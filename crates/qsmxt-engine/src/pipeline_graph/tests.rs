@@ -563,3 +563,19 @@ fn the_graph_as_text() {
     assert!(text.contains("  Background-field removal: V-SHARP\n      SMV kernel radii from 12 to 1 mm\n      after: Field map, Brain mask\n"), "{text}");
     assert!(text.contains("      only when the run is resampled\n"), "{text}");
 }
+
+/// Runs that set a step up differently (a mask supplied for one, computed for another): the
+/// merged box lists both ways.
+#[test]
+fn a_box_the_runs_set_up_differently_lists_each_way() {
+    let mut config = PipelineConfig::default();
+    config.masking.custom_mask_tool = Some("bet".into());
+    let mut supplied = facts();
+    supplied.custom_mask = true;
+    let a = graph(&config, &supplied);
+    let b = graph(&config, &facts());
+    let merged = PipelineGraph::merged(&[a.clone(), b.clone()]).unwrap();
+    let mask = merged.node("mask").unwrap();
+    assert_eq!(mask.settings[0], "supplied (bet)");
+    assert!(b.node("mask").unwrap().settings.iter().all(|s| mask.settings.contains(s)), "{:?}", mask.settings);
+}

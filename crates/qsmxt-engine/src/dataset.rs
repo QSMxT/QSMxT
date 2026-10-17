@@ -262,9 +262,9 @@ mod tests {
         let mask = s.graph.node("mask").unwrap().dataset.clone().unwrap();
         assert_eq!(
             mask.decision_note(&mask.decisions[1]),
-            "The supplied mask could not be read, so the mask was computed. (1 of 3 runs)"
+            "1 of 3 runs: The supplied mask could not be read, so the mask was computed."
         );
-        assert!(s.graph.to_mermaid().contains("(2 of 3 runs)"));
+        assert!(s.graph.to_mermaid().contains("2 of 3 runs: Taken from the supplied mask."));
 
         let s = summarise(&config, &[(&plan, &f, &bad), (&plan, &f, &bad)], "qsmxt").unwrap();
         assert!(s.changed.is_empty(), "{:?}", s.changed);

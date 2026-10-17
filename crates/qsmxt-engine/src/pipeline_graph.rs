@@ -141,9 +141,13 @@ impl NodeDataset {
         out
     }
 
-    /// A decision and how many of the step's runs made it.
+    /// A decision, after how many of the step's runs made it (first, so a box cut to its width
+    /// keeps it): "2 of 3 runs: The brain mask was the one supplied with the scan."
     pub fn decision_note(&self, c: &DecisionCount) -> String {
-        format!("{} ({})", c.reason, runs_text(c.runs, self.runs))
+        let runs = runs_text(c.runs, self.runs);
+        let mut chars = runs.chars();
+        let runs: String = chars.next().map(|f| f.to_uppercase().chain(chars).collect()).unwrap_or_default();
+        format!("{runs}: {}", c.reason)
     }
 }
 
@@ -881,7 +885,8 @@ impl PipelineGraph {
 
     /// A dataset's runs' graphs as one: the graph they share, or where they differ, every box and
     /// arrow any of them has, each once. A box only some runs have is placed after the box it
-    /// follows in the first graph that has it, and drawn as conditional ([`Node::only_when`]).
+    /// follows in the first graph that has it, and drawn as conditional ([`Node::only_when`]). A
+    /// box the graphs draw differently is the first graph's, with every graph's settings and models.
     /// How many runs took each box is the merged record's ([`crate::record::merge`]). `None` for
     /// no graphs.
     pub fn merged(graphs: &[PipelineGraph]) -> Option<PipelineGraph> {
@@ -897,6 +902,16 @@ impl PipelineGraph {
                 match out.nodes.iter().position(|m| m.id == n.id) {
                     Some(i) => {
                         seen.iter_mut().find(|(id, _)| *id == n.id).expect("counted").1 += 1;
+                        // A step the runs take differently (a mask supplied for some runs and
+                        // computed for others) lists every way it was set up and the models any run ran.
+                        let m = &mut out.nodes[i];
+                        for (mine, theirs) in [(&mut m.settings, &n.settings), (&mut m.models, &n.models)] {
+                            for x in theirs {
+                                if !mine.contains(x) {
+                                    mine.push(x.clone());
+                                }
+                            }
+                        }
                         at = i + 1;
                     }
                     None => {

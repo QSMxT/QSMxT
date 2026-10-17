@@ -2179,7 +2179,7 @@ mod oblique_run_tests {
         assert_eq!(methods, std::fs::read_to_string(output.run_methods_path(&runs[0].key)).unwrap());
         assert!(!output.changes_dir().exists());
         let graph = std::fs::read_to_string(output.dataset_graph_path()).unwrap();
-        assert!(graph.contains("(all 3 runs)"), "{graph}");
+        assert!(graph.contains("All 3 runs: "), "{graph}");
 
         // Run c decided otherwise (as if its supplied mask had been used): it alone differs.
         let c = &runs[2].key;
