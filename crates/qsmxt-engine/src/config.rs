@@ -1287,6 +1287,37 @@ impl PipelineConfig {
     }
 }
 
+impl PipelineConfig {
+    /// Only the settings that differ from QSMxT's defaults, as a QSMxT configuration file: a short
+    /// config that says what was changed. Settings that do not apply to this config are left out
+    /// ([`prune_hidden`](crate::schema::prune_hidden)), as the `qsmxt run` command leaves them
+    /// out. `qsmxt run --config` fills in the rest with the defaults, so it reads back as this
+    /// config, less those settings.
+    pub fn to_toml_changed(&self) -> crate::Result<String> {
+        let ser = |c: &PipelineConfig| toml::Value::try_from(c)
+            .map_err(|e| crate::error::ConfigError::Serialize(format!("{}", e)));
+        let pruned = crate::schema::prune_hidden(self, &crate::schema::ViewFacts::default());
+        let (toml::Value::Table(mut mine), toml::Value::Table(defaults)) = (ser(&pruned)?, ser(&PipelineConfig::default())?) else {
+            return Err(crate::error::ConfigError::Serialize("a config is not a TOML table".into()));
+        };
+        keep_changed(&mut mine, &defaults);
+        toml::to_string_pretty(&mine).map_err(|e| crate::error::ConfigError::Serialize(format!("{}", e)))
+    }
+}
+
+/// Drop from `mine` every value equal to `base`'s, and every table left empty; a value `base` does
+/// not have stays. Arrays (a mask recipe's sections) are compared whole.
+fn keep_changed(mine: &mut toml::value::Table, base: &toml::value::Table) {
+    mine.retain(|key, value| match (value, base.get(key)) {
+        (toml::Value::Table(sub), Some(toml::Value::Table(base_sub))) => {
+            keep_changed(sub, base_sub);
+            !sub.is_empty()
+        }
+        (value, Some(base_value)) => value != base_value,
+        (_, None) => true,
+    });
+}
+
 /// In `root[section]`, drop every nested algorithm table except the one whose key
 /// matches that section's `algorithm` value. Keeps `algorithm` and any non-table keys.
 /// No-op if the section or its `algorithm` field is absent.
@@ -1352,6 +1383,37 @@ mod selected_toml_tests {
         let loaded = PipelineConfig::from_toml(&c.to_toml().unwrap()).unwrap();
         assert_eq!(loaded.masking.combine, MaskCombine::And);
         assert_eq!(loaded.masking.refinements, c.masking.refinements);
+    }
+
+    /// The changed settings alone, read back on the defaults, give the config again.
+    #[test]
+    fn to_toml_changed_writes_only_what_differs_and_roundtrips() {
+        let d = PipelineConfig::default();
+        assert_eq!(d.to_toml_changed().unwrap().trim(), "", "nothing changed, nothing written");
+
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = QsmAlgorithm::Rts;
+        c.inversion.rts.delta = 0.22;
+        c.bg_removal.algorithm = BfAlgorithm::Pdf;
+        c.pipeline.do_swi = true;
+        let toml = c.to_toml_changed().unwrap();
+        assert!(toml.contains("delta = 0.22") && toml.contains("do_swi = true"), "{toml}");
+        assert!(!toml.contains("[inversion.tkd]") && !toml.contains("[masking]"), "only what changed: {toml}");
+        assert!(toml.lines().count() < 15, "{toml}");
+        let pruned = |c: &PipelineConfig| crate::schema::prune_hidden(c, &Default::default()).to_json().unwrap();
+        assert_eq!(PipelineConfig::from_toml(&toml).unwrap().to_json().unwrap(), pruned(&c));
+
+        // A setting that does not apply is left out: RTS's delta under another inversion.
+        let mut hidden = c.clone();
+        hidden.inversion.algorithm = QsmAlgorithm::Tkd;
+        assert!(!hidden.to_toml_changed().unwrap().contains("delta"));
+
+        // The browser profile reads back the same way: its changes that apply, and nothing else.
+        let mut browser = PipelineConfig::browser();
+        browser.inversion.algorithm = QsmAlgorithm::Xqsm;
+        let toml = browser.to_toml_changed().unwrap();
+        assert!(toml.contains("xqsm") && toml.len() * 4 < browser.to_toml().unwrap().len(), "{toml}");
+        assert_eq!(PipelineConfig::from_toml(&toml).unwrap().to_json().unwrap(), pruned(&browser));
     }
 
     #[test]
