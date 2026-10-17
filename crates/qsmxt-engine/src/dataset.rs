@@ -9,7 +9,9 @@ use std::collections::BTreeSet;
 
 use crate::config::PipelineConfig;
 use crate::methods::{methods_for_dataset, methods_for_run, Methods};
-use crate::pipeline_graph::{pipeline_graph_after, pipeline_graph_dataset, pipeline_graph_on, PipelineGraph};
+use crate::pipeline_graph::{
+    pipeline_graph_after, pipeline_graph_dataset, pipeline_graph_on, PipelineGraph,
+};
 use crate::plan::Plan;
 use crate::record::{merge, DatasetRecord, RunRecord, StepState};
 use crate::scan::ScanFacts;
@@ -28,11 +30,22 @@ pub struct RunSummary {
 }
 
 /// What a run of `plan` (from `config` and the scan's `facts`) that did what `record` says did.
-pub fn summarise_run(config: &PipelineConfig, plan: &Plan, facts: &ScanFacts, record: &RunRecord, tool: &str) -> RunSummary {
+pub fn summarise_run(
+    config: &PipelineConfig,
+    plan: &Plan,
+    facts: &ScanFacts,
+    record: &RunRecord,
+    tool: &str,
+) -> RunSummary {
     let planned = pipeline_graph_on(plan, config, facts, record.resampled);
     let after = pipeline_graph_after(plan, config, facts, record);
     let differs = after.differs_from(&planned);
-    RunSummary { methods: methods_for_run(config, plan, record, tool), planned, after, differs }
+    RunSummary {
+        methods: methods_for_run(config, plan, record, tool),
+        planned,
+        after,
+        differs,
+    }
 }
 
 /// A dataset's runs, as they ran.
@@ -62,12 +75,18 @@ pub struct DatasetSummary {
 /// A choice every run made is the dataset's (a supplied mask no run could use, say), so no run
 /// differs for it, and the dataset's text, which covers every run ("where available, …"), is not
 /// held against the runs that made the usual choice. `None` for no runs.
-pub fn summarise(config: &PipelineConfig, runs: &[(&Plan, &ScanFacts, &RunRecord)], tool: &str) -> Option<DatasetSummary> {
+pub fn summarise(
+    config: &PipelineConfig,
+    runs: &[(&Plan, &ScanFacts, &RunRecord)],
+    tool: &str,
+) -> Option<DatasetSummary> {
     if runs.is_empty() {
         return None;
     }
-    let summaries: Vec<RunSummary> =
-        runs.iter().map(|(plan, facts, record)| summarise_run(config, plan, facts, record, tool)).collect();
+    let summaries: Vec<RunSummary> = runs
+        .iter()
+        .map(|(plan, facts, record)| summarise_run(config, plan, facts, record, tool))
+        .collect();
     let records: Vec<RunRecord> = runs.iter().map(|(_, _, r)| (*r).clone()).collect();
     let record = merge(&records);
     let methods = methods_for_dataset(config, &record, tool);
@@ -77,9 +96,16 @@ pub fn summarise(config: &PipelineConfig, runs: &[(&Plan, &ScanFacts, &RunRecord
     // What each run's graph looked like as it ran, and the one most runs of the same plan took.
     type Shape = (PipelineGraph, BTreeSet<String>);
     let shape = |g: &PipelineGraph| -> Shape {
-        let skipped = g.nodes.iter()
-            .filter(|n| n.run.as_ref().is_some_and(|r| r.state == StepState::Skipped))
-            .map(|n| n.id.clone()).collect();
+        let skipped = g
+            .nodes
+            .iter()
+            .filter(|n| {
+                n.run
+                    .as_ref()
+                    .is_some_and(|r| r.state == StepState::Skipped)
+            })
+            .map(|n| n.id.clone())
+            .collect();
         (g.without_runs(), skipped)
     };
     let shapes: Vec<Shape> = summaries.iter().map(|s| shape(&s.after)).collect();
@@ -125,14 +151,24 @@ pub fn summarise(config: &PipelineConfig, runs: &[(&Plan, &ScanFacts, &RunRecord
     }
     let mut usual_text = counts[0];
     for &c in &counts[1..] {
-        if c.1 > usual_text.1 || (c.1 == usual_text.1 && texts[c.0] == dataset_text && texts[usual_text.0] != dataset_text) {
+        if c.1 > usual_text.1
+            || (c.1 == usual_text.1
+                && texts[c.0] == dataset_text
+                && texts[usual_text.0] != dataset_text)
+        {
             usual_text = c;
         }
     }
     let changed = (0..runs.len())
         .filter(|&i| texts[i] != texts[usual_text.0] || shapes[i] != shapes[usual[i]])
         .collect();
-    Some(DatasetSummary { record, methods, graph, runs: summaries, changed })
+    Some(DatasetSummary {
+        record,
+        methods,
+        graph,
+        runs: summaries,
+        changed,
+    })
 }
 
 #[cfg(test)]
@@ -145,18 +181,30 @@ mod tests {
     /// adds.
     fn record(plan: &Plan, decide: &[(&str, Decision)]) -> RunRecord {
         RunRecord {
-            steps: plan.steps.iter().map(|s| StepRecord {
-                id: s.stage.name(),
-                label: s.stage.label(),
-                state: StepState::Computed,
-                decisions: decide.iter().filter(|(id, _)| *id == s.stage.name()).map(|(_, d)| d.clone()).collect(),
-            }).collect(),
+            steps: plan
+                .steps
+                .iter()
+                .map(|s| StepRecord {
+                    id: s.stage.name(),
+                    label: s.stage.label(),
+                    state: StepState::Computed,
+                    decisions: decide
+                        .iter()
+                        .filter(|(id, _)| *id == s.stage.name())
+                        .map(|(_, d)| d.clone())
+                        .collect(),
+                })
+                .collect(),
             resampled: Some(false),
         }
     }
 
     fn unusable() -> Decision {
-        Decision::new(Topic::MaskSource, Choice::Computed, "The supplied mask could not be read, so the mask was computed.")
+        Decision::new(
+            Topic::MaskSource,
+            Choice::Computed,
+            "The supplied mask could not be read, so the mask was computed.",
+        )
     }
 
     /// Runs that decided nothing: the dataset's methods are the configuration's, its graph is
@@ -168,10 +216,17 @@ mod tests {
         let plan = crate::plan::plan(&config, &f);
         let r = record(&plan, &[]);
         let s = summarise(&config, &[(&plan, &f, &r), (&plan, &f, &r)], "qsmxt").unwrap();
-        assert_eq!(s.methods.to_markdown(), crate::methods::generate_methods_for(&config, "qsmxt"));
+        assert_eq!(
+            s.methods.to_markdown(),
+            crate::methods::generate_methods_for(&config, "qsmxt")
+        );
         assert!(s.changed.is_empty());
         assert_eq!(s.graph.without_runs(), s.runs[0].after.without_runs());
-        assert!(s.graph.nodes.iter().all(|n| n.dataset.as_ref().is_some_and(|d| d.summary().is_empty())));
+        assert!(s
+            .graph
+            .nodes
+            .iter()
+            .all(|n| n.dataset.as_ref().is_some_and(|d| d.summary().is_empty())));
         assert!(!s.graph.to_mermaid().contains("<b>"));
         assert!(summarise(&config, &[], "qsmxt").is_none());
     }
@@ -185,13 +240,30 @@ mod tests {
         let mut f = facts();
         f.custom_mask = true;
         let plan = crate::plan::plan(&config, &f);
-        let used = record(&plan, &[("mask", Decision::new(Topic::MaskSource, Choice::Supplied, "Taken from the supplied mask."))]);
+        let used = record(
+            &plan,
+            &[(
+                "mask",
+                Decision::new(
+                    Topic::MaskSource,
+                    Choice::Supplied,
+                    "Taken from the supplied mask.",
+                ),
+            )],
+        );
         let bad = record(&plan, &[("mask", unusable())]);
-        let s = summarise(&config, &[(&plan, &f, &used), (&plan, &f, &bad), (&plan, &f, &used)], "qsmxt").unwrap();
+        let s = summarise(
+            &config,
+            &[(&plan, &f, &used), (&plan, &f, &bad), (&plan, &f, &used)],
+            "qsmxt",
+        )
+        .unwrap();
         assert_eq!(s.changed, [1]);
         let mask = s.graph.node("mask").unwrap().dataset.clone().unwrap();
-        assert_eq!(mask.decision_note(&mask.decisions[1]),
-                   "The supplied mask could not be read, so the mask was computed. (1 of 3 runs)");
+        assert_eq!(
+            mask.decision_note(&mask.decisions[1]),
+            "The supplied mask could not be read, so the mask was computed. (1 of 3 runs)"
+        );
         assert!(s.graph.to_mermaid().contains("(2 of 3 runs)"));
 
         let s = summarise(&config, &[(&plan, &f, &bad), (&plan, &f, &bad)], "qsmxt").unwrap();
@@ -212,8 +284,22 @@ mod tests {
         let mut skipped = ok.clone();
         let swi = skipped.steps.iter_mut().find(|s| s.id == "swi").unwrap();
         swi.state = StepState::Skipped;
-        let s = summarise(&config, &[(&plan, &f, &ok), (&plan, &f, &skipped), (&plan, &f, &ok)], "qsmxt").unwrap();
+        let s = summarise(
+            &config,
+            &[(&plan, &f, &ok), (&plan, &f, &skipped), (&plan, &f, &ok)],
+            "qsmxt",
+        )
+        .unwrap();
         assert_eq!(s.changed, [1]);
-        assert_eq!(s.graph.node("swi").unwrap().dataset.as_ref().unwrap().summary(), ["Skipped in 1 of 3 runs"]);
+        assert_eq!(
+            s.graph
+                .node("swi")
+                .unwrap()
+                .dataset
+                .as_ref()
+                .unwrap()
+                .summary(),
+            ["Skipped in 1 of 3 runs"]
+        );
     }
 }

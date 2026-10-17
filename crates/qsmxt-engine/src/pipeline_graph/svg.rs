@@ -34,7 +34,10 @@ svg { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; fon
 
 /// `text` for XML text and attribute values.
 fn esc(text: &str) -> String {
-    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 impl PipelineGraph {
@@ -64,7 +67,11 @@ impl PipelineGraph {
             ));
         }
         for e in &l.edges {
-            let cls = if e.collapsed > 1 { "g-edge collapsed" } else { "g-edge" };
+            let cls = if e.collapsed > 1 {
+                "g-edge collapsed"
+            } else {
+                "g-edge"
+            };
             out.push_str(&format!(
                 "<g class=\"{cls}\" data-from=\"{}\" data-to=\"{}\"><title>{}</title><path d=\"{}\" marker-end=\"url(#g-arrow)\"/></g>\n",
                 esc(&e.from), esc(&e.to), esc(&e.title), rounded_path(&e.points, 5.0)
@@ -73,11 +80,15 @@ impl PipelineGraph {
         for g in &l.groups {
             out.push_str(&format!(
                 "<g class=\"g-group\"><text x=\"{}\" y=\"{}\">{}</text></g>\n",
-                num(g.x + 8.0), num(g.y + 13.0), esc(&g.title)
+                num(g.x + 8.0),
+                num(g.y + 13.0),
+                esc(&g.title)
             ));
         }
         for n in &l.nodes {
-            let Some(node) = self.node(&n.id) else { continue };
+            let Some(node) = self.node(&n.id) else {
+                continue;
+            };
             let mut cls = String::from("g-node");
             if n.optional {
                 cls.push_str(" optional");
@@ -96,13 +107,19 @@ impl PipelineGraph {
                 "<g class=\"{cls}\" data-step=\"{}\" transform=\"translate({},{})\"><title>{}</title>\n",
                 esc(&n.id), num(n.x), num(n.y), esc(&node.tooltip())
             ));
-            out.push_str(&format!("  <rect class=\"box\" width=\"{}\" height=\"{}\" rx=\"6\"/>\n", num(n.w), num(n.h)));
+            out.push_str(&format!(
+                "  <rect class=\"box\" width=\"{}\" height=\"{}\" rx=\"6\"/>\n",
+                num(n.w),
+                num(n.h)
+            ));
             let mut y = 8.0;
             for line in &n.lines {
                 y += line.cls.height();
                 out.push_str(&format!(
                     "  <text class=\"{}\" x=\"8\" y=\"{}\">{}</text>\n",
-                    line.cls.name(), num(y - 4.0), esc(&line.text)
+                    line.cls.name(),
+                    num(y - 4.0),
+                    esc(&line.text)
                 ));
             }
             if !node.models.is_empty() {
