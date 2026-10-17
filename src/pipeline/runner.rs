@@ -2229,7 +2229,7 @@ mod oblique_run_tests {
         assert_eq!(changes().len(), 3, "{:?}", changes());
         let cname = c.basename();
         assert!(output.change_path(&cname, false).exists() && output.change_path(&cname, true).with_extension("svg").exists());
-        assert!(read(output.change_path(&cname, false)).contains("sourced from"));
+        assert!(read(output.change_path(&cname, false)).contains("The brain mask was supplied with the scan"));
         let before = (methods.clone(), read(output.dataset_graph_path()), changes());
 
         // Run a alone again (`--include`): the dataset is still a, b and c, and c's files stay.
