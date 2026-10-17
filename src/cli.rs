@@ -1557,7 +1557,8 @@ pub struct RunArgs {
     #[arg(long, num_args = 1.., value_delimiter = ',')]
     pub dicom_outputs: Option<Vec<String>>,
 
-    /// Print processing plan without executing
+    /// Print the processing plan, the pipeline graph and the methods text without running
+    /// anything or writing any file
     #[arg(long)]
     pub dry: bool,
 
@@ -1586,7 +1587,8 @@ pub struct RunArgs {
 
     /// Process each run and stop: skip the dataset-level steps (multi-orientation
     /// reconstruction, summary tables, cohort figures, provenance, dataset_description.json,
-    /// pipeline_config.toml, methods.md) and log to logs/<run>.log instead of qsmxt.log.
+    /// pipeline_config.toml, methods.md, the pipeline graph, changes/) and log to
+    /// logs/<run>.log instead of qsmxt.log.
     /// `qsmxt aggregate` does those steps once every run is done; `qsmxt slurm` uses the pair
     #[arg(long, conflicts_with = "dry")]
     pub no_dataset_steps: bool,

@@ -20,7 +20,7 @@ use crate::enums::*;
 use crate::items::ItemKind;
 use crate::methods::words;
 use crate::plan::{Pass, Plan, Stage};
-use crate::record::{Choice, Decision, RunRecord, StepState, Topic};
+use crate::record::{Choice, DatasetRecord, Decision, DecisionCount, RunRecord, StepState, Topic};
 use crate::requirements::{self, Output};
 use crate::scan::{RunMetadata, ScanFacts};
 use crate::store::{Contrast, Item};
@@ -66,6 +66,32 @@ pub struct Node {
     /// What the step did in the run, on the graph after a run ([`pipeline_graph_after`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run: Option<NodeRun>,
+    /// What a dataset's runs did in the step, on a dataset's graph ([`pipeline_graph_dataset`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dataset: Option<NodeDataset>,
+}
+
+impl Node {
+    /// Everything the box says, in full, a line each: the step, its algorithm, settings, models,
+    /// and what the run or the dataset's runs did.
+    pub fn tooltip(&self) -> String {
+        let mut lines: Vec<String> = vec![self.label.clone()];
+        lines.extend(self.algorithm_label.clone());
+        lines.extend(self.settings.iter().cloned());
+        lines.extend(self.only_when.as_ref().map(|w| format!("Only when {w}")));
+        if !self.models.is_empty() {
+            lines.push(format!("Models: {}", self.models.join(", ")));
+        }
+        if let Some(run) = &self.run {
+            lines.push(layout::run_state_text(run.state).to_string());
+            lines.extend(run.decisions.iter().map(Decision::note));
+        }
+        if let Some(d) = &self.dataset {
+            lines.extend(d.summary());
+            lines.extend(d.decisions.iter().map(|c| d.decision_note(c)));
+        }
+        lines.join("\n")
+    }
 }
 
 /// What a step did in a run ([`crate::record::StepRecord`]).
@@ -75,6 +101,54 @@ pub struct NodeRun {
     /// What it decided, in the order it decided it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub decisions: Vec<Decision>,
+}
+
+/// What a dataset's runs did in a step ([`crate::record::DatasetStep`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NodeDataset {
+    /// The dataset's runs.
+    pub of: usize,
+    /// The runs whose plan had the step.
+    pub runs: usize,
+    pub computed: usize,
+    pub cached: usize,
+    pub skipped: usize,
+    /// What the runs decided in it, each with how many runs decided it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub decisions: Vec<DecisionCount>,
+}
+
+/// "1 run", "all 4 runs", "3 of 4 runs".
+fn runs_text(k: usize, n: usize) -> String {
+    match (k, n) {
+        (1, 1) => "1 run".to_string(),
+        _ if k == n => format!("all {n} runs"),
+        _ => format!("{k} of {n} runs"),
+    }
+}
+
+impl NodeDataset {
+    /// What the box says about the runs, a line each: how many runs took the step, when not all
+    /// did, and how many skipped it. Reusing the cache is not a difference, so it is not counted.
+    pub fn summary(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        if self.runs < self.of {
+            out.push(format!("In {}", runs_text(self.runs, self.of)));
+        }
+        if self.skipped > 0 {
+            out.push(format!("Skipped in {}", runs_text(self.skipped, self.runs)));
+        }
+        out
+    }
+
+    /// A decision, after how many of the step's runs made it (first, so a box cut to its width
+    /// keeps it): "2 of 3 runs: The brain mask was the one supplied with the scan."
+    pub fn decision_note(&self, c: &DecisionCount) -> String {
+        let runs = runs_text(c.runs, self.runs);
+        let mut chars = runs.chars();
+        let runs: String = chars.next().map(|f| f.to_uppercase().chain(chars).collect()).unwrap_or_default();
+        format!("{runs}: {}", c.reason)
+    }
 }
 
 /// One step reading what another wrote.
@@ -662,6 +736,21 @@ pub fn pipeline_graph_after(plan: &Plan, config: &PipelineConfig, facts: &ScanFa
     graph
 }
 
+/// A dataset's graph as its runs took it: the graphs after its runs ([`pipeline_graph_after`]),
+/// merged ([`PipelineGraph::merged`]), each box carrying what the runs did in it
+/// ([`Node::dataset`]), from their merged record ([`crate::record::merge`]). `None` for no runs.
+pub fn pipeline_graph_dataset(after: &[PipelineGraph], record: &DatasetRecord) -> Option<PipelineGraph> {
+    let bare: Vec<PipelineGraph> = after.iter().map(PipelineGraph::without_runs).collect();
+    let mut graph = PipelineGraph::merged(&bare)?;
+    for node in &mut graph.nodes {
+        node.dataset = record.step(&node.id).map(|s| NodeDataset {
+            of: record.runs, runs: s.runs, computed: s.computed, cached: s.cached, skipped: s.skipped,
+            decisions: s.decisions.clone(),
+        });
+    }
+    Some(graph)
+}
+
 /// [`pipeline_graph`], knowing only whether the run is `resampled` (when it is known) rather than
 /// its whole grid: the planned graph a run's graph after it ([`pipeline_graph_after`]) is compared
 /// with.
@@ -713,6 +802,7 @@ pub fn pipeline_graph_on(plan: &Plan, config: &PipelineConfig, facts: &ScanFacts
             writes: writes.iter().map(item_key).collect(),
             id,
             run: None,
+            dataset: None,
         });
     }
     let items = items.iter().map(|item| {
@@ -771,12 +861,22 @@ impl PipelineGraph {
         self.items.iter().find(|i| i.key == key)
     }
 
+    /// The graph without what a run or a dataset's runs did in each step: what was drawn.
+    pub fn without_runs(&self) -> PipelineGraph {
+        let mut g = self.clone();
+        for n in &mut g.nodes {
+            n.run = None;
+            n.dataset = None;
+        }
+        g
+    }
+
     /// Whether this graph, of a run ([`pipeline_graph_after`]), differs from `planned`, the graph
     /// of its plan: a box or an arrow the run drew differently (what a step read, wrote, ran or
     /// how it is labelled), or a box whose step did nothing. A step reused from the cache, and what
     /// a step noted without changing what it did (the box it reconstructed in), are not differences.
     pub fn differs_from(&self, planned: &PipelineGraph) -> bool {
-        let bare = |n: &Node| Node { run: None, ..n.clone() };
+        let bare = |n: &Node| Node { run: None, dataset: None, ..n.clone() };
         self.nodes.len() != planned.nodes.len()
             || self.nodes.iter().zip(&planned.nodes).any(|(a, b)| bare(a) != bare(b))
             || self.edges != planned.edges
@@ -785,7 +885,8 @@ impl PipelineGraph {
 
     /// A dataset's runs' graphs as one: the graph they share, or where they differ, every box and
     /// arrow any of them has, each once. A box only some runs have is placed after the box it
-    /// follows in the first graph that has it, and drawn as conditional ([`Node::only_when`]).
+    /// follows in the first graph that has it, and drawn as conditional ([`Node::only_when`]). A
+    /// box the graphs draw differently is the first graph's, with every graph's settings and models.
     /// How many runs took each box is the merged record's ([`crate::record::merge`]). `None` for
     /// no graphs.
     pub fn merged(graphs: &[PipelineGraph]) -> Option<PipelineGraph> {
@@ -801,6 +902,16 @@ impl PipelineGraph {
                 match out.nodes.iter().position(|m| m.id == n.id) {
                     Some(i) => {
                         seen.iter_mut().find(|(id, _)| *id == n.id).expect("counted").1 += 1;
+                        // A step the runs take differently (a mask supplied for some runs and
+                        // computed for others) lists every way it was set up and the models any run ran.
+                        let m = &mut out.nodes[i];
+                        for (mine, theirs) in [(&mut m.settings, &n.settings), (&mut m.models, &n.models)] {
+                            for x in theirs {
+                                if !mine.contains(x) {
+                                    mine.push(x.clone());
+                                }
+                            }
+                        }
                         at = i + 1;
                     }
                     None => {
@@ -836,6 +947,39 @@ impl PipelineGraph {
         self.edges.iter().any(|e| e.from == from && e.to == to)
     }
 
+    /// The graph as plain text, for a terminal: each step in run order, with its pass, its
+    /// algorithm and settings, when it applies, and the steps it reads from.
+    pub fn to_text(&self) -> String {
+        let mut out = String::new();
+        for n in &self.nodes {
+            let mut head = n.label.clone();
+            if let Some(alg) = &n.algorithm_label {
+                head.push_str(&format!(": {alg}"));
+            }
+            match n.branch {
+                Some(Branch::Main) => head.push_str(" [main pass]"),
+                Some(Branch::Reliable) => head.push_str(" [reliable pass]"),
+                None => {}
+            }
+            out.push_str(&format!("  {head}\n"));
+            for s in &n.settings {
+                out.push_str(&format!("      {s}\n"));
+            }
+            if let Some(when) = &n.only_when {
+                out.push_str(&format!("      only when {when}\n"));
+            }
+            if !n.models.is_empty() {
+                out.push_str(&format!("      models: {}\n", n.models.join(", ")));
+            }
+            let from: Vec<&str> = self.edges.iter().filter(|e| e.to == n.id)
+                .filter_map(|e| self.node(&e.from).map(|f| f.label.as_str())).collect();
+            if !from.is_empty() {
+                out.push_str(&format!("      after: {}\n", from.join(", ")));
+            }
+        }
+        out
+    }
+
     /// The graph as a Mermaid flowchart: one box per step (label, algorithm, settings), each
     /// arrow labelled with what flows along it (an echo's items once, for all echoes). A two-pass
     /// run's passes are subgraphs; a step a setting asked for is dashed, and one that may do
@@ -862,6 +1006,14 @@ impl PipelineGraph {
                 text.push_str(&format!("<br/><small><b>{state}</b></small>"));
                 for d in &run.decisions {
                     text.push_str(&format!("<br/><small>{}</small>", mermaid_text(&d.note())));
+                }
+            }
+            if let Some(d) = &n.dataset {
+                for line in d.summary() {
+                    text.push_str(&format!("<br/><small><b>{}</b></small>", mermaid_text(&line)));
+                }
+                for c in &d.decisions {
+                    text.push_str(&format!("<br/><small>{}</small>", mermaid_text(&d.decision_note(c))));
                 }
             }
             format!("{}[\"{text}\"]", mermaid_id(&n.id))
@@ -910,6 +1062,9 @@ impl PipelineGraph {
         out
     }
 }
+
+pub mod layout;
+mod svg;
 
 #[cfg(test)]
 mod tests;

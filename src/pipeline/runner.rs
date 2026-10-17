@@ -252,60 +252,47 @@ pub fn run_pipeline_cached(
     write_run_files(qsm_run, config, &facts, &plan, &record, output)
 }
 
-/// What a run did, in its workflow directory: its methods text, from the plan and what the run
-/// decided ([`qsmxt_engine::methods::methods_for_run`]); the record itself
+/// A run's `*_runrecord.json`: what it did ([`qsmxt_engine::record::RunRecord`], its fields at
+/// the top level) and the scan facts it was planned from (`scan`), so the dataset's methods can
+/// be made from the file alone, whichever invocation processed the run.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) struct RunRecordFile {
+    #[serde(flatten)]
+    pub record: qsmxt_engine::record::RunRecord,
+    pub scan: qsmxt_engine::scan::ScanFacts,
+}
+
+/// What a run did, in its workflow directory ([`qsmxt_engine::dataset::summarise_run`]): its
+/// methods text, from the plan and what the run decided; the record itself
 /// ([`qsmxt_engine::record::RunRecord`]); the planned pipeline graph; and the graph as it ran, only
-/// when that differs from the planned one ([`qsmxt_engine::pipeline_graph::PipelineGraph::differs_from`]).
+/// when that differs from the planned one. Each graph is written as Mermaid and as SVG.
 ///
-/// A run that differs from the dataset's methods also gets its methods text and the graph as it
-/// ran in `changes/` ([`differs_from_dataset`]); a run that no longer differs has them removed, and
-/// `changes/` with them once it is empty.
+/// Whether the run differs from the dataset (`changes/`) is decided once every run is done, from
+/// all their records (`qsmxt run`'s dataset-level steps).
 fn write_run_files(
     run: &QsmRun, config: &PipelineConfig, facts: &qsmxt_engine::scan::ScanFacts, plan: &qsmxt_engine::plan::Plan,
     record: &qsmxt_engine::record::RunRecord, output: &DerivativeOutputs,
 ) -> crate::Result<()> {
-    use qsmxt_engine::pipeline_graph::{pipeline_graph_after, pipeline_graph_on};
+    use crate::bids::derivatives::{remove_graph, write_graph};
     let key = &run.key;
     let methods_path = output.run_methods_path(key);
     if let Some(dir) = methods_path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let methods = qsmxt_engine::methods::methods_for_run(config, plan, record, "qsmxt").to_markdown();
-    std::fs::write(&methods_path, &methods)?;
-    let json = serde_json::to_string_pretty(record).map_err(|e| QsmxtError::Config(e.to_string()))?;
+    let summary = qsmxt_engine::dataset::summarise_run(config, plan, facts, record, "qsmxt");
+    std::fs::write(&methods_path, summary.methods.to_markdown())?;
+    let file = RunRecordFile { record: record.clone(), scan: facts.clone() };
+    let json = serde_json::to_string_pretty(&file).map_err(|e| QsmxtError::Config(e.to_string()))?;
     std::fs::write(output.run_record_path(key), json + "\n")?;
     // Drawn on the grid the run took: the return to the acquired grid only if it was resampled.
-    let planned = pipeline_graph_on(plan, config, facts, record.resampled);
-    std::fs::write(output.run_graph_path(key, false), planned.to_mermaid())?;
-    let after = pipeline_graph_after(plan, config, facts, record);
-    let graph_differs = after.differs_from(&planned);
+    write_graph(&output.run_graph_path(key, false), &summary.planned)?;
     let after_path = output.run_graph_path(key, true);
-    if graph_differs {
-        std::fs::write(&after_path, after.to_mermaid())?;
-    } else if after_path.exists() {
-        std::fs::remove_file(&after_path)?;
-    }
-
-    let changes = [output.change_path(key, false), output.change_path(key, true)];
-    if differs_from_dataset(&methods, config, graph_differs) {
-        std::fs::create_dir_all(output.changes_dir())?;
-        std::fs::write(&changes[0], &methods)?;
-        std::fs::write(&changes[1], after.to_mermaid())?;
+    if summary.differs {
+        write_graph(&after_path, &summary.after)?;
     } else {
-        for path in changes.iter().filter(|p| p.exists()) {
-            std::fs::remove_file(path)?;
-        }
-        // Gone once no run differs; another run writing into it at the same moment keeps it.
-        let _ = std::fs::remove_dir(output.changes_dir());
+        remove_graph(&after_path)?;
     }
     Ok(())
-}
-
-/// Whether a run differs from the dataset's methods: its methods text (`methods`, from its plan
-/// and what it decided) is not the dataset's `methods.md` (the configuration's), or it took the
-/// pipeline otherwise than planned (`graph_differs`).
-fn differs_from_dataset(methods: &str, config: &PipelineConfig, graph_differs: bool) -> bool {
-    graph_differs || methods != crate::pipeline::methods::generate_methods(config)
 }
 
 /// `qsmxt run`'s [`StageStore`]: a run's volumes as files under the derivatives directory, named
@@ -2170,36 +2157,88 @@ mod oblique_run_tests {
 
     const ACQUIRED: usize = DIMS.0 * DIMS.1 * DIMS.2;
 
-    /// Each run's methods text, record and planned graph go in its workflow directory; a run
-    /// whose methods differ from the dataset's (`--use-custom-masks` with no mask found, so the
-    /// mask was computed and "where available" no longer applies) also gets them in `changes/`,
-    /// which goes away when a later run of the directory no longer differs.
+    /// Each run's methods text, record and planned graph (Mermaid and SVG) go in its workflow
+    /// directory. Once the runs are done, the dataset's methods and graph come from every current
+    /// record in the output directory: `--use-custom-masks` with no mask found for any run is said
+    /// as done ("where available" no longer applies), and no run differs. A run that decided
+    /// otherwise than the rest gets its methods text and graph in `changes/`. Processing one run
+    /// again (`--include`) keeps the others in the dataset; a run processed with other settings is
+    /// not one of its runs; `changes/` goes when no run differs.
     #[test]
-    fn a_run_that_differs_from_the_datasets_methods_is_kept_in_changes() {
+    fn the_datasets_methods_come_from_its_runs_and_a_run_that_differs_is_kept_in_changes() {
+        use qsmxt_engine::record::{Choice, Decision, Topic};
         let dir = tempfile::tempdir().unwrap();
-        let run = oblique_run(dir.path(), "a", 3);
+        let runs: Vec<QsmRun> = ["a", "b", "c", "d"].iter().map(|acq| oblique_run(dir.path(), acq, 2)).collect();
         let mut config = fast_config();
         config.masking.custom_mask_tool = Some("nothing-here".into());
-        let output = DerivativeOutputs::new(&dir.path().join("out"));
-        run_pipeline_cached(&run, &config, &output, true, &|_| {}).unwrap();
-        let key = &run.key;
-        for path in [output.run_methods_path(key), output.run_record_path(key), output.run_graph_path(key, false)] {
-            assert!(path.exists() && path.starts_with(dir.path().join("out/workflow")), "{}", path.display());
+        let derivatives = dir.path().join("out");
+        let output = DerivativeOutputs::new(&derivatives);
+        std::fs::create_dir_all(&derivatives).unwrap();
+        crate::commands::run::write_dataset_files(&derivatives, dir.path(), &config, &runs[..3]).unwrap();
+        assert!(output.dataset_graph_path().with_extension("svg").exists());
+        for run in &runs[..3] {
+            run_pipeline_cached(run, &config, &output, true, &|_| {}).unwrap();
+            let key = &run.key;
+            for path in [output.run_methods_path(key), output.run_record_path(key), output.run_graph_path(key, false),
+                         output.run_graph_path(key, false).with_extension("svg")] {
+                assert!(path.exists() && path.starts_with(derivatives.join("workflow")), "{}", path.display());
+            }
         }
-        let methods = std::fs::read_to_string(output.change_path(key, false)).unwrap();
+        let summarise = || crate::commands::run::write_dataset_summary(&derivatives, &config).unwrap();
+        let read = |p: std::path::PathBuf| std::fs::read_to_string(p).unwrap();
+        summarise();
+        let methods = read(derivatives.join("methods.md"));
         assert!(!methods.contains("Where available") && methods.contains("A brain mask was generated"), "{methods}");
         assert!(crate::pipeline::methods::generate_methods(&config).contains("Where available"));
-        assert!(output.change_path(key, true).exists());
-        let record: qsmxt_engine::record::RunRecord =
-            serde_json::from_str(&std::fs::read_to_string(output.run_record_path(key)).unwrap()).unwrap();
-        assert!(record.step("mask").unwrap().decision(qsmxt_engine::record::Topic::MaskSource).is_some());
-
-        // Without the bring-your-own mask the run is the dataset's methods again.
-        config.masking.custom_mask_tool = None;
-        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
+        assert_eq!(methods, read(output.run_methods_path(&runs[0].key)));
         assert!(!output.changes_dir().exists());
-        assert_eq!(std::fs::read_to_string(output.run_methods_path(key)).unwrap(),
-                   crate::pipeline::methods::generate_methods(&config));
+        let graph = read(output.dataset_graph_path());
+        assert!(graph.contains("All 3 runs: "), "{graph}");
+
+        // Run c decided otherwise (as if its supplied mask had been used): it alone differs.
+        let c = &runs[2].key;
+        let mut file: RunRecordFile = serde_json::from_str(&read(output.run_record_path(c))).unwrap();
+        let mask = file.record.steps.iter_mut().find(|s| s.id == "mask").unwrap();
+        mask.decisions = vec![Decision::new(Topic::MaskSource, Choice::Supplied, "Taken from the supplied mask.")];
+        std::fs::write(output.run_record_path(c), serde_json::to_string(&file).unwrap()).unwrap();
+        summarise();
+        let methods = read(derivatives.join("methods.md"));
+        assert!(methods.contains("Where available"), "{methods}");
+        let changes = || -> Vec<String> {
+            let mut v: Vec<String> = std::fs::read_dir(output.changes_dir()).map(|d| d.map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect()).unwrap_or_default();
+            v.sort();
+            v
+        };
+        assert_eq!(changes().len(), 3, "{:?}", changes());
+        let cname = c.basename();
+        assert!(output.change_path(&cname, false).exists() && output.change_path(&cname, true).with_extension("svg").exists());
+        assert!(read(output.change_path(&cname, false)).contains("sourced from"));
+        let before = (methods.clone(), read(output.dataset_graph_path()), changes());
+
+        // Run a alone again (`--include`): the dataset is still a, b and c, and c's files stay.
+        run_pipeline_cached(&runs[0], &config, &output, false, &|_| {}).unwrap();
+        summarise();
+        assert_eq!((read(derivatives.join("methods.md")), read(output.dataset_graph_path()), changes()), before);
+
+        // Run d processed with other settings, and a run whose latest attempt did not finish, are
+        // not current: neither counts.
+        let mut other = config.clone();
+        other.masking.custom_mask_tool = None;
+        run_pipeline_cached(&runs[3], &other, &output, true, &|_| {}).unwrap();
+        assert!(output.run_record_path(&runs[3].key).exists());
+        let b_state = crate::pipeline::graph::state_file_path(&derivatives, &runs[1].key);
+        let saved = read(b_state.clone());
+        std::fs::write(&b_state, saved.replace("\"complete\"", "\"running\"")).unwrap();
+        summarise();
+        let graph = read(output.dataset_graph_path());
+        assert!(graph.contains("1 of 2 runs: Taken from the supplied mask."), "{graph}");
+        std::fs::write(&b_state, saved).unwrap();
+
+        // Run c again: it is like the rest, and changes/ goes.
+        run_pipeline_cached(&runs[2], &config, &output, false, &|_| {}).unwrap();
+        summarise();
+        assert!(!output.changes_dir().exists());
+        assert!(read(output.dataset_graph_path()).contains("All 3 runs: "));
     }
 
     /// ARLO and chi-separation read the acquired-grid source magnitudes and indexed past their end.

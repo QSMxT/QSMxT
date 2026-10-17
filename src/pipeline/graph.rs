@@ -285,8 +285,12 @@ impl PipelineState {
 /// before the dataset-level steps, in place of the per-run results a local run has in hand. The
 /// error says why not, for the message naming the run.
 pub fn run_completed_under(output_dir: &Path, key: &AcquisitionKey, config: &PipelineConfig) -> Result<(), String> {
-    let path = state_file_path(output_dir, key);
-    let text = std::fs::read_to_string(&path)
+    state_completed_under(&state_file_path(output_dir, key), config)
+}
+
+/// [`run_completed_under`], for the state file at `path`.
+pub fn state_completed_under(path: &Path, config: &PipelineConfig) -> Result<(), String> {
+    let text = std::fs::read_to_string(path)
         .map_err(|_| format!("has not been processed (no {})", path.display()))?;
     let state: PipelineState = serde_json::from_str(&text)
         .map_err(|e| format!("has an unreadable pipeline state {}: {e}", path.display()))?;
