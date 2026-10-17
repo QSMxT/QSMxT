@@ -192,6 +192,12 @@ pub struct RunMetadata {
 /// costs an interpolation and buys nothing.
 pub const AXIAL_ONLY_TOLERANCE_DEG: f64 = 1.0;
 
+/// Whether B0 sits far enough from the slice normal of the grid `affine` describes that an
+/// axial-only algorithm is given resampled data ([`AXIAL_ONLY_TOLERANCE_DEG`]).
+pub fn tilted_for_axial_only(affine: &[f64; 16]) -> bool {
+    qsm_core::geometry::b0_angle_from_affine(affine) > AXIAL_ONLY_TOLERANCE_DEG
+}
+
 /// Work out the grid and B0 direction the pipeline will actually reconstruct on, from the first
 /// phase image's header (`dims`, `voxel_size`, `affine`).
 ///
@@ -239,7 +245,7 @@ pub fn resolve_geometry(
     // way to reconstruct correctly is to move the data. Below the obliquity threshold the tilt
     // is small enough not to bother.
     let axial_only = crate::bridge::axial_only_algorithms(config, orientation_facts(facts, config));
-    let forced_axial = !axial_only.is_empty() && tilt > AXIAL_ONLY_TOLERANCE_DEG;
+    let forced_axial = !axial_only.is_empty() && tilted_for_axial_only(&affine);
     if forced_axial {
         log::info!(
             "Resampling to axial because {} {} no B0 direction and {} assume it is +z; B0 is \
@@ -398,7 +404,7 @@ pub fn grid_decision(meta: &RunMetadata, facts: &ScanFacts, config: &PipelineCon
     let detail = format!("{obliquity:.1}° oblique, B0 {tilt:.1}° from the slice normal");
     Some(if meta.source_geometry.is_none() {
         Decision::new(Topic::Grid, Choice::Acquired, "Processed on the acquired grid.").with_detail(detail)
-    } else if !axial_only.is_empty() && tilt > AXIAL_ONLY_TOLERANCE_DEG {
+    } else if !axial_only.is_empty() && tilted_for_axial_only(&acquired_affine) {
         Decision::new(Topic::Grid, Choice::ResampledForAlgorithm,
             "Resampled onto an axial grid, as an algorithm the run uses assumes B0 along the slice normal.")
             .with_detail(format!("{detail}; {}", axial_only.join(", ")))

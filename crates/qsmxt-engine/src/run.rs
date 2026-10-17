@@ -66,6 +66,18 @@ pub fn run_step<S: StageStore + ?Sized>(
 fn load<S: StageStore + ?Sized>(
     config: &PipelineConfig, facts: &ScanFacts, store: &mut S, observer: &mut dyn Observer,
 ) -> Result<(RunMetadata, StepRecord), S::Error> {
+    // The algorithms that assume B0 along the slice normal decide the grid only when this scan's
+    // B0 is tilted from it: on axial data they change nothing, and switching to or from one leaves
+    // the cache alone. The header is read for that only when there are any.
+    let mut header = None;
+    let mut axial_only = crate::bridge::axial_only_algorithms(config, crate::scan::orientation_facts(facts, config));
+    if !axial_only.is_empty() {
+        let h = store.header()?;
+        if !crate::scan::tilted_for_axial_only(&h.affine) {
+            axial_only.clear();
+        }
+        header = Some(h);
+    }
     // The grid every other step works on is decided here, so a setting that changes it leaves
     // nothing cached valid.
     let geometry = json!({
@@ -76,8 +88,9 @@ fn load<S: StageStore + ?Sized>(
         // key says so; changing these recomputes the run, as a geometry change does.
         "motion_correction": config.motion_correction,
         "registration": if config.motion_correction.enabled { Some(&config.registration) } else { None },
-        "axial_only": crate::bridge::axial_only_algorithms(
-            config, crate::scan::orientation_facts(facts, config)),
+        // Empty unless they force resampling, so a cache from before this rule stays valid for
+        // every run they did not resample.
+        "axial_only": axial_only,
         // Replacing an input in place (a re-export, a corrected sidecar) changes everything
         // computed from it; nothing else would notice.
         "inputs": store.input_identity(),
@@ -95,7 +108,10 @@ fn load<S: StageStore + ?Sized>(
     }
     observer.stage("load", None, StageEvent::Started("Loading NIfTI metadata"));
     store.start("load");
-    let header = store.header()?;
+    let header = match header {
+        Some(h) => h,
+        None => store.header()?,
+    };
     let mut meta = crate::scan::resolve_geometry(header.dims, header.voxel_size, header.affine, facts, config);
     let mut decisions = Vec::new();
     meta.slice_geometry = match &header.sidecar {
@@ -1832,6 +1848,66 @@ pub(crate) mod tests {
         // New input data recomputes everything.
         store.set_identity(json!("phantom-2"));
         assert_eq!(run_once(&config, &facts, &mut store).computed, first.computed);
+    }
+
+    /// The steps a run took before it failed (or finished): a deep-learning inversion has no
+    /// weights here, so it fails at that step, after everything before it has been reused or
+    /// computed.
+    fn run_until_done_or_failed(config: &PipelineConfig, facts: &ScanFacts, store: &mut MemoryStore) -> Events {
+        let plan = crate::plan::plan(config, facts);
+        let mut events = Events::default();
+        let _ = run(&plan, config, facts, store, &mut events);
+        events
+    }
+
+    /// An axial-only inversion (xQSM) on axial data changes nothing about the grid, so switching
+    /// to it from a classical one reuses every step before the inversion (#355).
+    #[test]
+    fn an_axial_only_inversion_on_axial_data_keeps_the_steps_before_it() {
+        let (facts, mut store) = phantom();
+        let mut config = config();
+        run_once(&config, &facts, &mut store);
+        config.inversion.algorithm = QsmAlgorithm::Xqsm;
+        let events = run_until_done_or_failed(&config, &facts, &mut store);
+        assert_eq!(events.cached, ["load", "scale_phase", "magnitude", "mask", "unwrap", "bgremove"]);
+        assert_eq!(events.computed.first().map(String::as_str), Some("invert"), "{:?}", events.computed);
+    }
+
+    /// On oblique data the same switch moves the scan to an axial grid, so nothing computed on
+    /// the acquired grid can be reused: the load step and everything after it are computed again.
+    #[test]
+    fn an_axial_only_inversion_on_oblique_data_recomputes_from_the_load_step() {
+        let (c, s) = (20f64.to_radians().cos(), 20f64.to_radians().sin());
+        let affine = [1.0, 0.0, 0.0, 0.0, 0.0, c, -s, 0.0, 0.0, s, c, 0.0, 0.0, 0.0, 0.0, 1.0];
+        let (facts, mut store) = phantom_on(affine);
+        let mut config = config();
+        let first = run_once(&config, &facts, &mut store);
+        assert!(store.grid().is_some_and(|m| m.source_geometry.is_none()), "TKD takes the tilt as it is");
+        config.inversion.algorithm = QsmAlgorithm::Xqsm;
+        let events = run_until_done_or_failed(&config, &facts, &mut store);
+        assert!(events.cached.is_empty(), "{:?}", events.cached);
+        assert_eq!(events.computed[..first.computed.len() - 2], first.computed[..first.computed.len() - 2]);
+        assert!(store.grid().is_some_and(|m| m.source_geometry.is_some()), "resampled for xQSM");
+    }
+
+    /// The load step's key on data where no axial-only algorithm is configured is the one earlier
+    /// releases wrote (an empty list), so their caches stay valid.
+    #[test]
+    fn the_load_key_of_a_run_without_axial_only_algorithms_is_unchanged() {
+        let (facts, mut store) = phantom();
+        let config = config();
+        run_once(&config, &facts, &mut store);
+        let geometry = json!({
+            "axial_resampling": config.pipeline.axial_resampling,
+            "obliquity_threshold": config.pipeline.obliquity_threshold,
+            "ignore_slice_gap": config.pipeline.ignore_slice_gap,
+            "motion_correction": config.motion_correction,
+            "registration": None::<()>,
+            "axial_only": Vec::<String>::new(),
+            "inputs": json!("phantom-1"),
+        });
+        let key = crate::cache::step_params_hash(None, &geometry);
+        assert!(store.cached_scan(&key).is_some(), "the load step is recorded under the key earlier releases used");
     }
 
     /// Two-pass reconstructs twice and references both maps; each pass's map is defined where its
