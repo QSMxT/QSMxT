@@ -507,7 +507,7 @@ fn graphs_lay_out_and_draw_as_svg() {
         let l = g.layout();
         if let Some(dir) = &out_dir {
             std::fs::create_dir_all(dir).unwrap();
-            std::fs::write(dir.join(format!("{name}.svg")), &g.to_svg()).unwrap();
+            std::fs::write(dir.join(format!("{name}.svg")), g.to_svg()).unwrap();
             std::fs::write(dir.join(format!("{name}.graph.json")), serde_json::to_string(&g).unwrap()).unwrap();
             std::fs::write(dir.join(format!("{name}.layout.json")), serde_json::to_string(&l).unwrap()).unwrap();
         }
@@ -606,4 +606,30 @@ fn a_box_the_runs_set_up_differently_lists_each_way() {
     let mask = merged.node("mask").unwrap();
     assert_eq!(mask.settings[0], "supplied (bet)");
     assert!(b.node("mask").unwrap().settings.iter().all(|s| mask.settings.contains(s)), "{:?}", mask.settings);
+}
+
+/// A graph that uses no special style has no key; one that does lists only what it uses.
+#[test]
+fn the_key_lists_only_the_styles_drawn() {
+    let config = PipelineConfig::default();
+    let f = facts();
+    let plain = pipeline_graph_on(&crate::plan::plan(&config, &f), &config, &f, Some(false));
+    assert!(plain.layout().key.is_empty());
+    assert!(!plain.to_svg().contains("class=\"g-key\""));
+    let planned = graph(&config, &f);
+    let styles: Vec<layout::KeyStyle> = planned.layout().key.iter().map(|k| k.style).collect();
+    assert_eq!(styles, [layout::KeyStyle::Conditional, layout::KeyStyle::Collapsed]);
+}
+
+/// Two arrows from one box to another are drawn as one carrying both, and a label lists one item
+/// per line, in full.
+#[test]
+fn arrows_between_the_same_boxes_are_one_and_labels_list_items_in_full() {
+    let mut g = graph(&PipelineConfig::default(), &facts());
+    let first = g.edges[0].clone();
+    g.edges.push(Edge { items: vec!["Mask".into()], ..first.clone() });
+    let l = g.layout();
+    let drawn: Vec<_> = l.edges.iter().filter(|e| e.from == first.from && e.to == first.to).collect();
+    assert_eq!(drawn.len(), 1);
+    assert_eq!(drawn[0].label, ["Phase (as acquired)", "Magnitude (as acquired)", "Mask"]);
 }

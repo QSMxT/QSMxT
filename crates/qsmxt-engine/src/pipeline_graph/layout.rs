@@ -58,7 +58,7 @@ const GROUP_TITLE: f64 = 18.0;
 const TITLE_CLEAR: f64 = 0.55;
 const MARGIN: f64 = 12.0;
 /// A label's average glyph width and line height.
-const LABEL_CHAR: f64 = 5.4;
+const LABEL_CHAR: f64 = 6.0;
 /// A label's line height.
 pub const LABEL_LINE: f64 = 12.0;
 /// The longest line of a label before an item's name wraps.
@@ -162,7 +162,11 @@ impl Rect {
     pub fn overlap(&self, o: &Rect) -> f64 {
         let w = (self.x + self.w).min(o.x + o.w) - self.x.max(o.x);
         let h = (self.y + self.h).min(o.y + o.h) - self.y.max(o.y);
-        if w > 0.0 && h > 0.0 { w * h } else { 0.0 }
+        if w > 0.0 && h > 0.0 {
+            w * h
+        } else {
+            0.0
+        }
     }
 }
 
@@ -273,7 +277,11 @@ pub fn run_state_text(state: StepState) -> &'static str {
 }
 
 fn push_wrapped(lines: &mut Vec<TextLine>, text: &str, cls: LineClass, width: usize) {
-    lines.extend(wrap(text, width).into_iter().map(|text| TextLine { text, cls }));
+    lines.extend(
+        wrap(text, width)
+            .into_iter()
+            .map(|text| TextLine { text, cls }),
+    );
 }
 
 /// A box's text, in full: the step, its algorithm, its settings and when it applies; after a run,
@@ -284,23 +292,46 @@ pub fn node_lines(n: &Node) -> Vec<TextLine> {
     let title = LineClass::Title.room() - if n.models.is_empty() { 0 } else { 7 };
     push_wrapped(&mut lines, &n.label, LineClass::Title, title);
     if let Some(alg) = &n.algorithm_label {
-        push_wrapped(&mut lines, alg, LineClass::Algorithm, LineClass::Algorithm.room());
+        push_wrapped(
+            &mut lines,
+            alg,
+            LineClass::Algorithm,
+            LineClass::Algorithm.room(),
+        );
     }
     for s in &n.settings {
         push_wrapped(&mut lines, s, LineClass::Setting, LineClass::Setting.room());
     }
     if let Some(d) = &n.dataset {
         for a in &d.alternatives {
-            push_wrapped(&mut lines, &d.alternative_text(a), LineClass::Setting, LineClass::Setting.room());
+            push_wrapped(
+                &mut lines,
+                &d.alternative_text(a),
+                LineClass::Setting,
+                LineClass::Setting.room(),
+            );
         }
     }
     if let Some(when) = &n.only_when {
-        push_wrapped(&mut lines, &format!("Only when {when}"), LineClass::When, LineClass::When.room());
+        push_wrapped(
+            &mut lines,
+            &format!("Only when {when}"),
+            LineClass::When,
+            LineClass::When.room(),
+        );
     }
     if let Some(run) = &n.run {
-        lines.push(TextLine { text: run_state_text(run.state).to_string(), cls: LineClass::Run });
+        lines.push(TextLine {
+            text: run_state_text(run.state).to_string(),
+            cls: LineClass::Run,
+        });
         for d in &run.decisions {
-            push_wrapped(&mut lines, &d.reason, LineClass::Note, LineClass::Note.room());
+            push_wrapped(
+                &mut lines,
+                &d.reason,
+                LineClass::Note,
+                LineClass::Note.room(),
+            );
         }
     }
     if let Some(d) = &n.dataset {
@@ -308,7 +339,12 @@ pub fn node_lines(n: &Node) -> Vec<TextLine> {
             push_wrapped(&mut lines, &text, LineClass::Run, LineClass::Run.room());
         }
         for c in &d.decisions {
-            push_wrapped(&mut lines, &d.decision_note(c), LineClass::Note, LineClass::Note.room());
+            push_wrapped(
+                &mut lines,
+                &d.decision_note(c),
+                LineClass::Note,
+                LineClass::Note.room(),
+            );
         }
     }
     lines
@@ -327,19 +363,26 @@ struct Drawn {
 fn drawn_edges(graph: &PipelineGraph) -> Vec<Drawn> {
     let order = |id: &str| graph.nodes.iter().position(|n| n.id == id).unwrap_or(0);
     let mut out: Vec<Drawn> = Vec::new();
-    let add = |out: &mut Vec<Drawn>, from: &str, to: &str, items: &[String], collapsed: usize| {
-        match out.iter_mut().find(|d| d.from == from && d.to == to) {
+    let add =
+        |out: &mut Vec<Drawn>, from: &str, to: &str, items: &[String], collapsed: usize| match out
+            .iter_mut()
+            .find(|d| d.from == from && d.to == to)
+        {
             Some(d) => {
                 for i in items {
                     if !d.items.contains(i) {
                         d.items.push(i.clone());
                     }
                 }
-                d.collapsed += collapsed;
+                d.collapsed = d.collapsed.max(collapsed);
             }
-            None => out.push(Drawn { from: from.into(), to: to.into(), items: items.to_vec(), collapsed }),
-        }
-    };
+            None => out.push(Drawn {
+                from: from.into(),
+                to: to.into(),
+                items: items.to_vec(),
+                collapsed,
+            }),
+        };
     let into: Vec<&Edge> = graph.edges.iter().filter(|e| e.to == RETURN_STEP).collect();
     for e in graph.edges.iter().filter(|e| e.to != RETURN_STEP) {
         add(&mut out, &e.from, &e.to, &e.items, 1);
@@ -362,7 +405,12 @@ fn drawn_edges(graph: &PipelineGraph) -> Vec<Drawn> {
             items.push(i.clone());
         }
     }
-    out.push(Drawn { from: last.from.clone(), to: RETURN_STEP.into(), items, collapsed: into.len() });
+    out.push(Drawn {
+        from: last.from.clone(),
+        to: RETURN_STEP.into(),
+        items,
+        collapsed: into.len(),
+    });
     out
 }
 
@@ -370,7 +418,9 @@ fn drawn_edges(graph: &PipelineGraph) -> Vec<Drawn> {
 pub fn item_labels(graph: &PipelineGraph, keys: &[String]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for key in keys {
-        let label = graph.item(key).map_or_else(|| key.clone(), |i| i.label.clone());
+        let label = graph
+            .item(key)
+            .map_or_else(|| key.clone(), |i| i.label.clone());
         if !out.contains(&label) {
             out.push(label);
         }
@@ -380,7 +430,10 @@ pub fn item_labels(graph: &PipelineGraph, keys: &[String]) -> Vec<String> {
 
 /// A step an output switch asked for, drawn beside the spine.
 fn side_step(n: &Node) -> bool {
-    n.branch.is_none() && n.enabled_by.as_deref().is_some_and(|s| s.starts_with("pipeline."))
+    n.branch.is_none()
+        && n.enabled_by
+            .as_deref()
+            .is_some_and(|s| s.starts_with("pipeline."))
 }
 
 /// A pass's title.
@@ -435,7 +488,11 @@ fn label_lines(names: &[String], collapsed: usize, wrap_at: usize) -> (Vec<Strin
 /// `graph`, laid out.
 pub fn layout(graph: &PipelineGraph) -> Layout {
     let nodes = &graph.nodes;
-    let index: HashMap<&str, usize> = nodes.iter().enumerate().map(|(i, n)| (n.id.as_str(), i)).collect();
+    let index: HashMap<&str, usize> = nodes
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (n.id.as_str(), i))
+        .collect();
     let drawn: Vec<Drawn> = drawn_edges(graph)
         .into_iter()
         .filter(|e| matches!((index.get(e.from.as_str()), index.get(e.to.as_str())), (Some(a), Some(b)) if a < b))
@@ -475,10 +532,17 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
                     if taken.contains(&(r, c)) {
                         return false;
                     }
-                    let Some(b) = [Branch::Main, Branch::Reliable].into_iter().find(|&b| dedicated(b) == Some(c)) else {
+                    let Some(b) = [Branch::Main, Branch::Reliable]
+                        .into_iter()
+                        .find(|&b| dedicated(b) == Some(c))
+                    else {
                         return true;
                     };
-                    nodes.iter().enumerate().filter(|(_, m)| m.branch == Some(b)).all(|(j, _)| j < i && row[j] < r)
+                    nodes
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, m)| m.branch == Some(b))
+                        .all(|(j, _)| j < i && row[j] < r)
                 };
                 // The first free column to the right, else the first free one at all.
                 let mut k = if side_step(n) { spine + 1 } else { spine };
@@ -501,15 +565,25 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
     let n_rows = row.iter().copied().max().unwrap_or(0) + 1;
     let n_cols = col.iter().copied().max().unwrap_or(0) + 1;
     let lines: Vec<Vec<TextLine>> = nodes.iter().map(node_lines).collect();
-    let heights: Vec<f64> = lines.iter().map(|ls| 2.0 * PAD + ls.iter().map(|l| l.cls.height()).sum::<f64>()).collect();
+    let heights: Vec<f64> = lines
+        .iter()
+        .map(|ls| 2.0 * PAD + ls.iter().map(|l| l.cls.height()).sum::<f64>())
+        .collect();
     let row_h: Vec<f64> = (0..n_rows)
-        .map(|r| (0..n_nodes).filter(|&i| row[i] == r).map(|i| heights[i]).fold(0.0, f64::max))
+        .map(|r| {
+            (0..n_nodes)
+                .filter(|&i| row[i] == r)
+                .map(|i| heights[i])
+                .fold(0.0, f64::max)
+        })
         .collect();
     let mut first_of_group: HashSet<usize> = HashSet::new();
     let mut group_rows: HashSet<usize> = HashSet::new();
     if two {
         for b in [Branch::Main, Branch::Reliable] {
-            let mut members: Vec<usize> = (0..n_nodes).filter(|&i| nodes[i].branch == Some(b)).collect();
+            let mut members: Vec<usize> = (0..n_nodes)
+                .filter(|&i| nodes[i].branch == Some(b))
+                .collect();
             members.sort_by_key(|&i| row[i]);
             if let Some(&first) = members.first() {
                 first_of_group.insert(first);
@@ -529,7 +603,11 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
             let (s, t) = (rc(&e.from), rc(&e.to));
             // The channel beside the source on the target's side; the outer left one for a
             // target straight below in the first column.
-            let (gutter, side) = if t.1 > s.1 || (t.1 == s.1 && s.1 > 0) { (s.1 + 1, Side::Right) } else { (s.1, Side::Left) };
+            let (gutter, side) = if t.1 > s.1 || (t.1 == s.1 && s.1 > 0) {
+                (s.1 + 1, Side::Right)
+            } else {
+                (s.1, Side::Left)
+            };
             let names = item_labels(graph, &e.items);
             let title = if e.collapsed > 1 {
                 format!("{} outputs: {}", names.len(), names.join(", "))
@@ -558,15 +636,18 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
     // each side, each long arrow, the one going furthest highest (so the lanes nest). Into a
     // box's top, each arrow, ordered by where it comes from.
     for i in 0..n_nodes {
-        let mut bottom: Vec<usize> = (0..arrows.len()).filter(|&k| arrows[k].s.2 == i && !arrows[k].long).collect();
+        let mut bottom: Vec<usize> = (0..arrows.len())
+            .filter(|&k| arrows[k].s.2 == i && !arrows[k].long)
+            .collect();
         bottom.sort_by_key(|&k| (arrows[k].t.1, arrows[k].t.2));
         let n = bottom.len() as f64;
         for (j, &k) in bottom.iter().enumerate() {
             arrows[k].out = (j as f64 + 1.0) / (n + 1.0);
         }
         for side in [Side::Left, Side::Right] {
-            let mut ks: Vec<usize> =
-                (0..arrows.len()).filter(|&k| arrows[k].s.2 == i && arrows[k].long && arrows[k].side == side).collect();
+            let mut ks: Vec<usize> = (0..arrows.len())
+                .filter(|&k| arrows[k].s.2 == i && arrows[k].long && arrows[k].side == side)
+                .collect();
             ks.sort_by_key(|&k| (std::cmp::Reverse(arrows[k].t.0), arrows[k].t.2));
             let n = ks.len() as f64;
             for (j, &k) in ks.iter().enumerate() {
@@ -588,9 +669,17 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
             }
         };
         let mut top: Vec<usize> = (0..arrows.len()).filter(|&k| arrows[k].t.2 == i).collect();
-        top.sort_by(|&a, &b| approach(&arrows[a]).total_cmp(&approach(&arrows[b])).then(arrows[a].s.2.cmp(&arrows[b].s.2)));
+        top.sort_by(|&a, &b| {
+            approach(&arrows[a])
+                .total_cmp(&approach(&arrows[b]))
+                .then(arrows[a].s.2.cmp(&arrows[b].s.2))
+        });
         // A pass's first step has the pass's title above its left half: its arrows come in on the right.
-        let (lo, span) = if first_of_group.contains(&i) { (TITLE_CLEAR, 1.0 - TITLE_CLEAR) } else { (0.0, 1.0) };
+        let (lo, span) = if first_of_group.contains(&i) {
+            (TITLE_CLEAR, 1.0 - TITLE_CLEAR)
+        } else {
+            (0.0, 1.0)
+        };
         let n = top.len() as f64;
         for (j, &k) in top.iter().enumerate() {
             arrows[k].inn = lo + span * (j as f64 + 1.0) / (n + 1.0);
@@ -603,8 +692,14 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
         if a.long || a.s.1 != a.t.1 {
             continue;
         }
-        let alone_out = !arrows.iter().enumerate().any(|(j, b)| j != k && b.s.2 == a.s.2 && !b.long);
-        let alone_in = !arrows.iter().enumerate().any(|(j, b)| j != k && b.t.2 == a.t.2);
+        let alone_out = !arrows
+            .iter()
+            .enumerate()
+            .any(|(j, b)| j != k && b.s.2 == a.s.2 && !b.long);
+        let alone_in = !arrows
+            .iter()
+            .enumerate()
+            .any(|(j, b)| j != k && b.t.2 == a.t.2);
         if alone_out {
             let inn = arrows[k].inn;
             arrows[k].out = inn;
@@ -618,7 +713,10 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
     let entering: Vec<Vec<usize>> = (0..n_rows)
         .map(|r| {
             let mut ks: Vec<usize> = (0..arrows.len()).filter(|&k| arrows[k].t.0 == r).collect();
-            ks.sort_by(|&a, &b| (arrows[a].t.1 as f64 + arrows[a].inn).total_cmp(&(arrows[b].t.1 as f64 + arrows[b].inn)));
+            ks.sort_by(|&a, &b| {
+                (arrows[a].t.1 as f64 + arrows[a].inn)
+                    .total_cmp(&(arrows[b].t.1 as f64 + arrows[b].inn))
+            });
             ks
         })
         .collect();
@@ -630,21 +728,33 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
     let mut reserve = vec![0.0f64; n_cols + 1];
     let mut round = 0;
     loop {
-        let labels: Vec<(Vec<String>, f64, f64)> =
-            arrows.iter().zip(&wrap_at).map(|(a, &w)| label_lines(&a.names, a.collapsed, w)).collect();
+        let labels: Vec<(Vec<String>, f64, f64)> = arrows
+            .iter()
+            .zip(&wrap_at)
+            .map(|(a, &w)| label_lines(&a.names, a.collapsed, w))
+            .collect();
         // Gap r is above row r: a margin, then each entering arrow's track with its label below
         // it, then room for the arrowheads, and a pass's title.
         let mut track_off = vec![0.0f64; arrows.len()];
         let gap_h: Vec<f64> = (0..=n_rows)
             .map(|r| {
-                let top = (if r == 0 { 0.0 } else { GAP }) + if two && r > 0 { GROUP_PAD } else { 0.0 };
-                let title = if group_rows.contains(&r) { GROUP_TITLE } else { 0.0 };
+                let top =
+                    (if r == 0 { 0.0 } else { GAP }) + if two && r > 0 { GROUP_PAD } else { 0.0 };
+                let title = if group_rows.contains(&r) {
+                    GROUP_TITLE
+                } else {
+                    0.0
+                };
                 let ks = entering.get(r).map(Vec::as_slice).unwrap_or(&[]);
                 let mut y = 0.0;
                 for (j, &k) in ks.iter().enumerate() {
                     track_off[k] = top + y;
                     let room = labels[k].2 + 6.0 + extra[k];
-                    y += if j + 1 < ks.len() { TRACK.max(room) } else { room };
+                    y += if j + 1 < ks.len() {
+                        TRACK.max(room)
+                    } else {
+                        room
+                    };
                 }
                 top + y + if ks.is_empty() { 0.0 } else { ARROW_ROOM } + title
             })
@@ -662,7 +772,8 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
         let graph_bottom = y + if two { GROUP_PAD } else { 0.0 };
         let track_y = |k: usize| gap_y[arrows[k].t.0] + track_off[k];
         let box_y = |i: usize| row_y[row[i]];
-        let exit_y = |k: usize| (box_y(arrows[k].s.2) + heights[arrows[k].s.2] * arrows[k].out).round();
+        let exit_y =
+            |k: usize| (box_y(arrows[k].s.2) + heights[arrows[k].s.2] * arrows[k].out).round();
 
         // Lanes: in each channel, the arrows leaving the column on its left and those leaving the
         // column on its right, each set nested (the one starting highest outermost); arrows whose
@@ -672,9 +783,14 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
         for (g, count) in lane_count.iter_mut().enumerate() {
             let mut sets: Vec<Vec<(usize, usize)>> = Vec::new();
             for side in [Side::Right, Side::Left] {
-                let mut ks: Vec<usize> =
-                    (0..arrows.len()).filter(|&k| arrows[k].long && arrows[k].gutter == g && arrows[k].side == side).collect();
-                ks.sort_by(|&a, &b| exit_y(a).total_cmp(&exit_y(b)).then(track_y(b).total_cmp(&track_y(a))));
+                let mut ks: Vec<usize> = (0..arrows.len())
+                    .filter(|&k| arrows[k].long && arrows[k].gutter == g && arrows[k].side == side)
+                    .collect();
+                ks.sort_by(|&a, &b| {
+                    exit_y(a)
+                        .total_cmp(&exit_y(b))
+                        .then(track_y(b).total_cmp(&track_y(a)))
+                });
                 let mut lanes: Vec<Vec<(f64, f64)>> = Vec::new();
                 let mut got = Vec::new();
                 for k in ks {
@@ -704,8 +820,19 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
         }
         let gutter_w: Vec<f64> = (0..=n_cols)
             .map(|g| {
-                let pads = if two && (reserved.contains(&g) || (g > 0 && reserved.contains(&(g - 1)))) { 2.0 * GROUP_PAD } else { 0.0 };
-                (if g == 0 || g == n_cols { GUTTER / 2.0 } else { GUTTER }) + pads + lane_count[g] as f64 * LANE + reserve[g]
+                let pads =
+                    if two && (reserved.contains(&g) || (g > 0 && reserved.contains(&(g - 1)))) {
+                        2.0 * GROUP_PAD
+                    } else {
+                        0.0
+                    };
+                (if g == 0 || g == n_cols {
+                    GUTTER / 2.0
+                } else {
+                    GUTTER
+                }) + pads
+                    + lane_count[g] as f64 * LANE
+                    + reserve[g]
             })
             .collect();
         let mut col_x = Vec::with_capacity(n_cols);
@@ -718,8 +845,16 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
         let mut width = x + gutter_w[n_cols] + MARGIN;
         let lane_x = |k: usize| {
             let g = arrows[k].gutter;
-            let left = if g == 0 { col_x[0] - gutter_w[0] } else { col_x[g - 1] + NODE_W };
-            (left + reserve[g] + (gutter_w[g] - reserve[g] - lane_count[g] as f64 * LANE) / 2.0 + (lane_pos[k] as f64 + 0.5) * LANE).round()
+            let left = if g == 0 {
+                col_x[0] - gutter_w[0]
+            } else {
+                col_x[g - 1] + NODE_W
+            };
+            (left
+                + reserve[g]
+                + (gutter_w[g] - reserve[g] - lane_count[g] as f64 * LANE) / 2.0
+                + (lane_pos[k] as f64 + 0.5) * LANE)
+                .round()
         };
 
         let laid: Vec<LaidNode> = nodes
@@ -746,7 +881,11 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
                 let tx = (dst.x + dst.w * a.inn).round();
                 let ty = track_y(k);
                 if a.long {
-                    let sx = if a.side == Side::Left { src.x } else { src.x + src.w };
+                    let sx = if a.side == Side::Left {
+                        src.x
+                    } else {
+                        src.x + src.w
+                    };
                     let (sy, lx) = (exit_y(k), lane_x(k));
                     vec![(sx, sy), (lx, sy), (lx, ty), (tx, ty), (tx, dst.y)]
                 } else {
@@ -763,11 +902,20 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
         let mut groups = Vec::new();
         if two {
             for b in [Branch::Main, Branch::Reliable] {
-                let members: Vec<&LaidNode> =
-                    laid.iter().zip(nodes).filter(|(_, n)| n.branch == Some(b)).map(|(l, _)| l).collect();
-                let Some(first) = members.first() else { continue };
+                let members: Vec<&LaidNode> = laid
+                    .iter()
+                    .zip(nodes)
+                    .filter(|(_, n)| n.branch == Some(b))
+                    .map(|(l, _)| l)
+                    .collect();
+                let Some(first) = members.first() else {
+                    continue;
+                };
                 let top = members.iter().map(|n| n.y).fold(f64::INFINITY, f64::min);
-                let bottom = members.iter().map(|n| n.y + n.h).fold(f64::NEG_INFINITY, f64::max);
+                let bottom = members
+                    .iter()
+                    .map(|n| n.y + n.h)
+                    .fold(f64::NEG_INFINITY, f64::max);
                 groups.push(Group {
                     branch: b,
                     title: group_title(b).to_string(),
@@ -780,10 +928,22 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
         }
 
         // Labels: beside the last drop, else wherever along the arrow is free, else the gap grows.
-        let mut obstacles: Vec<Rect> =
-            laid.iter().map(|n| Rect { x: n.x - 2.0, y: n.y - 2.0, w: n.w + 4.0, h: n.h + 4.0 }).collect();
+        let mut obstacles: Vec<Rect> = laid
+            .iter()
+            .map(|n| Rect {
+                x: n.x - 2.0,
+                y: n.y - 2.0,
+                w: n.w + 4.0,
+                h: n.h + 4.0,
+            })
+            .collect();
         for g in &groups {
-            obstacles.push(Rect { x: g.x, y: g.y, w: 100.0, h: GROUP_TITLE });
+            obstacles.push(Rect {
+                x: g.x,
+                y: g.y,
+                w: 100.0,
+                h: GROUP_TITLE,
+            });
         }
         let segments: Vec<Vec<Rect>> = routes
             .iter()
@@ -792,13 +952,26 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
                     .map(|w| {
                         let (x0, x1) = (w[0].0.min(w[1].0), w[0].0.max(w[1].0));
                         let (y0, y1) = (w[0].1.min(w[1].1), w[0].1.max(w[1].1));
-                        Rect { x: x0 - 1.5, y: y0 - 1.5, w: x1 - x0 + 3.0, h: y1 - y0 + 3.0 }
+                        Rect {
+                            x: x0 - 1.5,
+                            y: y0 - 1.5,
+                            w: x1 - x0 + 3.0,
+                            h: y1 - y0 + 3.0,
+                        }
                     })
                     .collect()
             })
             .collect();
         let mut placed: Vec<Rect> = Vec::new();
-        let mut boxes = vec![Rect { x: 0.0, y: 0.0, w: 0.0, h: 0.0 }; arrows.len()];
+        let mut boxes = vec![
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 0.0,
+                h: 0.0
+            };
+            arrows.len()
+        ];
         let mut grew = false;
         for k in entering.iter().flatten().copied() {
             let a = &arrows[k];
@@ -806,35 +979,74 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
             let (lw, lh) = (labels[k].1, labels[k].2);
             let cost = |r: &Rect, placed: &[Rect]| -> f64 {
                 let mut c: f64 = obstacles.iter().chain(placed).map(|o| r.overlap(o)).sum();
-                c += segments.iter().flatten().map(|seg| r.overlap(seg)).sum::<f64>();
+                c += segments
+                    .iter()
+                    .flatten()
+                    .map(|seg| r.overlap(seg))
+                    .sum::<f64>();
                 if r.x < MARGIN / 2.0 {
                     c += 1e6;
                 }
                 c
             };
             // What a wider gap cannot cure: a vertical line through the label's place.
-            let crossed = |r: &Rect| r.x < MARGIN / 2.0 || segments.iter().flatten().any(|seg| seg.w <= 3.5 && r.overlap(seg) > 0.0);
+            let crossed = |r: &Rect| {
+                r.x < MARGIN / 2.0
+                    || segments
+                        .iter()
+                        .flatten()
+                        .any(|seg| seg.w <= 3.5 && r.overlap(seg) > 0.0)
+            };
             // Beside the drop into the target, below the track: right, then left.
             let (tx, _) = pts[pts.len() - 2];
             let below_track = track_y(k) + 3.0;
             let candidates = [
-                Rect { x: tx + LABEL_GAP, y: below_track, w: lw, h: lh },
-                Rect { x: tx - LABEL_GAP - lw, y: below_track, w: lw, h: lh },
+                Rect {
+                    x: tx + LABEL_GAP,
+                    y: below_track,
+                    w: lw,
+                    h: lh,
+                },
+                Rect {
+                    x: tx - LABEL_GAP - lw,
+                    y: below_track,
+                    w: lw,
+                    h: lh,
+                },
             ];
             let chosen = match candidates.iter().find(|r| cost(r, &placed) == 0.0) {
                 Some(r) => *r,
                 None => {
                     if round < ROUNDS {
-                        if candidates.iter().all(|r| crossed(r)) {
+                        if candidates.iter().all(&crossed) {
                             // A line runs through both places: wrap the label narrower, to the
                             // widest that clears it on either side.
                             // Never inside a word.
-                            let longest = a.names.iter().flat_map(|n| n.split_whitespace()).map(|w| w.chars().count()).max().unwrap_or(1);
+                            let longest = a
+                                .names
+                                .iter()
+                                .flat_map(|n| n.split_whitespace())
+                                .map(|w| w.chars().count())
+                                .max()
+                                .unwrap_or(1);
                             let fits = (longest..wrap_at[k]).rev().find(|&w| {
                                 let (_, w2, h2) = label_lines(&a.names, a.collapsed, w);
-                                [Rect { x: tx + LABEL_GAP, y: below_track, w: w2, h: h2 },
-                                 Rect { x: tx - LABEL_GAP - w2, y: below_track, w: w2, h: h2 }]
-                                    .iter().any(|r| !crossed(r))
+                                [
+                                    Rect {
+                                        x: tx + LABEL_GAP,
+                                        y: below_track,
+                                        w: w2,
+                                        h: h2,
+                                    },
+                                    Rect {
+                                        x: tx - LABEL_GAP - w2,
+                                        y: below_track,
+                                        w: w2,
+                                        h: h2,
+                                    },
+                                ]
+                                .iter()
+                                .any(|r| !crossed(r))
                             });
                             if let Some(w) = fits {
                                 wrap_at[k] = w;
@@ -855,7 +1067,11 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
                             grew = true;
                         }
                     }
-                    candidates.iter().copied().min_by(|p, q| cost(p, &placed).total_cmp(&cost(q, &placed))).unwrap_or(candidates[0])
+                    candidates
+                        .iter()
+                        .copied()
+                        .min_by(|p, q| cost(p, &placed).total_cmp(&cost(q, &placed)))
+                        .unwrap_or(candidates[0])
                 }
             };
             width = width.max(chosen.x + chosen.w + MARGIN);
@@ -875,7 +1091,11 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
         if nodes.iter().any(|n| n.only_when.is_some()) {
             styles.push((KeyStyle::Conditional, "only in some runs"));
         }
-        if nodes.iter().any(|n| n.run.as_ref().is_some_and(|r| r.state == StepState::Skipped)) {
+        if nodes.iter().any(|n| {
+            n.run
+                .as_ref()
+                .is_some_and(|r| r.state == StepState::Skipped)
+        }) {
             styles.push((KeyStyle::Skipped, "skipped"));
         }
         if nodes.iter().any(|n| !n.models.is_empty()) {
@@ -894,7 +1114,12 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
                     kx = MARGIN;
                     ky += KEY_H;
                 }
-                key.push(KeyEntry { style, text: text.to_string(), x: kx, y: ky });
+                key.push(KeyEntry {
+                    style,
+                    text: text.to_string(),
+                    x: kx,
+                    y: ky,
+                });
                 kx += w;
             }
             height = ky + KEY_H + MARGIN;
@@ -914,7 +1139,14 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
                 collapsed: a.collapsed,
             })
             .collect();
-        return Layout { width, height, nodes: laid, edges, groups, key };
+        return Layout {
+            width,
+            height,
+            nodes: laid,
+            edges,
+            groups,
+            key,
+        };
     }
 }
 
@@ -926,7 +1158,9 @@ pub fn rounded_path(points: &[(f64, f64)], radius: f64) -> String {
             pts.push(p);
         }
     }
-    let Some(&(x0, y0)) = pts.first() else { return String::new() };
+    let Some(&(x0, y0)) = pts.first() else {
+        return String::new();
+    };
     let mut d = format!("M{},{}", num(x0), num(y0));
     for i in 1..pts.len() {
         let (x, y) = pts[i];
@@ -935,8 +1169,18 @@ pub fn rounded_path(points: &[(f64, f64)], radius: f64) -> String {
             break;
         };
         let (px, py) = pts[i - 1];
-        let r = radius.min((x - px).hypot(y - py) / 2.0).min((nx - x).hypot(ny - y) / 2.0);
-        let sign = |v: f64| if v > 0.0 { 1.0 } else if v < 0.0 { -1.0 } else { 0.0 };
+        let r = radius
+            .min((x - px).hypot(y - py) / 2.0)
+            .min((nx - x).hypot(ny - y) / 2.0);
+        let sign = |v: f64| {
+            if v > 0.0 {
+                1.0
+            } else if v < 0.0 {
+                -1.0
+            } else {
+                0.0
+            }
+        };
         let (ux, uy, vx, vy) = (sign(x - px), sign(y - py), sign(nx - x), sign(ny - y));
         d.push_str(&format!(
             " L{},{} Q{},{} {},{}",
@@ -955,5 +1199,9 @@ pub fn rounded_path(points: &[(f64, f64)], radius: f64) -> String {
 pub(crate) fn num(v: f64) -> String {
     let s = format!("{:.2}", v);
     let s = s.trim_end_matches('0').trim_end_matches('.');
-    if s == "-0" { "0".to_string() } else { s.to_string() }
+    if s == "-0" {
+        "0".to_string()
+    } else {
+        s.to_string()
+    }
 }

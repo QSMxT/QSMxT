@@ -141,7 +141,9 @@ impl PipelineGraph {
             for (i, line) in e.label.iter().enumerate() {
                 out.push_str(&format!(
                     "<text x=\"{}\" y=\"{}\">{}</text>",
-                    num(b.x + 4.0), num(b.y + (i as f64 + 1.0) * LABEL_LINE - 1.5), esc(line)
+                    num(b.x + 4.0),
+                    num(b.y + (i as f64 + 1.0) * LABEL_LINE - 1.5),
+                    esc(line)
                 ));
             }
             out.push_str("</g>\n");
@@ -157,7 +159,9 @@ impl PipelineGraph {
             };
             out.push_str(&format!(
                 "<g class=\"g-key\">{sample}<text x=\"{}\" y=\"{}\">{}</text></g>\n",
-                num(x + KEY_SAMPLE_W + 10.0), num(y + 11.0), esc(&k.text)
+                num(x + KEY_SAMPLE_W + 10.0),
+                num(y + 11.0),
+                esc(&k.text)
             ));
         }
         out.push_str("</svg>\n");
