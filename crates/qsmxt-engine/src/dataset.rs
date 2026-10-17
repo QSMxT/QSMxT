@@ -259,12 +259,14 @@ mod tests {
         )
         .unwrap();
         assert_eq!(s.changed, [1]);
-        let mask = s.graph.node("mask").unwrap().dataset.clone().unwrap();
-        assert_eq!(
-            mask.decision_note(&mask.decisions[1]),
-            "1 of 3 runs: The supplied mask could not be read, so the mask was computed."
-        );
-        assert!(s.graph.to_mermaid().contains("2 of 3 runs: Taken from the supplied mask."));
+        // The mask box: each way the runs set it up, in place of its settings and the sentences.
+        let node = s.graph.node("mask").unwrap();
+        let mask = node.dataset.clone().unwrap();
+        let ways: Vec<String> = mask.alternatives.iter().map(|a| mask.alternative_text(a)).collect();
+        assert_eq!(ways[0], "2 of 3: supplied (bet)");
+        assert!(ways[1].starts_with("1 of 3: phase quality (Otsu threshold"), "{ways:?}");
+        assert!(node.settings.is_empty() && mask.decisions.is_empty());
+        assert!(!s.graph.to_mermaid().contains("could not be read"));
 
         let s = summarise(&config, &[(&plan, &f, &bad), (&plan, &f, &bad)], "qsmxt").unwrap();
         assert!(s.changed.is_empty(), "{:?}", s.changed);

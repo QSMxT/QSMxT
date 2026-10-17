@@ -2,7 +2,7 @@
 //! arrows between them labelled with what flows along them, and each pass of a two-pass run
 //! boxed. Every box and arrow has a tooltip with its text in full.
 
-use super::layout::{layout, num, rounded_path, Layout};
+use super::layout::{layout, num, rounded_path, KeyStyle, Layout, KEY_SAMPLE_W, LABEL_LINE};
 use super::PipelineGraph;
 use crate::record::StepState;
 
@@ -30,6 +30,7 @@ svg { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; fon
 .g-node .model rect { fill: rgba(37, 99, 235, 0.10); stroke: #2563eb; }
 .g-node .model text { fill: #2563eb; font-size: 9.5px; font-weight: 600; }
 #g-arrow path { fill: #8a94a3; }
+.g-key text { fill: #4b5565; font-size: 11px; }
 ";
 
 /// `text` for XML text and attribute values.
@@ -134,9 +135,29 @@ impl PipelineGraph {
         for e in &l.edges {
             let b = e.label_box;
             out.push_str(&format!(
-                "<g class=\"g-label\"><title>{}</title><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"3\"/>\
-                 <text x=\"{}\" y=\"{}\">{}</text></g>\n",
-                esc(&e.title), num(b.x), num(b.y), num(b.w), num(b.h), num(b.x + 4.0), num(b.y + b.h - 3.5), esc(&e.label)
+                "<g class=\"g-label\"><title>{}</title><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"3\"/>",
+                esc(&e.title), num(b.x), num(b.y), num(b.w), num(b.h)
+            ));
+            for (i, line) in e.label.iter().enumerate() {
+                out.push_str(&format!(
+                    "<text x=\"{}\" y=\"{}\">{}</text>",
+                    num(b.x + 4.0), num(b.y + (i as f64 + 1.0) * LABEL_LINE - 1.5), esc(line)
+                ));
+            }
+            out.push_str("</g>\n");
+        }
+        for k in &l.key {
+            let (x, y) = (k.x, k.y);
+            let sample = match k.style {
+                KeyStyle::Optional => format!("<g class=\"g-node optional\"><rect class=\"box\" x=\"{}\" y=\"{}\" width=\"{KEY_SAMPLE_W}\" height=\"14\" rx=\"3\"/></g>", num(x), num(y)),
+                KeyStyle::Conditional => format!("<g class=\"g-node conditional\"><rect class=\"box\" x=\"{}\" y=\"{}\" width=\"{KEY_SAMPLE_W}\" height=\"14\" rx=\"3\"/></g>", num(x), num(y)),
+                KeyStyle::Skipped => format!("<g class=\"g-node run-skipped\"><rect class=\"box\" x=\"{}\" y=\"{}\" width=\"{KEY_SAMPLE_W}\" height=\"14\" rx=\"3\"/></g>", num(x), num(y)),
+                KeyStyle::Model => format!("<g class=\"g-node\"><g class=\"model\" transform=\"translate({},{})\"><rect width=\"38\" height=\"14\" rx=\"7\"/><text x=\"19\" y=\"10.5\" text-anchor=\"middle\">model</text></g></g>", num(x - 6.0), num(y)),
+                KeyStyle::Collapsed => format!("<g class=\"g-edge collapsed\"><path d=\"M{},{} L{},{}\" marker-end=\"url(#g-arrow)\"/></g>", num(x), num(y + 7.0), num(x + KEY_SAMPLE_W), num(y + 7.0)),
+            };
+            out.push_str(&format!(
+                "<g class=\"g-key\">{sample}<text x=\"{}\" y=\"{}\">{}</text></g>\n",
+                num(x + KEY_SAMPLE_W + 10.0), num(y + 11.0), esc(&k.text)
             ));
         }
         out.push_str("</svg>\n");
