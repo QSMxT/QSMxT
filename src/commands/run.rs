@@ -141,32 +141,19 @@ pub(crate) fn write_dataset_files(
     Ok(())
 }
 
-/// The dataset's methods text and pipeline graph from what its runs did: every completed run's
-/// record (`*_runrecord.json`, in its workflow directory) merged
-/// ([`qsmxt_engine::dataset::summarise`]). `methods.md` and `pipeline.mmd`/`.svg` are replaced,
-/// and `changes/` is rebuilt to hold the runs that differ from the dataset: each one's methods
-/// text and its graph as it ran. With no record to read, the planned files stay.
-pub(crate) fn write_dataset_summary(
-    derivatives_dir: &std::path::Path, runs: &[discovery::QsmRun], completed: &[bool], config: &PipelineConfig,
-) -> crate::Result<()> {
+/// The dataset's methods text and pipeline graph from what its runs did
+/// ([`qsmxt_engine::dataset::summarise`]), over every current run record in the output
+/// directory ([`current_run_records`]), whichever invocation processed it. `methods.md` and
+/// `pipeline.mmd`/`.svg` are replaced, and `changes/` is rebuilt to hold the runs that are
+/// exceptions among them: each one's methods text and its graph as it ran. With no current
+/// record, the planned files stay.
+pub(crate) fn write_dataset_summary(derivatives_dir: &std::path::Path, config: &PipelineConfig) -> crate::Result<()> {
     use crate::bids::derivatives::write_graph;
     let output = DerivativeOutputs::new(derivatives_dir);
-    let mut done: Vec<(&discovery::QsmRun, qsmxt_engine::plan::Plan, qsmxt_engine::scan::ScanFacts, qsmxt_engine::record::RunRecord)> =
-        Vec::new();
-    for (run, _) in runs.iter().zip(completed).filter(|(_, &c)| c) {
-        let path = output.run_record_path(&run.key);
-        let record = match std::fs::read_to_string(&path).map_err(|e| e.to_string())
-            .and_then(|t| serde_json::from_str(&t).map_err(|e| e.to_string())) {
-            Ok(r) => r,
-            Err(e) => {
-                warn!("{}: no run record to describe it by ({}: {e})", run.key, path.display());
-                continue;
-            }
-        };
-        let facts = crate::pipeline::requirements::scan_facts(run, config);
-        let plan = qsmxt_engine::plan::plan(config, &facts);
-        done.push((run, plan, facts, record));
-    }
+    let done: Vec<(String, qsmxt_engine::plan::Plan, qsmxt_engine::scan::ScanFacts, qsmxt_engine::record::RunRecord)> =
+        current_run_records(derivatives_dir, config).into_iter()
+            .map(|(name, file)| (name, qsmxt_engine::plan::plan(config, &file.scan), file.scan, file.record))
+            .collect();
     let inputs: Vec<_> = done.iter().map(|(_, p, f, r)| (p, f, r)).collect();
     let Some(summary) = qsmxt_engine::dataset::summarise(config, &inputs, "qsmxt") else { return Ok(()) };
     std::fs::write(derivatives_dir.join("methods.md"), summary.methods.to_markdown())?;
@@ -176,15 +163,47 @@ pub(crate) fn write_dataset_summary(
         std::fs::remove_dir_all(&changes)?;
     }
     for &i in &summary.changed {
-        let (run, ..) = done[i];
+        let name = &done[i].0;
         std::fs::create_dir_all(&changes)?;
-        std::fs::write(output.change_path(&run.key, false), summary.runs[i].methods.to_markdown())?;
-        write_graph(&output.change_path(&run.key, true), &summary.runs[i].after)?;
+        std::fs::write(output.change_path(name, false), summary.runs[i].methods.to_markdown())?;
+        write_graph(&output.change_path(name, true), &summary.runs[i].after)?;
     }
+    info!("Methods and pipeline graph from {} run(s)", done.len());
     if !summary.changed.is_empty() {
-        info!("{} run(s) differ from the dataset's methods -> {}", summary.changed.len(), changes.display());
+        info!("{} run(s) processed differently from the rest -> {}", summary.changed.len(), changes.display());
     }
     Ok(())
+}
+
+/// Every current run record under `workflow/` (`*_runrecord.json`), by the run's name (its BIDS
+/// basename), in path order. A record is current when the pipeline state beside it
+/// (`.pipeline_state.json`) says its run completed under `config`: a run since processed with
+/// other settings, or one whose latest attempt did not finish, is left out, so a record can
+/// only describe outputs that are there now. Unreadable records, and records written before
+/// they carried the run's scan facts, are left out with a warning.
+pub(crate) fn current_run_records(
+    derivatives_dir: &std::path::Path, config: &PipelineConfig,
+) -> Vec<(String, crate::pipeline::runner::RunRecordFile)> {
+    const SUFFIX: &str = "_runrecord.json";
+    let pattern = derivatives_dir.join("workflow").join("**").join(format!("*{SUFFIX}"));
+    let mut paths: Vec<std::path::PathBuf> = glob::glob(&pattern.to_string_lossy())
+        .map(|g| g.flatten().collect()).unwrap_or_default();
+    paths.sort();
+    let mut out = Vec::new();
+    for path in paths {
+        let Some(name) = path.file_name().and_then(|n| n.to_str()).and_then(|n| n.strip_suffix(SUFFIX)) else { continue };
+        let state = path.with_file_name(".pipeline_state.json");
+        if let Err(why) = crate::pipeline::graph::state_completed_under(&state, config) {
+            log::debug!("{name}: its run record is not current: the run {why}");
+            continue;
+        }
+        match std::fs::read_to_string(&path).map_err(|e| e.to_string())
+            .and_then(|t| serde_json::from_str::<crate::pipeline::runner::RunRecordFile>(&t).map_err(|e| e.to_string())) {
+            Ok(file) => out.push((name.to_string(), file)),
+            Err(e) => warn!("{name}: its run record cannot be read ({}: {e}); re-run it to include it", path.display()),
+        }
+    }
+    out
 }
 
 /// The pipeline the dataset's runs will take, as planned from each run's scan: the graph they
@@ -529,7 +548,7 @@ pub(crate) fn run_dataset_steps(steps: &DatasetSteps) -> Vec<String> {
 
     // The methods text and pipeline graph from what the runs did, and the runs that differ.
     // Best-effort: the planned ones are already written.
-    if let Err(e) = write_dataset_summary(derivatives_dir, runs, completed, config) {
+    if let Err(e) = write_dataset_summary(derivatives_dir, config) {
         warn!("Could not describe the dataset from its runs' records: {}", e);
     }
 

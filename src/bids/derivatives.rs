@@ -245,9 +245,10 @@ impl DerivativeOutputs {
     }
     /// A run that differs from the dataset: its methods text, or (`graph`) its pipeline graph as
     /// it ran (Mermaid, and the SVG beside it), in [`Self::changes_dir`].
-    pub fn change_path(&self, key: &AcquisitionKey, graph: bool) -> PathBuf {
+    /// `run` is the run's name, its BIDS basename ([`AcquisitionKey::basename`]).
+    pub fn change_path(&self, run: &str, graph: bool) -> PathBuf {
         let name = if graph { "desc-ran_pipeline.mmd" } else { "methods.md" };
-        self.changes_dir().join(format!("{}_{name}", key.basename()))
+        self.changes_dir().join(format!("{run}_{name}"))
     }
 
     /// SMWI and its minIP, per contrast. The `desc-` values match the chi-separation outputs, which
