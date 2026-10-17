@@ -165,7 +165,7 @@ are listed in `.bidsignore`.
   graph and as an image: one box per step, an arrow for each thing one step
   reads from another (where the runs' pipelines differ, every run's, merged),
   and on a box, how many runs skipped the step, decided something in it, or
-  set it up each way (e.g. "2 of 3: supplied (premask)").
+  set it up each way (e.g. `2 of 3: supplied (premask)`).
 - `changes/` — only when some runs were processed differently from the rest:
   for each such run, `<run>_methods.md`, what was done to it (e.g. a supplied
   mask that could not be used, so the mask was computed), and
