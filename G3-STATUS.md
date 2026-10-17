@@ -11,3 +11,4 @@ Task: follow-up to QSMxT #382 (G2). Branch engine-g3 from 69d0b04 (rebase onto m
 - verify: /scratch/user/uqaste15/src/g3-verify/run.sh single|multi (bin/qsmxt-g3 = release of this branch); compare with g2-verify/out/<case>-g2
 - full tests/clippy, PR
 ## State
+- 2026-10-17: verify multi done (MM: changes/ only sub-03; MN: no changes, methods without "Where available"; MA (no-dataset-steps+aggregate) == MM; DRY writes nothing). single job 29986585 running (out/done.txt), report: g3-verify/report.sh. Full tests running via cargo-slurm (g3-test.log). Then PR (draft, base main, note #382 dependency).
