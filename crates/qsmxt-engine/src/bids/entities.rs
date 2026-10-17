@@ -1,3 +1,5 @@
+//! The BIDS entities of an input file's name, and the key that groups a run's echoes.
+
 use std::fmt;
 use std::path::Path;
 
@@ -99,6 +101,21 @@ impl AcquisitionKey {
     }
 }
 
+/// The run `qsmxt nifti-convert` files a scan's NIfTI images under (`sub-01_acq-nifti_…_MEGRE`).
+pub fn converted_nifti_key() -> AcquisitionKey {
+    AcquisitionKey {
+        subject: "01".into(), session: None, acquisition: Some("nifti".into()), reconstruction: None,
+        inversion: None, run: None, suffix: "MEGRE".into(),
+    }
+}
+
+/// The run a scan's outputs are named after, from the name of one of its images (an echo's
+/// phase): its BIDS entities, or for a name without them, the run `qsmxt nifti-convert` would
+/// file the scan under ([`converted_nifti_key`]).
+pub fn run_key(file_name: &str) -> AcquisitionKey {
+    parse_entities(file_name).map(|e| e.acquisition_key()).unwrap_or_else(converted_nifti_key)
+}
+
 /// Parse BIDS entities from a NIfTI filename.
 ///
 /// Expects filenames like: `sub-01_ses-pre_acq-gre_run-1_echo-2_part-phase_MEGRE.nii.gz`
@@ -183,6 +200,13 @@ pub fn real_to_magnitude_path(real_path: &Path) -> std::path::PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_run_is_named_after_its_image_or_as_nifti_convert_names_it() {
+        assert_eq!(run_key("sub-1_ses-a_echo-2_part-phase_MEGRE.nii.gz").to_string(), "sub-1_ses-a_MEGRE");
+        assert_eq!(run_key("phase_e2.nii").basename(), "sub-01_acq-nifti");
+        assert_eq!(run_key("phase_e2.nii").suffix, "MEGRE");
+    }
 
     #[test]
     fn test_parse_coil() {

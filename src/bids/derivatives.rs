@@ -2,6 +2,8 @@ use std::path::{Path, PathBuf};
 
 use crate::bids::entities::AcquisitionKey;
 use crate::bids::naming::{self, Tail};
+use qsmxt_engine::bids::outputs;
+use qsmxt_engine::store::{Contrast, Item};
 
 /// Manages BIDS derivative output paths.
 ///
@@ -43,11 +45,7 @@ impl DerivativeOutputs {
 
     /// Build the subject/session anat directory for final outputs.
     pub fn anat_dir(&self, key: &AcquisitionKey) -> PathBuf {
-        let mut dir = self.output_dir.join(format!("sub-{}", key.subject));
-        if let Some(ref ses) = key.session {
-            dir = dir.join(format!("ses-{}", ses));
-        }
-        dir.join("anat")
+        self.output_dir.join(outputs::datatype_dir(key, "anat"))
     }
 
     /// Build the subject/session extra_files directory for auxiliary outputs.
@@ -175,6 +173,13 @@ impl DerivativeOutputs {
         self.anat_dir(key).join(format!("{}.nii", naming::compose(&key.basename(), &tail)))
     }
 
+    /// Where this run publishes `item` ([`outputs::published_path`]), in this run's space.
+    fn published_item(&self, key: &AcquisitionKey, item: Item) -> PathBuf {
+        let rel = outputs::published_path(&item, key, self.space.as_deref())
+            .unwrap_or_else(|| panic!("{item:?} is not a published output"));
+        self.output_dir.join(rel)
+    }
+
     /// A published non-NIfTI file of this run, named like its NIfTI (`.tsv`, `.json`).
     fn published_file(&self, key: &AcquisitionKey, tail: Tail, ext: &str) -> PathBuf {
         let tail = tail.in_space(self.space.as_deref());
@@ -192,30 +197,30 @@ impl DerivativeOutputs {
     }
 
     // Final outputs
-    pub fn qsm_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_nifti(key, naming::chimap()) }
-    pub fn mask_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_nifti(key, naming::mask()) }
+    pub fn qsm_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_item(key, Item::Chi) }
+    pub fn mask_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_item(key, Item::BrainMask) }
     /// Combined magnitude image.
     ///
     /// Named as a `part-mag` T2*-weighted anatomical (`_part-mag_T2starw`)
     /// rather than the BIDS `magnitude` suffix, which is reserved for fieldmap
     /// schemes that require accompanying Phase/Phase-difference/Fieldmap maps.
-    pub fn magnitude_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_nifti(key, naming::magnitude()) }
-    pub fn swi_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_nifti(key, naming::swi()) }
-    pub fn swi_mip_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_nifti(key, naming::swi_minip()) }
+    pub fn magnitude_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_item(key, Item::CombinedMagnitude) }
+    pub fn swi_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_item(key, Item::Swi) }
+    pub fn swi_mip_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_item(key, Item::SwiMip) }
     /// Discrete whole-brain segmentation (`_dseg.nii`) and its BIDS label lookup table.
     ///
     /// BIDS pairs a `dseg` image with a `.tsv` carrying `index` and `name` columns, so the integer
     /// labels in the volume mean something without consulting FreeSurfer's table.
-    pub fn dseg_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_nifti(key, naming::dseg()) }
+    pub fn dseg_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_item(key, Item::Segmentation) }
     pub fn dseg_lookup_path(&self, key: &AcquisitionKey) -> PathBuf {
-        self.published_file(key, naming::dseg(), "tsv")
+        self.published_item(key, Item::SegmentationLabels)
     }
     /// Per-structure statistics over the segmentation, for every quantitative map the run made.
     ///
     /// One table per run rather than one per map: the rows carry the map's name, so a single file
     /// holds χ, χ+/χ−, T2*, R2*, R2 and R2' together and nothing has to be joined to compare them.
     pub fn segmentation_stats_path(&self, key: &AcquisitionKey) -> PathBuf {
-        self.anat_dir(key).join(format!("{}_desc-segmentation_stats.tsv", key.basename()))
+        self.published_item(key, Item::RegionStats)
     }
 
     /// The run's methods text, in its workflow directory: what was done to it, from its plan and
@@ -253,26 +258,26 @@ impl DerivativeOutputs {
 
     /// SMWI and its minIP, per contrast. The `desc-` values match the chi-separation outputs, which
     /// split the same two ways.
-    pub fn smwi_path(&self, key: &AcquisitionKey, contrast: &str) -> PathBuf {
-        self.published_nifti(key, naming::smwi(contrast))
+    pub fn smwi_path(&self, key: &AcquisitionKey, contrast: Contrast) -> PathBuf {
+        self.published_item(key, Item::Smwi(contrast))
     }
-    pub fn smwi_mip_path(&self, key: &AcquisitionKey, contrast: &str) -> PathBuf {
-        self.published_nifti(key, naming::smwi_minip(contrast))
+    pub fn smwi_mip_path(&self, key: &AcquisitionKey, contrast: Contrast) -> PathBuf {
+        self.published_item(key, Item::SmwiMip(contrast))
     }
-    pub fn t2star_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_nifti(key, naming::t2starmap()) }
-    pub fn r2star_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_nifti(key, naming::r2starmap()) }
+    pub fn t2star_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_item(key, Item::T2star) }
+    pub fn r2star_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_item(key, Item::R2star) }
     /// R2 map (Hz) from the MESE acquisition (EPG fit).
-    pub fn r2_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_nifti(key, naming::r2map()) }
+    pub fn r2_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_item(key, Item::R2) }
     /// R2' = R2* − R2 (Hz), used by the R2'-based chi-separation methods.
-    pub fn r2prime_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_nifti(key, naming::r2primemap()) }
+    pub fn r2prime_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_item(key, Item::R2prime) }
     /// The total field in Hz (`fmap/<run>_desc-total_fieldmap`, `Units: "Hz"`), published
     /// whenever the run computed one, and the magnitude BIDS pairs with it
     /// (`fmap/<run>_desc-total_magnitude`, the first echo's).
     pub fn total_field_path(&self, key: &AcquisitionKey) -> PathBuf {
-        self.published_nifti(key, naming::total_fieldmap())
+        self.published_item(key, Item::TotalFieldHz)
     }
     pub fn total_field_magnitude_path(&self, key: &AcquisitionKey) -> PathBuf {
-        self.published_nifti(key, naming::total_fieldmap_magnitude())
+        self.published_item(key, Item::TotalFieldMagnitude)
     }
     /// Multi-orientation outputs. The key is the group key — the entities every member of the
     /// orientation set shares, with the one that varied between orientations dropped — so a
@@ -297,20 +302,20 @@ impl DerivativeOutputs {
     }
 
     /// Chi-separation outputs, using the BIDS `desc-` entity on the `Chimap` suffix.
-    pub fn chi_para_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_nifti(key, naming::chi_paramagnetic()) }
-    pub fn chi_dia_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_nifti(key, naming::chi_diamagnetic()) }
-    pub fn chi_sep_total_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_nifti(key, naming::chi_total()) }
+    pub fn chi_para_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_item(key, Item::SeparatedChi(Contrast::Paramagnetic)) }
+    pub fn chi_dia_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_item(key, Item::SeparatedChi(Contrast::Diamagnetic)) }
+    pub fn chi_sep_total_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_item(key, Item::SeparatedTotalChi) }
 
     /// The conventional single-pass map, kept alongside the combined one when two-pass runs.
     ///
     /// Named `_desc-singlepass_Chimap` as v8 named it, so scripts that already read it keep working.
     pub fn singlepass_qsm_path(&self, key: &AcquisitionKey) -> PathBuf {
-        self.published_nifti(key, naming::chimap_desc("singlepass"))
+        self.published_item(key, Item::SinglePassChi)
     }
     /// The reliable-phase mask of a two-pass run — worth keeping, since it is what decides which
     /// pass won where.
     pub fn two_pass_mask_path(&self, key: &AcquisitionKey) -> PathBuf {
-        self.published_nifti(key, naming::mask_desc("reliable"))
+        self.published_item(key, Item::ReliableMask)
     }
 
     /// Where the final susceptibility map is defined: the brain mask less the rim that
@@ -318,13 +323,13 @@ impl DerivativeOutputs {
     /// supports for a two-pass map. The `Chimap` is referenced over exactly these voxels and is 0
     /// outside them, so a 0 in the map outside this mask means "not reconstructed", not χ = 0.
     pub fn qsm_support_path(&self, key: &AcquisitionKey) -> PathBuf {
-        self.published_nifti(key, naming::mask_desc("qsm"))
+        self.published_item(key, Item::ChiSupport)
     }
 
     /// Where a measured R2′ (R2* − R2) is a measurement: the brain mask ∩ the MESE's field of
     /// view ∩ R2 > 0. The `R2primemap` is 0 outside it because nothing was measured there.
     pub fn r2prime_coverage_path(&self, key: &AcquisitionKey) -> PathBuf {
-        self.published_nifti(key, naming::mask_desc("r2prime"))
+        self.published_item(key, Item::R2primeCoverage)
     }
 
     // Intermediate outputs (in workflow step directories)
@@ -363,11 +368,11 @@ impl DerivativeOutputs {
     /// (`<basename>_rec-mcpc3ds_echo-N_part-phase_MEGRE.nii`; `rec-mcpc3ds` replaces the run's
     /// `rec-uncombined`).
     pub fn combined_phase_path(&self, key: &AcquisitionKey, echo: usize) -> PathBuf {
-        self.published_nifti(key, naming::combined_echo(echo, "phase", &key.suffix))
+        self.published_item(key, Item::CombinedEchoPhase(echo))
     }
     /// MCPC-3D-S combined magnitude of one echo (see [`Self::combined_phase_path`]).
     pub fn combined_mag_path(&self, key: &AcquisitionKey, echo: usize) -> PathBuf {
-        self.published_nifti(key, naming::combined_echo(echo, "mag", &key.suffix))
+        self.published_item(key, Item::CombinedEchoMagnitude(echo))
     }
     /// Robust mask used for the MCPC-3D-S phase-offset estimation (workflow intermediate).
     pub fn combine_mask_path(&self, key: &AcquisitionKey) -> PathBuf {
@@ -391,7 +396,7 @@ impl DerivativeOutputs {
     /// it — what every stage after motion correction is confined to. Published, so the shrink in
     /// the susceptibility map's support can be traced to it.
     pub fn motion_coverage_path(&self, key: &AcquisitionKey) -> PathBuf {
-        self.published_nifti(key, naming::mask_desc("motioncoverage"))
+        self.published_item(key, Item::CoverageMask)
     }
     pub fn motion_report_path(&self, key: &AcquisitionKey) -> PathBuf {
         self.workflow_step_dir(key, "motion").join(format!("{}_motion.json", key.basename()))
@@ -655,8 +660,8 @@ mod tests {
         assert_eq!(name(o.multiorient_sidecar_path(&k, "sti")), "sub-01_desc-sti_Chimap.json");
         assert_eq!(name(o.swi_path(&k)), "sub-01_swi.nii");
         assert_eq!(name(o.swi_mip_path(&k)), "sub-01_minIP.nii");
-        assert_eq!(name(o.smwi_path(&k, "paramagnetic")), "sub-01_desc-paramagnetic_smwi.nii");
-        assert_eq!(name(o.smwi_mip_path(&k, "diamagnetic")), "sub-01_desc-diamagneticsmwi_minIP.nii");
+        assert_eq!(name(o.smwi_path(&k, Contrast::Paramagnetic)), "sub-01_desc-paramagnetic_smwi.nii");
+        assert_eq!(name(o.smwi_mip_path(&k, Contrast::Diamagnetic)), "sub-01_desc-diamagneticsmwi_minIP.nii");
         assert_eq!(o.total_field_path(&k), PathBuf::from("/out/sub-01/fmap/sub-01_desc-total_fieldmap.nii"));
         assert_eq!(o.total_field_magnitude_path(&k), PathBuf::from("/out/sub-01/fmap/sub-01_desc-total_magnitude.nii"));
         assert_eq!(name(o.r2prime_path(&k)), "sub-01_R2primemap.nii");

@@ -376,8 +376,8 @@ impl FileStore<'_> {
             Item::MotionReport => o.motion_report_path(key),
             Item::Swi => o.swi_path(key),
             Item::SwiMip => o.swi_mip_path(key),
-            Item::Smwi(c) => o.smwi_path(key, c.name()),
-            Item::SmwiMip(c) => o.smwi_mip_path(key, c.name()),
+            Item::Smwi(c) => o.smwi_path(key, c),
+            Item::SmwiMip(c) => o.smwi_mip_path(key, c),
             Item::R2star => o.r2star_path(key),
             Item::T2star => o.t2star_path(key),
             Item::MeseMagnitude(n) => self.run.mese.as_ref()?.magnitude_niftis.get(n.checked_sub(1)?)?.clone(),
@@ -640,26 +640,6 @@ impl StageStore for FileStore<'_> {
                 }
                 std::fs::copy(source, &path)?;
             }
-        }
-        // The total field is published as a BIDS `fieldmap`, which takes Hz (or rad/s, or T) but
-        // not ppm, paired with a magnitude image for anatomical reference.
-        let echo_time = self.meta().echo_times[0];
-        let described = match item {
-            Item::TotalFieldHz => Some(vec![
-                ("Units", serde_json::json!("Hz")),
-                ("Description", serde_json::json!(
-                    "Total (unwrapped, echo-combined) field: the B0 field offset from the scanner frequency, \
-                     before background-field removal")),
-            ]),
-            Item::TotalFieldMagnitude => Some(vec![
-                ("Description", serde_json::json!(
-                    "Magnitude of the first echo, the anatomical reference for desc-total_fieldmap")),
-                ("EchoTime", serde_json::json!(echo_time)),
-            ]),
-            _ => None,
-        };
-        if let Some(fields) = described {
-            self.annotate(&item, fields.into_iter().map(|(k, v)| (k.to_string(), v)).collect())?;
         }
         if let (Item::RegionStats, Data::Text(table)) = (item, data) {
             log::info!("Per-structure statistics -> {}", path.display());
@@ -2665,8 +2645,9 @@ mod oblique_run_tests {
         let mut config = resampling_config();
         config.pipeline.do_smwi = true;
         run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
-        for contrast in ["paramagnetic", "diamagnetic"] {
+        for contrast in qsmxt_engine::store::Contrast::BOTH {
             let mip = io::read_nifti_file(&output.smwi_mip_path(&run.key, contrast)).unwrap();
+            let contrast = contrast.name();
             assert_eq!((mip.dims.0, mip.dims.1), (DIMS.0, DIMS.1),
                        "the {contrast} minIP is still on the working grid");
         }
