@@ -151,8 +151,18 @@ maps (`--do-chisep`) are fitted over it and are 0 outside it too.
 
 At the top of `derivatives/qsmxt/`, `methods.md` describes the processing in
 prose ready for a methods section, with citations for the exact methods used for
-your data and parameters; `pipeline_config.toml` holds the resolved settings
-(reusable with `--config`), and `qsmxt.log` the log.
+your data and parameters; `pipeline.mmd` draws the same pipeline as a
+[Mermaid](https://mermaid.js.org/) graph, one box per step; `pipeline_config.toml`
+holds the resolved settings (reusable with `--config`), and `qsmxt.log` the log.
+
+Some things are only decided as a run goes: a mask supplied with
+`--use-custom-masks` that cannot be used is computed instead, R2′ is measured
+where a multi-echo spin-echo scan allows and estimated otherwise. A run whose
+processing differs from `methods.md` because of such a decision gets its own
+methods text and graph in `changes/` (`<run>_methods.md`,
+`<run>_desc-ran_pipeline.mmd`); the folder is only there when some run differs.
+Each run's methods text, a record of what each step did and why
+(`*_runrecord.json`), and its graph are also kept in its `workflow/` directory.
 
 #### The reference summary
 
@@ -378,7 +388,7 @@ runs against that file.
   - `desc-reference_summary.tsv`, the dataset-level statistics table and cohort
     figures;
   - BIDS-Prov records under `prov/`;
-  - `dataset_description.json`, `pipeline_config.toml`, `methods.md`;
+  - `dataset_description.json`, `pipeline_config.toml`, `methods.md`, `pipeline.mmd`;
   - `qsmxt.log`, which collects every run's log followed by its own;
   - `--clean-intermediates`, if you asked for it.
 

@@ -111,10 +111,9 @@ slurm
 desc-segmentation_stats.tsv
 *_stats.png
 desc-reference_summary.tsv
-# Per-run methods text, run record and pipeline graphs
-*_methods.md
-*_runrecord.json
-*_pipeline.mmd
+# The pipeline graph, and the runs that differ from the dataset's methods
+pipeline.mmd
+changes
 # BEP028 (BIDS-Prov) records — not yet in the released BIDS schema
 prov
 ";
@@ -161,12 +160,17 @@ are listed in `.bidsignore`.
 - `desc-reference_summary.tsv` — what each run's susceptibility maps were
   referenced to (one row per map; the `map` column names it), and the offset
   that removed. The same facts are in each map's `_Chimap.json`.
-- `sub-*/[ses-*/]anat/*_methods.md` — the methods text of each run: what was
-  done to it, including what the run decided as it went (a supplied mask used,
-  or computed when none could be used). `*_runrecord.json` is the same as data:
-  each step computed, reused or skipped, and why. `*_pipeline.mmd` is the
-  run's pipeline graph as planned (Mermaid); `*_desc-ran_pipeline.mmd`, written
-  only when the run differed from the plan, is the graph as it ran.
+- `pipeline.mmd` — the pipeline the runs take, as a Mermaid graph: one box per
+  step, an arrow for each thing one step reads from another (where the runs'
+  scans make their pipelines differ, every run's, merged).
+- `changes/` — only when some run differs from `methods.md`: for each such run,
+  `<run>_methods.md`, what was done to it (e.g. a supplied mask that could not
+  be used, so the mask was computed), and `<run>_desc-ran_pipeline.mmd`, the
+  pipeline as it ran.
+- `workflow/` — intermediates, and for each run its methods text
+  (`*_methods.md`), what it did step by step (`*_runrecord.json`: each step
+  computed, reused or skipped, and why) and its pipeline graph as planned
+  (`*_pipeline.mmd`) and, where it differed, as it ran (`*_desc-ran_pipeline.mmd`).
 - `prov/` — BEP028 (BIDS-Prov) provenance records: one Activity per pipeline
   stage, with Entity/Agent/Environment records. Each output NIfTI also carries a
   `GeneratedBy` reference in its JSON sidecar.

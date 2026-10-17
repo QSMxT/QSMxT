@@ -252,33 +252,60 @@ pub fn run_pipeline_cached(
     write_run_files(qsm_run, config, &facts, &plan, &record, output)
 }
 
-/// What a run did, beside its outputs in `anat/`: its methods text, from the plan and what the
-/// run decided ([`qsmxt_engine::methods::methods_for_run`]); the record itself
-/// ([`qsmxt_engine::record::RunRecord`]); the planned pipeline graph; and the graph after the run,
-/// only when it differs from the planned one ([`qsmxt_engine::pipeline_graph::PipelineGraph::differs_from`]).
+/// What a run did, in its workflow directory: its methods text, from the plan and what the run
+/// decided ([`qsmxt_engine::methods::methods_for_run`]); the record itself
+/// ([`qsmxt_engine::record::RunRecord`]); the planned pipeline graph; and the graph as it ran, only
+/// when that differs from the planned one ([`qsmxt_engine::pipeline_graph::PipelineGraph::differs_from`]).
+///
+/// A run that differs from the dataset's methods also gets its methods text and the graph as it
+/// ran in `changes/` ([`differs_from_dataset`]); a run that no longer differs has them removed, and
+/// `changes/` with them once it is empty.
 fn write_run_files(
     run: &QsmRun, config: &PipelineConfig, facts: &qsmxt_engine::scan::ScanFacts, plan: &qsmxt_engine::plan::Plan,
     record: &qsmxt_engine::record::RunRecord, output: &DerivativeOutputs,
 ) -> crate::Result<()> {
     use qsmxt_engine::pipeline_graph::{pipeline_graph_after, pipeline_graph_on};
     let key = &run.key;
-    let dir = output.anat_dir(key);
-    std::fs::create_dir_all(&dir)?;
-    std::fs::write(output.run_methods_path(key),
-                   qsmxt_engine::methods::methods_for_run(config, plan, record, "qsmxt").to_markdown())?;
+    let methods_path = output.run_methods_path(key);
+    if let Some(dir) = methods_path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let methods = qsmxt_engine::methods::methods_for_run(config, plan, record, "qsmxt").to_markdown();
+    std::fs::write(&methods_path, &methods)?;
     let json = serde_json::to_string_pretty(record).map_err(|e| QsmxtError::Config(e.to_string()))?;
     std::fs::write(output.run_record_path(key), json + "\n")?;
     // Drawn on the grid the run took: the return to the acquired grid only if it was resampled.
     let planned = pipeline_graph_on(plan, config, facts, record.resampled);
     std::fs::write(output.run_graph_path(key, false), planned.to_mermaid())?;
     let after = pipeline_graph_after(plan, config, facts, record);
+    let graph_differs = after.differs_from(&planned);
     let after_path = output.run_graph_path(key, true);
-    if after.differs_from(&planned) {
+    if graph_differs {
         std::fs::write(&after_path, after.to_mermaid())?;
     } else if after_path.exists() {
         std::fs::remove_file(&after_path)?;
     }
+
+    let changes = [output.change_path(key, false), output.change_path(key, true)];
+    if differs_from_dataset(&methods, config, graph_differs) {
+        std::fs::create_dir_all(output.changes_dir())?;
+        std::fs::write(&changes[0], &methods)?;
+        std::fs::write(&changes[1], after.to_mermaid())?;
+    } else {
+        for path in changes.iter().filter(|p| p.exists()) {
+            std::fs::remove_file(path)?;
+        }
+        // Gone once no run differs; another run writing into it at the same moment keeps it.
+        let _ = std::fs::remove_dir(output.changes_dir());
+    }
     Ok(())
+}
+
+/// Whether a run differs from the dataset's methods: its methods text (`methods`, from its plan
+/// and what it decided) is not the dataset's `methods.md` (the configuration's), or it took the
+/// pipeline otherwise than planned (`graph_differs`).
+fn differs_from_dataset(methods: &str, config: &PipelineConfig, graph_differs: bool) -> bool {
+    graph_differs || methods != crate::pipeline::methods::generate_methods(config)
 }
 
 /// `qsmxt run`'s [`StageStore`]: a run's volumes as files under the derivatives directory, named
@@ -2142,6 +2169,38 @@ mod oblique_run_tests {
     }
 
     const ACQUIRED: usize = DIMS.0 * DIMS.1 * DIMS.2;
+
+    /// Each run's methods text, record and planned graph go in its workflow directory; a run
+    /// whose methods differ from the dataset's (`--use-custom-masks` with no mask found, so the
+    /// mask was computed and "where available" no longer applies) also gets them in `changes/`,
+    /// which goes away when a later run of the directory no longer differs.
+    #[test]
+    fn a_run_that_differs_from_the_datasets_methods_is_kept_in_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let run = oblique_run(dir.path(), "a", 3);
+        let mut config = fast_config();
+        config.masking.custom_mask_tool = Some("nothing-here".into());
+        let output = DerivativeOutputs::new(&dir.path().join("out"));
+        run_pipeline_cached(&run, &config, &output, true, &|_| {}).unwrap();
+        let key = &run.key;
+        for path in [output.run_methods_path(key), output.run_record_path(key), output.run_graph_path(key, false)] {
+            assert!(path.exists() && path.starts_with(dir.path().join("out/workflow")), "{}", path.display());
+        }
+        let methods = std::fs::read_to_string(output.change_path(key, false)).unwrap();
+        assert!(!methods.contains("Where available") && methods.contains("A brain mask was generated"), "{methods}");
+        assert!(crate::pipeline::methods::generate_methods(&config).contains("Where available"));
+        assert!(output.change_path(key, true).exists());
+        let record: qsmxt_engine::record::RunRecord =
+            serde_json::from_str(&std::fs::read_to_string(output.run_record_path(key)).unwrap()).unwrap();
+        assert!(record.step("mask").unwrap().decision(qsmxt_engine::record::Topic::MaskSource).is_some());
+
+        // Without the bring-your-own mask the run is the dataset's methods again.
+        config.masking.custom_mask_tool = None;
+        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
+        assert!(!output.changes_dir().exists());
+        assert_eq!(std::fs::read_to_string(output.run_methods_path(key)).unwrap(),
+                   crate::pipeline::methods::generate_methods(&config));
+    }
 
     /// ARLO and chi-separation read the acquired-grid source magnitudes and indexed past their end.
     #[test]

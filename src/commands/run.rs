@@ -124,16 +124,32 @@ pub(crate) fn worker_log_path(derivatives_dir: &std::path::Path, runs: &[discove
 
 /// The dataset-level files written whatever happens to the runs: the BIDS derivative
 /// description (required for a valid derivative dataset), `.bidsignore` and README, the resolved
-/// configuration, and the methods text.
+/// configuration, the methods text, and the pipeline graph of `runs`.
 pub(crate) fn write_dataset_files(
     derivatives_dir: &std::path::Path, bids_dir: &std::path::Path, config: &PipelineConfig,
+    runs: &[discovery::QsmRun],
 ) -> crate::Result<()> {
     crate::bids::dataset_description::write(derivatives_dir, bids_dir)?;
     crate::bids::dataset_description::write_bidsignore(derivatives_dir)?;
     crate::bids::dataset_description::write_readme(derivatives_dir)?;
     std::fs::write(derivatives_dir.join("pipeline_config.toml"), config.to_toml().unwrap_or_default())?;
     std::fs::write(derivatives_dir.join("methods.md"), crate::pipeline::methods::generate_methods(config))?;
+    if let Some(graph) = dataset_graph(config, runs) {
+        std::fs::write(DerivativeOutputs::new(derivatives_dir).dataset_graph_path(), graph.to_mermaid())?;
+    }
     Ok(())
+}
+
+/// The pipeline the dataset's runs will take, as planned from each run's scan: the graph they
+/// share, or, where their scans make them differ, all of them merged
+/// ([`qsmxt_engine::pipeline_graph::PipelineGraph::merged`]).
+fn dataset_graph(config: &PipelineConfig, runs: &[discovery::QsmRun]) -> Option<qsmxt_engine::pipeline_graph::PipelineGraph> {
+    let graphs: Vec<_> = runs.iter().map(|run| {
+        let facts = crate::pipeline::requirements::scan_facts(run, config);
+        let plan = qsmxt_engine::plan::plan(config, &facts);
+        qsmxt_engine::pipeline_graph::pipeline_graph(&plan, config, &facts, None)
+    }).collect();
+    qsmxt_engine::pipeline_graph::PipelineGraph::merged(&graphs)
 }
 
 /// One row per referenced susceptibility map of each run: what it was referenced to, and what
@@ -404,7 +420,7 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
     let output = DerivativeOutputs::new(&derivatives_dir);
 
     if !args.no_dataset_steps {
-        write_dataset_files(&derivatives_dir, &args.bids_dir, &config)?;
+        write_dataset_files(&derivatives_dir, &args.bids_dir, &config, &runs)?;
     }
 
     // Execute

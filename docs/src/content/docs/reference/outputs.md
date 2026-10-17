@@ -89,12 +89,14 @@ keeps the names valid. A run with no such twin keeps its name.
 | --- | --- |
 | `dataset_description.json`, `README` | BIDS-Derivatives description, with `GeneratedBy` and `SourceDatasets` |
 | `methods.md` | A methods paragraph describing what ran, with citations |
+| `pipeline.mmd` | The pipeline as a Mermaid graph: one box per step, an arrow for each thing one step reads from another |
+| `changes/` | Only when a run was processed differently from `methods.md` (a decision made as it ran, such as a supplied mask it could not use): that run's methods text (`<run>_methods.md`) and pipeline as it ran (`<run>_desc-ran_pipeline.mmd`) |
 | `pipeline_config.toml` | The resolved settings, reusable with `--config` |
 | `qsmxt.log`, `logs/` | The log (and, under SLURM, each run job's log) |
 | `desc-reference_summary.tsv` | What every susceptibility map was referenced to (see [Running noninteractively](/QSMxT/guides/running-noninteractively/#the-reference-summary)) |
 | `desc-segmentation_stats.tsv`, `desc-<map>_stats.png` | Cohort statistics and figures (`--do-analysis`) |
 | `prov/` | BIDS-Prov (BEP028) records of every step |
-| `workflow/` | Cached intermediates; removed by `--clean-intermediates` |
+| `workflow/` | Cached intermediates (removed by `--clean-intermediates`), and per run its methods text, a record of what each step did and why (`*_runrecord.json`) and its pipeline graph |
 | `slurm/` | Job scripts and their logs (`qsmxt slurm`) |
 | `sub-<X>/extra_files/` | DICOM series (`--export-dicom`) |
 
@@ -110,7 +112,7 @@ in the derivatives' `.bidsignore`, so the dataset passes the BIDS validator:
 | `smwi` | SMWI, named on the same BEP004 scheme |
 | `evec` | BIDS has no suffix for an orientation field; an eigenvector is not a susceptibility, so it is not a `Chimap` |
 | `*_stats.tsv`, `*_stats.png`, `desc-reference_summary.tsv` | `stats` is not a BIDS suffix |
-| `workflow`, `prov`, `logs`, `slurm`, `extra_files`, `methods.md`, `pipeline_config.toml`, `*.log` | Not BIDS data files |
+| `workflow`, `prov`, `logs`, `slurm`, `extra_files`, `changes`, `methods.md`, `pipeline.mmd`, `pipeline_config.toml`, `*.log` | Not BIDS data files |
 
 ## Standalone commands
 

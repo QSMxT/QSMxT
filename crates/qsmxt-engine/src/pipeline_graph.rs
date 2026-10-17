@@ -783,6 +783,54 @@ impl PipelineGraph {
             || self.nodes.iter().any(|n| n.run.as_ref().is_some_and(|r| r.state == StepState::Skipped))
     }
 
+    /// A dataset's runs' graphs as one: the graph they share, or where they differ, every box and
+    /// arrow any of them has, each once. A box only some runs have is placed after the box it
+    /// follows in the first graph that has it, and drawn as conditional ([`Node::only_when`]).
+    /// How many runs took each box is the merged record's ([`crate::record::merge`]). `None` for
+    /// no graphs.
+    pub fn merged(graphs: &[PipelineGraph]) -> Option<PipelineGraph> {
+        let first = graphs.first()?;
+        if graphs.iter().all(|g| g == first) {
+            return Some(first.clone());
+        }
+        let mut out = PipelineGraph { nodes: Vec::new(), edges: Vec::new(), items: Vec::new(), two_pass: false };
+        let mut seen: Vec<(String, usize)> = Vec::new();
+        for g in graphs {
+            let mut at = 0;
+            for n in &g.nodes {
+                match out.nodes.iter().position(|m| m.id == n.id) {
+                    Some(i) => {
+                        seen.iter_mut().find(|(id, _)| *id == n.id).expect("counted").1 += 1;
+                        at = i + 1;
+                    }
+                    None => {
+                        out.nodes.insert(at, n.clone());
+                        seen.push((n.id.clone(), 1));
+                        at += 1;
+                    }
+                }
+            }
+            for e in &g.edges {
+                if !out.edges.contains(e) {
+                    out.edges.push(e.clone());
+                }
+            }
+            for i in &g.items {
+                if !out.items.iter().any(|j| j.key == i.key) {
+                    out.items.push(i.clone());
+                }
+            }
+            out.two_pass |= g.two_pass;
+        }
+        for n in &mut out.nodes {
+            let runs = seen.iter().find(|(id, _)| *id == n.id).map_or(0, |(_, k)| *k);
+            if runs < graphs.len() && n.only_when.is_none() {
+                n.only_when = Some("the run's scan needs it".into());
+            }
+        }
+        Some(out)
+    }
+
     /// Whether `from` feeds `to` directly.
     pub fn has_edge(&self, from: &str, to: &str) -> bool {
         self.edges.iter().any(|e| e.from == from && e.to == to)

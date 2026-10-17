@@ -447,3 +447,31 @@ fn plan_steps_carry_their_name_label_algorithm_and_outputs() {
                 &serde_json::json!("ROMEO")));
     assert_eq!(step["outputs"][0], serde_json::json!("FieldPpm"));
 }
+
+/// A dataset's graphs merged: identical graphs give that graph; where runs differ, every box once,
+/// one only some runs have placed where it runs and drawn as conditional.
+#[test]
+fn a_datasets_graphs_merge_into_one() {
+    let config = PipelineConfig::default();
+    let multi = graph(&config, &facts());
+    assert_eq!(PipelineGraph::merged(&[multi.clone(), multi.clone()]), Some(multi.clone()));
+    assert_eq!(PipelineGraph::merged(&[]), None);
+    let mut swi = config.clone();
+    swi.pipeline.do_swi = true;
+    let mut no_mag = facts();
+    no_mag.has_magnitude = false;
+    let with_swi = graph(&swi, &facts());
+    let without = graph(&swi, &no_mag);
+    let merged = PipelineGraph::merged(&[without.clone(), with_swi.clone()]).unwrap();
+    let ids: Vec<&str> = merged.nodes.iter().map(|n| n.id.as_str()).collect();
+    let mut want: Vec<&str> = with_swi.nodes.iter().map(|n| n.id.as_str()).collect();
+    for n in &without.nodes {
+        if !want.contains(&n.id.as_str()) { want.push(&n.id); }
+    }
+    assert_eq!(ids.len(), want.len(), "{ids:?} vs {want:?}");
+    assert!(merged.node("swi").unwrap().only_when.is_some());
+    assert!(merged.node("invert").unwrap().only_when.is_none());
+    for e in with_swi.edges.iter().chain(&without.edges) {
+        assert!(merged.edges.contains(e));
+    }
+}
