@@ -89,7 +89,7 @@ keeps the names valid. A run with no such twin keeps its name.
 | --- | --- |
 | `dataset_description.json`, `README` | BIDS-Derivatives description, with `GeneratedBy` and `SourceDatasets` |
 | `methods.md` | A methods paragraph describing what the runs did, with citations |
-| `pipeline.svg`, `pipeline.mmd` | The pipeline the runs took, as an image and as a Mermaid graph: one box per step, an arrow for each thing one step reads from another, and on a box how many runs skipped the step or decided something in it |
+| `pipeline.svg`, `pipeline.mmd` | The pipeline the runs took, as an image and as a Mermaid graph: one box per step, an arrow for each thing one step reads from another, and on a box how many runs skipped the step, decided something in it, or set it up each way; a key explains the line styles used |
 | `changes/` | Only when some runs were processed differently from the rest (a decision made as a run went, such as a supplied mask it could not use): each such run's methods text (`<run>_methods.md`) and pipeline as it ran (`<run>_desc-ran_pipeline.mmd`, `.svg`) |
 | `pipeline_config.toml` | The resolved settings, reusable with `--config` |
 | `qsmxt.log`, `logs/` | The log (and, under SLURM, each run job's log) |

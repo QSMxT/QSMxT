@@ -2231,7 +2231,7 @@ mod oblique_run_tests {
         std::fs::write(&b_state, saved.replace("\"complete\"", "\"running\"")).unwrap();
         summarise();
         let graph = read(output.dataset_graph_path());
-        assert!(graph.contains("1 of 2 runs: Taken from the supplied mask."), "{graph}");
+        assert!(graph.contains("1 of 2: supplied (nothing-here)"), "{graph}");
         std::fs::write(&b_state, saved).unwrap();
 
         // Run c again: it is like the rest, and changes/ goes.
