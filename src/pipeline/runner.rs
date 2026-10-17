@@ -969,7 +969,13 @@ pub(crate) fn find_custom_derivative(
                     !exclude.iter().any(|e| name.contains(e))
                 })
                 .collect();
-            hits.sort();
+            // A file named for this run comes first (each run of a subject can have its own,
+            // `qsmxt_engine::supplied::supplied_mask_path`), then the rest in name order.
+            let own = format!("{}_", run.key.basename());
+            hits.sort_by_key(|p| {
+                let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                (!name.starts_with(&own), p.clone())
+            });
             if let Some(p) = hits.into_iter().next() {
                 return Some(p);
             }
@@ -1178,6 +1184,37 @@ mod tests {
         config.pipeline.do_qsm = true;
         config.masking.two_pass = false;
         assert!(!two_pass(&config, &run));
+    }
+
+    /// A mask a front end supplies for a run, written where `qsmxt_engine::supplied` says, is the
+    /// one `--use-custom-masks <tool>` finds for that run, over the subject's other runs' masks.
+    #[test]
+    fn a_supplied_mask_written_for_a_run_is_found_for_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let bids = dir.path();
+        let anat = bids.join("sub-1/ses-a/anat");
+        std::fs::create_dir_all(&anat).unwrap();
+        let mut runs = Vec::new();
+        for r in ["1", "2"] {
+            let phase = anat.join(format!("sub-1_ses-a_run-{r}_echo-1_part-phase_MEGRE.nii"));
+            write_vol(&phase, (2, 2, 2));
+            let mut run = run_with_echoes(vec![(phase, None)]);
+            run.key.session = Some("a".into());
+            run.key.run = Some(r.into());
+            runs.push(run);
+        }
+        let write = |prefix: &str| {
+            let path = bids.join(qsmxt_engine::supplied::supplied_mask_path("qsmbly", prefix).unwrap());
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            write_vol(&path, (2, 2, 2));
+            path
+        };
+        let second = write("sub-1_ses-a_run-2");
+        assert_eq!(super::find_custom_mask(&runs[1], "qsmbly"), Some(second.clone()));
+        let first = write("sub-1_ses-a_run-1");
+        assert_eq!(super::find_custom_mask(&runs[0], "qsmbly"), Some(first));
+        assert_eq!(super::find_custom_mask(&runs[1], "qsmbly"), Some(second.clone()), "its own, not the first by name");
+        assert_eq!(super::find_custom_mask(&runs[1], "*"), Some(second));
     }
 
     /// A bring-your-own mask must be the brain mask, not a two-pass reliable mask that happens
@@ -2192,7 +2229,7 @@ mod oblique_run_tests {
         assert_eq!(changes().len(), 3, "{:?}", changes());
         let cname = c.basename();
         assert!(output.change_path(&cname, false).exists() && output.change_path(&cname, true).with_extension("svg").exists());
-        assert!(read(output.change_path(&cname, false)).contains("sourced from"));
+        assert!(read(output.change_path(&cname, false)).contains("The brain mask was supplied with the scan"));
         let before = (methods.clone(), read(output.dataset_graph_path()), changes());
 
         // Run a alone again (`--include`): the dataset is still a, b and c, and c's files stay.

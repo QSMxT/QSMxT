@@ -32,7 +32,7 @@ pub fn run<S: StageStore + ?Sized>(
 ) -> Result<RunRecord, S::Error> {
     // Every front end's config is held to the settings' ranges (qsmxt checks them earlier too).
     crate::schema::check_ranges(config)?;
-    let (meta, load_record) = load(config, facts, store, observer)?;
+    let (meta, load_record, _) = load(config, facts, store, observer)?;
     store.begin(&meta)?;
     let mut record = RunRecord { steps: vec![load_record], resampled: Some(meta.source_geometry.is_some()) };
     if !plan.processes() {
@@ -139,11 +139,64 @@ pub fn run_step<S: StageStore + ?Sized>(
     Run::new(plan, config, facts, meta.clone(), store, observer).take(step)
 }
 
+/// A mask `sections` make (with `config`'s combine mode and refinements after combining), or part
+/// of it (`upto`), on the scan in `store`, as the run's mask step would make it: what a front end
+/// shows while the recipe is edited ([`stages::mask::preview`]).
+///
+/// The steps the plan's mask step reads from are taken first, each only computed when its earlier
+/// output is no longer valid, as a run takes them (so the run that follows reuses them). Nothing
+/// else is written to the store: not the brain mask, and nothing downstream of it goes stale.
+/// The images the sections work from are kept in `inputs` between previews, and built again only
+/// when what they were built from changes ([`stages::mask::MaskInputs::key`]): a threshold or
+/// morphology change reuses them. The weights of any deep-learning method in `sections` must be
+/// ready ([`StageStore::models`]).
+#[allow(clippy::too_many_arguments)]
+pub fn preview_mask<S: StageStore + ?Sized>(
+    plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, store: &mut S, observer: &mut dyn Observer,
+    inputs: &mut stages::mask::MaskInputs, sections: &[crate::masking::MaskSection], upto: stages::mask::Upto,
+) -> Result<stages::mask::MaskPreview, S::Error> {
+    crate::schema::check_ranges(config)?;
+    let Some(at) = plan.steps.iter().position(|s| s.stage == Stage::Mask(Pass::Main)) else {
+        return Err(crate::EngineError::Config("this run makes no brain mask to preview".into()).into());
+    };
+    let (meta, _, load_key) = load(config, facts, store, observer)?;
+    store.begin(&meta)?;
+    let mut upstream = vec![load_key];
+    let mut r = Run::new(plan, config, facts, meta, store, observer);
+    for step in mask_reads_from(plan, at) {
+        r.take(step)?;
+        upstream.push(format!("{}={}", step.name, r.store.recorded_key(&step.name).unwrap_or_default()));
+    }
+    let key = stages::mask::MaskInputs::key(config, &upstream.join(";"));
+    let meta = r.meta.clone();
+    inputs.fill(sections, config, key, &meta, || r.echoes())?;
+    r.store.models(&stages::mask::model_ids(sections, config))?;
+    let preview = stages::mask::preview(sections, config, inputs, &meta, upto)?;
+    r.store.finish()?;
+    Ok(preview)
+}
+
+/// The steps before the plan's step `at` whose outputs it reads, directly or through another of
+/// them, in plan order.
+fn mask_reads_from(plan: &Plan, at: usize) -> Vec<&Step> {
+    let mut wanted: Vec<Item> = plan.steps[at].reads.clone();
+    let mut taken = vec![false; at];
+    for i in (0..at).rev() {
+        let step = &plan.steps[i];
+        if step.stage != Stage::Load && step.outputs.iter().any(|o| wanted.contains(o)) {
+            taken[i] = true;
+            wanted.extend(step.reads.iter().copied());
+        }
+    }
+    (0..at).filter(|&i| taken[i]).map(|i| &plan.steps[i]).collect()
+}
+
 /// The grid the run is processed on: the cached load step's, or decided from the first echo's
-/// header ([`crate::scan::resolve_geometry`]) and recorded; and what the load step did.
+/// header ([`crate::scan::resolve_geometry`]) and recorded; what the load step did; and its cache
+/// key (which a mask preview keys the images it keeps on).
 fn load<S: StageStore + ?Sized>(
     config: &PipelineConfig, facts: &ScanFacts, store: &mut S, observer: &mut dyn Observer,
-) -> Result<(RunMetadata, StepRecord), S::Error> {
+) -> Result<(RunMetadata, StepRecord, String), S::Error> {
     // The algorithms that assume B0 along the slice normal decide the grid only when this scan's
     // B0 is tilted from it: on axial data they change nothing, and switching to or from one leaves
     // the cache alone. The header is read for that only when there are any.
@@ -182,7 +235,7 @@ fn load<S: StageStore + ?Sized>(
         observer.log(Level::Info, "Skipping load (cached)");
         observer.stage("load", None, StageEvent::Cached);
         let record = done(&meta, StepState::Cached, store.decisions("load"));
-        return Ok((meta, record));
+        return Ok((meta, record, key));
     }
     observer.stage("load", None, StageEvent::Started("Loading NIfTI metadata"));
     store.start("load");
@@ -210,7 +263,7 @@ fn load<S: StageStore + ?Sized>(
     store.record_scan(&key, &meta, &decisions)?;
     observer.stage("load", None, StageEvent::Finished("Load"));
     let record = done(&meta, StepState::Computed, decisions);
-    Ok((meta, record))
+    Ok((meta, record, key))
 }
 
 /// Every echo's phase, and every echo's magnitude (or none).
@@ -679,9 +732,9 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         Ok(())
     }
 
-    /// Build a mask from `sections`, with the weights of the deep-learning `models` it runs ready
-    /// first: every echo's phase, and every echo's magnitude (none for a phase-only run).
-    fn build_mask(&mut self, sections: &[crate::masking::MaskSection], models: &[&'static str]) -> Result<Vec<u8>, S::Error> {
+    /// Every echo's phase, and every echo's magnitude (none for a phase-only run): what masking
+    /// reads.
+    fn echoes(&mut self) -> Result<stages::mask::Echoes, S::Error> {
         let n = self.n_echoes();
         let mut phases = Vec::with_capacity(n);
         for e in 1..=n {
@@ -697,6 +750,13 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             }
             magnitudes.push(self.store.real(&Item::Magnitude(e))?);
         }
+        Ok((phases, magnitudes))
+    }
+
+    /// Build a mask from `sections`, with the weights of the deep-learning `models` it runs ready
+    /// first: every echo's phase, and every echo's magnitude (none for a phase-only run).
+    fn build_mask(&mut self, sections: &[crate::masking::MaskSection], models: &[&'static str]) -> Result<Vec<u8>, S::Error> {
+        let (phases, magnitudes) = self.echoes()?;
         self.store.models(models)?;
         let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
         Ok(stages::mask::build_mask(sections, self.config, &phase_refs, magnitudes, &self.meta)?)
@@ -2653,3 +2713,6 @@ pub(crate) mod tests {
 
 #[cfg(test)]
 mod record_tests;
+
+#[cfg(test)]
+mod preview_tests;

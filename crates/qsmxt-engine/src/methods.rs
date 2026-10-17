@@ -805,6 +805,11 @@ impl Ran<'_> {
         self.0.is_some_and(|r| r.only(topic, choices))
     }
 
+    /// The runs the text describes (none when nothing is known of them).
+    fn runs(&self) -> usize {
+        self.0.map_or(0, |r| r.runs)
+    }
+
     /// The runs that chose `choice` about `topic`.
     fn count(&self, topic: Topic, choice: Choice) -> usize {
         self.0.map_or(0, |r| r.count(topic, choice))
@@ -1606,6 +1611,11 @@ fn describe_masking(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
     let all_supplied = tool.is_some() && ran.only(Topic::MaskSource, &[Choice::Supplied]);
     let none_supplied = ran.only(Topic::MaskSource, &[Choice::Computed]);
     match tool {
+        // One run: its mask was the one supplied with it.
+        Some(tool) if all_supplied && ran.runs() == 1 => {
+            let from = if tool == "*" { "its".to_string() } else { format!("the '{tool}'") };
+            doc.say(&[Stage::Mask(Pass::Main)], format!("The brain mask was supplied with the scan, from {from} BIDS derivatives."));
+        }
         Some(tool) if all_supplied => {
             let from = if tool == "*" { String::new() } else { format!("'{tool}' ") };
             doc.say(&[Stage::Mask(Pass::Main)], format!("Brain masks were sourced from the {from}BIDS derivatives."));
