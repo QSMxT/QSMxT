@@ -475,3 +475,82 @@ fn a_datasets_graphs_merge_into_one() {
         assert!(merged.edges.contains(e));
     }
 }
+
+/// Graphs drawn from a spread of configurations: no two boxes overlap, every arrow runs from its
+/// source's bottom to its target's top in horizontal and vertical segments, every label is inside
+/// the drawing, and the SVG has a box per step and an arrow per drawn edge. With
+/// `QSMXT_WRITE_GRAPH_SVG=<dir>` set, each is written there to look at (and each layout as JSON).
+#[test]
+fn graphs_lay_out_and_draw_as_svg() {
+    let mut cases: Vec<(&str, PipelineConfig, ScanFacts)> = vec![("default", PipelineConfig::default(), facts())];
+    let mut c = PipelineConfig::default();
+    c.masking.two_pass = true;
+    c.inversion.algorithm = QsmAlgorithm::Tgv;
+    cases.push(("two-pass", c, facts()));
+    let mut c = PipelineConfig::default();
+    c.pipeline.do_swi = true;
+    c.pipeline.do_t2starmap = true;
+    c.pipeline.do_r2starmap = true;
+    c.pipeline.do_segmentation = true;
+    c.pipeline.do_analysis = true;
+    c.masking.two_pass = true;
+    cases.push(("many-outputs", c, facts()));
+    let mut c = PipelineConfig::default();
+    c.pipeline.do_swi = true;
+    c.pipeline.do_smwi = true;
+    let mut f = facts();
+    f.has_magnitude = false;
+    cases.push(("no-magnitude", c, f));
+    let out_dir = std::env::var_os("QSMXT_WRITE_GRAPH_SVG").map(std::path::PathBuf::from);
+    for (name, config, f) in cases {
+        let g = graph(&config, &f);
+        let l = g.layout();
+        for (i, a) in l.nodes.iter().enumerate() {
+            assert!(a.x >= 0.0 && a.y >= 0.0 && a.x + a.w <= l.width && a.y + a.h <= l.height, "{name}: {} outside", a.id);
+            for b in &l.nodes[i + 1..] {
+                let apart = a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
+                assert!(apart, "{name}: {} overlaps {}", a.id, b.id);
+            }
+        }
+        for e in &l.edges {
+            let from = l.nodes.iter().find(|n| n.id == e.from).unwrap();
+            let to = l.nodes.iter().find(|n| n.id == e.to).unwrap();
+            let (first, last) = (e.points[0], *e.points.last().unwrap());
+            assert_eq!(first.1, from.y + from.h, "{name}: {}->{}", e.from, e.to);
+            assert!(first.0 >= from.x && first.0 <= from.x + from.w);
+            assert_eq!(last.1, to.y, "{name}: {}->{}", e.from, e.to);
+            assert!(last.0 >= to.x && last.0 <= to.x + to.w);
+            for w in e.points.windows(2) {
+                assert!(w[0].0 == w[1].0 || w[0].1 == w[1].1, "{name}: a diagonal in {}->{}", e.from, e.to);
+            }
+            let b = e.label_box;
+            assert!(b.x >= 0.0 && b.x + b.w <= l.width, "{name}: label of {}->{} outside", e.from, e.to);
+        }
+        if g.two_pass {
+            assert_eq!(l.groups.len(), 2, "{name}");
+        }
+        let svg = g.to_svg();
+        assert!(svg.starts_with("<svg xmlns=\"http://www.w3.org/2000/svg\"") && svg.ends_with("</svg>\n"));
+        assert_eq!(svg.matches("<g class=\"g-node").count(), g.nodes.len(), "{name}");
+        assert_eq!(svg.matches("<g class=\"g-edge").count(), l.edges.len(), "{name}");
+        assert_eq!(svg.matches("<g").count(), svg.matches("</g>").count(), "{name}");
+        assert!(!svg.contains("NaN") && !svg.contains("inf"), "{name}");
+        if let Some(dir) = &out_dir {
+            std::fs::create_dir_all(dir).unwrap();
+            std::fs::write(dir.join(format!("{name}.svg")), &svg).unwrap();
+            std::fs::write(dir.join(format!("{name}.graph.json")), serde_json::to_string(&g).unwrap()).unwrap();
+            std::fs::write(dir.join(format!("{name}.layout.json")), serde_json::to_string(&l).unwrap()).unwrap();
+        }
+    }
+}
+
+/// Text in a box is cut to its width, a long word too, and XML in a label is escaped.
+#[test]
+fn box_text_wraps_and_svg_escapes() {
+    assert_eq!(layout::wrap("one two three", 7), ["one two", "three"]);
+    assert_eq!(layout::wrap("abcdefghij", 4), ["abcd", "efgh", "ij"]);
+    let mut g = graph(&PipelineConfig::default(), &facts());
+    g.nodes[0].settings.push("a < b & \"c\"".into());
+    let svg = g.to_svg();
+    assert!(svg.contains("a &lt; b &amp; &quot;c&quot;"), "{svg}");
+}
