@@ -505,6 +505,12 @@ fn graphs_lay_out_and_draw_as_svg() {
     for (name, config, f) in cases {
         let g = graph(&config, &f);
         let l = g.layout();
+        if let Some(dir) = &out_dir {
+            std::fs::create_dir_all(dir).unwrap();
+            std::fs::write(dir.join(format!("{name}.svg")), g.to_svg()).unwrap();
+            std::fs::write(dir.join(format!("{name}.graph.json")), serde_json::to_string(&g).unwrap()).unwrap();
+            std::fs::write(dir.join(format!("{name}.layout.json")), serde_json::to_string(&l).unwrap()).unwrap();
+        }
         for (i, a) in l.nodes.iter().enumerate() {
             assert!(a.x >= 0.0 && a.y >= 0.0 && a.x + a.w <= l.width && a.y + a.h <= l.height, "{name}: {} outside", a.id);
             for b in &l.nodes[i + 1..] {
@@ -512,12 +518,16 @@ fn graphs_lay_out_and_draw_as_svg() {
                 assert!(apart, "{name}: {} overlaps {}", a.id, b.id);
             }
         }
+        let mut on_lines: Vec<String> = Vec::new();
         for e in &l.edges {
             let from = l.nodes.iter().find(|n| n.id == e.from).unwrap();
             let to = l.nodes.iter().find(|n| n.id == e.to).unwrap();
             let (first, last) = (e.points[0], *e.points.last().unwrap());
-            assert_eq!(first.1, from.y + from.h, "{name}: {}->{}", e.from, e.to);
-            assert!(first.0 >= from.x && first.0 <= from.x + from.w);
+            // Out of the source's bottom, or (skipping rows) its side.
+            let bottom = first.1 == from.y + from.h && first.0 >= from.x && first.0 <= from.x + from.w;
+            let side = (first.0 == from.x || first.0 == from.x + from.w) && first.1 > from.y && first.1 < from.y + from.h;
+            assert!(bottom || side, "{name}: {}->{} starts at {first:?}", e.from, e.to);
+            assert!(e.points.len() <= 5, "{name}: {}->{} bends {} times", e.from, e.to, e.points.len() - 2);
             assert_eq!(last.1, to.y, "{name}: {}->{}", e.from, e.to);
             assert!(last.0 >= to.x && last.0 <= to.x + to.w);
             for w in e.points.windows(2) {
@@ -525,22 +535,40 @@ fn graphs_lay_out_and_draw_as_svg() {
             }
             let b = e.label_box;
             assert!(b.x >= 0.0 && b.x + b.w <= l.width, "{name}: label of {}->{} outside", e.from, e.to);
+            // A label touches no box, no other label and no line.
+            for n in &l.nodes {
+                let r = layout::Rect { x: n.x, y: n.y, w: n.w, h: n.h };
+                assert_eq!(b.overlap(&r), 0.0, "{name}: label of {}->{} on {}", e.from, e.to, n.id);
+            }
+            for f in &l.edges {
+                if f.from != e.from || f.to != e.to {
+                    assert_eq!(b.overlap(&f.label_box), 0.0, "{name}: labels of {}->{} and {}->{} overlap", e.from, e.to, f.from, f.to);
+                }
+                for w in f.points.windows(2) {
+                    let seg = layout::Rect { x: w[0].0.min(w[1].0) - 0.5, y: w[0].1.min(w[1].1) - 0.5,
+                                             w: (w[0].0 - w[1].0).abs() + 1.0, h: (w[0].1 - w[1].1).abs() + 1.0 };
+                    if b.overlap(&seg) > 0.0 {
+                        on_lines.push(format!("{}->{} on {}->{}", e.from, e.to, f.from, f.to));
+                    }
+                }
+            }
         }
+        eprintln!("{name}: labels on lines: {on_lines:?}");
+        assert!(on_lines.is_empty(), "{name}: labels on lines: {on_lines:?}");
+        // Nothing is cut short, and the key has the styles the graph uses.
+        let svg_text = g.to_svg();
+        assert!(!svg_text.contains('…'), "{name}");
+        assert_eq!(l.key.iter().any(|k| k.style == layout::KeyStyle::Optional), g.nodes.iter().any(|n| n.enabled_by.is_some()), "{name}");
+        assert_eq!(l.key.iter().any(|k| k.style == layout::KeyStyle::Conditional), g.nodes.iter().any(|n| n.only_when.is_some()), "{name}");
         if g.two_pass {
             assert_eq!(l.groups.len(), 2, "{name}");
         }
         let svg = g.to_svg();
         assert!(svg.starts_with("<svg xmlns=\"http://www.w3.org/2000/svg\"") && svg.ends_with("</svg>\n"));
-        assert_eq!(svg.matches("<g class=\"g-node").count(), g.nodes.len(), "{name}");
-        assert_eq!(svg.matches("<g class=\"g-edge").count(), l.edges.len(), "{name}");
+        assert_eq!(svg.matches(" data-step=").count(), g.nodes.len(), "{name}");
+        assert_eq!(svg.matches(" data-from=").count(), l.edges.len(), "{name}");
         assert_eq!(svg.matches("<g").count(), svg.matches("</g>").count(), "{name}");
         assert!(!svg.contains("NaN") && !svg.contains("inf"), "{name}");
-        if let Some(dir) = &out_dir {
-            std::fs::create_dir_all(dir).unwrap();
-            std::fs::write(dir.join(format!("{name}.svg")), &svg).unwrap();
-            std::fs::write(dir.join(format!("{name}.graph.json")), serde_json::to_string(&g).unwrap()).unwrap();
-            std::fs::write(dir.join(format!("{name}.layout.json")), serde_json::to_string(&l).unwrap()).unwrap();
-        }
     }
 }
 
@@ -578,4 +606,30 @@ fn a_box_the_runs_set_up_differently_lists_each_way() {
     let mask = merged.node("mask").unwrap();
     assert_eq!(mask.settings[0], "supplied (bet)");
     assert!(b.node("mask").unwrap().settings.iter().all(|s| mask.settings.contains(s)), "{:?}", mask.settings);
+}
+
+/// A graph that uses no special style has no key; one that does lists only what it uses.
+#[test]
+fn the_key_lists_only_the_styles_drawn() {
+    let config = PipelineConfig::default();
+    let f = facts();
+    let plain = pipeline_graph_on(&crate::plan::plan(&config, &f), &config, &f, Some(false));
+    assert!(plain.layout().key.is_empty());
+    assert!(!plain.to_svg().contains("class=\"g-key\""));
+    let planned = graph(&config, &f);
+    let styles: Vec<layout::KeyStyle> = planned.layout().key.iter().map(|k| k.style).collect();
+    assert_eq!(styles, [layout::KeyStyle::Conditional, layout::KeyStyle::Collapsed]);
+}
+
+/// Two arrows from one box to another are drawn as one carrying both, and a label lists one item
+/// per line, in full.
+#[test]
+fn arrows_between_the_same_boxes_are_one_and_labels_list_items_in_full() {
+    let mut g = graph(&PipelineConfig::default(), &facts());
+    let first = g.edges[0].clone();
+    g.edges.push(Edge { items: vec!["Mask".into()], ..first.clone() });
+    let l = g.layout();
+    let drawn: Vec<_> = l.edges.iter().filter(|e| e.from == first.from && e.to == first.to).collect();
+    assert_eq!(drawn.len(), 1);
+    assert_eq!(drawn[0].label, ["Phase (as acquired)", "Magnitude (as acquired)", "Mask"]);
 }

@@ -1,6 +1,7 @@
 //! Where each box and arrow of a [`PipelineGraph`] goes when it is drawn: one box per step, top
-//! to bottom in run order, with every arrow routed between the boxes. [`PipelineGraph::to_svg`]
-//! draws it; a front end can draw the same [`Layout`] (it serialises to JSON).
+//! to bottom in run order, with every arrow routed between the boxes and labelled with what flows
+//! along it. [`PipelineGraph::to_svg`] draws it; a front end can draw the same [`Layout`] (it
+//! serialises to JSON). The layout is a pure function of the graph.
 //!
 //! The graph is small (10–25 steps) and its steps are in run order, so a layered layout does the
 //! job without a layout library:
@@ -10,16 +11,27 @@
 //!   asked for (`enabled_by` = `pipeline.*`) goes to the first free column to its right, as does a
 //!   spine step whose row is taken. In a two-pass run each pass has a column of its own, so each
 //!   pass's box holds its steps and nothing else: main pass, then the shared spine, then reliable.
-//! - **Arrows** run only between boxes: down from the source into the gap below it, along a
-//!   horizontal track in that gap, down a gutter between columns, along a track in the gap above
-//!   the target, and down into it. Each arrow has its own track and gutter lane, so no arrow
-//!   crosses a box and no two share a segment; its label sits on its last track.
-//! - The many arrows into the return to the acquired grid are drawn as one (the data is unchanged).
+//! - **Arrows** run only between boxes, and every arrow enters its target from the top:
+//!   - to the next row: down from the source's bottom, along a track in the gap above the
+//!     target, and down into it (straight down where the two ends line up);
+//!   - further down: out of the source's side into a lane of the channel beside it, straight down
+//!     the lane, along a track in the gap above the target, and down into it.
 //!
-//! Text is measured by an estimate of its width, so the layout is a pure function of the graph.
-//! The constants and rules are those of qsmbly's Pipeline tab, so the two draw the same picture.
+//!   Each box side has a port per arrow, ordered by where the arrow's other end is, so arrows
+//!   leaving or entering a box do not cross each other there. Each arrow has its own track and
+//!   lane. Two arrows from one box to another are one arrow carrying both.
+//! - **Labels** list what flows along an arrow, one item per line, never cut short. A label sits
+//!   beside its arrow's last drop into the target, below the arrow's track. The gap above a row
+//!   is tall enough for the labels of the arrows entering it, the leftmost drop's track highest,
+//!   so a label to the right of its drop does not lie across a later drop. A label that would
+//!   still touch a box, a line or another label moves to the other side of its drop or beside
+//!   another of its arrow's vertical runs, and failing that, its gap grows.
+//! - The many arrows into the return to the acquired grid are drawn as one (the data is unchanged).
+//! - A **key** below the graph explains the styles the graph uses, and only those.
+//!
+//! Text is measured by an estimate of its width.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
 
@@ -32,18 +44,34 @@ pub const RETURN_STEP: &str = "output_space";
 /// A box's width.
 pub const NODE_W: f64 = 210.0;
 const PAD: f64 = 8.0;
-const TRACK: f64 = 15.0; // between horizontal tracks in a gap
-const GAP: f64 = 14.0; // a gap's margin above and below its tracks
-const LANE: f64 = 7.0; // between vertical lanes in a gutter
-const GUTTER: f64 = 28.0; // a gutter's width with no lanes
+/// The least distance between two tracks in a gap.
+const TRACK: f64 = 10.0;
+/// A gap's margin above its tracks.
+const GAP: f64 = 14.0;
+/// Between the last label of a gap and the boxes below it.
+const ARROW_ROOM: f64 = 6.0;
+const LANE: f64 = 7.0; // between vertical lanes in a channel
+const GUTTER: f64 = 28.0; // a channel's width with no lanes
 const GROUP_PAD: f64 = 9.0;
 const GROUP_TITLE: f64 = 18.0;
 /// The share of a pass's first box, from the left, its title sits above.
 const TITLE_CLEAR: f64 = 0.55;
 const MARGIN: f64 = 12.0;
-const LABEL_MAX: usize = 34; // characters
-/// An edge label's average glyph width.
-const LABEL_CHAR: f64 = 5.4;
+/// A label's average glyph width and line height.
+const LABEL_CHAR: f64 = 6.0;
+/// A label's line height.
+pub const LABEL_LINE: f64 = 12.0;
+/// The longest line of a label before an item's name wraps.
+const LABEL_WRAP: usize = 32;
+/// Between a label and the line it labels.
+const LABEL_GAP: f64 = 4.0;
+/// The key's row height.
+const KEY_H: f64 = 22.0;
+/// A key entry's sample width.
+pub const KEY_SAMPLE_W: f64 = 26.0;
+const KEY_CHAR: f64 = 5.9;
+/// How often the gaps may grow to make room for labels.
+const ROUNDS: usize = 6;
 
 /// What a line of a box's text is, which sets its size and style.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -120,13 +148,26 @@ pub struct LaidNode {
     pub conditional: bool,
 }
 
-/// A label's box.
+/// A rectangle.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct Rect {
     pub x: f64,
     pub y: f64,
     pub w: f64,
     pub h: f64,
+}
+
+impl Rect {
+    /// The area this and `o` share.
+    pub fn overlap(&self, o: &Rect) -> f64 {
+        let w = (self.x + self.w).min(o.x + o.w) - self.x.max(o.x);
+        let h = (self.y + self.h).min(o.y + o.h) - self.y.max(o.y);
+        if w > 0.0 && h > 0.0 {
+            w * h
+        } else {
+            0.0
+        }
+    }
 }
 
 /// An arrow, routed.
@@ -136,11 +177,11 @@ pub struct LaidEdge {
     pub to: String,
     /// What flows along it, by item key.
     pub items: Vec<String>,
-    /// What flows along it, as drawn (clipped).
-    pub label: String,
-    /// The label in full.
+    /// What flows along it, as drawn: one item per line.
+    pub label: Vec<String>,
+    /// What flows along it, on one line.
     pub title: String,
-    /// The route, from the source's bottom to the target's top.
+    /// The route, from the source to the target's top.
     pub points: Vec<(f64, f64)>,
     pub label_box: Rect,
     /// How many arrows it stands for (1 for an ordinary one).
@@ -158,6 +199,31 @@ pub struct Group {
     pub h: f64,
 }
 
+/// A style the key explains.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum KeyStyle {
+    /// A dashed box: a setting asked for the step.
+    Optional,
+    /// A dotted box: the step does something only in some runs.
+    Conditional,
+    /// A faded dotted box: the run skipped the step.
+    Skipped,
+    /// The model mark: the step runs a deep-learning model.
+    Model,
+    /// A thick arrow: several arrows drawn as one.
+    Collapsed,
+}
+
+/// One entry of the key, placed: its sample at (`x`, `y`), its text after it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct KeyEntry {
+    pub style: KeyStyle,
+    pub text: String,
+    pub x: f64,
+    pub y: f64,
+}
+
 /// A graph, laid out.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Layout {
@@ -166,6 +232,8 @@ pub struct Layout {
     pub nodes: Vec<LaidNode>,
     pub edges: Vec<LaidEdge>,
     pub groups: Vec<Group>,
+    /// The styles the graph uses; empty when it uses none.
+    pub key: Vec<KeyEntry>,
 }
 
 /// `text` in lines of at most `max` characters, broken between words, and a word longer than a
@@ -199,17 +267,6 @@ pub fn wrap(text: &str, max: usize) -> Vec<String> {
         .collect()
 }
 
-/// `text`, cut to `max` characters with an ellipsis.
-fn clip(text: &str, max: usize) -> String {
-    if text.chars().count() > max {
-        let mut s: String = text.chars().take(max.saturating_sub(1)).collect();
-        s.push('…');
-        s
-    } else {
-        text.to_string()
-    }
-}
-
 /// What a run's step did, as its box says it.
 pub fn run_state_text(state: StepState) -> &'static str {
     match state {
@@ -219,47 +276,49 @@ pub fn run_state_text(state: StepState) -> &'static str {
     }
 }
 
-/// `text` on at most two lines of `cls`, the second clipped.
-fn two_lines(text: &str, cls: LineClass, width: usize) -> Vec<TextLine> {
-    let ls = wrap(text, width);
-    let shown = if ls.len() > 2 {
-        vec![ls[0].clone(), clip(&ls[1..].join(" "), width)]
-    } else {
-        ls
-    };
-    shown
-        .into_iter()
-        .map(|text| TextLine { text, cls })
-        .collect()
+fn push_wrapped(lines: &mut Vec<TextLine>, text: &str, cls: LineClass, width: usize) {
+    lines.extend(
+        wrap(text, width)
+            .into_iter()
+            .map(|text| TextLine { text, cls }),
+    );
 }
 
-/// A box's text: the step, its algorithm, its settings and when it applies; after a run, what the
-/// step did and what it decided; for a dataset's runs, how many took it and what they decided.
-/// Long notes are cut to two lines; [`Node::tooltip`] has them in full.
+/// A box's text, in full: the step, its algorithm, its settings and when it applies; after a run,
+/// what the step did and what it decided; for a dataset's runs, each way they set the step up,
+/// how many took it, and what they decided.
 pub fn node_lines(n: &Node) -> Vec<TextLine> {
-    let width = LineClass::Title.room() - if n.models.is_empty() { 0 } else { 7 };
-    let mut lines = two_lines(&n.label, LineClass::Title, width);
+    let mut lines = Vec::new();
+    let title = LineClass::Title.room() - if n.models.is_empty() { 0 } else { 7 };
+    push_wrapped(&mut lines, &n.label, LineClass::Title, title);
     if let Some(alg) = &n.algorithm_label {
-        lines.push(TextLine {
-            text: clip(alg, LineClass::Algorithm.room()),
-            cls: LineClass::Algorithm,
-        });
+        push_wrapped(
+            &mut lines,
+            alg,
+            LineClass::Algorithm,
+            LineClass::Algorithm.room(),
+        );
     }
     for s in &n.settings {
-        for text in wrap(s, LineClass::Setting.room()) {
-            lines.push(TextLine {
-                text,
-                cls: LineClass::Setting,
-            });
+        push_wrapped(&mut lines, s, LineClass::Setting, LineClass::Setting.room());
+    }
+    if let Some(d) = &n.dataset {
+        for a in &d.alternatives {
+            push_wrapped(
+                &mut lines,
+                &d.alternative_text(a),
+                LineClass::Setting,
+                LineClass::Setting.room(),
+            );
         }
     }
     if let Some(when) = &n.only_when {
-        for text in wrap(&format!("Only when {when}"), LineClass::When.room()) {
-            lines.push(TextLine {
-                text,
-                cls: LineClass::When,
-            });
-        }
+        push_wrapped(
+            &mut lines,
+            &format!("Only when {when}"),
+            LineClass::When,
+            LineClass::When.room(),
+        );
     }
     if let Some(run) = &n.run {
         lines.push(TextLine {
@@ -267,26 +326,25 @@ pub fn node_lines(n: &Node) -> Vec<TextLine> {
             cls: LineClass::Run,
         });
         for d in &run.decisions {
-            lines.extend(two_lines(
+            push_wrapped(
+                &mut lines,
                 &d.reason,
                 LineClass::Note,
                 LineClass::Note.room(),
-            ));
+            );
         }
     }
     if let Some(d) = &n.dataset {
         for text in d.summary() {
-            lines.push(TextLine {
-                text,
-                cls: LineClass::Run,
-            });
+            push_wrapped(&mut lines, &text, LineClass::Run, LineClass::Run.room());
         }
         for c in &d.decisions {
-            lines.extend(two_lines(
+            push_wrapped(
+                &mut lines,
                 &d.decision_note(c),
                 LineClass::Note,
                 LineClass::Note.room(),
-            ));
+            );
         }
     }
     lines
@@ -300,25 +358,39 @@ struct Drawn {
     collapsed: usize,
 }
 
-/// The arrows as drawn: every arrow into [`RETURN_STEP`] becomes one, from the last step that
-/// feeds it, carrying all their items.
+/// The arrows as drawn: two from one box to another are one, and every arrow into
+/// [`RETURN_STEP`] becomes one, from the last step that feeds it, carrying all their items.
 fn drawn_edges(graph: &PipelineGraph) -> Vec<Drawn> {
     let order = |id: &str| graph.nodes.iter().position(|n| n.id == id).unwrap_or(0);
-    let one = |e: &Edge| Drawn {
-        from: e.from.clone(),
-        to: e.to.clone(),
-        items: e.items.clone(),
-        collapsed: 1,
-    };
+    let mut out: Vec<Drawn> = Vec::new();
+    let add =
+        |out: &mut Vec<Drawn>, from: &str, to: &str, items: &[String], collapsed: usize| match out
+            .iter_mut()
+            .find(|d| d.from == from && d.to == to)
+        {
+            Some(d) => {
+                for i in items {
+                    if !d.items.contains(i) {
+                        d.items.push(i.clone());
+                    }
+                }
+                d.collapsed = d.collapsed.max(collapsed);
+            }
+            None => out.push(Drawn {
+                from: from.into(),
+                to: to.into(),
+                items: items.to_vec(),
+                collapsed,
+            }),
+        };
     let into: Vec<&Edge> = graph.edges.iter().filter(|e| e.to == RETURN_STEP).collect();
-    let mut out: Vec<Drawn> = graph
-        .edges
-        .iter()
-        .filter(|e| e.to != RETURN_STEP)
-        .map(one)
-        .collect();
+    for e in graph.edges.iter().filter(|e| e.to != RETURN_STEP) {
+        add(&mut out, &e.from, &e.to, &e.items, 1);
+    }
     if into.len() <= 1 {
-        out.extend(into.into_iter().map(one));
+        for e in into {
+            add(&mut out, &e.from, &e.to, &e.items, 1);
+        }
         return out;
     }
     let mut last = into[0];
@@ -328,21 +400,21 @@ fn drawn_edges(graph: &PipelineGraph) -> Vec<Drawn> {
         }
     }
     let mut items: Vec<String> = Vec::new();
-    for key in into.iter().flat_map(|e| &e.items) {
-        if !items.contains(key) {
-            items.push(key.clone());
+    for i in into.iter().flat_map(|e| &e.items) {
+        if !items.contains(i) {
+            items.push(i.clone());
         }
     }
     out.push(Drawn {
         from: last.from.clone(),
-        to: RETURN_STEP.to_string(),
+        to: RETURN_STEP.into(),
         items,
         collapsed: into.len(),
     });
     out
 }
 
-/// What flows along an arrow, by item label, each once ("Phase, Magnitude" for every echo's).
+/// What flows along an arrow, by item label, each once ("Phase", "Magnitude" for every echo's).
 pub fn item_labels(graph: &PipelineGraph, keys: &[String]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for key in keys {
@@ -364,24 +436,53 @@ fn side_step(n: &Node) -> bool {
             .is_some_and(|s| s.starts_with("pipeline."))
 }
 
-/// Where an arrow runs: its ends' rows and columns, and the tracks and lane it takes.
-#[derive(Clone, Copy)]
-struct Route {
-    s: (usize, usize, usize), // row, column, index
-    t: (usize, usize, usize),
-    long: bool,
-    gutter: usize,
-    lane: usize,
-    exit_track: usize,
-    entry_track: usize,
-}
-
 /// A pass's title.
 fn group_title(b: Branch) -> &'static str {
     match b {
         Branch::Main => "Main pass",
         Branch::Reliable => "Reliable pass",
     }
+}
+
+/// Which side of its source a long arrow leaves by.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Side {
+    Left,
+    Right,
+}
+
+/// An arrow, with where its ends are and how it runs.
+struct Arrow {
+    from: String,
+    to: String,
+    items: Vec<String>,
+    collapsed: usize,
+    /// Source and target: row, column, index.
+    s: (usize, usize, usize),
+    t: (usize, usize, usize),
+    /// It skips a row: out of the source's side, down a lane.
+    long: bool,
+    /// For a long arrow, its channel (channel g is left of column g) and the source's side.
+    gutter: usize,
+    side: Side,
+    /// Its ports: a share of the source's width (bottom) or height (side), and of the target's width.
+    out: f64,
+    inn: f64,
+    /// What flows along it, one item each.
+    names: Vec<String>,
+    title: String,
+}
+
+/// A label's lines, width and height, its items' names wrapped at `wrap` characters.
+fn label_lines(names: &[String], collapsed: usize, wrap_at: usize) -> (Vec<String>, f64, f64) {
+    let lines: Vec<String> = if collapsed > 1 {
+        vec![format!("{} outputs", names.len())]
+    } else {
+        names.iter().flat_map(|n| wrap(n, wrap_at)).collect()
+    };
+    let lw = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0) as f64 * LABEL_CHAR + 8.0;
+    let lh = lines.len() as f64 * LABEL_LINE + 3.0;
+    (lines, lw, lh)
 }
 
 /// `graph`, laid out.
@@ -392,14 +493,9 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
         .enumerate()
         .map(|(i, n)| (n.id.as_str(), i))
         .collect();
-    let edges: Vec<Drawn> = drawn_edges(graph)
+    let drawn: Vec<Drawn> = drawn_edges(graph)
         .into_iter()
-        .filter(
-            |e| match (index.get(e.from.as_str()), index.get(e.to.as_str())) {
-                (Some(a), Some(b)) => a < b,
-                _ => false,
-            },
-        )
+        .filter(|e| matches!((index.get(e.from.as_str()), index.get(e.to.as_str())), (Some(a), Some(b)) if a < b))
         .collect();
 
     // Columns: in a two-pass run, the main pass, the spine and the reliable pass have their own.
@@ -420,7 +516,7 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
     let mut taken: HashSet<(usize, usize)> = HashSet::new();
     for (i, n) in nodes.iter().enumerate() {
         let mut r = 0;
-        for e in edges.iter().filter(|e| e.to == n.id) {
+        for e in drawn.iter().filter(|e| e.to == n.id) {
             r = r.max(row[index[e.from.as_str()]] + 1);
         }
         let c = match n.branch.and_then(dedicated) {
@@ -481,25 +577,8 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
                 .fold(0.0, f64::max)
         })
         .collect();
-
-    let rc = |id: &str| {
-        let i = index[id];
-        (row[i], col[i], i)
-    };
-    let is_long = |e: &Drawn| rc(&e.to).0 > rc(&e.from).0 + 1;
-    let gutter_of = |e: &Drawn| {
-        let (s, t) = (rc(&e.from), rc(&e.to));
-        if s.1 < t.1 {
-            s.1 + 1
-        } else if s.1 > t.1 {
-            s.1
-        } else if s.1 == 0 {
-            0 // the left edge for the first column
-        } else {
-            s.1 + 1
-        }
-    };
-    let mut first_of_group: HashSet<&str> = HashSet::new();
+    let mut first_of_group: HashSet<usize> = HashSet::new();
+    let mut group_rows: HashSet<usize> = HashSet::new();
     if two {
         for b in [Branch::Main, Branch::Reliable] {
             let mut members: Vec<usize> = (0..n_nodes)
@@ -507,285 +586,27 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
                 .collect();
             members.sort_by_key(|&i| row[i]);
             if let Some(&first) = members.first() {
-                first_of_group.insert(&nodes[first].id);
+                first_of_group.insert(first);
+                group_rows.insert(row[first]);
             }
         }
     }
 
-    // Ports, as fractions of a box's width: each arrow into a step enters at its own point, in
-    // the order of the columns it comes from. Out of a step, each arrow to the next row leaves at
-    // its own point, and the arrows that go further leave together (and share their way down a
-    // gutter until they part).
-    let mut port_out = vec![0.5; edges.len()];
-    let mut port_in = vec![0.5; edges.len()];
-    for n in nodes {
-        let outs: Vec<usize> = (0..edges.len())
-            .filter(|&k| edges[k].from == n.id)
-            .collect();
-        // Slots: each short arrow, and one for all the long ones, by where they head.
-        let mut slots: Vec<(f64, isize, Vec<usize>)> = outs
-            .iter()
-            .filter(|&&k| !is_long(&edges[k]))
-            .map(|&k| {
-                let t = rc(&edges[k].to);
-                (t.1 as f64, t.2 as isize, vec![k])
-            })
-            .collect();
-        let longs: Vec<usize> = outs
-            .iter()
-            .copied()
-            .filter(|&k| is_long(&edges[k]))
-            .collect();
-        if !longs.is_empty() {
-            let at = longs
-                .iter()
-                .map(|&k| gutter_of(&edges[k]))
-                .min()
-                .unwrap_or(0) as f64
-                - 0.5;
-            slots.push((at, -1, longs));
-        }
-        slots.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
-        let n_slots = slots.len() as f64;
-        for (k, slot) in slots.iter().enumerate() {
-            for &e in &slot.2 {
-                port_out[e] = (k as f64 + 1.0) / (n_slots + 1.0);
-            }
-        }
-        let mut ins: Vec<usize> = (0..edges.len()).filter(|&k| edges[k].to == n.id).collect();
-        ins.sort_by_key(|&k| {
-            let s = rc(&edges[k].from);
-            (s.1, s.2)
-        });
-        // A pass's first step has the pass's title above its left half: its arrows come in on the right.
-        let (lo, span) = if first_of_group.contains(n.id.as_str()) {
-            (TITLE_CLEAR, 1.0 - TITLE_CLEAR)
-        } else {
-            (0.0, 1.0)
-        };
-        let n_ins = ins.len() as f64;
-        for (k, &e) in ins.iter().enumerate() {
-            port_in[e] = lo + span * (k as f64 + 1.0) / (n_ins + 1.0);
-        }
-    }
-
-    // Each arrow's tracks (gap g is the one above row g) and, for a long one, its gutter (gutter
-    // g is left of column g) and lane in it.
-    let mut routes: Vec<Route> = edges
-        .iter()
+    // The arrows: which run long, by which channel, and their labels.
+    let rc = |id: &str| {
+        let i = index[id];
+        (row[i], col[i], i)
+    };
+    let mut arrows: Vec<Arrow> = drawn
+        .into_iter()
         .map(|e| {
-            let long = is_long(e);
-            Route {
-                s: rc(&e.from),
-                t: rc(&e.to),
-                long,
-                gutter: if long { gutter_of(e) } else { 0 },
-                lane: 0,
-                exit_track: 0,
-                entry_track: 0,
-            }
-        })
-        .collect();
-    let mut gap_exit: Vec<Vec<&str>> = vec![Vec::new(); n_rows + 1];
-    let mut gap_entry: Vec<Vec<usize>> = vec![Vec::new(); n_rows + 1];
-    // Entry tracks: per gap, the arrows into that row's steps, left to right.
-    for (r, entry) in gap_entry.iter_mut().enumerate().take(n_rows) {
-        let mut list: Vec<usize> = (0..edges.len()).filter(|&k| routes[k].t.0 == r).collect();
-        list.sort_by(|&a, &b| {
-            routes[a]
-                .t
-                .1
-                .cmp(&routes[b].t.1)
-                .then(port_in[a].total_cmp(&port_in[b]))
-        });
-        *entry = list;
-    }
-    // Exit tracks: one per step with long arrows, in the gap below it.
-    for (k, e) in edges.iter().enumerate() {
-        let g = &mut gap_exit[routes[k].s.0 + 1];
-        if routes[k].long && !g.contains(&e.from.as_str()) {
-            g.push(&e.from);
-        }
-    }
-    for (r, entry) in gap_entry.iter().enumerate() {
-        for (k, &e) in entry.iter().enumerate() {
-            routes[e].entry_track = gap_exit[r].len() + k;
-        }
-    }
-    for (k, e) in edges.iter().enumerate() {
-        if routes[k].long {
-            let g = &gap_exit[routes[k].s.0 + 1];
-            routes[k].exit_track = g.iter().position(|id| *id == e.from).unwrap_or(0);
-        }
-    }
-    // Gutter lanes: one per step and gutter, from below the step to its furthest target there;
-    // lanes whose rows overlap are apart.
-    let mut lanes: Vec<BTreeMap<usize, Vec<(usize, usize)>>> = vec![BTreeMap::new(); n_cols + 1];
-    struct Bundle {
-        gutter: usize,
-        from: usize,
-        to: usize,
-        list: Vec<usize>,
-    }
-    let mut bundles: Vec<(usize, String, Bundle)> = Vec::new();
-    for (k, e) in edges.iter().enumerate().filter(|(k, _)| routes[*k].long) {
-        let ro = routes[k];
-        match bundles
-            .iter_mut()
-            .find(|(g, from, _)| *g == ro.gutter && *from == e.from)
-        {
-            Some((_, _, b)) => {
-                b.to = b.to.max(ro.t.0);
-                b.list.push(k);
-            }
-            None => bundles.push((
-                ro.gutter,
-                e.from.clone(),
-                Bundle {
-                    gutter: ro.gutter,
-                    from: ro.s.0 + 1,
-                    to: ro.t.0,
-                    list: vec![k],
-                },
-            )),
-        }
-    }
-    let mut bundles: Vec<Bundle> = bundles.into_iter().map(|(_, _, b)| b).collect();
-    bundles.sort_by_key(|b| (b.from, b.to));
-    for b in &bundles {
-        let used = &mut lanes[b.gutter];
-        let mut k = 0;
-        while used
-            .get(&k)
-            .is_some_and(|spans| spans.iter().any(|&(lo, hi)| !(b.to < lo || b.from > hi)))
-        {
-            k += 1;
-        }
-        used.entry(k).or_default().push((b.from, b.to));
-        for &e in &b.list {
-            routes[e].lane = k;
-        }
-    }
-
-    // Sizes and positions.
-    let mut group_rows: HashSet<usize> = HashSet::new();
-    if two {
-        for b in [Branch::Main, Branch::Reliable] {
-            if let Some(r) = (0..n_nodes)
-                .filter(|&i| nodes[i].branch == Some(b))
-                .map(|i| row[i])
-                .min()
-            {
-                group_rows.insert(r);
-            }
-        }
-    }
-    let gap_h: Vec<f64> = (0..=n_rows)
-        .map(|r| {
-            let tracks = (gap_exit[r].len() + gap_entry[r].len()) as f64;
-            let title = if group_rows.contains(&r) {
-                GROUP_TITLE
+            let (s, t) = (rc(&e.from), rc(&e.to));
+            // The channel beside the source on the target's side; the outer left one for a
+            // target straight below in the first column.
+            let (gutter, side) = if t.1 > s.1 || (t.1 == s.1 && s.1 > 0) {
+                (s.1 + 1, Side::Right)
             } else {
-                0.0
-            };
-            let group_bottom = if two && r > 0 { GROUP_PAD } else { 0.0 };
-            (if r == 0 { 0.0 } else { GAP })
-                + tracks * TRACK
-                + if tracks > 0.0 { GAP - 4.0 } else { 0.0 }
-                + title
-                + group_bottom
-        })
-        .collect();
-    let gutter_w: Vec<f64> = (0..=n_cols)
-        .map(|g| {
-            let pads = if two && (reserved.contains(&g) || (g > 0 && reserved.contains(&(g - 1)))) {
-                2.0 * GROUP_PAD
-            } else {
-                0.0
-            };
-            (if g == 0 || g == n_cols {
-                GUTTER / 2.0
-            } else {
-                GUTTER
-            }) + pads
-                + lanes[g].len() as f64 * LANE
-        })
-        .collect();
-    let mut col_x = Vec::with_capacity(n_cols);
-    let mut x = MARGIN;
-    for g in gutter_w.iter().take(n_cols) {
-        x += g;
-        col_x.push(x);
-        x += NODE_W;
-    }
-    let width = x + gutter_w[n_cols] + MARGIN;
-    let mut row_y = Vec::with_capacity(n_rows);
-    let mut gap_y = Vec::with_capacity(n_rows + 1);
-    let mut y = MARGIN;
-    for r in 0..n_rows {
-        gap_y.push(y);
-        y += gap_h[r];
-        row_y.push(y);
-        y += row_h[r];
-    }
-    gap_y.push(y);
-    let height = y + MARGIN + if two { GROUP_PAD } else { 0.0 };
-
-    let laid: Vec<LaidNode> = nodes
-        .iter()
-        .enumerate()
-        .map(|(i, n)| LaidNode {
-            id: n.id.clone(),
-            x: col_x[col[i]],
-            y: row_y[row[i]],
-            w: NODE_W,
-            h: heights[i],
-            row: row[i],
-            col: col[i],
-            lines: lines[i].clone(),
-            optional: n.enabled_by.is_some(),
-            conditional: n.only_when.is_some(),
-        })
-        .collect();
-    // Track k of gap r: below the margin (and below a pass's bottom edge).
-    let track_y = |r: usize, k: usize| {
-        gap_y[r]
-            + (if r == 0 { 0.0 } else { GAP })
-            + (if two && r > 0 { GROUP_PAD } else { 0.0 })
-            + k as f64 * TRACK
-            + 4.0
-    };
-    let lane_x = |g: usize, k: usize| {
-        let left = if g == 0 {
-            col_x[0] - gutter_w[0]
-        } else {
-            col_x[g - 1] + NODE_W
-        };
-        left + gutter_w[g] / 2.0 + (k as f64 - (lanes[g].len() as f64 - 1.0) / 2.0) * LANE
-    };
-
-    let laid_edges: Vec<LaidEdge> = edges
-        .iter()
-        .enumerate()
-        .map(|(k, e)| {
-            let ro = routes[k];
-            let (a, b) = (&laid[ro.s.2], &laid[ro.t.2]);
-            let sx = (a.x + a.w * port_out[k]).round();
-            let tx = (b.x + b.w * port_in[k]).round();
-            let ty = track_y(ro.t.0, ro.entry_track);
-            let points = if ro.long {
-                let ey = track_y(ro.s.0 + 1, ro.exit_track);
-                let gx = lane_x(ro.gutter, ro.lane).round();
-                vec![
-                    (sx, a.y + a.h),
-                    (sx, ey),
-                    (gx, ey),
-                    (gx, ty),
-                    (tx, ty),
-                    (tx, b.y),
-                ]
-            } else {
-                vec![(sx, a.y + a.h), (sx, ty), (tx, ty), (tx, b.y)]
+                (s.1, Side::Left)
             };
             let names = item_labels(graph, &e.items);
             let title = if e.collapsed > 1 {
@@ -793,74 +614,539 @@ pub fn layout(graph: &PipelineGraph) -> Layout {
             } else {
                 names.join(", ")
             };
-            let label = clip(
-                &if e.collapsed > 1 {
-                    format!("{} outputs", names.len())
-                } else {
-                    title.clone()
-                },
-                LABEL_MAX,
-            );
-            let lw = (label.chars().count() as f64 * LABEL_CHAR).ceil() + 8.0;
-            // On its last track, beside the drop into the target: to the right, or to the left
-            // where it would run off the drawing. A gap holds no boxes and each track one label,
-            // so it overlaps neither.
-            let lx = if tx + 3.0 + lw <= width - MARGIN / 2.0 {
-                tx + 3.0
-            } else {
-                (MARGIN / 2.0).max(tx - 3.0 - lw)
-            };
-            LaidEdge {
-                from: e.from.clone(),
-                to: e.to.clone(),
-                items: e.items.clone(),
-                label,
-                title,
-                points,
-                label_box: Rect {
-                    x: lx,
-                    y: ty + 1.0,
-                    w: lw,
-                    h: TRACK - 2.0,
-                },
+            Arrow {
+                from: e.from,
+                to: e.to,
+                items: e.items,
                 collapsed: e.collapsed,
+                s,
+                t,
+                long: t.0 > s.0 + 1,
+                gutter,
+                side,
+                out: 0.5,
+                inn: 0.5,
+                names,
+                title,
             }
         })
         .collect();
 
-    let mut groups = Vec::new();
-    if two {
-        for b in [Branch::Main, Branch::Reliable] {
-            let members: Vec<&LaidNode> = laid
-                .iter()
-                .zip(nodes)
-                .filter(|(_, n)| n.branch == Some(b))
-                .map(|(l, _)| l)
+    // Ports. Out of a box's bottom, each arrow to the next row, ordered by where it heads; out of
+    // each side, each long arrow, the one going furthest highest (so the lanes nest). Into a
+    // box's top, each arrow, ordered by where it comes from.
+    for i in 0..n_nodes {
+        let mut bottom: Vec<usize> = (0..arrows.len())
+            .filter(|&k| arrows[k].s.2 == i && !arrows[k].long)
+            .collect();
+        bottom.sort_by_key(|&k| (arrows[k].t.1, arrows[k].t.2));
+        let n = bottom.len() as f64;
+        for (j, &k) in bottom.iter().enumerate() {
+            arrows[k].out = (j as f64 + 1.0) / (n + 1.0);
+        }
+        for side in [Side::Left, Side::Right] {
+            let mut ks: Vec<usize> = (0..arrows.len())
+                .filter(|&k| arrows[k].s.2 == i && arrows[k].long && arrows[k].side == side)
                 .collect();
-            let Some(first) = members.first() else {
-                continue;
-            };
-            let top = members.iter().map(|n| n.y).fold(f64::INFINITY, f64::min);
-            let bottom = members
-                .iter()
-                .map(|n| n.y + n.h)
-                .fold(f64::NEG_INFINITY, f64::max);
-            groups.push(Group {
-                branch: b,
-                title: group_title(b).to_string(),
-                x: first.x - GROUP_PAD,
-                y: top - GROUP_TITLE - 2.0,
-                w: NODE_W + 2.0 * GROUP_PAD,
-                h: bottom - top + GROUP_TITLE + 2.0 + GROUP_PAD,
-            });
+            ks.sort_by_key(|&k| (std::cmp::Reverse(arrows[k].t.0), arrows[k].t.2));
+            let n = ks.len() as f64;
+            for (j, &k) in ks.iter().enumerate() {
+                arrows[k].out = (j as f64 + 1.0) / (n + 1.0);
+            }
         }
     }
-    Layout {
-        width,
-        height,
-        nodes: laid,
-        edges: laid_edges,
-        groups,
+    for i in 0..n_nodes {
+        // Where each arrow comes from, left to right: a column and a place in it.
+        // The arrow from the box straight above comes in first: leftmost, with the highest track,
+        // so it crosses no other arrow's label.
+        let approach = |a: &Arrow| {
+            if a.long {
+                a.gutter as f64 - 0.5
+            } else if a.s.1 == a.t.1 {
+                -1.0
+            } else {
+                a.s.1 as f64 + a.out
+            }
+        };
+        let mut top: Vec<usize> = (0..arrows.len()).filter(|&k| arrows[k].t.2 == i).collect();
+        top.sort_by(|&a, &b| {
+            approach(&arrows[a])
+                .total_cmp(&approach(&arrows[b]))
+                .then(arrows[a].s.2.cmp(&arrows[b].s.2))
+        });
+        // A pass's first step has the pass's title above its left half: its arrows come in on the right.
+        let (lo, span) = if first_of_group.contains(&i) {
+            (TITLE_CLEAR, 1.0 - TITLE_CLEAR)
+        } else {
+            (0.0, 1.0)
+        };
+        let n = top.len() as f64;
+        for (j, &k) in top.iter().enumerate() {
+            arrows[k].inn = lo + span * (j as f64 + 1.0) / (n + 1.0);
+        }
+    }
+    // A short arrow whose ends are close in one column runs straight down when neither end has
+    // another arrow on that side.
+    for k in 0..arrows.len() {
+        let a = &arrows[k];
+        if a.long || a.s.1 != a.t.1 {
+            continue;
+        }
+        let alone_out = !arrows
+            .iter()
+            .enumerate()
+            .any(|(j, b)| j != k && b.s.2 == a.s.2 && !b.long);
+        let alone_in = !arrows
+            .iter()
+            .enumerate()
+            .any(|(j, b)| j != k && b.t.2 == a.t.2);
+        if alone_out {
+            let inn = arrows[k].inn;
+            arrows[k].out = inn;
+        } else if alone_in && !first_of_group.contains(&a.t.2) {
+            let out = arrows[k].out;
+            arrows[k].inn = out;
+        }
+    }
+
+    // The arrows into each row, left to right: their tracks run top to bottom in that order.
+    let entering: Vec<Vec<usize>> = (0..n_rows)
+        .map(|r| {
+            let mut ks: Vec<usize> = (0..arrows.len()).filter(|&k| arrows[k].t.0 == r).collect();
+            ks.sort_by(|&a, &b| {
+                (arrows[a].t.1 as f64 + arrows[a].inn)
+                    .total_cmp(&(arrows[b].t.1 as f64 + arrows[b].inn))
+            });
+            ks
+        })
+        .collect();
+
+    let mut extra = vec![0.0f64; arrows.len()];
+    let mut wrap_at = vec![LABEL_WRAP; arrows.len()];
+    // Room kept free at the left of each channel for labels that reach into it from the column
+    // on its left; its lanes run to the right of it.
+    let mut reserve = vec![0.0f64; n_cols + 1];
+    let mut round = 0;
+    loop {
+        let labels: Vec<(Vec<String>, f64, f64)> = arrows
+            .iter()
+            .zip(&wrap_at)
+            .map(|(a, &w)| label_lines(&a.names, a.collapsed, w))
+            .collect();
+        // Gap r is above row r: a margin, then each entering arrow's track with its label below
+        // it, then room for the arrowheads, and a pass's title.
+        let mut track_off = vec![0.0f64; arrows.len()];
+        let gap_h: Vec<f64> = (0..=n_rows)
+            .map(|r| {
+                let top =
+                    (if r == 0 { 0.0 } else { GAP }) + if two && r > 0 { GROUP_PAD } else { 0.0 };
+                let title = if group_rows.contains(&r) {
+                    GROUP_TITLE
+                } else {
+                    0.0
+                };
+                let ks = entering.get(r).map(Vec::as_slice).unwrap_or(&[]);
+                let mut y = 0.0;
+                for (j, &k) in ks.iter().enumerate() {
+                    track_off[k] = top + y;
+                    let room = labels[k].2 + 6.0 + extra[k];
+                    y += if j + 1 < ks.len() {
+                        TRACK.max(room)
+                    } else {
+                        room
+                    };
+                }
+                top + y + if ks.is_empty() { 0.0 } else { ARROW_ROOM } + title
+            })
+            .collect();
+        let mut row_y = Vec::with_capacity(n_rows);
+        let mut gap_y = Vec::with_capacity(n_rows + 1);
+        let mut y = MARGIN;
+        for r in 0..n_rows {
+            gap_y.push(y);
+            y += gap_h[r];
+            row_y.push(y);
+            y += row_h[r];
+        }
+        gap_y.push(y);
+        let graph_bottom = y + if two { GROUP_PAD } else { 0.0 };
+        let track_y = |k: usize| gap_y[arrows[k].t.0] + track_off[k];
+        let box_y = |i: usize| row_y[row[i]];
+        let exit_y =
+            |k: usize| (box_y(arrows[k].s.2) + heights[arrows[k].s.2] * arrows[k].out).round();
+
+        // Lanes: in each channel, the arrows leaving the column on its left and those leaving the
+        // column on its right, each set nested (the one starting highest outermost); arrows whose
+        // runs overlap are apart.
+        let mut lane_pos = vec![0usize; arrows.len()];
+        let mut lane_count = vec![0usize; n_cols + 1];
+        for (g, count) in lane_count.iter_mut().enumerate() {
+            let mut sets: Vec<Vec<(usize, usize)>> = Vec::new();
+            for side in [Side::Right, Side::Left] {
+                let mut ks: Vec<usize> = (0..arrows.len())
+                    .filter(|&k| arrows[k].long && arrows[k].gutter == g && arrows[k].side == side)
+                    .collect();
+                ks.sort_by(|&a, &b| {
+                    exit_y(a)
+                        .total_cmp(&exit_y(b))
+                        .then(track_y(b).total_cmp(&track_y(a)))
+                });
+                let mut lanes: Vec<Vec<(f64, f64)>> = Vec::new();
+                let mut got = Vec::new();
+                for k in ks {
+                    let (lo, hi) = (exit_y(k), track_y(k));
+                    let l = (0..lanes.len())
+                        .find(|&l| lanes[l].iter().all(|&(a, b)| hi + 2.0 < a || lo > b + 2.0))
+                        .unwrap_or(lanes.len());
+                    if lanes.len() <= l {
+                        lanes.push(Vec::new());
+                    }
+                    lanes[l].push((lo, hi));
+                    got.push((k, l));
+                }
+                sets.push(got);
+            }
+            let n_right = sets[0].iter().map(|&(_, l)| l + 1).max().unwrap_or(0);
+            let n_left = sets[1].iter().map(|&(_, l)| l + 1).max().unwrap_or(0);
+            // Left to right: the right-side set, its outermost furthest right, then the left-side
+            // set, its outermost furthest left.
+            for &(k, l) in &sets[0] {
+                lane_pos[k] = n_right - 1 - l;
+            }
+            for &(k, l) in &sets[1] {
+                lane_pos[k] = n_right + l;
+            }
+            *count = n_right + n_left;
+        }
+        let gutter_w: Vec<f64> = (0..=n_cols)
+            .map(|g| {
+                let pads =
+                    if two && (reserved.contains(&g) || (g > 0 && reserved.contains(&(g - 1)))) {
+                        2.0 * GROUP_PAD
+                    } else {
+                        0.0
+                    };
+                (if g == 0 || g == n_cols {
+                    GUTTER / 2.0
+                } else {
+                    GUTTER
+                }) + pads
+                    + lane_count[g] as f64 * LANE
+                    + reserve[g]
+            })
+            .collect();
+        let mut col_x = Vec::with_capacity(n_cols);
+        let mut x = MARGIN;
+        for g in gutter_w.iter().take(n_cols) {
+            x += g;
+            col_x.push(x);
+            x += NODE_W;
+        }
+        let mut width = x + gutter_w[n_cols] + MARGIN;
+        let lane_x = |k: usize| {
+            let g = arrows[k].gutter;
+            let left = if g == 0 {
+                col_x[0] - gutter_w[0]
+            } else {
+                col_x[g - 1] + NODE_W
+            };
+            (left
+                + reserve[g]
+                + (gutter_w[g] - reserve[g] - lane_count[g] as f64 * LANE) / 2.0
+                + (lane_pos[k] as f64 + 0.5) * LANE)
+                .round()
+        };
+
+        let laid: Vec<LaidNode> = nodes
+            .iter()
+            .enumerate()
+            .map(|(i, n)| LaidNode {
+                id: n.id.clone(),
+                x: col_x[col[i]],
+                y: box_y(i),
+                w: NODE_W,
+                h: heights[i],
+                row: row[i],
+                col: col[i],
+                lines: lines[i].clone(),
+                optional: n.enabled_by.is_some(),
+                conditional: n.only_when.is_some(),
+            })
+            .collect();
+
+        let routes: Vec<Vec<(f64, f64)>> = (0..arrows.len())
+            .map(|k| {
+                let a = &arrows[k];
+                let (src, dst) = (&laid[a.s.2], &laid[a.t.2]);
+                let tx = (dst.x + dst.w * a.inn).round();
+                let ty = track_y(k);
+                if a.long {
+                    let sx = if a.side == Side::Left {
+                        src.x
+                    } else {
+                        src.x + src.w
+                    };
+                    let (sy, lx) = (exit_y(k), lane_x(k));
+                    vec![(sx, sy), (lx, sy), (lx, ty), (tx, ty), (tx, dst.y)]
+                } else {
+                    let sx = (src.x + src.w * a.out).round();
+                    if (sx - tx).abs() < 1.0 {
+                        vec![(tx, src.y + src.h), (tx, dst.y)]
+                    } else {
+                        vec![(sx, src.y + src.h), (sx, ty), (tx, ty), (tx, dst.y)]
+                    }
+                }
+            })
+            .collect();
+
+        let mut groups = Vec::new();
+        if two {
+            for b in [Branch::Main, Branch::Reliable] {
+                let members: Vec<&LaidNode> = laid
+                    .iter()
+                    .zip(nodes)
+                    .filter(|(_, n)| n.branch == Some(b))
+                    .map(|(l, _)| l)
+                    .collect();
+                let Some(first) = members.first() else {
+                    continue;
+                };
+                let top = members.iter().map(|n| n.y).fold(f64::INFINITY, f64::min);
+                let bottom = members
+                    .iter()
+                    .map(|n| n.y + n.h)
+                    .fold(f64::NEG_INFINITY, f64::max);
+                groups.push(Group {
+                    branch: b,
+                    title: group_title(b).to_string(),
+                    x: first.x - GROUP_PAD,
+                    y: top - GROUP_TITLE - 2.0,
+                    w: NODE_W + 2.0 * GROUP_PAD,
+                    h: bottom - top + GROUP_TITLE + 2.0 + GROUP_PAD,
+                });
+            }
+        }
+
+        // Labels: beside the last drop, else wherever along the arrow is free, else the gap grows.
+        let mut obstacles: Vec<Rect> = laid
+            .iter()
+            .map(|n| Rect {
+                x: n.x - 2.0,
+                y: n.y - 2.0,
+                w: n.w + 4.0,
+                h: n.h + 4.0,
+            })
+            .collect();
+        for g in &groups {
+            obstacles.push(Rect {
+                x: g.x,
+                y: g.y,
+                w: 100.0,
+                h: GROUP_TITLE,
+            });
+        }
+        let segments: Vec<Vec<Rect>> = routes
+            .iter()
+            .map(|pts| {
+                pts.windows(2)
+                    .map(|w| {
+                        let (x0, x1) = (w[0].0.min(w[1].0), w[0].0.max(w[1].0));
+                        let (y0, y1) = (w[0].1.min(w[1].1), w[0].1.max(w[1].1));
+                        Rect {
+                            x: x0 - 1.5,
+                            y: y0 - 1.5,
+                            w: x1 - x0 + 3.0,
+                            h: y1 - y0 + 3.0,
+                        }
+                    })
+                    .collect()
+            })
+            .collect();
+        let mut placed: Vec<Rect> = Vec::new();
+        let mut boxes = vec![
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 0.0,
+                h: 0.0
+            };
+            arrows.len()
+        ];
+        let mut grew = false;
+        for k in entering.iter().flatten().copied() {
+            let a = &arrows[k];
+            let pts = &routes[k];
+            let (lw, lh) = (labels[k].1, labels[k].2);
+            let cost = |r: &Rect, placed: &[Rect]| -> f64 {
+                let mut c: f64 = obstacles.iter().chain(placed).map(|o| r.overlap(o)).sum();
+                c += segments
+                    .iter()
+                    .flatten()
+                    .map(|seg| r.overlap(seg))
+                    .sum::<f64>();
+                if r.x < MARGIN / 2.0 {
+                    c += 1e6;
+                }
+                c
+            };
+            // What a wider gap cannot cure: a vertical line through the label's place.
+            let crossed = |r: &Rect| {
+                r.x < MARGIN / 2.0
+                    || segments
+                        .iter()
+                        .flatten()
+                        .any(|seg| seg.w <= 3.5 && r.overlap(seg) > 0.0)
+            };
+            // Beside the drop into the target, below the track: right, then left.
+            let (tx, _) = pts[pts.len() - 2];
+            let below_track = track_y(k) + 3.0;
+            let candidates = [
+                Rect {
+                    x: tx + LABEL_GAP,
+                    y: below_track,
+                    w: lw,
+                    h: lh,
+                },
+                Rect {
+                    x: tx - LABEL_GAP - lw,
+                    y: below_track,
+                    w: lw,
+                    h: lh,
+                },
+            ];
+            let chosen = match candidates.iter().find(|r| cost(r, &placed) == 0.0) {
+                Some(r) => *r,
+                None => {
+                    if round < ROUNDS {
+                        if candidates.iter().all(&crossed) {
+                            // A line runs through both places: wrap the label narrower, to the
+                            // widest that clears it on either side.
+                            // Never inside a word.
+                            let longest = a
+                                .names
+                                .iter()
+                                .flat_map(|n| n.split_whitespace())
+                                .map(|w| w.chars().count())
+                                .max()
+                                .unwrap_or(1);
+                            let fits = (longest..wrap_at[k]).rev().find(|&w| {
+                                let (_, w2, h2) = label_lines(&a.names, a.collapsed, w);
+                                [
+                                    Rect {
+                                        x: tx + LABEL_GAP,
+                                        y: below_track,
+                                        w: w2,
+                                        h: h2,
+                                    },
+                                    Rect {
+                                        x: tx - LABEL_GAP - w2,
+                                        y: below_track,
+                                        w: w2,
+                                        h: h2,
+                                    },
+                                ]
+                                .iter()
+                                .any(|r| !crossed(r))
+                            });
+                            if let Some(w) = fits {
+                                wrap_at[k] = w;
+                                grew = true;
+                            } else {
+                                // No wrap clears it: move the lanes of the channel to the right
+                                // of the target's column clear of the label.
+                                let c = a.t.1;
+                                let edge = col_x[c] + NODE_W;
+                                let need = tx + LABEL_GAP + lw + 4.0 - edge;
+                                if need > reserve[c + 1] {
+                                    reserve[c + 1] = need;
+                                    grew = true;
+                                }
+                            }
+                        } else {
+                            extra[k] += lh.min(2.0 * LABEL_LINE);
+                            grew = true;
+                        }
+                    }
+                    candidates
+                        .iter()
+                        .copied()
+                        .min_by(|p, q| cost(p, &placed).total_cmp(&cost(q, &placed)))
+                        .unwrap_or(candidates[0])
+                }
+            };
+            width = width.max(chosen.x + chosen.w + MARGIN);
+            placed.push(chosen);
+            boxes[k] = chosen;
+        }
+        round += 1;
+        if grew && round <= ROUNDS {
+            continue;
+        }
+
+        // The key, below the graph: the styles the graph uses.
+        let mut styles: Vec<(KeyStyle, &str)> = Vec::new();
+        if nodes.iter().any(|n| n.enabled_by.is_some()) {
+            styles.push((KeyStyle::Optional, "optional"));
+        }
+        if nodes.iter().any(|n| n.only_when.is_some()) {
+            styles.push((KeyStyle::Conditional, "only in some runs"));
+        }
+        if nodes.iter().any(|n| {
+            n.run
+                .as_ref()
+                .is_some_and(|r| r.state == StepState::Skipped)
+        }) {
+            styles.push((KeyStyle::Skipped, "skipped"));
+        }
+        if nodes.iter().any(|n| !n.models.is_empty()) {
+            styles.push((KeyStyle::Model, "runs a deep-learning model"));
+        }
+        if arrows.iter().any(|a| a.collapsed > 1) {
+            styles.push((KeyStyle::Collapsed, "several arrows drawn as one"));
+        }
+        let mut key = Vec::new();
+        let mut height = graph_bottom + MARGIN;
+        if !styles.is_empty() {
+            let (mut kx, mut ky) = (MARGIN, graph_bottom + MARGIN);
+            for (style, text) in styles {
+                let w = KEY_SAMPLE_W + 10.0 + text.chars().count() as f64 * KEY_CHAR + 16.0;
+                if kx > MARGIN && kx + w > width - MARGIN {
+                    kx = MARGIN;
+                    ky += KEY_H;
+                }
+                key.push(KeyEntry {
+                    style,
+                    text: text.to_string(),
+                    x: kx,
+                    y: ky,
+                });
+                kx += w;
+            }
+            height = ky + KEY_H + MARGIN;
+        }
+
+        let edges = arrows
+            .iter()
+            .enumerate()
+            .map(|(k, a)| LaidEdge {
+                from: a.from.clone(),
+                to: a.to.clone(),
+                items: a.items.clone(),
+                label: labels[k].0.clone(),
+                title: a.title.clone(),
+                points: routes[k].clone(),
+                label_box: boxes[k],
+                collapsed: a.collapsed,
+            })
+            .collect();
+        return Layout {
+            width,
+            height,
+            nodes: laid,
+            edges,
+            groups,
+            key,
+        };
     }
 }
 

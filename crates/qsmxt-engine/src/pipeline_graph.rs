@@ -87,6 +87,7 @@ impl Node {
             lines.extend(run.decisions.iter().map(Decision::note));
         }
         if let Some(d) = &self.dataset {
+            lines.extend(d.alternatives.iter().map(|a| d.alternative_text(a)));
             lines.extend(d.summary());
             lines.extend(d.decisions.iter().map(|c| d.decision_note(c)));
         }
@@ -116,6 +117,18 @@ pub struct NodeDataset {
     /// What the runs decided in it, each with how many runs decided it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub decisions: Vec<DecisionCount>,
+    /// Where the runs set the step up differently (a mask supplied for some, computed for the
+    /// others): each way, with how many runs took it. Empty when they all did the same.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alternatives: Vec<Alternative>,
+}
+
+/// One way some of a dataset's runs set a step up ([`NodeDataset::alternatives`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Alternative {
+    pub runs: usize,
+    /// The step's settings in that setup, on one line ("phase quality (Otsu threshold, …)").
+    pub text: String,
 }
 
 /// "1 run", "all 4 runs", "3 of 4 runs".
@@ -139,6 +152,11 @@ impl NodeDataset {
             out.push(format!("Skipped in {}", runs_text(self.skipped, self.runs)));
         }
         out
+    }
+
+    /// An alternative, after how many of the step's runs took it: "2 of 3: supplied (premask)".
+    pub fn alternative_text(&self, a: &Alternative) -> String {
+        format!("{} of {}: {}", a.runs, self.runs, a.text)
     }
 
     /// A decision, after how many of the step's runs made it (first, so a box cut to its width
@@ -739,16 +757,53 @@ pub fn pipeline_graph_after(plan: &Plan, config: &PipelineConfig, facts: &ScanFa
 /// A dataset's graph as its runs took it: the graphs after its runs ([`pipeline_graph_after`]),
 /// merged ([`PipelineGraph::merged`]), each box carrying what the runs did in it
 /// ([`Node::dataset`]), from their merged record ([`crate::record::merge`]). `None` for no runs.
+///
+/// Where the runs set a step up differently, its box lists each way with how many runs took it
+/// ([`NodeDataset::alternatives`]) in place of its settings, and leaves out the decisions about
+/// where its input came from, which those lines already say.
 pub fn pipeline_graph_dataset(after: &[PipelineGraph], record: &DatasetRecord) -> Option<PipelineGraph> {
     let bare: Vec<PipelineGraph> = after.iter().map(PipelineGraph::without_runs).collect();
     let mut graph = PipelineGraph::merged(&bare)?;
     for node in &mut graph.nodes {
+        // Each way the runs set the step up, in the order first seen.
+        let mut ways: Vec<(Vec<String>, usize)> = Vec::new();
+        for g in &bare {
+            let Some(n) = g.node(&node.id) else { continue };
+            match ways.iter_mut().find(|(s, _)| *s == n.settings) {
+                Some((_, k)) => *k += 1,
+                None => ways.push((n.settings.clone(), 1)),
+            }
+        }
+        let alternatives: Vec<Alternative> = if ways.len() > 1 {
+            ways.into_iter().map(|(settings, runs)| Alternative { runs, text: setup_text(&settings, node) }).collect()
+        } else {
+            Vec::new()
+        };
+        if !alternatives.is_empty() {
+            node.settings.clear();
+        }
         node.dataset = record.step(&node.id).map(|s| NodeDataset {
             of: record.runs, runs: s.runs, computed: s.computed, cached: s.cached, skipped: s.skipped,
-            decisions: s.decisions.clone(),
+            decisions: s.decisions.iter()
+                .filter(|d| alternatives.is_empty() || !matches!(d.topic,
+                    Topic::MaskSource | Topic::SegmentationSource | Topic::R2Source | Topic::R2primeSource | Topic::QsmSource))
+                .cloned().collect(),
+            alternatives,
         });
     }
     Some(graph)
+}
+
+/// A step's settings on one line: "phase quality: Otsu threshold, erosion" as "phase quality
+/// (Otsu threshold, erosion)", several joined by "; ". With none, its algorithm, else "computed".
+fn setup_text(settings: &[String], node: &Node) -> String {
+    if settings.is_empty() {
+        return node.algorithm_label.clone().unwrap_or_else(|| "computed".into());
+    }
+    settings.iter().map(|s| match s.split_once(": ") {
+        Some((what, how)) => format!("{what} ({how})"),
+        None => s.clone(),
+    }).collect::<Vec<_>>().join("; ")
 }
 
 /// [`pipeline_graph`], knowing only whether the run is `resampled` (when it is known) rather than
@@ -1009,6 +1064,9 @@ impl PipelineGraph {
                 }
             }
             if let Some(d) = &n.dataset {
+                for a in &d.alternatives {
+                    text.push_str(&format!("<br/><small>{}</small>", mermaid_text(&d.alternative_text(a))));
+                }
                 for line in d.summary() {
                     text.push_str(&format!("<br/><small><b>{}</b></small>", mermaid_text(&line)));
                 }
