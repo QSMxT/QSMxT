@@ -619,10 +619,11 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let acquired = stages::phase::acquired_grid(&self.meta).n_total();
         let (mut real, mut imaginary) = (Vec::with_capacity(n), Vec::with_capacity(n));
         for e in 1..=n {
-            for (item, out) in [(Item::AcquiredPhase(e), &mut real), (Item::AcquiredImaginary(e), &mut imaginary)] {
+            for (item, out) in [(Item::AcquiredReal(e), &mut real), (Item::AcquiredImaginary(e), &mut imaginary)] {
                 if !self.store.has(&item) {
+                    let part = if matches!(item, Item::AcquiredReal(_)) { "real" } else { "imaginary" };
                     return Err(crate::EngineError::Config(format!(
-                        "echo {e}: real/imaginary run without a part-imag file")).into());
+                        "echo {e}: a real/imaginary run without the echo's {part} part")).into());
                 }
                 let v = self.store.real(&item)?;
                 if v.len() != acquired {
@@ -2955,7 +2956,7 @@ pub(crate) mod tests {
         let mut parts = MemoryStore::new(header("GE MEDICAL SYSTEMS"), json!("parts"));
         for e in 1..=TES.len() {
             let (p, m) = (&phases[e - 1], &mags[e - 1]);
-            parts.insert(Item::AcquiredPhase(e), VolumeData::Real(p.iter().zip(m).map(|(&p, &m)| m * p.cos()).collect()));
+            parts.insert(Item::AcquiredReal(e), VolumeData::Real(p.iter().zip(m).map(|(&p, &m)| m * p.cos()).collect()));
             parts.insert(Item::AcquiredImaginary(e), VolumeData::Real(p.iter().zip(m).map(|(&p, &m)| -m * p.sin()).collect()));
         }
         let mut f = facts.clone();

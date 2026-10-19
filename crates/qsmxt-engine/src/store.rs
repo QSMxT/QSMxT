@@ -24,8 +24,9 @@ pub enum Item {
     AcquiredPhase(usize),
     /// Echo `n`'s magnitude, as acquired, when there is one.
     AcquiredMagnitude(usize),
-    /// Echo `n`'s imaginary part, for a scan given as real and imaginary parts (whose real part
-    /// is then [`Item::AcquiredPhase`]).
+    /// Echo `n`'s real part, as acquired, for a scan given as real and imaginary parts.
+    AcquiredReal(usize),
+    /// Echo `n`'s imaginary part, as acquired, for a scan given as real and imaginary parts.
     AcquiredImaginary(usize),
     /// Uncombined receive coil `c`'s (1-based, in [`StageStore::coils`] order) echo `n` phase, as
     /// acquired.
@@ -158,6 +159,7 @@ impl Item {
         Some(match (name, args) {
             ("AcquiredPhase", a) => Item::AcquiredPhase(echo(a)?),
             ("AcquiredMagnitude", a) => Item::AcquiredMagnitude(echo(a)?),
+            ("AcquiredReal", a) => Item::AcquiredReal(echo(a)?),
             ("AcquiredImaginary", a) => Item::AcquiredImaginary(echo(a)?),
             ("CoilPhase", a) => { let (c, e) = pair(a)?; Item::CoilPhase(c, e) }
             ("CoilMagnitude", a) => { let (c, e) = pair(a)?; Item::CoilMagnitude(c, e) }
@@ -1220,7 +1222,7 @@ mod tests {
     fn items_are_read_back_from_their_keys() {
         use qsm_core::pipeline::qsmart::outputs as q;
         let mut items = vec![
-            Item::AcquiredPhase(1), Item::AcquiredMagnitude(12), Item::AcquiredImaginary(2), Item::CoilPhase(3, 1),
+            Item::AcquiredPhase(1), Item::AcquiredMagnitude(12), Item::AcquiredReal(3), Item::AcquiredImaginary(2), Item::CoilPhase(3, 1),
             Item::CoilMagnitude(1, 4), Item::CombinedEchoPhase(2), Item::CombinedEchoMagnitude(3),
             Item::CoilCombinationMask, Item::Phase(3), Item::Magnitude(2), Item::CorrectedPhase(4),
             Item::CorrectedMagnitude(5), Item::CombinedMagnitude, Item::BrainMask, Item::SuppliedMask,
