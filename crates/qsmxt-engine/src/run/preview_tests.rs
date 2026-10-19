@@ -71,8 +71,13 @@ fn recipes() -> Vec<(&'static str, PipelineConfig)> {
             c.masking.combine = MaskCombine::And;
             c.masking.refinements = vec![MaskOp::FillHoles { max_size: 0 }, MaskOp::Erode { iterations: 1 }];
         })),
-        ("BET and phase quality", with(&|c| {
-            let r = bet_and_phase_mask_recipe();
+        // The BET-and-phase-quality preset's recipe, its BET section thresholded instead: BET is
+        // one more generator handed to qsm-core like the others ([`crate::bridge`]), and the
+        // slowest to run.
+        ("BET and phase quality, thresholded", with(&|c| {
+            let mut r = bet_and_phase_mask_recipe();
+            assert!(matches!(r.sections[0].generator, MaskOp::Bet { .. }));
+            r.sections[0].generator = threshold(MaskThresholdMethod::Fixed, Some(20.0));
             c.masking.sections = r.sections;
             c.masking.combine = r.combine;
             c.masking.refinements = r.refinements;

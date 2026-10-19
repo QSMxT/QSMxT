@@ -855,7 +855,7 @@ mod tests {
     /// by flag; the command line's messages are unchanged.
     #[test]
     fn problems_as_data_name_no_flags() {
-        let mut configs = Vec::new();
+        let (mut configs, mut distinct) = (Vec::new(), Vec::new());
         for algorithm in [SeparationAlgorithm::R2starQsm, SeparationAlgorithm::ChiSepIlsqr,
                           SeparationAlgorithm::HcChisep, SeparationAlgorithm::SusepNet] {
             for strategy in [R2PrimeStrategy::Auto, R2PrimeStrategy::Mese, R2PrimeStrategy::R2primenet] {
@@ -878,7 +878,13 @@ mod tests {
                         c.separation.custom_r2_tool = Some("mine".into());
                         c.separation.custom_r2prime_tool = Some("mine".into());
                     }
-                    configs.push(enforced(c));
+                    // Some combinations come out the same once enforced: each is checked once.
+                    let c = enforced(c);
+                    let json = serde_json::to_value(&c).unwrap();
+                    if !distinct.contains(&json) {
+                        distinct.push(json);
+                        configs.push(c);
+                    }
                 }
             }
         }

@@ -1937,10 +1937,11 @@ pub(crate) mod tests {
         (facts, store)
     }
 
-    /// A quick configuration for a tiny phantom: a magnitude threshold for the mask, PDF (which
-    /// does not erode a small brain away) and TKD. The iterative algorithms a test switches to
-    /// (TGV, QSMART, χ-separation) get a few iterations, no padding and small kernels: the tests
-    /// check what a run computes, keeps and records, not how good the maps are.
+    /// A quick configuration for a tiny phantom: a magnitude threshold for the mask, Laplacian
+    /// unwrapping, LBV (which does not erode a small brain away) and TKD. The iterative
+    /// algorithms a test switches to (TGV, QSMART, χ-separation) get a few iterations, no padding
+    /// and small kernels: the tests check what a run computes, keeps and records, not how good
+    /// the maps are.
     pub(crate) fn config() -> PipelineConfig {
         let mut config = PipelineConfig::default();
         config.masking.sections = vec![MaskSection {
@@ -1950,7 +1951,8 @@ pub(crate) mod tests {
         }];
         config.masking.refinements = vec![];
         config.masking.inhomogeneity_correction = false;
-        config.bg_removal.algorithm = BfAlgorithm::Pdf;
+        config.field_mapping.unwrapping_algorithm = crate::enums::UnwrappingAlgorithm::Laplacian;
+        config.bg_removal.algorithm = BfAlgorithm::Lbv;
         config.inversion.algorithm = QsmAlgorithm::Tkd;
         config.inversion.tgv.iterations = 10;
         let qsmart = &mut config.inversion.qsmart;
@@ -2008,7 +2010,7 @@ pub(crate) mod tests {
             (store.get(&Item::Chi), store.get(&Item::ChiSupport)) else { panic!("no final map") };
         assert_eq!(chi.len(), N * N * N);
         let n_support = support.iter().filter(|&&s| s != 0).count();
-        assert!(n_support > 100, "the support is the sphere less what PDF left undefined: {n_support}");
+        assert!(n_support > 100, "the support is the sphere less what LBV left undefined: {n_support}");
         assert!(chi.iter().zip(support).all(|(&c, &s)| s != 0 || c == 0.0), "χ is 0 outside its support");
         assert!(chi.iter().all(|c| c.is_finite()));
         assert!(store.annotations(&Item::Chi).is_some_and(|a| a.contains_key("QsmReferenceOffsetPpm")));
@@ -2501,18 +2503,25 @@ pub(crate) mod tests {
     /// Any other step it still records is one `config`'s plan does not have, left by an earlier
     /// configuration.
     fn assert_holds(config: &PipelineConfig, facts: &ScanFacts, store: &MemoryStore, want: &Snapshot) {
-        let mut got = store.recorded();
-        let plan: Vec<String> = crate::plan::plan(config, facts).steps.iter().map(|s| s.stage.name()).collect();
-        got.steps.retain(|step, _| want.recorded.steps.contains_key(step) || {
-            assert!(!plan.contains(step), "{step} is in the plan but a fresh run does not record it");
-            false
-        });
-        assert_eq!(got.steps, want.recorded.steps);
+        assert_records_hold(config, facts, store.recorded(), &want.recorded);
         for (item, volume) in &want.outputs {
             assert!(store.get(item) == volume.as_ref(), "{item:?} is not what a fresh run makes");
         }
-        assert_eq!(got.reports, want.recorded.reports);
-        assert_eq!(got.annotations, want.recorded.annotations);
+    }
+
+    /// `got` records what `want` does: the same steps under the same keys and outputs, and the
+    /// same reports and annotations. Any other step `got` records is one `config`'s plan does not
+    /// have, left by an earlier configuration.
+    fn assert_records_hold(config: &PipelineConfig, facts: &ScanFacts, mut got: crate::store::Recorded,
+                           want: &crate::store::Recorded) {
+        let plan: Vec<String> = crate::plan::plan(config, facts).steps.iter().map(|s| s.stage.name()).collect();
+        got.steps.retain(|step, _| want.steps.contains_key(step) || {
+            assert!(!plan.contains(step), "{step} is in the plan but a fresh run does not record it");
+            false
+        });
+        assert_eq!(got.steps, want.steps);
+        assert_eq!(got.reports, want.reports);
+        assert_eq!(got.annotations, want.annotations);
     }
 
     /// The reliable-phase mask is restricted to the brain mask, so a new brain mask redoes it and
@@ -2565,30 +2574,72 @@ pub(crate) mod tests {
         assert_as_if_fresh(&config, &facts, &store, phantom().1);
     }
 
+    /// What a run of `config` would do, taken on `store` itself as [`dry_run`] takes it on a
+    /// shadow: each step that would be computed is recorded under its key, with the outputs the
+    /// plan says it writes, and nothing is computed. One after another on a
+    /// [`MemoryStore::shadow`] of a scan, these are what a sequence of runs records, with no
+    /// algorithm run. Returns the steps that would be computed, in order.
+    fn pretend_run<V: crate::store::Volumes>(config: &PipelineConfig, facts: &ScanFacts, store: &mut MemoryStore<V>) -> Vec<String> {
+        let plan = crate::plan::plan(config, facts);
+        let mut quiet = ();
+        let (meta, loaded, _) = load(config, facts, store, &mut quiet).unwrap();
+        store.begin(&meta).unwrap();
+        let mut computed: Vec<String> = Some(loaded).filter(|l| l.state == StepState::Computed).map(|l| l.id).into_iter().collect();
+        let mut r = Run::new(&plan, config, facts, meta, store, &mut quiet);
+        r.dry = true;
+        for step in plan.steps.iter().filter(|s| s.stage != Stage::Load) {
+            let record = r.take(step).unwrap();
+            if record.state == StepState::Computed {
+                computed.push(record.id);
+            }
+        }
+        computed
+    }
+
+    /// The steps of `config`'s plan that write a pass's raw map: its inversion steps.
+    fn inversion_steps(config: &PipelineConfig, facts: &ScanFacts) -> Vec<String> {
+        crate::plan::plan(config, facts).steps.iter()
+            .filter(|s| s.outputs.iter().any(|o| matches!(o, Item::RawChi(_))))
+            .map(|s| s.name.clone()).collect()
+    }
+
     /// The inversion steps are named for their algorithm (`invert`, `tgv`, `qsmart`), and every one
     /// writes the pass's raw map. Switching from `a` to another and back in the same store (#373)
-    /// would leave `a`'s record naming a map the other has since replaced: the switch back
-    /// recomputes it, and what reads it, and the store holds what `a`'s first (fresh) run left —
-    /// single- and two-pass, after each of the others.
+    /// would leave `a`'s record naming a map the other has since replaced: the other's step forgets
+    /// it, the switch back recomputes it and every step that reads a raw map, and the store
+    /// records what `a`'s first (fresh) run did — single- and two-pass, after each of the others.
+    /// Taken as dry runs one after another on a shadow of the scan ([`pretend_run`]), so nothing
+    /// is reconstructed: that a dry run says what the run then does is
+    /// [`switching_inversions_does_what_the_dry_run_says`]'s to check.
     fn switch_away_and_back(a: QsmAlgorithm) {
         let algorithms = [QsmAlgorithm::Tkd, QsmAlgorithm::Tgv, QsmAlgorithm::Qsmart];
         for two_pass in [false, true] {
             let mut config = if two_pass { two_pass_config() } else { config() };
             config.inversion.algorithm = a;
-            let (facts, mut store) = phantom();
-            run_once(&config, &facts, &mut store);
-            let fresh = snapshot(&store);
-            let step = crate::plan::plan(&config, &facts).steps.iter()
-                .find(|s| matches!(s.stage, Stage::Inversion(Pass::Main) | Stage::Tgv(Pass::Main) | Stage::Qsmart(Pass::Main)))
-                .map(|s| s.stage.name()).unwrap();
+            let (facts, scan) = phantom();
+            let mut store = scan.shadow();
+            assert!(pretend_run(&config, &facts, &mut store).contains(&"reference".to_string()));
+            let fresh = store.recorded();
+            let steps = inversion_steps(&config, &facts);
+            let readers: Vec<String> = crate::plan::plan(&config, &facts).steps.iter()
+                .filter(|s| s.reads.iter().any(|r| matches!(r, Item::RawChi(_))))
+                .map(|s| s.name.clone()).collect();
+            assert!(!readers.is_empty());
             for b in algorithms.into_iter().filter(|&b| b != a) {
                 config.inversion.algorithm = b;
-                run_once(&config, &facts, &mut store);
+                let away = pretend_run(&config, &facts, &mut store);
+                for step in inversion_steps(&config, &facts) {
+                    assert!(away.contains(&step), "{a} → {b}, two-pass {two_pass}: {away:?}");
+                }
+                let recorded = store.recorded().steps;
+                assert!(steps.iter().all(|s| !recorded.contains_key(s)), "{a} → {b}, two-pass {two_pass}: {a}'s map was replaced");
                 config.inversion.algorithm = a;
-                let back = run_once(&config, &facts, &mut store);
-                assert!(back.computed.contains(&step), "{a} → {b} → {a}, two-pass {two_pass}: {:?}", back.computed);
-                assert_holds(&config, &facts, &store, &fresh);
-                assert!(run_once(&config, &facts, &mut store).computed.is_empty(), "{a} → {b} → {a}, two-pass {two_pass}");
+                let back = pretend_run(&config, &facts, &mut store);
+                for step in steps.iter().chain(&readers) {
+                    assert!(back.contains(step), "{a} → {b} → {a}, two-pass {two_pass}: {step} in {back:?}");
+                }
+                assert_records_hold(&config, &facts, store.recorded(), &fresh);
+                assert!(pretend_run(&config, &facts, &mut store).is_empty(), "{a} → {b} → {a}, two-pass {two_pass}");
             }
         }
     }
@@ -2606,6 +2657,29 @@ pub(crate) mod tests {
     #[test]
     fn switching_from_qsmart_and_back_gives_what_a_fresh_run_does() {
         switch_away_and_back(QsmAlgorithm::Qsmart);
+    }
+
+    /// TKD to QSMART and back, single- and two-pass, run on the phantom: at each switch the dry
+    /// run says what the run then does, each switch leaves what a fresh run of the new algorithm
+    /// does, maps and all, and back on TKD nothing is left to do. (QSMART is the cheap one of the
+    /// steps that share the inversion's output.)
+    #[test]
+    fn switching_inversions_does_what_the_dry_run_says() {
+        for two_pass in [false, true] {
+            let mut config = if two_pass { two_pass_config() } else { config() };
+            let (facts, mut store) = phantom();
+            expect_then_run(&config, &facts, &mut store);
+            let tkd = snapshot(&store);
+            config.inversion.algorithm = QsmAlgorithm::Qsmart;
+            expect_then_run(&config, &facts, &mut store);
+            assert_as_if_fresh(&config, &facts, &store, phantom().1);
+            config.inversion.algorithm = QsmAlgorithm::Tkd;
+            let back = expect_then_run(&config, &facts, &mut store);
+            assert!(back.iter().any(|(id, s)| id == "invert" && s.computes()), "two-pass {two_pass}: {back:?}");
+            assert_holds(&config, &facts, &store, &tkd);
+            let again = expect_then_run(&config, &facts, &mut store);
+            assert!(again.iter().all(|(_, s)| matches!(s, ExpectedState::Cached | ExpectedState::Skipped)), "{again:?}");
+        }
     }
 
     /// SynthSeg in memory. Minutes in a debug build, so run with `--ignored`; skipped where the
