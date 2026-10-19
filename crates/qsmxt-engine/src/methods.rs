@@ -764,6 +764,7 @@ pub fn generate_methods(config: &PipelineConfig) -> String {
 
 /// Generate methods for a specific tool (e.g. "qsmxt" or "QSMbly"): [`Methods::to_markdown`].
 pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
+    let config = &config.normalised().0;
     draft(config, tool, Ran::default()).finish(config, None).to_markdown()
 }
 
@@ -771,6 +772,7 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
 /// scan's facts), sentence by sentence, each naming the steps of `plan`'s pipeline graph it
 /// describes. Its [`Methods::to_markdown`] is [`generate_methods_for`]'s text.
 pub fn methods_structured(config: &PipelineConfig, plan: &Plan, tool: &str) -> Methods {
+    let config = &config.normalised().0;
     draft(config, tool, Ran::default()).finish(config, Some(plan))
 }
 
@@ -780,6 +782,7 @@ pub fn methods_structured(config: &PipelineConfig, plan: &Plan, tool: &str) -> M
 /// instead; R2′ measured rather than predicted; a step that had nothing to work on). A run that
 /// decided nothing gets [`methods_structured`]'s text.
 pub fn methods_for_run(config: &PipelineConfig, plan: &Plan, record: &RunRecord, tool: &str) -> Methods {
+    let config = &config.normalised().0;
     let merged = DatasetRecord::from(record);
     draft(config, tool, Ran(Some(&merged))).finish_drawn(|stage| {
         plan.has(*stage) && !crate::pipeline_graph::left_out(plan, config, *stage, record.resampled)
@@ -790,6 +793,7 @@ pub fn methods_for_run(config: &PipelineConfig, plan: &Plan, record: &RunRecord,
 /// a choice every run made is said as for one run; where the runs differ, the configuration's
 /// wording ("where available") stands. Each sentence names the steps some run did something in.
 pub fn methods_for_dataset(config: &PipelineConfig, record: &DatasetRecord, tool: &str) -> Methods {
+    let config = &config.normalised().0;
     draft(config, tool, Ran(Some(record)))
         .finish_drawn(|stage| record.step(&stage.name()).is_some_and(|s| s.ran() > 0))
 }
@@ -1869,6 +1873,11 @@ fn inversion_name_cite(alg: QsmAlgorithm) -> (&'static str, &'static Citation) {
         QsmAlgorithm::IqsmPlus => ("iQSM+ (orientation-adaptive end-to-end deep-learning reconstruction)", &CITE_IQSM_PLUS),
         QsmAlgorithm::Tgv | QsmAlgorithm::Qsmart => ("iLSQR", &CITE_ILSQR),
     }
+}
+
+/// The χ-separation method's name as the methods text gives it.
+pub(crate) fn separation_name(alg: SeparationAlgorithm) -> &'static str {
+    separation_name_cite(alg).0
 }
 
 fn separation_name_cite(alg: SeparationAlgorithm) -> (&'static str, &'static Citation) {

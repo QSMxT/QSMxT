@@ -22,6 +22,10 @@ use crate::store::{Completed, Contrast, Data, Item, StageStore, Supplied};
 /// Run `plan` (made by [`crate::plan::plan`] from `config` and `facts`) on the scan in `store`,
 /// reporting to `observer`.
 ///
+/// `config` is normalised as [`crate::plan::plan`] normalises it ([`PipelineConfig::normalised`]),
+/// so the configuration the plan was made from can be passed as it is, and the steps run with,
+/// and are cached under, what `qsmxt run` gives them.
+///
 /// What the plan says the data cannot produce ([`Plan::check`]) is the front end's to refuse
 /// before calling this: `qsmxt` checks every run before the first starts.
 ///
@@ -30,6 +34,7 @@ use crate::store::{Completed, Contrast, Data, Item, StageStore, Supplied};
 pub fn run<S: StageStore + ?Sized>(
     plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, store: &mut S, observer: &mut dyn Observer,
 ) -> Result<RunRecord, S::Error> {
+    let config = &config.normalised().0;
     // Every front end's config is held to the settings' ranges (qsmxt checks them earlier too).
     crate::schema::check_ranges(config)?;
     let (meta, load_record, _) = load(config, facts, store, observer)?;
@@ -98,6 +103,7 @@ impl ExpectedState {
 pub fn dry_run<V: crate::store::Volumes>(
     plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, store: &crate::store::MemoryStore<V>,
 ) -> Result<Vec<Expected>, crate::EngineError> {
+    let config = &config.normalised().0;
     crate::schema::check_ranges(config)?;
     let before = store.recorded_keys();
     let mut shadow = store.shadow();
@@ -145,7 +151,7 @@ pub fn run_step<S: StageStore + ?Sized>(
     plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, meta: &RunMetadata, step: &Step, store: &mut S,
     observer: &mut dyn Observer,
 ) -> Result<StepRecord, S::Error> {
-    Run::new(plan, config, facts, meta.clone(), store, observer).take(step)
+    Run::new(plan, &config.normalised().0, facts, meta.clone(), store, observer).take(step)
 }
 
 /// A mask `sections` make (with `config`'s combine mode and refinements after combining), or part
@@ -164,6 +170,7 @@ pub fn preview_mask<S: StageStore + ?Sized>(
     plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, store: &mut S, observer: &mut dyn Observer,
     inputs: &mut stages::mask::MaskInputs, sections: &[crate::masking::MaskSection], upto: stages::mask::Upto,
 ) -> Result<stages::mask::MaskPreview, S::Error> {
+    let config = &config.normalised().0;
     crate::schema::check_ranges(config)?;
     let Some(at) = plan.steps.iter().position(|s| s.stage == Stage::Mask(Pass::Main)) else {
         return Err(crate::EngineError::Config("this run makes no brain mask to preview".into()).into());

@@ -197,6 +197,11 @@ pub struct Plan {
     /// Where the run departs from the configuration for this scan, for the log: an option this
     /// scan's inputs rule out.
     pub notes: Vec<String>,
+    /// What normalising the configuration changed ([`PipelineConfig::normalised`]): the outputs
+    /// switched on because another output needs them, each with its reason.
+    pub adjustments: Vec<crate::normalise::Adjustment>,
+    /// The configuration the plan was made from, normalised: what the run takes.
+    pub config: PipelineConfig,
     /// Two-pass artefact reduction runs.
     pub two_pass: bool,
     /// The echoes the stages after masking read are motion-corrected, and so is the mask they work
@@ -266,7 +271,13 @@ fn may_predict_r2prime(facts: &ScanFacts, config: &PipelineConfig) -> bool {
 }
 
 /// Plan one run of `config` on the scan `facts` describes.
+///
+/// `config` is normalised first ([`PipelineConfig::normalised`]), so it may be given as the user
+/// left it: the plan is that of the configuration `qsmxt run` would take, which it holds
+/// ([`Plan::config`]), with what was changed ([`Plan::adjustments`]).
 pub fn plan(config: &PipelineConfig, facts: &ScanFacts) -> Plan {
+    let (normalised, adjustments) = config.normalised();
+    let config = &normalised;
     let p = &config.pipeline;
     let wanted = |o: Output| requirements::wanted(facts, config, o);
     let relaxometry = wanted(Output::T2star) || wanted(Output::R2star);
@@ -369,6 +380,8 @@ pub fn plan(config: &PipelineConfig, facts: &ScanFacts) -> Plan {
             nx, ny, nz, facts.n_echoes, facts.n_coils, facts.has_magnitude, config),
         check: requirements::scan_check(facts, config),
         notes,
+        adjustments,
+        config: config.clone(),
         two_pass,
         motion_corrected,
     };

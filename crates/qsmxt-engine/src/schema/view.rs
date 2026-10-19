@@ -4,10 +4,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::config::{
-    enforce_analysis_dependencies, enforce_reference_dependencies, enforce_separation_dependencies,
-    enforce_smwi_dependencies, PipelineConfig,
-};
+use crate::config::PipelineConfig;
 use crate::enums::*;
 use crate::masking::{MaskOp, MaskSection};
 use crate::requirements::Output;
@@ -91,14 +88,10 @@ impl Ctx<'_> {
     pub fn qsmart_inner(&self, alg: &str) -> bool { self.inv("qsmart") && self.qsmart_inner == alg }
 }
 
-/// `config` with the outputs other outputs need switched on, as a run applies them.
+/// `config` with the outputs other outputs need switched on, as a run applies them
+/// ([`PipelineConfig::normalised`]).
 fn resolved(config: &PipelineConfig) -> PipelineConfig {
-    let mut c = config.clone();
-    enforce_analysis_dependencies(&mut c);
-    enforce_smwi_dependencies(&mut c);
-    enforce_separation_dependencies(&mut c);
-    enforce_reference_dependencies(&mut c);
-    c
+    config.normalised().0
 }
 
 fn uses_bet(c: &PipelineConfig) -> bool {
