@@ -1881,14 +1881,109 @@ mod parity {
         }
     }
 
-    /// Every state worth looking at: start from the defaults in each tab mode, and keep any
-    /// select/toggle change that reveals a row not seen yet, until nothing new turns up.
-    fn explore() -> Vec<App> {
+    /// What a state is: the parts of the app a control changes (everything else stays as
+    /// [`App::new`] has it). Unlike an [`App`] it can be shared between threads.
+    #[derive(Clone)]
+    struct State {
+        pipeline_state: crate::tui::app::PipelineFormState,
+        form: crate::tui::app::RunForm,
+        filter_state: crate::tui::app::FilterTreeState,
+        active_tab: usize,
+    }
+
+    impl State {
+        fn of(app: &App) -> Self {
+            State {
+                pipeline_state: app.pipeline_state.clone(),
+                form: app.form.clone(),
+                filter_state: app.filter_state.clone(),
+                active_tab: app.active_tab,
+            }
+        }
+
+        fn app(&self) -> App {
+            let mut a = App::new();
+            a.pipeline_state = self.pipeline_state.clone();
+            a.form = self.form.clone();
+            a.filter_state = self.filter_state.clone();
+            a.active_tab = self.active_tab;
+            a
+        }
+    }
+
+    /// A state's identity, to tell when two paths reach the same one.
+    fn state_key(app: &App) -> String {
+        format!("{:?}{:?}{:?}{}", app.pipeline_state, app.form, app.filter_state, app.active_tab)
+    }
+
+    fn clone_app(app: &App) -> App {
+        State::of(app).app()
+    }
+
+    /// `f` of each item, in order, worked out on every core (each thread with its own `init()`).
+    fn par_map<T: Send, R: Send, S>(items: Vec<T>, init: impl Fn() -> S + Sync, f: impl Fn(&mut S, T) -> R + Sync) -> Vec<R> {
+        let threads = std::thread::available_parallelism().map_or(1, |n| n.get()).min(items.len()).max(1);
+        let queue = std::sync::Mutex::new(items.into_iter().enumerate());
+        let mut out: Vec<(usize, R)> = std::thread::scope(|scope| {
+            let workers: Vec<_> = (0..threads).map(|_| scope.spawn(|| {
+                let mut state = init();
+                let mut done = Vec::new();
+                loop {
+                    let next = queue.lock().unwrap().next();
+                    let Some((i, item)) = next else { break };
+                    done.push((i, f(&mut state, item)));
+                }
+                done
+            })).collect();
+            workers.into_iter().flat_map(|w| w.join().unwrap_or_else(|e| std::panic::resume_unwind(e))).collect()
+        });
+        out.sort_unstable_by_key(|(i, _)| *i);
+        out.into_iter().map(|(_, r)| r).collect()
+    }
+
+    /// One select or checkbox change.
+    #[derive(Clone, Copy)]
+    enum Change {
+        Select(&'static str, usize),
+        Toggle(&'static str),
+    }
+
+    impl Change {
+        /// The changed state, or `None` for a checkbox the TUI refuses to change.
+        fn apply(self, app: &App) -> Option<App> {
+            let mut a = clone_app(app);
+            match self {
+                Change::Select(field, i) => a.set_field_select(field, i),
+                Change::Toggle(field) => {
+                    a.toggle_field(field);
+                    if a.error_message.is_some() { return None; }
+                }
+            }
+            Some(a)
+        }
+    }
+
+    /// One change to check against the state it is made in: a select's option, a checkbox (as
+    /// toggled), or a parameter's value.
+    enum Check {
+        Select(&'static str, usize),
+        Toggle(&'static str, Box<State>),
+        Param(&'static str),
+    }
+
+    /// Every state worth looking at, with its rows: start from the defaults in each tab mode, and
+    /// keep any select/toggle change that reveals a row not seen yet, until nothing new turns up.
+    fn explore() -> Vec<(App, Vec<PipelineRow>)> {
         // A row counts as seen per inversion algorithm: the same row (an inner inversion's
         // parameters under QSMART, say) can mean a different flag under another one.
-        let mut seen: BTreeSet<(&'static str, char, usize)> = BTreeSet::new();
+        let mut seen: std::collections::HashSet<(&'static str, char, usize)> = Default::default();
+        // The states already looked at. Different paths reach the same state (a select set back,
+        // two toggles in either order); a repeat shows only rows its first visit marked seen.
+        let mut visited: std::collections::HashSet<String> = Default::default();
         let mut states = Vec::new();
-        let mut frontier = Vec::new();
+        // Each state with its rows and its key for `visited`, worked out (on every core) as it is
+        // reached.
+        let mut frontier: Vec<(String, App, Vec<PipelineRow>)> = Vec::new();
         // The defaults, plus the starts whose rows only a non-row control reveals: the
         // multi-orientation settings (a grouping pattern on the Input tab, COSMOS or STI) and the
         // inputs of the relaxometry maps and statistics.
@@ -1905,53 +2000,50 @@ mod parity {
             app.form.bids_dir = "/bids".into();
             app.form.slurm_account = "acct".into();
             start(&mut app);
-            frontier.push(app);
-        }
-        while let Some(app) = frontier.pop() {
             let rows = rows(&app);
+            frontier.push((state_key(&app), app, rows));
+        }
+        while let Some((key, app, rows)) = frontier.pop() {
+            if !visited.insert(key) {
+                continue;
+            }
             let alg = app.pipeline_state.qsm_algorithm;
             // A checkbox counts as seen per value too: a state where a forced output is free
-            // (and so can be checked) is new even when its rows are not.
-            let fresh = rows.iter().filter_map(row_key)
-                .map(|(field, kind)| (field, if kind == 't' && app.field_toggle(field) { 'T' } else { kind }))
-                .fold(false, |f, (field, kind)| seen.insert((field, kind, alg)) | f);
-            if !fresh { continue; }
-            for r in &rows {
-                match r {
-                    PipelineRow::AlgoSelect { field, options, .. } => {
-                        for i in (0..options.len()).filter(|&i| i != app.field_select(field)) {
-                            let mut a = clone_app(&app);
-                            a.set_field_select(field, i);
-                            frontier.push(a);
-                        }
-                    }
-                    PipelineRow::Toggle { field, .. } => {
-                        let mut a = clone_app(&app);
-                        a.toggle_field(field);
-                        if a.error_message.is_none() { frontier.push(a); }
-                    }
-                    _ => {}
-                }
+            // (and so can be checked) is new even when its rows are not. (Its value is only
+            // looked up while one of the two is unseen.)
+            let mut fresh = false;
+            for (field, kind) in rows.iter().filter_map(row_key) {
+                let kind = if kind != 't' {
+                    kind
+                } else if seen.contains(&(field, 't', alg)) && seen.contains(&(field, 'T', alg)) {
+                    continue;
+                } else if app.field_toggle(field) { 'T' } else { 't' };
+                fresh |= seen.insert((field, kind, alg));
             }
-            states.push(app);
+            if !fresh { continue; }
+            let changes: Vec<Change> = rows.iter().flat_map(|r| match r {
+                PipelineRow::AlgoSelect { field, options, .. } => {
+                    let current = app.field_select(field);
+                    (0..options.len()).filter(|&i| i != current).map(|i| Change::Select(field, i)).collect()
+                }
+                PipelineRow::Toggle { field, .. } => vec![Change::Toggle(field)],
+                _ => vec![],
+            }).collect();
+            let state = State::of(&app);
+            let next = par_map(changes, || state.app(), |base, change| {
+                let a = change.apply(base)?;
+                let (key, rows) = (state_key(&a), self::rows(&a));
+                Some((key, a, rows))
+            });
+            frontier.extend(next.into_iter().flatten());
+            states.push((app, rows));
         }
         states
     }
 
-    fn clone_app(app: &App) -> App {
-        let mut a = App::new();
-        a.pipeline_state = app.pipeline_state.clone();
-        a.form = app.form.clone();
-        a.filter_state = app.filter_state.clone();
-        a.active_tab = app.active_tab;
-        a
-    }
-
-    /// What the run would do: the pipeline's resolved config (compared as data, so a value that
-    /// changes nothing reads as no effect) and the run-level arguments of the active mode.
-    fn run_of(app: &App) -> (serde_json::Value, String) {
-        let config = serde_json::to_value(config_from_app(app).unwrap()).unwrap();
-        let run_level = if app.form.execution_mode == 1 {
+    /// The run-level arguments of the active mode (the pipeline's part is the config's).
+    fn run_level(app: &App) -> String {
+        if app.form.execution_mode == 1 {
             let mut a = build_slurm_args(app).unwrap();
             a.pipeline = Default::default();
             format!("{a:?}")
@@ -1959,8 +2051,23 @@ mod parity {
             let mut a = build_run_args(app).unwrap();
             a.pipeline = Default::default();
             format!("{a:?}")
-        };
-        (config, run_level)
+        }
+    }
+
+    /// What a state runs and shows: its pipeline config (also as data, so a value that changes
+    /// nothing reads as no effect) and its generated command. Worked out once per state, however
+    /// many changes are checked against it.
+    struct Outcome {
+        config: PipelineConfig,
+        data: serde_json::Value,
+        shown: String,
+    }
+
+    impl Outcome {
+        fn of(app: &App) -> Self {
+            let config = config_from_app(app).unwrap();
+            Outcome { data: serde_json::to_value(&config).unwrap(), shown: build_command_string(app), config }
+        }
     }
 
     #[test]
@@ -1972,38 +2079,11 @@ mod parity {
         let mut checked: std::collections::HashSet<(&'static str, char, [usize; 4], [bool; 2])> = Default::default();
         let mut cli = <crate::cli::Cli as clap::CommandFactory>::command();
         cli.build();
-        let mut round_trips: std::collections::HashMap<String, String> = Default::default();
-        let mut check = |what: String, base: &App, app: &App, problems: &mut BTreeMap<String, String>| {
-            let (before, after) = (config_from_app(base).unwrap(), config_from_app(app).unwrap());
-            let (shown_before, shown) = (build_command_string(base), build_command_string(app));
-            if run_of(base) == run_of(app) {
-                problems.entry(format!("no effect on the run: {}", what.split('=').next().unwrap())).or_insert(what.clone());
-            } else if shown_before == shown {
-                let d = diff(&before, &after);
-                problems.entry(format!("not in the command: {d:?}")).or_insert(what.clone());
-            }
-            let cmd = qsmxt_engine::generate_command(&after);
-            // Parsing is most of a check's cost, and many changes produce a command already seen.
-            let back = match round_trips.get(&cmd) {
-                Some(b) => b.clone(),
-                None => {
-                    let b = qsmxt_engine::generate_command(&round_trip(&mut cli, &after));
-                    round_trips.insert(cmd.clone(), b.clone());
-                    b
-                }
-            };
-            if back != cmd {
-                let (a, b) = (flags_of(&cmd), flags_of(&back));
-                problems.entry(format!("command does not reproduce itself: {:?}", a.symmetric_difference(&b).collect::<Vec<_>>()))
-                    .or_insert(what.clone());
-            }
-            // Both ends are reachable states: a toggle explored from its checked side turns the
-            // flag off, and the flag is still one the TUI emits.
-            covered.extend(flags_of(&shown_before));
-            covered.extend(flags_of(&shown));
-        };
-        for app in explore() {
-            let rows = rows(&app);
+        // Which rows of each state are checked (each with its toggled state, for a checkbox):
+        // decided in order, so each combination is checked where it is first reached.
+        type Rows = Vec<(PipelineRow, Option<State>)>;
+        let mut jobs: Vec<(State, Rows)> = Vec::new();
+        for (app, rows) in explore() {
             let ps = &app.pipeline_state;
             let qsmart = crate::tui::app::QSM_ALGO_OPTIONS[ps.qsm_algorithm] == "qsmart";
             let context = (
@@ -2011,15 +2091,9 @@ mod parity {
                  if ps.do_chi_separation { ps.separation_algorithm } else { 0 }, app.form.execution_mode],
                 [ps.motion_correction, ps.do_chi_separation],
             );
-            for r in &rows {
-                let Some((field, kind)) = row_key(r) else { continue };
-                // A checkbox another option forces on refuses to change (and says why): it is
-                // checked where it is free instead.
-                if let PipelineRow::Toggle { field, .. } = r {
-                    let mut a = clone_app(&app);
-                    a.toggle_field(field);
-                    if a.error_message.is_some() { continue; }
-                }
+            let mut todo = Vec::new();
+            for r in rows {
+                let Some((field, kind)) = row_key(&r) else { continue };
                 // The run form's settings (outputs, execution) do not feed the reconstruction:
                 // they are checked per separation method and mode, not per inversion.
                 let ctx = if app.form.text(field).is_some() || app.form.flag(field).is_some() || app.form.choice(field).is_some() {
@@ -2027,36 +2101,105 @@ mod parity {
                 } else {
                     context
                 };
-                if !checked.insert((field, kind, ctx.0, ctx.1)) { continue; }
+                let key = (field, kind, ctx.0, ctx.1);
+                if checked.contains(&key) { continue; }
+                // A checkbox another option forces on refuses to change (and says why): it is
+                // checked where it is free instead.
+                let toggled = match r {
+                    PipelineRow::Toggle { field, .. } => match Change::Toggle(field).apply(&app) {
+                        Some(a) => Some(State::of(&a)),
+                        None => continue,
+                    },
+                    _ => None,
+                };
+                checked.insert(key);
+                todo.push((r, toggled));
+            }
+            if !todo.is_empty() {
+                jobs.push((State::of(&app), todo));
+            }
+        }
+        // The pipeline's command per config (as data), and what each command parses back to:
+        // generating and parsing are most of a check's cost, and many changes give a config or a
+        // command already seen.
+        let commands: std::sync::Mutex<std::collections::HashMap<String, String>> = Default::default();
+        let round_trips: std::sync::Mutex<std::collections::HashMap<String, String>> = Default::default();
+        let cached = |cache: &std::sync::Mutex<std::collections::HashMap<String, String>>, key: &str, make: &mut dyn FnMut() -> String| {
+            if let Some(v) = cache.lock().unwrap().get(key) { return v.clone(); }
+            let v = make();
+            cache.lock().unwrap().insert(key.to_string(), v.clone());
+            v
+        };
+        // What each state runs and shows, worked out once however many changes are checked
+        // against it.
+        let bases = par_map(jobs.iter().map(|(s, _)| s).collect(), || (), |_, s| Outcome::of(&s.app()));
+        // Every change, in order, each checked on its own (on every core).
+        let mut changes: Vec<(usize, Check)> = Vec::new();
+        for (j, (state, todo)) in jobs.iter().enumerate() {
+            let base = state.app();
+            for (r, toggled) in todo {
                 match r {
                     PipelineRow::AlgoSelect { field, options, .. } => {
-                        let current = app.field_select(field);
+                        let current = base.field_select(field);
                         // "custom" names a hand-edited mask; choosing it changes nothing by itself.
                         let custom = |i: usize| *field == "mask_preset" && i == crate::tui::app::MASK_PRESET_CUSTOM;
-                        for i in (0..options.len()).filter(|&i| i != current && !custom(i)) {
-                            let mut a = clone_app(&app);
-                            a.set_field_select(field, i);
-                            check(format!("{field}={i}"), &app, &a, &mut problems);
-                        }
+                        changes.extend((0..options.len()).filter(|&i| i != current && !custom(i)).map(|i| (j, Check::Select(field, i))));
                     }
-                    PipelineRow::Toggle { field, .. } => {
-                        let mut a = clone_app(&app);
-                        a.toggle_field(field);
-                        check(format!("toggle {field}"), &app, &a, &mut problems);
-                    }
-                    PipelineRow::Param { field, .. } => {
-                        let mut a = clone_app(&app);
-                        // Paths and names rather than numbers: any non-empty value is a change.
-                        let v = match (*field, a.field_text(field)) {
-                            ("source_dicom" | "dicom_outputs" | "slurm_account" | "slurm_partition", _) => "x1".to_string(),
-                            (_, v) => bumped(v),
-                        };
-                        *a.field_text_mut(field).unwrap_or_else(|| panic!("{field} not editable")) = v.clone();
-                        check(format!("{field}={v}"), &app, &a, &mut problems);
-                    }
+                    PipelineRow::Toggle { field, .. } => changes.push((j, Check::Toggle(field, Box::new(toggled.clone().unwrap())))),
+                    PipelineRow::Param { field, .. } => changes.push((j, Check::Param(field))),
                     _ => {}
                 }
             }
+        }
+        let results = par_map(changes, || {
+            let mut cli = <crate::cli::Cli as clap::CommandFactory>::command();
+            cli.build();
+            cli
+        }, |cli, (j, change)| {
+            let base = jobs[j].0.app();
+            let (what, app) = match change {
+                Check::Select(field, i) => (format!("{field}={i}"), Change::Select(field, i).apply(&base).unwrap()),
+                Check::Toggle(field, toggled) => (format!("toggle {field}"), toggled.app()),
+                Check::Param(field) => {
+                    let mut a = clone_app(&base);
+                    // Paths and names rather than numbers: any non-empty value is a change.
+                    let v = match (field, a.field_text(field)) {
+                        ("source_dicom" | "dicom_outputs" | "slurm_account" | "slurm_partition", _) => "x1".to_string(),
+                        (_, v) => bumped(v),
+                    };
+                    *a.field_text_mut(field).unwrap_or_else(|| panic!("{field} not editable")) = v.clone();
+                    (format!("{field}={v}"), a)
+                }
+            };
+            let (before, after) = (&bases[j], Outcome::of(&app));
+            let mut found: Vec<(String, String)> = Vec::new();
+            // The same run: the same config and the same run-level arguments.
+            if after.data == before.data && run_level(&app) == run_level(&base) {
+                found.push((format!("no effect on the run: {}", what.split('=').next().unwrap()), what.clone()));
+            } else if before.shown == after.shown {
+                let d = diff(&before.config, &after.config);
+                found.push((format!("not in the command: {d:?}"), what.clone()));
+            }
+            let cmd = cached(&commands, &after.data.to_string(), &mut || qsmxt_engine::generate_command(&after.config));
+            let back = cached(&round_trips, &cmd, &mut || qsmxt_engine::generate_command(&round_trip(cli, &after.config)));
+            if back != cmd {
+                let (a, b) = (flags_of(&cmd), flags_of(&back));
+                found.push((format!("command does not reproduce itself: {:?}", a.symmetric_difference(&b).collect::<Vec<_>>()), what));
+            }
+            (j, found, flags_of(&after.shown))
+        });
+        let mut last = None;
+        for (j, found, flags) in results {
+            for (problem, what) in found {
+                problems.entry(problem).or_insert(what);
+            }
+            // Both ends are reachable states: a toggle explored from its checked side turns the
+            // flag off, and the flag is still one the TUI emits.
+            if last != Some(j) {
+                covered.extend(flags_of(&bases[j].shown));
+                last = Some(j);
+            }
+            covered.extend(flags);
         }
 
         // The controls that are not rows: the Input tab's filters and grouping, and the mask

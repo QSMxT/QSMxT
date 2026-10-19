@@ -471,18 +471,30 @@ fn every_schema_option_is_a_qsmxt_run_option() {
     }
 }
 
+/// What [`schema::get`] reads at `path`, from a config already serialised.
+fn value_at(config: &serde_json::Value, path: &str) -> Option<serde_json::Value> {
+    let (parent, key) = path.rsplit_once('.').unwrap_or(("", path));
+    let obj = parent.split('.').filter(|k| !k.is_empty()).try_fold(config, |v, k| v.get(k))?;
+    obj.as_object().map(|o| o.get(key).cloned().unwrap_or(serde_json::Value::Null))
+}
+
 /// The command the TUI prints runs what the TUI runs: parsed back into a config, it agrees with
 /// the TUI's own config on every setting that applies. (Settings that do not apply are left out
 /// of the command; they do not change the run.)
 #[test]
 fn the_printed_command_reproduces_the_tuis_run() {
-    use clap::Parser;
+    use clap::{CommandFactory, FromArgMatches};
+    // Built once: building clap's command is most of the cost of a parse.
+    let mut parser = crate::cli::Cli::command();
+    parser.build();
+    let settings = schema::schema();
     let mut failures = Vec::new();
     for (acts, app) in explore() {
         let config = config_from_app(&app).unwrap();
         let cmd = qsmxt_engine::generate_command(&config);
         let argv: Vec<String> = cmd.split_whitespace().map(str::to_string).collect();
-        let cli = crate::cli::Cli::try_parse_from(&argv).unwrap_or_else(|e| panic!("{e}\n{cmd}"));
+        let cli = parser.try_get_matches_from_mut(&argv).and_then(|m| crate::cli::Cli::from_arg_matches(&m))
+            .unwrap_or_else(|e| panic!("{e}\n{cmd}"));
         let crate::cli::Command::Run(run) = cli.command else { panic!("expected run") };
         let mut rebuilt = crate::pipeline::config::PipelineConfig::default();
         crate::pipeline::config::apply_run_overrides(&mut rebuilt, &run.pipeline).unwrap();
@@ -494,8 +506,10 @@ fn the_printed_command_reproduces_the_tuis_run() {
                 c.masking.two_pass_sections = Some(c.masking.resolved_two_pass_sections());
             }
         }
-        let differ: Vec<_> = schema::schema().iter()
-            .filter(|s| schema::get(&a, s.path) != schema::get(&b, s.path)).map(|s| s.path).collect();
+        // `schema::get` of each setting, from one serialisation of each config.
+        let (a, b) = (serde_json::to_value(&a).unwrap(), serde_json::to_value(&b).unwrap());
+        let differ: Vec<_> = settings.iter()
+            .filter(|s| value_at(&a, s.path) != value_at(&b, s.path)).map(|s| s.path).collect();
         if !differ.is_empty() {
             failures.push(format!("{differ:?} after {acts:?}\n  {cmd}"));
         }
