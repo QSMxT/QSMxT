@@ -306,35 +306,63 @@ const TGV_PER_VOXEL: u64 = 128;
 /// QSMART's bytes per voxel.
 const QSMART_PER_VOXEL: u64 = 271;
 
-/// The voxels a deep-learning network holds activations for at once, and how many such passes
-/// run at the same time: the whole volume once, or, when `inversion.tile_size` tiles it, one
-/// tile's patch for each tile computed at once. Tiles run in parallel, one per thread natively;
-/// a browser's pool has one more in flight than its threads (measured: xQSM on 4 threads holds
-/// five tiles' activations).
-fn dl_voxels(s: &Scan, config: &PipelineConfig) -> (u64, u64) {
-    match config.dl_tile() {
-        Some((core, halo)) => {
-            let patch = ((core + 2 * halo) as u64).saturating_pow(3).min(s.n);
-            let tiles: u64 = s.dims.iter().map(|&d| d.div_ceil(core.max(1)) as u64).product();
-            let in_flight = match (s.host, s.threads) {
-                (Host::Browser, t) if t > 1 => t + 1,
-                (_, t) => t,
-            };
-            (patch, in_flight.min(tiles).max(1))
-        }
-        None => (s.n, 1),
-    }
+/// What a deep-learning network needs besides its activations, and its activations measured
+/// where qsm-core has no figure.
+struct Net {
+    /// Registry id (`qsm_core::models`), for qsm-core's per-tile cost.
+    id: &'static str,
+    /// Bytes per voxel of the volume (input, output, the tiles' blending), whole-volume and native.
+    per_voxel: u64,
+    /// Bytes held once (the parsed model, for the networks that parse it once).
+    fixed: u64,
+    /// Activation bytes per voxel of the volume, whole-volume.
+    whole: u64,
+    /// Bytes per patch voxel of one tile natively, counted by allocation (qsm-core's per-tile
+    /// figure is the WASM heap's, fragmentation included, and over-counts a native run).
+    native_tile: u64,
+    /// Bytes per voxel of the volume of a tiled run in a browser, and bytes it holds once
+    /// whatever the number of tiles (its plan and full-volume buffers), besides qsm-core's
+    /// per-tile figure, which leaves them out. Fitted to the WASM harness's tiled runs.
+    browser_per_voxel: u64,
+    once: u64,
 }
 
-/// A deep-learning inversion's own need: `per_voxel` bytes over the volume (its input, output
-/// and the tiles' blending), `fixed` bytes (the parsed model), and its activations: `tile` bytes
-/// per voxel of each tile it computes at once ([`dl_voxels`]), or `whole` per voxel of the
-/// volume when it is not tiled. The weights themselves are counted by the host: read in the step
-/// natively, held for the whole run in a browser.
-fn dl_need(s: &Scan, config: &PipelineConfig, per_voxel: u64, fixed: u64, tile: u64, whole: u64) -> u64 {
-    let (patch, at_once) = dl_voxels(s, config);
-    let activations = if config.dl_tile().is_some() { at_once * patch * tile } else { s.n * whole };
-    s.v(per_voxel) + fixed + activations
+/// A deep-learning network's own need.
+///
+/// - Whole volume: `per_voxel` and `whole` bytes per voxel of the volume, plus `fixed`.
+/// - Tiled (`inversion.tile_size`) in a browser: qsm-core's figure for one tile of this network
+///   (`ModelSpec::tile_cost`, `inversion::tile_bytes`) times qsm-core's count of tiles in flight
+///   (`inversion::wasm_tiles_in_flight`: the pool, up to what fits its tile budget), plus
+///   `browser_per_voxel` over the volume, `fixed` and `once`.
+/// - Tiled natively: one tile per thread at `native_tile` bytes per patch voxel, plus
+///   `per_voxel` and `fixed`.
+///
+/// Never more tiles in flight than there are tiles. The weights themselves are counted by the
+/// host: read in the step natively, held for the whole run in a browser.
+fn dl_need(s: &Scan, config: &PipelineConfig, net: Net) -> u64 {
+    use qsm_core::inversion::{tile_bytes, wasm_tiles_in_flight, TileConfig};
+    let cost = qsm_core::models::find_model(net.id).and_then(|m| m.tile_cost());
+    match (config.dl_tile(), cost) {
+        (Some((core, halo)), Some(cost)) => {
+            let cfg = TileConfig { core, halo };
+            let tiles: u64 = s.dims.iter().map(|&d| d.div_ceil(core.max(1)) as u64).product();
+            match s.host {
+                Host::Browser => {
+                    // A browser's rayon pool has one worker more than the threads it is given
+                    // (measured: xQSM and LPCNN on 4 threads hold five tiles), and qsm-core caps
+                    // the tiles in flight at the pool.
+                    let pool = s.threads as usize + usize::from(s.threads > 1);
+                    let in_flight = (wasm_tiles_in_flight(&cfg, &cost, pool) as u64).min(tiles).max(1);
+                    s.v(net.browser_per_voxel) + net.fixed + net.once + in_flight * tile_bytes(&cfg, &cost)
+                }
+                Host::Native => {
+                    let patch = ((core + 2 * halo) as u64).saturating_pow(3).min(s.n);
+                    s.v(net.per_voxel) + net.fixed + s.threads.min(tiles).max(1) * patch * net.native_tile
+                }
+            }
+        }
+        _ => s.v(net.per_voxel) + net.fixed + s.n * net.whole,
+    }
 }
 
 /// Background-field removal: the total field and mask in, the local field and its mask out.
@@ -360,8 +388,8 @@ fn bg_removal_need(config: &PipelineConfig, s: &Scan) -> u64 {
         // iQFM: from every echo's phase and magnitude; on the whole volume 4.2 GB in WASM on the
         // example. BFRnet on the whole volume: 10.9 GB natively on the example. Tiles measured
         // single-threaded in WASM only (0.85 and 1.04 GB on the example at 56 + 2×4).
-        BfAlgorithm::Iqfm => dl_need(s, config, 120, 0, 473, 583),
-        BfAlgorithm::Bfrnet => dl_need(s, config, 40, 0, 3_059, 1_760),
+        BfAlgorithm::Iqfm => dl_need(s, config, Net { id: "iqfm", per_voxel: 120, fixed: 0, whole: 583, native_tile: 473, browser_per_voxel: 120, once: 0 }),
+        BfAlgorithm::Bfrnet => dl_need(s, config, Net { id: "bfrnet", per_voxel: 40, fixed: 0, whole: 1_760, native_tile: 3_059, browser_per_voxel: 40, once: 264_000_000 }),
     }
 }
 
@@ -370,7 +398,7 @@ fn inversion_need(config: &PipelineConfig, s: &Scan) -> u64 {
     let n = s.n;
     // The tileable networks: activations per patch voxel, measured on tiles of 64³ (56 + 2×4) on
     // the example in WASM and natively (xQSM and QSMnet also at 48³, which separates the parts).
-    let dl = |per_voxel, fixed, tile, whole| dl_need(s, config, per_voxel, fixed, tile, whole);
+    let dl = |net: Net| dl_need(s, config, net);
     match config.inversion.algorithm {
         QsmAlgorithm::Tkd => 74 * n,
         QsmAlgorithm::Tsvd => 74 * n,
@@ -394,22 +422,23 @@ fn inversion_need(config: &PipelineConfig, s: &Scan) -> u64 {
         QsmAlgorithm::Hdqsm => 290 * n,
         QsmAlgorithm::AmpPe => 345 * n,
         // On the whole volume each of these is more than the WASM heap holds on the example.
-        QsmAlgorithm::Qsmnet | QsmAlgorithm::QsmnetPlus => dl(50, 820_000_000, 563, 563),
-        QsmAlgorithm::Xqsm => dl(53, 0, 767, 905),
-        QsmAlgorithm::Nextqsm => dl(40, 0, 1_556, 1_556),
+        QsmAlgorithm::Qsmnet => dl(Net { id: "qsmnet", per_voxel: 50, fixed: 820_000_000, whole: 563, native_tile: 563, browser_per_voxel: 50, once: 0 }),
+        QsmAlgorithm::QsmnetPlus => dl(Net { id: "qsmnet-plus", per_voxel: 50, fixed: 820_000_000, whole: 563, native_tile: 563, browser_per_voxel: 50, once: 0 }),
+        QsmAlgorithm::Xqsm => dl(Net { id: "xqsm", per_voxel: 53, fixed: 0, whole: 905, native_tile: 767, browser_per_voxel: 30, once: 0 }),
+        QsmAlgorithm::Nextqsm => dl(Net { id: "nextqsm", per_voxel: 40, fixed: 0, whole: 1_556, native_tile: 1_556, browser_per_voxel: 40, once: 0 }),
         // LPCNN measured natively on 4 threads and in WASM on one (which separates its parts);
         // iR2QSM and MoDL-QSM in WASM only, taken to divide the same way.
-        QsmAlgorithm::Ir2qsm => dl(17, 0, 1_180, WHOLE_VOLUME_AT_LEAST),
-        QsmAlgorithm::Lpcnn => dl(17, 0, 837, WHOLE_VOLUME_AT_LEAST),
-        QsmAlgorithm::ModlQsm => dl(10, 0, 800, WHOLE_VOLUME_AT_LEAST),
+        QsmAlgorithm::Ir2qsm => dl(Net { id: "ir2qsm", per_voxel: 17, fixed: 0, whole: WHOLE_VOLUME_AT_LEAST, native_tile: 1_180, browser_per_voxel: 17, once: 72_000_000 }),
+        QsmAlgorithm::Lpcnn => dl(Net { id: "lpcnn", per_voxel: 17, fixed: 0, whole: WHOLE_VOLUME_AT_LEAST, native_tile: 837, browser_per_voxel: 2, once: 0 }),
+        QsmAlgorithm::ModlQsm => dl(Net { id: "modl-qsm", per_voxel: 10, fixed: 0, whole: WHOLE_VOLUME_AT_LEAST, native_tile: 800, browser_per_voxel: 2, once: 0 }),
         // Patch-based networks that take the whole volume (they patch it themselves).
         QsmAlgorithm::Autoqsm => 92 * n,
         QsmAlgorithm::Qsmgan => 35 * n,
         // iQSM/iQSM+ from every echo's phase and magnitude. On the whole volume: 4.2 GB in WASM
         // for iQSM on the example, and iQSM+ more than the heap holds. Tiles measured
         // single-threaded in WASM only (0.85 and 0.99 GB on the example at 56 + 2×4).
-        QsmAlgorithm::Iqsm => dl(120, 0, 473, 583),
-        QsmAlgorithm::IqsmPlus => dl(120, 0, 1_026, 640),
+        QsmAlgorithm::Iqsm => dl(Net { id: "iqsm", per_voxel: 120, fixed: 0, whole: 583, native_tile: 473, browser_per_voxel: 120, once: 0 }),
+        QsmAlgorithm::IqsmPlus => dl(Net { id: "iqsm-plus", per_voxel: 120, fixed: 0, whole: 640, native_tile: 1_026, browser_per_voxel: 120, once: 0 }),
     }
 }
 
@@ -745,12 +774,7 @@ mod tests {
         for a in QsmAlgorithm::ALL.into_iter().filter(|a| !too_big.contains(a)) {
             configs.push((format!("{a}"), with(|c| c.inversion.algorithm = a)));
         }
-        // BFRnet is left out for now: tiled on 4 threads it comes to 4.1 GB, because qsm-core
-        // caps concurrent tiles with xQSM's per-voxel activation figure for every network
-        // (`inversion::tile_concurrency`), and BFRnet's patches are about three times heavier.
-        // That is QSM.rs's to fix (a separate QSM.rs PR sizes the cap per network); add BFRnet
-        // back here when qsm-core is repinned past it.
-        for b in [BfAlgorithm::Iqfm, BfAlgorithm::Vsharp, BfAlgorithm::Pdf, BfAlgorithm::Lbv, BfAlgorithm::Ismv, BfAlgorithm::Sharp,
+        for b in [BfAlgorithm::Bfrnet, BfAlgorithm::Iqfm, BfAlgorithm::Vsharp, BfAlgorithm::Pdf, BfAlgorithm::Lbv, BfAlgorithm::Ismv, BfAlgorithm::Sharp,
                   BfAlgorithm::Resharp, BfAlgorithm::Harperella, BfAlgorithm::Iharperella] {
             configs.push((format!("{b}"), with(|c| c.bg_removal.algorithm = b)));
         }

@@ -916,29 +916,6 @@
   },
   {
    "kind": "browser",
-   "name": "nextqsm",
-   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
-   "threads": 16,
-   "settings": [
-    [
-     "inversion.algorithm",
-     "nextqsm"
-    ]
-   ],
-   "isolated": "invert",
-   "heap": [
-    [
-     "invert",
-     2539520000
-    ],
-    [
-     "reference",
-     2539520000
-    ]
-   ]
-  },
-  {
-   "kind": "browser",
    "name": "base-tkd",
    "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
    "threads": 16,
