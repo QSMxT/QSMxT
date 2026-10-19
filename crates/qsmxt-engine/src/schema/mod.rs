@@ -308,6 +308,7 @@ pub const BROWSER_SUPPLIED_TOOL: &str = "qsmbly";
 /// Config leaves that are deliberately not in the schema, with why.
 pub const NOT_IN_SCHEMA: &[(&str, &str)] = &[
     ("description", "a free-text note saved with the config, not a setting"),
+    ("masking.recipe_chosen", "not a setting of its own: a front end sets it when the user picks a mask preset or edits the recipe (masking.sections), so the recipe is kept rather than replaced by the inversion's default"),
     ("bet.fractional_intensity", "set per BET step in the mask recipe (masking.sections); this is the --bet-fractional-intensity override applied to every step"),
     ("bet.voxel_scale", "set per BET step in the mask recipe (masking.sections); this is the --bet-voxel-scale override applied to every step"),
     ("inversion.tikhonov.reg", "config file only: no qsmxt run option or TUI row"),

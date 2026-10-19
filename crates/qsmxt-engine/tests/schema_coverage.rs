@@ -30,6 +30,7 @@ fn filled() -> PipelineConfig {
     c.inversion.tile_size = Some(64);
     c.inversion.tile_halo = Some(8);
     c.qsm.reference_region = Some("thalamus".into());
+    c.masking.recipe_chosen = true;
     c
 }
 

@@ -249,9 +249,9 @@ fn command_for(config: &PipelineConfig) -> String {
         && config.masking.refinements == d.masking.refinements;
     match crate::masking::masking_preset_command(&config.masking) {
         // The default recipe is a preset too; saying so adds noise rather than removing it. Except
-        // under QSMART, where untouched masking means BET (see `apply_run_overrides`), so the
-        // default recipe has to be said to be kept.
-        _ if masking_default && config.inversion.algorithm != QsmAlgorithm::Qsmart => {}
+        // where the user chose it over the inversion's own default (QSMART's BET mask, see
+        // `MaskingConfig::recipe_chosen`): naming the preset is what keeps it.
+        _ if masking_default && !config.masking.recipe_chosen => {}
         Some((preset, input)) => {
             parts.push(format!("--mask-preset {preset}"));
             if let Some(input) = input {

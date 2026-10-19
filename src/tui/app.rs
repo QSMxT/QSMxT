@@ -1814,6 +1814,10 @@ pub struct PipelineFormState {
     /// refinements as the main mask.
     pub two_pass_sections: Vec<crate::pipeline::config::MaskSection>,
     pub mask_preset: usize, // index into MASK_PRESET_OPTIONS (MASK_PRESET_CUSTOM = hand-edited)
+    /// The user chose the main mask: picked a preset (the default one included) or edited the
+    /// recipe. Until then the run takes the inversion's own default mask (QSMART's BET, the
+    /// engine's rule, `MaskingConfig::recipe_chosen`), and the recipe shown is that one.
+    pub mask_chosen: bool,
     pub custom_mask_tool: String, // empty=off; "*"=any derivatives tool; else a tool name
 
     // χ-separation tab
@@ -2156,6 +2160,7 @@ impl Default for PipelineFormState {
             two_pass: false,
             two_pass_sections: qsmxt_engine::default_two_pass_sections(),
             mask_preset: 0, // robust threshold
+            mask_chosen: false,
             custom_mask_tool: String::new(),
             do_chi_separation: false,
             separation_algorithm: 0,
@@ -2870,7 +2875,11 @@ impl PipelineFormState {
             }
             "qsmart" => { // QSMART
                 rows.push(PipelineRow::Note {
-                    text: "⚠ QSMART needs a tight BET brain mask — loose masks cause streaking (Preprocessing → Masking)".into(),
+                    text: match self.mask_warning() {
+                        Some(w) => format!("⚠ {w} (Preprocessing → Masking)").into(),
+                        None if !self.mask_chosen => "QSMART makes its brain mask with BET unless another mask is chosen (Preprocessing → Masking)".into(),
+                        None => "QSMART needs a tight brain mask (Preprocessing → Masking)".into(),
+                    },
                 });
                 rows.push(PipelineRow::AlgoSelect {
                     label: "  Inner Inversion", field: "qsmart_inversion",
@@ -3623,7 +3632,10 @@ impl PipelineFormState {
     /// Set a select value by field name.
     pub fn set_select(&mut self, field: &str, val: usize) {
         match field {
-            "qsm_algorithm" => self.qsm_algorithm = val,
+            "qsm_algorithm" => {
+                self.qsm_algorithm = val;
+                self.show_unchosen_mask();
+            }
             "qsmart_inversion" => self.qsmart_inversion = val,
             "unwrapping_algorithm" => self.unwrapping_algorithm = val,
             "bf_algorithm" => self.bf_algorithm = val,
@@ -3638,6 +3650,7 @@ impl PipelineFormState {
             "output_space" => self.output_space = val,
             "mask_preset" => {
                 self.mask_preset = val;
+                self.mask_chosen = true;
                 self.apply_mask_preset(val);
             }
             "separation_algorithm" => self.separation_algorithm = val,
@@ -4023,9 +4036,40 @@ impl PipelineFormState {
     /// alone — otherwise turning two-pass on and adjusting its threshold would appear to abandon
     /// the `robust-threshold` preset the main mask still follows.
     fn mark_mask_custom(&mut self, section: usize) {
-        if !is_two_pass_section(section) && self.mask_preset != MASK_PRESET_CUSTOM {
+        if !is_two_pass_section(section) {
+            self.mask_chosen = true;
             self.mask_preset = MASK_PRESET_CUSTOM;
         }
+    }
+
+    /// Show, while the user has not chosen a mask, the one the run takes: the selected
+    /// inversion's default ([`qsmxt_engine::masking::default_mask_sections_for`]), by its preset.
+    pub fn show_unchosen_mask(&mut self) {
+        if self.mask_chosen { return; }
+        let sections = qsmxt_engine::masking::default_mask_sections_for(
+            crate::tui::command::selected_qsm_algorithm(self));
+        let recipe = qsmxt_engine::masking::MaskRecipe::from_sections(sections);
+        match qsmxt_engine::masking::mask_presets().iter().position(|(_, r)| *r == recipe) {
+            Some(preset) => {
+                self.mask_preset = preset;
+                self.apply_mask_preset(preset);
+            }
+            None => {
+                self.mask_preset = MASK_PRESET_CUSTOM;
+                self.mask_sections = recipe.sections;
+                self.mask_combine = recipe.combine;
+                self.mask_combined_refinements = recipe.refinements;
+            }
+        }
+    }
+
+    /// What may go wrong with the main mask under the selected inversion
+    /// ([`qsmxt_engine::masking::mask_warning`]).
+    pub fn mask_warning(&self) -> Option<&'static str> {
+        let mut c = crate::pipeline::config::PipelineConfig::default();
+        c.inversion.algorithm = crate::tui::command::selected_qsm_algorithm(self);
+        c.masking.sections = self.mask_sections.clone();
+        qsmxt_engine::masking::mask_warning(&c)
     }
 
     /// Index of a section's generator in [`MASK_GENERATOR_TYPES`].
@@ -6648,6 +6692,8 @@ impl App {
             ps.mask_combined_refinements = d.mask_combined_refinements;
             ps.two_pass_sections = d.two_pass_sections;
             ps.mask_preset = d.mask_preset;
+            ps.mask_chosen = false;
+            ps.show_unchosen_mask();
         }
         let mut done = std::collections::HashSet::new();
         loop {

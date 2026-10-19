@@ -19,6 +19,7 @@ use crate::config::{
     enforce_smwi_dependencies, PipelineConfig,
 };
 use crate::enums::{QsmReference, SeparationAlgorithm};
+use crate::masking::{default_mask_sections, default_mask_sections_for};
 
 /// One change [`PipelineConfig::normalised`] made to a configuration, and why: what a front end
 /// lists beside the plan.
@@ -43,7 +44,10 @@ impl PipelineConfig {
     /// - χ-separation needs the relaxometry maps its method reads, and a computed R2′ needs R2*
     ///   (and R2, where R2′ may be measured);
     /// - a region reference is measured on the segmentation, and a region reference that names
-    ///   no region is the mean.
+    ///   no region is the mean;
+    /// - the general default mask recipe, unless the user chose it
+    ///   ([`crate::config::MaskingConfig::recipe_chosen`]), is the inversion's own default where
+    ///   it has one: QSMART's BET mask.
     ///
     /// Idempotent: normalising the result changes nothing and returns no adjustments.
     pub fn normalised(&self) -> (PipelineConfig, Vec<Adjustment>) {
@@ -98,6 +102,20 @@ impl PipelineConfig {
         if turned_on(&before, &c, |c| c.pipeline.do_segmentation) {
             out.push(note("pipeline.do_segmentation", "qsm.reference",
                 "Segmentation is on: the reference region is measured on it"));
+        }
+
+        // The general default mask gives way to the inversion's own, unless the user chose it.
+        // The mark is kept only where it decides that, so equal runs have equal configurations.
+        let general = default_mask_sections();
+        let own = default_mask_sections_for(c.inversion.algorithm);
+        if c.masking.sections == general && own != general {
+            if !c.masking.recipe_chosen {
+                c.masking.sections = own;
+                out.push(note("masking.sections", "inversion.algorithm",
+                    "The brain mask is made with BET: QSMART needs a tight brain mask"));
+            }
+        } else {
+            c.masking.recipe_chosen = false;
         }
         (c, out)
     }

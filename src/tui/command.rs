@@ -694,7 +694,9 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         output_space: Some(if ps.output_space == 1 { crate::cli::OutputSpaceArg::Working } else { crate::cli::OutputSpaceArg::Acquired }),
         mask_preset: None,
         use_custom_masks: if ps.custom_mask_tool.trim().is_empty() { None } else { Some(ps.custom_mask_tool.trim().to_string()) },
-        mask_sections_cli: {
+        // An unchosen mask is left to the engine's rule, as `qsmxt run` without a mask option
+        // leaves it: the inversion's own default (QSMART's BET), else the general one.
+        mask_sections_cli: if !ps.mask_chosen { None } else {
             let secs: Vec<String> = ps.mask_sections.iter().map(|section| {
                 let mut parts = vec![format!("{}", section.input)];
                 for op in &section.all_ops() {
@@ -706,11 +708,12 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         },
         // Only the non-default mode is worth spelling out on the command line.
         mask_combine: match ps.mask_combine_recipe().0 {
+            _ if !ps.mask_chosen => None,
             crate::pipeline::config::MaskCombine::Or => None,
             crate::pipeline::config::MaskCombine::And => Some(crate::cli::MaskCombineArg::And),
         },
         mask_refinements_cli: match ps.mask_combine_recipe().1 {
-            ops if ops.is_empty() => None,
+            ops if ops.is_empty() || !ps.mask_chosen => None,
             ops => Some(ops.iter().map(|op| format!("{op}")).collect()),
         },
         two_pass: ps.two_pass,
