@@ -105,12 +105,13 @@ fn same(a: &Value, b: &Value) -> bool {
 
 #[test]
 fn every_setting_reads_writes_and_survives_toml() {
+    let default = json_of(&PipelineConfig::default());
     for s in schema::schema() {
         let mut c = PipelineConfig::default();
         let cur = schema::get(&c, s.path).unwrap_or_else(|| panic!("{}: no such path", s.path));
         assert_eq!(cur, s.default, "{}: default", s.path);
         schema::set(&mut c, s.path, cur.clone()).unwrap_or_else(|e| panic!("{}: {e}", s.path));
-        assert_eq!(json_of(&c), json_of(&PipelineConfig::default()), "{}: writing the default changed the config", s.path);
+        assert_eq!(json_of(&c), default, "{}: writing the default changed the config", s.path);
 
         for v in another(&s, &cur) {
             let mut c = PipelineConfig::default();
