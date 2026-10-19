@@ -32,6 +32,26 @@ pub fn hd_bet_network_bytes(patch: Option<[usize; 3]>) -> u64 {
     input_voxels * 1024 + 300 * 1024 * 1024
 }
 
+/// SynthSeg's peak in bytes on a `dims` volume (taken to be about 1 mm, the resolution SynthSeg
+/// resamples to), with a sliding window of `patch` (`None`: the whole volume at once). The
+/// network takes about 1 KB per voxel it sees at once, and the posteriors (one float per label
+/// per voxel, blended and then cleaned up) about 200 B per padded voxel. Measured on a 184×256×128
+/// scan with flip averaging: 6.8 GB on the whole volume, 3.25 GB with 128³ windows, 2.0 GB with
+/// 96³.
+pub fn synthseg_bytes(dims: [usize; 3], patch: Option<usize>) -> u64 {
+    // qsm-core pads each axis to a multiple of 32, at least 128.
+    let padded: [u64; 3] = std::array::from_fn(|a| (dims[a].div_ceil(32) * 32).max(128) as u64);
+    let n_pad: u64 = padded.iter().product();
+    let window: u64 = match patch {
+        None => n_pad,
+        Some(p) => {
+            let p = (p.div_ceil(32) * 32) as u64;
+            padded.iter().map(|&d| d.min(p)).product()
+        }
+    };
+    window * 1000 + n_pad * 200
+}
+
 /// Estimate peak memory usage in bytes for a single pipeline run.
 ///
 /// The estimate accounts for:
@@ -96,6 +116,12 @@ pub fn estimate_peak_memory_bytes(
     // Signal-gated erosion keeps a handful of f64 volumes (smoothed signal, bias estimate, depth).
     let has_signal_erode = config.masking.sections.iter()
         .any(|s| s.refinements.iter().any(|op| matches!(op, MaskOp::SignalErode { .. })));
+    // SynthSeg runs on the combined magnitude after masking.
+    let segmentation_mem = if config.pipeline.do_segmentation || config.pipeline.do_analysis {
+        synthseg_bytes([nx, ny, nz], config.segmentation.patch)
+    } else {
+        0
+    };
     let mask_mem = (if has_bet { 17 * n } else { 9 * n }).max(hd_bet_mem).max(mindgrab_mem)
         + if has_signal_erode { 8 * n * F64 } else { 0 };
 
@@ -151,6 +177,7 @@ pub fn estimate_peak_memory_bytes(
         + [
             coil_combine_mem,
             mask_mem,
+            segmentation_mem,
             swi_temp + swi_persistent,
             qsm_stage_mem + swi_persistent,
             sep_mem,
@@ -338,6 +365,20 @@ mod tests {
             c.bg_removal.algorithm = b;
             assert!(estimate_peak_memory_bytes(8, 8, 8, 1, 1, false, &c) > 0, "{:?}", b);
         }
+    }
+
+    #[test]
+    fn synthseg_counts_and_a_window_bounds_it() {
+        let mut c = default_config();
+        let without = estimate_peak_memory_bytes(184, 256, 128, 5, 1, true, &c);
+        c.pipeline.do_segmentation = true;
+        let whole = estimate_peak_memory_bytes(184, 256, 128, 5, 1, true, &c);
+        assert!(whole > 6_000_000_000 && whole > without, "{whole}");
+        c.segmentation.patch = Some(128);
+        let window = estimate_peak_memory_bytes(184, 256, 128, 5, 1, true, &c);
+        assert!(window * 3 < whole * 2, "{window} vs {whole}");
+        // A volume one window covers costs what the whole volume costs, near enough.
+        assert!(synthseg_bytes([100, 100, 100], Some(128)) <= synthseg_bytes([100, 100, 100], None));
     }
 
     #[test]

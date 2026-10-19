@@ -652,6 +652,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         segmentation_params: crate::cli::SegmentationParamArgs {
             synthseg_version: Some(if form.synthseg_version == 1 { "v2".into() } else { "v1".into() }),
             synthseg_crop: parse_optional_usize(&form.synthseg_crop),
+            synthseg_patch: parse_optional_usize(&form.synthseg_patch),
             no_synthseg_flip_averaging: !form.synthseg_flip_averaging,
             no_synthseg_topology_cleanup: !form.synthseg_topology_cleanup,
             synthseg_sigma: if form.synthseg_smoothing { parse_optional_f64(&form.synthseg_sigma) } else { Some(0.0) },

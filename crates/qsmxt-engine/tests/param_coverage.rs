@@ -70,7 +70,10 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     cover!(q::inversion::AmpPeParams => c::AmpPeConfig);
     cover!(q::inversion::IlsqrParams => c::IlsqrConfig);
     cover!(q::swi::SmwiParams => c::SmwiConfig);
-    cover!(q::segment::SynthSegParams => c::SegmentationConfig);
+    // `inference` (FullVolume | SlidingWindow { patch, tile_step }) is `patch` here: None is the
+    // whole volume, Some(p) a window of p at qsm-core's low-memory step (half a patch), which
+    // QSMxT does not offer to change (config::synthseg_inference).
+    cover!(q::segment::SynthSegParams => c::SegmentationConfig, ignore: ["inference"]);
     // `b0` comes from scan metadata and `mask_output` is forced off when HEIDI consumes the
     // solution, so qsm-core's dispatcher owns both — neither is the user's to set.
     cover!(q::inversion::LsqrQsmParams => c::LsqrConfig, ignore: ["b0", "mask_output"]);

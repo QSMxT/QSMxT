@@ -860,6 +860,10 @@ pub(super) fn table() -> Vec<Def> {
         d("segmentation.crop", Segmentation, "Crop", "Cubic centre-crop in voxels at 1 mm before inference; empty processes the whole volume", Int).min(1.0).units("voxels").optional().flag("--synthseg-crop").parent("pipeline.do_segmentation")
         .when(|x| x.segmentation_on && x.c.segmentation.custom_dseg_tool.is_none())
         .gui("Cubic centre crop at 1 mm before inference; empty processes the whole volume"),
+        // QSM.rs segment/synthseg.rs refuses a patch under 64 and rounds it up to a multiple of 32.
+        d("segmentation.patch", Segmentation, "Sliding Window", "Run the network on half-overlapping cubes of this many voxels at 1 mm (rounded up to a multiple of 32), so its memory follows the patch instead of the volume; empty runs the whole volume at once", Int).min(64.0).units("voxels").optional().flag("--synthseg-patch").parent("pipeline.do_segmentation")
+        .when(|x| x.segmentation_on && x.c.segmentation.custom_dseg_tool.is_none())
+        .gui("Patch size for running SynthSeg piece by piece, which needs less memory; empty runs the whole volume at once"),
         d("segmentation.flip_averaging", Segmentation, "Flip Averaging", "Average with a left-right flipped second pass (SynthSeg's default). Doubles inference time", Bool).flag("--no-synthseg-flip-averaging").parent("pipeline.do_segmentation")
         .when(|x| x.segmentation_on && x.c.segmentation.custom_dseg_tool.is_none()),
         d("segmentation.topology_cleanup", Segmentation, "Topology Cleanup", "Reset each topological class to its largest connected component", Bool).flag("--no-synthseg-topology-cleanup").parent("pipeline.do_segmentation")

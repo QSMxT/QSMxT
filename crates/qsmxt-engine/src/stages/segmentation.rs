@@ -9,17 +9,22 @@ use crate::enums::SynthSegVersion;
 use crate::error::EngineError;
 use crate::scan::RunMetadata;
 
-/// The `segmentation` step's parameters.
+/// The `segmentation` step's parameters. A sliding window's `patch` is there only when one is
+/// set, so a whole-volume run keeps the cache key it had before the setting existed.
 pub fn params(config: &PipelineConfig) -> serde_json::Value {
     let c = &config.segmentation;
-    serde_json::json!({
+    let mut params = serde_json::json!({
         "version": format!("{}", c.version),
         "crop": c.crop,
         "flip_averaging": c.flip_averaging,
         "topology_cleanup": c.topology_cleanup,
         "sigma_smoothing": c.sigma_smoothing,
         "custom_dseg_tool": c.custom_dseg_tool,
-    })
+    });
+    if let Some(patch) = c.patch {
+        params["patch"] = patch.into();
+    }
+    params
 }
 
 /// Whether `version`'s weights can be had (published in QSM.rs's registry, or present locally),
@@ -69,6 +74,7 @@ pub fn synthseg(
         flip_averaging: config.flip_averaging,
         topology_cleanup: config.topology_cleanup,
         sigma_smoothing: config.sigma_smoothing,
+        inference: crate::config::synthseg_inference(config.patch),
     };
     let weights = qsm_core::models::primary_weight(config.version.weights_id())
         .map_err(|e| EngineError::Config(format!("synthseg weights: {}", e)))?;

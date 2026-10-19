@@ -29,7 +29,7 @@ dl = ["qsm-core/onnx", "qsm-core/download", "qsmxt-engine/onnx"]
 # cut: a `rev` pin is what CI can resolve, but it must become a `tag` pin before the next QSMxT
 # release, or qsmbly (which pins qsmxt-engine) has no release to match. qsmxt-engine must move in
 # lockstep.
-qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "8a3afda3716a859d93f1d41f1c8993335cc80c57", features = ["parallel"] }
+qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "91c40fd0df7425a099c7d10dd49cc3db91193b7e", features = ["parallel"] }
 qsmxt-engine = { path = "crates/qsmxt-engine" }
 clap = { version = "4", features = ["derive"] }
 const_format = "0.2"
