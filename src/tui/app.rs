@@ -499,7 +499,8 @@ pub const TAB_QSM: usize = 2;
 pub const TAB_SEPARATION: usize = 3;
 pub const TAB_OUTPUTS: usize = 4;
 pub const TAB_EXECUTION: usize = 5;
-pub const TAB_METHODS: usize = 6;
+pub const TAB_PIPELINE: usize = 6;
+pub const TAB_METHODS: usize = 7;
 
 /// A sub-tab of a row-based tab: the second tab row, switched with `[` and `]`. A tab with a
 /// single page (Separation, Execution) shows no second row.
@@ -775,13 +776,14 @@ fn expand_tilde(path: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(path)
 }
 
-pub const TAB_NAMES: [&str; 7] = [
+pub const TAB_NAMES: [&str; 8] = [
     "Input",
     "Preprocessing",
     "QSM",
     "χ-separation",
     "Other outputs",
     "Execution",
+    "Pipeline",
     "Methods",
 ];
 
@@ -4340,6 +4342,8 @@ pub struct App {
     pub should_update: bool,
     pub form_scroll_offset: usize,
     pub methods_scroll_offset: usize,
+    /// The Pipeline tab: its scroll, the scan it plans on, where its SVG goes.
+    pub pipeline_view: super::pipeline_view::PipelineView,
     pub error_message: Option<String>,
     /// A one-line confirmation in the footer (e.g. "Methods copied to clipboard"); cleared,
     /// like `error_message`, by the next key.
@@ -4630,6 +4634,7 @@ impl App {
             should_update: false,
             form_scroll_offset: 0,
             methods_scroll_offset: 0,
+            pipeline_view: Default::default(),
             error_message: None,
             status_message: None,
             clipboard: None,
@@ -4765,6 +4770,25 @@ impl App {
         if Self::is_rows_tab(self.active_tab) {
             self.sync_pipeline_mode();
             self.handle_rows_key(key);
+            return;
+        }
+
+        // The Pipeline tab — read-only: scrolling, and the graph as SVG.
+        if self.active_tab == TAB_PIPELINE {
+            match key.code {
+                KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
+                _ if self.switch_tab(key) => {}
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.pipeline_view.scroll = self.pipeline_view.scroll.saturating_sub(1);
+                }
+                KeyCode::Down | KeyCode::Char('j') => self.pipeline_view.scroll += 1,
+                KeyCode::PageUp => self.pipeline_view.scroll = self.pipeline_view.scroll.saturating_sub(10),
+                KeyCode::PageDown => self.pipeline_view.scroll += 10,
+                KeyCode::Home => self.pipeline_view.scroll = 0,
+                KeyCode::Enter | KeyCode::Char('s') => self.open_pipeline_svg(),
+                KeyCode::F(5) => self.try_run(),
+                _ => {}
+            }
             return;
         }
 
@@ -8761,7 +8785,7 @@ mod tests {
         let mut app = App::new();
         app.active_tab = TAB_METHODS;
         app.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
-        assert_eq!(app.active_tab, TAB_EXECUTION);
+        assert_eq!(app.active_tab, TAB_PIPELINE);
     }
 
     #[test]

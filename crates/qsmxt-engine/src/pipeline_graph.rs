@@ -4,7 +4,8 @@
 //! [`pipeline_graph`] reads only the [`Plan`], the configuration and the scan's facts, so a front
 //! end can draw it before anything runs, and since the plan is what `run` takes, the picture
 //! cannot disagree with what runs. qsmbly draws it from [`PipelineGraph`]'s JSON; `qsmxt` writes
-//! it as Mermaid ([`PipelineGraph::to_mermaid`]).
+//! it as Mermaid ([`PipelineGraph::to_mermaid`]) and SVG ([`PipelineGraph::to_svg`]), and shows it
+//! in a terminal as text ([`text`]).
 //!
 //! The arrows are data flow: an item a step reads, from the step that last wrote it before it.
 //! The load step stands for the scan: the acquired echoes and anything supplied with the scan (a
@@ -1013,39 +1014,6 @@ impl PipelineGraph {
         self.edges.iter().any(|e| e.from == from && e.to == to)
     }
 
-    /// The graph as plain text, for a terminal: each step in run order, with its pass, its
-    /// algorithm and settings, when it applies, and the steps it reads from.
-    pub fn to_text(&self) -> String {
-        let mut out = String::new();
-        for n in &self.nodes {
-            let mut head = n.label.clone();
-            if let Some(alg) = &n.algorithm_label {
-                head.push_str(&format!(": {alg}"));
-            }
-            match n.branch {
-                Some(Branch::Main) => head.push_str(" [main pass]"),
-                Some(Branch::Reliable) => head.push_str(" [reliable pass]"),
-                None => {}
-            }
-            out.push_str(&format!("  {head}\n"));
-            for s in &n.settings {
-                out.push_str(&format!("      {s}\n"));
-            }
-            if let Some(when) = &n.only_when {
-                out.push_str(&format!("      only when {when}\n"));
-            }
-            if !n.models.is_empty() {
-                out.push_str(&format!("      models: {}\n", n.models.join(", ")));
-            }
-            let from: Vec<&str> = self.edges.iter().filter(|e| e.to == n.id)
-                .filter_map(|e| self.node(&e.from).map(|f| f.label.as_str())).collect();
-            if !from.is_empty() {
-                out.push_str(&format!("      after: {}\n", from.join(", ")));
-            }
-        }
-        out
-    }
-
     /// The graph as a Mermaid flowchart: one box per step (label, algorithm, settings), each
     /// arrow labelled with what flows along it (an echo's items once, for all echoes). A two-pass
     /// run's passes are subgraphs; a step a setting asked for is dashed, and one that may do
@@ -1134,6 +1102,7 @@ impl PipelineGraph {
 
 pub mod layout;
 mod svg;
+pub mod text;
 
 #[cfg(test)]
 mod tests;

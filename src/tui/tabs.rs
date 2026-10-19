@@ -25,7 +25,7 @@ use ratatui::{
 use super::app::{App, TAB_NAMES};
 
 /// Short names, used for inactive tabs when the full names do not fit the width.
-const SHORT: [&str; TAB_NAMES.len()] = ["Input", "Prep", "QSM", "χ-sep", "Outputs", "Exec", "Methods"];
+const SHORT: [&str; TAB_NAMES.len()] = ["Input", "Prep", "QSM", "χ-sep", "Outputs", "Exec", "Pipeline", "Methods"];
 
 /// The greys the design is drawn with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1,6 +1,7 @@
 mod app;
 mod clipboard;
 mod command;
+mod pipeline_view;
 mod tabs;
 mod ui;
 #[cfg(test)]

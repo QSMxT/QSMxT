@@ -541,13 +541,73 @@ fn box_text_wraps_and_svg_escapes() {
     assert!(svg.contains("a &lt; b &amp; &quot;c&quot;"), "{svg}");
 }
 
-/// The plain-text graph names each step, its algorithm, settings and the steps it follows.
+/// The plain-text graph numbers each step in run order, with its algorithm, settings and when it
+/// applies, and a line for each step it reads from naming what flows along that arrow.
 #[test]
 fn the_graph_as_text() {
     let text = graph(&PipelineConfig::default(), &facts()).to_text();
-    assert!(text.starts_with("  Load\n  Phase scaling\n      after: Load\n"), "{text}");
-    assert!(text.contains("  Background-field removal: V-SHARP\n      SMV kernel radii from 12 to 1 mm\n      after: Field map, Brain mask\n"), "{text}");
-    assert!(text.contains("      only when the run is resampled\n"), "{text}");
+    assert!(text.starts_with(" 1 Load\n 2 Phase scaling\n     ← 1 Load: Phase (as acquired), Magnitude (as acquired)\n"), "{text}");
+    assert!(text.contains(concat!(
+        " 6 Background-field removal · V-SHARP\n",
+        "     SMV kernel radii from 12 to 1 mm\n",
+        "     ← 5 Field map: Total field\n",
+        "     ← 4 Brain mask: Brain mask\n")), "{text}");
+    assert!(text.contains("     only when the run is resampled\n"), "{text}");
+    // Every arrow is a line.
+    let g = graph(&PipelineConfig::default(), &facts());
+    let from_lines = g.text_lines(None).iter().filter(|l| l.parts[0].0 == text::Part::From).count();
+    let pairs: std::collections::BTreeSet<(&str, &str)> = g.edges.iter().map(|e| (e.from.as_str(), e.to.as_str())).collect();
+    assert_eq!(from_lines, pairs.len());
+}
+
+/// A two-pass run's per-pass steps say their pass, once; a deep-learning step names its models.
+#[test]
+fn the_text_names_passes_and_models() {
+    let mut config = PipelineConfig::default();
+    config.masking.two_pass = true;
+    config.inversion.algorithm = QsmAlgorithm::Tgv;
+    let text = graph(&config, &facts()).to_text();
+    assert!(text.contains(" 4 Brain mask  [main pass]\n"), "{text}");
+    assert!(text.contains("Reliable-phase mask  [reliable pass]\n"), "{text}");
+    assert!(text.contains("TGV-QSM (reliable pass) · TGV\n"), "{text}");
+    assert!(text.contains("Two-pass combination\n"), "{text}");
+
+    let mut config = PipelineConfig::default();
+    config.inversion.algorithm = QsmAlgorithm::Xqsm;
+    let g = graph(&config, &facts());
+    let node = g.nodes.iter().find(|n| !n.models.is_empty()).expect("a step runs a model");
+    let name = text::model_name(&node.models[0]);
+    assert_ne!(name, node.models[0], "the registry names it");
+    assert!(g.to_text().contains(&format!("model: {name}\n")), "{}", g.to_text());
+}
+
+/// A line too long for the width continues on the next, further indented, and keeps what each
+/// piece of it says; nothing is lost.
+#[test]
+fn text_lines_wrap_to_a_width() {
+    let mut config = PipelineConfig::default();
+    config.masking.two_pass = true;
+    let g = graph(&config, &facts());
+    let words = |lines: &[text::Line]| lines.iter().flat_map(|l| l.text().split_whitespace().map(str::to_string).collect::<Vec<_>>()).collect::<Vec<_>>();
+    let full = g.text_lines(None);
+    for width in [30, 44, 60] {
+        let narrow = g.text_lines(Some(width));
+        assert!(narrow.len() > full.len(), "{width}");
+        for l in &narrow {
+            assert!(l.indent + l.text().chars().count() <= width, "{width}: {l:?}");
+            assert!(!l.parts.is_empty());
+        }
+        assert_eq!(words(&narrow), words(&full), "{width}");
+        // A continued arrow line is still the arrow's: its items stay items.
+        let items = |lines: &[text::Line]| lines.iter().flat_map(|l| &l.parts).filter(|(p, _)| *p == text::Part::Items)
+            .map(|(_, t)| t.split_whitespace().count()).sum::<usize>();
+        assert_eq!(items(&narrow), items(&full), "{width}");
+    }
+    // A word longer than the line is cut, not dropped.
+    let mut g = graph(&PipelineConfig::default(), &facts());
+    g.nodes[0].settings.push("x".repeat(40));
+    let lines = g.text_lines(Some(20));
+    assert_eq!(lines.iter().filter(|l| l.step == g.nodes[0].id).map(|l| l.text().trim().to_string()).collect::<String>().matches('x').count(), 40);
 }
 
 /// Runs that set a step up differently (a mask supplied for one, computed for another): the
