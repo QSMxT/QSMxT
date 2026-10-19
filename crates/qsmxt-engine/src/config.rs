@@ -707,7 +707,7 @@ impl Default for SwiConfig {
 
 // ─── Top-level config and section structs ───
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PipelineConfig {
     #[serde(default)]

@@ -655,12 +655,14 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = sp.wavesep_tol { config.separation.wavesep.tol = v; }
         if let Some(v) = sp.hc_chisep_dr_pos_3t { config.separation.hc_chisep.dr_pos_3t = v; }
         if let Some(v) = sp.hc_chisep_bin_hz { config.separation.hc_chisep.bin_hz = v; }
-        // Chi-separation depends on R2*/R2/R2'; enabling it implies computing them
-        // (a custom R2' or R2 map, when supplied, is used instead — see the runner).
-        enforce_analysis_dependencies(config);
-        enforce_smwi_dependencies(config);
-        enforce_separation_dependencies(config);
-        enforce_reference_dependencies(config);
+        // The outputs other outputs need (χ-separation's relaxometry maps, the statistics'
+        // segmentation, ...) are switched on as every front end has them switched on. Nothing
+        // below sets a setting the rules read.
+        let (normalised, adjustments) = config.normalised();
+        for a in &adjustments {
+            log::debug!("{}", a.message);
+        }
+        *config = normalised;
         if args.export_dicom { config.pipeline.export_dicom = true; }
         if args.no_inhomogeneity_correction { config.masking.inhomogeneity_correction = false; }
         else if args.inhomogeneity_correction { config.masking.inhomogeneity_correction = true; }

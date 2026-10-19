@@ -1697,7 +1697,7 @@ mod tests {
         cfg.pipeline.do_chi_separation = true;
         // χ-sep-iLSQR takes B0 as a parameter, so nothing else in this run wants axial data.
         cfg.separation.algorithm = crate::pipeline::config::SeparationAlgorithm::ChiSepIlsqr;
-        qsmxt_engine::config::enforce_separation_dependencies(&mut cfg);
+        cfg = cfg.normalised().0;
         // No MESE, so `--r2prime-strategy auto` predicts R2′ with R2PRIMEnet.
         let run = run_for_geometry(None);
         let meta = super::resolve_run_geometry(&run, &nifti_with(oblique_affine(), (16, 16, 8)), &cfg).unwrap();
@@ -1713,7 +1713,7 @@ mod tests {
         let mut cfg = crate::pipeline::config::PipelineConfig::default();
         cfg.pipeline.do_chi_separation = true;
         cfg.separation.algorithm = crate::pipeline::config::SeparationAlgorithm::ChiSepIlsqr;
-        qsmxt_engine::config::enforce_separation_dependencies(&mut cfg);
+        cfg = cfg.normalised().0;
         let mut run = run_for_geometry(None);
         run.mese = Some(mese_on((16, 16, 8), oblique_affine()));
         let meta = super::resolve_run_geometry(&run, &nifti_with(oblique_affine(), (16, 16, 8)), &cfg).unwrap();

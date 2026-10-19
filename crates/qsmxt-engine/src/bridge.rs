@@ -450,6 +450,9 @@ pub fn to_separation_config(cfg: &PipelineConfig) -> PSeparation {
             dr_pos_3t: s.hc_chisep.dr_pos_3t, bin_hz: s.hc_chisep.bin_hz,
             ..qsm_core::separation::HcChisepParams::default()
         },
+        // The networks' patch sizes are QSM.rs's defaults until QSMxT exposes them.
+        chi_sepnet: Default::default(),
+        susep_net: Default::default(),
     }
 }
 

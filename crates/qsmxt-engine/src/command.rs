@@ -10,7 +10,7 @@ use crate::enums::*;
 /// [`crate::schema::settings_view`]) are left out: they cannot change the run, so saying them
 /// only makes the command longer and suggests they matter.
 pub fn generate_command(config: &PipelineConfig) -> String {
-    command_for(&crate::schema::prune_hidden(config, &crate::schema::ViewFacts::default()))
+    command_for(&crate::schema::prune_hidden(&config.normalised().0, &crate::schema::ViewFacts::default()))
 }
 
 fn command_for(config: &PipelineConfig) -> String {

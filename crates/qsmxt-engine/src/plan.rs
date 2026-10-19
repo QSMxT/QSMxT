@@ -197,6 +197,11 @@ pub struct Plan {
     /// Where the run departs from the configuration for this scan, for the log: an option this
     /// scan's inputs rule out.
     pub notes: Vec<String>,
+    /// What normalising the configuration changed ([`PipelineConfig::normalised`]): the outputs
+    /// switched on because another output needs them, each with its reason.
+    pub adjustments: Vec<crate::normalise::Adjustment>,
+    /// The configuration the plan was made from, normalised: what the run takes.
+    pub config: PipelineConfig,
     /// Two-pass artefact reduction runs.
     pub two_pass: bool,
     /// The echoes the stages after masking read are motion-corrected, and so is the mask they work
@@ -266,7 +271,13 @@ fn may_predict_r2prime(facts: &ScanFacts, config: &PipelineConfig) -> bool {
 }
 
 /// Plan one run of `config` on the scan `facts` describes.
+///
+/// `config` is normalised first ([`PipelineConfig::normalised`]), so it may be given as the user
+/// left it: the plan is that of the configuration `qsmxt run` would take, which it holds
+/// ([`Plan::config`]), with what was changed ([`Plan::adjustments`]).
 pub fn plan(config: &PipelineConfig, facts: &ScanFacts) -> Plan {
+    let (normalised, adjustments) = config.normalised();
+    let config = &normalised;
     let p = &config.pipeline;
     let wanted = |o: Output| requirements::wanted(facts, config, o);
     let relaxometry = wanted(Output::T2star) || wanted(Output::R2star);
@@ -369,6 +380,8 @@ pub fn plan(config: &PipelineConfig, facts: &ScanFacts) -> Plan {
             nx, ny, nz, facts.n_echoes, facts.n_coils, facts.has_magnitude, config),
         check: requirements::scan_check(facts, config),
         notes,
+        adjustments,
+        config: config.clone(),
         two_pass,
         motion_corrected,
     };
@@ -509,6 +522,62 @@ pub(crate) mod tests {
         config.separation.r2prime_strategy = R2PrimeStrategy::Auto;
         f.field_strength = 7.0;
         assert!(r2_models(&config, &f).is_empty(), "not run off its training field strength");
+    }
+
+    /// A configuration as a front end holds it (only the outputs asked for) is planned as `qsmxt
+    /// run` plans it: the outputs those need are switched on, the plan says so, and it holds the
+    /// configuration it planned. Planning that configuration again plans the same run.
+    #[test]
+    fn the_outputs_an_output_needs_are_planned_and_said() {
+        let step = |p: &Plan, name: &str| p.steps.iter().find(|s| s.name == name).cloned();
+        let planned = |edit: fn(&mut PipelineConfig)| {
+            let mut c = PipelineConfig::default();
+            edit(&mut c);
+            let p = plan(&c, &facts());
+            let again = plan(&p.config, &facts());
+            assert_eq!(again.steps, p.steps, "the plan's own configuration plans the same run");
+            assert_eq!(again.config, p.config);
+            assert!(again.adjustments.is_empty(), "{:?}", again.adjustments);
+            p
+        };
+
+        // R2′ alone: R2* is fitted for it and R2′ is written and returned to the acquired grid.
+        let p = planned(|c| c.pipeline.do_r2primemap = true);
+        assert!(p.has(Stage::Relaxometry), "{:?}", names(&p));
+        assert!(step(&p, "r2_r2prime").unwrap().outputs.contains(&Item::R2prime));
+        assert!(step(&p, "r2_r2prime").unwrap().reads.contains(&Item::R2star));
+        assert!(step(&p, "output_space").unwrap().reads.contains(&Item::R2prime));
+        assert!(p.config.pipeline.do_r2starmap && p.config.pipeline.do_r2map);
+        assert_eq!(p.adjustments.iter().map(|a| a.setting).collect::<Vec<_>>(),
+                   ["pipeline.do_r2starmap", "pipeline.do_r2map"]);
+
+        // The statistics alone: a segmentation to measure them over.
+        let p = planned(|c| c.pipeline.do_analysis = true);
+        assert!(p.has(Stage::Segmentation) && p.has(Stage::Analysis), "{:?}", names(&p));
+        assert_eq!(p.adjustments[0].because, "pipeline.do_analysis");
+
+        // ...and, with QSM off and nothing else to summarise, QSM.
+        let p = planned(|c| { c.pipeline.do_qsm = false; c.pipeline.do_analysis = true; });
+        assert!(p.has(Stage::Inversion(Pass::Main)) && p.has(Stage::Segmentation), "{:?}", names(&p));
+
+        // SMWI with QSM off: the susceptibility map it weights by is reconstructed.
+        let p = planned(|c| { c.pipeline.do_qsm = false; c.pipeline.do_smwi = true; });
+        assert!(p.has(Stage::Inversion(Pass::Main)) && p.has(Stage::Reference) && p.has(Stage::Smwi),
+                "{:?}", names(&p));
+        assert_eq!(p.adjustments[0].setting, "pipeline.do_qsm");
+
+        // χ-separation: the maps its method reads.
+        let p = planned(|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::R2starQsm; });
+        assert!(p.has(Stage::Relaxometry) && !p.has(Stage::R2), "{:?}", names(&p));
+        let p = planned(|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::ChiSepIlsqr; });
+        assert!(p.has(Stage::Relaxometry) && p.has(Stage::R2) && p.has(Stage::ChiSeparation), "{:?}", names(&p));
+        assert!(step(&p, "chi_separation").unwrap().reads.contains(&Item::R2prime));
+
+        // A region reference: the segmentation it is measured on, before the reference.
+        let p = planned(|c| { c.qsm.reference = QsmReference::Region; c.qsm.reference_region = Some("thalamus".into()); });
+        let at = |name: &str| p.steps.iter().position(|s| s.name == name).unwrap();
+        assert!(at("segmentation") < at("reference"), "{:?}", names(&p));
+        assert_eq!(p.adjustments[0].because, "qsm.reference");
     }
 
     #[test]

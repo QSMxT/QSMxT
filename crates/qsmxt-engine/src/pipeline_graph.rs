@@ -729,6 +729,7 @@ pub fn pipeline_graph(plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, g
 ///
 /// [`PipelineGraph::differs_from`] says whether it differs from the planned graph.
 pub fn pipeline_graph_after(plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, record: &RunRecord) -> PipelineGraph {
+    let config = &config.normalised().0;
     let ran = as_decided(facts, record.decisions().map(|(_, d)| d));
     let mut graph = pipeline_graph_on(plan, config, &ran, record.resampled);
     for node in &mut graph.nodes {
@@ -822,6 +823,7 @@ fn setup_text(settings: &[String], node: &Node) -> String {
 /// its whole grid: the planned graph a run's graph after it ([`pipeline_graph_after`]) is compared
 /// with.
 pub fn pipeline_graph_on(plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, resampled: Option<bool>) -> PipelineGraph {
+    let config = &config.normalised().0;
     let ctx = Ctx { plan, config, facts };
     let mut nodes: Vec<Node> = Vec::new();
     let mut edges: Vec<Edge> = Vec::new();
