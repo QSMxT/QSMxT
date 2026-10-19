@@ -191,6 +191,66 @@ pub struct SeparationConfig {
     /// R2PRIMEnet inference settings, for when R2′ is predicted rather than measured.
     #[serde(default)]
     pub r2primenet: R2primenetConfig,
+    /// χ-sepnet inference settings.
+    #[serde(default)]
+    pub chi_sepnet: ChiSepNetConfig,
+    /// SUSEP-Net inference settings.
+    #[serde(default)]
+    pub susep_net: SusepNetConfig,
+}
+
+/// χ-sepnet inference (`qsm_core::separation::ChiSepNetParams`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct ChiSepNetConfig {
+    /// Sliding-window patch (D, H, W) in voxels; each a positive multiple of 16.
+    pub patch: [usize; 3],
+}
+impl Default for ChiSepNetConfig {
+    fn default() -> Self {
+        let (d, h, w) = qsm_core::separation::ChiSepNetParams::default().patch;
+        Self { patch: [d, h, w] }
+    }
+}
+impl ChiSepNetConfig {
+    /// Why the patch cannot be used, if it cannot (qsm-core refuses it).
+    pub fn validate(&self) -> Result<(), String> {
+        check_patch("χ-sepnet", &self.patch, 16)
+    }
+    /// qsm-core's parameters for these settings.
+    pub fn params(&self) -> qsm_core::separation::ChiSepNetParams {
+        let [d, h, w] = self.patch;
+        qsm_core::separation::ChiSepNetParams { patch: (d, h, w) }
+    }
+}
+
+/// SUSEP-Net inference (`qsm_core::separation::SusepNetParams`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct SusepNetConfig {
+    /// Sliding-window patch (D, H, W) in voxels, each a positive multiple of 8; `None` (the
+    /// default) runs the whole volume in one pass.
+    pub patch: Option<[usize; 3]>,
+}
+impl SusepNetConfig {
+    /// Why the patch cannot be used, if it cannot (qsm-core refuses it).
+    pub fn validate(&self) -> Result<(), String> {
+        self.patch.as_ref().map_or(Ok(()), |p| check_patch("SUSEP-Net", p, 8))
+    }
+    /// qsm-core's parameters for these settings.
+    pub fn params(&self) -> qsm_core::separation::SusepNetParams {
+        qsm_core::separation::SusepNetParams { patch: self.patch.map(|[d, h, w]| (d, h, w)) }
+    }
+}
+
+/// A network patch every side of which must be a positive multiple of `multiple` (its pooling
+/// levels).
+fn check_patch(net: &str, patch: &[usize; 3], multiple: usize) -> Result<(), String> {
+    match patch.iter().find(|&&d| d == 0 || d % multiple != 0) {
+        Some(d) => Err(format!(
+            "{net} patch {patch:?}: every dimension must be a positive multiple of {multiple} (got {d})")),
+        None => Ok(()),
+    }
 }
 
 /// R2PRIMEnet inference (`qsm_core::relaxometry::R2PrimeNetParams`, which only exists with
@@ -238,6 +298,8 @@ impl Default for SeparationConfig {
             custom_r2prime_tool: None,
             r2prime_strategy: R2PrimeStrategy::default(),
             r2primenet: R2primenetConfig::default(),
+            chi_sepnet: ChiSepNetConfig::default(),
+            susep_net: SusepNetConfig::default(),
         }
     }
 }

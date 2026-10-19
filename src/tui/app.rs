@@ -1866,6 +1866,9 @@ pub struct PipelineFormState {
     // HC-ChiSep
     pub sep_hcchisep_dr_pos_3t: String,
     pub sep_hcchisep_bin_hz: String,
+    /// χ-sepnet's patch as "D H W"; SUSEP-Net's, or empty for the whole volume.
+    pub sep_chisepnet_patch: String,
+    pub sep_susepnet_patch: String,
 
     // Pipeline tab UI state
     pub focus: usize,
@@ -2198,6 +2201,11 @@ impl Default for PipelineFormState {
             sep_wavesep_tol: fmt_default(sep_wavesep.tol),
             sep_hcchisep_dr_pos_3t: fmt_default(sep_hcchisep.dr_pos_3t),
             sep_hcchisep_bin_hz: fmt_default(sep_hcchisep.bin_hz),
+            sep_chisepnet_patch: {
+                let p = qsmxt_engine::ChiSepNetConfig::default().patch;
+                format!("{} {} {}", p[0], p[1], p[2])
+            },
+            sep_susepnet_patch: String::new(),
             focus: 0,
             editing: false,
             cursor: 0,
@@ -2349,8 +2357,12 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Dr+ @3T (Hz/ppm)", field: "sep_hcchisep_dr_pos_3t", help: "Paramagnetic relaxivity at 3T" });
                 rows.push(PipelineRow::Param { label: "  R2' bin (Hz)", field: "sep_hcchisep_bin_hz", help: "R2' bin width for anchored grid search" });
             }
-            // SUSEP-Net / χ-sepnet (deep learning) have no tunable parameters. They used to fall
-            // into the arm above and show HC-χsep's, which did nothing.
+            6 => {
+                rows.push(PipelineRow::Param { label: "  Sliding Window", field: "sep_susepnet_patch", help: "Run the network on patches D H W in voxels, each a multiple of 8, so its memory follows the patch instead of the volume; empty runs the whole volume at once" });
+            }
+            7 => {
+                rows.push(PipelineRow::Param { label: "  Patch", field: "sep_chisepnet_patch", help: "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)" });
+            }
             _ => {}
         }
         } // end if do_chi_separation
@@ -3121,7 +3133,7 @@ impl PipelineFormState {
         "l1qsm_alpha1", "l1qsm_mu1", "l1qsm_mu2", "l1qsm_mu3", "l1qsm_lambda", "l1qsm_max_iter", "l1qsm_tol_update", "l1qsm_tol_delta", "l1qsm_phase_scale",
         "whqsm_alpha1", "whqsm_mu1", "whqsm_mu2", "whqsm_beta", "whqsm_muh", "whqsm_max_iter", "whqsm_tol_update", "whqsm_tol_delta", "whqsm_phase_scale",
         "hdqsm_alpha_l2", "hdqsm_mu1_l2", "hdqsm_mu2", "hdqsm_max_iter_l1", "hdqsm_max_iter_l2", "hdqsm_tol_update",
-        "r2primenet_patch",
+        "r2primenet_patch", "sep_chisepnet_patch", "sep_susepnet_patch",
         "laplacian_fft_pad",
         "crop_margin_mm", "homogeneity_sigma_mm", "homogeneity_nbox", "coil_combination_sigma",
         "tgv_step_size", "tgv_tol",
@@ -3352,6 +3364,8 @@ impl PipelineFormState {
             "sep_wavesep_tol" => &self.sep_wavesep_tol,
             "sep_hcchisep_dr_pos_3t" => &self.sep_hcchisep_dr_pos_3t,
             "sep_hcchisep_bin_hz" => &self.sep_hcchisep_bin_hz,
+            "sep_chisepnet_patch" => &self.sep_chisepnet_patch,
+            "sep_susepnet_patch" => &self.sep_susepnet_patch,
             _ => "",
         }
     }
@@ -3575,6 +3589,8 @@ impl PipelineFormState {
             "sep_wavesep_tol" => Some(&mut self.sep_wavesep_tol),
             "sep_hcchisep_dr_pos_3t" => Some(&mut self.sep_hcchisep_dr_pos_3t),
             "sep_hcchisep_bin_hz" => Some(&mut self.sep_hcchisep_bin_hz),
+            "sep_chisepnet_patch" => Some(&mut self.sep_chisepnet_patch),
+            "sep_susepnet_patch" => Some(&mut self.sep_susepnet_patch),
             _ => None,
         }
     }
@@ -7780,7 +7796,7 @@ mod tests {
     #[test]
     fn test_all_param_fields_are_valid() {
         // Opt-in fields that intentionally default to empty (blank = feature off).
-        const OPT_IN_EMPTY: &[&str] = &["dl_tile_size", "dl_tile_halo", "robust_fit_tuning"];
+        const OPT_IN_EMPTY: &[&str] = &["dl_tile_size", "dl_tile_halo", "robust_fit_tuning", "sep_susepnet_patch"];
         let state = PipelineFormState::default();
         for &field_name in PipelineFormState::ALL_PARAM_FIELDS {
             let val = state.get_param(field_name);

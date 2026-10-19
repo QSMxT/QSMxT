@@ -89,6 +89,8 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     cover!(q::separation::WaveSepParams => c::WaveSepConfig);
     cover!(q::separation::DecomposeParams => c::DecomposeConfig, ignore: ["b0"]);
     cover!(q::separation::HcChisepParams => c::HcChisepConfig, ignore: ["b0", "se_echo_times"]);
+    cover!(q::separation::ChiSepNetParams => c::ChiSepNetConfig);
+    cover!(q::separation::SusepNetParams => c::SusepNetConfig);
     // fieldstrength/te are runtime scan parameters, not user knobs.
     cover!(q::inversion::TgvParams => c::TgvConfig);
 

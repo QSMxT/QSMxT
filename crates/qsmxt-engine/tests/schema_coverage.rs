@@ -302,7 +302,8 @@ fn every_supplied_file_setting_names_the_item_it_fills() {
 fn browser_defaults_are_qsmxts_except_where_the_browser_profile_changes_them() {
     let changed: Vec<&str> = schema::schema().into_iter()
         .filter(|s| s.browser_default != s.default).map(|s| s.path).collect();
-    assert_eq!(changed, ["inversion.tile_size", "inversion.tile_halo", "separation.r2primenet.patch", "segmentation.patch"]);
+    assert_eq!(changed, ["inversion.tile_size", "inversion.tile_halo", "separation.chi_sepnet.patch",
+        "separation.susep_net.patch", "separation.r2primenet.patch", "segmentation.patch"]);
     for s in schema::schema() {
         assert_eq!(Some(s.browser_default.clone()), schema::get(&PipelineConfig::browser(), s.path), "{}", s.path);
     }
@@ -433,6 +434,13 @@ fn a_value_out_of_range_is_an_error_on_its_own_setting() {
     c.pipeline.do_r2primemap = true;
     c.separation.r2primenet.patch = [192, 192, 120];
     assert_eq!(error(&c, "separation.r2primenet.patch").as_deref(), Some("Every dimension must be a positive multiple of 16 (got 120)"));
+    c.pipeline.do_chi_separation = true;
+    c.separation.algorithm = qsmxt_engine::SeparationAlgorithm::ChiSepNet;
+    c.separation.chi_sepnet.patch = [128, 120, 64];
+    assert_eq!(error(&c, "separation.chi_sepnet.patch").as_deref(), Some("Every dimension must be a positive multiple of 16 (got 120)"));
+    c.separation.algorithm = qsmxt_engine::SeparationAlgorithm::SusepNet;
+    c.separation.susep_net.patch = Some([128, 128, 12]);
+    assert_eq!(error(&c, "separation.susep_net.patch").as_deref(), Some("Every dimension must be a positive multiple of 8 (got 12)"));
     let doc = serde_json::to_value(schema::settings_view(&c, &ViewFacts::default())).unwrap();
     let tkd = doc.as_array().unwrap().iter().find(|v| v["path"] == "inversion.tkd.threshold").unwrap();
     assert_eq!(tkd["error"], "Must be greater than 0");

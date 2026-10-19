@@ -148,7 +148,7 @@ const FIELD_PATHS: &[(&str, &str)] = &[
     ("sep_wavesep_alpha", "separation.wavesep.alpha"), ("sep_wavesep_lambda", "separation.wavesep.lambda"),
     ("sep_wavesep_wavelet_order", "separation.wavesep.wavelet_order"), ("sep_wavesep_max_iter", "separation.wavesep.max_iter"),
     ("sep_wavesep_tol", "separation.wavesep.tol"), ("sep_hcchisep_dr_pos_3t", "separation.hc_chisep.dr_pos_3t"),
-    ("sep_hcchisep_bin_hz", "separation.hc_chisep.bin_hz"), ("custom_qsm_tool", "separation.custom_qsm_tool"),
+    ("sep_hcchisep_bin_hz", "separation.hc_chisep.bin_hz"), ("sep_chisepnet_patch", "separation.chi_sepnet.patch"), ("sep_susepnet_patch", "separation.susep_net.patch"), ("custom_qsm_tool", "separation.custom_qsm_tool"),
     ("do_swi", "pipeline.do_swi"), ("swi_unwrap", "swi.unwrap"), ("swi_scaling", "swi.scaling"), ("swi_strength", "swi.strength"),
     ("swi_hp_sigma", "swi.hp_sigma"), ("swi_mip_window", "swi.mip_window"), ("do_smwi", "pipeline.do_smwi"),
     ("smwi_threshold", "smwi.threshold_ppm"), ("smwi_power", "smwi.power"), ("smwi_mip_window", "smwi.mip_window"),

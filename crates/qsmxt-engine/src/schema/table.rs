@@ -777,6 +777,14 @@ pub(super) fn table() -> Vec<Def> {
         d("separation.hc_chisep.bin_hz", Separation, "R2' bin (Hz)", "R2' bin width for anchored grid search", Float).units("Hz").flag("--hc-chisep-bin-hz").parent("separation.algorithm")
         .when(|x| x.sep("hc-chisep")).full("R2' Bin Width")
         .gui("R2' bin width for the anchored grid search"),
+        // QSMxT ChiSepNetConfig::validate (QSM.rs ChiSepNetParams::validate): each side a positive multiple of 16.
+        d("separation.chi_sepnet.patch", Separation, "Patch", "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)", IntVec3).min(16.0).units("voxels").flag("--chi-sepnet-patch").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sepnet")).full("χ-sepnet Patch")
+        .gui("Sliding-window patch D H W, each a multiple of 16"),
+        // QSMxT SusepNetConfig::validate (QSM.rs SusepNetParams::validate): each side a positive multiple of 8.
+        d("separation.susep_net.patch", Separation, "Sliding Window", "Run the network on patches D H W in voxels, each a multiple of 8, so its memory follows the patch instead of the volume; empty runs the whole volume at once", IntVec3).min(8.0).units("voxels").optional().flag("--susep-net-patch").parent("separation.algorithm")
+        .when(|x| x.sep("susep-net")).full("SUSEP-Net Sliding Window")
+        .gui("Patch size for running SUSEP-Net piece by piece, which needs less memory; empty runs the whole volume at once"),
         d("separation.custom_qsm_tool", Separation, "Custom QSM tool", "Use a Chimap from <bids>/derivatives/<tool>/ instead of recomputing QSM (χ-separation, statistics, SMWI); blank = compute, * = any tool", Text).optional().flag("--use-custom-qsm").also(&[SwiSmwi, Segmentation])
         .supplied_file(Item::SuppliedChi, "A susceptibility (χ) map to use instead of computing QSM, for χ-separation, the statistics and SMWI")
         .when(|x| x.reads_qsm).full("Custom QSM")

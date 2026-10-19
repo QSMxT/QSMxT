@@ -402,8 +402,17 @@ fn command_for(config: &PipelineConfig) -> String {
                 emit_f64(&mut parts, "--hc-chisep-dr-pos-3t", s.hc_chisep.dr_pos_3t, ds.hc_chisep.dr_pos_3t);
                 emit_f64(&mut parts, "--hc-chisep-bin-hz", s.hc_chisep.bin_hz, ds.hc_chisep.bin_hz);
             }
-            // SUSEP-Net / χ-sepnet (deep learning) have no user-tunable parameters.
-            SeparationAlgorithm::SusepNet | SeparationAlgorithm::ChiSepNet => {}
+            SeparationAlgorithm::ChiSepNet => {
+                let p = s.chi_sepnet.patch;
+                if p != ds.chi_sepnet.patch {
+                    parts.push(format!("--chi-sepnet-patch {} {} {}", p[0], p[1], p[2]));
+                }
+            }
+            SeparationAlgorithm::SusepNet => {
+                if let Some(p) = s.susep_net.patch {
+                    parts.push(format!("--susep-net-patch {} {} {}", p[0], p[1], p[2]));
+                }
+            }
         }
     }
 
@@ -757,7 +766,7 @@ mod tests {
             let cmd = generate_command(&c);
             assert!(cmd.contains(&format!("--qsm-algorithm {}", a)), "missing {} in: {}", a, cmd);
         }
-        // iQFM background removal + χ-sepnet separation (deep-learning, no params).
+        // iQFM background removal + χ-sepnet separation (deep-learning; patches in the profile tests).
         let mut c = PipelineConfig::default();
         c.bg_removal.algorithm = BfAlgorithm::Iqfm;
         assert!(generate_command(&c).contains("--bf-algorithm iqfm"));

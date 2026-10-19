@@ -196,8 +196,10 @@ pub fn settings_view(config: &PipelineConfig, facts: &ViewFacts) -> Vec<SettingV
 fn errors(config: &PipelineConfig, checked: impl Fn(&str) -> bool) -> Vec<(&'static str, String)> {
     let mut out: Vec<(&'static str, String)> = super::out_of_range(config, &checked)
         .into_iter().map(|p| (p.path, p.message)).collect();
-    let rules: [(&'static str, Result<(), String>); 1] = [
+    let rules: [(&'static str, Result<(), String>); 3] = [
         ("separation.r2primenet.patch", config.separation.r2primenet.validate()),
+        ("separation.chi_sepnet.patch", config.separation.chi_sepnet.validate()),
+        ("separation.susep_net.patch", config.separation.susep_net.validate()),
     ];
     for (path, result) in rules {
         if let (true, Err(e)) = (checked(path), result) {

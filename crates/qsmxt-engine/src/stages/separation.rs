@@ -7,10 +7,13 @@ use crate::error::EngineError;
 use crate::observe::Observer;
 use crate::scan::{scan_metadata, RunMetadata};
 
-/// The `chi_separation` step's parameters.
+/// The `chi_separation` step's parameters. A network's patch is there only when the network is
+/// the method and the patch is not its default, so a run at the default keeps the cache key it
+/// had before the setting existed.
 pub fn params(config: &PipelineConfig, meta: &RunMetadata, has_mese: bool) -> serde_json::Value {
     let s = &config.separation;
-    serde_json::json!({
+    let d = crate::config::SeparationConfig::default();
+    let mut params = serde_json::json!({
         "algorithm": format!("{}", s.algorithm),
         "echo_times": meta.echo_times,
         "field_strength": meta.field_strength,
@@ -20,7 +23,27 @@ pub fn params(config: &PipelineConfig, meta: &RunMetadata, has_mese: bool) -> se
         // `domain` versions where the fit runs, so maps fitted over the whole brain mask by an
         // older release (the eroded rim taken as χ = 0) are recomputed rather than reused.
         "domain": "support",
-    })
+    });
+    let patch = match s.algorithm {
+        SeparationAlgorithm::ChiSepNet if s.chi_sepnet != d.chi_sepnet => Some(serde_json::json!(s.chi_sepnet.patch)),
+        SeparationAlgorithm::SusepNet if s.susep_net != d.susep_net => Some(serde_json::json!(s.susep_net.patch)),
+        _ => None,
+    };
+    if let Some(patch) = patch {
+        params["patch"] = patch;
+    }
+    params
+}
+
+/// Why the selected network's patch cannot be used, if it cannot.
+pub fn check_patch(config: &PipelineConfig) -> Result<(), EngineError> {
+    let s = &config.separation;
+    match s.algorithm {
+        SeparationAlgorithm::ChiSepNet => s.chi_sepnet.validate(),
+        SeparationAlgorithm::SusepNet => s.susep_net.validate(),
+        _ => Ok(()),
+    }
+    .map_err(EngineError::Config)
 }
 
 /// Whether `algorithm` fits the local field.
@@ -101,6 +124,7 @@ pub fn separate(
     config: &PipelineConfig, observer: &mut dyn Observer,
 ) -> Result<Separated, EngineError> {
     let support = inputs.mask;
+    check_patch(config)?;
     let mut sep_config = crate::bridge::to_separation_config(config);
     if let Some(tes) = se_echo_times {
         sep_config.hc_chisep.se_echo_times = tes.to_vec();
@@ -134,6 +158,47 @@ mod tests {
         // The field-based methods also need the local field.
         let field = [0.01, 0.01, 0.01, 0.0, 0.01];
         assert_eq!(separation_support(&brain, Some(&[1, 1, 1, 1, 0]), &chi, Some(&field)), vec![1, 1, 1, 0, 0]);
+    }
+
+    /// The cache key carries a network's patch only when it is that network's run and not its
+    /// default; the default keeps the key of a run made before the setting existed.
+    #[test]
+    fn the_key_carries_a_non_default_patch_only() {
+        let meta = crate::stages::magnitude::tests::meta_4x4x4();
+        let mut c = PipelineConfig::default();
+        let key = |c: &PipelineConfig| params(c, &meta, false);
+        for alg in [SeparationAlgorithm::ChiSepNet, SeparationAlgorithm::SusepNet] {
+            c.separation.algorithm = alg;
+            assert!(key(&c).get("patch").is_none(), "{alg}");
+        }
+        c.separation.chi_sepnet.patch = [128, 128, 64];
+        c.separation.susep_net.patch = Some([64, 64, 64]);
+        c.separation.algorithm = SeparationAlgorithm::ChiSepNet;
+        assert_eq!(key(&c)["patch"], serde_json::json!([128, 128, 64]));
+        c.separation.algorithm = SeparationAlgorithm::SusepNet;
+        assert_eq!(key(&c)["patch"], serde_json::json!([64, 64, 64]));
+        c.separation.algorithm = SeparationAlgorithm::WaveSep;
+        assert!(key(&c).get("patch").is_none(), "another method's key ignores the patches");
+    }
+
+    #[test]
+    fn a_patch_the_network_cannot_take_is_refused() {
+        let mut c = PipelineConfig::default();
+        c.separation.chi_sepnet.patch = [128, 120, 64];
+        c.separation.susep_net.patch = Some([128, 128, 4]);
+        assert!(check_patch(&c).is_ok(), "not the method");
+        c.separation.algorithm = SeparationAlgorithm::ChiSepNet;
+        let e = check_patch(&c).unwrap_err().to_string();
+        assert!(e.contains("multiple of 16 (got 120)"), "{e}");
+        c.separation.algorithm = SeparationAlgorithm::SusepNet;
+        let e = check_patch(&c).unwrap_err().to_string();
+        assert!(e.contains("multiple of 8 (got 4)"), "{e}");
+        // The browser's are fine, and the configs map onto qsm-core's defaults.
+        let b = PipelineConfig::browser();
+        assert!(b.separation.chi_sepnet.validate().is_ok() && b.separation.susep_net.validate().is_ok());
+        let d = crate::config::SeparationConfig::default();
+        assert_eq!(d.chi_sepnet.params(), qsm_core::separation::ChiSepNetParams::default());
+        assert_eq!(d.susep_net.params(), qsm_core::separation::SusepNetParams::default());
     }
 
     #[test]

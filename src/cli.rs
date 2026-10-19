@@ -541,6 +541,15 @@ pub struct SeparationParamArgs {
     /// HC-ChiSep R2' bin width for the anchored grid search (Hz)
     #[arg(long)]
     pub hc_chisep_bin_hz: Option<f64>,
+    // χ-sepnet / SUSEP-Net (deep learning)
+    /// χ-sepnet sliding-window patch in voxels, D H W, each a multiple of 16
+    /// (default: 192 192 128, the authors')
+    #[arg(long, num_args = 3, value_names = ["D", "H", "W"])]
+    pub chi_sepnet_patch: Option<Vec<usize>>,
+    /// Run SUSEP-Net as a sliding window of patches this size in voxels, D H W, each a multiple
+    /// of 8, so its memory follows the patch, not the volume. Omit to run the whole volume at once
+    #[arg(long, num_args = 3, value_names = ["D", "H", "W"])]
+    pub susep_net_patch: Option<Vec<usize>>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -3039,6 +3048,10 @@ pub struct SeparateSusepNetArgs {
     /// R2' map NIfTI in Hz
     #[arg(long)]
     pub r2prime: PathBuf,
+    /// Sliding-window patch in voxels, D H W. χ-sepnet: each a multiple of 16 (default: 192 192
+    /// 128, the authors'). SUSEP-Net: each a multiple of 8 (default: the whole volume at once)
+    #[arg(long, num_args = 3, value_names = ["D", "H", "W"])]
+    pub patch: Option<Vec<usize>>,
 }
 
 #[derive(Parser, Debug)]
