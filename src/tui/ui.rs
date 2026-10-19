@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use super::app::{AlgoModal, App, PipelineRow, UpdateModal, TAB_NAMES, TAB_INPUT, TAB_METHODS};
+use super::app::{AlgoModal, App, PipelineRow, UpdateModal, TAB_NAMES, TAB_INPUT, TAB_METHODS, TAB_PIPELINE};
 use super::command;
 
 pub fn draw(f: &mut Frame, app: &mut App) {
@@ -266,6 +266,10 @@ fn draw_form(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     if App::is_rows_tab(app.active_tab) {
         app.sync_pipeline_mode();
         draw_rows_tab(f, app, area);
+        return;
+    }
+    if app.active_tab == TAB_PIPELINE {
+        super::pipeline_view::draw(f, app, area);
         return;
     }
     if app.active_tab == TAB_METHODS {
@@ -1905,6 +1909,8 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     let tabs = format!("1-{}", TAB_NAMES.len());
     let keys: Vec<(&str, &str)> = if app.editing || app.pipeline_state.editing {
         vec![("Esc", "Cancel"), ("Enter", "Confirm")]
+    } else if app.active_tab == TAB_PIPELINE {
+        vec![(&tabs, "Tabs"), ("\u{2191}\u{2193}", "Scroll"), ("Enter/s", "Open as SVG"), ("F5", "Run"), ("q", "Quit")]
     } else if app.active_tab == TAB_METHODS {
         vec![(&tabs, "Tabs"), ("\u{2191}\u{2193}", "Scroll"), ("Enter/c", "Copy to clipboard"), ("F5", "Run"), ("q", "Quit")]
     } else if app.on_subtabs() {

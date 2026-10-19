@@ -41,7 +41,7 @@ qsmxt tui
 
 ## Layout
 
-The top row holds the tabs; press a digit (`1`–`7`) or `Tab`/`Shift-Tab` to switch. A tab
+The top row holds the tabs; press a digit (`1`–`8`) or `Tab`/`Shift-Tab` to switch. A tab
 with more than one page shows a strip of sub-tabs along the top of its panel, and opens with
 focus on that strip (the current sub-tab turns yellow): `←`/`→` choose a sub-tab, and `↓` or
 `Enter` go into its settings. `↑` from the first setting goes back up to the strip. `[` and `]`
@@ -55,7 +55,8 @@ switch sub-tabs from anywhere on the tab. A tab without sub-tabs opens on its fi
 | 4 χ-separation | — | χ-separation method and its parameters |
 | 5 Other outputs | SWI/SMWI · Relaxometry · Segmentation · Export | SWI and SMWI; T2\*, R2\*, R2 and R2′ maps, the R2′ source and supplied maps; segmentation (SynthSeg or a dseg from derivatives) and per-structure statistics; DICOM export |
 | 6 Execution | — | Local or SLURM, each with its own settings; debug logging, force re-run, clean-up; and a button that does what `F5` does |
-| 7 Methods | — | The methods text for the current settings; `Enter` (or `c`) copies it to the clipboard |
+| 7 Pipeline | — | The pipeline the current settings run, step by step: each step's algorithm and settings, and the steps it reads from and what it reads. Above it, the peak memory the run is estimated to need and the deep-learning models it uses, with their download sizes. It is planned on the first selected run's scan (a typical scan until one is chosen). `Enter` (or `s`) saves it as an SVG drawing and opens it |
+| 8 Methods | — | The methods text for the current settings; `Enter` (or `c`) copies it to the clipboard |
 
 Settings appear only where and when they apply: a sub-setting sits indented under the
 checkbox or choice it belongs to, and a map another output needs reads as ticked (and says why
@@ -66,7 +67,7 @@ happen: *Run*, *Dry run*, *Write SLURM scripts* or *Submit SLURM jobs*.
 
 | Key | Where | Does |
 |---|---|---|
-| `1`–`7`, `Tab`, `Shift-Tab` | anywhere | switch tab |
+| `1`–`8`, `Tab`, `Shift-Tab` | anywhere | switch tab |
 | `←` `→` | sub-tab strip | previous / next sub-tab |
 | `↓`, `Enter` | sub-tab strip | go into the sub-tab's settings |
 | `[` `]` | any tab with sub-tabs | previous / next sub-tab |
@@ -74,6 +75,7 @@ happen: *Run*, *Dry run*, *Write SLURM scripts* or *Submit SLURM jobs*.
 | `←` `→`, `Space` | settings | change a choice or checkbox |
 | `Enter` | settings | open a list or edit a value; on the Execution tab's button, run |
 | `r` / `R` | settings | reset the setting / the whole sub-tab |
+| `Enter`, `s` | Pipeline | save the pipeline as an SVG drawing and open it |
 | `Enter`, `c`, `y` | Methods | copy the methods text to the clipboard |
 | `F5` | anywhere | run |
 | `q`, `Esc` | anywhere | quit |
@@ -83,6 +85,10 @@ the machine you are typing on even when QSMxT runs on a remote server over SSH. 
 terminals support it (iTerm2, kitty, WezTerm, Alacritty, foot, Windows Terminal; xterm with
 `allowWindowOps`). Inside tmux, set `set -g set-clipboard on`. If the clipboard stays empty,
 select the text in the Methods tab with the mouse instead.
+
+The Pipeline tab's drawing is written to the system's temporary folder. Over SSH, or with no
+display, QSMxT does not try to open it and shows where it was written instead, so you can copy
+it to your own computer. A run writes the same drawing next to its results (`pipeline.svg`).
 
 The TUI builds the same configuration the CLI consumes, so anything you set up
 interactively can be reproduced [noninteractively](/QSMxT/guides/running-noninteractively/)
