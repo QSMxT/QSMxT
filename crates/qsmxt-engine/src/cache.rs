@@ -47,6 +47,15 @@ pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value
         "fft_padding": config.pipeline.fft_padding,
         "crop_margin_mm": config.pipeline.crop_margin_mm,
     });
+    // Whether the user chose the recipe only decides which recipe it is (normalising), and the
+    // recipe itself is keyed.
+    let masking = || {
+        let mut m = serde_json::to_value(&config.masking).unwrap_or_default();
+        if let Some(o) = m.as_object_mut() {
+            o.remove("recipe_chosen");
+        }
+        m
+    };
     match base {
         "scale_phase" => json!({ "coil_combination_sigma": config.field_mapping.coil_combination_sigma }),
         "magnitude" => json!({
@@ -55,20 +64,20 @@ pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value
         }),
         // The main mask is not the two-pass one, so its settings stay out of the main mask's key.
         "mask" if step == base => {
-            let mut m = serde_json::to_value(&config.masking).unwrap_or_default();
+            let mut m = masking();
             if let Some(o) = m.as_object_mut() {
                 o.remove("two_pass");
                 o.remove("two_pass_sections");
             }
             json!({ "masking": m, "bet": config.bet })
         }
-        "mask" => json!({ "masking": config.masking, "bet": config.bet, "homogeneity": config.homogeneity }),
+        "mask" => json!({ "masking": masking(), "bet": config.bet, "homogeneity": config.homogeneity }),
         "motion" => json!({ "motion_correction": config.motion_correction, "registration": config.registration }),
         "swi" => json!({ "swi": config.swi }),
         "unwrap" => json!({ "field_mapping": config.field_mapping }),
         "bgremove" => json!({ "bg_removal": config.bg_removal, "crop": crop }),
         "invert" | "tgv" | "qsmart" => json!({ "inversion": config.inversion, "crop": crop }),
-        "twopass" => json!({ "masking": config.masking }),
+        "twopass" => json!({ "masking": masking() }),
         "reference" | "reference-singlepass" => json!({ "qsm": config.qsm }),
         "segmentation" => json!({ "segmentation": config.segmentation }),
         "smwi" => json!({ "smwi": config.smwi }),
@@ -144,6 +153,20 @@ mod tests {
                            "changing {p} leaves {step} cached");
             }
             assert!(tested * 2 >= paths.len().min(4), "{section}: only {tested} of {} leaves exercised", paths.len());
+        }
+    }
+
+    /// Whether the user chose the mask decides which recipe it is, when normalising; the steps
+    /// are keyed by the recipe, so the mark itself keys nothing.
+    #[test]
+    fn the_chosen_mark_is_not_in_the_mask_keys() {
+        let mut base = PipelineConfig::default();
+        base.inversion.algorithm = crate::enums::QsmAlgorithm::Qsmart;
+        let mut chosen = base.clone();
+        chosen.masking.recipe_chosen = true;
+        let p = serde_json::json!({});
+        for step in ["mask", "mask-reliable", "twopass"] {
+            assert_eq!(step_cache_key(step, None, &p, &chosen), step_cache_key(step, None, &p, &base), "{step}");
         }
     }
 

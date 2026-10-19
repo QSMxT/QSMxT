@@ -1140,6 +1140,16 @@ pub struct MaskingConfig {
     /// main mask, so anything expressible for one mask is expressible for this one.
     #[serde(default)]
     pub two_pass_sections: Option<Vec<MaskSection>>,
+    /// The user chose `sections` (picked a preset, the default one included, or edited the
+    /// recipe), so the run keeps them as they are. Left unset, the general default recipe gives
+    /// way to the inversion's own default where it has one: QSMART's BET mask
+    /// ([`crate::masking::default_mask_sections_for`], applied by
+    /// [`PipelineConfig::normalised`]).
+    ///
+    /// Normalising keeps it set only where it decides something (QSMART with the general default
+    /// recipe), and it is written out only when set, so a saved configuration says it only then.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub recipe_chosen: bool,
 }
 impl Default for MaskingConfig {
     fn default() -> Self {
@@ -1151,6 +1161,7 @@ impl Default for MaskingConfig {
             custom_mask_tool: None,
             two_pass: false,
             two_pass_sections: None,
+            recipe_chosen: false,
         }
     }
 }

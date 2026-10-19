@@ -694,7 +694,9 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         output_space: Some(if ps.output_space == 1 { crate::cli::OutputSpaceArg::Working } else { crate::cli::OutputSpaceArg::Acquired }),
         mask_preset: None,
         use_custom_masks: if ps.custom_mask_tool.trim().is_empty() { None } else { Some(ps.custom_mask_tool.trim().to_string()) },
-        mask_sections_cli: {
+        // An unchosen mask is left to the engine's rule, as `qsmxt run` without a mask option
+        // leaves it: the inversion's own default (QSMART's BET), else the general one.
+        mask_sections_cli: if !ps.mask_chosen { None } else {
             let secs: Vec<String> = ps.mask_sections.iter().map(|section| {
                 let mut parts = vec![format!("{}", section.input)];
                 for op in &section.all_ops() {
@@ -706,11 +708,12 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         },
         // Only the non-default mode is worth spelling out on the command line.
         mask_combine: match ps.mask_combine_recipe().0 {
+            _ if !ps.mask_chosen => None,
             crate::pipeline::config::MaskCombine::Or => None,
             crate::pipeline::config::MaskCombine::And => Some(crate::cli::MaskCombineArg::And),
         },
         mask_refinements_cli: match ps.mask_combine_recipe().1 {
-            ops if ops.is_empty() => None,
+            ops if ops.is_empty() || !ps.mask_chosen => None,
             ops => Some(ops.iter().map(|op| format!("{op}")).collect()),
         },
         two_pass: ps.two_pass,
@@ -1762,6 +1765,47 @@ mod tests {
         assert_eq!(build_run_args(&app).unwrap().pipeline.b0_estimation, Some(B0EstimationArg::LinearFit));
     }
 
+    /// Masking left alone in the TUI is masking left alone on the command line: QSMART takes
+    /// the engine's BET mask, which the masking page shows. Picking a preset (the default one
+    /// included) or editing the recipe chooses it, and the run keeps it.
+    #[test]
+    fn qsmart_takes_bet_until_the_mask_is_chosen() {
+        use qsmxt_engine::{default_mask_sections, qsmart_default_mask_sections};
+        let qsmart = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|a| *a == "qsmart").unwrap();
+        let mut app = default_app();
+        app.form.bids_dir = "/bids".to_string();
+        app.pipeline_state.set_select("qsm_algorithm", qsmart);
+        assert!(!app.pipeline_state.mask_chosen);
+        assert_eq!(app.pipeline_state.mask_sections, qsmart_default_mask_sections(), "the page shows BET");
+        assert_eq!(build_run_args(&app).unwrap().pipeline.mask_sections_cli, None);
+        let c = config_from_app(&app).unwrap();
+        assert_eq!(c.masking.sections, qsmart_default_mask_sections());
+        assert!(build_command_string(&app).contains("--mask-preset bet"));
+        assert_eq!(app.pipeline_state.mask_warning(), None);
+
+        // Back to RTS while still unchosen: the general default again.
+        app.pipeline_state.set_select("qsm_algorithm", 0);
+        assert_eq!(app.pipeline_state.mask_sections, default_mask_sections());
+        app.pipeline_state.set_select("qsm_algorithm", qsmart);
+
+        // Choosing the robust threshold keeps it, says so, and warns.
+        app.pipeline_state.set_select("mask_preset", 0);
+        assert!(app.pipeline_state.mask_chosen);
+        let c = config_from_app(&app).unwrap();
+        assert_eq!(c.masking.sections, default_mask_sections());
+        assert!(c.masking.recipe_chosen);
+        assert!(build_command_string(&app).contains("--mask-preset robust-threshold"));
+        assert!(app.pipeline_state.mask_warning().is_some());
+
+        // Editing the recipe chooses it too.
+        let mut app = default_app();
+        app.form.bids_dir = "/bids".to_string();
+        app.pipeline_state.set_select("qsm_algorithm", qsmart);
+        app.pipeline_state.set_mask_input(0, 0);
+        assert!(app.pipeline_state.mask_chosen);
+        assert!(build_run_args(&app).unwrap().pipeline.mask_sections_cli.is_some());
+    }
+
     /// The pipeline the SLURM jobs get must be the one a local run would use.
     #[test]
     fn test_slurm_and_local_resolve_to_the_same_config() {
@@ -2215,10 +2259,10 @@ mod parity {
             ("orientation_group", |_| {}, |a| a.filter_state.orientation_group = "acq".into()),
             ("orientation_algorithm", |a| a.filter_state.orientation_group = "acq".into(), |a| a.filter_state.orientation_algorithm = 1),
             ("orientation_lambda", |a| a.filter_state.orientation_group = "acq".into(), |a| a.filter_state.orientation_lambda = "0.5".into()),
-            ("bet_smoothness", |a| a.pipeline_state.apply_mask_preset(1), |a| a.pipeline_state.bet_smoothness = "2".into()),
-            ("bet_gradient_threshold", |a| a.pipeline_state.apply_mask_preset(1), |a| a.pipeline_state.bet_gradient_threshold = "0.3".into()),
-            ("bet_iterations", |a| a.pipeline_state.apply_mask_preset(1), |a| a.pipeline_state.bet_iterations = "500".into()),
-            ("bet_subdivisions", |a| a.pipeline_state.apply_mask_preset(1), |a| a.pipeline_state.bet_subdivisions = "3".into()),
+            ("bet_smoothness", |a| a.pipeline_state.set_select("mask_preset", 1), |a| a.pipeline_state.bet_smoothness = "2".into()),
+            ("bet_gradient_threshold", |a| a.pipeline_state.set_select("mask_preset", 1), |a| a.pipeline_state.bet_gradient_threshold = "0.3".into()),
+            ("bet_iterations", |a| a.pipeline_state.set_select("mask_preset", 1), |a| a.pipeline_state.bet_iterations = "500".into()),
+            ("bet_subdivisions", |a| a.pipeline_state.set_select("mask_preset", 1), |a| a.pipeline_state.bet_subdivisions = "3".into()),
             ("cosmos_magnitude_weighting", |a| a.filter_state.orientation_group = "acq".into(), |a| a.pipeline_state.cosmos_magnitude_weighting = true),
             ("cosmos_tol", |a| { a.filter_state.orientation_group = "acq".into(); a.pipeline_state.cosmos_magnitude_weighting = true; }, |a| a.pipeline_state.cosmos_tol = "1e-4".into()),
             ("cosmos_max_iter", |a| { a.filter_state.orientation_group = "acq".into(); a.pipeline_state.cosmos_magnitude_weighting = true; }, |a| a.pipeline_state.cosmos_max_iter = "250".into()),
@@ -2226,14 +2270,17 @@ mod parity {
                 let mut extra = a.pipeline_state.mask_sections[0].clone();
                 extra.input = crate::pipeline::config::MaskingInput::Magnitude;
                 a.pipeline_state.mask_sections.push(extra);
+                a.pipeline_state.mask_chosen = true; // as the add-section row marks it
             }),
             ("mask combine", |a| {
                 let extra = a.pipeline_state.mask_sections[0].clone();
                 a.pipeline_state.mask_sections.push(extra);
+                a.pipeline_state.mask_chosen = true;
             }, |a| a.pipeline_state.toggle_mask_combine()),
             ("mask refinements", |a| {
                 let extra = a.pipeline_state.mask_sections[0].clone();
                 a.pipeline_state.mask_sections.push(extra);
+                a.pipeline_state.mask_chosen = true;
             }, |a| a.pipeline_state.mask_combined_refinements.push(crate::pipeline::config::MaskOp::Erode { iterations: 1 })),
             ("masking input", |a| a.pipeline_state.set_select("mask_preset", 1), |a| {
                 for s in &mut a.pipeline_state.mask_sections { s.input = crate::pipeline::config::MaskingInput::MagnitudeLast; }

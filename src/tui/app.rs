@@ -1814,6 +1814,10 @@ pub struct PipelineFormState {
     /// refinements as the main mask.
     pub two_pass_sections: Vec<crate::pipeline::config::MaskSection>,
     pub mask_preset: usize, // index into MASK_PRESET_OPTIONS (MASK_PRESET_CUSTOM = hand-edited)
+    /// The user chose the main mask: picked a preset (the default one included) or edited the
+    /// recipe. Until then the run takes the inversion's own default mask (QSMART's BET, the
+    /// engine's rule, `MaskingConfig::recipe_chosen`), and the recipe shown is that one.
+    pub mask_chosen: bool,
     pub custom_mask_tool: String, // empty=off; "*"=any derivatives tool; else a tool name
 
     // χ-separation tab
@@ -2156,6 +2160,7 @@ impl Default for PipelineFormState {
             two_pass: false,
             two_pass_sections: qsmxt_engine::default_two_pass_sections(),
             mask_preset: 0, // robust threshold
+            mask_chosen: false,
             custom_mask_tool: String::new(),
             do_chi_separation: false,
             separation_algorithm: 0,
@@ -2870,7 +2875,11 @@ impl PipelineFormState {
             }
             "qsmart" => { // QSMART
                 rows.push(PipelineRow::Note {
-                    text: "⚠ QSMART needs a tight BET brain mask — loose masks cause streaking (Preprocessing → Masking)".into(),
+                    text: match self.mask_warning() {
+                        Some(w) => format!("⚠ {w} (Preprocessing → Masking)").into(),
+                        None if !self.mask_chosen => "QSMART makes its brain mask with BET unless another mask is chosen (Preprocessing → Masking)".into(),
+                        None => "QSMART needs a tight brain mask (Preprocessing → Masking)".into(),
+                    },
                 });
                 rows.push(PipelineRow::AlgoSelect {
                     label: "  Inner Inversion", field: "qsmart_inversion",
@@ -3623,7 +3632,10 @@ impl PipelineFormState {
     /// Set a select value by field name.
     pub fn set_select(&mut self, field: &str, val: usize) {
         match field {
-            "qsm_algorithm" => self.qsm_algorithm = val,
+            "qsm_algorithm" => {
+                self.qsm_algorithm = val;
+                self.show_unchosen_mask();
+            }
             "qsmart_inversion" => self.qsmart_inversion = val,
             "unwrapping_algorithm" => self.unwrapping_algorithm = val,
             "bf_algorithm" => self.bf_algorithm = val,
@@ -3638,6 +3650,7 @@ impl PipelineFormState {
             "output_space" => self.output_space = val,
             "mask_preset" => {
                 self.mask_preset = val;
+                self.mask_chosen = true;
                 self.apply_mask_preset(val);
             }
             "separation_algorithm" => self.separation_algorithm = val,
@@ -4023,9 +4036,40 @@ impl PipelineFormState {
     /// alone — otherwise turning two-pass on and adjusting its threshold would appear to abandon
     /// the `robust-threshold` preset the main mask still follows.
     fn mark_mask_custom(&mut self, section: usize) {
-        if !is_two_pass_section(section) && self.mask_preset != MASK_PRESET_CUSTOM {
+        if !is_two_pass_section(section) {
+            self.mask_chosen = true;
             self.mask_preset = MASK_PRESET_CUSTOM;
         }
+    }
+
+    /// Show, while the user has not chosen a mask, the one the run takes: the selected
+    /// inversion's default ([`qsmxt_engine::masking::default_mask_sections_for`]), by its preset.
+    pub fn show_unchosen_mask(&mut self) {
+        if self.mask_chosen { return; }
+        let sections = qsmxt_engine::masking::default_mask_sections_for(
+            crate::tui::command::selected_qsm_algorithm(self));
+        let recipe = qsmxt_engine::masking::MaskRecipe::from_sections(sections);
+        match qsmxt_engine::masking::mask_presets().iter().position(|(_, r)| *r == recipe) {
+            Some(preset) => {
+                self.mask_preset = preset;
+                self.apply_mask_preset(preset);
+            }
+            None => {
+                self.mask_preset = MASK_PRESET_CUSTOM;
+                self.mask_sections = recipe.sections;
+                self.mask_combine = recipe.combine;
+                self.mask_combined_refinements = recipe.refinements;
+            }
+        }
+    }
+
+    /// What may go wrong with the main mask under the selected inversion
+    /// ([`qsmxt_engine::masking::mask_warning`]).
+    pub fn mask_warning(&self) -> Option<&'static str> {
+        let mut c = crate::pipeline::config::PipelineConfig::default();
+        c.inversion.algorithm = crate::tui::command::selected_qsm_algorithm(self);
+        c.masking.sections = self.mask_sections.clone();
+        qsmxt_engine::masking::mask_warning(&c)
     }
 
     /// Index of a section's generator in [`MASK_GENERATOR_TYPES`].
@@ -6614,6 +6658,11 @@ impl App {
         match field {
             "orientation_lambda" => return self.filter_state.orientation_lambda.clear(),
             "orientation_algorithm" => return self.filter_state.orientation_algorithm = 0,
+            // The default is no choice: the mask the inversion takes when none is chosen.
+            "mask_preset" => {
+                self.pipeline_state.mask_chosen = false;
+                return self.pipeline_state.show_unchosen_mask();
+            }
             "segmentation_source" | "do_segmentation" => {
                 self.pipeline_state.custom_dseg_tool.clear();
                 self.form.do_segmentation = form.do_segmentation;
@@ -10113,6 +10162,29 @@ mod tests {
         // Edited away from the default, so the command now spells the reliable mask out.
         let cmd = crate::tui::command::build_command_string(&app);
         assert!(cmd.contains("--two-pass-mask"), "cmd: {cmd}");
+    }
+
+    /// Editing the reliable mask does not choose the main one; resetting the preset un-chooses
+    /// it, back to the mask the inversion takes, and the QSMART note says which applies.
+    #[test]
+    fn the_main_mask_is_chosen_only_by_its_own_rows() {
+        let qsmart = QSM_ALGO_OPTIONS.iter().position(|a| *a == "qsmart").unwrap();
+        let mut app = App::new();
+        app.pipeline_state.set_select("qsm_algorithm", qsmart);
+        app.pipeline_state.two_pass = true;
+        app.pipeline_state.set_mask_input(MASK_TWO_PASS_BASE, 1);
+        assert!(!app.pipeline_state.mask_chosen, "the reliable mask is not the main one");
+        let note = |app: &App| app.pipeline_state.all_rows().iter().find_map(|r| match r {
+            PipelineRow::Note { text } if text.contains("QSMART") => Some(text.to_string()),
+            _ => None,
+        }).unwrap();
+        assert!(note(&app).contains("unless another mask is chosen"), "{}", note(&app));
+        app.pipeline_state.set_select("mask_preset", 0);
+        assert!(app.pipeline_state.mask_chosen);
+        assert!(note(&app).starts_with("⚠ QSMART needs a tight brain mask"), "{}", note(&app));
+        app.reset_field("mask_preset");
+        assert!(!app.pipeline_state.mask_chosen);
+        assert_eq!(app.pipeline_state.mask_sections, qsmxt_engine::qsmart_default_mask_sections());
     }
 
     /// Turning two-pass off hides the editor but keeps what was typed into it, so toggling back

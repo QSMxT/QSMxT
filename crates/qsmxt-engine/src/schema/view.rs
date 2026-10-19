@@ -39,6 +39,11 @@ pub struct SettingView {
     /// step 2 (Erode): Iterations must be at least 1"). Only a setting that applies has one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// What may go wrong with a value the run accepts, for showing next to the setting: the mask
+    /// recipe under an inversion that needs a tighter mask ([`crate::masking::mask_warning`]).
+    /// Only a setting that applies has one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
 }
 
 /// The config as the run sees it, and the facts its settings' visibility is decided from.
@@ -179,7 +184,11 @@ pub fn settings_view(config: &PipelineConfig, facts: &ViewFacts) -> Vec<SettingV
                 "pipeline.do_r2primemap" => forcing_setting(&c, Output::R2prime),
                 _ => None,
             };
-            SettingView { path: d.path, visible, forced_by, error: None }
+            let warning = match d.path {
+                "masking.sections" if visible => crate::masking::mask_warning(&c).map(String::from),
+                _ => None,
+            };
+            SettingView { path: d.path, visible, forced_by, error: None, warning }
         })
         .collect();
     let visible: std::collections::HashSet<&str> = views.iter().filter(|v| v.visible).map(|v| v.path).collect();

@@ -657,40 +657,12 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = sp.hc_chisep_bin_hz { config.separation.hc_chisep.bin_hz = v; }
         if let Some(&[d, h, w]) = sp.chi_sepnet_patch.as_deref() { config.separation.chi_sepnet.patch = [d, h, w]; }
         if let Some(&[d, h, w]) = sp.susep_net_patch.as_deref() { config.separation.susep_net.patch = Some([d, h, w]); }
-        // The outputs other outputs need (χ-separation's relaxometry maps, the statistics'
-        // segmentation, ...) are switched on as every front end has them switched on. Nothing
-        // below sets a setting the rules read.
-        let (normalised, adjustments) = config.normalised();
-        for a in &adjustments {
-            log::debug!("{}", a.message);
-        }
-        *config = normalised;
-        if args.export_dicom { config.pipeline.export_dicom = true; }
-        if args.no_inhomogeneity_correction { config.masking.inhomogeneity_correction = false; }
-        else if args.inhomogeneity_correction { config.masking.inhomogeneity_correction = true; }
-        if let Some(tool) = &args.use_custom_masks { config.masking.custom_mask_tool = Some(tool.clone()); }
-        if args.axial_resampling { config.pipeline.axial_resampling = true; }
-        if args.no_axial_resampling { config.pipeline.axial_resampling = false; }
-        if let Some(v) = args.obliquity_threshold {
-            if v < 0.0 {
-                return Err(QsmxtError::Config(format!(
-                    "--obliquity-threshold {v}: the threshold is in degrees and cannot be negative. Resampling \
-                     is off unless --axial-resampling is given (a negative threshold no longer turns it off)")));
-            }
-            config.pipeline.obliquity_threshold = v;
-        }
-        if args.crop_to_mask { config.pipeline.crop_to_mask = true; }
-        if args.ignore_slice_gap { config.pipeline.ignore_slice_gap = true; }
-        if args.fft_padding { config.pipeline.fft_padding = true; }
-        if let Some(v) = args.crop_margin_mm { config.pipeline.crop_margin_mm = v; }
-        if let Some(v) = args.output_space {
-            config.pipeline.output_space = match v {
-                crate::cli::OutputSpaceArg::Acquired => OutputSpace::Acquired,
-                crate::cli::OutputSpaceArg::Working => OutputSpace::Working,
-            };
-        }
-
         // ── Mask sections ──
+        // Any of these is the user choosing the recipe, which the run then keeps as it is: left
+        // unchosen, normalising gives an inversion with a default mask of its own (QSMART) that one.
+        if args.mask_preset.is_some() || args.mask_sections_cli.is_some() || args.masking_input.is_some() {
+            config.masking.recipe_chosen = true;
+        }
         if let Some(preset) = args.mask_preset {
             // A preset is a whole recipe — it replaces the combine mode and the post-combine
             // refinements too, not just the sections.
@@ -757,26 +729,49 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             }
         }
 
-        // QSMART has no internal mask erosion (unlike V-SHARP), so a loose threshold
-        // mask leaks non-brain phase into the global dipole inversion and produces
-        // streaking. Default QSMART to a BET mask when masking is untouched; otherwise
-        // warn if the user-chosen mask isn't BET-based.
-        if config.inversion.algorithm == QsmAlgorithm::Qsmart {
-            let untouched = args.mask_preset.is_none()
-                && args.mask_sections_cli.is_none()
-                && args.masking_input.is_none()
-                && config.masking.sections == default_mask_sections();
-            if untouched {
-                log::info!("QSMART: defaulting to BET brain mask (override with --mask)");
-                config.masking.sections = qsmart_default_mask_sections();
-            } else if !config.masking.sections.iter()
-                .all(|s| matches!(s.generator, MaskOp::Bet { .. } | MaskOp::HdBet { .. } | MaskOp::MindGrab { .. })) {
-                log::warn!(
-                    "QSMART needs a tight brain mask; the configured mask is not BET-, HD-BET- or \
-                     MindGrab-based and may cause streaking artifacts. Consider --mask-preset bet, \
-                     --mask-preset hd-bet, --mask-preset mindgrab or --mask magnitude,bet:0.5,erode:2."
-                );
+        // The outputs other outputs need (χ-separation's relaxometry maps, the statistics'
+        // segmentation, ...) are switched on, and QSMART's BET mask installed where the recipe
+        // was left alone, as every front end has them. Nothing below sets a setting the rules read
+        // (the BET push only fills in the BET steps the recipe already has).
+        let (normalised, adjustments) = config.normalised();
+        for a in &adjustments {
+            if a.setting == "masking.sections" {
+                log::info!("{} (choose another mask with --mask-preset or --mask)", a.message);
+            } else {
+                log::debug!("{}", a.message);
             }
+        }
+        *config = normalised;
+        if args.export_dicom { config.pipeline.export_dicom = true; }
+        if args.no_inhomogeneity_correction { config.masking.inhomogeneity_correction = false; }
+        else if args.inhomogeneity_correction { config.masking.inhomogeneity_correction = true; }
+        if let Some(tool) = &args.use_custom_masks { config.masking.custom_mask_tool = Some(tool.clone()); }
+        if args.axial_resampling { config.pipeline.axial_resampling = true; }
+        if args.no_axial_resampling { config.pipeline.axial_resampling = false; }
+        if let Some(v) = args.obliquity_threshold {
+            if v < 0.0 {
+                return Err(QsmxtError::Config(format!(
+                    "--obliquity-threshold {v}: the threshold is in degrees and cannot be negative. Resampling \
+                     is off unless --axial-resampling is given (a negative threshold no longer turns it off)")));
+            }
+            config.pipeline.obliquity_threshold = v;
+        }
+        if args.crop_to_mask { config.pipeline.crop_to_mask = true; }
+        if args.ignore_slice_gap { config.pipeline.ignore_slice_gap = true; }
+        if args.fft_padding { config.pipeline.fft_padding = true; }
+        if let Some(v) = args.crop_margin_mm { config.pipeline.crop_margin_mm = v; }
+        if let Some(v) = args.output_space {
+            config.pipeline.output_space = match v {
+                crate::cli::OutputSpaceArg::Acquired => OutputSpace::Acquired,
+                crate::cli::OutputSpaceArg::Working => OutputSpace::Working,
+            };
+        }
+
+        // QSMART's own default mask (BET) is the engine's to install, when normalising; this only
+        // warns, with the options that would help, when the mask the run takes may not suit it.
+        if let Some(warning) = qsmxt_engine::masking::mask_warning(config) {
+            log::warn!("{warning}. Consider --mask-preset bet, --mask-preset hd-bet, --mask-preset \
+                        mindgrab or --mask magnitude,bet:0.5,erode:2.");
         }
 
         // ── BET ──
@@ -1123,6 +1118,61 @@ mod tests {
         ]);
         assert_ne!(c.masking.sections, qsmart_default_mask_sections());
         assert_eq!(c.masking.sections, default_mask_sections());
+        assert!(c.masking.recipe_chosen, "the choice is in the config, so it is saved");
+    }
+
+    /// Which flags choose the mask under QSMART (and so keep it), which leave QSMART's BET in
+    /// place, and that the BET options still reach the BET step the engine installs.
+    #[test]
+    fn qsmart_mask_flags_choose_the_mask() {
+        let qsmart = |extra: &[&str]| {
+            let mut argv = vec!["qsmxt", "run", "<bids>", "--qsm-algorithm", "qsmart"];
+            argv.extend_from_slice(extra);
+            config_from_cli(&argv)
+        };
+        let c = qsmart(&[]);
+        assert_eq!(c.masking.sections, qsmart_default_mask_sections());
+        assert!(!c.masking.recipe_chosen);
+        // `--masking-input` chooses the recipe: with the default's own input it is kept as it is.
+        let c = qsmart(&["--masking-input", "phase-quality"]);
+        assert_eq!(c.masking.sections, default_mask_sections());
+        assert!(c.masking.recipe_chosen);
+        let c = qsmart(&["--masking-input", "magnitude"]);
+        assert!(c.masking.sections.iter().all(|s| s.input == MaskingInput::Magnitude
+            && matches!(s.generator, MaskOp::Threshold { .. })));
+        // `--mask` spelling out the default recipe keeps it too.
+        let spec = default_mask_sections()[0].compact_spec();
+        let c = qsmart(&["--mask", &spec]);
+        assert_eq!(c.masking.sections, default_mask_sections());
+        // The BET options reach QSMART's BET; the combine options alone do not choose the recipe.
+        let c = qsmart(&["--bet-fractional-intensity", "0.3", "--mask-refine", "erode:1"]);
+        assert!(matches!(c.masking.sections[0].generator, MaskOp::Bet { fractional_intensity, .. }
+                         if fractional_intensity == 0.3));
+        assert_eq!(c.masking.sections[0].refinements, qsmart_default_mask_sections()[0].refinements);
+        assert!(!c.masking.recipe_chosen);
+    }
+
+    /// A QSMART run's saved config reloads as the same run, the kept threshold included, and so
+    /// does the command it generates.
+    #[test]
+    fn qsmart_mask_choice_survives_the_saved_config_and_the_command() {
+        let no_flags = |mut c: PipelineConfig| {
+            let cli = cli::Cli::try_parse_from(["qsmxt", "run", "<bids>"]).unwrap();
+            let cli::Command::Run(r) = cli.command else { panic!() };
+            apply_run_overrides(&mut c, &r.pipeline).unwrap();
+            c
+        };
+        for extra in [&[][..], &["--mask-preset", "robust-threshold"], &["--mask-preset", "bet"],
+                      &["--masking-input", "phase-quality"], &["--bet-fractional-intensity", "0.3"]] {
+            let mut argv = vec!["qsmxt", "run", "<bids>", "--qsm-algorithm", "qsmart"];
+            argv.extend_from_slice(extra);
+            let c = config_from_cli(&argv);
+            let reloaded = no_flags(PipelineConfig::from_toml(&c.to_toml().unwrap()).unwrap());
+            assert_eq!(reloaded, c, "{extra:?}");
+            let cmd = qsmxt_engine::generate_command(&c);
+            let args: Vec<&str> = cmd.split_whitespace().collect();
+            assert_eq!(config_from_cli(&args), c, "{extra:?}: {cmd}");
+        }
     }
 
     #[test]

@@ -3144,7 +3144,10 @@ mod defaults_only_tests {
             let mut c = base();
             c.inversion.algorithm = *alg;
             c.inversion.tile_size = Some(64);
-            assert_no_values(&c, &format!("inversion {alg}"));
+            // QSMART's own mask recipe (BET, then 2 erosions) is not the general default, so its
+            // erosion is said, as `qsmxt run --qsm-algorithm qsmart` always said it.
+            let allowed: &[&str] = if *alg == QsmAlgorithm::Qsmart { &["iteration"] } else { &[] };
+            assert_no_values_except(&c, &format!("inversion {alg}"), allowed);
         }
         for alg in [BfAlgorithm::Pdf, BfAlgorithm::Lbv, BfAlgorithm::Ismv, BfAlgorithm::Sharp,
                     BfAlgorithm::Resharp, BfAlgorithm::Harperella, BfAlgorithm::Iharperella] {
