@@ -102,10 +102,10 @@ pub struct HdBetChoice {
     pub label: &'static str,
     pub name: &'static str,
     pub help: &'static str,
-    /// The memory the run's memory check budgets for the network, in bytes: a conservative upper
-    /// bound, not a measurement (`help` gives the measured figure). The scan's own working
-    /// volumes come on top. For the whole volume it assumes a 176×256×256 head box at 1 mm and
-    /// ~1 KiB per input voxel, measured on sliding windows.
+    /// The memory the run's memory estimate counts for the network, in bytes
+    /// ([`crate::memory::hd_bet_network_bytes`]; `help` gives the measured figure for the whole
+    /// step). The scan's own working volumes come on top. For the whole volume it assumes a
+    /// 176×256×256 head box at 1 mm and ~850 B per input voxel, measured on sliding windows.
     pub budget_bytes: u64,
 }
 

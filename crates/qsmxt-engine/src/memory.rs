@@ -214,12 +214,12 @@ fn step_need(step: &Step, config: &PipelineConfig, s: &Scan) -> u64 {
         Stage::Mask(crate::plan::Pass::Main) => mask_recipe(&config.masking.sections),
         Stage::Mask(crate::plan::Pass::Reliable) => mask_recipe(&config.masking.resolved_two_pass_sections()),
         // Every echo's phase and magnitude, registered to the reference echo.
-        Stage::Motion => s.v(16 * e + 64),
+        Stage::Motion => s.v(16 * e + 113),
         // CLEAR-SWI: every echo's phase and magnitude and each echo's filtered phase; ROMEO adds
         // its weights.
         Stage::Swi => match config.swi.unwrap {
             crate::SwiUnwrap::Romeo => s.v((4 * e + 20) * F64),
-            _ => s.v(8 * e + 75),
+            _ => s.v(24 * e + 28),
         },
         // The echoes' magnitudes and the fit's maps.
         Stage::Relaxometry => s.v(8 * e + 25),
@@ -233,7 +233,7 @@ fn step_need(step: &Step, config: &PipelineConfig, s: &Scan) -> u64 {
         // Two background-field removals and iLSQR inversions, the vessel filter, and the
         // intermediates it keeps.
         Stage::Qsmart(_) => s.v(QSMART_PER_VOXEL),
-        Stage::TwoPassCombination => s.v(40),
+        Stage::TwoPassCombination => s.v(27),
         Stage::Reference | Stage::SinglePassReference => s.v(18),
         Stage::Smwi => s.v(65),
         Stage::Segmentation => match step.models.is_empty() {
@@ -302,9 +302,9 @@ fn romeo_threads(s: &Scan) -> u64 {
 
 /// TGV's bytes per voxel: its f32 workspace over the brain's bounding box (the whole volume, at
 /// worst), the inputs and outputs.
-const TGV_PER_VOXEL: u64 = 122;
+const TGV_PER_VOXEL: u64 = 128;
 /// QSMART's bytes per voxel.
-const QSMART_PER_VOXEL: u64 = 240;
+const QSMART_PER_VOXEL: u64 = 271;
 
 /// The voxels a deep-learning network holds activations for at once, and how many such passes
 /// run at the same time: the whole volume once, or, when `inversion.tile_size` tiles it, one
@@ -312,7 +312,6 @@ const QSMART_PER_VOXEL: u64 = 240;
 /// a browser's pool has one more in flight than its threads (measured: xQSM on 4 threads holds
 /// five tiles' activations).
 fn dl_voxels(s: &Scan, config: &PipelineConfig) -> (u64, u64) {
-    // One tile at a time on one thread; a browser's pool runs one more than its threads.
     match config.inversion.tile_size {
         Some(core) => {
             let halo = config.inversion.tile_halo.unwrap_or(8);
@@ -360,9 +359,9 @@ fn bg_removal_need(config: &PipelineConfig, s: &Scan) -> u64 {
         BfAlgorithm::Harperella => 139 * n,
         BfAlgorithm::Iharperella => 155 * n,
         // iQFM: from every echo's phase and magnitude, on the whole volume (4.2 GB in WASM on the
-        // example). BFRnet on the whole volume: more than the WASM heap holds.
+        // example). BFRnet on the whole volume: 10.9 GB natively on the example.
         BfAlgorithm::Iqfm => 703 * n,
-        BfAlgorithm::Bfrnet => WHOLE_VOLUME_AT_LEAST * n,
+        BfAlgorithm::Bfrnet => 1_800 * n,
     }
 }
 
@@ -375,31 +374,29 @@ fn inversion_need(config: &PipelineConfig, s: &Scan) -> u64 {
     match config.inversion.algorithm {
         QsmAlgorithm::Tkd => 74 * n,
         QsmAlgorithm::Tsvd => 74 * n,
-        QsmAlgorithm::Tikhonov => 74 * n,
+        QsmAlgorithm::Tikhonov => 82 * n,
         QsmAlgorithm::Ilsqr => 242 * n,
-        // LSQR (Schweser 2010): like iLSQR, but the unknown vector is ~2n — χ over the grid plus a
-        // residual-field unknown per masked voxel — and LSQR keeps several vectors that size.
-        QsmAlgorithm::Lsqr => 200 * n,
-        // HEIDI: an LSQR solve for the seed, then NESTA/TV continuation on top of it.
-        QsmAlgorithm::Heidi => 280 * n,
+        QsmAlgorithm::Lsqr => 147 * n,
+        QsmAlgorithm::Heidi => 194 * n,
         QsmAlgorithm::Tv => 147 * n,
-        QsmAlgorithm::Nltv => 140 * n,
+        QsmAlgorithm::Nltv => 154 * n,
         QsmAlgorithm::Rts => 227 * n,
         QsmAlgorithm::Medi => 224 * n,
-        QsmAlgorithm::Tfi => 224 * n,
+        QsmAlgorithm::Tfi => 198 * n,
         QsmAlgorithm::Tgv => s.v(TGV_PER_VOXEL),
         QsmAlgorithm::Qsmart => s.v(QSMART_PER_VOXEL),
         QsmAlgorithm::Ndi => 123 * n,
-        QsmAlgorithm::Fansi => 140 * n,
-        QsmAlgorithm::FansiTgv => 140 * n,
-        QsmAlgorithm::L1qsm => 140 * n,
-        QsmAlgorithm::Whqsm => 140 * n,
-        QsmAlgorithm::Hdqsm => 120 * n,
+        QsmAlgorithm::Fansi => 298 * n,
+        // FANSI-TGV: 5.7 GB natively on the example, more than the WASM heap holds.
+        QsmAlgorithm::FansiTgv => 938 * n,
+        QsmAlgorithm::L1qsm => 370 * n,
+        QsmAlgorithm::Whqsm => 290 * n,
+        QsmAlgorithm::Hdqsm => 290 * n,
         QsmAlgorithm::AmpPe => 345 * n,
         // On the whole volume each of these is more than the WASM heap holds on the example.
         QsmAlgorithm::Qsmnet | QsmAlgorithm::QsmnetPlus => dl(50, 820_000_000, 563, 563),
-        QsmAlgorithm::Xqsm => dl(53, 0, 767, 767),
-        QsmAlgorithm::Nextqsm => dl(77, 0, 729, 729),
+        QsmAlgorithm::Xqsm => dl(53, 0, 767, 905),
+        QsmAlgorithm::Nextqsm => dl(40, 0, 1_556, 1_556),
         // LPCNN measured natively on 4 threads and in WASM on one (which separates its parts);
         // iR2QSM and MoDL-QSM in WASM only, taken to divide the same way.
         QsmAlgorithm::Ir2qsm => dl(17, 0, 1_180, WHOLE_VOLUME_AT_LEAST),
@@ -428,8 +425,8 @@ fn r2_need(step: &Step, config: &PipelineConfig, s: &Scan) -> u64 {
     fit.max(patch * R2PRIMENET_PER_PATCH_VOXEL + R2PRIMENET_FIXED + s.v(24))
 }
 
-/// Bytes per voxel of a network on the whole volume, for those (BFRnet, iR2QSM, LPCNN, MoDL-QSM)
-/// whose whole-volume run is known only to be more than the 4 GB WASM heap holds on the example.
+/// Bytes per voxel of a network on the whole volume, for iR2QSM, LPCNN and MoDL-QSM: LPCNN's,
+/// 4.5 GB natively on the example (the others are known only to need more than the WASM heap).
 const WHOLE_VOLUME_AT_LEAST: u64 = 720;
 
 /// R2PRIMEnet's activations per patch voxel and its parsed model: 830 B natively (measured at
@@ -593,7 +590,7 @@ pub fn format_bytes(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plan::{plan, plan_for, Pass};
+    use crate::plan::{plan, plan_for};
 
     /// The example data: 184×256×128, 5 echoes, 3 T, with magnitude.
     pub(crate) fn example() -> ScanFacts {
@@ -718,7 +715,8 @@ mod tests {
         assert!(warning.starts_with("χ-separation is estimated to need ") && warning.ends_with("more than the 4.0 GB a browser run has"),
                 "{warning}");
         let problem = p.check.problems.last().unwrap();
-        assert_eq!((problem.severity, problem.setting), (crate::requirements::Severity::Warning, Some("separation.susep_net.patch")));
+        assert_eq!((problem.severity, problem.setting), (crate::requirements::Severity::Warning, None));
+        assert_eq!((&problem.reason, &problem.settings), (warning, &over.settings));
         assert!(p.check.errors.is_empty(), "a warning, not a refusal: {:?}", p.check.errors);
         // Natively the same plan has no limit to warn of.
         let native = plan(&config, &example());
@@ -741,8 +739,10 @@ mod tests {
     #[test]
     fn the_browser_profile_fits_every_option_in_the_heap() {
         let mut configs: Vec<(String, PipelineConfig)> = Vec::new();
-        // iQSM, iQSM+ (and iQFM, BFRnet below) run on the whole volume, which the heap cannot hold.
-        for a in QsmAlgorithm::ALL.into_iter().filter(|a| !matches!(a, QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus)) {
+        // iQSM, iQSM+ (and iQFM, BFRnet below) run on the whole volume, and FANSI-TGV holds
+        // 5.7 GB on the example: none of them fits the heap.
+        let too_big = [QsmAlgorithm::Iqsm, QsmAlgorithm::IqsmPlus, QsmAlgorithm::FansiTgv];
+        for a in QsmAlgorithm::ALL.into_iter().filter(|a| !too_big.contains(a)) {
             configs.push((format!("{a}"), with(|c| c.inversion.algorithm = a)));
         }
         for b in [BfAlgorithm::Vsharp, BfAlgorithm::Pdf, BfAlgorithm::Lbv, BfAlgorithm::Ismv, BfAlgorithm::Sharp,
@@ -834,7 +834,6 @@ mod tests {
         let mut phase_only = example();
         phase_only.has_magnitude = false;
         assert!(!plan(&d, &phase_only).has(Stage::Magnitude));
-        let _ = Pass::Main;
     }
 
     /// A small minimal run stays small, and a typical brain lands in the gigabytes.

@@ -440,13 +440,14 @@ fn estimate_memory(plan: &mut Plan, facts: &ScanFacts, profile: &MemoryProfile) 
     let Some(step) = plan.steps.iter().find(|s| s.memory_bytes > budget) else { return };
     let settings = crate::memory::reducing_settings(step, &plan.config);
     let fmt = crate::memory::format_bytes;
-    let reason = format!("is estimated to need {} of memory, more than the {} a browser run has",
-                         fmt(step.memory_bytes), fmt(budget));
-    let message = format!("{} {reason}", step.label);
+    let message = format!("{} is estimated to need {} of memory, more than the {} a browser run has",
+                          step.label, fmt(step.memory_bytes), fmt(budget));
     plan.check.warnings.push(message.clone());
+    // Not one setting's problem: the whole sentence is the reason, and the settings that bring
+    // the step down are listed.
     plan.check.problems.push(requirements::Problem {
-        severity: requirements::Severity::Warning, setting: settings.first().copied(), implied_by: None,
-        settings: settings.clone(), reason, message,
+        severity: requirements::Severity::Warning, setting: None, implied_by: None,
+        settings: settings.clone(), reason: message.clone(), message,
     });
     plan.over_budget = Some(OverBudget { step: step.name.clone(), bytes: step.memory_bytes, budget_bytes: budget, settings });
 }

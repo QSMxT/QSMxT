@@ -68,9 +68,11 @@ fn gb(b: f64) -> String {
     format!("{:.2} GB", b / 1e9)
 }
 
-/// `est` against `measured`: `None` when within the margin, else the line to report.
+/// `est` against `measured`: `None` when within the margin, else the line to report. Every
+/// comparison is printed as a table row (`cargo test --test memory_calibration -- --nocapture`).
 fn off(what: String, est: f64, measured: f64) -> Option<String> {
     let ratio = est / measured;
+    println!("| {what} | {} | {} | {:+.0}% |", gb(measured), gb(est), (ratio - 1.0) * 100.0);
     (!(1.0 - UNDER..=1.0 + OVER).contains(&ratio))
         .then(|| format!("{what}: estimated {}, measured {} ({:+.0}%)", gb(est), gb(measured), (ratio - 1.0) * 100.0))
 }
@@ -80,6 +82,7 @@ fn the_estimate_is_within_the_margin_of_every_measurement() {
     let fx = fixture();
     let mut misses = Vec::new();
     let mut checked = 0;
+    println!("| record and step | measured | estimated | difference |\n|---|---|---|---|");
     for r in fx["records"].as_array().unwrap() {
         let name = format!("{} {}", r["kind"].as_str().unwrap(), r["name"].as_str().unwrap());
         let threads = r["threads"].as_u64().unwrap() as usize;
