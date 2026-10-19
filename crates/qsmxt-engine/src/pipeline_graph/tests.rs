@@ -1,7 +1,8 @@
 use super::*;
 use crate::observe::{Observer, StageEvent, VolumeData};
 use crate::plan::tests::facts;
-use crate::store::{Completed, Data, Header, MemoryStore, Mese, StageStore, Supplied};
+use crate::run::tests::Recorder;
+use crate::store::{MemoryStore, StageStore};
 
 fn graph(config: &PipelineConfig, facts: &ScanFacts) -> PipelineGraph {
     pipeline_graph(&crate::plan::plan(config, facts), config, facts, None)
@@ -266,49 +267,6 @@ fn the_graph_round_trips_through_json() {
                (&serde_json::json!("ppm"), &serde_json::json!("chi"), &serde_json::json!("Chimap"), &serde_json::json!("Chi")));
 }
 
-/// A [`MemoryStore`] that also keeps what each computed step recorded reading and writing.
-struct Recorder {
-    inner: MemoryStore,
-    /// Each computed step, what it read and what it wrote.
-    completed: Vec<Recorded>,
-}
-
-type Recorded = (String, Vec<Item>, Vec<Item>);
-
-impl StageStore for Recorder {
-    type Error = crate::error::EngineError;
-    fn input_identity(&mut self) -> serde_json::Value { self.inner.input_identity() }
-    fn header(&mut self) -> Result<Header, Self::Error> { self.inner.header() }
-    fn sidecar(&mut self) -> Result<Option<crate::scan::QsmSidecar>, Self::Error> { self.inner.sidecar() }
-    fn coils(&mut self) -> Vec<u32> { self.inner.coils() }
-    fn cached_scan(&mut self, key: &str) -> Option<RunMetadata> { self.inner.cached_scan(key) }
-    fn record_scan(&mut self, key: &str, meta: &RunMetadata, decisions: &[crate::record::Decision]) -> Result<(), Self::Error> {
-        self.inner.record_scan(key, meta, decisions)
-    }
-    fn decisions(&mut self, step: &str) -> Vec<crate::record::Decision> { self.inner.decisions(step) }
-    fn has(&mut self, item: &Item) -> bool { self.inner.has(item) }
-    fn real(&mut self, item: &Item) -> Result<Vec<f64>, Self::Error> { self.inner.real(item) }
-    fn mask(&mut self, item: &Item) -> Result<Vec<u8>, Self::Error> { self.inner.mask(item) }
-    fn supplied_mask(&mut self) -> Supplied { self.inner.supplied_mask() }
-    fn mese(&mut self) -> Option<Mese> { self.inner.mese() }
-    fn supplied(&mut self, item: &Item) -> Supplied { self.inner.supplied(item) }
-    fn identity(&mut self, item: &Item) -> serde_json::Value { self.inner.identity(item) }
-    fn recorded_key(&mut self, step: &str) -> Option<String> { self.inner.recorded_key(step) }
-    fn cached(&mut self, step: &str, key: &str) -> bool { self.inner.cached(step, key) }
-    fn start(&mut self, step: &str) { self.inner.start(step) }
-    fn put(&mut self, item: Item, data: Data<'_>) -> Result<(), Self::Error> { self.inner.put(item, data) }
-    fn annotate(&mut self, item: &Item, fields: serde_json::Map<String, serde_json::Value>) -> Result<(), Self::Error> {
-        self.inner.annotate(item, fields)
-    }
-    fn report(&mut self, item: &Item) -> Option<serde_json::Value> { StageStore::report(&mut self.inner, item) }
-    fn annotation(&mut self, item: &Item) -> serde_json::Map<String, serde_json::Value> { self.inner.annotation(item) }
-    fn discard(&mut self, step: &str, outputs: &[Item]) -> Result<(), Self::Error> { self.inner.discard(step, outputs) }
-    fn record(&mut self, c: &Completed<'_>) -> Result<(), Self::Error> {
-        self.completed.push((c.step.to_string(), c.inputs.to_vec(), c.outputs.to_vec()));
-        self.inner.record(c)
-    }
-}
-
 /// The algorithm each step reported starting with.
 #[derive(Default)]
 struct Algorithms(Vec<(String, Option<String>)>);
@@ -326,7 +284,7 @@ impl Observer for Algorithms {
 /// every box (bar one that may do nothing) was computed.
 fn check_against_a_run(config: &PipelineConfig, facts: &ScanFacts, store: MemoryStore) {
     let plan = crate::plan::plan(config, facts);
-    let mut store = Recorder { inner: store, completed: Vec::new() };
+    let mut store = Recorder::new(store);
     let header = store.header().unwrap();
     let meta = crate::scan::resolve_geometry(header.dims, header.voxel_size, header.affine, facts, config);
     let mut observer = Algorithms::default();
@@ -343,10 +301,10 @@ fn check_against_a_run(config: &PipelineConfig, facts: &ScanFacts, store: Memory
     for (step, inputs, outputs) in &store.completed {
         let planned = plan.steps.iter().find(|s| &s.name == step).unwrap();
         assert!(outputs.iter().all(|o| planned.outputs.contains(o)), "{step}: {outputs:?} vs {:?}", planned.outputs);
+        assert_eq!(inputs, &planned.reads, "{step}: what the run recorded reading is what the plan says it reads");
         let node = g.node(step).unwrap();
-        for item in inputs {
-            assert!(node.reads.contains(&item_key(item)), "{step} read {item:?}; the graph says {:?}", node.reads);
-        }
+        let inputs: Vec<String> = inputs.iter().map(item_key).collect();
+        assert_eq!(inputs, node.reads, "{step}");
         for item in outputs {
             assert!(node.writes.contains(&item_key(item)), "{step} wrote {item:?}; the graph says {:?}", node.writes);
         }
