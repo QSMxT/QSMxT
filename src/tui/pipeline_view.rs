@@ -64,11 +64,14 @@ pub enum Opened {
     NoViewer(&'static str),
 }
 
+/// A run of a dataset: the dataset's folder, the run's key and the echo-count filter.
+type RunId = (String, String, String);
+
 /// The Pipeline tab's state.
 pub struct PipelineView {
     pub scroll: usize,
     /// The last run read, by dataset and run key, kept so the files are read once per run chosen.
-    run: Option<((String, String, String), Result<crate::bids::discovery::QsmRun, String>)>,
+    run: Option<(RunId, Result<crate::bids::discovery::QsmRun, String>)>,
     /// Where the SVG is written.
     pub svg_dir: PathBuf,
     /// How the SVG is opened ([`open`]; tests put a stub here).
@@ -143,9 +146,9 @@ impl App {
             return;
         }
         self.status_message = Some(match (self.pipeline_view.opener)(&path) {
-            Ok(Opened::Viewer) => format!("Pipeline graph written to {} and opened", path.display()),
-            Ok(Opened::NoViewer(why)) => format!("Pipeline graph written to {} ({why})", path.display()),
-            Err(e) => format!("Pipeline graph written to {} (could not open it: {e})", path.display()),
+            Ok(Opened::Viewer) => format!("Pipeline graph saved to {} and opened", path.display()),
+            Ok(Opened::NoViewer(why)) => format!("Pipeline graph saved to {} ({why})", path.display()),
+            Err(e) => format!("Pipeline graph saved to {} (not opened: {e})", path.display()),
         });
     }
 }
@@ -169,14 +172,14 @@ fn read_run(bids_dir: &str, key: &str, num_echoes: &str) -> Result<crate::bids::
 pub fn open_command(os: &str, var: impl Fn(&str) -> Option<String>, path: &Path) -> Result<(String, Vec<String>), &'static str> {
     let set = |name: &str| var(name).is_some_and(|v| !v.is_empty());
     if set("SSH_CONNECTION") || set("SSH_CLIENT") || set("SSH_TTY") {
-        return Err("connected over SSH: copy it to this computer to view it");
+        return Err("over SSH, not opened");
     }
     let p = path.display().to_string();
     match os {
         "macos" => Ok(("open".into(), vec![p])),
         "windows" => Ok(("cmd".into(), vec!["/C".into(), "start".into(), String::new(), p])),
         _ if set("DISPLAY") || set("WAYLAND_DISPLAY") => Ok(("xdg-open".into(), vec![p])),
-        _ => Err("no display to open it on"),
+        _ => Err("no display, not opened"),
     }
 }
 
@@ -478,14 +481,14 @@ mod tests {
         let msg = app.status_message.clone().unwrap();
         assert!(msg.contains(&path.display().to_string()) && msg.contains("not in a test"), "{msg}");
         let s = screen(&mut app, 40);
-        assert!(s.contains("Pipeline graph written to"), "{s}");
+        assert!(s.contains("Pipeline graph saved to"), "{s}");
 
         app.pipeline_view.opener = |_| Ok(Opened::Viewer);
         press(&mut app, KeyCode::Enter);
         assert!(app.status_message.as_deref().unwrap().ends_with("and opened"));
         app.pipeline_view.opener = |_| Err("xdg-open: not found".into());
         press(&mut app, KeyCode::Enter);
-        assert!(app.status_message.as_deref().unwrap().contains("could not open it: xdg-open: not found"));
+        assert!(app.status_message.as_deref().unwrap().contains("not opened: xdg-open: not found"));
 
         press(&mut app, KeyCode::Down);
         press(&mut app, KeyCode::Down);
