@@ -12,6 +12,7 @@ use crate::bridge::{field_mapping_runs, skips_bgremove};
 use crate::config::PipelineConfig;
 use crate::enums::*;
 use crate::requirements::{self, Check, Output};
+use crate::memory::MemoryProfile;
 use crate::scan::ScanFacts;
 use crate::store::Item;
 
@@ -166,6 +167,9 @@ pub struct Step {
     pub reads: Vec<Item>,
     /// The items it writes: its outputs, each described by [`Item::meta`].
     pub outputs: Vec<Item>,
+    /// The memory it takes at its peak, in bytes, on the host and store the plan was made for
+    /// ([`Plan::memory_profile`]; [`crate::memory::estimate`]).
+    pub memory_bytes: u64,
 }
 
 impl Step {
@@ -174,7 +178,7 @@ impl Step {
     pub fn new(stage: Stage, models: Vec<&'static str>) -> Self {
         Step {
             stage, models, name: stage.name(), label: stage.label(),
-            algorithm: None, algorithm_label: None, reads: Vec::new(), outputs: Vec::new(),
+            algorithm: None, algorithm_label: None, reads: Vec::new(), outputs: Vec::new(), memory_bytes: 0,
         }
     }
 }
@@ -188,8 +192,17 @@ pub struct Plan {
     pub steps: Vec<Step>,
     /// Every model any step needs, each once, in the order they are first needed.
     pub models: Vec<&'static str>,
-    /// The run's estimated peak memory ([`crate::memory::estimate_peak_memory_bytes`]).
+    /// The run's estimated peak memory: the largest of its steps' [`Step::memory_bytes`].
     pub peak_memory_bytes: u64,
+    /// The name of the step that sets [`Self::peak_memory_bytes`], when the run computes anything.
+    pub peak_memory_step: Option<String>,
+    /// The host and store the memory figures are for.
+    pub memory_profile: MemoryProfile,
+    /// The most the run can take on that host, when there is a hard limit (a browser's WASM heap).
+    pub memory_budget_bytes: Option<u64>,
+    /// The step whose estimate exceeds the budget first, when one does. The same is among
+    /// [`Self::check`]'s warnings.
+    pub over_budget: Option<OverBudget>,
     /// What the scan's data cannot produce of what was enabled ([`requirements::scan_check`]):
     /// errors for outputs asked for, warnings for outputs another option implied (the run goes
     /// ahead without those).
@@ -207,6 +220,18 @@ pub struct Plan {
     /// The echoes the stages after masking read are motion-corrected, and so is the mask they work
     /// in (the voxels every echo still covers).
     pub motion_corrected: bool,
+}
+
+/// A step estimated to need more memory than the host has ([`Plan::over_budget`]).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct OverBudget {
+    /// The step's name ([`Stage::name`]).
+    pub step: String,
+    pub bytes: u64,
+    pub budget_bytes: u64,
+    /// The settings that bring its memory down, by config path
+    /// ([`crate::memory::reducing_settings`]).
+    pub settings: Vec<&'static str>,
 }
 
 impl Plan {
@@ -270,12 +295,20 @@ fn may_predict_r2prime(facts: &ScanFacts, config: &PipelineConfig) -> bool {
         facts.field_strength, s.r2prime_strategy, s.r2primenet.ignore_field_mismatch).is_none()
 }
 
-/// Plan one run of `config` on the scan `facts` describes.
+/// Plan one run of `config` on the scan `facts` describes, as `qsmxt run` runs it: its memory
+/// figures are native, with the volumes in files ([`MemoryProfile::NATIVE`]).
 ///
 /// `config` is normalised first ([`PipelineConfig::normalised`]), so it may be given as the user
 /// left it: the plan is that of the configuration `qsmxt run` would take, which it holds
 /// ([`Plan::config`]), with what was changed ([`Plan::adjustments`]).
 pub fn plan(config: &PipelineConfig, facts: &ScanFacts) -> Plan {
+    plan_for(config, facts, &MemoryProfile::NATIVE)
+}
+
+/// [`plan`], with the memory figures for `profile`'s host and store (qsmbly:
+/// [`MemoryProfile::browser`]). Where the host has a limit and a step's estimate exceeds it, the
+/// plan names the step ([`Plan::over_budget`]) and warns of it in [`Plan::check`].
+pub fn plan_for(config: &PipelineConfig, facts: &ScanFacts, profile: &MemoryProfile) -> Plan {
     let (normalised, adjustments) = config.normalised();
     let config = &normalised;
     let p = &config.pipeline;
@@ -372,12 +405,14 @@ pub fn plan(config: &PipelineConfig, facts: &ScanFacts) -> Plan {
             models.push(id);
         }
     }
-    let (nx, ny, nz) = facts.dims;
     let mut plan = Plan {
         steps,
         models,
-        peak_memory_bytes: crate::memory::estimate_peak_memory_bytes(
-            nx, ny, nz, facts.n_echoes, facts.n_coils, facts.has_magnitude, config),
+        peak_memory_bytes: 0,
+        peak_memory_step: None,
+        memory_profile: *profile,
+        memory_budget_bytes: profile.budget_bytes(),
+        over_budget: None,
         check: requirements::scan_check(facts, config),
         notes,
         adjustments,
@@ -389,7 +424,31 @@ pub fn plan(config: &PipelineConfig, facts: &ScanFacts) -> Plan {
     for (step, d) in plan.steps.iter_mut().zip(details) {
         (step.algorithm, step.algorithm_label, step.reads, step.outputs) = (d.algorithm, d.algorithm_label, d.reads, d.writes);
     }
+    estimate_memory(&mut plan, facts, profile);
     plan
+}
+
+/// Fill in the plan's memory figures, and warn of the first step that exceeds the host's budget.
+fn estimate_memory(plan: &mut Plan, facts: &ScanFacts, profile: &MemoryProfile) {
+    let estimate = crate::memory::estimate(plan, facts, profile);
+    for (step, bytes) in plan.steps.iter_mut().zip(&estimate.steps) {
+        step.memory_bytes = *bytes;
+    }
+    plan.peak_memory_bytes = estimate.peak_bytes;
+    plan.peak_memory_step = estimate.peak_step.map(|i| plan.steps[i].name.clone());
+    let Some(budget) = plan.memory_budget_bytes else { return };
+    let Some(step) = plan.steps.iter().find(|s| s.memory_bytes > budget) else { return };
+    let settings = crate::memory::reducing_settings(step, &plan.config);
+    let fmt = crate::memory::format_bytes;
+    let reason = format!("is estimated to need {} of memory, more than the {} a browser run has",
+                         fmt(step.memory_bytes), fmt(budget));
+    let message = format!("{} {reason}", step.label);
+    plan.check.warnings.push(message.clone());
+    plan.check.problems.push(requirements::Problem {
+        severity: requirements::Severity::Warning, setting: settings.first().copied(), implied_by: None,
+        settings: settings.clone(), reason, message,
+    });
+    plan.over_budget = Some(OverBudget { step: step.name.clone(), bytes: step.memory_bytes, budget_bytes: budget, settings });
 }
 
 #[cfg(test)]
