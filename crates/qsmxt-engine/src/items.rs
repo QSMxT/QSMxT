@@ -73,6 +73,7 @@ impl Item {
         let (label, units, kind, bids_name): (String, Option<&'static str>, ItemKind, Option<String>) = match *self {
             Item::AcquiredPhase(_) => ("Phase (as acquired)".into(), None, K::Phase, None),
             Item::AcquiredMagnitude(_) => ("Magnitude (as acquired)".into(), None, K::Magnitude, None),
+            Item::AcquiredReal(_) => ("Real part (as acquired)".into(), None, K::Phase, None),
             Item::AcquiredImaginary(_) => ("Imaginary part (as acquired)".into(), None, K::Phase, None),
             Item::CoilPhase(..) => ("Coil phase".into(), None, K::Phase, None),
             Item::CoilMagnitude(..) => ("Coil magnitude".into(), None, K::Magnitude, None),
@@ -157,7 +158,7 @@ impl Item {
     /// variant cannot compile without its metadata; this list is what its tests check it on.
     pub fn one_of_each() -> Vec<Item> {
         let mut items = vec![
-            Item::AcquiredPhase(1), Item::AcquiredMagnitude(1), Item::AcquiredImaginary(1),
+            Item::AcquiredPhase(1), Item::AcquiredMagnitude(1), Item::AcquiredReal(1), Item::AcquiredImaginary(1),
             Item::CoilPhase(1, 1), Item::CoilMagnitude(1, 1), Item::CombinedEchoPhase(1),
             Item::CombinedEchoMagnitude(1), Item::CoilCombinationMask, Item::Phase(1), Item::Magnitude(1),
             Item::CorrectedPhase(1), Item::CorrectedMagnitude(1), Item::CombinedMagnitude, Item::BrainMask,
@@ -185,7 +186,7 @@ impl Item {
     /// The echo the item belongs to (1-based), for a per-echo item.
     pub fn echo(&self) -> Option<usize> {
         match *self {
-            Item::AcquiredPhase(e) | Item::AcquiredMagnitude(e) | Item::AcquiredImaginary(e)
+            Item::AcquiredPhase(e) | Item::AcquiredMagnitude(e) | Item::AcquiredReal(e) | Item::AcquiredImaginary(e)
             | Item::CoilPhase(_, e) | Item::CoilMagnitude(_, e)
             | Item::CombinedEchoPhase(e) | Item::CombinedEchoMagnitude(e)
             | Item::Phase(e) | Item::Magnitude(e) | Item::CorrectedPhase(e) | Item::CorrectedMagnitude(e)

@@ -300,11 +300,12 @@ impl Ctx<'_> {
                             writes.extend([Item::CoilPhase(coil, e), Item::CoilMagnitude(coil, e)]);
                         }
                     }
+                } else if f.real_imaginary {
+                    writes.extend(self.echoes(Item::AcquiredReal));
+                    writes.extend(self.echoes(Item::AcquiredImaginary));
                 } else {
                     writes.extend(self.echoes(Item::AcquiredPhase));
-                    if f.real_imaginary {
-                        writes.extend(self.echoes(Item::AcquiredImaginary));
-                    } else if f.has_magnitude {
+                    if f.has_magnitude {
                         writes.extend(self.echoes(Item::AcquiredMagnitude));
                     }
                 }
@@ -330,19 +331,18 @@ impl Ctx<'_> {
                     writes.extend(self.echoes(Item::CombinedEchoPhase));
                     writes.extend(self.echoes(Item::CombinedEchoMagnitude));
                     writes.push(Item::CoilCombinationMask);
+                } else if f.real_imaginary {
+                    reads.extend(self.echoes(Item::AcquiredReal));
+                    reads.extend(self.echoes(Item::AcquiredImaginary));
+                    writes.extend(self.echoes(Item::Phase));
+                    writes.extend(self.echoes(Item::Magnitude));
                 } else {
                     reads.extend(self.echoes(Item::AcquiredPhase));
-                    if f.real_imaginary {
-                        reads.extend(self.echoes(Item::AcquiredImaginary));
-                        writes.extend(self.echoes(Item::Phase));
-                        writes.extend(self.echoes(Item::Magnitude));
-                    } else {
-                        if f.has_magnitude {
-                            reads.extend(self.echoes(Item::AcquiredMagnitude));
-                        }
-                        writes.extend(self.echoes(Item::Phase));
-                        writes.extend(self.magnitudes());
+                    if f.has_magnitude {
+                        reads.extend(self.echoes(Item::AcquiredMagnitude));
                     }
+                    writes.extend(self.echoes(Item::Phase));
+                    writes.extend(self.magnitudes());
                 }
             }
             Stage::Magnitude => {

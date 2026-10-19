@@ -339,6 +339,8 @@ impl FileStore<'_> {
         Some(match *item {
             Item::AcquiredPhase(n) => echo(n)?.phase_nifti.clone(),
             Item::AcquiredMagnitude(n) => echo(n)?.magnitude_nifti.clone()?,
+            // A real/imaginary echo's real part is its `phase_nifti`, beside its `part-imag` file.
+            Item::AcquiredReal(n) => echo(n).filter(|e| e.imaginary_nifti.is_some())?.phase_nifti.clone(),
             Item::AcquiredImaginary(n) => echo(n)?.imaginary_nifti.clone()?,
             Item::CoilPhase(c, n) => self.run.coils.as_ref()?.get(c.checked_sub(1)?)?.echoes.get(n.checked_sub(1)?)?.phase_nifti.clone(),
             Item::CoilMagnitude(c, n) =>

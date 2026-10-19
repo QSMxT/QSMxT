@@ -531,10 +531,14 @@ pub fn wanted(f: &ScanFacts, config: &PipelineConfig, out: Output) -> bool {
 
 /// Problems that stop a run whatever was asked for.
 fn input_problems(f: &ScanFacts) -> Option<String> {
-    (f.n_coils > 1 && f.n_echoes < 2).then(|| format!(
-        "MCPC-3D-S coil combination needs at least 2 echoes, and this run has {} echo with {} \
-         uncombined coils. Combine the coils first (on the scanner, or with another tool).",
-        f.n_echoes, f.n_coils))
+    coil_combination_problem(f.n_echoes, f.n_coils)
+}
+
+/// Why `n_coils` uncombined coils of `n_echoes` echoes cannot be combined, if they cannot.
+pub fn coil_combination_problem(n_echoes: usize, n_coils: usize) -> Option<String> {
+    (n_coils > 1 && n_echoes < 2).then(|| format!(
+        "MCPC-3D-S coil combination needs at least 2 echoes, and this run has {n_echoes} echo with \
+         {n_coils} uncombined coils. Combine the coils first (on the scanner, or with another tool)."))
 }
 
 /// The result of checking every run: one error line per requested output a run cannot produce,
