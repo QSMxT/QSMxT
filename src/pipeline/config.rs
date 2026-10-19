@@ -655,6 +655,8 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = sp.wavesep_tol { config.separation.wavesep.tol = v; }
         if let Some(v) = sp.hc_chisep_dr_pos_3t { config.separation.hc_chisep.dr_pos_3t = v; }
         if let Some(v) = sp.hc_chisep_bin_hz { config.separation.hc_chisep.bin_hz = v; }
+        if let Some(&[d, h, w]) = sp.chi_sepnet_patch.as_deref() { config.separation.chi_sepnet.patch = [d, h, w]; }
+        if let Some(&[d, h, w]) = sp.susep_net_patch.as_deref() { config.separation.susep_net.patch = Some([d, h, w]); }
         // The outputs other outputs need (χ-separation's relaxometry maps, the statistics'
         // segmentation, ...) are switched on as every front end has them switched on. Nothing
         // below sets a setting the rules read.

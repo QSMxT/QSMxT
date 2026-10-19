@@ -52,6 +52,40 @@ pub fn synthseg_bytes(dims: [usize; 3], patch: Option<usize>) -> u64 {
     window * 1000 + n_pad * 200
 }
 
+/// The peak of a χ-separation network on top of the maps it reads, in bytes, on a `dims`
+/// volume: tract's activations for one patch, the parsed model, and the network's own padded
+/// input channels and overlap accumulators. χ-sepnet runs its `patch`; SUSEP-Net runs its
+/// `patch`, or with none the whole volume (padded to multiples of 8) in one pass. Other methods:
+/// 0. Measured natively, single-threaded, on a 184×256×128 volume (peak RSS, the maps in and out
+/// included): χ-sepnet 4.5 GB at its authors' 192×192×128 patch and 1.7 GB at 128×128×64;
+/// SUSEP-Net 12.5 GB on the whole volume and 3.1 GB at 128×128×64; on 136×136×72, SUSEP-Net
+/// 2.8 GB at 128×128×64 and 2.0 GB at 96×96×64.
+pub fn chi_separation_network_bytes(dims: [usize; 3], config: &SeparationConfig) -> u64 {
+    // (activation bytes per patch voxel, parsed model and fixed overhead, pooling multiple)
+    let (patch, per_voxel, fixed, multiple) = match config.algorithm {
+        SeparationAlgorithm::ChiSepNet => (Some(config.chi_sepnet.patch), CHI_SEPNET_PER_VOXEL, CHI_SEPNET_FIXED, 16),
+        SeparationAlgorithm::SusepNet => (config.susep_net.patch, SUSEP_NET_PER_VOXEL, SUSEP_NET_FIXED, 8),
+        _ => return 0,
+    };
+    let round = |d: usize| d.div_ceil(multiple) * multiple;
+    // The padded volume: each axis at least the patch (and, whole-volume, a multiple of 8).
+    let padded: [u64; 3] = std::array::from_fn(|a| match patch {
+        Some(p) => dims[a].max(p[a]) as u64,
+        None => round(dims[a]) as u64,
+    });
+    let window: u64 = match patch {
+        Some(p) => p.iter().map(|&d| d as u64).product(),
+        None => padded.iter().product(),
+    };
+    // Three f32 input channels and three f64 accumulators over the padded volume.
+    window * per_voxel + fixed + 36 * padded.iter().product::<u64>()
+}
+
+const CHI_SEPNET_PER_VOXEL: u64 = 760;
+const CHI_SEPNET_FIXED: u64 = 350_000_000;
+const SUSEP_NET_PER_VOXEL: u64 = 1_850;
+const SUSEP_NET_FIXED: u64 = 800_000_000;
+
 /// Estimate peak memory usage in bytes for a single pipeline run.
 ///
 /// The estimate accounts for:
@@ -162,11 +196,18 @@ pub fn estimate_peak_memory_bytes(
     // Chi-separation + R2/R2' run as sequential stages after QSM. Peak load: the QSM (8N),
     // R2*/R2/R2' maps (~24N), multi-echo GRE + MESE magnitude voxel-major (~2·n_echoes·8N),
     // plus the EPG R2 dictionary/solver or the run_separation workspace (~80N for the CG methods).
+    // The networks have no CG workspace; their own peak comes on top of the maps.
+    let sep_net_mem = if config.pipeline.do_chi_separation {
+        chi_separation_network_bytes([nx, ny, nz], &config.separation)
+    } else {
+        0
+    };
     let sep_mem = if config.pipeline.do_chi_separation
         || config.pipeline.do_r2map
         || config.pipeline.do_r2primemap
     {
-        (2 * n_echoes * F64 + 120) * n
+        let workspace = if sep_net_mem > 0 { 40 } else { 120 };
+        (2 * n_echoes * F64 + workspace) * n + sep_net_mem
     } else {
         0
     };
@@ -365,6 +406,35 @@ mod tests {
             c.bg_removal.algorithm = b;
             assert!(estimate_peak_memory_bytes(8, 8, 8, 1, 1, false, &c) > 0, "{:?}", b);
         }
+    }
+
+    /// The χ-separation networks count, the browser profile's patches shrink them, and a patch
+    /// bounds SUSEP-Net whatever the volume.
+    #[test]
+    fn chi_separation_networks_count_and_a_patch_bounds_them() {
+        let est = |c: &PipelineConfig| estimate_peak_memory_bytes(184, 256, 128, 5, 1, true, c);
+        for alg in [SeparationAlgorithm::ChiSepNet, SeparationAlgorithm::SusepNet] {
+            let mut c = default_config();
+            c.pipeline.do_chi_separation = true;
+            c.separation.algorithm = SeparationAlgorithm::ChiSepIlsqr;
+            let classical = est(&c);
+            c.separation.algorithm = alg;
+            let native = est(&c);
+            assert!(native > classical, "{alg}: {native} vs {classical}");
+            c.apply_browser_profile();
+            assert!(est(&c) < native, "{alg}");
+            // The network's own share at the browser patch, against the measured ~1.4 / ~1.9 GB.
+            let net = chi_separation_network_bytes([184, 256, 128], &c.separation);
+            assert!(net > 1_000_000_000 && net < 2_500_000_000, "{alg}: {net}");
+        }
+        let mut c = SeparationConfig { algorithm: SeparationAlgorithm::SusepNet, ..Default::default() };
+        let whole = chi_separation_network_bytes([184, 256, 128], &c);
+        assert!(whole > 10_000_000_000, "{whole}");
+        c.susep_net.patch = Some([96, 96, 64]);
+        let small = chi_separation_network_bytes([184, 256, 128], &c);
+        let big = chi_separation_network_bytes([368, 512, 256], &c);
+        assert!(big - small < 2_000_000_000, "{small} {big}");
+        assert_eq!(chi_separation_network_bytes([184, 256, 128], &SeparationConfig::default()), 0);
     }
 
     #[test]

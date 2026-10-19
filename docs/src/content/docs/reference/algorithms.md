@@ -897,6 +897,12 @@ baked into χ-sepnet and SUSEP-Net as a training normalisation and is not a
 parameter there. If your χ_total is COSMOS-derived, 114 is the better match for
 the analytic methods too, and `--chi-sep-ilsqr-dr-pos` and friends set it.
 
+χ-sepnet runs as a sliding window of 192×192×128-voxel patches;
+`--chi-sepnet-patch D H W` changes it (each a multiple of 16). SUSEP-Net runs
+the whole volume in one pass; `--susep-net-patch D H W` runs it as a sliding
+window of that size instead (each a multiple of 8), so its memory follows the
+patch rather than the volume.
+
 Outputs are written as `desc-paramagnetic_Chimap`, `desc-diamagnetic_Chimap` and
 `desc-total_Chimap`.
 

@@ -244,6 +244,8 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--wavesep-tol <WAVESEP_TOL>` | WaveSep relative-change stop tolerance. |
 | `--hc-chisep-dr-pos-3t <HC_CHISEP_DR_POS_3T>` | HC-ChiSep paramagnetic relaxivity at 3T (Hz/ppm) |
 | `--hc-chisep-bin-hz <HC_CHISEP_BIN_HZ>` | HC-ChiSep R2' bin width for the anchored grid search (Hz) |
+| `--chi-sepnet-patch <D> <H> <W>` | χ-sepnet sliding-window patch in voxels, D H W, each a multiple of 16 (default: 192 192 128, the authors') |
+| `--susep-net-patch <D> <H> <W>` | Run SUSEP-Net as a sliding window of patches this size in voxels, D H W, each a multiple of 8, so its memory follows the patch, not the volume. Omit to run the whole volume at once. |
 | `--motion-correction` | Rigidly co-register every echo onto a reference echo (estimated on magnitude, applied to phase through the complex signal) before field mapping, and restrict the mask to voxels every echo covers. Off by default. Needs magnitude images. |
 | `--motion-reference <first\|last\|N>` | Echo the others are aligned onto: `first` (default), `last`, or a 1-based echo number. |
 | `--no-motion-chain` | Register every echo from the identity instead of seeding it from its neighbour's solution. |
@@ -627,6 +629,8 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--wavesep-tol <WAVESEP_TOL>` | WaveSep relative-change stop tolerance. |
 | `--hc-chisep-dr-pos-3t <HC_CHISEP_DR_POS_3T>` | HC-ChiSep paramagnetic relaxivity at 3T (Hz/ppm) |
 | `--hc-chisep-bin-hz <HC_CHISEP_BIN_HZ>` | HC-ChiSep R2' bin width for the anchored grid search (Hz) |
+| `--chi-sepnet-patch <D> <H> <W>` | χ-sepnet sliding-window patch in voxels, D H W, each a multiple of 16 (default: 192 192 128, the authors') |
+| `--susep-net-patch <D> <H> <W>` | Run SUSEP-Net as a sliding window of patches this size in voxels, D H W, each a multiple of 8, so its memory follows the patch, not the volume. Omit to run the whole volume at once. |
 | `--motion-correction` | Rigidly co-register every echo onto a reference echo (estimated on magnitude, applied to phase through the complex signal) before field mapping, and restrict the mask to voxels every echo covers. Off by default. Needs magnitude images. |
 | `--motion-reference <first\|last\|N>` | Echo the others are aligned onto: `first` (default), `last`, or a 1-based echo number. |
 | `--no-motion-chain` | Register every echo from the identity instead of seeding it from its neighbour's solution. |
@@ -949,6 +953,8 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--wavesep-tol <WAVESEP_TOL>` | WaveSep relative-change stop tolerance. |
 | `--hc-chisep-dr-pos-3t <HC_CHISEP_DR_POS_3T>` | HC-ChiSep paramagnetic relaxivity at 3T (Hz/ppm) |
 | `--hc-chisep-bin-hz <HC_CHISEP_BIN_HZ>` | HC-ChiSep R2' bin width for the anchored grid search (Hz) |
+| `--chi-sepnet-patch <D> <H> <W>` | χ-sepnet sliding-window patch in voxels, D H W, each a multiple of 16 (default: 192 192 128, the authors') |
+| `--susep-net-patch <D> <H> <W>` | Run SUSEP-Net as a sliding window of patches this size in voxels, D H W, each a multiple of 8, so its memory follows the patch, not the volume. Omit to run the whole volume at once. |
 | `--motion-correction` | Rigidly co-register every echo onto a reference echo (estimated on magnitude, applied to phase through the complex signal) before field mapping, and restrict the mask to voxels every echo covers. Off by default. Needs magnitude images. |
 | `--motion-reference <first\|last\|N>` | Echo the others are aligned onto: `first` (default), `last`, or a 1-based echo number. |
 | `--no-motion-chain` | Register every echo from the identity instead of seeding it from its neighbour's solution. |
@@ -2587,6 +2593,7 @@ qsmxt separate susep-net [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> -
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--local-field <LOCAL_FIELD>` | Local (tissue) field NIfTI in ppm. Required. |
 | `--r2prime <R2PRIME>` | R2' map NIfTI in Hz. Required. |
+| `--patch <D> <H> <W>` | Sliding-window patch in voxels, D H W. χ-sepnet: each a multiple of 16 (default: 192 192 128, the authors'). SUSEP-Net: each a multiple of 8 (default: the whole volume at once) |
 
 ### `qsmxt separate chi-sepnet`
 
@@ -2605,6 +2612,7 @@ qsmxt separate chi-sepnet [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> 
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--local-field <LOCAL_FIELD>` | Local (tissue) field NIfTI in ppm. Required. |
 | `--r2prime <R2PRIME>` | R2' map NIfTI in Hz. Required. |
+| `--patch <D> <H> <W>` | Sliding-window patch in voxels, D H W. χ-sepnet: each a multiple of 16 (default: 192 192 128, the authors'). SUSEP-Net: each a multiple of 8 (default: the whole volume at once) |
 
 ## `qsmxt qsmart`
 

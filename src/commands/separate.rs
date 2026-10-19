@@ -260,9 +260,10 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
             crate::pipeline::runner::prefetch_weights("susep-net", "susep-net")?;
             let local_field = load_nifti(&args.local_field)?;
             let r2prime = load_nifti(&args.r2prime)?;
-            // SUSEP-Net has no user-tunable parameters; weights download on first use.
+            // Weights download on first use.
             let cfg = SeparationConfig {
                 algorithm: SeparationAlgorithm::SusepNet,
+                susep_net: qsm_core::separation::SusepNetParams { patch: patch3(&args.patch) },
                 ..Default::default()
             };
             let inputs = SeparationInputs {
@@ -281,9 +282,14 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
             crate::pipeline::runner::prefetch_weights("chi-sepnet", "chi-sepnet")?;
             let local_field = load_nifti(&args.local_field)?;
             let r2prime = load_nifti(&args.r2prime)?;
-            // χ-sepnet has no user-tunable parameters; weights download on first use.
+            // Weights download on first use.
+            let mut chi_sepnet = qsm_core::separation::ChiSepNetParams::default();
+            if let Some(p) = patch3(&args.patch) {
+                chi_sepnet.patch = p;
+            }
             let cfg = SeparationConfig {
                 algorithm: SeparationAlgorithm::ChiSepNet,
+                chi_sepnet,
                 ..Default::default()
             };
             let inputs = SeparationInputs {
@@ -298,4 +304,12 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
     };
     save_result(&output, &result, &reference)?;
     Ok(())
+}
+
+/// A `--patch D H W` as qsm-core's `(D, H, W)`.
+fn patch3(patch: &Option<Vec<usize>>) -> Option<(usize, usize, usize)> {
+    match patch.as_deref() {
+        Some(&[d, h, w]) => Some((d, h, w)),
+        _ => None,
+    }
 }

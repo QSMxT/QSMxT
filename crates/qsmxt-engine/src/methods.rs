@@ -630,7 +630,15 @@ fn separation_changes(config: &PipelineConfig) -> Changed {
         SeparationAlgorithm::ChiSepMedi => c.add_fields(&s.chi_sep_medi, &d.chi_sep_medi, &[]),
         SeparationAlgorithm::WaveSep => c.add_fields(&s.wavesep, &d.wavesep, &[]),
         SeparationAlgorithm::HcChisep => c.add_fields(&s.hc_chisep, &d.hc_chisep, &[]),
-        SeparationAlgorithm::SusepNet | SeparationAlgorithm::ChiSepNet => {}
+        SeparationAlgorithm::ChiSepNet => {
+            let [x, y, z] = s.chi_sepnet.patch;
+            c.add(s.chi_sepnet != d.chi_sepnet, || format!("{x}×{y}×{z}-voxel sliding-window patches"));
+        }
+        SeparationAlgorithm::SusepNet => {
+            if let Some([x, y, z]) = s.susep_net.patch {
+                c.add(true, || format!("the network applied as a sliding window of {x}×{y}×{z}-voxel patches"));
+            }
+        }
     }
     c
 }
@@ -3229,6 +3237,10 @@ mod defaults_only_tests {
             (|c| { c.pipeline.do_smwi = true; c.smwi.mip_window = 5; }, "minimum-intensity projection over 5 slices."),
             (|c| { c.pipeline.do_segmentation = true; c.segmentation.flip_averaging = !SegmentationConfig::default().flip_averaging; },
                 "structures, with left-right flip averaging of the posteriors"),
+            (|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::ChiSepNet; c.separation.chi_sepnet.patch = [128, 128, 64]; },
+                ", with 128×128×64-voxel sliding-window patches."),
+            (|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::SusepNet; c.separation.susep_net.patch = Some([128, 128, 64]); },
+                ", with the network applied as a sliding window of 128×128×64-voxel patches."),
             (|c| { c.pipeline.do_segmentation = true; c.segmentation.patch = Some(100); },
                 "structures, with the network applied as a sliding window of half-overlapping 128×128×128-voxel patches, their posteriors Gaussian-weighted."),
             (|c| { c.pipeline.do_chi_separation = true; c.separation.r2star_qsm.r_const_3t = 123.0; },
