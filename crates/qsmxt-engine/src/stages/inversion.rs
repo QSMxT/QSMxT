@@ -242,9 +242,9 @@ pub fn iqsm(
     let scan_meta = scan_metadata(meta);
     let none = qsm_core::pipeline::QsmReference::None;
     if plus {
-        qsm_core::pipeline::run_iqsm_plus(phases, magnitudes, mask, &scan_meta, none)
+        qsm_core::pipeline::run_iqsm_plus(phases, magnitudes, mask, &scan_meta, none, None)
     } else {
-        qsm_core::pipeline::run_iqsm(phases, magnitudes, mask, &scan_meta, none)
+        qsm_core::pipeline::run_iqsm(phases, magnitudes, mask, &scan_meta, none, None)
     }.map_err(|e| EngineError::Config(format!("{}: {}", alg, e)))
 }
 

@@ -220,6 +220,8 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             ..qsm_core::bgremove::MsmvParams::default()
         },
         msmv_refine: cfg.bg_removal.msmv_refine,
+        // BFRnet runs whole-volume until QSMxT exposes tiling for it.
+        tile: None,
     };
 
     let inversion = PInversion {
