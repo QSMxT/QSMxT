@@ -101,17 +101,7 @@ pub fn dry_run<V: crate::store::Volumes>(
     crate::schema::check_ranges(config)?;
     let before = store.recorded_keys();
     let mut shadow = store.shadow();
-    let mut quiet = ();
-    let (meta, load_record, _) = load(config, facts, &mut shadow, &mut quiet)?;
-    shadow.begin(&meta)?;
-    let mut records = vec![load_record];
-    if plan.processes() {
-        let mut r = Run::new(plan, config, facts, meta, &mut shadow, &mut quiet);
-        r.dry = true;
-        for step in plan.steps.iter().filter(|s| s.stage != Stage::Load) {
-            records.push(r.take(step)?);
-        }
-    }
+    let records = dry_steps(plan, config, facts, &mut shadow)?;
     let after = shadow.recorded_keys();
     Ok(records.into_iter().map(|record| {
         let key = after.get(&record.id).cloned();
@@ -127,6 +117,25 @@ pub fn dry_run<V: crate::store::Volumes>(
         let key = if state == ExpectedState::Skipped { None } else { key };
         Expected { id: record.id, state, key }
     }).collect())
+}
+
+/// [`dry_run`]'s run, on `store` (a shadow of the scan's): what it did with each step, each that
+/// would be computed recorded there under its key, with what it reads and writes, instead.
+fn dry_steps<S: StageStore + ?Sized>(
+    plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, store: &mut S,
+) -> Result<Vec<StepRecord>, S::Error> {
+    let mut quiet = ();
+    let (meta, load_record, _) = load(config, facts, store, &mut quiet)?;
+    store.begin(&meta)?;
+    let mut records = vec![load_record];
+    if plan.processes() {
+        let mut r = Run::new(plan, config, facts, meta, store, &mut quiet);
+        r.dry = true;
+        for step in plan.steps.iter().filter(|s| s.stage != Stage::Load) {
+            records.push(r.take(step)?);
+        }
+    }
+    Ok(records)
 }
 
 /// Run one of `plan`'s engine steps on its own, on a run whose grid (from its load step) is
@@ -288,6 +297,20 @@ struct Run<'r, S: StageStore + ?Sized> {
     /// A dry run ([`dry_run`]): a step that would be computed is recorded under its key, its
     /// outputs held, instead.
     dry: bool,
+    /// What the steps taken so far decided.
+    decided: Vec<Decision>,
+}
+
+/// A computed step, as a step of the run hands it to [`Run::record`]: [`Completed`] without what
+/// it read, which the run takes from the plan ([`Run::reads`]), and without its decisions, which
+/// the run kept as it made them.
+struct Done<'a> {
+    step: &'a str,
+    algorithm: Option<&'a str>,
+    params: &'a Value,
+    outcome: Option<(&'static str, Value)>,
+    key: &'a str,
+    outputs: &'a [Item],
 }
 
 impl<'r, S: StageStore + ?Sized> Run<'r, S> {
@@ -295,7 +318,8 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         plan: &'r Plan, config: &'r PipelineConfig, facts: &'r ScanFacts, meta: RunMetadata, store: &'r mut S,
         observer: &'r mut dyn Observer,
     ) -> Self {
-        Run { plan, config, facts, meta, store, observer, state: None, decisions: Vec::new(), computing_from: 0, dry: false }
+        Run { plan, config, facts, meta, store, observer, state: None, decisions: Vec::new(), computing_from: 0, dry: false,
+              decided: Vec::new() }
     }
 
     /// Take `step`, and say what it did.
@@ -303,6 +327,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         (self.state, self.computing_from) = (None, 0);
         self.decisions.clear();
         self.step(step)?;
+        self.decided.extend(self.decisions.iter().cloned());
         Ok(StepRecord {
             id: step.name.clone(),
             label: step.label.clone(),
@@ -386,10 +411,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         for item in &outputs {
             let _ = self.store.put(*item, Data::Mask(&[]));
         }
-        let _ = self.store.record(&Completed {
-            step, algorithm, params, outcome: None, key, inputs: &[], outputs: &outputs, decisions: &[],
-        });
-        self.state = Some(StepState::Computed);
+        let _ = self.record(Done { step, algorithm, params, outcome: None, key, outputs: &outputs });
     }
 
     /// Keep an output, and show it. A volume on a grid of its own (a projection) is kept but not
@@ -405,19 +427,34 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
     }
 
     /// Record a computed step, with what it decided while computed; `label` names it in the log.
-    fn complete(&mut self, c: Completed<'_>, label: &str) -> Result<(), S::Error> {
+    fn complete(&mut self, c: Done<'_>, label: &str) -> Result<(), S::Error> {
         let (step, algorithm) = (c.step, c.algorithm);
         self.record(c)?;
         self.observer.stage(step, algorithm, StageEvent::Finished(label));
         Ok(())
     }
 
-    /// Keep a computed step in the store, with what it decided while computed.
-    fn record(&mut self, c: Completed<'_>) -> Result<(), S::Error> {
+    /// Keep a computed step in the store, with what it decided while computed and what it read:
+    /// the plan's [`Step::reads`] for it, as this run's decisions so far left them
+    /// ([`Self::reads`]), never a list of its own.
+    fn record(&mut self, c: Done<'_>) -> Result<(), S::Error> {
         let decisions = self.decisions[self.computing_from.min(self.decisions.len())..].to_vec();
-        self.store.record(&Completed { decisions: &decisions, ..c })?;
+        let inputs = self.reads(c.step);
+        let Done { step, algorithm, params, outcome, key, outputs } = c;
+        self.store.record(&Completed { step, algorithm, params, outcome, key, inputs: &inputs, outputs, decisions: &decisions })?;
         self.state = Some(StepState::Computed);
         Ok(())
+    }
+
+    /// What `step` reads: the plan's [`Step::reads`], drawn again from the facts as the run's
+    /// decisions so far left them ([`crate::pipeline_graph::as_decided`]) — a supplied mask that
+    /// could not be used is computed from the echoes, and reads them. The same items the graph
+    /// after the run ([`crate::pipeline_graph::pipeline_graph_after`]) draws the step reading.
+    fn reads(&self, step: &str) -> Vec<Item> {
+        let decided = self.decided.iter().chain(&self.decisions);
+        let ran = crate::pipeline_graph::as_decided(self.facts, decided);
+        crate::pipeline_graph::step_details(self.plan, self.config, &ran).into_iter().zip(&self.plan.steps)
+            .find(|(_, s)| s.name == step).map(|(d, _)| d.reads).unwrap_or_default()
     }
 
     fn log(&mut self, level: Level, message: &str) {
@@ -554,11 +591,9 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                 }
             }
         }
-        let inputs: Vec<Item> = (1..=n).map(Item::AcquiredPhase).collect();
         let outputs: Vec<Item> = phases.into_iter().chain(magnitudes).collect();
-        self.complete(Completed {
-            step: "scale_phase", algorithm: None, params: &params, outcome: None, key: &key, decisions: &[],
-            inputs: &inputs, outputs: &outputs,
+        self.complete(Done {
+            step: "scale_phase", algorithm: None, params: &params, outcome: None, key: &key, outputs: &outputs,
         }, if resampled { "Resample + rescale phase" } else { "Rescale phase" })
     }
 
@@ -575,7 +610,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                                    "Converting real/imaginary to magnitude/phase") else { return Ok(()) };
         let n = self.n_echoes();
         let acquired = stages::phase::acquired_grid(&self.meta).n_total();
-        let (mut real, mut imaginary, mut inputs) = (Vec::with_capacity(n), Vec::with_capacity(n), Vec::new());
+        let (mut real, mut imaginary) = (Vec::with_capacity(n), Vec::with_capacity(n));
         for e in 1..=n {
             for (item, out) in [(Item::AcquiredPhase(e), &mut real), (Item::AcquiredImaginary(e), &mut imaginary)] {
                 if !self.store.has(&item) {
@@ -589,7 +624,6 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                         "{} has {} voxels, expected {acquired}", what.as_str().unwrap_or_default(), v.len())).into());
                 }
                 out.push(v);
-                inputs.push(item);
             }
         }
         let (converted, lines) = stages::phase::real_imaginary(&real, &imaginary, &self.meta, negate_phase);
@@ -623,9 +657,8 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             }
         }
         let outputs: Vec<Item> = phases.into_iter().chain(magnitudes).collect();
-        self.complete(Completed {
-            step: "scale_phase", algorithm: None, params: &params, outcome, key: &key, decisions: &[],
-            inputs: &inputs, outputs: &outputs,
+        self.complete(Done {
+            step: "scale_phase", algorithm: None, params: &params, outcome, key: &key, outputs: &outputs,
         }, if resampled { "Resample + rescale phase" } else { "Rescale phase" })
     }
 
@@ -648,7 +681,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                                    "MCPC-3D-S coil combination") else { return Ok(()) };
         self.log(Level::Info, &format!("Coil combination (MCPC-3D-S): {} coils x {n} echoes", coils.len()));
         let acquired = stages::phase::acquired_grid(&self.meta).n_total();
-        let (mut phases, mut magnitudes, mut inputs) = (Vec::new(), Vec::new(), Vec::new());
+        let (mut phases, mut magnitudes) = (Vec::new(), Vec::new());
         for (c, number) in coils.iter().enumerate().map(|(i, &number)| (i + 1, number)) {
             let (mut cp, mut cm) = (Vec::with_capacity(n), Vec::with_capacity(n));
             for e in 1..=n {
@@ -670,7 +703,6 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                     return Err(crate::EngineError::DimensionMismatch(format!(
                         "{} has {} voxels, expected {acquired}", what.as_str().unwrap_or_default(), m.len())).into());
                 }
-                inputs.extend([phase_item, mag_item]);
                 cp.push(p);
                 cm.push(m);
             }
@@ -692,9 +724,9 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let mask = stages::phase::combination_mask(&combined.mask, &self.meta);
         self.put(Item::CoilCombinationMask, Data::Mask(&mask))?;
         outputs.push(Item::CoilCombinationMask);
-        self.complete(Completed {
-            step: "scale_phase", algorithm: Some("mcpc3ds"), params: &params, outcome: None, key: &key, decisions: &[],
-            inputs: &inputs, outputs: &outputs,
+        self.complete(Done {
+            step: "scale_phase", algorithm: Some("mcpc3ds"), params: &params, outcome: None, key: &key,
+            outputs: &outputs,
         }, "Coil combination")
     }
 
@@ -720,10 +752,9 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             let combined = stages::magnitude::combined_magnitude(&refs, &self.meta, self.config)?;
             drop(echoes);
             self.put(Item::CombinedMagnitude, Data::Real(&combined))?;
-            let inputs: Vec<Item> = (1..=n).map(Item::Magnitude).collect();
-            self.record(Completed {
-                step: "magnitude", algorithm: Some("rss"), params: &params, outcome: None, key: &key, decisions: &[],
-                inputs: &inputs, outputs: &[Item::CombinedMagnitude],
+            self.record(Done {
+                step: "magnitude", algorithm: Some("rss"), params: &params, outcome: None, key: &key,
+                outputs: &[Item::CombinedMagnitude],
             })?;
         } else {
             self.skip("There was no magnitude to combine.");
@@ -782,9 +813,9 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                         self.decide(Decision::new(Topic::MaskSource, Choice::Supplied,
                             "The brain mask was the one supplied with the scan.").with_detail(origin));
                         self.put(Item::BrainMask, Data::Mask(&mask))?;
-                        return self.complete(Completed {
-                            step: "mask", algorithm: None, params: &params, outcome: None, key: &key, decisions: &[],
-                            inputs: &[Item::SuppliedMask], outputs: &[Item::BrainMask],
+                        return self.complete(Done {
+                            step: "mask", algorithm: None, params: &params, outcome: None, key: &key,
+                            outputs: &[Item::BrainMask],
                         }, "Mask (custom)");
                     }
                     self.log(Level::Warn, &format!(
@@ -813,11 +844,8 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             self.config.masking.sections.len(), self.config.masking.combine));
         let mask = self.build_mask(&self.config.masking.sections.clone(), &models)?;
         self.put(Item::BrainMask, Data::Mask(&mask))?;
-        let n = self.n_echoes();
-        let inputs: Vec<Item> = (1..=n).map(Item::Magnitude).filter(|i| self.store.has(i)).collect();
-        self.complete(Completed {
-            step: "mask", algorithm: None, params: &params, outcome: None, key: &key, decisions: &[],
-            inputs: &inputs, outputs: &[Item::BrainMask],
+        self.complete(Done {
+            step: "mask", algorithm: None, params: &params, outcome: None, key: &key, outputs: &[Item::BrainMask],
         }, "Mask creation")
     }
 
@@ -834,9 +862,8 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let main = self.store.mask(&main_item)?;
         let restricted = stages::mask::reliable_mask(&reliable, &main)?;
         self.put(Item::ReliableMask, Data::Mask(&restricted))?;
-        self.complete(Completed {
-            step: &name, algorithm: None, params: &params, outcome: None, key: &key, decisions: &[],
-            inputs: &[main_item], outputs: &[Item::ReliableMask],
+        self.complete(Done {
+            step: &name, algorithm: None, params: &params, outcome: None, key: &key, outputs: &[Item::ReliableMask],
         }, "Reliable-phase mask")
     }
 
@@ -881,10 +908,8 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             self.put(Item::RobustFitReport, Data::Json(report))?;
             outputs.push(Item::RobustFitReport);
         }
-        let inputs: Vec<Item> = phase_items.into_iter().chain(std::iter::once(mask_item)).collect();
-        self.complete(Completed {
-            step: "unwrap", algorithm: Some(&algorithm), params: &params, outcome: None, key: &key, decisions: &[],
-            inputs: &inputs, outputs: &outputs,
+        self.complete(Done {
+            step: "unwrap", algorithm: Some(&algorithm), params: &params, outcome: None, key: &key, outputs: &outputs,
         }, "Phase unwrapping")
     }
 
@@ -904,16 +929,13 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let Some(key) = self.begin(&name, Some(&algorithm), &params, skipping, &doing) else { return Ok(()) };
         let mask_item = self.pass_mask(pass);
         let outputs = [Item::LocalField(pass), Item::LocalFieldMask(pass)];
-        let (local, inputs) = if iqfm {
+        let local = if iqfm {
             let (phases, magnitudes) = self.phase_echoes()?;
             let mask = self.store.mask(&mask_item)?;
             let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
             let mag_refs: Vec<&[f64]> = magnitudes.iter().map(|m| m.as_slice()).collect();
             self.store.models(&step.models)?;
-            let local = stages::background::iqfm(&phase_refs, &mag_refs, &mask, &self.meta)?;
-            let inputs: Vec<Item> = (1..=self.n_echoes()).map(|e| self.echo_phase(e))
-                .chain(std::iter::once(mask_item)).collect();
-            (local, inputs)
+            stages::background::iqfm(&phase_refs, &mag_refs, &mask, &self.meta)?
         } else {
             let field = self.store.real(&Item::FieldPpm)?;
             let mask = self.store.mask(&mask_item)?;
@@ -922,15 +944,13 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                 self.decide(d);
             }
             self.log(Level::Info, &format!("Background removal ({algorithm}){label}"));
-            let local = stages::background::remove_background(&field, &mask, &self.meta, self.config, self.observer)?;
-            (local, vec![Item::FieldPpm, mask_item])
+            stages::background::remove_background(&field, &mask, &self.meta, self.config, self.observer)?
         };
         self.put(Item::LocalField(pass), Data::Real(&local.local_field_ppm))?;
         self.put(Item::LocalFieldMask(pass), Data::Mask(&local.mask))?;
         let label = if iqfm { format!("Background removal (iQFM){label}") } else { format!("Background removal ({algorithm}){label}") };
-        self.complete(Completed {
-            step: &name, algorithm: Some(&algorithm), params: &params, outcome: None, key: &key, decisions: &[],
-            inputs: &inputs, outputs: &outputs,
+        self.complete(Done {
+            step: &name, algorithm: Some(&algorithm), params: &params, outcome: None, key: &key, outputs: &outputs,
         }, &label)
     }
 
@@ -964,9 +984,9 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         self.log(Level::Info, &format!("Dipole inversion ({algorithm}){label}"));
         let chi = stages::inversion::invert(&field, &mask, magnitude.as_deref(), &self.meta, self.config, self.observer)?;
         self.put(Item::RawChi(pass), Data::Real(&chi))?;
-        self.complete(Completed {
-            step: &name, algorithm: Some(&algorithm), params: &params, outcome: None, key: &key, decisions: &[],
-            inputs: &[field_item, mask_item], outputs: &[Item::RawChi(pass)],
+        self.complete(Done {
+            step: &name, algorithm: Some(&algorithm), params: &params, outcome: None, key: &key,
+            outputs: &[Item::RawChi(pass)],
         }, &format!("Dipole inversion ({algorithm}){label}"))
     }
 
@@ -986,12 +1006,10 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         self.store.models(&step.models)?;
         let chi = stages::inversion::iqsm(&phase_refs, &mag_refs, &mask, &self.meta, self.config)?;
         self.put(Item::RawChi(pass), Data::Real(&chi))?;
-        let inputs: Vec<Item> = (1..=self.n_echoes()).map(|e| self.echo_phase(e))
-            .chain(std::iter::once(mask_item)).collect();
         let net = if algorithm == "iqsm-plus" { "iQSM+" } else { "iQSM" };
-        self.complete(Completed {
-            step: &name, algorithm: Some(algorithm), params: &params, outcome: None, key: &key, decisions: &[],
-            inputs: &inputs, outputs: &[Item::RawChi(pass)],
+        self.complete(Done {
+            step: &name, algorithm: Some(algorithm), params: &params, outcome: None, key: &key,
+            outputs: &[Item::RawChi(pass)],
         }, &format!("{net}{label}"))
     }
 
@@ -1011,9 +1029,9 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         };
         let chi = stages::inversion::tgv(&data, &mask, &self.meta, self.config)?;
         self.put(Item::RawChi(pass), Data::Real(&chi))?;
-        self.complete(Completed {
-            step: &name, algorithm: Some("tgv"), params: &params, outcome: None, key: &key, decisions: &[],
-            inputs: &[mask_item, Item::FieldPpm], outputs: &[Item::RawChi(pass)],
+        self.complete(Done {
+            step: &name, algorithm: Some("tgv"), params: &params, outcome: None, key: &key,
+            outputs: &[Item::RawChi(pass)],
         }, &format!("TGV-QSM{label}"))
     }
 
@@ -1041,9 +1059,8 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             })?;
             outputs.push(item);
         }
-        self.complete(Completed {
-            step: &name, algorithm: Some("qsmart"), params: &params, outcome: None, key: &key, decisions: &[],
-            inputs: &[mask_item, Item::FieldPpm], outputs: &outputs,
+        self.complete(Done {
+            step: &name, algorithm: Some("qsmart"), params: &params, outcome: None, key: &key, outputs: &outputs,
         }, &format!("QSMART{}", pass_label(pass)))
     }
 
@@ -1060,9 +1077,8 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let brain = self.store.mask(&brain_item)?;
         let combined = stages::inversion::combine_two_pass(&chi_reliable, &chi_main, &declared, &brain)?;
         self.put(Item::CombinedRawChi, Data::Real(&combined))?;
-        self.complete(Completed {
-            step: "twopass", algorithm: None, params: &params, outcome: None, key: &key, decisions: &[],
-            inputs: &[Item::RawChi(Pass::Reliable), Item::RawChi(Pass::Main), support],
+        self.complete(Done {
+            step: "twopass", algorithm: None, params: &params, outcome: None, key: &key,
             outputs: &[Item::CombinedRawChi],
         }, "Two-pass combination")
     }
@@ -1091,7 +1107,6 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let chi = self.store.real(&raw)?;
         let declared = supports.iter().map(|s| self.store.mask(s)).collect::<Result<Vec<_>, _>>()?;
         let declared_refs: Vec<&[u8]> = declared.iter().map(|m| m.as_slice()).collect();
-        let mut inputs: Vec<Item> = std::iter::once(raw).chain(supports.iter().copied()).collect();
         let dseg = match region {
             Some((spec, _)) => {
                 let Some(segmentation) = self.segmentation_item() else {
@@ -1099,7 +1114,6 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                         "--qsm-reference {spec}: no segmentation to measure the region on. Enable \
                          --do-segmentation, or supply one with --use-custom-dseg")).into());
                 };
-                inputs.push(segmentation);
                 Some(self.store.real(&segmentation)?)
             }
             None => None,
@@ -1115,9 +1129,8 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         // What the map was referenced to, recorded with the map itself: each map is referenced
         // over its own support, so each has its own offset.
         self.store.annotate(&out, crate::referencing::sidecar_fields(self.config, offset.as_ref()))?;
-        self.complete(Completed {
-            step: &name, algorithm: Some(&method), params: &params, outcome: None, key: &key, decisions: &[],
-            inputs: &inputs, outputs: &outputs,
+        self.complete(Done {
+            step: &name, algorithm: Some(&method), params: &params, outcome: None, key: &key, outputs: &outputs,
         }, "QSM referencing")
     }
 
@@ -1135,10 +1148,9 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         drop((phases, magnitudes));
         self.put(Item::Swi, Data::Real(&swi.image))?;
         self.put(Item::SwiMip, Data::OnGrid(&swi.mip, &swi.mip_geometry))?;
-        let inputs: Vec<Item> = phase_items.into_iter().chain(mag_items).collect();
-        self.complete(Completed {
-            step: "swi", algorithm: Some("clear-swi"), params: &params, outcome: None, key: &key, decisions: &[],
-            inputs: &inputs, outputs: &[Item::Swi, Item::SwiMip],
+        self.complete(Done {
+            step: "swi", algorithm: Some("clear-swi"), params: &params, outcome: None, key: &key,
+            outputs: &[Item::Swi, Item::SwiMip],
         }, "SWI")
     }
 
@@ -1167,9 +1179,8 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             self.put(Item::SmwiMip(*contrast), Data::OnGrid(&image.mip, &image.mip_geometry))?;
             outputs.extend([Item::Smwi(*contrast), Item::SmwiMip(*contrast)]);
         }
-        self.complete(Completed {
-            step: "smwi", algorithm: Some("smwi"), params: &params, outcome: None, key: &key, decisions: &[],
-            inputs: &[Item::Chi, Item::CombinedMagnitude, mask_item], outputs: &outputs,
+        self.complete(Done {
+            step: "smwi", algorithm: Some("smwi"), params: &params, outcome: None, key: &key, outputs: &outputs,
         }, "SMWI")
     }
 
@@ -1193,9 +1204,9 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         drop(magnitudes);
         self.put(Item::R2star, Data::Real(&r2star))?;
         self.put(Item::T2star, Data::Real(&t2star))?;
-        self.complete(Completed {
-            step: "t2star_r2star", algorithm: Some("arlo"), params: &params, outcome: None, key: &key, decisions: &[],
-            inputs: &[mask_item], outputs: &[Item::R2star, Item::T2star],
+        self.complete(Done {
+            step: "t2star_r2star", algorithm: Some("arlo"), params: &params, outcome: None, key: &key,
+            outputs: &[Item::R2star, Item::T2star],
         }, "T2*/R2* mapping")
     }
 
@@ -1431,9 +1442,8 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         if outputs.is_empty() {
             return Ok(());
         }
-        self.complete(Completed {
-            step: "r2_r2prime", algorithm: Some("epg"), params: &params, outcome: None, key: &key, decisions: &[],
-            inputs: &[mask_item], outputs: &outputs,
+        self.complete(Done {
+            step: "r2_r2prime", algorithm: Some("epg"), params: &params, outcome: None, key: &key, outputs: &outputs,
         }, "R2/R2' mapping")
     }
 
@@ -1570,13 +1580,8 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         self.put(Item::SeparatedChi(Contrast::Paramagnetic), Data::Real(&separated.paramagnetic))?;
         self.put(Item::SeparatedChi(Contrast::Diamagnetic), Data::Real(&separated.diamagnetic))?;
         self.put(Item::SeparatedTotalChi, Data::Real(&separated.total))?;
-        let mut inputs = vec![mask_item, qsm_item];
-        if published.is_some() {
-            inputs.push(Item::ChiSupport);
-        }
-        self.complete(Completed {
-            step: "chi_separation", algorithm: Some(&alg_name), params: &params, outcome: None, key: &key, decisions: &[],
-            inputs: &inputs,
+        self.complete(Done {
+            step: "chi_separation", algorithm: Some(&alg_name), params: &params, outcome: None, key: &key,
             outputs: &[Item::SeparatedChi(Contrast::Paramagnetic), Item::SeparatedChi(Contrast::Diamagnetic),
                        Item::SeparatedTotalChi],
         }, &format!("Chi-separation ({alg_name})"))
@@ -1612,14 +1617,12 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                 "Motion correction aligns the echoes onto echo {} but the mask was made on the first \
                  echo's magnitude; if the head moved, the mask is offset from the corrected echoes", m.reference));
         }
-        let (mut phases, mut magnitudes, mut inputs) = (Vec::with_capacity(n), Vec::with_capacity(n), Vec::new());
+        let (mut phases, mut magnitudes) = (Vec::with_capacity(n), Vec::with_capacity(n));
         for e in 1..=n {
             phases.push(self.store.real(&Item::Phase(e))?);
             magnitudes.push(self.store.real(&Item::Magnitude(e))?);
-            inputs.extend([Item::Phase(e), Item::Magnitude(e)]);
         }
         let mask = self.store.mask(&Item::BrainMask)?;
-        inputs.push(Item::BrainMask);
         let phase_refs: Vec<&[f64]> = phases.iter().map(|v| v.as_slice()).collect();
         let mag_refs: Vec<&[f64]> = magnitudes.iter().map(|v| v.as_slice()).collect();
         let r = stages::motion::correct(&phase_refs, &mag_refs, &mask, &self.meta, self.config)?;
@@ -1636,9 +1639,8 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         for (level, line) in stages::motion::summary(&r, &mask) {
             self.log(level, &line);
         }
-        self.complete(Completed {
-            step: "motion", algorithm: None, params: &params, outcome: None, key: &key, decisions: &[],
-            inputs: &inputs, outputs: &outputs,
+        self.complete(Done {
+            step: "motion", algorithm: None, params: &params, outcome: None, key: &key, outputs: &outputs,
         }, "Motion correction")
     }
 
@@ -1661,9 +1663,9 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                         "The segmentation was the one supplied with the scan.").with_detail(origin));
                     self.put(Item::Segmentation, Data::Real(&data))?;
                     self.put(Item::SegmentationLabels, Data::Text(&lookup))?;
-                    return self.complete(Completed {
-                        step: "segmentation", algorithm: Some("synthseg"), params: &params, outcome: None, key: &key, decisions: &[],
-                        inputs: &[Item::SuppliedSegmentation], outputs: &[Item::Segmentation, Item::SegmentationLabels],
+                    return self.complete(Done {
+                        step: "segmentation", algorithm: Some("synthseg"), params: &params, outcome: None, key: &key,
+                        outputs: &[Item::Segmentation, Item::SegmentationLabels],
                     }, "Segmentation (custom)");
                 }
                 Supplied::Found { origin, dims, .. } => {
@@ -1709,9 +1711,8 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         self.put(Item::SegmentationVolumes, Data::Json(&json!(seg.volumes)))?;
         let present = labels.ids.iter().skip(1).zip(seg.volumes.iter().skip(1)).filter(|(_, &v)| v > 0.0).count();
         self.log(Level::Info, &format!("Segmented {} of {} structures", present, labels.ids.len() - 1));
-        self.complete(Completed {
-            step: "segmentation", algorithm: Some("synthseg"), params: &params, outcome: None, key: &key, decisions: &[],
-            inputs: &[Item::CombinedMagnitude],
+        self.complete(Done {
+            step: "segmentation", algorithm: Some("synthseg"), params: &params, outcome: None, key: &key,
             outputs: &[Item::Segmentation, Item::SegmentationLabels, Item::SegmentationVolumes],
         }, "Segmentation")
     }
@@ -1779,10 +1780,8 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         self.decide(Decision::new(Topic::AnalysisMaps, Choice::Summarised, "The maps summarised per structure.")
             .with_detail(names.join(", ")));
         self.put(Item::RegionStats, Data::Text(&table))?;
-        let inputs: Vec<Item> = std::iter::once(seg_item).chain(maps.iter().map(|(i, ..)| *i)).collect();
-        self.complete(Completed {
-            step: "analysis", algorithm: None, params: &params, outcome: None, key: &key, decisions: &[],
-            inputs: &inputs, outputs: &[Item::RegionStats],
+        self.complete(Done {
+            step: "analysis", algorithm: None, params: &params, outcome: None, key: &key, outputs: &[Item::RegionStats],
         }, "Per-structure analysis")
     }
 
@@ -1866,9 +1865,8 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         }
         // Read: the working-grid versions each output was returned from.
         let items: Vec<Item> = published.iter().map(|(i, _)| *i).collect();
-        self.complete(Completed {
-            step: "output_space", algorithm: None, params: &params, outcome: None, key: &key, decisions: &[],
-            inputs: &items, outputs: &items,
+        self.complete(Done {
+            step: "output_space", algorithm: None, params: &params, outcome: None, key: &key, outputs: &items,
         }, "Output space")
     }
 }
@@ -1964,6 +1962,150 @@ pub(crate) mod tests {
         config.separation.chi_sep_ilsqr.max_iter = 3;
         config.separation.chi_sep_ilsqr.cg_max_iter = 5;
         config
+    }
+
+    /// A store that also keeps what each computed step recorded reading and writing: each step's
+    /// name, its inputs and its outputs.
+    pub(crate) struct Recorder<St> {
+        pub inner: St,
+        pub completed: Vec<(String, Vec<Item>, Vec<Item>)>,
+    }
+
+    impl<St> Recorder<St> {
+        pub(crate) fn new(inner: St) -> Self {
+            Recorder { inner, completed: Vec::new() }
+        }
+    }
+
+    impl<St: StageStore<Error = crate::EngineError>> StageStore for Recorder<St> {
+        type Error = crate::EngineError;
+        fn input_identity(&mut self) -> Value { self.inner.input_identity() }
+        fn header(&mut self) -> Result<Header, Self::Error> { self.inner.header() }
+        fn sidecar(&mut self) -> Result<Option<crate::scan::QsmSidecar>, Self::Error> { self.inner.sidecar() }
+        fn coils(&mut self) -> Vec<u32> { self.inner.coils() }
+        fn cached_scan(&mut self, key: &str) -> Option<RunMetadata> { self.inner.cached_scan(key) }
+        fn record_scan(&mut self, key: &str, meta: &RunMetadata, decisions: &[Decision]) -> Result<(), Self::Error> {
+            self.inner.record_scan(key, meta, decisions)
+        }
+        fn decisions(&mut self, step: &str) -> Vec<Decision> { self.inner.decisions(step) }
+        fn begin(&mut self, meta: &RunMetadata) -> Result<(), Self::Error> { self.inner.begin(meta) }
+        fn has(&mut self, item: &Item) -> bool { self.inner.has(item) }
+        fn real(&mut self, item: &Item) -> Result<Vec<f64>, Self::Error> { self.inner.real(item) }
+        fn mask(&mut self, item: &Item) -> Result<Vec<u8>, Self::Error> { self.inner.mask(item) }
+        fn supplied_mask(&mut self) -> Supplied { self.inner.supplied_mask() }
+        fn mese(&mut self) -> Option<crate::store::Mese> { self.inner.mese() }
+        fn supplied(&mut self, item: &Item) -> Supplied { self.inner.supplied(item) }
+        fn identity(&mut self, item: &Item) -> Value { self.inner.identity(item) }
+        fn recorded_key(&mut self, step: &str) -> Option<String> { self.inner.recorded_key(step) }
+        fn cached(&mut self, step: &str, key: &str) -> bool { self.inner.cached(step, key) }
+        fn start(&mut self, step: &str) { self.inner.start(step) }
+        fn put(&mut self, item: Item, data: Data<'_>) -> Result<(), Self::Error> { self.inner.put(item, data) }
+        fn annotate(&mut self, item: &Item, fields: serde_json::Map<String, Value>) -> Result<(), Self::Error> {
+            self.inner.annotate(item, fields)
+        }
+        fn report(&mut self, item: &Item) -> Option<Value> { self.inner.report(item) }
+        fn annotation(&mut self, item: &Item) -> serde_json::Map<String, Value> { self.inner.annotation(item) }
+        fn discard(&mut self, step: &str, outputs: &[Item]) -> Result<(), Self::Error> { self.inner.discard(step, outputs) }
+        fn record(&mut self, c: &Completed<'_>) -> Result<(), Self::Error> {
+            self.completed.push((c.step.to_string(), c.inputs.to_vec(), c.outputs.to_vec()));
+            self.inner.record(c)
+        }
+    }
+
+    /// Every step a dry run of `config` on the scan in `store` would compute, with what it would
+    /// record reading: computing nothing.
+    fn dry_recorded(config: &PipelineConfig, facts: &ScanFacts, store: &MemoryStore) -> (Plan, Vec<(String, Vec<Item>)>) {
+        let plan = crate::plan::plan(config, facts);
+        let mut recorder = Recorder::new(store.shadow());
+        dry_steps(&plan, config, facts, &mut recorder).unwrap();
+        (plan, recorder.completed.into_iter().map(|(step, inputs, _)| (step, inputs)).collect())
+    }
+
+    /// What a run records each step reading (what `qsmxt` writes into its provenance) is what the
+    /// plan says it reads (what the pipeline graph draws): for every step, every inversion,
+    /// single- and multi-echo, one pass and two. Found by dry runs, so nothing is computed.
+    /// Single-echo TGV reads echo 1's wrapped phase, not the field in ppm, which no step makes in
+    /// that run.
+    #[test]
+    fn every_step_records_reading_what_the_plan_says_it_reads() {
+        let check = |config: &PipelineConfig, facts: &ScanFacts, store: &MemoryStore| {
+            let (plan, recorded) = dry_recorded(config, facts, store);
+            let computed: Vec<&str> = recorded.iter().map(|(s, _)| s.as_str()).collect();
+            for step in plan.steps.iter().filter(|s| !matches!(s.stage, Stage::Load | Stage::Motion | Stage::OutputSpace)) {
+                assert!(computed.contains(&step.name.as_str()), "{}: not computed in the dry run: {computed:?}", step.name);
+            }
+            for (step, inputs) in &recorded {
+                let planned = plan.steps.iter().find(|s| &s.name == step).unwrap();
+                assert_eq!(inputs, &planned.reads, "{step} ({}, {} echo(es), two-pass {})",
+                           config.inversion.algorithm, facts.n_echoes, plan.two_pass);
+            }
+        };
+        let one_echo = |facts: &mut ScanFacts| {
+            facts.n_echoes = 1;
+            facts.echo_times.truncate(1);
+        };
+
+        let reliable = vec![MaskSection {
+            input: MaskingInput::Magnitude,
+            generator: MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(40.0) },
+            refinements: vec![],
+        }];
+        for algorithm in QsmAlgorithm::ALL {
+            for single in [false, true] {
+                for two_pass in [false, true] {
+                    let (mut facts, store) = phantom();
+                    if single {
+                        one_echo(&mut facts);
+                    }
+                    let mut c = config();
+                    c.inversion.algorithm = algorithm;
+                    c.masking.two_pass = two_pass;
+                    c.masking.two_pass_sections = Some(reliable.clone());
+                    check(&c, &facts, &store);
+                }
+            }
+        }
+
+        // The single-echo TGV the plan's table says: echo 1's phase and the mask, nothing else.
+        let (mut facts, store) = phantom();
+        one_echo(&mut facts);
+        let mut c = config();
+        c.inversion.algorithm = QsmAlgorithm::Tgv;
+        let (_, recorded) = dry_recorded(&c, &facts, &store);
+        let tgv = recorded.iter().find(|(s, _)| s == "tgv").unwrap();
+        assert_eq!(tgv.1, [Item::BrainMask, Item::Phase(1)]);
+
+        // iQFM, motion correction, and every other output: SWI, SMWI, R2*, R2, R2′,
+        // χ-separation, the segmentation and the statistics over it.
+        for single in [false, true] {
+            let (mut facts, mut store) = phantom();
+            with_mese(&mut facts, &mut store);
+            if single {
+                one_echo(&mut facts);
+            }
+            let mut c = config();
+            c.bg_removal.algorithm = BfAlgorithm::Iqfm;
+            let p = &mut c.pipeline;
+            (p.do_swi, p.do_smwi, p.do_r2starmap, p.do_r2map, p.do_r2primemap) = (true, true, true, true, true);
+            (p.do_chi_separation, p.do_segmentation, p.do_analysis) = (true, true, true);
+            c.motion_correction.enabled = !single;
+            check(&c, &facts, &store);
+        }
+
+        // A supplied mask and segmentation, with the reference measured on a region of it.
+        let (mut facts, mut store) = phantom();
+        (facts.custom_mask, facts.custom_dseg) = (true, true);
+        let mut affine = [0.0; 16];
+        for i in 0..4 { affine[5 * i] = 1.0; }
+        let grid = crate::store::Geometry { dims: facts.dims, voxel_size: (1.0, 1.0, 1.0), affine };
+        store.insert_on_grid(Item::SuppliedSegmentation, vec![10.0; N * N * N], grid);
+        let mut c = config();
+        c.masking.custom_mask_tool = Some("bet".into());
+        c.segmentation.custom_dseg_tool = Some("synthseg".into());
+        c.qsm.reference = crate::enums::QsmReference::Region;
+        c.qsm.reference_region = Some("thalamus".into());
+        c.pipeline.do_analysis = true;
+        check(&c, &facts, &store);
     }
 
     /// Which steps were computed and which were cached, in order.

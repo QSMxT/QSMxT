@@ -728,20 +728,7 @@ pub fn pipeline_graph(plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, g
 ///
 /// [`PipelineGraph::differs_from`] says whether it differs from the planned graph.
 pub fn pipeline_graph_after(plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, record: &RunRecord) -> PipelineGraph {
-    let decided = |topic: Topic| record.decisions().find(|(_, d)| d.topic == topic).map(|(_, d)| d.choice);
-    let mut ran = facts.clone();
-    if let Some(c) = decided(Topic::MaskSource) {
-        ran.custom_mask = c == Choice::Supplied;
-    }
-    if let Some(c) = decided(Topic::SegmentationSource) {
-        ran.custom_dseg = c == Choice::Supplied;
-    }
-    if let Some(c) = decided(Topic::R2Source) {
-        ran.custom_r2 = c == Choice::Supplied;
-    }
-    if let Some(c) = decided(Topic::R2primeSource) {
-        ran.custom_r2prime = c == Choice::Supplied;
-    }
+    let ran = as_decided(facts, record.decisions().map(|(_, d)| d));
     let mut graph = pipeline_graph_on(plan, config, &ran, record.resampled);
     for node in &mut graph.nodes {
         // A mask computed in place of one the plan expected to read runs its recipe's models.
@@ -752,6 +739,30 @@ pub fn pipeline_graph_after(plan: &Plan, config: &PipelineConfig, facts: &ScanFa
         node.run = record.step(&node.id).map(|s| NodeRun { state: s.state, decisions: s.decisions.clone() });
     }
     graph
+}
+
+/// `facts` as a run's `decisions` left them, where it decided something the plan could not know:
+/// whether the mask, segmentation, R2 or R2′ map supplied with the scan was the one used. The
+/// first decision on each counts. What a step reads ([`crate::plan::Step::reads`]) under these
+/// facts is what it read in that run: the graph after the run draws it, and the run records it.
+pub(crate) fn as_decided<'d>(facts: &ScanFacts, decisions: impl Iterator<Item = &'d Decision>) -> ScanFacts {
+    let mut ran = facts.clone();
+    let mut seen: Vec<Topic> = Vec::new();
+    for d in decisions {
+        if seen.contains(&d.topic) {
+            continue;
+        }
+        let supplied = d.choice == Choice::Supplied;
+        match d.topic {
+            Topic::MaskSource => ran.custom_mask = supplied,
+            Topic::SegmentationSource => ran.custom_dseg = supplied,
+            Topic::R2Source => ran.custom_r2 = supplied,
+            Topic::R2primeSource => ran.custom_r2prime = supplied,
+            _ => continue,
+        }
+        seen.push(d.topic);
+    }
+    ran
 }
 
 /// A dataset's graph as its runs took it: the graphs after its runs ([`pipeline_graph_after`]),
