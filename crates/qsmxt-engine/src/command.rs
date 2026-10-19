@@ -51,6 +51,7 @@ fn command_for(config: &PipelineConfig) -> String {
         let (c, dd) = (&config.segmentation, &d.segmentation);
         if c.version != dd.version { parts.push(format!("--synthseg-version {}", c.version)); }
         if let Some(crop) = c.crop { parts.push(format!("--synthseg-crop {crop}")); }
+        if let Some(patch) = c.patch { parts.push(format!("--synthseg-patch {patch}")); }
         if !c.flip_averaging { parts.push("--no-synthseg-flip-averaging".into()); }
         if !c.topology_cleanup { parts.push("--no-synthseg-topology-cleanup".into()); }
         emit_f64(&mut parts, "--synthseg-sigma", c.sigma_smoothing, dd.sigma_smoothing);

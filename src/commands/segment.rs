@@ -26,6 +26,9 @@ pub fn execute(args: SegmentArgs) -> crate::Result<()> {
     if let Some(v) = args.params.synthseg_crop {
         cfg.crop = Some(v);
     }
+    if let Some(v) = args.params.synthseg_patch {
+        cfg.patch = Some(v);
+    }
     if args.params.no_synthseg_flip_averaging {
         cfg.flip_averaging = false;
     }
@@ -84,6 +87,7 @@ fn run(
         flip_averaging: cfg.flip_averaging,
         topology_cleanup: cfg.topology_cleanup,
         sigma_smoothing: cfg.sigma_smoothing,
+        inference: crate::pipeline::config::synthseg_inference(cfg.patch),
     };
     let weights = qsm_core::models::primary_weight(cfg.version.weights_id())
         .map_err(|e| QsmxtError::Config(format!("synthseg weights: {e}")))?;

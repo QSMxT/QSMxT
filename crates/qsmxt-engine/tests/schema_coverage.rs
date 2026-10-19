@@ -301,7 +301,7 @@ fn every_supplied_file_setting_names_the_item_it_fills() {
 fn browser_defaults_are_qsmxts_except_where_the_browser_profile_changes_them() {
     let changed: Vec<&str> = schema::schema().into_iter()
         .filter(|s| s.browser_default != s.default).map(|s| s.path).collect();
-    assert_eq!(changed, ["inversion.tile_size", "inversion.tile_halo", "separation.r2primenet.patch"]);
+    assert_eq!(changed, ["inversion.tile_size", "inversion.tile_halo", "separation.r2primenet.patch", "segmentation.patch"]);
     for s in schema::schema() {
         assert_eq!(Some(s.browser_default.clone()), schema::get(&PipelineConfig::browser(), s.path), "{}", s.path);
     }

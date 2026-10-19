@@ -4491,6 +4491,7 @@ pub struct RunForm {
     pub do_analysis: bool,
     pub synthseg_version: usize,
     pub synthseg_crop: String,
+    pub synthseg_patch: String,
     pub synthseg_flip_averaging: bool,
     pub synthseg_topology_cleanup: bool,
     /// Smooth SynthSeg's posteriors (off = a sigma of 0).
@@ -4534,7 +4535,7 @@ macro_rules! named_fields {
 impl RunForm {
     named_fields!(text, text_mut, String, [
         swi_strength, swi_hp_sigma, swi_mip_window,
-        source_dicom, dicom_outputs, synthseg_crop, synthseg_sigma, smwi_threshold, smwi_power,
+        source_dicom, dicom_outputs, synthseg_crop, synthseg_patch, synthseg_sigma, smwi_threshold, smwi_power,
         smwi_mip_window, n_procs, mem_limit_gb, slurm_account, slurm_partition, slurm_time,
         slurm_mem, slurm_cpus,
     ]);
@@ -4587,6 +4588,7 @@ impl Default for RunForm {
             do_analysis: false,
             synthseg_version: 0,
             synthseg_crop: seg.crop.map(|c| format!("{c}")).unwrap_or_default(),
+            synthseg_patch: seg.patch.map(|p| format!("{p}")).unwrap_or_default(),
             synthseg_flip_averaging: seg.flip_averaging,
             synthseg_topology_cleanup: seg.topology_cleanup,
             synthseg_smoothing: seg.sigma_smoothing > 0.0,
@@ -6686,6 +6688,7 @@ impl App {
             } else {
                 rows.push(AlgoSelect { label: "    SynthSeg Version", field: "synthseg_version", options: SYNTHSEG_VERSION_OPTIONS, help: SYNTHSEG_VERSION_HELP });
                 rows.push(Param { label: "    Crop", field: "synthseg_crop", help: "Cubic centre-crop in voxels at 1 mm before inference; empty processes the whole volume" });
+                rows.push(Param { label: "    Sliding Window", field: "synthseg_patch", help: "Run the network on half-overlapping cubes of this many voxels at 1 mm (rounded up to a multiple of 32), so its memory follows the patch instead of the volume; empty runs the whole volume at once" });
                 rows.push(Toggle { label: "    Flip Averaging", field: "synthseg_flip_averaging", help: "Average with a left-right flipped second pass (SynthSeg's default). Doubles inference time" });
                 rows.push(Toggle { label: "    Topology Cleanup", field: "synthseg_topology_cleanup", help: "Reset each topological class to its largest connected component" });
                 rows.push(Toggle { label: "    Posterior Smoothing", field: "synthseg_smoothing", help: "Gaussian blur on the posteriors before the labels are taken" });
@@ -6748,7 +6751,7 @@ mod tests {
 
     /// Whether `field` has a row on `tab` now (switches to it, syncing the pipeline rows).
     /// SynthSeg's own settings, under the segmentation checkbox.
-    const SYNTHSEG_ROWS: [&str; 5] = ["synthseg_version", "synthseg_crop", "synthseg_flip_averaging",
+    const SYNTHSEG_ROWS: [&str; 6] = ["synthseg_version", "synthseg_crop", "synthseg_patch", "synthseg_flip_averaging",
                                       "synthseg_topology_cleanup", "synthseg_sigma"];
 
     fn shows(app: &mut App, tab: usize, field: &str) -> bool {

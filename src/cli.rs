@@ -1018,6 +1018,11 @@ pub struct SegmentationParamArgs {
     /// Omit to process the whole volume, as the SynthSeg CLI does
     #[arg(long)]
     pub synthseg_crop: Option<usize>,
+    /// Run SynthSeg as a sliding window of half-overlapping cubes this many voxels on a side at
+    /// 1 mm (at least 64, rounded up to a multiple of 32), so its memory follows the patch, not the
+    /// volume. Omit to run the whole volume at once, as the SynthSeg CLI does
+    #[arg(long, value_name = "VOXELS")]
+    pub synthseg_patch: Option<usize>,
     /// Skip the left-right flipped second pass. Halves inference time, as SynthSeg's --fast does
     #[arg(long)]
     pub no_synthseg_flip_averaging: bool,

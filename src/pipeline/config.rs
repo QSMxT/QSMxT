@@ -590,6 +590,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             })?;
         }
         if let Some(v) = sg.synthseg_crop { config.segmentation.crop = Some(v); }
+        if let Some(v) = sg.synthseg_patch { config.segmentation.patch = Some(v); }
         if sg.no_synthseg_flip_averaging { config.segmentation.flip_averaging = false; }
         if sg.no_synthseg_topology_cleanup { config.segmentation.topology_cleanup = false; }
         if let Some(v) = sg.synthseg_sigma { config.segmentation.sigma_smoothing = v; }

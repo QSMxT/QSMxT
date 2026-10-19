@@ -310,6 +310,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--smwi-mip-window <SMWI_MIP_WINDOW>` | SMWI mIP window size in slices. |
 | `--synthseg-version <VERSION>` | SynthSeg weights generation: v1 (32 labels, ships with SynthSeg) or v2 (33 labels, adds CSF; weights not published yet, so refused unless synthseg-2.0.onnx is in $QSM_MODEL_DIR) |
 | `--synthseg-crop <SYNTHSEG_CROP>` | Cubic centre-crop in voxels at 1 mm before inference (rounded up to a multiple of 32). Omit to process the whole volume, as the SynthSeg CLI does. |
+| `--synthseg-patch <VOXELS>` | Run SynthSeg as a sliding window of half-overlapping cubes this many voxels on a side at 1 mm (at least 64, rounded up to a multiple of 32), so its memory follows the patch, not the volume. Omit to run the whole volume at once, as the SynthSeg CLI does. |
 | `--no-synthseg-flip-averaging` | Skip the left-right flipped second pass. Halves inference time, as SynthSeg's --fast does. |
 | `--no-synthseg-topology-cleanup` | Skip resetting each topological class to its largest connected component. |
 | `--synthseg-sigma <SYNTHSEG_SIGMA>` | Gaussian blur on the posteriors, in voxels (0 disables it) |
@@ -692,6 +693,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--smwi-mip-window <SMWI_MIP_WINDOW>` | SMWI mIP window size in slices. |
 | `--synthseg-version <VERSION>` | SynthSeg weights generation: v1 (32 labels, ships with SynthSeg) or v2 (33 labels, adds CSF; weights not published yet, so refused unless synthseg-2.0.onnx is in $QSM_MODEL_DIR) |
 | `--synthseg-crop <SYNTHSEG_CROP>` | Cubic centre-crop in voxels at 1 mm before inference (rounded up to a multiple of 32). Omit to process the whole volume, as the SynthSeg CLI does. |
+| `--synthseg-patch <VOXELS>` | Run SynthSeg as a sliding window of half-overlapping cubes this many voxels on a side at 1 mm (at least 64, rounded up to a multiple of 32), so its memory follows the patch, not the volume. Omit to run the whole volume at once, as the SynthSeg CLI does. |
 | `--no-synthseg-flip-averaging` | Skip the left-right flipped second pass. Halves inference time, as SynthSeg's --fast does. |
 | `--no-synthseg-topology-cleanup` | Skip resetting each topological class to its largest connected component. |
 | `--synthseg-sigma <SYNTHSEG_SIGMA>` | Gaussian blur on the posteriors, in voxels (0 disables it) |
@@ -1013,6 +1015,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--smwi-mip-window <SMWI_MIP_WINDOW>` | SMWI mIP window size in slices. |
 | `--synthseg-version <VERSION>` | SynthSeg weights generation: v1 (32 labels, ships with SynthSeg) or v2 (33 labels, adds CSF; weights not published yet, so refused unless synthseg-2.0.onnx is in $QSM_MODEL_DIR) |
 | `--synthseg-crop <SYNTHSEG_CROP>` | Cubic centre-crop in voxels at 1 mm before inference (rounded up to a multiple of 32). Omit to process the whole volume, as the SynthSeg CLI does. |
+| `--synthseg-patch <VOXELS>` | Run SynthSeg as a sliding window of half-overlapping cubes this many voxels on a side at 1 mm (at least 64, rounded up to a multiple of 32), so its memory follows the patch, not the volume. Omit to run the whole volume at once, as the SynthSeg CLI does. |
 | `--no-synthseg-flip-averaging` | Skip the left-right flipped second pass. Halves inference time, as SynthSeg's --fast does. |
 | `--no-synthseg-topology-cleanup` | Skip resetting each topological class to its largest connected component. |
 | `--synthseg-sigma <SYNTHSEG_SIGMA>` | Gaussian blur on the posteriors, in voxels (0 disables it) |
@@ -2674,6 +2677,7 @@ qsmxt segment [OPTIONS] --output <OUTPUT> <MAGNITUDE>
 | `--lookup <LOOKUP>` | Also write the BIDS label lookup table (index/name) to this path. |
 | `--synthseg-version <VERSION>` | SynthSeg weights generation: v1 (32 labels, ships with SynthSeg) or v2 (33 labels, adds CSF; weights not published yet, so refused unless synthseg-2.0.onnx is in $QSM_MODEL_DIR) |
 | `--synthseg-crop <SYNTHSEG_CROP>` | Cubic centre-crop in voxels at 1 mm before inference (rounded up to a multiple of 32). Omit to process the whole volume, as the SynthSeg CLI does. |
+| `--synthseg-patch <VOXELS>` | Run SynthSeg as a sliding window of half-overlapping cubes this many voxels on a side at 1 mm (at least 64, rounded up to a multiple of 32), so its memory follows the patch, not the volume. Omit to run the whole volume at once, as the SynthSeg CLI does. |
 | `--no-synthseg-flip-averaging` | Skip the left-right flipped second pass. Halves inference time, as SynthSeg's --fast does. |
 | `--no-synthseg-topology-cleanup` | Skip resetting each topological class to its largest connected component. |
 | `--synthseg-sigma <SYNTHSEG_SIGMA>` | Gaussian blur on the posteriors, in voxels (0 disables it) |

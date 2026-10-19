@@ -586,6 +586,26 @@ impl From<&RomeoConfig> for qsm_core::unwrap::RomeoParams {
     }
 }
 
+/// The patch of a SynthSeg sliding window, or `None` for the whole volume.
+pub(crate) fn synthseg_patch(inference: qsm_core::segment::SynthSegInference) -> Option<usize> {
+    match inference {
+        qsm_core::segment::SynthSegInference::FullVolume => None,
+        qsm_core::segment::SynthSegInference::SlidingWindow { patch, .. } => Some(patch),
+    }
+}
+
+/// SynthSeg's low-memory patch — qsm-core's `SynthSegInference::LOW_MEMORY`.
+pub fn synthseg_low_memory_patch() -> usize {
+    synthseg_patch(qsm_core::segment::SynthSegInference::LOW_MEMORY).expect("a sliding window")
+}
+
+/// The sliding window `patch` asks for, at qsm-core's low-memory step (half a patch).
+pub fn synthseg_inference(patch: Option<usize>) -> qsm_core::segment::SynthSegInference {
+    use qsm_core::segment::SynthSegInference as I;
+    let I::SlidingWindow { tile_step, .. } = I::LOW_MEMORY else { unreachable!("a sliding window") };
+    patch.map_or(I::FullVolume, |patch| I::SlidingWindow { patch, tile_step })
+}
+
 /// Whole-brain segmentation via SynthSeg, and the per-structure statistics drawn from it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
@@ -603,6 +623,12 @@ pub struct SegmentationConfig {
     pub topology_cleanup: bool,
     /// Gaussian blur on the posteriors, in voxels. Zero disables it.
     pub sigma_smoothing: f64,
+    /// Run the network as a sliding window of cubes this many voxels on a side at 1 mm (at least
+    /// 64, rounded up to a multiple of 32), half-overlapping and Gaussian-blended, so its memory
+    /// follows the patch instead of the volume. `None` runs the whole volume at once, as the
+    /// SynthSeg CLI does.
+    #[serde(default)]
+    pub patch: Option<usize>,
     /// Prefer a bring-your-own segmentation from `<bids>/derivatives/<tool>/…` over running
     /// SynthSeg, mirroring `masking.custom_mask_tool`. Always falls back to computing one.
     #[serde(default)]
@@ -620,6 +646,7 @@ impl Default for SegmentationConfig {
             flip_averaging: p.flip_averaging,
             topology_cleanup: p.topology_cleanup,
             sigma_smoothing: p.sigma_smoothing,
+            patch: synthseg_patch(p.inference),
             custom_dseg_tool: None,
         }
     }

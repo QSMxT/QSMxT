@@ -1026,7 +1026,12 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
             if s.flip_averaging { "enabled" } else { "disabled" }));
         // The version names the weights (and the label count says what they produce); the
         // bring-your-own tool is not a SynthSeg setting.
-        changed.add_fields(s, &d, &["version", "flip_averaging", "custom_dseg_tool"]);
+        if let Some(patch) = s.patch {
+            changed.add(true, || format!(
+                "the network applied as a sliding window of half-overlapping {p}×{p}×{p}-voxel patches, \
+                 their posteriors Gaussian-weighted", p = patch.div_ceil(32) * 32));
+        }
+        changed.add_fields(s, &d, &["version", "flip_averaging", "custom_dseg_tool", "patch"]);
         doc.say(&[Stage::Segmentation], format!(
             "The brain was parcellated from the GRE magnitude using SynthSeg {} (Billot et al., \
              2023), yielding {} FreeSurfer-labelled structures{}.",
@@ -3215,6 +3220,8 @@ mod defaults_only_tests {
             (|c| { c.pipeline.do_smwi = true; c.smwi.mip_window = 5; }, "minimum-intensity projection over 5 slices."),
             (|c| { c.pipeline.do_segmentation = true; c.segmentation.flip_averaging = !SegmentationConfig::default().flip_averaging; },
                 "structures, with left-right flip averaging of the posteriors"),
+            (|c| { c.pipeline.do_segmentation = true; c.segmentation.patch = Some(100); },
+                "structures, with the network applied as a sliding window of half-overlapping 128×128×128-voxel patches, their posteriors Gaussian-weighted."),
             (|c| { c.pipeline.do_chi_separation = true; c.separation.r2star_qsm.r_const_3t = 123.0; },
                 "with relaxometric constant at 3 T = 123."),
             (|c| { c.pipeline.do_r2primemap = true; c.separation.r2prime_strategy = R2PrimeStrategy::R2primenet; c.separation.r2primenet.patch = [160, 160, 128]; },
