@@ -325,6 +325,12 @@ struct Net {
     /// per-tile figure, which leaves them out. Fitted to the WASM harness's tiled runs.
     browser_per_voxel: u64,
     once: u64,
+    /// Bytes each pool thread not running a tile of its own adds in a browser: a network whose
+    /// per-patch work is itself parallel lends it to the idle threads, and each holds its own
+    /// buffers. NeXtQSM (its whole VarNet unroll runs inside every patch), measured on the example
+    /// with its 2 tiles in flight: 0.96 GB of heap with a 1-thread pool, 1.50 GB with 3 and
+    /// 2.38 GB with 5, so about 0.44 GB for each thread beyond the tiles. The others: none seen.
+    browser_per_helper: u64,
 }
 
 /// A deep-learning network's own need.
@@ -333,7 +339,8 @@ struct Net {
 /// - Tiled (`inversion.tile_size`) in a browser: qsm-core's figure for one tile of this network
 ///   (`ModelSpec::tile_cost`, `inversion::tile_bytes`) times qsm-core's count of tiles in flight
 ///   (`inversion::wasm_tiles_in_flight`: the pool, up to what fits its tile budget), plus
-///   `browser_per_voxel` over the volume, `fixed` and `once`.
+///   `browser_per_voxel` over the volume, `fixed` and `once`, plus `browser_per_helper` for each
+///   pool thread beyond the tiles in flight.
 /// - Tiled natively: one tile per thread at `native_tile` bytes per patch voxel, plus
 ///   `per_voxel` and `fixed`.
 ///
@@ -353,7 +360,9 @@ fn dl_need(s: &Scan, config: &PipelineConfig, net: Net) -> u64 {
                     // the tiles in flight at the pool.
                     let pool = s.threads as usize + usize::from(s.threads > 1);
                     let in_flight = (wasm_tiles_in_flight(&cfg, &cost, pool) as u64).min(tiles).max(1);
+                    let helpers = (pool as u64).saturating_sub(in_flight);
                     s.v(net.browser_per_voxel) + net.fixed + net.once + in_flight * tile_bytes(&cfg, &cost)
+                        + helpers * net.browser_per_helper
                 }
                 Host::Native => {
                     let patch = ((core + 2 * halo) as u64).saturating_pow(3).min(s.n);
@@ -388,8 +397,8 @@ fn bg_removal_need(config: &PipelineConfig, s: &Scan) -> u64 {
         // iQFM: from every echo's phase and magnitude; on the whole volume 4.2 GB in WASM on the
         // example. BFRnet on the whole volume: 10.9 GB natively on the example. Tiles measured
         // single-threaded in WASM only (0.85 and 1.04 GB on the example at 56 + 2×4).
-        BfAlgorithm::Iqfm => dl_need(s, config, Net { id: "iqfm", per_voxel: 120, fixed: 0, whole: 583, native_tile: 473, browser_per_voxel: 120, once: 0 }),
-        BfAlgorithm::Bfrnet => dl_need(s, config, Net { id: "bfrnet", per_voxel: 40, fixed: 0, whole: 1_760, native_tile: 3_059, browser_per_voxel: 40, once: 264_000_000 }),
+        BfAlgorithm::Iqfm => dl_need(s, config, Net { id: "iqfm", per_voxel: 120, fixed: 0, whole: 583, native_tile: 473, browser_per_voxel: 120, once: 0, browser_per_helper: 0 }),
+        BfAlgorithm::Bfrnet => dl_need(s, config, Net { id: "bfrnet", per_voxel: 40, fixed: 0, whole: 1_760, native_tile: 3_059, browser_per_voxel: 40, once: 264_000_000, browser_per_helper: 0 }),
     }
 }
 
@@ -422,23 +431,23 @@ fn inversion_need(config: &PipelineConfig, s: &Scan) -> u64 {
         QsmAlgorithm::Hdqsm => 290 * n,
         QsmAlgorithm::AmpPe => 345 * n,
         // On the whole volume each of these is more than the WASM heap holds on the example.
-        QsmAlgorithm::Qsmnet => dl(Net { id: "qsmnet", per_voxel: 50, fixed: 820_000_000, whole: 563, native_tile: 563, browser_per_voxel: 50, once: 0 }),
-        QsmAlgorithm::QsmnetPlus => dl(Net { id: "qsmnet-plus", per_voxel: 50, fixed: 820_000_000, whole: 563, native_tile: 563, browser_per_voxel: 50, once: 0 }),
-        QsmAlgorithm::Xqsm => dl(Net { id: "xqsm", per_voxel: 53, fixed: 0, whole: 905, native_tile: 767, browser_per_voxel: 30, once: 0 }),
-        QsmAlgorithm::Nextqsm => dl(Net { id: "nextqsm", per_voxel: 40, fixed: 0, whole: 1_556, native_tile: 1_556, browser_per_voxel: 40, once: 0 }),
+        QsmAlgorithm::Qsmnet => dl(Net { id: "qsmnet", per_voxel: 50, fixed: 820_000_000, whole: 563, native_tile: 563, browser_per_voxel: 50, once: 0, browser_per_helper: 0 }),
+        QsmAlgorithm::QsmnetPlus => dl(Net { id: "qsmnet-plus", per_voxel: 50, fixed: 820_000_000, whole: 563, native_tile: 563, browser_per_voxel: 50, once: 0, browser_per_helper: 0 }),
+        QsmAlgorithm::Xqsm => dl(Net { id: "xqsm", per_voxel: 53, fixed: 0, whole: 905, native_tile: 767, browser_per_voxel: 30, once: 0, browser_per_helper: 0 }),
+        QsmAlgorithm::Nextqsm => dl(Net { id: "nextqsm", per_voxel: 40, fixed: 0, whole: 1_556, native_tile: 1_556, browser_per_voxel: 40, once: 0, browser_per_helper: 440_000_000 }),
         // LPCNN measured natively on 4 threads and in WASM on one (which separates its parts);
         // iR2QSM and MoDL-QSM in WASM only, taken to divide the same way.
-        QsmAlgorithm::Ir2qsm => dl(Net { id: "ir2qsm", per_voxel: 17, fixed: 0, whole: WHOLE_VOLUME_AT_LEAST, native_tile: 1_180, browser_per_voxel: 17, once: 72_000_000 }),
-        QsmAlgorithm::Lpcnn => dl(Net { id: "lpcnn", per_voxel: 17, fixed: 0, whole: WHOLE_VOLUME_AT_LEAST, native_tile: 837, browser_per_voxel: 2, once: 0 }),
-        QsmAlgorithm::ModlQsm => dl(Net { id: "modl-qsm", per_voxel: 10, fixed: 0, whole: WHOLE_VOLUME_AT_LEAST, native_tile: 800, browser_per_voxel: 2, once: 0 }),
+        QsmAlgorithm::Ir2qsm => dl(Net { id: "ir2qsm", per_voxel: 17, fixed: 0, whole: WHOLE_VOLUME_AT_LEAST, native_tile: 1_180, browser_per_voxel: 17, once: 72_000_000, browser_per_helper: 0 }),
+        QsmAlgorithm::Lpcnn => dl(Net { id: "lpcnn", per_voxel: 17, fixed: 0, whole: WHOLE_VOLUME_AT_LEAST, native_tile: 837, browser_per_voxel: 2, once: 0, browser_per_helper: 0 }),
+        QsmAlgorithm::ModlQsm => dl(Net { id: "modl-qsm", per_voxel: 10, fixed: 0, whole: WHOLE_VOLUME_AT_LEAST, native_tile: 800, browser_per_voxel: 2, once: 0, browser_per_helper: 0 }),
         // Patch-based networks that take the whole volume (they patch it themselves).
         QsmAlgorithm::Autoqsm => 92 * n,
         QsmAlgorithm::Qsmgan => 35 * n,
         // iQSM/iQSM+ from every echo's phase and magnitude. On the whole volume: 4.2 GB in WASM
         // for iQSM on the example, and iQSM+ more than the heap holds. Tiles measured
         // single-threaded in WASM only (0.85 and 0.99 GB on the example at 56 + 2×4).
-        QsmAlgorithm::Iqsm => dl(Net { id: "iqsm", per_voxel: 120, fixed: 0, whole: 583, native_tile: 473, browser_per_voxel: 120, once: 0 }),
-        QsmAlgorithm::IqsmPlus => dl(Net { id: "iqsm-plus", per_voxel: 120, fixed: 0, whole: 640, native_tile: 1_026, browser_per_voxel: 120, once: 0 }),
+        QsmAlgorithm::Iqsm => dl(Net { id: "iqsm", per_voxel: 120, fixed: 0, whole: 583, native_tile: 473, browser_per_voxel: 120, once: 0, browser_per_helper: 0 }),
+        QsmAlgorithm::IqsmPlus => dl(Net { id: "iqsm-plus", per_voxel: 120, fixed: 0, whole: 640, native_tile: 1_026, browser_per_voxel: 120, once: 0, browser_per_helper: 0 }),
     }
 }
 

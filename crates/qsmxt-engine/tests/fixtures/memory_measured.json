@@ -894,8 +894,8 @@
   {
    "kind": "browser",
    "name": "qsmnet",
-   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
-   "threads": 16,
+   "source": "qsmbly eea9f09 (QSMxT engine 36f1492, tiles in flight capped by qsm-core 16d3d0b), headless Chrome 155, example data",
+   "threads": 4,
    "settings": [
     [
      "inversion.algorithm",
@@ -911,6 +911,29 @@
     [
      "reference",
      2362769408
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "nextqsm",
+   "source": "qsmbly eea9f09 (QSMxT engine 36f1492, tiles in flight capped by qsm-core 16d3d0b), headless Chrome 155, example data",
+   "threads": 4,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "nextqsm"
+    ]
+   ],
+   "isolated": "invert",
+   "heap": [
+    [
+     "invert",
+     2380398592
+    ],
+    [
+     "reference",
+     2380398592
     ]
    ]
   },
