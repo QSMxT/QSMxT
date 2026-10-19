@@ -500,12 +500,32 @@ pub fn region_help(label: &str, n_ids: usize, ids: &str, v2_only: bool) -> Strin
     )
 }
 
-/// Every user-facing setting, in the TUI's order.
+/// The settings table, built once. It is a constant of the build: nothing in it reads the
+/// environment, the files on disk or anything else that can change while the program runs.
+pub(crate) fn defs() -> &'static [Def] {
+    static DEFS: std::sync::LazyLock<Vec<Def>> = std::sync::LazyLock::new(table::table);
+    &DEFS
+}
+
+/// Every user-facing setting, in the TUI's order, built once: like [`defs`], it is a constant of
+/// the build (its defaults are those of [`PipelineConfig::default`] and
+/// [`PipelineConfig::browser`], which read nothing at run time). Command generation, the settings
+/// view and range checks read it on every call, and rebuilding it each time was most of their cost.
+pub fn settings() -> &'static [Setting] {
+    static SETTINGS: std::sync::LazyLock<Vec<Setting>> = std::sync::LazyLock::new(build_schema);
+    &SETTINGS
+}
+
+/// Every user-facing setting, in the TUI's order: an owned copy of [`settings`].
 pub fn schema() -> Vec<Setting> {
+    settings().to_vec()
+}
+
+fn build_schema() -> Vec<Setting> {
     let native = serde_json::to_value(PipelineConfig::default()).expect("the default config serialises");
     let browser = serde_json::to_value(PipelineConfig::browser()).expect("the browser config serialises");
-    let defs = table::table();
-    let contexts: Vec<Option<&'static str>> = defs.iter().map(|d| d.context.or_else(|| context_of(d, &defs))).collect();
+    let defs = defs();
+    let contexts: Vec<Option<&'static str>> = defs.iter().map(|d| d.context.or_else(|| context_of(d, defs))).collect();
     defs.iter()
         .zip(contexts)
         .enumerate()
@@ -573,7 +593,7 @@ pub fn schema_json() -> String {
     let doc = Doc {
         tabs: Tab::ALL.iter().map(|&t| TabEntry { id: t, label: t.label() }).collect(),
         sections: Section::ALL.iter().map(|&s| SectionEntry { id: s, label: s.label(), tab: s.tab() }).collect(),
-        settings: schema(),
+        settings: settings().to_vec(),
         mask: mask_schema(),
     };
     serde_json::to_string(&doc).expect("the schema serialises")
@@ -581,7 +601,7 @@ pub fn schema_json() -> String {
 
 /// The setting at `path`.
 pub fn setting(path: &str) -> Option<Setting> {
-    schema().into_iter().find(|s| s.path == path)
+    settings().iter().find(|s| s.path == path).cloned()
 }
 
 fn lookup<'a>(v: &'a Value, path: &str) -> Option<&'a Value> {
@@ -611,7 +631,7 @@ pub fn set(config: &mut PipelineConfig, path: &str, value: Value) -> Result<(), 
     let map = obj.as_object_mut().ok_or_else(|| format!("no setting {path}"))?;
     // An unset optional value is left out of the serialised config, so a missing key is only an
     // unknown one when the schema does not know it either (serde would ignore it silently).
-    if !map.contains_key(key) && !table::table().iter().any(|d| d.path == path) {
+    if !map.contains_key(key) && !defs().iter().any(|d| d.path == path) {
         return Err(format!("no setting {path}"));
     }
     map.insert(key.to_string(), value);
@@ -685,7 +705,7 @@ pub(crate) fn out_of_range(config: &PipelineConfig, checked: impl Fn(&str) -> bo
     // Serialised, a non-finite number is `null`.
     let Ok(json) = serde_json::to_value(config) else { return vec![] };
     let mut problems = Vec::new();
-    for s in schema() {
+    for s in settings() {
         let float = matches!(s.value_type, ValueType::Float | ValueType::FloatVec3);
         if !checked(s.path) || !(float || s.min.is_some() || s.max.is_some()) {
             continue;

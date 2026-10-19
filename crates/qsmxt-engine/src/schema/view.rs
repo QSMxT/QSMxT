@@ -12,7 +12,7 @@ use crate::enums::*;
 use crate::masking::{MaskOp, MaskSection};
 use crate::requirements::Output;
 
-use super::{table, Section};
+use super::Section;
 
 /// What the config cannot say but decides whether some settings apply: facts about the data.
 /// The default is "not known", which shows every setting the data could need.
@@ -166,7 +166,7 @@ pub fn settings_view(config: &PipelineConfig, facts: &ViewFacts) -> Vec<SettingV
         sep,
         qsmart_inner: name(&c.inversion.qsmart.inversion),
     };
-    let mut views: Vec<SettingView> = table::table()
+    let mut views: Vec<SettingView> = super::defs()
         .iter()
         .map(|d| {
             // Compute QSM is the switch that turns its sections on, so it is shown either way.
