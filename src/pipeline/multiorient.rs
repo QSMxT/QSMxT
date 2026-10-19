@@ -1381,7 +1381,8 @@ mod tests {
         let mut config = PipelineConfig::default();
         config.multi_orientation.group_by = "acq".into();
         config.multi_orientation.magnitude_weighting = true;
-        config.multi_orientation.cosmos_max_iter = 20;
+        // The sidecar is under test, not the solve: a couple of CG steps are enough.
+        config.multi_orientation.cosmos_max_iter = 2;
         reconstruct_group(&group, &members, &config, &output, true, &|_| {}).unwrap();
         let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(
             output.multiorient_sidecar_path(&group_key(&members), "cosmos")).unwrap()).unwrap();

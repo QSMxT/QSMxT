@@ -263,7 +263,7 @@ fn try_download(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::Ordering;
+    use crate::testutils::http::Server;
 
 
     /// A registry entry pointing at a URL that is never reached: every test here
@@ -283,67 +283,6 @@ mod tests {
     /// SHA-256 of b"abc".
     const ABC_SHA: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
 
-
-    /// A one-shot HTTP server on loopback that serves `body` to every request until
-    /// dropped. Lets the download path — streaming, progress, retry classification,
-    /// checksum verification — be exercised without reaching the internet.
-    struct Server {
-        base: String,
-        shutdown: std::sync::Arc<std::sync::atomic::AtomicBool>,
-        handle: Option<std::thread::JoinHandle<()>>,
-    }
-
-    impl Server {
-        fn serve(body: Vec<u8>, status: &'static str) -> Self {
-            use std::io::{BufRead, BufReader};
-            use std::net::TcpListener;
-            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-            listener.set_nonblocking(true).unwrap();
-            let base = format!("http://{}", listener.local_addr().unwrap());
-            let shutdown = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-            let stop = std::sync::Arc::clone(&shutdown);
-
-            let handle = std::thread::spawn(move || {
-                while !stop.load(Ordering::Relaxed) {
-                    match listener.accept() {
-                        Ok((mut sock, _)) => {
-                            sock.set_nonblocking(false).ok();
-                            // Drain the request head so the client is not left writing.
-                            let mut reader = BufReader::new(sock.try_clone().unwrap());
-                            let mut line = String::new();
-                            while reader.read_line(&mut line).unwrap_or(0) > 0 {
-                                if line == "\r\n" || line == "\n" {
-                                    break;
-                                }
-                                line.clear();
-                            }
-                            let head = format!(
-                                "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                                body.len()
-                            );
-                            let _ = sock.write_all(head.as_bytes());
-                            let _ = sock.write_all(&body);
-                            let _ = sock.flush();
-                        }
-                        Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                            std::thread::sleep(std::time::Duration::from_millis(5));
-                        }
-                        Err(_) => break,
-                    }
-                }
-            });
-            Self { base, shutdown, handle: Some(handle) }
-        }
-    }
-
-    impl Drop for Server {
-        fn drop(&mut self) {
-            self.shutdown.store(true, Ordering::Relaxed);
-            if let Some(h) = self.handle.take() {
-                let _ = h.join();
-            }
-        }
-    }
 
     #[test]
     fn ensure_downloads_verifies_and_caches_from_a_mirror() {
@@ -388,18 +327,19 @@ mod tests {
         std::env::remove_var(super::super::BASE_URL_ENV);
     }
 
+    /// The registry says 3 bytes and the mirror sends 2: a connection that dropped cleanly
+    /// mid-transfer. It is caught by size before the checksum, for a clearer message, and is
+    /// worth retrying. One attempt is checked directly, so the test does not sit through the
+    /// retry backoff that `ensure` would wait out before giving up.
     #[test]
-    fn ensure_detects_a_truncated_transfer() {
-        let _cache = CacheDir::new();
+    fn a_truncated_transfer_is_detected_and_retried() {
+        let dir = tempfile::tempdir().unwrap();
         let server = Server::serve(b"ab".to_vec(), "200 OK");
-        std::env::set_var(super::super::BASE_URL_ENV, &server.base);
+        let part = dir.path().join("test-acq.zip.part");
 
-        // Registry says 3 bytes, the mirror sends 2 — a connection that dropped cleanly
-        // mid-transfer. Caught by size before the checksum, for a clearer message.
-        let err = ensure(&fake(ABC_SHA, 3), &mut |_, _| {}).unwrap_err();
-        assert!(err.to_string().contains("received"), "{err}");
-
-        std::env::remove_var(super::super::BASE_URL_ENV);
+        let err = try_download(&server.base, 3, &part, &mut |_, _| {}).expect_err("a short body is an error");
+        assert!(err.message.contains("received"), "{}", err.message);
+        assert!(err.retryable, "a dropped connection should be retried");
     }
 
     #[test]

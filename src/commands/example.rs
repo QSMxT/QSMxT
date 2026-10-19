@@ -172,15 +172,16 @@ mod tests {
 
     #[test]
     fn a_fetch_failure_is_reported_rather_than_leaving_a_half_built_dataset() {
-        // Point the fetch at a dead mirror: execute must surface the failure and leave
-        // no dataset directory behind for the caller to mistake for a good one.
+        // Point the fetch at a mirror that does not have the archive: execute must surface the
+        // failure and leave no dataset directory behind for the caller to mistake for a good one.
+        // A 404 is not retried, so this does not wait out the backoff a dead mirror would get.
         let _guard = example::download::env_lock();
         let cache = tempfile::tempdir().unwrap();
         let out = tempfile::tempdir().unwrap();
         let dataset = out.path().join("bids");
         std::env::set_var("QSMXT_EXAMPLE_CACHE", cache.path());
-        // Port 1 on loopback: nothing listens, so this fails without leaving the machine.
-        std::env::set_var(example::BASE_URL_ENV, "http://127.0.0.1:1");
+        let server = crate::testutils::http::Server::serve(Vec::new(), "404 Not Found");
+        std::env::set_var(example::BASE_URL_ENV, &server.base);
 
         let mut a = args(vec!["prisma-bridge-run1"], false);
         a.output_dir = Some(dataset.clone());
