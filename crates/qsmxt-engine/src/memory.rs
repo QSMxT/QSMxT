@@ -1,36 +1,469 @@
-//! Memory estimation for pipeline runs.
+//! How much memory each step of a run takes, and so the run's peak, before it starts.
 //!
-//! Provides static estimation of peak memory usage per pipeline run based on
-//! volume dimensions, number of echoes, and algorithm configuration. Used by
-//! the executor to limit concurrent runs and avoid out-of-memory conditions.
-//! Byte counts are `u64`, not `usize`: a run's peak can exceed 4 GB, which a 32-bit
-//! (WebAssembly) `usize` cannot hold. Querying the host's memory is the front end's job.
+//! [`estimate`] gives every step of a [`Plan`] the memory it holds at its peak, on a host and
+//! store described by a [`MemoryProfile`]:
 //!
-//! All estimates are derived from analysis of actual buffer allocations in
-//! qsm_core algorithms. Memory usage is deterministic and scales linearly
-//! with N = nx * ny * nz — no algorithm's memory grows with iteration count.
+//! - **The step's own need** ([`step_need`]): copies of the volumes it reads, its working memory
+//!   and its outputs. Measured per step on the example data (184×256×128, 5 echoes) by counting
+//!   allocations, and scaled by the voxel count and, where it matters, the echo count and the
+//!   threads. The deep-learning steps follow the network and its patch or tile settings.
+//! - **What the store holds while the step computes** ([`StoreKind`]): nothing when the volumes
+//!   live outside the memory estimated (`qsmxt run`'s files; qsmbly's page, outside the WASM
+//!   heap); every volume read or written so far, in double precision, for a [`MemoryStore`] with
+//!   its own volumes.
+//! - **The host** ([`Host`]): natively, a margin for the allocator and the NIfTI reads and writes.
+//!   In a browser, the WASM heap also holds the run's deep-learning weights from the start, it
+//!   never shrinks, and it cannot grow past [`WASM32_HEAP_BYTES`].
+//!
+//! Byte counts are `u64`, not `usize`: a run's peak can exceed 4 GB, which a 32-bit (WebAssembly)
+//! `usize` cannot hold. Querying the host's memory is the front end's job.
+//!
+//! [`MemoryStore`]: crate::store::MemoryStore
+
+use serde::{Deserialize, Serialize};
 
 use crate::config::*;
 use crate::enums::*;
+use crate::items::ItemKind;
 use crate::masking::*;
+use crate::plan::{Plan, Stage, Step};
+use crate::scan::ScanFacts;
+use crate::store::Item;
 
-// Element sizes in bytes
 const F64: u64 = 8;
-const F32: u64 = 4;
-const U8: u64 = 1;
+const GIB: u64 = 1 << 30;
+
+/// The memory a 32-bit WebAssembly module can address: what a browser run has, all told.
+pub const WASM32_HEAP_BYTES: u64 = 4 * GIB;
+
+/// Where a run's volumes live between its steps, as far as the memory estimated is concerned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StoreKind {
+    /// Outside it: `qsmxt run`'s files, or qsmbly's page (outside the WASM heap). A step holds only
+    /// the volumes it reads, its working memory and what it writes.
+    Disk,
+    /// In it: a [`crate::store::MemoryStore`] with its own volumes, which holds every volume the
+    /// run has read or written so far, in double precision, while each step computes.
+    Memory,
+}
+
+/// What a run computes on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Host {
+    /// A native process (`qsmxt run`).
+    Native,
+    /// A browser's WebAssembly heap: it holds the run's deep-learning weights from the start,
+    /// never shrinks, and cannot grow past [`WASM32_HEAP_BYTES`].
+    Browser,
+}
+
+/// The host and store a memory estimate is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct MemoryProfile {
+    pub host: Host,
+    pub store: StoreKind,
+    /// The threads the run computes on. Some steps hold working memory per thread.
+    pub threads: usize,
+}
+
+impl MemoryProfile {
+    /// `qsmxt run`: native, its volumes in files, on a typical workstation's threads.
+    pub const NATIVE: Self = Self { host: Host::Native, store: StoreKind::Disk, threads: 8 };
+
+    /// A browser run on `threads` threads, its volumes kept outside the WASM heap (qsmbly).
+    pub fn browser(threads: usize) -> Self {
+        Self { host: Host::Browser, store: StoreKind::Disk, threads }
+    }
+
+    /// The most a run can take on this host, when there is a hard limit: the WASM heap's.
+    pub fn budget_bytes(&self) -> Option<u64> {
+        match self.host {
+            Host::Browser => Some(WASM32_HEAP_BYTES),
+            Host::Native => None,
+        }
+    }
+}
+
+impl Default for MemoryProfile {
+    fn default() -> Self {
+        Self::NATIVE
+    }
+}
+
+/// The memory each step of a plan takes at its peak, in plan order, and the run's peak.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct MemoryEstimate {
+    /// One figure per step of the plan, in bytes.
+    pub steps: Vec<u64>,
+    /// The largest of them: the run's peak.
+    pub peak_bytes: u64,
+    /// The index in the plan of the step that sets the peak (the first, on a tie), when the plan
+    /// computes anything.
+    pub peak_step: Option<usize>,
+}
+
+/// The memory each step of `plan` takes at its peak on `facts`' scan, for `profile`'s host and
+/// store.
+pub fn estimate(plan: &Plan, facts: &ScanFacts, profile: &MemoryProfile) -> MemoryEstimate {
+    let s = Scan::of(facts, profile);
+    let config = &plan.config;
+    // Deep-learning weights a browser holds in its heap for the whole run.
+    let weights: u64 = match profile.host {
+        Host::Browser => plan.models.iter().map(|id| model_bytes(id)).sum(),
+        Host::Native => 0,
+    };
+    // What a store in the same memory holds before the first step: the scan as given.
+    let mut resident = match profile.store {
+        StoreKind::Memory => acquired_bytes(facts, s.n),
+        StoreKind::Disk => 0,
+    };
+    let mut steps = Vec::with_capacity(plan.steps.len());
+    for step in &plan.steps {
+        let need = step_need(step, config, &s);
+        let held = match profile.host {
+            // Natively a step reads its networks' weights itself.
+            Host::Native => (need + step.models.iter().map(|id| model_bytes(id)).sum::<u64>()) * 13 / 10,
+            Host::Browser => BROWSER_RUNTIME_BYTES + weights + need,
+        };
+        steps.push(held + resident);
+        if profile.store == StoreKind::Memory {
+            resident += step.outputs.iter().map(|i| item_bytes(i, s.n)).sum::<u64>();
+        }
+    }
+    let peak_bytes = steps.iter().copied().max().unwrap_or(0);
+    let peak_step = plan.processes().then(|| steps.iter().position(|&b| b == peak_bytes)).flatten();
+    MemoryEstimate { steps, peak_bytes, peak_step }
+}
+
+/// What the WASM module, its runtime and the allocator's slack add to a step's own need in the
+/// heap (measured on the example: 40–160 MB, the most for the FFT-based steps; the lighter steps
+/// stay inside the heap the runtime starts with).
+const BROWSER_RUNTIME_BYTES: u64 = 100_000_000;
+
+/// The scan as the estimate sees it.
+struct Scan {
+    dims: [usize; 3],
+    /// Voxels.
+    n: u64,
+    echoes: u64,
+    coils: u64,
+    /// A MESE acquisition comes with the scan.
+    mese: bool,
+    host: Host,
+    threads: u64,
+}
+
+impl Scan {
+    fn of(facts: &ScanFacts, profile: &MemoryProfile) -> Self {
+        let (x, y, z) = facts.dims;
+        Scan {
+            dims: [x, y, z],
+            n: x as u64 * y as u64 * z as u64,
+            echoes: facts.n_echoes.max(1) as u64,
+            coils: facts.n_coils.max(1) as u64,
+            mese: facts.mese_echo_times.is_some(),
+            host: profile.host,
+            threads: profile.threads.max(1) as u64,
+        }
+    }
+
+    /// `per_voxel` bytes for every voxel.
+    fn v(&self, per_voxel: u64) -> u64 {
+        per_voxel * self.n
+    }
+}
+
+/// An item's bytes in memory: a mask a byte a voxel, a real volume a double, a table or report
+/// next to nothing.
+fn item_bytes(item: &Item, n: u64) -> u64 {
+    match item.meta().kind {
+        ItemKind::Mask => n,
+        ItemKind::Table | ItemKind::Report => 0,
+        _ => F64 * n,
+    }
+}
+
+/// The scan as given, in a store in memory: every echo's phase and magnitude (each coil's, for
+/// uncombined coils; the real and imaginary parts, for a scan given as those).
+fn acquired_bytes(facts: &ScanFacts, n: u64) -> u64 {
+    let echoes = facts.n_echoes as u64;
+    let per_echo = if facts.real_imaginary || facts.has_magnitude { 2 } else { 1 };
+    per_echo * echoes * facts.n_coils.max(1) as u64 * F64 * n
+}
+
+/// A model's weights, as QSM.rs's registry gives their size.
+fn model_bytes(id: &str) -> u64 {
+    qsm_core::models::find_model(id).map_or(0, |m| m.files.iter().map(|f| f.bytes).sum())
+}
+
+/// What `step` holds at its peak on its own: copies of what it reads, its working memory, and
+/// its outputs.
+fn step_need(step: &Step, config: &PipelineConfig, s: &Scan) -> u64 {
+    let (n, e) = (s.n, s.echoes);
+    let mask_recipe = |sections: &[MaskSection]| mask_need(sections, s);
+    match step.stage {
+        Stage::Load => 0,
+        // One echo at a time; uncombined coils are combined (MCPC-3D-S) first, with every coil's
+        // phase and magnitude held at once.
+        Stage::ScalePhase if s.coils > 1 => (2 * s.coils * e + 4 + 2 * e) * F64 * n,
+        Stage::ScalePhase => s.v(8),
+        // Every echo's magnitude, read and combined.
+        Stage::Magnitude => s.v(8 * e + 49),
+        Stage::Mask(crate::plan::Pass::Main) => mask_recipe(&config.masking.sections),
+        Stage::Mask(crate::plan::Pass::Reliable) => mask_recipe(&config.masking.resolved_two_pass_sections()),
+        // Every echo's phase and magnitude, registered to the reference echo.
+        Stage::Motion => s.v(16 * e + 113),
+        // CLEAR-SWI: every echo's phase and magnitude and each echo's filtered phase; ROMEO adds
+        // its weights.
+        Stage::Swi => match config.swi.unwrap {
+            crate::SwiUnwrap::Romeo => s.v((4 * e + 20) * F64),
+            _ => s.v(24 * e + 28),
+        },
+        // The echoes' magnitudes and the fit's maps.
+        Stage::Relaxometry => s.v(8 * e + 25),
+        Stage::R2 => r2_need(step, config, s),
+        Stage::FieldMap => unwrap_need(config, s),
+        Stage::BackgroundRemoval(_) => bg_removal_need(config, s),
+        Stage::Inversion(_) => inversion_need(config, s),
+        // From the total field: TGV's f32 workspace over the brain's bounding box (the whole
+        // volume, at worst) and its stencils.
+        Stage::Tgv(_) => s.v(TGV_PER_VOXEL),
+        // Two background-field removals and iLSQR inversions, the vessel filter, and the
+        // intermediates it keeps.
+        Stage::Qsmart(_) => s.v(QSMART_PER_VOXEL),
+        Stage::TwoPassCombination => s.v(27),
+        Stage::Reference | Stage::SinglePassReference => s.v(18),
+        Stage::Smwi => s.v(65),
+        Stage::Segmentation => match step.models.is_empty() {
+            // A supplied segmentation, brought onto the run's grid.
+            true => s.v(24),
+            false => synthseg_bytes(s.dims, config.segmentation.patch) + s.v(16),
+        },
+        Stage::ChiSeparation => separation_need(config, s),
+        // Each map summarised over the segmentation, one at a time.
+        Stage::Analysis => s.v(32),
+        // Each output brought back to the acquired grid, one at a time (nothing when the run was
+        // not resampled).
+        Stage::OutputSpace => s.v(24),
+    }
+}
+
+/// The mask step reads every echo's phase and magnitude whatever the recipe, and its peak is the
+/// same for the thresholds, BET and the morphological refinements (measured: 24 B a voxel an
+/// echo and 42 more). A network takes its own peak on top of the echoes.
+fn mask_need(sections: &[MaskSection], s: &Scan) -> u64 {
+    let echoes = s.v(16 * s.echoes);
+    let network = sections.iter().map(|sec| match &sec.generator {
+        MaskOp::HdBet { patch, .. } => hd_bet_network_bytes(*patch) + s.v(40),
+        MaskOp::Rs2Net { .. } => RS2_NET_BYTES,
+        MaskOp::MindGrab { .. } => MINDGRAB_BYTES,
+        _ => 0,
+    }).max().unwrap_or(0);
+    s.v(24 * s.echoes + 42).max(echoes + network)
+}
+
+/// The field map (`unwrap`): unwrapping and echo combination.
+fn unwrap_need(config: &PipelineConfig, s: &Scan) -> u64 {
+    let (n, e) = (s.n, s.echoes);
+    let fm = &config.field_mapping;
+    let romeo = fm.unwrapping_algorithm == UnwrappingAlgorithm::Romeo;
+    if e == 1 {
+        return 85 * n;
+    }
+    if !romeo {
+        // Laplacian: each echo unwrapped and kept, then the fit (with or without offsets).
+        return (24 * e + 25) * n;
+    }
+    if !fm.phase_offset_removal {
+        // Each echo unwrapped and kept, then the linear fit.
+        return (25 * e + 56) * n;
+    }
+    // Phase-offset removal: the echoes, the offsets and their smoothing, and ROMEO for each
+    // echo, the echoes in parallel, each with its own weights and region-growing state.
+    (34 * e + 62) * n + romeo_threads(s) * ROMEO_PER_ECHO_THREAD * n
+}
+
+/// ROMEO's per-echo working memory, held once per echo unwrapped at the same time.
+const ROMEO_PER_ECHO_THREAD: u64 = 31;
+
+/// Echoes' worth of ROMEO working memory held beyond the first, with phase-offset removal on
+/// several threads. Natively up to one per echo (measured on the example's 5 echoes: 1.9–2.5 GB
+/// on 8 threads against 1.4 GB on one, as rayon splits the work); a browser's pool keeps it to
+/// about two whatever its size (measured on 4 and 16 threads).
+fn romeo_threads(s: &Scan) -> u64 {
+    match (s.host, s.threads) {
+        (_, 1) => 0,
+        (Host::Native, t) => t.min(s.echoes),
+        (Host::Browser, t) => (t - 1).min(2),
+    }
+}
+
+/// TGV's bytes per voxel: its f32 workspace over the brain's bounding box (the whole volume, at
+/// worst), the inputs and outputs.
+const TGV_PER_VOXEL: u64 = 128;
+/// QSMART's bytes per voxel.
+const QSMART_PER_VOXEL: u64 = 271;
+
+/// The voxels a deep-learning network holds activations for at once, and how many such passes
+/// run at the same time: the whole volume once, or, when `inversion.tile_size` tiles it, one
+/// tile's patch for each tile computed at once. Tiles run in parallel, one per thread natively;
+/// a browser's pool has one more in flight than its threads (measured: xQSM on 4 threads holds
+/// five tiles' activations).
+fn dl_voxels(s: &Scan, config: &PipelineConfig) -> (u64, u64) {
+    match config.inversion.tile_size {
+        Some(core) => {
+            let halo = config.inversion.tile_halo.unwrap_or(8);
+            let patch = ((core + 2 * halo) as u64).saturating_pow(3).min(s.n);
+            let tiles: u64 = s.dims.iter().map(|&d| d.div_ceil(core.max(1)) as u64).product();
+            let in_flight = match (s.host, s.threads) {
+                (Host::Browser, t) if t > 1 => t + 1,
+                (_, t) => t,
+            };
+            (patch, in_flight.min(tiles).max(1))
+        }
+        None => (s.n, 1),
+    }
+}
+
+/// A deep-learning inversion's own need: `per_voxel` bytes over the volume (its input, output
+/// and the tiles' blending), `fixed` bytes (the parsed model), and its activations: `tile` bytes
+/// per voxel of each tile it computes at once ([`dl_voxels`]), or `whole` per voxel of the
+/// volume when it is not tiled. The weights themselves are counted by the host: read in the step
+/// natively, held for the whole run in a browser.
+fn dl_need(s: &Scan, config: &PipelineConfig, per_voxel: u64, fixed: u64, tile: u64, whole: u64) -> u64 {
+    let (patch, at_once) = dl_voxels(s, config);
+    let activations = if config.inversion.tile_size.is_some() { at_once * patch * tile } else { s.n * whole };
+    s.v(per_voxel) + fixed + activations
+}
+
+/// Background-field removal: the total field and mask in, the local field and its mask out.
+fn bg_removal_need(config: &PipelineConfig, s: &Scan) -> u64 {
+    let n = s.n;
+    match config.bg_removal.algorithm {
+        // V-SHARP: the field's FFT and per-radius kernels, masks and filtered fields. A 1 mm
+        // isotropic working grid about doubles it: the resampled copies plus V-SHARP on the
+        // cropped working grid (UKB 0.8x0.8x3 mm: 0.37 -> 0.78 GB). The finest-voxel grid grows
+        // with the anisotropy ratio (3.75x the voxels for UKB); budget for ratios up to ~4.
+        BfAlgorithm::Vsharp => match config.bg_removal.vsharp.grid {
+            crate::VsharpGrid::Native => 110 * n,
+            crate::VsharpGrid::Isotropic => 220 * n,
+            crate::VsharpGrid::Finest => 440 * n,
+        },
+        BfAlgorithm::Pdf => 112 * n,
+        BfAlgorithm::Lbv => 37 * n,
+        BfAlgorithm::Ismv => 114 * n,
+        BfAlgorithm::Sharp => 59 * n,
+        BfAlgorithm::Resharp => 123 * n,
+        BfAlgorithm::Harperella => 139 * n,
+        BfAlgorithm::Iharperella => 155 * n,
+        // iQFM: from every echo's phase and magnitude, on the whole volume (4.2 GB in WASM on the
+        // example). BFRnet on the whole volume: 10.9 GB natively on the example.
+        BfAlgorithm::Iqfm => 703 * n,
+        BfAlgorithm::Bfrnet => 1_800 * n,
+    }
+}
+
+/// The dipole inversion of the local field (or, for iQSM/iQSM+, of the echoes' phase).
+fn inversion_need(config: &PipelineConfig, s: &Scan) -> u64 {
+    let n = s.n;
+    // The tileable networks: activations per patch voxel, measured on tiles of 64³ (56 + 2×4) on
+    // the example in WASM and natively (xQSM and QSMnet also at 48³, which separates the parts).
+    let dl = |per_voxel, fixed, tile, whole| dl_need(s, config, per_voxel, fixed, tile, whole);
+    match config.inversion.algorithm {
+        QsmAlgorithm::Tkd => 74 * n,
+        QsmAlgorithm::Tsvd => 74 * n,
+        QsmAlgorithm::Tikhonov => 82 * n,
+        QsmAlgorithm::Ilsqr => 242 * n,
+        QsmAlgorithm::Lsqr => 147 * n,
+        QsmAlgorithm::Heidi => 194 * n,
+        QsmAlgorithm::Tv => 147 * n,
+        QsmAlgorithm::Nltv => 154 * n,
+        QsmAlgorithm::Rts => 227 * n,
+        QsmAlgorithm::Medi => 224 * n,
+        QsmAlgorithm::Tfi => 198 * n,
+        QsmAlgorithm::Tgv => s.v(TGV_PER_VOXEL),
+        QsmAlgorithm::Qsmart => s.v(QSMART_PER_VOXEL),
+        QsmAlgorithm::Ndi => 123 * n,
+        QsmAlgorithm::Fansi => 298 * n,
+        // FANSI-TGV: 5.7 GB natively on the example, more than the WASM heap holds.
+        QsmAlgorithm::FansiTgv => 938 * n,
+        QsmAlgorithm::L1qsm => 370 * n,
+        QsmAlgorithm::Whqsm => 290 * n,
+        QsmAlgorithm::Hdqsm => 290 * n,
+        QsmAlgorithm::AmpPe => 345 * n,
+        // On the whole volume each of these is more than the WASM heap holds on the example.
+        QsmAlgorithm::Qsmnet | QsmAlgorithm::QsmnetPlus => dl(50, 820_000_000, 563, 563),
+        QsmAlgorithm::Xqsm => dl(53, 0, 767, 905),
+        QsmAlgorithm::Nextqsm => dl(40, 0, 1_556, 1_556),
+        // LPCNN measured natively on 4 threads and in WASM on one (which separates its parts);
+        // iR2QSM and MoDL-QSM in WASM only, taken to divide the same way.
+        QsmAlgorithm::Ir2qsm => dl(17, 0, 1_180, WHOLE_VOLUME_AT_LEAST),
+        QsmAlgorithm::Lpcnn => dl(17, 0, 837, WHOLE_VOLUME_AT_LEAST),
+        QsmAlgorithm::ModlQsm => dl(10, 0, 800, WHOLE_VOLUME_AT_LEAST),
+        // Patch-based networks that take the whole volume (they patch it themselves).
+        QsmAlgorithm::Autoqsm => 92 * n,
+        QsmAlgorithm::Qsmgan => 35 * n,
+        // iQSM/iQSM+ from every echo's phase and magnitude, on the whole volume: 4.2 GB in WASM
+        // for iQSM on the example, and iQSM+ more than the heap holds.
+        QsmAlgorithm::Iqsm => 703 * n,
+        QsmAlgorithm::IqsmPlus => 760 * n,
+    }
+}
+
+/// R2 and R2′: the EPG fit to a MESE, and/or R2′ predicted by R2PRIMEnet at its patch.
+fn r2_need(step: &Step, config: &PipelineConfig, s: &Scan) -> u64 {
+    // The fit holds the MESE's echoes and the GRE's beside its dictionary; with no MESE, R2 is
+    // supplied or not made.
+    let fit = if s.mese { s.v((2 * s.echoes * F64) + 120) } else { s.v(24) };
+    if step.models.is_empty() {
+        return fit;
+    }
+    let [x, y, z] = config.separation.r2primenet.patch;
+    let patch = x as u64 * y as u64 * z as u64;
+    fit.max(patch * R2PRIMENET_PER_PATCH_VOXEL + R2PRIMENET_FIXED + s.v(24))
+}
+
+/// Bytes per voxel of a network on the whole volume, for iR2QSM, LPCNN and MoDL-QSM: LPCNN's,
+/// 4.5 GB natively on the example (the others are known only to need more than the WASM heap).
+const WHOLE_VOLUME_AT_LEAST: u64 = 720;
+
+/// R2PRIMEnet's activations per patch voxel and its parsed model: 830 B natively (measured at
+/// 128×128×64 and 96×96×64, linear up to the authors' 192×192×128) and 1.1 KB in WASM.
+const R2PRIMENET_PER_PATCH_VOXEL: u64 = 1_000;
+const R2PRIMENET_FIXED: u64 = 225_000_000;
+
+/// χ-separation: the maps it reads and the method's workspace, or a network at its patch.
+fn separation_need(config: &PipelineConfig, s: &Scan) -> u64 {
+    let maps = s.v(2 * s.echoes * F64 + 40);
+    match chi_separation_network_bytes(s.dims, &config.separation) {
+        0 => maps + s.v(80),
+        net => maps + net,
+    }
+}
 
 /// HD-BET's peak for the network itself, in bytes, with a sliding window of `patch` (`None`: one
-/// pass over the whole volume): tract activations for one network input (~1 KiB per input
-/// voxel) and the parsed model (~300 MB). A sliding window's input is its patch: ~3.6 GB peak
-/// with the native 192×192×96, ~1.5 GB with 128×128×64. The whole volume's is the head's
-/// bounding box at 1 mm, padded to multiples of 32×32×16, which does not depend on the acquired
-/// resolution: 6.4–8.2 GB measured on 1 mm whole-head and 0.8×0.8×3 mm GRE (up to 160×256×256
-/// voxels), so budget a 176×256×256 box. The scan's own working volumes come on top.
+/// pass over the whole volume): tract's activations for one network input (~850 B per input
+/// voxel, measured at 128×128×64 and 96×96×64) and the parsed model. A sliding window's input
+/// is its patch. The whole volume's is the head's bounding box at 1 mm, padded to multiples of
+/// 32×32×16, which does not depend on the acquired resolution (6.4–8.2 GB peak RSS measured on
+/// 1 mm whole-head and 0.8×0.8×3 mm GRE, up to 160×256×256 voxels), so budget a 176×256×256
+/// box. The scan's own working volumes come on top.
 pub fn hd_bet_network_bytes(patch: Option<[usize; 3]>) -> u64 {
     const FULL_VOLUME_VOXELS: u64 = 256 * 256 * 176;
     let input_voxels = patch.map_or(FULL_VOLUME_VOXELS, |p| p.iter().map(|&d| d as u64).product());
-    input_voxels * 1024 + 300 * 1024 * 1024
+    input_voxels * 850 + 130_000_000
 }
+
+/// RS2-Net runs at one fixed window, so its peak does not depend on the volume: 3.2 GB measured
+/// in the browser on a mouse scan.
+const RS2_NET_BYTES: u64 = 3_200_000_000;
+
+/// MindGrab runs on the image conformed to 256³ at 1 mm whatever the acquisition, so its peak
+/// does not depend on the volume: 7.3 GB measured on 256×288×48 GRE, with or without TTA (the
+/// flipped pass runs after the first).
+const MINDGRAB_BYTES: u64 = 7_500_000_000;
 
 /// SynthSeg's peak in bytes on a `dims` volume (taken to be about 1 mm, the resolution SynthSeg
 /// resamples to), with a sliding window of `patch` (`None`: the whole volume at once). The
@@ -86,21 +519,38 @@ const CHI_SEPNET_FIXED: u64 = 350_000_000;
 const SUSEP_NET_PER_VOXEL: u64 = 1_850;
 const SUSEP_NET_FIXED: u64 = 800_000_000;
 
-/// Estimate peak memory usage in bytes for a single pipeline run.
+/// The settings that bring `step`'s memory down, by config path, for a front end to point at
+/// when a run would not fit.
+pub fn reducing_settings(step: &Step, config: &PipelineConfig) -> Vec<&'static str> {
+    let nets = |sections: &[MaskSection]| sections.iter().any(|s| matches!(s.generator,
+        MaskOp::HdBet { .. } | MaskOp::Rs2Net { .. } | MaskOp::MindGrab { .. }));
+    match step.stage {
+        Stage::Mask(crate::plan::Pass::Main) if nets(&config.masking.sections) => vec!["masking.sections"],
+        Stage::Mask(crate::plan::Pass::Reliable) => vec!["masking.two_pass_sections", "masking.two_pass"],
+        Stage::FieldMap => vec!["field_mapping.unwrapping_algorithm", "field_mapping.phase_offset_removal"],
+        Stage::BackgroundRemoval(_) if config.bg_removal.algorithm == BfAlgorithm::Vsharp =>
+            vec!["bg_removal.vsharp.grid", "bg_removal.algorithm"],
+        Stage::BackgroundRemoval(_) => vec!["bg_removal.algorithm"],
+        Stage::Inversion(_) if !step.models.is_empty() => vec!["inversion.tile_size", "inversion.algorithm"],
+        Stage::Inversion(_) | Stage::Tgv(_) | Stage::Qsmart(_) => vec!["inversion.algorithm"],
+        Stage::Segmentation => vec!["segmentation.patch"],
+        Stage::R2 if !step.models.is_empty() => vec!["separation.r2primenet.patch"],
+        Stage::ChiSeparation => match config.separation.algorithm {
+            SeparationAlgorithm::ChiSepNet => vec!["separation.chi_sepnet.patch", "separation.algorithm"],
+            SeparationAlgorithm::SusepNet => vec!["separation.susep_net.patch", "separation.algorithm"],
+            _ => vec!["separation.algorithm"],
+        },
+        _ => vec![],
+    }
+}
+
+/// Estimate peak memory usage in bytes for a single `qsmxt run` of `config` on a scan of
+/// `nx`×`ny`×`nz` voxels: the peak of [`estimate`] over the run's plan, natively, its volumes in
+/// files ([`MemoryProfile::NATIVE`]).
 ///
-/// The estimate accounts for:
-/// - Loaded NIfTI data (phases + magnitudes) that persists across the pipeline
-/// - Per-stage temporary allocations (masking, unwrapping, bg removal, inversion)
-/// - SWI outputs if enabled
-/// - A 1.3x safety margin for FFT scratch, allocator overhead, and fragmentation
-///
-/// # Arguments
-/// * `nx`, `ny`, `nz` — Volume dimensions
-/// * `n_echoes` — Number of echo times
 /// * `n_coils` — Uncombined receive-coil channels (1 for combined data); MCPC-3D-S loads every
 ///   coil's phase and magnitude at once before the rest of the pipeline runs
 /// * `has_magnitude` — Whether magnitude files are available
-/// * `config` — Pipeline configuration (determines which algorithms are used)
 pub fn estimate_peak_memory_bytes(
     nx: usize,
     ny: usize,
@@ -110,264 +560,20 @@ pub fn estimate_peak_memory_bytes(
     has_magnitude: bool,
     config: &PipelineConfig,
 ) -> u64 {
-    let n = nx as u64 * ny as u64 * nz as u64;
-    let (n_echoes, n_coils) = (n_echoes as u64, n_coils as u64);
-    let n_mag = if has_magnitude { n_echoes } else { 0 };
-
-    // MCPC-3D-S coil combination: all coils' phase + magnitude (f64), the HIP (2 volumes),
-    // the unwrapped HIP, one offset volume, and the per-echo complex accumulators.
-    let coil_combine_mem = if n_coils > 1 {
-        (2 * n_coils * n_echoes + 4 + 2 * n_echoes) * n * F64
-    } else {
-        0
+    let n_echoes = n_echoes.max(1);
+    let facts = ScanFacts {
+        dims: (nx, ny, nz),
+        n_echoes,
+        echo_times: (1..=n_echoes).map(|e| 0.005 * e as f64).collect(),
+        has_magnitude,
+        n_coils: n_coils.max(1),
+        real_imaginary: false,
+        field_strength: 3.0,
+        b0_dir: None,
+        mese_echo_times: None,
+        custom_mask: false, custom_dseg: false, custom_qsm: false, custom_r2: false, custom_r2prime: false,
     };
-
-    // Baseline: data that persists across the entire pipeline
-    let baseline = n_echoes * n * F64  // phases (Vec<f64> per echo)
-                 + n_mag * n * F64     // magnitudes (Vec<f64> per echo)
-                 + 2 * n * U8;        // mask + working_mask
-
-    // Masking stage (temporary) — worst case across all sections
-    // BET is the most expensive: sorted nonzero vec (~N*8) + within_brain values (~N*8) + output (N)
-    let has_bet = config.masking.sections.iter().any(|s| matches!(s.generator, MaskOp::Bet { .. }));
-    // HD-BET: the network ([`hd_bet_network_bytes`]) and its f32 working volumes (~40 B/voxel).
-    let hd_bet_mem = config.masking.sections.iter()
-        .filter_map(|s| match &s.generator {
-            MaskOp::HdBet { patch, .. } => Some(hd_bet_network_bytes(*patch)),
-            _ => None,
-        })
-        .max()
-        .map_or(0, |network| network + 40 * n);
-    // MindGrab runs on the image conformed to 256³ at 1 mm whatever the acquisition, so its peak
-    // does not depend on the volume: 7.3 GB measured on 256×288×48 GRE, with or without TTA (the
-    // flipped pass runs after the first).
-    const MINDGRAB_MEM: u64 = 7_500_000_000;
-    let mindgrab_mem = if config.masking.sections.iter().any(|s| matches!(s.generator, MaskOp::MindGrab { .. })) {
-        MINDGRAB_MEM
-    } else {
-        0
-    };
-    // Signal-gated erosion keeps a handful of f64 volumes (smoothed signal, bias estimate, depth).
-    let has_signal_erode = config.masking.sections.iter()
-        .any(|s| s.refinements.iter().any(|op| matches!(op, MaskOp::SignalErode { .. })));
-    // SynthSeg runs on the combined magnitude after masking.
-    let segmentation_mem = if config.pipeline.do_segmentation || config.pipeline.do_analysis {
-        synthseg_bytes([nx, ny, nz], config.segmentation.patch)
-    } else {
-        0
-    };
-    let mask_mem = (if has_bet { 17 * n } else { 9 * n }).max(hd_bet_mem).max(mindgrab_mem)
-        + if has_signal_erode { 8 * n * F64 } else { 0 };
-
-    // SWI runs before QSM; its outputs persist through QSM stages
-    let swi_persistent = if config.pipeline.do_swi { 16 * n } else { 0 }; // swi + mip results
-    // CLEAR-SWI loads every echo's phase and magnitude and keeps each echo's filtered phase;
-    // ROMEO adds its edge weights. Measured: 2 echoes 256×288×48 0.31 GB (Laplacian) / 0.76 GB
-    // (ROMEO); 8 echoes 260×320×160 2.8 GB / 4.5 GB.
-    let swi_temp = if config.pipeline.do_swi {
-        let per_voxel = match config.swi.unwrap {
-            crate::SwiUnwrap::Romeo => 4 * n_echoes + 20,
-            _ => 3 * n_echoes + 8,
-        };
-        per_voxel * n * F64
-    } else {
-        0
-    };
-
-    let qsm_stage_mem = if config.inversion.algorithm == QsmAlgorithm::Tgv {
-        // TGV path: single-step (no separate unwrap/bgremove)
-        // TGV workspace: 35 Vec<f32> fields + additional sub-volumes
-        // Worst case: bounding box = full volume (actual is often 30-70% of N)
-        // phase_f32 input: 4N, TGV workspace: 154*N (f32), mask temps: 6N, output: 12N
-        20 * n + 154 * n * F32 / F64 + 10 * 1024 * 1024 // ~97N + 10MB stencil
-    } else if config.inversion.algorithm == QsmAlgorithm::Qsmart {
-        // QSMART: ~2× standard pipeline (two-stage SDF + iLSQR) + vasculature buffers
-        // Vasculature detection: Frangi vesselness + sphere filtering (~80N)
-        // Two SDF passes (~80N each) + two iLSQR passes (~160N each) + combine step
-        // Peak is during iLSQR (biggest single-step allocation)
-        let unwrap_mem = estimate_unwrap_mem(n, n_echoes, config);
-        let qsmart_mem = 240 * n; // iLSQR workspace + SDF input/output + vasculature
-        unwrap_mem.max(qsmart_mem)
-    } else {
-        // Standard path: stages run sequentially
-        estimate_standard_pipeline(n, n_echoes, config)
-    };
-
-    // Chi-separation + R2/R2' run as sequential stages after QSM. Peak load: the QSM (8N),
-    // R2*/R2/R2' maps (~24N), multi-echo GRE + MESE magnitude voxel-major (~2·n_echoes·8N),
-    // plus the EPG R2 dictionary/solver or the run_separation workspace (~80N for the CG methods).
-    // The networks have no CG workspace; their own peak comes on top of the maps.
-    let sep_net_mem = if config.pipeline.do_chi_separation {
-        chi_separation_network_bytes([nx, ny, nz], &config.separation)
-    } else {
-        0
-    };
-    let sep_mem = if config.pipeline.do_chi_separation
-        || config.pipeline.do_r2map
-        || config.pipeline.do_r2primemap
-    {
-        let workspace = if sep_net_mem > 0 { 40 } else { 120 };
-        (2 * n_echoes * F64 + workspace) * n + sep_net_mem
-    } else {
-        0
-    };
-
-    // Overall peak: baseline + max across all stages
-    // Stages are sequential: masking → SWI → QSM → (R2/R2' + chi-separation)
-    let peak = baseline
-        + [
-            coil_combine_mem,
-            mask_mem,
-            segmentation_mem,
-            swi_temp + swi_persistent,
-            qsm_stage_mem + swi_persistent,
-            sep_mem,
-        ]
-        .into_iter()
-        .max()
-        .unwrap_or(0);
-
-    // Safety margin: 1.3x for FFT scratch space, allocator overhead, fragmentation
-    peak * 13 / 10
-}
-
-/// Estimate peak temporary memory for the standard pipeline path.
-///
-/// Returns the maximum memory across the sequential stages:
-/// unwrap/combination → background removal → dipole inversion.
-fn estimate_standard_pipeline(n: u64, n_echoes: u64, config: &PipelineConfig) -> u64 {
-    // Phase unwrapping / echo combination
-    let unwrap_mem = estimate_unwrap_mem(n, n_echoes, config);
-
-    // Background field removal
-    // Input: field_ppm (8N) + bg_mask (N) carry forward from unwrap stage
-    let bg_carry = 9 * n;
-    let bg_temp = match config.bg_removal.algorithm {
-        // V-SHARP: persistent field_fft (16N) + per-radius buffers (kernel/mask/filtered FFTs)
-        // A 1 mm isotropic working grid about doubles it: the resampled copies plus V-SHARP on the
-        // cropped working grid (UKB 0.8x0.8x3 mm: 0.37 -> 0.78 GB). The finest-voxel grid grows
-        // with the anisotropy ratio (3.75x the voxels for UKB); budget for ratios up to ~4.
-        BfAlgorithm::Vsharp => match config.bg_removal.vsharp.grid {
-            crate::VsharpGrid::Native => 80 * n,
-            crate::VsharpGrid::Isotropic => 160 * n,
-            crate::VsharpGrid::Finest => 400 * n,
-        },
-        // PDF: dipole kernel + masks + LSMR state + FFT workspace
-        BfAlgorithm::Pdf => 112 * n,
-        // LBV: minimal — no FFT, Gauss-Seidel in-place. interior/boundary bools + copies
-        BfAlgorithm::Lbv => 26 * n,
-        // iSMV: kernel + kernel_fft + masks + field copies + per-iteration FFT
-        BfAlgorithm::Ismv => 96 * n,
-        // SHARP: similar to V-SHARP but single radius
-        BfAlgorithm::Sharp => 60 * n,
-        // RESHARP: SMV kernel + CG solver state
-        BfAlgorithm::Resharp => 80 * n,
-        // HARPERELLA: iterative Laplacian solver + SMV kernel
-        BfAlgorithm::Harperella => 60 * n,
-        // iHARPERELLA: similar to HARPERELLA
-        BfAlgorithm::Iharperella => 60 * n,
-        // BFRnet / iQFM: ONNX U-Net activations dominate; padded field + network working set
-        BfAlgorithm::Bfrnet | BfAlgorithm::Iqfm => 120 * n,
-    };
-
-    // Dipole inversion
-    // Input: local_field (8N) + eroded_mask (N) carry forward from bg stage
-    let inv_carry = 9 * n;
-    // With overlap-tiling on, a DL net's activations are bounded by one patch, not the whole
-    // volume — use the padded patch voxel count for the tileable nets (never more than `n`).
-    let dl_voxels = match config.inversion.tile_size {
-        Some(core) => {
-            let halo = config.inversion.tile_halo.unwrap_or(8);
-            ((core + 2 * halo) as u64).saturating_pow(3).min(n)
-        }
-        None => n,
-    };
-    let inv_temp = match config.inversion.algorithm {
-        // TKD: dipole kernel + inverse + complex field + output
-        QsmAlgorithm::Tkd => 40 * n,
-        // TSVD: same as TKD (closed-form k-space solution with different thresholding)
-        QsmAlgorithm::Tsvd => 40 * n,
-        // Tikhonov: similar to TKD (closed-form k-space solution)
-        QsmAlgorithm::Tikhonov => 40 * n,
-        // iLSQR: iterative LSQR with dipole kernel + workspace buffers
-        QsmAlgorithm::Ilsqr => 160 * n,
-        // LSQR (Schweser 2010): like iLSQR, but the unknown vector is ~2n — χ over the grid plus a
-        // residual-field unknown per masked voxel — and LSQR keeps several vectors that size.
-        QsmAlgorithm::Lsqr => 200 * n,
-        // HEIDI: an LSQR solve for the seed, then NESTA/TV continuation on top of it.
-        QsmAlgorithm::Heidi => 280 * n,
-        // TV-ADMM: kernels + 9 ADMM buffers + FFT workspace + inv_a
-        QsmAlgorithm::Tv => 120 * n,
-        // NLTV: similar to TV + reweighting buffers
-        QsmAlgorithm::Nltv => 140 * n,
-        // RTS: TV buffers + field_fft + residual (LSMR step)
-        QsmAlgorithm::Rts => 160 * n,
-        // MEDI: magnitude + edge weights + CG buffers
-        QsmAlgorithm::Medi => 180 * n,
-        // TFI: preconditioned total-field CG, similar footprint to MEDI
-        QsmAlgorithm::Tfi => 180 * n,
-        QsmAlgorithm::Tgv => unreachable!("TGV handled separately"),
-        QsmAlgorithm::Qsmart => unreachable!("QSMART handled separately"),
-        // NDI: gradient-descent with dipole kernel + a few field buffers
-        QsmAlgorithm::Ndi => 120 * n,
-        // FANSI nlTV / nlTGV: ADMM with gradient + consistency buffers
-        QsmAlgorithm::Fansi => 140 * n,
-        QsmAlgorithm::FansiTgv => 140 * n,
-        // L1-QSM: ADMM with extra L1 proximal buffer
-        QsmAlgorithm::L1qsm => 140 * n,
-        // WH-QSM: ADMM with additional harmonic-field buffers
-        QsmAlgorithm::Whqsm => 140 * n,
-        // HD-QSM: two-stage L1->L2, closed-form + ADMM buffers
-        QsmAlgorithm::Hdqsm => 120 * n,
-        // AMP-PE: GAMP over complex wavelet coefficients + padded FFT workspace
-        QsmAlgorithm::AmpPe => 260 * n,
-        // Deep-learning inversions: ONNX U-Net activations dominate. QSMnet/QSMnet+ are the
-        // heaviest (deeper 3D U-Net, /16 padding); xQSM/AutoQSM are lighter patch/octave nets.
-        // `dl_voxels` == `n` unless tiling is enabled (then it's one patch); autoqsm/qsmgan patch
-        // natively (unaffected by the tiling flag) and iqsm/iqsm+ take a separate phase path.
-        QsmAlgorithm::Qsmnet | QsmAlgorithm::QsmnetPlus => 200 * dl_voxels,
-        QsmAlgorithm::Xqsm => 120 * dl_voxels,
-        QsmAlgorithm::Autoqsm => 120 * n,
-        // Other DL nets: unrolled/patch/single-step U-Nets. NeXtQSM (two U-Nets + unroll)
-        // and iQSM/iQSM+ (per-echo passes) are the heaviest; the rest are moderate.
-        QsmAlgorithm::Nextqsm => 220 * dl_voxels,
-        QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus => 200 * n,
-        QsmAlgorithm::Qsmgan => 140 * n,
-        QsmAlgorithm::Ir2qsm | QsmAlgorithm::Lpcnn | QsmAlgorithm::ModlQsm => 140 * dl_voxels,
-    };
-
-    // Peak is the maximum across the three sequential stages
-    [
-        unwrap_mem,
-        bg_carry + bg_temp,
-        inv_carry + inv_temp,
-    ]
-    .into_iter()
-    .max()
-    .unwrap_or(0)
-}
-
-/// Estimate peak temporary memory for phase unwrapping / echo combination.
-fn estimate_unwrap_mem(n: u64, n_echoes: u64, config: &PipelineConfig) -> u64 {
-    let unwrap_per_echo = match config.field_mapping.unwrapping_algorithm {
-        // Laplacian: d2u (8N) + d2u_masked (8N) + FFT complex (16N) + result (8N)
-        UnwrappingAlgorithm::Laplacian => 40 * n,
-        // ROMEO: weights (3N) + phase clone (8N) + mask clone (N)
-        UnwrappingAlgorithm::Romeo => 12 * n,
-    };
-
-    if n_echoes > 1 && config.field_mapping.phase_offset_removal {
-        // Phase offset removal: HIP (16N) + per-echo ROMEO (~12N, sequential) +
-        // smoothing (32N) + corrected_phases (n_echoes*8N) + offsets (16N)
-        (n_echoes * 8 + 56) * n
-    } else if n_echoes > 1 {
-        // Independent unwrap per echo, stored: n_echoes unwrapped volumes
-        // + linear fit outputs (field + offset + residual = 24N)
-        n_echoes * 8 * n + unwrap_per_echo + 32 * n
-    } else {
-        // Single echo: unwrapped (8N) + field_rads (8N) + field_ppm (8N)
-        24 * n + unwrap_per_echo
-    }
+    crate::plan::plan(config, &facts).peak_memory_bytes
 }
 
 /// Format a byte count as a human-readable string (e.g. "3.4 GB").
@@ -384,191 +590,259 @@ pub fn format_bytes(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plan::{plan, plan_for};
 
-    fn default_config() -> PipelineConfig {
-        PipelineConfig::default()
-    }
-
-    #[test]
-    fn test_dl_algorithms_estimate_memory() {
-        for a in [
-            QsmAlgorithm::Xqsm, QsmAlgorithm::Qsmnet, QsmAlgorithm::QsmnetPlus,
-            QsmAlgorithm::Autoqsm, QsmAlgorithm::Qsmgan, QsmAlgorithm::Ir2qsm,
-            QsmAlgorithm::Lpcnn, QsmAlgorithm::ModlQsm, QsmAlgorithm::Nextqsm,
-            QsmAlgorithm::Iqsm, QsmAlgorithm::IqsmPlus,
-        ] {
-            let mut c = default_config();
-            c.inversion.algorithm = a;
-            assert!(estimate_peak_memory_bytes(8, 8, 8, 1, 1, false, &c) > 0, "{:?}", a);
-        }
-        for b in [BfAlgorithm::Bfrnet, BfAlgorithm::Iqfm] {
-            let mut c = default_config();
-            c.bg_removal.algorithm = b;
-            assert!(estimate_peak_memory_bytes(8, 8, 8, 1, 1, false, &c) > 0, "{:?}", b);
+    /// The example data: 184×256×128, 5 echoes, 3 T, with magnitude.
+    pub(crate) fn example() -> ScanFacts {
+        ScanFacts {
+            dims: (184, 256, 128),
+            n_echoes: 5,
+            echo_times: vec![0.005, 0.011, 0.017, 0.023, 0.029],
+            has_magnitude: true,
+            n_coils: 1,
+            real_imaginary: false,
+            field_strength: 3.0,
+            b0_dir: None,
+            mese_echo_times: None,
+            custom_mask: false, custom_dseg: false, custom_qsm: false, custom_r2: false, custom_r2prime: false,
         }
     }
 
-    /// The χ-separation networks count, the browser profile's patches shrink them, and a patch
-    /// bounds SUSEP-Net whatever the volume.
+    fn with(edit: impl FnOnce(&mut PipelineConfig)) -> PipelineConfig {
+        let mut c = PipelineConfig::default();
+        edit(&mut c);
+        c
+    }
+
+    fn step_bytes(p: &Plan, name: &str) -> u64 {
+        p.steps.iter().find(|s| s.name == name).unwrap_or_else(|| panic!("no {name}")).memory_bytes
+    }
+
+    /// Every step that computes has an estimate, the plan's peak is the largest of them, and the
+    /// plan names the step that sets it.
     #[test]
-    fn chi_separation_networks_count_and_a_patch_bounds_them() {
-        let est = |c: &PipelineConfig| estimate_peak_memory_bytes(184, 256, 128, 5, 1, true, c);
-        for alg in [SeparationAlgorithm::ChiSepNet, SeparationAlgorithm::SusepNet] {
-            let mut c = default_config();
-            c.pipeline.do_chi_separation = true;
-            c.separation.algorithm = SeparationAlgorithm::ChiSepIlsqr;
-            let classical = est(&c);
-            c.separation.algorithm = alg;
-            let native = est(&c);
-            assert!(native > classical, "{alg}: {native} vs {classical}");
+    fn every_step_has_an_estimate_and_the_plan_names_the_peak() {
+        let configs = [
+            PipelineConfig::default(),
+            with(|c| { c.masking.two_pass = true; c.inversion.algorithm = QsmAlgorithm::Tgv; }),
+            with(|c| { c.pipeline.do_swi = true; c.pipeline.do_smwi = true; c.pipeline.do_t2starmap = true;
+                       c.pipeline.do_analysis = true; c.motion_correction.enabled = true; }),
+            with(|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::SusepNet; }),
+            with(|c| { c.inversion.algorithm = QsmAlgorithm::Qsmart; c.masking.sections = crate::hd_bet_mask_sections(); }),
+            with(|c| c.inversion.algorithm = QsmAlgorithm::Iqsm),
+        ];
+        for config in &configs {
+            for profile in [MemoryProfile::NATIVE, MemoryProfile::browser(4),
+                            MemoryProfile { store: StoreKind::Memory, ..MemoryProfile::NATIVE }] {
+                let p = plan_for(config, &example(), &profile);
+                for s in &p.steps {
+                    assert!(s.stage == Stage::Load || s.memory_bytes > 0, "{} has no estimate", s.name);
+                }
+                let peak = p.steps.iter().map(|s| s.memory_bytes).max().unwrap();
+                assert_eq!(p.peak_memory_bytes, peak);
+                let named = p.peak_memory_step.as_deref().unwrap();
+                assert_eq!(step_bytes(&p, named), peak);
+                assert_eq!(p.memory_profile, profile);
+            }
+        }
+        // Nothing to compute, no peak step.
+        let p = plan(&with(|c| c.pipeline.do_qsm = false), &example());
+        assert_eq!(p.peak_memory_step, None);
+    }
+
+    /// `qsmxt run`'s estimate is the native plan's peak, from the same per-step figures.
+    #[test]
+    fn the_native_estimate_is_the_native_plans_peak() {
+        for config in [PipelineConfig::default(), with(|c| c.inversion.algorithm = QsmAlgorithm::Tgv)] {
+            let f = example();
+            let p = plan(&config, &f);
+            assert_eq!(estimate_peak_memory_bytes(184, 256, 128, 5, 1, true, &config), p.peak_memory_bytes);
+            assert_eq!(p.memory_profile, MemoryProfile::NATIVE);
+            assert_eq!((p.memory_budget_bytes, &p.over_budget), (None, &None), "no hard limit natively");
+        }
+    }
+
+    /// With the volumes held in the same memory, each step also holds everything read or written
+    /// before it; with them outside, a step holds only its own.
+    #[test]
+    fn a_store_in_memory_adds_what_it_holds_before_each_step() {
+        let config = PipelineConfig::default();
+        let disk = plan_for(&config, &example(), &MemoryProfile::NATIVE);
+        let memory = plan_for(&config, &example(), &MemoryProfile { store: StoreKind::Memory, ..MemoryProfile::NATIVE });
+        let n = 184 * 256 * 128u64;
+        let held: Vec<u64> = disk.steps.iter().zip(&memory.steps).map(|(d, m)| m.memory_bytes - d.memory_bytes).collect();
+        // Before the first step: the 5 echoes' phase and magnitude, in double precision.
+        assert_eq!(held[0], 10 * 8 * n);
+        // Each step adds its outputs: the combined magnitude after `magnitude`, then the mask.
+        let after = |name: &str| held[disk.steps.iter().position(|s| s.name == name).unwrap() + 1];
+        assert_eq!(after("scale_phase") - after("load"), 10 * 8 * n, "every echo's phase and magnitude on the working grid");
+        assert_eq!(after("magnitude") - after("scale_phase"), 8 * n);
+        assert_eq!(after("mask") - after("magnitude"), n, "a mask is a byte a voxel");
+        assert!(held.windows(2).all(|w| w[0] <= w[1]));
+    }
+
+    /// A browser's heap holds the run's weights from the start, so every step carries them.
+    #[test]
+    fn a_browser_heap_holds_the_weights_for_the_whole_run() {
+        let config = with(|c| { c.apply_browser_profile(); c.inversion.algorithm = QsmAlgorithm::Xqsm; });
+        let tkd = with(|c| { c.apply_browser_profile(); c.inversion.algorithm = QsmAlgorithm::Tkd; });
+        let (a, b) = (plan_for(&config, &example(), &MemoryProfile::browser(4)),
+                      plan_for(&tkd, &example(), &MemoryProfile::browser(4)));
+        let xqsm_weights = model_bytes("xqsm");
+        assert!(xqsm_weights > 20_000_000);
+        assert_eq!(step_bytes(&a, "magnitude") - step_bytes(&b, "magnitude"), xqsm_weights);
+        assert_eq!(a.memory_budget_bytes, Some(WASM32_HEAP_BYTES));
+    }
+
+    /// A browser run that would not fit is warned of before it starts: the plan names the step
+    /// and the settings that bring it down, in neutral words, and the run is not refused.
+    #[test]
+    fn a_browser_run_over_the_heap_names_the_step_and_what_reduces_it() {
+        // SUSEP-Net on the whole volume, as natively; everything else as the browser runs it.
+        let config = with(|c| {
             c.apply_browser_profile();
-            assert!(est(&c) < native, "{alg}");
-            // The network's own share at the browser patch, against the measured ~1.4 / ~1.9 GB.
-            let net = chi_separation_network_bytes([184, 256, 128], &c.separation);
-            assert!(net > 1_000_000_000 && net < 2_500_000_000, "{alg}: {net}");
+            c.pipeline.do_chi_separation = true;
+            c.separation.algorithm = SeparationAlgorithm::SusepNet;
+            c.separation.susep_net.patch = None;
+        });
+        let p = plan_for(&config, &example(), &MemoryProfile::browser(4));
+        let over = p.over_budget.as_ref().expect("over the heap");
+        assert_eq!(over.step, "chi_separation");
+        assert_eq!(over.budget_bytes, WASM32_HEAP_BYTES);
+        assert!(over.bytes > WASM32_HEAP_BYTES);
+        assert_eq!(over.settings, ["separation.susep_net.patch", "separation.algorithm"]);
+        let warning = p.check.warnings.last().unwrap();
+        assert!(warning.starts_with("χ-separation is estimated to need ") && warning.ends_with("more than the 4.0 GB a browser run has"),
+                "{warning}");
+        let problem = p.check.problems.last().unwrap();
+        assert_eq!((problem.severity, problem.setting), (crate::requirements::Severity::Warning, None));
+        assert_eq!((&problem.reason, &problem.settings), (warning, &over.settings));
+        assert!(p.check.errors.is_empty(), "a warning, not a refusal: {:?}", p.check.errors);
+        // Natively the same plan has no limit to warn of.
+        let native = plan(&config, &example());
+        assert!(native.over_budget.is_none());
+        assert!(!native.check.warnings.iter().any(|w| w.contains("browser run")), "{:?}", native.check.warnings);
+        // The browser profile's patch fits.
+        let mut fitted = config.clone();
+        fitted.separation.susep_net.patch = None;
+        fitted.apply_browser_profile();
+        assert!(plan_for(&fitted, &example(), &MemoryProfile::browser(4)).over_budget.is_none());
+        // Natively the whole run is planned; R2PRIMEnet at its authors' patch is first to
+        // exceed the heap when nothing is changed for the browser.
+        let unprofiled = with(|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::SusepNet; });
+        assert_eq!(plan_for(&unprofiled, &example(), &MemoryProfile::browser(4)).over_budget.unwrap().step, "r2_r2prime");
+    }
+
+    /// With the browser profile, every step of every option fits the heap on the example data
+    /// (#358): each inversion, background removal, unwrapping and mask network, SynthSeg,
+    /// R2PRIMEnet and both χ-separation networks.
+    #[test]
+    fn the_browser_profile_fits_every_option_in_the_heap() {
+        let mut configs: Vec<(String, PipelineConfig)> = Vec::new();
+        // iQSM, iQSM+ (and iQFM, BFRnet below) run on the whole volume, and FANSI-TGV holds
+        // 5.7 GB on the example: none of them fits the heap.
+        let too_big = [QsmAlgorithm::Iqsm, QsmAlgorithm::IqsmPlus, QsmAlgorithm::FansiTgv];
+        for a in QsmAlgorithm::ALL.into_iter().filter(|a| !too_big.contains(a)) {
+            configs.push((format!("{a}"), with(|c| c.inversion.algorithm = a)));
         }
-        let mut c = SeparationConfig { algorithm: SeparationAlgorithm::SusepNet, ..Default::default() };
-        let whole = chi_separation_network_bytes([184, 256, 128], &c);
-        assert!(whole > 10_000_000_000, "{whole}");
-        c.susep_net.patch = Some([96, 96, 64]);
-        let small = chi_separation_network_bytes([184, 256, 128], &c);
-        let big = chi_separation_network_bytes([368, 512, 256], &c);
-        assert!(big - small < 2_000_000_000, "{small} {big}");
-        assert_eq!(chi_separation_network_bytes([184, 256, 128], &SeparationConfig::default()), 0);
+        for b in [BfAlgorithm::Vsharp, BfAlgorithm::Pdf, BfAlgorithm::Lbv, BfAlgorithm::Ismv, BfAlgorithm::Sharp,
+                  BfAlgorithm::Resharp, BfAlgorithm::Harperella, BfAlgorithm::Iharperella] {
+            configs.push((format!("{b}"), with(|c| c.bg_removal.algorithm = b)));
+        }
+        configs.push(("laplacian".into(), with(|c| c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian)));
+        configs.push(("hd-bet".into(), with(|c| c.masking.sections = crate::hd_bet_mask_sections())));
+        configs.push(("everything".into(), with(|c| {
+            c.pipeline.do_swi = true; c.pipeline.do_smwi = true; c.pipeline.do_t2starmap = true;
+            c.pipeline.do_analysis = true; c.motion_correction.enabled = true; c.masking.two_pass = true;
+        })));
+        for s in [SeparationAlgorithm::ChiSepIlsqr, SeparationAlgorithm::ChiSepNet, SeparationAlgorithm::SusepNet] {
+            configs.push((format!("{s}"), with(|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = s; })));
+        }
+        let mut over = Vec::new();
+        for (name, mut config) in configs {
+            config.apply_browser_profile();
+            // qsmbly runs a plan with networks on its deep-learning bundle, on 4 threads; the
+            // classical bundle on as many as the device has.
+            let threads: &[usize] = if plan(&config, &example()).models.is_empty() { &[1, 4, 16] } else { &[1, 4] };
+            for &threads in threads {
+                let p = plan_for(&config, &example(), &MemoryProfile::browser(threads));
+                if let Some(o) = &p.over_budget {
+                    over.push(format!("{name} on {threads} threads: {} {}", o.step, format_bytes(o.bytes)));
+                }
+            }
+        }
+        assert!(over.is_empty(), "{over:#?}");
     }
 
+    /// The figures follow the settings that set them: patches and tiles bound the networks, more
+    /// echoes and threads take more, and a lighter algorithm takes less.
     #[test]
-    fn synthseg_counts_and_a_window_bounds_it() {
-        let mut c = default_config();
-        let without = estimate_peak_memory_bytes(184, 256, 128, 5, 1, true, &c);
-        c.pipeline.do_segmentation = true;
-        let whole = estimate_peak_memory_bytes(184, 256, 128, 5, 1, true, &c);
-        assert!(whole > 6_000_000_000 && whole > without, "{whole}");
-        c.segmentation.patch = Some(128);
-        let window = estimate_peak_memory_bytes(184, 256, 128, 5, 1, true, &c);
-        assert!(window * 3 < whole * 2, "{window} vs {whole}");
-        // A volume one window covers costs what the whole volume costs, near enough.
-        assert!(synthseg_bytes([100, 100, 100], Some(128)) <= synthseg_bytes([100, 100, 100], None));
+    fn the_settings_move_the_figures_the_right_way() {
+        let f = example();
+        let at = |c: &PipelineConfig, step: &str, threads: usize| step_bytes(&plan_for(c, &f, &MemoryProfile { threads, ..MemoryProfile::NATIVE }), step);
+
+        // A tile bounds a network's activations; tiles run one per thread.
+        let xqsm = with(|c| c.inversion.algorithm = QsmAlgorithm::Xqsm);
+        let tiled = with(|c| { c.inversion.algorithm = QsmAlgorithm::Xqsm; c.inversion.tile_size = Some(56); c.inversion.tile_halo = Some(4); });
+        let small = with(|c| { c.inversion.algorithm = QsmAlgorithm::Xqsm; c.inversion.tile_size = Some(40); c.inversion.tile_halo = Some(4); });
+        assert!(at(&xqsm, "invert", 4) > at(&tiled, "invert", 4));
+        assert!(at(&tiled, "invert", 4) > at(&small, "invert", 4));
+        assert!(at(&tiled, "invert", 4) > at(&tiled, "invert", 1));
+
+        // HD-BET: the whole volume, the native window, the low-memory one.
+        let hd = |patch| with(|c| { c.masking.sections = crate::hd_bet_mask_sections();
+            c.masking.sections[0].generator = MaskOp::HdBet { patch, tta: false, tile_step: hd_bet_default_tile_step() }; });
+        let (whole, native, low) = (at(&hd(None), "mask", 1), at(&hd(Some(MaskOp::hd_bet_default_patch())), "mask", 1),
+                                    at(&hd(Some([128, 128, 64])), "mask", 1));
+        assert!(whole > native && native > low, "{whole} {native} {low}");
+        assert!(at(&with(|c| c.masking.sections = crate::mindgrab_mask_sections()), "mask", 1) > 7_300_000_000);
+
+        // SynthSeg's window, the χ-separation and R2PRIMEnet patches.
+        let seg = |patch| with(|c| { c.pipeline.do_segmentation = true; c.segmentation.patch = patch; });
+        assert!(at(&seg(None), "segmentation", 1) > at(&seg(Some(128)), "segmentation", 1));
+        assert!(at(&seg(Some(128)), "segmentation", 1) > at(&seg(Some(96)), "segmentation", 1));
+        for alg in [SeparationAlgorithm::ChiSepNet, SeparationAlgorithm::SusepNet] {
+            let mut c = with(|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = alg; });
+            let native = at(&c, "chi_separation", 1);
+            c.apply_browser_profile();
+            assert!(at(&c, "chi_separation", 1) < native, "{alg}");
+        }
+        let r2 = |patch| with(|c| { c.pipeline.do_r2primemap = true; c.separation.r2primenet.patch = patch; });
+        assert!(at(&r2([192, 192, 128]), "r2_r2prime", 1) > at(&r2([128, 128, 64]), "r2_r2prime", 1));
+
+        // Unwrapping: more echoes and, natively, more threads; Laplacian below ROMEO.
+        let d = PipelineConfig::default();
+        let mut three = example();
+        three.n_echoes = 3;
+        three.echo_times.truncate(3);
+        let unwrap = |f: &ScanFacts, c: &PipelineConfig, t| step_bytes(&plan_for(c, f, &MemoryProfile { threads: t, ..MemoryProfile::NATIVE }), "unwrap");
+        assert!(unwrap(&f, &d, 1) > unwrap(&three, &d, 1));
+        assert!(unwrap(&f, &d, 8) > unwrap(&f, &d, 1));
+        assert!(unwrap(&f, &with(|c| c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian), 1) < unwrap(&f, &d, 1));
+
+        // Lighter algorithms take less.
+        assert!(at(&with(|c| c.inversion.algorithm = QsmAlgorithm::Tkd), "invert", 1) < at(&with(|c| c.inversion.algorithm = QsmAlgorithm::Rts), "invert", 1));
+        assert!(at(&with(|c| c.bg_removal.algorithm = BfAlgorithm::Lbv), "bgremove", 1) < at(&d, "bgremove", 1));
+
+        // Uncombined coils are combined with every coil held at once.
+        let mut coils = example();
+        coils.n_coils = 32;
+        let scale = |f: &ScanFacts| step_bytes(&plan(&d, f), "scale_phase");
+        assert!(scale(&coils) > scale(&f) + 32 * 5 * 2 * 8 * 184 * 256 * 128);
+
+        // Without magnitude there is no combined magnitude to compute.
+        let mut phase_only = example();
+        phase_only.has_magnitude = false;
+        assert!(!plan(&d, &phase_only).has(Stage::Magnitude));
     }
 
+    /// A small minimal run stays small, and a typical brain lands in the gigabytes.
     #[test]
-    fn test_hd_bet_mask_memory() {
-        use crate::{hd_bet_mask_sections, MaskOp};
-        let mut c = default_config();
-        let base = estimate_peak_memory_bytes(164, 205, 205, 4, 1, true, &c);
-        c.masking.sections = hd_bet_mask_sections();
-        let full = estimate_peak_memory_bytes(164, 205, 205, 4, 1, true, &c);
-        c.masking.sections[0].generator =
-            MaskOp::HdBet { patch: Some(MaskOp::hd_bet_default_patch()), tta: false, tile_step: hd_bet_default_tile_step() };
-        let native = estimate_peak_memory_bytes(164, 205, 205, 4, 1, true, &c);
-        c.masking.sections[0].generator =
-            MaskOp::HdBet { patch: Some([128, 128, 64]), tta: false, tile_step: hd_bet_default_tile_step() };
-        let low = estimate_peak_memory_bytes(164, 205, 205, 4, 1, true, &c);
-        // HD-BET dominates the pipeline peak (measured for masking alone: ~6.4–8.2 GB on the
-        // whole volume, ~3.6 GB with the native patch).
-        assert!(full > 8_000_000_000 && full > native, "full {full}, native {native}");
-        assert!(native > 3_500_000_000 && native > base, "native {native}, base {base}");
-        assert!(low < native, "low-memory patch ({low}) should estimate below native ({native})");
-    }
-
-    #[test]
-    fn test_mindgrab_mask_memory() {
-        use crate::mindgrab_mask_sections;
-        let mut c = default_config();
-        let base = estimate_peak_memory_bytes(256, 288, 48, 2, 1, true, &c);
-        c.masking.sections = mindgrab_mask_sections();
-        let mg = estimate_peak_memory_bytes(256, 288, 48, 2, 1, true, &c);
-        // Measured: 7.3 GB peak for the whole run on this grid, MindGrab being the peak.
-        assert!(mg > 7_300_000_000 && mg > base, "mindgrab {mg}, base {base}");
-    }
-
-    #[test]
-    fn test_more_echoes_more_memory() {
-        let config = default_config();
-        let est_1 = estimate_peak_memory_bytes(128, 128, 128, 1, 1, true, &config);
-        let est_4 = estimate_peak_memory_bytes(128, 128, 128, 4, 1, true, &config);
-        assert!(est_4 > est_1, "4 echoes ({}) should use more memory than 1 ({})", est_4, est_1);
-    }
-
-    #[test]
-    fn test_swi_adds_memory() {
-        let mut config = default_config();
-        config.pipeline.do_swi = false;
-        let est_no_swi = estimate_peak_memory_bytes(128, 128, 128, 1, 1, true, &config);
-        config.pipeline.do_swi = true;
-        let est_swi = estimate_peak_memory_bytes(128, 128, 128, 1, 1, true, &config);
-        assert!(est_swi >= est_no_swi, "SWI ({}) should use at least as much memory as no SWI ({})", est_swi, est_no_swi);
-    }
-
-    #[test]
-    fn test_tkd_less_than_rts() {
-        let mut config = default_config();
-        config.inversion.algorithm = QsmAlgorithm::Tkd;
-        let est_tkd = estimate_peak_memory_bytes(128, 128, 128, 1, 1, true, &config);
-        config.inversion.algorithm = QsmAlgorithm::Rts;
-        let est_rts = estimate_peak_memory_bytes(128, 128, 128, 1, 1, true, &config);
-        assert!(est_tkd < est_rts, "TKD ({}) should use less memory than RTS ({})", est_tkd, est_rts);
-    }
-
-    #[test]
-    fn test_lbv_less_than_vsharp() {
-        let mut config = default_config();
-        config.inversion.algorithm = QsmAlgorithm::Tkd;
-        config.bg_removal.algorithm = BfAlgorithm::Lbv;
-        let est_lbv = estimate_peak_memory_bytes(128, 128, 128, 1, 1, true, &config);
-        config.bg_removal.algorithm = BfAlgorithm::Vsharp;
-        let est_vsharp = estimate_peak_memory_bytes(128, 128, 128, 1, 1, true, &config);
-        assert!(est_lbv < est_vsharp, "LBV ({}) should use less memory than V-SHARP ({})", est_lbv, est_vsharp);
-    }
-
-    #[test]
-    fn test_reasonable_range() {
-        // A 64^3 single-echo minimal pipeline should use less than 1 GB
-        let mut config = default_config();
-        config.inversion.algorithm = QsmAlgorithm::Tkd;
-        config.bg_removal.algorithm = BfAlgorithm::Lbv;
-        config.pipeline.do_swi = false;
-        let est = estimate_peak_memory_bytes(64, 64, 64, 1, 1, false, &config);
-        let one_gb = 1024 * 1024 * 1024;
-        assert!(est < one_gb, "64^3 minimal pipeline should use < 1 GB, got {}", format_bytes(est));
-        assert!(est > 0, "Estimate should be positive");
-    }
-
-    #[test]
-    fn test_uncombined_coils_raise_estimate() {
-        let config = default_config();
-        let one = estimate_peak_memory_bytes(256, 288, 48, 2, 1, true, &config);
-        let many = estimate_peak_memory_bytes(256, 288, 48, 2, 32, true, &config);
-        // 32 coils x 2 echoes x (phase + magnitude) f64 volumes dominate
-        assert!(many > one + 32 * 2 * 2 * 256 * 288 * 48 * 8 / 2, "{} vs {}", many, one);
-    }
-
-    #[test]
-    fn test_typical_brain_estimate() {
-        // 256x256x176, 4 echoes, default GRE (ROMEO + V-SHARP + iLSQR)
-        let config = default_config();
-        let est = estimate_peak_memory_bytes(256, 256, 176, 4, 1, true, &config);
-        let gb = est as f64 / (1024.0 * 1024.0 * 1024.0);
-        // Should be in the range of 2-6 GB for a typical brain
-        assert!(gb > 1.0, "Typical brain should use > 1 GB, got {:.1} GB", gb);
-        assert!(gb < 10.0, "Typical brain should use < 10 GB, got {:.1} GB", gb);
-    }
-
-    #[test]
-    fn test_tgv_path() {
-        let mut config = PipelineConfig::default();
-        config.inversion.algorithm = QsmAlgorithm::Tgv;
-        config.field_mapping.phase_offset_removal = false;
-        let est = estimate_peak_memory_bytes(128, 128, 128, 1, 1, true, &config);
-        assert!(est > 0, "TGV estimate should be positive");
-    }
-
-    #[test]
-    fn test_no_magnitude_less_memory() {
-        let config = default_config();
-        let est_mag = estimate_peak_memory_bytes(128, 128, 128, 4, 1, true, &config);
-        let est_no_mag = estimate_peak_memory_bytes(128, 128, 128, 4, 1, false, &config);
-        assert!(est_no_mag < est_mag, "No magnitude ({}) should use less memory than with magnitude ({})", est_no_mag, est_mag);
+    fn small_runs_stay_small_and_a_typical_brain_takes_gigabytes() {
+        let minimal = with(|c| { c.inversion.algorithm = QsmAlgorithm::Tkd; c.bg_removal.algorithm = BfAlgorithm::Lbv; });
+        assert!(estimate_peak_memory_bytes(64, 64, 64, 1, 1, false, &minimal) < GIB);
+        let typical = estimate_peak_memory_bytes(256, 256, 176, 4, 1, true, &PipelineConfig::default());
+        assert!(typical > GIB && typical < 10 * GIB, "{}", format_bytes(typical));
     }
 
     #[test]

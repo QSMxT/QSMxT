@@ -1,0 +1,5656 @@
+{
+ "scan": {
+  "dims": [
+   184,
+   256,
+   128
+  ],
+  "echo_times": [
+   0.005,
+   0.011,
+   0.017,
+   0.023,
+   0.029
+  ],
+  "field_strength": 3.0
+ },
+ "records": [
+  {
+   "kind": "browser",
+   "name": "defaults",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [],
+   "isolated": null,
+   "heap": [
+    [
+     "load",
+     145883136
+    ],
+    [
+     "scale_phase",
+     145883136
+    ],
+    [
+     "magnitude",
+     584777728
+    ],
+    [
+     "mask",
+     1023672320
+    ],
+    [
+     "unwrap",
+     1671299072
+    ],
+    [
+     "bgremove",
+     1671299072
+    ],
+    [
+     "invert",
+     1671299072
+    ],
+    [
+     "reference",
+     1671299072
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "tkd",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "isolated": "invert",
+   "heap": [
+    [
+     "invert",
+     532217856
+    ],
+    [
+     "reference",
+     532217856
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "tgv",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tgv"
+    ]
+   ],
+   "isolated": "tgv",
+   "heap": [
+    [
+     "tgv",
+     816578560
+    ],
+    [
+     "reference",
+     816578560
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "rts",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "rts"
+    ]
+   ],
+   "isolated": "invert",
+   "heap": [
+    [
+     "invert",
+     1449656320
+    ],
+    [
+     "reference",
+     1449656320
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "base-tkd",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "isolated": null,
+   "heap": [
+    [
+     "load",
+     145883136
+    ],
+    [
+     "scale_phase",
+     145883136
+    ],
+    [
+     "magnitude",
+     584777728
+    ],
+    [
+     "mask",
+     1023672320
+    ],
+    [
+     "unwrap",
+     1873870848
+    ],
+    [
+     "bgremove",
+     1873870848
+    ],
+    [
+     "invert",
+     1873870848
+    ],
+    [
+     "reference",
+     1873870848
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "ilsqr",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "ilsqr"
+    ]
+   ],
+   "isolated": "invert",
+   "heap": [
+    [
+     "invert",
+     1530134528
+    ],
+    [
+     "reference",
+     1530134528
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "medi",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "medi"
+    ]
+   ],
+   "isolated": "invert",
+   "heap": [
+    [
+     "invert",
+     1426784256
+    ],
+    [
+     "reference",
+     1426784256
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "tv",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tv"
+    ]
+   ],
+   "isolated": "invert",
+   "heap": [
+    [
+     "invert",
+     966852608
+    ],
+    [
+     "reference",
+     966852608
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "ndi",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "ndi"
+    ]
+   ],
+   "isolated": "invert",
+   "heap": [
+    [
+     "invert",
+     821952512
+    ],
+    [
+     "reference",
+     821952512
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "bg-pdf",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tkd"
+    ],
+    [
+     "bg_removal.algorithm",
+     "pdf"
+    ]
+   ],
+   "isolated": "bgremove",
+   "heap": [
+    [
+     "bgremove",
+     821952512
+    ],
+    [
+     "invert",
+     821952512
+    ],
+    [
+     "reference",
+     821952512
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "bg-lbv",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tkd"
+    ],
+    [
+     "bg_removal.algorithm",
+     "lbv"
+    ]
+   ],
+   "isolated": "bgremove",
+   "heap": [
+    [
+     "bgremove",
+     290783232
+    ],
+    [
+     "invert",
+     532217856
+    ],
+    [
+     "reference",
+     532217856
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "bg-vsharp",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tkd"
+    ],
+    [
+     "bg_removal.algorithm",
+     "vsharp"
+    ]
+   ],
+   "isolated": "bgremove",
+   "heap": [
+    [
+     "bgremove",
+     821755904
+    ],
+    [
+     "invert",
+     821755904
+    ],
+    [
+     "reference",
+     821755904
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "bg-ismv",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tkd"
+    ],
+    [
+     "bg_removal.algorithm",
+     "ismv"
+    ]
+   ],
+   "isolated": "bgremove",
+   "heap": [
+    [
+     "bgremove",
+     773586944
+    ],
+    [
+     "invert",
+     773586944
+    ],
+    [
+     "reference",
+     773586944
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "bg-harperella",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tkd"
+    ],
+    [
+     "bg_removal.algorithm",
+     "harperella"
+    ]
+   ],
+   "isolated": "bgremove",
+   "heap": [
+    [
+     "bgremove",
+     966852608
+    ],
+    [
+     "invert",
+     966852608
+    ],
+    [
+     "reference",
+     966852608
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "fm-laplacian",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tkd"
+    ],
+    [
+     "bg_removal.algorithm",
+     "vsharp"
+    ],
+    [
+     "field_mapping.unwrapping_algorithm",
+     "laplacian"
+    ]
+   ],
+   "isolated": "unwrap",
+   "heap": [
+    [
+     "unwrap",
+     942866432
+    ],
+    [
+     "bgremove",
+     942866432
+    ],
+    [
+     "invert",
+     942866432
+    ],
+    [
+     "reference",
+     942866432
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "fm-romeo-nopor",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tkd"
+    ],
+    [
+     "bg_removal.algorithm",
+     "vsharp"
+    ],
+    [
+     "field_mapping.unwrapping_algorithm",
+     "romeo"
+    ],
+    [
+     "field_mapping.phase_offset_removal",
+     false
+    ]
+   ],
+   "isolated": "unwrap",
+   "heap": [
+    [
+     "unwrap",
+     991297536
+    ],
+    [
+     "bgremove",
+     991297536
+    ],
+    [
+     "invert",
+     991297536
+    ],
+    [
+     "reference",
+     991297536
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "fm-romeo-por",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tkd"
+    ],
+    [
+     "bg_removal.algorithm",
+     "vsharp"
+    ],
+    [
+     "field_mapping.unwrapping_algorithm",
+     "romeo"
+    ],
+    [
+     "field_mapping.phase_offset_removal",
+     true
+    ]
+   ],
+   "isolated": "unwrap",
+   "heap": [
+    [
+     "unwrap",
+     1859059712
+    ],
+    [
+     "bgremove",
+     1859059712
+    ],
+    [
+     "invert",
+     1859059712
+    ],
+    [
+     "reference",
+     1859059712
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "t2star",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tkd"
+    ],
+    [
+     "bg_removal.algorithm",
+     "vsharp"
+    ],
+    [
+     "field_mapping.unwrapping_algorithm",
+     "romeo"
+    ],
+    [
+     "field_mapping.phase_offset_removal",
+     true
+    ],
+    [
+     "pipeline.do_t2starmap",
+     true
+    ],
+    [
+     "pipeline.do_r2starmap",
+     true
+    ]
+   ],
+   "isolated": "t2star_r2star",
+   "heap": [
+    [
+     "t2star_r2star",
+     435421184
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "swi",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tkd"
+    ],
+    [
+     "bg_removal.algorithm",
+     "vsharp"
+    ],
+    [
+     "field_mapping.unwrapping_algorithm",
+     "romeo"
+    ],
+    [
+     "field_mapping.phase_offset_removal",
+     true
+    ],
+    [
+     "pipeline.do_t2starmap",
+     true
+    ],
+    [
+     "pipeline.do_r2starmap",
+     true
+    ],
+    [
+     "pipeline.do_swi",
+     true
+    ]
+   ],
+   "isolated": "swi",
+   "heap": [
+    [
+     "swi",
+     947060736
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "motion",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tkd"
+    ],
+    [
+     "bg_removal.algorithm",
+     "vsharp"
+    ],
+    [
+     "field_mapping.unwrapping_algorithm",
+     "romeo"
+    ],
+    [
+     "field_mapping.phase_offset_removal",
+     true
+    ],
+    [
+     "pipeline.do_t2starmap",
+     true
+    ],
+    [
+     "pipeline.do_r2starmap",
+     true
+    ],
+    [
+     "pipeline.do_swi",
+     true
+    ],
+    [
+     "motion_correction.enabled",
+     true
+    ]
+   ],
+   "isolated": "motion",
+   "heap": [
+    [
+     "load",
+     145883136
+    ],
+    [
+     "scale_phase",
+     145883136
+    ],
+    [
+     "magnitude",
+     584777728
+    ],
+    [
+     "mask",
+     1023672320
+    ],
+    [
+     "motion",
+     1265172480
+    ],
+    [
+     "swi",
+     1265172480
+    ],
+    [
+     "t2star_r2star",
+     1265172480
+    ],
+    [
+     "unwrap",
+     1591934976
+    ],
+    [
+     "bgremove",
+     1591934976
+    ],
+    [
+     "invert",
+     1591934976
+    ],
+    [
+     "reference",
+     1591934976
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "twopass",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tkd"
+    ],
+    [
+     "bg_removal.algorithm",
+     "vsharp"
+    ],
+    [
+     "field_mapping.unwrapping_algorithm",
+     "romeo"
+    ],
+    [
+     "field_mapping.phase_offset_removal",
+     true
+    ],
+    [
+     "pipeline.do_t2starmap",
+     true
+    ],
+    [
+     "pipeline.do_r2starmap",
+     true
+    ],
+    [
+     "pipeline.do_swi",
+     true
+    ],
+    [
+     "motion_correction.enabled",
+     false
+    ],
+    [
+     "masking.two_pass",
+     true
+    ]
+   ],
+   "isolated": "mask-reliable",
+   "heap": [
+    [
+     "load",
+     145883136
+    ],
+    [
+     "scale_phase",
+     145883136
+    ],
+    [
+     "magnitude",
+     584777728
+    ],
+    [
+     "mask",
+     1023672320
+    ],
+    [
+     "swi",
+     1023672320
+    ],
+    [
+     "t2star_r2star",
+     1023672320
+    ],
+    [
+     "unwrap",
+     1847918592
+    ],
+    [
+     "bgremove",
+     1847918592
+    ],
+    [
+     "invert",
+     1847918592
+    ],
+    [
+     "mask-reliable",
+     1847918592
+    ],
+    [
+     "bgremove-reliable",
+     1847918592
+    ],
+    [
+     "invert-reliable",
+     1847918592
+    ],
+    [
+     "twopass",
+     1847918592
+    ],
+    [
+     "reference-singlepass",
+     1847918592
+    ],
+    [
+     "reference",
+     1847918592
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "base-tkd",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "isolated": null,
+   "heap": [
+    [
+     "load",
+     145883136
+    ],
+    [
+     "scale_phase",
+     145883136
+    ],
+    [
+     "magnitude",
+     584777728
+    ],
+    [
+     "mask",
+     1023672320
+    ],
+    [
+     "unwrap",
+     1550057472
+    ],
+    [
+     "bgremove",
+     1550057472
+    ],
+    [
+     "invert",
+     1550057472
+    ],
+    [
+     "reference",
+     1550057472
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "xqsm",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "xqsm"
+    ]
+   ],
+   "isolated": "invert",
+   "heap": [
+    [
+     "invert",
+     1356136448
+    ],
+    [
+     "reference",
+     1356136448
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "qsmnet",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "qsmnet"
+    ]
+   ],
+   "isolated": "invert",
+   "heap": [
+    [
+     "invert",
+     2362769408
+    ],
+    [
+     "reference",
+     2362769408
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "nextqsm",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "nextqsm"
+    ]
+   ],
+   "isolated": "invert",
+   "heap": [
+    [
+     "invert",
+     2539520000
+    ],
+    [
+     "reference",
+     2539520000
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "base-tkd",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "isolated": null,
+   "heap": [
+    [
+     "load",
+     145883136
+    ],
+    [
+     "scale_phase",
+     145883136
+    ],
+    [
+     "magnitude",
+     584777728
+    ],
+    [
+     "mask",
+     1023672320
+    ],
+    [
+     "unwrap",
+     1703018496
+    ],
+    [
+     "bgremove",
+     1703018496
+    ],
+    [
+     "invert",
+     1703018496
+    ],
+    [
+     "reference",
+     1703018496
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "lpcnn",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "lpcnn"
+    ]
+   ],
+   "isolated": "invert",
+   "heap": [
+    [
+     "invert",
+     1344012288
+    ],
+    [
+     "reference",
+     1344012288
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "autoqsm",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "autoqsm"
+    ]
+   ],
+   "isolated": "invert",
+   "heap": [
+    [
+     "invert",
+     700448768
+    ],
+    [
+     "reference",
+     700448768
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "hdbet",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tkd"
+    ],
+    [
+     "masking.sections",
+     [
+      {
+       "input": "magnitude",
+       "generator": {
+        "op": "hd-bet",
+        "patch": [
+         128,
+         128,
+         64
+        ],
+        "tta": false,
+        "tile_step": 0.5
+       },
+       "refinements": []
+      }
+     ]
+    ]
+   ],
+   "isolated": "mask",
+   "heap": [
+    [
+     "mask",
+     2092695552
+    ],
+    [
+     "unwrap",
+     2092695552
+    ],
+    [
+     "bgremove",
+     2092695552
+    ],
+    [
+     "invert",
+     2092695552
+    ],
+    [
+     "reference",
+     2092695552
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "synthseg",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tkd"
+    ],
+    [
+     "masking.sections",
+     [
+      {
+       "input": "magnitude",
+       "generator": {
+        "op": "hd-bet",
+        "patch": [
+         128,
+         128,
+         64
+        ],
+        "tta": false,
+        "tile_step": 0.5
+       },
+       "refinements": []
+      }
+     ]
+    ],
+    [
+     "pipeline.do_segmentation",
+     true
+    ]
+   ],
+   "isolated": "segmentation",
+   "heap": [
+    [
+     "segmentation",
+     2559901696
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "qsmart",
+   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
+   "threads": 16,
+   "settings": [
+    [
+     "masking.sections",
+     [
+      {
+       "input": "magnitude",
+       "generator": {
+        "op": "hd-bet",
+        "patch": [
+         128,
+         128,
+         64
+        ],
+        "tta": false,
+        "tile_step": 0.5
+       },
+       "refinements": []
+      }
+     ]
+    ],
+    [
+     "pipeline.do_segmentation",
+     false
+    ],
+    [
+     "inversion.algorithm",
+     "qsmart"
+    ]
+   ],
+   "isolated": "qsmart",
+   "heap": [
+    [
+     "qsmart",
+     1802502144
+    ],
+    [
+     "reference",
+     1802502144
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "r2primenet",
+   "source": "qsmbly U8 branch (next-swi-relax..next-chisep), headless Chrome, example data",
+   "threads": 4,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tkd"
+    ],
+    [
+     "pipeline.do_r2primemap",
+     true
+    ]
+   ],
+   "isolated": null,
+   "heap": [
+    [
+     "load",
+     259522560
+    ],
+    [
+     "magnitude",
+     650117120
+    ],
+    [
+     "mask",
+     1089011712
+    ],
+    [
+     "t2star_r2star",
+     1089011712
+    ],
+    [
+     "r2_r2prime",
+     1643118592
+    ],
+    [
+     "unwrap",
+     1736900608
+    ],
+    [
+     "bgremove",
+     1736900608
+    ],
+    [
+     "invert",
+     1736900608
+    ],
+    [
+     "reference",
+     1736900608
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "chi-sepnet",
+   "source": "qsmbly U8 branch (next-swi-relax..next-chisep), headless Chrome, example data",
+   "threads": 4,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tkd"
+    ],
+    [
+     "pipeline.do_chi_separation",
+     true
+    ],
+    [
+     "separation.algorithm",
+     "chi-sepnet"
+    ]
+   ],
+   "isolated": null,
+   "heap": [
+    [
+     "load",
+     301596672
+    ],
+    [
+     "magnitude",
+     740491264
+    ],
+    [
+     "mask",
+     1179385856
+    ],
+    [
+     "t2star_r2star",
+     1179385856
+    ],
+    [
+     "r2_r2prime",
+     1733492736
+    ],
+    [
+     "unwrap",
+     1781792768
+    ],
+    [
+     "bgremove",
+     1781792768
+    ],
+    [
+     "invert",
+     1781792768
+    ],
+    [
+     "reference",
+     1781792768
+    ],
+    [
+     "chi_separation",
+     2335899648
+    ]
+   ]
+  },
+  {
+   "kind": "browser",
+   "name": "susep-net",
+   "source": "qsmbly U8 branch (next-swi-relax..next-chisep), headless Chrome, example data",
+   "threads": 4,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tkd"
+    ],
+    [
+     "pipeline.do_chi_separation",
+     true
+    ],
+    [
+     "separation.algorithm",
+     "susep-net"
+    ]
+   ],
+   "isolated": null,
+   "heap": [
+    [
+     "load",
+     417005568
+    ],
+    [
+     "magnitude",
+     855900160
+    ],
+    [
+     "mask",
+     1294794752
+    ],
+    [
+     "t2star_r2star",
+     1294794752
+    ],
+    [
+     "r2_r2prime",
+     1848901632
+    ],
+    [
+     "unwrap",
+     1960116224
+    ],
+    [
+     "bgremove",
+     1960116224
+    ],
+    [
+     "invert",
+     1960116224
+    ],
+    [
+     "reference",
+     1960116224
+    ],
+    [
+     "chi_separation",
+     3085565952
+    ]
+   ]
+  },
+  {
+   "kind": "harness",
+   "name": "chi_sepnet_authors_patch",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "pipeline.do_chi_separation",
+     true
+    ],
+    [
+     "separation.algorithm",
+     "chi-sepnet"
+    ],
+    [
+     "separation.chi_sepnet.patch",
+     [
+      192,
+      192,
+      128
+     ]
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "step": "chi_separation",
+   "out_of_memory": true
+  },
+  {
+   "kind": "harness",
+   "name": "bfrnet",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "bfrnet"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "step": "bgremove",
+   "out_of_memory": true
+  },
+  {
+   "kind": "harness",
+   "name": "hd_bet_whole_volume",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "masking.sections",
+     [
+      {
+       "input": "magnitude",
+       "generator": {
+        "op": "hd-bet",
+        "tta": false,
+        "tile_step": 0.5
+       },
+       "refinements": []
+      }
+     ]
+    ]
+   ],
+   "step": "mask",
+   "out_of_memory": true
+  },
+  {
+   "kind": "harness",
+   "name": "iqsm",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "iqsm"
+    ]
+   ],
+   "step": "invert",
+   "heap": 4262000000
+  },
+  {
+   "kind": "harness",
+   "name": "iqfm",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "iqfm"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "step": "bgremove",
+   "heap": 4262000000
+  },
+  {
+   "kind": "harness",
+   "name": "iqsm_plus",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "iqsm-plus"
+    ]
+   ],
+   "step": "invert",
+   "out_of_memory": true
+  },
+  {
+   "kind": "harness",
+   "name": "hd_bet_low_memory",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "masking.sections",
+     [
+      {
+       "input": "magnitude",
+       "generator": {
+        "op": "hd-bet",
+        "patch": [
+         128,
+         128,
+         64
+        ],
+        "tta": false,
+        "tile_step": 0.5
+       },
+       "refinements": []
+      }
+     ]
+    ]
+   ],
+   "step": "mask",
+   "heap": 1972000000
+  },
+  {
+   "kind": "harness",
+   "name": "ir2qsm_whole_volume",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "ir2qsm"
+    ],
+    [
+     "inversion.tile_size",
+     null
+    ]
+   ],
+   "step": "invert",
+   "out_of_memory": true
+  },
+  {
+   "kind": "harness",
+   "name": "ir2qsm_tiled",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "ir2qsm"
+    ],
+    [
+     "inversion.tile_size",
+     56
+    ],
+    [
+     "inversion.tile_halo",
+     4
+    ]
+   ],
+   "step": "invert",
+   "heap": 455000000
+  },
+  {
+   "kind": "harness",
+   "name": "modl_qsm_whole_volume",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "modl-qsm"
+    ],
+    [
+     "inversion.tile_size",
+     null
+    ]
+   ],
+   "step": "invert",
+   "out_of_memory": true
+  },
+  {
+   "kind": "harness",
+   "name": "nextqsm_tiled",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "nextqsm"
+    ],
+    [
+     "inversion.tile_size",
+     56
+    ],
+    [
+     "inversion.tile_halo",
+     4
+    ]
+   ],
+   "step": "invert",
+   "heap": 807000000
+  },
+  {
+   "kind": "harness",
+   "name": "lpcnn_whole_volume",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "lpcnn"
+    ],
+    [
+     "inversion.tile_size",
+     null
+    ]
+   ],
+   "step": "invert",
+   "out_of_memory": true
+  },
+  {
+   "kind": "harness",
+   "name": "nextqsm_whole_volume",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "nextqsm"
+    ],
+    [
+     "inversion.tile_size",
+     null
+    ]
+   ],
+   "step": "invert",
+   "out_of_memory": true
+  },
+  {
+   "kind": "harness",
+   "name": "qsmnet_plus_whole_volume",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "qsmnet-plus"
+    ],
+    [
+     "inversion.tile_size",
+     null
+    ]
+   ],
+   "step": "invert",
+   "out_of_memory": true
+  },
+  {
+   "kind": "harness",
+   "name": "lpcnn_tiled",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "lpcnn"
+    ],
+    [
+     "inversion.tile_size",
+     56
+    ],
+    [
+     "inversion.tile_halo",
+     4
+    ]
+   ],
+   "step": "invert",
+   "heap": 332000000
+  },
+  {
+   "kind": "harness",
+   "name": "qsmnet_whole_volume",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "qsmnet"
+    ],
+    [
+     "inversion.tile_size",
+     null
+    ]
+   ],
+   "step": "invert",
+   "out_of_memory": true
+  },
+  {
+   "kind": "harness",
+   "name": "r2primenet_authors_patch",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "pipeline.do_r2primemap",
+     true
+    ],
+    [
+     "separation.r2primenet.patch",
+     [
+      192,
+      192,
+      128
+     ]
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "step": "r2_r2prime",
+   "out_of_memory": true
+  },
+  {
+   "kind": "harness",
+   "name": "modl_qsm_tiled",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "modl-qsm"
+    ],
+    [
+     "inversion.tile_size",
+     56
+    ],
+    [
+     "inversion.tile_halo",
+     4
+    ]
+   ],
+   "step": "invert",
+   "heap": 310000000
+  },
+  {
+   "kind": "harness",
+   "name": "susep_net_whole_volume",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "pipeline.do_chi_separation",
+     true
+    ],
+    [
+     "separation.algorithm",
+     "susep-net"
+    ],
+    [
+     "separation.susep_net.patch",
+     null
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "step": "chi_separation",
+   "out_of_memory": true
+  },
+  {
+   "kind": "harness",
+   "name": "qsmnet_plus_tiled",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "qsmnet-plus"
+    ],
+    [
+     "inversion.tile_size",
+     56
+    ],
+    [
+     "inversion.tile_halo",
+     4
+    ]
+   ],
+   "step": "invert",
+   "heap": 1661000000
+  },
+  {
+   "kind": "harness",
+   "name": "xqsm_tiled",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "xqsm"
+    ],
+    [
+     "inversion.tile_size",
+     56
+    ],
+    [
+     "inversion.tile_halo",
+     4
+    ]
+   ],
+   "step": "invert",
+   "heap": 547000000
+  },
+  {
+   "kind": "harness",
+   "name": "r2primenet_wasm_patch",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "pipeline.do_r2primemap",
+     true
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "step": "r2_r2prime",
+   "heap": 1650000000
+  },
+  {
+   "kind": "harness",
+   "name": "mindgrab",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "masking.sections",
+     [
+      {
+       "input": "magnitude",
+       "generator": {
+        "op": "mindgrab"
+       },
+       "refinements": []
+      }
+     ]
+    ]
+   ],
+   "step": "mask",
+   "out_of_memory": true
+  },
+  {
+   "kind": "harness",
+   "name": "qsmnet_tiled",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "qsmnet"
+    ],
+    [
+     "inversion.tile_size",
+     56
+    ],
+    [
+     "inversion.tile_halo",
+     4
+    ]
+   ],
+   "step": "invert",
+   "heap": 1661000000
+  },
+  {
+   "kind": "harness",
+   "name": "qsmgan",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "qsmgan"
+    ]
+   ],
+   "step": "invert",
+   "heap": 299000000
+  },
+  {
+   "kind": "harness",
+   "name": "xqsm_whole_volume",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "xqsm"
+    ],
+    [
+     "inversion.tile_size",
+     null
+    ]
+   ],
+   "step": "invert",
+   "out_of_memory": true
+  },
+  {
+   "kind": "harness",
+   "name": "synthseg_whole_volume",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "pipeline.do_segmentation",
+     true
+    ],
+    [
+     "segmentation.patch",
+     null
+    ]
+   ],
+   "step": "segmentation",
+   "out_of_memory": true
+  },
+  {
+   "kind": "harness",
+   "name": "autoqsm",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "autoqsm"
+    ]
+   ],
+   "step": "invert",
+   "heap": 565000000
+  },
+  {
+   "kind": "harness",
+   "name": "synthseg_low_memory",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "pipeline.do_segmentation",
+     true
+    ],
+    [
+     "segmentation.patch",
+     96
+    ]
+   ],
+   "step": "segmentation",
+   "heap": 2418000000
+  },
+  {
+   "kind": "native",
+   "name": "bg-harperella-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 1,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "harperella"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1391536490
+    ],
+    [
+     "bgremove",
+     838074410
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "bg-harperella-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "harperella"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1865311978
+    ],
+    [
+     "bgremove",
+     838074410
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "bg-iharperella-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 1,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "iharperella"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1391536490
+    ],
+    [
+     "bgremove",
+     934543402
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "bg-iharperella-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "iharperella"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2371212778
+    ],
+    [
+     "bgremove",
+     934543402
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "bg-ismv-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 1,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "ismv"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1391536490
+    ],
+    [
+     "bgremove",
+     687444218
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "bg-ismv-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "ismv"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2308384234
+    ],
+    [
+     "bgremove",
+     687931642
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "bg-lbv-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 1,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "lbv"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1391536490
+    ],
+    [
+     "bgremove",
+     223084586
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "bg-lbv-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "lbv"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2445218026
+    ],
+    [
+     "bgremove",
+     223084586
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "bg-pdf-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 1,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "pdf"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1391536490
+    ],
+    [
+     "bgremove",
+     687341610
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "bg-pdf-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "pdf"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2542401514
+    ],
+    [
+     "bgremove",
+     687341610
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "bg-resharp-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 1,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "resharp"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1391536490
+    ],
+    [
+     "bgremove",
+     741605418
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "bg-resharp-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "resharp"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2139388138
+    ],
+    [
+     "bgremove",
+     741605418
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "bg-sharp-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 1,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "sharp"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1391536490
+    ],
+    [
+     "bgremove",
+     355729450
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "bg-sharp-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "sharp"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2494751722
+    ],
+    [
+     "bgremove",
+     355729450
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "chisep-ilsqr-e3-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 1,
+   "echoes": 3,
+   "browser_profile": true,
+   "settings": [
+    [
+     "pipeline.do_r2map",
+     true
+    ],
+    [
+     "pipeline.do_chi_separation",
+     true
+    ],
+    [
+     "separation.algorithm",
+     "chi-sep-ilsqr"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234695
+    ],
+    [
+     "magnitude",
+     452198614
+    ],
+    [
+     "mask",
+     684982888
+    ],
+    [
+     "t2star_r2star",
+     295436297
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "chisep-ilsqr-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 1,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "pipeline.do_r2map",
+     true
+    ],
+    [
+     "pipeline.do_chi_separation",
+     true
+    ],
+    [
+     "separation.algorithm",
+     "chi-sep-ilsqr"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "t2star_r2star",
+     391905289
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "chisep-ilsqr-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "pipeline.do_r2map",
+     true
+    ],
+    [
+     "pipeline.do_chi_separation",
+     true
+    ],
+    [
+     "separation.algorithm",
+     "chi-sep-ilsqr"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "t2star_r2star",
+     391905289
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "defaults-e1-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 1,
+   "echoes": 1,
+   "browser_profile": true,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234599
+    ],
+    [
+     "magnitude",
+     347340934
+    ],
+    [
+     "mask",
+     395575736
+    ],
+    [
+     "unwrap",
+     510510290
+    ],
+    [
+     "bgremove",
+     663327162
+    ],
+    [
+     "invert",
+     446169062
+    ],
+    [
+     "reference",
+     108534238
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "defaults-e3-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 1,
+   "echoes": 3,
+   "browser_profile": true,
+   "settings": [],
+   "need": [
+    [
+     "scale_phase",
+     48234695
+    ],
+    [
+     "magnitude",
+     452198614
+    ],
+    [
+     "mask",
+     684982888
+    ],
+    [
+     "unwrap",
+     984693346
+    ],
+    [
+     "bgremove",
+     663327178
+    ],
+    [
+     "invert",
+     1460549270
+    ],
+    [
+     "reference",
+     108535151
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "defaults-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 1,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1391536490
+    ],
+    [
+     "bgremove",
+     663327194
+    ],
+    [
+     "invert",
+     1460549286
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "defaults-t16",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 16,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2330803306
+    ],
+    [
+     "bgremove",
+     664371674
+    ],
+    [
+     "invert",
+     1461528486
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "defaults-t4",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 4,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1945575274
+    ],
+    [
+     "bgremove",
+     663536090
+    ],
+    [
+     "invert",
+     1460745126
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "defaults-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2508732394
+    ],
+    [
+     "bgremove",
+     663814618
+    ],
+    [
+     "invert",
+     1461006246
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "fm-laplacian-e3-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 1,
+   "echoes": 3,
+   "browser_profile": true,
+   "settings": [
+    [
+     "field_mapping.unwrapping_algorithm",
+     "laplacian"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234695
+    ],
+    [
+     "magnitude",
+     452198614
+    ],
+    [
+     "mask",
+     684982888
+    ],
+    [
+     "unwrap",
+     584863047
+    ],
+    [
+     "bgremove",
+     663327178
+    ],
+    [
+     "invert",
+     446169078
+    ],
+    [
+     "reference",
+     108534096
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "fm-laplacian-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 1,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "field_mapping.unwrapping_algorithm",
+     "laplacian"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     874270375
+    ],
+    [
+     "bgremove",
+     663327194
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535000
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "fm-laplacian-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "field_mapping.unwrapping_algorithm",
+     "laplacian"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     874270375
+    ],
+    [
+     "bgremove",
+     663814618
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535000
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "fm-romeo-nopor-e3-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 1,
+   "echoes": 3,
+   "browser_profile": true,
+   "settings": [
+    [
+     "field_mapping.phase_offset_removal",
+     false
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234695
+    ],
+    [
+     "magnitude",
+     452198614
+    ],
+    [
+     "mask",
+     684982888
+    ],
+    [
+     "unwrap",
+     792021930
+    ],
+    [
+     "bgremove",
+     663327178
+    ],
+    [
+     "invert",
+     446169078
+    ],
+    [
+     "reference",
+     108535022
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "fm-romeo-nopor-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 1,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "field_mapping.phase_offset_removal",
+     false
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1090853002
+    ],
+    [
+     "bgremove",
+     663327194
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535638
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "fm-romeo-nopor-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "field_mapping.phase_offset_removal",
+     false
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1090853002
+    ],
+    [
+     "bgremove",
+     663814618
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535638
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inv-amp-pe-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 1,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "amp-pe"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1391536490
+    ],
+    [
+     "bgremove",
+     663327194
+    ],
+    [
+     "invert",
+     2082612182
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inv-amp-pe-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "amp-pe"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2177180458
+    ],
+    [
+     "bgremove",
+     663814618
+    ],
+    [
+     "invert",
+     2082620966
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inv-fansi-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "fansi"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2319464362
+    ],
+    [
+     "bgremove",
+     663814618
+    ],
+    [
+     "invert",
+     1797325014
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inv-fansi-tgv-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "fansi-tgv"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2386692202
+    ],
+    [
+     "bgremove",
+     663814618
+    ],
+    [
+     "invert",
+     5656084694
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inv-hdqsm-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "hdqsm"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2334562474
+    ],
+    [
+     "bgremove",
+     663814618
+    ],
+    [
+     "invert",
+     1749090518
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inv-heidi-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "heidi"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2208116842
+    ],
+    [
+     "bgremove",
+     663814618
+    ],
+    [
+     "invert",
+     1172376454
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inv-l1qsm-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "l1qsm"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2478798826
+    ],
+    [
+     "bgremove",
+     663814618
+    ],
+    [
+     "invert",
+     2230878422
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inv-lsqr-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "lsqr"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2263960298
+    ],
+    [
+     "bgremove",
+     663814618
+    ],
+    [
+     "invert",
+     884538006
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inv-medi-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "medi"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2385255082
+    ],
+    [
+     "invert",
+     1320436456
+    ],
+    [
+     "reference",
+     108535671
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inv-ndi-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "ndi"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2439703402
+    ],
+    [
+     "bgremove",
+     663814618
+    ],
+    [
+     "invert",
+     687931606
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inv-nltv-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "nltv"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2078352106
+    ],
+    [
+     "bgremove",
+     663744986
+    ],
+    [
+     "invert",
+     929104086
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inv-qsmart-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "qsmart"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2507196394
+    ],
+    [
+     "qsmart",
+     1634637696
+    ],
+    [
+     "reference",
+     108536225
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inv-rts-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "rts"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2437294570
+    ],
+    [
+     "bgremove",
+     663814618
+    ],
+    [
+     "invert",
+     1363214550
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inv-tfi-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tfi"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2520000490
+    ],
+    [
+     "invert",
+     1193820904
+    ],
+    [
+     "reference",
+     108535671
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inv-tgv-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tgv"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2367639658
+    ],
+    [
+     "tgv",
+     773213497
+    ],
+    [
+     "reference",
+     108535674
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inv-tikhonov-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tikhonov"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1869794026
+    ],
+    [
+     "bgremove",
+     663814618
+    ],
+    [
+     "invert",
+     494403590
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inv-tkd-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2114905642
+    ],
+    [
+     "bgremove",
+     663744986
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inv-tsvd-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tsvd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1803082090
+    ],
+    [
+     "bgremove",
+     663814618
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inv-tv-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "tv"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2198257130
+    ],
+    [
+     "bgremove",
+     663814618
+    ],
+    [
+     "invert",
+     880869590
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inv-whqsm-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "whqsm"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2401489834
+    ],
+    [
+     "bgremove",
+     663814618
+    ],
+    [
+     "invert",
+     1749090518
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "mask-bet-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 1,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "masking.sections",
+     [
+      {
+       "input": "magnitude",
+       "generator": {
+        "op": "bet",
+        "fractional_intensity": 0.5
+       },
+       "refinements": []
+      }
+     ]
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974389896
+    ],
+    [
+     "unwrap",
+     1363630194
+    ],
+    [
+     "bgremove",
+     663327194
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "mask-mag-otsu-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 1,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "masking.sections",
+     [
+      {
+       "input": "magnitude",
+       "generator": {
+        "op": "threshold",
+        "method": "otsu"
+       },
+       "refinements": []
+      }
+     ]
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974389896
+    ],
+    [
+     "unwrap",
+     1383684210
+    ],
+    [
+     "bgremove",
+     663327194
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "mask-signal-erode-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 1,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "masking.sections",
+     [
+      {
+       "input": "magnitude",
+       "generator": {
+        "op": "threshold",
+        "method": "otsu"
+       },
+       "refinements": [
+        {
+         "op": "signal-erode"
+        }
+       ]
+      }
+     ]
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974389944
+    ],
+    [
+     "unwrap",
+     1328032106
+    ],
+    [
+     "bgremove",
+     663327194
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "motion-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "motion_correction.enabled",
+     true
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "motion",
+     1169690970
+    ],
+    [
+     "unwrap",
+     2368627688
+    ],
+    [
+     "bgremove",
+     663814618
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108546179
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "swi-relax-e3-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 1,
+   "echoes": 3,
+   "browser_profile": true,
+   "settings": [
+    [
+     "pipeline.do_swi",
+     true
+    ],
+    [
+     "pipeline.do_t2starmap",
+     true
+    ],
+    [
+     "pipeline.do_r2starmap",
+     true
+    ],
+    [
+     "pipeline.do_smwi",
+     true
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234695
+    ],
+    [
+     "magnitude",
+     452198614
+    ],
+    [
+     "mask",
+     684982888
+    ],
+    [
+     "swi",
+     594543023
+    ],
+    [
+     "t2star_r2star",
+     295436298
+    ],
+    [
+     "unwrap",
+     984693337
+    ],
+    [
+     "bgremove",
+     663327178
+    ],
+    [
+     "invert",
+     446169078
+    ],
+    [
+     "reference",
+     108536053
+    ],
+    [
+     "smwi",
+     391905275
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "swi-relax-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "pipeline.do_swi",
+     true
+    ],
+    [
+     "pipeline.do_t2starmap",
+     true
+    ],
+    [
+     "pipeline.do_r2starmap",
+     true
+    ],
+    [
+     "pipeline.do_smwi",
+     true
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "swi",
+     880280295
+    ],
+    [
+     "t2star_r2star",
+     391905290
+    ],
+    [
+     "unwrap",
+     2448698401
+    ],
+    [
+     "bgremove",
+     663814618
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108536705
+    ],
+    [
+     "smwi",
+     391905275
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "twopass-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "masking.two_pass",
+     true
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2299360618
+    ],
+    [
+     "bgremove",
+     663814618
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "mask-reliable",
+     974389828
+    ],
+    [
+     "bgremove-reliable",
+     663814620
+    ],
+    [
+     "invert-reliable",
+     446169094
+    ],
+    [
+     "twopass",
+     162791416
+    ],
+    [
+     "reference-singlepass",
+     108536867
+    ],
+    [
+     "reference",
+     114566691
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "dl-bfrnet-whole",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 4,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "bfrnet"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1917029098
+    ],
+    [
+     "bgremove",
+     10908351275
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "dl-chisepnet-128",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 4,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "pipeline.do_chi_separation",
+     true
+    ],
+    [
+     "separation.algorithm",
+     "chi-sepnet"
+    ],
+    [
+     "separation.chi_sepnet.patch",
+     [
+      128,
+      128,
+      64
+     ]
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "t2star_r2star",
+     391905289
+    ],
+    [
+     "r2_r2prime",
+     4360283902
+    ],
+    [
+     "unwrap",
+     2119828964
+    ],
+    [
+     "bgremove",
+     663536090
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108536980
+    ],
+    [
+     "chi_separation",
+     1880798860
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "dl-chisepnet-96",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 4,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "pipeline.do_chi_separation",
+     true
+    ],
+    [
+     "separation.algorithm",
+     "chi-sepnet"
+    ],
+    [
+     "separation.chi_sepnet.patch",
+     [
+      96,
+      96,
+      64
+     ]
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "t2star_r2star",
+     391905289
+    ],
+    [
+     "r2_r2prime",
+     4360283902
+    ],
+    [
+     "unwrap",
+     2171982436
+    ],
+    [
+     "bgremove",
+     663536090
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108536980
+    ],
+    [
+     "chi_separation",
+     1494728591
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "dl-hdbet-128",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 4,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "masking.sections",
+     [
+      {
+       "input": "magnitude",
+       "generator": {
+        "op": "hd-bet",
+        "patch": [
+         128,
+         128,
+         64
+        ]
+       },
+       "refinements": []
+      }
+     ]
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     1736345584
+    ],
+    [
+     "unwrap",
+     2007884842
+    ],
+    [
+     "bgremove",
+     663536090
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "dl-hdbet-96",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 4,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "masking.sections",
+     [
+      {
+       "input": "magnitude",
+       "generator": {
+        "op": "hd-bet",
+        "patch": [
+         96,
+         96,
+         64
+        ]
+       },
+       "refinements": []
+      }
+     ]
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     1347821736
+    ],
+    [
+     "unwrap",
+     1751900778
+    ],
+    [
+     "bgremove",
+     663536090
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "dl-iqsm",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 4,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "iqsm"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "invert",
+     3648739808
+    ],
+    [
+     "reference",
+     108534696
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "dl-lpcnn-56",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 4,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "lpcnn"
+    ],
+    [
+     "inversion.tile_size",
+     56
+    ],
+    [
+     "inversion.tile_halo",
+     4
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2181966442
+    ],
+    [
+     "bgremove",
+     663536090
+    ],
+    [
+     "invert",
+     980517566
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "dl-lpcnn-whole",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 4,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "lpcnn"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2182839274
+    ],
+    [
+     "bgremove",
+     663536090
+    ],
+    [
+     "invert",
+     4533782734
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "dl-qsmnet-40",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 4,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "qsmnet"
+    ],
+    [
+     "inversion.tile_size",
+     40
+    ],
+    [
+     "inversion.tile_halo",
+     4
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2179601002
+    ],
+    [
+     "bgremove",
+     663536090
+    ],
+    [
+     "invert",
+     1769875954
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "dl-qsmnet-56",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 4,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "qsmnet"
+    ],
+    [
+     "inversion.tile_size",
+     56
+    ],
+    [
+     "inversion.tile_halo",
+     4
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2040467050
+    ],
+    [
+     "bgremove",
+     663536090
+    ],
+    [
+     "invert",
+     2111385058
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "dl-r2primenet-128",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 4,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "pipeline.do_r2primemap",
+     true
+    ],
+    [
+     "separation.r2primenet.patch",
+     [
+      128,
+      128,
+      64
+     ]
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "t2star_r2star",
+     391905289
+    ],
+    [
+     "r2_r2prime",
+     1332473643
+    ],
+    [
+     "unwrap",
+     1756718308
+    ],
+    [
+     "bgremove",
+     663536090
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108536857
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "dl-r2primenet-96",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 4,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "pipeline.do_r2primemap",
+     true
+    ],
+    [
+     "separation.r2primenet.patch",
+     [
+      96,
+      96,
+      64
+     ]
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "t2star_r2star",
+     391905289
+    ],
+    [
+     "r2_r2prime",
+     950073390
+    ],
+    [
+     "unwrap",
+     2069588068
+    ],
+    [
+     "bgremove",
+     663536090
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108536857
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "dl-susep-128",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 4,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "pipeline.do_chi_separation",
+     true
+    ],
+    [
+     "separation.algorithm",
+     "susep-net"
+    ],
+    [
+     "separation.susep_net.patch",
+     [
+      128,
+      128,
+      64
+     ]
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "t2star_r2star",
+     391905289
+    ],
+    [
+     "r2_r2prime",
+     4360283902
+    ],
+    [
+     "unwrap",
+     1975642084
+    ],
+    [
+     "bgremove",
+     663536090
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108536979
+    ],
+    [
+     "chi_separation",
+     3429451606
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "dl-susep-96",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 4,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "pipeline.do_chi_separation",
+     true
+    ],
+    [
+     "separation.algorithm",
+     "susep-net"
+    ],
+    [
+     "separation.susep_net.patch",
+     [
+      96,
+      96,
+      64
+     ]
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "t2star_r2star",
+     391905289
+    ],
+    [
+     "r2_r2prime",
+     4360283902
+    ],
+    [
+     "unwrap",
+     1836763876
+    ],
+    [
+     "bgremove",
+     663536090
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108536979
+    ],
+    [
+     "chi_separation",
+     2521641814
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "dl-synthseg-128",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 4,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "pipeline.do_segmentation",
+     true
+    ],
+    [
+     "segmentation.patch",
+     128
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "segmentation",
+     3308000040
+    ],
+    [
+     "unwrap",
+     2025825698
+    ],
+    [
+     "bgremove",
+     663536090
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108537935
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "dl-synthseg-96",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 4,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "pipeline.do_segmentation",
+     true
+    ],
+    [
+     "segmentation.patch",
+     96
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "segmentation",
+     2021406920
+    ],
+    [
+     "unwrap",
+     2015249762
+    ],
+    [
+     "bgremove",
+     663536090
+    ],
+    [
+     "invert",
+     446169094
+    ],
+    [
+     "reference",
+     108537935
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "dl-xqsm-40",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 4,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "xqsm"
+    ],
+    [
+     "inversion.tile_size",
+     40
+    ],
+    [
+     "inversion.tile_halo",
+     4
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2005766890
+    ],
+    [
+     "bgremove",
+     663536090
+    ],
+    [
+     "invert",
+     645845446
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "dl-xqsm-56",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 4,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "xqsm"
+    ],
+    [
+     "inversion.tile_size",
+     56
+    ],
+    [
+     "inversion.tile_halo",
+     4
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2175679978
+    ],
+    [
+     "bgremove",
+     663536090
+    ],
+    [
+     "invert",
+     1064808848
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "dl-xqsm-whole",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "threads": 4,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "xqsm"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1889602282
+    ],
+    [
+     "bgremove",
+     663536090
+    ],
+    [
+     "invert",
+     5802625681
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  }
+ ]
+}
