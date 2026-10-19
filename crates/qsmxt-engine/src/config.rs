@@ -1250,11 +1250,12 @@ pub struct InversionConfig {
     /// Shared by `lsqr` and `heidi` — HEIDI's seed is an LSQR solve.
     pub lsqr: LsqrConfig,
     pub heidi: HeidiConfig,
-    /// Overlap-tiling for deep-learning inversions (bounded memory). `tile_size` = the output core
-    /// per patch (voxels); its presence enables tiling. `tile_halo` = context margin per side
+    /// Overlap-tiling for the deep-learning networks (bounded memory). `tile_size` = the output
+    /// core per patch (voxels); its presence enables tiling. `tile_halo` = context margin per side
     /// (voxels; a default is used when omitted). `None` = whole-volume (the default). Applies to
-    /// the DL nets that route through `run_dipole_inversion`; ignored by classical algorithms and
-    /// the natively-patch-based nets (autoqsm/qsmgan).
+    /// every network [`QsmAlgorithm::tileable`] or [`BfAlgorithm::tileable`] names, including
+    /// BFRnet and iQFM in background removal; ignored by classical algorithms and the
+    /// natively-patch-based nets (autoqsm/qsmgan).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tile_size: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1314,6 +1315,21 @@ impl QsmConfig {
 
 /// The obliquity (degrees) above which `axial_resampling` resamples, unless set.
 pub const DEFAULT_OBLIQUITY_THRESHOLD: f64 = 10.0;
+
+impl PipelineConfig {
+    /// The overlap tiling the deep-learning networks run with, `(core, halo)` in voxels, or
+    /// `None` for whole-volume: `inversion.tile_size`, with the default halo when none is set.
+    pub fn dl_tile(&self) -> Option<(usize, usize)> {
+        self.inversion.tile_size.map(|core| (core, self.inversion.tile_halo.unwrap_or(DEFAULT_TILE_HALO)))
+    }
+
+    /// Whether a network this run uses takes the tiling: a tileable inversion, or a tileable
+    /// background removal (BFRnet, iQFM) in a run that removes the background.
+    pub fn runs_a_tileable_network(&self) -> bool {
+        self.inversion.algorithm.tileable()
+            || (self.bg_removal.algorithm.tileable() && !crate::bridge::skips_bgremove(self))
+    }
+}
 
 impl PipelineConfig {
     pub fn from_toml(s: &str) -> crate::Result<Self> {

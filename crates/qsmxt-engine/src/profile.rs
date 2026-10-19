@@ -1,7 +1,7 @@
 //! The browser profile: QSMxT's defaults, changed only where the browser cannot run them.
 //!
 //! A browser (WASM) run has a 4 GB heap, and several deep-learning steps need more than that at
-//! QSMxT's defaults: whole-volume inversion networks, HD-BET on the whole volume (9-13 GB),
+//! QSMxT's defaults: whole-volume inversion networks, BFRnet, iQFM, iQSM and iQSM+, HD-BET on the whole volume (9-13 GB),
 //! SynthSeg on the whole volume (about 7 GB for a 1 mm whole-head scan), R2PRIMEnet and χ-sepnet
 //! at their authors' patch and SUSEP-Net on the whole volume. The profile replaces those defaults with values that fit,
 //! and writes them into the config, so the TOML, the generated `qsmxt run` command and the
@@ -12,7 +12,8 @@
 use crate::config::{synthseg_low_memory_patch, PipelineConfig};
 use crate::masking::{hd_bet_low_memory_patch, MaskOp, MaskSection};
 
-/// Overlap-tiling core of the deep-learning inversions in the browser, in voxels. With
+/// Overlap-tiling core of the deep-learning networks in the browser (the inversions, iQSM/iQSM+,
+/// BFRnet and iQFM), in voxels. With
 /// [`BROWSER_TILE_HALO`] it makes 64³ patches, inside qsm-core's largest WASM patch
 /// (`qsm_core::inversion::max_wasm_patch_edge`, 131).
 pub const BROWSER_TILE_SIZE: usize = 56;
@@ -48,8 +49,8 @@ impl PipelineConfig {
     /// Replace each of QSMxT's defaults the browser cannot run with the browser's value,
     /// leaving every setting the user changed alone. Idempotent.
     ///
-    /// - The deep-learning inversions are tiled ([`BROWSER_TILE_SIZE`] / [`BROWSER_TILE_HALO`])
-    ///   when tiling is not set. The tile options only reach the run (and the command) for the
+    /// - The deep-learning networks are tiled ([`BROWSER_TILE_SIZE`] / [`BROWSER_TILE_HALO`])
+    ///   when tiling is not set: the inversions, iQSM/iQSM+, BFRnet and iQFM. The tile options only reach the run (and the command) for the
     ///   networks that tile.
     /// - HD-BET steps on the whole volume run as a sliding window with qsm-core's low-memory
     ///   patch (`hd-bet:low-memory`) instead, in every mask section and refinement list.

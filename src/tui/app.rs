@@ -3015,12 +3015,16 @@ impl PipelineFormState {
             _ => {}
         }
 
-        // Deep-learning overlap-tiling (optional). Shown for the tileable DL inversions; leave the
-        // fields blank to run whole-volume. Matched by name so it survives option reordering.
+        // Deep-learning overlap-tiling (optional). Shown for the tileable networks: the inversion,
+        // or BFRnet/iQFM in background removal; leave the fields blank to run whole-volume.
+        // Matched by name so it survives option reordering.
         if matches!(
             QSM_ALGO_OPTIONS.get(self.qsm_algorithm).copied().unwrap_or(""),
-            "xqsm" | "qsmnet" | "qsmnet-plus" | "ir2qsm" | "lpcnn" | "modl-qsm" | "nextqsm"
-        ) {
+            "xqsm" | "qsmnet" | "qsmnet-plus" | "ir2qsm" | "lpcnn" | "modl-qsm" | "nextqsm" | "iqsm"
+                | "iqsm-plus"
+        ) || (matches!(BF_OPTIONS.get(self.bf_algorithm).copied().unwrap_or(""), "bfrnet" | "iqfm")
+            && self.inversion_needs_bg_removal())
+        {
             rows.push(PipelineRow::Toggle { label: "  Tiled Inference", field: "dl_tiling",
                 help: "Run the network on overlapping tiles: bounded memory, approximate. Off = whole volume" });
             if self.dl_tiling {
