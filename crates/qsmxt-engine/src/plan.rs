@@ -524,6 +524,62 @@ pub(crate) mod tests {
         assert!(r2_models(&config, &f).is_empty(), "not run off its training field strength");
     }
 
+    /// A configuration as a front end holds it (only the outputs asked for) is planned as `qsmxt
+    /// run` plans it: the outputs those need are switched on, the plan says so, and it holds the
+    /// configuration it planned. Planning that configuration again plans the same run.
+    #[test]
+    fn the_outputs_an_output_needs_are_planned_and_said() {
+        let step = |p: &Plan, name: &str| p.steps.iter().find(|s| s.name == name).cloned();
+        let planned = |edit: fn(&mut PipelineConfig)| {
+            let mut c = PipelineConfig::default();
+            edit(&mut c);
+            let p = plan(&c, &facts());
+            let again = plan(&p.config, &facts());
+            assert_eq!(again.steps, p.steps, "the plan's own configuration plans the same run");
+            assert_eq!(again.config, p.config);
+            assert!(again.adjustments.is_empty(), "{:?}", again.adjustments);
+            p
+        };
+
+        // R2′ alone: R2* is fitted for it and R2′ is written and returned to the acquired grid.
+        let p = planned(|c| c.pipeline.do_r2primemap = true);
+        assert!(p.has(Stage::Relaxometry), "{:?}", names(&p));
+        assert!(step(&p, "r2_r2prime").unwrap().outputs.contains(&Item::R2prime));
+        assert!(step(&p, "r2_r2prime").unwrap().reads.contains(&Item::R2star));
+        assert!(step(&p, "output_space").unwrap().reads.contains(&Item::R2prime));
+        assert!(p.config.pipeline.do_r2starmap && p.config.pipeline.do_r2map);
+        assert_eq!(p.adjustments.iter().map(|a| a.setting).collect::<Vec<_>>(),
+                   ["pipeline.do_r2starmap", "pipeline.do_r2map"]);
+
+        // The statistics alone: a segmentation to measure them over.
+        let p = planned(|c| c.pipeline.do_analysis = true);
+        assert!(p.has(Stage::Segmentation) && p.has(Stage::Analysis), "{:?}", names(&p));
+        assert_eq!(p.adjustments[0].because, "pipeline.do_analysis");
+
+        // ...and, with QSM off and nothing else to summarise, QSM.
+        let p = planned(|c| { c.pipeline.do_qsm = false; c.pipeline.do_analysis = true; });
+        assert!(p.has(Stage::Inversion(Pass::Main)) && p.has(Stage::Segmentation), "{:?}", names(&p));
+
+        // SMWI with QSM off: the susceptibility map it weights by is reconstructed.
+        let p = planned(|c| { c.pipeline.do_qsm = false; c.pipeline.do_smwi = true; });
+        assert!(p.has(Stage::Inversion(Pass::Main)) && p.has(Stage::Reference) && p.has(Stage::Smwi),
+                "{:?}", names(&p));
+        assert_eq!(p.adjustments[0].setting, "pipeline.do_qsm");
+
+        // χ-separation: the maps its method reads.
+        let p = planned(|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::R2starQsm; });
+        assert!(p.has(Stage::Relaxometry) && !p.has(Stage::R2), "{:?}", names(&p));
+        let p = planned(|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::ChiSepIlsqr; });
+        assert!(p.has(Stage::Relaxometry) && p.has(Stage::R2) && p.has(Stage::ChiSeparation), "{:?}", names(&p));
+        assert!(step(&p, "chi_separation").unwrap().reads.contains(&Item::R2prime));
+
+        // A region reference: the segmentation it is measured on, before the reference.
+        let p = planned(|c| { c.qsm.reference = QsmReference::Region; c.qsm.reference_region = Some("thalamus".into()); });
+        let at = |name: &str| p.steps.iter().position(|s| s.name == name).unwrap();
+        assert!(at("segmentation") < at("reference"), "{:?}", names(&p));
+        assert_eq!(p.adjustments[0].because, "qsm.reference");
+    }
+
     #[test]
     fn nothing_enabled_loads_the_scan_and_stops() {
         let mut config = PipelineConfig::default();

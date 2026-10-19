@@ -184,6 +184,35 @@ mod tests {
         }
     }
 
+    /// The command, the methods text and which settings apply, of a configuration as given, are
+    /// those of its normalised configuration.
+    #[test]
+    fn the_command_methods_and_settings_view_take_the_normalised_configuration() {
+        let facts = crate::schema::ViewFacts::default();
+        let mut cases = Vec::new();
+        for edit in [
+            (|c| c.pipeline.do_r2primemap = true) as fn(&mut PipelineConfig),
+            |c| c.pipeline.do_analysis = true,
+            |c| { c.pipeline.do_qsm = false; c.pipeline.do_smwi = true; },
+            |c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::WaveSep; },
+            |c| { c.qsm.reference = QsmReference::Region; c.qsm.reference_region = Some("thalamus".into()); },
+        ] {
+            let mut c = PipelineConfig::default();
+            edit(&mut c);
+            cases.push(c);
+        }
+        for raw in cases {
+            let n = raw.normalised().0;
+            assert_ne!(n, raw);
+            assert_eq!(crate::generate_command(&raw), crate::generate_command(&n));
+            assert_eq!(crate::generate_methods(&raw), crate::generate_methods(&n));
+            // Which settings apply; which are forced on is said of the configuration as given.
+            let visible = |c: &PipelineConfig| crate::schema::settings_view(c, &facts).into_iter()
+                .map(|v| (v.path, v.visible)).collect::<Vec<_>>();
+            assert_eq!(visible(&raw), visible(&n));
+        }
+    }
+
     #[test]
     fn each_rule_says_what_it_changed_and_why() {
         let because = |c: &PipelineConfig| -> Vec<(&str, &str)> {

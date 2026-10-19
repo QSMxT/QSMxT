@@ -2295,6 +2295,33 @@ pub(crate) mod tests {
         assert!(e[1..].iter().all(|(_, s)| matches!(s, Stale | Skipped)), "{e:?}");
     }
 
+    /// A configuration as a front end holds it, with only the outputs asked for, is dry-run as
+    /// its normalised configuration is (what `qsmxt run` takes): the same steps under the same
+    /// keys, the outputs those need included.
+    #[test]
+    fn a_dry_run_of_a_configuration_as_given_is_that_of_the_normalised_one() {
+        let (facts, store) = phantom();
+        type Edit = fn(&mut PipelineConfig);
+        let cases: [(Edit, &str); 5] = [
+            (|c| c.pipeline.do_r2primemap = true, "t2star_r2star"),
+            (|c| c.pipeline.do_analysis = true, "segmentation"),
+            (|c| { c.pipeline.do_qsm = false; c.pipeline.do_smwi = true; }, "invert"),
+            (|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = crate::enums::SeparationAlgorithm::R2starQsm; },
+             "t2star_r2star"),
+            (|c| { c.qsm.reference = crate::enums::QsmReference::Region; c.qsm.reference_region = Some("thalamus".into()); },
+             "segmentation"),
+        ];
+        for (edit, needed) in cases {
+            let mut raw = config();
+            edit(&mut raw);
+            let normalised = raw.normalised().0;
+            let given = dry_run(&crate::plan::plan(&raw, &facts), &raw, &facts, &store).unwrap();
+            let taken = dry_run(&crate::plan::plan(&normalised, &facts), &normalised, &facts, &store).unwrap();
+            assert_eq!(given, taken);
+            assert!(given.iter().any(|e| e.id == needed && e.state == ExpectedState::WillRun), "{needed}: {given:?}");
+        }
+    }
+
     /// A switch to a deep-learning inversion on axial data: only the inversion and what reads it
     /// are computed (#355). Said before the run, which then fails here for want of weights.
     #[test]
