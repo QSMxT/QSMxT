@@ -3243,6 +3243,8 @@ mod defaults_only_tests {
                 ", with the network applied as a sliding window of 128×128×64-voxel patches."),
             (|c| { c.pipeline.do_segmentation = true; c.segmentation.patch = Some(100); },
                 "structures, with the network applied as a sliding window of half-overlapping 128×128×128-voxel patches, their posteriors Gaussian-weighted."),
+            (|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::ChiSepMedi; c.separation.chi_sep_medi.lambda_para = 1000.0; },
+                "λ (paramagnetic) = 1000"),
             (|c| { c.pipeline.do_chi_separation = true; c.separation.r2star_qsm.r_const_3t = 123.0; },
                 "with relaxometric constant at 3 T = 123."),
             (|c| { c.pipeline.do_r2primemap = true; c.separation.r2prime_strategy = R2PrimeStrategy::R2primenet; c.separation.r2primenet.patch = [160, 160, 128]; },

@@ -1447,6 +1447,16 @@ mod selected_toml_tests {
         assert!(d.radius > 0.0 && d.maxk > 0);
     }
 
+    /// χ-sep MEDI's defaults come from qsm-core rather than a copy here, so the config, schema,
+    /// TUI, command and methods all follow QSM.rs when it retunes them.
+    #[test]
+    fn chi_sep_medi_defaults_are_qsm_cores() {
+        let ours = PipelineConfig::default().separation.chi_sep_medi;
+        let core = qsm_core::separation::ChiSepParams::default();
+        assert_eq!((ours.lambda_para, ours.lambda_dia, ours.lambda_cpl),
+                   (core.lambda_para, core.lambda_dia, core.lambda_cpl));
+    }
+
     /// Configs written before `combine`/`refinements` existed must still load, and keep the
     /// union behaviour they were written with.
     #[test]

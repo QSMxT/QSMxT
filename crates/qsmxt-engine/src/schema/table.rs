@@ -739,7 +739,8 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.sep("chi-sep-medi")).full("Paramagnetic Lambda"),
         d("separation.chi_sep_medi.lambda_dia", Separation, "Lambda dia", "Diamagnetic L1 weight", Float).flag("--chi-sep-medi-lambda-dia").parent("separation.algorithm")
         .when(|x| x.sep("chi-sep-medi")).full("Diamagnetic Lambda"),
-        // QSM.rs separation/chi_sep_medi.rs: sqrt(target/(lambda_cpl dr^2)) is inf at 0 and NaN below.
+        // QSM.rs separation/chi_sep_medi.rs: lambda_cpl weights both data terms; at 0 they drop out
+        // and the solution stays zero, and below 0 the problem is no longer convex.
         d("separation.chi_sep_medi.lambda_cpl", Separation, "Lambda cpl", "Field/R2' coupling weight", Float).above(0.0).flag("--chi-sep-medi-lambda-cpl").parent("separation.algorithm")
         .when(|x| x.sep("chi-sep-medi")).full("Coupling Lambda"),
         d("separation.chi_sep_medi.dr_pos", Separation, "Dr+ (Hz/ppm)", "Paramagnetic relaxivity", Float).units("Hz/ppm").flag("--chi-sep-medi-dr-pos").parent("separation.algorithm")

@@ -89,7 +89,7 @@ pub fn iqfm(
     phases: &[&[f64]], magnitudes: &[&[f64]], mask: &[u8], meta: &RunMetadata,
 ) -> Result<LocalField, EngineError> {
     log::info!("Background removal (iQFM, deep-learning joint unwrap+BFR)");
-    let local_field_ppm = qsm_core::pipeline::run_iqfm(phases, magnitudes, mask, &scan_metadata(meta))
+    let local_field_ppm = qsm_core::pipeline::run_iqfm(phases, magnitudes, mask, &scan_metadata(meta), None)
         .map_err(|e| EngineError::Config(format!("iQFM: {}", e)))?;
     Ok(LocalField { local_field_ppm, mask: mask.to_vec() })
 }
