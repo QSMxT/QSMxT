@@ -45,8 +45,12 @@ pub fn params(config: &PipelineConfig) -> serde_json::Value {
             "max_iter": bg.iharperella.max_iter,
             "tol": bg.iharperella.tol,
         }),
-        // BFRnet / iQFM (deep learning) have no user-tunable parameters; cache key is the weights.
-        BfAlgorithm::Bfrnet | BfAlgorithm::Iqfm => serde_json::json!({}),
+        // BFRnet / iQFM (deep learning) have no network parameters; a tiled run is a different
+        // result from a whole-volume one, so the tiling is in the key.
+        BfAlgorithm::Bfrnet | BfAlgorithm::Iqfm => match config.dl_tile() {
+            Some((core, halo)) => serde_json::json!({ "tile": [core, halo] }),
+            None => serde_json::json!({}),
+        },
     }
 }
 
@@ -87,9 +91,10 @@ pub fn remove_background(
 /// (uniform weights). iQFM keeps the brain edge, so the local field's mask is the brain mask.
 pub fn iqfm(
     phases: &[&[f64]], magnitudes: &[&[f64]], mask: &[u8], meta: &RunMetadata,
+    config: &PipelineConfig,
 ) -> Result<LocalField, EngineError> {
     log::info!("Background removal (iQFM, deep-learning joint unwrap+BFR)");
-    let local_field_ppm = qsm_core::pipeline::run_iqfm(phases, magnitudes, mask, &scan_metadata(meta), None)
+    let local_field_ppm = qsm_core::pipeline::run_iqfm(phases, magnitudes, mask, &scan_metadata(meta), config.dl_tile())
         .map_err(|e| EngineError::Config(format!("iQFM: {}", e)))?;
     Ok(LocalField { local_field_ppm, mask: mask.to_vec() })
 }

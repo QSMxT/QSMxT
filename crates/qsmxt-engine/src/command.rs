@@ -353,6 +353,16 @@ fn command_for(config: &PipelineConfig) -> String {
     // ── QSM inversion ──
     emit_enum(&mut parts, "--qsm-algorithm", &config.inversion.algorithm, &d.inversion.algorithm);
     emit_inversion_params(&mut parts, config, &d, config.inversion.algorithm);
+    // Overlap tiling, for any network that takes it (the inversion, or BFRnet/iQFM in background
+    // removal). Presence of `--tile-size` enables tiling; absence = whole-volume.
+    if config.runs_a_tileable_network() {
+        if let Some(sz) = config.inversion.tile_size {
+            parts.push(format!("--tile-size {}", sz));
+        }
+        if let Some(h) = config.inversion.tile_halo {
+            parts.push(format!("--tile-halo {}", h));
+        }
+    }
 
     // ── Chi-separation method + params (only the selected method's) ──
     if config.pipeline.do_chi_separation {
@@ -645,21 +655,11 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
             emit_f64(parts, "--amp-pe-cvg-thd", a.cvg_thd, da.cvg_thd);
             emit_f64(parts, "--amp-pe-tikhonov-beta", a.tikhonov_beta, da.tikhonov_beta);
         }
-        // Deep-learning inversions have no per-net params (weights + fixed graph), but the
-        // tileable nets (routed through run_dipole_inversion) accept overlap-tiling options.
-        // Presence of `--tile-size` enables tiling; absence = whole-volume.
+        // Deep-learning inversions have no per-net params (weights + fixed graph); their
+        // tiling is emitted below, with BFRnet's and iQFM's.
         QsmAlgorithm::Xqsm | QsmAlgorithm::Qsmnet | QsmAlgorithm::QsmnetPlus
         | QsmAlgorithm::Ir2qsm | QsmAlgorithm::Lpcnn | QsmAlgorithm::ModlQsm
-        | QsmAlgorithm::Nextqsm => {
-            if let Some(sz) = config.inversion.tile_size {
-                parts.push(format!("--tile-size {}", sz));
-            }
-            if let Some(h) = config.inversion.tile_halo {
-                parts.push(format!("--tile-halo {}", h));
-            }
-        }
-        // Natively patch-based (autoqsm/qsmgan) and phase-input (iqsm/iqsm+) nets: no tiling opts.
-        QsmAlgorithm::Autoqsm | QsmAlgorithm::Qsmgan
+        | QsmAlgorithm::Nextqsm | QsmAlgorithm::Autoqsm | QsmAlgorithm::Qsmgan
         | QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus => {}
     }
 }
@@ -799,6 +799,14 @@ mod tests {
         c.inversion.algorithm = QsmAlgorithm::Autoqsm;
         let cmd = generate_command(&c);
         assert!(!cmd.contains("--tile-size"), "autoqsm should not emit tiling: {}", cmd);
+        // A classical inversion after a tiled background-removal network keeps them.
+        c.inversion.algorithm = QsmAlgorithm::Tkd;
+        c.bg_removal.algorithm = crate::enums::BfAlgorithm::Bfrnet;
+        assert!(generate_command(&c).contains("--tile-size 64"), "BFRnet tiles");
+        // The phase-input reconstructions tile too.
+        c.bg_removal.algorithm = crate::enums::BfAlgorithm::Vsharp;
+        c.inversion.algorithm = QsmAlgorithm::Iqsm;
+        assert!(generate_command(&c).contains("--tile-size 64"), "iQSM tiles");
     }
 
     #[test]

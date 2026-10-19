@@ -888,6 +888,7 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                      network.",
                     name, cite_inline(cite),
                 ));
+                say_tiling(config, Stage::Inversion, &mut doc);
             }
             QsmAlgorithm::Qsmart => {
                 // QSMART consumes a pre-computed total field, so the field-mapping
@@ -965,22 +966,11 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                     target, name, cite_inline(cite),
                     inversion_changes(config, config.inversion.algorithm).with()));
                 // Deep-learning tiling (memory-bounded, approximate) is noted when enabled — only
-                // for the tileable DL nets (a stray --tile-size on a classical algorithm is ignored).
-                let tileable = matches!(
-                    config.inversion.algorithm,
-                    QsmAlgorithm::Xqsm | QsmAlgorithm::Qsmnet | QsmAlgorithm::QsmnetPlus
-                        | QsmAlgorithm::Ir2qsm | QsmAlgorithm::Lpcnn | QsmAlgorithm::ModlQsm
-                        | QsmAlgorithm::Nextqsm
-                );
-                if let (true, Some(core)) = (tileable, config.inversion.tile_size) {
-                    // The halo is said only when it is not the default the runner fills in.
-                    let halo = match config.inversion.tile_halo {
-                        Some(h) if h != DEFAULT_TILE_HALO => format!(", halo {h} voxels"),
-                        _ => String::new(),
-                    };
-                    doc.say(&both(Stage::Inversion), format!(
-                        "Network inference was run on overlapping tiles (tile size {core} voxels{halo}).",
-                    ));
+                // for the tileable networks (a stray --tile-size on a classical algorithm is ignored).
+                if config.inversion.algorithm.tileable() {
+                    say_tiling(config, Stage::Inversion, &mut doc);
+                } else if config.runs_a_tileable_network() {
+                    say_tiling(config, Stage::BackgroundRemoval, &mut doc);
                 }
             }
         }
@@ -1844,6 +1834,36 @@ pub(crate) mod words {
     }
 }
 
+/// The network that reconstructs from the wrapped phase (iQFM, iQSM or iQSM+) a run uses, by
+/// name, if any. Tiled, it only approximates its whole-volume result.
+pub(crate) fn tiled_phase_network(config: &PipelineConfig) -> Option<&'static str> {
+    match config.inversion.algorithm {
+        QsmAlgorithm::Iqsm => Some("iQSM"),
+        QsmAlgorithm::IqsmPlus => Some("iQSM+"),
+        _ if config.bg_removal.algorithm == BfAlgorithm::Iqfm
+            && !crate::bridge::skips_bgremove(config) => Some("iQFM"),
+        _ => None,
+    }
+}
+
+/// The sentence saying the networks ran on overlapping tiles, when `inversion.tile_size` is set.
+/// The halo is said only when it is not the default the runner fills in. For iQFM, iQSM and
+/// iQSM+ it also says that this approximates the whole-volume result.
+fn say_tiling(config: &PipelineConfig, stage: fn(Pass) -> Stage, doc: &mut Draft) {
+    let Some(core) = config.inversion.tile_size else { return };
+    let halo = match config.inversion.tile_halo {
+        Some(h) if h != DEFAULT_TILE_HALO => format!(", halo {h} voxels"),
+        _ => String::new(),
+    };
+    doc.say(&both(stage), match tiled_phase_network(config) {
+        Some(network) => format!(
+            "{network} was run on overlapping tiles (tile size {core} voxels{halo}), which \
+             approximates its whole-volume result.",
+        ),
+        None => format!("Network inference was run on overlapping tiles (tile size {core} voxels{halo})."),
+    });
+}
+
 /// Display name + citation for a dipole inversion algorithm. Shared by the
 /// standard pipeline's inversion sentence and QSMART's inner inversion.
 /// Tgv/Qsmart are not valid dipole inversions; they fall back to iLSQR
@@ -2242,6 +2262,15 @@ mod tests {
         let out = generate_methods(&config);
         assert!(out.contains("overlapping tiles"), "got: {}", out);
         assert!(out.contains("tile size 64") && out.contains("halo 4"), "got: {}", out);
+        assert!(!out.contains("approximates"), "only the phase networks say so: {out}");
+        // The phase networks say that tiling approximates their whole-volume result.
+        config.inversion.algorithm = QsmAlgorithm::Iqsm;
+        let out = generate_methods(&config);
+        assert!(out.contains("iQSM was run on overlapping tiles (tile size 64 voxels, halo 4 voxels), \
+            which approximates its whole-volume result."), "got: {out}");
+        config.inversion.algorithm = QsmAlgorithm::Rts;
+        config.bg_removal.algorithm = BfAlgorithm::Iqfm;
+        assert!(generate_methods(&config).contains("iQFM was run on overlapping tiles"), "iQFM");
     }
 
     #[test]

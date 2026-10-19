@@ -312,9 +312,8 @@ const QSMART_PER_VOXEL: u64 = 271;
 /// a browser's pool has one more in flight than its threads (measured: xQSM on 4 threads holds
 /// five tiles' activations).
 fn dl_voxels(s: &Scan, config: &PipelineConfig) -> (u64, u64) {
-    match config.inversion.tile_size {
-        Some(core) => {
-            let halo = config.inversion.tile_halo.unwrap_or(8);
+    match config.dl_tile() {
+        Some((core, halo)) => {
             let patch = ((core + 2 * halo) as u64).saturating_pow(3).min(s.n);
             let tiles: u64 = s.dims.iter().map(|&d| d.div_ceil(core.max(1)) as u64).product();
             let in_flight = match (s.host, s.threads) {
@@ -334,7 +333,7 @@ fn dl_voxels(s: &Scan, config: &PipelineConfig) -> (u64, u64) {
 /// natively, held for the whole run in a browser.
 fn dl_need(s: &Scan, config: &PipelineConfig, per_voxel: u64, fixed: u64, tile: u64, whole: u64) -> u64 {
     let (patch, at_once) = dl_voxels(s, config);
-    let activations = if config.inversion.tile_size.is_some() { at_once * patch * tile } else { s.n * whole };
+    let activations = if config.dl_tile().is_some() { at_once * patch * tile } else { s.n * whole };
     s.v(per_voxel) + fixed + activations
 }
 
@@ -358,10 +357,11 @@ fn bg_removal_need(config: &PipelineConfig, s: &Scan) -> u64 {
         BfAlgorithm::Resharp => 123 * n,
         BfAlgorithm::Harperella => 139 * n,
         BfAlgorithm::Iharperella => 155 * n,
-        // iQFM: from every echo's phase and magnitude, on the whole volume (4.2 GB in WASM on the
-        // example). BFRnet on the whole volume: 10.9 GB natively on the example.
-        BfAlgorithm::Iqfm => 703 * n,
-        BfAlgorithm::Bfrnet => 1_800 * n,
+        // iQFM: from every echo's phase and magnitude; on the whole volume 4.2 GB in WASM on the
+        // example. BFRnet on the whole volume: 10.9 GB natively on the example. Tiles measured
+        // single-threaded in WASM only (0.85 and 1.04 GB on the example at 56 + 2×4).
+        BfAlgorithm::Iqfm => dl_need(s, config, 120, 0, 473, 583),
+        BfAlgorithm::Bfrnet => dl_need(s, config, 40, 0, 3_059, 1_760),
     }
 }
 
@@ -405,10 +405,11 @@ fn inversion_need(config: &PipelineConfig, s: &Scan) -> u64 {
         // Patch-based networks that take the whole volume (they patch it themselves).
         QsmAlgorithm::Autoqsm => 92 * n,
         QsmAlgorithm::Qsmgan => 35 * n,
-        // iQSM/iQSM+ from every echo's phase and magnitude, on the whole volume: 4.2 GB in WASM
-        // for iQSM on the example, and iQSM+ more than the heap holds.
-        QsmAlgorithm::Iqsm => 703 * n,
-        QsmAlgorithm::IqsmPlus => 760 * n,
+        // iQSM/iQSM+ from every echo's phase and magnitude. On the whole volume: 4.2 GB in WASM
+        // for iQSM on the example, and iQSM+ more than the heap holds. Tiles measured
+        // single-threaded in WASM only (0.85 and 0.99 GB on the example at 56 + 2×4).
+        QsmAlgorithm::Iqsm => dl(120, 0, 473, 583),
+        QsmAlgorithm::IqsmPlus => dl(120, 0, 1_026, 640),
     }
 }
 
@@ -739,13 +740,17 @@ mod tests {
     #[test]
     fn the_browser_profile_fits_every_option_in_the_heap() {
         let mut configs: Vec<(String, PipelineConfig)> = Vec::new();
-        // iQSM, iQSM+ (and iQFM, BFRnet below) run on the whole volume, and FANSI-TGV holds
-        // 5.7 GB on the example: none of them fits the heap.
-        let too_big = [QsmAlgorithm::Iqsm, QsmAlgorithm::IqsmPlus, QsmAlgorithm::FansiTgv];
+        // FANSI-TGV holds 5.7 GB on the example: it does not fit the heap.
+        let too_big = [QsmAlgorithm::FansiTgv];
         for a in QsmAlgorithm::ALL.into_iter().filter(|a| !too_big.contains(a)) {
             configs.push((format!("{a}"), with(|c| c.inversion.algorithm = a)));
         }
-        for b in [BfAlgorithm::Vsharp, BfAlgorithm::Pdf, BfAlgorithm::Lbv, BfAlgorithm::Ismv, BfAlgorithm::Sharp,
+        // BFRnet is left out for now: tiled on 4 threads it comes to 4.1 GB, because qsm-core
+        // caps concurrent tiles with xQSM's per-voxel activation figure for every network
+        // (`inversion::tile_concurrency`), and BFRnet's patches are about three times heavier.
+        // That is QSM.rs's to fix (a separate QSM.rs PR sizes the cap per network); add BFRnet
+        // back here when qsm-core is repinned past it.
+        for b in [BfAlgorithm::Iqfm, BfAlgorithm::Vsharp, BfAlgorithm::Pdf, BfAlgorithm::Lbv, BfAlgorithm::Ismv, BfAlgorithm::Sharp,
                   BfAlgorithm::Resharp, BfAlgorithm::Harperella, BfAlgorithm::Iharperella] {
             configs.push((format!("{b}"), with(|c| c.bg_removal.algorithm = b)));
         }

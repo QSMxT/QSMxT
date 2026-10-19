@@ -1396,6 +1396,10 @@
     [
      "inversion.algorithm",
      "tkd"
+    ],
+    [
+     "inversion.tile_size",
+     null
     ]
    ],
    "step": "bgremove",
@@ -1434,6 +1438,10 @@
     [
      "inversion.algorithm",
      "iqsm"
+    ],
+    [
+     "inversion.tile_size",
+     null
     ]
    ],
    "step": "invert",
@@ -1452,6 +1460,10 @@
     [
      "inversion.algorithm",
      "tkd"
+    ],
+    [
+     "inversion.tile_size",
+     null
     ]
    ],
    "step": "bgremove",
@@ -1466,6 +1478,10 @@
     [
      "inversion.algorithm",
      "iqsm-plus"
+    ],
+    [
+     "inversion.tile_size",
+     null
     ]
    ],
    "step": "invert",
@@ -1935,6 +1951,120 @@
    ],
    "step": "segmentation",
    "heap": 2418000000
+  },
+  {
+   "kind": "harness",
+   "name": "iqfm_tiled",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "iqfm"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ],
+    [
+     "inversion.tile_size",
+     56
+    ],
+    [
+     "inversion.tile_halo",
+     4
+    ]
+   ],
+   "step": "bgremove",
+   "heap": 871000000
+  },
+  {
+   "kind": "harness",
+   "name": "iqsm_tiled",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "iqsm"
+    ],
+    [
+     "inversion.tile_size",
+     56
+    ],
+    [
+     "inversion.tile_halo",
+     4
+    ]
+   ],
+   "step": "invert",
+   "heap": 867000000
+  },
+  {
+   "kind": "harness",
+   "name": "iqsm_plus_tiled",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "iqsm-plus"
+    ],
+    [
+     "inversion.tile_size",
+     56
+    ],
+    [
+     "inversion.tile_halo",
+     4
+    ]
+   ],
+   "step": "invert",
+   "heap": 1013000000
+  },
+  {
+   "kind": "harness",
+   "name": "iqsm_plus_whole_volume",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "iqsm-plus"
+    ],
+    [
+     "inversion.tile_size",
+     null
+    ]
+   ],
+   "step": "invert",
+   "out_of_memory": true
+  },
+  {
+   "kind": "harness",
+   "name": "bfrnet_tiled",
+   "source": "QSM.rs wasm harness (tests/wasm_pipeline.rs browser_memory, 70f3db0), Node, single-threaded",
+   "threads": 1,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "bfrnet"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ],
+    [
+     "inversion.tile_size",
+     56
+    ],
+    [
+     "inversion.tile_halo",
+     4
+    ]
+   ],
+   "step": "bgremove",
+   "heap": 1126000000
   },
   {
    "kind": "native",

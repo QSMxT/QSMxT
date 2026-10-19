@@ -99,6 +99,12 @@ pub fn params(config: &PipelineConfig) -> serde_json::Value {
             "max_linearization_ite": config.inversion.amp_pe.max_linearization_ite,
             "tikhonov_beta": config.inversion.amp_pe.tikhonov_beta,
         }),
+        // The networks have no parameters; a tiled run is a different result from a
+        // whole-volume one, so the tiling is in the key.
+        a if a.tileable() => match config.dl_tile() {
+            Some((core, halo)) => serde_json::json!({ "tile": [core, halo] }),
+            None => serde_json::json!({}),
+        },
         _ => serde_json::json!({}),
     }
 }
@@ -242,9 +248,9 @@ pub fn iqsm(
     let scan_meta = scan_metadata(meta);
     let none = qsm_core::pipeline::QsmReference::None;
     if plus {
-        qsm_core::pipeline::run_iqsm_plus(phases, magnitudes, mask, &scan_meta, none, None)
+        qsm_core::pipeline::run_iqsm_plus(phases, magnitudes, mask, &scan_meta, none, config.dl_tile())
     } else {
-        qsm_core::pipeline::run_iqsm(phases, magnitudes, mask, &scan_meta, none, None)
+        qsm_core::pipeline::run_iqsm(phases, magnitudes, mask, &scan_meta, none, config.dl_tile())
     }.map_err(|e| EngineError::Config(format!("{}: {}", alg, e)))
 }
 

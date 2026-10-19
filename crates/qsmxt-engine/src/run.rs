@@ -943,7 +943,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
             let mag_refs: Vec<&[f64]> = magnitudes.iter().map(|m| m.as_slice()).collect();
             self.store.models(&step.models)?;
-            stages::background::iqfm(&phase_refs, &mag_refs, &mask, &self.meta)?
+            stages::background::iqfm(&phase_refs, &mag_refs, &mask, &self.meta, self.config)?
         } else {
             let field = self.store.real(&Item::FieldPpm)?;
             let mask = self.store.mask(&mask_item)?;

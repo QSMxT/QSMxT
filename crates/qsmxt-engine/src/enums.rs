@@ -29,6 +29,16 @@ impl QsmAlgorithm {
         Self::Xqsm, Self::Qsmnet, Self::QsmnetPlus, Self::Autoqsm, Self::Qsmgan, Self::Ir2qsm,
         Self::Lpcnn, Self::ModlQsm, Self::Nextqsm, Self::Iqsm, Self::IqsmPlus,
     ];
+
+    /// A network that runs on overlapping tiles when `inversion.tile_size` is set. AutoQSM and
+    /// QSMGAN run on fixed patches of their own and take no tiling.
+    pub fn tileable(self) -> bool {
+        matches!(
+            self,
+            Self::Xqsm | Self::Qsmnet | Self::QsmnetPlus | Self::Ir2qsm | Self::Lpcnn | Self::ModlQsm
+                | Self::Nextqsm | Self::Iqsm | Self::IqsmPlus
+        )
+    }
 }
 impl fmt::Display for QsmAlgorithm {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -131,6 +141,12 @@ pub enum BfAlgorithm {
     // A "field preparation" choice occupying the BG-removal slot (input is phase, handled
     // specially by the runner), not a total-field→local BFR.
     Iqfm,
+}
+impl BfAlgorithm {
+    /// A network that runs on overlapping tiles when `inversion.tile_size` is set.
+    pub fn tileable(self) -> bool {
+        matches!(self, Self::Bfrnet | Self::Iqfm)
+    }
 }
 impl fmt::Display for BfAlgorithm {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

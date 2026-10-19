@@ -40,8 +40,9 @@ pub struct SettingView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     /// What may go wrong with a value the run accepts, for showing next to the setting: the mask
-    /// recipe under an inversion that needs a tighter mask ([`crate::masking::mask_warning`]).
-    /// Only a setting that applies has one.
+    /// recipe under an inversion that needs a tighter mask ([`crate::masking::mask_warning`]),
+    /// or tiling that makes iQFM, iQSM or iQSM+ only approximate its whole-volume result. Only a
+    /// setting that applies has one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub warning: Option<String>,
 }
@@ -151,9 +152,7 @@ pub fn settings_view(config: &PipelineConfig, facts: &ViewFacts) -> Vec<SettingV
         axial_forced: !crate::bridge::axial_only_algorithms(
             &c, crate::bridge::RunOrientationFacts { has_measured_r2: false }).is_empty(),
         uses_bet: uses_bet(&c),
-        tileable: matches!(c.inversion.algorithm,
-            QsmAlgorithm::Xqsm | QsmAlgorithm::Qsmnet | QsmAlgorithm::QsmnetPlus | QsmAlgorithm::Ir2qsm
-            | QsmAlgorithm::Lpcnn | QsmAlgorithm::ModlQsm | QsmAlgorithm::Nextqsm),
+        tileable: c.runs_a_tileable_network(),
         reads_qsm: p.do_chi_separation || p.do_analysis || p.do_smwi,
         reads_r2: p.do_r2map || (computes_r2prime && s.r2prime_strategy != R2PrimeStrategy::R2primenet),
         reads_r2prime,
@@ -197,7 +196,25 @@ pub fn settings_view(config: &PipelineConfig, facts: &ViewFacts) -> Vec<SettingV
             v.error.get_or_insert(message);
         }
     }
+    if let Some(note) = tiling_note(&c) {
+        if let Some(v) = views.iter_mut().find(|v| v.path == "inversion.tile_size" && v.visible) {
+            v.warning = Some(note);
+        }
+    }
     views
+}
+
+/// The warning on the tiling setting when it tiles a network that reconstructs from the wrapped
+/// phase (iQFM, iQSM, iQSM+): each tile unwraps and removes the background on its own, so the
+/// result differs noticeably from the whole-volume one.
+fn tiling_note(c: &PipelineConfig) -> Option<String> {
+    c.dl_tile()?;
+    let network = crate::methods::tiled_phase_network(c)?;
+    Some(format!(
+        "{network} runs in overlapping tiles, which approximates its whole-volume result: \
+         values can differ noticeably from a whole-volume run. Turn tiling off for the \
+         whole-volume result where memory allows."
+    ))
 }
 
 /// What is wrong with each checked setting: its range, and the rules a setting's own config
@@ -272,6 +289,27 @@ mod tests {
 
     /// What the command now leaves out does not change the run: the field map from a config with
     /// a hidden value left behind is the field map from the same config pruned, bit for bit.
+    /// A tiled iQFM, iQSM or iQSM+ carries a warning on the tiling setting; other networks do not.
+    #[test]
+    fn tiling_the_phase_networks_carries_a_note() {
+        let note = |c: &PipelineConfig| {
+            settings_view(c, &ViewFacts::default()).into_iter()
+                .find(|v| v.path == "inversion.tile_size").and_then(|v| v.warning)
+        };
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = QsmAlgorithm::Iqsm;
+        assert_eq!(note(&c), None, "whole volume: nothing to note");
+        c.inversion.tile_size = Some(56);
+        let n = note(&c).expect("tiled iQSM has a note");
+        assert!(n.starts_with("iQSM runs in overlapping tiles, which approximates its whole-volume result"), "{n}");
+        c.inversion.algorithm = QsmAlgorithm::Rts;
+        c.bg_removal.algorithm = crate::enums::BfAlgorithm::Iqfm;
+        assert!(note(&c).is_some_and(|n| n.starts_with("iQFM")), "tiled iQFM");
+        c.bg_removal.algorithm = crate::enums::BfAlgorithm::Vsharp;
+        c.inversion.algorithm = QsmAlgorithm::Xqsm;
+        assert_eq!(note(&c), None, "xQSM");
+    }
+
     #[test]
     fn a_pruned_setting_does_not_change_the_field_map() {
         let mut meta = crate::stages::magnitude::tests::meta_4x4x4();
