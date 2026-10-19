@@ -18,6 +18,10 @@ jobs:
   # suite under cargo-tarpaulin with `--test-threads=1` (~8 min) next to the plain `cargo test`
   # (~2 min). cargo-llvm-cov runs the suite in parallel, instrumented, and exits non-zero on a
   # failing test, so the one run is both the test gate and the coverage measurement.
+  #
+  # The suite runs under cargo-nextest: one process per test, scheduled across every test binary
+  # at once. `cargo test` runs the binaries one after another, so qsmxt-engine's tests waited for
+  # the whole of qsmxt's, and each binary ended on its slowest few tests with the other cores idle.
   check:
     name: Check, Clippy & Test
     runs-on: ubuntu-latest
@@ -30,22 +34,23 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Install cargo-llvm-cov and cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov,cargo-nextest
 
-      - name: Cargo check
-        run: cargo check --workspace --all-targets
-
+      # No separate `cargo check`: clippy checks the same targets, and fails on what check would.
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-      # `cargo test --workspace` under coverage instrumentation (doctests excluded; there are
+      # Every test in the workspace under coverage instrumentation (doctests excluded; there are
       # none). The ignore regex keeps the same files out of the report that tarpaulin's
       # --exclude-files did: entry point, TUI rendering, self-update. It only affects the
-      # report; those files' tests still run.
+      # report; those files' tests still run. `--no-fail-fast` reports every failing test, not
+      # the first.
       - name: Run tests with coverage
         run: >
-          cargo llvm-cov --workspace --lcov --output-path target/lcov.info
+          cargo llvm-cov nextest --workspace --no-fail-fast --lcov --output-path target/lcov.info
           --ignore-filename-regex '(^|/)src/(main|tui/mod|tui/ui|commands/update)\.rs$'
 
       # Fails if a qsm-core *Params field isn't represented in its qsmxt-engine
