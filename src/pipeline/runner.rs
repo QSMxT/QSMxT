@@ -2154,11 +2154,32 @@ mod oblique_run_tests {
 
     /// The default pipeline with RTS for the inversion. These tests are about grids, caching and
     /// outputs, not the inversion; with the default (iLSQR) they took the suite from ~2 min to
-    /// ~50 min under coverage.
+    /// ~50 min under coverage. The tests that switch to TGV or QSMART get them cut down as well:
+    /// a few TGV iterations, and QSMART with a few unpadded iLSQR iterations, one Frangi scale
+    /// and small vessel and SDF closing radii. Each still runs its own steps and writes the
+    /// same files.
     fn fast_config() -> PipelineConfig {
         let mut config = PipelineConfig::default();
         config.inversion.algorithm = QsmAlgorithm::Rts;
+        config.inversion.tgv.iterations = 10;
+        let q = &mut config.inversion.qsmart;
+        q.ilsqr_max_iter = 5;
+        q.ilsqr_pad_mm = 0.0;
+        q.vasc_sphere_radius = 2;
+        q.sdf_spatial_radius = 2;
+        (q.frangi_scale_min, q.frangi_scale_max) = (1.0, 1.0);
         config
+    }
+
+    /// Masking for QSMART that differs from the default, as `qsmxt run` gives QSMART a mask of its
+    /// own (BET on the magnitude, eroded): a thresholded, eroded magnitude, without BET's cost.
+    fn qsmart_mask_sections() -> Vec<qsmxt_engine::masking::MaskSection> {
+        use qsmxt_engine::masking::{MaskOp, MaskSection, MaskThresholdMethod, MaskingInput};
+        vec![MaskSection {
+            input: MaskingInput::Magnitude,
+            generator: MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None },
+            refinements: vec![MaskOp::Erode { iterations: 2 }],
+        }]
     }
 
     fn resampling_config() -> PipelineConfig {
@@ -2536,7 +2557,6 @@ mod oblique_run_tests {
         for two_pass in [false, true] {
             let mut config = fast_config();
             config.masking.two_pass = two_pass;
-            config.inversion.qsmart.ilsqr_max_iter = 5;
             let fresh = DerivativeOutputs::new(&dir.path().join(format!("fresh-{two_pass}")));
             run_pipeline_cached(&run, &config, &fresh, false, &|_| {}).unwrap();
             let output = DerivativeOutputs::new(&dir.path().join(format!("out-{two_pass}")));
@@ -2568,40 +2588,42 @@ mod oblique_run_tests {
     /// map as its output is that of the step that wrote it last. QSMART runs on its own mask, as
     /// `qsmxt run` gives it by default, so switching to or from it remakes the mask first and the
     /// state has already forgotten the other inversion by the time QSMART is recorded.
+    ///
+    /// One directory per pass mode, taken through a sequence of inversions that holds every
+    /// "a, then b, then a again" (RTS, TGV and QSMART, each to each other one and back), and
+    /// checked after every run. TGV, which costs most here, runs three times rather than once
+    /// per pair it is in.
     #[test]
     fn only_the_last_inversion_is_named_the_raw_maps_maker() {
+        use QsmAlgorithm::{Qsmart as Q, Rts as R, Tgv as T};
         let dir = tempfile::tempdir().unwrap();
         let run = oblique_run(dir.path(), "a", 2);
         let k = &run.key;
-        let algorithms = [(QsmAlgorithm::Rts, "invert"), (QsmAlgorithm::Tgv, "tgv"), (QsmAlgorithm::Qsmart, "qsmart")];
-        for (a, step) in algorithms {
-            for (b, _) in algorithms.into_iter().filter(|&(b, _)| b != a) {
-                for two_pass in [false, true] {
-                    let mut config = fast_config();
-                    config.masking.two_pass = two_pass;
-                    config.inversion.qsmart.ilsqr_max_iter = 5;
-                    let output = DerivativeOutputs::new(&dir.path().join(format!("{a:?}-{b:?}-{two_pass}")));
-                    for algorithm in [a, b, a] {
-                        config.inversion.algorithm = algorithm;
-                        config.masking.sections = if algorithm == QsmAlgorithm::Qsmart {
-                            qsmxt_engine::masking::qsmart_default_mask_sections()
-                        } else {
-                            fast_config().masking.sections
-                        };
-                        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
-                    }
-                    let mut raws = vec![(output.chi_raw_path(k), step.to_string())];
-                    if two_pass {
-                        raws.push((output.reliable_chi_raw_path(k), format!("{step}-reliable")));
-                    }
-                    for (raw, step) in raws {
-                        let makers: Vec<&str> = crate::bids::bidsprov::STEPS.iter().copied().filter(|&s| {
-                            let Ok(text) = std::fs::read_to_string(output.provenance_path(k, s)) else { return false };
-                            let prov: serde_json::Value = serde_json::from_str(&text).unwrap();
-                            prov["outputs"].as_array().unwrap().iter().any(|o| o.as_str() == Some(&raw.display().to_string()))
-                        }).collect();
-                        assert_eq!(makers, [step.as_str()], "{a:?} → {b:?} → {a:?}, two-pass {two_pass}");
-                    }
+        let sequence = [R, T, R, T, Q, T, Q, R, Q, R];
+        for (a, b) in [(R, T), (T, R), (R, Q), (Q, R), (T, Q), (Q, T)] {
+            assert!(sequence.windows(3).any(|w| w == [a, b, a]), "{a:?} → {b:?} → {a:?} is not in the sequence");
+        }
+        let step_of = |a: QsmAlgorithm| match a { R => "invert", T => "tgv", _ => "qsmart" };
+        for two_pass in [false, true] {
+            let mut config = fast_config();
+            config.masking.two_pass = two_pass;
+            let output = DerivativeOutputs::new(&dir.path().join(format!("two-pass-{two_pass}")));
+            for (i, &algorithm) in sequence.iter().enumerate() {
+                config.inversion.algorithm = algorithm;
+                config.masking.sections = if algorithm == Q { qsmart_mask_sections() } else { fast_config().masking.sections };
+                run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
+                let step = step_of(algorithm);
+                let mut raws = vec![(output.chi_raw_path(k), step.to_string())];
+                if two_pass {
+                    raws.push((output.reliable_chi_raw_path(k), format!("{step}-reliable")));
+                }
+                for (raw, step) in raws {
+                    let makers: Vec<&str> = crate::bids::bidsprov::STEPS.iter().copied().filter(|&s| {
+                        let Ok(text) = std::fs::read_to_string(output.provenance_path(k, s)) else { return false };
+                        let prov: serde_json::Value = serde_json::from_str(&text).unwrap();
+                        prov["outputs"].as_array().unwrap().iter().any(|o| o.as_str() == Some(&raw.display().to_string()))
+                    }).collect();
+                    assert_eq!(makers, [step.as_str()], "{:?}, two-pass {two_pass}", &sequence[..=i]);
                 }
             }
         }

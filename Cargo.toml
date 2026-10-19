@@ -60,3 +60,11 @@ png = "0.17"
 
 [dev-dependencies]
 tempfile = "3"
+
+# Tests that pass data through qsm-core run its numerical code, which is about ten times slower
+# unoptimised (qsmxt-engine's tests took 195 s at opt-level 0, 18 s at 3, under coverage), so
+# dependencies are optimised in dev and test builds. The workspace crates stay unoptimised, so they
+# still build quickly and their coverage maps one-to-one onto the source (cargo-llvm-cov
+# instruments only them). Release builds are unaffected.
+[profile.dev.package."*"]
+opt-level = 3

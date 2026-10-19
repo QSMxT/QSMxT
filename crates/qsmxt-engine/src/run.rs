@@ -1938,7 +1938,9 @@ pub(crate) mod tests {
     }
 
     /// A quick configuration for a tiny phantom: a magnitude threshold for the mask, PDF (which
-    /// does not erode a small brain away) and TKD.
+    /// does not erode a small brain away) and TKD. The iterative algorithms a test switches to
+    /// (TGV, QSMART, χ-separation) get a few iterations, no padding and small kernels: the tests
+    /// check what a run computes, keeps and records, not how good the maps are.
     pub(crate) fn config() -> PipelineConfig {
         let mut config = PipelineConfig::default();
         config.masking.sections = vec![MaskSection {
@@ -1950,6 +1952,15 @@ pub(crate) mod tests {
         config.masking.inhomogeneity_correction = false;
         config.bg_removal.algorithm = BfAlgorithm::Pdf;
         config.inversion.algorithm = QsmAlgorithm::Tkd;
+        config.inversion.tgv.iterations = 10;
+        let qsmart = &mut config.inversion.qsmart;
+        qsmart.ilsqr_max_iter = 5;
+        qsmart.ilsqr_pad_mm = 0.0;
+        qsmart.sdf_spatial_radius = 2;
+        qsmart.vasc_sphere_radius = 2;
+        qsmart.frangi_scale_max = 1.0;
+        config.separation.chi_sep_ilsqr.max_iter = 3;
+        config.separation.chi_sep_ilsqr.cg_max_iter = 5;
         config
     }
 
@@ -2563,7 +2574,6 @@ pub(crate) mod tests {
         let algorithms = [QsmAlgorithm::Tkd, QsmAlgorithm::Tgv, QsmAlgorithm::Qsmart];
         for two_pass in [false, true] {
             let mut config = if two_pass { two_pass_config() } else { config() };
-            config.inversion.qsmart.ilsqr_max_iter = 5;
             config.inversion.algorithm = a;
             let (facts, mut store) = phantom();
             run_once(&config, &facts, &mut store);

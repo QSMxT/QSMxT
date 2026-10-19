@@ -416,9 +416,11 @@ mod tests {
     use qsm_core::utils::B0WeightType as W;
     use std::f64::consts::PI;
 
-    const N: usize = 24;
+    const N: usize = 16;
     const DCT: LaplacianSolver = LaplacianSolver::Dct;
-    const FFT: LaplacianSolver = LaplacianSolver::Fft { pad: [64; 3] };
+    /// The FFT solver, with a few voxels of padding: the field is zero outside the mask, so more
+    /// padding (qsm-core's default is 64) changes nothing here but the cost.
+    const FFT: LaplacianSolver = LaplacianSolver::Fft { pad: [8; 3] };
 
     /// The module's entry point with the weighting and solver set on `cfg` (the weighting only
     /// matters to `WeightedAvg`), returning ppm.
@@ -445,7 +447,7 @@ mod tests {
     /// cosine (Neumann) modes, which the DCT Laplacian unwrap reproduces exactly on a full mask.
     fn omega(i: usize, j: usize, k: usize) -> f64 {
         let c = |x: usize, m: f64| (PI * m * (x as f64 + 0.5) / N as f64).cos();
-        900.0 * c(i, 1.0) + 600.0 * c(j, 1.0) * c(k, 2.0)
+        600.0 * c(i, 1.0) + 400.0 * c(j, 1.0) * c(k, 2.0)
     }
 
     /// A frequency map that wraps inside the sphere but falls smoothly to zero at its edge, so the
@@ -453,7 +455,7 @@ mod tests {
     fn omega_sphere(i: usize, j: usize, k: usize) -> f64 {
         let d = |x: usize| x as f64 + 0.5 - N as f64 / 2.0;
         let r = (d(i).powi(2) + d(j).powi(2) + d(k).powi(2)).sqrt() / (N as f64 / 2.0 - 2.0);
-        if r < 1.0 { 600.0 * (PI * r / 2.0).cos().powi(2) } else { 0.0 }
+        if r < 1.0 { 400.0 * (PI * r / 2.0).cos().powi(2) } else { 0.0 }
     }
 
     fn wrap(x: f64) -> f64 { (x + PI).rem_euclid(2.0 * PI) - PI }

@@ -1525,7 +1525,10 @@ mod integration_tests {
         args.dry = false;
         args.no_mem_limit = true;
         args.clean_intermediates = true;
-        let rerun = default_run_args(args.bids_dir.clone(), out.clone());
+        // What is cleaned does not depend on the inversion; TKD is the cheapest.
+        args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
+        let mut rerun = default_run_args(args.bids_dir.clone(), out.clone());
+        rerun.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
         super::run::execute(args).unwrap();
 
         let deriv = out.join("derivatives/qsmxt");
@@ -1540,7 +1543,6 @@ mod integration_tests {
         assert!(state, "the workflow directory (and its state file) is gone");
 
         let before = niftis_with_mtime(&deriv);
-        let mut rerun = rerun;
         rerun.dry = false;
         rerun.no_mem_limit = true;
         rerun.clean_intermediates = true;

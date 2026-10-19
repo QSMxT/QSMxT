@@ -887,6 +887,7 @@ mod tests {
         let mut coils = run(&[0.005], true);
         coils.n_coils = 4;
         let scans = [run(&EVEN, true), run(&EVEN, false), seven, coils];
+        let settings: Vec<&str> = crate::schema::schema().iter().map(|s| s.path).collect();
         let mut seen = 0;
         for c in &configs {
             for f in &scans {
@@ -902,7 +903,7 @@ mod tests {
                         assert_eq!(p.settings[0], s);
                     }
                     for s in &p.settings {
-                        assert!(crate::schema::setting(s).is_some(), "{s} is not a setting");
+                        assert!(settings.contains(s), "{s} is not a setting");
                     }
                     if let Some(by) = p.implied_by {
                         assert!(p.settings.contains(&by));
