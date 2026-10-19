@@ -249,9 +249,12 @@ fn command_for(config: &PipelineConfig) -> String {
         && config.masking.refinements == d.masking.refinements;
     match crate::masking::masking_preset_command(&config.masking) {
         // The default recipe is a preset too; saying so adds noise rather than removing it. Except
-        // where the user chose it over the inversion's own default (QSMART's BET mask, see
-        // `MaskingConfig::recipe_chosen`): naming the preset is what keeps it.
-        _ if masking_default && !config.masking.recipe_chosen => {}
+        // under an inversion with a default mask of its own (QSMART's BET), where a normalised
+        // config with the general default is one the user chose (`MaskingConfig::recipe_chosen`):
+        // naming the preset is what keeps it. (The inversion is read after pruning: with QSM off
+        // it is no longer QSMART, and there is nothing to keep.)
+        _ if masking_default
+            && crate::masking::default_mask_sections_for(config.inversion.algorithm) == d.masking.sections => {}
         Some((preset, input)) => {
             parts.push(format!("--mask-preset {preset}"));
             if let Some(input) = input {
@@ -984,6 +987,20 @@ mod tests {
         c.inversion.qsmart.vasc_sphere_radius = 10;
         let cmd = generate_command(&c);
         assert!(cmd.contains("--qsmart-vasc-sphere-radius 10"));
+    }
+
+    /// Under QSMART, an unchosen mask is BET and a chosen default threshold is said to be kept;
+    /// elsewhere the default recipe goes unsaid whether or not it was chosen.
+    #[test]
+    fn qsmart_mask_choice_is_in_the_command() {
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = QsmAlgorithm::Qsmart;
+        assert!(generate_command(&c).contains("--mask-preset bet"), "{}", generate_command(&c));
+        c.masking.recipe_chosen = true;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--mask-preset robust-threshold") && !cmd.contains("--mask-preset bet"), "{cmd}");
+        c.inversion.algorithm = QsmAlgorithm::Rts;
+        assert!(!generate_command(&c).contains("--mask"), "{}", generate_command(&c));
     }
 
     #[test]

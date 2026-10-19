@@ -6658,6 +6658,11 @@ impl App {
         match field {
             "orientation_lambda" => return self.filter_state.orientation_lambda.clear(),
             "orientation_algorithm" => return self.filter_state.orientation_algorithm = 0,
+            // The default is no choice: the mask the inversion takes when none is chosen.
+            "mask_preset" => {
+                self.pipeline_state.mask_chosen = false;
+                return self.pipeline_state.show_unchosen_mask();
+            }
             "segmentation_source" | "do_segmentation" => {
                 self.pipeline_state.custom_dseg_tool.clear();
                 self.form.do_segmentation = form.do_segmentation;
@@ -6692,8 +6697,6 @@ impl App {
             ps.mask_combined_refinements = d.mask_combined_refinements;
             ps.two_pass_sections = d.two_pass_sections;
             ps.mask_preset = d.mask_preset;
-            ps.mask_chosen = false;
-            ps.show_unchosen_mask();
         }
         let mut done = std::collections::HashSet::new();
         loop {
@@ -10159,6 +10162,29 @@ mod tests {
         // Edited away from the default, so the command now spells the reliable mask out.
         let cmd = crate::tui::command::build_command_string(&app);
         assert!(cmd.contains("--two-pass-mask"), "cmd: {cmd}");
+    }
+
+    /// Editing the reliable mask does not choose the main one; resetting the preset un-chooses
+    /// it, back to the mask the inversion takes, and the QSMART note says which applies.
+    #[test]
+    fn the_main_mask_is_chosen_only_by_its_own_rows() {
+        let qsmart = QSM_ALGO_OPTIONS.iter().position(|a| *a == "qsmart").unwrap();
+        let mut app = App::new();
+        app.pipeline_state.set_select("qsm_algorithm", qsmart);
+        app.pipeline_state.two_pass = true;
+        app.pipeline_state.set_mask_input(MASK_TWO_PASS_BASE, 1);
+        assert!(!app.pipeline_state.mask_chosen, "the reliable mask is not the main one");
+        let note = |app: &App| app.pipeline_state.all_rows().iter().find_map(|r| match r {
+            PipelineRow::Note { text } if text.contains("QSMART") => Some(text.to_string()),
+            _ => None,
+        }).unwrap();
+        assert!(note(&app).contains("unless another mask is chosen"), "{}", note(&app));
+        app.pipeline_state.set_select("mask_preset", 0);
+        assert!(app.pipeline_state.mask_chosen);
+        assert!(note(&app).starts_with("⚠ QSMART needs a tight brain mask"), "{}", note(&app));
+        app.reset_field("mask_preset");
+        assert!(!app.pipeline_state.mask_chosen);
+        assert_eq!(app.pipeline_state.mask_sections, qsmxt_engine::qsmart_default_mask_sections());
     }
 
     /// Turning two-pass off hides the editor but keeps what was typed into it, so toggling back

@@ -1118,6 +1118,61 @@ mod tests {
         ]);
         assert_ne!(c.masking.sections, qsmart_default_mask_sections());
         assert_eq!(c.masking.sections, default_mask_sections());
+        assert!(c.masking.recipe_chosen, "the choice is in the config, so it is saved");
+    }
+
+    /// Which flags choose the mask under QSMART (and so keep it), which leave QSMART's BET in
+    /// place, and that the BET options still reach the BET step the engine installs.
+    #[test]
+    fn qsmart_mask_flags_choose_the_mask() {
+        let qsmart = |extra: &[&str]| {
+            let mut argv = vec!["qsmxt", "run", "<bids>", "--qsm-algorithm", "qsmart"];
+            argv.extend_from_slice(extra);
+            config_from_cli(&argv)
+        };
+        let c = qsmart(&[]);
+        assert_eq!(c.masking.sections, qsmart_default_mask_sections());
+        assert!(!c.masking.recipe_chosen);
+        // `--masking-input` chooses the recipe: with the default's own input it is kept as it is.
+        let c = qsmart(&["--masking-input", "phase-quality"]);
+        assert_eq!(c.masking.sections, default_mask_sections());
+        assert!(c.masking.recipe_chosen);
+        let c = qsmart(&["--masking-input", "magnitude"]);
+        assert!(c.masking.sections.iter().all(|s| s.input == MaskingInput::Magnitude
+            && matches!(s.generator, MaskOp::Threshold { .. })));
+        // `--mask` spelling out the default recipe keeps it too.
+        let spec = default_mask_sections()[0].compact_spec();
+        let c = qsmart(&["--mask", &spec]);
+        assert_eq!(c.masking.sections, default_mask_sections());
+        // The BET options reach QSMART's BET; the combine options alone do not choose the recipe.
+        let c = qsmart(&["--bet-fractional-intensity", "0.3", "--mask-refine", "erode:1"]);
+        assert!(matches!(c.masking.sections[0].generator, MaskOp::Bet { fractional_intensity, .. }
+                         if fractional_intensity == 0.3));
+        assert_eq!(c.masking.sections[0].refinements, qsmart_default_mask_sections()[0].refinements);
+        assert!(!c.masking.recipe_chosen);
+    }
+
+    /// A QSMART run's saved config reloads as the same run, the kept threshold included, and so
+    /// does the command it generates.
+    #[test]
+    fn qsmart_mask_choice_survives_the_saved_config_and_the_command() {
+        let no_flags = |mut c: PipelineConfig| {
+            let cli = cli::Cli::try_parse_from(["qsmxt", "run", "<bids>"]).unwrap();
+            let cli::Command::Run(r) = cli.command else { panic!() };
+            apply_run_overrides(&mut c, &r.pipeline).unwrap();
+            c
+        };
+        for extra in [&[][..], &["--mask-preset", "robust-threshold"], &["--mask-preset", "bet"],
+                      &["--masking-input", "phase-quality"], &["--bet-fractional-intensity", "0.3"]] {
+            let mut argv = vec!["qsmxt", "run", "<bids>", "--qsm-algorithm", "qsmart"];
+            argv.extend_from_slice(extra);
+            let c = config_from_cli(&argv);
+            let reloaded = no_flags(PipelineConfig::from_toml(&c.to_toml().unwrap()).unwrap());
+            assert_eq!(reloaded, c, "{extra:?}");
+            let cmd = qsmxt_engine::generate_command(&c);
+            let args: Vec<&str> = cmd.split_whitespace().collect();
+            assert_eq!(config_from_cli(&args), c, "{extra:?}: {cmd}");
+        }
     }
 
     #[test]

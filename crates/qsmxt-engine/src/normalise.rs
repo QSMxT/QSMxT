@@ -132,7 +132,8 @@ fn note(setting: &'static str, because: &'static str, message: impl Into<String>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::enums::R2PrimeStrategy;
+    use crate::enums::{QsmAlgorithm, R2PrimeStrategy};
+    use crate::masking::{hd_bet_mask_sections, qsmart_default_mask_sections};
 
     /// Every combination of the settings the rules read, each normalised twice.
     fn configs() -> Vec<PipelineConfig> {
@@ -161,6 +162,10 @@ mod tests {
             }
             c.separation.algorithm = algorithms[bits as usize % algorithms.len()];
             c.separation.r2prime_strategy = strategies[bits as usize % strategies.len()];
+            // The mask rule's settings, crossed with the rest along different strides.
+            if bits % 3 == 0 { c.inversion.algorithm = QsmAlgorithm::Qsmart; }
+            c.masking.recipe_chosen = bits % 7 < 3;
+            if bits % 11 == 0 { c.masking.sections = crate::masking::hd_bet_mask_sections(); }
             out.push(c);
         }
         out
@@ -189,6 +194,7 @@ mod tests {
                 ("pipeline.do_r2map", c.pipeline.do_r2map != n.pipeline.do_r2map),
                 ("pipeline.do_r2primemap", c.pipeline.do_r2primemap != n.pipeline.do_r2primemap),
                 ("qsm.reference", c.qsm.reference != n.qsm.reference),
+                ("masking.sections", c.masking.sections != n.masking.sections),
             ].into_iter().filter(|(_, d)| *d).map(|(s, _)| s).collect();
             let mut said: Vec<&str> = adjustments.iter().map(|a| a.setting).collect();
             said.sort();
@@ -214,6 +220,7 @@ mod tests {
             |c| { c.pipeline.do_qsm = false; c.pipeline.do_smwi = true; },
             |c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::WaveSep; },
             |c| { c.qsm.reference = QsmReference::Region; c.qsm.reference_region = Some("thalamus".into()); },
+            |c| c.inversion.algorithm = QsmAlgorithm::Qsmart,
         ] {
             let mut c = PipelineConfig::default();
             edit(&mut c);
@@ -266,5 +273,67 @@ mod tests {
         assert_eq!(c.normalised().0.qsm.reference, QsmReference::Mean);
 
         assert!(PipelineConfig::default().normalised().1.is_empty());
+    }
+    /// QSMART takes its BET mask in place of the general default, unless the user chose that
+    /// default; the mark is kept only where it decides this.
+    #[test]
+    fn qsmart_takes_bet_unless_the_mask_was_chosen() {
+        let qsmart = |chosen: bool| {
+            let mut c = PipelineConfig::default();
+            c.inversion.algorithm = QsmAlgorithm::Qsmart;
+            c.masking.recipe_chosen = chosen;
+            c
+        };
+        // Untouched: BET, said once, in plain words.
+        let (n, adjustments) = qsmart(false).normalised();
+        assert_eq!(n.masking.sections, qsmart_default_mask_sections());
+        assert!(!n.masking.recipe_chosen);
+        assert_eq!(adjustments, [Adjustment { setting: "masking.sections", because: "inversion.algorithm",
+            message: "The brain mask is made with BET: QSMART needs a tight brain mask".into() }]);
+        // Chosen: the threshold is kept, and so is the mark that keeps it.
+        let (n, adjustments) = qsmart(true).normalised();
+        assert_eq!(n.masking.sections, default_mask_sections());
+        assert!(n.masking.recipe_chosen && adjustments.is_empty());
+        // Another recipe is left alone, chosen or not, and needs no mark.
+        for chosen in [false, true] {
+            let mut c = qsmart(chosen);
+            c.masking.sections = hd_bet_mask_sections();
+            let (n, adjustments) = c.normalised();
+            assert_eq!(n.masking.sections, hd_bet_mask_sections());
+            assert!(!n.masking.recipe_chosen && adjustments.is_empty());
+        }
+        // An inversion without a default of its own keeps the general one, and needs no mark.
+        let mut c = qsmart(true);
+        c.inversion.algorithm = QsmAlgorithm::Rts;
+        let (n, adjustments) = c.normalised();
+        assert_eq!(n.masking.sections, default_mask_sections());
+        assert!(!n.masking.recipe_chosen && adjustments.is_empty());
+        // Idempotent either way.
+        for chosen in [false, true] {
+            let once = qsmart(chosen).normalised().0;
+            assert_eq!(once.normalised(), (once.clone(), vec![]));
+        }
+    }
+
+    /// The mark is written out only where it decides something, so every other configuration
+    /// saves as it did, and a QSMART run that kept the threshold reloads as one.
+    #[test]
+    fn the_mark_is_saved_only_where_it_decides_something() {
+        let mut c = PipelineConfig::default();
+        c.masking.recipe_chosen = true;
+        let n = c.normalised().0;
+        assert!(!n.to_toml().unwrap().contains("recipe_chosen"));
+        assert!(!serde_json::to_string(&n).unwrap().contains("recipe_chosen"));
+        c.inversion.algorithm = QsmAlgorithm::Qsmart;
+        let n = c.normalised().0;
+        let toml = n.to_toml().unwrap();
+        assert!(toml.contains("recipe_chosen = true"), "{toml}");
+        let back = PipelineConfig::from_toml(&toml).unwrap().normalised().0;
+        assert_eq!(back, n);
+        assert_eq!(back.masking.sections, default_mask_sections());
+        // A configuration saved before the mark existed reads as unchosen.
+        let old = toml.replace("recipe_chosen = true\n", "");
+        assert_eq!(PipelineConfig::from_toml(&old).unwrap().normalised().0.masking.sections,
+                   qsmart_default_mask_sections());
     }
 }

@@ -156,6 +156,20 @@ mod tests {
         }
     }
 
+    /// Whether the user chose the mask decides which recipe it is, when normalising; the steps
+    /// are keyed by the recipe, so the mark itself keys nothing.
+    #[test]
+    fn the_chosen_mark_is_not_in_the_mask_keys() {
+        let mut base = PipelineConfig::default();
+        base.inversion.algorithm = crate::enums::QsmAlgorithm::Qsmart;
+        let mut chosen = base.clone();
+        chosen.masking.recipe_chosen = true;
+        let p = serde_json::json!({});
+        for step in ["mask", "mask-reliable", "twopass"] {
+            assert_eq!(step_cache_key(step, None, &p, &chosen), step_cache_key(step, None, &p, &base), "{step}");
+        }
+    }
+
     /// Cropping changes what background removal and the inversion compute, so it is in their keys
     /// — and not in the field map's, which it does not touch.
     #[test]
