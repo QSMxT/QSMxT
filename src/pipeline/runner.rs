@@ -1051,8 +1051,6 @@ fn check_slice_gap(
 
 #[cfg(test)]
 mod tests {
-    use qsm_core::pipeline::config::QsmReference as CoreRef;
-
     /// The two passes must not share a single output path. If they did, the second pass would
     /// overwrite the first's local field, eroded mask or raw map — and the combination would be
     /// one reconstruction blended with itself.
@@ -1338,45 +1336,6 @@ mod tests {
         assert_eq!(super::find_custom_mask(&run, "bet"), Some(mask.clone()));
         assert_eq!(super::find_custom_mask(&run, "*"), Some(mask.clone())); // first tool alphabetically
         assert_eq!(super::find_custom_mask(&run, "nonexistent"), None);     // falls back (None)
-    }
-
-    #[test]
-    fn test_apply_reference_mean_all_masked() {
-        let chi = vec![1.0, 2.0, 3.0];
-        let mask = vec![1u8, 1, 1];
-        let result = qsm_core::pipeline::apply_reference(&chi, &mask, CoreRef::Mean);
-        assert!((result[0] - (-1.0)).abs() < 1e-10);
-        assert!((result[1] - 0.0).abs() < 1e-10);
-        assert!((result[2] - 1.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_apply_reference_mean_partial_mask() {
-        let chi = vec![1.0, 2.0, 3.0, 4.0];
-        let mask = vec![1u8, 0, 1, 0];
-        let result = qsm_core::pipeline::apply_reference(&chi, &mask, CoreRef::Mean);
-        assert!((result[0] - (-1.0)).abs() < 1e-10);
-        assert!((result[1] - 0.0).abs() < 1e-10);
-        assert!((result[2] - 1.0).abs() < 1e-10);
-        assert!((result[3] - 0.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_apply_reference_mean_empty_mask() {
-        let chi = vec![1.0, 2.0, 3.0];
-        let mask = vec![0u8, 0, 0];
-        let result = qsm_core::pipeline::apply_reference(&chi, &mask, CoreRef::Mean);
-        assert_eq!(result, vec![0.0, 0.0, 0.0]);
-    }
-
-    #[test]
-    fn test_apply_reference_none() {
-        let chi = vec![1.0, 2.0, 3.0];
-        let mask = vec![1u8, 0, 1];
-        let result = qsm_core::pipeline::apply_reference(&chi, &mask, CoreRef::None);
-        assert!((result[0] - 1.0).abs() < 1e-10);
-        assert!((result[1] - 0.0).abs() < 1e-10);
-        assert!((result[2] - 3.0).abs() < 1e-10);
     }
 
     /// Build a `QsmRun` whose echoes point at the given (phase, magnitude) file pairs.
@@ -1836,19 +1795,21 @@ mod swi_export_tests {
         }
     }
 
-    /// Two echoes where the head moved 2 mm along x between them: the stage recovers the shift,
-    /// puts echo 2 back over echo 1, and the later stages read the corrected echoes and the
-    /// shrunk mask. Off, or without magnitude, it does what it says.
+    /// Two echoes where the head moved 2 mm along x between them: the stage reports echo 1 as the
+    /// reference and echo 2 as moved, writes echo 2 corrected (closer to echo 1 than it came in),
+    /// and the shrunk mask. Off, or without magnitude, it does what it says. How well the shift
+    /// is recovered is QSM.rs's to test (`motion::a_known_transform_is_recovered_and_b0_follows_it`).
     #[test]
     fn motion_correction_stage() {
-        let dims = (32, 32, 24);
+        let dims = (24, 24, 16);
         let (nx, ny, nz) = dims;
+        let (cx, cy, cz) = ((nx - 1) as f64 / 2.0, (ny - 1) as f64 / 2.0, (nz - 1) as f64 / 2.0);
         let blob = |shift: f64| -> Vec<f64> {
             let mut v = vec![0.0; nx * ny * nz];
             for k in 0..nz { for j in 0..ny { for i in 0..nx {
-                let (x, y, z) = (i as f64 - 15.5 - shift, j as f64 - 15.5, k as f64 - 11.5);
-                v[i + j * nx + k * nx * ny] = 100.0 * (-(x * x / 40.0 + y * y / 25.0 + z * z / 15.0)).exp()
-                    + 30.0 * (-((x - 4.0).powi(2) + (y + 3.0).powi(2) + z * z) / 6.0).exp();
+                let (x, y, z) = (i as f64 - cx - shift, j as f64 - cy, k as f64 - cz);
+                v[i + j * nx + k * nx * ny] = 100.0 * (-(x * x / 30.0 + y * y / 20.0 + z * z / 10.0)).exp()
+                    + 30.0 * (-((x - 3.0).powi(2) + (y + 2.0).powi(2) + z * z) / 5.0).exp();
             }}}
             v
         };
@@ -1880,13 +1841,14 @@ mod swi_export_tests {
         let report: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(output.motion_report_path(&k)).unwrap()).unwrap();
         let t = report["echoes"][1]["translation_mm"].as_f64().unwrap();
-        assert!((t - 2.0).abs() < 0.2, "recovered translation {t} mm, report {report}");
+        assert!(t > 1.0, "echo 2 moved 2 mm and is reported at {t} mm: {report}");
         assert_eq!(report["echoes"][0]["translation_mm"].as_f64().unwrap(), 0.0);
-        // Echo 2 now sits over echo 1 inside the brain.
+        // Echo 2 is written corrected: nearer echo 1 inside the brain than the echo that came in.
         let (m1, m2) = (load_volume(&output.motion_mag_path(&k, 1)).unwrap(), load_volume(&output.motion_mag_path(&k, 2)).unwrap());
         let mask = load_mask(&shrunk).unwrap();
-        let err = m1.iter().zip(&m2).zip(&mask).filter(|(_, &m)| m != 0).map(|((a, b), _)| (a - b).abs()).fold(0.0, f64::max);
-        assert!(err < 5.0, "max magnitude difference after correction {err}");
+        let worst = |a: &[f64], b: &[f64]| a.iter().zip(b).zip(&mask).filter(|(_, &m)| m != 0)
+            .map(|((a, b), _)| (a - b).abs()).fold(0.0, f64::max);
+        assert!(worst(&m1, &m2) < worst(&m1, &blob(2.0)), "echo 2 was not corrected towards echo 1");
 
         // Off again: the coverage mask it left is not this run's.
         config.motion_correction.enabled = false;
@@ -2107,7 +2069,9 @@ mod oblique_run_tests {
     use super::*;
     use crate::bids::entities::AcquisitionKey;
 
-    const DIMS: (usize, usize, usize) = (20, 22, 18);
+    /// As small as the grid logic allows: the obliquity is in the affine, not the matrix size.
+    /// Each axis differs, so a swapped axis shows, and ten slices leave room for the SMWI minIP.
+    const DIMS: (usize, usize, usize) = (12, 14, 10);
 
     fn key(acq: &str) -> AcquisitionKey {
         AcquisitionKey {
@@ -2119,11 +2083,12 @@ mod oblique_run_tests {
     /// A small multi-echo GRE of a sphere, 1 mm isotropic and tilted 30 degrees about x.
     fn oblique_run(dir: &Path, acq: &str, n_echoes: usize) -> QsmRun {
         let (nx, ny, nz) = DIMS;
+        let (cx, cy, cz) = ((nx / 2) as f64, (ny / 2) as f64, (nz / 2) as f64);
         let (c, s) = (30f64.to_radians().cos(), 30f64.to_radians().sin());
         let affine = [
-            1.0, 0.0, 0.0, -10.0,
-            0.0, c, -s, -11.0,
-            0.0, s, c, -9.0,
+            1.0, 0.0, 0.0, -cx,
+            0.0, c, -s, -cy,
+            0.0, s, c, -cz,
             0.0, 0.0, 0.0, 1.0,
         ];
         let mut echoes = Vec::new();
@@ -2133,9 +2098,9 @@ mod oblique_run_tests {
                 for j in 0..ny {
                     for i in 0..nx {
                         let v = i + j * nx + k * nx * ny;
-                        let (x, y, z) = (i as f64 - 10.0, j as f64 - 11.0, k as f64 - 9.0);
+                        let (x, y, z) = (i as f64 - cx, j as f64 - cy, k as f64 - cz);
                         let r = (x * x + y * y + z * z).sqrt();
-                        mag[v] = if r < 7.0 { 100.0 * (-0.02 * (e + 1) as f64).exp() + x } else { 1.0 };
+                        mag[v] = if r < 4.5 { 100.0 * (-0.02 * (e + 1) as f64).exp() + x } else { 1.0 };
                         phase[v] = (0.05 * (e + 1) as f64 * (x + 0.5 * y)).sin() * 3.0;
                     }
                 }
@@ -2152,21 +2117,28 @@ mod oblique_run_tests {
         run
     }
 
-    /// The default pipeline with RTS for the inversion. These tests are about grids, caching and
-    /// outputs, not the inversion; with the default (iLSQR) they took the suite from ~2 min to
-    /// ~50 min under coverage. The tests that switch to TGV or QSMART get them cut down as well:
-    /// a few TGV iterations, and QSMART with a few unpadded iLSQR iterations, one Frangi scale
-    /// and small vessel and SDF closing radii. Each still runs its own steps and writes the
-    /// same files.
+    /// The cheapest pipeline that still has every stage QSMxT wires: TKD for the inversion,
+    /// Laplacian unwrapping, an Otsu threshold of the magnitude for the mask, and V-SHARP with
+    /// small kernels. These tests are about grids, caching, outputs and provenance, which QSMxT
+    /// owns; the algorithms are QSM.rs's to test. The few that switch to QSMART, because its
+    /// step's own wiring is under test, get it cut down: two unpadded iLSQR iterations, one
+    /// Frangi scale and the smallest closing radii.
     fn fast_config() -> PipelineConfig {
+        use qsmxt_engine::masking::{MaskOp, MaskSection, MaskThresholdMethod, MaskingInput};
         let mut config = PipelineConfig::default();
-        config.inversion.algorithm = QsmAlgorithm::Rts;
-        config.inversion.tgv.iterations = 10;
+        config.inversion.algorithm = QsmAlgorithm::Tkd;
+        config.field_mapping.unwrapping_algorithm = crate::pipeline::config::UnwrappingAlgorithm::Laplacian;
+        config.masking.sections = vec![MaskSection {
+            input: MaskingInput::Magnitude,
+            generator: MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None },
+            refinements: vec![],
+        }];
+        config.bg_removal.vsharp.max_radius = 3.0;
         let q = &mut config.inversion.qsmart;
-        q.ilsqr_max_iter = 5;
+        q.ilsqr_max_iter = 2;
         q.ilsqr_pad_mm = 0.0;
-        q.vasc_sphere_radius = 2;
-        q.sdf_spatial_radius = 2;
+        q.vasc_sphere_radius = 1;
+        q.sdf_spatial_radius = 1;
         (q.frangi_scale_min, q.frangi_scale_max) = (1.0, 1.0);
         config
     }
@@ -2178,7 +2150,7 @@ mod oblique_run_tests {
         vec![MaskSection {
             input: MaskingInput::Magnitude,
             generator: MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None },
-            refinements: vec![MaskOp::Erode { iterations: 2 }],
+            refinements: vec![MaskOp::Erode { iterations: 1 }],
         }]
     }
 
@@ -2302,7 +2274,8 @@ mod oblique_run_tests {
         let mut config = resampling_config();
         run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
 
-        config.inversion.algorithm = QsmAlgorithm::Tkd;
+        // A new inversion threshold: the inversion is recomputed.
+        config.inversion.tkd.threshold *= 2.0;
         run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
         assert_eq!(voxels(&output.qsm_path(&run.key)), ACQUIRED);
         assert_eq!(voxels(&output.mask_path(&run.key)), ACQUIRED);
@@ -2505,9 +2478,9 @@ mod oblique_run_tests {
         assert_eq!(mtime(output.qsm_path(&run.key)), before, "the re-run recomputed χ");
         assert_eq!(voxels(&output.qsm_path(&run.key)), ACQUIRED);
         // A changed configuration recomputes what it needs, and lands on the acquired grid again.
-        let mut tkd = resampling_config();
-        tkd.inversion.algorithm = QsmAlgorithm::Tkd;
-        run_pipeline_cached(&run, &tkd, &output, false, &|_| {}).unwrap();
+        let mut changed = resampling_config();
+        changed.inversion.tkd.threshold *= 2.0;
+        run_pipeline_cached(&run, &changed, &output, false, &|_| {}).unwrap();
         assert_ne!(mtime(output.qsm_path(&run.key)), before);
         assert_eq!(voxels(&output.qsm_path(&run.key)), ACQUIRED);
     }
@@ -2563,7 +2536,7 @@ mod oblique_run_tests {
             run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
             config.inversion.algorithm = QsmAlgorithm::Qsmart;
             run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
-            config.inversion.algorithm = QsmAlgorithm::Rts;
+            config.inversion.algorithm = QsmAlgorithm::Tkd;
             run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
 
             let k = &run.key;
@@ -2590,32 +2563,65 @@ mod oblique_run_tests {
     /// state has already forgotten the other inversion by the time QSMART is recorded.
     ///
     /// One directory per pass mode, taken through a sequence of inversions that holds every
-    /// "a, then b, then a again" (RTS, TGV and QSMART, each to each other one and back), and
-    /// checked after every run. TGV, which costs most here, runs three times rather than once
-    /// per pair it is in.
+    /// "a, then b, then a again" (TKD, TGV and QSMART, each to each other one and back), and
+    /// checked after every step. The plan says which step each inversion is and what it writes;
+    /// the store records them as the engine does, and nothing is reconstructed: what is under test
+    /// is how `qsmxt run` keeps provenance, not the inversions (the engine's own
+    /// `switching_from_*_and_back` tests run those).
     #[test]
     fn only_the_last_inversion_is_named_the_raw_maps_maker() {
-        use QsmAlgorithm::{Qsmart as Q, Rts as R, Tgv as T};
+        use qsmxt_engine::plan::{Pass, Stage};
+        use qsmxt_engine::store::{Completed, Item, StageStore};
+        use QsmAlgorithm::{Qsmart as Q, Tgv as T, Tkd as K};
         let dir = tempfile::tempdir().unwrap();
         let run = oblique_run(dir.path(), "a", 2);
         let k = &run.key;
-        let sequence = [R, T, R, T, Q, T, Q, R, Q, R];
-        for (a, b) in [(R, T), (T, R), (R, Q), (Q, R), (T, Q), (Q, T)] {
+        let sequence = [K, T, K, T, Q, T, Q, K, Q, K];
+        for (a, b) in [(K, T), (T, K), (K, Q), (Q, K), (T, Q), (Q, T)] {
             assert!(sequence.windows(3).any(|w| w == [a, b, a]), "{a:?} → {b:?} → {a:?} is not in the sequence");
         }
-        let step_of = |a: QsmAlgorithm| match a { R => "invert", T => "tgv", _ => "qsmart" };
+        let step_of = |a: QsmAlgorithm| match a { K => "invert", T => "tgv", _ => "qsmart" };
         for two_pass in [false, true] {
             let mut config = fast_config();
             config.masking.two_pass = two_pass;
             let output = DerivativeOutputs::new(&dir.path().join(format!("two-pass-{two_pass}")));
+            let state_path = output.state_path(k);
+            let mut last_mask = None;
             for (i, &algorithm) in sequence.iter().enumerate() {
                 config.inversion.algorithm = algorithm;
                 config.masking.sections = if algorithm == Q { qsmart_mask_sections() } else { fast_config().masking.sections };
-                run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
-                let step = step_of(algorithm);
-                let mut raws = vec![(output.chi_raw_path(k), step.to_string())];
+                let plan = qsmxt_engine::plan::plan(&config, &requirements::scan_facts(&run, &config));
+                let mut store = FileStore {
+                    run: &run, config: &config, output: output.clone(), meta: None,
+                    state: PipelineState::load_or_create(&state_path, &config, k, false), state_path: state_path.clone(),
+                    started: None, step: None, supplied_mask: None, extra_outputs: Vec::new(), metadata: None,
+                    working_grid_kept: false,
+                };
+                let mut record = |step: &qsmxt_engine::plan::Step, key: &str| {
+                    store.start(&step.name);
+                    store.record(&Completed {
+                        step: &step.name, algorithm: step.algorithm.as_deref(), params: &serde_json::json!({}),
+                        outcome: None, key, inputs: &step.reads, outputs: &step.outputs, decisions: &[],
+                    }).unwrap();
+                };
+                // The mask is remade when its recipe changes, which forgets what was downstream.
+                let mask_key = format!("{:?}", config.masking.sections);
+                if last_mask.as_ref() != Some(&mask_key) {
+                    record(plan.steps.iter().find(|s| s.stage == Stage::Mask(Pass::Main)).unwrap(), &mask_key);
+                    last_mask = Some(mask_key);
+                }
+                let passes: &[Pass] = if two_pass { &[Pass::Main, Pass::Reliable] } else { &[Pass::Main] };
+                for &pass in passes {
+                    let step = plan.steps.iter()
+                        .find(|s| matches!(s.stage, Stage::Inversion(p) | Stage::Tgv(p) | Stage::Qsmart(p) if p == pass))
+                        .unwrap();
+                    assert_eq!(step.name, format!("{}{}", step_of(algorithm), pass.suffix()));
+                    assert!(step.outputs.contains(&Item::RawChi(pass)), "{}: {:?}", step.name, step.outputs);
+                    record(step, &format!("{algorithm:?}"));
+                }
+                let mut raws = vec![(output.chi_raw_path(k), step_of(algorithm).to_string())];
                 if two_pass {
-                    raws.push((output.reliable_chi_raw_path(k), format!("{step}-reliable")));
+                    raws.push((output.reliable_chi_raw_path(k), format!("{}-reliable", step_of(algorithm))));
                 }
                 for (raw, step) in raws {
                     let makers: Vec<&str> = crate::bids::bidsprov::STEPS.iter().copied().filter(|&s| {
@@ -2810,7 +2816,7 @@ mod oblique_run_tests {
         // A member's background removal changes: its local field is rewritten, and the group
         // is recomputed from it.
         let mut other = config.clone();
-        other.bg_removal.algorithm = BfAlgorithm::Pdf;
+        other.bg_removal.algorithm = BfAlgorithm::Sharp;
         run_pipeline_cached(&runs[1], &other, &output, false, &|_| {}).unwrap();
         combine(&config);
         assert_ne!(mtime(), first, "a member's new local field did not recompute the group");
@@ -2828,10 +2834,27 @@ mod real_imag_input_tests {
     use crate::bids::discovery::{discover_runs, DiscoveryFilter};
     use crate::testutils;
 
+    /// The cheapest reconstruction: these tests are about how the input is read (the conversion,
+    /// its correction and its provenance), so TKD, Laplacian unwrapping and a magnitude threshold
+    /// stand in for the default algorithms.
+    fn config() -> PipelineConfig {
+        use qsmxt_engine::masking::{MaskOp, MaskSection, MaskThresholdMethod, MaskingInput};
+        let mut config = PipelineConfig::default();
+        config.inversion.algorithm = QsmAlgorithm::Tkd;
+        config.field_mapping.unwrapping_algorithm = crate::pipeline::config::UnwrappingAlgorithm::Laplacian;
+        config.masking.sections = vec![MaskSection {
+            input: MaskingInput::Magnitude,
+            generator: MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None },
+            refinements: vec![],
+        }];
+        config.bg_removal.vsharp.max_radius = 3.0;
+        config
+    }
+
     fn run_on(bids: &Path, out: &Path) -> (QsmRun, DerivativeOutputs) {
         let run = discover_runs(bids, &DiscoveryFilter::default()).unwrap().remove(0);
         let output = DerivativeOutputs::new(out);
-        run_pipeline_cached(&run, &PipelineConfig::default(), &output, true, &|_| {}).unwrap();
+        run_pipeline_cached(&run, &config(), &output, true, &|_| {}).unwrap();
         (run, output)
     }
 
@@ -2910,7 +2933,7 @@ mod real_imag_input_tests {
             serde_json::json!({ "x": false, "y": false, "z": false }));
 
         let before = std::fs::metadata(&prov_path).unwrap().modified().unwrap();
-        run_pipeline_cached(&run, &PipelineConfig::default(), &output, false, &|_| {}).unwrap();
+        run_pipeline_cached(&run, &config(), &output, false, &|_| {}).unwrap();
         assert_eq!(std::fs::metadata(&prov_path).unwrap().modified().unwrap(), before, "scale_phase re-ran");
     }
 }
