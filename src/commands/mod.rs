@@ -841,9 +841,10 @@ mod integration_tests {
         assert!(output.exists());
     }
 
+    /// `invert tgv` takes a field in ppm like the other inversions: no TE or field strength. Its
+    /// one run, for the call site; one iteration is enough for that.
     #[test]
     fn test_invert_tgv_runs_on_a_ppm_field() {
-        // `invert tgv` takes a field in ppm like the other inversions: no TE or field strength.
         let dir = tempfile::tempdir().unwrap();
         let input = dir.path().join("field.nii");
         let mask = dir.path().join("mask.nii");
@@ -853,7 +854,7 @@ mod integration_tests {
 
         super::invert::execute(InvertCommand::Tgv(InvertTgvArgs {
             common: common_invert(input, mask, output.clone()),
-            iterations: Some(5),
+            iterations: Some(1),
             erosions: Some(0),
             alpha1: None, alpha0: None,
             step_size: None, tol: None,
@@ -1525,10 +1526,12 @@ mod integration_tests {
         args.dry = false;
         args.no_mem_limit = true;
         args.clean_intermediates = true;
-        // What is cleaned does not depend on the inversion; TKD is the cheapest.
+        // What is cleaned does not depend on the algorithms; TKD and Laplacian are the cheapest.
         args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
+        args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
         let mut rerun = default_run_args(args.bids_dir.clone(), out.clone());
         rerun.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
+        rerun.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
         super::run::execute(args).unwrap();
 
         let deriv = out.join("derivatives/qsmxt");
@@ -1564,6 +1567,8 @@ mod integration_tests {
         args.clean_intermediates = true;
         args.include = Some(vec!["*acq-dir*".to_string()]);
         args.pipeline.orientation_group = Some("acq".to_string());
+        args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
+        args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
         super::run::execute(args).unwrap();
         let deriv = out.join("derivatives/qsmxt");
         assert!(deriv.join("sub-1/ses-1/anat/sub-1_ses-1_desc-cosmos_Chimap.nii").exists());
@@ -1710,6 +1715,9 @@ mod integration_tests {
                 "nothing should have been reconstructed");
     }
 
+    /// The one single-echo TGV run, for the call site that hands TGV echo 1's wrapped phase (what
+    /// it is handed is `tgv_gets_the_field_in_ppm_or_echo_1_phase_with_te_in_s_and_b0_in_t`), with
+    /// one iteration; also inhomogeneity correction and a phase-quality mask on a single echo.
     #[test]
     fn test_run_single_echo_tgv() {
         let dir = tempfile::tempdir().unwrap();
@@ -1720,7 +1728,7 @@ mod integration_tests {
         let mut args = default_run_args(bids, out.clone());
         args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tgv);
         args.pipeline.masking_input = Some(MaskInputArg::MagnitudeFirst);
-        args.pipeline.tgv_params.tgv_iterations = Some(5);
+        args.pipeline.tgv_params.tgv_iterations = Some(1);
         args.pipeline.tgv_params.tgv_erosions = Some(0);
         args.dry = false;
         args.no_mem_limit = true;
@@ -1826,25 +1834,6 @@ mod integration_tests {
                 heidi_inner_iterations: Some(2),
                 ..Default::default()
             },
-        })).unwrap();
-        assert!(output.exists());
-    }
-
-    #[test]
-    fn test_invert_tgv() {
-        let dir = tempfile::tempdir().unwrap();
-        let input = dir.path().join("field.nii");
-        let mask = dir.path().join("mask.nii");
-        let output = dir.path().join("chi.nii");
-        testutils::write_field(&input);
-        testutils::write_mask(&mask);
-
-        super::invert::execute(InvertCommand::Tgv(InvertTgvArgs {
-            common: common_invert(input, mask, output.clone()),
-            iterations: Some(5),
-            erosions: Some(0),
-            alpha1: None, alpha0: None,
-            step_size: None, tol: None,
         })).unwrap();
         assert!(output.exists());
     }
@@ -2106,8 +2095,9 @@ mod integration_tests {
         testutils::create_multi_orientation_bids(&bids);
         testutils::write_dseg(&bids.join("derivatives/mydseg/sub-1/ses-1/anat/sub-1_ses-1_dseg.nii"));
         let pipeline = || PipelineArgs {
-            // What is under test is SLURM/local parity, not the inversion: RTS keeps it fast.
-            qsm_algorithm: Some(crate::cli::QsmAlgorithmArg::Rts),
+            // What is under test is SLURM/local parity, not the algorithms: the cheapest ones.
+            qsm_algorithm: Some(crate::cli::QsmAlgorithmArg::Tkd),
+            unwrapping_algorithm: Some(UnwrapAlgorithmArg::Laplacian),
             orientation_group: Some("acq".to_string()),
             masking_input: Some(MaskInputArg::Magnitude),
             do_analysis: true,
@@ -2208,10 +2198,19 @@ mod integration_tests {
         assert!(!prov.contains(" aggregate "), "the aggregation command leaked into provenance");
     }
 
+    /// The cheapest pipeline: what is under test is which runs were processed, not how.
+    fn cheap_pipeline() -> PipelineArgs {
+        PipelineArgs {
+            qsm_algorithm: Some(QsmAlgorithmArg::Tkd),
+            unwrapping_algorithm: Some(UnwrapAlgorithmArg::Laplacian),
+            ..Default::default()
+        }
+    }
+
     fn aggregate_args(bids: PathBuf, out: PathBuf, include: Vec<String>) -> AggregateArgs {
         AggregateArgs {
             bids_dir: bids, output_dir: Some(out), config: None, include: Some(include), exclude: None,
-            num_echoes: None, pipeline: Default::default(), debug: false, force: false,
+            num_echoes: None, pipeline: cheap_pipeline(), debug: false, force: false,
             clean_intermediates: false, command_line: None,
         }
     }
@@ -2229,6 +2228,7 @@ mod integration_tests {
         worker.no_mem_limit = true;
         worker.no_dataset_steps = true;
         worker.include = Some(vec!["*acq-dir1*".to_string()]);
+        worker.pipeline = cheap_pipeline();
         super::run::execute(worker).unwrap();
 
         let keys = vec!["*acq-dir1*".to_string(), "*acq-dir2*".to_string()];
@@ -2239,7 +2239,7 @@ mod integration_tests {
         assert!(deriv.join("desc-reference_summary.tsv").exists(), "the processed run is still summarised");
 
         let mut other = aggregate_args(bids, out.clone(), vec!["*acq-dir1*".to_string()]);
-        other.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
+        other.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Rts);
         let err = super::aggregate::execute(other).unwrap_err().to_string();
         assert!(err.contains("was processed with a different configuration"), "{err}");
     }
@@ -2268,83 +2268,74 @@ mod integration_tests {
         }).unwrap();
     }
 
-    // --- TGV scale regression (multi-echo TGV used to get the field in ppm as if it were rad) ---
+    // --- TGV's inputs (multi-echo TGV used to get the field in ppm as if it were rad) ---
 
-    /// A BIDS GRE dataset forward-simulated from the multi-orientation χ phantom: wrapped phase
-    /// `2π·γ·B0·TE·field_ppm` at each TE, unit magnitude inside a sphere, nothing outside.
-    fn write_phantom_gre_bids(root: &Path, echo_times: &[f64], b0_t: f64) {
-        use crate::testutils::multiorient as mo;
-        let anat = root.join("sub-1/anat");
+    /// What a `qsmxt run` hands TGV, for a dataset with `echo_times` (s) at `b0_t` (T): the
+    /// plan's TGV step (what it reads), the run's metadata and the step's parameters.
+    fn tgv_wiring(echo_times: &[f64], b0_t: f64)
+        -> (qsmxt_engine::plan::Step, qsmxt_engine::scan::RunMetadata, crate::pipeline::config::PipelineConfig)
+    {
+        let dir = tempfile::tempdir().unwrap();
+        let anat = dir.path().join("sub-1/anat");
         std::fs::create_dir_all(&anat).unwrap();
-        let field = mo::forward_field(&mo::chi_phantom(), (0.0, 0.0, 1.0));
-        let n = mo::MO_N;
-        let c = n as f64 / 2.0;
-        let inside = |i: usize| {
-            let (x, y, z) = (i % n, (i / n) % n, i / (n * n));
-            let d2 = (x as f64 + 0.5 - c).powi(2) + (y as f64 + 0.5 - c).powi(2) + (z as f64 + 0.5 - c).powi(2);
-            d2 < (c - 1.0).powi(2)
-        };
-        let mag: Vec<f64> = (0..n * n * n).map(|i| if inside(i) { 1.0 } else { 0.0 }).collect();
         let suffix = if echo_times.len() > 1 { "MEGRE" } else { "T2starw" };
         for (e, &te) in echo_times.iter().enumerate() {
-            let rad_per_ppm = 2.0 * std::f64::consts::PI * 42.5781 * b0_t * te;
-            let mut phase: Vec<f64> = (0..field.len())
-                .map(|i| if inside(i) { (field[i] * rad_per_ppm + std::f64::consts::PI)
-                    .rem_euclid(2.0 * std::f64::consts::PI) - std::f64::consts::PI } else { 0.0 })
-                .collect();
-            // Real phase spans [-π, π]; QSMxT rescales a phase image to that range by its min/max,
-            // so pin the range in two corner voxels outside the object.
-            phase[0] = -std::f64::consts::PI;
-            *phase.last_mut().unwrap() = std::f64::consts::PI;
             let echo = if echo_times.len() > 1 { format!("_echo-{}", e + 1) } else { String::new() };
-            for (part, data) in [("phase", &phase), ("mag", &mag)] {
-                let stem = format!("sub-1{echo}_part-{part}_{suffix}");
-                mo::write(&anat.join(format!("{stem}.nii")), data);
-                testutils::write_sidecar(&anat.join(format!("{stem}.json")), te, b0_t);
+            for part in ["phase", "mag"] {
+                let stem = anat.join(format!("sub-1{echo}_part-{part}_{suffix}"));
+                if part == "phase" { testutils::write_phase(&stem.with_extension("nii")) }
+                else { testutils::write_magnitude(&stem.with_extension("nii")) }
+                testutils::write_sidecar(&stem.with_extension("json"), te, b0_t);
             }
         }
+        let mut args = default_run_args(dir.path().to_path_buf(), dir.path().join("out"));
+        args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tgv);
+        args.pipeline.tgv_params.tgv_alpha1 = Some(0.0021);
+        args.pipeline.tgv_params.tgv_alpha0 = Some(0.0037);
+        let config = super::run::build_config(None, &args.pipeline).unwrap();
+        let runs = crate::bids::discovery::discover_runs(dir.path(), &Default::default()).unwrap();
+        let facts = crate::pipeline::requirements::scan_facts(&runs[0], &config);
+        let plan = qsmxt_engine::plan::plan(&config, &facts);
+        let step = plan.steps.iter()
+            .find(|s| s.stage == qsmxt_engine::plan::Stage::Tgv(qsmxt_engine::plan::Pass::Main))
+            .expect("a TGV run has a TGV step").clone();
+        let header = qsm_core::io::read_nifti_file(&runs[0].echoes[0].phase_nifti).unwrap();
+        let meta = qsmxt_engine::scan::resolve_geometry(header.dims, header.voxel_size, header.affine, &facts, &config);
+        (step, meta, config)
     }
 
-    /// Run the pipeline with `algo` and return the least-squares slope of χ against the
-    /// phantom's χ inside the phantom mask (offset-invariant, so referencing does not matter).
-    fn phantom_chi_slope(echo_times: &[f64], algo: QsmAlgorithmArg) -> f64 {
-        use crate::testutils::multiorient as mo;
-        let dir = tempfile::tempdir().unwrap();
-        let bids = dir.path().join("bids");
-        let out = dir.path().join("out");
-        write_phantom_gre_bids(&bids, echo_times, 3.0);
-        let mut args = default_run_args(bids, out.clone());
-        args.pipeline.qsm_algorithm = Some(algo);
-        args.pipeline.masking_input = Some(MaskInputArg::MagnitudeFirst);
-        args.dry = false;
-        args.no_mem_limit = true;
-        super::run::execute(args).unwrap();
-
-        let chimap = out.join("derivatives/qsmxt/sub-1/anat/sub-1_Chimap.nii");
-        let got = qsm_core::io::read_nifti_file(&chimap).unwrap().data;
-        let truth = mo::chi_phantom();
-        let mask = mo::mask();
-        let idx: Vec<usize> = (0..truth.len()).filter(|&i| mask[i] == 1 && got[i] != 0.0).collect();
-        assert!(idx.len() > 500, "too few scored voxels ({})", idx.len());
-        let k = idx.len() as f64;
-        let (mt, mg) = (idx.iter().map(|&i| truth[i]).sum::<f64>() / k, idx.iter().map(|&i| got[i]).sum::<f64>() / k);
-        let cov: f64 = idx.iter().map(|&i| (truth[i] - mt) * (got[i] - mg)).sum();
-        let var: f64 = idx.iter().map(|&i| (truth[i] - mt).powi(2)).sum();
-        cov / var
-    }
-
-    /// Multi-echo TGV gets the B0 field map in ppm (QSM.rs#170). Before, `stage_tgv` passed that
-    /// ppm field to a solver expecting rad at TE1, so χ came out 2π·γ·B0·TE1 too small: ÷4.0 at
-    /// 3 T with TE1 = 5 ms, a slope of ~0.2 here. Single-echo TGV takes echo 1's wrapped phase
-    /// and converts with TE1 and B0, so the two routes must also agree with each other.
+    /// Multi-echo TGV gets the B0 field map in ppm (QSM.rs#170); single-echo TGV gets echo 1's
+    /// wrapped phase, with TE1 in s and B0 in T for qsm-core to convert it; the alphas are in ppm
+    /// whichever the input. `stage_tgv` used to pass the ppm field to a solver expecting rad at
+    /// TE1, which made χ 2π·γ·B0·TE1 too small. That TGV then lands on the right scale is
+    /// QSM.rs's test (`chi_comes_back_on_the_phantom_scale`, QSM.rs#204); this checks what QSMxT
+    /// passes it, from the BIDS sidecars and the flags.
     #[test]
-    fn tgv_chi_has_the_right_scale() {
-        let multi = phantom_chi_slope(&[0.005, 0.010, 0.015], QsmAlgorithmArg::Tgv);
-        let single = phantom_chi_slope(&[0.010], QsmAlgorithmArg::Tgv);
-        eprintln!("phantom χ slope vs truth: multi-echo TGV {multi:.3}, single-echo TGV {single:.3}");
-        assert!((0.7..1.3).contains(&multi), "multi-echo TGV slope {multi:.3} vs truth (the ppm-as-rad bug gives ~0.2)");
-        assert!((0.7..1.3).contains(&single), "single-echo TGV slope {single:.3} vs truth");
-        assert!((multi / single - 1.0).abs() < 0.1, "multi-echo {multi:.3} vs single-echo {single:.3} TGV slope");
+    fn tgv_gets_the_field_in_ppm_or_echo_1_phase_with_te_in_s_and_b0_in_t() {
+        use qsmxt_engine::store::Item;
+        use qsmxt_engine::stages::inversion::{tgv_params, tgv_params_from_config, tgv_source, TgvSource};
+
+        let (step, meta, config) = tgv_wiring(&[0.005, 0.010, 0.015], 7.0);
+        assert!(step.reads.contains(&Item::FieldPpm), "{:?}", step.reads);
+        assert!(!step.reads.iter().any(|i| matches!(i, Item::Phase(_))), "{:?}", step.reads);
+        assert_eq!(tgv_source(&meta), TgvSource::FieldPpm);
+        let p = tgv_params(&config, &meta);
+        assert_eq!(p["input"], "field_ppm", "{p}");
+        assert!(p.get("te_ms").is_none(), "{p}");
+        assert_eq!(p["alphas_ppm"], serde_json::json!([0.0021, 0.0037]), "{p}");
+        let core = tgv_params_from_config(&config.inversion.tgv);
+        assert_eq!((core.alpha1, core.alpha0), (0.0021, 0.0037));
+
+        let (step, meta, config) = tgv_wiring(&[0.010], 7.0);
+        assert!(step.reads.contains(&Item::Phase(1)), "{:?}", step.reads);
+        assert!(!step.reads.contains(&Item::FieldPpm), "{:?}", step.reads);
+        assert_eq!(tgv_source(&meta), TgvSource::WrappedPhase);
+        // What `stages::inversion::tgv` gives qsm-core as `te_s` and `b0_t`.
+        assert_eq!((meta.echo_times[0], meta.field_strength), (0.010, 7.0));
+        let p = tgv_params(&config, &meta);
+        assert_eq!(p["input"], "wrapped_phase", "{p}");
+        assert_eq!((p["te_ms"].as_f64(), p["field_strength"].as_f64()), (Some(10.0), Some(7.0)), "{p}");
+        assert_eq!(p["alphas_ppm"], serde_json::json!([0.0021, 0.0037]), "{p}");
     }
 
     /// A requested output the data cannot produce stops the command before any run starts,
@@ -2533,11 +2524,13 @@ mod integration_tests {
         assert!(root.join("oblique/derivatives/qsmxt/sub-1/anat/sub-1_space-axial_Chimap.nii").exists());
     }
 }
-/// End-to-end tests for the multi-orientation reconstructions.
+/// Tests for the multi-orientation commands (`invert cosmos`, `invert sti`).
 ///
-/// These check numbers, not just exit codes: the point of COSMOS is that combining
-/// orientations recovers what a single orientation cannot, so a test that only asserted
-/// "it wrote a file" would pass just as happily if the extra orientations were dropped.
+/// That COSMOS and STI recover a phantom is QSM.rs's to test (`cosmos::tests::
+/// recovers_chi_from_simulated_orientations`, `sti::tests::recovers_tensor_from_simulated_orientations`).
+/// These check what the commands hand qsm-core: every orientation's field with its own B0
+/// direction, in order, and the mask. A command that dropped an orientation, or paired a field
+/// with another's direction, would not match qsm-core given the same inputs.
 #[cfg(test)]
 mod multiorient_tests {
     use crate::cli::*;
@@ -2585,8 +2578,29 @@ mod multiorient_tests {
         MultiOrientCommonArgs { inputs, b0_direction, b0_dirs: None, mask, force: false }
     }
 
+    fn read(path: &Path) -> Vec<f64> {
+        qsm_core::io::read_nifti_file(path).unwrap().data
+    }
+
+    /// `got` is `want` as written to a float32 NIfTI.
+    fn assert_same_map(got: &[f64], want: &[f64], what: &str) {
+        assert_eq!(got.len(), want.len(), "{what}");
+        for (i, (g, w)) in got.iter().zip(want).enumerate() {
+            assert!((g - w).abs() <= 1e-5 * (1.0 + w.abs()), "{what} differs at {i}: {g} vs {w}");
+        }
+    }
+
+    /// qsm-core's COSMOS on the phantom's fields for `dirs`, with `lambda`.
+    fn core_cosmos(chi: &[f64], dirs: &[(f64, f64, f64)], lambda: Option<f64>) -> Vec<f64> {
+        let fields: Vec<Vec<f64>> = dirs.iter().map(|&b| mo::forward_field(chi, b)).collect();
+        let d = qsm_core::inversion::CosmosParams::default();
+        let params = qsm_core::inversion::CosmosParams { lambda: lambda.unwrap_or(d.lambda), ..d };
+        qsm_core::inversion::cosmos(&fields, dirs, &mo::mask(), &mo::grid(), &params)
+    }
+
+    /// Every orientation's field reaches qsm-core with its own direction, and the mask with them.
     #[test]
-    fn cosmos_recovers_the_phantom_from_three_orientations() {
+    fn cosmos_gives_qsm_core_every_orientation_with_its_direction() {
         let dir = tempfile::tempdir().unwrap();
         let chi = mo::chi_phantom();
         let inputs = write_fields(dir.path(), &chi, &DIRS);
@@ -2604,52 +2618,7 @@ mod multiorient_tests {
         }))
         .unwrap();
 
-        let got = qsm_core::io::read_nifti_file(&out).unwrap();
-        let mask = mo::mask();
-        // COSMOS is referenced to zero mean, as the phantom is; an inverse-crime forward model
-        // means the residual should be small, but leave room for FFT edge effects.
-        let err = mo::nrmse(&got.data, &chi, &mask);
-        assert!(err < 0.25, "COSMOS NRMSE {err:.3} is too high to be a real reconstruction");
-    }
-
-    /// The load-bearing claim: three orientations beat one. If the extra orientations were
-    /// being ignored, this is the assertion that would fail.
-    #[test]
-    fn three_orientations_beat_one() {
-        let dir = tempfile::tempdir().unwrap();
-        let chi = mo::chi_phantom();
-        let inputs = write_fields(dir.path(), &chi, &DIRS);
-        let mask_path = dir.path().join("mask.nii");
-        mo::write_mask(&mask_path);
-        let mask = mo::mask();
-
-        let run = |inputs: Vec<PathBuf>, dirs: &[(f64, f64, f64)], name: &str| -> f64 {
-            let out = dir.path().join(format!("{name}.nii"));
-            let mut c = common(inputs, mask_path.clone(), flat_dirs(dirs));
-            // The single-orientation leg is exactly what the degeneracy gate exists to
-            // refuse; here it is the baseline being measured, so it has to be forced.
-            c.force = true;
-            super::invert::execute(InvertCommand::Cosmos(InvertCosmosArgs {
-                common: c,
-                output: out.clone(),
-                // One orientation leaves the magic-angle cone uncovered, so it needs the
-                // regularization COSMOS proper does not.
-                lambda: Some(1e-2),
-                magnitudes: vec![],
-                tol: None,
-                max_iter: None,
-            }))
-            .unwrap();
-            let got = qsm_core::io::read_nifti_file(&out).unwrap();
-            mo::nrmse(&got.data, &chi, &mask)
-        };
-
-        let one = run(inputs[..1].to_vec(), &DIRS[..1], "one");
-        let three = run(inputs.clone(), &DIRS, "three");
-        assert!(
-            three < one,
-            "three orientations (NRMSE {three:.3}) should beat one (NRMSE {one:.3})"
-        );
+        assert_same_map(&read(&out), &core_cosmos(&chi, &DIRS, None), "COSMOS");
     }
 
     /// The degenerate set that this feature exists to refuse: same direction N times.
@@ -2696,7 +2665,8 @@ mod multiorient_tests {
             max_iter: None,
         }))
         .unwrap();
-        assert!(out.exists());
+        // ...with `--lambda` reaching qsm-core.
+        assert_same_map(&read(&out), &core_cosmos(&chi, &same, Some(1e-2)), "forced COSMOS");
     }
 
     #[test]
@@ -2778,8 +2748,7 @@ mod multiorient_tests {
             max_iter: None,
         }))
         .unwrap();
-        let got = qsm_core::io::read_nifti_file(&out).unwrap();
-        assert!(mo::nrmse(&got.data, &chi, &mo::mask()) < 0.25);
+        assert_same_map(&read(&out), &core_cosmos(&chi, &DIRS, None), "COSMOS with --b0-dirs");
     }
 
     #[test]
@@ -2811,11 +2780,13 @@ mod multiorient_tests {
         let bytes = std::fs::read(dir.path().join("sti_desc-sti_evec.nii")).unwrap();
         assert_eq!(qsm_core::io::load_nifti_4d(&bytes).unwrap().1 .3, 3);
 
-        // The phantom is isotropic, so STI's mean magnetic susceptibility should reproduce
-        // the scalar map it was built from — the sense in which STI contains scalar QSM.
-        let mms = qsm_core::io::read_nifti_file(&dir.path().join("sti_desc-mms_Chimap.nii")).unwrap();
-        let err = mo::nrmse(&mms.data, &chi, &mo::mask());
-        assert!(err < 0.35, "STI MMS NRMSE {err:.3} should track the isotropic phantom");
+        // The maps are qsm-core's STI of every orientation with its direction, and `--lambda`.
+        let fields: Vec<Vec<f64>> = SIX_DIRS.iter().map(|&b| mo::forward_field(&chi, b)).collect();
+        let tensor = qsm_core::inversion::sti(&fields, &SIX_DIRS, &mo::mask(), &mo::grid(),
+            &qsm_core::inversion::StiParams { lambda: 1e-3 });
+        let maps = qsm_core::inversion::tensor_maps(&tensor, &mo::mask());
+        assert_same_map(&read(&dir.path().join("sti_desc-mms_Chimap.nii")), &maps.mms, "STI MMS");
+        assert_same_map(&read(&dir.path().join("sti_desc-msa_Chimap.nii")), &maps.msa, "STI MSA");
     }
 
     /// #275: each standalone command, given a run's BIDS basename as its prefix, writes exactly

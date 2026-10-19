@@ -347,10 +347,8 @@ fn mask_data() -> Vec<u8> {
 /// Synthetic multi-orientation data: a susceptibility phantom forward-projected through the
 /// dipole kernel at several B0 directions.
 ///
-/// Unlike the 8³ fixtures above, these are big enough that a reconstruction can be checked
-/// for *accuracy*, not just for running without crashing — the whole point of COSMOS is that
-/// combining orientations recovers what one orientation cannot, and a test that never looks
-/// at the numbers would not notice if the orientations were being ignored.
+/// Bigger than the 8³ fixtures above, with a mask well inside the volume, so that a
+/// multi-orientation reconstruction of it has structure to compare.
 pub mod multiorient {
     use std::path::Path;
 
@@ -423,18 +421,6 @@ pub mod multiorient {
     pub fn write_mask(path: &Path) {
         let data: Vec<f64> = mask().iter().map(|&m| m as f64).collect();
         write(path, &data);
-    }
-
-    /// Normalised RMS error between `got` and `want` inside `mask`.
-    pub fn nrmse(got: &[f64], want: &[f64], mask: &[u8]) -> f64 {
-        let (mut num, mut den) = (0.0, 0.0);
-        for i in 0..want.len() {
-            if mask[i] == 1 {
-                num += (got[i] - want[i]).powi(2);
-                den += want[i].powi(2);
-            }
-        }
-        (num / den.max(1e-30)).sqrt()
     }
 }
 
