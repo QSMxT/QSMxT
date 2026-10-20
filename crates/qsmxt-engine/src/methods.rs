@@ -132,7 +132,7 @@ const CITE_WAVESEP: Citation = Citation {
 
 const CITE_DECOMPOSE: Citation = Citation {
     key: "chen2021decompose",
-    text: "Chen, J., et al. (2021). \"DECOMPOSE-QSM: susceptibility source separation from a single gradient-echo acquisition.\" *Magnetic Resonance in Medicine*.",
+    text: "Chen, J., Gong, N.-J., Chaim, K.T., Otaduy, M.C.G., & Liu, C. (2021). \"Decompose quantitative susceptibility mapping (QSM) to sub-voxel diamagnetic and paramagnetic components based on gradient-echo MRI data.\" *NeuroImage*, 242, 118477.",
 };
 
 const CITE_HCCHISEP: Citation = Citation {

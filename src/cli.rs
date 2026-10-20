@@ -2990,7 +2990,8 @@ pub enum SeparationAlgorithmArg {
 /// Inputs shared by every chi-separation method.
 #[derive(Args, Debug, Clone)]
 pub struct SeparateCommonArgs {
-    /// Conventional QSM (χ_total) NIfTI in ppm
+    /// Conventional QSM (χ_total) NIfTI in ppm. For decompose: one QSM per echo as a 4D file, in
+    /// the echo order of --magnitude (a 3D QSM is used for every echo)
     #[arg(long)]
     pub qsm: PathBuf,
     /// Binary mask NIfTI file
@@ -3012,7 +3013,7 @@ pub struct SeparateCommonArgs {
 pub enum SeparateCommand {
     /// R2*-QSM closed-form (Dimov 2022) — QSM + R2* (GRE-only)
     R2starQsm(SeparateR2starQsmArgs),
-    /// DECOMPOSE-QSM signal-domain fit (Chen 2021) — QSM + multi-echo magnitude (GRE-only)
+    /// DECOMPOSE-QSM signal-domain fit (Chen 2021) — per-echo QSM + multi-echo magnitude (GRE-only)
     Decompose(SeparateDecomposeArgs),
     /// χ-separation iLSQR (Shin 2021) — local field + R2' + magnitude + QSM
     ChiSepIlsqr(SeparateChiSepIlsqrArgs),

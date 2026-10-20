@@ -6,7 +6,7 @@
 //! file. Outputs are written as `{prefix}_desc-{paramagnetic,diamagnetic,total}_Chimap.nii`, the
 //! pipeline's names (`bids::naming`).
 
-use log::info;
+use log::{info, warn};
 use std::path::Path;
 use qsm_core::io::NiftiData;
 use qsm_core::pipeline::{
@@ -88,7 +88,7 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
                 ..Default::default()
             };
             let inputs = SeparationInputs {
-                local_field_ppm: &[], qsm: &qsm.data, mask: &mask,
+                local_field_ppm: &[], qsm: &qsm.data, qsm_echoes: None, mask: &mask,
                 r2prime: None, r2star: r2star.as_ref().map(|n| n.data.as_slice()),
                 magnitude_rss: None, magnitude_multi: mag.as_deref(), se_magnitude_multi: None,
             };
@@ -98,10 +98,38 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
         }
         SeparateCommand::Decompose(args) => {
             let c = &args.common;
-            let (qsm, mask, metadata, n) = load_common(c, &args.echo_times)?;
-            info!("Chi-separation (decompose, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
+            // DECOMPOSE fits each echo's own QSM, so --qsm may be 4D (one χ per echo). The mask
+            // carries the 3D geometry for the metadata and the outputs.
+            let (mask, reference) = load_mask(&c.mask)?;
+            let n = mask.len();
             let (multi, ne) = load_multiecho_voxel_major(&args.magnitude, n)?;
+            let bdir = (c.b0_direction[0], c.b0_direction[1], c.b0_direction[2]);
+            let metadata = qsmxt_engine::bridge::to_scan_metadata(
+                reference.dims, reference.voxel_size, &args.echo_times, c.field_strength, bdir,
+                Some(reference.affine),
+            );
             check_echoes(ne, &metadata, "decompose")?;
+            let (qsm, qne) = load_multiecho_voxel_major(std::slice::from_ref(&c.qsm), n)
+                .map_err(|e| QsmxtError::Config(format!("decompose --qsm: {e}")))?;
+            let (qsm_total, qsm_echoes) = match qne {
+                1 => {
+                    warn!("decompose: --qsm is 3D, so the same χ is used for every echo. The method \
+                           expects one QSM per echo (a 4D --qsm in the echo order of --magnitude).");
+                    (qsm, None)
+                }
+                q if q == ne => {
+                    // χ_total for the dispatcher's own checks: the echo average.
+                    let mean = (0..n).map(|v| qsm[v * ne..(v + 1) * ne].iter().sum::<f64>() / ne as f64).collect();
+                    (mean, Some(qsm))
+                }
+                q => {
+                    return Err(QsmxtError::Config(format!(
+                        "decompose: --qsm has {q} volumes but the magnitude has {ne} echoes \
+                         (give one QSM per echo, or a single 3D QSM)")));
+                }
+            };
+            info!("Chi-separation (decompose, {}x{}x{}, {} QSM)", reference.dims.0, reference.dims.1,
+                  reference.dims.2, if qsm_echoes.is_some() { "per-echo" } else { "single" });
             let d = qsm_core::separation::DecomposeParams::default();
             let cfg = SeparationConfig {
                 algorithm: SeparationAlgorithm::Decompose,
@@ -114,13 +142,13 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
                 ..Default::default()
             };
             let inputs = SeparationInputs {
-                local_field_ppm: &[], qsm: &qsm.data, mask: &mask,
+                local_field_ppm: &[], qsm: &qsm_total, qsm_echoes: qsm_echoes.as_deref(), mask: &mask,
                 r2prime: None, r2star: None, magnitude_rss: None,
                 magnitude_multi: Some(&multi), se_magnitude_multi: None,
             };
             let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
                 .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
-            (c.output.clone(), qsm, result)
+            (c.output.clone(), reference, result)
         }
         SeparateCommand::ChiSepIlsqr(args) => {
             let c = &args.common;
@@ -149,7 +177,7 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
                 ..Default::default()
             };
             let inputs = SeparationInputs {
-                local_field_ppm: &local_field.data, qsm: &qsm.data, mask: &mask,
+                local_field_ppm: &local_field.data, qsm: &qsm.data, qsm_echoes: None, mask: &mask,
                 r2prime: Some(&r2prime.data), r2star: None,
                 magnitude_rss: Some(&mag_rss), magnitude_multi: None, se_magnitude_multi: None,
             };
@@ -184,7 +212,7 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
                 ..Default::default()
             };
             let inputs = SeparationInputs {
-                local_field_ppm: &local_field.data, qsm: &qsm.data, mask: &mask,
+                local_field_ppm: &local_field.data, qsm: &qsm.data, qsm_echoes: None, mask: &mask,
                 r2prime: Some(&r2prime.data), r2star: None,
                 magnitude_rss: Some(&mag_rss), magnitude_multi: None, se_magnitude_multi: None,
             };
@@ -212,7 +240,7 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
                 ..Default::default()
             };
             let inputs = SeparationInputs {
-                local_field_ppm: &[], qsm: &qsm.data, mask: &mask,
+                local_field_ppm: &[], qsm: &qsm.data, qsm_echoes: None, mask: &mask,
                 r2prime: Some(&r2prime.data), r2star: None,
                 magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None,
             };
@@ -245,7 +273,7 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
                 ..Default::default()
             };
             let inputs = SeparationInputs {
-                local_field_ppm: &[], qsm: &qsm.data, mask: &mask,
+                local_field_ppm: &[], qsm: &qsm.data, qsm_echoes: None, mask: &mask,
                 r2prime: Some(&r2prime.data), r2star: None, magnitude_rss: None,
                 magnitude_multi: Some(&multi), se_magnitude_multi: se_multi.as_deref(),
             };
@@ -267,7 +295,7 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
                 ..Default::default()
             };
             let inputs = SeparationInputs {
-                local_field_ppm: &local_field.data, qsm: &qsm.data, mask: &mask,
+                local_field_ppm: &local_field.data, qsm: &qsm.data, qsm_echoes: None, mask: &mask,
                 r2prime: Some(&r2prime.data), r2star: None,
                 magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None,
             };
@@ -293,7 +321,7 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
                 ..Default::default()
             };
             let inputs = SeparationInputs {
-                local_field_ppm: &local_field.data, qsm: &qsm.data, mask: &mask,
+                local_field_ppm: &local_field.data, qsm: &qsm.data, qsm_echoes: None, mask: &mask,
                 r2prime: Some(&r2prime.data), r2star: None,
                 magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None,
             };

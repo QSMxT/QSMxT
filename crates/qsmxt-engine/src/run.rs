@@ -1533,7 +1533,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let mut local_field = if self.store.has(&field_item) { self.store.real(&field_item)? } else { Vec::new() };
 
         let missing = sep::missing_inputs(alg, &qsm_core::pipeline::SeparationInputs {
-            local_field_ppm: &local_field, qsm: &qsm, mask: &brain, r2prime: r2prime.as_deref(),
+            local_field_ppm: &local_field, qsm: &qsm, qsm_echoes: None, mask: &brain, r2prime: r2prime.as_deref(),
             r2star: r2star.as_deref(), magnitude_rss: magnitude_rss.as_deref(),
             magnitude_multi: magnitude_multi.as_deref(), se_magnitude_multi: se_multi.as_deref(),
         });
@@ -1578,10 +1578,16 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             sep::zero_outside(&support, map);
         }
         let inputs = qsm_core::pipeline::SeparationInputs {
-            local_field_ppm: &local_field, qsm: &qsm, mask: &support, r2prime: r2prime.as_deref(),
+            local_field_ppm: &local_field, qsm: &qsm, qsm_echoes: None, mask: &support, r2prime: r2prime.as_deref(),
             r2star: r2star.as_deref(), magnitude_rss: magnitude_rss.as_deref(),
             magnitude_multi: magnitude_multi.as_deref(), se_magnitude_multi: se_multi.as_deref(),
         };
+        if alg == crate::enums::SeparationAlgorithm::Decompose {
+            // The pipeline reconstructs one χ from all echoes; DECOMPOSE is defined on a QSM of
+            // each echo (per-echo unwrapping, background removal and inversion).
+            self.log(Level::Warn, "DECOMPOSE expects a QSM of each echo; this run has one χ map, \
+                                   so it is used for every echo");
+        }
         self.store.models(&step.models)?;
         let separated = sep::separate(inputs, mese.as_ref().map(|m| m.echo_times.as_slice()), &self.meta,
                                       self.config, self.observer)?;

@@ -205,7 +205,7 @@ mod tests {
     fn a_method_names_every_input_it_lacks() {
         let (qsm, mask) = ([0.0; 4], [1u8; 4]);
         let mut inputs = qsm_core::pipeline::SeparationInputs {
-            local_field_ppm: &[], qsm: &qsm, mask: &mask, r2prime: None, r2star: None,
+            local_field_ppm: &[], qsm: &qsm, qsm_echoes: None, mask: &mask, r2prime: None, r2star: None,
             magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None,
         };
         assert_eq!(missing_inputs(SeparationAlgorithm::ChiSepIlsqr, &inputs), ["local field", "R2'", "magnitude"]);

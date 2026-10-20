@@ -636,6 +636,48 @@ mod integration_tests {
         assert!(dir.path().join("dc_desc-total_Chimap.nii").exists());
     }
 
+    /// DECOMPOSE takes one QSM per echo as a 4D --qsm; its echo count must match the magnitude's.
+    #[test]
+    fn test_separate_decompose_per_echo_qsm() {
+        let dir = tempfile::tempdir().unwrap();
+        let mags: Vec<PathBuf> = (1..=3)
+            .map(|e| {
+                let p = dir.path().join(format!("mag{e}.nii"));
+                testutils::write_magnitude_decayed(&p, 0.8_f64.powi(e));
+                p
+            })
+            .collect();
+        let qsm3d = dir.path().join("qsm3d.nii");
+        testutils::write_field(&qsm3d);
+        let chi = qsm_core::io::read_nifti_file(&qsm3d).unwrap();
+        let echoes: Vec<Vec<f64>> = (0..3).map(|e| chi.data.iter().map(|v| v * (1.0 + 0.1 * e as f64)).collect()).collect();
+        let write4d = |path: &Path, vols: &[Vec<f64>]| {
+            let refs: Vec<&[f64]> = vols.iter().map(|v| v.as_slice()).collect();
+            crate::nifti::write::write_volumes_4d(path, &refs, chi.dims, chi.voxel_size, &chi.affine).unwrap();
+        };
+        let qsm4d = dir.path().join("qsm4d.nii");
+        write4d(&qsm4d, &echoes);
+        let args = |qsm: PathBuf, prefix: &str| SeparateDecomposeArgs {
+            common: SeparateCommonArgs { qsm, ..separate_common(dir.path(), prefix) },
+            magnitude: mags.clone(),
+            echo_times: vec![0.004, 0.008, 0.012],
+            n_inner: Some(1),
+            chi_bound: None,
+            max_lm_iter: Some(1),
+        };
+
+        super::separate::execute(SeparateCommand::Decompose(args(qsm4d, "pe"))).unwrap();
+        let para = dir.path().join("pe_desc-paramagnetic_Chimap.nii");
+        let out = qsm_core::io::read_nifti_file(&para).unwrap();
+        assert_eq!(out.dims, chi.dims, "outputs are 3D on the mask's grid");
+
+        // Two echoes of QSM for three of magnitude.
+        let qsm2 = dir.path().join("qsm2.nii");
+        write4d(&qsm2, &echoes[..2]);
+        let err = super::separate::execute(SeparateCommand::Decompose(args(qsm2, "bad"))).unwrap_err();
+        assert!(format!("{err}").contains("2 volumes"), "{err}");
+    }
+
     /// χ-sep iLSQR takes the local field and R2' together — the four-input path.
     #[test]
     fn test_separate_chi_sep_ilsqr() {
