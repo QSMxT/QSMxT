@@ -15,7 +15,6 @@ pub fn params(config: &PipelineConfig) -> serde_json::Value {
     let q = &config.inversion.qsmart;
     serde_json::json!({
         "inversion": format!("{}", q.inversion),
-        "sdf_spatial_radius": q.sdf_spatial_radius,
         "vasc_sphere_radius": q.vasc_sphere_radius,
         // The inner iLSQR's tolerance is the iLSQR stage's.
         "ilsqr_tol": config.inversion.ilsqr.tol,
@@ -73,9 +72,9 @@ pub fn qsmart(
 ) -> Result<Qsmart, EngineError> {
     let q = &config.inversion.qsmart;
     log::info!(
-        "QSMART (inversion={}, ilsqr tol={:.0e}, max_iter={}, pad={} mm, vasc_radius={}, sdf_radius={})",
+        "QSMART (inversion={}, ilsqr tol={:.0e}, max_iter={}, pad={} mm, vasc_radius={})",
         q.inversion, config.inversion.ilsqr.tol, q.ilsqr_max_iter, q.ilsqr_pad_mm,
-        q.vasc_sphere_radius, q.sdf_spatial_radius,
+        q.vasc_sphere_radius,
     );
     let mut core = Core::new(observer);
     let chi = qsm_core::pipeline::run_qsmart(

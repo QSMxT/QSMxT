@@ -264,7 +264,6 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         tfi: qsm_core::inversion::TfiParams {
             lambda: cfg.inversion.tfi.lambda,
             precond: cfg.inversion.tfi.precond,
-            merit: cfg.inversion.tfi.merit,
             data_weighting: cfg.inversion.tfi.data_weighting,
             percentage: cfg.inversion.tfi.percentage,
             cg_tol: cfg.inversion.tfi.cg_tol,
@@ -337,7 +336,6 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             // NOTE: vasc_sphere_radius and frangi scales are in mm here; the qsmxt
             // runner converts them to voxels using the dataset voxel size.
             vasc_sphere_radius: cfg.inversion.qsmart.vasc_sphere_radius,
-            sdf_spatial_radius: cfg.inversion.qsmart.sdf_spatial_radius,
             inversion: map_alg(cfg.inversion.qsmart.inversion),
             sdf_sigma1_stage1: cfg.inversion.qsmart.sdf_sigma1_stage1,
             sdf_sigma2_stage1: cfg.inversion.qsmart.sdf_sigma2_stage1,
@@ -753,14 +751,12 @@ mod tests {
         cfg.inversion.qsmart.ilsqr_pad_mm = 12.5;
         cfg.inversion.qsmart.ilsqr_max_iter = 99;
         cfg.inversion.qsmart.vasc_sphere_radius = 5;
-        cfg.inversion.qsmart.sdf_spatial_radius = 6;
         cfg.inversion.qsmart.inversion = QsmAlgorithm::Tkd;
 
         let (_, _, inv, _) = to_pipeline_stages(&cfg);
         assert_eq!(inv.qsmart.ilsqr_pad_mm, 12.5);
         assert_eq!(inv.qsmart.ilsqr_max_iter, 99);
         assert_eq!(inv.qsmart.vasc_sphere_radius, 5);
-        assert_eq!(inv.qsmart.sdf_spatial_radius, 6);
         assert_eq!(inv.qsmart.inversion, PInvAlg::Tkd);
     }
 

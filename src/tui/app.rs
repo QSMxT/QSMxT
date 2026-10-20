@@ -1545,7 +1545,6 @@ pub struct PipelineFormState {
     pub tgv_tol: String,
     pub medi_merit: bool,
     pub medi_data_weighting: String,
-    pub tfi_merit: bool,
     pub tfi_data_weighting: String,
     pub amp_pe_damp_rate_sig: String,
     pub amp_pe_damp_rate_par: String,
@@ -1701,7 +1700,6 @@ pub struct PipelineFormState {
     pub qsmart_ilsqr_max_iter: String,
     pub qsmart_ilsqr_pad_mm: String,
     pub qsmart_vasc_sphere_radius: String,
-    pub qsmart_sdf_spatial_radius: String,
     pub qsmart_inversion: usize,
     pub qsmart_sdf_sigma1_stage1: String,
     pub qsmart_sdf_sigma2_stage1: String,
@@ -1964,7 +1962,6 @@ impl Default for PipelineFormState {
             tgv_tol: fmt_default(qsmxt_engine::TgvConfig::default().tol),
             medi_merit: qsm_core::inversion::MediParams::default().merit,
             medi_data_weighting: qsm_core::inversion::MediParams::default().data_weighting.to_string(),
-            tfi_merit: qsm_core::inversion::TfiParams::default().merit,
             tfi_data_weighting: qsm_core::inversion::TfiParams::default().data_weighting.to_string(),
             amp_pe_damp_rate_sig: fmt_default(qsm_core::inversion::AmpPeParams::default().damp_rate_sig),
             amp_pe_damp_rate_par: fmt_default(qsm_core::inversion::AmpPeParams::default().damp_rate_par),
@@ -2096,7 +2093,6 @@ impl Default for PipelineFormState {
             qsmart_ilsqr_max_iter: format!("{}", qsm_core::utils::QsmartParams::default().ilsqr_max_iter),
             qsmart_ilsqr_pad_mm: format!("{}", qsm_core::utils::QsmartParams::default().ilsqr_pad_mm),
             qsmart_vasc_sphere_radius: format!("{}", qsm_core::utils::QsmartParams::default().vasc_sphere_radius),
-            qsmart_sdf_spatial_radius: format!("{}", qsm_core::utils::QsmartParams::default().sdf_spatial_radius),
             qsmart_inversion: 0, // ilsqr (default)
             qsmart_sdf_sigma1_stage1: format!("{}", qsm_core::utils::QsmartParams::default().sdf_sigma1_stage1),
             qsmart_sdf_sigma2_stage1: format!("{}", qsm_core::utils::QsmartParams::default().sdf_sigma2_stage1),
@@ -2828,7 +2824,6 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  CG Max Iter", field: "tfi_cg_max_iter", help: "Maximum conjugate gradient iterations" });
                 rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "tfi_cg_tol", help: "CG convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "tfi_tol", help: "Outer convergence tolerance" });
-                rows.push(PipelineRow::Toggle { label: "  MERIT", field: "tfi_merit", help: "Iteratively down-weight voxels whose residual stays large" });
                 rows.push(PipelineRow::AlgoSelect { label: "  Data Weighting", field: "tfi_data_weighting", options: DATA_WEIGHTING_OPTIONS, help: DATA_WEIGHTING_HELP });
             }
             "ilsqr" => { // iLSQR
@@ -2942,7 +2937,6 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  SDF Sigma2 (s1)", field: "qsmart_sdf_sigma2_stage1", help: "Stage 1 SDF kernel sigma 2 (voxels)" });
                 rows.push(PipelineRow::Param { label: "  SDF Sigma1 (s2)", field: "qsmart_sdf_sigma1_stage2", help: "Stage 2 SDF kernel sigma 1 (voxels)" });
                 rows.push(PipelineRow::Param { label: "  SDF Sigma2 (s2)", field: "qsmart_sdf_sigma2_stage2", help: "Stage 2 SDF kernel sigma 2 (voxels)" });
-                rows.push(PipelineRow::Param { label: "  SDF Radius", field: "qsmart_sdf_spatial_radius", help: "SDF spatial filtering radius (voxels)" });
                 rows.push(PipelineRow::Param { label: "  SDF Lower Lim", field: "qsmart_sdf_lower_lim", help: "SDF proximity lower limit" });
                 rows.push(PipelineRow::Param { label: "  SDF Curv Const", field: "qsmart_sdf_curv_constant", help: "SDF curvature constant" });
                 // Vasculature detection (Frangi) — radii in mm, auto-scaled to voxels
@@ -3137,7 +3131,7 @@ impl PipelineFormState {
         "iharperella_max_iter", "iharperella_tol",
         "bet_smoothness", "bet_gradient_threshold", "bet_iterations", "bet_subdivisions",
         "msmv_radius", "msmv_maxk",
-        "qsmart_ilsqr_max_iter", "qsmart_ilsqr_pad_mm", "qsmart_vasc_sphere_radius", "qsmart_sdf_spatial_radius",
+        "qsmart_ilsqr_max_iter", "qsmart_ilsqr_pad_mm", "qsmart_vasc_sphere_radius",
         "qsmart_sdf_sigma1_stage1", "qsmart_sdf_sigma2_stage1", "qsmart_sdf_sigma1_stage2", "qsmart_sdf_sigma2_stage2",
         "qsmart_sdf_lower_lim", "qsmart_sdf_curv_constant",
         "qsmart_frangi_scale_min", "qsmart_frangi_scale_max", "qsmart_frangi_scale_ratio", "qsmart_frangi_c",
@@ -3292,7 +3286,6 @@ impl PipelineFormState {
             "qsmart_ilsqr_max_iter" => &self.qsmart_ilsqr_max_iter,
             "qsmart_ilsqr_pad_mm" => &self.qsmart_ilsqr_pad_mm,
             "qsmart_vasc_sphere_radius" => &self.qsmart_vasc_sphere_radius,
-            "qsmart_sdf_spatial_radius" => &self.qsmart_sdf_spatial_radius,
             "qsmart_sdf_sigma1_stage1" => &self.qsmart_sdf_sigma1_stage1,
             "qsmart_sdf_sigma2_stage1" => &self.qsmart_sdf_sigma2_stage1,
             "qsmart_sdf_sigma1_stage2" => &self.qsmart_sdf_sigma1_stage2,
@@ -3517,7 +3510,6 @@ impl PipelineFormState {
             "qsmart_ilsqr_max_iter" => Some(&mut self.qsmart_ilsqr_max_iter),
             "qsmart_ilsqr_pad_mm" => Some(&mut self.qsmart_ilsqr_pad_mm),
             "qsmart_vasc_sphere_radius" => Some(&mut self.qsmart_vasc_sphere_radius),
-            "qsmart_sdf_spatial_radius" => Some(&mut self.qsmart_sdf_spatial_radius),
             "qsmart_sdf_sigma1_stage1" => Some(&mut self.qsmart_sdf_sigma1_stage1),
             "qsmart_sdf_sigma2_stage1" => Some(&mut self.qsmart_sdf_sigma2_stage1),
             "qsmart_sdf_sigma1_stage2" => Some(&mut self.qsmart_sdf_sigma1_stage2),
@@ -3698,7 +3690,6 @@ impl PipelineFormState {
             "fft_padding" => self.fft_padding,
             "romeo_phase_coherence" => self.romeo_phase_coherence,
             "medi_merit" => self.medi_merit,
-            "tfi_merit" => self.tfi_merit,
             "motion_correction" => self.motion_correction,
             "orientation_registration" => self.orientation_registration,
             "multi_orientation_force" => self.multi_orientation_force,
@@ -3744,7 +3735,6 @@ impl PipelineFormState {
             "fft_padding" => self.fft_padding = !self.fft_padding,
             "romeo_phase_coherence" => self.romeo_phase_coherence = !self.romeo_phase_coherence,
             "medi_merit" => self.medi_merit = !self.medi_merit,
-            "tfi_merit" => self.tfi_merit = !self.tfi_merit,
             "motion_correction" => self.motion_correction = !self.motion_correction,
             "orientation_registration" => self.orientation_registration = !self.orientation_registration,
             "multi_orientation_force" => self.multi_orientation_force = !self.multi_orientation_force,

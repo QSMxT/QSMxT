@@ -498,9 +498,6 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
         QsmAlgorithm::Tfi => {
             emit_f64(parts, "--tfi-lambda", config.inversion.tfi.lambda, d.inversion.tfi.lambda);
             emit_f64(parts, "--tfi-precond", config.inversion.tfi.precond, d.inversion.tfi.precond);
-            if config.inversion.tfi.merit != d.inversion.tfi.merit {
-                parts.push(format!("--tfi-merit {}", config.inversion.tfi.merit));
-            }
             if config.inversion.tfi.data_weighting != d.inversion.tfi.data_weighting {
                 parts.push(format!("--tfi-data-weighting {}", config.inversion.tfi.data_weighting));
             }
@@ -572,7 +569,6 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
                 emit_inversion_params(parts, config, d, q.inversion);
             }
             emit_i32(parts, "--qsmart-vasc-sphere-radius", q.vasc_sphere_radius, dq.vasc_sphere_radius);
-            emit_i32(parts, "--qsmart-sdf-spatial-radius", q.sdf_spatial_radius, dq.sdf_spatial_radius);
             emit_f64(parts, "--qsmart-sdf-sigma1-stage1", q.sdf_sigma1_stage1, dq.sdf_sigma1_stage1);
             emit_f64(parts, "--qsmart-sdf-sigma2-stage1", q.sdf_sigma2_stage1, dq.sdf_sigma2_stage1);
             emit_f64(parts, "--qsmart-sdf-sigma1-stage2", q.sdf_sigma1_stage2, dq.sdf_sigma1_stage2);
@@ -1057,7 +1053,6 @@ inversion = "rts"
 ilsqr_max_iter = 50
 ilsqr_pad_mm = 8.0
 vasc_sphere_radius = 8
-sdf_spatial_radius = 8
 sdf_sigma1_stage1 = 11.0
 sdf_sigma2_stage1 = 12.0
 sdf_sigma1_stage2 = 13.0

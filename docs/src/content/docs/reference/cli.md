@@ -121,7 +121,6 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--medi-tol <MEDI_TOL>` | MEDI outer tolerance. |
 | `--tfi-lambda <TFI_LAMBDA>` | TFI lambda. |
 | `--tfi-precond <TFI_PRECOND>` | TFI preconditioner value (susceptibility scaling outside the mask) |
-| `--tfi-merit <TFI_MERIT>` | TFI: enable MERIT weighting. |
 | `--tfi-data-weighting <TFI_DATA_WEIGHTING>` | TFI: data weighting mode (0=uniform, 1=SNR) |
 | `--tfi-percentage <TFI_PERCENTAGE>` | TFI edge percentage (0.0-1.0) |
 | `--tfi-cg-tol <TFI_CG_TOL>` | TFI CG tolerance. |
@@ -151,7 +150,6 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
 | `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
 | `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius. |
-| `--qsmart-sdf-spatial-radius <QSMART_SDF_SPATIAL_RADIUS>` | QSMART SDF spatial radius. |
 | `--qsmart-inversion <QSMART_INVERSION>` | QSMART inner dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
 | `--qsmart-sdf-sigma1-stage1 <QSMART_SDF_SIGMA1_STAGE1>` | QSMART SDF sigma1, stage 1 (voxels) |
 | `--qsmart-sdf-sigma2-stage1 <QSMART_SDF_SIGMA2_STAGE1>` | QSMART SDF sigma2, stage 1 (voxels) |
@@ -506,7 +504,6 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--medi-tol <MEDI_TOL>` | MEDI outer tolerance. |
 | `--tfi-lambda <TFI_LAMBDA>` | TFI lambda. |
 | `--tfi-precond <TFI_PRECOND>` | TFI preconditioner value (susceptibility scaling outside the mask) |
-| `--tfi-merit <TFI_MERIT>` | TFI: enable MERIT weighting. |
 | `--tfi-data-weighting <TFI_DATA_WEIGHTING>` | TFI: data weighting mode (0=uniform, 1=SNR) |
 | `--tfi-percentage <TFI_PERCENTAGE>` | TFI edge percentage (0.0-1.0) |
 | `--tfi-cg-tol <TFI_CG_TOL>` | TFI CG tolerance. |
@@ -536,7 +533,6 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
 | `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
 | `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius. |
-| `--qsmart-sdf-spatial-radius <QSMART_SDF_SPATIAL_RADIUS>` | QSMART SDF spatial radius. |
 | `--qsmart-inversion <QSMART_INVERSION>` | QSMART inner dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
 | `--qsmart-sdf-sigma1-stage1 <QSMART_SDF_SIGMA1_STAGE1>` | QSMART SDF sigma1, stage 1 (voxels) |
 | `--qsmart-sdf-sigma2-stage1 <QSMART_SDF_SIGMA2_STAGE1>` | QSMART SDF sigma2, stage 1 (voxels) |
@@ -830,7 +826,6 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--medi-tol <MEDI_TOL>` | MEDI outer tolerance. |
 | `--tfi-lambda <TFI_LAMBDA>` | TFI lambda. |
 | `--tfi-precond <TFI_PRECOND>` | TFI preconditioner value (susceptibility scaling outside the mask) |
-| `--tfi-merit <TFI_MERIT>` | TFI: enable MERIT weighting. |
 | `--tfi-data-weighting <TFI_DATA_WEIGHTING>` | TFI: data weighting mode (0=uniform, 1=SNR) |
 | `--tfi-percentage <TFI_PERCENTAGE>` | TFI edge percentage (0.0-1.0) |
 | `--tfi-cg-tol <TFI_CG_TOL>` | TFI CG tolerance. |
@@ -860,7 +855,6 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
 | `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
 | `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius. |
-| `--qsmart-sdf-spatial-radius <QSMART_SDF_SPATIAL_RADIUS>` | QSMART SDF spatial radius. |
 | `--qsmart-inversion <QSMART_INVERSION>` | QSMART inner dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
 | `--qsmart-sdf-sigma1-stage1 <QSMART_SDF_SIGMA1_STAGE1>` | QSMART SDF sigma1, stage 1 (voxels) |
 | `--qsmart-sdf-sigma2-stage1 <QSMART_SDF_SIGMA2_STAGE1>` | QSMART SDF sigma2, stage 1 (voxels) |
@@ -1949,7 +1943,6 @@ qsmxt invert tfi [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--magnitude <MAGNITUDE>` | Magnitude NIfTI file (recommended) |
 | `--lambda <LAMBDA>` | Lambda. |
 | `--precond <PRECOND>` | Preconditioner value (susceptibility scaling outside the mask) |
-| `--merit <MERIT>` | Enable MERIT weighting. |
 | `--data-weighting <DATA_WEIGHTING>` | Data weighting mode (0=uniform, 1=SNR) |
 | `--percentage <PERCENTAGE>` | Edge percentage (0.0-1.0) |
 | `--cg-tol <CG_TOL>` | CG tolerance. |
@@ -2634,7 +2627,6 @@ qsmxt qsmart [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_S
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
 | `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
 | `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius. |
-| `--qsmart-sdf-spatial-radius <QSMART_SDF_SPATIAL_RADIUS>` | QSMART SDF spatial radius. |
 | `--qsmart-inversion <QSMART_INVERSION>` | QSMART inner dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
 | `--qsmart-sdf-sigma1-stage1 <QSMART_SDF_SIGMA1_STAGE1>` | QSMART SDF sigma1, stage 1 (voxels) |
 | `--qsmart-sdf-sigma2-stage1 <QSMART_SDF_SIGMA2_STAGE1>` | QSMART SDF sigma2, stage 1 (voxels) |
