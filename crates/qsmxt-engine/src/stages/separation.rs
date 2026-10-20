@@ -206,7 +206,7 @@ mod tests {
         let (qsm, mask) = ([0.0; 4], [1u8; 4]);
         let mut inputs = qsm_core::pipeline::SeparationInputs {
             local_field_ppm: &[], qsm: &qsm, mask: &mask, r2prime: None, r2star: None,
-            magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None,
+            magnitude_rss: None, magnitude_multi: None, phase_multi: None, se_magnitude_multi: None,
         };
         assert_eq!(missing_inputs(SeparationAlgorithm::ChiSepIlsqr, &inputs), ["local field", "R2'", "magnitude"]);
         let r2prime = [1.0; 4];

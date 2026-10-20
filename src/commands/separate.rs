@@ -60,6 +60,28 @@ fn check_echoes(n_echoes: usize, metadata: &ScanMetadata, method: &str) -> crate
     Ok(())
 }
 
+/// Accept integer-valued scanner phase as well as radians: when any value lies outside
+/// [-π, π], rescale each echo of the voxel-major multi-echo phase to [-π, π] as the other
+/// phase-reading commands do. Phase already in radians is left alone — the shared rescale also
+/// stretches a radian echo whose values happen not to span the full ±π (an early echo, a small
+/// field of view), which would corrupt it.
+fn scale_phase_echoes(phase: &mut [f64], n_voxels: usize, n_echoes: usize) {
+    let lim = std::f64::consts::PI + 1e-6;
+    if phase.iter().all(|v| !v.is_finite() || v.abs() <= lim) {
+        return;
+    }
+    let mut echo = vec![0.0f64; n_voxels];
+    for e in 0..n_echoes {
+        for v in 0..n_voxels {
+            echo[v] = phase[v * n_echoes + e];
+        }
+        crate::pipeline::phase::scale_phase_to_pi(&mut echo);
+        for v in 0..n_voxels {
+            phase[v * n_echoes + e] = echo[v];
+        }
+    }
+}
+
 pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
     // Each arm loads its inputs, runs the method, and yields (output prefix, reference NIfTI,
     // result); the three maps are written once at the end (mirrors `invert`'s single-save tail).
@@ -90,7 +112,7 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
             let inputs = SeparationInputs {
                 local_field_ppm: &[], qsm: &qsm.data, mask: &mask,
                 r2prime: None, r2star: r2star.as_ref().map(|n| n.data.as_slice()),
-                magnitude_rss: None, magnitude_multi: mag.as_deref(), se_magnitude_multi: None,
+                magnitude_rss: None, magnitude_multi: mag.as_deref(), phase_multi: None, se_magnitude_multi: None,
             };
             let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
                 .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
@@ -116,11 +138,47 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
             let inputs = SeparationInputs {
                 local_field_ppm: &[], qsm: &qsm.data, mask: &mask,
                 r2prime: None, r2star: None, magnitude_rss: None,
-                magnitude_multi: Some(&multi), se_magnitude_multi: None,
+                magnitude_multi: Some(&multi), phase_multi: None, se_magnitude_multi: None,
             };
             let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
                 .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
             (c.output.clone(), qsm, result)
+        }
+        SeparateCommand::DecomposeComplex(args) => {
+            // No QSM: the mask is the reference grid.
+            let (mask, reference) = load_mask(&args.mask)?;
+            let n = mask.len();
+            info!("Chi-separation (decompose-complex, {}x{}x{})",
+                reference.dims.0, reference.dims.1, reference.dims.2);
+            let bdir = (args.b0_direction[0], args.b0_direction[1], args.b0_direction[2]);
+            let metadata = qsmxt_engine::bridge::to_scan_metadata(
+                reference.dims, reference.voxel_size, &args.echo_times, args.field_strength, bdir,
+                Some(reference.affine),
+            );
+            let (magnitude, ne) = load_multiecho_voxel_major(&args.magnitude, n)?;
+            check_echoes(ne, &metadata, "decompose-complex")?;
+            let (mut phase, ne_phase) = load_multiecho_voxel_major(&args.phase, n)?;
+            check_echoes(ne_phase, &metadata, "decompose-complex (phase)")?;
+            scale_phase_echoes(&mut phase, n, ne);
+            let d = qsm_core::separation::DecomposeComplexParams::default();
+            let cfg = SeparationConfig {
+                algorithm: SeparationAlgorithm::DecomposeComplex,
+                decompose_complex: qsm_core::separation::DecomposeComplexParams {
+                    chi_bound: args.chi_bound.unwrap_or(d.chi_bound),
+                    r2_bound: args.r2_bound.unwrap_or(d.r2_bound),
+                    max_lm_iter: args.max_lm_iter.unwrap_or(d.max_lm_iter),
+                    ..d
+                },
+                ..Default::default()
+            };
+            let inputs = SeparationInputs {
+                local_field_ppm: &[], qsm: &[], mask: &mask,
+                r2prime: None, r2star: None, magnitude_rss: None,
+                magnitude_multi: Some(&magnitude), phase_multi: Some(&phase), se_magnitude_multi: None,
+            };
+            let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
+                .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
+            (args.output.clone(), reference, result)
         }
         SeparateCommand::ChiSepIlsqr(args) => {
             let c = &args.common;
@@ -151,7 +209,7 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
             let inputs = SeparationInputs {
                 local_field_ppm: &local_field.data, qsm: &qsm.data, mask: &mask,
                 r2prime: Some(&r2prime.data), r2star: None,
-                magnitude_rss: Some(&mag_rss), magnitude_multi: None, se_magnitude_multi: None,
+                magnitude_rss: Some(&mag_rss), magnitude_multi: None, phase_multi: None, se_magnitude_multi: None,
             };
             let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
                 .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
@@ -186,7 +244,7 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
             let inputs = SeparationInputs {
                 local_field_ppm: &local_field.data, qsm: &qsm.data, mask: &mask,
                 r2prime: Some(&r2prime.data), r2star: None,
-                magnitude_rss: Some(&mag_rss), magnitude_multi: None, se_magnitude_multi: None,
+                magnitude_rss: Some(&mag_rss), magnitude_multi: None, phase_multi: None, se_magnitude_multi: None,
             };
             let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
                 .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
@@ -214,7 +272,7 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
             let inputs = SeparationInputs {
                 local_field_ppm: &[], qsm: &qsm.data, mask: &mask,
                 r2prime: Some(&r2prime.data), r2star: None,
-                magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None,
+                magnitude_rss: None, magnitude_multi: None, phase_multi: None, se_magnitude_multi: None,
             };
             let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
                 .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
@@ -247,7 +305,7 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
             let inputs = SeparationInputs {
                 local_field_ppm: &[], qsm: &qsm.data, mask: &mask,
                 r2prime: Some(&r2prime.data), r2star: None, magnitude_rss: None,
-                magnitude_multi: Some(&multi), se_magnitude_multi: se_multi.as_deref(),
+                magnitude_multi: Some(&multi), phase_multi: None, se_magnitude_multi: se_multi.as_deref(),
             };
             let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
                 .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
@@ -269,7 +327,7 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
             let inputs = SeparationInputs {
                 local_field_ppm: &local_field.data, qsm: &qsm.data, mask: &mask,
                 r2prime: Some(&r2prime.data), r2star: None,
-                magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None,
+                magnitude_rss: None, magnitude_multi: None, phase_multi: None, se_magnitude_multi: None,
             };
             let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
                 .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
@@ -295,7 +353,7 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
             let inputs = SeparationInputs {
                 local_field_ppm: &local_field.data, qsm: &qsm.data, mask: &mask,
                 r2prime: Some(&r2prime.data), r2star: None,
-                magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None,
+                magnitude_rss: None, magnitude_multi: None, phase_multi: None, se_magnitude_multi: None,
             };
             let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
                 .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;

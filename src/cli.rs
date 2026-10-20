@@ -3014,6 +3014,8 @@ pub enum SeparateCommand {
     R2starQsm(SeparateR2starQsmArgs),
     /// DECOMPOSE-QSM signal-domain fit (Chen 2021) — QSM + multi-echo magnitude (GRE-only)
     Decompose(SeparateDecomposeArgs),
+    /// DECOMPOSE-QSM fitted to the measured multi-echo signal — magnitude + phase, no QSM (GRE-only)
+    DecomposeComplex(SeparateDecomposeComplexArgs),
     /// χ-separation iLSQR (Shin 2021) — local field + R2' + magnitude + QSM
     ChiSepIlsqr(SeparateChiSepIlsqrArgs),
     /// χ-separation MEDI — local field + R2' + magnitude + QSM
@@ -3081,6 +3083,42 @@ pub struct SeparateDecomposeArgs {
     #[arg(long)]
     pub chi_bound: Option<f64>,
     /// Levenberg–Marquardt max iterations
+    #[arg(long)]
+    pub max_lm_iter: Option<usize>,
+}
+
+#[derive(Parser, Debug)]
+pub struct SeparateDecomposeComplexArgs {
+    /// Multi-echo magnitude: one 4D file or several 3D files (space-separated)
+    #[arg(long, num_args = 1.., required = true)]
+    pub magnitude: Vec<PathBuf>,
+    /// Multi-echo phase, same layout as --magnitude: wrapped radians (or integer scanner phase,
+    /// rescaled to [-π, π]), with or without the background field
+    #[arg(long, num_args = 1.., required = true)]
+    pub phase: Vec<PathBuf>,
+    /// GRE echo times in seconds (space- or comma-separated)
+    #[arg(long, num_args = 1.., value_delimiter = ',', required = true)]
+    pub echo_times: Vec<f64>,
+    /// Binary mask NIfTI file
+    #[arg(short, long)]
+    pub mask: PathBuf,
+    /// Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii
+    /// and {prefix}_desc-total_Chimap.nii — the pipeline's names
+    #[arg(short, long)]
+    pub output: PathBuf,
+    /// B0 field strength in Tesla
+    #[arg(long, default_value_t = 3.0)]
+    pub field_strength: f64,
+    /// B0 direction (3 values)
+    #[arg(long, num_args = 3, allow_negative_numbers = true, default_values_t = [0.0, 0.0, 1.0])]
+    pub b0_direction: Vec<f64>,
+    /// Upper bound on the pool susceptibilities |χc±| in the fit (ppm)
+    #[arg(long)]
+    pub chi_bound: Option<f64>,
+    /// Upper bound on the baseline decay rate R2*₀ in the fit (Hz)
+    #[arg(long)]
+    pub r2_bound: Option<f64>,
+    /// Levenberg–Marquardt max iterations per start
     #[arg(long)]
     pub max_lm_iter: Option<usize>,
 }

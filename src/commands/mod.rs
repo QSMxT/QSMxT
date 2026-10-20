@@ -636,6 +636,40 @@ mod integration_tests {
         assert!(dir.path().join("dc_desc-total_Chimap.nii").exists());
     }
 
+    /// DECOMPOSE on the measured signal reads magnitude AND phase and no QSM, so it builds its
+    /// grid from the mask; integer scanner phase is rescaled on the way in.
+    #[test]
+    fn test_separate_decompose_complex() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut mags, mut phases) = (Vec::new(), Vec::new());
+        for e in 1..=3 {
+            let m = dir.path().join(format!("mag{e}.nii"));
+            let p = dir.path().join(format!("phase{e}.nii"));
+            testutils::write_magnitude_decayed(&m, 0.9f64.powi(e));
+            testutils::write_phase(&p);
+            mags.push(m);
+            phases.push(p);
+        }
+        let mask = dir.path().join("mask.nii");
+        testutils::write_mask(&mask);
+        super::separate::execute(SeparateCommand::DecomposeComplex(SeparateDecomposeComplexArgs {
+            magnitude: mags,
+            phase: phases,
+            echo_times: vec![0.004, 0.008, 0.012],
+            mask,
+            output: dir.path().join("dcx"),
+            field_strength: 3.0,
+            b0_direction: vec![0.0, 0.0, 1.0],
+            chi_bound: None,
+            r2_bound: None,
+            max_lm_iter: Some(2),
+        }))
+        .unwrap();
+        for desc in ["paramagnetic", "diamagnetic", "total"] {
+            assert!(dir.path().join(format!("dcx_desc-{desc}_Chimap.nii")).exists(), "{desc}");
+        }
+    }
+
     /// χ-sep iLSQR takes the local field and R2' together — the four-input path.
     #[test]
     fn test_separate_chi_sep_ilsqr() {

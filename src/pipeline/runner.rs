@@ -3199,7 +3199,7 @@ mod chisep_support_tests {
         let mag = load_volume(&f.output.mag_path(k, 1)).unwrap();
         let inputs = qsm_core::pipeline::SeparationInputs {
             local_field_ppm: &field, qsm: &qsm, mask, r2prime: Some(&r2prime), r2star: Some(&r2star),
-            magnitude_rss: Some(&mag), magnitude_multi: Some(&mag), se_magnitude_multi: None,
+            magnitude_rss: Some(&mag), magnitude_multi: Some(&mag), phase_multi: None, se_magnitude_multi: None,
         };
         let metadata = crate::pipeline::config::to_scan_metadata(
             m.dims, m.voxel_size, &m.echo_times, m.field_strength, m.b0_direction, Some(m.affine));

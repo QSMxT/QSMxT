@@ -2416,6 +2416,7 @@ Susceptibility source separation
 | --- | --- |
 | [`r2star-qsm`](#qsmxt-separate-r2star-qsm) | R2\*-QSM closed-form (Dimov 2022) — QSM + R2\* (GRE-only) |
 | [`decompose`](#qsmxt-separate-decompose) | DECOMPOSE-QSM signal-domain fit (Chen 2021) — QSM + multi-echo magnitude (GRE-only) |
+| [`decompose-complex`](#qsmxt-separate-decompose-complex) | DECOMPOSE-QSM fitted to the measured multi-echo signal — magnitude + phase, no QSM (GRE-only) |
 | [`chi-sep-ilsqr`](#qsmxt-separate-chi-sep-ilsqr) | χ-separation iLSQR (Shin 2021) — local field + R2' + magnitude + QSM |
 | [`chi-sep-medi`](#qsmxt-separate-chi-sep-medi) | χ-separation MEDI — local field + R2' + magnitude + QSM |
 | [`wavesep`](#qsmxt-separate-wavesep) | WaveSep wavelet-L1 (Fang 2023) — QSM + R2' |
@@ -2463,6 +2464,27 @@ qsmxt separate decompose [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> -
 | `--n-inner <N_INNER>` | Inner alternating passes per voxel. |
 | `--chi-bound <CHI_BOUND>` | Upper bound on \|χ\| in the fit (ppm) |
 | `--max-lm-iter <MAX_LM_ITER>` | Levenberg–Marquardt max iterations. |
+
+### `qsmxt separate decompose-complex`
+
+DECOMPOSE-QSM fitted to the measured multi-echo signal — magnitude + phase, no QSM (GRE-only)
+
+```sh
+qsmxt separate decompose-complex [OPTIONS] --magnitude <MAGNITUDE>... --phase <PHASE>... --echo-times <ECHO_TIMES>... --mask <MASK> --output <OUTPUT>
+```
+
+| Argument | Description |
+| --- | --- |
+| `--magnitude <MAGNITUDE>` | Multi-echo magnitude: one 4D file or several 3D files (space-separated) Required. |
+| `--phase <PHASE>` | Multi-echo phase, same layout as --magnitude: wrapped radians (or integer scanner phase, rescaled to [-π, π]), with or without the background field. Required. |
+| `--echo-times <ECHO_TIMES>` | GRE echo times in seconds (space- or comma-separated) Required. |
+| `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
+| `-o, --output <OUTPUT>` | Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names. Required. |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Default: `3`. |
+| `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
+| `--chi-bound <CHI_BOUND>` | Upper bound on the pool susceptibilities \|χc±\| in the fit (ppm) |
+| `--r2-bound <R2_BOUND>` | Upper bound on the baseline decay rate R2\*₀ in the fit (Hz) |
+| `--max-lm-iter <MAX_LM_ITER>` | Levenberg–Marquardt max iterations per start. |
 
 ### `qsmxt separate chi-sep-ilsqr`
 

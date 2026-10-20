@@ -449,6 +449,9 @@ pub fn to_separation_config(cfg: &PipelineConfig) -> PSeparation {
             dr_pos_3t: s.hc_chisep.dr_pos_3t, bin_hz: s.hc_chisep.bin_hz,
             ..qsm_core::separation::HcChisepParams::default()
         },
+        // The pipeline does not offer DECOMPOSE's complex-signal fit (`qsmxt separate
+        // decompose-complex` does), so it keeps qsm-core's defaults.
+        decompose_complex: qsm_core::separation::DecomposeComplexParams::default(),
         chi_sepnet: s.chi_sepnet.params(),
         susep_net: s.susep_net.params(),
     }

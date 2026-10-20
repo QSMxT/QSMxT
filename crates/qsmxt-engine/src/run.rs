@@ -1535,7 +1535,8 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let missing = sep::missing_inputs(alg, &qsm_core::pipeline::SeparationInputs {
             local_field_ppm: &local_field, qsm: &qsm, mask: &brain, r2prime: r2prime.as_deref(),
             r2star: r2star.as_deref(), magnitude_rss: magnitude_rss.as_deref(),
-            magnitude_multi: magnitude_multi.as_deref(), se_magnitude_multi: se_multi.as_deref(),
+            magnitude_multi: magnitude_multi.as_deref(), phase_multi: None,
+            se_magnitude_multi: se_multi.as_deref(),
         });
         if !missing.is_empty() {
             return Err(crate::EngineError::Config(format!(
@@ -1580,7 +1581,8 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let inputs = qsm_core::pipeline::SeparationInputs {
             local_field_ppm: &local_field, qsm: &qsm, mask: &support, r2prime: r2prime.as_deref(),
             r2star: r2star.as_deref(), magnitude_rss: magnitude_rss.as_deref(),
-            magnitude_multi: magnitude_multi.as_deref(), se_magnitude_multi: se_multi.as_deref(),
+            magnitude_multi: magnitude_multi.as_deref(), phase_multi: None,
+            se_magnitude_multi: se_multi.as_deref(),
         };
         self.store.models(&step.models)?;
         let separated = sep::separate(inputs, mese.as_ref().map(|m| m.echo_times.as_slice()), &self.meta,
