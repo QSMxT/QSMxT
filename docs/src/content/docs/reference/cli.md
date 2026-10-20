@@ -2415,7 +2415,7 @@ Susceptibility source separation
 | Subcommand | Description |
 | --- | --- |
 | [`r2star-qsm`](#qsmxt-separate-r2star-qsm) | R2\*-QSM closed-form (Dimov 2022) — QSM + R2\* (GRE-only) |
-| [`decompose`](#qsmxt-separate-decompose) | DECOMPOSE-QSM signal-domain fit (Chen 2021) — QSM + multi-echo magnitude (GRE-only) |
+| [`decompose`](#qsmxt-separate-decompose) | DECOMPOSE-QSM signal-domain fit (Chen 2021) — per-echo QSM + multi-echo magnitude (GRE-only) |
 | [`chi-sep-ilsqr`](#qsmxt-separate-chi-sep-ilsqr) | χ-separation iLSQR (Shin 2021) — local field + R2' + magnitude + QSM |
 | [`chi-sep-medi`](#qsmxt-separate-chi-sep-medi) | χ-separation MEDI — local field + R2' + magnitude + QSM |
 | [`wavesep`](#qsmxt-separate-wavesep) | WaveSep wavelet-L1 (Fang 2023) — QSM + R2' |
@@ -2433,7 +2433,7 @@ qsmxt separate r2star-qsm [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> 
 
 | Argument | Description |
 | --- | --- |
-| `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm. Required. |
+| `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm. For decompose: one QSM per echo as a 4D file, in the echo order of --magnitude (a 3D QSM is used for every echo) Required. |
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names. Required. |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Default: `3`. |
@@ -2445,7 +2445,7 @@ qsmxt separate r2star-qsm [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> 
 
 ### `qsmxt separate decompose`
 
-DECOMPOSE-QSM signal-domain fit (Chen 2021) — QSM + multi-echo magnitude (GRE-only)
+DECOMPOSE-QSM signal-domain fit (Chen 2021) — per-echo QSM + multi-echo magnitude (GRE-only)
 
 ```sh
 qsmxt separate decompose [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --magnitude <MAGNITUDE>... --echo-times <ECHO_TIMES>...
@@ -2453,7 +2453,7 @@ qsmxt separate decompose [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> -
 
 | Argument | Description |
 | --- | --- |
-| `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm. Required. |
+| `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm. For decompose: one QSM per echo as a 4D file, in the echo order of --magnitude (a 3D QSM is used for every echo) Required. |
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names. Required. |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Default: `3`. |
@@ -2474,7 +2474,7 @@ qsmxt separate chi-sep-ilsqr [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPU
 
 | Argument | Description |
 | --- | --- |
-| `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm. Required. |
+| `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm. For decompose: one QSM per echo as a 4D file, in the echo order of --magnitude (a 3D QSM is used for every echo) Required. |
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names. Required. |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Default: `3`. |
@@ -2503,7 +2503,7 @@ qsmxt separate chi-sep-medi [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT
 
 | Argument | Description |
 | --- | --- |
-| `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm. Required. |
+| `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm. For decompose: one QSM per echo as a 4D file, in the echo order of --magnitude (a 3D QSM is used for every echo) Required. |
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names. Required. |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Default: `3`. |
@@ -2532,7 +2532,7 @@ qsmxt separate wavesep [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --r
 
 | Argument | Description |
 | --- | --- |
-| `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm. Required. |
+| `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm. For decompose: one QSM per echo as a 4D file, in the echo order of --magnitude (a 3D QSM is used for every echo) Required. |
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names. Required. |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Default: `3`. |
@@ -2556,7 +2556,7 @@ qsmxt separate hc-chisep [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> -
 
 | Argument | Description |
 | --- | --- |
-| `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm. Required. |
+| `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm. For decompose: one QSM per echo as a 4D file, in the echo order of --magnitude (a 3D QSM is used for every echo) Required. |
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names. Required. |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Default: `3`. |
@@ -2579,7 +2579,7 @@ qsmxt separate susep-net [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> -
 
 | Argument | Description |
 | --- | --- |
-| `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm. Required. |
+| `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm. For decompose: one QSM per echo as a 4D file, in the echo order of --magnitude (a 3D QSM is used for every echo) Required. |
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names. Required. |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Default: `3`. |
@@ -2598,7 +2598,7 @@ qsmxt separate chi-sepnet [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> 
 
 | Argument | Description |
 | --- | --- |
-| `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm. Required. |
+| `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm. For decompose: one QSM per echo as a 4D file, in the echo order of --magnitude (a 3D QSM is used for every echo) Required. |
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names. Required. |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Default: `3`. |

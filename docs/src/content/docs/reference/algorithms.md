@@ -883,6 +883,10 @@ diamagnetic components, and choose the method with `--chisep`.
 | `susep-net` | SUSEP-Net (deep learning) |
 | `chi-sepnet` | χ-sepnet (deep learning) |
 
+DECOMPOSE-QSM is defined on a QSM of each echo. The pipeline reconstructs one
+susceptibility map from all echoes, so `--chisep decompose` uses that map for
+every echo; `qsmxt separate decompose` takes a per-echo QSM as a 4D `--qsm`.
+
 Only `r2star-qsm` and `decompose` run on a GRE acquisition alone. The rest are
 based on R2′, which comes from a multi-echo spin-echo acquisition, a
 bring-your-own R2′ map or, with the default `--r2prime-strategy auto` and neither

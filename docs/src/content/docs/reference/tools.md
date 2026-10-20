@@ -170,7 +170,7 @@ Split a susceptibility map into paramagnetic and diamagnetic sources, writing
 | Subcommand | Method and inputs |
 | --- | --- |
 | `r2star-qsm` | R2\*-QSM closed form — QSM + R2\* |
-| `decompose` | DECOMPOSE-QSM — QSM + multi-echo magnitude |
+| `decompose` | DECOMPOSE-QSM — per-echo QSM (4D `--qsm`, one map per echo) + multi-echo magnitude |
 | `chi-sep-ilsqr` | χ-separation, iLSQR — local field + R2′ + magnitude + QSM |
 | `chi-sep-medi` | χ-separation, MEDI — local field + R2′ + magnitude + QSM |
 | `wavesep` | WaveSep — QSM + R2′ |
