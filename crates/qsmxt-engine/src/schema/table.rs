@@ -439,8 +439,6 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.inv("tfi")),
         d("inversion.tfi.tol", Inversion, "Tolerance", "Outer convergence tolerance", Float).flag("--tfi-tol").parent("inversion.algorithm")
         .when(|x| x.inv("tfi")),
-        d("inversion.tfi.merit", Inversion, "MERIT", "Iteratively down-weight voxels whose residual stays large", Bool).flag("--tfi-merit").parent("inversion.algorithm")
-        .when(|x| x.inv("tfi")),
         d("inversion.tfi.data_weighting", Inversion, "Data Weighting", "", Enum(vec![
             o(0, "uniform", "Uniform", "Every voxel of the field weighs the same in the data term"),
             o(1, "magnitude SNR", "Magnitude SNR", "Weight the data term by the magnitude SNR, so noisy voxels count for less"),
@@ -525,9 +523,6 @@ pub(super) fn table() -> Vec<Def> {
         d("inversion.qsmart.sdf_sigma2_stage2", Inversion, "SDF Sigma2 (s2)", "Stage 2 SDF kernel sigma 2 (voxels)", Float).units("voxels").flag("--qsmart-sdf-sigma2-stage2").parent("inversion.algorithm")
         .when(|x| x.inv("qsmart")).full("SDF Sigma 2, Stage 2")
         .gui("Stage 2 SDF kernel sigma 2"),
-        d("inversion.qsmart.sdf_spatial_radius", Inversion, "SDF Radius", "SDF spatial filtering radius (voxels)", Int).units("voxels").flag("--qsmart-sdf-spatial-radius").parent("inversion.algorithm")
-        .when(|x| x.inv("qsmart")).full("SDF Radius")
-        .gui("SDF spatial filtering radius"),
         d("inversion.qsmart.sdf_lower_lim", Inversion, "SDF Lower Lim", "SDF proximity lower limit", Float).flag("--qsmart-sdf-lower-lim").parent("inversion.algorithm")
         .when(|x| x.inv("qsmart")).full("SDF Lower Limit"),
         d("inversion.qsmart.sdf_curv_constant", Inversion, "SDF Curv Const", "SDF curvature constant", Float).flag("--qsmart-sdf-curv-constant").parent("inversion.algorithm")

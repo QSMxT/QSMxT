@@ -1964,7 +1964,6 @@ pub(crate) mod tests {
         let qsmart = &mut config.inversion.qsmart;
         qsmart.ilsqr_max_iter = 5;
         qsmart.ilsqr_pad_mm = 0.0;
-        qsmart.sdf_spatial_radius = 2;
         qsmart.vasc_sphere_radius = 2;
         qsmart.frangi_scale_max = 1.0;
         config.separation.chi_sep_ilsqr.max_iter = 3;

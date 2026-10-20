@@ -382,7 +382,6 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         tfi_params: crate::cli::TfiParamArgs {
             tfi_lambda: parse_optional_f64(&ps.tfi_lambda),
             tfi_precond: parse_optional_f64(&ps.tfi_precond),
-            tfi_merit: Some(ps.tfi_merit),
             tfi_data_weighting: ps.tfi_data_weighting.trim().parse().ok(),
             tfi_percentage: parse_optional_f64(&ps.tfi_percentage),
             tfi_cg_tol: parse_optional_f64(&ps.tfi_cg_tol),
@@ -420,7 +419,6 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             qsmart_ilsqr_max_iter: parse_optional_usize(&ps.qsmart_ilsqr_max_iter),
             qsmart_ilsqr_pad_mm: parse_optional_f64(&ps.qsmart_ilsqr_pad_mm),
             qsmart_vasc_sphere_radius: ps.qsmart_vasc_sphere_radius.trim().parse::<i32>().ok(),
-            qsmart_sdf_spatial_radius: ps.qsmart_sdf_spatial_radius.trim().parse::<i32>().ok(),
             qsmart_inversion: if selected_qsm_algorithm(ps) == QsmAlgorithm::Qsmart {
                 [
                     crate::cli::QsmAlgorithmArg::Ilsqr, crate::cli::QsmAlgorithmArg::Rts,

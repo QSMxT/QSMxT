@@ -2140,7 +2140,6 @@ mod oblique_run_tests {
         q.ilsqr_max_iter = 2;
         q.ilsqr_pad_mm = 0.0;
         q.vasc_sphere_radius = 1;
-        q.sdf_spatial_radius = 1;
         (q.frangi_scale_min, q.frangi_scale_max) = (1.0, 1.0);
         config
     }

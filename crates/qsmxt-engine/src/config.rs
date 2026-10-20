@@ -56,7 +56,7 @@ param_config!(MediConfig from qsm_core::inversion::MediParams {
     percentage: f64, cg_tol: f64, cg_max_iter: usize, max_iter: usize, tol: f64
 });
 param_config!(TfiConfig from qsm_core::inversion::TfiParams {
-    lambda: f64, precond: f64, merit: bool, data_weighting: i32,
+    lambda: f64, precond: f64, data_weighting: i32,
     percentage: f64, cg_tol: f64, cg_max_iter: usize, max_iter: usize, tol: f64
 });
 param_config!(AmpPeConfig from qsm_core::inversion::AmpPeParams {
@@ -543,7 +543,6 @@ pub struct QsmartConfig {
     pub ilsqr_pad_mm: f64,
     /// Bottom-hat sphere radius for vasculature detection, in mm (converted to voxels at run time)
     pub vasc_sphere_radius: i32,
-    pub sdf_spatial_radius: i32,
     /// Inner dipole inversion algorithm used for both QSMART stages
     pub inversion: QsmAlgorithm,
     // SDF kernel sigmas (voxels)
@@ -567,7 +566,7 @@ impl Default for QsmartConfig {
         let p = qsm_core::utils::QsmartParams::default();
         Self {
             ilsqr_max_iter: p.ilsqr_max_iter, ilsqr_pad_mm: p.ilsqr_pad_mm,
-            vasc_sphere_radius: p.vasc_sphere_radius, sdf_spatial_radius: p.sdf_spatial_radius,
+            vasc_sphere_radius: p.vasc_sphere_radius,
             inversion: QsmAlgorithm::Ilsqr,
             sdf_sigma1_stage1: p.sdf_sigma1_stage1,
             sdf_sigma2_stage1: p.sdf_sigma2_stage1,
@@ -1856,5 +1855,29 @@ mod axial_resampling_tests {
         let c = PipelineConfig::from_toml("").unwrap();
         assert!(!c.pipeline.axial_resampling);
         assert_eq!(c.pipeline.obliquity_threshold, 10.0);
+    }
+}
+
+#[cfg(test)]
+mod removed_settings_tests {
+    use super::*;
+
+    /// Settings files from earlier QSMxT versions still carry two settings since removed, TFI's
+    /// `merit` and QSMART's `sdf_spatial_radius` (neither did anything). They load, and the
+    /// settings are ignored.
+    #[test]
+    fn configs_with_removed_settings_still_load() {
+        let old = "[inversion]\nalgorithm = \"tfi\"\n\n[inversion.tfi]\nmerit = true\nlambda = 0.0002\n\n\
+                   [inversion.qsmart]\nsdf_spatial_radius = 8\nvasc_sphere_radius = 5\n";
+        let (c, warnings) = PipelineConfig::from_toml_migrating(old).expect("an old config loads");
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(c.inversion.algorithm, QsmAlgorithm::Tfi);
+        assert_eq!(c.inversion.tfi.lambda, 0.0002);
+        assert_eq!(c.inversion.qsmart.vasc_sphere_radius, 5);
+        // Saving it again drops them.
+        let saved: toml::Table = toml::from_str(&c.to_toml().unwrap()).unwrap();
+        let inversion = saved["inversion"].as_table().unwrap();
+        assert!(!inversion["tfi"].as_table().unwrap().contains_key("merit"));
+        assert!(!inversion["qsmart"].as_table().unwrap().contains_key("sdf_spatial_radius"));
     }
 }

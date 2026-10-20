@@ -194,7 +194,6 @@ pub fn apply_qsmart_overrides(config: &mut PipelineConfig, p: &cli::QsmartParamA
     if let Some(v) = p.qsmart_ilsqr_pad_mm { config.inversion.qsmart.ilsqr_pad_mm = v; }
     if let Some(v) = p.qsmart_ilsqr_max_iter { config.inversion.qsmart.ilsqr_max_iter = v; }
     if let Some(v) = p.qsmart_vasc_sphere_radius { config.inversion.qsmart.vasc_sphere_radius = v; }
-    if let Some(v) = p.qsmart_sdf_spatial_radius { config.inversion.qsmart.sdf_spatial_radius = v; }
     if let Some(a) = p.qsmart_inversion { config.inversion.qsmart.inversion = qsm_algorithm_arg_to_config(a); }
     if let Some(v) = p.qsmart_sdf_sigma1_stage1 { config.inversion.qsmart.sdf_sigma1_stage1 = v; }
     if let Some(v) = p.qsmart_sdf_sigma2_stage1 { config.inversion.qsmart.sdf_sigma2_stage1 = v; }
@@ -459,7 +458,6 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.tfi_params.tfi_cg_max_iter { config.inversion.tfi.cg_max_iter = v; }
         if let Some(v) = args.tfi_params.tfi_max_iter { config.inversion.tfi.max_iter = v; }
         if let Some(v) = args.tfi_params.tfi_tol { config.inversion.tfi.tol = v; }
-        if let Some(v) = args.tfi_params.tfi_merit { config.inversion.tfi.merit = v; }
         if let Some(v) = args.tgv_params.tgv_iterations { config.inversion.tgv.iterations = v; }
         if let Some(v) = args.tgv_params.tgv_erosions { config.inversion.tgv.erosions = v; }
         if let Some(v) = args.tgv_params.tgv_alpha1 { config.inversion.tgv.alpha1 = v; }

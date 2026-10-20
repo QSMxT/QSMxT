@@ -597,9 +597,6 @@ pub struct TfiParamArgs {
     /// TFI preconditioner value (susceptibility scaling outside the mask)
     #[arg(long)]
     pub tfi_precond: Option<f64>,
-    /// TFI: enable MERIT weighting
-    #[arg(long)]
-    pub tfi_merit: Option<bool>,
     /// TFI: data weighting mode (0=uniform, 1=SNR)
     #[arg(long)]
     pub tfi_data_weighting: Option<i32>,
@@ -708,9 +705,6 @@ pub struct QsmartParamArgs {
     /// QSMART vasculature detection sphere radius
     #[arg(long)]
     pub qsmart_vasc_sphere_radius: Option<i32>,
-    /// QSMART SDF spatial radius
-    #[arg(long)]
-    pub qsmart_sdf_spatial_radius: Option<i32>,
     /// QSMART inner dipole inversion algorithm (default: ilsqr)
     #[arg(long)]
     pub qsmart_inversion: Option<QsmAlgorithmArg>,
@@ -2682,9 +2676,6 @@ pub struct InvertTfiArgs {
     /// Preconditioner value (susceptibility scaling outside the mask)
     #[arg(long)]
     pub precond: Option<f64>,
-    /// Enable MERIT weighting
-    #[arg(long)]
-    pub merit: Option<bool>,
     /// Data weighting mode (0=uniform, 1=SNR)
     #[arg(long)]
     pub data_weighting: Option<i32>,

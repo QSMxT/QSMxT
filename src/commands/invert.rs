@@ -529,7 +529,6 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             let params = qsm_core::inversion::TfiParams {
                 lambda: args.lambda.unwrap_or(d.lambda),
                 precond: args.precond.unwrap_or(d.precond),
-                merit: args.merit.unwrap_or(d.merit),
                 data_weighting: args.data_weighting.unwrap_or(d.data_weighting),
                 percentage: args.percentage.unwrap_or(d.percentage),
                 cg_tol: args.cg_tol.unwrap_or(d.cg_tol),
