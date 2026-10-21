@@ -584,7 +584,9 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
             emit_f64(parts, "--ndi-tau", config.inversion.ndi.tau, d.inversion.ndi.tau);
             emit_f64(parts, "--ndi-alpha", config.inversion.ndi.alpha, d.inversion.ndi.alpha);
             emit_usize(parts, "--ndi-max-iter", config.inversion.ndi.max_iter, d.inversion.ndi.max_iter);
-            emit_f64(parts, "--ndi-phase-scale", config.inversion.ndi.phase_scale, d.inversion.ndi.phase_scale);
+            if config.inversion.ndi.auto_stop != d.inversion.ndi.auto_stop {
+                parts.push(format!("--ndi-auto-stop {}", config.inversion.ndi.auto_stop));
+            }
         }
         QsmAlgorithm::Fansi | QsmAlgorithm::FansiTgv => {
             let fa = &config.inversion.fansi;

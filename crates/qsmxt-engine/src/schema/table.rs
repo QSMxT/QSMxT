@@ -549,9 +549,8 @@ pub(super) fn table() -> Vec<Def> {
         // QSM.rs inversion/ndi.rs: 0 iterations give an all-zero map.
         d("inversion.ndi.max_iter", Inversion, "Max Iter", "Number of iterations", Int).min(1.0).flag("--ndi-max-iter").parent("inversion.algorithm")
         .when(|x| x.inv("ndi")).full("Iterations"),
-        d("inversion.ndi.phase_scale", Inversion, "Phase Scale", "ppm -> working-scale multiplier", Float).flag("--ndi-phase-scale").parent("inversion.algorithm")
-        .when(|x| x.inv("ndi"))
-        .gui("Multiplier from ppm to the working scale"),
+        d("inversion.ndi.auto_stop", Inversion, "Auto Stop", "Stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto)", Bool).flag("--ndi-auto-stop").parent("inversion.algorithm")
+        .when(|x| x.inv("ndi")),
         d("inversion.fansi.alpha1", Inversion, "Alpha1", "First-order (TV/TGV) L1 penalty weight", Float).flag("--fansi-alpha1").parent("inversion.algorithm")
         .when(|x| x.inv("fansi") || x.inv("fansi-tgv")).context("FANSI"),
         d("inversion.fansi.mu1", Inversion, "Mu1", "Gradient-consistency ADMM weight", Float).flag("--fansi-mu1").parent("inversion.algorithm")

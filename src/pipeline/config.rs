@@ -470,7 +470,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.ndi_params.ndi_tau { config.inversion.ndi.tau = v; }
         if let Some(v) = args.ndi_params.ndi_alpha { config.inversion.ndi.alpha = v; }
         if let Some(v) = args.ndi_params.ndi_max_iter { config.inversion.ndi.max_iter = v; }
-        if let Some(v) = args.ndi_params.ndi_phase_scale { config.inversion.ndi.phase_scale = v; }
+        if let Some(v) = args.ndi_params.ndi_auto_stop { config.inversion.ndi.auto_stop = v; }
         if let Some(v) = args.fansi_params.fansi_alpha1 { config.inversion.fansi.alpha1 = v; }
         if let Some(v) = args.fansi_params.fansi_mu1 { config.inversion.fansi.mu1 = v; }
         if let Some(v) = args.fansi_params.fansi_mu2 { config.inversion.fansi.mu2 = v; }

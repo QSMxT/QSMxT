@@ -286,15 +286,31 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             let bdir = (c.b0_direction[0], c.b0_direction[1], c.b0_direction[2]);
             info!("Dipole inversion (NDI, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
 
-            let d = qsm_core::inversion::NdiParams::default();
+            // With --auto-stop, unset parameters take FANSI ndi_auto's defaults, else ndi's.
+            let auto_stop = args.auto_stop.unwrap_or(false);
+            let d = if auto_stop {
+                qsm_core::inversion::NdiParams::auto()
+            } else {
+                qsm_core::inversion::NdiParams::default()
+            };
             let params = qsm_core::inversion::NdiParams {
                 tau: args.tau.unwrap_or(d.tau),
                 alpha: args.alpha.unwrap_or(d.alpha),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
-                phase_scale: args.phase_scale.unwrap_or(d.phase_scale),
+                auto_stop,
+                b0: args.field_strength,
+                te: args.echo_time,
+            };
+            let magnitude = match args.magnitude {
+                // Multi-echo (4D) magnitudes are RSS-combined to one weighting volume.
+                Some(ref p) => Some(super::common::load_magnitude_rss(p, field_nifti.data.len())?),
+                None => {
+                    warn!("No --magnitude provided for NDI; weighting every voxel in the mask equally");
+                    None
+                }
             };
             let chi = qsm_core::inversion::ndi(
-                &field_nifti.data, &mask, &grid, bdir, &params, |_, _| {},
+                &field_nifti.data, &mask, magnitude.as_deref(), &grid, bdir, &params, |_, _| {},
             );
             (c, (chi, field_nifti))
         }

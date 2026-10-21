@@ -444,7 +444,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             ndi_tau: parse_optional_f64(&ps.ndi_tau),
             ndi_alpha: parse_optional_f64(&ps.ndi_alpha),
             ndi_max_iter: parse_optional_usize(&ps.ndi_max_iter),
-            ndi_phase_scale: parse_optional_f64(&ps.ndi_phase_scale),
+            ndi_auto_stop: Some(ps.ndi_auto_stop),
         },
         fansi_params: crate::cli::FansiParamArgs {
             fansi_alpha1: parse_optional_f64(&ps.fansi_alpha1),
