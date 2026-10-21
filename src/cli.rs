@@ -276,9 +276,10 @@ pub struct NdiParamArgs {
     /// NDI max iterations
     #[arg(long)]
     pub ndi_max_iter: Option<usize>,
-    /// NDI phase scale (ppm -> working scale)
+    /// NDI: stop automatically once noise starts to build up along the dipole cone (FANSI
+    /// ndi_auto); --ndi-max-iter is then the maximum
     #[arg(long)]
-    pub ndi_phase_scale: Option<f64>,
+    pub ndi_auto_stop: Option<bool>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -2755,12 +2756,21 @@ pub struct InvertNdiArgs {
     /// L2 regularization weight (alpha)
     #[arg(long)]
     pub alpha: Option<f64>,
-    /// Max iterations
+    /// Max iterations (the maximum, with --auto-stop)
     #[arg(long)]
     pub max_iter: Option<usize>,
-    /// Phase scale (ppm -> working scale)
+    /// Stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto)
     #[arg(long)]
-    pub phase_scale: Option<f64>,
+    pub auto_stop: Option<bool>,
+    /// B0 field strength in Tesla (NDI works in radians; used to convert the ppm field)
+    #[arg(long)]
+    pub field_strength: f64,
+    /// Echo time in seconds (used to convert the ppm field to radians)
+    #[arg(long)]
+    pub echo_time: f64,
+    /// Magnitude NIfTI file, the data weight (recommended)
+    #[arg(long)]
+    pub magnitude: Option<PathBuf>,
 }
 
 #[derive(Parser, Debug)]

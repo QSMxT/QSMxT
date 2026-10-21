@@ -277,7 +277,9 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         },
         ndi: qsm_core::inversion::NdiParams {
             tau: cfg.inversion.ndi.tau, alpha: cfg.inversion.ndi.alpha,
-            max_iter: cfg.inversion.ndi.max_iter, phase_scale: cfg.inversion.ndi.phase_scale,
+            max_iter: cfg.inversion.ndi.max_iter, auto_stop: cfg.inversion.ndi.auto_stop,
+            // Field strength and echo time are scan parameters; the pipeline fills them in.
+            ..Default::default()
         },
         fansi: qsm_core::inversion::FansiParams {
             alpha1: cfg.inversion.fansi.alpha1, mu1: cfg.inversion.fansi.mu1,

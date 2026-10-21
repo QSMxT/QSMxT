@@ -1716,7 +1716,7 @@ pub struct PipelineFormState {
     pub ndi_tau: String,
     pub ndi_alpha: String,
     pub ndi_max_iter: String,
-    pub ndi_phase_scale: String,
+    pub ndi_auto_stop: bool,
 
     // FANSI (nlTV / nlTGV — shared)
     pub fansi_alpha1: String,
@@ -2108,7 +2108,7 @@ impl Default for PipelineFormState {
             ndi_tau: format!("{}", ndi.tau),
             ndi_alpha: format!("{}", ndi.alpha),
             ndi_max_iter: format!("{}", ndi.max_iter),
-            ndi_phase_scale: format!("{}", ndi.phase_scale),
+            ndi_auto_stop: ndi.auto_stop,
 
             fansi_alpha1: format!("{}", fansi.alpha1),
             fansi_mu1: format!("{}", fansi.mu1),
@@ -2950,7 +2950,7 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Tau", field: "ndi_tau", help: "Gradient-descent step size" });
                 rows.push(PipelineRow::Param { label: "  Alpha", field: "ndi_alpha", help: "L2 regularization weight" });
                 rows.push(PipelineRow::Param { label: "  Max Iter", field: "ndi_max_iter", help: "Number of iterations" });
-                rows.push(PipelineRow::Param { label: "  Phase Scale", field: "ndi_phase_scale", help: "ppm -> working-scale multiplier" });
+                rows.push(PipelineRow::Toggle { label: "  Auto Stop", field: "ndi_auto_stop", help: "Stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto)" });
             }
             "fansi" | "fansi-tgv" => { // shared params
                 rows.push(PipelineRow::Param { label: "  Alpha1", field: "fansi_alpha1", help: "First-order (TV/TGV) L1 penalty weight" });
@@ -3135,7 +3135,7 @@ impl PipelineFormState {
         "qsmart_sdf_sigma1_stage1", "qsmart_sdf_sigma2_stage1", "qsmart_sdf_sigma1_stage2", "qsmart_sdf_sigma2_stage2",
         "qsmart_sdf_lower_lim", "qsmart_sdf_curv_constant",
         "qsmart_frangi_scale_min", "qsmart_frangi_scale_max", "qsmart_frangi_scale_ratio", "qsmart_frangi_c",
-        "ndi_tau", "ndi_alpha", "ndi_max_iter", "ndi_phase_scale",
+        "ndi_tau", "ndi_alpha", "ndi_max_iter",
         "fansi_alpha1", "fansi_mu1", "fansi_mu2", "fansi_alpha0", "fansi_mu0", "fansi_max_iter", "fansi_tol_update", "fansi_tol_delta", "fansi_phase_scale",
         "l1qsm_alpha1", "l1qsm_mu1", "l1qsm_mu2", "l1qsm_mu3", "l1qsm_lambda", "l1qsm_max_iter", "l1qsm_tol_update", "l1qsm_tol_delta", "l1qsm_phase_scale",
         "whqsm_alpha1", "whqsm_mu1", "whqsm_mu2", "whqsm_beta", "whqsm_muh", "whqsm_max_iter", "whqsm_tol_update", "whqsm_tol_delta", "whqsm_phase_scale",
@@ -3299,7 +3299,6 @@ impl PipelineFormState {
             "ndi_tau" => &self.ndi_tau,
             "ndi_alpha" => &self.ndi_alpha,
             "ndi_max_iter" => &self.ndi_max_iter,
-            "ndi_phase_scale" => &self.ndi_phase_scale,
             "fansi_alpha1" => &self.fansi_alpha1,
             "fansi_mu1" => &self.fansi_mu1,
             "fansi_mu2" => &self.fansi_mu2,
@@ -3523,7 +3522,6 @@ impl PipelineFormState {
             "ndi_tau" => Some(&mut self.ndi_tau),
             "ndi_alpha" => Some(&mut self.ndi_alpha),
             "ndi_max_iter" => Some(&mut self.ndi_max_iter),
-            "ndi_phase_scale" => Some(&mut self.ndi_phase_scale),
             "fansi_alpha1" => Some(&mut self.fansi_alpha1),
             "fansi_mu1" => Some(&mut self.fansi_mu1),
             "fansi_mu2" => Some(&mut self.fansi_mu2),
@@ -3690,6 +3688,7 @@ impl PipelineFormState {
             "fft_padding" => self.fft_padding,
             "romeo_phase_coherence" => self.romeo_phase_coherence,
             "medi_merit" => self.medi_merit,
+            "ndi_auto_stop" => self.ndi_auto_stop,
             "motion_correction" => self.motion_correction,
             "orientation_registration" => self.orientation_registration,
             "multi_orientation_force" => self.multi_orientation_force,
@@ -3735,6 +3734,7 @@ impl PipelineFormState {
             "fft_padding" => self.fft_padding = !self.fft_padding,
             "romeo_phase_coherence" => self.romeo_phase_coherence = !self.romeo_phase_coherence,
             "medi_merit" => self.medi_merit = !self.medi_merit,
+            "ndi_auto_stop" => self.ndi_auto_stop = !self.ndi_auto_stop,
             "motion_correction" => self.motion_correction = !self.motion_correction,
             "orientation_registration" => self.orientation_registration = !self.orientation_registration,
             "multi_orientation_force" => self.multi_orientation_force = !self.multi_orientation_force,

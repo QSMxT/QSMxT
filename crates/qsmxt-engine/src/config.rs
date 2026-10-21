@@ -34,7 +34,7 @@ param_config!(NltvConfig from qsm_core::inversion::NltvParams {
     lambda: f64, mu: f64, tol: f64, max_iter: usize, newton_iter: usize
 });
 param_config!(NdiConfig from qsm_core::inversion::NdiParams {
-    tau: f64, alpha: f64, max_iter: usize, phase_scale: f64
+    tau: f64, alpha: f64, max_iter: usize, auto_stop: bool
 });
 param_config!(FansiConfig from qsm_core::inversion::FansiParams {
     alpha1: f64, mu1: f64, mu2: f64, alpha0: f64, mu0: f64, max_iter: usize,

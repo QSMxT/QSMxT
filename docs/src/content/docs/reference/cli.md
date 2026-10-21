@@ -164,7 +164,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--ndi-tau <NDI_TAU>` | NDI gradient-descent step size (tau) |
 | `--ndi-alpha <NDI_ALPHA>` | NDI L2 regularization weight (alpha) |
 | `--ndi-max-iter <NDI_MAX_ITER>` | NDI max iterations. |
-| `--ndi-phase-scale <NDI_PHASE_SCALE>` | NDI phase scale (ppm -&gt; working scale) |
+| `--ndi-auto-stop <NDI_AUTO_STOP>` | NDI: stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto); --ndi-max-iter is then the maximum. |
 | `--fansi-alpha1 <FANSI_ALPHA1>` | FANSI first-order (TV/TGV) L1 penalty weight (alpha1) |
 | `--fansi-mu1 <FANSI_MU1>` | FANSI gradient-consistency ADMM weight (mu1) |
 | `--fansi-mu2 <FANSI_MU2>` | FANSI fidelity-consistency ADMM weight (mu2) |
@@ -547,7 +547,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--ndi-tau <NDI_TAU>` | NDI gradient-descent step size (tau) |
 | `--ndi-alpha <NDI_ALPHA>` | NDI L2 regularization weight (alpha) |
 | `--ndi-max-iter <NDI_MAX_ITER>` | NDI max iterations. |
-| `--ndi-phase-scale <NDI_PHASE_SCALE>` | NDI phase scale (ppm -&gt; working scale) |
+| `--ndi-auto-stop <NDI_AUTO_STOP>` | NDI: stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto); --ndi-max-iter is then the maximum. |
 | `--fansi-alpha1 <FANSI_ALPHA1>` | FANSI first-order (TV/TGV) L1 penalty weight (alpha1) |
 | `--fansi-mu1 <FANSI_MU1>` | FANSI gradient-consistency ADMM weight (mu1) |
 | `--fansi-mu2 <FANSI_MU2>` | FANSI fidelity-consistency ADMM weight (mu2) |
@@ -869,7 +869,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--ndi-tau <NDI_TAU>` | NDI gradient-descent step size (tau) |
 | `--ndi-alpha <NDI_ALPHA>` | NDI L2 regularization weight (alpha) |
 | `--ndi-max-iter <NDI_MAX_ITER>` | NDI max iterations. |
-| `--ndi-phase-scale <NDI_PHASE_SCALE>` | NDI phase scale (ppm -&gt; working scale) |
+| `--ndi-auto-stop <NDI_AUTO_STOP>` | NDI: stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto); --ndi-max-iter is then the maximum. |
 | `--fansi-alpha1 <FANSI_ALPHA1>` | FANSI first-order (TV/TGV) L1 penalty weight (alpha1) |
 | `--fansi-mu1 <FANSI_MU1>` | FANSI gradient-consistency ADMM weight (mu1) |
 | `--fansi-mu2 <FANSI_MU2>` | FANSI fidelity-consistency ADMM weight (mu2) |
@@ -2034,7 +2034,7 @@ qsmxt invert heidi [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 Nonlinear Dipole Inversion
 
 ```sh
-qsmxt invert ndi [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+qsmxt invert ndi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-time <ECHO_TIME> <INPUT>
 ```
 
 | Argument | Description |
@@ -2047,8 +2047,11 @@ qsmxt invert ndi [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--tau <TAU>` | Gradient-descent step size (tau) |
 | `--alpha <ALPHA>` | L2 regularization weight (alpha) |
-| `--max-iter <MAX_ITER>` | Max iterations. |
-| `--phase-scale <PHASE_SCALE>` | Phase scale (ppm -&gt; working scale) |
+| `--max-iter <MAX_ITER>` | Max iterations (the maximum, with --auto-stop) |
+| `--auto-stop <AUTO_STOP>` | Stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto) |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla (NDI works in radians; used to convert the ppm field) Required. |
+| `--echo-time <ECHO_TIME>` | Echo time in seconds (used to convert the ppm field to radians) Required. |
+| `--magnitude <MAGNITUDE>` | Magnitude NIfTI file, the data weight (recommended) |
 
 ### `qsmxt invert fansi`
 
