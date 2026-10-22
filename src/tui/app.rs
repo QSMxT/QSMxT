@@ -4383,6 +4383,8 @@ pub struct App {
     pub sub_page: [Option<Page>; TAB_NAMES.len()],
     /// Focus is on the sub-tab strip rather than the rows (see [`App::on_subtabs`]).
     pub subtab_focus: bool,
+    /// Focus is on the main tab bar: ←/→ switch tabs, ↓ or Enter go into the tab.
+    pub tab_focus: bool,
     pub active_field: usize,
     pub editing: bool,
     pub cursor_pos: usize,
@@ -4414,6 +4416,30 @@ pub struct App {
     pub update_modal: Option<UpdateModal>,
     /// Background release check started at launch.
     pub update_state: UpdateState,
+    /// The "Did you know?" pop-up: shown at launch (unless tips are off) and on `?`.
+    pub tip_modal: Option<TipModal>,
+}
+
+/// The "Did you know?" pop-up, with two buttons: OK, and one that turns startup tips off
+/// (or back on, when it was opened with `?` while they are off).
+#[derive(Debug, Clone)]
+pub struct TipModal {
+    pub tip: super::tips::Tip,
+    /// Whether startup tips were on when the pop-up opened; picks the second button.
+    pub tips_enabled: bool,
+    /// The selected button: 0 is OK, 1 turns startup tips off (or on).
+    pub cursor: usize,
+}
+
+impl TipModal {
+    pub fn new(tip: super::tips::Tip, tips_enabled: bool) -> Self {
+        TipModal { tip, tips_enabled, cursor: 0 }
+    }
+
+    /// The labels of the two buttons, OK first.
+    pub fn buttons(&self) -> [&'static str; 2] {
+        ["OK", if self.tips_enabled { "Don't show tips" } else { "Show tips at startup" }]
+    }
 }
 
 /// The "new version available" pop-up shown once the background check finds a release
@@ -4677,6 +4703,7 @@ impl App {
             active_tab: 0,
             sub_page: [None; TAB_NAMES.len()],
             subtab_focus: false,
+            tab_focus: false,
             active_field: 0,
             editing: false,
             cursor_pos: 0,
@@ -4695,6 +4722,7 @@ impl App {
             algo_modal: None,
             update_modal: None,
             update_state: UpdateState::start(),
+            tip_modal: None,
             input_mode: InputMode::Bids,
             example_state: ExampleState::default(),
             dicom_state: DicomConvertState::default(),
@@ -4803,9 +4831,19 @@ impl App {
             return;
         }
 
+        if self.tip_modal.is_some() {
+            self.handle_tip_modal_key(key);
+            return;
+        }
+
         // An open algorithm-selection modal captures all input until dismissed.
         if self.algo_modal.is_some() {
             self.handle_algo_modal_key(key);
+            return;
+        }
+
+        if key.code == KeyCode::Char('?') && !self.is_typing() {
+            self.open_tip();
             return;
         }
 
@@ -4814,6 +4852,11 @@ impl App {
             self.error_message = None;
         }
         self.status_message = None;
+
+        if self.tab_focus {
+            self.handle_tab_bar_key(key);
+            return;
+        }
 
         // Route tab 0 (Input) to its combined IO + filter handler
         if self.active_tab == TAB_INPUT {
@@ -4832,6 +4875,7 @@ impl App {
             match key.code {
                 KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
                 _ if self.switch_tab(key) => {}
+                KeyCode::Up | KeyCode::Char('k') if self.pipeline_view.scroll == 0 => self.tab_focus = true,
                 KeyCode::Up | KeyCode::Char('k') => {
                     self.pipeline_view.scroll = self.pipeline_view.scroll.saturating_sub(1);
                 }
@@ -4852,6 +4896,7 @@ impl App {
                 KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
                 // 1..=N, Tab, Shift-Tab: one rule for every tab (see `switch_tab`).
                 _ if self.switch_tab(key) => {}
+                KeyCode::Up | KeyCode::Char('k') if self.methods_scroll_offset == 0 => self.tab_focus = true,
                 KeyCode::Up | KeyCode::Char('k') => {
                     self.methods_scroll_offset = self.methods_scroll_offset.saturating_sub(1);
                 }
@@ -4917,6 +4962,7 @@ impl App {
                 KeyCode::Up | KeyCode::Char('k') if self.active_field > 0 => {
                     self.active_field -= 1;
                 }
+                KeyCode::Up | KeyCode::Char('k') => self.tab_focus = true,
                 KeyCode::Down | KeyCode::Char('j') => {
                     if self.active_field + 1 < Self::INPUT_IO_FIELDS {
                         self.active_field += 1;
@@ -5738,6 +5784,51 @@ impl App {
         }
     }
 
+    /// Is a text field taking keystrokes? Then `?` is typed rather than opening a tip.
+    fn is_typing(&self) -> bool {
+        let fs = &self.filter_state;
+        self.editing
+            || self.pipeline_state.editing
+            || self.pipeline_state.mask_threshold_editing
+            || fs.include_editing
+            || fs.exclude_editing
+            || fs.num_echoes_editing
+            || fs.orientation_editing
+            || self.nifti_state.editing
+    }
+
+    /// Open the tip pop-up on the next tip, whether or not startup tips are on.
+    pub fn open_tip(&mut self) {
+        self.status_message = None;
+        self.error_message = None;
+        self.tip_modal = Some(TipModal::new(super::tips::next_tip(), super::tips::enabled()));
+    }
+
+    /// Keys while the tip pop-up is open: ←/→/Tab choose a button, Enter/Space press it,
+    /// `n` shows the next tip, Esc/q close it.
+    pub fn handle_tip_modal_key(&mut self, key: KeyEvent) {
+        let Some(m) = self.tip_modal.as_mut() else { return };
+        match key.code {
+            KeyCode::Left | KeyCode::Char('h') => m.cursor = 0,
+            KeyCode::Right | KeyCode::Char('l') => m.cursor = 1,
+            KeyCode::Tab | KeyCode::BackTab => m.cursor = 1 - m.cursor,
+            KeyCode::Char('n') => m.tip = super::tips::next_tip(),
+            KeyCode::Enter | KeyCode::Char(' ') => {
+                let m = self.tip_modal.take().expect("checked above");
+                if m.cursor == 1 {
+                    super::tips::set_enabled(!m.tips_enabled);
+                    self.status_message = Some(if m.tips_enabled {
+                        "Tips turned off. Press ? to see a tip or to turn them back on".to_string()
+                    } else {
+                        "Tips will show when QSMxT opens".to_string()
+                    });
+                }
+            }
+            KeyCode::Esc | KeyCode::Char('q') => self.tip_modal = None,
+            _ => {}
+        }
+    }
+
     fn handle_algo_modal_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
@@ -5955,12 +6046,17 @@ impl App {
             return;
         }
 
-        // On the sub-tab strip: ←/→ choose the sub-tab, ↓ or Enter go into its rows. Tab
-        // switching, `[`/`]`, `R`, F5 and quitting work as on the rows; nothing else applies.
+        // On the sub-tab strip: ←/→ choose the sub-tab, ↓ or Enter go into its rows, ↑ goes up
+        // to the tab bar. Tab switching, `[`/`]`, `R`, F5 and quitting work as on the rows;
+        // nothing else applies.
         if self.on_subtabs() {
             match key.code {
                 KeyCode::Left => return self.cycle_page(-1),
                 KeyCode::Right => return self.cycle_page(1),
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.tab_focus = true;
+                    return;
+                }
                 KeyCode::Down | KeyCode::Char('j') | KeyCode::Enter => {
                     self.subtab_focus = false;
                     self.set_focus(0);
@@ -6010,11 +6106,16 @@ impl App {
                 }
             }
 
-            // Navigation; up from the first row goes back to the sub-tab strip.
+            // Navigation; up from the first row goes back to the sub-tab strip, or to the tab
+            // bar on a tab without sub-tabs.
             KeyCode::Up | KeyCode::Char('k') => {
                 let f = self.focus();
-                if f == 0 && self.has_subtabs() && !self.pipeline_state.mask_ops_adding {
-                    self.subtab_focus = true;
+                if f == 0 && !self.pipeline_state.mask_ops_adding {
+                    if self.has_subtabs() {
+                        self.subtab_focus = true;
+                    } else {
+                        self.tab_focus = true;
+                    }
                 } else {
                     self.set_focus(f.saturating_sub(1));
                 }
@@ -6390,9 +6491,29 @@ impl App {
         Self::is_rows_tab(self.active_tab) && self.pages(self.active_tab).len() > 1
     }
 
-    /// Whether focus is on the sub-tab strip rather than on a row.
+    /// Whether focus is on the sub-tab strip rather than on a row (or the tab bar above).
     pub fn on_subtabs(&self) -> bool {
-        self.subtab_focus && self.has_subtabs()
+        self.subtab_focus && self.has_subtabs() && !self.tab_focus
+    }
+
+    /// Keys while the main tab bar has focus: ←/→ switch tabs (wrapping), ↓ or Enter go into
+    /// the tab (onto its sub-tab strip, if it has one). Digits, Tab, F5 and quitting work as
+    /// anywhere else.
+    fn handle_tab_bar_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Left => {
+                self.switch_tab(KeyEvent::from(KeyCode::BackTab));
+            }
+            KeyCode::Right => {
+                self.switch_tab(KeyEvent::from(KeyCode::Tab));
+            }
+            KeyCode::Down | KeyCode::Char('j') | KeyCode::Enter => self.tab_focus = false,
+            KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
+            KeyCode::F(5) => self.try_run(),
+            _ => {
+                self.switch_tab(key);
+            }
+        }
     }
 
     /// Put focus and scrolling back at the top: on every change of tab or sub-tab.
@@ -10931,8 +11052,11 @@ mod tests {
         assert!(!app.on_subtabs());
         app.handle_key(key(KeyCode::Up));
         assert!(app.on_subtabs());
-        // Up on the strip goes nowhere; Enter also goes into the rows.
+        // Up on the strip goes to the tab bar, Down comes back; Enter also goes into the rows.
         app.handle_key(key(KeyCode::Up));
+        assert!(app.tab_focus);
+        app.handle_key(key(KeyCode::Down));
+        assert!(!app.tab_focus);
         assert!(app.on_subtabs());
         app.handle_key(key(KeyCode::Enter));
         assert!(!app.on_subtabs());
@@ -10983,6 +11107,9 @@ mod tests {
             assert_eq!(app.focus(), 0);
             app.handle_key(key(KeyCode::Up));
             assert!(!app.on_subtabs());
+            assert!(app.tab_focus, "↑ from the first row goes to the tab bar");
+            app.handle_key(key(KeyCode::Down));
+            assert!(!app.tab_focus);
         }
     }
 
@@ -11052,4 +11179,144 @@ mod tests {
         app.form.slurm_submit = true;
         assert_eq!(app.run_action().0, "Submit SLURM jobs");
     }
+
+    #[test]
+    fn tip_modal_ok_closes_and_leaves_tips_on() {
+        let _s = crate::tui::tips::TestSettings::new();
+        let mut app = App::new();
+        app.tip_modal = Some(TipModal::new(crate::tui::tips::TIPS[0], true));
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.tip_modal.is_none());
+        assert!(crate::tui::tips::enabled());
+        assert!(!app.should_quit);
+    }
+
+    /// Turning tips off takes a deliberate move to the second button; `?` brings the
+    /// pop-up back with a button that turns them on again.
+    #[test]
+    fn tips_can_be_turned_off_and_back_on_from_the_tui() {
+        let _s = crate::tui::tips::TestSettings::new();
+        let mut app = App::new();
+        app.tip_modal = Some(TipModal::new(crate::tui::tips::TIPS[0], true));
+        app.handle_key(key(KeyCode::Right));
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.tip_modal.is_none());
+        assert!(!crate::tui::tips::enabled());
+        assert!(crate::tui::tips::startup_tip().is_none());
+        assert!(app.status_message.as_deref().unwrap().contains("Press ?"));
+
+        app.handle_key(key(KeyCode::Char('?')));
+        let m = app.tip_modal.as_ref().expect("? opens a tip");
+        assert_eq!(m.buttons()[1], "Show tips at startup");
+        app.handle_key(key(KeyCode::Tab));
+        app.handle_key(key(KeyCode::Enter));
+        assert!(crate::tui::tips::enabled());
+    }
+
+    #[test]
+    fn tip_modal_esc_and_q_close_it_without_quitting() {
+        let _s = crate::tui::tips::TestSettings::new();
+        for code in [KeyCode::Esc, KeyCode::Char('q')] {
+            let mut app = App::new();
+            app.tip_modal = Some(TipModal::new(crate::tui::tips::TIPS[0], true));
+            app.handle_key(key(KeyCode::Right));
+            app.handle_key(key(code));
+            assert!(app.tip_modal.is_none());
+            assert!(!app.should_quit);
+            assert!(crate::tui::tips::enabled(), "closing must not turn tips off");
+        }
+    }
+
+    #[test]
+    fn n_shows_the_next_tip() {
+        let _s = crate::tui::tips::TestSettings::new();
+        let mut app = App::new();
+        app.open_tip();
+        let first = app.tip_modal.as_ref().unwrap().tip;
+        app.handle_key(key(KeyCode::Char('n')));
+        assert_ne!(app.tip_modal.as_ref().unwrap().tip, first);
+    }
+
+    /// `?` typed into a text field is text, not a request for a tip.
+    #[test]
+    fn question_mark_is_typed_while_editing() {
+        let _s = crate::tui::tips::TestSettings::new();
+        let mut app = App::new();
+        app.active_field = 1;
+        app.editing = true;
+        app.handle_key(key(KeyCode::Char('?')));
+        assert!(app.tip_modal.is_none());
+    }
+
+    // ─── The main tab bar ───
+
+    /// ↑ from the top of the Input tab reaches the tab bar; ←/→ there walk the tabs, wrapping,
+    /// and the focus stays on the bar until ↓.
+    #[test]
+    fn arrows_walk_the_main_tabs_from_the_tab_bar() {
+        let mut app = App::new();
+        app.handle_key(key(KeyCode::Up));
+        assert!(app.tab_focus);
+        assert_eq!(app.active_tab, TAB_INPUT);
+        app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.active_tab, TAB_PREPROCESSING);
+        assert!(app.tab_focus);
+        assert!(!app.on_subtabs(), "the sub-tab strip must not look focused under the tab bar");
+        app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.active_tab, TAB_QSM);
+        app.handle_key(key(KeyCode::Left));
+        app.handle_key(key(KeyCode::Left));
+        app.handle_key(key(KeyCode::Left));
+        assert_eq!(app.active_tab, TAB_NAMES.len() - 1, "← from the first tab wraps to the last");
+        // Digits still work and keep the bar focused.
+        app.handle_key(key(KeyCode::Char('2')));
+        assert_eq!(app.active_tab, TAB_PREPROCESSING);
+        assert!(app.tab_focus);
+        // ↓ goes into the tab: onto its sub-tab strip, here.
+        app.handle_key(key(KeyCode::Down));
+        assert!(!app.tab_focus);
+        assert!(app.on_subtabs());
+    }
+
+    /// Enter on the bar opens a tab without sub-tabs at its first row; ↑ from Pipeline and
+    /// Methods reaches the bar once they are scrolled to the top.
+    #[test]
+    fn the_tab_bar_is_reachable_from_every_tab() {
+        let mut app = App::new();
+        app.handle_key(key(KeyCode::Char('6')));
+        app.handle_key(key(KeyCode::Up));
+        assert!(app.tab_focus);
+        app.handle_key(key(KeyCode::Enter));
+        assert!(!app.tab_focus);
+        assert_eq!(app.focus(), 0);
+
+        for tab in [TAB_PIPELINE, TAB_METHODS] {
+            app.handle_key(key(KeyCode::Char(char::from_digit(tab as u32 + 1, 10).unwrap())));
+            app.handle_key(key(KeyCode::Down));
+            app.handle_key(key(KeyCode::Up));
+            assert!(!app.tab_focus, "the first ↑ scrolls back up");
+            app.handle_key(key(KeyCode::Up));
+            assert!(app.tab_focus);
+            app.handle_key(key(KeyCode::Down));
+            assert!(!app.tab_focus);
+        }
+    }
+
+    /// Keys that act on a setting do nothing while the tab bar has focus; `q` still quits.
+    #[test]
+    fn setting_keys_do_nothing_on_the_tab_bar() {
+        let mut app = App::new();
+        app.handle_key(key(KeyCode::Char('3')));
+        app.handle_key(key(KeyCode::Up));
+        assert!(app.tab_focus);
+        let before = crate::tui::command::build_command_string(&app);
+        for k in [KeyCode::Char(' '), KeyCode::Char('r'), KeyCode::Char('R'), KeyCode::Char('[')] {
+            app.handle_key(key(k));
+            assert!(app.tab_focus, "{k:?} left the tab bar");
+        }
+        assert_eq!(crate::tui::command::build_command_string(&app), before);
+        app.handle_key(key(KeyCode::Char('q')));
+        assert!(app.should_quit);
+    }
 }
+

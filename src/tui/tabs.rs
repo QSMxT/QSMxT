@@ -192,6 +192,7 @@ pub fn draw_header(f: &mut Frame, app: &App, area: Rect) {
     let mut x = put(buf, area, area.x + 1, y0, brand, Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD));
     x += 2;
     let mut underline = (0u16, 0u16);
+    let accent = if app.tab_focus { Color::Yellow } else { Color::Cyan };
     for (i, l) in labels.iter().enumerate() {
         if i > 0 {
             x += gap;
@@ -199,15 +200,17 @@ pub fn draw_header(f: &mut Frame, app: &App, area: Rect) {
         let (digit, name) = l.split_at(1);
         if i == active {
             underline = (x.saturating_sub(1), x + w(l) as u16 + 1);
-            x = put(buf, area, x, y0, digit, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
-            x = put(buf, area, x, y0, name, Style::default().fg(Color::White).add_modifier(Modifier::BOLD));
+            // Yellow while the tab bar has focus, as the sub-tab strip does.
+            let name_fg = if app.tab_focus { Color::Yellow } else { Color::White };
+            x = put(buf, area, x, y0, digit, Style::default().fg(accent).add_modifier(Modifier::BOLD));
+            x = put(buf, area, x, y0, name, Style::default().fg(name_fg).add_modifier(Modifier::BOLD));
         } else {
             x = put(buf, area, x, y0, digit, Style::default().fg(pal.muted));
             x = put(buf, area, x, y0, name, Style::default().fg(pal.text));
         }
     }
     let (ux0, ux1) = underline;
-    put(buf, area, ux0, y1, &"━".repeat((ux1 - ux0) as usize), Style::default().fg(Color::Cyan));
+    put(buf, area, ux0, y1, &"━".repeat((ux1 - ux0) as usize), Style::default().fg(accent));
 
     // The versions sit in the rule, right-aligned, unless they would cross the underline.
     let ver = format!(" {} ", version());

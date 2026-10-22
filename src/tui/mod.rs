@@ -3,6 +3,7 @@ mod clipboard;
 mod command;
 mod pipeline_view;
 mod tabs;
+pub(crate) mod tips;
 mod ui;
 #[cfg(test)]
 mod schema_parity;
@@ -40,6 +41,7 @@ pub fn run_tui() -> crate::Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = App::new();
+    app.tip_modal = tips::startup_tip().map(|tip| app::TipModal::new(tip, true));
 
     // Main loop
     loop {
