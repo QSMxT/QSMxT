@@ -104,6 +104,8 @@ const FIELD_PATHS: &[(&str, &str)] = &[
     ("qsmart_vasc_sphere_radius", "inversion.qsmart.vasc_sphere_radius"), ("qsmart_frangi_scale_min", "inversion.qsmart.frangi_scale_min"),
     ("qsmart_frangi_scale_max", "inversion.qsmart.frangi_scale_max"), ("qsmart_frangi_scale_ratio", "inversion.qsmart.frangi_scale_ratio"),
     ("qsmart_frangi_c", "inversion.qsmart.frangi_c"),
+    ("qsmart_vessel_magnitude", "inversion.qsmart.vessel_magnitude"), ("qsmart_vessel_units", "inversion.qsmart.vessel_size_units"),
+    ("qsmart_fit_threshold", "field_mapping.qsmart_fit_threshold"),
     ("ndi_tau", "inversion.ndi.tau"), ("ndi_alpha", "inversion.ndi.alpha"), ("ndi_max_iter", "inversion.ndi.max_iter"),
     ("ndi_auto_stop", "inversion.ndi.auto_stop"),
     ("fansi_alpha1", "inversion.fansi.alpha1"), ("fansi_mu1", "inversion.fansi.mu1"), ("fansi_mu2", "inversion.fansi.mu2"),

@@ -92,6 +92,7 @@ impl Item {
             Item::TotalFieldHz => ("Total field".into(), Some("Hz"), K::Field, Some("desc-total_fieldmap".into())),
             Item::TotalFieldMagnitude => ("Field map magnitude".into(), None, K::Magnitude, Some("desc-total_magnitude".into())),
             Item::RobustFitReport => ("Robust echo fit report".into(), None, K::Report, Some("desc-totalppm_fieldmap_robustfit".into())),
+            Item::FieldReliability => ("Echo-fit reliability mask".into(), None, K::Mask, Some("desc-echofit_mask".into())),
             Item::LocalField(p) => (format!("Local field{}", pass_suffix(p)), Some("ppm"), K::Field, Some("localfield".into())),
             Item::LocalFieldMask(p) => (format!("Local field mask{}", pass_suffix(p)), None, K::Mask, Some("bgmask".into())),
             Item::RawChi(p) => (format!("Unreferenced susceptibility{}", pass_suffix(p)), Some("ppm"), K::Chi,
@@ -99,6 +100,7 @@ impl Item {
             Item::ReliableMask => ("Reliable-phase mask".into(), None, K::Mask, Some("desc-reliable_mask".into())),
             Item::QsmartIntermediate(p, name) => {
                 let (label, units, kind, bids) = match name {
+                    crate::stages::qsmart::VESSEL_MAGNITUDE => ("QSMART vessel magnitude", None, K::Magnitude, "part-mag_desc-vessels_T2starw"),
                     qsmart::VESSEL_MASK => ("QSMART vessel mask", None, K::Mask, "desc-vessels_mask"),
                     qsmart::LOCAL_FIELD_STAGE1 => ("QSMART local field, stage 1", Some("ppm"), K::Field, "desc-stage1_localfield"),
                     qsmart::CHI_STAGE1 => ("QSMART susceptibility, stage 1", Some("ppm"), K::Chi, "desc-stage1_Chimap"),
@@ -163,7 +165,7 @@ impl Item {
             Item::CombinedEchoMagnitude(1), Item::CoilCombinationMask, Item::Phase(1), Item::Magnitude(1),
             Item::CorrectedPhase(1), Item::CorrectedMagnitude(1), Item::CombinedMagnitude, Item::BrainMask,
             Item::SuppliedMask, Item::CoverageMask, Item::FieldPpm, Item::TotalFieldHz,
-            Item::TotalFieldMagnitude, Item::RobustFitReport, Item::ReliableMask, Item::CombinedRawChi,
+            Item::TotalFieldMagnitude, Item::RobustFitReport, Item::FieldReliability, Item::ReliableMask, Item::CombinedRawChi,
             Item::Chi, Item::ChiSupport, Item::SinglePassChi, Item::Segmentation,
             Item::SuppliedSegmentation, Item::SegmentationLabels, Item::SegmentationVolumes,
             Item::RegionStats, Item::MotionReport, Item::Swi, Item::SwiMip, Item::R2star, Item::T2star,
@@ -172,8 +174,8 @@ impl Item {
         ];
         for p in [Pass::Main, Pass::Reliable] {
             items.extend([Item::LocalField(p), Item::LocalFieldMask(p), Item::RawChi(p)]);
-            for name in [qsmart::VESSEL_MASK, qsmart::LOCAL_FIELD_STAGE1, qsmart::CHI_STAGE1,
-                         qsmart::LOCAL_FIELD_STAGE2, qsmart::CHI_STAGE2] {
+            for name in [crate::stages::qsmart::VESSEL_MAGNITUDE, qsmart::VESSEL_MASK, qsmart::LOCAL_FIELD_STAGE1,
+                         qsmart::CHI_STAGE1, qsmart::LOCAL_FIELD_STAGE2, qsmart::CHI_STAGE2] {
                 items.push(Item::QsmartIntermediate(p, name));
             }
         }

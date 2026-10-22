@@ -118,6 +118,7 @@ mod integration_tests {
                 linear_fit_estimate_offset: None,
                 robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
                 robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
+                qsmart_fit_threshold: None,
                 no_qsm: false,
                 do_swi: false,
                 do_smwi: false,

@@ -64,7 +64,7 @@ qsmxt run study/bids \
 | Option | Choices |
 | --- | --- |
 | `--qsm-algorithm` | 20 classical (`rts`, `tv`, `tkd`, `tgv`, `medi`, `ilsqr`, …) and 11 deep-learning (`xqsm`, `qsmnet`, `iqsm`, …) |
-| `--unwrapping-algorithm` | `romeo`, `laplacian` |
+| `--unwrapping-algorithm` | `romeo`, `laplacian` (the default with QSMART) |
 | `--bf-algorithm` | `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm` |
 | `--mask-preset` | `robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`, `rs2-net`, `mindgrab` |
 | `--masking-input` | `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality` |

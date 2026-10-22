@@ -65,17 +65,18 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--cosmos-magnitude-weighting` | COSMOS: weight each orientation by its combined magnitude (conjugate-gradient solve) |
 | `--cosmos-tol <COSMOS_TOL>` | Magnitude-weighted COSMOS: conjugate-gradient tolerance (needs --cosmos-magnitude-weighting) |
 | `--cosmos-max-iter <COSMOS_MAX_ITER>` | Magnitude-weighted COSMOS: conjugate-gradient iteration cap (needs --cosmos-magnitude-weighting) |
-| `--unwrapping-algorithm <UNWRAPPING_ALGORITHM>` | Unwrapping algorithm. Values: `romeo`, `laplacian`. |
+| `--unwrapping-algorithm <UNWRAPPING_ALGORITHM>` | Unwrapping algorithm (default: romeo; laplacian with --qsm-algorithm qsmart or --b0-estimation qsmart-echofit) Values: `romeo`, `laplacian`. |
 | `--bf-algorithm <BF_ALGORITHM>` | Background field removal algorithm. Values: `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm`. |
 | `--masking-input <MASKING_INPUT>` | Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude) Values: `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality`. |
 | `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
 | `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
 | `--coil-combination-sigma <COIL_COMBINATION_SIGMA>` | MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets (3 values, in voxels; default 10 10 5, as in MriResearchTools). Only used for uncombined multi-coil runs. |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
-| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method. Values: `weighted-avg`, `linear-fit`, `robust-fit`. |
+| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (default: weighted-avg; qsmart-echofit with --qsm-algorithm qsmart and Laplacian unwrapping) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`. |
+| `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: fit residual at which a voxel is left out of QSMART's reconstruction (default 40) |
 | `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) computed from the echo times and an assumed T2\* (`--b0-weight-assumed-t2star`), the same in every voxel: no T2\* map, no magnitude (Wang et al. 2022, Nat Neurosci 25:818). `phase-snr`, which uses the measured magnitude in each voxel, is generally preferable when magnitude is available. Applies to Laplacian unwrapping as well as ROMEO. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. |
 | `--b0-weight-assumed-t2star <MS>` | T2\* in ms assumed by `--b0-weight-type assumed-decay` to compute its fixed echo weights (default 40; no T2\* map is used) |
-| `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares, Neumann/DCT solve; default) or `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume) Values: `dct`, `fft`. |
+| `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares, Neumann/DCT solve; default), `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume) or `mirror` (the same on the volume mirrored along each axis, as QSMART unwraps; the default with --qsm-algorithm qsmart) Values: `dct`, `fft`, `mirror`. |
 | `--laplacian-fft-pad <VOXELS>` | Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or three (x y z). Default 64. |
 | `--bet-fractional-intensity <BET_FRACTIONAL_INTENSITY>` | BET fractional intensity (0.0-1.0; smaller = larger brain). Applies to every BET step in the masking recipe, overriding a `bet:<f>` in a --mask spec. |
 | `--bet-smoothness <BET_SMOOTHNESS>` | BET surface smoothness factor. Applies to every BET step in the masking recipe. |
@@ -152,7 +153,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--heidi-denoise-conductance <HEIDI_DENOISE_CONDUCTANCE>` | Anisotropic-diffusion conductance. |
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
 | `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
-| `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius. |
+| `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius, in --qsmart-vessel-units (default 8) |
 | `--qsmart-inversion <QSMART_INVERSION>` | QSMART inner dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
 | `--qsmart-sdf-sigma1-stage1 <QSMART_SDF_SIGMA1_STAGE1>` | QSMART SDF sigma1, stage 1 (voxels) |
 | `--qsmart-sdf-sigma2-stage1 <QSMART_SDF_SIGMA2_STAGE1>` | QSMART SDF sigma2, stage 1 (voxels) |
@@ -160,10 +161,12 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--qsmart-sdf-sigma2-stage2 <QSMART_SDF_SIGMA2_STAGE2>` | QSMART SDF sigma2, stage 2 (voxels) |
 | `--qsmart-sdf-lower-lim <QSMART_SDF_LOWER_LIM>` | QSMART SDF proximity lower limit. |
 | `--qsmart-sdf-curv-constant <QSMART_SDF_CURV_CONSTANT>` | QSMART SDF curvature constant. |
-| `--qsmart-frangi-scale-min <QSMART_FRANGI_SCALE_MIN>` | QSMART Frangi min vessel radius (mm) |
-| `--qsmart-frangi-scale-max <QSMART_FRANGI_SCALE_MAX>` | QSMART Frangi max vessel radius (mm) |
-| `--qsmart-frangi-scale-ratio <QSMART_FRANGI_SCALE_RATIO>` | QSMART Frangi scale step (mm) |
+| `--qsmart-frangi-scale-min <QSMART_FRANGI_SCALE_MIN>` | QSMART Frangi min vessel radius, in --qsmart-vessel-units (default 0.5) |
+| `--qsmart-frangi-scale-max <QSMART_FRANGI_SCALE_MAX>` | QSMART Frangi max vessel radius, in --qsmart-vessel-units (default 6) |
+| `--qsmart-frangi-scale-ratio <QSMART_FRANGI_SCALE_RATIO>` | QSMART Frangi scale step, in --qsmart-vessel-units (default 0.5) |
 | `--qsmart-frangi-c <QSMART_FRANGI_C>` | QSMART Frangi C noise threshold. |
+| `--qsmart-vessel-units <QSMART_VESSEL_UNITS>` | Units of QSMART's vessel sizes (--qsmart-vasc-sphere-radius and the Frangi scales): `voxels` (default, as QSMART gives them) or `mm` (converted to voxels with the mean voxel size) Values: `voxels`, `mm`. |
+| `--qsmart-vessel-magnitude <QSMART_VESSEL_MAGNITUDE>` | The magnitude QSMART detects vessels on: `mean-n4` (the mean over echoes, N4 bias-corrected, as QSMART prepares it; default) or `combined` (the root sum of squares over echoes, inhomogeneity-corrected unless --no-inhomogeneity-correction) Values: `mean-n4`, `combined`. |
 | `--ndi-tau <NDI_TAU>` | NDI gradient-descent step size (tau) |
 | `--ndi-alpha <NDI_ALPHA>` | NDI L2 regularization weight (alpha) |
 | `--ndi-max-iter <NDI_MAX_ITER>` | NDI max iterations. |
@@ -445,17 +448,18 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--cosmos-magnitude-weighting` | COSMOS: weight each orientation by its combined magnitude (conjugate-gradient solve) |
 | `--cosmos-tol <COSMOS_TOL>` | Magnitude-weighted COSMOS: conjugate-gradient tolerance (needs --cosmos-magnitude-weighting) |
 | `--cosmos-max-iter <COSMOS_MAX_ITER>` | Magnitude-weighted COSMOS: conjugate-gradient iteration cap (needs --cosmos-magnitude-weighting) |
-| `--unwrapping-algorithm <UNWRAPPING_ALGORITHM>` | Unwrapping algorithm. Values: `romeo`, `laplacian`. |
+| `--unwrapping-algorithm <UNWRAPPING_ALGORITHM>` | Unwrapping algorithm (default: romeo; laplacian with --qsm-algorithm qsmart or --b0-estimation qsmart-echofit) Values: `romeo`, `laplacian`. |
 | `--bf-algorithm <BF_ALGORITHM>` | Background field removal algorithm. Values: `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm`. |
 | `--masking-input <MASKING_INPUT>` | Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude) Values: `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality`. |
 | `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
 | `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
 | `--coil-combination-sigma <COIL_COMBINATION_SIGMA>` | MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets (3 values, in voxels; default 10 10 5, as in MriResearchTools). Only used for uncombined multi-coil runs. |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
-| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method. Values: `weighted-avg`, `linear-fit`, `robust-fit`. |
+| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (default: weighted-avg; qsmart-echofit with --qsm-algorithm qsmart and Laplacian unwrapping) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`. |
+| `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: fit residual at which a voxel is left out of QSMART's reconstruction (default 40) |
 | `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) computed from the echo times and an assumed T2\* (`--b0-weight-assumed-t2star`), the same in every voxel: no T2\* map, no magnitude (Wang et al. 2022, Nat Neurosci 25:818). `phase-snr`, which uses the measured magnitude in each voxel, is generally preferable when magnitude is available. Applies to Laplacian unwrapping as well as ROMEO. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. |
 | `--b0-weight-assumed-t2star <MS>` | T2\* in ms assumed by `--b0-weight-type assumed-decay` to compute its fixed echo weights (default 40; no T2\* map is used) |
-| `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares, Neumann/DCT solve; default) or `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume) Values: `dct`, `fft`. |
+| `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares, Neumann/DCT solve; default), `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume) or `mirror` (the same on the volume mirrored along each axis, as QSMART unwraps; the default with --qsm-algorithm qsmart) Values: `dct`, `fft`, `mirror`. |
 | `--laplacian-fft-pad <VOXELS>` | Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or three (x y z). Default 64. |
 | `--bet-fractional-intensity <BET_FRACTIONAL_INTENSITY>` | BET fractional intensity (0.0-1.0; smaller = larger brain). Applies to every BET step in the masking recipe, overriding a `bet:<f>` in a --mask spec. |
 | `--bet-smoothness <BET_SMOOTHNESS>` | BET surface smoothness factor. Applies to every BET step in the masking recipe. |
@@ -532,7 +536,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--heidi-denoise-conductance <HEIDI_DENOISE_CONDUCTANCE>` | Anisotropic-diffusion conductance. |
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
 | `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
-| `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius. |
+| `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius, in --qsmart-vessel-units (default 8) |
 | `--qsmart-inversion <QSMART_INVERSION>` | QSMART inner dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
 | `--qsmart-sdf-sigma1-stage1 <QSMART_SDF_SIGMA1_STAGE1>` | QSMART SDF sigma1, stage 1 (voxels) |
 | `--qsmart-sdf-sigma2-stage1 <QSMART_SDF_SIGMA2_STAGE1>` | QSMART SDF sigma2, stage 1 (voxels) |
@@ -540,10 +544,12 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--qsmart-sdf-sigma2-stage2 <QSMART_SDF_SIGMA2_STAGE2>` | QSMART SDF sigma2, stage 2 (voxels) |
 | `--qsmart-sdf-lower-lim <QSMART_SDF_LOWER_LIM>` | QSMART SDF proximity lower limit. |
 | `--qsmart-sdf-curv-constant <QSMART_SDF_CURV_CONSTANT>` | QSMART SDF curvature constant. |
-| `--qsmart-frangi-scale-min <QSMART_FRANGI_SCALE_MIN>` | QSMART Frangi min vessel radius (mm) |
-| `--qsmart-frangi-scale-max <QSMART_FRANGI_SCALE_MAX>` | QSMART Frangi max vessel radius (mm) |
-| `--qsmart-frangi-scale-ratio <QSMART_FRANGI_SCALE_RATIO>` | QSMART Frangi scale step (mm) |
+| `--qsmart-frangi-scale-min <QSMART_FRANGI_SCALE_MIN>` | QSMART Frangi min vessel radius, in --qsmart-vessel-units (default 0.5) |
+| `--qsmart-frangi-scale-max <QSMART_FRANGI_SCALE_MAX>` | QSMART Frangi max vessel radius, in --qsmart-vessel-units (default 6) |
+| `--qsmart-frangi-scale-ratio <QSMART_FRANGI_SCALE_RATIO>` | QSMART Frangi scale step, in --qsmart-vessel-units (default 0.5) |
 | `--qsmart-frangi-c <QSMART_FRANGI_C>` | QSMART Frangi C noise threshold. |
+| `--qsmart-vessel-units <QSMART_VESSEL_UNITS>` | Units of QSMART's vessel sizes (--qsmart-vasc-sphere-radius and the Frangi scales): `voxels` (default, as QSMART gives them) or `mm` (converted to voxels with the mean voxel size) Values: `voxels`, `mm`. |
+| `--qsmart-vessel-magnitude <QSMART_VESSEL_MAGNITUDE>` | The magnitude QSMART detects vessels on: `mean-n4` (the mean over echoes, N4 bias-corrected, as QSMART prepares it; default) or `combined` (the root sum of squares over echoes, inhomogeneity-corrected unless --no-inhomogeneity-correction) Values: `mean-n4`, `combined`. |
 | `--ndi-tau <NDI_TAU>` | NDI gradient-descent step size (tau) |
 | `--ndi-alpha <NDI_ALPHA>` | NDI L2 regularization weight (alpha) |
 | `--ndi-max-iter <NDI_MAX_ITER>` | NDI max iterations. |
@@ -764,17 +770,18 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--cosmos-magnitude-weighting` | COSMOS: weight each orientation by its combined magnitude (conjugate-gradient solve) |
 | `--cosmos-tol <COSMOS_TOL>` | Magnitude-weighted COSMOS: conjugate-gradient tolerance (needs --cosmos-magnitude-weighting) |
 | `--cosmos-max-iter <COSMOS_MAX_ITER>` | Magnitude-weighted COSMOS: conjugate-gradient iteration cap (needs --cosmos-magnitude-weighting) |
-| `--unwrapping-algorithm <UNWRAPPING_ALGORITHM>` | Unwrapping algorithm. Values: `romeo`, `laplacian`. |
+| `--unwrapping-algorithm <UNWRAPPING_ALGORITHM>` | Unwrapping algorithm (default: romeo; laplacian with --qsm-algorithm qsmart or --b0-estimation qsmart-echofit) Values: `romeo`, `laplacian`. |
 | `--bf-algorithm <BF_ALGORITHM>` | Background field removal algorithm. Values: `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm`. |
 | `--masking-input <MASKING_INPUT>` | Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude) Values: `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality`. |
 | `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
 | `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
 | `--coil-combination-sigma <COIL_COMBINATION_SIGMA>` | MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets (3 values, in voxels; default 10 10 5, as in MriResearchTools). Only used for uncombined multi-coil runs. |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
-| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method. Values: `weighted-avg`, `linear-fit`, `robust-fit`. |
+| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (default: weighted-avg; qsmart-echofit with --qsm-algorithm qsmart and Laplacian unwrapping) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`. |
+| `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: fit residual at which a voxel is left out of QSMART's reconstruction (default 40) |
 | `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) computed from the echo times and an assumed T2\* (`--b0-weight-assumed-t2star`), the same in every voxel: no T2\* map, no magnitude (Wang et al. 2022, Nat Neurosci 25:818). `phase-snr`, which uses the measured magnitude in each voxel, is generally preferable when magnitude is available. Applies to Laplacian unwrapping as well as ROMEO. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. |
 | `--b0-weight-assumed-t2star <MS>` | T2\* in ms assumed by `--b0-weight-type assumed-decay` to compute its fixed echo weights (default 40; no T2\* map is used) |
-| `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares, Neumann/DCT solve; default) or `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume) Values: `dct`, `fft`. |
+| `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares, Neumann/DCT solve; default), `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume) or `mirror` (the same on the volume mirrored along each axis, as QSMART unwraps; the default with --qsm-algorithm qsmart) Values: `dct`, `fft`, `mirror`. |
 | `--laplacian-fft-pad <VOXELS>` | Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or three (x y z). Default 64. |
 | `--bet-fractional-intensity <BET_FRACTIONAL_INTENSITY>` | BET fractional intensity (0.0-1.0; smaller = larger brain). Applies to every BET step in the masking recipe, overriding a `bet:<f>` in a --mask spec. |
 | `--bet-smoothness <BET_SMOOTHNESS>` | BET surface smoothness factor. Applies to every BET step in the masking recipe. |
@@ -851,7 +858,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--heidi-denoise-conductance <HEIDI_DENOISE_CONDUCTANCE>` | Anisotropic-diffusion conductance. |
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
 | `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
-| `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius. |
+| `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius, in --qsmart-vessel-units (default 8) |
 | `--qsmart-inversion <QSMART_INVERSION>` | QSMART inner dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
 | `--qsmart-sdf-sigma1-stage1 <QSMART_SDF_SIGMA1_STAGE1>` | QSMART SDF sigma1, stage 1 (voxels) |
 | `--qsmart-sdf-sigma2-stage1 <QSMART_SDF_SIGMA2_STAGE1>` | QSMART SDF sigma2, stage 1 (voxels) |
@@ -859,10 +866,12 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--qsmart-sdf-sigma2-stage2 <QSMART_SDF_SIGMA2_STAGE2>` | QSMART SDF sigma2, stage 2 (voxels) |
 | `--qsmart-sdf-lower-lim <QSMART_SDF_LOWER_LIM>` | QSMART SDF proximity lower limit. |
 | `--qsmart-sdf-curv-constant <QSMART_SDF_CURV_CONSTANT>` | QSMART SDF curvature constant. |
-| `--qsmart-frangi-scale-min <QSMART_FRANGI_SCALE_MIN>` | QSMART Frangi min vessel radius (mm) |
-| `--qsmart-frangi-scale-max <QSMART_FRANGI_SCALE_MAX>` | QSMART Frangi max vessel radius (mm) |
-| `--qsmart-frangi-scale-ratio <QSMART_FRANGI_SCALE_RATIO>` | QSMART Frangi scale step (mm) |
+| `--qsmart-frangi-scale-min <QSMART_FRANGI_SCALE_MIN>` | QSMART Frangi min vessel radius, in --qsmart-vessel-units (default 0.5) |
+| `--qsmart-frangi-scale-max <QSMART_FRANGI_SCALE_MAX>` | QSMART Frangi max vessel radius, in --qsmart-vessel-units (default 6) |
+| `--qsmart-frangi-scale-ratio <QSMART_FRANGI_SCALE_RATIO>` | QSMART Frangi scale step, in --qsmart-vessel-units (default 0.5) |
 | `--qsmart-frangi-c <QSMART_FRANGI_C>` | QSMART Frangi C noise threshold. |
+| `--qsmart-vessel-units <QSMART_VESSEL_UNITS>` | Units of QSMART's vessel sizes (--qsmart-vasc-sphere-radius and the Frangi scales): `voxels` (default, as QSMART gives them) or `mm` (converted to voxels with the mean voxel size) Values: `voxels`, `mm`. |
+| `--qsmart-vessel-magnitude <QSMART_VESSEL_MAGNITUDE>` | The magnitude QSMART detects vessels on: `mean-n4` (the mean over echoes, N4 bias-corrected, as QSMART prepares it; default) or `combined` (the root sum of squares over echoes, inhomogeneity-corrected unless --no-inhomogeneity-correction) Values: `mean-n4`, `combined`. |
 | `--ndi-tau <NDI_TAU>` | NDI gradient-descent step size (tau) |
 | `--ndi-alpha <NDI_ALPHA>` | NDI L2 regularization weight (alpha) |
 | `--ndi-max-iter <NDI_MAX_ITER>` | NDI max iterations. |
@@ -1437,7 +1446,9 @@ qsmxt fieldmap romeo [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--tes <TES>` | Echo times in seconds (space-separated, one per echo) |
 | `--b0 <B0>` | Field strength in Tesla (alias: --field-strength) |
 | `--params <PARAMS>` | JSON params file: {"TE":[..seconds], "B0":&lt;tesla&gt;, "voxel_size":[..], "B0_dir":[..]}. --tes / --b0 override values from this file when both are present. |
-| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method. Values: `weighted-avg`, `linear-fit`, `robust-fit`. Default: `weighted-avg`. |
+| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (qsmart-echofit: `fieldmap laplacian` only) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`. Default: `weighted-avg`. |
+| `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: fit residual at which a voxel is marked unreliable. Default: `40`. |
+| `--reliability-output <RELIABILITY_OUTPUT>` | `--b0-estimation qsmart-echofit`: also save its reliability map (1 = reliable) here, for `qsmxt qsmart --reliability`. |
 | `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted-averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) from the echo times and an assumed T2\* (no T2\* map, no magnitude; Wang et al. 2022). `phase-snr` is generally preferable with magnitude. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. Default: `phase-snr`. |
 | `--b0-weight-assumed-t2star <MS>` | T2\* in ms assumed by `--b0-weight-type assumed-decay` (no T2\* map is used) Default: `40`. |
 | `--linear-fit-reliability-threshold <LINEAR_FIT_RELIABILITY_THRESHOLD>` | Linear and robust fit: percentile for the fit's reliability mask (default 90; 0 disables) |
@@ -1486,7 +1497,9 @@ qsmxt fieldmap laplacian [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--tes <TES>` | Echo times in seconds (space-separated, one per echo) |
 | `--b0 <B0>` | Field strength in Tesla (alias: --field-strength) |
 | `--params <PARAMS>` | JSON params file: {"TE":[..seconds], "B0":&lt;tesla&gt;, "voxel_size":[..], "B0_dir":[..]}. --tes / --b0 override values from this file when both are present. |
-| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method. Values: `weighted-avg`, `linear-fit`, `robust-fit`. Default: `weighted-avg`. |
+| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (qsmart-echofit: `fieldmap laplacian` only) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`. Default: `weighted-avg`. |
+| `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: fit residual at which a voxel is marked unreliable. Default: `40`. |
+| `--reliability-output <RELIABILITY_OUTPUT>` | `--b0-estimation qsmart-echofit`: also save its reliability map (1 = reliable) here, for `qsmxt qsmart --reliability`. |
 | `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted-averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) from the echo times and an assumed T2\* (no T2\* map, no magnitude; Wang et al. 2022). `phase-snr` is generally preferable with magnitude. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. Default: `phase-snr`. |
 | `--b0-weight-assumed-t2star <MS>` | T2\* in ms assumed by `--b0-weight-type assumed-decay` (no T2\* map is used) Default: `40`. |
 | `--linear-fit-reliability-threshold <LINEAR_FIT_RELIABILITY_THRESHOLD>` | Linear and robust fit: percentile for the fit's reliability mask (default 90; 0 disables) |
@@ -1496,7 +1509,7 @@ qsmxt fieldmap laplacian [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--robust-fit-iterations <ROBUST_FIT_ITERATIONS>` | Motion-robust fit: IRLS passes (default 3; 0 = report only, the field is the linear fit's) |
 | `--robust-fit-downweight-level <ROBUST_FIT_DOWNWEIGHT_LEVEL>` | Motion-robust fit (reporting only): a robust weight below this counts as down-weighted (default 0.75; in (0, 1]) |
 | `--robust-fit-flag-ratio <ROBUST_FIT_FLAG_RATIO>` | Motion-robust fit (reporting only): flag an echo whose outlier score exceeds this many times the best echo's (default 3; at least 1) |
-| `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver: `dct` (unweighted least squares, Neumann/DCT solve) or `fft` (Schofield & Zhu, FFT solve on a zero-padded volume) Values: `dct`, `fft`. Default: `dct`. |
+| `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver: `dct` (unweighted least squares, Neumann/DCT solve) or `fft` (Schofield & Zhu, FFT solve on a zero-padded volume) Values: `dct`, `fft`, `mirror`. Default: `dct`. |
 | `--laplacian-fft-pad <VOXELS>` | Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or three (x y z) Default: `64`. |
 
 ## `qsmxt bgremove`
@@ -2617,10 +2630,11 @@ qsmxt qsmart [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_S
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 | `--echo-time <ECHO_TIME>` | Echo time in seconds. Required. |
-| `--magnitude <MAGNITUDE>` | Combined magnitude NIfTI (optional; drives vasculature detection) |
+| `--magnitude <MAGNITUDE>` | Magnitude NIfTI (optional; drives vasculature detection). With --qsmart-vessel-magnitude mean-n4 (the default) every echo's magnitude (4D), averaged and N4 bias-corrected; with `combined`, a combined magnitude (3D), used as it is. |
+| `--reliability <RELIABILITY>` | QSMART's reliability map from its echo fit (`qsmxt fieldmap laplacian --b0-estimation qsmart-echofit --reliability-output`): both stages are reconstructed inside it. |
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
 | `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
-| `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius. |
+| `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius, in --qsmart-vessel-units (default 8) |
 | `--qsmart-inversion <QSMART_INVERSION>` | QSMART inner dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
 | `--qsmart-sdf-sigma1-stage1 <QSMART_SDF_SIGMA1_STAGE1>` | QSMART SDF sigma1, stage 1 (voxels) |
 | `--qsmart-sdf-sigma2-stage1 <QSMART_SDF_SIGMA2_STAGE1>` | QSMART SDF sigma2, stage 1 (voxels) |
@@ -2628,10 +2642,12 @@ qsmxt qsmart [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_S
 | `--qsmart-sdf-sigma2-stage2 <QSMART_SDF_SIGMA2_STAGE2>` | QSMART SDF sigma2, stage 2 (voxels) |
 | `--qsmart-sdf-lower-lim <QSMART_SDF_LOWER_LIM>` | QSMART SDF proximity lower limit. |
 | `--qsmart-sdf-curv-constant <QSMART_SDF_CURV_CONSTANT>` | QSMART SDF curvature constant. |
-| `--qsmart-frangi-scale-min <QSMART_FRANGI_SCALE_MIN>` | QSMART Frangi min vessel radius (mm) |
-| `--qsmart-frangi-scale-max <QSMART_FRANGI_SCALE_MAX>` | QSMART Frangi max vessel radius (mm) |
-| `--qsmart-frangi-scale-ratio <QSMART_FRANGI_SCALE_RATIO>` | QSMART Frangi scale step (mm) |
+| `--qsmart-frangi-scale-min <QSMART_FRANGI_SCALE_MIN>` | QSMART Frangi min vessel radius, in --qsmart-vessel-units (default 0.5) |
+| `--qsmart-frangi-scale-max <QSMART_FRANGI_SCALE_MAX>` | QSMART Frangi max vessel radius, in --qsmart-vessel-units (default 6) |
+| `--qsmart-frangi-scale-ratio <QSMART_FRANGI_SCALE_RATIO>` | QSMART Frangi scale step, in --qsmart-vessel-units (default 0.5) |
 | `--qsmart-frangi-c <QSMART_FRANGI_C>` | QSMART Frangi C noise threshold. |
+| `--qsmart-vessel-units <QSMART_VESSEL_UNITS>` | Units of QSMART's vessel sizes (--qsmart-vasc-sphere-radius and the Frangi scales): `voxels` (default, as QSMART gives them) or `mm` (converted to voxels with the mean voxel size) Values: `voxels`, `mm`. |
+| `--qsmart-vessel-magnitude <QSMART_VESSEL_MAGNITUDE>` | The magnitude QSMART detects vessels on: `mean-n4` (the mean over echoes, N4 bias-corrected, as QSMART prepares it; default) or `combined` (the root sum of squares over echoes, inhomogeneity-corrected unless --no-inhomogeneity-correction) Values: `mean-n4`, `combined`. |
 
 ## `qsmxt swi`
 

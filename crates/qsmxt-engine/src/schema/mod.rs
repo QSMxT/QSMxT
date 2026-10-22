@@ -310,6 +310,9 @@ pub const NOT_IN_SCHEMA: &[(&str, &str)] = &[
     ("description", "a free-text note saved with the config, not a setting"),
     ("schema_version", "the settings-file layout the config was written with (crate::migrate), not a setting"),
     ("masking.recipe_chosen", "not a setting of its own: a front end sets it when the user picks a mask preset or edits the recipe (masking.sections), so the recipe is kept rather than replaced by the inversion's default"),
+    ("field_mapping.unwrapping_chosen", "not a setting of its own: a front end sets it when the user picks the unwrapping (field_mapping.unwrapping_algorithm), so it is kept rather than replaced by QSMART's default"),
+    ("field_mapping.laplacian_solver_chosen", "not a setting of its own: a front end sets it when the user picks the Laplacian solver (field_mapping.laplacian_solver), so it is kept rather than replaced by QSMART's default"),
+    ("field_mapping.b0_estimation_chosen", "not a setting of its own: a front end sets it when the user picks the B0 estimation (field_mapping.b0_estimation), so it is kept rather than replaced by QSMART's default"),
     ("bet.fractional_intensity", "set per BET step in the mask recipe (masking.sections); this is the --bet-fractional-intensity override applied to every step"),
     ("bet.voxel_scale", "set per BET step in the mask recipe (masking.sections); this is the --bet-voxel-scale override applied to every step"),
     ("inversion.tikhonov.reg", "config file only: no qsmxt run option or TUI row"),
@@ -686,6 +689,12 @@ pub fn check_ranges(config: &PipelineConfig) -> Result<(), crate::EngineError> {
     let mut problems: Vec<String> = out_of_range(config, |p| applies.contains(p)).into_iter().map(|p| p.described).collect();
     // A mask step that would do nothing (an erosion of 0), as a config file and --mask refuse it.
     problems.extend(config.masking.validate().err());
+    // Settings that cannot be run together (QSMART's echo fit without Laplacian unwrapping).
+    if applies.contains("field_mapping.b0_estimation") {
+        if let Err(e) = config.field_mapping.validate() {
+            return Err(crate::EngineError::Config(e));
+        }
+    }
     if problems.is_empty() {
         Ok(())
     } else {
@@ -827,5 +836,22 @@ mod range_tests {
         c.inversion.tkd.threshold = 0.0;
         assert!(check_ranges(&c).is_ok());
         assert!(check_ranges(&PipelineConfig::default()).is_ok());
+    }
+
+    /// QSMART's echo fit with ROMEO unwrapping, both chosen, is refused before the run, and the
+    /// settings view shows why next to the B0 estimation.
+    #[test]
+    fn the_echo_fit_with_romeo_is_refused() {
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = crate::QsmAlgorithm::Qsmart;
+        assert!(check_ranges(&c.normalised().0).is_ok());
+        c.field_mapping.unwrapping_chosen = true;
+        c.field_mapping.b0_estimation = crate::B0Estimation::QsmartEchofit;
+        let n = c.normalised().0;
+        let e = check_ranges(&n).unwrap_err().to_string();
+        assert!(e.contains("QSMART's echo fit needs Laplacian unwrapping"), "{e}");
+        let view = settings_view(&c, &ViewFacts::default());
+        let b0 = view.iter().find(|v| v.path == "field_mapping.b0_estimation").unwrap();
+        assert!(b0.error.as_deref().is_some_and(|m| m.contains("Laplacian")), "{:?}", b0.error);
     }
 }

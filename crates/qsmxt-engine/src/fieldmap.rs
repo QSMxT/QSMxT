@@ -15,6 +15,11 @@
 //! * A **single Laplacian echo** is masked and demeaned, and **`linear-fit`** aligns the
 //!   Laplacian per-echo constants first (QSM.rs#167).
 //!
+//! * **QSMART's echo fit** (`--b0-estimation qsmart-echofit`) is qsm-core's
+//!   `B0EstimationMethod::QsmartEchofit`: each echo Laplacian-unwrapped over the whole, unmasked
+//!   volume, then QSMART's fit, which also returns its reliability map `R_0`
+//!   ([`FieldMappingResult::reliability`]). Its field is not masked.
+//!
 //! The UK Biobank recipe (per-echo Laplacian unwrapping as STI Suite's `MRPhaseUnwrap`, then a
 //! mean weighted by `TE·exp(−TE/T2*)` with an assumed T2* of 40 ms) is
 //! `--unwrapping-algorithm laplacian --laplacian-solver fft --b0-weight-type assumed-decay`.

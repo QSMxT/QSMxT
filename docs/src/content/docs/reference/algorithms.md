@@ -331,7 +331,7 @@ Set with `--unwrapping-algorithm`.
 | Value | Method |
 | --- | --- |
 | `romeo` | Rapid Opensource Minimum-spanning-tree Echo Optimisation (default) |
-| `laplacian` | Laplacian-based unwrapping |
+| `laplacian` | Laplacian-based unwrapping (default with QSMART) |
 
 With `laplacian`, each echo is unwrapped on its own (the phase is zeroed outside the
 mask first) and the echoes are then combined by
@@ -346,6 +346,7 @@ coils).
 | --- | --- |
 | `dct` | Unweighted least squares with a Neumann-boundary DCT solve (Ghiglia & Romero, 1994), as QSM.jl `:dct` (default) |
 | `fft` | Schofield & Zhu (2003): sin/cos Laplacian with an FFT Poisson solve on the volume zero-padded by `--laplacian-fft-pad` voxels per side (default 64) |
+| `mirror` | The same, solved on the volume mirrored along each axis, as QSMART unwraps (default with QSMART) |
 
 `--laplacian-fft-pad` takes one value for every axis or three (x y z); a config
 file's `field_mapping.laplacian_fft_pad` takes a number or a three-element list.
@@ -392,7 +393,8 @@ Multi-echo field maps combine the unwrapped echoes with `--b0-estimation`:
 `weighted-avg` (default) averages phase/TE across echoes with the weights chosen by
 `--b0-weight-type`; `linear-fit` fits phase against TE (with an intercept unless
 `--linear-fit-estimate-offset false`); `robust-fit` is the motion-robust variant
-described below.
+described below; `qsmart-echofit` is QSMART's echo fit, described with
+[QSMART](#qsmart).
 
 | `--b0-weight-type` | Weight on phase/TE |
 | --- | --- |
@@ -528,6 +530,35 @@ reconstructions and deep-learning networks.
 | `whqsm` | WH-QSM — Weak-Harmonic |
 | `hdqsm` | HD-QSM — Hybrid data fidelity |
 | `amp-pe` | AMP-PE — Approximate Message Passing with Parameter Estimation |
+
+### QSMART
+
+`qsmart` reconstructs from the total field in two stages, with its own background
+removal and vessel detection ([Yaghmaie et al. 2021, *NeuroImage* 231:117701](https://doi.org/10.1016/j.neuroimage.2020.117701)).
+With QSMART, QSMxT prepares its inputs the way the authors' implementation does,
+unless you choose otherwise:
+
+| Input | Default with QSMART | Change with |
+| --- | --- | --- |
+| Phase unwrapping | `laplacian`, each echo over the whole volume | `--unwrapping-algorithm` |
+| Laplacian solver | `mirror` | `--laplacian-solver` |
+| Echo combination | `qsmart-echofit`: a magnitude-weighted fit of phase against TE through the origin, which also marks the voxels with a high fit residual; QSMART leaves those out | `--b0-estimation` (threshold: `--qsmart-fit-threshold`, default 40) |
+| Magnitude for vessel detection | `mean-n4`: the mean over echoes, N4 bias-corrected ([Tustison et al. 2010](https://doi.org/10.1109/TMI.2010.2046908)) | `--qsmart-vessel-magnitude combined` for the combined magnitude (root sum of squares, inhomogeneity-corrected unless `--no-inhomogeneity-correction`) |
+| Vessel sizes (`--qsmart-vasc-sphere-radius`, `--qsmart-frangi-scale-*`) | voxels: 8, and scales 0.5 to 6 in steps of 0.5 | `--qsmart-vessel-units mm` to give them in mm, converted with the mean voxel size |
+
+An option you give explicitly is kept, including a general default (for example
+`--unwrapping-algorithm romeo`); the TUI likewise keeps a choice you make. QSMART's
+echo fit needs Laplacian unwrapping, so `--b0-estimation qsmart-echofit` with
+`--unwrapping-algorithm romeo` is refused before the run starts. Chosen with
+another inversion, `qsmart-echofit` brings Laplacian unwrapping with the `mirror`
+solver unless you choose otherwise, and its reliability map is not used.
+
+A configuration file that gives the vessel sizes without `vessel_size_units` reads
+them in mm, and says so; add `vessel_size_units = "voxels"` to read them in voxels.
+
+The echo fit's reliability map is kept in the unwrap step's workflow folder
+(`*_desc-echofit_mask`), and the vessel-detection magnitude in QSMART's
+(`*_part-mag_desc-vessels_T2starw`), beside its other intermediates.
 
 TGV replaces background removal and inversion. With one echo it also replaces unwrapping: it
 takes that echo's wrapped phase. With several echoes the field-mapping stage runs as usual and

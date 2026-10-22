@@ -31,6 +31,9 @@ fn filled() -> PipelineConfig {
     c.inversion.tile_halo = Some(8);
     c.qsm.reference_region = Some("thalamus".into());
     c.masking.recipe_chosen = true;
+    c.field_mapping.unwrapping_chosen = true;
+    c.field_mapping.laplacian_solver_chosen = true;
+    c.field_mapping.b0_estimation_chosen = true;
     c
 }
 

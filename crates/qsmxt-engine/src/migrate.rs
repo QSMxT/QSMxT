@@ -114,6 +114,10 @@ lambda_dia = [1000.0]
 /// The phase-offset smoothing every earlier release wrote, in voxels.
 const OLD_PHASE_OFFSET_SIGMA: [f64; 3] = [4.0, 4.0, 4.0];
 
+/// QSMART's vessel sizes every earlier release wrote, in mm, by key
+/// ([`crate::config::QSMART_VESSEL_SIZE_KEYS`]).
+const OLD_QSMART_VESSEL_SIZES: [f64; 4] = [8.0, 0.5, 6.0, 0.5];
+
 /// The settings whose meaning changed, and the method that reads each.
 #[derive(Clone, Copy, PartialEq)]
 enum Changed {
@@ -270,6 +274,55 @@ fn from_v1(value: &mut toml::Table, kind: Kind, out: &mut Migration) -> Result<(
             out.notes.push(format!(
                 "field_mapping.phase_offset_sigma = {v} is ignored: it is in voxels, the setting is now \
                  phase_offset_sigma_mm (mm), and this configuration does not remove phase offsets"));
+        }
+    }
+
+    // QSMART's vessel sizes were in mm before `vessel_size_units` (now voxels by default, as
+    // QSMART gives them). A full file at the earlier defaults takes today's; any other sizes keep
+    // their meaning, in mm.
+    let sizes: Vec<(String, toml::Value)> = crate::config::QSMART_VESSEL_SIZE_KEYS
+        .iter()
+        .filter_map(|k| {
+            let path = format!("inversion.qsmart.{k}");
+            get(value, &path).cloned().map(|v| (path, v))
+        })
+        .collect();
+    if !sizes.is_empty() && get(value, "inversion.qsmart.vessel_size_units").is_none() {
+        let at_old_defaults = crate::config::QSMART_VESSEL_SIZE_KEYS
+            .iter()
+            .zip(OLD_QSMART_VESSEL_SIZES)
+            .all(|(k, old)| {
+                get(value, &format!("inversion.qsmart.{k}"))
+                    .is_some_and(|v| same(v, &toml::Value::Float(old)))
+            });
+        if full && at_old_defaults {
+            for (path, _) in &sizes {
+                take(value, path);
+            }
+            out.notes.push(
+                "inversion.qsmart's vessel sizes (8 mm bottom-hat radius, Frangi scales 0.5 to 6 mm \
+                 in steps of 0.5 mm) were QSMxT's defaults when this file was written; using \
+                 today's defaults, in voxels as QSMART gives them"
+                    .into(),
+            );
+        } else {
+            set(
+                value,
+                "inversion.qsmart.vessel_size_units",
+                toml::Value::String("mm".into()),
+            );
+            let s = |p: &str| {
+                get(value, p)
+                    .or_else(|| get(&today, p))
+                    .and_then(|v| v.as_str().map(str::to_owned))
+            };
+            if s("inversion.algorithm").as_deref() == Some("qsmart") {
+                out.warnings.push(
+                    "inversion.qsmart gives vessel sizes without vessel_size_units: read in mm; add \
+                     vessel_size_units = \"voxels\" to read them in voxels"
+                        .into(),
+                );
+            }
         }
     }
 

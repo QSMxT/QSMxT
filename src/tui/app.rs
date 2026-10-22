@@ -1499,11 +1499,20 @@ pub struct PipelineFormState {
     pub romeo_individual: bool,
     pub romeo_correct_global: bool,
     pub romeo_template: String,
-    pub b0_estimation: usize,    // 0=weighted_avg, 1=linear_fit
+    pub b0_estimation: usize,    // 0=weighted_avg, 1=linear_fit, 2=robust_fit, 3=qsmart_echofit
     pub b0_weight_type: usize,   // 0=phase_snr, 1=phase_var, 2=average, 3=tes, 4=mag, 5=assumed-decay
     pub b0_weight_assumed_t2star_ms: String,
-    /// Index into [`LAPLACIAN_SOLVER_OPTIONS`] (0 = dct, 1 = fft).
+    /// QSMART's echo fit's residual threshold.
+    pub qsmart_fit_threshold: String,
+    /// Index into [`LAPLACIAN_SOLVER_OPTIONS`] (0 = dct, 1 = fft, 2 = mirror).
     pub laplacian_solver: usize,
+    /// The user chose the unwrapping, the Laplacian solver, the B0 estimation. Until then each
+    /// is the one the run takes: the general default, or QSMART's own under QSMART (the
+    /// engine's rule, `FieldMappingConfig::unwrapping_chosen` and its siblings), and the form
+    /// shows that one ([`Self::show_unchosen_field_mapping`]).
+    pub unwrapping_chosen: bool,
+    pub laplacian_solver_chosen: bool,
+    pub b0_estimation_chosen: bool,
     /// FFT solver pad in voxels per side: "64" for every axis, or "64 64 32".
     pub laplacian_fft_pad: String,
     /// Motion correction (off by default): reference index into [`MOTION_REFERENCE_OPTIONS`]
@@ -1715,6 +1724,10 @@ pub struct PipelineFormState {
     pub qsmart_frangi_scale_max: String,
     pub qsmart_frangi_scale_ratio: String,
     pub qsmart_frangi_c: String,
+    /// Index into [`QSMART_VESSEL_MAGNITUDE_OPTIONS`].
+    pub qsmart_vessel_magnitude: usize,
+    /// Index into [`QSMART_VESSEL_UNITS_OPTIONS`].
+    pub qsmart_vessel_units: usize,
 
     // NDI
     pub ndi_tau: String,
@@ -1925,7 +1938,11 @@ impl Default for PipelineFormState {
             b0_estimation: 0,    // weighted_avg
             b0_weight_type: 0,   // phase_snr
             b0_weight_assumed_t2star_ms: format!("{}", qsmxt_engine::default_b0_weight_assumed_t2star_ms()),
+            qsmart_fit_threshold: format!("{}", qsmxt_engine::default_qsmart_fit_threshold()),
             laplacian_solver: 0, // dct
+            unwrapping_chosen: false,
+            laplacian_solver_chosen: false,
+            b0_estimation_chosen: false,
             laplacian_fft_pad: qsmxt_engine::default_laplacian_fft_pad()[0].to_string(),
             motion_correction: false,
             orientation_registration: true,
@@ -2105,6 +2122,8 @@ impl Default for PipelineFormState {
             qsmart_frangi_scale_max: format!("{}", qsm_core::utils::QsmartParams::default().frangi_scale_range[1]),
             qsmart_frangi_scale_ratio: format!("{}", qsm_core::utils::QsmartParams::default().frangi_scale_ratio),
             qsmart_frangi_c: format!("{}", qsm_core::utils::QsmartParams::default().frangi_c),
+            qsmart_vessel_magnitude: 0, // mean-n4
+            qsmart_vessel_units: 0,     // voxels
 
             ndi_tau: format!("{}", ndi.tau),
             ndi_alpha: format!("{}", ndi.alpha),
@@ -2255,13 +2274,23 @@ const QSMART_INV_HELP: &[&str] = &[
 ];
 pub const UNWRAP_OPTIONS: &[&str] = &["romeo", "laplacian"];
 pub const BF_OPTIONS: &[&str] = &["vsharp", "pdf", "lbv", "ismv", "sharp", "resharp", "harperella", "iharperella", "bfrnet", "iqfm"];
-pub const B0_ESTIMATION_OPTIONS: &[&str] = &["weighted-avg", "linear-fit", "robust-fit"];
+pub const B0_ESTIMATION_OPTIONS: &[&str] = &["weighted-avg", "linear-fit", "robust-fit", "qsmart-echofit"];
 pub const ROBUST_FIT_LOSS_OPTIONS: &[&str] = &["tukey", "huber"];
 const ROBUST_FIT_LOSS_HELP: &[&str] = &[
     "Tukey biweight: rejects an echo at a voxel past the tuning radius (default)",
     "Huber: caps an outlying echo's influence but never rejects it",
 ];
-pub const LAPLACIAN_SOLVER_OPTIONS: &[&str] = &["dct", "fft"];
+pub const LAPLACIAN_SOLVER_OPTIONS: &[&str] = &["dct", "fft", "mirror"];
+pub const QSMART_VESSEL_MAGNITUDE_OPTIONS: &[&str] = &["mean-n4", "combined"];
+const QSMART_VESSEL_MAGNITUDE_HELP: &[&str] = &[
+    "Mean over echoes, N4 bias-corrected, as QSMART prepares it (default)",
+    "The combined magnitude: root sum of squares over echoes, inhomogeneity-corrected when that is on",
+];
+pub const QSMART_VESSEL_UNITS_OPTIONS: &[&str] = &["voxels", "mm"];
+const QSMART_VESSEL_UNITS_HELP: &[&str] = &[
+    "Vessel radius and scales in voxels, as QSMART gives them (default)",
+    "Vessel radius and scales in mm, converted to voxels with the mean voxel size",
+];
 pub const VSHARP_GRID_OPTIONS: &[&str] = &["native", "finest", "isotropic"];
 const VSHARP_GRID_HELP: &[&str] = &[
     "The acquired voxel grid (default)",
@@ -2277,12 +2306,14 @@ const MOTION_REFERENCE_HELP: &[&str] = &[
 const LAPLACIAN_SOLVER_HELP: &[&str] = &[
     "Unweighted least squares, Neumann-boundary DCT solve (Ghiglia & Romero 1994; QSM.jl :dct) (default)",
     "Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume",
+    "Schofield & Zhu sin/cos Laplacian, FFT solve on the volume mirrored along each axis (QSMART's; the default with QSMART)",
 ];
 pub const B0_WEIGHT_TYPE_OPTIONS: &[&str] = &["phase-snr", "phase-var", "average", "tes", "mag", "assumed-decay"];
 const B0_ESTIMATION_HELP: &[&str] = &[
     "Weighted average of phase/TE across echoes (default)",
     "Magnitude-weighted linear fit of phase vs TE",
     "Motion-robust linear fit (IRLS): down-weights echoes departing from a straight line, per voxel. Needs 4 echoes (3 without offset)",
+    "QSMART's: magnitude-weighted fit of phase vs TE through the origin, each echo unwrapped over the whole volume; marks the voxels QSMART leaves out. Needs Laplacian unwrapping (the default with QSMART)",
 ];
 const B0_WEIGHT_TYPE_HELP: &[&str] = &[
     "mag × TE — optimal for phase SNR (default)",
@@ -2655,6 +2686,9 @@ impl PipelineFormState {
             rows.push(PipelineRow::Param { label: "    Assumed T2* (ms)", field: "b0_weight_assumed_t2star_ms",
                     help: "T2* assumed to compute the fixed echo weights; no T2* map is used (default: 40 ms)" });
             }
+        } else if self.b0_estimation == 3 { // QSMART's echo fit
+            rows.push(PipelineRow::Param { label: "  Fit Threshold", field: "qsmart_fit_threshold",
+                help: "Fit residual at which a voxel is left out of QSMART's reconstruction (default: 40)" });
         } else { // linear-fit / robust-fit
             rows.push(PipelineRow::Toggle {
                 label: "  Estimate Offset", field: "linear_fit_estimate_offset",
@@ -2937,11 +2971,16 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  SDF Sigma2 (s2)", field: "qsmart_sdf_sigma2_stage2", help: "Stage 2 SDF kernel sigma 2 (voxels)" });
                 rows.push(PipelineRow::Param { label: "  SDF Lower Lim", field: "qsmart_sdf_lower_lim", help: "SDF proximity lower limit" });
                 rows.push(PipelineRow::Param { label: "  SDF Curv Const", field: "qsmart_sdf_curv_constant", help: "SDF curvature constant" });
-                // Vasculature detection (Frangi) — radii in mm, auto-scaled to voxels
-                rows.push(PipelineRow::Param { label: "  Vasc Radius (mm)", field: "qsmart_vasc_sphere_radius", help: "Bottom-hat sphere radius for vasculature detection (mm)" });
-                rows.push(PipelineRow::Param { label: "  Frangi Min (mm)", field: "qsmart_frangi_scale_min", help: "Frangi minimum vessel radius (mm)" });
-                rows.push(PipelineRow::Param { label: "  Frangi Max (mm)", field: "qsmart_frangi_scale_max", help: "Frangi maximum vessel radius (mm)" });
-                rows.push(PipelineRow::Param { label: "  Frangi Step (mm)", field: "qsmart_frangi_scale_ratio", help: "Frangi scale step (mm)" });
+                // Vasculature detection (Frangi): the magnitude it runs on, and the vessel sizes in
+                // voxels or mm.
+                rows.push(PipelineRow::AlgoSelect { label: "  Vessel Magnitude", field: "qsmart_vessel_magnitude",
+                    options: QSMART_VESSEL_MAGNITUDE_OPTIONS, help: QSMART_VESSEL_MAGNITUDE_HELP });
+                rows.push(PipelineRow::AlgoSelect { label: "  Vessel Size Units", field: "qsmart_vessel_units",
+                    options: QSMART_VESSEL_UNITS_OPTIONS, help: QSMART_VESSEL_UNITS_HELP });
+                rows.push(PipelineRow::Param { label: "  Vasc Radius", field: "qsmart_vasc_sphere_radius", help: "Bottom-hat sphere radius for vasculature detection, in the vessel size units" });
+                rows.push(PipelineRow::Param { label: "  Frangi Min", field: "qsmart_frangi_scale_min", help: "Frangi minimum vessel radius, in the vessel size units" });
+                rows.push(PipelineRow::Param { label: "  Frangi Max", field: "qsmart_frangi_scale_max", help: "Frangi maximum vessel radius, in the vessel size units" });
+                rows.push(PipelineRow::Param { label: "  Frangi Step", field: "qsmart_frangi_scale_ratio", help: "Frangi scale step, in the vessel size units" });
                 rows.push(PipelineRow::Param { label: "  Frangi C", field: "qsmart_frangi_c", help: "Frangi C noise threshold" });
             }
             "ndi" => { // NDI
@@ -3130,6 +3169,7 @@ impl PipelineFormState {
         "qsmart_sdf_sigma1_stage1", "qsmart_sdf_sigma2_stage1", "qsmart_sdf_sigma1_stage2", "qsmart_sdf_sigma2_stage2",
         "qsmart_sdf_lower_lim", "qsmart_sdf_curv_constant",
         "qsmart_frangi_scale_min", "qsmart_frangi_scale_max", "qsmart_frangi_scale_ratio", "qsmart_frangi_c",
+        "qsmart_fit_threshold",
         "ndi_tau", "ndi_alpha", "ndi_max_iter",
         "fansi_alpha1", "fansi_mu1", "fansi_mu2", "fansi_alpha0", "fansi_mu0", "fansi_max_iter", "fansi_tol_update", "fansi_tol_delta",
         "l1qsm_alpha1", "l1qsm_mu1", "l1qsm_mu2", "l1qsm_mu3", "l1qsm_lambda", "l1qsm_max_iter", "l1qsm_tol_update", "l1qsm_tol_delta",
@@ -3290,6 +3330,7 @@ impl PipelineFormState {
             "qsmart_frangi_scale_max" => &self.qsmart_frangi_scale_max,
             "qsmart_frangi_scale_ratio" => &self.qsmart_frangi_scale_ratio,
             "qsmart_frangi_c" => &self.qsmart_frangi_c,
+            "qsmart_fit_threshold" => &self.qsmart_fit_threshold,
             "ndi_tau" => &self.ndi_tau,
             "ndi_alpha" => &self.ndi_alpha,
             "ndi_max_iter" => &self.ndi_max_iter,
@@ -3509,6 +3550,7 @@ impl PipelineFormState {
             "qsmart_frangi_scale_max" => Some(&mut self.qsmart_frangi_scale_max),
             "qsmart_frangi_scale_ratio" => Some(&mut self.qsmart_frangi_scale_ratio),
             "qsmart_frangi_c" => Some(&mut self.qsmart_frangi_c),
+            "qsmart_fit_threshold" => Some(&mut self.qsmart_fit_threshold),
             "ndi_tau" => Some(&mut self.ndi_tau),
             "ndi_alpha" => Some(&mut self.ndi_alpha),
             "ndi_max_iter" => Some(&mut self.ndi_max_iter),
@@ -3597,6 +3639,8 @@ impl PipelineFormState {
             "b0_estimation" => self.b0_estimation,
             "b0_weight_type" => self.b0_weight_type,
             "laplacian_solver" => self.laplacian_solver,
+            "qsmart_vessel_magnitude" => self.qsmart_vessel_magnitude,
+            "qsmart_vessel_units" => self.qsmart_vessel_units,
             "vsharp_grid" => self.vsharp_grid,
             "robust_fit_loss" => self.robust_fit_loss,
             "motion_reference" => self.motion_reference,
@@ -3616,15 +3660,29 @@ impl PipelineFormState {
             "qsm_algorithm" => {
                 self.qsm_algorithm = val;
                 self.show_unchosen_mask();
+                self.show_unchosen_field_mapping();
             }
             "qsmart_inversion" => self.qsmart_inversion = val,
-            "unwrapping_algorithm" => self.unwrapping_algorithm = val,
+            "unwrapping_algorithm" => {
+                self.unwrapping_algorithm = val;
+                self.unwrapping_chosen = true;
+                self.show_unchosen_field_mapping();
+            }
             "bf_algorithm" => self.bf_algorithm = val,
             "qsm_reference" => self.qsm_reference = val,
             "r2prime_strategy" => self.r2prime_strategy = val,
-            "b0_estimation" => self.b0_estimation = val,
+            "b0_estimation" => {
+                self.b0_estimation = val;
+                self.b0_estimation_chosen = true;
+                self.show_unchosen_field_mapping();
+            }
             "b0_weight_type" => self.b0_weight_type = val,
-            "laplacian_solver" => self.laplacian_solver = val,
+            "laplacian_solver" => {
+                self.laplacian_solver = val;
+                self.laplacian_solver_chosen = true;
+            }
+            "qsmart_vessel_magnitude" => self.qsmart_vessel_magnitude = val,
+            "qsmart_vessel_units" => self.qsmart_vessel_units = val,
             "vsharp_grid" => self.vsharp_grid = val,
             "robust_fit_loss" => self.robust_fit_loss = val,
             "motion_reference" => self.motion_reference = val,
@@ -4043,6 +4101,46 @@ impl PipelineFormState {
                 self.mask_combine = recipe.combine;
                 self.mask_combined_refinements = recipe.refinements;
             }
+        }
+    }
+
+    /// Show, for each of the unwrapping, the Laplacian solver and the B0 estimation the user has
+    /// not chosen, the one the run takes: the engine's normalisation of the choices made, under
+    /// the selected inversion (QSMART's own field mapping under QSMART, the general defaults
+    /// otherwise).
+    pub fn show_unchosen_field_mapping(&mut self) {
+        use qsmxt_engine::PipelineConfig;
+        fn pick<T: serde::de::DeserializeOwned>(options: &[&str], i: usize) -> Option<T> {
+            serde_json::from_value(serde_json::json!(options.get(i)?)).ok()
+        }
+        fn index_of(options: &[&str], value: impl std::fmt::Display) -> usize {
+            let v = value.to_string();
+            options.iter().position(|o| *o == v).unwrap_or(0)
+        }
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = crate::tui::command::selected_qsm_algorithm(self);
+        let fm = &mut c.field_mapping;
+        if self.unwrapping_chosen {
+            fm.unwrapping_algorithm = pick(UNWRAP_OPTIONS, self.unwrapping_algorithm).unwrap_or(fm.unwrapping_algorithm);
+            fm.unwrapping_chosen = true;
+        }
+        if self.laplacian_solver_chosen {
+            fm.laplacian_solver = pick(LAPLACIAN_SOLVER_OPTIONS, self.laplacian_solver).unwrap_or(fm.laplacian_solver);
+            fm.laplacian_solver_chosen = true;
+        }
+        if self.b0_estimation_chosen {
+            fm.b0_estimation = pick(B0_ESTIMATION_OPTIONS, self.b0_estimation).unwrap_or(fm.b0_estimation);
+            fm.b0_estimation_chosen = true;
+        }
+        let run = c.normalised().0.field_mapping;
+        if !self.unwrapping_chosen {
+            self.unwrapping_algorithm = index_of(UNWRAP_OPTIONS, run.unwrapping_algorithm);
+        }
+        if !self.laplacian_solver_chosen {
+            self.laplacian_solver = index_of(LAPLACIAN_SOLVER_OPTIONS, run.laplacian_solver);
+        }
+        if !self.b0_estimation_chosen {
+            self.b0_estimation = index_of(B0_ESTIMATION_OPTIONS, run.b0_estimation);
         }
     }
 
@@ -6757,7 +6855,7 @@ impl App {
     }
 
     /// Reset one named field to its default, whichever form it lives in.
-    fn reset_field(&mut self, field: &str) {
+    pub(crate) fn reset_field(&mut self, field: &str) {
         let (form, ps) = (RunForm::default(), PipelineFormState::default());
         match field {
             "orientation_lambda" => return self.filter_state.orientation_lambda.clear(),
@@ -6766,6 +6864,16 @@ impl App {
             "mask_preset" => {
                 self.pipeline_state.mask_chosen = false;
                 return self.pipeline_state.show_unchosen_mask();
+            }
+            // Likewise the field mapping the inversion takes when none is chosen.
+            "unwrapping_algorithm" | "laplacian_solver" | "b0_estimation" => {
+                let ps = &mut self.pipeline_state;
+                match field {
+                    "unwrapping_algorithm" => ps.unwrapping_chosen = false,
+                    "laplacian_solver" => ps.laplacian_solver_chosen = false,
+                    _ => ps.b0_estimation_chosen = false,
+                }
+                return ps.show_unchosen_field_mapping();
             }
             "segmentation_source" | "do_segmentation" => {
                 self.pipeline_state.custom_dseg_tool.clear();
@@ -7985,6 +8093,8 @@ mod tests {
             ("qsmart-inner", QSMART_INV_OPTIONS.len(), QSMART_INV_HELP.len()),
             ("unwrap", UNWRAP_OPTIONS.len(), UNWRAP_HELP.len()),
             ("laplacian-solver", LAPLACIAN_SOLVER_OPTIONS.len(), LAPLACIAN_SOLVER_HELP.len()),
+            ("qsmart-vessel-magnitude", QSMART_VESSEL_MAGNITUDE_OPTIONS.len(), QSMART_VESSEL_MAGNITUDE_HELP.len()),
+            ("qsmart-vessel-units", QSMART_VESSEL_UNITS_OPTIONS.len(), QSMART_VESSEL_UNITS_HELP.len()),
             ("vsharp-grid", VSHARP_GRID_OPTIONS.len(), VSHARP_GRID_HELP.len()),
             ("b0-estimation", B0_ESTIMATION_OPTIONS.len(), B0_ESTIMATION_HELP.len()),
             ("robust-fit-loss", ROBUST_FIT_LOSS_OPTIONS.len(), ROBUST_FIT_LOSS_HELP.len()),

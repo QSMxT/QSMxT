@@ -383,6 +383,9 @@ impl Ctx<'_> {
                 if c.field_mapping.b0_estimation == B0Estimation::RobustFit && self.n() > 1 {
                     writes.push(Item::RobustFitReport);
                 }
+                if c.field_mapping.b0_estimation == B0Estimation::QsmartEchofit {
+                    writes.push(Item::FieldReliability);
+                }
             }
             Stage::BackgroundRemoval(p) => {
                 if c.bg_removal.algorithm == BfAlgorithm::Iqfm {
@@ -432,10 +435,22 @@ impl Ctx<'_> {
             }
             Stage::Qsmart(p) => {
                 reads.extend([Item::FieldPpm, self.pass_mask(p)]);
-                if has(&Item::CombinedMagnitude) {
-                    reads.push(Item::CombinedMagnitude);
+                if c.field_mapping.b0_estimation == B0Estimation::QsmartEchofit {
+                    reads.push(Item::FieldReliability);
                 }
                 writes.push(Item::RawChi(p));
+                // The magnitude vessels are detected on: QSMART's own, made from every echo's
+                // (and kept), or the combined one.
+                match c.inversion.qsmart.vessel_magnitude {
+                    QsmartVesselMagnitude::MeanN4 if f.has_magnitude => {
+                        reads.extend(self.echo_magnitudes());
+                        writes.push(Item::QsmartIntermediate(p, crate::stages::qsmart::VESSEL_MAGNITUDE));
+                    }
+                    QsmartVesselMagnitude::MeanN4 => {}
+                    QsmartVesselMagnitude::Combined => if has(&Item::CombinedMagnitude) {
+                        reads.push(Item::CombinedMagnitude);
+                    },
+                }
                 use crate::stages::qsmart::outputs as q;
                 for name in [q::VESSEL_MASK, q::LOCAL_FIELD_STAGE1, q::CHI_STAGE1, q::LOCAL_FIELD_STAGE2, q::CHI_STAGE2] {
                     writes.push(Item::QsmartIntermediate(p, name));
@@ -609,6 +624,7 @@ impl Ctx<'_> {
                         B0Estimation::WeightedAvg => "weighted average",
                         B0Estimation::LinearFit => "linear fit",
                         B0Estimation::RobustFit => "robust fit",
+                        B0Estimation::QsmartEchofit => "QSMART's echo fit",
                     }));
                 }
                 ((Some(id), Some(label.to_string())), s)

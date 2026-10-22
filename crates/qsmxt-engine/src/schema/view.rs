@@ -222,7 +222,8 @@ fn tiling_note(c: &PipelineConfig) -> Option<String> {
 fn errors(config: &PipelineConfig, checked: impl Fn(&str) -> bool) -> Vec<(&'static str, String)> {
     let mut out: Vec<(&'static str, String)> = super::out_of_range(config, &checked)
         .into_iter().map(|p| (p.path, p.message)).collect();
-    let rules: [(&'static str, Result<(), String>); 3] = [
+    let rules: [(&'static str, Result<(), String>); 4] = [
+        ("field_mapping.b0_estimation", config.field_mapping.validate()),
         ("separation.r2primenet.patch", config.separation.r2primenet.validate()),
         ("separation.chi_sepnet.patch", config.separation.chi_sepnet.validate()),
         ("separation.susep_net.patch", config.separation.susep_net.validate()),
