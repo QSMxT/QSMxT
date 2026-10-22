@@ -4383,6 +4383,8 @@ pub struct App {
     pub sub_page: [Option<Page>; TAB_NAMES.len()],
     /// Focus is on the sub-tab strip rather than the rows (see [`App::on_subtabs`]).
     pub subtab_focus: bool,
+    /// Focus is on the main tab bar: ←/→ switch tabs, ↓ or Enter go into the tab.
+    pub tab_focus: bool,
     pub active_field: usize,
     pub editing: bool,
     pub cursor_pos: usize,
@@ -4701,6 +4703,7 @@ impl App {
             active_tab: 0,
             sub_page: [None; TAB_NAMES.len()],
             subtab_focus: false,
+            tab_focus: false,
             active_field: 0,
             editing: false,
             cursor_pos: 0,
@@ -4850,6 +4853,11 @@ impl App {
         }
         self.status_message = None;
 
+        if self.tab_focus {
+            self.handle_tab_bar_key(key);
+            return;
+        }
+
         // Route tab 0 (Input) to its combined IO + filter handler
         if self.active_tab == TAB_INPUT {
             self.handle_input_tab_key(key);
@@ -4867,6 +4875,7 @@ impl App {
             match key.code {
                 KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
                 _ if self.switch_tab(key) => {}
+                KeyCode::Up | KeyCode::Char('k') if self.pipeline_view.scroll == 0 => self.tab_focus = true,
                 KeyCode::Up | KeyCode::Char('k') => {
                     self.pipeline_view.scroll = self.pipeline_view.scroll.saturating_sub(1);
                 }
@@ -4887,6 +4896,7 @@ impl App {
                 KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
                 // 1..=N, Tab, Shift-Tab: one rule for every tab (see `switch_tab`).
                 _ if self.switch_tab(key) => {}
+                KeyCode::Up | KeyCode::Char('k') if self.methods_scroll_offset == 0 => self.tab_focus = true,
                 KeyCode::Up | KeyCode::Char('k') => {
                     self.methods_scroll_offset = self.methods_scroll_offset.saturating_sub(1);
                 }
@@ -4952,6 +4962,7 @@ impl App {
                 KeyCode::Up | KeyCode::Char('k') if self.active_field > 0 => {
                     self.active_field -= 1;
                 }
+                KeyCode::Up | KeyCode::Char('k') => self.tab_focus = true,
                 KeyCode::Down | KeyCode::Char('j') => {
                     if self.active_field + 1 < Self::INPUT_IO_FIELDS {
                         self.active_field += 1;
@@ -6035,12 +6046,17 @@ impl App {
             return;
         }
 
-        // On the sub-tab strip: ←/→ choose the sub-tab, ↓ or Enter go into its rows. Tab
-        // switching, `[`/`]`, `R`, F5 and quitting work as on the rows; nothing else applies.
+        // On the sub-tab strip: ←/→ choose the sub-tab, ↓ or Enter go into its rows, ↑ goes up
+        // to the tab bar. Tab switching, `[`/`]`, `R`, F5 and quitting work as on the rows;
+        // nothing else applies.
         if self.on_subtabs() {
             match key.code {
                 KeyCode::Left => return self.cycle_page(-1),
                 KeyCode::Right => return self.cycle_page(1),
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.tab_focus = true;
+                    return;
+                }
                 KeyCode::Down | KeyCode::Char('j') | KeyCode::Enter => {
                     self.subtab_focus = false;
                     self.set_focus(0);
@@ -6090,11 +6106,16 @@ impl App {
                 }
             }
 
-            // Navigation; up from the first row goes back to the sub-tab strip.
+            // Navigation; up from the first row goes back to the sub-tab strip, or to the tab
+            // bar on a tab without sub-tabs.
             KeyCode::Up | KeyCode::Char('k') => {
                 let f = self.focus();
-                if f == 0 && self.has_subtabs() && !self.pipeline_state.mask_ops_adding {
-                    self.subtab_focus = true;
+                if f == 0 && !self.pipeline_state.mask_ops_adding {
+                    if self.has_subtabs() {
+                        self.subtab_focus = true;
+                    } else {
+                        self.tab_focus = true;
+                    }
                 } else {
                     self.set_focus(f.saturating_sub(1));
                 }
@@ -6470,9 +6491,29 @@ impl App {
         Self::is_rows_tab(self.active_tab) && self.pages(self.active_tab).len() > 1
     }
 
-    /// Whether focus is on the sub-tab strip rather than on a row.
+    /// Whether focus is on the sub-tab strip rather than on a row (or the tab bar above).
     pub fn on_subtabs(&self) -> bool {
-        self.subtab_focus && self.has_subtabs()
+        self.subtab_focus && self.has_subtabs() && !self.tab_focus
+    }
+
+    /// Keys while the main tab bar has focus: ←/→ switch tabs (wrapping), ↓ or Enter go into
+    /// the tab (onto its sub-tab strip, if it has one). Digits, Tab, F5 and quitting work as
+    /// anywhere else.
+    fn handle_tab_bar_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Left => {
+                self.switch_tab(KeyEvent::from(KeyCode::BackTab));
+            }
+            KeyCode::Right => {
+                self.switch_tab(KeyEvent::from(KeyCode::Tab));
+            }
+            KeyCode::Down | KeyCode::Char('j') | KeyCode::Enter => self.tab_focus = false,
+            KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
+            KeyCode::F(5) => self.try_run(),
+            _ => {
+                self.switch_tab(key);
+            }
+        }
     }
 
     /// Put focus and scrolling back at the top: on every change of tab or sub-tab.
@@ -11011,8 +11052,11 @@ mod tests {
         assert!(!app.on_subtabs());
         app.handle_key(key(KeyCode::Up));
         assert!(app.on_subtabs());
-        // Up on the strip goes nowhere; Enter also goes into the rows.
+        // Up on the strip goes to the tab bar, Down comes back; Enter also goes into the rows.
         app.handle_key(key(KeyCode::Up));
+        assert!(app.tab_focus);
+        app.handle_key(key(KeyCode::Down));
+        assert!(!app.tab_focus);
         assert!(app.on_subtabs());
         app.handle_key(key(KeyCode::Enter));
         assert!(!app.on_subtabs());
@@ -11063,6 +11107,9 @@ mod tests {
             assert_eq!(app.focus(), 0);
             app.handle_key(key(KeyCode::Up));
             assert!(!app.on_subtabs());
+            assert!(app.tab_focus, "↑ from the first row goes to the tab bar");
+            app.handle_key(key(KeyCode::Down));
+            assert!(!app.tab_focus);
         }
     }
 
@@ -11200,4 +11247,76 @@ mod tests {
         app.handle_key(key(KeyCode::Char('?')));
         assert!(app.tip_modal.is_none());
     }
+
+    // ─── The main tab bar ───
+
+    /// ↑ from the top of the Input tab reaches the tab bar; ←/→ there walk the tabs, wrapping,
+    /// and the focus stays on the bar until ↓.
+    #[test]
+    fn arrows_walk_the_main_tabs_from_the_tab_bar() {
+        let mut app = App::new();
+        app.handle_key(key(KeyCode::Up));
+        assert!(app.tab_focus);
+        assert_eq!(app.active_tab, TAB_INPUT);
+        app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.active_tab, TAB_PREPROCESSING);
+        assert!(app.tab_focus);
+        assert!(!app.on_subtabs(), "the sub-tab strip must not look focused under the tab bar");
+        app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.active_tab, TAB_QSM);
+        app.handle_key(key(KeyCode::Left));
+        app.handle_key(key(KeyCode::Left));
+        app.handle_key(key(KeyCode::Left));
+        assert_eq!(app.active_tab, TAB_NAMES.len() - 1, "← from the first tab wraps to the last");
+        // Digits still work and keep the bar focused.
+        app.handle_key(key(KeyCode::Char('2')));
+        assert_eq!(app.active_tab, TAB_PREPROCESSING);
+        assert!(app.tab_focus);
+        // ↓ goes into the tab: onto its sub-tab strip, here.
+        app.handle_key(key(KeyCode::Down));
+        assert!(!app.tab_focus);
+        assert!(app.on_subtabs());
+    }
+
+    /// Enter on the bar opens a tab without sub-tabs at its first row; ↑ from Pipeline and
+    /// Methods reaches the bar once they are scrolled to the top.
+    #[test]
+    fn the_tab_bar_is_reachable_from_every_tab() {
+        let mut app = App::new();
+        app.handle_key(key(KeyCode::Char('6')));
+        app.handle_key(key(KeyCode::Up));
+        assert!(app.tab_focus);
+        app.handle_key(key(KeyCode::Enter));
+        assert!(!app.tab_focus);
+        assert_eq!(app.focus(), 0);
+
+        for tab in [TAB_PIPELINE, TAB_METHODS] {
+            app.handle_key(key(KeyCode::Char(char::from_digit(tab as u32 + 1, 10).unwrap())));
+            app.handle_key(key(KeyCode::Down));
+            app.handle_key(key(KeyCode::Up));
+            assert!(!app.tab_focus, "the first ↑ scrolls back up");
+            app.handle_key(key(KeyCode::Up));
+            assert!(app.tab_focus);
+            app.handle_key(key(KeyCode::Down));
+            assert!(!app.tab_focus);
+        }
+    }
+
+    /// Keys that act on a setting do nothing while the tab bar has focus; `q` still quits.
+    #[test]
+    fn setting_keys_do_nothing_on_the_tab_bar() {
+        let mut app = App::new();
+        app.handle_key(key(KeyCode::Char('3')));
+        app.handle_key(key(KeyCode::Up));
+        assert!(app.tab_focus);
+        let before = crate::tui::command::build_command_string(&app);
+        for k in [KeyCode::Char(' '), KeyCode::Char('r'), KeyCode::Char('R'), KeyCode::Char('[')] {
+            app.handle_key(key(k));
+            assert!(app.tab_focus, "{k:?} left the tab bar");
+        }
+        assert_eq!(crate::tui::command::build_command_string(&app), before);
+        app.handle_key(key(KeyCode::Char('q')));
+        assert!(app.should_quit);
+    }
 }
+

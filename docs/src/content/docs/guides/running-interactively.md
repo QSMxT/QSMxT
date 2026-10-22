@@ -50,11 +50,14 @@ install.
 
 ## Layout
 
-The top row holds the tabs; press a digit (`1`–`8`) or `Tab`/`Shift-Tab` to switch. A tab
+The top row holds the tabs; press a digit (`1`–`8`) or `Tab`/`Shift-Tab` to switch. You can
+also press `↑` at the top of a tab to put focus on the tab bar (the current tab turns yellow).
+`←`/`→` then move between tabs, and `↓` or `Enter` go into the tab. A tab
 with more than one page shows a strip of sub-tabs along the top of its panel, and opens with
 focus on that strip (the current sub-tab turns yellow): `←`/`→` choose a sub-tab, and `↓` or
-`Enter` go into its settings. `↑` from the first setting goes back up to the strip. `[` and `]`
-switch sub-tabs from anywhere on the tab. A tab without sub-tabs opens on its first setting.
+`Enter` go into its settings. `↑` from the first setting goes back up to the strip, and `↑`
+from the strip goes up to the tab bar. `[` and `]` switch sub-tabs from anywhere on the tab. A
+tab without sub-tabs opens on its first setting.
 
 | Tab | Sub-tabs | What is there |
 |---|---|---|
@@ -77,10 +80,13 @@ happen: *Run*, *Dry run*, *Write SLURM scripts* or *Submit SLURM jobs*.
 | Key | Where | Does |
 |---|---|---|
 | `1`–`8`, `Tab`, `Shift-Tab` | anywhere | switch tab |
+| `←` `→` | tab bar | previous / next tab |
+| `↓`, `Enter` | tab bar | go into the tab |
 | `←` `→` | sub-tab strip | previous / next sub-tab |
 | `↓`, `Enter` | sub-tab strip | go into the sub-tab's settings |
 | `[` `]` | any tab with sub-tabs | previous / next sub-tab |
-| `↑` `↓` | settings | move; `↑` from the first setting returns to the strip |
+| `↑` | sub-tab strip | go up to the tab bar |
+| `↑` `↓` | settings | move; `↑` from the first setting returns to the strip, or to the tab bar on a tab without sub-tabs |
 | `←` `→`, `Space` | settings | change a choice or checkbox |
 | `Enter` | settings | open a list or edit a value; on the Execution tab's button, run |
 | `r` / `R` | settings | reset the setting / the whole sub-tab |

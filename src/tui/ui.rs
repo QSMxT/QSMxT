@@ -397,7 +397,7 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     let mut lines: Vec<Line> = Vec::new();
 
     // Field 0: Mode selector
-    let mode_focused = in_io && app.active_field == 0;
+    let mode_focused = in_io && app.active_field == 0 && !app.tab_focus;
     let mode_label_style = if mode_focused {
         Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
     } else {
@@ -442,7 +442,7 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     // Fields 1-3 are the text IO fields
     for (label_idx, io_label) in io_labels.iter().enumerate() {
         let field_idx = label_idx + 1; // field 0 is mode selector
-        let focused = in_io && field_idx == app.active_field;
+        let focused = in_io && field_idx == app.active_field && !app.tab_focus;
         let label_style = if focused {
             Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
         } else {
@@ -1382,7 +1382,7 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     let mut focusable_idx = 0;
     for (i, row) in rows.iter().enumerate() {
         let is_focusable = focusable.contains(&i);
-        let focused = is_focusable && focusable_idx == ps_focus && !on_strip;
+        let focused = is_focusable && focusable_idx == ps_focus && !on_strip && !app.tab_focus;
         if is_focusable {
             focusable_idx += 1;
         }
@@ -1840,7 +1840,7 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         lines.push(line);
     }
     if on_strip {
-        focused_help = Some("←/→ choose a sub-tab; ↓ or Enter to go to its settings".to_string());
+        focused_help = Some("←/→ choose a sub-tab; ↓ or Enter to go to its settings; ↑ to the tabs".to_string());
     }
 
     // Determine which line is focused for auto-scroll (the top while the sub-tab strip has it)
@@ -2006,6 +2006,8 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     let tabs = format!("1-{}", TAB_NAMES.len());
     let keys: Vec<(&str, &str)> = if app.editing || app.pipeline_state.editing {
         vec![("Esc", "Cancel"), ("Enter", "Confirm")]
+    } else if app.tab_focus {
+        vec![("\u{2190}\u{2192}", "Tabs"), ("\u{2193}/Enter", "Open tab"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else if app.active_tab == TAB_PIPELINE {
         vec![(&tabs, "Tabs"), ("\u{2191}\u{2193}", "Scroll"), ("Enter/s", "Open as SVG"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else if app.active_tab == TAB_METHODS {
