@@ -1,12 +1,12 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
     Frame,
 };
 
-use super::app::{AlgoModal, App, PipelineRow, UpdateModal, TAB_NAMES, TAB_INPUT, TAB_METHODS, TAB_PIPELINE};
+use super::app::{AlgoModal, App, PipelineRow, TipModal, UpdateModal, TAB_NAMES, TAB_INPUT, TAB_METHODS, TAB_PIPELINE};
 use super::command;
 
 pub fn draw(f: &mut Frame, app: &mut App) {
@@ -38,10 +38,107 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         draw_algo_modal(f, modal, f.area());
     }
 
-    // Drawn last so it sits above an algorithm modal, matching the input routing.
+    if let Some(ref modal) = app.tip_modal {
+        draw_tip_modal(f, modal, f.area());
+    }
+
+    // Drawn last so it sits above the other pop-ups, matching the input routing.
     if let Some(ref modal) = app.update_modal {
         draw_update_modal(f, modal, f.area());
     }
+}
+
+/// Word-wrap `text` to `width` columns, drawing `backticked` parts as commands.
+fn tip_lines(text: &str, width: usize) -> Vec<Line<'static>> {
+    let code = Style::default().fg(Color::Yellow);
+    // Each word as its pieces, with the backticks dropped: "`--config`." is a command then a dot.
+    let mut in_code = false;
+    let words: Vec<Vec<Span<'static>>> = text
+        .split_whitespace()
+        .map(|word| {
+            let mut pieces = Vec::new();
+            for (i, piece) in word.split('`').enumerate() {
+                if i > 0 {
+                    in_code = !in_code;
+                }
+                if !piece.is_empty() {
+                    let style = if in_code { code } else { Style::default() };
+                    pieces.push(Span::styled(piece.to_string(), style));
+                }
+            }
+            pieces
+        })
+        .collect();
+    let mut lines = Vec::new();
+    let mut line: Vec<Span<'static>> = Vec::new();
+    let mut used = 0;
+    for word in words {
+        let w: usize = word.iter().map(|p| p.content.chars().count()).sum();
+        if used > 0 && used + 1 + w > width {
+            lines.push(Line::from(std::mem::take(&mut line)));
+            used = 0;
+        }
+        if used > 0 {
+            line.push(Span::raw(" "));
+            used += 1;
+        }
+        line.extend(word);
+        used += w;
+    }
+    if !line.is_empty() {
+        lines.push(Line::from(line));
+    }
+    lines
+}
+
+/// The "Did you know?" pop-up: a tip, its link, and the OK / turn-tips-off buttons.
+fn draw_tip_modal(f: &mut Frame, modal: &TipModal, area: Rect) {
+    let popup_w = 68.min(area.width);
+    let text_w = popup_w.saturating_sub(6).max(10) as usize;
+
+    let mut lines = vec![Line::from("")];
+    lines.extend(tip_lines(modal.tip.text, text_w));
+    if let Some(link) = modal.tip.link {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            link,
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::UNDERLINED),
+        )));
+    }
+    lines.push(Line::from(""));
+
+    let mut buttons = Vec::new();
+    for (i, label) in modal.buttons().into_iter().enumerate() {
+        if i > 0 {
+            buttons.push(Span::raw("   "));
+        }
+        let style = if i == modal.cursor {
+            Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Gray)
+        };
+        buttons.push(Span::styled(format!(" {label} "), style));
+    }
+    lines.push(Line::from(buttons).alignment(Alignment::Center));
+    lines.push(Line::from(""));
+    lines.push(
+        Line::from(Span::styled(
+            "\u{2190}\u{2192} choose   Enter select   n next tip   Esc close",
+            Style::default().fg(Color::DarkGray),
+        ))
+        .alignment(Alignment::Center),
+    );
+
+    let popup = centered_rect(popup_w, lines.len() as u16 + 2, area);
+    f.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(Span::styled(" Did you know? ", Style::default().add_modifier(Modifier::BOLD)));
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+    let text_area = Rect { x: inner.x + 2, width: inner.width.saturating_sub(4), ..inner };
+    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), text_area);
 }
 
 
@@ -1910,15 +2007,15 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     let keys: Vec<(&str, &str)> = if app.editing || app.pipeline_state.editing {
         vec![("Esc", "Cancel"), ("Enter", "Confirm")]
     } else if app.active_tab == TAB_PIPELINE {
-        vec![(&tabs, "Tabs"), ("\u{2191}\u{2193}", "Scroll"), ("Enter/s", "Open as SVG"), ("F5", "Run"), ("q", "Quit")]
+        vec![(&tabs, "Tabs"), ("\u{2191}\u{2193}", "Scroll"), ("Enter/s", "Open as SVG"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else if app.active_tab == TAB_METHODS {
-        vec![(&tabs, "Tabs"), ("\u{2191}\u{2193}", "Scroll"), ("Enter/c", "Copy to clipboard"), ("F5", "Run"), ("q", "Quit")]
+        vec![(&tabs, "Tabs"), ("\u{2191}\u{2193}", "Scroll"), ("Enter/c", "Copy to clipboard"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else if app.on_subtabs() {
         vec![(&tabs, "Tabs"), ("\u{2190}\u{2192}/[ ]", "Sub-tabs"), ("\u{2193}/Enter", "Settings"), ("R", "Reset Page"),
-             ("F5", "Run"), ("q", "Quit")]
+             ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else {
         vec![(&tabs, "Tabs"), ("[ ]", "Sub-tabs"), ("\u{2191}\u{2193}", "Navigate"), ("\u{2190}\u{2192}/Space", "Change"),
-             ("Enter", "Edit"), ("r", "Reset"), ("R", "Reset Page"), ("F5", "Run"), ("q", "Quit")]
+             ("Enter", "Edit"), ("r", "Reset"), ("R", "Reset Page"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     };
     let mut help = vec![Span::raw(" ")];
     for (i, (key, what)) in keys.into_iter().enumerate() {
@@ -2322,6 +2419,45 @@ mod tests {
         app.active_field = 0;
         let _ = render_app(&mut app);
     }
+
+    fn tip_app(tips_enabled: bool) -> App {
+        let mut app = App::new();
+        app.tip_modal = Some(TipModal::new(crate::tui::tips::TIPS[0], tips_enabled));
+        app
+    }
+
+    /// The pop-up shows the tip, its link and both buttons.
+    #[test]
+    fn tip_modal_shows_the_tip_its_link_and_buttons() {
+        let text = screen_text(&render_app(&mut tip_app(true)));
+        assert!(text.contains("Did you know?"), "missing title:\n{text}");
+        assert!(text.contains("QSMxT can run on the MRI scanner"), "missing tip:\n{text}");
+        assert!(text.contains("https://qsmxt.github.io/recon/"), "missing link:\n{text}");
+        assert!(text.contains(" OK "), "missing OK:\n{text}");
+        assert!(text.contains("Don't show tips"), "missing opt-out:\n{text}");
+    }
+
+    /// Opened with `?` while tips are off, the second button turns them back on.
+    #[test]
+    fn tip_modal_offers_to_turn_tips_back_on() {
+        let text = screen_text(&render_app(&mut tip_app(false)));
+        assert!(text.contains("Show tips at startup"), "{text}");
+        assert!(!text.contains("Don't show tips"), "{text}");
+    }
+
+    /// Every tip wraps without losing words, and a narrow terminal does not panic.
+    #[test]
+    fn every_tip_wraps_without_losing_words() {
+        for tip in crate::tui::tips::TIPS {
+            let lines = tip_lines(tip.text, 62);
+            let joined: String = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join(" ");
+            assert_eq!(joined, tip.text.replace('`', ""));
+            assert!(lines.iter().all(|l| l.width() <= 62), "{}", tip.text);
+        }
+        let mut app = tip_app(true);
+        let text = screen_text(&render_app_sized(&mut app, 40, 12));
+        assert!(text.contains("Did you know"), "{text}");
+    }
 }
 
 /// The multi-orientation block of the Input tab: the pattern, its settings, and a live
@@ -2511,5 +2647,5 @@ mod orientation_block_tests {
         let text = screen_text(&render_app_sized(&mut app, 140, 60));
         assert!(text.contains("STI — rank-2"), "{text}");
     }
-}
 
+}

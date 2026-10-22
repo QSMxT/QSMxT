@@ -39,6 +39,15 @@ qsmxt tui
 - **Submit to a cluster** — generate and launch SLURM jobs for large cohorts
   directly from the TUI; scaling out doesn't require the command line.
 
+## Tips
+
+When the TUI opens it shows a *Did you know?* tip. Press `Enter` on **OK** to close it,
+or `n` to see the next tip. To stop the tips, press `→` to select **Don't show tips** and
+then `Enter`. Press `?` at any time to see a tip. When tips are off, its **Show tips at
+startup** button turns them back on. The setting is saved in `~/.qsmxt/tips.json`. Setting
+the `QSMXT_NO_TIPS` environment variable also turns tips off, for example on a shared
+install.
+
 ## Layout
 
 The top row holds the tabs; press a digit (`1`–`8`) or `Tab`/`Shift-Tab` to switch. A tab
@@ -78,6 +87,7 @@ happen: *Run*, *Dry run*, *Write SLURM scripts* or *Submit SLURM jobs*.
 | `Enter`, `s` | Pipeline | save the pipeline as an SVG drawing and open it |
 | `Enter`, `c`, `y` | Methods | copy the methods text to the clipboard |
 | `F5` | anywhere | run |
+| `?` | anywhere | show a tip (and turn startup tips on or off) |
 | `q`, `Esc` | anywhere | quit |
 
 Copying goes through the terminal (the OSC 52 escape sequence), so it reaches the clipboard of
