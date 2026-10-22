@@ -158,7 +158,10 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         },
         phase_offset_removal: cfg.field_mapping.phase_offset_removal,
         phase_offset_sigma_mm: cfg.field_mapping.phase_offset_sigma_mm,
-        bipolar_correction: cfg.field_mapping.bipolar_correction,
+        // Bipolar correction follows ROMEO's phase offset removal; Laplacian unwrapping has none
+        // (QSMART's echo fit refuses it, so it is not passed on there).
+        bipolar_correction: cfg.field_mapping.bipolar_correction
+            && cfg.field_mapping.unwrapping_algorithm == UnwrappingAlgorithm::Romeo,
         b0_estimation: match cfg.field_mapping.b0_estimation {
             B0Estimation::WeightedAvg => PB0Method::WeightedAvg {
                 weighting: map_b0_weight_type(&cfg.field_mapping),
@@ -182,12 +185,16 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
                     reliability_threshold_percentile: cfg.field_mapping.linear_fit.reliability_threshold_percentile,
                 })
             }
+            B0Estimation::QsmartEchofit => PB0Method::QsmartEchofit {
+                fit_threshold: cfg.field_mapping.qsmart_fit_threshold,
+            },
         },
         laplacian_solver: match cfg.field_mapping.laplacian_solver {
             LaplacianSolver::Dct => qsm_core::unwrap::LaplacianSolver::Dct,
             LaplacianSolver::Fft => qsm_core::unwrap::LaplacianSolver::Fft {
                 pad: cfg.field_mapping.laplacian_fft_pad,
             },
+            LaplacianSolver::Mirror => qsm_core::unwrap::LaplacianSolver::Mirror,
         },
         romeo_params: (&cfg.field_mapping.romeo).into(),
     };
@@ -369,8 +376,9 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         qsmart: qsm_core::utils::QsmartParams {
             ilsqr_max_iter: cfg.inversion.qsmart.ilsqr_max_iter,
             ilsqr_pad_mm: cfg.inversion.qsmart.ilsqr_pad_mm,
-            // NOTE: vasc_sphere_radius and frangi scales are in mm here; the qsmxt
-            // runner converts them to voxels using the dataset voxel size.
+            // NOTE: vasc_sphere_radius and frangi scales are in `vessel_size_units` here; the
+            // QSMART stage converts mm to voxels with the dataset voxel size
+            // (crate::stages::qsmart::inversion_config).
             vasc_sphere_radius: cfg.inversion.qsmart.vasc_sphere_radius,
             inversion: map_alg(cfg.inversion.qsmart.inversion),
             sdf_sigma1_stage1: cfg.inversion.qsmart.sdf_sigma1_stage1,

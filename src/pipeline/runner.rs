@@ -360,6 +360,7 @@ impl FileStore<'_> {
             Item::TotalFieldHz => o.total_field_path(key),
             Item::TotalFieldMagnitude => o.total_field_magnitude_path(key),
             Item::RobustFitReport => robust_fit_report_path(&o.field_ppm_path(key)),
+            Item::FieldReliability => o.field_reliability_path(key),
             Item::LocalField(p) => pass(p, o.local_field_path(key), o.reliable_local_field_path(key)),
             Item::LocalFieldMask(p) => pass(p, o.bg_mask_path(key), o.reliable_bg_mask_path(key)),
             Item::RawChi(p) => pass(p, o.chi_raw_path(key), o.reliable_chi_raw_path(key)),

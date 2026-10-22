@@ -131,16 +131,38 @@ fn graphs_of_a_table_of_configurations() {
     assert!(g.node("r2_r2prime").unwrap().writes.contains(&item_key(&Item::R2primeCoverage)));
     assert_consistent(&g);
 
-    // QSMART: the total field and the combined magnitude in, five intermediates out.
+    // QSMART, its inputs prepared as its own: the total field and the echo fit's reliability map
+    // from QSMART's Laplacian unwrapping and echo fit, every echo's magnitude for its own vessel
+    // magnitude (kept), and five intermediates of its own out.
     let mut config = PipelineConfig::default();
     config.inversion.algorithm = QsmAlgorithm::Qsmart;
     let g = graph(&config, &facts());
     assert!(g.node("bgremove").is_none());
-    assert!(g.has_edge("unwrap", "qsmart") && g.has_edge("magnitude", "qsmart") && g.has_edge("qsmart", "reference"));
+    assert!(g.has_edge("unwrap", "qsmart") && g.has_edge("scale_phase", "qsmart") && g.has_edge("qsmart", "reference"));
+    assert!(!g.has_edge("magnitude", "qsmart"));
+    let u = g.node("unwrap").unwrap();
+    assert_eq!(u.algorithm_label.as_deref(), Some("Laplacian"));
+    assert!(u.writes.contains(&item_key(&Item::FieldReliability)), "{:?}", u.writes);
+    assert!(u.settings.contains(&"mirror solver".to_string()) && u.settings.contains(&"B0 by QSMART's echo fit".to_string()),
+            "{:?}", u.settings);
     let q = g.node("qsmart").unwrap();
-    assert_eq!(q.writes.len(), 6);
+    assert_eq!(q.writes.len(), 7);
+    assert!(q.reads.contains(&item_key(&Item::FieldReliability)));
+    assert!(q.writes.contains(&item_key(&Item::QsmartIntermediate(Pass::Main, crate::stages::qsmart::VESSEL_MAGNITUDE))));
     assert_eq!(q.settings.first().map(String::as_str), Some("iLSQR inversion"));
     assert_consistent(&g);
+    // The combined magnitude, and the general field mapping, chosen: as before.
+    config.inversion.qsmart.vessel_magnitude = QsmartVesselMagnitude::Combined;
+    config.field_mapping.unwrapping_chosen = true;
+    let g = graph(&config, &facts());
+    assert!(g.has_edge("magnitude", "qsmart"));
+    let q = g.node("qsmart").unwrap();
+    assert_eq!(q.writes.len(), 6);
+    assert!(!q.reads.contains(&item_key(&Item::FieldReliability)));
+    assert!(q.settings.contains(&"vessels on the combined magnitude".to_string()), "{:?}", q.settings);
+    assert!(!g.node("unwrap").unwrap().writes.contains(&item_key(&Item::FieldReliability)));
+    assert_consistent(&g);
+    let mut config = PipelineConfig::default();
 
     // A magnitude-weighted inversion, one weighted by every echo's magnitude, and iQSM straight
     // from the echoes.

@@ -32,6 +32,9 @@ fn filled() -> PipelineConfig {
     c.qsm.reference_region = Some("thalamus".into());
     c.masking.recipe_chosen = true;
     c.bg_removal.algorithm_chosen = true;
+    c.field_mapping.unwrapping_chosen = true;
+    c.field_mapping.laplacian_solver_chosen = true;
+    c.field_mapping.b0_estimation_chosen = true;
     c
 }
 

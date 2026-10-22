@@ -1079,6 +1079,10 @@
    "threads": 16,
    "settings": [
     [
+     "inversion.qsmart.vessel_magnitude",
+     "combined"
+    ],
+    [
      "masking.sections",
      [
       {
@@ -3839,6 +3843,18 @@
    "echoes": 5,
    "browser_profile": true,
    "settings": [
+    [
+     "field_mapping.unwrapping_algorithm",
+     "romeo"
+    ],
+    [
+     "field_mapping.b0_estimation",
+     "weighted-avg"
+    ],
+    [
+     "inversion.qsmart.vessel_magnitude",
+     "combined"
+    ],
     [
      "inversion.algorithm",
      "qsmart"

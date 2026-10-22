@@ -273,8 +273,12 @@ fn unwrap_need(config: &PipelineConfig, s: &Scan) -> u64 {
         return 85 * n;
     }
     if !romeo {
-        // Laplacian: each echo unwrapped and kept, then the fit (with or without offsets).
-        return (24 * e + 25) * n;
+        // Laplacian: each echo unwrapped and kept, then the fit (with or without offsets). The
+        // mirror solver works on the volume mirrored to twice its size along each axis, one echo
+        // at a time: a complex volume eight times the size, 128 B a voxel (measured natively by
+        // peak RSS on 178×182×148, 5 echoes: 0.46 GB above the DCT solver's).
+        let mirror = if fm.laplacian_solver == LaplacianSolver::Mirror { 128 * n } else { 0 };
+        return (24 * e + 25) * n + mirror;
     }
     if !fm.phase_offset_removal {
         // Each echo unwrapped and kept, then the linear fit.
@@ -861,6 +865,10 @@ mod tests {
         assert!(unwrap(&f, &d, 1) > unwrap(&three, &d, 1));
         assert!(unwrap(&f, &d, 8) > unwrap(&f, &d, 1));
         assert!(unwrap(&f, &with(|c| c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian), 1) < unwrap(&f, &d, 1));
+        let laplacian = with(|c| c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian);
+        let mut mirror = laplacian.clone();
+        mirror.field_mapping.laplacian_solver = LaplacianSolver::Mirror;
+        assert!(unwrap(&f, &mirror, 1) > unwrap(&f, &laplacian, 1));
 
         // Lighter algorithms take less.
         assert!(at(&with(|c| c.inversion.algorithm = QsmAlgorithm::Tkd), "invert", 1) < at(&with(|c| c.inversion.algorithm = QsmAlgorithm::Rts), "invert", 1));

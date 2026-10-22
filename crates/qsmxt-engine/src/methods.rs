@@ -165,6 +165,11 @@ const CITE_QSMART: Citation = Citation {
     text: "Yaghmaie, N., Syeda, W., et al. (2021). \"QSMART: Quantitative Susceptibility Mapping Artifact Reduction Technique.\" *NeuroImage*, 231:117701. https://doi.org/10.1016/j.neuroimage.2020.117701",
 };
 
+const CITE_N4: Citation = Citation {
+    key: "tustison2010",
+    text: "Tustison, N.J., Avants, B.B., Cook, P.A., Zheng, Y., Egan, A., Yushkevich, P.A., Gee, J.C. (2010). \"N4ITK: Improved N3 Bias Correction.\" *IEEE Transactions on Medical Imaging*, 29(6):1310-1320. https://doi.org/10.1109/TMI.2010.2046908",
+};
+
 const CITE_RESHARP: Citation = Citation {
     key: "sun2014",
     text: "Sun, H., Wilman, A.H. (2014). \"Background field removal using spherical mean value filtering and Tikhonov regularization.\" *Magnetic Resonance in Medicine*, 71(3):1151-1157. https://doi.org/10.1002/mrm.25032",
@@ -641,6 +646,26 @@ fn medi_msmv(config: &PipelineConfig, doc: &mut Draft) -> String {
         cite_inline(&CITE_MSMV), changed.semi())
 }
 
+/// QSMART's settings that differ from their defaults, its inner inversion and vessel magnitude
+/// aside (said apart). The vessel sizes carry their units.
+fn qsmart_changes(config: &PipelineConfig) -> Changed {
+    let (q, d) = (&config.inversion.qsmart, QsmartConfig::default());
+    let mut c = Changed::default();
+    let mut skip = vec!["inversion", "vessel_magnitude", "vessel_size_units"];
+    skip.extend(QSMART_VESSEL_SIZE_KEYS);
+    c.add_fields(q, &d, &skip);
+    // In other units than the default, the sizes are said whatever they are: the default numbers
+    // mean something else.
+    let u = q.vessel_size_units;
+    let other_units = u != d.vessel_size_units;
+    c.add(other_units || q.vasc_sphere_radius != d.vasc_sphere_radius,
+        || format!("a bottom-hat sphere radius of {} {u}", q.vasc_sphere_radius));
+    c.add(other_units || differs(q.frangi_scale_min, d.frangi_scale_min) || differs(q.frangi_scale_max, d.frangi_scale_max)
+            || differs(q.frangi_scale_ratio, d.frangi_scale_ratio),
+        || format!("Frangi scales from {} to {} {u} in steps of {} {u}", q.frangi_scale_min, q.frangi_scale_max, q.frangi_scale_ratio));
+    c
+}
+
 /// The non-default settings of the selected background-field remover. V-SHARP's are worded by
 /// its own sentence.
 fn bg_removal_changes(config: &PipelineConfig) -> Changed {
@@ -951,13 +976,20 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                     "QSM was computed using QSMART (Yaghmaie et al., 2021), with spatially dependent \
                      filtering for background field removal, {} dipole inversion ({}), and Frangi \
                      vesselness-based tissue/vasculature separation{}.",
-                    inv_name, cite_inline(inv_cite), {
-                        let (q, d) = (&config.inversion.qsmart, QsmartConfig::default());
-                        let mut c = Changed::default();
-                        c.add_fields(q, &d, &["inversion"]);
-                        c.comma_with()
-                    },
+                    inv_name, cite_inline(inv_cite), qsmart_changes(config).comma_with(),
                 ));
+                // The magnitude vessels were detected on.
+                match config.inversion.qsmart.vessel_magnitude {
+                    QsmartVesselMagnitude::MeanN4 => {
+                        doc.cite(&CITE_N4);
+                        doc.say(&both(Stage::Qsmart), "Vessels were detected on the mean magnitude over echoes, \
+                            bias-corrected with N4 (Tustison et al., 2010).".to_string());
+                    }
+                    QsmartVesselMagnitude::Combined => {
+                        doc.say(&both(Stage::Qsmart), format!("Vessels were detected on the {}RSS-combined magnitude.",
+                            if config.masking.inhomogeneity_correction { "inhomogeneity-corrected " } else { "" }));
+                    }
+                }
             }
             _ => {
                 describe_field_mapping(config, ran, &mut doc);
@@ -1439,7 +1471,10 @@ fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
                 _ if fm.laplacian_solver == d.laplacian_solver => String::new(),
                 LaplacianSolver::Dct => " solved as unweighted least squares with a Neumann-boundary DCT (Ghiglia & Romero, 1994)".to_string(),
                 LaplacianSolver::Fft => " with an FFT Poisson solve".to_string(),
+                LaplacianSolver::Mirror => " with an FFT Poisson solve on the volume mirrored along each axis".to_string(),
             };
+            // QSMART's echo fit unwraps every echo over the whole volume; otherwise inside the mask.
+            let whole = if fm.b0_estimation == B0Estimation::QsmartEchofit { " over the whole volume" } else { "" };
             // The padding only exists for the FFT solve.
             let pad = if fm.laplacian_solver == LaplacianSolver::Fft && fm.laplacian_fft_pad != d.laplacian_fft_pad {
                 format!(" on the volume zero-padded by {} voxels", describe_pad(fm.laplacian_fft_pad))
@@ -1448,7 +1483,7 @@ fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
             };
             doc.cite(&CITE_LAPLACIAN_UNWRAP);
             doc.say(&[Stage::FieldMap], format!(
-                "Phase unwrapping was performed separately for each echo using the Laplacian method (Schofield & Zhu, 2003){solver}{pad}."));
+                "Phase unwrapping was performed separately for each echo{whole} using the Laplacian method (Schofield & Zhu, 2003){solver}{pad}."));
         }
     }
 
@@ -1489,6 +1524,22 @@ fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
                 changed.add(r.iterations != rd.iterations, || format!("{} iterations", r.iterations));
                 format!("The B0 field map was estimated with a motion-robust magnitude-weighted linear fit of phase vs echo time by iteratively reweighted least squares{}.", changed.with())
             });
+        }
+        B0Estimation::QsmartEchofit => {
+            doc.cite(&CITE_QSMART);
+            let threshold = if differs(fm.qsmart_fit_threshold, d.qsmart_fit_threshold) {
+                format!(" (residual threshold {})", fm.qsmart_fit_threshold)
+            } else {
+                String::new()
+            };
+            // The voxels the fit marks unreliable are left out of QSMART only.
+            let excluded = if config.inversion.algorithm == QsmAlgorithm::Qsmart {
+                format!(", and voxels with a high fit residual{threshold} were excluded from the QSMART reconstruction")
+            } else {
+                String::new()
+            };
+            doc.say(&[Stage::FieldMap], format!(
+                "The B0 field map was estimated by a magnitude-weighted fit of phase vs echo time through the origin, as in QSMART (Yaghmaie et al., 2021){excluded}."));
         }
     }
 }
@@ -1842,12 +1893,15 @@ pub(crate) mod words {
         registration_changes(config).0
     }
 
-    /// ROMEO's settings that differ from their defaults; Laplacian unwrapping has none here.
+    /// ROMEO's settings that differ from their defaults; Laplacian unwrapping's solver, when it
+    /// is not the default one.
     pub(crate) fn unwrapping_settings(config: &PipelineConfig) -> Vec<String> {
         let (fm, d) = (&config.field_mapping, FieldMappingConfig::default());
         let mut c = Changed::default();
         if fm.unwrapping_algorithm == UnwrappingAlgorithm::Romeo {
             c.add_fields(&fm.romeo, &d.romeo, &[]);
+        } else {
+            c.add(fm.laplacian_solver != d.laplacian_solver, || format!("{} solver", fm.laplacian_solver));
         }
         c.0
     }
@@ -1882,8 +1936,9 @@ pub(crate) mod words {
 
     /// QSMART's settings that differ from their defaults (its inner inversion is said apart).
     pub(crate) fn qsmart_settings(config: &PipelineConfig) -> Vec<String> {
-        let mut c = Changed::default();
-        c.add_fields(&config.inversion.qsmart, &QsmartConfig::default(), &["inversion"]);
+        let mut c = qsmart_changes(config);
+        c.add(config.inversion.qsmart.vessel_magnitude == QsmartVesselMagnitude::Combined,
+            || "vessels on the combined magnitude".to_string());
         c.0
     }
 }
@@ -2352,10 +2407,54 @@ mod tests {
         // unwrapping, B0 estimation, and phase offset removal (not just QSMART).
         let mut config = PipelineConfig::default();
         config.inversion.algorithm = QsmAlgorithm::Qsmart;
+        config.field_mapping.unwrapping_chosen = true;
+        config.field_mapping.b0_estimation_chosen = true;
         let out = generate_methods(&config);
         assert!(out.contains("ROMEO"), "QSMART methods should describe unwrapping: {}", out);
         assert!(out.contains("B0 field map"), "QSMART methods should describe B0 estimation: {}", out);
         assert!(out.contains("Phase offset removal"), "QSMART methods should describe phase offset removal: {}", out);
+    }
+
+    /// QSMART's own inputs, as QSMART takes them by default, are said plainly and cited: each echo
+    /// unwrapped over the whole volume on the mirrored volume, the echo fit and the voxels it
+    /// leaves out, and the N4-corrected mean magnitude vessels are detected on.
+    #[test]
+    fn qsmarts_own_inputs_are_described() {
+        let mut config = PipelineConfig::default();
+        config.inversion.algorithm = QsmAlgorithm::Qsmart;
+        let out = generate_methods(&config);
+        for said in ["separately for each echo over the whole volume using the Laplacian method",
+                     "on the volume mirrored along each axis",
+                     "fit of phase vs echo time through the origin, as in QSMART (Yaghmaie et al., 2021)",
+                     "voxels with a high fit residual were excluded from the QSMART reconstruction",
+                     "mean magnitude over echoes, bias-corrected with N4 (Tustison et al., 2010)",
+                     "https://doi.org/10.1109/TMI.2010.2046908"] {
+            assert!(out.contains(said), "{said:?} not in: {out}");
+        }
+        for unsaid in ["Phase offset removal", "ROMEO", "sphere radius", "STI", "Biobank"] {
+            assert!(!out.contains(unsaid), "{unsaid:?} in: {out}");
+        }
+        // The overrides, said as what was done.
+        config.inversion.qsmart.vessel_magnitude = QsmartVesselMagnitude::Combined;
+        config.inversion.qsmart.vessel_size_units = VesselSizeUnits::Mm;
+        config.field_mapping.qsmart_fit_threshold = 30.0;
+        let out = generate_methods(&config);
+        for said in ["detected on the inhomogeneity-corrected RSS-combined magnitude",
+                     "a bottom-hat sphere radius of 8 mm", "Frangi scales from 0.5 to 6 mm in steps of 0.5 mm",
+                     "(residual threshold 30)"] {
+            assert!(out.contains(said), "{said:?} not in: {out}");
+        }
+        assert!(!out.contains("Tustison"), "{out}");
+        // Sizes in voxels are said only when changed, with their units.
+        config.inversion.qsmart.vessel_size_units = VesselSizeUnits::Voxels;
+        config.inversion.qsmart.vasc_sphere_radius = 6;
+        let out = generate_methods(&config);
+        assert!(out.contains("a bottom-hat sphere radius of 6 voxels") && !out.contains("Frangi scales from"), "{out}");
+        // The echo fit under another inversion: no voxels left out of anything.
+        let mut other = PipelineConfig::default();
+        other.field_mapping.b0_estimation = B0Estimation::QsmartEchofit;
+        let out = generate_methods(&other);
+        assert!(out.contains("as in QSMART") && !out.contains("excluded"), "{out}");
     }
 
     #[test]

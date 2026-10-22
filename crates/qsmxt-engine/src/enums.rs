@@ -98,10 +98,14 @@ pub enum LaplacianSolver {
     /// volume (`field_mapping.laplacian_fft_pad`), reproducing STI Suite 3.0's `MRPhaseUnwrap`.
     #[serde(alias = "sti")]
     Fft,
+    /// Schofield & Zhu sin/cos Laplacian with an FFT Poisson solve on the volume mirrored along
+    /// each axis (qsm-core's `LaplacianSolver::Mirror`): QSMART's unwrapping, and its default
+    /// when QSMART is the inversion.
+    Mirror,
 }
 impl fmt::Display for LaplacianSolver {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", match self { Self::Dct => "dct", Self::Fft => "fft" })
+        write!(f, "{}", match self { Self::Dct => "dct", Self::Fft => "fft", Self::Mirror => "mirror" })
     }
 }
 impl fmt::Display for UnwrappingAlgorithm {
@@ -161,12 +165,56 @@ impl fmt::Display for BfAlgorithm {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
-pub enum B0Estimation { WeightedAvg, LinearFit, RobustFit }
+pub enum B0Estimation {
+    WeightedAvg, LinearFit, RobustFit,
+    /// QSMART's echo fit (qsm-core's `B0EstimationMethod::QsmartEchofit`): each echo
+    /// Laplacian-unwrapped over the whole volume, then a magnitude-weighted fit of phase against
+    /// TE through the origin, with QSMART's reliability map. Needs Laplacian unwrapping and no
+    /// bipolar correction ([`crate::config::FieldMappingConfig::validate`]); the default when
+    /// QSMART is the inversion.
+    QsmartEchofit,
+}
 impl fmt::Display for B0Estimation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", match self {
             Self::WeightedAvg => "weighted-avg", Self::LinearFit => "linear-fit", Self::RobustFit => "robust-fit",
+            Self::QsmartEchofit => "qsmart-echofit",
         })
+    }
+}
+
+/// The magnitude QSMART detects vessels on (`inversion.qsmart.vessel_magnitude`).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum QsmartVesselMagnitude {
+    /// The mean over echoes, N4 bias-corrected (qsm-core's `qsmart_vessel_magnitude`), as
+    /// QSMART's authors prepare it.
+    #[default]
+    MeanN4,
+    /// The run's combined magnitude: the root sum of squares over echoes, inhomogeneity-corrected
+    /// when `masking.inhomogeneity_correction` is on.
+    Combined,
+}
+impl fmt::Display for QsmartVesselMagnitude {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", match self { Self::MeanN4 => "mean-n4", Self::Combined => "combined" })
+    }
+}
+
+/// The units QSMART's vessel sizes (bottom-hat sphere radius, Frangi scales) are given in
+/// (`inversion.qsmart.vessel_size_units`).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum VesselSizeUnits {
+    /// Voxels, as QSMART specifies them.
+    #[default]
+    Voxels,
+    /// Millimetres, converted to voxels with the mean voxel size.
+    Mm,
+}
+impl fmt::Display for VesselSizeUnits {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", match self { Self::Voxels => "voxels", Self::Mm => "mm" })
     }
 }
 

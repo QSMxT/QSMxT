@@ -56,10 +56,15 @@ fn config(r: &Value, browser: bool) -> PipelineConfig {
     for s in r["settings"].as_array().unwrap() {
         let (path, value) = (s[0].as_str().unwrap(), s[1].clone());
         qsmxt_engine::schema::set(&mut c, path, value).unwrap_or_else(|e| panic!("{}: {path}: {e}", r["name"]));
-        // The background removal a measurement names is the one it ran, whatever the inversion's
-        // own default.
-        if path == "bg_removal.algorithm" {
-            c.bg_removal.algorithm_chosen = true;
+        // The background removal and field mapping a record names are what it was measured with,
+        // whatever the inversion's own defaults (as a front end marks a choice).
+        let fm = &mut c.field_mapping;
+        match path {
+            "bg_removal.algorithm" => c.bg_removal.algorithm_chosen = true,
+            "field_mapping.unwrapping_algorithm" => fm.unwrapping_chosen = true,
+            "field_mapping.laplacian_solver" => fm.laplacian_solver_chosen = true,
+            "field_mapping.b0_estimation" => fm.b0_estimation_chosen = true,
+            _ => {}
         }
     }
     c
