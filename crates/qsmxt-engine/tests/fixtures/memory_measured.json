@@ -3889,6 +3889,46 @@
   },
   {
    "kind": "native",
+   "name": "inv-qsmart-defaults-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT 96b3965), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "qsmart"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974389944
+    ],
+    [
+     "unwrap",
+     1555700515
+    ],
+    [
+     "qsmart",
+     1573651000
+    ],
+    [
+     "reference",
+     108536594
+    ]
+   ]
+  },
+  {
+   "kind": "native",
    "name": "inv-rts-t8",
    "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
    "threads": 8,
