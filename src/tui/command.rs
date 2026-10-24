@@ -289,7 +289,10 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         cosmos_magnitude_weighting: weighted_cosmos,
         cosmos_tol: if weighted_cosmos { parse_optional_f64(&ps.cosmos_tol) } else { None },
         cosmos_max_iter: if weighted_cosmos { parse_optional_usize(&ps.cosmos_max_iter) } else { None },
-        unwrapping_algorithm: Some(unwrap_options[ps.unwrapping_algorithm]),
+        // Said when chosen or not the general default: a general default left unchosen is the
+        // inversion's to decide (QSMART's own under QSMART), as the form shows it.
+        unwrapping_algorithm: (ps.unwrapping_chosen || ps.unwrapping_algorithm != 0)
+            .then(|| unwrap_options[ps.unwrapping_algorithm]),
         // Only when the inversion has a background-removal stage: otherwise the choice has no
         // effect, and iQFM there is refused (#276).
         bf_algorithm: ps.inversion_needs_bg_removal().then(|| bf_options[ps.bf_algorithm]),
@@ -299,20 +302,30 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         coil_combination_sigma: parse_optional_f64_vec3(&ps.coil_combination_sigma),
         // Part of HIP phase offset removal, which only ROMEO unwrapping runs.
         bipolar_correction: ps.unwrapping_algorithm == 0 && ps.phase_offset_removal && ps.bipolar_correction,
-        // Only when changed from the default, so a default form still yields a bare command.
+        // Only when changed from the default or chosen, so a default form still yields a bare
+        // command.
         b0_estimation: match ps.b0_estimation {
             1 => Some(B0EstimationArg::LinearFit),
             2 => Some(B0EstimationArg::RobustFit),
-            _ => None,
+            3 => Some(B0EstimationArg::QsmartEchofit),
+            _ => ps.b0_estimation_chosen.then_some(B0EstimationArg::WeightedAvg),
         },
+        // QSMART's echo-fit threshold: the mode, and the value of that mode.
+        qsmart_fit_threshold_mode: [crate::cli::QsmartFitThresholdModeArg::Percentile, crate::cli::QsmartFitThresholdModeArg::Absolute]
+            .get(ps.qsmart_fit_threshold_mode).copied().filter(|_| ps.b0_estimation == 3),
+        qsmart_fit_percentile: if ps.b0_estimation == 3 && ps.qsmart_fit_threshold_mode == 0 { parse_optional_f64(&ps.qsmart_fit_percentile) } else { None },
+        qsmart_fit_threshold: if ps.b0_estimation == 3 && ps.qsmart_fit_threshold_mode == 1 { parse_optional_f64(&ps.qsmart_fit_threshold) } else { None },
         // The echo weights belong to the weighted average; the fits do not use them.
         b0_weight_type: [B0WeightTypeArg::PhaseSNR, B0WeightTypeArg::PhaseVar, B0WeightTypeArg::Average,
                          B0WeightTypeArg::TEs, B0WeightTypeArg::Mag, B0WeightTypeArg::AssumedDecay]
             .get(ps.b0_weight_type).copied().filter(|&w| ps.b0_estimation == 0 && w != B0WeightTypeArg::PhaseSNR),
         b0_weight_assumed_t2star: if ps.b0_estimation == 0 && ps.b0_weight_type == 5 { parse_optional_f64(&ps.b0_weight_assumed_t2star_ms) } else { None },
-        // Only when Laplacian unwrapping is selected, and only when changed from the default.
-        laplacian_solver: (ps.unwrapping_algorithm == 1 && ps.laplacian_solver == 1)
-            .then_some(crate::cli::LaplacianSolverArg::Fft),
+        // Only when Laplacian unwrapping is selected, and only when changed from the default or
+        // chosen.
+        laplacian_solver: if ps.unwrapping_algorithm == 1 && (ps.laplacian_solver != 0 || ps.laplacian_solver_chosen) {
+            [crate::cli::LaplacianSolverArg::Dct, crate::cli::LaplacianSolverArg::Fft, crate::cli::LaplacianSolverArg::Mirror]
+                .get(ps.laplacian_solver).copied()
+        } else { None },
         laplacian_fft_pad: if ps.unwrapping_algorithm == 1 && ps.laplacian_solver == 1 {
             parse_pad3(&ps.laplacian_fft_pad)
                 .filter(|&p| p != qsmxt_engine::default_laplacian_fft_pad())
@@ -442,6 +455,10 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             qsmart_frangi_scale_max: parse_optional_f64(&ps.qsmart_frangi_scale_max),
             qsmart_frangi_scale_ratio: parse_optional_f64(&ps.qsmart_frangi_scale_ratio),
             qsmart_frangi_c: parse_optional_f64(&ps.qsmart_frangi_c),
+            qsmart_vessel_units: [crate::cli::VesselSizeUnitsArg::Voxels, crate::cli::VesselSizeUnitsArg::Mm]
+                .get(ps.qsmart_vessel_units).copied(),
+            qsmart_vessel_magnitude: [crate::cli::QsmartVesselMagnitudeArg::MeanN4, crate::cli::QsmartVesselMagnitudeArg::Combined]
+                .get(ps.qsmart_vessel_magnitude).copied(),
         },
         ndi_params: crate::cli::NdiParamArgs {
             ndi_tau: parse_optional_f64(&ps.ndi_tau),
@@ -1756,6 +1773,59 @@ mod tests {
         assert_eq!(c.field_mapping.b0_weight_assumed_t2star_ms, 35.0);
         app.pipeline_state.b0_estimation = 1;
         assert_eq!(build_run_args(&app).unwrap().pipeline.b0_estimation, Some(B0EstimationArg::LinearFit));
+    }
+
+    /// The field mapping left alone in the TUI is QSMART's under QSMART, as the form shows it; a
+    /// choice, the general default included, is kept, and resetting the row lets QSMART decide
+    /// again. QSMART's vessel options travel to the run.
+    #[test]
+    fn qsmart_takes_its_field_mapping_until_one_is_chosen() {
+        use qsmxt_engine::{B0Estimation, LaplacianSolver, UnwrappingAlgorithm};
+        let qsmart = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|a| *a == "qsmart").unwrap();
+        let mut app = default_app();
+        app.form.bids_dir = "/bids".to_string();
+        app.pipeline_state.set_select("qsm_algorithm", qsmart);
+        let ps = &app.pipeline_state;
+        assert_eq!((ps.unwrapping_algorithm, ps.laplacian_solver, ps.b0_estimation), (1, 2, 3), "the form shows QSMART's");
+        let fm = config_from_app(&app).unwrap().field_mapping;
+        assert_eq!((fm.unwrapping_algorithm, fm.laplacian_solver, fm.b0_estimation),
+                   (UnwrappingAlgorithm::Laplacian, LaplacianSolver::Mirror, B0Estimation::QsmartEchofit));
+        let cmd = build_command_string(&app);
+        assert!(cmd.contains("--laplacian-solver mirror") && cmd.contains("--b0-estimation qsmart-echofit"), "{cmd}");
+
+        // ROMEO chosen: kept, and the echo combination the form shows follows it.
+        app.pipeline_state.set_select("unwrapping_algorithm", 0);
+        assert_eq!(app.pipeline_state.b0_estimation, 0);
+        let c = config_from_app(&app).unwrap();
+        assert_eq!((c.field_mapping.unwrapping_algorithm, c.field_mapping.b0_estimation),
+                   (UnwrappingAlgorithm::Romeo, B0Estimation::WeightedAvg));
+        assert!(build_command_string(&app).contains("--unwrapping-algorithm romeo"));
+        // Reset: QSMART's again.
+        app.reset_field("unwrapping_algorithm");
+        assert_eq!((app.pipeline_state.unwrapping_algorithm, app.pipeline_state.b0_estimation), (1, 3));
+        assert_eq!(config_from_app(&app).unwrap().field_mapping.unwrapping_algorithm, UnwrappingAlgorithm::Laplacian);
+
+        // The weighted average chosen under QSMART is kept; back to RTS the general defaults show.
+        app.pipeline_state.set_select("b0_estimation", 0);
+        assert_eq!(config_from_app(&app).unwrap().field_mapping.b0_estimation, B0Estimation::WeightedAvg);
+        app.pipeline_state.set_select("qsm_algorithm", 0);
+        assert_eq!((app.pipeline_state.unwrapping_algorithm, app.pipeline_state.laplacian_solver), (0, 0));
+
+        // QSMART's vessel options and the echo fit's threshold.
+        app.pipeline_state.set_select("qsm_algorithm", qsmart);
+        app.pipeline_state.set_select("qsmart_vessel_magnitude", 1);
+        app.pipeline_state.set_select("qsmart_vessel_units", 1);
+        app.reset_field("b0_estimation");
+        app.pipeline_state.qsmart_fit_percentile = "95".into();
+        let c = config_from_app(&app).unwrap();
+        assert_eq!(c.inversion.qsmart.vessel_magnitude, qsmxt_engine::QsmartVesselMagnitude::Combined);
+        assert_eq!(c.inversion.qsmart.vessel_size_units, qsmxt_engine::VesselSizeUnits::Mm);
+        assert_eq!(c.field_mapping.qsmart_fit_threshold(), qsm_core::utils::QsmartFitThreshold::Percentile(95.0));
+        // The fixed mode takes the fixed residual, not the percentile.
+        app.pipeline_state.set_select("qsmart_fit_threshold_mode", 1);
+        app.pipeline_state.qsmart_fit_threshold = "30".into();
+        let c = config_from_app(&app).unwrap();
+        assert_eq!(c.field_mapping.qsmart_fit_threshold(), qsm_core::utils::QsmartFitThreshold::Absolute(30.0));
     }
 
     /// Masking left alone in the TUI is masking left alone on the command line: QSMART takes

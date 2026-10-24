@@ -56,6 +56,15 @@ fn config(r: &Value, browser: bool) -> PipelineConfig {
     for s in r["settings"].as_array().unwrap() {
         let (path, value) = (s[0].as_str().unwrap(), s[1].clone());
         qsmxt_engine::schema::set(&mut c, path, value).unwrap_or_else(|e| panic!("{}: {path}: {e}", r["name"]));
+        // A record's field mapping is what it was measured with, kept under QSMART too (as a
+        // front end marks a choice).
+        let fm = &mut c.field_mapping;
+        match path {
+            "field_mapping.unwrapping_algorithm" => fm.unwrapping_chosen = true,
+            "field_mapping.laplacian_solver" => fm.laplacian_solver_chosen = true,
+            "field_mapping.b0_estimation" => fm.b0_estimation_chosen = true,
+            _ => {}
+        }
     }
     c
 }

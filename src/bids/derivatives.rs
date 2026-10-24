@@ -337,6 +337,10 @@ impl DerivativeOutputs {
     pub fn field_ppm_path(&self, key: &AcquisitionKey) -> PathBuf {
         self.workflow_nifti_path(key, "unwrap", naming::total_fieldmap_ppm())
     }
+    /// QSMART's echo-fit reliability map, beside the total field it came with.
+    pub fn field_reliability_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.workflow_nifti_path(key, "unwrap", naming::echofit_reliability_mask())
+    }
     pub fn local_field_path(&self, key: &AcquisitionKey) -> PathBuf { self.workflow_nifti_path(key, "bgremove", Tail::new("localfield")) }
     pub fn bg_mask_path(&self, key: &AcquisitionKey) -> PathBuf { self.workflow_nifti_path(key, "bgremove", Tail::new("bgmask")) }
     pub fn chi_raw_path(&self, key: &AcquisitionKey) -> PathBuf {

@@ -25,7 +25,7 @@ pub fn algorithm(config: &PipelineConfig, meta: &RunMetadata) -> String {
 pub fn params(config: &PipelineConfig, meta: &RunMetadata) -> serde_json::Value {
     let fm = &config.field_mapping;
     let laplacian = fm.unwrapping_algorithm == crate::enums::UnwrappingAlgorithm::Laplacian;
-    serde_json::json!({
+    let mut params = serde_json::json!({
         "n_echoes": meta.n_echoes,
         "phase_offset_removal": fm.phase_offset_removal,
         "bipolar_correction": fm.bipolar_correction,
@@ -45,18 +45,29 @@ pub fn params(config: &PipelineConfig, meta: &RunMetadata) -> serde_json::Value 
         "laplacian_echo_combination": if laplacian { 2 } else { 0 },
         "laplacian_solver": format!("{}", fm.laplacian_solver),
         "laplacian_fft_pad": fm.laplacian_fft_pad,
-    })
+    });
+    if fm.b0_estimation == crate::enums::B0Estimation::QsmartEchofit {
+        params["qsmart_fit_threshold"] = match fm.qsmart_fit_threshold() {
+            qsm_core::utils::QsmartFitThreshold::Percentile(p) => serde_json::json!({ "percentile": p }),
+            qsm_core::utils::QsmartFitThreshold::Absolute(t) => serde_json::json!({ "absolute": t }),
+        };
+    }
+    params
 }
 
 /// The total field of a run.
 pub struct FieldMap {
-    /// The B0 field offset in ppm, zero outside the mask: what the inversions read.
+    /// The B0 field offset in ppm, zero outside the mask (QSMART's echo fit: over the whole
+    /// volume, as QSMART fits it): what the inversions read.
     pub b0_field_ppm: Vec<f64>,
     /// The same field in Hz, as BIDS publishes a `fieldmap` (it takes Hz, rad/s or T, not ppm).
     pub total_field_hz: Vec<f64>,
     /// The robust echo fit's per-echo report ([`crate::fieldmap::robust_fit_report_json`]), when
     /// the echoes were combined by a robust fit.
     pub robust_fit_report: Option<serde_json::Value>,
+    /// QSMART's reliability map `R_0` (1 = reliable), when the echoes were combined by QSMART's
+    /// echo fit, over the whole volume: QSMART reconstructs where it and the brain mask are 1.
+    pub reliability: Option<Vec<u8>>,
 }
 
 /// Map the total field from every echo's wrapped phase (radians) on the run's working grid, inside
@@ -75,7 +86,14 @@ pub fn map_field(
     } else {
         log::info!("Phase unwrapping ({}, single echo)", unwrap_name);
     }
-    if fm.unwrapping_algorithm == crate::enums::UnwrappingAlgorithm::Laplacian && meta.n_echoes > 1 {
+    if fm.b0_estimation == crate::enums::B0Estimation::QsmartEchofit {
+        let threshold = match fm.qsmart_fit_threshold() {
+            qsm_core::utils::QsmartFitThreshold::Percentile(p) => format!("the {p}th percentile of the blurred residual"),
+            qsm_core::utils::QsmartFitThreshold::Absolute(t) => format!("a residual of {t}"),
+        };
+        log::info!("Laplacian unwrapping per echo over the whole volume ({} solver), then QSMART's echo fit \
+                    (reliability threshold: {threshold})", fm.laplacian_solver);
+    } else if fm.unwrapping_algorithm == crate::enums::UnwrappingAlgorithm::Laplacian && meta.n_echoes > 1 {
         log::info!("Laplacian unwrapping per echo ({} solver), then {} ({} weighting)",
             fm.laplacian_solver, fm.b0_estimation, fm.b0_weight_type);
     }
@@ -91,7 +109,7 @@ pub fn map_field(
         crate::fieldmap::log_robust_fit_report(report);
         crate::fieldmap::robust_fit_report_json(report)
     });
-    Ok(FieldMap { b0_field_ppm: field.b0_field_ppm, total_field_hz, robust_fit_report })
+    Ok(FieldMap { b0_field_ppm: field.b0_field_ppm, total_field_hz, robust_fit_report, reliability: field.reliability })
 }
 
 #[cfg(test)]

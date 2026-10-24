@@ -114,6 +114,7 @@ pub(super) fn table() -> Vec<Def> {
         d("field_mapping.laplacian_solver", FieldMap, "Solver", "", Enum(vec![
             o("dct", "dct", "DCT", "Unweighted least squares, Neumann-boundary DCT solve (Ghiglia & Romero 1994; QSM.jl :dct) (default)"),
             o("fft", "fft", "FFT", "Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume"),
+            o("mirror", "mirror", "Mirror", "Schofield & Zhu sin/cos Laplacian, FFT solve on the volume mirrored along each axis (QSMART's; the default with QSMART)"),
         ])).flag("--laplacian-solver").parent("field_mapping.unwrapping_algorithm")
         .when(|x| x.laplacian).full("Laplacian Solver")
         .gui("How Laplacian unwrapping's Poisson equation is solved"),
@@ -171,8 +172,23 @@ pub(super) fn table() -> Vec<Def> {
             o("weighted-avg", "weighted-avg", "Weighted average", "Weighted average of phase/TE across echoes (default)"),
             o("linear-fit", "linear-fit", "Linear fit", "Magnitude-weighted linear fit of phase vs TE"),
             o("robust-fit", "robust-fit", "Robust fit", "Motion-robust linear fit (IRLS): down-weights echoes departing from a straight line, per voxel. Needs 4 echoes (3 without offset)"),
+            o("qsmart-echofit", "qsmart-echofit", "QSMART echo fit", "QSMART's: magnitude-weighted fit of phase vs TE through the origin, each echo unwrapped over the whole volume; marks the voxels QSMART leaves out. Needs Laplacian unwrapping (the default with QSMART)"),
         ])).basic().flag("--b0-estimation")
         .gui("How the unwrapped echoes are combined into one field map"),
+        d("field_mapping.qsmart_fit_threshold_mode", FieldMap, "Fit Threshold", "", Enum(vec![
+            o("percentile", "percentile", "Percentile", "A percentile of the blurred fit residual over the volume, as QSMART's authors run it (default)"),
+            o("absolute", "absolute", "Fixed", "A fixed fit residual"),
+        ])).flag("--qsmart-fit-threshold-mode").parent("field_mapping.b0_estimation")
+        .when(|x| x.c.field_mapping.b0_estimation == B0Estimation::QsmartEchofit).full("QSMART Fit Threshold")
+        .gui("How the fit residual at which a voxel is left out of QSMART's reconstruction is set"),
+        // QSM.rs utils/qsmart.rs QsmartFitThreshold::validate refuses a percentile outside (0, 100].
+        d("field_mapping.qsmart_fit_percentile", FieldMap, "Fit Percentile", "Percentile of the blurred fit residual above which a voxel is left out of QSMART's reconstruction (default: 99)", Float).above(0.0).max(100.0).flag("--qsmart-fit-percentile").parent("field_mapping.qsmart_fit_threshold_mode")
+        .when(|x| x.c.field_mapping.b0_estimation == B0Estimation::QsmartEchofit && x.c.field_mapping.qsmart_fit_threshold_mode == QsmartFitThresholdMode::Percentile).full("QSMART Fit Percentile")
+        .gui("Percentile of the blurred fit residual above which a voxel is left out of QSMART's reconstruction"),
+        // QSM.rs utils/qsmart.rs QsmartFitThreshold::validate refuses a threshold that is not > 0.
+        d("field_mapping.qsmart_fit_threshold", FieldMap, "Fit Residual", "Blurred fit residual above which a voxel is left out of QSMART's reconstruction (default: 40)", Float).above(0.0).flag("--qsmart-fit-threshold").parent("field_mapping.qsmart_fit_threshold_mode")
+        .when(|x| x.c.field_mapping.b0_estimation == B0Estimation::QsmartEchofit && x.c.field_mapping.qsmart_fit_threshold_mode == QsmartFitThresholdMode::Absolute).full("QSMART Fit Residual")
+        .gui("Blurred fit residual above which a voxel is left out of QSMART's reconstruction"),
         d("field_mapping.b0_weight_type", FieldMap, "Weight Type", "", Enum(vec![
             o("phase-snr", "phase-snr", "Phase SNR", "mag × TE — optimal for phase SNR (default)"),
             o("phase-var", "phase-var", "Phase variance", "mag² × TE² — based on phase variance"),
@@ -188,11 +204,11 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.c.field_mapping.b0_estimation == B0Estimation::WeightedAvg && x.c.field_mapping.b0_weight_type == B0WeightType::AssumedDecay).full("Assumed T2*")
         .gui("T2* assumed to compute the fixed echo weights; no T2* map is used"),
         d("field_mapping.linear_fit.estimate_offset", FieldMap, "Estimate Offset", "Fit a phase-offset term in the echo-time fit (robust fit: needs 4 echoes with it, 3 without)", Bool).flag("--linear-fit-estimate-offset").parent("field_mapping.b0_estimation")
-        .when(|x| x.c.field_mapping.b0_estimation != B0Estimation::WeightedAvg).context("Echo-time fit"),
+        .when(|x| matches!(x.c.field_mapping.b0_estimation, B0Estimation::LinearFit | B0Estimation::RobustFit)).context("Echo-time fit"),
         // QSM.rs RobustFitParams::validate (utils/multi_echo.rs) refuses a percentile outside [0, 100].
         d("field_mapping.linear_fit.reliability_threshold_percentile", FieldMap, "Reliability Mask", "Report the fit's reliability mask; does not change the field map", Float).min(0.0).max(100.0)
         .value("Percentile", "Percentile of the fit residual above which a voxel counts as unreliable").off(json!(0.0)).flag("--linear-fit-reliability-threshold").parent("field_mapping.b0_estimation")
-        .when(|x| x.c.field_mapping.b0_estimation != B0Estimation::WeightedAvg).context("Echo-time fit"),
+        .when(|x| matches!(x.c.field_mapping.b0_estimation, B0Estimation::LinearFit | B0Estimation::RobustFit)).context("Echo-time fit"),
         d("field_mapping.robust_fit.loss", FieldMap, "Loss", "", Enum(vec![
             o("tukey", "tukey", "Tukey", "Tukey biweight: rejects an echo at a voxel past the tuning radius (default)"),
             o("huber", "huber", "Huber", "Huber: caps an outlying echo's influence but never rejects it"),
@@ -530,18 +546,26 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.inv("qsmart")).full("SDF Lower Limit"),
         d("inversion.qsmart.sdf_curv_constant", Inversion, "SDF Curv Const", "SDF curvature constant", Float).flag("--qsmart-sdf-curv-constant").parent("inversion.algorithm")
         .when(|x| x.inv("qsmart")).full("SDF Curvature Constant"),
-        d("inversion.qsmart.vasc_sphere_radius", Inversion, "Vasc Radius (mm)", "Bottom-hat sphere radius for vasculature detection (mm)", Int).units("mm").flag("--qsmart-vasc-sphere-radius").parent("inversion.algorithm")
-        .when(|x| x.inv("qsmart")).full("Vasculature Sphere Radius")
-        .gui("Bottom-hat sphere radius for vasculature detection"),
-        d("inversion.qsmart.frangi_scale_min", Inversion, "Frangi Min (mm)", "Frangi minimum vessel radius (mm)", Float).units("mm").flag("--qsmart-frangi-scale-min").parent("inversion.algorithm")
-        .when(|x| x.inv("qsmart")).full("Frangi Minimum Scale")
-        .gui("Frangi minimum vessel radius"),
-        d("inversion.qsmart.frangi_scale_max", Inversion, "Frangi Max (mm)", "Frangi maximum vessel radius (mm)", Float).units("mm").flag("--qsmart-frangi-scale-max").parent("inversion.algorithm")
-        .when(|x| x.inv("qsmart")).full("Frangi Maximum Scale")
-        .gui("Frangi maximum vessel radius"),
-        d("inversion.qsmart.frangi_scale_ratio", Inversion, "Frangi Step (mm)", "Frangi scale step (mm)", Float).units("mm").flag("--qsmart-frangi-scale-ratio").parent("inversion.algorithm")
-        .when(|x| x.inv("qsmart")).full("Frangi Scale Step")
-        .gui("Frangi scale step"),
+        d("inversion.qsmart.vessel_magnitude", Inversion, "Vessel Magnitude", "", Enum(vec![
+            o("mean-n4", "mean-n4", "Mean + N4", "Mean over echoes, N4 bias-corrected, as QSMART prepares it (default)"),
+            o("combined", "combined", "Combined", "The combined magnitude: root sum of squares over echoes, inhomogeneity-corrected when that is on"),
+        ])).flag("--qsmart-vessel-magnitude").parent("inversion.algorithm")
+        .when(|x| x.inv("qsmart")).full("Vessel Detection Magnitude")
+        .gui("The magnitude vessels are detected on"),
+        d("inversion.qsmart.vessel_size_units", Inversion, "Vessel Size Units", "", Enum(vec![
+            o("voxels", "voxels", "Voxels", "Vessel radius and scales in voxels, as QSMART gives them (default)"),
+            o("mm", "mm", "mm", "Vessel radius and scales in mm, converted to voxels with the mean voxel size"),
+        ])).flag("--qsmart-vessel-units").parent("inversion.algorithm")
+        .when(|x| x.inv("qsmart"))
+        .gui("The units of the vasculature sphere radius and the Frangi scales"),
+        d("inversion.qsmart.vasc_sphere_radius", Inversion, "Vasc Radius", "Bottom-hat sphere radius for vasculature detection, in the vessel size units", Int).flag("--qsmart-vasc-sphere-radius").parent("inversion.algorithm")
+        .when(|x| x.inv("qsmart")).full("Vasculature Sphere Radius"),
+        d("inversion.qsmart.frangi_scale_min", Inversion, "Frangi Min", "Frangi minimum vessel radius, in the vessel size units", Float).flag("--qsmart-frangi-scale-min").parent("inversion.algorithm")
+        .when(|x| x.inv("qsmart")).full("Frangi Minimum Scale"),
+        d("inversion.qsmart.frangi_scale_max", Inversion, "Frangi Max", "Frangi maximum vessel radius, in the vessel size units", Float).flag("--qsmart-frangi-scale-max").parent("inversion.algorithm")
+        .when(|x| x.inv("qsmart")).full("Frangi Maximum Scale"),
+        d("inversion.qsmart.frangi_scale_ratio", Inversion, "Frangi Step", "Frangi scale step, in the vessel size units", Float).flag("--qsmart-frangi-scale-ratio").parent("inversion.algorithm")
+        .when(|x| x.inv("qsmart")).full("Frangi Scale Step"),
         d("inversion.qsmart.frangi_c", Inversion, "Frangi C", "Frangi C noise threshold", Float).flag("--qsmart-frangi-c").parent("inversion.algorithm")
         .when(|x| x.inv("qsmart")),
         d("inversion.ndi.tau", Inversion, "Tau", "Gradient-descent step size", Float).flag("--ndi-tau").parent("inversion.algorithm")

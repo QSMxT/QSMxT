@@ -208,6 +208,8 @@ pub fn fmap_key(key: &crate::bids::entities::AcquisitionKey) -> crate::bids::ent
 pub const FMAP_SUFFIXES: [&str; 2] = ["fieldmap", "magnitude"];
 /// The same field in ppm, the unit the inversions take (a workflow intermediate).
 pub fn total_fieldmap_ppm() -> Tail { Tail::new("fieldmap").with("desc", "totalppm") }
+/// QSMART's echo-fit reliability map, kept beside the total field (a workflow intermediate).
+pub fn echofit_reliability_mask() -> Tail { mask_desc("echofit") }
 /// A susceptibility map before referencing (a workflow intermediate).
 pub fn unreferenced_chimap() -> Tail { chimap_desc("unreferenced") }
 
@@ -219,6 +221,7 @@ pub fn unreferenced_chimap() -> Tail { chimap_desc("unreferenced") }
 pub fn qsmart_intermediate(name: &str) -> Option<Tail> {
     use qsm_core::pipeline::qsmart::outputs;
     Some(match name {
+        crate::stages::qsmart::VESSEL_MAGNITUDE => magnitude().with("desc", "vessels"),
         outputs::VESSEL_MASK => mask_desc("vessels"),
         outputs::LOCAL_FIELD_STAGE1 => Tail::new("localfield").with("desc", "stage1"),
         outputs::CHI_STAGE1 => chimap_desc("stage1"),

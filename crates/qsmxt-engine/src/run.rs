@@ -941,6 +941,11 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             self.put(Item::RobustFitReport, Data::Json(report))?;
             outputs.push(Item::RobustFitReport);
         }
+        // QSMART's echo fit's reliability map, which QSMART reconstructs inside.
+        if let Some(reliability) = &field.reliability {
+            self.put(Item::FieldReliability, Data::Mask(reliability))?;
+            outputs.push(Item::FieldReliability);
+        }
         self.complete(Done {
             step: "unwrap", algorithm: Some(&algorithm), params: &params, outcome: None, key: &key, outputs: &outputs,
         }, "Phase unwrapping")
@@ -1083,13 +1088,40 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let field = self.store.real(&Item::FieldPpm)?;
         let mask_item = self.pass_mask(pass);
         let mask = self.store.mask(&mask_item)?;
-        // The combined magnitude drives vasculature detection.
-        let magnitude = self.combined_magnitude()?;
-        // QSMART's reliability map R_0 comes from its own echo fit (#413), which QSMxT does not
-        // run yet: every voxel counts as reliable.
+        // QSMART's echo fit's reliability map, when the field came from it: both stages run
+        // inside it.
+        let reliability = if self.config.field_mapping.b0_estimation == crate::enums::B0Estimation::QsmartEchofit {
+            Some(self.store.mask(&Item::FieldReliability)?)
+        } else {
+            None
+        };
+        // The magnitude vessels are detected on (and MEDI's edge weighting): every echo's, for
+        // QSMART's own, or the combined one.
+        let magnitude = match self.config.inversion.qsmart.vessel_magnitude {
+            crate::enums::QsmartVesselMagnitude::MeanN4 => {
+                // The mean is over every echo: a run with magnitude must have each echo's. A run
+                // without any detects vessels on a uniform magnitude.
+                let n = self.n_echoes();
+                let items: Vec<Item> = (1..=n).map(|e| self.echo_magnitude(e)).collect();
+                let missing: Vec<usize> = (1..=n).filter(|&e| !self.store.has(&items[e - 1])).collect();
+                if !missing.is_empty() && missing.len() < n {
+                    let list = missing.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
+                    return Err(crate::EngineError::Config(format!(
+                        "qsmart: no magnitude for echo {list} of {n}: QSMART's vessel magnitude is the \
+                         mean over every echo. Supply every echo's magnitude, or use \
+                         --qsmart-vessel-magnitude combined")).into());
+                }
+                let mut echoes = Vec::with_capacity(n);
+                for item in items.iter().filter(|_| missing.is_empty()) {
+                    echoes.push(self.store.real(item)?);
+                }
+                stages::qsmart::Magnitude::Echoes(echoes)
+            }
+            crate::enums::QsmartVesselMagnitude::Combined => stages::qsmart::Magnitude::Combined(self.combined_magnitude()?),
+        };
         let stages::qsmart::Qsmart { chi, intermediates } = stages::qsmart::qsmart(
-            &field, &mask, None, magnitude.as_deref(), &self.meta, self.config, self.observer)?;
-        drop((field, mask, magnitude));
+            &field, &mask, reliability.as_deref(), magnitude, &self.meta, self.config, self.observer)?;
+        drop((field, mask, reliability));
         self.put(Item::RawChi(pass), Data::Real(&chi))?;
         let mut outputs = vec![Item::RawChi(pass)];
         for (intermediate, volume) in &intermediates {
@@ -2058,6 +2090,8 @@ pub(crate) mod tests {
     /// Every step a dry run of `config` on the scan in `store` would compute, with what it would
     /// record reading: computing nothing.
     fn dry_recorded(config: &PipelineConfig, facts: &ScanFacts, store: &MemoryStore) -> (Plan, Vec<(String, Vec<Item>)>) {
+        // As every entry point takes it ([`PipelineConfig::normalised`]).
+        let config = &config.normalised().0;
         let plan = crate::plan::plan(config, facts);
         let mut recorder = Recorder::new(store.shadow());
         dry_steps(&plan, config, facts, &mut recorder).unwrap();
@@ -2892,6 +2926,24 @@ pub(crate) mod tests {
             let again = expect_then_run(&config, &facts, &mut store);
             assert!(again.iter().all(|(_, s)| matches!(s, ExpectedState::Cached | ExpectedState::Skipped)), "{again:?}");
         }
+    }
+
+    /// QSMART's vessel magnitude is the mean over every echo: a run missing one echo's magnitude
+    /// is refused, naming it, rather than averaging the others.
+    #[test]
+    fn qsmart_refuses_a_missing_echo_magnitude() {
+        let (facts, mut store) = phantom();
+        let mut config = config();
+        config.inversion.algorithm = QsmAlgorithm::Qsmart;
+        let plan = crate::plan::plan(&config, &facts);
+        run(&plan, &config, &facts, &mut store, &mut ()).unwrap();
+        // Echo 2's magnitude gone after the field map was made, and QSMART to run again.
+        store.take(&Item::AcquiredMagnitude(2));
+        store.take(&Item::Magnitude(2));
+        config.inversion.qsmart.vasc_sphere_radius += 1;
+        let plan = crate::plan::plan(&config, &facts);
+        let e = run(&plan, &config, &facts, &mut store, &mut ()).unwrap_err().to_string();
+        assert!(e.contains("no magnitude for echo 2 of") && e.contains("--qsmart-vessel-magnitude combined"), "{e}");
     }
 
     /// SynthSeg in memory. Minutes in a debug build, so run with `--ignored`; skipped where the

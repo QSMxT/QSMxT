@@ -158,8 +158,17 @@ fn command_for(config: &PipelineConfig) -> String {
     emit_f64_arr3(&mut parts, "--phase-offset-sigma-mm", &config.field_mapping.phase_offset_sigma_mm, &d.field_mapping.phase_offset_sigma_mm);
     emit_f64_arr3(&mut parts, "--coil-combination-sigma", &config.field_mapping.coil_combination_sigma, &d.field_mapping.coil_combination_sigma);
     if config.field_mapping.bipolar_correction { parts.push("--bipolar-correction".into()); }
-    emit_enum(&mut parts, "--unwrapping-algorithm", &config.field_mapping.unwrapping_algorithm, &d.field_mapping.unwrapping_algorithm);
-    emit_enum(&mut parts, "--laplacian-solver", &config.field_mapping.laplacian_solver, &d.field_mapping.laplacian_solver);
+    // A general default the user chose in place of QSMART's (`FieldMappingConfig::unwrapping_chosen`
+    // and its siblings, kept by normalising only where they decide that) is said, which keeps it.
+    // (Read after pruning: with QSM off the inversion is no longer QSMART, and there is nothing
+    // to keep.)
+    let fm = &config.field_mapping;
+    let qsmart = config.inversion.algorithm == QsmAlgorithm::Qsmart;
+    let qsmart_inputs = qsmart || fm.b0_estimation == B0Estimation::QsmartEchofit;
+    emit_chosen(&mut parts, "--unwrapping-algorithm", &fm.unwrapping_algorithm, &d.field_mapping.unwrapping_algorithm,
+                fm.unwrapping_chosen && qsmart_inputs);
+    emit_chosen(&mut parts, "--laplacian-solver", &fm.laplacian_solver, &d.field_mapping.laplacian_solver,
+                fm.laplacian_solver_chosen && qsmart_inputs);
     if config.field_mapping.laplacian_solver == LaplacianSolver::Fft {
         let pad = config.field_mapping.laplacian_fft_pad;
         if pad != d.field_mapping.laplacian_fft_pad {
@@ -191,13 +200,22 @@ fn command_for(config: &PipelineConfig) -> String {
         emit_f64(&mut parts, "--registration-translation-step-mm", r.translation_step_mm, rd.translation_step_mm);
         emit_f64(&mut parts, "--registration-min-overlap", r.min_overlap, rd.min_overlap);
     }
-    emit_enum(&mut parts, "--b0-estimation", &config.field_mapping.b0_estimation, &d.field_mapping.b0_estimation);
+    emit_chosen(&mut parts, "--b0-estimation", &config.field_mapping.b0_estimation, &d.field_mapping.b0_estimation,
+                config.field_mapping.b0_estimation_chosen && config.inversion.algorithm == QsmAlgorithm::Qsmart);
+    if config.field_mapping.b0_estimation == B0Estimation::QsmartEchofit {
+        let (f, fd) = (&config.field_mapping, &d.field_mapping);
+        emit_enum(&mut parts, "--qsmart-fit-threshold-mode", &f.qsmart_fit_threshold_mode, &fd.qsmart_fit_threshold_mode);
+        match f.qsmart_fit_threshold_mode {
+            QsmartFitThresholdMode::Percentile => emit_f64(&mut parts, "--qsmart-fit-percentile", f.qsmart_fit_percentile, fd.qsmart_fit_percentile),
+            QsmartFitThresholdMode::Absolute => emit_f64(&mut parts, "--qsmart-fit-threshold", f.qsmart_fit_threshold, fd.qsmart_fit_threshold),
+        }
+    }
     emit_enum(&mut parts, "--b0-weight-type", &config.field_mapping.b0_weight_type, &d.field_mapping.b0_weight_type);
     if config.field_mapping.b0_weight_type == B0WeightType::AssumedDecay {
         emit_f64(&mut parts, "--b0-weight-assumed-t2star", config.field_mapping.b0_weight_assumed_t2star_ms, d.field_mapping.b0_weight_assumed_t2star_ms);
     }
     // The fits' shared settings, and the robust fit's own.
-    if config.field_mapping.b0_estimation != B0Estimation::WeightedAvg {
+    if matches!(config.field_mapping.b0_estimation, B0Estimation::LinearFit | B0Estimation::RobustFit) {
         let (l, ld) = (&config.field_mapping.linear_fit, &d.field_mapping.linear_fit);
         if l.estimate_offset != ld.estimate_offset {
             parts.push(format!("--linear-fit-estimate-offset {}", l.estimate_offset));
@@ -580,6 +598,8 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
             emit_f64(parts, "--qsmart-frangi-scale-max", q.frangi_scale_max, dq.frangi_scale_max);
             emit_f64(parts, "--qsmart-frangi-scale-ratio", q.frangi_scale_ratio, dq.frangi_scale_ratio);
             emit_f64(parts, "--qsmart-frangi-c", q.frangi_c, dq.frangi_c);
+            emit_enum(parts, "--qsmart-vessel-units", &q.vessel_size_units, &dq.vessel_size_units);
+            emit_enum(parts, "--qsmart-vessel-magnitude", &q.vessel_magnitude, &dq.vessel_magnitude);
         }
         QsmAlgorithm::Ndi => {
             emit_f64(parts, "--ndi-tau", config.inversion.ndi.tau, d.inversion.ndi.tau);
@@ -679,6 +699,10 @@ fn emit_i32(parts: &mut Vec<String>, flag: &str, val: i32, default: i32) {
 }
 fn emit_enum<T: PartialEq + std::fmt::Display>(parts: &mut Vec<String>, flag: &str, val: &T, default: &T) {
     if val != default { parts.push(format!("{} {}", flag, val)); }
+}
+/// [`emit_enum`], and the default too when the user chose it.
+fn emit_chosen<T: PartialEq + std::fmt::Display>(parts: &mut Vec<String>, flag: &str, val: &T, default: &T, chosen: bool) {
+    if val != default || chosen { parts.push(format!("{} {}", flag, val)); }
 }
 fn emit_f64_arr3(parts: &mut Vec<String>, flag: &str, val: &[f64; 3], default: &[f64; 3]) {
     if val != default { parts.push(format!("{} {} {} {}", flag, val[0], val[1], val[2])); }
@@ -1023,6 +1047,46 @@ mod tests {
         assert!(cmd.contains("--mask-preset robust-threshold") && !cmd.contains("--mask-preset bet"), "{cmd}");
         c.inversion.algorithm = QsmAlgorithm::Rts;
         assert!(!generate_command(&c).contains("--mask"), "{}", generate_command(&c));
+    }
+
+    /// Under QSMART the command says the field mapping it takes, and keeps a general default the
+    /// user chose in its place; QSMART's vessel options are said when changed.
+    #[test]
+    fn qsmart_field_mapping_and_vessel_options_are_in_the_command() {
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = QsmAlgorithm::Qsmart;
+        let cmd = generate_command(&c);
+        for flag in ["--unwrapping-algorithm laplacian", "--laplacian-solver mirror", "--b0-estimation qsmart-echofit"] {
+            assert!(cmd.contains(flag), "{cmd}");
+        }
+        assert!(!cmd.contains("--qsmart-fit-threshold") && !cmd.contains("--qsmart-vessel"), "{cmd}");
+        c.field_mapping.qsmart_fit_percentile = 95.0;
+        c.inversion.qsmart.vessel_magnitude = QsmartVesselMagnitude::Combined;
+        c.inversion.qsmart.vessel_size_units = VesselSizeUnits::Mm;
+        let cmd = generate_command(&c);
+        for flag in ["--qsmart-fit-percentile 95", "--qsmart-vessel-magnitude combined", "--qsmart-vessel-units mm"] {
+            assert!(cmd.contains(flag), "{cmd}");
+        }
+        assert!(!cmd.contains("--qsmart-fit-threshold"), "{cmd}");
+        // A fixed threshold: the mode, and the threshold when changed; not the percentile.
+        c.field_mapping.qsmart_fit_threshold_mode = QsmartFitThresholdMode::Absolute;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--qsmart-fit-threshold-mode absolute") && !cmd.contains("--qsmart-fit-percentile")
+                && !cmd.contains("--qsmart-fit-threshold "), "{cmd}");
+        c.field_mapping.qsmart_fit_threshold = 30.0;
+        assert!(generate_command(&c).contains("--qsmart-fit-threshold 30"), "{}", generate_command(&c));
+        // Chosen general defaults are said, which keeps them.
+        c.field_mapping.laplacian_solver_chosen = true;
+        c.field_mapping.b0_estimation_chosen = true;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--laplacian-solver dct") && cmd.contains("--b0-estimation weighted-avg"), "{cmd}");
+        c.field_mapping.unwrapping_chosen = true;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--unwrapping-algorithm romeo") && !cmd.contains("--laplacian-solver"), "{cmd}");
+        // Elsewhere the general defaults go unsaid, chosen or not.
+        c.inversion.algorithm = QsmAlgorithm::Rts;
+        let cmd = generate_command(&c);
+        assert!(!cmd.contains("--unwrapping-algorithm") && !cmd.contains("--b0-estimation"), "{cmd}");
     }
 
     #[test]

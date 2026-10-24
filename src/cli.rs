@@ -710,7 +710,7 @@ pub struct QsmartParamArgs {
     /// Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6)
     #[arg(long, value_name = "MM")]
     pub qsmart_ilsqr_pad_mm: Option<f64>,
-    /// QSMART vasculature detection sphere radius
+    /// QSMART vasculature detection sphere radius, in --qsmart-vessel-units (default 8)
     #[arg(long)]
     pub qsmart_vasc_sphere_radius: Option<i32>,
     /// QSMART inner dipole inversion algorithm (default: ilsqr)
@@ -734,18 +734,28 @@ pub struct QsmartParamArgs {
     /// QSMART SDF curvature constant
     #[arg(long)]
     pub qsmart_sdf_curv_constant: Option<f64>,
-    /// QSMART Frangi min vessel radius (mm)
+    /// QSMART Frangi min vessel radius, in --qsmart-vessel-units (default 0.5)
     #[arg(long)]
     pub qsmart_frangi_scale_min: Option<f64>,
-    /// QSMART Frangi max vessel radius (mm)
+    /// QSMART Frangi max vessel radius, in --qsmart-vessel-units (default 6)
     #[arg(long)]
     pub qsmart_frangi_scale_max: Option<f64>,
-    /// QSMART Frangi scale step (mm)
+    /// QSMART Frangi scale step, in --qsmart-vessel-units (default 0.5)
     #[arg(long)]
     pub qsmart_frangi_scale_ratio: Option<f64>,
     /// QSMART Frangi C noise threshold
     #[arg(long)]
     pub qsmart_frangi_c: Option<f64>,
+    /// Units of QSMART's vessel sizes (--qsmart-vasc-sphere-radius and the Frangi scales):
+    /// `voxels` (default, as QSMART gives them) or `mm` (converted to voxels with the mean voxel
+    /// size)
+    #[arg(long, value_enum)]
+    pub qsmart_vessel_units: Option<VesselSizeUnitsArg>,
+    /// The magnitude QSMART detects vessels on: `mean-n4` (the mean over echoes, N4
+    /// bias-corrected, as QSMART prepares it; default) or `combined` (the root sum of squares over
+    /// echoes, inhomogeneity-corrected unless --no-inhomogeneity-correction)
+    #[arg(long, value_enum)]
+    pub qsmart_vessel_magnitude: Option<QsmartVesselMagnitudeArg>,
 }
 
 /// Retrospective motion correction: rigid co-registration of every echo onto a reference echo
@@ -1118,7 +1128,8 @@ pub struct PipelineArgs {
     #[arg(long)]
     pub cosmos_max_iter: Option<usize>,
 
-    /// Unwrapping algorithm
+    /// Unwrapping algorithm (default: romeo; laplacian with --qsm-algorithm qsmart or
+    /// --b0-estimation qsmart-echofit)
     #[arg(long, value_enum)]
     pub unwrapping_algorithm: Option<UnwrapAlgorithmArg>,
 
@@ -1150,9 +1161,28 @@ pub struct PipelineArgs {
     #[arg(long)]
     pub bipolar_correction: bool,
 
-    /// B0 field estimation method
+    /// B0 field estimation method (default: weighted-avg; qsmart-echofit with --qsm-algorithm
+    /// qsmart and Laplacian unwrapping)
     #[arg(long, value_enum)]
     pub b0_estimation: Option<B0EstimationArg>,
+
+    /// `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is left out of
+    /// QSMART's reconstruction is set: a percentile of the blurred residual over the volume
+    /// (`--qsmart-fit-percentile`; default), or a fixed residual (`--qsmart-fit-threshold`).
+    /// Without it, giving one of those two selects its mode
+    #[arg(long, value_enum)]
+    pub qsmart_fit_threshold_mode: Option<QsmartFitThresholdModeArg>,
+
+    /// `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100],
+    /// above which a voxel is left out of QSMART's reconstruction (default 99)
+    #[arg(long)]
+    pub qsmart_fit_percentile: Option<f64>,
+
+    /// `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is left
+    /// out of QSMART's reconstruction, instead of a percentile (40 when the mode is `absolute`
+    /// and none is given)
+    #[arg(long)]
+    pub qsmart_fit_threshold: Option<f64>,
 
     /// B0 weighted averaging weight type. `assumed-decay` gives each echo's phase a fixed weight
     /// TE·exp(−TE/T2*) computed from the echo times and an assumed T2*
@@ -1169,8 +1199,9 @@ pub struct PipelineArgs {
     pub b0_weight_assumed_t2star: Option<f64>,
 
     /// Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares,
-    /// Neumann/DCT solve; default) or `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a
-    /// zero-padded volume)
+    /// Neumann/DCT solve; default), `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a
+    /// zero-padded volume) or `mirror` (the same on the volume mirrored along each axis, as
+    /// QSMART unwraps; the default with --qsm-algorithm qsmart)
     #[arg(long, value_enum, alias = "laplacian-kernel")]
     pub laplacian_solver: Option<LaplacianSolverArg>,
 
@@ -2016,9 +2047,27 @@ pub struct FieldmapCommonArgs {
     /// --tes / --b0 override values from this file when both are present.
     #[arg(long)]
     pub params: Option<PathBuf>,
-    /// B0 field estimation method
+    /// B0 field estimation method (qsmart-echofit: `fieldmap laplacian` only)
     #[arg(long, value_enum, default_value = "weighted-avg")]
     pub b0_estimation: B0EstimationArg,
+    /// `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is marked
+    /// unreliable is set: a percentile of the blurred residual over the volume
+    /// (`--qsmart-fit-percentile`; default), or a fixed residual (`--qsmart-fit-threshold`).
+    /// Without it, giving one of those two selects its mode
+    #[arg(long, value_enum)]
+    pub qsmart_fit_threshold_mode: Option<QsmartFitThresholdModeArg>,
+    /// `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100],
+    /// above which a voxel is marked unreliable (default 99)
+    #[arg(long)]
+    pub qsmart_fit_percentile: Option<f64>,
+    /// `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is marked
+    /// unreliable, instead of a percentile (40 when the mode is `absolute` and none is given)
+    #[arg(long)]
+    pub qsmart_fit_threshold: Option<f64>,
+    /// `--b0-estimation qsmart-echofit`: also save its reliability map (1 = reliable) here, for
+    /// `qsmxt qsmart --reliability`
+    #[arg(long)]
+    pub reliability_output: Option<PathBuf>,
     /// B0 weighted-averaging weight type. `assumed-decay` gives each echo's phase a fixed weight
     /// TE·exp(−TE/T2*) from the echo times and an assumed T2* (no T2* map, no magnitude; Wang et
     /// al. 2022). `phase-snr` is generally preferable with magnitude
@@ -3290,9 +3339,15 @@ pub struct QsmartArgs {
     /// Echo time in seconds
     #[arg(long)]
     pub echo_time: f64,
-    /// Combined magnitude NIfTI (optional; drives vasculature detection)
+    /// Magnitude NIfTI (optional; drives vasculature detection). With --qsmart-vessel-magnitude
+    /// mean-n4 (the default) every echo's magnitude (4D), averaged and N4 bias-corrected; with
+    /// `combined`, a combined magnitude (3D), used as it is
     #[arg(long)]
     pub magnitude: Option<PathBuf>,
+    /// QSMART's reliability map from its echo fit (`qsmxt fieldmap laplacian --b0-estimation
+    /// qsmart-echofit --reliability-output`): both stages are reconstructed inside it
+    #[arg(long)]
+    pub reliability: Option<PathBuf>,
     #[command(flatten)]
     pub qsmart_params: QsmartParamArgs,
 }
@@ -3611,6 +3666,8 @@ pub enum LaplacianSolverArg {
     Dct,
     #[value(alias = "sti")]
     Fft,
+    /// FFT solve on the volume mirrored along each axis, as QSMART unwraps
+    Mirror,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
@@ -3619,6 +3676,25 @@ pub enum B0EstimationArg {
     /// Motion-robust (IRLS) linear fit: down-weights echoes that depart from a straight line in
     /// TE, voxel by voxel. Needs 4 echoes (3 with --linear-fit-estimate-offset false)
     RobustFit,
+    /// QSMART's echo fit: each echo unwrapped over the whole volume, then a magnitude-weighted fit
+    /// of phase vs TE through the origin, which also marks the voxels QSMART leaves out. Needs
+    /// Laplacian unwrapping
+    QsmartEchofit,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum QsmartFitThresholdModeArg {
+    Percentile, Absolute,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum VesselSizeUnitsArg {
+    Voxels, Mm,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum QsmartVesselMagnitudeArg {
+    MeanN4, Combined,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

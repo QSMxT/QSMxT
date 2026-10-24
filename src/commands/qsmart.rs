@@ -6,7 +6,7 @@
 
 use log::info;
 
-use super::common::{load_mask, load_nifti, nifti_grid, save_nifti};
+use super::common::{load_mask, load_nifti, load_nifti_4d, nifti_grid, save_nifti};
 use crate::cli::QsmartArgs;
 use crate::error::QsmxtError;
 use crate::pipeline::config;
@@ -24,24 +24,24 @@ pub fn execute(args: QsmartArgs) -> crate::Result<()> {
     let mut cfg = config::PipelineConfig::default();
     cfg.inversion.algorithm = config::QsmAlgorithm::Qsmart;
     config::apply_qsmart_overrides(&mut cfg, &args.qsmart_params);
-    let (_, _, mut inv_config, _) = config::to_pipeline_stages(&cfg);
-
-    // Vasculature sphere radius + Frangi vessel scales are configured in mm; convert to voxels
-    // using the dataset voxel size (matches the pipeline runner).
-    {
-        let (vsx, vsy, vsz) = voxel_size;
-        let avg = (vsx + vsy + vsz) / 3.0;
-        let q = &mut inv_config.qsmart;
-        q.vasc_sphere_radius = (((q.vasc_sphere_radius as f64) / avg).round() as i32).max(2);
-        q.frangi_scale_range = [q.frangi_scale_range[0] / avg, q.frangi_scale_range[1] / avg];
-        q.frangi_scale_ratio = (q.frangi_scale_ratio / avg).max(0.1);
-    }
+    // The vessel sizes in voxels, converted from mm when given in mm, as `qsmxt run` does.
+    let inv_config = qsmxt_engine::stages::qsmart::vessel_sizes_in_voxels(&cfg, voxel_size);
 
     let scan_meta =
         config::to_scan_metadata(dims, voxel_size, &[args.echo_time], args.field_strength, b0, Some(field.affine));
 
-    let magnitude: Option<Vec<f64>> = match &args.magnitude {
-        Some(p) => Some(load_nifti(p)?.data),
+    let magnitude: Option<Vec<f64>> = match (&args.magnitude, cfg.inversion.qsmart.vessel_magnitude) {
+        (Some(p), config::QsmartVesselMagnitude::MeanN4) => {
+            let echoes = load_nifti_4d(p)?.echoes;
+            let refs: Vec<&[f64]> = echoes.iter().map(|e| e.as_slice()).collect();
+            Some(qsm_core::utils::qsmart_vessel_magnitude(&refs, &scan_meta.grid())
+                .map_err(|e| QsmxtError::Config(format!("--magnitude: {e}")))?)
+        }
+        (Some(p), config::QsmartVesselMagnitude::Combined) => Some(load_nifti(p)?.data),
+        (None, _) => None,
+    };
+    let reliability = match &args.reliability {
+        Some(p) => Some(load_mask(p)?.0),
         None => None,
     };
 
@@ -49,9 +49,7 @@ pub fn execute(args: QsmartArgs) -> crate::Result<()> {
     let chi = qsm_core::pipeline::run_qsmart(
         &field.data,
         &mask,
-        // QSMART's reliability map R_0 comes from its own echo fit, which this command does not
-        // run: every voxel counts as reliable.
-        None,
+        reliability.as_deref(),
         magnitude.as_deref(),
         &scan_meta,
         &inv_config,
