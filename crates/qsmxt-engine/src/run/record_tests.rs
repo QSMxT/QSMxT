@@ -226,3 +226,17 @@ fn a_datasets_methods_text_comes_from_its_merged_record() {
     let none = methods_for_dataset(&config, &merge(&[computed.clone(), computed]), "qsmxt").to_markdown();
     assert!(!none.contains("BIDS derivatives") && none.contains("A brain mask was generated"), "{none}");
 }
+
+/// MEDI+0's CSF term is recorded as applied on 5 echoes and not on 2, and only for MEDI with the
+/// term on.
+#[test]
+fn medi_csf_is_recorded_by_echo_count() {
+    let mut c = config();
+    assert!(super::medi_csf_decision(&c, 5).is_none(), "TKD has no CSF term");
+    c.inversion.algorithm = crate::QsmAlgorithm::Medi;
+    assert_eq!(super::medi_csf_decision(&c, 5).unwrap().choice, Choice::Applied);
+    assert_eq!(super::medi_csf_decision(&c, 2).unwrap().choice, Choice::NotApplied);
+    assert_eq!(super::medi_csf_decision(&c, 2).unwrap().topic, Topic::MediCsf);
+    c.inversion.medi.csf = false;
+    assert!(super::medi_csf_decision(&c, 5).is_none());
+}

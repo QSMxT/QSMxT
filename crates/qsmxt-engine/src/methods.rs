@@ -612,21 +612,28 @@ const MEDI_MSMV_FIELDS: [&str; 4] = ["msmv", "msmv_maxk", "msmv_vessel_radius", 
 const MEDI_CSF_FIELDS: [&str; 4] = ["csf", "lambda_csf", "csf_r2s_threshold", "csf_erode"];
 
 /// MEDI+0's sentence, after the inversion's: "MEDI's zero reference to the ventricular CSF
-/// (MEDI+0; Liu et al., 2018) was applied to runs of at least three echoes.", with its changed
-/// settings; nothing with the CSF term off or another inversion. QSM.rs runs MEDI without the
-/// term on fewer than three echoes (the CSF is found from R2*), so the condition is said.
-fn describe_medi_csf(config: &PipelineConfig, doc: &mut Draft) {
+/// (MEDI+0; Liu et al., 2018) was applied.", with its changed settings, when the runs applied it.
+/// QSM.rs runs MEDI without the term on fewer than three echoes (the CSF is found from R2*; the
+/// plan warns), and each run records which it did ([`Topic::MediCsf`]): nothing is said when no
+/// run applied it, and where the runs differ, or nothing is known of them, the configuration's
+/// wording says the condition ("to runs of at least three echoes"). Nothing with the CSF term off
+/// or another inversion.
+fn describe_medi_csf(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
     let (m, d) = (&config.inversion.medi, MediConfig::default());
     if config.inversion.algorithm != QsmAlgorithm::Medi || !m.csf {
         return;
     }
+    if ran.only(Topic::MediCsf, &[Choice::NotApplied]) {
+        return;
+    }
+    let scope = if ran.only(Topic::MediCsf, &[Choice::Applied]) { "" } else { " to runs of at least three echoes" };
     doc.cite(&CITE_MEDI0);
     let mut changed = Changed::default();
     changed.add(differs(m.lambda_csf, d.lambda_csf), || format!("λ_CSF = {}", m.lambda_csf));
     changed.add(differs(m.csf_r2s_threshold, d.csf_r2s_threshold), || format!("CSF below R2* = {} Hz", m.csf_r2s_threshold));
     changed.add(m.csf_erode != d.csf_erode, || "without eroding the mask first".to_string());
     doc.say(&both(Stage::Inversion), format!(
-        "MEDI's zero reference to the ventricular CSF (MEDI+0; {}{}) was applied to runs of at least three echoes.",
+        "MEDI's zero reference to the ventricular CSF (MEDI+0; {}{}) was applied{scope}.",
         cite_inline(&CITE_MEDI0), changed.semi()));
 }
 
@@ -1016,7 +1023,7 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                 doc.say(&both(Stage::Inversion), format!("Dipole inversion was performed{} using {} ({}){msmv}{}.",
                     target, name, cite_inline(cite),
                     if msmv.is_empty() { changes.with() } else { changes.comma_with() }));
-                describe_medi_csf(config, &mut doc);
+                describe_medi_csf(config, ran, &mut doc);
                 // Deep-learning tiling (memory-bounded, approximate) is noted when enabled — only
                 // for the tileable networks (a stray --tile-size on a classical algorithm is ignored).
                 if config.inversion.algorithm.tileable() {

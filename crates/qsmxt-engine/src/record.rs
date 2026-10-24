@@ -67,6 +67,8 @@ pub enum Topic {
     AnalysisMaps,
     /// An output left where it was when the others returned to the acquired grid.
     OutputGrid,
+    /// Whether MEDI's CSF zero reference (MEDI+0) was applied: it needs at least three echoes.
+    MediCsf,
 }
 
 /// What was decided.
@@ -115,6 +117,8 @@ pub enum Choice {
     Kept,
     /// Summarised ([`Topic::AnalysisMaps`]).
     Summarised,
+    /// Applied ([`Topic::MediCsf`]).
+    Applied,
 }
 
 /// Something a run decided while it ran.
