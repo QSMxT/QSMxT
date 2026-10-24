@@ -367,6 +367,17 @@ fn method_problem(f: &ScanFacts, config: &PipelineConfig, alg: QsmAlgorithm) -> 
     if weighted && !f.has_magnitude {
         return Some("needs magnitude images (its data weight), and this run has none".into());
     }
+    // The echo time the method converts the field to radians at has to resolve from this scan's
+    // echo times (the echo spacing needs them in order). TGV on one echo starts from that echo's
+    // wrapped phase, at its own echo time.
+    if let Some(te) = crate::stages::inversion::echo_time_choice(config, alg) {
+        if !(alg == QsmAlgorithm::Tgv && f.n_echoes == 1) {
+            if let Err(e) = qsm_core::EchoTime::from(te).resolve(&f.echo_times) {
+                let flag = if alg == QsmAlgorithm::FansiTgv { "fansi".to_string() } else { alg.to_string() };
+                return Some(format!("cannot run on this scan with --{flag}-te {te}: {e}"));
+            }
+        }
+    }
     match alg {
         QsmAlgorithm::Medi | QsmAlgorithm::Tfi => {
             let method = if alg == QsmAlgorithm::Medi { "MEDI" } else { "TFI" };
@@ -972,6 +983,40 @@ mod tests {
         assert!(out.errors.len() == 1 && out.errors[0].contains("--qsm-algorithm star")
             && out.errors[0].contains("echo spacing"), "{out:?}");
         assert_eq!(out.problems[0].setting, Some("inversion.algorithm"));
+    }
+
+    /// A method's echo time has to resolve from the scan's echo times; TGV on one echo starts from
+    /// that echo's wrapped phase, so its choice is not checked there.
+    #[test]
+    fn the_echo_time_is_checked_against_the_scan() {
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = QsmAlgorithm::Medi;
+        assert!(check(&run(&EVEN, true), &c).errors.is_empty());
+        // The echo spacing of echoes out of order is not a time.
+        let out = check(&run(&[0.02, 0.01], true), &c);
+        assert!(out.errors.len() == 1 && out.errors[0].contains("--medi-te spacing")
+            && out.errors[0].contains("echo spacing"), "{out:?}");
+        // One echo's spacing is its echo time (MEDI toolbox).
+        assert!(check(&run(&[0.02], true), &c).errors.is_empty());
+        c.inversion.algorithm = QsmAlgorithm::FansiTgv;
+        c.inversion.fansi.te = crate::EchoTimeChoice::Seconds(0.0);
+        let out = check(&run(&EVEN, true), &c);
+        assert!(out.errors.len() == 1 && out.errors[0].contains("--fansi-te 0"), "{out:?}");
+        c.inversion.algorithm = QsmAlgorithm::Tgv;
+        c.inversion.tgv.te = crate::EchoTimeChoice::Spacing;
+        assert!(check(&run(&[0.02, 0.01], false), &c).errors.len() == 1);
+        assert!(check(&run(&[0.02], false), &c).errors.is_empty(), "one echo is at its own echo time");
+    }
+
+    /// WH-QSM needs magnitude images only for a magnitude data weight.
+    #[test]
+    fn whqsm_needs_magnitude_only_for_a_magnitude_weight() {
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = QsmAlgorithm::Whqsm;
+        assert!(check(&run(&EVEN, false), &c).errors.is_empty());
+        c.inversion.whqsm.weight = crate::WhqsmWeight::MaxNormalised;
+        let out = check(&run(&EVEN, false), &c);
+        assert!(out.errors.len() == 1 && out.errors[0].contains("needs magnitude"), "{out:?}");
     }
 
     /// QSMART's inner inversion gets the same checks as the inversion; inner MEDI or TFI is

@@ -172,6 +172,12 @@ pub struct RtsParamArgs {
     /// RTS LSMR iterations
     #[arg(long)]
     pub rts_lsmr_iter: Option<usize>,
+    /// RTS: rho is raised when the primal residual falls by less than this factor (tau)
+    #[arg(long)]
+    pub rts_tau: Option<f64>,
+    /// RTS: the factor rho is raised by (gamma)
+    #[arg(long)]
+    pub rts_gamma: Option<f64>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -179,9 +185,9 @@ pub struct TvParamArgs {
     /// TV lambda parameter
     #[arg(long)]
     pub tv_lambda: Option<f64>,
-    /// TV rho (ADMM penalty; default: 100 × lambda)
-    #[arg(long)]
-    pub tv_rho: Option<f64>,
+    /// TV rho (ADMM penalty), or auto for 100 × lambda (default: auto)
+    #[arg(long, value_name = "RHO", value_parser = parse_or_auto)]
+    pub tv_rho: Option<OrAuto>,
     /// TV tolerance
     #[arg(long)]
     pub tv_tol: Option<f64>,
@@ -212,17 +218,22 @@ pub struct TgvParamArgs {
     /// TGV erosions
     #[arg(long)]
     pub tgv_erosions: Option<usize>,
-    /// TGV alpha1 (first-order weight), in radians at the scan's first echo time and field
+    /// TGV alpha1 (first-order weight), in radians at the echo time (--tgv-te) and field
     /// strength (the reference's units)
     #[arg(long)]
     pub tgv_alpha1: Option<f64>,
-    /// TGV alpha0 (second-order weight), in radians at the scan's first echo time and field
+    /// TGV alpha0 (second-order weight), in radians at the echo time (--tgv-te) and field
     /// strength (the reference's units)
     #[arg(long)]
     pub tgv_alpha0: Option<f64>,
     /// TGV primal step size multiplier
     #[arg(long)]
     pub tgv_step_size: Option<f64>,
+    /// TGV: the echo time a field from several echoes is converted to phase at, and its weights
+    /// are in radians at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in
+    /// ms (default: first). A single echo is at its own
+    #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
+    pub tgv_te: Option<qsmxt_engine::EchoTimeChoice>,
 }
 
 /// Overlap-tiling for deep-learning inversions (bounded memory). Passing `--tile-size` enables
@@ -250,6 +261,9 @@ pub struct NltvParamArgs {
     /// NLTV lambda
     #[arg(long)]
     pub nltv_lambda: Option<f64>,
+    /// NLTV rho (ADMM penalty), or auto for 100 × lambda (default: auto)
+    #[arg(long, value_name = "RHO", value_parser = parse_or_auto)]
+    pub nltv_rho: Option<OrAuto>,
     /// NLTV mu (penalty parameter)
     #[arg(long)]
     pub nltv_mu: Option<f64>,
@@ -259,9 +273,16 @@ pub struct NltvParamArgs {
     /// NLTV max iterations
     #[arg(long)]
     pub nltv_max_iter: Option<usize>,
+    /// NLTV convergence tolerance of the Newton iterations of the data-term subproblem
+    #[arg(long)]
+    pub nltv_tol_newton: Option<f64>,
     /// NLTV maximum Newton iterations of the data-term subproblem
     #[arg(long)]
     pub nltv_newton_iter: Option<usize>,
+    /// NLTV: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum
+    /// (of the echo times), or a time in ms (default: first)
+    #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
+    pub nltv_te: Option<qsmxt_engine::EchoTimeChoice>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -279,6 +300,10 @@ pub struct NdiParamArgs {
     /// ndi_auto); --ndi-max-iter is then the maximum
     #[arg(long)]
     pub ndi_auto_stop: Option<bool>,
+    /// NDI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum
+    /// (of the echo times), or a time in ms (default: first)
+    #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
+    pub ndi_te: Option<qsmxt_engine::EchoTimeChoice>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -286,18 +311,20 @@ pub struct FansiParamArgs {
     /// FANSI first-order (TV/TGV) L1 penalty weight (alpha1)
     #[arg(long)]
     pub fansi_alpha1: Option<f64>,
-    /// FANSI gradient-consistency ADMM weight (mu1; default: 100 × alpha1)
-    #[arg(long)]
-    pub fansi_mu1: Option<f64>,
+    /// FANSI gradient-consistency ADMM weight (mu1), or auto for 100 × alpha1 (default: auto)
+    #[arg(long, value_name = "MU1", value_parser = parse_or_auto)]
+    pub fansi_mu1: Option<OrAuto>,
     /// FANSI fidelity-consistency ADMM weight (mu2)
     #[arg(long)]
     pub fansi_mu2: Option<f64>,
-    /// FANSI second-order L1 penalty weight (alpha0, nlTGV only; default: 2 × alpha1)
-    #[arg(long)]
-    pub fansi_alpha0: Option<f64>,
-    /// FANSI second-order consistency ADMM weight (mu0, nlTGV only; default: 2 × mu1)
-    #[arg(long)]
-    pub fansi_mu0: Option<f64>,
+    /// FANSI second-order L1 penalty weight (alpha0, nlTGV only), or auto for 2 × alpha1
+    /// (default: auto)
+    #[arg(long, value_name = "ALPHA0", value_parser = parse_or_auto)]
+    pub fansi_alpha0: Option<OrAuto>,
+    /// FANSI second-order consistency ADMM weight (mu0, nlTGV only), or auto for 2 × mu1
+    /// (default: auto)
+    #[arg(long, value_name = "MU0", value_parser = parse_or_auto)]
+    pub fansi_mu0: Option<OrAuto>,
     /// FANSI outer ADMM iterations
     #[arg(long)]
     pub fansi_max_iter: Option<usize>,
@@ -307,6 +334,10 @@ pub struct FansiParamArgs {
     /// FANSI inner Newton convergence tolerance
     #[arg(long)]
     pub fansi_tol_delta: Option<f64>,
+    /// FANSI (nlTV and nlTGV): the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum
+    /// (of the echo times), or a time in ms (default: spacing)
+    #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
+    pub fansi_te: Option<qsmxt_engine::EchoTimeChoice>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -314,9 +345,9 @@ pub struct L1qsmParamArgs {
     /// L1-QSM gradient (TV) L1 penalty weight (alpha1)
     #[arg(long)]
     pub l1qsm_alpha1: Option<f64>,
-    /// L1-QSM gradient-consistency ADMM weight (mu1; default: 100 × alpha1)
-    #[arg(long)]
-    pub l1qsm_mu1: Option<f64>,
+    /// L1-QSM gradient-consistency ADMM weight (mu1), or auto for 100 × alpha1 (default: auto)
+    #[arg(long, value_name = "MU1", value_parser = parse_or_auto)]
+    pub l1qsm_mu1: Option<OrAuto>,
     /// L1-QSM fidelity-consistency ADMM weight (mu2)
     #[arg(long)]
     pub l1qsm_mu2: Option<f64>,
@@ -335,6 +366,10 @@ pub struct L1qsmParamArgs {
     /// L1-QSM inner Newton convergence tolerance
     #[arg(long)]
     pub l1qsm_tol_delta: Option<f64>,
+    /// L1-QSM: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum
+    /// (of the echo times), or a time in ms (default: first)
+    #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
+    pub l1qsm_te: Option<qsmxt_engine::EchoTimeChoice>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -363,6 +398,15 @@ pub struct WhqsmParamArgs {
     /// WH-QSM inner Newton convergence tolerance
     #[arg(long)]
     pub whqsm_tol_delta: Option<f64>,
+    /// WH-QSM data weight: flat (1 in the mask), max-normalised (the magnitude over its
+    /// maximum) or in-vivo (min(2 × magnitude / maximum, 1)); the last two need magnitude images
+    /// (default: flat)
+    #[arg(long, value_name = "WEIGHT", value_parser = parse_whqsm_weight)]
+    pub whqsm_weight: Option<qsmxt_engine::WhqsmWeight>,
+    /// WH-QSM: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum
+    /// (of the echo times), or a time in ms (default: first)
+    #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
+    pub whqsm_te: Option<qsmxt_engine::EchoTimeChoice>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -370,9 +414,10 @@ pub struct HdqsmParamArgs {
     /// HD-QSM L2-stage TV weight (alpha_l2)
     #[arg(long)]
     pub hdqsm_alpha_l2: Option<f64>,
-    /// HD-QSM L2-stage gradient-consistency ADMM weight (mu1_l2; default: 100 × alpha_l2)
-    #[arg(long)]
-    pub hdqsm_mu1_l2: Option<f64>,
+    /// HD-QSM L2-stage gradient-consistency ADMM weight (mu1_l2), or auto for 100 × alpha_l2
+    /// (default: auto)
+    #[arg(long, value_name = "MU1_L2", value_parser = parse_or_auto)]
+    pub hdqsm_mu1_l2: Option<OrAuto>,
     /// HD-QSM fidelity consistency weight (mu2)
     #[arg(long)]
     pub hdqsm_mu2: Option<f64>,
@@ -611,6 +656,10 @@ pub struct MediParamArgs {
     /// MEDI outer tolerance
     #[arg(long)]
     pub medi_tol: Option<f64>,
+    /// MEDI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum
+    /// (of the echo times), or a time in ms (default: spacing)
+    #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
+    pub medi_te: Option<qsmxt_engine::EchoTimeChoice>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -639,6 +688,10 @@ pub struct TfiParamArgs {
     /// TFI outer tolerance
     #[arg(long)]
     pub tfi_tol: Option<f64>,
+    /// TFI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum
+    /// (of the echo times), or a time in ms (default: spacing)
+    #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
+    pub tfi_te: Option<qsmxt_engine::EchoTimeChoice>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -668,6 +721,40 @@ pub struct StarParamArgs {
 /// An echo-time choice: `first`, `last`, `spacing`, `sum`, or an echo time in milliseconds.
 pub fn parse_echo_time(s: &str) -> Result<qsmxt_engine::EchoTimeChoice, String> {
     qsmxt_engine::EchoTimeChoice::parse(s)
+}
+
+/// A setting a method can derive from its other settings: a number, or `auto` for the value it
+/// derives (TV's and NLTV's rho, FANSI's, L1-QSM's and HD-QSM's mu).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum OrAuto {
+    Auto,
+    Value(f64),
+}
+impl OrAuto {
+    /// The setting: `None` for auto.
+    pub fn value(self) -> Option<f64> {
+        match self { OrAuto::Auto => None, OrAuto::Value(v) => Some(v) }
+    }
+}
+
+/// `auto`, or a number.
+pub fn parse_or_auto(s: &str) -> Result<OrAuto, String> {
+    match s.trim() {
+        "auto" => Ok(OrAuto::Auto),
+        v => v.parse::<f64>().map(OrAuto::Value).map_err(|_| format!("expected a number or auto, got '{v}'")),
+    }
+}
+
+/// A WH-QSM data weight: `flat`, `max-normalised` or `in-vivo`.
+pub fn parse_whqsm_weight(s: &str) -> Result<qsmxt_engine::WhqsmWeight, String> {
+    qsmxt_engine::WhqsmWeight::ALL.into_iter().find(|w| w.as_str() == s.trim())
+        .ok_or_else(|| format!("expected flat, max-normalised or in-vivo, got '{s}'"))
+}
+
+/// A PDF dipole kernel: `image` or `kspace`.
+pub fn parse_pdf_space(s: &str) -> Result<qsmxt_engine::PdfSpace, String> {
+    qsmxt_engine::PdfSpace::ALL.into_iter().find(|k| k.as_str() == s.trim())
+        .ok_or_else(|| format!("expected image or kspace, got '{s}'"))
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -732,6 +819,11 @@ pub struct HeidiParamArgs {
     /// Anisotropic-diffusion conductance
     #[arg(long)]
     pub heidi_denoise_conductance: Option<f64>,
+    /// HEIDI: the echo time the field stands for the phase of, in the conversion to HEIDI's
+    /// units: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms
+    /// (default: last)
+    #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
+    pub heidi_te: Option<qsmxt_engine::EchoTimeChoice>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -872,6 +964,17 @@ pub struct PdfParamArgs {
     /// PDF tolerance, relative to the noise level
     #[arg(long)]
     pub pdf_tol: Option<f64>,
+    /// PDF maximum conjugate-gradient iterations (default: 300)
+    #[arg(long)]
+    pub pdf_n_cg: Option<usize>,
+    /// PDF dipole kernel: image (the FFT of the dipole sampled on the voxel grid) or kspace (the
+    /// analytic k-space kernel) (default: image)
+    #[arg(long, value_name = "SPACE", value_parser = parse_pdf_space)]
+    pub pdf_space: Option<qsmxt_engine::PdfSpace>,
+    /// PDF zero-padding around the mask's bounding box, in voxels; 0 runs on the full volume
+    /// (default: 40)
+    #[arg(long, value_name = "VOXELS")]
+    pub pdf_n_pad: Option<usize>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -931,6 +1034,9 @@ pub struct HarperellaParamArgs {
     /// HARPERELLA convergence tolerance
     #[arg(long)]
     pub harperella_tol: Option<f64>,
+    /// HARPERELLA zero-padding in voxels per side, X Y Z (default: 0 0 0)
+    #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"])]
+    pub harperella_pad: Option<Vec<usize>>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -941,6 +1047,9 @@ pub struct IharperellaParamArgs {
     /// iHARPERELLA convergence tolerance
     #[arg(long)]
     pub iharperella_tol: Option<f64>,
+    /// iHARPERELLA zero-padding in voxels per side, X Y Z (default: 0 0 0)
+    #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"])]
+    pub iharperella_pad: Option<Vec<usize>>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -2338,6 +2447,17 @@ pub struct BgremovePdfArgs {
     /// Tolerance, relative to the noise level
     #[arg(long)]
     pub tol: Option<f64>,
+    /// Maximum conjugate-gradient iterations (default: 300)
+    #[arg(long)]
+    pub n_cg: Option<usize>,
+    /// Dipole kernel: image (the FFT of the dipole sampled on the voxel grid) or kspace (the
+    /// analytic k-space kernel) (default: image)
+    #[arg(long, value_name = "SPACE", value_parser = parse_pdf_space)]
+    pub space: Option<qsmxt_engine::PdfSpace>,
+    /// Zero-padding around the mask's bounding box, in voxels; 0 runs on the full volume
+    /// (default: 40)
+    #[arg(long, value_name = "VOXELS")]
+    pub n_pad: Option<usize>,
 }
 
 #[derive(Parser, Debug)]
@@ -2424,6 +2544,9 @@ pub struct BgremoveHarperellaArgs {
     /// B0 field strength (T) of a wrapped-phase input — see --te
     #[arg(long, requires = "te")]
     pub field_strength: Option<f64>,
+    /// Zero-padding in voxels per side, X Y Z (default: 0 0 0)
+    #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"])]
+    pub pad: Option<Vec<usize>>,
 }
 
 #[derive(Parser, Debug)]
@@ -2454,6 +2577,9 @@ pub struct BgremoveIharperellaArgs {
     /// B0 field strength (T) of a wrapped-phase input — see --te
     #[arg(long, requires = "te")]
     pub field_strength: Option<f64>,
+    /// Zero-padding in voxels per side, X Y Z (default: 0 0 0)
+    #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"])]
+    pub pad: Option<Vec<usize>>,
 }
 
 // ── Invert ──
@@ -2670,6 +2796,12 @@ pub struct InvertRtsArgs {
     /// LSMR iterations
     #[arg(long)]
     pub lsmr_iter: Option<usize>,
+    /// Rho is raised when the primal residual falls by less than this factor (tau)
+    #[arg(long)]
+    pub tau: Option<f64>,
+    /// The factor rho is raised by (gamma)
+    #[arg(long)]
+    pub gamma: Option<f64>,
 }
 
 #[derive(Parser, Debug)]
@@ -2679,9 +2811,9 @@ pub struct InvertTvArgs {
     /// Lambda parameter
     #[arg(long)]
     pub lambda: Option<f64>,
-    /// Rho (ADMM penalty; default: 100 × lambda)
-    #[arg(long)]
-    pub rho: Option<f64>,
+    /// Rho (ADMM penalty), or auto for 100 × lambda (default: auto)
+    #[arg(long, value_name = "RHO", value_parser = parse_or_auto)]
+    pub rho: Option<OrAuto>,
     /// Tolerance
     #[arg(long)]
     pub tol: Option<f64>,
@@ -2708,7 +2840,7 @@ pub struct InvertTsvdArgs {
     pub threshold: Option<f64>,
 }
 
-/// TGV of a field map in ppm, which TGV expresses as phase at the first echo time.
+/// TGV of a field map in ppm, which TGV expresses as phase at the echo time `--te` picks.
 #[derive(Parser, Debug)]
 pub struct InvertTgvArgs {
     #[command(flatten)]
@@ -2721,15 +2853,19 @@ pub struct InvertTgvArgs {
     /// Erosions
     #[arg(long)]
     pub erosions: Option<usize>,
-    /// Alpha1 (first-order weight), in radians at the first echo time and the field strength
+    /// Alpha1 (first-order weight), in radians at the echo time (--te) and the field strength
     #[arg(long)]
     pub alpha1: Option<f64>,
-    /// Alpha0 (second-order weight), in radians at the first echo time and the field strength
+    /// Alpha0 (second-order weight), in radians at the echo time (--te) and the field strength
     #[arg(long)]
     pub alpha0: Option<f64>,
     /// Primal step size multiplier
     #[arg(long)]
     pub step_size: Option<f64>,
+    /// Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of
+    /// the echo times), or a time in ms (default: first)
+    #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
+    pub te: Option<qsmxt_engine::EchoTimeChoice>,
 }
 
 #[derive(Parser, Debug)]
@@ -2754,6 +2890,9 @@ pub struct InvertNltvArgs {
     /// Lambda
     #[arg(long)]
     pub lambda: Option<f64>,
+    /// Rho (ADMM penalty), or auto for 100 × lambda (default: auto)
+    #[arg(long, value_name = "RHO", value_parser = parse_or_auto)]
+    pub rho: Option<OrAuto>,
     /// Mu (penalty parameter)
     #[arg(long)]
     pub mu: Option<f64>,
@@ -2763,9 +2902,16 @@ pub struct InvertNltvArgs {
     /// Max iterations
     #[arg(long)]
     pub max_iter: Option<usize>,
+    /// Convergence tolerance of the Newton iterations of the data-term subproblem
+    #[arg(long)]
+    pub tol_newton: Option<f64>,
     /// Maximum Newton iterations of the data-term subproblem
     #[arg(long)]
     pub newton_iter: Option<usize>,
+    /// Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of
+    /// the echo times), or a time in ms (default: first)
+    #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
+    pub te: Option<qsmxt_engine::EchoTimeChoice>,
 }
 
 /// MEDI of a local field in ppm. It weights the data by a noise map and its edges by a magnitude it
@@ -2830,6 +2976,10 @@ pub struct InvertMediArgs {
     /// Outer tolerance
     #[arg(long)]
     pub tol: Option<f64>,
+    /// Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of
+    /// the echo times), or a time in ms (default: spacing)
+    #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
+    pub te: Option<qsmxt_engine::EchoTimeChoice>,
 }
 
 /// TFI of the total field in ppm. Like MEDI it takes every echo's magnitude and the echo times
@@ -2867,6 +3017,10 @@ pub struct InvertTfiArgs {
     /// Outer tolerance
     #[arg(long)]
     pub tol: Option<f64>,
+    /// Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of
+    /// the echo times), or a time in ms (default: spacing)
+    #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
+    pub te: Option<qsmxt_engine::EchoTimeChoice>,
 }
 
 #[derive(Parser, Debug)]
@@ -2953,6 +3107,10 @@ pub struct InvertNdiArgs {
     /// Stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto)
     #[arg(long)]
     pub auto_stop: Option<bool>,
+    /// Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of
+    /// the echo times), or a time in ms (default: first)
+    #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
+    pub te: Option<qsmxt_engine::EchoTimeChoice>,
     #[command(flatten)]
     pub scan: ScanParamArgs,
     /// Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo;
@@ -2974,18 +3132,19 @@ pub struct InvertFansiArgs {
     /// First-order (TV/TGV) L1 penalty weight (alpha1)
     #[arg(long)]
     pub alpha1: Option<f64>,
-    /// Gradient-consistency ADMM weight (mu1; default: 100 × alpha1)
-    #[arg(long)]
-    pub mu1: Option<f64>,
+    /// Gradient-consistency ADMM weight (mu1), or auto for 100 × alpha1 (default: auto)
+    #[arg(long, value_name = "MU1", value_parser = parse_or_auto)]
+    pub mu1: Option<OrAuto>,
     /// Fidelity-consistency ADMM weight (mu2)
     #[arg(long)]
     pub mu2: Option<f64>,
-    /// Second-order L1 penalty weight (alpha0, nlTGV only; default: 2 × alpha1)
-    #[arg(long)]
-    pub alpha0: Option<f64>,
-    /// Second-order consistency ADMM weight (mu0, nlTGV only; default: 2 × mu1)
-    #[arg(long)]
-    pub mu0: Option<f64>,
+    /// Second-order L1 penalty weight (alpha0, nlTGV only), or auto for 2 × alpha1 (default: auto)
+    #[arg(long, value_name = "ALPHA0", value_parser = parse_or_auto)]
+    pub alpha0: Option<OrAuto>,
+    /// Second-order consistency ADMM weight (mu0, nlTGV only), or auto for 2 × mu1 (default:
+    /// auto)
+    #[arg(long, value_name = "MU0", value_parser = parse_or_auto)]
+    pub mu0: Option<OrAuto>,
     /// Max iterations
     #[arg(long)]
     pub max_iter: Option<usize>,
@@ -2995,6 +3154,10 @@ pub struct InvertFansiArgs {
     /// Inner Newton convergence tolerance
     #[arg(long)]
     pub tol_delta: Option<f64>,
+    /// Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of
+    /// the echo times), or a time in ms (default: spacing)
+    #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
+    pub te: Option<qsmxt_engine::EchoTimeChoice>,
 }
 
 #[derive(Parser, Debug)]
@@ -3010,18 +3173,18 @@ pub struct InvertFansiTgvArgs {
     /// First-order (TGV gradient) L1 penalty weight (alpha1)
     #[arg(long)]
     pub alpha1: Option<f64>,
-    /// Gradient-consistency ADMM weight (mu1; default: 100 × alpha1)
-    #[arg(long)]
-    pub mu1: Option<f64>,
+    /// Gradient-consistency ADMM weight (mu1), or auto for 100 × alpha1 (default: auto)
+    #[arg(long, value_name = "MU1", value_parser = parse_or_auto)]
+    pub mu1: Option<OrAuto>,
     /// Fidelity-consistency ADMM weight (mu2)
     #[arg(long)]
     pub mu2: Option<f64>,
-    /// Second-order L1 penalty weight (alpha0; default: 2 × alpha1)
-    #[arg(long)]
-    pub alpha0: Option<f64>,
-    /// Second-order consistency ADMM weight (mu0; default: 2 × mu1)
-    #[arg(long)]
-    pub mu0: Option<f64>,
+    /// Second-order L1 penalty weight (alpha0), or auto for 2 × alpha1 (default: auto)
+    #[arg(long, value_name = "ALPHA0", value_parser = parse_or_auto)]
+    pub alpha0: Option<OrAuto>,
+    /// Second-order consistency ADMM weight (mu0), or auto for 2 × mu1 (default: auto)
+    #[arg(long, value_name = "MU0", value_parser = parse_or_auto)]
+    pub mu0: Option<OrAuto>,
     /// Max iterations
     #[arg(long)]
     pub max_iter: Option<usize>,
@@ -3031,6 +3194,10 @@ pub struct InvertFansiTgvArgs {
     /// Inner Newton convergence tolerance
     #[arg(long)]
     pub tol_delta: Option<f64>,
+    /// Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of
+    /// the echo times), or a time in ms (default: spacing)
+    #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
+    pub te: Option<qsmxt_engine::EchoTimeChoice>,
 }
 
 #[derive(Parser, Debug)]
@@ -3046,9 +3213,9 @@ pub struct InvertL1qsmArgs {
     /// Gradient (TV) L1 penalty weight (alpha1)
     #[arg(long)]
     pub alpha1: Option<f64>,
-    /// Gradient-consistency ADMM weight (mu1; default: 100 × alpha1)
-    #[arg(long)]
-    pub mu1: Option<f64>,
+    /// Gradient-consistency ADMM weight (mu1), or auto for 100 × alpha1 (default: auto)
+    #[arg(long, value_name = "MU1", value_parser = parse_or_auto)]
+    pub mu1: Option<OrAuto>,
     /// Fidelity-consistency ADMM weight (mu2)
     #[arg(long)]
     pub mu2: Option<f64>,
@@ -3067,6 +3234,10 @@ pub struct InvertL1qsmArgs {
     /// Inner Newton convergence tolerance
     #[arg(long)]
     pub tol_delta: Option<f64>,
+    /// Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of
+    /// the echo times), or a time in ms (default: first)
+    #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
+    pub te: Option<qsmxt_engine::EchoTimeChoice>,
 }
 
 #[derive(Parser, Debug)]
@@ -3099,6 +3270,18 @@ pub struct InvertWhqsmArgs {
     /// Inner Newton convergence tolerance
     #[arg(long)]
     pub tol_delta: Option<f64>,
+    /// Data weight: flat (1 in the mask), max-normalised (the magnitude over its maximum) or
+    /// in-vivo (min(2 × magnitude / maximum, 1)); the last two need --magnitude (default: flat)
+    #[arg(long, value_name = "WEIGHT", value_parser = parse_whqsm_weight)]
+    pub weight: Option<qsmxt_engine::WhqsmWeight>,
+    /// Magnitude NIfTI, for a magnitude data weight (--weight): one 3D volume, a 4D one, or one
+    /// per echo; several echoes are RSS-combined
+    #[arg(long, num_args = 1..)]
+    pub magnitude: Vec<PathBuf>,
+    /// Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of
+    /// the echo times), or a time in ms (default: first)
+    #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
+    pub te: Option<qsmxt_engine::EchoTimeChoice>,
 }
 
 #[derive(Parser, Debug)]
@@ -3112,9 +3295,10 @@ pub struct InvertHdqsmArgs {
     /// L2-stage TV weight (alpha_l2)
     #[arg(long)]
     pub alpha_l2: Option<f64>,
-    /// L2-stage gradient-consistency ADMM weight (mu1_l2; default: 100 × alpha_l2)
-    #[arg(long)]
-    pub mu1_l2: Option<f64>,
+    /// L2-stage gradient-consistency ADMM weight (mu1_l2), or auto for 100 × alpha_l2 (default:
+    /// auto)
+    #[arg(long, value_name = "MU1_L2", value_parser = parse_or_auto)]
+    pub mu1_l2: Option<OrAuto>,
     /// Fidelity consistency weight (mu2)
     #[arg(long)]
     pub mu2: Option<f64>,

@@ -296,6 +296,18 @@ pub(super) fn table() -> Vec<Def> {
         .gui("Isotropic working-grid spacing"),
         d("bg_removal.pdf.tol", Background, "Tolerance", "Convergence tolerance, relative to the noise level", Float).flag("--pdf-tol").parent("bg_removal.algorithm")
         .when(|x| x.bf("pdf")),
+        d("bg_removal.pdf.n_cg", Background, "CG Iter", "Maximum conjugate-gradient iterations", Int).min(1.0).flag("--pdf-n-cg").parent("bg_removal.algorithm")
+        .when(|x| x.bf("pdf")).full("CG Iterations"),
+        d("bg_removal.pdf.space", Background, "Kernel", "", Enum(vec![
+            o("image", "image", "Image space", "The FFT of the dipole field sampled on the voxel grid (default)"),
+            o("kspace", "kspace", "k-space", "The analytic k-space dipole kernel"),
+        ])).flag("--pdf-space").parent("bg_removal.algorithm")
+        .when(|x| x.bf("pdf"))
+        .gui("The dipole kernel the background is fitted with"),
+        // QSM.rs bgremove/pdf.rs refuses 1 (PdfConfig::validate).
+        d("bg_removal.pdf.n_pad", Background, "Pad (voxels)", "Zero-padding around the mask's bounding box, voxels; 0 = the full volume", Int).min(0.0).units("voxels").flag("--pdf-n-pad").parent("bg_removal.algorithm")
+        .when(|x| x.bf("pdf")).full("Padding")
+        .gui("Zero-padding around the mask's bounding box; 0 runs on the full volume"),
         d("bg_removal.lbv.tol", Background, "Tolerance", "Convergence tolerance", Float).flag("--lbv-tol").parent("bg_removal.algorithm")
         .when(|x| x.bf("lbv")),
         d("bg_removal.ismv.tol", Background, "Tolerance", "Convergence tolerance", Float).flag("--ismv-tol").parent("bg_removal.algorithm")
@@ -330,10 +342,16 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.bf("harperella")).full("Maximum Iterations"),
         d("bg_removal.harperella.tol", Background, "Tolerance", "Convergence tolerance", Float).flag("--harperella-tol").parent("bg_removal.algorithm")
         .when(|x| x.bf("harperella")),
+        d("bg_removal.harperella.pad", Background, "Pad (voxels)", "Zero-padding per side, voxels (x y z). Larger costs time and memory (default 0 0 0)", IntVec3).units("voxels").flag("--harperella-pad").parent("bg_removal.algorithm")
+        .when(|x| x.bf("harperella")).full("Padding")
+        .gui("Zero-padding per side (x y z). Larger costs time and memory"),
         d("bg_removal.iharperella.max_iter", Background, "Max Iter", "Maximum iterations", Int).flag("--iharperella-max-iter").parent("bg_removal.algorithm")
         .when(|x| x.bf("iharperella")).full("Maximum Iterations"),
         d("bg_removal.iharperella.tol", Background, "Tolerance", "Convergence tolerance", Float).flag("--iharperella-tol").parent("bg_removal.algorithm")
         .when(|x| x.bf("iharperella")),
+        d("bg_removal.iharperella.pad", Background, "Pad (voxels)", "Zero-padding per side, voxels (x y z). Larger costs time and memory (default 0 0 0)", IntVec3).units("voxels").flag("--iharperella-pad").parent("bg_removal.algorithm")
+        .when(|x| x.bf("iharperella")).full("Padding")
+        .gui("Zero-padding per side (x y z). Larger costs time and memory"),
         d("pipeline.do_qsm", Inversion, "Compute QSM", "Enable QSM reconstruction (disable to only run the other outputs)", Bool).basic().flag("--no-qsm").also(&[FieldMap, Background, MultiOrientation, Reference]),
         d("inversion.algorithm", Inversion, "QSM Inversion", "", Enum(vec![
             o("rts", "rts", "RTS", "RTS (Rapid Two-Step) — fast two-step k-space inversion with streaking removal. https://doi.org/10.1016/j.neuroimage.2017.11.018"),
@@ -383,6 +401,10 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.inv("rts") || x.qsmart_inner("rts")).full("Maximum Iterations"),
         d("inversion.rts.lsmr_iter", Inversion, "LSMR Iter", "LSMR iterations for step 1 (well-conditioned solve)", Int).flag("--rts-lsmr-iter").parent("inversion.algorithm")
         .when(|x| x.inv("rts") || x.qsmart_inner("rts")).full("LSMR Iterations"),
+        d("inversion.rts.tau", Inversion, "Tau", "Rho is raised when the primal residual falls by less than this factor", Float).flag("--rts-tau").parent("inversion.algorithm")
+        .when(|x| x.inv("rts") || x.qsmart_inner("rts")),
+        d("inversion.rts.gamma", Inversion, "Gamma", "Factor rho is raised by", Float).flag("--rts-gamma").parent("inversion.algorithm")
+        .when(|x| x.inv("rts") || x.qsmart_inner("rts")),
         d("inversion.tv.lambda", Inversion, "Lambda", "L1 regularization weight (larger = smoother)", Float).flag("--tv-lambda").parent("inversion.algorithm")
         .when(|x| x.inv("tv") || x.qsmart_inner("tv"))
         .gui("L1 regularisation weight (larger = smoother)"),
@@ -405,21 +427,27 @@ pub(super) fn table() -> Vec<Def> {
         d("inversion.tgv.erosions", Inversion, "Erosions", "Mask erosions before TGV solve", Int).flag("--tgv-erosions").parent("inversion.algorithm")
         .when(|x| x.inv("tgv")),
         // QSM.rs inversion/tgv.rs project_linf3: a negative weight divides by a zero norm (NaN).
-        d("inversion.tgv.alpha1", Inversion, "Alpha1", "First-order TGV weight (gradient term), in radians at the first echo time and field strength", Float).min(0.0).units("rad").flag("--tgv-alpha1").parent("inversion.algorithm")
+        d("inversion.tgv.alpha1", Inversion, "Alpha1", "First-order TGV weight (gradient term), in radians at the echo time and field strength", Float).min(0.0).units("rad").flag("--tgv-alpha1").parent("inversion.algorithm")
         .when(|x| x.inv("tgv"))
-        .gui("First-order TGV weight (gradient term), at the first echo time and field strength"),
+        .gui("First-order TGV weight (gradient term), at the echo time and field strength"),
         // QSM.rs inversion/tgv.rs project_linf6: a negative weight divides by a zero norm (NaN).
-        d("inversion.tgv.alpha0", Inversion, "Alpha0", "Second-order TGV weight (symmetric gradient term), in radians at the first echo time and field strength", Float).min(0.0).units("rad").flag("--tgv-alpha0").parent("inversion.algorithm")
+        d("inversion.tgv.alpha0", Inversion, "Alpha0", "Second-order TGV weight (symmetric gradient term), in radians at the echo time and field strength", Float).min(0.0).units("rad").flag("--tgv-alpha0").parent("inversion.algorithm")
         .when(|x| x.inv("tgv"))
-        .gui("Second-order TGV weight (symmetric gradient term), at the first echo time and field strength"),
+        .gui("Second-order TGV weight (symmetric gradient term), at the echo time and field strength"),
         d("inversion.tgv.step_size", Inversion, "Step Size", "Primal step-size multiplier", Float).flag("--tgv-step-size").parent("inversion.algorithm")
         .when(|x| x.inv("tgv")),
+        d("inversion.tgv.te", Inversion, "Echo Time", "", EchoTime)
+        .value("Echo Time (ms)", "Echo time the field is converted to phase at, ms").flag("--tgv-te").parent("inversion.algorithm")
+        .when(|x| x.inv("tgv"))
+        .gui("The echo time the field is converted to phase at (several echoes; a single echo is at its own); the weights are in radians at it").gui_value("Echo Time", "The echo time the field is converted to phase at, in ms"),
         d("inversion.tikhonov.lambda", Inversion, "Lambda", "L2 regularization weight", Float).flag("--tikhonov-lambda").parent("inversion.algorithm")
         .when(|x| x.inv("tikhonov") || x.qsmart_inner("tikhonov"))
         .gui("L2 regularisation weight"),
         d("inversion.nltv.lambda", Inversion, "Lambda", "Regularization parameter", Float).flag("--nltv-lambda").parent("inversion.algorithm")
         .when(|x| x.inv("nltv") || x.qsmart_inner("nltv"))
         .gui("Regularisation parameter"),
+        d("inversion.nltv.rho", Inversion, "Rho", "ADMM penalty parameter. Blank = 100×lambda", Float).above(0.0).optional().flag("--nltv-rho").parent("inversion.algorithm")
+        .when(|x| x.inv("nltv") || x.qsmart_inner("nltv")),
         d("inversion.nltv.mu", Inversion, "Mu", "Penalty parameter", Float).flag("--nltv-mu").parent("inversion.algorithm")
         .when(|x| x.inv("nltv") || x.qsmart_inner("nltv")),
         d("inversion.nltv.tol", Inversion, "Tolerance", "Convergence tolerance", Float).flag("--nltv-tol").parent("inversion.algorithm")
@@ -427,9 +455,15 @@ pub(super) fn table() -> Vec<Def> {
         // QSM.rs inversion/nltv.rs: 0 iterations give an all-zero map.
         d("inversion.nltv.max_iter", Inversion, "Max Iter", "Maximum ADMM iterations", Int).min(1.0).flag("--nltv-max-iter").parent("inversion.algorithm")
         .when(|x| x.inv("nltv") || x.qsmart_inner("nltv")).full("Maximum Iterations"),
+        d("inversion.nltv.tol_newton", Inversion, "Newton Tol", "Convergence tolerance of the Newton iterations of the data-term subproblem", Float).flag("--nltv-tol-newton").parent("inversion.algorithm")
+        .when(|x| x.inv("nltv") || x.qsmart_inner("nltv")).full("Newton Tolerance"),
         // QSM.rs inversion/nltv.rs: 0 Newton iterations give an all-zero map.
         d("inversion.nltv.max_iter_newton", Inversion, "Newton Iter", "Maximum Newton iterations of the data-term subproblem", Int).min(1.0).flag("--nltv-newton-iter").parent("inversion.algorithm")
         .when(|x| x.inv("nltv") || x.qsmart_inner("nltv")).full("Newton Iterations"),
+        d("inversion.nltv.te", Inversion, "Echo Time", "", EchoTime)
+        .value("Echo Time (ms)", "Echo time the field is converted to phase at, ms").flag("--nltv-te").parent("inversion.algorithm")
+        .when(|x| x.inv("nltv") || x.qsmart_inner("nltv"))
+        .gui("The echo time the field is converted to phase at").gui_value("Echo Time", "The echo time the field is converted to phase at, in ms"),
         d("inversion.medi.smv", Inversion, "SMV Mode", "High-pass the local field with a spherical mean value (SMV) filter, removing residual background near the brain edge (MEDI-SMV)", Bool).flag("--no-medi-smv").parent("inversion.algorithm")
         .when(|x| x.inv("medi")),
         d("inversion.medi.smv_radius", Inversion, "SMV Radius", "SMV radius in mm (also mSMV's)", Float).units("mm").flag("--medi-smv-radius").parent("inversion.algorithm")
@@ -471,6 +505,10 @@ pub(super) fn table() -> Vec<Def> {
         ])).flag("--medi-data-weighting").parent("inversion.algorithm")
         .when(|x| x.inv("medi") || x.qsmart_inner("medi"))
         .gui("How the voxels of the field are weighted in the data term"),
+        d("inversion.medi.te", Inversion, "Echo Time", "", EchoTime)
+        .value("Echo Time (ms)", "Echo time the field is converted to phase at, ms").flag("--medi-te").parent("inversion.algorithm")
+        .when(|x| x.inv("medi") || x.qsmart_inner("medi"))
+        .gui("The echo time the field is converted to phase at").gui_value("Echo Time", "The echo time the field is converted to phase at, in ms"),
         d("inversion.tfi.lambda", Inversion, "Lambda", "Data-fidelity weight (larger fits the field more closely)", Float).flag("--tfi-lambda").parent("inversion.algorithm")
         .when(|x| x.inv("tfi"))
         .gui("Data-fidelity weight (larger fits the field more closely)"),
@@ -494,6 +532,10 @@ pub(super) fn table() -> Vec<Def> {
         ])).flag("--tfi-data-weighting").parent("inversion.algorithm")
         .when(|x| x.inv("tfi"))
         .gui("How the voxels of the field are weighted in the data term"),
+        d("inversion.tfi.te", Inversion, "Echo Time", "", EchoTime)
+        .value("Echo Time (ms)", "Echo time the field is converted to phase at, ms").flag("--tfi-te").parent("inversion.algorithm")
+        .when(|x| x.inv("tfi"))
+        .gui("The echo time the field is converted to phase at").gui_value("Echo Time", "The echo time the field is converted to phase at, in ms"),
         d("inversion.ilsqr.tol", Inversion, "Tolerance", "Convergence tolerance", Float).flag("--ilsqr-tol").parent("inversion.algorithm")
         .when(|x| x.inv("ilsqr") || x.qsmart_inner("ilsqr")),
         d("inversion.ilsqr.max_iter", Inversion, "Max Iter", "Maximum iterations", Int).flag("--ilsqr-max-iter").parent("inversion.algorithm")
@@ -540,6 +582,10 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.inv("heidi")).full("Final Mu"),
         d("inversion.heidi.tol", Inversion, "HEIDI Tolerance", "Relative objective change that ends an inner loop early (the default runs every iteration)", Float).flag("--heidi-tol").parent("inversion.algorithm")
         .when(|x| x.inv("heidi")),
+        d("inversion.heidi.te", Inversion, "Echo Time", "", EchoTime)
+        .value("Echo Time (ms)", "Echo time the field is converted to phase at, ms").flag("--heidi-te").parent("inversion.algorithm")
+        .when(|x| x.inv("heidi"))
+        .gui("The echo time the field is converted to phase at, in the conversion to HEIDI's units").gui_value("Echo Time", "The echo time the field is converted to phase at, in ms"),
         d("inversion.heidi.denoise", Inversion, "Denoise Field", "Anisotropic-diffusion smoothing of the field before its gradients are taken", Bool).flag("--no-heidi-denoise").parent("inversion.algorithm")
         .when(|x| x.inv("heidi")),
         d("inversion.heidi.denoise_iterations", Inversion, "Denoise Iter", "Anisotropic-diffusion iterations", Int).flag("--heidi-denoise-iterations").parent("inversion.heidi.denoise")
@@ -615,6 +661,10 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.inv("ndi")).full("Iterations"),
         d("inversion.ndi.auto_stop", Inversion, "Auto Stop", "Stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto)", Bool).flag("--ndi-auto-stop").parent("inversion.algorithm")
         .when(|x| x.inv("ndi")),
+        d("inversion.ndi.te", Inversion, "Echo Time", "", EchoTime)
+        .value("Echo Time (ms)", "Echo time the field is converted to phase at, ms").flag("--ndi-te").parent("inversion.algorithm")
+        .when(|x| x.inv("ndi"))
+        .gui("The echo time the field is converted to phase at").gui_value("Echo Time", "The echo time the field is converted to phase at, in ms"),
         d("inversion.fansi.alpha1", Inversion, "Alpha1", "First-order (TV/TGV) L1 penalty weight", Float).flag("--fansi-alpha1").parent("inversion.algorithm")
         .when(|x| x.inv("fansi") || x.inv("fansi-tgv")).context("FANSI"),
         d("inversion.fansi.mu1", Inversion, "Mu1", "Gradient-consistency ADMM weight. Blank = 100×alpha1", Float).above(0.0).optional().flag("--fansi-mu1").parent("inversion.algorithm")
@@ -632,6 +682,10 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.inv("fansi") || x.inv("fansi-tgv")).full("Update Tolerance").context("FANSI"),
         d("inversion.fansi.tol_delta", Inversion, "Tol Delta", "Inner Newton convergence tolerance", Float).flag("--fansi-tol-delta").parent("inversion.algorithm")
         .when(|x| x.inv("fansi") || x.inv("fansi-tgv")).full("Newton Tolerance").context("FANSI"),
+        d("inversion.fansi.te", Inversion, "Echo Time", "", EchoTime)
+        .value("Echo Time (ms)", "Echo time the field is converted to phase at, ms").flag("--fansi-te").parent("inversion.algorithm")
+        .when(|x| x.inv("fansi") || x.inv("fansi-tgv")).context("FANSI")
+        .gui("The echo time the field is converted to phase at").gui_value("Echo Time", "The echo time the field is converted to phase at, in ms"),
         d("inversion.l1qsm.alpha1", Inversion, "Alpha1", "Gradient (TV) L1 penalty weight", Float).flag("--l1qsm-alpha1").parent("inversion.algorithm")
         .when(|x| x.inv("l1qsm")),
         d("inversion.l1qsm.mu1", Inversion, "Mu1", "Gradient-consistency ADMM weight. Blank = 100×alpha1", Float).above(0.0).optional().flag("--l1qsm-mu1").parent("inversion.algorithm")
@@ -649,6 +703,10 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.inv("l1qsm")).full("Update Tolerance"),
         d("inversion.l1qsm.tol_delta", Inversion, "Tol Delta", "Inner Newton convergence tolerance", Float).flag("--l1qsm-tol-delta").parent("inversion.algorithm")
         .when(|x| x.inv("l1qsm")).full("Newton Tolerance"),
+        d("inversion.l1qsm.te", Inversion, "Echo Time", "", EchoTime)
+        .value("Echo Time (ms)", "Echo time the field is converted to phase at, ms").flag("--l1qsm-te").parent("inversion.algorithm")
+        .when(|x| x.inv("l1qsm"))
+        .gui("The echo time the field is converted to phase at").gui_value("Echo Time", "The echo time the field is converted to phase at, in ms"),
         d("inversion.whqsm.alpha1", Inversion, "Alpha1", "TV regularization weight", Float).flag("--whqsm-alpha1").parent("inversion.algorithm")
         .when(|x| x.inv("whqsm"))
         .gui("TV regularisation weight"),
@@ -666,6 +724,17 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.inv("whqsm")).full("Update Tolerance"),
         d("inversion.whqsm.tol_delta", Inversion, "Tol Delta", "Inner Newton stopping tolerance", Float).flag("--whqsm-tol-delta").parent("inversion.algorithm")
         .when(|x| x.inv("whqsm")).full("Newton Tolerance"),
+        d("inversion.whqsm.weight", Inversion, "Data Weight", "", Enum(vec![
+            o("flat", "flat", "Flat", "1 in the mask, no magnitude (default)"),
+            o("max-normalised", "max-normalised", "Max-normalised", "The magnitude over its maximum in the mask; needs magnitude images"),
+            o("in-vivo", "in-vivo", "In vivo", "min(2 × magnitude / maximum, 1) in the mask, as NDI weights; needs magnitude images"),
+        ])).flag("--whqsm-weight").parent("inversion.algorithm")
+        .when(|x| x.inv("whqsm"))
+        .gui("How the voxels of the field are weighted in the data term"),
+        d("inversion.whqsm.te", Inversion, "Echo Time", "", EchoTime)
+        .value("Echo Time (ms)", "Echo time the field is converted to phase at, ms").flag("--whqsm-te").parent("inversion.algorithm")
+        .when(|x| x.inv("whqsm"))
+        .gui("The echo time the field is converted to phase at").gui_value("Echo Time", "The echo time the field is converted to phase at, in ms"),
         // QSM.rs inversion/hdqsm.rs: sqrt(alpha_l2) is NaN below 0.
         d("inversion.hdqsm.alpha_l2", Inversion, "Alpha L2", "L2-stage TV weight", Float).min(0.0).flag("--hdqsm-alpha-l2").parent("inversion.algorithm")
         .when(|x| x.inv("hdqsm")),

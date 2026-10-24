@@ -355,7 +355,13 @@ fn command_for(config: &PipelineConfig) -> String {
                 emit_f64(&mut parts, "--vsharp-grid-spacing", config.bg_removal.vsharp.grid_spacing, d.bg_removal.vsharp.grid_spacing);
             }
         }
-        BfAlgorithm::Pdf => { emit_f64(&mut parts, "--pdf-tol", config.bg_removal.pdf.tol, d.bg_removal.pdf.tol); }
+        BfAlgorithm::Pdf => {
+            let (p, dp) = (&config.bg_removal.pdf, &d.bg_removal.pdf);
+            emit_f64(&mut parts, "--pdf-tol", p.tol, dp.tol);
+            emit_usize(&mut parts, "--pdf-n-cg", p.n_cg, dp.n_cg);
+            emit_enum(&mut parts, "--pdf-space", &p.space, &dp.space);
+            emit_usize(&mut parts, "--pdf-n-pad", p.n_pad, dp.n_pad);
+        }
         BfAlgorithm::Lbv => { emit_f64(&mut parts, "--lbv-tol", config.bg_removal.lbv.tol, d.bg_removal.lbv.tol); }
         BfAlgorithm::Ismv => {
             emit_f64(&mut parts, "--ismv-tol", config.bg_removal.ismv.tol, d.bg_removal.ismv.tol);
@@ -376,10 +382,12 @@ fn command_for(config: &PipelineConfig) -> String {
             emit_f64(&mut parts, "--harperella-radius", config.bg_removal.harperella.radius, d.bg_removal.harperella.radius);
             emit_usize(&mut parts, "--harperella-max-iter", config.bg_removal.harperella.max_iter, d.bg_removal.harperella.max_iter);
             emit_f64(&mut parts, "--harperella-tol", config.bg_removal.harperella.tol, d.bg_removal.harperella.tol);
+            emit_usize_arr3(&mut parts, "--harperella-pad", &config.bg_removal.harperella.pad, &d.bg_removal.harperella.pad);
         }
         BfAlgorithm::Iharperella => {
             emit_usize(&mut parts, "--iharperella-max-iter", config.bg_removal.iharperella.max_iter, d.bg_removal.iharperella.max_iter);
             emit_f64(&mut parts, "--iharperella-tol", config.bg_removal.iharperella.tol, d.bg_removal.iharperella.tol);
+            emit_usize_arr3(&mut parts, "--iharperella-pad", &config.bg_removal.iharperella.pad, &d.bg_removal.iharperella.pad);
         }
         // BFRnet / iQFM (deep learning) have no user-tunable parameters.
         BfAlgorithm::Bfrnet | BfAlgorithm::Iqfm => {}
@@ -499,6 +507,8 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
             emit_f64(parts, "--rts-tol", config.inversion.rts.tol, d.inversion.rts.tol);
             emit_usize(parts, "--rts-max-iter", config.inversion.rts.max_iter, d.inversion.rts.max_iter);
             emit_usize(parts, "--rts-lsmr-iter", config.inversion.rts.lsmr_iter, d.inversion.rts.lsmr_iter);
+            emit_f64(parts, "--rts-tau", config.inversion.rts.tau, d.inversion.rts.tau);
+            emit_f64(parts, "--rts-gamma", config.inversion.rts.gamma, d.inversion.rts.gamma);
         }
         QsmAlgorithm::Tv => {
             emit_f64(parts, "--tv-lambda", config.inversion.tv.lambda, d.inversion.tv.lambda);
@@ -511,10 +521,13 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
         QsmAlgorithm::Tikhonov => { emit_f64(parts, "--tikhonov-lambda", config.inversion.tikhonov.lambda, d.inversion.tikhonov.lambda); }
         QsmAlgorithm::Nltv => {
             emit_f64(parts, "--nltv-lambda", config.inversion.nltv.lambda, d.inversion.nltv.lambda);
+            emit_opt_f64(parts, "--nltv-rho", config.inversion.nltv.rho, d.inversion.nltv.rho);
             emit_f64(parts, "--nltv-mu", config.inversion.nltv.mu, d.inversion.nltv.mu);
             emit_f64(parts, "--nltv-tol", config.inversion.nltv.tol, d.inversion.nltv.tol);
             emit_usize(parts, "--nltv-max-iter", config.inversion.nltv.max_iter, d.inversion.nltv.max_iter);
+            emit_f64(parts, "--nltv-tol-newton", config.inversion.nltv.tol_newton, d.inversion.nltv.tol_newton);
             emit_usize(parts, "--nltv-newton-iter", config.inversion.nltv.max_iter_newton, d.inversion.nltv.max_iter_newton);
+            emit_enum(parts, "--nltv-te", &config.inversion.nltv.te, &d.inversion.nltv.te);
         }
         QsmAlgorithm::Medi => {
             emit_f64(parts, "--medi-lambda", config.inversion.medi.lambda, d.inversion.medi.lambda);
@@ -545,6 +558,7 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
                     parts.push("--no-medi-msmv-prefilter".into());
                 }
             }
+            emit_enum(parts, "--medi-te", &m.te, &dm.te);
         }
         QsmAlgorithm::Tfi => {
             emit_f64(parts, "--tfi-lambda", config.inversion.tfi.lambda, d.inversion.tfi.lambda);
@@ -557,6 +571,7 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
             emit_usize(parts, "--tfi-cg-max-iter", config.inversion.tfi.cg_max_iter, d.inversion.tfi.cg_max_iter);
             emit_f64(parts, "--tfi-cg-tol", config.inversion.tfi.cg_tol, d.inversion.tfi.cg_tol);
             emit_f64(parts, "--tfi-tol", config.inversion.tfi.tol, d.inversion.tfi.tol);
+            emit_enum(parts, "--tfi-te", &config.inversion.tfi.te, &d.inversion.tfi.te);
         }
         QsmAlgorithm::Ilsqr => {
             emit_f64(parts, "--ilsqr-tol", config.inversion.ilsqr.tol, d.inversion.ilsqr.tol);
@@ -605,6 +620,7 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
                     emit_f64(parts, "--heidi-denoise-time-step", c.denoise_time_step, dd.denoise_time_step);
                     emit_f64(parts, "--heidi-denoise-conductance", c.denoise_conductance, dd.denoise_conductance);
                 }
+                emit_enum(parts, "--heidi-te", &c.te, &dd.te);
             }
         }
         QsmAlgorithm::Tgv => {
@@ -613,6 +629,7 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
             emit_f64(parts, "--tgv-alpha0", config.inversion.tgv.alpha0, d.inversion.tgv.alpha0);
             emit_f64(parts, "--tgv-alpha1", config.inversion.tgv.alpha1, d.inversion.tgv.alpha1);
             emit_f64(parts, "--tgv-step-size", config.inversion.tgv.step_size, d.inversion.tgv.step_size);
+            emit_enum(parts, "--tgv-te", &config.inversion.tgv.te, &d.inversion.tgv.te);
         }
         QsmAlgorithm::Qsmart => {
             let q = &config.inversion.qsmart;
@@ -646,6 +663,7 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
             if config.inversion.ndi.auto_stop != d.inversion.ndi.auto_stop {
                 parts.push(format!("--ndi-auto-stop {}", config.inversion.ndi.auto_stop));
             }
+            emit_enum(parts, "--ndi-te", &config.inversion.ndi.te, &d.inversion.ndi.te);
         }
         QsmAlgorithm::Fansi | QsmAlgorithm::FansiTgv => {
             let fa = &config.inversion.fansi;
@@ -658,6 +676,7 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
             emit_usize(parts, "--fansi-max-iter", fa.max_iter, df.max_iter);
             emit_f64(parts, "--fansi-tol-update", fa.tol_update, df.tol_update);
             emit_f64(parts, "--fansi-tol-delta", fa.tol_delta, df.tol_delta);
+            emit_enum(parts, "--fansi-te", &fa.te, &df.te);
         }
         QsmAlgorithm::L1qsm => {
             let l = &config.inversion.l1qsm;
@@ -670,6 +689,7 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
             emit_usize(parts, "--l1qsm-max-iter", l.max_iter, dl.max_iter);
             emit_f64(parts, "--l1qsm-tol-update", l.tol_update, dl.tol_update);
             emit_f64(parts, "--l1qsm-tol-delta", l.tol_delta, dl.tol_delta);
+            emit_enum(parts, "--l1qsm-te", &l.te, &dl.te);
         }
         QsmAlgorithm::Whqsm => {
             let w = &config.inversion.whqsm;
@@ -682,6 +702,8 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
             emit_usize(parts, "--whqsm-max-iter", w.max_iter, dw.max_iter);
             emit_f64(parts, "--whqsm-tol-update", w.tol_update, dw.tol_update);
             emit_f64(parts, "--whqsm-tol-delta", w.tol_delta, dw.tol_delta);
+            emit_enum(parts, "--whqsm-weight", &w.weight, &dw.weight);
+            emit_enum(parts, "--whqsm-te", &w.te, &dw.te);
         }
         QsmAlgorithm::Hdqsm => {
             let h = &config.inversion.hdqsm;
@@ -741,6 +763,9 @@ fn emit_enum<T: PartialEq + std::fmt::Display>(parts: &mut Vec<String>, flag: &s
 /// [`emit_enum`], and the default too when the user chose it.
 fn emit_chosen<T: PartialEq + std::fmt::Display>(parts: &mut Vec<String>, flag: &str, val: &T, default: &T, chosen: bool) {
     if val != default || chosen { parts.push(format!("{} {}", flag, val)); }
+}
+fn emit_usize_arr3(parts: &mut Vec<String>, flag: &str, val: &[usize; 3], default: &[usize; 3]) {
+    if val != default { parts.push(format!("{} {} {} {}", flag, val[0], val[1], val[2])); }
 }
 fn emit_f64_arr3(parts: &mut Vec<String>, flag: &str, val: &[f64; 3], default: &[f64; 3]) {
     if val != default { parts.push(format!("{} {} {} {}", flag, val[0], val[1], val[2])); }
@@ -1095,6 +1120,75 @@ mod tests {
         let cmd = generate_command(&c);
         assert!(cmd.contains("--tgv-iterations 500"));
         assert!(cmd.contains("--tgv-erosions 2"));
+    }
+
+    /// Each method's echo time, and the method settings from QSM.rs v0.40.0, are emitted only away
+    /// from their defaults; a given echo time is written in ms.
+    #[test]
+    fn echo_times_and_method_settings_are_emitted_when_changed() {
+        let methods = [
+            QsmAlgorithm::Nltv, QsmAlgorithm::Medi, QsmAlgorithm::Tfi, QsmAlgorithm::Ndi,
+            QsmAlgorithm::Fansi, QsmAlgorithm::FansiTgv, QsmAlgorithm::L1qsm, QsmAlgorithm::Whqsm,
+            QsmAlgorithm::Heidi, QsmAlgorithm::Tgv,
+        ];
+        for alg in methods {
+            let mut c = PipelineConfig::default();
+            c.inversion.algorithm = alg;
+            let flag = if alg == QsmAlgorithm::FansiTgv { "fansi".to_string() } else { alg.to_string() };
+            assert!(!generate_command(&c).contains("-te "), "{alg}: the default is not emitted");
+            let i = &mut c.inversion;
+            for te in [&mut i.nltv.te, &mut i.medi.te, &mut i.tfi.te, &mut i.ndi.te, &mut i.fansi.te,
+                       &mut i.l1qsm.te, &mut i.whqsm.te, &mut i.heidi.te, &mut i.tgv.te] {
+                *te = EchoTimeChoice::Seconds(0.007);
+            }
+            let cmd = generate_command(&c);
+            assert!(cmd.contains(&format!("--{flag}-te 7")), "{alg}: {cmd}");
+        }
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = QsmAlgorithm::Whqsm;
+        c.inversion.whqsm.weight = WhqsmWeight::InVivo;
+        assert!(generate_command(&c).contains("--whqsm-weight in-vivo"));
+        c.inversion.algorithm = QsmAlgorithm::Nltv;
+        c.inversion.nltv.rho = Some(0.5);
+        c.inversion.nltv.tol_newton = 1e-4;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--nltv-rho 0.5") && cmd.contains("--nltv-tol-newton 0.0001"), "{cmd}");
+        c.inversion.algorithm = QsmAlgorithm::Rts;
+        c.inversion.rts.tau = 0.5;
+        c.inversion.rts.gamma = 2.0;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--rts-tau 0.5") && cmd.contains("--rts-gamma 2"), "{cmd}");
+        c.bg_removal.algorithm = BfAlgorithm::Pdf;
+        c.bg_removal.pdf.n_cg = 30;
+        c.bg_removal.pdf.space = PdfSpace::Kspace;
+        c.bg_removal.pdf.n_pad = 0;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--pdf-n-cg 30") && cmd.contains("--pdf-space kspace") && cmd.contains("--pdf-n-pad 0"), "{cmd}");
+        for (alg, flag) in [(BfAlgorithm::Harperella, "--harperella-pad"), (BfAlgorithm::Iharperella, "--iharperella-pad")] {
+            let mut c = PipelineConfig::default();
+            c.bg_removal.algorithm = alg;
+            assert!(!generate_command(&c).contains(flag));
+            c.bg_removal.harperella.pad = [2, 4, 6];
+            c.bg_removal.iharperella.pad = [2, 4, 6];
+            assert!(generate_command(&c).contains(&format!("{flag} 2 4 6")));
+        }
+    }
+
+    /// The new settings in a config file: an echo time as a name or `{ seconds = … }`, the WH-QSM
+    /// weight and PDF's kernel by their names, and the padding as three numbers.
+    #[test]
+    fn echo_times_and_method_settings_in_config_files() {
+        let c: PipelineConfig = toml::from_str("[inversion.medi]\nte = \"first\"\n[inversion.tgv]\nte = { seconds = 0.03 }\n\
+            [inversion.whqsm]\nweight = \"max-normalised\"\n[bg_removal.pdf]\nspace = \"kspace\"\n\
+            [bg_removal.harperella]\npad = [1, 2, 3]\n").unwrap();
+        assert_eq!(c.inversion.medi.te, EchoTimeChoice::First);
+        assert_eq!(c.inversion.tgv.te, EchoTimeChoice::Seconds(0.03));
+        assert_eq!(c.inversion.whqsm.weight, WhqsmWeight::MaxNormalised);
+        assert_eq!(c.bg_removal.pdf.space, PdfSpace::Kspace);
+        assert_eq!(c.bg_removal.harperella.pad, [1, 2, 3]);
+        assert!(toml::from_str::<PipelineConfig>("[inversion.ndi]\nte = \"median\"\n").is_err());
+        let back: PipelineConfig = toml::from_str(&toml::to_string(&c).unwrap()).unwrap();
+        assert_eq!(back, c);
     }
 
     #[test]

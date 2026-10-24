@@ -3,7 +3,8 @@ use crate::enums::*;
 use crate::masking::*;
 
 // ─── Macro for algorithm parameter structs ───
-// Generates a serde struct with Default sourced from qsm-core.
+// Generates a serde struct with Default sourced from qsm-core. Each default goes through `Into`, so
+// a field can be QSMxT's serde form of a qsm-core type (`te`: `EchoTime` → `EchoTimeChoice`).
 
 macro_rules! param_config {
     ($name:ident from $core:path { $($field:ident : $ty:ty),* $(,)? }) => {
@@ -15,7 +16,7 @@ macro_rules! param_config {
             fn default() -> Self {
                 #[allow(unused)]
                 let p = <$core>::default();
-                Self { $($field: p.$field),* }
+                Self { $($field: p.$field.into()),* }
             }
         }
     };
@@ -24,33 +25,39 @@ macro_rules! param_config {
 // ─── Algorithm parameter configs (each ~1-3 lines) ───
 
 param_config!(RtsConfig from qsm_core::inversion::RtsParams {
-    delta: f64, mu: f64, rho: f64, tol: f64, max_iter: usize, lsmr_iter: usize
+    delta: f64, mu: f64, rho: f64, tol: f64, max_iter: usize, lsmr_iter: usize, tau: f64, gamma: f64
 });
 // `rho`: `None` is qsm-core's 100·λ, so it follows λ.
 param_config!(TvConfig from qsm_core::inversion::TvParams {
     lambda: f64, rho: Option<f64>, tol: f64, max_iter: usize
 });
 param_config!(TkdConfig from qsm_core::inversion::TkdParams { threshold: f64 });
+// `te` (here and below): which of the scan's echo times the method converts the field from ppm to
+// radians at; each method's default is its reference code's. The scan's echo times and field
+// strength are not settings: qsm-core's dispatcher fills them in.
+// NLTV's `rho`: `None` is qsm-core's 100·λ, so it follows λ.
 param_config!(NltvConfig from qsm_core::inversion::NltvParams {
-    lambda: f64, mu: f64, tol: f64, max_iter: usize, max_iter_newton: usize
+    lambda: f64, rho: Option<f64>, mu: f64, tol: f64, max_iter: usize, tol_newton: f64,
+    max_iter_newton: usize, te: EchoTimeChoice
 });
 param_config!(NdiConfig from qsm_core::inversion::NdiParams {
-    tau: f64, alpha: f64, max_iter: usize, auto_stop: bool
+    tau: f64, alpha: f64, max_iter: usize, auto_stop: bool, te: EchoTimeChoice
 });
 // FANSI's `mu1`, `alpha0` and `mu0`, L1-QSM's `mu1` and HD-QSM's `mu1_l2`: `None` is the value
 // qsm-core derives from the method's other weights (FANSI: 100·α1, 2·α1, 2·μ1; L1-QSM: 100·α1;
 // HD-QSM: 100·α_l2), so they follow those.
 param_config!(FansiConfig from qsm_core::inversion::FansiParams {
     alpha1: f64, mu1: Option<f64>, mu2: f64, alpha0: Option<f64>, mu0: Option<f64>, max_iter: usize,
-    tol_update: f64, tol_delta: f64
+    tol_update: f64, tol_delta: f64, te: EchoTimeChoice
 });
 param_config!(L1qsmConfig from qsm_core::inversion::L1QsmParams {
     alpha1: f64, mu1: Option<f64>, mu2: f64, mu3: f64, lambda: f64, max_iter: usize,
-    tol_update: f64, tol_delta: f64
+    tol_update: f64, tol_delta: f64, te: EchoTimeChoice
 });
+// WH-QSM's `weight`: the data weight; any but `flat` is made from the magnitude.
 param_config!(WhqsmConfig from qsm_core::inversion::WhQsmParams {
     alpha1: f64, mu1: f64, mu2: f64, beta: f64, muh: f64, max_iter: usize,
-    tol_update: f64, tol_delta: f64
+    tol_update: f64, tol_delta: f64, weight: WhqsmWeight, te: EchoTimeChoice
 });
 param_config!(HdqsmConfig from qsm_core::inversion::HdQsmParams {
     alpha_l2: f64, mu1_l2: Option<f64>, mu2: f64, max_iter_l1: usize, max_iter_l2: usize, tol_update: f64
@@ -88,6 +95,8 @@ pub struct MediConfig {
     /// SMV-filter the field before mSMV, as the authors do. Off is only consistent for a field
     /// already high-passed by the same SMV; after PDF, V-SHARP or LBV it diverges.
     pub msmv_prefilter: bool,
+    /// Which echo time the field is converted to radians at (MEDI's `delta_TE`).
+    pub te: EchoTimeChoice,
 }
 impl Default for MediConfig {
     fn default() -> Self {
@@ -98,7 +107,7 @@ impl Default for MediConfig {
             smv_shrink_mask: p.smv_shrink_mask, data_weighting: p.data_weighting,
             percentage: p.percentage, cg_tol: p.cg_tol, cg_max_iter: p.cg_max_iter, max_iter: p.max_iter, tol: p.tol,
             msmv: p.msmv.is_some(), msmv_maxk: m.maxk, msmv_vessel_radius: m.vessel_radius,
-            msmv_prefilter: m.prefilter,
+            msmv_prefilter: m.prefilter, te: p.te.into(),
         }
     }
 }
@@ -114,7 +123,7 @@ impl MediConfig {
 }
 param_config!(TfiConfig from qsm_core::inversion::TfiParams {
     lambda: f64, precond: f64, data_weighting: i32,
-    percentage: f64, cg_tol: f64, cg_max_iter: usize, max_iter: usize, tol: f64
+    percentage: f64, cg_tol: f64, cg_max_iter: usize, max_iter: usize, tol: f64, te: EchoTimeChoice
 });
 param_config!(AmpPeConfig from qsm_core::inversion::AmpPeParams {
     wave_order: usize, nlevel: usize, wave_pec: f64, simulated_te: f64,
@@ -218,6 +227,8 @@ pub struct HeidiConfig {
     pub denoise_iterations: usize,
     pub denoise_time_step: f64,
     pub denoise_conductance: f64,
+    /// Which echo time the field stands for the phase of, in the conversion to HEIDI's units.
+    pub te: EchoTimeChoice,
 }
 impl Default for HeidiConfig {
     fn default() -> Self {
@@ -239,6 +250,7 @@ impl Default for HeidiConfig {
             denoise_iterations: d.iterations,
             denoise_time_step: d.time_step,
             denoise_conductance: d.conductance,
+            te: p.te.into(),
         }
     }
 }
@@ -593,7 +605,20 @@ impl VsharpConfig {
         }
     }
 }
-param_config!(PdfConfig from qsm_core::bgremove::PdfParams { tol: f64 });
+// PDF's `n_pad`: zero padding around the mask's bounding box, voxels per axis (0 = the full volume).
+param_config!(PdfConfig from qsm_core::bgremove::PdfParams {
+    tol: f64, n_cg: usize, space: PdfSpace, n_pad: usize
+});
+impl PdfConfig {
+    /// Why the settings cannot be used, if they cannot: a padding of 1, which `PDF.m` cannot run
+    /// with on odd extents (qsm-core refuses it).
+    pub fn validate(&self) -> Result<(), String> {
+        if self.n_pad == 1 {
+            return Err("PDF padding: must be 0 (the full volume) or at least 2 voxels (got 1)".into());
+        }
+        Ok(())
+    }
+}
 param_config!(LbvConfig from qsm_core::bgremove::LbvParams { tol: f64 });
 param_config!(IsmvConfig from qsm_core::bgremove::IsmvParams {
     tol: f64, max_iter: usize, radius: f64
@@ -602,12 +627,13 @@ param_config!(SharpConfig from qsm_core::bgremove::SharpParams { threshold: f64,
 param_config!(ResharpConfig from qsm_core::bgremove::ResharpParams {
     radius: f64, tik_reg: f64, tol: f64, max_iter: usize
 });
+// `pad`: zero padding per side, voxels per axis (STI Suite's `padsize`).
 param_config!(HarperellaConfig from qsm_core::bgremove::HarperellaParams {
-    radius: f64, max_iter: usize, tol: f64
+    radius: f64, max_iter: usize, tol: f64, pad: [usize; 3]
 });
 // iHARPERELLA has no SMV kernel, so no radius (QSM.rs#169).
 param_config!(IharperellaConfig from qsm_core::bgremove::IharperellaParams {
-    max_iter: usize, tol: f64
+    max_iter: usize, tol: f64, pad: [usize; 3]
 });
 param_config!(BetConfig from qsm_core::bet::BetParams {
     fractional_intensity: f64, smoothness: f64, gradient_threshold: f64,
@@ -711,7 +737,8 @@ impl Default for TikhonovConfig {
 
 // TGV needs special handling (f32→f64 conversion)
 /// TGV-QSM (QuantitativeSusceptibilityMappingTGV.jl). `alpha0` and `alpha1` are in the
-/// reference's units: radians, at the scan's first echo time and field strength.
+/// reference's units: radians, at the echo time `te` picks (the first by default) and the scan's
+/// field strength.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct TgvConfig {
@@ -721,6 +748,9 @@ pub struct TgvConfig {
     pub alpha0: f64,
     pub alpha1: f64,
     pub step_size: f64,
+    /// Which echo time a field combined over several echoes is converted to phase at; a single
+    /// echo's wrapped phase is at its own.
+    pub te: EchoTimeChoice,
 }
 impl Default for TgvConfig {
     fn default() -> Self {
@@ -731,7 +761,7 @@ impl Default for TgvConfig {
         Self {
             iterations: p.iterations, erosions: p.erosions,
             alpha0: widen(p.alpha0), alpha1: widen(p.alpha1),
-            step_size: widen(p.step_size),
+            step_size: widen(p.step_size), te: p.te.into(),
         }
     }
 }

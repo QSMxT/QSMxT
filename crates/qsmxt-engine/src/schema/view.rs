@@ -225,6 +225,21 @@ fn errors(config: &PipelineConfig, checked: impl Fn(&str) -> bool) -> Vec<(&'sta
     let mut out: Vec<(&'static str, String)> = rule_problems(config, &checked)
         .into_iter().map(|(path, e)| (path, sentence(&e))).collect();
     out.extend(super::out_of_range(config, &checked).into_iter().map(|p| (p.path, p.message)));
+    // A given echo time has to be a positive time (a named one is checked against the scan's
+    // echo times when the run is planned).
+    let inv = &config.inversion;
+    let echo_times = [
+        ("inversion.nltv.te", inv.nltv.te), ("inversion.medi.te", inv.medi.te),
+        ("inversion.tfi.te", inv.tfi.te), ("inversion.ndi.te", inv.ndi.te),
+        ("inversion.fansi.te", inv.fansi.te), ("inversion.l1qsm.te", inv.l1qsm.te),
+        ("inversion.whqsm.te", inv.whqsm.te), ("inversion.heidi.te", inv.heidi.te),
+        ("inversion.tgv.te", inv.tgv.te),
+    ];
+    for (path, te) in echo_times {
+        if let (true, Err(e)) = (checked(path), te.validate()) {
+            out.push((path, sentence(&e)));
+        }
+    }
     // The mask recipes' steps, against the mask schema's parameter ranges.
     let m = &config.masking;
     let recipes: [(&'static str, Vec<String>); 3] = [
@@ -260,7 +275,7 @@ pub(crate) fn rule_problems(config: &PipelineConfig, checked: impl Fn(&str) -> b
     // (the setting a message goes on when it names this parameter, the parameter), the first
     // being where any other message from the same check goes.
     type Targets = &'static [(&'static str, &'static str)];
-    let rules: [(Targets, Result<(), String>); 12] = [
+    let rules: [(Targets, Result<(), String>); 13] = [
         (&[("inversion.star.te", "")], config.inversion.star.validate()),
         (&[("field_mapping.b0_estimation", "")], config.field_mapping.validate()),
         (&[("separation.r2primenet.patch", "")], config.separation.r2primenet.validate()),
@@ -269,6 +284,7 @@ pub(crate) fn rule_problems(config: &PipelineConfig, checked: impl Fn(&str) -> b
         (&[("bg_removal.vsharp.min_radius", "min_radius"), ("bg_removal.vsharp.grid_spacing", "spacing_mm"),
             ("bg_removal.vsharp.radius_step", "radius_step")],
             s(bg.vsharp.validate())),
+        (&[("bg_removal.pdf.n_pad", "")], config.bg_removal.pdf.validate()),
         (&[("inversion.qsmart.frangi_scale_ratio", "")], s(frangi.validate())),
         (&[("inversion.amp_pe.nlevel", "nlevel"), ("inversion.amp_pe.wave_order", "wave_order")],
             s(inv.amp_pe.validate())),
