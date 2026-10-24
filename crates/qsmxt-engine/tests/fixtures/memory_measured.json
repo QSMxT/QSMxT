@@ -5731,6 +5731,438 @@
      108535767
     ]
    ]
+  },
+  {
+   "kind": "native",
+   "name": "bg-harperella-pad16-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT with QSM.rs v0.40.0), example data",
+   "threads": 1,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "harperella"
+    ],
+    [
+     "bg_removal.harperella.pad",
+     [
+      16,
+      16,
+      16
+     ]
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1390737194
+    ],
+    [
+     "bgremove",
+     1969793450
+    ],
+    [
+     "invert",
+     349700174
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "bg-harperella-pad16-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT with QSM.rs v0.40.0), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "harperella"
+    ],
+    [
+     "bg_removal.harperella.pad",
+     [
+      16,
+      16,
+      16
+     ]
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2463061546
+    ],
+    [
+     "bgremove",
+     1969793450
+    ],
+    [
+     "invert",
+     349700174
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "bg-iharperella-pad16-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT with QSM.rs v0.40.0), example data",
+   "threads": 1,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "iharperella"
+    ],
+    [
+     "bg_removal.iharperella.pad",
+     [
+      16,
+      16,
+      16
+     ]
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1390737194
+    ],
+    [
+     "bgremove",
+     1959840170
+    ],
+    [
+     "invert",
+     349700174
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "bg-iharperella-pad16-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT with QSM.rs v0.40.0), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "iharperella"
+    ],
+    [
+     "bg_removal.iharperella.pad",
+     [
+      16,
+      16,
+      16
+     ]
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2426689066
+    ],
+    [
+     "bgremove",
+     1959840170
+    ],
+    [
+     "invert",
+     349700174
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "bg-pdf-pad0-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT with QSM.rs v0.40.0), example data",
+   "threads": 1,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "pdf"
+    ],
+    [
+     "bg_removal.pdf.n_pad",
+     0
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1390737194
+    ],
+    [
+     "bgremove",
+     1754632442
+    ],
+    [
+     "invert",
+     349700174
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "bg-pdf-pad0-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT with QSM.rs v0.40.0), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "pdf"
+    ],
+    [
+     "bg_removal.pdf.n_pad",
+     0
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2369862634
+    ],
+    [
+     "bgremove",
+     1755119866
+    ],
+    [
+     "invert",
+     349700174
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "bg-pdf-pad80-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT with QSM.rs v0.40.0), example data",
+   "threads": 1,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "pdf"
+    ],
+    [
+     "bg_removal.pdf.n_pad",
+     80
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1390737194
+    ],
+    [
+     "bgremove",
+     2947414794
+    ],
+    [
+     "invert",
+     349700174
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "bg-pdf-pad80-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT with QSM.rs v0.40.0), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "bg_removal.algorithm",
+     "pdf"
+    ],
+    [
+     "bg_removal.pdf.n_pad",
+     80
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2233513066
+    ],
+    [
+     "bgremove",
+     2947963146
+    ],
+    [
+     "invert",
+     349700174
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
   }
  ]
 }
