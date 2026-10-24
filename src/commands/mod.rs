@@ -824,7 +824,7 @@ mod integration_tests {
             common: common_bgremove(input.clone(), mask.clone(), output.clone()),
             scan: scan(&[0.02]),
             magnitude: vec![magnitude.clone()],
-            tol: None,
+            tol: None, n_cg: None, space: None, n_pad: None,
         })).unwrap();
         assert!(output.exists());
         // One magnitude for two echo times is refused before PDF runs.
@@ -832,7 +832,7 @@ mod integration_tests {
             common: common_bgremove(input, mask, output),
             scan: scan(&[0.01, 0.02]),
             magnitude: vec![magnitude],
-            tol: None,
+            tol: None, n_cg: None, space: None, n_pad: None,
         })).unwrap_err().to_string();
         assert!(e.contains("magnitude of every echo"), "{e}");
     }
@@ -855,6 +855,32 @@ mod integration_tests {
         assert!(output.exists());
     }
 
+    /// `invert whqsm` takes a magnitude only for a magnitude data weight, and refuses that weight
+    /// without one; an echo time it cannot resolve from the scan is refused.
+    #[test]
+    fn test_invert_whqsm_weight_and_echo_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("field.nii");
+        let mask = dir.path().join("mask.nii");
+        let output = dir.path().join("chi.nii");
+        testutils::write_field(&input);
+        testutils::write_mask(&mask);
+        let whqsm = |weight, te, echoes: &[f64]| InvertCommand::Whqsm(crate::cli::InvertWhqsmArgs {
+            common: common_invert(input.clone(), mask.clone(), output.clone()),
+            scan: scan(echoes),
+            alpha1: None, mu1: None, mu2: None, beta: None, muh: None, max_iter: Some(1),
+            tol_update: None, tol_delta: None, weight, magnitude: vec![], te,
+        });
+        let e = super::invert::execute(whqsm(Some(qsmxt_engine::WhqsmWeight::InVivo), None, &[0.01, 0.02]))
+            .unwrap_err().to_string();
+        assert!(e.contains("--weight in-vivo needs --magnitude"), "{e}");
+        let e = super::invert::execute(whqsm(None, Some(qsmxt_engine::EchoTimeChoice::Spacing), &[0.02, 0.01]))
+            .unwrap_err().to_string();
+        assert!(e.contains("echo spacing"), "{e}");
+        super::invert::execute(whqsm(None, Some(qsmxt_engine::EchoTimeChoice::Last), &[0.01, 0.02])).unwrap();
+        assert!(output.exists());
+    }
+
     /// `invert tgv` takes a field in ppm like the other inversions, with the echo times and field
     /// strength its weights are in units of. One iteration is enough for the call site.
     #[test]
@@ -872,7 +898,7 @@ mod integration_tests {
             iterations: Some(1),
             erosions: Some(0),
             alpha1: None, alpha0: None,
-            step_size: None,
+            step_size: None, te: None,
         })).unwrap();
         assert!(output.exists());
     }
@@ -1789,7 +1815,7 @@ mod integration_tests {
             common: common_invert(input, mask, output.clone()),
             delta: None, mu: None,
             tol: Some(0.5), // loose tolerance for speed
-            rho: None, max_iter: None, lsmr_iter: None,
+            rho: None, max_iter: None, lsmr_iter: None, tau: None, gamma: None,
         })).unwrap();
         assert!(output.exists());
     }
@@ -1876,7 +1902,7 @@ mod integration_tests {
             lambda: None, merit: Some(false), smv: Some(false), smv_radius: None,
             msmv, msmv_maxk: None, msmv_vessel_radius: None, no_msmv_prefilter: false,
             data_weighting: None, percentage: None, cg_tol: None, cg_max_iter: Some(2),
-            max_iter: Some(1), tol: None,
+            max_iter: Some(1), tol: None, te: None,
         });
         super::invert::execute(medi(mags.clone(), false)).unwrap();
         assert!(output.exists());
@@ -1899,7 +1925,7 @@ mod integration_tests {
         testutils::write_magnitude(&magnitude);
         super::invert::execute(InvertCommand::Ndi(InvertNdiArgs {
             common: common_invert(input, mask, output.clone()),
-            tau: None, alpha: None, max_iter: Some(2), auto_stop: None,
+            tau: None, alpha: None, max_iter: Some(2), auto_stop: None, te: None,
             scan: scan(&[0.02]),
             magnitude: vec![magnitude],
         })).unwrap();

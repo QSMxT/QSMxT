@@ -51,6 +51,24 @@ lambda = 0.0
 See [multi-orientation](/QSMxT/reference/algorithms/#multi-orientation-cosmos-and-sti)
 for what the pattern matches and what will be refused.
 
+A method that converts the field to phase at one echo time has a `te` setting naming it:
+`"first"`, `"last"`, `"spacing"` (TE2 − TE1), `"sum"` (of the echo times), or a given time
+in seconds. On the command line the same choice is `first`, `last`, `spacing`, `sum`, or a
+time in ms:
+
+```toml
+[inversion.medi]
+te = "spacing"            # or "first", "last", "sum", or { seconds = 0.02 }
+
+[inversion.whqsm]
+weight = "flat"           # or "max-normalised", "in-vivo"
+```
+
+`te = { seconds = 0.02 }` is `--medi-te 20`. A setting the method derives from its others
+(`inversion.tv.rho`, `inversion.nltv.rho`, FANSI's `mu1`, `alpha0` and `mu0`, L1-QSM's `mu1`,
+HD-QSM's `mu1_l2`) is left out of the file to take the derived value; on the command line it is
+`auto`.
+
 :::tip
 Rather than writing flags or TOML by hand, configure interactively in the
 [TUI](/QSMxT/guides/running-interactively/) — it shows the equivalent `qsmxt run`
@@ -71,12 +89,15 @@ A file without it is read as follows, and what changed is logged:
 - **Any other file** (written by hand, or a changed-settings file) holds what its author
   chose, so nothing is reset.
 - **Settings whose meaning changed** are refused when they hold anything but today's
-  default and their method runs: TGV's `alpha0`/`alpha1` (now in radians at the scan's
-  first echo time and field strength), MEDI's and TFI's `lambda` (now MEDI_L1's data
+  default and their method runs: TGV's `alpha0`/`alpha1` (now in radians at the echo time
+  `inversion.tgv.te` picks, the first by default, and the field strength), MEDI's and TFI's `lambda` (now MEDI_L1's data
   weight), and `field_mapping.phase_offset_sigma` (now `phase_offset_sigma_mm`, in mm).
   The message says what changed. Give the value in the new terms and add `schema_version`
   with the current version at the top, or remove the setting to use the default. When the
   method does not run, the value is dropped with a note.
+- Settings an earlier file does not have (each method's echo time `te`, WH-QSM's `weight`,
+  NLTV's `rho` and `tol_newton`, RTS's `tau` and `gamma`, PDF's `n_cg`, `space` and `n_pad`,
+  HARPERELLA's and iHARPERELLA's `pad`) take today's defaults.
 - Settings that no longer exist are ignored, with a warning where that changes what a
   run does (for example `bg_removal.msmv_refine`: mSMV is now MEDI's option,
   `inversion.medi.msmv`).

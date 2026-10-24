@@ -375,9 +375,10 @@ fn what_changed(changed: Changed, kind: Kind) -> String {
 fn consequence(changed: Changed) -> &'static str {
     match changed {
         Changed::TgvAlpha =>
-            "They are now in radians at the scan's first echo time and field strength, as \
+            "They are now in radians at the scan's echo time and field strength, as \
              QuantitativeSusceptibilityMappingTGV.jl defines them (a multi-echo field map is \
-             expressed as phase at the first echo time), so the same number regularises differently.",
+             expressed as phase at the echo time inversion.tgv.te picks, the first by default), so \
+             the same number regularises differently.",
         Changed::MediLambda =>
             "MEDI is now MEDI_L1, whose λ weights the data term on the field in radians over the echo \
              spacing, weighted by the noise map, so the same number is a much weaker fit.",
@@ -494,6 +495,98 @@ mod tests {
         assert_eq!((back, m), (c, super::Migration::default()));
     }
 
+    /// Earlier files have no echo-time choices and none of the method settings QSM.rs v0.40.0 added
+    /// (WH-QSM's weight, NLTV's ρ and Newton tolerance, RTS's τ and γ, PDF's iterations, kernel and
+    /// padding, HARPERELLA's padding): they read as today's defaults, with nothing to say.
+    #[test]
+    fn earlier_files_take_the_new_settings_at_their_defaults() {
+        let d = PipelineConfig::default();
+        for file in [V9_FULL, V10_FULL] {
+            let (c, m) = read(file).unwrap();
+            let (i, di) = (&c.inversion, &d.inversion);
+            assert_eq!(
+                [
+                    i.nltv.te, i.medi.te, i.tfi.te, i.ndi.te, i.fansi.te, i.l1qsm.te, i.whqsm.te,
+                    i.heidi.te, i.tgv.te
+                ],
+                [
+                    di.nltv.te,
+                    di.medi.te,
+                    di.tfi.te,
+                    di.ndi.te,
+                    di.fansi.te,
+                    di.l1qsm.te,
+                    di.whqsm.te,
+                    di.heidi.te,
+                    di.tgv.te
+                ]
+            );
+            assert_eq!(
+                (
+                    i.whqsm.weight,
+                    i.nltv.rho,
+                    i.nltv.tol_newton,
+                    i.rts.tau,
+                    i.rts.gamma
+                ),
+                (
+                    di.whqsm.weight,
+                    di.nltv.rho,
+                    di.nltv.tol_newton,
+                    di.rts.tau,
+                    di.rts.gamma
+                )
+            );
+            let (b, db) = (&c.bg_removal, &d.bg_removal);
+            assert_eq!(
+                (
+                    b.pdf.n_cg,
+                    b.pdf.space,
+                    b.pdf.n_pad,
+                    b.harperella.pad,
+                    b.iharperella.pad
+                ),
+                (
+                    db.pdf.n_cg,
+                    db.pdf.space,
+                    db.pdf.n_pad,
+                    db.harperella.pad,
+                    db.iharperella.pad
+                )
+            );
+            let new = [
+                "nltv.te",
+                "medi.te",
+                "tfi.te",
+                "ndi.te",
+                "fansi.te",
+                "l1qsm.te",
+                "whqsm.te",
+                "heidi.te",
+                "tgv.te",
+                "whqsm.weight",
+                "nltv.rho",
+                "nltv.tol_newton",
+                "rts.tau",
+                "rts.gamma",
+                "pdf.n_cg",
+                "pdf.space",
+                "pdf.n_pad",
+                "harperella.pad",
+                "iharperella.pad",
+            ];
+            for path in new {
+                assert!(
+                    !m.notes
+                        .iter()
+                        .chain(&m.warnings)
+                        .any(|n| n.contains(&format!(".{path} "))),
+                    "{path}: {m:#?}"
+                );
+            }
+        }
+    }
+
     /// QSMxT 9.22.0's full file, with iLSQR: it loads, one note per setting reset, and its TGV
     /// weights (QSMxT 9's defaults) take today's even though TGV does not run.
     #[test]
@@ -536,7 +629,7 @@ mod tests {
         assert!(
             e.contains("inversion.tgv.alpha1 = 0.0008")
                 && e.contains("QSMxT 9 applied")
-                && e.contains("radians at the scan's first echo time")
+                && e.contains("radians at the scan's echo time")
                 && e.contains("schema_version = 2")
                 && !e.contains("were in ppm"),
             "{e}"

@@ -1004,7 +1004,11 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             self.log(Level::Info, "Skipping background removal (single-step inversion handles it internally)");
         }
         let algorithm = format!("{}", self.config.inversion.algorithm);
-        let params = stages::inversion::params(self.config);
+        let mut params = stages::inversion::params(self.config);
+        // The echo time the field is converted to radians at, as the scan's echo times resolve it.
+        if let Some(te) = stages::inversion::resolved_te(self.config, &self.meta) {
+            params["te_s"] = serde_json::json!(te);
+        }
         let Some(key) = self.begin(&name, Some(&algorithm), &params, "Skipping invert (cached)",
                                    &format!("Dipole inversion{label}")) else { return Ok(()) };
         let (field_item, mask_item) = if skip_bgremove {

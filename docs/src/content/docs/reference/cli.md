@@ -90,23 +90,29 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--rts-rho <RTS_RHO>` | RTS rho (ADMM penalty) |
 | `--rts-max-iter <RTS_MAX_ITER>` | RTS max iterations. |
 | `--rts-lsmr-iter <RTS_LSMR_ITER>` | RTS LSMR iterations. |
+| `--rts-tau <RTS_TAU>` | RTS: rho is raised when the primal residual falls by less than this factor (tau) |
+| `--rts-gamma <RTS_GAMMA>` | RTS: the factor rho is raised by (gamma) |
 | `--tv-lambda <TV_LAMBDA>` | TV lambda parameter. |
-| `--tv-rho <TV_RHO>` | TV rho (ADMM penalty; default: 100 × lambda) |
+| `--tv-rho <RHO>` | TV rho (ADMM penalty), or auto for 100 × lambda (default: auto) |
 | `--tv-tol <TV_TOL>` | TV tolerance. |
 | `--tv-max-iter <TV_MAX_ITER>` | TV max iterations. |
 | `--tkd-threshold <TKD_THRESHOLD>` | TKD threshold. |
 | `--tsvd-threshold <TSVD_THRESHOLD>` | TSVD threshold. |
 | `--tgv-iterations <TGV_ITERATIONS>` | TGV iterations (default: from the voxel size, as the reference does) |
 | `--tgv-erosions <TGV_EROSIONS>` | TGV erosions. |
-| `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in radians at the scan's first echo time and field strength (the reference's units) |
-| `--tgv-alpha0 <TGV_ALPHA0>` | TGV alpha0 (second-order weight), in radians at the scan's first echo time and field strength (the reference's units) |
+| `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) |
+| `--tgv-alpha0 <TGV_ALPHA0>` | TGV alpha0 (second-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) |
 | `--tgv-step-size <TGV_STEP_SIZE>` | TGV primal step size multiplier. |
+| `--tgv-te <TE>` | TGV: the echo time a field from several echoes is converted to phase at, and its weights are in radians at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first). A single echo is at its own. |
 | `--tikhonov-lambda <TIKHONOV_LAMBDA>` | Tikhonov lambda. |
 | `--nltv-lambda <NLTV_LAMBDA>` | NLTV lambda. |
+| `--nltv-rho <RHO>` | NLTV rho (ADMM penalty), or auto for 100 × lambda (default: auto) |
 | `--nltv-mu <NLTV_MU>` | NLTV mu (penalty parameter) |
 | `--nltv-tol <NLTV_TOL>` | NLTV tolerance. |
 | `--nltv-max-iter <NLTV_MAX_ITER>` | NLTV max iterations. |
+| `--nltv-tol-newton <NLTV_TOL_NEWTON>` | NLTV convergence tolerance of the Newton iterations of the data-term subproblem. |
 | `--nltv-newton-iter <NLTV_NEWTON_ITER>` | NLTV maximum Newton iterations of the data-term subproblem. |
+| `--nltv-te <TE>` | NLTV: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 | `--medi-lambda <MEDI_LAMBDA>` | MEDI lambda: the data-fidelity weight (larger fits the field more closely) |
 | `--medi-merit <MEDI_MERIT>` | MEDI: enable MERIT weighting. |
 | `--medi-smv` | MEDI: high-pass the local field with a spherical mean value filter, removing residual background near the brain edge (MEDI-SMV; on by default) |
@@ -122,6 +128,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--medi-cg-max-iter <MEDI_CG_MAX_ITER>` | MEDI CG max iterations. |
 | `--medi-max-iter <MEDI_MAX_ITER>` | MEDI max outer iterations. |
 | `--medi-tol <MEDI_TOL>` | MEDI outer tolerance. |
+| `--medi-te <TE>` | MEDI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing) |
 | `--tfi-lambda <TFI_LAMBDA>` | TFI lambda: the data-fidelity weight (larger fits the field more closely) |
 | `--tfi-precond <TFI_PRECOND>` | TFI preconditioner value (susceptibility scaling outside the mask) |
 | `--tfi-data-weighting <TFI_DATA_WEIGHTING>` | TFI: data weighting mode (0=uniform, 1=SNR) |
@@ -130,6 +137,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--tfi-cg-max-iter <TFI_CG_MAX_ITER>` | TFI CG max iterations. |
 | `--tfi-max-iter <TFI_MAX_ITER>` | TFI max outer iterations. |
 | `--tfi-tol <TFI_TOL>` | TFI outer tolerance. |
+| `--tfi-te <TE>` | TFI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing) |
 | `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve. |
 | `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve. |
 | `--ilsqr-pad-mm <MM>` | iLSQR zero-padding in mm per side. |
@@ -150,6 +158,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--heidi-denoise-iterations <HEIDI_DENOISE_ITERATIONS>` | Anisotropic-diffusion iterations. |
 | `--heidi-denoise-time-step <HEIDI_DENOISE_TIME_STEP>` | Anisotropic-diffusion time step. |
 | `--heidi-denoise-conductance <HEIDI_DENOISE_CONDUCTANCE>` | Anisotropic-diffusion conductance. |
+| `--heidi-te <TE>` | HEIDI: the echo time the field stands for the phase of, in the conversion to HEIDI's units: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: last) |
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
 | `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
 | `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius. |
@@ -168,22 +177,25 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--ndi-alpha <NDI_ALPHA>` | NDI L2 regularization weight (alpha) |
 | `--ndi-max-iter <NDI_MAX_ITER>` | NDI max iterations. |
 | `--ndi-auto-stop <NDI_AUTO_STOP>` | NDI: stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto); --ndi-max-iter is then the maximum. |
+| `--ndi-te <TE>` | NDI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 | `--fansi-alpha1 <FANSI_ALPHA1>` | FANSI first-order (TV/TGV) L1 penalty weight (alpha1) |
-| `--fansi-mu1 <FANSI_MU1>` | FANSI gradient-consistency ADMM weight (mu1; default: 100 × alpha1) |
+| `--fansi-mu1 <MU1>` | FANSI gradient-consistency ADMM weight (mu1), or auto for 100 × alpha1 (default: auto) |
 | `--fansi-mu2 <FANSI_MU2>` | FANSI fidelity-consistency ADMM weight (mu2) |
-| `--fansi-alpha0 <FANSI_ALPHA0>` | FANSI second-order L1 penalty weight (alpha0, nlTGV only; default: 2 × alpha1) |
-| `--fansi-mu0 <FANSI_MU0>` | FANSI second-order consistency ADMM weight (mu0, nlTGV only; default: 2 × mu1) |
+| `--fansi-alpha0 <ALPHA0>` | FANSI second-order L1 penalty weight (alpha0, nlTGV only), or auto for 2 × alpha1 (default: auto) |
+| `--fansi-mu0 <MU0>` | FANSI second-order consistency ADMM weight (mu0, nlTGV only), or auto for 2 × mu1 (default: auto) |
 | `--fansi-max-iter <FANSI_MAX_ITER>` | FANSI outer ADMM iterations. |
 | `--fansi-tol-update <FANSI_TOL_UPDATE>` | FANSI percent-update convergence tolerance. |
 | `--fansi-tol-delta <FANSI_TOL_DELTA>` | FANSI inner Newton convergence tolerance. |
+| `--fansi-te <TE>` | FANSI (nlTV and nlTGV): the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing) |
 | `--l1qsm-alpha1 <L1QSM_ALPHA1>` | L1-QSM gradient (TV) L1 penalty weight (alpha1) |
-| `--l1qsm-mu1 <L1QSM_MU1>` | L1-QSM gradient-consistency ADMM weight (mu1; default: 100 × alpha1) |
+| `--l1qsm-mu1 <MU1>` | L1-QSM gradient-consistency ADMM weight (mu1), or auto for 100 × alpha1 (default: auto) |
 | `--l1qsm-mu2 <L1QSM_MU2>` | L1-QSM fidelity-consistency ADMM weight (mu2) |
 | `--l1qsm-mu3 <L1QSM_MU3>` | L1-QSM L1 proximal ADMM weight (mu3) |
 | `--l1qsm-lambda <L1QSM_LAMBDA>` | L1-QSM L1 fidelity strength (lambda) |
 | `--l1qsm-max-iter <L1QSM_MAX_ITER>` | L1-QSM outer ADMM iterations. |
 | `--l1qsm-tol-update <L1QSM_TOL_UPDATE>` | L1-QSM percent-update convergence tolerance. |
 | `--l1qsm-tol-delta <L1QSM_TOL_DELTA>` | L1-QSM inner Newton convergence tolerance. |
+| `--l1qsm-te <TE>` | L1-QSM: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 | `--whqsm-alpha1 <WHQSM_ALPHA1>` | WH-QSM TV regularization weight (alpha1) |
 | `--whqsm-mu1 <WHQSM_MU1>` | WH-QSM ADMM penalty for TV splitting (mu1) |
 | `--whqsm-mu2 <WHQSM_MU2>` | WH-QSM ADMM penalty for data-fidelity splitting (mu2) |
@@ -192,8 +204,10 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--whqsm-max-iter <WHQSM_MAX_ITER>` | WH-QSM max outer iterations. |
 | `--whqsm-tol-update <WHQSM_TOL_UPDATE>` | WH-QSM percent-update convergence tolerance. |
 | `--whqsm-tol-delta <WHQSM_TOL_DELTA>` | WH-QSM inner Newton convergence tolerance. |
+| `--whqsm-weight <WEIGHT>` | WH-QSM data weight: flat (1 in the mask), max-normalised (the magnitude over its maximum) or in-vivo (min(2 × magnitude / maximum, 1)); the last two need magnitude images (default: flat) |
+| `--whqsm-te <TE>` | WH-QSM: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 | `--hdqsm-alpha-l2 <HDQSM_ALPHA_L2>` | HD-QSM L2-stage TV weight (alpha_l2) |
-| `--hdqsm-mu1-l2 <HDQSM_MU1_L2>` | HD-QSM L2-stage gradient-consistency ADMM weight (mu1_l2; default: 100 × alpha_l2) |
+| `--hdqsm-mu1-l2 <MU1_L2>` | HD-QSM L2-stage gradient-consistency ADMM weight (mu1_l2), or auto for 100 × alpha_l2 (default: auto) |
 | `--hdqsm-mu2 <HDQSM_MU2>` | HD-QSM fidelity consistency weight (mu2) |
 | `--hdqsm-max-iter-l1 <HDQSM_MAX_ITER_L1>` | HD-QSM stage-1 (L1) iterations (max_iter_l1) |
 | `--hdqsm-max-iter-l2 <HDQSM_MAX_ITER_L2>` | HD-QSM stage-2 (L2) iterations (max_iter_l2) |
@@ -264,6 +278,9 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--vsharp-grid <VSHARP_GRID>` | Grid V-SHARP estimates the background on: `native` (default), `finest` (isotropic at the smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened), or `isotropic` (spacing from --vsharp-grid-spacing). The local field keeps native resolution. Values: `native`, `finest`, `isotropic`. |
 | `--vsharp-grid-spacing <MM>` | V-SHARP isotropic working-grid spacing in mm (default 1); used with --vsharp-grid isotropic. |
 | `--pdf-tol <PDF_TOL>` | PDF tolerance, relative to the noise level. |
+| `--pdf-n-cg <PDF_N_CG>` | PDF maximum conjugate-gradient iterations (default: 300) |
+| `--pdf-space <SPACE>` | PDF dipole kernel: image (the FFT of the dipole sampled on the voxel grid) or kspace (the analytic k-space kernel) (default: image) |
+| `--pdf-n-pad <VOXELS>` | PDF zero-padding around the mask's bounding box, in voxels; 0 runs on the full volume (default: 40) |
 | `--lbv-tol <LBV_TOL>` | LBV tolerance. |
 | `--ismv-tol <ISMV_TOL>` | iSMV tolerance. |
 | `--ismv-max-iter <ISMV_MAX_ITER>` | iSMV max iterations. |
@@ -277,8 +294,10 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--harperella-radius <HARPERELLA_RADIUS>` | HARPERELLA SMV kernel radius in mm. |
 | `--harperella-max-iter <HARPERELLA_MAX_ITER>` | HARPERELLA maximum iterations. |
 | `--harperella-tol <HARPERELLA_TOL>` | HARPERELLA convergence tolerance. |
+| `--harperella-pad <X> <Y> <Z>` | HARPERELLA zero-padding in voxels per side, X Y Z (default: 0 0 0) |
 | `--iharperella-max-iter <IHARPERELLA_MAX_ITER>` | iHARPERELLA maximum iterations. |
 | `--iharperella-tol <IHARPERELLA_TOL>` | iHARPERELLA convergence tolerance. |
+| `--iharperella-pad <X> <Y> <Z>` | iHARPERELLA zero-padding in voxels per side, X Y Z (default: 0 0 0) |
 | `--no-romeo-phase-coherence` | ROMEO: disable phase coherence weights (default: on) |
 | `--no-romeo-phase-gradient-coherence` | ROMEO: disable phase gradient coherence weights (default: on) |
 | `--no-romeo-phase-linearity` | ROMEO: disable phase linearity weights (default: on) |
@@ -470,23 +489,29 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--rts-rho <RTS_RHO>` | RTS rho (ADMM penalty) |
 | `--rts-max-iter <RTS_MAX_ITER>` | RTS max iterations. |
 | `--rts-lsmr-iter <RTS_LSMR_ITER>` | RTS LSMR iterations. |
+| `--rts-tau <RTS_TAU>` | RTS: rho is raised when the primal residual falls by less than this factor (tau) |
+| `--rts-gamma <RTS_GAMMA>` | RTS: the factor rho is raised by (gamma) |
 | `--tv-lambda <TV_LAMBDA>` | TV lambda parameter. |
-| `--tv-rho <TV_RHO>` | TV rho (ADMM penalty; default: 100 × lambda) |
+| `--tv-rho <RHO>` | TV rho (ADMM penalty), or auto for 100 × lambda (default: auto) |
 | `--tv-tol <TV_TOL>` | TV tolerance. |
 | `--tv-max-iter <TV_MAX_ITER>` | TV max iterations. |
 | `--tkd-threshold <TKD_THRESHOLD>` | TKD threshold. |
 | `--tsvd-threshold <TSVD_THRESHOLD>` | TSVD threshold. |
 | `--tgv-iterations <TGV_ITERATIONS>` | TGV iterations (default: from the voxel size, as the reference does) |
 | `--tgv-erosions <TGV_EROSIONS>` | TGV erosions. |
-| `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in radians at the scan's first echo time and field strength (the reference's units) |
-| `--tgv-alpha0 <TGV_ALPHA0>` | TGV alpha0 (second-order weight), in radians at the scan's first echo time and field strength (the reference's units) |
+| `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) |
+| `--tgv-alpha0 <TGV_ALPHA0>` | TGV alpha0 (second-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) |
 | `--tgv-step-size <TGV_STEP_SIZE>` | TGV primal step size multiplier. |
+| `--tgv-te <TE>` | TGV: the echo time a field from several echoes is converted to phase at, and its weights are in radians at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first). A single echo is at its own. |
 | `--tikhonov-lambda <TIKHONOV_LAMBDA>` | Tikhonov lambda. |
 | `--nltv-lambda <NLTV_LAMBDA>` | NLTV lambda. |
+| `--nltv-rho <RHO>` | NLTV rho (ADMM penalty), or auto for 100 × lambda (default: auto) |
 | `--nltv-mu <NLTV_MU>` | NLTV mu (penalty parameter) |
 | `--nltv-tol <NLTV_TOL>` | NLTV tolerance. |
 | `--nltv-max-iter <NLTV_MAX_ITER>` | NLTV max iterations. |
+| `--nltv-tol-newton <NLTV_TOL_NEWTON>` | NLTV convergence tolerance of the Newton iterations of the data-term subproblem. |
 | `--nltv-newton-iter <NLTV_NEWTON_ITER>` | NLTV maximum Newton iterations of the data-term subproblem. |
+| `--nltv-te <TE>` | NLTV: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 | `--medi-lambda <MEDI_LAMBDA>` | MEDI lambda: the data-fidelity weight (larger fits the field more closely) |
 | `--medi-merit <MEDI_MERIT>` | MEDI: enable MERIT weighting. |
 | `--medi-smv` | MEDI: high-pass the local field with a spherical mean value filter, removing residual background near the brain edge (MEDI-SMV; on by default) |
@@ -502,6 +527,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--medi-cg-max-iter <MEDI_CG_MAX_ITER>` | MEDI CG max iterations. |
 | `--medi-max-iter <MEDI_MAX_ITER>` | MEDI max outer iterations. |
 | `--medi-tol <MEDI_TOL>` | MEDI outer tolerance. |
+| `--medi-te <TE>` | MEDI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing) |
 | `--tfi-lambda <TFI_LAMBDA>` | TFI lambda: the data-fidelity weight (larger fits the field more closely) |
 | `--tfi-precond <TFI_PRECOND>` | TFI preconditioner value (susceptibility scaling outside the mask) |
 | `--tfi-data-weighting <TFI_DATA_WEIGHTING>` | TFI: data weighting mode (0=uniform, 1=SNR) |
@@ -510,6 +536,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--tfi-cg-max-iter <TFI_CG_MAX_ITER>` | TFI CG max iterations. |
 | `--tfi-max-iter <TFI_MAX_ITER>` | TFI max outer iterations. |
 | `--tfi-tol <TFI_TOL>` | TFI outer tolerance. |
+| `--tfi-te <TE>` | TFI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing) |
 | `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve. |
 | `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve. |
 | `--ilsqr-pad-mm <MM>` | iLSQR zero-padding in mm per side. |
@@ -530,6 +557,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--heidi-denoise-iterations <HEIDI_DENOISE_ITERATIONS>` | Anisotropic-diffusion iterations. |
 | `--heidi-denoise-time-step <HEIDI_DENOISE_TIME_STEP>` | Anisotropic-diffusion time step. |
 | `--heidi-denoise-conductance <HEIDI_DENOISE_CONDUCTANCE>` | Anisotropic-diffusion conductance. |
+| `--heidi-te <TE>` | HEIDI: the echo time the field stands for the phase of, in the conversion to HEIDI's units: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: last) |
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
 | `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
 | `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius. |
@@ -548,22 +576,25 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--ndi-alpha <NDI_ALPHA>` | NDI L2 regularization weight (alpha) |
 | `--ndi-max-iter <NDI_MAX_ITER>` | NDI max iterations. |
 | `--ndi-auto-stop <NDI_AUTO_STOP>` | NDI: stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto); --ndi-max-iter is then the maximum. |
+| `--ndi-te <TE>` | NDI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 | `--fansi-alpha1 <FANSI_ALPHA1>` | FANSI first-order (TV/TGV) L1 penalty weight (alpha1) |
-| `--fansi-mu1 <FANSI_MU1>` | FANSI gradient-consistency ADMM weight (mu1; default: 100 × alpha1) |
+| `--fansi-mu1 <MU1>` | FANSI gradient-consistency ADMM weight (mu1), or auto for 100 × alpha1 (default: auto) |
 | `--fansi-mu2 <FANSI_MU2>` | FANSI fidelity-consistency ADMM weight (mu2) |
-| `--fansi-alpha0 <FANSI_ALPHA0>` | FANSI second-order L1 penalty weight (alpha0, nlTGV only; default: 2 × alpha1) |
-| `--fansi-mu0 <FANSI_MU0>` | FANSI second-order consistency ADMM weight (mu0, nlTGV only; default: 2 × mu1) |
+| `--fansi-alpha0 <ALPHA0>` | FANSI second-order L1 penalty weight (alpha0, nlTGV only), or auto for 2 × alpha1 (default: auto) |
+| `--fansi-mu0 <MU0>` | FANSI second-order consistency ADMM weight (mu0, nlTGV only), or auto for 2 × mu1 (default: auto) |
 | `--fansi-max-iter <FANSI_MAX_ITER>` | FANSI outer ADMM iterations. |
 | `--fansi-tol-update <FANSI_TOL_UPDATE>` | FANSI percent-update convergence tolerance. |
 | `--fansi-tol-delta <FANSI_TOL_DELTA>` | FANSI inner Newton convergence tolerance. |
+| `--fansi-te <TE>` | FANSI (nlTV and nlTGV): the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing) |
 | `--l1qsm-alpha1 <L1QSM_ALPHA1>` | L1-QSM gradient (TV) L1 penalty weight (alpha1) |
-| `--l1qsm-mu1 <L1QSM_MU1>` | L1-QSM gradient-consistency ADMM weight (mu1; default: 100 × alpha1) |
+| `--l1qsm-mu1 <MU1>` | L1-QSM gradient-consistency ADMM weight (mu1), or auto for 100 × alpha1 (default: auto) |
 | `--l1qsm-mu2 <L1QSM_MU2>` | L1-QSM fidelity-consistency ADMM weight (mu2) |
 | `--l1qsm-mu3 <L1QSM_MU3>` | L1-QSM L1 proximal ADMM weight (mu3) |
 | `--l1qsm-lambda <L1QSM_LAMBDA>` | L1-QSM L1 fidelity strength (lambda) |
 | `--l1qsm-max-iter <L1QSM_MAX_ITER>` | L1-QSM outer ADMM iterations. |
 | `--l1qsm-tol-update <L1QSM_TOL_UPDATE>` | L1-QSM percent-update convergence tolerance. |
 | `--l1qsm-tol-delta <L1QSM_TOL_DELTA>` | L1-QSM inner Newton convergence tolerance. |
+| `--l1qsm-te <TE>` | L1-QSM: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 | `--whqsm-alpha1 <WHQSM_ALPHA1>` | WH-QSM TV regularization weight (alpha1) |
 | `--whqsm-mu1 <WHQSM_MU1>` | WH-QSM ADMM penalty for TV splitting (mu1) |
 | `--whqsm-mu2 <WHQSM_MU2>` | WH-QSM ADMM penalty for data-fidelity splitting (mu2) |
@@ -572,8 +603,10 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--whqsm-max-iter <WHQSM_MAX_ITER>` | WH-QSM max outer iterations. |
 | `--whqsm-tol-update <WHQSM_TOL_UPDATE>` | WH-QSM percent-update convergence tolerance. |
 | `--whqsm-tol-delta <WHQSM_TOL_DELTA>` | WH-QSM inner Newton convergence tolerance. |
+| `--whqsm-weight <WEIGHT>` | WH-QSM data weight: flat (1 in the mask), max-normalised (the magnitude over its maximum) or in-vivo (min(2 × magnitude / maximum, 1)); the last two need magnitude images (default: flat) |
+| `--whqsm-te <TE>` | WH-QSM: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 | `--hdqsm-alpha-l2 <HDQSM_ALPHA_L2>` | HD-QSM L2-stage TV weight (alpha_l2) |
-| `--hdqsm-mu1-l2 <HDQSM_MU1_L2>` | HD-QSM L2-stage gradient-consistency ADMM weight (mu1_l2; default: 100 × alpha_l2) |
+| `--hdqsm-mu1-l2 <MU1_L2>` | HD-QSM L2-stage gradient-consistency ADMM weight (mu1_l2), or auto for 100 × alpha_l2 (default: auto) |
 | `--hdqsm-mu2 <HDQSM_MU2>` | HD-QSM fidelity consistency weight (mu2) |
 | `--hdqsm-max-iter-l1 <HDQSM_MAX_ITER_L1>` | HD-QSM stage-1 (L1) iterations (max_iter_l1) |
 | `--hdqsm-max-iter-l2 <HDQSM_MAX_ITER_L2>` | HD-QSM stage-2 (L2) iterations (max_iter_l2) |
@@ -644,6 +677,9 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--vsharp-grid <VSHARP_GRID>` | Grid V-SHARP estimates the background on: `native` (default), `finest` (isotropic at the smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened), or `isotropic` (spacing from --vsharp-grid-spacing). The local field keeps native resolution. Values: `native`, `finest`, `isotropic`. |
 | `--vsharp-grid-spacing <MM>` | V-SHARP isotropic working-grid spacing in mm (default 1); used with --vsharp-grid isotropic. |
 | `--pdf-tol <PDF_TOL>` | PDF tolerance, relative to the noise level. |
+| `--pdf-n-cg <PDF_N_CG>` | PDF maximum conjugate-gradient iterations (default: 300) |
+| `--pdf-space <SPACE>` | PDF dipole kernel: image (the FFT of the dipole sampled on the voxel grid) or kspace (the analytic k-space kernel) (default: image) |
+| `--pdf-n-pad <VOXELS>` | PDF zero-padding around the mask's bounding box, in voxels; 0 runs on the full volume (default: 40) |
 | `--lbv-tol <LBV_TOL>` | LBV tolerance. |
 | `--ismv-tol <ISMV_TOL>` | iSMV tolerance. |
 | `--ismv-max-iter <ISMV_MAX_ITER>` | iSMV max iterations. |
@@ -657,8 +693,10 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--harperella-radius <HARPERELLA_RADIUS>` | HARPERELLA SMV kernel radius in mm. |
 | `--harperella-max-iter <HARPERELLA_MAX_ITER>` | HARPERELLA maximum iterations. |
 | `--harperella-tol <HARPERELLA_TOL>` | HARPERELLA convergence tolerance. |
+| `--harperella-pad <X> <Y> <Z>` | HARPERELLA zero-padding in voxels per side, X Y Z (default: 0 0 0) |
 | `--iharperella-max-iter <IHARPERELLA_MAX_ITER>` | iHARPERELLA maximum iterations. |
 | `--iharperella-tol <IHARPERELLA_TOL>` | iHARPERELLA convergence tolerance. |
+| `--iharperella-pad <X> <Y> <Z>` | iHARPERELLA zero-padding in voxels per side, X Y Z (default: 0 0 0) |
 | `--no-romeo-phase-coherence` | ROMEO: disable phase coherence weights (default: on) |
 | `--no-romeo-phase-gradient-coherence` | ROMEO: disable phase gradient coherence weights (default: on) |
 | `--no-romeo-phase-linearity` | ROMEO: disable phase linearity weights (default: on) |
@@ -789,23 +827,29 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--rts-rho <RTS_RHO>` | RTS rho (ADMM penalty) |
 | `--rts-max-iter <RTS_MAX_ITER>` | RTS max iterations. |
 | `--rts-lsmr-iter <RTS_LSMR_ITER>` | RTS LSMR iterations. |
+| `--rts-tau <RTS_TAU>` | RTS: rho is raised when the primal residual falls by less than this factor (tau) |
+| `--rts-gamma <RTS_GAMMA>` | RTS: the factor rho is raised by (gamma) |
 | `--tv-lambda <TV_LAMBDA>` | TV lambda parameter. |
-| `--tv-rho <TV_RHO>` | TV rho (ADMM penalty; default: 100 × lambda) |
+| `--tv-rho <RHO>` | TV rho (ADMM penalty), or auto for 100 × lambda (default: auto) |
 | `--tv-tol <TV_TOL>` | TV tolerance. |
 | `--tv-max-iter <TV_MAX_ITER>` | TV max iterations. |
 | `--tkd-threshold <TKD_THRESHOLD>` | TKD threshold. |
 | `--tsvd-threshold <TSVD_THRESHOLD>` | TSVD threshold. |
 | `--tgv-iterations <TGV_ITERATIONS>` | TGV iterations (default: from the voxel size, as the reference does) |
 | `--tgv-erosions <TGV_EROSIONS>` | TGV erosions. |
-| `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in radians at the scan's first echo time and field strength (the reference's units) |
-| `--tgv-alpha0 <TGV_ALPHA0>` | TGV alpha0 (second-order weight), in radians at the scan's first echo time and field strength (the reference's units) |
+| `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) |
+| `--tgv-alpha0 <TGV_ALPHA0>` | TGV alpha0 (second-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) |
 | `--tgv-step-size <TGV_STEP_SIZE>` | TGV primal step size multiplier. |
+| `--tgv-te <TE>` | TGV: the echo time a field from several echoes is converted to phase at, and its weights are in radians at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first). A single echo is at its own. |
 | `--tikhonov-lambda <TIKHONOV_LAMBDA>` | Tikhonov lambda. |
 | `--nltv-lambda <NLTV_LAMBDA>` | NLTV lambda. |
+| `--nltv-rho <RHO>` | NLTV rho (ADMM penalty), or auto for 100 × lambda (default: auto) |
 | `--nltv-mu <NLTV_MU>` | NLTV mu (penalty parameter) |
 | `--nltv-tol <NLTV_TOL>` | NLTV tolerance. |
 | `--nltv-max-iter <NLTV_MAX_ITER>` | NLTV max iterations. |
+| `--nltv-tol-newton <NLTV_TOL_NEWTON>` | NLTV convergence tolerance of the Newton iterations of the data-term subproblem. |
 | `--nltv-newton-iter <NLTV_NEWTON_ITER>` | NLTV maximum Newton iterations of the data-term subproblem. |
+| `--nltv-te <TE>` | NLTV: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 | `--medi-lambda <MEDI_LAMBDA>` | MEDI lambda: the data-fidelity weight (larger fits the field more closely) |
 | `--medi-merit <MEDI_MERIT>` | MEDI: enable MERIT weighting. |
 | `--medi-smv` | MEDI: high-pass the local field with a spherical mean value filter, removing residual background near the brain edge (MEDI-SMV; on by default) |
@@ -821,6 +865,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--medi-cg-max-iter <MEDI_CG_MAX_ITER>` | MEDI CG max iterations. |
 | `--medi-max-iter <MEDI_MAX_ITER>` | MEDI max outer iterations. |
 | `--medi-tol <MEDI_TOL>` | MEDI outer tolerance. |
+| `--medi-te <TE>` | MEDI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing) |
 | `--tfi-lambda <TFI_LAMBDA>` | TFI lambda: the data-fidelity weight (larger fits the field more closely) |
 | `--tfi-precond <TFI_PRECOND>` | TFI preconditioner value (susceptibility scaling outside the mask) |
 | `--tfi-data-weighting <TFI_DATA_WEIGHTING>` | TFI: data weighting mode (0=uniform, 1=SNR) |
@@ -829,6 +874,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--tfi-cg-max-iter <TFI_CG_MAX_ITER>` | TFI CG max iterations. |
 | `--tfi-max-iter <TFI_MAX_ITER>` | TFI max outer iterations. |
 | `--tfi-tol <TFI_TOL>` | TFI outer tolerance. |
+| `--tfi-te <TE>` | TFI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing) |
 | `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve. |
 | `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve. |
 | `--ilsqr-pad-mm <MM>` | iLSQR zero-padding in mm per side. |
@@ -849,6 +895,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--heidi-denoise-iterations <HEIDI_DENOISE_ITERATIONS>` | Anisotropic-diffusion iterations. |
 | `--heidi-denoise-time-step <HEIDI_DENOISE_TIME_STEP>` | Anisotropic-diffusion time step. |
 | `--heidi-denoise-conductance <HEIDI_DENOISE_CONDUCTANCE>` | Anisotropic-diffusion conductance. |
+| `--heidi-te <TE>` | HEIDI: the echo time the field stands for the phase of, in the conversion to HEIDI's units: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: last) |
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
 | `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
 | `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius. |
@@ -867,22 +914,25 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--ndi-alpha <NDI_ALPHA>` | NDI L2 regularization weight (alpha) |
 | `--ndi-max-iter <NDI_MAX_ITER>` | NDI max iterations. |
 | `--ndi-auto-stop <NDI_AUTO_STOP>` | NDI: stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto); --ndi-max-iter is then the maximum. |
+| `--ndi-te <TE>` | NDI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 | `--fansi-alpha1 <FANSI_ALPHA1>` | FANSI first-order (TV/TGV) L1 penalty weight (alpha1) |
-| `--fansi-mu1 <FANSI_MU1>` | FANSI gradient-consistency ADMM weight (mu1; default: 100 × alpha1) |
+| `--fansi-mu1 <MU1>` | FANSI gradient-consistency ADMM weight (mu1), or auto for 100 × alpha1 (default: auto) |
 | `--fansi-mu2 <FANSI_MU2>` | FANSI fidelity-consistency ADMM weight (mu2) |
-| `--fansi-alpha0 <FANSI_ALPHA0>` | FANSI second-order L1 penalty weight (alpha0, nlTGV only; default: 2 × alpha1) |
-| `--fansi-mu0 <FANSI_MU0>` | FANSI second-order consistency ADMM weight (mu0, nlTGV only; default: 2 × mu1) |
+| `--fansi-alpha0 <ALPHA0>` | FANSI second-order L1 penalty weight (alpha0, nlTGV only), or auto for 2 × alpha1 (default: auto) |
+| `--fansi-mu0 <MU0>` | FANSI second-order consistency ADMM weight (mu0, nlTGV only), or auto for 2 × mu1 (default: auto) |
 | `--fansi-max-iter <FANSI_MAX_ITER>` | FANSI outer ADMM iterations. |
 | `--fansi-tol-update <FANSI_TOL_UPDATE>` | FANSI percent-update convergence tolerance. |
 | `--fansi-tol-delta <FANSI_TOL_DELTA>` | FANSI inner Newton convergence tolerance. |
+| `--fansi-te <TE>` | FANSI (nlTV and nlTGV): the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing) |
 | `--l1qsm-alpha1 <L1QSM_ALPHA1>` | L1-QSM gradient (TV) L1 penalty weight (alpha1) |
-| `--l1qsm-mu1 <L1QSM_MU1>` | L1-QSM gradient-consistency ADMM weight (mu1; default: 100 × alpha1) |
+| `--l1qsm-mu1 <MU1>` | L1-QSM gradient-consistency ADMM weight (mu1), or auto for 100 × alpha1 (default: auto) |
 | `--l1qsm-mu2 <L1QSM_MU2>` | L1-QSM fidelity-consistency ADMM weight (mu2) |
 | `--l1qsm-mu3 <L1QSM_MU3>` | L1-QSM L1 proximal ADMM weight (mu3) |
 | `--l1qsm-lambda <L1QSM_LAMBDA>` | L1-QSM L1 fidelity strength (lambda) |
 | `--l1qsm-max-iter <L1QSM_MAX_ITER>` | L1-QSM outer ADMM iterations. |
 | `--l1qsm-tol-update <L1QSM_TOL_UPDATE>` | L1-QSM percent-update convergence tolerance. |
 | `--l1qsm-tol-delta <L1QSM_TOL_DELTA>` | L1-QSM inner Newton convergence tolerance. |
+| `--l1qsm-te <TE>` | L1-QSM: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 | `--whqsm-alpha1 <WHQSM_ALPHA1>` | WH-QSM TV regularization weight (alpha1) |
 | `--whqsm-mu1 <WHQSM_MU1>` | WH-QSM ADMM penalty for TV splitting (mu1) |
 | `--whqsm-mu2 <WHQSM_MU2>` | WH-QSM ADMM penalty for data-fidelity splitting (mu2) |
@@ -891,8 +941,10 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--whqsm-max-iter <WHQSM_MAX_ITER>` | WH-QSM max outer iterations. |
 | `--whqsm-tol-update <WHQSM_TOL_UPDATE>` | WH-QSM percent-update convergence tolerance. |
 | `--whqsm-tol-delta <WHQSM_TOL_DELTA>` | WH-QSM inner Newton convergence tolerance. |
+| `--whqsm-weight <WEIGHT>` | WH-QSM data weight: flat (1 in the mask), max-normalised (the magnitude over its maximum) or in-vivo (min(2 × magnitude / maximum, 1)); the last two need magnitude images (default: flat) |
+| `--whqsm-te <TE>` | WH-QSM: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 | `--hdqsm-alpha-l2 <HDQSM_ALPHA_L2>` | HD-QSM L2-stage TV weight (alpha_l2) |
-| `--hdqsm-mu1-l2 <HDQSM_MU1_L2>` | HD-QSM L2-stage gradient-consistency ADMM weight (mu1_l2; default: 100 × alpha_l2) |
+| `--hdqsm-mu1-l2 <MU1_L2>` | HD-QSM L2-stage gradient-consistency ADMM weight (mu1_l2), or auto for 100 × alpha_l2 (default: auto) |
 | `--hdqsm-mu2 <HDQSM_MU2>` | HD-QSM fidelity consistency weight (mu2) |
 | `--hdqsm-max-iter-l1 <HDQSM_MAX_ITER_L1>` | HD-QSM stage-1 (L1) iterations (max_iter_l1) |
 | `--hdqsm-max-iter-l2 <HDQSM_MAX_ITER_L2>` | HD-QSM stage-2 (L2) iterations (max_iter_l2) |
@@ -963,6 +1015,9 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--vsharp-grid <VSHARP_GRID>` | Grid V-SHARP estimates the background on: `native` (default), `finest` (isotropic at the smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened), or `isotropic` (spacing from --vsharp-grid-spacing). The local field keeps native resolution. Values: `native`, `finest`, `isotropic`. |
 | `--vsharp-grid-spacing <MM>` | V-SHARP isotropic working-grid spacing in mm (default 1); used with --vsharp-grid isotropic. |
 | `--pdf-tol <PDF_TOL>` | PDF tolerance, relative to the noise level. |
+| `--pdf-n-cg <PDF_N_CG>` | PDF maximum conjugate-gradient iterations (default: 300) |
+| `--pdf-space <SPACE>` | PDF dipole kernel: image (the FFT of the dipole sampled on the voxel grid) or kspace (the analytic k-space kernel) (default: image) |
+| `--pdf-n-pad <VOXELS>` | PDF zero-padding around the mask's bounding box, in voxels; 0 runs on the full volume (default: 40) |
 | `--lbv-tol <LBV_TOL>` | LBV tolerance. |
 | `--ismv-tol <ISMV_TOL>` | iSMV tolerance. |
 | `--ismv-max-iter <ISMV_MAX_ITER>` | iSMV max iterations. |
@@ -976,8 +1031,10 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--harperella-radius <HARPERELLA_RADIUS>` | HARPERELLA SMV kernel radius in mm. |
 | `--harperella-max-iter <HARPERELLA_MAX_ITER>` | HARPERELLA maximum iterations. |
 | `--harperella-tol <HARPERELLA_TOL>` | HARPERELLA convergence tolerance. |
+| `--harperella-pad <X> <Y> <Z>` | HARPERELLA zero-padding in voxels per side, X Y Z (default: 0 0 0) |
 | `--iharperella-max-iter <IHARPERELLA_MAX_ITER>` | iHARPERELLA maximum iterations. |
 | `--iharperella-tol <IHARPERELLA_TOL>` | iHARPERELLA convergence tolerance. |
+| `--iharperella-pad <X> <Y> <Z>` | iHARPERELLA zero-padding in voxels per side, X Y Z (default: 0 0 0) |
 | `--no-romeo-phase-coherence` | ROMEO: disable phase coherence weights (default: on) |
 | `--no-romeo-phase-gradient-coherence` | ROMEO: disable phase gradient coherence weights (default: on) |
 | `--no-romeo-phase-linearity` | ROMEO: disable phase linearity weights (default: on) |
@@ -1556,6 +1613,9 @@ qsmxt bgremove pdf [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <F
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
 | `--magnitude <MAGNITUDE>` | Magnitude of every echo: one 4D NIfTI, or one 3D NIfTI per echo in echo order. Required. |
 | `--tol <TOL>` | Tolerance, relative to the noise level. |
+| `--n-cg <N_CG>` | Maximum conjugate-gradient iterations (default: 300) |
+| `--space <SPACE>` | Dipole kernel: image (the FFT of the dipole sampled on the voxel grid) or kspace (the analytic k-space kernel) (default: image) |
+| `--n-pad <VOXELS>` | Zero-padding around the mask's bounding box, in voxels; 0 runs on the full volume (default: 40) |
 
 ### `qsmxt bgremove lbv`
 
@@ -1650,6 +1710,7 @@ qsmxt bgremove harperella [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--tol <TOL>` | Convergence tolerance. |
 | `--te <TE>` | Echo time (s) of a wrapped-phase input. With --field-strength, the input is one wrapped echo in rad (the published method); without both, it is an unwrapped total field in ppm. The local field is written in ppm either way. |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength (T) of a wrapped-phase input — see --te. |
+| `--pad <X> <Y> <Z>` | Zero-padding in voxels per side, X Y Z (default: 0 0 0) |
 
 ### `qsmxt bgremove iharperella`
 
@@ -1669,6 +1730,7 @@ qsmxt bgremove iharperella [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--tol <TOL>` | Convergence tolerance. |
 | `--te <TE>` | Echo time (s) of a wrapped-phase input. With --field-strength, the input is one wrapped echo in rad, unwrapped by HARPERELLA's Laplacian; without both, it is an unwrapped total field in ppm, which iHARPERELLA takes as it is. The local field is written in ppm either way. |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength (T) of a wrapped-phase input — see --te. |
+| `--pad <X> <Y> <Z>` | Zero-padding in voxels per side, X Y Z (default: 0 0 0) |
 
 ### `qsmxt bgremove bfrnet`
 
@@ -1745,6 +1807,8 @@ qsmxt invert rts [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--rho <RHO>` | Rho (ADMM penalty) |
 | `--max-iter <MAX_ITER>` | Max iterations. |
 | `--lsmr-iter <LSMR_ITER>` | LSMR iterations. |
+| `--tau <TAU>` | Rho is raised when the primal residual falls by less than this factor (tau) |
+| `--gamma <GAMMA>` | The factor rho is raised by (gamma) |
 
 ### `qsmxt invert tv`
 
@@ -1763,7 +1827,7 @@ qsmxt invert tv [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--lambda <LAMBDA>` | Lambda parameter. |
-| `--rho <RHO>` | Rho (ADMM penalty; default: 100 × lambda) |
+| `--rho <RHO>` | Rho (ADMM penalty), or auto for 100 × lambda (default: auto) |
 | `--tol <TOL>` | Tolerance. |
 | `--max-iter <MAX_ITER>` | Max iterations. |
 
@@ -1823,9 +1887,10 @@ qsmxt invert tgv [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIE
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
 | `--iterations <ITERATIONS>` | Iterations (default: from the voxel size, as the reference does) |
 | `--erosions <EROSIONS>` | Erosions. |
-| `--alpha1 <ALPHA1>` | Alpha1 (first-order weight), in radians at the first echo time and the field strength. |
-| `--alpha0 <ALPHA0>` | Alpha0 (second-order weight), in radians at the first echo time and the field strength. |
+| `--alpha1 <ALPHA1>` | Alpha1 (first-order weight), in radians at the echo time (--te) and the field strength. |
+| `--alpha0 <ALPHA0>` | Alpha0 (second-order weight), in radians at the echo time (--te) and the field strength. |
 | `--step-size <STEP_SIZE>` | Primal step size multiplier. |
+| `--te <TE>` | Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 
 ### `qsmxt invert tikhonov`
 
@@ -1865,10 +1930,13 @@ qsmxt invert nltv [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FI
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
 | `--magnitude <MAGNITUDE>` | Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. Required. |
 | `--lambda <LAMBDA>` | Lambda. |
+| `--rho <RHO>` | Rho (ADMM penalty), or auto for 100 × lambda (default: auto) |
 | `--mu <MU>` | Mu (penalty parameter) |
 | `--tol <TOL>` | Tolerance. |
 | `--max-iter <MAX_ITER>` | Max iterations. |
+| `--tol-newton <TOL_NEWTON>` | Convergence tolerance of the Newton iterations of the data-term subproblem. |
 | `--newton-iter <NEWTON_ITER>` | Maximum Newton iterations of the data-term subproblem. |
+| `--te <TE>` | Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 
 ### `qsmxt invert medi`
 
@@ -1903,6 +1971,7 @@ qsmxt invert medi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FI
 | `--cg-max-iter <CG_MAX_ITER>` | CG max iterations. |
 | `--max-iter <MAX_ITER>` | Max outer iterations. |
 | `--tol <TOL>` | Outer tolerance. |
+| `--te <TE>` | Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing) |
 
 ### `qsmxt invert tfi`
 
@@ -1931,6 +2000,7 @@ qsmxt invert tfi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIE
 | `--cg-max-iter <CG_MAX_ITER>` | CG max iterations. |
 | `--max-iter <MAX_ITER>` | Max outer iterations. |
 | `--tol <TOL>` | Outer tolerance. |
+| `--te <TE>` | Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing) |
 
 ### `qsmxt invert ilsqr`
 
@@ -2011,6 +2081,7 @@ qsmxt invert heidi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <F
 | `--heidi-denoise-iterations <HEIDI_DENOISE_ITERATIONS>` | Anisotropic-diffusion iterations. |
 | `--heidi-denoise-time-step <HEIDI_DENOISE_TIME_STEP>` | Anisotropic-diffusion time step. |
 | `--heidi-denoise-conductance <HEIDI_DENOISE_CONDUCTANCE>` | Anisotropic-diffusion conductance. |
+| `--heidi-te <TE>` | HEIDI: the echo time the field stands for the phase of, in the conversion to HEIDI's units: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: last) |
 
 ### `qsmxt invert ndi`
 
@@ -2032,6 +2103,7 @@ qsmxt invert ndi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIE
 | `--alpha <ALPHA>` | L2 regularization weight (alpha) |
 | `--max-iter <MAX_ITER>` | Max iterations (the maximum, with --auto-stop) |
 | `--auto-stop <AUTO_STOP>` | Stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto) |
+| `--te <TE>` | Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
 | `--magnitude <MAGNITUDE>` | Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. Required. |
@@ -2056,13 +2128,14 @@ qsmxt invert fansi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <F
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
 | `--magnitude <MAGNITUDE>` | Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. Required. |
 | `--alpha1 <ALPHA1>` | First-order (TV/TGV) L1 penalty weight (alpha1) |
-| `--mu1 <MU1>` | Gradient-consistency ADMM weight (mu1; default: 100 × alpha1) |
+| `--mu1 <MU1>` | Gradient-consistency ADMM weight (mu1), or auto for 100 × alpha1 (default: auto) |
 | `--mu2 <MU2>` | Fidelity-consistency ADMM weight (mu2) |
-| `--alpha0 <ALPHA0>` | Second-order L1 penalty weight (alpha0, nlTGV only; default: 2 × alpha1) |
-| `--mu0 <MU0>` | Second-order consistency ADMM weight (mu0, nlTGV only; default: 2 × mu1) |
+| `--alpha0 <ALPHA0>` | Second-order L1 penalty weight (alpha0, nlTGV only), or auto for 2 × alpha1 (default: auto) |
+| `--mu0 <MU0>` | Second-order consistency ADMM weight (mu0, nlTGV only), or auto for 2 × mu1 (default: auto) |
 | `--max-iter <MAX_ITER>` | Max iterations. |
 | `--tol-update <TOL_UPDATE>` | Percent-update convergence tolerance. |
 | `--tol-delta <TOL_DELTA>` | Inner Newton convergence tolerance. |
+| `--te <TE>` | Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing) |
 
 ### `qsmxt invert fansi-tgv`
 
@@ -2084,13 +2157,14 @@ qsmxt invert fansi-tgv [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strengt
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
 | `--magnitude <MAGNITUDE>` | Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. Required. |
 | `--alpha1 <ALPHA1>` | First-order (TGV gradient) L1 penalty weight (alpha1) |
-| `--mu1 <MU1>` | Gradient-consistency ADMM weight (mu1; default: 100 × alpha1) |
+| `--mu1 <MU1>` | Gradient-consistency ADMM weight (mu1), or auto for 100 × alpha1 (default: auto) |
 | `--mu2 <MU2>` | Fidelity-consistency ADMM weight (mu2) |
-| `--alpha0 <ALPHA0>` | Second-order L1 penalty weight (alpha0; default: 2 × alpha1) |
-| `--mu0 <MU0>` | Second-order consistency ADMM weight (mu0; default: 2 × mu1) |
+| `--alpha0 <ALPHA0>` | Second-order L1 penalty weight (alpha0), or auto for 2 × alpha1 (default: auto) |
+| `--mu0 <MU0>` | Second-order consistency ADMM weight (mu0), or auto for 2 × mu1 (default: auto) |
 | `--max-iter <MAX_ITER>` | Max iterations. |
 | `--tol-update <TOL_UPDATE>` | Percent-update convergence tolerance. |
 | `--tol-delta <TOL_DELTA>` | Inner Newton convergence tolerance. |
+| `--te <TE>` | Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing) |
 
 ### `qsmxt invert l1qsm`
 
@@ -2112,13 +2186,14 @@ qsmxt invert l1qsm [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <F
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
 | `--magnitude <MAGNITUDE>` | Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. Required. |
 | `--alpha1 <ALPHA1>` | Gradient (TV) L1 penalty weight (alpha1) |
-| `--mu1 <MU1>` | Gradient-consistency ADMM weight (mu1; default: 100 × alpha1) |
+| `--mu1 <MU1>` | Gradient-consistency ADMM weight (mu1), or auto for 100 × alpha1 (default: auto) |
 | `--mu2 <MU2>` | Fidelity-consistency ADMM weight (mu2) |
 | `--mu3 <MU3>` | L1 proximal ADMM weight (mu3) |
 | `--lambda <LAMBDA>` | L1 fidelity strength (lambda) |
 | `--max-iter <MAX_ITER>` | Max iterations. |
 | `--tol-update <TOL_UPDATE>` | Percent-update convergence tolerance. |
 | `--tol-delta <TOL_DELTA>` | Inner Newton convergence tolerance. |
+| `--te <TE>` | Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 
 ### `qsmxt invert whqsm`
 
@@ -2146,6 +2221,9 @@ qsmxt invert whqsm [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <F
 | `--max-iter <MAX_ITER>` | Max iterations. |
 | `--tol-update <TOL_UPDATE>` | Percent-update convergence tolerance. |
 | `--tol-delta <TOL_DELTA>` | Inner Newton convergence tolerance. |
+| `--weight <WEIGHT>` | Data weight: flat (1 in the mask), max-normalised (the magnitude over its maximum) or in-vivo (min(2 × magnitude / maximum, 1)); the last two need --magnitude (default: flat) |
+| `--magnitude <MAGNITUDE>` | Magnitude NIfTI, for a magnitude data weight (--weight): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. |
+| `--te <TE>` | Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 
 ### `qsmxt invert hdqsm`
 
@@ -2165,7 +2243,7 @@ qsmxt invert hdqsm [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--magnitude <MAGNITUDE>` | Magnitude NIfTI (optional data weight): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. |
 | `--alpha-l2 <ALPHA_L2>` | L2-stage TV weight (alpha_l2) |
-| `--mu1-l2 <MU1_L2>` | L2-stage gradient-consistency ADMM weight (mu1_l2; default: 100 × alpha_l2) |
+| `--mu1-l2 <MU1_L2>` | L2-stage gradient-consistency ADMM weight (mu1_l2), or auto for 100 × alpha_l2 (default: auto) |
 | `--mu2 <MU2>` | Fidelity consistency weight (mu2) |
 | `--max-iter-l1 <MAX_ITER_L1>` | Stage-1 (L1) iterations (max_iter_l1) |
 | `--max-iter-l2 <MAX_ITER_L2>` | Stage-2 (L2) iterations (max_iter_l2) |

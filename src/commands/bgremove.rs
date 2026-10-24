@@ -114,7 +114,12 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
         }
         BgremoveCommand::Pdf(args) => {
             let d = bg::PdfParams::default();
-            let pdf = bg::PdfParams { tol: args.tol.unwrap_or(d.tol), ..d };
+            let pdf = bg::PdfParams {
+                tol: args.tol.unwrap_or(d.tol),
+                n_cg: args.n_cg.unwrap_or(d.n_cg),
+                space: args.space.map_or(d.space, Into::into),
+                n_pad: args.n_pad.unwrap_or(d.n_pad),
+            };
             let config = qsm_core::pipeline::BgRemovalConfig { pdf, ..config_for(A::Pdf) };
             let out = remove_with(&args.common, config, Some(&args.scan), &args.magnitude, "PDF")?;
             (args.common, out)
@@ -172,7 +177,7 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
                 radius: args.radius.unwrap_or(d.radius),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol: args.tol.unwrap_or(d.tol),
-                ..d
+                pad: args.pad.as_deref().map_or(d.pad, |p| [p[0], p[1], p[2]]),
             };
             let config = qsm_core::pipeline::BgRemovalConfig { harperella, ..config_for(A::Harperella) };
             harperella_with(&HarperellaArgs {
@@ -185,7 +190,7 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             let iharperella = bg::IharperellaParams {
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol: args.tol.unwrap_or(d.tol),
-                ..d
+                pad: args.pad.as_deref().map_or(d.pad, |p| [p[0], p[1], p[2]]),
             };
             let config = qsm_core::pipeline::BgRemovalConfig { iharperella, ..config_for(A::Iharperella) };
             harperella_with(&HarperellaArgs {

@@ -159,6 +159,95 @@ impl fmt::Display for BfAlgorithm {
     }
 }
 
+/// The kernel PDF fits the background with (qsm-core `DipoleKernelSpace`; `PDF.m`'s `space`).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum PdfSpace {
+    /// The FFT of the dipole field sampled on the voxel grid (`'imagespace'`).
+    #[default]
+    Image,
+    /// The analytic k-space kernel (`'kspace'`).
+    Kspace,
+}
+impl PdfSpace {
+    /// Every variant, in the order the CLI help and the TUI list them.
+    pub const ALL: [PdfSpace; 2] = [Self::Image, Self::Kspace];
+
+    /// The name the CLI, the config file and the TUI use.
+    pub fn as_str(self) -> &'static str {
+        match self { Self::Image => "image", Self::Kspace => "kspace" }
+    }
+}
+impl fmt::Display for PdfSpace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl From<PdfSpace> for qsm_core::bgremove::DipoleKernelSpace {
+    fn from(s: PdfSpace) -> Self {
+        use qsm_core::bgremove::DipoleKernelSpace as K;
+        match s { PdfSpace::Image => K::ImageSpace, PdfSpace::Kspace => K::KSpace }
+    }
+}
+impl From<qsm_core::bgremove::DipoleKernelSpace> for PdfSpace {
+    fn from(k: qsm_core::bgremove::DipoleKernelSpace) -> Self {
+        use qsm_core::bgremove::DipoleKernelSpace as K;
+        match k { K::ImageSpace => Self::Image, K::KSpace => Self::Kspace }
+    }
+}
+
+/// WH-QSM's data weight (qsm-core `WhQsmWeight`).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum WhqsmWeight {
+    /// 1 in the mask, no magnitude (`WH_nlTV.m`'s own default).
+    #[default]
+    Flat,
+    /// The magnitude in the mask over its maximum. Needs the magnitude.
+    MaxNormalised,
+    /// `min(2·magnitude/max, 1)` in the mask, as NDI weights. Needs the magnitude.
+    InVivo,
+}
+impl WhqsmWeight {
+    /// Every variant, in the order the CLI help and the TUI list them.
+    pub const ALL: [WhqsmWeight; 3] = [Self::Flat, Self::MaxNormalised, Self::InVivo];
+
+    /// The name the CLI, the config file and the TUI use.
+    pub fn as_str(self) -> &'static str {
+        match self { Self::Flat => "flat", Self::MaxNormalised => "max-normalised", Self::InVivo => "in-vivo" }
+    }
+}
+impl fmt::Display for WhqsmWeight {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl From<WhqsmWeight> for qsm_core::inversion::WhQsmWeight {
+    fn from(w: WhqsmWeight) -> Self {
+        use qsm_core::inversion::WhQsmWeight as W;
+        match w { WhqsmWeight::Flat => W::Flat, WhqsmWeight::MaxNormalised => W::MaxNormalised, WhqsmWeight::InVivo => W::InVivo }
+    }
+}
+impl From<qsm_core::inversion::WhQsmWeight> for WhqsmWeight {
+    fn from(w: qsm_core::inversion::WhQsmWeight) -> Self {
+        use qsm_core::inversion::WhQsmWeight as W;
+        match w { W::Flat => Self::Flat, W::MaxNormalised => Self::MaxNormalised, W::InVivo => Self::InVivo }
+    }
+}
+
+impl EchoTimeChoice {
+    /// Why the choice cannot be used whatever the scan, if it cannot: a given echo time that is not
+    /// a positive time. Against a scan's echo times, qsm-core's `EchoTime::resolve` decides
+    /// ([`crate::requirements`]).
+    pub fn validate(&self) -> Result<(), String> {
+        match *self {
+            Self::Seconds(s) if !(s.is_finite() && s > 0.0) => Err(format!(
+                "echo time: must be a finite time greater than 0 ms (got {} ms)", s * 1000.0)),
+            _ => Ok(()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum B0Estimation { WeightedAvg, LinearFit, RobustFit }
