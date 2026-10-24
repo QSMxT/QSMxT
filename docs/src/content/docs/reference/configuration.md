@@ -80,6 +80,9 @@ A file without it is read as follows, and what changed is logged:
 - Settings that no longer exist are ignored, with a warning where that changes what a
   run does (for example `bg_removal.msmv_refine`: mSMV is now MEDI's option,
   `inversion.medi.msmv`).
+- TFI's `merit` did nothing in earlier files; it is now MERIT, on by default. An earlier
+  value is dropped, with a warning where it turned MERIT off for a TFI run; keep it, with
+  `schema_version` at the top, to turn MERIT off.
 
 ## Validate before you run
 

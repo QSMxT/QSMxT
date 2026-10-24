@@ -408,6 +408,43 @@ pub fn bg_removal_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<Stri
     }
 }
 
+/// Why the configured B0 estimation cannot run on this run's data, if it cannot: MEDI's complex
+/// fit (QSM.rs `B0EstimationMethod::ComplexFit`) fits every echo's complex signal, so it needs the
+/// magnitude of every echo, increasing and evenly spaced echo times (it models the phase per echo
+/// spacing), and no bipolar correction (QSM.rs refuses it: MEDI's bipolar fit is not ported).
+pub fn field_mapping_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<String> {
+    let fm = &config.field_mapping;
+    if fm.b0_estimation != B0Estimation::ComplexFit {
+        return None;
+    }
+    if fm.bipolar_correction {
+        return Some("cannot be used with bipolar correction (MEDI's complex fit for bipolar readouts \
+                     is not available): turn bipolar correction off, or choose another B0 estimation".into());
+    }
+    if !f.has_magnitude {
+        return Some("needs the magnitude of every echo (it fits the complex echoes), and this run has \
+                     no magnitude".into());
+    }
+    let spacing: Vec<f64> = f.echo_times.windows(2).map(|w| w[1] - w[0]).collect();
+    let uneven = spacing.iter()
+        .any(|d| *d <= 0.0 || (d - spacing[0]).abs() > FIT_PPM_COMPLEX_SPACING_TOLERANCE * spacing[0].abs());
+    uneven.then(|| format!(
+        "needs increasing, evenly spaced echoes (it fits the phase per echo spacing), and this run's \
+         echo times are {}", ms(&f.echo_times)))
+}
+
+/// The note for MEDI+0's CSF term on a run with fewer than 3 echoes (MEDI, or QSMART's inner
+/// MEDI): QSM.rs's MEDI finds the CSF from ARLO R2*, which needs 3 echoes, and runs without the
+/// term otherwise.
+pub fn medi_csf_note(f: &ScanFacts, config: &PipelineConfig) -> Option<String> {
+    let inv = &config.inversion;
+    let medi = inv.algorithm == QsmAlgorithm::Medi
+        || (inv.algorithm == QsmAlgorithm::Qsmart && inv.qsmart.inversion == QsmAlgorithm::Medi);
+    (config.pipeline.do_qsm && medi && inv.medi.csf && f.n_echoes < 3).then(|| format!(
+        "MEDI's CSF zero reference (MEDI+0) needs at least 3 echoes (it finds the CSF from R2*), and \
+         this run has {}: MEDI runs without it", f.n_echoes))
+}
+
 /// Why the EPG fit cannot measure R2 from this run's MESE acquisition, if it cannot.
 pub fn mese_problem(f: &ScanFacts) -> Option<String> {
     let Some(tes) = f.mese_echo_times.as_deref() else {
@@ -683,6 +720,8 @@ pub fn scan_check(f: &ScanFacts, config: &PipelineConfig) -> Check {
     if config.pipeline.do_qsm {
         let bg = config.bg_removal.algorithm;
         let methods = [
+            ("field_mapping.b0_estimation", "--b0-estimation", config.field_mapping.b0_estimation.to_string(),
+             if crate::bridge::field_mapping_runs(config, f.n_echoes) { field_mapping_problem(f, config) } else { None }),
             ("inversion.algorithm", "--qsm-algorithm", config.inversion.algorithm.to_string(),
              inversion_problem(f, config)),
             ("bg_removal.algorithm", "--bf-algorithm", bg.to_string(),
@@ -698,6 +737,13 @@ pub fn scan_check(f: &ScanFacts, config: &PipelineConfig) -> Check {
                 settings: vec![path], reason: why, message,
             });
         }
+    }
+    if let Some(note) = medi_csf_note(f, config) {
+        out.warnings.push(note.clone());
+        out.problems.push(Problem {
+            severity: Severity::Warning, setting: Some("inversion.medi.csf"), implied_by: None,
+            settings: vec!["inversion.medi.csf"], reason: note.clone(), message: note,
+        });
     }
     for o in Output::ALL {
         if !o.enabled(config) {
@@ -1148,5 +1194,41 @@ mod tests {
             assert!(r2primenet_field_offset(outside).is_some(),
                     "{outside} T is not what R2PRIMEnet was trained on");
         }
+    }
+
+    /// MEDI's complex fit needs every echo's magnitude, evenly spaced echoes and no bipolar
+    /// correction; a single echo is its phase over its echo time, as in QSM.rs.
+    #[test]
+    fn complex_fit_says_what_it_needs() {
+        let mut c = PipelineConfig::default();
+        c.field_mapping.b0_estimation = B0Estimation::ComplexFit;
+        assert!(check(&run(&EVEN, true), &c).errors.is_empty());
+        assert!(check(&run(&[0.02], true), &c).errors.is_empty());
+        let out = check(&run(&EVEN, false), &c);
+        assert!(out.errors.len() == 1 && out.errors[0].contains("--b0-estimation complex-fit needs the magnitude"), "{out:?}");
+        let out = check(&run(&[0.005, 0.010, 0.020], true), &c);
+        assert!(out.errors.len() == 1 && out.errors[0].contains("evenly spaced"), "{out:?}");
+        assert!(out.problems[0].settings == ["field_mapping.b0_estimation"], "{out:?}");
+        assert!(check(&run(&[0.010, 0.005], true), &c).errors.len() == 1, "decreasing echo times");
+        c.field_mapping.bipolar_correction = true;
+        let out = check(&run(&EVEN, true), &c);
+        assert!(out.errors.len() == 1 && out.errors[0].contains("bipolar correction"), "{out:?}");
+        // Without the complex fit none of this applies.
+        c.field_mapping.b0_estimation = B0Estimation::WeightedAvg;
+        assert!(check(&run(&[0.005, 0.010, 0.020], false), &c).errors.is_empty());
+    }
+
+    /// MEDI+0's CSF term on fewer than 3 echoes is a warning that MEDI runs without it, not an
+    /// error and not silence.
+    #[test]
+    fn medi_csf_on_fewer_than_three_echoes_is_noted() {
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = QsmAlgorithm::Medi;
+        let out = check(&run(&[0.005, 0.010], true), &c);
+        assert!(out.errors.is_empty() && out.warnings.len() == 1 && out.warnings[0].contains("MEDI runs without it"), "{out:?}");
+        assert_eq!(out.problems[0].setting, Some("inversion.medi.csf"));
+        assert!(check(&run(&EVEN, true), &c).warnings.is_empty());
+        c.inversion.medi.csf = false;
+        assert!(check(&run(&[0.005, 0.010], true), &c).warnings.is_empty());
     }
 }

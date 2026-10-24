@@ -5,10 +5,12 @@ use crate::error::EngineError;
 use crate::scan::{scan_metadata, RunMetadata};
 
 /// Whether the echoes' phase offsets are removed before unwrapping (multi-echo, asked for, and
-/// not Laplacian unwrapping, which removes them by construction).
+/// not Laplacian unwrapping, which removes them by construction, nor MEDI's complex fit, which
+/// fits its own phase offset).
 fn removes_phase_offsets(config: &PipelineConfig, meta: &RunMetadata) -> bool {
     meta.n_echoes > 1 && config.field_mapping.phase_offset_removal
         && config.field_mapping.unwrapping_algorithm != crate::enums::UnwrappingAlgorithm::Laplacian
+        && config.field_mapping.b0_estimation != crate::enums::B0Estimation::ComplexFit
 }
 
 /// The algorithm the `unwrap` step is recorded and cached under: `phase_offset_removal` when the
@@ -40,6 +42,7 @@ pub fn params(config: &PipelineConfig, meta: &RunMetadata) -> serde_json::Value 
         "linear_fit_estimate_offset": fm.linear_fit.estimate_offset,
         "linear_fit_reliability_threshold": fm.linear_fit.reliability_threshold_percentile,
         "robust_fit": fm.robust_fit,
+        "complex_fit": fm.complex_fit,
         // Per-echo masked Laplacian + echo combination (crate::fieldmap); bump on a change to
         // that path so field maps from the old one are recomputed.
         "laplacian_echo_combination": if laplacian { 2 } else { 0 },
@@ -68,7 +71,10 @@ pub fn map_field(
 ) -> Result<FieldMap, EngineError> {
     let fm = &config.field_mapping;
     let unwrap_name = format!("{}", fm.unwrapping_algorithm);
-    if removes_phase_offsets(config, meta) {
+    if fm.b0_estimation == crate::enums::B0Estimation::ComplexFit {
+        log::info!("Field mapping: complex fit of {} echoes (Fit_ppm_complex), then {} unwrapping of the fitted phase",
+            meta.n_echoes, unwrap_name);
+    } else if removes_phase_offsets(config, meta) {
         log::info!("Field mapping: offset removal + {} unwrapping ({} echoes)", unwrap_name, meta.n_echoes);
     } else if meta.n_echoes > 1 {
         log::info!("Field mapping: {} unwrapping ({} echoes)", unwrap_name, meta.n_echoes);

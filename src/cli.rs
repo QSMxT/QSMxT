@@ -551,6 +551,24 @@ pub struct MediParamArgs {
     /// MEDI: enable MERIT weighting
     #[arg(long)]
     pub medi_merit: Option<bool>,
+    /// MEDI+0 (Liu et al. 2018): zero-reference χ to the ventricular CSF, found from R2*, and
+    /// keep it uniform there (default: true). Needs at least 3 echoes; with fewer, MEDI runs
+    /// without it
+    #[arg(long)]
+    pub medi_csf: Option<bool>,
+    /// MEDI+0: weight of the CSF uniformity term (default: 100)
+    #[arg(long)]
+    pub medi_lambda_csf: Option<f64>,
+    /// MEDI+0: R2* in Hz below which a voxel is a CSF candidate (default: 5)
+    #[arg(long)]
+    pub medi_csf_r2s_threshold: Option<f64>,
+    /// MEDI+0: erode the mask by a 10 mm sphere before finding the CSF (default: true)
+    #[arg(long)]
+    pub medi_csf_erode: Option<bool>,
+    /// MEDI: voxels of zeros appended at the end of x, y and z before the inversion; the result
+    /// is cropped back (default: 0 0 0)
+    #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"])]
+    pub medi_zeropad: Option<Vec<usize>>,
     /// MEDI: high-pass the local field with a spherical mean value filter, removing residual
     /// background near the brain edge (MEDI-SMV; on by default)
     #[arg(long)]
@@ -605,6 +623,13 @@ pub struct TfiParamArgs {
     /// TFI preconditioner value (susceptibility scaling outside the mask)
     #[arg(long)]
     pub tfi_precond: Option<f64>,
+    /// TFI: enable MERIT weighting (default: true)
+    #[arg(long)]
+    pub tfi_merit: Option<bool>,
+    /// TFI: fit the field linearly, as the TFI paper does (default: true); false uses MEDI's
+    /// exponential data term
+    #[arg(long)]
+    pub tfi_linear: Option<bool>,
     /// TFI: data weighting mode (0=uniform, 1=SNR)
     #[arg(long)]
     pub tfi_data_weighting: Option<i32>,
@@ -1320,6 +1345,13 @@ pub struct PipelineArgs {
     /// times the best echo's (default 3; at least 1)
     #[arg(long)]
     pub robust_fit_flag_ratio: Option<f64>,
+    /// Complex fit (`--b0-estimation complex-fit`): stop once the update is this fraction of the
+    /// first estimate, over the whole volume (default 1e-4)
+    #[arg(long)]
+    pub complex_fit_reltol: Option<f64>,
+    /// Complex fit: Gauss-Newton iterations at most (default 30)
+    #[arg(long)]
+    pub complex_fit_max_iter: Option<usize>,
 
     /// Skip QSM processing (only run supplementary outputs like SWI, T2*, R2*)
     #[arg(long)]
@@ -2053,6 +2085,13 @@ pub struct FieldmapCommonArgs {
     /// times the best echo's (default 3; at least 1)
     #[arg(long)]
     pub robust_fit_flag_ratio: Option<f64>,
+    /// Complex fit (`--b0-estimation complex-fit`): stop once the update is this fraction of the
+    /// first estimate, over the whole volume (default 1e-4)
+    #[arg(long)]
+    pub complex_fit_reltol: Option<f64>,
+    /// Complex fit: Gauss-Newton iterations at most (default 30)
+    #[arg(long)]
+    pub complex_fit_max_iter: Option<usize>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -2633,6 +2672,24 @@ pub struct InvertMediArgs {
     /// Enable MERIT weighting
     #[arg(long)]
     pub merit: Option<bool>,
+    /// MEDI+0 (Liu et al. 2018): zero-reference χ to the ventricular CSF, found from R2* of the
+    /// echo magnitudes, and keep it uniform there (default: true). Needs at least 3 echoes; with
+    /// fewer, MEDI runs without it
+    #[arg(long)]
+    pub csf: Option<bool>,
+    /// MEDI+0: weight of the CSF uniformity term (default: 100)
+    #[arg(long)]
+    pub lambda_csf: Option<f64>,
+    /// MEDI+0: R2* in Hz below which a voxel is a CSF candidate (default: 5)
+    #[arg(long)]
+    pub csf_r2s_threshold: Option<f64>,
+    /// MEDI+0: erode the mask by a 10 mm sphere before finding the CSF (default: true)
+    #[arg(long)]
+    pub csf_erode: Option<bool>,
+    /// Voxels of zeros appended at the end of x, y and z before the inversion; the result is
+    /// cropped back (default: 0 0 0)
+    #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"])]
+    pub zeropad: Option<Vec<usize>>,
     /// High-pass the local field with a spherical mean value filter, removing residual
     /// background near the brain edge (MEDI-SMV) [default: on]
     #[arg(long)]
@@ -2692,6 +2749,13 @@ pub struct InvertTfiArgs {
     /// Preconditioner value (susceptibility scaling outside the mask)
     #[arg(long)]
     pub precond: Option<f64>,
+    /// Enable MERIT weighting (default: true)
+    #[arg(long)]
+    pub merit: Option<bool>,
+    /// Fit the field linearly, as the TFI paper does (default: true); false uses MEDI's
+    /// exponential data term
+    #[arg(long)]
+    pub linear: Option<bool>,
     /// Data weighting mode (0=uniform, 1=SNR)
     #[arg(long)]
     pub data_weighting: Option<i32>,
@@ -3619,6 +3683,10 @@ pub enum B0EstimationArg {
     /// Motion-robust (IRLS) linear fit: down-weights echoes that depart from a straight line in
     /// TE, voxel by voxel. Needs 4 echoes (3 with --linear-fit-estimate-offset false)
     RobustFit,
+    /// MEDI's field map (Fit_ppm_complex): a magnitude-weighted fit of the complex echoes, then
+    /// unwrapping of the fitted phase per echo spacing. Needs the magnitude and evenly spaced
+    /// echoes; no phase offset removal is run first, and bipolar correction is refused
+    ComplexFit,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

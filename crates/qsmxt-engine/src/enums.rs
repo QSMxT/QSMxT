@@ -161,11 +161,17 @@ impl fmt::Display for BfAlgorithm {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
-pub enum B0Estimation { WeightedAvg, LinearFit, RobustFit }
+pub enum B0Estimation {
+    WeightedAvg, LinearFit, RobustFit,
+    /// MEDI's field map (`Fit_ppm_complex`): a fit of the complex echoes, then unwrapping of the
+    /// fitted phase per echo spacing (QSM.rs `B0EstimationMethod::ComplexFit`).
+    ComplexFit,
+}
 impl fmt::Display for B0Estimation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", match self {
             Self::WeightedAvg => "weighted-avg", Self::LinearFit => "linear-fit", Self::RobustFit => "robust-fit",
+            Self::ComplexFit => "complex-fit",
         })
     }
 }
