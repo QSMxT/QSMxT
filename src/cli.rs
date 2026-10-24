@@ -2296,8 +2296,8 @@ pub struct BgremoveIharperellaArgs {
     pub tol: Option<f64>,
     /// Echo time (s) of a wrapped-phase input. With --field-strength, the input is one wrapped
     /// echo in rad, unwrapped by HARPERELLA's Laplacian; without both, it is an unwrapped total
-    /// field in ppm, which STI Suite's iHARPERELLA takes. The local field is written in ppm
-    /// either way
+    /// field in ppm, which iHARPERELLA takes as it is. The local field is written in ppm either
+    /// way
     #[arg(long, requires = "field_strength")]
     pub te: Option<f64>,
     /// B0 field strength (T) of a wrapped-phase input — see --te

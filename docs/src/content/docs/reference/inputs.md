@@ -149,6 +149,7 @@ Some QSM methods need more of the data than phase:
 | --- | --- |
 | `--qsm-algorithm medi`, `tfi`, `--bf-algorithm pdf` | the magnitude of every echo, and evenly spaced echoes: they weight the data by a noise map made from the echoes (MEDI toolbox `Fit_ppm_complex`) |
 | `--qsm-algorithm medi` with `--medi-msmv` | also at least 3 echoes (R2\* for its vessel mask) |
+| `--qsm-algorithm qsmart` | what its inner inversion (`--qsmart-inversion`) needs; an inner `medi` or `tfi` only with a single echo, since QSMART gives its inner inversion one combined magnitude |
 | `--qsm-algorithm ndi`, `nltv`, `fansi`, `fansi-tgv`, `l1qsm` | magnitude (the data weight) |
 
 A run that cannot give these is refused before processing.

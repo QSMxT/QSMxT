@@ -686,10 +686,6 @@ pub fn check_ranges(config: &PipelineConfig) -> Result<(), crate::EngineError> {
     let mut problems: Vec<String> = out_of_range(config, |p| applies.contains(p)).into_iter().map(|p| p.described).collect();
     // A mask step that would do nothing (an erosion of 0), as a config file and --mask refuse it.
     problems.extend(config.masking.validate().err());
-    // A combination QSM.rs cannot run (it would fail part-way through).
-    if let Some(problem) = crate::requirements::qsmart_inner_problem(config) {
-        return Err(crate::EngineError::Config(problem));
-    }
     if problems.is_empty() {
         Ok(())
     } else {

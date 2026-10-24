@@ -1667,7 +1667,7 @@ qsmxt bgremove iharperella [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--output-mask <OUTPUT_MASK>` | Output eroded mask (for algorithms that erode) |
 | `--max-iter <MAX_ITER>` | Maximum iterations. |
 | `--tol <TOL>` | Convergence tolerance. |
-| `--te <TE>` | Echo time (s) of a wrapped-phase input. With --field-strength, the input is one wrapped echo in rad, unwrapped by HARPERELLA's Laplacian; without both, it is an unwrapped total field in ppm, which STI Suite's iHARPERELLA takes. The local field is written in ppm either way. |
+| `--te <TE>` | Echo time (s) of a wrapped-phase input. With --field-strength, the input is one wrapped echo in rad, unwrapped by HARPERELLA's Laplacian; without both, it is an unwrapped total field in ppm, which iHARPERELLA takes as it is. The local field is written in ppm either way. |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength (T) of a wrapped-phase input — see --te. |
 
 ### `qsmxt bgremove bfrnet`

@@ -1392,9 +1392,20 @@ impl PipelineConfig {
     /// `axial_resampling`) keeps its meaning. A config that has `axial_resampling` must give a
     /// non-negative threshold.
     pub fn from_toml_migrating(s: &str) -> crate::Result<(Self, Vec<String>)> {
+        Self::from_toml_noting(s).map(|(c, m)| (c, m.warnings.into_iter().chain(m.notes).collect()))
+    }
+
+    /// [`from_toml_migrating`](Self::from_toml_migrating), with the warnings apart from the notes
+    /// that a setting took today's default ([`crate::migrate`]), for a caller that shows them
+    /// differently.
+    pub fn from_toml_noting(s: &str) -> crate::Result<(Self, crate::migrate::Migration)> {
         let parse_err = |e: toml::de::Error| crate::error::ConfigError::Parse(format!("{}", e));
         let mut value: toml::Table = toml::from_str(s).map_err(parse_err)?;
-        let mut warnings = Vec::new();
+        let mut notes = crate::migrate::Migration::default();
+        // Before anything is added to the file: what an older file holds says which release
+        // wrote it.
+        crate::migrate::migrate(&mut value, &mut notes)?;
+        let warnings = &mut notes.warnings;
         if let Some(toml::Value::Table(p)) = value.get_mut("pipeline") {
             let threshold = p.get("obliquity_threshold").and_then(|v| v.as_float().or(v.as_integer().map(|i| i as f64)));
             match (threshold, p.contains_key("axial_resampling")) {
@@ -1420,10 +1431,33 @@ impl PipelineConfig {
                 _ => {}
             }
         }
-        crate::migrate::migrate(&mut value, &mut warnings)?;
         let config: Self = toml::Value::Table(value).try_into().map_err(parse_err)?;
         config.masking.validate().map_err(crate::error::ConfigError::Parse)?;
-        Ok((config, warnings))
+        Ok((config, notes))
+    }
+
+    /// Parse a JSON config (as a front end keeps one, e.g. qsmbly's saved settings), bringing one
+    /// without `schema_version` up to date as [`from_toml_noting`](Self::from_toml_noting) does a
+    /// settings file. A config with `schema_version` is read as it is.
+    pub fn from_json_migrating(s: &str) -> crate::Result<(Self, crate::migrate::Migration)> {
+        let parse_err = |e: String| crate::error::ConfigError::Parse(e);
+        let json: serde_json::Value = serde_json::from_str(s).map_err(|e| parse_err(e.to_string()))?;
+        if json.get("schema_version").is_some() {
+            let config = serde_json::from_value(json).map_err(|e| parse_err(e.to_string()))?;
+            return Ok((config, Default::default()));
+        }
+        // TOML has no null: an unset setting is simply absent, which reads the same.
+        fn drop_nulls(v: serde_json::Value) -> serde_json::Value {
+            match v {
+                serde_json::Value::Object(m) => serde_json::Value::Object(
+                    m.into_iter().filter(|(_, v)| !v.is_null()).map(|(k, v)| (k, drop_nulls(v))).collect()),
+                serde_json::Value::Array(a) => serde_json::Value::Array(a.into_iter().map(drop_nulls).collect()),
+                v => v,
+            }
+        }
+        let table = toml::Table::try_from(drop_nulls(json)).map_err(|e| parse_err(e.to_string()))?;
+        let text = toml::to_string(&table).map_err(|e| parse_err(e.to_string()))?;
+        Self::from_toml_noting(&text)
     }
 
     pub fn to_toml(&self) -> crate::Result<String> {

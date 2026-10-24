@@ -24,9 +24,6 @@ pub fn execute(args: QsmartArgs) -> crate::Result<()> {
     let mut cfg = config::PipelineConfig::default();
     cfg.inversion.algorithm = config::QsmAlgorithm::Qsmart;
     config::apply_qsmart_overrides(&mut cfg, &args.qsmart_params);
-    if let Some(problem) = qsmxt_engine::requirements::qsmart_inner_problem(&cfg) {
-        return Err(QsmxtError::Config(problem));
-    }
     let (_, _, mut inv_config, _) = config::to_pipeline_stages(&cfg);
 
     // Vasculature sphere radius + Frangi vessel scales are configured in mm; convert to voxels

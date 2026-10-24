@@ -305,7 +305,7 @@ regions, not as a general speedup.
 iLSQR crops the field to the mask's bounding box and zero-pads it before
 solving. Each axis is padded to the next multiple of 16 above the crop plus
 `2 × pad / voxel size`, and both LSQR solves run on that grid. The default is
-STI Suite's QSM_GUI padding.
+12 mm per side.
 
 The padding changes χ slightly, because the dipole convolution is circular on
 the padded grid. Larger padding costs time and memory roughly in proportion to
@@ -463,8 +463,8 @@ PDF weights its fit by a noise map made from every echo's magnitude (MEDI toolbo
 ### V-SHARP and its deconvolution
 
 V-SHARP (Wu et al. 2012) high-passes the field with spherical mean value (SMV)
-kernels from `--vsharp-max-radius` down to `--vsharp-min-radius` (STI Suite's
-radii by default), using at each voxel the largest kernel that fits inside the
+kernels from `--vsharp-max-radius` down to `--vsharp-min-radius` (12 mm to 2 mm
+in 1 mm steps by default), using at each voxel the largest kernel that fits inside the
 mask. The published method then **deconvolves** that high-pass with a
 truncated SVD (threshold `--vsharp-threshold`) to recover the local field the
 SMV filter attenuated.

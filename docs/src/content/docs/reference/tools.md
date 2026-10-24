@@ -110,7 +110,7 @@ iQFM, the pipeline's `--bf-algorithm iqfm`, has no standalone command.
 
 `qsmxt bgremove harperella` and `iharperella` read one wrapped echo in rad when
 given `--te` and `--field-strength`, or an unwrapped total field in ppm without them
-(which STI Suite's iHARPERELLA takes), and write the local field in ppm.
+(which iHARPERELLA takes as it is), and write the local field in ppm.
 
 `qsmxt bgremove pdf` takes every echo's magnitude (`--magnitude`, one 4D file or one
 file per echo), `--echo-times` and `--field-strength`: PDF weights its fit by a noise

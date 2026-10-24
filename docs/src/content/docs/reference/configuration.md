@@ -62,18 +62,21 @@ config file you can pass back with `--config`.
 ## Files from earlier versions
 
 A config file QSMxT writes starts with `schema_version`, the layout it was written in.
-A file without it, or with an older one, is brought up to date as it is read, with a
-warning for each change:
+A file without it is read as follows, and what changed is logged:
 
-- A setting at the default it had when the file was written takes today's default.
-  A full config file holds every setting, so without this it would keep every old
-  default as though it had been chosen.
-- A setting whose meaning changed is refused if it holds anything else: TGV's
-  `alpha0`/`alpha1` (now in radians at the scan's first echo time and field strength),
-  MEDI's and TFI's `lambda` (now MEDI_L1's), and `field_mapping.phase_offset_sigma`
-  (now `phase_offset_sigma_mm`, in mm). The message says what changed. Give the value in
-  the new unit and add `schema_version` with the current version at the top, or remove
-  the setting to use the default.
+- **A full config file an earlier QSMxT wrote** (`qsmxt init`, or a run's
+  `pipeline_config.toml`) holds every setting, so it would otherwise keep the defaults of
+  the release that wrote it as though they had been chosen. A setting holding one of an
+  earlier release's defaults takes today's default instead. Any other value is kept.
+- **Any other file** (written by hand, or a changed-settings file) holds what its author
+  chose, so nothing is reset.
+- **Settings whose meaning changed** are refused when they hold anything but today's
+  default and their method runs: TGV's `alpha0`/`alpha1` (now in radians at the scan's
+  first echo time and field strength), MEDI's and TFI's `lambda` (now MEDI_L1's data
+  weight), and `field_mapping.phase_offset_sigma` (now `phase_offset_sigma_mm`, in mm).
+  The message says what changed. Give the value in the new terms and add `schema_version`
+  with the current version at the top, or remove the setting to use the default. When the
+  method does not run, the value is dropped with a note.
 - Settings that no longer exist are ignored, with a warning where that changes what a
   run does (for example `bg_removal.msmv_refine`: mSMV is now MEDI's option,
   `inversion.medi.msmv`).

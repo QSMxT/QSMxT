@@ -334,7 +334,8 @@ pub fn arlo_problem(f: &ScanFacts) -> Option<String> {
 fn echo_noise_map_problem(f: &ScanFacts, method: &str) -> Option<String> {
     if !f.has_magnitude {
         return Some(format!(
-            "needs the magnitude of every echo ({method} weights the data by a noise map made from              them), and this run has no magnitude"));
+            "needs the magnitude of every echo ({method} weights the data by a noise map made from \
+             them), and this run has no magnitude"));
     }
     let spacing: Vec<f64> = f.echo_times.windows(2).map(|w| w[1] - w[0]).collect();
     let uneven = spacing.iter()
@@ -348,7 +349,14 @@ fn echo_noise_map_problem(f: &ScanFacts, method: &str) -> Option<String> {
 /// QSM.rs gives a magnitude data weight need magnitude images, MEDI and TFI need every echo's
 /// (evenly spaced), and MEDI-mSMV needs R2* for its vessel mask.
 pub fn inversion_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<String> {
-    let alg = config.inversion.algorithm;
+    if config.inversion.algorithm == QsmAlgorithm::Qsmart {
+        return qsmart_inner_problem(f, config);
+    }
+    method_problem(f, config, config.inversion.algorithm)
+}
+
+/// What dipole inversion `alg` needs of this run's data ([`inversion_problem`]).
+fn method_problem(f: &ScanFacts, config: &PipelineConfig, alg: QsmAlgorithm) -> Option<String> {
     let (_, _, core, _) = crate::bridge::to_pipeline_stages(config);
     let weighted = match alg {
         QsmAlgorithm::Ndi | QsmAlgorithm::Nltv | QsmAlgorithm::Fansi | QsmAlgorithm::FansiTgv
@@ -365,8 +373,10 @@ pub fn inversion_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<Strin
             if let Some(why) = echo_noise_map_problem(f, method) {
                 return Some(why);
             }
-            if alg == QsmAlgorithm::Medi && config.inversion.medi.msmv {
-                return arlo_problem(f).map(|why| format!("with mSMV needs R2* for its vessel mask, and {why}"));
+            if alg == QsmAlgorithm::Medi && config.inversion.medi.msmv && f.n_echoes < 3 {
+                return Some(format!(
+                    "with mSMV needs at least 3 echoes (its vessel mask uses R2* from ARLO), and this \
+                     run has {}", f.n_echoes));
             }
             None
         }
@@ -374,16 +384,19 @@ pub fn inversion_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<Strin
     }
 }
 
-/// Why QSMART cannot run with the configured inner inversion, if it cannot: QSM.rs gives QSMART's
-/// inner inversion the combined magnitude, and MEDI needs every echo's, so QSMART with MEDI fails
-/// inside QSM.rs. Refused before any processing instead.
-pub fn qsmart_inner_problem(config: &PipelineConfig) -> Option<String> {
-    (config.inversion.algorithm == QsmAlgorithm::Qsmart
-        && config.inversion.qsmart.inversion == QsmAlgorithm::Medi).then(|| {
-        "QSMART cannot use MEDI as its inner inversion: MEDI needs the magnitude of every echo, \
-         and QSMART passes its inner inversion one combined magnitude. Choose another inner \
-         inversion".to_string()
-    })
+/// Why QSMART cannot run its inner inversion on this run's data, if it cannot: what that method
+/// needs of the data ([`method_problem`]), and, for MEDI and TFI on several echoes, the magnitude of
+/// every echo, which QSM.rs does not give QSMART's inner inversion (it passes one combined
+/// magnitude; with a single echo the two are the same).
+fn qsmart_inner_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<String> {
+    let inner = config.inversion.qsmart.inversion;
+    if matches!(inner, QsmAlgorithm::Medi | QsmAlgorithm::Tfi) && f.n_echoes > 1 {
+        return Some(format!(
+            "cannot use {inner} as its inner inversion on {} echoes: {inner} needs the magnitude of \
+             every echo, and QSM.rs gives QSMART's inner inversion one combined magnitude. Choose \
+             another inner inversion (--qsmart-inversion), or use a single echo", f.n_echoes));
+    }
+    method_problem(f, config, inner).map(|why| format!("with {inner} as its inner inversion: {inner} {why}"))
 }
 
 /// Why the configured background removal cannot run on this run's data, if it cannot: PDF needs
@@ -903,17 +916,24 @@ mod tests {
         assert!(check(&run(&EVEN, false), &off).errors.is_empty());
     }
 
-    /// QSMART cannot give MEDI, as its inner inversion, the echoes MEDI needs: refused up front.
+    /// QSMART's inner inversion gets the same checks as the inversion; inner MEDI or TFI is
+    /// refused only on several echoes, where QSM.rs cannot give it every echo's magnitude.
     #[test]
-    fn qsmart_with_an_inner_medi_is_refused() {
+    fn qsmart_checks_its_inner_inversion() {
         let mut c = PipelineConfig::default();
-        c.inversion.qsmart.inversion = QsmAlgorithm::Medi;
-        assert!(qsmart_inner_problem(&c).is_none(), "only under QSMART");
         c.inversion.algorithm = QsmAlgorithm::Qsmart;
-        assert!(qsmart_inner_problem(&c).unwrap().contains("MEDI"));
-        assert!(crate::schema::check_ranges(&c).unwrap_err().to_string().contains("inner inversion"));
+        for inner in [QsmAlgorithm::Medi, QsmAlgorithm::Tfi] {
+            c.inversion.qsmart.inversion = inner;
+            let out = check(&run(&EVEN, true), &c);
+            assert!(out.errors.len() == 1 && out.errors[0].contains("--qsm-algorithm qsmart")
+                && out.errors[0].contains("QSM.rs gives QSMART's inner inversion one combined magnitude"), "{out:?}");
+            assert!(check(&run(&[0.02], true), &c).errors.is_empty(), "{inner} on one echo works");
+        }
+        c.inversion.qsmart.inversion = QsmAlgorithm::Nltv;
+        let out = check(&run(&EVEN, false), &c);
+        assert!(out.errors.len() == 1 && out.errors[0].contains("nltv") && out.errors[0].contains("magnitude"), "{out:?}");
         c.inversion.qsmart.inversion = QsmAlgorithm::Ilsqr;
-        assert!(qsmart_inner_problem(&c).is_none());
+        assert!(check(&run(&EVEN, false), &c).errors.is_empty());
     }
 
     #[test]

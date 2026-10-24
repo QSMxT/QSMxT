@@ -11,10 +11,13 @@ pub use qsmxt_engine::*;
 /// Load config from a TOML file.
 pub fn load_config(path: &Path) -> crate::Result<PipelineConfig> {
     let text = std::fs::read_to_string(path)?;
-    let (config, warnings) = PipelineConfig::from_toml_migrating(&text)
+    let (config, migration) = PipelineConfig::from_toml_noting(&text)
         .map_err(|e| QsmxtError::Config(format!("TOML parse error: {}", e)))?;
-    for w in warnings {
+    for w in migration.warnings {
         log::warn!("{}: {w}", path.display());
+    }
+    for n in migration.notes {
+        log::info!("{}: {n}", path.display());
     }
     Ok(config)
 }
