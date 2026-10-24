@@ -472,6 +472,16 @@ pub struct SeparationParamArgs {
     /// χ-sep iLSQR inner CG relative tolerance
     #[arg(long)]
     pub chi_sep_ilsqr_cg_tol: Option<f64>,
+    /// χ-sep iLSQR: max iterations of the iLSQR that reconstructs, from the local field, the QSM
+    /// χ-separation is initialised with (default: 100; not used with --use-custom-qsm)
+    #[arg(long)]
+    pub chi_sep_ilsqr_qsm_max_iter: Option<usize>,
+    /// χ-sep iLSQR: tolerance of that QSM's iLSQR
+    #[arg(long)]
+    pub chi_sep_ilsqr_qsm_tol: Option<f64>,
+    /// χ-sep iLSQR: zero-padding of that QSM's iLSQR, in mm per side (default: 12)
+    #[arg(long, value_name = "MM")]
+    pub chi_sep_ilsqr_qsm_pad_mm: Option<f64>,
     // χ-sep MEDI
     /// χ-sep MEDI paramagnetic L1 weight
     #[arg(long)]
@@ -810,9 +820,14 @@ pub struct VsharpParamArgs {
     /// V-SHARP min kernel radius in mm
     #[arg(long)]
     pub vsharp_min_radius: Option<f64>,
-    /// Grid V-SHARP estimates the background on: `native` (default), `finest` (isotropic at the
-    /// smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened), or
-    /// `isotropic` (spacing from --vsharp-grid-spacing). The local field keeps native resolution
+    /// V-SHARP step between kernel radii in mm (default: 1); the radii run from
+    /// --vsharp-max-radius down to --vsharp-min-radius
+    #[arg(long, value_name = "MM")]
+    pub vsharp_radius_step: Option<f64>,
+    /// Grid V-SHARP estimates the background on: `isotropic` (default; spacing from
+    /// --vsharp-grid-spacing), `native` (the acquired grid), or `finest` (isotropic at the
+    /// smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened). The local
+    /// field keeps native resolution
     #[arg(long, value_enum)]
     pub vsharp_grid: Option<VsharpGridArg>,
     /// V-SHARP isotropic working-grid spacing in mm (default 1); used with --vsharp-grid isotropic
@@ -2163,9 +2178,14 @@ pub struct BgremoveVsharpArgs {
     /// Smallest SMV kernel radius, in mm
     #[arg(long)]
     pub min_radius: Option<f64>,
-    /// Grid the background is estimated on: `native` (default), `finest` (isotropic at the
-    /// smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened), or
-    /// `isotropic` (spacing from --grid-spacing). The local field keeps native resolution
+    /// Step between SMV kernel radii, in mm (default: 1); the radii run from --max-radius down to
+    /// --min-radius
+    #[arg(long, value_name = "MM")]
+    pub radius_step: Option<f64>,
+    /// Grid the background is estimated on: `isotropic` (default; spacing from --grid-spacing),
+    /// `native` (the acquired grid), or `finest` (isotropic at the smallest voxel dimension,
+    /// e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened). The local field keeps native
+    /// resolution
     #[arg(long, value_enum)]
     pub grid: Option<VsharpGridArg>,
     /// Isotropic working-grid spacing in mm (default 1); used with --grid isotropic
@@ -3667,6 +3687,29 @@ mod tests {
     fn parse(args: &[&str]) -> Cli {
         Cli::try_parse_from([&["qsmxt"][..], args].concat())
             .unwrap_or_else(|e| panic!("{args:?} did not parse:\n{e}"))
+    }
+
+    /// The defaults the V-SHARP radius step and χ-sep iLSQR's QSM help states are qsm-core's.
+    #[test]
+    fn stated_reference_defaults_are_qsm_cores() {
+        use clap::CommandFactory;
+        let cli = Cli::command();
+        let help = |path: &[&str], flag: &str| {
+            let cmd = path.iter().fold(&cli, |c, name| c.find_subcommand(name).unwrap());
+            let arg = cmd.get_arguments().find(|a| a.get_long() == Some(flag)).unwrap_or_else(|| panic!("no --{flag}"));
+            arg.get_help().unwrap().to_string()
+        };
+        let v = qsm_core::bgremove::VsharpParams::default();
+        let q = qsm_core::separation::ChiSepIlsqrParams::default().qsm_ilsqr;
+        for (path, flag, default) in [
+            (&["run"][..], "vsharp-radius-step", v.radius_step.to_string()),
+            (&["bgremove", "vsharp"][..], "radius-step", v.radius_step.to_string()),
+            (&["run"][..], "chi-sep-ilsqr-qsm-max-iter", q.max_iter.to_string()),
+            (&["run"][..], "chi-sep-ilsqr-qsm-pad-mm", q.pad_mm.to_string()),
+        ] {
+            let h = help(path, flag);
+            assert!(h.contains(&format!("(default: {default})")) || h.contains(&format!("(default: {default};")), "--{flag}: {h}");
+        }
     }
 
     /// Oblique slabs give B0 directions with negative components, written as `-0.05`. Clap

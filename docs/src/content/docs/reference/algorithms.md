@@ -280,11 +280,10 @@ the same run unpadded:
 | inversion | median difference | p99 | as % of dynamic range |
 |---|---|---|---|
 | TKD (direct) | 4e-7 ppm | 9.4e-3 ppm | 0.000% / 5.7% |
-| WH-QSM (iterative) | 8.3e-5 ppm | 3.7e-3 ppm | 0.06% / 2.8% |
 
 A direct inversion is unchanged for the typical voxel and moves only where the
-deconvolution is ill-conditioned. An iterative one moves slightly everywhere,
-since it is solving on a different grid. Neither is evidence that padding is
+deconvolution is ill-conditioned. An iterative one solves on a different grid,
+so it can move slightly everywhere. Neither is evidence that padding is
 worse — a finer k-space sampling with the boundary further from the object has
 reason to be better — but nothing here establishes that it is better, so it does
 not change anyone's numbers unless asked for.
@@ -463,9 +462,9 @@ PDF weights its fit by a noise map made from every echo's magnitude (MEDI toolbo
 ### V-SHARP and its deconvolution
 
 V-SHARP (Wu et al. 2012) high-passes the field with spherical mean value (SMV)
-kernels from `--vsharp-max-radius` down to `--vsharp-min-radius` (12 mm to 2 mm
-in 1 mm steps by default), using at each voxel the largest kernel that fits inside the
-mask. The published method then **deconvolves** that high-pass with a
+kernels from `--vsharp-max-radius` down to `--vsharp-min-radius` in steps of
+`--vsharp-radius-step` (12 mm to 2 mm in 1 mm steps by default), using at each
+voxel the largest kernel that fits inside the mask. The published method then **deconvolves** that high-pass with a
 truncated SVD (threshold `--vsharp-threshold`) to recover the local field the
 SMV filter attenuated.
 
@@ -483,15 +482,15 @@ The SMV kernels are balls on the voxel grid. On strongly anisotropic voxels
 is a single-slice disk. `--vsharp-grid` chooses the grid the background is
 estimated on:
 
-- `native` (default): the acquired grid.
+- `isotropic` (default): an isotropic grid of `--vsharp-grid-spacing` mm
+  (default 1), the same whatever the acquisition resolution. Axes finer than the
+  spacing are coarsened, including the mask edge the background is estimated
+  from.
+- `native`: the acquired grid.
 - `finest`: an isotropic grid at the smallest acquired voxel dimension (0.8 mm
   for 0.8 × 0.8 × 3 mm), so no axis is coarsened. The working grid is larger by
   the anisotropy ratio, so it costs memory and time on very fine or very
   anisotropic data. Isotropic data stays on the acquired grid.
-- `isotropic`: an isotropic grid of `--vsharp-grid-spacing` mm (default 1), the
-  same whatever the acquisition resolution. Axes finer than the spacing are
-  coarsened, including the mask edge the background is estimated from, so it
-  suits thick-slice data rather than sub-millimetre acquisitions.
 
 On an isotropic grid the field and mask are cropped to the mask's bounding box
 and resampled trilinearly; the background estimated there is interpolated back,
@@ -895,6 +894,13 @@ based on R2′, which comes from a multi-echo spin-echo acquisition, a
 bring-your-own R2′ map or, with the default `--r2prime-strategy auto` and neither
 of those, R2PRIMEnet's prediction from R2\* (3 T only); see
 [Where R2′ comes from](#where-r2-comes-from) and [Input data](/QSMxT/reference/inputs/).
+
+`chi-sep-ilsqr` is initialised with a QSM that the χ-separation step
+reconstructs from the local field by iLSQR, as the χ-separation toolbox does,
+rather than with the run's own QSM: 100 iterations and 12 mm padding per side by
+default (`--chi-sep-ilsqr-qsm-max-iter`, `--chi-sep-ilsqr-qsm-tol`,
+`--chi-sep-ilsqr-qsm-pad-mm`). With `--use-custom-qsm` it takes the supplied QSM
+instead.
 
 The four non-network methods share a relaxometric constant D_r of 137 Hz/ppm,
 from the original χ-separation paper (Shin et al. 2021), which was measured by

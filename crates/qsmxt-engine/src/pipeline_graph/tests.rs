@@ -69,7 +69,7 @@ fn graphs_of_a_table_of_configurations() {
     assert!(!g.has_edge("unwrap", "invert"), "a local-field inversion reads the local field, not the total");
     let bg = g.node("bgremove").unwrap();
     assert_eq!((bg.algorithm.as_deref(), bg.algorithm_label.as_deref()), (Some("vsharp"), Some("V-SHARP")));
-    assert_eq!(bg.settings, ["SMV kernel radii from 12 to 2 mm"]);
+    assert_eq!(bg.settings, ["SMV kernel radii from 12 to 2 mm in 1 mm steps"]);
     assert_eq!(g.node("invert").unwrap().algorithm_label.as_deref(), Some("iLSQR"));
     // Whether the outputs go back to the acquired grid depends on the header.
     assert_eq!(g.node("output_space").unwrap().only_when.as_deref(), Some("the run is resampled"));
@@ -123,9 +123,14 @@ fn graphs_of_a_table_of_configurations() {
     let mut f = facts();
     f.mese_echo_times = Some(vec![0.01, 0.02, 0.03, 0.04]);
     let g = graph(&config, &f);
-    for from in ["reference", "t2star_r2star", "r2_r2prime", "bgremove", "load"] {
+    for from in ["t2star_r2star", "r2_r2prime", "bgremove", "load"] {
         assert!(g.has_edge(from, "chi_separation"), "{from}: {:?}", g.edges);
     }
+    // χ-sep iLSQR makes its QSM from the local field; χ-sep MEDI separates the run's.
+    assert!(!g.has_edge("reference", "chi_separation"), "{:?}", g.edges);
+    config.separation.algorithm = SeparationAlgorithm::ChiSepMedi;
+    assert!(graph(&config, &f).has_edge("reference", "chi_separation"));
+    config.separation.algorithm = SeparationAlgorithm::ChiSepIlsqr;
     assert!(g.has_edge("t2star_r2star", "r2_r2prime") && g.has_edge("load", "r2_r2prime"));
     assert_eq!(g.node("chi_separation").unwrap().algorithm_label.as_deref(), Some("χ-separation"));
     assert!(g.node("r2_r2prime").unwrap().writes.contains(&item_key(&Item::R2primeCoverage)));
@@ -216,7 +221,7 @@ fn the_default_graph_in_mermaid() {
     magnitude["Combined magnitude<br/><i>root sum of squares</i><br/><small>inhomogeneity correction</small>"]
     mask["Brain mask<br/><small>phase quality: Otsu threshold, dilation, hole-filling, erosion</small>"]
     unwrap["Field map<br/><i>ROMEO</i><br/><small>phase offsets removed</small><br/><small>B0 by weighted average</small>"]
-    bgremove["Background-field removal<br/><i>V-SHARP</i><br/><small>SMV kernel radii from 12 to 2 mm</small>"]
+    bgremove["Background-field removal<br/><i>V-SHARP</i><br/><small>SMV kernel radii from 12 to 2 mm in 1 mm steps</small>"]
     invert["Dipole inversion<br/><i>iLSQR</i>"]
     reference["Referencing<br/><i>mean</i>"]
     output_space["Return to the acquired grid<br/><small>only when the run is resampled</small>"]
@@ -554,7 +559,7 @@ fn the_graph_as_text() {
     assert!(text.starts_with(" 1 Load\n 2 Phase scaling\n     ← 1 Load: Phase (as acquired), Magnitude (as acquired)\n"), "{text}");
     assert!(text.contains(concat!(
         " 6 Background-field removal · V-SHARP\n",
-        "     SMV kernel radii from 12 to 2 mm\n",
+        "     SMV kernel radii from 12 to 2 mm in 1 mm steps\n",
         "     ← 5 Field map: Total field\n",
         "     ← 4 Brain mask: Brain mask\n")), "{text}");
     assert!(text.contains("     only when the run is resampled\n"), "{text}");

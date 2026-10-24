@@ -1502,8 +1502,16 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         use stages::separation as sep;
         let alg = self.config.separation.algorithm;
         let alg_name = format!("{alg}");
-        // Every method needs a conventional QSM (χ_total): the run's, or a supplied one.
+        // Every method needs a conventional QSM (χ_total): the run's, a supplied one, or (χ-sep
+        // iLSQR) one this step reconstructs from the local field.
+        let own_qsm = sep::reconstructs_qsm(self.config);
         let qsm_item = match &self.config.separation.custom_qsm_tool {
+            None if own_qsm => {
+                self.decide(Decision::new(Topic::QsmSource, Choice::Computed,
+                    "The susceptibility map separated was reconstructed from the local field by iLSQR, \
+                     as the χ-separation toolbox does."));
+                None
+            }
             Some(tool) => {
                 if !self.store.has(&Item::SuppliedChi) {
                     return Err(crate::EngineError::Config(format!(
@@ -1515,14 +1523,14 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                 self.decide(Decision::new(Topic::QsmSource, Choice::Supplied,
                     "The susceptibility map separated was the one supplied with the scan.")
                     .with_detail(from.as_str().unwrap_or_default()));
-                Item::SuppliedChi
+                Some(Item::SuppliedChi)
             }
             None => {
                 if !self.store.has(&Item::Chi) {
                     return Err(crate::EngineError::Config(format!(
                         "--do-chisep ({alg_name}) needs a QSM, and none was made")).into());
                 }
-                Item::Chi
+                Some(Item::Chi)
             }
         };
         let mese = self.store.mese();
@@ -1534,7 +1542,6 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let n_voxels = nx * ny * nz;
         let mask_item = self.mask_item();
         let brain = self.store.mask(&mask_item)?;
-        let mut qsm = self.store.real(&qsm_item)?;
 
         // Multi-echo magnitude (voxel-major) and its RSS over echoes, when there is magnitude.
         let (magnitude_multi, magnitude_rss) = if self.meta.has_magnitude {
@@ -1567,6 +1574,15 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         // The local field (ppm), for the field-based methods.
         let field_item = Item::LocalField(Pass::Main);
         let mut local_field = if self.store.has(&field_item) { self.store.real(&field_item)? } else { Vec::new() };
+        let mut qsm = match &qsm_item {
+            Some(item) => self.store.real(item)?,
+            None if local_field.is_empty() => Vec::new(),
+            None => {
+                let field_mask = self.store.mask(&Item::LocalFieldMask(Pass::Main))?;
+                self.log(Level::Info, "Chi-separation: reconstructing its QSM from the local field (iLSQR)");
+                sep::initial_qsm(&local_field, &field_mask, &self.meta, self.config, self.observer)?
+            }
+        };
 
         let missing = sep::missing_inputs(alg, &qsm_core::pipeline::SeparationInputs {
             local_field_ppm: &local_field, qsm: &qsm, mask: &brain, r2prime: r2prime.as_deref(),
@@ -1583,7 +1599,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         // support is the one referencing kept; a supplied χ has none, so it is the brain mask less
         // the voxels that χ leaves undefined. The field-based methods also need the local field
         // there, so they are further limited to where it exists.
-        let published = if qsm_item == Item::Chi && self.store.has(&Item::ChiSupport) {
+        let published = if qsm_item == Some(Item::Chi) && self.store.has(&Item::ChiSupport) {
             Some(self.store.mask(&Item::ChiSupport)?)
         } else {
             None
@@ -2432,6 +2448,10 @@ pub(crate) mod tests {
         let e = expect_then_run(&config, &facts, &mut store);
         assert_eq!(states(&e, &["r2_r2prime", "chi_separation"]),
                    [("r2_r2prime", ExpectedState::Cached), ("chi_separation", ExpectedState::Stale)]);
+        // The iLSQR of the QSM χ-sep iLSQR makes for itself is in its key.
+        config.separation.chi_sep_ilsqr.qsm_ilsqr.max_iter = 5;
+        let e = expect_then_run(&config, &facts, &mut store);
+        assert_eq!(states(&e, &["chi_separation"]), [("chi_separation", ExpectedState::Changed)]);
         erode_the_brain_mask(&mut config);
         expect_then_run(&config, &facts, &mut store);
     }

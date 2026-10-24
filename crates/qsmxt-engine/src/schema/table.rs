@@ -236,12 +236,15 @@ pub(super) fn table() -> Vec<Def> {
         d("bg_removal.vsharp.max_radius", Background, "Max Radius", "Largest SMV kernel radius (mm)", Float).units("mm").flag("--vsharp-max-radius").parent("bg_removal.algorithm")
         .when(|x| x.bf("vsharp")).full("Maximum Radius")
         .gui("Largest SMV kernel radius"),
-        // QSM.rs bgremove/vsharp.rs: min_radius is the radius step; <= 0 loops forever.
+        // QSM.rs VsharpParams::validate: min_radius and radius_step must be > 0.
         d("bg_removal.vsharp.min_radius", Background, "Min Radius", "Smallest SMV kernel radius (mm)", Float).above(0.0).units("mm").flag("--vsharp-min-radius").parent("bg_removal.algorithm")
         .when(|x| x.bf("vsharp")).full("Minimum Radius")
         .gui("Smallest SMV kernel radius"),
+        d("bg_removal.vsharp.radius_step", Background, "Radius Step", "Step between SMV kernel radii (mm)", Float).above(0.0).units("mm").flag("--vsharp-radius-step").parent("bg_removal.algorithm")
+        .when(|x| x.bf("vsharp"))
+        .gui("Step between SMV kernel radii, from the largest down to the smallest"),
         d("bg_removal.vsharp.grid", Background, "Working Grid", "", Enum(vec![
-            o("native", "native", "Native", "The acquired voxel grid (default)"),
+            o("native", "native", "Native", "The acquired voxel grid"),
             o("finest", "finest", "Finest", "An isotropic grid at the smallest voxel dimension, so no axis is coarsened; isotropic data stays on the acquired grid"),
             o("isotropic", "isotropic", "Isotropic", "An isotropic grid of Grid Spacing mm; the background is interpolated back, the local field keeps native resolution"),
         ])).flag("--vsharp-grid").parent("bg_removal.algorithm")
@@ -723,6 +726,14 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.sep("chi-sep-ilsqr")).full("CG Maximum Iterations"),
         d("separation.chi_sep_ilsqr.cg_tol", Separation, "CG Tolerance", "Inner CG relative tolerance", Float).flag("--chi-sep-ilsqr-cg-tol").parent("separation.algorithm")
         .when(|x| x.sep("chi-sep-ilsqr")),
+        // The QSM χ-sep iLSQR is initialised with, reconstructed unless one is supplied. QSM.rs
+        // inversion/ilsqr.rs: 0 iterations give an all-zero map; IlsqrParams::validate: pad >= 0.
+        d("separation.chi_sep_ilsqr.qsm_ilsqr.max_iter", Separation, "QSM Max Iter", "Maximum iterations of the iLSQR that reconstructs the QSM separated", Int).min(1.0).flag("--chi-sep-ilsqr-qsm-max-iter").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-ilsqr") && x.c.separation.custom_qsm_tool.is_none()).full("QSM Maximum Iterations"),
+        d("separation.chi_sep_ilsqr.qsm_ilsqr.tol", Separation, "QSM Tolerance", "Tolerance of the iLSQR that reconstructs the QSM separated", Float).flag("--chi-sep-ilsqr-qsm-tol").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-ilsqr") && x.c.separation.custom_qsm_tool.is_none()),
+        d("separation.chi_sep_ilsqr.qsm_ilsqr.pad_mm", Separation, "QSM Pad (mm)", "Zero-padding per side of the iLSQR that reconstructs the QSM separated", Float).min(0.0).units("mm").flag("--chi-sep-ilsqr-qsm-pad-mm").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-ilsqr") && x.c.separation.custom_qsm_tool.is_none()).full("QSM Padding"),
         d("separation.chi_sep_medi.lambda_para", Separation, "Lambda para", "Paramagnetic L1 weight", Float).flag("--chi-sep-medi-lambda-para").parent("separation.algorithm")
         .when(|x| x.sep("chi-sep-medi")).full("Paramagnetic Lambda"),
         d("separation.chi_sep_medi.lambda_dia", Separation, "Lambda dia", "Diamagnetic L1 weight", Float).flag("--chi-sep-medi-lambda-dia").parent("separation.algorithm")

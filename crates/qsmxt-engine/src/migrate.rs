@@ -18,6 +18,8 @@
 //!   method does not run, the value is dropped with a note.
 //! - Settings that no longer exist are dropped, with a warning where dropping one changes what a
 //!   run does; renamed ones keep their value under the new name.
+//! - V-SHARP's smallest radius was also the step between its radii: a kept one brings that step
+//!   with it as `radius_step`, so the radii stay the same.
 
 use crate::error::ConfigError;
 
@@ -53,6 +55,7 @@ const OLD_DEFAULTS: &str = r#"
 [bg_removal.vsharp]
 min_radius = [1.0]
 threshold = [0.001, 0.05]
+grid = ["native"]
 [bg_removal.pdf]
 tol = [0.00001]
 [bg_removal.ismv]
@@ -311,6 +314,17 @@ fn from_v1(value: &mut toml::Table, kind: Kind, out: &mut Migration) -> Result<(
              value in the new terms and add `schema_version = {CONFIG_SCHEMA_VERSION}` at the top of \
              the file.",
             what_changed(changed, kind), consequence(changed))));
+    }
+
+    // V-SHARP's smallest radius was also the step between its radii; a kept one keeps its radii.
+    if let Some(v) = get(value, "bg_removal.vsharp.min_radius").cloned() {
+        let step = "bg_removal.vsharp.radius_step";
+        if get(value, step).is_none() && get(&today, step).is_none_or(|d| !same(&v, d)) {
+            set(value, step, v.clone());
+            out.notes.push(format!(
+                "bg_removal.vsharp.min_radius = {v} was also the step between V-SHARP's kernel radii \
+                 when this file was written; keeping those radii with {step} = {v}"));
+        }
     }
     Ok(())
 }
@@ -607,6 +621,43 @@ mod tests {
         let c = PipelineConfig::from_toml("schema_version = 2\n[inversion.medi]\nlambda = 0.002\n")
             .unwrap();
         assert_eq!(c.inversion.medi.lambda, 0.002);
+    }
+
+    /// A V-SHARP smallest radius kept from an earlier file keeps its radii: it was also their step.
+    #[test]
+    fn a_kept_vsharp_min_radius_keeps_its_step() {
+        let (c, m) = read("[bg_removal.vsharp]\nmin_radius = 3.0\n").unwrap();
+        assert_eq!(
+            (
+                c.bg_removal.vsharp.min_radius,
+                c.bg_removal.vsharp.radius_step
+            ),
+            (3.0, 3.0)
+        );
+        assert!(
+            m.notes
+                .iter()
+                .any(|n| n.contains("bg_removal.vsharp.radius_step = 3.0")),
+            "{m:#?}"
+        );
+        // A step equal to today's needs no note, nor does a file that is today's.
+        let (c, m) = read("[bg_removal.vsharp]\nmin_radius = 1.0\n").unwrap();
+        assert_eq!(
+            (c.bg_removal.vsharp.min_radius, m),
+            (1.0, super::Migration::default())
+        );
+        let (c, m) = read("schema_version = 2\n[bg_removal.vsharp]\nmin_radius = 3.0\n").unwrap();
+        let d = PipelineConfig::default().bg_removal.vsharp.radius_step;
+        assert_eq!(
+            (c.bg_removal.vsharp.radius_step, m),
+            (d, super::Migration::default())
+        );
+        // A full earlier file at the old defaults takes today's radii and grid.
+        let (c, _) = read(V10_FULL).unwrap();
+        assert_eq!(
+            c.bg_removal.vsharp,
+            PipelineConfig::default().bg_removal.vsharp
+        );
     }
 
     /// A phase-offset σ in voxels is refused when phase offsets are removed, dropped otherwise.

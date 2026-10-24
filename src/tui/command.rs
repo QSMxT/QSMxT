@@ -534,6 +534,9 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             chi_sep_ilsqr_tol: parse_optional_f64(&ps.sep_ilsqr_tol),
             chi_sep_ilsqr_cg_max_iter: parse_optional_usize(&ps.sep_ilsqr_cg_max_iter),
             chi_sep_ilsqr_cg_tol: parse_optional_f64(&ps.sep_ilsqr_cg_tol),
+            chi_sep_ilsqr_qsm_max_iter: parse_optional_usize(&ps.sep_ilsqr_qsm_max_iter),
+            chi_sep_ilsqr_qsm_tol: parse_optional_f64(&ps.sep_ilsqr_qsm_tol),
+            chi_sep_ilsqr_qsm_pad_mm: parse_optional_f64(&ps.sep_ilsqr_qsm_pad_mm),
             chi_sep_medi_lambda_para: parse_optional_f64(&ps.sep_medi_lambda_para),
             chi_sep_medi_lambda_dia: parse_optional_f64(&ps.sep_medi_lambda_dia),
             chi_sep_medi_lambda_cpl: parse_optional_f64(&ps.sep_medi_lambda_cpl),
@@ -561,11 +564,13 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             vsharp_threshold: parse_optional_f64(&ps.vsharp_threshold),
             vsharp_max_radius: parse_optional_f64(&ps.vsharp_max_radius),
             vsharp_min_radius: parse_optional_f64(&ps.vsharp_min_radius),
-            vsharp_grid: match ps.vsharp_grid {
-                1 => Some(crate::cli::VsharpGridArg::Finest),
-                2 => Some(crate::cli::VsharpGridArg::Isotropic),
-                _ => None,
-            },
+            vsharp_radius_step: parse_optional_f64(&ps.vsharp_radius_step),
+            vsharp_grid: (ps.vsharp_grid != crate::tui::app::vsharp_grid_index(qsmxt_engine::VsharpConfig::default().grid))
+                .then_some(match ps.vsharp_grid {
+                    1 => crate::cli::VsharpGridArg::Finest,
+                    2 => crate::cli::VsharpGridArg::Isotropic,
+                    _ => crate::cli::VsharpGridArg::Native,
+                }),
             vsharp_grid_spacing: if ps.vsharp_grid == 2 { parse_optional_f64(&ps.vsharp_grid_spacing) } else { None },
         },
         pdf_params: crate::cli::PdfParamArgs {
@@ -956,7 +961,8 @@ mod tests {
         assert_eq!(a.r2primenet_patch, Some(vec![128, 128, 64]));
     }
 
-    /// V-SHARP's working grid: native by default (off the command), spacing row only for isotropic.
+    /// V-SHARP's working grid: the engine's by default (off the command), spacing row only for
+    /// isotropic.
     #[test]
     fn vsharp_working_grid() {
         let mut app = default_app();
@@ -965,9 +971,13 @@ mod tests {
             _ => None,
         }).collect::<Vec<_>>();
         assert!(fields(&app).contains(&"vsharp_grid".to_string()));
+        let d = qsmxt_engine::VsharpConfig::default();
+        assert_eq!(config_from_app(&app).unwrap().bg_removal.vsharp.grid, d.grid);
+        assert_eq!(pipeline_args_from_app(&app).vsharp_params.vsharp_grid, None);
+        app.pipeline_state.set_select("vsharp_grid", 0);
         assert!(!fields(&app).contains(&"vsharp_grid_spacing".to_string()));
         assert_eq!(config_from_app(&app).unwrap().bg_removal.vsharp.grid, qsmxt_engine::VsharpGrid::Native);
-        assert_eq!(pipeline_args_from_app(&app).vsharp_params.vsharp_grid, None);
+        assert_eq!(pipeline_args_from_app(&app).vsharp_params.vsharp_grid, Some(crate::cli::VsharpGridArg::Native));
         app.pipeline_state.set_select("vsharp_grid", 1);
         assert_eq!(config_from_app(&app).unwrap().bg_removal.vsharp.grid, qsmxt_engine::VsharpGrid::Finest);
         assert!(!fields(&app).contains(&"vsharp_grid_spacing".to_string()));
@@ -977,7 +987,7 @@ mod tests {
         let c = config_from_app(&app).unwrap();
         assert_eq!((c.bg_removal.vsharp.grid, c.bg_removal.vsharp.grid_spacing), (qsmxt_engine::VsharpGrid::Isotropic, 0.8));
         let a = pipeline_args_from_app(&app);
-        assert_eq!(a.vsharp_params.vsharp_grid, Some(crate::cli::VsharpGridArg::Isotropic));
+        assert_eq!(a.vsharp_params.vsharp_grid, None, "isotropic is the default");
         assert_eq!(a.vsharp_params.vsharp_grid_spacing, Some(0.8));
     }
 

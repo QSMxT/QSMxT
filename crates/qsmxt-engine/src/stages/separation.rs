@@ -46,6 +46,26 @@ pub fn check_patch(config: &PipelineConfig) -> Result<(), EngineError> {
     .map_err(EngineError::Config)
 }
 
+/// Whether the step reconstructs the QSM it separates: χ-sep iLSQR, unless a QSM is supplied, is
+/// initialised with an iLSQR QSM of the same local field, as the χ-separation toolbox makes it
+/// (QSM.rs `ChiSepIlsqrParams::qsm_ilsqr`).
+pub fn reconstructs_qsm(config: &PipelineConfig) -> bool {
+    config.separation.algorithm == SeparationAlgorithm::ChiSepIlsqr && config.separation.custom_qsm_tool.is_none()
+}
+
+/// The QSM χ-sep iLSQR is initialised with ([`reconstructs_qsm`]): iLSQR of `local_field` (ppm)
+/// inside `mask`, with `separation.chi_sep_ilsqr.qsm_ilsqr`. Unreferenced, in ppm.
+pub fn initial_qsm(
+    local_field: &[f64], mask: &[u8], meta: &RunMetadata, config: &PipelineConfig, observer: &mut dyn Observer,
+) -> Result<Vec<f64>, EngineError> {
+    let (_, _, mut inversion, _) = crate::bridge::to_pipeline_stages(config);
+    inversion.algorithm = qsm_core::pipeline::InversionAlgorithm::Ilsqr;
+    inversion.ilsqr = crate::bridge::to_separation_config(config).chi_sep_ilsqr.qsm_ilsqr;
+    qsm_core::pipeline::run_dipole_inversion(
+        local_field, mask, &scan_metadata(meta), &inversion, None, &mut |done, total| observer.progress(done, total),
+    ).map_err(|e| EngineError::Config(format!("chi-separation: the iLSQR QSM: {}", e)))
+}
+
 /// Whether `algorithm` fits the local field.
 pub fn uses_field(algorithm: SeparationAlgorithm) -> bool {
     matches!(algorithm,

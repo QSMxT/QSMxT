@@ -515,10 +515,16 @@ impl Ctx<'_> {
                 }
             }
             Stage::ChiSeparation => {
-                let chi = if c.separation.custom_qsm_tool.is_some() { Item::SuppliedChi } else { Item::Chi };
-                reads.extend([self.mask_item(), chi]);
-                if chi == Item::Chi && has(&Item::ChiSupport) {
-                    reads.push(Item::ChiSupport);
+                reads.push(self.mask_item());
+                if crate::stages::separation::reconstructs_qsm(c) {
+                    // Its QSM is made from the local field, inside that field's mask.
+                    reads.push(Item::LocalFieldMask(Pass::Main));
+                } else {
+                    let chi = if c.separation.custom_qsm_tool.is_some() { Item::SuppliedChi } else { Item::Chi };
+                    reads.push(chi);
+                    if chi == Item::Chi && has(&Item::ChiSupport) {
+                        reads.push(Item::ChiSupport);
+                    }
                 }
                 reads.extend(self.echo_magnitudes());
                 let r2prime = if c.separation.custom_r2prime_tool.is_some() { Item::SuppliedR2prime } else { Item::R2prime };

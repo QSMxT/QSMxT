@@ -308,6 +308,7 @@ fn command_for(config: &PipelineConfig) -> String {
             }
             emit_f64(&mut parts, "--vsharp-max-radius", config.bg_removal.vsharp.max_radius, d.bg_removal.vsharp.max_radius);
             emit_f64(&mut parts, "--vsharp-min-radius", config.bg_removal.vsharp.min_radius, d.bg_removal.vsharp.min_radius);
+            emit_f64(&mut parts, "--vsharp-radius-step", config.bg_removal.vsharp.radius_step, d.bg_removal.vsharp.radius_step);
             emit_enum(&mut parts, "--vsharp-grid", &config.bg_removal.vsharp.grid, &d.bg_removal.vsharp.grid);
             if config.bg_removal.vsharp.grid == VsharpGrid::Isotropic {
                 emit_f64(&mut parts, "--vsharp-grid-spacing", config.bg_removal.vsharp.grid_spacing, d.bg_removal.vsharp.grid_spacing);
@@ -382,6 +383,10 @@ fn command_for(config: &PipelineConfig) -> String {
                 emit_f64(&mut parts, "--chi-sep-ilsqr-tol", s.chi_sep_ilsqr.tol, ds.chi_sep_ilsqr.tol);
                 emit_usize(&mut parts, "--chi-sep-ilsqr-cg-max-iter", s.chi_sep_ilsqr.cg_max_iter, ds.chi_sep_ilsqr.cg_max_iter);
                 emit_f64(&mut parts, "--chi-sep-ilsqr-cg-tol", s.chi_sep_ilsqr.cg_tol, ds.chi_sep_ilsqr.cg_tol);
+                let (q, dq) = (&s.chi_sep_ilsqr.qsm_ilsqr, &ds.chi_sep_ilsqr.qsm_ilsqr);
+                emit_usize(&mut parts, "--chi-sep-ilsqr-qsm-max-iter", q.max_iter, dq.max_iter);
+                emit_f64(&mut parts, "--chi-sep-ilsqr-qsm-tol", q.tol, dq.tol);
+                emit_f64(&mut parts, "--chi-sep-ilsqr-qsm-pad-mm", q.pad_mm, dq.pad_mm);
             }
             SeparationAlgorithm::ChiSepMedi => {
                 emit_f64(&mut parts, "--chi-sep-medi-lambda-para", s.chi_sep_medi.lambda_para, ds.chi_sep_medi.lambda_para);
@@ -1115,15 +1120,25 @@ frangi_c = 400.0
     }
 
     #[test]
+    fn test_vsharp_radius_step_flag() {
+        let mut c = PipelineConfig::default();
+        assert!(!generate_command(&c).contains("--vsharp-radius-step"));
+        c.bg_removal.vsharp.radius_step = 2.0;
+        assert!(generate_command(&c).contains("--vsharp-radius-step 2"));
+    }
+
+    #[test]
     fn test_vsharp_grid_flags() {
         let mut c = PipelineConfig::default();
         let cmd = generate_command(&c);
-        assert!(!cmd.contains("--vsharp-grid"), "native is the default: {cmd}");
+        assert!(!cmd.contains("--vsharp-grid"), "the default grid is not stated: {cmd}");
+        c.bg_removal.vsharp.grid = VsharpGrid::Native;
         c.bg_removal.vsharp.grid_spacing = 0.8;
-        assert!(!generate_command(&c).contains("--vsharp-grid-spacing"), "unused unless isotropic");
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--vsharp-grid native") && !cmd.contains("--vsharp-grid-spacing"), "unused unless isotropic: {cmd}");
         c.bg_removal.vsharp.grid = VsharpGrid::Isotropic;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--vsharp-grid isotropic") && cmd.contains("--vsharp-grid-spacing 0.8"), "{cmd}");
+        assert!(!cmd.contains("--vsharp-grid ") && cmd.contains("--vsharp-grid-spacing 0.8"), "{cmd}");
         c.bg_removal.vsharp.grid = VsharpGrid::Finest;
         let cmd = generate_command(&c);
         assert!(cmd.contains("--vsharp-grid finest") && !cmd.contains("--vsharp-grid-spacing"), "{cmd}");
