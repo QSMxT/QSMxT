@@ -402,8 +402,10 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.rts_params.rts_rho { config.inversion.rts.rho = v; }
         if let Some(v) = args.rts_params.rts_max_iter { config.inversion.rts.max_iter = v; }
         if let Some(v) = args.rts_params.rts_lsmr_iter { config.inversion.rts.lsmr_iter = v; }
+        if let Some(v) = args.rts_params.rts_tau { config.inversion.rts.tau = v; }
+        if let Some(v) = args.rts_params.rts_gamma { config.inversion.rts.gamma = v; }
         if let Some(v) = args.tv_params.tv_lambda { config.inversion.tv.lambda = v; }
-        if let Some(v) = args.tv_params.tv_rho { config.inversion.tv.rho = Some(v); }
+        if let Some(v) = args.tv_params.tv_rho { config.inversion.tv.rho = v.value(); }
         if let Some(v) = args.tv_params.tv_tol { config.inversion.tv.tol = v; }
         if let Some(v) = args.tv_params.tv_max_iter { config.inversion.tv.max_iter = v; }
         if let Some(v) = args.tkd_params.tkd_threshold { config.inversion.tkd.threshold = v; }
@@ -434,17 +436,22 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.heidi_params.heidi_denoise_iterations { config.inversion.heidi.denoise_iterations = v; }
         if let Some(v) = args.heidi_params.heidi_denoise_time_step { config.inversion.heidi.denoise_time_step = v; }
         if let Some(v) = args.heidi_params.heidi_denoise_conductance { config.inversion.heidi.denoise_conductance = v; }
+        if let Some(v) = args.heidi_params.heidi_te { config.inversion.heidi.te = v; }
         if let Some(v) = args.tikhonov_params.tikhonov_lambda { config.inversion.tikhonov.lambda = v; }
         if let Some(v) = args.nltv_params.nltv_lambda { config.inversion.nltv.lambda = v; }
+        if let Some(v) = args.nltv_params.nltv_rho { config.inversion.nltv.rho = v.value(); }
         if let Some(v) = args.nltv_params.nltv_mu { config.inversion.nltv.mu = v; }
         if let Some(v) = args.nltv_params.nltv_tol { config.inversion.nltv.tol = v; }
         if let Some(v) = args.nltv_params.nltv_max_iter { config.inversion.nltv.max_iter = v; }
         if let Some(v) = args.nltv_params.nltv_newton_iter { config.inversion.nltv.max_iter_newton = v; }
+        if let Some(v) = args.nltv_params.nltv_tol_newton { config.inversion.nltv.tol_newton = v; }
+        if let Some(v) = args.nltv_params.nltv_te { config.inversion.nltv.te = v; }
         if let Some(v) = args.medi_params.medi_lambda { config.inversion.medi.lambda = v; }
         if let Some(v) = args.medi_params.medi_max_iter { config.inversion.medi.max_iter = v; }
         if let Some(v) = args.medi_params.medi_cg_max_iter { config.inversion.medi.cg_max_iter = v; }
         if let Some(v) = args.medi_params.medi_cg_tol { config.inversion.medi.cg_tol = v; }
         if let Some(v) = args.medi_params.medi_tol { config.inversion.medi.tol = v; }
+        if let Some(v) = args.medi_params.medi_te { config.inversion.medi.te = v; }
         if let Some(v) = args.medi_params.medi_percentage { config.inversion.medi.percentage = v; }
         if let Some(v) = args.medi_params.medi_smv_radius { config.inversion.medi.smv_radius = v; }
         if args.medi_params.medi_smv { config.inversion.medi.smv = true; }
@@ -465,11 +472,13 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.tfi_params.tfi_cg_max_iter { config.inversion.tfi.cg_max_iter = v; }
         if let Some(v) = args.tfi_params.tfi_max_iter { config.inversion.tfi.max_iter = v; }
         if let Some(v) = args.tfi_params.tfi_tol { config.inversion.tfi.tol = v; }
+        if let Some(v) = args.tfi_params.tfi_te { config.inversion.tfi.te = v; }
         if let Some(v) = args.tgv_params.tgv_iterations { config.inversion.tgv.iterations = Some(v); }
         if let Some(v) = args.tgv_params.tgv_erosions { config.inversion.tgv.erosions = v; }
         if let Some(v) = args.tgv_params.tgv_alpha1 { config.inversion.tgv.alpha1 = v; }
         if let Some(v) = args.tgv_params.tgv_alpha0 { config.inversion.tgv.alpha0 = v; }
         if let Some(v) = args.tgv_params.tgv_step_size { config.inversion.tgv.step_size = v; }
+        if let Some(v) = args.tgv_params.tgv_te { config.inversion.tgv.te = v; }
         // Deep-learning overlap-tiling (opt-in): presence of --tile-size enables it.
         if let Some(v) = args.tiling_params.tile_size { config.inversion.tile_size = Some(v); }
         if let Some(v) = args.tiling_params.tile_halo { config.inversion.tile_halo = Some(v); }
@@ -477,22 +486,25 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.ndi_params.ndi_alpha { config.inversion.ndi.alpha = v; }
         if let Some(v) = args.ndi_params.ndi_max_iter { config.inversion.ndi.max_iter = v; }
         if let Some(v) = args.ndi_params.ndi_auto_stop { config.inversion.ndi.auto_stop = v; }
+        if let Some(v) = args.ndi_params.ndi_te { config.inversion.ndi.te = v; }
         if let Some(v) = args.fansi_params.fansi_alpha1 { config.inversion.fansi.alpha1 = v; }
-        if let Some(v) = args.fansi_params.fansi_mu1 { config.inversion.fansi.mu1 = Some(v); }
+        if let Some(v) = args.fansi_params.fansi_mu1 { config.inversion.fansi.mu1 = v.value(); }
         if let Some(v) = args.fansi_params.fansi_mu2 { config.inversion.fansi.mu2 = v; }
-        if let Some(v) = args.fansi_params.fansi_alpha0 { config.inversion.fansi.alpha0 = Some(v); }
-        if let Some(v) = args.fansi_params.fansi_mu0 { config.inversion.fansi.mu0 = Some(v); }
+        if let Some(v) = args.fansi_params.fansi_alpha0 { config.inversion.fansi.alpha0 = v.value(); }
+        if let Some(v) = args.fansi_params.fansi_mu0 { config.inversion.fansi.mu0 = v.value(); }
         if let Some(v) = args.fansi_params.fansi_max_iter { config.inversion.fansi.max_iter = v; }
         if let Some(v) = args.fansi_params.fansi_tol_update { config.inversion.fansi.tol_update = v; }
         if let Some(v) = args.fansi_params.fansi_tol_delta { config.inversion.fansi.tol_delta = v; }
+        if let Some(v) = args.fansi_params.fansi_te { config.inversion.fansi.te = v; }
         if let Some(v) = args.l1qsm_params.l1qsm_alpha1 { config.inversion.l1qsm.alpha1 = v; }
-        if let Some(v) = args.l1qsm_params.l1qsm_mu1 { config.inversion.l1qsm.mu1 = Some(v); }
+        if let Some(v) = args.l1qsm_params.l1qsm_mu1 { config.inversion.l1qsm.mu1 = v.value(); }
         if let Some(v) = args.l1qsm_params.l1qsm_mu2 { config.inversion.l1qsm.mu2 = v; }
         if let Some(v) = args.l1qsm_params.l1qsm_mu3 { config.inversion.l1qsm.mu3 = v; }
         if let Some(v) = args.l1qsm_params.l1qsm_lambda { config.inversion.l1qsm.lambda = v; }
         if let Some(v) = args.l1qsm_params.l1qsm_max_iter { config.inversion.l1qsm.max_iter = v; }
         if let Some(v) = args.l1qsm_params.l1qsm_tol_update { config.inversion.l1qsm.tol_update = v; }
         if let Some(v) = args.l1qsm_params.l1qsm_tol_delta { config.inversion.l1qsm.tol_delta = v; }
+        if let Some(v) = args.l1qsm_params.l1qsm_te { config.inversion.l1qsm.te = v; }
         if let Some(v) = args.whqsm_params.whqsm_alpha1 { config.inversion.whqsm.alpha1 = v; }
         if let Some(v) = args.whqsm_params.whqsm_mu1 { config.inversion.whqsm.mu1 = v; }
         if let Some(v) = args.whqsm_params.whqsm_mu2 { config.inversion.whqsm.mu2 = v; }
@@ -501,8 +513,10 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.whqsm_params.whqsm_max_iter { config.inversion.whqsm.max_iter = v; }
         if let Some(v) = args.whqsm_params.whqsm_tol_update { config.inversion.whqsm.tol_update = v; }
         if let Some(v) = args.whqsm_params.whqsm_tol_delta { config.inversion.whqsm.tol_delta = v; }
+        if let Some(v) = args.whqsm_params.whqsm_weight { config.inversion.whqsm.weight = v; }
+        if let Some(v) = args.whqsm_params.whqsm_te { config.inversion.whqsm.te = v; }
         if let Some(v) = args.hdqsm_params.hdqsm_alpha_l2 { config.inversion.hdqsm.alpha_l2 = v; }
-        if let Some(v) = args.hdqsm_params.hdqsm_mu1_l2 { config.inversion.hdqsm.mu1_l2 = Some(v); }
+        if let Some(v) = args.hdqsm_params.hdqsm_mu1_l2 { config.inversion.hdqsm.mu1_l2 = v.value(); }
         if let Some(v) = args.hdqsm_params.hdqsm_mu2 { config.inversion.hdqsm.mu2 = v; }
         if let Some(v) = args.hdqsm_params.hdqsm_max_iter_l1 { config.inversion.hdqsm.max_iter_l1 = v; }
         if let Some(v) = args.hdqsm_params.hdqsm_max_iter_l2 { config.inversion.hdqsm.max_iter_l2 = v; }
@@ -528,6 +542,9 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.vsharp_params.vsharp_grid { config.bg_removal.vsharp.grid = v.into(); }
         if let Some(v) = args.vsharp_params.vsharp_grid_spacing { config.bg_removal.vsharp.grid_spacing = v; }
         if let Some(v) = args.pdf_params.pdf_tol { config.bg_removal.pdf.tol = v; }
+        if let Some(v) = args.pdf_params.pdf_n_cg { config.bg_removal.pdf.n_cg = v; }
+        if let Some(v) = args.pdf_params.pdf_space { config.bg_removal.pdf.space = v; }
+        if let Some(v) = args.pdf_params.pdf_n_pad { config.bg_removal.pdf.n_pad = v; }
         if let Some(v) = args.lbv_params.lbv_tol { config.bg_removal.lbv.tol = v; }
         if let Some(v) = args.ismv_params.ismv_tol { config.bg_removal.ismv.tol = v; }
         if let Some(v) = args.ismv_params.ismv_max_iter { config.bg_removal.ismv.max_iter = v; }
@@ -541,8 +558,10 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.harperella_params.harperella_radius { config.bg_removal.harperella.radius = v; }
         if let Some(v) = args.harperella_params.harperella_max_iter { config.bg_removal.harperella.max_iter = v; }
         if let Some(v) = args.harperella_params.harperella_tol { config.bg_removal.harperella.tol = v; }
+        if let Some(&[x, y, z]) = args.harperella_params.harperella_pad.as_deref() { config.bg_removal.harperella.pad = [x, y, z]; }
         if let Some(v) = args.iharperella_params.iharperella_max_iter { config.bg_removal.iharperella.max_iter = v; }
         if let Some(v) = args.iharperella_params.iharperella_tol { config.bg_removal.iharperella.tol = v; }
+        if let Some(&[x, y, z]) = args.iharperella_params.iharperella_pad.as_deref() { config.bg_removal.iharperella.pad = [x, y, z]; }
 
         // ── SWI ──
         if let Some(ref s) = args.swi_params.swi_hp_sigma {
@@ -1022,6 +1041,43 @@ mod tests {
         assert_eq!(with(&["--laplacian-fft-pad", "12"]).field_mapping.laplacian_fft_pad, [12; 3]);
         assert_eq!(with(&["--laplacian-fft-pad", "64", "64", "32"]).field_mapping.laplacian_fft_pad, [64, 64, 32]);
         // Two values is neither: refused (see `unusable_flag_values_are_refused`).
+    }
+
+    /// Each method's `--<method>-te`, and the method settings QSM.rs v0.40.0 added, reach the
+    /// config; `auto` puts a derived setting back to its derived value.
+    #[test]
+    fn echo_times_and_method_settings_from_cli() {
+        use qsmxt_engine::EchoTimeChoice as E;
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--nltv-te", "last", "--medi-te", "first",
+            "--tfi-te", "sum", "--ndi-te", "spacing", "--fansi-te", "first", "--l1qsm-te", "12.5",
+            "--whqsm-te", "last", "--heidi-te", "first", "--tgv-te", "spacing"]);
+        let i = &c.inversion;
+        assert_eq!([i.nltv.te, i.medi.te, i.tfi.te, i.ndi.te, i.fansi.te, i.l1qsm.te, i.whqsm.te, i.heidi.te, i.tgv.te],
+                   [E::Last, E::First, E::Sum, E::Spacing, E::First, E::Seconds(0.0125), E::Last, E::First, E::Spacing]);
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--whqsm-weight", "in-vivo", "--nltv-rho", "0.2",
+            "--nltv-tol-newton", "1e-5", "--rts-tau", "0.5", "--rts-gamma", "2", "--pdf-n-cg", "30",
+            "--pdf-space", "kspace", "--pdf-n-pad", "0", "--harperella-pad", "1", "2", "3",
+            "--iharperella-pad", "4", "5", "6", "--fansi-mu1", "0.1", "--tv-rho", "0.3"]);
+        assert_eq!(c.inversion.whqsm.weight, qsmxt_engine::WhqsmWeight::InVivo);
+        assert_eq!((c.inversion.nltv.rho, c.inversion.nltv.tol_newton), (Some(0.2), 1e-5));
+        assert_eq!((c.inversion.rts.tau, c.inversion.rts.gamma), (0.5, 2.0));
+        assert_eq!((c.bg_removal.pdf.n_cg, c.bg_removal.pdf.space, c.bg_removal.pdf.n_pad),
+                   (30, qsmxt_engine::PdfSpace::Kspace, 0));
+        assert_eq!((c.bg_removal.harperella.pad, c.bg_removal.iharperella.pad), ([1, 2, 3], [4, 5, 6]));
+        assert_eq!((c.inversion.fansi.mu1, c.inversion.tv.rho), (Some(0.1), Some(0.3)));
+        // `auto` overrides a value from a config file with the derived one.
+        let args = |argv: &[&str]| match cli::Cli::try_parse_from(argv).unwrap().command {
+            cli::Command::Run(r) => r.pipeline,
+            _ => unreachable!(),
+        };
+        let mut c = PipelineConfig::default();
+        (c.inversion.tv.rho, c.inversion.nltv.rho, c.inversion.hdqsm.mu1_l2) = (Some(1.0), Some(1.0), Some(1.0));
+        apply_run_overrides(&mut c, &args(&["qsmxt", "run", "<bids>", "--tv-rho", "auto", "--nltv-rho", "auto",
+            "--hdqsm-mu1-l2", "auto"])).unwrap();
+        assert_eq!((c.inversion.tv.rho, c.inversion.nltv.rho, c.inversion.hdqsm.mu1_l2), (None, None, None));
+        for bad in [["--medi-te", "median"], ["--whqsm-weight", "heavy"], ["--pdf-space", "real"], ["--tv-rho", "x"]] {
+            assert!(cli::Cli::try_parse_from(["qsmxt", "run", "<bids>", bad[0], bad[1]]).is_err(), "{bad:?}");
+        }
     }
 
     #[test]

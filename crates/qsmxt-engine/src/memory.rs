@@ -388,20 +388,38 @@ fn bg_removal_need(config: &PipelineConfig, s: &Scan) -> u64 {
             crate::VsharpGrid::Finest => 440 * n,
         },
         // PDF: every echo's magnitude (8 B per voxel per echo) and the noise map made from it,
-        // on top of the solve (2.13 GB natively on the example's 5 echoes).
-        BfAlgorithm::Pdf => (313 + 8 * s.echoes) * n,
+        // on the acquired grid, and the solve on the mask's bounding box padded by `n_pad` voxels
+        // (the whole volume for 0), taken as the volume padded (2.13 GB natively on the example's
+        // 5 echoes at the default 40, 1.75 GB at 0, 2.95 GB at 80).
+        BfAlgorithm::Pdf => {
+            let p = config.bg_removal.pdf.n_pad;
+            (217 + 8 * s.echoes) * n + 34 * padded_voxels(s, [p, p, p])
+        }
         BfAlgorithm::Lbv => 37 * n,
         BfAlgorithm::Ismv => 114 * n,
         BfAlgorithm::Sharp => 59 * n,
         BfAlgorithm::Resharp => 123 * n,
-        BfAlgorithm::Harperella => 139 * n,
-        BfAlgorithm::Iharperella => 155 * n,
+        // HARPERELLA and iHARPERELLA: zero padding adds copies on the padded grid (example, 16
+        // voxels per side: 0.84 -> 1.97 GB and 0.93 -> 1.96 GB).
+        BfAlgorithm::Harperella => {
+            let pad = config.bg_removal.harperella.pad;
+            139 * n + if pad == [0; 3] { 0 } else { 114 * padded_voxels(s, pad) }
+        }
+        BfAlgorithm::Iharperella => {
+            let pad = config.bg_removal.iharperella.pad;
+            155 * n + if pad == [0; 3] { 0 } else { 103 * padded_voxels(s, pad) }
+        }
         // iQFM: from every echo's phase and magnitude; on the whole volume 4.2 GB in WASM on the
         // example. BFRnet on the whole volume: 10.9 GB natively on the example. Tiles measured
         // single-threaded in WASM only (0.85 and 1.04 GB on the example at 56 + 2×4).
         BfAlgorithm::Iqfm => dl_need(s, config, Net { id: "iqfm", per_voxel: 120, fixed: 0, whole: 583, native_tile: 473, browser_per_voxel: 120, once: 0, browser_per_helper: 0 }),
         BfAlgorithm::Bfrnet => dl_need(s, config, Net { id: "bfrnet", per_voxel: 40, fixed: 0, whole: 1_760, native_tile: 3_059, browser_per_voxel: 40, once: 264_000_000, browser_per_helper: 0 }),
     }
+}
+
+/// Voxels of the acquired grid zero-padded by `pad` voxels per side on each axis.
+fn padded_voxels(s: &Scan, pad: [usize; 3]) -> u64 {
+    (0..3).map(|a| (s.dims[a] + 2 * pad[a]) as u64).product()
 }
 
 /// The dipole inversion of the local field (or, for iQSM/iQSM+, of the echoes' phase).
@@ -838,6 +856,14 @@ mod tests {
                                     at(&hd(Some([128, 128, 64])), "mask", 1));
         assert!(whole > native && native > low, "{whole} {native} {low}");
         assert!(at(&with(|c| c.masking.sections = crate::mindgrab_mask_sections()), "mask", 1) > 7_300_000_000);
+
+        // HARPERELLA's, iHARPERELLA's and PDF's padding enlarge their working grid.
+        let harp = |pad| with(|c| { c.bg_removal.algorithm = BfAlgorithm::Harperella; c.bg_removal.harperella.pad = pad; });
+        assert!(at(&harp([16; 3]), "bgremove", 1) > at(&harp([0; 3]), "bgremove", 1));
+        let iharp = |pad| with(|c| { c.bg_removal.algorithm = BfAlgorithm::Iharperella; c.bg_removal.iharperella.pad = pad; });
+        assert!(at(&iharp([16; 3]), "bgremove", 1) > at(&iharp([0; 3]), "bgremove", 1));
+        let pdf = |n_pad| with(|c| { c.bg_removal.algorithm = BfAlgorithm::Pdf; c.bg_removal.pdf.n_pad = n_pad; });
+        assert!(at(&pdf(80), "bgremove", 1) > at(&pdf(40), "bgremove", 1));
 
         // SynthSeg's window, the χ-separation and R2PRIMEnet patches.
         let seg = |patch| with(|c| { c.pipeline.do_segmentation = true; c.segmentation.patch = patch; });

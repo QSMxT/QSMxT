@@ -447,6 +447,7 @@ fn param_label(field: &str) -> Label {
         "max_iter_l2" => AtMost("L2 iterations"),
         "lsmr_iter" => Count("LSMR iterations"),
         "max_iter_newton" => AtMost("Newton iterations"),
+        "n_cg" => AtMost("conjugate-gradient iterations"),
         "iterations" => Count("iterations"),
         "erosions" => Count("mask erosions"),
         "continuation_steps" => Count("continuation steps"),
@@ -478,6 +479,12 @@ fn param_label(field: &str) -> Label {
         "mu_min" => Eq("minimum μ"),
         "rho" => Eq("ρ"),
         "tau" => Eq("τ"),
+        "gamma" => Eq("γ (ρ increase factor)"),
+        "tol_newton" => Eq("Newton tolerance"),
+        "weight" => Eq("data weight"),
+        "space" => Eq("dipole kernel"),
+        "n_pad" => Unit("zero-padding", "voxels"),
+        "pad" => Unit("zero-padding", "voxels per side"),
         "threshold" => Eq("threshold"),
         "radius" | "smv_radius" => Unit("SMV radius", "mm"),
         "tik_reg" => Eq("Tikhonov weight"),
@@ -564,32 +571,52 @@ fn changed_fields<T: serde::Serialize>(cfg: &T, default: &T, skip: &[&str]) -> V
 fn inversion_changes(config: &PipelineConfig, alg: QsmAlgorithm) -> Changed {
     let (i, d) = (&config.inversion, InversionConfig::default());
     let mut c = Changed::default();
+    // The echo time the field is converted at is worded below, not as `te = …`.
+    const TE: [&str; 1] = ["te"];
     match alg {
         QsmAlgorithm::Rts => c.add_fields(&i.rts, &d.rts, &[]),
         QsmAlgorithm::Tv => c.add_fields(&i.tv, &d.tv, &[]),
         QsmAlgorithm::Tkd => c.add_fields(&i.tkd, &d.tkd, &[]),
         QsmAlgorithm::Tsvd => c.add_fields(&i.tsvd, &d.tsvd, &[]),
         QsmAlgorithm::Tikhonov => c.add_fields(&i.tikhonov, &d.tikhonov, &[]),
-        QsmAlgorithm::Nltv => c.add_fields(&i.nltv, &d.nltv, &[]),
+        QsmAlgorithm::Nltv => c.add_fields(&i.nltv, &d.nltv, &TE),
         // mSMV's settings are worded with it (see `medi_msmv`).
-        QsmAlgorithm::Medi => c.add_fields(&i.medi, &d.medi, &MEDI_MSMV_FIELDS),
-        QsmAlgorithm::Tfi => c.add_fields(&i.tfi, &d.tfi, &[]),
+        QsmAlgorithm::Medi => c.add_fields(&i.medi, &d.medi, &[MEDI_MSMV_FIELDS.as_slice(), &TE].concat()),
+        QsmAlgorithm::Tfi => c.add_fields(&i.tfi, &d.tfi, &TE),
         QsmAlgorithm::Ilsqr => c.add_fields(&i.ilsqr, &d.ilsqr, &[]),
         QsmAlgorithm::Lsqr => c.add_fields(&i.lsqr, &d.lsqr, &[]),
         QsmAlgorithm::Heidi => {
             c.add_fields(&i.lsqr, &d.lsqr, &[]);
-            c.add_fields(&i.heidi, &d.heidi, &[]);
+            c.add_fields(&i.heidi, &d.heidi, &TE);
         }
-        QsmAlgorithm::Ndi => c.add_fields(&i.ndi, &d.ndi, &[]),
-        QsmAlgorithm::Fansi | QsmAlgorithm::FansiTgv => c.add_fields(&i.fansi, &d.fansi, &[]),
-        QsmAlgorithm::L1qsm => c.add_fields(&i.l1qsm, &d.l1qsm, &[]),
-        QsmAlgorithm::Whqsm => c.add_fields(&i.whqsm, &d.whqsm, &[]),
+        QsmAlgorithm::Ndi => c.add_fields(&i.ndi, &d.ndi, &TE),
+        QsmAlgorithm::Fansi | QsmAlgorithm::FansiTgv => c.add_fields(&i.fansi, &d.fansi, &TE),
+        QsmAlgorithm::L1qsm => c.add_fields(&i.l1qsm, &d.l1qsm, &TE),
+        QsmAlgorithm::Whqsm => c.add_fields(&i.whqsm, &d.whqsm, &TE),
         QsmAlgorithm::Hdqsm => c.add_fields(&i.hdqsm, &d.hdqsm, &[]),
         QsmAlgorithm::AmpPe => c.add_fields(&i.amp_pe, &d.amp_pe, &[]),
-        QsmAlgorithm::Tgv => c.add_fields(&i.tgv, &d.tgv, &[]),
+        QsmAlgorithm::Tgv => c.add_fields(&i.tgv, &d.tgv, &TE),
         _ => {}
     }
+    // Stated only when it is not the method's own default (its reference code's). TGV's sentence
+    // always says it.
+    let default = PipelineConfig::default();
+    let te = crate::stages::inversion::echo_time_choice(config, alg);
+    if let Some(te) = te.filter(|&te| alg != QsmAlgorithm::Tgv && Some(te) != crate::stages::inversion::echo_time_choice(&default, alg)) {
+        c.0.push(format!("the field converted to phase at {}", echo_time_prose(te)));
+    }
     c
+}
+
+/// The echo time a method converts the field to phase at, as prose ("the sum of the echo times").
+fn echo_time_prose(te: EchoTimeChoice) -> String {
+    match te {
+        EchoTimeChoice::First => "the first echo time".into(),
+        EchoTimeChoice::Last => "the last echo time".into(),
+        EchoTimeChoice::Spacing => "the echo spacing".into(),
+        EchoTimeChoice::Sum => "the sum of the echo times".into(),
+        EchoTimeChoice::Seconds(_) => format!("an echo time of {te} ms"),
+    }
 }
 
 /// MEDI's mSMV settings, which [`medi_msmv`] words rather than the list of changed settings.
@@ -888,14 +915,15 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                 // unwraps it itself), several are field-mapped first and go in as the total field.
                 // Neither route runs a separate background-removal stage.
                 doc.cite(&CITE_TGV);
-                doc.say(&both(Stage::Tgv), 
+                doc.say(&both(Stage::Tgv), format!(
                     "QSM was computed using the Total Generalized Variation (TGV) algorithm \
                      (Langkammer et al., 2015), with background field removal and dipole inversion \
                      performed jointly. For single-echo data TGV was applied to the wrapped phase of \
                      the echo and also performed the phase unwrapping; for multi-echo data TGV was \
                      applied to the B0 field map, computed as described below, expressed as phase at \
-                     the first echo time. The regularisation weights are in radians at that echo time \
-                     and the field strength, and the susceptibility was converted to ppm with them.".to_string());
+                     {}. The regularisation weights are in radians at that echo time \
+                     and the field strength, and the susceptibility was converted to ppm with them.",
+                    echo_time_prose(config.inversion.tgv.te)));
                 let changed = inversion_changes(config, QsmAlgorithm::Tgv);
                 if !changed.is_empty() {
                     doc.say(&both(Stage::Tgv), format!("TGV was run{}.", changed.with()));
@@ -2231,6 +2259,31 @@ mod tests {
         config.inversion.ilsqr.pad_mm = 32.0;
         let out = generate_methods(&config);
         assert!(out.contains("zero-padding = 32 mm per side"), "{out}");
+    }
+
+    /// A method's echo time is said only when it is not that method's default; the new settings
+    /// read by name.
+    #[test]
+    fn methods_state_an_echo_time_only_when_it_is_not_the_default() {
+        let mut config = PipelineConfig::default();
+        config.inversion.algorithm = QsmAlgorithm::Medi;
+        assert!(!generate_methods(&config).contains("converted to phase"));
+        config.inversion.medi.te = EchoTimeChoice::First;
+        let out = generate_methods(&config);
+        assert!(out.contains("the field converted to phase at the first echo time"), "{out}");
+        assert!(!out.contains("te ="), "{out}");
+        config.inversion.algorithm = QsmAlgorithm::Ndi;
+        config.inversion.ndi.te = EchoTimeChoice::Seconds(0.01);
+        assert!(generate_methods(&config).contains("converted to phase at an echo time of 10 ms"));
+        config.inversion.algorithm = QsmAlgorithm::Rts;
+        config.inversion.rts.gamma = 2.0;
+        assert!(generate_methods(&config).contains("γ (ρ increase factor) = 2"));
+        config.inversion.algorithm = QsmAlgorithm::Whqsm;
+        config.inversion.whqsm.weight = WhqsmWeight::InVivo;
+        assert!(generate_methods(&config).contains("data weight = in-vivo"));
+        config.bg_removal.algorithm = BfAlgorithm::Pdf;
+        config.bg_removal.pdf.n_cg = 30;
+        assert!(generate_methods(&config).contains("at most 30 conjugate-gradient iterations"));
     }
 
     #[test]

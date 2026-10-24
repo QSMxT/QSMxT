@@ -86,6 +86,9 @@ fn another(s: &Setting, cur: &Value) -> Vec<Value> {
         // The named echoes, and an echo by number.
         ValueType::EchoReference { .. } => s.value_type.options().iter().map(|o| o.value.clone())
             .chain([json!("3")]).filter(|v| v != cur).collect(),
+        // The named echo times, and a time of the user's.
+        ValueType::EchoTime { .. } => s.value_type.options().iter().map(|o| o.value.clone())
+            .filter(|v| v.is_string()).chain([json!({ "seconds": 0.025 })]).filter(|v| v != cur).collect(),
         ValueType::MaskSections => vec![serde_json::to_value(qsmxt_engine::masking::hd_bet_mask_sections()).unwrap()],
         ValueType::MaskOps => vec![json!([{ "op": "erode", "iterations": 2 }])],
     };
@@ -196,7 +199,7 @@ fn the_schema_is_well_formed() {
         }
         assert!(!s.also_in.contains(&s.section), "{}", s.path);
         assert_eq!(s.section.tab(), s.tab, "{}", s.path);
-        if matches!(s.value_type, ValueType::Enum { .. } | ValueType::EchoReference { .. }) {
+        if matches!(s.value_type, ValueType::Enum { .. } | ValueType::EchoReference { .. } | ValueType::EchoTime { .. }) {
             let options = s.value_type.options();
             assert!(!options.is_empty(), "{}", s.path);
             for o in options {
@@ -400,6 +403,28 @@ fn labels_are_unique_within_a_section_after_their_context() {
     assert_eq!(ctx("inversion.qsmart.ilsqr_max_iter"), Some("QSMART"));
     assert_eq!(ctx("inversion.amp_pe.nlevel"), Some("AMP-PE"));
     assert_eq!(ctx("pipeline.do_qsm"), None);
+}
+
+/// Every method's echo time is an echo-time setting defaulting to its reference's choice; a given
+/// time that is not positive is the setting's error, and so is a PDF padding of 1.
+#[test]
+fn each_methods_echo_time_and_pdf_padding_are_checked() {
+    let defaults = [("nltv", "first"), ("medi", "spacing"), ("tfi", "spacing"), ("ndi", "first"),
+                    ("fansi", "spacing"), ("l1qsm", "first"), ("whqsm", "first"), ("heidi", "last"), ("tgv", "first")];
+    for (m, d) in defaults {
+        let s = schema::setting(&format!("inversion.{m}.te")).unwrap_or_else(|| panic!("{m}"));
+        assert!(matches!(s.value_type, ValueType::EchoTime { .. }), "{m}");
+        assert_eq!(s.default, json!(d), "{m}");
+    }
+    let mut c = PipelineConfig::default();
+    c.inversion.algorithm = qsmxt_engine::QsmAlgorithm::Medi;
+    c.inversion.medi.te = qsmxt_engine::EchoTimeChoice::Seconds(0.0);
+    c.bg_removal.algorithm = qsmxt_engine::BfAlgorithm::Pdf;
+    c.bg_removal.pdf.n_pad = 1;
+    let view = schema::settings_view(&c, &Default::default());
+    let error = |p: &str| view.iter().find(|v| v.path == p).and_then(|v| v.error.clone());
+    assert!(error("inversion.medi.te").is_some_and(|e| e.contains("greater than 0 ms")), "{view:?}");
+    assert!(error("bg_removal.pdf.n_pad").is_some_and(|e| e.contains("at least 2")), "{view:?}");
 }
 
 #[test]

@@ -186,8 +186,10 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             // Not a QSMxT setting yet (#420): qsm-core's.
             ..Default::default()
         },
-        // n_cg, space and n_pad are not QSMxT settings yet: qsm-core's.
-        pdf: qsm_core::bgremove::PdfParams { tol: cfg.bg_removal.pdf.tol, ..Default::default() },
+        pdf: qsm_core::bgremove::PdfParams {
+            tol: cfg.bg_removal.pdf.tol, n_cg: cfg.bg_removal.pdf.n_cg,
+            space: cfg.bg_removal.pdf.space.into(), n_pad: cfg.bg_removal.pdf.n_pad,
+        },
         lbv: qsm_core::bgremove::LbvParams { tol: cfg.bg_removal.lbv.tol, max_iter: None },
         ismv: qsm_core::bgremove::IsmvParams {
             tol: cfg.bg_removal.ismv.tol,
@@ -208,13 +210,12 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             radius: cfg.bg_removal.harperella.radius,
             max_iter: cfg.bg_removal.harperella.max_iter,
             tol: cfg.bg_removal.harperella.tol,
-            // The padding is not a QSMxT setting yet: qsm-core's.
-            ..Default::default()
+            pad: cfg.bg_removal.harperella.pad,
         },
         iharperella: qsm_core::bgremove::IharperellaParams {
             max_iter: cfg.bg_removal.iharperella.max_iter,
             tol: cfg.bg_removal.iharperella.tol,
-            ..Default::default()
+            pad: cfg.bg_removal.iharperella.pad,
         },
         sdf: qsm_core::bgremove::SdfParams::default(),
         tile: cfg.dl_tile(),
@@ -240,15 +241,14 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             delta: cfg.inversion.rts.delta, mu: cfg.inversion.rts.mu,
             rho: cfg.inversion.rts.rho, tol: cfg.inversion.rts.tol,
             max_iter: cfg.inversion.rts.max_iter, lsmr_iter: cfg.inversion.rts.lsmr_iter,
-            // tau and gamma (the adaptive ρ) are not QSMxT settings yet: qsm-core's.
-            ..Default::default()
+            tau: cfg.inversion.rts.tau, gamma: cfg.inversion.rts.gamma,
         },
         nltv: qsm_core::inversion::NltvParams {
-            lambda: cfg.inversion.nltv.lambda, mu: cfg.inversion.nltv.mu,
+            lambda: cfg.inversion.nltv.lambda, rho: cfg.inversion.nltv.rho, mu: cfg.inversion.nltv.mu,
             tol: cfg.inversion.nltv.tol, max_iter: cfg.inversion.nltv.max_iter,
-            max_iter_newton: cfg.inversion.nltv.max_iter_newton,
-            // ρ, the Newton tolerance and the echo time choice are not QSMxT settings yet; field
-            // strength and echo times are scan parameters the pipeline fills in.
+            tol_newton: cfg.inversion.nltv.tol_newton,
+            max_iter_newton: cfg.inversion.nltv.max_iter_newton, te: cfg.inversion.nltv.te.into(),
+            // Field strength and echo times are scan parameters; the pipeline fills them in.
             ..Default::default()
         },
         medi: qsm_core::inversion::MediParams {
@@ -263,9 +263,9 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             max_iter: cfg.inversion.medi.max_iter,
             tol: cfg.inversion.medi.tol,
             msmv: cfg.inversion.medi.msmv_params(),
-            // MEDI+0's CSF term, the mask shrinking, the zero padding and the echo time choice are
-            // not QSMxT settings yet; field strength and echo times are scan parameters the
-            // pipeline fills in.
+            te: cfg.inversion.medi.te.into(),
+            // MEDI+0's CSF term, the mask shrinking and the zero padding are not QSMxT settings
+            // yet; field strength and echo times are scan parameters the pipeline fills in.
             ..Default::default()
         },
         tfi: qsm_core::inversion::TfiParams {
@@ -277,8 +277,9 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             cg_max_iter: cfg.inversion.tfi.cg_max_iter,
             max_iter: cfg.inversion.tfi.max_iter,
             tol: cfg.inversion.tfi.tol,
-            // MERIT, the linear data term and the echo time choice are not QSMxT settings yet;
-            // field strength and echo times are scan parameters the pipeline fills in.
+            te: cfg.inversion.tfi.te.into(),
+            // MERIT and the linear data term are not QSMxT settings yet; field strength and echo
+            // times are scan parameters the pipeline fills in.
             ..Default::default()
         },
         ilsqr: qsm_core::inversion::IlsqrParams {
@@ -290,7 +291,8 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         ndi: qsm_core::inversion::NdiParams {
             tau: cfg.inversion.ndi.tau, alpha: cfg.inversion.ndi.alpha,
             max_iter: cfg.inversion.ndi.max_iter, auto_stop: cfg.inversion.ndi.auto_stop,
-            // Field strength and echo time are scan parameters; the pipeline fills them in.
+            te: cfg.inversion.ndi.te.into(),
+            // Field strength and echo times are scan parameters; the pipeline fills them in.
             ..Default::default()
         },
         fansi: qsm_core::inversion::FansiParams {
@@ -298,6 +300,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             mu2: cfg.inversion.fansi.mu2, alpha0: cfg.inversion.fansi.alpha0,
             mu0: cfg.inversion.fansi.mu0, max_iter: cfg.inversion.fansi.max_iter,
             tol_update: cfg.inversion.fansi.tol_update, tol_delta: cfg.inversion.fansi.tol_delta,
+            te: cfg.inversion.fansi.te.into(),
             // The dispatcher sets is_tgv; field strength and echo times are scan parameters.
             ..Default::default()
         },
@@ -306,6 +309,8 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             mu2: cfg.inversion.l1qsm.mu2, mu3: cfg.inversion.l1qsm.mu3,
             lambda: cfg.inversion.l1qsm.lambda, max_iter: cfg.inversion.l1qsm.max_iter,
             tol_update: cfg.inversion.l1qsm.tol_update, tol_delta: cfg.inversion.l1qsm.tol_delta,
+            te: cfg.inversion.l1qsm.te.into(),
+            // Field strength and echo times are scan parameters; the pipeline fills them in.
             ..Default::default()
         },
         whqsm: qsm_core::inversion::WhQsmParams {
@@ -313,7 +318,8 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             mu2: cfg.inversion.whqsm.mu2, beta: cfg.inversion.whqsm.beta,
             muh: cfg.inversion.whqsm.muh, max_iter: cfg.inversion.whqsm.max_iter,
             tol_update: cfg.inversion.whqsm.tol_update, tol_delta: cfg.inversion.whqsm.tol_delta,
-            // The data weight (WH_nlTV's flat one by default) is not a QSMxT setting yet.
+            weight: cfg.inversion.whqsm.weight.into(), te: cfg.inversion.whqsm.te.into(),
+            // Field strength and echo times are scan parameters; the pipeline fills them in.
             ..Default::default()
         },
         hdqsm: qsm_core::inversion::HdQsmParams {
@@ -345,8 +351,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             alpha0: cfg.inversion.tgv.alpha0 as f32,
             alpha1: cfg.inversion.tgv.alpha1 as f32,
             step_size: cfg.inversion.tgv.step_size as f32,
-            // The echo time choice is not a QSMxT setting yet: the reference's (the first echo).
-            ..Default::default()
+            te: cfg.inversion.tgv.te.into(),
         },
         qsmart: qsm_core::utils::QsmartParams {
             ilsqr_max_iter: cfg.inversion.qsmart.ilsqr_max_iter,
@@ -397,7 +402,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
                 time_step: cfg.inversion.heidi.denoise_time_step,
                 conductance: cfg.inversion.heidi.denoise_conductance,
             }),
-            // The echo time choice is not a QSMxT setting yet: the reference's (the last echo).
+            te: cfg.inversion.heidi.te.into(),
             // Field strength and echo times are scan parameters the pipeline fills in.
             ..Default::default()
         },
@@ -763,6 +768,40 @@ mod tests {
         assert_eq!(inv.ilsqr.pad_mm, 32.0);
         // QSMART's inner iLSQR keeps its own padding
         assert_eq!(inv.qsmart.ilsqr_pad_mm, cfg.inversion.qsmart.ilsqr_pad_mm);
+    }
+
+    /// Each method's echo time, and the method settings from QSM.rs v0.40.0, reach qsm-core; their
+    /// defaults are qsm-core's.
+    #[test]
+    fn echo_times_and_method_settings_propagate_to_core_params() {
+        use qsm_core::EchoTime as E;
+        let (_, bg, inv, _) = to_pipeline_stages(&PipelineConfig::default());
+        let core = |p: &PInversion| [p.nltv.te, p.medi.te, p.tfi.te, p.ndi.te, p.fansi.te, p.l1qsm.te,
+                                      p.whqsm.te, p.heidi.te, p.tgv.te];
+        assert_eq!(core(&inv), [E::First, E::Spacing, E::Spacing, E::First, E::Spacing, E::First,
+                                E::First, E::Last, E::First]);
+        assert_eq!(inv.whqsm.weight, qsm_core::inversion::WhQsmWeight::Flat);
+        assert_eq!((bg.pdf.n_cg, bg.pdf.n_pad, bg.harperella.pad, bg.iharperella.pad),
+                   (300, 40, [0, 0, 0], [0, 0, 0]));
+        let mut cfg = PipelineConfig::default();
+        let i = &mut cfg.inversion;
+        for te in [&mut i.nltv.te, &mut i.medi.te, &mut i.tfi.te, &mut i.ndi.te, &mut i.fansi.te,
+                   &mut i.l1qsm.te, &mut i.whqsm.te, &mut i.heidi.te, &mut i.tgv.te] {
+            *te = EchoTimeChoice::Sum;
+        }
+        i.whqsm.weight = crate::WhqsmWeight::InVivo;
+        (i.nltv.rho, i.nltv.tol_newton, i.rts.tau, i.rts.gamma) = (Some(0.3), 1e-5, 0.5, 2.0);
+        cfg.bg_removal.pdf.space = crate::PdfSpace::Kspace;
+        (cfg.bg_removal.pdf.n_cg, cfg.bg_removal.pdf.n_pad) = (30, 0);
+        cfg.bg_removal.harperella.pad = [1, 2, 3];
+        cfg.bg_removal.iharperella.pad = [4, 5, 6];
+        let (_, bg, inv, _) = to_pipeline_stages(&cfg);
+        assert_eq!(core(&inv), [E::Sum; 9]);
+        assert_eq!(inv.whqsm.weight, qsm_core::inversion::WhQsmWeight::InVivo);
+        assert_eq!((inv.nltv.rho, inv.nltv.tol_newton, inv.rts.tau, inv.rts.gamma), (Some(0.3), 1e-5, 0.5, 2.0));
+        assert_eq!(bg.pdf.space, qsm_core::bgremove::DipoleKernelSpace::KSpace);
+        assert_eq!((bg.pdf.n_cg, bg.pdf.n_pad, bg.harperella.pad, bg.iharperella.pad),
+                   (30, 0, [1, 2, 3], [4, 5, 6]));
     }
 
     #[test]

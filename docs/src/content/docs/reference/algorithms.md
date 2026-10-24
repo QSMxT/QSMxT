@@ -459,6 +459,14 @@ multi-echo data) and the wrapped-phase ones (`iqsm`,
 
 PDF weights its fit by a noise map made from every echo's magnitude (MEDI toolbox
 `Fit_ppm_complex`), so it needs the magnitude of every echo and evenly spaced echoes.
+It runs at most `--pdf-n-cg` conjugate-gradient iterations (default 300), on the mask's
+bounding box zero-padded by
+`--pdf-n-pad` voxels (default 40; 0 runs on the full volume, and 1 is refused). `--pdf-space`
+picks the dipole kernel: `image` (the FFT of the dipole sampled on the voxel grid, the
+default) or `kspace` (the analytic k-space kernel).
+
+HARPERELLA and iHARPERELLA zero-pad the field by `--harperella-pad` / `--iharperella-pad`
+voxels per side, X Y Z (STI Suite's `padsize`, default `0 0 0`).
 
 ### V-SHARP and its deconvolution
 
@@ -530,11 +538,11 @@ reconstructions and deep-learning networks.
 | `amp-pe` | AMP-PE — Approximate Message Passing with Parameter Estimation |
 
 TGV replaces background removal and inversion. With one echo it also replaces unwrapping: it
-takes that echo's wrapped phase. With several echoes the field-mapping stage runs as usual and
-TGV takes the combined B0 field map, expressed as phase at the first echo time. Its weights
-`--tgv-alpha0` / `--tgv-alpha1` are in the reference's units, radians at the scan's first echo
-time and field strength, so the same values regularise differently at another echo time or
-field strength.
+takes that echo's wrapped phase, at its own echo time. With several echoes the field-mapping
+stage runs as usual and TGV takes the combined B0 field map, expressed as phase at the echo
+time `--tgv-te` picks (the first by default). Its weights `--tgv-alpha0` / `--tgv-alpha1` are
+in the reference's units, radians at that echo time and the field strength, so the same values
+regularise differently at another echo time or field strength.
 
 MEDI takes the local field from background removal (PDF in the authors' pipeline), and
 with `--medi-smv` (the default) high-passes it with a spherical mean value filter near the
@@ -543,6 +551,40 @@ filtering (Roberts et al., 2024), which removes residual background at the brain
 eroding the mask; it needs at least three echoes. MEDI and TFI weight the data by a noise map
 and their edges by a magnitude they make from every echo's magnitude, so they need the
 magnitude of every echo and evenly spaced echoes.
+
+#### Echo time
+
+Several methods take the field in ppm and convert it to phase in radians at one echo time.
+A field combined over several echoes has no single echo time, and the choice scales the phase,
+so it can change the result. Each such method has a `--<method>-te` setting: `first`, `last`,
+`spacing` (TE2 − TE1), `sum` (of the echo times), or a time in ms. With one echo every named
+choice is that echo's time. The default is what the method's reference code uses:
+
+| Method | Setting | Default |
+| --- | --- | --- |
+| NDI, NLTV, L1-QSM, WH-QSM, TGV | `--ndi-te`, `--nltv-te`, `--l1qsm-te`, `--whqsm-te`, `--tgv-te` | `first` |
+| MEDI, TFI, FANSI (`fansi`, `fansi-tgv`) | `--medi-te`, `--tfi-te`, `--fansi-te` | `spacing` |
+| HEIDI | `--heidi-te` | `last` |
+
+The choice has to resolve from the scan's echo times: `spacing` needs them in increasing order.
+A run that cannot use the choice is refused before processing.
+
+#### Other method settings
+
+- WH-QSM's data weight, `--whqsm-weight`: `flat` (1 in the mask, the default), `max-normalised`
+  (the magnitude over its maximum) or `in-vivo` (min(2 × magnitude / maximum, 1)). The last two
+  need magnitude images.
+- RTS raises its ADMM penalty ρ by `--rts-gamma` (default 5) whenever the primal residual falls
+  by less than a factor of `--rts-tau` (default 0.7).
+- NLTV's ADMM penalty `--nltv-rho` and TV's `--tv-rho` default to 100 × λ. NLTV's data-term
+  subproblem runs at most `--nltv-newton-iter` Newton iterations, to the tolerance
+  `--nltv-tol-newton`.
+- FANSI's `--fansi-mu1`, `--fansi-alpha0` and `--fansi-mu0`, L1-QSM's `--l1qsm-mu1` and
+  HD-QSM's `--hdqsm-mu1-l2` default to values derived from the method's other weights (100 ×
+  α1, 2 × α1, 2 × μ1; 100 × α1; 100 × α L2), as the reference code derives them.
+
+A setting derived from others is `auto` on the command line (`--tv-rho auto`), left out of the
+config file, and blank in the TUI.
 
 ### Deep learning
 

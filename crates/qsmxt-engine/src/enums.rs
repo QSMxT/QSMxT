@@ -159,6 +159,95 @@ impl fmt::Display for BfAlgorithm {
     }
 }
 
+/// The kernel PDF fits the background with (qsm-core `DipoleKernelSpace`; `PDF.m`'s `space`).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum PdfSpace {
+    /// The FFT of the dipole field sampled on the voxel grid (`'imagespace'`).
+    #[default]
+    Image,
+    /// The analytic k-space kernel (`'kspace'`).
+    Kspace,
+}
+impl PdfSpace {
+    /// Every variant, in the order the CLI help and the TUI list them.
+    pub const ALL: [PdfSpace; 2] = [Self::Image, Self::Kspace];
+
+    /// The name the CLI, the config file and the TUI use.
+    pub fn as_str(self) -> &'static str {
+        match self { Self::Image => "image", Self::Kspace => "kspace" }
+    }
+}
+impl fmt::Display for PdfSpace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl From<PdfSpace> for qsm_core::bgremove::DipoleKernelSpace {
+    fn from(s: PdfSpace) -> Self {
+        use qsm_core::bgremove::DipoleKernelSpace as K;
+        match s { PdfSpace::Image => K::ImageSpace, PdfSpace::Kspace => K::KSpace }
+    }
+}
+impl From<qsm_core::bgremove::DipoleKernelSpace> for PdfSpace {
+    fn from(k: qsm_core::bgremove::DipoleKernelSpace) -> Self {
+        use qsm_core::bgremove::DipoleKernelSpace as K;
+        match k { K::ImageSpace => Self::Image, K::KSpace => Self::Kspace }
+    }
+}
+
+/// WH-QSM's data weight (qsm-core `WhQsmWeight`).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum WhqsmWeight {
+    /// 1 in the mask, no magnitude (`WH_nlTV.m`'s own default).
+    #[default]
+    Flat,
+    /// The magnitude in the mask over its maximum. Needs the magnitude.
+    MaxNormalised,
+    /// `min(2·magnitude/max, 1)` in the mask, as NDI weights. Needs the magnitude.
+    InVivo,
+}
+impl WhqsmWeight {
+    /// Every variant, in the order the CLI help and the TUI list them.
+    pub const ALL: [WhqsmWeight; 3] = [Self::Flat, Self::MaxNormalised, Self::InVivo];
+
+    /// The name the CLI, the config file and the TUI use.
+    pub fn as_str(self) -> &'static str {
+        match self { Self::Flat => "flat", Self::MaxNormalised => "max-normalised", Self::InVivo => "in-vivo" }
+    }
+}
+impl fmt::Display for WhqsmWeight {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl From<WhqsmWeight> for qsm_core::inversion::WhQsmWeight {
+    fn from(w: WhqsmWeight) -> Self {
+        use qsm_core::inversion::WhQsmWeight as W;
+        match w { WhqsmWeight::Flat => W::Flat, WhqsmWeight::MaxNormalised => W::MaxNormalised, WhqsmWeight::InVivo => W::InVivo }
+    }
+}
+impl From<qsm_core::inversion::WhQsmWeight> for WhqsmWeight {
+    fn from(w: qsm_core::inversion::WhQsmWeight) -> Self {
+        use qsm_core::inversion::WhQsmWeight as W;
+        match w { W::Flat => Self::Flat, W::MaxNormalised => Self::MaxNormalised, W::InVivo => Self::InVivo }
+    }
+}
+
+impl EchoTimeChoice {
+    /// Why the choice cannot be used whatever the scan, if it cannot: a given echo time that is not
+    /// a positive time. Against a scan's echo times, qsm-core's `EchoTime::resolve` decides
+    /// ([`crate::requirements`]).
+    pub fn validate(&self) -> Result<(), String> {
+        match *self {
+            Self::Seconds(s) if !(s.is_finite() && s > 0.0) => Err(format!(
+                "echo time: must be a finite time greater than 0 ms (got {} ms)", s * 1000.0)),
+            _ => Ok(()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum B0Estimation { WeightedAvg, LinearFit, RobustFit }
@@ -400,5 +489,82 @@ pub fn parse_r2prime_strategy(s: &str) -> Option<R2PrimeStrategy> {
         "mese" => Some(R2PrimeStrategy::Mese),
         "r2primenet" => Some(R2PrimeStrategy::R2primenet),
         _ => None,
+    }
+}
+
+/// Which echo time a method converts the field from ppm to radians at (qsm-core `EchoTime`).
+///
+/// In the config it is `"first"`, `"last"`, `"spacing"`, `"sum"` or `{ seconds = … }`; on the
+/// command line it is one of those names or a time in milliseconds ([`EchoTimeChoice::parse`]).
+/// Each method that takes it has its own default, the one its reference code uses.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum EchoTimeChoice {
+    /// The first echo time.
+    First,
+    /// The last echo time.
+    Last,
+    /// The echo spacing, TE2 − TE1 (the echo time for one echo).
+    Spacing,
+    /// The sum of the echo times.
+    Sum,
+    /// A given echo time, in seconds.
+    Seconds(f64),
+}
+impl EchoTimeChoice {
+    /// The named choices, in the order the CLI help and the TUI list them.
+    pub const NAMED: [EchoTimeChoice; 4] = [Self::First, Self::Last, Self::Spacing, Self::Sum];
+
+    /// A command-line value: `first`, `last`, `spacing`, `sum`, or an echo time in milliseconds.
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match s.trim() {
+            "first" => Ok(Self::First),
+            "last" => Ok(Self::Last),
+            "spacing" => Ok(Self::Spacing),
+            "sum" => Ok(Self::Sum),
+            other => match other.parse::<f64>() {
+                Ok(ms) if ms.is_finite() && ms > 0.0 => Ok(Self::Seconds(ms / 1000.0)),
+                _ => Err(format!(
+                    "expected first, last, spacing, sum or an echo time in ms (> 0), got '{other}'"
+                )),
+            },
+        }
+    }
+}
+impl fmt::Display for EchoTimeChoice {
+    /// The command-line form: the choice's name, or the time in milliseconds.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::First => f.write_str("first"),
+            Self::Last => f.write_str("last"),
+            Self::Spacing => f.write_str("spacing"),
+            Self::Sum => f.write_str("sum"),
+            // Rounded to the nanosecond, so 7 ms is not shown as 7.000000000000001.
+            Self::Seconds(s) => write!(f, "{}", (s * 1e9).round() / 1e6),
+        }
+    }
+}
+impl From<EchoTimeChoice> for qsm_core::EchoTime {
+    fn from(c: EchoTimeChoice) -> Self {
+        use qsm_core::EchoTime as E;
+        match c {
+            EchoTimeChoice::First => E::First,
+            EchoTimeChoice::Last => E::Last,
+            EchoTimeChoice::Spacing => E::Spacing,
+            EchoTimeChoice::Sum => E::Sum,
+            EchoTimeChoice::Seconds(s) => E::Seconds(s),
+        }
+    }
+}
+impl From<qsm_core::EchoTime> for EchoTimeChoice {
+    fn from(e: qsm_core::EchoTime) -> Self {
+        use qsm_core::EchoTime as E;
+        match e {
+            E::First => Self::First,
+            E::Last => Self::Last,
+            E::Spacing => Self::Spacing,
+            E::Sum => Self::Sum,
+            E::Seconds(s) => Self::Seconds(s),
+        }
     }
 }

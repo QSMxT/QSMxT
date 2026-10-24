@@ -118,6 +118,7 @@ fn heidi_params(args: &crate::cli::HeidiParamArgs) -> qsm_core::inversion::Heidi
                 conductance: args.heidi_denoise_conductance.unwrap_or(d.denoise_conductance),
             }
         }),
+        te: args.heidi_te.unwrap_or(d.te).into(),
         // Field strength and echo times are the scan's; the dispatcher fills them in.
         ..Default::default()
     }
@@ -144,7 +145,8 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 tol: args.tol.unwrap_or(d.tol),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 lsmr_iter: args.lsmr_iter.unwrap_or(d.lsmr_iter),
-                ..d
+                tau: args.tau.unwrap_or(d.tau),
+                gamma: args.gamma.unwrap_or(d.gamma),
             };
             let config = qsm_core::pipeline::InversionConfig { rts, ..config_for(A::Rts) };
             let out = invert_with(&args.common, f64::NAN, &[], Magnitude::None, config, "RTS")?;
@@ -154,7 +156,7 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             let d = inv::TvParams::default();
             let tv = inv::TvParams {
                 lambda: args.lambda.unwrap_or(d.lambda),
-                rho: args.rho.or(d.rho),
+                rho: args.rho.map_or(d.rho, crate::cli::OrAuto::value),
                 tol: args.tol.unwrap_or(d.tol),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
             };
@@ -217,10 +219,13 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             let d = inv::NltvParams::default();
             let nltv = inv::NltvParams {
                 lambda: args.lambda.unwrap_or(d.lambda),
+                rho: args.rho.map_or(d.rho, crate::cli::OrAuto::value),
                 mu: args.mu.unwrap_or(d.mu),
                 tol: args.tol.unwrap_or(d.tol),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
+                tol_newton: args.tol_newton.unwrap_or(d.tol_newton),
                 max_iter_newton: args.newton_iter.unwrap_or(d.max_iter_newton),
+                te: args.te.map_or(d.te, Into::into),
                 ..d
             };
             let config = qsm_core::pipeline::InversionConfig { nltv, ..config_for(A::Nltv) };
@@ -237,6 +242,7 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 alpha: args.alpha.unwrap_or(d.alpha),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 auto_stop,
+                te: args.te.map_or(d.te, Into::into),
                 ..d
             };
             let config = qsm_core::pipeline::InversionConfig { ndi, ..config_for(A::Ndi) };
@@ -248,13 +254,14 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             let d = inv::FansiParams::default();
             let fansi = inv::FansiParams {
                 alpha1: args.alpha1.unwrap_or(d.alpha1),
-                mu1: args.mu1.or(d.mu1),
+                mu1: args.mu1.map_or(d.mu1, crate::cli::OrAuto::value),
                 mu2: args.mu2.unwrap_or(d.mu2),
-                alpha0: args.alpha0.or(d.alpha0),
-                mu0: args.mu0.or(d.mu0),
+                alpha0: args.alpha0.map_or(d.alpha0, crate::cli::OrAuto::value),
+                mu0: args.mu0.map_or(d.mu0, crate::cli::OrAuto::value),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol_update: args.tol_update.unwrap_or(d.tol_update),
                 tol_delta: args.tol_delta.unwrap_or(d.tol_delta),
+                te: args.te.map_or(d.te, Into::into),
                 ..d
             };
             let config = qsm_core::pipeline::InversionConfig { fansi, ..config_for(A::Fansi) };
@@ -266,13 +273,14 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             let d = inv::FansiParams::default();
             let fansi = inv::FansiParams {
                 alpha1: args.alpha1.unwrap_or(d.alpha1),
-                mu1: args.mu1.or(d.mu1),
+                mu1: args.mu1.map_or(d.mu1, crate::cli::OrAuto::value),
                 mu2: args.mu2.unwrap_or(d.mu2),
-                alpha0: args.alpha0.or(d.alpha0),
-                mu0: args.mu0.or(d.mu0),
+                alpha0: args.alpha0.map_or(d.alpha0, crate::cli::OrAuto::value),
+                mu0: args.mu0.map_or(d.mu0, crate::cli::OrAuto::value),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol_update: args.tol_update.unwrap_or(d.tol_update),
                 tol_delta: args.tol_delta.unwrap_or(d.tol_delta),
+                te: args.te.map_or(d.te, Into::into),
                 ..d
             };
             let config = qsm_core::pipeline::InversionConfig { fansi, ..config_for(A::FansiTgv) };
@@ -284,13 +292,14 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             let d = inv::L1QsmParams::default();
             let l1qsm = inv::L1QsmParams {
                 alpha1: args.alpha1.unwrap_or(d.alpha1),
-                mu1: args.mu1.or(d.mu1),
+                mu1: args.mu1.map_or(d.mu1, crate::cli::OrAuto::value),
                 mu2: args.mu2.unwrap_or(d.mu2),
                 mu3: args.mu3.unwrap_or(d.mu3),
                 lambda: args.lambda.unwrap_or(d.lambda),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol_update: args.tol_update.unwrap_or(d.tol_update),
                 tol_delta: args.tol_delta.unwrap_or(d.tol_delta),
+                te: args.te.map_or(d.te, Into::into),
                 ..d
             };
             let config = qsm_core::pipeline::InversionConfig { l1qsm, ..config_for(A::L1qsm) };
@@ -309,19 +318,30 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol_update: args.tol_update.unwrap_or(d.tol_update),
                 tol_delta: args.tol_delta.unwrap_or(d.tol_delta),
+                weight: args.weight.map_or(d.weight, Into::into),
+                te: args.te.map_or(d.te, Into::into),
                 ..d
             };
-            // WH_nlTV's default weight is flat: no magnitude.
+            // WH_nlTV's default weight is flat: no magnitude. A magnitude weight needs one.
+            let magnitude = if whqsm.weight.needs_magnitude() {
+                if args.magnitude.is_empty() {
+                    return Err(QsmxtError::Config(format!(
+                        "WH-QSM: --weight {} needs --magnitude", args.weight.unwrap_or_default())));
+                }
+                Magnitude::Combined(&args.magnitude)
+            } else {
+                Magnitude::None
+            };
             let config = qsm_core::pipeline::InversionConfig { whqsm, ..config_for(A::Whqsm) };
             let out = invert_with(&args.common, args.scan.field_strength, &args.scan.echo_times,
-                Magnitude::None, config, "WH-QSM")?;
+                magnitude, config, "WH-QSM")?;
             (args.common, out)
         }
         InvertCommand::Hdqsm(args) => {
             let d = inv::HdQsmParams::default();
             let hdqsm = inv::HdQsmParams {
                 alpha_l2: args.alpha_l2.unwrap_or(d.alpha_l2),
-                mu1_l2: args.mu1_l2.or(d.mu1_l2),
+                mu1_l2: args.mu1_l2.map_or(d.mu1_l2, crate::cli::OrAuto::value),
                 mu2: args.mu2.unwrap_or(d.mu2),
                 max_iter_l1: args.max_iter_l1.unwrap_or(d.max_iter_l1),
                 max_iter_l2: args.max_iter_l2.unwrap_or(d.max_iter_l2),
@@ -373,6 +393,7 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 cg_max_iter: args.cg_max_iter.unwrap_or(d.cg_max_iter),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol: args.tol.unwrap_or(d.tol),
+                te: args.te.map_or(d.te, Into::into),
                 ..d
             };
             let config = qsm_core::pipeline::InversionConfig { medi, ..config_for(A::Medi) };
@@ -391,6 +412,7 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 cg_max_iter: args.cg_max_iter.unwrap_or(d.cg_max_iter),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol: args.tol.unwrap_or(d.tol),
+                te: args.te.map_or(d.te, Into::into),
                 ..d
             };
             let config = qsm_core::pipeline::InversionConfig { tfi, ..config_for(A::Tfi) };
@@ -412,9 +434,10 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 alpha1: args.alpha1.unwrap_or(d.alpha1),
                 alpha0: args.alpha0.unwrap_or(d.alpha0),
                 step_size: args.step_size.unwrap_or(d.step_size),
+                te: args.te.unwrap_or(d.te),
             });
-            // A field map in ppm, which TGV expresses as phase at the first echo time and this
-            // field strength itself (qsm-core has no pipeline entry point for a field-map input).
+            // A field map in ppm, which TGV expresses as phase at the echo time --te picks and
+            // this field strength itself (qsm-core has no pipeline entry point for a field-map input).
             let chi = qsm_core::inversion::tgv_qsm(
                 qsm_core::inversion::TgvInput::FieldPpm {
                     field: &field_nifti.data, echo_times: &args.scan.echo_times,
