@@ -32,9 +32,10 @@ fn configs() -> Vec<(String, PipelineConfig)> {
                 BfAlgorithm::Resharp, BfAlgorithm::Harperella, BfAlgorithm::Iharperella, BfAlgorithm::Bfrnet,
                 BfAlgorithm::Iqfm] {
         add(format!("bgremove={alg}"), &|c| c.bg_removal.algorithm = alg);
-        add(format!("bgremove={alg}+msmv+two-pass"), &|c| {
+        add(format!("bgremove={alg}+medi-msmv+two-pass"), &|c| {
             c.bg_removal.algorithm = alg;
-            c.bg_removal.msmv_refine = true;
+            c.inversion.algorithm = QsmAlgorithm::Medi;
+            c.inversion.medi.msmv = true;
             c.masking.two_pass = true;
         });
     }

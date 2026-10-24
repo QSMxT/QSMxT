@@ -47,7 +47,7 @@ configurable — see [Algorithms](/QSMxT/reference/algorithms/).
 7. **Referencing** — reference the susceptibility values (e.g. to the mean).
 
 Not every inversion runs every stage: total-field methods (TFI, QSMART, AutoQSM,
-NeXtQSM, MEDI with `--medi-smv`, multi-echo TGV) skip background field removal,
+NeXtQSM, multi-echo TGV) skip background field removal,
 and the wrapped-phase methods (iQSM, iQSM+, single-echo TGV) skip unwrapping and
 echo combination too. See [Algorithms](/QSMxT/reference/algorithms/#dipole-inversion).
 

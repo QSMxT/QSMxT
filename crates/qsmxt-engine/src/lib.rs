@@ -21,6 +21,7 @@ pub mod enums;
 pub mod masking;
 pub mod regions;
 pub mod config;
+pub mod migrate;
 pub mod normalise;
 pub mod command;
 pub mod methods;

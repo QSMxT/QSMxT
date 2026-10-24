@@ -3,11 +3,13 @@
 use crate::error::EngineError;
 use crate::scan::RunMetadata;
 
-/// The `t2star_r2star` step's parameters.
+/// The `t2star_r2star` step's parameters. `method` names the ARLO port, so that maps made by an
+/// earlier one are not reused.
 pub fn t2star_r2star_params(meta: &RunMetadata) -> serde_json::Value {
     serde_json::json!({
         "n_echoes": meta.n_echoes,
         "echo_times": meta.echo_times,
+        "method": "arlo.m",
     })
 }
 
@@ -39,12 +41,16 @@ impl VoxelMajor {
     }
 }
 
-/// R2* (Hz) by ARLO from every echo's magnitude (`magnitudes`, voxel-major) inside `mask`, and
-/// T2* (s) from it.
+/// R2* (Hz) by ARLO (MEDI toolbox `arlo.m`) from every echo's magnitude (`magnitudes`, stacked
+/// with the echo slowest), and T2* (s) from it, both zero outside `mask`.
 pub fn t2star_r2star(magnitudes: &[f64], mask: &[u8], meta: &RunMetadata) -> Result<(Vec<f64>, Vec<f64>), EngineError> {
-    let ((nx, ny, nz), (vx, vy, vz)) = (meta.dims, meta.voxel_size);
-    let grid = qsm_core::Grid::new(nx, ny, nz, vx, vy, vz);
-    let (r2star, _s0) = qsm_core::r2star::r2star_arlo(magnitudes, mask, &meta.echo_times, &grid)?;
+    let mut r2star = qsm_core::r2star::arlo(magnitudes, &meta.echo_times, mask.len())?;
+    // ARLO fits every voxel; the maps are defined inside the mask.
+    for (r, &m) in r2star.iter_mut().zip(mask) {
+        if m == 0 {
+            *r = 0.0;
+        }
+    }
     // R2* is 0 outside the mask, so T2* is too.
     let t2star = qsm_core::r2star::t2star_from_r2star(&r2star);
     Ok((r2star, t2star))

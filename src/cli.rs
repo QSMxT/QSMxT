@@ -179,7 +179,7 @@ pub struct TvParamArgs {
     /// TV lambda parameter
     #[arg(long)]
     pub tv_lambda: Option<f64>,
-    /// TV rho (ADMM penalty)
+    /// TV rho (ADMM penalty; default: 100 × lambda)
     #[arg(long)]
     pub tv_rho: Option<f64>,
     /// TV tolerance
@@ -206,24 +206,23 @@ pub struct TsvdParamArgs {
 
 #[derive(Args, Debug, Default, Clone)]
 pub struct TgvParamArgs {
-    /// TGV iterations
+    /// TGV iterations (default: from the voxel size, as the reference does)
     #[arg(long)]
     pub tgv_iterations: Option<usize>,
     /// TGV erosions
     #[arg(long)]
     pub tgv_erosions: Option<usize>,
-    /// TGV alpha1 (first-order weight), in ppm (TE- and B0-independent)
+    /// TGV alpha1 (first-order weight), in radians at the scan's first echo time and field
+    /// strength (the reference's units)
     #[arg(long)]
     pub tgv_alpha1: Option<f64>,
-    /// TGV alpha0 (second-order weight), in ppm (TE- and B0-independent)
+    /// TGV alpha0 (second-order weight), in radians at the scan's first echo time and field
+    /// strength (the reference's units)
     #[arg(long)]
     pub tgv_alpha0: Option<f64>,
     /// TGV primal step size multiplier
     #[arg(long)]
     pub tgv_step_size: Option<f64>,
-    /// TGV convergence tolerance
-    #[arg(long)]
-    pub tgv_tol: Option<f64>,
 }
 
 /// Overlap-tiling for deep-learning inversions (bounded memory). Passing `--tile-size` enables
@@ -260,7 +259,7 @@ pub struct NltvParamArgs {
     /// NLTV max iterations
     #[arg(long)]
     pub nltv_max_iter: Option<usize>,
-    /// NLTV Newton iterations
+    /// NLTV maximum Newton iterations of the data-term subproblem
     #[arg(long)]
     pub nltv_newton_iter: Option<usize>,
 }
@@ -287,16 +286,16 @@ pub struct FansiParamArgs {
     /// FANSI first-order (TV/TGV) L1 penalty weight (alpha1)
     #[arg(long)]
     pub fansi_alpha1: Option<f64>,
-    /// FANSI gradient-consistency ADMM weight (mu1)
+    /// FANSI gradient-consistency ADMM weight (mu1; default: 100 × alpha1)
     #[arg(long)]
     pub fansi_mu1: Option<f64>,
     /// FANSI fidelity-consistency ADMM weight (mu2)
     #[arg(long)]
     pub fansi_mu2: Option<f64>,
-    /// FANSI second-order L1 penalty weight (alpha0, nlTGV only)
+    /// FANSI second-order L1 penalty weight (alpha0, nlTGV only; default: 2 × alpha1)
     #[arg(long)]
     pub fansi_alpha0: Option<f64>,
-    /// FANSI second-order consistency ADMM weight (mu0, nlTGV only)
+    /// FANSI second-order consistency ADMM weight (mu0, nlTGV only; default: 2 × mu1)
     #[arg(long)]
     pub fansi_mu0: Option<f64>,
     /// FANSI outer ADMM iterations
@@ -308,9 +307,6 @@ pub struct FansiParamArgs {
     /// FANSI inner Newton convergence tolerance
     #[arg(long)]
     pub fansi_tol_delta: Option<f64>,
-    /// FANSI phase scale (ppm -> working scale)
-    #[arg(long)]
-    pub fansi_phase_scale: Option<f64>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -318,7 +314,7 @@ pub struct L1qsmParamArgs {
     /// L1-QSM gradient (TV) L1 penalty weight (alpha1)
     #[arg(long)]
     pub l1qsm_alpha1: Option<f64>,
-    /// L1-QSM gradient-consistency ADMM weight (mu1)
+    /// L1-QSM gradient-consistency ADMM weight (mu1; default: 100 × alpha1)
     #[arg(long)]
     pub l1qsm_mu1: Option<f64>,
     /// L1-QSM fidelity-consistency ADMM weight (mu2)
@@ -339,9 +335,6 @@ pub struct L1qsmParamArgs {
     /// L1-QSM inner Newton convergence tolerance
     #[arg(long)]
     pub l1qsm_tol_delta: Option<f64>,
-    /// L1-QSM phase scale (ppm -> working scale)
-    #[arg(long)]
-    pub l1qsm_phase_scale: Option<f64>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -370,9 +363,6 @@ pub struct WhqsmParamArgs {
     /// WH-QSM inner Newton convergence tolerance
     #[arg(long)]
     pub whqsm_tol_delta: Option<f64>,
-    /// WH-QSM phase scale (ppm -> working scale)
-    #[arg(long)]
-    pub whqsm_phase_scale: Option<f64>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -380,7 +370,7 @@ pub struct HdqsmParamArgs {
     /// HD-QSM L2-stage TV weight (alpha_l2)
     #[arg(long)]
     pub hdqsm_alpha_l2: Option<f64>,
-    /// HD-QSM L2-stage gradient-consistency ADMM weight (mu1_l2)
+    /// HD-QSM L2-stage gradient-consistency ADMM weight (mu1_l2; default: 100 × alpha_l2)
     #[arg(long)]
     pub hdqsm_mu1_l2: Option<f64>,
     /// HD-QSM fidelity consistency weight (mu2)
@@ -555,21 +545,38 @@ pub struct SeparationParamArgs {
 
 #[derive(Args, Debug, Default, Clone)]
 pub struct MediParamArgs {
-    /// MEDI lambda
+    /// MEDI lambda: the data-fidelity weight (larger fits the field more closely)
     #[arg(long)]
     pub medi_lambda: Option<f64>,
     /// MEDI: enable MERIT weighting
     #[arg(long)]
     pub medi_merit: Option<bool>,
-    /// MEDI: enable SMV deconvolution (on by default)
+    /// MEDI: high-pass the local field with a spherical mean value filter, removing residual
+    /// background near the brain edge (MEDI-SMV; on by default)
     #[arg(long)]
     pub medi_smv: bool,
-    /// MEDI: disable SMV deconvolution
+    /// MEDI: no SMV high-pass of the local field
     #[arg(long, conflicts_with = "medi_smv")]
     pub no_medi_smv: bool,
-    /// MEDI SMV radius in mm
+    /// MEDI SMV radius in mm (also mSMV's)
     #[arg(long)]
     pub medi_smv_radius: Option<f64>,
+    /// MEDI-mSMV (Roberts et al. 2024): filter the local field by maximum spherical mean value
+    /// before MEDI, which fits it with the SMV-filtered dipole kernel (it implies the SMV). Needs
+    /// at least 3 echoes
+    #[arg(long)]
+    pub medi_msmv: bool,
+    /// MEDI-mSMV: the boundary correction makes at most this many passes, less one
+    #[arg(long, requires = "medi_msmv")]
+    pub medi_msmv_maxk: Option<usize>,
+    /// MEDI-mSMV: largest vessel thickness of the vessel mask, in voxels (default: 15, or 8 ×
+    /// the largest voxel dimension if that is more)
+    #[arg(long, requires = "medi_msmv")]
+    pub medi_msmv_vessel_radius: Option<f64>,
+    /// MEDI-mSMV: no SMV prefilter before mSMV. Only consistent for a field already high-passed
+    /// by the same SMV; after PDF, V-SHARP or LBV it diverges (expert)
+    #[arg(long, requires = "medi_msmv")]
+    pub no_medi_msmv_prefilter: bool,
     /// MEDI: data weighting mode (0=uniform, 1=SNR)
     #[arg(long)]
     pub medi_data_weighting: Option<i32>,
@@ -592,7 +599,7 @@ pub struct MediParamArgs {
 
 #[derive(Args, Debug, Default, Clone)]
 pub struct TfiParamArgs {
-    /// TFI lambda
+    /// TFI lambda: the data-fidelity weight (larger fits the field more closely)
     #[arg(long)]
     pub tfi_lambda: Option<f64>,
     /// TFI preconditioner value (susceptibility scaling outside the mask)
@@ -620,13 +627,13 @@ pub struct TfiParamArgs {
 
 #[derive(Args, Debug, Default, Clone)]
 pub struct IlsqrParamArgs {
-    /// iLSQR tolerance of the streaking-artefact solve (default: 0.001)
+    /// iLSQR tolerance of the streaking-artefact solve
     #[arg(long)]
     pub ilsqr_tol: Option<f64>,
-    /// iLSQR max iterations of each LSQR solve (default: 100)
+    /// iLSQR max iterations of each LSQR solve
     #[arg(long)]
     pub ilsqr_max_iter: Option<usize>,
-    /// iLSQR zero-padding in mm per side (default: 16)
+    /// iLSQR zero-padding in mm per side
     #[arg(long, value_name = "MM")]
     pub ilsqr_pad_mm: Option<f64>,
 }
@@ -668,8 +675,7 @@ pub struct HeidiParamArgs {
     /// binarised masks)
     #[arg(long)]
     pub heidi_gradient_mask_floor: Option<f64>,
-    /// NESTA continuation steps on μ. The dominant quality knob, and more is not better — on the
-    /// QSM-CI phantom 6 steps beat 8. Worth sweeping on your own data
+    /// NESTA continuation steps on μ
     #[arg(long)]
     pub heidi_continuation_steps: Option<usize>,
     /// Accelerated-gradient iterations per continuation step
@@ -678,7 +684,8 @@ pub struct HeidiParamArgs {
     /// Final (smallest) smoothing parameter μ
     #[arg(long)]
     pub heidi_mu_min: Option<f64>,
-    /// Relative objective change that ends an inner loop early
+    /// Relative objective change that ends an inner loop early (the default runs every
+    /// iteration)
     #[arg(long)]
     pub heidi_tol: Option<f64>,
     /// Skip the anisotropic-diffusion smoothing of the field before its gradients are taken
@@ -815,7 +822,7 @@ pub struct VsharpParamArgs {
 
 #[derive(Args, Debug, Default, Clone)]
 pub struct PdfParamArgs {
-    /// PDF tolerance
+    /// PDF tolerance, relative to the noise level
     #[arg(long)]
     pub pdf_tol: Option<f64>,
 }
@@ -887,19 +894,6 @@ pub struct IharperellaParamArgs {
     /// iHARPERELLA convergence tolerance
     #[arg(long)]
     pub iharperella_tol: Option<f64>,
-}
-
-#[derive(Args, Debug, Default, Clone)]
-pub struct MsmvParamArgs {
-    /// Apply mSMV boundary-shadow refinement (Roberts 2024) on top of the primary BFR
-    #[arg(long)]
-    pub msmv_refine: bool,
-    /// mSMV SMV kernel radius in mm
-    #[arg(long)]
-    pub msmv_radius: Option<f64>,
-    /// mSMV maximum boundary-correction iterations
-    #[arg(long)]
-    pub msmv_maxk: Option<usize>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -1141,9 +1135,10 @@ pub struct PipelineArgs {
     #[arg(long)]
     pub phase_offset_removal: Option<bool>,
 
-    /// Phase offset removal smoothing sigma (3 values, in voxels)
+    /// Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command
+    /// line's)
     #[arg(long, num_args = 3)]
-    pub phase_offset_sigma: Option<Vec<f64>>,
+    pub phase_offset_sigma_mm: Option<Vec<f64>>,
 
     /// MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets
     /// (3 values, in voxels; default 10 10 5, as in MriResearchTools).
@@ -1279,8 +1274,6 @@ pub struct PipelineArgs {
     pub harperella_params: HarperellaParamArgs,
     #[command(flatten)]
     pub iharperella_params: IharperellaParamArgs,
-    #[command(flatten)]
-    pub msmv_params: MsmvParamArgs,
     #[command(flatten)]
     pub romeo_params: RomeoParamArgs,
     #[command(flatten)]
@@ -2077,9 +2070,10 @@ pub struct FieldmapRomeoArgs {
     /// Enable phase offset removal for multi-echo data (default: true)
     #[arg(long)]
     pub phase_offset_removal: Option<bool>,
-    /// Phase offset removal smoothing sigma (3 values, in voxels)
+    /// Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command
+    /// line's)
     #[arg(long, num_args = 3)]
-    pub phase_offset_sigma: Option<Vec<f64>>,
+    pub phase_offset_sigma_mm: Option<Vec<f64>>,
     /// Enable bipolar gradient correction (requires >= 3 echoes)
     #[arg(long)]
     pub bipolar_correction: bool,
@@ -2143,8 +2137,6 @@ pub enum BgremoveCommand {
     Harperella(BgremoveHarperellaArgs),
     /// Improved HARPERELLA (iHARPERELLA)
     Iharperella(BgremoveIharperellaArgs),
-    /// Maximum Spherical Mean Value (mSMV) boundary-shadow removal
-    Msmv(BgremoveMsmvArgs),
     /// BFRnet deep-learning background removal (weights downloaded on first use)
     Bfrnet(BgremoveBfrnetArgs),
 }
@@ -2165,10 +2157,10 @@ pub struct BgremoveVsharpArgs {
     /// Deconvolution (TSVD) threshold; only used with --deconvolve true
     #[arg(long)]
     pub threshold: Option<f64>,
-    /// Largest SMV kernel radius, in mm (default: 12)
+    /// Largest SMV kernel radius, in mm
     #[arg(long)]
     pub max_radius: Option<f64>,
-    /// Smallest SMV kernel radius, in mm (default: 1)
+    /// Smallest SMV kernel radius, in mm
     #[arg(long)]
     pub min_radius: Option<f64>,
     /// Grid the background is estimated on: `native` (default), `finest` (isotropic at the
@@ -2181,11 +2173,18 @@ pub struct BgremoveVsharpArgs {
     pub grid_spacing: Option<f64>,
 }
 
+/// PDF weights the fit by a noise map it makes from every echo's magnitude (MEDI toolbox
+/// `Fit_ppm_complex`), so it takes the echoes' magnitudes, echo times and field strength.
 #[derive(Parser, Debug)]
 pub struct BgremovePdfArgs {
     #[command(flatten)]
     pub common: BgremoveCommonArgs,
-    /// Tolerance
+    #[command(flatten)]
+    pub scan: ScanParamArgs,
+    /// Magnitude of every echo: one 4D NIfTI, or one 3D NIfTI per echo in echo order
+    #[arg(long, num_args = 1.., required = true)]
+    pub magnitude: Vec<PathBuf>,
+    /// Tolerance, relative to the noise level
     #[arg(long)]
     pub tol: Option<f64>,
 }
@@ -2245,28 +2244,6 @@ pub struct BgremoveResharpArgs {
 }
 
 #[derive(Parser, Debug)]
-pub struct BgremoveMsmvArgs {
-    #[command(flatten)]
-    pub common: BgremoveCommonArgs,
-    /// SMV prefilter kernel radius in mm
-    #[arg(long)]
-    pub radius: Option<f64>,
-    /// Maximum boundary-correction iterations
-    #[arg(long)]
-    pub maxk: Option<usize>,
-    /// B0 field strength (T) — sets the radian shadow-threshold cap
-    #[arg(long)]
-    pub field_strength: Option<f64>,
-    /// Echo time (s) for the ppm↔radian conversion
-    #[arg(long)]
-    pub te: Option<f64>,
-    /// Refinement mode: skip the SMV prefilter and treat the input as an already-local
-    /// field from a primary BFR (only the boundary-shadow correction is applied)
-    #[arg(long)]
-    pub refine: bool,
-}
-
-#[derive(Parser, Debug)]
 pub struct BgremoveHarperellaArgs {
     /// Input NIfTI: a wrapped echo in rad (with --te and --field-strength) or a total field in ppm
     pub input: std::path::PathBuf,
@@ -2318,8 +2295,9 @@ pub struct BgremoveIharperellaArgs {
     #[arg(long)]
     pub tol: Option<f64>,
     /// Echo time (s) of a wrapped-phase input. With --field-strength, the input is one wrapped
-    /// echo in rad (the published method); without both, it is an unwrapped total field in ppm.
-    /// The local field is written in ppm either way
+    /// echo in rad, unwrapped by HARPERELLA's Laplacian; without both, it is an unwrapped total
+    /// field in ppm, which STI Suite's iHARPERELLA takes. The local field is written in ppm
+    /// either way
     #[arg(long, requires = "field_strength")]
     pub te: Option<f64>,
     /// B0 field strength (T) of a wrapped-phase input — see --te
@@ -2345,6 +2323,19 @@ pub struct InvertCommonArgs {
     /// Deep-learning overlap-tiling (opt-in; ignored by classical algorithms).
     #[command(flatten)]
     pub tiling_params: TilingParamArgs,
+}
+
+/// The scan parameters a standalone step takes from its acquisition: what `qsmxt run` reads from
+/// the sidecars. The methods that work in radians convert the field with them, at the echo time
+/// their reference picks.
+#[derive(Args, Debug, Clone)]
+pub struct ScanParamArgs {
+    /// B0 field strength in Tesla
+    #[arg(long)]
+    pub field_strength: f64,
+    /// Echo times in seconds, every echo's, in order
+    #[arg(long, num_args = 1.., required = true, alias = "echo-time")]
+    pub echo_times: Vec<f64>,
 }
 
 /// Which multi-orientation reconstruction `qsmxt run` should apply to each group.
@@ -2442,7 +2433,7 @@ pub enum InvertCommand {
     Tgv(InvertTgvArgs),
     /// Tikhonov regularization
     Tikhonov(InvertTikhonovArgs),
-    /// Nonlocal Total Variation
+    /// Nonlinear Total Variation
     Nltv(InvertNltvArgs),
     /// Morphology Enabled Dipole Inversion
     Medi(InvertMediArgs),
@@ -2535,7 +2526,7 @@ pub struct InvertTvArgs {
     /// Lambda parameter
     #[arg(long)]
     pub lambda: Option<f64>,
-    /// Rho (ADMM penalty)
+    /// Rho (ADMM penalty; default: 100 × lambda)
     #[arg(long)]
     pub rho: Option<f64>,
     /// Tolerance
@@ -2564,28 +2555,28 @@ pub struct InvertTsvdArgs {
     pub threshold: Option<f64>,
 }
 
+/// TGV of a field map in ppm, which TGV expresses as phase at the first echo time.
 #[derive(Parser, Debug)]
 pub struct InvertTgvArgs {
     #[command(flatten)]
     pub common: InvertCommonArgs,
-    /// Iterations
+    #[command(flatten)]
+    pub scan: ScanParamArgs,
+    /// Iterations (default: from the voxel size, as the reference does)
     #[arg(long)]
     pub iterations: Option<usize>,
     /// Erosions
     #[arg(long)]
     pub erosions: Option<usize>,
-    /// Alpha1 (first-order weight), in ppm
+    /// Alpha1 (first-order weight), in radians at the first echo time and the field strength
     #[arg(long)]
     pub alpha1: Option<f64>,
-    /// Alpha0 (second-order weight), in ppm
+    /// Alpha0 (second-order weight), in radians at the first echo time and the field strength
     #[arg(long)]
     pub alpha0: Option<f64>,
     /// Primal step size multiplier
     #[arg(long)]
     pub step_size: Option<f64>,
-    /// Convergence tolerance
-    #[arg(long)]
-    pub tol: Option<f64>,
 }
 
 #[derive(Parser, Debug)]
@@ -2601,6 +2592,12 @@ pub struct InvertTikhonovArgs {
 pub struct InvertNltvArgs {
     #[command(flatten)]
     pub common: InvertCommonArgs,
+    #[command(flatten)]
+    pub scan: ScanParamArgs,
+    /// Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo;
+    /// several echoes are RSS-combined
+    #[arg(long, num_args = 1.., required = true)]
+    pub magnitude: Vec<PathBuf>,
     /// Lambda
     #[arg(long)]
     pub lambda: Option<f64>,
@@ -2613,37 +2610,51 @@ pub struct InvertNltvArgs {
     /// Max iterations
     #[arg(long)]
     pub max_iter: Option<usize>,
-    /// Newton iterations
+    /// Maximum Newton iterations of the data-term subproblem
     #[arg(long)]
     pub newton_iter: Option<usize>,
 }
 
+/// MEDI of a local field in ppm. It weights the data by a noise map and its edges by a magnitude it
+/// makes from every echo's magnitude, so it takes the echoes' magnitudes and echo times (evenly
+/// spaced).
 #[derive(Parser, Debug)]
 pub struct InvertMediArgs {
     #[command(flatten)]
     pub common: InvertCommonArgs,
-    /// B0 field strength in Tesla (MEDI works in radians; used to convert the ppm field)
-    #[arg(long)]
-    pub field_strength: f64,
-    /// Echo time in seconds (used to convert the ppm field to radians for MEDI)
-    #[arg(long)]
-    pub echo_time: f64,
-    /// Magnitude NIfTI file (recommended)
-    #[arg(long)]
-    pub magnitude: Option<PathBuf>,
-    /// Lambda
+    #[command(flatten)]
+    pub scan: ScanParamArgs,
+    /// Magnitude of every echo: one 4D NIfTI, or one 3D NIfTI per echo in echo order
+    #[arg(long, num_args = 1.., required = true)]
+    pub magnitude: Vec<PathBuf>,
+    /// Lambda: the data-fidelity weight (larger fits the field more closely)
     #[arg(long)]
     pub lambda: Option<f64>,
     /// Enable MERIT weighting
     #[arg(long)]
     pub merit: Option<bool>,
-    /// Enable SMV deconvolution (MEDI's own background removal). Set false when the input is
-    /// already a local field. [default: from qsm-core]
+    /// High-pass the local field with a spherical mean value filter, removing residual
+    /// background near the brain edge (MEDI-SMV) [default: on]
     #[arg(long)]
     pub smv: Option<bool>,
-    /// SMV radius in mm
+    /// SMV radius in mm (also mSMV's)
     #[arg(long)]
     pub smv_radius: Option<f64>,
+    /// MEDI-mSMV (Roberts et al. 2024): filter the local field by maximum spherical mean value
+    /// first, and fit it with the SMV-filtered dipole kernel. Needs at least 3 echoes
+    #[arg(long)]
+    pub msmv: bool,
+    /// MEDI-mSMV: the boundary correction makes at most this many passes, less one
+    #[arg(long, requires = "msmv")]
+    pub msmv_maxk: Option<usize>,
+    /// MEDI-mSMV: largest vessel thickness of the vessel mask, in voxels (default: 15, or 8 ×
+    /// the largest voxel dimension if that is more)
+    #[arg(long, requires = "msmv")]
+    pub msmv_vessel_radius: Option<f64>,
+    /// MEDI-mSMV: no SMV prefilter before mSMV. Only consistent for a field already high-passed
+    /// by the same SMV; after PDF, V-SHARP or LBV it diverges (expert)
+    #[arg(long, requires = "msmv")]
+    pub no_msmv_prefilter: bool,
     /// Data weighting mode (0=uniform, 1=SNR)
     #[arg(long)]
     pub data_weighting: Option<i32>,
@@ -2664,14 +2675,18 @@ pub struct InvertMediArgs {
     pub tol: Option<f64>,
 }
 
+/// TFI of the total field in ppm. Like MEDI it takes every echo's magnitude and the echo times
+/// (evenly spaced).
 #[derive(Parser, Debug)]
 pub struct InvertTfiArgs {
     #[command(flatten)]
     pub common: InvertCommonArgs,
-    /// Magnitude NIfTI file (recommended)
-    #[arg(long)]
-    pub magnitude: Option<PathBuf>,
-    /// Lambda
+    #[command(flatten)]
+    pub scan: ScanParamArgs,
+    /// Magnitude of every echo: one 4D NIfTI, or one 3D NIfTI per echo in echo order
+    #[arg(long, num_args = 1.., required = true)]
+    pub magnitude: Vec<PathBuf>,
+    /// Lambda: the data-fidelity weight (larger fits the field more closely)
     #[arg(long)]
     pub lambda: Option<f64>,
     /// Preconditioner value (susceptibility scaling outside the mask)
@@ -2707,7 +2722,7 @@ pub struct InvertIlsqrArgs {
     /// Max iterations
     #[arg(long)]
     pub max_iter: Option<usize>,
-    /// Zero-padding in mm per side (default: 16)
+    /// Zero-padding in mm per side
     #[arg(long, value_name = "MM")]
     pub pad_mm: Option<f64>,
 }
@@ -2719,9 +2734,10 @@ pub struct InvertIlsqrArgs {
 pub struct InvertLsqrArgs {
     #[command(flatten)]
     pub common: InvertCommonArgs,
-    /// Magnitude NIfTI file (optional SNR row weight, normalised to unit mean inside the mask)
-    #[arg(long)]
-    pub magnitude: Option<PathBuf>,
+    /// Magnitude NIfTI (optional row weight; its scale does not change the solution): one 3D
+    /// volume, a 4D one, or one per echo; several echoes are RSS-combined
+    #[arg(long, num_args = 1..)]
+    pub magnitude: Vec<PathBuf>,
     /// B0 field strength in Tesla — sets the default residual weighting
     #[arg(long, default_value_t = 3.0)]
     pub b0: f64,
@@ -2729,17 +2745,18 @@ pub struct InvertLsqrArgs {
     pub lsqr_params: LsqrParamArgs,
 }
 
-/// HEIDI. Its seed is an LSQR solve, so the `--lsqr-*` flags apply here too.
+/// HEIDI. It runs its own LSQR seed, so the `--lsqr-*` flags apply here too. Its result depends
+/// on the field's scale in phase units, so it takes the echo times and field strength.
 #[derive(Parser, Debug)]
 pub struct InvertHeidiArgs {
     #[command(flatten)]
     pub common: InvertCommonArgs,
-    /// Magnitude NIfTI file (optional SNR row weight for the LSQR seed)
-    #[arg(long)]
-    pub magnitude: Option<PathBuf>,
-    /// B0 field strength in Tesla — sets the LSQR seed's default residual weighting
-    #[arg(long, default_value_t = 3.0)]
-    pub b0: f64,
+    #[command(flatten)]
+    pub scan: ScanParamArgs,
+    /// Magnitude NIfTI (optional row weight of the LSQR seed): one 3D volume, a 4D one, or one
+    /// per echo; several echoes are RSS-combined
+    #[arg(long, num_args = 1..)]
+    pub magnitude: Vec<PathBuf>,
     #[command(flatten)]
     pub lsqr_params: LsqrParamArgs,
     #[command(flatten)]
@@ -2762,34 +2779,37 @@ pub struct InvertNdiArgs {
     /// Stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto)
     #[arg(long)]
     pub auto_stop: Option<bool>,
-    /// B0 field strength in Tesla (NDI works in radians; used to convert the ppm field)
-    #[arg(long)]
-    pub field_strength: f64,
-    /// Echo time in seconds (used to convert the ppm field to radians)
-    #[arg(long)]
-    pub echo_time: f64,
-    /// Magnitude NIfTI file, the data weight (recommended)
-    #[arg(long)]
-    pub magnitude: Option<PathBuf>,
+    #[command(flatten)]
+    pub scan: ScanParamArgs,
+    /// Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo;
+    /// several echoes are RSS-combined
+    #[arg(long, num_args = 1.., required = true)]
+    pub magnitude: Vec<PathBuf>,
 }
 
 #[derive(Parser, Debug)]
 pub struct InvertFansiArgs {
     #[command(flatten)]
     pub common: InvertCommonArgs,
+    #[command(flatten)]
+    pub scan: ScanParamArgs,
+    /// Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo;
+    /// several echoes are RSS-combined
+    #[arg(long, num_args = 1.., required = true)]
+    pub magnitude: Vec<PathBuf>,
     /// First-order (TV/TGV) L1 penalty weight (alpha1)
     #[arg(long)]
     pub alpha1: Option<f64>,
-    /// Gradient-consistency ADMM weight (mu1)
+    /// Gradient-consistency ADMM weight (mu1; default: 100 × alpha1)
     #[arg(long)]
     pub mu1: Option<f64>,
     /// Fidelity-consistency ADMM weight (mu2)
     #[arg(long)]
     pub mu2: Option<f64>,
-    /// Second-order L1 penalty weight (alpha0, nlTGV only)
+    /// Second-order L1 penalty weight (alpha0, nlTGV only; default: 2 × alpha1)
     #[arg(long)]
     pub alpha0: Option<f64>,
-    /// Second-order consistency ADMM weight (mu0, nlTGV only)
+    /// Second-order consistency ADMM weight (mu0, nlTGV only; default: 2 × mu1)
     #[arg(long)]
     pub mu0: Option<f64>,
     /// Max iterations
@@ -2801,28 +2821,31 @@ pub struct InvertFansiArgs {
     /// Inner Newton convergence tolerance
     #[arg(long)]
     pub tol_delta: Option<f64>,
-    /// Phase scale (ppm -> working scale)
-    #[arg(long)]
-    pub phase_scale: Option<f64>,
 }
 
 #[derive(Parser, Debug)]
 pub struct InvertFansiTgvArgs {
     #[command(flatten)]
     pub common: InvertCommonArgs,
+    #[command(flatten)]
+    pub scan: ScanParamArgs,
+    /// Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo;
+    /// several echoes are RSS-combined
+    #[arg(long, num_args = 1.., required = true)]
+    pub magnitude: Vec<PathBuf>,
     /// First-order (TGV gradient) L1 penalty weight (alpha1)
     #[arg(long)]
     pub alpha1: Option<f64>,
-    /// Gradient-consistency ADMM weight (mu1)
+    /// Gradient-consistency ADMM weight (mu1; default: 100 × alpha1)
     #[arg(long)]
     pub mu1: Option<f64>,
     /// Fidelity-consistency ADMM weight (mu2)
     #[arg(long)]
     pub mu2: Option<f64>,
-    /// Second-order L1 penalty weight (alpha0)
+    /// Second-order L1 penalty weight (alpha0; default: 2 × alpha1)
     #[arg(long)]
     pub alpha0: Option<f64>,
-    /// Second-order consistency ADMM weight (mu0)
+    /// Second-order consistency ADMM weight (mu0; default: 2 × mu1)
     #[arg(long)]
     pub mu0: Option<f64>,
     /// Max iterations
@@ -2834,19 +2857,22 @@ pub struct InvertFansiTgvArgs {
     /// Inner Newton convergence tolerance
     #[arg(long)]
     pub tol_delta: Option<f64>,
-    /// Phase scale (ppm -> working scale)
-    #[arg(long)]
-    pub phase_scale: Option<f64>,
 }
 
 #[derive(Parser, Debug)]
 pub struct InvertL1qsmArgs {
     #[command(flatten)]
     pub common: InvertCommonArgs,
+    #[command(flatten)]
+    pub scan: ScanParamArgs,
+    /// Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo;
+    /// several echoes are RSS-combined
+    #[arg(long, num_args = 1.., required = true)]
+    pub magnitude: Vec<PathBuf>,
     /// Gradient (TV) L1 penalty weight (alpha1)
     #[arg(long)]
     pub alpha1: Option<f64>,
-    /// Gradient-consistency ADMM weight (mu1)
+    /// Gradient-consistency ADMM weight (mu1; default: 100 × alpha1)
     #[arg(long)]
     pub mu1: Option<f64>,
     /// Fidelity-consistency ADMM weight (mu2)
@@ -2867,15 +2893,14 @@ pub struct InvertL1qsmArgs {
     /// Inner Newton convergence tolerance
     #[arg(long)]
     pub tol_delta: Option<f64>,
-    /// Phase scale (ppm -> working scale)
-    #[arg(long)]
-    pub phase_scale: Option<f64>,
 }
 
 #[derive(Parser, Debug)]
 pub struct InvertWhqsmArgs {
     #[command(flatten)]
     pub common: InvertCommonArgs,
+    #[command(flatten)]
+    pub scan: ScanParamArgs,
     /// TV regularization weight (alpha1)
     #[arg(long)]
     pub alpha1: Option<f64>,
@@ -2900,19 +2925,20 @@ pub struct InvertWhqsmArgs {
     /// Inner Newton convergence tolerance
     #[arg(long)]
     pub tol_delta: Option<f64>,
-    /// Phase scale (ppm -> working scale)
-    #[arg(long)]
-    pub phase_scale: Option<f64>,
 }
 
 #[derive(Parser, Debug)]
 pub struct InvertHdqsmArgs {
     #[command(flatten)]
     pub common: InvertCommonArgs,
+    /// Magnitude NIfTI (optional data weight): one 3D volume, a 4D one, or one per echo; several
+    /// echoes are RSS-combined
+    #[arg(long, num_args = 1..)]
+    pub magnitude: Vec<PathBuf>,
     /// L2-stage TV weight (alpha_l2)
     #[arg(long)]
     pub alpha_l2: Option<f64>,
-    /// L2-stage gradient-consistency ADMM weight (mu1_l2)
+    /// L2-stage gradient-consistency ADMM weight (mu1_l2; default: 100 × alpha_l2)
     #[arg(long)]
     pub mu1_l2: Option<f64>,
     /// Fidelity consistency weight (mu2)
@@ -2933,9 +2959,10 @@ pub struct InvertHdqsmArgs {
 pub struct InvertAmpPeArgs {
     #[command(flatten)]
     pub common: InvertCommonArgs,
-    /// Magnitude NIfTI file (used as data-fidelity weight + morphology mask)
-    #[arg(long)]
-    pub magnitude: Option<PathBuf>,
+    /// Magnitude NIfTI (data weight and morphology image): one 3D volume, a 4D one, or one per
+    /// echo; several echoes are RSS-combined
+    #[arg(long, num_args = 1..)]
+    pub magnitude: Vec<PathBuf>,
     /// B0 field strength in Tesla (scales the simulated phase)
     #[arg(long, default_value_t = 3.0)]
     pub b0: f64,

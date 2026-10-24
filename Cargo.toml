@@ -23,15 +23,9 @@ default = ["dl"]
 dl = ["qsm-core/onnx", "qsm-core/download", "qsmxt-engine/onnx"]
 
 [dependencies]
-# TEMP: pinned by rev to QSM.rs main after #208 (v0.39.0 plus MindGrab and `ScanMetadata::affine`
-# (#189), iLSQR without a clock (#190), the in-memory weight provider (#192), QSMART's
-# intermediates through an Observer (#191), SynthSeg's sliding window (#203), TGV's oblique
-# stencil by a fast DST (#204), the χ-separation networks' patch sizes (#208) and MEDI's
-# k-space SMV with SDF's radius and TFI's MERIT removed (#202)), and NDI following FANSI (#223). Re-pin to the release tag once one is
-# cut: a `rev` pin is what CI can resolve, but it must become a `tag` pin before the next QSMxT
-# release, or qsmbly (which pins qsmxt-engine) has no release to match. qsmxt-engine must move in
-# lockstep.
-qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "ca8aae8c106a4e6d99aa5f2fc7b75480f45d63ee", features = ["parallel"] }
+# Pinned to the QSM.rs v0.40.0 release. qsmxt-engine must move in lockstep (same tag), so qsmbly
+# (which pins qsmxt-engine) resolves the same qsm-core.
+qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", tag = "v0.40.0", features = ["parallel"] }
 qsmxt-engine = { path = "crates/qsmxt-engine" }
 clap = { version = "4", features = ["derive"] }
 const_format = "0.2"

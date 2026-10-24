@@ -18,9 +18,10 @@ pub fn read_nifti_any(path: &Path) -> crate::Result<Nifti4d> {
 }
 
 /// Load multi-echo magnitude from **either** multiple 3D files (one per echo) **or** a single 4D
-/// file, returning voxel-major `(n_voxels * n_echoes)` data and the echo count. Dimensions are
-/// validated against `n_voxels` with a clear error rather than a deep panic.
-pub fn load_multiecho_voxel_major(paths: &[PathBuf], n_voxels: usize) -> crate::Result<(Vec<f64>, usize)> {
+/// file, stacked with the echo slowest (`data[e * n_voxels + v]`, as a 4D NIfTI stores it), with
+/// the echo count. Dimensions are validated against `n_voxels` with a clear error rather than a
+/// deep panic.
+pub fn load_echo_stack(paths: &[PathBuf], n_voxels: usize) -> crate::Result<(Vec<f64>, usize)> {
     if paths.is_empty() {
         return Err(QsmxtError::Config("no magnitude file provided".into()));
     }
@@ -33,47 +34,48 @@ pub fn load_multiecho_voxel_major(paths: &[PathBuf], n_voxels: usize) -> crate::
                 "magnitude {} has {} voxels but the reference volume has {}",
                 paths[0].display(), nvox, n_voxels)));
         }
-        // load_nifti_4d gives echo-major (t slowest: data[e*n_voxels + v]).
-        let mut out = vec![0.0f64; n_voxels * nt];
-        for e in 0..nt {
-            for v in 0..n_voxels {
-                out[v * nt + e] = data[e * n_voxels + v];
-            }
-        }
-        Ok((out, nt))
-    } else {
-        // One 3D file per echo.
-        let n_echoes = paths.len();
-        let mut out = vec![0.0f64; n_voxels * n_echoes];
-        for (e, p) in paths.iter().enumerate() {
-            let (data, (nx, ny, nz, nt)) = read_nifti_any(p)?;
-            if nt != 1 {
-                return Err(QsmxtError::Config(format!(
-                    "{} is 4D ({} volumes) — pass a single 4D file OR one 3D file per echo, not a mix",
-                    p.display(), nt)));
-            }
-            if nx * ny * nz != n_voxels {
-                return Err(QsmxtError::Config(format!(
-                    "magnitude echo {} ({}) has {} voxels but the reference volume has {}",
-                    e + 1, p.display(), nx * ny * nz, n_voxels)));
-            }
-            for v in 0..n_voxels {
-                out[v * n_echoes + e] = data[v];
-            }
-        }
-        Ok((out, n_echoes))
+        return Ok((data, nt));
     }
+    // One 3D file per echo.
+    let mut out = Vec::with_capacity(n_voxels * paths.len());
+    for (e, p) in paths.iter().enumerate() {
+        let (data, (nx, ny, nz, nt)) = read_nifti_any(p)?;
+        if nt != 1 {
+            return Err(QsmxtError::Config(format!(
+                "{} is 4D ({} volumes) — pass a single 4D file OR one 3D file per echo, not a mix",
+                p.display(), nt)));
+        }
+        if nx * ny * nz != n_voxels {
+            return Err(QsmxtError::Config(format!(
+                "magnitude echo {} ({}) has {} voxels but the reference volume has {}",
+                e + 1, p.display(), nx * ny * nz, n_voxels)));
+        }
+        out.extend(data);
+    }
+    Ok((out, paths.len()))
 }
 
-/// Load a magnitude as a single RSS-combined volume, handling a 3D file (used as-is) or a 4D
-/// multi-echo file (root-sum-of-squares over echoes). For weighting inputs that want one volume.
-pub fn load_magnitude_rss(path: &Path, n_voxels: usize) -> crate::Result<Vec<f64>> {
-    let (multi, n_echoes) = load_multiecho_voxel_major(std::slice::from_ref(&path.to_path_buf()), n_voxels)?;
-    if n_echoes == 1 {
-        Ok(multi)
-    } else {
-        Ok(rss_over_echoes(&multi, n_voxels, n_echoes))
+/// [`load_echo_stack`], voxel-major (`(n_voxels * n_echoes)`, `data[v * n_echoes + e]`): the
+/// layout the voxel-wise fits take.
+pub fn load_multiecho_voxel_major(paths: &[PathBuf], n_voxels: usize) -> crate::Result<(Vec<f64>, usize)> {
+    let (stack, n_echoes) = load_echo_stack(paths, n_voxels)?;
+    let mut out = vec![0.0f64; n_voxels * n_echoes];
+    for e in 0..n_echoes {
+        for v in 0..n_voxels {
+            out[v * n_echoes + e] = stack[e * n_voxels + v];
+        }
     }
+    Ok((out, n_echoes))
+}
+
+/// The combined magnitude a method weights by, as `qsmxt run` combines it (root-sum-of-squares
+/// over echoes) from one 3D or 4D file or one file per echo; `None` without any.
+pub fn load_combined_magnitude(paths: &[PathBuf], n_voxels: usize) -> crate::Result<Option<Vec<f64>>> {
+    if paths.is_empty() {
+        return Ok(None);
+    }
+    let (multi, n_echoes) = load_multiecho_voxel_major(paths, n_voxels)?;
+    Ok(Some(if n_echoes == 1 { multi } else { rss_over_echoes(&multi, n_voxels, n_echoes) }))
 }
 
 /// Root-sum-of-squares over echoes of a voxel-major `(n_voxels, n_echoes)` magnitude.
@@ -178,16 +180,22 @@ pub fn compute_r2star(
     let (nx, ny, nz) = reference.dims;
     let n_voxels = nx * ny * nz;
     // Accepts a single 4D file or several 3D files.
-    let (interleaved, n_echoes) = load_multiecho_voxel_major(inputs, n_voxels)?;
+    let (stack, n_echoes) = load_echo_stack(inputs, n_voxels)?;
     if n_echoes != echo_times.len() {
         return Err(QsmxtError::Config(format!(
             "{} magnitude echoes but {} echo times", n_echoes, echo_times.len())));
     }
+    if let Some(problem) = qsm_core::r2star::arlo_echo_times_problem(echo_times) {
+        return Err(QsmxtError::Config(problem));
+    }
     let (mask, _) = load_mask(mask_path)?;
-    let grid = nifti_grid(&reference);
-    let (r2star_map, _s0_map) = qsm_core::utils::r2star_arlo(
-        &interleaved, &mask, echo_times, &grid,
-    )?;
+    let mut r2star_map = qsm_core::r2star::arlo(&stack, echo_times, n_voxels)?;
+    // ARLO fits every voxel; the map is defined inside the mask.
+    for (r, &m) in r2star_map.iter_mut().zip(&mask) {
+        if m == 0 {
+            *r = 0.0;
+        }
+    }
     Ok((r2star_map, reference))
 }
 

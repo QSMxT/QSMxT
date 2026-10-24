@@ -59,16 +59,17 @@ pub struct Qsmart {
 }
 
 /// QSMART's two-stage reconstruction of the total field `field_ppm` (ppm) inside the brain `mask`
-/// ([`qsm_core::pipeline::run_qsmart`]). `magnitude` is the combined magnitude, which drives
-/// vasculature detection (and MEDI's edge weighting when that is the inner inversion); uniform
-/// when `None`.
+/// ([`qsm_core::pipeline::run_qsmart`]), and inside `reliability` (QSMART's reliability map `R_0`)
+/// when there is one; `None` counts every voxel as reliable. `magnitude` is the combined
+/// magnitude, which drives vasculature detection (and is the inner inversion's data weight when
+/// it weights by one); uniform when `None`.
 ///
 /// `observer` gets progress (step of 6). The intermediates come back with the map rather than
 /// through it, so that keeping them is the caller's, and a failure to keep one is the caller's
 /// error to return.
 pub fn qsmart(
-    field_ppm: &[f64], mask: &[u8], magnitude: Option<&[f64]>, meta: &RunMetadata,
-    config: &PipelineConfig, observer: &mut dyn Observer,
+    field_ppm: &[f64], mask: &[u8], reliability: Option<&[u8]>, magnitude: Option<&[f64]>,
+    meta: &RunMetadata, config: &PipelineConfig, observer: &mut dyn Observer,
 ) -> Result<Qsmart, EngineError> {
     let q = &config.inversion.qsmart;
     log::info!(
@@ -78,7 +79,7 @@ pub fn qsmart(
     );
     let mut core = Core::new(observer);
     let chi = qsm_core::pipeline::run_qsmart(
-        field_ppm, mask, magnitude, &scan_metadata(meta), &inversion_config(config, meta),
+        field_ppm, mask, reliability, magnitude, &scan_metadata(meta), &inversion_config(config, meta),
         qsm_core::pipeline::QsmReference::None, &mut core,
     ).map_err(|e| EngineError::Config(format!("qsmart: {}", e)))?;
     Ok(Qsmart { chi, intermediates: core.outputs })

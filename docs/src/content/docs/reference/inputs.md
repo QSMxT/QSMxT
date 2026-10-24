@@ -132,17 +132,26 @@ This table lists what each output needs in addition to it.
 
 | Output | Also requires |
 | --- | --- |
-| QSM | nothing, though magnitude is recommended and some masking options need it |
+| QSM | nothing, though magnitude is recommended and some masking options need it. Some methods need more: see below |
 | SWI (`--do-swi`), SMWI (`--do-smwi`) | magnitude |
 | Segmentation (`--do-segmentation`), and so `--do-analysis` and a region `--qsm-reference` | magnitude, or a dseg via `--use-custom-dseg` |
-| R2\*/T2\* (`--do-r2starmap`, `--do-t2starmap`) | magnitude, at least 3 echoes, equally spaced (within 0.1 ms) |
+| R2\*/T2\* (`--do-r2starmap`, `--do-t2starmap`) | magnitude, at least 3 echoes with increasing echo times |
 | R2 (`--do-r2map`) | a MESE acquisition with at least 3 equally spaced echoes, the first at the echo spacing (TE₁ = ESP) |
 | R2' (`--do-r2primemap`) | R2\* and R2 (above). Reported only where the MESE reached; without one, predicted from R2\* by R2PRIMEnet, which is 3 T only |
 
-ARLO, which fits R2\*, integrates the decay with a single echo spacing, and the EPG
-fit behind R2 simulates a spin-echo train with echoes at multiples of the spacing.
-Bipolar or flyback readouts with uneven spacing, or an extra long echo, would give
-wrong maps rather than noisy ones, so they are refused.
+The EPG fit behind R2 simulates a spin-echo train with echoes at multiples of the
+spacing. A MESE with uneven spacing would give wrong maps rather than noisy ones, so
+it is refused.
+
+Some QSM methods need more of the data than phase:
+
+| Method | Also requires |
+| --- | --- |
+| `--qsm-algorithm medi`, `tfi`, `--bf-algorithm pdf` | the magnitude of every echo, and evenly spaced echoes: they weight the data by a noise map made from the echoes (MEDI toolbox `Fit_ppm_complex`) |
+| `--qsm-algorithm medi` with `--medi-msmv` | also at least 3 echoes (R2\* for its vessel mask) |
+| `--qsm-algorithm ndi`, `nltv`, `fansi`, `fansi-tgv`, `l1qsm` | magnitude (the data weight) |
+
+A run that cannot give these is refused before processing.
 
 [Source separation](/QSMxT/reference/algorithms/#susceptibility-source-separation)
 (`--do-chisep`) splits into two groups. The `r2star-qsm` and `decompose` methods

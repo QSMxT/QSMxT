@@ -27,7 +27,7 @@ pub(super) fn table() -> Vec<Def> {
         ])).flag("--output-space").parent("pipeline.axial_resampling")
         .when(|x| x.c.pipeline.axial_resampling || x.axial_forced)
         .gui("The grid derivatives are written on, when an oblique run was resampled to axial"),
-        d("masking.inhomogeneity_correction", Geometry, "Inhomog. Correction", "Apply B1 field correction to magnitude (improves masking, ROMEO weights, MEDI edges, SWI)", Bool).basic().flag("--no-inhomogeneity-correction").full("Inhomogeneity Correction"),
+        d("masking.inhomogeneity_correction", Geometry, "Inhomog. Correction", "Apply B1 field correction to magnitude (improves masking, ROMEO weights, SWI)", Bool).basic().flag("--no-inhomogeneity-correction").full("Inhomogeneity Correction"),
         d("homogeneity.sigma_mm", Geometry, "Sigma (mm)", "Smoothing sigma of the bias-field estimate, in mm", Float).units("mm").flag("--homogeneity-sigma-mm").parent("masking.inhomogeneity_correction")
         .when(|x| x.c.masking.inhomogeneity_correction).full("Bias Field Sigma")
         .gui("Smoothing sigma of the bias-field estimate"),
@@ -122,7 +122,7 @@ pub(super) fn table() -> Vec<Def> {
         .gui("Zero-padding per side: one value for every axis, or three (x y z)"),
         d("field_mapping.phase_offset_removal", FieldMap, "Phase Offset Removal", "Remove spatially-varying phase offset using HIP (Eckstein et al., 2018); multi-echo only", Bool).flag("--phase-offset-removal").parent("field_mapping.unwrapping_algorithm")
         .when(|x| !x.laplacian),
-        d("field_mapping.phase_offset_sigma", FieldMap, "Sigma", "Gaussian smoothing sigma in voxels (x y z)", FloatVec3).units("voxels").flag("--phase-offset-sigma").parent("field_mapping.phase_offset_removal")
+        d("field_mapping.phase_offset_sigma_mm", FieldMap, "Sigma (mm)", "Gaussian smoothing sigma in mm (x y z)", FloatVec3).units("mm").flag("--phase-offset-sigma-mm").parent("field_mapping.phase_offset_removal")
         .when(|x| !x.laplacian && x.c.field_mapping.phase_offset_removal).full("Phase Offset Sigma")
         .gui("Gaussian smoothing sigma (x y z)"),
         d("field_mapping.bipolar_correction", FieldMap, "Bipolar Correction", "Remove the linear phase artefact of bipolar readout gradients (needs at least 3 echoes; fewer: skipped)", Bool).flag("--bipolar-correction").parent("field_mapping.phase_offset_removal")
@@ -251,7 +251,7 @@ pub(super) fn table() -> Vec<Def> {
         d("bg_removal.vsharp.grid_spacing", Background, "Grid Spacing", "Isotropic working-grid spacing (mm)", Float).above(0.0).units("mm").flag("--vsharp-grid-spacing").parent("bg_removal.vsharp.grid")
         .when(|x| x.bf("vsharp") && x.c.bg_removal.vsharp.grid == VsharpGrid::Isotropic)
         .gui("Isotropic working-grid spacing"),
-        d("bg_removal.pdf.tol", Background, "Tolerance", "Convergence tolerance", Float).flag("--pdf-tol").parent("bg_removal.algorithm")
+        d("bg_removal.pdf.tol", Background, "Tolerance", "Convergence tolerance, relative to the noise level", Float).flag("--pdf-tol").parent("bg_removal.algorithm")
         .when(|x| x.bf("pdf")),
         d("bg_removal.lbv.tol", Background, "Tolerance", "Convergence tolerance", Float).flag("--lbv-tol").parent("bg_removal.algorithm")
         .when(|x| x.bf("lbv")),
@@ -291,12 +291,6 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.bf("iharperella")).full("Maximum Iterations"),
         d("bg_removal.iharperella.tol", Background, "Tolerance", "Convergence tolerance", Float).flag("--iharperella-tol").parent("bg_removal.algorithm")
         .when(|x| x.bf("iharperella")),
-        d("bg_removal.msmv_refine", Background, "mSMV refinement", "Remove residual boundary-field shadows with mSMV after the primary BFR (Roberts 2024)", Bool).flag("--msmv-refine").full("mSMV Refinement"),
-        d("bg_removal.msmv.radius", Background, "mSMV Radius", "SMV prefilter kernel radius in mm", Float).units("mm").flag("--msmv-radius").parent("bg_removal.msmv_refine")
-        .when(|x| x.c.bg_removal.msmv_refine)
-        .gui("SMV prefilter kernel radius"),
-        d("bg_removal.msmv.maxk", Background, "mSMV Max Iter", "Maximum boundary-correction iterations", Int).flag("--msmv-maxk").parent("bg_removal.msmv_refine")
-        .when(|x| x.c.bg_removal.msmv_refine).full("mSMV Maximum Iterations"),
         d("pipeline.do_qsm", Inversion, "Compute QSM", "Enable QSM reconstruction (disable to only run the other outputs)", Bool).basic().flag("--no-qsm").also(&[FieldMap, Background, MultiOrientation, Reference]),
         d("inversion.algorithm", Inversion, "QSM Inversion", "", Enum(vec![
             o("rts", "rts", "RTS", "RTS (Rapid Two-Step) — fast two-step k-space inversion with streaking removal. https://doi.org/10.1016/j.neuroimage.2017.11.018"),
@@ -345,10 +339,10 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.inv("rts") || x.qsmart_inner("rts")).full("Maximum Iterations"),
         d("inversion.rts.lsmr_iter", Inversion, "LSMR Iter", "LSMR iterations for step 1 (well-conditioned solve)", Int).flag("--rts-lsmr-iter").parent("inversion.algorithm")
         .when(|x| x.inv("rts") || x.qsmart_inner("rts")).full("LSMR Iterations"),
-        d("inversion.tv.lambda", Inversion, "Lambda", "L1 regularization weight (smaller = smoother)", Float).flag("--tv-lambda").parent("inversion.algorithm")
+        d("inversion.tv.lambda", Inversion, "Lambda", "L1 regularization weight (larger = smoother)", Float).flag("--tv-lambda").parent("inversion.algorithm")
         .when(|x| x.inv("tv") || x.qsmart_inner("tv"))
-        .gui("L1 regularisation weight (smaller = smoother)"),
-        d("inversion.tv.rho", Inversion, "Rho", "ADMM penalty parameter (typically 100×lambda)", Float).flag("--tv-rho").parent("inversion.algorithm")
+        .gui("L1 regularisation weight (larger = smoother)"),
+        d("inversion.tv.rho", Inversion, "Rho", "ADMM penalty parameter. Blank = 100×lambda", Float).above(0.0).optional().flag("--tv-rho").parent("inversion.algorithm")
         .when(|x| x.inv("tv") || x.qsmart_inner("tv")),
         d("inversion.tv.tol", Inversion, "Tolerance", "Convergence tolerance", Float).flag("--tv-tol").parent("inversion.algorithm")
         .when(|x| x.inv("tv") || x.qsmart_inner("tv")),
@@ -362,21 +356,19 @@ pub(super) fn table() -> Vec<Def> {
         d("inversion.tsvd.threshold", Inversion, "Threshold", "Truncation threshold for SVD (0.1-0.2)", Float).min(0.0).below(2.0 / 3.0).flag("--tsvd-threshold").parent("inversion.algorithm")
         .when(|x| x.inv("tsvd") || x.qsmart_inner("tsvd")),
         // QSM.rs inversion/tgv.rs: 0 iterations give an all-zero map.
-        d("inversion.tgv.iterations", Inversion, "Iterations", "Primal-dual iterations", Int).min(1.0).flag("--tgv-iterations").parent("inversion.algorithm")
+        d("inversion.tgv.iterations", Inversion, "Iterations", "Primal-dual iterations. Blank = from the voxel size, as the reference does", Int).min(1.0).optional().flag("--tgv-iterations").parent("inversion.algorithm")
         .when(|x| x.inv("tgv")),
         d("inversion.tgv.erosions", Inversion, "Erosions", "Mask erosions before TGV solve", Int).flag("--tgv-erosions").parent("inversion.algorithm")
         .when(|x| x.inv("tgv")),
         // QSM.rs inversion/tgv.rs project_linf3: a negative weight divides by a zero norm (NaN).
-        d("inversion.tgv.alpha1", Inversion, "Alpha1", "First-order TGV weight (gradient term), in ppm", Float).min(0.0).units("ppm").flag("--tgv-alpha1").parent("inversion.algorithm")
+        d("inversion.tgv.alpha1", Inversion, "Alpha1", "First-order TGV weight (gradient term), in radians at the first echo time and field strength", Float).min(0.0).units("rad").flag("--tgv-alpha1").parent("inversion.algorithm")
         .when(|x| x.inv("tgv"))
-        .gui("First-order TGV weight (gradient term)"),
+        .gui("First-order TGV weight (gradient term), at the first echo time and field strength"),
         // QSM.rs inversion/tgv.rs project_linf6: a negative weight divides by a zero norm (NaN).
-        d("inversion.tgv.alpha0", Inversion, "Alpha0", "Second-order TGV weight (symmetric gradient term), in ppm", Float).min(0.0).units("ppm").flag("--tgv-alpha0").parent("inversion.algorithm")
+        d("inversion.tgv.alpha0", Inversion, "Alpha0", "Second-order TGV weight (symmetric gradient term), in radians at the first echo time and field strength", Float).min(0.0).units("rad").flag("--tgv-alpha0").parent("inversion.algorithm")
         .when(|x| x.inv("tgv"))
-        .gui("Second-order TGV weight (symmetric gradient term)"),
+        .gui("Second-order TGV weight (symmetric gradient term), at the first echo time and field strength"),
         d("inversion.tgv.step_size", Inversion, "Step Size", "Primal step-size multiplier", Float).flag("--tgv-step-size").parent("inversion.algorithm")
-        .when(|x| x.inv("tgv")),
-        d("inversion.tgv.tol", Inversion, "Tolerance", "Convergence tolerance", Float).flag("--tgv-tol").parent("inversion.algorithm")
         .when(|x| x.inv("tgv")),
         d("inversion.tikhonov.lambda", Inversion, "Lambda", "L2 regularization weight", Float).flag("--tikhonov-lambda").parent("inversion.algorithm")
         .when(|x| x.inv("tikhonov") || x.qsmart_inner("tikhonov"))
@@ -392,16 +384,27 @@ pub(super) fn table() -> Vec<Def> {
         d("inversion.nltv.max_iter", Inversion, "Max Iter", "Maximum ADMM iterations", Int).min(1.0).flag("--nltv-max-iter").parent("inversion.algorithm")
         .when(|x| x.inv("nltv") || x.qsmart_inner("nltv")).full("Maximum Iterations"),
         // QSM.rs inversion/nltv.rs: 0 Newton iterations give an all-zero map.
-        d("inversion.nltv.newton_iter", Inversion, "Newton Iter", "Newton iterations for weight update", Int).min(1.0).flag("--nltv-newton-iter").parent("inversion.algorithm")
+        d("inversion.nltv.max_iter_newton", Inversion, "Newton Iter", "Maximum Newton iterations of the data-term subproblem", Int).min(1.0).flag("--nltv-newton-iter").parent("inversion.algorithm")
         .when(|x| x.inv("nltv") || x.qsmart_inner("nltv")).full("Newton Iterations"),
-        d("inversion.medi.smv", Inversion, "SMV Mode", "MEDI handles background removal internally using spherical mean value preprocessing (skips the BG removal step)", Bool).flag("--no-medi-smv").parent("inversion.algorithm")
+        d("inversion.medi.smv", Inversion, "SMV Mode", "High-pass the local field with a spherical mean value (SMV) filter, removing residual background near the brain edge (MEDI-SMV)", Bool).flag("--no-medi-smv").parent("inversion.algorithm")
         .when(|x| x.inv("medi")),
-        d("inversion.medi.smv_radius", Inversion, "SMV Radius", "SMV preprocessing radius in mm", Float).units("mm").flag("--medi-smv-radius").parent("inversion.algorithm")
+        d("inversion.medi.smv_radius", Inversion, "SMV Radius", "SMV radius in mm (also mSMV's)", Float).units("mm").flag("--medi-smv-radius").parent("inversion.algorithm")
         .when(|x| x.inv("medi"))
-        .gui("SMV preprocessing radius"),
-        d("inversion.medi.lambda", Inversion, "Lambda", "Regularization weight", Float).flag("--medi-lambda").parent("inversion.algorithm")
+        .gui("SMV radius (also mSMV's)"),
+        d("inversion.medi.msmv", Inversion, "mSMV", "Filter the local field by maximum spherical mean value (MEDI-mSMV, Roberts 2024) before MEDI; needs at least 3 echoes", Bool).flag("--medi-msmv").parent("inversion.algorithm")
+        .when(|x| x.inv("medi")).full("MEDI-mSMV")
+        .gui("Filter the local field by maximum spherical mean value (mSMV) before MEDI, which removes residual background at the brain edge; needs at least three echoes"),
+        // QSM.rs inversion/msmv.rs: the boundary correction makes at most maxk − 1 passes.
+        d("inversion.medi.msmv_maxk", Inversion, "mSMV Max K", "mSMV's boundary correction makes at most this many passes, less one", Int).min(1.0).flag("--medi-msmv-maxk").parent("inversion.medi.msmv")
+        .when(|x| x.inv("medi") && x.c.inversion.medi.msmv).full("mSMV Maximum k"),
+        d("inversion.medi.msmv_vessel_radius", Inversion, "mSMV Vessel Radius", "Largest vessel thickness of mSMV's vessel mask, in voxels. Blank = max(15, 8 × the largest voxel dimension)", Float).above(0.0).optional().units("voxels").flag("--medi-msmv-vessel-radius").parent("inversion.medi.msmv")
+        .when(|x| x.inv("medi") && x.c.inversion.medi.msmv)
+        .gui("Largest vessel thickness of mSMV's vessel mask. Empty: 15 voxels, or 8 times the largest voxel dimension if that is more"),
+        d("inversion.medi.msmv_prefilter", Inversion, "mSMV Prefilter", "SMV-filter the field before mSMV, as the authors do. Off diverges after PDF, V-SHARP or LBV (expert)", Bool).flag("--no-medi-msmv-prefilter").parent("inversion.medi.msmv")
+        .when(|x| x.inv("medi") && x.c.inversion.medi.msmv),
+        d("inversion.medi.lambda", Inversion, "Lambda", "Data-fidelity weight (larger fits the field more closely)", Float).flag("--medi-lambda").parent("inversion.algorithm")
         .when(|x| x.inv("medi") || x.qsmart_inner("medi"))
-        .gui("Regularisation weight"),
+        .gui("Data-fidelity weight (larger fits the field more closely)"),
         d("inversion.medi.percentage", Inversion, "Percentage", "Fraction of voxels considered edges (0.0-1.0)", Float).flag("--medi-percentage").parent("inversion.algorithm")
         .when(|x| x.inv("medi") || x.qsmart_inner("medi")),
         // QSM.rs inversion/medi.rs: 0 iterations give an all-zero map.
@@ -422,9 +425,9 @@ pub(super) fn table() -> Vec<Def> {
         ])).flag("--medi-data-weighting").parent("inversion.algorithm")
         .when(|x| x.inv("medi") || x.qsmart_inner("medi"))
         .gui("How the voxels of the field are weighted in the data term"),
-        d("inversion.tfi.lambda", Inversion, "Lambda", "Regularization weight", Float).flag("--tfi-lambda").parent("inversion.algorithm")
+        d("inversion.tfi.lambda", Inversion, "Lambda", "Data-fidelity weight (larger fits the field more closely)", Float).flag("--tfi-lambda").parent("inversion.algorithm")
         .when(|x| x.inv("tfi"))
-        .gui("Regularisation weight"),
+        .gui("Data-fidelity weight (larger fits the field more closely)"),
         d("inversion.tfi.precond", Inversion, "Precond", "Preconditioner value (susceptibility scaling outside the mask)", Float).flag("--tfi-precond").parent("inversion.algorithm")
         .when(|x| x.inv("tfi")).full("Preconditioner"),
         d("inversion.tfi.percentage", Inversion, "Percentage", "Fraction of voxels considered edges (0.0-1.0)", Float).flag("--tfi-percentage").parent("inversion.algorithm")
@@ -450,9 +453,9 @@ pub(super) fn table() -> Vec<Def> {
         d("inversion.ilsqr.max_iter", Inversion, "Max Iter", "Maximum iterations", Int).flag("--ilsqr-max-iter").parent("inversion.algorithm")
         .when(|x| x.inv("ilsqr")).full("Maximum Iterations"),
         // QSM.rs IlsqrParams::validate (inversion/ilsqr.rs): pad must be >= 0.
-        d("inversion.ilsqr.pad_mm", Inversion, "Pad (mm)", "Zero-padding per side, mm. Larger costs time and memory; below 16 mm thin volumes lose accuracy", Float).min(0.0).units("mm").flag("--ilsqr-pad-mm").parent("inversion.algorithm")
+        d("inversion.ilsqr.pad_mm", Inversion, "Pad (mm)", "Zero-padding per side, mm. Larger costs time and memory", Float).min(0.0).units("mm").flag("--ilsqr-pad-mm").parent("inversion.algorithm")
         .when(|x| x.inv("ilsqr")).full("Padding")
-        .gui("Zero-padding per side. Larger costs time and memory; below 16 mm thin volumes lose accuracy"),
+        .gui("Zero-padding per side. Larger costs time and memory"),
         d("inversion.lsqr.residual_weighting", Inversion, "Residual Weight", "Weight w on the residual field — the only regularisation. Blank = scaled from B0; 0 drops the term and streaks badly", Float).optional().flag("--lsqr-residual-weighting").parent("inversion.algorithm")
         .when(|x| x.inv("lsqr") || x.inv("heidi"))
         .gui("Weight w on the residual field, the only regularisation. Empty: scaled from B0; 0 drops the term and streaks badly"),
@@ -475,14 +478,14 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.inv("heidi") && x.c.inversion.heidi.apply_laplacian_correction),
         d("inversion.heidi.gradient_mask_floor", Inversion, "Gradient Mask Floor", "TV weight kept where every direction reads as an edge (0 = upstream's binarised masks)", Float).flag("--heidi-gradient-mask-floor").parent("inversion.algorithm")
         .when(|x| x.inv("heidi")),
-        d("inversion.heidi.continuation_steps", Inversion, "Continuation Steps", "NESTA continuation steps on μ. The dominant quality knob, and more is not better — worth sweeping", Int).flag("--heidi-continuation-steps").parent("inversion.algorithm")
+        d("inversion.heidi.continuation_steps", Inversion, "Continuation Steps", "NESTA continuation steps on μ", Int).flag("--heidi-continuation-steps").parent("inversion.algorithm")
         .when(|x| x.inv("heidi")),
         d("inversion.heidi.inner_iterations", Inversion, "Inner Iterations", "Accelerated-gradient iterations per continuation step", Int).flag("--heidi-inner-iterations").parent("inversion.algorithm")
         .when(|x| x.inv("heidi")),
         // QSM.rs inversion/heidi.rs: (mu_min/mu0)^(1/steps) is 0 or NaN at <= 0, so the TV fill never runs.
         d("inversion.heidi.mu_min", Inversion, "Mu Min", "Final (smallest) smoothing parameter μ", Float).above(0.0).flag("--heidi-mu-min").parent("inversion.algorithm")
         .when(|x| x.inv("heidi")).full("Final Mu"),
-        d("inversion.heidi.tol", Inversion, "HEIDI Tolerance", "Relative objective change that ends an inner loop early", Float).flag("--heidi-tol").parent("inversion.algorithm")
+        d("inversion.heidi.tol", Inversion, "HEIDI Tolerance", "Relative objective change that ends an inner loop early (the default runs every iteration)", Float).flag("--heidi-tol").parent("inversion.algorithm")
         .when(|x| x.inv("heidi")),
         d("inversion.heidi.denoise", Inversion, "Denoise Field", "Anisotropic-diffusion smoothing of the field before its gradients are taken", Bool).flag("--no-heidi-denoise").parent("inversion.algorithm")
         .when(|x| x.inv("heidi")),
@@ -553,13 +556,13 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.inv("ndi")),
         d("inversion.fansi.alpha1", Inversion, "Alpha1", "First-order (TV/TGV) L1 penalty weight", Float).flag("--fansi-alpha1").parent("inversion.algorithm")
         .when(|x| x.inv("fansi") || x.inv("fansi-tgv")).context("FANSI"),
-        d("inversion.fansi.mu1", Inversion, "Mu1", "Gradient-consistency ADMM weight", Float).flag("--fansi-mu1").parent("inversion.algorithm")
+        d("inversion.fansi.mu1", Inversion, "Mu1", "Gradient-consistency ADMM weight. Blank = 100×alpha1", Float).above(0.0).optional().flag("--fansi-mu1").parent("inversion.algorithm")
         .when(|x| x.inv("fansi") || x.inv("fansi-tgv")).context("FANSI"),
         d("inversion.fansi.mu2", Inversion, "Mu2", "Fidelity-consistency ADMM weight", Float).flag("--fansi-mu2").parent("inversion.algorithm")
         .when(|x| x.inv("fansi") || x.inv("fansi-tgv")).context("FANSI"),
-        d("inversion.fansi.alpha0", Inversion, "Alpha0", "Second-order L1 penalty weight (nlTGV only)", Float).flag("--fansi-alpha0").parent("inversion.algorithm")
+        d("inversion.fansi.alpha0", Inversion, "Alpha0", "Second-order L1 penalty weight (nlTGV only). Blank = 2×alpha1", Float).min(0.0).optional().flag("--fansi-alpha0").parent("inversion.algorithm")
         .when(|x| x.inv("fansi") || x.inv("fansi-tgv")).context("FANSI"),
-        d("inversion.fansi.mu0", Inversion, "Mu0", "Second-order consistency ADMM weight (nlTGV only)", Float).flag("--fansi-mu0").parent("inversion.algorithm")
+        d("inversion.fansi.mu0", Inversion, "Mu0", "Second-order consistency ADMM weight (nlTGV only). Blank = 2×mu1", Float).above(0.0).optional().flag("--fansi-mu0").parent("inversion.algorithm")
         .when(|x| x.inv("fansi") || x.inv("fansi-tgv")).context("FANSI"),
         // QSM.rs inversion/fansi.rs: 0 iterations give an all-zero map.
         d("inversion.fansi.max_iter", Inversion, "Max Iter", "Number of outer ADMM iterations", Int).min(1.0).flag("--fansi-max-iter").parent("inversion.algorithm")
@@ -568,12 +571,9 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.inv("fansi") || x.inv("fansi-tgv")).full("Update Tolerance").context("FANSI"),
         d("inversion.fansi.tol_delta", Inversion, "Tol Delta", "Inner Newton convergence tolerance", Float).flag("--fansi-tol-delta").parent("inversion.algorithm")
         .when(|x| x.inv("fansi") || x.inv("fansi-tgv")).full("Newton Tolerance").context("FANSI"),
-        d("inversion.fansi.phase_scale", Inversion, "Phase Scale", "ppm -> working-scale multiplier", Float).flag("--fansi-phase-scale").parent("inversion.algorithm")
-        .when(|x| x.inv("fansi") || x.inv("fansi-tgv"))
-        .gui("Multiplier from ppm to the working scale").context("FANSI"),
         d("inversion.l1qsm.alpha1", Inversion, "Alpha1", "Gradient (TV) L1 penalty weight", Float).flag("--l1qsm-alpha1").parent("inversion.algorithm")
         .when(|x| x.inv("l1qsm")),
-        d("inversion.l1qsm.mu1", Inversion, "Mu1", "Gradient-consistency ADMM weight", Float).flag("--l1qsm-mu1").parent("inversion.algorithm")
+        d("inversion.l1qsm.mu1", Inversion, "Mu1", "Gradient-consistency ADMM weight. Blank = 100×alpha1", Float).above(0.0).optional().flag("--l1qsm-mu1").parent("inversion.algorithm")
         .when(|x| x.inv("l1qsm")),
         d("inversion.l1qsm.mu2", Inversion, "Mu2", "Fidelity-consistency ADMM weight", Float).flag("--l1qsm-mu2").parent("inversion.algorithm")
         .when(|x| x.inv("l1qsm")),
@@ -588,9 +588,6 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.inv("l1qsm")).full("Update Tolerance"),
         d("inversion.l1qsm.tol_delta", Inversion, "Tol Delta", "Inner Newton convergence tolerance", Float).flag("--l1qsm-tol-delta").parent("inversion.algorithm")
         .when(|x| x.inv("l1qsm")).full("Newton Tolerance"),
-        d("inversion.l1qsm.phase_scale", Inversion, "Phase Scale", "ppm -> working-scale multiplier", Float).flag("--l1qsm-phase-scale").parent("inversion.algorithm")
-        .when(|x| x.inv("l1qsm"))
-        .gui("Multiplier from ppm to the working scale"),
         d("inversion.whqsm.alpha1", Inversion, "Alpha1", "TV regularization weight", Float).flag("--whqsm-alpha1").parent("inversion.algorithm")
         .when(|x| x.inv("whqsm"))
         .gui("TV regularisation weight"),
@@ -608,14 +605,11 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.inv("whqsm")).full("Update Tolerance"),
         d("inversion.whqsm.tol_delta", Inversion, "Tol Delta", "Inner Newton stopping tolerance", Float).flag("--whqsm-tol-delta").parent("inversion.algorithm")
         .when(|x| x.inv("whqsm")).full("Newton Tolerance"),
-        d("inversion.whqsm.phase_scale", Inversion, "Phase Scale", "ppm -> working-scale multiplier", Float).flag("--whqsm-phase-scale").parent("inversion.algorithm")
-        .when(|x| x.inv("whqsm"))
-        .gui("Multiplier from ppm to the working scale"),
         // QSM.rs inversion/hdqsm.rs: sqrt(alpha_l2) is NaN below 0.
         d("inversion.hdqsm.alpha_l2", Inversion, "Alpha L2", "L2-stage TV weight", Float).min(0.0).flag("--hdqsm-alpha-l2").parent("inversion.algorithm")
         .when(|x| x.inv("hdqsm")),
         // QSM.rs inversion/hdqsm.rs: sqrt(mu1_l2) is NaN below 0 and alpha/mu1 infinite at 0.
-        d("inversion.hdqsm.mu1_l2", Inversion, "Mu1 L2", "L2-stage gradient-consistency ADMM weight", Float).above(0.0).flag("--hdqsm-mu1-l2").parent("inversion.algorithm")
+        d("inversion.hdqsm.mu1_l2", Inversion, "Mu1 L2", "L2-stage gradient-consistency ADMM weight. Blank = 100×alpha L2", Float).above(0.0).optional().flag("--hdqsm-mu1-l2").parent("inversion.algorithm")
         .when(|x| x.inv("hdqsm")),
         d("inversion.hdqsm.mu2", Inversion, "Mu2", "Fidelity consistency weight", Float).flag("--hdqsm-mu2").parent("inversion.algorithm")
         .when(|x| x.inv("hdqsm")),

@@ -266,7 +266,7 @@ fn reconstruction(config: &PipelineConfig, pass: Pass) -> Vec<Step> {
         ),
         _ => {
             let mut steps = Vec::new();
-            // The total-field methods (TFI, MEDI+SMV, AutoQSM, NeXtQSM) remove or model the
+            // The total-field methods (TFI, AutoQSM, NeXtQSM) remove or model the
             // background themselves, so there is no separate step for it.
             if !skips_bgremove(config) {
                 let bf = config.bg_removal.algorithm;

@@ -52,7 +52,7 @@ pub fn homogeneity_correct(
         )));
     }
     let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
-    Ok(qsm_core::utils::makehomogeneous(data, &grid, homogeneity.sigma_mm, homogeneity.nbox))
+    Ok(qsm_core::utils::makehomogeneous(data, &grid, homogeneity.sigma_mm, homogeneity.nbox)?)
 }
 
 #[cfg(test)]

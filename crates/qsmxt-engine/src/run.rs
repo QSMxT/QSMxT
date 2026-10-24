@@ -559,6 +559,31 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         [Item::Segmentation, Item::SuppliedSegmentation].into_iter().find(|i| self.store.has(i))
     }
 
+    /// Every echo's magnitude as the stages after motion correction read it, stacked with the
+    /// echo slowest: what MEDI, TFI and PDF take. `None` for a run without magnitude.
+    fn echo_magnitude_stack(&mut self) -> Result<Option<Vec<f64>>, S::Error> {
+        let n = self.n_echoes();
+        let mut stack = Vec::new();
+        for e in 1..=n {
+            let item = self.echo_magnitude(e);
+            if !self.store.has(&item) {
+                return Ok(None);
+            }
+            stack.extend(self.store.real(&item)?);
+        }
+        Ok(Some(stack))
+    }
+
+    /// The magnitude the configured inversion takes
+    /// ([`stages::inversion::magnitude_input`]).
+    fn inversion_magnitude(&mut self) -> Result<Option<Vec<f64>>, S::Error> {
+        match stages::inversion::magnitude_input(self.config) {
+            Some(stages::inversion::MagnitudeInput::Combined) => self.combined_magnitude(),
+            Some(stages::inversion::MagnitudeInput::Echoes) => self.echo_magnitude_stack(),
+            None => Ok(None),
+        }
+    }
+
     fn combined_magnitude(&mut self) -> Result<Option<Vec<f64>>, S::Error> {
         if self.store.has(&Item::CombinedMagnitude) { self.store.real(&Item::CombinedMagnitude).map(Some) } else { Ok(None) }
     }
@@ -951,8 +976,14 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             if let Some(d) = self.reconstruction_box(&mask) {
                 self.decide(d);
             }
+            // PDF's data weight is a noise map made from every echo's magnitude.
+            let magnitudes = if stages::background::takes_echo_magnitudes(self.config) {
+                self.echo_magnitude_stack()?
+            } else {
+                None
+            };
             self.log(Level::Info, &format!("Background removal ({algorithm}){label}"));
-            stages::background::remove_background(&field, &mask, &self.meta, self.config, self.observer)?
+            stages::background::remove_background(&field, &mask, magnitudes.as_deref(), &self.meta, self.config, self.observer)?
         };
         self.put(Item::LocalField(pass), Data::Real(&local.local_field_ppm))?;
         self.put(Item::LocalFieldMask(pass), Data::Mask(&local.mask))?;
@@ -963,7 +994,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
     }
 
     /// Dipole inversion for one pass, of the local field background removal left — or, for the
-    /// total-field methods (TFI, MEDI+SMV, AutoQSM, NeXtQSM), which remove or model the
+    /// total-field methods (TFI, AutoQSM, NeXtQSM), which remove or model the
     /// background themselves, of the total field inside the pass's mask.
     fn inversion(&mut self, step: &Step, pass: Pass) -> Result<(), S::Error> {
         let name = step.stage.name();
@@ -983,8 +1014,8 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         };
         let field = self.store.real(&field_item)?;
         let mask = self.store.mask(&mask_item)?;
-        // The combined magnitude, for MEDI's edge weighting.
-        let magnitude = self.combined_magnitude()?;
+        // The combined magnitude, or every echo's for MEDI and TFI.
+        let magnitude = self.inversion_magnitude()?;
         self.store.models(&step.models)?;
         if let Some(d) = self.reconstruction_box(&mask) {
             self.decide(d);
@@ -1052,10 +1083,12 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let field = self.store.real(&Item::FieldPpm)?;
         let mask_item = self.pass_mask(pass);
         let mask = self.store.mask(&mask_item)?;
-        // The combined magnitude drives vasculature detection (and MEDI's edge weighting).
+        // The combined magnitude drives vasculature detection.
         let magnitude = self.combined_magnitude()?;
+        // QSMART's reliability map R_0 comes from its own echo fit (#413), which QSMxT does not
+        // run yet: every voxel counts as reliable.
         let stages::qsmart::Qsmart { chi, intermediates } = stages::qsmart::qsmart(
-            &field, &mask, magnitude.as_deref(), &self.meta, self.config, self.observer)?;
+            &field, &mask, None, magnitude.as_deref(), &self.meta, self.config, self.observer)?;
         drop((field, mask, magnitude));
         self.put(Item::RawChi(pass), Data::Real(&chi))?;
         let mut outputs = vec![Item::RawChi(pass)];
@@ -1201,14 +1234,17 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         self.log(Level::Info, &format!("Computing R2*/T2* maps (ARLO, {n} echoes)"));
         let mask_item = self.mask_item();
         let mask = self.store.mask(&mask_item)?;
-        let (nx, ny, nz) = self.meta.dims;
-        let mut magnitudes = stages::relaxometry::VoxelMajor::new(nx * ny * nz, n);
+        let mut magnitudes = Vec::with_capacity(mask.len() * n);
         for e in 1..=n {
             let item = self.working_magnitude(e);
             let echo = self.store.real(&item)?;
-            magnitudes.set(e - 1, &echo, &format!("mag echo {e}"))?;
+            if echo.len() != mask.len() {
+                return Err(crate::error::EngineError::Config(format!(
+                    "mag echo {e} has {} voxels, but this run is processed on a grid of {}", echo.len(), mask.len())).into());
+            }
+            magnitudes.extend(echo);
         }
-        let (r2star, t2star) = stages::relaxometry::t2star_r2star(&magnitudes.data, &mask, &self.meta)?;
+        let (r2star, t2star) = stages::relaxometry::t2star_r2star(&magnitudes, &mask, &self.meta)?;
         drop(magnitudes);
         self.put(Item::R2star, Data::Real(&r2star))?;
         self.put(Item::T2star, Data::Real(&t2star))?;
@@ -1960,7 +1996,7 @@ pub(crate) mod tests {
         config.field_mapping.unwrapping_algorithm = crate::enums::UnwrappingAlgorithm::Laplacian;
         config.bg_removal.algorithm = BfAlgorithm::Lbv;
         config.inversion.algorithm = QsmAlgorithm::Tkd;
-        config.inversion.tgv.iterations = 10;
+        config.inversion.tgv.iterations = Some(10);
         let qsmart = &mut config.inversion.qsmart;
         qsmart.ilsqr_max_iter = 5;
         qsmart.ilsqr_pad_mm = 0.0;

@@ -295,7 +295,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         bf_algorithm: ps.inversion_needs_bg_removal().then(|| bf_options[ps.bf_algorithm]),
         masking_input: None,
         phase_offset_removal: Some(ps.phase_offset_removal),
-        phase_offset_sigma: parse_optional_f64_vec3(&ps.phase_offset_sigma),
+        phase_offset_sigma_mm: parse_optional_f64_vec3(&ps.phase_offset_sigma_mm),
         coil_combination_sigma: parse_optional_f64_vec3(&ps.coil_combination_sigma),
         // Part of HIP phase offset removal, which only ROMEO unwrapping runs.
         bipolar_correction: ps.unwrapping_algorithm == 0 && ps.phase_offset_removal && ps.bipolar_correction,
@@ -354,7 +354,6 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             tgv_alpha1: parse_optional_f64(&ps.tgv_alpha1),
             tgv_alpha0: parse_optional_f64(&ps.tgv_alpha0),
             tgv_step_size: parse_optional_f64(&ps.tgv_step_size),
-            tgv_tol: parse_optional_f64(&ps.tgv_tol),
         },
         tikhonov_params: crate::cli::TikhonovParamArgs {
             tikhonov_lambda: parse_optional_f64(&ps.tikhonov_lambda),
@@ -372,6 +371,10 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             medi_smv: ps.medi_smv,
             no_medi_smv: !ps.medi_smv,
             medi_smv_radius: parse_optional_f64(&ps.medi_smv_radius),
+            medi_msmv: ps.medi_msmv,
+            medi_msmv_maxk: if ps.medi_msmv { parse_optional_usize(&ps.medi_msmv_maxk) } else { None },
+            medi_msmv_vessel_radius: if ps.medi_msmv { parse_optional_f64(&ps.medi_msmv_vessel_radius) } else { None },
+            no_medi_msmv_prefilter: ps.medi_msmv && !ps.medi_msmv_prefilter,
             medi_data_weighting: ps.medi_data_weighting.trim().parse().ok(),
             medi_percentage: parse_optional_f64(&ps.medi_percentage),
             medi_cg_tol: parse_optional_f64(&ps.medi_cg_tol),
@@ -455,7 +458,6 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             fansi_max_iter: parse_optional_usize(&ps.fansi_max_iter),
             fansi_tol_update: parse_optional_f64(&ps.fansi_tol_update),
             fansi_tol_delta: parse_optional_f64(&ps.fansi_tol_delta),
-            fansi_phase_scale: parse_optional_f64(&ps.fansi_phase_scale),
         },
         l1qsm_params: crate::cli::L1qsmParamArgs {
             l1qsm_alpha1: parse_optional_f64(&ps.l1qsm_alpha1),
@@ -466,7 +468,6 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             l1qsm_max_iter: parse_optional_usize(&ps.l1qsm_max_iter),
             l1qsm_tol_update: parse_optional_f64(&ps.l1qsm_tol_update),
             l1qsm_tol_delta: parse_optional_f64(&ps.l1qsm_tol_delta),
-            l1qsm_phase_scale: parse_optional_f64(&ps.l1qsm_phase_scale),
         },
         whqsm_params: crate::cli::WhqsmParamArgs {
             whqsm_alpha1: parse_optional_f64(&ps.whqsm_alpha1),
@@ -477,7 +478,6 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             whqsm_max_iter: parse_optional_usize(&ps.whqsm_max_iter),
             whqsm_tol_update: parse_optional_f64(&ps.whqsm_tol_update),
             whqsm_tol_delta: parse_optional_f64(&ps.whqsm_tol_delta),
-            whqsm_phase_scale: parse_optional_f64(&ps.whqsm_phase_scale),
         },
         hdqsm_params: crate::cli::HdqsmParamArgs {
             hdqsm_alpha_l2: parse_optional_f64(&ps.hdqsm_alpha_l2),
@@ -597,11 +597,6 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         iharperella_params: crate::cli::IharperellaParamArgs {
             iharperella_max_iter: parse_optional_usize(&ps.iharperella_max_iter),
             iharperella_tol: parse_optional_f64(&ps.iharperella_tol),
-        },
-        msmv_params: crate::cli::MsmvParamArgs {
-            msmv_refine: ps.msmv_refine,
-            msmv_radius: parse_optional_f64(&ps.msmv_radius),
-            msmv_maxk: parse_optional_usize(&ps.msmv_maxk),
         },
         romeo_params: crate::cli::RomeoParamArgs {
             no_romeo_phase_coherence: !ps.romeo_phase_coherence,
