@@ -2,258 +2,199 @@ use log::info;
 use super::common::{load_nifti, load_mask, save_nifti, save_mask};
 use crate::cli::{BgremoveCommand, BgremoveCommonArgs};
 
-/// BFRnet local-field estimation (deep learning). Split out so the non-`dl` build compiles
-/// without the ONNX-gated `qsm_core::bgremove::bfrnet` symbol; `prefetch_weights` guards the
-/// call site, so the no-DL body is effectively unreachable.
-#[cfg(feature = "dl")]
-fn bfrnet_local_field(
-    field: &qsm_core::io::NiftiData, mask: &[u8], grid: &qsm_core::Grid,
-) -> crate::Result<Vec<f64>> {
-    let spec = qsm_core::models::find_model("bfrnet")
-        .ok_or_else(|| crate::error::QsmxtError::Config("bfrnet not in model registry".into()))?;
-    let weights = qsm_core::models::primary_weight_bytes(spec)
-        .map_err(|e| crate::error::QsmxtError::Config(format!("BFRnet weights: {}", e)))?;
-    qsm_core::bgremove::bfrnet(&field.data, mask, grid, &weights)
-        .map_err(|e| crate::error::QsmxtError::Config(format!("BFRnet: {}", e)))
+/// A local field (ppm), the geometry it is written with, and the mask it is defined on.
+type Removed = (Vec<f64>, qsm_core::io::NiftiData, Vec<u8>);
+
+/// Remove the background of `c.input` inside `c.mask` with `config` through qsm-core's pipeline
+/// dispatcher ([`qsm_core::pipeline::run_bg_removal`]), as `qsmxt run` does. `scan` and
+/// `magnitude` are the scan's field strength and echo times and every echo's magnitude, for the
+/// method that takes them (PDF); `None` otherwise. Returns the local field (ppm), its geometry
+/// and the mask it is defined on.
+fn remove_with(
+    c: &BgremoveCommonArgs, config: qsm_core::pipeline::BgRemovalConfig,
+    scan: Option<&crate::cli::ScanParamArgs>, magnitude: &[std::path::PathBuf], name: &str,
+) -> crate::Result<Removed> {
+    let field_nifti = load_nifti(&c.input)?;
+    let (mask, _) = load_mask(&c.mask)?;
+    let (nx, ny, nz) = field_nifti.dims;
+    let echo_times = scan.map(|s| s.echo_times.clone()).unwrap_or_default();
+    let magnitude = if magnitude.is_empty() {
+        None
+    } else {
+        let (stack, n_echoes) = super::common::load_echo_stack(magnitude, field_nifti.data.len())?;
+        if n_echoes != echo_times.len() {
+            return Err(crate::error::QsmxtError::Config(format!(
+                "{name} needs the magnitude of every echo: got {n_echoes} magnitude volume(s) for {} echo time(s)",
+                echo_times.len())));
+        }
+        Some(stack)
+    };
+    info!("Background removal ({}, {}x{}x{})", name, nx, ny, nz);
+    let metadata = qsm_core::pipeline::ScanMetadata {
+        dims: field_nifti.dims,
+        voxel_size: field_nifti.voxel_size,
+        echo_times,
+        // Only PDF reads it (for its noise map), and takes it with the echo times.
+        field_strength: scan.map_or(f64::NAN, |s| s.field_strength),
+        b0_direction: (c.b0_direction[0], c.b0_direction[1], c.b0_direction[2]),
+        slice_geometry: None,
+        affine: Some(field_nifti.affine),
+    };
+    let result = qsm_core::pipeline::run_bg_removal(
+        &field_nifti.data, &mask, &metadata, &config, magnitude.as_deref(), &mut |_, _| {},
+    ).map_err(|e| crate::error::QsmxtError::Config(format!("{name}: {e}")))?;
+    Ok((result.local_field_ppm, field_nifti, result.eroded_mask))
 }
 
-#[cfg(not(feature = "dl"))]
-fn bfrnet_local_field(
-    _field: &qsm_core::io::NiftiData, _mask: &[u8], _grid: &qsm_core::Grid,
-) -> crate::Result<Vec<f64>> {
-    Err(crate::error::QsmxtError::Config(
-        "BFRnet requires a deep-learning build of qsmxt".into(),
-    ))
+/// A background-removal config for `algorithm`, with qsm-core's settings for every other method.
+fn config_for(algorithm: qsm_core::pipeline::BgRemovalAlgorithm) -> qsm_core::pipeline::BgRemovalConfig {
+    qsm_core::pipeline::BgRemovalConfig { algorithm, ..Default::default() }
+}
+
+/// HARPERELLA or iHARPERELLA of `args.input`: a total field in ppm through qsm-core's pipeline
+/// dispatcher, or a wrapped echo in rad (with `--te` and `--field-strength`), which only the
+/// method itself takes.
+fn harperella_with(
+    args: &HarperellaArgs, config: qsm_core::pipeline::BgRemovalConfig, name: &str,
+) -> crate::Result<(BgremoveCommonArgs, Removed)> {
+    let common = BgremoveCommonArgs {
+        input: args.input.clone(), mask: args.mask.clone(), output: args.output.clone(),
+        b0_direction: vec![0.0, 0.0, 1.0], output_mask: args.output_mask.clone(),
+    };
+    let (Some(te_s), Some(b0_t)) = (args.te, args.field_strength) else {
+        let out = remove_with(&common, config, None, &[], name)?;
+        return Ok((common, out));
+    };
+    let phase_nifti = load_nifti(&args.input)?;
+    let (mask, _) = load_mask(&args.mask)?;
+    let grid = super::common::nifti_grid(&phase_nifti);
+    info!("Background removal ({}, wrapped echo, {}x{}x{})", name, grid.nx(), grid.ny(), grid.nz());
+    let input = qsm_core::bgremove::HarperellaInput::WrappedPhase { phase: &phase_nifti.data, te_s, b0_t };
+    let (lf, em) = if config.algorithm == qsm_core::pipeline::BgRemovalAlgorithm::Harperella {
+        qsm_core::bgremove::harperella(input, &mask, &grid, &config.harperella, |_, _| {})?
+    } else {
+        qsm_core::bgremove::iharperella(input, &mask, &grid, &config.iharperella, |_, _| {})?
+    };
+    Ok((common, (lf, phase_nifti, em)))
+}
+
+/// The (i)HARPERELLA arguments both subcommands share.
+struct HarperellaArgs {
+    input: std::path::PathBuf,
+    mask: std::path::PathBuf,
+    output: std::path::PathBuf,
+    output_mask: Option<std::path::PathBuf>,
+    te: Option<f64>,
+    field_strength: Option<f64>,
 }
 
 pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
-    let (common, local_field, eroded_mask) = match cmd {
+    use qsm_core::bgremove as bg;
+    use qsm_core::pipeline::BgRemovalAlgorithm as A;
+    let (common, (local_field_data, field_nifti, eroded_mask)) = match cmd {
         BgremoveCommand::Vsharp(args) => {
-            let c = args.common;
-            let field_nifti = load_nifti(&c.input)?;
-            let (mask, _) = load_mask(&c.mask)?;
-            let (nx, ny, nz) = field_nifti.dims;
-            let (vsx, vsy, vsz) = field_nifti.voxel_size;
-            let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
-            info!("Background removal (V-SHARP, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
-
-            // QSMxT's defaults (deconvolution off), the same as `qsmxt run`'s.
+            // QSMxT's defaults (deconvolution off, the acquired grid), the same as `qsmxt run`'s.
             let d = qsmxt_engine::VsharpConfig::default();
             let grid_cfg = qsmxt_engine::VsharpConfig {
                 grid: args.grid.map(Into::into).unwrap_or(d.grid),
                 grid_spacing: args.grid_spacing.unwrap_or(d.grid_spacing),
                 ..d.clone()
             };
-            let params = qsm_core::bgremove::VsharpParams {
+            let vsharp = bg::VsharpParams {
                 threshold: args.threshold.unwrap_or(d.threshold),
                 max_radius: args.max_radius.unwrap_or(d.max_radius),
                 min_radius: args.min_radius.unwrap_or(d.min_radius),
                 deconvolve: args.deconvolve.unwrap_or(d.deconvolve),
                 grid: grid_cfg.core_grid(),
+                ..Default::default()
             };
-            if let qsm_core::bgremove::VsharpGrid::Isotropic { spacing_mm } = params.working_grid(&grid) {
-                if !(spacing_mm.is_finite() && spacing_mm > 0.0) {
-                    return Err(crate::error::QsmxtError::Config(format!("--grid-spacing must be > 0 mm, got {spacing_mm}")));
-                }
-            }
-            info!("V-SHARP working grid: {:?}", params.working_grid(&grid));
-            let (lf, em) = qsm_core::bgremove::vsharp(
-                &field_nifti.data, &mask, &grid, &params, |_, _| {},
-            );
-            (c, (lf, field_nifti), em)
+            let config = qsm_core::pipeline::BgRemovalConfig { vsharp, ..config_for(A::Vsharp) };
+            let out = remove_with(&args.common, config, None, &[], "V-SHARP")?;
+            (args.common, out)
         }
         BgremoveCommand::Pdf(args) => {
-            let c = args.common;
-            let field_nifti = load_nifti(&c.input)?;
-            let (mask, _) = load_mask(&c.mask)?;
-            let (nx, ny, nz) = field_nifti.dims;
-            let (vsx, vsy, vsz) = field_nifti.voxel_size;
-            let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
-            let bdir = (c.b0_direction[0], c.b0_direction[1], c.b0_direction[2]);
-            info!("Background removal (PDF, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
-
-            let d = qsm_core::bgremove::PdfParams::default();
-            let params = qsm_core::bgremove::PdfParams {
-                tol: args.tol.unwrap_or(d.tol),
-                max_iter: None,
-            };
-            let lf = qsm_core::bgremove::pdf(
-                &field_nifti.data, &mask, &grid, bdir, &params, |_, _| {},
-            );
-            (c, (lf, field_nifti), mask)
+            let d = bg::PdfParams::default();
+            let pdf = bg::PdfParams { tol: args.tol.unwrap_or(d.tol), ..d };
+            let config = qsm_core::pipeline::BgRemovalConfig { pdf, ..config_for(A::Pdf) };
+            let out = remove_with(&args.common, config, Some(&args.scan), &args.magnitude, "PDF")?;
+            (args.common, out)
         }
         BgremoveCommand::Lbv(args) => {
-            let c = args.common;
-            let field_nifti = load_nifti(&c.input)?;
-            let (mask, _) = load_mask(&c.mask)?;
-            let (nx, ny, nz) = field_nifti.dims;
-            let (vsx, vsy, vsz) = field_nifti.voxel_size;
-            let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
-            info!("Background removal (LBV, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
-
-            let d = qsm_core::bgremove::LbvParams::default();
-            let params = qsm_core::bgremove::LbvParams {
-                tol: args.tol.unwrap_or(d.tol),
-                max_iter: None,
-            };
-            let (lf, em) = qsm_core::bgremove::lbv(
-                &field_nifti.data, &mask, &grid, &params, |_, _| {},
-            );
-            (c, (lf, field_nifti), em)
+            let d = bg::LbvParams::default();
+            let lbv = bg::LbvParams { tol: args.tol.unwrap_or(d.tol), ..d };
+            let config = qsm_core::pipeline::BgRemovalConfig { lbv, ..config_for(A::Lbv) };
+            let out = remove_with(&args.common, config, None, &[], "LBV")?;
+            (args.common, out)
         }
         BgremoveCommand::Ismv(args) => {
-            let c = args.common;
-            let field_nifti = load_nifti(&c.input)?;
-            let (mask, _) = load_mask(&c.mask)?;
-            let (nx, ny, nz) = field_nifti.dims;
-            let (vsx, vsy, vsz) = field_nifti.voxel_size;
-            let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
-            info!("Background removal (iSMV, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
-
-            let d = qsm_core::bgremove::IsmvParams::default();
-            let params = qsm_core::bgremove::IsmvParams {
+            let d = bg::IsmvParams::default();
+            let ismv = bg::IsmvParams {
                 tol: args.tol.unwrap_or(d.tol),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 radius: args.radius.unwrap_or(d.radius),
             };
-            let (lf, em) = qsm_core::bgremove::ismv(
-                &field_nifti.data, &mask, &grid, &params, |_, _| {},
-            );
-            (c, (lf, field_nifti), em)
+            let config = qsm_core::pipeline::BgRemovalConfig { ismv, ..config_for(A::Ismv) };
+            let out = remove_with(&args.common, config, None, &[], "iSMV")?;
+            (args.common, out)
         }
         BgremoveCommand::Sharp(args) => {
-            let c = args.common;
-            let field_nifti = load_nifti(&c.input)?;
-            let (mask, _) = load_mask(&c.mask)?;
-            let (nx, ny, nz) = field_nifti.dims;
-            let (vsx, vsy, vsz) = field_nifti.voxel_size;
-            let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
-            info!("Background removal (SHARP, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
-
-            let d = qsm_core::bgremove::SharpParams::default();
-            let params = qsm_core::bgremove::SharpParams {
+            let d = bg::SharpParams::default();
+            let sharp = bg::SharpParams {
                 threshold: args.threshold.unwrap_or(d.threshold),
                 radius: args.radius.unwrap_or(d.radius),
             };
-            let (lf, em) = qsm_core::bgremove::sharp(
-                &field_nifti.data, &mask, &grid, &params,
-            );
-            (c, (lf, field_nifti), em)
+            let config = qsm_core::pipeline::BgRemovalConfig { sharp, ..config_for(A::Sharp) };
+            let out = remove_with(&args.common, config, None, &[], "SHARP")?;
+            (args.common, out)
         }
         BgremoveCommand::Resharp(args) => {
-            let c = args.common;
-            let field_nifti = load_nifti(&c.input)?;
-            let (mask, _) = load_mask(&c.mask)?;
-            let (nx, ny, nz) = field_nifti.dims;
-            let (vsx, vsy, vsz) = field_nifti.voxel_size;
-            let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
-            info!("Background removal (RESHARP, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
-
-            let d = qsm_core::bgremove::ResharpParams::default();
-            let params = qsm_core::bgremove::ResharpParams {
+            let d = bg::ResharpParams::default();
+            let resharp = bg::ResharpParams {
                 radius: args.radius.unwrap_or(d.radius),
                 tik_reg: args.tik_reg.unwrap_or(d.tik_reg),
                 tol: args.tol.unwrap_or(d.tol),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
             };
-            let (lf, em) = qsm_core::bgremove::resharp(
-                &field_nifti.data, &mask, &grid, &params, |_, _| {},
-            );
-            (c, (lf, field_nifti), em)
-        }
-        BgremoveCommand::Msmv(args) => {
-            let c = args.common;
-            let field_nifti = load_nifti(&c.input)?;
-            let (mask, _) = load_mask(&c.mask)?;
-            let (nx, ny, nz) = field_nifti.dims;
-            let (vsx, vsy, vsz) = field_nifti.voxel_size;
-            let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
-            info!("Background removal (mSMV, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
-
-            let d = qsm_core::bgremove::MsmvParams::default();
-            let params = qsm_core::bgremove::MsmvParams {
-                radius: args.radius.unwrap_or(d.radius),
-                maxk: args.maxk.unwrap_or(d.maxk),
-                b0: args.field_strength.unwrap_or(d.b0),
-                te: args.te.unwrap_or(d.te),
-                // Standalone (prefilter) by default; --refine skips the SMV prefilter to
-                // treat the input as an already-local field from a primary BFR.
-                prefilter: !args.refine,
-            };
-            // mSMV preserves the brain edge (no erosion): it returns the mask unchanged.
-            let (lf, em) = qsm_core::bgremove::msmv(
-                &field_nifti.data, &mask, &grid, &params, |_, _| {},
-            );
-            (c, (lf, field_nifti), em)
+            let config = qsm_core::pipeline::BgRemovalConfig { resharp, ..config_for(A::Resharp) };
+            let out = remove_with(&args.common, config, None, &[], "RESHARP")?;
+            (args.common, out)
         }
         BgremoveCommand::Bfrnet(args) => {
-            let c = args.common;
-            let field_nifti = load_nifti(&c.input)?;
-            let (mask, _) = load_mask(&c.mask)?;
-            let (nx, ny, nz) = field_nifti.dims;
-            let (vsx, vsy, vsz) = field_nifti.voxel_size;
-            let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
-            info!("Background removal (BFRnet, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
-
             // Fetch the ONNX weights with a download bar (cached under $QSM_MODEL_DIR / the cache).
             // On a build without the `dl` feature this errors here with a clear message.
             crate::pipeline::runner::prefetch_weights("bfrnet", "bfrnet")?;
-            let lf = bfrnet_local_field(&field_nifti, &mask, &grid)?;
-            // BFRnet preserves the brain edge (no erosion): mask returned unchanged.
-            (c, (lf, field_nifti), mask)
+            let out = remove_with(&args.common, config_for(A::Bfrnet), None, &[], "BFRnet")?;
+            (args.common, out)
         }
         BgremoveCommand::Harperella(args) => {
-            let phase_nifti = load_nifti(&args.input)?;
-            let (mask, _) = load_mask(&args.mask)?;
-            let (nx, ny, nz) = phase_nifti.dims;
-            let (vsx, vsy, vsz) = phase_nifti.voxel_size;
-            let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
-            info!("Background removal (HARPERELLA, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
-
-            let d = qsm_core::bgremove::HarperellaParams::default();
-            let params = qsm_core::bgremove::HarperellaParams {
+            let d = bg::HarperellaParams::default();
+            let harperella = bg::HarperellaParams {
                 radius: args.radius.unwrap_or(d.radius),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol: args.tol.unwrap_or(d.tol),
+                ..d
             };
-            let (lf, em) = qsm_core::bgremove::harperella(
-                harperella_input(&phase_nifti.data, args.te, args.field_strength),
-                &mask, &grid, &params, |_, _| {},
-            )?;
-
-            let common = BgremoveCommonArgs {
-                input: args.input, mask: args.mask, output: args.output,
-                b0_direction: vec![0.0, 0.0, 1.0], output_mask: args.output_mask,
-            };
-            (common, (lf, phase_nifti), em)
+            let config = qsm_core::pipeline::BgRemovalConfig { harperella, ..config_for(A::Harperella) };
+            harperella_with(&HarperellaArgs {
+                input: args.input, mask: args.mask, output: args.output, output_mask: args.output_mask,
+                te: args.te, field_strength: args.field_strength,
+            }, config, "HARPERELLA")?
         }
         BgremoveCommand::Iharperella(args) => {
-            let phase_nifti = load_nifti(&args.input)?;
-            let (mask, _) = load_mask(&args.mask)?;
-            let (nx, ny, nz) = phase_nifti.dims;
-            let (vsx, vsy, vsz) = phase_nifti.voxel_size;
-            let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
-            info!("Background removal (iHARPERELLA, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
-
-            let d = qsm_core::bgremove::IharperellaParams::default();
-            let params = qsm_core::bgremove::IharperellaParams {
+            let d = bg::IharperellaParams::default();
+            let iharperella = bg::IharperellaParams {
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol: args.tol.unwrap_or(d.tol),
+                ..d
             };
-            let (lf, em) = qsm_core::bgremove::iharperella(
-                harperella_input(&phase_nifti.data, args.te, args.field_strength),
-                &mask, &grid, &params, |_, _| {},
-            )?;
-
-            let common = BgremoveCommonArgs {
-                input: args.input, mask: args.mask, output: args.output,
-                b0_direction: vec![0.0, 0.0, 1.0], output_mask: args.output_mask,
-            };
-            (common, (lf, phase_nifti), em)
+            let config = qsm_core::pipeline::BgRemovalConfig { iharperella, ..config_for(A::Iharperella) };
+            harperella_with(&HarperellaArgs {
+                input: args.input, mask: args.mask, output: args.output, output_mask: args.output_mask,
+                te: args.te, field_strength: args.field_strength,
+            }, config, "iHARPERELLA")?
         }
     };
 
-    let (local_field_data, field_nifti) = local_field;
     save_nifti(&common.output, &local_field_data, &field_nifti)?;
     info!("Local field saved to {}", common.output.display());
 
@@ -263,13 +204,4 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
     }
 
     Ok(())
-}
-
-/// What (i)HARPERELLA starts from: one wrapped echo when its echo time and field strength are
-/// given (clap requires both together), otherwise an unwrapped total field in ppm.
-fn harperella_input(data: &[f64], te: Option<f64>, b0: Option<f64>) -> qsm_core::bgremove::HarperellaInput<'_> {
-    match (te, b0) {
-        (Some(te_s), Some(b0_t)) => qsm_core::bgremove::HarperellaInput::WrappedPhase { phase: data, te_s, b0_t },
-        _ => qsm_core::bgremove::HarperellaInput::FieldPpm(data),
-    }
 }

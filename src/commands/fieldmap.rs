@@ -156,8 +156,8 @@ pub fn execute(cmd: FieldmapCommand) -> crate::Result<()> {
 /// `fieldmap romeo`'s own flags.
 fn apply_romeo(args: &FieldmapRomeoArgs, c: &mut qsm_core::pipeline::config::FieldMappingConfig) {
     if let Some(v) = args.phase_offset_removal { c.phase_offset_removal = v; }
-    if let Some(ref s) = args.phase_offset_sigma {
-        if s.len() == 3 { c.phase_offset_sigma = [s[0], s[1], s[2]]; }
+    if let Some(ref s) = args.phase_offset_sigma_mm {
+        if s.len() == 3 { c.phase_offset_sigma_mm = [s[0], s[1], s[2]]; }
     }
     c.bipolar_correction = args.bipolar_correction;
     c.romeo_params = args.romeo_params.to_romeo_params();
@@ -304,7 +304,7 @@ mod tests {
         let flag_sets: &[&[&str]] = &[
             &[],
             &["--no-romeo-phase-linearity", "--romeo-max-seeds", "3", "--no-romeo-correct-global"],
-            &["--phase-offset-sigma", "2", "2", "1", "--romeo-mag-weight", "--no-romeo-individual",
+            &["--phase-offset-sigma-mm", "2", "2", "1", "--romeo-mag-weight", "--no-romeo-individual",
               "--romeo-template", "2"],
         ];
         for flags in flag_sets {
@@ -411,7 +411,7 @@ mod tests {
             common,
             // Disable offset removal so the constant field is preserved (ROMEO path B).
             phase_offset_removal: Some(false),
-            phase_offset_sigma: None,
+            phase_offset_sigma_mm: None,
             bipolar_correction: false,
             romeo_params: Default::default(),
         };
@@ -492,7 +492,7 @@ mod tests {
         let args = FieldmapRomeoArgs {
             common,
             phase_offset_removal: Some(false),
-            phase_offset_sigma: None,
+            phase_offset_sigma_mm: None,
             bipolar_correction: false,
             romeo_params: Default::default(),
         };

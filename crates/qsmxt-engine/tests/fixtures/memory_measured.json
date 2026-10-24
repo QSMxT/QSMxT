@@ -198,29 +198,6 @@
   },
   {
    "kind": "browser",
-   "name": "medi",
-   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
-   "threads": 16,
-   "settings": [
-    [
-     "inversion.algorithm",
-     "medi"
-    ]
-   ],
-   "isolated": "invert",
-   "heap": [
-    [
-     "invert",
-     1426784256
-    ],
-    [
-     "reference",
-     1426784256
-    ]
-   ]
-  },
-  {
-   "kind": "browser",
    "name": "tv",
    "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
    "threads": 16,
@@ -255,37 +232,6 @@
    ],
    "isolated": "invert",
    "heap": [
-    [
-     "invert",
-     821952512
-    ],
-    [
-     "reference",
-     821952512
-    ]
-   ]
-  },
-  {
-   "kind": "browser",
-   "name": "bg-pdf",
-   "source": "qsmbly c05383f (QSMxT engine e426923), headless Chrome 155, example data",
-   "threads": 16,
-   "settings": [
-    [
-     "inversion.algorithm",
-     "tkd"
-    ],
-    [
-     "bg_removal.algorithm",
-     "pdf"
-    ]
-   ],
-   "isolated": "bgremove",
-   "heap": [
-    [
-     "bgremove",
-     821952512
-    ],
     [
      "invert",
      821952512
@@ -2453,7 +2399,7 @@
   {
    "kind": "native",
    "name": "bg-pdf-t1",
-   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "source": "native, allocations counted per step (e3 driver on QSMxT with QSM.rs v0.40.0), example data",
    "threads": 1,
    "echoes": 5,
    "browser_profile": true,
@@ -2482,15 +2428,15 @@
     ],
     [
      "unwrap",
-     1391536490
+     1390737194
     ],
     [
      "bgremove",
-     687341610
+     2131129050
     ],
     [
      "invert",
-     446169094
+     349700174
     ],
     [
      "reference",
@@ -2501,7 +2447,7 @@
   {
    "kind": "native",
    "name": "bg-pdf-t8",
-   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "source": "native, allocations counted per step (e3 driver on QSMxT with QSM.rs v0.40.0), example data",
    "threads": 8,
    "echoes": 5,
    "browser_profile": true,
@@ -2530,15 +2476,15 @@
     ],
     [
      "unwrap",
-     2542401514
+     2422710442
     ],
     [
      "bgremove",
-     687341610
+     2131601242
     ],
     [
      "invert",
-     446169094
+     349700174
     ],
     [
      "reference",
@@ -3752,7 +3698,7 @@
   {
    "kind": "native",
    "name": "inv-medi-t8",
-   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "source": "native, allocations counted per step (e3 driver on QSMxT with QSM.rs v0.40.0), example data",
    "threads": 8,
    "echoes": 5,
    "browser_profile": true,
@@ -3777,15 +3723,19 @@
     ],
     [
      "unwrap",
-     2385255082
+     2260553450
+    ],
+    [
+     "bgremove",
+     663814610
     ],
     [
      "invert",
-     1320436456
+     2576974118
     ],
     [
      "reference",
-     108535671
+     108535782
     ]
    ]
   },
@@ -3964,7 +3914,7 @@
   {
    "kind": "native",
    "name": "inv-tfi-t8",
-   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "source": "native, allocations counted per step (e3 driver on QSMxT with QSM.rs v0.40.0), example data",
    "threads": 8,
    "echoes": 5,
    "browser_profile": true,
@@ -3989,11 +3939,11 @@
     ],
     [
      "unwrap",
-     2520000490
+     2548466218
     ],
     [
      "invert",
-     1193820904
+     2640905136
     ],
     [
      "reference",

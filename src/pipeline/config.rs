@@ -11,10 +11,13 @@ pub use qsmxt_engine::*;
 /// Load config from a TOML file.
 pub fn load_config(path: &Path) -> crate::Result<PipelineConfig> {
     let text = std::fs::read_to_string(path)?;
-    let (config, warnings) = PipelineConfig::from_toml_migrating(&text)
+    let (config, migration) = PipelineConfig::from_toml_noting(&text)
         .map_err(|e| QsmxtError::Config(format!("TOML parse error: {}", e)))?;
-    for w in warnings {
+    for w in migration.warnings {
         log::warn!("{}: {w}", path.display());
+    }
+    for n in migration.notes {
+        log::info!("{}: {n}", path.display());
     }
     Ok(config)
 }
@@ -367,8 +370,8 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(ref s) = args.coil_combination_sigma {
             if s.len() == 3 { config.field_mapping.coil_combination_sigma = [s[0], s[1], s[2]]; }
         }
-        if let Some(ref s) = args.phase_offset_sigma {
-            if s.len() == 3 { config.field_mapping.phase_offset_sigma = [s[0], s[1], s[2]]; }
+        if let Some(ref s) = args.phase_offset_sigma_mm {
+            if s.len() == 3 { config.field_mapping.phase_offset_sigma_mm = [s[0], s[1], s[2]]; }
         }
 
         // ── ROMEO weights and unwrapping options ──
@@ -400,7 +403,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.rts_params.rts_max_iter { config.inversion.rts.max_iter = v; }
         if let Some(v) = args.rts_params.rts_lsmr_iter { config.inversion.rts.lsmr_iter = v; }
         if let Some(v) = args.tv_params.tv_lambda { config.inversion.tv.lambda = v; }
-        if let Some(v) = args.tv_params.tv_rho { config.inversion.tv.rho = v; }
+        if let Some(v) = args.tv_params.tv_rho { config.inversion.tv.rho = Some(v); }
         if let Some(v) = args.tv_params.tv_tol { config.inversion.tv.tol = v; }
         if let Some(v) = args.tv_params.tv_max_iter { config.inversion.tv.max_iter = v; }
         if let Some(v) = args.tkd_params.tkd_threshold { config.inversion.tkd.threshold = v; }
@@ -436,7 +439,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.nltv_params.nltv_mu { config.inversion.nltv.mu = v; }
         if let Some(v) = args.nltv_params.nltv_tol { config.inversion.nltv.tol = v; }
         if let Some(v) = args.nltv_params.nltv_max_iter { config.inversion.nltv.max_iter = v; }
-        if let Some(v) = args.nltv_params.nltv_newton_iter { config.inversion.nltv.newton_iter = v; }
+        if let Some(v) = args.nltv_params.nltv_newton_iter { config.inversion.nltv.max_iter_newton = v; }
         if let Some(v) = args.medi_params.medi_lambda { config.inversion.medi.lambda = v; }
         if let Some(v) = args.medi_params.medi_max_iter { config.inversion.medi.max_iter = v; }
         if let Some(v) = args.medi_params.medi_cg_max_iter { config.inversion.medi.cg_max_iter = v; }
@@ -446,6 +449,10 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.medi_params.medi_smv_radius { config.inversion.medi.smv_radius = v; }
         if args.medi_params.medi_smv { config.inversion.medi.smv = true; }
         if args.medi_params.no_medi_smv { config.inversion.medi.smv = false; }
+        if args.medi_params.medi_msmv { config.inversion.medi.msmv = true; }
+        if let Some(v) = args.medi_params.medi_msmv_maxk { config.inversion.medi.msmv_maxk = v; }
+        if let Some(v) = args.medi_params.medi_msmv_vessel_radius { config.inversion.medi.msmv_vessel_radius = Some(v); }
+        if args.medi_params.no_medi_msmv_prefilter { config.inversion.medi.msmv_prefilter = false; }
         // Parsed but never applied before the TUI parity sweep: `--medi-merit` and
         // `--medi-data-weighting` did nothing.
         if let Some(v) = args.medi_params.medi_merit { config.inversion.medi.merit = v; }
@@ -458,12 +465,11 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.tfi_params.tfi_cg_max_iter { config.inversion.tfi.cg_max_iter = v; }
         if let Some(v) = args.tfi_params.tfi_max_iter { config.inversion.tfi.max_iter = v; }
         if let Some(v) = args.tfi_params.tfi_tol { config.inversion.tfi.tol = v; }
-        if let Some(v) = args.tgv_params.tgv_iterations { config.inversion.tgv.iterations = v; }
+        if let Some(v) = args.tgv_params.tgv_iterations { config.inversion.tgv.iterations = Some(v); }
         if let Some(v) = args.tgv_params.tgv_erosions { config.inversion.tgv.erosions = v; }
         if let Some(v) = args.tgv_params.tgv_alpha1 { config.inversion.tgv.alpha1 = v; }
         if let Some(v) = args.tgv_params.tgv_alpha0 { config.inversion.tgv.alpha0 = v; }
         if let Some(v) = args.tgv_params.tgv_step_size { config.inversion.tgv.step_size = v; }
-        if let Some(v) = args.tgv_params.tgv_tol { config.inversion.tgv.tol = v; }
         // Deep-learning overlap-tiling (opt-in): presence of --tile-size enables it.
         if let Some(v) = args.tiling_params.tile_size { config.inversion.tile_size = Some(v); }
         if let Some(v) = args.tiling_params.tile_halo { config.inversion.tile_halo = Some(v); }
@@ -472,23 +478,21 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.ndi_params.ndi_max_iter { config.inversion.ndi.max_iter = v; }
         if let Some(v) = args.ndi_params.ndi_auto_stop { config.inversion.ndi.auto_stop = v; }
         if let Some(v) = args.fansi_params.fansi_alpha1 { config.inversion.fansi.alpha1 = v; }
-        if let Some(v) = args.fansi_params.fansi_mu1 { config.inversion.fansi.mu1 = v; }
+        if let Some(v) = args.fansi_params.fansi_mu1 { config.inversion.fansi.mu1 = Some(v); }
         if let Some(v) = args.fansi_params.fansi_mu2 { config.inversion.fansi.mu2 = v; }
-        if let Some(v) = args.fansi_params.fansi_alpha0 { config.inversion.fansi.alpha0 = v; }
-        if let Some(v) = args.fansi_params.fansi_mu0 { config.inversion.fansi.mu0 = v; }
+        if let Some(v) = args.fansi_params.fansi_alpha0 { config.inversion.fansi.alpha0 = Some(v); }
+        if let Some(v) = args.fansi_params.fansi_mu0 { config.inversion.fansi.mu0 = Some(v); }
         if let Some(v) = args.fansi_params.fansi_max_iter { config.inversion.fansi.max_iter = v; }
         if let Some(v) = args.fansi_params.fansi_tol_update { config.inversion.fansi.tol_update = v; }
         if let Some(v) = args.fansi_params.fansi_tol_delta { config.inversion.fansi.tol_delta = v; }
-        if let Some(v) = args.fansi_params.fansi_phase_scale { config.inversion.fansi.phase_scale = v; }
         if let Some(v) = args.l1qsm_params.l1qsm_alpha1 { config.inversion.l1qsm.alpha1 = v; }
-        if let Some(v) = args.l1qsm_params.l1qsm_mu1 { config.inversion.l1qsm.mu1 = v; }
+        if let Some(v) = args.l1qsm_params.l1qsm_mu1 { config.inversion.l1qsm.mu1 = Some(v); }
         if let Some(v) = args.l1qsm_params.l1qsm_mu2 { config.inversion.l1qsm.mu2 = v; }
         if let Some(v) = args.l1qsm_params.l1qsm_mu3 { config.inversion.l1qsm.mu3 = v; }
         if let Some(v) = args.l1qsm_params.l1qsm_lambda { config.inversion.l1qsm.lambda = v; }
         if let Some(v) = args.l1qsm_params.l1qsm_max_iter { config.inversion.l1qsm.max_iter = v; }
         if let Some(v) = args.l1qsm_params.l1qsm_tol_update { config.inversion.l1qsm.tol_update = v; }
         if let Some(v) = args.l1qsm_params.l1qsm_tol_delta { config.inversion.l1qsm.tol_delta = v; }
-        if let Some(v) = args.l1qsm_params.l1qsm_phase_scale { config.inversion.l1qsm.phase_scale = v; }
         if let Some(v) = args.whqsm_params.whqsm_alpha1 { config.inversion.whqsm.alpha1 = v; }
         if let Some(v) = args.whqsm_params.whqsm_mu1 { config.inversion.whqsm.mu1 = v; }
         if let Some(v) = args.whqsm_params.whqsm_mu2 { config.inversion.whqsm.mu2 = v; }
@@ -497,9 +501,8 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.whqsm_params.whqsm_max_iter { config.inversion.whqsm.max_iter = v; }
         if let Some(v) = args.whqsm_params.whqsm_tol_update { config.inversion.whqsm.tol_update = v; }
         if let Some(v) = args.whqsm_params.whqsm_tol_delta { config.inversion.whqsm.tol_delta = v; }
-        if let Some(v) = args.whqsm_params.whqsm_phase_scale { config.inversion.whqsm.phase_scale = v; }
         if let Some(v) = args.hdqsm_params.hdqsm_alpha_l2 { config.inversion.hdqsm.alpha_l2 = v; }
-        if let Some(v) = args.hdqsm_params.hdqsm_mu1_l2 { config.inversion.hdqsm.mu1_l2 = v; }
+        if let Some(v) = args.hdqsm_params.hdqsm_mu1_l2 { config.inversion.hdqsm.mu1_l2 = Some(v); }
         if let Some(v) = args.hdqsm_params.hdqsm_mu2 { config.inversion.hdqsm.mu2 = v; }
         if let Some(v) = args.hdqsm_params.hdqsm_max_iter_l1 { config.inversion.hdqsm.max_iter_l1 = v; }
         if let Some(v) = args.hdqsm_params.hdqsm_max_iter_l2 { config.inversion.hdqsm.max_iter_l2 = v; }
@@ -540,9 +543,6 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.harperella_params.harperella_tol { config.bg_removal.harperella.tol = v; }
         if let Some(v) = args.iharperella_params.iharperella_max_iter { config.bg_removal.iharperella.max_iter = v; }
         if let Some(v) = args.iharperella_params.iharperella_tol { config.bg_removal.iharperella.tol = v; }
-        if args.msmv_params.msmv_refine { config.bg_removal.msmv_refine = true; }
-        if let Some(v) = args.msmv_params.msmv_radius { config.bg_removal.msmv.radius = v; }
-        if let Some(v) = args.msmv_params.msmv_maxk { config.bg_removal.msmv.maxk = v; }
 
         // ── SWI ──
         if let Some(ref s) = args.swi_params.swi_hp_sigma {
@@ -802,8 +802,7 @@ pub fn validate_inversion_input(config: &PipelineConfig) -> crate::Result<()> {
         return Ok(());
     }
     let alg = config.inversion.algorithm;
-    let medi_smv = alg == QsmAlgorithm::Medi && config.inversion.medi.smv;
-    let what = format!("--qsm-algorithm {alg}{}", if medi_smv { " with SMV" } else { "" });
+    let what = format!("--qsm-algorithm {alg}");
     let takes = if qsmxt_engine::bridge::inversion_input(config, 2).needs_field_mapping() {
         "the total field and removes the background itself"
     } else {
@@ -824,8 +823,8 @@ pub fn validate_inversion_input(config: &PipelineConfig) -> crate::Result<()> {
 /// Refuse a multi-orientation configuration whose members cannot contribute (#270).
 ///
 /// COSMOS and STI combine each orientation's *local* field, which only background-field removal
-/// writes. An inversion that skips that step (MEDI with SMV, TGV, QSMART, the end-to-end
-/// networks), or a run with reconstruction off, leaves every member without one, so the group
+/// writes. An inversion that skips that step (TFI, TGV, QSMART, the end-to-end networks), or a
+/// run with reconstruction off, leaves every member without one, so the group
 /// would fail after every member had been processed. Said before any processing instead.
 pub fn validate_multi_orientation(config: &PipelineConfig) -> crate::Result<()> {
     if !config.multi_orientation.enabled() {
@@ -837,14 +836,11 @@ pub fn validate_multi_orientation(config: &PipelineConfig) -> crate::Result<()> 
              reconstruction produces; it cannot be used with --no-qsm".into()));
     }
     if qsmxt_engine::bridge::skips_bgremove(config) {
-        let medi_smv = config.inversion.algorithm == QsmAlgorithm::Medi && config.inversion.medi.smv;
         return Err(QsmxtError::Config(format!(
             "--orientation-group combines each orientation's local field, and --qsm-algorithm \
-             {}{} has no background-field removal step, so no orientation would have one. Use an \
-             inversion that takes a local field (e.g. rts, tv, tkd, nltv, ilsqr{}).",
+             {} has no background-field removal step, so no orientation would have one. Use an \
+             inversion that takes a local field (e.g. rts, tv, tkd, nltv, ilsqr, medi).",
             config.inversion.algorithm,
-            if medi_smv { " with SMV" } else { "" },
-            if medi_smv { ", or medi with --no-medi-smv" } else { "" },
         )));
     }
     Ok(())
@@ -1031,7 +1027,7 @@ mod tests {
     #[test]
     fn ilsqr_pad_mm_from_cli() {
         let d = config_from_cli(&["qsmxt", "run", "<bids>"]);
-        assert_eq!(d.inversion.ilsqr.pad_mm, qsm_core::inversion::DEFAULT_PAD_MM);
+        assert_eq!(d.inversion.ilsqr.pad_mm, qsm_core::inversion::IlsqrParams::default().pad_mm);
         let c = config_from_cli(&["qsmxt", "run", "<bids>", "--ilsqr-pad-mm", "32"]);
         assert_eq!(c.inversion.ilsqr.pad_mm, 32.0);
         assert_eq!(c.inversion.qsmart.ilsqr_pad_mm, d.inversion.qsmart.ilsqr_pad_mm, "QSMART keeps its own");

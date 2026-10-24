@@ -32,7 +32,7 @@ pipeline, and run the same code as the corresponding pipeline stage. See
 | `combine` | Multi-coil phase combination (MCPC-3D-S) |
 | `unwrap` | Phase unwrapping (ROMEO, Laplacian) |
 | `fieldmap` | Multi-echo B0 field mapping from phase, in ppm |
-| `bgremove` | Background field removal (V-SHARP, PDF, LBV, …, mSMV, BFRnet) |
+| `bgremove` | Background field removal (V-SHARP, PDF, LBV, …, BFRnet) |
 | `invert` | Dipole inversion: every classical and deep-learning method, plus COSMOS and STI |
 | `separate` | Susceptibility source separation (paramagnetic / diamagnetic) |
 | `qsmart` | QSMART vessel-aware reconstruction from the total field |

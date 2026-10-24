@@ -15,7 +15,7 @@ macro_rules! param_config {
             fn default() -> Self {
                 #[allow(unused)]
                 let p = <$core>::default();
-                Self { $($field: p.$field as $ty),* }
+                Self { $($field: p.$field),* }
             }
         }
     };
@@ -26,35 +26,89 @@ macro_rules! param_config {
 param_config!(RtsConfig from qsm_core::inversion::RtsParams {
     delta: f64, mu: f64, rho: f64, tol: f64, max_iter: usize, lsmr_iter: usize
 });
+// `rho`: `None` is qsm-core's 100·λ, so it follows λ.
 param_config!(TvConfig from qsm_core::inversion::TvParams {
-    lambda: f64, rho: f64, tol: f64, max_iter: usize
+    lambda: f64, rho: Option<f64>, tol: f64, max_iter: usize
 });
 param_config!(TkdConfig from qsm_core::inversion::TkdParams { threshold: f64 });
 param_config!(NltvConfig from qsm_core::inversion::NltvParams {
-    lambda: f64, mu: f64, tol: f64, max_iter: usize, newton_iter: usize
+    lambda: f64, mu: f64, tol: f64, max_iter: usize, max_iter_newton: usize
 });
 param_config!(NdiConfig from qsm_core::inversion::NdiParams {
     tau: f64, alpha: f64, max_iter: usize, auto_stop: bool
 });
+// FANSI's `mu1`, `alpha0` and `mu0`, L1-QSM's `mu1` and HD-QSM's `mu1_l2`: `None` is the value
+// qsm-core derives from the method's other weights (FANSI: 100·α1, 2·α1, 2·μ1; L1-QSM: 100·α1;
+// HD-QSM: 100·α_l2), so they follow those.
 param_config!(FansiConfig from qsm_core::inversion::FansiParams {
-    alpha1: f64, mu1: f64, mu2: f64, alpha0: f64, mu0: f64, max_iter: usize,
-    tol_update: f64, tol_delta: f64, phase_scale: f64
+    alpha1: f64, mu1: Option<f64>, mu2: f64, alpha0: Option<f64>, mu0: Option<f64>, max_iter: usize,
+    tol_update: f64, tol_delta: f64
 });
 param_config!(L1qsmConfig from qsm_core::inversion::L1QsmParams {
-    alpha1: f64, mu1: f64, mu2: f64, mu3: f64, lambda: f64, max_iter: usize,
-    tol_update: f64, tol_delta: f64, phase_scale: f64
+    alpha1: f64, mu1: Option<f64>, mu2: f64, mu3: f64, lambda: f64, max_iter: usize,
+    tol_update: f64, tol_delta: f64
 });
 param_config!(WhqsmConfig from qsm_core::inversion::WhQsmParams {
     alpha1: f64, mu1: f64, mu2: f64, beta: f64, muh: f64, max_iter: usize,
-    tol_update: f64, tol_delta: f64, phase_scale: f64
+    tol_update: f64, tol_delta: f64
 });
 param_config!(HdqsmConfig from qsm_core::inversion::HdQsmParams {
-    alpha_l2: f64, mu1_l2: f64, mu2: f64, max_iter_l1: usize, max_iter_l2: usize, tol_update: f64
+    alpha_l2: f64, mu1_l2: Option<f64>, mu2: f64, max_iter_l1: usize, max_iter_l2: usize, tol_update: f64
 });
-param_config!(MediConfig from qsm_core::inversion::MediParams {
-    lambda: f64, merit: bool, smv: bool, smv_radius: f64, data_weighting: i32,
-    percentage: f64, cg_tol: f64, cg_max_iter: usize, max_iter: usize, tol: f64
-});
+
+/// MEDI (MEDI toolbox `MEDI_L1`), with its mSMV option.
+///
+/// `MediParams::msmv` is an `Option<MsmvParams>` in qsm-core; it is flattened here into an `msmv`
+/// switch plus its settings, as HEIDI's `denoise` is, so it can be a checkbox and rows in the TUI
+/// rather than a nested table. The mSMV radius is MEDI's `smv_radius`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct MediConfig {
+    pub lambda: f64,
+    pub merit: bool,
+    pub smv: bool,
+    pub smv_radius: f64,
+    pub data_weighting: i32,
+    pub percentage: f64,
+    pub cg_tol: f64,
+    pub cg_max_iter: usize,
+    pub max_iter: usize,
+    pub tol: f64,
+    /// MEDI-mSMV (Roberts et al. 2024): the local field is filtered by mSMV, and MEDI fits it
+    /// with the SMV-filtered dipole kernel. Needs at least three echoes. Off by default.
+    pub msmv: bool,
+    /// mSMV's boundary correction makes at most `msmv_maxk − 1` passes.
+    pub msmv_maxk: usize,
+    /// Largest vessel thickness (voxels) of mSMV's vessel mask; `None` is `msmv.m`'s
+    /// `max(15, 8·max(voxel size))`.
+    pub msmv_vessel_radius: Option<f64>,
+    /// SMV-filter the field before mSMV, as the authors do. Off is only consistent for a field
+    /// already high-passed by the same SMV; after PDF, V-SHARP or LBV it diverges.
+    pub msmv_prefilter: bool,
+}
+impl Default for MediConfig {
+    fn default() -> Self {
+        let p = qsm_core::inversion::MediParams::default();
+        let m = p.msmv.clone().unwrap_or_default();
+        Self {
+            lambda: p.lambda, merit: p.merit, smv: p.smv, smv_radius: p.smv_radius,
+            data_weighting: p.data_weighting, percentage: p.percentage, cg_tol: p.cg_tol,
+            cg_max_iter: p.cg_max_iter, max_iter: p.max_iter, tol: p.tol,
+            msmv: p.msmv.is_some(), msmv_maxk: m.maxk, msmv_vessel_radius: m.vessel_radius,
+            msmv_prefilter: m.prefilter,
+        }
+    }
+}
+impl MediConfig {
+    /// qsm-core's mSMV option for these settings: `None` unless `msmv` is on.
+    pub fn msmv_params(&self) -> Option<qsm_core::inversion::MsmvParams> {
+        self.msmv.then_some(qsm_core::inversion::MsmvParams {
+            prefilter: self.msmv_prefilter,
+            maxk: self.msmv_maxk,
+            vessel_radius: self.msmv_vessel_radius,
+        })
+    }
+}
 param_config!(TfiConfig from qsm_core::inversion::TfiParams {
     lambda: f64, precond: f64, data_weighting: i32,
     percentage: f64, cg_tol: f64, cg_max_iter: usize, max_iter: usize, tol: f64
@@ -410,15 +464,14 @@ pub fn enforce_separation_dependencies(config: &mut PipelineConfig) {
         }
     }
 }
-/// V-SHARP. Written out rather than generated by `param_config!` because QSMxT's `deconvolve`
-/// default differs from qsm-core's: off, as STI Suite and the UK Biobank pipeline run it.
+/// V-SHARP. Written out rather than generated by `param_config!` because QSMxT's working grid
+/// is its own: the acquired one (`grid`), where qsm-core's default is a 1 mm isotropic grid.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct VsharpConfig {
-    /// Undo the SMV high-pass with a truncated-SVD deconvolution (Wu et al. 2012). Off (QSMxT's
+    /// Undo the SMV high-pass with a truncated-SVD deconvolution (Wu et al. 2012). Off (the
     /// default) returns the SMV high-pass with the largest kernel that fits at each voxel, as
-    /// STI Suite's V_SHARP does. On, it is qsm-core's default and every QSMxT release up to
-    /// v9.22.0.
+    /// STI Suite's V_SHARP does.
     pub deconvolve: bool,
     /// TSVD threshold of the deconvolution; unused when `deconvolve` is off.
     pub threshold: f64,
@@ -434,7 +487,7 @@ impl Default for VsharpConfig {
     fn default() -> Self {
         let p = qsm_core::bgremove::VsharpParams::default();
         Self {
-            deconvolve: false, threshold: p.threshold, max_radius: p.max_radius, min_radius: p.min_radius,
+            deconvolve: p.deconvolve, threshold: p.threshold, max_radius: p.max_radius, min_radius: p.min_radius,
             grid: VsharpGrid::Native, grid_spacing: 1.0,
         }
     }
@@ -464,12 +517,6 @@ param_config!(HarperellaConfig from qsm_core::bgremove::HarperellaParams {
 // iHARPERELLA has no SMV kernel, so no radius (QSM.rs#169).
 param_config!(IharperellaConfig from qsm_core::bgremove::IharperellaParams {
     max_iter: usize, tol: f64
-});
-// mSMV boundary-shadow refinement. Only radius/maxk are user knobs here; b0/te are
-// runtime scan parameters (overridden from ScanMetadata by qsm-core), and prefilter is
-// forced off by the dispatcher in refinement mode.
-param_config!(MsmvConfig from qsm_core::bgremove::MsmvParams {
-    radius: f64, maxk: usize
 });
 param_config!(BetConfig from qsm_core::bet::BetParams {
     fractional_intensity: f64, smoothness: f64, gradient_threshold: f64,
@@ -509,15 +556,17 @@ impl Default for TikhonovConfig {
 }
 
 // TGV needs special handling (f32→f64 conversion)
+/// TGV-QSM (QuantitativeSusceptibilityMappingTGV.jl). `alpha0` and `alpha1` are in the
+/// reference's units: radians, at the scan's first echo time and field strength.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct TgvConfig {
-    pub iterations: usize,
+    /// `None` takes the reference's count for the voxel size (and step size).
+    pub iterations: Option<usize>,
     pub erosions: usize,
     pub alpha0: f64,
     pub alpha1: f64,
     pub step_size: f64,
-    pub tol: f64,
 }
 impl Default for TgvConfig {
     fn default() -> Self {
@@ -528,7 +577,7 @@ impl Default for TgvConfig {
         Self {
             iterations: p.iterations, erosions: p.erosions,
             alpha0: widen(p.alpha0), alpha1: widen(p.alpha1),
-            step_size: widen(p.step_size), tol: widen(p.tol),
+            step_size: widen(p.step_size),
         }
     }
 }
@@ -660,11 +709,11 @@ pub fn synthseg_low_memory_patch() -> usize {
     synthseg_patch(qsm_core::segment::SynthSegInference::LOW_MEMORY).expect("a sliding window")
 }
 
-/// The sliding window `patch` asks for, at qsm-core's low-memory step (half a patch).
+/// The sliding window `patch` asks for, its neighbours overlapping by at least half a patch (as
+/// qsm-core's low-memory window does).
 pub fn synthseg_inference(patch: Option<usize>) -> qsm_core::segment::SynthSegInference {
     use qsm_core::segment::SynthSegInference as I;
-    let I::SlidingWindow { tile_step, .. } = I::LOW_MEMORY else { unreachable!("a sliding window") };
-    patch.map_or(I::FullVolume, |patch| I::SlidingWindow { patch, tile_step })
+    patch.map_or(I::FullVolume, |patch| I::SlidingWindow { patch, overlap: patch / 2 })
 }
 
 /// Whole-brain segmentation via SynthSeg, and the per-structure statistics drawn from it.
@@ -685,7 +734,8 @@ pub struct SegmentationConfig {
     /// Gaussian blur on the posteriors, in voxels. Zero disables it.
     pub sigma_smoothing: f64,
     /// Run the network as a sliding window of cubes this many voxels on a side at 1 mm (at least
-    /// 64, rounded up to a multiple of 32), half-overlapping and Gaussian-blended, so its memory
+    /// 64, rounded up to a multiple of 16), overlapping by at least half a patch and
+    /// Gaussian-blended, so its memory
     /// follows the patch instead of the volume. `None` runs the whole volume at once, as the
     /// SynthSeg CLI does.
     #[serde(default)]
@@ -773,6 +823,9 @@ impl Default for SwiConfig {
 pub struct PipelineConfig {
     #[serde(default)]
     pub description: String,
+    /// The settings-file layout this config was written with ([`crate::migrate`]): an older file
+    /// is brought up to date when it is read.
+    pub schema_version: crate::migrate::SchemaVersion,
     pub pipeline: PipelineToggles,
     pub field_mapping: FieldMappingConfig,
     pub masking: MaskingConfig,
@@ -984,7 +1037,9 @@ impl Default for PipelineToggles {
 #[serde(default)]
 pub struct FieldMappingConfig {
     pub phase_offset_removal: bool,
-    pub phase_offset_sigma: [f64; 3],
+    /// Gaussian smoothing sigma of the MCPC-3D-S phase offsets, in mm per axis (divided by the
+    /// voxel size to give voxels). Default 7 mm, the ROMEO command line's.
+    pub phase_offset_sigma_mm: [f64; 3],
     /// Smoothing sigma (voxels) for the per-coil phase offsets in MCPC-3D-S coil combination
     /// of uncombined multi-coil runs. Default [10, 10, 5] = MriResearchTools / QSMxT 8.x.
     #[serde(default = "default_coil_combination_sigma")]
@@ -1095,7 +1150,7 @@ impl Default for FieldMappingConfig {
     fn default() -> Self {
         Self {
             phase_offset_removal: true,
-            phase_offset_sigma: qsm_core::utils::PhaseOffsetParams::default().sigma,
+            phase_offset_sigma_mm: qsm_core::pipeline::FieldMappingConfig::default().phase_offset_sigma_mm,
             coil_combination_sigma: default_coil_combination_sigma(),
             bipolar_correction: false,
             unwrapping_algorithm: UnwrappingAlgorithm::Romeo,
@@ -1206,11 +1261,6 @@ pub struct BgRemovalConfig {
     pub resharp: ResharpConfig,
     pub harperella: HarperellaConfig,
     pub iharperella: IharperellaConfig,
-    pub msmv: MsmvConfig,
-    /// Apply mSMV boundary-shadow refinement (Roberts 2024) as a post-step on top of the
-    /// selected primary background-field removal. mSMV is a refinement, not a standalone
-    /// primary remover, so this is how it's wired into the pipeline.
-    pub msmv_refine: bool,
 }
 impl Default for BgRemovalConfig {
     fn default() -> Self {
@@ -1220,7 +1270,6 @@ impl Default for BgRemovalConfig {
             lbv: LbvConfig::default(), ismv: IsmvConfig::default(),
             sharp: SharpConfig::default(), resharp: ResharpConfig::default(),
             harperella: HarperellaConfig::default(), iharperella: IharperellaConfig::default(),
-            msmv: MsmvConfig::default(), msmv_refine: false,
         }
     }
 }
@@ -1343,9 +1392,20 @@ impl PipelineConfig {
     /// `axial_resampling`) keeps its meaning. A config that has `axial_resampling` must give a
     /// non-negative threshold.
     pub fn from_toml_migrating(s: &str) -> crate::Result<(Self, Vec<String>)> {
+        Self::from_toml_noting(s).map(|(c, m)| (c, m.warnings.into_iter().chain(m.notes).collect()))
+    }
+
+    /// [`from_toml_migrating`](Self::from_toml_migrating), with the warnings apart from the notes
+    /// that a setting took today's default ([`crate::migrate`]), for a caller that shows them
+    /// differently.
+    pub fn from_toml_noting(s: &str) -> crate::Result<(Self, crate::migrate::Migration)> {
         let parse_err = |e: toml::de::Error| crate::error::ConfigError::Parse(format!("{}", e));
         let mut value: toml::Table = toml::from_str(s).map_err(parse_err)?;
-        let mut warnings = Vec::new();
+        let mut notes = crate::migrate::Migration::default();
+        // Before anything is added to the file: what an older file holds says which release
+        // wrote it.
+        crate::migrate::migrate(&mut value, &mut notes)?;
+        let warnings = &mut notes.warnings;
         if let Some(toml::Value::Table(p)) = value.get_mut("pipeline") {
             let threshold = p.get("obliquity_threshold").and_then(|v| v.as_float().or(v.as_integer().map(|i| i as f64)));
             match (threshold, p.contains_key("axial_resampling")) {
@@ -1373,7 +1433,31 @@ impl PipelineConfig {
         }
         let config: Self = toml::Value::Table(value).try_into().map_err(parse_err)?;
         config.masking.validate().map_err(crate::error::ConfigError::Parse)?;
-        Ok((config, warnings))
+        Ok((config, notes))
+    }
+
+    /// Parse a JSON config (as a front end keeps one, e.g. qsmbly's saved settings), bringing one
+    /// without `schema_version` up to date as [`from_toml_noting`](Self::from_toml_noting) does a
+    /// settings file. A config with `schema_version` is read as it is.
+    pub fn from_json_migrating(s: &str) -> crate::Result<(Self, crate::migrate::Migration)> {
+        let parse_err = |e: String| crate::error::ConfigError::Parse(e);
+        let json: serde_json::Value = serde_json::from_str(s).map_err(|e| parse_err(e.to_string()))?;
+        if json.get("schema_version").is_some() {
+            let config = serde_json::from_value(json).map_err(|e| parse_err(e.to_string()))?;
+            return Ok((config, Default::default()));
+        }
+        // TOML has no null: an unset setting is simply absent, which reads the same.
+        fn drop_nulls(v: serde_json::Value) -> serde_json::Value {
+            match v {
+                serde_json::Value::Object(m) => serde_json::Value::Object(
+                    m.into_iter().filter(|(_, v)| !v.is_null()).map(|(k, v)| (k, drop_nulls(v))).collect()),
+                serde_json::Value::Array(a) => serde_json::Value::Array(a.into_iter().map(drop_nulls).collect()),
+                v => v,
+            }
+        }
+        let table = toml::Table::try_from(drop_nulls(json)).map_err(|e| parse_err(e.to_string()))?;
+        let text = toml::to_string(&table).map_err(|e| parse_err(e.to_string()))?;
+        Self::from_toml_noting(&text)
     }
 
     pub fn to_toml(&self) -> crate::Result<String> {
@@ -1416,6 +1500,8 @@ impl PipelineConfig {
             return Err(crate::error::ConfigError::Serialize("a config is not a TOML table".into()));
         };
         keep_changed(&mut mine, &defaults);
+        // Always said, so the file reads back as today's settings rather than an older version's.
+        mine.insert("schema_version".into(), toml::Value::Integer(crate::migrate::CONFIG_SCHEMA_VERSION as i64));
         toml::to_string_pretty(&mine).map_err(|e| crate::error::ConfigError::Serialize(format!("{}", e)))
     }
 }
@@ -1439,13 +1525,9 @@ fn keep_changed(mine: &mut toml::value::Table, base: &toml::value::Table) {
 fn prune_to_selected_algorithm(root: &mut toml::value::Table, section: &str) {
     let Some(toml::Value::Table(sub)) = root.get_mut(section) else { return };
     let Some(selected) = sub.get("algorithm").and_then(|v| v.as_str()).map(str::to_owned) else { return };
-    // mSMV is a boundary-shadow refinement layered on top of the primary BFR, not a primary
-    // alternative — keep its params table whenever the refinement is enabled.
-    let keep_msmv = sub.get("msmv_refine").and_then(|v| v.as_bool()).unwrap_or(false);
     let to_remove: Vec<String> = sub
         .iter()
-        .filter(|(k, v)| k.as_str() != "algorithm" && v.is_table() && k.as_str() != selected
-            && !(keep_msmv && k.as_str() == "msmv"))
+        .filter(|(k, v)| k.as_str() != "algorithm" && v.is_table() && k.as_str() != selected)
         .map(|(k, _)| k.clone())
         .collect();
     for k in &to_remove {
@@ -1459,7 +1541,7 @@ mod selected_toml_tests {
     use crate::enums::{BfAlgorithm, QsmAlgorithm, SeparationAlgorithm};
 
     #[test]
-    fn dl_separation_forces_r2prime_and_msmv_config_defaults() {
+    fn dl_separation_forces_r2prime() {
         // χ-sepnet (like susep-net) consumes local field + QSM + R2', so it must force R2'.
         for alg in [SeparationAlgorithm::SusepNet, SeparationAlgorithm::ChiSepNet] {
             let mut c = PipelineConfig::default();
@@ -1468,9 +1550,6 @@ mod selected_toml_tests {
             enforce_separation_dependencies(&mut c);
             assert!(c.pipeline.do_r2primemap, "{:?} must force R2'", alg);
         }
-        // mSMV config carries the qsm-core defaults.
-        let d = MsmvConfig::default();
-        assert!(d.radius > 0.0 && d.maxk > 0);
     }
 
     /// χ-sep MEDI's defaults come from qsm-core rather than a copy here, so the config, schema,
@@ -1514,7 +1593,7 @@ mod selected_toml_tests {
     #[test]
     fn to_toml_changed_writes_only_what_differs_and_roundtrips() {
         let d = PipelineConfig::default();
-        assert_eq!(d.to_toml_changed().unwrap().trim(), "", "nothing changed, nothing written");
+        assert_eq!(d.to_toml_changed().unwrap().trim(), "schema_version = 2", "nothing changed, only the version written");
 
         let mut c = PipelineConfig::default();
         c.inversion.algorithm = QsmAlgorithm::Rts;
@@ -1867,12 +1946,12 @@ mod removed_settings_tests {
     /// settings are ignored.
     #[test]
     fn configs_with_removed_settings_still_load() {
-        let old = "[inversion]\nalgorithm = \"tfi\"\n\n[inversion.tfi]\nmerit = true\nlambda = 0.0002\n\n\
+        let old = "[inversion]\nalgorithm = \"tfi\"\n\n[inversion.tfi]\nmerit = true\nprecond = 20.0\n\n\
                    [inversion.qsmart]\nsdf_spatial_radius = 8\nvasc_sphere_radius = 5\n";
         let (c, warnings) = PipelineConfig::from_toml_migrating(old).expect("an old config loads");
         assert!(warnings.is_empty(), "{warnings:?}");
         assert_eq!(c.inversion.algorithm, QsmAlgorithm::Tfi);
-        assert_eq!(c.inversion.tfi.lambda, 0.0002);
+        assert_eq!(c.inversion.tfi.precond, 20.0);
         assert_eq!(c.inversion.qsmart.vasc_sphere_radius, 5);
         // Saving it again drops them.
         let saved: toml::Table = toml::from_str(&c.to_toml().unwrap()).unwrap();

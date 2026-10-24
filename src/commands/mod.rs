@@ -63,7 +63,7 @@ mod integration_tests {
                 bf_algorithm: None,
                 masking_input: None,
                 phase_offset_removal: None,
-                phase_offset_sigma: None,
+                phase_offset_sigma_mm: None,
                 coil_combination_sigma: None,
                 bipolar_correction: false,
                 b0_estimation: None,
@@ -107,7 +107,6 @@ mod integration_tests {
                 resharp_params: Default::default(),
                 harperella_params: Default::default(),
                 iharperella_params: Default::default(),
-                msmv_params: Default::default(),
                 romeo_params: Default::default(),
                 swi_params: Default::default(),
                 smwi_params: Default::default(),
@@ -176,6 +175,10 @@ mod integration_tests {
             b0_direction: vec![0.0, 0.0, 1.0],
             tiling_params: Default::default(),
         }
+    }
+
+    fn scan(echo_times: &[f64]) -> crate::cli::ScanParamArgs {
+        crate::cli::ScanParamArgs { field_strength: 3.0, echo_times: echo_times.to_vec() }
     }
 
     fn common_unwrap(input: PathBuf, mask: PathBuf, output: PathBuf) -> UnwrapCommonArgs {
@@ -778,15 +781,16 @@ mod integration_tests {
         assert!(output.exists());
         assert!(output_mask.exists());
 
-        // `--deconvolve true` is exactly qsm-core's default V-SHARP (what QSMxT <= v9.22.0 ran);
-        // the default (off) is a different map.
+        // The defaults are qsm-core's V-SHARP on QSMxT's working grid (the acquired one), and
+        // `--deconvolve true` reaches it.
         let field = qsm_core::io::read_nifti_file(&input).unwrap();
         let (m, _) = super::common::load_mask(&mask).unwrap();
         let (nx, ny, nz) = field.dims;
         let (vx, vy, vz) = field.voxel_size;
         let grid = qsm_core::Grid::new(nx, ny, nz, vx, vy, vz);
         let core = |p: &qsm_core::bgremove::VsharpParams| {
-            qsm_core::bgremove::vsharp(&field.data, &m, &grid, p, |_, _| {}).0
+            let p = qsm_core::bgremove::VsharpParams { grid: qsm_core::bgremove::VsharpGrid::Native, ..p.clone() };
+            qsm_core::bgremove::vsharp(&field.data, &m, &grid, &p, |_, _| {}).unwrap().0
         };
         let read = |p: &std::path::Path| qsm_core::io::read_nifti_file(p).unwrap().data;
         let off = read(&output);
@@ -798,13 +802,10 @@ mod integration_tests {
         })).unwrap();
         let on = read(&output);
         let as_f32 = |v: Vec<f64>| v.into_iter().map(|x| x as f32).collect::<Vec<_>>();
-        assert_eq!(as_f32(on.clone()), as_f32(core(&qsm_core::bgremove::VsharpParams::default())));
-        assert_eq!(as_f32(off), as_f32(core(&qsm_core::bgremove::VsharpParams {
-            deconvolve: false, ..Default::default()
+        assert_eq!(as_f32(on), as_f32(core(&qsm_core::bgremove::VsharpParams {
+            deconvolve: true, ..Default::default()
         })));
-        assert_ne!(as_f32(on), as_f32(core(&qsm_core::bgremove::VsharpParams {
-            deconvolve: false, ..Default::default()
-        })));
+        assert_eq!(as_f32(off), as_f32(core(&qsm_core::bgremove::VsharpParams::default())));
     }
 
     #[test]
@@ -816,11 +817,24 @@ mod integration_tests {
         testutils::write_field(&input);
         testutils::write_mask(&mask);
 
+        // PDF weights the fit by a noise map made from the echoes' magnitudes.
+        let magnitude = dir.path().join("mag.nii");
+        testutils::write_magnitude(&magnitude);
         super::bgremove::execute(BgremoveCommand::Pdf(BgremovePdfArgs {
-            common: common_bgremove(input, mask, output.clone()),
+            common: common_bgremove(input.clone(), mask.clone(), output.clone()),
+            scan: scan(&[0.02]),
+            magnitude: vec![magnitude.clone()],
             tol: None,
         })).unwrap();
         assert!(output.exists());
+        // One magnitude for two echo times is refused before PDF runs.
+        let e = super::bgremove::execute(BgremoveCommand::Pdf(BgremovePdfArgs {
+            common: common_bgremove(input, mask, output),
+            scan: scan(&[0.01, 0.02]),
+            magnitude: vec![magnitude],
+            tol: None,
+        })).unwrap_err().to_string();
+        assert!(e.contains("magnitude of every echo"), "{e}");
     }
 
     // --- Dipole Inversion ---
@@ -841,8 +855,8 @@ mod integration_tests {
         assert!(output.exists());
     }
 
-    /// `invert tgv` takes a field in ppm like the other inversions: no TE or field strength. Its
-    /// one run, for the call site; one iteration is enough for that.
+    /// `invert tgv` takes a field in ppm like the other inversions, with the echo times and field
+    /// strength its weights are in units of. One iteration is enough for the call site.
     #[test]
     fn test_invert_tgv_runs_on_a_ppm_field() {
         let dir = tempfile::tempdir().unwrap();
@@ -854,10 +868,11 @@ mod integration_tests {
 
         super::invert::execute(InvertCommand::Tgv(InvertTgvArgs {
             common: common_invert(input, mask, output.clone()),
+            scan: scan(&[0.005, 0.01]),
             iterations: Some(1),
             erosions: Some(0),
             alpha1: None, alpha0: None,
-            step_size: None, tol: None,
+            step_size: None,
         })).unwrap();
         assert!(output.exists());
     }
@@ -1379,16 +1394,14 @@ mod integration_tests {
     /// it would do nothing, and used to leave the field map unwritten (#276).
     #[test]
     fn iqfm_with_a_total_field_inversion_is_refused_before_processing() {
-        for (alg, smv) in [(QsmAlgorithmArg::Medi, true), (QsmAlgorithmArg::Tgv, false),
-                           (QsmAlgorithmArg::Qsmart, false), (QsmAlgorithmArg::Autoqsm, false),
-                           (QsmAlgorithmArg::Nextqsm, false), (QsmAlgorithmArg::Tfi, false)] {
+        for alg in [QsmAlgorithmArg::Tgv, QsmAlgorithmArg::Qsmart, QsmAlgorithmArg::Autoqsm,
+                    QsmAlgorithmArg::Nextqsm, QsmAlgorithmArg::Tfi] {
             let dir = tempfile::tempdir().unwrap();
             let bids = dir.path().join("bids");
             testutils::create_multi_echo_bids(&bids);
             let mut args = default_run_args(bids, dir.path().join("out"));
             args.pipeline.qsm_algorithm = Some(alg);
             args.pipeline.bf_algorithm = Some(BfAlgorithmArg::Iqfm);
-            if smv { args.pipeline.medi_params.medi_smv = true; }
             let err = super::run::execute(args).unwrap_err().to_string();
             assert!(err.contains("iqfm") && err.contains("no effect"), "{alg:?}: {err}");
         }
@@ -1429,8 +1442,9 @@ mod integration_tests {
         let dir = tempfile::tempdir().unwrap();
         let bids = dir.path().join("bids");
         let out = dir.path().join("out");
-        testutils::create_multi_echo_bids(&bids);
-        testutils::write_dseg(&bids.join("derivatives/mydseg/sub-1/anat/sub-1_dseg.nii"));
+        // Large enough that χ is defined inside the structures after background removal's erosion.
+        testutils::create_multi_echo_bids_on(&bids, testutils::STRUCTURES_N);
+        testutils::write_dseg_on(&bids.join("derivatives/mydseg/sub-1/anat/sub-1_dseg.nii"), testutils::STRUCTURES_N);
 
         let mut args = default_run_args(bids, out.clone());
         args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
@@ -1617,9 +1631,10 @@ mod integration_tests {
         let dir = tempfile::tempdir().unwrap();
         let bids = dir.path().join("bids");
         let out = dir.path().join("out");
-        testutils::create_multi_echo_bids(&bids);
+        // Large enough that the thalami survive background removal's erosion.
+        testutils::create_multi_echo_bids_on(&bids, testutils::STRUCTURES_N);
         let dseg_path = bids.join("derivatives/mydseg/sub-1/anat/sub-1_dseg.nii");
-        testutils::write_dseg(&dseg_path);
+        testutils::write_dseg_on(&dseg_path, testutils::STRUCTURES_N);
 
         let mut args = default_run_args(bids, out.clone());
         args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
@@ -1806,7 +1821,7 @@ mod integration_tests {
 
         super::invert::execute(InvertCommand::Lsqr(InvertLsqrArgs {
             common: common_invert(input, mask, output.clone()),
-            magnitude: None,
+            magnitude: vec![],
             b0: 3.0,
             lsqr_params: LsqrParamArgs { lsqr_max_iter: Some(5), ..Default::default() },
         })).unwrap();
@@ -1826,14 +1841,67 @@ mod integration_tests {
 
         super::invert::execute(InvertCommand::Heidi(InvertHeidiArgs {
             common: common_invert(input, mask, output.clone()),
-            magnitude: None,
-            b0: 3.0,
+            scan: scan(&[0.02]),
+            magnitude: vec![],
             lsqr_params: LsqrParamArgs { lsqr_max_iter: Some(5), ..Default::default() },
             heidi_params: HeidiParamArgs {
                 heidi_continuation_steps: Some(1),
                 heidi_inner_iterations: Some(2),
                 ..Default::default()
             },
+        })).unwrap();
+        assert!(output.exists());
+    }
+
+    /// `invert medi` takes every echo's magnitude (one file per echo here) with the echo times,
+    /// as `qsmxt run` gives MEDI them, and MEDI-mSMV with three echoes; a magnitude count that
+    /// does not match the echo times is refused.
+    #[test]
+    fn test_invert_medi_takes_every_echo() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("field.nii");
+        let mask = dir.path().join("mask.nii");
+        let output = dir.path().join("chi.nii");
+        testutils::write_field(&input);
+        testutils::write_mask(&mask);
+        let mags: Vec<PathBuf> = (0..3).map(|e| {
+            let p = dir.path().join(format!("mag{e}.nii"));
+            testutils::write_magnitude_decayed(&p, (-0.2 * e as f64).exp());
+            p
+        }).collect();
+        let medi = |magnitude: Vec<PathBuf>, msmv: bool| InvertCommand::Medi(InvertMediArgs {
+            common: common_invert(input.clone(), mask.clone(), output.clone()),
+            scan: scan(&[0.005, 0.010, 0.015]),
+            magnitude,
+            lambda: None, merit: Some(false), smv: Some(false), smv_radius: None,
+            msmv, msmv_maxk: None, msmv_vessel_radius: None, no_msmv_prefilter: false,
+            data_weighting: None, percentage: None, cg_tol: None, cg_max_iter: Some(2),
+            max_iter: Some(1), tol: None,
+        });
+        super::invert::execute(medi(mags.clone(), false)).unwrap();
+        assert!(output.exists());
+        super::invert::execute(medi(mags.clone(), true)).unwrap();
+        let e = super::invert::execute(medi(mags[..2].to_vec(), false)).unwrap_err().to_string();
+        assert!(e.contains("magnitude of every echo") && e.contains("2 magnitude volume(s) for 3 echo time(s)"), "{e}");
+    }
+
+    /// NDI's data weight is the combined magnitude, and it converts the field with the scan's
+    /// echo times and field strength.
+    #[test]
+    fn test_invert_ndi_weights_by_the_magnitude() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("field.nii");
+        let mask = dir.path().join("mask.nii");
+        let output = dir.path().join("chi.nii");
+        let magnitude = dir.path().join("mag.nii");
+        testutils::write_field(&input);
+        testutils::write_mask(&mask);
+        testutils::write_magnitude(&magnitude);
+        super::invert::execute(InvertCommand::Ndi(InvertNdiArgs {
+            common: common_invert(input, mask, output.clone()),
+            tau: None, alpha: None, max_iter: Some(2), auto_stop: None,
+            scan: scan(&[0.02]),
+            magnitude: vec![magnitude],
         })).unwrap();
         assert!(output.exists());
     }
@@ -2092,8 +2160,9 @@ mod integration_tests {
     fn slurm_jobs_produce_what_a_local_run_does() {
         let dir = tempfile::tempdir().unwrap();
         let bids = dir.path().join("bids");
-        testutils::create_multi_orientation_bids(&bids);
-        testutils::write_dseg(&bids.join("derivatives/mydseg/sub-1/ses-1/anat/sub-1_ses-1_dseg.nii"));
+        // Large enough that χ is defined inside the structures after background removal's erosion.
+        testutils::create_multi_orientation_bids_on(&bids, testutils::STRUCTURES_N);
+        testutils::write_dseg_on(&bids.join("derivatives/mydseg/sub-1/ses-1/anat/sub-1_ses-1_dseg.nii"), testutils::STRUCTURES_N);
         let pipeline = || PipelineArgs {
             // What is under test is SLURM/local parity, not the algorithms: the cheapest ones.
             qsm_algorithm: Some(crate::cli::QsmAlgorithmArg::Tkd),
@@ -2305,8 +2374,8 @@ mod integration_tests {
     }
 
     /// Multi-echo TGV gets the B0 field map in ppm (QSM.rs#170); single-echo TGV gets echo 1's
-    /// wrapped phase, with TE1 in s and B0 in T for qsm-core to convert it; the alphas are in ppm
-    /// whichever the input. `stage_tgv` used to pass the ppm field to a solver expecting rad at
+    /// wrapped phase, with TE1 in s and B0 in T for qsm-core to convert it; the alphas are in
+    /// radians at TE1 and B0 whichever the input, so both are in the step's parameters. `stage_tgv` used to pass the ppm field to a solver expecting rad at
     /// TE1, which made χ 2π·γ·B0·TE1 too small. That TGV then lands on the right scale is
     /// QSM.rs's test (`chi_comes_back_on_the_phantom_scale`, QSM.rs#204); this checks what QSMxT
     /// passes it, from the BIDS sidecars and the flags.
@@ -2321,8 +2390,8 @@ mod integration_tests {
         assert_eq!(tgv_source(&meta), TgvSource::FieldPpm);
         let p = tgv_params(&config, &meta);
         assert_eq!(p["input"], "field_ppm", "{p}");
-        assert!(p.get("te_ms").is_none(), "{p}");
-        assert_eq!(p["alphas_ppm"], serde_json::json!([0.0021, 0.0037]), "{p}");
+        assert_eq!((p["te_ms"].as_f64(), p["field_strength"].as_f64()), (Some(5.0), Some(7.0)), "{p}");
+        assert_eq!(p["alphas_rad"], serde_json::json!([0.0021, 0.0037]), "{p}");
         let core = tgv_params_from_config(&config.inversion.tgv);
         assert_eq!((core.alpha1, core.alpha0), (0.0021, 0.0037));
 
@@ -2335,7 +2404,7 @@ mod integration_tests {
         let p = tgv_params(&config, &meta);
         assert_eq!(p["input"], "wrapped_phase", "{p}");
         assert_eq!((p["te_ms"].as_f64(), p["field_strength"].as_f64()), (Some(10.0), Some(7.0)), "{p}");
-        assert_eq!(p["alphas_ppm"], serde_json::json!([0.0021, 0.0037]), "{p}");
+        assert_eq!(p["alphas_rad"], serde_json::json!([0.0021, 0.0037]), "{p}");
     }
 
     /// A requested output the data cannot produce stops the command before any run starts,

@@ -1134,12 +1134,12 @@ mod tests {
             assert!(qsmxt_engine::bridge::skips_bgremove(&config), "{alg} has no separate background removal");
         }
 
-        // MEDI only skips it with SMV enabled.
+        // MEDI takes the local field with every SMV option.
         config.inversion.algorithm = QsmAlgorithm::Medi;
-        config.inversion.medi.smv = false;
-        assert!(!qsmxt_engine::bridge::skips_bgremove(&config));
-        config.inversion.medi.smv = true;
-        assert!(qsmxt_engine::bridge::skips_bgremove(&config));
+        for smv in [false, true] {
+            config.inversion.medi.smv = smv;
+            assert!(!qsmxt_engine::bridge::skips_bgremove(&config));
+        }
     }
 
     /// A bring-your-own mask has no recipe to leave unfilled, so two-pass has nothing to build a

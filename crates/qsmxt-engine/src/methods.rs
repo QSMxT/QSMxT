@@ -446,7 +446,7 @@ fn param_label(field: &str) -> Label {
         "max_iter_l1" => AtMost("L1 iterations"),
         "max_iter_l2" => AtMost("L2 iterations"),
         "lsmr_iter" => Count("LSMR iterations"),
-        "newton_iter" => Count("Newton iterations"),
+        "max_iter_newton" => AtMost("Newton iterations"),
         "iterations" => Count("iterations"),
         "erosions" => Count("mask erosions"),
         "continuation_steps" => Count("continuation steps"),
@@ -480,7 +480,6 @@ fn param_label(field: &str) -> Label {
         "tau" => Eq("τ"),
         "threshold" => Eq("threshold"),
         "radius" | "smv_radius" => Unit("SMV radius", "mm"),
-        "maxk" => AtMost("residual-removal iterations"),
         "tik_reg" => Eq("Tikhonov weight"),
         "smv" => Toggle("SMV preprocessing"),
         "merit" => Toggle("MERIT"),
@@ -488,7 +487,6 @@ fn param_label(field: &str) -> Label {
         "data_weighting" => Eq("data weighting mode"),
         "precond" => Eq("preconditioner weight"),
         "step_size" => Eq("step size"),
-        "phase_scale" => Eq("phase scale"),
         "reg" => Eq("regularization operator"),
         "pad_mm" | "ilsqr_pad_mm" => Unit("zero-padding", "mm per side"),
         "dr_pos" => Eq("Dr+"),
@@ -573,7 +571,8 @@ fn inversion_changes(config: &PipelineConfig, alg: QsmAlgorithm) -> Changed {
         QsmAlgorithm::Tsvd => c.add_fields(&i.tsvd, &d.tsvd, &[]),
         QsmAlgorithm::Tikhonov => c.add_fields(&i.tikhonov, &d.tikhonov, &[]),
         QsmAlgorithm::Nltv => c.add_fields(&i.nltv, &d.nltv, &[]),
-        QsmAlgorithm::Medi => c.add_fields(&i.medi, &d.medi, &[]),
+        // mSMV's settings are worded with it (see `medi_msmv`).
+        QsmAlgorithm::Medi => c.add_fields(&i.medi, &d.medi, &MEDI_MSMV_FIELDS),
         QsmAlgorithm::Tfi => c.add_fields(&i.tfi, &d.tfi, &[]),
         QsmAlgorithm::Ilsqr => c.add_fields(&i.ilsqr, &d.ilsqr, &[]),
         QsmAlgorithm::Lsqr => c.add_fields(&i.lsqr, &d.lsqr, &[]),
@@ -591,6 +590,30 @@ fn inversion_changes(config: &PipelineConfig, alg: QsmAlgorithm) -> Changed {
         _ => {}
     }
     c
+}
+
+/// MEDI's mSMV settings, which [`medi_msmv`] words rather than the list of changed settings.
+const MEDI_MSMV_FIELDS: [&str; 4] = ["msmv", "msmv_maxk", "msmv_vessel_radius", "msmv_prefilter"];
+
+/// MEDI-mSMV, after MEDI's name and citation in the inversion's sentence: ", with maximum
+/// spherical mean value (mSMV) filtering of the local field (Roberts et al., 2024)", and its
+/// changed settings; nothing for plain MEDI or another inversion.
+fn medi_msmv(config: &PipelineConfig, doc: &mut Draft) -> String {
+    let (m, d) = (&config.inversion.medi, MediConfig::default());
+    if config.inversion.algorithm != QsmAlgorithm::Medi || !m.msmv {
+        return String::new();
+    }
+    doc.cite(&CITE_MSMV);
+    let mut changed = Changed::default();
+    changed.add(m.msmv_maxk != d.msmv_maxk, || format!("at most {} boundary-correction passes", m.msmv_maxk.saturating_sub(1)));
+    changed.add(m.msmv_vessel_radius != d.msmv_vessel_radius, || match m.msmv_vessel_radius {
+        Some(r) => format!("vessels up to {r} voxels thick"),
+        None => "vessel thicknesses from the voxel size".to_string(),
+    });
+    changed.add(m.msmv_prefilter != d.msmv_prefilter, || format!(
+        "the SMV prefilter {}", if m.msmv_prefilter { "enabled" } else { "disabled" }));
+    format!(", with maximum spherical mean value (mSMV) filtering of the local field ({}{})",
+        cite_inline(&CITE_MSMV), changed.semi())
 }
 
 /// The non-default settings of the selected background-field remover. V-SHARP's are worded by
@@ -869,9 +892,10 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                     "QSM was computed using the Total Generalized Variation (TGV) algorithm \
                      (Langkammer et al., 2015), with background field removal and dipole inversion \
                      performed jointly. For single-echo data TGV was applied to the wrapped phase of \
-                     the echo, converted to ppm using its echo time and the field strength, and also \
-                     performed the phase unwrapping; for multi-echo data TGV was applied to the B0 \
-                     field map in ppm, computed as described below.".to_string());
+                     the echo and also performed the phase unwrapping; for multi-echo data TGV was \
+                     applied to the B0 field map, computed as described below, expressed as phase at \
+                     the first echo time. The regularisation weights are in radians at that echo time \
+                     and the field strength, and the susceptibility was converted to ppm with them.".to_string());
                 let changed = inversion_changes(config, QsmAlgorithm::Tgv);
                 if !changed.is_empty() {
                     doc.say(&both(Stage::Tgv), format!("TGV was run{}.", changed.with()));
@@ -946,25 +970,17 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                             name, cite_inline(cite), bg_removal_changes(config).with()));
                     }
 
-                    // Optional mSMV boundary-shadow refinement layered on the primary BFR.
-                    if config.bg_removal.msmv_refine {
-                        let mut changed = Changed::default();
-                        changed.add_fields(&config.bg_removal.msmv, &MsmvConfig::default(), &[]);
-                        doc.cite(&CITE_MSMV);
-                        doc.say(&both(Stage::BackgroundRemoval), format!(
-                            "Residual boundary-field shadows were then removed with maximum spherical mean value (mSMV) filtering ({}){}.",
-                            cite_inline(&CITE_MSMV), changed.with(),
-                        ));
-                    }
                 }
 
                 // Dipole inversion
                 let (name, cite) = inversion_name_cite(config.inversion.algorithm);
                 let target = if total_field { " on the total field within the brain mask" } else { "" };
                 doc.cite(cite);
-                doc.say(&both(Stage::Inversion), format!("Dipole inversion was performed{} using {} ({}){}.",
+                let msmv = medi_msmv(config, &mut doc);
+                let changes = inversion_changes(config, config.inversion.algorithm);
+                doc.say(&both(Stage::Inversion), format!("Dipole inversion was performed{} using {} ({}){msmv}{}.",
                     target, name, cite_inline(cite),
-                    inversion_changes(config, config.inversion.algorithm).with()));
+                    if msmv.is_empty() { changes.with() } else { changes.comma_with() }));
                 // Deep-learning tiling (memory-bounded, approximate) is noted when enabled — only
                 // for the tileable networks (a stray --tile-size on a classical algorithm is ignored).
                 if config.inversion.algorithm.tileable() {
@@ -1030,8 +1046,8 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
         // bring-your-own tool is not a SynthSeg setting.
         if let Some(patch) = s.patch {
             changed.add(true, || format!(
-                "the network applied as a sliding window of half-overlapping {p}×{p}×{p}-voxel patches, \
-                 their posteriors Gaussian-weighted", p = patch.div_ceil(32) * 32));
+                "the network applied as a sliding window of {p}×{p}×{p}-voxel patches overlapping by at \
+                 least half a patch, their posteriors Gaussian-weighted", p = patch.div_ceil(16) * 16));
         }
         changed.add_fields(s, &d, &["version", "flip_averaging", "custom_dseg_tool", "patch"]);
         doc.say(&[Stage::Segmentation], format!(
@@ -1347,9 +1363,9 @@ fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
     }
     // Phase offset removal and/or bipolar correction (ROMEO only: the Laplacian path skips both)
     let romeo = fm.unwrapping_algorithm == UnwrappingAlgorithm::Romeo;
-    let sigma = if fm.phase_offset_sigma.iter().zip(d.phase_offset_sigma).any(|(a, b)| differs(*a, b)) {
-        format!("; smoothing σ = {} voxels",
-            fm.phase_offset_sigma.iter().map(|v| format!("{v}")).collect::<Vec<_>>().join(" × "))
+    let sigma = if fm.phase_offset_sigma_mm.iter().zip(d.phase_offset_sigma_mm).any(|(a, b)| differs(*a, b)) {
+        format!("; smoothing σ = {} mm",
+            fm.phase_offset_sigma_mm.iter().map(|v| format!("{v}")).collect::<Vec<_>>().join(" × "))
     } else {
         String::new()
     };
@@ -2185,7 +2201,7 @@ mod tests {
         config.bg_removal.vsharp.threshold = 0.1;
         config.bg_removal.vsharp.max_radius = 8.0;
         let out = generate_methods(&config);
-        assert!(out.contains("with SMV kernel radii from 8 to 1 mm, truncated-SVD deconvolution enabled, and a deconvolution threshold of 0.1."), "{out}");
+        assert!(out.contains("with SMV kernel radii from 8 to 2 mm, truncated-SVD deconvolution enabled, and a deconvolution threshold of 0.1."), "{out}");
     }
 
     #[test]
@@ -2471,17 +2487,24 @@ mod tests {
         }
     }
 
+    /// MEDI-mSMV is said with MEDI, after the background removal it takes the local field from,
+    /// and cited; plain MEDI and other inversions say nothing of it.
     #[test]
-    fn test_msmv_refine_methods() {
+    fn test_medi_msmv_methods() {
         let mut config = PipelineConfig::default();
-        // Off by default: no mSMV sentence.
+        config.inversion.algorithm = QsmAlgorithm::Medi;
         assert!(!generate_methods(&config).contains("mSMV"));
-        // On: the primary BFR is still described, followed by the mSMV refinement.
-        config.bg_removal.msmv_refine = true;
+        config.inversion.medi.msmv = true;
         let out = generate_methods(&config);
-        assert!(out.contains("V-SHARP"), "primary BFR still described: {}", out);
-        assert!(out.contains("mSMV"), "mSMV refinement described: {}", out);
-        assert!(out.contains("Roberts et al., 2024"));
+        assert!(out.contains("Background field removal was performed using"), "{out}");
+        assert!(out.contains("MEDI (Morphology Enabled Dipole Inversion) (Liu et al., 2011), with maximum spherical mean value (mSMV) filtering of the local field (Roberts et al., 2024)"), "{out}");
+        assert!(out.contains("Roberts, A.G."), "cited: {out}");
+        config.inversion.medi.msmv_maxk = 9;
+        config.inversion.medi.lambda = 500.0;
+        let out = generate_methods(&config);
+        assert!(out.contains("(Roberts et al., 2024; at most 8 boundary-correction passes), with λ = 500."), "{out}");
+        config.inversion.algorithm = QsmAlgorithm::Rts;
+        assert!(!generate_methods(&config).contains("mSMV"));
     }
 
     /// #282: for every inversion, the methods text describes background field removal exactly
@@ -3165,7 +3188,7 @@ mod defaults_only_tests {
             c.pipeline.fft_padding = true;
             c.masking.two_pass = true;
             c.motion_correction.enabled = true;
-            c.bg_removal.msmv_refine = true;
+            c.inversion.medi.msmv = true;
             c
         };
         assert_no_values(&base(), "everything on");
@@ -3226,14 +3249,14 @@ mod defaults_only_tests {
     fn a_changed_setting_is_stated() {
         type Edit = fn(&mut PipelineConfig);
         let cases: Vec<(Edit, &str)> = vec![
-            (|c| c.bg_removal.vsharp.min_radius = 2.0, "V-SHARP (Wu et al., 2012) with SMV kernel radii from 12 to 2 mm."),
+            (|c| c.bg_removal.vsharp.min_radius = 3.0, "V-SHARP (Wu et al., 2012) with SMV kernel radii from 12 to 3 mm."),
             (|c| c.bg_removal.vsharp.deconvolve = true, "V-SHARP (Wu et al., 2012) with truncated-SVD deconvolution enabled."),
             (|c| { c.bg_removal.algorithm = BfAlgorithm::Ismv; c.bg_removal.ismv.radius = 7.5; },
                 "iSMV (Wen et al., 2014) with SMV radius = 7.5 mm."),
             (|c| { c.bg_removal.algorithm = BfAlgorithm::Pdf; c.bg_removal.pdf.tol = 0.123; },
                 "PDF (Liu et al., 2011) with tolerance = 0.123."),
-            (|c| { c.bg_removal.msmv_refine = true; c.bg_removal.msmv.maxk = 9; },
-                "(Roberts et al., 2024) with at most 9 residual-removal iterations."),
+            (|c| { c.inversion.algorithm = QsmAlgorithm::Medi; c.inversion.medi.msmv = true; c.inversion.medi.msmv_maxk = 9; },
+                "(Roberts et al., 2024; at most 8 boundary-correction passes)."),
             (|c| c.inversion.ilsqr.max_iter = 123, "iLSQR (Li et al., 2015) with at most 123 iterations."),
             (|c| { c.inversion.algorithm = QsmAlgorithm::Rts; c.inversion.rts.delta = 0.37; },
                 "(Kames et al., 2018) with δ = 0.37."),
@@ -3244,7 +3267,7 @@ mod defaults_only_tests {
             (|c| { c.inversion.algorithm = QsmAlgorithm::Qsmart; c.inversion.qsmart.frangi_c = 123.0; },
                 "tissue/vasculature separation, with frangi c = 123."),
             (|c| c.field_mapping.romeo.correct_global = false, "ROMEO (Dymerska et al., 2021) with correct global disabled."),
-            (|c| c.field_mapping.phase_offset_sigma = [3.0, 3.0, 3.0], "(Eckstein et al., 2018; smoothing σ = 3 × 3 × 3 voxels)"),
+            (|c| c.field_mapping.phase_offset_sigma_mm = [3.0, 3.0, 3.0], "(Eckstein et al., 2018; smoothing σ = 3 × 3 × 3 mm)"),
             (|c| { c.field_mapping.b0_estimation = B0Estimation::LinearFit; c.field_mapping.linear_fit.estimate_offset = !LinearFitConfig::default().estimate_offset; },
                 "echo time with phase-offset estimation"),
             (|c| { c.pipeline.axial_resampling = true; c.pipeline.obliquity_threshold = 5.0; },
@@ -3274,7 +3297,7 @@ mod defaults_only_tests {
             (|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::SusepNet; c.separation.susep_net.patch = Some([128, 128, 64]); },
                 ", with the network applied as a sliding window of 128×128×64-voxel patches."),
             (|c| { c.pipeline.do_segmentation = true; c.segmentation.patch = Some(100); },
-                "structures, with the network applied as a sliding window of half-overlapping 128×128×128-voxel patches, their posteriors Gaussian-weighted."),
+                "structures, with the network applied as a sliding window of 112×112×112-voxel patches overlapping by at least half a patch, their posteriors Gaussian-weighted."),
             (|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::ChiSepMedi; c.separation.chi_sep_medi.lambda_para = 1000.0; },
                 "λ (paramagnetic) = 1000"),
             (|c| { c.pipeline.do_chi_separation = true; c.separation.r2star_qsm.r_const_3t = 123.0; },

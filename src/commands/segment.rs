@@ -88,6 +88,8 @@ fn run(
         topology_cleanup: cfg.topology_cleanup,
         sigma_smoothing: cfg.sigma_smoothing,
         inference: crate::pipeline::config::synthseg_inference(cfg.patch),
+        // The head crop and the posteriors' precision are not QSMxT settings yet: qsm-core's.
+        ..Default::default()
     };
     let weights = qsm_core::models::primary_weight(cfg.version.weights_id())
         .map_err(|e| QsmxtError::Config(format!("synthseg weights: {e}")))?;

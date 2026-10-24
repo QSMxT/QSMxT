@@ -49,6 +49,9 @@ pub fn execute(args: QsmartArgs) -> crate::Result<()> {
     let chi = qsm_core::pipeline::run_qsmart(
         &field.data,
         &mask,
+        // QSMART's reliability map R_0 comes from its own echo fit, which this command does not
+        // run: every voxel counts as reliable.
+        None,
         magnitude.as_deref(),
         &scan_meta,
         &inv_config,

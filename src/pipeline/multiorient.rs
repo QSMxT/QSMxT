@@ -1414,10 +1414,10 @@ mod tests {
         let mut config = PipelineConfig::default();
         config.multi_orientation.group_by = "acq".into();
         assert!(validate_multi_orientation(&config).is_ok());
+        // MEDI takes the local field with every SMV option.
         config.inversion.algorithm = QsmAlgorithm::Medi;
         config.inversion.medi.smv = true;
-        let err = validate_multi_orientation(&config).unwrap_err().to_string();
-        assert!(err.contains("medi with SMV") && err.contains("--no-medi-smv"), "{err}");
+        assert!(validate_multi_orientation(&config).is_ok());
         config.inversion.algorithm = QsmAlgorithm::Tgv;
         assert!(validate_multi_orientation(&config).unwrap_err().to_string().contains("tgv"));
         config.inversion.algorithm = QsmAlgorithm::Rts;

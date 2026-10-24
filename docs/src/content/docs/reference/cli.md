@@ -69,7 +69,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--bf-algorithm <BF_ALGORITHM>` | Background field removal algorithm. Values: `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm`. |
 | `--masking-input <MASKING_INPUT>` | Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude) Values: `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality`. |
 | `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
-| `--phase-offset-sigma <PHASE_OFFSET_SIGMA>` | Phase offset removal smoothing sigma (3 values, in voxels) |
+| `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
 | `--coil-combination-sigma <COIL_COMBINATION_SIGMA>` | MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets (3 values, in voxels; default 10 10 5, as in MriResearchTools). Only used for uncombined multi-coil runs. |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
 | `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method. Values: `weighted-avg`, `linear-fit`, `robust-fit`. |
@@ -91,35 +91,38 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--rts-max-iter <RTS_MAX_ITER>` | RTS max iterations. |
 | `--rts-lsmr-iter <RTS_LSMR_ITER>` | RTS LSMR iterations. |
 | `--tv-lambda <TV_LAMBDA>` | TV lambda parameter. |
-| `--tv-rho <TV_RHO>` | TV rho (ADMM penalty) |
+| `--tv-rho <TV_RHO>` | TV rho (ADMM penalty; default: 100 × lambda) |
 | `--tv-tol <TV_TOL>` | TV tolerance. |
 | `--tv-max-iter <TV_MAX_ITER>` | TV max iterations. |
 | `--tkd-threshold <TKD_THRESHOLD>` | TKD threshold. |
 | `--tsvd-threshold <TSVD_THRESHOLD>` | TSVD threshold. |
-| `--tgv-iterations <TGV_ITERATIONS>` | TGV iterations. |
+| `--tgv-iterations <TGV_ITERATIONS>` | TGV iterations (default: from the voxel size, as the reference does) |
 | `--tgv-erosions <TGV_EROSIONS>` | TGV erosions. |
-| `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in ppm (TE- and B0-independent) |
-| `--tgv-alpha0 <TGV_ALPHA0>` | TGV alpha0 (second-order weight), in ppm (TE- and B0-independent) |
+| `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in radians at the scan's first echo time and field strength (the reference's units) |
+| `--tgv-alpha0 <TGV_ALPHA0>` | TGV alpha0 (second-order weight), in radians at the scan's first echo time and field strength (the reference's units) |
 | `--tgv-step-size <TGV_STEP_SIZE>` | TGV primal step size multiplier. |
-| `--tgv-tol <TGV_TOL>` | TGV convergence tolerance. |
 | `--tikhonov-lambda <TIKHONOV_LAMBDA>` | Tikhonov lambda. |
 | `--nltv-lambda <NLTV_LAMBDA>` | NLTV lambda. |
 | `--nltv-mu <NLTV_MU>` | NLTV mu (penalty parameter) |
 | `--nltv-tol <NLTV_TOL>` | NLTV tolerance. |
 | `--nltv-max-iter <NLTV_MAX_ITER>` | NLTV max iterations. |
-| `--nltv-newton-iter <NLTV_NEWTON_ITER>` | NLTV Newton iterations. |
-| `--medi-lambda <MEDI_LAMBDA>` | MEDI lambda. |
+| `--nltv-newton-iter <NLTV_NEWTON_ITER>` | NLTV maximum Newton iterations of the data-term subproblem. |
+| `--medi-lambda <MEDI_LAMBDA>` | MEDI lambda: the data-fidelity weight (larger fits the field more closely) |
 | `--medi-merit <MEDI_MERIT>` | MEDI: enable MERIT weighting. |
-| `--medi-smv` | MEDI: enable SMV deconvolution (on by default) |
-| `--no-medi-smv` | MEDI: disable SMV deconvolution. |
-| `--medi-smv-radius <MEDI_SMV_RADIUS>` | MEDI SMV radius in mm. |
+| `--medi-smv` | MEDI: high-pass the local field with a spherical mean value filter, removing residual background near the brain edge (MEDI-SMV; on by default) |
+| `--no-medi-smv` | MEDI: no SMV high-pass of the local field. |
+| `--medi-smv-radius <MEDI_SMV_RADIUS>` | MEDI SMV radius in mm (also mSMV's) |
+| `--medi-msmv` | MEDI-mSMV (Roberts et al. 2024): filter the local field by maximum spherical mean value before MEDI, which fits it with the SMV-filtered dipole kernel (it implies the SMV). Needs at least 3 echoes. |
+| `--medi-msmv-maxk <MEDI_MSMV_MAXK>` | MEDI-mSMV: the boundary correction makes at most this many passes, less one. |
+| `--medi-msmv-vessel-radius <MEDI_MSMV_VESSEL_RADIUS>` | MEDI-mSMV: largest vessel thickness of the vessel mask, in voxels (default: 15, or 8 × the largest voxel dimension if that is more) |
+| `--no-medi-msmv-prefilter` | MEDI-mSMV: no SMV prefilter before mSMV. Only consistent for a field already high-passed by the same SMV; after PDF, V-SHARP or LBV it diverges (expert) |
 | `--medi-data-weighting <MEDI_DATA_WEIGHTING>` | MEDI: data weighting mode (0=uniform, 1=SNR) |
 | `--medi-percentage <MEDI_PERCENTAGE>` | MEDI edge percentage (0.0-1.0) |
 | `--medi-cg-tol <MEDI_CG_TOL>` | MEDI CG tolerance. |
 | `--medi-cg-max-iter <MEDI_CG_MAX_ITER>` | MEDI CG max iterations. |
 | `--medi-max-iter <MEDI_MAX_ITER>` | MEDI max outer iterations. |
 | `--medi-tol <MEDI_TOL>` | MEDI outer tolerance. |
-| `--tfi-lambda <TFI_LAMBDA>` | TFI lambda. |
+| `--tfi-lambda <TFI_LAMBDA>` | TFI lambda: the data-fidelity weight (larger fits the field more closely) |
 | `--tfi-precond <TFI_PRECOND>` | TFI preconditioner value (susceptibility scaling outside the mask) |
 | `--tfi-data-weighting <TFI_DATA_WEIGHTING>` | TFI: data weighting mode (0=uniform, 1=SNR) |
 | `--tfi-percentage <TFI_PERCENTAGE>` | TFI edge percentage (0.0-1.0) |
@@ -127,9 +130,9 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--tfi-cg-max-iter <TFI_CG_MAX_ITER>` | TFI CG max iterations. |
 | `--tfi-max-iter <TFI_MAX_ITER>` | TFI max outer iterations. |
 | `--tfi-tol <TFI_TOL>` | TFI outer tolerance. |
-| `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve (default: 0.001) |
-| `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve (default: 100) |
-| `--ilsqr-pad-mm <MM>` | iLSQR zero-padding in mm per side (default: 16) |
+| `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve. |
+| `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve. |
+| `--ilsqr-pad-mm <MM>` | iLSQR zero-padding in mm per side. |
 | `--lsqr-residual-weighting <LSQR_RESIDUAL_WEIGHTING>` | LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly. |
 | `--no-lsqr-global-offset` | Do not fit a global field offset alongside χ. |
 | `--lsqr-tol <LSQR_TOL>` | LSQR convergence tolerance. |
@@ -139,10 +142,10 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--no-heidi-laplacian-correction` | Do not open the homogeneity masks where the field's Laplacian is large. |
 | `--heidi-laplacian-threshold <HEIDI_LAPLACIAN_THRESHOLD>` | Field-Laplacian threshold (ppm per voxel²) |
 | `--heidi-gradient-mask-floor <HEIDI_GRADIENT_MASK_FLOOR>` | TV weight kept where every direction reads as an edge (0 reproduces upstream's shipped binarised masks) |
-| `--heidi-continuation-steps <HEIDI_CONTINUATION_STEPS>` | NESTA continuation steps on μ. The dominant quality knob, and more is not better — on the QSM-CI phantom 6 steps beat 8. Worth sweeping on your own data. |
+| `--heidi-continuation-steps <HEIDI_CONTINUATION_STEPS>` | NESTA continuation steps on μ. |
 | `--heidi-inner-iterations <HEIDI_INNER_ITERATIONS>` | Accelerated-gradient iterations per continuation step. |
 | `--heidi-mu-min <HEIDI_MU_MIN>` | Final (smallest) smoothing parameter μ. |
-| `--heidi-tol <HEIDI_TOL>` | Relative objective change that ends an inner loop early. |
+| `--heidi-tol <HEIDI_TOL>` | Relative objective change that ends an inner loop early (the default runs every iteration) |
 | `--no-heidi-denoise` | Skip the anisotropic-diffusion smoothing of the field before its gradients are taken. |
 | `--heidi-denoise-iterations <HEIDI_DENOISE_ITERATIONS>` | Anisotropic-diffusion iterations. |
 | `--heidi-denoise-time-step <HEIDI_DENOISE_TIME_STEP>` | Anisotropic-diffusion time step. |
@@ -166,23 +169,21 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--ndi-max-iter <NDI_MAX_ITER>` | NDI max iterations. |
 | `--ndi-auto-stop <NDI_AUTO_STOP>` | NDI: stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto); --ndi-max-iter is then the maximum. |
 | `--fansi-alpha1 <FANSI_ALPHA1>` | FANSI first-order (TV/TGV) L1 penalty weight (alpha1) |
-| `--fansi-mu1 <FANSI_MU1>` | FANSI gradient-consistency ADMM weight (mu1) |
+| `--fansi-mu1 <FANSI_MU1>` | FANSI gradient-consistency ADMM weight (mu1; default: 100 × alpha1) |
 | `--fansi-mu2 <FANSI_MU2>` | FANSI fidelity-consistency ADMM weight (mu2) |
-| `--fansi-alpha0 <FANSI_ALPHA0>` | FANSI second-order L1 penalty weight (alpha0, nlTGV only) |
-| `--fansi-mu0 <FANSI_MU0>` | FANSI second-order consistency ADMM weight (mu0, nlTGV only) |
+| `--fansi-alpha0 <FANSI_ALPHA0>` | FANSI second-order L1 penalty weight (alpha0, nlTGV only; default: 2 × alpha1) |
+| `--fansi-mu0 <FANSI_MU0>` | FANSI second-order consistency ADMM weight (mu0, nlTGV only; default: 2 × mu1) |
 | `--fansi-max-iter <FANSI_MAX_ITER>` | FANSI outer ADMM iterations. |
 | `--fansi-tol-update <FANSI_TOL_UPDATE>` | FANSI percent-update convergence tolerance. |
 | `--fansi-tol-delta <FANSI_TOL_DELTA>` | FANSI inner Newton convergence tolerance. |
-| `--fansi-phase-scale <FANSI_PHASE_SCALE>` | FANSI phase scale (ppm -&gt; working scale) |
 | `--l1qsm-alpha1 <L1QSM_ALPHA1>` | L1-QSM gradient (TV) L1 penalty weight (alpha1) |
-| `--l1qsm-mu1 <L1QSM_MU1>` | L1-QSM gradient-consistency ADMM weight (mu1) |
+| `--l1qsm-mu1 <L1QSM_MU1>` | L1-QSM gradient-consistency ADMM weight (mu1; default: 100 × alpha1) |
 | `--l1qsm-mu2 <L1QSM_MU2>` | L1-QSM fidelity-consistency ADMM weight (mu2) |
 | `--l1qsm-mu3 <L1QSM_MU3>` | L1-QSM L1 proximal ADMM weight (mu3) |
 | `--l1qsm-lambda <L1QSM_LAMBDA>` | L1-QSM L1 fidelity strength (lambda) |
 | `--l1qsm-max-iter <L1QSM_MAX_ITER>` | L1-QSM outer ADMM iterations. |
 | `--l1qsm-tol-update <L1QSM_TOL_UPDATE>` | L1-QSM percent-update convergence tolerance. |
 | `--l1qsm-tol-delta <L1QSM_TOL_DELTA>` | L1-QSM inner Newton convergence tolerance. |
-| `--l1qsm-phase-scale <L1QSM_PHASE_SCALE>` | L1-QSM phase scale (ppm -&gt; working scale) |
 | `--whqsm-alpha1 <WHQSM_ALPHA1>` | WH-QSM TV regularization weight (alpha1) |
 | `--whqsm-mu1 <WHQSM_MU1>` | WH-QSM ADMM penalty for TV splitting (mu1) |
 | `--whqsm-mu2 <WHQSM_MU2>` | WH-QSM ADMM penalty for data-fidelity splitting (mu2) |
@@ -191,9 +192,8 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--whqsm-max-iter <WHQSM_MAX_ITER>` | WH-QSM max outer iterations. |
 | `--whqsm-tol-update <WHQSM_TOL_UPDATE>` | WH-QSM percent-update convergence tolerance. |
 | `--whqsm-tol-delta <WHQSM_TOL_DELTA>` | WH-QSM inner Newton convergence tolerance. |
-| `--whqsm-phase-scale <WHQSM_PHASE_SCALE>` | WH-QSM phase scale (ppm -&gt; working scale) |
 | `--hdqsm-alpha-l2 <HDQSM_ALPHA_L2>` | HD-QSM L2-stage TV weight (alpha_l2) |
-| `--hdqsm-mu1-l2 <HDQSM_MU1_L2>` | HD-QSM L2-stage gradient-consistency ADMM weight (mu1_l2) |
+| `--hdqsm-mu1-l2 <HDQSM_MU1_L2>` | HD-QSM L2-stage gradient-consistency ADMM weight (mu1_l2; default: 100 × alpha_l2) |
 | `--hdqsm-mu2 <HDQSM_MU2>` | HD-QSM fidelity consistency weight (mu2) |
 | `--hdqsm-max-iter-l1 <HDQSM_MAX_ITER_L1>` | HD-QSM stage-1 (L1) iterations (max_iter_l1) |
 | `--hdqsm-max-iter-l2 <HDQSM_MAX_ITER_L2>` | HD-QSM stage-2 (L2) iterations (max_iter_l2) |
@@ -263,7 +263,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--vsharp-min-radius <VSHARP_MIN_RADIUS>` | V-SHARP min kernel radius in mm. |
 | `--vsharp-grid <VSHARP_GRID>` | Grid V-SHARP estimates the background on: `native` (default), `finest` (isotropic at the smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened), or `isotropic` (spacing from --vsharp-grid-spacing). The local field keeps native resolution. Values: `native`, `finest`, `isotropic`. |
 | `--vsharp-grid-spacing <MM>` | V-SHARP isotropic working-grid spacing in mm (default 1); used with --vsharp-grid isotropic. |
-| `--pdf-tol <PDF_TOL>` | PDF tolerance. |
+| `--pdf-tol <PDF_TOL>` | PDF tolerance, relative to the noise level. |
 | `--lbv-tol <LBV_TOL>` | LBV tolerance. |
 | `--ismv-tol <ISMV_TOL>` | iSMV tolerance. |
 | `--ismv-max-iter <ISMV_MAX_ITER>` | iSMV max iterations. |
@@ -279,9 +279,6 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--harperella-tol <HARPERELLA_TOL>` | HARPERELLA convergence tolerance. |
 | `--iharperella-max-iter <IHARPERELLA_MAX_ITER>` | iHARPERELLA maximum iterations. |
 | `--iharperella-tol <IHARPERELLA_TOL>` | iHARPERELLA convergence tolerance. |
-| `--msmv-refine` | Apply mSMV boundary-shadow refinement (Roberts 2024) on top of the primary BFR. |
-| `--msmv-radius <MSMV_RADIUS>` | mSMV SMV kernel radius in mm. |
-| `--msmv-maxk <MSMV_MAXK>` | mSMV maximum boundary-correction iterations. |
 | `--no-romeo-phase-coherence` | ROMEO: disable phase coherence weights (default: on) |
 | `--no-romeo-phase-gradient-coherence` | ROMEO: disable phase gradient coherence weights (default: on) |
 | `--no-romeo-phase-linearity` | ROMEO: disable phase linearity weights (default: on) |
@@ -452,7 +449,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--bf-algorithm <BF_ALGORITHM>` | Background field removal algorithm. Values: `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm`. |
 | `--masking-input <MASKING_INPUT>` | Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude) Values: `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality`. |
 | `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
-| `--phase-offset-sigma <PHASE_OFFSET_SIGMA>` | Phase offset removal smoothing sigma (3 values, in voxels) |
+| `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
 | `--coil-combination-sigma <COIL_COMBINATION_SIGMA>` | MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets (3 values, in voxels; default 10 10 5, as in MriResearchTools). Only used for uncombined multi-coil runs. |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
 | `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method. Values: `weighted-avg`, `linear-fit`, `robust-fit`. |
@@ -474,35 +471,38 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--rts-max-iter <RTS_MAX_ITER>` | RTS max iterations. |
 | `--rts-lsmr-iter <RTS_LSMR_ITER>` | RTS LSMR iterations. |
 | `--tv-lambda <TV_LAMBDA>` | TV lambda parameter. |
-| `--tv-rho <TV_RHO>` | TV rho (ADMM penalty) |
+| `--tv-rho <TV_RHO>` | TV rho (ADMM penalty; default: 100 × lambda) |
 | `--tv-tol <TV_TOL>` | TV tolerance. |
 | `--tv-max-iter <TV_MAX_ITER>` | TV max iterations. |
 | `--tkd-threshold <TKD_THRESHOLD>` | TKD threshold. |
 | `--tsvd-threshold <TSVD_THRESHOLD>` | TSVD threshold. |
-| `--tgv-iterations <TGV_ITERATIONS>` | TGV iterations. |
+| `--tgv-iterations <TGV_ITERATIONS>` | TGV iterations (default: from the voxel size, as the reference does) |
 | `--tgv-erosions <TGV_EROSIONS>` | TGV erosions. |
-| `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in ppm (TE- and B0-independent) |
-| `--tgv-alpha0 <TGV_ALPHA0>` | TGV alpha0 (second-order weight), in ppm (TE- and B0-independent) |
+| `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in radians at the scan's first echo time and field strength (the reference's units) |
+| `--tgv-alpha0 <TGV_ALPHA0>` | TGV alpha0 (second-order weight), in radians at the scan's first echo time and field strength (the reference's units) |
 | `--tgv-step-size <TGV_STEP_SIZE>` | TGV primal step size multiplier. |
-| `--tgv-tol <TGV_TOL>` | TGV convergence tolerance. |
 | `--tikhonov-lambda <TIKHONOV_LAMBDA>` | Tikhonov lambda. |
 | `--nltv-lambda <NLTV_LAMBDA>` | NLTV lambda. |
 | `--nltv-mu <NLTV_MU>` | NLTV mu (penalty parameter) |
 | `--nltv-tol <NLTV_TOL>` | NLTV tolerance. |
 | `--nltv-max-iter <NLTV_MAX_ITER>` | NLTV max iterations. |
-| `--nltv-newton-iter <NLTV_NEWTON_ITER>` | NLTV Newton iterations. |
-| `--medi-lambda <MEDI_LAMBDA>` | MEDI lambda. |
+| `--nltv-newton-iter <NLTV_NEWTON_ITER>` | NLTV maximum Newton iterations of the data-term subproblem. |
+| `--medi-lambda <MEDI_LAMBDA>` | MEDI lambda: the data-fidelity weight (larger fits the field more closely) |
 | `--medi-merit <MEDI_MERIT>` | MEDI: enable MERIT weighting. |
-| `--medi-smv` | MEDI: enable SMV deconvolution (on by default) |
-| `--no-medi-smv` | MEDI: disable SMV deconvolution. |
-| `--medi-smv-radius <MEDI_SMV_RADIUS>` | MEDI SMV radius in mm. |
+| `--medi-smv` | MEDI: high-pass the local field with a spherical mean value filter, removing residual background near the brain edge (MEDI-SMV; on by default) |
+| `--no-medi-smv` | MEDI: no SMV high-pass of the local field. |
+| `--medi-smv-radius <MEDI_SMV_RADIUS>` | MEDI SMV radius in mm (also mSMV's) |
+| `--medi-msmv` | MEDI-mSMV (Roberts et al. 2024): filter the local field by maximum spherical mean value before MEDI, which fits it with the SMV-filtered dipole kernel (it implies the SMV). Needs at least 3 echoes. |
+| `--medi-msmv-maxk <MEDI_MSMV_MAXK>` | MEDI-mSMV: the boundary correction makes at most this many passes, less one. |
+| `--medi-msmv-vessel-radius <MEDI_MSMV_VESSEL_RADIUS>` | MEDI-mSMV: largest vessel thickness of the vessel mask, in voxels (default: 15, or 8 × the largest voxel dimension if that is more) |
+| `--no-medi-msmv-prefilter` | MEDI-mSMV: no SMV prefilter before mSMV. Only consistent for a field already high-passed by the same SMV; after PDF, V-SHARP or LBV it diverges (expert) |
 | `--medi-data-weighting <MEDI_DATA_WEIGHTING>` | MEDI: data weighting mode (0=uniform, 1=SNR) |
 | `--medi-percentage <MEDI_PERCENTAGE>` | MEDI edge percentage (0.0-1.0) |
 | `--medi-cg-tol <MEDI_CG_TOL>` | MEDI CG tolerance. |
 | `--medi-cg-max-iter <MEDI_CG_MAX_ITER>` | MEDI CG max iterations. |
 | `--medi-max-iter <MEDI_MAX_ITER>` | MEDI max outer iterations. |
 | `--medi-tol <MEDI_TOL>` | MEDI outer tolerance. |
-| `--tfi-lambda <TFI_LAMBDA>` | TFI lambda. |
+| `--tfi-lambda <TFI_LAMBDA>` | TFI lambda: the data-fidelity weight (larger fits the field more closely) |
 | `--tfi-precond <TFI_PRECOND>` | TFI preconditioner value (susceptibility scaling outside the mask) |
 | `--tfi-data-weighting <TFI_DATA_WEIGHTING>` | TFI: data weighting mode (0=uniform, 1=SNR) |
 | `--tfi-percentage <TFI_PERCENTAGE>` | TFI edge percentage (0.0-1.0) |
@@ -510,9 +510,9 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--tfi-cg-max-iter <TFI_CG_MAX_ITER>` | TFI CG max iterations. |
 | `--tfi-max-iter <TFI_MAX_ITER>` | TFI max outer iterations. |
 | `--tfi-tol <TFI_TOL>` | TFI outer tolerance. |
-| `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve (default: 0.001) |
-| `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve (default: 100) |
-| `--ilsqr-pad-mm <MM>` | iLSQR zero-padding in mm per side (default: 16) |
+| `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve. |
+| `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve. |
+| `--ilsqr-pad-mm <MM>` | iLSQR zero-padding in mm per side. |
 | `--lsqr-residual-weighting <LSQR_RESIDUAL_WEIGHTING>` | LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly. |
 | `--no-lsqr-global-offset` | Do not fit a global field offset alongside χ. |
 | `--lsqr-tol <LSQR_TOL>` | LSQR convergence tolerance. |
@@ -522,10 +522,10 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--no-heidi-laplacian-correction` | Do not open the homogeneity masks where the field's Laplacian is large. |
 | `--heidi-laplacian-threshold <HEIDI_LAPLACIAN_THRESHOLD>` | Field-Laplacian threshold (ppm per voxel²) |
 | `--heidi-gradient-mask-floor <HEIDI_GRADIENT_MASK_FLOOR>` | TV weight kept where every direction reads as an edge (0 reproduces upstream's shipped binarised masks) |
-| `--heidi-continuation-steps <HEIDI_CONTINUATION_STEPS>` | NESTA continuation steps on μ. The dominant quality knob, and more is not better — on the QSM-CI phantom 6 steps beat 8. Worth sweeping on your own data. |
+| `--heidi-continuation-steps <HEIDI_CONTINUATION_STEPS>` | NESTA continuation steps on μ. |
 | `--heidi-inner-iterations <HEIDI_INNER_ITERATIONS>` | Accelerated-gradient iterations per continuation step. |
 | `--heidi-mu-min <HEIDI_MU_MIN>` | Final (smallest) smoothing parameter μ. |
-| `--heidi-tol <HEIDI_TOL>` | Relative objective change that ends an inner loop early. |
+| `--heidi-tol <HEIDI_TOL>` | Relative objective change that ends an inner loop early (the default runs every iteration) |
 | `--no-heidi-denoise` | Skip the anisotropic-diffusion smoothing of the field before its gradients are taken. |
 | `--heidi-denoise-iterations <HEIDI_DENOISE_ITERATIONS>` | Anisotropic-diffusion iterations. |
 | `--heidi-denoise-time-step <HEIDI_DENOISE_TIME_STEP>` | Anisotropic-diffusion time step. |
@@ -549,23 +549,21 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--ndi-max-iter <NDI_MAX_ITER>` | NDI max iterations. |
 | `--ndi-auto-stop <NDI_AUTO_STOP>` | NDI: stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto); --ndi-max-iter is then the maximum. |
 | `--fansi-alpha1 <FANSI_ALPHA1>` | FANSI first-order (TV/TGV) L1 penalty weight (alpha1) |
-| `--fansi-mu1 <FANSI_MU1>` | FANSI gradient-consistency ADMM weight (mu1) |
+| `--fansi-mu1 <FANSI_MU1>` | FANSI gradient-consistency ADMM weight (mu1; default: 100 × alpha1) |
 | `--fansi-mu2 <FANSI_MU2>` | FANSI fidelity-consistency ADMM weight (mu2) |
-| `--fansi-alpha0 <FANSI_ALPHA0>` | FANSI second-order L1 penalty weight (alpha0, nlTGV only) |
-| `--fansi-mu0 <FANSI_MU0>` | FANSI second-order consistency ADMM weight (mu0, nlTGV only) |
+| `--fansi-alpha0 <FANSI_ALPHA0>` | FANSI second-order L1 penalty weight (alpha0, nlTGV only; default: 2 × alpha1) |
+| `--fansi-mu0 <FANSI_MU0>` | FANSI second-order consistency ADMM weight (mu0, nlTGV only; default: 2 × mu1) |
 | `--fansi-max-iter <FANSI_MAX_ITER>` | FANSI outer ADMM iterations. |
 | `--fansi-tol-update <FANSI_TOL_UPDATE>` | FANSI percent-update convergence tolerance. |
 | `--fansi-tol-delta <FANSI_TOL_DELTA>` | FANSI inner Newton convergence tolerance. |
-| `--fansi-phase-scale <FANSI_PHASE_SCALE>` | FANSI phase scale (ppm -&gt; working scale) |
 | `--l1qsm-alpha1 <L1QSM_ALPHA1>` | L1-QSM gradient (TV) L1 penalty weight (alpha1) |
-| `--l1qsm-mu1 <L1QSM_MU1>` | L1-QSM gradient-consistency ADMM weight (mu1) |
+| `--l1qsm-mu1 <L1QSM_MU1>` | L1-QSM gradient-consistency ADMM weight (mu1; default: 100 × alpha1) |
 | `--l1qsm-mu2 <L1QSM_MU2>` | L1-QSM fidelity-consistency ADMM weight (mu2) |
 | `--l1qsm-mu3 <L1QSM_MU3>` | L1-QSM L1 proximal ADMM weight (mu3) |
 | `--l1qsm-lambda <L1QSM_LAMBDA>` | L1-QSM L1 fidelity strength (lambda) |
 | `--l1qsm-max-iter <L1QSM_MAX_ITER>` | L1-QSM outer ADMM iterations. |
 | `--l1qsm-tol-update <L1QSM_TOL_UPDATE>` | L1-QSM percent-update convergence tolerance. |
 | `--l1qsm-tol-delta <L1QSM_TOL_DELTA>` | L1-QSM inner Newton convergence tolerance. |
-| `--l1qsm-phase-scale <L1QSM_PHASE_SCALE>` | L1-QSM phase scale (ppm -&gt; working scale) |
 | `--whqsm-alpha1 <WHQSM_ALPHA1>` | WH-QSM TV regularization weight (alpha1) |
 | `--whqsm-mu1 <WHQSM_MU1>` | WH-QSM ADMM penalty for TV splitting (mu1) |
 | `--whqsm-mu2 <WHQSM_MU2>` | WH-QSM ADMM penalty for data-fidelity splitting (mu2) |
@@ -574,9 +572,8 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--whqsm-max-iter <WHQSM_MAX_ITER>` | WH-QSM max outer iterations. |
 | `--whqsm-tol-update <WHQSM_TOL_UPDATE>` | WH-QSM percent-update convergence tolerance. |
 | `--whqsm-tol-delta <WHQSM_TOL_DELTA>` | WH-QSM inner Newton convergence tolerance. |
-| `--whqsm-phase-scale <WHQSM_PHASE_SCALE>` | WH-QSM phase scale (ppm -&gt; working scale) |
 | `--hdqsm-alpha-l2 <HDQSM_ALPHA_L2>` | HD-QSM L2-stage TV weight (alpha_l2) |
-| `--hdqsm-mu1-l2 <HDQSM_MU1_L2>` | HD-QSM L2-stage gradient-consistency ADMM weight (mu1_l2) |
+| `--hdqsm-mu1-l2 <HDQSM_MU1_L2>` | HD-QSM L2-stage gradient-consistency ADMM weight (mu1_l2; default: 100 × alpha_l2) |
 | `--hdqsm-mu2 <HDQSM_MU2>` | HD-QSM fidelity consistency weight (mu2) |
 | `--hdqsm-max-iter-l1 <HDQSM_MAX_ITER_L1>` | HD-QSM stage-1 (L1) iterations (max_iter_l1) |
 | `--hdqsm-max-iter-l2 <HDQSM_MAX_ITER_L2>` | HD-QSM stage-2 (L2) iterations (max_iter_l2) |
@@ -646,7 +643,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--vsharp-min-radius <VSHARP_MIN_RADIUS>` | V-SHARP min kernel radius in mm. |
 | `--vsharp-grid <VSHARP_GRID>` | Grid V-SHARP estimates the background on: `native` (default), `finest` (isotropic at the smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened), or `isotropic` (spacing from --vsharp-grid-spacing). The local field keeps native resolution. Values: `native`, `finest`, `isotropic`. |
 | `--vsharp-grid-spacing <MM>` | V-SHARP isotropic working-grid spacing in mm (default 1); used with --vsharp-grid isotropic. |
-| `--pdf-tol <PDF_TOL>` | PDF tolerance. |
+| `--pdf-tol <PDF_TOL>` | PDF tolerance, relative to the noise level. |
 | `--lbv-tol <LBV_TOL>` | LBV tolerance. |
 | `--ismv-tol <ISMV_TOL>` | iSMV tolerance. |
 | `--ismv-max-iter <ISMV_MAX_ITER>` | iSMV max iterations. |
@@ -662,9 +659,6 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--harperella-tol <HARPERELLA_TOL>` | HARPERELLA convergence tolerance. |
 | `--iharperella-max-iter <IHARPERELLA_MAX_ITER>` | iHARPERELLA maximum iterations. |
 | `--iharperella-tol <IHARPERELLA_TOL>` | iHARPERELLA convergence tolerance. |
-| `--msmv-refine` | Apply mSMV boundary-shadow refinement (Roberts 2024) on top of the primary BFR. |
-| `--msmv-radius <MSMV_RADIUS>` | mSMV SMV kernel radius in mm. |
-| `--msmv-maxk <MSMV_MAXK>` | mSMV maximum boundary-correction iterations. |
 | `--no-romeo-phase-coherence` | ROMEO: disable phase coherence weights (default: on) |
 | `--no-romeo-phase-gradient-coherence` | ROMEO: disable phase gradient coherence weights (default: on) |
 | `--no-romeo-phase-linearity` | ROMEO: disable phase linearity weights (default: on) |
@@ -774,7 +768,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--bf-algorithm <BF_ALGORITHM>` | Background field removal algorithm. Values: `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm`. |
 | `--masking-input <MASKING_INPUT>` | Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude) Values: `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality`. |
 | `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
-| `--phase-offset-sigma <PHASE_OFFSET_SIGMA>` | Phase offset removal smoothing sigma (3 values, in voxels) |
+| `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
 | `--coil-combination-sigma <COIL_COMBINATION_SIGMA>` | MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets (3 values, in voxels; default 10 10 5, as in MriResearchTools). Only used for uncombined multi-coil runs. |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
 | `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method. Values: `weighted-avg`, `linear-fit`, `robust-fit`. |
@@ -796,35 +790,38 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--rts-max-iter <RTS_MAX_ITER>` | RTS max iterations. |
 | `--rts-lsmr-iter <RTS_LSMR_ITER>` | RTS LSMR iterations. |
 | `--tv-lambda <TV_LAMBDA>` | TV lambda parameter. |
-| `--tv-rho <TV_RHO>` | TV rho (ADMM penalty) |
+| `--tv-rho <TV_RHO>` | TV rho (ADMM penalty; default: 100 × lambda) |
 | `--tv-tol <TV_TOL>` | TV tolerance. |
 | `--tv-max-iter <TV_MAX_ITER>` | TV max iterations. |
 | `--tkd-threshold <TKD_THRESHOLD>` | TKD threshold. |
 | `--tsvd-threshold <TSVD_THRESHOLD>` | TSVD threshold. |
-| `--tgv-iterations <TGV_ITERATIONS>` | TGV iterations. |
+| `--tgv-iterations <TGV_ITERATIONS>` | TGV iterations (default: from the voxel size, as the reference does) |
 | `--tgv-erosions <TGV_EROSIONS>` | TGV erosions. |
-| `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in ppm (TE- and B0-independent) |
-| `--tgv-alpha0 <TGV_ALPHA0>` | TGV alpha0 (second-order weight), in ppm (TE- and B0-independent) |
+| `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in radians at the scan's first echo time and field strength (the reference's units) |
+| `--tgv-alpha0 <TGV_ALPHA0>` | TGV alpha0 (second-order weight), in radians at the scan's first echo time and field strength (the reference's units) |
 | `--tgv-step-size <TGV_STEP_SIZE>` | TGV primal step size multiplier. |
-| `--tgv-tol <TGV_TOL>` | TGV convergence tolerance. |
 | `--tikhonov-lambda <TIKHONOV_LAMBDA>` | Tikhonov lambda. |
 | `--nltv-lambda <NLTV_LAMBDA>` | NLTV lambda. |
 | `--nltv-mu <NLTV_MU>` | NLTV mu (penalty parameter) |
 | `--nltv-tol <NLTV_TOL>` | NLTV tolerance. |
 | `--nltv-max-iter <NLTV_MAX_ITER>` | NLTV max iterations. |
-| `--nltv-newton-iter <NLTV_NEWTON_ITER>` | NLTV Newton iterations. |
-| `--medi-lambda <MEDI_LAMBDA>` | MEDI lambda. |
+| `--nltv-newton-iter <NLTV_NEWTON_ITER>` | NLTV maximum Newton iterations of the data-term subproblem. |
+| `--medi-lambda <MEDI_LAMBDA>` | MEDI lambda: the data-fidelity weight (larger fits the field more closely) |
 | `--medi-merit <MEDI_MERIT>` | MEDI: enable MERIT weighting. |
-| `--medi-smv` | MEDI: enable SMV deconvolution (on by default) |
-| `--no-medi-smv` | MEDI: disable SMV deconvolution. |
-| `--medi-smv-radius <MEDI_SMV_RADIUS>` | MEDI SMV radius in mm. |
+| `--medi-smv` | MEDI: high-pass the local field with a spherical mean value filter, removing residual background near the brain edge (MEDI-SMV; on by default) |
+| `--no-medi-smv` | MEDI: no SMV high-pass of the local field. |
+| `--medi-smv-radius <MEDI_SMV_RADIUS>` | MEDI SMV radius in mm (also mSMV's) |
+| `--medi-msmv` | MEDI-mSMV (Roberts et al. 2024): filter the local field by maximum spherical mean value before MEDI, which fits it with the SMV-filtered dipole kernel (it implies the SMV). Needs at least 3 echoes. |
+| `--medi-msmv-maxk <MEDI_MSMV_MAXK>` | MEDI-mSMV: the boundary correction makes at most this many passes, less one. |
+| `--medi-msmv-vessel-radius <MEDI_MSMV_VESSEL_RADIUS>` | MEDI-mSMV: largest vessel thickness of the vessel mask, in voxels (default: 15, or 8 × the largest voxel dimension if that is more) |
+| `--no-medi-msmv-prefilter` | MEDI-mSMV: no SMV prefilter before mSMV. Only consistent for a field already high-passed by the same SMV; after PDF, V-SHARP or LBV it diverges (expert) |
 | `--medi-data-weighting <MEDI_DATA_WEIGHTING>` | MEDI: data weighting mode (0=uniform, 1=SNR) |
 | `--medi-percentage <MEDI_PERCENTAGE>` | MEDI edge percentage (0.0-1.0) |
 | `--medi-cg-tol <MEDI_CG_TOL>` | MEDI CG tolerance. |
 | `--medi-cg-max-iter <MEDI_CG_MAX_ITER>` | MEDI CG max iterations. |
 | `--medi-max-iter <MEDI_MAX_ITER>` | MEDI max outer iterations. |
 | `--medi-tol <MEDI_TOL>` | MEDI outer tolerance. |
-| `--tfi-lambda <TFI_LAMBDA>` | TFI lambda. |
+| `--tfi-lambda <TFI_LAMBDA>` | TFI lambda: the data-fidelity weight (larger fits the field more closely) |
 | `--tfi-precond <TFI_PRECOND>` | TFI preconditioner value (susceptibility scaling outside the mask) |
 | `--tfi-data-weighting <TFI_DATA_WEIGHTING>` | TFI: data weighting mode (0=uniform, 1=SNR) |
 | `--tfi-percentage <TFI_PERCENTAGE>` | TFI edge percentage (0.0-1.0) |
@@ -832,9 +829,9 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--tfi-cg-max-iter <TFI_CG_MAX_ITER>` | TFI CG max iterations. |
 | `--tfi-max-iter <TFI_MAX_ITER>` | TFI max outer iterations. |
 | `--tfi-tol <TFI_TOL>` | TFI outer tolerance. |
-| `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve (default: 0.001) |
-| `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve (default: 100) |
-| `--ilsqr-pad-mm <MM>` | iLSQR zero-padding in mm per side (default: 16) |
+| `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve. |
+| `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve. |
+| `--ilsqr-pad-mm <MM>` | iLSQR zero-padding in mm per side. |
 | `--lsqr-residual-weighting <LSQR_RESIDUAL_WEIGHTING>` | LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly. |
 | `--no-lsqr-global-offset` | Do not fit a global field offset alongside χ. |
 | `--lsqr-tol <LSQR_TOL>` | LSQR convergence tolerance. |
@@ -844,10 +841,10 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--no-heidi-laplacian-correction` | Do not open the homogeneity masks where the field's Laplacian is large. |
 | `--heidi-laplacian-threshold <HEIDI_LAPLACIAN_THRESHOLD>` | Field-Laplacian threshold (ppm per voxel²) |
 | `--heidi-gradient-mask-floor <HEIDI_GRADIENT_MASK_FLOOR>` | TV weight kept where every direction reads as an edge (0 reproduces upstream's shipped binarised masks) |
-| `--heidi-continuation-steps <HEIDI_CONTINUATION_STEPS>` | NESTA continuation steps on μ. The dominant quality knob, and more is not better — on the QSM-CI phantom 6 steps beat 8. Worth sweeping on your own data. |
+| `--heidi-continuation-steps <HEIDI_CONTINUATION_STEPS>` | NESTA continuation steps on μ. |
 | `--heidi-inner-iterations <HEIDI_INNER_ITERATIONS>` | Accelerated-gradient iterations per continuation step. |
 | `--heidi-mu-min <HEIDI_MU_MIN>` | Final (smallest) smoothing parameter μ. |
-| `--heidi-tol <HEIDI_TOL>` | Relative objective change that ends an inner loop early. |
+| `--heidi-tol <HEIDI_TOL>` | Relative objective change that ends an inner loop early (the default runs every iteration) |
 | `--no-heidi-denoise` | Skip the anisotropic-diffusion smoothing of the field before its gradients are taken. |
 | `--heidi-denoise-iterations <HEIDI_DENOISE_ITERATIONS>` | Anisotropic-diffusion iterations. |
 | `--heidi-denoise-time-step <HEIDI_DENOISE_TIME_STEP>` | Anisotropic-diffusion time step. |
@@ -871,23 +868,21 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--ndi-max-iter <NDI_MAX_ITER>` | NDI max iterations. |
 | `--ndi-auto-stop <NDI_AUTO_STOP>` | NDI: stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto); --ndi-max-iter is then the maximum. |
 | `--fansi-alpha1 <FANSI_ALPHA1>` | FANSI first-order (TV/TGV) L1 penalty weight (alpha1) |
-| `--fansi-mu1 <FANSI_MU1>` | FANSI gradient-consistency ADMM weight (mu1) |
+| `--fansi-mu1 <FANSI_MU1>` | FANSI gradient-consistency ADMM weight (mu1; default: 100 × alpha1) |
 | `--fansi-mu2 <FANSI_MU2>` | FANSI fidelity-consistency ADMM weight (mu2) |
-| `--fansi-alpha0 <FANSI_ALPHA0>` | FANSI second-order L1 penalty weight (alpha0, nlTGV only) |
-| `--fansi-mu0 <FANSI_MU0>` | FANSI second-order consistency ADMM weight (mu0, nlTGV only) |
+| `--fansi-alpha0 <FANSI_ALPHA0>` | FANSI second-order L1 penalty weight (alpha0, nlTGV only; default: 2 × alpha1) |
+| `--fansi-mu0 <FANSI_MU0>` | FANSI second-order consistency ADMM weight (mu0, nlTGV only; default: 2 × mu1) |
 | `--fansi-max-iter <FANSI_MAX_ITER>` | FANSI outer ADMM iterations. |
 | `--fansi-tol-update <FANSI_TOL_UPDATE>` | FANSI percent-update convergence tolerance. |
 | `--fansi-tol-delta <FANSI_TOL_DELTA>` | FANSI inner Newton convergence tolerance. |
-| `--fansi-phase-scale <FANSI_PHASE_SCALE>` | FANSI phase scale (ppm -&gt; working scale) |
 | `--l1qsm-alpha1 <L1QSM_ALPHA1>` | L1-QSM gradient (TV) L1 penalty weight (alpha1) |
-| `--l1qsm-mu1 <L1QSM_MU1>` | L1-QSM gradient-consistency ADMM weight (mu1) |
+| `--l1qsm-mu1 <L1QSM_MU1>` | L1-QSM gradient-consistency ADMM weight (mu1; default: 100 × alpha1) |
 | `--l1qsm-mu2 <L1QSM_MU2>` | L1-QSM fidelity-consistency ADMM weight (mu2) |
 | `--l1qsm-mu3 <L1QSM_MU3>` | L1-QSM L1 proximal ADMM weight (mu3) |
 | `--l1qsm-lambda <L1QSM_LAMBDA>` | L1-QSM L1 fidelity strength (lambda) |
 | `--l1qsm-max-iter <L1QSM_MAX_ITER>` | L1-QSM outer ADMM iterations. |
 | `--l1qsm-tol-update <L1QSM_TOL_UPDATE>` | L1-QSM percent-update convergence tolerance. |
 | `--l1qsm-tol-delta <L1QSM_TOL_DELTA>` | L1-QSM inner Newton convergence tolerance. |
-| `--l1qsm-phase-scale <L1QSM_PHASE_SCALE>` | L1-QSM phase scale (ppm -&gt; working scale) |
 | `--whqsm-alpha1 <WHQSM_ALPHA1>` | WH-QSM TV regularization weight (alpha1) |
 | `--whqsm-mu1 <WHQSM_MU1>` | WH-QSM ADMM penalty for TV splitting (mu1) |
 | `--whqsm-mu2 <WHQSM_MU2>` | WH-QSM ADMM penalty for data-fidelity splitting (mu2) |
@@ -896,9 +891,8 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--whqsm-max-iter <WHQSM_MAX_ITER>` | WH-QSM max outer iterations. |
 | `--whqsm-tol-update <WHQSM_TOL_UPDATE>` | WH-QSM percent-update convergence tolerance. |
 | `--whqsm-tol-delta <WHQSM_TOL_DELTA>` | WH-QSM inner Newton convergence tolerance. |
-| `--whqsm-phase-scale <WHQSM_PHASE_SCALE>` | WH-QSM phase scale (ppm -&gt; working scale) |
 | `--hdqsm-alpha-l2 <HDQSM_ALPHA_L2>` | HD-QSM L2-stage TV weight (alpha_l2) |
-| `--hdqsm-mu1-l2 <HDQSM_MU1_L2>` | HD-QSM L2-stage gradient-consistency ADMM weight (mu1_l2) |
+| `--hdqsm-mu1-l2 <HDQSM_MU1_L2>` | HD-QSM L2-stage gradient-consistency ADMM weight (mu1_l2; default: 100 × alpha_l2) |
 | `--hdqsm-mu2 <HDQSM_MU2>` | HD-QSM fidelity consistency weight (mu2) |
 | `--hdqsm-max-iter-l1 <HDQSM_MAX_ITER_L1>` | HD-QSM stage-1 (L1) iterations (max_iter_l1) |
 | `--hdqsm-max-iter-l2 <HDQSM_MAX_ITER_L2>` | HD-QSM stage-2 (L2) iterations (max_iter_l2) |
@@ -968,7 +962,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--vsharp-min-radius <VSHARP_MIN_RADIUS>` | V-SHARP min kernel radius in mm. |
 | `--vsharp-grid <VSHARP_GRID>` | Grid V-SHARP estimates the background on: `native` (default), `finest` (isotropic at the smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened), or `isotropic` (spacing from --vsharp-grid-spacing). The local field keeps native resolution. Values: `native`, `finest`, `isotropic`. |
 | `--vsharp-grid-spacing <MM>` | V-SHARP isotropic working-grid spacing in mm (default 1); used with --vsharp-grid isotropic. |
-| `--pdf-tol <PDF_TOL>` | PDF tolerance. |
+| `--pdf-tol <PDF_TOL>` | PDF tolerance, relative to the noise level. |
 | `--lbv-tol <LBV_TOL>` | LBV tolerance. |
 | `--ismv-tol <ISMV_TOL>` | iSMV tolerance. |
 | `--ismv-max-iter <ISMV_MAX_ITER>` | iSMV max iterations. |
@@ -984,9 +978,6 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--harperella-tol <HARPERELLA_TOL>` | HARPERELLA convergence tolerance. |
 | `--iharperella-max-iter <IHARPERELLA_MAX_ITER>` | iHARPERELLA maximum iterations. |
 | `--iharperella-tol <IHARPERELLA_TOL>` | iHARPERELLA convergence tolerance. |
-| `--msmv-refine` | Apply mSMV boundary-shadow refinement (Roberts 2024) on top of the primary BFR. |
-| `--msmv-radius <MSMV_RADIUS>` | mSMV SMV kernel radius in mm. |
-| `--msmv-maxk <MSMV_MAXK>` | mSMV maximum boundary-correction iterations. |
 | `--no-romeo-phase-coherence` | ROMEO: disable phase coherence weights (default: on) |
 | `--no-romeo-phase-gradient-coherence` | ROMEO: disable phase gradient coherence weights (default: on) |
 | `--no-romeo-phase-linearity` | ROMEO: disable phase linearity weights (default: on) |
@@ -1457,7 +1448,7 @@ qsmxt fieldmap romeo [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--robust-fit-downweight-level <ROBUST_FIT_DOWNWEIGHT_LEVEL>` | Motion-robust fit (reporting only): a robust weight below this counts as down-weighted (default 0.75; in (0, 1]) |
 | `--robust-fit-flag-ratio <ROBUST_FIT_FLAG_RATIO>` | Motion-robust fit (reporting only): flag an echo whose outlier score exceeds this many times the best echo's (default 3; at least 1) |
 | `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
-| `--phase-offset-sigma <PHASE_OFFSET_SIGMA>` | Phase offset removal smoothing sigma (3 values, in voxels) |
+| `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
 | `--no-romeo-phase-coherence` | ROMEO: disable phase coherence weights (default: on) |
 | `--no-romeo-phase-gradient-coherence` | ROMEO: disable phase gradient coherence weights (default: on) |
@@ -1522,7 +1513,6 @@ Background field removal
 | [`resharp`](#qsmxt-bgremove-resharp) | Regularized SHARP (RESHARP) with Tikhonov regularization |
 | [`harperella`](#qsmxt-bgremove-harperella) | HARPERELLA integrated phase unwrapping + background removal |
 | [`iharperella`](#qsmxt-bgremove-iharperella) | Improved HARPERELLA (iHARPERELLA) |
-| [`msmv`](#qsmxt-bgremove-msmv) | Maximum Spherical Mean Value (mSMV) boundary-shadow removal |
 | [`bfrnet`](#qsmxt-bgremove-bfrnet) | BFRnet deep-learning background removal (weights downloaded on first use) |
 
 ### `qsmxt bgremove vsharp`
@@ -1542,8 +1532,8 @@ qsmxt bgremove vsharp [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--output-mask <OUTPUT_MASK>` | Output eroded mask (for algorithms that erode) |
 | `--deconvolve <BOOL>` | Undo the SMV high-pass with a truncated-SVD deconvolution (default: false) |
 | `--threshold <THRESHOLD>` | Deconvolution (TSVD) threshold; only used with --deconvolve true. |
-| `--max-radius <MAX_RADIUS>` | Largest SMV kernel radius, in mm (default: 12) |
-| `--min-radius <MIN_RADIUS>` | Smallest SMV kernel radius, in mm (default: 1) |
+| `--max-radius <MAX_RADIUS>` | Largest SMV kernel radius, in mm. |
+| `--min-radius <MIN_RADIUS>` | Smallest SMV kernel radius, in mm. |
 | `--grid <GRID>` | Grid the background is estimated on: `native` (default), `finest` (isotropic at the smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened), or `isotropic` (spacing from --grid-spacing). The local field keeps native resolution. Values: `native`, `finest`, `isotropic`. |
 | `--grid-spacing <MM>` | Isotropic working-grid spacing in mm (default 1); used with --grid isotropic. |
 
@@ -1552,7 +1542,7 @@ qsmxt bgremove vsharp [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 Projection onto Dipole Fields
 
 ```sh
-qsmxt bgremove pdf [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+qsmxt bgremove pdf [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... --magnitude <MAGNITUDE>... <INPUT>
 ```
 
 | Argument | Description |
@@ -1562,7 +1552,10 @@ qsmxt bgremove pdf [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-o, --output <OUTPUT>` | Output local field NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--output-mask <OUTPUT_MASK>` | Output eroded mask (for algorithms that erode) |
-| `--tol <TOL>` | Tolerance. |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
+| `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
+| `--magnitude <MAGNITUDE>` | Magnitude of every echo: one 4D NIfTI, or one 3D NIfTI per echo in echo order. Required. |
+| `--tol <TOL>` | Tolerance, relative to the noise level. |
 
 ### `qsmxt bgremove lbv`
 
@@ -1674,29 +1667,8 @@ qsmxt bgremove iharperella [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--output-mask <OUTPUT_MASK>` | Output eroded mask (for algorithms that erode) |
 | `--max-iter <MAX_ITER>` | Maximum iterations. |
 | `--tol <TOL>` | Convergence tolerance. |
-| `--te <TE>` | Echo time (s) of a wrapped-phase input. With --field-strength, the input is one wrapped echo in rad (the published method); without both, it is an unwrapped total field in ppm. The local field is written in ppm either way. |
+| `--te <TE>` | Echo time (s) of a wrapped-phase input. With --field-strength, the input is one wrapped echo in rad, unwrapped by HARPERELLA's Laplacian; without both, it is an unwrapped total field in ppm, which iHARPERELLA takes as it is. The local field is written in ppm either way. |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength (T) of a wrapped-phase input — see --te. |
-
-### `qsmxt bgremove msmv`
-
-Maximum Spherical Mean Value (mSMV) boundary-shadow removal
-
-```sh
-qsmxt bgremove msmv [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
-```
-
-| Argument | Description |
-| --- | --- |
-| `<INPUT>` | Input total field NIfTI file. Required. |
-| `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
-| `-o, --output <OUTPUT>` | Output local field NIfTI file. Required. |
-| `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--output-mask <OUTPUT_MASK>` | Output eroded mask (for algorithms that erode) |
-| `--radius <RADIUS>` | SMV prefilter kernel radius in mm. |
-| `--maxk <MAXK>` | Maximum boundary-correction iterations. |
-| `--field-strength <FIELD_STRENGTH>` | B0 field strength (T) — sets the radian shadow-threshold cap. |
-| `--te <TE>` | Echo time (s) for the ppm↔radian conversion. |
-| `--refine` | Refinement mode: skip the SMV prefilter and treat the input as an already-local field from a primary BFR (only the boundary-shadow correction is applied) |
 
 ### `qsmxt bgremove bfrnet`
 
@@ -1726,7 +1698,7 @@ Dipole inversion
 | [`tsvd`](#qsmxt-invert-tsvd) | Truncated Singular Value Decomposition |
 | [`tgv`](#qsmxt-invert-tgv) | Total Generalized Variation |
 | [`tikhonov`](#qsmxt-invert-tikhonov) | Tikhonov regularization |
-| [`nltv`](#qsmxt-invert-nltv) | Nonlocal Total Variation |
+| [`nltv`](#qsmxt-invert-nltv) | Nonlinear Total Variation |
 | [`medi`](#qsmxt-invert-medi) | Morphology Enabled Dipole Inversion |
 | [`tfi`](#qsmxt-invert-tfi) | Total Field Inversion (preconditioned). Input is the TOTAL field (not a local field) |
 | [`ilsqr`](#qsmxt-invert-ilsqr) | Iterative Least Squares QR |
@@ -1791,7 +1763,7 @@ qsmxt invert tv [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--lambda <LAMBDA>` | Lambda parameter. |
-| `--rho <RHO>` | Rho (ADMM penalty) |
+| `--rho <RHO>` | Rho (ADMM penalty; default: 100 × lambda) |
 | `--tol <TOL>` | Tolerance. |
 | `--max-iter <MAX_ITER>` | Max iterations. |
 
@@ -1836,7 +1808,7 @@ qsmxt invert tsvd [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 Total Generalized Variation
 
 ```sh
-qsmxt invert tgv [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+qsmxt invert tgv [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... <INPUT>
 ```
 
 | Argument | Description |
@@ -1847,12 +1819,13 @@ qsmxt invert tgv [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
-| `--iterations <ITERATIONS>` | Iterations. |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
+| `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
+| `--iterations <ITERATIONS>` | Iterations (default: from the voxel size, as the reference does) |
 | `--erosions <EROSIONS>` | Erosions. |
-| `--alpha1 <ALPHA1>` | Alpha1 (first-order weight), in ppm. |
-| `--alpha0 <ALPHA0>` | Alpha0 (second-order weight), in ppm. |
+| `--alpha1 <ALPHA1>` | Alpha1 (first-order weight), in radians at the first echo time and the field strength. |
+| `--alpha0 <ALPHA0>` | Alpha0 (second-order weight), in radians at the first echo time and the field strength. |
 | `--step-size <STEP_SIZE>` | Primal step size multiplier. |
-| `--tol <TOL>` | Convergence tolerance. |
 
 ### `qsmxt invert tikhonov`
 
@@ -1874,10 +1847,10 @@ qsmxt invert tikhonov [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 
 ### `qsmxt invert nltv`
 
-Nonlocal Total Variation
+Nonlinear Total Variation
 
 ```sh
-qsmxt invert nltv [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+qsmxt invert nltv [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... --magnitude <MAGNITUDE>... <INPUT>
 ```
 
 | Argument | Description |
@@ -1888,18 +1861,21 @@ qsmxt invert nltv [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
+| `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
+| `--magnitude <MAGNITUDE>` | Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. Required. |
 | `--lambda <LAMBDA>` | Lambda. |
 | `--mu <MU>` | Mu (penalty parameter) |
 | `--tol <TOL>` | Tolerance. |
 | `--max-iter <MAX_ITER>` | Max iterations. |
-| `--newton-iter <NEWTON_ITER>` | Newton iterations. |
+| `--newton-iter <NEWTON_ITER>` | Maximum Newton iterations of the data-term subproblem. |
 
 ### `qsmxt invert medi`
 
 Morphology Enabled Dipole Inversion
 
 ```sh
-qsmxt invert medi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-time <ECHO_TIME> <INPUT>
+qsmxt invert medi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... --magnitude <MAGNITUDE>... <INPUT>
 ```
 
 | Argument | Description |
@@ -1910,13 +1886,17 @@ qsmxt invert medi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FI
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
-| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla (MEDI works in radians; used to convert the ppm field) Required. |
-| `--echo-time <ECHO_TIME>` | Echo time in seconds (used to convert the ppm field to radians for MEDI) Required. |
-| `--magnitude <MAGNITUDE>` | Magnitude NIfTI file (recommended) |
-| `--lambda <LAMBDA>` | Lambda. |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
+| `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
+| `--magnitude <MAGNITUDE>` | Magnitude of every echo: one 4D NIfTI, or one 3D NIfTI per echo in echo order. Required. |
+| `--lambda <LAMBDA>` | Lambda: the data-fidelity weight (larger fits the field more closely) |
 | `--merit <MERIT>` | Enable MERIT weighting. |
-| `--smv <SMV>` | Enable SMV deconvolution (MEDI's own background removal). Set false when the input is already a local field. [default: from qsm-core]. |
-| `--smv-radius <SMV_RADIUS>` | SMV radius in mm. |
+| `--smv <SMV>` | High-pass the local field with a spherical mean value filter, removing residual background near the brain edge (MEDI-SMV) [default: on]. |
+| `--smv-radius <SMV_RADIUS>` | SMV radius in mm (also mSMV's) |
+| `--msmv` | MEDI-mSMV (Roberts et al. 2024): filter the local field by maximum spherical mean value first, and fit it with the SMV-filtered dipole kernel. Needs at least 3 echoes. |
+| `--msmv-maxk <MSMV_MAXK>` | MEDI-mSMV: the boundary correction makes at most this many passes, less one. |
+| `--msmv-vessel-radius <MSMV_VESSEL_RADIUS>` | MEDI-mSMV: largest vessel thickness of the vessel mask, in voxels (default: 15, or 8 × the largest voxel dimension if that is more) |
+| `--no-msmv-prefilter` | MEDI-mSMV: no SMV prefilter before mSMV. Only consistent for a field already high-passed by the same SMV; after PDF, V-SHARP or LBV it diverges (expert) |
 | `--data-weighting <DATA_WEIGHTING>` | Data weighting mode (0=uniform, 1=SNR) |
 | `--percentage <PERCENTAGE>` | Edge percentage (0.0-1.0) |
 | `--cg-tol <CG_TOL>` | CG tolerance. |
@@ -1929,7 +1909,7 @@ qsmxt invert medi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FI
 Total Field Inversion (preconditioned). Input is the TOTAL field (not a local field)
 
 ```sh
-qsmxt invert tfi [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+qsmxt invert tfi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... --magnitude <MAGNITUDE>... <INPUT>
 ```
 
 | Argument | Description |
@@ -1940,8 +1920,10 @@ qsmxt invert tfi [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
-| `--magnitude <MAGNITUDE>` | Magnitude NIfTI file (recommended) |
-| `--lambda <LAMBDA>` | Lambda. |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
+| `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
+| `--magnitude <MAGNITUDE>` | Magnitude of every echo: one 4D NIfTI, or one 3D NIfTI per echo in echo order. Required. |
+| `--lambda <LAMBDA>` | Lambda: the data-fidelity weight (larger fits the field more closely) |
 | `--precond <PRECOND>` | Preconditioner value (susceptibility scaling outside the mask) |
 | `--data-weighting <DATA_WEIGHTING>` | Data weighting mode (0=uniform, 1=SNR) |
 | `--percentage <PERCENTAGE>` | Edge percentage (0.0-1.0) |
@@ -1968,7 +1950,7 @@ qsmxt invert ilsqr [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--tol <TOL>` | Tolerance. |
 | `--max-iter <MAX_ITER>` | Max iterations. |
-| `--pad-mm <MM>` | Zero-padding in mm per side (default: 16) |
+| `--pad-mm <MM>` | Zero-padding in mm per side. |
 
 ### `qsmxt invert lsqr`
 
@@ -1986,7 +1968,7 @@ qsmxt invert lsqr [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
-| `--magnitude <MAGNITUDE>` | Magnitude NIfTI file (optional SNR row weight, normalised to unit mean inside the mask) |
+| `--magnitude <MAGNITUDE>` | Magnitude NIfTI (optional row weight; its scale does not change the solution): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. |
 | `--b0 <B0>` | B0 field strength in Tesla — sets the default residual weighting. Default: `3`. |
 | `--lsqr-residual-weighting <LSQR_RESIDUAL_WEIGHTING>` | LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly. |
 | `--no-lsqr-global-offset` | Do not fit a global field offset alongside χ. |
@@ -1998,7 +1980,7 @@ qsmxt invert lsqr [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 HEIDI (Homogeneity Enabled Incremental Dipole Inversion), seeded by an LSQR solve
 
 ```sh
-qsmxt invert heidi [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+qsmxt invert heidi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... <INPUT>
 ```
 
 | Argument | Description |
@@ -2009,8 +1991,9 @@ qsmxt invert heidi [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
-| `--magnitude <MAGNITUDE>` | Magnitude NIfTI file (optional SNR row weight for the LSQR seed) |
-| `--b0 <B0>` | B0 field strength in Tesla — sets the LSQR seed's default residual weighting. Default: `3`. |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
+| `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
+| `--magnitude <MAGNITUDE>` | Magnitude NIfTI (optional row weight of the LSQR seed): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. |
 | `--lsqr-residual-weighting <LSQR_RESIDUAL_WEIGHTING>` | LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly. |
 | `--no-lsqr-global-offset` | Do not fit a global field offset alongside χ. |
 | `--lsqr-tol <LSQR_TOL>` | LSQR convergence tolerance. |
@@ -2020,10 +2003,10 @@ qsmxt invert heidi [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--no-heidi-laplacian-correction` | Do not open the homogeneity masks where the field's Laplacian is large. |
 | `--heidi-laplacian-threshold <HEIDI_LAPLACIAN_THRESHOLD>` | Field-Laplacian threshold (ppm per voxel²) |
 | `--heidi-gradient-mask-floor <HEIDI_GRADIENT_MASK_FLOOR>` | TV weight kept where every direction reads as an edge (0 reproduces upstream's shipped binarised masks) |
-| `--heidi-continuation-steps <HEIDI_CONTINUATION_STEPS>` | NESTA continuation steps on μ. The dominant quality knob, and more is not better — on the QSM-CI phantom 6 steps beat 8. Worth sweeping on your own data. |
+| `--heidi-continuation-steps <HEIDI_CONTINUATION_STEPS>` | NESTA continuation steps on μ. |
 | `--heidi-inner-iterations <HEIDI_INNER_ITERATIONS>` | Accelerated-gradient iterations per continuation step. |
 | `--heidi-mu-min <HEIDI_MU_MIN>` | Final (smallest) smoothing parameter μ. |
-| `--heidi-tol <HEIDI_TOL>` | Relative objective change that ends an inner loop early. |
+| `--heidi-tol <HEIDI_TOL>` | Relative objective change that ends an inner loop early (the default runs every iteration) |
 | `--no-heidi-denoise` | Skip the anisotropic-diffusion smoothing of the field before its gradients are taken. |
 | `--heidi-denoise-iterations <HEIDI_DENOISE_ITERATIONS>` | Anisotropic-diffusion iterations. |
 | `--heidi-denoise-time-step <HEIDI_DENOISE_TIME_STEP>` | Anisotropic-diffusion time step. |
@@ -2034,7 +2017,7 @@ qsmxt invert heidi [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 Nonlinear Dipole Inversion
 
 ```sh
-qsmxt invert ndi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-time <ECHO_TIME> <INPUT>
+qsmxt invert ndi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... --magnitude <MAGNITUDE>... <INPUT>
 ```
 
 | Argument | Description |
@@ -2049,16 +2032,16 @@ qsmxt invert ndi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIE
 | `--alpha <ALPHA>` | L2 regularization weight (alpha) |
 | `--max-iter <MAX_ITER>` | Max iterations (the maximum, with --auto-stop) |
 | `--auto-stop <AUTO_STOP>` | Stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto) |
-| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla (NDI works in radians; used to convert the ppm field) Required. |
-| `--echo-time <ECHO_TIME>` | Echo time in seconds (used to convert the ppm field to radians) Required. |
-| `--magnitude <MAGNITUDE>` | Magnitude NIfTI file, the data weight (recommended) |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
+| `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
+| `--magnitude <MAGNITUDE>` | Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. Required. |
 
 ### `qsmxt invert fansi`
 
 FANSI Nonlinear Total Variation
 
 ```sh
-qsmxt invert fansi [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+qsmxt invert fansi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... --magnitude <MAGNITUDE>... <INPUT>
 ```
 
 | Argument | Description |
@@ -2069,22 +2052,24 @@ qsmxt invert fansi [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
+| `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
+| `--magnitude <MAGNITUDE>` | Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. Required. |
 | `--alpha1 <ALPHA1>` | First-order (TV/TGV) L1 penalty weight (alpha1) |
-| `--mu1 <MU1>` | Gradient-consistency ADMM weight (mu1) |
+| `--mu1 <MU1>` | Gradient-consistency ADMM weight (mu1; default: 100 × alpha1) |
 | `--mu2 <MU2>` | Fidelity-consistency ADMM weight (mu2) |
-| `--alpha0 <ALPHA0>` | Second-order L1 penalty weight (alpha0, nlTGV only) |
-| `--mu0 <MU0>` | Second-order consistency ADMM weight (mu0, nlTGV only) |
+| `--alpha0 <ALPHA0>` | Second-order L1 penalty weight (alpha0, nlTGV only; default: 2 × alpha1) |
+| `--mu0 <MU0>` | Second-order consistency ADMM weight (mu0, nlTGV only; default: 2 × mu1) |
 | `--max-iter <MAX_ITER>` | Max iterations. |
 | `--tol-update <TOL_UPDATE>` | Percent-update convergence tolerance. |
 | `--tol-delta <TOL_DELTA>` | Inner Newton convergence tolerance. |
-| `--phase-scale <PHASE_SCALE>` | Phase scale (ppm -&gt; working scale) |
 
 ### `qsmxt invert fansi-tgv`
 
 FANSI Nonlinear Total Generalized Variation
 
 ```sh
-qsmxt invert fansi-tgv [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+qsmxt invert fansi-tgv [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... --magnitude <MAGNITUDE>... <INPUT>
 ```
 
 | Argument | Description |
@@ -2095,22 +2080,24 @@ qsmxt invert fansi-tgv [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
+| `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
+| `--magnitude <MAGNITUDE>` | Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. Required. |
 | `--alpha1 <ALPHA1>` | First-order (TGV gradient) L1 penalty weight (alpha1) |
-| `--mu1 <MU1>` | Gradient-consistency ADMM weight (mu1) |
+| `--mu1 <MU1>` | Gradient-consistency ADMM weight (mu1; default: 100 × alpha1) |
 | `--mu2 <MU2>` | Fidelity-consistency ADMM weight (mu2) |
-| `--alpha0 <ALPHA0>` | Second-order L1 penalty weight (alpha0) |
-| `--mu0 <MU0>` | Second-order consistency ADMM weight (mu0) |
+| `--alpha0 <ALPHA0>` | Second-order L1 penalty weight (alpha0; default: 2 × alpha1) |
+| `--mu0 <MU0>` | Second-order consistency ADMM weight (mu0; default: 2 × mu1) |
 | `--max-iter <MAX_ITER>` | Max iterations. |
 | `--tol-update <TOL_UPDATE>` | Percent-update convergence tolerance. |
 | `--tol-delta <TOL_DELTA>` | Inner Newton convergence tolerance. |
-| `--phase-scale <PHASE_SCALE>` | Phase scale (ppm -&gt; working scale) |
 
 ### `qsmxt invert l1qsm`
 
 L1 Data-Fidelity QSM
 
 ```sh
-qsmxt invert l1qsm [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+qsmxt invert l1qsm [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... --magnitude <MAGNITUDE>... <INPUT>
 ```
 
 | Argument | Description |
@@ -2121,22 +2108,24 @@ qsmxt invert l1qsm [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
+| `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
+| `--magnitude <MAGNITUDE>` | Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. Required. |
 | `--alpha1 <ALPHA1>` | Gradient (TV) L1 penalty weight (alpha1) |
-| `--mu1 <MU1>` | Gradient-consistency ADMM weight (mu1) |
+| `--mu1 <MU1>` | Gradient-consistency ADMM weight (mu1; default: 100 × alpha1) |
 | `--mu2 <MU2>` | Fidelity-consistency ADMM weight (mu2) |
 | `--mu3 <MU3>` | L1 proximal ADMM weight (mu3) |
 | `--lambda <LAMBDA>` | L1 fidelity strength (lambda) |
 | `--max-iter <MAX_ITER>` | Max iterations. |
 | `--tol-update <TOL_UPDATE>` | Percent-update convergence tolerance. |
 | `--tol-delta <TOL_DELTA>` | Inner Newton convergence tolerance. |
-| `--phase-scale <PHASE_SCALE>` | Phase scale (ppm -&gt; working scale) |
 
 ### `qsmxt invert whqsm`
 
 Weak-Harmonic QSM
 
 ```sh
-qsmxt invert whqsm [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+qsmxt invert whqsm [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... <INPUT>
 ```
 
 | Argument | Description |
@@ -2147,6 +2136,8 @@ qsmxt invert whqsm [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
+| `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
 | `--alpha1 <ALPHA1>` | TV regularization weight (alpha1) |
 | `--mu1 <MU1>` | ADMM penalty for TV splitting (mu1) |
 | `--mu2 <MU2>` | ADMM penalty for data-fidelity splitting (mu2) |
@@ -2155,7 +2146,6 @@ qsmxt invert whqsm [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--max-iter <MAX_ITER>` | Max iterations. |
 | `--tol-update <TOL_UPDATE>` | Percent-update convergence tolerance. |
 | `--tol-delta <TOL_DELTA>` | Inner Newton convergence tolerance. |
-| `--phase-scale <PHASE_SCALE>` | Phase scale (ppm -&gt; working scale) |
 
 ### `qsmxt invert hdqsm`
 
@@ -2173,8 +2163,9 @@ qsmxt invert hdqsm [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
+| `--magnitude <MAGNITUDE>` | Magnitude NIfTI (optional data weight): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. |
 | `--alpha-l2 <ALPHA_L2>` | L2-stage TV weight (alpha_l2) |
-| `--mu1-l2 <MU1_L2>` | L2-stage gradient-consistency ADMM weight (mu1_l2) |
+| `--mu1-l2 <MU1_L2>` | L2-stage gradient-consistency ADMM weight (mu1_l2; default: 100 × alpha_l2) |
 | `--mu2 <MU2>` | Fidelity consistency weight (mu2) |
 | `--max-iter-l1 <MAX_ITER_L1>` | Stage-1 (L1) iterations (max_iter_l1) |
 | `--max-iter-l2 <MAX_ITER_L2>` | Stage-2 (L2) iterations (max_iter_l2) |
@@ -2196,7 +2187,7 @@ qsmxt invert amp-pe [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
-| `--magnitude <MAGNITUDE>` | Magnitude NIfTI file (used as data-fidelity weight + morphology mask) |
+| `--magnitude <MAGNITUDE>` | Magnitude NIfTI (data weight and morphology image): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. |
 | `--b0 <B0>` | B0 field strength in Tesla (scales the simulated phase) Default: `3`. |
 | `--wave-order <WAVE_ORDER>` | Daubechies wavelet order (1=db1, 2=db2) |
 | `--nlevel <NLEVEL>` | Wavelet decomposition levels. |

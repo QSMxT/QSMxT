@@ -15,90 +15,33 @@ use crate::stages::crop::crop_box_for;
 /// A parameter missing here is a parameter whose change does not invalidate a cached
 /// reconstruction, so the run silently reuses a map computed with the old value.
 pub fn params(config: &PipelineConfig) -> serde_json::Value {
-    match config.inversion.algorithm {
-        QsmAlgorithm::Rts => serde_json::json!({
-            "delta": config.inversion.rts.delta, "mu": config.inversion.rts.mu,
-            "tol": config.inversion.rts.tol, "max_iter": config.inversion.rts.max_iter,
-        }),
-        QsmAlgorithm::Tv => serde_json::json!({
-            "lambda": config.inversion.tv.lambda, "max_iter": config.inversion.tv.max_iter,
-        }),
-        QsmAlgorithm::Tkd => serde_json::json!({ "threshold": config.inversion.tkd.threshold }),
-        QsmAlgorithm::Tsvd => serde_json::json!({ "threshold": config.inversion.tsvd.threshold }),
-        QsmAlgorithm::Ilsqr => serde_json::json!({
-            "tol": config.inversion.ilsqr.tol, "max_iter": config.inversion.ilsqr.max_iter,
-            "pad_mm": config.inversion.ilsqr.pad_mm,
-        }),
-        // HEIDI's cache key carries the LSQR group too — its seed is an LSQR solve, so changing
-        // `--lsqr-tol` changes the HEIDI result and has to invalidate it.
-        QsmAlgorithm::Lsqr | QsmAlgorithm::Heidi => {
-            let l = &config.inversion.lsqr;
-            let mut key = serde_json::json!({
-                "lsqr_residual_weighting": l.residual_weighting,
-                "lsqr_fit_global_offset": l.fit_global_offset,
-                "lsqr_tol": l.tol, "lsqr_max_iter": l.max_iter,
-            });
-            if config.inversion.algorithm == QsmAlgorithm::Heidi {
-                let h = &config.inversion.heidi;
-                key["heidi"] = serde_json::json!({
-                    "cone_threshold": h.cone_threshold,
-                    "gradient_threshold": h.gradient_threshold,
-                    "apply_laplacian_correction": h.apply_laplacian_correction,
-                    "laplacian_threshold": h.laplacian_threshold,
-                    "gradient_mask_floor": h.gradient_mask_floor,
-                    "continuation_steps": h.continuation_steps,
-                    "inner_iterations": h.inner_iterations,
-                    "mu_min": h.mu_min, "tol": h.tol,
-                    "denoise": h.denoise,
-                    "denoise_iterations": h.denoise_iterations,
-                    "denoise_time_step": h.denoise_time_step,
-                    "denoise_conductance": h.denoise_conductance,
-                });
-            }
+    // Each method's settings serialised whole, so that a setting added to its config is recorded
+    // (and keyed) without anyone listing it here.
+    let inv = &config.inversion;
+    match inv.algorithm {
+        QsmAlgorithm::Rts => all(&inv.rts),
+        QsmAlgorithm::Tv => all(&inv.tv),
+        QsmAlgorithm::Tkd => all(&inv.tkd),
+        QsmAlgorithm::Tsvd => all(&inv.tsvd),
+        QsmAlgorithm::Ilsqr => all(&inv.ilsqr),
+        QsmAlgorithm::Tikhonov => all(&inv.tikhonov),
+        QsmAlgorithm::Nltv => all(&inv.nltv),
+        QsmAlgorithm::Medi => all(&inv.medi),
+        QsmAlgorithm::Tfi => all(&inv.tfi),
+        QsmAlgorithm::Ndi => all(&inv.ndi),
+        QsmAlgorithm::Fansi | QsmAlgorithm::FansiTgv => {
+            let mut key = all(&inv.fansi);
+            key["is_tgv"] = serde_json::json!(inv.algorithm == QsmAlgorithm::FansiTgv);
             key
         }
-        QsmAlgorithm::Tikhonov => serde_json::json!({ "lambda": config.inversion.tikhonov.lambda }),
-        QsmAlgorithm::Nltv => serde_json::json!({
-            "lambda": config.inversion.nltv.lambda, "max_iter": config.inversion.nltv.max_iter,
-        }),
-        QsmAlgorithm::Medi => serde_json::json!({
-            "lambda": config.inversion.medi.lambda, "max_iter": config.inversion.medi.max_iter,
-            "smv": config.inversion.medi.smv,
-        }),
-        QsmAlgorithm::Ndi => serde_json::json!({
-            "tau": config.inversion.ndi.tau, "alpha": config.inversion.ndi.alpha,
-            "max_iter": config.inversion.ndi.max_iter,
-        }),
-        QsmAlgorithm::Fansi => serde_json::json!({
-            "is_tgv": false, "alpha1": config.inversion.fansi.alpha1,
-            "max_iter": config.inversion.fansi.max_iter,
-        }),
-        QsmAlgorithm::FansiTgv => serde_json::json!({
-            "is_tgv": true, "alpha1": config.inversion.fansi.alpha1,
-            "alpha0": config.inversion.fansi.alpha0,
-            "max_iter": config.inversion.fansi.max_iter,
-        }),
-        QsmAlgorithm::L1qsm => serde_json::json!({
-            "alpha1": config.inversion.l1qsm.alpha1, "lambda": config.inversion.l1qsm.lambda,
-            "max_iter": config.inversion.l1qsm.max_iter,
-        }),
-        QsmAlgorithm::Whqsm => serde_json::json!({
-            "alpha1": config.inversion.whqsm.alpha1, "beta": config.inversion.whqsm.beta,
-            "max_iter": config.inversion.whqsm.max_iter,
-        }),
-        QsmAlgorithm::Hdqsm => serde_json::json!({
-            "alpha_l2": config.inversion.hdqsm.alpha_l2,
-            "max_iter_l1": config.inversion.hdqsm.max_iter_l1,
-            "max_iter_l2": config.inversion.hdqsm.max_iter_l2,
-        }),
-        QsmAlgorithm::AmpPe => serde_json::json!({
-            "wave_order": config.inversion.amp_pe.wave_order,
-            "nlevel": config.inversion.amp_pe.nlevel,
-            "wave_pec": config.inversion.amp_pe.wave_pec,
-            "simulated_te": config.inversion.amp_pe.simulated_te,
-            "max_linearization_ite": config.inversion.amp_pe.max_linearization_ite,
-            "tikhonov_beta": config.inversion.amp_pe.tikhonov_beta,
-        }),
+        QsmAlgorithm::L1qsm => all(&inv.l1qsm),
+        QsmAlgorithm::Whqsm => all(&inv.whqsm),
+        QsmAlgorithm::Hdqsm => all(&inv.hdqsm),
+        QsmAlgorithm::AmpPe => all(&inv.amp_pe),
+        // HEIDI's key carries the LSQR group too — its seed is an LSQR solve, so changing
+        // `--lsqr-tol` changes the HEIDI result and has to invalidate it.
+        QsmAlgorithm::Lsqr => serde_json::json!({ "lsqr": all(&inv.lsqr) }),
+        QsmAlgorithm::Heidi => serde_json::json!({ "lsqr": all(&inv.lsqr), "heidi": all(&inv.heidi) }),
         // The networks have no parameters; a tiled run is a different result from a
         // whole-volume one, so the tiling is in the key.
         a if a.tileable() => match config.dl_tile() {
@@ -109,10 +52,52 @@ pub fn params(config: &PipelineConfig) -> serde_json::Value {
     }
 }
 
+/// A method's settings, serialised whole.
+fn all<T: serde::Serialize>(settings: &T) -> serde_json::Value {
+    serde_json::to_value(settings).unwrap_or_default()
+}
+
+/// Which magnitude an inversion takes, by what qsm-core's dispatcher asks of it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MagnitudeInput {
+    /// The combined magnitude, when the run has one: the data weight of the methods that weight
+    /// by the magnitude.
+    Combined,
+    /// Every echo's magnitude, stacked with the echo slowest: MEDI and TFI, which make their
+    /// edge mask and noise map (MEDI toolbox `Fit_ppm_complex`) from the echoes.
+    Echoes,
+}
+
+/// The magnitude the configured inversion takes ([`MagnitudeInput`]), or `None` for one that
+/// takes none.
+pub fn magnitude_input(config: &PipelineConfig) -> Option<MagnitudeInput> {
+    use QsmAlgorithm as A;
+    match config.inversion.algorithm {
+        A::Medi | A::Tfi => Some(MagnitudeInput::Echoes),
+        A::Nltv | A::Ndi | A::Fansi | A::FansiTgv | A::L1qsm | A::Hdqsm | A::AmpPe | A::Lsqr | A::Heidi => {
+            Some(MagnitudeInput::Combined)
+        }
+        // WH-QSM weights by the magnitude only with a magnitude weight (WH_nlTV's default is flat).
+        A::Whqsm => crate::bridge::to_pipeline_stages(config).2.whqsm.weight.needs_magnitude()
+            .then_some(MagnitudeInput::Combined),
+        _ => None,
+    }
+}
+
+/// `volume` cropped to `cb`, or, for a stack of several volumes of `n` voxels each (the echoes,
+/// echo slowest), each volume cropped and the results stacked again.
+pub(crate) fn crop_stack(volume: &[f64], n: usize, cb: &qsm_core::crop::CropBox) -> Vec<f64> {
+    if n == 0 || volume.len() == n {
+        return qsm_core::crop::crop_volume(volume, cb);
+    }
+    volume.chunks(n).flat_map(|v| qsm_core::crop::crop_volume(v, cb)).collect()
+}
+
 /// Invert the local field `local_field` (ppm) inside `mask` (the mask background removal left, or
 /// the brain mask for an inversion that removes the background itself, which then takes the total
-/// field) with the configured algorithm. `magnitude` is the combined magnitude, for the
-/// algorithms that weight by it (MEDI's edges). Returns the raw susceptibility map in ppm.
+/// field) with the configured algorithm. `magnitude` is what [`magnitude_input`] says the
+/// algorithm takes: the combined magnitude, or every echo's, stacked with the echo slowest.
+/// Returns the raw susceptibility map in ppm.
 ///
 /// Runs in the reconstruction box ([`crop_box_for`]); the dipole kernel has infinite support, so
 /// this is the stage most exposed to the periodic boundary moving inward, and the margin is there
@@ -123,7 +108,7 @@ pub fn invert(
 ) -> Result<Vec<f64>, EngineError> {
     let (_, _, inv_config, _) = crate::bridge::to_pipeline_stages(config);
     let cb = crop_box_for(config, meta, mask, "Dipole inversion");
-    let magnitude = magnitude.map(|m| qsm_core::crop::crop_volume(m, &cb));
+    let magnitude = magnitude.map(|m| crop_stack(m, mask.len(), &cb));
     let chi = qsm_core::pipeline::run_dipole_inversion(
         &qsm_core::crop::crop_volume(local_field, &cb),
         &qsm_core::crop::crop_volume(mask, &cb),
@@ -149,26 +134,23 @@ pub fn tgv_source(meta: &RunMetadata) -> TgvSource {
     if meta.n_echoes > 1 { TgvSource::FieldPpm } else { TgvSource::WrappedPhase }
 }
 
-/// The TGV step's parameters. α are in ppm whichever the input.
+/// The TGV step's parameters. α are in the reference's units, radians at the first echo time and
+/// field strength, whichever the input.
 pub fn tgv_params(config: &PipelineConfig, meta: &RunMetadata) -> serde_json::Value {
     let tgv = &config.inversion.tgv;
     let wrapped = tgv_source(meta) == TgvSource::WrappedPhase;
-    let mut params = serde_json::json!({
+    serde_json::json!({
         "iterations": tgv.iterations,
-        "alphas_ppm": [tgv.alpha1, tgv.alpha0],
+        "alphas_rad": [tgv.alpha1, tgv.alpha0],
         "erosions": tgv.erosions,
         "step_size": tgv.step_size,
-        "tol": tgv.tol,
         "input": if wrapped { "wrapped_phase" } else { "field_ppm" },
-    });
-    if wrapped {
-        params["te_ms"] = serde_json::json!(meta.echo_times[0] * 1000.0);
-        params["field_strength"] = serde_json::json!(meta.field_strength);
-    }
-    params
+        "te_ms": meta.echo_times[0] * 1000.0,
+        "field_strength": meta.field_strength,
+    })
 }
 
-/// qsm-core's TGV parameters from QSMxT's TGV config. α are in ppm.
+/// qsm-core's TGV parameters from QSMxT's TGV config.
 pub fn tgv_params_from_config(c: &TgvConfig) -> qsm_core::inversion::TgvParams {
     qsm_core::inversion::TgvParams {
         alpha0: c.alpha0 as f32,
@@ -176,36 +158,39 @@ pub fn tgv_params_from_config(c: &TgvConfig) -> qsm_core::inversion::TgvParams {
         iterations: c.iterations,
         erosions: c.erosions,
         step_size: c.step_size as f32,
-        tol: c.tol as f32,
+        // The echo time choice is not a QSMxT setting yet: the reference's (the first echo).
+        ..Default::default()
     }
 }
 
 /// TGV-QSM inside the brain `mask`, from `data`: what [`tgv_source`] says for this run (the total
-/// field in ppm, or echo 1's wrapped phase). Returns the raw susceptibility map in ppm.
+/// field in ppm, which TGV expresses as phase at the first echo time, or echo 1's wrapped phase).
+/// Returns the raw susceptibility map in ppm.
 pub fn tgv(
     data: &[f64], mask: &[u8], meta: &RunMetadata, config: &PipelineConfig,
 ) -> Result<Vec<f64>, EngineError> {
     let tgv = &config.inversion.tgv;
     let te1_s = meta.echo_times[0];
     let b0_t = meta.field_strength;
+    let iterations = tgv.iterations.map_or_else(|| "from the voxel size".to_string(), |n| n.to_string());
+    if !(te1_s.is_finite() && te1_s > 0.0 && b0_t.is_finite() && b0_t > 0.0) {
+        return Err(EngineError::Config(format!(
+            "TGV needs a positive echo time and field strength (TE1 = {te1_s} s, B0 = {b0_t} T)"
+        )));
+    }
     let input = match tgv_source(meta) {
         TgvSource::FieldPpm => {
             log::info!(
-                "TGV-QSM on the B0 field map (iterations={}, alphas=[{}, {}] ppm, erosions={})",
-                tgv.iterations, tgv.alpha1, tgv.alpha0, tgv.erosions,
+                "TGV-QSM on the B0 field map (iterations {iterations}, alphas [{}, {}] rad at TE1, erosions {})",
+                tgv.alpha1, tgv.alpha0, tgv.erosions,
             );
-            qsm_core::inversion::TgvInput::FieldPpm(data)
+            qsm_core::inversion::TgvInput::FieldPpm { field: data, echo_times: &meta.echo_times, b0_t }
         }
         TgvSource::WrappedPhase => {
             log::info!(
-                "TGV-QSM on wrapped echo-1 phase (iterations={}, alphas=[{}, {}] ppm, erosions={}, TE={:.3}ms, B0={:.1}T)",
-                tgv.iterations, tgv.alpha1, tgv.alpha0, tgv.erosions, te1_s * 1000.0, b0_t,
+                "TGV-QSM on wrapped echo-1 phase (iterations {iterations}, alphas [{}, {}] rad, erosions {}, TE={:.3}ms, B0={:.1}T)",
+                tgv.alpha1, tgv.alpha0, tgv.erosions, te1_s * 1000.0, b0_t,
             );
-            if !(te1_s.is_finite() && te1_s > 0.0 && b0_t.is_finite() && b0_t > 0.0) {
-                return Err(EngineError::Config(format!(
-                    "single-echo TGV needs a positive echo time and field strength (TE1 = {te1_s} s, B0 = {b0_t} T)"
-                )));
-            }
             qsm_core::inversion::TgvInput::WrappedPhase { phase: data, te_s: te1_s, b0_t }
         }
     };
@@ -343,13 +328,15 @@ mod tests {
         meta.n_echoes = 3;
         meta.echo_times = vec![0.004, 0.008, 0.012];
         assert_eq!(tgv_source(&meta), TgvSource::FieldPpm);
-        assert!(tgv_params(&config, &meta).get("te_ms").is_none(), "TE does not change a field-map run");
+        // α are in radians at TE1 and B0 either way, so both are in the key.
+        assert!((tgv_params(&config, &meta)["te_ms"].as_f64().unwrap() - 4.0).abs() < 1e-9);
+        assert_eq!(tgv_params(&config, &meta)["input"], "field_ppm");
 
-        // A single echo without a usable echo time is refused, not divided by.
+        // An echo time or field strength TGV cannot use is refused, not divided by.
         meta.n_echoes = 1;
         meta.echo_times = vec![0.0];
         let err = tgv(&[0.0; 64], &[1; 64], &meta, &config).unwrap_err();
-        assert!(format!("{err}").contains("single-echo TGV"), "{err}");
+        assert!(format!("{err}").contains("TGV needs a positive echo time"), "{err}");
     }
 
     /// The reliable pass is kept where it has a value; a zero inside its mask is a hole to fill.

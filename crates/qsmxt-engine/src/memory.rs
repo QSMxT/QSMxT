@@ -387,7 +387,9 @@ fn bg_removal_need(config: &PipelineConfig, s: &Scan) -> u64 {
             crate::VsharpGrid::Isotropic => 220 * n,
             crate::VsharpGrid::Finest => 440 * n,
         },
-        BfAlgorithm::Pdf => 112 * n,
+        // PDF: every echo's magnitude (8 B per voxel per echo) and the noise map made from it,
+        // on top of the solve (2.13 GB natively on the example's 5 echoes).
+        BfAlgorithm::Pdf => (313 + 8 * s.echoes) * n,
         BfAlgorithm::Lbv => 37 * n,
         BfAlgorithm::Ismv => 114 * n,
         BfAlgorithm::Sharp => 59 * n,
@@ -418,8 +420,10 @@ fn inversion_need(config: &PipelineConfig, s: &Scan) -> u64 {
         QsmAlgorithm::Tv => 147 * n,
         QsmAlgorithm::Nltv => 154 * n,
         QsmAlgorithm::Rts => 227 * n,
-        QsmAlgorithm::Medi => 224 * n,
-        QsmAlgorithm::Tfi => 198 * n,
+        // MEDI and TFI hold every echo's magnitude (8 B per voxel per echo) and the noise map and
+        // edge mask made from it (2.58 and 2.64 GB natively on the example's 5 echoes).
+        QsmAlgorithm::Medi => (387 + 8 * s.echoes) * n,
+        QsmAlgorithm::Tfi => (398 + 8 * s.echoes) * n,
         QsmAlgorithm::Tgv => s.v(TGV_PER_VOXEL),
         QsmAlgorithm::Qsmart => s.v(QSMART_PER_VOXEL),
         QsmAlgorithm::Ndi => 123 * n,

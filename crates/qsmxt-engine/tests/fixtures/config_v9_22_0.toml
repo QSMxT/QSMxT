@@ -1,0 +1,378 @@
+description = ""
+
+[pipeline]
+do_qsm = true
+do_swi = false
+do_smwi = false
+do_segmentation = false
+do_analysis = false
+do_t2starmap = false
+do_r2starmap = false
+do_r2map = false
+do_r2primemap = false
+do_chi_separation = false
+export_dicom = false
+obliquity_threshold = -1.0
+crop_to_mask = false
+fft_padding = false
+crop_margin_mm = 32.0
+output_space = "acquired"
+
+[field_mapping]
+phase_offset_removal = true
+phase_offset_sigma = [
+    4.0,
+    4.0,
+    4.0,
+]
+coil_combination_sigma = [
+    10.0,
+    10.0,
+    5.0,
+]
+bipolar_correction = false
+unwrapping_algorithm = "romeo"
+b0_estimation = "weighted-avg"
+b0_weight_type = "phase-snr"
+
+[field_mapping.romeo]
+individual = true
+correct_global = true
+template = 0
+phase_coherence = true
+phase_gradient_coherence = true
+phase_linearity = true
+mag_coherence = true
+mag_weight = false
+mag_weight2 = false
+bestpath = false
+temporal_uncertain_unwrapping = 0.5
+max_seeds = 1
+merge_regions = false
+correct_regions = false
+wrap_addition = 0.0
+
+[field_mapping.linear_fit]
+estimate_offset = true
+reliability_threshold_percentile = 90.0
+
+[masking]
+inhomogeneity_correction = true
+combine = "or"
+refinements = []
+two_pass = false
+
+[[masking.sections]]
+input = "phase-quality"
+
+[masking.sections.generator]
+op = "threshold"
+method = "otsu"
+
+[[masking.sections.refinements]]
+op = "dilate"
+iterations = 1
+
+[[masking.sections.refinements]]
+op = "fill-holes"
+max_size = 0
+
+[[masking.sections.refinements]]
+op = "erode"
+iterations = 1
+
+[bg_removal]
+algorithm = "vsharp"
+msmv_refine = false
+
+[bg_removal.vsharp]
+threshold = 0.2
+max_radius = 12.0
+min_radius = 1.0
+
+[bg_removal.pdf]
+tol = 0.00001
+
+[bg_removal.lbv]
+tol = 0.000001
+
+[bg_removal.ismv]
+tol = 0.000001
+max_iter = 50
+radius = 5.0
+
+[bg_removal.sharp]
+threshold = 0.05
+radius = 6.0
+
+[bg_removal.resharp]
+radius = 6.0
+tik_reg = 0.0001
+tol = 0.000001
+max_iter = 30
+
+[bg_removal.harperella]
+radius = 10.0
+max_iter = 40
+tol = 0.000001
+
+[bg_removal.iharperella]
+radius = 10.0
+max_iter = 40
+tol = 0.000001
+
+[bg_removal.msmv]
+radius = 5.0
+maxk = 5
+
+[inversion]
+algorithm = "rts"
+
+[inversion.rts]
+delta = 0.15
+mu = 100000.0
+rho = 10.0
+tol = 0.01
+max_iter = 20
+lsmr_iter = 4
+
+[inversion.tv]
+lambda = 0.0002
+rho = 0.02
+tol = 0.001
+max_iter = 250
+
+[inversion.tkd]
+threshold = 0.15
+
+[inversion.tsvd]
+threshold = 0.15
+
+[inversion.tikhonov]
+lambda = 0.01
+reg = "identity"
+
+[inversion.nltv]
+lambda = 0.001
+mu = 1.0
+tol = 0.001
+max_iter = 250
+newton_iter = 10
+
+[inversion.medi]
+lambda = 0.001
+merit = false
+smv = true
+smv_radius = 5.0
+data_weighting = 1
+percentage = 0.3
+cg_tol = 0.01
+cg_max_iter = 10
+max_iter = 30
+tol = 0.1
+
+[inversion.tfi]
+lambda = 0.000075
+precond = 30.0
+merit = false
+data_weighting = 1
+percentage = 0.9
+cg_tol = 0.01
+cg_max_iter = 100
+max_iter = 10
+tol = 0.1
+
+[inversion.ilsqr]
+tol = 0.01
+max_iter = 50
+
+[inversion.tgv]
+iterations = 1000
+erosions = 3
+alpha0 = 0.0015
+alpha1 = 0.0005
+step_size = 3.0
+tol = 0.00001
+
+[inversion.qsmart]
+ilsqr_tol = 0.01
+ilsqr_max_iter = 50
+vasc_sphere_radius = 8
+sdf_spatial_radius = 8
+inversion = "ilsqr"
+sdf_sigma1_stage1 = 10.0
+sdf_sigma2_stage1 = 10.0
+sdf_sigma1_stage2 = 8.0
+sdf_sigma2_stage2 = 2.0
+sdf_lower_lim = 0.6
+sdf_curv_constant = 500.0
+frangi_scale_min = 0.5
+frangi_scale_max = 6.0
+frangi_scale_ratio = 0.5
+frangi_c = 500.0
+
+[inversion.ndi]
+tau = 2.0
+alpha = 0.00001
+max_iter = 200
+phase_scale = 1.0
+
+[inversion.fansi]
+alpha1 = 0.0002
+mu1 = 0.02
+mu2 = 1.0
+alpha0 = 0.0004
+mu0 = 0.04
+max_iter = 150
+tol_update = 0.1
+tol_delta = 0.000001
+phase_scale = 1.0
+
+[inversion.l1qsm]
+alpha1 = 0.0002
+mu1 = 0.02
+mu2 = 1.0
+mu3 = 1.0
+lambda = 1.0
+max_iter = 50
+tol_update = 1.0
+tol_delta = 0.000001
+phase_scale = 1.0
+
+[inversion.whqsm]
+alpha1 = 0.0002
+mu1 = 0.02
+mu2 = 1.0
+beta = 150.0
+muh = 3.0
+max_iter = 300
+tol_update = 0.1
+tol_delta = 0.000001
+phase_scale = 1.0
+
+[inversion.hdqsm]
+alpha_l2 = 0.0001
+mu1_l2 = 0.01
+mu2 = 1.0
+max_iter_l1 = 20
+max_iter_l2 = 80
+tol_update = 1.0
+
+[inversion.amp_pe]
+wave_order = 1
+nlevel = 3
+wave_pec = 0.85
+simulated_te = 0.008
+max_linearization_ite = 25
+b0 = 3.0
+gyro_ratio = 42.58
+damp_rate_sig = 0.01
+damp_rate_par = 0.1
+max_pe_spar_ite = 5
+max_pe_est_ite = 5
+cvg_thd = 0.000001
+tikhonov_beta = 0.02
+
+[inversion.lsqr]
+fit_global_offset = true
+tol = 0.00001
+max_iter = 400
+
+[inversion.heidi]
+cone_threshold = 0.1
+gradient_threshold = 0.003924908970520748
+apply_laplacian_correction = true
+laplacian_threshold = 0.05943433583931419
+gradient_mask_floor = 0.1
+continuation_steps = 8
+inner_iterations = 500
+mu_min = 0.0000000000000002220446049250313
+tol = 0.001
+denoise = true
+denoise_iterations = 5
+denoise_time_step = 0.05
+denoise_conductance = 1.0
+
+[separation]
+algorithm = "r2star-qsm"
+r2prime_strategy = "auto"
+
+[separation.chi_sep_ilsqr]
+dr_pos = 137.0
+dr_neg = 137.0
+lambda1 = 1.0
+percentage = 0.9
+r2p_min = 1.0
+r2p_max = 30.0
+max_iter = 30
+tol = 0.01
+cg_max_iter = 30
+cg_tol = 0.05
+
+[separation.chi_sep_medi]
+lambda_para = 1000.0
+lambda_dia = 1000.0
+lambda_cpl = 100.0
+dr_pos = 114.0
+dr_neg = 30.0
+percentage = 0.3
+cg_tol = 0.01
+cg_max_iter = 100
+max_iter = 10
+tol = 0.1
+
+[separation.r2star_qsm]
+r_const_3t = 274.0
+
+[separation.wavesep]
+dr_pos = 137.0
+dr_neg = 137.0
+alpha = 0.2
+lambda = 0.02
+wavelet_order = 4
+max_iter = 100
+tol = 0.001
+
+[separation.decompose]
+n_inner = 10
+chi_bound = 0.5
+max_lm_iter = 30
+
+[separation.hc_chisep]
+dr_pos_3t = 137.0
+bin_hz = 0.25
+
+[qsm]
+reference = "mean"
+
+[swi]
+hp_sigma = [
+    4.0,
+    4.0,
+    0.0,
+]
+scaling = "tanh"
+strength = 4.0
+mip_window = 7
+
+[smwi]
+threshold_ppm = 1.0
+power = 4.0
+mip_window = 4
+
+[segmentation]
+version = "v1"
+flip_averaging = true
+topology_cleanup = true
+sigma_smoothing = 0.5
+
+[bet]
+fractional_intensity = 0.5
+smoothness = 1.0
+gradient_threshold = 0.0
+iterations = 1000
+subdivisions = 4
+
+[homogeneity]
+sigma_mm = 7.0
+nbox = 3

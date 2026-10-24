@@ -14,12 +14,16 @@ use crate::enums::*;
 use crate::error::EngineError;
 use crate::scan::ScanFacts;
 
-/// How far echo spacings may deviate, in seconds, before ARLO's single-spacing Simpson integral
-/// or the EPG dictionary's `TEₙ = n·ESP` train no longer describe the acquisition: QSM.rs's own
-/// tolerances (0.1 ms, the rounding of echo times in DICOM headers and BIDS sidecars), so a run
-/// refused here is exactly one QSM.rs would refuse with an `InputError` mid-run.
-const ARLO_TOLERANCE_S: f64 = qsm_core::utils::ARLO_TE_SPACING_TOLERANCE_S;
+/// How far spin-echo spacings may deviate, in seconds, before the EPG dictionary's `TEₙ = n·ESP`
+/// train no longer describes the acquisition: QSM.rs's own tolerance (0.1 ms, the rounding of
+/// echo times in DICOM headers and BIDS sidecars), so a run refused here is exactly one QSM.rs
+/// would refuse with an `InputError` mid-run.
 const EPG_TOLERANCE_S: f64 = qsm_core::utils::EPG_TE_TOLERANCE_S;
+
+/// How far an echo spacing may differ from the first, relative to it, before the noise map of
+/// MEDI, TFI and PDF (MEDI toolbox `Fit_ppm_complex`, which assumes one spacing) is refused: the
+/// tolerance of qsm-core's dispatcher (`pipeline::inversion::echo_magnitudes`).
+const FIT_PPM_COMPLEX_SPACING_TOLERANCE: f64 = 1e-3;
 
 /// An output the pipeline can be asked for, or that another can turn on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -313,22 +317,95 @@ fn spacing_deviation(tes: &[f64], first_as_reference: bool) -> (f64, f64) {
     (reference, dev)
 }
 
-/// Why ARLO cannot fit R2* on this run's GRE echoes, if it cannot.
+/// Why ARLO cannot fit R2* on this run's GRE echoes, if it cannot: it needs the magnitude and the
+/// echo times QSM.rs's ARLO takes ([`qsm_core::r2star::arlo_echo_times_problem`]).
 pub fn arlo_problem(f: &ScanFacts) -> Option<String> {
     if !f.has_magnitude {
         return Some("needs magnitude images, and this run has none".into());
     }
-    if f.n_echoes < 3 {
-        return Some(format!("needs at least 3 echoes, and this run has {}", f.n_echoes));
-    }
-    if !qsm_core::utils::use_arlo(&f.echo_times, ARLO_TOLERANCE_S) {
-        let (_, dev) = spacing_deviation(&f.echo_times, false);
+    qsm_core::r2star::arlo_echo_times_problem(&f.echo_times).map(|why| {
+        let why = why.strip_prefix("ARLO ").unwrap_or(&why);
+        format!("{why} (R2* by ARLO)")
+    })
+}
+
+/// Why the noise map of MEDI, TFI and PDF (MEDI toolbox `Fit_ppm_complex`, from every echo's
+/// magnitude) cannot be made for this run, if it cannot: `method` names the method.
+fn echo_noise_map_problem(f: &ScanFacts, method: &str) -> Option<String> {
+    if !f.has_magnitude {
         return Some(format!(
-            "needs equally spaced echo times (ARLO integrates with one spacing), and this run's \
-             echo times {} have spacings {:.3} ms apart",
-            ms(&f.echo_times), dev * 1e3));
+            "needs the magnitude of every echo ({method} weights the data by a noise map made from \
+             them), and this run has no magnitude"));
     }
-    None
+    let spacing: Vec<f64> = f.echo_times.windows(2).map(|w| w[1] - w[0]).collect();
+    let uneven = spacing.iter()
+        .any(|d| (d - spacing[0]).abs() > FIT_PPM_COMPLEX_SPACING_TOLERANCE * spacing[0].abs());
+    uneven.then(|| format!(
+        "needs evenly spaced echoes ({method}'s noise map assumes one echo spacing), and this run's \
+         echo times are {}", ms(&f.echo_times)))
+}
+
+/// Why the configured dipole inversion cannot run on this run's data, if it cannot: the methods
+/// QSM.rs gives a magnitude data weight need magnitude images, MEDI and TFI need every echo's
+/// (evenly spaced), and MEDI-mSMV needs R2* for its vessel mask.
+pub fn inversion_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<String> {
+    if config.inversion.algorithm == QsmAlgorithm::Qsmart {
+        return qsmart_inner_problem(f, config);
+    }
+    method_problem(f, config, config.inversion.algorithm)
+}
+
+/// What dipole inversion `alg` needs of this run's data ([`inversion_problem`]).
+fn method_problem(f: &ScanFacts, config: &PipelineConfig, alg: QsmAlgorithm) -> Option<String> {
+    let (_, _, core, _) = crate::bridge::to_pipeline_stages(config);
+    let weighted = match alg {
+        QsmAlgorithm::Ndi | QsmAlgorithm::Nltv | QsmAlgorithm::Fansi | QsmAlgorithm::FansiTgv
+        | QsmAlgorithm::L1qsm => true,
+        QsmAlgorithm::Whqsm => core.whqsm.weight.needs_magnitude(),
+        _ => false,
+    };
+    if weighted && !f.has_magnitude {
+        return Some("needs magnitude images (its data weight), and this run has none".into());
+    }
+    match alg {
+        QsmAlgorithm::Medi | QsmAlgorithm::Tfi => {
+            let method = if alg == QsmAlgorithm::Medi { "MEDI" } else { "TFI" };
+            if let Some(why) = echo_noise_map_problem(f, method) {
+                return Some(why);
+            }
+            if alg == QsmAlgorithm::Medi && config.inversion.medi.msmv && f.n_echoes < 3 {
+                return Some(format!(
+                    "with mSMV needs at least 3 echoes (its vessel mask uses R2* from ARLO), and this \
+                     run has {}", f.n_echoes));
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+/// Why QSMART cannot run its inner inversion on this run's data, if it cannot: what that method
+/// needs of the data ([`method_problem`]), and, for MEDI and TFI on several echoes, the magnitude of
+/// every echo, which QSM.rs does not give QSMART's inner inversion (it passes one combined
+/// magnitude; with a single echo the two are the same).
+fn qsmart_inner_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<String> {
+    let inner = config.inversion.qsmart.inversion;
+    if matches!(inner, QsmAlgorithm::Medi | QsmAlgorithm::Tfi) && f.n_echoes > 1 {
+        return Some(format!(
+            "cannot use {inner} as its inner inversion on {} echoes: {inner} needs the magnitude of \
+             every echo, and QSM.rs gives QSMART's inner inversion one combined magnitude. Choose \
+             another inner inversion (--qsmart-inversion), or use a single echo", f.n_echoes));
+    }
+    method_problem(f, config, inner).map(|why| format!("with {inner} as its inner inversion: {inner} {why}"))
+}
+
+/// Why the configured background removal cannot run on this run's data, if it cannot: PDF needs
+/// every echo's magnitude, evenly spaced, for its noise map.
+pub fn bg_removal_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<String> {
+    match config.bg_removal.algorithm {
+        BfAlgorithm::Pdf => echo_noise_map_problem(f, "PDF"),
+        _ => None,
+    }
 }
 
 /// Why the EPG fit cannot measure R2 from this run's MESE acquisition, if it cannot.
@@ -602,6 +679,26 @@ pub fn scan_check(f: &ScanFacts, config: &PipelineConfig) -> Check {
         });
     }
     let label = |path: &str| crate::schema::setting(path).map_or_else(|| path.to_string(), |s| s.full_label.to_string());
+    // The reconstruction's own methods: what they need of the data.
+    if config.pipeline.do_qsm {
+        let bg = config.bg_removal.algorithm;
+        let methods = [
+            ("inversion.algorithm", "--qsm-algorithm", config.inversion.algorithm.to_string(),
+             inversion_problem(f, config)),
+            ("bg_removal.algorithm", "--bf-algorithm", bg.to_string(),
+             if crate::bridge::skips_bgremove(config) { None } else { bg_removal_problem(f, config) }),
+        ];
+        for (path, flag, value, why) in methods {
+            let Some(why) = why else { continue };
+            out.errors.push(format!("{flag} {value} {why}"));
+            let words = Words::labels();
+            let message = format!("{} {why}", words.choice(path, &value, ""));
+            out.problems.push(Problem {
+                severity: Severity::Error, setting: Some(path), implied_by: None,
+                settings: vec![path], reason: why, message,
+            });
+        }
+    }
     for o in Output::ALL {
         if !o.enabled(config) {
             continue;
@@ -734,42 +831,109 @@ mod tests {
         assert!(out.warnings.is_empty(), "{out:?}");
     }
 
+    /// R2* takes what QSM.rs's ARLO takes: magnitude, and three or more increasing echo times,
+    /// evenly spaced or not.
     #[test]
-    fn r2star_needs_three_equally_spaced_echoes_with_magnitude() {
+    fn r2star_needs_three_increasing_echoes_with_magnitude() {
         let mut c = PipelineConfig::default();
         c.pipeline.do_r2starmap = true;
         let two = check(&run(&[0.005, 0.010], true), &c);
         assert!(two.errors.len() == 1 && two.errors[0].contains("at least 3 echoes"), "{two:?}");
-        // A long echo appended to an even train: ARLO would integrate it with the wrong spacing.
-        let uneven = check(&run(&[0.005, 0.010, 0.015, 0.030], true), &c);
-        assert!(uneven.errors.len() == 1 && uneven.errors[0].contains("equally spaced"), "{uneven:?}");
-        let ok = check(&run(&EVEN, true), &c);
-        assert!(ok.errors.is_empty() && ok.warnings.is_empty(), "{ok:?}");
-        // Rounding in a sidecar is not unequal spacing.
-        let rounded = check(&run(&[0.00492, 0.00984, 0.01477, 0.01968], true), &c);
-        assert!(rounded.errors.is_empty(), "{rounded:?}");
+        let unordered = check(&run(&[0.005, 0.015, 0.010], true), &c);
+        assert!(unordered.errors.len() == 1 && unordered.errors[0].contains("strictly increasing"), "{unordered:?}");
+        let phase_only = check(&run(&EVEN, false), &c);
+        assert!(phase_only.errors.len() == 1 && phase_only.errors[0].contains("magnitude"), "{phase_only:?}");
+        for ok in [&EVEN[..], &[0.005, 0.010, 0.015, 0.030]] {
+            let ok = check(&run(ok, true), &c);
+            assert!(ok.errors.is_empty() && ok.warnings.is_empty(), "{ok:?}");
+        }
     }
 
     #[test]
     fn t2star_is_refused_on_the_same_terms() {
         let mut c = PipelineConfig::default();
         c.pipeline.do_t2starmap = true;
-        let out = check(&run(&[0.005, 0.010, 0.030], true), &c);
+        let out = check(&run(&[0.005, 0.010], true), &c);
         assert!(out.errors.iter().any(|e| e.contains("--do-t2starmap")), "{out:?}");
     }
 
     /// R2*-based chi-separation turns R2* on: R2* is then a warning, and chi-separation, which
     /// was asked for, is the error.
     #[test]
-    fn r2star_qsm_chisep_on_unequal_echoes_is_refused_and_its_r2star_warned() {
+    fn r2star_qsm_chisep_on_two_echoes_is_refused_and_its_r2star_warned() {
         let mut c = PipelineConfig::default();
         c.pipeline.do_chi_separation = true;
         c.separation.algorithm = SeparationAlgorithm::R2starQsm;
-        let out = check(&run(&[0.005, 0.010, 0.030], true), &enforced(c));
+        let out = check(&run(&[0.005, 0.010], true), &enforced(c));
         assert!(out.warnings.iter().any(|w| w.contains("--do-r2starmap")
             && w.contains("turned on by --do-chisep")), "{out:?}");
         assert!(out.errors.len() == 1 && out.errors[0].contains("--do-chisep")
-            && out.errors[0].contains("equally spaced"), "{out:?}");
+            && out.errors[0].contains("at least 3 echoes"), "{out:?}");
+    }
+
+    /// What the QSM methods need of the data: magnitude for the magnitude-weighted ones, every
+    /// echo's (evenly spaced) for MEDI, TFI and PDF, three echoes for MEDI-mSMV. Each is an
+    /// error naming the method, before any processing; the defaults need nothing more.
+    #[test]
+    fn qsm_methods_say_what_they_need_of_the_data() {
+        let with = |f: fn(&mut PipelineConfig)| { let mut c = PipelineConfig::default(); f(&mut c); c };
+        assert!(check(&run(&EVEN, false), &PipelineConfig::default()).errors.is_empty());
+        for alg in [QsmAlgorithm::Ndi, QsmAlgorithm::Nltv, QsmAlgorithm::Fansi, QsmAlgorithm::FansiTgv,
+                    QsmAlgorithm::L1qsm, QsmAlgorithm::Medi, QsmAlgorithm::Tfi] {
+            let mut c = PipelineConfig::default();
+            c.inversion.algorithm = alg;
+            let out = check(&run(&EVEN, false), &c);
+            assert!(out.errors.len() == 1 && out.errors[0].contains(&format!("--qsm-algorithm {alg}"))
+                && out.errors[0].contains("magnitude"), "{alg}: {out:?}");
+            assert_eq!(out.problems[0].setting, Some("inversion.algorithm"));
+            assert!(check(&run(&EVEN, true), &c).errors.is_empty(), "{alg}");
+        }
+        // WH-QSM's default weight is flat: no magnitude needed.
+        assert!(check(&run(&EVEN, false), &with(|c| c.inversion.algorithm = QsmAlgorithm::Whqsm)).errors.is_empty());
+        // The noise map of MEDI, TFI and PDF needs evenly spaced echoes.
+        let uneven = run(&[0.005, 0.010, 0.020], true);
+        for c in [with(|c| c.inversion.algorithm = QsmAlgorithm::Medi), with(|c| c.inversion.algorithm = QsmAlgorithm::Tfi),
+                  with(|c| c.bg_removal.algorithm = BfAlgorithm::Pdf)] {
+            let out = check(&uneven, &c);
+            assert!(out.errors.len() == 1 && out.errors[0].contains("evenly spaced"), "{out:?}");
+        }
+        let pdf = check(&run(&EVEN, false), &with(|c| c.bg_removal.algorithm = BfAlgorithm::Pdf));
+        assert!(pdf.errors.len() == 1 && pdf.errors[0].contains("--bf-algorithm pdf"), "{pdf:?}");
+        assert_eq!(pdf.problems[0].setting, Some("bg_removal.algorithm"));
+        // PDF is not asked of a run without background removal.
+        let mut tgv = with(|c| c.bg_removal.algorithm = BfAlgorithm::Pdf);
+        tgv.inversion.algorithm = QsmAlgorithm::Tgv;
+        assert!(check(&run(&EVEN, false), &tgv).errors.is_empty());
+        // MEDI-mSMV needs three echoes for its vessel mask.
+        let mut msmv = with(|c| c.inversion.algorithm = QsmAlgorithm::Medi);
+        msmv.inversion.medi.msmv = true;
+        let out = check(&run(&[0.005, 0.010], true), &msmv);
+        assert!(out.errors.len() == 1 && out.errors[0].contains("mSMV") && out.errors[0].contains("at least 3 echoes"), "{out:?}");
+        assert!(check(&run(&EVEN, true), &msmv).errors.is_empty());
+        // Nothing is asked of a run that does not reconstruct.
+        let mut off = with(|c| c.inversion.algorithm = QsmAlgorithm::Medi);
+        off.pipeline.do_qsm = false;
+        assert!(check(&run(&EVEN, false), &off).errors.is_empty());
+    }
+
+    /// QSMART's inner inversion gets the same checks as the inversion; inner MEDI or TFI is
+    /// refused only on several echoes, where QSM.rs cannot give it every echo's magnitude.
+    #[test]
+    fn qsmart_checks_its_inner_inversion() {
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = QsmAlgorithm::Qsmart;
+        for inner in [QsmAlgorithm::Medi, QsmAlgorithm::Tfi] {
+            c.inversion.qsmart.inversion = inner;
+            let out = check(&run(&EVEN, true), &c);
+            assert!(out.errors.len() == 1 && out.errors[0].contains("--qsm-algorithm qsmart")
+                && out.errors[0].contains("QSM.rs gives QSMART's inner inversion one combined magnitude"), "{out:?}");
+            assert!(check(&run(&[0.02], true), &c).errors.is_empty(), "{inner} on one echo works");
+        }
+        c.inversion.qsmart.inversion = QsmAlgorithm::Nltv;
+        let out = check(&run(&EVEN, false), &c);
+        assert!(out.errors.len() == 1 && out.errors[0].contains("nltv") && out.errors[0].contains("magnitude"), "{out:?}");
+        c.inversion.qsmart.inversion = QsmAlgorithm::Ilsqr;
+        assert!(check(&run(&EVEN, false), &c).errors.is_empty());
     }
 
     #[test]

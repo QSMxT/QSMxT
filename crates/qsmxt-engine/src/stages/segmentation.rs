@@ -75,6 +75,9 @@ pub fn synthseg(
         topology_cleanup: config.topology_cleanup,
         sigma_smoothing: config.sigma_smoothing,
         inference: crate::config::synthseg_inference(config.patch),
+        // The head crop and the posteriors' precision are not QSMxT settings yet: qsm-core's
+        // (no crop, single precision).
+        ..Default::default()
     };
     let weights = qsm_core::models::primary_weight(config.version.weights_id())
         .map_err(|e| EngineError::Config(format!("synthseg weights: {}", e)))?;

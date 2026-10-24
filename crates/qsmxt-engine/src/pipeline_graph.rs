@@ -390,6 +390,10 @@ impl Ctx<'_> {
                     reads.extend(self.echo_magnitudes());
                 } else {
                     reads.push(Item::FieldPpm);
+                    // PDF's noise map is made from every echo's magnitude.
+                    if crate::stages::background::takes_echo_magnitudes(c) {
+                        reads.extend(self.echo_magnitudes());
+                    }
                 }
                 reads.push(self.pass_mask(p));
                 writes.extend([Item::LocalField(p), Item::LocalFieldMask(p)]);
@@ -405,11 +409,14 @@ impl Ctx<'_> {
                     } else {
                         reads.extend([Item::LocalField(p), Item::LocalFieldMask(p)]);
                     }
-                    // The inversions that weight their data by the combined magnitude.
-                    let weighted = matches!(c.inversion.algorithm,
-                        QsmAlgorithm::Medi | QsmAlgorithm::Tfi | QsmAlgorithm::AmpPe | QsmAlgorithm::Lsqr | QsmAlgorithm::Heidi);
-                    if weighted && has(&Item::CombinedMagnitude) {
-                        reads.push(Item::CombinedMagnitude);
+                    // The magnitude the inversion weights by: the combined one, or every echo's.
+                    use crate::stages::inversion::{magnitude_input, MagnitudeInput};
+                    match magnitude_input(c) {
+                        Some(MagnitudeInput::Combined) if has(&Item::CombinedMagnitude) => {
+                            reads.push(Item::CombinedMagnitude);
+                        }
+                        Some(MagnitudeInput::Echoes) => reads.extend(self.echo_magnitudes()),
+                        _ => {}
                     }
                 }
                 writes.push(Item::RawChi(p));

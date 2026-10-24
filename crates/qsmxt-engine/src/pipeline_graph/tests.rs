@@ -69,7 +69,7 @@ fn graphs_of_a_table_of_configurations() {
     assert!(!g.has_edge("unwrap", "invert"), "a local-field inversion reads the local field, not the total");
     let bg = g.node("bgremove").unwrap();
     assert_eq!((bg.algorithm.as_deref(), bg.algorithm_label.as_deref()), (Some("vsharp"), Some("V-SHARP")));
-    assert_eq!(bg.settings, ["SMV kernel radii from 12 to 1 mm"]);
+    assert_eq!(bg.settings, ["SMV kernel radii from 12 to 2 mm"]);
     assert_eq!(g.node("invert").unwrap().algorithm_label.as_deref(), Some("iLSQR"));
     // Whether the outputs go back to the acquired grid depends on the header.
     assert_eq!(g.node("output_space").unwrap().only_when.as_deref(), Some("the run is resampled"));
@@ -142,10 +142,15 @@ fn graphs_of_a_table_of_configurations() {
     assert_eq!(q.settings.first().map(String::as_str), Some("iLSQR inversion"));
     assert_consistent(&g);
 
-    // A magnitude-weighted inversion, and iQSM straight from the echoes.
-    config.inversion.algorithm = QsmAlgorithm::Medi;
+    // A magnitude-weighted inversion, one weighted by every echo's magnitude, and iQSM straight
+    // from the echoes.
+    config.inversion.algorithm = QsmAlgorithm::Ndi;
     let g = graph(&config, &facts());
     assert!(g.has_edge("magnitude", "invert"));
+    assert_consistent(&g);
+    config.inversion.algorithm = QsmAlgorithm::Medi;
+    let g = graph(&config, &facts());
+    assert!(g.has_edge("scale_phase", "invert") && !g.has_edge("magnitude", "invert"));
     assert_consistent(&g);
     config.inversion.algorithm = QsmAlgorithm::Iqsm;
     let g = graph(&config, &facts());
@@ -211,7 +216,7 @@ fn the_default_graph_in_mermaid() {
     magnitude["Combined magnitude<br/><i>root sum of squares</i><br/><small>inhomogeneity correction</small>"]
     mask["Brain mask<br/><small>phase quality: Otsu threshold, dilation, hole-filling, erosion</small>"]
     unwrap["Field map<br/><i>ROMEO</i><br/><small>phase offsets removed</small><br/><small>B0 by weighted average</small>"]
-    bgremove["Background-field removal<br/><i>V-SHARP</i><br/><small>SMV kernel radii from 12 to 1 mm</small>"]
+    bgremove["Background-field removal<br/><i>V-SHARP</i><br/><small>SMV kernel radii from 12 to 2 mm</small>"]
     invert["Dipole inversion<br/><i>iLSQR</i>"]
     reference["Referencing<br/><i>mean</i>"]
     output_space["Return to the acquired grid<br/><small>only when the run is resampled</small>"]
@@ -549,7 +554,7 @@ fn the_graph_as_text() {
     assert!(text.starts_with(" 1 Load\n 2 Phase scaling\n     ← 1 Load: Phase (as acquired), Magnitude (as acquired)\n"), "{text}");
     assert!(text.contains(concat!(
         " 6 Background-field removal · V-SHARP\n",
-        "     SMV kernel radii from 12 to 1 mm\n",
+        "     SMV kernel radii from 12 to 2 mm\n",
         "     ← 5 Field map: Total field\n",
         "     ← 4 Brain mask: Brain mask\n")), "{text}");
     assert!(text.contains("     only when the run is resampled\n"), "{text}");

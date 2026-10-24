@@ -305,14 +305,12 @@ regions, not as a general speedup.
 iLSQR crops the field to the mask's bounding box and zero-pads it before
 solving. Each axis is padded to the next multiple of 16 above the crop plus
 `2 × pad / voxel size`, and both LSQR solves run on that grid. The default is
-16 mm per side.
+12 mm per side.
 
 The padding changes χ slightly, because the dipole convolution is circular on
 the padded grid. Larger padding costs time and memory roughly in proportion to
-the padded grid. For example, a 256×288×48 acquisition at 0.8×0.8×3 mm is
-solved on 208×256×64 at 16 mm and on 336×384×96 at 64 mm, which takes 2.4 times
-as long. Padding below 16 mm loses accuracy on thin slabs and small fields of
-view, where the volume wraps onto itself.
+the padded grid. Too little padding lets a thin slab or small field of view wrap
+onto itself.
 
 ## Coil combination
 
@@ -449,24 +447,24 @@ Set with `--bf-algorithm`.
 | `sharp` | Sophisticated Harmonic Artifact Reduction |
 | `resharp` | Regularization-enabled SHARP |
 | `harperella` | HARPERELLA |
-| `iharperella` | Iterative HARPERELLA |
+| `iharperella` | Improved HARPERELLA |
 | `bfrnet` | BFRnet — deep-learning background removal from the total field. Needs a deep-learning build; weights downloaded on first use |
 | `iqfm` | iQFM — deep-learning joint unwrapping and background removal straight from the wrapped phase (the local-field head of iQSM). Replaces field mapping as well; refused with inversions that do not take a local field. Weights downloaded on first use |
 
 Background removal only runs in front of an inversion that takes the local field.
-The total-field inversions (`tfi`, `qsmart`, `autoqsm`, `nextqsm`, `medi` with
-`--medi-smv`, and `tgv` on multi-echo data) and the wrapped-phase ones (`iqsm`,
+The total-field inversions (`tfi`, `qsmart`, `autoqsm`, `nextqsm`, and `tgv` on
+multi-echo data) and the wrapped-phase ones (`iqsm`,
 `iqsm-plus`, single-echo `tgv`) remove or model the background themselves, so
 `--bf-algorithm` has no effect with them and the TUI hides it.
 
-`--msmv-refine` adds maximum spherical mean value (mSMV) filtering after the
-chosen method, to remove residual boundary-field shadows (Roberts et al., 2024).
+PDF weights its fit by a noise map made from every echo's magnitude (MEDI toolbox
+`Fit_ppm_complex`), so it needs the magnitude of every echo and evenly spaced echoes.
 
 ### V-SHARP and its deconvolution
 
 V-SHARP (Wu et al. 2012) high-passes the field with spherical mean value (SMV)
-kernels from `--vsharp-max-radius` (default 12 mm) down to `--vsharp-min-radius`
-(default 1 mm), using at each voxel the largest kernel that fits inside the
+kernels from `--vsharp-max-radius` down to `--vsharp-min-radius` (12 mm to 2 mm
+in 1 mm steps by default), using at each voxel the largest kernel that fits inside the
 mask. The published method then **deconvolves** that high-pass with a
 truncated SVD (threshold `--vsharp-threshold`) to recover the local field the
 SMV filter attenuated.
@@ -532,10 +530,19 @@ reconstructions and deep-learning networks.
 | `amp-pe` | AMP-PE — Approximate Message Passing with Parameter Estimation |
 
 TGV replaces background removal and inversion. With one echo it also replaces unwrapping: it
-takes that echo's wrapped phase and converts it to ppm with the echo time and field strength.
-With several echoes the field-mapping stage runs as usual and TGV takes the combined B0 field
-map, in ppm. Its weights `--tgv-alpha0` / `--tgv-alpha1` are in
-ppm, so the same values suit any echo time and field strength.
+takes that echo's wrapped phase. With several echoes the field-mapping stage runs as usual and
+TGV takes the combined B0 field map, expressed as phase at the first echo time. Its weights
+`--tgv-alpha0` / `--tgv-alpha1` are in the reference's units, radians at the scan's first echo
+time and field strength, so the same values regularise differently at another echo time or
+field strength.
+
+MEDI takes the local field from background removal (PDF in the authors' pipeline), and
+with `--medi-smv` (the default) high-passes it with a spherical mean value filter near the
+brain edge. `--medi-msmv` replaces that step with maximum spherical mean value (mSMV)
+filtering (Roberts et al., 2024), which removes residual background at the brain edge without
+eroding the mask; it needs at least three echoes. MEDI and TFI weight the data by a noise map
+and their edges by a magnitude they make from every echo's magnitude, so they need the
+magnitude of every echo and evenly spaced echoes.
 
 ### Deep learning
 
@@ -813,8 +820,8 @@ and `--cosmos-max-iter` (default 1e-6 and 100) set that solve, and are refused
 without the weighting, where COSMOS is solved in closed form and would ignore them.
 
 Each orientation contributes its *local* field, which only background-field
-removal writes. A grouping with an inversion that has no such step (TFI, MEDI with
-SMV, TGV, QSMART, AutoQSM, NeXtQSM, iQSM, iQSM+) or with `--no-qsm` is refused
+removal writes. A grouping with an inversion that has no such step (TFI, TGV,
+QSMART, AutoQSM, NeXtQSM, iQSM, iQSM+) or with `--no-qsm` is refused
 before processing.
 
 ### Outputs

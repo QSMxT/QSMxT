@@ -104,14 +104,17 @@ Remove background fields from an unwrapped total field map in ppm:
 | `resharp` | Regularised SHARP |
 | `harperella` | HARPERELLA, joint unwrapping and background removal |
 | `iharperella` | Improved HARPERELLA |
-| `msmv` | Maximum Spherical Mean Value boundary-shadow removal, on a local field another method produced (the pipeline's `--msmv-refine`) |
 | `bfrnet` | BFRnet deep-learning background removal (weights downloaded on first use) |
 
 iQFM, the pipeline's `--bf-algorithm iqfm`, has no standalone command.
 
 `qsmxt bgremove harperella` and `iharperella` read one wrapped echo in rad when
-given `--te` and `--field-strength` (the published method), or an unwrapped total
-field in ppm without them, and write the local field in ppm.
+given `--te` and `--field-strength`, or an unwrapped total field in ppm without them
+(which iHARPERELLA takes as it is), and write the local field in ppm.
+
+`qsmxt bgremove pdf` takes every echo's magnitude (`--magnitude`, one 4D file or one
+file per echo), `--echo-times` and `--field-strength`: PDF weights its fit by a noise
+map made from them.
 
 `qsmxt bgremove vsharp` takes `--deconvolve <true|false>` (default `false`, as
 `qsmxt run`), `--threshold` (used only with deconvolution),
@@ -131,7 +134,7 @@ take the local field, and `tfi`, `autoqsm` and `nextqsm` the **total** field:
 | `tsvd` | Truncated SVD |
 | `tgv` | Total Generalized Variation |
 | `tikhonov` | Tikhonov regularization |
-| `nltv` | Nonlocal Total Variation |
+| `nltv` | Nonlinear Total Variation |
 | `medi` | Morphology-Enabled Dipole Inversion |
 | `tfi` | Total Field Inversion (total field in) |
 | `ilsqr` | Iterative Least-Squares QR |
@@ -151,6 +154,14 @@ take the local field, and `tfi`, `autoqsm` and `nextqsm` the **total** field:
 QSMART is its own command, `qsmxt qsmart`, since it takes the total field and
 runs its own two-stage reconstruction. iQSM and iQSM+, which reconstruct from
 wrapped phase, are pipeline-only (`run --qsm-algorithm iqsm`).
+
+Each subcommand runs its method as `qsmxt run` does, through QSM.rs's pipeline: the
+field goes in in ppm, and the methods that work in radians (`ndi`, `nltv`, `fansi`,
+`fansi-tgv`, `l1qsm`, `whqsm`, `medi`, `tfi`, `heidi`, `tgv`) convert it themselves
+with `--field-strength` and `--echo-times` (every echo's). `ndi`, `nltv`, `fansi`,
+`fansi-tgv` and `l1qsm` need `--magnitude` as their data weight; `medi` and `tfi`
+need the magnitude of every echo (one 4D file or one file per echo). MEDI-mSMV is
+`qsmxt invert medi --msmv`.
 
 ```sh
 # e.g. inspect the parameters of a method

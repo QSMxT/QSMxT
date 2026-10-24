@@ -155,7 +155,7 @@ fn command_for(config: &PipelineConfig) -> String {
     if config.field_mapping.phase_offset_removal != d.field_mapping.phase_offset_removal {
         parts.push(format!("--phase-offset-removal {}", config.field_mapping.phase_offset_removal));
     }
-    emit_f64_arr3(&mut parts, "--phase-offset-sigma", &config.field_mapping.phase_offset_sigma, &d.field_mapping.phase_offset_sigma);
+    emit_f64_arr3(&mut parts, "--phase-offset-sigma-mm", &config.field_mapping.phase_offset_sigma_mm, &d.field_mapping.phase_offset_sigma_mm);
     emit_f64_arr3(&mut parts, "--coil-combination-sigma", &config.field_mapping.coil_combination_sigma, &d.field_mapping.coil_combination_sigma);
     if config.field_mapping.bipolar_correction { parts.push("--bipolar-correction".into()); }
     emit_enum(&mut parts, "--unwrapping-algorithm", &config.field_mapping.unwrapping_algorithm, &d.field_mapping.unwrapping_algorithm);
@@ -342,13 +342,6 @@ fn command_for(config: &PipelineConfig) -> String {
         // BFRnet / iQFM (deep learning) have no user-tunable parameters.
         BfAlgorithm::Bfrnet | BfAlgorithm::Iqfm => {}
     }
-    // mSMV boundary-shadow refinement is a post-step on any primary BFR (not part of the
-    // match above); emit its flag + params only when enabled.
-    if config.bg_removal.msmv_refine {
-        parts.push("--msmv-refine".into());
-        emit_f64(&mut parts, "--msmv-radius", config.bg_removal.msmv.radius, d.bg_removal.msmv.radius);
-        emit_usize(&mut parts, "--msmv-maxk", config.bg_removal.msmv.maxk, d.bg_removal.msmv.maxk);
-    }
 
     // ── QSM inversion ──
     emit_enum(&mut parts, "--qsm-algorithm", &config.inversion.algorithm, &d.inversion.algorithm);
@@ -463,7 +456,7 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
         }
         QsmAlgorithm::Tv => {
             emit_f64(parts, "--tv-lambda", config.inversion.tv.lambda, d.inversion.tv.lambda);
-            emit_f64(parts, "--tv-rho", config.inversion.tv.rho, d.inversion.tv.rho);
+            emit_opt_f64(parts, "--tv-rho", config.inversion.tv.rho, d.inversion.tv.rho);
             emit_f64(parts, "--tv-tol", config.inversion.tv.tol, d.inversion.tv.tol);
             emit_usize(parts, "--tv-max-iter", config.inversion.tv.max_iter, d.inversion.tv.max_iter);
         }
@@ -475,7 +468,7 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
             emit_f64(parts, "--nltv-mu", config.inversion.nltv.mu, d.inversion.nltv.mu);
             emit_f64(parts, "--nltv-tol", config.inversion.nltv.tol, d.inversion.nltv.tol);
             emit_usize(parts, "--nltv-max-iter", config.inversion.nltv.max_iter, d.inversion.nltv.max_iter);
-            emit_usize(parts, "--nltv-newton-iter", config.inversion.nltv.newton_iter, d.inversion.nltv.newton_iter);
+            emit_usize(parts, "--nltv-newton-iter", config.inversion.nltv.max_iter_newton, d.inversion.nltv.max_iter_newton);
         }
         QsmAlgorithm::Medi => {
             emit_f64(parts, "--medi-lambda", config.inversion.medi.lambda, d.inversion.medi.lambda);
@@ -493,6 +486,15 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
             }
             if config.inversion.medi.smv != d.inversion.medi.smv {
                 parts.push(if config.inversion.medi.smv { "--medi-smv" } else { "--no-medi-smv" }.into());
+            }
+            let (m, dm) = (&config.inversion.medi, &d.inversion.medi);
+            if m.msmv {
+                parts.push("--medi-msmv".into());
+                emit_usize(parts, "--medi-msmv-maxk", m.msmv_maxk, dm.msmv_maxk);
+                emit_opt_f64(parts, "--medi-msmv-vessel-radius", m.msmv_vessel_radius, dm.msmv_vessel_radius);
+                if !m.msmv_prefilter {
+                    parts.push("--no-medi-msmv-prefilter".into());
+                }
             }
         }
         QsmAlgorithm::Tfi => {
@@ -550,12 +552,11 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
             }
         }
         QsmAlgorithm::Tgv => {
-            emit_usize(parts, "--tgv-iterations", config.inversion.tgv.iterations, d.inversion.tgv.iterations);
+            emit_opt_usize(parts, "--tgv-iterations", config.inversion.tgv.iterations, d.inversion.tgv.iterations);
             emit_usize(parts, "--tgv-erosions", config.inversion.tgv.erosions, d.inversion.tgv.erosions);
             emit_f64(parts, "--tgv-alpha0", config.inversion.tgv.alpha0, d.inversion.tgv.alpha0);
             emit_f64(parts, "--tgv-alpha1", config.inversion.tgv.alpha1, d.inversion.tgv.alpha1);
             emit_f64(parts, "--tgv-step-size", config.inversion.tgv.step_size, d.inversion.tgv.step_size);
-            emit_f64(parts, "--tgv-tol", config.inversion.tgv.tol, d.inversion.tgv.tol);
         }
         QsmAlgorithm::Qsmart => {
             let q = &config.inversion.qsmart;
@@ -592,27 +593,25 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
             let fa = &config.inversion.fansi;
             let df = &d.inversion.fansi;
             emit_f64(parts, "--fansi-alpha1", fa.alpha1, df.alpha1);
-            emit_f64(parts, "--fansi-mu1", fa.mu1, df.mu1);
+            emit_opt_f64(parts, "--fansi-mu1", fa.mu1, df.mu1);
             emit_f64(parts, "--fansi-mu2", fa.mu2, df.mu2);
-            emit_f64(parts, "--fansi-alpha0", fa.alpha0, df.alpha0);
-            emit_f64(parts, "--fansi-mu0", fa.mu0, df.mu0);
+            emit_opt_f64(parts, "--fansi-alpha0", fa.alpha0, df.alpha0);
+            emit_opt_f64(parts, "--fansi-mu0", fa.mu0, df.mu0);
             emit_usize(parts, "--fansi-max-iter", fa.max_iter, df.max_iter);
             emit_f64(parts, "--fansi-tol-update", fa.tol_update, df.tol_update);
             emit_f64(parts, "--fansi-tol-delta", fa.tol_delta, df.tol_delta);
-            emit_f64(parts, "--fansi-phase-scale", fa.phase_scale, df.phase_scale);
         }
         QsmAlgorithm::L1qsm => {
             let l = &config.inversion.l1qsm;
             let dl = &d.inversion.l1qsm;
             emit_f64(parts, "--l1qsm-alpha1", l.alpha1, dl.alpha1);
-            emit_f64(parts, "--l1qsm-mu1", l.mu1, dl.mu1);
+            emit_opt_f64(parts, "--l1qsm-mu1", l.mu1, dl.mu1);
             emit_f64(parts, "--l1qsm-mu2", l.mu2, dl.mu2);
             emit_f64(parts, "--l1qsm-mu3", l.mu3, dl.mu3);
             emit_f64(parts, "--l1qsm-lambda", l.lambda, dl.lambda);
             emit_usize(parts, "--l1qsm-max-iter", l.max_iter, dl.max_iter);
             emit_f64(parts, "--l1qsm-tol-update", l.tol_update, dl.tol_update);
             emit_f64(parts, "--l1qsm-tol-delta", l.tol_delta, dl.tol_delta);
-            emit_f64(parts, "--l1qsm-phase-scale", l.phase_scale, dl.phase_scale);
         }
         QsmAlgorithm::Whqsm => {
             let w = &config.inversion.whqsm;
@@ -625,13 +624,12 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
             emit_usize(parts, "--whqsm-max-iter", w.max_iter, dw.max_iter);
             emit_f64(parts, "--whqsm-tol-update", w.tol_update, dw.tol_update);
             emit_f64(parts, "--whqsm-tol-delta", w.tol_delta, dw.tol_delta);
-            emit_f64(parts, "--whqsm-phase-scale", w.phase_scale, dw.phase_scale);
         }
         QsmAlgorithm::Hdqsm => {
             let h = &config.inversion.hdqsm;
             let dh = &d.inversion.hdqsm;
             emit_f64(parts, "--hdqsm-alpha-l2", h.alpha_l2, dh.alpha_l2);
-            emit_f64(parts, "--hdqsm-mu1-l2", h.mu1_l2, dh.mu1_l2);
+            emit_opt_f64(parts, "--hdqsm-mu1-l2", h.mu1_l2, dh.mu1_l2);
             emit_f64(parts, "--hdqsm-mu2", h.mu2, dh.mu2);
             emit_usize(parts, "--hdqsm-max-iter-l1", h.max_iter_l1, dh.max_iter_l1);
             emit_usize(parts, "--hdqsm-max-iter-l2", h.max_iter_l2, dh.max_iter_l2);
@@ -667,6 +665,14 @@ fn emit_f64(parts: &mut Vec<String>, flag: &str, val: f64, default: f64) {
 }
 fn emit_usize(parts: &mut Vec<String>, flag: &str, val: usize, default: usize) {
     if val != default { parts.push(format!("{} {}", flag, val)); }
+}
+/// An optional setting: said when it is set to something other than the default. Unset is the
+/// value qsm-core derives, which the command line says by leaving the flag out.
+fn emit_opt_f64(parts: &mut Vec<String>, flag: &str, val: Option<f64>, default: Option<f64>) {
+    if let Some(v) = val.filter(|_| val != default) { parts.push(format!("{} {}", flag, v)); }
+}
+fn emit_opt_usize(parts: &mut Vec<String>, flag: &str, val: Option<usize>, default: Option<usize>) {
+    if let Some(v) = val.filter(|_| val != default) { parts.push(format!("{} {}", flag, v)); }
 }
 fn emit_i32(parts: &mut Vec<String>, flag: &str, val: i32, default: i32) {
     if val != default { parts.push(format!("{} {}", flag, val)); }
@@ -807,19 +813,25 @@ mod tests {
         assert!(generate_command(&c).contains("--tile-size 64"), "iQSM tiles");
     }
 
+    /// MEDI-mSMV is MEDI's option: said only with MEDI, its settings only when it is on and
+    /// changed.
     #[test]
-    fn test_msmv_refine_command() {
-        // Off by default → no mSMV flags.
+    fn test_medi_msmv_command() {
         let mut config = PipelineConfig::default();
-        assert!(!generate_command(&config).contains("--msmv"));
-        // Enabled → the refine flag is emitted; a non-default param is emitted too.
-        config.bg_removal.msmv_refine = true;
-        config.bg_removal.msmv.maxk = 9;
+        config.inversion.algorithm = QsmAlgorithm::Medi;
+        assert!(!generate_command(&config).contains("msmv"));
+        config.inversion.medi.msmv = true;
+        config.inversion.medi.msmv_maxk = 9;
         let cmd = generate_command(&config);
-        assert!(cmd.contains("--msmv-refine"), "got: {}", cmd);
-        assert!(cmd.contains("--msmv-maxk 9"), "got: {}", cmd);
-        // A default param is not emitted (only the refine flag + changed knobs).
-        assert!(!cmd.contains("--msmv-radius"), "got: {}", cmd);
+        assert!(cmd.contains("--medi-msmv") && cmd.contains("--medi-msmv-maxk 9"), "got: {cmd}");
+        assert!(!cmd.contains("--medi-msmv-vessel-radius") && !cmd.contains("prefilter"), "got: {cmd}");
+        config.inversion.medi.msmv_vessel_radius = Some(12.0);
+        config.inversion.medi.msmv_prefilter = false;
+        let cmd = generate_command(&config);
+        assert!(cmd.contains("--medi-msmv-vessel-radius 12") && cmd.contains("--no-medi-msmv-prefilter"), "got: {cmd}");
+        // Under another inversion it does not apply.
+        config.inversion.algorithm = QsmAlgorithm::Rts;
+        assert!(!generate_command(&config).contains("msmv"));
     }
 
     #[test]
@@ -959,11 +971,15 @@ mod tests {
     fn test_tv_params() {
         let mut c = PipelineConfig::default();
         c.inversion.algorithm = QsmAlgorithm::Tv;
-        c.inversion.tv.lambda = 0.001;
+        c.inversion.tv.lambda = 0.002;
         c.inversion.tv.max_iter = 100;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--tv-lambda 0.001"));
+        assert!(cmd.contains("--tv-lambda 0.002"));
         assert!(cmd.contains("--tv-max-iter 100"));
+        // ρ unset follows λ (qsm-core's 100·λ): no flag. Set, it is said.
+        assert!(!cmd.contains("--tv-rho"), "{cmd}");
+        c.inversion.tv.rho = Some(0.5);
+        assert!(generate_command(&c).contains("--tv-rho 0.5"));
     }
 
     #[test]
@@ -979,7 +995,7 @@ mod tests {
     fn test_tgv_params() {
         let mut c = PipelineConfig::default();
         c.inversion.algorithm = QsmAlgorithm::Tgv;
-        c.inversion.tgv.iterations = 500;
+        c.inversion.tgv.iterations = Some(500);
         c.inversion.tgv.erosions = 2;
         let cmd = generate_command(&c);
         assert!(cmd.contains("--tgv-iterations 500"));
@@ -1501,9 +1517,9 @@ algorithm = "tv"
     #[test]
     fn test_phase_offset_sigma() {
         let mut c = PipelineConfig::default();
-        c.field_mapping.phase_offset_sigma = [10.0, 10.0, 5.0];
+        c.field_mapping.phase_offset_sigma_mm = [10.0, 10.0, 5.0];
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--phase-offset-sigma 10 10 5"));
+        assert!(cmd.contains("--phase-offset-sigma-mm 10 10 5"));
     }
 }
 
