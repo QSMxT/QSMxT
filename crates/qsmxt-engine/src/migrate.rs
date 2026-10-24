@@ -687,6 +687,51 @@ mod tests {
     }
 
     /// A phase-offset σ in voxels is refused when phase offsets are removed, dropped otherwise.
+    /// QSMART's vessel sizes were in mm. A full file at those defaults takes today's (in voxels);
+    /// any other sizes stay in mm, said when QSMART runs.
+    #[test]
+    fn qsmart_vessel_sizes_from_before_their_units() {
+        use crate::VesselSizeUnits;
+        let qsmart = V9_FULL.replacen("algorithm = \"rts\"", "algorithm = \"qsmart\"", 1);
+        let (c, m) = read(&qsmart).unwrap();
+        assert_eq!(
+            c.inversion.qsmart.vessel_size_units,
+            VesselSizeUnits::Voxels
+        );
+        assert_eq!(
+            c.inversion.qsmart.vasc_sphere_radius,
+            crate::QsmartConfig::default().vasc_sphere_radius
+        );
+        assert!(m.notes.iter().any(|n| n.contains("vessel sizes")), "{m:#?}");
+        assert!(
+            !m.warnings.iter().any(|w| w.contains("vessel_size_units")),
+            "{m:#?}"
+        );
+        // Changed sizes in a full file keep their meaning in mm.
+        let changed = qsmart.replacen("vasc_sphere_radius = 8", "vasc_sphere_radius = 5", 1);
+        let (c, m) = read(&changed).unwrap();
+        assert_eq!(
+            (
+                c.inversion.qsmart.vessel_size_units,
+                c.inversion.qsmart.vasc_sphere_radius
+            ),
+            (VesselSizeUnits::Mm, 5)
+        );
+        assert!(
+            m.warnings.iter().any(|w| w.contains("vessel_size_units")),
+            "{m:#?}"
+        );
+        // A file saying it is today's reads its sizes in today's default units.
+        let c = PipelineConfig::from_toml(
+            "schema_version = 2\n[inversion.qsmart]\nvasc_sphere_radius = 5\n",
+        )
+        .unwrap();
+        assert_eq!(
+            c.inversion.qsmart.vessel_size_units,
+            VesselSizeUnits::Voxels
+        );
+    }
+
     #[test]
     fn a_phase_offset_sigma_in_voxels() {
         let e = read("[field_mapping]\nphase_offset_sigma = [3.0, 3.0, 3.0]\n")

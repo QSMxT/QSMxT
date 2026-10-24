@@ -186,7 +186,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
                 })
             }
             B0Estimation::QsmartEchofit => PB0Method::QsmartEchofit {
-                fit_threshold: cfg.field_mapping.qsmart_fit_threshold,
+                fit_threshold: cfg.field_mapping.qsmart_fit_threshold(),
             },
         },
         laplacian_solver: match cfg.field_mapping.laplacian_solver {

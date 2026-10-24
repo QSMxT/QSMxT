@@ -314,7 +314,11 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             3 => Some(B0EstimationArg::QsmartEchofit),
             _ => ps.b0_estimation_chosen.then_some(B0EstimationArg::WeightedAvg),
         },
-        qsmart_fit_threshold: if ps.b0_estimation == 3 { parse_optional_f64(&ps.qsmart_fit_threshold) } else { None },
+        // QSMART's echo-fit threshold: the mode, and the value of that mode.
+        qsmart_fit_threshold_mode: [crate::cli::QsmartFitThresholdModeArg::Percentile, crate::cli::QsmartFitThresholdModeArg::Absolute]
+            .get(ps.qsmart_fit_threshold_mode).copied().filter(|_| ps.b0_estimation == 3),
+        qsmart_fit_percentile: if ps.b0_estimation == 3 && ps.qsmart_fit_threshold_mode == 0 { parse_optional_f64(&ps.qsmart_fit_percentile) } else { None },
+        qsmart_fit_threshold: if ps.b0_estimation == 3 && ps.qsmart_fit_threshold_mode == 1 { parse_optional_f64(&ps.qsmart_fit_threshold) } else { None },
         // The echo weights belong to the weighted average; the fits do not use them.
         b0_weight_type: [B0WeightTypeArg::PhaseSNR, B0WeightTypeArg::PhaseVar, B0WeightTypeArg::Average,
                          B0WeightTypeArg::TEs, B0WeightTypeArg::Mag, B0WeightTypeArg::AssumedDecay]
@@ -1875,11 +1879,16 @@ mod tests {
         app.pipeline_state.set_select("qsmart_vessel_magnitude", 1);
         app.pipeline_state.set_select("qsmart_vessel_units", 1);
         app.reset_field("b0_estimation");
-        app.pipeline_state.qsmart_fit_threshold = "30".into();
+        app.pipeline_state.qsmart_fit_percentile = "95".into();
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.inversion.qsmart.vessel_magnitude, qsmxt_engine::QsmartVesselMagnitude::Combined);
         assert_eq!(c.inversion.qsmart.vessel_size_units, qsmxt_engine::VesselSizeUnits::Mm);
-        assert_eq!(c.field_mapping.qsmart_fit_threshold, 30.0);
+        assert_eq!(c.field_mapping.qsmart_fit_threshold(), qsm_core::utils::QsmartFitThreshold::Percentile(95.0));
+        // The fixed mode takes the fixed residual, not the percentile.
+        app.pipeline_state.set_select("qsmart_fit_threshold_mode", 1);
+        app.pipeline_state.qsmart_fit_threshold = "30".into();
+        let c = config_from_app(&app).unwrap();
+        assert_eq!(c.field_mapping.qsmart_fit_threshold(), qsm_core::utils::QsmartFitThreshold::Absolute(30.0));
     }
 
     /// Masking left alone in the TUI is masking left alone on the command line: QSMART takes

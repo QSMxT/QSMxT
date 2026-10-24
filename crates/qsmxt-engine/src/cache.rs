@@ -218,7 +218,8 @@ mod tests {
             edit(&mut c);
             step_cache_key(step, None, &p, &c) != step_cache_key(step, None, &p, &base)
         };
-        assert!(changed(|c| c.field_mapping.qsmart_fit_threshold = 30.0, "unwrap"));
+        assert!(changed(|c| c.field_mapping.qsmart_fit_percentile = 95.0, "unwrap"));
+        assert!(changed(|c| c.field_mapping.qsmart_fit_threshold_mode = crate::enums::QsmartFitThresholdMode::Absolute, "unwrap"));
         assert!(changed(|c| c.field_mapping.b0_estimation = crate::enums::B0Estimation::QsmartEchofit, "unwrap"));
         assert!(changed(|c| c.field_mapping.laplacian_solver = crate::enums::LaplacianSolver::Mirror, "unwrap"));
         assert!(changed(|c| c.inversion.qsmart.vessel_magnitude = crate::enums::QsmartVesselMagnitude::Combined, "qsmart"));

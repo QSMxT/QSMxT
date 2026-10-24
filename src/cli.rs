@@ -1173,8 +1173,21 @@ pub struct PipelineArgs {
     #[arg(long, value_enum)]
     pub b0_estimation: Option<B0EstimationArg>,
 
-    /// `--b0-estimation qsmart-echofit`: fit residual at which a voxel is left out of QSMART's
-    /// reconstruction (default 40)
+    /// `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is left out of
+    /// QSMART's reconstruction is set: a percentile of the blurred residual over the volume
+    /// (`--qsmart-fit-percentile`; default), or a fixed residual (`--qsmart-fit-threshold`).
+    /// Without it, giving one of those two selects its mode
+    #[arg(long, value_enum)]
+    pub qsmart_fit_threshold_mode: Option<QsmartFitThresholdModeArg>,
+
+    /// `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100],
+    /// above which a voxel is left out of QSMART's reconstruction (default 99)
+    #[arg(long)]
+    pub qsmart_fit_percentile: Option<f64>,
+
+    /// `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is left
+    /// out of QSMART's reconstruction, instead of a percentile (40 when the mode is `absolute`
+    /// and none is given)
     #[arg(long)]
     pub qsmart_fit_threshold: Option<f64>,
 
@@ -2044,9 +2057,20 @@ pub struct FieldmapCommonArgs {
     /// B0 field estimation method (qsmart-echofit: `fieldmap laplacian` only)
     #[arg(long, value_enum, default_value = "weighted-avg")]
     pub b0_estimation: B0EstimationArg,
-    /// `--b0-estimation qsmart-echofit`: fit residual at which a voxel is marked unreliable
-    #[arg(long, default_value_t = qsm_core::utils::QSMART_FIT_THRESHOLD)]
-    pub qsmart_fit_threshold: f64,
+    /// `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is marked
+    /// unreliable is set: a percentile of the blurred residual over the volume
+    /// (`--qsmart-fit-percentile`; default), or a fixed residual (`--qsmart-fit-threshold`).
+    /// Without it, giving one of those two selects its mode
+    #[arg(long, value_enum)]
+    pub qsmart_fit_threshold_mode: Option<QsmartFitThresholdModeArg>,
+    /// `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100],
+    /// above which a voxel is marked unreliable (default 99)
+    #[arg(long)]
+    pub qsmart_fit_percentile: Option<f64>,
+    /// `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is marked
+    /// unreliable, instead of a percentile (40 when the mode is `absolute` and none is given)
+    #[arg(long)]
+    pub qsmart_fit_threshold: Option<f64>,
     /// `--b0-estimation qsmart-echofit`: also save its reliability map (1 = reliable) here, for
     /// `qsmxt qsmart --reliability`
     #[arg(long)]
@@ -3667,6 +3691,11 @@ pub enum B0EstimationArg {
     /// of phase vs TE through the origin, which also marks the voxels QSMART leaves out. Needs
     /// Laplacian unwrapping
     QsmartEchofit,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum QsmartFitThresholdModeArg {
+    Percentile, Absolute,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

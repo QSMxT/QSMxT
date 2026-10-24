@@ -83,6 +83,10 @@ A file without it is read as follows, and what changed is logged:
   The message says what changed. Give the value in the new terms and add `schema_version`
   with the current version at the top, or remove the setting to use the default. When the
   method does not run, the value is dropped with a note.
+- **QSMART's vessel sizes** (`inversion.qsmart.vasc_sphere_radius` and the Frangi
+  scales) were in mm and are now in voxels by default (`vessel_size_units`). Sizes
+  given without `vessel_size_units` keep their meaning, in mm, with a warning when QSMART
+  runs; in a full config file, sizes at the earlier defaults take today's.
 - Settings that no longer exist are ignored, with a warning where that changes what a
   run does (for example `bg_removal.msmv_refine`: mSMV is now MEDI's option,
   `inversion.medi.msmv`).

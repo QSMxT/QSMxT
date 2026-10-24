@@ -1094,9 +1094,18 @@ pub struct FieldMappingConfig {
     /// The motion-robust echo fit (`b0_estimation = "robust-fit"`).
     #[serde(default)]
     pub robust_fit: RobustFitConfig,
-    /// The fit-residual threshold of QSMART's echo fit (`b0_estimation = "qsmart-echofit"`):
-    /// voxels whose residual reaches it are left out of QSMART's reconstruction. Default 40,
-    /// QSMART's (`qsm_core::utils::QSMART_FIT_THRESHOLD`).
+    /// How QSMART's echo fit (`b0_estimation = "qsmart-echofit"`) sets the residual threshold
+    /// at which a voxel is left out of QSMART's reconstruction: a percentile of the blurred fit
+    /// residual (default, as QSMART's authors run it) or a fixed residual
+    /// (`qsm_core::utils::QsmartFitThreshold`).
+    #[serde(default)]
+    pub qsmart_fit_threshold_mode: QsmartFitThresholdMode,
+    /// The percentile, in (0, 100], with `qsmart_fit_threshold_mode = "percentile"`. Default
+    /// qsm-core's (`QSMART_FIT_PERCENTILE`, 99).
+    #[serde(default = "default_qsmart_fit_percentile")]
+    pub qsmart_fit_percentile: f64,
+    /// The fixed residual threshold with `qsmart_fit_threshold_mode = "absolute"`. Default
+    /// qsm-core's (`QSMART_FIT_THRESHOLD`, 40).
     #[serde(default = "default_qsmart_fit_threshold")]
     pub qsmart_fit_threshold: f64,
     /// The user chose `unwrapping_algorithm`, `laplacian_solver` or `b0_estimation`, so the run
@@ -1122,7 +1131,19 @@ impl FieldMappingConfig {
                 "B0 estimation by QSMART's echo fit needs Laplacian unwrapping, not {}: choose Laplacian \
                  unwrapping, or another B0 estimation", self.unwrapping_algorithm.to_string().to_uppercase()));
         }
+        if self.b0_estimation == B0Estimation::QsmartEchofit {
+            self.qsmart_fit_threshold().validate()?;
+        }
         Ok(())
+    }
+
+    /// QSMART's echo-fit threshold as qsm-core takes it: the setting `qsmart_fit_threshold_mode`
+    /// selects.
+    pub fn qsmart_fit_threshold(&self) -> qsm_core::utils::QsmartFitThreshold {
+        match self.qsmart_fit_threshold_mode {
+            QsmartFitThresholdMode::Percentile => qsm_core::utils::QsmartFitThreshold::Percentile(self.qsmart_fit_percentile),
+            QsmartFitThresholdMode::Absolute => qsm_core::utils::QsmartFitThreshold::Absolute(self.qsmart_fit_threshold),
+        }
     }
 }
 
@@ -1159,7 +1180,18 @@ impl Default for RobustFitConfig {
     }
 }
 pub fn default_b0_weight_assumed_t2star_ms() -> f64 { 40.0 }
-pub fn default_qsmart_fit_threshold() -> f64 { qsm_core::utils::QSMART_FIT_THRESHOLD }
+pub fn default_qsmart_fit_percentile() -> f64 {
+    match qsm_core::utils::QsmartFitThreshold::default() {
+        qsm_core::utils::QsmartFitThreshold::Percentile(p) => p,
+        qsm_core::utils::QsmartFitThreshold::Absolute(_) => qsm_core::utils::QSMART_FIT_PERCENTILE,
+    }
+}
+pub fn default_qsmart_fit_threshold() -> f64 {
+    match qsm_core::utils::QsmartFitThreshold::default() {
+        qsm_core::utils::QsmartFitThreshold::Absolute(t) => t,
+        qsm_core::utils::QsmartFitThreshold::Percentile(_) => qsm_core::utils::QSMART_FIT_THRESHOLD,
+    }
+}
 pub fn default_laplacian_fft_pad() -> [usize; 3] { [64; 3] }
 
 /// A per-axis count given as one number for every axis or as three.
@@ -1220,6 +1252,8 @@ impl Default for FieldMappingConfig {
             romeo: RomeoConfig::default(),
             linear_fit: LinearFitConfig::default(),
             robust_fit: RobustFitConfig::default(),
+            qsmart_fit_threshold_mode: QsmartFitThresholdMode::default(),
+            qsmart_fit_percentile: default_qsmart_fit_percentile(),
             qsmart_fit_threshold: default_qsmart_fit_threshold(),
             unwrapping_chosen: false,
             laplacian_solver_chosen: false,
