@@ -415,6 +415,7 @@ fn inversion_need(config: &PipelineConfig, s: &Scan) -> u64 {
         QsmAlgorithm::Tsvd => 74 * n,
         QsmAlgorithm::Tikhonov => 82 * n,
         QsmAlgorithm::Ilsqr => 242 * n,
+        QsmAlgorithm::Star => star_need(config, s),
         QsmAlgorithm::Lsqr => 147 * n,
         QsmAlgorithm::Heidi => 194 * n,
         QsmAlgorithm::Tv => 147 * n,
@@ -453,6 +454,19 @@ fn inversion_need(config: &PipelineConfig, s: &Scan) -> u64 {
         QsmAlgorithm::Iqsm => dl(Net { id: "iqsm", per_voxel: 120, fixed: 0, whole: 583, native_tile: 473, browser_per_voxel: 120, once: 0, browser_per_helper: 0 }),
         QsmAlgorithm::IqsmPlus => dl(Net { id: "iqsm-plus", per_voxel: 120, fixed: 0, whole: 640, native_tile: 1_026, browser_per_voxel: 120, once: 0, browser_per_helper: 0 }),
     }
+}
+
+/// STAR-QSM: its complex working arrays are on the zero-padded grid (`inversion.star.pad` voxels
+/// per side, an odd extent grown by one), the field, mask and result on the acquired one.
+/// Measured natively on the example at its default padding (0.76 GB) and unpadded (0.55 GB),
+/// which separates the two, the same on 1 and 8 threads.
+fn star_need(config: &PipelineConfig, s: &Scan) -> u64 {
+    let pad = config.inversion.star.pad;
+    let padded: u64 = (0..3).map(|a| {
+        let m = s.dims[a] + 2 * pad[a];
+        (m + m % 2) as u64
+    }).product();
+    26 * s.n + 66 * padded
 }
 
 /// R2 and R2′: the EPG fit to a MESE, and/or R2′ predicted by R2PRIMEnet at its patch.
@@ -830,6 +844,10 @@ mod tests {
         assert!(at(&xqsm, "invert", 4) > at(&tiled, "invert", 4));
         assert!(at(&tiled, "invert", 4) > at(&small, "invert", 4));
         assert!(at(&tiled, "invert", 4) > at(&tiled, "invert", 1));
+
+        // STAR-QSM's padding enlarges its working grid.
+        let star = |pad| with(|c| { c.inversion.algorithm = QsmAlgorithm::Star; c.inversion.star.pad = pad; });
+        assert!(at(&star([8, 8, 20]), "invert", 1) > at(&star([0, 0, 0]), "invert", 1));
 
         // HD-BET: the whole volume, the native window, the low-memory one.
         let hd = |patch| with(|c| { c.masking.sections = crate::hd_bet_mask_sections();

@@ -131,6 +131,7 @@ pub fn qsm_algorithm_arg_to_config(a: cli::QsmAlgorithmArg) -> QsmAlgorithm {
         cli::QsmAlgorithmArg::Medi => QsmAlgorithm::Medi,
         cli::QsmAlgorithmArg::Tfi => QsmAlgorithm::Tfi,
         cli::QsmAlgorithmArg::Ilsqr => QsmAlgorithm::Ilsqr,
+        cli::QsmAlgorithmArg::Star => QsmAlgorithm::Star,
         cli::QsmAlgorithmArg::Lsqr => QsmAlgorithm::Lsqr,
         cli::QsmAlgorithmArg::Heidi => QsmAlgorithm::Heidi,
         cli::QsmAlgorithmArg::Qsmart => QsmAlgorithm::Qsmart,
@@ -416,6 +417,8 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
                 .map_err(|e| QsmxtError::Config(format!("--ilsqr-pad-mm: {e}")))?;
             config.inversion.ilsqr.pad_mm = v;
         }
+        if let Some(&[x, y, z]) = args.star_params.star_pad.as_deref() { config.inversion.star.pad = [x, y, z]; }
+        if let Some(v) = args.star_params.star_te { config.inversion.star.te = v; }
         // LSQR's params serve HEIDI too — its seed is an LSQR solve.
         if let Some(v) = args.lsqr_params.lsqr_residual_weighting { config.inversion.lsqr.residual_weighting = Some(v); }
         if args.lsqr_params.no_lsqr_global_offset { config.inversion.lsqr.fit_global_offset = false; }
@@ -1022,6 +1025,21 @@ mod tests {
         assert_eq!(with(&["--laplacian-fft-pad", "12"]).field_mapping.laplacian_fft_pad, [12; 3]);
         assert_eq!(with(&["--laplacian-fft-pad", "64", "64", "32"]).field_mapping.laplacian_fft_pad, [64, 64, 32]);
         // Two values is neither: refused (see `unusable_flag_values_are_refused`).
+    }
+
+    #[test]
+    fn star_settings_from_cli() {
+        let d = PipelineConfig::default();
+        assert_eq!(d.inversion.star.pad, qsm_core::inversion::StarParams::default().pad);
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--qsm-algorithm", "star",
+            "--star-pad", "4", "6", "10", "--star-te", "first"]);
+        assert_eq!(c.inversion.algorithm, QsmAlgorithm::Star);
+        assert_eq!(c.inversion.star.pad, [4, 6, 10]);
+        assert_eq!(c.inversion.star.te, qsmxt_engine::EchoTimeChoice::First);
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--star-te", "12.5"]);
+        assert_eq!(c.inversion.star.te, qsmxt_engine::EchoTimeChoice::Seconds(0.0125));
+        assert!(cli::Cli::try_parse_from(["qsmxt", "run", "<bids>", "--star-te", "median"]).is_err());
+        assert!(cli::Cli::try_parse_from(["qsmxt", "run", "<bids>", "--star-pad", "4", "4"]).is_err());
     }
 
     #[test]

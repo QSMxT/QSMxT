@@ -43,7 +43,7 @@ configurable — see [Algorithms](/QSMxT/reference/algorithms/).
 4. **Echo combination / B0 mapping** — combine echoes into a field map
    (`--b0-estimation`, `--b0-weight-type`).
 5. **Background field removal** — `vsharp`, `pdf`, `lbv`, and more.
-6. **Dipole inversion** — `ilsqr` (default), `rts`, `tv`, `tgv`, `medi`, … (31 algorithms).
+6. **Dipole inversion** — `ilsqr` (default), `rts`, `tv`, `tgv`, `medi`, … (32 algorithms).
 7. **Referencing** — reference the susceptibility values (e.g. to the mean).
 
 Not every inversion runs every stage: total-field methods (TFI, QSMART, AutoQSM,
@@ -63,7 +63,7 @@ qsmxt run study/bids \
 
 | Option | Choices |
 | --- | --- |
-| `--qsm-algorithm` | 20 classical (`rts`, `tv`, `tkd`, `tgv`, `medi`, `ilsqr`, …) and 11 deep-learning (`xqsm`, `qsmnet`, `iqsm`, …) |
+| `--qsm-algorithm` | 21 classical (`rts`, `tv`, `tkd`, `tgv`, `medi`, `ilsqr`, …) and 11 deep-learning (`xqsm`, `qsmnet`, `iqsm`, …) |
 | `--unwrapping-algorithm` | `romeo`, `laplacian` |
 | `--bf-algorithm` | `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm` |
 | `--mask-preset` | `robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`, `rs2-net`, `mindgrab` |

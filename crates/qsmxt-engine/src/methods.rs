@@ -155,6 +155,11 @@ const CITE_ILSQR: Citation = Citation {
     text: "Li, W., et al. (2015). \"A method for estimating and removing streaking artifacts in quantitative susceptibility mapping.\" *NeuroImage*, 108:111-122. https://doi.org/10.1016/j.neuroimage.2014.12.043",
 };
 
+const CITE_STAR: Citation = Citation {
+    key: "wei2015star",
+    text: "Wei, H., Dibb, R., Zhou, Y., Sun, Y., Xu, J., Wang, N., Liu, C. (2015). \"Streaking artifact reduction for quantitative susceptibility mapping of sources with large dynamic range.\" *NMR in Biomedicine*, 28(10):1294-1303. https://doi.org/10.1002/nbm.3383",
+};
+
 const CITE_TGV: Citation = Citation {
     key: "langkammer2015",
     text: "Langkammer, C., et al. (2015). \"Fast quantitative susceptibility mapping using 3D EPI and total generalized variation.\" *NeuroImage*, 111:622-630. https://doi.org/10.1016/j.neuroimage.2015.02.041",
@@ -575,6 +580,13 @@ fn inversion_changes(config: &PipelineConfig, alg: QsmAlgorithm) -> Changed {
         QsmAlgorithm::Medi => c.add_fields(&i.medi, &d.medi, &MEDI_MSMV_FIELDS),
         QsmAlgorithm::Tfi => c.add_fields(&i.tfi, &d.tfi, &[]),
         QsmAlgorithm::Ilsqr => c.add_fields(&i.ilsqr, &d.ilsqr, &[]),
+        // STAR-QSM's result depends on the padding and on the echo time the field is converted
+        // to phase at, so both are always given.
+        QsmAlgorithm::Star => {
+            let p = i.star.pad;
+            c.0.push(format!("zero-padding of {} × {} × {} voxels per side", p[0], p[1], p[2]));
+            c.0.push(format!("the field converted to phase at {}", echo_time_prose(i.star.te)));
+        }
         QsmAlgorithm::Lsqr => c.add_fields(&i.lsqr, &d.lsqr, &[]),
         QsmAlgorithm::Heidi => {
             c.add_fields(&i.lsqr, &d.lsqr, &[]);
@@ -590,6 +602,17 @@ fn inversion_changes(config: &PipelineConfig, alg: QsmAlgorithm) -> Changed {
         _ => {}
     }
     c
+}
+
+/// The echo time a method converts the field to phase at, as prose ("the sum of the echo times").
+fn echo_time_prose(te: EchoTimeChoice) -> String {
+    match te {
+        EchoTimeChoice::First => "the first echo time".into(),
+        EchoTimeChoice::Last => "the last echo time".into(),
+        EchoTimeChoice::Spacing => "the echo spacing".into(),
+        EchoTimeChoice::Sum => "the sum of the echo times".into(),
+        EchoTimeChoice::Seconds(_) => format!("an echo time of {te} ms"),
+    }
 }
 
 /// MEDI's mSMV settings, which [`medi_msmv`] words rather than the list of changed settings.
@@ -1895,6 +1918,7 @@ fn inversion_name_cite(alg: QsmAlgorithm) -> (&'static str, &'static Citation) {
         QsmAlgorithm::Medi => ("MEDI (Morphology Enabled Dipole Inversion)", &CITE_MEDI),
         QsmAlgorithm::Tfi => ("TFI (Total Field Inversion)", &CITE_TFI),
         QsmAlgorithm::Ilsqr => ("iLSQR", &CITE_ILSQR),
+        QsmAlgorithm::Star => ("STAR-QSM (Streaking Artifact Reduction)", &CITE_STAR),
         QsmAlgorithm::Lsqr => ("minimally regularised LSQR", &CITE_LSQR),
         QsmAlgorithm::Heidi => ("HEIDI (Homogeneity Enabled Incremental Dipole Inversion)", &CITE_HEIDI),
         QsmAlgorithm::Ndi => ("NDI (Nonlinear Dipole Inversion)", &CITE_NDI),
@@ -1950,6 +1974,7 @@ fn cite_inline(cite: &Citation) -> &'static str {
         "shmueli2009" => "Shmueli et al., 2009",
         "bilgic2014l2" => "Bilgic et al., 2014",
         "liu2011medi" => "Liu et al., 2011",
+        "wei2015star" => "Wei et al., 2015",
         "liu2017tfi" => "Liu et al., 2017",
         "milovic2018" => "Milovic et al., 2018",
         "polak2020" => "Polak et al., 2020",
@@ -2231,6 +2256,18 @@ mod tests {
         config.inversion.ilsqr.pad_mm = 32.0;
         let out = generate_methods(&config);
         assert!(out.contains("zero-padding = 32 mm per side"), "{out}");
+    }
+
+    #[test]
+    fn star_methods_state_the_padding_and_echo_time() {
+        let mut config = PipelineConfig::default();
+        config.inversion.algorithm = QsmAlgorithm::Star;
+        let out = generate_methods(&config);
+        assert!(out.contains("STAR-QSM (Streaking Artifact Reduction) (Wei et al., 2015) with zero-padding of 8 × 8 × 20 voxels per side and the field converted to phase at the sum of the echo times."), "{out}");
+        assert!(out.contains("https://doi.org/10.1002/nbm.3383"), "{out}");
+        config.inversion.star.te = EchoTimeChoice::Seconds(0.02);
+        let out = generate_methods(&config);
+        assert!(out.contains("converted to phase at an echo time of 20 ms"), "{out}");
     }
 
     #[test]
@@ -2992,6 +3029,7 @@ mod tests {
             (QsmAlgorithm::Medi, "MEDI"),
             (QsmAlgorithm::Tfi, "TFI"),
             (QsmAlgorithm::Ilsqr, "iLSQR"),
+            (QsmAlgorithm::Star, "STAR-QSM"),
             (QsmAlgorithm::Ndi, "NDI"),
             (QsmAlgorithm::Fansi, "FANSI (Nonlinear TV)"),
             (QsmAlgorithm::FansiTgv, "FANSI (Nonlinear TGV)"),

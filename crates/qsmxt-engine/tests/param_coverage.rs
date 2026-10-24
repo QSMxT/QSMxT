@@ -126,9 +126,8 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     cover!(q::separation::SusepNetParams => c::SusepNetConfig);
     // te (the echo time a field is expressed as phase at) is not exposed yet (follow-up: echo time).
     cover!(q::inversion::TgvParams => c::TgvConfig, ignore: ["te"]);
-    // STAR-QSM is not a QSMxT inversion yet (follow-up: STAR-QSM); every field is listed so a new
-    // one is noticed.
-    not_exposed::<q::inversion::StarParams>("StarParams", &["pad", "echo_times", "te", "b0"]);
+    // b0/echo_times come from scan metadata (the dispatcher fills them).
+    cover!(q::inversion::StarParams => c::StarConfig, ignore: ["b0", "echo_times"]);
     // N4 is not offered yet (#414); every field is listed so a new one is noticed.
     not_exposed::<q::utils::N4Params>("N4Params", &[
         "shrink_factor", "max_iterations", "convergence_threshold", "mesh", "spline_order",
