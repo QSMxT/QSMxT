@@ -570,7 +570,11 @@ impl Ctx<'_> {
         let ((id, label), settings) = match stage {
             Stage::ScalePhase if self.facts.n_coils > 1 => (some("mcpc3ds", "MCPC-3D-S"), vec![]),
             Stage::Magnitude => {
-                let s = if c.masking.inhomogeneity_correction { vec!["inhomogeneity correction".to_string()] } else { vec![] };
+                let s = match (c.masking.inhomogeneity_correction, c.masking.inhomogeneity_method) {
+                    (false, _) => vec![],
+                    (true, InhomogeneityMethod::Makehomogeneous) => vec!["inhomogeneity correction".to_string()],
+                    (true, InhomogeneityMethod::N4) => vec!["inhomogeneity correction (N4)".to_string()],
+                };
                 (some("rss", "root sum of squares"), s)
             }
             Stage::Mask(pass) => {

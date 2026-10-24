@@ -1,16 +1,24 @@
 //! The combined magnitude, and the inhomogeneity (bias field) correction masking also uses.
 
-use crate::config::{HomogeneityConfig, PipelineConfig};
+use crate::config::PipelineConfig;
+use crate::enums::InhomogeneityMethod;
 use crate::error::EngineError;
 use crate::scan::RunMetadata;
 
-/// The `magnitude` step's parameters.
+/// The `magnitude` step's parameters: the correction's method and that method's settings.
 pub fn params(config: &PipelineConfig) -> serde_json::Value {
-    serde_json::json!({
-        "inhomogeneity_correction": config.masking.inhomogeneity_correction,
-        "homogeneity_sigma_mm": config.homogeneity.sigma_mm,
-        "homogeneity_nbox": config.homogeneity.nbox,
-    })
+    match config.masking.inhomogeneity_method {
+        InhomogeneityMethod::Makehomogeneous => serde_json::json!({
+            "inhomogeneity_correction": config.masking.inhomogeneity_correction,
+            "homogeneity_sigma_mm": config.homogeneity.sigma_mm,
+            "homogeneity_nbox": config.homogeneity.nbox,
+        }),
+        InhomogeneityMethod::N4 => serde_json::json!({
+            "inhomogeneity_correction": config.masking.inhomogeneity_correction,
+            "inhomogeneity_method": "n4",
+            "n4": config.n4,
+        }),
+    }
 }
 
 /// The run's combined magnitude: the root sum of squares of every echo's, corrected for
@@ -22,11 +30,11 @@ pub fn combined_magnitude(
     if !config.masking.inhomogeneity_correction {
         return Ok(combined);
     }
-    homogeneity_correct(&combined, meta, &config.homogeneity, "the RSS-combined magnitude")
+    homogeneity_correct(&combined, meta, config, "the RSS-combined magnitude")
 }
 
-/// Apply inhomogeneity (bias field) correction on the run's working grid. `source` names the
-/// volume in the error.
+/// Apply inhomogeneity (bias field) correction on the run's working grid, with the configured
+/// method (`masking.inhomogeneity_method`). `source` names the volume in the error.
 ///
 /// qsm-core indexes the volume as `x + y*nx + z*nx*ny` over the grid dimensions, so a volume
 /// with fewer voxels than the grid panics with an out-of-bounds index inside the box filter
@@ -35,7 +43,7 @@ pub fn combined_magnitude(
 pub fn homogeneity_correct(
     data: &[f64],
     meta: &RunMetadata,
-    homogeneity: &HomogeneityConfig,
+    config: &PipelineConfig,
     source: &str,
 ) -> Result<Vec<f64>, EngineError> {
     let (nx, ny, nz) = meta.dims;
@@ -52,7 +60,22 @@ pub fn homogeneity_correct(
         )));
     }
     let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
-    Ok(qsm_core::utils::makehomogeneous(data, &grid, homogeneity.sigma_mm, homogeneity.nbox)?)
+    match config.masking.inhomogeneity_method {
+        InhomogeneityMethod::Makehomogeneous => {
+            let h = &config.homogeneity;
+            Ok(qsm_core::utils::makehomogeneous(data, &grid, h.sigma_mm, h.nbox)?)
+        }
+        InhomogeneityMethod::N4 => {
+            // qsm-core panics on a grid too small to shrink and on settings it cannot use; the
+            // plan refuses both up front, and this covers runs resumed from a cached state.
+            let n4 = &config.n4;
+            if let Some(why) = n4.validate().err().or_else(|| n4.grid_problem(meta.dims)) {
+                return Err(EngineError::Config(format!("inhomogeneity correction: {why}")));
+            }
+            // No mask: the corrected magnitude is what masking is made from.
+            Ok(qsm_core::utils::n4_bias_correction(data, None, &grid, &n4.core(), |_, _| {}).corrected)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -72,7 +95,7 @@ pub(crate) mod tests {
     #[test]
     fn test_homogeneity_correct_rejects_size_mismatch() {
         // The guard must report the mismatch rather than let qsm-core index past the volume.
-        let cfg = HomogeneityConfig::default();
+        let cfg = PipelineConfig::default();
         let short = vec![1.0f64; 4 * 4 * 3];
         let err = homogeneity_correct(&short, &meta_4x4x4(), &cfg, "the magnitude").unwrap_err();
         assert!(matches!(err, EngineError::DimensionMismatch(_)));
@@ -84,7 +107,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_homogeneity_correct_runs_on_matching_volume() {
-        let cfg = HomogeneityConfig::default();
+        let cfg = PipelineConfig::default();
         let data: Vec<f64> = (0..4 * 4 * 4).map(|i| 100.0 + i as f64).collect();
         let out = homogeneity_correct(&data, &meta_4x4x4(), &cfg, "the magnitude").unwrap();
         assert_eq!(out.len(), data.len());
@@ -103,7 +126,40 @@ pub(crate) mod tests {
         assert_eq!(combined_magnitude(&[&a, &b], &meta, &config).unwrap(), rss);
 
         config.masking.inhomogeneity_correction = true;
-        let corrected = homogeneity_correct(&rss, &meta, &config.homogeneity, "x").unwrap();
+        let corrected = homogeneity_correct(&rss, &meta, &config, "x").unwrap();
         assert_eq!(combined_magnitude(&[&a, &b], &meta, &config).unwrap(), corrected);
+    }
+
+    /// The method decides which correction runs, and N4's own settings reach it.
+    #[test]
+    fn the_method_chooses_the_correction() {
+        let mut meta = meta_4x4x4();
+        meta.dims = (8, 8, 8);
+        let data: Vec<f64> = (0..512).map(|i| 100.0 + (i % 37) as f64).collect();
+        let mut config = PipelineConfig::default();
+        let made = homogeneity_correct(&data, &meta, &config, "x").unwrap();
+        config.masking.inhomogeneity_method = InhomogeneityMethod::N4;
+        config.n4.max_iterations = vec![2];
+        let grid = qsm_core::Grid::new(8, 8, 8, 1.0, 1.0, 1.0);
+        let n4 = qsm_core::utils::n4_bias_correction(&data, None, &grid, &config.n4.core(), |_, _| {}).corrected;
+        assert_eq!(homogeneity_correct(&data, &meta, &config, "x").unwrap(), n4);
+        assert_ne!(n4, made);
+        assert_eq!(params(&config)["inhomogeneity_method"], "n4");
+        assert_eq!(params(&config)["n4"]["max_iterations"], serde_json::json!([2]));
+    }
+
+    /// A grid N4 cannot shrink, and no fitting level, are errors rather than qsm-core panics.
+    #[test]
+    fn n4_refuses_what_qsm_core_would_panic_on() {
+        let mut config = PipelineConfig::default();
+        config.masking.inhomogeneity_method = InhomogeneityMethod::N4;
+        let data = vec![1.0f64; 64];
+        let err = homogeneity_correct(&data, &meta_4x4x4(), &config, "x").unwrap_err().to_string();
+        assert!(err.contains("--n4-shrink-factor") && err.contains("4x4x4"), "{err}");
+        config.n4.shrink_factor = 2;
+        assert!(homogeneity_correct(&data, &meta_4x4x4(), &config, "x").is_ok());
+        config.n4.max_iterations.clear();
+        let err = homogeneity_correct(&data, &meta_4x4x4(), &config, "x").unwrap_err().to_string();
+        assert!(err.contains("--n4-max-iterations"), "{err}");
     }
 }

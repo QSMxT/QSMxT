@@ -525,6 +525,69 @@ param_config!(BetConfig from qsm_core::bet::BetParams {
 param_config!(HomogeneityConfig from qsm_core::utils::HomogeneityParams {
     sigma_mm: f64, nbox: usize
 });
+// N4 runs without a mask here (on the magnitude masking is made from), so qsm-core's
+// `rescale_intensities`, which applies only with a mask, has nothing to do and is left out.
+param_config!(N4Config from qsm_core::utils::N4Params {
+    shrink_factor: usize, max_iterations: Vec<usize>, convergence_threshold: f64, mesh: [usize; 3],
+    spline_order: usize, bias_field_fwhm: f64, wiener_noise: f64, histogram_bins: usize
+});
+impl N4Config {
+    /// The qsm-core parameters.
+    pub fn core(&self) -> qsm_core::utils::N4Params {
+        qsm_core::utils::N4Params {
+            shrink_factor: self.shrink_factor,
+            max_iterations: self.max_iterations.clone(),
+            convergence_threshold: self.convergence_threshold,
+            mesh: self.mesh,
+            spline_order: self.spline_order,
+            bias_field_fwhm: self.bias_field_fwhm,
+            wiener_noise: self.wiener_noise,
+            histogram_bins: self.histogram_bins,
+            ..Default::default()
+        }
+    }
+
+    /// Why the settings cannot be used, if they cannot: what qsm-core's `n4_bias_correction`
+    /// asserts (at least one fitting level, a positive shrink factor and mesh, a spline order of
+    /// 1 to 3, two histogram bins or more), and a positive, finite FWHM.
+    pub fn validate(&self) -> Result<(), String> {
+        let mut problems = Vec::new();
+        if self.max_iterations.is_empty() {
+            problems.push("--n4-max-iterations needs at least one fitting level".to_string());
+        }
+        if self.shrink_factor == 0 {
+            problems.push("--n4-shrink-factor must be at least 1".into());
+        }
+        if self.mesh.contains(&0) {
+            problems.push(format!("--n4-mesh must be at least 1 along each axis, not {:?}", self.mesh));
+        }
+        if !(1..=3).contains(&self.spline_order) {
+            problems.push(format!("--n4-spline-order must be 1, 2 or 3, not {}", self.spline_order));
+        }
+        if self.histogram_bins < 2 {
+            problems.push(format!("--n4-histogram-bins must be at least 2, not {}", self.histogram_bins));
+        }
+        if !(self.bias_field_fwhm > 0.0 && self.bias_field_fwhm.is_finite()) {
+            problems.push(format!("--n4-bias-field-fwhm must be a positive number, not {}", self.bias_field_fwhm));
+        }
+        if !(self.wiener_noise >= 0.0 && self.wiener_noise.is_finite() && self.convergence_threshold.is_finite()) {
+            problems.push("--n4-wiener-noise and --n4-convergence-threshold must be finite, and the noise not negative".into());
+        }
+        if problems.is_empty() { Ok(()) } else { Err(format!("N4: {}", problems.join("; "))) }
+    }
+
+    /// Why a `dims` grid is too small for N4, if it is: N4 fits the bias field on the image
+    /// shrunk by `shrink_factor`, which needs at least two voxels along each axis.
+    pub fn grid_problem(&self, dims: (usize, usize, usize)) -> Option<String> {
+        let s = self.shrink_factor.max(1);
+        let short = [dims.0, dims.1, dims.2].into_iter().any(|n| n / s < 2);
+        short.then(|| format!(
+            "N4 fits the bias field on the image shrunk by {s} (--n4-shrink-factor), which needs at \
+             least {} voxels along each axis, and this run is {}x{}x{}. Lower --n4-shrink-factor, or \
+             use --inhomogeneity-method makehomogeneous",
+            2 * s, dims.0, dims.1, dims.2))
+    }
+}
 param_config!(LinearFitConfig from qsm_core::utils::LinearFitParams {
     estimate_offset: bool, reliability_threshold_percentile: f64
 });
@@ -838,6 +901,9 @@ pub struct PipelineConfig {
     pub segmentation: SegmentationConfig,
     pub bet: BetConfig,
     pub homogeneity: HomogeneityConfig,
+    /// N4 inhomogeneity correction (`masking.inhomogeneity_method = "n4"`).
+    #[serde(default)]
+    pub n4: N4Config,
     #[serde(default)]
     pub multi_orientation: MultiOrientationConfig,
     /// Rigid co-registration of the echoes before field mapping. Off by default.
@@ -1170,6 +1236,9 @@ impl Default for FieldMappingConfig {
 #[serde(default)]
 pub struct MaskingConfig {
     pub inhomogeneity_correction: bool,
+    /// How the magnitude is corrected for inhomogeneity: `makehomogeneous` (default) or `n4`.
+    #[serde(default)]
+    pub inhomogeneity_method: InhomogeneityMethod,
     pub sections: Vec<MaskSection>,
     /// How `sections` fold into one mask: `or` (union, the default) or `and` (intersection).
     #[serde(default)]
@@ -1209,6 +1278,7 @@ impl Default for MaskingConfig {
     fn default() -> Self {
         Self {
             inhomogeneity_correction: true,
+            inhomogeneity_method: InhomogeneityMethod::default(),
             sections: default_mask_sections(),
             combine: MaskCombine::default(),
             refinements: vec![],

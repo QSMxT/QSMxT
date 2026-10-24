@@ -217,7 +217,7 @@ qsmxt r2prime --r2star r2star.nii --r2 r2.nii -m mask.nii -o r2prime.nii \
 
 | Command | Purpose |
 | --- | --- |
-| `homogeneity` | Correct intensity inhomogeneity on magnitude data |
+| `homogeneity` | Correct intensity inhomogeneity on magnitude data, with `makehomogeneous` (default) or N4 (`--method n4`) |
 | `resample` | Resample an oblique volume to axial orientation. Continuous data (magnitude, an unwrapped field, χ) as a positional argument; **wrapped phase needs `--phase` with `--magnitude`** so the interpolation goes through the complex domain |
 
 ```sh

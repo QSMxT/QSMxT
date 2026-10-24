@@ -51,6 +51,29 @@ lambda = 0.0
 See [multi-orientation](/QSMxT/reference/algorithms/#multi-orientation-cosmos-and-sti)
 for what the pattern matches and what will be refused.
 
+The inhomogeneity correction's method is `masking.inhomogeneity_method`, and each
+method's settings have their own section: `[homogeneity]` for `makehomogeneous`
+and `[n4]` for N4:
+
+```toml
+[masking]
+inhomogeneity_correction = true
+inhomogeneity_method = "n4"   # or "makehomogeneous" (the default)
+
+[n4]
+shrink_factor = 4
+max_iterations = [50, 50, 50, 50]   # one entry per fitting level
+convergence_threshold = 0.0
+mesh = [1, 1, 1]
+spline_order = 3
+bias_field_fwhm = 0.15
+wiener_noise = 0.01
+histogram_bins = 200
+```
+
+See [inhomogeneity correction](/QSMxT/reference/algorithms/#inhomogeneity-correction)
+for what each does.
+
 :::tip
 Rather than writing flags or TOML by hand, configure interactively in the
 [TUI](/QSMxT/guides/running-interactively/) — it shows the equivalent `qsmxt run`

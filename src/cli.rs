@@ -91,7 +91,7 @@ pub enum Command {
     R2(R2Args),
     /// R2' mapping (R2' = R2* - R2)
     R2prime(R2primeArgs),
-    /// Inhomogeneity correction on magnitude data
+    /// Inhomogeneity correction on magnitude data (makehomogeneous or N4)
     Homogeneity(HomogeneityArgs),
     /// Resample oblique volume to axial orientation
     Resample(ResampleArgs),
@@ -1006,6 +1006,55 @@ impl RomeoParamArgs {
     }
 }
 
+/// N4's settings (`--inhomogeneity-method n4`), shared by `qsmxt run` and `qsmxt homogeneity`.
+#[derive(Args, Debug, Default, Clone)]
+pub struct N4ParamArgs {
+    /// N4: subsample the image by this factor before fitting the bias field (default 4)
+    #[arg(long)]
+    pub n4_shrink_factor: Option<usize>,
+    /// N4: maximum iterations at each fitting level, one number a level (default 50 50 50 50);
+    /// the B-spline mesh doubles from one level to the next
+    #[arg(long, num_args = 1.., value_name = "ITERATIONS")]
+    pub n4_max_iterations: Option<Vec<usize>>,
+    /// N4: stop a level once the change in the bias field (its coefficient of variation) falls
+    /// to this (default 0: every iteration runs)
+    #[arg(long)]
+    pub n4_convergence_threshold: Option<f64>,
+    /// N4: B-spline mesh elements per axis at the first level, X Y Z (default 1 1 1)
+    #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"])]
+    pub n4_mesh: Option<Vec<usize>>,
+    /// N4: order of the B-spline bias field, 1 to 3 (default 3)
+    #[arg(long)]
+    pub n4_spline_order: Option<usize>,
+    /// N4: FWHM of the Gaussian modelling the bias field's blurring of the log-intensity
+    /// histogram (default 0.15)
+    #[arg(long)]
+    pub n4_bias_field_fwhm: Option<f64>,
+    /// N4: noise term of the Wiener deconvolution of the histogram (default 0.01)
+    #[arg(long)]
+    pub n4_wiener_noise: Option<f64>,
+    /// N4: bins of the log-intensity histogram (default 200)
+    #[arg(long)]
+    pub n4_histogram_bins: Option<usize>,
+}
+
+impl N4ParamArgs {
+    /// Apply these flags onto an N4 configuration: the one place they are read, so `qsmxt run`
+    /// and `qsmxt homogeneity` cannot disagree about what a flag means.
+    pub fn apply_to(&self, n: &mut qsmxt_engine::N4Config) {
+        if let Some(v) = self.n4_shrink_factor { n.shrink_factor = v; }
+        if let Some(v) = &self.n4_max_iterations { n.max_iterations = v.clone(); }
+        if let Some(v) = self.n4_convergence_threshold { n.convergence_threshold = v; }
+        if let Some(v) = &self.n4_mesh {
+            if let [x, y, z] = v[..] { n.mesh = [x, y, z]; }
+        }
+        if let Some(v) = self.n4_spline_order { n.spline_order = v; }
+        if let Some(v) = self.n4_bias_field_fwhm { n.bias_field_fwhm = v; }
+        if let Some(v) = self.n4_wiener_noise { n.wiener_noise = v; }
+        if let Some(v) = self.n4_histogram_bins { n.histogram_bins = v; }
+    }
+}
+
 #[derive(Args, Debug, Default, Clone)]
 pub struct SegmentationParamArgs {
     /// SynthSeg weights generation: v1 (32 labels, ships with SynthSeg) or v2 (33 labels, adds CSF;
@@ -1285,13 +1334,21 @@ pub struct PipelineArgs {
     #[command(flatten)]
     pub tiling_params: TilingParamArgs,
 
-    /// Inhomogeneity correction smoothing sigma in mm
+    /// Inhomogeneity correction method: `makehomogeneous` (default; --homogeneity-*) or `n4`
+    /// (N4 bias field correction, as ANTs' N4BiasFieldCorrection; --n4-*)
+    #[arg(long, value_enum)]
+    pub inhomogeneity_method: Option<InhomogeneityMethodArg>,
+
+    /// Inhomogeneity correction smoothing sigma in mm (makehomogeneous)
     #[arg(long)]
     pub homogeneity_sigma_mm: Option<f64>,
 
-    /// Inhomogeneity correction box filter passes
+    /// Inhomogeneity correction box filter passes (makehomogeneous)
     #[arg(long)]
     pub homogeneity_nbox: Option<usize>,
+
+    #[command(flatten)]
+    pub n4_params: N4ParamArgs,
 
     /// Linear and robust fit: percentile for the fit's reliability mask (default 90; 0 disables)
     #[arg(long)]
@@ -3429,12 +3486,18 @@ pub struct HomogeneityArgs {
     /// Output corrected magnitude NIfTI file
     #[arg(short, long)]
     pub output: PathBuf,
-    /// Smoothing sigma in mm (default: 7.0)
-    #[arg(long, default_value_t = 7.0)]
+    /// Correction method: `makehomogeneous` (--sigma, --nbox) or `n4` (N4 bias field correction,
+    /// as ANTs' N4BiasFieldCorrection; --n4-*)
+    #[arg(long, value_enum, default_value_t = InhomogeneityMethodArg::Makehomogeneous)]
+    pub method: InhomogeneityMethodArg,
+    /// makehomogeneous: smoothing sigma in mm
+    #[arg(long, default_value_t = qsmxt_engine::HomogeneityConfig::default().sigma_mm)]
     pub sigma: f64,
-    /// Number of box filter passes for Gaussian approximation (default: 3)
-    #[arg(long, default_value_t = 3)]
+    /// makehomogeneous: number of box filter passes for the Gaussian approximation
+    #[arg(long, default_value_t = qsmxt_engine::HomogeneityConfig::default().nbox)]
     pub nbox: usize,
+    #[command(flatten)]
+    pub n4_params: N4ParamArgs,
 }
 
 #[derive(Parser, Debug)]
@@ -3602,6 +3665,23 @@ impl From<VsharpGridArg> for qsmxt_engine::VsharpGrid {
             VsharpGridArg::Native => Self::Native,
             VsharpGridArg::Finest => Self::Finest,
             VsharpGridArg::Isotropic => Self::Isotropic,
+        }
+    }
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum InhomogeneityMethodArg {
+    /// Divide by a smoothed estimate of the receive sensitivity (MriResearchTools' makehomogeneous)
+    Makehomogeneous,
+    /// N4 bias field correction, as ANTs' N4BiasFieldCorrection
+    N4,
+}
+
+impl From<InhomogeneityMethodArg> for qsmxt_engine::InhomogeneityMethod {
+    fn from(a: InhomogeneityMethodArg) -> Self {
+        match a {
+            InhomogeneityMethodArg::Makehomogeneous => Self::Makehomogeneous,
+            InhomogeneityMethodArg::N4 => Self::N4,
         }
     }
 }
