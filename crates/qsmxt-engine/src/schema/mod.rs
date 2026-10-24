@@ -655,9 +655,34 @@ impl Setting {
     }
 }
 
+/// A bound as a range's text gives it: exact where that is short ("0", "0.5", "64"), a simple
+/// fraction where the bound is one ("2/3" for the dipole kernel's largest |D|), and otherwise
+/// rounded to 4 significant digits. Only the text: the comparison uses the bound itself.
+pub(crate) fn range_number(v: f64) -> String {
+    if v.fract() == 0.0 {
+        return format!("{v:.0}");
+    }
+    let rounded = |v: f64| {
+        let decimals = (3 - v.abs().log10().floor() as i32).max(0) as usize;
+        let t = format!("{v:.decimals$}");
+        t.trim_end_matches('0').trim_end_matches('.').to_string()
+    };
+    let short = rounded(v);
+    if short.parse::<f64>() == Ok(v) {
+        return short;
+    }
+    for q in 2..=12u32 {
+        let p = (v * q as f64).round();
+        if p != 0.0 && (p / q as f64 - v).abs() <= 1e-12 * v.abs() {
+            return format!("{p:.0}/{q}");
+        }
+    }
+    short
+}
+
 /// A range in words: "at least 0", "greater than 0", "from 0 to 1".
 pub(crate) fn range_words(min: Option<f64>, max: Option<f64>, exclusive_min: bool, exclusive_max: bool) -> String {
-    let num = |v: f64| if v.fract() == 0.0 { format!("{v:.0}") } else { format!("{v}") };
+    let num = range_number;
     match (min, max) {
         (Some(lo), Some(hi)) => format!(
             "from {} to {}{}", num(lo), num(hi),
@@ -813,6 +838,23 @@ mod range_tests {
     }
 
     #[test]
+    fn range_numbers_are_exact_when_short_and_rounded_otherwise() {
+        assert_eq!(range_number(0.0), "0");
+        assert_eq!(range_number(64.0), "64");
+        assert_eq!(range_number(0.5), "0.5");
+        assert_eq!(range_number(1e-4), "0.0001");
+        assert_eq!(range_number(2.0 / 3.0), "2/3");
+        assert_eq!(range_number(std::f64::consts::PI), "3.142");
+        // A value just under 2/3 is still refused by the exact comparison.
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = crate::QsmAlgorithm::Tkd;
+        c.inversion.tkd.threshold = 0.6667;
+        assert!(check_ranges(&c).is_err());
+        c.inversion.tkd.threshold = 0.6666;
+        assert!(check_ranges(&c).is_ok());
+    }
+
+    #[test]
     fn a_number_that_is_not_finite_is_refused() {
         let mut c = PipelineConfig::default();
         c.bg_removal.vsharp.max_radius = f64::INFINITY;
@@ -828,7 +870,7 @@ mod range_tests {
         c.inversion.algorithm = crate::QsmAlgorithm::Tkd;
         c.inversion.tkd.threshold = 0.0;
         let e = check_ranges(&c).unwrap_err().to_string();
-        assert!(e.contains("inversion.tkd.threshold (--tkd-threshold) is 0.0; it must be from 0 to 0.6666666666666666 (not 0 or 0.6666666666666666)"), "{e}");
+        assert!(e.contains("inversion.tkd.threshold (--tkd-threshold) is 0.0; it must be from 0 to 2/3 (not 0 or 2/3)"), "{e}");
     }
 
     #[test]

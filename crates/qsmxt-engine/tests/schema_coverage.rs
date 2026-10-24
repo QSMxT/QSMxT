@@ -428,7 +428,7 @@ fn a_value_out_of_range_is_an_error_on_its_own_setting() {
     // TKD is not the method, so its threshold does not apply.
     assert_eq!(error(&c, "inversion.tkd.threshold"), None);
     c.inversion.algorithm = qsmxt_engine::QsmAlgorithm::Tkd;
-    assert_eq!(error(&c, "inversion.tkd.threshold").as_deref(), Some("Must be from 0 to 0.6666666666666666 (not 0 or 0.6666666666666666)"));
+    assert_eq!(error(&c, "inversion.tkd.threshold").as_deref(), Some("Must be from 0 to 2/3 (not 0 or 2/3)"));
     c.bg_removal.vsharp.max_radius = f64::NAN;
     assert_eq!(error(&c, "bg_removal.vsharp.max_radius").as_deref(), Some("Must be a finite number"));
     // A setting's own rule.
@@ -444,7 +444,7 @@ fn a_value_out_of_range_is_an_error_on_its_own_setting() {
     assert_eq!(error(&c, "separation.susep_net.patch").as_deref(), Some("Every dimension must be a positive multiple of 8 (got 12)"));
     let doc = serde_json::to_value(schema::settings_view(&c, &ViewFacts::default())).unwrap();
     let tkd = doc.as_array().unwrap().iter().find(|v| v["path"] == "inversion.tkd.threshold").unwrap();
-    assert_eq!(tkd["error"], "Must be from 0 to 0.6666666666666666 (not 0 or 0.6666666666666666)");
+    assert_eq!(tkd["error"], "Must be from 0 to 2/3 (not 0 or 2/3)");
 }
 
 /// QSM.rs's parameter checks (`validate()`) reach the settings view on the setting they name,
@@ -499,6 +499,31 @@ fn qsm_rs_parameter_checks_reach_the_view_and_the_plan() {
     c.inversion.qsmart.ilsqr_pad_mm = -1.0;
     let e = schema::check_ranges(&c).unwrap_err().to_string();
     assert!(e.contains("inversion.qsmart.ilsqr_pad_mm (--qsmart-ilsqr-pad-mm): iLSQR padding must be finite"), "{e}");
+}
+
+/// A range's text never prints a bound to more than 4 significant digits (a bound built from a
+/// constant, such as 2/3, would otherwise read 0.6666666666666666). The bounds themselves stay
+/// exact.
+#[test]
+fn range_text_numbers_are_short() {
+    let sig = |n: &str| -> usize {
+        let digits: String = n.chars().filter(|c| c.is_ascii_digit()).collect();
+        let t = digits.trim_start_matches('0');
+        // An integer's trailing zeros are not significant ("100").
+        if n.contains('.') { t.len() } else { t.trim_end_matches('0').len() }
+    };
+    let texts: Vec<String> = schema::settings().iter().map(|s| s.range_text()).collect();
+    for text in &texts {
+        for word in text.split(|c: char| !(c.is_ascii_digit() || c == '.')) {
+            let word = word.trim_matches('.');
+            if !word.is_empty() && word.chars().any(|c| c.is_ascii_digit()) && word.parse::<f64>().is_ok() {
+                assert!(sig(word) <= 4, "`{word}` in {text}");
+            }
+        }
+    }
+    let tkd = schema::settings().iter().find(|s| s.path == "inversion.tkd.threshold").unwrap();
+    assert_eq!(tkd.range_text(), "from 0 to 2/3 (not 0 or 2/3)");
+    assert_eq!(tkd.max, Some(qsmxt_engine::qsm_core::kernels::MAX_ABS_DIPOLE));
 }
 
 /// AMP-PE's largest nlevel is QSM.rs's for the target (31 on wasm32), and TKD's threshold is
