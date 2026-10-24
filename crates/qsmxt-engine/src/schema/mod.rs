@@ -675,7 +675,7 @@ pub(crate) fn range_words(min: Option<f64>, max: Option<f64>, exclusive_min: boo
 
 /// Check every setting that applies to `config` against its range, and every number setting
 /// that applies for being finite (a config file and the command line both accept `nan` and
-/// `inf`), and the mask recipe's steps ([`MaskingConfig::validate`](crate::config::MaskingConfig::validate)). A setting that does not apply (see [`settings_view`]) is not checked: it cannot
+/// `inf`), the parameter checks the settings view shows (QSM.rs's `validate()`s), and the mask recipe's steps ([`MaskingConfig::validate`](crate::config::MaskingConfig::validate)). A setting that does not apply (see [`settings_view`]) is not checked: it cannot
 /// change the run.
 ///
 /// The error names each setting out of range (its path and `qsmxt run` option), the value, and
@@ -683,7 +683,18 @@ pub(crate) fn range_words(min: Option<f64>, max: Option<f64>, exclusive_min: boo
 pub fn check_ranges(config: &PipelineConfig) -> Result<(), crate::EngineError> {
     let applies: std::collections::HashSet<&str> = settings_view(config, &ViewFacts::default())
         .into_iter().filter(|v| v.visible).map(|v| v.path).collect();
-    let mut problems: Vec<String> = out_of_range(config, |p| applies.contains(p)).into_iter().map(|p| p.described).collect();
+    // The parameter checks the settings view shows (QSM.rs's message, which a run would
+    // otherwise stop on), then the ranges of the settings they do not already refuse.
+    let rules = view::rule_problems(config, |p| applies.contains(p));
+    let ranges = out_of_range(config, |p| applies.contains(p) && !rules.iter().any(|(r, _)| *r == p));
+    let mut problems: Vec<String> = rules.into_iter()
+        .map(|(path, e)| {
+            let flag = settings().iter().find(|s| s.path == path).and_then(|s| s.cli_flag)
+                .map(|f| format!(" ({f})")).unwrap_or_default();
+            format!("{path}{flag}: {e}")
+        })
+        .chain(ranges.into_iter().map(|p| p.described))
+        .collect();
     // A mask step that would do nothing (an erosion of 0), as a config file and --mask refuse it.
     problems.extend(config.masking.validate().err());
     if problems.is_empty() {
@@ -817,7 +828,7 @@ mod range_tests {
         c.inversion.algorithm = crate::QsmAlgorithm::Tkd;
         c.inversion.tkd.threshold = 0.0;
         let e = check_ranges(&c).unwrap_err().to_string();
-        assert!(e.contains("inversion.tkd.threshold (--tkd-threshold) is 0.0; it must be greater than 0"), "{e}");
+        assert!(e.contains("inversion.tkd.threshold (--tkd-threshold) is 0.0; it must be from 0 to 0.6666666666666666 (not 0 or 0.6666666666666666)"), "{e}");
     }
 
     #[test]

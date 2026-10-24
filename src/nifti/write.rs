@@ -26,11 +26,11 @@ pub fn write_volume(
 }
 
 /// Write several volumes on one grid as a single 4D NIfTI, the volumes along the fourth axis in
-/// the order given.
+/// the order given, creating the output directory if it does not exist.
 ///
-/// For outputs that are one quantity with several components (the STI tensor, its eigenvector):
-/// QSM.rs writes only 3D volumes, so the header is QSM.rs's for the first volume with the fourth
-/// dimension added, and the remaining volumes follow it — the layout NIfTI defines for 4D data.
+/// For outputs that are one quantity with several components (the STI tensor, its eigenvector).
+/// The header and the compression (a `.nii.gz` path is gzipped) are `qsm_core::io`'s, the same as
+/// [`write_volume`]'s, and a volume of the wrong length is an error rather than a file.
 pub fn write_volumes_4d(
     path: &Path,
     volumes: &[&[f64]],
@@ -38,33 +38,12 @@ pub fn write_volumes_4d(
     voxel_size: (f64, f64, f64),
     affine: &[f64; 16],
 ) -> crate::Result<()> {
-    let Some(first) = volumes.first() else {
-        return Err(QsmxtError::NiftiIo(format!("{}: no volumes to write", path.display())));
-    };
-    let mut bytes = qsm_core::io::save_nifti(first, dims, voxel_size, affine)
-        .map_err(|e| QsmxtError::NiftiIo(format!("{}: {e}", path.display())))?;
-    let n = dims.0 * dims.1 * dims.2;
-    if let Some(v) = volumes.iter().find(|v| v.len() != n) {
-        return Err(QsmxtError::NiftiIo(format!(
-            "{}: cannot write a {}x{}x{} volume from {} values", path.display(), dims.0, dims.1, dims.2, v.len())));
-    }
-    let nt = i16::try_from(volumes.len())
-        .map_err(|_| QsmxtError::NiftiIo(format!("{}: too many volumes", path.display())))?;
-    // dim[0] = 4 dimensions, dim[4] = the volume count (pixdim[4] stays 1).
-    bytes[40..42].copy_from_slice(&4i16.to_le_bytes());
-    bytes[48..50].copy_from_slice(&nt.to_le_bytes());
-    bytes.reserve(n * 4 * (volumes.len() - 1));
-    for v in &volumes[1..] {
-        for &x in v.iter() {
-            bytes.extend_from_slice(&(x as f32).to_le_bytes());
-        }
-    }
     match path.parent() {
         Some(parent) if !parent.as_os_str().is_empty() => std::fs::create_dir_all(parent)?,
         _ => {}
     }
-    std::fs::write(path, bytes)?;
-    Ok(())
+    qsm_core::io::save_nifti_4d_to_file(path, volumes, dims, voxel_size, affine)
+        .map_err(QsmxtError::NiftiIo)
 }
 
 #[cfg(test)]
@@ -91,6 +70,30 @@ mod tests {
         assert_eq!(data[24], 2.0);
         assert_eq!(data[71], 3.0);
         assert!(write_volumes_4d(&path, &[&a, &[1.0; 5]], (2, 3, 4), (1.0, 1.0, 1.0), &AFFINE).is_err());
+    }
+
+    /// Byte 123 of an uncompressed NIfTI-1 header is `xyzt_units`.
+    fn xyzt_units(path: &Path) -> u8 {
+        std::fs::read(path).unwrap()[123]
+    }
+
+    #[test]
+    fn a_gz_4d_path_is_gzipped_and_both_writers_carry_the_units() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nested").join("t.nii.gz");
+        let (a, b) = (vec![1.0; 24], vec![2.0; 24]);
+        write_volumes_4d(&path, &[&a, &b], (2, 3, 4), (1.0, 1.0, 1.0), &AFFINE).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(bytes.starts_with(&[0x1f, 0x8b]), "a .nii.gz path must be gzipped");
+        let (data, dims, _, _) = qsm_core::io::load_nifti_4d(&bytes).unwrap();
+        assert_eq!(dims, (2, 3, 4, 2));
+        assert_eq!(data[24], 2.0);
+
+        let (p4, p3) = (dir.path().join("t.nii"), dir.path().join("v.nii"));
+        write_volumes_4d(&p4, &[&a, &b], (2, 3, 4), (1.0, 1.0, 1.0), &AFFINE).unwrap();
+        write_volume(&p3, &a, (2, 3, 4), (1.0, 1.0, 1.0), &AFFINE).unwrap();
+        assert_eq!(xyzt_units(&p4), qsm_core::io::NIFTI_XYZT_UNITS);
+        assert_eq!(xyzt_units(&p3), qsm_core::io::NIFTI_XYZT_UNITS);
     }
 
     #[test]
