@@ -1625,7 +1625,7 @@ pub struct PipelineFormState {
     pub ilsqr_pad_mm: String,
 
     // STAR-QSM: the padding (x y z), and the echo time it converts at (an index into
-    // STAR_TE_OPTIONS; the last is a time in ms, `star_te_ms`)
+    // ECHO_TIME_OPTIONS; the last is a time in ms, `star_te_ms`)
     pub star_pad: String,
     pub star_te: usize,
     pub star_te_ms: String,
@@ -2094,14 +2094,10 @@ impl Default for PipelineFormState {
                 let p = qsmxt_engine::StarConfig::default().pad;
                 format!("{} {} {}", p[0], p[1], p[2])
             },
-            star_te: star_te_index(qsmxt_engine::StarConfig::default().te),
+            star_te: echo_time_index(qsmxt_engine::StarConfig::default().te),
             // What the time row starts at: qsm-core's default echo time for STAR-QSM (STI
             // Suite's 40 ms).
-            star_te_ms: {
-                let d = qsm_core::inversion::StarParams::default();
-                let te = d.te.resolve(&d.echo_times).unwrap_or_default();
-                qsmxt_engine::EchoTimeChoice::Seconds(te).to_string()
-            },
+            star_te_ms: { let p = qsm_core::inversion::StarParams::default(); echo_time_ms_default(p.te, &p.echo_times) },
             // Via qsmxt-engine rather than qsm-core: it is the layer that decides which of
             // qsm-core's fields are the user's (LSQR's b0 and mask_output are not), and it
             // flattens HEIDI's optional denoise struct into the four values shown here.
@@ -2437,21 +2433,6 @@ const VSHARP_GRID_HELP: &[&str] = &[
     "An isotropic grid at the smallest voxel dimension, so no axis is coarsened; isotropic data stays on the acquired grid",
     "An isotropic grid of Grid Spacing mm; the background is interpolated back, the local field keeps native resolution (default)",
 ];
-/// STAR-QSM's echo time: the named echo times, then a time in ms (`star_te_ms`).
-pub const STAR_TE_OPTIONS: &[&str] = &["first", "last", "spacing", "sum", "ms"];
-const STAR_TE_HELP: &[&str] = &[
-    "The first echo time, TE1",
-    "The last echo time",
-    "The echo spacing, TE2 − TE1 (the echo time for one echo)",
-    "The sum of the echo times: the phase summed over the echoes (default)",
-    "A given echo time (Echo Time)",
-];
-/// The [`STAR_TE_OPTIONS`] entry of an echo-time choice.
-pub fn star_te_index(te: qsmxt_engine::EchoTimeChoice) -> usize {
-    use qsmxt_engine::EchoTimeChoice as E;
-    match te { E::First => 0, E::Last => 1, E::Spacing => 2, E::Sum => 3, E::Seconds(_) => 4 }
-}
-
 /// The [`VSHARP_GRID_OPTIONS`] index of `grid`.
 pub fn vsharp_grid_index(grid: qsmxt_engine::VsharpGrid) -> usize {
     VSHARP_GRID_OPTIONS.iter().position(|o| *o == grid.to_string()).unwrap_or(0)
@@ -2475,12 +2456,20 @@ const ECHO_TIME_HELP_LAST: &[&str] = &[
     "The sum of the echo times: the phase summed over the echoes",
     "A given echo time (Echo Time)",
 ];
-/// or the echo spacing.
+/// the echo spacing,
 const ECHO_TIME_HELP_SPACING: &[&str] = &[
     "The first echo time, TE1",
     "The last echo time",
     "The echo spacing, TE2 − TE1 (the echo time for one echo) (default)",
     "The sum of the echo times: the phase summed over the echoes",
+    "A given echo time (Echo Time)",
+];
+/// or the sum of the echo times.
+const ECHO_TIME_HELP_SUM: &[&str] = &[
+    "The first echo time, TE1",
+    "The last echo time",
+    "The echo spacing, TE2 − TE1 (the echo time for one echo)",
+    "The sum of the echo times: the phase summed over the echoes (default)",
     "A given echo time (Echo Time)",
 ];
 /// The [`ECHO_TIME_OPTIONS`] entry of an echo-time choice.
@@ -3062,6 +3051,7 @@ impl PipelineFormState {
             "whqsm" => ("whqsm_te", "whqsm_te_ms", ECHO_TIME_HELP_FIRST),
             "heidi" => ("heidi_te", "heidi_te_ms", ECHO_TIME_HELP_LAST),
             "tgv" => ("tgv_te", "tgv_te_ms", ECHO_TIME_HELP_FIRST),
+            "star" => ("star_te", "star_te_ms", ECHO_TIME_HELP_SUM),
             other => unreachable!("{other} has no echo time"),
         };
         rows.push(PipelineRow::AlgoSelect { label: "  Echo Time", field, options: ECHO_TIME_OPTIONS, help });
@@ -3170,12 +3160,7 @@ impl PipelineFormState {
             }
             "star" => { // STAR-QSM
                 rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "star_pad", help: "Zero-padding per side, voxels (x y z). Larger costs time and memory (default 8 8 20)" });
-                rows.push(PipelineRow::AlgoSelect { label: "  Echo Time", field: "star_te", options: STAR_TE_OPTIONS,
-                    help: STAR_TE_HELP });
-                if STAR_TE_OPTIONS[self.star_te] == "ms" {
-                    rows.push(PipelineRow::Param { label: "    Echo Time (ms)", field: "star_te_ms",
-                        help: "Echo time the field is converted to phase at, ms" });
-                }
+                self.push_echo_time(rows, "star");
             }
             // HEIDI seeds itself with an LSQR solve, so it shows both groups.
             "lsqr" | "heidi" => {
@@ -4101,7 +4086,7 @@ impl PipelineFormState {
             "vsharp_grid" => self.vsharp_grid = val,
             "robust_fit_loss" => self.robust_fit_loss = val,
             "motion_reference" => self.motion_reference = val,
-            "star_te" => self.star_te = val.min(STAR_TE_OPTIONS.len() - 1),
+            "star_te" => self.star_te = val.min(ECHO_TIME_OPTIONS.len() - 1),
             "whqsm_weight" => self.whqsm_weight = val.min(WHQSM_WEIGHT_OPTIONS.len() - 1),
             "pdf_space" => self.pdf_space = val.min(PDF_SPACE_OPTIONS.len() - 1),
             "nltv_te" => self.nltv_te = val.min(ECHO_TIME_OPTIONS.len() - 1),

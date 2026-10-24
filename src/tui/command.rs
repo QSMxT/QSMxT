@@ -452,11 +452,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         },
         star_params: crate::cli::StarParamArgs {
             star_pad: parse_usize_triple(&ps.star_pad).map(|p| p.to_vec()),
-            star_te: match super::app::STAR_TE_OPTIONS.get(ps.star_te).copied() {
-                Some("ms") => qsmxt_engine::EchoTimeChoice::parse(&ps.star_te_ms).ok(),
-                Some(name) => qsmxt_engine::EchoTimeChoice::parse(name).ok(),
-                None => None,
-            },
+            star_te: super::app::echo_time_choice(ps.star_te, &ps.star_te_ms),
         },
         qsmart_params: crate::cli::QsmartParamArgs {
             qsmart_ilsqr_max_iter: parse_optional_usize(&ps.qsmart_ilsqr_max_iter),
