@@ -428,7 +428,7 @@ fn a_value_out_of_range_is_an_error_on_its_own_setting() {
     // TKD is not the method, so its threshold does not apply.
     assert_eq!(error(&c, "inversion.tkd.threshold"), None);
     c.inversion.algorithm = qsmxt_engine::QsmAlgorithm::Tkd;
-    assert_eq!(error(&c, "inversion.tkd.threshold").as_deref(), Some("Must be greater than 0"));
+    assert_eq!(error(&c, "inversion.tkd.threshold").as_deref(), Some("Must be from 0 to 2/3 (not 0 or 2/3)"));
     c.bg_removal.vsharp.max_radius = f64::NAN;
     assert_eq!(error(&c, "bg_removal.vsharp.max_radius").as_deref(), Some("Must be a finite number"));
     // A setting's own rule.
@@ -444,7 +444,99 @@ fn a_value_out_of_range_is_an_error_on_its_own_setting() {
     assert_eq!(error(&c, "separation.susep_net.patch").as_deref(), Some("Every dimension must be a positive multiple of 8 (got 12)"));
     let doc = serde_json::to_value(schema::settings_view(&c, &ViewFacts::default())).unwrap();
     let tkd = doc.as_array().unwrap().iter().find(|v| v["path"] == "inversion.tkd.threshold").unwrap();
-    assert_eq!(tkd["error"], "Must be greater than 0");
+    assert_eq!(tkd["error"], "Must be from 0 to 2/3 (not 0 or 2/3)");
+}
+
+/// QSM.rs's parameter checks (`validate()`) reach the settings view on the setting they name,
+/// in QSM.rs's words, and the plan-time check refuses the same config with the same message.
+#[test]
+fn qsm_rs_parameter_checks_reach_the_view_and_the_plan() {
+    use qsmxt_engine::{BfAlgorithm, QsmAlgorithm, SeparationAlgorithm, VsharpGrid};
+    type Case = (&'static str, fn(&mut PipelineConfig), &'static str);
+    let cases: Vec<Case> = vec![
+        ("bg_removal.vsharp.min_radius", |c| { c.bg_removal.algorithm = BfAlgorithm::Vsharp; c.bg_removal.vsharp.min_radius = 0.0; },
+            "V-SHARP min_radius = 0 is out of range: must be finite and > 0 mm"),
+        ("bg_removal.vsharp.grid_spacing", |c| {
+            c.bg_removal.algorithm = BfAlgorithm::Vsharp;
+            c.bg_removal.vsharp.grid = VsharpGrid::Isotropic;
+            c.bg_removal.vsharp.grid_spacing = -1.0;
+        }, "V-SHARP isotropic working grid spacing_mm = -1 is out of range: must be finite and > 0 mm"),
+        ("inversion.qsmart.frangi_scale_ratio", |c| { c.inversion.algorithm = QsmAlgorithm::Qsmart; c.inversion.qsmart.frangi_scale_ratio = 0.0; },
+            "Frangi scale_ratio = 0 is out of range: must be finite and > 0"),
+        ("inversion.amp_pe.nlevel", |c| { c.inversion.algorithm = QsmAlgorithm::AmpPe; c.inversion.amp_pe.nlevel = 64; },
+            "AMP-PE nlevel = 64 is out of range: must be <= 63"),
+        ("inversion.amp_pe.wave_order", |c| { c.inversion.algorithm = QsmAlgorithm::AmpPe; c.inversion.amp_pe.wave_order = 5; },
+            "AMP-PE wave_order = 5 is out of range: must be 1..=4 (db1–db4)"),
+        ("inversion.ilsqr.pad_mm", |c| { c.inversion.algorithm = QsmAlgorithm::Ilsqr; c.inversion.ilsqr.pad_mm = -1.0; },
+            "iLSQR padding must be finite and >= 0 mm, got -1"),
+        ("separation.decompose.chi_bound", |c| {
+            c.pipeline.do_chi_separation = true;
+            c.separation.algorithm = SeparationAlgorithm::Decompose;
+            c.separation.decompose.chi_bound = -0.1;
+        }, "DECOMPOSE chi_bound = -0.1 is out of range: must be >= 0 ppm"),
+        ("separation.wavesep.wavelet_order", |c| {
+            c.pipeline.do_chi_separation = true;
+            c.separation.algorithm = SeparationAlgorithm::WaveSep;
+            c.separation.wavesep.wavelet_order = 0;
+        }, "WaveSep wavelet_order = 0 is out of range: must be 1..=4 (db1–db4)"),
+    ];
+    for (path, edit, message) in cases {
+        let mut c = PipelineConfig::default();
+        edit(&mut c);
+        let view = schema::settings_view(&c, &ViewFacts::default());
+        let v = view.iter().find(|v| v.path == path).unwrap();
+        assert!(v.visible, "{path} should apply");
+        let shown = v.error.clone().unwrap_or_else(|| panic!("{path}: no error"));
+        // The view gives what follows the subject, capitalised (or as QSM.rs wrote a lower-case name).
+        let rest = message.split_once(": ").map_or(message, |(_, r)| r);
+        assert!(shown.to_lowercase().starts_with(&rest.to_lowercase()), "{path}: {shown} vs {message}");
+        let e = schema::check_ranges(&c).unwrap_err().to_string();
+        assert!(e.contains(path) && e.contains(message), "{path}: {e}");
+    }
+    // QSMART's iLSQR padding is checked with iLSQR's own check.
+    let mut c = PipelineConfig::default();
+    c.inversion.algorithm = QsmAlgorithm::Qsmart;
+    c.inversion.qsmart.ilsqr_pad_mm = -1.0;
+    let e = schema::check_ranges(&c).unwrap_err().to_string();
+    assert!(e.contains("inversion.qsmart.ilsqr_pad_mm (--qsmart-ilsqr-pad-mm): iLSQR padding must be finite"), "{e}");
+}
+
+/// A range's text never prints a bound to more than 4 significant digits (a bound built from a
+/// constant, such as 2/3, would otherwise read 0.6666666666666666). The bounds themselves stay
+/// exact.
+#[test]
+fn range_text_numbers_are_short() {
+    let sig = |n: &str| -> usize {
+        let digits: String = n.chars().filter(|c| c.is_ascii_digit()).collect();
+        let t = digits.trim_start_matches('0');
+        // An integer's trailing zeros are not significant ("100").
+        if n.contains('.') { t.len() } else { t.trim_end_matches('0').len() }
+    };
+    let texts: Vec<String> = schema::settings().iter().map(|s| s.range_text()).collect();
+    for text in &texts {
+        for word in text.split(|c: char| !(c.is_ascii_digit() || c == '.')) {
+            let word = word.trim_matches('.');
+            if !word.is_empty() && word.chars().any(|c| c.is_ascii_digit()) && word.parse::<f64>().is_ok() {
+                assert!(sig(word) <= 4, "`{word}` in {text}");
+            }
+        }
+    }
+    let tkd = schema::settings().iter().find(|s| s.path == "inversion.tkd.threshold").unwrap();
+    assert_eq!(tkd.range_text(), "from 0 to 2/3 (not 0 or 2/3)");
+    assert_eq!(tkd.max, Some(qsmxt_engine::qsm_core::kernels::MAX_ABS_DIPOLE));
+}
+
+/// AMP-PE's largest nlevel is QSM.rs's for the target (31 on wasm32), and TKD's threshold is
+/// below the dipole kernel's largest |D|, as TSVD's and HEIDI's are.
+#[test]
+fn bounds_come_from_qsm_rs_constants() {
+    let s = |p: &str| schema::settings().iter().find(|s| s.path == p).unwrap();
+    assert_eq!(s("inversion.amp_pe.nlevel").max, Some(qsmxt_engine::qsm_core::inversion::amp_pe::MAX_NLEVEL as f64));
+    for p in ["inversion.tkd.threshold", "inversion.tsvd.threshold", "inversion.heidi.cone_threshold", "inversion.rts.delta"] {
+        assert_eq!((s(p).max, s(p).exclusive_max), (Some(qsmxt_engine::qsm_core::kernels::MAX_ABS_DIPOLE), true), "{p}");
+    }
+    let r = s("inversion.qsmart.frangi_scale_ratio");
+    assert_eq!((r.min, r.exclusive_min), (Some(0.0), true));
 }
 
 /// The values serde names when it refuses one of type `T`.

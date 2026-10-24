@@ -326,12 +326,21 @@ impl Default for R2primenetConfig {
         Self { patch: [192, 192, 128], ignore_field_mismatch: false }
     }
 }
+/// R2PRIMEnet's patch multiple: QSM.rs's `relaxometry::POOL_MULTIPLE`. QSM.rs exports it only
+/// with its `onnx` feature, so a build without the networks (which cannot run R2PRIMEnet, but
+/// still shows and checks the setting) uses the same value written out.
+#[cfg(feature = "onnx")]
+pub const R2PRIMENET_POOL_MULTIPLE: usize = qsm_core::relaxometry::POOL_MULTIPLE;
+#[cfg(not(feature = "onnx"))]
+pub const R2PRIMENET_POOL_MULTIPLE: usize = 16;
+
 impl R2primenetConfig {
     /// Why the patch cannot be used, if it cannot (qsm-core panics on it).
     pub fn validate(&self) -> Result<(), String> {
-        match self.patch.iter().find(|&&d| d == 0 || d % 16 != 0) {
+        const POOL_MULTIPLE: usize = R2PRIMENET_POOL_MULTIPLE;
+        match self.patch.iter().find(|&&d| d == 0 || d % POOL_MULTIPLE != 0) {
             Some(d) => Err(format!(
-                "R2PRIMEnet patch {:?}: every dimension must be a positive multiple of 16 (got {d})",
+                "R2PRIMEnet patch {:?}: every dimension must be a positive multiple of {POOL_MULTIPLE} (got {d})",
                 self.patch)),
             None => Ok(()),
         }
@@ -1662,6 +1671,17 @@ mod r2primenet_config_tests {
             let c = R2primenetConfig { patch: bad, ..d.clone() };
             assert!(c.validate().unwrap_err().contains("multiple of 16"));
         }
+    }
+
+    /// The setting's texts say "multiple of 16"; that is QSM.rs's pooling multiple, its minimum.
+    #[test]
+    fn the_patch_texts_and_minimum_are_qsm_rs_pooling_multiple() {
+        let m = super::R2PRIMENET_POOL_MULTIPLE;
+        let s = crate::schema::settings().iter().find(|s| s.path == "separation.r2primenet.patch").unwrap();
+        for text in [s.help, s.tui_help] {
+            assert!(text.contains(&format!("multiple of {m}")), "{text}");
+        }
+        assert_eq!(s.min, Some(m as f64));
     }
 }
 

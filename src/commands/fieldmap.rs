@@ -421,8 +421,7 @@ mod tests {
         let out = qsm_core::io::read_nifti_file(&out_path).unwrap();
         assert_eq!(out.data.len(), n);
 
-        let gamma = 42.576e6;
-        let expected_ppm = freq_hz * 1e6 / (gamma * b0);
+        let expected_ppm = freq_hz * 1e6 / (qsm_core::constants::GAMMA_BAR_HZ_PER_T * b0);
         let mean: f64 = out.data.iter().sum::<f64>() / n as f64;
         assert!(
             (mean - expected_ppm).abs() < 0.01,

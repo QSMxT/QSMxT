@@ -22,6 +22,11 @@ const BIDS_VERSION: &str = "1.10.0";
 
 /// Gyromagnetic ratio of the proton, MHz/T — relates `f0` to the field strength recorded
 /// in `params.json`, and lets a reader check one against the other.
+///
+/// Deliberately not `qsm_core::constants::GAMMA_BAR_MHZ_PER_T` (42.576): this is the value the
+/// dataset's packer divided `ImagingFrequency` by, so it reproduces the recorded B0 to the
+/// digits given (123.243444 / 42.576384 = 2.89464 → 2.8946; 42.576 would give 2.8947). It only
+/// describes the data; QSM itself converts with QSM.rs's constant.
 const GAMMA_MHZ_PER_T: f64 = 42.576384;
 
 /// Acquisition parameters as packed by QSM-CI's `pack_harmonization.py`.

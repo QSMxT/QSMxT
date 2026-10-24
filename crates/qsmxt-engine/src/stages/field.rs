@@ -85,8 +85,8 @@ pub fn map_field(
     let field = crate::fieldmap::run_field_mapping(phases, mags, mask, &scan_metadata(meta), &fm_config)
         .map_err(|e| EngineError::Config(format!("field mapping: {}", e)))?;
 
-    let hz_per_ppm = crate::fieldmap::hz_per_ppm(meta.field_strength);
-    let total_field_hz = field.b0_field_ppm.iter().map(|v| v * hz_per_ppm).collect();
+    // QSM.rs's γ̄, so the published Hz map is exactly the ppm one the inversions read.
+    let total_field_hz = qsm_core::pipeline::ppm_to_hz(&field.b0_field_ppm, meta.field_strength);
     let robust_fit_report = field.robust_fit.as_ref().map(|report| {
         crate::fieldmap::log_robust_fit_report(report);
         crate::fieldmap::robust_fit_report_json(report)
@@ -127,7 +127,7 @@ mod tests {
         let mask = vec![1u8; n];
         let config = PipelineConfig::default();
         let f = map_field(&[&phase], &[&mag], &mask, &m, &config).unwrap();
-        let k = crate::fieldmap::hz_per_ppm(m.field_strength);
+        let k = qsm_core::constants::GAMMA_BAR_HZ_PER_T * m.field_strength * 1e-6;
         assert!(f.b0_field_ppm.iter().zip(&f.total_field_hz).all(|(p, h)| *h == p * k));
         assert!(f.robust_fit_report.is_none());
 

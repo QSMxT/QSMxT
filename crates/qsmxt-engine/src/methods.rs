@@ -1188,6 +1188,10 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                     }
                 },
             }
+            // Both ways QSMxT computes an R2′ (R2* − R2 and R2PRIMEnet) set negative values to zero.
+            if config.separation.custom_r2prime_tool.is_none() && !none_made {
+                doc.say(&[Stage::R2], "Negative R2' values were set to zero.".to_string());
+            }
             // Said where a run applied it off 3 T, or nothing is known of the runs.
             let off_field = ran.count(Topic::R2primenetCalibration, Choice::Uncalibrated) > 0
                 || ran.0.is_none_or(|r| r.split(Topic::R2primeSource).is_empty());
@@ -1215,6 +1219,10 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
             if config.pipeline.do_qsm && config.qsm.reference != QsmReference::None { RECON_MASK_AGAIN } else { RECON_MASK },
             separation_changes(config).comma_with(),
         ));
+        // The networks' outputs as QSM.rs returns them.
+        if matches!(config.separation.algorithm, SeparationAlgorithm::ChiSepNet | SeparationAlgorithm::SusepNet) {
+            doc.say(&[Stage::ChiSeparation], "Negative χ+ and |χ−| values were set to zero.".to_string());
+        }
     }
 
     // Multi-orientation. Described after the per-orientation pipeline because that is the
@@ -2032,6 +2040,7 @@ mod tests {
 
         let out = generate_methods(&cfg(crate::enums::R2PrimeStrategy::Mese));
         assert!(out.contains("R2' was computed as R2* - R2"), "out: {out}");
+        assert!(out.contains("Negative R2' values were set to zero."), "out: {out}");
         assert!(!out.contains("R2PRIMEnet"), "nothing was estimated: {out}");
         // The measuring route reports its R2 fit, and cites EPG for it.
         assert!(out.contains("Extended Phase Graph"), "out: {out}");
@@ -2039,6 +2048,7 @@ mod tests {
 
         let out = generate_methods(&cfg(crate::enums::R2PrimeStrategy::R2primenet));
         assert!(out.contains("estimated from the R2* map with R2PRIMEnet"), "out: {out}");
+        assert!(out.contains("Negative R2' values were set to zero."), "out: {out}");
         assert!(out.contains("10.1002/hbm.70136"), "R2PRIMEnet citation missing: {out}");
         // Nothing measured R2 on this route, so it must not claim to have fitted one.
         assert!(!out.contains("Extended Phase Graph"), "out: {out}");
@@ -2053,6 +2063,7 @@ mod tests {
         let out = generate_methods(&c);
         assert!(out.contains("taken from the supplied BIDS derivatives"), "out: {out}");
         assert!(!out.contains("R2PRIMEnet"), "out: {out}");
+        assert!(!out.contains("Negative R2'"), "a supplied map is as supplied: {out}");
     }
 
     #[test]
@@ -2484,7 +2495,13 @@ mod tests {
             assert!(out.contains("Paramagnetic and diamagnetic susceptibility maps were computed using"), "{:?}: {}", alg, out);
             assert!(out.contains(needle), "missing {} for {:?}: {}", needle, alg, out);
             assert!(out.contains(cite), "missing citation for {:?}: {}", alg, out);
+            assert!(out.contains("Negative χ+ and |χ−| values were set to zero."), "{:?}: {}", alg, out);
         }
+        // The other separations return the signed maps.
+        let mut config = PipelineConfig::default();
+        config.pipeline.do_chi_separation = true;
+        config.separation.algorithm = SeparationAlgorithm::ChiSepIlsqr;
+        assert!(!generate_methods(&config).contains("Negative χ+"));
     }
 
     /// MEDI-mSMV is said with MEDI, after the background removal it takes the local field from,
@@ -3137,7 +3154,9 @@ mod multiorient_methods_tests {
         for c in &configs {
             let out = generate_methods(c);
             let paragraph = out.split("## References").next().unwrap().to_lowercase();
-            for banned in ["sti suite", "biobank", "ukb", "qsmxt v", "rather than", "without the", "set to zero"] {
+            // "set to zero outside": no zeroing outside a mask is described (the non-negative
+            // network and R2' outputs are, as negative values set to zero).
+            for banned in ["sti suite", "biobank", "ukb", "qsmxt v", "rather than", "without the", "set to zero outside"] {
                 assert!(!paragraph.contains(banned), "`{banned}` in methods:\n{paragraph}");
             }
         }
