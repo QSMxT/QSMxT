@@ -379,12 +379,13 @@ fn bg_removal_need(config: &PipelineConfig, s: &Scan) -> u64 {
     let n = s.n;
     match config.bg_removal.algorithm {
         // V-SHARP: the field's FFT and per-radius kernels, masks and filtered fields. A 1 mm
-        // isotropic working grid about doubles it: the resampled copies plus V-SHARP on the
-        // cropped working grid (UKB 0.8x0.8x3 mm: 0.37 -> 0.78 GB). The finest-voxel grid grows
-        // with the anisotropy ratio (3.75x the voxels for UKB); budget for ratios up to ~4.
+        // isotropic working grid (the default) adds the resampled copies plus V-SHARP on the
+        // cropped working grid: 1.5x on the 1 mm example (0.66 -> 1.01 GB), 2.1x on UKB
+        // 0.8x0.8x3 mm (0.37 -> 0.78 GB). The finest-voxel grid grows with the anisotropy ratio
+        // (3.75x the voxels for UKB); budget for ratios up to ~4.
         BfAlgorithm::Vsharp => match config.bg_removal.vsharp.grid {
             crate::VsharpGrid::Native => 110 * n,
-            crate::VsharpGrid::Isotropic => 220 * n,
+            crate::VsharpGrid::Isotropic => 210 * n,
             crate::VsharpGrid::Finest => 440 * n,
         },
         // PDF: every echo's magnitude (8 B per voxel per echo) and the noise map made from it,
@@ -480,8 +481,16 @@ const R2PRIMENET_FIXED: u64 = 225_000_000;
 /// χ-separation: the maps it reads and the method's workspace, or a network at its patch.
 fn separation_need(config: &PipelineConfig, s: &Scan) -> u64 {
     let maps = s.v(2 * s.echoes * F64 + 40);
+    // χ-sep iLSQR's own QSM: an iLSQR inversion before the separation, its map held through it.
+    let (qsm_solve, qsm_map) = if crate::stages::separation::reconstructs_qsm(config) {
+        let mut ilsqr = config.clone();
+        ilsqr.inversion.algorithm = QsmAlgorithm::Ilsqr;
+        (inversion_need(&ilsqr, s), s.v(F64))
+    } else {
+        (0, 0)
+    };
     match chi_separation_network_bytes(s.dims, &config.separation) {
-        0 => maps + s.v(80),
+        0 => maps + s.v(80).max(qsm_solve) + qsm_map,
         net => maps + net,
     }
 }
@@ -659,6 +668,21 @@ mod tests {
 
     fn step_bytes(p: &Plan, name: &str) -> u64 {
         p.steps.iter().find(|s| s.name == name).unwrap_or_else(|| panic!("no {name}")).memory_bytes
+    }
+
+    /// χ-sep iLSQR's step reconstructs its QSM with iLSQR, so it needs at least the iLSQR
+    /// inversion's working memory; separating a supplied QSM does not.
+    #[test]
+    fn chi_sep_ilsqr_counts_the_ilsqr_of_its_own_qsm() {
+        let mut f = example();
+        f.mese_echo_times = Some(vec![0.01, 0.02, 0.03, 0.04]);
+        let sep = |c: &PipelineConfig| step_bytes(&plan(c, &f), "chi_separation");
+        let own = with(|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::ChiSepIlsqr; });
+        let ilsqr = step_bytes(&plan(&with(|c| c.inversion.algorithm = QsmAlgorithm::Ilsqr), &f), "invert");
+        assert!(sep(&own) >= ilsqr, "{} < {ilsqr}", sep(&own));
+        let supplied = with(|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::ChiSepIlsqr;
+                                  c.separation.custom_qsm_tool = Some("qsmxt".into()); });
+        assert!(sep(&supplied) < sep(&own));
     }
 
     /// Every step that computes has an estimate, the plan's peak is the largest of them, and the

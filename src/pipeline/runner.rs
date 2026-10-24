@@ -3254,9 +3254,10 @@ mod chisep_support_tests {
     /// mask their inputs to the mask they are given, so restricting those maps is observable only
     /// through the networks (SUSEP-Net, χ-sepnet), whose weights the tests do not download.
     #[test]
-    fn chi_sep_ilsqr_fits_the_support_not_the_brain_mask() {
+    fn chi_sep_medi_fits_the_support_not_the_brain_mask() {
         let f = fixture();
-        let config = sep_config(SeparationAlgorithm::ChiSepIlsqr);
+        // χ-sep MEDI separates the run's QSM (χ-sep iLSQR makes its own from the local field).
+        let config = sep_config(SeparationAlgorithm::ChiSepMedi);
         let out = separate(&f, &config);
         assert_zero_outside(&out, &f.support);
         assert_close(&out, &direct(&f, &config, &f.support));

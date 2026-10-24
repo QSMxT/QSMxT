@@ -80,6 +80,9 @@ A file without it is read as follows, and what changed is logged:
 - Settings that no longer exist are ignored, with a warning where that changes what a
   run does (for example `bg_removal.msmv_refine`: mSMV is now MEDI's option,
   `inversion.medi.msmv`).
+- `bg_removal.vsharp.min_radius` was also the step between V-SHARP's radii. A value kept
+  from such a file brings that step with it as `bg_removal.vsharp.radius_step`, so the
+  radii stay the same.
 
 ## Validate before you run
 

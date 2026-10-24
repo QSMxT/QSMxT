@@ -1666,6 +1666,7 @@ pub struct PipelineFormState {
     pub vsharp_threshold: String,
     pub vsharp_max_radius: String,
     pub vsharp_min_radius: String,
+    pub vsharp_radius_step: String,
     /// Index into [`VSHARP_GRID_OPTIONS`] (0 = native, 1 = finest, 2 = isotropic).
     pub vsharp_grid: usize,
     pub vsharp_grid_spacing: String,
@@ -1847,6 +1848,9 @@ pub struct PipelineFormState {
     pub sep_ilsqr_tol: String,
     pub sep_ilsqr_cg_max_iter: String,
     pub sep_ilsqr_cg_tol: String,
+    pub sep_ilsqr_qsm_max_iter: String,
+    pub sep_ilsqr_qsm_tol: String,
+    pub sep_ilsqr_qsm_pad_mm: String,
     // χ-sep MEDI
     pub sep_medi_lambda_para: String,
     pub sep_medi_lambda_dia: String,
@@ -2048,7 +2052,8 @@ impl Default for PipelineFormState {
             vsharp_threshold: format!("{}", qsm_core::bgremove::VsharpParams::default().threshold),
             vsharp_max_radius: format!("{}", qsm_core::bgremove::VsharpParams::default().max_radius),
             vsharp_min_radius: format!("{}", qsm_core::bgremove::VsharpParams::default().min_radius),
-            vsharp_grid: 0, // native
+            vsharp_radius_step: format!("{}", qsm_core::bgremove::VsharpParams::default().radius_step),
+            vsharp_grid: vsharp_grid_index(qsmxt_engine::VsharpConfig::default().grid),
             vsharp_grid_spacing: format!("{}", qsmxt_engine::VsharpConfig::default().grid_spacing),
             pdf_tol: format!("{}", qsm_core::bgremove::PdfParams::default().tol),
             lbv_tol: format!("{}", qsm_core::bgremove::LbvParams::default().tol),
@@ -2181,6 +2186,9 @@ impl Default for PipelineFormState {
             sep_ilsqr_tol: fmt_default(sep_ilsqr.tol),
             sep_ilsqr_cg_max_iter: sep_ilsqr.cg_max_iter.to_string(),
             sep_ilsqr_cg_tol: fmt_default(sep_ilsqr.cg_tol),
+            sep_ilsqr_qsm_max_iter: sep_ilsqr.qsm_ilsqr.max_iter.to_string(),
+            sep_ilsqr_qsm_tol: fmt_default(sep_ilsqr.qsm_ilsqr.tol),
+            sep_ilsqr_qsm_pad_mm: fmt_default(sep_ilsqr.qsm_ilsqr.pad_mm),
             sep_medi_lambda_para: fmt_default(sep_medi.lambda_para),
             sep_medi_lambda_dia: fmt_default(sep_medi.lambda_dia),
             sep_medi_lambda_cpl: fmt_default(sep_medi.lambda_cpl),
@@ -2264,10 +2272,14 @@ const ROBUST_FIT_LOSS_HELP: &[&str] = &[
 pub const LAPLACIAN_SOLVER_OPTIONS: &[&str] = &["dct", "fft"];
 pub const VSHARP_GRID_OPTIONS: &[&str] = &["native", "finest", "isotropic"];
 const VSHARP_GRID_HELP: &[&str] = &[
-    "The acquired voxel grid (default)",
+    "The acquired voxel grid",
     "An isotropic grid at the smallest voxel dimension, so no axis is coarsened; isotropic data stays on the acquired grid",
-    "An isotropic grid of Grid Spacing mm; the background is interpolated back, the local field keeps native resolution",
+    "An isotropic grid of Grid Spacing mm; the background is interpolated back, the local field keeps native resolution (default)",
 ];
+/// The [`VSHARP_GRID_OPTIONS`] index of `grid`.
+pub fn vsharp_grid_index(grid: qsmxt_engine::VsharpGrid) -> usize {
+    VSHARP_GRID_OPTIONS.iter().position(|o| *o == grid.to_string()).unwrap_or(0)
+}
 pub const MOTION_REFERENCE_OPTIONS: &[&str] = &["first", "last", "echo"];
 const MOTION_REFERENCE_HELP: &[&str] = &[
     "Align every echo onto the first (best SNR; the published procedure) (default)",
@@ -2330,6 +2342,14 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "sep_ilsqr_tol", help: "Outer relative-change tolerance" });
                 rows.push(PipelineRow::Param { label: "  CG Max Iter", field: "sep_ilsqr_cg_max_iter", help: "Inner CG max iterations" });
                 rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "sep_ilsqr_cg_tol", help: "Inner CG relative tolerance" });
+                if self.custom_qsm_tool.trim().is_empty() {
+                    rows.push(PipelineRow::Param { label: "  QSM Max Iter", field: "sep_ilsqr_qsm_max_iter",
+                        help: "Maximum iterations of the iLSQR that reconstructs the QSM separated" });
+                    rows.push(PipelineRow::Param { label: "  QSM Tolerance", field: "sep_ilsqr_qsm_tol",
+                        help: "Tolerance of the iLSQR that reconstructs the QSM separated" });
+                    rows.push(PipelineRow::Param { label: "  QSM Pad (mm)", field: "sep_ilsqr_qsm_pad_mm",
+                        help: "Zero-padding per side of the iLSQR that reconstructs the QSM separated" });
+                }
             }
             3 => {
                 rows.push(PipelineRow::Param { label: "  Lambda para", field: "sep_medi_lambda_para", help: "Paramagnetic L1 weight" });
@@ -2703,6 +2723,7 @@ impl PipelineFormState {
                 }
                 rows.push(PipelineRow::Param { label: "  Max Radius", field: "vsharp_max_radius", help: "Largest SMV kernel radius (mm)" });
                 rows.push(PipelineRow::Param { label: "  Min Radius", field: "vsharp_min_radius", help: "Smallest SMV kernel radius (mm)" });
+                rows.push(PipelineRow::Param { label: "  Radius Step", field: "vsharp_radius_step", help: "Step between SMV kernel radii (mm)" });
                 rows.push(PipelineRow::AlgoSelect { label: "  Working Grid", field: "vsharp_grid",
                     options: VSHARP_GRID_OPTIONS, help: VSHARP_GRID_HELP });
                 if self.vsharp_grid == 2 {
@@ -3119,7 +3140,7 @@ impl PipelineFormState {
         "amp_pe_wave_order", "amp_pe_nlevel", "amp_pe_wave_pec", "amp_pe_simulated_te", "amp_pe_max_linearization_ite", "amp_pe_tikhonov_beta",
         "phase_offset_sigma_mm", "romeo_template",
         "romeo_temporal_uncertain_unwrapping", "romeo_max_seeds", "romeo_wrap_addition",
-        "vsharp_threshold", "vsharp_max_radius", "vsharp_min_radius", "vsharp_grid_spacing", "pdf_tol", "lbv_tol",
+        "vsharp_threshold", "vsharp_max_radius", "vsharp_min_radius", "vsharp_radius_step", "vsharp_grid_spacing", "pdf_tol", "lbv_tol",
         "ismv_tol", "ismv_max_iter", "ismv_radius", "sharp_threshold", "sharp_radius",
         "resharp_radius", "resharp_tik_reg", "resharp_tol", "resharp_max_iter",
         "harperella_radius", "harperella_max_iter", "harperella_tol",
@@ -3254,6 +3275,7 @@ impl PipelineFormState {
             "vsharp_threshold" => &self.vsharp_threshold,
             "vsharp_max_radius" => &self.vsharp_max_radius,
             "vsharp_min_radius" => &self.vsharp_min_radius,
+            "vsharp_radius_step" => &self.vsharp_radius_step,
             "vsharp_grid_spacing" => &self.vsharp_grid_spacing,
             "pdf_tol" => &self.pdf_tol,
             "lbv_tol" => &self.lbv_tol,
@@ -3341,6 +3363,9 @@ impl PipelineFormState {
             "sep_ilsqr_tol" => &self.sep_ilsqr_tol,
             "sep_ilsqr_cg_max_iter" => &self.sep_ilsqr_cg_max_iter,
             "sep_ilsqr_cg_tol" => &self.sep_ilsqr_cg_tol,
+            "sep_ilsqr_qsm_max_iter" => &self.sep_ilsqr_qsm_max_iter,
+            "sep_ilsqr_qsm_tol" => &self.sep_ilsqr_qsm_tol,
+            "sep_ilsqr_qsm_pad_mm" => &self.sep_ilsqr_qsm_pad_mm,
             "sep_medi_lambda_para" => &self.sep_medi_lambda_para,
             "sep_medi_lambda_dia" => &self.sep_medi_lambda_dia,
             "sep_medi_lambda_cpl" => &self.sep_medi_lambda_cpl,
@@ -3473,6 +3498,7 @@ impl PipelineFormState {
             "vsharp_threshold" => Some(&mut self.vsharp_threshold),
             "vsharp_max_radius" => Some(&mut self.vsharp_max_radius),
             "vsharp_min_radius" => Some(&mut self.vsharp_min_radius),
+            "vsharp_radius_step" => Some(&mut self.vsharp_radius_step),
             "vsharp_grid_spacing" => Some(&mut self.vsharp_grid_spacing),
             "pdf_tol" => Some(&mut self.pdf_tol),
             "lbv_tol" => Some(&mut self.lbv_tol),
@@ -3560,6 +3586,9 @@ impl PipelineFormState {
             "sep_ilsqr_tol" => Some(&mut self.sep_ilsqr_tol),
             "sep_ilsqr_cg_max_iter" => Some(&mut self.sep_ilsqr_cg_max_iter),
             "sep_ilsqr_cg_tol" => Some(&mut self.sep_ilsqr_cg_tol),
+            "sep_ilsqr_qsm_max_iter" => Some(&mut self.sep_ilsqr_qsm_max_iter),
+            "sep_ilsqr_qsm_tol" => Some(&mut self.sep_ilsqr_qsm_tol),
+            "sep_ilsqr_qsm_pad_mm" => Some(&mut self.sep_ilsqr_qsm_pad_mm),
             "sep_medi_lambda_para" => Some(&mut self.sep_medi_lambda_para),
             "sep_medi_lambda_dia" => Some(&mut self.sep_medi_lambda_dia),
             "sep_medi_lambda_cpl" => Some(&mut self.sep_medi_lambda_cpl),

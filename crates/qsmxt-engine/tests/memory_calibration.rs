@@ -47,13 +47,14 @@ fn facts(fx: &Value, echoes: usize) -> ScanFacts {
 
 /// The record's configuration: the browser's for a browser or harness record (QSMxT's defaults
 /// with the browser profile, as qsmbly starts), QSMxT's own for a native one unless it recorded
-/// the profile, with the record's settings on top.
-fn config(r: &Value, browser: bool) -> PipelineConfig {
+/// the profile, then the fixture's `earlier_defaults` (defaults the records were measured under
+/// that have changed since), with the record's settings on top.
+fn config(fx: &Value, r: &Value, browser: bool) -> PipelineConfig {
     let mut c = PipelineConfig::default();
     if browser {
         c.apply_browser_profile();
     }
-    for s in r["settings"].as_array().unwrap() {
+    for s in fx["earlier_defaults"].as_array().unwrap().iter().chain(r["settings"].as_array().unwrap()) {
         let (path, value) = (s[0].as_str().unwrap(), s[1].clone());
         qsmxt_engine::schema::set(&mut c, path, value).unwrap_or_else(|e| panic!("{}: {path}: {e}", r["name"]));
     }
@@ -89,7 +90,7 @@ fn the_estimate_is_within_the_margin_of_every_measurement() {
         match r["kind"].as_str().unwrap() {
             "browser" => {
                 // The run worker runs a plan with models on the deep-learning bundle's 4 threads.
-                let c = config(r, true);
+                let c = config(&fx, r, true);
                 let probe = plan_for(&c, &facts(&fx, 5), &MemoryProfile::browser(threads));
                 let threads = if probe.models.is_empty() { threads } else { 4 };
                 let p = plan_for(&c, &facts(&fx, 5), &MemoryProfile::browser(threads));
@@ -111,7 +112,7 @@ fn the_estimate_is_within_the_margin_of_every_measurement() {
                 }
             }
             "harness" => {
-                let p = plan_for(&config(r, true), &facts(&fx, 5), &MemoryProfile::browser(threads));
+                let p = plan_for(&config(&fx, r, true), &facts(&fx, 5), &MemoryProfile::browser(threads));
                 let est = estimate(&p, r["step"].as_str().unwrap()) as f64;
                 if r["out_of_memory"].as_bool() == Some(true) {
                     if est <= WASM32_HEAP_BYTES as f64 {
@@ -126,7 +127,7 @@ fn the_estimate_is_within_the_margin_of_every_measurement() {
                 let browser_profile = r["browser_profile"].as_bool().unwrap();
                 let echoes = r["echoes"].as_u64().unwrap() as usize;
                 let profile = MemoryProfile { host: Host::Native, store: StoreKind::Disk, threads };
-                let p = plan_for(&config(r, browser_profile), &facts(&fx, echoes), &profile);
+                let p = plan_for(&config(&fx, r, browser_profile), &facts(&fx, echoes), &profile);
                 for s in r["need"].as_array().unwrap() {
                     let (step, need) = (s[0].as_str().unwrap(), s[1].as_f64().unwrap());
                     // Too small to matter (a header, a lookup) and allocator noise.
