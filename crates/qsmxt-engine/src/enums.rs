@@ -114,6 +114,24 @@ impl fmt::Display for UnwrappingAlgorithm {
     }
 }
 
+/// How the magnitude is corrected for inhomogeneity (`masking.inhomogeneity_method`), when
+/// `masking.inhomogeneity_correction` is on.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum InhomogeneityMethod {
+    /// MriResearchTools' `makehomogeneous` (Eckstein et al., 2019), qsm-core's `makehomogeneous`
+    /// with `homogeneity.*`.
+    #[default]
+    Makehomogeneous,
+    /// N4 (Tustison et al., 2010), qsm-core's `n4_bias_correction` with `n4.*`.
+    N4,
+}
+impl fmt::Display for InhomogeneityMethod {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", match self { Self::Makehomogeneous => "makehomogeneous", Self::N4 => "n4" })
+    }
+}
+
 /// Grid V-SHARP estimates the background field on (qsm-core `VsharpGrid`).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]

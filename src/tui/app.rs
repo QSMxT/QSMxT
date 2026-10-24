@@ -1559,8 +1559,19 @@ pub struct PipelineFormState {
     /// Index into [`OUTPUT_SPACE_OPTIONS`].
     pub output_space: usize,
     // Inhomogeneity correction's own settings.
+    /// Index into [`INHOMOGENEITY_METHOD_OPTIONS`] (0 = makehomogeneous, 1 = n4).
+    pub inhomogeneity_method: usize,
     pub homogeneity_sigma_mm: String,
     pub homogeneity_nbox: String,
+    /// N4's settings; the iterations one number a level ("50 50 50 50"), the mesh "x y z".
+    pub n4_shrink_factor: String,
+    pub n4_max_iterations: String,
+    pub n4_convergence_threshold: String,
+    pub n4_mesh: String,
+    pub n4_spline_order: String,
+    pub n4_bias_field_fwhm: String,
+    pub n4_wiener_noise: String,
+    pub n4_histogram_bins: String,
     /// MCPC-3D-S coil combination smoothing (x y z voxels), for uncombined multi-coil runs.
     pub coil_combination_sigma: String,
     pub romeo_phase_coherence: bool,
@@ -1983,8 +1994,21 @@ impl Default for PipelineFormState {
             crop_margin_mm: fmt_default(qsmxt_engine::PipelineToggles::default().crop_margin_mm),
             fft_padding: false,
             output_space: 0,
+            inhomogeneity_method: 0, // makehomogeneous
             homogeneity_sigma_mm: fmt_default(qsmxt_engine::HomogeneityConfig::default().sigma_mm),
             homogeneity_nbox: qsmxt_engine::HomogeneityConfig::default().nbox.to_string(),
+            n4_shrink_factor: qsmxt_engine::N4Config::default().shrink_factor.to_string(),
+            n4_max_iterations: qsmxt_engine::N4Config::default().max_iterations.iter()
+                .map(|i| i.to_string()).collect::<Vec<_>>().join(" "),
+            n4_convergence_threshold: fmt_default(qsmxt_engine::N4Config::default().convergence_threshold),
+            n4_mesh: {
+                let m = qsmxt_engine::N4Config::default().mesh;
+                format!("{} {} {}", m[0], m[1], m[2])
+            },
+            n4_spline_order: qsmxt_engine::N4Config::default().spline_order.to_string(),
+            n4_bias_field_fwhm: fmt_default(qsmxt_engine::N4Config::default().bias_field_fwhm),
+            n4_wiener_noise: fmt_default(qsmxt_engine::N4Config::default().wiener_noise),
+            n4_histogram_bins: qsmxt_engine::N4Config::default().histogram_bins.to_string(),
             coil_combination_sigma: {
                 let s = qsmxt_engine::FieldMappingConfig::default().coil_combination_sigma;
                 format!("{} {} {}", s[0], s[1], s[2])
@@ -2311,6 +2335,11 @@ const QSMART_VESSEL_UNITS_HELP: &[&str] = &[
     "Vessel radius and scales in voxels, as QSMART gives them (default)",
     "Vessel radius and scales in mm, converted to voxels with the mean voxel size",
 ];
+pub const INHOMOGENEITY_METHOD_OPTIONS: &[&str] = &["makehomogeneous", "n4"];
+const INHOMOGENEITY_METHOD_HELP: &[&str] = &[
+    "Divide by a smoothed estimate of the receive sensitivity (MriResearchTools' makehomogeneous) (default)",
+    "N4 bias field correction, as ANTs' N4BiasFieldCorrection: a B-spline bias field fitted to sharpen the intensity histogram — https://doi.org/10.1109/TMI.2010.2046908",
+];
 pub const VSHARP_GRID_OPTIONS: &[&str] = &["native", "finest", "isotropic"];
 const VSHARP_GRID_HELP: &[&str] = &[
     "The acquired voxel grid (default)",
@@ -2471,10 +2500,33 @@ impl PipelineFormState {
             help: "Apply B1 field correction to magnitude (improves masking, ROMEO weights, SWI)",
         });
         if self.inhomogeneity_correction {
-            rows.push(PipelineRow::Param { label: "  Sigma (mm)", field: "homogeneity_sigma_mm",
-                help: "Smoothing sigma of the bias-field estimate, in mm" });
-            rows.push(PipelineRow::Param { label: "  Box Passes", field: "homogeneity_nbox",
-                help: "Box-filter passes approximating the Gaussian" });
+            rows.push(PipelineRow::AlgoSelect {
+                label: "  Method", field: "inhomogeneity_method",
+                options: INHOMOGENEITY_METHOD_OPTIONS, help: INHOMOGENEITY_METHOD_HELP,
+            });
+            if self.inhomogeneity_method == 0 {
+                rows.push(PipelineRow::Param { label: "    Sigma (mm)", field: "homogeneity_sigma_mm",
+                    help: "Smoothing sigma of the bias-field estimate, in mm" });
+                rows.push(PipelineRow::Param { label: "    Box Passes", field: "homogeneity_nbox",
+                    help: "Box-filter passes approximating the Gaussian" });
+            } else {
+                rows.push(PipelineRow::Param { label: "    Shrink Factor", field: "n4_shrink_factor",
+                    help: "Subsample the image by this factor before fitting the bias field" });
+                rows.push(PipelineRow::Param { label: "    Iterations", field: "n4_max_iterations",
+                    help: "Maximum iterations at each fitting level, one number a level (e.g. 50 50 50 50); the B-spline mesh doubles from one level to the next" });
+                rows.push(PipelineRow::Param { label: "    Convergence", field: "n4_convergence_threshold",
+                    help: "Stop a level once the change in the bias field (its coefficient of variation) falls to this; 0 runs every iteration" });
+                rows.push(PipelineRow::Param { label: "    Mesh", field: "n4_mesh",
+                    help: "B-spline mesh elements per axis at the first level (x y z)" });
+                rows.push(PipelineRow::Param { label: "    Spline Order", field: "n4_spline_order",
+                    help: "Order of the B-spline bias field: 1, 2 or 3" });
+                rows.push(PipelineRow::Param { label: "    Bias FWHM", field: "n4_bias_field_fwhm",
+                    help: "FWHM of the Gaussian modelling the bias field's blurring of the log-intensity histogram" });
+                rows.push(PipelineRow::Param { label: "    Wiener Noise", field: "n4_wiener_noise",
+                    help: "Noise term of the Wiener deconvolution of the histogram" });
+                rows.push(PipelineRow::Param { label: "    Histogram Bins", field: "n4_histogram_bins",
+                    help: "Bins of the log-intensity histogram" });
+            }
         }
         rows.push(PipelineRow::Toggle {
             label: "Ignore Slice Gap", field: "ignore_slice_gap",
@@ -3209,6 +3261,8 @@ impl PipelineFormState {
         "r2primenet_patch", "sep_chisepnet_patch", "sep_susepnet_patch",
         "laplacian_fft_pad",
         "crop_margin_mm", "homogeneity_sigma_mm", "homogeneity_nbox", "coil_combination_sigma",
+        "n4_shrink_factor", "n4_max_iterations", "n4_convergence_threshold", "n4_mesh", "n4_spline_order",
+        "n4_bias_field_fwhm", "n4_wiener_noise", "n4_histogram_bins",
         "tgv_step_size",
         "amp_pe_damp_rate_sig", "amp_pe_damp_rate_par", "amp_pe_max_pe_spar_ite", "amp_pe_max_pe_est_ite", "amp_pe_cvg_thd",
         "linear_fit_reliability_threshold", "robust_fit_tuning", "robust_fit_iterations",
@@ -3225,6 +3279,14 @@ impl PipelineFormState {
             "crop_margin_mm" => &self.crop_margin_mm,
             "homogeneity_sigma_mm" => &self.homogeneity_sigma_mm,
             "homogeneity_nbox" => &self.homogeneity_nbox,
+            "n4_shrink_factor" => &self.n4_shrink_factor,
+            "n4_max_iterations" => &self.n4_max_iterations,
+            "n4_convergence_threshold" => &self.n4_convergence_threshold,
+            "n4_mesh" => &self.n4_mesh,
+            "n4_spline_order" => &self.n4_spline_order,
+            "n4_bias_field_fwhm" => &self.n4_bias_field_fwhm,
+            "n4_wiener_noise" => &self.n4_wiener_noise,
+            "n4_histogram_bins" => &self.n4_histogram_bins,
             "coil_combination_sigma" => &self.coil_combination_sigma,
             "tgv_step_size" => &self.tgv_step_size,
             "medi_data_weighting" => &self.medi_data_weighting,
@@ -3446,6 +3508,14 @@ impl PipelineFormState {
             "crop_margin_mm" => Some(&mut self.crop_margin_mm),
             "homogeneity_sigma_mm" => Some(&mut self.homogeneity_sigma_mm),
             "homogeneity_nbox" => Some(&mut self.homogeneity_nbox),
+            "n4_shrink_factor" => Some(&mut self.n4_shrink_factor),
+            "n4_max_iterations" => Some(&mut self.n4_max_iterations),
+            "n4_convergence_threshold" => Some(&mut self.n4_convergence_threshold),
+            "n4_mesh" => Some(&mut self.n4_mesh),
+            "n4_spline_order" => Some(&mut self.n4_spline_order),
+            "n4_bias_field_fwhm" => Some(&mut self.n4_bias_field_fwhm),
+            "n4_wiener_noise" => Some(&mut self.n4_wiener_noise),
+            "n4_histogram_bins" => Some(&mut self.n4_histogram_bins),
             "coil_combination_sigma" => Some(&mut self.coil_combination_sigma),
             "tgv_step_size" => Some(&mut self.tgv_step_size),
             "medi_data_weighting" => Some(&mut self.medi_data_weighting),
@@ -3675,6 +3745,7 @@ impl PipelineFormState {
             "qsmart_vessel_magnitude" => self.qsmart_vessel_magnitude,
             "qsmart_vessel_units" => self.qsmart_vessel_units,
             "qsmart_fit_threshold_mode" => self.qsmart_fit_threshold_mode,
+            "inhomogeneity_method" => self.inhomogeneity_method,
             "vsharp_grid" => self.vsharp_grid,
             "robust_fit_loss" => self.robust_fit_loss,
             "motion_reference" => self.motion_reference,
@@ -3722,6 +3793,7 @@ impl PipelineFormState {
             "qsmart_vessel_magnitude" => self.qsmart_vessel_magnitude = val,
             "qsmart_vessel_units" => self.qsmart_vessel_units = val,
             "qsmart_fit_threshold_mode" => self.qsmart_fit_threshold_mode = val,
+            "inhomogeneity_method" => self.inhomogeneity_method = val,
             "vsharp_grid" => self.vsharp_grid = val,
             "robust_fit_loss" => self.robust_fit_loss = val,
             "motion_reference" => self.motion_reference = val,
@@ -8160,6 +8232,7 @@ mod tests {
             ("qsmart-vessel-magnitude", QSMART_VESSEL_MAGNITUDE_OPTIONS.len(), QSMART_VESSEL_MAGNITUDE_HELP.len()),
             ("qsmart-vessel-units", QSMART_VESSEL_UNITS_OPTIONS.len(), QSMART_VESSEL_UNITS_HELP.len()),
             ("qsmart-fit-threshold-mode", QSMART_FIT_THRESHOLD_MODE_OPTIONS.len(), QSMART_FIT_THRESHOLD_MODE_HELP.len()),
+            ("inhomogeneity-method", INHOMOGENEITY_METHOD_OPTIONS.len(), INHOMOGENEITY_METHOD_HELP.len()),
             ("vsharp-grid", VSHARP_GRID_OPTIONS.len(), VSHARP_GRID_HELP.len()),
             ("b0-estimation", B0_ESTIMATION_OPTIONS.len(), B0_ESTIMATION_HELP.len()),
             ("robust-fit-loss", ROBUST_FIT_LOSS_OPTIONS.len(), ROBUST_FIT_LOSS_HELP.len()),

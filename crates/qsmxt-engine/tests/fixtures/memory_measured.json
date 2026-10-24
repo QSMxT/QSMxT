@@ -5791,6 +5791,102 @@
      108535767
     ]
    ]
+  },
+  {
+   "kind": "native",
+   "name": "inhomogeneity-n4-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT feat/n4-inhomogeneity), example data",
+   "threads": 1,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "masking.inhomogeneity_method",
+     "n4"
+    ]
+   ],
+   "need": [
+    [
+     "magnitude",
+     439071230
+    ],
+    [
+     "mask",
+     940585820
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inhomogeneity-n4-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT feat/n4-inhomogeneity), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "masking.inhomogeneity_method",
+     "n4"
+    ]
+   ],
+   "need": [
+    [
+     "magnitude",
+     439071230
+    ],
+    [
+     "mask",
+     940635228
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inhomogeneity-n4-e3-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT feat/n4-inhomogeneity), example data",
+   "threads": 1,
+   "echoes": 3,
+   "browser_profile": false,
+   "settings": [
+    [
+     "masking.inhomogeneity_method",
+     "n4"
+    ]
+   ],
+   "need": [
+    [
+     "magnitude",
+     342602158
+    ],
+    [
+     "mask",
+     651178588
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inhomogeneity-n4-e1-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT feat/n4-inhomogeneity), example data",
+   "threads": 1,
+   "echoes": 1,
+   "browser_profile": false,
+   "settings": [
+    [
+     "masking.inhomogeneity_method",
+     "n4"
+    ]
+   ],
+   "need": [
+    [
+     "magnitude",
+     246133086
+    ],
+    [
+     "mask",
+     361771356
+    ]
+   ]
   }
  ]
 }

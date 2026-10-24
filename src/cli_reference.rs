@@ -221,7 +221,8 @@ mod tests {
         let run = cmd.find_subcommand("run").unwrap();
         for flag in ["qsm-algorithm", "bf-algorithm", "unwrapping-algorithm", "mask-preset",
                      "masking-input", "chisep", "r2prime-strategy", "multi-orientation-algorithm",
-                     "b0-estimation", "b0-weight-type", "laplacian-solver", "output-space"] {
+                     "b0-estimation", "b0-weight-type", "laplacian-solver", "output-space",
+                     "inhomogeneity-method"] {
             let arg = run.get_arguments().find(|a| a.get_long() == Some(flag))
                 .unwrap_or_else(|| panic!("`qsmxt run` has no --{flag}"));
             for v in arg.get_possible_values().iter().filter(|v| !v.is_hide_set()) {

@@ -184,6 +184,8 @@ pub enum ValueType {
     IntVec3,
     /// Three numbers, `[x, y, z]`.
     FloatVec3,
+    /// One integer or more, `[a, b, ...]` (N4's iterations at each fitting level).
+    IntList,
     Text,
     Enum { options: Vec<EnumOption> },
     /// An echo to align onto: a named echo, or any echo by its number (see [`EchoKind`]).
@@ -330,6 +332,7 @@ pub(crate) enum Ty {
     Float,
     IntVec3,
     FloatVec3,
+    IntList,
     Text,
     Enum(Vec<Opt>),
     EchoReference(Vec<Opt>),
@@ -541,6 +544,7 @@ fn build_schema() -> Vec<Setting> {
                 Ty::Int => ValueType::Int,
                 Ty::Float => ValueType::Float,
                 Ty::IntVec3 => ValueType::IntVec3,
+                Ty::IntList => ValueType::IntList,
                 Ty::FloatVec3 => ValueType::FloatVec3,
                 Ty::Text => ValueType::Text,
                 Ty::Enum(o) => ValueType::Enum { options: options(o) },
@@ -549,7 +553,7 @@ fn build_schema() -> Vec<Setting> {
                 Ty::MaskSections => ValueType::MaskSections,
                 Ty::MaskOps => ValueType::MaskOps,
             };
-            let step = matches!(d.ty, Ty::Int | Ty::IntVec3).then_some(1.0);
+            let step = matches!(d.ty, Ty::Int | Ty::IntVec3 | Ty::IntList).then_some(1.0);
             Setting {
                 path: d.path,
                 label: d.label,
@@ -716,6 +720,8 @@ pub fn check_ranges(config: &PipelineConfig) -> Result<(), crate::EngineError> {
     // otherwise stop on), then the ranges of the settings they do not already refuse.
     let rules = view::rule_problems(config, |p| applies.contains(p));
     let ranges = out_of_range(config, |p| applies.contains(p) && !rules.iter().any(|(r, _)| *r == p));
+    // N4's own check repeats its ranges; it adds what a range cannot say (no fitting level).
+    let n4_said = ranges.iter().any(|p| p.path.starts_with("n4."));
     let mut problems: Vec<String> = rules.into_iter()
         .map(|(path, e)| {
             let flag = settings().iter().find(|s| s.path == path).and_then(|s| s.cli_flag)
@@ -726,6 +732,9 @@ pub fn check_ranges(config: &PipelineConfig) -> Result<(), crate::EngineError> {
         .collect();
     // A mask step that would do nothing (an erosion of 0), as a config file and --mask refuse it.
     problems.extend(config.masking.validate().err());
+    if applies.contains("n4.max_iterations") && !n4_said {
+        problems.extend(config.n4.validate().err());
+    }
     // Settings that cannot be run together (QSMART's echo fit without Laplacian unwrapping).
     if applies.contains("field_mapping.b0_estimation") {
         if let Err(e) = config.field_mapping.validate() {
@@ -791,7 +800,7 @@ mod range_tests {
 
     /// A value just outside each end of the range, of the setting's type.
     fn outside(s: &Setting) -> Vec<f64> {
-        let int = matches!(s.value_type, ValueType::Int | ValueType::IntVec3);
+        let int = matches!(s.value_type, ValueType::Int | ValueType::IntVec3 | ValueType::IntList);
         let step = if int { 1.0 } else { 1e-6 };
         let mut out = Vec::new();
         if let Some(lo) = s.min {
@@ -808,6 +817,7 @@ mod range_tests {
         let v = match s.value_type {
             ValueType::Int => json!(x as u64),
             ValueType::IntVec3 => json!([x as u64, x as u64, x as u64]),
+            ValueType::IntList => json!([x as u64, x as u64]),
             ValueType::FloatVec3 => json!([x, x, x]),
             _ => json!(x),
         };
@@ -872,6 +882,22 @@ mod range_tests {
         assert!(e.contains("bg_removal.vsharp.max_radius (--vsharp-max-radius) must be a finite number"), "{e}");
         c.bg_removal.vsharp.max_radius = f64::NAN;
         assert!(check_ranges(&c).is_err());
+    }
+
+    /// N4 with no fitting level is refused, when N4 is the method; a spline order out of range
+    /// is said once, by its range.
+    #[test]
+    fn n4_needs_a_fitting_level() {
+        let mut c = PipelineConfig::default();
+        c.n4.max_iterations.clear();
+        assert!(check_ranges(&c).is_ok(), "makehomogeneous does not read N4's settings");
+        c.masking.inhomogeneity_method = crate::InhomogeneityMethod::N4;
+        let e = check_ranges(&c).unwrap_err().to_string();
+        assert!(e.contains("--n4-max-iterations needs at least one fitting level"), "{e}");
+        c.n4.max_iterations = vec![10];
+        c.n4.spline_order = 4;
+        let e = check_ranges(&c).unwrap_err().to_string();
+        assert!(e.contains("n4.spline_order (--n4-spline-order) is 4") && !e.contains("N4:"), "{e}");
     }
 
     #[test]

@@ -321,8 +321,17 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--use-custom-dseg <TOOL>` | Prefer a bring-your-own segmentation from &lt;bids&gt;/derivatives/&lt;TOOL&gt;/ when present. Bare flag = first matching tool alphabetically. Always falls back to running SynthSeg. |
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
-| `--homogeneity-sigma-mm <HOMOGENEITY_SIGMA_MM>` | Inhomogeneity correction smoothing sigma in mm. |
-| `--homogeneity-nbox <HOMOGENEITY_NBOX>` | Inhomogeneity correction box filter passes. |
+| `--inhomogeneity-method <INHOMOGENEITY_METHOD>` | Inhomogeneity correction method: `makehomogeneous` (default; --homogeneity-\*) or `n4` (N4 bias field correction, as ANTs' N4BiasFieldCorrection; --n4-\*) Values: `makehomogeneous`, `n4`. |
+| `--homogeneity-sigma-mm <HOMOGENEITY_SIGMA_MM>` | Inhomogeneity correction smoothing sigma in mm (makehomogeneous) |
+| `--homogeneity-nbox <HOMOGENEITY_NBOX>` | Inhomogeneity correction box filter passes (makehomogeneous) |
+| `--n4-shrink-factor <N4_SHRINK_FACTOR>` | N4: subsample the image by this factor before fitting the bias field (default 4) |
+| `--n4-max-iterations <ITERATIONS>` | N4: maximum iterations at each fitting level, one number a level (default 50 50 50 50); the B-spline mesh doubles from one level to the next. |
+| `--n4-convergence-threshold <N4_CONVERGENCE_THRESHOLD>` | N4: stop a level once the change in the bias field (its coefficient of variation) falls to this (default 0: every iteration runs) |
+| `--n4-mesh <X> <Y> <Z>` | N4: B-spline mesh elements per axis at the first level, X Y Z (default 1 1 1) |
+| `--n4-spline-order <N4_SPLINE_ORDER>` | N4: order of the B-spline bias field, 1 to 3 (default 3) |
+| `--n4-bias-field-fwhm <N4_BIAS_FIELD_FWHM>` | N4: FWHM of the Gaussian modelling the bias field's blurring of the log-intensity histogram (default 0.15) |
+| `--n4-wiener-noise <N4_WIENER_NOISE>` | N4: noise term of the Wiener deconvolution of the histogram (default 0.01) |
+| `--n4-histogram-bins <N4_HISTOGRAM_BINS>` | N4: bins of the log-intensity histogram (default 200) |
 | `--linear-fit-reliability-threshold <LINEAR_FIT_RELIABILITY_THRESHOLD>` | Linear and robust fit: percentile for the fit's reliability mask (default 90; 0 disables) |
 | `--linear-fit-estimate-offset <LINEAR_FIT_ESTIMATE_OFFSET>` | Linear and robust fit: estimate a phase offset term (default: true). The robust fit needs 4 echoes with it, 3 without. |
 | `--robust-fit-loss <ROBUST_FIT_LOSS>` | Motion-robust fit (`--b0-estimation robust-fit`): loss turning residuals into weights. `tukey` (default) rejects echoes past the tuning radius; `huber` caps but never rejects. Values: `tukey`, `huber`. |
@@ -708,8 +717,17 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--use-custom-dseg <TOOL>` | Prefer a bring-your-own segmentation from &lt;bids&gt;/derivatives/&lt;TOOL&gt;/ when present. Bare flag = first matching tool alphabetically. Always falls back to running SynthSeg. |
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
-| `--homogeneity-sigma-mm <HOMOGENEITY_SIGMA_MM>` | Inhomogeneity correction smoothing sigma in mm. |
-| `--homogeneity-nbox <HOMOGENEITY_NBOX>` | Inhomogeneity correction box filter passes. |
+| `--inhomogeneity-method <INHOMOGENEITY_METHOD>` | Inhomogeneity correction method: `makehomogeneous` (default; --homogeneity-\*) or `n4` (N4 bias field correction, as ANTs' N4BiasFieldCorrection; --n4-\*) Values: `makehomogeneous`, `n4`. |
+| `--homogeneity-sigma-mm <HOMOGENEITY_SIGMA_MM>` | Inhomogeneity correction smoothing sigma in mm (makehomogeneous) |
+| `--homogeneity-nbox <HOMOGENEITY_NBOX>` | Inhomogeneity correction box filter passes (makehomogeneous) |
+| `--n4-shrink-factor <N4_SHRINK_FACTOR>` | N4: subsample the image by this factor before fitting the bias field (default 4) |
+| `--n4-max-iterations <ITERATIONS>` | N4: maximum iterations at each fitting level, one number a level (default 50 50 50 50); the B-spline mesh doubles from one level to the next. |
+| `--n4-convergence-threshold <N4_CONVERGENCE_THRESHOLD>` | N4: stop a level once the change in the bias field (its coefficient of variation) falls to this (default 0: every iteration runs) |
+| `--n4-mesh <X> <Y> <Z>` | N4: B-spline mesh elements per axis at the first level, X Y Z (default 1 1 1) |
+| `--n4-spline-order <N4_SPLINE_ORDER>` | N4: order of the B-spline bias field, 1 to 3 (default 3) |
+| `--n4-bias-field-fwhm <N4_BIAS_FIELD_FWHM>` | N4: FWHM of the Gaussian modelling the bias field's blurring of the log-intensity histogram (default 0.15) |
+| `--n4-wiener-noise <N4_WIENER_NOISE>` | N4: noise term of the Wiener deconvolution of the histogram (default 0.01) |
+| `--n4-histogram-bins <N4_HISTOGRAM_BINS>` | N4: bins of the log-intensity histogram (default 200) |
 | `--linear-fit-reliability-threshold <LINEAR_FIT_RELIABILITY_THRESHOLD>` | Linear and robust fit: percentile for the fit's reliability mask (default 90; 0 disables) |
 | `--linear-fit-estimate-offset <LINEAR_FIT_ESTIMATE_OFFSET>` | Linear and robust fit: estimate a phase offset term (default: true). The robust fit needs 4 echoes with it, 3 without. |
 | `--robust-fit-loss <ROBUST_FIT_LOSS>` | Motion-robust fit (`--b0-estimation robust-fit`): loss turning residuals into weights. `tukey` (default) rejects echoes past the tuning radius; `huber` caps but never rejects. Values: `tukey`, `huber`. |
@@ -1034,8 +1052,17 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--use-custom-dseg <TOOL>` | Prefer a bring-your-own segmentation from &lt;bids&gt;/derivatives/&lt;TOOL&gt;/ when present. Bare flag = first matching tool alphabetically. Always falls back to running SynthSeg. |
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
-| `--homogeneity-sigma-mm <HOMOGENEITY_SIGMA_MM>` | Inhomogeneity correction smoothing sigma in mm. |
-| `--homogeneity-nbox <HOMOGENEITY_NBOX>` | Inhomogeneity correction box filter passes. |
+| `--inhomogeneity-method <INHOMOGENEITY_METHOD>` | Inhomogeneity correction method: `makehomogeneous` (default; --homogeneity-\*) or `n4` (N4 bias field correction, as ANTs' N4BiasFieldCorrection; --n4-\*) Values: `makehomogeneous`, `n4`. |
+| `--homogeneity-sigma-mm <HOMOGENEITY_SIGMA_MM>` | Inhomogeneity correction smoothing sigma in mm (makehomogeneous) |
+| `--homogeneity-nbox <HOMOGENEITY_NBOX>` | Inhomogeneity correction box filter passes (makehomogeneous) |
+| `--n4-shrink-factor <N4_SHRINK_FACTOR>` | N4: subsample the image by this factor before fitting the bias field (default 4) |
+| `--n4-max-iterations <ITERATIONS>` | N4: maximum iterations at each fitting level, one number a level (default 50 50 50 50); the B-spline mesh doubles from one level to the next. |
+| `--n4-convergence-threshold <N4_CONVERGENCE_THRESHOLD>` | N4: stop a level once the change in the bias field (its coefficient of variation) falls to this (default 0: every iteration runs) |
+| `--n4-mesh <X> <Y> <Z>` | N4: B-spline mesh elements per axis at the first level, X Y Z (default 1 1 1) |
+| `--n4-spline-order <N4_SPLINE_ORDER>` | N4: order of the B-spline bias field, 1 to 3 (default 3) |
+| `--n4-bias-field-fwhm <N4_BIAS_FIELD_FWHM>` | N4: FWHM of the Gaussian modelling the bias field's blurring of the log-intensity histogram (default 0.15) |
+| `--n4-wiener-noise <N4_WIENER_NOISE>` | N4: noise term of the Wiener deconvolution of the histogram (default 0.01) |
+| `--n4-histogram-bins <N4_HISTOGRAM_BINS>` | N4: bins of the log-intensity histogram (default 200) |
 | `--linear-fit-reliability-threshold <LINEAR_FIT_RELIABILITY_THRESHOLD>` | Linear and robust fit: percentile for the fit's reliability mask (default 90; 0 disables) |
 | `--linear-fit-estimate-offset <LINEAR_FIT_ESTIMATE_OFFSET>` | Linear and robust fit: estimate a phase offset term (default: true). The robust fit needs 4 echoes with it, 3 without. |
 | `--robust-fit-loss <ROBUST_FIT_LOSS>` | Motion-robust fit (`--b0-estimation robust-fit`): loss turning residuals into weights. `tukey` (default) rejects echoes past the tuning radius; `huber` caps but never rejects. Values: `tukey`, `huber`. |
@@ -2776,7 +2803,7 @@ qsmxt r2prime [OPTIONS] --r2star <R2STAR> --r2 <R2> --mask <MASK> --output <OUTP
 
 ## `qsmxt homogeneity`
 
-Inhomogeneity correction on magnitude data
+Inhomogeneity correction on magnitude data (makehomogeneous or N4)
 
 ```sh
 qsmxt homogeneity [OPTIONS] --output <OUTPUT> <INPUT>
@@ -2786,8 +2813,17 @@ qsmxt homogeneity [OPTIONS] --output <OUTPUT> <INPUT>
 | --- | --- |
 | `<INPUT>` | Input magnitude NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output corrected magnitude NIfTI file. Required. |
-| `--sigma <SIGMA>` | Smoothing sigma in mm (default: 7.0) Default: `7`. |
-| `--nbox <NBOX>` | Number of box filter passes for Gaussian approximation (default: 3) Default: `3`. |
+| `--method <METHOD>` | Correction method: `makehomogeneous` (--sigma, --nbox) or `n4` (N4 bias field correction, as ANTs' N4BiasFieldCorrection; --n4-\*) Values: `makehomogeneous`, `n4`. Default: `makehomogeneous`. |
+| `--sigma <SIGMA>` | makehomogeneous: smoothing sigma in mm. Default: `7`. |
+| `--nbox <NBOX>` | makehomogeneous: number of box filter passes for the Gaussian approximation. Default: `3`. |
+| `--n4-shrink-factor <N4_SHRINK_FACTOR>` | N4: subsample the image by this factor before fitting the bias field (default 4) |
+| `--n4-max-iterations <ITERATIONS>` | N4: maximum iterations at each fitting level, one number a level (default 50 50 50 50); the B-spline mesh doubles from one level to the next. |
+| `--n4-convergence-threshold <N4_CONVERGENCE_THRESHOLD>` | N4: stop a level once the change in the bias field (its coefficient of variation) falls to this (default 0: every iteration runs) |
+| `--n4-mesh <X> <Y> <Z>` | N4: B-spline mesh elements per axis at the first level, X Y Z (default 1 1 1) |
+| `--n4-spline-order <N4_SPLINE_ORDER>` | N4: order of the B-spline bias field, 1 to 3 (default 3) |
+| `--n4-bias-field-fwhm <N4_BIAS_FIELD_FWHM>` | N4: FWHM of the Gaussian modelling the bias field's blurring of the log-intensity histogram (default 0.15) |
+| `--n4-wiener-noise <N4_WIENER_NOISE>` | N4: noise term of the Wiener deconvolution of the histogram (default 0.01) |
+| `--n4-histogram-bins <N4_HISTOGRAM_BINS>` | N4: bins of the log-intensity histogram (default 200) |
 
 ## `qsmxt resample`
 
