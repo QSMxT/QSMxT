@@ -39,6 +39,7 @@ fn map_alg(alg: QsmAlgorithm) -> PInvAlg {
         QsmAlgorithm::Medi => PInvAlg::Medi,
         QsmAlgorithm::Tfi => PInvAlg::Tfi,
         QsmAlgorithm::Ilsqr => PInvAlg::Ilsqr,
+        QsmAlgorithm::Star => PInvAlg::Star,
         QsmAlgorithm::Lsqr => PInvAlg::Lsqr,
         QsmAlgorithm::Heidi => PInvAlg::Heidi,
         QsmAlgorithm::Qsmart => PInvAlg::Qsmart,
@@ -310,8 +311,11 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             tol: cfg.inversion.ilsqr.tol, max_iter: cfg.inversion.ilsqr.max_iter,
             pad_mm: cfg.inversion.ilsqr.pad_mm,
         },
-        // STAR-QSM is not a QSMxT inversion yet.
-        star: qsm_core::inversion::StarParams::default(),
+        star: qsm_core::inversion::StarParams {
+            pad: cfg.inversion.star.pad, te: cfg.inversion.star.te.into(),
+            // Field strength and echo times are scan parameters; the pipeline fills them in.
+            ..Default::default()
+        },
         ndi: qsm_core::inversion::NdiParams {
             tau: cfg.inversion.ndi.tau, alpha: cfg.inversion.ndi.alpha,
             max_iter: cfg.inversion.ndi.max_iter, auto_stop: cfg.inversion.ndi.auto_stop,
@@ -789,6 +793,21 @@ mod tests {
         assert_eq!(inv.ilsqr.pad_mm, 32.0);
         // QSMART's inner iLSQR keeps its own padding
         assert_eq!(inv.qsmart.ilsqr_pad_mm, cfg.inversion.qsmart.ilsqr_pad_mm);
+    }
+
+    #[test]
+    fn star_settings_propagate_to_core_params() {
+        let mut cfg = PipelineConfig::default();
+        let core = qsm_core::inversion::StarParams::default();
+        assert_eq!(cfg.inversion.star.pad, core.pad);
+        assert_eq!(qsm_core::EchoTime::from(cfg.inversion.star.te), core.te);
+        cfg.inversion.algorithm = QsmAlgorithm::Star;
+        cfg.inversion.star.pad = [4, 6, 10];
+        cfg.inversion.star.te = EchoTimeChoice::Seconds(0.02);
+        let (_, _, inv, _) = to_pipeline_stages(&cfg);
+        assert_eq!(inv.algorithm, PInvAlg::Star);
+        assert_eq!(inv.star.pad, [4, 6, 10]);
+        assert_eq!(inv.star.te, qsm_core::EchoTime::Seconds(0.02));
     }
 
     #[test]

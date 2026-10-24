@@ -24,6 +24,7 @@ pub fn params(config: &PipelineConfig) -> serde_json::Value {
         QsmAlgorithm::Tkd => all(&inv.tkd),
         QsmAlgorithm::Tsvd => all(&inv.tsvd),
         QsmAlgorithm::Ilsqr => all(&inv.ilsqr),
+        QsmAlgorithm::Star => all(&inv.star),
         QsmAlgorithm::Tikhonov => all(&inv.tikhonov),
         QsmAlgorithm::Nltv => all(&inv.nltv),
         QsmAlgorithm::Medi => all(&inv.medi),
@@ -322,6 +323,22 @@ mod tests {
         let mut edited = l.clone();
         edited.inversion.lsqr.tol *= 10.0;
         assert_ne!(key(&edited), lbase, "but it does read its own");
+    }
+
+    /// STAR-QSM's padding and echo time both change its result, so both are in its key.
+    #[test]
+    fn the_star_cache_key_covers_its_padding_and_echo_time() {
+        let key = |c: &PipelineConfig| crate::cache::step_params_hash(
+            Some(&format!("{}", c.inversion.algorithm)), &params(c));
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = QsmAlgorithm::Star;
+        let base = key(&c);
+        let mut edited = c.clone();
+        edited.inversion.star.pad[2] += 2;
+        assert_ne!(key(&edited), base);
+        let mut edited = c.clone();
+        edited.inversion.star.te = crate::EchoTimeChoice::First;
+        assert_ne!(key(&edited), base);
     }
 
     #[test]

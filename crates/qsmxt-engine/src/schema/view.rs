@@ -260,7 +260,8 @@ pub(crate) fn rule_problems(config: &PipelineConfig, checked: impl Fn(&str) -> b
     // (the setting a message goes on when it names this parameter, the parameter), the first
     // being where any other message from the same check goes.
     type Targets = &'static [(&'static str, &'static str)];
-    let rules: [(Targets, Result<(), String>); 11] = [
+    let rules: [(Targets, Result<(), String>); 12] = [
+        (&[("inversion.star.te", "")], config.inversion.star.validate()),
         (&[("field_mapping.b0_estimation", "")], config.field_mapping.validate()),
         (&[("separation.r2primenet.patch", "")], config.separation.r2primenet.validate()),
         (&[("separation.chi_sepnet.patch", "")], config.separation.chi_sepnet.validate()),

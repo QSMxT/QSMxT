@@ -343,6 +343,7 @@ pub(super) fn table() -> Vec<Def> {
             o("medi", "medi", "MEDI", "MEDI (Morphology Enabled Dipole Inversion) — magnitude-guided edge weighting. https://doi.org/10.1002/mrm.22816"),
             o("tfi", "tfi", "TFI", "TFI (Total Field Inversion) — inverts the total field directly (its own background removal). https://doi.org/10.1002/mrm.26331"),
             o("ilsqr", "ilsqr", "iLSQR", "iLSQR (default) — iterative LSQR with streaking-artifact correction. https://doi.org/10.1016/j.neuroimage.2014.12.043"),
+            o("star", "star", "STAR-QSM", "STAR-QSM (Streaking Artifact Reduction) — sparse (L1) inversion from a k-space initial guess, for sources with a large susceptibility range. https://doi.org/10.1002/nbm.3383"),
             o("lsqr", "lsqr", "LSQR", "LSQR (minimally regularised) — one least-squares solve for χ plus a residual field; the residual weight is the only regularisation. https://doi.org/10.1118/1.3481505"),
             o("heidi", "heidi", "HEIDI", "HEIDI (Homogeneity Enabled Incremental Dipole Inversion) — keeps the well-conditioned k-space of an LSQR solve and re-derives the dipole cone under a homogeneity prior. https://doi.org/10.1016/j.neuroimage.2012.05.067"),
             o("qsmart", "qsmart", "QSMART", "QSMART — two-stage spatially-dependent filtering plus inversion. https://doi.org/10.1016/j.neuroimage.2020.117701"),
@@ -498,6 +499,13 @@ pub(super) fn table() -> Vec<Def> {
         d("inversion.ilsqr.pad_mm", Inversion, "Pad (mm)", "Zero-padding per side, mm. Larger costs time and memory", Float).min(0.0).units("mm").flag("--ilsqr-pad-mm").parent("inversion.algorithm")
         .when(|x| x.inv("ilsqr")).full("Padding")
         .gui("Zero-padding per side. Larger costs time and memory"),
+        d("inversion.star.pad", Inversion, "Pad (voxels)", "Zero-padding per side, voxels (x y z). Larger costs time and memory (default 8 8 20)", IntVec3).units("voxels").flag("--star-pad").parent("inversion.algorithm")
+        .when(|x| x.inv("star")).full("Padding")
+        .gui("Zero-padding per side (x y z). Larger costs time and memory"),
+        d("inversion.star.te", Inversion, "Echo Time", "", EchoTime)
+        .value("Echo Time (ms)", "Echo time the field is converted to phase at, ms").flag("--star-te").parent("inversion.algorithm")
+        .when(|x| x.inv("star"))
+        .gui("The echo time the field is converted to phase at; STAR-QSM's result depends on it").gui_value("Echo Time", "The echo time the field is converted to phase at, in ms"),
         d("inversion.lsqr.residual_weighting", Inversion, "Residual Weight", "Weight w on the residual field — the only regularisation. Blank = scaled from B0; 0 drops the term and streaks badly", Float).optional().flag("--lsqr-residual-weighting").parent("inversion.algorithm")
         .when(|x| x.inv("lsqr") || x.inv("heidi"))
         .gui("Weight w on the residual field, the only regularisation. Empty: scaled from B0; 0 drops the term and streaks badly"),

@@ -181,7 +181,7 @@ see [Output space](#output-space).
 
 | | behaviour on oblique data |
 |---|---|
-| all 20 classical dipole inversions, PDF, χ-sep iLSQR and MEDI | correct as acquired — B0 is an explicit parameter |
+| all 21 classical dipole inversions, PDF, χ-sep iLSQR and MEDI | correct as acquired — B0 is an explicit parameter |
 | SHARP, V-SHARP, RESHARP, iSMV, LBV, HARPERELLA, iHARPERELLA, BFRnet | unaffected — never uses B0 |
 | all 11 deep-learning inversions, SUSEP-Net, χ-sepnet, R2PRIMEnet, iQFM | **resampled first** — assumes B0 is +z |
 
@@ -571,6 +571,7 @@ reconstructions and deep-learning networks.
 | `medi` | MEDI — Morphology-Enabled Dipole Inversion |
 | `tfi` | TFI — Total Field Inversion |
 | `ilsqr` | iLSQR — iterative LSQR with streaking-artefact correction (default) |
+| `star` | STAR-QSM — Streaking Artifact Reduction |
 | `lsqr` | Minimally regularised LSQR — HEIDI's seed |
 | `heidi` | HEIDI — Homogeneity Enabled Incremental Dipole Inversion |
 | `qsmart` | QSMART two-stage reconstruction |
@@ -630,6 +631,14 @@ filtering (Roberts et al., 2024), which removes residual background at the brain
 eroding the mask; it needs at least three echoes. MEDI and TFI weight the data by a noise map
 and their edges by a magnitude they make from every echo's magnitude, so they need the
 magnitude of every echo and evenly spaced echoes.
+
+STAR-QSM (Wei et al., 2015) takes the local field. It divides the field by the dipole kernel
+in k-space, with a floor on small kernel values, for an initial guess, and refines that with a
+sparse (L1) solve. Both run on the field zero-padded by `--star-pad` voxels per side (default
+`8 8 20`). Its result depends on the scale of the field in radians, so it converts the field to
+phase at the echo time `--star-te` picks: `first`, `last`, `spacing` (TE2 − TE1), `sum` (the
+sum of the echo times, the default, as for a phase summed over the echoes), or a time in ms.
+Changing the padding or the echo time changes the result.
 
 ### Deep learning
 

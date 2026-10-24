@@ -153,7 +153,8 @@ pub struct EnumOption {
     pub tui_help: String,
 }
 
-/// One choice of an echo reference: a named echo, or any echo by its number.
+/// One choice of an echo reference (a named echo, or any echo by its number) or of an echo time
+/// (a named echo time, or a time of the user's).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct EchoOption {
     #[serde(flatten)]
@@ -162,7 +163,7 @@ pub struct EchoOption {
     pub kind: EchoKind,
 }
 
-/// What an echo-reference choice stands for.
+/// What an echo-reference or echo-time choice stands for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum EchoKind {
@@ -171,6 +172,10 @@ pub enum EchoKind {
     /// Any echo by number, counted from `min`: the setting's value is the number as a string
     /// (`"3"`). The option's value is the number the choice starts at.
     EchoNumber { min: u32 },
+    /// An echo time the user gives: the setting's value is `{ "seconds": s }`, edited in the
+    /// value row in milliseconds (as the command line takes it). The option's value is that
+    /// shape with no time, `{ "seconds": null }`.
+    Time,
 }
 
 /// What kind of value a setting holds.
@@ -190,6 +195,9 @@ pub enum ValueType {
     Enum { options: Vec<EnumOption> },
     /// An echo to align onto: a named echo, or any echo by its number (see [`EchoKind`]).
     EchoReference { options: Vec<EchoOption> },
+    /// The echo time a method converts the field to phase at: a named echo time (`"first"`,
+    /// `"sum"`), or a time the user gives (see [`EchoKind::Time`]).
+    EchoTime { options: Vec<EchoOption> },
     /// A mask recipe: a list of mask sections (`masking.sections` in the config). Edited with a
     /// mask builder rather than a field.
     MaskSections,
@@ -198,11 +206,13 @@ pub enum ValueType {
 }
 
 impl ValueType {
-    /// The choices of an enum or echo-reference setting (none for other types).
+    /// The choices of an enum, echo-reference or echo-time setting (none for other types).
     pub fn options(&self) -> Vec<&EnumOption> {
         match self {
             ValueType::Enum { options } => options.iter().collect(),
-            ValueType::EchoReference { options } => options.iter().map(|o| &o.option).collect(),
+            ValueType::EchoReference { options } | ValueType::EchoTime { options } => {
+                options.iter().map(|o| &o.option).collect()
+            }
             _ => vec![],
         }
     }
@@ -336,6 +346,8 @@ pub(crate) enum Ty {
     Text,
     Enum(Vec<Opt>),
     EchoReference(Vec<Opt>),
+    /// The named echo times, then a time of the user's ([`EchoKind::Time`]).
+    EchoTime,
     /// The SynthSeg regions ([`crate::regions::REGIONS`]).
     Regions,
     MaskSections,
@@ -462,6 +474,30 @@ fn echo_options(opts: &[Opt]) -> Vec<EchoOption> {
         .collect()
 }
 
+/// An echo time's options: the named echo times ([`crate::EchoTimeChoice::NAMED`]), then a time
+/// the user gives.
+fn echo_time_options() -> Vec<EchoOption> {
+    use crate::EchoTimeChoice as E;
+    let named = E::NAMED.map(|c| {
+        let (label, name, help) = match c {
+            E::First => ("first", "First echo time", "The first echo time, TE1"),
+            E::Last => ("last", "Last echo time", "The last echo time"),
+            E::Spacing => ("spacing", "Echo spacing", "The echo spacing, TE2 − TE1 (the echo time for one echo)"),
+            E::Sum => ("sum", "Sum of echo times", "The sum of the echo times: the phase summed over the echoes"),
+            E::Seconds(_) => unreachable!("not a named echo time"),
+        };
+        (serde_json::to_value(c).expect("an echo time serialises"), label, name, help)
+    });
+    let time = (serde_json::json!({ "seconds": null }), "ms", "Echo time", "A given echo time (Echo Time)");
+    options(&[named.as_slice(), &[time]].concat())
+        .into_iter()
+        .map(|option| {
+            let kind = if option.value.is_object() { EchoKind::Time } else { EchoKind::Named };
+            EchoOption { option, kind }
+        })
+        .collect()
+}
+
 /// The method a setting's path names, as its parent's option names it: `bg_removal.pdf.tol`
 /// under `bg_removal.algorithm` is PDF's. Walks up the parents to the first choice with an
 /// option named like the path's middle part.
@@ -549,6 +585,7 @@ fn build_schema() -> Vec<Setting> {
                 Ty::Text => ValueType::Text,
                 Ty::Enum(o) => ValueType::Enum { options: options(o) },
                 Ty::EchoReference(o) => ValueType::EchoReference { options: echo_options(o) },
+                Ty::EchoTime => ValueType::EchoTime { options: echo_time_options() },
                 Ty::Regions => ValueType::Enum { options: region_options() },
                 Ty::MaskSections => ValueType::MaskSections,
                 Ty::MaskOps => ValueType::MaskOps,

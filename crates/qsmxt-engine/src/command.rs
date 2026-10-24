@@ -558,6 +558,13 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
             emit_usize(parts, "--ilsqr-max-iter", config.inversion.ilsqr.max_iter, d.inversion.ilsqr.max_iter);
             emit_f64(parts, "--ilsqr-pad-mm", config.inversion.ilsqr.pad_mm, d.inversion.ilsqr.pad_mm);
         }
+        QsmAlgorithm::Star => {
+            let (c, dd) = (&config.inversion.star, &d.inversion.star);
+            if c.pad != dd.pad {
+                parts.push(format!("--star-pad {} {} {}", c.pad[0], c.pad[1], c.pad[2]));
+            }
+            emit_enum(parts, "--star-te", &c.te, &dd.te);
+        }
         // HEIDI's seed is an LSQR solve, so it emits both groups.
         QsmAlgorithm::Lsqr | QsmAlgorithm::Heidi => {
             let (c, dd) = (&config.inversion.lsqr, &d.inversion.lsqr);
@@ -1325,6 +1332,43 @@ frangi_c = 400.0
         c.field_mapping.b0_weight_type = B0WeightType::Average;
         let cmd = generate_command(&c);
         assert!(cmd.contains("--b0-weight-type average"));
+    }
+
+    #[test]
+    fn test_star_settings() {
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = QsmAlgorithm::Star;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--qsm-algorithm star"), "{cmd}");
+        assert!(!cmd.contains("--star-pad") && !cmd.contains("--star-te"), "defaults are not emitted: {cmd}");
+        c.inversion.star.pad = [4, 4, 12];
+        c.inversion.star.te = EchoTimeChoice::First;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--star-pad 4 4 12") && cmd.contains("--star-te first"), "{cmd}");
+        c.inversion.star.te = EchoTimeChoice::Seconds(0.007);
+        assert!(generate_command(&c).contains("--star-te 7"), "an echo time is given in ms");
+    }
+
+    #[test]
+    fn star_te_in_config_files() {
+        let c: StarConfig = toml::from_str("te = \"first\"").unwrap();
+        assert_eq!(c.te, EchoTimeChoice::First);
+        let c: StarConfig = toml::from_str("te = { seconds = 0.03 }").unwrap();
+        assert_eq!(c.te, EchoTimeChoice::Seconds(0.03));
+        assert!(toml::from_str::<StarConfig>("te = \"median\"").is_err());
+        let mut d = PipelineConfig::default();
+        d.inversion.star.te = EchoTimeChoice::Seconds(0.025);
+        let back: PipelineConfig = toml::from_str(&toml::to_string(&d).unwrap()).unwrap();
+        assert_eq!(back.inversion.star.te, EchoTimeChoice::Seconds(0.025));
+    }
+
+    #[test]
+    fn echo_time_choice_parses_names_and_milliseconds() {
+        for c in EchoTimeChoice::NAMED {
+            assert_eq!(EchoTimeChoice::parse(&c.to_string()), Ok(c));
+        }
+        assert_eq!(EchoTimeChoice::parse("20"), Ok(EchoTimeChoice::Seconds(0.02)));
+        assert!(EchoTimeChoice::parse("0").is_err() && EchoTimeChoice::parse("median").is_err());
     }
 
     #[test]

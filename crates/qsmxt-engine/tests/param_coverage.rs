@@ -44,12 +44,6 @@ where
     );
 }
 
-/// A qsm-core parameter struct QSMxT does not offer yet: its fields must be exactly `fields`, so a
-/// field added later is noticed when the struct is exposed.
-fn not_exposed<P: Serialize + Default>(name: &str, fields: &[&str]) {
-    assert_eq!(field_names::<P>(), fields, "{name} changed; update this list (and expose it)");
-}
-
 macro_rules! cover {
     ($params:ty => $config:ty $(, ignore: [$($ig:literal),* $(,)?])?) => {
         assert_covers::<$params, $config>(
@@ -126,9 +120,8 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     cover!(q::separation::SusepNetParams => c::SusepNetConfig);
     // te (the echo time a field is expressed as phase at) is not exposed yet (follow-up: echo time).
     cover!(q::inversion::TgvParams => c::TgvConfig, ignore: ["te"]);
-    // STAR-QSM is not a QSMxT inversion yet (follow-up: STAR-QSM); every field is listed so a new
-    // one is noticed.
-    not_exposed::<q::inversion::StarParams>("StarParams", &["pad", "echo_times", "te", "b0"]);
+    // b0/echo_times come from scan metadata (the dispatcher fills them).
+    cover!(q::inversion::StarParams => c::StarConfig, ignore: ["b0", "echo_times"]);
 
     // Background-field removal
     // radius_step is not exposed yet (#420).

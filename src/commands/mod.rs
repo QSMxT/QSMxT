@@ -88,6 +88,7 @@ mod integration_tests {
                 medi_params: Default::default(),
                 tfi_params: Default::default(),
                 ilsqr_params: Default::default(),
+                star_params: Default::default(),
                 lsqr_params: Default::default(),
                 heidi_params: Default::default(),
                 qsmart_params: Default::default(),
@@ -1929,6 +1930,26 @@ mod integration_tests {
             magnitude: vec![magnitude],
         })).unwrap();
         assert!(output.exists());
+    }
+
+    /// STAR-QSM takes no magnitude; it converts the field with the scan's echo times and field
+    /// strength, and a scan whose echo spacing is not positive is refused.
+    #[test]
+    fn test_invert_star() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("field.nii");
+        let mask = dir.path().join("mask.nii");
+        let output = dir.path().join("chi.nii");
+        testutils::write_field(&input);
+        testutils::write_mask(&mask);
+        let star = |te, echoes: &[f64]| InvertCommand::Star(InvertStarArgs {
+            common: common_invert(input.clone(), mask.clone(), output.clone()),
+            scan: scan(echoes), pad: Some(vec![2, 2, 2]), te,
+        });
+        super::invert::execute(star(None, &[0.01, 0.02])).unwrap();
+        assert!(output.exists());
+        let err = super::invert::execute(star(Some(qsmxt_engine::EchoTimeChoice::Spacing), &[0.02, 0.01])).unwrap_err();
+        assert!(err.to_string().contains("STAR-QSM") && err.to_string().contains("echo spacing"), "{err}");
     }
 
     // --- SWI with MIP ---

@@ -380,6 +380,11 @@ fn method_problem(f: &ScanFacts, config: &PipelineConfig, alg: QsmAlgorithm) -> 
             }
             None
         }
+        // The echo time STAR-QSM converts at must resolve from this scan's echo times (the echo
+        // spacing needs them in order), and the field strength must be positive.
+        QsmAlgorithm::Star => qsm_core::inversion::StarParams {
+            echo_times: f.echo_times.clone(), b0: f.field_strength, ..core.star
+        }.validate().err().map(|e| format!("cannot run on this scan: {e}")),
         _ => None,
     }
 }
@@ -954,6 +959,19 @@ mod tests {
         let mut off = with(|c| c.inversion.algorithm = QsmAlgorithm::Medi);
         off.pipeline.do_qsm = false;
         assert!(check(&run(&EVEN, false), &off).errors.is_empty());
+    }
+
+    /// STAR-QSM's echo time has to resolve from the scan's echo times.
+    #[test]
+    fn star_checks_its_echo_time_against_the_scan() {
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = QsmAlgorithm::Star;
+        assert!(check(&run(&EVEN, false), &c).errors.is_empty(), "STAR-QSM takes no magnitude");
+        c.inversion.star.te = crate::EchoTimeChoice::Spacing;
+        let out = check(&run(&[0.02, 0.01], false), &c);
+        assert!(out.errors.len() == 1 && out.errors[0].contains("--qsm-algorithm star")
+            && out.errors[0].contains("echo spacing"), "{out:?}");
+        assert_eq!(out.problems[0].setting, Some("inversion.algorithm"));
     }
 
     /// QSMART's inner inversion gets the same checks as the inversion; inner MEDI or TFI is
