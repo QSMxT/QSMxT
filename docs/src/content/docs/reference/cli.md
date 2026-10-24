@@ -232,6 +232,9 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--chi-sep-ilsqr-tol <CHI_SEP_ILSQR_TOL>` | χ-sep iLSQR outer relative-change tolerance. |
 | `--chi-sep-ilsqr-cg-max-iter <CHI_SEP_ILSQR_CG_MAX_ITER>` | χ-sep iLSQR inner CG max iterations. |
 | `--chi-sep-ilsqr-cg-tol <CHI_SEP_ILSQR_CG_TOL>` | χ-sep iLSQR inner CG relative tolerance. |
+| `--chi-sep-ilsqr-qsm-max-iter <CHI_SEP_ILSQR_QSM_MAX_ITER>` | χ-sep iLSQR: max iterations of the iLSQR that reconstructs, from the local field, the QSM χ-separation is initialised with (default: 100; not used with --use-custom-qsm) |
+| `--chi-sep-ilsqr-qsm-tol <CHI_SEP_ILSQR_QSM_TOL>` | χ-sep iLSQR: tolerance of that QSM's iLSQR. |
+| `--chi-sep-ilsqr-qsm-pad-mm <MM>` | χ-sep iLSQR: zero-padding of that QSM's iLSQR, in mm per side (default: 12) |
 | `--chi-sep-medi-lambda-para <CHI_SEP_MEDI_LAMBDA_PARA>` | χ-sep MEDI paramagnetic L1 weight. |
 | `--chi-sep-medi-lambda-dia <CHI_SEP_MEDI_LAMBDA_DIA>` | χ-sep MEDI diamagnetic L1 weight. |
 | `--chi-sep-medi-lambda-cpl <CHI_SEP_MEDI_LAMBDA_CPL>` | χ-sep MEDI field/R2' coupling weight. |
@@ -270,7 +273,8 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--vsharp-threshold <VSHARP_THRESHOLD>` | V-SHARP deconvolution (TSVD) threshold; only used with --vsharp-deconvolve true. |
 | `--vsharp-max-radius <VSHARP_MAX_RADIUS>` | V-SHARP max kernel radius in mm. |
 | `--vsharp-min-radius <VSHARP_MIN_RADIUS>` | V-SHARP min kernel radius in mm. |
-| `--vsharp-grid <VSHARP_GRID>` | Grid V-SHARP estimates the background on: `native` (default), `finest` (isotropic at the smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened), or `isotropic` (spacing from --vsharp-grid-spacing). The local field keeps native resolution. Values: `native`, `finest`, `isotropic`. |
+| `--vsharp-radius-step <MM>` | V-SHARP step between kernel radii in mm (default: 1); the radii run from --vsharp-max-radius down to --vsharp-min-radius. |
+| `--vsharp-grid <VSHARP_GRID>` | Grid V-SHARP estimates the background on: `isotropic` (default; spacing from --vsharp-grid-spacing), `native` (the acquired grid), or `finest` (isotropic at the smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened). The local field keeps native resolution. Values: `native`, `finest`, `isotropic`. |
 | `--vsharp-grid-spacing <MM>` | V-SHARP isotropic working-grid spacing in mm (default 1); used with --vsharp-grid isotropic. |
 | `--pdf-tol <PDF_TOL>` | PDF tolerance, relative to the noise level. |
 | `--lbv-tol <LBV_TOL>` | LBV tolerance. |
@@ -630,6 +634,9 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--chi-sep-ilsqr-tol <CHI_SEP_ILSQR_TOL>` | χ-sep iLSQR outer relative-change tolerance. |
 | `--chi-sep-ilsqr-cg-max-iter <CHI_SEP_ILSQR_CG_MAX_ITER>` | χ-sep iLSQR inner CG max iterations. |
 | `--chi-sep-ilsqr-cg-tol <CHI_SEP_ILSQR_CG_TOL>` | χ-sep iLSQR inner CG relative tolerance. |
+| `--chi-sep-ilsqr-qsm-max-iter <CHI_SEP_ILSQR_QSM_MAX_ITER>` | χ-sep iLSQR: max iterations of the iLSQR that reconstructs, from the local field, the QSM χ-separation is initialised with (default: 100; not used with --use-custom-qsm) |
+| `--chi-sep-ilsqr-qsm-tol <CHI_SEP_ILSQR_QSM_TOL>` | χ-sep iLSQR: tolerance of that QSM's iLSQR. |
+| `--chi-sep-ilsqr-qsm-pad-mm <MM>` | χ-sep iLSQR: zero-padding of that QSM's iLSQR, in mm per side (default: 12) |
 | `--chi-sep-medi-lambda-para <CHI_SEP_MEDI_LAMBDA_PARA>` | χ-sep MEDI paramagnetic L1 weight. |
 | `--chi-sep-medi-lambda-dia <CHI_SEP_MEDI_LAMBDA_DIA>` | χ-sep MEDI diamagnetic L1 weight. |
 | `--chi-sep-medi-lambda-cpl <CHI_SEP_MEDI_LAMBDA_CPL>` | χ-sep MEDI field/R2' coupling weight. |
@@ -668,7 +675,8 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--vsharp-threshold <VSHARP_THRESHOLD>` | V-SHARP deconvolution (TSVD) threshold; only used with --vsharp-deconvolve true. |
 | `--vsharp-max-radius <VSHARP_MAX_RADIUS>` | V-SHARP max kernel radius in mm. |
 | `--vsharp-min-radius <VSHARP_MIN_RADIUS>` | V-SHARP min kernel radius in mm. |
-| `--vsharp-grid <VSHARP_GRID>` | Grid V-SHARP estimates the background on: `native` (default), `finest` (isotropic at the smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened), or `isotropic` (spacing from --vsharp-grid-spacing). The local field keeps native resolution. Values: `native`, `finest`, `isotropic`. |
+| `--vsharp-radius-step <MM>` | V-SHARP step between kernel radii in mm (default: 1); the radii run from --vsharp-max-radius down to --vsharp-min-radius. |
+| `--vsharp-grid <VSHARP_GRID>` | Grid V-SHARP estimates the background on: `isotropic` (default; spacing from --vsharp-grid-spacing), `native` (the acquired grid), or `finest` (isotropic at the smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened). The local field keeps native resolution. Values: `native`, `finest`, `isotropic`. |
 | `--vsharp-grid-spacing <MM>` | V-SHARP isotropic working-grid spacing in mm (default 1); used with --vsharp-grid isotropic. |
 | `--pdf-tol <PDF_TOL>` | PDF tolerance, relative to the noise level. |
 | `--lbv-tol <LBV_TOL>` | LBV tolerance. |
@@ -967,6 +975,9 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--chi-sep-ilsqr-tol <CHI_SEP_ILSQR_TOL>` | χ-sep iLSQR outer relative-change tolerance. |
 | `--chi-sep-ilsqr-cg-max-iter <CHI_SEP_ILSQR_CG_MAX_ITER>` | χ-sep iLSQR inner CG max iterations. |
 | `--chi-sep-ilsqr-cg-tol <CHI_SEP_ILSQR_CG_TOL>` | χ-sep iLSQR inner CG relative tolerance. |
+| `--chi-sep-ilsqr-qsm-max-iter <CHI_SEP_ILSQR_QSM_MAX_ITER>` | χ-sep iLSQR: max iterations of the iLSQR that reconstructs, from the local field, the QSM χ-separation is initialised with (default: 100; not used with --use-custom-qsm) |
+| `--chi-sep-ilsqr-qsm-tol <CHI_SEP_ILSQR_QSM_TOL>` | χ-sep iLSQR: tolerance of that QSM's iLSQR. |
+| `--chi-sep-ilsqr-qsm-pad-mm <MM>` | χ-sep iLSQR: zero-padding of that QSM's iLSQR, in mm per side (default: 12) |
 | `--chi-sep-medi-lambda-para <CHI_SEP_MEDI_LAMBDA_PARA>` | χ-sep MEDI paramagnetic L1 weight. |
 | `--chi-sep-medi-lambda-dia <CHI_SEP_MEDI_LAMBDA_DIA>` | χ-sep MEDI diamagnetic L1 weight. |
 | `--chi-sep-medi-lambda-cpl <CHI_SEP_MEDI_LAMBDA_CPL>` | χ-sep MEDI field/R2' coupling weight. |
@@ -1005,7 +1016,8 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--vsharp-threshold <VSHARP_THRESHOLD>` | V-SHARP deconvolution (TSVD) threshold; only used with --vsharp-deconvolve true. |
 | `--vsharp-max-radius <VSHARP_MAX_RADIUS>` | V-SHARP max kernel radius in mm. |
 | `--vsharp-min-radius <VSHARP_MIN_RADIUS>` | V-SHARP min kernel radius in mm. |
-| `--vsharp-grid <VSHARP_GRID>` | Grid V-SHARP estimates the background on: `native` (default), `finest` (isotropic at the smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened), or `isotropic` (spacing from --vsharp-grid-spacing). The local field keeps native resolution. Values: `native`, `finest`, `isotropic`. |
+| `--vsharp-radius-step <MM>` | V-SHARP step between kernel radii in mm (default: 1); the radii run from --vsharp-max-radius down to --vsharp-min-radius. |
+| `--vsharp-grid <VSHARP_GRID>` | Grid V-SHARP estimates the background on: `isotropic` (default; spacing from --vsharp-grid-spacing), `native` (the acquired grid), or `finest` (isotropic at the smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened). The local field keeps native resolution. Values: `native`, `finest`, `isotropic`. |
 | `--vsharp-grid-spacing <MM>` | V-SHARP isotropic working-grid spacing in mm (default 1); used with --vsharp-grid isotropic. |
 | `--pdf-tol <PDF_TOL>` | PDF tolerance, relative to the noise level. |
 | `--lbv-tol <LBV_TOL>` | LBV tolerance. |
@@ -1596,7 +1608,8 @@ qsmxt bgremove vsharp [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--threshold <THRESHOLD>` | Deconvolution (TSVD) threshold; only used with --deconvolve true. |
 | `--max-radius <MAX_RADIUS>` | Largest SMV kernel radius, in mm. |
 | `--min-radius <MIN_RADIUS>` | Smallest SMV kernel radius, in mm. |
-| `--grid <GRID>` | Grid the background is estimated on: `native` (default), `finest` (isotropic at the smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened), or `isotropic` (spacing from --grid-spacing). The local field keeps native resolution. Values: `native`, `finest`, `isotropic`. |
+| `--radius-step <MM>` | Step between SMV kernel radii, in mm (default: 1); the radii run from --max-radius down to --min-radius. |
+| `--grid <GRID>` | Grid the background is estimated on: `isotropic` (default; spacing from --grid-spacing), `native` (the acquired grid), or `finest` (isotropic at the smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened). The local field keeps native resolution. Values: `native`, `finest`, `isotropic`. |
 | `--grid-spacing <MM>` | Isotropic working-grid spacing in mm (default 1); used with --grid isotropic. |
 
 ### `qsmxt bgremove pdf`

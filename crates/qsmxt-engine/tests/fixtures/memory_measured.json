@@ -14,6 +14,12 @@
   ],
   "field_strength": 3.0
  },
+ "earlier_defaults": [
+  [
+   "bg_removal.vsharp.grid",
+   "native"
+  ]
+ ],
  "records": [
   {
    "kind": "browser",
@@ -3052,6 +3058,94 @@
     [
      "invert",
      1461006246
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "defaults-vsharp-isotropic-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT feat/reference-defaults), example data",
+   "threads": 1,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "bg_removal.vsharp.grid",
+     "isotropic"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1390737194
+    ],
+    [
+     "bgremove",
+     1007828234
+    ],
+    [
+     "invert",
+     1275607678
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "defaults-vsharp-isotropic-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT feat/reference-defaults), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": true,
+   "settings": [
+    [
+     "bg_removal.vsharp.grid",
+     "isotropic"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2379157930
+    ],
+    [
+     "bgremove",
+     1008273770
+    ],
+    [
+     "invert",
+     1276064638
     ],
     [
      "reference",

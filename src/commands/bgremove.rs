@@ -93,7 +93,7 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
     use qsm_core::pipeline::BgRemovalAlgorithm as A;
     let (common, (local_field_data, field_nifti, eroded_mask)) = match cmd {
         BgremoveCommand::Vsharp(args) => {
-            // QSMxT's defaults (deconvolution off, the acquired grid), the same as `qsmxt run`'s.
+            // QSMxT's defaults (qsm-core's), the same as `qsmxt run`'s.
             let d = qsmxt_engine::VsharpConfig::default();
             let grid_cfg = qsmxt_engine::VsharpConfig {
                 grid: args.grid.map(Into::into).unwrap_or(d.grid),
@@ -104,9 +104,9 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
                 threshold: args.threshold.unwrap_or(d.threshold),
                 max_radius: args.max_radius.unwrap_or(d.max_radius),
                 min_radius: args.min_radius.unwrap_or(d.min_radius),
+                radius_step: args.radius_step.unwrap_or(d.radius_step),
                 deconvolve: args.deconvolve.unwrap_or(d.deconvolve),
                 grid: grid_cfg.core_grid(),
-                ..Default::default()
             };
             let config = qsm_core::pipeline::BgRemovalConfig { vsharp, ..config_for(A::Vsharp) };
             let out = remove_with(&args.common, config, None, &[], "V-SHARP")?;
