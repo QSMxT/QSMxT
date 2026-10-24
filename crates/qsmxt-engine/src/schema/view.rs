@@ -259,7 +259,8 @@ pub(crate) fn rule_problems(config: &PipelineConfig, checked: impl Fn(&str) -> b
     let s = |r: Result<(), qsm_core::error::InputError>| r.map_err(|e| e.0);
     // (the setting a message goes on when it names this parameter, the parameter), the first
     // being where any other message from the same check goes.
-    let rules: [(&[(&'static str, &str)], Result<(), String>); 10] = [
+    type Targets = &'static [(&'static str, &'static str)];
+    let rules: [(Targets, Result<(), String>); 10] = [
         (&[("separation.r2primenet.patch", "")], config.separation.r2primenet.validate()),
         (&[("separation.chi_sepnet.patch", "")], config.separation.chi_sepnet.validate()),
         (&[("separation.susep_net.patch", "")], config.separation.susep_net.validate()),

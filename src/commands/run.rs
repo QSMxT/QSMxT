@@ -779,7 +779,7 @@ mod tests {
     fn a_setting_out_of_range_is_refused_before_the_run() {
         let e = super::build_config(None, &pipeline_args(&["--qsm-algorithm", "tkd", "--tkd-threshold", "0"]))
             .unwrap_err().to_string();
-        assert!(e.contains("inversion.tkd.threshold (--tkd-threshold) is 0.0; it must be greater than 0"), "{e}");
+        assert!(e.contains("inversion.tkd.threshold (--tkd-threshold) is 0.0; it must be from 0 to 0.6666666666666666 (not 0 or 0.6666666666666666)"), "{e}");
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("c.toml");

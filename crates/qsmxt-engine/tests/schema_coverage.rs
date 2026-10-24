@@ -452,7 +452,8 @@ fn a_value_out_of_range_is_an_error_on_its_own_setting() {
 #[test]
 fn qsm_rs_parameter_checks_reach_the_view_and_the_plan() {
     use qsmxt_engine::{BfAlgorithm, QsmAlgorithm, SeparationAlgorithm, VsharpGrid};
-    let cases: Vec<(&str, fn(&mut PipelineConfig), &str)> = vec![
+    type Case = (&'static str, fn(&mut PipelineConfig), &'static str);
+    let cases: Vec<Case> = vec![
         ("bg_removal.vsharp.min_radius", |c| { c.bg_removal.algorithm = BfAlgorithm::Vsharp; c.bg_removal.vsharp.min_radius = 0.0; },
             "V-SHARP min_radius = 0 is out of range: must be finite and > 0 mm"),
         ("bg_removal.vsharp.grid_spacing", |c| {
