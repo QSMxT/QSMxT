@@ -343,6 +343,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
                 cli::B0EstimationArg::WeightedAvg => B0Estimation::WeightedAvg,
                 cli::B0EstimationArg::LinearFit => B0Estimation::LinearFit,
                 cli::B0EstimationArg::RobustFit => B0Estimation::RobustFit,
+                cli::B0EstimationArg::ComplexFit => B0Estimation::ComplexFit,
             };
         }
         if let Some(a) = args.b0_weight_type {
@@ -457,8 +458,15 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         // `--medi-data-weighting` did nothing.
         if let Some(v) = args.medi_params.medi_merit { config.inversion.medi.merit = v; }
         if let Some(v) = args.medi_params.medi_data_weighting { config.inversion.medi.data_weighting = v; }
+        if let Some(v) = args.medi_params.medi_csf { config.inversion.medi.csf = v; }
+        if let Some(v) = args.medi_params.medi_lambda_csf { config.inversion.medi.lambda_csf = v; }
+        if let Some(v) = args.medi_params.medi_csf_r2s_threshold { config.inversion.medi.csf_r2s_threshold = v; }
+        if let Some(v) = args.medi_params.medi_csf_erode { config.inversion.medi.csf_erode = v; }
+        if let Some(z) = &args.medi_params.medi_zeropad { config.inversion.medi.zeropad = [z[0], z[1], z[2]]; }
         if let Some(v) = args.tfi_params.tfi_lambda { config.inversion.tfi.lambda = v; }
         if let Some(v) = args.tfi_params.tfi_precond { config.inversion.tfi.precond = v; }
+        if let Some(v) = args.tfi_params.tfi_merit { config.inversion.tfi.merit = v; }
+        if let Some(v) = args.tfi_params.tfi_linear { config.inversion.tfi.linear = v; }
         if let Some(v) = args.tfi_params.tfi_data_weighting { config.inversion.tfi.data_weighting = v; }
         if let Some(v) = args.tfi_params.tfi_percentage { config.inversion.tfi.percentage = v; }
         if let Some(v) = args.tfi_params.tfi_cg_tol { config.inversion.tfi.cg_tol = v; }
@@ -571,6 +579,8 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.robust_fit_iterations { config.field_mapping.robust_fit.iterations = v; }
         if let Some(v) = args.robust_fit_downweight_level { config.field_mapping.robust_fit.downweight_level = v; }
         if let Some(v) = args.robust_fit_flag_ratio { config.field_mapping.robust_fit.flag_ratio = v; }
+        if let Some(v) = args.complex_fit_reltol { config.field_mapping.complex_fit.reltol = v; }
+        if let Some(v) = args.complex_fit_max_iter { config.field_mapping.complex_fit.max_iter = v; }
         if let Some(v) = args.linear_fit_estimate_offset {
             config.field_mapping.linear_fit.estimate_offset = v;
         }
@@ -1032,6 +1042,22 @@ mod tests {
         assert_eq!(c.inversion.ilsqr.pad_mm, 32.0);
         assert_eq!(c.inversion.qsmart.ilsqr_pad_mm, d.inversion.qsmart.ilsqr_pad_mm, "QSMART keeps its own");
         assert_eq!(config_from_cli(&["qsmxt", "run", "<bids>", "--ilsqr-pad-mm", "0"]).inversion.ilsqr.pad_mm, 0.0);
+    }
+
+    #[test]
+    fn complex_fit_medi_csf_and_tfi_from_cli() {
+        let d = config_from_cli(&["qsmxt", "run", "<bids>", "--b0-estimation", "complex-fit"]);
+        assert_eq!(d.field_mapping.b0_estimation, B0Estimation::ComplexFit);
+        assert_eq!(d.field_mapping.complex_fit, ComplexFitConfig::default());
+        assert_eq!((d.inversion.medi.clone(), d.inversion.tfi.clone()), (MediConfig::default(), TfiConfig::default()));
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--b0-estimation", "complex-fit",
+            "--complex-fit-reltol", "0.001", "--complex-fit-max-iter", "12",
+            "--medi-csf", "false", "--medi-lambda-csf", "50", "--medi-csf-r2s-threshold", "4",
+            "--medi-csf-erode", "false", "--medi-zeropad", "1", "2", "3", "--tfi-merit", "false", "--tfi-linear", "false"]);
+        assert_eq!((c.field_mapping.complex_fit.reltol, c.field_mapping.complex_fit.max_iter), (0.001, 12));
+        let m = &c.inversion.medi;
+        assert_eq!((m.csf, m.lambda_csf, m.csf_r2s_threshold, m.csf_erode, m.zeropad), (false, 50.0, 4.0, false, [1, 2, 3]));
+        assert_eq!((c.inversion.tfi.merit, c.inversion.tfi.linear), (false, false));
     }
 
     #[test]

@@ -165,6 +165,10 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
                     reliability_threshold_percentile: cfg.field_mapping.linear_fit.reliability_threshold_percentile,
                 })
             }
+            B0Estimation::ComplexFit => PB0Method::ComplexFit(qsm_core::fieldmap::FitPpmComplexParams {
+                reltol: cfg.field_mapping.complex_fit.reltol,
+                max_iter: cfg.field_mapping.complex_fit.max_iter,
+            }),
         },
         laplacian_solver: match cfg.field_mapping.laplacian_solver {
             LaplacianSolver::Dct => qsm_core::unwrap::LaplacianSolver::Dct,
@@ -259,26 +263,29 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             data_weighting: cfg.inversion.medi.data_weighting,
             percentage: cfg.inversion.medi.percentage,
             cg_tol: cfg.inversion.medi.cg_tol,
+            csf: cfg.inversion.medi.csf, lambda_csf: cfg.inversion.medi.lambda_csf,
+            csf_r2s_threshold: cfg.inversion.medi.csf_r2s_threshold, csf_erode: cfg.inversion.medi.csf_erode,
+            zeropad: (cfg.inversion.medi.zeropad[0], cfg.inversion.medi.zeropad[1], cfg.inversion.medi.zeropad[2]),
             cg_max_iter: cfg.inversion.medi.cg_max_iter,
             max_iter: cfg.inversion.medi.max_iter,
             tol: cfg.inversion.medi.tol,
             msmv: cfg.inversion.medi.msmv_params(),
-            // MEDI+0's CSF term, the mask shrinking, the zero padding and the echo time choice are
-            // not QSMxT settings yet; field strength and echo times are scan parameters the
-            // pipeline fills in.
+            // The mask shrinking and the echo time choice are not QSMxT settings yet; field
+            // strength and echo times are scan parameters the pipeline fills in.
             ..Default::default()
         },
         tfi: qsm_core::inversion::TfiParams {
             lambda: cfg.inversion.tfi.lambda,
             precond: cfg.inversion.tfi.precond,
+            merit: cfg.inversion.tfi.merit, linear: cfg.inversion.tfi.linear,
             data_weighting: cfg.inversion.tfi.data_weighting,
             percentage: cfg.inversion.tfi.percentage,
             cg_tol: cfg.inversion.tfi.cg_tol,
             cg_max_iter: cfg.inversion.tfi.cg_max_iter,
             max_iter: cfg.inversion.tfi.max_iter,
             tol: cfg.inversion.tfi.tol,
-            // MERIT, the linear data term and the echo time choice are not QSMxT settings yet;
-            // field strength and echo times are scan parameters the pipeline fills in.
+            // The echo time choice is not a QSMxT setting yet; field strength and echo times are
+            // scan parameters the pipeline fills in.
             ..Default::default()
         },
         ilsqr: qsm_core::inversion::IlsqrParams {
@@ -850,6 +857,39 @@ mod tests {
             downweight_level: 0.5, flag_ratio: 4.0, estimate_offset: false,
             reliability_threshold_percentile: 0.0,
         }));
+    }
+
+    #[test]
+    fn complex_fit_reaches_core() {
+        let mut cfg = PipelineConfig::default();
+        cfg.field_mapping.b0_estimation = B0Estimation::ComplexFit;
+        let (fm, _, _, _) = to_pipeline_stages(&cfg);
+        assert_eq!(fm.b0_estimation, PB0Method::ComplexFit(qsm_core::fieldmap::FitPpmComplexParams::default()));
+        cfg.field_mapping.complex_fit.reltol = 1e-3;
+        cfg.field_mapping.complex_fit.max_iter = 5;
+        let (fm, _, _, _) = to_pipeline_stages(&cfg);
+        assert_eq!(fm.b0_estimation, PB0Method::ComplexFit(qsm_core::fieldmap::FitPpmComplexParams {
+            reltol: 1e-3, max_iter: 5,
+        }));
+    }
+
+    /// MEDI+0's CSF term, MEDI's zero padding and TFI's MERIT and data term reach qsm-core, at
+    /// qsm-core's defaults unless set.
+    #[test]
+    fn medi_csf_and_tfi_settings_reach_core() {
+        let (_, _, inv, _) = to_pipeline_stages(&PipelineConfig::default());
+        let (dm, dt) = (qsm_core::inversion::MediParams::default(), qsm_core::inversion::TfiParams::default());
+        assert_eq!((inv.medi.csf, inv.medi.lambda_csf, inv.medi.csf_r2s_threshold, inv.medi.csf_erode, inv.medi.zeropad),
+                   (dm.csf, dm.lambda_csf, dm.csf_r2s_threshold, dm.csf_erode, dm.zeropad));
+        assert_eq!((inv.tfi.merit, inv.tfi.linear), (dt.merit, dt.linear));
+        let mut cfg = PipelineConfig::default();
+        let m = &mut cfg.inversion.medi;
+        (m.csf, m.lambda_csf, m.csf_r2s_threshold, m.csf_erode, m.zeropad) = (false, 50.0, 4.0, false, [1, 2, 3]);
+        (cfg.inversion.tfi.merit, cfg.inversion.tfi.linear) = (false, false);
+        let (_, _, inv, _) = to_pipeline_stages(&cfg);
+        assert_eq!((inv.medi.csf, inv.medi.lambda_csf, inv.medi.csf_r2s_threshold, inv.medi.csf_erode, inv.medi.zeropad),
+                   (false, 50.0, 4.0, false, (1, 2, 3)));
+        assert_eq!((inv.tfi.merit, inv.tfi.linear), (false, false));
     }
 
     #[test]

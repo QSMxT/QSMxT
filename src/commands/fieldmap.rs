@@ -112,6 +112,16 @@ fn apply_common_config(
             if let Some(v) = common.robust_fit_flag_ratio { fm.robust_fit.flag_ratio = v; }
             qsmxt_engine::to_pipeline_stages(&cfg).0.b0_estimation
         }
+        B0EstimationArg::ComplexFit => {
+            // MEDI's complex fit: it needs every echo's magnitude (--magnitude) and evenly spaced
+            // echoes, and refuses bipolar correction (qsm-core says so before fitting).
+            let mut cfg = qsmxt_engine::PipelineConfig::default();
+            let fm = &mut cfg.field_mapping;
+            fm.b0_estimation = qsmxt_engine::B0Estimation::ComplexFit;
+            if let Some(v) = common.complex_fit_reltol { fm.complex_fit.reltol = v; }
+            if let Some(v) = common.complex_fit_max_iter { fm.complex_fit.max_iter = v; }
+            qsmxt_engine::to_pipeline_stages(&cfg).0.b0_estimation
+        }
     };
 }
 
@@ -406,6 +416,7 @@ mod tests {
             linear_fit_estimate_offset: None,
             robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
             robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
+            complex_fit_reltol: None, complex_fit_max_iter: None,
         };
         let args = FieldmapRomeoArgs {
             common,
@@ -453,6 +464,7 @@ mod tests {
             linear_fit_estimate_offset: None,
             robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
             robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
+            complex_fit_reltol: None, complex_fit_max_iter: None,
         };
         let p = resolve_scan_params(&common).unwrap();
         assert_eq!(p.echo_times, vec![0.004, 0.008, 0.012]);
@@ -488,6 +500,7 @@ mod tests {
             linear_fit_estimate_offset: None,
             robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
             robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
+            complex_fit_reltol: None, complex_fit_max_iter: None,
         };
         let args = FieldmapRomeoArgs {
             common,

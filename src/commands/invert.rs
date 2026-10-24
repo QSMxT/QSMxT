@@ -369,12 +369,21 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 }),
                 data_weighting: args.data_weighting.unwrap_or(d.data_weighting),
                 percentage: args.percentage.unwrap_or(d.percentage),
+                csf: args.csf.unwrap_or(d.csf),
+                lambda_csf: args.lambda_csf.unwrap_or(d.lambda_csf),
+                csf_r2s_threshold: args.csf_r2s_threshold.unwrap_or(d.csf_r2s_threshold),
+                csf_erode: args.csf_erode.unwrap_or(d.csf_erode),
+                zeropad: args.zeropad.as_deref().map_or(d.zeropad, |z| (z[0], z[1], z[2])),
                 cg_tol: args.cg_tol.unwrap_or(d.cg_tol),
                 cg_max_iter: args.cg_max_iter.unwrap_or(d.cg_max_iter),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol: args.tol.unwrap_or(d.tol),
                 ..d
             };
+            if medi.csf && args.scan.echo_times.len() < 3 {
+                warn!("MEDI's CSF zero reference (MEDI+0) needs at least 3 echoes (it finds the CSF from R2*); \
+                       with {} MEDI runs without it", args.scan.echo_times.len());
+            }
             let config = qsm_core::pipeline::InversionConfig { medi, ..config_for(A::Medi) };
             let out = invert_with(&args.common, args.scan.field_strength, &args.scan.echo_times,
                 Magnitude::Echoes(&args.magnitude), config, "MEDI")?;
@@ -385,6 +394,8 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             let tfi = inv::TfiParams {
                 lambda: args.lambda.unwrap_or(d.lambda),
                 precond: args.precond.unwrap_or(d.precond),
+                merit: args.merit.unwrap_or(d.merit),
+                linear: args.linear.unwrap_or(d.linear),
                 data_weighting: args.data_weighting.unwrap_or(d.data_weighting),
                 percentage: args.percentage.unwrap_or(d.percentage),
                 cg_tol: args.cg_tol.unwrap_or(d.cg_tol),

@@ -434,6 +434,27 @@ fractions, median weight, median residual, outlier score, flagged echoes) to
 flagged echo. In the TUI it is the third "B0 Estimation" option, with each parameter
 below it.
 
+### MEDI's complex fit
+
+`--b0-estimation complex-fit` (off by default) is the MEDI toolbox's field map,
+`Fit_ppm_complex` ([Liu et al. 2013, *MRM* 69:467](https://doi.org/10.1002/mrm.24272)):
+a magnitude-weighted Gauss-Newton fit of the complex echoes that gives the field as
+phase per echo spacing, wrapped. That phase is then unwrapped with
+`--unwrapping-algorithm` (ROMEO is given the root-sum-of-squares of the echo
+magnitudes; MEDI's own region-growing unwrapper is not available) and divided by the
+echo spacing. A single echo gives its phase over its echo time.
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--complex-fit-reltol` | 1e-4 | stop once the update is this fraction of the first estimate, over the whole volume |
+| `--complex-fit-max-iter` | 30 | Gauss-Newton iterations at most |
+
+The fit has its own phase offset, so phase offset removal is not run, whatever
+`--phase-offset-removal` says. It needs the magnitude of every echo and increasing,
+evenly spaced echo times, and bipolar correction is refused (MEDI's fit for bipolar
+readouts is not available); a run that cannot meet these is refused before processing.
+In the TUI it is the "complex-fit" B0 Estimation option, with its two parameters below it.
+
 ## Background field removal
 
 Set with `--bf-algorithm`.
@@ -606,6 +627,28 @@ you change them. You can also set them in a
 [configuration file](/QSMxT/reference/configuration/), or run the matching
 [standalone tool](/QSMxT/reference/tools/) (e.g. `qsmxt invert tgv --help`) to
 experiment directly.
+
+### MEDI's CSF zero reference and TFI's data term
+
+MEDI runs with the ventricular CSF zero reference of MEDI+0
+([Liu et al. 2018, *MRM* 79:2795](https://doi.org/10.1002/mrm.26946)), as the MEDI
+toolbox's pipeline does: the CSF is found from R2\* (ARLO, on the echo magnitudes) inside
+the brain mask, a term weighted by `--medi-lambda-csf` keeps χ uniform there, and χ is
+referenced to its mean there. It needs at least three echoes; with fewer, MEDI runs
+without it and the run says so.
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--medi-csf` | true | the CSF zero reference |
+| `--medi-lambda-csf` | 100 | weight of the CSF uniformity term |
+| `--medi-csf-r2s-threshold` | 5 | R2\* in Hz below which a voxel is a CSF candidate |
+| `--medi-csf-erode` | true | erode the mask by a 10 mm sphere before finding the CSF |
+| `--medi-zeropad` | 0 0 0 | voxels of zeros appended at the end of x, y and z before the inversion; the result is cropped back |
+
+QSMxT's own referencing (`--qsm-reference`) still runs after the inversion.
+
+TFI runs MERIT (`--tfi-merit`, true) and fits the field linearly, as the TFI paper does
+(`--tfi-linear`, true); `--tfi-linear false` uses MEDI_L1's exponential data term instead.
 
 ## Multi-orientation (COSMOS and STI)
 

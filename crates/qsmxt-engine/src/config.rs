@@ -74,6 +74,19 @@ pub struct MediConfig {
     pub cg_max_iter: usize,
     pub max_iter: usize,
     pub tol: f64,
+    /// MEDI+0 (Liu et al. 2018): zero-reference the χ map to the ventricular CSF, found from
+    /// ARLO R2* on the echo magnitudes, with a CSF-uniformity term in the cost. On by default, as
+    /// in MEDI's pipeline. Needs at least three echoes; with fewer, MEDI runs without it.
+    pub csf: bool,
+    /// Weight of the CSF term (`lambda_CSF`)
+    pub lambda_csf: f64,
+    /// R2* (Hz) below which a voxel is a CSF candidate (`extract_CSF`'s `thresh_R2s`)
+    pub csf_r2s_threshold: f64,
+    /// Erode the mask by a 10 mm SMV before finding the CSF (`extract_CSF`'s `flag_erode`)
+    pub csf_erode: bool,
+    /// Voxels of zeros appended at the end of x, y and z before the inversion (`MEDI_L1`'s
+    /// `zeropad`); the result is cropped back.
+    pub zeropad: [usize; 3],
     /// MEDI-mSMV (Roberts et al. 2024): the local field is filtered by mSMV, and MEDI fits it
     /// with the SMV-filtered dipole kernel. Needs at least three echoes. Off by default.
     pub msmv: bool,
@@ -91,6 +104,8 @@ impl Default for MediConfig {
         let p = qsm_core::inversion::MediParams::default();
         let m = p.msmv.clone().unwrap_or_default();
         Self {
+            csf: p.csf, lambda_csf: p.lambda_csf, csf_r2s_threshold: p.csf_r2s_threshold,
+            csf_erode: p.csf_erode, zeropad: [p.zeropad.0, p.zeropad.1, p.zeropad.2],
             lambda: p.lambda, merit: p.merit, smv: p.smv, smv_radius: p.smv_radius,
             data_weighting: p.data_weighting, percentage: p.percentage, cg_tol: p.cg_tol,
             cg_max_iter: p.cg_max_iter, max_iter: p.max_iter, tol: p.tol,
@@ -109,7 +124,10 @@ impl MediConfig {
         })
     }
 }
+// TFI's `merit`: MEDI_L1's MERIT reweighting; `linear`: the linear data term of Liu et al. 2017
+// (eq. 5) rather than MEDI_L1's exponential one.
 param_config!(TfiConfig from qsm_core::inversion::TfiParams {
+    merit: bool, linear: bool,
     lambda: f64, precond: f64, data_weighting: i32,
     percentage: f64, cg_tol: f64, cg_max_iter: usize, max_iter: usize, tol: f64
 });
@@ -527,6 +545,11 @@ param_config!(HomogeneityConfig from qsm_core::utils::HomogeneityParams {
 });
 param_config!(LinearFitConfig from qsm_core::utils::LinearFitParams {
     estimate_offset: bool, reliability_threshold_percentile: f64
+});
+// MEDI's complex fit (`Fit_ppm_complex`): `reltol` stops the Gauss-Newton iterations once the
+// update is this fraction of the first estimate, over the whole volume; `max_iter` caps them.
+param_config!(ComplexFitConfig from qsm_core::fieldmap::FitPpmComplexParams {
+    reltol: f64, max_iter: usize
 });
 
 // Tikhonov regularization operator (mirrors qsm_core::inversion::Regularization)
@@ -1061,6 +1084,9 @@ pub struct FieldMappingConfig {
     #[serde(default = "default_laplacian_fft_pad", deserialize_with = "deserialize_pad3")]
     pub laplacian_fft_pad: [usize; 3],
     pub romeo: RomeoConfig,
+    /// MEDI's complex fit (`b0_estimation = "complex-fit"`).
+    #[serde(default)]
+    pub complex_fit: ComplexFitConfig,
     /// The linear fit's settings. `estimate_offset` and `reliability_threshold_percentile` are
     /// shared with the robust fit, where they mean the same thing.
     pub linear_fit: LinearFitConfig,
@@ -1160,6 +1186,7 @@ impl Default for FieldMappingConfig {
             laplacian_solver: LaplacianSolver::Dct,
             laplacian_fft_pad: default_laplacian_fft_pad(),
             romeo: RomeoConfig::default(),
+            complex_fit: ComplexFitConfig::default(),
             linear_fit: LinearFitConfig::default(),
             robust_fit: RobustFitConfig::default(),
         }
@@ -1941,22 +1968,22 @@ mod axial_resampling_tests {
 mod removed_settings_tests {
     use super::*;
 
-    /// Settings files from earlier QSMxT versions still carry two settings since removed, TFI's
-    /// `merit` and QSMART's `sdf_spatial_radius` (neither did anything). They load, and the
-    /// settings are ignored.
+    /// Settings files from earlier QSMxT versions still carry two settings that did nothing, TFI's
+    /// `merit` (a setting again since, MERIT, on by default) and QSMART's `sdf_spatial_radius`
+    /// (removed). They load, and the old values are ignored.
     #[test]
     fn configs_with_removed_settings_still_load() {
         let old = "[inversion]\nalgorithm = \"tfi\"\n\n[inversion.tfi]\nmerit = true\nprecond = 20.0\n\n\
                    [inversion.qsmart]\nsdf_spatial_radius = 8\nvasc_sphere_radius = 5\n";
         let (c, warnings) = PipelineConfig::from_toml_migrating(old).expect("an old config loads");
-        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(warnings.len() == 1 && warnings[0].starts_with("inversion.tfi.merit = true had no effect"), "{warnings:?}");
         assert_eq!(c.inversion.algorithm, QsmAlgorithm::Tfi);
         assert_eq!(c.inversion.tfi.precond, 20.0);
         assert_eq!(c.inversion.qsmart.vasc_sphere_radius, 5);
         // Saving it again drops them.
         let saved: toml::Table = toml::from_str(&c.to_toml().unwrap()).unwrap();
         let inversion = saved["inversion"].as_table().unwrap();
-        assert!(!inversion["tfi"].as_table().unwrap().contains_key("merit"));
+        assert_eq!(inversion["tfi"]["merit"].as_bool(), Some(qsm_core::inversion::TfiParams::default().merit));
         assert!(!inversion["qsmart"].as_table().unwrap().contains_key("sdf_spatial_radius"));
     }
 }

@@ -55,6 +55,14 @@ fn configs() -> Vec<(String, PipelineConfig)> {
         add(format!("b0={b0:?}"), &|c| c.field_mapping.b0_estimation = b0);
     }
     add("b0-assumed-decay".into(), &|c| c.field_mapping.b0_weight_type = B0WeightType::AssumedDecay);
+    add("b0=ComplexFit".into(), &|c| {
+        c.field_mapping.b0_estimation = B0Estimation::ComplexFit;
+        c.field_mapping.complex_fit.max_iter = 12;
+    });
+    add("medi-csf".into(), &|c| {
+        c.inversion.algorithm = QsmAlgorithm::Medi;
+        c.inversion.medi.lambda_csf = 50.0;
+    });
     add("robust-fit-0".into(), &|c| {
         c.field_mapping.b0_estimation = B0Estimation::RobustFit;
         c.field_mapping.robust_fit.iterations = 0;

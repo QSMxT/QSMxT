@@ -1004,6 +1004,9 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             self.log(Level::Info, "Skipping background removal (single-step inversion handles it internally)");
         }
         let algorithm = format!("{}", self.config.inversion.algorithm);
+        if let Some(d) = medi_csf_decision(self.config, self.n_echoes()) {
+            self.decide(d);
+        }
         let params = stages::inversion::params(self.config);
         let Some(key) = self.begin(&name, Some(&algorithm), &params, "Skipping invert (cached)",
                                    &format!("Dipole inversion{label}")) else { return Ok(()) };
@@ -1922,6 +1925,21 @@ fn pass_label(pass: Pass) -> &'static str {
         Pass::Main => "",
         Pass::Reliable => " (reliable pass)",
     }
+}
+
+/// Whether MEDI+0's CSF term is applied to a MEDI run of `n_echoes` echoes ([`Topic::MediCsf`]):
+/// QSM.rs applies it on three or more and runs MEDI without it on fewer (the plan warns), so the
+/// methods text can say what was done. `None` for another inversion or with the term off.
+pub(crate) fn medi_csf_decision(config: &PipelineConfig, n_echoes: usize) -> Option<Decision> {
+    (config.inversion.algorithm == crate::QsmAlgorithm::Medi && config.inversion.medi.csf).then(|| {
+        if n_echoes >= 3 {
+            Decision::new(Topic::MediCsf, Choice::Applied,
+                "MEDI's zero reference to the ventricular CSF (MEDI+0) was applied.")
+        } else {
+            Decision::new(Topic::MediCsf, Choice::NotApplied,
+                "MEDI's zero reference to the ventricular CSF (MEDI+0) was not applied: it needs at least three echoes.")
+        }
+    })
 }
 
 #[cfg(test)]
