@@ -402,3 +402,80 @@ pub fn parse_r2prime_strategy(s: &str) -> Option<R2PrimeStrategy> {
         _ => None,
     }
 }
+
+/// Which echo time a method converts the field from ppm to radians at (qsm-core `EchoTime`).
+///
+/// In the config it is `"first"`, `"last"`, `"spacing"`, `"sum"` or `{ seconds = … }`; on the
+/// command line it is one of those names or a time in milliseconds ([`EchoTimeChoice::parse`]).
+/// Each method that takes it has its own default, the one its reference code uses.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum EchoTimeChoice {
+    /// The first echo time.
+    First,
+    /// The last echo time.
+    Last,
+    /// The echo spacing, TE2 − TE1 (the echo time for one echo).
+    Spacing,
+    /// The sum of the echo times.
+    Sum,
+    /// A given echo time, in seconds.
+    Seconds(f64),
+}
+impl EchoTimeChoice {
+    /// The named choices, in the order the CLI help and the TUI list them.
+    pub const NAMED: [EchoTimeChoice; 4] = [Self::First, Self::Last, Self::Spacing, Self::Sum];
+
+    /// A command-line value: `first`, `last`, `spacing`, `sum`, or an echo time in milliseconds.
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match s.trim() {
+            "first" => Ok(Self::First),
+            "last" => Ok(Self::Last),
+            "spacing" => Ok(Self::Spacing),
+            "sum" => Ok(Self::Sum),
+            other => match other.parse::<f64>() {
+                Ok(ms) if ms.is_finite() && ms > 0.0 => Ok(Self::Seconds(ms / 1000.0)),
+                _ => Err(format!(
+                    "expected first, last, spacing, sum or an echo time in ms (> 0), got '{other}'"
+                )),
+            },
+        }
+    }
+}
+impl fmt::Display for EchoTimeChoice {
+    /// The command-line form: the choice's name, or the time in milliseconds.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::First => f.write_str("first"),
+            Self::Last => f.write_str("last"),
+            Self::Spacing => f.write_str("spacing"),
+            Self::Sum => f.write_str("sum"),
+            // Rounded to the nanosecond, so 7 ms is not shown as 7.000000000000001.
+            Self::Seconds(s) => write!(f, "{}", (s * 1e9).round() / 1e6),
+        }
+    }
+}
+impl From<EchoTimeChoice> for qsm_core::EchoTime {
+    fn from(c: EchoTimeChoice) -> Self {
+        use qsm_core::EchoTime as E;
+        match c {
+            EchoTimeChoice::First => E::First,
+            EchoTimeChoice::Last => E::Last,
+            EchoTimeChoice::Spacing => E::Spacing,
+            EchoTimeChoice::Sum => E::Sum,
+            EchoTimeChoice::Seconds(s) => E::Seconds(s),
+        }
+    }
+}
+impl From<qsm_core::EchoTime> for EchoTimeChoice {
+    fn from(e: qsm_core::EchoTime) -> Self {
+        use qsm_core::EchoTime as E;
+        match e {
+            E::First => Self::First,
+            E::Last => Self::Last,
+            E::Spacing => Self::Spacing,
+            E::Sum => Self::Sum,
+            E::Seconds(s) => Self::Seconds(s),
+        }
+    }
+}

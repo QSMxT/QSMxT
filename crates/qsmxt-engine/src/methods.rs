@@ -592,6 +592,17 @@ fn inversion_changes(config: &PipelineConfig, alg: QsmAlgorithm) -> Changed {
     c
 }
 
+/// The echo time a method converts the field to phase at, as prose ("the sum of the echo times").
+fn echo_time_prose(te: EchoTimeChoice) -> String {
+    match te {
+        EchoTimeChoice::First => "the first echo time".into(),
+        EchoTimeChoice::Last => "the last echo time".into(),
+        EchoTimeChoice::Spacing => "the echo spacing".into(),
+        EchoTimeChoice::Sum => "the sum of the echo times".into(),
+        EchoTimeChoice::Seconds(_) => format!("an echo time of {te} ms"),
+    }
+}
+
 /// MEDI's mSMV settings, which [`medi_msmv`] words rather than the list of changed settings.
 const MEDI_MSMV_FIELDS: [&str; 4] = ["msmv", "msmv_maxk", "msmv_vessel_radius", "msmv_prefilter"];
 

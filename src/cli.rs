@@ -638,6 +638,11 @@ pub struct IlsqrParamArgs {
     pub ilsqr_pad_mm: Option<f64>,
 }
 
+/// An echo-time choice: `first`, `last`, `spacing`, `sum`, or an echo time in milliseconds.
+pub fn parse_echo_time(s: &str) -> Result<qsmxt_engine::EchoTimeChoice, String> {
+    qsmxt_engine::EchoTimeChoice::parse(s)
+}
+
 #[derive(Args, Debug, Default, Clone)]
 pub struct LsqrParamArgs {
     /// LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use

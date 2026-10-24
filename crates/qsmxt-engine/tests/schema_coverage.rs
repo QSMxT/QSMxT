@@ -86,6 +86,9 @@ fn another(s: &Setting, cur: &Value) -> Vec<Value> {
         // The named echoes, and an echo by number.
         ValueType::EchoReference { .. } => s.value_type.options().iter().map(|o| o.value.clone())
             .chain([json!("3")]).filter(|v| v != cur).collect(),
+        // The named echo times, and a time of the user's.
+        ValueType::EchoTime { .. } => s.value_type.options().iter().map(|o| o.value.clone())
+            .filter(|v| v.is_string()).chain([json!({ "seconds": 0.025 })]).filter(|v| v != cur).collect(),
         ValueType::MaskSections => vec![serde_json::to_value(qsmxt_engine::masking::hd_bet_mask_sections()).unwrap()],
         ValueType::MaskOps => vec![json!([{ "op": "erode", "iterations": 2 }])],
     };
@@ -196,7 +199,7 @@ fn the_schema_is_well_formed() {
         }
         assert!(!s.also_in.contains(&s.section), "{}", s.path);
         assert_eq!(s.section.tab(), s.tab, "{}", s.path);
-        if matches!(s.value_type, ValueType::Enum { .. } | ValueType::EchoReference { .. }) {
+        if matches!(s.value_type, ValueType::Enum { .. } | ValueType::EchoReference { .. } | ValueType::EchoTime { .. }) {
             let options = s.value_type.options();
             assert!(!options.is_empty(), "{}", s.path);
             for o in options {
