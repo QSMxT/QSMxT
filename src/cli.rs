@@ -639,6 +639,22 @@ pub struct IlsqrParamArgs {
 }
 
 #[derive(Args, Debug, Default, Clone)]
+pub struct StarParamArgs {
+    /// STAR-QSM zero-padding in voxels per side, X Y Z (default: 8 8 20)
+    #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"])]
+    pub star_pad: Option<Vec<usize>>,
+    /// Echo time STAR-QSM converts the field to phase at: first, last, spacing (TE2 - TE1),
+    /// sum (of the echo times), or a time in ms (default: sum)
+    #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
+    pub star_te: Option<qsmxt_engine::EchoTimeChoice>,
+}
+
+/// An echo-time choice: `first`, `last`, `spacing`, `sum`, or an echo time in milliseconds.
+pub fn parse_echo_time(s: &str) -> Result<qsmxt_engine::EchoTimeChoice, String> {
+    qsmxt_engine::EchoTimeChoice::parse(s)
+}
+
+#[derive(Args, Debug, Default, Clone)]
 pub struct LsqrParamArgs {
     /// LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use
     /// qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly
@@ -1236,6 +1252,8 @@ pub struct PipelineArgs {
     pub tfi_params: TfiParamArgs,
     #[command(flatten)]
     pub ilsqr_params: IlsqrParamArgs,
+    #[command(flatten)]
+    pub star_params: StarParamArgs,
     #[command(flatten)]
     pub lsqr_params: LsqrParamArgs,
     #[command(flatten)]
@@ -2441,6 +2459,8 @@ pub enum InvertCommand {
     Tfi(InvertTfiArgs),
     /// Iterative Least Squares QR
     Ilsqr(InvertIlsqrArgs),
+    /// STAR-QSM (Streaking Artifact Reduction): sparse inversion from a k-space initial guess
+    Star(InvertStarArgs),
     /// Minimally regularised LSQR
     Lsqr(InvertLsqrArgs),
     /// HEIDI (Homogeneity Enabled Incremental Dipole Inversion), seeded by an LSQR solve
@@ -2725,6 +2745,23 @@ pub struct InvertIlsqrArgs {
     /// Zero-padding in mm per side
     #[arg(long, value_name = "MM")]
     pub pad_mm: Option<f64>,
+}
+
+/// STAR-QSM. Its result depends on the scale of the field in radians, so it takes the scan's
+/// field strength and echo times and converts the field to phase at the echo time `--te` picks.
+#[derive(Parser, Debug)]
+pub struct InvertStarArgs {
+    #[command(flatten)]
+    pub common: InvertCommonArgs,
+    #[command(flatten)]
+    pub scan: ScanParamArgs,
+    /// Zero-padding in voxels per side, X Y Z (default: 8 8 20)
+    #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"])]
+    pub pad: Option<Vec<usize>>,
+    /// Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of
+    /// the echo times), or a time in ms (default: sum)
+    #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
+    pub te: Option<qsmxt_engine::EchoTimeChoice>,
 }
 
 /// Minimally regularised LSQR. The residual-field weight (`--lsqr-residual-weighting`) is the only
@@ -3534,7 +3571,7 @@ pub struct QualityMapArgs {
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum QsmAlgorithmArg {
-    Rts, Tv, Tkd, Tsvd, Tgv, Tikhonov, Nltv, Medi, Tfi, Ilsqr, Lsqr, Heidi, Qsmart,
+    Rts, Tv, Tkd, Tsvd, Tgv, Tikhonov, Nltv, Medi, Tfi, Ilsqr, Star, Lsqr, Heidi, Qsmart,
     Ndi, Fansi, FansiTgv, L1qsm, Whqsm, Hdqsm, AmpPe,
     // Deep-learning dipole inversions (weights downloaded on first use).
     Xqsm, Qsmnet, QsmnetPlus, Autoqsm, Qsmgan, Ir2qsm, Lpcnn, ModlQsm, Nextqsm,

@@ -5731,6 +5731,146 @@
      108535767
     ]
    ]
+  },
+  {
+   "kind": "native",
+   "name": "inv-star-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT with QSM.rs v0.40.0), example data",
+   "threads": 1,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "star"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1390737194
+    ],
+    [
+     "bgremove",
+     663327186
+    ],
+    [
+     "invert",
+     760066566
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inv-star-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT with QSM.rs v0.40.0), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "star"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2426637418
+    ],
+    [
+     "bgremove",
+     663814610
+    ],
+    [
+     "invert",
+     760584454
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inv-star-pad0-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT with QSM.rs v0.40.0), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "star"
+    ],
+    [
+     "inversion.star.pad",
+     [
+      0,
+      0,
+      0
+     ]
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2335377514
+    ],
+    [
+     "bgremove",
+     663814610
+    ],
+    [
+     "invert",
+     555289062
+    ],
+    [
+     "reference",
+     108535767
+    ]
+   ]
   }
  ]
 }

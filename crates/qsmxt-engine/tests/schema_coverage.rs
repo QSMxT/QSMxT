@@ -86,6 +86,9 @@ fn another(s: &Setting, cur: &Value) -> Vec<Value> {
         // The named echoes, and an echo by number.
         ValueType::EchoReference { .. } => s.value_type.options().iter().map(|o| o.value.clone())
             .chain([json!("3")]).filter(|v| v != cur).collect(),
+        // The named echo times, and a time of the user's.
+        ValueType::EchoTime { .. } => s.value_type.options().iter().map(|o| o.value.clone())
+            .filter(|v| v.is_string()).chain([json!({ "seconds": 0.025 })]).filter(|v| v != cur).collect(),
         ValueType::MaskSections => vec![serde_json::to_value(qsmxt_engine::masking::hd_bet_mask_sections()).unwrap()],
         ValueType::MaskOps => vec![json!([{ "op": "erode", "iterations": 2 }])],
     };
@@ -196,7 +199,7 @@ fn the_schema_is_well_formed() {
         }
         assert!(!s.also_in.contains(&s.section), "{}", s.path);
         assert_eq!(s.section.tab(), s.tab, "{}", s.path);
-        if matches!(s.value_type, ValueType::Enum { .. } | ValueType::EchoReference { .. }) {
+        if matches!(s.value_type, ValueType::Enum { .. } | ValueType::EchoReference { .. } | ValueType::EchoTime { .. }) {
             let options = s.value_type.options();
             assert!(!options.is_empty(), "{}", s.path);
             for o in options {
@@ -400,6 +403,30 @@ fn labels_are_unique_within_a_section_after_their_context() {
     assert_eq!(ctx("inversion.qsmart.ilsqr_max_iter"), Some("QSMART"));
     assert_eq!(ctx("inversion.amp_pe.nlevel"), Some("AMP-PE"));
     assert_eq!(ctx("pipeline.do_qsm"), None);
+}
+
+#[test]
+fn an_echo_time_says_which_choice_is_a_time_of_the_users() {
+    let s = schema::setting("inversion.star.te").unwrap();
+    let ValueType::EchoTime { options } = &s.value_type else { panic!() };
+    let kinds: Vec<_> = options.iter().map(|o| o.kind).collect();
+    use schema::EchoKind::*;
+    assert_eq!(kinds, [Named, Named, Named, Named, Time]);
+    let values: Vec<_> = options.iter().map(|o| o.option.value.clone()).collect();
+    assert_eq!(values, [json!("first"), json!("last"), json!("spacing"), json!("sum"), json!({ "seconds": null })]);
+    assert_eq!(s.default, json!("sum"));
+    let doc: Value = serde_json::to_value(&s).unwrap();
+    assert_eq!(doc["type"], "echo-time");
+    assert_eq!(doc["options"][4]["kind"], "time");
+    let mut c = PipelineConfig::default();
+    schema::set(&mut c, s.path, json!({ "seconds": 0.03 })).unwrap();
+    assert_eq!(c.inversion.star.te, qsmxt_engine::EchoTimeChoice::Seconds(0.03));
+    // A time that is not positive is the setting's error.
+    c.inversion.algorithm = qsmxt_engine::QsmAlgorithm::Star;
+    c.inversion.star.te = qsmxt_engine::EchoTimeChoice::Seconds(0.0);
+    let view = schema::settings_view(&c, &Default::default());
+    let te = view.iter().find(|v| v.path == s.path).unwrap();
+    assert!(te.error.as_deref().is_some_and(|e| e.contains("greater than 0 ms")), "{te:?}");
 }
 
 #[test]

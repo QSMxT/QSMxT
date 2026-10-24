@@ -138,6 +138,7 @@ take the local field, and `tfi`, `autoqsm` and `nextqsm` the **total** field:
 | `medi` | Morphology-Enabled Dipole Inversion |
 | `tfi` | Total Field Inversion (total field in) |
 | `ilsqr` | Iterative Least-Squares QR |
+| `star` | STAR-QSM — Streaking Artifact Reduction |
 | `lsqr` | Minimally regularised LSQR |
 | `heidi` | HEIDI — Homogeneity Enabled Incremental Dipole Inversion |
 | `ndi` | Nonlinear Dipole Inversion |
@@ -157,7 +158,7 @@ wrapped phase, are pipeline-only (`run --qsm-algorithm iqsm`).
 
 Each subcommand runs its method as `qsmxt run` does, through QSM.rs's pipeline: the
 field goes in in ppm, and the methods that work in radians (`ndi`, `nltv`, `fansi`,
-`fansi-tgv`, `l1qsm`, `whqsm`, `medi`, `tfi`, `heidi`, `tgv`) convert it themselves
+`fansi-tgv`, `l1qsm`, `whqsm`, `medi`, `tfi`, `heidi`, `tgv`, `star`) convert it themselves
 with `--field-strength` and `--echo-times` (every echo's). `ndi`, `nltv`, `fansi`,
 `fansi-tgv` and `l1qsm` need `--magnitude` as their data weight; `medi` and `tfi`
 need the magnitude of every echo (one 4D file or one file per echo). MEDI-mSMV is

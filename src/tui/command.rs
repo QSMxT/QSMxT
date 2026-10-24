@@ -174,7 +174,7 @@ pub const SWI_SCALING_ARGS: [crate::cli::SwiScalingArg; 5] = {
     [S::Tanh, S::NegativeTanh, S::Positive, S::Negative, S::Triangular]
 };
 
-pub const QSM_ALGO_ARGS: [QsmAlgorithmArg; 31] = [
+pub const QSM_ALGO_ARGS: [QsmAlgorithmArg; 32] = [
         QsmAlgorithmArg::Rts,
         QsmAlgorithmArg::Tv,
         QsmAlgorithmArg::Tkd,
@@ -185,6 +185,7 @@ pub const QSM_ALGO_ARGS: [QsmAlgorithmArg; 31] = [
         QsmAlgorithmArg::Medi,
         QsmAlgorithmArg::Tfi,
         QsmAlgorithmArg::Ilsqr,
+        QsmAlgorithmArg::Star,
         QsmAlgorithmArg::Lsqr,
         QsmAlgorithmArg::Heidi,
         QsmAlgorithmArg::Qsmart,
@@ -417,6 +418,14 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             ilsqr_tol: parse_optional_f64(&ps.ilsqr_tol),
             ilsqr_max_iter: parse_optional_usize(&ps.ilsqr_max_iter),
             ilsqr_pad_mm: parse_optional_f64(&ps.ilsqr_pad_mm),
+        },
+        star_params: crate::cli::StarParamArgs {
+            star_pad: parse_usize_triple(&ps.star_pad).map(|p| p.to_vec()),
+            star_te: match super::app::STAR_TE_OPTIONS.get(ps.star_te).copied() {
+                Some("ms") => qsmxt_engine::EchoTimeChoice::parse(&ps.star_te_ms).ok(),
+                Some(name) => qsmxt_engine::EchoTimeChoice::parse(name).ok(),
+                None => None,
+            },
         },
         qsmart_params: crate::cli::QsmartParamArgs {
             qsmart_ilsqr_max_iter: parse_optional_usize(&ps.qsmart_ilsqr_max_iter),
