@@ -202,15 +202,20 @@ fn model_bytes(id: &str) -> u64 {
 /// its outputs.
 fn step_need(step: &Step, config: &PipelineConfig, s: &Scan) -> u64 {
     let (n, e) = (s.n, s.echoes);
-    let mask_recipe = |sections: &[MaskSection]| mask_need(sections, s);
+    let n4 = config.masking.inhomogeneity_correction && config.masking.inhomogeneity_method == InhomogeneityMethod::N4;
+    let mask_recipe = |sections: &[MaskSection]| mask_need(sections, s, n4);
     match step.stage {
         Stage::Load => 0,
         // One echo at a time; uncombined coils are combined (MCPC-3D-S) first, with every coil's
         // phase and magnitude held at once.
         Stage::ScalePhase if s.coils > 1 => (2 * s.coils * e + 4 + 2 * e) * F64 * n,
         Stage::ScalePhase => s.v(8),
-        // Every echo's magnitude, read and combined.
-        Stage::Magnitude => s.v(8 * e + 49),
+        // Every echo's magnitude, read and combined, and the correction's working memory: N4's
+        // is less than makehomogeneous's (measured: 8 B a voxel an echo and 33 more).
+        Stage::Magnitude => match n4 {
+            true => s.v(8 * e + 33),
+            false => s.v(8 * e + 49),
+        },
         Stage::Mask(crate::plan::Pass::Main) => mask_recipe(&config.masking.sections),
         Stage::Mask(crate::plan::Pass::Reliable) => mask_recipe(&config.masking.resolved_two_pass_sections()),
         // Every echo's phase and magnitude, registered to the reference echo.
@@ -252,8 +257,9 @@ fn step_need(step: &Step, config: &PipelineConfig, s: &Scan) -> u64 {
 
 /// The mask step reads every echo's phase and magnitude whatever the recipe, and its peak is the
 /// same for the thresholds, BET and the morphological refinements (measured: 24 B a voxel an
-/// echo and 42 more). A network takes its own peak on top of the echoes.
-fn mask_need(sections: &[MaskSection], s: &Scan) -> u64 {
+/// echo and 42 more; 36 more when the echoes are corrected with N4). A network takes its own peak
+/// on top of the echoes.
+fn mask_need(sections: &[MaskSection], s: &Scan, n4: bool) -> u64 {
     let echoes = s.v(16 * s.echoes);
     let network = sections.iter().map(|sec| match &sec.generator {
         MaskOp::HdBet { patch, .. } => hd_bet_network_bytes(*patch) + s.v(40),
@@ -261,7 +267,7 @@ fn mask_need(sections: &[MaskSection], s: &Scan) -> u64 {
         MaskOp::MindGrab { .. } => MINDGRAB_BYTES,
         _ => 0,
     }).max().unwrap_or(0);
-    s.v(24 * s.echoes + 42).max(echoes + network)
+    s.v(24 * s.echoes + if n4 { 36 } else { 42 }).max(echoes + network)
 }
 
 /// The field map (`unwrap`): unwrapping and echo combination.

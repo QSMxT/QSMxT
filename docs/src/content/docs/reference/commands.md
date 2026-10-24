@@ -42,7 +42,7 @@ pipeline, and run the same code as the corresponding pipeline stage. See
 | `t2star` | T2\* mapping from multi-echo magnitude |
 | `r2` | R2 mapping from multi-echo spin-echo (MESE) magnitude |
 | `r2prime` | R2′ = R2\* − R2, over the region R2 covers |
-| `homogeneity` | Inhomogeneity correction on magnitude data |
+| `homogeneity` | Inhomogeneity correction on magnitude data (makehomogeneous or N4) |
 | `resample` | Resample an oblique volume to axial orientation |
 | `quality-map` | Compute a ROMEO phase-quality map |
 

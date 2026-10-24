@@ -60,7 +60,9 @@ pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value
         "scale_phase" => json!({ "coil_combination_sigma": config.field_mapping.coil_combination_sigma }),
         "magnitude" => json!({
             "inhomogeneity_correction": config.masking.inhomogeneity_correction,
+            "inhomogeneity_method": config.masking.inhomogeneity_method,
             "homogeneity": config.homogeneity,
+            "n4": config.n4,
         }),
         // The main mask is not the two-pass one, so its settings stay out of the main mask's key.
         "mask" if step == base => {
@@ -71,7 +73,7 @@ pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value
             }
             json!({ "masking": m, "bet": config.bet })
         }
-        "mask" => json!({ "masking": masking(), "bet": config.bet, "homogeneity": config.homogeneity }),
+        "mask" => json!({ "masking": masking(), "bet": config.bet, "homogeneity": config.homogeneity, "n4": config.n4 }),
         "motion" => json!({ "motion_correction": config.motion_correction, "registration": config.registration }),
         "swi" => json!({ "swi": config.swi }),
         "unwrap" => json!({ "field_mapping": config.field_mapping }),
@@ -153,6 +155,26 @@ mod tests {
                            "changing {p} leaves {step} cached");
             }
             assert!(tested * 2 >= paths.len().min(4), "{section}: only {tested} of {} leaves exercised", paths.len());
+        }
+    }
+
+    /// The inhomogeneity correction's method and N4's settings key the steps that correct the
+    /// magnitude: the combined magnitude and the reliable mask (the main mask is recomputed
+    /// whenever the combined magnitude is).
+    #[test]
+    fn the_inhomogeneity_method_and_n4_settings_are_keyed() {
+        let base = PipelineConfig::default();
+        let p = serde_json::json!({});
+        let mut n4 = base.clone();
+        n4.masking.inhomogeneity_method = crate::enums::InhomogeneityMethod::N4;
+        let mut shrink = n4.clone();
+        shrink.n4.shrink_factor += 1;
+        let mut levels = n4.clone();
+        levels.n4.max_iterations.push(10);
+        for step in ["magnitude", "mask-reliable"] {
+            assert_ne!(step_cache_key(step, None, &p, &n4), step_cache_key(step, None, &p, &base), "{step}");
+            assert_ne!(step_cache_key(step, None, &p, &shrink), step_cache_key(step, None, &p, &n4), "{step}");
+            assert_ne!(step_cache_key(step, None, &p, &levels), step_cache_key(step, None, &p, &n4), "{step}");
         }
     }
 

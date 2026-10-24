@@ -556,6 +556,8 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         // ── Homogeneity ──
         if let Some(v) = args.homogeneity_sigma_mm { config.homogeneity.sigma_mm = v; }
         if let Some(v) = args.homogeneity_nbox { config.homogeneity.nbox = v; }
+        if let Some(m) = args.inhomogeneity_method { config.masking.inhomogeneity_method = m.into(); }
+        args.n4_params.apply_to(&mut config.n4);
 
         // ── Linear fit ──
         if let Some(v) = args.linear_fit_reliability_threshold {
@@ -1022,6 +1024,22 @@ mod tests {
         assert_eq!(with(&["--laplacian-fft-pad", "12"]).field_mapping.laplacian_fft_pad, [12; 3]);
         assert_eq!(with(&["--laplacian-fft-pad", "64", "64", "32"]).field_mapping.laplacian_fft_pad, [64, 64, 32]);
         // Two values is neither: refused (see `unusable_flag_values_are_refused`).
+    }
+
+    #[test]
+    fn inhomogeneity_method_and_n4_flags() {
+        let c = config_from_cli(&["qsmxt", "run", "<bids>"]);
+        assert_eq!(c.masking.inhomogeneity_method, qsmxt_engine::InhomogeneityMethod::Makehomogeneous);
+        assert_eq!(c.n4, qsmxt_engine::N4Config::default());
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--inhomogeneity-method", "n4",
+            "--n4-shrink-factor", "2", "--n4-max-iterations", "20", "10", "--n4-convergence-threshold", "0.001",
+            "--n4-mesh", "2", "2", "1", "--n4-spline-order", "2", "--n4-bias-field-fwhm", "0.2",
+            "--n4-wiener-noise", "0.02", "--n4-histogram-bins", "100"]);
+        assert_eq!(c.masking.inhomogeneity_method, qsmxt_engine::InhomogeneityMethod::N4);
+        assert_eq!(c.n4, qsmxt_engine::N4Config {
+            shrink_factor: 2, max_iterations: vec![20, 10], convergence_threshold: 0.001, mesh: [2, 2, 1],
+            spline_order: 2, bias_field_fwhm: 0.2, wiener_noise: 0.02, histogram_bins: 100,
+        });
     }
 
     #[test]

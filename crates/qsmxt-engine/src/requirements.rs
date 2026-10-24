@@ -611,6 +611,17 @@ fn input_problems(f: &ScanFacts) -> Option<String> {
     coil_combination_problem(f.n_echoes, f.n_coils)
 }
 
+/// Why the magnitude cannot be corrected for inhomogeneity as configured, if it cannot: N4 needs
+/// a grid it can shrink (on the acquired grid; the run checks its working grid again).
+pub fn inhomogeneity_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<String> {
+    let on = f.has_magnitude && config.masking.inhomogeneity_correction
+        && config.masking.inhomogeneity_method == InhomogeneityMethod::N4;
+    if !on {
+        return None;
+    }
+    config.n4.grid_problem(f.dims)
+}
+
 /// Why `n_coils` uncombined coils of `n_echoes` echoes cannot be combined, if they cannot.
 pub fn coil_combination_problem(n_echoes: usize, n_coils: usize) -> Option<String> {
     (n_coils > 1 && n_echoes < 2).then(|| format!(
@@ -676,6 +687,14 @@ pub fn scan_check(f: &ScanFacts, config: &PipelineConfig) -> Check {
         out.problems.push(Problem {
             severity: Severity::Error, setting: None, implied_by: None, settings: vec![],
             reason: why.clone(), message: why,
+        });
+    }
+    if let Some(why) = inhomogeneity_problem(f, config) {
+        let path = "masking.inhomogeneity_method";
+        out.errors.push(why.clone());
+        out.problems.push(Problem {
+            severity: Severity::Error, setting: Some(path), implied_by: None,
+            settings: vec![path, "n4.shrink_factor"], reason: why.clone(), message: why,
         });
     }
     let label = |path: &str| crate::schema::setting(path).map_or_else(|| path.to_string(), |s| s.full_label.to_string());
@@ -773,6 +792,27 @@ mod tests {
     }
 
     const EVEN: [f64; 4] = [0.005, 0.010, 0.015, 0.020];
+
+    #[test]
+    fn n4_refuses_a_grid_it_cannot_shrink() {
+        let mut c = PipelineConfig::default();
+        c.masking.inhomogeneity_method = InhomogeneityMethod::N4;
+        let thin = ScanFacts { dims: (64, 64, 6), ..run(&[0.004, 0.008], true) };
+        let out = scan_check(&thin, &c);
+        assert!(out.errors.len() == 1 && out.errors[0].contains("64x64x6") && out.errors[0].contains("--n4-shrink-factor"), "{out:?}");
+        assert_eq!(out.problems[0].setting, Some("masking.inhomogeneity_method"));
+        c.n4.shrink_factor = 3;
+        assert!(scan_check(&thin, &c).errors.is_empty());
+        c.n4.shrink_factor = 4;
+        c.masking.inhomogeneity_method = InhomogeneityMethod::Makehomogeneous;
+        assert!(scan_check(&thin, &c).errors.is_empty(), "makehomogeneous has no such limit");
+        c.masking.inhomogeneity_method = InhomogeneityMethod::N4;
+        c.masking.inhomogeneity_correction = false;
+        assert!(scan_check(&thin, &c).errors.is_empty(), "no correction, no limit");
+        assert!(scan_check(&ScanFacts { has_magnitude: false, ..thin }, &PipelineConfig {
+            masking: MaskingConfig { inhomogeneity_method: InhomogeneityMethod::N4, ..Default::default() },
+            ..Default::default() }).errors.is_empty(), "no magnitude, nothing to correct");
+    }
 
     fn check(r: &ScanFacts, c: &PipelineConfig) -> Check {
         let mut out = Check::default();

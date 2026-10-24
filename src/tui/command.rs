@@ -235,6 +235,9 @@ pub fn selected_qsm_algorithm(ps: &super::app::PipelineFormState) -> QsmAlgorith
 pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
     let form = &app.form;
     let ps = &app.pipeline_state;
+    // The inhomogeneity correction's settings go with the method that reads them.
+    let makehomogeneous = ps.inhomogeneity_correction && ps.inhomogeneity_method == 0;
+    let n4 = ps.inhomogeneity_correction && ps.inhomogeneity_method == 1;
 
     let qsm_options = QSM_ALGO_ARGS;
     let unwrap_options = [UnwrapAlgorithmArg::Romeo, UnwrapAlgorithmArg::Laplacian];
@@ -630,8 +633,22 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             tile_size: if ps.dl_tiling { parse_optional_usize(&ps.dl_tile_size) } else { None },
             tile_halo: if ps.dl_tiling { parse_optional_usize(&ps.dl_tile_halo) } else { None },
         },
-        homogeneity_sigma_mm: if ps.inhomogeneity_correction { parse_optional_f64(&ps.homogeneity_sigma_mm) } else { None },
-        homogeneity_nbox: if ps.inhomogeneity_correction { parse_optional_usize(&ps.homogeneity_nbox) } else { None },
+        inhomogeneity_method: (ps.inhomogeneity_correction && ps.inhomogeneity_method == 1)
+            .then_some(crate::cli::InhomogeneityMethodArg::N4),
+        homogeneity_sigma_mm: if makehomogeneous { parse_optional_f64(&ps.homogeneity_sigma_mm) } else { None },
+        homogeneity_nbox: if makehomogeneous { parse_optional_usize(&ps.homogeneity_nbox) } else { None },
+        n4_params: if n4 {
+            crate::cli::N4ParamArgs {
+                n4_shrink_factor: parse_optional_usize(&ps.n4_shrink_factor),
+                n4_max_iterations: parse_usize_list(&ps.n4_max_iterations),
+                n4_convergence_threshold: parse_optional_f64(&ps.n4_convergence_threshold),
+                n4_mesh: parse_usize_triple(&ps.n4_mesh).map(|m| m.to_vec()),
+                n4_spline_order: parse_optional_usize(&ps.n4_spline_order),
+                n4_bias_field_fwhm: parse_optional_f64(&ps.n4_bias_field_fwhm),
+                n4_wiener_noise: parse_optional_f64(&ps.n4_wiener_noise),
+                n4_histogram_bins: parse_optional_usize(&ps.n4_histogram_bins),
+            }
+        } else { Default::default() },
         linear_fit_reliability_threshold: if ps.linear_fit_reliability { parse_optional_f64(&ps.linear_fit_reliability_threshold) } else { Some(0.0) },
         linear_fit_estimate_offset: Some(ps.linear_fit_estimate_offset),
         robust_fit_loss: (ps.b0_estimation == 2 && ps.robust_fit_loss == 1).then_some(crate::cli::RobustLossArg::Huber),
@@ -778,6 +795,13 @@ fn parse_optional_f64(s: &str) -> Option<f64> {
 fn parse_usize_triple(s: &str) -> Option<[usize; 3]> {
     let v: Vec<usize> = s.split_whitespace().map(|t| t.parse().ok()).collect::<Option<_>>()?;
     <[usize; 3]>::try_from(v).ok()
+}
+
+/// One count or more, separated by spaces or commas ("50 50 50 50"); `None` if empty or not counts.
+fn parse_usize_list(s: &str) -> Option<Vec<usize>> {
+    let v: Vec<usize> = s.split(|c: char| c == ',' || c.is_whitespace())
+        .filter(|t| !t.is_empty()).map(|t| t.parse().ok()).collect::<Option<_>>()?;
+    (!v.is_empty()).then_some(v)
 }
 
 /// "64" (every axis) or "64 64 32".
@@ -998,6 +1022,36 @@ mod tests {
 
     /// The Laplacian solver and its pad are in the TUI (they used to be CLI-only): the rows
     /// follow the selection, and the values reach both the config and the CLI args.
+    #[test]
+    fn inhomogeneity_method_and_n4_settings() {
+        let mut app = default_app();
+        let fields = |app: &App| app.pipeline_state.all_rows().iter().filter_map(|r| match r {
+            crate::tui::app::PipelineRow::AlgoSelect { field, .. }
+            | crate::tui::app::PipelineRow::Param { field, .. } => Some(field.to_string()),
+            _ => None,
+        }).collect::<Vec<_>>();
+        assert!(fields(&app).contains(&"inhomogeneity_method".to_string()));
+        assert!(fields(&app).contains(&"homogeneity_sigma_mm".to_string()));
+        assert!(!fields(&app).contains(&"n4_shrink_factor".to_string()), "makehomogeneous has no N4 rows");
+        let a = pipeline_args_from_app(&app);
+        assert!(a.inhomogeneity_method.is_none() && a.n4_params.n4_shrink_factor.is_none(), "default stays off the command");
+        app.pipeline_state.set_select("inhomogeneity_method", 1);
+        assert!(fields(&app).contains(&"n4_max_iterations".to_string()));
+        assert!(!fields(&app).contains(&"homogeneity_sigma_mm".to_string()));
+        app.pipeline_state.n4_max_iterations = "20 10".into();
+        app.pipeline_state.n4_mesh = "2 2 1".into();
+        app.pipeline_state.n4_shrink_factor = "2".into();
+        let c = config_from_app(&app).unwrap();
+        assert_eq!(c.masking.inhomogeneity_method, qsmxt_engine::InhomogeneityMethod::N4);
+        assert_eq!((c.n4.max_iterations.clone(), c.n4.mesh, c.n4.shrink_factor), (vec![20, 10], [2, 2, 1], 2));
+        let a = pipeline_args_from_app(&app);
+        assert_eq!(a.inhomogeneity_method, Some(crate::cli::InhomogeneityMethodArg::N4));
+        assert!(a.homogeneity_sigma_mm.is_none(), "makehomogeneous's settings stay off with N4");
+        app.pipeline_state.inhomogeneity_correction = false;
+        assert!(!fields(&app).contains(&"inhomogeneity_method".to_string()));
+        assert!(pipeline_args_from_app(&app).n4_params.n4_max_iterations.is_none());
+    }
+
     #[test]
     fn laplacian_solver_and_pad() {
         let mut app = default_app();
