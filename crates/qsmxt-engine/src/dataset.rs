@@ -207,6 +207,28 @@ mod tests {
         )
     }
 
+    /// MEDI+0's sentence says what the runs did: applied on 5 echoes, left out on 2, and the
+    /// configuration's condition where a dataset has both.
+    #[test]
+    fn medi_csf_is_said_as_the_runs_applied_it() {
+        let mut config = PipelineConfig::default();
+        config.inversion.algorithm = crate::QsmAlgorithm::Medi;
+        let f = facts();
+        let plan = crate::plan::plan(&config, &f);
+        let csf = |echoes: usize| record(&plan, &[("invert", crate::run::medi_csf_decision(&config, echoes).unwrap())]);
+        let (five, two) = (csf(5), csf(2));
+        let text = |runs: &[&RunRecord]| {
+            let runs: Vec<_> = runs.iter().map(|r| (&plan, &f, *r)).collect();
+            summarise(&config, &runs, "qsmxt").unwrap().methods.to_markdown()
+        };
+        let applied = "MEDI's zero reference to the ventricular CSF (MEDI+0; Liu et al., 2018) was applied.";
+        assert!(text(&[&five]).contains(applied), "{}", text(&[&five]));
+        assert!(!text(&[&two]).contains("MEDI+0"), "{}", text(&[&two]));
+        assert!(text(&[&five, &two]).contains("(MEDI+0; Liu et al., 2018) was applied to runs of at least three echoes."));
+        let run = |r: &RunRecord| crate::methods::methods_for_run(&config, &plan, r, "qsmxt").to_markdown();
+        assert!(run(&five).contains(applied) && !run(&two).contains("MEDI+0"));
+    }
+
     /// Runs that decided nothing: the dataset's methods are the configuration's, its graph is
     /// each run's, with nothing to say on the boxes, and no run differs.
     #[test]
