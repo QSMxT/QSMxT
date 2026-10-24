@@ -56,6 +56,11 @@ fn config(r: &Value, browser: bool) -> PipelineConfig {
     for s in r["settings"].as_array().unwrap() {
         let (path, value) = (s[0].as_str().unwrap(), s[1].clone());
         qsmxt_engine::schema::set(&mut c, path, value).unwrap_or_else(|e| panic!("{}: {path}: {e}", r["name"]));
+        // The background removal a measurement names is the one it ran, whatever the inversion's
+        // own default.
+        if path == "bg_removal.algorithm" {
+            c.bg_removal.algorithm_chosen = true;
+        }
     }
     c
 }

@@ -84,6 +84,23 @@ fn map_bf_alg(alg: BfAlgorithm) -> PBgAlg {
     }
 }
 
+/// The background removal the configured inversion's reference pipeline uses (QSM.rs
+/// `InversionConfig::reference_bg_removal`): PDF for MEDI, `None` for the rest. A run whose
+/// background removal the user did not choose takes it ([`PipelineConfig::normalised`]).
+pub fn reference_bg_removal(cfg: &PipelineConfig) -> Option<BfAlgorithm> {
+    to_pipeline_stages(cfg).2.reference_bg_removal().map(|a| match a {
+        PBgAlg::Vsharp => BfAlgorithm::Vsharp,
+        PBgAlg::Pdf => BfAlgorithm::Pdf,
+        PBgAlg::Lbv => BfAlgorithm::Lbv,
+        PBgAlg::Ismv => BfAlgorithm::Ismv,
+        PBgAlg::Sharp => BfAlgorithm::Sharp,
+        PBgAlg::Resharp => BfAlgorithm::Resharp,
+        PBgAlg::Harperella => BfAlgorithm::Harperella,
+        PBgAlg::Iharperella => BfAlgorithm::Iharperella,
+        PBgAlg::Bfrnet => BfAlgorithm::Bfrnet,
+    })
+}
+
 /// The per-echo weight of `b0_estimation = "weighted-avg"`, in qsm-core's terms.
 fn map_b0_weight_type(fm: &crate::config::FieldMappingConfig) -> qsm_core::utils::B0WeightType {
     use qsm_core::utils::B0WeightType as W;
@@ -256,6 +273,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             merit: cfg.inversion.medi.merit,
             smv: cfg.inversion.medi.smv,
             smv_radius: cfg.inversion.medi.smv_radius,
+            smv_shrink_mask: cfg.inversion.medi.smv_shrink_mask,
             data_weighting: cfg.inversion.medi.data_weighting,
             percentage: cfg.inversion.medi.percentage,
             cg_tol: cfg.inversion.medi.cg_tol,
@@ -263,7 +281,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             max_iter: cfg.inversion.medi.max_iter,
             tol: cfg.inversion.medi.tol,
             msmv: cfg.inversion.medi.msmv_params(),
-            // MEDI+0's CSF term, the mask shrinking, the zero padding and the echo time choice are
+            // MEDI+0's CSF term, the zero padding and the echo time choice are
             // not QSMxT settings yet; field strength and echo times are scan parameters the
             // pipeline fills in.
             ..Default::default()

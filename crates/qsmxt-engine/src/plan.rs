@@ -488,6 +488,29 @@ pub(crate) mod tests {
         assert!(!plan.two_pass && !plan.motion_corrected);
     }
 
+    /// MEDI's background removal is PDF, its reference pipeline's, unless one is chosen; a chosen
+    /// one is kept, the general default included.
+    #[test]
+    fn medi_removes_the_background_with_pdf_unless_another_is_chosen() {
+        use crate::enums::BfAlgorithm;
+        let bfr = |c: &PipelineConfig| {
+            let p = plan(c, &facts());
+            p.steps.iter().find(|s| s.name == "bgremove").and_then(|s| s.algorithm.clone())
+        };
+        let mut config = PipelineConfig::default();
+        config.inversion.algorithm = QsmAlgorithm::Medi;
+        assert_eq!(bfr(&config).as_deref(), Some("pdf"));
+        config.inversion.medi.smv = false;
+        assert_eq!(bfr(&config).as_deref(), Some("pdf"));
+        config.bg_removal.algorithm_chosen = true;
+        assert_eq!(bfr(&config).as_deref(), Some("vsharp"), "the general default, chosen");
+        config.bg_removal.algorithm = BfAlgorithm::Lbv;
+        config.bg_removal.algorithm_chosen = false;
+        assert_eq!(bfr(&config).as_deref(), Some("lbv"));
+        // Other inversions keep the general default.
+        assert_eq!(bfr(&PipelineConfig::default()).as_deref(), Some("vsharp"));
+    }
+
     #[test]
     fn two_pass_repeats_the_reconstruction_and_references_both_maps() {
         let mut config = PipelineConfig::default();

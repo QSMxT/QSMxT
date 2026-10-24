@@ -38,6 +38,12 @@ algorithm has its own parameters, the config is the place to tune things like
 regularisation weights and iteration counts that aren't exposed as top-level
 flags.
 
+Some defaults depend on the method. With `inversion.algorithm = "medi"`, background
+removal is PDF unless the file chooses another, as in the MEDI authors' pipeline. A config
+that keeps V-SHARP under MEDI says so with `algorithm_chosen = true` under
+`[bg_removal]`; QSMxT writes it into the configs it saves. A file without
+`schema_version` that names `bg_removal.algorithm` (one written by hand) keeps it.
+
 Multi-orientation reconstruction lives in its own `[multi_orientation]` section,
 off unless `group_by` names a pattern:
 

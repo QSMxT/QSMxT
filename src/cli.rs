@@ -561,6 +561,12 @@ pub struct MediParamArgs {
     /// MEDI SMV radius in mm (also mSMV's)
     #[arg(long)]
     pub medi_smv_radius: Option<f64>,
+    /// MEDI-SMV: shrink the mask to where the SMV of the mask exceeds 0.999 (on by default)
+    #[arg(long)]
+    pub medi_smv_shrink_mask: bool,
+    /// MEDI-SMV: keep the full mask, high-passing the field over it
+    #[arg(long, conflicts_with = "medi_smv_shrink_mask")]
+    pub no_medi_smv_shrink_mask: bool,
     /// MEDI-mSMV (Roberts et al. 2024): filter the local field by maximum spherical mean value
     /// before MEDI, which fits it with the SMV-filtered dipole kernel (it implies the SMV). Needs
     /// at least 3 echoes
@@ -1122,7 +1128,8 @@ pub struct PipelineArgs {
     #[arg(long, value_enum)]
     pub unwrapping_algorithm: Option<UnwrapAlgorithmArg>,
 
-    /// Background field removal algorithm
+    /// Background field removal algorithm (default: vsharp; pdf with --qsm-algorithm medi, as in
+    /// its authors' pipeline)
     #[arg(long, value_enum)]
     pub bf_algorithm: Option<BfAlgorithmArg>,
 
@@ -2640,6 +2647,10 @@ pub struct InvertMediArgs {
     /// SMV radius in mm (also mSMV's)
     #[arg(long)]
     pub smv_radius: Option<f64>,
+    /// With SMV, shrink the mask to where the SMV of the mask exceeds 0.999; false keeps the
+    /// full mask, high-passing the field over it [default: on]
+    #[arg(long)]
+    pub smv_shrink_mask: Option<bool>,
     /// MEDI-mSMV (Roberts et al. 2024): filter the local field by maximum spherical mean value
     /// first, and fit it with the SMV-filtered dipole kernel. Needs at least 3 echoes
     #[arg(long)]

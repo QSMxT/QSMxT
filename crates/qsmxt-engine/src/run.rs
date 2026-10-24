@@ -2338,7 +2338,7 @@ pub(crate) mod tests {
     fn a_dry_run_of_a_configuration_as_given_is_that_of_the_normalised_one() {
         let (facts, store) = phantom();
         type Edit = fn(&mut PipelineConfig);
-        let cases: [(Edit, &str); 5] = [
+        let cases: [(Edit, &str); 6] = [
             (|c| c.pipeline.do_r2primemap = true, "t2star_r2star"),
             (|c| c.pipeline.do_analysis = true, "segmentation"),
             (|c| { c.pipeline.do_qsm = false; c.pipeline.do_smwi = true; }, "invert"),
@@ -2346,6 +2346,8 @@ pub(crate) mod tests {
              "t2star_r2star"),
             (|c| { c.qsm.reference = crate::enums::QsmReference::Region; c.qsm.reference_region = Some("thalamus".into()); },
              "segmentation"),
+            // MEDI's PDF: the background removal the run takes is keyed as such.
+            (|c| c.inversion.algorithm = crate::enums::QsmAlgorithm::Medi, "bgremove"),
         ];
         for (edit, needed) in cases {
             let mut raw = config();

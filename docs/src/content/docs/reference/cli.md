@@ -66,7 +66,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--cosmos-tol <COSMOS_TOL>` | Magnitude-weighted COSMOS: conjugate-gradient tolerance (needs --cosmos-magnitude-weighting) |
 | `--cosmos-max-iter <COSMOS_MAX_ITER>` | Magnitude-weighted COSMOS: conjugate-gradient iteration cap (needs --cosmos-magnitude-weighting) |
 | `--unwrapping-algorithm <UNWRAPPING_ALGORITHM>` | Unwrapping algorithm. Values: `romeo`, `laplacian`. |
-| `--bf-algorithm <BF_ALGORITHM>` | Background field removal algorithm. Values: `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm`. |
+| `--bf-algorithm <BF_ALGORITHM>` | Background field removal algorithm (default: vsharp; pdf with --qsm-algorithm medi, as in its authors' pipeline) Values: `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm`. |
 | `--masking-input <MASKING_INPUT>` | Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude) Values: `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality`. |
 | `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
 | `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
@@ -112,6 +112,8 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--medi-smv` | MEDI: high-pass the local field with a spherical mean value filter, removing residual background near the brain edge (MEDI-SMV; on by default) |
 | `--no-medi-smv` | MEDI: no SMV high-pass of the local field. |
 | `--medi-smv-radius <MEDI_SMV_RADIUS>` | MEDI SMV radius in mm (also mSMV's) |
+| `--medi-smv-shrink-mask` | MEDI-SMV: shrink the mask to where the SMV of the mask exceeds 0.999 (on by default) |
+| `--no-medi-smv-shrink-mask` | MEDI-SMV: keep the full mask, high-passing the field over it. |
 | `--medi-msmv` | MEDI-mSMV (Roberts et al. 2024): filter the local field by maximum spherical mean value before MEDI, which fits it with the SMV-filtered dipole kernel (it implies the SMV). Needs at least 3 echoes. |
 | `--medi-msmv-maxk <MEDI_MSMV_MAXK>` | MEDI-mSMV: the boundary correction makes at most this many passes, less one. |
 | `--medi-msmv-vessel-radius <MEDI_MSMV_VESSEL_RADIUS>` | MEDI-mSMV: largest vessel thickness of the vessel mask, in voxels (default: 15, or 8 × the largest voxel dimension if that is more) |
@@ -446,7 +448,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--cosmos-tol <COSMOS_TOL>` | Magnitude-weighted COSMOS: conjugate-gradient tolerance (needs --cosmos-magnitude-weighting) |
 | `--cosmos-max-iter <COSMOS_MAX_ITER>` | Magnitude-weighted COSMOS: conjugate-gradient iteration cap (needs --cosmos-magnitude-weighting) |
 | `--unwrapping-algorithm <UNWRAPPING_ALGORITHM>` | Unwrapping algorithm. Values: `romeo`, `laplacian`. |
-| `--bf-algorithm <BF_ALGORITHM>` | Background field removal algorithm. Values: `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm`. |
+| `--bf-algorithm <BF_ALGORITHM>` | Background field removal algorithm (default: vsharp; pdf with --qsm-algorithm medi, as in its authors' pipeline) Values: `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm`. |
 | `--masking-input <MASKING_INPUT>` | Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude) Values: `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality`. |
 | `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
 | `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
@@ -492,6 +494,8 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--medi-smv` | MEDI: high-pass the local field with a spherical mean value filter, removing residual background near the brain edge (MEDI-SMV; on by default) |
 | `--no-medi-smv` | MEDI: no SMV high-pass of the local field. |
 | `--medi-smv-radius <MEDI_SMV_RADIUS>` | MEDI SMV radius in mm (also mSMV's) |
+| `--medi-smv-shrink-mask` | MEDI-SMV: shrink the mask to where the SMV of the mask exceeds 0.999 (on by default) |
+| `--no-medi-smv-shrink-mask` | MEDI-SMV: keep the full mask, high-passing the field over it. |
 | `--medi-msmv` | MEDI-mSMV (Roberts et al. 2024): filter the local field by maximum spherical mean value before MEDI, which fits it with the SMV-filtered dipole kernel (it implies the SMV). Needs at least 3 echoes. |
 | `--medi-msmv-maxk <MEDI_MSMV_MAXK>` | MEDI-mSMV: the boundary correction makes at most this many passes, less one. |
 | `--medi-msmv-vessel-radius <MEDI_MSMV_VESSEL_RADIUS>` | MEDI-mSMV: largest vessel thickness of the vessel mask, in voxels (default: 15, or 8 × the largest voxel dimension if that is more) |
@@ -765,7 +769,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--cosmos-tol <COSMOS_TOL>` | Magnitude-weighted COSMOS: conjugate-gradient tolerance (needs --cosmos-magnitude-weighting) |
 | `--cosmos-max-iter <COSMOS_MAX_ITER>` | Magnitude-weighted COSMOS: conjugate-gradient iteration cap (needs --cosmos-magnitude-weighting) |
 | `--unwrapping-algorithm <UNWRAPPING_ALGORITHM>` | Unwrapping algorithm. Values: `romeo`, `laplacian`. |
-| `--bf-algorithm <BF_ALGORITHM>` | Background field removal algorithm. Values: `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm`. |
+| `--bf-algorithm <BF_ALGORITHM>` | Background field removal algorithm (default: vsharp; pdf with --qsm-algorithm medi, as in its authors' pipeline) Values: `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm`. |
 | `--masking-input <MASKING_INPUT>` | Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude) Values: `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality`. |
 | `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
 | `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
@@ -811,6 +815,8 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--medi-smv` | MEDI: high-pass the local field with a spherical mean value filter, removing residual background near the brain edge (MEDI-SMV; on by default) |
 | `--no-medi-smv` | MEDI: no SMV high-pass of the local field. |
 | `--medi-smv-radius <MEDI_SMV_RADIUS>` | MEDI SMV radius in mm (also mSMV's) |
+| `--medi-smv-shrink-mask` | MEDI-SMV: shrink the mask to where the SMV of the mask exceeds 0.999 (on by default) |
+| `--no-medi-smv-shrink-mask` | MEDI-SMV: keep the full mask, high-passing the field over it. |
 | `--medi-msmv` | MEDI-mSMV (Roberts et al. 2024): filter the local field by maximum spherical mean value before MEDI, which fits it with the SMV-filtered dipole kernel (it implies the SMV). Needs at least 3 echoes. |
 | `--medi-msmv-maxk <MEDI_MSMV_MAXK>` | MEDI-mSMV: the boundary correction makes at most this many passes, less one. |
 | `--medi-msmv-vessel-radius <MEDI_MSMV_VESSEL_RADIUS>` | MEDI-mSMV: largest vessel thickness of the vessel mask, in voxels (default: 15, or 8 × the largest voxel dimension if that is more) |
@@ -1893,6 +1899,7 @@ qsmxt invert medi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FI
 | `--merit <MERIT>` | Enable MERIT weighting. |
 | `--smv <SMV>` | High-pass the local field with a spherical mean value filter, removing residual background near the brain edge (MEDI-SMV) [default: on]. |
 | `--smv-radius <SMV_RADIUS>` | SMV radius in mm (also mSMV's) |
+| `--smv-shrink-mask <SMV_SHRINK_MASK>` | With SMV, shrink the mask to where the SMV of the mask exceeds 0.999; false keeps the full mask, high-passing the field over it [default: on]. |
 | `--msmv` | MEDI-mSMV (Roberts et al. 2024): filter the local field by maximum spherical mean value first, and fit it with the SMV-filtered dipole kernel. Needs at least 3 echoes. |
 | `--msmv-maxk <MSMV_MAXK>` | MEDI-mSMV: the boundary correction makes at most this many passes, less one. |
 | `--msmv-vessel-radius <MSMV_VESSEL_RADIUS>` | MEDI-mSMV: largest vessel thickness of the vessel mask, in voxels (default: 15, or 8 × the largest voxel dimension if that is more) |
