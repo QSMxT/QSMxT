@@ -542,7 +542,7 @@ unless you choose otherwise:
 | --- | --- | --- |
 | Phase unwrapping | `laplacian`, each echo over the whole volume | `--unwrapping-algorithm` |
 | Laplacian solver | `mirror` | `--laplacian-solver` |
-| Echo combination | `qsmart-echofit`: a magnitude-weighted fit of phase against TE through the origin, which also marks the voxels with a high fit residual; QSMART leaves those out | `--b0-estimation` (threshold: `--qsmart-fit-threshold`, default 40) |
+| Echo combination | `qsmart-echofit`: a magnitude-weighted fit of phase against TE through the origin, which also marks the voxels whose blurred fit residual exceeds the 99th percentile; QSMART leaves those out | `--b0-estimation`; the threshold with `--qsmart-fit-percentile`, or a fixed residual with `--qsmart-fit-threshold` (`--qsmart-fit-threshold-mode percentile\|absolute`) |
 | Magnitude for vessel detection | `mean-n4`: the mean over echoes, N4 bias-corrected ([Tustison et al. 2010](https://doi.org/10.1109/TMI.2010.2046908)) | `--qsmart-vessel-magnitude combined` for the combined magnitude (root sum of squares, inhomogeneity-corrected unless `--no-inhomogeneity-correction`) |
 | Vessel sizes (`--qsmart-vasc-sphere-radius`, `--qsmart-frangi-scale-*`) | voxels: 8, and scales 0.5 to 6 in steps of 0.5 | `--qsmart-vessel-units mm` to give them in mm, converted with the mean voxel size |
 
@@ -553,8 +553,10 @@ echo fit needs Laplacian unwrapping, so `--b0-estimation qsmart-echofit` with
 another inversion, `qsmart-echofit` brings Laplacian unwrapping with the `mirror`
 solver unless you choose otherwise, and its reliability map is not used.
 
-A configuration file that gives the vessel sizes without `vessel_size_units` reads
-them in mm, and says so; add `vessel_size_units = "voxels"` to read them in voxels.
+A configuration file without `schema_version` that gives the vessel sizes without
+`vessel_size_units` reads them in mm, and says so; add `vessel_size_units = "voxels"`
+to read them in voxels. A full configuration file an earlier QSMxT wrote, with the
+sizes at that release's defaults, takes today's defaults in voxels.
 
 The echo fit's reliability map is kept in the unwrap step's workflow folder
 (`*_desc-echofit_mask`), and the vessel-detection magnitude in QSMART's

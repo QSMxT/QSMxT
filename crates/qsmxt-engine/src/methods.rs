@@ -1494,14 +1494,13 @@ fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
         }
         B0Estimation::QsmartEchofit => {
             doc.cite(&CITE_QSMART);
-            let threshold = if differs(fm.qsmart_fit_threshold, d.qsmart_fit_threshold) {
-                format!(" (residual threshold {})", fm.qsmart_fit_threshold)
-            } else {
-                String::new()
+            let threshold = match fm.qsmart_fit_threshold() {
+                qsm_core::utils::QsmartFitThreshold::Percentile(p) => format!("its {p}th percentile"),
+                qsm_core::utils::QsmartFitThreshold::Absolute(t) => format!("{t}"),
             };
             // The voxels the fit marks unreliable are left out of QSMART only.
             let excluded = if config.inversion.algorithm == QsmAlgorithm::Qsmart {
-                format!(", and voxels with a high fit residual{threshold} were excluded from the QSMART reconstruction")
+                format!(", and voxels whose blurred fit residual exceeded {threshold} were excluded from the QSMART reconstruction")
             } else {
                 String::new()
             };
@@ -2385,7 +2384,7 @@ mod tests {
         for said in ["separately for each echo over the whole volume using the Laplacian method",
                      "on the volume mirrored along each axis",
                      "fit of phase vs echo time through the origin, as in QSMART (Yaghmaie et al., 2021)",
-                     "voxels with a high fit residual were excluded from the QSMART reconstruction",
+                     "voxels whose blurred fit residual exceeded its 99th percentile were excluded from the QSMART reconstruction",
                      "mean magnitude over echoes, bias-corrected with N4 (Tustison et al., 2010)",
                      "https://doi.org/10.1109/TMI.2010.2046908"] {
             assert!(out.contains(said), "{said:?} not in: {out}");
@@ -2396,11 +2395,12 @@ mod tests {
         // The overrides, said as what was done.
         config.inversion.qsmart.vessel_magnitude = QsmartVesselMagnitude::Combined;
         config.inversion.qsmart.vessel_size_units = VesselSizeUnits::Mm;
+        config.field_mapping.qsmart_fit_threshold_mode = QsmartFitThresholdMode::Absolute;
         config.field_mapping.qsmart_fit_threshold = 30.0;
         let out = generate_methods(&config);
         for said in ["detected on the inhomogeneity-corrected RSS-combined magnitude",
                      "a bottom-hat sphere radius of 8 mm", "Frangi scales from 0.5 to 6 mm in steps of 0.5 mm",
-                     "(residual threshold 30)"] {
+                     "blurred fit residual exceeded 30 were excluded"] {
             assert!(out.contains(said), "{said:?} not in: {out}");
         }
         assert!(!out.contains("Tustison"), "{out}");

@@ -2928,6 +2928,24 @@ pub(crate) mod tests {
         }
     }
 
+    /// QSMART's vessel magnitude is the mean over every echo: a run missing one echo's magnitude
+    /// is refused, naming it, rather than averaging the others.
+    #[test]
+    fn qsmart_refuses_a_missing_echo_magnitude() {
+        let (facts, mut store) = phantom();
+        let mut config = config();
+        config.inversion.algorithm = QsmAlgorithm::Qsmart;
+        let plan = crate::plan::plan(&config, &facts);
+        run(&plan, &config, &facts, &mut store, &mut ()).unwrap();
+        // Echo 2's magnitude gone after the field map was made, and QSMART to run again.
+        store.take(&Item::AcquiredMagnitude(2));
+        store.take(&Item::Magnitude(2));
+        config.inversion.qsmart.vasc_sphere_radius += 1;
+        let plan = crate::plan::plan(&config, &facts);
+        let e = run(&plan, &config, &facts, &mut store, &mut ()).unwrap_err().to_string();
+        assert!(e.contains("no magnitude for echo 2 of") && e.contains("--qsmart-vessel-magnitude combined"), "{e}");
+    }
+
     /// SynthSeg in memory. Minutes in a debug build, so run with `--ignored`; skipped where the
     /// weights have not been downloaded.
     #[test]

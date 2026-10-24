@@ -47,7 +47,10 @@ pub fn params(config: &PipelineConfig, meta: &RunMetadata) -> serde_json::Value 
         "laplacian_fft_pad": fm.laplacian_fft_pad,
     });
     if fm.b0_estimation == crate::enums::B0Estimation::QsmartEchofit {
-        params["qsmart_fit_threshold"] = serde_json::json!(fm.qsmart_fit_threshold);
+        params["qsmart_fit_threshold"] = match fm.qsmart_fit_threshold() {
+            qsm_core::utils::QsmartFitThreshold::Percentile(p) => serde_json::json!({ "percentile": p }),
+            qsm_core::utils::QsmartFitThreshold::Absolute(t) => serde_json::json!({ "absolute": t }),
+        };
     }
     params
 }
@@ -84,8 +87,12 @@ pub fn map_field(
         log::info!("Phase unwrapping ({}, single echo)", unwrap_name);
     }
     if fm.b0_estimation == crate::enums::B0Estimation::QsmartEchofit {
+        let threshold = match fm.qsmart_fit_threshold() {
+            qsm_core::utils::QsmartFitThreshold::Percentile(p) => format!("the {p}th percentile of the blurred residual"),
+            qsm_core::utils::QsmartFitThreshold::Absolute(t) => format!("a residual of {t}"),
+        };
         log::info!("Laplacian unwrapping per echo over the whole volume ({} solver), then QSMART's echo fit \
-                    (fit threshold {})", fm.laplacian_solver, fm.qsmart_fit_threshold);
+                    (reliability threshold: {threshold})", fm.laplacian_solver);
     } else if fm.unwrapping_algorithm == crate::enums::UnwrappingAlgorithm::Laplacian && meta.n_echoes > 1 {
         log::info!("Laplacian unwrapping per echo ({} solver), then {} ({} weighting)",
             fm.laplacian_solver, fm.b0_estimation, fm.b0_weight_type);

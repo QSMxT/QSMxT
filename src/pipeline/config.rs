@@ -232,6 +232,26 @@ pub fn apply_qsmart_overrides(config: &mut PipelineConfig, p: &cli::QsmartParamA
 /// are matched case-insensitively and nothing else is guessed at here. Whether the region exists
 /// is [`validate_reference_region`]'s job — it needs the SynthSeg generation, which this function
 /// is called too early to know.
+/// QSMART's echo-fit threshold flags onto `fm`: the mode as given, or else the mode of the value
+/// given (a percentile, or a fixed residual); each value as given.
+pub fn apply_qsmart_fit_threshold(
+    fm: &mut FieldMappingConfig, mode: Option<cli::QsmartFitThresholdModeArg>,
+    percentile: Option<f64>, threshold: Option<f64>,
+) {
+    let implied = match (percentile, threshold) {
+        (Some(_), None) => Some(QsmartFitThresholdMode::Percentile),
+        (None, Some(_)) => Some(QsmartFitThresholdMode::Absolute),
+        _ => None,
+    };
+    let mode = mode.map(|m| match m {
+        cli::QsmartFitThresholdModeArg::Percentile => QsmartFitThresholdMode::Percentile,
+        cli::QsmartFitThresholdModeArg::Absolute => QsmartFitThresholdMode::Absolute,
+    });
+    if let Some(m) = mode.or(implied) { fm.qsmart_fit_threshold_mode = m; }
+    if let Some(p) = percentile { fm.qsmart_fit_percentile = p; }
+    if let Some(t) = threshold { fm.qsmart_fit_threshold = t; }
+}
+
 pub fn parse_reference_spec(spec: &str) -> (QsmReference, Option<String>) {
     match spec.trim().to_lowercase().as_str() {
         "mean" => (QsmReference::Mean, None),
@@ -362,7 +382,8 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
                 cli::B0EstimationArg::QsmartEchofit => B0Estimation::QsmartEchofit,
             };
         }
-        if let Some(v) = args.qsmart_fit_threshold { config.field_mapping.qsmart_fit_threshold = v; }
+        apply_qsmart_fit_threshold(&mut config.field_mapping, args.qsmart_fit_threshold_mode,
+                                   args.qsmart_fit_percentile, args.qsmart_fit_threshold);
         if let Some(a) = args.b0_weight_type {
             config.field_mapping.b0_weight_type = match a {
                 cli::B0WeightTypeArg::PhaseSNR => B0WeightType::PhaseSNR,
@@ -1155,7 +1176,16 @@ mod tests {
         let fm = qsmart(&["--laplacian-solver", "dct", "--b0-estimation", "weighted-avg", "--qsmart-fit-threshold", "30"]);
         assert_eq!((fm.unwrapping_algorithm, fm.laplacian_solver, fm.b0_estimation),
                    (UnwrappingAlgorithm::Laplacian, LaplacianSolver::Dct, B0Estimation::WeightedAvg));
-        assert_eq!(fm.qsmart_fit_threshold, 30.0);
+        // A fixed residual given alone selects the fixed mode; a percentile, the percentile mode.
+        assert_eq!(fm.qsmart_fit_threshold(), qsm_core::utils::QsmartFitThreshold::Absolute(30.0));
+        assert_eq!(qsmart(&[]).qsmart_fit_threshold(), qsm_core::utils::QsmartFitThreshold::default());
+        assert_eq!(qsmart(&["--qsmart-fit-percentile", "95"]).qsmart_fit_threshold(),
+                   qsm_core::utils::QsmartFitThreshold::Percentile(95.0));
+        // The mode as given wins.
+        let fm = qsmart(&["--qsmart-fit-threshold-mode", "percentile", "--qsmart-fit-threshold", "30"]);
+        assert_eq!(fm.qsmart_fit_threshold(), qsm_core::utils::QsmartFitThreshold::default());
+        assert_eq!(qsmart(&["--qsmart-fit-threshold-mode", "absolute"]).qsmart_fit_threshold(),
+                   qsm_core::utils::QsmartFitThreshold::Absolute(qsm_core::utils::QSMART_FIT_THRESHOLD));
         let c = config_from_cli(&["qsmxt", "run", "<bids>", "--qsm-algorithm", "qsmart",
                                   "--qsmart-vessel-magnitude", "combined", "--qsmart-vessel-units", "mm"]);
         assert_eq!(c.inversion.qsmart.vessel_magnitude, QsmartVesselMagnitude::Combined);

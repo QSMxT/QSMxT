@@ -175,10 +175,20 @@ pub(super) fn table() -> Vec<Def> {
             o("qsmart-echofit", "qsmart-echofit", "QSMART echo fit", "QSMART's: magnitude-weighted fit of phase vs TE through the origin, each echo unwrapped over the whole volume; marks the voxels QSMART leaves out. Needs Laplacian unwrapping (the default with QSMART)"),
         ])).basic().flag("--b0-estimation")
         .gui("How the unwrapped echoes are combined into one field map"),
-        // QSM.rs pipeline/field_mapping.rs refuses a threshold that is not > 0.
-        d("field_mapping.qsmart_fit_threshold", FieldMap, "Fit Threshold", "Fit residual at which a voxel is left out of QSMART's reconstruction (default: 40)", Float).above(0.0).flag("--qsmart-fit-threshold").parent("field_mapping.b0_estimation")
+        d("field_mapping.qsmart_fit_threshold_mode", FieldMap, "Fit Threshold", "", Enum(vec![
+            o("percentile", "percentile", "Percentile", "A percentile of the blurred fit residual over the volume, as QSMART's authors run it (default)"),
+            o("absolute", "absolute", "Fixed", "A fixed fit residual"),
+        ])).flag("--qsmart-fit-threshold-mode").parent("field_mapping.b0_estimation")
         .when(|x| x.c.field_mapping.b0_estimation == B0Estimation::QsmartEchofit).full("QSMART Fit Threshold")
-        .gui("Fit residual at which a voxel is left out of QSMART's reconstruction"),
+        .gui("How the fit residual at which a voxel is left out of QSMART's reconstruction is set"),
+        // QSM.rs utils/qsmart.rs QsmartFitThreshold::validate refuses a percentile outside (0, 100].
+        d("field_mapping.qsmart_fit_percentile", FieldMap, "Fit Percentile", "Percentile of the blurred fit residual above which a voxel is left out of QSMART's reconstruction (default: 99)", Float).above(0.0).max(100.0).flag("--qsmart-fit-percentile").parent("field_mapping.qsmart_fit_threshold_mode")
+        .when(|x| x.c.field_mapping.b0_estimation == B0Estimation::QsmartEchofit && x.c.field_mapping.qsmart_fit_threshold_mode == QsmartFitThresholdMode::Percentile).full("QSMART Fit Percentile")
+        .gui("Percentile of the blurred fit residual above which a voxel is left out of QSMART's reconstruction"),
+        // QSM.rs utils/qsmart.rs QsmartFitThreshold::validate refuses a threshold that is not > 0.
+        d("field_mapping.qsmart_fit_threshold", FieldMap, "Fit Residual", "Blurred fit residual above which a voxel is left out of QSMART's reconstruction (default: 40)", Float).above(0.0).flag("--qsmart-fit-threshold").parent("field_mapping.qsmart_fit_threshold_mode")
+        .when(|x| x.c.field_mapping.b0_estimation == B0Estimation::QsmartEchofit && x.c.field_mapping.qsmart_fit_threshold_mode == QsmartFitThresholdMode::Absolute).full("QSMART Fit Residual")
+        .gui("Blurred fit residual above which a voxel is left out of QSMART's reconstruction"),
         d("field_mapping.b0_weight_type", FieldMap, "Weight Type", "", Enum(vec![
             o("phase-snr", "phase-snr", "Phase SNR", "mag × TE — optimal for phase SNR (default)"),
             o("phase-var", "phase-var", "Phase variance", "mag² × TE² — based on phase variance"),

@@ -112,9 +112,12 @@ fn apply_common_config(
             if let Some(v) = common.robust_fit_flag_ratio { fm.robust_fit.flag_ratio = v; }
             qsmxt_engine::to_pipeline_stages(&cfg).0.b0_estimation
         }
-        B0EstimationArg::QsmartEchofit => qsm_core::pipeline::config::B0EstimationMethod::QsmartEchofit {
-            fit_threshold: common.qsmart_fit_threshold,
-        },
+        B0EstimationArg::QsmartEchofit => {
+            let mut fm = qsmxt_engine::FieldMappingConfig::default();
+            crate::pipeline::config::apply_qsmart_fit_threshold(&mut fm, common.qsmart_fit_threshold_mode,
+                common.qsmart_fit_percentile, common.qsmart_fit_threshold);
+            qsm_core::pipeline::config::B0EstimationMethod::QsmartEchofit { fit_threshold: fm.qsmart_fit_threshold() }
+        }
     };
 }
 
@@ -416,7 +419,8 @@ mod tests {
             linear_fit_estimate_offset: None,
             robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
             robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
-            qsmart_fit_threshold: 40.0, reliability_output: None,
+            qsmart_fit_threshold_mode: None, qsmart_fit_percentile: None, qsmart_fit_threshold: None,
+            reliability_output: None,
         };
         let args = FieldmapRomeoArgs {
             common,
@@ -464,7 +468,8 @@ mod tests {
             linear_fit_estimate_offset: None,
             robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
             robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
-            qsmart_fit_threshold: 40.0, reliability_output: None,
+            qsmart_fit_threshold_mode: None, qsmart_fit_percentile: None, qsmart_fit_threshold: None,
+            reliability_output: None,
         };
         let p = resolve_scan_params(&common).unwrap();
         assert_eq!(p.echo_times, vec![0.004, 0.008, 0.012]);
@@ -500,7 +505,8 @@ mod tests {
             linear_fit_estimate_offset: None,
             robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
             robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
-            qsmart_fit_threshold: 40.0, reliability_output: None,
+            qsmart_fit_threshold_mode: None, qsmart_fit_percentile: None, qsmart_fit_threshold: None,
+            reliability_output: None,
         };
         let args = FieldmapRomeoArgs {
             common,

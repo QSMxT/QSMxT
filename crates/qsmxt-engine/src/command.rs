@@ -203,7 +203,12 @@ fn command_for(config: &PipelineConfig) -> String {
     emit_chosen(&mut parts, "--b0-estimation", &config.field_mapping.b0_estimation, &d.field_mapping.b0_estimation,
                 config.field_mapping.b0_estimation_chosen && config.inversion.algorithm == QsmAlgorithm::Qsmart);
     if config.field_mapping.b0_estimation == B0Estimation::QsmartEchofit {
-        emit_f64(&mut parts, "--qsmart-fit-threshold", config.field_mapping.qsmart_fit_threshold, d.field_mapping.qsmart_fit_threshold);
+        let (f, fd) = (&config.field_mapping, &d.field_mapping);
+        emit_enum(&mut parts, "--qsmart-fit-threshold-mode", &f.qsmart_fit_threshold_mode, &fd.qsmart_fit_threshold_mode);
+        match f.qsmart_fit_threshold_mode {
+            QsmartFitThresholdMode::Percentile => emit_f64(&mut parts, "--qsmart-fit-percentile", f.qsmart_fit_percentile, fd.qsmart_fit_percentile),
+            QsmartFitThresholdMode::Absolute => emit_f64(&mut parts, "--qsmart-fit-threshold", f.qsmart_fit_threshold, fd.qsmart_fit_threshold),
+        }
     }
     emit_enum(&mut parts, "--b0-weight-type", &config.field_mapping.b0_weight_type, &d.field_mapping.b0_weight_type);
     if config.field_mapping.b0_weight_type == B0WeightType::AssumedDecay {
@@ -1055,13 +1060,21 @@ mod tests {
             assert!(cmd.contains(flag), "{cmd}");
         }
         assert!(!cmd.contains("--qsmart-fit-threshold") && !cmd.contains("--qsmart-vessel"), "{cmd}");
-        c.field_mapping.qsmart_fit_threshold = 30.0;
+        c.field_mapping.qsmart_fit_percentile = 95.0;
         c.inversion.qsmart.vessel_magnitude = QsmartVesselMagnitude::Combined;
         c.inversion.qsmart.vessel_size_units = VesselSizeUnits::Mm;
         let cmd = generate_command(&c);
-        for flag in ["--qsmart-fit-threshold 30", "--qsmart-vessel-magnitude combined", "--qsmart-vessel-units mm"] {
+        for flag in ["--qsmart-fit-percentile 95", "--qsmart-vessel-magnitude combined", "--qsmart-vessel-units mm"] {
             assert!(cmd.contains(flag), "{cmd}");
         }
+        assert!(!cmd.contains("--qsmart-fit-threshold"), "{cmd}");
+        // A fixed threshold: the mode, and the threshold when changed; not the percentile.
+        c.field_mapping.qsmart_fit_threshold_mode = QsmartFitThresholdMode::Absolute;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--qsmart-fit-threshold-mode absolute") && !cmd.contains("--qsmart-fit-percentile")
+                && !cmd.contains("--qsmart-fit-threshold "), "{cmd}");
+        c.field_mapping.qsmart_fit_threshold = 30.0;
+        assert!(generate_command(&c).contains("--qsmart-fit-threshold 30"), "{}", generate_command(&c));
         // Chosen general defaults are said, which keeps them.
         c.field_mapping.laplacian_solver_chosen = true;
         c.field_mapping.b0_estimation_chosen = true;

@@ -1502,7 +1502,12 @@ pub struct PipelineFormState {
     pub b0_estimation: usize,    // 0=weighted_avg, 1=linear_fit, 2=robust_fit, 3=qsmart_echofit
     pub b0_weight_type: usize,   // 0=phase_snr, 1=phase_var, 2=average, 3=tes, 4=mag, 5=assumed-decay
     pub b0_weight_assumed_t2star_ms: String,
-    /// QSMART's echo fit's residual threshold.
+    /// Index into [`QSMART_FIT_THRESHOLD_MODE_OPTIONS`]: how QSMART's echo fit sets its residual
+    /// threshold (0 = percentile, 1 = fixed).
+    pub qsmart_fit_threshold_mode: usize,
+    /// QSMART's echo fit's residual percentile, with the percentile mode.
+    pub qsmart_fit_percentile: String,
+    /// QSMART's echo fit's fixed residual threshold, with the fixed mode.
     pub qsmart_fit_threshold: String,
     /// Index into [`LAPLACIAN_SOLVER_OPTIONS`] (0 = dct, 1 = fft, 2 = mirror).
     pub laplacian_solver: usize,
@@ -1938,6 +1943,9 @@ impl Default for PipelineFormState {
             b0_estimation: 0,    // weighted_avg
             b0_weight_type: 0,   // phase_snr
             b0_weight_assumed_t2star_ms: format!("{}", qsmxt_engine::default_b0_weight_assumed_t2star_ms()),
+            qsmart_fit_threshold_mode: QSMART_FIT_THRESHOLD_MODE_OPTIONS.iter()
+                .position(|o| *o == qsmxt_engine::QsmartFitThresholdMode::default().to_string()).unwrap_or(0),
+            qsmart_fit_percentile: format!("{}", qsmxt_engine::default_qsmart_fit_percentile()),
             qsmart_fit_threshold: format!("{}", qsmxt_engine::default_qsmart_fit_threshold()),
             laplacian_solver: 0, // dct
             unwrapping_chosen: false,
@@ -2285,6 +2293,11 @@ pub const QSMART_VESSEL_MAGNITUDE_OPTIONS: &[&str] = &["mean-n4", "combined"];
 const QSMART_VESSEL_MAGNITUDE_HELP: &[&str] = &[
     "Mean over echoes, N4 bias-corrected, as QSMART prepares it (default)",
     "The combined magnitude: root sum of squares over echoes, inhomogeneity-corrected when that is on",
+];
+pub const QSMART_FIT_THRESHOLD_MODE_OPTIONS: &[&str] = &["percentile", "absolute"];
+const QSMART_FIT_THRESHOLD_MODE_HELP: &[&str] = &[
+    "A percentile of the blurred fit residual over the volume, as QSMART's authors run it (default)",
+    "A fixed fit residual",
 ];
 pub const QSMART_VESSEL_UNITS_OPTIONS: &[&str] = &["voxels", "mm"];
 const QSMART_VESSEL_UNITS_HELP: &[&str] = &[
@@ -2687,8 +2700,15 @@ impl PipelineFormState {
                     help: "T2* assumed to compute the fixed echo weights; no T2* map is used (default: 40 ms)" });
             }
         } else if self.b0_estimation == 3 { // QSMART's echo fit
-            rows.push(PipelineRow::Param { label: "  Fit Threshold", field: "qsmart_fit_threshold",
-                help: "Fit residual at which a voxel is left out of QSMART's reconstruction (default: 40)" });
+            rows.push(PipelineRow::AlgoSelect { label: "  Fit Threshold", field: "qsmart_fit_threshold_mode",
+                options: QSMART_FIT_THRESHOLD_MODE_OPTIONS, help: QSMART_FIT_THRESHOLD_MODE_HELP });
+            if self.qsmart_fit_threshold_mode == 0 {
+                rows.push(PipelineRow::Param { label: "    Fit Percentile", field: "qsmart_fit_percentile",
+                    help: "Percentile of the blurred fit residual above which a voxel is left out of QSMART's reconstruction (default: 99)" });
+            } else {
+                rows.push(PipelineRow::Param { label: "    Fit Residual", field: "qsmart_fit_threshold",
+                    help: "Blurred fit residual above which a voxel is left out of QSMART's reconstruction (default: 40)" });
+            }
         } else { // linear-fit / robust-fit
             rows.push(PipelineRow::Toggle {
                 label: "  Estimate Offset", field: "linear_fit_estimate_offset",
@@ -3169,7 +3189,7 @@ impl PipelineFormState {
         "qsmart_sdf_sigma1_stage1", "qsmart_sdf_sigma2_stage1", "qsmart_sdf_sigma1_stage2", "qsmart_sdf_sigma2_stage2",
         "qsmart_sdf_lower_lim", "qsmart_sdf_curv_constant",
         "qsmart_frangi_scale_min", "qsmart_frangi_scale_max", "qsmart_frangi_scale_ratio", "qsmart_frangi_c",
-        "qsmart_fit_threshold",
+        "qsmart_fit_percentile", "qsmart_fit_threshold",
         "ndi_tau", "ndi_alpha", "ndi_max_iter",
         "fansi_alpha1", "fansi_mu1", "fansi_mu2", "fansi_alpha0", "fansi_mu0", "fansi_max_iter", "fansi_tol_update", "fansi_tol_delta",
         "l1qsm_alpha1", "l1qsm_mu1", "l1qsm_mu2", "l1qsm_mu3", "l1qsm_lambda", "l1qsm_max_iter", "l1qsm_tol_update", "l1qsm_tol_delta",
@@ -3330,6 +3350,7 @@ impl PipelineFormState {
             "qsmart_frangi_scale_max" => &self.qsmart_frangi_scale_max,
             "qsmart_frangi_scale_ratio" => &self.qsmart_frangi_scale_ratio,
             "qsmart_frangi_c" => &self.qsmart_frangi_c,
+            "qsmart_fit_percentile" => &self.qsmart_fit_percentile,
             "qsmart_fit_threshold" => &self.qsmart_fit_threshold,
             "ndi_tau" => &self.ndi_tau,
             "ndi_alpha" => &self.ndi_alpha,
@@ -3550,6 +3571,7 @@ impl PipelineFormState {
             "qsmart_frangi_scale_max" => Some(&mut self.qsmart_frangi_scale_max),
             "qsmart_frangi_scale_ratio" => Some(&mut self.qsmart_frangi_scale_ratio),
             "qsmart_frangi_c" => Some(&mut self.qsmart_frangi_c),
+            "qsmart_fit_percentile" => Some(&mut self.qsmart_fit_percentile),
             "qsmart_fit_threshold" => Some(&mut self.qsmart_fit_threshold),
             "ndi_tau" => Some(&mut self.ndi_tau),
             "ndi_alpha" => Some(&mut self.ndi_alpha),
@@ -3641,6 +3663,7 @@ impl PipelineFormState {
             "laplacian_solver" => self.laplacian_solver,
             "qsmart_vessel_magnitude" => self.qsmart_vessel_magnitude,
             "qsmart_vessel_units" => self.qsmart_vessel_units,
+            "qsmart_fit_threshold_mode" => self.qsmart_fit_threshold_mode,
             "vsharp_grid" => self.vsharp_grid,
             "robust_fit_loss" => self.robust_fit_loss,
             "motion_reference" => self.motion_reference,
@@ -3683,6 +3706,7 @@ impl PipelineFormState {
             }
             "qsmart_vessel_magnitude" => self.qsmart_vessel_magnitude = val,
             "qsmart_vessel_units" => self.qsmart_vessel_units = val,
+            "qsmart_fit_threshold_mode" => self.qsmart_fit_threshold_mode = val,
             "vsharp_grid" => self.vsharp_grid = val,
             "robust_fit_loss" => self.robust_fit_loss = val,
             "motion_reference" => self.motion_reference = val,
@@ -8095,6 +8119,7 @@ mod tests {
             ("laplacian-solver", LAPLACIAN_SOLVER_OPTIONS.len(), LAPLACIAN_SOLVER_HELP.len()),
             ("qsmart-vessel-magnitude", QSMART_VESSEL_MAGNITUDE_OPTIONS.len(), QSMART_VESSEL_MAGNITUDE_HELP.len()),
             ("qsmart-vessel-units", QSMART_VESSEL_UNITS_OPTIONS.len(), QSMART_VESSEL_UNITS_HELP.len()),
+            ("qsmart-fit-threshold-mode", QSMART_FIT_THRESHOLD_MODE_OPTIONS.len(), QSMART_FIT_THRESHOLD_MODE_HELP.len()),
             ("vsharp-grid", VSHARP_GRID_OPTIONS.len(), VSHARP_GRID_HELP.len()),
             ("b0-estimation", B0_ESTIMATION_OPTIONS.len(), B0_ESTIMATION_HELP.len()),
             ("robust-fit-loss", ROBUST_FIT_LOSS_OPTIONS.len(), ROBUST_FIT_LOSS_HELP.len()),

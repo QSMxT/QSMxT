@@ -183,6 +183,30 @@ impl fmt::Display for B0Estimation {
     }
 }
 
+/// How QSMART's echo fit sets the residual threshold for its reliability map
+/// (`field_mapping.qsmart_fit_threshold_mode`; qsm-core's `QsmartFitThreshold`).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum QsmartFitThresholdMode {
+    /// A percentile of the blurred fit residual over the volume (`field_mapping.qsmart_fit_percentile`).
+    Percentile,
+    /// A fixed residual (`field_mapping.qsmart_fit_threshold`).
+    Absolute,
+}
+impl Default for QsmartFitThresholdMode {
+    fn default() -> Self {
+        match qsm_core::utils::QsmartFitThreshold::default() {
+            qsm_core::utils::QsmartFitThreshold::Percentile(_) => Self::Percentile,
+            qsm_core::utils::QsmartFitThreshold::Absolute(_) => Self::Absolute,
+        }
+    }
+}
+impl fmt::Display for QsmartFitThresholdMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", match self { Self::Percentile => "percentile", Self::Absolute => "absolute" })
+    }
+}
+
 /// The magnitude QSMART detects vessels on (`inversion.qsmart.vessel_magnitude`).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
