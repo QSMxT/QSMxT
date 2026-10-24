@@ -3706,6 +3706,10 @@
     [
      "inversion.algorithm",
      "medi"
+    ],
+    [
+     "bg_removal.algorithm",
+     "vsharp"
     ]
    ],
    "need": [

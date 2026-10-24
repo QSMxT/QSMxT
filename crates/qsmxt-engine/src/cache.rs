@@ -75,7 +75,15 @@ pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value
         "motion" => json!({ "motion_correction": config.motion_correction, "registration": config.registration }),
         "swi" => json!({ "swi": config.swi }),
         "unwrap" => json!({ "field_mapping": config.field_mapping }),
-        "bgremove" => json!({ "bg_removal": config.bg_removal, "crop": crop }),
+        // Whether the user chose the algorithm only decides which one it is (normalising), and
+        // the algorithm itself is keyed.
+        "bgremove" => {
+            let mut b = serde_json::to_value(&config.bg_removal).unwrap_or_default();
+            if let Some(o) = b.as_object_mut() {
+                o.remove("algorithm_chosen");
+            }
+            json!({ "bg_removal": b, "crop": crop })
+        }
         "invert" | "tgv" | "qsmart" => json!({ "inversion": config.inversion, "crop": crop }),
         "twopass" => json!({ "masking": masking() }),
         "reference" | "reference-singlepass" => json!({ "qsm": config.qsm }),
@@ -168,6 +176,21 @@ mod tests {
         for step in ["mask", "mask-reliable", "twopass"] {
             assert_eq!(step_cache_key(step, None, &p, &chosen), step_cache_key(step, None, &p, &base), "{step}");
         }
+    }
+
+    /// Likewise whether the user chose the background removal: the algorithm is keyed, the mark
+    /// is not.
+    #[test]
+    fn the_chosen_mark_is_not_in_the_background_removal_key() {
+        let mut base = PipelineConfig::default();
+        base.inversion.algorithm = crate::enums::QsmAlgorithm::Medi;
+        let mut chosen = base.clone();
+        chosen.bg_removal.algorithm_chosen = true;
+        let p = serde_json::json!({});
+        assert_eq!(step_cache_key("bgremove", None, &p, &chosen), step_cache_key("bgremove", None, &p, &base));
+        let mut other = base.clone();
+        other.bg_removal.algorithm = crate::enums::BfAlgorithm::Pdf;
+        assert_ne!(step_cache_key("bgremove", None, &p, &other), step_cache_key("bgremove", None, &p, &base));
     }
 
     /// Cropping changes what background removal and the inversion compute, so it is in their keys

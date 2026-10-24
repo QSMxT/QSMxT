@@ -309,6 +309,7 @@ pub const BROWSER_SUPPLIED_TOOL: &str = "qsmbly";
 pub const NOT_IN_SCHEMA: &[(&str, &str)] = &[
     ("description", "a free-text note saved with the config, not a setting"),
     ("schema_version", "the settings-file layout the config was written with (crate::migrate), not a setting"),
+    ("bg_removal.algorithm_chosen", "not a setting of its own: a front end sets it when the user picks a background removal (bg_removal.algorithm), so it is kept rather than replaced by the inversion's reference one"),
     ("masking.recipe_chosen", "not a setting of its own: a front end sets it when the user picks a mask preset or edits the recipe (masking.sections), so the recipe is kept rather than replaced by the inversion's default"),
     ("bet.fractional_intensity", "set per BET step in the mask recipe (masking.sections); this is the --bet-fractional-intensity override applied to every step"),
     ("bet.voxel_scale", "set per BET step in the mask recipe (masking.sections); this is the --bet-voxel-scale override applied to every step"),

@@ -362,6 +362,7 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 merit: args.merit.unwrap_or(d.merit),
                 smv: args.smv.unwrap_or(d.smv),
                 smv_radius: args.smv_radius.unwrap_or(d.smv_radius),
+                smv_shrink_mask: args.smv_shrink_mask.unwrap_or(d.smv_shrink_mask),
                 msmv: args.msmv.then(|| inv::MsmvParams {
                     prefilter: !args.no_msmv_prefilter,
                     maxk: args.msmv_maxk.unwrap_or(msmv_default.maxk),

@@ -226,7 +226,7 @@ pub(super) fn table() -> Vec<Def> {
             o("bfrnet", "bfrnet", "BFRnet", "BFRnet deep-learning background removal (weights auto-downloaded) — https://github.com/sunhongfu/BFRnet"),
             o("iqfm", "iqfm", "iQFM", "iQFM deep-learning joint unwrapping + background removal from phase (weights auto-downloaded) — https://doi.org/10.1016/j.neuroimage.2022.119410"),
         ])).basic().flag("--bf-algorithm").full("Background Removal")
-        .gui("How the background field, from sources outside the mask, is removed to leave the local field"),
+        .gui("How the background field, from sources outside the mask, is removed to leave the local field. Unless one is chosen, MEDI takes PDF, as its authors' pipeline does"),
         d("bg_removal.vsharp.deconvolve", Background, "Deconvolve", "Undo the SMV high-pass with a truncated-SVD deconvolution (default: off)", Bool).flag("--vsharp-deconvolve").parent("bg_removal.algorithm")
         .when(|x| x.bf("vsharp"))
         .gui("Undo the SMV high-pass with a truncated-SVD deconvolution"),
@@ -391,6 +391,8 @@ pub(super) fn table() -> Vec<Def> {
         d("inversion.medi.smv_radius", Inversion, "SMV Radius", "SMV radius in mm (also mSMV's)", Float).units("mm").flag("--medi-smv-radius").parent("inversion.algorithm")
         .when(|x| x.inv("medi"))
         .gui("SMV radius (also mSMV's)"),
+        d("inversion.medi.smv_shrink_mask", Inversion, "Shrink Mask", "With SMV, shrink the mask to where the SMV of the mask exceeds 0.999, dropping the edge band whose SMV reaches outside it. Off keeps the full mask", Bool).flag("--no-medi-smv-shrink-mask").parent("inversion.medi.smv")
+        .when(|x| x.inv("medi") && x.c.inversion.medi.smv && !x.c.inversion.medi.msmv).full("SMV Mask Shrinking"),
         d("inversion.medi.msmv", Inversion, "mSMV", "Filter the local field by maximum spherical mean value (MEDI-mSMV, Roberts 2024) before MEDI; needs at least 3 echoes", Bool).flag("--medi-msmv").parent("inversion.algorithm")
         .when(|x| x.inv("medi")).full("MEDI-mSMV")
         .gui("Filter the local field by maximum spherical mean value (mSMV) before MEDI, which removes residual background at the brain edge; needs at least three echoes"),

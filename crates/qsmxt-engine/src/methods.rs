@@ -482,6 +482,7 @@ fn param_label(field: &str) -> Label {
         "radius" | "smv_radius" => Unit("SMV radius", "mm"),
         "tik_reg" => Eq("Tikhonov weight"),
         "smv" => Toggle("SMV preprocessing"),
+        "smv_shrink_mask" => Toggle("SMV mask shrinking"),
         "merit" => Toggle("MERIT"),
         "percentage" => Eq("gradient-mask percentage"),
         "data_weighting" => Eq("data weighting mode"),
@@ -572,7 +573,15 @@ fn inversion_changes(config: &PipelineConfig, alg: QsmAlgorithm) -> Changed {
         QsmAlgorithm::Tikhonov => c.add_fields(&i.tikhonov, &d.tikhonov, &[]),
         QsmAlgorithm::Nltv => c.add_fields(&i.nltv, &d.nltv, &[]),
         // mSMV's settings are worded with it (see `medi_msmv`).
-        QsmAlgorithm::Medi => c.add_fields(&i.medi, &d.medi, &MEDI_MSMV_FIELDS),
+        // The SMV and mSMV settings are worded with them (see `medi_smv` and `medi_msmv`); the
+        // mask shrinking only applies to MEDI-SMV.
+        QsmAlgorithm::Medi => {
+            let smv_worded = i.medi.smv && !i.medi.msmv;
+            let skip: Vec<&str> = MEDI_MSMV_FIELDS.iter().copied()
+                .chain(if smv_worded { MEDI_SMV_FIELDS.as_slice() } else { &["smv_shrink_mask"] }.iter().copied())
+                .collect();
+            c.add_fields(&i.medi, &d.medi, &skip)
+        }
         QsmAlgorithm::Tfi => c.add_fields(&i.tfi, &d.tfi, &[]),
         QsmAlgorithm::Ilsqr => c.add_fields(&i.ilsqr, &d.ilsqr, &[]),
         QsmAlgorithm::Lsqr => c.add_fields(&i.lsqr, &d.lsqr, &[]),
@@ -594,6 +603,22 @@ fn inversion_changes(config: &PipelineConfig, alg: QsmAlgorithm) -> Changed {
 
 /// MEDI's mSMV settings, which [`medi_msmv`] words rather than the list of changed settings.
 const MEDI_MSMV_FIELDS: [&str; 4] = ["msmv", "msmv_maxk", "msmv_vessel_radius", "msmv_prefilter"];
+
+/// MEDI's SMV settings, which [`medi_smv`] words rather than the list of changed settings.
+const MEDI_SMV_FIELDS: [&str; 3] = ["smv", "smv_radius", "smv_shrink_mask"];
+
+/// MEDI-SMV, after MEDI's name and citation in the inversion's sentence: ", with the local field
+/// high-passed by a 5 mm spherical mean value (SMV) filter within the mask shrunk by that
+/// radius"; nothing for MEDI without SMV, MEDI-mSMV ([`medi_msmv`]) or another inversion.
+fn medi_smv(config: &PipelineConfig) -> String {
+    let m = &config.inversion.medi;
+    if config.inversion.algorithm != QsmAlgorithm::Medi || !m.smv || m.msmv {
+        return String::new();
+    }
+    format!(", with the local field high-passed by a {} mm spherical mean value (SMV) filter {}",
+        m.smv_radius,
+        if m.smv_shrink_mask { "within the mask shrunk by that radius" } else { "over the full mask" })
+}
 
 /// MEDI-mSMV, after MEDI's name and citation in the inversion's sentence: ", with maximum
 /// spherical mean value (mSMV) filtering of the local field (Roberts et al., 2024)", and its
@@ -976,7 +1001,7 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                 let (name, cite) = inversion_name_cite(config.inversion.algorithm);
                 let target = if total_field { " on the total field within the brain mask" } else { "" };
                 doc.cite(cite);
-                let msmv = medi_msmv(config, &mut doc);
+                let msmv = medi_msmv(config, &mut doc) + &medi_smv(config);
                 let changes = inversion_changes(config, config.inversion.algorithm);
                 doc.say(&both(Stage::Inversion), format!("Dipole inversion was performed{} using {} ({}){msmv}{}.",
                     target, name, cite_inline(cite),
@@ -1737,6 +1762,11 @@ fn describe_masking(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
 }
 
 /// Display name + citation for a background-field removal algorithm.
+/// A background-field remover's name, as the methods text gives it.
+pub(crate) fn bg_removal_name(alg: BfAlgorithm) -> &'static str {
+    bg_removal_name_cite(alg).0
+}
+
 fn bg_removal_name_cite(alg: BfAlgorithm) -> (&'static str, &'static Citation) {
     match alg {
         BfAlgorithm::Vsharp => ("V-SHARP", &CITE_VSHARP),
@@ -2505,6 +2535,31 @@ mod tests {
         assert!(out.contains("(Roberts et al., 2024; at most 8 boundary-correction passes), with λ = 500."), "{out}");
         config.inversion.algorithm = QsmAlgorithm::Rts;
         assert!(!generate_methods(&config).contains("mSMV"));
+    }
+
+    /// MEDI's route: PDF's local field (unless another background removal is chosen), then MEDI
+    /// with its SMV high-pass, whose mask shrinking is said either way.
+    #[test]
+    fn medi_methods_say_pdf_and_the_smv_step() {
+        let mut config = PipelineConfig::default();
+        config.inversion.algorithm = QsmAlgorithm::Medi;
+        let out = generate_methods(&config);
+        assert!(out.contains("Background field removal was performed using PDF"), "{out}");
+        assert!(out.contains("(Liu et al., 2011), with the local field high-passed by a 5 mm spherical mean value (SMV) filter within the mask shrunk by that radius."), "{out}");
+        config.inversion.medi.smv_shrink_mask = false;
+        config.inversion.medi.lambda = 500.0;
+        let out = generate_methods(&config);
+        assert!(out.contains("(SMV) filter over the full mask, with λ = 500."), "{out}");
+        assert!(!out.contains("shrinking"), "{out}");
+        // Without SMV the shrinking does not apply, and is not said.
+        config.inversion.medi.smv = false;
+        let out = generate_methods(&config);
+        assert!(!out.contains("high-passed") && !out.contains("shrink"), "{out}");
+        assert!(out.contains("SMV preprocessing disabled"), "{out}");
+        // A chosen background removal is kept.
+        config.bg_removal.algorithm = BfAlgorithm::Vsharp;
+        config.bg_removal.algorithm_chosen = true;
+        assert!(generate_methods(&config).contains("Background field removal was performed using V-SHARP"));
     }
 
     /// #282: for every inversion, the methods text describes background field removal exactly
