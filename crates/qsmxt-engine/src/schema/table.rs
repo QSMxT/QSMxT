@@ -145,13 +145,14 @@ pub(super) fn table() -> Vec<Def> {
         d("field_mapping.laplacian_fft_pad", FieldMap, "FFT Pad (voxels)", "Zero-padding per side: one value for every axis or three (x y z). Default: 64", IntVec3).units("voxels").flag("--laplacian-fft-pad").parent("field_mapping.laplacian_solver")
         .when(|x| x.laplacian && x.c.field_mapping.laplacian_solver == LaplacianSolver::Fft).full("Laplacian FFT Padding")
         .gui("Zero-padding per side: one value for every axis, or three (x y z)"),
+        // MEDI's complex fit fits its own phase offset: QSM.rs does not remove them first.
         d("field_mapping.phase_offset_removal", FieldMap, "Phase Offset Removal", "Remove spatially-varying phase offset using HIP (Eckstein et al., 2018); multi-echo only", Bool).flag("--phase-offset-removal").parent("field_mapping.unwrapping_algorithm")
-        .when(|x| !x.laplacian),
+        .when(|x| !x.laplacian && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit),
         d("field_mapping.phase_offset_sigma_mm", FieldMap, "Sigma (mm)", "Gaussian smoothing sigma in mm (x y z)", FloatVec3).units("mm").flag("--phase-offset-sigma-mm").parent("field_mapping.phase_offset_removal")
-        .when(|x| !x.laplacian && x.c.field_mapping.phase_offset_removal).full("Phase Offset Sigma")
+        .when(|x| !x.laplacian && x.c.field_mapping.phase_offset_removal && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit).full("Phase Offset Sigma")
         .gui("Gaussian smoothing sigma (x y z)"),
         d("field_mapping.bipolar_correction", FieldMap, "Bipolar Correction", "Remove the linear phase artefact of bipolar readout gradients (needs at least 3 echoes; fewer: skipped)", Bool).flag("--bipolar-correction").parent("field_mapping.phase_offset_removal")
-        .when(|x| !x.laplacian && x.c.field_mapping.phase_offset_removal),
+        .when(|x| !x.laplacian && x.c.field_mapping.phase_offset_removal && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit),
         d("field_mapping.romeo.individual", FieldMap, "Individual Mode", "Unwrap each echo independently (recommended). Off = template-based temporal unwrapping.", Bool).flag("--no-romeo-individual").parent("field_mapping.unwrapping_algorithm")
         .when(|x| !x.laplacian).full("Unwrap Echoes Individually"),
         // The config counts echoes from 0; the TUI and --romeo-template from 1.
@@ -197,6 +198,7 @@ pub(super) fn table() -> Vec<Def> {
             o("linear-fit", "linear-fit", "Linear fit", "Magnitude-weighted linear fit of phase vs TE"),
             o("robust-fit", "robust-fit", "Robust fit", "Motion-robust linear fit (IRLS): down-weights echoes departing from a straight line, per voxel. Needs 4 echoes (3 without offset)"),
             o("qsmart-echofit", "qsmart-echofit", "QSMART echo fit", "QSMART's: magnitude-weighted fit of phase vs TE through the origin, each echo unwrapped over the whole volume; marks the voxels QSMART leaves out. Needs Laplacian unwrapping (the default with QSMART)"),
+            o("complex-fit", "complex-fit", "Complex fit", "MEDI's field map (Fit_ppm_complex): a magnitude-weighted fit of the complex echoes, then unwrapping of the fitted phase. Needs the magnitude and evenly spaced echoes; no phase offset removal or bipolar correction"),
         ])).basic().flag("--b0-estimation")
         .gui("How the unwrapped echoes are combined into one field map"),
         d("field_mapping.qsmart_fit_threshold_mode", FieldMap, "Fit Threshold", "", Enum(vec![
@@ -254,6 +256,14 @@ pub(super) fn table() -> Vec<Def> {
         d("field_mapping.robust_fit.flag_ratio", FieldMap, "Flag Ratio", "Reporting only: flag an echo whose outlier score exceeds this x the best echo's (>= 1)", Float).min(1.0).flag("--robust-fit-flag-ratio").parent("field_mapping.b0_estimation")
         .when(|x| x.c.field_mapping.b0_estimation == B0Estimation::RobustFit)
         .gui("Reporting only: flag an echo whose outlier score exceeds this multiple of the best echo's"),
+        // QSM.rs fit_ppm_complex (utils/multi_echo.rs) refuses a reltol that is not >= 0.
+        d("field_mapping.complex_fit.reltol", FieldMap, "Rel Tolerance", "Stop once the update is this fraction of the first estimate, over the whole volume (default 1e-4)", Float).min(0.0).flag("--complex-fit-reltol").parent("field_mapping.b0_estimation")
+        .when(|x| x.c.field_mapping.b0_estimation == B0Estimation::ComplexFit).full("Relative Tolerance")
+        .gui("The fit stops once its update is this fraction of the first estimate, over the whole volume"),
+        // 0 keeps the fit's starting estimate (a linear fit to the first three echoes' phase).
+        d("field_mapping.complex_fit.max_iter", FieldMap, "Max Iter", "Gauss-Newton iterations at most (default 30)", Int).flag("--complex-fit-max-iter").parent("field_mapping.b0_estimation")
+        .when(|x| x.c.field_mapping.b0_estimation == B0Estimation::ComplexFit).full("Maximum Iterations")
+        .gui("Gauss-Newton iterations at most"),
         d("bg_removal.algorithm", Background, "BG Removal", "", Enum(vec![
             o("vsharp", "vsharp", "V-SHARP", "Variable-kernel SHARP (V-SHARP) — https://doi.org/10.1002/mrm.23000"),
             o("pdf", "pdf", "PDF", "Projection onto Dipole Fields (PDF) — https://doi.org/10.1002/nbm.1670"),
@@ -499,6 +509,20 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.inv("medi") || x.qsmart_inner("medi")),
         d("inversion.medi.merit", Inversion, "MERIT", "Iteratively down-weight voxels whose residual stays large", Bool).flag("--medi-merit").parent("inversion.algorithm")
         .when(|x| x.inv("medi") || x.qsmart_inner("medi")),
+        // QSM.rs inversion/medi.rs: the CSF term needs R2* from at least 3 echoes; with fewer, MEDI
+        // runs without it (and the run says so, requirements::medi_csf_note).
+        d("inversion.medi.csf", Inversion, "CSF Reference", "Zero-reference χ to the ventricular CSF and keep it uniform there (MEDI+0, Liu 2018); needs at least 3 echoes, with fewer MEDI runs without it", Bool).flag("--medi-csf").parent("inversion.algorithm")
+        .when(|x| x.inv("medi") || x.qsmart_inner("medi")).full("CSF Zero Reference (MEDI+0)")
+        .gui("Zero-reference the susceptibility to the ventricular CSF, found from R2*, and keep it uniform there (MEDI+0); needs at least three echoes, with fewer MEDI runs without it"),
+        d("inversion.medi.lambda_csf", Inversion, "Lambda CSF", "Weight of the CSF uniformity term", Float).min(0.0).flag("--medi-lambda-csf").parent("inversion.medi.csf")
+        .when(|x| (x.inv("medi") || x.qsmart_inner("medi")) && x.c.inversion.medi.csf).full("CSF Weight"),
+        d("inversion.medi.csf_r2s_threshold", Inversion, "CSF R2* Threshold", "Voxels below this R2* are CSF candidates", Float).above(0.0).units("Hz").flag("--medi-csf-r2s-threshold").parent("inversion.medi.csf")
+        .when(|x| (x.inv("medi") || x.qsmart_inner("medi")) && x.c.inversion.medi.csf),
+        d("inversion.medi.csf_erode", Inversion, "CSF Erode", "Erode the mask by a 10 mm sphere before finding the CSF", Bool).flag("--medi-csf-erode").parent("inversion.medi.csf")
+        .when(|x| (x.inv("medi") || x.qsmart_inner("medi")) && x.c.inversion.medi.csf).full("Erode Before Finding CSF"),
+        d("inversion.medi.zeropad", Inversion, "Zero Padding", "Voxels of zeros appended at the end of x, y and z before the inversion; the result is cropped back (default 0 0 0)", IntVec3).units("voxels").flag("--medi-zeropad").parent("inversion.algorithm")
+        .when(|x| x.inv("medi") || x.qsmart_inner("medi"))
+        .gui("Voxels of zeros appended at the end of each axis before the inversion; the result is cropped back"),
         d("inversion.medi.data_weighting", Inversion, "Data Weighting", "", Enum(vec![
             o(0, "uniform", "Uniform", "Every voxel of the field weighs the same in the data term"),
             o(1, "magnitude SNR", "Magnitude SNR", "Weight the data term by the magnitude SNR, so noisy voxels count for less"),
@@ -526,6 +550,11 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.inv("tfi")),
         d("inversion.tfi.tol", Inversion, "Tolerance", "Outer convergence tolerance", Float).flag("--tfi-tol").parent("inversion.algorithm")
         .when(|x| x.inv("tfi")),
+        d("inversion.tfi.merit", Inversion, "MERIT", "Iteratively down-weight voxels whose residual stays large", Bool).flag("--tfi-merit").parent("inversion.algorithm")
+        .when(|x| x.inv("tfi")),
+        d("inversion.tfi.linear", Inversion, "Linear Data Term", "Fit the field linearly, as the TFI paper does (default); off uses MEDI's exponential data term", Bool).flag("--tfi-linear").parent("inversion.algorithm")
+        .when(|x| x.inv("tfi"))
+        .gui("Fit the field linearly, as the TFI paper does; off uses MEDI's exponential data term"),
         d("inversion.tfi.data_weighting", Inversion, "Data Weighting", "", Enum(vec![
             o(0, "uniform", "Uniform", "Every voxel of the field weighs the same in the data term"),
             o(1, "magnitude SNR", "Magnitude SNR", "Weight the data term by the magnitude SNR, so noisy voxels count for less"),

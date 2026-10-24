@@ -247,6 +247,11 @@ fn command_for(config: &PipelineConfig) -> String {
         emit_f64(&mut parts, "--robust-fit-downweight-level", r.downweight_level, rd.downweight_level);
         emit_f64(&mut parts, "--robust-fit-flag-ratio", r.flag_ratio, rd.flag_ratio);
     }
+    if config.field_mapping.b0_estimation == B0Estimation::ComplexFit {
+        let (c, cd) = (&config.field_mapping.complex_fit, &d.field_mapping.complex_fit);
+        emit_f64(&mut parts, "--complex-fit-reltol", c.reltol, cd.reltol);
+        emit_usize(&mut parts, "--complex-fit-max-iter", c.max_iter, cd.max_iter);
+    }
 
     // ROMEO params: every one that differs from the default, in whichever direction it differs.
     let r = &config.field_mapping.romeo;
@@ -546,6 +551,22 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
             if config.inversion.medi.data_weighting != d.inversion.medi.data_weighting {
                 parts.push(format!("--medi-data-weighting {}", config.inversion.medi.data_weighting));
             }
+            {
+                let (m, dm) = (&config.inversion.medi, &d.inversion.medi);
+                if m.csf != dm.csf {
+                    parts.push(format!("--medi-csf {}", m.csf));
+                }
+                if m.csf {
+                    emit_f64(parts, "--medi-lambda-csf", m.lambda_csf, dm.lambda_csf);
+                    emit_f64(parts, "--medi-csf-r2s-threshold", m.csf_r2s_threshold, dm.csf_r2s_threshold);
+                    if m.csf_erode != dm.csf_erode {
+                        parts.push(format!("--medi-csf-erode {}", m.csf_erode));
+                    }
+                }
+                if m.zeropad != dm.zeropad {
+                    parts.push(format!("--medi-zeropad {} {} {}", m.zeropad[0], m.zeropad[1], m.zeropad[2]));
+                }
+            }
             if config.inversion.medi.smv != d.inversion.medi.smv {
                 parts.push(if config.inversion.medi.smv { "--medi-smv" } else { "--no-medi-smv" }.into());
             }
@@ -565,6 +586,12 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
             emit_f64(parts, "--tfi-precond", config.inversion.tfi.precond, d.inversion.tfi.precond);
             if config.inversion.tfi.data_weighting != d.inversion.tfi.data_weighting {
                 parts.push(format!("--tfi-data-weighting {}", config.inversion.tfi.data_weighting));
+            }
+            if config.inversion.tfi.merit != d.inversion.tfi.merit {
+                parts.push(format!("--tfi-merit {}", config.inversion.tfi.merit));
+            }
+            if config.inversion.tfi.linear != d.inversion.tfi.linear {
+                parts.push(format!("--tfi-linear {}", config.inversion.tfi.linear));
             }
             emit_f64(parts, "--tfi-percentage", config.inversion.tfi.percentage, d.inversion.tfi.percentage);
             emit_usize(parts, "--tfi-max-iter", config.inversion.tfi.max_iter, d.inversion.tfi.max_iter);
@@ -1380,6 +1407,41 @@ frangi_c = 400.0
         let cmd = generate_command(&c);
         assert!(cmd.contains("--vsharp-deconvolve true"), "{cmd}");
         assert!(cmd.contains("--vsharp-threshold 0.1"), "{cmd}");
+    }
+
+    #[test]
+    fn test_complex_fit_flags() {
+        let mut c = PipelineConfig::default();
+        c.field_mapping.b0_estimation = B0Estimation::ComplexFit;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--b0-estimation complex-fit") && !cmd.contains("--complex-fit-"), "{cmd}");
+        assert!(!cmd.contains("--linear-fit-"), "the linear fit's settings mean nothing to it: {cmd}");
+        (c.field_mapping.complex_fit.reltol, c.field_mapping.complex_fit.max_iter) = (1e-3, 12);
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--complex-fit-reltol 0.001") && cmd.contains("--complex-fit-max-iter 12"), "{cmd}");
+        c.field_mapping.b0_estimation = B0Estimation::WeightedAvg;
+        assert!(!generate_command(&c).contains("--complex-fit-"));
+    }
+
+    #[test]
+    fn test_medi_csf_and_tfi_flags() {
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = QsmAlgorithm::Medi;
+        let cmd = generate_command(&c);
+        assert!(!cmd.contains("csf") && !cmd.contains("zeropad"), "defaults are not emitted: {cmd}");
+        (c.inversion.medi.lambda_csf, c.inversion.medi.csf_r2s_threshold, c.inversion.medi.csf_erode) = (50.0, 4.0, false);
+        c.inversion.medi.zeropad = [2, 0, 2];
+        let cmd = generate_command(&c);
+        for f in ["--medi-lambda-csf 50", "--medi-csf-r2s-threshold 4", "--medi-csf-erode false", "--medi-zeropad 2 0 2"] {
+            assert!(cmd.contains(f), "{f} missing: {cmd}");
+        }
+        c.inversion.medi.csf = false;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--medi-csf false") && !cmd.contains("--medi-lambda-csf"), "{cmd}");
+        c.inversion.algorithm = QsmAlgorithm::Tfi;
+        (c.inversion.tfi.merit, c.inversion.tfi.linear) = (false, false);
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--tfi-merit false") && cmd.contains("--tfi-linear false") && !cmd.contains("--medi-"), "{cmd}");
     }
 
     #[test]

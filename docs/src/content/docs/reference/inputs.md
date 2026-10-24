@@ -148,6 +148,8 @@ Some QSM methods need more of the data than phase:
 | Method | Also requires |
 | --- | --- |
 | `--qsm-algorithm medi`, `tfi`, `--bf-algorithm pdf` | the magnitude of every echo, and evenly spaced echoes: they weight the data by a noise map made from the echoes (MEDI toolbox `Fit_ppm_complex`) |
+| `--b0-estimation complex-fit` | the magnitude of every echo, and increasing, evenly spaced echo times: it fits the complex echoes per echo spacing (MEDI toolbox `Fit_ppm_complex`). Bipolar correction is refused with it |
+| `--qsm-algorithm medi` with its CSF zero reference (`--medi-csf`, on by default) | at least 3 echoes for the CSF term (R2\* finds the CSF); with fewer, MEDI runs without it, and the run says so |
 | `--qsm-algorithm medi` with `--medi-msmv` | also at least 3 echoes (R2\* for its vessel mask) |
 | `--qsm-algorithm qsmart` | what its inner inversion (`--qsmart-inversion`) needs; an inner `medi` or `tfi` only with a single echo, since QSMART gives its inner inversion one combined magnitude. With magnitude, every echo's: QSMART detects vessels on their mean (`--qsmart-vessel-magnitude mean-n4`) |
 | `--qsm-algorithm ndi`, `nltv`, `fansi`, `fansi-tgv`, `l1qsm` | magnitude (the data weight) |

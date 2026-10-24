@@ -6553,6 +6553,362 @@
      108535767
     ]
    ]
+  },
+  {
+   "kind": "native",
+   "name": "fm-complex-fit-romeo-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT with QSM.rs v0.40.0), example data",
+   "threads": 1,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "field_mapping.b0_estimation",
+     "complex-fit"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1742472050
+    ],
+    [
+     "bgremove",
+     663327186
+    ],
+    [
+     "invert",
+     349700174
+    ],
+    [
+     "reference",
+     108535638
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "fm-complex-fit-romeo-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT with QSM.rs v0.40.0), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "field_mapping.b0_estimation",
+     "complex-fit"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1742472050
+    ],
+    [
+     "bgremove",
+     663814610
+    ],
+    [
+     "invert",
+     349700174
+    ],
+    [
+     "reference",
+     108535638
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "fm-complex-fit-romeo-e3-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT with QSM.rs v0.40.0), example data",
+   "threads": 1,
+   "echoes": 3,
+   "browser_profile": false,
+   "settings": [
+    [
+     "field_mapping.b0_estimation",
+     "complex-fit"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234695
+    ],
+    [
+     "magnitude",
+     452198614
+    ],
+    [
+     "mask",
+     684982888
+    ],
+    [
+     "unwrap",
+     1260126722
+    ],
+    [
+     "bgremove",
+     663327170
+    ],
+    [
+     "invert",
+     349700158
+    ],
+    [
+     "reference",
+     108535022
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "fm-complex-fit-laplacian-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT with QSM.rs v0.40.0), example data",
+   "threads": 1,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "field_mapping.b0_estimation",
+     "complex-fit"
+    ],
+    [
+     "field_mapping.unwrapping_algorithm",
+     "laplacian"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1742472051
+    ],
+    [
+     "bgremove",
+     663327186
+    ],
+    [
+     "invert",
+     349700174
+    ],
+    [
+     "reference",
+     108535000
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "fm-complex-fit-laplacian-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT with QSM.rs v0.40.0), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "field_mapping.b0_estimation",
+     "complex-fit"
+    ],
+    [
+     "field_mapping.unwrapping_algorithm",
+     "laplacian"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     1742472051
+    ],
+    [
+     "bgremove",
+     663814610
+    ],
+    [
+     "invert",
+     349700174
+    ],
+    [
+     "reference",
+     108535000
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "fm-complex-fit-laplacian-e3-t1",
+   "source": "native, allocations counted per step (e3 driver on QSMxT with QSM.rs v0.40.0), example data",
+   "threads": 1,
+   "echoes": 3,
+   "browser_profile": false,
+   "settings": [
+    [
+     "field_mapping.b0_estimation",
+     "complex-fit"
+    ],
+    [
+     "field_mapping.unwrapping_algorithm",
+     "laplacian"
+    ],
+    [
+     "inversion.algorithm",
+     "tkd"
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234695
+    ],
+    [
+     "magnitude",
+     452198614
+    ],
+    [
+     "mask",
+     684982888
+    ],
+    [
+     "unwrap",
+     1260126723
+    ],
+    [
+     "bgremove",
+     663327170
+    ],
+    [
+     "invert",
+     349700158
+    ],
+    [
+     "reference",
+     108534096
+    ]
+   ]
+  },
+  {
+   "kind": "native",
+   "name": "inv-medi-zeropad16-t8",
+   "source": "native, allocations counted per step (e3 driver on QSMxT with QSM.rs v0.40.0), example data",
+   "threads": 8,
+   "echoes": 5,
+   "browser_profile": false,
+   "settings": [
+    [
+     "inversion.algorithm",
+     "medi"
+    ],
+    [
+     "bg_removal.algorithm",
+     "vsharp"
+    ],
+    [
+     "inversion.medi.zeropad",
+     [
+      16,
+      16,
+      16
+     ]
+    ]
+   ],
+   "need": [
+    [
+     "scale_phase",
+     48234791
+    ],
+    [
+     "magnitude",
+     548667686
+    ],
+    [
+     "mask",
+     974390040
+    ],
+    [
+     "unwrap",
+     2321038570
+    ],
+    [
+     "bgremove",
+     663814610
+    ],
+    [
+     "invert",
+     3286594822
+    ],
+    [
+     "reference",
+     108537968
+    ]
+   ]
   }
  ]
 }

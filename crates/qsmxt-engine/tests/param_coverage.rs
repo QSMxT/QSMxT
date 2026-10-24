@@ -67,16 +67,12 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     // b0/echo_times come from scan metadata (the dispatcher fills them).
     cover!(q::inversion::NltvParams => c::NltvConfig, ignore: ["b0", "echo_times"]);
     // b0/echo_times come from scan metadata. `msmv` (an Option<MsmvParams>) is flattened into
-    // msmv + msmv_* (guarded below). Not exposed yet: MEDI+0's CSF term (csf, lambda_csf,
-    // csf_r2s_threshold, csf_erode) and zeropad (follow-up: MEDI family).
-    cover!(q::inversion::MediParams => c::MediConfig,
-        ignore: ["b0", "echo_times", "csf", "lambda_csf", "csf_r2s_threshold", "csf_erode",
-                 "zeropad"]);
+    // msmv + msmv_* (guarded below).
+    cover!(q::inversion::MediParams => c::MediConfig, ignore: ["b0", "echo_times"]);
     assert_eq!(field_names::<q::inversion::MsmvParams>(), ["prefilter", "maxk", "vessel_radius"],
                "MsmvParams changed: expose it in MediConfig's msmv_* settings");
-    // b0/echo_times come from scan metadata. Not exposed yet: merit and linear (follow-up: MEDI
-    // family).
-    cover!(q::inversion::TfiParams => c::TfiConfig, ignore: ["b0", "echo_times", "merit", "linear"]);
+    // b0/echo_times come from scan metadata.
+    cover!(q::inversion::TfiParams => c::TfiConfig, ignore: ["b0", "echo_times"]);
     // normalize_weight: AMP-PE's solution does not depend on the weight's scale (QSM.rs #253), so
     // it is left off rather than offered.
     cover!(q::inversion::AmpPeParams => c::AmpPeConfig, ignore: ["normalize_weight"]);
@@ -143,6 +139,7 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     // estimate_offset / reliability_threshold_percentile are LinearFitConfig's, shared.
     cover!(q::fieldmap::RobustFitParams => c::RobustFitConfig,
         ignore: ["estimate_offset", "reliability_threshold_percentile"]);
+    cover!(q::fieldmap::FitPpmComplexParams => c::ComplexFitConfig);
     // CLEAR-SWI's magnitude processing and echo weighting stay at CLEARSWI.jl's defaults.
     cover!(q::swi::SwiParams => c::SwiConfig,
         ignore: ["mag_combine", "sensitivity", "softplus", "echo_weighting"]);

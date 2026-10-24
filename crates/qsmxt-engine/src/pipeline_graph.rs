@@ -617,8 +617,10 @@ impl Ctx<'_> {
             Stage::Motion => ((None, None), words::registration_settings(c)),
             Stage::FieldMap => {
                 let fm = &c.field_mapping;
+                // MEDI's complex fit fits its own phase offset (crate::stages::field).
                 let removes_offsets = self.n() > 1 && fm.phase_offset_removal
-                    && fm.unwrapping_algorithm != UnwrappingAlgorithm::Laplacian;
+                    && fm.unwrapping_algorithm != UnwrappingAlgorithm::Laplacian
+                    && fm.b0_estimation != B0Estimation::ComplexFit;
                 let id = if removes_offsets { "phase_offset_removal".to_string() } else { fm.unwrapping_algorithm.to_string() };
                 let label = match fm.unwrapping_algorithm {
                     UnwrappingAlgorithm::Romeo => "ROMEO",
@@ -635,6 +637,7 @@ impl Ctx<'_> {
                         B0Estimation::LinearFit => "linear fit",
                         B0Estimation::RobustFit => "robust fit",
                         B0Estimation::QsmartEchofit => "QSMART's echo fit",
+                        B0Estimation::ComplexFit => "complex fit",
                     }));
                 }
                 ((Some(id), Some(label.to_string())), s)

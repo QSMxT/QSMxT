@@ -145,6 +145,16 @@ const CITE_MEDI: Citation = Citation {
     text: "Liu, T., et al. (2011). \"Morphology enabled dipole inversion (MEDI) from a single-angle acquisition.\" *Magnetic Resonance in Medicine*, 66(3):777-783. https://doi.org/10.1002/mrm.22816",
 };
 
+const CITE_MEDI0: Citation = Citation {
+    key: "liu2018medi0",
+    text: "Liu, Z., et al. (2018). \"MEDI+0: Morphology enabled dipole inversion with automatic uniform cerebrospinal fluid zero reference for quantitative susceptibility mapping.\" *Magnetic Resonance in Medicine*, 79(5):2795-2803. https://doi.org/10.1002/mrm.26946",
+};
+
+const CITE_FIT_PPM_COMPLEX: Citation = Citation {
+    key: "liu2013nonlinear",
+    text: "Liu, T., et al. (2013). \"Nonlinear formulation of the magnetic field to source relationship for robust quantitative susceptibility mapping.\" *Magnetic Resonance in Medicine*, 69(2):467-476. https://doi.org/10.1002/mrm.24272",
+};
+
 const CITE_TFI: Citation = Citation {
     key: "liu2017tfi",
     text: "Liu, Z., et al. (2017). \"Preconditioned total field inversion (TFI) method for quantitative susceptibility mapping.\" *Magnetic Resonance in Medicine*, 78(1):303-315. https://doi.org/10.1002/mrm.26331",
@@ -501,6 +511,9 @@ fn param_label(field: &str) -> Label {
         "smv" => Toggle("SMV preprocessing"),
         "smv_shrink_mask" => Toggle("SMV mask shrinking"),
         "merit" => Toggle("MERIT"),
+        "linear" => Toggle("the linear data term"),
+        "zeropad" => Unit("zero-padding", "voxels at the end of each axis"),
+        "reltol" => Eq("relative tolerance"),
         "percentage" => Eq("gradient-mask percentage"),
         "data_weighting" => Eq("data weighting mode"),
         "precond" => Eq("preconditioner weight"),
@@ -605,6 +618,7 @@ fn inversion_changes(config: &PipelineConfig, alg: QsmAlgorithm) -> Changed {
             let smv_worded = i.medi.smv && !i.medi.msmv;
             let skip: Vec<&str> = MEDI_MSMV_FIELDS.iter().copied()
                 .chain(if smv_worded { MEDI_SMV_FIELDS.as_slice() } else { &["smv_shrink_mask"] }.iter().copied())
+                .chain(MEDI_CSF_FIELDS)
                 .chain(TE)
                 .collect();
             c.add_fields(&i.medi, &d.medi, &skip)
@@ -670,6 +684,28 @@ fn medi_smv(config: &PipelineConfig) -> String {
     format!(", with the local field high-passed by a {} mm spherical mean value (SMV) filter {}",
         m.smv_radius,
         if m.smv_shrink_mask { "within the mask shrunk by that radius" } else { "over the full mask" })
+}
+
+/// MEDI+0's settings, which [`medi_csf`] words rather than the list of changed settings.
+const MEDI_CSF_FIELDS: [&str; 4] = ["csf", "lambda_csf", "csf_r2s_threshold", "csf_erode"];
+
+/// MEDI+0's sentence, after the inversion's: "MEDI's zero reference to the ventricular CSF
+/// (MEDI+0; Liu et al., 2018) was applied to runs of at least three echoes.", with its changed
+/// settings; nothing with the CSF term off or another inversion. QSM.rs runs MEDI without the
+/// term on fewer than three echoes (the CSF is found from R2*), so the condition is said.
+fn describe_medi_csf(config: &PipelineConfig, doc: &mut Draft) {
+    let (m, d) = (&config.inversion.medi, MediConfig::default());
+    if config.inversion.algorithm != QsmAlgorithm::Medi || !m.csf {
+        return;
+    }
+    doc.cite(&CITE_MEDI0);
+    let mut changed = Changed::default();
+    changed.add(differs(m.lambda_csf, d.lambda_csf), || format!("λ_CSF = {}", m.lambda_csf));
+    changed.add(differs(m.csf_r2s_threshold, d.csf_r2s_threshold), || format!("CSF below R2* = {} Hz", m.csf_r2s_threshold));
+    changed.add(m.csf_erode != d.csf_erode, || "without eroding the mask first".to_string());
+    doc.say(&both(Stage::Inversion), format!(
+        "MEDI's zero reference to the ventricular CSF (MEDI+0; {}{}) was applied to runs of at least three echoes.",
+        cite_inline(&CITE_MEDI0), changed.semi()));
 }
 
 /// MEDI-mSMV, after MEDI's name and citation in the inversion's sentence: ", with maximum
@@ -1090,6 +1126,7 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                 doc.say(&both(Stage::Inversion), format!("Dipole inversion was performed{} using {} ({}){msmv}{}.",
                     target, name, cite_inline(cite),
                     if msmv.is_empty() { changes.with() } else { changes.comma_with() }));
+                describe_medi_csf(config, &mut doc);
                 // Deep-learning tiling (memory-bounded, approximate) is noted when enabled — only
                 // for the tileable networks (a stray --tile-size on a classical algorithm is ignored).
                 if config.inversion.algorithm.tileable() {
@@ -1494,6 +1531,11 @@ fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
     } else {
         String::new()
     };
+    // MEDI's complex fit fits its own phase offset, and takes no bipolar correction.
+    if fm.b0_estimation == B0Estimation::ComplexFit {
+        describe_complex_fit(config, doc);
+        return;
+    }
     match (fm.phase_offset_removal && romeo, fm.bipolar_correction && romeo) {
         (true, true) => {
             doc.cite(&CITE_MCPC3DS);
@@ -1600,7 +1642,39 @@ fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
             doc.say(&[Stage::FieldMap], format!(
                 "The B0 field map was estimated by a magnitude-weighted fit of phase vs echo time through the origin, as in QSMART (Yaghmaie et al., 2021){excluded}."));
         }
+        // Worded by describe_complex_fit, which returned above.
+        B0Estimation::ComplexFit => {}
     }
+}
+
+/// MEDI's field map (QSM.rs `B0EstimationMethod::ComplexFit`): `Fit_ppm_complex` on the complex
+/// echoes, then the fitted phase per echo spacing unwrapped and divided by the echo spacing. No
+/// phase offsets are removed first (the fit has its own).
+fn describe_complex_fit(config: &PipelineConfig, doc: &mut Draft) {
+    let (fm, d) = (&config.field_mapping, FieldMappingConfig::default());
+    let mut fit = Changed::default();
+    fit.add_fields(&fm.complex_fit, &d.complex_fit, &[]);
+    doc.cite(&CITE_FIT_PPM_COMPLEX);
+    let unwrapping = match fm.unwrapping_algorithm {
+        UnwrappingAlgorithm::Romeo => {
+            let mut changed = Changed::default();
+            changed.add_fields(&fm.romeo, &d.romeo, &["individual", "template"]);
+            doc.cite(&CITE_ROMEO);
+            format!("ROMEO (Dymerska et al., 2021){}", changed.with())
+        }
+        UnwrappingAlgorithm::Laplacian => {
+            let solver = if fm.laplacian_solver == d.laplacian_solver {
+                String::new()
+            } else {
+                format!(" with the {} solver", fm.laplacian_solver)
+            };
+            doc.cite(&CITE_LAPLACIAN_UNWRAP);
+            format!("the Laplacian method (Schofield & Zhu, 2003){solver}")
+        }
+    };
+    doc.say(&[Stage::FieldMap], format!(
+        "The B0 field map was estimated by a magnitude-weighted nonlinear fit of the complex echo signal (Fit_ppm_complex, MEDI toolbox; Liu et al., 2013{}); the fitted phase per echo spacing was unwrapped using {unwrapping} and divided by the echo spacing.",
+        fit.semi()));
 }
 
 /// Prose for a list of mask refinement ops, in the order they run.
@@ -2122,6 +2196,8 @@ fn cite_inline(cite: &Citation) -> &'static str {
         "liu2011medi" => "Liu et al., 2011",
         "wei2015star" => "Wei et al., 2015",
         "liu2017tfi" => "Liu et al., 2017",
+        "liu2018medi0" => "Liu et al., 2018",
+        "liu2013nonlinear" => "Liu et al., 2013",
         "milovic2018" => "Milovic et al., 2018",
         "polak2020" => "Polak et al., 2020",
         "milovic2022" => "Milovic et al., 2022",
@@ -2769,6 +2845,42 @@ mod tests {
 
     /// MEDI-mSMV is said with MEDI, after the background removal it takes the local field from,
     /// and cited; plain MEDI and other inversions say nothing of it.
+    /// MEDI+0's CSF term is said with its condition and cited, and its changed settings are
+    /// listed; off, nothing is said.
+    #[test]
+    fn test_medi_csf_methods() {
+        let mut config = PipelineConfig::default();
+        config.inversion.algorithm = QsmAlgorithm::Medi;
+        let out = generate_methods(&config);
+        assert!(out.contains("MEDI's zero reference to the ventricular CSF (MEDI+0; Liu et al., 2018) was applied to runs of at least three echoes."), "{out}");
+        assert!(out.contains("https://doi.org/10.1002/mrm.26946"), "cited: {out}");
+        (config.inversion.medi.lambda_csf, config.inversion.medi.csf_erode) = (50.0, false);
+        config.inversion.medi.zeropad = [2, 0, 2];
+        let out = generate_methods(&config);
+        assert!(out.contains("(MEDI+0; Liu et al., 2018; λ_CSF = 50 and without eroding the mask first)"), "{out}");
+        assert!(out.contains("zero-padding = 2 × 0 × 2 voxels at the end of each axis") && !out.contains("csf"), "{out}");
+        config.inversion.medi.csf = false;
+        assert!(!generate_methods(&config).contains("MEDI+0"));
+        config.inversion.algorithm = QsmAlgorithm::Tfi;
+        config.inversion.tfi.linear = false;
+        assert!(generate_methods(&config).contains("with the linear data term disabled"));
+    }
+
+    /// MEDI's complex fit is one sentence: the fit, cited, then the unwrapping of the fitted
+    /// phase; no phase offset removal is said, as none is run.
+    #[test]
+    fn test_complex_fit_methods() {
+        let mut config = PipelineConfig::default();
+        config.field_mapping.b0_estimation = B0Estimation::ComplexFit;
+        let out = generate_methods(&config);
+        assert!(out.contains("The B0 field map was estimated by a magnitude-weighted nonlinear fit of the complex echo signal (Fit_ppm_complex, MEDI toolbox; Liu et al., 2013); the fitted phase per echo spacing was unwrapped using ROMEO (Dymerska et al., 2021) and divided by the echo spacing."), "{out}");
+        assert!(!out.contains("Phase offset removal") && out.contains("https://doi.org/10.1002/mrm.24272"), "{out}");
+        config.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
+        config.field_mapping.complex_fit.max_iter = 12;
+        let out = generate_methods(&config);
+        assert!(out.contains("(Fit_ppm_complex, MEDI toolbox; Liu et al., 2013; at most 12 iterations); the fitted phase per echo spacing was unwrapped using the Laplacian method (Schofield & Zhu, 2003)"), "{out}");
+    }
+
     #[test]
     fn test_medi_msmv_methods() {
         let mut config = PipelineConfig::default();

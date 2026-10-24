@@ -20,6 +20,9 @@
 //!   run does; renamed ones keep their value under the new name.
 //! - V-SHARP's smallest radius was also the step between its radii: a kept one brings that step
 //!   with it as `radius_step`, so the radii stay the same.
+//! - TFI's `merit` did nothing when these files were written, and is a setting again (MERIT, on
+//!   by default): an old value is dropped, with a warning where it turned MERIT off in a file
+//!   that runs TFI.
 
 use crate::error::ConfigError;
 
@@ -261,6 +264,22 @@ fn from_v1(value: &mut toml::Table, kind: Kind, out: &mut Migration) -> Result<(
             out.warnings.push(format!(
                 "{path} = {v} is no longer a setting and is ignored: {why}"
             ));
+        }
+    }
+
+    // TFI's `merit` did nothing before version 2 (TFI had no MERIT); it now turns MERIT on and off,
+    // on by default, so an old value is not carried over.
+    if let Some(v) = take(value, "inversion.tfi.merit") {
+        let off = v.as_bool() == Some(false);
+        if off && !full && tfi {
+            out.warnings.push(format!(
+                "inversion.tfi.merit = {v} had no effect when this file was written and is ignored: TFI \
+                 now runs MERIT by default. To turn it off, keep the setting and add \
+                 `schema_version = {CONFIG_SCHEMA_VERSION}` at the top of the file"));
+        } else {
+            out.notes.push(format!(
+                "inversion.tfi.merit = {v} had no effect when this file was written and is ignored; \
+                 TFI now runs MERIT by default"));
         }
     }
 
@@ -945,6 +964,30 @@ mod tests {
         assert!(
             m.warnings.len() == 1 && m.warnings[0].contains("newer QSMxT"),
             "{m:?}"
+        );
+    }
+
+    /// TFI's `merit` did nothing before version 2: it is dropped from older files (a warning where
+    /// it turned MERIT off for TFI, by hand), and a version 2 file keeps it.
+    #[test]
+    fn an_old_tfi_merit_is_dropped() {
+        let partial = "[inversion]\nalgorithm = \"tfi\"\n[inversion.tfi]\nmerit = false\n";
+        let (c, m) = read(partial).unwrap();
+        assert!(
+            c.inversion.tfi.merit
+                && m.warnings.len() == 1
+                && m.warnings[0].contains("inversion.tfi.merit"),
+            "{m:?}"
+        );
+        let (c, m) = read("[inversion.tfi]\nmerit = false\n").unwrap();
+        assert!(
+            c.inversion.tfi.merit && m.warnings.is_empty() && m.notes.len() == 1,
+            "TFI does not run: {m:?}"
+        );
+        let (c, _) = read(&format!("schema_version = 2\n{partial}")).unwrap();
+        assert!(
+            !c.inversion.tfi.merit,
+            "a version 2 file says what it means"
         );
     }
 }

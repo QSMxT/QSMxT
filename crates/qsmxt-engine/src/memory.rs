@@ -275,6 +275,12 @@ fn unwrap_need(config: &PipelineConfig, s: &Scan) -> u64 {
     let (n, e) = (s.n, s.echoes);
     let fm = &config.field_mapping;
     let romeo = fm.unwrapping_algorithm == UnwrappingAlgorithm::Romeo;
+    if fm.b0_estimation == B0Estimation::ComplexFit {
+        // MEDI's complex fit: every echo as complex and as its magnitude besides the inputs, then
+        // one volume unwrapped, by ROMEO or Laplacian alike (natively on the example, 1.74 GB on
+        // 5 echoes and 1.26 GB on 3, on 1 and 8 threads). A single echo is fitted as two.
+        return (40 * e.max(2) + 89) * n;
+    }
     if e == 1 {
         return 85 * n;
     }
@@ -452,7 +458,12 @@ fn inversion_need(config: &PipelineConfig, s: &Scan) -> u64 {
         QsmAlgorithm::Rts => 227 * n,
         // MEDI and TFI hold every echo's magnitude (8 B per voxel per echo) and the noise map and
         // edge mask made from it (2.58 and 2.64 GB natively on the example's 5 echoes).
-        QsmAlgorithm::Medi => (387 + 8 * s.echoes) * n,
+        // MEDI's zero padding enlarges its grid at the end of each axis (16 voxels on each of the
+        // example's axes: 2.58 -> 3.29 GB).
+        QsmAlgorithm::Medi => {
+            let z = config.inversion.medi.zeropad;
+            (387 + 8 * s.echoes) * (0..3).map(|a| (s.dims[a] + z[a]) as u64).product::<u64>()
+        }
         QsmAlgorithm::Tfi => (398 + 8 * s.echoes) * n,
         QsmAlgorithm::Tgv => s.v(TGV_PER_VOXEL),
         QsmAlgorithm::Qsmart => s.v(QSMART_PER_VOXEL),
@@ -943,6 +954,11 @@ mod tests {
         let mut mirror = laplacian.clone();
         mirror.field_mapping.laplacian_solver = LaplacianSolver::Mirror;
         assert!(unwrap(&f, &mirror, 1) > unwrap(&f, &laplacian, 1));
+        // MEDI's complex fit: more echoes, not more threads; MEDI's zero padding enlarges its grid.
+        let cf = with(|c| c.field_mapping.b0_estimation = B0Estimation::ComplexFit);
+        assert!(unwrap(&f, &cf, 1) > unwrap(&three, &cf, 1) && unwrap(&f, &cf, 8) == unwrap(&f, &cf, 1));
+        let medi = |z| with(|c| { c.inversion.algorithm = QsmAlgorithm::Medi; c.inversion.medi.zeropad = z; });
+        assert!(at(&medi([16; 3]), "invert", 1) > at(&medi([0; 3]), "invert", 1));
 
         // Lighter algorithms take less.
         assert!(at(&with(|c| c.inversion.algorithm = QsmAlgorithm::Tkd), "invert", 1) < at(&with(|c| c.inversion.algorithm = QsmAlgorithm::Rts), "invert", 1));
