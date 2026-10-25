@@ -103,6 +103,51 @@ To try this on files without a pipeline run, use
 [`qsmxt mask preset bet-and-phase`, or `qsmxt mask and` / `or`](/QSMxT/reference/tools/#masking--qsmxt-mask)
 on masks you already have.
 
+## Inhomogeneity correction
+
+With `--inhomogeneity-correction` (on by default; `--no-inhomogeneity-correction`
+turns it off), the magnitude is corrected for the receive coils' intensity bias
+before it is used: the combined magnitude (for masking, ROMEO's weights and SWI)
+and each echo's magnitude that a mask section reads. `--inhomogeneity-method`
+chooses how:
+
+| Value | Method |
+| --- | --- |
+| `makehomogeneous` | Divides the magnitude by a smoothed estimate of the receive sensitivity (MriResearchTools' `makehomogeneous`; Eckstein et al., 2019) (default) |
+| `n4` | N4 bias field correction ([Tustison et al., 2010](https://doi.org/10.1109/TMI.2010.2046908)), as ANTs' `N4BiasFieldCorrection`: a smooth B-spline bias field, fitted in the log domain over several levels of increasing resolution so that the corrected image's intensity histogram is as sharp as possible |
+
+`makehomogeneous` takes `--homogeneity-sigma-mm` and `--homogeneity-nbox`. N4
+takes:
+
+| Option | Meaning | Default |
+| --- | --- | --- |
+| `--n4-shrink-factor` | subsample the image by this factor before fitting | 4 |
+| `--n4-max-iterations` | maximum iterations at each fitting level, one number a level; the B-spline mesh doubles from one level to the next | `50 50 50 50` |
+| `--n4-convergence-threshold` | stop a level once the change in the bias field (its coefficient of variation) falls to this | 0 (every iteration runs) |
+| `--n4-mesh` | B-spline mesh elements per axis at the first level | `1 1 1` |
+| `--n4-spline-order` | order of the B-spline, 1 to 3 | 3 |
+| `--n4-bias-field-fwhm` | FWHM of the Gaussian modelling the bias field's blurring of the log-intensity histogram | 0.15 |
+| `--n4-wiener-noise` | noise term of the Wiener deconvolution of that histogram | 0.01 |
+| `--n4-histogram-bins` | bins of the histogram | 200 |
+
+The defaults are those of `N4BiasFieldCorrection` given only an input and an
+output. N4 runs on the whole image, without a mask, because the corrected
+magnitude is what the mask is made from. It fits the bias field on the image
+shrunk by the shrink factor, so it needs at least twice that many voxels along
+each axis (8 at the default of 4); a thinner acquisition is refused before
+processing starts, naming the smallest axis, and a lower `--n4-shrink-factor`
+or `makehomogeneous` will run it.
+
+The two methods give different images. `makehomogeneous` returns the magnitude
+divided by its sensitivity estimate, about 1 in tissue; N4 keeps the image's own
+intensity scale. Otsu and percentile thresholds, BET, the deep-learning brain
+extractors and `signal-erode` do not depend on that scale, but a
+`threshold:fixed:<v>` step on a magnitude input does: choose `<v>` for the
+method in use.
+
+`qsmxt homogeneity` runs either on a single image (`--method makehomogeneous|n4`,
+with the same N4 options).
+
 ## Oblique acquisitions
 
 The dipole kernel is built in the voxel grid, so an acquisition whose slices

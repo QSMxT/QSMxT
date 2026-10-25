@@ -92,7 +92,7 @@ impl MaskInputs {
     /// its settings, and `upstream`, which names what the echoes were computed from (the run's
     /// load and earlier steps' cache keys, [`crate::run::preview_mask`]).
     pub fn key(config: &PipelineConfig, upstream: &str) -> String {
-        let correction = config.masking.inhomogeneity_correction.then_some(&config.homogeneity);
+        let correction = config.masking.inhomogeneity_correction.then(|| crate::stages::magnitude::params(config));
         serde_json::json!({ "upstream": upstream, "inhomogeneity_correction": correction }).to_string()
     }
 
@@ -124,7 +124,7 @@ impl MaskInputs {
         let (phases, magnitudes) = load()?;
         let magnitudes = if config.masking.inhomogeneity_correction {
             magnitudes.into_iter().enumerate()
-                .map(|(i, m)| homogeneity_correct(&m, meta, &config.homogeneity, &format!("echo {}'s magnitude", i + 1)))
+                .map(|(i, m)| homogeneity_correct(&m, meta, config, &format!("echo {}'s magnitude", i + 1)))
                 .collect::<Result<Vec<_>, EngineError>>()?
         } else {
             magnitudes

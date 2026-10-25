@@ -112,8 +112,10 @@ mod integration_tests {
                 smwi_params: Default::default(),
                 segmentation_params: Default::default(),
                 tiling_params: Default::default(),
+                inhomogeneity_method: None,
                 homogeneity_sigma_mm: None,
                 homogeneity_nbox: None,
+                n4_params: Default::default(),
                 linear_fit_reliability_threshold: None,
                 linear_fit_estimate_offset: None,
                 robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
@@ -888,9 +890,31 @@ mod integration_tests {
         testutils::write_magnitude(&input);
 
         super::homogeneity::execute(HomogeneityArgs {
-            input, output: output.clone(), sigma: 4.0, nbox: 2,
+            input, output: output.clone(), method: InhomogeneityMethodArg::Makehomogeneous,
+            sigma: 4.0, nbox: 2, n4_params: Default::default(),
         }).unwrap();
         assert!(output.exists());
+    }
+
+    /// `--method n4` runs N4 with the --n4-* flags, and a grid it cannot shrink is an error naming
+    /// the subcommand's own flags.
+    #[test]
+    fn test_homogeneity_n4() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("mag.nii");
+        let output = dir.path().join("corrected.nii");
+        testutils::write_magnitude(&input);
+        let n4 = |shrink| crate::cli::N4ParamArgs {
+            n4_shrink_factor: Some(shrink), n4_max_iterations: Some(vec![2, 2]), ..Default::default()
+        };
+        let args = |shrink| HomogeneityArgs {
+            input: input.clone(), output: output.clone(), method: InhomogeneityMethodArg::N4,
+            sigma: 7.0, nbox: 15, n4_params: n4(shrink),
+        };
+        super::homogeneity::execute(args(2)).unwrap();
+        assert!(output.exists());
+        let e = super::homogeneity::execute(args(5)).unwrap_err().to_string();
+        assert!(e.contains("--n4-shrink-factor") && e.contains("--method makehomogeneous"), "{e}");
     }
 
     // --- Resample ---

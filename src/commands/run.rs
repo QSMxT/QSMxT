@@ -406,7 +406,7 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
         println!("Pipeline:");
         println!("  Phase Offset Removal: {}", if config.field_mapping.phase_offset_removal { "enabled" } else { "disabled" });
         if config.masking.inhomogeneity_correction {
-            println!("  Inhomogeneity:     enabled");
+            println!("  Inhomogeneity:     {}", config.masking.inhomogeneity_method);
         }
         let joiner = format!(" {} ", config.masking.combine.to_string().to_uppercase());
         let mut masking = config.masking.sections.iter()

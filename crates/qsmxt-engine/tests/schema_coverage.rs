@@ -84,6 +84,7 @@ fn another(s: &Setting, cur: &Value) -> Vec<Value> {
         ValueType::Int => vec![json!(cur.as_u64().unwrap_or(0) + 1)],
         ValueType::Float => vec![json!(pick_f(num(cur)))],
         ValueType::IntVec3 => vec![json!([7, 8, 9])],
+        ValueType::IntList => vec![json!([7, 8]), json!([9])],
         ValueType::FloatVec3 => vec![json!([1.5, 2.5, 3.5])],
         ValueType::Text => vec![json!("probe")],
         ValueType::Enum { .. } => s.value_type.options().iter().map(|o| o.value.clone()).filter(|v| v != cur).collect(),

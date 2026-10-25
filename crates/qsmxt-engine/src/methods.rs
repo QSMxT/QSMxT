@@ -501,6 +501,13 @@ fn param_label(field: &str) -> Label {
         "r_const_3t" => Eq("relaxometric constant at 3 T"),
         "sigma_mm" => Unit("σ", "mm"),
         "nbox" => Count("box-filter passes"),
+        "shrink_factor" => Eq("shrink factor"),
+        "convergence_threshold" => Eq("convergence threshold"),
+        "mesh" => Eq("initial B-spline mesh"),
+        "spline_order" => Eq("B-spline order"),
+        "bias_field_fwhm" => Eq("bias field FWHM"),
+        "wiener_noise" => Eq("Wiener filter noise"),
+        "histogram_bins" => Count("histogram bins"),
         "estimate_offset" => Toggle("phase-offset estimation"),
         "reliability_threshold_percentile" => Eq("reliability threshold percentile"),
         "denoise" => Toggle("anisotropic-diffusion denoising"),
@@ -1740,9 +1747,26 @@ fn describe_masking(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
     // The RSS-combined magnitude is used for both Magnitude and PhaseQuality masking inputs,
     // while MagnitudeFirst/MagnitudeLast use their specific echo magnitudes.
     if config.masking.inhomogeneity_correction {
-        doc.cite(&CITE_BIAS);
         let mut changed = Changed::default();
-        changed.add_fields(&config.homogeneity, &HomogeneityConfig::default(), &[]);
+        let correction = match config.masking.inhomogeneity_method {
+            InhomogeneityMethod::Makehomogeneous => {
+                doc.cite(&CITE_BIAS);
+                changed.add_fields(&config.homogeneity, &HomogeneityConfig::default(), &[]);
+                "Inhomogeneity correction (Eckstein et al., 2019"
+            }
+            InhomogeneityMethod::N4 => {
+                doc.cite(&CITE_N4);
+                let (n4, d) = (&config.n4, N4Config::default());
+                if n4.max_iterations != d.max_iterations {
+                    let levels: Vec<String> = n4.max_iterations.iter().map(|i| i.to_string()).collect();
+                    let n = levels.len();
+                    changed.0.push(format!("at most {} iterations at {n} fitting level{}",
+                                           join_list(&levels), if n == 1 { "" } else { "s" }));
+                }
+                changed.add_fields(n4, &d, &["max_iterations"]);
+                "N4 inhomogeneity correction (Tustison et al., 2010"
+            }
+        };
         let settings = changed.semi();
 
         let inputs: Vec<MaskingInput> = config.masking.sections.iter().map(|s| s.input).collect();
@@ -1751,15 +1775,15 @@ fn describe_masking(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
         let uses_last = inputs.iter().any(|i| matches!(i, MaskingInput::MagnitudeLast));
 
         if uses_rss && !uses_first && !uses_last {
-            doc.say(&[Stage::Magnitude], format!("Inhomogeneity correction (Eckstein et al., 2019{settings}) was applied to the RSS-combined magnitude image."));
+            doc.say(&[Stage::Magnitude], format!("{correction}{settings}) was applied to the RSS-combined magnitude image."));
         } else if !uses_rss && (uses_first || uses_last) {
             let echo = if uses_first { "first" } else { "last" };
             doc.say(&[Stage::Magnitude], format!(
-                "Inhomogeneity correction (Eckstein et al., 2019{settings}) was applied to the {}-echo magnitude image.",
+                "{correction}{settings}) was applied to the {}-echo magnitude image.",
                 echo
             ));
         } else {
-            doc.say(&[Stage::Magnitude], format!("Inhomogeneity correction (Eckstein et al., 2019{settings}) was applied to the magnitude data."));
+            doc.say(&[Stage::Magnitude], format!("{correction}{settings}) was applied to the magnitude data."));
         }
     }
 
@@ -2969,6 +2993,16 @@ mod tests {
     }
 
     #[test]
+    fn n4_is_named_and_cited_and_makehomogeneous_is_not() {
+        let mut config = PipelineConfig::default();
+        config.masking.inhomogeneity_method = InhomogeneityMethod::N4;
+        let out = generate_methods(&config);
+        assert!(out.contains("N4 inhomogeneity correction (Tustison et al., 2010) was applied"), "out: {out}");
+        assert!(out.contains("N4ITK: Improved N3 Bias Correction"), "out: {out}");
+        assert!(!out.contains("Eckstein et al., 2019") && !out.contains("A Simple Homogeneity Correction"), "out: {out}");
+    }
+
+    #[test]
     fn test_masking_inhomogeneity_first_echo() {
         let mut config = PipelineConfig::default();
         config.masking.inhomogeneity_correction = true;
@@ -3452,6 +3486,8 @@ mod defaults_only_tests {
             (|c| { c.motion_correction.enabled = true; c.registration.levels = 2; },
                 "over a multi-resolution pyramid (2 pyramid levels)"),
             (|c| { c.homogeneity.sigma_mm = 5.0; }, "(Eckstein et al., 2019; σ = 5 mm)"),
+            (|c| { c.masking.inhomogeneity_method = InhomogeneityMethod::N4; c.n4.max_iterations = vec![20, 10]; c.n4.shrink_factor = 2; },
+                "N4 inhomogeneity correction (Tustison et al., 2010; at most 20 and 10 iterations at 2 fitting levels and shrink factor = 2) was applied"),
             (|c| c.masking.sections[0].refinements[0] = MaskOp::Dilate { iterations: 2 }, "followed by dilation (2 iterations), hole-filling, and erosion."),
             (|c| { c.pipeline.do_swi = true; c.swi.hp_sigma = [2.0, 2.0, 0.0]; },
                 "CLEAR-SWI (Eckstein et al., 2021) using a high-pass filter σ of 2 × 2 × 0 voxels."),

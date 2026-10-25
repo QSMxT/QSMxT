@@ -141,6 +141,23 @@ fn command_for(config: &PipelineConfig) -> String {
     }
     emit_f64(&mut parts, "--homogeneity-sigma-mm", config.homogeneity.sigma_mm, d.homogeneity.sigma_mm);
     emit_usize(&mut parts, "--homogeneity-nbox", config.homogeneity.nbox, d.homogeneity.nbox);
+    emit_enum(&mut parts, "--inhomogeneity-method", &config.masking.inhomogeneity_method, &d.masking.inhomogeneity_method);
+    {
+        let (n, dn) = (&config.n4, &d.n4);
+        emit_usize(&mut parts, "--n4-shrink-factor", n.shrink_factor, dn.shrink_factor);
+        if n.max_iterations != dn.max_iterations {
+            let levels: Vec<String> = n.max_iterations.iter().map(|i| i.to_string()).collect();
+            parts.push(format!("--n4-max-iterations {}", levels.join(" ")));
+        }
+        emit_f64(&mut parts, "--n4-convergence-threshold", n.convergence_threshold, dn.convergence_threshold);
+        if n.mesh != dn.mesh {
+            parts.push(format!("--n4-mesh {} {} {}", n.mesh[0], n.mesh[1], n.mesh[2]));
+        }
+        emit_usize(&mut parts, "--n4-spline-order", n.spline_order, dn.spline_order);
+        emit_f64(&mut parts, "--n4-bias-field-fwhm", n.bias_field_fwhm, dn.bias_field_fwhm);
+        emit_f64(&mut parts, "--n4-wiener-noise", n.wiener_noise, dn.wiener_noise);
+        emit_usize(&mut parts, "--n4-histogram-bins", n.histogram_bins, dn.histogram_bins);
+    }
 
     // ── Custom masks (BYO from derivatives) ──
     if config.masking.custom_mask_tool != d.masking.custom_mask_tool {
@@ -1533,6 +1550,25 @@ frangi_c = 400.0
         assert!(cmd.contains("--do-swi"));
         assert!(cmd.contains("--do-t2starmap"));
         assert!(cmd.contains("--do-r2starmap"));
+    }
+
+    #[test]
+    fn n4_and_its_settings_are_said_when_they_apply() {
+        let mut c = PipelineConfig::default();
+        c.n4.shrink_factor = 2;
+        let cmd = generate_command(&c);
+        assert!(!cmd.contains("--inhomogeneity-method") && !cmd.contains("--n4-"), "makehomogeneous hides N4's settings: {cmd}");
+        c.masking.inhomogeneity_method = InhomogeneityMethod::N4;
+        c.homogeneity.sigma_mm = 5.0;
+        c.n4.max_iterations = vec![20, 10];
+        c.n4.mesh = [2, 2, 1];
+        c.n4.wiener_noise = 0.02;
+        let cmd = generate_command(&c);
+        for f in ["--inhomogeneity-method n4", "--n4-shrink-factor 2", "--n4-max-iterations 20 10",
+                  "--n4-mesh 2 2 1", "--n4-wiener-noise 0.02"] {
+            assert!(cmd.contains(f), "{f} missing: {cmd}");
+        }
+        assert!(!cmd.contains("--homogeneity-sigma-mm") && !cmd.contains("--n4-spline-order"), "{cmd}");
     }
 
     #[test]

@@ -129,10 +129,6 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     // STAR-QSM is not a QSMxT inversion yet (follow-up: STAR-QSM); every field is listed so a new
     // one is noticed.
     not_exposed::<q::inversion::StarParams>("StarParams", &["pad", "echo_times", "te", "b0"]);
-    // N4 is not offered yet (#414); every field is listed so a new one is noticed.
-    not_exposed::<q::utils::N4Params>("N4Params", &[
-        "shrink_factor", "max_iterations", "convergence_threshold", "mesh", "spline_order",
-        "bias_field_fwhm", "wiener_noise", "histogram_bins", "rescale_intensities"]);
 
     // Background-field removal
     // radius_step is not exposed yet (#420).
@@ -158,6 +154,9 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     // initial is per volume, and overwritten by chaining.
     cover!(q::registration::RigidParams => c::RegistrationConfig, ignore: ["initial"]);
     cover!(q::utils::HomogeneityParams => c::HomogeneityConfig);
+    // N4 runs without a mask (on the magnitude masking is made from), and rescale_intensities
+    // applies only with one, so it would change nothing.
+    cover!(q::utils::N4Params => c::N4Config, ignore: ["rescale_intensities"]);
     cover!(q::utils::LinearFitParams => c::LinearFitConfig);
     // estimate_offset / reliability_threshold_percentile are LinearFitConfig's, shared.
     cover!(q::fieldmap::RobustFitParams => c::RobustFitConfig,
