@@ -4,7 +4,7 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum QsmAlgorithm {
-    Rts, Tv, Tkd, Tsvd, Tgv, Tikhonov, Nltv, Medi, Tfi, Ilsqr, Lsqr, Heidi, Qsmart,
+    Rts, Tv, Tkd, Tsvd, Tgv, Tikhonov, Nltv, Medi, Tfi, Ilsqr, Star, Lsqr, Heidi, Qsmart,
     Ndi, Fansi,
     #[serde(rename = "fansi-tgv")] FansiTgv,
     L1qsm, Whqsm, Hdqsm,
@@ -22,10 +22,10 @@ pub enum QsmAlgorithm {
 impl QsmAlgorithm {
     /// Every inversion, in the order the CLI lists them (`qsmxt`'s CLI reference test holds this
     /// to `--qsm-algorithm`'s values, so a new variant cannot be left out).
-    pub const ALL: [QsmAlgorithm; 31] = [
+    pub const ALL: [QsmAlgorithm; 32] = [
         Self::Rts, Self::Tv, Self::Tkd, Self::Tsvd, Self::Tgv, Self::Tikhonov, Self::Nltv,
-        Self::Medi, Self::Tfi, Self::Ilsqr, Self::Lsqr, Self::Heidi, Self::Qsmart, Self::Ndi,
-        Self::Fansi, Self::FansiTgv, Self::L1qsm, Self::Whqsm, Self::Hdqsm, Self::AmpPe,
+        Self::Medi, Self::Tfi, Self::Ilsqr, Self::Star, Self::Lsqr, Self::Heidi, Self::Qsmart,
+        Self::Ndi, Self::Fansi, Self::FansiTgv, Self::L1qsm, Self::Whqsm, Self::Hdqsm, Self::AmpPe,
         Self::Xqsm, Self::Qsmnet, Self::QsmnetPlus, Self::Autoqsm, Self::Qsmgan, Self::Ir2qsm,
         Self::Lpcnn, Self::ModlQsm, Self::Nextqsm, Self::Iqsm, Self::IqsmPlus,
     ];
@@ -46,7 +46,7 @@ impl fmt::Display for QsmAlgorithm {
             Self::Rts => "rts", Self::Tv => "tv", Self::Tkd => "tkd", Self::Tsvd => "tsvd",
             Self::Tgv => "tgv", Self::Tikhonov => "tikhonov", Self::Nltv => "nltv",
             Self::Medi => "medi", Self::Tfi => "tfi", Self::Ilsqr => "ilsqr",
-            Self::Lsqr => "lsqr", Self::Heidi => "heidi", Self::Qsmart => "qsmart",
+            Self::Star => "star", Self::Lsqr => "lsqr", Self::Heidi => "heidi", Self::Qsmart => "qsmart",
             Self::Ndi => "ndi", Self::Fansi => "fansi", Self::FansiTgv => "fansi-tgv",
             Self::L1qsm => "l1qsm", Self::Whqsm => "whqsm", Self::Hdqsm => "hdqsm",
             Self::AmpPe => "amp-pe",
@@ -490,5 +490,82 @@ pub fn parse_r2prime_strategy(s: &str) -> Option<R2PrimeStrategy> {
         "mese" => Some(R2PrimeStrategy::Mese),
         "r2primenet" => Some(R2PrimeStrategy::R2primenet),
         _ => None,
+    }
+}
+
+/// Which echo time a method converts the field from ppm to radians at (qsm-core `EchoTime`).
+///
+/// In the config it is `"first"`, `"last"`, `"spacing"`, `"sum"` or `{ seconds = … }`; on the
+/// command line it is one of those names or a time in milliseconds ([`EchoTimeChoice::parse`]).
+/// Each method that takes it has its own default, the one its reference code uses.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum EchoTimeChoice {
+    /// The first echo time.
+    First,
+    /// The last echo time.
+    Last,
+    /// The echo spacing, TE2 − TE1 (the echo time for one echo).
+    Spacing,
+    /// The sum of the echo times.
+    Sum,
+    /// A given echo time, in seconds.
+    Seconds(f64),
+}
+impl EchoTimeChoice {
+    /// The named choices, in the order the CLI help and the TUI list them.
+    pub const NAMED: [EchoTimeChoice; 4] = [Self::First, Self::Last, Self::Spacing, Self::Sum];
+
+    /// A command-line value: `first`, `last`, `spacing`, `sum`, or an echo time in milliseconds.
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match s.trim() {
+            "first" => Ok(Self::First),
+            "last" => Ok(Self::Last),
+            "spacing" => Ok(Self::Spacing),
+            "sum" => Ok(Self::Sum),
+            other => match other.parse::<f64>() {
+                Ok(ms) if ms.is_finite() && ms > 0.0 => Ok(Self::Seconds(ms / 1000.0)),
+                _ => Err(format!(
+                    "expected first, last, spacing, sum or an echo time in ms (> 0), got '{other}'"
+                )),
+            },
+        }
+    }
+}
+impl fmt::Display for EchoTimeChoice {
+    /// The command-line form: the choice's name, or the time in milliseconds.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::First => f.write_str("first"),
+            Self::Last => f.write_str("last"),
+            Self::Spacing => f.write_str("spacing"),
+            Self::Sum => f.write_str("sum"),
+            // Rounded to the nanosecond, so 7 ms is not shown as 7.000000000000001.
+            Self::Seconds(s) => write!(f, "{}", (s * 1e9).round() / 1e6),
+        }
+    }
+}
+impl From<EchoTimeChoice> for qsm_core::EchoTime {
+    fn from(c: EchoTimeChoice) -> Self {
+        use qsm_core::EchoTime as E;
+        match c {
+            EchoTimeChoice::First => E::First,
+            EchoTimeChoice::Last => E::Last,
+            EchoTimeChoice::Spacing => E::Spacing,
+            EchoTimeChoice::Sum => E::Sum,
+            EchoTimeChoice::Seconds(s) => E::Seconds(s),
+        }
+    }
+}
+impl From<qsm_core::EchoTime> for EchoTimeChoice {
+    fn from(e: qsm_core::EchoTime) -> Self {
+        use qsm_core::EchoTime as E;
+        match e {
+            E::First => Self::First,
+            E::Last => Self::Last,
+            E::Spacing => Self::Spacing,
+            E::Sum => Self::Sum,
+            E::Seconds(s) => Self::Seconds(s),
+        }
     }
 }

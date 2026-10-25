@@ -1361,6 +1361,7 @@ const QSM_ALGO_HELP: &[&str] = &[
     "MEDI (Morphology Enabled Dipole Inversion) — magnitude-guided edge weighting. https://doi.org/10.1002/mrm.22816",
     "TFI (Total Field Inversion) — inverts the total field directly (its own background removal). https://doi.org/10.1002/mrm.26331",
     "iLSQR (default) — iterative LSQR with streaking-artifact correction. https://doi.org/10.1016/j.neuroimage.2014.12.043",
+    "STAR-QSM (Streaking Artifact Reduction) — sparse (L1) inversion from a k-space initial guess, for sources with a large susceptibility range. https://doi.org/10.1002/nbm.3383",
     "LSQR (minimally regularised) — one least-squares solve for χ plus a residual field; the residual weight is the only regularisation. https://doi.org/10.1118/1.3481505",
     "HEIDI (Homogeneity Enabled Incremental Dipole Inversion) — keeps the well-conditioned k-space of an LSQR solve and re-derives the dipole cone under a homogeneity prior. https://doi.org/10.1016/j.neuroimage.2012.05.067",
     "QSMART — two-stage spatially-dependent filtering plus inversion. https://doi.org/10.1016/j.neuroimage.2020.117701",
@@ -1620,6 +1621,12 @@ pub struct PipelineFormState {
     pub ilsqr_tol: String,
     pub ilsqr_max_iter: String,
     pub ilsqr_pad_mm: String,
+
+    // STAR-QSM: the padding (x y z), and the echo time it converts at (an index into
+    // STAR_TE_OPTIONS; the last is a time in ms, `star_te_ms`)
+    pub star_pad: String,
+    pub star_te: usize,
+    pub star_te_ms: String,
 
     // LSQR (also HEIDI's seed)
     pub lsqr_residual_weighting: String,
@@ -2044,6 +2051,18 @@ impl Default for PipelineFormState {
             ilsqr_tol: format!("{}", qsm_core::inversion::IlsqrParams::default().tol),
             ilsqr_max_iter: format!("{}", qsm_core::inversion::IlsqrParams::default().max_iter),
             ilsqr_pad_mm: format!("{}", qsm_core::inversion::IlsqrParams::default().pad_mm),
+            star_pad: {
+                let p = qsmxt_engine::StarConfig::default().pad;
+                format!("{} {} {}", p[0], p[1], p[2])
+            },
+            star_te: star_te_index(qsmxt_engine::StarConfig::default().te),
+            // What the time row starts at: qsm-core's default echo time for STAR-QSM (STI
+            // Suite's 40 ms).
+            star_te_ms: {
+                let d = qsm_core::inversion::StarParams::default();
+                let te = d.te.resolve(&d.echo_times).unwrap_or_default();
+                qsmxt_engine::EchoTimeChoice::Seconds(te).to_string()
+            },
             // Via qsmxt-engine rather than qsm-core: it is the layer that decides which of
             // qsm-core's fields are the user's (LSQR's b0 and mask_output are not), and it
             // flattens HEIDI's optional denoise struct into the four values shown here.
@@ -2276,7 +2295,7 @@ impl Default for PipelineFormState {
     }
 }
 
-pub const QSM_ALGO_OPTIONS: &[&str] = &["rts", "tv", "tkd", "tsvd", "tgv", "tikhonov", "nltv", "medi", "tfi", "ilsqr", "lsqr", "heidi", "qsmart", "ndi", "fansi", "fansi-tgv", "l1qsm", "whqsm", "hdqsm", "amp-pe", "xqsm", "qsmnet", "qsmnet-plus", "autoqsm", "qsmgan", "ir2qsm", "lpcnn", "modl-qsm", "nextqsm", "iqsm", "iqsm-plus"];
+pub const QSM_ALGO_OPTIONS: &[&str] = &["rts", "tv", "tkd", "tsvd", "tgv", "tikhonov", "nltv", "medi", "tfi", "ilsqr", "star", "lsqr", "heidi", "qsmart", "ndi", "fansi", "fansi-tgv", "l1qsm", "whqsm", "hdqsm", "amp-pe", "xqsm", "qsmnet", "qsmnet-plus", "autoqsm", "qsmgan", "ir2qsm", "lpcnn", "modl-qsm", "nextqsm", "iqsm", "iqsm-plus"];
 /// MEDI/TFI data weighting, in the CLI's order (0, 1).
 pub const DATA_WEIGHTING_OPTIONS: &[&str] = &["uniform", "magnitude SNR"];
 const DATA_WEIGHTING_HELP: &[&str] = &[
@@ -2346,6 +2365,20 @@ const VSHARP_GRID_HELP: &[&str] = &[
     "An isotropic grid at the smallest voxel dimension, so no axis is coarsened; isotropic data stays on the acquired grid",
     "An isotropic grid of Grid Spacing mm; the background is interpolated back, the local field keeps native resolution",
 ];
+/// STAR-QSM's echo time: the named echo times, then a time in ms (`star_te_ms`).
+pub const STAR_TE_OPTIONS: &[&str] = &["first", "last", "spacing", "sum", "ms"];
+const STAR_TE_HELP: &[&str] = &[
+    "The first echo time, TE1",
+    "The last echo time",
+    "The echo spacing, TE2 − TE1 (the echo time for one echo)",
+    "The sum of the echo times: the phase summed over the echoes (default)",
+    "A given echo time (Echo Time)",
+];
+/// The [`STAR_TE_OPTIONS`] entry of an echo-time choice.
+pub fn star_te_index(te: qsmxt_engine::EchoTimeChoice) -> usize {
+    use qsmxt_engine::EchoTimeChoice as E;
+    match te { E::First => 0, E::Last => 1, E::Spacing => 2, E::Sum => 3, E::Seconds(_) => 4 }
+}
 pub const MOTION_REFERENCE_OPTIONS: &[&str] = &["first", "last", "echo"];
 const MOTION_REFERENCE_HELP: &[&str] = &[
     "Align every echo onto the first (best SNR; the published procedure) (default)",
@@ -2946,6 +2979,15 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Max Iter", field: "ilsqr_max_iter", help: "Maximum iterations" });
                 rows.push(PipelineRow::Param { label: "  Pad (mm)", field: "ilsqr_pad_mm", help: "Zero-padding per side, mm. Larger costs time and memory" });
             }
+            "star" => { // STAR-QSM
+                rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "star_pad", help: "Zero-padding per side, voxels (x y z). Larger costs time and memory (default 8 8 20)" });
+                rows.push(PipelineRow::AlgoSelect { label: "  Echo Time", field: "star_te", options: STAR_TE_OPTIONS,
+                    help: STAR_TE_HELP });
+                if STAR_TE_OPTIONS[self.star_te] == "ms" {
+                    rows.push(PipelineRow::Param { label: "    Echo Time (ms)", field: "star_te_ms",
+                        help: "Echo time the field is converted to phase at, ms" });
+                }
+            }
             // HEIDI seeds itself with an LSQR solve, so it shows both groups.
             "lsqr" | "heidi" => {
                 rows.push(PipelineRow::Param { label: "  Residual Weight", field: "lsqr_residual_weighting",
@@ -3233,6 +3275,7 @@ impl PipelineFormState {
         "tv_lambda", "tv_rho", "tv_tol", "tv_max_iter",
         "tkd_threshold", "tsvd_threshold",
         "ilsqr_tol", "ilsqr_max_iter", "ilsqr_pad_mm",
+        "star_pad", "star_te_ms",
         "tgv_iterations", "tgv_erosions", "tgv_alpha1", "tgv_alpha0",
         "tikhonov_lambda",
         "nltv_lambda", "nltv_mu", "nltv_tol", "nltv_max_iter", "nltv_newton_iter",
@@ -3348,6 +3391,8 @@ impl PipelineFormState {
             "heidi_denoise_conductance" => &self.heidi_denoise_conductance,
             "ilsqr_max_iter" => &self.ilsqr_max_iter,
             "ilsqr_pad_mm" => &self.ilsqr_pad_mm,
+            "star_pad" => &self.star_pad,
+            "star_te_ms" => &self.star_te_ms,
             "tgv_iterations" => &self.tgv_iterations,
             "tgv_erosions" => &self.tgv_erosions,
             "tgv_alpha1" => &self.tgv_alpha1,
@@ -3577,6 +3622,8 @@ impl PipelineFormState {
             "heidi_denoise_conductance" => Some(&mut self.heidi_denoise_conductance),
             "ilsqr_max_iter" => Some(&mut self.ilsqr_max_iter),
             "ilsqr_pad_mm" => Some(&mut self.ilsqr_pad_mm),
+            "star_pad" => Some(&mut self.star_pad),
+            "star_te_ms" => Some(&mut self.star_te_ms),
             "tgv_iterations" => Some(&mut self.tgv_iterations),
             "tgv_erosions" => Some(&mut self.tgv_erosions),
             "tgv_alpha1" => Some(&mut self.tgv_alpha1),
@@ -3749,6 +3796,7 @@ impl PipelineFormState {
             "vsharp_grid" => self.vsharp_grid,
             "robust_fit_loss" => self.robust_fit_loss,
             "motion_reference" => self.motion_reference,
+            "star_te" => self.star_te,
             "output_space" => self.output_space,
             "mask_preset" => self.mask_preset,
             "separation_algorithm" => self.separation_algorithm,
@@ -3797,6 +3845,7 @@ impl PipelineFormState {
             "vsharp_grid" => self.vsharp_grid = val,
             "robust_fit_loss" => self.robust_fit_loss = val,
             "motion_reference" => self.motion_reference = val,
+            "star_te" => self.star_te = val.min(STAR_TE_OPTIONS.len() - 1),
             "output_space" => self.output_space = val,
             "mask_preset" => {
                 self.mask_preset = val;
@@ -8664,7 +8713,7 @@ mod tests {
         let ilsqr = QSM_ALGO_OPTIONS.iter().position(|o| *o == "ilsqr").unwrap();
         assert_eq!(app.pipeline_state.qsm_algorithm, ilsqr); // the default inversion
         app.handle_key(key(KeyCode::Right));
-        assert_eq!(QSM_ALGO_OPTIONS[app.pipeline_state.qsm_algorithm], "lsqr");
+        assert_eq!(QSM_ALGO_OPTIONS[app.pipeline_state.qsm_algorithm], QSM_ALGO_OPTIONS[ilsqr + 1]);
         app.handle_key(key(KeyCode::Left));
         assert_eq!(app.pipeline_state.qsm_algorithm, ilsqr);
     }

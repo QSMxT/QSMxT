@@ -80,6 +80,19 @@ histogram_bins = 200
 See [inhomogeneity correction](/QSMxT/reference/algorithms/#inhomogeneity-correction)
 for what each does.
 
+A method that converts the field to phase at one echo time has a `te` setting naming it:
+`"first"`, `"last"`, `"spacing"` (TE2 − TE1), `"sum"` (of the echo times), or a given time
+in seconds. On the command line the same choice is `first`, `last`, `spacing`, `sum`, or a
+time in ms:
+
+```toml
+[inversion.star]
+pad = [8, 8, 20]          # zero-padding per side, voxels (x y z)
+te = "sum"                # or "first", "last", "spacing", or { seconds = 0.03 }
+```
+
+`te = { seconds = 0.03 }` is `--star-te 30`.
+
 :::tip
 Rather than writing flags or TOML by hand, configure interactively in the
 [TUI](/QSMxT/guides/running-interactively/) — it shows the equivalent `qsmxt run`

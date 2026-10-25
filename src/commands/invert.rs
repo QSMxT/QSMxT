@@ -98,6 +98,17 @@ fn lsqr_params(args: &crate::cli::LsqrParamArgs) -> qsm_core::inversion::LsqrQsm
 /// [`HeidiConfig`] is the pipeline's flattening of qsm-core's optional denoise struct into a
 /// switch plus three values; taking the defaults from it keeps `invert heidi` and
 /// `run --qsm-algorithm heidi` on one set of numbers.
+/// STAR-QSM's settings from `qsmxt invert star`'s flags. The field strength and echo times are
+/// the scan's; qsm-core's dispatcher fills them in.
+fn star_params(args: &crate::cli::InvertStarArgs) -> qsm_core::inversion::StarParams {
+    let d = qsm_core::inversion::StarParams::default();
+    qsm_core::inversion::StarParams {
+        pad: args.pad.as_deref().map_or(d.pad, |p| [p[0], p[1], p[2]]),
+        te: args.te.map_or(d.te, Into::into),
+        ..d
+    }
+}
+
 fn heidi_params(args: &crate::cli::HeidiParamArgs) -> qsm_core::inversion::HeidiParams {
     let d = crate::pipeline::config::HeidiConfig::default();
     qsm_core::inversion::HeidiParams {
@@ -186,6 +197,12 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             ilsqr.validate().map_err(|e| QsmxtError::Config(format!("--pad-mm: {e}")))?;
             let config = qsm_core::pipeline::InversionConfig { ilsqr, ..config_for(A::Ilsqr) };
             let out = invert_with(&args.common, f64::NAN, &[], Magnitude::None, config, "iLSQR")?;
+            (args.common, out)
+        }
+        InvertCommand::Star(args) => {
+            let config = qsm_core::pipeline::InversionConfig { star: star_params(&args), ..config_for(A::Star) };
+            let out = invert_with(&args.common, args.scan.field_strength, &args.scan.echo_times,
+                Magnitude::None, config, "STAR-QSM")?;
             (args.common, out)
         }
         InvertCommand::Lsqr(args) => {
@@ -688,7 +705,7 @@ fn run_sti(args: crate::cli::InvertStiArgs) -> crate::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{heidi_params, lsqr_params};
+    use super::{heidi_params, lsqr_params, star_params};
     use crate::cli::{HeidiParamArgs, LsqrParamArgs};
 
     /// With no flags set, the `invert` surface must reproduce qsm-core's own defaults — the same
@@ -717,6 +734,26 @@ mod tests {
         assert_eq!(p.te, h.te);
         let (a, b) = (p.denoise.unwrap(), h.denoise.unwrap());
         assert_eq!((a.iterations, a.time_step, a.conductance), (b.iterations, b.time_step, b.conductance));
+    }
+
+    /// `qsmxt invert star` with no flags gives qsm-core's STAR-QSM defaults; `--pad` and `--te`
+    /// reach its parameters.
+    #[test]
+    fn star_flags_map_to_its_params() {
+        use clap::Parser;
+        let parse = |extra: &[&str]| {
+            let mut argv = vec!["qsmxt", "invert", "star", "f.nii", "-m", "m.nii", "-o", "o.nii",
+                                "--field-strength", "3", "--echo-times", "0.01", "0.02"];
+            argv.extend(extra);
+            match crate::cli::Cli::try_parse_from(argv).unwrap().command {
+                crate::cli::Command::Invert { command: crate::cli::InvertCommand::Star(a) } => a,
+                _ => panic!("expected invert star"),
+            }
+        };
+        let (p, d) = (star_params(&parse(&[])), qsm_core::inversion::StarParams::default());
+        assert_eq!((p.pad, p.te), (d.pad, d.te));
+        let p = star_params(&parse(&["--pad", "2", "4", "6", "--te", "spacing"]));
+        assert_eq!((p.pad, p.te), ([2, 4, 6], qsm_core::EchoTime::Spacing));
     }
 
     /// `--lsqr-residual-weighting` is `Option<f64>` in qsm-core because `None` means
