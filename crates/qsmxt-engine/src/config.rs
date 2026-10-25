@@ -68,6 +68,9 @@ pub struct MediConfig {
     pub merit: bool,
     pub smv: bool,
     pub smv_radius: f64,
+    /// With SMV, erode the mask to where the SMV of the mask exceeds 0.999, as `MEDI_L1` does.
+    /// Off keeps the full mask. Ignored without SMV and with mSMV, which keeps the mask.
+    pub smv_shrink_mask: bool,
     pub data_weighting: i32,
     pub percentage: f64,
     pub cg_tol: f64,
@@ -92,8 +95,8 @@ impl Default for MediConfig {
         let m = p.msmv.clone().unwrap_or_default();
         Self {
             lambda: p.lambda, merit: p.merit, smv: p.smv, smv_radius: p.smv_radius,
-            data_weighting: p.data_weighting, percentage: p.percentage, cg_tol: p.cg_tol,
-            cg_max_iter: p.cg_max_iter, max_iter: p.max_iter, tol: p.tol,
+            smv_shrink_mask: p.smv_shrink_mask, data_weighting: p.data_weighting,
+            percentage: p.percentage, cg_tol: p.cg_tol, cg_max_iter: p.cg_max_iter, max_iter: p.max_iter, tol: p.tol,
             msmv: p.msmv.is_some(), msmv_maxk: m.maxk, msmv_vessel_radius: m.vessel_radius,
             msmv_prefilter: m.prefilter,
         }
@@ -1270,6 +1273,16 @@ pub struct BgRemovalConfig {
     pub resharp: ResharpConfig,
     pub harperella: HarperellaConfig,
     pub iharperella: IharperellaConfig,
+    /// The user chose `algorithm`, so the run keeps it. Left unset, the general default gives way
+    /// to the inversion's own reference background removal where it has one: PDF for MEDI
+    /// (QSM.rs `InversionConfig::reference_bg_removal`, applied by
+    /// [`PipelineConfig::normalised`]).
+    ///
+    /// Normalising keeps it set only where it decides something (MEDI with the general default),
+    /// and it is written out only when set, as [`MaskingConfig::recipe_chosen`] is. Last, so the
+    /// cache key can drop it without reordering the rest.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub algorithm_chosen: bool,
 }
 impl Default for BgRemovalConfig {
     fn default() -> Self {
@@ -1279,6 +1292,7 @@ impl Default for BgRemovalConfig {
             lbv: LbvConfig::default(), ismv: IsmvConfig::default(),
             sharp: SharpConfig::default(), resharp: ResharpConfig::default(),
             harperella: HarperellaConfig::default(), iharperella: IharperellaConfig::default(),
+            algorithm_chosen: false,
         }
     }
 }

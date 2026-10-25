@@ -1873,7 +1873,7 @@ mod integration_tests {
             common: common_invert(input.clone(), mask.clone(), output.clone()),
             scan: scan(&[0.005, 0.010, 0.015]),
             magnitude,
-            lambda: None, merit: Some(false), smv: Some(false), smv_radius: None,
+            lambda: None, merit: Some(false), smv: Some(false), smv_radius: None, smv_shrink_mask: None,
             msmv, msmv_maxk: None, msmv_vessel_radius: None, no_msmv_prefilter: false,
             data_weighting: None, percentage: None, cg_tol: None, cg_max_iter: Some(2),
             max_iter: Some(1), tol: None,

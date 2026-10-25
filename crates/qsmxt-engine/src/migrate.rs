@@ -229,6 +229,13 @@ fn from_v1(value: &mut toml::Table, kind: Kind, out: &mut Migration) -> Result<(
             && s("field_mapping.phase_offset_removal").and_then(|v| v.as_bool()) != Some(false)
     };
 
+    // A background removal a hand-written file names is one its author chose, so an inversion
+    // with a reference background removal of its own (MEDI's PDF) does not replace it. A full
+    // file's is the default of the release that wrote it, and gives way like any other.
+    if !full && get(value, "bg_removal.algorithm").is_some() {
+        set(value, "bg_removal.algorithm_chosen", toml::Value::Boolean(true));
+    }
+
     for (from, to) in RENAMED {
         if let Some(v) = take(value, from) {
             if get(value, to).is_none() {
@@ -607,6 +614,23 @@ mod tests {
         let c = PipelineConfig::from_toml("schema_version = 2\n[inversion.medi]\nlambda = 0.002\n")
             .unwrap();
         assert_eq!(c.inversion.medi.lambda, 0.002);
+    }
+
+    /// A background removal named in a hand-written file is kept under MEDI; one in an old full
+    /// file was that release's default, and MEDI takes PDF in its place.
+    #[test]
+    fn a_hand_written_background_removal_is_kept_under_medi() {
+        use crate::enums::BfAlgorithm;
+        let medi = "[inversion]\nalgorithm = \"medi\"\n";
+        let (c, _) = read(&format!("{medi}[bg_removal]\nalgorithm = \"vsharp\"\n")).unwrap();
+        assert_eq!(c.normalised().0.bg_removal.algorithm, BfAlgorithm::Vsharp);
+        let (c, _) = read(medi).unwrap();
+        assert_eq!(c.normalised().0.bg_removal.algorithm, BfAlgorithm::Pdf);
+        let full = V10_FULL.replacen("algorithm = \"ilsqr\"", "algorithm = \"medi\"", 1);
+        assert_ne!(full, V10_FULL);
+        let (c, _) = read(&full).unwrap();
+        assert_eq!(c.inversion.algorithm, QsmAlgorithm::Medi);
+        assert_eq!(c.normalised().0.bg_removal.algorithm, BfAlgorithm::Pdf);
     }
 
     /// A phase-offset σ in voxels is refused when phase offsets are removed, dropped otherwise.

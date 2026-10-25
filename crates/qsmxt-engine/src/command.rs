@@ -297,7 +297,13 @@ fn command_for(config: &PipelineConfig) -> String {
     emit_f64(&mut parts, "--bet-voxel-scale", config.bet.voxel_scale, d.bet.voxel_scale);
 
     // ── Background removal ──
-    emit_enum(&mut parts, "--bf-algorithm", &config.bg_removal.algorithm, &d.bg_removal.algorithm);
+    // The default is the inversion's reference background removal where it has one (PDF for
+    // MEDI), else the general one. A normalised config that keeps the general default under MEDI
+    // is one the user chose (`BgRemovalConfig::algorithm_chosen`): naming it is what keeps it.
+    let bf_default = crate::bridge::reference_bg_removal(config).unwrap_or(d.bg_removal.algorithm);
+    if config.bg_removal.algorithm != bf_default || config.bg_removal.algorithm_chosen {
+        parts.push(format!("--bf-algorithm {}", config.bg_removal.algorithm));
+    }
     match config.bg_removal.algorithm {
         BfAlgorithm::Vsharp => {
             if config.bg_removal.vsharp.deconvolve != d.bg_removal.vsharp.deconvolve {
@@ -478,6 +484,9 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
             emit_f64(parts, "--medi-cg-tol", config.inversion.medi.cg_tol, d.inversion.medi.cg_tol);
             emit_f64(parts, "--medi-tol", config.inversion.medi.tol, d.inversion.medi.tol);
             emit_f64(parts, "--medi-smv-radius", config.inversion.medi.smv_radius, d.inversion.medi.smv_radius);
+            if config.inversion.medi.smv_shrink_mask != d.inversion.medi.smv_shrink_mask {
+                parts.push(if config.inversion.medi.smv_shrink_mask { "--medi-smv-shrink-mask" } else { "--no-medi-smv-shrink-mask" }.into());
+            }
             if config.inversion.medi.merit != d.inversion.medi.merit {
                 parts.push(format!("--medi-merit {}", config.inversion.medi.merit));
             }
@@ -832,6 +841,39 @@ mod tests {
         // Under another inversion it does not apply.
         config.inversion.algorithm = QsmAlgorithm::Rts;
         assert!(!generate_command(&config).contains("msmv"));
+    }
+
+    /// MEDI's default background removal is PDF, so a MEDI command names none; a background
+    /// removal the user chose is named, the general default included, so the command keeps it.
+    #[test]
+    fn medi_names_a_background_removal_only_when_chosen() {
+        let mut config = PipelineConfig::default();
+        config.inversion.algorithm = QsmAlgorithm::Medi;
+        assert!(!generate_command(&config).contains("--bf-algorithm"), "{}", generate_command(&config));
+        config.bg_removal.algorithm = BfAlgorithm::Pdf;
+        assert!(!generate_command(&config).contains("--bf-algorithm"));
+        config.bg_removal.algorithm = BfAlgorithm::Vsharp;
+        config.bg_removal.algorithm_chosen = true;
+        assert!(generate_command(&config).contains("--bf-algorithm vsharp"), "{}", generate_command(&config));
+        config.bg_removal.algorithm = BfAlgorithm::Lbv;
+        config.bg_removal.algorithm_chosen = false;
+        assert!(generate_command(&config).contains("--bf-algorithm lbv"));
+        // Another inversion: PDF is not its default, the general one is.
+        config.inversion.algorithm = QsmAlgorithm::Rts;
+        config.bg_removal.algorithm = BfAlgorithm::Pdf;
+        assert!(generate_command(&config).contains("--bf-algorithm pdf"));
+        config.bg_removal.algorithm = BfAlgorithm::Vsharp;
+        config.bg_removal.algorithm_chosen = true;
+        assert!(!generate_command(&config).contains("--bf-algorithm"));
+    }
+
+    #[test]
+    fn medi_smv_shrink_mask_command() {
+        let mut config = PipelineConfig::default();
+        config.inversion.algorithm = QsmAlgorithm::Medi;
+        assert!(!generate_command(&config).contains("shrink"));
+        config.inversion.medi.smv_shrink_mask = false;
+        assert!(generate_command(&config).contains("--no-medi-smv-shrink-mask"));
     }
 
     #[test]

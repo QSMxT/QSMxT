@@ -1491,6 +1491,10 @@ pub struct PipelineFormState {
     pub qsm_algorithm: usize,
     pub unwrapping_algorithm: usize,
     pub bf_algorithm: usize,
+    /// The user chose the background removal. Until then the run takes the inversion's
+    /// reference one where it has one (PDF for MEDI; the engine's rule,
+    /// `BgRemovalConfig::algorithm_chosen`), and that is the one shown.
+    pub bf_chosen: bool,
     pub qsm_reference: usize,
 
     // Field mapping
@@ -1638,6 +1642,7 @@ pub struct PipelineFormState {
     pub medi_tol: String,
     pub medi_percentage: String,
     pub medi_smv_radius: String,
+    pub medi_smv_shrink_mask: bool,
     /// MEDI-mSMV and its settings (`msmv_vessel_radius` blank = msmv.m's own).
     pub medi_msmv: bool,
     pub medi_msmv_maxk: String,
@@ -1916,6 +1921,7 @@ impl Default for PipelineFormState {
             qsm_algorithm: super::command::default_qsm_algorithm_index(), // ilsqr
             unwrapping_algorithm: 0, // romeo
             bf_algorithm: 0, // vsharp
+            bf_chosen: false,
             qsm_reference: 0, // mean
             phase_offset_removal: true,
             bipolar_correction: false,
@@ -2027,6 +2033,7 @@ impl Default for PipelineFormState {
             medi_tol: format!("{}", qsm_core::inversion::MediParams::default().tol),
             medi_percentage: format!("{}", qsm_core::inversion::MediParams::default().percentage),
             medi_smv_radius: format!("{}", qsm_core::inversion::MediParams::default().smv_radius),
+            medi_smv_shrink_mask: qsm_core::inversion::MediParams::default().smv_shrink_mask,
             medi_msmv: qsmxt_engine::MediConfig::default().msmv,
             medi_msmv_maxk: qsmxt_engine::MediConfig::default().msmv_maxk.to_string(),
             medi_msmv_vessel_radius: fmt_opt(qsmxt_engine::MediConfig::default().msmv_vessel_radius),
@@ -2795,6 +2802,10 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Toggle { label: "  SMV Mode", field: "medi_smv",
                     help: "High-pass the local field with a spherical mean value (SMV) filter, removing residual background near the brain edge (MEDI-SMV)" });
                 rows.push(PipelineRow::Param { label: "  SMV Radius", field: "medi_smv_radius", help: "SMV radius in mm (also mSMV's)" });
+                if self.medi_smv && !self.medi_msmv {
+                    rows.push(PipelineRow::Toggle { label: "  Shrink Mask", field: "medi_smv_shrink_mask",
+                        help: "With SMV, shrink the mask to where the SMV of the mask exceeds 0.999, dropping the edge band whose SMV reaches outside it. Off keeps the full mask" });
+                }
                 rows.push(PipelineRow::Toggle { label: "  mSMV", field: "medi_msmv",
                     help: "Filter the local field by maximum spherical mean value (MEDI-mSMV, Roberts 2024) before MEDI; needs at least 3 echoes" });
                 if self.medi_msmv {
@@ -3616,10 +3627,14 @@ impl PipelineFormState {
             "qsm_algorithm" => {
                 self.qsm_algorithm = val;
                 self.show_unchosen_mask();
+                self.show_unchosen_bf();
             }
             "qsmart_inversion" => self.qsmart_inversion = val,
             "unwrapping_algorithm" => self.unwrapping_algorithm = val,
-            "bf_algorithm" => self.bf_algorithm = val,
+            "bf_algorithm" => {
+                self.bf_algorithm = val;
+                self.bf_chosen = true;
+            }
             "qsm_reference" => self.qsm_reference = val,
             "r2prime_strategy" => self.r2prime_strategy = val,
             "b0_estimation" => self.b0_estimation = val,
@@ -3663,6 +3678,7 @@ impl PipelineFormState {
             "romeo_correct_regions" => self.romeo_correct_regions,
             "linear_fit_estimate_offset" => self.linear_fit_estimate_offset,
             "medi_smv" => self.medi_smv,
+            "medi_smv_shrink_mask" => self.medi_smv_shrink_mask,
             "do_chi_separation" => self.do_chi_separation,
             "medi_msmv" => self.medi_msmv,
             "medi_msmv_prefilter" => self.medi_msmv_prefilter,
@@ -3711,6 +3727,7 @@ impl PipelineFormState {
             "romeo_correct_regions" => self.romeo_correct_regions = !self.romeo_correct_regions,
             "linear_fit_estimate_offset" => self.linear_fit_estimate_offset = !self.linear_fit_estimate_offset,
             "medi_smv" => self.medi_smv = !self.medi_smv,
+            "medi_smv_shrink_mask" => self.medi_smv_shrink_mask = !self.medi_smv_shrink_mask,
             "medi_msmv" => self.medi_msmv = !self.medi_msmv,
             "medi_msmv_prefilter" => self.medi_msmv_prefilter = !self.medi_msmv_prefilter,
             "two_pass" => self.two_pass = !self.two_pass,
@@ -4043,6 +4060,23 @@ impl PipelineFormState {
                 self.mask_combine = recipe.combine;
                 self.mask_combined_refinements = recipe.refinements;
             }
+        }
+    }
+
+    /// The background removal the run takes while the user has not chosen one: the selected
+    /// inversion's reference one ([`qsmxt_engine::bridge::reference_bg_removal`]), else the
+    /// general default, as an index into [`BF_OPTIONS`].
+    pub fn unchosen_bf_algorithm(&self) -> usize {
+        let mut c = crate::pipeline::config::PipelineConfig::default();
+        c.inversion.algorithm = crate::tui::command::selected_qsm_algorithm(self);
+        let alg = qsmxt_engine::bridge::reference_bg_removal(&c).unwrap_or(c.bg_removal.algorithm);
+        BF_OPTIONS.iter().position(|o| *o == alg.to_string()).unwrap_or(0)
+    }
+
+    /// Show, while the user has not chosen a background removal, the one the run takes.
+    pub fn show_unchosen_bf(&mut self) {
+        if !self.bf_chosen {
+            self.bf_algorithm = self.unchosen_bf_algorithm();
         }
     }
 
@@ -6757,11 +6791,17 @@ impl App {
     }
 
     /// Reset one named field to its default, whichever form it lives in.
-    fn reset_field(&mut self, field: &str) {
+    pub(crate) fn reset_field(&mut self, field: &str) {
         let (form, ps) = (RunForm::default(), PipelineFormState::default());
         match field {
             "orientation_lambda" => return self.filter_state.orientation_lambda.clear(),
             "orientation_algorithm" => return self.filter_state.orientation_algorithm = 0,
+            // The default is no choice: the background removal the inversion takes when none is
+            // chosen.
+            "bf_algorithm" => {
+                self.pipeline_state.bf_chosen = false;
+                return self.pipeline_state.show_unchosen_bf();
+            }
             // The default is no choice: the mask the inversion takes when none is chosen.
             "mask_preset" => {
                 self.pipeline_state.mask_chosen = false;
@@ -8577,7 +8617,7 @@ mod tests {
     fn test_pipeline_reset_tab() {
         let mut app = App::new();
         app.pipeline_state.qsm_algorithm = 5;
-        app.pipeline_state.bf_algorithm = 3;
+        app.pipeline_state.set_select("bf_algorithm", 3);
         app.pipeline_state.tikhonov_lambda = "9".into();
         assert!(app.goto_field("qsm_algorithm"));
         app.handle_key(key(KeyCode::Char('R')));

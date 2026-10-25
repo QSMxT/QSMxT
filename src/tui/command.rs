@@ -291,8 +291,12 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         cosmos_max_iter: if weighted_cosmos { parse_optional_usize(&ps.cosmos_max_iter) } else { None },
         unwrapping_algorithm: Some(unwrap_options[ps.unwrapping_algorithm]),
         // Only when the inversion has a background-removal stage: otherwise the choice has no
-        // effect, and iQFM there is refused (#276).
-        bf_algorithm: ps.inversion_needs_bg_removal().then(|| bf_options[ps.bf_algorithm]),
+        // effect, and iQFM there is refused (#276). An unchosen one is left to the engine's rule,
+        // as `qsmxt run` without `--bf-algorithm` leaves it: the inversion's reference one (PDF
+        // for MEDI), else the general default.
+        bf_algorithm: (ps.inversion_needs_bg_removal()
+            && (ps.bf_chosen || ps.bf_algorithm != ps.unchosen_bf_algorithm()))
+            .then(|| bf_options[ps.bf_algorithm]),
         masking_input: None,
         phase_offset_removal: Some(ps.phase_offset_removal),
         phase_offset_sigma_mm: parse_optional_f64_vec3(&ps.phase_offset_sigma_mm),
@@ -371,6 +375,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             medi_smv: ps.medi_smv,
             no_medi_smv: !ps.medi_smv,
             medi_smv_radius: parse_optional_f64(&ps.medi_smv_radius),
+            medi_smv_shrink_mask: ps.medi_smv_shrink_mask,
+            no_medi_smv_shrink_mask: !ps.medi_smv_shrink_mask,
             medi_msmv: ps.medi_msmv,
             medi_msmv_maxk: if ps.medi_msmv { parse_optional_usize(&ps.medi_msmv_maxk) } else { None },
             medi_msmv_vessel_radius: if ps.medi_msmv { parse_optional_f64(&ps.medi_msmv_vessel_radius) } else { None },
@@ -1140,6 +1146,9 @@ mod tests {
         let shows_bfr = |app: &App| app.pipeline_state.all_rows().iter().any(|r|
             matches!(r, PipelineRow::AlgoSelect { field: "bf_algorithm", .. }));
         assert!(shows_bfr(&app));
+        // Unchosen, the engine's rule decides it; a chosen one is sent.
+        assert!(pipeline_args_from_app(&app).bf_algorithm.is_none());
+        app.pipeline_state.set_select("bf_algorithm", 0);
         assert!(pipeline_args_from_app(&app).bf_algorithm.is_some());
         for name in ["tfi", "tgv", "qsmart", "autoqsm", "nextqsm", "iqsm"] {
             app.pipeline_state.qsm_algorithm = QSM_ALGO_OPTIONS.iter().position(|o| *o == name).unwrap();
@@ -1758,6 +1767,60 @@ mod tests {
         assert_eq!(build_run_args(&app).unwrap().pipeline.b0_estimation, Some(B0EstimationArg::LinearFit));
     }
 
+    /// Background removal left alone in the TUI is left alone on the command line: MEDI takes
+    /// PDF, which the page shows. Picking one (the general default included) chooses it, and the
+    /// run keeps it; resetting it gives the choice back to the inversion.
+    #[test]
+    fn medi_takes_pdf_until_the_background_removal_is_chosen() {
+        use crate::cli::BfAlgorithmArg;
+        use qsmxt_engine::BfAlgorithm;
+        let medi = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|a| *a == "medi").unwrap();
+        let bf = |name: &str| crate::tui::app::BF_OPTIONS.iter().position(|o| *o == name).unwrap();
+        let mut app = default_app();
+        app.form.bids_dir = "/bids".to_string();
+        app.pipeline_state.set_select("qsm_algorithm", medi);
+        assert!(!app.pipeline_state.bf_chosen);
+        assert_eq!(app.pipeline_state.bf_algorithm, bf("pdf"), "the page shows PDF");
+        assert_eq!(build_run_args(&app).unwrap().pipeline.bf_algorithm, None);
+        assert_eq!(config_from_app(&app).unwrap().bg_removal.algorithm, BfAlgorithm::Pdf);
+        assert!(!build_command_string(&app).contains("--bf-algorithm"));
+
+        // Back to RTS while still unchosen: the general default again.
+        app.pipeline_state.set_select("qsm_algorithm", 0);
+        assert_eq!(app.pipeline_state.bf_algorithm, bf("vsharp"));
+        app.pipeline_state.set_select("qsm_algorithm", medi);
+
+        // Choosing V-SHARP keeps it, through a change of inversion too.
+        app.pipeline_state.set_select("bf_algorithm", bf("vsharp"));
+        assert!(app.pipeline_state.bf_chosen);
+        assert_eq!(build_run_args(&app).unwrap().pipeline.bf_algorithm, Some(BfAlgorithmArg::Vsharp));
+        let c = config_from_app(&app).unwrap();
+        assert_eq!(c.bg_removal.algorithm, BfAlgorithm::Vsharp);
+        assert!(c.bg_removal.algorithm_chosen);
+        assert!(build_command_string(&app).contains("--bf-algorithm vsharp"));
+        app.pipeline_state.set_select("qsm_algorithm", 0);
+        app.pipeline_state.set_select("qsm_algorithm", medi);
+        assert_eq!(app.pipeline_state.bf_algorithm, bf("vsharp"));
+
+        // Resetting the row is no choice again.
+        app.reset_field("bf_algorithm");
+        assert!(!app.pipeline_state.bf_chosen);
+        assert_eq!(app.pipeline_state.bf_algorithm, bf("pdf"));
+    }
+
+    /// MEDI's mask shrinking is a row under SMV, and reaches the run.
+    #[test]
+    fn medi_smv_shrink_mask_reaches_the_run() {
+        let medi = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|a| *a == "medi").unwrap();
+        let mut app = default_app();
+        app.form.bids_dir = "/bids".to_string();
+        app.pipeline_state.set_select("qsm_algorithm", medi);
+        assert!(config_from_app(&app).unwrap().inversion.medi.smv_shrink_mask);
+        app.pipeline_state.toggle("medi_smv_shrink_mask");
+        assert!(!config_from_app(&app).unwrap().inversion.medi.smv_shrink_mask);
+        assert!(build_command_string(&app).contains("--no-medi-smv-shrink-mask"));
+    }
+
     /// Masking left alone in the TUI is masking left alone on the command line: QSMART takes
     /// the engine's BET mask, which the masking page shows. Picking a preset (the default one
     /// included) or editing the recipe chooses it, and the run keeps it.
@@ -2323,6 +2386,7 @@ mod parity {
             ("--no-axial-resampling", "restates the default"),
             ("--romeo-correct-global", "restates the default"),
             ("--medi-smv", "restates the default"),
+            ("--medi-smv-shrink-mask", "restates the default"),
             ("--no-romeo-mag-weight", "restates the default (kept for compatibility)"),
             // The per-run half of a distributed run: the TUI's SLURM mode generates it (through
             // `qsmxt slurm`) and its local mode is a whole run.

@@ -15,7 +15,7 @@
 use serde::Serialize;
 
 use crate::config::{
-    enforce_analysis_dependencies, enforce_reference_dependencies, enforce_separation_dependencies,
+    BgRemovalConfig, enforce_analysis_dependencies, enforce_reference_dependencies, enforce_separation_dependencies,
     enforce_smwi_dependencies, PipelineConfig,
 };
 use crate::enums::{QsmReference, SeparationAlgorithm};
@@ -47,7 +47,10 @@ impl PipelineConfig {
     ///   no region is the mean;
     /// - the general default mask recipe, unless the user chose it
     ///   ([`crate::config::MaskingConfig::recipe_chosen`]), is the inversion's own default where
-    ///   it has one: QSMART's BET mask.
+    ///   it has one: QSMART's BET mask;
+    /// - the general default background removal, unless the user chose it
+    ///   ([`crate::config::BgRemovalConfig::algorithm_chosen`]), is the inversion's reference one
+    ///   where it has one ([`crate::bridge::reference_bg_removal`]): PDF for MEDI.
     ///
     /// Idempotent: normalising the result changes nothing and returns no adjustments.
     pub fn normalised(&self) -> (PipelineConfig, Vec<Adjustment>) {
@@ -117,6 +120,21 @@ impl PipelineConfig {
         } else {
             c.masking.recipe_chosen = false;
         }
+
+        // Likewise the general default background removal gives way to the inversion's
+        // reference one (PDF for MEDI), unless the user chose it.
+        let general = BgRemovalConfig::default().algorithm;
+        match crate::bridge::reference_bg_removal(&c) {
+            Some(own) if c.bg_removal.algorithm == general && own != general => {
+                if !c.bg_removal.algorithm_chosen {
+                    c.bg_removal.algorithm = own;
+                    out.push(note("bg_removal.algorithm", "inversion.algorithm", format!(
+                        "Background fields are removed with {}, as in the selected inversion's reference pipeline",
+                        crate::methods::bg_removal_name(own))));
+                }
+            }
+            _ => c.bg_removal.algorithm_chosen = false,
+        }
         (c, out)
     }
 }
@@ -166,6 +184,10 @@ mod tests {
             if bits % 3 == 0 { c.inversion.algorithm = QsmAlgorithm::Qsmart; }
             c.masking.recipe_chosen = bits % 7 < 3;
             if bits % 11 == 0 { c.masking.sections = crate::masking::hd_bet_mask_sections(); }
+            // The background-removal rule's, likewise.
+            if bits % 5 == 1 { c.inversion.algorithm = QsmAlgorithm::Medi; }
+            c.bg_removal.algorithm_chosen = bits % 13 < 6;
+            if bits % 17 == 0 { c.bg_removal.algorithm = crate::enums::BfAlgorithm::Lbv; }
             out.push(c);
         }
         out
@@ -195,6 +217,7 @@ mod tests {
                 ("pipeline.do_r2primemap", c.pipeline.do_r2primemap != n.pipeline.do_r2primemap),
                 ("qsm.reference", c.qsm.reference != n.qsm.reference),
                 ("masking.sections", c.masking.sections != n.masking.sections),
+                ("bg_removal.algorithm", c.bg_removal.algorithm != n.bg_removal.algorithm),
             ].into_iter().filter(|(_, d)| *d).map(|(s, _)| s).collect();
             let mut said: Vec<&str> = adjustments.iter().map(|a| a.setting).collect();
             said.sort();
@@ -221,6 +244,7 @@ mod tests {
             |c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::WaveSep; },
             |c| { c.qsm.reference = QsmReference::Region; c.qsm.reference_region = Some("thalamus".into()); },
             |c| c.inversion.algorithm = QsmAlgorithm::Qsmart,
+            |c| c.inversion.algorithm = QsmAlgorithm::Medi,
         ] {
             let mut c = PipelineConfig::default();
             edit(&mut c);
@@ -312,6 +336,60 @@ mod tests {
         for chosen in [false, true] {
             let once = qsmart(chosen).normalised().0;
             assert_eq!(once.normalised(), (once.clone(), vec![]));
+        }
+    }
+
+    /// MEDI takes PDF, its reference pipeline's background removal, in place of the general
+    /// default, unless the user chose that default; a background removal other than the general
+    /// default is kept, chosen or not; the mark is kept only where it decides this.
+    #[test]
+    fn medi_takes_pdf_unless_the_background_removal_was_chosen() {
+        use crate::enums::BfAlgorithm;
+        let general = BgRemovalConfig::default().algorithm;
+        let medi = |chosen: bool| {
+            let mut c = PipelineConfig::default();
+            c.inversion.algorithm = QsmAlgorithm::Medi;
+            c.bg_removal.algorithm_chosen = chosen;
+            c
+        };
+        // Untouched: PDF, said once.
+        let (n, adjustments) = medi(false).normalised();
+        assert_eq!(n.bg_removal.algorithm, BfAlgorithm::Pdf);
+        assert!(!n.bg_removal.algorithm_chosen);
+        assert_eq!(adjustments.iter().map(|a| (a.setting, a.because)).collect::<Vec<_>>(),
+                   [("bg_removal.algorithm", "inversion.algorithm")]);
+        assert!(adjustments[0].message.contains("PDF"), "{}", adjustments[0].message);
+        // Chosen: the general default is kept, and so is the mark that keeps it.
+        let (n, adjustments) = medi(true).normalised();
+        assert_eq!(n.bg_removal.algorithm, general);
+        assert!(n.bg_removal.algorithm_chosen && adjustments.is_empty());
+        // Another background removal is left alone, chosen or not, and needs no mark.
+        for chosen in [false, true] {
+            let mut c = medi(chosen);
+            c.bg_removal.algorithm = BfAlgorithm::Lbv;
+            let (n, adjustments) = c.normalised();
+            assert_eq!(n.bg_removal.algorithm, BfAlgorithm::Lbv);
+            assert!(!n.bg_removal.algorithm_chosen && adjustments.is_empty());
+        }
+        // With every SMV option: MEDI takes the local field whatever they are.
+        let mut c = medi(false);
+        c.inversion.medi.smv = false;
+        assert_eq!(c.normalised().0.bg_removal.algorithm, BfAlgorithm::Pdf);
+        c.inversion.medi.msmv = true;
+        assert_eq!(c.normalised().0.bg_removal.algorithm, BfAlgorithm::Pdf);
+        // An inversion without a reference background removal keeps the general default.
+        let mut c = medi(true);
+        c.inversion.algorithm = QsmAlgorithm::Rts;
+        let (n, adjustments) = c.normalised();
+        assert_eq!(n.bg_removal.algorithm, general);
+        assert!(!n.bg_removal.algorithm_chosen && adjustments.is_empty());
+        // Idempotent either way, and the mark survives saving where it decides something.
+        for chosen in [false, true] {
+            let once = medi(chosen).normalised().0;
+            assert_eq!(once.normalised(), (once.clone(), vec![]));
+            let toml = once.to_toml().unwrap();
+            assert_eq!(toml.contains("algorithm_chosen = true"), chosen, "{toml}");
+            assert_eq!(PipelineConfig::from_toml(&toml).unwrap().normalised().0, once);
         }
     }
 

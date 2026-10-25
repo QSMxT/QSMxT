@@ -76,11 +76,11 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     cover!(q::inversion::NltvParams => c::NltvConfig,
         ignore: ["b0", "echo_times", "rho", "tol_newton", "te"]);
     // b0/echo_times come from scan metadata. `msmv` (an Option<MsmvParams>) is flattened into
-    // msmv + msmv_* (guarded below). Not exposed yet: the mask shrinking (#418), MEDI+0's CSF term
-    // (csf, lambda_csf, csf_r2s_threshold, csf_erode), zeropad and te (follow-up: MEDI family).
+    // msmv + msmv_* (guarded below). Not exposed yet: MEDI+0's CSF term (csf, lambda_csf,
+    // csf_r2s_threshold, csf_erode), zeropad and te (follow-up: MEDI family).
     cover!(q::inversion::MediParams => c::MediConfig,
-        ignore: ["b0", "echo_times", "smv_shrink_mask", "csf", "lambda_csf", "csf_r2s_threshold",
-                 "csf_erode", "zeropad", "te"]);
+        ignore: ["b0", "echo_times", "csf", "lambda_csf", "csf_r2s_threshold", "csf_erode",
+                 "zeropad", "te"]);
     assert_eq!(field_names::<q::inversion::MsmvParams>(), ["prefilter", "maxk", "vessel_radius"],
                "MsmvParams changed: expose it in MediConfig's msmv_* settings");
     // b0/echo_times come from scan metadata. Not exposed yet: merit, linear and te (follow-up:

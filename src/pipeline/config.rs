@@ -320,7 +320,10 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         }
 
         // ── Background removal ──
+        // Naming one is the user choosing it, which the run then keeps: left unchosen,
+        // normalising gives an inversion with a reference background removal (MEDI) that one.
         if let Some(a) = args.bf_algorithm {
+            config.bg_removal.algorithm_chosen = true;
             config.bg_removal.algorithm = match a {
                 cli::BfAlgorithmArg::Vsharp => BfAlgorithm::Vsharp,
                 cli::BfAlgorithmArg::Pdf => BfAlgorithm::Pdf,
@@ -449,6 +452,8 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.medi_params.medi_smv_radius { config.inversion.medi.smv_radius = v; }
         if args.medi_params.medi_smv { config.inversion.medi.smv = true; }
         if args.medi_params.no_medi_smv { config.inversion.medi.smv = false; }
+        if args.medi_params.medi_smv_shrink_mask { config.inversion.medi.smv_shrink_mask = true; }
+        if args.medi_params.no_medi_smv_shrink_mask { config.inversion.medi.smv_shrink_mask = false; }
         if args.medi_params.medi_msmv { config.inversion.medi.msmv = true; }
         if let Some(v) = args.medi_params.medi_msmv_maxk { config.inversion.medi.msmv_maxk = v; }
         if let Some(v) = args.medi_params.medi_msmv_vessel_radius { config.inversion.medi.msmv_vessel_radius = Some(v); }
@@ -1101,6 +1106,40 @@ mod tests {
         let err = apply_run_overrides(&mut PipelineConfig::default(), &run_args.pipeline)
             .expect_err("mouse-bet was removed").to_string();
         assert!(err.contains("removed") && err.contains("rs2-net") && err.contains("scale="), "{err}");
+    }
+
+    /// `qsmxt run --qsm-algorithm medi` removes the background with PDF, as MEDI's authors do;
+    /// `--bf-algorithm` chooses another, the general default included, and the run keeps it.
+    #[test]
+    fn medi_takes_pdf_unless_bf_algorithm_is_given() {
+        let medi = |extra: &[&str]| {
+            let mut argv = vec!["qsmxt", "run", "<bids>", "--qsm-algorithm", "medi"];
+            argv.extend_from_slice(extra);
+            config_from_cli(&argv).normalised().0
+        };
+        assert_eq!(medi(&[]).bg_removal.algorithm, BfAlgorithm::Pdf);
+        assert_eq!(medi(&["--no-medi-smv"]).bg_removal.algorithm, BfAlgorithm::Pdf);
+        let c = medi(&["--bf-algorithm", "vsharp"]);
+        assert_eq!(c.bg_removal.algorithm, BfAlgorithm::Vsharp);
+        assert!(c.bg_removal.algorithm_chosen, "the choice is in the config, so it is saved");
+        assert_eq!(medi(&["--bf-algorithm", "lbv"]).bg_removal.algorithm, BfAlgorithm::Lbv);
+        // Another inversion keeps the general default.
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--qsm-algorithm", "rts"]).normalised().0;
+        assert_eq!(c.bg_removal.algorithm, BfAlgorithm::Vsharp);
+    }
+
+    #[test]
+    fn medi_smv_shrink_mask_flags() {
+        let medi = |extra: &[&str]| {
+            let mut argv = vec!["qsmxt", "run", "<bids>", "--qsm-algorithm", "medi"];
+            argv.extend_from_slice(extra);
+            config_from_cli(&argv).inversion.medi.smv_shrink_mask
+        };
+        assert!(medi(&[]));
+        assert!(!medi(&["--no-medi-smv-shrink-mask"]));
+        assert!(medi(&["--medi-smv-shrink-mask"]));
+        assert!(cli::Cli::try_parse_from(["qsmxt", "run", "<bids>", "--medi-smv-shrink-mask",
+            "--no-medi-smv-shrink-mask"]).is_err());
     }
 
     #[test]

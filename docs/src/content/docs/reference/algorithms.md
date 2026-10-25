@@ -443,7 +443,7 @@ Set with `--bf-algorithm`.
 | Value | Method |
 | --- | --- |
 | `vsharp` | Variable-kernel SHARP (default) |
-| `pdf` | Projection onto Dipole Fields |
+| `pdf` | Projection onto Dipole Fields (default with `--qsm-algorithm medi`) |
 | `lbv` | Laplacian Boundary Value |
 | `ismv` | Iterative Spherical Mean Value |
 | `sharp` | Sophisticated Harmonic Artifact Reduction |
@@ -452,6 +452,10 @@ Set with `--bf-algorithm`.
 | `iharperella` | Improved HARPERELLA |
 | `bfrnet` | BFRnet — deep-learning background removal from the total field. Needs a deep-learning build; weights downloaded on first use |
 | `iqfm` | iQFM — deep-learning joint unwrapping and background removal straight from the wrapped phase (the local-field head of iQSM). Replaces field mapping as well; refused with inversions that do not take a local field. Weights downloaded on first use |
+
+With `--qsm-algorithm medi` and no `--bf-algorithm`, background removal is PDF, as in
+the MEDI authors' pipeline; the TUI shows it so until another is picked. A background
+removal you choose, `vsharp` included, is kept.
 
 Background removal only runs in front of an inversion that takes the local field.
 The total-field inversions (`tfi`, `qsmart`, `autoqsm`, `nextqsm`, and `tgv` on
@@ -538,9 +542,12 @@ TGV takes the combined B0 field map, expressed as phase at the first echo time. 
 time and field strength, so the same values regularise differently at another echo time or
 field strength.
 
-MEDI takes the local field from background removal (PDF in the authors' pipeline), and
-with `--medi-smv` (the default) high-passes it with a spherical mean value filter near the
-brain edge. `--medi-msmv` replaces that step with maximum spherical mean value (mSMV)
+MEDI takes the local field from background removal (PDF unless you choose another, as in
+the authors' pipeline), and with `--medi-smv` (the default) high-passes it with a spherical
+mean value filter of radius `--medi-smv-radius` (5 mm). With SMV, the mask is shrunk to
+where the filtered mask exceeds 0.999, about one SMV radius in from its edge;
+`--no-medi-smv-shrink-mask` keeps the full mask and high-passes the field over it.
+`--medi-msmv` replaces that step with maximum spherical mean value (mSMV)
 filtering (Roberts et al., 2024), which removes residual background at the brain edge without
 eroding the mask; it needs at least three echoes. MEDI and TFI weight the data by a noise map
 and their edges by a magnitude they make from every echo's magnitude, so they need the
