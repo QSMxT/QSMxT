@@ -780,21 +780,19 @@ mod integration_tests {
         c.output_mask = Some(output_mask.clone());
         super::bgremove::execute(BgremoveCommand::Vsharp(BgremoveVsharpArgs {
             common: c,
-            deconvolve: None, threshold: None, max_radius: None, min_radius: None, grid: None, grid_spacing: None,
+            deconvolve: None, threshold: None, max_radius: None, min_radius: None, radius_step: None, grid: None, grid_spacing: None,
         })).unwrap();
         assert!(output.exists());
         assert!(output_mask.exists());
 
-        // The defaults are qsm-core's V-SHARP on QSMxT's working grid (the acquired one), and
-        // `--deconvolve true` reaches it.
+        // The defaults are qsm-core's V-SHARP, and `--deconvolve true` reaches it.
         let field = qsm_core::io::read_nifti_file(&input).unwrap();
         let (m, _) = super::common::load_mask(&mask).unwrap();
         let (nx, ny, nz) = field.dims;
         let (vx, vy, vz) = field.voxel_size;
         let grid = qsm_core::Grid::new(nx, ny, nz, vx, vy, vz);
         let core = |p: &qsm_core::bgremove::VsharpParams| {
-            let p = qsm_core::bgremove::VsharpParams { grid: qsm_core::bgremove::VsharpGrid::Native, ..p.clone() };
-            qsm_core::bgremove::vsharp(&field.data, &m, &grid, &p, |_, _| {}).unwrap().0
+            qsm_core::bgremove::vsharp(&field.data, &m, &grid, p, |_, _| {}).unwrap().0
         };
         let read = |p: &std::path::Path| qsm_core::io::read_nifti_file(p).unwrap().data;
         let off = read(&output);
@@ -802,7 +800,7 @@ mod integration_tests {
         c.output_mask = None;
         super::bgremove::execute(BgremoveCommand::Vsharp(BgremoveVsharpArgs {
             common: c,
-            deconvolve: Some(true), threshold: None, max_radius: None, min_radius: None, grid: None, grid_spacing: None,
+            deconvolve: Some(true), threshold: None, max_radius: None, min_radius: None, radius_step: None, grid: None, grid_spacing: None,
         })).unwrap();
         let on = read(&output);
         let as_f32 = |v: Vec<f64>| v.into_iter().map(|x| x as f32).collect::<Vec<_>>();

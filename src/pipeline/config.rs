@@ -574,6 +574,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.vsharp_params.vsharp_threshold { config.bg_removal.vsharp.threshold = v; }
         if let Some(v) = args.vsharp_params.vsharp_max_radius { config.bg_removal.vsharp.max_radius = v; }
         if let Some(v) = args.vsharp_params.vsharp_min_radius { config.bg_removal.vsharp.min_radius = v; }
+        if let Some(v) = args.vsharp_params.vsharp_radius_step { config.bg_removal.vsharp.radius_step = v; }
         if let Some(v) = args.vsharp_params.vsharp_grid { config.bg_removal.vsharp.grid = v.into(); }
         if let Some(v) = args.vsharp_params.vsharp_grid_spacing { config.bg_removal.vsharp.grid_spacing = v; }
         if let Some(v) = args.pdf_params.pdf_tol { config.bg_removal.pdf.tol = v; }
@@ -685,6 +686,9 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = sp.chi_sep_ilsqr_tol { config.separation.chi_sep_ilsqr.tol = v; }
         if let Some(v) = sp.chi_sep_ilsqr_cg_max_iter { config.separation.chi_sep_ilsqr.cg_max_iter = v; }
         if let Some(v) = sp.chi_sep_ilsqr_cg_tol { config.separation.chi_sep_ilsqr.cg_tol = v; }
+        if let Some(v) = sp.chi_sep_ilsqr_qsm_max_iter { config.separation.chi_sep_ilsqr.qsm_ilsqr.max_iter = v; }
+        if let Some(v) = sp.chi_sep_ilsqr_qsm_tol { config.separation.chi_sep_ilsqr.qsm_ilsqr.tol = v; }
+        if let Some(v) = sp.chi_sep_ilsqr_qsm_pad_mm { config.separation.chi_sep_ilsqr.qsm_ilsqr.pad_mm = v; }
         if let Some(v) = sp.chi_sep_medi_lambda_para { config.separation.chi_sep_medi.lambda_para = v; }
         if let Some(v) = sp.chi_sep_medi_lambda_dia { config.separation.chi_sep_medi.lambda_dia = v; }
         if let Some(v) = sp.chi_sep_medi_lambda_cpl { config.separation.chi_sep_medi.lambda_cpl = v; }

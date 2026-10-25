@@ -729,7 +729,8 @@ fn separation_changes(config: &PipelineConfig) -> Changed {
     match s.algorithm {
         SeparationAlgorithm::R2starQsm => c.add_fields(&s.r2star_qsm, &d.r2star_qsm, &[]),
         SeparationAlgorithm::Decompose => c.add_fields(&s.decompose, &d.decompose, &[]),
-        SeparationAlgorithm::ChiSepIlsqr => c.add_fields(&s.chi_sep_ilsqr, &d.chi_sep_ilsqr, &[]),
+        // Its QSM's iLSQR is worded with that QSM.
+        SeparationAlgorithm::ChiSepIlsqr => c.add_fields(&s.chi_sep_ilsqr, &d.chi_sep_ilsqr, &["qsm_ilsqr"]),
         SeparationAlgorithm::ChiSepMedi => c.add_fields(&s.chi_sep_medi, &d.chi_sep_medi, &[]),
         SeparationAlgorithm::WaveSep => c.add_fields(&s.wavesep, &d.wavesep, &[]),
         SeparationAlgorithm::HcChisep => c.add_fields(&s.hc_chisep, &d.hc_chisep, &[]),
@@ -1034,8 +1035,9 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                     if *alg == BfAlgorithm::Vsharp {
                         let (v, d) = (&config.bg_removal.vsharp, VsharpConfig::default());
                         let mut changed = Changed::default();
-                        changed.add(differs(v.max_radius, d.max_radius) || differs(v.min_radius, d.min_radius),
-                            || format!("SMV kernel radii from {} to {} mm", v.max_radius, v.min_radius));
+                        changed.add(differs(v.max_radius, d.max_radius) || differs(v.min_radius, d.min_radius)
+                            || differs(v.radius_step, d.radius_step),
+                            || format!("SMV kernel radii from {} to {} mm in {} mm steps", v.max_radius, v.min_radius, v.radius_step));
                         changed.add(v.deconvolve != d.deconvolve, || format!(
                             "truncated-SVD deconvolution {}",
                             if v.deconvolve { "enabled" } else { "disabled" }));
@@ -1048,6 +1050,8 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                         match v.grid {
                             VsharpGrid::Finest => doc.say(&both(Stage::BackgroundRemoval), format!(
                                 "For anisotropic voxels the V-SHARP background was estimated on an isotropic grid at the smallest acquired voxel dimension: {resample}. Isotropic acquisitions were processed on their acquired grid.")),
+                            VsharpGrid::Isotropic if !differs(v.grid_spacing, d.grid_spacing) => doc.say(&both(Stage::BackgroundRemoval), format!(
+                                "The V-SHARP background was estimated on an isotropic grid: {resample}.")),
                             VsharpGrid::Isotropic => doc.say(&both(Stage::BackgroundRemoval), format!(
                                 "The V-SHARP background was estimated on a {} mm isotropic grid: {resample}.", v.grid_spacing)),
                             VsharpGrid::Native => {}
@@ -1309,6 +1313,14 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
         // The networks' outputs as QSM.rs returns them.
         if matches!(config.separation.algorithm, SeparationAlgorithm::ChiSepNet | SeparationAlgorithm::SusepNet) {
             doc.say(&[Stage::ChiSeparation], "Negative χ+ and |χ−| values were set to zero.".to_string());
+        }
+        if crate::stages::separation::reconstructs_qsm(config) {
+            let mut q = Changed::default();
+            q.add_fields(&config.separation.chi_sep_ilsqr.qsm_ilsqr, &SeparationConfig::default().chi_sep_ilsqr.qsm_ilsqr, &[]);
+            doc.cite(&CITE_ILSQR);
+            doc.say(&[Stage::ChiSeparation], format!(
+                "The susceptibility map separated was reconstructed from the local field by iLSQR ({}){}.",
+                cite_inline(&CITE_ILSQR), q.with()));
         }
     }
 
@@ -1924,7 +1936,7 @@ pub(crate) mod words {
         }
         let (v, d) = (&b.vsharp, VsharpConfig::default());
         let mut c = Changed::default();
-        c.add(true, || format!("SMV kernel radii from {} to {} mm", v.max_radius, v.min_radius));
+        c.add(true, || format!("SMV kernel radii from {} to {} mm in {} mm steps", v.max_radius, v.min_radius, v.radius_step));
         c.add(v.deconvolve != d.deconvolve, || format!(
             "truncated-SVD deconvolution {}", if v.deconvolve { "enabled" } else { "disabled" }));
         c.add(v.deconvolve && differs(v.threshold, d.threshold), || format!("deconvolution threshold = {}", v.threshold));
@@ -2345,14 +2357,32 @@ mod tests {
         config.bg_removal.vsharp.threshold = 0.1;
         config.bg_removal.vsharp.max_radius = 8.0;
         let out = generate_methods(&config);
-        assert!(out.contains("with SMV kernel radii from 8 to 2 mm, truncated-SVD deconvolution enabled, and a deconvolution threshold of 0.1."), "{out}");
+        assert!(out.contains("with SMV kernel radii from 8 to 2 mm in 1 mm steps, truncated-SVD deconvolution enabled, and a deconvolution threshold of 0.1."), "{out}");
+    }
+
+    /// χ-sep iLSQR says it reconstructed the QSM it separated, and any iLSQR setting changed.
+    #[test]
+    fn chi_sep_ilsqr_methods_state_its_own_qsm() {
+        let mut config = PipelineConfig::default();
+        config.pipeline.do_chi_separation = true;
+        config.separation.algorithm = SeparationAlgorithm::ChiSepIlsqr;
+        let own = "The susceptibility map separated was reconstructed from the local field by iLSQR (Li et al., 2015)";
+        let out = generate_methods(&config);
+        assert!(out.contains(&format!("{own}.")), "{out}");
+        config.separation.chi_sep_ilsqr.qsm_ilsqr.max_iter = 40;
+        assert!(generate_methods(&config).contains(&format!("{own} with at most 40 iterations.")));
+        config.separation.custom_qsm_tool = Some("qsmxt".into());
+        assert!(!generate_methods(&config).contains(own));
+        config.separation.custom_qsm_tool = None;
+        config.separation.algorithm = SeparationAlgorithm::ChiSepMedi;
+        assert!(!generate_methods(&config).contains(own));
     }
 
     #[test]
     fn vsharp_methods_describe_the_working_grid() {
         let mut config = PipelineConfig::default();
         let out = generate_methods(&config);
-        assert!(!out.contains("isotropic grid"), "native is the default: {out}");
+        assert!(out.contains("estimated on an isotropic grid: the field"), "the default: {out}");
         config.bg_removal.vsharp.grid = VsharpGrid::Finest;
         let out = generate_methods(&config);
         assert!(out.contains("estimated on an isotropic grid at the smallest acquired voxel dimension"), "{out}");
@@ -3494,7 +3524,8 @@ mod defaults_only_tests {
     fn a_changed_setting_is_stated() {
         type Edit = fn(&mut PipelineConfig);
         let cases: Vec<(Edit, &str)> = vec![
-            (|c| c.bg_removal.vsharp.min_radius = 3.0, "V-SHARP (Wu et al., 2012) with SMV kernel radii from 12 to 3 mm."),
+            (|c| c.bg_removal.vsharp.min_radius = 3.0, "V-SHARP (Wu et al., 2012) with SMV kernel radii from 12 to 3 mm in 1 mm steps."),
+            (|c| c.bg_removal.vsharp.radius_step = 2.0, "V-SHARP (Wu et al., 2012) with SMV kernel radii from 12 to 2 mm in 2 mm steps."),
             (|c| c.bg_removal.vsharp.deconvolve = true, "V-SHARP (Wu et al., 2012) with truncated-SVD deconvolution enabled."),
             (|c| { c.bg_removal.algorithm = BfAlgorithm::Ismv; c.bg_removal.ismv.radius = 7.5; },
                 "iSMV (Wen et al., 2014) with SMV radius = 7.5 mm."),

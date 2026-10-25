@@ -118,7 +118,7 @@ map made from them.
 
 `qsmxt bgremove vsharp` takes `--deconvolve <true|false>` (default `false`, as
 `qsmxt run`), `--threshold` (used only with deconvolution),
-`--max-radius`/`--min-radius` in mm, and `--grid <native|finest|isotropic>` with
+`--max-radius`/`--min-radius`/`--radius-step` in mm, and `--grid <isotropic|native|finest>` with
 `--grid-spacing` in mm (the working grid, as `qsmxt run`'s `--vsharp-grid`).
 
 ## Dipole inversion — `qsmxt invert`
@@ -186,7 +186,7 @@ Split a susceptibility map into paramagnetic and diamagnetic sources, writing
 | --- | --- |
 | `r2star-qsm` | R2\*-QSM closed form — QSM + R2\* |
 | `decompose` | DECOMPOSE-QSM — QSM + multi-echo magnitude |
-| `chi-sep-ilsqr` | χ-separation, iLSQR — local field + R2′ + magnitude + QSM |
+| `chi-sep-ilsqr` | χ-separation, iLSQR — local field + R2′ + magnitude + QSM (`qsmxt run` reconstructs this QSM from the local field by iLSQR; here it is the one given) |
 | `chi-sep-medi` | χ-separation, MEDI — local field + R2′ + magnitude + QSM |
 | `wavesep` | WaveSep — QSM + R2′ |
 | `hc-chisep` | Hollow-cylinder χ-separation — QSM + R2′ + multi-echo magnitude |

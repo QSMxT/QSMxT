@@ -109,8 +109,7 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
 
     // Chi-separation methods. cf/b0 come from scan metadata; se_echo_times is set by the
     // runner from spin-echo data — none are user knobs.
-    // qsm_ilsqr (the χ-separation toolbox's own QSM iLSQR settings) is not exposed yet (#420).
-    cover!(q::separation::ChiSepIlsqrParams => c::ChiSepIlsqrConfig, ignore: ["cf", "qsm_ilsqr"]);
+    cover!(q::separation::ChiSepIlsqrParams => c::ChiSepIlsqrConfig, ignore: ["cf"]);
     cover!(q::separation::ChiSepParams => c::ChiSepMediConfig, ignore: ["cf"]);
     cover!(q::separation::R2starQsmParams => c::R2starQsmConfig, ignore: ["b0"]);
     cover!(q::separation::WaveSepParams => c::WaveSepConfig);
@@ -124,8 +123,7 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     cover!(q::inversion::StarParams => c::StarConfig, ignore: ["b0", "echo_times"]);
 
     // Background-field removal
-    // radius_step is not exposed yet (#420).
-    cover!(q::bgremove::VsharpParams => c::VsharpConfig, ignore: ["radius_step"]);
+    cover!(q::bgremove::VsharpParams => c::VsharpConfig);
     // n_cg, space and n_pad are not exposed yet (follow-up: method parameters).
     cover!(q::bgremove::PdfParams => c::PdfConfig, ignore: ["n_cg", "space", "n_pad"]);
     cover!(q::bgremove::LbvParams => c::LbvConfig, ignore: ["max_iter"]);

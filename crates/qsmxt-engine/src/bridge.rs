@@ -206,10 +206,9 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             threshold: cfg.bg_removal.vsharp.threshold,
             max_radius: cfg.bg_removal.vsharp.max_radius,
             min_radius: cfg.bg_removal.vsharp.min_radius,
+            radius_step: cfg.bg_removal.vsharp.radius_step,
             deconvolve: cfg.bg_removal.vsharp.deconvolve,
             grid: cfg.bg_removal.vsharp.core_grid(),
-            // Not a QSMxT setting yet (#420): qsm-core's.
-            ..Default::default()
         },
         // n_cg, space and n_pad are not QSMxT settings yet: qsm-core's.
         pdf: qsm_core::bgremove::PdfParams { tol: cfg.bg_removal.pdf.tol, ..Default::default() },
@@ -472,6 +471,7 @@ pub fn to_separation_config(cfg: &PipelineConfig) -> PSeparation {
             r2p_min: s.chi_sep_ilsqr.r2p_min, r2p_max: s.chi_sep_ilsqr.r2p_max,
             max_iter: s.chi_sep_ilsqr.max_iter, tol: s.chi_sep_ilsqr.tol,
             cg_max_iter: s.chi_sep_ilsqr.cg_max_iter, cg_tol: s.chi_sep_ilsqr.cg_tol,
+            qsm_ilsqr: s.chi_sep_ilsqr.qsm_ilsqr.params(),
             ..qsm_core::separation::ChiSepIlsqrParams::default()
         },
         chi_sep_medi: qsm_core::separation::ChiSepParams {
@@ -856,20 +856,38 @@ mod tests {
     fn vsharp_deconvolve_defaults_off_and_reaches_core() {
         let mut cfg = PipelineConfig::default();
         let (_, bg, _, _) = to_pipeline_stages(&cfg);
-        // qsm-core's V-SHARP, on QSMxT's own (acquired) working grid.
+        // qsm-core's V-SHARP, working grid included.
         let d = qsm_core::bgremove::VsharpParams::default();
         assert_eq!((bg.vsharp.deconvolve, bg.vsharp.threshold, bg.vsharp.max_radius, bg.vsharp.min_radius, bg.vsharp.radius_step),
                    (d.deconvolve, d.threshold, d.max_radius, d.min_radius, d.radius_step));
-        assert_eq!(bg.vsharp.grid, qsm_core::bgremove::VsharpGrid::Native);
+        assert_eq!(bg.vsharp.grid, d.grid);
         cfg.bg_removal.vsharp.deconvolve = true;
+        cfg.bg_removal.vsharp.radius_step = 2.0;
         let (_, bg, _, _) = to_pipeline_stages(&cfg);
         assert!(bg.vsharp.deconvolve);
+        assert_eq!(bg.vsharp.radius_step, 2.0);
+    }
+
+    /// The iLSQR of the QSM χ-sep iLSQR is initialised with: qsm-core's (the χ-separation
+    /// toolbox's call) by default, and the setting reaches it.
+    #[test]
+    fn chi_sep_ilsqr_qsm_ilsqr_reaches_core() {
+        let mut cfg = PipelineConfig::default();
+        let d = qsm_core::separation::ChiSepIlsqrParams::default().qsm_ilsqr;
+        let q = to_separation_config(&cfg).chi_sep_ilsqr.qsm_ilsqr;
+        assert_eq!((q.max_iter, q.pad_mm, q.tol), (d.max_iter, d.pad_mm, d.tol));
+        cfg.separation.chi_sep_ilsqr.qsm_ilsqr.max_iter = 7;
+        cfg.separation.chi_sep_ilsqr.qsm_ilsqr.pad_mm = 3.0;
+        let q = to_separation_config(&cfg).chi_sep_ilsqr.qsm_ilsqr;
+        assert_eq!((q.max_iter, q.pad_mm), (7, 3.0));
     }
 
     #[test]
     fn vsharp_grid_reaches_core() {
         use qsm_core::bgremove::VsharpGrid as Core;
         let mut cfg = PipelineConfig::default();
+        assert_eq!(to_pipeline_stages(&cfg).1.vsharp.grid, qsm_core::bgremove::VsharpParams::default().grid);
+        cfg.bg_removal.vsharp.grid = crate::VsharpGrid::Native;
         assert_eq!(to_pipeline_stages(&cfg).1.vsharp.grid, Core::Native);
         cfg.bg_removal.vsharp.grid = crate::VsharpGrid::Finest;
         assert_eq!(to_pipeline_stages(&cfg).1.vsharp.grid, Core::IsotropicFinest);
