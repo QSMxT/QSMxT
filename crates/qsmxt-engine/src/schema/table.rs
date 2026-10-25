@@ -327,7 +327,7 @@ pub(super) fn table() -> Vec<Def> {
         ])).basic().flag("--qsm-algorithm")
         .gui("How the field is inverted into a susceptibility map"),
         // QSM.rs inversion/rts.rs: no |D| exceeds 2/3, so delta >= 2/3 empties the mask and the map is all zero.
-        d("inversion.rts.delta", Inversion, "Delta", "Threshold for ill-conditioned k-space region", Float).below(2.0 / 3.0).flag("--rts-delta").parent("inversion.algorithm")
+        d("inversion.rts.delta", Inversion, "Delta", "Threshold for ill-conditioned k-space region", Float).below(qsm_core::kernels::MAX_ABS_DIPOLE).flag("--rts-delta").parent("inversion.algorithm")
         .when(|x| x.inv("rts") || x.qsmart_inner("rts")),
         d("inversion.rts.mu", Inversion, "Mu", "Regularization parameter for well-conditioned region", Float).flag("--rts-mu").parent("inversion.algorithm")
         .when(|x| x.inv("rts") || x.qsmart_inner("rts")),
@@ -350,10 +350,10 @@ pub(super) fn table() -> Vec<Def> {
         d("inversion.tv.max_iter", Inversion, "Max Iter", "Maximum ADMM iterations", Int).min(1.0).flag("--tv-max-iter").parent("inversion.algorithm")
         .when(|x| x.inv("tv") || x.qsmart_inner("tv")).full("Maximum Iterations"),
         // QSM.rs inversion/tkd.rs: 1/threshold on the DC bin (D = 0) gives inf/NaN at <= 0.
-        d("inversion.tkd.threshold", Inversion, "Threshold", "Truncation threshold for k-space division (0.1-0.2)", Float).above(0.0).flag("--tkd-threshold").parent("inversion.algorithm")
+        d("inversion.tkd.threshold", Inversion, "Threshold", "Truncation threshold for k-space division (0.1-0.2)", Float).above(0.0).below(qsm_core::kernels::MAX_ABS_DIPOLE).flag("--tkd-threshold").parent("inversion.algorithm")
         .when(|x| x.inv("tkd") || x.qsmart_inner("tkd")),
         // QSM.rs inversion/tkd.rs: < 0 inverts D = 0 (NaN); >= 2/3 zeroes every bin.
-        d("inversion.tsvd.threshold", Inversion, "Threshold", "Truncation threshold for SVD (0.1-0.2)", Float).min(0.0).below(2.0 / 3.0).flag("--tsvd-threshold").parent("inversion.algorithm")
+        d("inversion.tsvd.threshold", Inversion, "Threshold", "Truncation threshold for SVD (0.1-0.2)", Float).min(0.0).below(qsm_core::kernels::MAX_ABS_DIPOLE).flag("--tsvd-threshold").parent("inversion.algorithm")
         .when(|x| x.inv("tsvd") || x.qsmart_inner("tsvd")),
         // QSM.rs inversion/tgv.rs: 0 iterations give an all-zero map.
         d("inversion.tgv.iterations", Inversion, "Iterations", "Primal-dual iterations. Blank = from the voxel size, as the reference does", Int).min(1.0).optional().flag("--tgv-iterations").parent("inversion.algorithm")
@@ -467,7 +467,7 @@ pub(super) fn table() -> Vec<Def> {
         d("inversion.lsqr.max_iter", Inversion, "LSQR Max Iter", "Maximum LSQR iterations", Int).min(1.0).flag("--lsqr-max-iter").parent("inversion.algorithm")
         .when(|x| x.inv("lsqr") || x.inv("heidi")).full("LSQR Maximum Iterations"),
         // QSM.rs inversion/heidi.rs: no |D| exceeds 2/3, so the cone is empty and the map is all zero.
-        d("inversion.heidi.cone_threshold", Inversion, "Cone Threshold", "|D(k)| above which a coefficient is taken from the LSQR seed unchanged", Float).below(2.0 / 3.0).flag("--heidi-cone-threshold").parent("inversion.algorithm")
+        d("inversion.heidi.cone_threshold", Inversion, "Cone Threshold", "|D(k)| above which a coefficient is taken from the LSQR seed unchanged", Float).below(qsm_core::kernels::MAX_ABS_DIPOLE).flag("--heidi-cone-threshold").parent("inversion.algorithm")
         .when(|x| x.inv("heidi")),
         d("inversion.heidi.gradient_threshold", Inversion, "Gradient Threshold", "Field-gradient threshold (ppm/mm); below it a direction reads as homogeneous", Float).units("ppm/mm").flag("--heidi-gradient-threshold").parent("inversion.algorithm")
         .when(|x| x.inv("heidi"))
@@ -539,7 +539,7 @@ pub(super) fn table() -> Vec<Def> {
         d("inversion.qsmart.frangi_scale_max", Inversion, "Frangi Max (mm)", "Frangi maximum vessel radius (mm)", Float).units("mm").flag("--qsmart-frangi-scale-max").parent("inversion.algorithm")
         .when(|x| x.inv("qsmart")).full("Frangi Maximum Scale")
         .gui("Frangi maximum vessel radius"),
-        d("inversion.qsmart.frangi_scale_ratio", Inversion, "Frangi Step (mm)", "Frangi scale step (mm)", Float).units("mm").flag("--qsmart-frangi-scale-ratio").parent("inversion.algorithm")
+        d("inversion.qsmart.frangi_scale_ratio", Inversion, "Frangi Step (mm)", "Frangi scale step (mm)", Float).above(0.0).units("mm").flag("--qsmart-frangi-scale-ratio").parent("inversion.algorithm")
         .when(|x| x.inv("qsmart")).full("Frangi Scale Step")
         .gui("Frangi scale step"),
         d("inversion.qsmart.frangi_c", Inversion, "Frangi C", "Frangi C noise threshold", Float).flag("--qsmart-frangi-c").parent("inversion.algorithm")
@@ -623,7 +623,7 @@ pub(super) fn table() -> Vec<Def> {
         d("inversion.amp_pe.wave_order", Inversion, "Wave Order", "Daubechies wavelet order (1=db1, 2=db2)", Int).min(1.0).max(4.0).flag("--amp-pe-wave-order").parent("inversion.algorithm")
         .when(|x| x.inv("amp-pe")).full("Wavelet Order"),
         // QSM.rs inversion/amp_pe.rs: 1 << nlevel overflows at 64.
-        d("inversion.amp_pe.nlevel", Inversion, "N Level", "Wavelet decomposition levels", Int).max(63.0).flag("--amp-pe-nlevel").parent("inversion.algorithm")
+        d("inversion.amp_pe.nlevel", Inversion, "N Level", "Wavelet decomposition levels", Int).max(qsm_core::inversion::amp_pe::MAX_NLEVEL as f64).flag("--amp-pe-nlevel").parent("inversion.algorithm")
         .when(|x| x.inv("amp-pe")).full("Wavelet Levels"),
         d("inversion.amp_pe.wave_pec", Inversion, "Wave Pec", "Morphology-mask energy retention fraction (0.0-1.0)", Float).flag("--amp-pe-wave-pec").parent("inversion.algorithm")
         .when(|x| x.inv("amp-pe")).full("Energy Retention"),
@@ -838,8 +838,9 @@ pub(super) fn table() -> Vec<Def> {
         .gui("How R2' is obtained when no R2' map is supplied"),
         d("separation.r2primenet.ignore_field_mismatch", Relaxometry, "R2PRIMEnet off 3 T", "Run R2PRIMEnet on non-3 T data (trained at 3 T only; the R2' is uncalibrated). Off: auto skips R2', r2primenet errors", Bool).flag("--r2primenet-ignore-field-mismatch").parent("separation.r2prime_strategy")
         .when(|x| x.computes_r2prime && x.c.separation.r2prime_strategy != R2PrimeStrategy::Mese).full("R2PRIMEnet Away From 3 T"),
-        // QSMxT R2primenetConfig::validate: each side a positive multiple of 16 (QSM.rs utils/r2primenet.rs asserts it).
-        d("separation.r2primenet.patch", Relaxometry, "R2PRIMEnet Patch", "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)", IntVec3).min(16.0).units("voxels").flag("--r2primenet-patch").parent("separation.r2prime_strategy")
+        // QSMxT R2primenetConfig::validate: each side a positive multiple of R2PRIMENET_POOL_MULTIPLE
+        // (QSM.rs's POOL_MULTIPLE, 16; QSM.rs utils/r2primenet.rs asserts it). The texts' "16" is pinned to it by a test.
+        d("separation.r2primenet.patch", Relaxometry, "R2PRIMEnet Patch", "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)", IntVec3).min(crate::config::R2PRIMENET_POOL_MULTIPLE as f64).units("voxels").flag("--r2primenet-patch").parent("separation.r2prime_strategy")
         .when(|x| x.computes_r2prime && x.c.separation.r2prime_strategy != R2PrimeStrategy::Mese)
         .gui("Sliding-window patch D H W, each a multiple of 16"),
         d("pipeline.do_segmentation", Segmentation, "Segmentation", "Whole-brain parcellation: SynthSeg straight off the GRE magnitude, or one supplied in derivatives. Forced on by the statistics and a region reference", Bool).basic().flag("--do-segmentation"),

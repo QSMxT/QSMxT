@@ -197,6 +197,8 @@ comes from one of three places, chosen by `--r2prime-strategy`:
 need a MESE: without one it runs on R2PRIMEnet's prediction, which is trained at
 3 T only (see below), and the R2′ sidecar's `R2primeSource` says which it was.
 
+Both measured and predicted R2′ maps have negative values set to zero.
+
 ## R2′ coverage and field strength
 
 A MESE is often a slab rather than a whole head, because whole-brain MESE is
@@ -909,6 +911,8 @@ the analytic methods too, and `--chi-sep-ilsqr-dr-pos` and friends set it.
 the whole volume in one pass; `--susep-net-patch D H W` runs it as a sliding
 window of that size instead (each a multiple of 8), so its memory follows the
 patch rather than the volume.
+
+χ-sepnet and SUSEP-Net set negative χ+ and |χ−| values to zero.
 
 Outputs are written as `desc-paramagnetic_Chimap`, `desc-diamagnetic_Chimap` and
 `desc-total_Chimap`.

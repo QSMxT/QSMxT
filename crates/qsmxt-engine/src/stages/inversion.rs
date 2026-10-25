@@ -197,7 +197,13 @@ pub fn tgv(
     let (nx, ny, nz) = meta.dims;
     let (vsx, vsy, vsz) = meta.voxel_size;
     let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
-    Ok(qsm_core::inversion::tgv_qsm(input, mask, &grid, &tgv_params_from_config(tgv), meta.b0_direction, |_, _| {})?)
+    // Whether the erosions leave any of the mask depends on the mask, so this is known only now:
+    // QSM.rs's message, with the setting that changes it.
+    qsm_core::inversion::tgv_qsm(input, mask, &grid, &tgv_params_from_config(tgv), meta.b0_direction, |_, _| {})
+        .map_err(|e| match e.0.starts_with("TGV erosions") {
+            true => EngineError::InvalidInput(format!("{} (setting inversion.tgv.erosions, --tgv-erosions)", e.0)),
+            false => e.into(),
+        })
 }
 
 /// The algorithm id of an end-to-end reconstruction from phase (`iqsm` or `iqsm-plus`): its
@@ -337,6 +343,18 @@ mod tests {
         meta.echo_times = vec![0.0];
         let err = tgv(&[0.0; 64], &[1; 64], &meta, &config).unwrap_err();
         assert!(format!("{err}").contains("TGV needs a positive echo time"), "{err}");
+    }
+
+    /// Erosions that leave nothing of this mask: QSM.rs's message, naming the setting.
+    #[test]
+    fn tgv_erosions_that_empty_the_mask_name_the_setting() {
+        let meta = crate::stages::magnitude::tests::meta_4x4x4();
+        let mut config = PipelineConfig::default();
+        config.inversion.tgv.erosions = 3;
+        let mut mask = [0u8; 64];
+        mask[21] = 1;
+        let err = tgv(&[0.0; 64], &mask, &meta, &config).unwrap_err().to_string();
+        assert!(err.contains("TGV erosions = 3") && err.contains("--tgv-erosions"), "{err}");
     }
 
     /// The reliable pass is kept where it has a value; a zero inside its mask is a hole to fill.

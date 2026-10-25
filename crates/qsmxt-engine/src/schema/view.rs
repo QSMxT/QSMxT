@@ -217,21 +217,14 @@ fn tiling_note(c: &PipelineConfig) -> Option<String> {
     ))
 }
 
-/// What is wrong with each checked setting: its range, and the rules a setting's own config
-/// section checks.
+/// What is wrong with each checked setting: the rules its own config section and QSM.rs's
+/// parameter types check, and its range.
 fn errors(config: &PipelineConfig, checked: impl Fn(&str) -> bool) -> Vec<(&'static str, String)> {
-    let mut out: Vec<(&'static str, String)> = super::out_of_range(config, &checked)
-        .into_iter().map(|p| (p.path, p.message)).collect();
-    let rules: [(&'static str, Result<(), String>); 3] = [
-        ("separation.r2primenet.patch", config.separation.r2primenet.validate()),
-        ("separation.chi_sepnet.patch", config.separation.chi_sepnet.validate()),
-        ("separation.susep_net.patch", config.separation.susep_net.validate()),
-    ];
-    for (path, result) in rules {
-        if let (true, Err(e)) = (checked(path), result) {
-            out.push((path, sentence(&e)));
-        }
-    }
+    // A parameter check's message first: where it and the range both refuse a value, the user
+    // sees QSM.rs's words (the first message on a setting is the one shown).
+    let mut out: Vec<(&'static str, String)> = rule_problems(config, &checked)
+        .into_iter().map(|(path, e)| (path, sentence(&e))).collect();
+    out.extend(super::out_of_range(config, &checked).into_iter().map(|p| (p.path, p.message)));
     // The mask recipes' steps, against the mask schema's parameter ranges.
     let m = &config.masking;
     let recipes: [(&'static str, Vec<String>); 3] = [
@@ -247,10 +240,60 @@ fn errors(config: &PipelineConfig, checked: impl Fn(&str) -> bool) -> Vec<(&'sta
     out
 }
 
+/// What the parameter checks of the config's own sections and of QSM.rs's parameter types
+/// (`validate()`) refuse, for each checked setting: the setting and the check's own message.
+/// A check covering several settings puts its message on the one it names.
+pub(crate) fn rule_problems(config: &PipelineConfig, checked: impl Fn(&str) -> bool) -> Vec<(&'static str, String)> {
+    let (_, bg, inv, _) = crate::bridge::to_pipeline_stages(config);
+    let sep = crate::bridge::to_separation_config(config);
+    let q = &config.inversion.qsmart;
+    // QSMART builds its Frangi filter from these (in mm; it converts them to voxels, which keeps
+    // the step's sign).
+    let frangi = qsm_core::utils::frangi::FrangiParams {
+        scale_range: [q.frangi_scale_min, q.frangi_scale_max],
+        scale_ratio: q.frangi_scale_ratio,
+        c: q.frangi_c,
+        ..Default::default()
+    };
+    let qsmart_ilsqr = qsm_core::inversion::IlsqrParams { pad_mm: q.ilsqr_pad_mm, ..inv.ilsqr };
+    let s = |r: Result<(), qsm_core::error::InputError>| r.map_err(|e| e.0);
+    // (the setting a message goes on when it names this parameter, the parameter), the first
+    // being where any other message from the same check goes.
+    type Targets = &'static [(&'static str, &'static str)];
+    let rules: [(Targets, Result<(), String>); 10] = [
+        (&[("separation.r2primenet.patch", "")], config.separation.r2primenet.validate()),
+        (&[("separation.chi_sepnet.patch", "")], config.separation.chi_sepnet.validate()),
+        (&[("separation.susep_net.patch", "")], config.separation.susep_net.validate()),
+        (&[("bg_removal.vsharp.min_radius", "min_radius"), ("bg_removal.vsharp.grid_spacing", "spacing_mm")],
+            s(bg.vsharp.validate())),
+        (&[("inversion.qsmart.frangi_scale_ratio", "")], s(frangi.validate())),
+        (&[("inversion.amp_pe.nlevel", "nlevel"), ("inversion.amp_pe.wave_order", "wave_order")],
+            s(inv.amp_pe.validate())),
+        (&[("inversion.ilsqr.pad_mm", "")], inv.ilsqr.validate()),
+        (&[("inversion.qsmart.ilsqr_pad_mm", "")], qsmart_ilsqr.validate()),
+        (&[("separation.decompose.chi_bound", "")], s(sep.decompose.validate())),
+        (&[("separation.wavesep.wavelet_order", "")], s(sep.wavesep.validate())),
+    ];
+    let mut out = Vec::new();
+    for (targets, result) in rules {
+        let Err(e) = result else { continue };
+        let named = targets.iter().find(|(_, name)| !name.is_empty() && e.contains(name));
+        let path = named.unwrap_or(&targets[0]).0;
+        if checked(path) {
+            out.push((path, e));
+        }
+    }
+    out
+}
+
 /// A rule's message as a field's: what follows its subject ("R2PRIMEnet patch [..]: every
 /// dimension ..."), capitalised.
 fn sentence(message: &str) -> String {
     let rest = message.split_once(": ").map_or(message, |(_, r)| r);
+    // A name written with a lower-case first letter ("iLSQR") stays as it is.
+    if rest.chars().nth(1).is_some_and(char::is_uppercase) {
+        return rest.to_string();
+    }
     let mut chars = rest.chars();
     chars.next().map_or_else(String::new, |c| c.to_uppercase().chain(chars).collect())
 }

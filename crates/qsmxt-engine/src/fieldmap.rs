@@ -105,12 +105,6 @@ pub fn robust_fit_report_json(report: &qsm_core::pipeline::RobustFitReport) -> s
     })
 }
 
-/// Hz per ppm of field at `field_strength` T: γ̄·B0·10⁻⁶, with the γ̄ QSM.rs converts by
-/// (42.576 MHz/T), so the published Hz map is exactly the ppm one the inversions read.
-pub fn hz_per_ppm(field_strength: f64) -> f64 {
-    42.576e6 * field_strength * 1e-6
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -226,10 +220,5 @@ mod tests {
         assert!(bad(&[p], None, &mask, &[f64::NAN], &cfg));
         let assumed = B0EstimationMethod::WeightedAvg { weighting: W::AssumedDecay { t2star_s: 0.0 } };
         assert!(bad(&[p], None, &mask, &[0.01], &FieldMappingConfig { b0_estimation: assumed, ..cfg }));
-    }
-
-    #[test]
-    fn hz_per_ppm_is_the_gyromagnetic_ratio_at_the_field() {
-        assert!((hz_per_ppm(3.0) - 127.728).abs() < 1e-9);
     }
 }
