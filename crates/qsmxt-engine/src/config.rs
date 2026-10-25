@@ -602,7 +602,7 @@ pub struct QsmartConfig {
     pub ilsqr_max_iter: usize,
     /// Zero-padding (mm per side) of QSMART's inner iLSQR solves. Default 6 mm, STI Suite's.
     pub ilsqr_pad_mm: f64,
-    /// Bottom-hat sphere radius for vasculature detection, in mm (converted to voxels at run time)
+    /// Bottom-hat sphere radius for vasculature detection, in `vessel_size_units`
     pub vasc_sphere_radius: i32,
     /// Inner dipole inversion algorithm used for both QSMART stages
     pub inversion: QsmAlgorithm,
@@ -615,13 +615,26 @@ pub struct QsmartConfig {
     pub sdf_lower_lim: f64,
     /// SDF curvature constant
     pub sdf_curv_constant: f64,
-    // Frangi vesselness, vessel radii in mm (converted to voxels at run time)
+    // Frangi vesselness, vessel radii in `vessel_size_units`
     pub frangi_scale_min: f64,
     pub frangi_scale_max: f64,
     pub frangi_scale_ratio: f64,
     /// Frangi C noise threshold (unitless)
     pub frangi_c: f64,
+    /// The magnitude vessels are detected on: the mean over echoes, N4 bias-corrected (default),
+    /// or the run's combined magnitude.
+    pub vessel_magnitude: QsmartVesselMagnitude,
+    /// The units of `vasc_sphere_radius` and the Frangi scales: voxels (default, as QSMART
+    /// specifies them) or mm (converted with the mean voxel size).
+    ///
+    /// A file without `schema_version` that gives vessel sizes without this field was written
+    /// when they were in mm, and reads as mm ([`crate::migrate`]).
+    pub vessel_size_units: VesselSizeUnits,
 }
+
+/// The `[inversion.qsmart]` keys measured in `vessel_size_units`.
+pub const QSMART_VESSEL_SIZE_KEYS: [&str; 4] =
+    ["vasc_sphere_radius", "frangi_scale_min", "frangi_scale_max", "frangi_scale_ratio"];
 impl Default for QsmartConfig {
     fn default() -> Self {
         let p = qsm_core::utils::QsmartParams::default();
@@ -639,6 +652,8 @@ impl Default for QsmartConfig {
             frangi_scale_max: p.frangi_scale_range[1],
             frangi_scale_ratio: p.frangi_scale_ratio,
             frangi_c: p.frangi_c,
+            vessel_magnitude: QsmartVesselMagnitude::default(),
+            vessel_size_units: VesselSizeUnits::default(),
         }
     }
 }
@@ -1079,6 +1094,57 @@ pub struct FieldMappingConfig {
     /// The motion-robust echo fit (`b0_estimation = "robust-fit"`).
     #[serde(default)]
     pub robust_fit: RobustFitConfig,
+    /// How QSMART's echo fit (`b0_estimation = "qsmart-echofit"`) sets the residual threshold
+    /// at which a voxel is left out of QSMART's reconstruction: a percentile of the blurred fit
+    /// residual (default, as QSMART's authors run it) or a fixed residual
+    /// (`qsm_core::utils::QsmartFitThreshold`).
+    #[serde(default)]
+    pub qsmart_fit_threshold_mode: QsmartFitThresholdMode,
+    /// The percentile, in (0, 100], with `qsmart_fit_threshold_mode = "percentile"`. Default
+    /// qsm-core's (`QSMART_FIT_PERCENTILE`, 99).
+    #[serde(default = "default_qsmart_fit_percentile")]
+    pub qsmart_fit_percentile: f64,
+    /// The fixed residual threshold with `qsmart_fit_threshold_mode = "absolute"`. Default
+    /// qsm-core's (`QSMART_FIT_THRESHOLD`, 40).
+    #[serde(default = "default_qsmart_fit_threshold")]
+    pub qsmart_fit_threshold: f64,
+    /// The user chose `unwrapping_algorithm`, `laplacian_solver` or `b0_estimation`, so the run
+    /// keeps it as it is. Left unset, the general default gives way to the inversion's own where
+    /// it has one: QSMART's Laplacian unwrapping with the `mirror` solver and its echo fit
+    /// ([`PipelineConfig::normalised`]). As [`MaskingConfig::recipe_chosen`]: normalising keeps
+    /// a mark only where it decides something, and it is written out only when set.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unwrapping_chosen: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub laplacian_solver_chosen: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub b0_estimation_chosen: bool,
+}
+
+impl FieldMappingConfig {
+    /// Why these settings cannot be run together, if they cannot: QSMART's echo fit follows its
+    /// own Laplacian unwrapping. (It has no bipolar correction either, but bipolar correction
+    /// belongs to ROMEO's phase offset removal and is not applied with Laplacian unwrapping.)
+    pub fn validate(&self) -> Result<(), String> {
+        if self.b0_estimation == B0Estimation::QsmartEchofit && self.unwrapping_algorithm != UnwrappingAlgorithm::Laplacian {
+            return Err(format!(
+                "B0 estimation by QSMART's echo fit needs Laplacian unwrapping, not {}: choose Laplacian \
+                 unwrapping, or another B0 estimation", self.unwrapping_algorithm.to_string().to_uppercase()));
+        }
+        if self.b0_estimation == B0Estimation::QsmartEchofit {
+            self.qsmart_fit_threshold().validate()?;
+        }
+        Ok(())
+    }
+
+    /// QSMART's echo-fit threshold as qsm-core takes it: the setting `qsmart_fit_threshold_mode`
+    /// selects.
+    pub fn qsmart_fit_threshold(&self) -> qsm_core::utils::QsmartFitThreshold {
+        match self.qsmart_fit_threshold_mode {
+            QsmartFitThresholdMode::Percentile => qsm_core::utils::QsmartFitThreshold::Percentile(self.qsmart_fit_percentile),
+            QsmartFitThresholdMode::Absolute => qsm_core::utils::QsmartFitThreshold::Absolute(self.qsmart_fit_threshold),
+        }
+    }
 }
 
 /// Motion-robust echo fit (`qsm_core::fieldmap::RobustFitParams`): an IRLS fit of phase against
@@ -1114,6 +1180,18 @@ impl Default for RobustFitConfig {
     }
 }
 pub fn default_b0_weight_assumed_t2star_ms() -> f64 { 40.0 }
+pub fn default_qsmart_fit_percentile() -> f64 {
+    match qsm_core::utils::QsmartFitThreshold::default() {
+        qsm_core::utils::QsmartFitThreshold::Percentile(p) => p,
+        qsm_core::utils::QsmartFitThreshold::Absolute(_) => qsm_core::utils::QSMART_FIT_PERCENTILE,
+    }
+}
+pub fn default_qsmart_fit_threshold() -> f64 {
+    match qsm_core::utils::QsmartFitThreshold::default() {
+        qsm_core::utils::QsmartFitThreshold::Absolute(t) => t,
+        qsm_core::utils::QsmartFitThreshold::Percentile(_) => qsm_core::utils::QSMART_FIT_THRESHOLD,
+    }
+}
 pub fn default_laplacian_fft_pad() -> [usize; 3] { [64; 3] }
 
 /// A per-axis count given as one number for every axis or as three.
@@ -1174,6 +1252,12 @@ impl Default for FieldMappingConfig {
             romeo: RomeoConfig::default(),
             linear_fit: LinearFitConfig::default(),
             robust_fit: RobustFitConfig::default(),
+            qsmart_fit_threshold_mode: QsmartFitThresholdMode::default(),
+            qsmart_fit_percentile: default_qsmart_fit_percentile(),
+            qsmart_fit_threshold: default_qsmart_fit_threshold(),
+            unwrapping_chosen: false,
+            laplacian_solver_chosen: false,
+            b0_estimation_chosen: false,
         }
     }
 }
@@ -1992,5 +2076,66 @@ mod removed_settings_tests {
         let inversion = saved["inversion"].as_table().unwrap();
         assert!(!inversion["tfi"].as_table().unwrap().contains_key("merit"));
         assert!(!inversion["qsmart"].as_table().unwrap().contains_key("sdf_spatial_radius"));
+    }
+}
+
+#[cfg(test)]
+mod qsmart_inputs_tests {
+    use super::*;
+
+    /// Vessel sizes given without their units were written in mm and read as mm (said under
+    /// QSMART); with their units, or not given at all, they read as written, in voxels by default.
+    #[test]
+    fn vessel_sizes_without_units_read_as_mm() {
+        let old = "[inversion]\nalgorithm = \"qsmart\"\n\n[inversion.qsmart]\nvasc_sphere_radius = 8\nfrangi_scale_max = 6.0\n";
+        let (c, warnings) = PipelineConfig::from_toml_migrating(old).unwrap();
+        assert_eq!(c.inversion.qsmart.vessel_size_units, VesselSizeUnits::Mm);
+        assert!(warnings.len() == 1 && warnings[0].contains("vessel_size_units"), "{warnings:?}");
+        assert!(!warnings[0].contains("--"), "names settings, not flags");
+        // Under another inversion the sizes do nothing, so nothing is said.
+        let (c, warnings) = PipelineConfig::from_toml_migrating(&old.replace("qsmart\"", "rts\"")).unwrap();
+        assert_eq!(c.inversion.qsmart.vessel_size_units, VesselSizeUnits::Mm);
+        assert!(warnings.is_empty());
+        // Units given: as written.
+        let (c, warnings) = PipelineConfig::from_toml_migrating(&format!("{old}vessel_size_units = \"voxels\"\n")).unwrap();
+        assert_eq!(c.inversion.qsmart.vessel_size_units, VesselSizeUnits::Voxels);
+        assert!(warnings.is_empty());
+        // No sizes: the defaults, in voxels.
+        let (c, _) = PipelineConfig::from_toml_migrating("[inversion]\nalgorithm = \"qsmart\"\n").unwrap();
+        assert_eq!(c.inversion.qsmart, QsmartConfig::default());
+        assert_eq!(c.inversion.qsmart.vessel_size_units, VesselSizeUnits::Voxels);
+    }
+
+    /// Every file QSMxT writes reads back with the units it was written with: the full one, and
+    /// the changed-settings one, which carries the units wherever it carries a size.
+    #[test]
+    fn written_configs_keep_their_vessel_units() {
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = QsmAlgorithm::Qsmart;
+        c.inversion.qsmart.vasc_sphere_radius = 6;
+        for units in [VesselSizeUnits::Voxels, VesselSizeUnits::Mm] {
+            c.inversion.qsmart.vessel_size_units = units;
+            for text in [c.to_toml().unwrap(), c.to_toml_changed().unwrap()] {
+                let (back, warnings) = PipelineConfig::from_toml_migrating(&text).unwrap();
+                assert_eq!(back.inversion.qsmart.vessel_size_units, units, "{text}");
+                assert_eq!(back.inversion.qsmart.vasc_sphere_radius, 6);
+                assert!(warnings.is_empty(), "{warnings:?}");
+            }
+        }
+        // Without a size, the changed-settings file needs no units.
+        let mut d = PipelineConfig::default();
+        d.inversion.algorithm = QsmAlgorithm::Qsmart;
+        assert!(!d.to_toml_changed().unwrap().contains("vessel_size_units"));
+    }
+
+    #[test]
+    fn the_echo_fit_needs_laplacian_unwrapping() {
+        let mut fm = FieldMappingConfig { b0_estimation: B0Estimation::QsmartEchofit, ..Default::default() };
+        let e = fm.validate().unwrap_err();
+        assert!(e.contains("Laplacian") && e.contains("ROMEO") && !e.contains("--"), "{e}");
+        fm.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
+        fm.bipolar_correction = true; // ROMEO's; not applied with Laplacian unwrapping
+        assert!(fm.validate().is_ok());
+        assert!(FieldMappingConfig::default().validate().is_ok());
     }
 }

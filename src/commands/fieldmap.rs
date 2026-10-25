@@ -112,6 +112,12 @@ fn apply_common_config(
             if let Some(v) = common.robust_fit_flag_ratio { fm.robust_fit.flag_ratio = v; }
             qsmxt_engine::to_pipeline_stages(&cfg).0.b0_estimation
         }
+        B0EstimationArg::QsmartEchofit => {
+            let mut fm = qsmxt_engine::FieldMappingConfig::default();
+            crate::pipeline::config::apply_qsmart_fit_threshold(&mut fm, common.qsmart_fit_threshold_mode,
+                common.qsmart_fit_percentile, common.qsmart_fit_threshold);
+            qsm_core::pipeline::config::B0EstimationMethod::QsmartEchofit { fit_threshold: fm.qsmart_fit_threshold() }
+        }
     };
 }
 
@@ -143,6 +149,7 @@ pub fn execute(cmd: FieldmapCommand) -> crate::Result<()> {
             let solver = match args.laplacian_solver {
                 LaplacianSolverArg::Dct => qsm_core::unwrap::LaplacianSolver::Dct,
                 LaplacianSolverArg::Fft => qsm_core::unwrap::LaplacianSolver::Fft { pad },
+                LaplacianSolverArg::Mirror => qsm_core::unwrap::LaplacianSolver::Mirror,
             };
             run_field_mapping(
                 &args.common,
@@ -281,6 +288,12 @@ fn run_field_mapping(
     let reference = phase_me.geometry_reference();
     save_nifti(&common.output, &field_ppm, &reference)?;
     info!("B0 field map (ppm) saved to {}", common.output.display());
+    if let Some(path) = &common.reliability_output {
+        let reliability = field.reliability.as_ref().ok_or_else(|| QsmxtError::Config(
+            "--reliability-output: only --b0-estimation qsmart-echofit makes a reliability map".into()))?;
+        super::common::save_mask(path, reliability, &reference)?;
+        info!("Echo-fit reliability map saved to {}", path.display());
+    }
     Ok(())
 }
 
@@ -406,6 +419,8 @@ mod tests {
             linear_fit_estimate_offset: None,
             robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
             robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
+            qsmart_fit_threshold_mode: None, qsmart_fit_percentile: None, qsmart_fit_threshold: None,
+            reliability_output: None,
         };
         let args = FieldmapRomeoArgs {
             common,
@@ -452,6 +467,8 @@ mod tests {
             linear_fit_estimate_offset: None,
             robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
             robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
+            qsmart_fit_threshold_mode: None, qsmart_fit_percentile: None, qsmart_fit_threshold: None,
+            reliability_output: None,
         };
         let p = resolve_scan_params(&common).unwrap();
         assert_eq!(p.echo_times, vec![0.004, 0.008, 0.012]);
@@ -487,6 +504,8 @@ mod tests {
             linear_fit_estimate_offset: None,
             robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
             robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
+            qsmart_fit_threshold_mode: None, qsmart_fit_percentile: None, qsmart_fit_threshold: None,
+            reliability_output: None,
         };
         let args = FieldmapRomeoArgs {
             common,

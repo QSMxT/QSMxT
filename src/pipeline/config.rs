@@ -208,6 +208,18 @@ pub fn apply_qsmart_overrides(config: &mut PipelineConfig, p: &cli::QsmartParamA
     if let Some(v) = p.qsmart_frangi_scale_max { config.inversion.qsmart.frangi_scale_max = v; }
     if let Some(v) = p.qsmart_frangi_scale_ratio { config.inversion.qsmart.frangi_scale_ratio = v; }
     if let Some(v) = p.qsmart_frangi_c { config.inversion.qsmart.frangi_c = v; }
+    if let Some(u) = p.qsmart_vessel_units {
+        config.inversion.qsmart.vessel_size_units = match u {
+            cli::VesselSizeUnitsArg::Voxels => VesselSizeUnits::Voxels,
+            cli::VesselSizeUnitsArg::Mm => VesselSizeUnits::Mm,
+        };
+    }
+    if let Some(m) = p.qsmart_vessel_magnitude {
+        config.inversion.qsmart.vessel_magnitude = match m {
+            cli::QsmartVesselMagnitudeArg::MeanN4 => QsmartVesselMagnitude::MeanN4,
+            cli::QsmartVesselMagnitudeArg::Combined => QsmartVesselMagnitude::Combined,
+        };
+    }
 }
 
 /// Maps flat CLI flags to nested config fields.
@@ -220,6 +232,26 @@ pub fn apply_qsmart_overrides(config: &mut PipelineConfig, p: &cli::QsmartParamA
 /// are matched case-insensitively and nothing else is guessed at here. Whether the region exists
 /// is [`validate_reference_region`]'s job — it needs the SynthSeg generation, which this function
 /// is called too early to know.
+/// QSMART's echo-fit threshold flags onto `fm`: the mode as given, or else the mode of the value
+/// given (a percentile, or a fixed residual); each value as given.
+pub fn apply_qsmart_fit_threshold(
+    fm: &mut FieldMappingConfig, mode: Option<cli::QsmartFitThresholdModeArg>,
+    percentile: Option<f64>, threshold: Option<f64>,
+) {
+    let implied = match (percentile, threshold) {
+        (Some(_), None) => Some(QsmartFitThresholdMode::Percentile),
+        (None, Some(_)) => Some(QsmartFitThresholdMode::Absolute),
+        _ => None,
+    };
+    let mode = mode.map(|m| match m {
+        cli::QsmartFitThresholdModeArg::Percentile => QsmartFitThresholdMode::Percentile,
+        cli::QsmartFitThresholdModeArg::Absolute => QsmartFitThresholdMode::Absolute,
+    });
+    if let Some(m) = mode.or(implied) { fm.qsmart_fit_threshold_mode = m; }
+    if let Some(p) = percentile { fm.qsmart_fit_percentile = p; }
+    if let Some(t) = threshold { fm.qsmart_fit_threshold = t; }
+}
+
 pub fn parse_reference_spec(spec: &str) -> (QsmReference, Option<String>) {
     match spec.trim().to_lowercase().as_str() {
         "mean" => (QsmReference::Mean, None),
@@ -312,7 +344,10 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         config.multi_orientation.validate().map_err(QsmxtError::Config)?;
 
         // ── Unwrapping ──
+        // Each of these, given, is the user's choice, which the run keeps under QSMART too
+        // (`FieldMappingConfig::unwrapping_chosen` and its siblings).
         if let Some(a) = args.unwrapping_algorithm {
+            config.field_mapping.unwrapping_chosen = true;
             config.field_mapping.unwrapping_algorithm = match a {
                 cli::UnwrapAlgorithmArg::Romeo => UnwrappingAlgorithm::Romeo,
                 cli::UnwrapAlgorithmArg::Laplacian => UnwrappingAlgorithm::Laplacian,
@@ -342,12 +377,16 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.phase_offset_removal { config.field_mapping.phase_offset_removal = v; }
         if args.bipolar_correction { config.field_mapping.bipolar_correction = true; }
         if let Some(a) = args.b0_estimation {
+            config.field_mapping.b0_estimation_chosen = true;
             config.field_mapping.b0_estimation = match a {
                 cli::B0EstimationArg::WeightedAvg => B0Estimation::WeightedAvg,
                 cli::B0EstimationArg::LinearFit => B0Estimation::LinearFit,
                 cli::B0EstimationArg::RobustFit => B0Estimation::RobustFit,
+                cli::B0EstimationArg::QsmartEchofit => B0Estimation::QsmartEchofit,
             };
         }
+        apply_qsmart_fit_threshold(&mut config.field_mapping, args.qsmart_fit_threshold_mode,
+                                   args.qsmart_fit_percentile, args.qsmart_fit_threshold);
         if let Some(a) = args.b0_weight_type {
             config.field_mapping.b0_weight_type = match a {
                 cli::B0WeightTypeArg::PhaseSNR => B0WeightType::PhaseSNR,
@@ -360,9 +399,11 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         }
         if let Some(v) = args.b0_weight_assumed_t2star { config.field_mapping.b0_weight_assumed_t2star_ms = v; }
         if let Some(k) = args.laplacian_solver {
+            config.field_mapping.laplacian_solver_chosen = true;
             config.field_mapping.laplacian_solver = match k {
                 cli::LaplacianSolverArg::Dct => LaplacianSolver::Dct,
                 cli::LaplacianSolverArg::Fft => LaplacianSolver::Fft,
+                cli::LaplacianSolverArg::Mirror => LaplacianSolver::Mirror,
             };
         }
         if let Some(ref p) = args.laplacian_fft_pad {
@@ -738,10 +779,12 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         // (the BET push only fills in the BET steps the recipe already has).
         let (normalised, adjustments) = config.normalised();
         for a in &adjustments {
-            if a.setting == "masking.sections" {
-                log::info!("{} (choose another mask with --mask-preset or --mask)", a.message);
-            } else {
-                log::debug!("{}", a.message);
+            match a.setting {
+                "masking.sections" => log::info!("{} (choose another mask with --mask-preset or --mask)", a.message),
+                "field_mapping.unwrapping_algorithm" => log::info!("{} (choose another with --unwrapping-algorithm)", a.message),
+                "field_mapping.laplacian_solver" => log::info!("{} (choose another with --laplacian-solver)", a.message),
+                "field_mapping.b0_estimation" => log::info!("{} (choose another with --b0-estimation)", a.message),
+                _ => log::debug!("{}", a.message),
             }
         }
         *config = normalised;
@@ -1152,6 +1195,43 @@ mod tests {
         assert_ne!(c.masking.sections, qsmart_default_mask_sections());
         assert_eq!(c.masking.sections, default_mask_sections());
         assert!(c.masking.recipe_chosen, "the choice is in the config, so it is saved");
+    }
+
+    /// Under QSMART the field mapping is QSMART's unless a flag chooses it, and a flag's choice
+    /// (the general default included) is kept; QSMART's vessel flags reach the config.
+    #[test]
+    fn qsmart_field_mapping_flags_choose_it() {
+        let qsmart = |extra: &[&str]| {
+            let mut argv = vec!["qsmxt", "run", "<bids>", "--qsm-algorithm", "qsmart"];
+            argv.extend_from_slice(extra);
+            config_from_cli(&argv).field_mapping
+        };
+        let fm = qsmart(&[]);
+        assert_eq!((fm.unwrapping_algorithm, fm.laplacian_solver, fm.b0_estimation),
+                   (UnwrappingAlgorithm::Laplacian, LaplacianSolver::Mirror, B0Estimation::QsmartEchofit));
+        let fm = qsmart(&["--unwrapping-algorithm", "romeo"]);
+        assert_eq!((fm.unwrapping_algorithm, fm.b0_estimation), (UnwrappingAlgorithm::Romeo, B0Estimation::WeightedAvg));
+        assert!(fm.unwrapping_chosen, "the choice is in the config, so it is saved");
+        let fm = qsmart(&["--laplacian-solver", "dct", "--b0-estimation", "weighted-avg", "--qsmart-fit-threshold", "30"]);
+        assert_eq!((fm.unwrapping_algorithm, fm.laplacian_solver, fm.b0_estimation),
+                   (UnwrappingAlgorithm::Laplacian, LaplacianSolver::Dct, B0Estimation::WeightedAvg));
+        // A fixed residual given alone selects the fixed mode; a percentile, the percentile mode.
+        assert_eq!(fm.qsmart_fit_threshold(), qsm_core::utils::QsmartFitThreshold::Absolute(30.0));
+        assert_eq!(qsmart(&[]).qsmart_fit_threshold(), qsm_core::utils::QsmartFitThreshold::default());
+        assert_eq!(qsmart(&["--qsmart-fit-percentile", "95"]).qsmart_fit_threshold(),
+                   qsm_core::utils::QsmartFitThreshold::Percentile(95.0));
+        // The mode as given wins.
+        let fm = qsmart(&["--qsmart-fit-threshold-mode", "percentile", "--qsmart-fit-threshold", "30"]);
+        assert_eq!(fm.qsmart_fit_threshold(), qsm_core::utils::QsmartFitThreshold::default());
+        assert_eq!(qsmart(&["--qsmart-fit-threshold-mode", "absolute"]).qsmart_fit_threshold(),
+                   qsm_core::utils::QsmartFitThreshold::Absolute(qsm_core::utils::QSMART_FIT_THRESHOLD));
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--qsm-algorithm", "qsmart",
+                                  "--qsmart-vessel-magnitude", "combined", "--qsmart-vessel-units", "mm"]);
+        assert_eq!(c.inversion.qsmart.vessel_magnitude, QsmartVesselMagnitude::Combined);
+        assert_eq!(c.inversion.qsmart.vessel_size_units, VesselSizeUnits::Mm);
+        // Elsewhere: the general defaults, and the echo fit brings QSMART's unwrapping.
+        let fm = config_from_cli(&["qsmxt", "run", "<bids>", "--b0-estimation", "qsmart-echofit"]).field_mapping;
+        assert_eq!((fm.unwrapping_algorithm, fm.laplacian_solver), (UnwrappingAlgorithm::Laplacian, LaplacianSolver::Mirror));
     }
 
     /// Which flags choose the mask under QSMART (and so keep it), which leave QSMART's BET in

@@ -63,6 +63,9 @@ pub enum Item {
     TotalFieldMagnitude,
     /// The robust echo fit's report (a JSON document).
     RobustFitReport,
+    /// QSMART's reliability map `R_0` from its echo fit (1 = reliable), over the whole volume:
+    /// where QSMART reconstructs, within the brain mask.
+    FieldReliability,
     /// A pass's local field in ppm.
     LocalField(Pass),
     /// Where a pass's local field is defined.
@@ -176,7 +179,8 @@ impl Item {
             ("QsmartIntermediate", Some(a)) => {
                 let (p, n) = a.split_once(',')?;
                 let n = n.trim().strip_prefix('"')?.strip_suffix('"')?;
-                let name = [q::VESSEL_MASK, q::LOCAL_FIELD_STAGE1, q::CHI_STAGE1, q::LOCAL_FIELD_STAGE2, q::CHI_STAGE2]
+                let name = [crate::stages::qsmart::VESSEL_MAGNITUDE, q::VESSEL_MASK, q::LOCAL_FIELD_STAGE1, q::CHI_STAGE1,
+                            q::LOCAL_FIELD_STAGE2, q::CHI_STAGE2]
                     .into_iter().find(|&known| known == n)?;
                 Item::QsmartIntermediate(pass(p)?, name)
             }
@@ -186,7 +190,7 @@ impl Item {
             (name, None) => [
                 Item::CoilCombinationMask, Item::CombinedMagnitude, Item::BrainMask, Item::SuppliedMask,
                 Item::CoverageMask, Item::FieldPpm, Item::TotalFieldHz, Item::TotalFieldMagnitude,
-                Item::RobustFitReport, Item::ReliableMask, Item::CombinedRawChi, Item::Chi, Item::ChiSupport,
+                Item::RobustFitReport, Item::FieldReliability, Item::ReliableMask, Item::CombinedRawChi, Item::Chi, Item::ChiSupport,
                 Item::SinglePassChi, Item::Segmentation, Item::SuppliedSegmentation, Item::SegmentationLabels,
                 Item::SegmentationVolumes, Item::RegionStats, Item::MotionReport, Item::Swi, Item::SwiMip,
                 Item::R2star, Item::T2star, Item::SuppliedR2, Item::R2, Item::SuppliedR2prime, Item::R2prime,

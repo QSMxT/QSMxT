@@ -152,7 +152,10 @@ take the local field, and `tfi`, `autoqsm` and `nextqsm` the **total** field:
 | `sti` | Susceptibility tensor imaging (6+ orientations) |
 
 QSMART is its own command, `qsmxt qsmart`, since it takes the total field and
-runs its own two-stage reconstruction. iQSM and iQSM+, which reconstruct from
+runs its own two-stage reconstruction. To prepare its inputs as `qsmxt run` does by
+default, map the field with `qsmxt fieldmap laplacian --laplacian-solver mirror
+--b0-estimation qsmart-echofit --reliability-output r0.nii`, then pass
+`--reliability r0.nii` and every echo's magnitude (4D) as `--magnitude`. iQSM and iQSM+, which reconstruct from
 wrapped phase, are pipeline-only (`run --qsm-algorithm iqsm`).
 
 Each subcommand runs its method as `qsmxt run` does, through QSM.rs's pipeline: the

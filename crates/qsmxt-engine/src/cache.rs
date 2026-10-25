@@ -74,9 +74,17 @@ pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value
         "mask" => json!({ "masking": masking(), "bet": config.bet, "homogeneity": config.homogeneity }),
         "motion" => json!({ "motion_correction": config.motion_correction, "registration": config.registration }),
         "swi" => json!({ "swi": config.swi }),
-        "unwrap" => json!({ "field_mapping": config.field_mapping }),
-        // Whether the user chose the algorithm only decides which one it is (normalising), and
-        // the algorithm itself is keyed.
+        // Whether the user chose a setting only decides which it is (normalising), and the setting
+        // itself is keyed.
+        "unwrap" => {
+            let mut fm = serde_json::to_value(&config.field_mapping).unwrap_or_default();
+            if let Some(o) = fm.as_object_mut() {
+                for mark in ["unwrapping_chosen", "laplacian_solver_chosen", "b0_estimation_chosen"] {
+                    o.remove(mark);
+                }
+            }
+            json!({ "field_mapping": fm })
+        }
         "bgremove" => {
             let mut b = serde_json::to_value(&config.bg_removal).unwrap_or_default();
             if let Some(o) = b.as_object_mut() {
@@ -191,6 +199,33 @@ mod tests {
         let mut other = base.clone();
         other.bg_removal.algorithm = crate::enums::BfAlgorithm::Pdf;
         assert_ne!(step_cache_key("bgremove", None, &p, &other), step_cache_key("bgremove", None, &p, &base));
+    }
+
+    /// Likewise the field-mapping marks: they decide which unwrapping and echo combination it is,
+    /// and those are keyed. QSMART's vessel magnitude and units, and the echo fit's threshold, are
+    /// keyed where they are read.
+    #[test]
+    fn qsmarts_input_choices_are_keyed_and_the_marks_are_not() {
+        let p = serde_json::json!({});
+        let base = PipelineConfig::default();
+        let mut marked = base.clone();
+        marked.field_mapping.unwrapping_chosen = true;
+        marked.field_mapping.laplacian_solver_chosen = true;
+        marked.field_mapping.b0_estimation_chosen = true;
+        assert_eq!(step_cache_key("unwrap", None, &p, &marked), step_cache_key("unwrap", None, &p, &base));
+        let changed = |edit: fn(&mut PipelineConfig), step: &str| {
+            let mut c = base.clone();
+            edit(&mut c);
+            step_cache_key(step, None, &p, &c) != step_cache_key(step, None, &p, &base)
+        };
+        assert!(changed(|c| c.field_mapping.qsmart_fit_percentile = 95.0, "unwrap"));
+        assert!(changed(|c| c.field_mapping.qsmart_fit_threshold_mode = crate::enums::QsmartFitThresholdMode::Absolute, "unwrap"));
+        assert!(changed(|c| c.field_mapping.b0_estimation = crate::enums::B0Estimation::QsmartEchofit, "unwrap"));
+        assert!(changed(|c| c.field_mapping.laplacian_solver = crate::enums::LaplacianSolver::Mirror, "unwrap"));
+        assert!(changed(|c| c.inversion.qsmart.vessel_magnitude = crate::enums::QsmartVesselMagnitude::Combined, "qsmart"));
+        assert!(changed(|c| c.inversion.qsmart.vessel_size_units = crate::enums::VesselSizeUnits::Mm, "qsmart"));
+        // A new field map invalidates QSMART, which reads it and its reliability map.
+        assert!(crate::graph::downstream_of("unwrap").iter().any(|s| s == "qsmart"));
     }
 
     /// Cropping changes what background removal and the inversion compute, so it is in their keys
