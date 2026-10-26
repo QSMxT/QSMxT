@@ -60,38 +60,32 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     use qsmxt_engine as c;
 
     // Inversion algorithms
-    // tau and gamma (RTS's adaptive ρ) are not exposed yet (follow-up: method parameters).
-    cover!(q::inversion::RtsParams => c::RtsConfig, ignore: ["tau", "gamma"]);
+    cover!(q::inversion::RtsParams => c::RtsConfig);
     cover!(q::inversion::TvParams => c::TvConfig);
     cover!(q::inversion::TkdParams => c::TkdConfig);
     cover!(q::inversion::TikhonovParams => c::TikhonovConfig);
-    // b0/echo_times come from scan metadata (the dispatcher fills them). Not exposed yet: rho,
-    // tol_newton and the echo-time choice te (follow-up: echo time and method parameters).
-    cover!(q::inversion::NltvParams => c::NltvConfig,
-        ignore: ["b0", "echo_times", "rho", "tol_newton", "te"]);
+    // b0/echo_times come from scan metadata (the dispatcher fills them).
+    cover!(q::inversion::NltvParams => c::NltvConfig, ignore: ["b0", "echo_times"]);
     // b0/echo_times come from scan metadata. `msmv` (an Option<MsmvParams>) is flattened into
     // msmv + msmv_* (guarded below). Not exposed yet: MEDI+0's CSF term (csf, lambda_csf,
-    // csf_r2s_threshold, csf_erode), zeropad and te (follow-up: MEDI family).
+    // csf_r2s_threshold, csf_erode) and zeropad (follow-up: MEDI family).
     cover!(q::inversion::MediParams => c::MediConfig,
         ignore: ["b0", "echo_times", "csf", "lambda_csf", "csf_r2s_threshold", "csf_erode",
-                 "zeropad", "te"]);
+                 "zeropad"]);
     assert_eq!(field_names::<q::inversion::MsmvParams>(), ["prefilter", "maxk", "vessel_radius"],
                "MsmvParams changed: expose it in MediConfig's msmv_* settings");
-    // b0/echo_times come from scan metadata. Not exposed yet: merit, linear and te (follow-up:
-    // MEDI family).
-    cover!(q::inversion::TfiParams => c::TfiConfig, ignore: ["b0", "echo_times", "merit", "linear", "te"]);
+    // b0/echo_times come from scan metadata. Not exposed yet: merit and linear (follow-up: MEDI
+    // family).
+    cover!(q::inversion::TfiParams => c::TfiConfig, ignore: ["b0", "echo_times", "merit", "linear"]);
     // normalize_weight: AMP-PE's solution does not depend on the weight's scale (QSM.rs #253), so
     // it is left off rather than offered.
     cover!(q::inversion::AmpPeParams => c::AmpPeConfig, ignore: ["normalize_weight"]);
     // b0/echo_times come from scan metadata; is_tgv is set by the dispatcher from the algorithm.
-    // te is not exposed yet (follow-up: echo time).
-    cover!(q::inversion::FansiParams => c::FansiConfig, ignore: ["b0", "echo_times", "te", "is_tgv"]);
-    cover!(q::inversion::L1QsmParams => c::L1qsmConfig, ignore: ["b0", "echo_times", "te"]);
-    // Not exposed yet: the data weight and te (follow-up: echo time and method parameters).
-    cover!(q::inversion::WhQsmParams => c::WhqsmConfig, ignore: ["b0", "echo_times", "te", "weight"]);
+    cover!(q::inversion::FansiParams => c::FansiConfig, ignore: ["b0", "echo_times", "is_tgv"]);
+    cover!(q::inversion::L1QsmParams => c::L1qsmConfig, ignore: ["b0", "echo_times"]);
+    cover!(q::inversion::WhQsmParams => c::WhqsmConfig, ignore: ["b0", "echo_times"]);
     cover!(q::inversion::HdQsmParams => c::HdqsmConfig);
-    // te is not exposed yet (follow-up: echo time).
-    cover!(q::inversion::NdiParams => c::NdiConfig, ignore: ["b0", "echo_times", "te"]);
+    cover!(q::inversion::NdiParams => c::NdiConfig, ignore: ["b0", "echo_times"]);
     cover!(q::inversion::IlsqrParams => c::IlsqrConfig);
     cover!(q::swi::SmwiParams => c::SmwiConfig);
     // `inference` (FullVolume | SlidingWindow { patch, tile_step }) is `patch` here: None is the
@@ -104,8 +98,8 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     cover!(q::inversion::LsqrQsmParams => c::LsqrConfig, ignore: ["b0", "mask_output"]);
     // `denoise` is an Option<AnisotropicDiffusionParams> in qsm-core; LsqrConfig's sibling
     // flattens it into `denoise` + three `denoise_*` values, which is what the TUI and CLI show.
-    // b0/echo_times come from scan metadata; te is not exposed yet (follow-up: echo time).
-    cover!(q::inversion::HeidiParams => c::HeidiConfig, ignore: ["denoise", "b0", "echo_times", "te"]);
+    // b0/echo_times come from scan metadata.
+    cover!(q::inversion::HeidiParams => c::HeidiConfig, ignore: ["denoise", "b0", "echo_times"]);
 
     // Chi-separation methods. cf/b0 come from scan metadata; se_echo_times is set by the
     // runner from spin-echo data — none are user knobs.
@@ -117,22 +111,19 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     cover!(q::separation::HcChisepParams => c::HcChisepConfig, ignore: ["b0", "se_echo_times"]);
     cover!(q::separation::ChiSepNetParams => c::ChiSepNetConfig);
     cover!(q::separation::SusepNetParams => c::SusepNetConfig);
-    // te (the echo time a field is expressed as phase at) is not exposed yet (follow-up: echo time).
-    cover!(q::inversion::TgvParams => c::TgvConfig, ignore: ["te"]);
+    cover!(q::inversion::TgvParams => c::TgvConfig);
     // b0/echo_times come from scan metadata (the dispatcher fills them).
     cover!(q::inversion::StarParams => c::StarConfig, ignore: ["b0", "echo_times"]);
 
     // Background-field removal
     cover!(q::bgremove::VsharpParams => c::VsharpConfig);
-    // n_cg, space and n_pad are not exposed yet (follow-up: method parameters).
-    cover!(q::bgremove::PdfParams => c::PdfConfig, ignore: ["n_cg", "space", "n_pad"]);
+    cover!(q::bgremove::PdfParams => c::PdfConfig);
     cover!(q::bgremove::LbvParams => c::LbvConfig, ignore: ["max_iter"]);
     cover!(q::bgremove::IsmvParams => c::IsmvConfig);
     cover!(q::bgremove::SharpParams => c::SharpConfig);
     cover!(q::bgremove::ResharpParams => c::ResharpConfig);
-    // The padding is not exposed yet (follow-up: method parameters).
-    cover!(q::bgremove::HarperellaParams => c::HarperellaConfig, ignore: ["pad"]);
-    cover!(q::bgremove::IharperellaParams => c::IharperellaConfig, ignore: ["pad"]);
+    cover!(q::bgremove::HarperellaParams => c::HarperellaConfig);
+    cover!(q::bgremove::IharperellaParams => c::IharperellaConfig);
 
     // Masking / field mapping / misc
     // HdBetParams / Rs2NetParams / MindGrabParams have no *Config pair by design: a DL brain extractor's

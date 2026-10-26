@@ -152,6 +152,8 @@ Some QSM methods need more of the data than phase:
 | `--qsm-algorithm qsmart` | what its inner inversion (`--qsmart-inversion`) needs; an inner `medi` or `tfi` only with a single echo, since QSMART gives its inner inversion one combined magnitude. With magnitude, every echo's: QSMART detects vessels on their mean (`--qsmart-vessel-magnitude mean-n4`) |
 | `--qsm-algorithm ndi`, `nltv`, `fansi`, `fansi-tgv`, `l1qsm` | magnitude (the data weight) |
 | `--qsm-algorithm star` | nothing more, but with `--star-te spacing` the first two echo times in increasing order |
+| `--qsm-algorithm whqsm` with `--whqsm-weight max-normalised` or `in-vivo` | magnitude (the data weight) |
+| a method's echo time (`--medi-te` and the others, see [Echo time](/QSMxT/reference/algorithms/#echo-time)) | echo times it resolves from: with `spacing`, the first two in increasing order; a given time must be above 0 |
 
 A run that cannot give these is refused before processing.
 
