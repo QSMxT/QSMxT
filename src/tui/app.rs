@@ -2081,7 +2081,7 @@ pub struct PipelineFormState {
     /// [`MASK_TWO_PASS_BASE`] + index, and folded with the same combine mode and post-combine
     /// refinements as the main mask.
     pub two_pass_sections: Vec<crate::pipeline::config::MaskSection>,
-    /// The recommendations dismissed (Ignore in the recommendation pop-up), each for the value
+    /// The recommendations dismissed (Keep mine in a recommendation or reference pipeline pop-up), each for the value
     /// its setting had then: `--dismiss-recommendation`, and so the run's config.
     pub dismissed: Vec<qsmxt_engine::Dismissal>,
     pub mask_preset: usize, // index into MASK_PRESET_OPTIONS (MASK_PRESET_CUSTOM = hand-edited)
@@ -5215,6 +5215,9 @@ pub struct App {
     /// The form as it was when `rec_seen` was taken (empty before the first check): a key that
     /// changed nothing is not checked.
     pub rec_form: String,
+    /// The reference pipeline pop-up opened when a method is chosen, and what it is worked out
+    /// from ([`super::recommend::RefState`]).
+    pub refs: super::recommend::RefState,
 }
 
 /// The "Did you know?" pop-up, with two buttons: OK, and one that turns startup tips off
@@ -5536,6 +5539,7 @@ impl App {
             rec_modal: None,
             rec_seen: Vec::new(),
             rec_form: String::new(),
+            refs: Default::default(),
         }
     }
 
@@ -5637,6 +5641,10 @@ impl App {
         // The recommendation pop-up captures input under the update prompt and the tips.
         if self.rec_modal.is_some() && self.update_modal.is_none() && self.tip_modal.is_none() {
             self.handle_rec_modal_key(key);
+            return;
+        }
+        if self.refs.modal.is_some() && self.update_modal.is_none() && self.tip_modal.is_none() {
+            self.handle_ref_modal_key(key);
             return;
         }
         if key.code == KeyCode::Char('!') && !self.is_typing() && Self::is_rows_tab(self.active_tab) {
@@ -7118,6 +7126,8 @@ impl App {
                     let cur = self.field_select(field).min((n - 1) as usize) as isize;
                     let new_val = (cur + delta).rem_euclid(n) as usize;
                     self.set_field_select(field, new_val);
+                    // A method passed while cycling is not offered until the cycling stops.
+                    self.refs.last_cycle = Some(std::time::Instant::now());
                     self.restore_focus(&focused_field);
                     return;
                 }

@@ -306,3 +306,77 @@ fn the_note_says_what_was_done() {
     // Applied findings are not departures.
     assert!(note(&counts(Some(Outcome::Applied), 1), 1).is_empty());
 }
+
+/// MEDI with V-SHARP and a threshold mask, its mask chosen by the user.
+fn medi_vsharp_threshold() -> PipelineConfig {
+    let mut c = PipelineConfig::default();
+    c.inversion.algorithm = QsmAlgorithm::Medi;
+    set(&mut c, "bg_removal.algorithm", &json!("vsharp")).unwrap();
+    set(&mut c, "masking.generator", &json!("threshold")).unwrap();
+    c
+}
+
+fn method(c: &PipelineConfig, name: &str) -> Trigger {
+    chosen_methods(c, &Facts::default()).into_iter().find(|m| m.name == name)
+        .unwrap_or_else(|| panic!("{name} is not chosen"))
+}
+
+/// A method's reference pipeline: its reference rules grouped under it, the differences listed,
+/// applied all at once, or kept (dismissed for their values).
+#[test]
+fn reference_differences_of_a_chosen_method() {
+    let facts = Facts::default();
+    let c = medi_vsharp_threshold();
+    let medi = method(&c, "MEDI");
+    assert_eq!(medi.setting, "inversion.algorithm");
+    assert_eq!(reference_title(&medi), "MEDI's reference pipeline");
+    let diffs = reference_differences(&c, &facts, &medi);
+    let rules: Vec<&str> = diffs.iter().map(|r| r.rule.as_str()).collect();
+    assert!(rules.contains(&"medi.bg-pdf") && rules.contains(&"medi.mask-bet"), "{rules:?}");
+    assert!(diffs.iter().all(|r| r.strength == Strength::Reference && r.trigger == medi));
+    let groups = by_method(&reference_values(&c, &facts));
+    assert!(groups.iter().all(|m| m.rules.iter().all(|r| r.trigger == m.method)));
+
+    let mut applied = c.clone();
+    apply_all(&mut applied, &diffs).unwrap();
+    assert!(reference_differences(&applied, &facts, &medi).is_empty());
+    assert_eq!(applied.bg_removal.algorithm, BfAlgorithm::Pdf);
+
+    let mut kept = c.clone();
+    keep(&mut kept.dismissed_recommendations, &diffs);
+    assert!(reference_differences(&kept, &facts, &medi).is_empty(), "kept: not offered again");
+    assert_eq!(kept.bg_removal.algorithm, BfAlgorithm::Vsharp, "keeping changes no setting");
+    assert!(kept.dismissed_recommendations.iter().any(|d| d.rule == "medi.bg-pdf" && d.chosen == "vsharp"));
+    // Another method chosen, the kept values no longer apply; choosing MEDI again offers them.
+    kept.inversion.algorithm = QsmAlgorithm::Rts;
+    prune_dismissals(&mut kept, &facts);
+    assert!(!chosen_methods(&kept, &facts).contains(&medi));
+    kept.inversion.algorithm = QsmAlgorithm::Medi;
+    assert_eq!(reference_differences(&kept, &facts, &medi).len(), diffs.len());
+}
+
+/// A setting's marker names whose rule it departs from and what that rule uses.
+#[test]
+fn markers_name_the_method() {
+    let facts = Facts::default();
+    let mut c = PipelineConfig::default();
+    c.inversion.algorithm = QsmAlgorithm::Qsmart;
+    set(&mut c, "masking.generator", &json!("threshold")).unwrap();
+    let view = reference_values(&c, &facts);
+    let m = marker(&view, "masking.sections").unwrap();
+    assert_eq!(m, Marker { actionable: false, text: "QSMART: BET".into() });
+    // Two methods whose references agree share the value.
+    let mut c = medi_vsharp_threshold();
+    set(&mut c, "bg_removal.algorithm", &json!("pdf")).unwrap();
+    let m = marker(&reference_values(&c, &facts), "masking.sections").unwrap();
+    assert_eq!(m.text, "MEDI, PDF: BET");
+    // An offered finding is flagged and named first.
+    let rule = core::RULES.iter().find(|r| r.id == "medi-msmv.prefilter").unwrap();
+    let c = violating(rule);
+    let m = marker(&reference_values(&c, &facts), "inversion.medi.msmv_prefilter").unwrap();
+    assert!(m.actionable && m.text.starts_with("MEDI: "), "{m:?}");
+    // The settings view carries it.
+    let view = schema::settings_view(&c, &view_facts(&facts));
+    assert_eq!(view.iter().find(|v| v.path == "inversion.medi.msmv_prefilter").unwrap().marker.as_ref(), Some(&m));
+    assert!(marker(&reference_values(&PipelineConfig::default(), &facts), "inversion.algorithm").is_none());
+}

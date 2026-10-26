@@ -52,11 +52,33 @@ install.
 
 When a change makes a setting depart from what a chosen method recommends (or requires, or
 discourages), a pop-up gives the reason and offers **Apply** (the recommended value, selected),
-the other values the method allows, and **Ignore**. `w` shows the source. **Ignore** keeps your
-choice and saves it in the configuration, so the pop-up does not come back until the setting
-changes. `Esc` closes the pop-up and leaves the setting marked ⚑; press `!` on it to see the
-pop-up again. A setting marked ⓘ differs from the method's reference pipeline. This is
-information only and never opens a pop-up. The line under the help gives each covered setting's
+the other values the method allows, and **Keep mine**. `w` shows the source. **Keep mine** keeps
+your choice and saves it in the configuration, so the pop-up does not come back until the
+setting changes. `Esc` closes the pop-up and leaves the setting marked ⚑.
+
+When you choose a method that has a reference pipeline (for example MEDI, QSMART or iLSQR) and
+your settings differ from it, a pop-up titled with that pipeline (*MEDI's reference pipeline*)
+lists each setting that differs: your value, the reference value, why the reference uses it,
+and the source (the paper, or the file and line in the authors' code). Nothing changes unless
+you apply it:
+
+- **Apply all** sets every listed setting to the reference value.
+- **Choose per setting** lists the settings again with a choice on each (`↑`/`↓` to move,
+  `←`/`→` to choose a value or to keep yours); `Enter` applies them.
+- **Keep mine** keeps your values and saves that in the configuration, so the pop-up does not
+  come back while the method stays chosen. Choosing the method again after switching away
+  shows it again.
+
+The pop-up opens once per method choice. If you cycle through methods with `←`/`→`, it waits
+until you stop. If the same change also creates recommendations, they are listed first in the
+same pop-up. If your settings already match the reference pipeline, there is no pop-up.
+
+A setting that departs from a rule is marked with the method whose rule it is and what that
+rule uses, for example `ⓘ MEDI: BET`, or `ⓘ MEDI, PDF: BET` when several methods' references
+agree. ⚑ marks a recommendation (or something required or discouraged) that is still open; ⓘ
+marks a difference from a reference pipeline, or a recommendation you kept. Press `!` on a
+marked setting to see its details: whose rule it is, what it uses, why, the source, and
+**Apply** with the other values it allows. The line under the help gives each covered setting's
 reference value and its source, whether or not the setting differs.
 
 ## Layout

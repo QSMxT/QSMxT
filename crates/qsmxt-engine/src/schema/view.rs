@@ -71,6 +71,11 @@ pub struct SettingView {
     /// `reference` one is information only.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub recommendations: Vec<crate::recommendations::Recommendation>,
+    /// The marker to show next to the setting when it departs from a rule
+    /// ([`crate::recommendations::marker`]): whose rule, what it uses, and whether it is offered
+    /// as a change (⚑) or information only (ⓘ).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub marker: Option<crate::recommendations::Marker>,
 }
 
 /// The config as the run sees it, and the facts its settings' visibility is decided from.
@@ -219,7 +224,7 @@ pub fn settings_view(config: &PipelineConfig, facts: &ViewFacts) -> Vec<SettingV
                 }
                 _ => None,
             };
-            SettingView { path: d.path, visible, forced_by, error: None, warning, reference: vec![], recommendations: vec![] }
+            SettingView { path: d.path, visible, forced_by, error: None, warning, reference: vec![], recommendations: vec![], marker: None }
         })
         .collect();
     let visible: std::collections::HashSet<&str> = views.iter().filter(|v| v.visible).map(|v| v.path).collect();
@@ -238,6 +243,7 @@ pub fn settings_view(config: &PipelineConfig, facts: &ViewFacts) -> Vec<SettingV
     }
     for v in &mut views {
         v.recommendations.sort_by_key(|r| std::cmp::Reverse(r.strength));
+        v.marker = crate::recommendations::marker(&v.recommendations, v.path);
     }
     if let Some(note) = tiling_note(&c) {
         if let Some(v) = views.iter_mut().find(|v| v.path == "inversion.tile_size" && v.visible) {
