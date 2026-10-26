@@ -103,11 +103,16 @@ the scanner's phase combination is generally not suitable for QSM. Pass
 
 ## GE data
 
-GE phase is not yet corrected for handedness or slice chopping, and GE
-real/imaginary series (`part-real`/`part-imag`) are converted but not read by
-`qsmxt run`. `qsmxt dicom-convert` warns on each GE phase, real or imaginary series. Until the
-correction lands (QSM.rs#171), check the sign of χ from GE data against a known
-structure, such as iron-rich deep grey matter, which should be paramagnetic.
+GE real/imaginary series (`part-real`/`part-imag`) are read by `qsmxt run`: each
+echo is converted to magnitude and phase, slice chopping is undone, and the phase
+is negated, as GE records it with the opposite sign (see
+[Real and imaginary images](#real-and-imaginary-images)).
+
+GE phase series (`part-phase`) are not yet corrected for handedness or slice
+chopping, and `qsmxt dicom-convert` warns on each one. Until that correction lands
+(QSM.rs#171), use the real/imaginary export where there is one, or check the sign
+of χ from GE phase against a known structure, such as iron-rich deep grey matter,
+which should be paramagnetic.
 
 ## Slice gaps in 2D acquisitions
 
