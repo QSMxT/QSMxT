@@ -57,7 +57,7 @@ qsmxt example --name prisma-bridge-run2 study/bids   # adds a third to the same 
 ```
 
 Acquisitions already in the dataset are left alone; pass `--force` to rewrite
-them. Everything here is also available in the TUI under **Input Mode → Example
+them. Everything here is also available in the TUI under **Input mode → Example
 dataset**.
 
 :::note

@@ -384,9 +384,44 @@ fn full_labels_are_not_abbreviated() {
                              "Precond", "Mag", "BG", "Param", "Est", "Recon", "Max", "Min", "Pad", "cpl", "para", "dia", "Pec"];
     for s in schema::schema() {
         for w in s.full_label.split([' ', ',']) {
-            assert!(!SHORT.contains(&w), "{}: full label {:?} abbreviates {w:?}", s.path, s.full_label);
+            assert!(!SHORT.iter().any(|a| a.eq_ignore_ascii_case(w)), "{}: full label {:?} abbreviates {w:?}", s.path, s.full_label);
         }
     }
+}
+
+/// Whether a label is in sentence case: no word but the first is capitalised, except names
+/// ("QSM", "V-SHARP", "iLSQR", "SUSEP-Net") and units ("Hz").
+fn sentence_case(label: &str) -> bool {
+    const NAMES: &[&str] = &["Hz", "Hz/ppm", "Dr+", "Dr−", "SUSEP-Net", "RS2-Net"];
+    label.split(' ').enumerate().all(|(i, w)| {
+        NAMES.contains(&w.trim_matches(|c: char| "(),:".contains(c)))
+            || w.split('-').enumerate().all(|(j, p)| {
+                let mut c = p.trim_start_matches('(').chars();
+                let capitalised = c.next().is_some_and(char::is_uppercase)
+                    && c.clone().any(char::is_lowercase) && !c.any(char::is_uppercase);
+                (i == 0 && j == 0) || !capitalised
+            })
+    })
+}
+
+#[test]
+fn labels_are_in_sentence_case() {
+    for s in schema::schema() {
+        let options = s.value_type.options();
+        for l in [s.label, s.full_label].into_iter().chain(s.value_label).chain(s.context).chain(options.iter().map(|o| o.name.as_str())) {
+            assert!(sentence_case(l), "{}: {l:?} is not in sentence case", s.path);
+        }
+    }
+    let m = schema::mask_schema();
+    for i in &m.inputs {
+        assert!(sentence_case(i.label), "{:?} is not in sentence case", i.label);
+    }
+    for s in &m.steps {
+        for l in std::iter::once(s.name).chain(s.params.iter().map(|p| p.label)) {
+            assert!(sentence_case(l), "{}: {l:?} is not in sentence case", s.kind);
+        }
+    }
+    assert!(!sentence_case("Background Removal") && sentence_case("V-SHARP max radius"));
 }
 
 #[test]

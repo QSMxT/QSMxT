@@ -2697,7 +2697,7 @@ mod integration_tests {
         assert!(text[at..].contains("field-mapping.phase-offsets"), "{text}");
         assert!(text.contains("keep the choice with --dismiss-recommendation field-mapping.phase-offsets=false"), "{text}");
         assert!(text.contains("With --accept-recommendations, the run would use:")
-            && text.contains("Phase Offset Removal: off → on (field-mapping.phase-offsets)"), "{text}");
+            && text.contains("Phase offset removal: off → on (field-mapping.phase-offsets)"), "{text}");
         // Dismissed, it is listed as such and nothing would change.
         let mut dismissed = departing_args(bids.clone(), dir.path().join("out")).pipeline;
         dismissed.dismiss_recommendation = Some(vec!["field-mapping.phase-offsets=false".into()]);
@@ -2736,7 +2736,7 @@ mod integration_tests {
         assert!(!methods.contains("Departures from the methods' recommendations"), "{methods}");
         let accepted = super::recommend::Accepted { applied: vec![applied.finding.clone()], ..Default::default() };
         let summary = super::recommend::summary(&config, &runs, &accepted);
-        assert!(summary.iter().any(|l| l.starts_with("  applied (recommended): Phase Offset Removal: on (was off)")), "{summary:?}");
+        assert!(summary.iter().any(|l| l.starts_with("  applied (recommended): Phase offset removal: on (was off)")), "{summary:?}");
 
         let out = dir.path().join("kept");
         let mut args = departing_args(bids, out.clone());

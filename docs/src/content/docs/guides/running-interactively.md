@@ -18,7 +18,7 @@ qsmxt tui
   [DICOM → BIDS](/QSMxT/guides/running-noninteractively/#converting-dicoms-to-bids) for what the classifier handles.)
 - **Point at a dataset** and let QSMxT discover the phase/magnitude runs.
 - **Download an example dataset** — no data of your own to hand? Set
-  **Input Mode → Example dataset**, tick one or more real in-vivo acquisitions,
+  **Input mode → Example dataset**, tick one or more real in-vivo acquisitions,
   and press Download. The TUI fetches them, writes a BIDS dataset, and drops you
   straight into BIDS mode pointed at it. (See
   [Fetch an example](/QSMxT/getting-started/quick-start/#no-data-yet-fetch-an-example).)

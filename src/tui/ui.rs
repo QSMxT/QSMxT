@@ -466,7 +466,7 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     let experimental_span = Span::styled(" (experimental)", Style::default().fg(Color::Yellow));
     if mode_focused {
         let mut spans = vec![
-            Span::styled(format!("  {:22}", "Input Mode:"), mode_label_style),
+            Span::styled(format!("  {:22}", "Input mode:"), mode_label_style),
             Span::styled("< ", Style::default().fg(Color::DarkGray)),
             Span::styled(mode_text, mode_style.add_modifier(Modifier::BOLD)),
             Span::styled(" >", Style::default().fg(Color::DarkGray)),
@@ -475,7 +475,7 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         lines.push(Line::from(spans));
     } else {
         let mut spans = vec![
-            Span::styled(format!("  {:22}", "Input Mode:"), mode_label_style),
+            Span::styled(format!("  {:22}", "Input mode:"), mode_label_style),
             Span::styled(mode_text, mode_style),
         ];
         if is_experimental { spans.push(experimental_span); }
@@ -484,10 +484,10 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
 
     // Fields 1-3: directory/config fields (labels change based on mode)
     let io_labels = match app.input_mode {
-        super::app::InputMode::Bids => ["BIDS Directory", "Output Directory", "Config File"],
-        super::app::InputMode::NIfTI => ["Input Directory", "Output BIDS Dir", "Config File"],
-        super::app::InputMode::DicomToBids => ["DICOM Directory", "Output BIDS Dir", "Config File"],
-        super::app::InputMode::Example => ["Dataset Directory", "Output Directory", "Config File"],
+        super::app::InputMode::Bids => ["BIDS directory", "Output directory", "Config file"],
+        super::app::InputMode::NIfTI => ["Input directory", "Output BIDS dir", "Config file"],
+        super::app::InputMode::DicomToBids => ["DICOM directory", "Output BIDS dir", "Config file"],
+        super::app::InputMode::Example => ["Dataset directory", "Output directory", "Config file"],
     };
 
     // Fields 1-3 are the text IO fields
@@ -662,7 +662,7 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 lines.push(Line::from(""));
                 let ne_focused = !in_io && app.filter_state.focus == super::app::FilterFocus::NumEchoes;
                 let ne_label = Span::styled(
-                    "  Num Echoes: ",
+                    "  Num echoes: ",
                     if ne_focused { Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD) }
                     else { Style::default().fg(Color::White) },
                 );
@@ -1052,7 +1052,7 @@ fn draw_nifti_section(
 
     // ── Magnitude section ──
     lines.push(Line::from(Span::styled(
-        format!("  -- Magnitude Files ({}) --", ns.magnitude_files.len()),
+        format!("  -- Magnitude files ({}) --", ns.magnitude_files.len()),
         Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
     )));
 
@@ -1089,7 +1089,7 @@ fn draw_nifti_section(
 
     // ── Phase section ──
     lines.push(Line::from(Span::styled(
-        format!("  -- Phase Files ({}) --", ns.phase_files.len()),
+        format!("  -- Phase files ({}) --", ns.phase_files.len()),
         Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
     )));
 
@@ -1138,7 +1138,7 @@ fn draw_nifti_section(
         Span::styled(ns.echo_times.clone(), Style::default().fg(Color::Cyan))
     };
     lines.push(Line::from(vec![
-        Span::styled(format!("  {:22}", "Echo Times (ms):"), label_style(&et_focus)),
+        Span::styled(format!("  {:22}", "Echo times (ms):"), label_style(&et_focus)),
         et_val,
     ]));
 
@@ -1150,7 +1150,7 @@ fn draw_nifti_section(
         Span::styled(ns.field_strength.clone(), Style::default().fg(Color::Cyan))
     };
     lines.push(Line::from(vec![
-        Span::styled(format!("  {:22}", "Field Strength (T):"), label_style(&fs_focus)),
+        Span::styled(format!("  {:22}", "Field strength (T):"), label_style(&fs_focus)),
         fs_val,
     ]));
 
@@ -1242,7 +1242,7 @@ fn draw_dicom_series_section(
     };
 
     lines.push(Line::from(Span::styled(
-        "  -- Series Classification --",
+        "  -- Series classification --",
         Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
     )));
 
@@ -1379,7 +1379,7 @@ fn draw_dicom_series_section(
     if !ds.convert_log.is_empty() {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            "  -- Conversion Log --",
+            "  -- Conversion log --",
             Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
         )));
         for log_line in &ds.convert_log {
@@ -1727,14 +1727,14 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 }
                 if focused {
                     Line::from(vec![
-                        Span::styled(format!("  {:lw$}", "Patch Step:"), label_style),
+                        Span::styled(format!("  {:lw$}", "Patch step:"), label_style),
                         Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
                         Span::styled(val, Style::default().fg(Color::Cyan)),
                         Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
                     ])
                 } else {
                     Line::from(vec![
-                        Span::styled(format!("  {:lw$}", "Patch Step:"), label_style),
+                        Span::styled(format!("  {:lw$}", "Patch step:"), label_style),
                         Span::styled(val, Style::default().fg(Color::Gray)),
                     ])
                 }
@@ -1757,14 +1757,14 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 }
                 if focused {
                     Line::from(vec![
-                        Span::styled(format!("  {:lw$}", "Voxel Scale:"), label_style),
+                        Span::styled(format!("  {:lw$}", "Voxel scale:"), label_style),
                         Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
                         Span::styled(val, Style::default().fg(Color::Cyan)),
                         Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
                     ])
                 } else {
                     Line::from(vec![
-                        Span::styled(format!("  {:lw$}", "Voxel Scale:"), label_style),
+                        Span::styled(format!("  {:lw$}", "Voxel scale:"), label_style),
                         Span::styled(val, Style::default().fg(Color::Gray)),
                     ])
                 }
@@ -2055,7 +2055,7 @@ fn draw_methods_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
 fn draw_command_preview_with(f: &mut Frame, cmd: &str, area: ratatui::layout::Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(" Command Preview ");
+        .title(" Command preview ");
     let para = Paragraph::new(Line::from(Span::styled(
         cmd.to_string(),
         Style::default().fg(Color::Green),
@@ -2091,11 +2091,11 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     } else if app.active_tab == TAB_METHODS {
         vec![(&tabs, "Tabs"), ("\u{2191}\u{2193}", "Scroll"), ("Enter/c", "Copy to clipboard"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else if app.on_subtabs() {
-        vec![(&tabs, "Tabs"), ("\u{2190}\u{2192}/[ ]", "Sub-tabs"), ("\u{2193}/Enter", "Settings"), ("R", "Reset Page"),
+        vec![(&tabs, "Tabs"), ("\u{2190}\u{2192}/[ ]", "Sub-tabs"), ("\u{2193}/Enter", "Settings"), ("R", "Reset page"),
              ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else {
         vec![(&tabs, "Tabs"), ("[ ]", "Sub-tabs"), ("\u{2191}\u{2193}", "Navigate"), ("\u{2190}\u{2192}/Space", "Change"),
-             ("Enter", "Edit"), ("r", "Reset"), ("R", "Reset Page"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
+             ("Enter", "Edit"), ("r", "Reset"), ("R", "Reset page"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     };
     let mut help = vec![Span::raw(" ")];
     for (i, (key, what)) in keys.into_iter().enumerate() {
@@ -2153,7 +2153,7 @@ mod tests {
         assert!(app.goto_field("do_smwi"));
         let text = screen_text(&render_app_sized(&mut app, 120, 60));
         let smwi = indent_of(&text, "Compute SMWI");
-        for child in ["Threshold", "Power", "Strength", "HP Sigma (x y z)"] {
+        for child in ["Threshold", "Power", "Strength", "HP sigma (x y z)"] {
             assert!(indent_of(&text, child) > smwi, "{child} should be indented:\n{text}");
         }
         assert!(app.goto_field("synthseg_version"));
@@ -2161,7 +2161,7 @@ mod tests {
         let seg = indent_of(&text, "Segmentation:");
         let source = indent_of(&text, "Source");
         assert!(source > seg, "{text}");
-        for child in ["SynthSeg Version", "Crop", "Flip Averaging", "Topology Cleanup", "Posterior Smoothing"] {
+        for child in ["SynthSeg version", "Crop", "Flip averaging", "Topology cleanup", "Posterior smoothing"] {
             assert!(indent_of(&text, child) > source, "{child} belongs under the source:\n{text}");
         }
         // The sub-tab row is drawn, the active one among them.
@@ -2199,7 +2199,7 @@ mod tests {
         let mut app = example_app();
         let text = screen_text(&render_app(&mut app));
         assert!(text.contains("Example dataset"), "mode label missing:\n{text}");
-        assert!(text.contains("Dataset Directory"), "IO label missing:\n{text}");
+        assert!(text.contains("Dataset directory"), "IO label missing:\n{text}");
         assert!(text.contains("prisma-bridge-run1"), "default acquisition missing:\n{text}");
         assert!(text.contains("[x]"), "default acquisition not ticked:\n{text}");
     }
@@ -2295,7 +2295,7 @@ mod tests {
         let mut app = App::new();
         app.algo_modal = Some(AlgoModal {
             target: AlgoModalTarget::Select("qsm_algorithm".into()),
-            title: "QSM Inversion".into(),
+            title: "QSM inversion".into(),
             options: (0..20).map(|i| format!("algo-{i}")).collect(),
             help: (0..20).map(|i| format!("help {i}")).collect(),
             cursor: 0,
@@ -2332,7 +2332,7 @@ mod tests {
         let help: Vec<String> = options.iter().map(|o| format!("help for {o}")).collect();
         app.algo_modal = Some(AlgoModal {
             target: AlgoModalTarget::Select("qsm_algorithm".into()),
-            title: "QSM Inversion".into(),
+            title: "QSM inversion".into(),
             options,
             help,
             cursor: 20, // inside the DL group, past the capped viewport → list must scroll
