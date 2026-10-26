@@ -407,8 +407,10 @@ reference echo before field mapping: the registration is estimated on the
 magnitude images (normalised cross-correlation, multi-resolution) and applied to
 the phase through the complex signal, so wraps are not interpolated. The mask is
 then restricted to voxels every echo still covers, and every later stage (field
-mapping, SWI, T2\*/R2\*, inversion) reads the corrected echoes. It needs magnitude
-images, and a run without them stops with an error; a single-echo run skips it.
+mapping, SWI, T2\*/R2\*, inversion) reads the corrected echoes. It needs at least
+two echoes with magnitude images: a run with one echo or without magnitude goes
+ahead without it, and the check before processing (and `--dry`) warns about each
+such run.
 
 | Flag | Default | Meaning |
 | --- | --- | --- |

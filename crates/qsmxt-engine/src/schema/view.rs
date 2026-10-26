@@ -207,6 +207,11 @@ pub fn settings_view(config: &PipelineConfig, facts: &ViewFacts) -> Vec<SettingV
             };
             let warning = match d.path {
                 "masking.sections" if visible => crate::masking::mask_warning(&c).map(String::from),
+                // The run's check says the same per scan, including one without magnitude (#397).
+                "motion_correction.enabled" if visible && c.motion_correction.enabled
+                    && facts.num_echoes == Some(1) => Some(
+                    "Motion correction needs at least two echoes, and the data has one: runs go \
+                     ahead without it".to_string()),
                 _ => None,
             };
             SettingView { path: d.path, visible, forced_by, error: None, warning, reference: vec![], recommendations: vec![] }
@@ -403,6 +408,21 @@ mod tests {
         c.bg_removal.algorithm = crate::enums::BfAlgorithm::Vsharp;
         c.inversion.algorithm = QsmAlgorithm::Xqsm;
         assert_eq!(note(&c), None, "xQSM");
+    }
+
+    /// Motion correction on single-echo data is flagged on its switch (#397).
+    #[test]
+    fn motion_correction_on_one_echo_is_flagged() {
+        let warning = |c: &PipelineConfig, num_echoes| {
+            settings_view(c, &ViewFacts { num_echoes, ..Default::default() }).into_iter()
+                .find(|v| v.path == "motion_correction.enabled").and_then(|v| v.warning)
+        };
+        let mut c = PipelineConfig::default();
+        assert_eq!(warning(&c, Some(1)), None, "off");
+        c.motion_correction.enabled = true;
+        assert!(warning(&c, Some(1)).is_some_and(|w| w.contains("at least two echoes")));
+        assert_eq!(warning(&c, Some(4)), None);
+        assert_eq!(warning(&c, None), None, "not known");
     }
 
     #[test]

@@ -331,7 +331,9 @@ pub fn plan_for(config: &PipelineConfig, facts: &ScanFacts, profile: &MemoryProf
              so there is no recipe to derive a reliable-phase mask from",
             config.masking.custom_mask_tool.as_deref().unwrap_or_default()));
     }
-    let motion_corrected = config.motion_correction.enabled && facts.n_echoes > 1 && facts.has_magnitude;
+    // Switched on for a scan it cannot correct, it is left out with a warning in the check.
+    let motion_corrected = config.motion_correction.enabled
+        && requirements::motion_correction_note(facts, config).is_none();
 
     let mut steps = vec![Step::new(Stage::Load, vec![])];
     let mut add = |stage: Stage, models: Vec<&'static str>| steps.push(Step::new(stage, models));

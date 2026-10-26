@@ -1691,25 +1691,21 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
     }
 
     /// Retrospective motion correction: every echo co-registered onto the reference echo and the
-    /// mask cut to where every echo still has data. Off (or with one echo), what an earlier run
-    /// of it left is stale: its coverage mask must not be published as this run's, and every
-    /// step that read the corrected echoes or that mask has to run again on the uncorrected ones.
+    /// mask cut to where every echo still has data. Off (or impossible: one echo, or no
+    /// magnitude), what an earlier run of it left is stale: its coverage mask must not be
+    /// published as this run's, and every step that read the corrected echoes or that mask has to
+    /// run again on the uncorrected ones.
     fn motion(&mut self) -> Result<(), S::Error> {
         let m = &self.config.motion_correction;
         if !m.enabled {
             return self.store.discard("motion", &[Item::CoverageMask]);
         }
-        if !self.meta.has_magnitude {
-            return Err(crate::EngineError::Config(
-                "--motion-correction needs magnitude images: the registration is estimated on magnitude, \
-                 and this run has none".into()).into());
-        }
-        let n = self.n_echoes();
-        if n < 2 {
-            self.log(Level::Warn, "Motion correction needs at least two echoes; this run has one, so it is skipped");
-            self.skip("Motion correction needs at least two echoes, and this run has one.");
+        // The plan's check warned about it before the run started.
+        if !self.plan.motion_corrected {
+            self.skip("Motion correction needs at least two echoes with magnitude images, which this run does not have.");
             return self.store.discard("motion", &[Item::CoverageMask]);
         }
+        let n = self.n_echoes();
         let params = stages::motion::params(self.config, &self.meta);
         let Some(key) = self.begin("motion", None, &params, "Skipping motion correction (cached)",
                                    "Motion correction (rigid co-registration of the echoes)") else { return Ok(()) };

@@ -454,6 +454,24 @@ pub fn medi_csf_note(f: &ScanFacts, config: &PipelineConfig) -> Option<String> {
          this run has {}: MEDI runs without it", f.n_echoes))
 }
 
+/// The note for motion correction switched on for a scan it cannot correct (#397): the echoes are
+/// co-registered on their magnitude, so it needs at least two echoes with magnitude images. The
+/// run goes ahead without it.
+pub fn motion_correction_note(f: &ScanFacts, config: &PipelineConfig) -> Option<String> {
+    if !config.motion_correction.enabled {
+        return None;
+    }
+    let lacks = match (f.n_echoes < 2, f.has_magnitude) {
+        (true, false) => "one echo and no magnitude images",
+        (true, true) => "one echo",
+        (false, false) => "no magnitude images",
+        (false, true) => return None,
+    };
+    Some(format!(
+        "Motion correction needs at least two echoes with magnitude images, and this run has \
+         {lacks}: it runs without motion correction"))
+}
+
 /// Why the EPG fit cannot measure R2 from this run's MESE acquisition, if it cannot.
 pub fn mese_problem(f: &ScanFacts) -> Option<String> {
     let Some(tes) = f.mese_echo_times.as_deref() else {
@@ -784,6 +802,14 @@ pub fn scan_check(f: &ScanFacts, config: &PipelineConfig) -> Check {
         out.problems.push(Problem {
             severity: Severity::Warning, setting: Some("inversion.medi.csf"), implied_by: None,
             settings: vec!["inversion.medi.csf"], reason: note.clone(), message: note,
+        });
+    }
+    if let Some(note) = motion_correction_note(f, config) {
+        let path = "motion_correction.enabled";
+        out.warnings.push(note.clone());
+        out.problems.push(Problem {
+            severity: Severity::Warning, setting: Some(path), implied_by: None,
+            settings: vec![path], reason: note.clone(), message: note,
         });
     }
     for o in Output::ALL {
@@ -1154,6 +1180,27 @@ mod tests {
         let out = check(&r, &PipelineConfig::default());
         assert!(out.errors.len() == 1 && out.errors[0].contains("MCPC-3D-S")
             && out.errors[0].contains("2 uncombined coils"), "{out:?}");
+    }
+
+    /// Motion correction on a scan it cannot correct is a warning on its switch, and the plan
+    /// leaves the correction out (#397).
+    #[test]
+    fn motion_correction_on_one_echo_or_no_magnitude_warns() {
+        let mut c = PipelineConfig::default();
+        c.motion_correction.enabled = true;
+        for (r, lacks) in [(run(&[0.005], true), "has one echo:"), (run(&EVEN, false), "has no magnitude images:"),
+                           (run(&[0.005], false), "has one echo and no magnitude images:")] {
+            let out = check(&r, &c);
+            assert!(out.errors.is_empty() && out.warnings.len() == 1 && out.warnings[0].contains(lacks), "{out:?}");
+            assert!(out.warnings[0].starts_with("sub-01_MEGRE: Motion correction needs"), "{out:?}");
+            let p = &out.problems[0];
+            assert!(p.severity == Severity::Warning && p.setting == Some("motion_correction.enabled"), "{p:?}");
+            assert!(!crate::plan::plan(&c, &r).motion_corrected);
+        }
+        assert!(check(&run(&EVEN, true), &c).warnings.is_empty());
+        assert!(crate::plan::plan(&c, &run(&EVEN, true)).motion_corrected);
+        c.motion_correction.enabled = false;
+        assert!(check(&run(&[0.005], false), &c).warnings.is_empty(), "off: nothing to say");
     }
 
     #[test]
