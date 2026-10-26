@@ -105,7 +105,7 @@ fn every_rule_setting_is_a_qsmxt_setting() {
 #[test]
 fn the_iqfm_placeholder_is_named_by_no_rule() {
     let names = |t: &Test| match t {
-        Test::OneOf { values } | Test::NoneOf { values } => values.iter().any(|v| *v == core::Value::Choice("iharperella")),
+        Test::OneOf { values } | Test::NoneOf { values } => values.contains(&core::Value::Choice("iharperella")),
         Test::Range { .. } => false,
     };
     for r in core::RULES {

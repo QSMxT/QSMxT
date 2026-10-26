@@ -122,7 +122,8 @@ pub(crate) fn dry_text(config: &PipelineConfig, runs: &[QsmRun], accept: bool) -
         let _ = writeln!(out, "Recommendations: none (the configuration departs from nothing the chosen methods' rules cover)");
     } else {
         let _ = writeln!(out, "Recommendations (QSM.rs's pipeline rules for the chosen methods):");
-        let groups: [(&str, Box<dyn Fn(&Recommendation) -> bool>); 5] = [
+        type Belongs = Box<dyn Fn(&Recommendation) -> bool>;
+        let groups: [(&str, Belongs); 5] = [
             ("required (the run is refused as configured)", Box::new(|r| r.strength == Strength::Required)),
             ("recommended", Box::new(|r| !r.dismissed && r.strength == Strength::Recommended)),
             ("discouraged", Box::new(|r| !r.dismissed && r.strength == Strength::Discouraged)),
