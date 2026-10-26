@@ -280,12 +280,16 @@ pub enum B0Estimation {
     /// bipolar correction ([`crate::config::FieldMappingConfig::validate`]); the default when
     /// QSMART is the inversion.
     QsmartEchofit,
+    /// MEDI's field map (`Fit_ppm_complex`): a fit of the complex echoes, then unwrapping of the
+    /// fitted phase per echo spacing (QSM.rs `B0EstimationMethod::ComplexFit`).
+    ComplexFit,
 }
 impl fmt::Display for B0Estimation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", match self {
             Self::WeightedAvg => "weighted-avg", Self::LinearFit => "linear-fit", Self::RobustFit => "robust-fit",
             Self::QsmartEchofit => "qsmart-echofit",
+            Self::ComplexFit => "complex-fit",
         })
     }
 }

@@ -142,6 +142,9 @@ A file without it is read as follows, and what changed is logged:
 - `bg_removal.vsharp.min_radius` was also the step between V-SHARP's radii. A value kept
   from such a file brings that step with it as `bg_removal.vsharp.radius_step`, so the
   radii stay the same.
+- TFI's `merit` did nothing in earlier files; it is now MERIT, on by default. An earlier
+  value is dropped, with a warning where it turned MERIT off for a TFI run; keep it, with
+  `schema_version` at the top, to turn MERIT off.
 
 ## Validate before you run
 

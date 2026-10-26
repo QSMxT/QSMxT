@@ -72,7 +72,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
 | `--coil-combination-sigma <COIL_COMBINATION_SIGMA>` | MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets (3 values, in voxels; default 10 10 5, as in MriResearchTools). Only used for uncombined multi-coil runs. |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
-| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (default: weighted-avg; qsmart-echofit with --qsm-algorithm qsmart and Laplacian unwrapping) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`. |
+| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (default: weighted-avg; qsmart-echofit with --qsm-algorithm qsmart and Laplacian unwrapping) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. |
 | `--qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>` | `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is left out of QSMART's reconstruction is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`; default), or a fixed residual (`--qsmart-fit-threshold`). Without it, giving one of those two selects its mode. Values: `percentile`, `absolute`. |
 | `--qsmart-fit-percentile <QSMART_FIT_PERCENTILE>` | `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is left out of QSMART's reconstruction (default 99) |
 | `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is left out of QSMART's reconstruction, instead of a percentile (40 when the mode is `absolute` and none is given) |
@@ -118,6 +118,11 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--nltv-te <TE>` | NLTV: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 | `--medi-lambda <MEDI_LAMBDA>` | MEDI lambda: the data-fidelity weight (larger fits the field more closely) |
 | `--medi-merit <MEDI_MERIT>` | MEDI: enable MERIT weighting. |
+| `--medi-csf <MEDI_CSF>` | MEDI+0 (Liu et al. 2018): zero-reference χ to the ventricular CSF, found from R2\*, and keep it uniform there (default: true). Needs at least 3 echoes; with fewer, MEDI runs without it. |
+| `--medi-lambda-csf <MEDI_LAMBDA_CSF>` | MEDI+0: weight of the CSF uniformity term (default: 100) |
+| `--medi-csf-r2s-threshold <MEDI_CSF_R2S_THRESHOLD>` | MEDI+0: R2\* in Hz below which a voxel is a CSF candidate (default: 5) |
+| `--medi-csf-erode <MEDI_CSF_ERODE>` | MEDI+0: erode the mask by a 10 mm sphere before finding the CSF (default: true) |
+| `--medi-zeropad <X> <Y> <Z>` | MEDI: voxels of zeros appended at the end of x, y and z before the inversion; the result is cropped back (default: 0 0 0) |
 | `--medi-smv` | MEDI: high-pass the local field with a spherical mean value filter, removing residual background near the brain edge (MEDI-SMV; on by default) |
 | `--no-medi-smv` | MEDI: no SMV high-pass of the local field. |
 | `--medi-smv-radius <MEDI_SMV_RADIUS>` | MEDI SMV radius in mm (also mSMV's) |
@@ -136,6 +141,8 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--medi-te <TE>` | MEDI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing) |
 | `--tfi-lambda <TFI_LAMBDA>` | TFI lambda: the data-fidelity weight (larger fits the field more closely) |
 | `--tfi-precond <TFI_PRECOND>` | TFI preconditioner value (susceptibility scaling outside the mask) |
+| `--tfi-merit <TFI_MERIT>` | TFI: enable MERIT weighting (default: true) |
+| `--tfi-linear <TFI_LINEAR>` | TFI: fit the field linearly, as the TFI paper does (default: true); false uses MEDI's exponential data term. |
 | `--tfi-data-weighting <TFI_DATA_WEIGHTING>` | TFI: data weighting mode (0=uniform, 1=SNR) |
 | `--tfi-percentage <TFI_PERCENTAGE>` | TFI edge percentage (0.0-1.0) |
 | `--tfi-cg-tol <TFI_CG_TOL>` | TFI CG tolerance. |
@@ -364,6 +371,8 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--robust-fit-iterations <ROBUST_FIT_ITERATIONS>` | Motion-robust fit: IRLS passes (default 3; 0 = report only, the field is the linear fit's) |
 | `--robust-fit-downweight-level <ROBUST_FIT_DOWNWEIGHT_LEVEL>` | Motion-robust fit (reporting only): a robust weight below this counts as down-weighted (default 0.75; in (0, 1]) |
 | `--robust-fit-flag-ratio <ROBUST_FIT_FLAG_RATIO>` | Motion-robust fit (reporting only): flag an echo whose outlier score exceeds this many times the best echo's (default 3; at least 1) |
+| `--complex-fit-reltol <COMPLEX_FIT_RELTOL>` | Complex fit (`--b0-estimation complex-fit`): stop once the update is this fraction of the first estimate, over the whole volume (default 1e-4) |
+| `--complex-fit-max-iter <COMPLEX_FIT_MAX_ITER>` | Complex fit: Gauss-Newton iterations at most (default 30) |
 | `--no-qsm` | Skip QSM processing (only run supplementary outputs like SWI, T2\*, R2\*) |
 | `--do-swi` | Also compute SWI. |
 | `--do-segmentation` | Also segment the brain from the GRE magnitude with SynthSeg, writing a FreeSurfer-labelled `_dseg.nii` and its BIDS lookup table. Needs no T1w and no registration. Needs a deep-learning build. doi:10.1016/j.media.2023.102789. |
@@ -493,7 +502,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
 | `--coil-combination-sigma <COIL_COMBINATION_SIGMA>` | MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets (3 values, in voxels; default 10 10 5, as in MriResearchTools). Only used for uncombined multi-coil runs. |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
-| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (default: weighted-avg; qsmart-echofit with --qsm-algorithm qsmart and Laplacian unwrapping) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`. |
+| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (default: weighted-avg; qsmart-echofit with --qsm-algorithm qsmart and Laplacian unwrapping) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. |
 | `--qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>` | `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is left out of QSMART's reconstruction is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`; default), or a fixed residual (`--qsmart-fit-threshold`). Without it, giving one of those two selects its mode. Values: `percentile`, `absolute`. |
 | `--qsmart-fit-percentile <QSMART_FIT_PERCENTILE>` | `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is left out of QSMART's reconstruction (default 99) |
 | `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is left out of QSMART's reconstruction, instead of a percentile (40 when the mode is `absolute` and none is given) |
@@ -539,6 +548,11 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--nltv-te <TE>` | NLTV: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 | `--medi-lambda <MEDI_LAMBDA>` | MEDI lambda: the data-fidelity weight (larger fits the field more closely) |
 | `--medi-merit <MEDI_MERIT>` | MEDI: enable MERIT weighting. |
+| `--medi-csf <MEDI_CSF>` | MEDI+0 (Liu et al. 2018): zero-reference χ to the ventricular CSF, found from R2\*, and keep it uniform there (default: true). Needs at least 3 echoes; with fewer, MEDI runs without it. |
+| `--medi-lambda-csf <MEDI_LAMBDA_CSF>` | MEDI+0: weight of the CSF uniformity term (default: 100) |
+| `--medi-csf-r2s-threshold <MEDI_CSF_R2S_THRESHOLD>` | MEDI+0: R2\* in Hz below which a voxel is a CSF candidate (default: 5) |
+| `--medi-csf-erode <MEDI_CSF_ERODE>` | MEDI+0: erode the mask by a 10 mm sphere before finding the CSF (default: true) |
+| `--medi-zeropad <X> <Y> <Z>` | MEDI: voxels of zeros appended at the end of x, y and z before the inversion; the result is cropped back (default: 0 0 0) |
 | `--medi-smv` | MEDI: high-pass the local field with a spherical mean value filter, removing residual background near the brain edge (MEDI-SMV; on by default) |
 | `--no-medi-smv` | MEDI: no SMV high-pass of the local field. |
 | `--medi-smv-radius <MEDI_SMV_RADIUS>` | MEDI SMV radius in mm (also mSMV's) |
@@ -557,6 +571,8 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--medi-te <TE>` | MEDI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing) |
 | `--tfi-lambda <TFI_LAMBDA>` | TFI lambda: the data-fidelity weight (larger fits the field more closely) |
 | `--tfi-precond <TFI_PRECOND>` | TFI preconditioner value (susceptibility scaling outside the mask) |
+| `--tfi-merit <TFI_MERIT>` | TFI: enable MERIT weighting (default: true) |
+| `--tfi-linear <TFI_LINEAR>` | TFI: fit the field linearly, as the TFI paper does (default: true); false uses MEDI's exponential data term. |
 | `--tfi-data-weighting <TFI_DATA_WEIGHTING>` | TFI: data weighting mode (0=uniform, 1=SNR) |
 | `--tfi-percentage <TFI_PERCENTAGE>` | TFI edge percentage (0.0-1.0) |
 | `--tfi-cg-tol <TFI_CG_TOL>` | TFI CG tolerance. |
@@ -785,6 +801,8 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--robust-fit-iterations <ROBUST_FIT_ITERATIONS>` | Motion-robust fit: IRLS passes (default 3; 0 = report only, the field is the linear fit's) |
 | `--robust-fit-downweight-level <ROBUST_FIT_DOWNWEIGHT_LEVEL>` | Motion-robust fit (reporting only): a robust weight below this counts as down-weighted (default 0.75; in (0, 1]) |
 | `--robust-fit-flag-ratio <ROBUST_FIT_FLAG_RATIO>` | Motion-robust fit (reporting only): flag an echo whose outlier score exceeds this many times the best echo's (default 3; at least 1) |
+| `--complex-fit-reltol <COMPLEX_FIT_RELTOL>` | Complex fit (`--b0-estimation complex-fit`): stop once the update is this fraction of the first estimate, over the whole volume (default 1e-4) |
+| `--complex-fit-max-iter <COMPLEX_FIT_MAX_ITER>` | Complex fit: Gauss-Newton iterations at most (default 30) |
 | `--no-qsm` | Skip QSM processing (only run supplementary outputs like SWI, T2\*, R2\*) |
 | `--do-swi` | Also compute SWI. |
 | `--do-segmentation` | Also segment the brain from the GRE magnitude with SynthSeg, writing a FreeSurfer-labelled `_dseg.nii` and its BIDS lookup table. Needs no T1w and no registration. Needs a deep-learning build. doi:10.1016/j.media.2023.102789. |
@@ -853,7 +871,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
 | `--coil-combination-sigma <COIL_COMBINATION_SIGMA>` | MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets (3 values, in voxels; default 10 10 5, as in MriResearchTools). Only used for uncombined multi-coil runs. |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
-| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (default: weighted-avg; qsmart-echofit with --qsm-algorithm qsmart and Laplacian unwrapping) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`. |
+| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (default: weighted-avg; qsmart-echofit with --qsm-algorithm qsmart and Laplacian unwrapping) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. |
 | `--qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>` | `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is left out of QSMART's reconstruction is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`; default), or a fixed residual (`--qsmart-fit-threshold`). Without it, giving one of those two selects its mode. Values: `percentile`, `absolute`. |
 | `--qsmart-fit-percentile <QSMART_FIT_PERCENTILE>` | `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is left out of QSMART's reconstruction (default 99) |
 | `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is left out of QSMART's reconstruction, instead of a percentile (40 when the mode is `absolute` and none is given) |
@@ -899,6 +917,11 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--nltv-te <TE>` | NLTV: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 | `--medi-lambda <MEDI_LAMBDA>` | MEDI lambda: the data-fidelity weight (larger fits the field more closely) |
 | `--medi-merit <MEDI_MERIT>` | MEDI: enable MERIT weighting. |
+| `--medi-csf <MEDI_CSF>` | MEDI+0 (Liu et al. 2018): zero-reference χ to the ventricular CSF, found from R2\*, and keep it uniform there (default: true). Needs at least 3 echoes; with fewer, MEDI runs without it. |
+| `--medi-lambda-csf <MEDI_LAMBDA_CSF>` | MEDI+0: weight of the CSF uniformity term (default: 100) |
+| `--medi-csf-r2s-threshold <MEDI_CSF_R2S_THRESHOLD>` | MEDI+0: R2\* in Hz below which a voxel is a CSF candidate (default: 5) |
+| `--medi-csf-erode <MEDI_CSF_ERODE>` | MEDI+0: erode the mask by a 10 mm sphere before finding the CSF (default: true) |
+| `--medi-zeropad <X> <Y> <Z>` | MEDI: voxels of zeros appended at the end of x, y and z before the inversion; the result is cropped back (default: 0 0 0) |
 | `--medi-smv` | MEDI: high-pass the local field with a spherical mean value filter, removing residual background near the brain edge (MEDI-SMV; on by default) |
 | `--no-medi-smv` | MEDI: no SMV high-pass of the local field. |
 | `--medi-smv-radius <MEDI_SMV_RADIUS>` | MEDI SMV radius in mm (also mSMV's) |
@@ -917,6 +940,8 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--medi-te <TE>` | MEDI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing) |
 | `--tfi-lambda <TFI_LAMBDA>` | TFI lambda: the data-fidelity weight (larger fits the field more closely) |
 | `--tfi-precond <TFI_PRECOND>` | TFI preconditioner value (susceptibility scaling outside the mask) |
+| `--tfi-merit <TFI_MERIT>` | TFI: enable MERIT weighting (default: true) |
+| `--tfi-linear <TFI_LINEAR>` | TFI: fit the field linearly, as the TFI paper does (default: true); false uses MEDI's exponential data term. |
 | `--tfi-data-weighting <TFI_DATA_WEIGHTING>` | TFI: data weighting mode (0=uniform, 1=SNR) |
 | `--tfi-percentage <TFI_PERCENTAGE>` | TFI edge percentage (0.0-1.0) |
 | `--tfi-cg-tol <TFI_CG_TOL>` | TFI CG tolerance. |
@@ -1145,6 +1170,8 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--robust-fit-iterations <ROBUST_FIT_ITERATIONS>` | Motion-robust fit: IRLS passes (default 3; 0 = report only, the field is the linear fit's) |
 | `--robust-fit-downweight-level <ROBUST_FIT_DOWNWEIGHT_LEVEL>` | Motion-robust fit (reporting only): a robust weight below this counts as down-weighted (default 0.75; in (0, 1]) |
 | `--robust-fit-flag-ratio <ROBUST_FIT_FLAG_RATIO>` | Motion-robust fit (reporting only): flag an echo whose outlier score exceeds this many times the best echo's (default 3; at least 1) |
+| `--complex-fit-reltol <COMPLEX_FIT_RELTOL>` | Complex fit (`--b0-estimation complex-fit`): stop once the update is this fraction of the first estimate, over the whole volume (default 1e-4) |
+| `--complex-fit-max-iter <COMPLEX_FIT_MAX_ITER>` | Complex fit: Gauss-Newton iterations at most (default 30) |
 | `--no-qsm` | Skip QSM processing (only run supplementary outputs like SWI, T2\*, R2\*) |
 | `--do-swi` | Also compute SWI. |
 | `--do-segmentation` | Also segment the brain from the GRE magnitude with SynthSeg, writing a FreeSurfer-labelled `_dseg.nii` and its BIDS lookup table. Needs no T1w and no registration. Needs a deep-learning build. doi:10.1016/j.media.2023.102789. |
@@ -1560,7 +1587,7 @@ qsmxt fieldmap romeo [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--tes <TES>` | Echo times in seconds (space-separated, one per echo) |
 | `--b0 <B0>` | Field strength in Tesla (alias: --field-strength) |
 | `--params <PARAMS>` | JSON params file: {"TE":[..seconds], "B0":&lt;tesla&gt;, "voxel_size":[..], "B0_dir":[..]}. --tes / --b0 override values from this file when both are present. |
-| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (qsmart-echofit: `fieldmap laplacian` only) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`. Default: `weighted-avg`. |
+| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (qsmart-echofit: `fieldmap laplacian` only) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. Default: `weighted-avg`. |
 | `--qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>` | `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is marked unreliable is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`; default), or a fixed residual (`--qsmart-fit-threshold`). Without it, giving one of those two selects its mode. Values: `percentile`, `absolute`. |
 | `--qsmart-fit-percentile <QSMART_FIT_PERCENTILE>` | `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is marked unreliable (default 99) |
 | `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is marked unreliable, instead of a percentile (40 when the mode is `absolute` and none is given) |
@@ -1574,6 +1601,8 @@ qsmxt fieldmap romeo [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--robust-fit-iterations <ROBUST_FIT_ITERATIONS>` | Motion-robust fit: IRLS passes (default 3; 0 = report only, the field is the linear fit's) |
 | `--robust-fit-downweight-level <ROBUST_FIT_DOWNWEIGHT_LEVEL>` | Motion-robust fit (reporting only): a robust weight below this counts as down-weighted (default 0.75; in (0, 1]) |
 | `--robust-fit-flag-ratio <ROBUST_FIT_FLAG_RATIO>` | Motion-robust fit (reporting only): flag an echo whose outlier score exceeds this many times the best echo's (default 3; at least 1) |
+| `--complex-fit-reltol <COMPLEX_FIT_RELTOL>` | Complex fit (`--b0-estimation complex-fit`): stop once the update is this fraction of the first estimate, over the whole volume (default 1e-4) |
+| `--complex-fit-max-iter <COMPLEX_FIT_MAX_ITER>` | Complex fit: Gauss-Newton iterations at most (default 30) |
 | `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
 | `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
@@ -1613,7 +1642,7 @@ qsmxt fieldmap laplacian [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--tes <TES>` | Echo times in seconds (space-separated, one per echo) |
 | `--b0 <B0>` | Field strength in Tesla (alias: --field-strength) |
 | `--params <PARAMS>` | JSON params file: {"TE":[..seconds], "B0":&lt;tesla&gt;, "voxel_size":[..], "B0_dir":[..]}. --tes / --b0 override values from this file when both are present. |
-| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (qsmart-echofit: `fieldmap laplacian` only) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`. Default: `weighted-avg`. |
+| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (qsmart-echofit: `fieldmap laplacian` only) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. Default: `weighted-avg`. |
 | `--qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>` | `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is marked unreliable is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`; default), or a fixed residual (`--qsmart-fit-threshold`). Without it, giving one of those two selects its mode. Values: `percentile`, `absolute`. |
 | `--qsmart-fit-percentile <QSMART_FIT_PERCENTILE>` | `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is marked unreliable (default 99) |
 | `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is marked unreliable, instead of a percentile (40 when the mode is `absolute` and none is given) |
@@ -1627,6 +1656,8 @@ qsmxt fieldmap laplacian [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--robust-fit-iterations <ROBUST_FIT_ITERATIONS>` | Motion-robust fit: IRLS passes (default 3; 0 = report only, the field is the linear fit's) |
 | `--robust-fit-downweight-level <ROBUST_FIT_DOWNWEIGHT_LEVEL>` | Motion-robust fit (reporting only): a robust weight below this counts as down-weighted (default 0.75; in (0, 1]) |
 | `--robust-fit-flag-ratio <ROBUST_FIT_FLAG_RATIO>` | Motion-robust fit (reporting only): flag an echo whose outlier score exceeds this many times the best echo's (default 3; at least 1) |
+| `--complex-fit-reltol <COMPLEX_FIT_RELTOL>` | Complex fit (`--b0-estimation complex-fit`): stop once the update is this fraction of the first estimate, over the whole volume (default 1e-4) |
+| `--complex-fit-max-iter <COMPLEX_FIT_MAX_ITER>` | Complex fit: Gauss-Newton iterations at most (default 30) |
 | `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver: `dct` (unweighted least squares, Neumann/DCT solve) or `fft` (Schofield & Zhu, FFT solve on a zero-padded volume) Values: `dct`, `fft`, `mirror`. Default: `dct`. |
 | `--laplacian-fft-pad <VOXELS>` | Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or three (x y z) Default: `64`. |
 
@@ -2035,6 +2066,11 @@ qsmxt invert medi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FI
 | `--magnitude <MAGNITUDE>` | Magnitude of every echo: one 4D NIfTI, or one 3D NIfTI per echo in echo order. Required. |
 | `--lambda <LAMBDA>` | Lambda: the data-fidelity weight (larger fits the field more closely) |
 | `--merit <MERIT>` | Enable MERIT weighting. |
+| `--csf <CSF>` | MEDI+0 (Liu et al. 2018): zero-reference χ to the ventricular CSF, found from R2\* of the echo magnitudes, and keep it uniform there (default: true). Needs at least 3 echoes; with fewer, MEDI runs without it. |
+| `--lambda-csf <LAMBDA_CSF>` | MEDI+0: weight of the CSF uniformity term (default: 100) |
+| `--csf-r2s-threshold <CSF_R2S_THRESHOLD>` | MEDI+0: R2\* in Hz below which a voxel is a CSF candidate (default: 5) |
+| `--csf-erode <CSF_ERODE>` | MEDI+0: erode the mask by a 10 mm sphere before finding the CSF (default: true) |
+| `--zeropad <X> <Y> <Z>` | Voxels of zeros appended at the end of x, y and z before the inversion; the result is cropped back (default: 0 0 0) |
 | `--smv <SMV>` | High-pass the local field with a spherical mean value filter, removing residual background near the brain edge (MEDI-SMV) [default: on]. |
 | `--smv-radius <SMV_RADIUS>` | SMV radius in mm (also mSMV's) |
 | `--smv-shrink-mask <SMV_SHRINK_MASK>` | With SMV, shrink the mask to where the SMV of the mask exceeds 0.999; false keeps the full mask, high-passing the field over it [default: on]. |
@@ -2071,6 +2107,8 @@ qsmxt invert tfi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIE
 | `--magnitude <MAGNITUDE>` | Magnitude of every echo: one 4D NIfTI, or one 3D NIfTI per echo in echo order. Required. |
 | `--lambda <LAMBDA>` | Lambda: the data-fidelity weight (larger fits the field more closely) |
 | `--precond <PRECOND>` | Preconditioner value (susceptibility scaling outside the mask) |
+| `--merit <MERIT>` | Enable MERIT weighting (default: true) |
+| `--linear <LINEAR>` | Fit the field linearly, as the TFI paper does (default: true); false uses MEDI's exponential data term. |
 | `--data-weighting <DATA_WEIGHTING>` | Data weighting mode (0=uniform, 1=SNR) |
 | `--percentage <PERCENTAGE>` | Edge percentage (0.0-1.0) |
 | `--cg-tol <CG_TOL>` | CG tolerance. |

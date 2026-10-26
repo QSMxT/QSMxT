@@ -1865,6 +1865,17 @@ pub struct PipelineFormState {
     pub robust_fit_iterations: String,
     pub robust_fit_downweight_level: String,
     pub robust_fit_flag_ratio: String,
+    /// MEDI's complex fit (`b0_estimation` complex-fit).
+    pub complex_fit_reltol: String,
+    pub complex_fit_max_iter: String,
+    /// MEDI+0's CSF term and MEDI's zero padding (x y z voxels); TFI's MERIT and data term.
+    pub medi_csf: bool,
+    pub medi_lambda_csf: String,
+    pub medi_csf_r2s_threshold: String,
+    pub medi_csf_erode: bool,
+    pub medi_zeropad: String,
+    pub tfi_merit: bool,
+    pub tfi_linear: bool,
 
     // Phase offset sigma (mm)
     pub phase_offset_sigma_mm: String,
@@ -2205,6 +2216,18 @@ impl Default for PipelineFormState {
             robust_fit_iterations: qsmxt_engine::RobustFitConfig::default().iterations.to_string(),
             robust_fit_downweight_level: fmt_default(qsmxt_engine::RobustFitConfig::default().downweight_level),
             robust_fit_flag_ratio: fmt_default(qsmxt_engine::RobustFitConfig::default().flag_ratio),
+            complex_fit_reltol: fmt_default(qsmxt_engine::ComplexFitConfig::default().reltol),
+            complex_fit_max_iter: qsmxt_engine::ComplexFitConfig::default().max_iter.to_string(),
+            medi_csf: qsmxt_engine::MediConfig::default().csf,
+            medi_lambda_csf: fmt_default(qsmxt_engine::MediConfig::default().lambda_csf),
+            medi_csf_r2s_threshold: fmt_default(qsmxt_engine::MediConfig::default().csf_r2s_threshold),
+            medi_csf_erode: qsmxt_engine::MediConfig::default().csf_erode,
+            medi_zeropad: {
+                let z = qsmxt_engine::MediConfig::default().zeropad;
+                format!("{} {} {}", z[0], z[1], z[2])
+            },
+            tfi_merit: qsmxt_engine::TfiConfig::default().merit,
+            tfi_linear: qsmxt_engine::TfiConfig::default().linear,
             phase_offset_sigma_mm: {
                 let s = qsmxt_engine::FieldMappingConfig::default().phase_offset_sigma_mm;
                 format!("{} {} {}", s[0], s[1], s[2])
@@ -2400,7 +2423,7 @@ const QSMART_INV_HELP: &[&str] = &[
 ];
 pub const UNWRAP_OPTIONS: &[&str] = &["romeo", "laplacian"];
 pub const BF_OPTIONS: &[&str] = &["vsharp", "pdf", "lbv", "ismv", "sharp", "resharp", "harperella", "iharperella", "bfrnet", "iqfm"];
-pub const B0_ESTIMATION_OPTIONS: &[&str] = &["weighted-avg", "linear-fit", "robust-fit", "qsmart-echofit"];
+pub const B0_ESTIMATION_OPTIONS: &[&str] = &["weighted-avg", "linear-fit", "robust-fit", "qsmart-echofit", "complex-fit"];
 pub const ROBUST_FIT_LOSS_OPTIONS: &[&str] = &["tukey", "huber"];
 const ROBUST_FIT_LOSS_HELP: &[&str] = &[
     "Tukey biweight: rejects an echo at a voxel past the tuning radius (default)",
@@ -2530,6 +2553,7 @@ const B0_ESTIMATION_HELP: &[&str] = &[
     "Magnitude-weighted linear fit of phase vs TE",
     "Motion-robust linear fit (IRLS): down-weights echoes departing from a straight line, per voxel. Needs 4 echoes (3 without offset)",
     "QSMART's: magnitude-weighted fit of phase vs TE through the origin, each echo unwrapped over the whole volume; marks the voxels QSMART leaves out. Needs Laplacian unwrapping (the default with QSMART)",
+    "MEDI's field map (Fit_ppm_complex): a magnitude-weighted fit of the complex echoes, then unwrapping of the fitted phase. Needs the magnitude and evenly spaced echoes; no phase offset removal or bipolar correction",
 ];
 const B0_WEIGHT_TYPE_HELP: &[&str] = &[
     "mag × TE — optimal for phase SNR (default)",
@@ -2834,13 +2858,17 @@ impl PipelineFormState {
             }
         }
 
-        // ROMEO's own settings, phase offset removal (HIP — ROMEO only) among them.
+        // ROMEO's own settings, phase offset removal (HIP — ROMEO only) among them. MEDI's complex
+        // fit fits its own phase offset, so none are removed first.
+        let removes_offsets = !self.b0_estimation_is("complex-fit");
         if !is_laplacian {
+            if removes_offsets {
             rows.push(PipelineRow::Toggle {
                 label: "  Phase Offset Removal", field: "phase_offset_removal",
                 help: "Remove spatially-varying phase offset using HIP (Eckstein et al., 2018); multi-echo only",
             });
-            if self.phase_offset_removal {
+            }
+            if removes_offsets && self.phase_offset_removal {
             rows.push(PipelineRow::Param { label: "    Sigma (mm)", field: "phase_offset_sigma_mm",
                     help: "Gaussian smoothing sigma in mm (x y z)" });
                 // Part of the offset-removal path: without it the correction never runs.
@@ -2943,6 +2971,8 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "    Fit Residual", field: "qsmart_fit_threshold",
                     help: "Blurred fit residual above which a voxel is left out of QSMART's reconstruction (default: 40)" });
             }
+        } else if self.b0_estimation_is("complex-fit") {
+            self.push_complex_fit_rows(rows);
         } else { // linear-fit / robust-fit
             rows.push(PipelineRow::Toggle {
                 label: "  Estimate Offset", field: "linear_fit_estimate_offset",
@@ -3139,6 +3169,7 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "medi_cg_tol", help: "CG convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "medi_tol", help: "Outer convergence tolerance" });
                 rows.push(PipelineRow::Toggle { label: "  MERIT", field: "medi_merit", help: "Iteratively down-weight voxels whose residual stays large" });
+                self.push_medi_csf_rows(rows);
                 rows.push(PipelineRow::AlgoSelect { label: "  Data Weighting", field: "medi_data_weighting", options: DATA_WEIGHTING_OPTIONS, help: DATA_WEIGHTING_HELP });
                 self.push_echo_time(rows, "medi");
             }
@@ -3150,6 +3181,9 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  CG Max Iter", field: "tfi_cg_max_iter", help: "Maximum conjugate gradient iterations" });
                 rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "tfi_cg_tol", help: "CG convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "tfi_tol", help: "Outer convergence tolerance" });
+                rows.push(PipelineRow::Toggle { label: "  MERIT", field: "tfi_merit", help: "Iteratively down-weight voxels whose residual stays large" });
+                rows.push(PipelineRow::Toggle { label: "  Linear Data Term", field: "tfi_linear",
+                    help: "Fit the field linearly, as the TFI paper does (default); off uses MEDI's exponential data term" });
                 rows.push(PipelineRow::AlgoSelect { label: "  Data Weighting", field: "tfi_data_weighting", options: DATA_WEIGHTING_OPTIONS, help: DATA_WEIGHTING_HELP });
                 self.push_echo_time(rows, "tfi");
             }
@@ -3265,6 +3299,7 @@ impl PipelineFormState {
                         rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "medi_cg_tol", help: "CG convergence tolerance" });
                         rows.push(PipelineRow::Param { label: "  Tolerance", field: "medi_tol", help: "Outer convergence tolerance" });
                         rows.push(PipelineRow::Toggle { label: "  MERIT", field: "medi_merit", help: "Iteratively down-weight voxels whose residual stays large" });
+                        self.push_medi_csf_rows(rows);
                         rows.push(PipelineRow::AlgoSelect { label: "  Data Weighting", field: "medi_data_weighting", options: DATA_WEIGHTING_OPTIONS, help: DATA_WEIGHTING_HELP });
                         self.push_echo_time(rows, "medi");
                     }
@@ -3498,6 +3533,7 @@ impl PipelineFormState {
         "amp_pe_damp_rate_sig", "amp_pe_damp_rate_par", "amp_pe_max_pe_spar_ite", "amp_pe_max_pe_est_ite", "amp_pe_cvg_thd",
         "linear_fit_reliability_threshold", "robust_fit_tuning", "robust_fit_iterations",
         "robust_fit_downweight_level", "robust_fit_flag_ratio",
+        "complex_fit_reltol", "complex_fit_max_iter", "medi_lambda_csf", "medi_csf_r2s_threshold", "medi_zeropad",
         "motion_reference_echo", "motion_chain_levels", "motion_min_ncc",
         "reg_levels", "reg_max_samples", "reg_max_iterations", "reg_max_evaluations", "reg_tolerance", "reg_rotation_step_deg", "reg_translation_step_mm", "reg_min_overlap",
         "cosmos_tol", "cosmos_max_iter",
@@ -3573,6 +3609,11 @@ impl PipelineFormState {
             "robust_fit_iterations" => &self.robust_fit_iterations,
             "robust_fit_downweight_level" => &self.robust_fit_downweight_level,
             "robust_fit_flag_ratio" => &self.robust_fit_flag_ratio,
+            "complex_fit_reltol" => &self.complex_fit_reltol,
+            "complex_fit_max_iter" => &self.complex_fit_max_iter,
+            "medi_lambda_csf" => &self.medi_lambda_csf,
+            "medi_csf_r2s_threshold" => &self.medi_csf_r2s_threshold,
+            "medi_zeropad" => &self.medi_zeropad,
             "motion_reference_echo" => &self.motion_reference_echo,
             "motion_chain_levels" => &self.motion_chain_levels,
             "motion_min_ncc" => &self.motion_min_ncc,
@@ -3825,6 +3866,11 @@ impl PipelineFormState {
             "robust_fit_iterations" => Some(&mut self.robust_fit_iterations),
             "robust_fit_downweight_level" => Some(&mut self.robust_fit_downweight_level),
             "robust_fit_flag_ratio" => Some(&mut self.robust_fit_flag_ratio),
+            "complex_fit_reltol" => Some(&mut self.complex_fit_reltol),
+            "complex_fit_max_iter" => Some(&mut self.complex_fit_max_iter),
+            "medi_lambda_csf" => Some(&mut self.medi_lambda_csf),
+            "medi_csf_r2s_threshold" => Some(&mut self.medi_csf_r2s_threshold),
+            "medi_zeropad" => Some(&mut self.medi_zeropad),
             "motion_reference_echo" => Some(&mut self.motion_reference_echo),
             "motion_chain_levels" => Some(&mut self.motion_chain_levels),
             "motion_min_ncc" => Some(&mut self.motion_min_ncc),
@@ -4137,6 +4183,10 @@ impl PipelineFormState {
             "do_chi_separation" => self.do_chi_separation,
             "medi_msmv" => self.medi_msmv,
             "medi_msmv_prefilter" => self.medi_msmv_prefilter,
+            "medi_csf" => self.medi_csf,
+            "medi_csf_erode" => self.medi_csf_erode,
+            "tfi_merit" => self.tfi_merit,
+            "tfi_linear" => self.tfi_linear,
             "two_pass" => self.two_pass,
             "lsqr_fit_global_offset" => self.lsqr_fit_global_offset,
             "heidi_apply_laplacian_correction" => self.heidi_apply_laplacian_correction,
@@ -4185,6 +4235,10 @@ impl PipelineFormState {
             "medi_smv_shrink_mask" => self.medi_smv_shrink_mask = !self.medi_smv_shrink_mask,
             "medi_msmv" => self.medi_msmv = !self.medi_msmv,
             "medi_msmv_prefilter" => self.medi_msmv_prefilter = !self.medi_msmv_prefilter,
+            "medi_csf" => self.medi_csf = !self.medi_csf,
+            "medi_csf_erode" => self.medi_csf_erode = !self.medi_csf_erode,
+            "tfi_merit" => self.tfi_merit = !self.tfi_merit,
+            "tfi_linear" => self.tfi_linear = !self.tfi_linear,
             "two_pass" => self.two_pass = !self.two_pass,
             "lsqr_fit_global_offset" => self.lsqr_fit_global_offset = !self.lsqr_fit_global_offset,
             "heidi_apply_laplacian_correction" => self.heidi_apply_laplacian_correction = !self.heidi_apply_laplacian_correction,
@@ -4828,6 +4882,35 @@ impl PipelineFormState {
 }
 
 /// Indices of the rows focus can land on: every row but separators, notes and mask headers.
+impl PipelineFormState {
+    /// Whether the B0 estimation chosen is `name` (one of [`B0_ESTIMATION_OPTIONS`]).
+    pub fn b0_estimation_is(&self, name: &str) -> bool {
+        B0_ESTIMATION_OPTIONS.get(self.b0_estimation) == Some(&name)
+    }
+
+    /// MEDI's complex fit's own settings, under B0 Estimation.
+    fn push_complex_fit_rows(&self, rows: &mut Vec<PipelineRow>) {
+        rows.push(PipelineRow::Param { label: "  Rel Tolerance", field: "complex_fit_reltol",
+            help: "Stop once the update is this fraction of the first estimate, over the whole volume (default 1e-4)" });
+        rows.push(PipelineRow::Param { label: "  Max Iter", field: "complex_fit_max_iter",
+            help: "Gauss-Newton iterations at most (default 30)" });
+    }
+
+    /// MEDI+0's CSF term (needs at least 3 echoes; with fewer MEDI runs without it, which the
+    /// run says) and MEDI's zero padding.
+    fn push_medi_csf_rows(&self, rows: &mut Vec<PipelineRow>) {
+        rows.push(PipelineRow::Toggle { label: "  CSF Reference", field: "medi_csf",
+            help: "Zero-reference χ to the ventricular CSF and keep it uniform there (MEDI+0, Liu 2018); needs at least 3 echoes, with fewer MEDI runs without it" });
+        if self.medi_csf {
+            rows.push(PipelineRow::Param { label: "    Lambda CSF", field: "medi_lambda_csf", help: "Weight of the CSF uniformity term" });
+            rows.push(PipelineRow::Param { label: "    CSF R2* Threshold", field: "medi_csf_r2s_threshold", help: "Voxels below this R2* are CSF candidates" });
+            rows.push(PipelineRow::Toggle { label: "    CSF Erode", field: "medi_csf_erode", help: "Erode the mask by a 10 mm sphere before finding the CSF" });
+        }
+        rows.push(PipelineRow::Param { label: "  Zero Padding", field: "medi_zeropad",
+            help: "Voxels of zeros appended at the end of x, y and z before the inversion; the result is cropped back (default 0 0 0)" });
+    }
+}
+
 pub fn focusable_indices(rows: &[PipelineRow]) -> Vec<usize> {
     rows.iter()
         .enumerate()

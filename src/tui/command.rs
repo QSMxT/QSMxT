@@ -309,10 +309,13 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         phase_offset_sigma_mm: parse_optional_f64_vec3(&ps.phase_offset_sigma_mm),
         coil_combination_sigma: parse_optional_f64_vec3(&ps.coil_combination_sigma),
         // Part of HIP phase offset removal, which only ROMEO unwrapping runs.
-        bipolar_correction: ps.unwrapping_algorithm == 0 && ps.phase_offset_removal && ps.bipolar_correction,
+        // MEDI's complex fit removes no offsets, and refuses bipolar correction.
+        bipolar_correction: ps.unwrapping_algorithm == 0 && ps.phase_offset_removal && ps.bipolar_correction
+            && !ps.b0_estimation_is("complex-fit"),
         // Only when changed from the default or chosen, so a default form still yields a bare
         // command.
         b0_estimation: match ps.b0_estimation {
+            _ if ps.b0_estimation_is("complex-fit") => Some(B0EstimationArg::ComplexFit),
             1 => Some(B0EstimationArg::LinearFit),
             2 => Some(B0EstimationArg::RobustFit),
             3 => Some(B0EstimationArg::QsmartEchofit),
@@ -405,6 +408,11 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             medi_msmv_vessel_radius: if ps.medi_msmv { parse_optional_f64(&ps.medi_msmv_vessel_radius) } else { None },
             no_medi_msmv_prefilter: ps.medi_msmv && !ps.medi_msmv_prefilter,
             medi_data_weighting: ps.medi_data_weighting.trim().parse().ok(),
+            medi_csf: Some(ps.medi_csf),
+            medi_lambda_csf: if ps.medi_csf { parse_optional_f64(&ps.medi_lambda_csf) } else { None },
+            medi_csf_r2s_threshold: if ps.medi_csf { parse_optional_f64(&ps.medi_csf_r2s_threshold) } else { None },
+            medi_csf_erode: ps.medi_csf.then_some(ps.medi_csf_erode),
+            medi_zeropad: parse_pad3(&ps.medi_zeropad).map(|p| p.to_vec()),
             medi_percentage: parse_optional_f64(&ps.medi_percentage),
             medi_cg_tol: parse_optional_f64(&ps.medi_cg_tol),
             medi_cg_max_iter: parse_optional_usize(&ps.medi_cg_max_iter),
@@ -415,6 +423,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         tfi_params: crate::cli::TfiParamArgs {
             tfi_lambda: parse_optional_f64(&ps.tfi_lambda),
             tfi_precond: parse_optional_f64(&ps.tfi_precond),
+            tfi_merit: Some(ps.tfi_merit),
+            tfi_linear: Some(ps.tfi_linear),
             tfi_data_weighting: ps.tfi_data_weighting.trim().parse().ok(),
             tfi_percentage: parse_optional_f64(&ps.tfi_percentage),
             tfi_cg_tol: parse_optional_f64(&ps.tfi_cg_tol),
@@ -708,6 +718,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         robust_fit_iterations: if ps.b0_estimation == 2 { parse_optional_usize(&ps.robust_fit_iterations) } else { None },
         robust_fit_downweight_level: if ps.b0_estimation == 2 { parse_optional_f64(&ps.robust_fit_downweight_level) } else { None },
         robust_fit_flag_ratio: if ps.b0_estimation == 2 { parse_optional_f64(&ps.robust_fit_flag_ratio) } else { None },
+        complex_fit_reltol: if ps.b0_estimation_is("complex-fit") { parse_optional_f64(&ps.complex_fit_reltol) } else { None },
+        complex_fit_max_iter: if ps.b0_estimation_is("complex-fit") { parse_optional_usize(&ps.complex_fit_max_iter) } else { None },
         no_qsm: !ps.do_qsm,
         do_swi: form.do_swi,
         do_smwi: form.do_smwi,
@@ -1136,6 +1148,44 @@ mod tests {
         app.pipeline_state.laplacian_fft_pad = "12".into();
         assert_eq!(config_from_app(&app).unwrap().field_mapping.laplacian_fft_pad, [12; 3]);
         assert_eq!(pipeline_args_from_app(&app).laplacian_fft_pad, Some(vec![12]));
+    }
+
+    /// MEDI's complex fit, MEDI+0's CSF term with MEDI's zero padding, and TFI's MERIT and data
+    /// term are in the TUI and reach the config; the complex fit hides phase offset removal.
+    #[test]
+    fn complex_fit_medi_csf_and_tfi_reach_the_config() {
+        let mut app = default_app();
+        let fields = |app: &App| app.pipeline_state.all_rows().iter().filter_map(crate::tui::app::row_field)
+            .map(str::to_string).collect::<Vec<_>>();
+        assert!(fields(&app).contains(&"phase_offset_removal".to_string()));
+        app.pipeline_state.b0_estimation = crate::tui::app::B0_ESTIMATION_OPTIONS.iter().position(|o| *o == "complex-fit").unwrap();
+        let f = fields(&app);
+        assert!(f.contains(&"complex_fit_reltol".to_string()) && !f.contains(&"phase_offset_removal".to_string())
+            && !f.contains(&"linear_fit_estimate_offset".to_string()), "{f:?}");
+        let c = config_from_app(&app).unwrap();
+        assert_eq!((c.field_mapping.b0_estimation, c.field_mapping.complex_fit.clone()),
+                   (qsmxt_engine::B0Estimation::ComplexFit, qsmxt_engine::ComplexFitConfig::default()));
+        app.pipeline_state.complex_fit_max_iter = "5".into();
+        assert_eq!(config_from_app(&app).unwrap().field_mapping.complex_fit.max_iter, 5);
+
+        let ps = &mut app.pipeline_state;
+        ps.qsm_algorithm = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|o| *o == "medi").unwrap();
+        assert!(fields(&app).contains(&"medi_lambda_csf".to_string()));
+        let ps = &mut app.pipeline_state;
+        (ps.medi_lambda_csf, ps.medi_zeropad) = ("50".into(), "2 0 2".into());
+        ps.toggle("medi_csf_erode");
+        let m = config_from_app(&app).unwrap().inversion.medi;
+        assert_eq!((m.csf, m.lambda_csf, m.csf_erode, m.zeropad), (true, 50.0, false, [2, 0, 2]));
+        app.pipeline_state.toggle("medi_csf");
+        assert!(!fields(&app).contains(&"medi_lambda_csf".to_string()));
+        assert!(!config_from_app(&app).unwrap().inversion.medi.csf);
+
+        let ps = &mut app.pipeline_state;
+        ps.qsm_algorithm = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|o| *o == "tfi").unwrap();
+        ps.toggle("tfi_merit");
+        ps.toggle("tfi_linear");
+        let t = config_from_app(&app).unwrap().inversion.tfi;
+        assert_eq!((t.merit, t.linear), (false, false));
     }
 
     /// The robust fit, its parameters and the shared fit settings are in the TUI and reach both
