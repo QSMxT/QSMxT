@@ -5212,7 +5212,8 @@ pub struct App {
     /// The recommendations open after the last change (rule and value), so that only a change
     /// that creates one opens the pop-up.
     pub rec_seen: Vec<(String, String)>,
-    /// The form as it was when `rec_seen` was taken: a key that changed nothing is not checked.
+    /// The form as it was when `rec_seen` was taken (empty before the first check): a key that
+    /// changed nothing is not checked.
     pub rec_form: String,
 }
 
@@ -5495,10 +5496,7 @@ impl Default for RunForm {
 
 impl App {
     pub fn new() -> Self {
-        let mut app = Self::with_update_state(UpdateState::start());
-        app.rec_seen = app.open_recommendations();
-        app.rec_form = app.rec_fingerprint();
-        app
+        Self::with_update_state(UpdateState::start())
     }
 
     /// A form with no release check, for trying a value on ([`super::recommend`]).
@@ -5646,8 +5644,6 @@ impl App {
             return;
         }
         self.handle_key_unchecked(key);
-        // A change that creates a recommendation opens the pop-up.
-        self.check_recommendations();
     }
 
     fn handle_key_unchecked(&mut self, key: KeyEvent) {

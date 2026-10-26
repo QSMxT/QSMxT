@@ -103,12 +103,7 @@ impl App {
         format!("{:?}{:?}{}", self.form, self.pipeline_state, self.filter_state.num_echoes)
     }
 
-    /// The open findings (offered and not dismissed), by rule and value.
-    pub fn open_recommendations(&self) -> Vec<(String, String)> {
-        self.rule_view().into_iter().filter(open).map(|r| (r.rule.clone(), rec::chosen_text(&r.current))).collect()
-    }
-
-    /// After a key: drop the dismissals whose setting has changed, and open the pop-up for the
+    /// After a change: drop the dismissals whose setting has changed, and open the pop-up for the
     /// findings the change created. Nothing while a value is being typed.
     pub fn check_recommendations(&mut self) {
         if self.is_typing() || self.rec_modal.is_some() {
@@ -118,6 +113,8 @@ impl App {
         if form == self.rec_form {
             return;
         }
+        // The first check takes the form as it opened: only a change opens the pop-up.
+        let opening = self.rec_form.is_empty();
         self.rec_form = form;
         if let Ok(mut c) = super::command::config_from_app(self) {
             let before = c.dismissed_recommendations.len();
@@ -133,6 +130,9 @@ impl App {
             open(r) && !self.rec_seen.contains(&(r.rule.clone(), rec::chosen_text(&r.current)))
         }).collect();
         self.rec_seen = now;
+        if opening {
+            return;
+        }
         if let Some(first) = created.first() {
             self.rec_modal = Some(RecModal::new(group(&view, first)));
         }
@@ -178,8 +178,6 @@ impl App {
                         }
                     }
                 }
-                self.rec_seen = self.open_recommendations();
-                self.rec_form.clear();
                 // Whatever the choice created (a value another rule departs from) opens next.
                 self.check_recommendations();
             }
@@ -339,7 +337,7 @@ mod tests {
 
     fn app() -> App {
         let mut app = App::new_for_trial();
-        app.rec_seen = app.open_recommendations();
+        app.check_recommendations();
         app
     }
 

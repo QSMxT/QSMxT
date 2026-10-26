@@ -77,6 +77,8 @@ pub fn run_tui() -> crate::Result<()> {
             app.filter_state.maybe_rescan(&bids_dir);
         }
 
+        // A change that creates a recommendation opens its pop-up (`recommend`).
+        app.check_recommendations();
         terminal.draw(|f| ui::draw(f, &mut app))?;
 
         // Use poll with timeout so the UI refreshes during background scans
