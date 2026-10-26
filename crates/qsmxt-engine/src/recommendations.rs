@@ -161,7 +161,7 @@ pub struct Recommendation {
     /// The QSMxT config path of the setting the rule is about (`bg_removal.algorithm`; the mask
     /// recipe's rules are about `masking.sections`).
     pub setting: String,
-    /// The setting's display name ("Background Field Removal").
+    /// The setting's display name ("Background removal").
     pub label: String,
     pub trigger: Trigger,
     /// The setting's value now (one per mask section for the mask recipe's rules).
@@ -244,7 +244,7 @@ impl Recommendation {
         }
     }
 
-    /// One line for a terminal or a log: "Background Field Removal is V-SHARP; MEDI recommends
+    /// One line for a terminal or a log: "Background removal is V-SHARP; MEDI recommends
     /// PDF: why [source]".
     pub fn line(&self) -> String {
         format!("{} is {}{} [{}]", self.label, self.current_text(), self.departure(), self.source)
@@ -254,20 +254,8 @@ impl Recommendation {
     /// what the method's reference uses. A `reference` departure says so more softly.
     pub fn note(&self) -> String {
         let verb = if self.current.iter().all(|n| n.value.is_string()) { "used" } else { "was" };
-        format!("{} {verb} {}{} ({})", sentence_case(&self.label), self.current_text(), self.departure(), self.source)
+        format!("{} {verb} {}{} ({})", self.label, self.current_text(), self.departure(), self.source)
     }
-}
-
-/// "Background Field Removal" → "Background field removal": capitalised words after the first
-/// are lowered; acronyms and names ("QSM", "V-SHARP", "iLSQR") stay as they are.
-fn sentence_case(label: &str) -> String {
-    label.split(' ').enumerate().map(|(i, w)| {
-        let rest: Vec<char> = w.chars().skip(1).collect();
-        let titled = w.chars().next().is_some_and(char::is_uppercase)
-            && rest.iter().any(|c| c.is_lowercase())
-            && !rest.iter().any(|c| c.is_uppercase());
-        if i > 0 && titled { w.to_lowercase() } else { w.to_string() }
-    }).collect::<Vec<_>>().join(" ")
 }
 
 // ─── What is known about the scan ───
@@ -637,7 +625,7 @@ fn trigger_name(core_path: &str, value_name: &str) -> String {
     match core_path {
         "inversion.algorithm" | "bg_removal.algorithm" | "masking.generator" => value_name.to_string(),
         "separation.algorithm" => value_name.to_string(),
-        _ => format!("{} {}", sentence_case(&label_of(core_path)).to_lowercase(), value_name),
+        _ => format!("{} {}", label_of(core_path).to_lowercase(), value_name),
     }
 }
 

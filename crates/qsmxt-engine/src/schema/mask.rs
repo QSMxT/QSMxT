@@ -222,10 +222,10 @@ fn describe(op: &MaskOp) -> (&'static str, &'static str, &'static str, Vec<P>) {
             ]),
         MaskOp::Bet { .. } => ("bet", "BET",
             "BET brain extraction: a surface fitted to the edge of the brain in the magnitude", vec![
-                p("fractional_intensity", "Fractional Intensity", "Smaller values give a larger brain", Float)
+                p("fractional_intensity", "Fractional intensity", "Smaller values give a larger brain", Float)
                     .min(0.0).max(1.0),
                 // masking.rs parse_bet_voxel_scale refuses a scale that is not > 0.
-                p("voxel_scale", "Voxel Scale",
+                p("voxel_scale", "Voxel scale",
                   "Voxel sizes are multiplied by this before BET runs: its surface model is tuned to a human \
                    brain in mm, so preclinical data needs presenting at human scale (10 for mouse); 1 keeps the \
                    acquired geometry", Float).above(0.0),
@@ -236,7 +236,7 @@ fn describe(op: &MaskOp) -> (&'static str, &'static str, &'static str, Vec<P>) {
                 .optional(),
             p("tta", "Mirroring TTA", TTA_HELP, Bool),
             // masking.rs parse_window_step refuses a step outside (0, 1].
-            p("tile_step", "Patch Step",
+            p("tile_step", "Patch step",
               "Sliding-window step, as a fraction of the patch: larger steps mean fewer patches and a shorter \
                run, at softer patch seams", Float).above(0.0).max(1.0).only_with("patch"),
         ]),
@@ -245,7 +245,7 @@ fn describe(op: &MaskOp) -> (&'static str, &'static str, &'static str, Vec<P>) {
              the network; larger volumes are tiled", vec![
                 p("tta", "Mirroring TTA", TTA_HELP, Bool),
                 // masking.rs parse_window_step refuses a step outside (0, 1].
-                p("tile_step", "Patch Step",
+                p("tile_step", "Patch step",
                   "Sliding-window step, as a fraction of the patch: larger steps mean fewer patches and a shorter \
                    run, at softer patch seams", Float).above(0.0).max(1.0),
             ]),
@@ -264,7 +264,7 @@ fn describe(op: &MaskOp) -> (&'static str, &'static str, &'static str, Vec<P>) {
                 p("radius", "Radius", "Radius of the sphere", Int).units("voxels").min(1.0),
             ]),
         MaskOp::FillHoles { .. } => ("fill-holes", "Fill holes", "Fill the holes enclosed by the mask, up to a size", vec![
-            p("max_size", "Largest Hole", "The largest hole filled; 0 fills holes up to 5% of the volume", Int)
+            p("max_size", "Largest hole", "The largest hole filled; 0 fills holes up to 5% of the volume", Int)
                 .units("voxels").min(0.0),
         ]),
         MaskOp::GaussianSmooth { .. } => ("gaussian", "Smooth",
@@ -277,14 +277,14 @@ fn describe(op: &MaskOp) -> (&'static str, &'static str, &'static str, Vec<P>) {
                 p("threshold", "Threshold",
                   "Signal gate as a fraction of the in-mask median magnitude; above about 0.85 it over-carves", Float)
                     .above(0.0).max(1.0),
-                p("depth_cap", "Depth Cap", "How far below the original surface removal may reach; 0 for no cap", Int)
+                p("depth_cap", "Depth cap", "How far below the original surface removal may reach; 0 for no cap", Int)
                     .units("voxels").min(0.0),
-                p("global_erosions", "Plain Erosions",
+                p("global_erosions", "Plain erosions",
                   "Plain erosions before the gate: unlike a separate erode step they spend the depth budget and \
                    leave the gate unchanged", Int).min(0.0),
-                p("bias_sigma", "Bias Sigma", "Gaussian scale of the receive-coil bias estimate divided out of the magnitude", Float)
+                p("bias_sigma", "Bias sigma", "Gaussian scale of the receive-coil bias estimate divided out of the magnitude", Float)
                     .units("voxels").above(0.0),
-                p("min_component", "Minimum Component",
+                p("min_component", "Minimum component",
                   "Keep every connected component at least this large, not just the largest", Int)
                     .units("voxels").min(0.0),
             ]),

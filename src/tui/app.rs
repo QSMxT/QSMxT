@@ -2641,7 +2641,7 @@ pub const VSHARP_GRID_OPTIONS: &[&str] = &["native", "finest", "isotropic"];
 const VSHARP_GRID_HELP: &[&str] = &[
     "The acquired voxel grid",
     "An isotropic grid at the smallest voxel dimension, so no axis is coarsened; isotropic data stays on the acquired grid",
-    "An isotropic grid of Grid Spacing mm; the background is interpolated back, the local field keeps native resolution (default)",
+    "An isotropic grid of Grid spacing mm; the background is interpolated back, the local field keeps native resolution (default)",
 ];
 /// The [`VSHARP_GRID_OPTIONS`] index of `grid`.
 pub fn vsharp_grid_index(grid: qsmxt_engine::VsharpGrid) -> usize {
@@ -2656,7 +2656,7 @@ const ECHO_TIME_HELP_FIRST: &[&str] = &[
     "The last echo time",
     "The echo spacing, TE2 − TE1 (the echo time for one echo)",
     "The sum of the echo times: the phase summed over the echoes",
-    "A given echo time (Echo Time)",
+    "A given echo time (Echo time)",
 ];
 /// the last,
 const ECHO_TIME_HELP_LAST: &[&str] = &[
@@ -2664,7 +2664,7 @@ const ECHO_TIME_HELP_LAST: &[&str] = &[
     "The last echo time (default)",
     "The echo spacing, TE2 − TE1 (the echo time for one echo)",
     "The sum of the echo times: the phase summed over the echoes",
-    "A given echo time (Echo Time)",
+    "A given echo time (Echo time)",
 ];
 /// the echo spacing,
 const ECHO_TIME_HELP_SPACING: &[&str] = &[
@@ -2672,7 +2672,7 @@ const ECHO_TIME_HELP_SPACING: &[&str] = &[
     "The last echo time",
     "The echo spacing, TE2 − TE1 (the echo time for one echo) (default)",
     "The sum of the echo times: the phase summed over the echoes",
-    "A given echo time (Echo Time)",
+    "A given echo time (Echo time)",
 ];
 /// or the sum of the echo times.
 const ECHO_TIME_HELP_SUM: &[&str] = &[
@@ -2680,7 +2680,7 @@ const ECHO_TIME_HELP_SUM: &[&str] = &[
     "The last echo time",
     "The echo spacing, TE2 − TE1 (the echo time for one echo)",
     "The sum of the echo times: the phase summed over the echoes (default)",
-    "A given echo time (Echo Time)",
+    "A given echo time (Echo time)",
 ];
 /// The [`ECHO_TIME_OPTIONS`] entry of an echo-time choice.
 pub fn echo_time_index(te: qsmxt_engine::EchoTimeChoice) -> usize {
@@ -2727,7 +2727,7 @@ pub const MOTION_REFERENCE_OPTIONS: &[&str] = &["first", "last", "echo"];
 const MOTION_REFERENCE_HELP: &[&str] = &[
     "Align every echo onto the first (best SNR; the published procedure) (default)",
     "Align every echo onto the last",
-    "Align every echo onto a given echo (Reference Echo)",
+    "Align every echo onto a given echo (Reference echo)",
 ];
 const LAPLACIAN_SOLVER_HELP: &[&str] = &[
     "Unweighted least squares, Neumann-boundary DCT solve (Ghiglia & Romero 1994; QSM.jl :dct) (default)",
@@ -2784,16 +2784,16 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Percentage", field: "sep_ilsqr_percentage", help: "Edge-mask keep fraction (0-1)" });
                 rows.push(PipelineRow::Param { label: "  R2' min (Hz)", field: "sep_ilsqr_r2p_min", help: "R2' reliability window lower" });
                 rows.push(PipelineRow::Param { label: "  R2' max (Hz)", field: "sep_ilsqr_r2p_max", help: "R2' reliability window upper" });
-                rows.push(PipelineRow::Param { label: "  Max Iter", field: "sep_ilsqr_max_iter", help: "Outer Gauss-Newton iterations" });
+                rows.push(PipelineRow::Param { label: "  Max iter", field: "sep_ilsqr_max_iter", help: "Outer Gauss-Newton iterations" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "sep_ilsqr_tol", help: "Outer relative-change tolerance" });
-                rows.push(PipelineRow::Param { label: "  CG Max Iter", field: "sep_ilsqr_cg_max_iter", help: "Inner CG max iterations" });
-                rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "sep_ilsqr_cg_tol", help: "Inner CG relative tolerance" });
+                rows.push(PipelineRow::Param { label: "  CG max iter", field: "sep_ilsqr_cg_max_iter", help: "Inner CG max iterations" });
+                rows.push(PipelineRow::Param { label: "  CG tolerance", field: "sep_ilsqr_cg_tol", help: "Inner CG relative tolerance" });
                 if self.custom_qsm_tool.trim().is_empty() {
-                    rows.push(PipelineRow::Param { label: "  QSM Max Iter", field: "sep_ilsqr_qsm_max_iter",
+                    rows.push(PipelineRow::Param { label: "  QSM max iter", field: "sep_ilsqr_qsm_max_iter",
                         help: "Maximum iterations of the iLSQR that reconstructs the QSM separated" });
-                    rows.push(PipelineRow::Param { label: "  QSM Tolerance", field: "sep_ilsqr_qsm_tol",
+                    rows.push(PipelineRow::Param { label: "  QSM tolerance", field: "sep_ilsqr_qsm_tol",
                         help: "Tolerance of the iLSQR that reconstructs the QSM separated" });
-                    rows.push(PipelineRow::Param { label: "  QSM Pad (mm)", field: "sep_ilsqr_qsm_pad_mm",
+                    rows.push(PipelineRow::Param { label: "  QSM pad (mm)", field: "sep_ilsqr_qsm_pad_mm",
                         help: "Zero-padding per side of the iLSQR that reconstructs the QSM separated" });
                 }
             }
@@ -2804,9 +2804,9 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Dr+ (Hz/ppm)", field: "sep_medi_dr_pos", help: "Paramagnetic relaxivity" });
                 rows.push(PipelineRow::Param { label: "  Dr- (Hz/ppm)", field: "sep_medi_dr_neg", help: "Diamagnetic relaxivity" });
                 rows.push(PipelineRow::Param { label: "  Percentage", field: "sep_medi_percentage", help: "Edge-mask percentage (0-1)" });
-                rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "sep_medi_cg_tol", help: "Inner CG tolerance" });
-                rows.push(PipelineRow::Param { label: "  CG Max Iter", field: "sep_medi_cg_max_iter", help: "Inner CG max iterations" });
-                rows.push(PipelineRow::Param { label: "  Max Iter", field: "sep_medi_max_iter", help: "Outer Gauss-Newton iterations" });
+                rows.push(PipelineRow::Param { label: "  CG tolerance", field: "sep_medi_cg_tol", help: "Inner CG tolerance" });
+                rows.push(PipelineRow::Param { label: "  CG max iter", field: "sep_medi_cg_max_iter", help: "Inner CG max iterations" });
+                rows.push(PipelineRow::Param { label: "  Max iter", field: "sep_medi_max_iter", help: "Outer Gauss-Newton iterations" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "sep_medi_tol", help: "Outer convergence tolerance" });
             }
             4 => {
@@ -2815,7 +2815,7 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Alpha", field: "sep_wavesep_alpha", help: "Proximal-gradient step size" });
                 rows.push(PipelineRow::Param { label: "  Lambda", field: "sep_wavesep_lambda", help: "Wavelet L1 soft-threshold weight" });
                 rows.push(PipelineRow::Param { label: "  Wavelet order", field: "sep_wavesep_wavelet_order", help: "Daubechies order" });
-                rows.push(PipelineRow::Param { label: "  Max Iter", field: "sep_wavesep_max_iter", help: "ISTA max iterations" });
+                rows.push(PipelineRow::Param { label: "  Max iter", field: "sep_wavesep_max_iter", help: "ISTA max iterations" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "sep_wavesep_tol", help: "Relative-change stop tolerance" });
             }
             5 => {
@@ -2823,7 +2823,7 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  R2' bin (Hz)", field: "sep_hcchisep_bin_hz", help: "R2' bin width for anchored grid search" });
             }
             6 => {
-                rows.push(PipelineRow::Param { label: "  Sliding Window", field: "sep_susepnet_patch", help: "Run the network on patches D H W in voxels, each a multiple of 8, so its memory follows the patch instead of the volume; empty runs the whole volume at once" });
+                rows.push(PipelineRow::Param { label: "  Sliding window", field: "sep_susepnet_patch", help: "Run the network on patches D H W in voxels, each a multiple of 8, so its memory follows the patch instead of the volume; empty runs the whole volume at once" });
             }
             7 => {
                 rows.push(PipelineRow::Param { label: "  Patch", field: "sep_chisepnet_patch", help: "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)" });
@@ -2849,13 +2849,13 @@ impl PipelineFormState {
     fn push_registration_rows(rows: &mut Vec<PipelineRow>) {
         rows.push(PipelineRow::Note { text: "  Rigid registration (advanced):".into() });
         rows.push(PipelineRow::Param { label: "    Levels", field: "reg_levels", help: "Pyramid levels: the capture range; do not lower (default 5)" });
-        rows.push(PipelineRow::Param { label: "    Max Samples", field: "reg_max_samples", help: "Voxels sampled per metric evaluation, per level" });
-        rows.push(PipelineRow::Param { label: "    Max Iterations", field: "reg_max_iterations", help: "Powell cycles per level" });
-        rows.push(PipelineRow::Param { label: "    Max Evaluations", field: "reg_max_evaluations", help: "Metric evaluations across all levels (hard stop)" });
+        rows.push(PipelineRow::Param { label: "    Max samples", field: "reg_max_samples", help: "Voxels sampled per metric evaluation, per level" });
+        rows.push(PipelineRow::Param { label: "    Max iterations", field: "reg_max_iterations", help: "Powell cycles per level" });
+        rows.push(PipelineRow::Param { label: "    Max evaluations", field: "reg_max_evaluations", help: "Metric evaluations across all levels (hard stop)" });
         rows.push(PipelineRow::Param { label: "    Tolerance", field: "reg_tolerance", help: "Relative cost improvement per cycle that counts as converged" });
-        rows.push(PipelineRow::Param { label: "    Rotation Step (deg)", field: "reg_rotation_step_deg", help: "Initial rotation step at the finest level" });
-        rows.push(PipelineRow::Param { label: "    Translation Step (mm)", field: "reg_translation_step_mm", help: "Initial translation step at the finest level" });
-        rows.push(PipelineRow::Param { label: "    Min Overlap", field: "reg_min_overlap", help: "Smallest fraction of sampled voxels that must overlap" });
+        rows.push(PipelineRow::Param { label: "    Rotation step (deg)", field: "reg_rotation_step_deg", help: "Initial rotation step at the finest level" });
+        rows.push(PipelineRow::Param { label: "    Translation step (mm)", field: "reg_translation_step_mm", help: "Initial translation step at the finest level" });
+        rows.push(PipelineRow::Param { label: "    Min overlap", field: "reg_min_overlap", help: "Smallest fraction of sampled voxels that must overlap" });
     }
 
 
@@ -2863,11 +2863,11 @@ impl PipelineFormState {
     fn geometry_rows(&self, rows: &mut Vec<PipelineRow>) {
         let qsm = self.qsm_runs();
         rows.push(PipelineRow::Toggle {
-            label: "Axial Resampling", field: "axial_resampling",
+            label: "Axial resampling", field: "axial_resampling",
             help: "Resample oblique acquisitions onto an axial grid when they are tilted more than the threshold. Off: reconstruct on the acquired grid with the true B0 direction",
         });
         if self.axial_resampling {
-            rows.push(PipelineRow::Param { label: "  Obliquity Threshold (°)", field: "obliquity_threshold",
+            rows.push(PipelineRow::Param { label: "  Obliquity threshold (°)", field: "obliquity_threshold",
                 help: "Resample only data more oblique than this, in degrees" });
         }
         // Where the outputs land only matters when something resamples: on request, or because
@@ -2877,12 +2877,12 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Note { text: format!("  Oblique data is resampled to axial for {why}").into() });
             }
             rows.push(PipelineRow::AlgoSelect {
-                label: "  Output Space", field: "output_space",
+                label: "  Output space", field: "output_space",
                 options: OUTPUT_SPACE_OPTIONS, help: OUTPUT_SPACE_HELP,
             });
         }
         rows.push(PipelineRow::Toggle {
-            label: "Inhomog. Correction", field: "inhomogeneity_correction",
+            label: "Inhomog. correction", field: "inhomogeneity_correction",
             help: "Apply B1 field correction to magnitude (improves masking, ROMEO weights, SWI)",
         });
         if self.inhomogeneity_correction {
@@ -2893,10 +2893,10 @@ impl PipelineFormState {
             if self.inhomogeneity_method == 0 {
                 rows.push(PipelineRow::Param { label: "    Sigma (mm)", field: "homogeneity_sigma_mm",
                     help: "Smoothing sigma of the bias-field estimate, in mm" });
-                rows.push(PipelineRow::Param { label: "    Box Passes", field: "homogeneity_nbox",
+                rows.push(PipelineRow::Param { label: "    Box passes", field: "homogeneity_nbox",
                     help: "Box-filter passes approximating the Gaussian" });
             } else {
-                rows.push(PipelineRow::Param { label: "    Shrink Factor", field: "n4_shrink_factor",
+                rows.push(PipelineRow::Param { label: "    Shrink factor", field: "n4_shrink_factor",
                     help: "Subsample the image by this factor before fitting the bias field" });
                 rows.push(PipelineRow::Param { label: "    Iterations", field: "n4_max_iterations",
                     help: "Maximum iterations at each fitting level, one number a level (e.g. 50 50 50 50); the B-spline mesh doubles from one level to the next" });
@@ -2904,38 +2904,38 @@ impl PipelineFormState {
                     help: "Stop a level once the change in the bias field (its coefficient of variation) falls to this; 0 runs every iteration" });
                 rows.push(PipelineRow::Param { label: "    Mesh", field: "n4_mesh",
                     help: "B-spline mesh elements per axis at the first level (x y z)" });
-                rows.push(PipelineRow::Param { label: "    Spline Order", field: "n4_spline_order",
+                rows.push(PipelineRow::Param { label: "    Spline order", field: "n4_spline_order",
                     help: "Order of the B-spline bias field: 1, 2 or 3" });
                 rows.push(PipelineRow::Param { label: "    Bias FWHM", field: "n4_bias_field_fwhm",
                     help: "FWHM of the Gaussian modelling the bias field's blurring of the log-intensity histogram" });
-                rows.push(PipelineRow::Param { label: "    Wiener Noise", field: "n4_wiener_noise",
+                rows.push(PipelineRow::Param { label: "    Wiener noise", field: "n4_wiener_noise",
                     help: "Noise term of the Wiener deconvolution of the histogram" });
-                rows.push(PipelineRow::Param { label: "    Histogram Bins", field: "n4_histogram_bins",
+                rows.push(PipelineRow::Param { label: "    Histogram bins", field: "n4_histogram_bins",
                     help: "Bins of the log-intensity histogram" });
             }
         }
         rows.push(PipelineRow::Toggle {
-            label: "Ignore Slice Gap", field: "ignore_slice_gap",
+            label: "Ignore slice gap", field: "ignore_slice_gap",
             help: "Reconstruct even if the sidecar's SliceThickness is thinner than the slice pitch (gapped 2D data gives a wrong map)",
         });
         if qsm {
             rows.push(PipelineRow::Toggle {
-                label: "Crop to Mask", field: "crop_to_mask",
+                label: "Crop to mask", field: "crop_to_mask",
                 help: "Run the FFT-bound stages on a box around the mask (faster; outputs stay on the full grid). Off by default",
             });
             if self.crop_to_mask {
-                rows.push(PipelineRow::Param { label: "  Crop Margin (mm)", field: "crop_margin_mm",
+                rows.push(PipelineRow::Param { label: "  Crop margin (mm)", field: "crop_margin_mm",
                     help: "Margin around the mask; below ~32 mm results start to differ, and it must clear the largest SMV kernel" });
             }
             rows.push(PipelineRow::Toggle {
-                label: "FFT Padding", field: "fft_padding",
+                label: "FFT padding", field: "fft_padding",
                 help: "Pad the grid to an FFT-friendly size before the FFT-bound stages (faster on awkward grids; shifts results slightly). Off by default",
             });
         }
         // Coil combination prepares the echoes every later stage reads, whatever the inversion;
         // it only runs for uncombined multi-coil data.
         if self.ctx.multi_coil {
-            rows.push(PipelineRow::Param { label: "Coil Comb. Sigma", field: "coil_combination_sigma",
+            rows.push(PipelineRow::Param { label: "Coil comb. sigma", field: "coil_combination_sigma",
                 help: "MCPC-3D-S smoothing of per-coil phase offsets, voxels (x y z); only for uncombined multi-coil data" });
         }
     }
@@ -2943,7 +2943,7 @@ impl PipelineFormState {
     /// Preprocessing → Masking: the mask recipe, its custom masks, and the two-pass reliable mask.
     fn masking_rows(&self, rows: &mut Vec<PipelineRow>) {
         rows.push(PipelineRow::AlgoSelect {
-            label: "Mask Preset", field: "mask_preset",
+            label: "Mask preset", field: "mask_preset",
             options: MASK_PRESET_OPTIONS, help: mask_preset_help(),
         });
         rows.push(PipelineRow::Param {
@@ -2969,7 +2969,7 @@ impl PipelineFormState {
         // Two-pass artefact reduction. Configured here because what it needs is a second mask;
         // what it does is repeat background removal and dipole inversion against it.
         rows.push(PipelineRow::Toggle {
-            label: "Two-pass Artefact Reduction", field: "two_pass",
+            label: "Two-pass artefact reduction", field: "two_pass",
             help: "Reconstruct again on a mask whose holes are left unfilled and keep that result where it is defined — keeps streaking from strong sources out of the rest of the brain, at roughly double the reconstruction time (doi:10.1002/mrm.29048)",
         });
         if self.two_pass {
@@ -2983,7 +2983,7 @@ impl PipelineFormState {
     /// Preprocessing → Motion: echo co-registration, and the registration it runs.
     fn motion_rows(&self, rows: &mut Vec<PipelineRow>) {
         rows.push(PipelineRow::Toggle {
-            label: "Motion Correction", field: "motion_correction",
+            label: "Motion correction", field: "motion_correction",
             help: "Rigidly co-register every echo onto a reference echo before any other stage (multi-echo, needs magnitude). Off by default",
         });
         if self.motion_correction {
@@ -2992,13 +2992,13 @@ impl PipelineFormState {
                 options: MOTION_REFERENCE_OPTIONS, help: MOTION_REFERENCE_HELP,
             });
             if self.motion_reference == 2 {
-            rows.push(PipelineRow::Param { label: "    Reference Echo", field: "motion_reference_echo",
+            rows.push(PipelineRow::Param { label: "    Reference echo", field: "motion_reference_echo",
                     help: "1-based echo number the others are aligned onto" });
             }
             rows.push(PipelineRow::Toggle { label: "  Chain", field: "motion_chain",
                 help: "Seed each echo's registration from its neighbour's solution" });
             if self.motion_chain {
-            rows.push(PipelineRow::Param { label: "    Chain Levels", field: "motion_chain_levels",
+            rows.push(PipelineRow::Param { label: "    Chain levels", field: "motion_chain_levels",
                     help: "Pyramid levels for a seeded registration (default 3)" });
             }
             rows.push(PipelineRow::Param { label: "  Min NCC", field: "motion_min_ncc",
@@ -3040,7 +3040,7 @@ impl PipelineFormState {
                 options: LAPLACIAN_SOLVER_OPTIONS, help: LAPLACIAN_SOLVER_HELP,
             });
             if self.laplacian_solver == 1 {
-            rows.push(PipelineRow::Param { label: "    FFT Pad (voxels)", field: "laplacian_fft_pad",
+            rows.push(PipelineRow::Param { label: "    FFT pad (voxels)", field: "laplacian_fft_pad",
                     help: "Zero-padding per side: one value for every axis or three (x y z). Default: 64" });
             }
         }
@@ -3051,7 +3051,7 @@ impl PipelineFormState {
         if !is_laplacian {
             if removes_offsets {
             rows.push(PipelineRow::Toggle {
-                label: "  Phase Offset Removal", field: "phase_offset_removal",
+                label: "  Phase offset removal", field: "phase_offset_removal",
                 help: "Remove spatially-varying phase offset using HIP (Eckstein et al., 2018); multi-echo only",
             });
             }
@@ -3060,88 +3060,88 @@ impl PipelineFormState {
                     help: "Gaussian smoothing sigma in mm (x y z)" });
                 // Part of the offset-removal path: without it the correction never runs.
                 rows.push(PipelineRow::Toggle {
-                    label: "    Bipolar Correction", field: "bipolar_correction",
+                    label: "    Bipolar correction", field: "bipolar_correction",
                     help: "Remove the linear phase artefact of bipolar readout gradients (needs at least 3 echoes; fewer: skipped)",
                 });
             }
             rows.push(PipelineRow::Toggle {
-                label: "  Individual Mode", field: "romeo_individual",
+                label: "  Individual mode", field: "romeo_individual",
                 help: "Unwrap each echo independently (recommended). Off = template-based temporal unwrapping.",
             });
             if !self.romeo_individual {
                 rows.push(PipelineRow::Param {
-                    label: "  Template Echo", field: "romeo_template",
+                    label: "  Template echo", field: "romeo_template",
                     help: "Echo index for spatial unwrapping (1-indexed)",
                 });
             }
             rows.push(PipelineRow::Toggle {
-                label: "  Correct Global", field: "romeo_correct_global",
+                label: "  Correct global", field: "romeo_correct_global",
                 help: "Correct inter-echo 2π offsets after unwrapping",
             });
             rows.push(PipelineRow::Toggle {
-                label: "  Phase Coherence", field: "romeo_phase_coherence",
+                label: "  Phase coherence", field: "romeo_phase_coherence",
                 help: "Weight edges by neighbour phase coherence",
             });
             rows.push(PipelineRow::Toggle {
-                label: "  Phase Gradient Coherence", field: "romeo_phase_gradient_coherence",
+                label: "  Phase gradient coherence", field: "romeo_phase_gradient_coherence",
                 help: "Weight edges by inter-echo phase-gradient consistency (multi-echo)",
             });
             rows.push(PipelineRow::Toggle {
-                label: "  Phase Linearity", field: "romeo_phase_linearity",
+                label: "  Phase linearity", field: "romeo_phase_linearity",
                 help: "Weight edges by second-derivative smoothness",
             });
             rows.push(PipelineRow::Toggle {
-                label: "  Mag Coherence", field: "romeo_mag_coherence",
+                label: "  Mag coherence", field: "romeo_mag_coherence",
                 help: "Weight edges by neighbor magnitude coherence",
             });
             rows.push(PipelineRow::Toggle {
-                label: "  Mag Weight", field: "romeo_mag_weight",
+                label: "  Mag weight", field: "romeo_mag_weight",
                 help: "Penalise low-signal voxels (off by default)",
             });
             rows.push(PipelineRow::Toggle {
-                label: "  Mag Weight 2", field: "romeo_mag_weight2",
+                label: "  Mag weight 2", field: "romeo_mag_weight2",
                 help: "Penalise abnormally high signal / flow artefacts (off by default)",
             });
             rows.push(PipelineRow::Toggle {
-                label: "  Best-path Weights", field: "romeo_bestpath",
+                label: "  Best-path weights", field: "romeo_bestpath",
                 help: "Use Abdul-Rahman best-path weights instead of ROMEO weights",
             });
             rows.push(PipelineRow::Toggle {
-                label: "  Temporal Uncertain", field: "romeo_temporal_uncertain",
+                label: "  Temporal uncertain", field: "romeo_temporal_uncertain",
                 help: "Re-unwrap voxels whose temporal unwrapping is uncertain",
             });
             if self.romeo_temporal_uncertain {
                 rows.push(PipelineRow::Param {
-                    label: "    Quality Threshold", field: "romeo_temporal_uncertain_unwrapping",
+                    label: "    Quality threshold", field: "romeo_temporal_uncertain_unwrapping",
                     help: "Quality threshold (0, 1] below which a voxel is re-unwrapped",
                 });
             }
             rows.push(PipelineRow::Param {
-                label: "  Max Seeds", field: "romeo_max_seeds",
+                label: "  Max seeds", field: "romeo_max_seeds",
                 help: "Maximum number of seed regions (default 1)",
             });
             rows.push(PipelineRow::Toggle {
-                label: "  Merge Regions", field: "romeo_merge_regions",
+                label: "  Merge regions", field: "romeo_merge_regions",
                 help: "Merge neighboring regions after unwrapping",
             });
             rows.push(PipelineRow::Toggle {
-                label: "  Correct Regions", field: "romeo_correct_regions",
+                label: "  Correct regions", field: "romeo_correct_regions",
                 help: "Shift each region's median to nearest 0 by n·2π",
             });
             rows.push(PipelineRow::Param {
-                label: "  Wrap Addition", field: "romeo_wrap_addition",
+                label: "  Wrap addition", field: "romeo_wrap_addition",
                 help: "Extra phase tolerance beyond π for neighbor differences [0,π]",
             });
         }
 
         // B0 estimation
         rows.push(PipelineRow::AlgoSelect {
-            label: "B0 Estimation", field: "b0_estimation",
+            label: "B0 estimation", field: "b0_estimation",
             options: B0_ESTIMATION_OPTIONS, help: B0_ESTIMATION_HELP,
         });
         if self.b0_estimation == 0 { // weighted_avg
             rows.push(PipelineRow::AlgoSelect {
-                label: "  Weight Type", field: "b0_weight_type",
+                label: "  Weight type", field: "b0_weight_type",
                 options: B0_WEIGHT_TYPE_OPTIONS, help: B0_WEIGHT_TYPE_HELP,
             });
             if self.b0_weight_type == 5 { // assumed-decay
@@ -3149,24 +3149,24 @@ impl PipelineFormState {
                     help: "T2* assumed to compute the fixed echo weights; no T2* map is used (default: 40 ms)" });
             }
         } else if self.b0_estimation == 3 { // QSMART's echo fit
-            rows.push(PipelineRow::AlgoSelect { label: "  Fit Threshold", field: "qsmart_fit_threshold_mode",
+            rows.push(PipelineRow::AlgoSelect { label: "  Fit threshold", field: "qsmart_fit_threshold_mode",
                 options: QSMART_FIT_THRESHOLD_MODE_OPTIONS, help: QSMART_FIT_THRESHOLD_MODE_HELP });
             if self.qsmart_fit_threshold_mode == 0 {
-                rows.push(PipelineRow::Param { label: "    Fit Percentile", field: "qsmart_fit_percentile",
+                rows.push(PipelineRow::Param { label: "    Fit percentile", field: "qsmart_fit_percentile",
                     help: "Percentile of the blurred fit residual above which a voxel is left out of QSMART's reconstruction (default: 99)" });
             } else {
-                rows.push(PipelineRow::Param { label: "    Fit Residual", field: "qsmart_fit_threshold",
+                rows.push(PipelineRow::Param { label: "    Fit residual", field: "qsmart_fit_threshold",
                     help: "Blurred fit residual above which a voxel is left out of QSMART's reconstruction (default: 40)" });
             }
         } else if self.b0_estimation_is("complex-fit") {
             self.push_complex_fit_rows(rows);
         } else { // linear-fit / robust-fit
             rows.push(PipelineRow::Toggle {
-                label: "  Estimate Offset", field: "linear_fit_estimate_offset",
+                label: "  Estimate offset", field: "linear_fit_estimate_offset",
                 help: "Fit a phase-offset term in the echo-time fit (robust fit: needs 4 echoes with it, 3 without)",
             });
             rows.push(PipelineRow::Toggle {
-                label: "  Reliability Mask", field: "linear_fit_reliability",
+                label: "  Reliability mask", field: "linear_fit_reliability",
                 help: "Report the fit's reliability mask; does not change the field map",
             });
             if self.linear_fit_reliability {
@@ -3184,9 +3184,9 @@ impl PipelineFormState {
                     help: "Tuning radius in robust-scale units; blank = conventional (Tukey 4.685, Huber 1.345)" });
                 rows.push(PipelineRow::Param { label: "  Iterations", field: "robust_fit_iterations",
                     help: "IRLS passes (0 = report only: the field map is the linear fit's)" });
-                rows.push(PipelineRow::Param { label: "  Downweight Level", field: "robust_fit_downweight_level",
+                rows.push(PipelineRow::Param { label: "  Downweight level", field: "robust_fit_downweight_level",
                     help: "Reporting only: a weight below this counts as down-weighted (0, 1]" });
-                rows.push(PipelineRow::Param { label: "  Flag Ratio", field: "robust_fit_flag_ratio",
+                rows.push(PipelineRow::Param { label: "  Flag ratio", field: "robust_fit_flag_ratio",
                     help: "Reporting only: flag an echo whose outlier score exceeds this x the best echo's (>= 1)" });
             }
         }
@@ -3196,7 +3196,7 @@ impl PipelineFormState {
     /// QSM → Background: background-field removal (only for inversions that take a local field).
     fn background_rows(&self, rows: &mut Vec<PipelineRow>) {
         rows.push(PipelineRow::AlgoSelect {
-            label: "BG Removal", field: "bf_algorithm",
+            label: "BG removal", field: "bf_algorithm",
             options: BF_OPTIONS, help: BF_HELP,
         });
         match self.bf_algorithm {
@@ -3206,19 +3206,19 @@ impl PipelineFormState {
                 if self.vsharp_deconvolve {
                     rows.push(PipelineRow::Param { label: "  Threshold", field: "vsharp_threshold", help: "Deconvolution (TSVD) threshold" });
                 }
-                rows.push(PipelineRow::Param { label: "  Max Radius", field: "vsharp_max_radius", help: "Largest SMV kernel radius (mm)" });
-                rows.push(PipelineRow::Param { label: "  Min Radius", field: "vsharp_min_radius", help: "Smallest SMV kernel radius (mm)" });
-                rows.push(PipelineRow::Param { label: "  Radius Step", field: "vsharp_radius_step", help: "Step between SMV kernel radii (mm)" });
-                rows.push(PipelineRow::AlgoSelect { label: "  Working Grid", field: "vsharp_grid",
+                rows.push(PipelineRow::Param { label: "  Max radius", field: "vsharp_max_radius", help: "Largest SMV kernel radius (mm)" });
+                rows.push(PipelineRow::Param { label: "  Min radius", field: "vsharp_min_radius", help: "Smallest SMV kernel radius (mm)" });
+                rows.push(PipelineRow::Param { label: "  Radius step", field: "vsharp_radius_step", help: "Step between SMV kernel radii (mm)" });
+                rows.push(PipelineRow::AlgoSelect { label: "  Working grid", field: "vsharp_grid",
                     options: VSHARP_GRID_OPTIONS, help: VSHARP_GRID_HELP });
                 if self.vsharp_grid == 2 {
-                    rows.push(PipelineRow::Param { label: "    Grid Spacing", field: "vsharp_grid_spacing",
+                    rows.push(PipelineRow::Param { label: "    Grid spacing", field: "vsharp_grid_spacing",
                         help: "Isotropic working-grid spacing (mm)" });
                 }
             }
             1 => { // PDF
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "pdf_tol", help: "Convergence tolerance, relative to the noise level" });
-                rows.push(PipelineRow::Param { label: "  CG Iter", field: "pdf_n_cg", help: "Maximum conjugate-gradient iterations" });
+                rows.push(PipelineRow::Param { label: "  CG iter", field: "pdf_n_cg", help: "Maximum conjugate-gradient iterations" });
                 rows.push(PipelineRow::AlgoSelect { label: "  Kernel", field: "pdf_space", options: PDF_SPACE_OPTIONS, help: PDF_SPACE_HELP });
                 rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "pdf_n_pad", help: "Zero-padding around the mask's bounding box, voxels; 0 = the full volume" });
             }
@@ -3227,7 +3227,7 @@ impl PipelineFormState {
             }
             3 => { // iSMV
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "ismv_tol", help: "Convergence tolerance" });
-                rows.push(PipelineRow::Param { label: "  Max Iter", field: "ismv_max_iter", help: "Maximum iterations" });
+                rows.push(PipelineRow::Param { label: "  Max iter", field: "ismv_max_iter", help: "Maximum iterations" });
                 rows.push(PipelineRow::Param { label: "  Radius", field: "ismv_radius", help: "SMV kernel radius (mm)" });
             }
             4 => { // SHARP
@@ -3236,18 +3236,18 @@ impl PipelineFormState {
             }
             5 => { // RESHARP
                 rows.push(PipelineRow::Param { label: "  Radius", field: "resharp_radius", help: "SMV kernel radius in mm" });
-                rows.push(PipelineRow::Param { label: "  Tik Reg", field: "resharp_tik_reg", help: "Tikhonov regularization parameter" });
+                rows.push(PipelineRow::Param { label: "  Tik reg", field: "resharp_tik_reg", help: "Tikhonov regularization parameter" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "resharp_tol", help: "CG convergence tolerance" });
-                rows.push(PipelineRow::Param { label: "  Max Iter", field: "resharp_max_iter", help: "Maximum CG iterations" });
+                rows.push(PipelineRow::Param { label: "  Max iter", field: "resharp_max_iter", help: "Maximum CG iterations" });
             }
             6 => { // HARPERELLA
                 rows.push(PipelineRow::Param { label: "  Radius", field: "harperella_radius", help: "SMV kernel radius in mm" });
-                rows.push(PipelineRow::Param { label: "  Max Iter", field: "harperella_max_iter", help: "Maximum iterations" });
+                rows.push(PipelineRow::Param { label: "  Max iter", field: "harperella_max_iter", help: "Maximum iterations" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "harperella_tol", help: "Convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "harperella_pad", help: "Zero-padding per side, voxels (x y z). Larger costs time and memory (default 0 0 0)" });
             }
             7 => { // iHARPERELLA
-                rows.push(PipelineRow::Param { label: "  Max Iter", field: "iharperella_max_iter", help: "Maximum iterations" });
+                rows.push(PipelineRow::Param { label: "  Max iter", field: "iharperella_max_iter", help: "Maximum iterations" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "iharperella_tol", help: "Convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "iharperella_pad", help: "Zero-padding per side, voxels (x y z). Larger costs time and memory (default 0 0 0)" });
             }
@@ -3271,9 +3271,9 @@ impl PipelineFormState {
             "star" => ("star_te", "star_te_ms", ECHO_TIME_HELP_SUM),
             other => unreachable!("{other} has no echo time"),
         };
-        rows.push(PipelineRow::AlgoSelect { label: "  Echo Time", field, options: ECHO_TIME_OPTIONS, help });
+        rows.push(PipelineRow::AlgoSelect { label: "  Echo time", field, options: ECHO_TIME_OPTIONS, help });
         if ECHO_TIME_OPTIONS.get(self.get_select(field)) == Some(&"ms") {
-            rows.push(PipelineRow::Param { label: "    Echo Time (ms)", field: ms,
+            rows.push(PipelineRow::Param { label: "    Echo time (ms)", field: ms,
                 help: "Echo time the field is converted to phase at, ms" });
         }
     }
@@ -3282,7 +3282,7 @@ impl PipelineFormState {
     fn inversion_rows(&self, rows: &mut Vec<PipelineRow>) {
         let alg = QSM_ALGO_OPTIONS.get(self.qsm_algorithm).copied().unwrap_or("");
         rows.push(PipelineRow::AlgoSelect {
-            label: "QSM Inversion", field: "qsm_algorithm",
+            label: "QSM inversion", field: "qsm_algorithm",
             options: QSM_ALGO_OPTIONS, help: QSM_ALGO_HELP,
         });
 
@@ -3293,8 +3293,8 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Mu", field: "rts_mu", help: "Regularization parameter for well-conditioned region" });
                 rows.push(PipelineRow::Param { label: "  Rho", field: "rts_rho", help: "ADMM penalty parameter" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "rts_tol", help: "Convergence tolerance (relative change)" });
-                rows.push(PipelineRow::Param { label: "  Max Iter", field: "rts_max_iter", help: "Maximum ADMM iterations" });
-                rows.push(PipelineRow::Param { label: "  LSMR Iter", field: "rts_lsmr_iter", help: "LSMR iterations for step 1 (well-conditioned solve)" });
+                rows.push(PipelineRow::Param { label: "  Max iter", field: "rts_max_iter", help: "Maximum ADMM iterations" });
+                rows.push(PipelineRow::Param { label: "  LSMR iter", field: "rts_lsmr_iter", help: "LSMR iterations for step 1 (well-conditioned solve)" });
                 rows.push(PipelineRow::Param { label: "  Tau", field: "rts_tau", help: "Rho is raised when the primal residual falls by less than this factor" });
                 rows.push(PipelineRow::Param { label: "  Gamma", field: "rts_gamma", help: "Factor rho is raised by" });
             }
@@ -3302,7 +3302,7 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Lambda", field: "tv_lambda", help: "L1 regularization weight (larger = smoother)" });
                 rows.push(PipelineRow::Param { label: "  Rho", field: "tv_rho", help: "ADMM penalty parameter. Blank = 100×lambda" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "tv_tol", help: "Convergence tolerance" });
-                rows.push(PipelineRow::Param { label: "  Max Iter", field: "tv_max_iter", help: "Maximum ADMM iterations" });
+                rows.push(PipelineRow::Param { label: "  Max iter", field: "tv_max_iter", help: "Maximum ADMM iterations" });
             }
             "tkd" => { // TKD
                 rows.push(PipelineRow::Param { label: "  Threshold", field: "tkd_threshold", help: "Truncation threshold for k-space division (0.1-0.2)" });
@@ -3315,7 +3315,7 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Erosions", field: "tgv_erosions", help: "Mask erosions before TGV solve" });
                 rows.push(PipelineRow::Param { label: "  Alpha1", field: "tgv_alpha1", help: "First-order TGV weight (gradient term), in radians at the echo time and field strength" });
                 rows.push(PipelineRow::Param { label: "  Alpha0", field: "tgv_alpha0", help: "Second-order TGV weight (symmetric gradient term), in radians at the echo time and field strength" });
-                rows.push(PipelineRow::Param { label: "  Step Size", field: "tgv_step_size", help: "Primal step-size multiplier" });
+                rows.push(PipelineRow::Param { label: "  Step size", field: "tgv_step_size", help: "Primal step-size multiplier" });
                 self.push_echo_time(rows, "tgv");
             }
             "tikhonov" => { // Tikhonov
@@ -3326,57 +3326,57 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Rho", field: "nltv_rho", help: "ADMM penalty parameter. Blank = 100×lambda" });
                 rows.push(PipelineRow::Param { label: "  Mu", field: "nltv_mu", help: "Penalty parameter" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "nltv_tol", help: "Convergence tolerance" });
-                rows.push(PipelineRow::Param { label: "  Max Iter", field: "nltv_max_iter", help: "Maximum ADMM iterations" });
-                rows.push(PipelineRow::Param { label: "  Newton Tol", field: "nltv_tol_newton", help: "Convergence tolerance of the Newton iterations of the data-term subproblem" });
-                rows.push(PipelineRow::Param { label: "  Newton Iter", field: "nltv_newton_iter", help: "Maximum Newton iterations of the data-term subproblem" });
+                rows.push(PipelineRow::Param { label: "  Max iter", field: "nltv_max_iter", help: "Maximum ADMM iterations" });
+                rows.push(PipelineRow::Param { label: "  Newton tol", field: "nltv_tol_newton", help: "Convergence tolerance of the Newton iterations of the data-term subproblem" });
+                rows.push(PipelineRow::Param { label: "  Newton iter", field: "nltv_newton_iter", help: "Maximum Newton iterations of the data-term subproblem" });
                 self.push_echo_time(rows, "nltv");
             }
             "medi" => { // MEDI
-                rows.push(PipelineRow::Toggle { label: "  SMV Mode", field: "medi_smv",
+                rows.push(PipelineRow::Toggle { label: "  SMV mode", field: "medi_smv",
                     help: "High-pass the local field with a spherical mean value (SMV) filter, removing residual background near the brain edge (MEDI-SMV)" });
-                rows.push(PipelineRow::Param { label: "  SMV Radius", field: "medi_smv_radius", help: "SMV radius in mm (also mSMV's)" });
+                rows.push(PipelineRow::Param { label: "  SMV radius", field: "medi_smv_radius", help: "SMV radius in mm (also mSMV's)" });
                 if self.medi_smv && !self.medi_msmv {
-                    rows.push(PipelineRow::Toggle { label: "  Shrink Mask", field: "medi_smv_shrink_mask",
+                    rows.push(PipelineRow::Toggle { label: "  Shrink mask", field: "medi_smv_shrink_mask",
                         help: "With SMV, shrink the mask to where the SMV of the mask exceeds 0.999, dropping the edge band whose SMV reaches outside it. Off keeps the full mask" });
                 }
                 rows.push(PipelineRow::Toggle { label: "  mSMV", field: "medi_msmv",
                     help: "Filter the local field by maximum spherical mean value (MEDI-mSMV, Roberts 2024) before MEDI; needs at least 3 echoes" });
                 if self.medi_msmv {
-                    rows.push(PipelineRow::Param { label: "    mSMV Max K", field: "medi_msmv_maxk",
+                    rows.push(PipelineRow::Param { label: "    mSMV max K", field: "medi_msmv_maxk",
                         help: "mSMV's boundary correction makes at most this many passes, less one" });
-                    rows.push(PipelineRow::Param { label: "    mSMV Vessel Radius", field: "medi_msmv_vessel_radius",
+                    rows.push(PipelineRow::Param { label: "    mSMV vessel radius", field: "medi_msmv_vessel_radius",
                         help: "Largest vessel thickness of mSMV's vessel mask, in voxels. Blank = max(15, 8 × the largest voxel dimension)" });
-                    rows.push(PipelineRow::Toggle { label: "    mSMV Prefilter", field: "medi_msmv_prefilter",
+                    rows.push(PipelineRow::Toggle { label: "    mSMV prefilter", field: "medi_msmv_prefilter",
                         help: "SMV-filter the field before mSMV, as the authors do. Off diverges after PDF, V-SHARP or LBV (expert)" });
                 }
                 rows.push(PipelineRow::Param { label: "  Lambda", field: "medi_lambda", help: "Data-fidelity weight (larger fits the field more closely)" });
                 rows.push(PipelineRow::Param { label: "  Percentage", field: "medi_percentage", help: "Fraction of voxels considered edges (0.0-1.0)" });
-                rows.push(PipelineRow::Param { label: "  Max Iter", field: "medi_max_iter", help: "Maximum outer iterations" });
-                rows.push(PipelineRow::Param { label: "  CG Max Iter", field: "medi_cg_max_iter", help: "Maximum conjugate gradient iterations" });
-                rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "medi_cg_tol", help: "CG convergence tolerance" });
+                rows.push(PipelineRow::Param { label: "  Max iter", field: "medi_max_iter", help: "Maximum outer iterations" });
+                rows.push(PipelineRow::Param { label: "  CG max iter", field: "medi_cg_max_iter", help: "Maximum conjugate gradient iterations" });
+                rows.push(PipelineRow::Param { label: "  CG tolerance", field: "medi_cg_tol", help: "CG convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "medi_tol", help: "Outer convergence tolerance" });
                 rows.push(PipelineRow::Toggle { label: "  MERIT", field: "medi_merit", help: "Iteratively down-weight voxels whose residual stays large" });
                 self.push_medi_csf_rows(rows);
-                rows.push(PipelineRow::AlgoSelect { label: "  Data Weighting", field: "medi_data_weighting", options: DATA_WEIGHTING_OPTIONS, help: DATA_WEIGHTING_HELP });
+                rows.push(PipelineRow::AlgoSelect { label: "  Data weighting", field: "medi_data_weighting", options: DATA_WEIGHTING_OPTIONS, help: DATA_WEIGHTING_HELP });
                 self.push_echo_time(rows, "medi");
             }
             "tfi" => { // TFI
                 rows.push(PipelineRow::Param { label: "  Lambda", field: "tfi_lambda", help: "Data-fidelity weight (larger fits the field more closely)" });
                 rows.push(PipelineRow::Param { label: "  Precond", field: "tfi_precond", help: "Preconditioner value (susceptibility scaling outside the mask)" });
                 rows.push(PipelineRow::Param { label: "  Percentage", field: "tfi_percentage", help: "Fraction of voxels considered edges (0.0-1.0)" });
-                rows.push(PipelineRow::Param { label: "  Max Iter", field: "tfi_max_iter", help: "Maximum outer iterations" });
-                rows.push(PipelineRow::Param { label: "  CG Max Iter", field: "tfi_cg_max_iter", help: "Maximum conjugate gradient iterations" });
-                rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "tfi_cg_tol", help: "CG convergence tolerance" });
+                rows.push(PipelineRow::Param { label: "  Max iter", field: "tfi_max_iter", help: "Maximum outer iterations" });
+                rows.push(PipelineRow::Param { label: "  CG max iter", field: "tfi_cg_max_iter", help: "Maximum conjugate gradient iterations" });
+                rows.push(PipelineRow::Param { label: "  CG tolerance", field: "tfi_cg_tol", help: "CG convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "tfi_tol", help: "Outer convergence tolerance" });
                 rows.push(PipelineRow::Toggle { label: "  MERIT", field: "tfi_merit", help: "Iteratively down-weight voxels whose residual stays large" });
-                rows.push(PipelineRow::Toggle { label: "  Linear Data Term", field: "tfi_linear",
+                rows.push(PipelineRow::Toggle { label: "  Linear data term", field: "tfi_linear",
                     help: "Fit the field linearly, as the TFI paper does (default); off uses MEDI's exponential data term" });
-                rows.push(PipelineRow::AlgoSelect { label: "  Data Weighting", field: "tfi_data_weighting", options: DATA_WEIGHTING_OPTIONS, help: DATA_WEIGHTING_HELP });
+                rows.push(PipelineRow::AlgoSelect { label: "  Data weighting", field: "tfi_data_weighting", options: DATA_WEIGHTING_OPTIONS, help: DATA_WEIGHTING_HELP });
                 self.push_echo_time(rows, "tfi");
             }
             "ilsqr" => { // iLSQR
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "ilsqr_tol", help: "Convergence tolerance" });
-                rows.push(PipelineRow::Param { label: "  Max Iter", field: "ilsqr_max_iter", help: "Maximum iterations" });
+                rows.push(PipelineRow::Param { label: "  Max iter", field: "ilsqr_max_iter", help: "Maximum iterations" });
                 rows.push(PipelineRow::Param { label: "  Pad (mm)", field: "ilsqr_pad_mm", help: "Zero-padding per side, mm. Larger costs time and memory" });
             }
             "star" => { // STAR-QSM
@@ -3385,38 +3385,38 @@ impl PipelineFormState {
             }
             // HEIDI seeds itself with an LSQR solve, so it shows both groups.
             "lsqr" | "heidi" => {
-                rows.push(PipelineRow::Param { label: "  Residual Weight", field: "lsqr_residual_weighting",
+                rows.push(PipelineRow::Param { label: "  Residual weight", field: "lsqr_residual_weighting",
                     help: "Weight w on the residual field — the only regularisation. Blank = scaled from B0; 0 drops the term and streaks badly" });
-                rows.push(PipelineRow::Toggle { label: "  Fit Global Offset", field: "lsqr_fit_global_offset",
+                rows.push(PipelineRow::Toggle { label: "  Fit global offset", field: "lsqr_fit_global_offset",
                     help: "Fit a single global field offset alongside χ" });
-                rows.push(PipelineRow::Param { label: "  LSQR Tolerance", field: "lsqr_tol", help: "LSQR convergence tolerance" });
-                rows.push(PipelineRow::Param { label: "  LSQR Max Iter", field: "lsqr_max_iter", help: "Maximum LSQR iterations" });
+                rows.push(PipelineRow::Param { label: "  LSQR tolerance", field: "lsqr_tol", help: "LSQR convergence tolerance" });
+                rows.push(PipelineRow::Param { label: "  LSQR max iter", field: "lsqr_max_iter", help: "Maximum LSQR iterations" });
                 if alg == "heidi" {
-                    rows.push(PipelineRow::Param { label: "  Cone Threshold", field: "heidi_cone_threshold",
+                    rows.push(PipelineRow::Param { label: "  Cone threshold", field: "heidi_cone_threshold",
                         help: "|D(k)| above which a coefficient is taken from the LSQR seed unchanged" });
-                    rows.push(PipelineRow::Param { label: "  Gradient Threshold", field: "heidi_gradient_threshold",
+                    rows.push(PipelineRow::Param { label: "  Gradient threshold", field: "heidi_gradient_threshold",
                         help: "Field-gradient threshold (ppm/mm); below it a direction reads as homogeneous" });
-                    rows.push(PipelineRow::Toggle { label: "  Laplacian Correction", field: "heidi_apply_laplacian_correction",
+                    rows.push(PipelineRow::Toggle { label: "  Laplacian correction", field: "heidi_apply_laplacian_correction",
                         help: "Open the homogeneity masks where the field's Laplacian is large" });
                     if self.heidi_apply_laplacian_correction {
-                    rows.push(PipelineRow::Param { label: "    Laplacian Threshold", field: "heidi_laplacian_threshold",
+                    rows.push(PipelineRow::Param { label: "    Laplacian threshold", field: "heidi_laplacian_threshold",
                             help: "Field-Laplacian threshold (ppm per voxel²)" });
                     }
-                    rows.push(PipelineRow::Param { label: "  Gradient Mask Floor", field: "heidi_gradient_mask_floor",
+                    rows.push(PipelineRow::Param { label: "  Gradient mask floor", field: "heidi_gradient_mask_floor",
                         help: "TV weight kept where every direction reads as an edge (0 = upstream's binarised masks)" });
-                    rows.push(PipelineRow::Param { label: "  Continuation Steps", field: "heidi_continuation_steps",
+                    rows.push(PipelineRow::Param { label: "  Continuation steps", field: "heidi_continuation_steps",
                         help: "NESTA continuation steps on μ" });
-                    rows.push(PipelineRow::Param { label: "  Inner Iterations", field: "heidi_inner_iterations",
+                    rows.push(PipelineRow::Param { label: "  Inner iterations", field: "heidi_inner_iterations",
                         help: "Accelerated-gradient iterations per continuation step" });
-                    rows.push(PipelineRow::Param { label: "  Mu Min", field: "heidi_mu_min", help: "Final (smallest) smoothing parameter μ" });
-                    rows.push(PipelineRow::Param { label: "  HEIDI Tolerance", field: "heidi_tol",
+                    rows.push(PipelineRow::Param { label: "  Mu min", field: "heidi_mu_min", help: "Final (smallest) smoothing parameter μ" });
+                    rows.push(PipelineRow::Param { label: "  HEIDI tolerance", field: "heidi_tol",
                         help: "Relative objective change that ends an inner loop early (the default runs every iteration)" });
                     self.push_echo_time(rows, "heidi");
-                    rows.push(PipelineRow::Toggle { label: "  Denoise Field", field: "heidi_denoise",
+                    rows.push(PipelineRow::Toggle { label: "  Denoise field", field: "heidi_denoise",
                         help: "Anisotropic-diffusion smoothing of the field before its gradients are taken" });
                     if self.heidi_denoise {
-                    rows.push(PipelineRow::Param { label: "    Denoise Iter", field: "heidi_denoise_iterations", help: "Anisotropic-diffusion iterations" });
-                    rows.push(PipelineRow::Param { label: "    Time Step", field: "heidi_denoise_time_step", help: "Anisotropic-diffusion time step" });
+                    rows.push(PipelineRow::Param { label: "    Denoise iter", field: "heidi_denoise_iterations", help: "Anisotropic-diffusion iterations" });
+                    rows.push(PipelineRow::Param { label: "    Time step", field: "heidi_denoise_time_step", help: "Anisotropic-diffusion time step" });
                     rows.push(PipelineRow::Param { label: "    Conductance", field: "heidi_denoise_conductance", help: "Anisotropic-diffusion conductance" });
                     }
                 }
@@ -3430,7 +3430,7 @@ impl PipelineFormState {
                     },
                 });
                 rows.push(PipelineRow::AlgoSelect {
-                    label: "  Inner Inversion", field: "qsmart_inversion",
+                    label: "  Inner inversion", field: "qsmart_inversion",
                     options: QSMART_INV_OPTIONS, help: QSMART_INV_HELP,
                 });
                 // Params for the selected inner inversion. QSMART_INV_OPTIONS order:
@@ -3439,17 +3439,17 @@ impl PipelineFormState {
                 // which run_qsmart applies to both QSMART stages.
                 match self.qsmart_inversion {
                     0 => { // iLSQR: QSMART's own max_iter/pad, iLSQR's tolerance
-                        rows.push(PipelineRow::Param { label: "  iLSQR Tolerance", field: "ilsqr_tol", help: "Streaking-stage LSQR tolerance (shared with iLSQR)" });
-                        rows.push(PipelineRow::Param { label: "  iLSQR Max Iter", field: "qsmart_ilsqr_max_iter", help: "Maximum iLSQR iterations per stage (tolerance: iLSQR's)" });
-                        rows.push(PipelineRow::Param { label: "  iLSQR Pad (mm)", field: "qsmart_ilsqr_pad_mm", help: "Zero-padding of the inner iLSQR solves, mm per side (default: 6)" });
+                        rows.push(PipelineRow::Param { label: "  iLSQR tolerance", field: "ilsqr_tol", help: "Streaking-stage LSQR tolerance (shared with iLSQR)" });
+                        rows.push(PipelineRow::Param { label: "  iLSQR max iter", field: "qsmart_ilsqr_max_iter", help: "Maximum iLSQR iterations per stage (tolerance: iLSQR's)" });
+                        rows.push(PipelineRow::Param { label: "  iLSQR pad (mm)", field: "qsmart_ilsqr_pad_mm", help: "Zero-padding of the inner iLSQR solves, mm per side (default: 6)" });
                     }
                     1 => { // RTS
                         rows.push(PipelineRow::Param { label: "  Delta", field: "rts_delta", help: "Threshold for ill-conditioned k-space region" });
                         rows.push(PipelineRow::Param { label: "  Mu", field: "rts_mu", help: "Regularization parameter for well-conditioned region" });
                         rows.push(PipelineRow::Param { label: "  Rho", field: "rts_rho", help: "ADMM penalty parameter" });
                         rows.push(PipelineRow::Param { label: "  Tolerance", field: "rts_tol", help: "Convergence tolerance (relative change)" });
-                        rows.push(PipelineRow::Param { label: "  Max Iter", field: "rts_max_iter", help: "Maximum ADMM iterations" });
-                        rows.push(PipelineRow::Param { label: "  LSMR Iter", field: "rts_lsmr_iter", help: "LSMR iterations for step 1 (well-conditioned solve)" });
+                        rows.push(PipelineRow::Param { label: "  Max iter", field: "rts_max_iter", help: "Maximum ADMM iterations" });
+                        rows.push(PipelineRow::Param { label: "  LSMR iter", field: "rts_lsmr_iter", help: "LSMR iterations for step 1 (well-conditioned solve)" });
                         rows.push(PipelineRow::Param { label: "  Tau", field: "rts_tau", help: "Rho is raised when the primal residual falls by less than this factor" });
                         rows.push(PipelineRow::Param { label: "  Gamma", field: "rts_gamma", help: "Factor rho is raised by" });
                     }
@@ -3457,7 +3457,7 @@ impl PipelineFormState {
                         rows.push(PipelineRow::Param { label: "  Lambda", field: "tv_lambda", help: "L1 regularization weight (larger = smoother)" });
                         rows.push(PipelineRow::Param { label: "  Rho", field: "tv_rho", help: "ADMM penalty parameter. Blank = 100×lambda" });
                         rows.push(PipelineRow::Param { label: "  Tolerance", field: "tv_tol", help: "Convergence tolerance" });
-                        rows.push(PipelineRow::Param { label: "  Max Iter", field: "tv_max_iter", help: "Maximum ADMM iterations" });
+                        rows.push(PipelineRow::Param { label: "  Max iter", field: "tv_max_iter", help: "Maximum ADMM iterations" });
                     }
                     3 => { // TKD
                         rows.push(PipelineRow::Param { label: "  Threshold", field: "tkd_threshold", help: "Truncation threshold for k-space division (0.1-0.2)" });
@@ -3473,49 +3473,49 @@ impl PipelineFormState {
                         rows.push(PipelineRow::Param { label: "  Rho", field: "nltv_rho", help: "ADMM penalty parameter. Blank = 100×lambda" });
                         rows.push(PipelineRow::Param { label: "  Mu", field: "nltv_mu", help: "Penalty parameter" });
                         rows.push(PipelineRow::Param { label: "  Tolerance", field: "nltv_tol", help: "Convergence tolerance" });
-                        rows.push(PipelineRow::Param { label: "  Max Iter", field: "nltv_max_iter", help: "Maximum ADMM iterations" });
-                        rows.push(PipelineRow::Param { label: "  Newton Tol", field: "nltv_tol_newton", help: "Convergence tolerance of the Newton iterations of the data-term subproblem" });
-                        rows.push(PipelineRow::Param { label: "  Newton Iter", field: "nltv_newton_iter", help: "Maximum Newton iterations of the data-term subproblem" });
+                        rows.push(PipelineRow::Param { label: "  Max iter", field: "nltv_max_iter", help: "Maximum ADMM iterations" });
+                        rows.push(PipelineRow::Param { label: "  Newton tol", field: "nltv_tol_newton", help: "Convergence tolerance of the Newton iterations of the data-term subproblem" });
+                        rows.push(PipelineRow::Param { label: "  Newton iter", field: "nltv_newton_iter", help: "Maximum Newton iterations of the data-term subproblem" });
                         self.push_echo_time(rows, "nltv");
                     }
                     7 => { // MEDI (QSMART already removes background, so SMV mode is omitted)
                         rows.push(PipelineRow::Param { label: "  Lambda", field: "medi_lambda", help: "Data-fidelity weight (larger fits the field more closely)" });
                         rows.push(PipelineRow::Param { label: "  Percentage", field: "medi_percentage", help: "Fraction of voxels considered edges (0.0-1.0)" });
-                        rows.push(PipelineRow::Param { label: "  Max Iter", field: "medi_max_iter", help: "Maximum outer iterations" });
-                        rows.push(PipelineRow::Param { label: "  CG Max Iter", field: "medi_cg_max_iter", help: "Maximum conjugate gradient iterations" });
-                        rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "medi_cg_tol", help: "CG convergence tolerance" });
+                        rows.push(PipelineRow::Param { label: "  Max iter", field: "medi_max_iter", help: "Maximum outer iterations" });
+                        rows.push(PipelineRow::Param { label: "  CG max iter", field: "medi_cg_max_iter", help: "Maximum conjugate gradient iterations" });
+                        rows.push(PipelineRow::Param { label: "  CG tolerance", field: "medi_cg_tol", help: "CG convergence tolerance" });
                         rows.push(PipelineRow::Param { label: "  Tolerance", field: "medi_tol", help: "Outer convergence tolerance" });
                         rows.push(PipelineRow::Toggle { label: "  MERIT", field: "medi_merit", help: "Iteratively down-weight voxels whose residual stays large" });
                         self.push_medi_csf_rows(rows);
-                        rows.push(PipelineRow::AlgoSelect { label: "  Data Weighting", field: "medi_data_weighting", options: DATA_WEIGHTING_OPTIONS, help: DATA_WEIGHTING_HELP });
+                        rows.push(PipelineRow::AlgoSelect { label: "  Data weighting", field: "medi_data_weighting", options: DATA_WEIGHTING_OPTIONS, help: DATA_WEIGHTING_HELP });
                         self.push_echo_time(rows, "medi");
                     }
                     _ => {}
                 }
                 // SDF background-removal parameters
-                rows.push(PipelineRow::Param { label: "  SDF Sigma1 (s1)", field: "qsmart_sdf_sigma1_stage1", help: "Stage 1 SDF kernel sigma 1 (voxels)" });
-                rows.push(PipelineRow::Param { label: "  SDF Sigma2 (s1)", field: "qsmart_sdf_sigma2_stage1", help: "Stage 1 SDF kernel sigma 2 (voxels)" });
-                rows.push(PipelineRow::Param { label: "  SDF Sigma1 (s2)", field: "qsmart_sdf_sigma1_stage2", help: "Stage 2 SDF kernel sigma 1 (voxels)" });
-                rows.push(PipelineRow::Param { label: "  SDF Sigma2 (s2)", field: "qsmart_sdf_sigma2_stage2", help: "Stage 2 SDF kernel sigma 2 (voxels)" });
-                rows.push(PipelineRow::Param { label: "  SDF Lower Lim", field: "qsmart_sdf_lower_lim", help: "SDF proximity lower limit" });
-                rows.push(PipelineRow::Param { label: "  SDF Curv Const", field: "qsmart_sdf_curv_constant", help: "SDF curvature constant" });
+                rows.push(PipelineRow::Param { label: "  SDF sigma1 (s1)", field: "qsmart_sdf_sigma1_stage1", help: "Stage 1 SDF kernel sigma 1 (voxels)" });
+                rows.push(PipelineRow::Param { label: "  SDF sigma2 (s1)", field: "qsmart_sdf_sigma2_stage1", help: "Stage 1 SDF kernel sigma 2 (voxels)" });
+                rows.push(PipelineRow::Param { label: "  SDF sigma1 (s2)", field: "qsmart_sdf_sigma1_stage2", help: "Stage 2 SDF kernel sigma 1 (voxels)" });
+                rows.push(PipelineRow::Param { label: "  SDF sigma2 (s2)", field: "qsmart_sdf_sigma2_stage2", help: "Stage 2 SDF kernel sigma 2 (voxels)" });
+                rows.push(PipelineRow::Param { label: "  SDF lower lim", field: "qsmart_sdf_lower_lim", help: "SDF proximity lower limit" });
+                rows.push(PipelineRow::Param { label: "  SDF curv const", field: "qsmart_sdf_curv_constant", help: "SDF curvature constant" });
                 // Vasculature detection (Frangi): the magnitude it runs on, and the vessel sizes in
                 // voxels or mm.
-                rows.push(PipelineRow::AlgoSelect { label: "  Vessel Magnitude", field: "qsmart_vessel_magnitude",
+                rows.push(PipelineRow::AlgoSelect { label: "  Vessel magnitude", field: "qsmart_vessel_magnitude",
                     options: QSMART_VESSEL_MAGNITUDE_OPTIONS, help: QSMART_VESSEL_MAGNITUDE_HELP });
-                rows.push(PipelineRow::AlgoSelect { label: "  Vessel Size Units", field: "qsmart_vessel_units",
+                rows.push(PipelineRow::AlgoSelect { label: "  Vessel size units", field: "qsmart_vessel_units",
                     options: QSMART_VESSEL_UNITS_OPTIONS, help: QSMART_VESSEL_UNITS_HELP });
-                rows.push(PipelineRow::Param { label: "  Vasc Radius", field: "qsmart_vasc_sphere_radius", help: "Bottom-hat sphere radius for vasculature detection, in the vessel size units" });
-                rows.push(PipelineRow::Param { label: "  Frangi Min", field: "qsmart_frangi_scale_min", help: "Frangi minimum vessel radius, in the vessel size units" });
-                rows.push(PipelineRow::Param { label: "  Frangi Max", field: "qsmart_frangi_scale_max", help: "Frangi maximum vessel radius, in the vessel size units" });
-                rows.push(PipelineRow::Param { label: "  Frangi Step", field: "qsmart_frangi_scale_ratio", help: "Frangi scale step, in the vessel size units" });
+                rows.push(PipelineRow::Param { label: "  Vasc radius", field: "qsmart_vasc_sphere_radius", help: "Bottom-hat sphere radius for vasculature detection, in the vessel size units" });
+                rows.push(PipelineRow::Param { label: "  Frangi min", field: "qsmart_frangi_scale_min", help: "Frangi minimum vessel radius, in the vessel size units" });
+                rows.push(PipelineRow::Param { label: "  Frangi max", field: "qsmart_frangi_scale_max", help: "Frangi maximum vessel radius, in the vessel size units" });
+                rows.push(PipelineRow::Param { label: "  Frangi step", field: "qsmart_frangi_scale_ratio", help: "Frangi scale step, in the vessel size units" });
                 rows.push(PipelineRow::Param { label: "  Frangi C", field: "qsmart_frangi_c", help: "Frangi C noise threshold" });
             }
             "ndi" => { // NDI
                 rows.push(PipelineRow::Param { label: "  Tau", field: "ndi_tau", help: "Gradient-descent step size" });
                 rows.push(PipelineRow::Param { label: "  Alpha", field: "ndi_alpha", help: "L2 regularization weight" });
-                rows.push(PipelineRow::Param { label: "  Max Iter", field: "ndi_max_iter", help: "Number of iterations" });
-                rows.push(PipelineRow::Toggle { label: "  Auto Stop", field: "ndi_auto_stop", help: "Stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto)" });
+                rows.push(PipelineRow::Param { label: "  Max iter", field: "ndi_max_iter", help: "Number of iterations" });
+                rows.push(PipelineRow::Toggle { label: "  Auto stop", field: "ndi_auto_stop", help: "Stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto)" });
                 self.push_echo_time(rows, "ndi");
             }
             "fansi" | "fansi-tgv" => { // shared params
@@ -3524,9 +3524,9 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Mu2", field: "fansi_mu2", help: "Fidelity-consistency ADMM weight" });
                 rows.push(PipelineRow::Param { label: "  Alpha0", field: "fansi_alpha0", help: "Second-order L1 penalty weight (nlTGV only). Blank = 2×alpha1" });
                 rows.push(PipelineRow::Param { label: "  Mu0", field: "fansi_mu0", help: "Second-order consistency ADMM weight (nlTGV only). Blank = 2×mu1" });
-                rows.push(PipelineRow::Param { label: "  Max Iter", field: "fansi_max_iter", help: "Number of outer ADMM iterations" });
-                rows.push(PipelineRow::Param { label: "  Tol Update", field: "fansi_tol_update", help: "Percent-update stopping tolerance" });
-                rows.push(PipelineRow::Param { label: "  Tol Delta", field: "fansi_tol_delta", help: "Inner Newton convergence tolerance" });
+                rows.push(PipelineRow::Param { label: "  Max iter", field: "fansi_max_iter", help: "Number of outer ADMM iterations" });
+                rows.push(PipelineRow::Param { label: "  Tol update", field: "fansi_tol_update", help: "Percent-update stopping tolerance" });
+                rows.push(PipelineRow::Param { label: "  Tol delta", field: "fansi_tol_delta", help: "Inner Newton convergence tolerance" });
                 self.push_echo_time(rows, "fansi");
             }
             "l1qsm" => { // L1-QSM
@@ -3535,9 +3535,9 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Mu2", field: "l1qsm_mu2", help: "Fidelity-consistency ADMM weight" });
                 rows.push(PipelineRow::Param { label: "  Mu3", field: "l1qsm_mu3", help: "L1 proximal ADMM weight" });
                 rows.push(PipelineRow::Param { label: "  Lambda", field: "l1qsm_lambda", help: "L1 fidelity strength" });
-                rows.push(PipelineRow::Param { label: "  Max Iter", field: "l1qsm_max_iter", help: "Number of outer ADMM iterations" });
-                rows.push(PipelineRow::Param { label: "  Tol Update", field: "l1qsm_tol_update", help: "Percent-update stopping tolerance" });
-                rows.push(PipelineRow::Param { label: "  Tol Delta", field: "l1qsm_tol_delta", help: "Inner Newton convergence tolerance" });
+                rows.push(PipelineRow::Param { label: "  Max iter", field: "l1qsm_max_iter", help: "Number of outer ADMM iterations" });
+                rows.push(PipelineRow::Param { label: "  Tol update", field: "l1qsm_tol_update", help: "Percent-update stopping tolerance" });
+                rows.push(PipelineRow::Param { label: "  Tol delta", field: "l1qsm_tol_delta", help: "Inner Newton convergence tolerance" });
                 self.push_echo_time(rows, "l1qsm");
             }
             "whqsm" => { // WH-QSM
@@ -3546,31 +3546,31 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Mu2", field: "whqsm_mu2", help: "ADMM penalty for data-fidelity splitting" });
                 rows.push(PipelineRow::Param { label: "  Beta", field: "whqsm_beta", help: "Weak-harmonic ROI penalty" });
                 rows.push(PipelineRow::Param { label: "  Muh", field: "whqsm_muh", help: "ADMM penalty for harmonic-field splitting" });
-                rows.push(PipelineRow::Param { label: "  Max Iter", field: "whqsm_max_iter", help: "Maximum outer iterations" });
-                rows.push(PipelineRow::Param { label: "  Tol Update", field: "whqsm_tol_update", help: "Percent-update stopping tolerance" });
-                rows.push(PipelineRow::Param { label: "  Tol Delta", field: "whqsm_tol_delta", help: "Inner Newton stopping tolerance" });
-                rows.push(PipelineRow::AlgoSelect { label: "  Data Weight", field: "whqsm_weight", options: WHQSM_WEIGHT_OPTIONS, help: WHQSM_WEIGHT_HELP });
+                rows.push(PipelineRow::Param { label: "  Max iter", field: "whqsm_max_iter", help: "Maximum outer iterations" });
+                rows.push(PipelineRow::Param { label: "  Tol update", field: "whqsm_tol_update", help: "Percent-update stopping tolerance" });
+                rows.push(PipelineRow::Param { label: "  Tol delta", field: "whqsm_tol_delta", help: "Inner Newton stopping tolerance" });
+                rows.push(PipelineRow::AlgoSelect { label: "  Data weight", field: "whqsm_weight", options: WHQSM_WEIGHT_OPTIONS, help: WHQSM_WEIGHT_HELP });
                 self.push_echo_time(rows, "whqsm");
             }
             "hdqsm" => { // HD-QSM
                 rows.push(PipelineRow::Param { label: "  Alpha L2", field: "hdqsm_alpha_l2", help: "L2-stage TV weight" });
                 rows.push(PipelineRow::Param { label: "  Mu1 L2", field: "hdqsm_mu1_l2", help: "L2-stage gradient-consistency ADMM weight. Blank = 100×alpha L2" });
                 rows.push(PipelineRow::Param { label: "  Mu2", field: "hdqsm_mu2", help: "Fidelity consistency weight" });
-                rows.push(PipelineRow::Param { label: "  Max Iter L1", field: "hdqsm_max_iter_l1", help: "Stage-1 (L1) iterations" });
-                rows.push(PipelineRow::Param { label: "  Max Iter L2", field: "hdqsm_max_iter_l2", help: "Stage-2 (L2) iterations" });
-                rows.push(PipelineRow::Param { label: "  Tol Update", field: "hdqsm_tol_update", help: "Stage-2 percent-update stopping tolerance" });
+                rows.push(PipelineRow::Param { label: "  Max iter L1", field: "hdqsm_max_iter_l1", help: "Stage-1 (L1) iterations" });
+                rows.push(PipelineRow::Param { label: "  Max iter L2", field: "hdqsm_max_iter_l2", help: "Stage-2 (L2) iterations" });
+                rows.push(PipelineRow::Param { label: "  Tol update", field: "hdqsm_tol_update", help: "Stage-2 percent-update stopping tolerance" });
             }
             "amp-pe" => { // AMP-PE
-                rows.push(PipelineRow::Param { label: "  Wave Order", field: "amp_pe_wave_order", help: "Daubechies wavelet order (1=db1, 2=db2)" });
-                rows.push(PipelineRow::Param { label: "  N Level", field: "amp_pe_nlevel", help: "Wavelet decomposition levels" });
-                rows.push(PipelineRow::Param { label: "  Wave Pec", field: "amp_pe_wave_pec", help: "Morphology-mask energy retention fraction (0.0-1.0)" });
+                rows.push(PipelineRow::Param { label: "  Wave order", field: "amp_pe_wave_order", help: "Daubechies wavelet order (1=db1, 2=db2)" });
+                rows.push(PipelineRow::Param { label: "  N level", field: "amp_pe_nlevel", help: "Wavelet decomposition levels" });
+                rows.push(PipelineRow::Param { label: "  Wave pec", field: "amp_pe_wave_pec", help: "Morphology-mask energy retention fraction (0.0-1.0)" });
                 rows.push(PipelineRow::Param { label: "  Simulated TE", field: "amp_pe_simulated_te", help: "Simulated echo time (s) used to turn the field into phase" });
-                rows.push(PipelineRow::Param { label: "  Max Linearization Ite", field: "amp_pe_max_linearization_ite", help: "Linearization iterations per stage" });
-                rows.push(PipelineRow::Param { label: "  Tikhonov Beta", field: "amp_pe_tikhonov_beta", help: "L2-seed Tikhonov weight" });
-                rows.push(PipelineRow::Param { label: "  Damp Rate (signal)", field: "amp_pe_damp_rate_sig", help: "GAMP signal-update damping rate" });
-                rows.push(PipelineRow::Param { label: "  Damp Rate (params)", field: "amp_pe_damp_rate_par", help: "Parameter-estimation learning rate (kappa)" });
-                rows.push(PipelineRow::Param { label: "  Sparse Recon Ite", field: "amp_pe_max_pe_spar_ite", help: "Inner sparse-reconstruction iterations" });
-                rows.push(PipelineRow::Param { label: "  Param Est Ite", field: "amp_pe_max_pe_est_ite", help: "Inner parameter-estimation iterations" });
+                rows.push(PipelineRow::Param { label: "  Max linearization ite", field: "amp_pe_max_linearization_ite", help: "Linearization iterations per stage" });
+                rows.push(PipelineRow::Param { label: "  Tikhonov beta", field: "amp_pe_tikhonov_beta", help: "L2-seed Tikhonov weight" });
+                rows.push(PipelineRow::Param { label: "  Damp rate (signal)", field: "amp_pe_damp_rate_sig", help: "GAMP signal-update damping rate" });
+                rows.push(PipelineRow::Param { label: "  Damp rate (params)", field: "amp_pe_damp_rate_par", help: "Parameter-estimation learning rate (kappa)" });
+                rows.push(PipelineRow::Param { label: "  Sparse recon ite", field: "amp_pe_max_pe_spar_ite", help: "Inner sparse-reconstruction iterations" });
+                rows.push(PipelineRow::Param { label: "  Param est ite", field: "amp_pe_max_pe_est_ite", help: "Inner parameter-estimation iterations" });
                 rows.push(PipelineRow::Param { label: "  Convergence", field: "amp_pe_cvg_thd", help: "GAMP inner convergence threshold" });
             }
             _ => {}
@@ -3586,11 +3586,11 @@ impl PipelineFormState {
         ) || (matches!(BF_OPTIONS.get(self.bf_algorithm).copied().unwrap_or(""), "bfrnet" | "iqfm")
             && self.inversion_needs_bg_removal())
         {
-            rows.push(PipelineRow::Toggle { label: "  Tiled Inference", field: "dl_tiling",
+            rows.push(PipelineRow::Toggle { label: "  Tiled inference", field: "dl_tiling",
                 help: "Run the network on overlapping tiles: bounded memory, approximate. Off = whole volume" });
             if self.dl_tiling {
-                rows.push(PipelineRow::Param { label: "    Tile Size", field: "dl_tile_size", help: "Overlap-tiling core size in voxels" });
-                rows.push(PipelineRow::Param { label: "    Tile Halo", field: "dl_tile_halo", help: "Overlap-tiling context margin in voxels (blank = 8)" });
+                rows.push(PipelineRow::Param { label: "    Tile size", field: "dl_tile_size", help: "Overlap-tiling core size in voxels" });
+                rows.push(PipelineRow::Param { label: "    Tile halo", field: "dl_tile_halo", help: "Overlap-tiling context margin in voxels (blank = 8)" });
             }
         }
 
@@ -3606,12 +3606,12 @@ impl PipelineFormState {
             help: "Regularization (blank = 0, plain least squares). Raise for 2 orientations or single-axis rotations" });
         if self.ctx.orientation_cosmos {
             rows.push(PipelineRow::Toggle {
-                label: "COSMOS Magnitude Weighting", field: "cosmos_magnitude_weighting",
+                label: "COSMOS magnitude weighting", field: "cosmos_magnitude_weighting",
                 help: "COSMOS groups: weight each orientation by its combined magnitude (conjugate-gradient solve). Off = closed-form least squares",
             });
             if self.cosmos_magnitude_weighting {
-                rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "cosmos_tol", help: "Conjugate-gradient tolerance of weighted COSMOS" });
-                rows.push(PipelineRow::Param { label: "  CG Max Iterations", field: "cosmos_max_iter", help: "Conjugate-gradient iteration cap of weighted COSMOS" });
+                rows.push(PipelineRow::Param { label: "  CG tolerance", field: "cosmos_tol", help: "Conjugate-gradient tolerance of weighted COSMOS" });
+                rows.push(PipelineRow::Param { label: "  CG max iterations", field: "cosmos_max_iter", help: "Conjugate-gradient iteration cap of weighted COSMOS" });
             }
         }
         rows.push(PipelineRow::Toggle {
@@ -3630,7 +3630,7 @@ impl PipelineFormState {
     /// QSM → Reference: what χ's zero is pinned to.
     fn reference_rows(&self, rows: &mut Vec<PipelineRow>) {
         rows.push(PipelineRow::AlgoSelect {
-            label: "QSM Reference", field: "qsm_reference",
+            label: "QSM reference", field: "qsm_reference",
             options: qsm_ref_options(), help: qsm_ref_help(),
         });
     }
@@ -4679,7 +4679,7 @@ impl PipelineFormState {
     /// step's own settings, so all of BET's settings sit together.
     fn push_bet_surface_rows(rows: &mut Vec<PipelineRow>) {
         rows.push(PipelineRow::Param { label: "Smoothness", field: "bet_smoothness", help: "BET surface smoothness factor (shared by every BET step)" });
-        rows.push(PipelineRow::Param { label: "Gradient Threshold", field: "bet_gradient_threshold", help: "BET gradient threshold, -1 to 1 (shared by every BET step)" });
+        rows.push(PipelineRow::Param { label: "Gradient threshold", field: "bet_gradient_threshold", help: "BET gradient threshold, -1 to 1 (shared by every BET step)" });
         rows.push(PipelineRow::Param { label: "Iterations", field: "bet_iterations", help: "BET surface evolution iterations (shared by every BET step)" });
         rows.push(PipelineRow::Param { label: "Subdivisions", field: "bet_subdivisions", help: "BET icosphere subdivision level (shared by every BET step)" });
     }
@@ -5077,23 +5077,23 @@ impl PipelineFormState {
 
     /// MEDI's complex fit's own settings, under B0 Estimation.
     fn push_complex_fit_rows(&self, rows: &mut Vec<PipelineRow>) {
-        rows.push(PipelineRow::Param { label: "  Rel Tolerance", field: "complex_fit_reltol",
+        rows.push(PipelineRow::Param { label: "  Rel tolerance", field: "complex_fit_reltol",
             help: "Stop once the update is this fraction of the first estimate, over the whole volume (default 1e-4)" });
-        rows.push(PipelineRow::Param { label: "  Max Iter", field: "complex_fit_max_iter",
+        rows.push(PipelineRow::Param { label: "  Max iter", field: "complex_fit_max_iter",
             help: "Gauss-Newton iterations at most (default 30)" });
     }
 
     /// MEDI+0's CSF term (needs at least 3 echoes; with fewer MEDI runs without it, which the
     /// run says) and MEDI's zero padding.
     fn push_medi_csf_rows(&self, rows: &mut Vec<PipelineRow>) {
-        rows.push(PipelineRow::Toggle { label: "  CSF Reference", field: "medi_csf",
+        rows.push(PipelineRow::Toggle { label: "  CSF reference", field: "medi_csf",
             help: "Zero-reference χ to the ventricular CSF and keep it uniform there (MEDI+0, Liu 2018); needs at least 3 echoes, with fewer MEDI runs without it" });
         if self.medi_csf {
             rows.push(PipelineRow::Param { label: "    Lambda CSF", field: "medi_lambda_csf", help: "Weight of the CSF uniformity term" });
-            rows.push(PipelineRow::Param { label: "    CSF R2* Threshold", field: "medi_csf_r2s_threshold", help: "Voxels below this R2* are CSF candidates" });
-            rows.push(PipelineRow::Toggle { label: "    CSF Erode", field: "medi_csf_erode", help: "Erode the mask by a 10 mm sphere before finding the CSF" });
+            rows.push(PipelineRow::Param { label: "    CSF R2* threshold", field: "medi_csf_r2s_threshold", help: "Voxels below this R2* are CSF candidates" });
+            rows.push(PipelineRow::Toggle { label: "    CSF erode", field: "medi_csf_erode", help: "Erode the mask by a 10 mm sphere before finding the CSF" });
         }
-        rows.push(PipelineRow::Param { label: "  Zero Padding", field: "medi_zeropad",
+        rows.push(PipelineRow::Param { label: "  Zero padding", field: "medi_zeropad",
             help: "Voxels of zeros appended at the end of x, y and z before the inversion; the result is cropped back (default 0 0 0)" });
     }
 }
@@ -5319,7 +5319,7 @@ impl UpdateState {
 pub struct AlgoModal {
     /// What this modal edits, applied on confirm.
     pub target: AlgoModalTarget,
-    /// Modal title (the row label, e.g. "QSM Inversion").
+    /// Modal title (the row label, e.g. "QSM inversion").
     pub title: String,
     pub options: Vec<String>,
     /// Per-option help text (same length as `options`).
@@ -5573,7 +5573,7 @@ impl App {
 
         // BIDS directory is always required
         if self.form.bids_dir.trim().is_empty() {
-            self.error_message = Some("BIDS Directory is required".to_string());
+            self.error_message = Some("BIDS directory is required".to_string());
             self.active_tab = 0;
             self.active_field = 0;
             return;
@@ -5581,7 +5581,7 @@ impl App {
 
         // SLURM mode requires account
         if self.form.execution_mode == 1 && self.form.slurm_account.trim().is_empty() {
-            self.error_message = Some("SLURM Account is required".to_string());
+            self.error_message = Some("SLURM account is required".to_string());
             self.goto_field("slurm_account");
             return;
         }
@@ -5883,7 +5883,7 @@ impl App {
             // Mode selector: open a modal listing all input modes.
             self.algo_modal = Some(AlgoModal {
                 target: AlgoModalTarget::InputMode,
-                title: "Input Mode".to_string(),
+                title: "Input mode".to_string(),
                 options: vec![
                     "BIDS".to_string(),
                     "NIfTI -> BIDS".to_string(),
@@ -6967,7 +6967,7 @@ impl App {
                         }),
                         Some(PipelineRow::MaskOpInput { section }) => Some(AlgoModal {
                             target: AlgoModalTarget::MaskInput(*section),
-                            title: "Masking Input".to_string(),
+                            title: "Masking input".to_string(),
                             options: PipelineFormState::MASK_INPUT_SOURCES.iter().map(|s| format!("{}", s)).collect(),
                             help: mask_schema().inputs.iter().map(|i| format!("{}: {}", i.label, i.help)).collect(),
                             cursor: ps.mask_input_index(*section),
@@ -6975,7 +6975,7 @@ impl App {
                         Some(PipelineRow::MaskOpGenerator { section }) => {
                             Some(AlgoModal {
                                 target: AlgoModalTarget::MaskGenerator(*section),
-                                title: "Mask Algorithm".to_string(),
+                                title: "Mask algorithm".to_string(),
                                 options: MASK_GENERATOR_TYPES.iter().map(|t| t.to_string()).collect(),
                                 // A threshold's method is chosen on its own row.
                                 help: MASK_GENERATOR_TYPES.iter().map(|t| match *t {
@@ -6995,7 +6995,7 @@ impl App {
                         {
                             Some(AlgoModal {
                                 target: AlgoModalTarget::MaskThresholdMethod(*section),
-                                title: "Threshold Method".to_string(),
+                                title: "Threshold method".to_string(),
                                 options: vec!["otsu".to_string(), "fixed".to_string(), "percentile".to_string()],
                                 help: vec![
                                     "Otsu automatic threshold".to_string(),
@@ -7670,15 +7670,15 @@ impl App {
             rows.push(AlgoSelect { label: "  Unwrapping", field: "swi_unwrap", options: &SWI_UNWRAP_OPTIONS, help: &SWI_UNWRAP_HELP });
             rows.push(AlgoSelect { label: "  Scaling", field: "swi_scaling", options: &SWI_SCALING_OPTIONS, help: &SWI_SCALING_HELP });
             rows.push(Param { label: "  Strength", field: "swi_strength", help: "Phase scaling strength (higher = stronger phase contrast)" });
-            rows.push(Param { label: "  HP Sigma (x y z)", field: "swi_hp_sigma", help: "High-pass filter sigma per axis, in voxels (x y z): background phase removal. Set z to 0 for thin axial slices" });
-            rows.push(Param { label: "  mIP Window", field: "swi_mip_window", help: "Minimum intensity projection window size in slices" });
+            rows.push(Param { label: "  HP sigma (x y z)", field: "swi_hp_sigma", help: "High-pass filter sigma per axis, in voxels (x y z): background phase removal. Set z to 0 for thin axial slices" });
+            rows.push(Param { label: "  mIP window", field: "swi_mip_window", help: "Minimum intensity projection window size in slices" });
         }
         rows.push(PipelineRow::Separator);
         rows.push(Toggle { label: "Compute SMWI", field: "do_smwi", help: "Susceptibility map-weighted imaging — weights the magnitude by a mask built from χ, not from filtered phase. Needs QSM" });
         if f.do_smwi {
             rows.push(Param { label: "  Threshold", field: "smwi_threshold", help: "|χ| in ppm at which the weighting mask reaches zero. The 1 ppm default targets strong sources; brain tissue wants far less" });
             rows.push(Param { label: "  Power", field: "smwi_power", help: "Power the mask is raised to (contrast strength)" });
-            rows.push(Param { label: "  mIP Window", field: "smwi_mip_window", help: "Minimum-intensity-projection window in slices" });
+            rows.push(Param { label: "  mIP window", field: "smwi_mip_window", help: "Minimum-intensity-projection window in slices" });
             if self.input_relevance().qsm {
                 rows.push(PipelineFormState::custom_qsm_row());
             }
@@ -7691,25 +7691,25 @@ impl App {
         use PipelineRow::{AlgoSelect, Param, Toggle};
         let inputs = self.input_relevance();
         let mut rows = vec![
-            Toggle { label: "Compute T2* Map", field: "do_t2starmap", help: "Compute T2* relaxation map (requires 3+ echoes with magnitude)" },
-            Toggle { label: "Compute R2* Map", field: "do_r2starmap", help: "Compute R2* decay rate map (requires 3+ echoes with magnitude)" },
-            Toggle { label: "Compute R2 Map", field: "do_r2map", help: "R2 map (Hz) from a multi-echo spin-echo (MESE) acquisition via EPG. Forced on when chi-separation needs it" },
+            Toggle { label: "Compute T2* map", field: "do_t2starmap", help: "Compute T2* relaxation map (requires 3+ echoes with magnitude)" },
+            Toggle { label: "Compute R2* map", field: "do_r2starmap", help: "Compute R2* decay rate map (requires 3+ echoes with magnitude)" },
+            Toggle { label: "Compute R2 map", field: "do_r2map", help: "R2 map (Hz) from a multi-echo spin-echo (MESE) acquisition via EPG. Forced on when chi-separation needs it" },
         ];
         if inputs.r2 {
             rows.push(Param { label: "  Custom R2 tool", field: "custom_r2_tool", help: "Use an R2 map from <bids>/derivatives/<tool>/ instead of computing it from MESE (blank = compute, * = any tool)" });
         }
-        rows.push(Toggle { label: "Compute R2' Map", field: "do_r2primemap", help: "R2' = R2* − R2 (Hz); needs GRE magnitude + a MESE acquisition, or R2PRIMEnet. Forced on when chi-separation needs it" });
+        rows.push(Toggle { label: "Compute R2' map", field: "do_r2primemap", help: "R2' = R2* − R2 (Hz); needs GRE magnitude + a MESE acquisition, or R2PRIMEnet. Forced on when chi-separation needs it" });
         if inputs.r2prime {
             rows.push(Param { label: "  Custom R2' tool", field: "custom_r2prime_tool", help: "Use an R2' map from <bids>/derivatives/<tool>/ instead of computing it (blank = compute, * = any tool)" });
         }
         // Only consulted when R2' is computed — a supplied map always wins.
         if inputs.r2prime_source {
-            rows.push(AlgoSelect { label: "  R2' Source", field: "r2prime_strategy", options: R2PRIME_STRATEGY_OPTIONS, help: R2PRIME_STRATEGY_HELP });
+            rows.push(AlgoSelect { label: "  R2' source", field: "r2prime_strategy", options: R2PRIME_STRATEGY_OPTIONS, help: R2PRIME_STRATEGY_HELP });
             // R2PRIMEnet's own settings, unless R2' is only ever measured (index 1 = mese).
             if self.pipeline_state.r2prime_strategy != 1 {
                 rows.push(Toggle { label: "    R2PRIMEnet off 3 T", field: "r2primenet_ignore_field_mismatch",
                     help: "Run R2PRIMEnet on non-3 T data (trained at 3 T only; the R2' is uncalibrated). Off: auto skips R2', r2primenet errors" });
-                rows.push(Param { label: "    R2PRIMEnet Patch", field: "r2primenet_patch",
+                rows.push(Param { label: "    R2PRIMEnet patch", field: "r2primenet_patch",
                     help: "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)" });
             }
         }
@@ -7728,12 +7728,12 @@ impl App {
             if self.field_select("segmentation_source") == 1 {
                 rows.push(Param { label: "    Derivatives tool", field: "custom_dseg_tool", help: "The dseg from <bids>/derivatives/<tool>/: * = any tool, or a tool name; SynthSeg runs where none is found" });
             } else {
-                rows.push(AlgoSelect { label: "    SynthSeg Version", field: "synthseg_version", options: SYNTHSEG_VERSION_OPTIONS, help: SYNTHSEG_VERSION_HELP });
+                rows.push(AlgoSelect { label: "    SynthSeg version", field: "synthseg_version", options: SYNTHSEG_VERSION_OPTIONS, help: SYNTHSEG_VERSION_HELP });
                 rows.push(Param { label: "    Crop", field: "synthseg_crop", help: "Cubic centre-crop in voxels at 1 mm before inference; empty processes the whole volume" });
-                rows.push(Param { label: "    Sliding Window", field: "synthseg_patch", help: "Run the network on half-overlapping cubes of this many voxels at 1 mm (rounded up to a multiple of 32), so its memory follows the patch instead of the volume; empty runs the whole volume at once" });
-                rows.push(Toggle { label: "    Flip Averaging", field: "synthseg_flip_averaging", help: "Average with a left-right flipped second pass (SynthSeg's default). Doubles inference time" });
-                rows.push(Toggle { label: "    Topology Cleanup", field: "synthseg_topology_cleanup", help: "Reset each topological class to its largest connected component" });
-                rows.push(Toggle { label: "    Posterior Smoothing", field: "synthseg_smoothing", help: "Gaussian blur on the posteriors before the labels are taken" });
+                rows.push(Param { label: "    Sliding window", field: "synthseg_patch", help: "Run the network on half-overlapping cubes of this many voxels at 1 mm (rounded up to a multiple of 32), so its memory follows the patch instead of the volume; empty runs the whole volume at once" });
+                rows.push(Toggle { label: "    Flip averaging", field: "synthseg_flip_averaging", help: "Average with a left-right flipped second pass (SynthSeg's default). Doubles inference time" });
+                rows.push(Toggle { label: "    Topology cleanup", field: "synthseg_topology_cleanup", help: "Reset each topological class to its largest connected component" });
+                rows.push(Toggle { label: "    Posterior smoothing", field: "synthseg_smoothing", help: "Gaussian blur on the posteriors before the labels are taken" });
                 if f.synthseg_smoothing {
                     rows.push(Param { label: "      Sigma (voxels)", field: "synthseg_sigma", help: "Gaussian sigma of the posterior blur, in voxels" });
                 }
@@ -7752,8 +7752,8 @@ impl App {
         use PipelineRow::{Param, Toggle};
         let mut rows = vec![Toggle { label: "Export DICOM", field: "export_dicom", help: "Also write final maps as DICOM series into each subject's extra_files/ folder" }];
         if self.form.export_dicom {
-            rows.push(Param { label: "  Source DICOM Dir", field: "source_dicom", help: "Original DICOM directory: the exported series inherit its patient/study identity (empty = none)" });
-            rows.push(Param { label: "  DICOM Outputs", field: "dicom_outputs", help: "Comma-separated maps to export, e.g. Chimap,desc-total_chimap (empty = all)" });
+            rows.push(Param { label: "  Source DICOM dir", field: "source_dicom", help: "Original DICOM directory: the exported series inherit its patient/study identity (empty = none)" });
+            rows.push(Param { label: "  DICOM outputs", field: "dicom_outputs", help: "Comma-separated maps to export, e.g. Chimap,desc-total_chimap (empty = all)" });
         }
         rows
     }
@@ -7762,24 +7762,24 @@ impl App {
     fn execution_rows(&self) -> Vec<PipelineRow> {
         use PipelineRow::{AlgoSelect, Param, Toggle};
         let local = self.form.execution_mode == 0;
-        let mut rows = vec![AlgoSelect { label: "Execution Mode", field: "execution_mode", options: EXECUTION_MODE_OPTIONS, help: EXECUTION_MODE_HELP }];
+        let mut rows = vec![AlgoSelect { label: "Execution mode", field: "execution_mode", options: EXECUTION_MODE_OPTIONS, help: EXECUTION_MODE_HELP }];
         if local {
-            rows.push(Toggle { label: "  Dry Run", field: "dry_run", help: "Print the processing plan, pipeline graph and methods text without running anything" });
-            rows.push(Param { label: "  Num Processes", field: "n_procs", help: "Number of parallel threads (empty = auto)" });
+            rows.push(Toggle { label: "  Dry run", field: "dry_run", help: "Print the processing plan, pipeline graph and methods text without running anything" });
+            rows.push(Param { label: "  Num processes", field: "n_procs", help: "Number of parallel threads (empty = auto)" });
             // The memory limit schedules concurrent local runs.
-            rows.push(Param { label: "  Memory Limit (GB)", field: "mem_limit_gb", help: "Memory budget for scheduling concurrent runs: auto (empty) detects it, a number of GB, or none for no limit" });
+            rows.push(Param { label: "  Memory limit (GB)", field: "mem_limit_gb", help: "Memory budget for scheduling concurrent runs: auto (empty) detects it, a number of GB, or none for no limit" });
         } else {
-            rows.push(Param { label: "  SLURM Account", field: "slurm_account", help: "SLURM account name (required for SLURM mode)" });
-            rows.push(Param { label: "  SLURM Partition", field: "slurm_partition", help: "SLURM partition (optional)" });
-            rows.push(Param { label: "  SLURM Time Limit", field: "slurm_time", help: "Wall time limit per job (e.g. 02:00:00)" });
-            rows.push(Param { label: "  SLURM Memory (GB)", field: "slurm_mem", help: "Memory per job in GB (empty = estimated per run)" });
+            rows.push(Param { label: "  SLURM account", field: "slurm_account", help: "SLURM account name (required for SLURM mode)" });
+            rows.push(Param { label: "  SLURM partition", field: "slurm_partition", help: "SLURM partition (optional)" });
+            rows.push(Param { label: "  SLURM time limit", field: "slurm_time", help: "Wall time limit per job (e.g. 02:00:00)" });
+            rows.push(Param { label: "  SLURM memory (GB)", field: "slurm_mem", help: "Memory per job in GB (empty = estimated per run)" });
             rows.push(Param { label: "  SLURM CPUs/Task", field: "slurm_cpus", help: "CPUs per SLURM task" });
-            rows.push(Toggle { label: "  Auto-Submit", field: "slurm_submit", help: "Automatically submit generated scripts via sbatch" });
+            rows.push(Toggle { label: "  Auto-submit", field: "slurm_submit", help: "Automatically submit generated scripts via sbatch" });
         }
         rows.push(PipelineRow::Separator);
-        rows.push(Toggle { label: "Debug Logging", field: "debug", help: "Enable verbose debug log output" });
-        rows.push(Toggle { label: "Force Re-run", field: "force", help: "Ignore cached pipeline state and recompute everything" });
-        rows.push(Toggle { label: "Clean Intermediates", field: "clean_intermediates", help: "Remove intermediate files after the run, keeping only final outputs" });
+        rows.push(Toggle { label: "Debug logging", field: "debug", help: "Enable verbose debug log output" });
+        rows.push(Toggle { label: "Force re-run", field: "force", help: "Ignore cached pipeline state and recompute everything" });
+        rows.push(Toggle { label: "Clean intermediates", field: "clean_intermediates", help: "Remove intermediate files after the run, keeping only final outputs" });
         rows.push(PipelineRow::Separator);
         rows.push(PipelineRow::RunButton);
         rows
@@ -8118,7 +8118,7 @@ mod tests {
         let mut app = App::new();
         app.algo_modal = Some(AlgoModal {
             target: AlgoModalTarget::Select("qsm_algorithm".to_string()),
-            title: "QSM Inversion".to_string(),
+            title: "QSM inversion".to_string(),
             options: QSM_ALGO_OPTIONS.iter().map(|s| s.to_string()).collect(),
             help: vec![String::new(); QSM_ALGO_OPTIONS.len()],
             cursor: 0,
@@ -8137,7 +8137,7 @@ mod tests {
         let before = app.pipeline_state.get_select("qsm_algorithm");
         app.algo_modal = Some(AlgoModal {
             target: AlgoModalTarget::Select("qsm_algorithm".to_string()),
-            title: "QSM Inversion".to_string(),
+            title: "QSM inversion".to_string(),
             options: vec!["a".to_string(), "b".to_string()],
             help: vec![String::new(), String::new()],
             cursor: 1,
@@ -8414,7 +8414,7 @@ mod tests {
         app.form.execution_mode = 1; // SLURM
         app.handle_key(key(KeyCode::F(5)));
         assert!(!app.should_run);
-        assert!(app.error_message.as_deref() == Some("SLURM Account is required"));
+        assert!(app.error_message.as_deref() == Some("SLURM account is required"));
         assert_eq!(app.active_tab, TAB_EXECUTION); // navigated to Execution tab
     }
 
@@ -10409,7 +10409,7 @@ mod tests {
         let mut app = App::new();
         app.try_run();
         assert!(!app.should_run);
-        assert!(app.error_message.as_deref().unwrap().contains("BIDS Directory"));
+        assert!(app.error_message.as_deref().unwrap().contains("BIDS directory"));
         assert_eq!(app.active_tab, 0);
         assert_eq!(app.active_field, 0);
     }
@@ -10421,7 +10421,7 @@ mod tests {
         app.form.execution_mode = 1;
         app.try_run();
         assert!(!app.should_run);
-        assert!(app.error_message.as_deref().unwrap().contains("SLURM Account"));
+        assert!(app.error_message.as_deref().unwrap().contains("SLURM account"));
         assert_eq!(app.active_tab, TAB_EXECUTION);
         assert_eq!(app.focused_field_name().as_deref(), Some("slurm_account"));
     }
@@ -12002,7 +12002,7 @@ mod tests {
         focus_run_button(&mut app);
         app.handle_key(key(KeyCode::Enter));
         assert!(!app.should_run);
-        assert_eq!(app.error_message.as_deref(), Some("BIDS Directory is required"));
+        assert_eq!(app.error_message.as_deref(), Some("BIDS directory is required"));
 
         let mut app = App::new();
         app.form.bids_dir = "/tmp/bids".to_string();
@@ -12010,7 +12010,7 @@ mod tests {
         focus_run_button(&mut app);
         app.handle_key(key(KeyCode::Char(' ')));
         assert!(!app.should_run);
-        assert_eq!(app.error_message.as_deref(), Some("SLURM Account is required"));
+        assert_eq!(app.error_message.as_deref(), Some("SLURM account is required"));
     }
 
     #[test]

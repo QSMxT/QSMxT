@@ -486,7 +486,7 @@ It needs at least 4 echoes with the offset term, 3 without; fewer is an error ra
 a silent plain fit. Each run writes a per-echo report (down-weighted and rejected
 fractions, median weight, median residual, outlier score, flagged echoes) to
 `<field map>_robustfit.json` in the unwrap step's workflow folder, and the log names any
-flagged echo. In the TUI it is the third "B0 Estimation" option, with each parameter
+flagged echo. In the TUI it is the third "B0 estimation" option, with each parameter
 below it.
 
 ### MEDI's complex fit
@@ -508,7 +508,7 @@ The fit has its own phase offset, so phase offset removal is not run, whatever
 `--phase-offset-removal` says. It needs the magnitude of every echo and increasing,
 evenly spaced echo times, and bipolar correction is refused (MEDI's fit for bipolar
 readouts is not available); a run that cannot meet these is refused before processing.
-In the TUI it is the "complex-fit" B0 Estimation option, with its two parameters below it.
+In the TUI it is the "complex-fit" B0 estimation option, with its two parameters below it.
 
 ## Background field removal
 
@@ -584,8 +584,8 @@ estimated on:
 On an isotropic grid the field and mask are cropped to the mask's bounding box
 and resampled trilinearly; the background estimated there is interpolated back,
 so the local field keeps the acquired resolution.
-In the TUI it is "Working Grid" under V-SHARP, with "Grid
-Spacing" shown for `isotropic`.
+In the TUI it is "Working grid" under V-SHARP, with "Grid
+spacing" shown for `isotropic`.
 
 ## Dipole inversion
 
@@ -1178,7 +1178,7 @@ subject's run **fails** rather than falling back to `mean` — a map that was
 quietly referenced to something else looks fine and cannot be compared with the
 rest of the cohort.
 
-In the TUI the setting is **QSM → Reference → QSM Reference**. Picking a region
+In the TUI the setting is **QSM → Reference → QSM reference**. Picking a region
 there turns segmentation on: **Other outputs → Segmentation** then reads as ticked,
 with its source (SynthSeg or a dseg from derivatives) and settings.
 

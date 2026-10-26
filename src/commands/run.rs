@@ -413,7 +413,7 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
 
     if args.dry {
         println!("Pipeline:");
-        println!("  Phase Offset Removal: {}", if config.field_mapping.phase_offset_removal { "enabled" } else { "disabled" });
+        println!("  Phase offset removal: {}", if config.field_mapping.phase_offset_removal { "enabled" } else { "disabled" });
         if config.masking.inhomogeneity_correction {
             println!("  Inhomogeneity:     {}", config.masking.inhomogeneity_method);
         }
@@ -427,9 +427,9 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
         }
         println!("  Masking:           {masking}");
         println!("  Unwrapping:        {}", config.field_mapping.unwrapping_algorithm);
-        println!("  BG Removal:        {}", config.bg_removal.algorithm);
-        println!("  QSM Algorithm:     {:?}", config.inversion.algorithm);
-        println!("  QSM Reference:     {:?}", config.qsm.reference);
+        println!("  BG removal:        {}", config.bg_removal.algorithm);
+        println!("  QSM algorithm:     {:?}", config.inversion.algorithm);
+        println!("  QSM reference:     {:?}", config.qsm.reference);
         println!();
         for run in &runs {
             let (nx, ny, nz) = run.dims;

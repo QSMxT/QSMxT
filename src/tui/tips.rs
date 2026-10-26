@@ -58,7 +58,7 @@ pub const TIPS: &[Tip] = &[
         None,
     ),
     tip(
-        "You can try QSMxT without data of your own. Set Input Mode to Example dataset, or run `qsmxt example`.",
+        "You can try QSMxT without data of your own. Set Input mode to Example dataset, or run `qsmxt example`.",
         None,
     ),
     tip(

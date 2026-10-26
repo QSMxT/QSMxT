@@ -306,12 +306,3 @@ fn the_note_says_what_was_done() {
     // Applied findings are not departures.
     assert!(note(&counts(Some(Outcome::Applied), 1), 1).is_empty());
 }
-
-#[test]
-fn sentence_case_keeps_names() {
-    assert_eq!(sentence_case("Background Field Removal"), "Background field removal");
-    assert_eq!(sentence_case("QSM Reference"), "QSM reference");
-    assert_eq!(sentence_case("Echo Time (MEDI)"), "Echo time (MEDI)");
-    assert_eq!(sentence_case("V-SHARP Max Radius"), "V-SHARP max radius");
-}
-

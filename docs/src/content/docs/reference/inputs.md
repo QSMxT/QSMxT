@@ -126,7 +126,7 @@ QSMxT reads `SliceThickness`, `MRAcquisitionType` and `SliceEncodingDirection` f
 the first echo's sidecar. When the acquisition is 2D (or the thickness differs from
 the pitch) and the slices are more than 1% thinner than the pitch, a run that asks
 for QSM stops before any processing with a message saying so. `--ignore-slice-gap`
-(TUI: Preprocessing → Geometry → Ignore Slice Gap) reconstructs anyway, with a warning. Runs that
+(TUI: Preprocessing → Geometry → Ignore slice gap) reconstructs anyway, with a warning. Runs that
 only make SWI, T2\*/R2\* or other non-QSM outputs continue with a warning. Without
 `SliceThickness` nothing can be checked, and the run proceeds; dcm2niix writes it.
 

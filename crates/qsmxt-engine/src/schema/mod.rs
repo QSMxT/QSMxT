@@ -488,7 +488,7 @@ fn echo_time_options() -> Vec<EchoOption> {
         };
         (serde_json::to_value(c).expect("an echo time serialises"), label, name, help)
     });
-    let time = (serde_json::json!({ "seconds": null }), "ms", "Echo time", "A given echo time (Echo Time)");
+    let time = (serde_json::json!({ "seconds": null }), "ms", "Echo time", "A given echo time (Echo time)");
     options(&[named.as_slice(), &[time]].concat())
         .into_iter()
         .map(|option| {
