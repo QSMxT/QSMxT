@@ -98,6 +98,11 @@ impl App {
             .unwrap_or_default()
     }
 
+    /// What the findings are worked out from: the form and the echo limit.
+    pub(super) fn rec_fingerprint(&self) -> String {
+        format!("{:?}{:?}{}", self.form, self.pipeline_state, self.filter_state.num_echoes)
+    }
+
     /// The open findings (offered and not dismissed), by rule and value.
     pub fn open_recommendations(&self) -> Vec<(String, String)> {
         self.rule_view().into_iter().filter(open).map(|r| (r.rule.clone(), rec::chosen_text(&r.current))).collect()
@@ -109,6 +114,11 @@ impl App {
         if self.is_typing() || self.rec_modal.is_some() {
             return;
         }
+        let form = self.rec_fingerprint();
+        if form == self.rec_form {
+            return;
+        }
+        self.rec_form = form;
         if let Ok(mut c) = super::command::config_from_app(self) {
             let before = c.dismissed_recommendations.len();
             rec::prune_dismissals(&mut c, &self.rule_facts());
@@ -169,6 +179,7 @@ impl App {
                     }
                 }
                 self.rec_seen = self.open_recommendations();
+                self.rec_form.clear();
                 // Whatever the choice created (a value another rule departs from) opens next.
                 self.check_recommendations();
             }

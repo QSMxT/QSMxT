@@ -5212,6 +5212,8 @@ pub struct App {
     /// The recommendations open after the last change (rule and value), so that only a change
     /// that creates one opens the pop-up.
     pub rec_seen: Vec<(String, String)>,
+    /// The form as it was when `rec_seen` was taken: a key that changed nothing is not checked.
+    pub rec_form: String,
 }
 
 /// The "Did you know?" pop-up, with two buttons: OK, and one that turns startup tips off
@@ -5495,6 +5497,7 @@ impl App {
     pub fn new() -> Self {
         let mut app = Self::with_update_state(UpdateState::start());
         app.rec_seen = app.open_recommendations();
+        app.rec_form = app.rec_fingerprint();
         app
     }
 
@@ -5534,6 +5537,7 @@ impl App {
             nifti_state: NiftiState::default(),
             rec_modal: None,
             rec_seen: Vec::new(),
+            rec_form: String::new(),
         }
     }
 

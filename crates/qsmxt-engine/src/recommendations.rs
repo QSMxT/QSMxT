@@ -429,6 +429,18 @@ fn number(x: f64) -> Value {
     if x.fract() == 0.0 && x.abs() < 1e15 { json!(x as i64) } else { json!(x) }
 }
 
+/// A schema setting, borrowed (looked up often: [`crate::schema::setting`] clones).
+fn setting(path: &str) -> Option<&'static crate::schema::Setting> {
+    crate::schema::settings().iter().find(|s| s.path == path)
+}
+
+/// The mask recipe's step types, built once.
+fn mask_steps() -> &'static [crate::schema::mask::MaskStep] {
+    static STEPS: std::sync::LazyLock<Vec<crate::schema::mask::MaskStep>> =
+        std::sync::LazyLock::new(|| crate::schema::mask_schema().steps);
+    &STEPS
+}
+
 /// A number as it is said (`2`, not `2.0`); anything else as JSON.
 fn num_text(v: &Value) -> String {
     v.as_f64().map_or_else(|| v.to_string(), |x| x.to_string())
@@ -447,7 +459,7 @@ fn name_of(path: &str, kind: Kind, value: &Value) -> String {
     match kind {
         Kind::MaskGenerator => {
             let op = value.as_str().unwrap_or_default();
-            crate::schema::mask_schema().steps.iter().find(|s| s.op == op)
+            mask_steps().iter().find(|s| s.op == op)
                 .map_or_else(|| op.to_string(), |s| s.name.to_string())
         }
         Kind::HdBetInference => match value.as_str().unwrap_or_default() {
@@ -478,7 +490,7 @@ fn name_of(path: &str, kind: Kind, value: &Value) -> String {
         },
         Kind::SynthSegPatch => format!("{}-voxel window", text(value)),
         Kind::Same => {
-            let Some(s) = crate::schema::setting(path) else { return text(value) };
+            let Some(s) = setting(path) else { return text(value) };
             if let Some(o) = s.value_type.options().into_iter().find(|o| o.value == *value) {
                 return o.name.clone();
             }
@@ -492,11 +504,11 @@ fn name_of(path: &str, kind: Kind, value: &Value) -> String {
 
 /// The current value(s) of a QSM.rs setting in QSMxT's terms: for a [`Kind::Same`] setting, the
 /// config's own value (QSMxT's region referencing is `none` to QSM.rs, but `region` here).
-fn current_named(config: &PipelineConfig, core_path: &str, core_current: &[Current]) -> Vec<Named> {
+fn current_named(config: &Value, core_path: &str, core_current: &[Current]) -> Vec<Named> {
     let Some((path, kind)) = setting_of(core_path) else { return vec![] };
     match kind {
         Kind::Same => {
-            let v = crate::schema::get(config, path).unwrap_or(Value::Null);
+            let v = path.split('.').try_fold(config, |v, k| v.get(k)).cloned().unwrap_or(Value::Null);
             vec![Named { name: name_of(path, kind, &v), value: v }]
         }
         _ => core_current.iter().map(|c| {
@@ -519,7 +531,7 @@ fn label_of(core_path: &str) -> String {
         "segmentation.inference" => "SynthSeg inference".into(),
         _ => {
             let path = qsmxt_path(core_path).unwrap_or(core_path);
-            crate::schema::setting(path).map_or_else(|| path.to_string(), |s| match s.context {
+            setting(path).map_or_else(|| path.to_string(), |s| match s.context {
                 Some(ctx) if !s.full_label.contains(ctx) => format!("{} ({ctx})", s.full_label),
                 _ => s.full_label.to_string(),
             })
@@ -557,6 +569,7 @@ pub fn reference_values(config: &PipelineConfig, facts: &Facts) -> Vec<Recommend
         segmentation: c.pipeline.do_segmentation.then_some(&segmentation),
     };
     let scan = facts.core();
+    let json = serde_json::to_value(c).unwrap_or(Value::Null);
     let mut out: Vec<Recommendation> = core::RULES.iter().zip(applying()).filter_map(|(rule, probe)| {
         let Condition::Setting { setting: trigger, .. } = rule.trigger() else { return None };
         if !c.pipeline.do_qsm && (reconstructs(trigger) || reconstructs(rule.setting)) {
@@ -564,7 +577,7 @@ pub fn reference_values(config: &PipelineConfig, facts: &Facts) -> Vec<Recommend
         }
         let applies = core::check(probe, &input, &scan)?;
         let departs = core::check(rule, &input, &scan).is_some();
-        Some(recommendation(c, rule, &input, &scan, &applies.current, departs))
+        Some(recommendation(&json, rule, &input, &scan, &applies.current, departs))
     }).collect();
     mark(config, &mut out);
     out
@@ -576,7 +589,7 @@ pub fn recommendations(config: &PipelineConfig, facts: &Facts) -> Vec<Recommenda
 }
 
 fn recommendation(
-    c: &PipelineConfig, rule: &'static Rule, input: &RuleInput, scan: &core::ScanFacts, current: &[Current], departs: bool,
+    c: &Value, rule: &'static Rule, input: &RuleInput, scan: &core::ScanFacts, current: &[Current], departs: bool,
 ) -> Recommendation {
     let trigger = match rule.trigger() {
         Condition::Setting { setting, is } => {
@@ -806,7 +819,8 @@ fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -> Result<()
 
 /// QSM.rs's id of a mask op (`MaskOp::id`): the step's `op`.
 fn op_id(op: &MaskOp) -> &'static str {
-    crate::schema::mask::step(crate::schema::mask::step_kind(op)).map_or("", |s| s.op)
+    let kind = crate::schema::mask::step_kind(op);
+    mask_steps().iter().find(|s| s.kind == kind).map_or("", |s| s.op)
 }
 
 /// What `--accept-recommendations` changes: on each setting, the strongest actionable finding
