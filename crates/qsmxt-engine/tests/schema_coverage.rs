@@ -783,20 +783,14 @@ fn a_morphology_step_of_zero_is_refused_by_the_run_and_the_view() {
     assert_eq!((dilate.params[0].min, dilate.params[0].exclusive_min), (Some(1.0), false));
 }
 
-/// A mask that may not suit the inversion is said beside the mask recipe, in words that name no
-/// option: under QSMART, the threshold mask (QSMART does not replace it); not a brain-extraction
-/// mask, and not a threshold under another inversion.
+/// The mask recipe carries no warning of QSMxT's own under QSMART: QSMART's reference mask is a
+/// pipeline rule's, shown as the setting's marker.
 #[test]
-fn the_mask_recipe_warns_when_it_may_not_suit_qsmart() {
-    let warning = |c: &PipelineConfig| schema::settings_view(c, &ViewFacts::default()).into_iter()
-        .find(|v| v.path == "masking.sections").unwrap().warning;
+fn the_mask_recipe_under_qsmart_has_a_reference_marker_not_a_warning() {
     let mut c = PipelineConfig::default();
-    assert_eq!(warning(&c), None);
     c.inversion.algorithm = qsmxt_engine::QsmAlgorithm::Qsmart;
-    let w = warning(&c).expect("a threshold under QSMART");
-    assert!(w.contains("QSMART") && !w.contains("--"), "{w}");
-    let json = serde_json::to_value(schema::settings_view(&c, &ViewFacts::default())).unwrap();
-    assert!(json.as_array().unwrap().iter().any(|v| v["path"] == "masking.sections" && v["warning"].is_string()));
-    c.masking.sections = qsmxt_engine::hd_bet_mask_sections();
-    assert_eq!(warning(&c), None);
+    let view = schema::settings_view(&c, &ViewFacts::default());
+    let mask = view.iter().find(|v| v.path == "masking.sections").unwrap();
+    assert_eq!(mask.warning, None);
+    assert_eq!(mask.marker.as_ref().map(|m| m.text.as_str()), Some("QSMART: BET"));
 }

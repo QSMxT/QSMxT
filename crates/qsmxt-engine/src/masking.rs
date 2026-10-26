@@ -360,19 +360,6 @@ pub fn default_two_pass_sections() -> Vec<MaskSection> {
     }]
 }
 
-/// Why the configured mask may not suit the inversion, if it may not, in words that name no
-/// option: QSMART needs a tight brain mask, which BET, HD-BET and MindGrab make and a threshold
-/// does not. Read off the configuration as the run takes it (normalise first).
-pub fn mask_warning(config: &crate::config::PipelineConfig) -> Option<&'static str> {
-    let brain_extraction = |s: &MaskSection| matches!(s.generator,
-        MaskOp::Bet { .. } | MaskOp::HdBet { .. } | MaskOp::MindGrab { .. });
-    (config.pipeline.do_qsm
-        && config.inversion.algorithm == crate::enums::QsmAlgorithm::Qsmart
-        && !config.masking.sections.iter().all(brain_extraction))
-        .then_some("QSMART needs a tight brain mask, and this mask is not made by BET, HD-BET or \
-                    MindGrab: a looser mask can cause streaking artefacts")
-}
-
 /// HD-BET on the magnitude followed by signal-gated erosion — the QSM-CI harmonization masking
 /// (the `hd-bet` mask preset).
 pub fn hd_bet_mask_sections() -> Vec<MaskSection> {

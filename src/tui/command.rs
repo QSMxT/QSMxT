@@ -1990,7 +1990,6 @@ mod tests {
 
         app.pipeline_state.set_select("mask_preset", 1);
         assert!(build_command_string(&app).contains("--mask-preset bet"));
-        assert_eq!(app.pipeline_state.mask_warning(), None);
     }
 
     /// The pipeline the SLURM jobs get must be the one a local run would use.

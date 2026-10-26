@@ -53,10 +53,9 @@ pub struct SettingView {
     /// step 2 (Erode): Iterations must be at least 1"). Only a setting that applies has one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
-    /// What may go wrong with a value the run accepts, for showing next to the setting: the mask
-    /// recipe under an inversion that needs a tighter mask ([`crate::masking::mask_warning`]),
-    /// or tiling that makes iQFM, iQSM or iQSM+ only approximate its whole-volume result. Only a
-    /// setting that applies has one.
+    /// What may go wrong with a value the run accepts, for showing next to the setting: motion
+    /// correction that what is known of the runs rules out, or tiling that makes iQFM, iQSM or
+    /// iQSM+ only approximate its whole-volume result. Only a setting that applies has one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub warning: Option<String>,
     /// Every pipeline rule of the chosen methods that covers this setting
@@ -215,7 +214,6 @@ pub fn settings_view(config: &PipelineConfig, facts: &ViewFacts) -> Vec<SettingV
                 _ => None,
             };
             let warning = match d.path {
-                "masking.sections" if visible => crate::masking::mask_warning(&c).map(String::from),
                 // Decided per run (#397): said when what is known of the run rules it out.
                 "motion_correction.enabled" if visible && c.motion_correction.enabled => {
                     crate::requirements::motion_correction_lacks(

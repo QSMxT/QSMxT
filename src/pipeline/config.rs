@@ -838,13 +838,6 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             };
         }
 
-        // QSMART's own default mask (BET) is the engine's to install, when normalising; this only
-        // warns, with the options that would help, when the mask the run takes may not suit it.
-        if let Some(warning) = qsmxt_engine::masking::mask_warning(config) {
-            log::warn!("{warning}. Consider --mask-preset bet, --mask-preset hd-bet, --mask-preset \
-                        mindgrab or --mask magnitude,bet:0.5,erode:2.");
-        }
-
         // ── BET ──
         // `config.bet` is the one-value-per-parameter view of BET, but the values BET actually
         // runs with live on each `MaskOp::Bet` in the recipe. Push them out last, so they reach

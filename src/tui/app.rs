@@ -3402,12 +3402,6 @@ impl PipelineFormState {
                 }
             }
             "qsmart" => { // QSMART
-                rows.push(PipelineRow::Note {
-                    text: match self.mask_warning() {
-                        Some(w) => format!("⚠ {w} (Preprocessing → Masking)").into(),
-                        None => "QSMART needs a tight brain mask (Preprocessing → Masking)".into(),
-                    },
-                });
                 rows.push(PipelineRow::AlgoSelect {
                     label: "  Inner inversion", field: "qsmart_inversion",
                     options: QSMART_INV_OPTIONS, help: QSMART_INV_HELP,
@@ -4697,14 +4691,6 @@ impl PipelineFormState {
     }
 
 
-    /// What may go wrong with the main mask under the selected inversion
-    /// ([`qsmxt_engine::masking::mask_warning`]).
-    pub fn mask_warning(&self) -> Option<&'static str> {
-        let mut c = crate::pipeline::config::PipelineConfig::default();
-        c.inversion.algorithm = crate::tui::command::selected_qsm_algorithm(self);
-        c.masking.sections = self.mask_sections.clone();
-        qsmxt_engine::masking::mask_warning(&c)
-    }
 
     /// Index of a section's generator in [`MASK_GENERATOR_TYPES`].
     pub fn mask_generator_index(&self, section: usize) -> usize {
@@ -10993,22 +10979,18 @@ mod tests {
         assert!(cmd.contains("--two-pass-mask"), "cmd: {cmd}");
     }
 
-    /// Under QSMART the default mask stays as it is, with a note saying it may not suit; resetting
-    /// the preset brings the default back.
+    /// Under QSMART the default mask stays as it is, with no warning of QSMxT's own: QSMART's
+    /// reference mask is the rules' to point out (the mask row's ⓘ). Resetting the preset brings
+    /// the default back.
     #[test]
-    fn qsmart_keeps_the_mask_and_says_when_it_may_not_suit() {
+    fn qsmart_keeps_the_mask() {
         let qsmart = QSM_ALGO_OPTIONS.iter().position(|a| *a == "qsmart").unwrap();
         let mut app = App::new();
         let before = app.pipeline_state.mask_sections.clone();
         app.pipeline_state.set_select("qsm_algorithm", qsmart);
         assert_eq!(app.pipeline_state.mask_sections, before, "choosing QSMART changes no mask");
-        let note = |app: &App| app.pipeline_state.all_rows().iter().find_map(|r| match r {
-            PipelineRow::Note { text } if text.contains("QSMART") => Some(text.to_string()),
-            _ => None,
-        }).unwrap();
-        assert!(note(&app).starts_with("⚠ QSMART needs a tight brain mask"), "{}", note(&app));
+        assert!(!app.pipeline_state.all_rows().iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("brain mask"))));
         app.pipeline_state.set_select("mask_preset", 1);
-        assert!(!note(&app).starts_with("⚠"), "{}", note(&app));
         app.reset_field("mask_preset");
         assert_eq!(app.pipeline_state.mask_sections, before);
     }
