@@ -742,10 +742,6 @@ mod tests {
     /// pipeline pop-up lists both.
     fn medi_chosen() -> App {
         let mut app = app();
-        // V-SHARP chosen by the user (else background removal follows the inversion's reference).
-        select(&mut app, "bf_algorithm", "lbv", super::super::app::BF_OPTIONS);
-        select(&mut app, "bf_algorithm", "vsharp", super::super::app::BF_OPTIONS);
-        app.refs.modal = None;
         assert_eq!(super::super::app::MASK_PRESET_OPTIONS[app.pipeline_state.mask_preset], "robust-threshold");
         assert!(app.refs.modal.is_none(), "nothing at start-up");
         select(&mut app, "qsm_algorithm", "medi", QSM_ALGO_OPTIONS);

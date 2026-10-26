@@ -175,17 +175,9 @@ fn command_for(config: &PipelineConfig) -> String {
     emit_f64_arr3(&mut parts, "--phase-offset-sigma-mm", &config.field_mapping.phase_offset_sigma_mm, &d.field_mapping.phase_offset_sigma_mm);
     emit_f64_arr3(&mut parts, "--coil-combination-sigma", &config.field_mapping.coil_combination_sigma, &d.field_mapping.coil_combination_sigma);
     if config.field_mapping.bipolar_correction { parts.push("--bipolar-correction".into()); }
-    // A general default the user chose in place of QSMART's (`FieldMappingConfig::unwrapping_chosen`
-    // and its siblings, kept by normalising only where they decide that) is said, which keeps it.
-    // (Read after pruning: with QSM off the inversion is no longer QSMART, and there is nothing
-    // to keep.)
     let fm = &config.field_mapping;
-    let qsmart = config.inversion.algorithm == QsmAlgorithm::Qsmart;
-    let qsmart_inputs = qsmart || fm.b0_estimation == B0Estimation::QsmartEchofit;
-    emit_chosen(&mut parts, "--unwrapping-algorithm", &fm.unwrapping_algorithm, &d.field_mapping.unwrapping_algorithm,
-                fm.unwrapping_chosen && qsmart_inputs);
-    emit_chosen(&mut parts, "--laplacian-solver", &fm.laplacian_solver, &d.field_mapping.laplacian_solver,
-                fm.laplacian_solver_chosen && qsmart_inputs);
+    emit_enum(&mut parts, "--unwrapping-algorithm", &fm.unwrapping_algorithm, &d.field_mapping.unwrapping_algorithm);
+    emit_enum(&mut parts, "--laplacian-solver", &fm.laplacian_solver, &d.field_mapping.laplacian_solver);
     if config.field_mapping.laplacian_solver == LaplacianSolver::Fft {
         let pad = config.field_mapping.laplacian_fft_pad;
         if pad != d.field_mapping.laplacian_fft_pad {
@@ -217,8 +209,7 @@ fn command_for(config: &PipelineConfig) -> String {
         emit_f64(&mut parts, "--registration-translation-step-mm", r.translation_step_mm, rd.translation_step_mm);
         emit_f64(&mut parts, "--registration-min-overlap", r.min_overlap, rd.min_overlap);
     }
-    emit_chosen(&mut parts, "--b0-estimation", &config.field_mapping.b0_estimation, &d.field_mapping.b0_estimation,
-                config.field_mapping.b0_estimation_chosen && config.inversion.algorithm == QsmAlgorithm::Qsmart);
+    emit_enum(&mut parts, "--b0-estimation", &config.field_mapping.b0_estimation, &d.field_mapping.b0_estimation);
     if config.field_mapping.b0_estimation == B0Estimation::QsmartEchofit {
         let (f, fd) = (&config.field_mapping, &d.field_mapping);
         emit_enum(&mut parts, "--qsmart-fit-threshold-mode", &f.qsmart_fit_threshold_mode, &fd.qsmart_fit_threshold_mode);
@@ -288,13 +279,8 @@ fn command_for(config: &PipelineConfig) -> String {
         && config.masking.combine == d.masking.combine
         && config.masking.refinements == d.masking.refinements;
     match crate::masking::masking_preset_command(&config.masking) {
-        // The default recipe is a preset too; saying so adds noise rather than removing it. Except
-        // under an inversion with a default mask of its own (QSMART's BET), where a normalised
-        // config with the general default is one the user chose (`MaskingConfig::recipe_chosen`):
-        // naming the preset is what keeps it. (The inversion is read after pruning: with QSM off
-        // it is no longer QSMART, and there is nothing to keep.)
-        _ if masking_default
-            && crate::masking::default_mask_sections_for(config.inversion.algorithm) == d.masking.sections => {}
+        // The default recipe is a preset too; saying so adds noise rather than removing it.
+        _ if masking_default => {}
         Some((preset, input)) => {
             parts.push(format!("--mask-preset {preset}"));
             if let Some(input) = input {
@@ -337,11 +323,7 @@ fn command_for(config: &PipelineConfig) -> String {
     emit_f64(&mut parts, "--bet-voxel-scale", config.bet.voxel_scale, d.bet.voxel_scale);
 
     // ── Background removal ──
-    // The default is the inversion's reference background removal where it has one (PDF for
-    // MEDI), else the general one. A normalised config that keeps the general default under MEDI
-    // is one the user chose (`BgRemovalConfig::algorithm_chosen`): naming it is what keeps it.
-    let bf_default = crate::bridge::reference_bg_removal(config).unwrap_or(d.bg_removal.algorithm);
-    if config.bg_removal.algorithm != bf_default || config.bg_removal.algorithm_chosen {
+    if config.bg_removal.algorithm != d.bg_removal.algorithm {
         parts.push(format!("--bf-algorithm {}", config.bg_removal.algorithm));
     }
     match config.bg_removal.algorithm {
@@ -802,10 +784,6 @@ fn emit_i32(parts: &mut Vec<String>, flag: &str, val: i32, default: i32) {
 fn emit_enum<T: PartialEq + std::fmt::Display>(parts: &mut Vec<String>, flag: &str, val: &T, default: &T) {
     if val != default { parts.push(format!("{} {}", flag, val)); }
 }
-/// [`emit_enum`], and the default too when the user chose it.
-fn emit_chosen<T: PartialEq + std::fmt::Display>(parts: &mut Vec<String>, flag: &str, val: &T, default: &T, chosen: bool) {
-    if val != default || chosen { parts.push(format!("{} {}", flag, val)); }
-}
 fn emit_usize_arr3(parts: &mut Vec<String>, flag: &str, val: &[usize; 3], default: &[usize; 3]) {
     if val != default { parts.push(format!("{} {} {} {}", flag, val[0], val[1], val[2])); }
 }
@@ -963,28 +941,17 @@ mod tests {
         assert!(!generate_command(&config).contains("msmv"));
     }
 
-    /// MEDI's default background removal is PDF, so a MEDI command names none; a background
-    /// removal the user chose is named, the general default included, so the command keeps it.
+    /// A command names the background removal whenever it is not the general default, under
+    /// every inversion: nothing depends on the inversion.
     #[test]
-    fn medi_names_a_background_removal_only_when_chosen() {
+    fn the_background_removal_is_named_unless_it_is_the_default() {
         let mut config = PipelineConfig::default();
         config.inversion.algorithm = QsmAlgorithm::Medi;
         assert!(!generate_command(&config).contains("--bf-algorithm"), "{}", generate_command(&config));
         config.bg_removal.algorithm = BfAlgorithm::Pdf;
-        assert!(!generate_command(&config).contains("--bf-algorithm"));
-        config.bg_removal.algorithm = BfAlgorithm::Vsharp;
-        config.bg_removal.algorithm_chosen = true;
-        assert!(generate_command(&config).contains("--bf-algorithm vsharp"), "{}", generate_command(&config));
-        config.bg_removal.algorithm = BfAlgorithm::Lbv;
-        config.bg_removal.algorithm_chosen = false;
-        assert!(generate_command(&config).contains("--bf-algorithm lbv"));
-        // Another inversion: PDF is not its default, the general one is.
-        config.inversion.algorithm = QsmAlgorithm::Rts;
-        config.bg_removal.algorithm = BfAlgorithm::Pdf;
         assert!(generate_command(&config).contains("--bf-algorithm pdf"));
-        config.bg_removal.algorithm = BfAlgorithm::Vsharp;
-        config.bg_removal.algorithm_chosen = true;
-        assert!(!generate_command(&config).contains("--bf-algorithm"));
+        config.inversion.algorithm = QsmAlgorithm::Rts;
+        assert!(generate_command(&config).contains("--bf-algorithm pdf"));
     }
 
     #[test]
@@ -1242,26 +1209,27 @@ mod tests {
         assert!(cmd.contains("--qsmart-vasc-sphere-radius 10"));
     }
 
-    /// Under QSMART, an unchosen mask is BET and a chosen default threshold is said to be kept;
-    /// elsewhere the default recipe goes unsaid whether or not it was chosen.
+    /// Under QSMART the default mask goes unsaid, as elsewhere: it is not replaced.
     #[test]
-    fn qsmart_mask_choice_is_in_the_command() {
+    fn qsmart_keeps_the_default_mask() {
         let mut c = PipelineConfig::default();
         c.inversion.algorithm = QsmAlgorithm::Qsmart;
-        assert!(generate_command(&c).contains("--mask-preset bet"), "{}", generate_command(&c));
-        c.masking.recipe_chosen = true;
-        let cmd = generate_command(&c);
-        assert!(cmd.contains("--mask-preset robust-threshold") && !cmd.contains("--mask-preset bet"), "{cmd}");
-        c.inversion.algorithm = QsmAlgorithm::Rts;
         assert!(!generate_command(&c).contains("--mask"), "{}", generate_command(&c));
+        c.masking.sections = crate::masking::mask_presets().into_iter().find(|(n, _)| *n == "bet").unwrap().1.sections;
+        assert!(generate_command(&c).contains("--mask-preset bet"), "{}", generate_command(&c));
     }
 
-    /// Under QSMART the command says the field mapping it takes, and keeps a general default the
-    /// user chose in its place; QSMART's vessel options are said when changed.
+    /// Under QSMART the command says the field mapping it was given, as elsewhere; QSMART's vessel
+    /// options are said when changed.
     #[test]
     fn qsmart_field_mapping_and_vessel_options_are_in_the_command() {
         let mut c = PipelineConfig::default();
         c.inversion.algorithm = QsmAlgorithm::Qsmart;
+        let cmd = generate_command(&c);
+        assert!(!cmd.contains("--unwrapping-algorithm") && !cmd.contains("--b0-estimation"), "{cmd}");
+        c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
+        c.field_mapping.laplacian_solver = LaplacianSolver::Mirror;
+        c.field_mapping.b0_estimation = B0Estimation::QsmartEchofit;
         let cmd = generate_command(&c);
         for flag in ["--unwrapping-algorithm laplacian", "--laplacian-solver mirror", "--b0-estimation qsmart-echofit"] {
             assert!(cmd.contains(flag), "{cmd}");
@@ -1282,18 +1250,6 @@ mod tests {
                 && !cmd.contains("--qsmart-fit-threshold "), "{cmd}");
         c.field_mapping.qsmart_fit_threshold = 30.0;
         assert!(generate_command(&c).contains("--qsmart-fit-threshold 30"), "{}", generate_command(&c));
-        // Chosen general defaults are said, which keeps them.
-        c.field_mapping.laplacian_solver_chosen = true;
-        c.field_mapping.b0_estimation_chosen = true;
-        let cmd = generate_command(&c);
-        assert!(cmd.contains("--laplacian-solver dct") && cmd.contains("--b0-estimation weighted-avg"), "{cmd}");
-        c.field_mapping.unwrapping_chosen = true;
-        let cmd = generate_command(&c);
-        assert!(cmd.contains("--unwrapping-algorithm romeo") && !cmd.contains("--laplacian-solver"), "{cmd}");
-        // Elsewhere the general defaults go unsaid, chosen or not.
-        c.inversion.algorithm = QsmAlgorithm::Rts;
-        let cmd = generate_command(&c);
-        assert!(!cmd.contains("--unwrapping-algorithm") && !cmd.contains("--b0-estimation"), "{cmd}");
     }
 
     #[test]

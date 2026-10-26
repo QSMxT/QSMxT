@@ -1675,10 +1675,6 @@ pub struct PipelineFormState {
     pub qsm_algorithm: usize,
     pub unwrapping_algorithm: usize,
     pub bf_algorithm: usize,
-    /// The user chose the background removal. Until then the run takes the inversion's
-    /// reference one where it has one (PDF for MEDI; the engine's rule,
-    /// `BgRemovalConfig::algorithm_chosen`), and that is the one shown.
-    pub bf_chosen: bool,
     pub qsm_reference: usize,
 
     // Field mapping
@@ -1699,13 +1695,6 @@ pub struct PipelineFormState {
     pub qsmart_fit_threshold: String,
     /// Index into [`LAPLACIAN_SOLVER_OPTIONS`] (0 = dct, 1 = fft, 2 = mirror).
     pub laplacian_solver: usize,
-    /// The user chose the unwrapping, the Laplacian solver, the B0 estimation. Until then each
-    /// is the one the run takes: the general default, or QSMART's own under QSMART (the
-    /// engine's rule, `FieldMappingConfig::unwrapping_chosen` and its siblings), and the form
-    /// shows that one ([`Self::show_unchosen_field_mapping`]).
-    pub unwrapping_chosen: bool,
-    pub laplacian_solver_chosen: bool,
-    pub b0_estimation_chosen: bool,
     /// FFT solver pad in voxels per side: "64" for every axis, or "64 64 32".
     pub laplacian_fft_pad: String,
     /// Motion correction (off by default): reference index into [`MOTION_REFERENCE_OPTIONS`]
@@ -2085,10 +2074,6 @@ pub struct PipelineFormState {
     /// its setting had then: `--dismiss-recommendation`, and so the run's config.
     pub dismissed: Vec<qsmxt_engine::Dismissal>,
     pub mask_preset: usize, // index into MASK_PRESET_OPTIONS (MASK_PRESET_CUSTOM = hand-edited)
-    /// The user chose the main mask: picked a preset (the default one included) or edited the
-    /// recipe. Until then the run takes the inversion's own default mask (QSMART's BET, the
-    /// engine's rule, `MaskingConfig::recipe_chosen`), and the recipe shown is that one.
-    pub mask_chosen: bool,
     pub custom_mask_tool: String, // empty=off; "*"=any derivatives tool; else a tool name
 
     // χ-separation tab
@@ -2191,7 +2176,6 @@ impl Default for PipelineFormState {
             qsm_algorithm: super::command::default_qsm_algorithm_index(), // ilsqr
             unwrapping_algorithm: 0, // romeo
             bf_algorithm: 0, // vsharp
-            bf_chosen: false,
             qsm_reference: 0, // mean
             phase_offset_removal: true,
             bipolar_correction: false,
@@ -2206,9 +2190,6 @@ impl Default for PipelineFormState {
             qsmart_fit_percentile: format!("{}", qsmxt_engine::default_qsmart_fit_percentile()),
             qsmart_fit_threshold: format!("{}", qsmxt_engine::default_qsmart_fit_threshold()),
             laplacian_solver: 0, // dct
-            unwrapping_chosen: false,
-            laplacian_solver_chosen: false,
-            b0_estimation_chosen: false,
             laplacian_fft_pad: qsmxt_engine::default_laplacian_fft_pad()[0].to_string(),
             motion_correction: false,
             orientation_registration: true,
@@ -2506,7 +2487,6 @@ impl Default for PipelineFormState {
             two_pass_sections: qsmxt_engine::default_two_pass_sections(),
             dismissed: vec![],
             mask_preset: 0, // robust threshold
-            mask_chosen: false,
             custom_mask_tool: String::new(),
             do_chi_separation: false,
             separation_algorithm: 0,
@@ -2732,14 +2712,14 @@ const MOTION_REFERENCE_HELP: &[&str] = &[
 const LAPLACIAN_SOLVER_HELP: &[&str] = &[
     "Unweighted least squares, Neumann-boundary DCT solve (Ghiglia & Romero 1994; QSM.jl :dct) (default)",
     "Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume",
-    "Schofield & Zhu sin/cos Laplacian, FFT solve on the volume mirrored along each axis (QSMART's; the default with QSMART)",
+    "Schofield & Zhu sin/cos Laplacian, FFT solve on the volume mirrored along each axis (QSMART's reference)",
 ];
 pub const B0_WEIGHT_TYPE_OPTIONS: &[&str] = &["phase-snr", "phase-var", "average", "tes", "mag", "assumed-decay"];
 const B0_ESTIMATION_HELP: &[&str] = &[
     "Weighted average of phase/TE across echoes (default)",
     "Magnitude-weighted linear fit of phase vs TE",
     "Motion-robust linear fit (IRLS): down-weights echoes departing from a straight line, per voxel. Needs 4 echoes (3 without offset)",
-    "QSMART's: magnitude-weighted fit of phase vs TE through the origin, each echo unwrapped over the whole volume; marks the voxels QSMART leaves out. Needs Laplacian unwrapping (the default with QSMART)",
+    "QSMART's: magnitude-weighted fit of phase vs TE through the origin, each echo unwrapped over the whole volume; marks the voxels QSMART leaves out. Needs Laplacian unwrapping",
     "MEDI's field map (Fit_ppm_complex): a magnitude-weighted fit of the complex echoes, then unwrapping of the fitted phase. Needs the magnitude and evenly spaced echoes; no phase offset removal or bipolar correction",
 ];
 const B0_WEIGHT_TYPE_HELP: &[&str] = &[
@@ -3425,7 +3405,6 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Note {
                     text: match self.mask_warning() {
                         Some(w) => format!("⚠ {w} (Preprocessing → Masking)").into(),
-                        None if !self.mask_chosen => "QSMART makes its brain mask with BET unless another mask is chosen (Preprocessing → Masking)".into(),
                         None => "QSMART needs a tight brain mask (Preprocessing → Masking)".into(),
                     },
                 });
@@ -4284,34 +4263,15 @@ impl PipelineFormState {
     /// Set a select value by field name.
     pub fn set_select(&mut self, field: &str, val: usize) {
         match field {
-            "qsm_algorithm" => {
-                self.qsm_algorithm = val;
-                self.show_unchosen_mask();
-                self.show_unchosen_bf();
-                self.show_unchosen_field_mapping();
-            }
+            "qsm_algorithm" => self.qsm_algorithm = val,
             "qsmart_inversion" => self.qsmart_inversion = val,
-            "unwrapping_algorithm" => {
-                self.unwrapping_algorithm = val;
-                self.unwrapping_chosen = true;
-                self.show_unchosen_field_mapping();
-            }
-            "bf_algorithm" => {
-                self.bf_algorithm = val;
-                self.bf_chosen = true;
-            }
+            "unwrapping_algorithm" => self.unwrapping_algorithm = val,
+            "bf_algorithm" => self.bf_algorithm = val,
             "qsm_reference" => self.qsm_reference = val,
             "r2prime_strategy" => self.r2prime_strategy = val,
-            "b0_estimation" => {
-                self.b0_estimation = val;
-                self.b0_estimation_chosen = true;
-                self.show_unchosen_field_mapping();
-            }
+            "b0_estimation" => self.b0_estimation = val,
             "b0_weight_type" => self.b0_weight_type = val,
-            "laplacian_solver" => {
-                self.laplacian_solver = val;
-                self.laplacian_solver_chosen = true;
-            }
+            "laplacian_solver" => self.laplacian_solver = val,
             "qsmart_vessel_magnitude" => self.qsmart_vessel_magnitude = val,
             "qsmart_vessel_units" => self.qsmart_vessel_units = val,
             "qsmart_fit_threshold_mode" => self.qsmart_fit_threshold_mode = val,
@@ -4334,7 +4294,6 @@ impl PipelineFormState {
             "output_space" => self.output_space = val,
             "mask_preset" => {
                 self.mask_preset = val;
-                self.mask_chosen = true;
                 self.apply_mask_preset(val);
             }
             "separation_algorithm" => self.separation_algorithm = val,
@@ -4733,88 +4692,10 @@ impl PipelineFormState {
     /// the `robust-threshold` preset the main mask still follows.
     fn mark_mask_custom(&mut self, section: usize) {
         if !is_two_pass_section(section) {
-            self.mask_chosen = true;
             self.mask_preset = MASK_PRESET_CUSTOM;
         }
     }
 
-    /// Show, while the user has not chosen a mask, the one the run takes: the selected
-    /// inversion's default ([`qsmxt_engine::masking::default_mask_sections_for`]), by its preset.
-    pub fn show_unchosen_mask(&mut self) {
-        if self.mask_chosen { return; }
-        let sections = qsmxt_engine::masking::default_mask_sections_for(
-            crate::tui::command::selected_qsm_algorithm(self));
-        let recipe = qsmxt_engine::masking::MaskRecipe::from_sections(sections);
-        match qsmxt_engine::masking::mask_presets().iter().position(|(_, r)| *r == recipe) {
-            Some(preset) => {
-                self.mask_preset = preset;
-                self.apply_mask_preset(preset);
-            }
-            None => {
-                self.mask_preset = MASK_PRESET_CUSTOM;
-                self.mask_sections = recipe.sections;
-                self.mask_combine = recipe.combine;
-                self.mask_combined_refinements = recipe.refinements;
-            }
-        }
-    }
-
-    /// The background removal the run takes while the user has not chosen one: the selected
-    /// inversion's reference one ([`qsmxt_engine::bridge::reference_bg_removal`]), else the
-    /// general default, as an index into [`BF_OPTIONS`].
-    pub fn unchosen_bf_algorithm(&self) -> usize {
-        let mut c = crate::pipeline::config::PipelineConfig::default();
-        c.inversion.algorithm = crate::tui::command::selected_qsm_algorithm(self);
-        let alg = qsmxt_engine::bridge::reference_bg_removal(&c).unwrap_or(c.bg_removal.algorithm);
-        BF_OPTIONS.iter().position(|o| *o == alg.to_string()).unwrap_or(0)
-    }
-
-    /// Show, while the user has not chosen a background removal, the one the run takes.
-    pub fn show_unchosen_bf(&mut self) {
-        if !self.bf_chosen {
-            self.bf_algorithm = self.unchosen_bf_algorithm();
-        }
-    }
-
-    /// Show, for each of the unwrapping, the Laplacian solver and the B0 estimation the user has
-    /// not chosen, the one the run takes: the engine's normalisation of the choices made, under
-    /// the selected inversion (QSMART's own field mapping under QSMART, the general defaults
-    /// otherwise).
-    pub fn show_unchosen_field_mapping(&mut self) {
-        use qsmxt_engine::PipelineConfig;
-        fn pick<T: serde::de::DeserializeOwned>(options: &[&str], i: usize) -> Option<T> {
-            serde_json::from_value(serde_json::json!(options.get(i)?)).ok()
-        }
-        fn index_of(options: &[&str], value: impl std::fmt::Display) -> usize {
-            let v = value.to_string();
-            options.iter().position(|o| *o == v).unwrap_or(0)
-        }
-        let mut c = PipelineConfig::default();
-        c.inversion.algorithm = crate::tui::command::selected_qsm_algorithm(self);
-        let fm = &mut c.field_mapping;
-        if self.unwrapping_chosen {
-            fm.unwrapping_algorithm = pick(UNWRAP_OPTIONS, self.unwrapping_algorithm).unwrap_or(fm.unwrapping_algorithm);
-            fm.unwrapping_chosen = true;
-        }
-        if self.laplacian_solver_chosen {
-            fm.laplacian_solver = pick(LAPLACIAN_SOLVER_OPTIONS, self.laplacian_solver).unwrap_or(fm.laplacian_solver);
-            fm.laplacian_solver_chosen = true;
-        }
-        if self.b0_estimation_chosen {
-            fm.b0_estimation = pick(B0_ESTIMATION_OPTIONS, self.b0_estimation).unwrap_or(fm.b0_estimation);
-            fm.b0_estimation_chosen = true;
-        }
-        let run = c.normalised().0.field_mapping;
-        if !self.unwrapping_chosen {
-            self.unwrapping_algorithm = index_of(UNWRAP_OPTIONS, run.unwrapping_algorithm);
-        }
-        if !self.laplacian_solver_chosen {
-            self.laplacian_solver = index_of(LAPLACIAN_SOLVER_OPTIONS, run.laplacian_solver);
-        }
-        if !self.b0_estimation_chosen {
-            self.b0_estimation = index_of(B0_ESTIMATION_OPTIONS, run.b0_estimation);
-        }
-    }
 
     /// What may go wrong with the main mask under the selected inversion
     /// ([`qsmxt_engine::masking::mask_warning`]).
@@ -7598,27 +7479,6 @@ impl App {
         match field {
             "orientation_lambda" => return self.filter_state.orientation_lambda.clear(),
             "orientation_algorithm" => return self.filter_state.orientation_algorithm = 0,
-            // The default is no choice: the background removal the inversion takes when none is
-            // chosen.
-            "bf_algorithm" => {
-                self.pipeline_state.bf_chosen = false;
-                return self.pipeline_state.show_unchosen_bf();
-            }
-            // The default is no choice: the mask the inversion takes when none is chosen.
-            "mask_preset" => {
-                self.pipeline_state.mask_chosen = false;
-                return self.pipeline_state.show_unchosen_mask();
-            }
-            // Likewise the field mapping the inversion takes when none is chosen.
-            "unwrapping_algorithm" | "laplacian_solver" | "b0_estimation" => {
-                let ps = &mut self.pipeline_state;
-                match field {
-                    "unwrapping_algorithm" => ps.unwrapping_chosen = false,
-                    "laplacian_solver" => ps.laplacian_solver_chosen = false,
-                    _ => ps.b0_estimation_chosen = false,
-                }
-                return ps.show_unchosen_field_mapping();
-            }
             "segmentation_source" | "do_segmentation" => {
                 self.pipeline_state.custom_dseg_tool.clear();
                 self.form.do_segmentation = form.do_segmentation;
@@ -11133,27 +10993,24 @@ mod tests {
         assert!(cmd.contains("--two-pass-mask"), "cmd: {cmd}");
     }
 
-    /// Editing the reliable mask does not choose the main one; resetting the preset un-chooses
-    /// it, back to the mask the inversion takes, and the QSMART note says which applies.
+    /// Under QSMART the default mask stays as it is, with a note saying it may not suit; resetting
+    /// the preset brings the default back.
     #[test]
-    fn the_main_mask_is_chosen_only_by_its_own_rows() {
+    fn qsmart_keeps_the_mask_and_says_when_it_may_not_suit() {
         let qsmart = QSM_ALGO_OPTIONS.iter().position(|a| *a == "qsmart").unwrap();
         let mut app = App::new();
+        let before = app.pipeline_state.mask_sections.clone();
         app.pipeline_state.set_select("qsm_algorithm", qsmart);
-        app.pipeline_state.two_pass = true;
-        app.pipeline_state.set_mask_input(MASK_TWO_PASS_BASE, 1);
-        assert!(!app.pipeline_state.mask_chosen, "the reliable mask is not the main one");
+        assert_eq!(app.pipeline_state.mask_sections, before, "choosing QSMART changes no mask");
         let note = |app: &App| app.pipeline_state.all_rows().iter().find_map(|r| match r {
             PipelineRow::Note { text } if text.contains("QSMART") => Some(text.to_string()),
             _ => None,
         }).unwrap();
-        assert!(note(&app).contains("unless another mask is chosen"), "{}", note(&app));
-        app.pipeline_state.set_select("mask_preset", 0);
-        assert!(app.pipeline_state.mask_chosen);
         assert!(note(&app).starts_with("⚠ QSMART needs a tight brain mask"), "{}", note(&app));
+        app.pipeline_state.set_select("mask_preset", 1);
+        assert!(!note(&app).starts_with("⚠"), "{}", note(&app));
         app.reset_field("mask_preset");
-        assert!(!app.pipeline_state.mask_chosen);
-        assert_eq!(app.pipeline_state.mask_sections, qsmxt_engine::qsmart_default_mask_sections());
+        assert_eq!(app.pipeline_state.mask_sections, before);
     }
 
     /// Turning two-pass off hides the editor but keeps what was typed into it, so toggling back

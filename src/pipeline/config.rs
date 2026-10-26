@@ -345,10 +345,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         config.multi_orientation.validate().map_err(QsmxtError::Config)?;
 
         // ── Unwrapping ──
-        // Each of these, given, is the user's choice, which the run keeps under QSMART too
-        // (`FieldMappingConfig::unwrapping_chosen` and its siblings).
         if let Some(a) = args.unwrapping_algorithm {
-            config.field_mapping.unwrapping_chosen = true;
             config.field_mapping.unwrapping_algorithm = match a {
                 cli::UnwrapAlgorithmArg::Romeo => UnwrappingAlgorithm::Romeo,
                 cli::UnwrapAlgorithmArg::Laplacian => UnwrappingAlgorithm::Laplacian,
@@ -356,10 +353,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         }
 
         // ── Background removal ──
-        // Naming one is the user choosing it, which the run then keeps: left unchosen,
-        // normalising gives an inversion with a reference background removal (MEDI) that one.
         if let Some(a) = args.bf_algorithm {
-            config.bg_removal.algorithm_chosen = true;
             config.bg_removal.algorithm = match a {
                 cli::BfAlgorithmArg::Vsharp => BfAlgorithm::Vsharp,
                 cli::BfAlgorithmArg::Pdf => BfAlgorithm::Pdf,
@@ -378,7 +372,6 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.phase_offset_removal { config.field_mapping.phase_offset_removal = v; }
         if args.bipolar_correction { config.field_mapping.bipolar_correction = true; }
         if let Some(a) = args.b0_estimation {
-            config.field_mapping.b0_estimation_chosen = true;
             config.field_mapping.b0_estimation = match a {
                 cli::B0EstimationArg::WeightedAvg => B0Estimation::WeightedAvg,
                 cli::B0EstimationArg::LinearFit => B0Estimation::LinearFit,
@@ -401,7 +394,6 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         }
         if let Some(v) = args.b0_weight_assumed_t2star { config.field_mapping.b0_weight_assumed_t2star_ms = v; }
         if let Some(k) = args.laplacian_solver {
-            config.field_mapping.laplacian_solver_chosen = true;
             config.field_mapping.laplacian_solver = match k {
                 cli::LaplacianSolverArg::Dct => LaplacianSolver::Dct,
                 cli::LaplacianSolverArg::Fft => LaplacianSolver::Fft,
@@ -740,11 +732,6 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(&[d, h, w]) = sp.chi_sepnet_patch.as_deref() { config.separation.chi_sepnet.patch = [d, h, w]; }
         if let Some(&[d, h, w]) = sp.susep_net_patch.as_deref() { config.separation.susep_net.patch = Some([d, h, w]); }
         // ── Mask sections ──
-        // Any of these is the user choosing the recipe, which the run then keeps as it is: left
-        // unchosen, normalising gives an inversion with a default mask of its own (QSMART) that one.
-        if args.mask_preset.is_some() || args.mask_sections_cli.is_some() || args.masking_input.is_some() {
-            config.masking.recipe_chosen = true;
-        }
         if let Some(preset) = args.mask_preset {
             // A preset is a whole recipe — it replaces the combine mode and the post-combine
             // refinements too, not just the sections.
@@ -1259,11 +1246,16 @@ mod tests {
         assert_eq!(l.motion_correction.reference, qsmxt_engine::MotionReference::Last);
     }
 
+    /// The BET preset's sections (QSMART's reference mask).
+    fn bet_sections() -> Vec<qsmxt_engine::MaskSection> {
+        qsmxt_engine::masking::mask_presets().into_iter().find(|(n, _)| *n == "bet").unwrap().1.sections
+    }
+
+    /// QSMART runs the mask it is given, the default one included: nothing replaces it.
     #[test]
-    fn qsmart_defaults_to_bet_mask() {
+    fn qsmart_keeps_the_default_mask() {
         let c = config_from_cli(&["qsmxt", "run", "<bids>", "--qsm-algorithm", "qsmart"]);
-        assert_eq!(c.masking.sections, qsmart_default_mask_sections());
-        assert_ne!(c.masking.sections, default_mask_sections());
+        assert_eq!(c.masking.sections, default_mask_sections());
     }
 
     #[test]
@@ -1272,7 +1264,7 @@ mod tests {
             "qsmxt", "run", "<bids>", "--qsm-algorithm", "qsmart",
             "--mask", "phase-quality,threshold:otsu",
         ]);
-        assert_ne!(c.masking.sections, qsmart_default_mask_sections());
+        assert_ne!(c.masking.sections, bet_sections());
     }
 
     #[test]
@@ -1285,24 +1277,18 @@ mod tests {
         assert!(err.contains("removed") && err.contains("rs2-net") && err.contains("scale="), "{err}");
     }
 
-    /// `qsmxt run --qsm-algorithm medi` removes the background with PDF, as MEDI's authors do;
-    /// `--bf-algorithm` chooses another, the general default included, and the run keeps it.
+    /// `qsmxt run --qsm-algorithm medi` runs the general default background removal; MEDI's
+    /// reference (PDF) is the rules' to point out, and `--bf-algorithm` sets another.
     #[test]
-    fn medi_takes_pdf_unless_bf_algorithm_is_given() {
+    fn medi_runs_the_background_removal_it_is_given() {
         let medi = |extra: &[&str]| {
             let mut argv = vec!["qsmxt", "run", "<bids>", "--qsm-algorithm", "medi"];
             argv.extend_from_slice(extra);
             config_from_cli(&argv).normalised().0
         };
-        assert_eq!(medi(&[]).bg_removal.algorithm, BfAlgorithm::Pdf);
-        assert_eq!(medi(&["--no-medi-smv"]).bg_removal.algorithm, BfAlgorithm::Pdf);
-        let c = medi(&["--bf-algorithm", "vsharp"]);
-        assert_eq!(c.bg_removal.algorithm, BfAlgorithm::Vsharp);
-        assert!(c.bg_removal.algorithm_chosen, "the choice is in the config, so it is saved");
+        assert_eq!(medi(&[]).bg_removal.algorithm, BfAlgorithm::Vsharp);
+        assert_eq!(medi(&["--bf-algorithm", "pdf"]).bg_removal.algorithm, BfAlgorithm::Pdf);
         assert_eq!(medi(&["--bf-algorithm", "lbv"]).bg_removal.algorithm, BfAlgorithm::Lbv);
-        // Another inversion keeps the general default.
-        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--qsm-algorithm", "rts"]).normalised().0;
-        assert_eq!(c.bg_removal.algorithm, BfAlgorithm::Vsharp);
     }
 
     #[test]
@@ -1326,13 +1312,11 @@ mod tests {
             "qsmxt", "run", "<bids>", "--qsm-algorithm", "qsmart",
             "--mask-preset", "robust-threshold",
         ]);
-        assert_ne!(c.masking.sections, qsmart_default_mask_sections());
         assert_eq!(c.masking.sections, default_mask_sections());
-        assert!(c.masking.recipe_chosen, "the choice is in the config, so it is saved");
     }
 
-    /// Under QSMART the field mapping is QSMART's unless a flag chooses it, and a flag's choice
-    /// (the general default included) is kept; QSMART's vessel flags reach the config.
+    /// Under QSMART the field mapping is the one given (the general defaults unless a flag sets
+    /// it); QSMART's vessel flags reach the config.
     #[test]
     fn qsmart_field_mapping_flags_choose_it() {
         let qsmart = |extra: &[&str]| {
@@ -1340,13 +1324,11 @@ mod tests {
             argv.extend_from_slice(extra);
             config_from_cli(&argv).field_mapping
         };
-        let fm = qsmart(&[]);
+        assert_eq!(qsmart(&[]), qsmxt_engine::FieldMappingConfig::default());
+        let fm = qsmart(&["--unwrapping-algorithm", "laplacian", "--laplacian-solver", "mirror", "--b0-estimation", "qsmart-echofit"]);
         assert_eq!((fm.unwrapping_algorithm, fm.laplacian_solver, fm.b0_estimation),
                    (UnwrappingAlgorithm::Laplacian, LaplacianSolver::Mirror, B0Estimation::QsmartEchofit));
-        let fm = qsmart(&["--unwrapping-algorithm", "romeo"]);
-        assert_eq!((fm.unwrapping_algorithm, fm.b0_estimation), (UnwrappingAlgorithm::Romeo, B0Estimation::WeightedAvg));
-        assert!(fm.unwrapping_chosen, "the choice is in the config, so it is saved");
-        let fm = qsmart(&["--laplacian-solver", "dct", "--b0-estimation", "weighted-avg", "--qsmart-fit-threshold", "30"]);
+        let fm = qsmart(&["--unwrapping-algorithm", "laplacian", "--laplacian-solver", "dct", "--qsmart-fit-threshold", "30"]);
         assert_eq!((fm.unwrapping_algorithm, fm.laplacian_solver, fm.b0_estimation),
                    (UnwrappingAlgorithm::Laplacian, LaplacianSolver::Dct, B0Estimation::WeightedAvg));
         // A fixed residual given alone selects the fixed mode; a percentile, the percentile mode.
@@ -1363,43 +1345,29 @@ mod tests {
                                   "--qsmart-vessel-magnitude", "combined", "--qsmart-vessel-units", "mm"]);
         assert_eq!(c.inversion.qsmart.vessel_magnitude, QsmartVesselMagnitude::Combined);
         assert_eq!(c.inversion.qsmart.vessel_size_units, VesselSizeUnits::Mm);
-        // Elsewhere: the general defaults, and the echo fit brings QSMART's unwrapping.
+        // The echo fit brings no unwrapping with it: with ROMEO it is refused before the run.
         let fm = config_from_cli(&["qsmxt", "run", "<bids>", "--b0-estimation", "qsmart-echofit"]).field_mapping;
-        assert_eq!((fm.unwrapping_algorithm, fm.laplacian_solver), (UnwrappingAlgorithm::Laplacian, LaplacianSolver::Mirror));
+        assert_eq!(fm.unwrapping_algorithm, UnwrappingAlgorithm::Romeo);
     }
 
-    /// Which flags choose the mask under QSMART (and so keep it), which leave QSMART's BET in
-    /// place, and that the BET options still reach the BET step the engine installs.
+    /// The mask flags under QSMART set the mask as anywhere else.
     #[test]
-    fn qsmart_mask_flags_choose_the_mask() {
+    fn qsmart_mask_flags_set_the_mask() {
         let qsmart = |extra: &[&str]| {
             let mut argv = vec!["qsmxt", "run", "<bids>", "--qsm-algorithm", "qsmart"];
             argv.extend_from_slice(extra);
             config_from_cli(&argv)
         };
-        let c = qsmart(&[]);
-        assert_eq!(c.masking.sections, qsmart_default_mask_sections());
-        assert!(!c.masking.recipe_chosen);
-        // `--masking-input` chooses the recipe: with the default's own input it is kept as it is.
-        let c = qsmart(&["--masking-input", "phase-quality"]);
-        assert_eq!(c.masking.sections, default_mask_sections());
-        assert!(c.masking.recipe_chosen);
         let c = qsmart(&["--masking-input", "magnitude"]);
         assert!(c.masking.sections.iter().all(|s| s.input == MaskingInput::Magnitude
             && matches!(s.generator, MaskOp::Threshold { .. })));
-        // `--mask` spelling out the default recipe keeps it too.
-        let spec = default_mask_sections()[0].compact_spec();
-        let c = qsmart(&["--mask", &spec]);
-        assert_eq!(c.masking.sections, default_mask_sections());
-        // The BET options reach QSMART's BET; the combine options alone do not choose the recipe.
-        let c = qsmart(&["--bet-fractional-intensity", "0.3", "--mask-refine", "erode:1"]);
+        assert_eq!(qsmart(&["--mask-preset", "bet"]).masking.sections, bet_sections());
+        let c = qsmart(&["--mask-preset", "bet", "--bet-fractional-intensity", "0.3"]);
         assert!(matches!(c.masking.sections[0].generator, MaskOp::Bet { fractional_intensity, .. }
                          if fractional_intensity == 0.3));
-        assert_eq!(c.masking.sections[0].refinements, qsmart_default_mask_sections()[0].refinements);
-        assert!(!c.masking.recipe_chosen);
     }
 
-    /// A QSMART run's saved config reloads as the same run, the kept threshold included, and so
+    /// A QSMART run's saved config reloads as the same run, and so
     /// does the command it generates.
     #[test]
     fn qsmart_mask_choice_survives_the_saved_config_and_the_command() {
@@ -1455,13 +1423,6 @@ mod tests {
                                   "--bet-voxel-scale", "10"]);
         assert!(matches!(c.masking.sections[0].generator, MaskOp::Bet { voxel_scale, .. }
                          if voxel_scale == 10.0));
-
-        // The QSMART default mask is installed later still, and is BET.
-        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--qsm-algorithm", "qsmart",
-                                  "--bet-voxel-scale", "10"]);
-        assert_eq!(c.masking.sections, qsmart_default_mask_sections().into_iter()
-                   .map(|mut s| { s.generator = MaskOp::Bet { fractional_intensity: 0.5, voxel_scale: 10.0 }; s })
-                   .collect::<Vec<_>>());
     }
 
     /// `--bet-fractional-intensity` used to be stored in `config.bet` and never reach a BET step

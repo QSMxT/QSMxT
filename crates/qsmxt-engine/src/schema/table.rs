@@ -138,7 +138,7 @@ pub(super) fn table() -> Vec<Def> {
         d("field_mapping.laplacian_solver", FieldMap, "Solver", "", Enum(vec![
             o("dct", "dct", "DCT", "Unweighted least squares, Neumann-boundary DCT solve (Ghiglia & Romero 1994; QSM.jl :dct) (default)"),
             o("fft", "fft", "FFT", "Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume"),
-            o("mirror", "mirror", "Mirror", "Schofield & Zhu sin/cos Laplacian, FFT solve on the volume mirrored along each axis (QSMART's; the default with QSMART)"),
+            o("mirror", "mirror", "Mirror", "Schofield & Zhu sin/cos Laplacian, FFT solve on the volume mirrored along each axis (QSMART's reference)"),
         ])).flag("--laplacian-solver").parent("field_mapping.unwrapping_algorithm")
         .when(|x| x.laplacian).full("Laplacian solver")
         .gui("How Laplacian unwrapping's Poisson equation is solved"),
@@ -197,7 +197,7 @@ pub(super) fn table() -> Vec<Def> {
             o("weighted-avg", "weighted-avg", "Weighted average", "Weighted average of phase/TE across echoes (default)"),
             o("linear-fit", "linear-fit", "Linear fit", "Magnitude-weighted linear fit of phase vs TE"),
             o("robust-fit", "robust-fit", "Robust fit", "Motion-robust linear fit (IRLS): down-weights echoes departing from a straight line, per voxel. Needs 4 echoes (3 without offset)"),
-            o("qsmart-echofit", "qsmart-echofit", "QSMART echo fit", "QSMART's: magnitude-weighted fit of phase vs TE through the origin, each echo unwrapped over the whole volume; marks the voxels QSMART leaves out. Needs Laplacian unwrapping (the default with QSMART)"),
+            o("qsmart-echofit", "qsmart-echofit", "QSMART echo fit", "QSMART's: magnitude-weighted fit of phase vs TE through the origin, each echo unwrapped over the whole volume; marks the voxels QSMART leaves out. Needs Laplacian unwrapping"),
             o("complex-fit", "complex-fit", "Complex fit", "MEDI's field map (Fit_ppm_complex): a magnitude-weighted fit of the complex echoes, then unwrapping of the fitted phase. Needs the magnitude and evenly spaced echoes; no phase offset removal or bipolar correction"),
         ])).basic().flag("--b0-estimation")
         .gui("How the unwrapped echoes are combined into one field map"),
@@ -276,7 +276,7 @@ pub(super) fn table() -> Vec<Def> {
             o("bfrnet", "bfrnet", "BFRnet", "BFRnet deep-learning background removal (weights auto-downloaded) — https://github.com/sunhongfu/BFRnet"),
             o("iqfm", "iqfm", "iQFM", "iQFM deep-learning joint unwrapping + background removal from phase (weights auto-downloaded) — https://doi.org/10.1016/j.neuroimage.2022.119410"),
         ])).basic().flag("--bf-algorithm").full("Background removal")
-        .gui("How the background field, from sources outside the mask, is removed to leave the local field. Unless one is chosen, MEDI takes PDF, as its authors' pipeline does"),
+        .gui("How the background field, from sources outside the mask, is removed to leave the local field"),
         d("bg_removal.vsharp.deconvolve", Background, "Deconvolve", "Undo the SMV high-pass with a truncated-SVD deconvolution (default: off)", Bool).flag("--vsharp-deconvolve").parent("bg_removal.algorithm")
         .when(|x| x.bf("vsharp"))
         .gui("Undo the SMV high-pass with a truncated-SVD deconvolution"),

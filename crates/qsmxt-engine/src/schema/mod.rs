@@ -321,11 +321,6 @@ pub const BROWSER_SUPPLIED_TOOL: &str = "qsmbly";
 pub const NOT_IN_SCHEMA: &[(&str, &str)] = &[
     ("description", "a free-text note saved with the config, not a setting"),
     ("schema_version", "the settings-file layout the config was written with (crate::migrate), not a setting"),
-    ("bg_removal.algorithm_chosen", "not a setting of its own: a front end sets it when the user picks a background removal (bg_removal.algorithm), so it is kept rather than replaced by the inversion's reference one"),
-    ("masking.recipe_chosen", "not a setting of its own: a front end sets it when the user picks a mask preset or edits the recipe (masking.sections), so the recipe is kept rather than replaced by the inversion's default"),
-    ("field_mapping.unwrapping_chosen", "not a setting of its own: a front end sets it when the user picks the unwrapping (field_mapping.unwrapping_algorithm), so it is kept rather than replaced by QSMART's default"),
-    ("field_mapping.laplacian_solver_chosen", "not a setting of its own: a front end sets it when the user picks the Laplacian solver (field_mapping.laplacian_solver), so it is kept rather than replaced by QSMART's default"),
-    ("field_mapping.b0_estimation_chosen", "not a setting of its own: a front end sets it when the user picks the B0 estimation (field_mapping.b0_estimation), so it is kept rather than replaced by QSMART's default"),
     ("bet.fractional_intensity", "set per BET step in the mask recipe (masking.sections); this is the --bet-fractional-intensity override applied to every step"),
     ("bet.voxel_scale", "set per BET step in the mask recipe (masking.sections); this is the --bet-voxel-scale override applied to every step"),
     ("inversion.tikhonov.reg", "config file only: no qsmxt run option or TUI row"),
@@ -955,14 +950,13 @@ mod range_tests {
         assert!(check_ranges(&PipelineConfig::default()).is_ok());
     }
 
-    /// QSMART's echo fit with ROMEO unwrapping, both chosen, is refused before the run, and the
+    /// QSMART's echo fit with ROMEO unwrapping is refused before the run (not replaced), and the
     /// settings view shows why next to the B0 estimation.
     #[test]
     fn the_echo_fit_with_romeo_is_refused() {
         let mut c = PipelineConfig::default();
         c.inversion.algorithm = crate::QsmAlgorithm::Qsmart;
         assert!(check_ranges(&c.normalised().0).is_ok());
-        c.field_mapping.unwrapping_chosen = true;
         c.field_mapping.b0_estimation = crate::B0Estimation::QsmartEchofit;
         let n = c.normalised().0;
         let e = check_ranges(&n).unwrap_err().to_string();

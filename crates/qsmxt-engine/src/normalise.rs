@@ -11,15 +11,19 @@
 //!
 //! Normalisation reads only the configuration. What a scan's data rules out is the plan's to say
 //! ([`crate::plan::Plan::notes`], [`crate::plan::Plan::check`]).
+//!
+//! It never changes a method's settings to suit another method: a run takes the methods and
+//! settings it is given. Where a chosen method's reference pipeline uses something else, the
+//! pipeline rules say so ([`crate::recommendations`]): the log, `--dry`, the methods Note and the
+//! front ends' pop-ups. What a method cannot run with is refused before the run.
 
 use serde::Serialize;
 
 use crate::config::{
-    BgRemovalConfig, enforce_analysis_dependencies, enforce_reference_dependencies,
-    enforce_separation_dependencies, enforce_smwi_dependencies, FieldMappingConfig, PipelineConfig,
+    enforce_analysis_dependencies, enforce_reference_dependencies, enforce_separation_dependencies,
+    enforce_smwi_dependencies, PipelineConfig,
 };
-use crate::enums::{B0Estimation, LaplacianSolver, QsmAlgorithm, QsmReference, SeparationAlgorithm, UnwrappingAlgorithm};
-use crate::masking::{default_mask_sections, default_mask_sections_for};
+use crate::enums::{QsmReference, SeparationAlgorithm};
 
 /// One change [`PipelineConfig::normalised`] made to a configuration, and why: what a front end
 /// lists beside the plan.
@@ -44,18 +48,7 @@ impl PipelineConfig {
     /// - χ-separation needs the relaxometry maps its method reads, and a computed R2′ needs R2*
     ///   (and R2, where R2′ may be measured);
     /// - a region reference is measured on the segmentation, and a region reference that names
-    ///   no region is the mean;
-    /// - the general default mask recipe, unless the user chose it
-    ///   ([`crate::config::MaskingConfig::recipe_chosen`]), is the inversion's own default where
-    ///   it has one: QSMART's BET mask;
-    /// - the general default background removal, unless the user chose it
-    ///   ([`crate::config::BgRemovalConfig::algorithm_chosen`]), is the inversion's reference one
-    ///   where it has one ([`crate::bridge::reference_bg_removal`]): PDF for MEDI;
-    /// - likewise the general default field mapping, setting by setting unless the user chose it
-    ///   ([`crate::config::FieldMappingConfig::unwrapping_chosen`] and its siblings), is QSMART's
-    ///   own under QSMART: Laplacian unwrapping with the `mirror` solver, and QSMART's echo fit.
-    ///   QSMART's echo fit, chosen under another inversion, takes QSMART's unwrapping the same
-    ///   way, as it needs Laplacian unwrapping.
+    ///   no region is the mean.
     ///
     /// Idempotent: normalising the result changes nothing and returns no adjustments.
     pub fn normalised(&self) -> (PipelineConfig, Vec<Adjustment>) {
@@ -112,81 +105,7 @@ impl PipelineConfig {
                 "Segmentation is on: the reference region is measured on it"));
         }
 
-        // The general default mask gives way to the inversion's own, unless the user chose it.
-        // The mark is kept only where it decides that, so equal runs have equal configurations.
-        let general = default_mask_sections();
-        let own = default_mask_sections_for(c.inversion.algorithm);
-        if c.masking.sections == general && own != general {
-            if !c.masking.recipe_chosen {
-                c.masking.sections = own;
-                out.push(note("masking.sections", "inversion.algorithm",
-                    "The brain mask is made with BET: QSMART needs a tight brain mask"));
-            }
-        } else {
-            c.masking.recipe_chosen = false;
-        }
-
-        // Likewise the general default background removal gives way to the inversion's
-        // reference one (PDF for MEDI), unless the user chose it.
-        let general = BgRemovalConfig::default().algorithm;
-        match crate::bridge::reference_bg_removal(&c) {
-            Some(own) if c.bg_removal.algorithm == general && own != general => {
-                if !c.bg_removal.algorithm_chosen {
-                    c.bg_removal.algorithm = own;
-                    out.push(note("bg_removal.algorithm", "inversion.algorithm", format!(
-                        "Background fields are removed with {}, as in the selected inversion's reference pipeline",
-                        crate::methods::bg_removal_name(own))));
-                }
-            }
-            _ => c.bg_removal.algorithm_chosen = false,
-        }
-        qsmart_field_mapping(&mut c, &mut out);
         (c, out)
-    }
-}
-
-/// QSMART's field mapping in place of the general defaults the user did not choose (see
-/// [`PipelineConfig::normalised`]). Each mark is kept only where it decides something: where the
-/// general default stands and QSMART's would otherwise replace it.
-fn qsmart_field_mapping(c: &mut PipelineConfig, out: &mut Vec<Adjustment>) {
-    let qsmart = c.inversion.algorithm == QsmAlgorithm::Qsmart;
-    let general = FieldMappingConfig::default();
-    let fm = &mut c.field_mapping;
-    let echofit = fm.b0_estimation == B0Estimation::QsmartEchofit;
-    let because = if qsmart { "inversion.algorithm" } else { "field_mapping.b0_estimation" };
-
-    if (qsmart || echofit) && fm.unwrapping_algorithm == general.unwrapping_algorithm {
-        if !fm.unwrapping_chosen {
-            fm.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
-            out.push(note("field_mapping.unwrapping_algorithm", because, if qsmart {
-                "The phase is unwrapped with the Laplacian method: QSMART's own unwrapping"
-            } else {
-                "The phase is unwrapped with the Laplacian method: QSMART's echo fit needs it"
-            }));
-        }
-    } else {
-        fm.unwrapping_chosen = false;
-    }
-    let laplacian = fm.unwrapping_algorithm == UnwrappingAlgorithm::Laplacian;
-
-    if (qsmart || echofit) && laplacian && fm.laplacian_solver == general.laplacian_solver {
-        if !fm.laplacian_solver_chosen {
-            fm.laplacian_solver = LaplacianSolver::Mirror;
-            out.push(note("field_mapping.laplacian_solver", because,
-                "Laplacian unwrapping solves on the mirrored volume: QSMART's own unwrapping"));
-        }
-    } else {
-        fm.laplacian_solver_chosen = false;
-    }
-
-    if qsmart && laplacian && fm.b0_estimation == general.b0_estimation {
-        if !fm.b0_estimation_chosen {
-            fm.b0_estimation = B0Estimation::QsmartEchofit;
-            out.push(note("field_mapping.b0_estimation", "inversion.algorithm",
-                "The echoes are combined by QSMART's echo fit, which also marks the voxels QSMART leaves out"));
-        }
-    } else {
-        fm.b0_estimation_chosen = false;
     }
 }
 
@@ -202,7 +121,7 @@ fn note(setting: &'static str, because: &'static str, message: impl Into<String>
 mod tests {
     use super::*;
     use crate::enums::R2PrimeStrategy;
-    use crate::masking::{hd_bet_mask_sections, qsmart_default_mask_sections};
+    use crate::enums::QsmAlgorithm;
 
     /// Every combination of the settings the rules read, each normalised twice.
     fn configs() -> Vec<PipelineConfig> {
@@ -231,23 +150,6 @@ mod tests {
             }
             c.separation.algorithm = algorithms[bits as usize % algorithms.len()];
             c.separation.r2prime_strategy = strategies[bits as usize % strategies.len()];
-            // The mask rule's settings, crossed with the rest along different strides.
-            if bits % 3 == 0 { c.inversion.algorithm = QsmAlgorithm::Qsmart; }
-            c.masking.recipe_chosen = bits % 7 < 3;
-            if bits % 11 == 0 { c.masking.sections = crate::masking::hd_bet_mask_sections(); }
-            // The background-removal rule's, likewise.
-            if bits % 37 == 1 { c.inversion.algorithm = QsmAlgorithm::Medi; }
-            c.bg_removal.algorithm_chosen = bits % 41 < 20;
-            if bits % 43 == 0 { c.bg_removal.algorithm = crate::enums::BfAlgorithm::Lbv; }
-            // The field-mapping rule's settings and marks, along other strides.
-            let fm = &mut c.field_mapping;
-            fm.unwrapping_chosen = bits % 5 < 2;
-            fm.laplacian_solver_chosen = bits % 13 < 6;
-            fm.b0_estimation_chosen = bits % 17 < 8;
-            if bits % 19 == 0 { fm.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian; }
-            if bits % 23 == 0 { fm.laplacian_solver = LaplacianSolver::Fft; }
-            if bits % 29 == 0 { fm.b0_estimation = B0Estimation::QsmartEchofit; }
-            if bits % 31 == 0 { fm.b0_estimation = B0Estimation::LinearFit; }
             out.push(c);
         }
         out
@@ -276,11 +178,6 @@ mod tests {
                 ("pipeline.do_r2map", c.pipeline.do_r2map != n.pipeline.do_r2map),
                 ("pipeline.do_r2primemap", c.pipeline.do_r2primemap != n.pipeline.do_r2primemap),
                 ("qsm.reference", c.qsm.reference != n.qsm.reference),
-                ("masking.sections", c.masking.sections != n.masking.sections),
-                ("bg_removal.algorithm", c.bg_removal.algorithm != n.bg_removal.algorithm),
-                ("field_mapping.unwrapping_algorithm", c.field_mapping.unwrapping_algorithm != n.field_mapping.unwrapping_algorithm),
-                ("field_mapping.laplacian_solver", c.field_mapping.laplacian_solver != n.field_mapping.laplacian_solver),
-                ("field_mapping.b0_estimation", c.field_mapping.b0_estimation != n.field_mapping.b0_estimation),
             ].into_iter().filter(|(_, d)| *d).map(|(s, _)| s).collect();
             let mut said: Vec<&str> = adjustments.iter().map(|a| a.setting).collect();
             said.sort();
@@ -306,8 +203,6 @@ mod tests {
             |c| { c.pipeline.do_qsm = false; c.pipeline.do_smwi = true; },
             |c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::WaveSep; },
             |c| { c.qsm.reference = QsmReference::Region; c.qsm.reference_region = Some("thalamus".into()); },
-            |c| c.inversion.algorithm = QsmAlgorithm::Qsmart,
-            |c| c.inversion.algorithm = QsmAlgorithm::Medi,
         ] {
             let mut c = PipelineConfig::default();
             edit(&mut c);
@@ -361,215 +256,21 @@ mod tests {
 
         assert!(PipelineConfig::default().normalised().1.is_empty());
     }
-    /// QSMART takes its BET mask in place of the general default, unless the user chose that
-    /// default; the mark is kept only where it decides this.
+    /// Choosing a method changes no other setting: MEDI keeps the general background removal,
+    /// QSMART the general mask and field mapping. Their references are the rules' to offer.
     #[test]
-    fn qsmart_takes_bet_unless_the_mask_was_chosen() {
-        let qsmart = |chosen: bool| {
+    fn a_method_changes_no_other_setting() {
+        for alg in [QsmAlgorithm::Medi, QsmAlgorithm::Qsmart, QsmAlgorithm::Tfi, QsmAlgorithm::Star] {
             let mut c = PipelineConfig::default();
-            c.inversion.algorithm = QsmAlgorithm::Qsmart;
-            c.masking.recipe_chosen = chosen;
-            // The field mapping kept as it is, so only the mask's rule speaks.
-            c.field_mapping.unwrapping_chosen = true;
-            c
-        };
-        // Untouched: BET, said once, in plain words.
-        let (n, adjustments) = qsmart(false).normalised();
-        assert_eq!(n.masking.sections, qsmart_default_mask_sections());
-        assert!(!n.masking.recipe_chosen);
-        assert_eq!(adjustments, [Adjustment { setting: "masking.sections", because: "inversion.algorithm",
-            message: "The brain mask is made with BET: QSMART needs a tight brain mask".into() }]);
-        // Chosen: the threshold is kept, and so is the mark that keeps it.
-        let (n, adjustments) = qsmart(true).normalised();
-        assert_eq!(n.masking.sections, default_mask_sections());
-        assert!(n.masking.recipe_chosen && adjustments.is_empty());
-        // Another recipe is left alone, chosen or not, and needs no mark.
-        for chosen in [false, true] {
-            let mut c = qsmart(chosen);
-            c.masking.sections = hd_bet_mask_sections();
+            c.inversion.algorithm = alg;
             let (n, adjustments) = c.normalised();
-            assert_eq!(n.masking.sections, hd_bet_mask_sections());
-            assert!(!n.masking.recipe_chosen && adjustments.is_empty());
+            assert_eq!(n, c, "{alg:?}");
+            assert!(adjustments.is_empty(), "{alg:?}: {adjustments:?}");
         }
-        // An inversion without a default of its own keeps the general one, and needs no mark.
-        let mut c = qsmart(true);
-        c.inversion.algorithm = QsmAlgorithm::Rts;
-        let (n, adjustments) = c.normalised();
-        assert_eq!(n.masking.sections, default_mask_sections());
-        assert!(!n.masking.recipe_chosen && adjustments.is_empty());
-        // Idempotent either way.
-        for chosen in [false, true] {
-            let once = qsmart(chosen).normalised().0;
-            assert_eq!(once.normalised(), (once.clone(), vec![]));
-        }
-    }
-
-    /// MEDI takes PDF, its reference pipeline's background removal, in place of the general
-    /// default, unless the user chose that default; a background removal other than the general
-    /// default is kept, chosen or not; the mark is kept only where it decides this.
-    #[test]
-    fn medi_takes_pdf_unless_the_background_removal_was_chosen() {
-        use crate::enums::BfAlgorithm;
-        let general = BgRemovalConfig::default().algorithm;
-        let medi = |chosen: bool| {
-            let mut c = PipelineConfig::default();
-            c.inversion.algorithm = QsmAlgorithm::Medi;
-            c.bg_removal.algorithm_chosen = chosen;
-            c
-        };
-        // Untouched: PDF, said once.
-        let (n, adjustments) = medi(false).normalised();
-        assert_eq!(n.bg_removal.algorithm, BfAlgorithm::Pdf);
-        assert!(!n.bg_removal.algorithm_chosen);
-        assert_eq!(adjustments.iter().map(|a| (a.setting, a.because)).collect::<Vec<_>>(),
-                   [("bg_removal.algorithm", "inversion.algorithm")]);
-        assert!(adjustments[0].message.contains("PDF"), "{}", adjustments[0].message);
-        // Chosen: the general default is kept, and so is the mark that keeps it.
-        let (n, adjustments) = medi(true).normalised();
-        assert_eq!(n.bg_removal.algorithm, general);
-        assert!(n.bg_removal.algorithm_chosen && adjustments.is_empty());
-        // Another background removal is left alone, chosen or not, and needs no mark.
-        for chosen in [false, true] {
-            let mut c = medi(chosen);
-            c.bg_removal.algorithm = BfAlgorithm::Lbv;
-            let (n, adjustments) = c.normalised();
-            assert_eq!(n.bg_removal.algorithm, BfAlgorithm::Lbv);
-            assert!(!n.bg_removal.algorithm_chosen && adjustments.is_empty());
-        }
-        // With every SMV option: MEDI takes the local field whatever they are.
-        let mut c = medi(false);
-        c.inversion.medi.smv = false;
-        assert_eq!(c.normalised().0.bg_removal.algorithm, BfAlgorithm::Pdf);
-        c.inversion.medi.msmv = true;
-        assert_eq!(c.normalised().0.bg_removal.algorithm, BfAlgorithm::Pdf);
-        // An inversion without a reference background removal keeps the general default.
-        let mut c = medi(true);
-        c.inversion.algorithm = QsmAlgorithm::Rts;
-        let (n, adjustments) = c.normalised();
-        assert_eq!(n.bg_removal.algorithm, general);
-        assert!(!n.bg_removal.algorithm_chosen && adjustments.is_empty());
-        // Idempotent either way, and the mark survives saving where it decides something.
-        for chosen in [false, true] {
-            let once = medi(chosen).normalised().0;
-            assert_eq!(once.normalised(), (once.clone(), vec![]));
-            let toml = once.to_toml().unwrap();
-            assert_eq!(toml.contains("algorithm_chosen = true"), chosen, "{toml}");
-            assert_eq!(PipelineConfig::from_toml(&toml).unwrap().normalised().0, once);
-        }
-    }
-
-    /// The mark is written out only where it decides something, so every other configuration
-    /// saves as it did, and a QSMART run that kept the threshold reloads as one.
-    #[test]
-    fn the_mark_is_saved_only_where_it_decides_something() {
+        // QSMART's echo fit under another inversion keeps its unwrapping: ROMEO with it is refused
+        // before the run, not replaced.
         let mut c = PipelineConfig::default();
-        c.masking.recipe_chosen = true;
-        let n = c.normalised().0;
-        assert!(!n.to_toml().unwrap().contains("recipe_chosen"));
-        assert!(!serde_json::to_string(&n).unwrap().contains("recipe_chosen"));
-        c.inversion.algorithm = QsmAlgorithm::Qsmart;
-        let n = c.normalised().0;
-        let toml = n.to_toml().unwrap();
-        assert!(toml.contains("recipe_chosen = true"), "{toml}");
-        let back = PipelineConfig::from_toml(&toml).unwrap().normalised().0;
-        assert_eq!(back, n);
-        assert_eq!(back.masking.sections, default_mask_sections());
-        // A configuration saved before the mark existed reads as unchosen.
-        let old = toml.replace("recipe_chosen = true\n", "");
-        assert_eq!(PipelineConfig::from_toml(&old).unwrap().normalised().0.masking.sections,
-                   qsmart_default_mask_sections());
-    }
-
-    fn field_mapping(c: &PipelineConfig) -> (UnwrappingAlgorithm, LaplacianSolver, B0Estimation) {
-        let fm = &c.field_mapping;
-        (fm.unwrapping_algorithm, fm.laplacian_solver, fm.b0_estimation)
-    }
-
-    /// Under QSMART the field mapping the user left alone is QSMART's own: Laplacian unwrapping
-    /// on the mirrored volume and its echo fit, each said once; elsewhere nothing changes.
-    #[test]
-    fn qsmart_takes_its_own_field_mapping_unless_chosen() {
-        use UnwrappingAlgorithm::*;
-        let mut c = PipelineConfig::default();
-        c.inversion.algorithm = QsmAlgorithm::Qsmart;
-        let (n, adjustments) = c.normalised();
-        assert_eq!(field_mapping(&n), (Laplacian, LaplacianSolver::Mirror, B0Estimation::QsmartEchofit));
-        let said: Vec<_> = adjustments.iter().map(|a| (a.setting, a.because)).collect();
-        assert_eq!(said, [("masking.sections", "inversion.algorithm"),
-                          ("field_mapping.unwrapping_algorithm", "inversion.algorithm"),
-                          ("field_mapping.laplacian_solver", "inversion.algorithm"),
-                          ("field_mapping.b0_estimation", "inversion.algorithm")]);
-        assert_eq!(n.normalised(), (n.clone(), vec![]));
-        assert_eq!(field_mapping(&PipelineConfig::default().normalised().0), (Romeo, LaplacianSolver::Dct, B0Estimation::WeightedAvg));
-
-        // ROMEO chosen: kept, and the echo fit, which needs Laplacian unwrapping, is not taken;
-        // only the mark that decides something is kept.
-        let mut romeo = c.clone();
-        romeo.field_mapping.unwrapping_chosen = true;
-        romeo.field_mapping.b0_estimation_chosen = true;
-        romeo.field_mapping.laplacian_solver_chosen = true;
-        let n = romeo.normalised().0;
-        assert_eq!(field_mapping(&n), (Romeo, LaplacianSolver::Dct, B0Estimation::WeightedAvg));
-        assert!(n.field_mapping.unwrapping_chosen);
-        assert!(!n.field_mapping.laplacian_solver_chosen && !n.field_mapping.b0_estimation_chosen);
-
-        // The DCT solver and the weighted average chosen: kept, with their marks.
-        let mut dct = c.clone();
-        dct.field_mapping.laplacian_solver_chosen = true;
-        dct.field_mapping.b0_estimation_chosen = true;
-        let n = dct.normalised().0;
-        assert_eq!(field_mapping(&n), (Laplacian, LaplacianSolver::Dct, B0Estimation::WeightedAvg));
-        assert!(n.field_mapping.laplacian_solver_chosen && n.field_mapping.b0_estimation_chosen);
-        assert!(!n.field_mapping.unwrapping_chosen, "Laplacian is not the general default: no mark needed");
-        assert_eq!(n.normalised(), (n.clone(), vec![]));
-
-        // Another value than the general default needs no mark, and keeps its value.
-        let mut fft = c.clone();
-        fft.field_mapping.laplacian_solver = LaplacianSolver::Fft;
-        fft.field_mapping.b0_estimation = B0Estimation::LinearFit;
-        assert_eq!(field_mapping(&fft.normalised().0), (Laplacian, LaplacianSolver::Fft, B0Estimation::LinearFit));
-
-        // The marks decide nothing outside QSMART and are dropped.
-        let mut rts = romeo.clone();
-        rts.inversion.algorithm = QsmAlgorithm::Rts;
-        let n = rts.normalised().0;
-        assert!(!n.field_mapping.unwrapping_chosen && !n.field_mapping.laplacian_solver_chosen && !n.field_mapping.b0_estimation_chosen);
-    }
-
-    /// QSMART's echo fit chosen under another inversion takes QSMART's unwrapping, which it needs,
-    /// unless the unwrapping was chosen too (which the run then refuses: FieldMappingConfig::validate).
-    #[test]
-    fn the_echo_fit_takes_qsmarts_unwrapping() {
-        let mut c = PipelineConfig::default();
-        c.field_mapping.b0_estimation = B0Estimation::QsmartEchofit;
-        let (n, adjustments) = c.normalised();
-        assert_eq!(field_mapping(&n), (UnwrappingAlgorithm::Laplacian, LaplacianSolver::Mirror, B0Estimation::QsmartEchofit));
-        assert!(adjustments.iter().all(|a| a.because == "field_mapping.b0_estimation"), "{adjustments:?}");
-        assert!(n.field_mapping.validate().is_ok());
-        c.field_mapping.unwrapping_chosen = true;
-        let n = c.normalised().0;
-        assert_eq!(n.field_mapping.unwrapping_algorithm, UnwrappingAlgorithm::Romeo);
-        assert!(n.field_mapping.validate().unwrap_err().contains("Laplacian unwrapping"));
-    }
-
-    /// A chosen mark is saved where it decides something, so a QSMART run that kept ROMEO reloads
-    /// as one; a configuration without the marks reads as unchosen.
-    #[test]
-    fn the_field_mapping_marks_are_saved_only_where_they_decide_something() {
-        let mut c = PipelineConfig::default();
-        c.inversion.algorithm = QsmAlgorithm::Qsmart;
-        c.field_mapping.unwrapping_chosen = true;
-        let n = c.normalised().0;
-        let toml = n.to_toml().unwrap();
-        assert!(toml.contains("unwrapping_chosen = true") && !toml.contains("b0_estimation_chosen"), "{toml}");
-        assert_eq!(PipelineConfig::from_toml(&toml).unwrap().normalised().0, n);
-        let old = toml.replace("unwrapping_chosen = true\n", "");
-        assert_eq!(PipelineConfig::from_toml(&old).unwrap().normalised().0.field_mapping.unwrapping_algorithm,
-                   UnwrappingAlgorithm::Laplacian);
-        // The changed-settings file says it too.
-        let changed = n.to_toml_changed().unwrap();
-        assert!(changed.contains("unwrapping_chosen = true"), "{changed}");
-        assert_eq!(PipelineConfig::from_toml(&changed).unwrap().normalised().0.field_mapping.unwrapping_algorithm,
-                   UnwrappingAlgorithm::Romeo);
+        c.field_mapping.b0_estimation = crate::enums::B0Estimation::QsmartEchofit;
+        assert_eq!(c.normalised().0, c);
     }
 }

@@ -829,8 +829,7 @@ pub fn prune_dismissals(config: &mut PipelineConfig, facts: &Facts) {
 
 /// Change `config` so the finding of `rule` is resolved: to the rule's recommended value, or, with
 /// `pick`, to another value it allows (one of [`Allowed::OneOf`]'s, or a number in its
-/// [`Allowed::Range`]). The setting is then the user's choice (it is not replaced by a method's
-/// default). Any dismissal of the rule is dropped.
+/// [`Allowed::Range`]). Any dismissal of the rule is dropped.
 pub fn apply(config: &mut PipelineConfig, rule: &str, pick: Option<&Value>) -> Result<(), String> {
     let r = core::RULES.iter().find(|r| r.id == rule).ok_or_else(|| format!("no rule {rule}"))?;
     let value = match (pick, r.expect) {
@@ -863,12 +862,6 @@ fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -> Result<()
     match kind {
         Kind::Same => {
             crate::schema::set(config, path, value.clone())?;
-            match path {
-                "bg_removal.algorithm" => config.bg_removal.algorithm_chosen = true,
-                "field_mapping.unwrapping_algorithm" => config.field_mapping.unwrapping_chosen = true,
-                "field_mapping.b0_estimation" => config.field_mapping.b0_estimation_chosen = true,
-                _ => {}
-            }
         }
         Kind::MaskGenerator => {
             // The preset whose sections all start with that generator (`bet` → BET on the
@@ -879,7 +872,6 @@ fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -> Result<()
             config.masking.sections = recipe.sections;
             config.masking.combine = recipe.combine;
             config.masking.refinements = recipe.refinements;
-            config.masking.recipe_chosen = true;
         }
         Kind::HdBetInference => {
             let patch = match id {
@@ -895,7 +887,6 @@ fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -> Result<()
                     }
                 }
             }
-            config.masking.recipe_chosen = true;
         }
         Kind::LaplacianSolver => {
             let fm = &mut config.field_mapping;
@@ -911,7 +902,6 @@ fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -> Result<()
                 }
                 other => return Err(format!("unknown Laplacian solver {other}")),
             };
-            fm.laplacian_solver_chosen = true;
         }
         Kind::VsharpGrid => {
             let v = &mut config.bg_removal.vsharp;

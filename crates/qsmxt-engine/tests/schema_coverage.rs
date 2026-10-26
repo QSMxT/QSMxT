@@ -30,11 +30,6 @@ fn filled() -> PipelineConfig {
     c.inversion.tile_size = Some(64);
     c.inversion.tile_halo = Some(8);
     c.qsm.reference_region = Some("thalamus".into());
-    c.masking.recipe_chosen = true;
-    c.bg_removal.algorithm_chosen = true;
-    c.field_mapping.unwrapping_chosen = true;
-    c.field_mapping.laplacian_solver_chosen = true;
-    c.field_mapping.b0_estimation_chosen = true;
     c
 }
 
@@ -789,8 +784,8 @@ fn a_morphology_step_of_zero_is_refused_by_the_run_and_the_view() {
 }
 
 /// A mask that may not suit the inversion is said beside the mask recipe, in words that name no
-/// option: under QSMART, a chosen threshold mask; not the BET mask it takes when none is chosen,
-/// and not a threshold under another inversion.
+/// option: under QSMART, the threshold mask (QSMART does not replace it); not a brain-extraction
+/// mask, and not a threshold under another inversion.
 #[test]
 fn the_mask_recipe_warns_when_it_may_not_suit_qsmart() {
     let warning = |c: &PipelineConfig| schema::settings_view(c, &ViewFacts::default()).into_iter()
@@ -798,9 +793,7 @@ fn the_mask_recipe_warns_when_it_may_not_suit_qsmart() {
     let mut c = PipelineConfig::default();
     assert_eq!(warning(&c), None);
     c.inversion.algorithm = qsmxt_engine::QsmAlgorithm::Qsmart;
-    assert_eq!(warning(&c), None, "unchosen, QSMART takes BET");
-    c.masking.recipe_chosen = true;
-    let w = warning(&c).expect("a chosen threshold under QSMART");
+    let w = warning(&c).expect("a threshold under QSMART");
     assert!(w.contains("QSMART") && !w.contains("--"), "{w}");
     let json = serde_json::to_value(schema::settings_view(&c, &ViewFacts::default())).unwrap();
     assert!(json.as_array().unwrap().iter().any(|v| v["path"] == "masking.sections" && v["warning"].is_string()));

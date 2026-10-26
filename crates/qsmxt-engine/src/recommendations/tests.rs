@@ -204,7 +204,6 @@ fn no_qsm_no_reconstruction_rules() {
     let mut c = PipelineConfig::default();
     c.inversion.algorithm = QsmAlgorithm::Rts;
     c.bg_removal.algorithm = BfAlgorithm::Pdf;
-    c.bg_removal.algorithm_chosen = true;
     assert!(!recommendations(&c, &Facts::default()).is_empty());
     c.pipeline.do_qsm = false;
     c.pipeline.do_swi = true;
@@ -216,7 +215,6 @@ fn reference_findings_are_information_only() {
     let mut c = PipelineConfig::default();
     c.inversion.algorithm = QsmAlgorithm::Rts;
     c.bg_removal.algorithm = BfAlgorithm::Pdf;
-    c.bg_removal.algorithm_chosen = true;
     let found = recommendations(&c, &Facts::default());
     let r = found.iter().find(|r| r.rule == "rts.bg-vsharp").unwrap();
     assert!(r.strength == Strength::Reference && !r.actionable());
@@ -253,7 +251,6 @@ fn dismissals_hold_for_their_value() {
     let mut c = PipelineConfig::default();
     c.inversion.algorithm = QsmAlgorithm::Rts;
     c.bg_removal.algorithm = BfAlgorithm::Pdf;
-    c.bg_removal.algorithm_chosen = true;
     assert!(dismiss(&mut c, "medi.bg-pdf", &facts).is_err(), "only a finding can be dismissed");
     let hash = crate::cache::config_hash(&c);
     dismiss(&mut c, "rts.bg-vsharp", &facts).unwrap();
@@ -283,7 +280,6 @@ fn findings_of_two_triggers_on_one_setting_are_both_reported() {
     // iLSQR's reference unwraps with the Laplacian, χ-separation's with ROMEO (the default).
     assert!(found.iter().any(|r| r.rule == "sti.unwrap-laplacian"));
     c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
-    c.field_mapping.unwrapping_chosen = true;
     let found = recommendations(&c, &Facts::default());
     assert!(found.iter().any(|r| r.rule == "chi-sep.unwrap-romeo"));
     assert!(!found.iter().any(|r| r.rule == "sti.unwrap-laplacian"));
