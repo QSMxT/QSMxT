@@ -48,6 +48,17 @@ startup** button turns them back on. The setting is saved in `~/.qsmxt/tips.json
 the `QSMXT_NO_TIPS` environment variable also turns tips off, for example on a shared
 install.
 
+## Recommendations
+
+When a change makes a setting depart from what a chosen method recommends (or requires, or
+discourages), a pop-up gives the reason and offers **Apply** (the recommended value, selected),
+the other values the method allows, and **Ignore**. `w` shows the source. **Ignore** keeps your
+choice and saves it in the configuration, so the pop-up does not come back until the setting
+changes. `Esc` closes the pop-up and leaves the setting marked ⚑; press `!` on it to see the
+pop-up again. A setting marked ⓘ differs from the method's reference pipeline. This is
+information only and never opens a pop-up. The line under the help gives each covered setting's
+reference value and its source, whether or not the setting differs.
+
 ## Layout
 
 The top row holds the tabs; press a digit (`1`–`8`) or `Tab`/`Shift-Tab` to switch. You can

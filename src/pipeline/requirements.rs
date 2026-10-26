@@ -17,6 +17,7 @@ pub fn scan_facts(run: &QsmRun, config: &PipelineConfig) -> ScanFacts {
     };
     ScanFacts {
         dims: run.dims,
+        voxel_size: None,
         n_echoes: run.echoes.len(),
         echo_times: run.echo_times.clone(),
         has_magnitude: run.has_magnitude,

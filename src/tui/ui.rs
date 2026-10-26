@@ -38,6 +38,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         draw_algo_modal(f, modal, f.area());
     }
 
+    if let Some(ref modal) = app.rec_modal {
+        draw_rec_modal(f, modal, f.area());
+    }
+
     if let Some(ref modal) = app.tip_modal {
         draw_tip_modal(f, modal, f.area());
     }
@@ -141,6 +145,53 @@ fn draw_tip_modal(f: &mut Frame, modal: &TipModal, area: Rect) {
     f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), text_area);
 }
 
+
+/// The recommendation pop-up ([`super::recommend`]): what the setting is, what the method
+/// recommends and why, and the choices.
+fn draw_rec_modal(f: &mut Frame, modal: &super::recommend::RecModal, area: Rect) {
+    let popup_w = 76.min(area.width);
+    let text_w = popup_w.saturating_sub(6).max(10) as usize;
+    let mut lines = vec![Line::from("")];
+    for r in &modal.findings {
+        let head = format!("{} is {}.", r.label, r.current_text());
+        lines.extend(tip_lines(&head, text_w));
+        let wants = match r.strength {
+            super::recommend::Strength::Discouraged => format!("This is discouraged with {}: {}", r.trigger.name, r.reason),
+            super::recommend::Strength::Required => format!("{} requires {}: {}", r.trigger.name, r.recommended.name, r.reason),
+            _ => format!("{} recommends {}: {}", r.trigger.name, r.recommended.name, r.reason),
+        };
+        lines.extend(tip_lines(&wants, text_w));
+        if modal.why {
+            lines.push(Line::from(Span::styled(
+                format!("Source ({}): {}", r.basis.label(), r.source), Style::default().fg(Color::Cyan))));
+        }
+        lines.push(Line::from(""));
+    }
+    for (i, c) in modal.choices.iter().enumerate() {
+        let style = if modal.cursor == Some(i) {
+            Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Gray)
+        };
+        lines.push(Line::from(Span::styled(format!(" {} ", super::recommend::RecModal::choice_label(c)), style)));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        format!("\u{2191}\u{2193} choose   Enter select   w {}   Esc later", if modal.why { "hide why" } else { "why?" }),
+        Style::default().fg(Color::DarkGray),
+    )).alignment(Alignment::Center));
+
+    let popup = centered_rect(popup_w, lines.len() as u16 + 2, area);
+    f.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow))
+        .title(Span::styled(modal.title(), Style::default().add_modifier(Modifier::BOLD)));
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+    let text_area = Rect { x: inner.x + 2, width: inner.width.saturating_sub(4), ..inner };
+    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), text_area);
+}
 
 /// "A new version is available" pop-up, raised once by the launch-time release check.
 fn draw_update_modal(f: &mut Frame, modal: &UpdateModal, area: Rect) {
@@ -1348,18 +1399,6 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    // The sub-tabs (second tab row), when the tab has more than one; then the form and its help.
-    let bar = super::tabs::subtab_rows(app);
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(bar), Constraint::Min(4), Constraint::Length(2)])
-        .split(inner);
-    if bar > 0 {
-        super::tabs::draw_subtabs(f, app, chunks[0]);
-    }
-    let form_area = chunks[1];
-    let help_area = chunks[2];
-
     // Build lines and collect state from pipeline_state before mutable borrow
     let rows = app.rows();
     let focusable = super::app::focusable_indices(&rows);
@@ -1368,6 +1407,26 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     let ps_cursor = app.pipeline_state.cursor;
     // With focus on the sub-tab strip no row is focused; the help line says how to get in.
     let on_strip = app.on_subtabs();
+    // The pipeline rules' findings for the form's config: a badge on each setting with one, and
+    // the focused setting's reference values under its help.
+    let view = app.rule_view();
+    let reference = (!on_strip && !app.tab_focus)
+        .then(|| focusable.get(ps_focus).and_then(|&i| rows.get(i)))
+        .flatten()
+        .and_then(|row| App::row_reference(&view, row));
+
+    // The sub-tabs (second tab row), when the tab has more than one; then the form and its help.
+    let bar = super::tabs::subtab_rows(app);
+    let help_rows = if reference.is_some() { 3 } else { 2 };
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(bar), Constraint::Min(4), Constraint::Length(help_rows)])
+        .split(inner);
+    if bar > 0 {
+        super::tabs::draw_subtabs(f, app, chunks[0]);
+    }
+    let form_area = chunks[1];
+    let help_area = chunks[2];
 
     // One label column per page, wide enough for its longest label (within reason).
     let lw = rows.iter().filter_map(|r| match r {
@@ -1837,6 +1896,15 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 }
             }
         };
+        let line = match App::row_badge(&view, row) {
+            Some(open) => {
+                let mut line = line;
+                let (mark, color) = if open { (" ⚑", Color::Yellow) } else { (" ⓘ", Color::DarkGray) };
+                line.spans.push(Span::styled(mark, Style::default().fg(color)));
+                line
+            }
+            None => line,
+        };
         lines.push(line);
     }
     if on_strip {
@@ -1850,7 +1918,17 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     render_scrollable(f, form_area, lines, scroll_offset, focused_line);
     let scroll = *scroll_offset;
 
-    // Render help text
+    // Render help text, and under it the reference values of the setting
+    let help_area = match &reference {
+        Some(text) => {
+            let [help, refs] = Layout::default().direction(Direction::Vertical)
+                .constraints([Constraint::Length(2), Constraint::Length(1)]).areas(help_area);
+            f.render_widget(Paragraph::new(Line::from(Span::styled(
+                format!("  {text}"), Style::default().fg(Color::Cyan)))), refs);
+            help
+        }
+        None => help_area,
+    };
     if let Some(help) = focused_help {
         let help_para = Paragraph::new(Line::from(Span::styled(
             format!("  {}", help),

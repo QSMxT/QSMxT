@@ -312,13 +312,15 @@ fn sentences_name_the_steps_they_describe() {
     assert_eq!(tgv.citations, ["langkammer2015"]);
 }
 
-/// What a run that decided nothing at run time did, step by step: every step of `plan` computed.
-fn as_planned(plan: &crate::plan::Plan) -> RunRecord {
+/// What a run that decided nothing at run time did, step by step: every step of `plan` computed,
+/// with the findings `config` has before a scan is known (a run's own scan may add to them).
+fn as_planned(plan: &crate::plan::Plan, config: &PipelineConfig) -> RunRecord {
     RunRecord {
         steps: plan.steps.iter().map(|s| crate::record::StepRecord {
             id: s.name.clone(), label: s.label.clone(), state: crate::record::StepState::Computed, decisions: vec![],
         }).collect(),
         resampled: None,
+        recommendations: crate::recommendations::recorded(config, &Default::default()),
     }
 }
 
@@ -331,7 +333,7 @@ fn a_run_that_decided_nothing_gets_the_configurations_text() {
             let text = generate_methods_for(&c, tool);
             for (scan, f) in scans() {
                 let p = plan(&c, &f);
-                let record = as_planned(&p);
+                let record = as_planned(&p, &c);
                 let run = methods_for_run(&c, &p, &record, tool);
                 assert_eq!(run, methods_structured(&c, &p, tool), "{name} on {scan} [{tool}]");
                 let merged = crate::record::merge(&[record.clone(), record.clone(), record]);

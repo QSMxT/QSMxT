@@ -13,13 +13,23 @@ use super::Section;
 
 /// What the config cannot say but decides whether some settings apply: facts about the data.
 /// The default is "not known", which shows every setting the data could need.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ViewFacts {
     /// The number of echoes, when every run has the same (`None` = not known, or mixed).
     pub num_echoes: Option<usize>,
     /// Whether some run is uncombined multi-coil data (`None` = not known).
     pub multi_coil: Option<bool>,
+    /// The field strength in tesla, when known: for the pipeline rules that depend on it
+    /// ([`crate::recommendations`]), as are the voxel and matrix size.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field_strength: Option<f64>,
+    /// The voxel size in mm, when known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub voxel_size: Option<[f64; 3]>,
+    /// The matrix size, when known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dims: Option<[usize; 3]>,
 }
 
 /// How a setting applies to a config.
@@ -45,6 +55,18 @@ pub struct SettingView {
     /// setting that applies has one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub warning: Option<String>,
+    /// Every pipeline rule of the chosen methods that covers this setting
+    /// ([`crate::recommendations::reference_values`]): its reference value and source, to show
+    /// next to the current value always, marked where the current value departs from it. Only a
+    /// setting that applies has them.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub reference: Vec<crate::recommendations::Recommendation>,
+    /// The findings on this setting: the rules of [`Self::reference`] it departs from, strongest
+    /// first. A `required` one stops the run as configured; `recommended` and `discouraged` ones
+    /// are offered (a modal when a change creates one, a badge afterwards) unless dismissed; a
+    /// `reference` one is information only.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub recommendations: Vec<crate::recommendations::Recommendation>,
 }
 
 /// The config as the run sees it, and the facts its settings' visibility is decided from.
@@ -187,7 +209,7 @@ pub fn settings_view(config: &PipelineConfig, facts: &ViewFacts) -> Vec<SettingV
                 "masking.sections" if visible => crate::masking::mask_warning(&c).map(String::from),
                 _ => None,
             };
-            SettingView { path: d.path, visible, forced_by, error: None, warning }
+            SettingView { path: d.path, visible, forced_by, error: None, warning, reference: vec![], recommendations: vec![] }
         })
         .collect();
     let visible: std::collections::HashSet<&str> = views.iter().filter(|v| v.visible).map(|v| v.path).collect();
@@ -195,6 +217,17 @@ pub fn settings_view(config: &PipelineConfig, facts: &ViewFacts) -> Vec<SettingV
         if let Some(v) = views.iter_mut().find(|v| v.path == path) {
             v.error.get_or_insert(message);
         }
+    }
+    for r in crate::recommendations::reference_values(config, &crate::recommendations::Facts::of_view(facts)) {
+        if let Some(v) = views.iter_mut().find(|v| v.path == r.setting && v.visible) {
+            if r.departs {
+                v.recommendations.push(r.clone());
+            }
+            v.reference.push(r);
+        }
+    }
+    for v in &mut views {
+        v.recommendations.sort_by_key(|r| std::cmp::Reverse(r.strength));
     }
     if let Some(note) = tiling_note(&c) {
         if let Some(v) = views.iter_mut().find(|v| v.path == "inversion.tile_size" && v.visible) {

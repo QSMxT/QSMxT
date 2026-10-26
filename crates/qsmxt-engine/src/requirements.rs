@@ -381,15 +381,8 @@ fn method_problem(f: &ScanFacts, config: &PipelineConfig, alg: QsmAlgorithm) -> 
     match alg {
         QsmAlgorithm::Medi | QsmAlgorithm::Tfi => {
             let method = if alg == QsmAlgorithm::Medi { "MEDI" } else { "TFI" };
-            if let Some(why) = echo_noise_map_problem(f, method) {
-                return Some(why);
-            }
-            if alg == QsmAlgorithm::Medi && config.inversion.medi.msmv && f.n_echoes < 3 {
-                return Some(format!(
-                    "with mSMV needs at least 3 echoes (its vessel mask uses R2* from ARLO), and this \
-                     run has {}", f.n_echoes));
-            }
-            None
+            // MEDI-mSMV's three echoes are QSM.rs's rule `medi-msmv.three-echoes` (below).
+            echo_noise_map_problem(f, method)
         }
         // The echo time STAR-QSM converts at must resolve from this scan's echo times (the echo
         // spacing needs them in order), and the field strength must be positive.
@@ -773,6 +766,19 @@ pub fn scan_check(f: &ScanFacts, config: &PipelineConfig) -> Check {
             });
         }
     }
+    // What a chosen method cannot run without, from QSM.rs's pipeline rules (`required`).
+    for r in crate::recommendations::recommendations(config, &crate::recommendations::Facts::of_scan(f)) {
+        if r.strength != crate::recommendations::Strength::Required {
+            continue;
+        }
+        let path = crate::schema::setting(&r.setting).map(|s| s.path);
+        let why = format!("{} is {}, and {} requires {}: {}", r.label, r.current_text(), r.trigger.name, r.recommended.name, r.reason);
+        out.errors.push(format!("{why} (rule {}; --accept-recommendations applies it)", r.rule));
+        out.problems.push(Problem {
+            severity: Severity::Error, setting: path, implied_by: None, settings: path.into_iter().collect(),
+            reason: why.clone(), message: why,
+        });
+    }
     if let Some(note) = medi_csf_note(f, config) {
         out.warnings.push(note.clone());
         out.problems.push(Problem {
@@ -835,6 +841,7 @@ mod tests {
     fn run(echo_times: &[f64], has_magnitude: bool) -> ScanFacts {
         ScanFacts {
             dims: (4, 4, 4),
+            voxel_size: None,
             n_echoes: echo_times.len(),
             echo_times: echo_times.to_vec(),
             has_magnitude,
@@ -1010,7 +1017,9 @@ mod tests {
         let mut msmv = with(|c| c.inversion.algorithm = QsmAlgorithm::Medi);
         msmv.inversion.medi.msmv = true;
         let out = check(&run(&[0.005, 0.010], true), &msmv);
-        assert!(out.errors.len() == 1 && out.errors[0].contains("mSMV") && out.errors[0].contains("at least 3 echoes"), "{out:?}");
+        assert!(out.errors.len() == 1 && out.errors[0].contains("mSMV") && out.errors[0].contains("at least three echoes")
+            && out.errors[0].contains("medi-msmv.three-echoes"), "{out:?}");
+        assert_eq!(out.problems[0].setting, Some("inversion.medi.msmv"));
         assert!(check(&run(&EVEN, true), &msmv).errors.is_empty());
         // Nothing is asked of a run that does not reconstruct.
         let mut off = with(|c| c.inversion.algorithm = QsmAlgorithm::Medi);

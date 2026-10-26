@@ -196,6 +196,7 @@ mod tests {
                 })
                 .collect(),
             resampled: Some(false),
+            recommendations: vec![],
         }
     }
 
@@ -236,7 +237,10 @@ mod tests {
         let config = PipelineConfig::default();
         let f = facts();
         let plan = crate::plan::plan(&config, &f);
-        let r = record(&plan, &[]);
+        let mut r = record(&plan, &[]);
+        // What the configuration departs from before a scan is known (iLSQR's reference
+        // unwrapping), as its runs record it.
+        r.recommendations = crate::recommendations::recorded(&config, &Default::default());
         let s = summarise(&config, &[(&plan, &f, &r), (&plan, &f, &r)], "qsmxt").unwrap();
         assert_eq!(
             s.methods.to_markdown(),

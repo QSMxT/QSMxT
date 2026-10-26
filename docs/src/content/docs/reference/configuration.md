@@ -103,6 +103,20 @@ weight = "flat"           # or "max-normalised", "in-vivo"
 HD-QSM's `mu1_l2`) is left out of the file to take the derived value; on the command line it is
 `auto`.
 
+Recommendations you chose not to follow (see
+[Recommendations](/QSMxT/guides/running-noninteractively/#recommendations)) are kept in the
+file, each with the value of its setting at the time. A change to the setting brings the
+recommendation back:
+
+```toml
+[[dismissed_recommendations]]
+rule = "fansi.te-spacing"   # the rule's id, as `qsmxt run --dry` lists it
+chosen = "first"            # the setting's value it was dismissed for
+```
+
+On the command line this is `--dismiss-recommendation fansi.te-spacing=first`. A file without
+`dismissed_recommendations` has none.
+
 :::tip
 Rather than writing flags or TOML by hand, configure interactively in the
 [TUI](/QSMxT/guides/running-interactively/) — it shows the equivalent `qsmxt run`

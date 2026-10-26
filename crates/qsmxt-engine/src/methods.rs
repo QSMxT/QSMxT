@@ -837,6 +837,29 @@ pub struct Methods {
     pub sentences: Vec<Sentence>,
     /// In the order the paragraph first cites them.
     pub references: Vec<Reference>,
+    /// What the run departed from in its methods' reference pipelines, said under the references.
+    #[serde(default, skip_serializing_if = "Note::is_empty")]
+    pub note: Note,
+}
+
+/// The methods text's Note section: the departures from the chosen methods' recommendations and
+/// reference pipelines that a run kept ([`crate::recommendations::note`]), one sentence each.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Note {
+    /// From what the methods' authors recommend, or QSM.rs measured to be better (or a combination
+    /// known to fail).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub departures: Vec<String>,
+    /// From what the methods' reference pipelines used, where their authors did not say it is
+    /// needed or better.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub differences: Vec<String>,
+}
+
+impl Note {
+    pub fn is_empty(&self) -> bool {
+        self.departures.is_empty() && self.differences.is_empty()
+    }
 }
 
 impl Methods {
@@ -845,7 +868,8 @@ impl Methods {
         self.sentences.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join(" ")
     }
 
-    /// The paragraph under a `# Methods` heading, and the references under `## References`.
+    /// The paragraph under a `# Methods` heading, the references under `## References`, and the
+    /// Note, if there is one, under `## Note`.
     pub fn to_markdown(&self) -> String {
         let mut out = format!("# Methods\n\n{}\n\n", self.paragraph());
         if !self.references.is_empty() {
@@ -853,6 +877,28 @@ impl Methods {
             for r in &self.references {
                 out.push_str(&format!("- {}\n", r.text));
             }
+        }
+        let n = &self.note;
+        if !n.is_empty() {
+            if !self.references.is_empty() {
+                out.push('\n');
+            }
+            out.push_str("## Note\n\n");
+            for (heading, lines) in [
+                ("Departures from the methods' recommendations:", &n.departures),
+                ("Differences from the methods' reference pipelines:", &n.differences),
+            ] {
+                if lines.is_empty() {
+                    continue;
+                }
+                out.push_str(&format!("{heading}\n\n"));
+                for l in lines {
+                    out.push_str(&format!("- {l}\n"));
+                }
+                out.push('\n');
+            }
+            out.truncate(out.trim_end().len());
+            out.push('\n');
         }
         out
     }
@@ -906,7 +952,7 @@ impl Draft {
         let references = self.references.iter()
             .map(|c| Reference { key: c.key.to_string(), text: c.text.to_string() })
             .collect();
-        Methods { sentences, references }
+        Methods { sentences, references, note: Note::default() }
     }
 }
 
@@ -937,7 +983,9 @@ pub fn generate_methods(config: &PipelineConfig) -> String {
 /// Generate methods for a specific tool (e.g. "qsmxt" or "QSMbly"): [`Methods::to_markdown`].
 pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
     let config = &config.normalised().0;
-    draft(config, tool, Ran::default()).finish(config, None).to_markdown()
+    let mut methods = draft(config, tool, Ran::default()).finish(config, None);
+    methods.note = crate::recommendations::config_note(config);
+    methods.to_markdown()
 }
 
 /// The methods text for a run of `plan` (made by [`crate::plan::plan`] from `config` and the
@@ -945,7 +993,9 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
 /// describes. Its [`Methods::to_markdown`] is [`generate_methods_for`]'s text.
 pub fn methods_structured(config: &PipelineConfig, plan: &Plan, tool: &str) -> Methods {
     let config = &config.normalised().0;
-    draft(config, tool, Ran::default()).finish(config, Some(plan))
+    let mut methods = draft(config, tool, Ran::default()).finish(config, Some(plan));
+    methods.note = crate::recommendations::config_note(config);
+    methods
 }
 
 /// The methods text of a run of `plan` that did what `record` says ([`crate::run::run`]'s
@@ -956,9 +1006,11 @@ pub fn methods_structured(config: &PipelineConfig, plan: &Plan, tool: &str) -> M
 pub fn methods_for_run(config: &PipelineConfig, plan: &Plan, record: &RunRecord, tool: &str) -> Methods {
     let config = &config.normalised().0;
     let merged = DatasetRecord::from(record);
-    draft(config, tool, Ran(Some(&merged))).finish_drawn(|stage| {
+    let mut methods = draft(config, tool, Ran(Some(&merged))).finish_drawn(|stage| {
         plan.has(*stage) && !crate::pipeline_graph::left_out(plan, config, *stage, record.resampled)
-    })
+    });
+    methods.note = crate::recommendations::note(&merged.recommendations, 1);
+    methods
 }
 
 /// The methods text of a dataset's runs of `config`, merged into `record` ([`crate::record::merge`]):
@@ -966,8 +1018,10 @@ pub fn methods_for_run(config: &PipelineConfig, plan: &Plan, record: &RunRecord,
 /// wording ("where available") stands. Each sentence names the steps some run did something in.
 pub fn methods_for_dataset(config: &PipelineConfig, record: &DatasetRecord, tool: &str) -> Methods {
     let config = &config.normalised().0;
-    draft(config, tool, Ran(Some(record)))
-        .finish_drawn(|stage| record.step(&stage.name()).is_some_and(|s| s.ran() > 0))
+    let mut methods = draft(config, tool, Ran(Some(record)))
+        .finish_drawn(|stage| record.step(&stage.name()).is_some_and(|s| s.ran() > 0));
+    methods.note = crate::recommendations::note(&record.recommendations, record.runs);
+    methods
 }
 
 /// What the runs the text describes did ([`DatasetRecord`]; one run's is a dataset of one). With
@@ -2256,6 +2310,11 @@ fn join_list(items: &[String]) -> String {
 mod tests {
     use super::*;
 
+    /// The methods text without its Note: what was done, as the paragraph and references say it.
+    fn paragraph(config: &PipelineConfig) -> String {
+        generate_methods(config).split("\n## Note").next().unwrap().to_string()
+    }
+
     /// Methods text is prose meant to be pasted into a paper, so a run of whitespace in the middle
     /// of a sentence is a defect. A Rust string continuation that loses its backslash produces
     /// exactly that, and every other assertion in this file still passes when it happens.
@@ -2482,18 +2541,18 @@ mod tests {
     #[test]
     fn vsharp_methods_describe_the_working_grid() {
         let mut config = PipelineConfig::default();
-        let out = generate_methods(&config);
+        let out = paragraph(&config);
         assert!(out.contains("estimated on an isotropic grid: the field"), "the default: {out}");
         config.bg_removal.vsharp.grid = VsharpGrid::Finest;
-        let out = generate_methods(&config);
+        let out = paragraph(&config);
         assert!(out.contains("estimated on an isotropic grid at the smallest acquired voxel dimension"), "{out}");
         config.bg_removal.vsharp.grid = VsharpGrid::Isotropic;
         config.bg_removal.vsharp.grid_spacing = 0.8;
-        let out = generate_methods(&config);
+        let out = paragraph(&config);
         assert!(out.contains("estimated on a 0.8 mm isotropic grid"), "{out}");
         assert!(!out.contains("For anisotropic voxels"), "{out}");
         config.bg_removal.vsharp.grid = VsharpGrid::Native;
-        let out = generate_methods(&config);
+        let out = paragraph(&config);
         assert!(!out.contains("isotropic grid"), "{out}");
     }
 
@@ -2713,16 +2772,16 @@ mod tests {
     fn test_laplacian_methods() {
         let mut config = PipelineConfig::default();
         config.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
-        let out = generate_methods(&config);
+        let out = paragraph(&config);
         assert!(out.contains("Laplacian method"));
         assert!(out.contains("Schofield"));
         assert!(!out.contains("DCT"), "the default solver is not stated: {out}");
         config.field_mapping.laplacian_solver = LaplacianSolver::Fft;
-        let out = generate_methods(&config);
+        let out = paragraph(&config);
         assert!(out.contains("(Schofield & Zhu, 2003) with an FFT Poisson solve."), "{out}");
         assert!(!out.contains("zero-padded"), "the default padding is not stated: {out}");
         config.field_mapping.laplacian_fft_pad = [64, 64, 32];
-        assert!(generate_methods(&config).contains("with an FFT Poisson solve on the volume zero-padded by 64×64×32 voxels."));
+        assert!(paragraph(&config).contains("with an FFT Poisson solve on the volume zero-padded by 64×64×32 voxels."));
     }
 
     #[test]

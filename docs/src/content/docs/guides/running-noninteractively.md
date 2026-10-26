@@ -77,6 +77,41 @@ with `--mask-preset` — e.g. `--mask-preset bet --masking-input magnitude-first
 runs BET on the first-echo magnitude. For fully custom masking, see `--mask`
 in [Algorithms](/QSMxT/reference/algorithms/#masking).
 
+### Recommendations
+
+Many methods only work as intended with certain other settings: the ones their authors used.
+QSMxT checks the configuration against what each chosen method's reference pipeline does (the
+pipeline rules in QSM.rs, each with its source) and says where it departs. It never changes a
+setting on its own.
+
+- **Required**: the method cannot run otherwise (MEDI-mSMV on fewer than three echoes). The
+  run is refused, with the change that resolves it.
+- **Recommended** or **discouraged**: the authors recommend another value, QSM.rs measured one
+  to be better, or the combination is known to fail. Each is logged as a warning before the
+  runs start.
+- **Reference**: the reference pipeline used another value, without its authors saying it is
+  needed or better. This is information only.
+
+```sh
+# List every recommendation for this configuration and dataset, and each covered
+# setting's reference value
+qsmxt run study/bids --qsm-algorithm medi --dry
+
+# Apply every recommended value that is not dismissed (reference ones are left as they are)
+qsmxt run study/bids --qsm-algorithm medi --accept-recommendations
+
+# Keep a choice: dismiss the recommendation for the setting's current value
+qsmxt run study/bids --qsm-algorithm fansi --fansi-te first \
+  --dismiss-recommendation fansi.te-spacing=first
+```
+
+`--dry --accept-recommendations` shows the settings that would change and the resulting
+command. Two equally strong recommendations that disagree on one setting are left for you to
+choose. A dismissal is saved in the configuration (`dismissed_recommendations`), and stops
+applying once the setting changes. At the end of a run, the log lists what was applied,
+what was dismissed, and the departures that were kept. Each run's record keeps the same, and
+`methods.md` ends with a **Note** that lists the departures the runs kept.
+
 ### Selecting runs
 
 Process only part of a dataset with glob patterns:

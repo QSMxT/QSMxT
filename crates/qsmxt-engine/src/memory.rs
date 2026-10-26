@@ -668,6 +668,7 @@ pub fn estimate_peak_memory_bytes(
     let n_echoes = n_echoes.max(1);
     let facts = ScanFacts {
         dims: (nx, ny, nz),
+        voxel_size: None,
         n_echoes,
         echo_times: (1..=n_echoes).map(|e| 0.005 * e as f64).collect(),
         has_magnitude,
@@ -701,6 +702,7 @@ mod tests {
     pub(crate) fn example() -> ScanFacts {
         ScanFacts {
             dims: (184, 256, 128),
+            voxel_size: None,
             n_echoes: 5,
             echo_times: vec![0.005, 0.011, 0.017, 0.023, 0.029],
             has_magnitude: true,

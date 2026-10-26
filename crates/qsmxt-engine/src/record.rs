@@ -187,6 +187,11 @@ pub struct RunRecord {
     /// on the axial one); `None` before the load step has run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resampled: Option<bool>,
+    /// What the run's config departs from in its methods' reference pipelines, on its scan
+    /// ([`crate::recommendations::recorded`]), and what became of each finding: applied before
+    /// the run, dismissed, or kept.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recommendations: Vec<crate::recommendations::Recorded>,
 }
 
 impl RunRecord {
@@ -264,6 +269,18 @@ pub struct DatasetRecord {
     pub steps: Vec<DatasetStep>,
     /// The runs resampled to axial.
     pub resampled: usize,
+    /// Every finding any run kept ([`RunRecord::recommendations`]), once, with how many runs kept
+    /// it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recommendations: Vec<RecommendationCount>,
+}
+
+/// A finding of a dataset's runs, and how many runs it was found in.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecommendationCount {
+    #[serde(flatten)]
+    pub recorded: crate::recommendations::Recorded,
+    pub runs: usize,
 }
 
 impl DatasetRecord {
@@ -320,6 +337,12 @@ pub fn merge(records: &[RunRecord]) -> DatasetRecord {
     for record in records {
         if record.resampled == Some(true) {
             out.resampled += 1;
+        }
+        for r in &record.recommendations {
+            match out.recommendations.iter_mut().find(|c| c.recorded == *r) {
+                Some(c) => c.runs += 1,
+                None => out.recommendations.push(RecommendationCount { recorded: r.clone(), runs: 1 }),
+            }
         }
         // Where the next step of this run not merged yet goes: after the last one it shares.
         let mut at = 0;
@@ -413,6 +436,7 @@ mod tests {
                 ),
             ],
             resampled: Some(false),
+            recommendations: vec![],
         };
         let json = serde_json::to_value(&record).unwrap();
         assert_eq!(
@@ -448,6 +472,7 @@ mod tests {
                 step("invert", StepState::Computed, vec![]),
             ],
             resampled: Some(true),
+            recommendations: vec![],
         };
         let b = RunRecord {
             steps: vec![
@@ -457,6 +482,7 @@ mod tests {
                 step("invert", StepState::Cached, vec![]),
             ],
             resampled: Some(false),
+            recommendations: vec![],
         };
         let m = merge(&[a.clone(), a, b]);
         assert_eq!(m.runs, 3);

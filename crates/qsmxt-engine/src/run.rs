@@ -39,7 +39,11 @@ pub fn run<S: StageStore + ?Sized>(
     crate::schema::check_ranges(config)?;
     let (meta, load_record, _) = load(config, facts, store, observer)?;
     store.begin(&meta)?;
-    let mut record = RunRecord { steps: vec![load_record], resampled: Some(meta.source_geometry.is_some()) };
+    let mut record = RunRecord {
+        steps: vec![load_record],
+        resampled: Some(meta.source_geometry.is_some()),
+        recommendations: crate::recommendations::recorded(config, &crate::recommendations::Facts::of_run(&meta)),
+    };
     if !plan.processes() {
         observer.log(Level::Info, "No outputs enabled — nothing to process");
         store.finish()?;
@@ -2042,6 +2046,7 @@ pub(crate) mod tests {
         }
         let facts = ScanFacts {
             dims: (N, N, N), n_echoes: TES.len(), echo_times: TES.to_vec(), has_magnitude: true,
+            voxel_size: None,
             n_coils: 1, real_imaginary: false, field_strength: 3.0, b0_dir: None,
             mese_echo_times: None, custom_mask: false, custom_dseg: false, custom_qsm: false,
             custom_r2: false, custom_r2prime: false,

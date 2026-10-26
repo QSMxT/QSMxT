@@ -33,6 +33,7 @@ fn facts(fx: &Value, echoes: usize) -> ScanFacts {
     let tes: Vec<f64> = serde_json::from_value(s["echo_times"].clone()).unwrap();
     ScanFacts {
         dims: (dims[0], dims[1], dims[2]),
+        voxel_size: None,
         n_echoes: echoes,
         echo_times: tes[..echoes].to_vec(),
         has_magnitude: true,

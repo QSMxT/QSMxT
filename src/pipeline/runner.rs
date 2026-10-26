@@ -223,12 +223,14 @@ fn load_mask(path: &Path) -> crate::Result<Vec<u8>> {
 ///
 /// The engine plans the run and runs it ([`qsmxt_engine::run::run`]) against the run's files
 /// ([`FileStore`]): each step saves its output to disk and drops data from memory, and on re-run,
-/// completed steps with valid outputs on disk are skipped.
-pub fn run_pipeline_cached(
+/// completed steps with valid outputs on disk are skipped. `applied` are the recommendations
+/// `--accept-recommendations` applied that this run had, which its run record keeps.
+pub fn run_pipeline_applied(
     qsm_run: &QsmRun,
     config: &PipelineConfig,
     output: &DerivativeOutputs,
     force: bool,
+    applied: &[qsmxt_engine::recommendations::Recommendation],
     progress: &dyn Fn(&str),
 ) -> crate::Result<()> {
     let state_path = output.state_path(&qsm_run.key);
@@ -248,8 +250,23 @@ pub fn run_pipeline_cached(
         working_grid_kept: false,
     };
     let mut observer = RunObserver { key: qsm_run.key.to_string(), progress, bar: None, started: None };
-    let record = qsmxt_engine::run::run(&plan, config, &facts, &mut store, &mut observer)?;
+    let mut record = qsmxt_engine::run::run(&plan, config, &facts, &mut store, &mut observer)?;
+    record.recommendations.extend(applied.iter().map(|r| qsmxt_engine::recommendations::Recorded {
+        finding: r.clone(), outcome: qsmxt_engine::recommendations::Outcome::Applied,
+    }));
     write_run_files(qsm_run, config, &facts, &plan, &record, output)
+}
+
+/// [`run_pipeline_applied`] with nothing applied.
+#[cfg(test)]
+pub fn run_pipeline_cached(
+    qsm_run: &QsmRun,
+    config: &PipelineConfig,
+    output: &DerivativeOutputs,
+    force: bool,
+    progress: &dyn Fn(&str),
+) -> crate::Result<()> {
+    run_pipeline_applied(qsm_run, config, output, force, &[], progress)
 }
 
 /// A run's `*_runrecord.json`: what it did ([`qsmxt_engine::record::RunRecord`], its fields at

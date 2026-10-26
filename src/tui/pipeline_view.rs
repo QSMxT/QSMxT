@@ -30,6 +30,7 @@ use super::app::{App, InputMode};
 pub fn typical_scan() -> ScanFacts {
     ScanFacts {
         dims: (256, 256, 176),
+        voxel_size: None,
         n_echoes: 5,
         echo_times: vec![0.004, 0.008, 0.012, 0.016, 0.020],
         has_magnitude: true,
