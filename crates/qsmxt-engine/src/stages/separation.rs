@@ -209,10 +209,10 @@ mod tests {
         assert!(check_patch(&c).is_ok(), "not the method");
         c.separation.algorithm = SeparationAlgorithm::ChiSepNet;
         let e = check_patch(&c).unwrap_err().to_string();
-        assert!(e.contains("multiple of 16 (got 120)"), "{e}");
+        assert!(e.contains("χ-sepnet patch H = 120 must be a positive multiple of 16"), "{e}");
         c.separation.algorithm = SeparationAlgorithm::SusepNet;
         let e = check_patch(&c).unwrap_err().to_string();
-        assert!(e.contains("multiple of 8 (got 4)"), "{e}");
+        assert!(e.contains("SUSEP-Net patch W = 4 must be a positive multiple of 8"), "{e}");
         // The browser's are fine, and the configs map onto qsm-core's defaults.
         let b = PipelineConfig::browser();
         assert!(b.separation.chi_sepnet.validate().is_ok() && b.separation.susep_net.validate().is_ok());

@@ -952,8 +952,10 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             self.put(Item::FieldReliability, Data::Mask(reliability))?;
             outputs.push(Item::FieldReliability);
         }
+        // The threshold QSMART's echo fit resolved, recorded beside the parameters.
+        let outcome = field.qsmart_fit_threshold.map(|t| ("qsmart_fit_threshold", serde_json::json!(t)));
         self.complete(Done {
-            step: "unwrap", algorithm: Some(&algorithm), params: &params, outcome: None, key: &key, outputs: &outputs,
+            step: "unwrap", algorithm: Some(&algorithm), params: &params, outcome, key: &key, outputs: &outputs,
         }, "Phase unwrapping")
     }
 
@@ -1514,7 +1516,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                             source.insert("R2primeSource".into(), json!("predicted"));
                             source.insert("R2primeMethod".into(), json!("R2PRIMEnet (from R2*)"));
                             source.insert("R2primenetTrainedFieldStrength".into(),
-                                          json!(crate::requirements::R2PRIMENET_TRAINED_B0_T));
+                                          json!(qsm_core::relaxometry::TRAINED_B0_T));
                             source.insert("R2primenetCalibrated".into(), json!(policy == R2primenetFieldPolicy::Run));
                             Some(predicted)
                         }

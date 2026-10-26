@@ -20,11 +20,6 @@ use crate::scan::ScanFacts;
 /// would refuse with an `InputError` mid-run.
 const EPG_TOLERANCE_S: f64 = qsm_core::utils::EPG_TE_TOLERANCE_S;
 
-/// How far an echo spacing may differ from the first, relative to it, before the noise map of
-/// MEDI, TFI and PDF (MEDI toolbox `Fit_ppm_complex`, which assumes one spacing) is refused: the
-/// tolerance of qsm-core's dispatcher (`pipeline::inversion::echo_magnitudes`).
-const FIT_PPM_COMPLEX_SPACING_TOLERANCE: f64 = 1e-3;
-
 /// An output the pipeline can be asked for, or that another can turn on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Output {
@@ -245,15 +240,9 @@ pub fn r2primenet_field_policy(
 /// Kept separate from the inference so a non-`dl` build still compiles the check, and so the
 /// policy is decided before the weights are fetched rather than after.
 fn r2primenet_field_offset(field_strength: f64) -> Option<f64> {
-    let off = (field_strength - R2PRIMENET_TRAINED_B0_T).abs();
-    (off > R2PRIMENET_B0_TOLERANCE_T).then_some(off)
+    let off = (field_strength - qsm_core::relaxometry::TRAINED_B0_T).abs();
+    (off > qsm_core::relaxometry::B0_TOLERANCE_T).then_some(off)
 }
-
-/// qsm-core's `relaxometry::{TRAINED_B0_T, B0_TOLERANCE_T}`, which only exist with its `onnx`
-/// feature; a build without it still needs them for the policy. Checked against qsm-core in
-/// `qsmxt`'s tests.
-pub const R2PRIMENET_TRAINED_B0_T: f64 = 3.0;
-pub const R2PRIMENET_B0_TOLERANCE_T: f64 = 0.3;
 
 /// Why R2PRIMEnet off 3 T is a problem, for the warning or the error.
 ///
@@ -294,7 +283,7 @@ fn r2primenet_field_message_in(field_strength: f64, w: &Words) -> String {
         "R2PRIMEnet's weights are trained at {} T and this acquisition is {} T. R2* scales with \
          field strength, so a predicted R2' would be outside what the network has seen and wrong \
          in a way that looks plausible. Acquire a MESE and {measure}, or {supply}",
-        R2PRIMENET_TRAINED_B0_T, field_strength,
+        qsm_core::relaxometry::TRAINED_B0_T, field_strength,
     )
 }
 
@@ -337,12 +326,9 @@ fn echo_noise_map_problem(f: &ScanFacts, method: &str) -> Option<String> {
             "needs the magnitude of every echo ({method} weights the data by a noise map made from \
              them), and this run has no magnitude"));
     }
-    let spacing: Vec<f64> = f.echo_times.windows(2).map(|w| w[1] - w[0]).collect();
-    let uneven = spacing.iter()
-        .any(|d| (d - spacing[0]).abs() > FIT_PPM_COMPLEX_SPACING_TOLERANCE * spacing[0].abs());
-    uneven.then(|| format!(
-        "needs evenly spaced echoes ({method}'s noise map assumes one echo spacing), and this run's \
-         echo times are {}", ms(&f.echo_times)))
+    // QSM.rs's rule (finite, increasing, evenly spaced), as its dispatcher checks it.
+    qsm_core::fieldmap::echo_spacing_problem(&f.echo_times)
+        .map(|why| format!("{why} ({method}'s noise map assumes one echo spacing)"))
 }
 
 /// Why the configured dipole inversion cannot run on this run's data, if it cannot: the methods
@@ -434,12 +420,8 @@ pub fn field_mapping_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<S
         return Some("needs the magnitude of every echo (it fits the complex echoes), and this run has \
                      no magnitude".into());
     }
-    let spacing: Vec<f64> = f.echo_times.windows(2).map(|w| w[1] - w[0]).collect();
-    let uneven = spacing.iter()
-        .any(|d| *d <= 0.0 || (d - spacing[0]).abs() > FIT_PPM_COMPLEX_SPACING_TOLERANCE * spacing[0].abs());
-    uneven.then(|| format!(
-        "needs increasing, evenly spaced echoes (it fits the phase per echo spacing), and this run's \
-         echo times are {}", ms(&f.echo_times)))
+    qsm_core::fieldmap::echo_spacing_problem(&f.echo_times)
+        .map(|why| format!("{why} (it fits the phase per echo spacing)"))
 }
 
 /// The note for MEDI+0's CSF term on a run with fewer than 3 echoes (MEDI, or QSMART's inner
@@ -718,7 +700,8 @@ pub fn inhomogeneity_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<S
     if !on {
         return None;
     }
-    config.n4.grid_problem(f.dims)
+    config.n4.core().check_grid(f.dims).err().map(|e| format!(
+        "{e}. Lower --n4-shrink-factor, or use --inhomogeneity-method makehomogeneous"))
 }
 
 /// Why `n_coils` uncombined coils of `n_echoes` echoes cannot be combined, if they cannot.
@@ -948,6 +931,8 @@ mod tests {
     }
 
     const EVEN: [f64; 4] = [0.005, 0.010, 0.015, 0.020];
+    /// An evenly spaced train as a sidecar rounds it (to 0.01 ms): spacings 4.92, 4.93, 4.91 ms.
+    const ROUNDED: [f64; 4] = [0.00492, 0.00984, 0.01477, 0.01968];
 
     #[test]
     fn n4_refuses_a_grid_it_cannot_shrink() {
@@ -1092,6 +1077,8 @@ mod tests {
                   with(|c| c.bg_removal.algorithm = BfAlgorithm::Pdf)] {
             let out = check(&uneven, &c);
             assert!(out.errors.len() == 1 && out.errors[0].contains("evenly spaced"), "{out:?}");
+            // QSM.rs's rule: echo times rounded to 0.01 ms in a sidecar are evenly spaced.
+            assert!(check(&run(&ROUNDED, true), &c).errors.is_empty(), "rounded echo times");
         }
         let pdf = check(&run(&EVEN, false), &with(|c| c.bg_removal.algorithm = BfAlgorithm::Pdf));
         assert!(pdf.errors.len() == 1 && pdf.errors[0].contains("--bf-algorithm pdf"), "{pdf:?}");
@@ -1459,6 +1446,7 @@ mod tests {
         assert!(out.errors.len() == 1 && out.errors[0].contains("evenly spaced"), "{out:?}");
         assert!(out.problems[0].settings == ["field_mapping.b0_estimation"], "{out:?}");
         assert!(check(&run(&[0.010, 0.005], true), &c).errors.len() == 1, "decreasing echo times");
+        assert!(check(&run(&ROUNDED, true), &c).errors.is_empty());
         c.field_mapping.bipolar_correction = true;
         let out = check(&run(&EVEN, true), &c);
         assert!(out.errors.len() == 1 && out.errors[0].contains("bipolar correction"), "{out:?}");

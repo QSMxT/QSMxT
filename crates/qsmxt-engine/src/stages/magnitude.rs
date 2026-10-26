@@ -66,14 +66,12 @@ pub fn homogeneity_correct(
             Ok(qsm_core::utils::makehomogeneous(data, &grid, h.sigma_mm, h.nbox)?)
         }
         InhomogeneityMethod::N4 => {
-            // qsm-core panics on a grid too small to shrink and on settings it cannot use; the
-            // plan refuses both up front, and this covers runs resumed from a cached state.
-            let n4 = &config.n4;
-            if let Some(why) = n4.validate().err().or_else(|| n4.grid_problem(meta.dims)) {
-                return Err(EngineError::Config(format!("inhomogeneity correction: {why}")));
-            }
-            // No mask: the corrected magnitude is what masking is made from.
-            Ok(qsm_core::utils::n4_bias_correction(data, None, &grid, &n4.core(), |_, _| {}).corrected)
+            // The plan refuses settings and grids N4 cannot use up front; this covers runs
+            // resumed from a cached state. No mask: the corrected magnitude is what masking is
+            // made from.
+            qsm_core::utils::n4_bias_correction(data, None, &grid, &config.n4.core(), |_, _| {})
+                .map(|out| out.corrected)
+                .map_err(|e| EngineError::Config(format!("inhomogeneity correction: {e}")))
         }
     }
 }
@@ -141,7 +139,7 @@ pub(crate) mod tests {
         config.masking.inhomogeneity_method = InhomogeneityMethod::N4;
         config.n4.max_iterations = vec![2];
         let grid = qsm_core::Grid::new(8, 8, 8, 1.0, 1.0, 1.0);
-        let n4 = qsm_core::utils::n4_bias_correction(&data, None, &grid, &config.n4.core(), |_, _| {}).corrected;
+        let n4 = qsm_core::utils::n4_bias_correction(&data, None, &grid, &config.n4.core(), |_, _| {}).unwrap().corrected;
         assert_eq!(homogeneity_correct(&data, &meta, &config, "x").unwrap(), n4);
         assert_ne!(n4, made);
         assert_eq!(params(&config)["inhomogeneity_method"], "n4");
@@ -155,11 +153,11 @@ pub(crate) mod tests {
         config.masking.inhomogeneity_method = InhomogeneityMethod::N4;
         let data = vec![1.0f64; 64];
         let err = homogeneity_correct(&data, &meta_4x4x4(), &config, "x").unwrap_err().to_string();
-        assert!(err.contains("--n4-shrink-factor") && err.contains("4x4x4"), "{err}");
+        assert!(err.contains("shrink_factor = 4") && err.contains("4x4x4"), "{err}");
         config.n4.shrink_factor = 2;
         assert!(homogeneity_correct(&data, &meta_4x4x4(), &config, "x").is_ok());
         config.n4.max_iterations.clear();
         let err = homogeneity_correct(&data, &meta_4x4x4(), &config, "x").unwrap_err().to_string();
-        assert!(err.contains("--n4-max-iterations"), "{err}");
+        assert!(err.contains("N4 max_iterations = []"), "{err}");
     }
 }

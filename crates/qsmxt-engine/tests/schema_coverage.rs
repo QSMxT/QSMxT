@@ -518,14 +518,14 @@ fn a_value_out_of_range_is_an_error_on_its_own_setting() {
     // A setting's own rule.
     c.pipeline.do_r2primemap = true;
     c.separation.r2primenet.patch = [192, 192, 120];
-    assert_eq!(error(&c, "separation.r2primenet.patch").as_deref(), Some("Every dimension must be a positive multiple of 16 (got 120)"));
+    assert_eq!(error(&c, "separation.r2primenet.patch").as_deref(), Some("R2PRIMEnet patch W = 120 must be a positive multiple of 16 (four pooling levels)"));
     c.pipeline.do_chi_separation = true;
     c.separation.algorithm = qsmxt_engine::SeparationAlgorithm::ChiSepNet;
     c.separation.chi_sepnet.patch = [128, 120, 64];
-    assert_eq!(error(&c, "separation.chi_sepnet.patch").as_deref(), Some("Every dimension must be a positive multiple of 16 (got 120)"));
+    assert_eq!(error(&c, "separation.chi_sepnet.patch").as_deref(), Some("χ-sepnet patch H = 120 must be a positive multiple of 16 (four pooling levels)"));
     c.separation.algorithm = qsmxt_engine::SeparationAlgorithm::SusepNet;
     c.separation.susep_net.patch = Some([128, 128, 12]);
-    assert_eq!(error(&c, "separation.susep_net.patch").as_deref(), Some("Every dimension must be a positive multiple of 8 (got 12)"));
+    assert_eq!(error(&c, "separation.susep_net.patch").as_deref(), Some("SUSEP-Net patch W = 12 must be a positive multiple of 8 (three pooling levels)"));
     let doc = serde_json::to_value(schema::settings_view(&c, &ViewFacts::default())).unwrap();
     let tkd = doc.as_array().unwrap().iter().find(|v| v["path"] == "inversion.tkd.threshold").unwrap();
     assert_eq!(tkd["error"], "Must be from 0 to 2/3 (not 0 or 2/3)");
@@ -550,7 +550,7 @@ fn qsm_rs_parameter_checks_reach_the_view_and_the_plan() {
         ("inversion.amp_pe.nlevel", |c| { c.inversion.algorithm = QsmAlgorithm::AmpPe; c.inversion.amp_pe.nlevel = 64; },
             "AMP-PE nlevel = 64 is out of range: must be <= 63"),
         ("inversion.amp_pe.wave_order", |c| { c.inversion.algorithm = QsmAlgorithm::AmpPe; c.inversion.amp_pe.wave_order = 5; },
-            "AMP-PE wave_order = 5 is out of range: must be 1..=4 (db1–db4)"),
+            "AMP-PE wave_order = 5 is out of range: must be from 1 to 4 (db1–db4)"),
         ("inversion.ilsqr.pad_mm", |c| { c.inversion.algorithm = QsmAlgorithm::Ilsqr; c.inversion.ilsqr.pad_mm = -1.0; },
             "iLSQR padding must be finite and >= 0 mm, got -1"),
         ("separation.decompose.chi_bound", |c| {
@@ -562,7 +562,7 @@ fn qsm_rs_parameter_checks_reach_the_view_and_the_plan() {
             c.pipeline.do_chi_separation = true;
             c.separation.algorithm = SeparationAlgorithm::WaveSep;
             c.separation.wavesep.wavelet_order = 0;
-        }, "WaveSep wavelet_order = 0 is out of range: must be 1..=4 (db1–db4)"),
+        }, "WaveSep wavelet_order = 0 is out of range: must be from 1 to 4 (db1–db4)"),
     ];
     for (path, edit, message) in cases {
         let mut c = PipelineConfig::default();

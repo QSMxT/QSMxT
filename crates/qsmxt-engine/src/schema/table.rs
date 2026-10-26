@@ -11,6 +11,7 @@ use serde_json::{json, Value};
 use super::{d, o, Def, Section::*, Ty::*};
 use crate::enums::*;
 use crate::store::Item;
+use qsm_core::utils::wavelet::SUPPORTED_ORDERS as WAVELET_ORDERS;
 
 pub(super) fn table() -> Vec<Def> {
     vec![
@@ -778,8 +779,8 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.inv("hdqsm")).full("L2 iterations"),
         d("inversion.hdqsm.tol_update", Inversion, "Tol update", "Stage-2 percent-update stopping tolerance", Float).flag("--hdqsm-tol-update").parent("inversion.algorithm")
         .when(|x| x.inv("hdqsm")).full("Update tolerance"),
-        // QSM.rs utils/wavelet.rs: only db1..db4 exist (any other order panics).
-        d("inversion.amp_pe.wave_order", Inversion, "Wave order", "Daubechies wavelet order (1=db1, 2=db2)", Int).min(1.0).max(4.0).flag("--amp-pe-wave-order").parent("inversion.algorithm")
+        // QSM.rs utils/wavelet.rs: only the SUPPORTED_ORDERS (db1–db4) exist.
+        d("inversion.amp_pe.wave_order", Inversion, "Wave order", "Daubechies wavelet order (1=db1, 2=db2)", Int).min(*WAVELET_ORDERS.start() as f64).max(*WAVELET_ORDERS.end() as f64).flag("--amp-pe-wave-order").parent("inversion.algorithm")
         .when(|x| x.inv("amp-pe")).full("Wavelet order"),
         // QSM.rs inversion/amp_pe.rs: 1 << nlevel overflows at 64.
         d("inversion.amp_pe.nlevel", Inversion, "N level", "Wavelet decomposition levels", Int).max(qsm_core::inversion::amp_pe::MAX_NLEVEL as f64).flag("--amp-pe-nlevel").parent("inversion.algorithm")
@@ -920,8 +921,8 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.sep("wavesep")),
         d("separation.wavesep.lambda", Separation, "Lambda", "Wavelet L1 soft-threshold weight", Float).flag("--wavesep-lambda").parent("separation.algorithm")
         .when(|x| x.sep("wavesep")),
-        // QSM.rs utils/wavelet.rs: only db1..db4 exist (any other order panics).
-        d("separation.wavesep.wavelet_order", Separation, "Wavelet order", "Daubechies order", Int).min(1.0).max(4.0).flag("--wavesep-wavelet-order").parent("separation.algorithm")
+        // QSM.rs utils/wavelet.rs: only the SUPPORTED_ORDERS (db1–db4) exist.
+        d("separation.wavesep.wavelet_order", Separation, "Wavelet order", "Daubechies order", Int).min(*WAVELET_ORDERS.start() as f64).max(*WAVELET_ORDERS.end() as f64).flag("--wavesep-wavelet-order").parent("separation.algorithm")
         .when(|x| x.sep("wavesep")).full("Wavelet order"),
         d("separation.wavesep.max_iter", Separation, "Max iter", "ISTA max iterations", Int).flag("--wavesep-max-iter").parent("separation.algorithm")
         .when(|x| x.sep("wavesep")).full("Maximum iterations"),
@@ -933,12 +934,14 @@ pub(super) fn table() -> Vec<Def> {
         d("separation.hc_chisep.bin_hz", Separation, "R2' bin (Hz)", "R2' bin width for anchored grid search", Float).units("Hz").flag("--hc-chisep-bin-hz").parent("separation.algorithm")
         .when(|x| x.sep("hc-chisep")).full("R2' bin width")
         .gui("R2' bin width for the anchored grid search"),
-        // QSMxT ChiSepNetConfig::validate (QSM.rs ChiSepNetParams::validate): each side a positive multiple of 16.
-        d("separation.chi_sepnet.patch", Separation, "Patch", "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)", IntVec3).min(16.0).units("voxels").flag("--chi-sepnet-patch").parent("separation.algorithm")
+        // QSM.rs ChiSepNetParams::validate: each side a positive multiple of chisepnet::POOL_MULTIPLE
+        // (16). The texts' "16" is pinned to it by a test.
+        d("separation.chi_sepnet.patch", Separation, "Patch", "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)", IntVec3).min(qsm_core::separation::chisepnet::POOL_MULTIPLE as f64).units("voxels").flag("--chi-sepnet-patch").parent("separation.algorithm")
         .when(|x| x.sep("chi-sepnet")).full("χ-sepnet patch")
         .gui("Sliding-window patch D H W, each a multiple of 16"),
-        // QSMxT SusepNetConfig::validate (QSM.rs SusepNetParams::validate): each side a positive multiple of 8.
-        d("separation.susep_net.patch", Separation, "Sliding window", "Run the network on patches D H W in voxels, each a multiple of 8, so its memory follows the patch instead of the volume; empty runs the whole volume at once", IntVec3).min(8.0).units("voxels").optional().flag("--susep-net-patch").parent("separation.algorithm")
+        // QSM.rs SusepNetParams::validate: each side a positive multiple of susep_net::POOL_MULTIPLE
+        // (8). The texts' "8" is pinned to it by a test.
+        d("separation.susep_net.patch", Separation, "Sliding window", "Run the network on patches D H W in voxels, each a multiple of 8, so its memory follows the patch instead of the volume; empty runs the whole volume at once", IntVec3).min(qsm_core::separation::susep_net::POOL_MULTIPLE as f64).units("voxels").optional().flag("--susep-net-patch").parent("separation.algorithm")
         .when(|x| x.sep("susep-net")).full("SUSEP-Net sliding window")
         .gui("Patch size for running SUSEP-Net piece by piece, which needs less memory; empty runs the whole volume at once"),
         d("separation.custom_qsm_tool", Separation, "Custom QSM tool", "Use a Chimap from <bids>/derivatives/<tool>/ instead of recomputing QSM (χ-separation, statistics, SMWI); blank = compute, * = any tool", Text).optional().flag("--use-custom-qsm").also(&[SwiSmwi, Segmentation])
@@ -1005,9 +1008,9 @@ pub(super) fn table() -> Vec<Def> {
         .gui("How R2' is obtained when no R2' map is supplied"),
         d("separation.r2primenet.ignore_field_mismatch", Relaxometry, "R2PRIMEnet off 3 T", "Run R2PRIMEnet on non-3 T data (trained at 3 T only; the R2' is uncalibrated). Off: auto skips R2', r2primenet errors", Bool).flag("--r2primenet-ignore-field-mismatch").parent("separation.r2prime_strategy")
         .when(|x| x.computes_r2prime && x.c.separation.r2prime_strategy != R2PrimeStrategy::Mese).full("R2PRIMEnet away from 3 T"),
-        // QSMxT R2primenetConfig::validate: each side a positive multiple of R2PRIMENET_POOL_MULTIPLE
-        // (QSM.rs's POOL_MULTIPLE, 16; QSM.rs utils/r2primenet.rs asserts it). The texts' "16" is pinned to it by a test.
-        d("separation.r2primenet.patch", Relaxometry, "R2PRIMEnet patch", "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)", IntVec3).min(crate::config::R2PRIMENET_POOL_MULTIPLE as f64).units("voxels").flag("--r2primenet-patch").parent("separation.r2prime_strategy")
+        // QSMxT R2primenetConfig::validate: each side a positive multiple of QSM.rs's
+        // relaxometry::POOL_MULTIPLE (16; QSM.rs utils/r2primenet.rs asserts it). The texts' "16" is pinned to it by a test.
+        d("separation.r2primenet.patch", Relaxometry, "R2PRIMEnet patch", "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)", IntVec3).min(qsm_core::relaxometry::POOL_MULTIPLE as f64).units("voxels").flag("--r2primenet-patch").parent("separation.r2prime_strategy")
         .when(|x| x.computes_r2prime && x.c.separation.r2prime_strategy != R2PrimeStrategy::Mese)
         .gui("Sliding-window patch D H W, each a multiple of 16"),
         d("pipeline.do_segmentation", Segmentation, "Segmentation", "Whole-brain parcellation: SynthSeg straight off the GRE magnitude, or one supplied in derivatives. Forced on by the statistics and a region reference", Bool).basic().flag("--do-segmentation"),

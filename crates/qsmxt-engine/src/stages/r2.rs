@@ -414,17 +414,4 @@ mod tests {
                 "half a millimetre of offset is a real difference");
         assert!(!same_grid((4, 4, 4), &a, (4, 4, 5), &a), "dims count too");
     }
-
-    /// The engine writes R2PRIMEnet's defaults out (it builds without qsm-core's `onnx`); they
-    /// must stay qsm-core's.
-    #[cfg(feature = "onnx")]
-    #[test]
-    fn r2primenet_config_defaults_are_qsm_cores() {
-        let ours = r2primenet_params(&Default::default()).unwrap();
-        let core = qsm_core::relaxometry::R2PrimeNetParams::default();
-        assert_eq!(ours.patch, core.patch);
-        assert_eq!(ours.ignore_field_mismatch, core.ignore_field_mismatch);
-        assert_eq!(crate::requirements::R2PRIMENET_TRAINED_B0_T, qsm_core::relaxometry::TRAINED_B0_T);
-        assert_eq!(crate::requirements::R2PRIMENET_B0_TOLERANCE_T, qsm_core::relaxometry::B0_TOLERANCE_T);
-    }
 }

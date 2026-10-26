@@ -601,8 +601,10 @@ pub fn synthseg_bytes(dims: [usize; 3], patch: Option<usize>) -> u64 {
 pub fn chi_separation_network_bytes(dims: [usize; 3], config: &SeparationConfig) -> u64 {
     // (activation bytes per patch voxel, parsed model and fixed overhead, pooling multiple)
     let (patch, per_voxel, fixed, multiple) = match config.algorithm {
-        SeparationAlgorithm::ChiSepNet => (Some(config.chi_sepnet.patch), CHI_SEPNET_PER_VOXEL, CHI_SEPNET_FIXED, 16),
-        SeparationAlgorithm::SusepNet => (config.susep_net.patch, SUSEP_NET_PER_VOXEL, SUSEP_NET_FIXED, 8),
+        SeparationAlgorithm::ChiSepNet => (Some(config.chi_sepnet.patch), CHI_SEPNET_PER_VOXEL, CHI_SEPNET_FIXED,
+            qsm_core::separation::chisepnet::POOL_MULTIPLE),
+        SeparationAlgorithm::SusepNet => (config.susep_net.patch, SUSEP_NET_PER_VOXEL, SUSEP_NET_FIXED,
+            qsm_core::separation::susep_net::POOL_MULTIPLE),
         _ => return 0,
     };
     let round = |d: usize| d.div_ceil(multiple) * multiple;

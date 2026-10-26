@@ -285,6 +285,9 @@ fn run_field_mapping(
     if let Some(report) = &field.robust_fit {
         qsmxt_engine::fieldmap::log_robust_fit_report(report);
     }
+    if let Some(t) = field.qsmart_fit_threshold {
+        qsmxt_engine::fieldmap::log_qsmart_fit_threshold(t);
+    }
     let mut field_ppm = field.b0_field_ppm;
 
     // run_field_mapping already restricts to the mask, but multiply defensively so
