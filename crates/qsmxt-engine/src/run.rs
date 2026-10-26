@@ -846,6 +846,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             match self.store.supplied_mask() {
                 Supplied::Found { origin, data, dims, affine } => {
                     if let Some(mask) = stages::mask::conform_custom_mask(&data, dims, &affine, &self.meta) {
+                        stages::mask::require_voxels(&mask, stages::mask::MaskSource::Supplied(&origin))?;
                         self.log(Level::Info, &format!("Using custom mask from {origin}"));
                         self.decide(Decision::new(Topic::MaskSource, Choice::Supplied,
                             "The brain mask was the one supplied with the scan.").with_detail(origin));
@@ -880,6 +881,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         self.log(Level::Info, &format!("Creating mask ({} section(s), combined with {})",
             self.config.masking.sections.len(), self.config.masking.combine));
         let mask = self.build_mask(&self.config.masking.sections.clone(), &models)?;
+        stages::mask::require_voxels(&mask, stages::mask::MaskSource::Recipe(&self.config.masking))?;
         self.put(Item::BrainMask, Data::Mask(&mask))?;
         self.complete(Done {
             step: "mask", algorithm: None, params: &params, outcome: None, key: &key, outputs: &[Item::BrainMask],
@@ -2251,6 +2253,43 @@ pub(crate) mod tests {
         let mut events = Events::default();
         run(&plan, config, facts, store, &mut events).unwrap();
         events
+    }
+
+    /// An empty brain mask stops the run at the mask step, computed or supplied (#251); a section
+    /// that adds nothing to a union does not.
+    #[test]
+    fn an_empty_brain_mask_is_refused_at_the_mask_step() {
+        let failed = |c: &PipelineConfig, facts: &ScanFacts, store: &mut MemoryStore| {
+            let mut events = Events::default();
+            let err = run(&crate::plan::plan(c, facts), c, facts, store, &mut events).unwrap_err();
+            assert_eq!(events.computed.last().map(String::as_str), Some("mask"), "{err}");
+            assert!(store.get(&Item::BrainMask).is_none());
+            err.to_string()
+        };
+        let (facts, mut store) = phantom();
+        let mut c = config();
+        // Erosion after combining removes the whole sphere.
+        c.masking.refinements = vec![MaskOp::Erode { iterations: N }];
+        let err = failed(&c, &facts, &mut store);
+        assert!(err.contains("brain mask is empty") && err.contains("--mask-refine"), "{err}");
+
+        // A section that finds nothing, in a union with one that finds the sphere.
+        c.masking.refinements.clear();
+        let mut nothing = c.masking.sections[0].clone();
+        nothing.refinements = vec![MaskOp::Erode { iterations: N }];
+        c.masking.sections.push(nothing);
+        assert!(run_once(&c, &facts, &mut store).computed.iter().any(|s| s == "mask"));
+
+        let (mut facts, mut store) = phantom();
+        facts.custom_mask = true;
+        let mut affine = [0.0; 16];
+        for i in 0..4 { affine[5 * i] = 1.0; }
+        store.supply_mask(Supplied::Found {
+            origin: "sub-1_mask.nii".into(), data: vec![0.0; N * N * N], dims: (N, N, N), affine });
+        let mut c = config();
+        c.masking.custom_mask_tool = Some("bet".into());
+        let err = failed(&c, &facts, &mut store);
+        assert!(err.contains("sub-1_mask.nii is empty"), "{err}");
     }
 
     /// The whole plan, run on the phantom in memory: every engine step computed once, a final

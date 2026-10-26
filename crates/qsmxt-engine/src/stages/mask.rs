@@ -298,6 +298,40 @@ pub fn conform_custom_mask(
     (mask.len() == nx * ny * nz).then_some(mask)
 }
 
+/// Where a run's brain mask came from, for [`require_voxels`]'s message.
+pub enum MaskSource<'a> {
+    /// Computed from the run's mask recipe.
+    Recipe(&'a crate::config::MaskingConfig),
+    /// Read from the file at this path.
+    Supplied(&'a str),
+}
+
+/// Refuse a brain mask with no voxels (#251) at the mask stage, so the run stops there, naming
+/// the cause, rather than several steps later with an empty map. Only the final mask counts: a
+/// section that adds nothing to a union is a valid recipe, and an empty reliable-phase mask only
+/// makes two-pass redundant ([`coverage_advice`]).
+pub fn require_voxels(mask: &[u8], source: MaskSource) -> Result<(), EngineError> {
+    if mask.iter().any(|&v| v != 0) {
+        return Ok(());
+    }
+    Err(EngineError::Config(match source {
+        MaskSource::Recipe(masking) => {
+            let joiner = format!(" {} ", masking.combine.to_string().to_uppercase());
+            let mut recipe = masking.sections.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(&joiner);
+            for op in &masking.refinements {
+                recipe.push_str(&format!(" → {op}"));
+            }
+            format!(
+                "the brain mask is empty: masking ({recipe}) left no voxels. Check that the \
+                 threshold or BET settings suit the contrast of the image each section is built \
+                 from, and that erosions do not remove the whole brain (--mask, --mask-refine).")
+        }
+        MaskSource::Supplied(origin) => format!(
+            "the supplied brain mask {origin} is empty: no voxel is above 0.5. Supply a mask with \
+             the brain in it, or drop --use-custom-masks to compute one."),
+    }))
+}
+
 /// The reliable-phase mask of a two-pass run (`reliable`, built from its own sections by
 /// [`build_mask`]), restricted to the main mask.
 ///
