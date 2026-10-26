@@ -10,7 +10,7 @@ license = "GPL-3.0-only"
 qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", tag = "v0.40.0" }
 serde = { version = "1", features = ["derive"] }
 # preserve_order: the methods text lists changed settings in struct order.
-serde_json = { version = "1", features = ["preserve_order"] }
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 toml = "0.8"
 thiserror = "2"
 log = "0.4"

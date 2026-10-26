@@ -423,6 +423,31 @@ pub fn grid_decision(meta: &RunMetadata, facts: &ScanFacts, config: &PipelineCon
 mod tests {
     use super::*;
 
+    /// The run metadata a cached load step hands back is bit for bit what was saved (serde_json's
+    /// `float_roundtrip`, #372): an oblique grid's affine one ulp off would put the rest of the run
+    /// on a slightly different grid from a fresh one.
+    #[test]
+    fn run_metadata_survives_json_bit_for_bit() {
+        let mut meta = crate::stages::magnitude::tests::meta_4x4x4();
+        // Without `float_roundtrip`, about one in six of these parses back one ulp off.
+        let mut x: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut next = || {
+            x ^= x << 13; x ^= x >> 7; x ^= x << 17;
+            f64::from_bits((x >> 12) | 0x3FF0_0000_0000_0000) * 0.123
+        };
+        let bits = |m: &RunMetadata| (
+            m.affine.map(f64::to_bits),
+            m.echo_times.iter().map(|t| t.to_bits()).collect::<Vec<_>>(),
+            [m.voxel_size.0, m.voxel_size.1, m.voxel_size.2].map(f64::to_bits));
+        for _ in 0..64 {
+            meta.affine = std::array::from_fn(|_| next());
+            meta.echo_times = (0..4).map(|_| next()).collect();
+            meta.voxel_size = (next(), next(), next());
+            let back: RunMetadata = serde_json::from_str(&serde_json::to_string(&meta).unwrap()).unwrap();
+            assert_eq!(bits(&back), bits(&meta));
+        }
+    }
+
     fn sidecar(thickness: Option<f64>, acq: Option<&str>, dir: Option<&str>) -> QsmSidecar {
         QsmSidecar {
             echo_time: 0.004, magnetic_field_strength: 3.0, b0_dir: None,
