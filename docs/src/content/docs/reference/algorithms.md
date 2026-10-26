@@ -135,7 +135,7 @@ output. N4 runs on the whole image, without a mask, because the corrected
 magnitude is what the mask is made from. It fits the bias field on the image
 shrunk by the shrink factor, so it needs at least twice that many voxels along
 each axis (8 at the default of 4); a thinner acquisition is refused before
-processing starts, naming the smallest axis, and a lower `--n4-shrink-factor`
+processing starts, naming the axis that is too short, and a lower `--n4-shrink-factor`
 or `makehomogeneous` will run it.
 
 The two methods give different images. `makehomogeneous` returns the magnitude
@@ -647,7 +647,10 @@ sizes at that release's defaults, takes today's defaults in voxels.
 
 The echo fit's reliability map is kept in the unwrap step's workflow folder
 (`*_desc-echofit_mask`), and the vessel-detection magnitude in QSMART's
-(`*_part-mag_desc-vessels_T2starw`), beside its other intermediates.
+(`*_part-mag_desc-vessels_T2starw`), beside its other intermediates. The blurred
+residual the map was cut at (the value the percentile came to, or the fixed
+threshold) is written to the log and recorded with the unwrap step's parameters
+in its provenance, as `qsmart_fit_threshold`.
 
 TGV replaces background removal and inversion. With one echo it also replaces unwrapping: it
 takes that echo's wrapped phase, at its own echo time. With several echoes the field-mapping

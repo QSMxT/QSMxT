@@ -96,6 +96,11 @@ pub fn log_robust_fit_report(report: &qsm_core::pipeline::RobustFitReport) {
     }
 }
 
+/// Log the blurred fit residual QSMART's echo fit cut its reliability map at.
+pub fn log_qsmart_fit_threshold(threshold: f64) {
+    log::info!("QSMART echo fit: reliability threshold at a blurred residual of {threshold:.2}");
+}
+
 /// The robust fit's per-echo report as JSON (echoes 1-based), for the field map's sidecar.
 pub fn robust_fit_report_json(report: &qsm_core::pipeline::RobustFitReport) -> serde_json::Value {
     let q = &report.quality;

@@ -757,8 +757,6 @@ pub fn check_ranges(config: &PipelineConfig) -> Result<(), crate::EngineError> {
     // otherwise stop on), then the ranges of the settings they do not already refuse.
     let rules = view::rule_problems(config, |p| applies.contains(p));
     let ranges = out_of_range(config, |p| applies.contains(p) && !rules.iter().any(|(r, _)| *r == p));
-    // N4's own check repeats its ranges; it adds what a range cannot say (no fitting level).
-    let n4_said = ranges.iter().any(|p| p.path.starts_with("n4."));
     let mut problems: Vec<String> = rules.into_iter()
         .map(|(path, e)| {
             let flag = settings().iter().find(|s| s.path == path).and_then(|s| s.cli_flag)
@@ -769,9 +767,6 @@ pub fn check_ranges(config: &PipelineConfig) -> Result<(), crate::EngineError> {
         .collect();
     // A mask step that would do nothing (an erosion of 0), as a config file and --mask refuse it.
     problems.extend(config.masking.validate().err());
-    if applies.contains("n4.max_iterations") && !n4_said {
-        problems.extend(config.n4.validate().err());
-    }
     // Settings that cannot be run together (QSMART's echo fit without Laplacian unwrapping).
     if applies.contains("field_mapping.b0_estimation") {
         if let Err(e) = config.field_mapping.validate() {
@@ -921,20 +916,21 @@ mod range_tests {
         assert!(check_ranges(&c).is_err());
     }
 
-    /// N4 with no fitting level is refused, when N4 is the method; a spline order out of range
-    /// is said once, by its range.
+    /// N4's settings are refused with QSM.rs's message (`N4Params::validate`), on the setting it
+    /// names, when N4 is the method.
     #[test]
-    fn n4_needs_a_fitting_level() {
+    fn n4_settings_are_refused_with_qsm_rs_message() {
         let mut c = PipelineConfig::default();
         c.n4.max_iterations.clear();
         assert!(check_ranges(&c).is_ok(), "makehomogeneous does not read N4's settings");
         c.masking.inhomogeneity_method = crate::InhomogeneityMethod::N4;
         let e = check_ranges(&c).unwrap_err().to_string();
-        assert!(e.contains("--n4-max-iterations needs at least one fitting level"), "{e}");
+        assert!(e.contains("n4.max_iterations (--n4-max-iterations): N4 max_iterations = []"), "{e}");
         c.n4.max_iterations = vec![10];
         c.n4.spline_order = 4;
         let e = check_ranges(&c).unwrap_err().to_string();
-        assert!(e.contains("n4.spline_order (--n4-spline-order) is 4") && !e.contains("N4:"), "{e}");
+        assert!(e.contains("n4.spline_order (--n4-spline-order): N4 spline_order = 4 is out of range: must be 1, 2 or 3"), "{e}");
+        assert_eq!(e.matches("spline_order").count(), 2, "said once: {e}");
     }
 
     #[test]

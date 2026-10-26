@@ -369,9 +369,9 @@ impl Default for ChiSepNetConfig {
     }
 }
 impl ChiSepNetConfig {
-    /// Why the patch cannot be used, if it cannot (qsm-core refuses it).
+    /// Why the patch cannot be used, if it cannot (QSM.rs's `ChiSepNetParams::validate`).
     pub fn validate(&self) -> Result<(), String> {
-        check_patch("χ-sepnet", &self.patch, 16)
+        self.params().validate()
     }
     /// qsm-core's parameters for these settings.
     pub fn params(&self) -> qsm_core::separation::ChiSepNetParams {
@@ -389,9 +389,9 @@ pub struct SusepNetConfig {
     pub patch: Option<[usize; 3]>,
 }
 impl SusepNetConfig {
-    /// Why the patch cannot be used, if it cannot (qsm-core refuses it).
+    /// Why the patch cannot be used, if it cannot (QSM.rs's `SusepNetParams::validate`).
     pub fn validate(&self) -> Result<(), String> {
-        self.patch.as_ref().map_or(Ok(()), |p| check_patch("SUSEP-Net", p, 8))
+        self.params().validate()
     }
     /// qsm-core's parameters for these settings.
     pub fn params(&self) -> qsm_core::separation::SusepNetParams {
@@ -399,19 +399,7 @@ impl SusepNetConfig {
     }
 }
 
-/// A network patch every side of which must be a positive multiple of `multiple` (its pooling
-/// levels).
-fn check_patch(net: &str, patch: &[usize; 3], multiple: usize) -> Result<(), String> {
-    match patch.iter().find(|&&d| d == 0 || d % multiple != 0) {
-        Some(d) => Err(format!(
-            "{net} patch {patch:?}: every dimension must be a positive multiple of {multiple} (got {d})")),
-        None => Ok(()),
-    }
-}
-
-/// R2PRIMEnet inference (`qsm_core::relaxometry::R2PrimeNetParams`, which only exists with
-/// qsm-core's `onnx` feature; this crate builds without it, so the defaults are written out here
-/// and the qsmxt binary's `dl` build checks them against qsm-core's).
+/// R2PRIMEnet inference (`qsm_core::relaxometry::R2PrimeNetParams`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct R2primenetConfig {
@@ -424,28 +412,22 @@ pub struct R2primenetConfig {
 }
 impl Default for R2primenetConfig {
     fn default() -> Self {
-        // qsm_core::relaxometry::{AUTHORS_PATCH, R2PrimeNetParams::default()}.
-        Self { patch: [192, 192, 128], ignore_field_mismatch: false }
+        let core = qsm_core::relaxometry::R2PrimeNetParams::default();
+        let (d, h, w) = core.patch;
+        Self { patch: [d, h, w], ignore_field_mismatch: core.ignore_field_mismatch }
     }
 }
-/// R2PRIMEnet's patch multiple: QSM.rs's `relaxometry::POOL_MULTIPLE`. QSM.rs exports it only
-/// with its `onnx` feature, so a build without the networks (which cannot run R2PRIMEnet, but
-/// still shows and checks the setting) uses the same value written out.
-#[cfg(feature = "onnx")]
-pub const R2PRIMENET_POOL_MULTIPLE: usize = qsm_core::relaxometry::POOL_MULTIPLE;
-#[cfg(not(feature = "onnx"))]
-pub const R2PRIMENET_POOL_MULTIPLE: usize = 16;
-
 impl R2primenetConfig {
     /// Why the patch cannot be used, if it cannot (qsm-core panics on it).
     pub fn validate(&self) -> Result<(), String> {
-        const POOL_MULTIPLE: usize = R2PRIMENET_POOL_MULTIPLE;
-        match self.patch.iter().find(|&&d| d == 0 || d % POOL_MULTIPLE != 0) {
-            Some(d) => Err(format!(
-                "R2PRIMEnet patch {:?}: every dimension must be a positive multiple of {POOL_MULTIPLE} (got {d})",
-                self.patch)),
-            None => Ok(()),
+        use qsm_core::relaxometry::POOL_MULTIPLE;
+        for (axis, v) in ["D", "H", "W"].into_iter().zip(self.patch) {
+            if v == 0 || v % POOL_MULTIPLE != 0 {
+                return Err(format!(
+                    "R2PRIMEnet patch {axis} = {v} must be a positive multiple of {POOL_MULTIPLE} (four pooling levels)"));
+            }
         }
+        Ok(())
     }
 }
 impl Default for SeparationConfig {
@@ -680,47 +662,6 @@ impl N4Config {
             histogram_bins: self.histogram_bins,
             ..Default::default()
         }
-    }
-
-    /// Why the settings cannot be used, if they cannot: what qsm-core's `n4_bias_correction`
-    /// asserts (at least one fitting level, a positive shrink factor and mesh, a spline order of
-    /// 1 to 3, two histogram bins or more), and a positive, finite FWHM.
-    pub fn validate(&self) -> Result<(), String> {
-        let mut problems = Vec::new();
-        if self.max_iterations.is_empty() {
-            problems.push("--n4-max-iterations needs at least one fitting level".to_string());
-        }
-        if self.shrink_factor == 0 {
-            problems.push("--n4-shrink-factor must be at least 1".into());
-        }
-        if self.mesh.contains(&0) {
-            problems.push(format!("--n4-mesh must be at least 1 along each axis, not {:?}", self.mesh));
-        }
-        if !(1..=3).contains(&self.spline_order) {
-            problems.push(format!("--n4-spline-order must be 1, 2 or 3, not {}", self.spline_order));
-        }
-        if self.histogram_bins < 2 {
-            problems.push(format!("--n4-histogram-bins must be at least 2, not {}", self.histogram_bins));
-        }
-        if !(self.bias_field_fwhm > 0.0 && self.bias_field_fwhm.is_finite()) {
-            problems.push(format!("--n4-bias-field-fwhm must be a positive number, not {}", self.bias_field_fwhm));
-        }
-        if !(self.wiener_noise >= 0.0 && self.wiener_noise.is_finite() && self.convergence_threshold.is_finite()) {
-            problems.push("--n4-wiener-noise and --n4-convergence-threshold must be finite, and the noise not negative".into());
-        }
-        if problems.is_empty() { Ok(()) } else { Err(format!("N4: {}", problems.join("; "))) }
-    }
-
-    /// Why a `dims` grid is too small for N4, if it is: N4 fits the bias field on the image
-    /// shrunk by `shrink_factor`, which needs at least two voxels along each axis.
-    pub fn grid_problem(&self, dims: (usize, usize, usize)) -> Option<String> {
-        let s = self.shrink_factor.max(1);
-        let short = [dims.0, dims.1, dims.2].into_iter().any(|n| n / s < 2);
-        short.then(|| format!(
-            "N4 fits the bias field on the image shrunk by {s} (--n4-shrink-factor), which needs at \
-             least {} voxels along each axis, and this run is {}x{}x{}. Lower --n4-shrink-factor, or \
-             use --inhomogeneity-method makehomogeneous",
-            2 * s, dims.0, dims.1, dims.2))
     }
 }
 param_config!(LinearFitConfig from qsm_core::utils::LinearFitParams {
@@ -1993,15 +1934,23 @@ mod r2primenet_config_tests {
         }
     }
 
-    /// The setting's texts say "multiple of 16"; that is QSM.rs's pooling multiple, its minimum.
+    /// The patch settings' texts say "multiple of N", and their minimum is N: QSM.rs's pooling
+    /// multiple for each network.
     #[test]
     fn the_patch_texts_and_minimum_are_qsm_rs_pooling_multiple() {
-        let m = super::R2PRIMENET_POOL_MULTIPLE;
-        let s = crate::schema::settings().iter().find(|s| s.path == "separation.r2primenet.patch").unwrap();
-        for text in [s.help, s.tui_help] {
-            assert!(text.contains(&format!("multiple of {m}")), "{text}");
+        for (path, m) in [
+            ("separation.r2primenet.patch", qsm_core::relaxometry::POOL_MULTIPLE),
+            ("separation.chi_sepnet.patch", qsm_core::separation::chisepnet::POOL_MULTIPLE),
+            ("separation.susep_net.patch", qsm_core::separation::susep_net::POOL_MULTIPLE),
+        ] {
+            let s = crate::schema::settings().iter().find(|s| s.path == path).unwrap();
+            assert!(s.tui_help.contains(&format!("multiple of {m}")), "{path}: {}", s.tui_help);
+            // A text that states the rule states this multiple.
+            for text in [s.help, s.tui_help].into_iter().filter(|t| t.contains("multiple of")) {
+                assert!(text.contains(&format!("multiple of {m}")), "{path}: {text}");
+            }
+            assert_eq!(s.min, Some(m as f64), "{path}");
         }
-        assert_eq!(s.min, Some(m as f64));
     }
 }
 

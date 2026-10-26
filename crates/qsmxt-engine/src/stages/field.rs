@@ -71,6 +71,9 @@ pub struct FieldMap {
     /// QSMART's reliability map `R_0` (1 = reliable), when the echoes were combined by QSMART's
     /// echo fit, over the whole volume: QSMART reconstructs where it and the brain mask are 1.
     pub reliability: Option<Vec<u8>>,
+    /// The blurred fit residual `R_0` was cut at, when the echoes were combined by QSMART's echo
+    /// fit: the value the percentile resolved to, or the fixed threshold.
+    pub qsmart_fit_threshold: Option<f64>,
 }
 
 /// Map the total field from every echo's wrapped phase (radians) on the run's working grid, inside
@@ -115,7 +118,13 @@ pub fn map_field(
         crate::fieldmap::log_robust_fit_report(report);
         crate::fieldmap::robust_fit_report_json(report)
     });
-    Ok(FieldMap { b0_field_ppm: field.b0_field_ppm, total_field_hz, robust_fit_report, reliability: field.reliability })
+    if let Some(t) = field.qsmart_fit_threshold {
+        crate::fieldmap::log_qsmart_fit_threshold(t);
+    }
+    Ok(FieldMap {
+        b0_field_ppm: field.b0_field_ppm, total_field_hz, robust_fit_report, reliability: field.reliability,
+        qsmart_fit_threshold: field.qsmart_fit_threshold,
+    })
 }
 
 #[cfg(test)]
@@ -154,6 +163,7 @@ mod tests {
         let k = qsm_core::constants::GAMMA_BAR_HZ_PER_T * m.field_strength * 1e-6;
         assert!(f.b0_field_ppm.iter().zip(&f.total_field_hz).all(|(p, h)| *h == p * k));
         assert!(f.robust_fit_report.is_none());
+        assert!(f.qsmart_fit_threshold.is_none());
 
         let err = map_field(&[&phase], &[&mag], &mask[..10], &m, &config).err().unwrap();
         assert!(format!("{err}").starts_with("field mapping:"), "{err}");

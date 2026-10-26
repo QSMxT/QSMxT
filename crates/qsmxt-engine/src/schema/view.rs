@@ -48,8 +48,8 @@ pub struct SettingView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub forced_by: Option<&'static str>,
     /// What is wrong with the setting's value, for showing next to it: outside its range, not a
-    /// finite number, or refused by a rule of the setting ("Every dimension must be a positive
-    /// multiple of 16"); for a mask recipe, each step parameter outside its range ("Section 1,
+    /// finite number, or refused by a rule of the setting ("χ-sepnet patch H = 120 must be a
+    /// positive multiple of 16 (four pooling levels)"); for a mask recipe, each step parameter outside its range ("Section 1,
     /// step 2 (Erode): Iterations must be at least 1"). Only a setting that applies has one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
@@ -318,7 +318,7 @@ pub(crate) fn rule_problems(config: &PipelineConfig, checked: impl Fn(&str) -> b
     // (the setting a message goes on when it names this parameter, the parameter), the first
     // being where any other message from the same check goes.
     type Targets = &'static [(&'static str, &'static str)];
-    let rules: [(Targets, Result<(), String>); 13] = [
+    let rules: [(Targets, Result<(), String>); 14] = [
         (&[("inversion.star.te", "")], config.inversion.star.validate()),
         (&[("field_mapping.b0_estimation", "")], config.field_mapping.validate()),
         (&[("separation.r2primenet.patch", "")], config.separation.r2primenet.validate()),
@@ -335,6 +335,11 @@ pub(crate) fn rule_problems(config: &PipelineConfig, checked: impl Fn(&str) -> b
         (&[("inversion.qsmart.ilsqr_pad_mm", "")], qsmart_ilsqr.validate()),
         (&[("separation.decompose.chi_bound", "")], s(sep.decompose.validate())),
         (&[("separation.wavesep.wavelet_order", "")], s(sep.wavesep.validate())),
+        (&[("n4.max_iterations", "max_iterations"), ("n4.shrink_factor", "shrink_factor"), ("n4.mesh", "mesh"),
+            ("n4.spline_order", "spline_order"), ("n4.histogram_bins", "histogram_bins"),
+            ("n4.bias_field_fwhm", "bias_field_fwhm"), ("n4.wiener_noise", "wiener_noise"),
+            ("n4.convergence_threshold", "convergence_threshold")],
+            s(config.n4.core().validate())),
     ];
     let mut out = Vec::new();
     for (targets, result) in rules {
@@ -352,8 +357,9 @@ pub(crate) fn rule_problems(config: &PipelineConfig, checked: impl Fn(&str) -> b
 /// dimension ..."), capitalised.
 fn sentence(message: &str) -> String {
     let rest = message.split_once(": ").map_or(message, |(_, r)| r);
-    // A name written with a lower-case first letter ("iLSQR") stays as it is.
-    if rest.chars().nth(1).is_some_and(char::is_uppercase) {
+    // A name written with a lower-case first letter ("iLSQR", "χ-sepnet") stays as it is.
+    let first = rest.split(' ').next().unwrap_or("");
+    if first.chars().skip(1).any(|c| c.is_uppercase() || c == '-') {
         return rest.to_string();
     }
     let mut chars = rest.chars();

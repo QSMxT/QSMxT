@@ -21,9 +21,11 @@ pub const BROWSER_TILE_SIZE: usize = 56;
 /// Overlap-tiling context margin per side in the browser, in voxels.
 pub const BROWSER_TILE_HALO: usize = 4;
 
-/// R2PRIMEnet's sliding-window patch in the browser: qsm-core's `WASM_PATCH` for it
-/// (`qsm_core::relaxometry::WASM_PATCH`, only compiled with qsm-core's `onnx` feature).
-pub const BROWSER_R2PRIMENET_PATCH: [usize; 3] = [128, 128, 64];
+/// R2PRIMEnet's sliding-window patch in the browser: qsm-core's `WASM_PATCH` for it.
+pub const BROWSER_R2PRIMENET_PATCH: [usize; 3] = {
+    let (d, h, w) = qsm_core::relaxometry::WASM_PATCH;
+    [d, h, w]
+};
 
 /// χ-sepnet's sliding-window patch in the browser: qsm-core's `WASM_PATCH` for it.
 pub const BROWSER_CHI_SEPNET_PATCH: [usize; 3] = {

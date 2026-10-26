@@ -2507,7 +2507,8 @@ mod oblique_run_tests {
     }
 
     /// QSMART's intermediates land in each pass's own step directory, are recorded as that step's
-    /// outputs, and go with the other intermediates when they are cleaned.
+    /// outputs, and go with the other intermediates when they are cleaned. The threshold its echo
+    /// fit resolved is recorded with the unwrap step.
     #[test]
     fn qsmart_keeps_its_intermediates_in_each_pass_step() {
         let dir = tempfile::tempdir().unwrap();
@@ -2515,8 +2516,12 @@ mod oblique_run_tests {
         let output = DerivativeOutputs::new(&dir.path().join("out"));
         let mut config = fast_config();
         config.inversion.algorithm = QsmAlgorithm::Qsmart;
+        config.field_mapping.b0_estimation = B0Estimation::QsmartEchofit;
         config.masking.two_pass = true;
         run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
+        let prov: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(output.provenance_path(&run.key, "unwrap")).unwrap()).unwrap();
+        assert!(prov["parameters"]["qsmart_fit_threshold"].is_f64(), "{prov}");
 
         let names = [
             qsm_core::pipeline::qsmart::outputs::VESSEL_MASK,

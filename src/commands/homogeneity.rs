@@ -18,16 +18,18 @@ pub fn execute(args: HomogeneityArgs) -> crate::Result<()> {
         InhomogeneityMethodArg::N4 => {
             let mut n4 = qsmxt_engine::N4Config::default();
             args.n4_params.apply_to(&mut n4);
-            // qsm-core panics on these; say what is wrong instead.
+            let core = n4.core();
             let dims = (grid.nx(), grid.ny(), grid.nz());
-            if let Some(why) = n4.validate().err().or_else(|| n4.grid_problem(dims)) {
-                return Err(QsmxtError::Config(why.replace("--inhomogeneity-method", "--method")));
+            core.validate()?;
+            if let Err(e) = core.check_grid(dims) {
+                return Err(QsmxtError::Config(format!(
+                    "{e}. Lower --n4-shrink-factor, or use --method makehomogeneous")));
             }
             info!(
                 "Applying N4 inhomogeneity correction to {} ({}x{}x{})",
                 args.input.display(), dims.0, dims.1, dims.2
             );
-            qsm_core::utils::n4_bias_correction(&nifti.data, None, &grid, &n4.core(), |_, _| {}).corrected
+            qsm_core::utils::n4_bias_correction(&nifti.data, None, &grid, &core, |_, _| {})?.corrected
         }
     };
 
