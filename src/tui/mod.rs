@@ -15,9 +15,22 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::{backend::CrosstermBackend, Terminal};
+use ratatui::{
+    backend::{Backend, CrosstermBackend},
+    Terminal,
+};
 
 use app::App;
+
+/// A terminal for the TUI on `backend`, with its screen cleared. Ratatui draws only the cells that
+/// differ from what it last drew, and it starts out believing the screen is blank, so any text
+/// already on the screen stays wherever the first frame has a space. Some terminals (multiplexers,
+/// web terminals) show the main screen's text on a freshly entered alternate screen, so clear it.
+fn new_terminal<B: Backend>(backend: B) -> io::Result<Terminal<B>> {
+    let mut terminal = Terminal::new(backend)?;
+    terminal.clear()?;
+    Ok(terminal)
+}
 
 fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) {
     let _ = disable_raw_mode();
@@ -38,8 +51,7 @@ pub fn run_tui() -> crate::Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut terminal = new_terminal(CrosstermBackend::new(stdout))?;
 
     let mut app = App::new();
     app.tip_modal = tips::startup_tip().map(|tip| app::TipModal::new(tip, true));
@@ -138,5 +150,25 @@ pub fn run_tui() -> crate::Result<()> {
                 return crate::commands::run::execute(args);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::{backend::{Backend, TestBackend}, buffer::Cell, widgets::Paragraph};
+
+    /// Text left on the screen before the TUI starts must not show through the first frame's
+    /// blank cells.
+    #[test]
+    fn first_frame_hides_text_already_on_screen() {
+        let mut backend = TestBackend::new(20, 2);
+        let mut old = Cell::default();
+        old.set_symbol("x");
+        let cells: Vec<(u16, u16, Cell)> = (0..2).flat_map(|y| (0..20).map(move |x| (x, y))).map(|(x, y)| (x, y, old.clone())).collect();
+        backend.draw(cells.iter().map(|(x, y, c)| (*x, *y, c))).unwrap();
+
+        let mut terminal = super::new_terminal(backend).unwrap();
+        terminal.draw(|f| f.render_widget(Paragraph::new("a tip"), f.area())).unwrap();
+        terminal.backend().assert_buffer_lines(["a tip               ", "                    "]);
     }
 }
