@@ -857,6 +857,7 @@ impl ScanInputs {
                 }).collect();
                 let facts = ScanFacts {
                     dims: grid.dims,
+                    voxel_size: None,
                     n_echoes: n,
                     echo_times,
                     has_magnitude,

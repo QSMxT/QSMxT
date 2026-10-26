@@ -68,17 +68,7 @@ pub fn synthseg(
 ) -> Result<Segmentation, EngineError> {
     let ((nx, ny, nz), (vx, vy, vz)) = (meta.dims, meta.voxel_size);
     let grid = qsm_core::Grid::new(nx, ny, nz, vx, vy, vz);
-    let params = qsm_core::segment::SynthSegParams {
-        version: config.version.to_core(),
-        crop: config.crop,
-        flip_averaging: config.flip_averaging,
-        topology_cleanup: config.topology_cleanup,
-        sigma_smoothing: config.sigma_smoothing,
-        inference: crate::config::synthseg_inference(config.patch),
-        // The head crop and the posteriors' precision are not QSMxT settings yet: qsm-core's
-        // (no crop, single precision).
-        ..Default::default()
-    };
+    let params = crate::bridge::to_synthseg_params(config);
     let weights = qsm_core::models::primary_weight(config.version.weights_id())
         .map_err(|e| EngineError::Config(format!("synthseg weights: {}", e)))?;
     let out = qsm_core::segment::synthseg(magnitude, &grid, &meta.affine, &weights, &params,

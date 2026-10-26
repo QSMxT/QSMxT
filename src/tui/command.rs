@@ -129,6 +129,8 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
     }
 
     Ok(RunArgs {
+        // The TUI resolves recommendations in its pop-up; the run applies none of its own.
+        accept_recommendations: false,
         bids_dir: expand_tilde(&form.bids_dir),
         output_dir: if form.output_dir.is_empty() { None } else { Some(expand_tilde(&form.output_dir)) },
         config: parse_optional_path(&form.config_file),
@@ -801,6 +803,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
                     .join(",")
             }).collect()
         }),
+        dismiss_recommendation: (!ps.dismissed.is_empty())
+            .then(|| ps.dismissed.iter().map(|d| format!("{}={}", d.rule, d.chosen)).collect()),
     }
 }
 
@@ -906,6 +910,7 @@ pub fn build_slurm_args(app: &App) -> crate::Result<SlurmArgs> {
     let defaults = super::app::RunForm::default();
     let (include, exclude) = app.filter_state.get_include_exclude();
     Ok(SlurmArgs {
+        accept_recommendations: false,
         bids_dir: expand_tilde(&form.bids_dir),
         output_dir: if form.output_dir.is_empty() { None } else { Some(expand_tilde(&form.output_dir)) },
         account: form.slurm_account.trim().to_string(),

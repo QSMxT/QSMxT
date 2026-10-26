@@ -10,6 +10,7 @@ pub mod init;
 pub mod invert;
 pub mod mask;
 pub mod qsmart;
+pub mod recommend;
 pub mod quality_map;
 pub mod r2star;
 pub mod r2;
@@ -49,6 +50,7 @@ mod integration_tests {
             force: false,
             clean_intermediates: false,
             no_dataset_steps: false,
+            accept_recommendations: false,
             pipeline: PipelineArgs {
                 qsm_algorithm: None,
                 orientation_group: None,
@@ -158,6 +160,7 @@ mod integration_tests {
                 mask_refinements_cli: None,
                 two_pass: false,
                 two_pass_sections_cli: None,
+                dismiss_recommendation: None,
             },
         }
     }
@@ -2083,6 +2086,7 @@ mod integration_tests {
         testutils::create_single_echo_bids(&bids);
 
         super::slurm::execute(SlurmArgs {
+            accept_recommendations: false,
             bids_dir: bids,
             output_dir: Some(out.clone()),
             account: "testacct".to_string(),
@@ -2108,6 +2112,7 @@ mod integration_tests {
         testutils::create_single_echo_bids(&bids);
 
         super::slurm::execute(SlurmArgs {
+            accept_recommendations: false,
             bids_dir: bids,
             output_dir: Some(out.clone()),
             account: "testacct".to_string(),
@@ -2258,6 +2263,7 @@ mod integration_tests {
 
         let dist = dir.path().join("dist");
         super::slurm::execute(SlurmArgs {
+            accept_recommendations: false,
             bids_dir: bids.clone(), output_dir: Some(dist.clone()),
             account: "acct".into(), partition: None, config: None, time: "01:00:00".into(),
             mem: None, cpus_per_task: 1, submit: false,
@@ -2664,6 +2670,84 @@ mod integration_tests {
         assert!(root.join("sti/derivatives/qsmxt/sub-1/anat/sub-1_desc-sti_Chimap.nii").exists());
         assert!(root.join("oblique/derivatives/qsmxt/sub-1/anat/sub-1_space-axial_Chimap.nii").exists());
     }
+
+    // --- Recommendations (QSM.rs's pipeline rules) ---
+
+    /// TKD on multi-echo data without phase offset removal: ROMEO's MCPC-3D-S is recommended for
+    /// a weighted-average B0 from multi-echo data (`field-mapping.phase-offsets`).
+    fn departing_args(bids: PathBuf, out: PathBuf) -> RunArgs {
+        let mut args = default_run_args(bids, out);
+        args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
+        args.pipeline.phase_offset_removal = Some(false);
+        args.pipeline.masking_input = Some(MaskInputArg::MagnitudeFirst);
+        args.no_mem_limit = true;
+        args
+    }
+
+    #[test]
+    fn dry_lists_the_findings_and_what_accepting_would_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let bids = dir.path().join("bids");
+        testutils::create_multi_echo_bids(&bids);
+        let args = departing_args(bids.clone(), dir.path().join("out"));
+        let config = super::run::build_config(None, &args.pipeline).unwrap();
+        let runs = crate::bids::discovery::discover_runs(&bids, &Default::default()).unwrap();
+        let text = super::recommend::dry_text(&config, &runs, true);
+        let at = text.find("  recommended:").unwrap_or_else(|| panic!("{text}"));
+        assert!(text[at..].contains("field-mapping.phase-offsets"), "{text}");
+        assert!(text.contains("keep the choice with --dismiss-recommendation field-mapping.phase-offsets=false"), "{text}");
+        assert!(text.contains("With --accept-recommendations, the run would use:")
+            && text.contains("Phase Offset Removal: off → on (field-mapping.phase-offsets)"), "{text}");
+        // Dismissed, it is listed as such and nothing would change.
+        let mut dismissed = departing_args(bids.clone(), dir.path().join("out")).pipeline;
+        dismissed.dismiss_recommendation = Some(vec!["field-mapping.phase-offsets=false".into()]);
+        let config = super::run::build_config(None, &dismissed).unwrap();
+        let text = super::recommend::dry_text(&config, &runs, true);
+        assert!(text.contains("  dismissed:") && text.contains("--accept-recommendations would change nothing."), "{text}");
+        assert!(qsmxt_engine::generate_command(&config).contains("--dismiss-recommendation field-mapping.phase-offsets=false"));
+        // An unknown rule is refused.
+        dismissed.dismiss_recommendation = Some(vec!["no.such-rule=1".into()]);
+        assert!(super::run::build_config(None, &dismissed).is_err());
+    }
+
+    /// The fastest tiny pipeline, with a recommendation accepted: the run takes the recommended
+    /// value, its record keeps the finding as applied, the methods have no Note for it, and the
+    /// end-of-run summary says so. Without accepting, the Note says what was done.
+    #[test]
+    fn accepted_recommendations_reach_the_record_and_summary() {
+        let dir = tempfile::tempdir().unwrap();
+        let bids = dir.path().join("bids");
+        testutils::create_multi_echo_bids(&bids);
+        let runs = crate::bids::discovery::discover_runs(&bids, &Default::default()).unwrap();
+
+        let out = dir.path().join("accepted");
+        let mut args = departing_args(bids.clone(), out.clone());
+        args.dry = false;
+        args.accept_recommendations = true;
+        super::run::execute(args).unwrap();
+        let deriv = out.join("derivatives/qsmxt");
+        let config = qsmxt_engine::PipelineConfig::from_toml(&std::fs::read_to_string(deriv.join("pipeline_config.toml")).unwrap()).unwrap();
+        assert!(config.field_mapping.phase_offset_removal, "the run took the recommended value");
+        let records = super::run::current_run_records(&deriv, &config);
+        let (_, file) = records.first().expect("a run record");
+        let applied = file.record.recommendations.iter().find(|r| r.finding.rule == "field-mapping.phase-offsets").unwrap();
+        assert_eq!(applied.outcome, qsmxt_engine::recommendations::Outcome::Applied);
+        let methods = std::fs::read_to_string(deriv.join("methods.md")).unwrap();
+        assert!(!methods.contains("Departures from the methods' recommendations"), "{methods}");
+        let accepted = super::recommend::Accepted { applied: vec![applied.finding.clone()], ..Default::default() };
+        let summary = super::recommend::summary(&config, &runs, &accepted);
+        assert!(summary.iter().any(|l| l.starts_with("  applied (recommended): Phase Offset Removal: on (was off)")), "{summary:?}");
+
+        let out = dir.path().join("kept");
+        let mut args = departing_args(bids, out.clone());
+        args.dry = false;
+        super::run::execute(args).unwrap();
+        let methods = std::fs::read_to_string(out.join("derivatives/qsmxt/methods.md")).unwrap();
+        let note = &methods[methods.find("## Note").unwrap_or_else(|| panic!("{methods}"))..];
+        assert!(note.contains("Departures from the methods' recommendations:")
+            && note.contains("- Phase offset removal was off; turning it on is recommended: "), "{note}");
+        assert!(methods.find("## References").unwrap() < methods.find("## Note").unwrap(), "the Note is under the references");
+    }
 }
 /// Tests for the multi-orientation commands (`invert cosmos`, `invert sti`).
 ///
@@ -3038,4 +3122,5 @@ mod multiorient_tests {
         .unwrap_err();
         assert!(format!("{err}").contains("at least 6"), "{err}");
     }
+
 }

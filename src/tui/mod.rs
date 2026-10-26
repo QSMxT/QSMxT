@@ -2,6 +2,7 @@ mod app;
 mod clipboard;
 mod command;
 mod pipeline_view;
+mod recommend;
 mod tabs;
 pub(crate) mod tips;
 mod ui;

@@ -453,6 +453,51 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
     (field_mapping, bg_removal, inversion, reference)
 }
 
+/// The whole QSM pipeline as QSM.rs configures it: the mask recipe ([`to_mask_sections`]) and the
+/// stages [`to_pipeline_stages`] converts. What QSM.rs's pipeline rules check
+/// ([`crate::recommendations`]).
+///
+/// iQFM has no QSM.rs background removal (the runner calls `run_iqfm` itself), so it goes to the
+/// rules as iHARPERELLA, which no rule names: a rule about the background removal then sees a
+/// method it does not expect, and none is triggered by it. `map_bf_alg`'s V-SHARP placeholder
+/// would pass the rules that expect V-SHARP.
+///
+/// Bipolar correction goes as the stages pass it: off under Laplacian unwrapping, where QSMxT
+/// does not offer it (the settings view hides it), so QSM.rs's
+/// `field-mapping.bipolar-not-with-laplacian` has nothing to find.
+pub fn to_qsm_pipeline_config(cfg: &PipelineConfig) -> qsm_core::pipeline::QsmPipelineConfig {
+    let (field_mapping, mut bg_removal, inversion, reference) = to_pipeline_stages(cfg);
+    if cfg.bg_removal.algorithm == BfAlgorithm::Iqfm {
+        bg_removal.algorithm = PBgAlg::Iharperella;
+    }
+    qsm_core::pipeline::QsmPipelineConfig {
+        masking: qsm_core::pipeline::MaskingConfig {
+            inhomogeneity_correction: cfg.masking.inhomogeneity_correction,
+            homogeneity_sigma_mm: cfg.homogeneity.sigma_mm,
+            homogeneity_nbox: cfg.homogeneity.nbox,
+            sections: to_mask_sections(&cfg.masking.sections, &cfg.bet),
+        },
+        field_mapping,
+        bg_removal,
+        inversion,
+        reference,
+    }
+}
+
+/// SynthSeg's parameters for the segmentation settings. The head crop and the posteriors'
+/// precision are not QSMxT settings yet: qsm-core's (no crop, single precision).
+pub fn to_synthseg_params(config: &crate::config::SegmentationConfig) -> qsm_core::segment::SynthSegParams {
+    qsm_core::segment::SynthSegParams {
+        version: config.version.to_core(),
+        crop: config.crop,
+        flip_averaging: config.flip_averaging,
+        topology_cleanup: config.topology_cleanup,
+        sigma_smoothing: config.sigma_smoothing,
+        inference: crate::config::synthseg_inference(config.patch),
+        ..Default::default()
+    }
+}
+
 /// Map a qsmxt-engine separation algorithm to its qsm-core equivalent.
 fn map_sep_alg(alg: SeparationAlgorithm) -> PSepAlg {
     match alg {

@@ -497,6 +497,17 @@ fn command_for(config: &PipelineConfig) -> String {
         emit_usize(&mut parts, "--swi-mip-window", config.swi.mip_window, d.swi.mip_window);
     }
 
+    // ── Dismissed recommendations ──
+    // Only those that still hold: a dismissal whose setting has since changed is gone.
+    let mut held = config.clone();
+    crate::recommendations::prune_dismissals(&mut held, &crate::recommendations::Facts::default());
+    for x in &held.dismissed_recommendations {
+        let arg = format!("{}={}", x.rule, x.chosen);
+        // Rule ids and dismissed values are written in characters a shell leaves alone.
+        let plain = arg.chars().all(|c| c.is_ascii_alphanumeric() || "-_.=,/".contains(c));
+        parts.push(format!("--dismiss-recommendation {}", if plain { arg } else { shell_quote(&arg) }));
+    }
+
     parts.join(" ")
 }
 

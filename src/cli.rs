@@ -1783,6 +1783,13 @@ pub struct PipelineArgs {
     /// always intersected with it.
     #[arg(long = "two-pass-mask", num_args = 1)]
     pub two_pass_sections_cli: Option<Vec<String>>,
+
+    /// Stop offering a recommendation for the setting's current value: RULE=VALUE, the rule's id
+    /// and the value it was dismissed for, as `qsmxt run --dry` lists them (e.g.
+    /// rts.bg-vsharp=pdf). Repeatable. A change to the setting brings the recommendation back;
+    /// a required one cannot be dismissed
+    #[arg(long = "dismiss-recommendation", value_name = "RULE=VALUE", num_args = 1)]
+    pub dismiss_recommendation: Option<Vec<String>>,
 }
 
 #[derive(Parser, Debug)]
@@ -1829,9 +1836,18 @@ pub struct RunArgs {
     pub dicom_outputs: Option<Vec<String>>,
 
     /// Print the processing plan, the pipeline graph and the methods text without running
-    /// anything or writing any file
+    /// anything or writing any file. Also lists what the configuration departs from in the
+    /// chosen methods' reference pipelines, for every run's scan, and each covered setting's
+    /// reference value; with --accept-recommendations, the settings that would change
     #[arg(long)]
     pub dry: bool,
+
+    /// Apply the recommended value of every recommendation that is not dismissed (required,
+    /// recommended and discouraged findings; reference ones are information only) before
+    /// running. Two equally strong recommendations that disagree on a setting are left for you
+    /// to choose. Without it, no setting is ever changed
+    #[arg(long)]
+    pub accept_recommendations: bool,
 
     /// Enable debug logging
     #[arg(long)]
@@ -2002,6 +2018,11 @@ pub struct SlurmArgs {
     /// (used with --export-dicom)
     #[arg(long, num_args = 1.., value_delimiter = ',')]
     pub dicom_outputs: Option<Vec<String>>,
+
+    /// Apply the recommended value of every recommendation that is not dismissed before writing
+    /// the jobs (as `qsmxt run --accept-recommendations`)
+    #[arg(long)]
+    pub accept_recommendations: bool,
 
     #[command(flatten)]
     pub pipeline: PipelineArgs,

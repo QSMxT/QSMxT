@@ -873,6 +873,18 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             let scale = config.bet.voxel_scale;
             for_each_bet_op(&mut config.masking, |_, s| *s = scale);
         }
+
+        // ── Dismissed recommendations ──
+        for d in args.dismiss_recommendation.iter().flatten() {
+            let (rule, chosen) = d.split_once('=').ok_or_else(|| QsmxtError::Config(format!(
+                "--dismiss-recommendation {d}: give the rule and the value it is dismissed for, as RULE=VALUE \
+                 (`qsmxt run --dry` lists them)")))?;
+            if !qsmxt_engine::recommendations::is_rule(rule) {
+                return Err(QsmxtError::Config(format!("--dismiss-recommendation {d}: there is no rule {rule}")));
+            }
+            config.dismissed_recommendations.retain(|x| x.rule != rule);
+            config.dismissed_recommendations.push(qsmxt_engine::Dismissal { rule: rule.to_string(), chosen: chosen.to_string() });
+        }
         Ok(())
 }
 

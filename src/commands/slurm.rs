@@ -6,7 +6,7 @@ pub fn execute(args: SlurmArgs) -> crate::Result<()> {
     // can be made before a run starts. Without the overrides the generated jobs silently fall
     // back to the pipeline defaults; without the checks a bad setting is found once per job,
     // after submission.
-    let config = super::run::build_config(args.config.as_deref(), &args.pipeline)?;
+    let mut config = super::run::build_config(args.config.as_deref(), &args.pipeline)?;
 
     let filter = DiscoveryFilter {
         include: args.include.clone(),
@@ -20,8 +20,14 @@ pub fn execute(args: SlurmArgs) -> crate::Result<()> {
         return Ok(());
     }
 
+    // Applied here, so every job reads the same configuration file.
+    if args.accept_recommendations {
+        super::recommend::accept(&mut config, &runs);
+    }
+
     // Refuse before writing or submitting a job that would fail on its node.
     crate::pipeline::requirements::check_runs(&runs, &config)?;
+    super::recommend::log_found(&config, &runs);
 
     let base_dir = args.output_dir.as_deref().unwrap_or(&args.bids_dir);
 

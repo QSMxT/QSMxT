@@ -354,7 +354,7 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
     }
 
     // Build config: file -> CLI overrides -> checks
-    let config = build_config(args.config.as_deref(), &args.pipeline)?;
+    let mut config = build_config(args.config.as_deref(), &args.pipeline)?;
 
     // Discover BIDS runs
     let filter = DiscoveryFilter {
@@ -369,6 +369,15 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
         eprintln!("No QSM-compatible runs found in {}", args.bids_dir.display());
         return Ok(());
     }
+
+    // What the chosen methods' rules recommend is only ever applied when asked, before the
+    // checks (a required one would otherwise refuse the run).
+    let as_configured = config.clone();
+    let accepted = if args.accept_recommendations {
+        super::recommend::accept(&mut config, &runs)
+    } else {
+        super::recommend::Accepted::default()
+    };
 
     // Every requested output every run can produce, before any run starts (#193, #273).
     crate::pipeline::requirements::check_runs(&runs, &config)?;
@@ -464,8 +473,10 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
             );
         }
         print_planned(&derivatives_dir, &config, &runs);
+        super::recommend::print_dry(&as_configured, &runs, args.accept_recommendations);
         return Ok(());
     }
+    super::recommend::log_found(&config, &runs);
 
     if args.no_dataset_steps {
         let path = worker_log_path(&derivatives_dir, &runs);
@@ -497,6 +508,7 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
         force: args.force,
         source_dicom: args.source_dicom.clone(),
         dicom_outputs: args.dicom_outputs.clone(),
+        applied: accepted.per_run.clone(),
     };
 
     let results = executor::local::execute_local(&runs, &config, &output, &exec_config);
@@ -505,6 +517,7 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
 
     if args.no_dataset_steps {
         info!("Dataset-level steps skipped (--no-dataset-steps): run `qsmxt aggregate` once every run is done");
+        super::recommend::log_summary(&config, &runs, &accepted);
         return finish(&run_failures, &[], &derivatives_dir);
     }
 
@@ -518,6 +531,7 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
         clean_intermediates: args.clean_intermediates,
         command_line: &std::env::args().collect::<Vec<_>>().join(" "),
     });
+    super::recommend::log_summary(&config, &runs, &accepted);
     finish(&run_failures, &group_failures, &derivatives_dir)
 }
 

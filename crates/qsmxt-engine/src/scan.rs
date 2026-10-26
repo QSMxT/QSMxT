@@ -16,6 +16,10 @@ use crate::record::{Choice, Decision, Topic};
 pub struct ScanFacts {
     /// The matrix size of the first echo, as acquired.
     pub dims: (usize, usize, usize),
+    /// The voxel size in mm, when the front end read it from the header (the pipeline rules that
+    /// depend on it stay silent until it is known: [`crate::recommendations`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voxel_size: Option<(f64, f64, f64)>,
     pub n_echoes: usize,
     /// Echo times in seconds, in echo order.
     pub echo_times: Vec<f64>,
@@ -68,6 +72,7 @@ impl ScanFacts {
         }
         Ok(ScanFacts {
             dims,
+            voxel_size: None,
             n_echoes: sidecars.len(),
             echo_times: sidecars.iter().map(|sc| sc.echo_time).collect(),
             has_magnitude,

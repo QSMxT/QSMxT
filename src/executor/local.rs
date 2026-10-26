@@ -18,6 +18,9 @@ pub struct ExecutionConfig {
     pub source_dicom: Option<std::path::PathBuf>,
     /// Optional subset of maps to export as DICOM (`--dicom-outputs`).
     pub dicom_outputs: Option<Vec<String>>,
+    /// The recommendations `--accept-recommendations` applied that each run had, by run key: its
+    /// run record keeps them.
+    pub applied: std::collections::HashMap<String, Vec<qsmxt_engine::recommendations::Recommendation>>,
 }
 
 /// Execute pipeline runs in parallel using Rayon.
@@ -44,11 +47,12 @@ pub fn execute_local(
             info!("Processing {}", run.key);
             let run_start = std::time::Instant::now();
 
-            let result = runner::run_pipeline_cached(
+            let result = runner::run_pipeline_applied(
                 run,
                 config,
                 output,
                 exec_config.force,
+                exec_config.applied.get(&run.key.to_string()).map_or(&[], |a| a.as_slice()),
                 &|msg| { info!("{}: {}", run.key, msg); },
             );
 
@@ -207,6 +211,7 @@ mod tests {
             force: false,
             source_dicom: None,
             dicom_outputs: None,
+            applied: Default::default(),
         };
         assert_eq!(compute_concurrency(&runs, &config, &exec), 8);
     }
@@ -220,6 +225,7 @@ mod tests {
             force: false,
             source_dicom: None,
             dicom_outputs: None,
+            applied: Default::default(),
         };
         assert_eq!(compute_concurrency(&[], &config, &exec), 8);
     }
@@ -237,6 +243,7 @@ mod tests {
             force: false,
             source_dicom: None,
             dicom_outputs: None,
+            applied: Default::default(),
         };
         assert_eq!(compute_concurrency(&runs, &config, &exec), 2);
     }
@@ -253,6 +260,7 @@ mod tests {
             force: false,
             source_dicom: None,
             dicom_outputs: None,
+            applied: Default::default(),
         };
         assert_eq!(compute_concurrency(&runs, &config, &exec), 1);
     }

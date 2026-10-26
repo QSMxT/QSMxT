@@ -1072,6 +1072,21 @@ pub struct PipelineConfig {
     /// co-registration (`--registration-*`).
     #[serde(default)]
     pub registration: crate::motion::RegistrationConfig,
+    /// Recommendations the user chose not to follow ([`crate::recommendations`]), each for the
+    /// value its setting had then: a change to the setting brings the recommendation back. They
+    /// change nothing a run computes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dismissed_recommendations: Vec<Dismissal>,
+}
+
+/// A recommendation dismissed for one value of its setting ([`crate::recommendations::dismiss`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Dismissal {
+    /// QSM.rs's rule id (`rts.bg-vsharp`).
+    pub rule: String,
+    /// The setting's value(s) it was dismissed for, as
+    /// [`chosen_text`](crate::recommendations::chosen_text) writes them (`pdf`).
+    pub chosen: String,
 }
 
 /// Multi-orientation reconstruction (COSMOS / STI) over a group of runs.
