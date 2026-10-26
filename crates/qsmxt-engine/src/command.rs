@@ -499,9 +499,13 @@ fn command_for(config: &PipelineConfig) -> String {
 
     // ── Dismissed recommendations ──
     // Only those that still hold: a dismissal whose setting has since changed is gone.
-    let mut held = config.clone();
-    crate::recommendations::prune_dismissals(&mut held, &crate::recommendations::Facts::default());
-    for x in &held.dismissed_recommendations {
+    let mut held = config.dismissed_recommendations.clone();
+    if !held.is_empty() {
+        let mut c = config.clone();
+        crate::recommendations::prune_dismissals(&mut c, &crate::recommendations::Facts::default());
+        held = c.dismissed_recommendations;
+    }
+    for x in &held {
         let arg = format!("{}={}", x.rule, x.chosen);
         // Rule ids and dismissed values are written in characters a shell leaves alone.
         let plain = arg.chars().all(|c| c.is_ascii_alphanumeric() || "-_.=,/".contains(c));
