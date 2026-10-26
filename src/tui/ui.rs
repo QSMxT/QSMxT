@@ -150,6 +150,16 @@ fn draw_tip_modal(f: &mut Frame, modal: &TipModal, area: Rect) {
 }
 
 
+/// A picker's value drawn as a button, `[ MEDI ▾ ]`: Enter (or ←/→) opens the list.
+fn picker_button(value: &str, focused: bool) -> Vec<Span<'static>> {
+    let (frame, text) = if focused {
+        (Style::default().fg(Color::DarkGray), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+    } else {
+        (Style::default().fg(Color::DarkGray), Style::default().fg(Color::Gray))
+    };
+    vec![Span::styled("[ ", frame), Span::styled(value.to_string(), text), Span::styled(" \u{25be} ]", frame)]
+}
+
 /// The recommendation pop-up ([`super::recommend`]): what the setting is, what the method
 /// recommends and why, and the choices.
 fn draw_rec_modal(f: &mut Frame, modal: &super::recommend::RecModal, area: Rect) {
@@ -579,25 +589,11 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     };
     // The example dataset lands in a plain BIDS tree, so it carries no experimental caveat.
     let is_experimental = !matches!(app.input_mode, super::app::InputMode::Bids | super::app::InputMode::Example);
-    let mode_style = Style::default().fg(Color::Cyan);
     let experimental_span = Span::styled(" (experimental)", Style::default().fg(Color::Yellow));
-    if mode_focused {
-        let mut spans = vec![
-            Span::styled(format!("  {:22}", "Input mode:"), mode_label_style),
-            Span::styled("< ", Style::default().fg(Color::DarkGray)),
-            Span::styled(mode_text, mode_style.add_modifier(Modifier::BOLD)),
-            Span::styled(" >", Style::default().fg(Color::DarkGray)),
-        ];
-        if is_experimental { spans.push(experimental_span); }
-        lines.push(Line::from(spans));
-    } else {
-        let mut spans = vec![
-            Span::styled(format!("  {:22}", "Input mode:"), mode_label_style),
-            Span::styled(mode_text, mode_style),
-        ];
-        if is_experimental { spans.push(experimental_span); }
-        lines.push(Line::from(spans));
-    }
+    let mut spans = vec![Span::styled(format!("  {:22}", "Input mode:"), mode_label_style)];
+    spans.extend(picker_button(mode_text, mode_focused));
+    if is_experimental { spans.push(experimental_span); }
+    lines.push(Line::from(spans));
 
     // Fields 1-3: directory/config fields (labels change based on mode)
     let io_labels = match app.input_mode {
@@ -905,7 +901,7 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     // Help text
     let help_text = if in_io {
         match app.active_field {
-            0 => "Left/Right to switch input mode (BIDS / NIfTI / DICOM / Example)",
+            0 => "Enter: choose input mode (BIDS / NIfTI / DICOM / Example)",
             1 => match app.input_mode {
                 super::app::InputMode::Bids => "Path to BIDS-formatted dataset directory",
                 super::app::InputMode::NIfTI => "Directory with NIfTI files + JSON sidecars (optional, for auto-scan)",
@@ -1567,15 +1563,23 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
             PipelineRow::AlgoSelect { label, field, options, help } => {
                 let selected = app.field_select(field);
                 let val = options.get(selected).unwrap_or(&"?");
+                let picker = super::recommend::picker_noun(row);
                 if focused {
-                    focused_help = help.get(selected).map(|s| s.to_string());
+                    focused_help = help.get(selected).map(|s| match &picker {
+                        Some(noun) => format!("{s} — Enter: choose {noun}"),
+                        None => s.to_string(),
+                    });
                 }
                 let label_style = if focused {
                     Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::White)
                 };
-                if focused {
+                if picker.is_some() {
+                    let mut spans = vec![Span::styled(format!("  {:lw$}", format!("{}:", label)), label_style)];
+                    spans.extend(picker_button(val, focused));
+                    Line::from(spans)
+                } else if focused {
                     Line::from(vec![
                         Span::styled(format!("  {:lw$}", format!("{}:", label)), label_style),
                         Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
@@ -1686,23 +1690,13 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 } else {
                     Style::default().fg(Color::White)
                 };
-                if focused {
-                    if focused_help.is_none() {
-                        let i = super::app::mask_schema().inputs.iter().find(|i| i.value == *input);
-                        focused_help = Some(format!("{} (←/→ to change)", i.map_or("Masking input source", |i| i.help)));
-                    }
-                    Line::from(vec![
-                        Span::styled(format!("  {:lw$}", "Input:"), label_style),
-                        Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(format!("{}", input), Style::default().fg(Color::Cyan)),
-                        Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
-                    ])
-                } else {
-                    Line::from(vec![
-                        Span::styled(format!("  {:lw$}", "Input:"), label_style),
-                        Span::styled(format!("{}", input), Style::default().fg(Color::Gray)),
-                    ])
+                if focused && focused_help.is_none() {
+                    let i = super::app::mask_schema().inputs.iter().find(|i| i.value == *input);
+                    focused_help = Some(format!("{} — Enter: choose input", i.map_or("Masking input source", |i| i.help)));
                 }
+                let mut spans = vec![Span::styled(format!("  {:lw$}", "Input:"), label_style)];
+                spans.extend(picker_button(&input.to_string(), focused));
+                Line::from(spans)
             }
             PipelineRow::MaskOpGenerator { section } => {
                 let Some(gen) = app.pipeline_state.mask_section(*section).map(|s| &s.generator) else { continue };
@@ -1719,23 +1713,13 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 } else {
                     Style::default().fg(Color::White)
                 };
-                if focused {
-                    if focused_help.is_none() {
-                        focused_help = Some(format!("{} (←/→ to switch between threshold, BET, HD-BET, MindGrab and RS2-Net)",
-                            super::app::mask_step_of(gen).help));
-                    }
-                    Line::from(vec![
-                        Span::styled(format!("  {:lw$}", "Algorithm:"), label_style),
-                        Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(algo_name, Style::default().fg(Color::Cyan)),
-                        Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
-                    ])
-                } else {
-                    Line::from(vec![
-                        Span::styled(format!("  {:lw$}", "Algorithm:"), label_style),
-                        Span::styled(algo_name, Style::default().fg(Color::Gray)),
-                    ])
+                if focused && focused_help.is_none() {
+                    focused_help = Some(format!("{} — Enter: choose algorithm (threshold, BET, HD-BET, MindGrab or RS2-Net)",
+                        super::app::mask_step_of(gen).help));
                 }
+                let mut spans = vec![Span::styled(format!("  {:lw$}", "Algorithm:"), label_style)];
+                spans.extend(picker_button(algo_name, focused));
+                Line::from(spans)
             }
             PipelineRow::MaskOpGeneratorParam { section } => {
                 let Some(gen) = app.pipeline_state.mask_section(*section).map(|s| &s.generator) else { continue };
@@ -2211,9 +2195,31 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         vec![(&tabs, "Tabs"), ("\u{2190}\u{2192}/[ ]", "Sub-tabs"), ("\u{2193}/Enter", "Settings"), ("R", "Reset page"),
              ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else {
-        vec![(&tabs, "Tabs"), ("[ ]", "Sub-tabs"), ("\u{2191}\u{2193}", "Navigate"), ("\u{2190}\u{2192}/Space", "Change"),
-             ("Enter", "Edit"), ("r", "Reset"), ("R", "Reset page"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
+        // The row's own keys: Enter for a picker, ←/→ for a row that cycles, Enter to edit text.
+        let rows_tab = App::is_rows_tab(app.active_tab);
+        let row = if rows_tab { app.focused_row() } else { None };
+        let choose = match &row {
+            Some(r) => super::recommend::picker_noun(r).map(|noun| format!("Choose {noun}")),
+            None if app.active_tab == TAB_INPUT && app.active_field == 0 => Some("Choose input mode".to_string()),
+            None => None,
+        };
+        let mut keys = vec![(tabs.as_str(), "Tabs"), ("[ ]", "Sub-tabs"), ("\u{2191}\u{2193}", "Navigate")];
+        match (&choose, &row) {
+            (Some(c), _) => keys.push(("Enter", c.as_str())),
+            (None, None) if !rows_tab => keys.extend([("\u{2190}\u{2192}/Space", "Change"), ("Enter", "Edit")]),
+            (None, Some(PipelineRow::Param { .. })) => keys.push(("Enter", "Edit")),
+            (None, Some(PipelineRow::Toggle { .. })) => keys.push(("Space", "Toggle")),
+            _ => keys.push(("\u{2190}\u{2192}", "Change")),
+        }
+        keys.extend([("r", "Reset"), ("R", "Reset page"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]);
+        draw_keys(f, keys, area);
+        return;
     };
+    draw_keys(f, keys, area);
+}
+
+/// The help bar's key hints: each key, then what it does.
+fn draw_keys(f: &mut Frame, keys: Vec<(&str, &str)>, area: ratatui::layout::Rect) {
     let mut help = vec![Span::raw(" ")];
     for (i, (key, what)) in keys.into_iter().enumerate() {
         if i > 0 {

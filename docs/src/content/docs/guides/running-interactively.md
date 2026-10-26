@@ -69,9 +69,8 @@ you apply it:
   come back while the method stays chosen. Choosing the method again after switching away
   shows it again.
 
-The pop-up opens once per method choice. If you cycle through methods with `←`/`→`, it waits
-until you stop. If the same change also creates recommendations, they are listed first in the
-same pop-up. If your settings already match the reference pipeline, there is no pop-up.
+The pop-up opens once per method choice. If the same change also creates recommendations, they
+are listed first in the same pop-up. If your settings already match the reference pipeline, there is no pop-up.
 
 A setting that departs from a rule is marked with the method whose rule it is and what that
 rule uses, for example `ⓘ MEDI: BET`, or `ⓘ MEDI, PDF: BET` when several methods' references
@@ -105,9 +104,13 @@ tab without sub-tabs opens on its first setting.
 
 Settings appear only where and when they apply: a sub-setting sits indented under the
 checkbox or choice it belongs to, and a map another output needs reads as ticked (and says why
-when you try to untick it). `↑`/`↓` move, `←`/`→` or `Space` change a choice or checkbox,
-`Enter` opens a list or edits a value, `r` resets the focused setting, `R` the whole sub-tab, and
-`F5` runs. The button at the bottom of the Execution tab runs too, and its label says what will
+when you try to untick it). `↑`/`↓` move, `Space` ticks a checkbox, `Enter` edits a value, `r`
+resets the focused setting, `R` the whole sub-tab, and `F5` runs. A short choice of up to three
+values (for example ROMEO or Laplacian unwrapping) shows as `◀ romeo ▶` when focused and changes
+with `←`/`→`. A method (the inversion, background removal, χ-separation), or a choice with more
+than three values, shows as a button, `[ medi ▾ ]`: `Enter` (or `←`/`→`) opens the list to choose
+from, so you never pass through other methods on the way. The help line and the key hints at
+the bottom say which a setting is ("Enter: choose method"). The button at the bottom of the Execution tab runs too, and its label says what will
 happen: *Run*, *Dry run*, *Write SLURM scripts* or *Submit SLURM jobs*.
 
 | Key | Where | Does |
@@ -120,8 +123,9 @@ happen: *Run*, *Dry run*, *Write SLURM scripts* or *Submit SLURM jobs*.
 | `[` `]` | any tab with sub-tabs | previous / next sub-tab |
 | `↑` | sub-tab strip | go up to the tab bar |
 | `↑` `↓` | settings | move; `↑` from the first setting returns to the strip, or to the tab bar on a tab without sub-tabs |
-| `←` `→`, `Space` | settings | change a choice or checkbox |
-| `Enter` | settings | open a list or edit a value; on the Execution tab's button, run |
+| `←` `→` | settings | change a short choice (`◀ … ▶`); on a button (`[ … ▾ ]`), open its list |
+| `Space` | settings | tick a checkbox |
+| `Enter` | settings | open a button's list or edit a value; on the Execution tab's button, run |
 | `r` / `R` | settings | reset the setting / the whole sub-tab |
 | `Enter`, `s` | Pipeline | save the pipeline as an SVG drawing and open it |
 | `Enter`, `c`, `y` | Methods | copy the methods text to the clipboard |

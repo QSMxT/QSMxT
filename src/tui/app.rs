@@ -5809,8 +5809,7 @@ impl App {
                     }
                 }
                 KeyCode::Enter | KeyCode::Char(' ') => self.interact_io_field(),
-                KeyCode::Left => self.adjust_io_select(-1),
-                KeyCode::Right => self.adjust_io_select(1),
+                KeyCode::Left | KeyCode::Right => self.adjust_io_select(),
                 KeyCode::Char('r') => self.reset_current_field(),
                 KeyCode::Char('R') => self.reset_current_tab(),
                 KeyCode::F(5) => self.try_run(),
@@ -5933,20 +5932,11 @@ impl App {
         };
     }
 
-    fn adjust_io_select(&mut self, delta: isize) {
+    fn adjust_io_select(&mut self) {
         if self.active_field == 0 {
-            // Mode selector: Left/Right cycles through modes
-            self.cycle_input_mode(delta);
+            // Mode selector: four modes, so Left/Right open its picker as Enter does.
+            self.interact_io_field();
         }
-    }
-
-    fn cycle_input_mode(&mut self, delta: isize) {
-        const MODES: [InputMode; 4] =
-            [InputMode::Bids, InputMode::NIfTI, InputMode::DicomToBids, InputMode::Example];
-        let cur = MODES.iter().position(|m| *m == self.input_mode).unwrap_or(0) as isize;
-        let next = (cur + delta).rem_euclid(MODES.len() as isize) as usize;
-        self.input_mode = MODES[next];
-        self.form_scroll_offset = 0;
     }
 
     /// Reset the focused field on a generic form tab to its default.
@@ -7119,6 +7109,11 @@ impl App {
                     return;
                 }
                 let row = self.focused_row();
+                // A picker row opens its picker: ←/→ are never dead keys.
+                if row.as_ref().is_some_and(|r| super::recommend::picker_noun(r).is_some()) {
+                    self.handle_rows_key(KeyEvent::from(KeyCode::Enter));
+                    return;
+                }
                 if let Some(PipelineRow::AlgoSelect { field, options, .. }) = row {
                     let focused_field = self.focused_field_name();
                     // Mask preset: cycle the real presets only; "custom" is auto-set on edits
@@ -7126,8 +7121,6 @@ impl App {
                     let cur = self.field_select(field).min((n - 1) as usize) as isize;
                     let new_val = (cur + delta).rem_euclid(n) as usize;
                     self.set_field_select(field, new_val);
-                    // A method passed while cycling is not offered until the cycling stops.
-                    self.refs.last_cycle = Some(std::time::Instant::now());
                     self.restore_focus(&focused_field);
                     return;
                 }
@@ -7990,7 +7983,7 @@ mod tests {
         app.active_field = 0;
         let seen: Vec<InputMode> = (0..4)
             .map(|_| {
-                app.handle_key(key(KeyCode::Right));
+                step(&mut app, 1);
                 app.input_mode
             })
             .collect();
@@ -9019,7 +9012,7 @@ mod tests {
         assert_eq!(app.input_mode, InputMode::Bids);
         // Field 0 is the mode selector; Right arrow cycles Bids -> NIfTI
         app.active_field = 0;
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert_eq!(app.input_mode, InputMode::NIfTI);
     }
 
@@ -9027,7 +9020,7 @@ mod tests {
     fn test_nifti_focus_navigation_into_nifti_section() {
         let mut app = App::new();
         app.active_field = 0;
-        app.handle_key(key(KeyCode::Right)); // switch to NIfTI mode
+        step(&mut app, 1); // switch to NIfTI mode
         assert_eq!(app.input_mode, InputMode::NIfTI);
         // Navigate down past IO fields (0..3) into NIfTI section
         app.active_field = 3;
@@ -9068,7 +9061,7 @@ mod tests {
     fn test_nifti_editing_echo_times() {
         let mut app = App::new();
         app.active_field = 0;
-        app.handle_key(key(KeyCode::Right)); // switch to NIfTI
+        step(&mut app, 1); // switch to NIfTI
         // Navigate into NIfTI section
         app.active_field = App::INPUT_IO_FIELDS;
         app.nifti_state.focus = NiftiFocus::EchoTimes;
@@ -9087,7 +9080,7 @@ mod tests {
     fn test_nifti_editing_field_strength() {
         let mut app = App::new();
         app.active_field = 0;
-        app.handle_key(key(KeyCode::Right)); // switch to NIfTI
+        step(&mut app, 1); // switch to NIfTI
         app.active_field = App::INPUT_IO_FIELDS;
         app.nifti_state.focus = NiftiFocus::FieldStrength;
         app.handle_key(key(KeyCode::Enter));
@@ -9105,7 +9098,7 @@ mod tests {
     fn test_nifti_editing_b0_direction() {
         let mut app = App::new();
         app.active_field = 0;
-        app.handle_key(key(KeyCode::Right)); // switch to NIfTI
+        step(&mut app, 1); // switch to NIfTI
         app.active_field = App::INPUT_IO_FIELDS;
         app.nifti_state.focus = NiftiFocus::B0Direction;
         // Clear default value first
@@ -9127,8 +9120,8 @@ mod tests {
         assert_eq!(app.input_mode, InputMode::Bids);
         app.active_field = 0;
         // Right twice: Bids -> NIfTI -> DicomToBids
-        app.handle_key(key(KeyCode::Right));
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
+        step(&mut app, 1);
         assert_eq!(app.input_mode, InputMode::DicomToBids);
     }
 
@@ -9154,7 +9147,7 @@ mod tests {
     fn test_nifti_add_magnitude_editing() {
         let mut app = App::new();
         app.active_field = 0;
-        app.handle_key(key(KeyCode::Right)); // switch to NIfTI
+        step(&mut app, 1); // switch to NIfTI
         app.active_field = App::INPUT_IO_FIELDS;
         app.nifti_state.focus = NiftiFocus::AddMagnitude;
         app.handle_key(key(KeyCode::Enter));
@@ -9169,7 +9162,7 @@ mod tests {
     fn test_nifti_add_phase_editing() {
         let mut app = App::new();
         app.active_field = 0;
-        app.handle_key(key(KeyCode::Right)); // switch to NIfTI
+        step(&mut app, 1); // switch to NIfTI
         app.active_field = App::INPUT_IO_FIELDS;
         app.nifti_state.focus = NiftiFocus::AddPhase;
         app.handle_key(key(KeyCode::Enter));
@@ -9278,9 +9271,9 @@ mod tests {
         app.pipeline_state.focus = fi;
         let ilsqr = QSM_ALGO_OPTIONS.iter().position(|o| *o == "ilsqr").unwrap();
         assert_eq!(app.pipeline_state.qsm_algorithm, ilsqr); // the default inversion
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert_eq!(QSM_ALGO_OPTIONS[app.pipeline_state.qsm_algorithm], QSM_ALGO_OPTIONS[ilsqr + 1]);
-        app.handle_key(key(KeyCode::Left));
+        step(&mut app, -1);
         assert_eq!(app.pipeline_state.qsm_algorithm, ilsqr);
     }
 
@@ -9530,9 +9523,9 @@ mod tests {
         app.form.do_swi = true; // make SWI fields visible
         focus_on(&mut app, TAB_OUTPUTS, "swi_scaling");
         assert_eq!(app.form.swi_scaling, 0); // tanh
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert_eq!(app.form.swi_scaling, 1); // negative-tanh
-        app.handle_key(key(KeyCode::Left));
+        step(&mut app, -1);
         assert_eq!(app.form.swi_scaling, 0);
     }
 
@@ -10354,24 +10347,30 @@ mod tests {
         assert_eq!(app.dicom_state.focus, DicomFocus::ConvertButton);
     }
 
-    // ========== IO select (input mode cycling) ==========
+    /// ←/→ on a picker row: it opens the picker; move its cursor `by` and confirm, as cycling did.
+    fn step(app: &mut App, by: isize) {
+        app.handle_key(key(if by < 0 { KeyCode::Left } else { KeyCode::Right }));
+        let m = app.algo_modal.as_mut().expect("←/→ open the picker");
+        let n = m.options.len() as isize;
+        m.cursor = (m.cursor as isize + by).rem_euclid(n) as usize;
+        app.handle_key(key(KeyCode::Enter));
+    }
 
+    // ========== IO select (input mode picker) ==========
+
+    /// Four input modes: ←/→ open the picker, as Enter does, rather than cycling.
     #[test]
-    fn test_adjust_io_select_cycles_mode() {
+    fn test_adjust_io_select_opens_the_picker() {
         let mut app = App::new();
         app.active_tab = TAB_INPUT;
         app.active_field = 0;
         assert_eq!(app.input_mode, InputMode::Bids);
         app.handle_key(key(KeyCode::Right));
-        assert_eq!(app.input_mode, InputMode::NIfTI);
-        app.handle_key(key(KeyCode::Right));
-        assert_eq!(app.input_mode, InputMode::DicomToBids);
-        app.handle_key(key(KeyCode::Right));
-        assert_eq!(app.input_mode, InputMode::Example);
-        app.handle_key(key(KeyCode::Right));
-        assert_eq!(app.input_mode, InputMode::Bids); // wraps around
+        assert_eq!(app.input_mode, InputMode::Bids, "not cycled");
+        assert!(matches!(app.algo_modal.as_ref().map(|m| &m.target), Some(AlgoModalTarget::InputMode)));
+        app.algo_modal = None;
         app.handle_key(key(KeyCode::Left));
-        assert_eq!(app.input_mode, InputMode::Example); // wraps other way
+        assert!(app.algo_modal.is_some());
     }
 
     #[test]
@@ -10386,10 +10385,10 @@ mod tests {
         app.handle_key(key(KeyCode::Down));
         app.handle_key(key(KeyCode::Enter));
         assert_eq!(app.input_mode, InputMode::NIfTI);
-        // Left/Right still cycles inline without the modal.
+        // Left/Right open the picker too (four modes are not cycled).
         app.handle_key(key(KeyCode::Left));
-        assert!(app.algo_modal.is_none());
-        assert_eq!(app.input_mode, InputMode::Bids);
+        assert!(app.algo_modal.is_some());
+        assert_eq!(app.input_mode, InputMode::NIfTI);
     }
 
     // ========== try_run validation tests ==========
@@ -10590,28 +10589,28 @@ mod tests {
         let fi = mp_focus.expect("mask_preset not found");
         app.pipeline_state.focus = fi;
         assert_eq!(app.pipeline_state.mask_preset, 0); // robust threshold
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert_eq!(app.pipeline_state.mask_preset, 1); // BET
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert_eq!(app.pipeline_state.mask_preset, 2); // HD-BET + signal-gated erosion
         assert_eq!(app.pipeline_state.mask_sections, crate::pipeline::config::hd_bet_mask_sections());
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert_eq!(app.pipeline_state.mask_preset, 3); // BET AND phase quality
         let recipe = crate::pipeline::config::bet_and_phase_mask_recipe();
         assert_eq!(app.pipeline_state.mask_sections, recipe.sections);
         assert_eq!(app.pipeline_state.mask_combine, recipe.combine);
         assert_eq!(app.pipeline_state.mask_combined_refinements, recipe.refinements);
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert_eq!(app.pipeline_state.mask_preset, 4); // RS2-Net (rodent)
         assert_eq!(app.pipeline_state.mask_sections, crate::pipeline::config::rs2_net_mask_sections());
         // Leaving the two-section preset resets the combine mode and the combined-mask steps.
         assert_eq!(app.pipeline_state.mask_combine, crate::pipeline::config::MaskCombine::Or);
         assert!(app.pipeline_state.mask_combined_refinements.is_empty());
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert_eq!(app.pipeline_state.mask_preset, 5); // MindGrab
         assert_eq!(app.pipeline_state.mask_sections, crate::pipeline::config::mindgrab_mask_sections());
-        app.handle_key(key(KeyCode::Right));
-        assert_eq!(app.pipeline_state.mask_preset, 0, "cycling skips 'custom'");
+        step(&mut app, 1);
+        assert_eq!(app.pipeline_state.mask_preset, MASK_PRESET_CUSTOM, "the picker lists 'custom' last");
     }
 
     #[test]
@@ -11122,7 +11121,7 @@ mod tests {
             .position(|&ri| matches!(&rows[ri], PipelineRow::MaskOpInput { section } if is_two_pass_section(*section)))
             .expect("reliable input row not focusable");
         app.pipeline_state.focus = focus;
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
 
         assert_ne!(app.pipeline_state.two_pass_sections[0].input, MaskingInput::PhaseQuality,
                    "the reliable mask's input should have changed");
@@ -11374,33 +11373,33 @@ mod tests {
         let fi = gen_focus.expect("MaskOpGenerator not found");
         app.pipeline_state.focus = fi;
         // Cycle generator threshold -> bet -> hd-bet -> threshold (and back with Left)
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert!(matches!(
             app.pipeline_state.mask_sections[0].generator,
             crate::pipeline::config::MaskOp::Bet { .. }
         ));
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert!(matches!(
             app.pipeline_state.mask_sections[0].generator,
             crate::pipeline::config::MaskOp::HdBet { .. }
         ));
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert!(matches!(
             app.pipeline_state.mask_sections[0].generator,
             crate::pipeline::config::MaskOp::MindGrab { tta: false }
         ));
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert!(matches!(
             app.pipeline_state.mask_sections[0].generator,
             crate::pipeline::config::MaskOp::Rs2Net { .. }
         ));
         // Wraps back round to the first generator.
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert!(matches!(
             app.pipeline_state.mask_sections[0].generator,
             crate::pipeline::config::MaskOp::Threshold { .. }
         ));
-        app.handle_key(key(KeyCode::Left));
+        step(&mut app, -1);
         assert!(matches!(
             app.pipeline_state.mask_sections[0].generator,
             crate::pipeline::config::MaskOp::Rs2Net { .. }
@@ -11448,7 +11447,7 @@ mod tests {
         let fi = inp_focus.expect("MaskOpInput not found");
         app.pipeline_state.focus = fi;
         let before = app.pipeline_state.mask_sections[0].input;
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         // Should have cycled to a different input
         assert_ne!(app.pipeline_state.mask_sections[0].input, before);
     }

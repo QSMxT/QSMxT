@@ -15,9 +15,11 @@
 //!   pipeline is chosen ([`rec::chosen_methods`]) and the config differs from it
 //!   ([`rec::reference_differences`]): every difference, with **Apply all**, **Choose per
 //!   setting** and **Keep mine** (each difference dismissed for its value, so it is not offered
-//!   again while the method stays chosen). Nothing changes unless applied. A method passed while
-//!   cycling a row with ←/→ waits until the cycling stops. When the same change also creates
-//!   recommendations, they lead the same pop-up.
+//!   again while the method stays chosen). Nothing changes unless applied. When the same change
+//!   also creates recommendations, they lead the same pop-up.
+//! - **Pickers** ([`picker_noun`]): a selector whose choice can open that pop-up, or that has
+//!   more than three options, is chosen from a picker (Enter, or ←/→), never cycled, so no
+//!   method is chosen on the way to another.
 //! - **The marker** ([`rec::marker`]) names whose rule a setting departs from and what it uses:
 //!   ⚑ for a finding offered as a change, ⓘ for information only. `!` on a marked setting opens
 //!   its details: whose rule, what it uses, why, the source, and Apply.
@@ -216,13 +218,7 @@ pub struct RefState {
     /// Methods just chosen whose pop-up has not been shown, each with the settings it leaves
     /// out (those the pop-up that chose it had just decided).
     pub pending: Vec<(Trigger, Vec<String>)>,
-    /// When a row was last cycled with ←/→: a method passed on the way is not offered until
-    /// the cycling stops ([`SETTLE`]).
-    pub last_cycle: Option<std::time::Instant>,
 }
-
-/// How long after the last ←/→ on a row a method chosen by it is offered.
-const SETTLE: std::time::Duration = std::time::Duration::from_millis(1200);
 
 /// A finding offered as a change and not dismissed: what can open the pop-up or show a badge.
 fn open(r: &Recommendation) -> bool {
@@ -249,7 +245,7 @@ impl App {
 
     /// After a change: drop the dismissals whose setting has changed, open the pop-up for the
     /// findings the change created, and note the methods it chose. A chosen method's reference
-    /// pipeline pop-up opens once nothing else is open and the row has stopped cycling. Nothing
+    /// pipeline pop-up opens once nothing else is open. Nothing
     /// while a value is being typed.
     pub fn check_recommendations(&mut self) {
         if self.is_typing() || self.rec_modal.is_some() || self.refs.modal.is_some() {
@@ -285,11 +281,10 @@ impl App {
             self.refs.pending.retain(|(m, _)| chosen.contains(m));
             view = Some(v);
         }
-        let settled = self.refs.last_cycle.is_none_or(|t| t.elapsed() >= SETTLE);
         let view = view.unwrap_or_else(|| if self.refs.pending.is_empty() { vec![] } else { self.rule_view() });
         // Every pending method's differences from its reference: one pop-up for one change.
         let mut reference: Option<(Vec<Trigger>, Vec<Recommendation>)> = None;
-        if settled && !self.refs.pending.is_empty() {
+        if !self.refs.pending.is_empty() {
             let groups = rec::by_method(&view);
             let mut methods = Vec::new();
             let mut diffs: Vec<Recommendation> = Vec::new();
@@ -594,6 +589,34 @@ fn row_path(row: &PipelineRow) -> Option<&'static str> {
     }
 }
 
+/// The most options a selector cycles through with ←/→; one with more is a picker.
+const MAX_CYCLED: usize = 3;
+
+/// For a selector row chosen from a picker (Enter; ←/→ open it too) rather than cycled: what it
+/// chooses, for "Enter: choose method". A selector is a picker when it has more than
+/// [`MAX_CYCLED`] options, or when choosing it can open a reference pipeline pop-up
+/// ([`rec::reference_trigger_settings`]): then no method is chosen on the way to another.
+pub fn picker_noun(row: &PipelineRow) -> Option<String> {
+    static TRIGGERS: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::new(rec::reference_trigger_settings);
+    let (label, options) = match row {
+        PipelineRow::AlgoSelect { label, field, options, .. } => {
+            let n = if *field == "mask_preset" { super::app::MASK_PRESET_CUSTOM } else { options.len() };
+            (label.trim(), n)
+        }
+        PipelineRow::MaskOpInput { .. } => ("Input", super::app::PipelineFormState::MASK_INPUT_SOURCES.len()),
+        PipelineRow::MaskOpGenerator { .. } => ("Algorithm", super::app::MASK_GENERATOR_TYPES.len()),
+        _ => return None,
+    };
+    let method = row_path(row).is_some_and(|p| TRIGGERS.contains(&p));
+    if method {
+        Some("method".into())
+    } else if options > MAX_CYCLED {
+        Some(label.to_lowercase())
+    } else {
+        None
+    }
+}
+
 /// `first`, with the findings as strong on its setting that disagree with it.
 fn group(view: &[Recommendation], first: &Recommendation) -> Vec<Recommendation> {
     if !first.conflict {
@@ -846,18 +869,48 @@ mod tests {
         screen(&mut app, "MEDI chosen with a recommendation");
     }
 
-    /// A method passed while cycling a row is offered once the cycling stops.
+    /// No row that cycles with ←/→ can open a reference pipeline pop-up: each selector whose
+    /// choice can is a picker, as is each with more than three options.
     #[test]
-    fn cycling_waits() {
-        let mut app = medi_chosen();
-        app.refs.modal = None;
-        select(&mut app, "qsm_algorithm", "rts", QSM_ALGO_OPTIONS);
-        app.refs.last_cycle = Some(std::time::Instant::now());
+    fn method_and_long_selectors_are_pickers() {
+        let triggers = rec::reference_trigger_settings();
+        let mut app = app();
+        app.form.do_swi = true;
+        for (_, _, rows) in app.all_pages() {
+            for row in &rows {
+                let picker = picker_noun(row).is_some();
+                if let PipelineRow::AlgoSelect { field, options, .. } = row {
+                    if row_path(row).is_some_and(|p| triggers.contains(&p)) {
+                        assert_eq!(picker_noun(row).as_deref(), Some("method"), "{field}");
+                    } else {
+                        assert_eq!(picker, options.len() > MAX_CYCLED, "{field}");
+                    }
+                }
+            }
+        }
+        let row = |field: &'static str| PipelineRow::AlgoSelect { label: "  Unwrapping", field, options: &["romeo", "laplacian"], help: &[] };
+        assert_eq!(picker_noun(&row("unwrapping_algorithm")), None, "two options: cycled");
+        assert_eq!(picker_noun(&row("qsm_algorithm")).as_deref(), Some("method"), "a method, however few options");
+    }
+
+    /// ←/→ on a picker row open the picker (no cycling), and the row and footer say so.
+    #[test]
+    fn arrows_on_a_method_row_open_its_picker() {
+        let mut app = app();
+        assert!(app.goto_field("qsm_algorithm"));
+        let before = app.field_select("qsm_algorithm");
+        app.handle_key(KeyEvent::from(KeyCode::Right));
+        assert_eq!(app.field_select("qsm_algorithm"), before, "not cycled");
+        assert!(app.algo_modal.is_some(), "the picker opened");
+        app.algo_modal = None;
         select(&mut app, "qsm_algorithm", "medi", QSM_ALGO_OPTIONS);
-        assert!(app.refs.modal.is_none(), "still cycling");
-        app.refs.last_cycle = Some(std::time::Instant::now() - SETTLE);
-        app.check_recommendations();
-        assert!(app.refs.modal.as_ref().is_some_and(|m| m.methods[0].name == "MEDI"));
+        app.refs.modal = None;
+        assert!(app.goto_field("qsm_algorithm"));
+        let text = screen(&mut app, "A method picker row and its footer");
+        assert!(text.contains("[ medi ▾ ]") && text.contains("Enter: choose method") && text.contains("Enter:Choose method"), "{text}");
+        assert!(app.goto_field("unwrapping_algorithm"));
+        let text = screen(&mut app, "A cycled row and its footer");
+        assert!(text.contains("◀ ") && text.contains("←→:Change") && !text.contains("Enter:Choose"), "{text}");
     }
 
     /// Every setting a rule covers has a TUI row to carry its badge and reference values.

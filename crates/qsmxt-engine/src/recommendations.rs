@@ -706,6 +706,23 @@ pub fn by_method(view: &[Recommendation]) -> Vec<MethodReference> {
     out
 }
 
+/// The QSMxT settings a choice of which can open a reference pipeline pop-up: those that trigger
+/// a `reference` rule (the inversion, background removal, χ-separation, phase offset removal),
+/// from QSM.rs's rules. A front end shows them as a picker
+/// rather than cycling through their values, so no method is chosen on the way to another.
+pub fn reference_trigger_settings() -> Vec<&'static str> {
+    let mut out: Vec<&'static str> = Vec::new();
+    for r in core::RULES.iter().filter(|r| r.strength == core::Strength::Reference) {
+        let Condition::Setting { setting, .. } = r.trigger() else { continue };
+        if let Some(path) = qsmxt_path(setting) {
+            if !out.contains(&path) {
+                out.push(path);
+            }
+        }
+    }
+    out
+}
+
 /// The choices in `config` that have a reference pipeline: the triggers of the `reference` rules
 /// that apply. A front end compares them before and after a change; a choice that appears is a
 /// method just chosen, and its [`reference_differences`] are what to offer.

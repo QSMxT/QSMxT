@@ -380,3 +380,13 @@ fn markers_name_the_method() {
     assert_eq!(view.iter().find(|v| v.path == "inversion.medi.msmv_prefilter").unwrap().marker.as_ref(), Some(&m));
     assert!(marker(&reference_values(&PipelineConfig::default(), &facts), "inversion.algorithm").is_none());
 }
+
+/// The settings whose choice can open a reference pipeline pop-up come from the rules.
+#[test]
+fn reference_triggers_are_the_method_settings() {
+    let t = reference_trigger_settings();
+    for path in ["inversion.algorithm", "bg_removal.algorithm", "separation.algorithm"] {
+        assert!(t.contains(&path), "{path} not in {t:?}");
+    }
+    assert!(!t.contains(&"bg_removal.vsharp.max_radius"));
+}
