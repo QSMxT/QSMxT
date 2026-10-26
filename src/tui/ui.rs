@@ -42,6 +42,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         draw_rec_modal(f, modal, f.area());
     }
 
+    if let Some(ref modal) = app.refs.modal {
+        draw_ref_modal(f, modal, f.area());
+    }
+
     if let Some(ref modal) = app.tip_modal {
         draw_tip_modal(f, modal, f.area());
     }
@@ -146,6 +150,16 @@ fn draw_tip_modal(f: &mut Frame, modal: &TipModal, area: Rect) {
 }
 
 
+/// A picker's value drawn as a button, `[ MEDI ▾ ]`: Enter (or ←/→) opens the list.
+fn picker_button(value: &str, focused: bool) -> Vec<Span<'static>> {
+    let (frame, text) = if focused {
+        (Style::default().fg(Color::DarkGray), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+    } else {
+        (Style::default().fg(Color::DarkGray), Style::default().fg(Color::Gray))
+    };
+    vec![Span::styled("[ ", frame), Span::styled(value.to_string(), text), Span::styled(" \u{25be} ]", frame)]
+}
+
 /// The recommendation pop-up ([`super::recommend`]): what the setting is, what the method
 /// recommends and why, and the choices.
 fn draw_rec_modal(f: &mut Frame, modal: &super::recommend::RecModal, area: Rect) {
@@ -158,12 +172,17 @@ fn draw_rec_modal(f: &mut Frame, modal: &super::recommend::RecModal, area: Rect)
         let wants = match r.strength {
             super::recommend::Strength::Discouraged => format!("This is discouraged with {}: {}", r.trigger.name, r.reason),
             super::recommend::Strength::Required => format!("{} requires {}: {}", r.trigger.name, r.recommended.name, r.reason),
+            super::recommend::Strength::Reference => format!("{} uses {}: {}", rec_reference_of(r), r.recommended.name, r.reason),
             _ => format!("{} recommends {}: {}", r.trigger.name, r.recommended.name, r.reason),
         };
         lines.extend(tip_lines(&wants, text_w));
         if modal.why {
-            lines.push(Line::from(Span::styled(
-                format!("Source ({}): {}", r.basis.label(), r.source), Style::default().fg(Color::Cyan))));
+            for l in tip_lines(&format!("Source ({}): {}", r.basis.label(), r.source), text_w) {
+                lines.push(Line::from(l.spans.into_iter().map(|s| Span::styled(s.content, Style::default().fg(Color::Cyan))).collect::<Vec<_>>()));
+            }
+        }
+        if r.dismissed {
+            lines.push(Line::from(Span::styled(format!("Kept: {}.", r.current_text()), Style::default().fg(Color::DarkGray))));
         }
         lines.push(Line::from(""));
     }
@@ -177,20 +196,128 @@ fn draw_rec_modal(f: &mut Frame, modal: &super::recommend::RecModal, area: Rect)
     }
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        format!("\u{2191}\u{2193} choose   Enter select   w {}   Esc later", if modal.why { "hide why" } else { "why?" }),
+        format!("\u{2191}\u{2193} choose   Enter select   w {}   Esc {}", if modal.why { "hide why" } else { "why?" }, if modal.details { "close" } else { "later" }),
         Style::default().fg(Color::DarkGray),
     )).alignment(Alignment::Center));
 
     let popup = centered_rect(popup_w, lines.len() as u16 + 2, area);
     f.render_widget(Clear, popup);
+    let color = if modal.findings.iter().all(|r| r.strength == super::recommend::Strength::Reference) { Color::Cyan } else { Color::Yellow };
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Yellow))
+        .border_style(Style::default().fg(color))
         .title(Span::styled(modal.title(), Style::default().add_modifier(Modifier::BOLD)));
     let inner = block.inner(popup);
     f.render_widget(block, popup);
     let text_area = Rect { x: inner.x + 2, width: inner.width.saturating_sub(4), ..inner };
     f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), text_area);
+}
+
+/// "MEDI's reference pipeline", for a reference finding's line.
+fn rec_reference_of(r: &qsmxt_engine::recommendations::Recommendation) -> String {
+    qsmxt_engine::recommendations::reference_title(&r.trigger)
+}
+
+/// The reference pipeline pop-up ([`super::recommend::RefModal`]): each setting that differs
+/// from the chosen method's reference pipeline (after any recommendations the same change
+/// created), as current → reference value, with why and the source; then the buttons, or, when
+/// choosing per setting, a choice on each setting.
+fn draw_ref_modal(f: &mut Frame, modal: &super::recommend::RefModal, area: Rect) {
+    use super::recommend::{Strength, REF_BUTTONS};
+    let popup_w = 84.min(area.width);
+    let text_w = popup_w.saturating_sub(6).max(10) as usize;
+    let dim = Style::default().fg(Color::DarkGray);
+    let src = Style::default().fg(Color::Cyan);
+    let mut lines = vec![Line::from("")];
+    let offered = modal.items.iter().any(|i| i.finding.strength != Strength::Reference);
+    let mut heading_done = false;
+    let mut item_lines = Vec::new();
+    for (n, item) in modal.items.iter().enumerate() {
+        let r = &item.finding;
+        if r.strength == Strength::Reference && !heading_done {
+            heading_done = true;
+            if offered {
+                lines.push(Line::from(""));
+            }
+            let uses = if modal.several() { "use" } else { "uses" };
+            lines.extend(tip_lines(&format!("Where your settings differ from what {} {uses}:", modal.whose()), text_w));
+            lines.push(Line::from(""));
+        } else if n == 0 {
+            lines.extend(tip_lines("Recommendations:", text_w));
+            lines.push(Line::from(""));
+        }
+        let to = match modal.row {
+            Some(_) => format!("[{}]", item.pick_text()),
+            None => r.recommended.name.clone(),
+        };
+        let focused = modal.row == Some(n);
+        item_lines.push(lines.len());
+        let lead = if focused { "\u{25b8} " } else { "  " };
+        let style = if focused { Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD) } else { Style::default().add_modifier(Modifier::BOLD) };
+        let whose = if modal.several() && r.strength == Strength::Reference { format!(" ({})", item.methods()) } else { String::new() };
+        for (i, l) in tip_lines(&format!("{}: {} \u{2192} {to}{whose}", r.label, r.current_text()), text_w.saturating_sub(2)).into_iter().enumerate() {
+            let mut spans = vec![Span::raw(if i == 0 { lead } else { "  " })];
+            spans.extend(l.spans.into_iter().map(|s| Span::styled(s.content, style)));
+            lines.push(Line::from(spans));
+        }
+        let why = match r.strength {
+            Strength::Reference => r.reason.clone(),
+            Strength::Discouraged => format!("Discouraged with {}: {}", r.trigger.name, r.reason),
+            _ => format!("{} recommends {}: {}", r.trigger.name, r.recommended.name, r.reason),
+        };
+        for l in tip_lines(&why, text_w.saturating_sub(4)) {
+            let mut spans = vec![Span::raw("    ")];
+            spans.extend(l.spans);
+            lines.push(Line::from(spans));
+        }
+        for x in std::iter::once(r).chain(&item.also) {
+            let whose = if item.also.is_empty() { String::new() } else { format!(" ({})", x.trigger.name) };
+            for l in tip_lines(&format!("Source{whose}: {}", x.source), text_w.saturating_sub(4)) {
+                let mut spans = vec![Span::raw("    ")];
+                spans.extend(l.spans.into_iter().map(|s| Span::styled(s.content, src)));
+                lines.push(Line::from(spans));
+            }
+        }
+    }
+    lines.push(Line::from(""));
+    let mut footer = Vec::new();
+    let hint = if modal.row.is_some() {
+        "\u{2191}\u{2193} setting   \u{2190}\u{2192} choose   Enter apply these   Esc back"
+    } else {
+        let mut buttons = Vec::new();
+        for (i, label) in REF_BUTTONS.iter().enumerate() {
+            if i > 0 {
+                buttons.push(Span::raw("   "));
+            }
+            let style = if i == modal.cursor {
+                Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+            buttons.push(Span::styled(format!(" {label} "), style));
+        }
+        footer.push(Line::from(buttons).alignment(Alignment::Center));
+        footer.push(Line::from(""));
+        "\u{2190}\u{2192} choose   Enter select   Esc close (nothing changes)"
+    };
+    footer.push(Line::from(Span::styled(hint, dim)).alignment(Alignment::Center));
+
+    // The buttons stay in view; a list taller than the screen scrolls to the setting being chosen.
+    let popup = centered_rect(popup_w, (lines.len() + footer.len()) as u16 + 2, area);
+    f.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(if offered { Color::Yellow } else { Color::Cyan }))
+        .title(Span::styled(modal.title(), Style::default().add_modifier(Modifier::BOLD)));
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+    let text_area = Rect { x: inner.x + 2, width: inner.width.saturating_sub(4), ..inner };
+    let [body, foot] = Layout::default().direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(footer.len() as u16)]).areas(text_area);
+    let focus_line = modal.row.and_then(|n| item_lines.get(n).copied()).unwrap_or(0);
+    let scroll = (focus_line + 4).saturating_sub(body.height as usize) as u16;
+    f.render_widget(Paragraph::new(lines).scroll((scroll, 0)), body);
+    f.render_widget(Paragraph::new(footer), foot);
 }
 
 /// "A new version is available" pop-up, raised once by the launch-time release check.
@@ -462,25 +589,11 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     };
     // The example dataset lands in a plain BIDS tree, so it carries no experimental caveat.
     let is_experimental = !matches!(app.input_mode, super::app::InputMode::Bids | super::app::InputMode::Example);
-    let mode_style = Style::default().fg(Color::Cyan);
     let experimental_span = Span::styled(" (experimental)", Style::default().fg(Color::Yellow));
-    if mode_focused {
-        let mut spans = vec![
-            Span::styled(format!("  {:22}", "Input mode:"), mode_label_style),
-            Span::styled("< ", Style::default().fg(Color::DarkGray)),
-            Span::styled(mode_text, mode_style.add_modifier(Modifier::BOLD)),
-            Span::styled(" >", Style::default().fg(Color::DarkGray)),
-        ];
-        if is_experimental { spans.push(experimental_span); }
-        lines.push(Line::from(spans));
-    } else {
-        let mut spans = vec![
-            Span::styled(format!("  {:22}", "Input mode:"), mode_label_style),
-            Span::styled(mode_text, mode_style),
-        ];
-        if is_experimental { spans.push(experimental_span); }
-        lines.push(Line::from(spans));
-    }
+    let mut spans = vec![Span::styled(format!("  {:22}", "Input mode:"), mode_label_style)];
+    spans.extend(picker_button(mode_text, mode_focused));
+    if is_experimental { spans.push(experimental_span); }
+    lines.push(Line::from(spans));
 
     // Fields 1-3: directory/config fields (labels change based on mode)
     let io_labels = match app.input_mode {
@@ -788,7 +901,7 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     // Help text
     let help_text = if in_io {
         match app.active_field {
-            0 => "Left/Right to switch input mode (BIDS / NIfTI / DICOM / Example)",
+            0 => "Enter: choose input mode (BIDS / NIfTI / DICOM / Example)",
             1 => match app.input_mode {
                 super::app::InputMode::Bids => "Path to BIDS-formatted dataset directory",
                 super::app::InputMode::NIfTI => "Directory with NIfTI files + JSON sidecars (optional, for auto-scan)",
@@ -1450,15 +1563,23 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
             PipelineRow::AlgoSelect { label, field, options, help } => {
                 let selected = app.field_select(field);
                 let val = options.get(selected).unwrap_or(&"?");
+                let picker = super::recommend::picker_noun(row);
                 if focused {
-                    focused_help = help.get(selected).map(|s| s.to_string());
+                    focused_help = help.get(selected).map(|s| match &picker {
+                        Some(noun) => format!("{s} — Enter: choose {noun}"),
+                        None => s.to_string(),
+                    });
                 }
                 let label_style = if focused {
                     Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::White)
                 };
-                if focused {
+                if picker.is_some() {
+                    let mut spans = vec![Span::styled(format!("  {:lw$}", format!("{}:", label)), label_style)];
+                    spans.extend(picker_button(val, focused));
+                    Line::from(spans)
+                } else if focused {
                     Line::from(vec![
                         Span::styled(format!("  {:lw$}", format!("{}:", label)), label_style),
                         Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
@@ -1569,23 +1690,13 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 } else {
                     Style::default().fg(Color::White)
                 };
-                if focused {
-                    if focused_help.is_none() {
-                        let i = super::app::mask_schema().inputs.iter().find(|i| i.value == *input);
-                        focused_help = Some(format!("{} (←/→ to change)", i.map_or("Masking input source", |i| i.help)));
-                    }
-                    Line::from(vec![
-                        Span::styled(format!("  {:lw$}", "Input:"), label_style),
-                        Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(format!("{}", input), Style::default().fg(Color::Cyan)),
-                        Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
-                    ])
-                } else {
-                    Line::from(vec![
-                        Span::styled(format!("  {:lw$}", "Input:"), label_style),
-                        Span::styled(format!("{}", input), Style::default().fg(Color::Gray)),
-                    ])
+                if focused && focused_help.is_none() {
+                    let i = super::app::mask_schema().inputs.iter().find(|i| i.value == *input);
+                    focused_help = Some(format!("{} — Enter: choose input", i.map_or("Masking input source", |i| i.help)));
                 }
+                let mut spans = vec![Span::styled(format!("  {:lw$}", "Input:"), label_style)];
+                spans.extend(picker_button(&input.to_string(), focused));
+                Line::from(spans)
             }
             PipelineRow::MaskOpGenerator { section } => {
                 let Some(gen) = app.pipeline_state.mask_section(*section).map(|s| &s.generator) else { continue };
@@ -1602,23 +1713,13 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 } else {
                     Style::default().fg(Color::White)
                 };
-                if focused {
-                    if focused_help.is_none() {
-                        focused_help = Some(format!("{} (←/→ to switch between threshold, BET, HD-BET, MindGrab and RS2-Net)",
-                            super::app::mask_step_of(gen).help));
-                    }
-                    Line::from(vec![
-                        Span::styled(format!("  {:lw$}", "Algorithm:"), label_style),
-                        Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(algo_name, Style::default().fg(Color::Cyan)),
-                        Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
-                    ])
-                } else {
-                    Line::from(vec![
-                        Span::styled(format!("  {:lw$}", "Algorithm:"), label_style),
-                        Span::styled(algo_name, Style::default().fg(Color::Gray)),
-                    ])
+                if focused && focused_help.is_none() {
+                    focused_help = Some(format!("{} — Enter: choose algorithm (threshold, BET, HD-BET, MindGrab or RS2-Net)",
+                        super::app::mask_step_of(gen).help));
                 }
+                let mut spans = vec![Span::styled(format!("  {:lw$}", "Algorithm:"), label_style)];
+                spans.extend(picker_button(algo_name, focused));
+                Line::from(spans)
             }
             PipelineRow::MaskOpGeneratorParam { section } => {
                 let Some(gen) = app.pipeline_state.mask_section(*section).map(|s| &s.generator) else { continue };
@@ -1896,11 +1997,11 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 }
             }
         };
-        let line = match App::row_badge(&view, row) {
-            Some(open) => {
+        let line = match App::row_marker(&view, row) {
+            Some(m) => {
                 let mut line = line;
-                let (mark, color) = if open { (" ⚑", Color::Yellow) } else { (" ⓘ", Color::DarkGray) };
-                line.spans.push(Span::styled(mark, Style::default().fg(color)));
+                let (mark, color) = if m.actionable { ("⚑", Color::Yellow) } else { ("ⓘ", Color::DarkGray) };
+                line.spans.push(Span::styled(format!(" {mark} {}", m.text), Style::default().fg(color)));
                 line
             }
             None => line,
@@ -2094,9 +2195,31 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         vec![(&tabs, "Tabs"), ("\u{2190}\u{2192}/[ ]", "Sub-tabs"), ("\u{2193}/Enter", "Settings"), ("R", "Reset page"),
              ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else {
-        vec![(&tabs, "Tabs"), ("[ ]", "Sub-tabs"), ("\u{2191}\u{2193}", "Navigate"), ("\u{2190}\u{2192}/Space", "Change"),
-             ("Enter", "Edit"), ("r", "Reset"), ("R", "Reset page"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
+        // The row's own keys: Enter for a picker, ←/→ for a row that cycles, Enter to edit text.
+        let rows_tab = App::is_rows_tab(app.active_tab);
+        let row = if rows_tab { app.focused_row() } else { None };
+        let choose = match &row {
+            Some(r) => super::recommend::picker_noun(r).map(|noun| format!("Choose {noun}")),
+            None if app.active_tab == TAB_INPUT && app.active_field == 0 => Some("Choose input mode".to_string()),
+            None => None,
+        };
+        let mut keys = vec![(tabs.as_str(), "Tabs"), ("[ ]", "Sub-tabs"), ("\u{2191}\u{2193}", "Navigate")];
+        match (&choose, &row) {
+            (Some(c), _) => keys.push(("Enter", c.as_str())),
+            (None, None) if !rows_tab => keys.extend([("\u{2190}\u{2192}/Space", "Change"), ("Enter", "Edit")]),
+            (None, Some(PipelineRow::Param { .. })) => keys.push(("Enter", "Edit")),
+            (None, Some(PipelineRow::Toggle { .. })) => keys.push(("Space", "Toggle")),
+            _ => keys.push(("\u{2190}\u{2192}", "Change")),
+        }
+        keys.extend([("r", "Reset"), ("R", "Reset page"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]);
+        draw_keys(f, keys, area);
+        return;
     };
+    draw_keys(f, keys, area);
+}
+
+/// The help bar's key hints: each key, then what it does.
+fn draw_keys(f: &mut Frame, keys: Vec<(&str, &str)>, area: ratatui::layout::Rect) {
     let mut help = vec![Span::raw(" ")];
     for (i, (key, what)) in keys.into_iter().enumerate() {
         if i > 0 {

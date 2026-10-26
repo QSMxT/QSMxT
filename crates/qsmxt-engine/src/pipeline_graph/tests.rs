@@ -136,11 +136,14 @@ fn graphs_of_a_table_of_configurations() {
     assert!(g.node("r2_r2prime").unwrap().writes.contains(&item_key(&Item::R2primeCoverage)));
     assert_consistent(&g);
 
-    // QSMART, its inputs prepared as its own: the total field and the echo fit's reliability map
+    // QSMART, its inputs prepared as its own (set here; nothing sets them for it): the total field and the echo fit's reliability map
     // from QSMART's Laplacian unwrapping and echo fit, every echo's magnitude for its own vessel
     // magnitude (kept), and five intermediates of its own out.
     let mut config = PipelineConfig::default();
     config.inversion.algorithm = QsmAlgorithm::Qsmart;
+    config.field_mapping.unwrapping_algorithm = crate::enums::UnwrappingAlgorithm::Laplacian;
+    config.field_mapping.laplacian_solver = crate::enums::LaplacianSolver::Mirror;
+    config.field_mapping.b0_estimation = crate::enums::B0Estimation::QsmartEchofit;
     let g = graph(&config, &facts());
     assert!(g.node("bgremove").is_none());
     assert!(g.has_edge("unwrap", "qsmart") && g.has_edge("scale_phase", "qsmart") && g.has_edge("qsmart", "reference"));
@@ -156,9 +159,9 @@ fn graphs_of_a_table_of_configurations() {
     assert!(q.writes.contains(&item_key(&Item::QsmartIntermediate(Pass::Main, crate::stages::qsmart::VESSEL_MAGNITUDE))));
     assert_eq!(q.settings.first().map(String::as_str), Some("iLSQR inversion"));
     assert_consistent(&g);
-    // The combined magnitude, and the general field mapping, chosen: as before.
+    // The combined magnitude, and the general field mapping: as before.
     config.inversion.qsmart.vessel_magnitude = QsmartVesselMagnitude::Combined;
-    config.field_mapping.unwrapping_chosen = true;
+    config.field_mapping = Default::default();
     let g = graph(&config, &facts());
     assert!(g.has_edge("magnitude", "qsmart"));
     let q = g.node("qsmart").unwrap();

@@ -2039,11 +2039,6 @@ fn describe_masking(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
 }
 
 /// Display name + citation for a background-field removal algorithm.
-/// A background-field remover's name, as the methods text gives it.
-pub(crate) fn bg_removal_name(alg: BfAlgorithm) -> &'static str {
-    bg_removal_name_cite(alg).0
-}
-
 fn bg_removal_name_cite(alg: BfAlgorithm) -> (&'static str, &'static Citation) {
     match alg {
         BfAlgorithm::Vsharp => ("V-SHARP", &CITE_VSHARP),
@@ -2689,21 +2684,23 @@ mod tests {
         // unwrapping, B0 estimation, and phase offset removal (not just QSMART).
         let mut config = PipelineConfig::default();
         config.inversion.algorithm = QsmAlgorithm::Qsmart;
-        config.field_mapping.unwrapping_chosen = true;
-        config.field_mapping.b0_estimation_chosen = true;
         let out = generate_methods(&config);
         assert!(out.contains("ROMEO"), "QSMART methods should describe unwrapping: {}", out);
         assert!(out.contains("B0 field map"), "QSMART methods should describe B0 estimation: {}", out);
         assert!(out.contains("Phase offset removal"), "QSMART methods should describe phase offset removal: {}", out);
     }
 
-    /// QSMART's own inputs, as QSMART takes them by default, are said plainly and cited: each echo
+    /// QSMART's own inputs, set as the authors' implementation prepares them, are said plainly and cited: each echo
     /// unwrapped over the whole volume on the mirrored volume, the echo fit and the voxels it
     /// leaves out, and the N4-corrected mean magnitude vessels are detected on.
     #[test]
     fn qsmarts_own_inputs_are_described() {
         let mut config = PipelineConfig::default();
         config.inversion.algorithm = QsmAlgorithm::Qsmart;
+        config.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
+        config.field_mapping.laplacian_solver = LaplacianSolver::Mirror;
+        config.field_mapping.b0_estimation = B0Estimation::QsmartEchofit;
+        config.masking.sections = crate::masking::mask_presets().into_iter().find(|(n, _)| *n == "bet").unwrap().1.sections;
         let out = generate_methods(&config);
         for said in ["separately for each echo over the whole volume using the Laplacian method",
                      "on the volume mirrored along each axis",
@@ -2972,12 +2969,13 @@ mod tests {
         assert!(!generate_methods(&config).contains("mSMV"));
     }
 
-    /// MEDI's route: PDF's local field (unless another background removal is chosen), then MEDI
-    /// with its SMV high-pass, whose mask shrinking is said either way.
+    /// MEDI's route: the local field of the background removal given, then MEDI with its SMV
+    /// high-pass, whose mask shrinking is said either way.
     #[test]
     fn medi_methods_say_pdf_and_the_smv_step() {
         let mut config = PipelineConfig::default();
         config.inversion.algorithm = QsmAlgorithm::Medi;
+        config.bg_removal.algorithm = BfAlgorithm::Pdf;
         let out = generate_methods(&config);
         assert!(out.contains("Background field removal was performed using PDF"), "{out}");
         assert!(out.contains("(Liu et al., 2011), with the local field high-passed by a 5 mm spherical mean value (SMV) filter within the mask shrunk by that radius."), "{out}");
@@ -2991,10 +2989,11 @@ mod tests {
         let out = generate_methods(&config);
         assert!(!out.contains("high-passed") && !out.contains("shrink"), "{out}");
         assert!(out.contains("SMV preprocessing disabled"), "{out}");
-        // A chosen background removal is kept.
+        // The general default is kept, and the Note says what MEDI's reference uses.
         config.bg_removal.algorithm = BfAlgorithm::Vsharp;
-        config.bg_removal.algorithm_chosen = true;
-        assert!(generate_methods(&config).contains("Background field removal was performed using V-SHARP"));
+        let out = generate_methods(&config);
+        assert!(out.contains("Background field removal was performed using V-SHARP"), "{out}");
+        assert!(out.contains("MEDI reference pipeline, which uses PDF"), "{out}");
     }
 
     /// #282: for every inversion, the methods text describes background field removal exactly
@@ -3699,10 +3698,7 @@ mod defaults_only_tests {
             let mut c = base();
             c.inversion.algorithm = *alg;
             c.inversion.tile_size = Some(64);
-            // QSMART's own mask recipe (BET, then 2 erosions) is not the general default, so its
-            // erosion is said, as `qsmxt run --qsm-algorithm qsmart` always said it.
-            let allowed: &[&str] = if *alg == QsmAlgorithm::Qsmart { &["iteration"] } else { &[] };
-            assert_no_values_except(&c, &format!("inversion {alg}"), allowed);
+            assert_no_values_except(&c, &format!("inversion {alg}"), &[]);
         }
         for alg in [BfAlgorithm::Pdf, BfAlgorithm::Lbv, BfAlgorithm::Ismv, BfAlgorithm::Sharp,
                     BfAlgorithm::Resharp, BfAlgorithm::Harperella, BfAlgorithm::Iharperella] {

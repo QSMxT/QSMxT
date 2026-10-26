@@ -1675,10 +1675,6 @@ pub struct PipelineFormState {
     pub qsm_algorithm: usize,
     pub unwrapping_algorithm: usize,
     pub bf_algorithm: usize,
-    /// The user chose the background removal. Until then the run takes the inversion's
-    /// reference one where it has one (PDF for MEDI; the engine's rule,
-    /// `BgRemovalConfig::algorithm_chosen`), and that is the one shown.
-    pub bf_chosen: bool,
     pub qsm_reference: usize,
 
     // Field mapping
@@ -1699,13 +1695,6 @@ pub struct PipelineFormState {
     pub qsmart_fit_threshold: String,
     /// Index into [`LAPLACIAN_SOLVER_OPTIONS`] (0 = dct, 1 = fft, 2 = mirror).
     pub laplacian_solver: usize,
-    /// The user chose the unwrapping, the Laplacian solver, the B0 estimation. Until then each
-    /// is the one the run takes: the general default, or QSMART's own under QSMART (the
-    /// engine's rule, `FieldMappingConfig::unwrapping_chosen` and its siblings), and the form
-    /// shows that one ([`Self::show_unchosen_field_mapping`]).
-    pub unwrapping_chosen: bool,
-    pub laplacian_solver_chosen: bool,
-    pub b0_estimation_chosen: bool,
     /// FFT solver pad in voxels per side: "64" for every axis, or "64 64 32".
     pub laplacian_fft_pad: String,
     /// Motion correction (off by default): reference index into [`MOTION_REFERENCE_OPTIONS`]
@@ -2081,14 +2070,10 @@ pub struct PipelineFormState {
     /// [`MASK_TWO_PASS_BASE`] + index, and folded with the same combine mode and post-combine
     /// refinements as the main mask.
     pub two_pass_sections: Vec<crate::pipeline::config::MaskSection>,
-    /// The recommendations dismissed (Ignore in the recommendation pop-up), each for the value
+    /// The recommendations dismissed (Keep mine in a recommendation or reference pipeline pop-up), each for the value
     /// its setting had then: `--dismiss-recommendation`, and so the run's config.
     pub dismissed: Vec<qsmxt_engine::Dismissal>,
     pub mask_preset: usize, // index into MASK_PRESET_OPTIONS (MASK_PRESET_CUSTOM = hand-edited)
-    /// The user chose the main mask: picked a preset (the default one included) or edited the
-    /// recipe. Until then the run takes the inversion's own default mask (QSMART's BET, the
-    /// engine's rule, `MaskingConfig::recipe_chosen`), and the recipe shown is that one.
-    pub mask_chosen: bool,
     pub custom_mask_tool: String, // empty=off; "*"=any derivatives tool; else a tool name
 
     // χ-separation tab
@@ -2191,7 +2176,6 @@ impl Default for PipelineFormState {
             qsm_algorithm: super::command::default_qsm_algorithm_index(), // ilsqr
             unwrapping_algorithm: 0, // romeo
             bf_algorithm: 0, // vsharp
-            bf_chosen: false,
             qsm_reference: 0, // mean
             phase_offset_removal: true,
             bipolar_correction: false,
@@ -2206,9 +2190,6 @@ impl Default for PipelineFormState {
             qsmart_fit_percentile: format!("{}", qsmxt_engine::default_qsmart_fit_percentile()),
             qsmart_fit_threshold: format!("{}", qsmxt_engine::default_qsmart_fit_threshold()),
             laplacian_solver: 0, // dct
-            unwrapping_chosen: false,
-            laplacian_solver_chosen: false,
-            b0_estimation_chosen: false,
             laplacian_fft_pad: qsmxt_engine::default_laplacian_fft_pad()[0].to_string(),
             motion_correction: false,
             orientation_registration: true,
@@ -2506,7 +2487,6 @@ impl Default for PipelineFormState {
             two_pass_sections: qsmxt_engine::default_two_pass_sections(),
             dismissed: vec![],
             mask_preset: 0, // robust threshold
-            mask_chosen: false,
             custom_mask_tool: String::new(),
             do_chi_separation: false,
             separation_algorithm: 0,
@@ -2732,14 +2712,14 @@ const MOTION_REFERENCE_HELP: &[&str] = &[
 const LAPLACIAN_SOLVER_HELP: &[&str] = &[
     "Unweighted least squares, Neumann-boundary DCT solve (Ghiglia & Romero 1994; QSM.jl :dct) (default)",
     "Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume",
-    "Schofield & Zhu sin/cos Laplacian, FFT solve on the volume mirrored along each axis (QSMART's; the default with QSMART)",
+    "Schofield & Zhu sin/cos Laplacian, FFT solve on the volume mirrored along each axis (QSMART's reference)",
 ];
 pub const B0_WEIGHT_TYPE_OPTIONS: &[&str] = &["phase-snr", "phase-var", "average", "tes", "mag", "assumed-decay"];
 const B0_ESTIMATION_HELP: &[&str] = &[
     "Weighted average of phase/TE across echoes (default)",
     "Magnitude-weighted linear fit of phase vs TE",
     "Motion-robust linear fit (IRLS): down-weights echoes departing from a straight line, per voxel. Needs 4 echoes (3 without offset)",
-    "QSMART's: magnitude-weighted fit of phase vs TE through the origin, each echo unwrapped over the whole volume; marks the voxels QSMART leaves out. Needs Laplacian unwrapping (the default with QSMART)",
+    "QSMART's: magnitude-weighted fit of phase vs TE through the origin, each echo unwrapped over the whole volume; marks the voxels QSMART leaves out. Needs Laplacian unwrapping",
     "MEDI's field map (Fit_ppm_complex): a magnitude-weighted fit of the complex echoes, then unwrapping of the fitted phase. Needs the magnitude and evenly spaced echoes; no phase offset removal or bipolar correction",
 ];
 const B0_WEIGHT_TYPE_HELP: &[&str] = &[
@@ -3422,13 +3402,6 @@ impl PipelineFormState {
                 }
             }
             "qsmart" => { // QSMART
-                rows.push(PipelineRow::Note {
-                    text: match self.mask_warning() {
-                        Some(w) => format!("⚠ {w} (Preprocessing → Masking)").into(),
-                        None if !self.mask_chosen => "QSMART makes its brain mask with BET unless another mask is chosen (Preprocessing → Masking)".into(),
-                        None => "QSMART needs a tight brain mask (Preprocessing → Masking)".into(),
-                    },
-                });
                 rows.push(PipelineRow::AlgoSelect {
                     label: "  Inner inversion", field: "qsmart_inversion",
                     options: QSMART_INV_OPTIONS, help: QSMART_INV_HELP,
@@ -4284,34 +4257,15 @@ impl PipelineFormState {
     /// Set a select value by field name.
     pub fn set_select(&mut self, field: &str, val: usize) {
         match field {
-            "qsm_algorithm" => {
-                self.qsm_algorithm = val;
-                self.show_unchosen_mask();
-                self.show_unchosen_bf();
-                self.show_unchosen_field_mapping();
-            }
+            "qsm_algorithm" => self.qsm_algorithm = val,
             "qsmart_inversion" => self.qsmart_inversion = val,
-            "unwrapping_algorithm" => {
-                self.unwrapping_algorithm = val;
-                self.unwrapping_chosen = true;
-                self.show_unchosen_field_mapping();
-            }
-            "bf_algorithm" => {
-                self.bf_algorithm = val;
-                self.bf_chosen = true;
-            }
+            "unwrapping_algorithm" => self.unwrapping_algorithm = val,
+            "bf_algorithm" => self.bf_algorithm = val,
             "qsm_reference" => self.qsm_reference = val,
             "r2prime_strategy" => self.r2prime_strategy = val,
-            "b0_estimation" => {
-                self.b0_estimation = val;
-                self.b0_estimation_chosen = true;
-                self.show_unchosen_field_mapping();
-            }
+            "b0_estimation" => self.b0_estimation = val,
             "b0_weight_type" => self.b0_weight_type = val,
-            "laplacian_solver" => {
-                self.laplacian_solver = val;
-                self.laplacian_solver_chosen = true;
-            }
+            "laplacian_solver" => self.laplacian_solver = val,
             "qsmart_vessel_magnitude" => self.qsmart_vessel_magnitude = val,
             "qsmart_vessel_units" => self.qsmart_vessel_units = val,
             "qsmart_fit_threshold_mode" => self.qsmart_fit_threshold_mode = val,
@@ -4334,7 +4288,6 @@ impl PipelineFormState {
             "output_space" => self.output_space = val,
             "mask_preset" => {
                 self.mask_preset = val;
-                self.mask_chosen = true;
                 self.apply_mask_preset(val);
             }
             "separation_algorithm" => self.separation_algorithm = val,
@@ -4733,97 +4686,11 @@ impl PipelineFormState {
     /// the `robust-threshold` preset the main mask still follows.
     fn mark_mask_custom(&mut self, section: usize) {
         if !is_two_pass_section(section) {
-            self.mask_chosen = true;
             self.mask_preset = MASK_PRESET_CUSTOM;
         }
     }
 
-    /// Show, while the user has not chosen a mask, the one the run takes: the selected
-    /// inversion's default ([`qsmxt_engine::masking::default_mask_sections_for`]), by its preset.
-    pub fn show_unchosen_mask(&mut self) {
-        if self.mask_chosen { return; }
-        let sections = qsmxt_engine::masking::default_mask_sections_for(
-            crate::tui::command::selected_qsm_algorithm(self));
-        let recipe = qsmxt_engine::masking::MaskRecipe::from_sections(sections);
-        match qsmxt_engine::masking::mask_presets().iter().position(|(_, r)| *r == recipe) {
-            Some(preset) => {
-                self.mask_preset = preset;
-                self.apply_mask_preset(preset);
-            }
-            None => {
-                self.mask_preset = MASK_PRESET_CUSTOM;
-                self.mask_sections = recipe.sections;
-                self.mask_combine = recipe.combine;
-                self.mask_combined_refinements = recipe.refinements;
-            }
-        }
-    }
 
-    /// The background removal the run takes while the user has not chosen one: the selected
-    /// inversion's reference one ([`qsmxt_engine::bridge::reference_bg_removal`]), else the
-    /// general default, as an index into [`BF_OPTIONS`].
-    pub fn unchosen_bf_algorithm(&self) -> usize {
-        let mut c = crate::pipeline::config::PipelineConfig::default();
-        c.inversion.algorithm = crate::tui::command::selected_qsm_algorithm(self);
-        let alg = qsmxt_engine::bridge::reference_bg_removal(&c).unwrap_or(c.bg_removal.algorithm);
-        BF_OPTIONS.iter().position(|o| *o == alg.to_string()).unwrap_or(0)
-    }
-
-    /// Show, while the user has not chosen a background removal, the one the run takes.
-    pub fn show_unchosen_bf(&mut self) {
-        if !self.bf_chosen {
-            self.bf_algorithm = self.unchosen_bf_algorithm();
-        }
-    }
-
-    /// Show, for each of the unwrapping, the Laplacian solver and the B0 estimation the user has
-    /// not chosen, the one the run takes: the engine's normalisation of the choices made, under
-    /// the selected inversion (QSMART's own field mapping under QSMART, the general defaults
-    /// otherwise).
-    pub fn show_unchosen_field_mapping(&mut self) {
-        use qsmxt_engine::PipelineConfig;
-        fn pick<T: serde::de::DeserializeOwned>(options: &[&str], i: usize) -> Option<T> {
-            serde_json::from_value(serde_json::json!(options.get(i)?)).ok()
-        }
-        fn index_of(options: &[&str], value: impl std::fmt::Display) -> usize {
-            let v = value.to_string();
-            options.iter().position(|o| *o == v).unwrap_or(0)
-        }
-        let mut c = PipelineConfig::default();
-        c.inversion.algorithm = crate::tui::command::selected_qsm_algorithm(self);
-        let fm = &mut c.field_mapping;
-        if self.unwrapping_chosen {
-            fm.unwrapping_algorithm = pick(UNWRAP_OPTIONS, self.unwrapping_algorithm).unwrap_or(fm.unwrapping_algorithm);
-            fm.unwrapping_chosen = true;
-        }
-        if self.laplacian_solver_chosen {
-            fm.laplacian_solver = pick(LAPLACIAN_SOLVER_OPTIONS, self.laplacian_solver).unwrap_or(fm.laplacian_solver);
-            fm.laplacian_solver_chosen = true;
-        }
-        if self.b0_estimation_chosen {
-            fm.b0_estimation = pick(B0_ESTIMATION_OPTIONS, self.b0_estimation).unwrap_or(fm.b0_estimation);
-            fm.b0_estimation_chosen = true;
-        }
-        let run = c.normalised().0.field_mapping;
-        if !self.unwrapping_chosen {
-            self.unwrapping_algorithm = index_of(UNWRAP_OPTIONS, run.unwrapping_algorithm);
-        }
-        if !self.laplacian_solver_chosen {
-            self.laplacian_solver = index_of(LAPLACIAN_SOLVER_OPTIONS, run.laplacian_solver);
-        }
-        if !self.b0_estimation_chosen {
-            self.b0_estimation = index_of(B0_ESTIMATION_OPTIONS, run.b0_estimation);
-        }
-    }
-
-    /// What may go wrong with the main mask under the selected inversion
-    /// ([`qsmxt_engine::masking::mask_warning`]).
-    pub fn mask_warning(&self) -> Option<&'static str> {
-        let mut c = crate::pipeline::config::PipelineConfig::default();
-        c.inversion.algorithm = crate::tui::command::selected_qsm_algorithm(self);
-        c.masking.sections = self.mask_sections.clone();
-        qsmxt_engine::masking::mask_warning(&c)
-    }
 
     /// Index of a section's generator in [`MASK_GENERATOR_TYPES`].
     pub fn mask_generator_index(&self, section: usize) -> usize {
@@ -5215,6 +5082,9 @@ pub struct App {
     /// The form as it was when `rec_seen` was taken (empty before the first check): a key that
     /// changed nothing is not checked.
     pub rec_form: String,
+    /// The reference pipeline pop-up opened when a method is chosen, and what it is worked out
+    /// from ([`super::recommend::RefState`]).
+    pub refs: super::recommend::RefState,
 }
 
 /// The "Did you know?" pop-up, with two buttons: OK, and one that turns startup tips off
@@ -5536,6 +5406,7 @@ impl App {
             rec_modal: None,
             rec_seen: Vec::new(),
             rec_form: String::new(),
+            refs: Default::default(),
         }
     }
 
@@ -5637,6 +5508,10 @@ impl App {
         // The recommendation pop-up captures input under the update prompt and the tips.
         if self.rec_modal.is_some() && self.update_modal.is_none() && self.tip_modal.is_none() {
             self.handle_rec_modal_key(key);
+            return;
+        }
+        if self.refs.modal.is_some() && self.update_modal.is_none() && self.tip_modal.is_none() {
+            self.handle_ref_modal_key(key);
             return;
         }
         if key.code == KeyCode::Char('!') && !self.is_typing() && Self::is_rows_tab(self.active_tab) {
@@ -5801,8 +5676,7 @@ impl App {
                     }
                 }
                 KeyCode::Enter | KeyCode::Char(' ') => self.interact_io_field(),
-                KeyCode::Left => self.adjust_io_select(-1),
-                KeyCode::Right => self.adjust_io_select(1),
+                KeyCode::Left | KeyCode::Right => self.adjust_io_select(),
                 KeyCode::Char('r') => self.reset_current_field(),
                 KeyCode::Char('R') => self.reset_current_tab(),
                 KeyCode::F(5) => self.try_run(),
@@ -5925,20 +5799,11 @@ impl App {
         };
     }
 
-    fn adjust_io_select(&mut self, delta: isize) {
+    fn adjust_io_select(&mut self) {
         if self.active_field == 0 {
-            // Mode selector: Left/Right cycles through modes
-            self.cycle_input_mode(delta);
+            // Mode selector: four modes, so Left/Right open its picker as Enter does.
+            self.interact_io_field();
         }
-    }
-
-    fn cycle_input_mode(&mut self, delta: isize) {
-        const MODES: [InputMode; 4] =
-            [InputMode::Bids, InputMode::NIfTI, InputMode::DicomToBids, InputMode::Example];
-        let cur = MODES.iter().position(|m| *m == self.input_mode).unwrap_or(0) as isize;
-        let next = (cur + delta).rem_euclid(MODES.len() as isize) as usize;
-        self.input_mode = MODES[next];
-        self.form_scroll_offset = 0;
     }
 
     /// Reset the focused field on a generic form tab to its default.
@@ -7111,6 +6976,11 @@ impl App {
                     return;
                 }
                 let row = self.focused_row();
+                // A picker row opens its picker: ←/→ are never dead keys.
+                if row.as_ref().is_some_and(|r| super::recommend::picker_noun(r).is_some()) {
+                    self.handle_rows_key(KeyEvent::from(KeyCode::Enter));
+                    return;
+                }
                 if let Some(PipelineRow::AlgoSelect { field, options, .. }) = row {
                     let focused_field = self.focused_field_name();
                     // Mask preset: cycle the real presets only; "custom" is auto-set on edits
@@ -7595,27 +7465,6 @@ impl App {
         match field {
             "orientation_lambda" => return self.filter_state.orientation_lambda.clear(),
             "orientation_algorithm" => return self.filter_state.orientation_algorithm = 0,
-            // The default is no choice: the background removal the inversion takes when none is
-            // chosen.
-            "bf_algorithm" => {
-                self.pipeline_state.bf_chosen = false;
-                return self.pipeline_state.show_unchosen_bf();
-            }
-            // The default is no choice: the mask the inversion takes when none is chosen.
-            "mask_preset" => {
-                self.pipeline_state.mask_chosen = false;
-                return self.pipeline_state.show_unchosen_mask();
-            }
-            // Likewise the field mapping the inversion takes when none is chosen.
-            "unwrapping_algorithm" | "laplacian_solver" | "b0_estimation" => {
-                let ps = &mut self.pipeline_state;
-                match field {
-                    "unwrapping_algorithm" => ps.unwrapping_chosen = false,
-                    "laplacian_solver" => ps.laplacian_solver_chosen = false,
-                    _ => ps.b0_estimation_chosen = false,
-                }
-                return ps.show_unchosen_field_mapping();
-            }
             "segmentation_source" | "do_segmentation" => {
                 self.pipeline_state.custom_dseg_tool.clear();
                 self.form.do_segmentation = form.do_segmentation;
@@ -7980,7 +7829,7 @@ mod tests {
         app.active_field = 0;
         let seen: Vec<InputMode> = (0..4)
             .map(|_| {
-                app.handle_key(key(KeyCode::Right));
+                step(&mut app, 1);
                 app.input_mode
             })
             .collect();
@@ -9009,7 +8858,7 @@ mod tests {
         assert_eq!(app.input_mode, InputMode::Bids);
         // Field 0 is the mode selector; Right arrow cycles Bids -> NIfTI
         app.active_field = 0;
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert_eq!(app.input_mode, InputMode::NIfTI);
     }
 
@@ -9017,7 +8866,7 @@ mod tests {
     fn test_nifti_focus_navigation_into_nifti_section() {
         let mut app = App::new();
         app.active_field = 0;
-        app.handle_key(key(KeyCode::Right)); // switch to NIfTI mode
+        step(&mut app, 1); // switch to NIfTI mode
         assert_eq!(app.input_mode, InputMode::NIfTI);
         // Navigate down past IO fields (0..3) into NIfTI section
         app.active_field = 3;
@@ -9058,7 +8907,7 @@ mod tests {
     fn test_nifti_editing_echo_times() {
         let mut app = App::new();
         app.active_field = 0;
-        app.handle_key(key(KeyCode::Right)); // switch to NIfTI
+        step(&mut app, 1); // switch to NIfTI
         // Navigate into NIfTI section
         app.active_field = App::INPUT_IO_FIELDS;
         app.nifti_state.focus = NiftiFocus::EchoTimes;
@@ -9077,7 +8926,7 @@ mod tests {
     fn test_nifti_editing_field_strength() {
         let mut app = App::new();
         app.active_field = 0;
-        app.handle_key(key(KeyCode::Right)); // switch to NIfTI
+        step(&mut app, 1); // switch to NIfTI
         app.active_field = App::INPUT_IO_FIELDS;
         app.nifti_state.focus = NiftiFocus::FieldStrength;
         app.handle_key(key(KeyCode::Enter));
@@ -9095,7 +8944,7 @@ mod tests {
     fn test_nifti_editing_b0_direction() {
         let mut app = App::new();
         app.active_field = 0;
-        app.handle_key(key(KeyCode::Right)); // switch to NIfTI
+        step(&mut app, 1); // switch to NIfTI
         app.active_field = App::INPUT_IO_FIELDS;
         app.nifti_state.focus = NiftiFocus::B0Direction;
         // Clear default value first
@@ -9117,8 +8966,8 @@ mod tests {
         assert_eq!(app.input_mode, InputMode::Bids);
         app.active_field = 0;
         // Right twice: Bids -> NIfTI -> DicomToBids
-        app.handle_key(key(KeyCode::Right));
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
+        step(&mut app, 1);
         assert_eq!(app.input_mode, InputMode::DicomToBids);
     }
 
@@ -9144,7 +8993,7 @@ mod tests {
     fn test_nifti_add_magnitude_editing() {
         let mut app = App::new();
         app.active_field = 0;
-        app.handle_key(key(KeyCode::Right)); // switch to NIfTI
+        step(&mut app, 1); // switch to NIfTI
         app.active_field = App::INPUT_IO_FIELDS;
         app.nifti_state.focus = NiftiFocus::AddMagnitude;
         app.handle_key(key(KeyCode::Enter));
@@ -9159,7 +9008,7 @@ mod tests {
     fn test_nifti_add_phase_editing() {
         let mut app = App::new();
         app.active_field = 0;
-        app.handle_key(key(KeyCode::Right)); // switch to NIfTI
+        step(&mut app, 1); // switch to NIfTI
         app.active_field = App::INPUT_IO_FIELDS;
         app.nifti_state.focus = NiftiFocus::AddPhase;
         app.handle_key(key(KeyCode::Enter));
@@ -9268,9 +9117,9 @@ mod tests {
         app.pipeline_state.focus = fi;
         let ilsqr = QSM_ALGO_OPTIONS.iter().position(|o| *o == "ilsqr").unwrap();
         assert_eq!(app.pipeline_state.qsm_algorithm, ilsqr); // the default inversion
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert_eq!(QSM_ALGO_OPTIONS[app.pipeline_state.qsm_algorithm], QSM_ALGO_OPTIONS[ilsqr + 1]);
-        app.handle_key(key(KeyCode::Left));
+        step(&mut app, -1);
         assert_eq!(app.pipeline_state.qsm_algorithm, ilsqr);
     }
 
@@ -9520,9 +9369,9 @@ mod tests {
         app.form.do_swi = true; // make SWI fields visible
         focus_on(&mut app, TAB_OUTPUTS, "swi_scaling");
         assert_eq!(app.form.swi_scaling, 0); // tanh
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert_eq!(app.form.swi_scaling, 1); // negative-tanh
-        app.handle_key(key(KeyCode::Left));
+        step(&mut app, -1);
         assert_eq!(app.form.swi_scaling, 0);
     }
 
@@ -10344,24 +10193,30 @@ mod tests {
         assert_eq!(app.dicom_state.focus, DicomFocus::ConvertButton);
     }
 
-    // ========== IO select (input mode cycling) ==========
+    /// ←/→ on a picker row: it opens the picker; move its cursor `by` and confirm, as cycling did.
+    fn step(app: &mut App, by: isize) {
+        app.handle_key(key(if by < 0 { KeyCode::Left } else { KeyCode::Right }));
+        let m = app.algo_modal.as_mut().expect("←/→ open the picker");
+        let n = m.options.len() as isize;
+        m.cursor = (m.cursor as isize + by).rem_euclid(n) as usize;
+        app.handle_key(key(KeyCode::Enter));
+    }
 
+    // ========== IO select (input mode picker) ==========
+
+    /// Four input modes: ←/→ open the picker, as Enter does, rather than cycling.
     #[test]
-    fn test_adjust_io_select_cycles_mode() {
+    fn test_adjust_io_select_opens_the_picker() {
         let mut app = App::new();
         app.active_tab = TAB_INPUT;
         app.active_field = 0;
         assert_eq!(app.input_mode, InputMode::Bids);
         app.handle_key(key(KeyCode::Right));
-        assert_eq!(app.input_mode, InputMode::NIfTI);
-        app.handle_key(key(KeyCode::Right));
-        assert_eq!(app.input_mode, InputMode::DicomToBids);
-        app.handle_key(key(KeyCode::Right));
-        assert_eq!(app.input_mode, InputMode::Example);
-        app.handle_key(key(KeyCode::Right));
-        assert_eq!(app.input_mode, InputMode::Bids); // wraps around
+        assert_eq!(app.input_mode, InputMode::Bids, "not cycled");
+        assert!(matches!(app.algo_modal.as_ref().map(|m| &m.target), Some(AlgoModalTarget::InputMode)));
+        app.algo_modal = None;
         app.handle_key(key(KeyCode::Left));
-        assert_eq!(app.input_mode, InputMode::Example); // wraps other way
+        assert!(app.algo_modal.is_some());
     }
 
     #[test]
@@ -10376,10 +10231,10 @@ mod tests {
         app.handle_key(key(KeyCode::Down));
         app.handle_key(key(KeyCode::Enter));
         assert_eq!(app.input_mode, InputMode::NIfTI);
-        // Left/Right still cycles inline without the modal.
+        // Left/Right open the picker too (four modes are not cycled).
         app.handle_key(key(KeyCode::Left));
-        assert!(app.algo_modal.is_none());
-        assert_eq!(app.input_mode, InputMode::Bids);
+        assert!(app.algo_modal.is_some());
+        assert_eq!(app.input_mode, InputMode::NIfTI);
     }
 
     // ========== try_run validation tests ==========
@@ -10580,28 +10435,28 @@ mod tests {
         let fi = mp_focus.expect("mask_preset not found");
         app.pipeline_state.focus = fi;
         assert_eq!(app.pipeline_state.mask_preset, 0); // robust threshold
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert_eq!(app.pipeline_state.mask_preset, 1); // BET
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert_eq!(app.pipeline_state.mask_preset, 2); // HD-BET + signal-gated erosion
         assert_eq!(app.pipeline_state.mask_sections, crate::pipeline::config::hd_bet_mask_sections());
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert_eq!(app.pipeline_state.mask_preset, 3); // BET AND phase quality
         let recipe = crate::pipeline::config::bet_and_phase_mask_recipe();
         assert_eq!(app.pipeline_state.mask_sections, recipe.sections);
         assert_eq!(app.pipeline_state.mask_combine, recipe.combine);
         assert_eq!(app.pipeline_state.mask_combined_refinements, recipe.refinements);
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert_eq!(app.pipeline_state.mask_preset, 4); // RS2-Net (rodent)
         assert_eq!(app.pipeline_state.mask_sections, crate::pipeline::config::rs2_net_mask_sections());
         // Leaving the two-section preset resets the combine mode and the combined-mask steps.
         assert_eq!(app.pipeline_state.mask_combine, crate::pipeline::config::MaskCombine::Or);
         assert!(app.pipeline_state.mask_combined_refinements.is_empty());
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert_eq!(app.pipeline_state.mask_preset, 5); // MindGrab
         assert_eq!(app.pipeline_state.mask_sections, crate::pipeline::config::mindgrab_mask_sections());
-        app.handle_key(key(KeyCode::Right));
-        assert_eq!(app.pipeline_state.mask_preset, 0, "cycling skips 'custom'");
+        step(&mut app, 1);
+        assert_eq!(app.pipeline_state.mask_preset, MASK_PRESET_CUSTOM, "the picker lists 'custom' last");
     }
 
     #[test]
@@ -11112,7 +10967,7 @@ mod tests {
             .position(|&ri| matches!(&rows[ri], PipelineRow::MaskOpInput { section } if is_two_pass_section(*section)))
             .expect("reliable input row not focusable");
         app.pipeline_state.focus = focus;
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
 
         assert_ne!(app.pipeline_state.two_pass_sections[0].input, MaskingInput::PhaseQuality,
                    "the reliable mask's input should have changed");
@@ -11124,27 +10979,20 @@ mod tests {
         assert!(cmd.contains("--two-pass-mask"), "cmd: {cmd}");
     }
 
-    /// Editing the reliable mask does not choose the main one; resetting the preset un-chooses
-    /// it, back to the mask the inversion takes, and the QSMART note says which applies.
+    /// Under QSMART the default mask stays as it is, with no warning of QSMxT's own: QSMART's
+    /// reference mask is the rules' to point out (the mask row's ⓘ). Resetting the preset brings
+    /// the default back.
     #[test]
-    fn the_main_mask_is_chosen_only_by_its_own_rows() {
+    fn qsmart_keeps_the_mask() {
         let qsmart = QSM_ALGO_OPTIONS.iter().position(|a| *a == "qsmart").unwrap();
         let mut app = App::new();
+        let before = app.pipeline_state.mask_sections.clone();
         app.pipeline_state.set_select("qsm_algorithm", qsmart);
-        app.pipeline_state.two_pass = true;
-        app.pipeline_state.set_mask_input(MASK_TWO_PASS_BASE, 1);
-        assert!(!app.pipeline_state.mask_chosen, "the reliable mask is not the main one");
-        let note = |app: &App| app.pipeline_state.all_rows().iter().find_map(|r| match r {
-            PipelineRow::Note { text } if text.contains("QSMART") => Some(text.to_string()),
-            _ => None,
-        }).unwrap();
-        assert!(note(&app).contains("unless another mask is chosen"), "{}", note(&app));
-        app.pipeline_state.set_select("mask_preset", 0);
-        assert!(app.pipeline_state.mask_chosen);
-        assert!(note(&app).starts_with("⚠ QSMART needs a tight brain mask"), "{}", note(&app));
+        assert_eq!(app.pipeline_state.mask_sections, before, "choosing QSMART changes no mask");
+        assert!(!app.pipeline_state.all_rows().iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("brain mask"))));
+        app.pipeline_state.set_select("mask_preset", 1);
         app.reset_field("mask_preset");
-        assert!(!app.pipeline_state.mask_chosen);
-        assert_eq!(app.pipeline_state.mask_sections, qsmxt_engine::qsmart_default_mask_sections());
+        assert_eq!(app.pipeline_state.mask_sections, before);
     }
 
     /// Turning two-pass off hides the editor but keeps what was typed into it, so toggling back
@@ -11364,33 +11212,33 @@ mod tests {
         let fi = gen_focus.expect("MaskOpGenerator not found");
         app.pipeline_state.focus = fi;
         // Cycle generator threshold -> bet -> hd-bet -> threshold (and back with Left)
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert!(matches!(
             app.pipeline_state.mask_sections[0].generator,
             crate::pipeline::config::MaskOp::Bet { .. }
         ));
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert!(matches!(
             app.pipeline_state.mask_sections[0].generator,
             crate::pipeline::config::MaskOp::HdBet { .. }
         ));
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert!(matches!(
             app.pipeline_state.mask_sections[0].generator,
             crate::pipeline::config::MaskOp::MindGrab { tta: false }
         ));
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert!(matches!(
             app.pipeline_state.mask_sections[0].generator,
             crate::pipeline::config::MaskOp::Rs2Net { .. }
         ));
         // Wraps back round to the first generator.
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         assert!(matches!(
             app.pipeline_state.mask_sections[0].generator,
             crate::pipeline::config::MaskOp::Threshold { .. }
         ));
-        app.handle_key(key(KeyCode::Left));
+        step(&mut app, -1);
         assert!(matches!(
             app.pipeline_state.mask_sections[0].generator,
             crate::pipeline::config::MaskOp::Rs2Net { .. }
@@ -11438,7 +11286,7 @@ mod tests {
         let fi = inp_focus.expect("MaskOpInput not found");
         app.pipeline_state.focus = fi;
         let before = app.pipeline_state.mask_sections[0].input;
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, 1);
         // Should have cycled to a different input
         assert_ne!(app.pipeline_state.mask_sections[0].input, before);
     }

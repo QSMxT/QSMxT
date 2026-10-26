@@ -377,7 +377,7 @@ Set with `--unwrapping-algorithm`.
 | Value | Method |
 | --- | --- |
 | `romeo` | Rapid Opensource Minimum-spanning-tree Echo Optimisation (default) |
-| `laplacian` | Laplacian-based unwrapping (default with QSMART) |
+| `laplacian` | Laplacian-based unwrapping (QSMART's reference) |
 
 With `laplacian`, each echo is unwrapped on its own (the phase is zeroed outside the
 mask first) and the echoes are then combined by
@@ -392,7 +392,7 @@ coils).
 | --- | --- |
 | `dct` | Unweighted least squares with a Neumann-boundary DCT solve (Ghiglia & Romero, 1994), as QSM.jl `:dct` (default) |
 | `fft` | Schofield & Zhu (2003): sin/cos Laplacian with an FFT Poisson solve on the volume zero-padded by `--laplacian-fft-pad` voxels per side (default 64) |
-| `mirror` | The same, solved on the volume mirrored along each axis, as QSMART unwraps (default with QSMART) |
+| `mirror` | The same, solved on the volume mirrored along each axis, as QSMART unwraps (QSMART's reference) |
 
 `--laplacian-fft-pad` takes one value for every axis or three (x y z); a config
 file's `field_mapping.laplacian_fft_pad` takes a number or a three-element list.
@@ -517,7 +517,7 @@ Set with `--bf-algorithm`.
 | Value | Method |
 | --- | --- |
 | `vsharp` | Variable-kernel SHARP (default) |
-| `pdf` | Projection onto Dipole Fields (default with `--qsm-algorithm medi`) |
+| `pdf` | Projection onto Dipole Fields (MEDI's reference) |
 | `lbv` | Laplacian Boundary Value |
 | `ismv` | Iterative Spherical Mean Value |
 | `sharp` | Sophisticated Harmonic Artifact Reduction |
@@ -527,9 +527,9 @@ Set with `--bf-algorithm`.
 | `bfrnet` | BFRnet — deep-learning background removal from the total field. Needs a deep-learning build; weights downloaded on first use |
 | `iqfm` | iQFM — deep-learning joint unwrapping and background removal straight from the wrapped phase (the local-field head of iQSM). Replaces field mapping as well; refused with inversions that do not take a local field. Weights downloaded on first use |
 
-With `--qsm-algorithm medi` and no `--bf-algorithm`, background removal is PDF, as in
-the MEDI authors' pipeline; the TUI shows it so until another is picked. A background
-removal you choose, `vsharp` included, is kept.
+Choosing an inversion changes no background removal: `--qsm-algorithm medi` alone runs the
+general default (`vsharp`). MEDI's reference pipeline uses PDF, which the log, `--dry` and
+the methods Note point out, and which the TUI offers when you choose MEDI.
 
 Background removal only runs in front of an inversion that takes the local field.
 The total-field inversions (`tfi`, `qsmart`, `autoqsm`, `nextqsm`, and `tgv` on
@@ -622,10 +622,11 @@ reconstructions and deep-learning networks.
 
 `qsmart` reconstructs from the total field in two stages, with its own background
 removal and vessel detection ([Yaghmaie et al. 2021, *NeuroImage* 231:117701](https://doi.org/10.1016/j.neuroimage.2020.117701)).
-With QSMART, QSMxT prepares its inputs the way the authors' implementation does,
-unless you choose otherwise:
+The authors' implementation prepares its inputs as below. QSMxT runs the settings you give,
+so set these to match it; when you choose QSMART, the TUI offers them, and the log, `--dry`
+and the methods Note list those that differ:
 
-| Input | Default with QSMART | Change with |
+| Input | QSMART's reference | Set with |
 | --- | --- | --- |
 | Phase unwrapping | `laplacian`, each echo over the whole volume | `--unwrapping-algorithm` |
 | Laplacian solver | `mirror` | `--laplacian-solver` |
@@ -633,12 +634,9 @@ unless you choose otherwise:
 | Magnitude for vessel detection | `mean-n4`: the mean over echoes, N4 bias-corrected ([Tustison et al. 2010](https://doi.org/10.1109/TMI.2010.2046908)) | `--qsmart-vessel-magnitude combined` for the combined magnitude (root sum of squares, inhomogeneity-corrected unless `--no-inhomogeneity-correction`) |
 | Vessel sizes (`--qsmart-vasc-sphere-radius`, `--qsmart-frangi-scale-*`) | voxels: 8, and scales 0.5 to 6 in steps of 0.5 | `--qsmart-vessel-units mm` to give them in mm, converted with the mean voxel size |
 
-An option you give explicitly is kept, including a general default (for example
-`--unwrapping-algorithm romeo`); the TUI likewise keeps a choice you make. QSMART's
-echo fit needs Laplacian unwrapping, so `--b0-estimation qsmart-echofit` with
-`--unwrapping-algorithm romeo` is refused before the run starts. Chosen with
-another inversion, `qsmart-echofit` brings Laplacian unwrapping with the `mirror`
-solver unless you choose otherwise, and its reliability map is not used.
+QSMART's echo fit needs Laplacian unwrapping, so `--b0-estimation qsmart-echofit` without
+`--unwrapping-algorithm laplacian` is refused before the run starts. Chosen with another
+inversion, `qsmart-echofit`'s reliability map is not used.
 
 A configuration file without `schema_version` that gives the vessel sizes without
 `vessel_size_units` reads them in mm, and says so; add `vessel_size_units = "voxels"`
@@ -656,8 +654,7 @@ time `--tgv-te` picks (the first by default). Its weights `--tgv-alpha0` / `--tg
 in the reference's units, radians at that echo time and the field strength, so the same values
 regularise differently at another echo time or field strength.
 
-MEDI takes the local field from background removal (PDF unless you choose another, as in
-the authors' pipeline), and with `--medi-smv` (the default) high-passes it with a spherical
+MEDI takes the local field from background removal (the authors' pipeline uses PDF), and with `--medi-smv` (the default) high-passes it with a spherical
 mean value filter of radius `--medi-smv-radius` (5 mm). With SMV, the mask is shrunk to
 where the filtered mask exceeds 0.999, about one SMV radius in from its edge;
 `--no-medi-smv-shrink-mask` keeps the full mask and high-passes the field over it.

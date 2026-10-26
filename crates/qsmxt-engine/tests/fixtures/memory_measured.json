@@ -3992,6 +3992,36 @@
     [
      "inversion.algorithm",
      "qsmart"
+    ],
+    [
+     "field_mapping.unwrapping_algorithm",
+     "laplacian"
+    ],
+    [
+     "field_mapping.laplacian_solver",
+     "mirror"
+    ],
+    [
+     "field_mapping.b0_estimation",
+     "qsmart-echofit"
+    ],
+    [
+     "masking.sections",
+     [
+      {
+       "input": "magnitude",
+       "generator": {
+        "op": "bet",
+        "fractional_intensity": 0.5
+       },
+       "refinements": [
+        {
+         "op": "erode",
+         "iterations": 2
+        }
+       ]
+      }
+     ]
     ]
    ],
    "need": [

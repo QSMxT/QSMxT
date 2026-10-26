@@ -149,6 +149,13 @@ const REMOVED: &[(&str, &str, &str)] = &[
       (inversion.medi.msmv, --medi-msmv), which takes the local field from the background removal",
     ),
     ("bg_removal.msmv", "", ""),
+    // Marks a front end once set so a method's own default did not replace a chosen setting.
+    // Nothing is replaced any more, so they mean nothing.
+    ("bg_removal.algorithm_chosen", "", ""),
+    ("masking.recipe_chosen", "", ""),
+    ("field_mapping.unwrapping_chosen", "", ""),
+    ("field_mapping.laplacian_solver_chosen", "", ""),
+    ("field_mapping.b0_estimation_chosen", "", ""),
     (
         "inversion.tgv.tol",
         "0.00001",
@@ -238,13 +245,6 @@ fn from_v1(value: &mut toml::Table, kind: Kind, out: &mut Migration) -> Result<(
             == Some("romeo")
             && s("field_mapping.phase_offset_removal").and_then(|v| v.as_bool()) != Some(false)
     };
-
-    // A background removal a hand-written file names is one its author chose, so an inversion
-    // with a reference background removal of its own (MEDI's PDF) does not replace it. A full
-    // file's is the default of the release that wrote it, and gives way like any other.
-    if !full && get(value, "bg_removal.algorithm").is_some() {
-        set(value, "bg_removal.algorithm_chosen", toml::Value::Boolean(true));
-    }
 
     for (from, to) in RENAMED {
         if let Some(v) = take(value, from) {
@@ -795,21 +795,27 @@ mod tests {
         assert_eq!(c.inversion.medi.lambda, 0.002);
     }
 
-    /// A background removal named in a hand-written file is kept under MEDI; one in an old full
-    /// file was that release's default, and MEDI takes PDF in its place.
+    /// A file runs the background removal it says, under MEDI too, old full files included; the
+    /// marks a front end once wrote are ignored.
     #[test]
-    fn a_hand_written_background_removal_is_kept_under_medi() {
+    fn a_file_runs_the_background_removal_it_says() {
         use crate::enums::BfAlgorithm;
         let medi = "[inversion]\nalgorithm = \"medi\"\n";
         let (c, _) = read(&format!("{medi}[bg_removal]\nalgorithm = \"vsharp\"\n")).unwrap();
         assert_eq!(c.normalised().0.bg_removal.algorithm, BfAlgorithm::Vsharp);
         let (c, _) = read(medi).unwrap();
-        assert_eq!(c.normalised().0.bg_removal.algorithm, BfAlgorithm::Pdf);
+        assert_eq!(c.normalised().0.bg_removal.algorithm, BfAlgorithm::Vsharp, "the general default");
         let full = V10_FULL.replacen("algorithm = \"ilsqr\"", "algorithm = \"medi\"", 1);
         assert_ne!(full, V10_FULL);
         let (c, _) = read(&full).unwrap();
         assert_eq!(c.inversion.algorithm, QsmAlgorithm::Medi);
-        assert_eq!(c.normalised().0.bg_removal.algorithm, BfAlgorithm::Pdf);
+        assert_eq!(c.normalised().0.bg_removal.algorithm, BfAlgorithm::Vsharp);
+        for marks in ["", "schema_version = 2\n"] {
+            let toml = format!("{marks}[bg_removal]\nalgorithm_chosen = true\n[masking]\nrecipe_chosen = true\n\
+                [field_mapping]\nunwrapping_chosen = true\nlaplacian_solver_chosen = true\nb0_estimation_chosen = true\n");
+            let c = PipelineConfig::from_toml(&toml).unwrap_or_else(|e| panic!("{toml}: {e}"));
+            assert_eq!(c, PipelineConfig::default());
+        }
     }
 
     /// A V-SHARP smallest radius kept from an earlier file keeps its radii: it was also their step.

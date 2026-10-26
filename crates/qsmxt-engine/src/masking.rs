@@ -360,40 +360,6 @@ pub fn default_two_pass_sections() -> Vec<MaskSection> {
     }]
 }
 
-/// QSMART has no internal mask erosion (unlike V-SHARP), so it needs a tight
-/// brain mask — a loose threshold mask leaks non-brain phase into the global
-/// dipole inversion and produces streaking. Default QSMART to BET-on-magnitude.
-pub fn qsmart_default_mask_sections() -> Vec<MaskSection> {
-    vec![MaskSection {
-        input: MaskingInput::Magnitude,
-        generator: MaskOp::bet(0.5),
-        refinements: vec![MaskOp::Erode { iterations: 2 }],
-    }]
-}
-
-/// The mask recipe an inversion runs with when the user has not chosen one
-/// ([`crate::config::MaskingConfig::recipe_chosen`]): QSMART's BET mask, and the general
-/// default for every other inversion. [`crate::config::PipelineConfig::normalised`] applies it.
-pub fn default_mask_sections_for(algorithm: crate::enums::QsmAlgorithm) -> Vec<MaskSection> {
-    match algorithm {
-        crate::enums::QsmAlgorithm::Qsmart => qsmart_default_mask_sections(),
-        _ => default_mask_sections(),
-    }
-}
-
-/// Why the configured mask may not suit the inversion, if it may not, in words that name no
-/// option: QSMART needs a tight brain mask, which BET, HD-BET and MindGrab make and a threshold
-/// does not. Read off the configuration as the run takes it (normalise first).
-pub fn mask_warning(config: &crate::config::PipelineConfig) -> Option<&'static str> {
-    let brain_extraction = |s: &MaskSection| matches!(s.generator,
-        MaskOp::Bet { .. } | MaskOp::HdBet { .. } | MaskOp::MindGrab { .. });
-    (config.pipeline.do_qsm
-        && config.inversion.algorithm == crate::enums::QsmAlgorithm::Qsmart
-        && !config.masking.sections.iter().all(brain_extraction))
-        .then_some("QSMART needs a tight brain mask, and this mask is not made by BET, HD-BET or \
-                    MindGrab: a looser mask can cause streaking artefacts")
-}
-
 /// HD-BET on the magnitude followed by signal-gated erosion — the QSM-CI harmonization masking
 /// (the `hd-bet` mask preset).
 pub fn hd_bet_mask_sections() -> Vec<MaskSection> {

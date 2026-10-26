@@ -11,10 +11,14 @@
 //!   Apply, `qsmxt run --accept-recommendations`) changes a setting only when asked.
 //! - **Strength** ([`Strength`]) is QSM.rs's. A `required` finding stops the run as configured
 //!   (a plan-time error, [`crate::requirements::scan_check`]); `recommended` and `discouraged`
-//!   findings are offered (a modal when a change creates one, a badge afterwards); a `reference`
-//!   finding is information only: it never opens a modal, is never applied by
-//!   `--accept-recommendations`, and its Note line is the softer "differs from the reference
-//!   pipeline".
+//!   findings are offered (a modal when a change creates one, a marker afterwards); a
+//!   `reference` finding is information only: it is never applied by `--accept-recommendations`,
+//!   and its Note line is the softer "differs from the reference pipeline".
+//! - **By method** ([`by_method`]): a method's `reference` rules are its reference pipeline. A
+//!   front end offers it when the method is chosen ([`chosen_methods`] before and after a change)
+//!   and the config differs from it ([`reference_differences`]): Apply all ([`apply_all`]), per
+//!   setting ([`apply`]), or Keep mine ([`keep`], dismissals, so it is not offered again for the
+//!   same values). A setting's [`marker`] names whose rule it departs from and what that uses.
 //! - **Every rule that applies is shown**, departed from or not ([`reference_values`]), so a
 //!   setting covered by a rule always shows its reference value and source next to its own.
 //! - **Dismissals** ([`crate::config::Dismissal`]) are kept in the config, with the value they
@@ -218,8 +222,7 @@ impl Recommendation {
     /// The method the rule is scoped to, when it is one ("MEDI"); `None` when the trigger is
     /// another setting's value, or the setting itself.
     fn method(&self) -> Option<&str> {
-        const METHODS: [&str; 4] = ["inversion.algorithm", "bg_removal.algorithm", "masking.sections", "separation.algorithm"];
-        (METHODS.contains(&self.trigger.setting.as_str()) && self.trigger.setting != self.setting).then_some(&self.trigger.name)
+        (METHOD_SETTINGS.contains(&self.trigger.setting.as_str()) && self.trigger.setting != self.setting).then_some(&self.trigger.name)
     }
 
     /// The setting is a flag.
@@ -257,6 +260,9 @@ impl Recommendation {
         format!("{} {verb} {}{} ({})", self.label, self.current_text(), self.departure(), self.source)
     }
 }
+
+/// The settings whose values are methods (a rule triggered by one is that method's).
+const METHOD_SETTINGS: [&str; 4] = ["inversion.algorithm", "bg_removal.algorithm", "masking.sections", "separation.algorithm"];
 
 // ─── What is known about the scan ───
 
@@ -656,6 +662,135 @@ pub fn chosen_text(current: &[Named]) -> String {
     current.iter().map(|n| one(&n.value)).collect::<Vec<_>>().join("/")
 }
 
+// ─── By method ───
+
+/// One method's reference pipeline as far as it covers a config: the `reference` rules scoped to
+/// that method (their trigger), departed from or not. What a front end opens when the method is
+/// chosen ([`chosen_methods`], [`reference_differences`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MethodReference {
+    /// The choice the rules are scoped to ("MEDI").
+    pub method: Trigger,
+    /// "MEDI's reference pipeline".
+    pub title: String,
+    pub rules: Vec<Recommendation>,
+}
+
+impl MethodReference {
+    /// The rules the config departs from and has not kept ([`keep`]).
+    pub fn differences(&self) -> Vec<Recommendation> {
+        self.rules.iter().filter(|r| r.departs && !r.dismissed).cloned().collect()
+    }
+}
+
+/// What a pop-up about `method`'s reference pipeline is called: "MEDI's reference pipeline" for a
+/// method, "The reference for phase offset removal on" for another setting's value.
+pub fn reference_title(method: &Trigger) -> String {
+    if METHOD_SETTINGS.contains(&method.setting.as_str()) {
+        format!("{}'s reference pipeline", method.name)
+    } else {
+        format!("The reference for {}", method.name)
+    }
+}
+
+/// The `reference` rules of `view` ([`reference_values`]) grouped by the choice they are scoped
+/// to, in the order the choices first appear.
+pub fn by_method(view: &[Recommendation]) -> Vec<MethodReference> {
+    let mut out: Vec<MethodReference> = Vec::new();
+    for r in view.iter().filter(|r| r.strength == Strength::Reference && !r.trigger.setting.is_empty()) {
+        match out.iter_mut().find(|m| m.method == r.trigger) {
+            Some(m) => m.rules.push(r.clone()),
+            None => out.push(MethodReference { method: r.trigger.clone(), title: reference_title(&r.trigger), rules: vec![r.clone()] }),
+        }
+    }
+    out
+}
+
+/// The QSMxT settings a choice of which can open a reference pipeline pop-up: those that trigger
+/// a `reference` rule (the inversion, background removal, χ-separation, phase offset removal),
+/// from QSM.rs's rules. A front end shows them as a picker
+/// rather than cycling through their values, so no method is chosen on the way to another.
+pub fn reference_trigger_settings() -> Vec<&'static str> {
+    let mut out: Vec<&'static str> = Vec::new();
+    for r in core::RULES.iter().filter(|r| r.strength == core::Strength::Reference) {
+        let Condition::Setting { setting, .. } = r.trigger() else { continue };
+        if let Some(path) = qsmxt_path(setting) {
+            if !out.contains(&path) {
+                out.push(path);
+            }
+        }
+    }
+    out
+}
+
+/// The choices in `config` that have a reference pipeline: the triggers of the `reference` rules
+/// that apply. A front end compares them before and after a change; a choice that appears is a
+/// method just chosen, and its [`reference_differences`] are what to offer.
+pub fn chosen_methods(config: &PipelineConfig, facts: &Facts) -> Vec<Trigger> {
+    by_method(&reference_values(config, facts)).into_iter().map(|m| m.method).collect()
+}
+
+/// Where `config` differs from `method`'s reference pipeline and has not kept its own value
+/// ([`keep`]): each setting's current value, the reference value, why and the source. Empty when
+/// it does not differ, or `method` is not chosen.
+pub fn reference_differences(config: &PipelineConfig, facts: &Facts, method: &Trigger) -> Vec<Recommendation> {
+    by_method(&reference_values(config, facts)).into_iter()
+        .find(|m| m.method == *method)
+        .map(|m| m.differences())
+        .unwrap_or_default()
+}
+
+/// The marker a setting shows when it departs from a rule ([`marker`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Marker {
+    /// A finding offered as a change and not dismissed (⚑); otherwise information only (ⓘ): a
+    /// `reference` difference, or a finding kept.
+    pub actionable: bool,
+    /// Whose rule and what it uses: "MEDI: BET", "MEDI, PDF: BET", "MEDI: PDF · TFI: LBV".
+    pub text: String,
+}
+
+/// The marker for the setting at `path`, from the rules of `view` ([`reference_values`]) that it
+/// departs from: `None` when it departs from none. Offered findings are named first.
+pub fn marker(view: &[Recommendation], path: &str) -> Option<Marker> {
+    let mut here: Vec<&Recommendation> = view.iter().filter(|r| r.setting == path && r.departs).collect();
+    if here.is_empty() {
+        return None;
+    }
+    let open = |r: &Recommendation| r.actionable() && !r.dismissed;
+    here.sort_by_key(|r| !open(r));
+    // Each value, with every method whose rule has it.
+    let mut groups: Vec<(String, Vec<String>)> = Vec::new();
+    for r in &here {
+        let value = if r.strength == Strength::Discouraged { format!("not {}", r.current_text()) } else { r.recommended.name.clone() };
+        let who = if r.trigger.name.is_empty() { "Reference".to_string() } else { r.trigger.name.clone() };
+        match groups.iter_mut().find(|(v, _)| *v == value) {
+            Some((_, names)) if names.contains(&who) => {}
+            Some((_, names)) => names.push(who),
+            None => groups.push((value, vec![who])),
+        }
+    }
+    let text = groups.iter().map(|(v, names)| format!("{}: {v}", names.join(", "))).collect::<Vec<_>>().join(" · ");
+    Some(Marker { actionable: here.iter().any(|r| open(r)), text })
+}
+
+/// Keep the setting of each finding at its current value: dismiss each for that value
+/// ([`Dismissal`], into a config's `dismissed_recommendations`), so it is not offered again while
+/// the setting keeps it. A `required` finding cannot be kept and is left. What "Keep mine" does.
+pub fn keep(dismissals: &mut Vec<Dismissal>, findings: &[Recommendation]) {
+    for r in findings.iter().filter(|r| r.strength != Strength::Required) {
+        dismissals.retain(|d| d.rule != r.rule);
+        dismissals.push(Dismissal { rule: r.rule.clone(), chosen: chosen_text(&r.current) });
+    }
+}
+
+/// Apply each finding's recommended value ([`apply`]), in order: what "Apply all" does. Every
+/// finding is tried; `Err` lists those that could not be applied.
+pub fn apply_all(config: &mut PipelineConfig, findings: &[Recommendation]) -> Result<(), String> {
+    let errors: Vec<String> = findings.iter().filter_map(|r| apply(config, &r.rule, None).err()).collect();
+    if errors.is_empty() { Ok(()) } else { Err(errors.join("; ")) }
+}
+
 // ─── Dismissing ───
 
 /// Dismiss the finding of `rule` on `config` for the setting's current value: it is no longer
@@ -694,8 +829,7 @@ pub fn prune_dismissals(config: &mut PipelineConfig, facts: &Facts) {
 
 /// Change `config` so the finding of `rule` is resolved: to the rule's recommended value, or, with
 /// `pick`, to another value it allows (one of [`Allowed::OneOf`]'s, or a number in its
-/// [`Allowed::Range`]). The setting is then the user's choice (it is not replaced by a method's
-/// default). Any dismissal of the rule is dropped.
+/// [`Allowed::Range`]). Any dismissal of the rule is dropped.
 pub fn apply(config: &mut PipelineConfig, rule: &str, pick: Option<&Value>) -> Result<(), String> {
     let r = core::RULES.iter().find(|r| r.id == rule).ok_or_else(|| format!("no rule {rule}"))?;
     let value = match (pick, r.expect) {
@@ -728,12 +862,6 @@ fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -> Result<()
     match kind {
         Kind::Same => {
             crate::schema::set(config, path, value.clone())?;
-            match path {
-                "bg_removal.algorithm" => config.bg_removal.algorithm_chosen = true,
-                "field_mapping.unwrapping_algorithm" => config.field_mapping.unwrapping_chosen = true,
-                "field_mapping.b0_estimation" => config.field_mapping.b0_estimation_chosen = true,
-                _ => {}
-            }
         }
         Kind::MaskGenerator => {
             // The preset whose sections all start with that generator (`bet` → BET on the
@@ -744,7 +872,6 @@ fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -> Result<()
             config.masking.sections = recipe.sections;
             config.masking.combine = recipe.combine;
             config.masking.refinements = recipe.refinements;
-            config.masking.recipe_chosen = true;
         }
         Kind::HdBetInference => {
             let patch = match id {
@@ -760,7 +887,6 @@ fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -> Result<()
                     }
                 }
             }
-            config.masking.recipe_chosen = true;
         }
         Kind::LaplacianSolver => {
             let fm = &mut config.field_mapping;
@@ -776,7 +902,6 @@ fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -> Result<()
                 }
                 other => return Err(format!("unknown Laplacian solver {other}")),
             };
-            fm.laplacian_solver_chosen = true;
         }
         Kind::VsharpGrid => {
             let v = &mut config.bg_removal.vsharp;

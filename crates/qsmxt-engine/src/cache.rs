@@ -49,15 +49,7 @@ pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value
         "fft_padding": config.pipeline.fft_padding,
         "crop_margin_mm": config.pipeline.crop_margin_mm,
     });
-    // Whether the user chose the recipe only decides which recipe it is (normalising), and the
-    // recipe itself is keyed.
-    let masking = || {
-        let mut m = serde_json::to_value(&config.masking).unwrap_or_default();
-        if let Some(o) = m.as_object_mut() {
-            o.remove("recipe_chosen");
-        }
-        m
-    };
+    let masking = || serde_json::to_value(&config.masking).unwrap_or_default();
     match base {
         "scale_phase" => json!({ "coil_combination_sigma": config.field_mapping.coil_combination_sigma }),
         "magnitude" => json!({
@@ -78,24 +70,8 @@ pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value
         "mask" => json!({ "masking": masking(), "bet": config.bet, "homogeneity": config.homogeneity, "n4": config.n4 }),
         "motion" => json!({ "motion_correction": config.motion_correction, "registration": config.registration }),
         "swi" => json!({ "swi": config.swi }),
-        // Whether the user chose a setting only decides which it is (normalising), and the setting
-        // itself is keyed.
-        "unwrap" => {
-            let mut fm = serde_json::to_value(&config.field_mapping).unwrap_or_default();
-            if let Some(o) = fm.as_object_mut() {
-                for mark in ["unwrapping_chosen", "laplacian_solver_chosen", "b0_estimation_chosen"] {
-                    o.remove(mark);
-                }
-            }
-            json!({ "field_mapping": fm })
-        }
-        "bgremove" => {
-            let mut b = serde_json::to_value(&config.bg_removal).unwrap_or_default();
-            if let Some(o) = b.as_object_mut() {
-                o.remove("algorithm_chosen");
-            }
-            json!({ "bg_removal": b, "crop": crop })
-        }
+        "unwrap" => json!({ "field_mapping": config.field_mapping }),
+        "bgremove" => json!({ "bg_removal": config.bg_removal, "crop": crop }),
         "invert" | "tgv" | "qsmart" => json!({ "inversion": config.inversion, "crop": crop }),
         "twopass" => json!({ "masking": masking() }),
         "reference" | "reference-singlepass" => json!({ "qsm": config.qsm }),
@@ -196,47 +172,12 @@ mod tests {
         }
     }
 
-    /// Whether the user chose the mask decides which recipe it is, when normalising; the steps
-    /// are keyed by the recipe, so the mark itself keys nothing.
+    /// QSMART's vessel magnitude and units, and the echo fit's threshold, are keyed where they
+    /// are read.
     #[test]
-    fn the_chosen_mark_is_not_in_the_mask_keys() {
-        let mut base = PipelineConfig::default();
-        base.inversion.algorithm = crate::enums::QsmAlgorithm::Qsmart;
-        let mut chosen = base.clone();
-        chosen.masking.recipe_chosen = true;
-        let p = serde_json::json!({});
-        for step in ["mask", "mask-reliable", "twopass"] {
-            assert_eq!(step_cache_key(step, None, &p, &chosen), step_cache_key(step, None, &p, &base), "{step}");
-        }
-    }
-
-    /// Likewise whether the user chose the background removal: the algorithm is keyed, the mark
-    /// is not.
-    #[test]
-    fn the_chosen_mark_is_not_in_the_background_removal_key() {
-        let mut base = PipelineConfig::default();
-        base.inversion.algorithm = crate::enums::QsmAlgorithm::Medi;
-        let mut chosen = base.clone();
-        chosen.bg_removal.algorithm_chosen = true;
-        let p = serde_json::json!({});
-        assert_eq!(step_cache_key("bgremove", None, &p, &chosen), step_cache_key("bgremove", None, &p, &base));
-        let mut other = base.clone();
-        other.bg_removal.algorithm = crate::enums::BfAlgorithm::Pdf;
-        assert_ne!(step_cache_key("bgremove", None, &p, &other), step_cache_key("bgremove", None, &p, &base));
-    }
-
-    /// Likewise the field-mapping marks: they decide which unwrapping and echo combination it is,
-    /// and those are keyed. QSMART's vessel magnitude and units, and the echo fit's threshold, are
-    /// keyed where they are read.
-    #[test]
-    fn qsmarts_input_choices_are_keyed_and_the_marks_are_not() {
+    fn qsmarts_input_choices_are_keyed() {
         let p = serde_json::json!({});
         let base = PipelineConfig::default();
-        let mut marked = base.clone();
-        marked.field_mapping.unwrapping_chosen = true;
-        marked.field_mapping.laplacian_solver_chosen = true;
-        marked.field_mapping.b0_estimation_chosen = true;
-        assert_eq!(step_cache_key("unwrap", None, &p, &marked), step_cache_key("unwrap", None, &p, &base));
         let changed = |edit: fn(&mut PipelineConfig), step: &str| {
             let mut c = base.clone();
             edit(&mut c);

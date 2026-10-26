@@ -295,16 +295,11 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         cosmos_magnitude_weighting: weighted_cosmos,
         cosmos_tol: if weighted_cosmos { parse_optional_f64(&ps.cosmos_tol) } else { None },
         cosmos_max_iter: if weighted_cosmos { parse_optional_usize(&ps.cosmos_max_iter) } else { None },
-        // Said when chosen or not the general default: a general default left unchosen is the
-        // inversion's to decide (QSMART's own under QSMART), as the form shows it.
-        unwrapping_algorithm: (ps.unwrapping_chosen || ps.unwrapping_algorithm != 0)
-            .then(|| unwrap_options[ps.unwrapping_algorithm]),
+        // Said when not the general default.
+        unwrapping_algorithm: (ps.unwrapping_algorithm != 0).then(|| unwrap_options[ps.unwrapping_algorithm]),
         // Only when the inversion has a background-removal stage: otherwise the choice has no
-        // effect, and iQFM there is refused (#276). An unchosen one is left to the engine's rule,
-        // as `qsmxt run` without `--bf-algorithm` leaves it: the inversion's reference one (PDF
-        // for MEDI), else the general default.
-        bf_algorithm: (ps.inversion_needs_bg_removal()
-            && (ps.bf_chosen || ps.bf_algorithm != ps.unchosen_bf_algorithm()))
+        // effect, and iQFM there is refused (#276). Said when not the general default.
+        bf_algorithm: (ps.inversion_needs_bg_removal() && ps.bf_algorithm != 0)
             .then(|| bf_options[ps.bf_algorithm]),
         masking_input: None,
         phase_offset_removal: Some(ps.phase_offset_removal),
@@ -314,14 +309,13 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         // MEDI's complex fit removes no offsets, and refuses bipolar correction.
         bipolar_correction: ps.unwrapping_algorithm == 0 && ps.phase_offset_removal && ps.bipolar_correction
             && !ps.b0_estimation_is("complex-fit"),
-        // Only when changed from the default or chosen, so a default form still yields a bare
-        // command.
+        // Only when changed from the default, so a default form still yields a bare command.
         b0_estimation: match ps.b0_estimation {
             _ if ps.b0_estimation_is("complex-fit") => Some(B0EstimationArg::ComplexFit),
             1 => Some(B0EstimationArg::LinearFit),
             2 => Some(B0EstimationArg::RobustFit),
             3 => Some(B0EstimationArg::QsmartEchofit),
-            _ => ps.b0_estimation_chosen.then_some(B0EstimationArg::WeightedAvg),
+            _ => None,
         },
         // QSMART's echo-fit threshold: the mode, and the value of that mode.
         qsmart_fit_threshold_mode: [crate::cli::QsmartFitThresholdModeArg::Percentile, crate::cli::QsmartFitThresholdModeArg::Absolute]
@@ -333,9 +327,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
                          B0WeightTypeArg::TEs, B0WeightTypeArg::Mag, B0WeightTypeArg::AssumedDecay]
             .get(ps.b0_weight_type).copied().filter(|&w| ps.b0_estimation == 0 && w != B0WeightTypeArg::PhaseSNR),
         b0_weight_assumed_t2star: if ps.b0_estimation == 0 && ps.b0_weight_type == 5 { parse_optional_f64(&ps.b0_weight_assumed_t2star_ms) } else { None },
-        // Only when Laplacian unwrapping is selected, and only when changed from the default or
-        // chosen.
-        laplacian_solver: if ps.unwrapping_algorithm == 1 && (ps.laplacian_solver != 0 || ps.laplacian_solver_chosen) {
+        // Only when Laplacian unwrapping is selected, and only when changed from the default.
+        laplacian_solver: if ps.unwrapping_algorithm == 1 && ps.laplacian_solver != 0 {
             [crate::cli::LaplacianSolverArg::Dct, crate::cli::LaplacianSolverArg::Fft, crate::cli::LaplacianSolverArg::Mirror]
                 .get(ps.laplacian_solver).copied()
         } else { None },
@@ -770,9 +763,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         output_space: Some(if ps.output_space == 1 { crate::cli::OutputSpaceArg::Working } else { crate::cli::OutputSpaceArg::Acquired }),
         mask_preset: None,
         use_custom_masks: if ps.custom_mask_tool.trim().is_empty() { None } else { Some(ps.custom_mask_tool.trim().to_string()) },
-        // An unchosen mask is left to the engine's rule, as `qsmxt run` without a mask option
-        // leaves it: the inversion's own default (QSMART's BET), else the general one.
-        mask_sections_cli: if !ps.mask_chosen { None } else {
+        mask_sections_cli: {
             let secs: Vec<String> = ps.mask_sections.iter().map(|section| {
                 let mut parts = vec![format!("{}", section.input)];
                 for op in &section.all_ops() {
@@ -784,12 +775,11 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         },
         // Only the non-default mode is worth spelling out on the command line.
         mask_combine: match ps.mask_combine_recipe().0 {
-            _ if !ps.mask_chosen => None,
             crate::pipeline::config::MaskCombine::Or => None,
             crate::pipeline::config::MaskCombine::And => Some(crate::cli::MaskCombineArg::And),
         },
         mask_refinements_cli: match ps.mask_combine_recipe().1 {
-            ops if ops.is_empty() || !ps.mask_chosen => None,
+            ops if ops.is_empty() => None,
             ops => Some(ops.iter().map(|op| format!("{op}")).collect()),
         },
         two_pass: ps.two_pass,
@@ -1306,9 +1296,9 @@ mod tests {
         let shows_bfr = |app: &App| app.pipeline_state.all_rows().iter().any(|r|
             matches!(r, PipelineRow::AlgoSelect { field: "bf_algorithm", .. }));
         assert!(shows_bfr(&app));
-        // Unchosen, the engine's rule decides it; a chosen one is sent.
+        // The default goes unsent; another one is sent.
         assert!(pipeline_args_from_app(&app).bf_algorithm.is_none());
-        app.pipeline_state.set_select("bf_algorithm", 0);
+        app.pipeline_state.set_select("bf_algorithm", 1);
         assert!(pipeline_args_from_app(&app).bf_algorithm.is_some());
         for name in ["tfi", "tgv", "qsmart", "autoqsm", "nextqsm", "iqsm"] {
             app.pipeline_state.qsm_algorithm = QSM_ALGO_OPTIONS.iter().position(|o| *o == name).unwrap();
@@ -1927,11 +1917,10 @@ mod tests {
         assert_eq!(build_run_args(&app).unwrap().pipeline.b0_estimation, Some(B0EstimationArg::LinearFit));
     }
 
-    /// Background removal left alone in the TUI is left alone on the command line: MEDI takes
-    /// PDF, which the page shows. Picking one (the general default included) chooses it, and the
-    /// run keeps it; resetting it gives the choice back to the inversion.
+    /// Choosing MEDI changes no other row: the background removal stays as it is, and the run
+    /// takes what the page shows.
     #[test]
-    fn medi_takes_pdf_until_the_background_removal_is_chosen() {
+    fn choosing_medi_leaves_the_background_removal_alone() {
         use crate::cli::BfAlgorithmArg;
         use qsmxt_engine::BfAlgorithm;
         let medi = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|a| *a == "medi").unwrap();
@@ -1939,33 +1928,14 @@ mod tests {
         let mut app = default_app();
         app.form.bids_dir = "/bids".to_string();
         app.pipeline_state.set_select("qsm_algorithm", medi);
-        assert!(!app.pipeline_state.bf_chosen);
-        assert_eq!(app.pipeline_state.bf_algorithm, bf("pdf"), "the page shows PDF");
+        assert_eq!(app.pipeline_state.bf_algorithm, bf("vsharp"));
         assert_eq!(build_run_args(&app).unwrap().pipeline.bf_algorithm, None);
-        assert_eq!(config_from_app(&app).unwrap().bg_removal.algorithm, BfAlgorithm::Pdf);
-        assert!(!build_command_string(&app).contains("--bf-algorithm"));
-
-        // Back to RTS while still unchosen: the general default again.
-        app.pipeline_state.set_select("qsm_algorithm", 0);
-        assert_eq!(app.pipeline_state.bf_algorithm, bf("vsharp"));
-        app.pipeline_state.set_select("qsm_algorithm", medi);
-
-        // Choosing V-SHARP keeps it, through a change of inversion too.
-        app.pipeline_state.set_select("bf_algorithm", bf("vsharp"));
-        assert!(app.pipeline_state.bf_chosen);
-        assert_eq!(build_run_args(&app).unwrap().pipeline.bf_algorithm, Some(BfAlgorithmArg::Vsharp));
-        let c = config_from_app(&app).unwrap();
-        assert_eq!(c.bg_removal.algorithm, BfAlgorithm::Vsharp);
-        assert!(c.bg_removal.algorithm_chosen);
-        assert!(build_command_string(&app).contains("--bf-algorithm vsharp"));
-        app.pipeline_state.set_select("qsm_algorithm", 0);
-        app.pipeline_state.set_select("qsm_algorithm", medi);
-        assert_eq!(app.pipeline_state.bf_algorithm, bf("vsharp"));
-
-        // Resetting the row is no choice again.
+        assert_eq!(config_from_app(&app).unwrap().bg_removal.algorithm, BfAlgorithm::Vsharp);
+        app.pipeline_state.set_select("bf_algorithm", bf("pdf"));
+        assert_eq!(build_run_args(&app).unwrap().pipeline.bf_algorithm, Some(BfAlgorithmArg::Pdf));
+        assert!(build_command_string(&app).contains("--bf-algorithm pdf"));
         app.reset_field("bf_algorithm");
-        assert!(!app.pipeline_state.bf_chosen);
-        assert_eq!(app.pipeline_state.bf_algorithm, bf("pdf"));
+        assert_eq!(app.pipeline_state.bf_algorithm, bf("vsharp"));
     }
 
     /// MEDI's mask shrinking is a row under SMV, and reaches the run.
@@ -1981,98 +1951,45 @@ mod tests {
         assert!(build_command_string(&app).contains("--no-medi-smv-shrink-mask"));
     }
 
-    /// The field mapping left alone in the TUI is QSMART's under QSMART, as the form shows it; a
-    /// choice, the general default included, is kept, and resetting the row lets QSMART decide
-    /// again. QSMART's vessel options travel to the run.
+    /// Choosing QSMART changes neither the field mapping nor the mask; set, they reach the run,
+    /// as do QSMART's vessel options and the echo fit's threshold.
     #[test]
-    fn qsmart_takes_its_field_mapping_until_one_is_chosen() {
-        use qsmxt_engine::{B0Estimation, LaplacianSolver, UnwrappingAlgorithm};
+    fn qsmart_leaves_the_field_mapping_and_mask_alone() {
+        use qsmxt_engine::{B0Estimation, LaplacianSolver, UnwrappingAlgorithm, default_mask_sections};
         let qsmart = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|a| *a == "qsmart").unwrap();
         let mut app = default_app();
         app.form.bids_dir = "/bids".to_string();
         app.pipeline_state.set_select("qsm_algorithm", qsmart);
         let ps = &app.pipeline_state;
-        assert_eq!((ps.unwrapping_algorithm, ps.laplacian_solver, ps.b0_estimation), (1, 2, 3), "the form shows QSMART's");
+        assert_eq!((ps.unwrapping_algorithm, ps.laplacian_solver, ps.b0_estimation), (0, 0, 0));
+        assert_eq!(ps.mask_sections, default_mask_sections());
+        let c = config_from_app(&app).unwrap();
+        assert_eq!(c.field_mapping, qsmxt_engine::FieldMappingConfig::default());
+        assert_eq!(c.masking.sections, default_mask_sections());
+
+        app.pipeline_state.set_select("unwrapping_algorithm", 1);
+        app.pipeline_state.set_select("laplacian_solver", 2);
+        app.pipeline_state.set_select("b0_estimation", 3);
         let fm = config_from_app(&app).unwrap().field_mapping;
         assert_eq!((fm.unwrapping_algorithm, fm.laplacian_solver, fm.b0_estimation),
                    (UnwrappingAlgorithm::Laplacian, LaplacianSolver::Mirror, B0Estimation::QsmartEchofit));
         let cmd = build_command_string(&app);
         assert!(cmd.contains("--laplacian-solver mirror") && cmd.contains("--b0-estimation qsmart-echofit"), "{cmd}");
 
-        // ROMEO chosen: kept, and the echo combination the form shows follows it.
-        app.pipeline_state.set_select("unwrapping_algorithm", 0);
-        assert_eq!(app.pipeline_state.b0_estimation, 0);
-        let c = config_from_app(&app).unwrap();
-        assert_eq!((c.field_mapping.unwrapping_algorithm, c.field_mapping.b0_estimation),
-                   (UnwrappingAlgorithm::Romeo, B0Estimation::WeightedAvg));
-        assert!(build_command_string(&app).contains("--unwrapping-algorithm romeo"));
-        // Reset: QSMART's again.
-        app.reset_field("unwrapping_algorithm");
-        assert_eq!((app.pipeline_state.unwrapping_algorithm, app.pipeline_state.b0_estimation), (1, 3));
-        assert_eq!(config_from_app(&app).unwrap().field_mapping.unwrapping_algorithm, UnwrappingAlgorithm::Laplacian);
-
-        // The weighted average chosen under QSMART is kept; back to RTS the general defaults show.
-        app.pipeline_state.set_select("b0_estimation", 0);
-        assert_eq!(config_from_app(&app).unwrap().field_mapping.b0_estimation, B0Estimation::WeightedAvg);
-        app.pipeline_state.set_select("qsm_algorithm", 0);
-        assert_eq!((app.pipeline_state.unwrapping_algorithm, app.pipeline_state.laplacian_solver), (0, 0));
-
-        // QSMART's vessel options and the echo fit's threshold.
-        app.pipeline_state.set_select("qsm_algorithm", qsmart);
         app.pipeline_state.set_select("qsmart_vessel_magnitude", 1);
         app.pipeline_state.set_select("qsmart_vessel_units", 1);
-        app.reset_field("b0_estimation");
         app.pipeline_state.qsmart_fit_percentile = "95".into();
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.inversion.qsmart.vessel_magnitude, qsmxt_engine::QsmartVesselMagnitude::Combined);
         assert_eq!(c.inversion.qsmart.vessel_size_units, qsmxt_engine::VesselSizeUnits::Mm);
         assert_eq!(c.field_mapping.qsmart_fit_threshold(), qsm_core::utils::QsmartFitThreshold::Percentile(95.0));
-        // The fixed mode takes the fixed residual, not the percentile.
         app.pipeline_state.set_select("qsmart_fit_threshold_mode", 1);
         app.pipeline_state.qsmart_fit_threshold = "30".into();
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.qsmart_fit_threshold(), qsm_core::utils::QsmartFitThreshold::Absolute(30.0));
-    }
 
-    /// Masking left alone in the TUI is masking left alone on the command line: QSMART takes
-    /// the engine's BET mask, which the masking page shows. Picking a preset (the default one
-    /// included) or editing the recipe chooses it, and the run keeps it.
-    #[test]
-    fn qsmart_takes_bet_until_the_mask_is_chosen() {
-        use qsmxt_engine::{default_mask_sections, qsmart_default_mask_sections};
-        let qsmart = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|a| *a == "qsmart").unwrap();
-        let mut app = default_app();
-        app.form.bids_dir = "/bids".to_string();
-        app.pipeline_state.set_select("qsm_algorithm", qsmart);
-        assert!(!app.pipeline_state.mask_chosen);
-        assert_eq!(app.pipeline_state.mask_sections, qsmart_default_mask_sections(), "the page shows BET");
-        assert_eq!(build_run_args(&app).unwrap().pipeline.mask_sections_cli, None);
-        let c = config_from_app(&app).unwrap();
-        assert_eq!(c.masking.sections, qsmart_default_mask_sections());
+        app.pipeline_state.set_select("mask_preset", 1);
         assert!(build_command_string(&app).contains("--mask-preset bet"));
-        assert_eq!(app.pipeline_state.mask_warning(), None);
-
-        // Back to RTS while still unchosen: the general default again.
-        app.pipeline_state.set_select("qsm_algorithm", 0);
-        assert_eq!(app.pipeline_state.mask_sections, default_mask_sections());
-        app.pipeline_state.set_select("qsm_algorithm", qsmart);
-
-        // Choosing the robust threshold keeps it, says so, and warns.
-        app.pipeline_state.set_select("mask_preset", 0);
-        assert!(app.pipeline_state.mask_chosen);
-        let c = config_from_app(&app).unwrap();
-        assert_eq!(c.masking.sections, default_mask_sections());
-        assert!(c.masking.recipe_chosen);
-        assert!(build_command_string(&app).contains("--mask-preset robust-threshold"));
-        assert!(app.pipeline_state.mask_warning().is_some());
-
-        // Editing the recipe chooses it too.
-        let mut app = default_app();
-        app.form.bids_dir = "/bids".to_string();
-        app.pipeline_state.set_select("qsm_algorithm", qsmart);
-        app.pipeline_state.set_mask_input(0, 0);
-        assert!(app.pipeline_state.mask_chosen);
-        assert!(build_run_args(&app).unwrap().pipeline.mask_sections_cli.is_some());
     }
 
     /// The pipeline the SLURM jobs get must be the one a local run would use.
@@ -2539,17 +2456,14 @@ mod parity {
                 let mut extra = a.pipeline_state.mask_sections[0].clone();
                 extra.input = crate::pipeline::config::MaskingInput::Magnitude;
                 a.pipeline_state.mask_sections.push(extra);
-                a.pipeline_state.mask_chosen = true; // as the add-section row marks it
             }),
             ("mask combine", |a| {
                 let extra = a.pipeline_state.mask_sections[0].clone();
                 a.pipeline_state.mask_sections.push(extra);
-                a.pipeline_state.mask_chosen = true;
             }, |a| a.pipeline_state.toggle_mask_combine()),
             ("mask refinements", |a| {
                 let extra = a.pipeline_state.mask_sections[0].clone();
                 a.pipeline_state.mask_sections.push(extra);
-                a.pipeline_state.mask_chosen = true;
             }, |a| a.pipeline_state.mask_combined_refinements.push(crate::pipeline::config::MaskOp::Erode { iterations: 1 })),
             ("masking input", |a| a.pipeline_state.set_select("mask_preset", 1), |a| {
                 for s in &mut a.pipeline_state.mask_sections { s.input = crate::pipeline::config::MaskingInput::MagnitudeLast; }

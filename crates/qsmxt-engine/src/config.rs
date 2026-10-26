@@ -1324,17 +1324,6 @@ pub struct FieldMappingConfig {
     /// qsm-core's (`QSMART_FIT_THRESHOLD`, 40).
     #[serde(default = "default_qsmart_fit_threshold")]
     pub qsmart_fit_threshold: f64,
-    /// The user chose `unwrapping_algorithm`, `laplacian_solver` or `b0_estimation`, so the run
-    /// keeps it as it is. Left unset, the general default gives way to the inversion's own where
-    /// it has one: QSMART's Laplacian unwrapping with the `mirror` solver and its echo fit
-    /// ([`PipelineConfig::normalised`]). As [`MaskingConfig::recipe_chosen`]: normalising keeps
-    /// a mark only where it decides something, and it is written out only when set.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub unwrapping_chosen: bool,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub laplacian_solver_chosen: bool,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub b0_estimation_chosen: bool,
 }
 
 impl FieldMappingConfig {
@@ -1472,9 +1461,6 @@ impl Default for FieldMappingConfig {
             qsmart_fit_threshold_mode: QsmartFitThresholdMode::default(),
             qsmart_fit_percentile: default_qsmart_fit_percentile(),
             qsmart_fit_threshold: default_qsmart_fit_threshold(),
-            unwrapping_chosen: false,
-            laplacian_solver_chosen: false,
-            b0_estimation_chosen: false,
         }
     }
 }
@@ -1510,16 +1496,6 @@ pub struct MaskingConfig {
     /// main mask, so anything expressible for one mask is expressible for this one.
     #[serde(default)]
     pub two_pass_sections: Option<Vec<MaskSection>>,
-    /// The user chose `sections` (picked a preset, the default one included, or edited the
-    /// recipe), so the run keeps them as they are. Left unset, the general default recipe gives
-    /// way to the inversion's own default where it has one: QSMART's BET mask
-    /// ([`crate::masking::default_mask_sections_for`], applied by
-    /// [`PipelineConfig::normalised`]).
-    ///
-    /// Normalising keeps it set only where it decides something (QSMART with the general default
-    /// recipe), and it is written out only when set, so a saved configuration says it only then.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub recipe_chosen: bool,
 }
 impl Default for MaskingConfig {
     fn default() -> Self {
@@ -1532,7 +1508,6 @@ impl Default for MaskingConfig {
             custom_mask_tool: None,
             two_pass: false,
             two_pass_sections: None,
-            recipe_chosen: false,
         }
     }
 }
@@ -1578,16 +1553,6 @@ pub struct BgRemovalConfig {
     pub resharp: ResharpConfig,
     pub harperella: HarperellaConfig,
     pub iharperella: IharperellaConfig,
-    /// The user chose `algorithm`, so the run keeps it. Left unset, the general default gives way
-    /// to the inversion's own reference background removal where it has one: PDF for MEDI
-    /// (QSM.rs `InversionConfig::reference_bg_removal`, applied by
-    /// [`PipelineConfig::normalised`]).
-    ///
-    /// Normalising keeps it set only where it decides something (MEDI with the general default),
-    /// and it is written out only when set, as [`MaskingConfig::recipe_chosen`] is. Last, so the
-    /// cache key can drop it without reordering the rest.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub algorithm_chosen: bool,
 }
 impl Default for BgRemovalConfig {
     fn default() -> Self {
@@ -1597,7 +1562,6 @@ impl Default for BgRemovalConfig {
             lbv: LbvConfig::default(), ismv: IsmvConfig::default(),
             sharp: SharpConfig::default(), resharp: ResharpConfig::default(),
             harperella: HarperellaConfig::default(), iharperella: IharperellaConfig::default(),
-            algorithm_chosen: false,
         }
     }
 }
