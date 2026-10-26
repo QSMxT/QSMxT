@@ -512,8 +512,8 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
     };
 
     let results = executor::local::execute_local(&runs, &config, &output, &exec_config);
-    let run_failures: Vec<String> = results.iter()
-        .filter_map(|r| r.as_ref().err().map(|e| e.to_string())).collect();
+    let run_failures: Vec<String> = runs.iter().zip(&results)
+        .filter_map(|(run, r)| r.as_ref().err().map(|e| format!("{}: {e}", run.key))).collect();
 
     if args.no_dataset_steps {
         info!("Dataset-level steps skipped (--no-dataset-steps): run `qsmxt aggregate` once every run is done");

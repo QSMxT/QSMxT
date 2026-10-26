@@ -1875,11 +1875,13 @@ mod swi_export_tests {
         run_engine_step(&run, &config, &output, &meta, Stage::Motion).unwrap();
         assert!(!shrunk.exists(), "a stale coverage mask stays behind");
 
+        // On for a run without magnitude: the plan's check warned, and the run goes ahead
+        // without it (#397).
         config.motion_correction.enabled = true;
-        let mut no_mag = meta.clone();
+        let mut no_mag = run.clone();
         no_mag.has_magnitude = false;
-        let e = run_engine_step(&run, &config, &output, &no_mag, Stage::Motion).unwrap_err().to_string();
-        assert!(e.contains("magnitude"), "{e}");
+        run_engine_step(&no_mag, &config, &output, &meta, Stage::Motion).unwrap();
+        assert!(!shrunk.exists(), "skipped: no coverage mask");
     }
 
     /// Something with structure in every direction, so a projection is not trivially constant.

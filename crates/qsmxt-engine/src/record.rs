@@ -69,6 +69,8 @@ pub enum Topic {
     OutputGrid,
     /// Whether MEDI's CSF zero reference (MEDI+0) was applied: it needs at least three echoes.
     MediCsf,
+    /// Whether motion correction was applied: it needs at least two echoes with magnitude images.
+    MotionCorrection,
 }
 
 /// What was decided.
@@ -117,7 +119,7 @@ pub enum Choice {
     Kept,
     /// Summarised ([`Topic::AnalysisMaps`]).
     Summarised,
-    /// Applied ([`Topic::MediCsf`]).
+    /// Applied ([`Topic::MediCsf`], [`Topic::MotionCorrection`]).
     Applied,
 }
 

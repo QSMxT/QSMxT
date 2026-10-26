@@ -240,3 +240,40 @@ fn medi_csf_is_recorded_by_echo_count() {
     c.inversion.medi.csf = false;
     assert!(super::medi_csf_decision(&c, 5).is_none());
 }
+
+/// Motion correction is decided per run (#397): applied to a multi-echo run with magnitude, not
+/// to one with one echo or none, each recorded; the methods text says it plainly when every run
+/// had it, that it was not applied when none did, and the condition when the runs differ.
+#[test]
+fn motion_correction_is_decided_per_run_and_said_for_the_runs_it_was_applied_to() {
+    use crate::methods::methods_for_dataset;
+    use crate::record::merge;
+    let mut c = config();
+    c.motion_correction.enabled = true;
+    // A mask a run without magnitude can make too.
+    c.masking.sections[0].input = crate::MaskingInput::PhaseQuality;
+    let record = |one_echo: bool, magnitude: bool| {
+        let (mut facts, mut store) = phantom();
+        if one_echo {
+            facts.n_echoes = 1;
+            facts.echo_times.truncate(1);
+        }
+        facts.has_magnitude = magnitude;
+        let (plan, record) = run_recorded(&c, &facts, &mut store);
+        assert_eq!(plan.motion_corrected, !one_echo && magnitude);
+        record
+    };
+    let (eligible, single, no_mag) = (record(false, true), record(true, true), record(false, false));
+    let choice = |r: &RunRecord| r.step("motion").and_then(|s| s.decision(Topic::MotionCorrection)).map(|d| d.choice);
+    assert_eq!(choice(&eligible), Some(Choice::Applied));
+    assert_eq!(choice(&single), Some(Choice::NotApplied));
+    assert_eq!(choice(&no_mag), Some(Choice::NotApplied));
+
+    let text = |records: &[RunRecord]| methods_for_dataset(&c, &merge(records), "qsmxt").to_markdown();
+    let all = text(&[eligible.clone(), eligible.clone()]);
+    assert!(all.contains("Before field mapping, every echo was rigidly co-registered"), "{all}");
+    let none = text(&[single.clone(), no_mag.clone()]);
+    assert!(none.contains("Motion correction was not applied") && !none.contains("co-registered"), "{none}");
+    let mixed = text(&[eligible, single, no_mag]);
+    assert!(mixed.contains("Before field mapping, in runs with more than one echo and magnitude images, every echo"), "{mixed}");
+}

@@ -407,8 +407,15 @@ reference echo before field mapping: the registration is estimated on the
 magnitude images (normalised cross-correlation, multi-resolution) and applied to
 the phase through the complex signal, so wraps are not interpolated. The mask is
 then restricted to voxels every echo still covers, and every later stage (field
-mapping, SWI, T2\*/R2\*, inversion) reads the corrected echoes. It needs magnitude
-images, and a run without them stops with an error; a single-echo run skips it.
+mapping, SWI, T2\*/R2\*, inversion) reads the corrected echoes. It needs at least
+two echoes with magnitude images, so it is decided per run: it runs where it can
+and is skipped where it cannot, and the rest of the run goes ahead. Before
+processing (and with `--dry`), `qsmxt run` says how many runs it will run for and
+which it skips and why, e.g. "Motion correction will run for 3 of 5 run(s);
+skipped for sub-02_ses-1_MEGRE (one echo) and sub-04_MEGRE (no magnitude)". The
+TUI's Pipeline tab shows the same for the selected runs. Each run's record says
+whether it was applied, and where only some runs had it, the methods text says
+it was applied to runs with more than one echo and magnitude images.
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
