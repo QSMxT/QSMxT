@@ -20,6 +20,10 @@ pub struct ViewFacts {
     pub num_echoes: Option<usize>,
     /// Whether some run is uncombined multi-coil data (`None` = not known).
     pub multi_coil: Option<bool>,
+    /// Whether the run has magnitude images (`None` = not known, or mixed): motion correction
+    /// needs them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub has_magnitude: Option<bool>,
     /// The field strength in tesla, when known: for the pipeline rules that depend on it
     /// ([`crate::recommendations`]), as are the voxel and matrix size.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -207,11 +211,12 @@ pub fn settings_view(config: &PipelineConfig, facts: &ViewFacts) -> Vec<SettingV
             };
             let warning = match d.path {
                 "masking.sections" if visible => crate::masking::mask_warning(&c).map(String::from),
-                // The run's check says the same per scan, including one without magnitude (#397).
-                "motion_correction.enabled" if visible && c.motion_correction.enabled
-                    && facts.num_echoes == Some(1) => Some(
-                    "Motion correction needs at least two echoes, and the data has one: runs go \
-                     ahead without it".to_string()),
+                // Decided per run (#397): said when what is known of the run rules it out.
+                "motion_correction.enabled" if visible && c.motion_correction.enabled => {
+                    crate::requirements::motion_correction_lacks(
+                        facts.num_echoes.unwrap_or(2), facts.has_magnitude.unwrap_or(true))
+                        .map(crate::requirements::motion_correction_skipped)
+                }
                 _ => None,
             };
             SettingView { path: d.path, visible, forced_by, error: None, warning, reference: vec![], recommendations: vec![] }
@@ -410,7 +415,7 @@ mod tests {
         assert_eq!(note(&c), None, "xQSM");
     }
 
-    /// Motion correction on single-echo data is flagged on its switch (#397).
+    /// Motion correction on a run it cannot correct is flagged on its switch (#397).
     #[test]
     fn motion_correction_on_one_echo_is_flagged() {
         let warning = |c: &PipelineConfig, num_echoes| {
@@ -420,9 +425,12 @@ mod tests {
         let mut c = PipelineConfig::default();
         assert_eq!(warning(&c, Some(1)), None, "off");
         c.motion_correction.enabled = true;
-        assert!(warning(&c, Some(1)).is_some_and(|w| w.contains("at least two echoes")));
+        assert!(warning(&c, Some(1)).is_some_and(|w| w.starts_with("Motion correction will be skipped for this run (one echo)")));
         assert_eq!(warning(&c, Some(4)), None);
         assert_eq!(warning(&c, None), None, "not known");
+        let no_mag = settings_view(&c, &ViewFacts { num_echoes: Some(4), has_magnitude: Some(false), ..Default::default() })
+            .into_iter().find(|v| v.path == "motion_correction.enabled").and_then(|v| v.warning);
+        assert!(no_mag.is_some_and(|w| w.contains("(no magnitude)")));
     }
 
     #[test]

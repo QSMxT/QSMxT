@@ -91,6 +91,26 @@ pub struct Planned {
     pub facts: ScanFacts,
     pub plan: Plan,
     pub graph: PipelineGraph,
+    /// With motion correction on, how many of the selected runs it runs for and which it is
+    /// skipped for ([`qsmxt_engine::requirements::motion_correction_summary`]).
+    pub motion: Option<String>,
+}
+
+/// Each selected run of a scanned BIDS dataset with motion correction on: its key, echo count (as
+/// the echo limit leaves it) and whether it has magnitude, from its file names.
+fn motion_runs(app: &App, config: &crate::pipeline::config::PipelineConfig) -> Vec<(String, usize, bool)> {
+    let mut runs = Vec::new();
+    let Some(tree) = app.filter_state.tree.as_ref() else { return runs };
+    if app.input_mode != InputMode::Bids || !config.motion_correction.enabled {
+        return runs;
+    }
+    let limit: Option<usize> = app.filter_state.num_echoes.trim().parse().ok();
+    tree.for_each_run(|r| {
+        if r.selected {
+            runs.push((r.key_string.clone(), limit.map_or(r.n_echoes, |l| r.n_echoes.min(l)), r.has_magnitude));
+        }
+    });
+    runs
 }
 
 /// The first selected run's key and how many runs are selected, in a scanned BIDS dataset.
@@ -129,7 +149,8 @@ impl App {
         };
         let plan = qsmxt_engine::plan::plan(&config, &facts);
         let graph = pipeline_graph(&plan, &config, &facts, None);
-        Ok(Planned { source, facts, plan, graph })
+        let motion = qsmxt_engine::requirements::motion_correction_summary(&motion_runs(self, &config));
+        Ok(Planned { source, facts, plan, graph, motion })
     }
 
     /// Write the graph of the current settings as SVG and open it; the footer says what happened.
@@ -269,6 +290,9 @@ pub fn summary_lines(p: &Planned) -> Vec<Line<'static>> {
     }
     for n in &p.plan.notes {
         lines.push(Line::from(vec![head("Note"), Span::raw(n.clone())]));
+    }
+    if let Some(m) = &p.motion {
+        lines.push(Line::from(vec![head("Motion"), Span::raw(m.clone())]));
     }
     lines
 }
@@ -467,6 +491,25 @@ mod tests {
         // Deselecting every run goes back to the typical scan.
         app.filter_state.tree.as_mut().unwrap().set_all(false);
         assert!(screen(&mut app, 60).contains("Scan     a typical scan"));
+    }
+
+    /// Motion correction is decided per run: the view counts the selected runs it runs for and
+    /// names the ones it is skipped for (#397).
+    #[test]
+    fn motion_correction_is_counted_over_the_selected_runs() {
+        let dir = tempfile::tempdir().unwrap();
+        let bids = tempfile::tempdir().unwrap();
+        crate::testutils::create_multi_echo_bids(bids.path());
+        crate::testutils::create_single_echo_bids(bids.path());
+        let mut app = app(dir.path());
+        app.form.bids_dir = bids.path().to_string_lossy().to_string();
+        app.filter_state.maybe_rescan(&app.form.bids_dir.clone());
+        assert!(app.planned().unwrap().motion.is_none(), "off: nothing to count");
+        app.pipeline_state.motion_correction = true;
+        let s = screen(&mut app, 60);
+        assert!(s.contains("Motion   Motion correction will run for 1 of 2 run(s); skipped for sub-1_T2starw (one echo)"), "{s}");
+        app.filter_state.num_echoes = "1".into();
+        assert!(app.planned().unwrap().motion.unwrap().starts_with("Motion correction will run for 0 of 2"));
     }
 
     /// Enter (or `s`) writes the graph as SVG and says where; scrolling stays on the tab.

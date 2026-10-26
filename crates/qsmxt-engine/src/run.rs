@@ -1702,9 +1702,9 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         if !m.enabled {
             return self.store.discard("motion", &[Item::CoverageMask]);
         }
-        // The plan's check warned about it before the run started.
+        // Decided per run by the plan, which said so before the run started.
+        self.decide(motion_decision(self.plan.motion_corrected));
         if !self.plan.motion_corrected {
-            self.skip("Motion correction needs at least two echoes with magnitude images, which this run does not have.");
             return self.store.discard("motion", &[Item::CoverageMask]);
         }
         let n = self.n_echoes();
@@ -1978,6 +1978,18 @@ fn pass_label(pass: Pass) -> &'static str {
     match pass {
         Pass::Main => "",
         Pass::Reliable => " (reliable pass)",
+    }
+}
+
+/// Whether motion correction, switched on, was applied to the run ([`Topic::MotionCorrection`]):
+/// the plan decides it per run ([`crate::plan::Plan::motion_corrected`]), so the methods text can
+/// say which runs it was applied to.
+fn motion_decision(applied: bool) -> Decision {
+    if applied {
+        Decision::new(Topic::MotionCorrection, Choice::Applied, "Motion correction was applied.")
+    } else {
+        Decision::new(Topic::MotionCorrection, Choice::NotApplied,
+            "Motion correction was not applied: it needs at least two echoes with magnitude images.")
     }
 }
 

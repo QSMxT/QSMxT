@@ -1568,8 +1568,15 @@ fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
     let fm = &config.field_mapping;
     let d = FieldMappingConfig::default();
     let m = &config.motion_correction;
-    // Not said for runs that could not be corrected (a single echo).
-    if m.enabled && !ran.none_ran(Stage::Motion) {
+    // Decided per run ([`Topic::MotionCorrection`]), worded as MEDI+0 is: applied to every run,
+    // plainly; to none, that it was not; where the runs differ, or nothing is known of them, with
+    // the condition.
+    if m.enabled && ran.only(Topic::MotionCorrection, &[Choice::NotApplied]) {
+        doc.say(&[Stage::Motion],
+            "Motion correction was not applied: it needs at least two echoes with magnitude images, and no run had them.");
+    } else if m.enabled {
+        let scope = if ran.only(Topic::MotionCorrection, &[Choice::Applied]) { "" }
+            else { ", in runs with more than one echo and magnitude images" };
         // The reference echo says what was done (which echo the others were moved onto), so it
         // is always named; the registration settings only when changed.
         let reference = match m.reference {
@@ -1581,7 +1588,7 @@ fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
         changed.add_fields(m, &crate::motion::MotionCorrectionConfig::default(),
             &["enabled", "reference", "min_ncc"]);
         doc.say(&[Stage::Motion], format!(
-            "Before field mapping, every echo was rigidly co-registered to {reference} by maximising the normalised cross-correlation of the magnitude images over a multi-resolution pyramid{}, and the phase was resampled with it through the complex signal; the brain mask was restricted to voxels covered by every echo.",
+            "Before field mapping{scope}, every echo was rigidly co-registered to {reference} by maximising the normalised cross-correlation of the magnitude images over a multi-resolution pyramid{}, and the phase was resampled with it through the complex signal; the brain mask was restricted to voxels covered by every echo.",
             changed.paren()));
     }
     // Phase offset removal and/or bipolar correction (ROMEO only: the Laplacian path skips both)

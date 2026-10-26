@@ -541,6 +541,11 @@ pub struct BidsRunLeaf {
     pub selected: bool,
     /// Whether the run is uncombined multi-coil data (`coil-` files), which coil combination reads.
     pub multi_coil: bool,
+    /// Its number of echoes, from the file names.
+    pub n_echoes: usize,
+    /// Whether it has magnitude images (or real/imaginary parts, which give them), from the file
+    /// names: motion correction needs them.
+    pub has_magnitude: bool,
 }
 
 /// A session node containing runs.
@@ -658,6 +663,8 @@ pub fn scan_bids_tree(bids_dir: &Path) -> crate::Result<BidsTree> {
     let mut tree_map: BTreeMap<String, BTreeMap<Option<String>, Vec<AcquisitionKey>>> = BTreeMap::new();
     let mut seen_keys = std::collections::HashSet::new();
     let mut coil_keys = std::collections::HashSet::new();
+    // Each key's echoes and whether it has magnitude, for what motion correction can run on.
+    let mut echoes: HashMap<String, (std::collections::BTreeSet<u32>, bool)> = HashMap::new();
 
     for pattern in &patterns {
         for entry in glob(pattern).map_err(|e| QsmxtError::BidsDiscovery(e.to_string()))? {
@@ -677,6 +684,9 @@ pub fn scan_bids_tree(bids_dir: &Path) -> crate::Result<BidsTree> {
                 if ent.coil.is_some() {
                     coil_keys.insert(key_str.clone());
                 }
+                let entry = echoes.entry(key_str.clone()).or_default();
+                entry.0.insert(ent.echo.unwrap_or(1));
+                entry.1 |= ent.part == Some(Part::Real) || entities::phase_to_magnitude_path(&path).exists();
                 if seen_keys.contains(&key_str) {
                     continue;
                 }
@@ -709,7 +719,8 @@ pub fn scan_bids_tree(bids_dir: &Path) -> crate::Result<BidsTree> {
                     display.push_str(" (+MESE)");
                 }
                 let multi_coil = coil_keys.contains(&key_string);
-                BidsRunLeaf { display, key_string, key, selected: true, multi_coil }
+                let (n_echoes, has_magnitude) = echoes.get(&key_string).map_or((1, false), |(e, m)| (e.len(), *m));
+                BidsRunLeaf { display, key_string, key, selected: true, multi_coil, n_echoes, has_magnitude }
             }).collect();
 
             match session {

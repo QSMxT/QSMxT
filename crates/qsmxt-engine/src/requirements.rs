@@ -454,22 +454,57 @@ pub fn medi_csf_note(f: &ScanFacts, config: &PipelineConfig) -> Option<String> {
          this run has {}: MEDI runs without it", f.n_echoes))
 }
 
-/// The note for motion correction switched on for a scan it cannot correct (#397): the echoes are
-/// co-registered on their magnitude, so it needs at least two echoes with magnitude images. The
-/// run goes ahead without it.
+/// What a scan of `n_echoes` echoes lacks for motion correction, if anything: the echoes are
+/// co-registered on their magnitude, so it needs at least two echoes with magnitude images
+/// (#397). `None` when it can be corrected.
+pub fn motion_correction_lacks(n_echoes: usize, has_magnitude: bool) -> Option<&'static str> {
+    match (n_echoes < 2, has_magnitude) {
+        (true, false) => Some("one echo, no magnitude"),
+        (true, true) => Some("one echo"),
+        (false, false) => Some("no magnitude"),
+        (false, true) => None,
+    }
+}
+
+/// The sentence for a scan that motion correction, switched on, will be skipped for.
+pub fn motion_correction_skipped(lacks: &str) -> String {
+    format!("Motion correction will be skipped for this run ({lacks}): it needs at least two echoes \
+             with magnitude images")
+}
+
+/// The note for motion correction switched on for a scan it cannot correct (#397). Motion
+/// correction is decided per run: it runs where it can, and this run goes ahead without it.
 pub fn motion_correction_note(f: &ScanFacts, config: &PipelineConfig) -> Option<String> {
     if !config.motion_correction.enabled {
         return None;
     }
-    let lacks = match (f.n_echoes < 2, f.has_magnitude) {
-        (true, false) => "one echo and no magnitude images",
-        (true, true) => "one echo",
-        (false, false) => "no magnitude images",
-        (false, true) => return None,
-    };
-    Some(format!(
-        "Motion correction needs at least two echoes with magnitude images, and this run has \
-         {lacks}: it runs without motion correction"))
+    motion_correction_lacks(f.n_echoes, f.has_magnitude).map(motion_correction_skipped)
+}
+
+/// How many of a dataset's runs motion correction will run for, and which it is skipped for and
+/// why: "Motion correction will run for 3 of 5 runs; skipped for sub-02_ses-1_MEGRE (one echo)
+/// and sub-04_MEGRE (no magnitude)". `runs` are each run's key, echo count and whether it has
+/// magnitude images; `None` when there are none. A long list is cut after its first ten.
+pub fn motion_correction_summary(runs: &[(String, usize, bool)]) -> Option<String> {
+    if runs.is_empty() {
+        return None;
+    }
+    let skipped: Vec<String> = runs.iter()
+        .filter_map(|(key, n, mag)| motion_correction_lacks(*n, *mag).map(|why| format!("{key} ({why})")))
+        .collect();
+    let mut out = format!("Motion correction will run for {} of {} run(s)", runs.len() - skipped.len(), runs.len());
+    if skipped.is_empty() {
+        return Some(out);
+    }
+    const LISTED: usize = 10;
+    let mut named: Vec<String> = skipped.iter().take(LISTED).cloned().collect();
+    if skipped.len() > LISTED {
+        named.push(format!("{} more", skipped.len() - LISTED));
+    }
+    let last = named.pop().unwrap_or_default();
+    let list = if named.is_empty() { last } else { format!("{} and {last}", named.join(", ")) };
+    out.push_str(&format!("; skipped for {list}"));
+    Some(out)
 }
 
 /// Why the EPG fit cannot measure R2 from this run's MESE acquisition, if it cannot.
@@ -702,6 +737,10 @@ pub struct Check {
     /// The same problems, each as data: for a front end that words them itself (qsmbly names
     /// settings by their labels, not by their flags).
     pub problems: Vec<Problem>,
+    /// With motion correction on, each run [`check_scan`] checked: its key, echo count and
+    /// whether it has magnitude images, for [`motion_correction_summary`].
+    #[serde(skip)]
+    pub motion_runs: Vec<(String, usize, bool)>,
 }
 
 /// One problem a [`Check`] found, as data, in words a front end that shows settings rather than
@@ -736,11 +775,19 @@ pub enum Severity {
 
 /// Check one scan against the config. `key` names it in the messages (`qsmxt` uses the run's
 /// BIDS key, e.g. `sub-01_ses-1_MEGRE`).
+///
+/// Motion correction is decided per run: rather than a line per run it cannot correct, the
+/// runs are counted ([`Check::motion_runs`]), and [`Check::finish`] says how many it runs for
+/// and which it is skipped for ([`motion_correction_summary`]).
 pub fn check_scan(key: &str, f: &ScanFacts, config: &PipelineConfig, out: &mut Check) {
-    let Check { errors, warnings, problems } = scan_check(f, config);
+    let Check { errors, warnings, problems, .. } = scan_check(f, config);
+    let motion = motion_correction_note(f, config);
     out.problems.extend(problems);
     out.errors.extend(errors.into_iter().map(|e| format!("{key}: {e}")));
-    out.warnings.extend(warnings.into_iter().map(|w| format!("{key}: {w}")));
+    out.warnings.extend(warnings.into_iter().filter(|w| Some(w) != motion.as_ref()).map(|w| format!("{key}: {w}")));
+    if config.motion_correction.enabled {
+        out.motion_runs.push((key.to_string(), f.n_echoes, f.has_magnitude));
+    }
 }
 
 /// [`check_scan`] for a scan on its own: the same messages, without a key in front of them.
@@ -844,11 +891,25 @@ pub fn scan_check(f: &ScanFacts, config: &PipelineConfig) -> Check {
 }
 
 impl Check {
+    /// How many of the checked runs motion correction runs for, and which it is skipped for
+    /// ([`motion_correction_summary`]); `None` with motion correction off.
+    pub fn motion_summary(&self) -> Option<String> {
+        motion_correction_summary(&self.motion_runs)
+    }
+
     /// The outcome of checking every scan before any is processed. Warnings are logged; errors,
     /// all of them at once, fail the command.
     pub fn finish(self) -> Result<(), EngineError> {
         for w in &self.warnings {
             log::warn!("{w}");
+        }
+        // Per run: a warning only where some run goes without it.
+        if let Some(summary) = self.motion_summary() {
+            if self.motion_runs.iter().any(|(_, n, mag)| motion_correction_lacks(*n, *mag).is_some()) {
+                log::warn!("{summary}");
+            } else {
+                log::info!("{summary}");
+            }
         }
         if self.errors.is_empty() {
             return Ok(());
@@ -1182,25 +1243,54 @@ mod tests {
             && out.errors[0].contains("2 uncombined coils"), "{out:?}");
     }
 
-    /// Motion correction on a scan it cannot correct is a warning on its switch, and the plan
-    /// leaves the correction out (#397).
+    /// Motion correction is decided per run (#397): a scan it cannot correct gets a problem on
+    /// its switch saying it is skipped for this run, and the plan leaves it out there.
     #[test]
-    fn motion_correction_on_one_echo_or_no_magnitude_warns() {
+    fn motion_correction_is_skipped_for_a_run_with_one_echo_or_no_magnitude() {
         let mut c = PipelineConfig::default();
         c.motion_correction.enabled = true;
-        for (r, lacks) in [(run(&[0.005], true), "has one echo:"), (run(&EVEN, false), "has no magnitude images:"),
-                           (run(&[0.005], false), "has one echo and no magnitude images:")] {
-            let out = check(&r, &c);
-            assert!(out.errors.is_empty() && out.warnings.len() == 1 && out.warnings[0].contains(lacks), "{out:?}");
-            assert!(out.warnings[0].starts_with("sub-01_MEGRE: Motion correction needs"), "{out:?}");
+        for (r, lacks) in [(run(&[0.005], true), "(one echo)"), (run(&EVEN, false), "(no magnitude)"),
+                           (run(&[0.005], false), "(one echo, no magnitude)")] {
+            let out = scan_check(&r, &c);
+            assert!(out.errors.is_empty() && out.warnings.len() == 1, "{out:?}");
+            assert!(out.warnings[0].starts_with(&format!("Motion correction will be skipped for this run {lacks}")), "{out:?}");
             let p = &out.problems[0];
             assert!(p.severity == Severity::Warning && p.setting == Some("motion_correction.enabled"), "{p:?}");
             assert!(!crate::plan::plan(&c, &r).motion_corrected);
         }
-        assert!(check(&run(&EVEN, true), &c).warnings.is_empty());
+        assert!(scan_check(&run(&EVEN, true), &c).warnings.is_empty());
         assert!(crate::plan::plan(&c, &run(&EVEN, true)).motion_corrected);
         c.motion_correction.enabled = false;
-        assert!(check(&run(&[0.005], false), &c).warnings.is_empty(), "off: nothing to say");
+        assert!(scan_check(&run(&[0.005], false), &c).warnings.is_empty(), "off: nothing to say");
+    }
+
+    /// Across a dataset the runs are counted, not warned about one by one: how many motion
+    /// correction runs for, and which it is skipped for and why.
+    #[test]
+    fn motion_correction_is_summarised_across_the_runs() {
+        let mut c = PipelineConfig::default();
+        c.motion_correction.enabled = true;
+        let checked = |runs: &[(&str, ScanFacts)]| {
+            let mut out = Check::default();
+            for (key, r) in runs {
+                check_scan(key, r, &c, &mut out);
+            }
+            assert!(out.warnings.is_empty(), "no line per run: {out:?}");
+            out.motion_summary().unwrap()
+        };
+        let mixed = checked(&[("sub-01", run(&EVEN, true)), ("sub-02_ses-1", run(&[0.005], true)),
+                              ("sub-03", run(&EVEN, true)), ("sub-04", run(&EVEN, false)), ("sub-05", run(&EVEN, true))]);
+        assert_eq!(mixed, "Motion correction will run for 3 of 5 run(s); skipped for sub-02_ses-1 (one echo) and sub-04 (no magnitude)");
+        let all = checked(&[("sub-01", run(&EVEN, true)), ("sub-02", run(&EVEN, true))]);
+        assert_eq!(all, "Motion correction will run for 2 of 2 run(s)");
+        let none = checked(&[("sub-01", run(&[0.005], false)), ("sub-02", run(&[0.005], true))]);
+        assert_eq!(none, "Motion correction will run for 0 of 2 run(s); skipped for sub-01 (one echo, no magnitude) and sub-02 (one echo)");
+        let many: Vec<(String, usize, bool)> = (1..=12).map(|i| (format!("sub-{i:02}"), 1, true)).collect();
+        assert!(motion_correction_summary(&many).unwrap().ends_with("sub-10 (one echo) and 2 more"));
+        c.motion_correction.enabled = false;
+        let mut out = Check::default();
+        check_scan("sub-01", &run(&[0.005], true), &c, &mut out);
+        assert_eq!(out.motion_summary(), None, "off: nothing to count");
     }
 
     #[test]
