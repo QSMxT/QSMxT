@@ -65,7 +65,7 @@ fn a_supplied_mask_that_cannot_be_used_is_recorded_computed() {
     let mut far = [0.0; 16];
     for i in 0..4 { far[5 * i] = 1.0; }
     far[3] = 1000.0;
-    store.supply_mask(Supplied::Found { origin: "sub-1_mask.nii".into(), data: vec![1.0; 8], dims: (2, 2, 2), affine: far });
+    store.supply_mask(Supplied::Found { origin: "sub-1_mask.nii".into(), data: vec![1.0; 8], dims: (2, 2, 2), affine: far }, "sub-1_mask.nii");
     let (plan, record) = run_recorded(&config, &facts, &mut store);
     assert!(!plan.two_pass, "the plan drops two-pass for a supplied mask");
     let mask = record.step("mask").unwrap();
@@ -112,7 +112,7 @@ fn a_supplied_mask_that_is_used_is_recorded_supplied() {
     facts.custom_mask = true;
     let header = store.header().unwrap();
     let ones = vec![1.0; header.dims.0 * header.dims.1 * header.dims.2];
-    store.supply_mask(Supplied::Found { origin: "sub-1_mask.nii".into(), data: ones, dims: header.dims, affine: header.affine });
+    store.supply_mask(Supplied::Found { origin: "sub-1_mask.nii".into(), data: ones, dims: header.dims, affine: header.affine }, "sub-1_mask.nii");
     let (plan, record) = run_recorded(&config, &facts, &mut store);
     assert_eq!(record.step("mask").unwrap().decision(Topic::MaskSource).unwrap().choice, Choice::Supplied);
     let text = methods_for_run(&config, &plan, &record, "qsmxt").to_markdown();
@@ -213,7 +213,7 @@ fn a_datasets_methods_text_comes_from_its_merged_record() {
     supplied_facts.custom_mask = true;
     let header = store.header().unwrap();
     let ones = vec![1.0; header.dims.0 * header.dims.1 * header.dims.2];
-    store.supply_mask(Supplied::Found { origin: "m.nii".into(), data: ones, dims: header.dims, affine: header.affine });
+    store.supply_mask(Supplied::Found { origin: "m.nii".into(), data: ones, dims: header.dims, affine: header.affine }, "m.nii");
     let (_, supplied) = run_recorded(&config, &supplied_facts, &mut store);
 
     let split = merge(&[computed.clone(), supplied.clone(), supplied.clone()]);

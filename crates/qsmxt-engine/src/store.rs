@@ -389,7 +389,9 @@ pub trait StageStore {
         }
     }
 
-    /// What names `item` in a cache key (`qsmxt`: its path, as earlier releases keyed it).
+    /// What names `item` in a cache key (`qsmxt`: its path, as earlier releases keyed it). For a
+    /// file supplied with the scan it is in the keys of the steps that read it, so it must change
+    /// when the file does; it names the file in the log too, so make it a string.
     fn identity(&mut self, item: &Item) -> serde_json::Value;
 
     /// The key `step` was last recorded under, if it is recorded.
@@ -602,6 +604,8 @@ pub struct MemoryStore<V = InMemory> {
     reports: HashMap<Item, serde_json::Value>,
     annotations: HashMap<Item, serde_json::Map<String, serde_json::Value>>,
     supplied: Option<Supplied>,
+    /// What identifies each file supplied with the scan ([`Self::supply`], [`Self::supply_mask`]).
+    supplied_identities: HashMap<Item, String>,
     mese: Option<Mese>,
     /// The step being computed.
     current: Option<String>,
@@ -650,7 +654,7 @@ impl<V: Volumes> MemoryStore<V> {
     pub fn with_volumes(header: Header, identity: serde_json::Value, volumes: V) -> Self {
         Self {
             header: Some(header), identity, volumes, geometries: HashMap::new(), reports: HashMap::new(),
-            annotations: HashMap::new(), supplied: None, mese: None, current: None,
+            annotations: HashMap::new(), supplied: None, supplied_identities: HashMap::new(), mese: None, current: None,
             working_grid: HashMap::new(), steps: HashMap::new(), scan: None, decisions: HashMap::new(),
         }
     }
@@ -660,9 +664,22 @@ impl<V: Volumes> MemoryStore<V> {
         self.identity = identity;
     }
 
-    /// Supply a brain mask with the scan.
-    pub fn supply_mask(&mut self, mask: Supplied) {
+    /// Supply a brain mask with the scan. `identity` is anything that changes when the mask does
+    /// (its name and a version, or a hash of its file): it is in the mask step's key, so a new mask
+    /// recomputes the mask and what follows from it, and nothing else.
+    pub fn supply_mask(&mut self, mask: Supplied, identity: impl Into<String>) {
         self.supplied = Some(mask);
+        self.supplied_identities.insert(Item::SuppliedMask, identity.into());
+    }
+
+    /// A map supplied with the scan ([`Item::SuppliedChi`], [`Item::SuppliedR2`],
+    /// [`Item::SuppliedR2prime`], [`Item::SuppliedSegmentation`]), which the volumes hold as
+    /// `item`, on `geometry`'s grid. `identity` names it in the log and is in the keys of the steps
+    /// that read it: give it something that changes when the file does (its name and a version, or
+    /// a hash of its file), so replacing the file recomputes those steps and nothing else.
+    pub fn supply(&mut self, item: Item, geometry: Geometry, identity: impl Into<String>) {
+        self.geometries.insert(item, geometry);
+        self.supplied_identities.insert(item, identity.into());
     }
 
     /// Match a MESE acquisition to the scan; add its echoes with [`MemoryStore::insert_on_grid`],
@@ -798,6 +815,8 @@ impl<V: Volumes> MemoryStore<V> {
             annotations: self.annotations.clone(),
             // Read only by a step being computed, which a dry run never does.
             supplied: None,
+            // In the keys, which a dry run does compute.
+            supplied_identities: self.supplied_identities.clone(),
             mese: self.mese.clone(),
             current: None,
             working_grid: self.working_grid.clone(),
@@ -953,22 +972,25 @@ impl<V: Volumes> StageStore for MemoryStore<V> {
     }
 
     fn supplied(&mut self, item: &Item) -> Supplied {
-        let origin = format!("{item:?}");
+        let origin = self.supplied_identities.get(item).cloned().unwrap_or_else(|| format!("{item:?}"));
         let (Ok(Some(VolumeData::Real(data))), Some(g)) = (Volumes::get(&self.volumes, item), self.geometries.get(item)) else {
             return Supplied::Missing { searched: "the loaded files".into() };
         };
         Supplied::Found { origin, data, dims: g.dims, affine: g.affine }
     }
 
-    /// The grid it was given ([`Self::insert_on_grid`], [`Self::set_geometry`]); `None` for one
-    /// held on the run's grid.
+    /// The grid it was given ([`Self::supply`], [`Self::insert_on_grid`], [`Self::set_geometry`]),
+    /// named by the identity [`Self::supply`] gave; `None` for one held on the run's grid.
     fn supplied_grid(&mut self, item: &Item) -> Option<SuppliedGrid> {
         let g = self.geometries.get(item)?;
-        self.volumes.contains(item).then(|| SuppliedGrid { origin: format!("{item:?}"), dims: g.dims, affine: g.affine })
+        let origin = self.supplied_identities.get(item).cloned().unwrap_or_else(|| format!("{item:?}"));
+        self.volumes.contains(item).then_some(SuppliedGrid { origin, dims: g.dims, affine: g.affine })
     }
 
+    /// What [`Self::supply`] or [`Self::supply_mask`] gave for a supplied file; otherwise the
+    /// item's name, which stays the same whatever the item holds.
     fn identity(&mut self, item: &Item) -> serde_json::Value {
-        serde_json::json!(format!("{item:?}"))
+        serde_json::json!(self.supplied_identities.get(item).cloned().unwrap_or_else(|| format!("{item:?}")))
     }
 
     fn recorded_key(&mut self, step: &str) -> Option<String> {
