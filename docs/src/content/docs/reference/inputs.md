@@ -201,6 +201,14 @@ following the same `sub-*/[ses-*/]anat/` layout:
 | `--use-custom-r2 <TOOL>` | R2 map | `*_R2map.nii*` |
 | `--use-custom-r2prime <TOOL>` | R2' map | `*_R2primemap.nii*` |
 
+A supplied map must be on the scan's grid. When `--axial-resampling` resamples the run to a
+cardinal-aligned grid, a map on the acquired grid is resampled with the echoes. A susceptibility,
+R2 or R2' map on any other grid is refused when the run starts, before anything is computed, with
+a message naming the file and both grids. So is a segmentation (`--use-custom-dseg`) that only the
+statistics or a region `--qsm-reference` read. A brain mask, or a segmentation with
+`--do-segmentation`, that is not on the scan's grid is replaced by one the run makes, with a
+warning.
+
 Supplying R2' directly removes the MESE requirement for source separation, since
 R2 is only needed to compute it. `qsmxt validate` lists the derivative tools it
 can see for each run.

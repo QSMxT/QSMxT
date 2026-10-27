@@ -38,6 +38,7 @@ pub fn run<S: StageStore + ?Sized>(
     // Every front end's config is held to the settings' ranges (qsmxt checks them earlier too).
     crate::schema::check_ranges(config)?;
     let (meta, load_record, _) = load(config, facts, store, observer)?;
+    check_supplied_grids(plan, &meta, store)?;
     store.begin(&meta)?;
     let mut record = RunRecord {
         steps: vec![load_record],
@@ -136,6 +137,7 @@ fn dry_steps<S: StageStore + ?Sized>(
 ) -> Result<Vec<StepRecord>, S::Error> {
     let mut quiet = ();
     let (meta, load_record, _) = load(config, facts, store, &mut quiet)?;
+    check_supplied_grids(plan, &meta, store)?;
     store.begin(&meta)?;
     let mut records = vec![load_record];
     if plan.processes() {
@@ -286,6 +288,30 @@ fn load<S: StageStore + ?Sized>(
     Ok((meta, record, key))
 }
 
+/// Refuse a map supplied with the scan that the run reads and that cannot be brought onto its
+/// grid ([`stages::supplied::grid_problem`]), once the load step has decided the grid and before
+/// anything is computed from the scan (#384). A segmentation the segmentation step reads is left
+/// to it: like a mask that cannot be used, it segments the scan instead.
+fn check_supplied_grids<S: StageStore + ?Sized>(plan: &Plan, meta: &RunMetadata, store: &mut S) -> Result<(), S::Error> {
+    let mut problems = Vec::new();
+    for item in SUPPLIED_MAPS {
+        let read = plan.steps.iter().any(|s| {
+            s.reads.contains(&item) && !(item == Item::SuppliedSegmentation && s.stage == Stage::Segmentation)
+        });
+        if let Some(g) = read.then(|| store.supplied_grid(&item)).flatten() {
+            problems.extend(stages::supplied::grid_problem(&item, &g.origin, g.dims, &g.affine, meta));
+        }
+    }
+    if problems.is_empty() {
+        return Ok(());
+    }
+    Err(crate::EngineError::DimensionMismatch(problems.join(" ")).into())
+}
+
+/// The maps a scan can be supplied with, which the steps read onto the working grid
+/// ([`Run::map`]).
+const SUPPLIED_MAPS: [Item; 4] = [Item::SuppliedChi, Item::SuppliedR2, Item::SuppliedR2prime, Item::SuppliedSegmentation];
+
 /// Every echo's phase, and every echo's magnitude (or none).
 type Echoes = (Vec<Vec<f64>>, Vec<Vec<f64>>);
 
@@ -392,6 +418,17 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             Stage::Analysis => self.analysis(),
             Stage::OutputSpace => self.output_space(),
         }
+    }
+
+    /// `item` as a step reads it: a map supplied with the scan on the working grid
+    /// ([`stages::supplied::conform`]), anything else as the store holds it.
+    fn map(&mut self, item: &Item) -> Result<Vec<f64>, S::Error> {
+        if SUPPLIED_MAPS.contains(item) {
+            if let Supplied::Found { origin, data, dims, affine } = self.store.supplied(item) {
+                return Ok(stages::supplied::conform(item, &origin, data, dims, &affine, &self.meta)?);
+            }
+        }
+        self.store.real(item)
     }
 
     /// The key `step` is cached under, unless its earlier output is still valid (then `None`, with
@@ -1202,7 +1239,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                         "--qsm-reference {spec}: no segmentation to measure the region on. Enable \
                          --do-segmentation, or supply one with --use-custom-dseg")).into());
                 };
-                Some(self.store.real(&segmentation)?)
+                Some(self.map(&segmentation)?)
             }
             None => None,
         };
@@ -1331,7 +1368,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                 self.log(Level::Info, &format!("Using custom R2 map from {}", from.as_str().unwrap_or_default()));
                 self.decide(Decision::new(Topic::R2Source, Choice::Supplied, "The R2 map was the one supplied with the scan.")
                     .with_detail(from.as_str().unwrap_or_default()));
-                Some(self.store.real(&Item::SuppliedR2)?)
+                Some(self.map(&Item::SuppliedR2)?)
             } else {
                 self.log(Level::Warn, &format!("no custom R2 map under derivatives (tool: {tool}) — skipping R2"));
                 self.decide(Decision::new(Topic::R2Source, Choice::Unavailable,
@@ -1402,7 +1439,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                         "The R2′ map was the one supplied with the scan.").with_detail(from));
                     source.insert("R2primeSource".into(), json!("supplied"));
                     source.insert("R2primeSuppliedFrom".into(), json!(from));
-                    Some(self.store.real(&Item::SuppliedR2prime)?)
+                    Some(self.map(&Item::SuppliedR2prime)?)
                 } else {
                     self.log(Level::Warn, &format!("no custom R2' map under derivatives (tool: {tool}) — skipping R2'"));
                     self.decide(Decision::new(Topic::R2primeSource, Choice::Unavailable,
@@ -1611,7 +1648,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         // R2* and R2′, from the relaxometry and R2 steps, or a supplied R2′.
         let mut r2star = if self.store.has(&Item::R2star) { Some(self.store.real(&Item::R2star)?) } else { None };
         let r2prime_item = if self.config.separation.custom_r2prime_tool.is_some() { Item::SuppliedR2prime } else { Item::R2prime };
-        let mut r2prime = if self.store.has(&r2prime_item) { Some(self.store.real(&r2prime_item)?) } else { None };
+        let mut r2prime = if self.store.has(&r2prime_item) { Some(self.map(&r2prime_item)?) } else { None };
         // The MESE's echoes on this run's grid, for HC-ChiSep. Voxels outside its FOV are zero,
         // the same as voxels outside the brain.
         let se_multi = match &mese {
@@ -1622,7 +1659,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let field_item = Item::LocalField(Pass::Main);
         let mut local_field = if self.store.has(&field_item) { self.store.real(&field_item)? } else { Vec::new() };
         let mut qsm = match &qsm_item {
-            Some(item) => self.store.real(item)?,
+            Some(item) => self.map(item)?,
             None if local_field.is_empty() => Vec::new(),
             None => {
                 let field_mask = self.store.mask(&Item::LocalFieldMask(Pass::Main))?;
@@ -1760,7 +1797,11 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         // Prefer a bring-your-own segmentation, as masking does.
         if let Some(tool) = &c.custom_dseg_tool {
             match self.store.supplied(&Item::SuppliedSegmentation) {
-                Supplied::Found { origin, data, dims, .. } if dims == self.meta.dims => {
+                Supplied::Found { origin, data, dims, affine }
+                    if stages::supplied::fit(dims, &affine, &self.meta) != stages::supplied::Fit::Refused =>
+                {
+                    let item = Item::SuppliedSegmentation;
+                    let data = stages::supplied::conform(&item, &origin, data, dims, &affine, &self.meta)?;
                     self.log(Level::Info, &format!("Using custom segmentation from {origin}"));
                     self.decide(Decision::new(Topic::SegmentationSource, Choice::Supplied,
                         "The segmentation was the one supplied with the scan.").with_detail(origin));
@@ -1773,7 +1814,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                 }
                 Supplied::Found { origin, dims, .. } => {
                     self.log(Level::Warn, &format!(
-                        "custom segmentation {origin} is {}x{}x{}, not the run's {}x{}x{} — computing instead",
+                        "custom segmentation {origin} is {}x{}x{}, not on the scan's grid (the run's is {}x{}x{}) — computing instead",
                         dims.0, dims.1, dims.2, self.meta.dims.0, self.meta.dims.1, self.meta.dims.2));
                     self.decide(Decision::new(Topic::SegmentationSource, Choice::Computed,
                         "The supplied segmentation is not on the run's grid, so the scan was segmented.")
@@ -1859,14 +1900,14 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         }
         self.observer.stage("analysis", None, StageEvent::Started("Summarising maps per structure"));
         self.store.start("analysis");
-        let seg = self.store.real(&seg_item)?;
+        let seg = self.map(&seg_item)?;
         let labels = self.config.segmentation.version.to_core().labels();
         // SynthSeg's per-label volumes, when this run segmented the scan itself.
         let volumes: Option<Vec<f64>> = self.store.report(&Item::SegmentationVolumes)
             .and_then(|v| serde_json::from_value(v).ok());
         let mut table = String::from(a::HEADER);
         for (item, name, unit) in &maps {
-            let map = self.store.real(item)?;
+            let map = self.map(item)?;
             if map.len() != seg.len() {
                 let what = self.store.identity(item);
                 return Err(crate::EngineError::DimensionMismatch(format!(
@@ -2125,6 +2166,9 @@ pub(crate) mod tests {
         fn supplied_mask(&mut self) -> Supplied { self.inner.supplied_mask() }
         fn mese(&mut self) -> Option<crate::store::Mese> { self.inner.mese() }
         fn supplied(&mut self, item: &Item) -> Supplied { self.inner.supplied(item) }
+        fn supplied_grid(&mut self, item: &Item) -> Option<crate::store::SuppliedGrid> {
+            self.inner.supplied_grid(item)
+        }
         fn identity(&mut self, item: &Item) -> Value { self.inner.identity(item) }
         fn recorded_key(&mut self, step: &str) -> Option<String> { self.inner.recorded_key(step) }
         fn cached(&mut self, step: &str, key: &str) -> bool { self.inner.cached(step, key) }
@@ -3098,6 +3142,92 @@ pub(crate) mod tests {
         assert_eq!(again.computed, ["invert", "reference", "output_space"]);
         assert!(store.geometry(&Item::Chi).is_some_and(|g| g.affine == affine));
         assert!(store.geometry(&Item::LocalField(Pass::Main)).is_none(), "intermediates stay on the working grid");
+    }
+
+    /// A map supplied on a grid of its own is refused once the load step has decided the run's
+    /// grid, before anything is computed from the scan, naming the file and both grids (#384). A
+    /// dry run refuses it the same way.
+    #[test]
+    fn a_supplied_map_on_another_grid_is_refused_before_the_first_step() {
+        let mut identity = [0.0; 16];
+        for i in 0..4 { identity[5 * i] = 1.0; }
+        let small = crate::store::Geometry { dims: (4, 4, 4), voxel_size: (1.0, 1.0, 1.0), affine: identity };
+        type Setup = fn(&mut PipelineConfig, &mut ScanFacts);
+        let cases: [(Item, Setup); 4] = [
+            (Item::SuppliedChi, |c, f| {
+                c.pipeline.do_chi_separation = true;
+                c.separation.custom_qsm_tool = Some("mine".into());
+                f.custom_qsm = true;
+            }),
+            (Item::SuppliedR2, |c, f| {
+                c.pipeline.do_r2map = true;
+                c.separation.custom_r2_tool = Some("mine".into());
+                f.custom_r2 = true;
+            }),
+            (Item::SuppliedR2prime, |c, f| {
+                c.pipeline.do_r2primemap = true;
+                c.separation.custom_r2prime_tool = Some("mine".into());
+                f.custom_r2prime = true;
+            }),
+            // Read by the statistics directly, with no segmentation step to fall back to.
+            (Item::SuppliedSegmentation, |c, f| {
+                c.pipeline.do_analysis = true;
+                c.segmentation.custom_dseg_tool = Some("mine".into());
+                f.custom_dseg = true;
+            }),
+        ];
+        for (item, setup) in cases {
+            let (mut facts, mut store) = phantom();
+            let mut c = config();
+            setup(&mut c, &mut facts);
+            store.insert_on_grid(item, vec![1.0; 64], small.clone());
+            let plan = crate::plan::plan(&c, &facts);
+            assert!(plan.steps.iter().any(|s| s.reads.contains(&item)), "{item:?}: no step reads it");
+            let dry = dry_run(&plan, &c, &facts, &store).unwrap_err().to_string();
+            let mut events = Events::default();
+            let err = run(&plan, &c, &facts, &mut store, &mut events).unwrap_err().to_string();
+            assert_eq!(events.computed, ["load"], "{item:?}");
+            assert!(err.contains(&format!("{item:?}")) && err.contains("4x4x4") && err.contains("16x16x16"), "{err}");
+            assert_eq!(dry, err);
+        }
+
+        // A segmentation the segmentation step reads is left to it, which segments the scan instead.
+        let (mut facts, mut store) = phantom();
+        let mut c = config();
+        c.pipeline.do_segmentation = true;
+        c.segmentation.custom_dseg_tool = Some("mine".into());
+        facts.custom_dseg = true;
+        store.insert_on_grid(Item::SuppliedSegmentation, vec![1.0; 64], small);
+        assert!(dry_run(&crate::plan::plan(&c, &facts), &c, &facts, &store).is_ok());
+    }
+
+    /// In a run resampled to a cardinal-aligned grid, maps supplied on the scan's acquired grid
+    /// are brought onto the working grid, as the echoes are, and used (#384).
+    #[test]
+    fn supplied_maps_on_the_acquired_grid_of_a_resampled_run_are_resampled_and_used() {
+        let (c, s) = (20f64.to_radians().cos(), 20f64.to_radians().sin());
+        let affine = [1.0, 0.0, 0.0, 0.0, 0.0, c, -s, 0.0, 0.0, s, c, 0.0, 0.0, 0.0, 0.0, 1.0];
+        let (mut facts, mut store) = phantom_on(affine);
+        let acquired = crate::store::Geometry { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine };
+        let Some(VolumeData::Real(m)) = store.get(&Item::AcquiredMagnitude(1)).cloned() else { panic!() };
+        let inside = |v: f64| m.iter().map(|&x| if x > 50.0 { v } else { 0.0 }).collect::<Vec<_>>();
+        store.insert_on_grid(Item::SuppliedR2, inside(12.0), acquired.clone());
+        store.insert_on_grid(Item::SuppliedSegmentation, inside(10.0), acquired);
+        (facts.custom_r2, facts.custom_dseg) = (true, true);
+        let mut config = config();
+        config.pipeline.axial_resampling = true;
+        config.pipeline.obliquity_threshold = 5.0;
+        config.pipeline.do_r2map = true;
+        config.pipeline.do_analysis = true;
+        config.separation.custom_r2_tool = Some("mine".into());
+        config.segmentation.custom_dseg_tool = Some("mine".into());
+        let events = run_once(&config, &facts, &mut store);
+        for step in ["r2_r2prime", "analysis", "output_space"] {
+            assert!(events.computed.iter().any(|c| c == step), "{step}: {:?}", events.computed);
+        }
+        assert!(store.get(&Item::R2).is_some());
+        let table = store.report(&Item::RegionStats).unwrap();
+        assert!(table.as_str().unwrap().lines().any(|r| r.starts_with("R2map\t")), "{table}");
     }
 
     /// Uncombined coils and real/imaginary parts, in memory: the coils combined by MCPC-3D-S,

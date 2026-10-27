@@ -27,3 +27,4 @@ pub mod segmentation;
 pub mod analysis;
 pub mod motion;
 pub mod output_space;
+pub mod supplied;
