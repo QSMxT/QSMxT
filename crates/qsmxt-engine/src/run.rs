@@ -394,6 +394,18 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         }
     }
 
+    /// `params` with the identity ([`StageStore::identity`]) of each file supplied with the scan
+    /// that the step reads, under `supplied`: replacing one of those files recomputes the steps
+    /// that read it and nothing else (#383). `params` is returned as it is when the step reads none.
+    fn with_supplied(&mut self, mut params: Value, items: &[Item]) -> Value {
+        if !items.is_empty() {
+            let identities: serde_json::Map<String, Value> =
+                items.iter().map(|item| (item.key(), self.store.identity(item))).collect();
+            params["supplied"] = Value::Object(identities);
+        }
+        params
+    }
+
     /// The key `step` is cached under, unless its earlier output is still valid (then `None`, with
     /// `skipping` logged). Otherwise the step starts, `doing` being what it does.
     fn begin(&mut self, step: &str, algorithm: Option<&str>, params: &Value, skipping: &str, doing: &str) -> Option<String> {
@@ -837,7 +849,8 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                 "Two-pass artefact reduction was not applied: the mask was supplied, so there was no recipe to \
                  derive a reliable-phase mask from."));
         }
-        let params = stages::mask::params(self.config);
+        let supplied: &[Item] = if self.config.masking.custom_mask_tool.is_some() { &[Item::SuppliedMask] } else { &[] };
+        let params = self.with_supplied(stages::mask::params(self.config), supplied);
         let Some(key) = self.begin("mask", None, &params, "Skipping mask (cached)", "Creating mask") else { return Ok(()) };
         // A supplied mask, when one is asked for and found. One that cannot be used falls back to
         // the recipe, whose models the plan did not list.
@@ -1312,7 +1325,11 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             return Ok(());
         }
         let mese = self.store.mese();
-        let params = stages::r2::params(self.config, &self.meta, mese.as_ref());
+        let sep = &self.config.separation;
+        let supplied: Vec<Item> = [(sep.custom_r2_tool.is_some(), Item::SuppliedR2),
+                                   (sep.custom_r2prime_tool.is_some(), Item::SuppliedR2prime)]
+            .into_iter().filter_map(|(read, item)| read.then_some(item)).collect();
+        let params = self.with_supplied(stages::r2::params(self.config, &self.meta, mese.as_ref()), &supplied);
         let Some(key) = self.begin("r2_r2prime", Some("epg"), &params, "Skipping r2_r2prime (cached)",
                                    "Computing R2/R2' maps") else { return Ok(()) };
         let config = self.config;
@@ -1581,7 +1598,11 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             }
         };
         let mese = self.store.mese();
-        let params = sep::params(self.config, &self.meta, mese.is_some());
+        let s = &self.config.separation;
+        let supplied: Vec<Item> = [(s.custom_qsm_tool.is_some(), Item::SuppliedChi),
+                                   (s.custom_r2prime_tool.is_some(), Item::SuppliedR2prime)]
+            .into_iter().filter_map(|(read, item)| read.then_some(item)).collect();
+        let params = self.with_supplied(sep::params(self.config, &self.meta, mese.is_some()), &supplied);
         let Some(key) = self.begin("chi_separation", Some(&alg_name), &params, "Skipping chi_separation (cached)",
                                    "Chi-separation") else { return Ok(()) };
         self.log(Level::Info, &format!("Chi-separation ({alg_name})"));
@@ -1753,7 +1774,8 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
     fn segmentation(&mut self, step: &Step) -> Result<(), S::Error> {
         let config = self.config;
         let c = &config.segmentation;
-        let params = stages::segmentation::params(config);
+        let supplied: &[Item] = if c.custom_dseg_tool.is_some() { &[Item::SuppliedSegmentation] } else { &[] };
+        let params = self.with_supplied(stages::segmentation::params(config), supplied);
         let Some(key) = self.begin("segmentation", Some("synthseg"), &params, "Skipping segmentation (cached)",
                                    "Segmenting") else { return Ok(()) };
         let lookup = stages::segmentation::lookup_table(c.version);
@@ -2299,7 +2321,7 @@ pub(crate) mod tests {
         let mut affine = [0.0; 16];
         for i in 0..4 { affine[5 * i] = 1.0; }
         store.supply_mask(Supplied::Found {
-            origin: "sub-1_mask.nii".into(), data: vec![0.0; N * N * N], dims: (N, N, N), affine });
+            origin: "sub-1_mask.nii".into(), data: vec![0.0; N * N * N], dims: (N, N, N), affine }, "sub-1_mask.nii");
         let mut c = config();
         c.masking.custom_mask_tool = Some("bet".into());
         let err = failed(&c, &facts, &mut store);
@@ -2783,6 +2805,89 @@ pub(crate) mod tests {
         }
         assert!(rows.iter().filter(|r| r.starts_with("Chimap\t")).all(|r| r.contains("\tthalamus\t")), "{rows:?}");
         assert!(run_once(&config, &facts, &mut store).computed.is_empty());
+    }
+
+    /// A file supplied with the scan, replaced between two runs over one store (#383): the second
+    /// run recomputes the steps that read it, and nothing before them. Supplied again unchanged,
+    /// nothing is recomputed.
+    #[test]
+    fn a_replaced_supplied_file_recomputes_only_the_steps_that_read_it() {
+        let mut affine = [0.0; 16];
+        for i in 0..4 { affine[5 * i] = 1.0; }
+        let grid = crate::store::Geometry { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine };
+        let sphere = |store: &MemoryStore, inside: f64| -> Vec<f64> {
+            let Some(VolumeData::Real(m)) = store.get(&Item::AcquiredMagnitude(1)) else { panic!() };
+            m.iter().map(|&v| if v > 50.0 { inside } else { 0.0 }).collect()
+        };
+        let supply = |store: &mut MemoryStore, item: Item, version: u32| {
+            let data = sphere(store, match item { Item::SuppliedSegmentation => 10.0, _ => 0.01 * version as f64 });
+            store.insert(item, VolumeData::Real(data));
+            store.supply(item, grid.clone(), format!("{item:?} v{version}"));
+        };
+        let base = || {
+            let mut c = config();
+            c.pipeline.do_r2starmap = true;
+            c.pipeline.do_chi_separation = true;
+            c.separation.algorithm = crate::enums::SeparationAlgorithm::ChiSepIlsqr;
+            c
+        };
+
+        // χ: χ-separation reads it; the field map and everything else before it are kept.
+        let (mut facts, mut store) = phantom();
+        facts.custom_qsm = true;
+        let mut c = base();
+        c.pipeline.do_r2primemap = true;
+        c.separation.custom_r2prime_tool = Some("mine".into());
+        c.separation.custom_qsm_tool = Some("mine".into());
+        facts.custom_r2prime = true;
+        supply(&mut store, Item::SuppliedChi, 1);
+        supply(&mut store, Item::SuppliedR2prime, 1);
+        let first = run_once(&c, &facts, &mut store);
+        assert!(first.computed.iter().any(|s| s == "unwrap") && first.computed.iter().any(|s| s == "chi_separation"),
+                "{:?}", first.computed);
+        supply(&mut store, Item::SuppliedChi, 2);
+        assert_eq!(run_once(&c, &facts, &mut store).computed, ["chi_separation"]);
+        supply(&mut store, Item::SuppliedChi, 2);
+        assert!(run_once(&c, &facts, &mut store).computed.is_empty());
+        // R2′: read by the R2/R2′ step and by χ-separation.
+        supply(&mut store, Item::SuppliedR2prime, 2);
+        assert_eq!(run_once(&c, &facts, &mut store).computed, ["r2_r2prime", "chi_separation"]);
+
+        // R2: read by the R2/R2′ step.
+        let (mut facts, mut store) = phantom();
+        facts.custom_r2 = true;
+        let mut c = config();
+        c.pipeline.do_r2map = true;
+        c.separation.custom_r2_tool = Some("mine".into());
+        supply(&mut store, Item::SuppliedR2, 1);
+        assert!(run_once(&c, &facts, &mut store).computed.iter().any(|s| s == "r2_r2prime"));
+        supply(&mut store, Item::SuppliedR2, 2);
+        assert_eq!(run_once(&c, &facts, &mut store).computed, ["r2_r2prime"]);
+
+        // A segmentation: read by the segmentation step, and the statistics over it after.
+        let (mut facts, mut store) = phantom();
+        facts.custom_dseg = true;
+        let mut c = config();
+        c.pipeline.do_segmentation = true;
+        c.pipeline.do_analysis = true;
+        c.segmentation.custom_dseg_tool = Some("mine".into());
+        supply(&mut store, Item::SuppliedSegmentation, 1);
+        assert!(run_once(&c, &facts, &mut store).computed.iter().any(|s| s == "segmentation"));
+        supply(&mut store, Item::SuppliedSegmentation, 2);
+        assert_eq!(run_once(&c, &facts, &mut store).computed, ["segmentation", "analysis"]);
+
+        // A brain mask: the mask step and what reads the mask; the steps before it are kept.
+        let (mut facts, mut store) = phantom();
+        facts.custom_mask = true;
+        let mut c = config();
+        c.masking.custom_mask_tool = Some("mine".into());
+        let mask = |store: &MemoryStore| Supplied::Found { origin: "mask.nii".into(), data: sphere(store, 1.0), dims: (N, N, N), affine };
+        store.supply_mask(mask(&store), "mask.nii v1");
+        let first = run_once(&c, &facts, &mut store);
+        store.supply_mask(mask(&store), "mask.nii v2");
+        let second = run_once(&c, &facts, &mut store);
+        assert_eq!(second.computed, first.computed.iter().skip_while(|s| *s != "mask").cloned().collect::<Vec<_>>());
+        assert!(second.computed.len() < first.computed.len(), "{:?}", second.computed);
     }
 
     /// Motion correction in memory: the corrected echoes and the mask every echo covers, which
