@@ -3,7 +3,7 @@
 
 use crate::config::PipelineConfig;
 use crate::error::EngineError;
-use crate::masking::{MaskSection, MaskingInput};
+use crate::masking::{MaskCombine, MaskSection, MaskingInput};
 use crate::scan::{scan_metadata, RunMetadata};
 use crate::stages::magnitude::homogeneity_correct;
 
@@ -22,7 +22,7 @@ pub fn reliable_params(config: &PipelineConfig) -> serde_json::Value {
     let sections = config.masking.resolved_two_pass_sections();
     serde_json::json!({
         "sections": sections.iter().map(|s| format!("{}", s)).collect::<Vec<_>>(),
-        "combine": format!("{}", config.masking.combine),
+        "combine": format!("{}", config.masking.resolved_two_pass_combine()),
         "refinements": config.masking.refinements.iter().map(|o| format!("{}", o)).collect::<Vec<_>>(),
     })
 }
@@ -36,9 +36,10 @@ pub fn model_ids(sections: &[MaskSection], config: &PipelineConfig) -> Vec<&'sta
         .collect()
 }
 
-/// Build a mask from `sections`, folded with the configured combine mode and refinements. The
-/// main mask and the two-pass reliable mask are both built here, so both read the same images
-/// and follow the same folding rules.
+/// Build a mask from `sections`, folded with `combine` and then the configured refinements. The
+/// main mask (`masking.combine`) and the two-pass reliable mask
+/// ([`resolved_two_pass_combine`](crate::config::MaskingConfig::resolved_two_pass_combine)) are
+/// both built here, so both read the same images and follow the same folding rules.
 ///
 /// `phases` are every echo's phase in radians (for phase-based inputs such as phase quality).
 /// `magnitudes` are every echo's magnitude, or none for a phase-only run. Each echo is corrected
@@ -50,6 +51,7 @@ pub fn model_ids(sections: &[MaskSection], config: &PipelineConfig) -> Vec<&'sta
 /// the run's mask are the same computation.
 pub fn build_mask(
     sections: &[MaskSection],
+    combine: MaskCombine,
     config: &PipelineConfig,
     phases: &[&[f64]],
     magnitudes: Vec<Vec<f64>>,
@@ -59,7 +61,7 @@ pub fn build_mask(
     inputs.fill::<EngineError>(sections, config, String::new(), meta, || Ok((
         phases.iter().map(|p| p.to_vec()).collect(), magnitudes,
     )))?;
-    Ok(preview(sections, config, &inputs, meta, Upto::Recipe)?.mask)
+    Ok(preview(sections, combine, config, &inputs, meta, Upto::Recipe)?.mask)
 }
 
 /// The images mask sections work from, built once and kept for previews: for each input a
@@ -215,7 +217,7 @@ pub struct MaskPreview {
     pub voxels: usize,
 }
 
-/// The mask `sections` make (with the configured combine mode and refinements after combining),
+/// The mask `sections` make (folded with `combine`, then the configured refinements),
 /// or part of it (`upto`), from `inputs` (filled for `sections` by [`MaskInputs::fill`]). It reads
 /// and writes nothing else: a front end previews a recipe while editing it, and the run's mask
 /// step is this function on the whole recipe ([`build_mask`]).
@@ -223,6 +225,7 @@ pub struct MaskPreview {
 /// The weights of any deep-learning method the shown part runs must have been provided.
 pub fn preview(
     sections: &[MaskSection],
+    combine: MaskCombine,
     config: &PipelineConfig,
     inputs: &MaskInputs,
     meta: &RunMetadata,
@@ -259,7 +262,7 @@ pub fn preview(
                 let mask = section(i, usize::MAX)?;
                 combined = Some(match combined {
                     None => mask,
-                    Some(mut acc) => { config.masking.combine.accumulate(&mut acc, &mask); acc }
+                    Some(mut acc) => { combine.accumulate(&mut acc, &mask); acc }
                 });
             }
             let mut mask = combined.unwrap_or_default();
@@ -382,7 +385,7 @@ pub fn coverage_advice(kept: usize, brain: usize) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::masking::{MaskCombine, MaskOp, MaskThresholdMethod};
+    use crate::masking::{MaskOp, MaskThresholdMethod};
 
     /// A grid of `dims` with 1 mm voxels and one echo.
     fn meta(dims: (usize, usize, usize)) -> RunMetadata {
@@ -395,9 +398,8 @@ mod tests {
               dims: (usize, usize, usize)) -> Result<Vec<u8>, EngineError> {
         let mut config = PipelineConfig::default();
         config.masking.inhomogeneity_correction = false;
-        config.masking.combine = combine;
         config.masking.refinements = refinements;
-        build_mask(sections, &config, &[], vec![magnitude.to_vec()], &meta(dims))
+        build_mask(sections, combine, &config, &[], vec![magnitude.to_vec()], &meta(dims))
     }
 
     /// A reliable mask with no holes, or no voxels, makes the second reconstruction pointless —
@@ -515,11 +517,11 @@ mod tests {
             refinements: vec![],
         }];
         config.masking.inhomogeneity_correction = true;
-        let err = build_mask(&sections, &config, &[], vec![vec![1.0; 48]], &meta).unwrap_err();
+        let err = build_mask(&sections, MaskCombine::Or, &config, &[], vec![vec![1.0; 48]], &meta).unwrap_err();
         assert!(matches!(err, EngineError::DimensionMismatch(ref m) if m.contains("echo 1's magnitude")), "{err}");
 
         config.masking.inhomogeneity_correction = false;
-        let mask = build_mask(&sections, &config, &[], vec![vec![1.0; 64]], &meta).unwrap();
+        let mask = build_mask(&sections, MaskCombine::Or, &config, &[], vec![vec![1.0; 64]], &meta).unwrap();
         assert_eq!(mask.len(), 64);
     }
 

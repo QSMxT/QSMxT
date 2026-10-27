@@ -99,6 +99,11 @@ BET bounds the head, the phase-quality threshold drops voxels whose phase
 cannot be unwrapped reliably, and the holes their intersection leaves inside
 the brain are filled afterwards.
 
+The two-pass reliable mask (`--two-pass-mask`, repeatable) has its own combine
+mode, `--two-pass-mask-combine or|and`, which is the main mask's `--mask-combine`
+unless set. Its combined mask then takes the same `--mask-refine` steps as the
+main mask, and is intersected with the main mask.
+
 To try this on files without a pipeline run, use
 [`qsmxt mask preset bet-and-phase`, or `qsmxt mask and` / `or`](/QSMxT/reference/tools/#masking--qsmxt-mask)
 on masks you already have.
@@ -419,7 +424,7 @@ and is skipped where it cannot, and the rest of the run goes ahead. Before
 processing (and with `--dry`), `qsmxt run` says how many runs it will run for and
 which it skips and why, e.g. "Motion correction will run for 3 of 5 run(s);
 skipped for sub-02_ses-1_MEGRE (one echo) and sub-04_MEGRE (no magnitude)". The
-TUI's Pipeline tab shows the same for the selected runs. Each run's record says
+TUI's Methods › Pipeline sub-tab shows the same for the selected runs. Each run's record says
 whether it was applied, and where only some runs had it, the methods text says
 it was applied to runs with more than one echo and magnitude images.
 

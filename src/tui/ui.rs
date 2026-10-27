@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use super::app::{AlgoModal, App, PipelineRow, TipModal, UpdateModal, TAB_NAMES, TAB_INPUT, TAB_METHODS, TAB_PIPELINE};
+use super::app::{AlgoModal, App, PipelineRow, TipModal, UpdateModal, TAB_NAMES, TAB_INPUT, TAB_METHODS};
 use super::command;
 
 pub fn draw(f: &mut Frame, app: &mut App) {
@@ -543,12 +543,25 @@ fn draw_form(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         draw_rows_tab(f, app, area);
         return;
     }
-    if app.active_tab == TAB_PIPELINE {
-        super::pipeline_view::draw(f, app, area);
-        return;
-    }
     if app.active_tab == TAB_METHODS {
         draw_methods_tab(f, app, area);
+    }
+}
+
+/// The Methods tab: its sub-tab strip, then the methods text or the pipeline graph.
+fn draw_methods_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
+    let block = super::tabs::panel(app);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(super::tabs::subtab_rows(app)), Constraint::Min(1)])
+        .split(inner);
+    super::tabs::draw_subtabs(f, app, chunks[0]);
+    if app.page() == Some(super::app::Page::Pipeline) {
+        super::pipeline_view::draw(f, app, chunks[1]);
+    } else {
+        draw_methods_text(f, app, chunks[1]);
     }
 }
 
@@ -1652,13 +1665,14 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                     Style::default().fg(Color::DarkGray),
                 ))
             }
-            PipelineRow::MaskCombineOp => {
-                let mode = format!("{}", app.pipeline_state.mask_combine).to_uppercase();
+            PipelineRow::MaskCombineOp { section } => {
+                let mode = format!("{}", app.pipeline_state.combine_mode(*section)).to_uppercase();
                 let sep = Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD);
                 if focused {
                     if focused_help.is_none() {
-                        focused_help = Some(
-                            "How the mask sections combine: OR = union, AND = intersection (←/→ to change)".to_string());
+                        let which = if crate::tui::app::is_two_pass_section(*section) { "reliable mask's" } else { "mask" };
+                        focused_help = Some(format!(
+                            "How the {which} sections combine: OR = union, AND = intersection (←/→ to change, d to remove the next section)"));
                     }
                     Line::from(vec![
                         Span::styled("  ── COMBINED WITH ", sep),
@@ -2058,14 +2072,10 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     }
 }
 
-fn draw_methods_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
+fn draw_methods_text(f: &mut Frame, app: &mut App, inner: ratatui::layout::Rect) {
     let methods_text = command::methods_text(app).unwrap_or_else(|e| {
         format!("# Invalid setting\n\n{e}\n\nThe run would refuse this configuration.")
     });
-
-    let block = super::tabs::panel(app);
-    let inner = block.inner(area);
-    f.render_widget(block, area);
 
     let mut lines: Vec<Line> = Vec::new();
     for raw_line in methods_text.lines() {
@@ -2187,10 +2197,12 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         vec![("Esc", "Cancel"), ("Enter", "Confirm")]
     } else if app.tab_focus {
         vec![("\u{2190}\u{2192}", "Tabs"), ("\u{2193}/Enter", "Open tab"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
-    } else if app.active_tab == TAB_PIPELINE {
-        vec![(&tabs, "Tabs"), ("\u{2191}\u{2193}", "Scroll"), ("Enter/s", "Open as SVG"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
+    } else if app.active_tab == TAB_METHODS && app.on_subtabs() {
+        vec![(&tabs, "Tabs"), ("\u{2190}\u{2192}/[ ]", "Sub-tabs"), ("\u{2193}/Enter", "Open"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
+    } else if app.active_tab == TAB_METHODS && app.page() == Some(super::app::Page::Pipeline) {
+        vec![(&tabs, "Tabs"), ("[ ]", "Sub-tabs"), ("\u{2191}\u{2193}", "Scroll"), ("Enter/s", "Open as SVG"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else if app.active_tab == TAB_METHODS {
-        vec![(&tabs, "Tabs"), ("\u{2191}\u{2193}", "Scroll"), ("Enter/c", "Copy to clipboard"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
+        vec![(&tabs, "Tabs"), ("[ ]", "Sub-tabs"), ("\u{2191}\u{2193}", "Scroll"), ("Enter/c", "Copy to clipboard"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else if app.on_subtabs() {
         vec![(&tabs, "Tabs"), ("\u{2190}\u{2192}/[ ]", "Sub-tabs"), ("\u{2193}/Enter", "Settings"), ("R", "Reset page"),
              ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
@@ -2210,6 +2222,9 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
             (None, Some(PipelineRow::Param { .. })) => keys.push(("Enter", "Edit")),
             (None, Some(PipelineRow::Toggle { .. })) => keys.push(("Space", "Toggle")),
             _ => keys.push(("\u{2190}\u{2192}", "Change")),
+        }
+        if row.as_ref().is_some_and(|r| app.pipeline_state.row_removes_section(r)) {
+            keys.push(("d", "Remove section"));
         }
         keys.extend([("r", "Reset"), ("R", "Reset page"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]);
         draw_keys(f, keys, area);
@@ -2241,9 +2256,17 @@ fn hd_bet_inference_help() -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use ratatui::{backend::TestBackend, Terminal};
+
+    /// The footer (key hints) as drawn on a wide terminal.
+    pub(crate) fn footer(app: &mut App) -> String {
+        let (w, h) = (200, 40);
+        let t = render_app_sized(app, w, h);
+        let buf = t.backend().buffer();
+        (0..w).map(|x| buf[(x, h - 1)].symbol().to_string()).collect()
+    }
 
     /// Render at a given size, for tabs that are taller than the default 30-row terminal.
     pub(super) fn render_app_sized(app: &mut App, width: u16, height: u16) -> Terminal<TestBackend> {
@@ -2568,7 +2591,7 @@ mod tests {
         assert!(rows.iter().any(|r| matches!(r, PipelineRow::MaskCombinedHeader)));
         assert!(rows.iter().any(|r| matches!(r, PipelineRow::MaskOpEntry { section: MASK_COMBINED_SECTION, .. })));
         app.pipeline_state.focus = app.focusable_rows().iter()
-            .position(|&ri| matches!(rows[ri], PipelineRow::MaskCombineOp))
+            .position(|&ri| matches!(rows[ri], PipelineRow::MaskCombineOp { .. }))
             .expect("MaskCombineOp not focusable");
 
         let terminal = render_app(&mut app);
@@ -2580,7 +2603,7 @@ mod tests {
     #[test]
     fn test_draw_parameters_tab() {
         let mut app = App::new();
-        app.active_tab = 2; // Pipeline tab
+        app.active_tab = 2; // QSM tab
         let _ = render_app(&mut app);
         // Change algorithm
         app.pipeline_state.qsm_algorithm = 3; // TSVD

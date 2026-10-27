@@ -80,6 +80,16 @@ histogram_bins = 200
 See [inhomogeneity correction](/QSMxT/reference/algorithms/#inhomogeneity-correction)
 for what each does.
 
+With two-pass artefact reduction, the reliable mask's sections and how they combine are
+`masking.two_pass_sections` and `masking.two_pass_combine` (`"or"` or `"and"`; left out, it is
+the main mask's `masking.combine`):
+
+```toml
+[masking]
+two_pass = true
+two_pass_combine = "and"
+```
+
 Laplacian unwrapping's settings are in `[field_mapping]`:
 
 ```toml
@@ -117,7 +127,8 @@ HD-QSM's `mu1_l2`) is left out of the file to take the derived value; on the com
 
 Recommendations you chose not to follow (see
 [Recommendations](/QSMxT/guides/running-noninteractively/#recommendations)) are kept in the
-file, each with the value of its setting at the time. A change to the setting brings the
+file, each with the value of its setting at the time. Only recommended and discouraged
+findings are kept; one for a reference-pipeline difference is dropped when the file is read. A change to the setting brings the
 recommendation back:
 
 ```toml

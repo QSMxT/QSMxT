@@ -71,6 +71,7 @@ qsmxt <cmd> --help # full help for a command
 | `--mask <SECTION>` | Custom mask section, repeatable (e.g. `magnitude,bet:0.5,erode:2`) |
 | `--mask-combine <or\|and>` | How multiple `--mask` sections combine (default `or`) |
 | `--mask-refine <OP>` | Refinement applied to the combined mask, repeatable (e.g. `fill-holes:0`) |
+| `--two-pass-mask <SECTION>` / `--two-pass-mask-combine <or\|and>` | The two-pass reliable mask's sections, and how they combine (default: as `--mask-combine`) |
 | `--masking-input <A>` | Override the image the mask is derived from |
 | `--phase-offset-removal <bool>` | Multi-echo phase-offset removal |
 | `--bipolar-correction` | Bipolar readout correction (≥ 3 echoes) |

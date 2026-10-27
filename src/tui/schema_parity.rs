@@ -51,7 +51,8 @@ fn row_paths(app: &App, row: &PipelineRow) -> Vec<&'static str> {
         | MaskOpThresholdValue { section } | MaskOpHdBetStep { section } | MaskOpBetVoxelScale { section }
         | MaskOpEntry { section, .. } | MaskOpSignalErodeParam { section, .. } | MaskOpAddStep { section } => vec![recipe(*section)],
         MaskOpAddSection { two_pass } => vec![if *two_pass { "masking.two_pass_sections" } else { "masking.sections" }],
-        MaskCombineOp => vec!["masking.combine"],
+        MaskCombineOp { section } if is_two_pass_section(*section) => vec!["masking.two_pass_combine"],
+        MaskCombineOp { .. } => vec!["masking.combine"],
         MaskCombinedHeader => vec!["masking.refinements"],
         MaskTwoPassHeader => vec!["masking.two_pass_sections"],
         Separator | Note { .. } | MaskSectionHeader { .. } | RunButton => vec![],
@@ -73,7 +74,7 @@ fn section_of(page: Page) -> Option<Section> {
         Page::Relaxometry => Section::Relaxometry,
         Page::Segmentation => Section::Segmentation,
         Page::Export => Section::Export,
-        Page::Execution => return None,
+        Page::Execution | Page::MethodsText | Page::Pipeline => return None,
     })
 }
 
@@ -243,7 +244,7 @@ fn every_setting_has_a_row_and_is_worded_as_the_tui_words_it() {
     let mut failures = Vec::new();
     for (p, s) in &schema {
         if p.starts_with("masking.") && matches!(s.value_type, ValueType::MaskSections | ValueType::MaskOps)
-            || *p == "masking.combine" || *p == "multi_orientation.group_by" || *p == "qsm.reference_region"
+            || *p == "masking.combine" || *p == "masking.two_pass_combine" || *p == "multi_orientation.group_by" || *p == "qsm.reference_region"
         {
             continue; // the mask builder, the Input tab and the reference picker: below
         }

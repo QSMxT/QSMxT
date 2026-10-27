@@ -78,26 +78,32 @@ fn dismiss_flag(r: &Recommendation) -> String {
     format!("--dismiss-recommendation {}={}", r.rule, rec::chosen_text(&r.current))
 }
 
-/// The plan-time lines of `qsmxt run`: each finding not dismissed (a warning when it is offered
-/// as a change, information for a reference one), and how many were dismissed. A required one is
-/// refused by the run's checks ([`crate::pipeline::requirements::check_runs`]).
+/// The plan-time lines of `qsmxt run`: every departure the run keeps, a warning for a
+/// recommended or discouraged one (dismissed or not) and information for a reference-pipeline
+/// difference. A required one is refused by the run's checks
+/// ([`crate::pipeline::requirements::check_runs`]).
 pub(crate) fn log_found(config: &PipelineConfig, runs: &[QsmRun]) {
-    let found = found(config, runs);
-    let mut dismissed = 0;
-    for f in &found {
-        let r = &f.finding;
-        let at = of_runs(f, runs.len());
-        match (r.dismissed, r.strength) {
-            (true, _) => dismissed += 1,
-            (false, Strength::Required) => {}
-            (false, Strength::Reference) => info!("Differs from the reference pipeline{at}: {} ({})", r.line(), r.rule),
-            (false, s) => warn!("{}{at}: {} ({}; --accept-recommendations applies it, {} keeps the choice)",
-                                capitalised(s.label()), r.line(), r.rule, dismiss_flag(r)),
+    for line in found_lines(config, runs) {
+        match line {
+            (true, l) => warn!("{l}"),
+            (false, l) => info!("{l}"),
         }
     }
-    if dismissed > 0 {
-        info!("{dismissed} dismissed recommendation(s) not shown (qsmxt run --dry lists them)");
-    }
+}
+
+/// [`log_found`]'s lines, each with whether it is a warning.
+pub(crate) fn found_lines(config: &PipelineConfig, runs: &[QsmRun]) -> Vec<(bool, String)> {
+    found(config, runs).iter().filter_map(|f| {
+        let r = &f.finding;
+        let at = of_runs(f, runs.len());
+        match (r.strength, r.dismissed) {
+            (Strength::Required, _) => None,
+            (Strength::Reference, _) => Some((false, format!("Differs from the reference pipeline{at}: {} ({})", r.line(), r.rule))),
+            (s, true) => Some((true, format!("{}{at}: {} ({}; dismissed, kept)", capitalised(s.label()), r.line(), r.rule))),
+            (s, false) => Some((true, format!("{}{at}: {} ({}; --accept-recommendations applies it)",
+                                             capitalised(s.label()), r.line(), r.rule))),
+        }
+    }).collect()
 }
 
 fn capitalised(s: &str) -> String {
@@ -127,8 +133,8 @@ pub(crate) fn dry_text(config: &PipelineConfig, runs: &[QsmRun], accept: bool) -
             ("required (the run is refused as configured)", Box::new(|r| r.strength == Strength::Required)),
             ("recommended", Box::new(|r| !r.dismissed && r.strength == Strength::Recommended)),
             ("discouraged", Box::new(|r| !r.dismissed && r.strength == Strength::Discouraged)),
-            ("reference (information only)", Box::new(|r| !r.dismissed && r.strength == Strength::Reference)),
-            ("dismissed", Box::new(|r| r.dismissed && r.strength != Strength::Required)),
+            ("reference (information only)", Box::new(|r| r.strength == Strength::Reference)),
+            ("dismissed (kept)", Box::new(|r| r.dismissed && r.strength.dismissable())),
         ];
         for (heading, belongs) in &groups {
             let members: Vec<&Found> = found.iter().filter(|f| belongs(&f.finding)).collect();
@@ -139,7 +145,7 @@ pub(crate) fn dry_text(config: &PipelineConfig, runs: &[QsmRun], accept: bool) -
             for f in members {
                 let r = &f.finding;
                 let _ = writeln!(out, "    - {}{} ({}, {})", r.line(), of_runs(f, runs.len()), r.rule, r.basis.label());
-                if r.strength.actionable() && r.strength != Strength::Required && !r.dismissed {
+                if r.strength.dismissable() && !r.dismissed {
                     let _ = writeln!(out, "      keep the choice with {}", dismiss_flag(r));
                 }
             }

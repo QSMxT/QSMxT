@@ -50,11 +50,11 @@ pub const TIPS: &[Tip] = &[
         None,
     ),
     tip(
-        "The Methods tab (8) writes a methods paragraph for your current settings. Press `c` there to copy it.",
+        "The Methods tab (7) writes a methods paragraph for your current settings. Press `c` there to copy it.",
         None,
     ),
     tip(
-        "The Pipeline tab (7) shows every step your settings run, the memory a run needs and the models it downloads. Press `s` there to save it as an SVG.",
+        "The Methods tab's Pipeline sub-tab shows every step your settings run, the memory a run needs and the models it downloads. Press `s` there to save it as an SVG.",
         None,
     ),
     tip(

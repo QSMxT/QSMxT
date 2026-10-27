@@ -221,7 +221,7 @@ fn reference_findings_are_information_only() {
     let before = c.clone();
     let (applied, _) = accept(&mut c, &found);
     assert!(applied.is_empty() && c == before, "--accept-recommendations leaves a reference departure");
-    assert!(r.note().contains("differs from the RTS reference pipeline, which uses V-SHARP"), "{}", r.note());
+    assert_eq!(r.note(), "Background removal used PDF; this differs from the RTS reference pipeline, which uses V-SHARP");
 }
 
 #[test]
@@ -248,25 +248,57 @@ fn accepting_applies_the_strongest_actionable_finding() {
 #[test]
 fn dismissals_hold_for_their_value() {
     let facts = Facts::default();
-    let mut c = PipelineConfig::default();
-    c.inversion.algorithm = QsmAlgorithm::Rts;
-    c.bg_removal.algorithm = BfAlgorithm::Pdf;
+    let rule = core::RULES.iter().find(|r| r.id == "medi-msmv.prefilter").unwrap();
+    let mut c = violating(rule);
     assert!(dismiss(&mut c, "medi.bg-pdf", &facts).is_err(), "only a finding can be dismissed");
     let hash = crate::cache::config_hash(&c);
-    dismiss(&mut c, "rts.bg-vsharp", &facts).unwrap();
-    assert_eq!(c.dismissed_recommendations, vec![Dismissal { rule: "rts.bg-vsharp".into(), chosen: "pdf".into() }]);
+    dismiss(&mut c, rule.id, &facts).unwrap();
+    assert_eq!(c.dismissed_recommendations.len(), 1);
+    assert_eq!(c.dismissed_recommendations[0].rule, rule.id);
     assert_eq!(crate::cache::config_hash(&c), hash, "a dismissal changes nothing a run computes");
     let toml = c.to_toml().unwrap();
     assert!(toml.contains("[[dismissed_recommendations]]"), "{toml}");
     assert_eq!(PipelineConfig::from_toml(&toml).unwrap(), c);
-    assert!(recommendations(&c, &facts).iter().any(|r| r.rule == "rts.bg-vsharp" && r.dismissed));
+    assert!(recommendations(&c, &facts).iter().any(|r| r.rule == rule.id && r.dismissed));
 
-    c.bg_removal.algorithm = BfAlgorithm::Lbv;
-    assert!(recommendations(&c, &facts).iter().any(|r| r.rule == "rts.bg-vsharp" && !r.dismissed), "changed: offered again");
+    let prefilter = c.inversion.medi.msmv_prefilter;
+    c.inversion.medi.msmv_prefilter = !prefilter;
     prune_dismissals(&mut c, &facts);
     assert!(c.dismissed_recommendations.is_empty());
+    c.inversion.medi.msmv_prefilter = prefilter;
+    assert!(recommendations(&c, &facts).iter().any(|r| r.rule == rule.id && !r.dismissed), "changed and back: offered again");
     // A config without dismissals (any earlier one) loads.
     assert!(PipelineConfig::from_toml("schema_version = 2\n").unwrap().dismissed_recommendations.is_empty());
+}
+
+/// A reference-pipeline difference is information only: there is nothing to dismiss, "Keep mine"
+/// records nothing, and a file that holds a dismissal of one still loads, without it and
+/// without a word.
+#[test]
+fn a_reference_difference_has_no_dismissal() {
+    let facts = Facts::default();
+    let mut c = PipelineConfig::default();
+    c.inversion.algorithm = QsmAlgorithm::Rts;
+    c.bg_removal.algorithm = BfAlgorithm::Pdf;
+    assert!(is_reference_rule("rts.bg-vsharp") && !is_reference_rule("medi-msmv.prefilter"));
+    assert_eq!(dismiss(&mut c, "rts.bg-vsharp", &facts),
+               Err("rts.bg-vsharp is a reference-pipeline note, not a recommendation; there is nothing to dismiss".into()));
+    let found = recommendations(&c, &facts);
+    keep(&mut c.dismissed_recommendations, &found);
+    assert!(c.dismissed_recommendations.is_empty(), "{:?}", c.dismissed_recommendations);
+
+    let file = format!("{}\n[[dismissed_recommendations]]\nrule = \"rts.bg-vsharp\"\nchosen = \"pdf\"\n", c.to_toml().unwrap());
+    let (read, migration) = PipelineConfig::from_toml_noting(&file).unwrap();
+    assert!(read.dismissed_recommendations.is_empty());
+    assert!(migration.warnings.is_empty() && migration.notes.is_empty(), "{migration:?}");
+    let json = r#"{"dismissed_recommendations": [{"rule": "rts.bg-vsharp", "chosen": "pdf"}, {"rule": "medi-msmv.prefilter", "chosen": "true"}]}"#;
+    let (read, _) = PipelineConfig::from_json_migrating(json).unwrap();
+    assert_eq!(read.dismissed_recommendations, vec![Dismissal { rule: "medi-msmv.prefilter".into(), chosen: "true".into() }]);
+    // One put in by hand is dropped by pruning.
+    c.dismissed_recommendations.push(Dismissal { rule: "rts.bg-vsharp".into(), chosen: "pdf".into() });
+    assert!(!recommendations(&c, &facts).iter().any(|r| r.dismissed));
+    prune_dismissals(&mut c, &facts);
+    assert!(c.dismissed_recommendations.is_empty());
 }
 
 /// Two triggers can want different things of one setting: both are reported.
@@ -295,7 +327,11 @@ fn the_note_says_what_was_done() {
         .collect::<Vec<_>>();
     let n = note(&counts(None, 1), 1);
     let line = n.departures.iter().find(|l| l.contains("recommends")).expect("a recommendation departed from");
-    assert!(line.starts_with("Echo time") && line.ends_with(").") && line.contains(rule.source), "{line}");
+    assert!(line.starts_with("Echo time") && line.ends_with('.'), "{line}");
+    // What was done and what the method recommends; why, and where that is recorded, is for the log.
+    let finding = recorded(&c, &facts).into_iter().find(|r| r.finding.rule == rule.id).unwrap().finding;
+    assert!(!line.contains(rule.source) && !line.contains(&finding.reason), "{line}");
+    assert!(finding.line().contains(rule.source) && finding.line().contains(&finding.reason));
     assert!(n.differences.iter().all(|l| l.contains("differs from the")), "{:?}", n.differences);
     // In some of a dataset's runs.
     assert!(note(&counts(None, 2), 5).departures[0].ends_with("; in 2 of 5 runs."));
@@ -318,7 +354,7 @@ fn method(c: &PipelineConfig, name: &str) -> Trigger {
 }
 
 /// A method's reference pipeline: its reference rules grouped under it, the differences listed,
-/// applied all at once, or kept (dismissed for their values).
+/// applied all at once, or kept (which records nothing).
 #[test]
 fn reference_differences_of_a_chosen_method() {
     let facts = Facts::default();
@@ -338,14 +374,12 @@ fn reference_differences_of_a_chosen_method() {
     assert!(reference_differences(&applied, &facts, &medi).is_empty());
     assert_eq!(applied.bg_removal.algorithm, BfAlgorithm::Pdf);
 
+    // Kept, nothing changes and nothing is recorded: a reference difference is information only.
     let mut kept = c.clone();
     keep(&mut kept.dismissed_recommendations, &diffs);
-    assert!(reference_differences(&kept, &facts, &medi).is_empty(), "kept: not offered again");
-    assert_eq!(kept.bg_removal.algorithm, BfAlgorithm::Vsharp, "keeping changes no setting");
-    assert!(kept.dismissed_recommendations.iter().any(|d| d.rule == "medi.bg-pdf" && d.chosen == "vsharp"));
-    // Another method chosen, the kept values no longer apply; choosing MEDI again offers them.
+    assert_eq!(kept, c, "keeping changes no setting and records no dismissal");
+    // Another method chosen, the differences no longer apply; choosing MEDI again offers them.
     kept.inversion.algorithm = QsmAlgorithm::Rts;
-    prune_dismissals(&mut kept, &facts);
     assert!(!chosen_methods(&kept, &facts).contains(&medi));
     kept.inversion.algorithm = QsmAlgorithm::Medi;
     assert_eq!(reference_differences(&kept, &facts, &medi).len(), diffs.len());

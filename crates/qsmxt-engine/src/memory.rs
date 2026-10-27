@@ -633,7 +633,7 @@ pub fn reducing_settings(step: &Step, config: &PipelineConfig) -> Vec<&'static s
         MaskOp::HdBet { .. } | MaskOp::Rs2Net { .. } | MaskOp::MindGrab { .. }));
     match step.stage {
         Stage::Mask(crate::plan::Pass::Main) if nets(&config.masking.sections) => vec!["masking.sections"],
-        Stage::Mask(crate::plan::Pass::Reliable) => vec!["masking.two_pass_sections", "masking.two_pass"],
+        Stage::Mask(crate::plan::Pass::Reliable) => vec!["masking.two_pass_sections", "masking.two_pass_combine", "masking.two_pass"],
         Stage::FieldMap => vec!["field_mapping.unwrapping_algorithm", "field_mapping.phase_offset_removal"],
         Stage::BackgroundRemoval(_) if config.bg_removal.algorithm == BfAlgorithm::Vsharp =>
             vec!["bg_removal.vsharp.grid", "bg_removal.algorithm"],

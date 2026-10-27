@@ -64,10 +64,21 @@ pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value
             if let Some(o) = m.as_object_mut() {
                 o.remove("two_pass");
                 o.remove("two_pass_sections");
+                o.remove("two_pass_combine");
             }
             json!({ "masking": m, "bet": config.bet })
         }
-        "mask" => json!({ "masking": masking(), "bet": config.bet, "homogeneity": config.homogeneity, "n4": config.n4 }),
+        "mask" => {
+            // Unset, the reliable mask's combine mode is the main mask's, already in the key:
+            // left out, so the keys of runs from before it existed still match.
+            let mut m = masking();
+            if config.masking.two_pass_combine.is_none() {
+                if let Some(o) = m.as_object_mut() {
+                    o.remove("two_pass_combine");
+                }
+            }
+            json!({ "masking": m, "bet": config.bet, "homogeneity": config.homogeneity, "n4": config.n4 })
+        }
         "motion" => json!({ "motion_correction": config.motion_correction, "registration": config.registration }),
         "swi" => json!({ "swi": config.swi }),
         "unwrap" => json!({ "field_mapping": config.field_mapping }),
@@ -211,5 +222,14 @@ mod tests {
         t.masking.two_pass = true;
         assert_eq!(step_cache_key("mask", None, &p, &t), step_cache_key("mask", None, &p, &base));
         assert_ne!(step_cache_key("mask-reliable", None, &p, &t), step_cache_key("mask-reliable", None, &p, &base));
+        // So is the reliable mask's own combine mode; unset, the key is what it was before the
+        // setting existed (the masking section without it).
+        let mut u = t.clone();
+        u.masking.two_pass_combine = Some(crate::masking::MaskCombine::And);
+        assert_eq!(step_cache_key("mask", None, &p, &u), step_cache_key("mask", None, &p, &t));
+        assert_ne!(step_cache_key("mask-reliable", None, &p, &u), step_cache_key("mask-reliable", None, &p, &t));
+        let mut old = serde_json::to_value(&t.masking).unwrap();
+        old.as_object_mut().unwrap().remove("two_pass_combine");
+        assert_eq!(consumed_config("mask-reliable", &t)["masking"], old);
     }
 }

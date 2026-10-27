@@ -504,11 +504,10 @@ pub const TAB_QSM: usize = 2;
 pub const TAB_SEPARATION: usize = 3;
 pub const TAB_OUTPUTS: usize = 4;
 pub const TAB_EXECUTION: usize = 5;
-pub const TAB_PIPELINE: usize = 6;
-pub const TAB_METHODS: usize = 7;
+pub const TAB_METHODS: usize = 6;
 
-/// A sub-tab of a row-based tab: the second tab row, switched with `[` and `]`. A tab with a
-/// single page (Separation, Execution) shows no second row.
+/// A sub-tab: the second tab row, switched with `[` and `]`. A tab with a single page
+/// (Separation, Execution) shows no second row. The Methods tab's two pages are views, not rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Page {
     Geometry,
@@ -527,6 +526,10 @@ pub enum Page {
     Segmentation,
     Export,
     Execution,
+    /// The Methods tab's methods text.
+    MethodsText,
+    /// The Methods tab's pipeline graph ([`super::pipeline_view`]).
+    Pipeline,
 }
 
 impl Page {
@@ -548,21 +551,25 @@ impl Page {
             Page::Segmentation => "Segmentation",
             Page::Export => "Export",
             Page::Execution => "Execution",
+            Page::MethodsText => "Methods text",
+            Page::Pipeline => "Pipeline",
         }
     }
 
     /// Whether the page's rows are the pipeline form's ([`PipelineFormState::visible_rows`])
     /// rather than built by the App from both forms.
     pub fn is_pipeline(self) -> bool {
-        !matches!(self, Page::SwiSmwi | Page::Relaxometry | Page::Segmentation | Page::Export | Page::Execution)
+        !matches!(self, Page::SwiSmwi | Page::Relaxometry | Page::Segmentation | Page::Export | Page::Execution
+            | Page::MethodsText | Page::Pipeline)
     }
 
     /// Every page, in tab order.
     #[cfg(test)]
-    pub const ALL: [Page; 15] = [
+    pub const ALL: [Page; 17] = [
         Page::Geometry, Page::Masking, Page::Motion, Page::QsmOff, Page::FieldMap, Page::Background,
         Page::Inversion, Page::MultiOrientation, Page::Reference, Page::Separation, Page::SwiSmwi,
-        Page::Relaxometry, Page::Segmentation, Page::Export, Page::Execution,
+        Page::Relaxometry, Page::Segmentation, Page::Export, Page::Execution, Page::MethodsText,
+        Page::Pipeline,
     ];
 }
 
@@ -781,14 +788,13 @@ fn expand_tilde(path: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(path)
 }
 
-pub const TAB_NAMES: [&str; 8] = [
+pub const TAB_NAMES: [&str; 7] = [
     "Input",
     "Preprocessing",
     "QSM",
     "χ-separation",
     "Other outputs",
     "Execution",
-    "Pipeline",
     "Methods",
 ];
 
@@ -1211,8 +1217,8 @@ impl FilterTreeState {
 
 // ─── Pipeline tab state ───
 
-/// A visible row in the pipeline tab.
-#[derive(Debug, Clone)]
+/// A visible row on a row-based tab.
+#[derive(Debug, Clone, PartialEq)]
 pub enum PipelineRow {
     /// Algorithm selector: ◀ value ▶
     AlgoSelect {
@@ -1243,9 +1249,9 @@ pub enum PipelineRow {
     MaskCombinedHeader,
     /// Header for the two-pass reliable mask (not focusable)
     MaskTwoPassHeader,
-    /// "── OR ──" separator between sections (not focusable)
-    /// "COMBINED WITH ◀ OR ▶" between sections (focusable, ←/→ toggles OR/AND)
-    MaskCombineOp,
+    /// "COMBINED WITH ◀ OR ▶" before `section`, the second or later section of the main or the
+    /// reliable mask (focusable, ←/→ toggles that mask's OR/AND; `d` removes `section`)
+    MaskCombineOp { section: usize },
     /// Input source for a mask section (focusable, ←/→ to cycle)
     MaskOpInput { section: usize },
     /// Generator algorithm selector (threshold or BET, ←/→ to switch)
@@ -2066,11 +2072,14 @@ pub struct PipelineFormState {
     /// reconstruction where it is defined.
     pub two_pass: bool,
     /// The reliable-pass mask. Edited with the same rows as `mask_sections`, addressed by
-    /// [`MASK_TWO_PASS_BASE`] + index, and folded with the same combine mode and post-combine
-    /// refinements as the main mask.
+    /// [`MASK_TWO_PASS_BASE`] + index, folded with `two_pass_combine` and then the main mask's
+    /// post-combine refinements.
     pub two_pass_sections: Vec<crate::pipeline::config::MaskSection>,
-    /// The recommendations dismissed (Keep mine in a recommendation or reference pipeline pop-up), each for the value
-    /// its setting had then: `--dismiss-recommendation`, and so the run's config.
+    /// How the reliable mask's sections combine: `--two-pass-mask-combine`. `None` = as the main
+    /// mask's do ([`PipelineFormState::two_pass_combine_mode`]).
+    pub two_pass_combine: Option<crate::pipeline::config::MaskCombine>,
+    /// The recommendations dismissed (Keep mine on a `recommended` or `discouraged` finding), each
+    /// for the value its setting had then: `--dismiss-recommendation`, and so the run's config.
     pub dismissed: Vec<qsmxt_engine::Dismissal>,
     pub mask_preset: usize, // index into MASK_PRESET_OPTIONS (MASK_PRESET_CUSTOM = hand-edited)
     pub custom_mask_tool: String, // empty=off; "*"=any derivatives tool; else a tool name
@@ -2483,6 +2492,7 @@ impl Default for PipelineFormState {
             mask_combined_refinements: vec![],
             two_pass: false,
             two_pass_sections: qsmxt_engine::default_two_pass_sections(),
+            two_pass_combine: None,
             dismissed: vec![],
             mask_preset: 0, // robust threshold
             custom_mask_tool: String::new(),
@@ -4577,18 +4587,7 @@ impl PipelineFormState {
         for i in 0..count {
             let si = base + i;
             if i > 0 {
-                // The reliable mask folds with the main mask's combine mode, so it reports that
-                // mode rather than offering a second control over the same setting.
-                if two_pass {
-                    rows.push(PipelineRow::Note {
-                        text: match self.mask_combine_recipe().0 {
-                            crate::pipeline::config::MaskCombine::Or => "── combined with OR ──",
-                            crate::pipeline::config::MaskCombine::And => "── combined with AND ──",
-                        }.into(),
-                    });
-                } else {
-                    rows.push(PipelineRow::MaskCombineOp);
-                }
+                rows.push(PipelineRow::MaskCombineOp { section: si });
             }
             if count > 1 {
                 rows.push(PipelineRow::MaskSectionHeader { section: si });
@@ -4660,6 +4659,66 @@ impl PipelineFormState {
         } else {
             (self.mask_combine, self.mask_combined_refinements.clone())
         }
+    }
+
+    /// How the reliable mask's sections combine: its own mode, or the main mask's.
+    pub fn two_pass_combine_mode(&self) -> crate::pipeline::config::MaskCombine {
+        self.two_pass_combine.unwrap_or(self.mask_combine_recipe().0)
+    }
+
+    /// How the sections of the mask `section` belongs to combine.
+    pub fn combine_mode(&self, section: usize) -> crate::pipeline::config::MaskCombine {
+        if is_two_pass_section(section) { self.two_pass_combine_mode() } else { self.mask_combine }
+    }
+
+    /// Toggle the combine mode (OR ↔ AND) of the mask `section` belongs to.
+    pub fn toggle_combine(&mut self, section: usize) {
+        use crate::pipeline::config::MaskCombine;
+        if is_two_pass_section(section) {
+            self.two_pass_combine = Some(match self.two_pass_combine_mode() { MaskCombine::Or => MaskCombine::And, MaskCombine::And => MaskCombine::Or });
+        } else {
+            self.toggle_mask_combine();
+        }
+    }
+
+    /// Remove the section `section` (main or reliable mask), unless it is its mask's only one.
+    /// Returns whether it was removed.
+    pub fn remove_mask_section(&mut self, section: usize) -> bool {
+        let (two_pass, i) = Self::mask_section_slot(section);
+        let count = self.mask_section_count(two_pass);
+        if count < 2 || i >= count {
+            return false;
+        }
+        if two_pass { self.two_pass_sections.remove(i); } else { self.mask_sections.remove(i); }
+        self.mark_mask_custom(section);
+        let max = self.focusable_rows().len().saturating_sub(1);
+        if self.focus > max { self.focus = max; }
+        true
+    }
+
+    /// The mask section a row belongs to and that `d` removes: the section a "Combined with" row
+    /// comes before, or the section of one of its input, generator and generator-setting rows.
+    /// `None` for a refinement step's rows (`d` removes the step) and for every other row.
+    pub fn removable_section(row: &PipelineRow) -> Option<usize> {
+        match *row {
+            PipelineRow::MaskCombineOp { section }
+            | PipelineRow::MaskOpInput { section }
+            | PipelineRow::MaskOpGenerator { section }
+            | PipelineRow::MaskOpGeneratorParam { section }
+            | PipelineRow::MaskOpThresholdValue { section }
+            | PipelineRow::MaskOpHdBetStep { section }
+            | PipelineRow::MaskOpBetVoxelScale { section } => Some(section),
+            PipelineRow::MaskOpAddStep { section } if section != MASK_COMBINED_SECTION => Some(section),
+            _ => None,
+        }
+    }
+
+    /// Whether `d` on `row` removes a section now: it belongs to one, and that mask has others.
+    pub fn row_removes_section(&self, row: &PipelineRow) -> bool {
+        Self::removable_section(row).is_some_and(|s| {
+            let (two_pass, i) = Self::mask_section_slot(s);
+            i < self.mask_section_count(two_pass) && self.mask_section_count(two_pass) > 1
+        })
     }
 
     /// Toggle the mask combine mode (OR ↔ AND).
@@ -5557,43 +5616,45 @@ impl App {
             return;
         }
 
-        // The Pipeline tab — read-only: scrolling, and the graph as SVG.
-        if self.active_tab == TAB_PIPELINE {
+        if self.active_tab == TAB_METHODS {
+            self.handle_methods_tab_key(key);
+        }
+    }
+
+    /// The Methods tab: its sub-tab strip, then the methods text (scrolling, copying) or the
+    /// pipeline graph (scrolling, the graph as SVG). Both are read-only.
+    fn handle_methods_tab_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char('q') | KeyCode::Esc => return self.should_quit = true,
+            // 1..=N, Tab, Shift-Tab: one rule for every tab (see `switch_tab`).
+            _ if self.switch_tab(key) => return,
+            KeyCode::Char('[') => return self.cycle_page(-1),
+            KeyCode::Char(']') => return self.cycle_page(1),
+            KeyCode::F(5) => return self.try_run(),
+            _ => {}
+        }
+        if self.on_subtabs() {
             match key.code {
-                KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
-                _ if self.switch_tab(key) => {}
-                KeyCode::Up | KeyCode::Char('k') if self.pipeline_view.scroll == 0 => self.tab_focus = true,
-                KeyCode::Up | KeyCode::Char('k') => {
-                    self.pipeline_view.scroll = self.pipeline_view.scroll.saturating_sub(1);
-                }
-                KeyCode::Down | KeyCode::Char('j') => self.pipeline_view.scroll += 1,
-                KeyCode::PageUp => self.pipeline_view.scroll = self.pipeline_view.scroll.saturating_sub(10),
-                KeyCode::PageDown => self.pipeline_view.scroll += 10,
-                KeyCode::Home => self.pipeline_view.scroll = 0,
-                KeyCode::Enter | KeyCode::Char('s') => self.open_pipeline_svg(),
-                KeyCode::F(5) => self.try_run(),
+                KeyCode::Left => self.cycle_page(-1),
+                KeyCode::Right => self.cycle_page(1),
+                KeyCode::Up | KeyCode::Char('k') => self.tab_focus = true,
+                KeyCode::Down | KeyCode::Char('j') | KeyCode::Enter => self.subtab_focus = false,
                 _ => {}
             }
             return;
         }
-
-        // Route tab Methods — read-only, only tab switching and scrolling
-        if self.active_tab == TAB_METHODS {
-            match key.code {
-                KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
-                // 1..=N, Tab, Shift-Tab: one rule for every tab (see `switch_tab`).
-                _ if self.switch_tab(key) => {}
-                KeyCode::Up | KeyCode::Char('k') if self.methods_scroll_offset == 0 => self.tab_focus = true,
-                KeyCode::Up | KeyCode::Char('k') => {
-                    self.methods_scroll_offset = self.methods_scroll_offset.saturating_sub(1);
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    self.methods_scroll_offset += 1;
-                }
-                KeyCode::Enter | KeyCode::Char('c') | KeyCode::Char('y') => self.copy_methods(),
-                KeyCode::F(5) => self.try_run(),
-                _ => {}
-            }
+        let pipeline = self.page() == Some(Page::Pipeline);
+        let scroll = if pipeline { &mut self.pipeline_view.scroll } else { &mut self.methods_scroll_offset };
+        match key.code {
+            KeyCode::Up | KeyCode::Char('k') if *scroll == 0 => self.subtab_focus = true,
+            KeyCode::Up | KeyCode::Char('k') => *scroll = scroll.saturating_sub(1),
+            KeyCode::Down | KeyCode::Char('j') => *scroll += 1,
+            KeyCode::PageUp => *scroll = scroll.saturating_sub(10),
+            KeyCode::PageDown => *scroll += 10,
+            KeyCode::Home => *scroll = 0,
+            KeyCode::Enter | KeyCode::Char('s') if pipeline => self.open_pipeline_svg(),
+            KeyCode::Enter | KeyCode::Char('c') | KeyCode::Char('y') if !pipeline => self.copy_methods(),
+            _ => {}
         }
     }
 
@@ -6918,36 +6979,33 @@ impl App {
                         ps.mask_threshold_editing = true;
                         ps.cursor = current.len();
                     }
-                    Some(PipelineRow::MaskCombineOp) => {
-                        self.pipeline_state.toggle_mask_combine();
+                    Some(PipelineRow::MaskCombineOp { section }) => {
+                        self.pipeline_state.toggle_combine(section);
                     }
                     // The other mask rows are adjusted with Left/Right.
                     _ => {}
                 }
             }
 
-            // Delete refinement step or entire section
+            // Delete a refinement step (on its rows), or the section a row belongs to (the
+            // "Combined with" row before it, or its input, generator and generator settings) when
+            // its mask has another.
             KeyCode::Char('d') | KeyCode::Delete => {
                 let ps = &mut self.pipeline_state;
                 match ps.focused_row() {
-                    Some(PipelineRow::MaskOpEntry { section: si, index: oi })
+                    Some(PipelineRow::MaskOpEntry { section: si, index: oi } | PipelineRow::MaskOpSignalErodeParam { section: si, index: oi, .. })
                         if oi < ps.mask_refinements(si).map_or(0, |r| r.len()) => {
                         if let Some(refs) = ps.mask_refinements_mut(si) { refs.remove(oi); }
                         ps.mark_mask_custom(si);
                         let max = ps.focusable_rows().len().saturating_sub(1);
                         if ps.focus > max { ps.focus = max; }
                     }
-                    // Delete entire section (only if >1 sections) when focused on section header-adjacent rows
-                    Some(PipelineRow::MaskOpGenerator { section: si }) | Some(PipelineRow::MaskOpInput { section: si }) => {
-                        let (two_pass, i) = PipelineFormState::mask_section_slot(si);
-                        if ps.mask_section_count(two_pass) > 1 && i < ps.mask_section_count(two_pass) {
-                            if two_pass { ps.two_pass_sections.remove(i); } else { ps.mask_sections.remove(i); }
-                            ps.mark_mask_custom(si);
-                            let max = ps.focusable_rows().len().saturating_sub(1);
-                            if ps.focus > max { ps.focus = max; }
+                    Some(row) => {
+                        if let Some(si) = PipelineFormState::removable_section(&row) {
+                            ps.remove_mask_section(si);
                         }
                     }
-                    _ => {}
+                    None => {}
                 }
             }
 
@@ -6983,7 +7041,7 @@ impl App {
                 }
                 let ps = &mut self.pipeline_state;
                 match row {
-                    Some(PipelineRow::MaskCombineOp) => ps.toggle_mask_combine(),
+                    Some(PipelineRow::MaskCombineOp { section }) => ps.toggle_combine(section),
                     Some(PipelineRow::MaskOpEntry { section, index }) => ps.adjust_mask_op(section, index, delta),
                     Some(PipelineRow::MaskOpSignalErodeParam { section, index, param }) => {
                         ps.adjust_signal_erode_param(section, index, param, delta);
@@ -7143,15 +7201,24 @@ impl App {
             TAB_SEPARATION => vec![Page::Separation],
             TAB_OUTPUTS => vec![Page::SwiSmwi, Page::Relaxometry, Page::Segmentation, Page::Export],
             TAB_EXECUTION => vec![Page::Execution],
+            TAB_METHODS => vec![Page::MethodsText, Page::Pipeline],
             _ => Vec::new(),
         }
     }
 
-    /// The active sub-tab: the one last chosen on this tab while it still applies, else the first.
+    /// The active sub-tab: the one last chosen on this tab while it still applies, else the
+    /// tab's default ([`App::default_page`]), else the first.
     pub fn page(&self) -> Option<Page> {
         let pages = self.pages(self.active_tab);
         let chosen = self.sub_page.get(self.active_tab).copied().flatten();
-        chosen.filter(|p| pages.contains(p)).or_else(|| pages.first().copied())
+        chosen.or_else(|| Self::default_page(self.active_tab)).filter(|p| pages.contains(p))
+            .or_else(|| pages.first().copied())
+    }
+
+    /// The sub-tab a tab opens on before one is chosen, when it is not the first: Preprocessing
+    /// opens on Masking, the page most runs need to look at.
+    fn default_page(tab: usize) -> Option<Page> {
+        (tab == TAB_PREPROCESSING).then_some(Page::Masking)
     }
 
     /// Move to the next (`delta` 1) or previous (-1) sub-tab of the active tab, wrapping. Focus
@@ -7168,9 +7235,10 @@ impl App {
         self.subtab_focus = on_strip;
     }
 
-    /// Whether the active tab shows a sub-tab strip (a row-based tab with more than one page).
+    /// Whether the active tab shows a sub-tab strip (a row-based tab with more than one page, or
+    /// the Methods tab).
     pub fn has_subtabs(&self) -> bool {
-        Self::is_rows_tab(self.active_tab) && self.pages(self.active_tab).len() > 1
+        (Self::is_rows_tab(self.active_tab) || self.active_tab == TAB_METHODS) && self.pages(self.active_tab).len() > 1
     }
 
     /// Whether focus is on the sub-tab strip rather than on a row (or the tab bar above).
@@ -7488,6 +7556,7 @@ impl App {
             ps.mask_combine = d.mask_combine;
             ps.mask_combined_refinements = d.mask_combined_refinements;
             ps.two_pass_sections = d.two_pass_sections;
+            ps.two_pass_combine = d.two_pass_combine;
             ps.mask_preset = d.mask_preset;
         }
         let mut done = std::collections::HashSet::new();
@@ -8405,25 +8474,27 @@ mod tests {
         let mut app = App::new();
         app.active_tab = TAB_PREPROCESSING;
         app.sync_pipeline_mode();
-        assert_eq!(app.page(), Some(Page::Geometry));
+        // Masking, the second sub-tab, is the one Preprocessing opens on.
+        assert_eq!(app.pages(TAB_PREPROCESSING), vec![Page::Geometry, Page::Masking, Page::Motion]);
+        assert_eq!(app.page(), Some(Page::Masking));
         app.handle_key(key(KeyCode::Down));
         assert_eq!(app.focus(), 1);
         app.handle_key(key(KeyCode::Char(']')));
-        assert_eq!(app.page(), Some(Page::Masking));
+        assert_eq!(app.page(), Some(Page::Motion));
         assert_eq!(app.focus(), 0, "a sub-tab switch starts at the top");
         app.handle_key(key(KeyCode::Char(']')));
-        assert_eq!(app.page(), Some(Page::Motion));
-        app.handle_key(key(KeyCode::Char(']')));
         assert_eq!(app.page(), Some(Page::Geometry), "wraps");
+        app.handle_key(key(KeyCode::Char(']')));
+        assert_eq!(app.page(), Some(Page::Masking));
         app.handle_key(key(KeyCode::Char('[')));
-        assert_eq!(app.page(), Some(Page::Motion));
+        assert_eq!(app.page(), Some(Page::Geometry));
         // The sub-tab is remembered per tab; a main-tab switch resets focus too.
         app.handle_key(key(KeyCode::Down));
         app.handle_key(key(KeyCode::Char('3')));
         assert_eq!(app.active_tab, TAB_QSM);
         assert_eq!(app.focus(), 0);
         app.handle_key(key(KeyCode::Char('2')));
-        assert_eq!(app.page(), Some(Page::Motion));
+        assert_eq!(app.page(), Some(Page::Geometry));
     }
 
     /// The QSM tab shows a sub-tab for each stage that runs, and only the switch when none do.
@@ -9618,6 +9689,36 @@ mod tests {
         app.active_tab = TAB_METHODS;
         app.handle_key(key(KeyCode::Up));
         assert_eq!(app.methods_scroll_offset, 0);
+        assert!(app.on_subtabs(), "↑ at the top goes up to the sub-tab strip");
+    }
+
+    /// The Methods tab opens on its strip with the methods text chosen; the pipeline graph is the
+    /// second sub-tab, reached with →, `]` or `[`, and ↓ goes into it.
+    #[test]
+    fn the_pipeline_is_the_methods_tabs_second_sub_tab() {
+        let mut app = App::new();
+        app.handle_key(key(KeyCode::Char('7')));
+        assert_eq!(app.active_tab, TAB_METHODS);
+        assert_eq!(app.pages(TAB_METHODS), vec![Page::MethodsText, Page::Pipeline]);
+        assert_eq!(app.page(), Some(Page::MethodsText));
+        assert!(app.on_subtabs());
+        app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.page(), Some(Page::Pipeline));
+        assert!(app.on_subtabs());
+        app.handle_key(key(KeyCode::Down));
+        assert!(!app.on_subtabs());
+        app.handle_key(key(KeyCode::Down));
+        assert_eq!((app.pipeline_view.scroll, app.methods_scroll_offset), (1, 0), "↓ scrolls the graph");
+        app.handle_key(key(KeyCode::Char('[')));
+        assert_eq!(app.page(), Some(Page::MethodsText));
+        app.handle_key(key(KeyCode::Char(']')));
+        assert_eq!(app.page(), Some(Page::Pipeline));
+        app.handle_key(key(KeyCode::Up));
+        app.handle_key(key(KeyCode::Up));
+        assert!(app.on_subtabs());
+        app.handle_key(key(KeyCode::Up));
+        assert!(app.tab_focus);
+        assert!(!TAB_NAMES.contains(&"Pipeline"));
     }
 
     #[test]
@@ -9649,7 +9750,7 @@ mod tests {
         let mut app = App::new();
         app.active_tab = TAB_METHODS;
         app.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
-        assert_eq!(app.active_tab, TAB_PIPELINE);
+        assert_eq!(app.active_tab, TAB_EXECUTION);
     }
 
     #[test]
@@ -11014,7 +11115,7 @@ mod tests {
         goto_page(&mut app, Page::Masking);
 
         let has_combine_row = |app: &App| app.rows().iter()
-            .any(|r| matches!(r, PipelineRow::MaskCombineOp));
+            .any(|r| matches!(r, PipelineRow::MaskCombineOp { .. }));
         assert!(!has_combine_row(&app), "a single section has nothing to combine with");
 
         // Add a second section via the "+ Add mask..." row.
@@ -11027,7 +11128,7 @@ mod tests {
         app.handle_key(key(KeyCode::Enter));
         assert!(has_combine_row(&app), "two sections show how they combine");
 
-        app.pipeline_state.focus = focus_on(&app, |r| matches!(r, PipelineRow::MaskCombineOp))
+        app.pipeline_state.focus = focus_on(&app, |r| matches!(r, PipelineRow::MaskCombineOp { .. }))
             .expect("MaskCombineOp not focusable");
         assert_eq!(app.pipeline_state.mask_combine, MaskCombine::Or);
         app.handle_key(key(KeyCode::Right));
@@ -11035,6 +11136,105 @@ mod tests {
         assert_eq!(app.pipeline_state.mask_preset, MASK_PRESET_CUSTOM, "editing the recipe marks it custom");
         app.handle_key(key(KeyCode::Left));
         assert_eq!(app.pipeline_state.mask_combine, MaskCombine::Or);
+    }
+
+    /// With two-pass on, the reliable mask's "Combined with" row is its own control: ←/→ toggle
+    /// its mode, which starts as the main mask's and follows it until set, and leaves the main
+    /// mask (and its preset) alone. The run gets it as `--two-pass-mask-combine`.
+    #[test]
+    fn the_reliable_mask_has_its_own_combine_mode() {
+        use crate::pipeline::config::MaskCombine;
+        let mut app = App::new();
+        app.form.bids_dir = "/bids".into();
+        goto_page(&mut app, Page::Masking);
+        app.pipeline_state.two_pass = true;
+        let extra = app.pipeline_state.two_pass_sections[0].clone();
+        app.pipeline_state.two_pass_sections.push(extra);
+        let main = app.pipeline_state.mask_sections[0].clone();
+        app.pipeline_state.mask_sections.push(main);
+        let rows = app.rows();
+        let reliable = MASK_TWO_PASS_BASE + 1;
+        assert!(rows.contains(&PipelineRow::MaskCombineOp { section: 1 }));
+        assert!(rows.contains(&PipelineRow::MaskCombineOp { section: reliable }));
+        assert!(!rows.iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("combined with"))));
+
+        let ps = &mut app.pipeline_state;
+        ps.toggle_combine(1);
+        assert_eq!((ps.mask_combine, ps.two_pass_combine_mode(), ps.two_pass_combine), (MaskCombine::And, MaskCombine::And, None),
+                   "unset, the reliable mask follows the main mask");
+        let preset = ps.mask_preset;
+        app.pipeline_state.focus = app.focusable_rows().iter()
+            .position(|&ri| app.rows()[ri] == PipelineRow::MaskCombineOp { section: reliable }).unwrap();
+        app.handle_key(key(KeyCode::Right));
+        let ps = &app.pipeline_state;
+        assert_eq!((ps.mask_combine, ps.two_pass_combine), (MaskCombine::And, Some(MaskCombine::Or)));
+        assert_eq!(ps.mask_preset, preset, "the reliable mask is not the main mask's preset");
+        let config = crate::tui::command::config_from_app(&app).unwrap();
+        assert_eq!((config.masking.combine, config.masking.resolved_two_pass_combine()), (MaskCombine::And, MaskCombine::Or));
+        assert!(crate::tui::command::build_command_string(&app).contains("--two-pass-mask-combine or"));
+        app.handle_key(key(KeyCode::Left));
+        assert_eq!(app.pipeline_state.two_pass_combine, Some(MaskCombine::And));
+        app.handle_key(key(KeyCode::Char('R')));
+        assert_eq!(app.pipeline_state.two_pass_combine, None, "R resets it with the rest of the recipe");
+    }
+
+    /// `d` removes the section a row belongs to — from its "Combined with" row (the section after
+    /// it) or any of its input and generator rows — in the main and the reliable mask alike, and
+    /// says so in the footer. A refinement step's rows remove only the step, and a mask's only
+    /// section stays.
+    #[test]
+    fn d_removes_the_section_a_row_belongs_to() {
+        use crate::pipeline::config::{MaskOp, MaskingInput};
+        let mut app = App::new();
+        goto_page(&mut app, Page::Masking);
+        app.pipeline_state.two_pass = true;
+        for two_pass in [false, true] {
+            let base = if two_pass { MASK_TWO_PASS_BASE } else { 0 };
+            let sections = |app: &App| if two_pass { app.pipeline_state.two_pass_sections.clone() } else { app.pipeline_state.mask_sections.clone() };
+            let set = |app: &mut App, s: Vec<crate::pipeline::config::MaskSection>| {
+                if two_pass { app.pipeline_state.two_pass_sections = s } else { app.pipeline_state.mask_sections = s }
+            };
+            let press_d_on = |app: &mut App, row: PipelineRow| {
+                let rows = app.rows();
+                app.pipeline_state.focus = app.focusable_rows().iter().position(|&ri| rows[ri] == row)
+                    .unwrap_or_else(|| panic!("{row:?} not shown"));
+                app.handle_key(key(KeyCode::Char('d')));
+            };
+            let mut first = sections(&app)[0].clone();
+            first.refinements = vec![MaskOp::Erode { iterations: 1 }];
+            let mut second = first.clone();
+            second.input = MaskingInput::MagnitudeLast;
+            let mut third = first.clone();
+            third.input = MaskingInput::MagnitudeFirst;
+
+            // The "Combined with" row removes the section after it.
+            set(&mut app, vec![first.clone(), second.clone(), third.clone()]);
+            assert!(app.pipeline_state.row_removes_section(&PipelineRow::MaskCombineOp { section: base + 1 }));
+            press_d_on(&mut app, PipelineRow::MaskCombineOp { section: base + 1 });
+            assert_eq!(sections(&app), vec![first.clone(), third.clone()], "two_pass {two_pass}");
+            // A generator-setting row removes its section.
+            set(&mut app, vec![first.clone(), second.clone(), third.clone()]);
+            press_d_on(&mut app, PipelineRow::MaskOpGeneratorParam { section: base + 2 });
+            assert_eq!(sections(&app), vec![first.clone(), second.clone()]);
+            // A refinement step's row removes the step only.
+            press_d_on(&mut app, PipelineRow::MaskOpEntry { section: base + 1, index: 0 });
+            let mut bare = second.clone();
+            bare.refinements.clear();
+            assert_eq!(sections(&app), vec![first.clone(), bare]);
+            // The footer offers it where it applies.
+            let rows = app.rows();
+            app.pipeline_state.focus = app.focusable_rows().iter()
+                .position(|&ri| rows[ri] == PipelineRow::MaskOpInput { section: base + 1 }).unwrap();
+            let footer = crate::tui::ui::tests::footer(&mut app);
+            assert!(footer.contains("d:Remove section"), "{footer}");
+            press_d_on(&mut app, PipelineRow::MaskOpInput { section: base + 1 });
+            // The only section stays, and the footer does not offer it.
+            assert_eq!(sections(&app), vec![first.clone()]);
+            assert!(!app.pipeline_state.row_removes_section(&PipelineRow::MaskOpGenerator { section: base }));
+            press_d_on(&mut app, PipelineRow::MaskOpGenerator { section: base });
+            assert_eq!(sections(&app), vec![first.clone()]);
+            assert!(!crate::tui::ui::tests::footer(&mut app).contains("Remove section"));
+        }
     }
 
     /// Steps added under "On the combined mask" land in the combined list, not in a section.
@@ -11702,14 +11902,15 @@ mod tests {
         app.handle_key(key(KeyCode::Char('2')));
         assert_eq!(app.active_tab, TAB_PREPROCESSING);
         assert!(app.on_subtabs());
-        assert_eq!(app.page(), Some(Page::Geometry));
+        assert_eq!(app.page(), Some(Page::Masking), "Preprocessing opens on Masking");
         // ←/→ move along the strip, wrapping, and focus stays on it.
         app.handle_key(key(KeyCode::Right));
-        assert_eq!(app.page(), Some(Page::Masking));
-        assert!(app.on_subtabs());
-        app.handle_key(key(KeyCode::Left));
-        app.handle_key(key(KeyCode::Left));
         assert_eq!(app.page(), Some(Page::Motion));
+        assert!(app.on_subtabs());
+        app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.page(), Some(Page::Geometry), "wraps");
+        app.handle_key(key(KeyCode::Left));
+        assert_eq!(app.page(), Some(Page::Motion), "wraps back");
         assert!(app.on_subtabs());
         // `[`/`]` still switch too.
         app.handle_key(key(KeyCode::Char(']')));
@@ -11720,8 +11921,7 @@ mod tests {
     #[test]
     fn down_enters_the_sub_tab_and_up_from_its_first_row_returns() {
         let mut app = App::new();
-        app.handle_key(key(KeyCode::Char('2')));
-        app.handle_key(key(KeyCode::Right)); // Masking
+        app.handle_key(key(KeyCode::Char('2'))); // Masking, the default
         let first = app.focusable_rows().len();
         assert!(first > 1);
         app.handle_key(key(KeyCode::Down));
@@ -11961,8 +12161,8 @@ mod tests {
         assert!(app.on_subtabs());
     }
 
-    /// Enter on the bar opens a tab without sub-tabs at its first row; ↑ from Pipeline and
-    /// Methods reaches the bar once they are scrolled to the top.
+    /// Enter on the bar opens a tab without sub-tabs at its first row; ↑ from the Methods tab's
+    /// sub-tabs reaches the strip once they are scrolled to the top, and then the bar.
     #[test]
     fn the_tab_bar_is_reachable_from_every_tab() {
         let mut app = App::new();
@@ -11973,11 +12173,15 @@ mod tests {
         assert!(!app.tab_focus);
         assert_eq!(app.focus(), 0);
 
-        for tab in [TAB_PIPELINE, TAB_METHODS] {
-            app.handle_key(key(KeyCode::Char(char::from_digit(tab as u32 + 1, 10).unwrap())));
+        for page in [Page::MethodsText, Page::Pipeline] {
+            app.handle_key(key(KeyCode::Char(char::from_digit(TAB_METHODS as u32 + 1, 10).unwrap())));
+            app.sub_page[TAB_METHODS] = Some(page);
+            app.handle_key(key(KeyCode::Down));
             app.handle_key(key(KeyCode::Down));
             app.handle_key(key(KeyCode::Up));
-            assert!(!app.tab_focus, "the first ↑ scrolls back up");
+            assert!(!app.tab_focus && !app.on_subtabs(), "the first ↑ scrolls back up");
+            app.handle_key(key(KeyCode::Up));
+            assert!(app.on_subtabs());
             app.handle_key(key(KeyCode::Up));
             assert!(app.tab_focus);
             app.handle_key(key(KeyCode::Down));

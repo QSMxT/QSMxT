@@ -793,6 +793,10 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
                     .join(",")
             }).collect()
         }),
+        two_pass_mask_combine: ps.two_pass_combine.filter(|_| ps.two_pass).map(|c| match c {
+            crate::pipeline::config::MaskCombine::Or => crate::cli::MaskCombineArg::Or,
+            crate::pipeline::config::MaskCombine::And => crate::cli::MaskCombineArg::And,
+        }),
         dismiss_recommendation: (!ps.dismissed.is_empty())
             .then(|| ps.dismissed.iter().map(|d| format!("{}={}", d.rule, d.chosen)).collect()),
     }
@@ -2490,6 +2494,11 @@ mod parity {
             ("two-pass sections", |a| a.pipeline_state.two_pass = true, |a| {
                 a.pipeline_state.two_pass_sections[0].refinements.push(crate::pipeline::config::MaskOp::Erode { iterations: 2 });
             }),
+            ("two-pass combine", |a| {
+                a.pipeline_state.two_pass = true;
+                let extra = a.pipeline_state.two_pass_sections[0].clone();
+                a.pipeline_state.two_pass_sections.push(extra);
+            }, |a| a.pipeline_state.toggle_combine(crate::tui::app::MASK_TWO_PASS_BASE + 1)),
             // Run-level settings: not in the pipeline config, so compared on the run's arguments.
             ("config", |_| {}, |a| a.form.config_file = "c.toml".into()),
             ("include", |_| {}, |a| a.filter_state.include_pattern = "sub-1*".into()),
@@ -2497,13 +2506,14 @@ mod parity {
             ("num_echoes", |_| {}, |a| a.filter_state.num_echoes = "2".into()),
             // The memory-limit row's third state (auto, a number, none).
             ("no_mem_limit", |_| {}, |a| a.form.mem_limit_gb = "none".into()),
-            // A recommendation dismissed in the pop-up (RTS's reference background removal is
-            // V-SHARP).
+            // A recommendation dismissed in the pop-up (MEDI-mSMV without its prefilter is
+            // discouraged).
             ("dismiss_recommendation", |a| {
                 let at = |list: &[&str], v: &str| list.iter().position(|o| *o == v).unwrap();
-                a.set_field_select("qsm_algorithm", at(crate::tui::app::QSM_ALGO_OPTIONS, "rts"));
-                a.set_field_select("bf_algorithm", at(crate::tui::app::BF_OPTIONS, "pdf"));
-            }, |a| a.pipeline_state.dismissed.push(qsmxt_engine::Dismissal { rule: "rts.bg-vsharp".into(), chosen: "pdf".into() })),
+                a.set_field_select("qsm_algorithm", at(crate::tui::app::QSM_ALGO_OPTIONS, "medi"));
+                a.pipeline_state.medi_msmv = true;
+                a.pipeline_state.medi_msmv_prefilter = false;
+            }, |a| a.pipeline_state.dismissed.push(qsmxt_engine::Dismissal { rule: "medi-msmv.prefilter".into(), chosen: "false".into() })),
         ];
         for (what, setup, change) in surfaces {
             let mut base = App::new();

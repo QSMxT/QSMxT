@@ -1779,15 +1779,21 @@ pub struct PipelineArgs {
     /// Define the reliable-pass mask used by --two-pass (repeatable; same format as --mask).
     /// Defaults to `phase-quality,threshold:otsu` — an unfilled threshold on the phase-quality
     /// map. Its holes are the point, so refinements that close them (fill-holes, close, gaussian)
-    /// defeat the method. Folded with --mask-combine and --mask-refine like the main mask, and
-    /// always intersected with it.
+    /// defeat the method. Folded with --two-pass-mask-combine, then --mask-refine like the main
+    /// mask, and always intersected with it.
     #[arg(long = "two-pass-mask", num_args = 1)]
     pub two_pass_sections_cli: Option<Vec<String>>,
 
+    /// How to combine multiple --two-pass-mask sections: `or` (union) or `and` (intersection).
+    /// Defaults to the main mask's --mask-combine. Turns on --two-pass.
+    #[arg(long, value_enum)]
+    pub two_pass_mask_combine: Option<MaskCombineArg>,
+
     /// Stop offering a recommendation for the setting's current value: RULE=VALUE, the rule's id
     /// and the value it was dismissed for, as `qsmxt run --dry` lists them (e.g.
-    /// rts.bg-vsharp=pdf). Repeatable. A change to the setting brings the recommendation back;
-    /// a required one cannot be dismissed
+    /// field-mapping.phase-offsets=false). Repeatable. A change to the setting brings the
+    /// recommendation back. A required one cannot be dismissed, and a reference-pipeline
+    /// difference has nothing to dismiss
     #[arg(long = "dismiss-recommendation", value_name = "RULE=VALUE", num_args = 1)]
     pub dismiss_recommendation: Option<Vec<String>>,
 }
