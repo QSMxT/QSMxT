@@ -351,6 +351,31 @@ fn reference_differences_of_a_chosen_method() {
     assert_eq!(reference_differences(&kept, &facts, &medi).len(), diffs.len());
 }
 
+/// With Laplacian unwrapping, QSMART's and iLSQR's reference pipelines offer the unmasked
+/// unwrapping, in QSMxT's setting, and applying it sets only that.
+#[test]
+fn the_reference_pipelines_offer_the_unmasked_unwrapping() {
+    let facts = Facts::default();
+    for (alg, name, rule) in [(QsmAlgorithm::Qsmart, "QSMART", "qsmart.unwrap-unmasked"),
+                              (QsmAlgorithm::Ilsqr, "iLSQR", "sti.unwrap-unmasked")] {
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = alg;
+        let unmasked = |c: &PipelineConfig| reference_values(c, &facts).into_iter().find(|r| r.rule == rule);
+        assert!(unmasked(&c).is_none(), "{rule}: ROMEO has no Laplacian unwrapping");
+        c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
+        let diffs = reference_differences(&c, &facts, &method(&c, name));
+        let r = diffs.iter().find(|r| r.rule == rule).unwrap_or_else(|| panic!("{rule} not offered: {diffs:?}"));
+        assert_eq!((r.setting.as_str(), &r.recommended.value), ("field_mapping.laplacian_unmasked", &json!(true)));
+        let mut applied = c.clone();
+        apply(&mut applied, rule, None).unwrap();
+        assert!(applied.field_mapping.laplacian_unmasked);
+        let mut back = applied.clone();
+        back.field_mapping.laplacian_unmasked = false;
+        assert_eq!(back, c, "{rule}: nothing else changes");
+        assert!(!unmasked(&applied).unwrap().departs);
+    }
+}
+
 /// A setting's marker names whose rule it departs from and what that rule uses.
 #[test]
 fn markers_name_the_method() {

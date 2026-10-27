@@ -153,6 +153,11 @@ fn graphs_of_a_table_of_configurations() {
     assert!(u.writes.contains(&item_key(&Item::FieldReliability)), "{:?}", u.writes);
     assert!(u.settings.contains(&"mirror solver".to_string()) && u.settings.contains(&"B0 by QSMART's echo fit".to_string()),
             "{:?}", u.settings);
+    assert!(!u.settings.iter().any(|s| s.contains("raw phase")), "{:?}", u.settings);
+    config.field_mapping.laplacian_unmasked = true;
+    let g = graph(&config, &facts());
+    let u = g.node("unwrap").unwrap();
+    assert!(u.settings.contains(&"raw phase over the whole volume".to_string()), "{:?}", u.settings);
     let q = g.node("qsmart").unwrap();
     assert_eq!(q.writes.len(), 7);
     assert!(q.reads.contains(&item_key(&Item::FieldReliability)));

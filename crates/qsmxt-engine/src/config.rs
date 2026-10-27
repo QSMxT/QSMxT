@@ -664,9 +664,7 @@ impl N4Config {
         }
     }
 }
-param_config!(LinearFitConfig from qsm_core::utils::LinearFitParams {
-    estimate_offset: bool, reliability_threshold_percentile: f64
-});
+param_config!(LinearFitConfig from qsm_core::utils::LinearFitParams { estimate_offset: bool });
 // MEDI's complex fit (`Fit_ppm_complex`): `reltol` stops the Gauss-Newton iterations once the
 // update is this fraction of the first estimate, over the whole volume; `max_iter` caps them.
 param_config!(ComplexFitConfig from qsm_core::fieldmap::FitPpmComplexParams {
@@ -1241,12 +1239,18 @@ pub struct FieldMappingConfig {
     /// one number for all three.
     #[serde(default = "default_laplacian_fft_pad", deserialize_with = "deserialize_pad3")]
     pub laplacian_fft_pad: [usize; 3],
+    /// Laplacian unwrapping on the raw phase over the whole volume, instead of on the phase zeroed
+    /// outside the brain mask (qsm-core's `FieldMappingConfig::laplacian_unmasked`, off by
+    /// default). With QSMART's echo fit the unwrapped echoes are then kept over the whole volume,
+    /// as QSMART fits them. Only with Laplacian unwrapping; MEDI's complex fit unwraps its fitted
+    /// phase inside the mask either way.
+    pub laplacian_unmasked: bool,
     pub romeo: RomeoConfig,
     /// MEDI's complex fit (`b0_estimation = "complex-fit"`).
     #[serde(default)]
     pub complex_fit: ComplexFitConfig,
-    /// The linear fit's settings. `estimate_offset` and `reliability_threshold_percentile` are
-    /// shared with the robust fit, where they mean the same thing.
+    /// The linear fit's settings. `estimate_offset` is shared with the robust fit, where it means
+    /// the same thing.
     pub linear_fit: LinearFitConfig,
     /// The motion-robust echo fit (`b0_estimation = "robust-fit"`).
     #[serde(default)]
@@ -1268,15 +1272,10 @@ pub struct FieldMappingConfig {
 }
 
 impl FieldMappingConfig {
-    /// Why these settings cannot be run together, if they cannot: QSMART's echo fit follows its
-    /// own Laplacian unwrapping. (It has no bipolar correction either, but bipolar correction
-    /// belongs to ROMEO's phase offset removal and is not applied with Laplacian unwrapping.)
+    /// Why these settings cannot be run, if they cannot: QSMART's echo fit with a threshold
+    /// qsm-core refuses (`QsmartFitThreshold::validate`). The echo fit takes any unwrapping, phase
+    /// offset removal and bipolar correction; QSMART's own choices are the rules' to suggest.
     pub fn validate(&self) -> Result<(), String> {
-        if self.b0_estimation == B0Estimation::QsmartEchofit && self.unwrapping_algorithm != UnwrappingAlgorithm::Laplacian {
-            return Err(format!(
-                "B0 estimation by QSMART's echo fit needs Laplacian unwrapping, not {}: choose Laplacian \
-                 unwrapping, or another B0 estimation", self.unwrapping_algorithm.to_string().to_uppercase()));
-        }
         if self.b0_estimation == B0Estimation::QsmartEchofit {
             self.qsmart_fit_threshold().validate()?;
         }
@@ -1295,7 +1294,7 @@ impl FieldMappingConfig {
 
 /// Motion-robust echo fit (`qsm_core::fieldmap::RobustFitParams`): an IRLS fit of phase against
 /// TE that down-weights echoes departing from a straight line, voxel by voxel. Its
-/// `estimate_offset` and `reliability_threshold_percentile` are `linear_fit`'s.
+/// `estimate_offset` is `linear_fit`'s.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct RobustFitConfig {
@@ -1395,6 +1394,7 @@ impl Default for FieldMappingConfig {
             b0_weight_assumed_t2star_ms: default_b0_weight_assumed_t2star_ms(),
             laplacian_solver: LaplacianSolver::Dct,
             laplacian_fft_pad: default_laplacian_fft_pad(),
+            laplacian_unmasked: qsm_core::pipeline::FieldMappingConfig::default().laplacian_unmasked,
             romeo: RomeoConfig::default(),
             complex_fit: ComplexFitConfig::default(),
             linear_fit: LinearFitConfig::default(),
@@ -2263,14 +2263,22 @@ mod qsmart_inputs_tests {
         assert!(!d.to_toml_changed().unwrap().contains("vessel_size_units"));
     }
 
+    /// QSMART's echo fit runs with any unwrapping, phase offset removal and bipolar correction;
+    /// only a threshold qsm-core refuses is refused.
     #[test]
-    fn the_echo_fit_needs_laplacian_unwrapping() {
+    fn the_echo_fit_takes_any_unwrapping() {
         let mut fm = FieldMappingConfig { b0_estimation: B0Estimation::QsmartEchofit, ..Default::default() };
-        let e = fm.validate().unwrap_err();
-        assert!(e.contains("Laplacian") && e.contains("ROMEO") && !e.contains("--"), "{e}");
-        fm.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
-        fm.bipolar_correction = true; // ROMEO's; not applied with Laplacian unwrapping
+        assert_eq!(fm.unwrapping_algorithm, UnwrappingAlgorithm::Romeo);
         assert!(fm.validate().is_ok());
+        fm.bipolar_correction = true;
+        assert!(fm.validate().is_ok());
+        fm.phase_offset_removal = false;
+        assert!(fm.validate().is_ok());
+        fm.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
+        fm.laplacian_unmasked = true;
+        assert!(fm.validate().is_ok());
+        fm.qsmart_fit_percentile = 0.0;
+        assert!(fm.validate().is_err());
         assert!(FieldMappingConfig::default().validate().is_ok());
     }
 }

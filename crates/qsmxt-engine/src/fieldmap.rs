@@ -6,9 +6,10 @@
 //! own path (QSM.rs#161/#162/#166), where QSM.rs's tests check it:
 //!
 //! * **Laplacian unwrapping** unwraps each echo on its own (phase zeroed outside the mask, as STI
-//!   Suite's `MRPhaseUnwrap` is called by UK Biobank), aligns the constant a Laplacian unwrap
-//!   leaves undetermined across echoes, and combines the echoes with the configured estimator,
-//!   so `--b0-estimation` and `--b0-weight-type` mean the same as with ROMEO.
+//!   Suite's `MRPhaseUnwrap` is called by UK Biobank, or the raw phase over the whole volume with
+//!   `--laplacian-unmasked`), aligns the constant a Laplacian unwrap leaves undetermined across
+//!   echoes, and combines the echoes with the configured estimator, so `--b0-estimation` and
+//!   `--b0-weight-type` mean the same as with ROMEO.
 //! * **`assumed-decay` weighting** is qsm-core's `B0WeightType::AssumedDecay`.
 //! * The **FFT Laplacian solver** is qsm-core's `LaplacianSolver::Fft`.
 //!
@@ -16,9 +17,11 @@
 //!   Laplacian per-echo constants first (QSM.rs#167).
 //!
 //! * **QSMART's echo fit** (`--b0-estimation qsmart-echofit`) is qsm-core's
-//!   `B0EstimationMethod::QsmartEchofit`: each echo Laplacian-unwrapped over the whole, unmasked
-//!   volume, then QSMART's fit, which also returns its reliability map `R_0`
-//!   ([`FieldMappingResult::reliability`]). Its field is not masked.
+//!   `B0EstimationMethod::QsmartEchofit`: QSMART's fit of the echoes as the configured unwrapping,
+//!   phase offset removal and bipolar correction leave them, which also returns its reliability
+//!   map `R_0` ([`FieldMappingResult::reliability`]). QSMART's own route is Laplacian unwrapping
+//!   of the raw phase with the mirror solver (`--laplacian-unmasked`), and its field is then not
+//!   masked.
 //!
 //! The UK Biobank recipe (per-echo Laplacian unwrapping as STI Suite's `MRPhaseUnwrap`, then a
 //! mean weighted by `TE·exp(−TE/T2*)` with an assumed T2* of 40 ms) is

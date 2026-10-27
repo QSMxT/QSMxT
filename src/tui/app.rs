@@ -1298,7 +1298,8 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("reg_translation_step_mm", "registration.translation_step_mm"), ("reg_min_overlap", "registration.min_overlap"),
     ("do_qsm", "pipeline.do_qsm"),
     ("unwrapping_algorithm", "field_mapping.unwrapping_algorithm"), ("laplacian_solver", "field_mapping.laplacian_solver"),
-    ("laplacian_fft_pad", "field_mapping.laplacian_fft_pad"), ("phase_offset_removal", "field_mapping.phase_offset_removal"),
+    ("laplacian_fft_pad", "field_mapping.laplacian_fft_pad"), ("laplacian_unmasked", "field_mapping.laplacian_unmasked"),
+    ("phase_offset_removal", "field_mapping.phase_offset_removal"),
     ("phase_offset_sigma_mm", "field_mapping.phase_offset_sigma_mm"), ("bipolar_correction", "field_mapping.bipolar_correction"),
     ("romeo_individual", "field_mapping.romeo.individual"), ("romeo_template", "field_mapping.romeo.template"),
     ("romeo_correct_global", "field_mapping.romeo.correct_global"), ("romeo_phase_coherence", "field_mapping.romeo.phase_coherence"),
@@ -1313,8 +1314,6 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("b0_estimation", "field_mapping.b0_estimation"), ("b0_weight_type", "field_mapping.b0_weight_type"),
     ("b0_weight_assumed_t2star_ms", "field_mapping.b0_weight_assumed_t2star_ms"),
     ("linear_fit_estimate_offset", "field_mapping.linear_fit.estimate_offset"),
-    ("linear_fit_reliability", "field_mapping.linear_fit.reliability_threshold_percentile"),
-    ("linear_fit_reliability_threshold", "field_mapping.linear_fit.reliability_threshold_percentile"),
     ("robust_fit_loss", "field_mapping.robust_fit.loss"), ("robust_fit_tuning", "field_mapping.robust_fit.tuning"),
     ("robust_fit_iterations", "field_mapping.robust_fit.iterations"),
     ("robust_fit_downweight_level", "field_mapping.robust_fit.downweight_level"),
@@ -1697,6 +1696,9 @@ pub struct PipelineFormState {
     pub laplacian_solver: usize,
     /// FFT solver pad in voxels per side: "64" for every axis, or "64 64 32".
     pub laplacian_fft_pad: String,
+    /// Laplacian unwrapping of the raw phase over the whole volume
+    /// (`field_mapping.laplacian_unmasked`).
+    pub laplacian_unmasked: bool,
     /// Motion correction (off by default): reference index into [`MOTION_REFERENCE_OPTIONS`]
     /// (0 first, 1 last, 2 a given echo), and the rigid registration's settings.
     pub motion_correction: bool,
@@ -2027,9 +2029,6 @@ pub struct PipelineFormState {
     pub romeo_correct_regions: bool,
     pub romeo_wrap_addition: String,
     pub linear_fit_estimate_offset: bool,
-    /// Report the fit's reliability mask (off = a percentile of 0).
-    pub linear_fit_reliability: bool,
-    pub linear_fit_reliability_threshold: String,
     /// Motion-robust echo fit: index into [`ROBUST_FIT_LOSS_OPTIONS`], and its parameters
     /// (`robust_fit_tuning` blank = the loss's conventional value).
     pub robust_fit_loss: usize,
@@ -2191,6 +2190,7 @@ impl Default for PipelineFormState {
             qsmart_fit_threshold: format!("{}", qsmxt_engine::default_qsmart_fit_threshold()),
             laplacian_solver: 0, // dct
             laplacian_fft_pad: qsmxt_engine::default_laplacian_fft_pad()[0].to_string(),
+            laplacian_unmasked: qsmxt_engine::FieldMappingConfig::default().laplacian_unmasked,
             motion_correction: false,
             orientation_registration: true,
             multi_orientation_force: false,
@@ -2376,8 +2376,6 @@ impl Default for PipelineFormState {
             romeo_correct_regions: qsm_core::unwrap::RomeoParams::default().correct_regions,
             romeo_wrap_addition: format!("{}", qsm_core::unwrap::RomeoParams::default().wrap_addition),
             linear_fit_estimate_offset: true,
-            linear_fit_reliability: qsmxt_engine::LinearFitConfig::default().reliability_threshold_percentile > 0.0,
-            linear_fit_reliability_threshold: fmt_default(qsmxt_engine::LinearFitConfig::default().reliability_threshold_percentile),
             robust_fit_loss: 0,
             robust_fit_tuning: String::new(),
             robust_fit_iterations: qsmxt_engine::RobustFitConfig::default().iterations.to_string(),
@@ -2719,7 +2717,7 @@ const B0_ESTIMATION_HELP: &[&str] = &[
     "Weighted average of phase/TE across echoes (default)",
     "Magnitude-weighted linear fit of phase vs TE",
     "Motion-robust linear fit (IRLS): down-weights echoes departing from a straight line, per voxel. Needs 4 echoes (3 without offset)",
-    "QSMART's: magnitude-weighted fit of phase vs TE through the origin, each echo unwrapped over the whole volume; marks the voxels QSMART leaves out. Needs Laplacian unwrapping",
+    "QSMART's: magnitude-weighted fit of phase vs TE through the origin; marks the voxels QSMART leaves out",
     "MEDI's field map (Fit_ppm_complex): a magnitude-weighted fit of the complex echoes, then unwrapping of the fitted phase. Needs the magnitude and evenly spaced echoes; no phase offset removal or bipolar correction",
 ];
 const B0_WEIGHT_TYPE_HELP: &[&str] = &[
@@ -3023,6 +3021,10 @@ impl PipelineFormState {
             rows.push(PipelineRow::Param { label: "    FFT pad (voxels)", field: "laplacian_fft_pad",
                     help: "Zero-padding per side: one value for every axis or three (x y z). Default: 64" });
             }
+            rows.push(PipelineRow::Toggle {
+                label: "  Unmasked phase", field: "laplacian_unmasked",
+                help: "Unwrap the raw phase over the whole volume, as QSMART does, instead of the phase set to zero outside the brain mask",
+            });
         }
 
         // ROMEO's own settings, phase offset removal (HIP — ROMEO only) among them. MEDI's complex
@@ -3145,16 +3147,6 @@ impl PipelineFormState {
                 label: "  Estimate offset", field: "linear_fit_estimate_offset",
                 help: "Fit a phase-offset term in the echo-time fit (robust fit: needs 4 echoes with it, 3 without)",
             });
-            rows.push(PipelineRow::Toggle {
-                label: "  Reliability mask", field: "linear_fit_reliability",
-                help: "Report the fit's reliability mask; does not change the field map",
-            });
-            if self.linear_fit_reliability {
-                rows.push(PipelineRow::Param {
-                    label: "    Percentile", field: "linear_fit_reliability_threshold",
-                    help: "Percentile of the fit residual above which a voxel counts as unreliable",
-                });
-            }
             if self.b0_estimation == 2 { // robust-fit
                 rows.push(PipelineRow::AlgoSelect {
                     label: "  Loss", field: "robust_fit_loss",
@@ -3691,7 +3683,7 @@ impl PipelineFormState {
         "n4_bias_field_fwhm", "n4_wiener_noise", "n4_histogram_bins",
         "tgv_step_size",
         "amp_pe_damp_rate_sig", "amp_pe_damp_rate_par", "amp_pe_max_pe_spar_ite", "amp_pe_max_pe_est_ite", "amp_pe_cvg_thd",
-        "linear_fit_reliability_threshold", "robust_fit_tuning", "robust_fit_iterations",
+        "robust_fit_tuning", "robust_fit_iterations",
         "robust_fit_downweight_level", "robust_fit_flag_ratio",
         "complex_fit_reltol", "complex_fit_max_iter", "medi_lambda_csf", "medi_csf_r2s_threshold", "medi_zeropad",
         "motion_reference_echo", "motion_chain_levels", "motion_min_ncc",
@@ -3764,7 +3756,6 @@ impl PipelineFormState {
             "heidi_laplacian_threshold" => &self.heidi_laplacian_threshold,
             "b0_weight_assumed_t2star_ms" => &self.b0_weight_assumed_t2star_ms,
             "laplacian_fft_pad" => &self.laplacian_fft_pad,
-            "linear_fit_reliability_threshold" => &self.linear_fit_reliability_threshold,
             "robust_fit_tuning" => &self.robust_fit_tuning,
             "robust_fit_iterations" => &self.robust_fit_iterations,
             "robust_fit_downweight_level" => &self.robust_fit_downweight_level,
@@ -4021,7 +4012,6 @@ impl PipelineFormState {
             "heidi_laplacian_threshold" => Some(&mut self.heidi_laplacian_threshold),
             "b0_weight_assumed_t2star_ms" => Some(&mut self.b0_weight_assumed_t2star_ms),
             "laplacian_fft_pad" => Some(&mut self.laplacian_fft_pad),
-            "linear_fit_reliability_threshold" => Some(&mut self.linear_fit_reliability_threshold),
             "robust_fit_tuning" => Some(&mut self.robust_fit_tuning),
             "robust_fit_iterations" => Some(&mut self.robust_fit_iterations),
             "robust_fit_downweight_level" => Some(&mut self.robust_fit_downweight_level),
@@ -4314,7 +4304,7 @@ impl PipelineFormState {
             "romeo_bestpath" => self.romeo_bestpath,
             "romeo_merge_regions" => self.romeo_merge_regions,
             "romeo_temporal_uncertain" => self.romeo_temporal_uncertain,
-            "linear_fit_reliability" => self.linear_fit_reliability,
+            "laplacian_unmasked" => self.laplacian_unmasked,
             "dl_tiling" => self.dl_tiling,
             "romeo_correct_regions" => self.romeo_correct_regions,
             "linear_fit_estimate_offset" => self.linear_fit_estimate_offset,
@@ -4367,7 +4357,7 @@ impl PipelineFormState {
             "romeo_bestpath" => self.romeo_bestpath = !self.romeo_bestpath,
             "romeo_merge_regions" => self.romeo_merge_regions = !self.romeo_merge_regions,
             "romeo_temporal_uncertain" => self.romeo_temporal_uncertain = !self.romeo_temporal_uncertain,
-            "linear_fit_reliability" => self.linear_fit_reliability = !self.linear_fit_reliability,
+            "laplacian_unmasked" => self.laplacian_unmasked = !self.laplacian_unmasked,
             "dl_tiling" => self.dl_tiling = !self.dl_tiling,
             "romeo_correct_regions" => self.romeo_correct_regions = !self.romeo_correct_regions,
             "linear_fit_estimate_offset" => self.linear_fit_estimate_offset = !self.linear_fit_estimate_offset,

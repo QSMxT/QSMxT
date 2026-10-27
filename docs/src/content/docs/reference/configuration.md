@@ -80,6 +80,18 @@ histogram_bins = 200
 See [inhomogeneity correction](/QSMxT/reference/algorithms/#inhomogeneity-correction)
 for what each does.
 
+Laplacian unwrapping's settings are in `[field_mapping]`:
+
+```toml
+[field_mapping]
+unwrapping_algorithm = "laplacian"
+laplacian_solver = "mirror"   # or "dct" (the default), "fft"
+laplacian_unmasked = true     # the raw phase over the whole volume (default false)
+```
+
+`laplacian_unmasked = true` is `--laplacian-unmasked`. See
+[phase unwrapping](/QSMxT/reference/algorithms/#phase-unwrapping) for what each does.
+
 A method that converts the field to phase at one echo time has a `te` setting naming it:
 `"first"`, `"last"`, `"spacing"` (TE2 − TE1), `"sum"` (of the echo times), or a given time
 in seconds. On the command line the same choice is `first`, `last`, `spacing`, `sum`, or a
@@ -153,6 +165,9 @@ A file without it is read as follows, and what changed is logged:
 - Settings that no longer exist are ignored, with a warning where that changes what a
   run does (for example `bg_removal.msmv_refine`: mSMV is now MEDI's option,
   `inversion.medi.msmv`).
+- `field_mapping.linear_fit.reliability_threshold_percentile` never changed the field map
+  and is no longer a setting: it is dropped with a note, whatever it holds, also from a
+  file that has `schema_version`.
 - `bg_removal.vsharp.min_radius` was also the step between V-SHARP's radii. A value kept
   from such a file brings that step with it as `bg_removal.vsharp.radius_step`, so the
   radii stay the same.

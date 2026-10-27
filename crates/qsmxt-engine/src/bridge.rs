@@ -142,8 +142,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         },
         phase_offset_removal: cfg.field_mapping.phase_offset_removal,
         phase_offset_sigma_mm: cfg.field_mapping.phase_offset_sigma_mm,
-        // Bipolar correction follows ROMEO's phase offset removal; Laplacian unwrapping has none
-        // (QSMART's echo fit refuses it, so it is not passed on there).
+        // Bipolar correction follows ROMEO's phase offset removal; Laplacian unwrapping has none.
         bipolar_correction: cfg.field_mapping.bipolar_correction
             && cfg.field_mapping.unwrapping_algorithm == UnwrappingAlgorithm::Romeo,
         b0_estimation: match cfg.field_mapping.b0_estimation {
@@ -152,7 +151,6 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             },
             B0Estimation::LinearFit => PB0Method::LinearFit(qsm_core::utils::LinearFitParams {
                 estimate_offset: cfg.field_mapping.linear_fit.estimate_offset,
-                reliability_threshold_percentile: cfg.field_mapping.linear_fit.reliability_threshold_percentile,
             }),
             B0Estimation::RobustFit => {
                 let r = &cfg.field_mapping.robust_fit;
@@ -166,7 +164,6 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
                     downweight_level: r.downweight_level,
                     flag_ratio: r.flag_ratio,
                     estimate_offset: cfg.field_mapping.linear_fit.estimate_offset,
-                    reliability_threshold_percentile: cfg.field_mapping.linear_fit.reliability_threshold_percentile,
                 })
             }
             B0Estimation::QsmartEchofit => PB0Method::QsmartEchofit {
@@ -184,6 +181,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             },
             LaplacianSolver::Mirror => qsm_core::unwrap::LaplacianSolver::Mirror,
         },
+        laplacian_unmasked: cfg.field_mapping.laplacian_unmasked,
         romeo_params: (&cfg.field_mapping.romeo).into(),
     };
 
@@ -915,14 +913,40 @@ mod tests {
 
         cfg.field_mapping.b0_estimation = B0Estimation::LinearFit;
         cfg.field_mapping.linear_fit.estimate_offset = false;
-        cfg.field_mapping.linear_fit.reliability_threshold_percentile = 75.0;
         cfg.field_mapping.laplacian_solver = LaplacianSolver::Fft;
         cfg.field_mapping.laplacian_fft_pad = [40, 40, 40];
         let (fm, _, _, _) = to_pipeline_stages(&cfg);
         assert_eq!(fm.b0_estimation, PB0Method::LinearFit(qsm_core::utils::LinearFitParams {
-            estimate_offset: false, reliability_threshold_percentile: 75.0,
+            estimate_offset: false,
         }));
         assert_eq!(fm.laplacian_solver, qsm_core::unwrap::LaplacianSolver::Fft { pad: [40; 3] });
+    }
+
+    /// The unmasked Laplacian unwrapping reaches qsm-core as set, off by default as qsm-core's is.
+    #[test]
+    fn laplacian_unmasked_reaches_core() {
+        let mut cfg = PipelineConfig::default();
+        let core_default = qsm_core::pipeline::FieldMappingConfig::default().laplacian_unmasked;
+        assert_eq!(to_pipeline_stages(&cfg).0.laplacian_unmasked, core_default);
+        assert!(!core_default);
+        cfg.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
+        cfg.field_mapping.laplacian_unmasked = true;
+        let (fm, _, _, _) = to_pipeline_stages(&cfg);
+        assert!(fm.laplacian_unmasked);
+        assert_eq!(fm.unwrapping_algorithm, PUnwrap::Laplacian);
+    }
+
+    /// QSMART's echo fit reaches qsm-core with the unwrapping, phase offset removal and bipolar
+    /// correction it is given: nothing is switched for it.
+    #[test]
+    fn the_echo_fit_keeps_the_configured_field_mapping() {
+        let mut cfg = PipelineConfig::default();
+        cfg.field_mapping.b0_estimation = B0Estimation::QsmartEchofit;
+        cfg.field_mapping.bipolar_correction = true;
+        let (fm, _, _, _) = to_pipeline_stages(&cfg);
+        assert_eq!(fm.unwrapping_algorithm, PUnwrap::Romeo);
+        assert!(fm.phase_offset_removal && fm.bipolar_correction && !fm.laplacian_unmasked);
+        assert!(matches!(fm.b0_estimation, PB0Method::QsmartEchofit { .. }));
     }
 
     #[test]
@@ -979,12 +1003,10 @@ mod tests {
             loss: RobustLoss::Huber, tuning: Some(2.0), iterations: 0, downweight_level: 0.5, flag_ratio: 4.0,
         };
         cfg.field_mapping.linear_fit.estimate_offset = false;
-        cfg.field_mapping.linear_fit.reliability_threshold_percentile = 0.0;
         let (fm, _, _, _) = to_pipeline_stages(&cfg);
         assert_eq!(fm.b0_estimation, PB0Method::RobustFit(qsm_core::fieldmap::RobustFitParams {
             loss: qsm_core::fieldmap::RobustLoss::Huber, tuning: Some(2.0), iterations: 0,
             downweight_level: 0.5, flag_ratio: 4.0, estimate_offset: false,
-            reliability_threshold_percentile: 0.0,
         }));
     }
 

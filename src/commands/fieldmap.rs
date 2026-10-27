@@ -9,7 +9,8 @@ use log::info;
 
 use super::common::{load_mask, load_nifti_4d, save_nifti, MultiEcho};
 use crate::cli::{
-    B0EstimationArg, B0WeightTypeArg, FieldmapCommand, FieldmapCommonArgs, FieldmapRomeoArgs,
+    B0EstimationArg, B0WeightTypeArg, FieldmapCommand, FieldmapCommonArgs, FieldmapLaplacianArgs,
+    FieldmapRomeoArgs,
 };
 use crate::error::QsmxtError;
 use crate::cli::LaplacianSolverArg;
@@ -85,9 +86,6 @@ fn apply_common_config(
         },
         B0EstimationArg::LinearFit => {
             let mut p = qsm_core::utils::LinearFitParams::default();
-            if let Some(v) = common.linear_fit_reliability_threshold {
-                p.reliability_threshold_percentile = v;
-            }
             if let Some(v) = common.linear_fit_estimate_offset {
                 p.estimate_offset = v;
             }
@@ -98,7 +96,6 @@ fn apply_common_config(
             let mut cfg = qsmxt_engine::PipelineConfig::default();
             let fm = &mut cfg.field_mapping;
             fm.b0_estimation = qsmxt_engine::B0Estimation::RobustFit;
-            if let Some(v) = common.linear_fit_reliability_threshold { fm.linear_fit.reliability_threshold_percentile = v; }
             if let Some(v) = common.linear_fit_estimate_offset { fm.linear_fit.estimate_offset = v; }
             if let Some(l) = common.robust_fit_loss {
                 fm.robust_fit.loss = match l {
@@ -154,20 +151,34 @@ pub fn execute(cmd: FieldmapCommand) -> crate::Result<()> {
             &|c| apply_romeo(&args, c),
         ),
         FieldmapCommand::Laplacian(args) => {
-            let pad = qsmxt_engine::pad3_from(&args.laplacian_fft_pad).ok_or_else(|| QsmxtError::Config(
-                format!("--laplacian-fft-pad {:?}: give one value or three", args.laplacian_fft_pad)))?;
-            let solver = match args.laplacian_solver {
-                LaplacianSolverArg::Dct => qsm_core::unwrap::LaplacianSolver::Dct,
-                LaplacianSolverArg::Fft => qsm_core::unwrap::LaplacianSolver::Fft { pad },
-                LaplacianSolverArg::Mirror => qsm_core::unwrap::LaplacianSolver::Mirror,
-            };
+            let solver = laplacian_solver(&args)?;
             run_field_mapping(
                 &args.common,
                 qsm_core::pipeline::config::UnwrappingAlgorithm::Laplacian,
-                &|c| c.laplacian_solver = solver,
+                &|c| apply_laplacian(&args, solver, c),
             )
         }
     }
+}
+
+/// The Poisson solver `fieldmap laplacian`'s flags choose.
+fn laplacian_solver(args: &FieldmapLaplacianArgs) -> crate::Result<qsm_core::unwrap::LaplacianSolver> {
+    let pad = qsmxt_engine::pad3_from(&args.laplacian_fft_pad).ok_or_else(|| QsmxtError::Config(
+        format!("--laplacian-fft-pad {:?}: give one value or three", args.laplacian_fft_pad)))?;
+    Ok(match args.laplacian_solver {
+        LaplacianSolverArg::Dct => qsm_core::unwrap::LaplacianSolver::Dct,
+        LaplacianSolverArg::Fft => qsm_core::unwrap::LaplacianSolver::Fft { pad },
+        LaplacianSolverArg::Mirror => qsm_core::unwrap::LaplacianSolver::Mirror,
+    })
+}
+
+/// `fieldmap laplacian`'s own flags.
+fn apply_laplacian(
+    args: &FieldmapLaplacianArgs, solver: qsm_core::unwrap::LaplacianSolver,
+    c: &mut qsm_core::pipeline::config::FieldMappingConfig,
+) {
+    c.laplacian_solver = solver;
+    c.laplacian_unmasked = args.laplacian_unmasked;
 }
 
 /// `fieldmap romeo`'s own flags.
@@ -332,6 +343,8 @@ mod tests {
             &["--no-romeo-phase-linearity", "--romeo-max-seeds", "3", "--no-romeo-correct-global"],
             &["--phase-offset-sigma-mm", "2", "2", "1", "--romeo-mag-weight", "--no-romeo-individual",
               "--romeo-template", "2"],
+            // QSMART's echo fit on ROMEO's echoes, bipolar correction included.
+            &["--b0-estimation", "qsmart-echofit", "--bipolar-correction", "--qsmart-fit-percentile", "95"],
         ];
         for flags in flag_sets {
             let mut fm = vec!["qsmxt", "fieldmap", "romeo", "p.nii", "--mask", "m.nii", "--output", "o.nii",
@@ -344,6 +357,40 @@ mod tests {
                 &|c| super::apply_romeo(&args, c));
 
             let mut run = vec!["qsmxt", "run", "bids", "--unwrapping-algorithm", "romeo"];
+            run.extend_from_slice(flags);
+            let cli = crate::cli::Cli::try_parse_from(&run).unwrap();
+            let crate::cli::Command::Run(r) = cli.command else { panic!() };
+            let mut config = qsmxt_engine::PipelineConfig::default();
+            crate::pipeline::config::apply_run_overrides(&mut config, &r.pipeline).unwrap();
+            let pipeline = qsmxt_engine::to_pipeline_stages(&config).0;
+            assert_eq!(format!("{standalone:?}"), format!("{pipeline:?}"), "flags {flags:?}");
+        }
+    }
+
+    /// `qsmxt fieldmap laplacian` and `qsmxt run --unwrapping-algorithm laplacian` build the same
+    /// field-mapping configuration from the same flags, the unmasked unwrapping included.
+    #[test]
+    fn fieldmap_laplacian_matches_run_for_the_same_flags() {
+        use clap::Parser;
+        let flag_sets: &[&[&str]] = &[
+            &[],
+            &["--laplacian-unmasked"],
+            &["--laplacian-solver", "mirror", "--laplacian-unmasked", "--b0-estimation", "qsmart-echofit"],
+            &["--laplacian-solver", "fft", "--laplacian-fft-pad", "12", "--b0-estimation", "linear-fit"],
+        ];
+        for flags in flag_sets {
+            let mut fm = vec!["qsmxt", "fieldmap", "laplacian", "p.nii", "--mask", "m.nii", "--output", "o.nii",
+                              "--tes", "0.005", "0.01", "--b0", "3"];
+            fm.extend_from_slice(flags);
+            let cli = crate::cli::Cli::try_parse_from(&fm).unwrap();
+            let crate::cli::Command::Fieldmap { command: FieldmapCommand::Laplacian(args) } = cli.command else { panic!() };
+            let solver = super::laplacian_solver(&args).unwrap();
+            let standalone = super::field_mapping_config(
+                &args.common, qsm_core::pipeline::config::UnwrappingAlgorithm::Laplacian,
+                &|c| super::apply_laplacian(&args, solver, c));
+            assert_eq!(standalone.laplacian_unmasked, flags.contains(&"--laplacian-unmasked"), "flags {flags:?}");
+
+            let mut run = vec!["qsmxt", "run", "bids", "--unwrapping-algorithm", "laplacian"];
             run.extend_from_slice(flags);
             let cli = crate::cli::Cli::try_parse_from(&run).unwrap();
             let crate::cli::Command::Run(r) = cli.command else { panic!() };
@@ -428,7 +475,6 @@ mod tests {
             b0_estimation: B0EstimationArg::WeightedAvg,
             b0_weight_type: B0WeightTypeArg::PhaseSNR,
             b0_weight_assumed_t2star: 40.0,
-            linear_fit_reliability_threshold: None,
             linear_fit_estimate_offset: None,
             robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
             robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
@@ -477,7 +523,6 @@ mod tests {
             b0_estimation: B0EstimationArg::WeightedAvg,
             b0_weight_type: B0WeightTypeArg::PhaseSNR,
             b0_weight_assumed_t2star: 40.0,
-            linear_fit_reliability_threshold: None,
             linear_fit_estimate_offset: None,
             robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
             robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
@@ -515,7 +560,6 @@ mod tests {
             b0_estimation: B0EstimationArg::WeightedAvg,
             b0_weight_type: B0WeightTypeArg::PhaseSNR,
             b0_weight_assumed_t2star: 40.0,
-            linear_fit_reliability_threshold: None,
             linear_fit_estimate_offset: None,
             robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
             robust_fit_downweight_level: None, robust_fit_flag_ratio: None,

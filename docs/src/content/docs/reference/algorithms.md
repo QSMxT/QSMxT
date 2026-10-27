@@ -379,12 +379,18 @@ Set with `--unwrapping-algorithm`.
 | `romeo` | Rapid Opensource Minimum-spanning-tree Echo Optimisation (default) |
 | `laplacian` | Laplacian-based unwrapping (QSMART's reference) |
 
-With `laplacian`, each echo is unwrapped on its own (the phase is zeroed outside the
-mask first) and the echoes are then combined by
+With `laplacian`, each echo is unwrapped on its own (the phase is set to zero outside
+the brain mask first) and the echoes are then combined by
 `--b0-estimation` / `--b0-weight-type`, the same options as with ROMEO. Phase offset
 removal and bipolar correction are not applied, so use it on phase that is already
 offset-free (single-channel or prescan-normalised reconstructions, MCPC-3D-S combined
 coils).
+
+`--laplacian-unmasked` (off by default) unwraps the raw phase over the whole volume
+instead, as QSMART does. The combined field is still kept inside the mask, except with
+`--b0-estimation qsmart-echofit`, which fits every voxel and keeps its field over the
+whole volume. MEDI's complex fit (`--b0-estimation complex-fit`) unwraps its fitted phase
+inside the mask either way.
 
 `--laplacian-solver` picks the Poisson solver (QSM.jl's names):
 
@@ -397,8 +403,8 @@ coils).
 `--laplacian-fft-pad` takes one value for every axis or three (x y z); a config
 file's `field_mapping.laplacian_fft_pad` takes a number or a three-element list.
 In the TUI,
-choosing Laplacian unwrapping shows a "Solver" selector, and `fft` a "FFT Pad
-(voxels)" field that accepts `64` or `64 64 32`.
+choosing Laplacian unwrapping shows a "Solver" selector and an "Unmasked phase" toggle,
+and `fft` a "FFT Pad (voxels)" field that accepts `64` or `64 64 32`.
 
 ## Motion correction
 
@@ -480,7 +486,6 @@ signal loss leaves. Nothing is dropped; an echo is down-weighted only where it d
 | `--robust-fit-downweight-level` | 0.75 | reporting only: a weight below this counts as down-weighted |
 | `--robust-fit-flag-ratio` | 3 | reporting only: flag an echo whose outlier score exceeds this × the best echo's |
 | `--linear-fit-estimate-offset` | true | fit a phase-offset intercept (shared with `linear-fit`) |
-| `--linear-fit-reliability-threshold` | 90 | percentile of the fit's reliability mask (shared; does not change the field map) |
 
 It needs at least 4 echoes with the offset term, 3 without; fewer is an error rather than
 a silent plain fit. Each run writes a per-echo report (down-weighted and rejected
@@ -628,15 +633,19 @@ and the methods Note list those that differ:
 
 | Input | QSMART's reference | Set with |
 | --- | --- | --- |
-| Phase unwrapping | `laplacian`, each echo over the whole volume | `--unwrapping-algorithm` |
+| Phase unwrapping | `laplacian` | `--unwrapping-algorithm` |
 | Laplacian solver | `mirror` | `--laplacian-solver` |
+| Phase that is unwrapped | each echo's raw phase, over the whole volume | `--laplacian-unmasked` |
 | Echo combination | `qsmart-echofit`: a magnitude-weighted fit of phase against TE through the origin, which also marks the voxels whose blurred fit residual exceeds the 99th percentile; QSMART leaves those out | `--b0-estimation`; the threshold with `--qsmart-fit-percentile`, or a fixed residual with `--qsmart-fit-threshold` (`--qsmart-fit-threshold-mode percentile\|absolute`) |
 | Magnitude for vessel detection | `mean-n4`: the mean over echoes, N4 bias-corrected ([Tustison et al. 2010](https://doi.org/10.1109/TMI.2010.2046908)) | `--qsmart-vessel-magnitude combined` for the combined magnitude (root sum of squares, inhomogeneity-corrected unless `--no-inhomogeneity-correction`) |
 | Vessel sizes (`--qsmart-vasc-sphere-radius`, `--qsmart-frangi-scale-*`) | voxels: 8, and scales 0.5 to 6 in steps of 0.5 | `--qsmart-vessel-units mm` to give them in mm, converted with the mean voxel size |
 
-QSMART's echo fit needs Laplacian unwrapping, so `--b0-estimation qsmart-echofit` without
-`--unwrapping-algorithm laplacian` is refused before the run starts. Chosen with another
-inversion, `qsmart-echofit`'s reliability map is not used.
+QSMART's echo fit combines the echoes as the field mapping leaves them, so it also runs
+after ROMEO unwrapping, with or without phase offset removal and bipolar correction; under
+QSMART, the methods Note then lists the unwrapping as a departure from QSMART's reference.
+With Laplacian unwrapping and `--laplacian-unmasked`, the fit and its field cover the whole
+volume, as in QSMART. Chosen with another inversion, `qsmart-echofit`'s reliability map is
+not used.
 
 A configuration file without `schema_version` that gives the vessel sizes without
 `vessel_size_units` reads them in mm, and says so; add `vessel_size_units = "voxels"`

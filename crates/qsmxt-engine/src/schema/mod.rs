@@ -762,7 +762,7 @@ pub fn check_ranges(config: &PipelineConfig) -> Result<(), crate::EngineError> {
         .collect();
     // A mask step that would do nothing (an erosion of 0), as a config file and --mask refuse it.
     problems.extend(config.masking.validate().err());
-    // Settings that cannot be run together (QSMART's echo fit without Laplacian unwrapping).
+    // Settings that cannot be run (QSMART's echo fit with a threshold qsm-core refuses).
     if applies.contains("field_mapping.b0_estimation") {
         if let Err(e) = config.field_mapping.validate() {
             return Err(crate::EngineError::Config(e));
@@ -946,19 +946,25 @@ mod range_tests {
         assert!(check_ranges(&PipelineConfig::default()).is_ok());
     }
 
-    /// QSMART's echo fit with ROMEO unwrapping is refused before the run (not replaced), and the
-    /// settings view shows why next to the B0 estimation.
+    /// QSMART's echo fit runs on ROMEO's echoes, bipolar correction included: nothing refuses
+    /// it, and nothing is switched for it.
     #[test]
-    fn the_echo_fit_with_romeo_is_refused() {
+    fn the_echo_fit_with_romeo_is_accepted() {
         let mut c = PipelineConfig::default();
         c.inversion.algorithm = crate::QsmAlgorithm::Qsmart;
-        assert!(check_ranges(&c.normalised().0).is_ok());
         c.field_mapping.b0_estimation = crate::B0Estimation::QsmartEchofit;
+        c.field_mapping.bipolar_correction = true;
         let n = c.normalised().0;
-        let e = check_ranges(&n).unwrap_err().to_string();
-        assert!(e.contains("QSMART's echo fit needs Laplacian unwrapping"), "{e}");
+        assert_eq!(n, c);
+        assert!(check_ranges(&n).is_ok());
         let view = settings_view(&c, &ViewFacts::default());
         let b0 = view.iter().find(|v| v.path == "field_mapping.b0_estimation").unwrap();
-        assert!(b0.error.as_deref().is_some_and(|m| m.contains("Laplacian")), "{:?}", b0.error);
+        assert!(b0.error.is_none(), "{:?}", b0.error);
+        // The unmasked unwrapping is a Laplacian setting: shown only with Laplacian unwrapping.
+        let shown = |c: &PipelineConfig| settings_view(c, &ViewFacts::default()).iter()
+            .any(|v| v.path == "field_mapping.laplacian_unmasked" && v.visible);
+        assert!(!shown(&c));
+        c.field_mapping.unwrapping_algorithm = crate::UnwrappingAlgorithm::Laplacian;
+        assert!(shown(&c));
     }
 }

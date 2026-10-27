@@ -18,6 +18,9 @@
 //!   method does not run, the value is dropped with a note.
 //! - Settings that no longer exist are dropped, with a warning where dropping one changes what a
 //!   run does; renamed ones keep their value under the new name.
+//! - A setting that never changed what a run computes (the linear and robust fits' reliability
+//!   threshold, QSM.rs#312) is dropped with a note from a file of any version, `schema_version = 2`
+//!   included: it was removed after that version was written.
 //! - V-SHARP's smallest radius was also the step between its radii: a kept one brings that step
 //!   with it as `radius_step`, so the radii stay the same.
 //! - TFI's `merit` did nothing when these files were written, and is a setting again (MERIT, on
@@ -178,6 +181,13 @@ const REMOVED: &[(&str, &str, &str)] = &[
     ),
 ];
 
+/// Settings that no longer exist and never changed what a run computes, and why: dropped with a
+/// note, whatever they held, from a file of any version.
+const REMOVED_UNUSED: &[(&str, &str)] = &[(
+    "field_mapping.linear_fit.reliability_threshold_percentile",
+    "it set a reliability mask for the linear and robust fits that the field map never used",
+)];
+
 /// Settings renamed with their meaning (and unit) unchanged.
 const RENAMED: &[(&str, &str)] = &[(
     "inversion.nltv.newton_iter",
@@ -209,6 +219,11 @@ pub fn migrate(value: &mut toml::Table, out: &mut Migration) -> Result<(), Confi
             .push(format!(
             "schema_version = {version}: this file was written by a newer QSMxT (this one writes \
              {CONFIG_SCHEMA_VERSION}); settings it does not know are ignored"));
+    }
+    for (path, why) in REMOVED_UNUSED {
+        if let Some(v) = take(value, path) {
+            out.notes.push(format!("{path} = {v} is no longer a setting and is ignored: {why}"));
+        }
     }
     if version < 2 {
         let kind = match (full, get(value, "pipeline.axial_resampling").is_some()) {
@@ -971,6 +986,26 @@ mod tests {
             m.warnings.len() == 1 && m.warnings[0].contains("newer QSMxT"),
             "{m:?}"
         );
+    }
+
+    /// The linear and robust fits' reliability threshold never changed a run: it is dropped with
+    /// a note, whatever it held, from the earlier releases' full files and from version 2 files.
+    #[test]
+    fn the_fits_reliability_threshold_is_dropped_with_a_note() {
+        let key = "field_mapping.linear_fit.reliability_threshold_percentile";
+        for file in [V9_FULL, V10_FULL] {
+            assert!(file.contains("reliability_threshold_percentile = 90.0"));
+            let (c, m) = read(file).unwrap();
+            assert!(m.notes.iter().any(|n| n.starts_with(&format!("{key} = 90.0 is no longer a setting"))), "{m:#?}");
+            assert!(!m.warnings.iter().any(|w| w.contains(key)), "{m:#?}");
+            assert!(!c.to_toml().unwrap().contains("reliability_threshold"));
+        }
+        for version in ["", "schema_version = 2\n"] {
+            let (c, m) = read(&format!(
+                "{version}[field_mapping.linear_fit]\nestimate_offset = false\nreliability_threshold_percentile = 75.0\n")).unwrap();
+            assert!(!c.field_mapping.linear_fit.estimate_offset, "the rest of the section is kept");
+            assert!(m.warnings.is_empty() && m.notes.len() == 1 && m.notes[0].starts_with(&format!("{key} = 75.0 ")), "{m:#?}");
+        }
     }
 
     /// TFI's `merit` did nothing before version 2: it is dropped from older files (a warning where

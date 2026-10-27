@@ -534,7 +534,6 @@ fn param_label(field: &str) -> Label {
         "wiener_noise" => Eq("Wiener filter noise"),
         "histogram_bins" => Count("histogram bins"),
         "estimate_offset" => Toggle("phase-offset estimation"),
-        "reliability_threshold_percentile" => Eq("reliability threshold percentile"),
         "denoise" => Toggle("anisotropic-diffusion denoising"),
         "rotation_step_deg" => Unit("initial rotation step", "°"),
         "translation_step_mm" => Unit("initial translation step", "mm"),
@@ -1643,8 +1642,8 @@ fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
                 LaplacianSolver::Fft => " with an FFT Poisson solve".to_string(),
                 LaplacianSolver::Mirror => " with an FFT Poisson solve on the volume mirrored along each axis".to_string(),
             };
-            // QSMART's echo fit unwraps every echo over the whole volume; otherwise inside the mask.
-            let whole = if fm.b0_estimation == B0Estimation::QsmartEchofit { " over the whole volume" } else { "" };
+            // The phase is set to zero outside the brain mask first unless it is unwrapped raw.
+            let whole = if fm.laplacian_unmasked { ", on the raw phase over the whole volume," } else { "" };
             // The padding only exists for the FFT solve.
             let pad = if fm.laplacian_solver == LaplacianSolver::Fft && fm.laplacian_fft_pad != d.laplacian_fft_pad {
                 format!(" on the volume zero-padded by {} voxels", describe_pad(fm.laplacian_fft_pad))
@@ -2107,7 +2106,7 @@ pub(crate) mod words {
     }
 
     /// ROMEO's settings that differ from their defaults; Laplacian unwrapping's solver, when it
-    /// is not the default one.
+    /// is not the default one, and the raw phase, when it is unwrapped unmasked.
     pub(crate) fn unwrapping_settings(config: &PipelineConfig) -> Vec<String> {
         let (fm, d) = (&config.field_mapping, FieldMappingConfig::default());
         let mut c = Changed::default();
@@ -2115,6 +2114,7 @@ pub(crate) mod words {
             c.add_fields(&fm.romeo, &d.romeo, &[]);
         } else {
             c.add(fm.laplacian_solver != d.laplacian_solver, || format!("{} solver", fm.laplacian_solver));
+            c.add(fm.laplacian_unmasked != d.laplacian_unmasked, || "raw phase over the whole volume".to_string());
         }
         c.0
     }
@@ -2690,19 +2690,20 @@ mod tests {
         assert!(out.contains("Phase offset removal"), "QSMART methods should describe phase offset removal: {}", out);
     }
 
-    /// QSMART's own inputs, set as the authors' implementation prepares them, are said plainly and cited: each echo
-    /// unwrapped over the whole volume on the mirrored volume, the echo fit and the voxels it
-    /// leaves out, and the N4-corrected mean magnitude vessels are detected on.
+    /// QSMART's own inputs, set as the authors' implementation prepares them, are said plainly and cited: each echo's
+    /// raw phase unwrapped over the whole volume on the mirrored volume, the echo fit and the
+    /// voxels it leaves out, and the N4-corrected mean magnitude vessels are detected on.
     #[test]
     fn qsmarts_own_inputs_are_described() {
         let mut config = PipelineConfig::default();
         config.inversion.algorithm = QsmAlgorithm::Qsmart;
         config.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
         config.field_mapping.laplacian_solver = LaplacianSolver::Mirror;
+        config.field_mapping.laplacian_unmasked = true;
         config.field_mapping.b0_estimation = B0Estimation::QsmartEchofit;
         config.masking.sections = crate::masking::mask_presets().into_iter().find(|(n, _)| *n == "bet").unwrap().1.sections;
         let out = generate_methods(&config);
-        for said in ["separately for each echo over the whole volume using the Laplacian method",
+        for said in ["separately for each echo, on the raw phase over the whole volume, using the Laplacian method",
                      "on the volume mirrored along each axis",
                      "fit of phase vs echo time through the origin, as in QSMART (Yaghmaie et al., 2021)",
                      "voxels whose blurred fit residual exceeded its 99th percentile were excluded from the QSMART reconstruction",
@@ -2735,6 +2736,27 @@ mod tests {
         other.field_mapping.b0_estimation = B0Estimation::QsmartEchofit;
         let out = generate_methods(&other);
         assert!(out.contains("as in QSMART") && !out.contains("excluded"), "{out}");
+    }
+
+    /// QSMART's echo fit after ROMEO, phase offset removal and bipolar correction: each step is
+    /// said as it ran, and nothing about Laplacian unwrapping or the whole volume.
+    #[test]
+    fn the_echo_fit_after_romeo_says_what_ran() {
+        let mut config = PipelineConfig::default();
+        config.inversion.algorithm = QsmAlgorithm::Qsmart;
+        config.field_mapping.b0_estimation = B0Estimation::QsmartEchofit;
+        config.field_mapping.bipolar_correction = true;
+        config.field_mapping.laplacian_unmasked = true; // a Laplacian setting: ROMEO ignores it
+        let out = paragraph(&config);
+        for said in ["Phase offset removal (Eckstein et al., 2018) and bipolar gradient correction (Eckstein, 2021) were applied.",
+                     "Phase unwrapping was performed using ROMEO (Dymerska et al., 2021).",
+                     "a magnitude-weighted fit of phase vs echo time through the origin, as in QSMART (Yaghmaie et al., 2021)",
+                     "excluded from the QSMART reconstruction"] {
+            assert!(out.contains(said), "{said:?} not in: {out}");
+        }
+        for unsaid in ["Laplacian", "whole volume", "raw phase"] {
+            assert!(!out.contains(unsaid), "{unsaid:?} in: {out}");
+        }
     }
 
     #[test]
@@ -2786,6 +2808,18 @@ mod tests {
         assert!(!out.contains("zero-padded"), "the default padding is not stated: {out}");
         config.field_mapping.laplacian_fft_pad = [64, 64, 32];
         assert!(paragraph(&config).contains("with an FFT Poisson solve on the volume zero-padded by 64×64×32 voxels."));
+        // The phase set to zero outside the mask first is the default, so it is not said; the raw
+        // phase is.
+        assert!(!paragraph(&config).contains("raw phase") && !paragraph(&config).contains("whole volume"));
+        config.field_mapping.laplacian_unmasked = true;
+        let out = paragraph(&config);
+        assert!(out.contains("Phase unwrapping was performed separately for each echo, on the raw phase over the whole \
+                              volume, using the Laplacian method (Schofield & Zhu, 2003) with an FFT Poisson solve"), "{out}");
+        // The echo fit on the masked phase: nothing about the whole volume.
+        config.field_mapping.laplacian_unmasked = false;
+        config.field_mapping.b0_estimation = B0Estimation::QsmartEchofit;
+        let out = paragraph(&config);
+        assert!(out.contains("as in QSMART") && !out.contains("whole volume"), "{out}");
     }
 
     #[test]
