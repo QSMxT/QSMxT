@@ -2881,8 +2881,8 @@ impl PipelineFormState {
             if self.inhomogeneity_method == 0 {
                 rows.push(PipelineRow::Param { label: "    Sigma (mm)", field: "homogeneity_sigma_mm",
                     help: "Smoothing sigma of the bias-field estimate, in mm" });
-                rows.push(PipelineRow::Param { label: "    Box passes", field: "homogeneity_nbox",
-                    help: "Box-filter passes approximating the Gaussian" });
+                rows.push(PipelineRow::Param { label: "    Segmentation boxes", field: "homogeneity_nbox",
+                    help: "Boxes per dimension for the tissue segmentation the receive sensitivity is estimated from" });
             } else {
                 rows.push(PipelineRow::Param { label: "    Shrink factor", field: "n4_shrink_factor",
                     help: "Subsample the image by this factor before fitting the bias field" });

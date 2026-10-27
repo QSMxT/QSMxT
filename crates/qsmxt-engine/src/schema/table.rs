@@ -39,7 +39,7 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.c.masking.inhomogeneity_correction && x.c.masking.inhomogeneity_method == InhomogeneityMethod::Makehomogeneous).full("Bias field sigma")
         .gui("Smoothing sigma of the bias-field estimate"),
         // QSM.rs utils/bias_correction.rs: nx.div_ceil(nbox) divides by zero at 0.
-        d("homogeneity.nbox", Geometry, "Box passes", "Box-filter passes approximating the Gaussian", Int).min(1.0).flag("--homogeneity-nbox").parent("masking.inhomogeneity_method")
+        d("homogeneity.nbox", Geometry, "Segmentation boxes", "Boxes per dimension for the tissue segmentation the receive sensitivity is estimated from", Int).min(1.0).flag("--homogeneity-nbox").parent("masking.inhomogeneity_method")
         .when(|x| x.c.masking.inhomogeneity_correction && x.c.masking.inhomogeneity_method == InhomogeneityMethod::Makehomogeneous).full("Box filter passes"),
         // N4's settings: QSM.rs utils/n4.rs asserts each range below (a shrink factor, mesh and
         // spline order it can use, at least two histogram bins); FWHM 0 divides by zero.

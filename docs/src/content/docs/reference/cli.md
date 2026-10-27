@@ -356,7 +356,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--inhomogeneity-method <INHOMOGENEITY_METHOD>` | Inhomogeneity correction method: `makehomogeneous` (default; --homogeneity-\*) or `n4` (N4 bias field correction, as ANTs' N4BiasFieldCorrection; --n4-\*) Values: `makehomogeneous`, `n4`. |
 | `--homogeneity-sigma-mm <HOMOGENEITY_SIGMA_MM>` | Inhomogeneity correction smoothing sigma in mm (makehomogeneous) |
-| `--homogeneity-nbox <HOMOGENEITY_NBOX>` | Inhomogeneity correction box filter passes (makehomogeneous) |
+| `--homogeneity-nbox <HOMOGENEITY_NBOX>` | makehomogeneous: boxes per dimension for the tissue segmentation the receive sensitivity is estimated from. |
 | `--n4-shrink-factor <N4_SHRINK_FACTOR>` | N4: subsample the image by this factor before fitting the bias field (default 4) |
 | `--n4-max-iterations <ITERATIONS>` | N4: maximum iterations at each fitting level, one number a level (default 50 50 50 50); the B-spline mesh doubles from one level to the next. |
 | `--n4-convergence-threshold <N4_CONVERGENCE_THRESHOLD>` | N4: stop a level once the change in the bias field (its coefficient of variation) falls to this (default 0: every iteration runs) |
@@ -790,7 +790,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--inhomogeneity-method <INHOMOGENEITY_METHOD>` | Inhomogeneity correction method: `makehomogeneous` (default; --homogeneity-\*) or `n4` (N4 bias field correction, as ANTs' N4BiasFieldCorrection; --n4-\*) Values: `makehomogeneous`, `n4`. |
 | `--homogeneity-sigma-mm <HOMOGENEITY_SIGMA_MM>` | Inhomogeneity correction smoothing sigma in mm (makehomogeneous) |
-| `--homogeneity-nbox <HOMOGENEITY_NBOX>` | Inhomogeneity correction box filter passes (makehomogeneous) |
+| `--homogeneity-nbox <HOMOGENEITY_NBOX>` | makehomogeneous: boxes per dimension for the tissue segmentation the receive sensitivity is estimated from. |
 | `--n4-shrink-factor <N4_SHRINK_FACTOR>` | N4: subsample the image by this factor before fitting the bias field (default 4) |
 | `--n4-max-iterations <ITERATIONS>` | N4: maximum iterations at each fitting level, one number a level (default 50 50 50 50); the B-spline mesh doubles from one level to the next. |
 | `--n4-convergence-threshold <N4_CONVERGENCE_THRESHOLD>` | N4: stop a level once the change in the bias field (its coefficient of variation) falls to this (default 0: every iteration runs) |
@@ -1161,7 +1161,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--inhomogeneity-method <INHOMOGENEITY_METHOD>` | Inhomogeneity correction method: `makehomogeneous` (default; --homogeneity-\*) or `n4` (N4 bias field correction, as ANTs' N4BiasFieldCorrection; --n4-\*) Values: `makehomogeneous`, `n4`. |
 | `--homogeneity-sigma-mm <HOMOGENEITY_SIGMA_MM>` | Inhomogeneity correction smoothing sigma in mm (makehomogeneous) |
-| `--homogeneity-nbox <HOMOGENEITY_NBOX>` | Inhomogeneity correction box filter passes (makehomogeneous) |
+| `--homogeneity-nbox <HOMOGENEITY_NBOX>` | makehomogeneous: boxes per dimension for the tissue segmentation the receive sensitivity is estimated from. |
 | `--n4-shrink-factor <N4_SHRINK_FACTOR>` | N4: subsample the image by this factor before fitting the bias field (default 4) |
 | `--n4-max-iterations <ITERATIONS>` | N4: maximum iterations at each fitting level, one number a level (default 50 50 50 50); the B-spline mesh doubles from one level to the next. |
 | `--n4-convergence-threshold <N4_CONVERGENCE_THRESHOLD>` | N4: stop a level once the change in the bias field (its coefficient of variation) falls to this (default 0: every iteration runs) |
@@ -2979,7 +2979,7 @@ qsmxt homogeneity [OPTIONS] --output <OUTPUT> <INPUT>
 | `-o, --output <OUTPUT>` | Output corrected magnitude NIfTI file. Required. |
 | `--method <METHOD>` | Correction method: `makehomogeneous` (--sigma, --nbox) or `n4` (N4 bias field correction, as ANTs' N4BiasFieldCorrection; --n4-\*) Values: `makehomogeneous`, `n4`. Default: `makehomogeneous`. |
 | `--sigma <SIGMA>` | makehomogeneous: smoothing sigma in mm. Default: `7`. |
-| `--nbox <NBOX>` | makehomogeneous: number of box filter passes for the Gaussian approximation. Default: `3`. |
+| `--nbox <NBOX>` | makehomogeneous: boxes per dimension for the tissue segmentation the receive sensitivity is estimated from. Default: `15`. |
 | `--n4-shrink-factor <N4_SHRINK_FACTOR>` | N4: subsample the image by this factor before fitting the bias field (default 4) |
 | `--n4-max-iterations <ITERATIONS>` | N4: maximum iterations at each fitting level, one number a level (default 50 50 50 50); the B-spline mesh doubles from one level to the next. |
 | `--n4-convergence-threshold <N4_CONVERGENCE_THRESHOLD>` | N4: stop a level once the change in the bias field (its coefficient of variation) falls to this (default 0: every iteration runs) |
