@@ -1,4 +1,4 @@
-//! The Pipeline tab: the graph of the run the current settings plan ([`qsmxt_engine::plan`] and
+//! The Methods tab's Pipeline sub-tab: the graph of the run the current settings plan ([`qsmxt_engine::plan`] and
 //! [`qsmxt_engine::pipeline_graph`], as `qsmxt run --dry` prints it), with the plan's peak memory,
 //! the deep-learning models it needs and their download sizes, and what the scan cannot produce.
 //! It is drawn from the settings each time, so it follows every change. A key writes the graph as
@@ -68,7 +68,7 @@ pub enum Opened {
 /// A run of a dataset: the dataset's folder, the run's key and the echo-count filter.
 type RunId = (String, String, String);
 
-/// The Pipeline tab's state.
+/// The Pipeline sub-tab's state.
 pub struct PipelineView {
     pub scroll: usize,
     /// The last run read, by dataset and run key, kept so the files are read once per run chosen.
@@ -340,10 +340,8 @@ pub fn lines(p: &Planned, width: usize) -> Vec<Line<'static>> {
     lines
 }
 
-pub fn draw(f: &mut Frame, app: &mut App, area: Rect) {
-    let block = super::tabs::panel(app);
-    let inner = block.inner(area);
-    f.render_widget(block, area);
+/// The graph in `inner`, the Methods tab's Pipeline sub-tab under its strip.
+pub fn draw(f: &mut Frame, app: &mut App, inner: Rect) {
     let lines = match app.planned() {
         Ok(p) => lines(&p, inner.width.saturating_sub(1) as usize),
         Err(e) => vec![
@@ -369,14 +367,15 @@ pub fn draw(f: &mut Frame, app: &mut App, area: Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::app::{QSM_ALGO_OPTIONS, TAB_PIPELINE};
+    use crate::tui::app::{Page, QSM_ALGO_OPTIONS, TAB_METHODS};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::{backend::TestBackend, Terminal};
 
-    /// The app on the Pipeline tab, its SVG kept in `dir` and never opened.
+    /// The app on the Methods tab's Pipeline sub-tab, its SVG kept in `dir` and never opened.
     fn app(dir: &Path) -> App {
         let mut app = App::new();
-        app.active_tab = TAB_PIPELINE;
+        app.active_tab = TAB_METHODS;
+        app.sub_page[TAB_METHODS] = Some(Page::Pipeline);
         app.pipeline_view.svg_dir = dir.to_path_buf();
         app.pipeline_view.opener = |_| Ok(Opened::NoViewer("not in a test"));
         app
@@ -539,7 +538,7 @@ mod tests {
         assert_eq!(app.pipeline_view.scroll, 2);
         press(&mut app, KeyCode::Up);
         assert_eq!(app.pipeline_view.scroll, 1);
-        assert_eq!(app.active_tab, TAB_PIPELINE);
+        assert_eq!((app.active_tab, app.page()), (TAB_METHODS, Some(Page::Pipeline)));
     }
 
     /// The system's opener, or none over SSH or with no display.

@@ -73,7 +73,7 @@ fn section_of(page: Page) -> Option<Section> {
         Page::Relaxometry => Section::Relaxometry,
         Page::Segmentation => Section::Segmentation,
         Page::Export => Section::Export,
-        Page::Execution => return None,
+        Page::Execution | Page::MethodsText | Page::Pipeline => return None,
     })
 }
 

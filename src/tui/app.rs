@@ -504,11 +504,10 @@ pub const TAB_QSM: usize = 2;
 pub const TAB_SEPARATION: usize = 3;
 pub const TAB_OUTPUTS: usize = 4;
 pub const TAB_EXECUTION: usize = 5;
-pub const TAB_PIPELINE: usize = 6;
-pub const TAB_METHODS: usize = 7;
+pub const TAB_METHODS: usize = 6;
 
-/// A sub-tab of a row-based tab: the second tab row, switched with `[` and `]`. A tab with a
-/// single page (Separation, Execution) shows no second row.
+/// A sub-tab: the second tab row, switched with `[` and `]`. A tab with a single page
+/// (Separation, Execution) shows no second row. The Methods tab's two pages are views, not rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Page {
     Geometry,
@@ -527,6 +526,10 @@ pub enum Page {
     Segmentation,
     Export,
     Execution,
+    /// The Methods tab's methods text.
+    MethodsText,
+    /// The Methods tab's pipeline graph ([`super::pipeline_view`]).
+    Pipeline,
 }
 
 impl Page {
@@ -548,21 +551,25 @@ impl Page {
             Page::Segmentation => "Segmentation",
             Page::Export => "Export",
             Page::Execution => "Execution",
+            Page::MethodsText => "Methods text",
+            Page::Pipeline => "Pipeline",
         }
     }
 
     /// Whether the page's rows are the pipeline form's ([`PipelineFormState::visible_rows`])
     /// rather than built by the App from both forms.
     pub fn is_pipeline(self) -> bool {
-        !matches!(self, Page::SwiSmwi | Page::Relaxometry | Page::Segmentation | Page::Export | Page::Execution)
+        !matches!(self, Page::SwiSmwi | Page::Relaxometry | Page::Segmentation | Page::Export | Page::Execution
+            | Page::MethodsText | Page::Pipeline)
     }
 
     /// Every page, in tab order.
     #[cfg(test)]
-    pub const ALL: [Page; 15] = [
+    pub const ALL: [Page; 17] = [
         Page::Geometry, Page::Masking, Page::Motion, Page::QsmOff, Page::FieldMap, Page::Background,
         Page::Inversion, Page::MultiOrientation, Page::Reference, Page::Separation, Page::SwiSmwi,
-        Page::Relaxometry, Page::Segmentation, Page::Export, Page::Execution,
+        Page::Relaxometry, Page::Segmentation, Page::Export, Page::Execution, Page::MethodsText,
+        Page::Pipeline,
     ];
 }
 
@@ -781,14 +788,13 @@ fn expand_tilde(path: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(path)
 }
 
-pub const TAB_NAMES: [&str; 8] = [
+pub const TAB_NAMES: [&str; 7] = [
     "Input",
     "Preprocessing",
     "QSM",
     "χ-separation",
     "Other outputs",
     "Execution",
-    "Pipeline",
     "Methods",
 ];
 
@@ -5557,43 +5563,45 @@ impl App {
             return;
         }
 
-        // The Pipeline tab — read-only: scrolling, and the graph as SVG.
-        if self.active_tab == TAB_PIPELINE {
+        if self.active_tab == TAB_METHODS {
+            self.handle_methods_tab_key(key);
+        }
+    }
+
+    /// The Methods tab: its sub-tab strip, then the methods text (scrolling, copying) or the
+    /// pipeline graph (scrolling, the graph as SVG). Both are read-only.
+    fn handle_methods_tab_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char('q') | KeyCode::Esc => return self.should_quit = true,
+            // 1..=N, Tab, Shift-Tab: one rule for every tab (see `switch_tab`).
+            _ if self.switch_tab(key) => return,
+            KeyCode::Char('[') => return self.cycle_page(-1),
+            KeyCode::Char(']') => return self.cycle_page(1),
+            KeyCode::F(5) => return self.try_run(),
+            _ => {}
+        }
+        if self.on_subtabs() {
             match key.code {
-                KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
-                _ if self.switch_tab(key) => {}
-                KeyCode::Up | KeyCode::Char('k') if self.pipeline_view.scroll == 0 => self.tab_focus = true,
-                KeyCode::Up | KeyCode::Char('k') => {
-                    self.pipeline_view.scroll = self.pipeline_view.scroll.saturating_sub(1);
-                }
-                KeyCode::Down | KeyCode::Char('j') => self.pipeline_view.scroll += 1,
-                KeyCode::PageUp => self.pipeline_view.scroll = self.pipeline_view.scroll.saturating_sub(10),
-                KeyCode::PageDown => self.pipeline_view.scroll += 10,
-                KeyCode::Home => self.pipeline_view.scroll = 0,
-                KeyCode::Enter | KeyCode::Char('s') => self.open_pipeline_svg(),
-                KeyCode::F(5) => self.try_run(),
+                KeyCode::Left => self.cycle_page(-1),
+                KeyCode::Right => self.cycle_page(1),
+                KeyCode::Up | KeyCode::Char('k') => self.tab_focus = true,
+                KeyCode::Down | KeyCode::Char('j') | KeyCode::Enter => self.subtab_focus = false,
                 _ => {}
             }
             return;
         }
-
-        // Route tab Methods — read-only, only tab switching and scrolling
-        if self.active_tab == TAB_METHODS {
-            match key.code {
-                KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
-                // 1..=N, Tab, Shift-Tab: one rule for every tab (see `switch_tab`).
-                _ if self.switch_tab(key) => {}
-                KeyCode::Up | KeyCode::Char('k') if self.methods_scroll_offset == 0 => self.tab_focus = true,
-                KeyCode::Up | KeyCode::Char('k') => {
-                    self.methods_scroll_offset = self.methods_scroll_offset.saturating_sub(1);
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    self.methods_scroll_offset += 1;
-                }
-                KeyCode::Enter | KeyCode::Char('c') | KeyCode::Char('y') => self.copy_methods(),
-                KeyCode::F(5) => self.try_run(),
-                _ => {}
-            }
+        let pipeline = self.page() == Some(Page::Pipeline);
+        let scroll = if pipeline { &mut self.pipeline_view.scroll } else { &mut self.methods_scroll_offset };
+        match key.code {
+            KeyCode::Up | KeyCode::Char('k') if *scroll == 0 => self.subtab_focus = true,
+            KeyCode::Up | KeyCode::Char('k') => *scroll = scroll.saturating_sub(1),
+            KeyCode::Down | KeyCode::Char('j') => *scroll += 1,
+            KeyCode::PageUp => *scroll = scroll.saturating_sub(10),
+            KeyCode::PageDown => *scroll += 10,
+            KeyCode::Home => *scroll = 0,
+            KeyCode::Enter | KeyCode::Char('s') if pipeline => self.open_pipeline_svg(),
+            KeyCode::Enter | KeyCode::Char('c') | KeyCode::Char('y') if !pipeline => self.copy_methods(),
+            _ => {}
         }
     }
 
@@ -7143,15 +7151,24 @@ impl App {
             TAB_SEPARATION => vec![Page::Separation],
             TAB_OUTPUTS => vec![Page::SwiSmwi, Page::Relaxometry, Page::Segmentation, Page::Export],
             TAB_EXECUTION => vec![Page::Execution],
+            TAB_METHODS => vec![Page::MethodsText, Page::Pipeline],
             _ => Vec::new(),
         }
     }
 
-    /// The active sub-tab: the one last chosen on this tab while it still applies, else the first.
+    /// The active sub-tab: the one last chosen on this tab while it still applies, else the
+    /// tab's default ([`App::default_page`]), else the first.
     pub fn page(&self) -> Option<Page> {
         let pages = self.pages(self.active_tab);
         let chosen = self.sub_page.get(self.active_tab).copied().flatten();
-        chosen.filter(|p| pages.contains(p)).or_else(|| pages.first().copied())
+        chosen.or_else(|| Self::default_page(self.active_tab)).filter(|p| pages.contains(p))
+            .or_else(|| pages.first().copied())
+    }
+
+    /// The sub-tab a tab opens on before one is chosen, when it is not the first: Preprocessing
+    /// opens on Masking, the page most runs need to look at.
+    fn default_page(tab: usize) -> Option<Page> {
+        (tab == TAB_PREPROCESSING).then_some(Page::Masking)
     }
 
     /// Move to the next (`delta` 1) or previous (-1) sub-tab of the active tab, wrapping. Focus
@@ -7168,9 +7185,10 @@ impl App {
         self.subtab_focus = on_strip;
     }
 
-    /// Whether the active tab shows a sub-tab strip (a row-based tab with more than one page).
+    /// Whether the active tab shows a sub-tab strip (a row-based tab with more than one page, or
+    /// the Methods tab).
     pub fn has_subtabs(&self) -> bool {
-        Self::is_rows_tab(self.active_tab) && self.pages(self.active_tab).len() > 1
+        (Self::is_rows_tab(self.active_tab) || self.active_tab == TAB_METHODS) && self.pages(self.active_tab).len() > 1
     }
 
     /// Whether focus is on the sub-tab strip rather than on a row (or the tab bar above).
@@ -8405,25 +8423,27 @@ mod tests {
         let mut app = App::new();
         app.active_tab = TAB_PREPROCESSING;
         app.sync_pipeline_mode();
-        assert_eq!(app.page(), Some(Page::Geometry));
+        // Masking, the second sub-tab, is the one Preprocessing opens on.
+        assert_eq!(app.pages(TAB_PREPROCESSING), vec![Page::Geometry, Page::Masking, Page::Motion]);
+        assert_eq!(app.page(), Some(Page::Masking));
         app.handle_key(key(KeyCode::Down));
         assert_eq!(app.focus(), 1);
         app.handle_key(key(KeyCode::Char(']')));
-        assert_eq!(app.page(), Some(Page::Masking));
+        assert_eq!(app.page(), Some(Page::Motion));
         assert_eq!(app.focus(), 0, "a sub-tab switch starts at the top");
         app.handle_key(key(KeyCode::Char(']')));
-        assert_eq!(app.page(), Some(Page::Motion));
-        app.handle_key(key(KeyCode::Char(']')));
         assert_eq!(app.page(), Some(Page::Geometry), "wraps");
+        app.handle_key(key(KeyCode::Char(']')));
+        assert_eq!(app.page(), Some(Page::Masking));
         app.handle_key(key(KeyCode::Char('[')));
-        assert_eq!(app.page(), Some(Page::Motion));
+        assert_eq!(app.page(), Some(Page::Geometry));
         // The sub-tab is remembered per tab; a main-tab switch resets focus too.
         app.handle_key(key(KeyCode::Down));
         app.handle_key(key(KeyCode::Char('3')));
         assert_eq!(app.active_tab, TAB_QSM);
         assert_eq!(app.focus(), 0);
         app.handle_key(key(KeyCode::Char('2')));
-        assert_eq!(app.page(), Some(Page::Motion));
+        assert_eq!(app.page(), Some(Page::Geometry));
     }
 
     /// The QSM tab shows a sub-tab for each stage that runs, and only the switch when none do.
@@ -9618,6 +9638,36 @@ mod tests {
         app.active_tab = TAB_METHODS;
         app.handle_key(key(KeyCode::Up));
         assert_eq!(app.methods_scroll_offset, 0);
+        assert!(app.on_subtabs(), "↑ at the top goes up to the sub-tab strip");
+    }
+
+    /// The Methods tab opens on its strip with the methods text chosen; the pipeline graph is the
+    /// second sub-tab, reached with →, `]` or `[`, and ↓ goes into it.
+    #[test]
+    fn the_pipeline_is_the_methods_tabs_second_sub_tab() {
+        let mut app = App::new();
+        app.handle_key(key(KeyCode::Char('7')));
+        assert_eq!(app.active_tab, TAB_METHODS);
+        assert_eq!(app.pages(TAB_METHODS), vec![Page::MethodsText, Page::Pipeline]);
+        assert_eq!(app.page(), Some(Page::MethodsText));
+        assert!(app.on_subtabs());
+        app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.page(), Some(Page::Pipeline));
+        assert!(app.on_subtabs());
+        app.handle_key(key(KeyCode::Down));
+        assert!(!app.on_subtabs());
+        app.handle_key(key(KeyCode::Down));
+        assert_eq!((app.pipeline_view.scroll, app.methods_scroll_offset), (1, 0), "↓ scrolls the graph");
+        app.handle_key(key(KeyCode::Char('[')));
+        assert_eq!(app.page(), Some(Page::MethodsText));
+        app.handle_key(key(KeyCode::Char(']')));
+        assert_eq!(app.page(), Some(Page::Pipeline));
+        app.handle_key(key(KeyCode::Up));
+        app.handle_key(key(KeyCode::Up));
+        assert!(app.on_subtabs());
+        app.handle_key(key(KeyCode::Up));
+        assert!(app.tab_focus);
+        assert!(!TAB_NAMES.contains(&"Pipeline"));
     }
 
     #[test]
@@ -9649,7 +9699,7 @@ mod tests {
         let mut app = App::new();
         app.active_tab = TAB_METHODS;
         app.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
-        assert_eq!(app.active_tab, TAB_PIPELINE);
+        assert_eq!(app.active_tab, TAB_EXECUTION);
     }
 
     #[test]
@@ -11702,14 +11752,15 @@ mod tests {
         app.handle_key(key(KeyCode::Char('2')));
         assert_eq!(app.active_tab, TAB_PREPROCESSING);
         assert!(app.on_subtabs());
-        assert_eq!(app.page(), Some(Page::Geometry));
+        assert_eq!(app.page(), Some(Page::Masking), "Preprocessing opens on Masking");
         // ←/→ move along the strip, wrapping, and focus stays on it.
         app.handle_key(key(KeyCode::Right));
-        assert_eq!(app.page(), Some(Page::Masking));
-        assert!(app.on_subtabs());
-        app.handle_key(key(KeyCode::Left));
-        app.handle_key(key(KeyCode::Left));
         assert_eq!(app.page(), Some(Page::Motion));
+        assert!(app.on_subtabs());
+        app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.page(), Some(Page::Geometry), "wraps");
+        app.handle_key(key(KeyCode::Left));
+        assert_eq!(app.page(), Some(Page::Motion), "wraps back");
         assert!(app.on_subtabs());
         // `[`/`]` still switch too.
         app.handle_key(key(KeyCode::Char(']')));
@@ -11720,8 +11771,7 @@ mod tests {
     #[test]
     fn down_enters_the_sub_tab_and_up_from_its_first_row_returns() {
         let mut app = App::new();
-        app.handle_key(key(KeyCode::Char('2')));
-        app.handle_key(key(KeyCode::Right)); // Masking
+        app.handle_key(key(KeyCode::Char('2'))); // Masking, the default
         let first = app.focusable_rows().len();
         assert!(first > 1);
         app.handle_key(key(KeyCode::Down));
@@ -11961,8 +12011,8 @@ mod tests {
         assert!(app.on_subtabs());
     }
 
-    /// Enter on the bar opens a tab without sub-tabs at its first row; ↑ from Pipeline and
-    /// Methods reaches the bar once they are scrolled to the top.
+    /// Enter on the bar opens a tab without sub-tabs at its first row; ↑ from the Methods tab's
+    /// sub-tabs reaches the strip once they are scrolled to the top, and then the bar.
     #[test]
     fn the_tab_bar_is_reachable_from_every_tab() {
         let mut app = App::new();
@@ -11973,11 +12023,15 @@ mod tests {
         assert!(!app.tab_focus);
         assert_eq!(app.focus(), 0);
 
-        for tab in [TAB_PIPELINE, TAB_METHODS] {
-            app.handle_key(key(KeyCode::Char(char::from_digit(tab as u32 + 1, 10).unwrap())));
+        for page in [Page::MethodsText, Page::Pipeline] {
+            app.handle_key(key(KeyCode::Char(char::from_digit(TAB_METHODS as u32 + 1, 10).unwrap())));
+            app.sub_page[TAB_METHODS] = Some(page);
+            app.handle_key(key(KeyCode::Down));
             app.handle_key(key(KeyCode::Down));
             app.handle_key(key(KeyCode::Up));
-            assert!(!app.tab_focus, "the first ↑ scrolls back up");
+            assert!(!app.tab_focus && !app.on_subtabs(), "the first ↑ scrolls back up");
+            app.handle_key(key(KeyCode::Up));
+            assert!(app.on_subtabs());
             app.handle_key(key(KeyCode::Up));
             assert!(app.tab_focus);
             app.handle_key(key(KeyCode::Down));

@@ -25,7 +25,7 @@ use ratatui::{
 use super::app::{App, TAB_NAMES};
 
 /// Short names, used for inactive tabs when the full names do not fit the width.
-const SHORT: [&str; TAB_NAMES.len()] = ["Input", "Prep", "QSM", "χ-sep", "Outputs", "Exec", "Pipeline", "Methods"];
+const SHORT: [&str; TAB_NAMES.len()] = ["Input", "Prep", "QSM", "χ-sep", "Outputs", "Exec", "Methods"];
 
 /// The greys the design is drawn with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -453,8 +453,7 @@ pub(super) mod tests {
     fn a_focused_sub_tab_strip_looks_focused() {
         for (width, height) in [(120, 40), (80, 24)] {
             let mut app = App::new();
-            key(&mut app, crossterm::event::KeyCode::Char('2'));
-            key(&mut app, crossterm::event::KeyCode::Right);
+            key(&mut app, crossterm::event::KeyCode::Char('2')); // Masking, the default
             let t = render(&mut app, width, height);
             let pills = row(&t, 3);
             let at = |s: &str| pills.find(s).map(|b| pills[..b].chars().count() as u16 + 1).unwrap();

@@ -419,7 +419,7 @@ and is skipped where it cannot, and the rest of the run goes ahead. Before
 processing (and with `--dry`), `qsmxt run` says how many runs it will run for and
 which it skips and why, e.g. "Motion correction will run for 3 of 5 run(s);
 skipped for sub-02_ses-1_MEGRE (one echo) and sub-04_MEGRE (no magnitude)". The
-TUI's Pipeline tab shows the same for the selected runs. Each run's record says
+TUI's Methods › Pipeline sub-tab shows the same for the selected runs. Each run's record says
 whether it was applied, and where only some runs had it, the methods text says
 it was applied to runs with more than one echo and magnitude images.
 
