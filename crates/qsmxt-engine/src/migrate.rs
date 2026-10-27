@@ -58,6 +58,8 @@ pub struct Migration {
 /// since changed, by path, from each release's `qsmxt init`. In a full file from an earlier
 /// release, a setting holding one of these takes today's default.
 const OLD_DEFAULTS: &str = r#"
+[homogeneity]
+nbox = [3]
 [bg_removal.vsharp]
 min_radius = [1.0]
 threshold = [0.001, 0.05]
