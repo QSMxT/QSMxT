@@ -265,6 +265,15 @@ pub enum Supplied {
     Missing { searched: String },
 }
 
+/// Where a map supplied with the scan sits ([`StageStore::supplied_grid`]): what names it in the
+/// log (`qsmxt`: its path), and its own grid.
+#[derive(Debug, Clone)]
+pub struct SuppliedGrid {
+    pub origin: String,
+    pub dims: (usize, usize, usize),
+    pub affine: [f64; 16],
+}
+
 /// A multi-echo spin-echo (MESE) acquisition matched to the scan, for R2: its echoes are
 /// [`Item::MeseMagnitude`].
 #[derive(Debug, Clone)]
@@ -368,6 +377,17 @@ pub trait StageStore {
 
     /// A volume supplied with the scan on a grid of its own (a MESE echo), as the store found it.
     fn supplied(&mut self, item: &Item) -> Supplied;
+
+    /// The name and grid (dims, affine) of a map supplied with the scan ([`Item::SuppliedChi`],
+    /// [`Item::SuppliedR2`], [`Item::SuppliedR2prime`], [`Item::SuppliedSegmentation`]), checked
+    /// against the run's grid before its first step; `None` when none was found or it could not
+    /// be read. A store that knows the grid without reading the voxels says so here.
+    fn supplied_grid(&mut self, item: &Item) -> Option<SuppliedGrid> {
+        match self.supplied(item) {
+            Supplied::Found { origin, dims, affine, .. } => Some(SuppliedGrid { origin, dims, affine }),
+            Supplied::Unreadable { .. } | Supplied::Missing { .. } => None,
+        }
+    }
 
     /// What names `item` in a cache key (`qsmxt`: its path, as earlier releases keyed it). For a
     /// file supplied with the scan it is in the keys of the steps that read it, so it must change
@@ -957,6 +977,14 @@ impl<V: Volumes> StageStore for MemoryStore<V> {
             return Supplied::Missing { searched: "the loaded files".into() };
         };
         Supplied::Found { origin, data, dims: g.dims, affine: g.affine }
+    }
+
+    /// The grid it was given ([`Self::supply`], [`Self::insert_on_grid`], [`Self::set_geometry`]),
+    /// named by the identity [`Self::supply`] gave; `None` for one held on the run's grid.
+    fn supplied_grid(&mut self, item: &Item) -> Option<SuppliedGrid> {
+        let g = self.geometries.get(item)?;
+        let origin = self.supplied_identities.get(item).cloned().unwrap_or_else(|| format!("{item:?}"));
+        self.volumes.contains(item).then_some(SuppliedGrid { origin, dims: g.dims, affine: g.affine })
     }
 
     /// What [`Self::supply`] or [`Self::supply_mask`] gave for a supplied file; otherwise the
