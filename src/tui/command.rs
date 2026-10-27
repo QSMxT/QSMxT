@@ -337,6 +337,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
                 .filter(|&p| p != qsmxt_engine::default_laplacian_fft_pad())
                 .map(|p| if p[0] == p[1] && p[1] == p[2] { vec![p[0]] } else { p.to_vec() })
         } else { None },
+        laplacian_unmasked: ps.unwrapping_algorithm == 1 && ps.laplacian_unmasked,
         // BET is edited per mask step in the TUI, so its settings travel inside the sections.
         bet_fractional_intensity: None,
         // The TUI's voxel scale lives on the mask recipe's BET step, so it travels in
@@ -706,7 +707,6 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
                 n4_histogram_bins: parse_optional_usize(&ps.n4_histogram_bins),
             }
         } else { Default::default() },
-        linear_fit_reliability_threshold: if ps.linear_fit_reliability { parse_optional_f64(&ps.linear_fit_reliability_threshold) } else { Some(0.0) },
         linear_fit_estimate_offset: Some(ps.linear_fit_estimate_offset),
         robust_fit_loss: (ps.b0_estimation == 2 && ps.robust_fit_loss == 1).then_some(crate::cli::RobustLossArg::Huber),
         robust_fit_tuning: if ps.b0_estimation == 2 { parse_optional_f64(&ps.robust_fit_tuning) } else { None },
@@ -1145,6 +1145,30 @@ mod tests {
         assert_eq!(pipeline_args_from_app(&app).laplacian_fft_pad, Some(vec![12]));
     }
 
+    /// The unmasked unwrapping is a Laplacian toggle, as the solver is: off by default and
+    /// reaching the config and the command when on.
+    #[test]
+    fn laplacian_unmasked_toggle() {
+        let mut app = default_app();
+        app.form.bids_dir = "/bids".into();
+        let toggles = |app: &App| app.pipeline_state.all_rows().iter().filter_map(|r| match r {
+            crate::tui::app::PipelineRow::Toggle { field, .. } => Some(field.to_string()),
+            _ => None,
+        }).collect::<Vec<_>>();
+        assert!(!toggles(&app).contains(&"laplacian_unmasked".to_string()), "ROMEO has no Laplacian unwrapping");
+        app.pipeline_state.laplacian_unmasked = true;
+        assert!(!pipeline_args_from_app(&app).laplacian_unmasked, "not passed under ROMEO");
+        app.pipeline_state.laplacian_unmasked = false;
+        app.pipeline_state.unwrapping_algorithm = 1; // laplacian
+        assert!(toggles(&app).contains(&"laplacian_unmasked".to_string()));
+        assert!(!config_from_app(&app).unwrap().field_mapping.laplacian_unmasked);
+        assert!(!build_command_string(&app).contains("--laplacian-unmasked"));
+        app.pipeline_state.toggle("laplacian_unmasked");
+        assert!(config_from_app(&app).unwrap().field_mapping.laplacian_unmasked);
+        assert!(pipeline_args_from_app(&app).laplacian_unmasked);
+        assert!(build_command_string(&app).contains("--laplacian-unmasked"));
+    }
+
     /// MEDI's complex fit, MEDI+0's CSF term with MEDI's zero padding, and TFI's MERIT and data
     /// term are in the TUI and reach the config; the complex fit hides phase offset removal.
     #[test]
@@ -1197,7 +1221,7 @@ mod tests {
         app.pipeline_state.b0_estimation = 2;
         let f = fields(&app);
         for name in ["robust_fit_loss", "robust_fit_tuning", "robust_fit_iterations",
-                     "robust_fit_downweight_level", "robust_fit_flag_ratio", "linear_fit_reliability_threshold"] {
+                     "robust_fit_downweight_level", "robust_fit_flag_ratio"] {
             assert!(f.contains(&name.to_string()), "{name} missing: {f:?}");
         }
         assert_eq!(config_from_app(&app).unwrap().field_mapping.robust_fit, qsmxt_engine::RobustFitConfig::default());
@@ -1207,7 +1231,6 @@ mod tests {
         ps.robust_fit_iterations = "0".into();
         ps.robust_fit_downweight_level = "0.5".into();
         ps.robust_fit_flag_ratio = "4".into();
-        ps.linear_fit_reliability_threshold = "80".into();
         ps.toggle("linear_fit_estimate_offset");
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.b0_estimation, qsmxt_engine::B0Estimation::RobustFit);
@@ -1216,13 +1239,11 @@ mod tests {
             downweight_level: 0.5, flag_ratio: 4.0,
         });
         assert!(!c.field_mapping.linear_fit.estimate_offset);
-        assert_eq!(c.field_mapping.linear_fit.reliability_threshold_percentile, 80.0);
         let a = pipeline_args_from_app(&app);
         assert_eq!(a.b0_estimation, Some(B0EstimationArg::RobustFit));
         assert_eq!(a.robust_fit_loss, Some(crate::cli::RobustLossArg::Huber));
         assert_eq!(a.robust_fit_tuning, Some(2.0));
         assert_eq!(a.robust_fit_iterations, Some(0));
-        assert_eq!(a.linear_fit_reliability_threshold, Some(80.0));
         assert_eq!(a.linear_fit_estimate_offset, Some(false));
     }
 
@@ -1377,7 +1398,7 @@ mod tests {
         app.form.bids_dir = "/bids".into();
         let base = build_command_string(&app);
         for f in ["--axial-resampling", "--obliquity-threshold", "--romeo-temporal-uncertain-unwrapping",
-                  "--linear-fit-reliability-threshold", "--tile-size", "--synthseg-sigma"] {
+                  "--tile-size", "--synthseg-sigma"] {
             assert!(!base.contains(f), "{f} in a default command: {base}");
         }
         app.pipeline_state.axial_resampling = true;
@@ -1388,12 +1409,10 @@ mod tests {
         assert!(!build_command_string(&app).contains("--obliquity-threshold"), "no threshold without resampling");
 
         app.pipeline_state.romeo_temporal_uncertain = false;
-        app.pipeline_state.linear_fit_reliability = false;
-        app.pipeline_state.b0_estimation = 1; // linear fit: the one with a reliability mask
         app.form.synthseg_smoothing = false;
         app.form.do_segmentation = true;
         let cmd = build_command_string(&app);
-        for f in ["--romeo-temporal-uncertain-unwrapping 0", "--linear-fit-reliability-threshold 0", "--synthseg-sigma 0"] {
+        for f in ["--romeo-temporal-uncertain-unwrapping 0", "--synthseg-sigma 0"] {
             assert!(cmd.contains(f), "{f} missing: {cmd}");
         }
         app.pipeline_state.qsm_algorithm = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|a| *a == "xqsm").unwrap();

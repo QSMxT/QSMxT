@@ -188,6 +188,7 @@ fn command_for(config: &PipelineConfig) -> String {
             });
         }
     }
+    if fm.laplacian_unmasked { parts.push("--laplacian-unmasked".into()); }
     // Motion correction (off by default).
     let (m, md) = (&config.motion_correction, &d.motion_correction);
     if m.enabled {
@@ -228,7 +229,6 @@ fn command_for(config: &PipelineConfig) -> String {
         if l.estimate_offset != ld.estimate_offset {
             parts.push(format!("--linear-fit-estimate-offset {}", l.estimate_offset));
         }
-        emit_f64(&mut parts, "--linear-fit-reliability-threshold", l.reliability_threshold_percentile, ld.reliability_threshold_percentile);
     }
     if config.field_mapping.b0_estimation == B0Estimation::RobustFit {
         let (r, rd) = (&config.field_mapping.robust_fit, &d.field_mapping.robust_fit);
@@ -1235,6 +1235,9 @@ mod tests {
             assert!(cmd.contains(flag), "{cmd}");
         }
         assert!(!cmd.contains("--qsmart-fit-threshold") && !cmd.contains("--qsmart-vessel"), "{cmd}");
+        assert!(!cmd.contains("--laplacian-unmasked"), "{cmd}");
+        c.field_mapping.laplacian_unmasked = true;
+        assert!(generate_command(&c).contains("--laplacian-unmasked"));
         c.field_mapping.qsmart_fit_percentile = 95.0;
         c.inversion.qsmart.vessel_magnitude = QsmartVesselMagnitude::Combined;
         c.inversion.qsmart.vessel_size_units = VesselSizeUnits::Mm;
@@ -1428,11 +1431,10 @@ frangi_c = 400.0
         c.field_mapping.robust_fit.downweight_level = 0.5;
         c.field_mapping.robust_fit.flag_ratio = 4.0;
         c.field_mapping.linear_fit.estimate_offset = false;
-        c.field_mapping.linear_fit.reliability_threshold_percentile = 80.0;
         let cmd = generate_command(&c);
         for f in ["--robust-fit-loss huber", "--robust-fit-tuning 2.5", "--robust-fit-iterations 5",
                   "--robust-fit-downweight-level 0.5", "--robust-fit-flag-ratio 4",
-                  "--linear-fit-estimate-offset false", "--linear-fit-reliability-threshold 80"] {
+                  "--linear-fit-estimate-offset false"] {
             assert!(cmd.contains(f), "missing {f}: {cmd}");
         }
         // The robust settings mean nothing to the weighted average.
@@ -1528,6 +1530,22 @@ frangi_c = 400.0
         assert!(generate_command(&c).contains("--laplacian-fft-pad 12"));
         c.field_mapping.laplacian_fft_pad = [64, 64, 32];
         assert!(generate_command(&c).contains("--laplacian-fft-pad 64 64 32"));
+    }
+
+    /// The unmasked Laplacian unwrapping is said only when it is on and Laplacian unwrapping
+    /// runs, and a config file keeps it.
+    #[test]
+    fn test_laplacian_unmasked() {
+        let mut c = PipelineConfig::default();
+        c.field_mapping.laplacian_unmasked = true;
+        assert!(!generate_command(&c).contains("--laplacian-unmasked"), "ROMEO has no Laplacian unwrapping");
+        c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
+        assert!(generate_command(&c).contains("--laplacian-unmasked"));
+        c.field_mapping.laplacian_unmasked = false;
+        assert!(!generate_command(&c).contains("--laplacian-unmasked"), "off is the default");
+        let f: FieldMappingConfig = toml::from_str("laplacian_unmasked = true").unwrap();
+        assert!(f.laplacian_unmasked);
+        assert!(!toml::from_str::<FieldMappingConfig>("").unwrap().laplacian_unmasked);
     }
 
     #[test]

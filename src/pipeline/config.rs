@@ -405,6 +405,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
                 QsmxtError::Config(format!("--laplacian-fft-pad {p:?}: give one value or three (x y z)"))
             })?;
         }
+        if args.laplacian_unmasked { config.field_mapping.laplacian_unmasked = true; }
         if let Some(ref s) = args.coil_combination_sigma {
             if s.len() == 3 { config.field_mapping.coil_combination_sigma = [s[0], s[1], s[2]]; }
         }
@@ -628,10 +629,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(m) = args.inhomogeneity_method { config.masking.inhomogeneity_method = m.into(); }
         args.n4_params.apply_to(&mut config.n4);
 
-        // ── Linear fit ──
-        if let Some(v) = args.linear_fit_reliability_threshold {
-            config.field_mapping.linear_fit.reliability_threshold_percentile = v;
-        }
+        // ── Linear and robust fit ──
         if let Some(l) = args.robust_fit_loss {
             config.field_mapping.robust_fit.loss = match l {
                 cli::RobustLossArg::Tukey => RobustLoss::Tukey,
@@ -1204,12 +1202,22 @@ mod tests {
         let c = config_from_cli(&["qsmxt", "run", "<bids>", "--b0-estimation", "robust-fit",
             "--robust-fit-loss", "huber", "--robust-fit-tuning", "2", "--robust-fit-iterations", "4",
             "--robust-fit-downweight-level", "0.6", "--robust-fit-flag-ratio", "5",
-            "--linear-fit-estimate-offset", "false", "--linear-fit-reliability-threshold", "0"]);
+            "--linear-fit-estimate-offset", "false"]);
         assert_eq!(c.field_mapping.robust_fit, RobustFitConfig {
             loss: RobustLoss::Huber, tuning: Some(2.0), iterations: 4, downweight_level: 0.6, flag_ratio: 5.0,
         });
         assert!(!c.field_mapping.linear_fit.estimate_offset);
-        assert_eq!(c.field_mapping.linear_fit.reliability_threshold_percentile, 0.0);
+    }
+
+    /// `--laplacian-unmasked` turns on Laplacian unwrapping of the raw phase, and nothing else.
+    #[test]
+    fn laplacian_unmasked_from_cli() {
+        let base = ["qsmxt", "run", "<bids>", "--unwrapping-algorithm", "laplacian"];
+        let fm = config_from_cli(&base).field_mapping;
+        assert!(!fm.laplacian_unmasked, "off by default");
+        let on = config_from_cli(&[&base[..], &["--laplacian-unmasked"]].concat()).field_mapping;
+        assert!(on.laplacian_unmasked);
+        assert_eq!(qsmxt_engine::FieldMappingConfig { laplacian_unmasked: false, ..on }, fm);
     }
 
     #[test]
@@ -1338,9 +1346,11 @@ mod tests {
                                   "--qsmart-vessel-magnitude", "combined", "--qsmart-vessel-units", "mm"]);
         assert_eq!(c.inversion.qsmart.vessel_magnitude, QsmartVesselMagnitude::Combined);
         assert_eq!(c.inversion.qsmart.vessel_size_units, VesselSizeUnits::Mm);
-        // The echo fit brings no unwrapping with it: with ROMEO it is refused before the run.
+        // The echo fit brings no unwrapping with it: it runs on ROMEO's echoes as given.
         let fm = config_from_cli(&["qsmxt", "run", "<bids>", "--b0-estimation", "qsmart-echofit"]).field_mapping;
         assert_eq!(fm.unwrapping_algorithm, UnwrappingAlgorithm::Romeo);
+        assert!(!fm.laplacian_unmasked);
+        assert!(fm.validate().is_ok());
     }
 
     /// The mask flags under QSMART set the mask as anywhere else.

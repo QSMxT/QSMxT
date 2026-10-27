@@ -40,7 +40,6 @@ pub fn params(config: &PipelineConfig, meta: &RunMetadata) -> serde_json::Value 
         "b0_weight_type": format!("{}", fm.b0_weight_type),
         "b0_weight_assumed_t2star_ms": fm.b0_weight_assumed_t2star_ms,
         "linear_fit_estimate_offset": fm.linear_fit.estimate_offset,
-        "linear_fit_reliability_threshold": fm.linear_fit.reliability_threshold_percentile,
         "robust_fit": fm.robust_fit,
         "complex_fit": fm.complex_fit,
         // Per-echo masked Laplacian + echo combination (crate::fieldmap); bump on a change to
@@ -48,6 +47,7 @@ pub fn params(config: &PipelineConfig, meta: &RunMetadata) -> serde_json::Value 
         "laplacian_echo_combination": if laplacian { 2 } else { 0 },
         "laplacian_solver": format!("{}", fm.laplacian_solver),
         "laplacian_fft_pad": fm.laplacian_fft_pad,
+        "laplacian_unmasked": fm.laplacian_unmasked,
     });
     if fm.b0_estimation == crate::enums::B0Estimation::QsmartEchofit {
         params["qsmart_fit_threshold"] = match fm.qsmart_fit_threshold() {
@@ -95,15 +95,21 @@ pub fn map_field(
     } else {
         log::info!("Phase unwrapping ({}, single echo)", unwrap_name);
     }
+    let laplacian = fm.unwrapping_algorithm == crate::enums::UnwrappingAlgorithm::Laplacian;
+    let region = if fm.laplacian_unmasked { " of the raw phase over the whole volume" } else { "" };
     if fm.b0_estimation == crate::enums::B0Estimation::QsmartEchofit {
         let threshold = match fm.qsmart_fit_threshold() {
             qsm_core::utils::QsmartFitThreshold::Percentile(p) => format!("the {p}th percentile of the blurred residual"),
             qsm_core::utils::QsmartFitThreshold::Absolute(t) => format!("a residual of {t}"),
         };
-        log::info!("Laplacian unwrapping per echo over the whole volume ({} solver), then QSMART's echo fit \
-                    (reliability threshold: {threshold})", fm.laplacian_solver);
-    } else if fm.unwrapping_algorithm == crate::enums::UnwrappingAlgorithm::Laplacian && meta.n_echoes > 1 {
-        log::info!("Laplacian unwrapping per echo ({} solver), then {} ({} weighting)",
+        let unwrapping = if laplacian {
+            format!("Laplacian unwrapping per echo{region} ({} solver), then ", fm.laplacian_solver)
+        } else {
+            String::new()
+        };
+        log::info!("{unwrapping}QSMART's echo fit (reliability threshold: {threshold})");
+    } else if laplacian && meta.n_echoes > 1 && fm.b0_estimation != crate::enums::B0Estimation::ComplexFit {
+        log::info!("Laplacian unwrapping per echo{region} ({} solver), then {} ({} weighting)",
             fm.laplacian_solver, fm.b0_estimation, fm.b0_weight_type);
     }
 
@@ -149,6 +155,26 @@ mod tests {
         config.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
         assert_eq!(algorithm(&config, &meta(3)), "laplacian");
         assert_eq!(params(&config, &meta(3))["laplacian_echo_combination"], 2);
+    }
+
+    /// The unmasked Laplacian unwrapping is recorded in the unwrap step's parameters, so a field
+    /// map from the masked phase is not reused for it.
+    #[test]
+    fn the_unmasked_unwrapping_is_in_the_unwrap_parameters() {
+        let mut config = PipelineConfig::default();
+        config.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
+        let masked = params(&config, &meta(3));
+        assert_eq!(masked["laplacian_unmasked"], false);
+        config.field_mapping.laplacian_unmasked = true;
+        let unmasked = params(&config, &meta(3));
+        assert_eq!(unmasked["laplacian_unmasked"], true);
+        let key = |p: &serde_json::Value, c: &PipelineConfig| {
+            crate::cache::step_cache_key("unwrap", Some("laplacian"), p, c)
+        };
+        let mut masked_config = config.clone();
+        masked_config.field_mapping.laplacian_unmasked = false;
+        assert_ne!(key(&unmasked, &config), key(&masked, &masked_config));
+        assert!(masked.get("linear_fit_reliability_threshold").is_none());
     }
 
     #[test]

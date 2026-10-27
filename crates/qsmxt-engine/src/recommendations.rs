@@ -353,6 +353,7 @@ const SETTINGS: &[(&str, &str, Kind)] = &[
     ("field_mapping.phase_offset_sigma_mm", "field_mapping.phase_offset_sigma_mm", Kind::Same),
     ("field_mapping.bipolar_correction", "field_mapping.bipolar_correction", Kind::Same),
     ("field_mapping.laplacian_solver", "field_mapping.laplacian_solver", Kind::LaplacianSolver),
+    ("field_mapping.laplacian_unmasked", "field_mapping.laplacian_unmasked", Kind::Same),
     ("bg_removal.algorithm", "bg_removal.algorithm", Kind::Same),
     ("bg_removal.vsharp.deconvolve", "bg_removal.vsharp.deconvolve", Kind::Same),
     ("bg_removal.vsharp.max_radius", "bg_removal.vsharp.max_radius", Kind::Same),

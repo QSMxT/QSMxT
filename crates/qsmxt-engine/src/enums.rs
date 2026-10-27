@@ -99,8 +99,8 @@ pub enum LaplacianSolver {
     #[serde(alias = "sti")]
     Fft,
     /// Schofield & Zhu sin/cos Laplacian with an FFT Poisson solve on the volume mirrored along
-    /// each axis (qsm-core's `LaplacianSolver::Mirror`): QSMART's unwrapping, and its default
-    /// when QSMART is the inversion.
+    /// each axis (qsm-core's `LaplacianSolver::Mirror`): QSMART's unwrapping, which the rule
+    /// `qsmart.laplacian-solver` suggests for a QSMART run.
     Mirror,
 }
 impl fmt::Display for LaplacianSolver {
@@ -274,11 +274,11 @@ impl EchoTimeChoice {
 #[serde(rename_all = "kebab-case")]
 pub enum B0Estimation {
     WeightedAvg, LinearFit, RobustFit,
-    /// QSMART's echo fit (qsm-core's `B0EstimationMethod::QsmartEchofit`): each echo
-    /// Laplacian-unwrapped over the whole volume, then a magnitude-weighted fit of phase against
-    /// TE through the origin, with QSMART's reliability map. Needs Laplacian unwrapping and no
-    /// bipolar correction ([`crate::config::FieldMappingConfig::validate`]); the default when
-    /// QSMART is the inversion.
+    /// QSMART's echo fit (qsm-core's `B0EstimationMethod::QsmartEchofit`): a magnitude-weighted
+    /// fit of phase against TE through the origin, on the echoes as the configured unwrapping,
+    /// phase offset removal and bipolar correction leave them, with QSMART's reliability map.
+    /// QSMART's own route (Laplacian unwrapping of the raw phase with the mirror solver) is what
+    /// the rules suggest for a QSMART run.
     QsmartEchofit,
     /// MEDI's field map (`Fit_ppm_complex`): a fit of the complex echoes, then unwrapping of the
     /// fitted phase per echo spacing (QSM.rs `B0EstimationMethod::ComplexFit`).

@@ -65,21 +65,22 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--cosmos-magnitude-weighting` | COSMOS: weight each orientation by its combined magnitude (conjugate-gradient solve) |
 | `--cosmos-tol <COSMOS_TOL>` | Magnitude-weighted COSMOS: conjugate-gradient tolerance (needs --cosmos-magnitude-weighting) |
 | `--cosmos-max-iter <COSMOS_MAX_ITER>` | Magnitude-weighted COSMOS: conjugate-gradient iteration cap (needs --cosmos-magnitude-weighting) |
-| `--unwrapping-algorithm <UNWRAPPING_ALGORITHM>` | Unwrapping algorithm (default: romeo; laplacian with --qsm-algorithm qsmart or --b0-estimation qsmart-echofit) Values: `romeo`, `laplacian`. |
+| `--unwrapping-algorithm <UNWRAPPING_ALGORITHM>` | Unwrapping algorithm (default: romeo) Values: `romeo`, `laplacian`. |
 | `--bf-algorithm <BF_ALGORITHM>` | Background field removal algorithm (default: vsharp; pdf with --qsm-algorithm medi, as in its authors' pipeline) Values: `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm`. |
 | `--masking-input <MASKING_INPUT>` | Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude) Values: `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality`. |
 | `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
 | `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
 | `--coil-combination-sigma <COIL_COMBINATION_SIGMA>` | MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets (3 values, in voxels; default 10 10 5, as in MriResearchTools). Only used for uncombined multi-coil runs. |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
-| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (default: weighted-avg; qsmart-echofit with --qsm-algorithm qsmart and Laplacian unwrapping) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. |
+| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (default: weighted-avg) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. |
 | `--qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>` | `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is left out of QSMART's reconstruction is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`; default), or a fixed residual (`--qsmart-fit-threshold`). Without it, giving one of those two selects its mode. Values: `percentile`, `absolute`. |
 | `--qsmart-fit-percentile <QSMART_FIT_PERCENTILE>` | `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is left out of QSMART's reconstruction (default 99) |
 | `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is left out of QSMART's reconstruction, instead of a percentile (40 when the mode is `absolute` and none is given) |
 | `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) computed from the echo times and an assumed T2\* (`--b0-weight-assumed-t2star`), the same in every voxel: no T2\* map, no magnitude (Wang et al. 2022, Nat Neurosci 25:818). `phase-snr`, which uses the measured magnitude in each voxel, is generally preferable when magnitude is available. Applies to Laplacian unwrapping as well as ROMEO. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. |
 | `--b0-weight-assumed-t2star <MS>` | T2\* in ms assumed by `--b0-weight-type assumed-decay` to compute its fixed echo weights (default 40; no T2\* map is used) |
-| `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares, Neumann/DCT solve; default), `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume) or `mirror` (the same on the volume mirrored along each axis, as QSMART unwraps; the default with --qsm-algorithm qsmart) Values: `dct`, `fft`, `mirror`. |
+| `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares, Neumann/DCT solve; default), `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume) or `mirror` (the same on the volume mirrored along each axis, as QSMART unwraps) Values: `dct`, `fft`, `mirror`. |
 | `--laplacian-fft-pad <VOXELS>` | Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or three (x y z). Default 64. |
+| `--laplacian-unmasked` | `--unwrapping-algorithm laplacian`: unwrap the raw phase over the whole volume, instead of the phase set to zero outside the brain mask, as QSMART does. With `--b0-estimation qsmart-echofit` the field map is then kept over the whole volume. |
 | `--bet-fractional-intensity <BET_FRACTIONAL_INTENSITY>` | BET fractional intensity (0.0-1.0; smaller = larger brain). Applies to every BET step in the masking recipe, overriding a `bet:<f>` in a --mask spec. |
 | `--bet-smoothness <BET_SMOOTHNESS>` | BET surface smoothness factor. Applies to every BET step in the masking recipe. |
 | `--bet-gradient-threshold <BET_GRADIENT_THRESHOLD>` | BET gradient threshold (-1 to 1). Applies to every BET step in the masking recipe. |
@@ -364,7 +365,6 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--n4-bias-field-fwhm <N4_BIAS_FIELD_FWHM>` | N4: FWHM of the Gaussian modelling the bias field's blurring of the log-intensity histogram (default 0.15) |
 | `--n4-wiener-noise <N4_WIENER_NOISE>` | N4: noise term of the Wiener deconvolution of the histogram (default 0.01) |
 | `--n4-histogram-bins <N4_HISTOGRAM_BINS>` | N4: bins of the log-intensity histogram (default 200) |
-| `--linear-fit-reliability-threshold <LINEAR_FIT_RELIABILITY_THRESHOLD>` | Linear and robust fit: percentile for the fit's reliability mask (default 90; 0 disables) |
 | `--linear-fit-estimate-offset <LINEAR_FIT_ESTIMATE_OFFSET>` | Linear and robust fit: estimate a phase offset term (default: true). The robust fit needs 4 echoes with it, 3 without. |
 | `--robust-fit-loss <ROBUST_FIT_LOSS>` | Motion-robust fit (`--b0-estimation robust-fit`): loss turning residuals into weights. `tukey` (default) rejects echoes past the tuning radius; `huber` caps but never rejects. Values: `tukey`, `huber`. |
 | `--robust-fit-tuning <ROBUST_FIT_TUNING>` | Motion-robust fit: tuning radius in robust-scale units (default: the loss's conventional value, Tukey 4.685 / Huber 1.345). Smaller is more aggressive. |
@@ -498,21 +498,22 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--cosmos-magnitude-weighting` | COSMOS: weight each orientation by its combined magnitude (conjugate-gradient solve) |
 | `--cosmos-tol <COSMOS_TOL>` | Magnitude-weighted COSMOS: conjugate-gradient tolerance (needs --cosmos-magnitude-weighting) |
 | `--cosmos-max-iter <COSMOS_MAX_ITER>` | Magnitude-weighted COSMOS: conjugate-gradient iteration cap (needs --cosmos-magnitude-weighting) |
-| `--unwrapping-algorithm <UNWRAPPING_ALGORITHM>` | Unwrapping algorithm (default: romeo; laplacian with --qsm-algorithm qsmart or --b0-estimation qsmart-echofit) Values: `romeo`, `laplacian`. |
+| `--unwrapping-algorithm <UNWRAPPING_ALGORITHM>` | Unwrapping algorithm (default: romeo) Values: `romeo`, `laplacian`. |
 | `--bf-algorithm <BF_ALGORITHM>` | Background field removal algorithm (default: vsharp; pdf with --qsm-algorithm medi, as in its authors' pipeline) Values: `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm`. |
 | `--masking-input <MASKING_INPUT>` | Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude) Values: `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality`. |
 | `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
 | `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
 | `--coil-combination-sigma <COIL_COMBINATION_SIGMA>` | MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets (3 values, in voxels; default 10 10 5, as in MriResearchTools). Only used for uncombined multi-coil runs. |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
-| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (default: weighted-avg; qsmart-echofit with --qsm-algorithm qsmart and Laplacian unwrapping) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. |
+| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (default: weighted-avg) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. |
 | `--qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>` | `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is left out of QSMART's reconstruction is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`; default), or a fixed residual (`--qsmart-fit-threshold`). Without it, giving one of those two selects its mode. Values: `percentile`, `absolute`. |
 | `--qsmart-fit-percentile <QSMART_FIT_PERCENTILE>` | `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is left out of QSMART's reconstruction (default 99) |
 | `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is left out of QSMART's reconstruction, instead of a percentile (40 when the mode is `absolute` and none is given) |
 | `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) computed from the echo times and an assumed T2\* (`--b0-weight-assumed-t2star`), the same in every voxel: no T2\* map, no magnitude (Wang et al. 2022, Nat Neurosci 25:818). `phase-snr`, which uses the measured magnitude in each voxel, is generally preferable when magnitude is available. Applies to Laplacian unwrapping as well as ROMEO. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. |
 | `--b0-weight-assumed-t2star <MS>` | T2\* in ms assumed by `--b0-weight-type assumed-decay` to compute its fixed echo weights (default 40; no T2\* map is used) |
-| `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares, Neumann/DCT solve; default), `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume) or `mirror` (the same on the volume mirrored along each axis, as QSMART unwraps; the default with --qsm-algorithm qsmart) Values: `dct`, `fft`, `mirror`. |
+| `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares, Neumann/DCT solve; default), `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume) or `mirror` (the same on the volume mirrored along each axis, as QSMART unwraps) Values: `dct`, `fft`, `mirror`. |
 | `--laplacian-fft-pad <VOXELS>` | Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or three (x y z). Default 64. |
+| `--laplacian-unmasked` | `--unwrapping-algorithm laplacian`: unwrap the raw phase over the whole volume, instead of the phase set to zero outside the brain mask, as QSMART does. With `--b0-estimation qsmart-echofit` the field map is then kept over the whole volume. |
 | `--bet-fractional-intensity <BET_FRACTIONAL_INTENSITY>` | BET fractional intensity (0.0-1.0; smaller = larger brain). Applies to every BET step in the masking recipe, overriding a `bet:<f>` in a --mask spec. |
 | `--bet-smoothness <BET_SMOOTHNESS>` | BET surface smoothness factor. Applies to every BET step in the masking recipe. |
 | `--bet-gradient-threshold <BET_GRADIENT_THRESHOLD>` | BET gradient threshold (-1 to 1). Applies to every BET step in the masking recipe. |
@@ -797,7 +798,6 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--n4-bias-field-fwhm <N4_BIAS_FIELD_FWHM>` | N4: FWHM of the Gaussian modelling the bias field's blurring of the log-intensity histogram (default 0.15) |
 | `--n4-wiener-noise <N4_WIENER_NOISE>` | N4: noise term of the Wiener deconvolution of the histogram (default 0.01) |
 | `--n4-histogram-bins <N4_HISTOGRAM_BINS>` | N4: bins of the log-intensity histogram (default 200) |
-| `--linear-fit-reliability-threshold <LINEAR_FIT_RELIABILITY_THRESHOLD>` | Linear and robust fit: percentile for the fit's reliability mask (default 90; 0 disables) |
 | `--linear-fit-estimate-offset <LINEAR_FIT_ESTIMATE_OFFSET>` | Linear and robust fit: estimate a phase offset term (default: true). The robust fit needs 4 echoes with it, 3 without. |
 | `--robust-fit-loss <ROBUST_FIT_LOSS>` | Motion-robust fit (`--b0-estimation robust-fit`): loss turning residuals into weights. `tukey` (default) rejects echoes past the tuning radius; `huber` caps but never rejects. Values: `tukey`, `huber`. |
 | `--robust-fit-tuning <ROBUST_FIT_TUNING>` | Motion-robust fit: tuning radius in robust-scale units (default: the loss's conventional value, Tukey 4.685 / Huber 1.345). Smaller is more aggressive. |
@@ -868,21 +868,22 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--cosmos-magnitude-weighting` | COSMOS: weight each orientation by its combined magnitude (conjugate-gradient solve) |
 | `--cosmos-tol <COSMOS_TOL>` | Magnitude-weighted COSMOS: conjugate-gradient tolerance (needs --cosmos-magnitude-weighting) |
 | `--cosmos-max-iter <COSMOS_MAX_ITER>` | Magnitude-weighted COSMOS: conjugate-gradient iteration cap (needs --cosmos-magnitude-weighting) |
-| `--unwrapping-algorithm <UNWRAPPING_ALGORITHM>` | Unwrapping algorithm (default: romeo; laplacian with --qsm-algorithm qsmart or --b0-estimation qsmart-echofit) Values: `romeo`, `laplacian`. |
+| `--unwrapping-algorithm <UNWRAPPING_ALGORITHM>` | Unwrapping algorithm (default: romeo) Values: `romeo`, `laplacian`. |
 | `--bf-algorithm <BF_ALGORITHM>` | Background field removal algorithm (default: vsharp; pdf with --qsm-algorithm medi, as in its authors' pipeline) Values: `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm`. |
 | `--masking-input <MASKING_INPUT>` | Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude) Values: `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality`. |
 | `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
 | `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
 | `--coil-combination-sigma <COIL_COMBINATION_SIGMA>` | MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets (3 values, in voxels; default 10 10 5, as in MriResearchTools). Only used for uncombined multi-coil runs. |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
-| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (default: weighted-avg; qsmart-echofit with --qsm-algorithm qsmart and Laplacian unwrapping) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. |
+| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (default: weighted-avg) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. |
 | `--qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>` | `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is left out of QSMART's reconstruction is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`; default), or a fixed residual (`--qsmart-fit-threshold`). Without it, giving one of those two selects its mode. Values: `percentile`, `absolute`. |
 | `--qsmart-fit-percentile <QSMART_FIT_PERCENTILE>` | `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is left out of QSMART's reconstruction (default 99) |
 | `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is left out of QSMART's reconstruction, instead of a percentile (40 when the mode is `absolute` and none is given) |
 | `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) computed from the echo times and an assumed T2\* (`--b0-weight-assumed-t2star`), the same in every voxel: no T2\* map, no magnitude (Wang et al. 2022, Nat Neurosci 25:818). `phase-snr`, which uses the measured magnitude in each voxel, is generally preferable when magnitude is available. Applies to Laplacian unwrapping as well as ROMEO. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. |
 | `--b0-weight-assumed-t2star <MS>` | T2\* in ms assumed by `--b0-weight-type assumed-decay` to compute its fixed echo weights (default 40; no T2\* map is used) |
-| `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares, Neumann/DCT solve; default), `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume) or `mirror` (the same on the volume mirrored along each axis, as QSMART unwraps; the default with --qsm-algorithm qsmart) Values: `dct`, `fft`, `mirror`. |
+| `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares, Neumann/DCT solve; default), `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume) or `mirror` (the same on the volume mirrored along each axis, as QSMART unwraps) Values: `dct`, `fft`, `mirror`. |
 | `--laplacian-fft-pad <VOXELS>` | Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or three (x y z). Default 64. |
+| `--laplacian-unmasked` | `--unwrapping-algorithm laplacian`: unwrap the raw phase over the whole volume, instead of the phase set to zero outside the brain mask, as QSMART does. With `--b0-estimation qsmart-echofit` the field map is then kept over the whole volume. |
 | `--bet-fractional-intensity <BET_FRACTIONAL_INTENSITY>` | BET fractional intensity (0.0-1.0; smaller = larger brain). Applies to every BET step in the masking recipe, overriding a `bet:<f>` in a --mask spec. |
 | `--bet-smoothness <BET_SMOOTHNESS>` | BET surface smoothness factor. Applies to every BET step in the masking recipe. |
 | `--bet-gradient-threshold <BET_GRADIENT_THRESHOLD>` | BET gradient threshold (-1 to 1). Applies to every BET step in the masking recipe. |
@@ -1167,7 +1168,6 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--n4-bias-field-fwhm <N4_BIAS_FIELD_FWHM>` | N4: FWHM of the Gaussian modelling the bias field's blurring of the log-intensity histogram (default 0.15) |
 | `--n4-wiener-noise <N4_WIENER_NOISE>` | N4: noise term of the Wiener deconvolution of the histogram (default 0.01) |
 | `--n4-histogram-bins <N4_HISTOGRAM_BINS>` | N4: bins of the log-intensity histogram (default 200) |
-| `--linear-fit-reliability-threshold <LINEAR_FIT_RELIABILITY_THRESHOLD>` | Linear and robust fit: percentile for the fit's reliability mask (default 90; 0 disables) |
 | `--linear-fit-estimate-offset <LINEAR_FIT_ESTIMATE_OFFSET>` | Linear and robust fit: estimate a phase offset term (default: true). The robust fit needs 4 echoes with it, 3 without. |
 | `--robust-fit-loss <ROBUST_FIT_LOSS>` | Motion-robust fit (`--b0-estimation robust-fit`): loss turning residuals into weights. `tukey` (default) rejects echoes past the tuning radius; `huber` caps but never rejects. Values: `tukey`, `huber`. |
 | `--robust-fit-tuning <ROBUST_FIT_TUNING>` | Motion-robust fit: tuning radius in robust-scale units (default: the loss's conventional value, Tukey 4.685 / Huber 1.345). Smaller is more aggressive. |
@@ -1592,14 +1592,13 @@ qsmxt fieldmap romeo [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--tes <TES>` | Echo times in seconds (space-separated, one per echo) |
 | `--b0 <B0>` | Field strength in Tesla (alias: --field-strength) |
 | `--params <PARAMS>` | JSON params file: {"TE":[..seconds], "B0":&lt;tesla&gt;, "voxel_size":[..], "B0_dir":[..]}. --tes / --b0 override values from this file when both are present. |
-| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (qsmart-echofit: `fieldmap laplacian` only) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. Default: `weighted-avg`. |
+| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method. Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. Default: `weighted-avg`. |
 | `--qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>` | `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is marked unreliable is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`; default), or a fixed residual (`--qsmart-fit-threshold`). Without it, giving one of those two selects its mode. Values: `percentile`, `absolute`. |
 | `--qsmart-fit-percentile <QSMART_FIT_PERCENTILE>` | `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is marked unreliable (default 99) |
 | `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is marked unreliable, instead of a percentile (40 when the mode is `absolute` and none is given) |
 | `--reliability-output <RELIABILITY_OUTPUT>` | `--b0-estimation qsmart-echofit`: also save its reliability map (1 = reliable) here, for `qsmxt qsmart --reliability`. |
 | `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted-averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) from the echo times and an assumed T2\* (no T2\* map, no magnitude; Wang et al. 2022). `phase-snr` is generally preferable with magnitude. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. Default: `phase-snr`. |
 | `--b0-weight-assumed-t2star <MS>` | T2\* in ms assumed by `--b0-weight-type assumed-decay` (no T2\* map is used) Default: `40`. |
-| `--linear-fit-reliability-threshold <LINEAR_FIT_RELIABILITY_THRESHOLD>` | Linear and robust fit: percentile for the fit's reliability mask (default 90; 0 disables) |
 | `--linear-fit-estimate-offset <LINEAR_FIT_ESTIMATE_OFFSET>` | Linear and robust fit: estimate a phase offset term (default: true). The robust fit needs 4 echoes with it, 3 without. |
 | `--robust-fit-loss <ROBUST_FIT_LOSS>` | Motion-robust fit (`--b0-estimation robust-fit`): loss turning residuals into weights. `tukey` (default) rejects echoes past the tuning radius; `huber` caps but never rejects. Values: `tukey`, `huber`. |
 | `--robust-fit-tuning <ROBUST_FIT_TUNING>` | Motion-robust fit: tuning radius in robust-scale units (default: the loss's conventional value, Tukey 4.685 / Huber 1.345). Smaller is more aggressive. |
@@ -1647,14 +1646,13 @@ qsmxt fieldmap laplacian [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--tes <TES>` | Echo times in seconds (space-separated, one per echo) |
 | `--b0 <B0>` | Field strength in Tesla (alias: --field-strength) |
 | `--params <PARAMS>` | JSON params file: {"TE":[..seconds], "B0":&lt;tesla&gt;, "voxel_size":[..], "B0_dir":[..]}. --tes / --b0 override values from this file when both are present. |
-| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (qsmart-echofit: `fieldmap laplacian` only) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. Default: `weighted-avg`. |
+| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method. Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. Default: `weighted-avg`. |
 | `--qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>` | `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is marked unreliable is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`; default), or a fixed residual (`--qsmart-fit-threshold`). Without it, giving one of those two selects its mode. Values: `percentile`, `absolute`. |
 | `--qsmart-fit-percentile <QSMART_FIT_PERCENTILE>` | `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is marked unreliable (default 99) |
 | `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is marked unreliable, instead of a percentile (40 when the mode is `absolute` and none is given) |
 | `--reliability-output <RELIABILITY_OUTPUT>` | `--b0-estimation qsmart-echofit`: also save its reliability map (1 = reliable) here, for `qsmxt qsmart --reliability`. |
 | `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted-averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) from the echo times and an assumed T2\* (no T2\* map, no magnitude; Wang et al. 2022). `phase-snr` is generally preferable with magnitude. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. Default: `phase-snr`. |
 | `--b0-weight-assumed-t2star <MS>` | T2\* in ms assumed by `--b0-weight-type assumed-decay` (no T2\* map is used) Default: `40`. |
-| `--linear-fit-reliability-threshold <LINEAR_FIT_RELIABILITY_THRESHOLD>` | Linear and robust fit: percentile for the fit's reliability mask (default 90; 0 disables) |
 | `--linear-fit-estimate-offset <LINEAR_FIT_ESTIMATE_OFFSET>` | Linear and robust fit: estimate a phase offset term (default: true). The robust fit needs 4 echoes with it, 3 without. |
 | `--robust-fit-loss <ROBUST_FIT_LOSS>` | Motion-robust fit (`--b0-estimation robust-fit`): loss turning residuals into weights. `tukey` (default) rejects echoes past the tuning radius; `huber` caps but never rejects. Values: `tukey`, `huber`. |
 | `--robust-fit-tuning <ROBUST_FIT_TUNING>` | Motion-robust fit: tuning radius in robust-scale units (default: the loss's conventional value, Tukey 4.685 / Huber 1.345). Smaller is more aggressive. |
@@ -1665,6 +1663,7 @@ qsmxt fieldmap laplacian [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--complex-fit-max-iter <COMPLEX_FIT_MAX_ITER>` | Complex fit: Gauss-Newton iterations at most (default 30) |
 | `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver: `dct` (unweighted least squares, Neumann/DCT solve) or `fft` (Schofield & Zhu, FFT solve on a zero-padded volume) Values: `dct`, `fft`, `mirror`. Default: `dct`. |
 | `--laplacian-fft-pad <VOXELS>` | Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or three (x y z) Default: `64`. |
+| `--laplacian-unmasked` | Unwrap the raw phase over the whole volume, instead of the phase set to zero outside the mask, as QSMART does. With `--b0-estimation qsmart-echofit` the fit then covers the whole volume (the saved field map is still set to zero outside the mask) |
 
 ## `qsmxt bgremove`
 

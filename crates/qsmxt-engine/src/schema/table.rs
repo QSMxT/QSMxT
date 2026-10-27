@@ -146,6 +146,8 @@ pub(super) fn table() -> Vec<Def> {
         d("field_mapping.laplacian_fft_pad", FieldMap, "FFT pad (voxels)", "Zero-padding per side: one value for every axis or three (x y z). Default: 64", IntVec3).units("voxels").flag("--laplacian-fft-pad").parent("field_mapping.laplacian_solver")
         .when(|x| x.laplacian && x.c.field_mapping.laplacian_solver == LaplacianSolver::Fft).full("Laplacian FFT padding")
         .gui("Zero-padding per side: one value for every axis, or three (x y z)"),
+        d("field_mapping.laplacian_unmasked", FieldMap, "Unmasked phase", "Unwrap the raw phase over the whole volume, as QSMART does, instead of the phase set to zero outside the brain mask", Bool).flag("--laplacian-unmasked").parent("field_mapping.unwrapping_algorithm")
+        .when(|x| x.laplacian).full("Laplacian unwrapping of the raw phase"),
         // MEDI's complex fit fits its own phase offset: QSM.rs does not remove them first.
         d("field_mapping.phase_offset_removal", FieldMap, "Phase offset removal", "Remove spatially-varying phase offset using HIP (Eckstein et al., 2018); multi-echo only", Bool).flag("--phase-offset-removal").parent("field_mapping.unwrapping_algorithm")
         .when(|x| !x.laplacian && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit),
@@ -198,7 +200,7 @@ pub(super) fn table() -> Vec<Def> {
             o("weighted-avg", "weighted-avg", "Weighted average", "Weighted average of phase/TE across echoes (default)"),
             o("linear-fit", "linear-fit", "Linear fit", "Magnitude-weighted linear fit of phase vs TE"),
             o("robust-fit", "robust-fit", "Robust fit", "Motion-robust linear fit (IRLS): down-weights echoes departing from a straight line, per voxel. Needs 4 echoes (3 without offset)"),
-            o("qsmart-echofit", "qsmart-echofit", "QSMART echo fit", "QSMART's: magnitude-weighted fit of phase vs TE through the origin, each echo unwrapped over the whole volume; marks the voxels QSMART leaves out. Needs Laplacian unwrapping"),
+            o("qsmart-echofit", "qsmart-echofit", "QSMART echo fit", "QSMART's: magnitude-weighted fit of phase vs TE through the origin; marks the voxels QSMART leaves out"),
             o("complex-fit", "complex-fit", "Complex fit", "MEDI's field map (Fit_ppm_complex): a magnitude-weighted fit of the complex echoes, then unwrapping of the fitted phase. Needs the magnitude and evenly spaced echoes; no phase offset removal or bipolar correction"),
         ])).basic().flag("--b0-estimation")
         .gui("How the unwrapped echoes are combined into one field map"),
@@ -231,10 +233,6 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.c.field_mapping.b0_estimation == B0Estimation::WeightedAvg && x.c.field_mapping.b0_weight_type == B0WeightType::AssumedDecay).full("Assumed T2*")
         .gui("T2* assumed to compute the fixed echo weights; no T2* map is used"),
         d("field_mapping.linear_fit.estimate_offset", FieldMap, "Estimate offset", "Fit a phase-offset term in the echo-time fit (robust fit: needs 4 echoes with it, 3 without)", Bool).flag("--linear-fit-estimate-offset").parent("field_mapping.b0_estimation")
-        .when(|x| matches!(x.c.field_mapping.b0_estimation, B0Estimation::LinearFit | B0Estimation::RobustFit)).context("Echo-time fit"),
-        // QSM.rs RobustFitParams::validate (utils/multi_echo.rs) refuses a percentile outside [0, 100].
-        d("field_mapping.linear_fit.reliability_threshold_percentile", FieldMap, "Reliability mask", "Report the fit's reliability mask; does not change the field map", Float).min(0.0).max(100.0)
-        .value("Percentile", "Percentile of the fit residual above which a voxel counts as unreliable").off(json!(0.0)).flag("--linear-fit-reliability-threshold").parent("field_mapping.b0_estimation")
         .when(|x| matches!(x.c.field_mapping.b0_estimation, B0Estimation::LinearFit | B0Estimation::RobustFit)).context("Echo-time fit"),
         d("field_mapping.robust_fit.loss", FieldMap, "Loss", "", Enum(vec![
             o("tukey", "tukey", "Tukey", "Tukey biweight: rejects an echo at a voxel past the tuning radius (default)"),

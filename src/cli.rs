@@ -1348,8 +1348,7 @@ pub struct PipelineArgs {
     #[arg(long)]
     pub cosmos_max_iter: Option<usize>,
 
-    /// Unwrapping algorithm (default: romeo; laplacian with --qsm-algorithm qsmart or
-    /// --b0-estimation qsmart-echofit)
+    /// Unwrapping algorithm (default: romeo)
     #[arg(long, value_enum)]
     pub unwrapping_algorithm: Option<UnwrapAlgorithmArg>,
 
@@ -1382,8 +1381,7 @@ pub struct PipelineArgs {
     #[arg(long)]
     pub bipolar_correction: bool,
 
-    /// B0 field estimation method (default: weighted-avg; qsmart-echofit with --qsm-algorithm
-    /// qsmart and Laplacian unwrapping)
+    /// B0 field estimation method (default: weighted-avg)
     #[arg(long, value_enum)]
     pub b0_estimation: Option<B0EstimationArg>,
 
@@ -1422,7 +1420,7 @@ pub struct PipelineArgs {
     /// Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares,
     /// Neumann/DCT solve; default), `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a
     /// zero-padded volume) or `mirror` (the same on the volume mirrored along each axis, as
-    /// QSMART unwraps; the default with --qsm-algorithm qsmart)
+    /// QSMART unwraps)
     #[arg(long, value_enum, alias = "laplacian-kernel")]
     pub laplacian_solver: Option<LaplacianSolverArg>,
 
@@ -1430,6 +1428,12 @@ pub struct PipelineArgs {
     /// three (x y z). Default 64
     #[arg(long, value_name = "VOXELS", num_args = 1..=3)]
     pub laplacian_fft_pad: Option<Vec<usize>>,
+
+    /// `--unwrapping-algorithm laplacian`: unwrap the raw phase over the whole volume, instead of
+    /// the phase set to zero outside the brain mask, as QSMART does. With `--b0-estimation
+    /// qsmart-echofit` the field map is then kept over the whole volume
+    #[arg(long)]
+    pub laplacian_unmasked: bool,
 
     /// BET fractional intensity (0.0-1.0; smaller = larger brain). Applies to every BET step in
     /// the masking recipe, overriding a `bet:<f>` in a --mask spec
@@ -1554,10 +1558,6 @@ pub struct PipelineArgs {
 
     #[command(flatten)]
     pub n4_params: N4ParamArgs,
-
-    /// Linear and robust fit: percentile for the fit's reliability mask (default 90; 0 disables)
-    #[arg(long)]
-    pub linear_fit_reliability_threshold: Option<f64>,
 
     /// Linear and robust fit: estimate a phase offset term (default: true). The robust fit needs
     /// 4 echoes with it, 3 without
@@ -2306,7 +2306,7 @@ pub struct FieldmapCommonArgs {
     /// --tes / --b0 override values from this file when both are present.
     #[arg(long)]
     pub params: Option<PathBuf>,
-    /// B0 field estimation method (qsmart-echofit: `fieldmap laplacian` only)
+    /// B0 field estimation method
     #[arg(long, value_enum, default_value = "weighted-avg")]
     pub b0_estimation: B0EstimationArg,
     /// `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is marked
@@ -2335,9 +2335,6 @@ pub struct FieldmapCommonArgs {
     /// T2* in ms assumed by `--b0-weight-type assumed-decay` (no T2* map is used)
     #[arg(long, value_name = "MS", default_value_t = 40.0)]
     pub b0_weight_assumed_t2star: f64,
-    /// Linear and robust fit: percentile for the fit's reliability mask (default 90; 0 disables)
-    #[arg(long)]
-    pub linear_fit_reliability_threshold: Option<f64>,
     /// Linear and robust fit: estimate a phase offset term (default: true). The robust fit needs
     /// 4 echoes with it, 3 without
     #[arg(long)]
@@ -2408,6 +2405,11 @@ pub struct FieldmapLaplacianArgs {
     /// three (x y z)
     #[arg(long, value_name = "VOXELS", num_args = 1..=3, default_values_t = [64])]
     pub laplacian_fft_pad: Vec<usize>,
+    /// Unwrap the raw phase over the whole volume, instead of the phase set to zero outside the
+    /// mask, as QSMART does. With `--b0-estimation qsmart-echofit` the fit then covers the whole
+    /// volume (the saved field map is still set to zero outside the mask)
+    #[arg(long)]
+    pub laplacian_unmasked: bool,
     // Note: phase offset removal and bipolar correction are not applied with Laplacian
     // unwrapping, so they are intentionally not exposed here. Each echo is unwrapped on its
     // own and the echoes are then combined by b0-estimation / b0-weight-type / linear-fit-*
@@ -4093,9 +4095,8 @@ pub enum B0EstimationArg {
     /// Motion-robust (IRLS) linear fit: down-weights echoes that depart from a straight line in
     /// TE, voxel by voxel. Needs 4 echoes (3 with --linear-fit-estimate-offset false)
     RobustFit,
-    /// QSMART's echo fit: each echo unwrapped over the whole volume, then a magnitude-weighted fit
-    /// of phase vs TE through the origin, which also marks the voxels QSMART leaves out. Needs
-    /// Laplacian unwrapping
+    /// QSMART's echo fit: a magnitude-weighted fit of the unwrapped phase vs TE through the
+    /// origin, which also marks the voxels QSMART leaves out
     QsmartEchofit,
     /// MEDI's field map (Fit_ppm_complex): a magnitude-weighted fit of the complex echoes, then
     /// unwrapping of the fitted phase per echo spacing. Needs the magnitude and evenly spaced

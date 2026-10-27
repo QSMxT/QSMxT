@@ -136,9 +136,8 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     // applies only with one, so it would change nothing.
     cover!(q::utils::N4Params => c::N4Config, ignore: ["rescale_intensities"]);
     cover!(q::utils::LinearFitParams => c::LinearFitConfig);
-    // estimate_offset / reliability_threshold_percentile are LinearFitConfig's, shared.
-    cover!(q::fieldmap::RobustFitParams => c::RobustFitConfig,
-        ignore: ["estimate_offset", "reliability_threshold_percentile"]);
+    // estimate_offset is LinearFitConfig's, shared.
+    cover!(q::fieldmap::RobustFitParams => c::RobustFitConfig, ignore: ["estimate_offset"]);
     cover!(q::fieldmap::FitPpmComplexParams => c::ComplexFitConfig);
     // CLEAR-SWI's magnitude processing and echo weighting stay at CLEARSWI.jl's defaults.
     cover!(q::swi::SwiParams => c::SwiConfig,
@@ -147,6 +146,9 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     // pipeline's default (the uncombined-coil sigma is coil_combination_sigma, QSMxT's own).
     assert_eq!(c::FieldMappingConfig::default().phase_offset_sigma_mm,
                q::pipeline::FieldMappingConfig::default().phase_offset_sigma_mm);
+    // Laplacian unwrapping of the raw phase: off by default, as in qsm-core.
+    assert_eq!(c::FieldMappingConfig::default().laplacian_unmasked,
+               q::pipeline::FieldMappingConfig::default().laplacian_unmasked);
 
     // QSMART: ppm/b0_dir are runtime; frangi_scale_range is reshaped into
     // frangi_scale_min/max in the config.
