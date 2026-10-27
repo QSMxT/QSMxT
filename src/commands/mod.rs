@@ -160,6 +160,7 @@ mod integration_tests {
                 mask_refinements_cli: None,
                 two_pass: false,
                 two_pass_sections_cli: None,
+                two_pass_mask_combine: None,
                 dismiss_recommendation: None,
             },
         }

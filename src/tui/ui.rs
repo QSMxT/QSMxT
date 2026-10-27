@@ -1665,13 +1665,14 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                     Style::default().fg(Color::DarkGray),
                 ))
             }
-            PipelineRow::MaskCombineOp => {
-                let mode = format!("{}", app.pipeline_state.mask_combine).to_uppercase();
+            PipelineRow::MaskCombineOp { section } => {
+                let mode = format!("{}", app.pipeline_state.combine_mode(*section)).to_uppercase();
                 let sep = Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD);
                 if focused {
                     if focused_help.is_none() {
-                        focused_help = Some(
-                            "How the mask sections combine: OR = union, AND = intersection (←/→ to change)".to_string());
+                        let which = if crate::tui::app::is_two_pass_section(*section) { "reliable mask's" } else { "mask" };
+                        focused_help = Some(format!(
+                            "How the {which} sections combine: OR = union, AND = intersection (←/→ to change, d to remove the next section)"));
                     }
                     Line::from(vec![
                         Span::styled("  ── COMBINED WITH ", sep),
@@ -2222,6 +2223,9 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
             (None, Some(PipelineRow::Toggle { .. })) => keys.push(("Space", "Toggle")),
             _ => keys.push(("\u{2190}\u{2192}", "Change")),
         }
+        if row.as_ref().is_some_and(|r| app.pipeline_state.row_removes_section(r)) {
+            keys.push(("d", "Remove section"));
+        }
         keys.extend([("r", "Reset"), ("R", "Reset page"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]);
         draw_keys(f, keys, area);
         return;
@@ -2252,9 +2256,17 @@ fn hd_bet_inference_help() -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use ratatui::{backend::TestBackend, Terminal};
+
+    /// The footer (key hints) as drawn on a wide terminal.
+    pub(crate) fn footer(app: &mut App) -> String {
+        let (w, h) = (200, 40);
+        let t = render_app_sized(app, w, h);
+        let buf = t.backend().buffer();
+        (0..w).map(|x| buf[(x, h - 1)].symbol().to_string()).collect()
+    }
 
     /// Render at a given size, for tabs that are taller than the default 30-row terminal.
     pub(super) fn render_app_sized(app: &mut App, width: u16, height: u16) -> Terminal<TestBackend> {
@@ -2579,7 +2591,7 @@ mod tests {
         assert!(rows.iter().any(|r| matches!(r, PipelineRow::MaskCombinedHeader)));
         assert!(rows.iter().any(|r| matches!(r, PipelineRow::MaskOpEntry { section: MASK_COMBINED_SECTION, .. })));
         app.pipeline_state.focus = app.focusable_rows().iter()
-            .position(|&ri| matches!(rows[ri], PipelineRow::MaskCombineOp))
+            .position(|&ri| matches!(rows[ri], PipelineRow::MaskCombineOp { .. }))
             .expect("MaskCombineOp not focusable");
 
         let terminal = render_app(&mut app);

@@ -742,11 +742,12 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             let new_sections = parse_mask_sections(sections, "--mask")?;
             if !new_sections.is_empty() { config.masking.sections = new_sections; }
         }
+        let combine_of = |arg: cli::MaskCombineArg| match arg {
+            cli::MaskCombineArg::Or => MaskCombine::Or,
+            cli::MaskCombineArg::And => MaskCombine::And,
+        };
         if let Some(combine) = args.mask_combine {
-            config.masking.combine = match combine {
-                cli::MaskCombineArg::Or => MaskCombine::Or,
-                cli::MaskCombineArg::And => MaskCombine::And,
-            };
+            config.masking.combine = combine_of(combine);
         }
         if let Some(ref refinements) = args.mask_refinements_cli {
             let mut ops: Vec<MaskOp> = Vec::new();
@@ -777,6 +778,11 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             }
         }
         if args.two_pass { config.masking.two_pass = true; }
+        // Like `--two-pass-mask`, a reliable mask's combine mode is a request for the method.
+        if let Some(combine) = args.two_pass_mask_combine {
+            config.masking.two_pass_combine = Some(combine_of(combine));
+            config.masking.two_pass = true;
+        }
 
         // ── Masking input / erosion overrides ──
         // These rewrite the configured sections (default or --mask-preset). Full
@@ -1683,6 +1689,22 @@ mod tests {
         assert_eq!(sections[0].input, MaskingInput::Magnitude);
         assert!(matches!(sections[0].generator,
                          MaskOp::Threshold { method: MaskThresholdMethod::Percentile, value: Some(v) } if v == 30.0));
+    }
+
+    /// The reliable mask has its own combine mode, which implies two-pass as `--two-pass-mask`
+    /// does; unset, it is the main mask's, and setting one leaves the other alone.
+    #[test]
+    fn two_pass_mask_combine_is_the_reliable_masks_own() {
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--two-pass", "--mask-combine", "and"]);
+        assert_eq!(c.masking.two_pass_combine, None);
+        assert_eq!(c.masking.resolved_two_pass_combine(), MaskCombine::And);
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--mask-combine", "and", "--two-pass-mask-combine", "or",
+                                  "--two-pass-mask", "magnitude,threshold:otsu", "--two-pass-mask", "phase-quality,threshold:otsu"]);
+        assert!(c.masking.two_pass);
+        assert_eq!((c.masking.combine, c.masking.two_pass_combine), (MaskCombine::And, Some(MaskCombine::Or)));
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--two-pass-mask-combine", "and"]);
+        assert!(c.masking.two_pass);
+        assert_eq!((c.masking.combine, c.masking.resolved_two_pass_combine()), (MaskCombine::Or, MaskCombine::And));
     }
 
     /// Two-pass leaves the main mask alone — it adds a second one rather than replacing the first.

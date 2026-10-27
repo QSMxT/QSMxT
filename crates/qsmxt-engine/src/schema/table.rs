@@ -96,6 +96,11 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.uses_bet).context("BET"),
         d("masking.two_pass_sections", Masking, "Reliable mask", "The mask the second pass reconstructs on: its holes are left unfilled. Empty = the main mask without its hole filling", MaskSections).optional().parent("masking.two_pass")
         .when(|x| x.c.masking.two_pass),
+        d("masking.two_pass_combine", Masking, "Combined with", "How the reliable mask's sections are combined: OR keeps a voxel any section keeps, AND only one every section keeps. Empty = as the main mask's sections are", Enum(vec![
+            o("or", "OR", "OR", "A voxel is in the reliable mask when any section keeps it"),
+            o("and", "AND", "AND", "A voxel is in the reliable mask when every section keeps it"),
+        ])).optional().flag("--two-pass-mask-combine").parent("masking.two_pass_sections").context("Reliable mask")
+        .when(|x| x.c.masking.two_pass && x.c.masking.resolved_two_pass_sections().len() > 1),
         d("motion_correction.enabled", Motion, "Motion correction", "Rigidly co-register every echo onto a reference echo before any other stage (multi-echo, needs magnitude). Off by default", Bool).basic().flag("--motion-correction")
         .gui("Rigidly co-register every echo onto a reference echo before any other stage (multi-echo, needs magnitude)"),
         d("motion_correction.reference", Motion, "Reference", "", EchoReference(vec![

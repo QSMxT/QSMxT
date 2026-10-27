@@ -99,6 +99,11 @@ BET bounds the head, the phase-quality threshold drops voxels whose phase
 cannot be unwrapped reliably, and the holes their intersection leaves inside
 the brain are filled afterwards.
 
+The two-pass reliable mask (`--two-pass-mask`, repeatable) has its own combine
+mode, `--two-pass-mask-combine or|and`, which is the main mask's `--mask-combine`
+unless set. Its combined mask then takes the same `--mask-refine` steps as the
+main mask, and is intersected with the main mask.
+
 To try this on files without a pipeline run, use
 [`qsmxt mask preset bet-and-phase`, or `qsmxt mask and` / `or`](/QSMxT/reference/tools/#masking--qsmxt-mask)
 on masks you already have.

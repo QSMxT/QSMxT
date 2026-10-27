@@ -1433,10 +1433,14 @@ pub struct MaskingConfig {
     /// The reliable-pass mask, when `two_pass` is set. `None` = [`default_two_pass_sections`]
     /// (an Otsu threshold on the phase-quality map, unfilled).
     ///
-    /// An ordinary list of mask sections, folded with the same `combine` and `refinements` as the
-    /// main mask, so anything expressible for one mask is expressible for this one.
+    /// An ordinary list of mask sections, folded with [`two_pass_combine`](Self::two_pass_combine)
+    /// and then the main mask's `refinements`, so anything expressible for one mask is expressible
+    /// for this one.
     #[serde(default)]
     pub two_pass_sections: Option<Vec<MaskSection>>,
+    /// How the reliable-pass sections fold into one mask. `None` = the main mask's `combine`.
+    #[serde(default)]
+    pub two_pass_combine: Option<MaskCombine>,
 }
 impl Default for MaskingConfig {
     fn default() -> Self {
@@ -1449,6 +1453,7 @@ impl Default for MaskingConfig {
             custom_mask_tool: None,
             two_pass: false,
             two_pass_sections: None,
+            two_pass_combine: None,
         }
     }
 }
@@ -1479,6 +1484,12 @@ impl MaskingConfig {
     /// The reliable-pass mask sections: the configured ones, or the default recipe.
     pub fn resolved_two_pass_sections(&self) -> Vec<MaskSection> {
         self.two_pass_sections.clone().unwrap_or_else(default_two_pass_sections)
+    }
+
+    /// How the reliable-pass sections are combined: [`two_pass_combine`](Self::two_pass_combine),
+    /// or the main mask's `combine` when it is unset.
+    pub fn resolved_two_pass_combine(&self) -> MaskCombine {
+        self.two_pass_combine.unwrap_or(self.combine)
     }
 }
 

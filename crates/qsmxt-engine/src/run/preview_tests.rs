@@ -29,7 +29,7 @@ fn preview_of(
 ) -> (stages::mask::MaskPreview, Vec<String>) {
     let plan = crate::plan::plan(config, facts);
     let mut started = Started::default();
-    let p = preview_mask(&plan, config, facts, store, &mut started, inputs, &config.masking.sections, upto).unwrap();
+    let p = preview_mask(&plan, config, facts, store, &mut started, inputs, &config.masking.sections, config.masking.combine, upto).unwrap();
     (p, started.0)
 }
 
@@ -165,7 +165,7 @@ fn a_preview_shows_a_section_step_by_step() {
     assert_eq!(recipe.input, MaskingInput::Magnitude, "the whole recipe shows its first section's input");
 
     let err = preview_mask(&crate::plan::plan(&config, &facts), &config, &facts, &mut store, &mut (), &mut inputs,
-                           &config.masking.sections, Upto::Section { index: 2, ops: 1 }).unwrap_err();
+                           &config.masking.sections, config.masking.combine, Upto::Section { index: 2, ops: 1 }).unwrap_err();
     assert!(err.to_string().contains("no section 3"), "{err}");
 }
 
@@ -216,7 +216,7 @@ fn a_run_without_a_mask_has_no_preview() {
         return;
     }
     let err = preview_mask(&plan, &config, &facts, &mut store, &mut (), &mut MaskInputs::default(),
-                           &config.masking.sections, Upto::Recipe).unwrap_err();
+                           &config.masking.sections, config.masking.combine, Upto::Recipe).unwrap_err();
     assert!(err.to_string().contains("no brain mask"), "{err}");
 }
 
@@ -256,7 +256,7 @@ fn preview_speed() {
             let mut c = config.clone();
             c.masking.sections[0].refinements = refinements;
             let t = std::time::Instant::now();
-            let p = stages::mask::preview(&c.masking.sections, &c, &inputs, &meta, Upto::Recipe).unwrap();
+            let p = stages::mask::preview(&c.masking.sections, c.masking.combine, &c, &inputs, &meta, Upto::Recipe).unwrap();
             eprintln!("{input} ({n} voxels): inputs built in {built:?}; {label}: {:?} ({} voxels)", t.elapsed(), p.voxels);
         }
     }

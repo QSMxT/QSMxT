@@ -312,6 +312,9 @@ fn command_for(config: &PipelineConfig) -> String {
                 }
             }
         }
+        if let Some(combine) = config.masking.two_pass_combine {
+            parts.push(format!("--two-pass-mask-combine {combine}"));
+        }
     }
 
     // ── BET ──
@@ -1740,6 +1743,12 @@ frangi_c = 400.0
         let cmd = generate_command(&c);
         assert!(cmd.contains("--two-pass"), "{cmd}");
         assert!(cmd.contains("--two-pass-mask magnitude,threshold:percentile:30.0"), "{cmd}");
+        assert!(!cmd.contains("--two-pass-mask-combine"), "unset, it is the main mask's: {cmd}");
+        // Its own combine mode, once it has sections to combine.
+        c.masking.two_pass_combine = Some(crate::masking::MaskCombine::And);
+        assert!(!generate_command(&c).contains("--two-pass-mask-combine"));
+        c.masking.two_pass_sections.as_mut().unwrap().extend(crate::masking::default_two_pass_sections());
+        assert!(generate_command(&c).contains("--two-pass-mask-combine and"));
     }
 
     #[test]

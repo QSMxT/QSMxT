@@ -160,8 +160,8 @@ pub fn run_step<S: StageStore + ?Sized>(
     Run::new(plan, &config.normalised().0, facts, meta.clone(), store, observer).take(step)
 }
 
-/// A mask `sections` make (with `config`'s combine mode and refinements after combining), or part
-/// of it (`upto`), on the scan in `store`, as the run's mask step would make it: what a front end
+/// A mask `sections` make (folded with `combine`, then `config`'s refinements after combining), or
+/// part of it (`upto`), on the scan in `store`, as the run's mask step would make it: what a front end
 /// shows while the recipe is edited ([`stages::mask::preview`]).
 ///
 /// The steps the plan's mask step reads from are taken first, each only computed when its earlier
@@ -174,7 +174,8 @@ pub fn run_step<S: StageStore + ?Sized>(
 #[allow(clippy::too_many_arguments)]
 pub fn preview_mask<S: StageStore + ?Sized>(
     plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, store: &mut S, observer: &mut dyn Observer,
-    inputs: &mut stages::mask::MaskInputs, sections: &[crate::masking::MaskSection], upto: stages::mask::Upto,
+    inputs: &mut stages::mask::MaskInputs, sections: &[crate::masking::MaskSection],
+    combine: crate::masking::MaskCombine, upto: stages::mask::Upto,
 ) -> Result<stages::mask::MaskPreview, S::Error> {
     let config = &config.normalised().0;
     crate::schema::check_ranges(config)?;
@@ -193,7 +194,7 @@ pub fn preview_mask<S: StageStore + ?Sized>(
     let meta = r.meta.clone();
     inputs.fill(sections, config, key, &meta, || r.echoes())?;
     r.store.models(&stages::mask::model_ids(sections, config))?;
-    let preview = stages::mask::preview(sections, config, inputs, &meta, upto)?;
+    let preview = stages::mask::preview(sections, combine, config, inputs, &meta, upto)?;
     r.store.finish()?;
     Ok(preview)
 }
@@ -872,11 +873,12 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
 
     /// Build a mask from `sections`, with the weights of the deep-learning `models` it runs ready
     /// first: every echo's phase, and every echo's magnitude (none for a phase-only run).
-    fn build_mask(&mut self, sections: &[crate::masking::MaskSection], models: &[&'static str]) -> Result<Vec<u8>, S::Error> {
+    fn build_mask(&mut self, sections: &[crate::masking::MaskSection], combine: crate::masking::MaskCombine,
+                  models: &[&'static str]) -> Result<Vec<u8>, S::Error> {
         let (phases, magnitudes) = self.echoes()?;
         self.store.models(models)?;
         let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
-        Ok(stages::mask::build_mask(sections, self.config, &phase_refs, magnitudes, &self.meta)?)
+        Ok(stages::mask::build_mask(sections, combine, self.config, &phase_refs, magnitudes, &self.meta)?)
     }
 
     fn mask(&mut self, step: &Step) -> Result<(), S::Error> {
@@ -930,7 +932,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         }
         self.log(Level::Info, &format!("Creating mask ({} section(s), combined with {})",
             self.config.masking.sections.len(), self.config.masking.combine));
-        let mask = self.build_mask(&self.config.masking.sections.clone(), &models)?;
+        let mask = self.build_mask(&self.config.masking.sections.clone(), self.config.masking.combine, &models)?;
         stages::mask::require_voxels(&mask, stages::mask::MaskSource::Recipe(&self.config.masking))?;
         self.put(Item::BrainMask, Data::Mask(&mask))?;
         self.complete(Done {
@@ -945,8 +947,10 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let name = Stage::Mask(Pass::Reliable).name();
         let Some(key) = self.begin(&name, None, &params, "Skipping reliable-phase mask (cached)",
                                    "Creating the reliable-phase mask") else { return Ok(()) };
-        self.log(Level::Info, &format!("Creating the reliable-phase mask ({} section(s))", sections.len()));
-        let reliable = self.build_mask(&sections, &step.models)?;
+        let combine = self.config.masking.resolved_two_pass_combine();
+        self.log(Level::Info, &format!("Creating the reliable-phase mask ({} section(s), combined with {combine})",
+                                       sections.len()));
+        let reliable = self.build_mask(&sections, combine, &step.models)?;
         let main_item = self.mask_item();
         let main = self.store.mask(&main_item)?;
         let restricted = stages::mask::reliable_mask(&reliable, &main)?;

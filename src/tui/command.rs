@@ -793,6 +793,10 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
                     .join(",")
             }).collect()
         }),
+        two_pass_mask_combine: ps.two_pass_combine.filter(|_| ps.two_pass).map(|c| match c {
+            crate::pipeline::config::MaskCombine::Or => crate::cli::MaskCombineArg::Or,
+            crate::pipeline::config::MaskCombine::And => crate::cli::MaskCombineArg::And,
+        }),
         dismiss_recommendation: (!ps.dismissed.is_empty())
             .then(|| ps.dismissed.iter().map(|d| format!("{}={}", d.rule, d.chosen)).collect()),
     }

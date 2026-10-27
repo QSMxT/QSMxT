@@ -607,8 +607,12 @@ impl Ctx<'_> {
                     vec![format!("supplied ({})", c.masking.custom_mask_tool.as_deref().unwrap_or_default())]
                 } else {
                     let mut lines = words::mask_sections(&sections);
-                    if pass == Pass::Main && sections.len() > 1 {
-                        lines.push(format!("sections combined by {}", c.masking.combine));
+                    if sections.len() > 1 {
+                        let combine = match pass {
+                            Pass::Main => c.masking.combine,
+                            Pass::Reliable => c.masking.resolved_two_pass_combine(),
+                        };
+                        lines.push(format!("sections combined by {combine}"));
                     }
                     lines
                 };
