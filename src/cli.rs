@@ -1552,7 +1552,8 @@ pub struct PipelineArgs {
     #[arg(long)]
     pub homogeneity_sigma_mm: Option<f64>,
 
-    /// Inhomogeneity correction box filter passes (makehomogeneous)
+    /// makehomogeneous: boxes per dimension for the tissue segmentation the receive sensitivity
+    /// is estimated from
     #[arg(long)]
     pub homogeneity_nbox: Option<usize>,
 
@@ -3893,7 +3894,8 @@ pub struct HomogeneityArgs {
     /// makehomogeneous: smoothing sigma in mm
     #[arg(long, default_value_t = qsmxt_engine::HomogeneityConfig::default().sigma_mm)]
     pub sigma: f64,
-    /// makehomogeneous: number of box filter passes for the Gaussian approximation
+    /// makehomogeneous: boxes per dimension for the tissue segmentation the receive sensitivity
+    /// is estimated from
     #[arg(long, default_value_t = qsmxt_engine::HomogeneityConfig::default().nbox)]
     pub nbox: usize,
     #[command(flatten)]

@@ -525,7 +525,7 @@ fn param_label(field: &str) -> Label {
         "dr_pos_3t" => Eq("Dr+ at 3 T"),
         "r_const_3t" => Eq("relaxometric constant at 3 T"),
         "sigma_mm" => Unit("σ", "mm"),
-        "nbox" => Count("box-filter passes"),
+        "nbox" => Count("segmentation boxes per dimension"),
         "shrink_factor" => Eq("shrink factor"),
         "convergence_threshold" => Eq("convergence threshold"),
         "mesh" => Eq("initial B-spline mesh"),
