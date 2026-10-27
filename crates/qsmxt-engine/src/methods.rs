@@ -836,7 +836,7 @@ pub struct Methods {
     pub sentences: Vec<Sentence>,
     /// In the order the paragraph first cites them.
     pub references: Vec<Reference>,
-    /// What the run departed from in its methods' reference pipelines, said under the references.
+    /// What the run departed from in its methods' reference pipelines, said before the references.
     #[serde(default, skip_serializing_if = "Note::is_empty")]
     pub note: Note,
 }
@@ -867,21 +867,12 @@ impl Methods {
         self.sentences.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join(" ")
     }
 
-    /// The paragraph under a `# Methods` heading, the references under `## References`, and the
-    /// Note, if there is one, under `## Note`.
+    /// The paragraph under a `# Methods` heading, then the Note, if there is one, under `## Note`,
+    /// then the references under `## References`.
     pub fn to_markdown(&self) -> String {
         let mut out = format!("# Methods\n\n{}\n\n", self.paragraph());
-        if !self.references.is_empty() {
-            out.push_str("## References\n\n");
-            for r in &self.references {
-                out.push_str(&format!("- {}\n", r.text));
-            }
-        }
         let n = &self.note;
         if !n.is_empty() {
-            if !self.references.is_empty() {
-                out.push('\n');
-            }
             out.push_str("## Note\n\n");
             for (heading, lines) in [
                 ("Departures from the methods' recommendations:", &n.departures),
@@ -896,9 +887,15 @@ impl Methods {
                 }
                 out.push('\n');
             }
-            out.truncate(out.trim_end().len());
-            out.push('\n');
         }
+        if !self.references.is_empty() {
+            out.push_str("## References\n\n");
+            for r in &self.references {
+                out.push_str(&format!("- {}\n", r.text));
+            }
+        }
+        out.truncate(out.trim_end().len());
+        out.push('\n');
         out
     }
 }
@@ -2308,13 +2305,25 @@ fn join_list(items: &[String]) -> String {
     }
 }
 
+/// `text` (a [`Methods::to_markdown`]) without its `## Note` section.
+#[cfg(test)]
+fn without_note(text: &str) -> String {
+    match text.find("## Note\n") {
+        Some(start) => {
+            let end = text[start..].find("## References").map_or(text.len(), |e| start + e);
+            format!("{}{}", &text[..start], &text[end..])
+        }
+        None => text.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     /// The methods text without its Note: what was done, as the paragraph and references say it.
     fn paragraph(config: &PipelineConfig) -> String {
-        generate_methods(config).split("\n## Note").next().unwrap().to_string()
+        without_note(&generate_methods(config))
     }
 
     /// Methods text is prose meant to be pasted into a paper, so a run of whitespace in the middle
@@ -3670,7 +3679,7 @@ mod multiorient_methods_tests {
         }
         for c in &configs {
             let out = generate_methods(c);
-            let paragraph = out.split("## References").next().unwrap().to_lowercase();
+            let paragraph = out.split("\n## ").next().unwrap().to_lowercase();
             // "set to zero outside": no zeroing outside a mask is described (the non-negative
             // network and R2' outputs are, as negative values set to zero).
             for banned in ["sti suite", "biobank", "ukb", "qsmxt v", "rather than", "without the", "set to zero outside"] {
@@ -3694,7 +3703,7 @@ mod defaults_only_tests {
 
     fn paragraph(config: &PipelineConfig) -> String {
         let out = generate_methods(config);
-        out.split("## References").next().unwrap().to_string()
+        out.split("\n## ").next().unwrap().to_string()
     }
 
     fn assert_no_values(config: &PipelineConfig, what: &str) {

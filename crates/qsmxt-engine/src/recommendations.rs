@@ -232,32 +232,36 @@ impl Recommendation {
 
     /// What the departure is from, after the current value: "; MEDI recommends PDF: why",
     /// ", which is discouraged with NDI: why", "; this differs from the MEDI reference pipeline,
-    /// which uses BET".
-    fn departure(&self) -> String {
+    /// which uses BET". With `why` off, the rule's reason is left out: what the methods text says.
+    fn departure(&self, why: bool) -> String {
         let rec = if self.flag() { format!("turning it {}", self.recommended.name) } else { self.recommended.name.clone() };
         let uses = if self.flag() { format!("has it {}", self.recommended.name) } else { format!("uses {}", self.recommended.name) };
         let verb = if self.strength == Strength::Required { "requires" } else { "recommends" };
+        let reason = if why { format!(": {}", self.reason) } else { String::new() };
         match (self.strength, self.method()) {
-            (Strength::Discouraged, Some(m)) => format!(", which is discouraged with {m}: {}", self.reason),
-            (Strength::Discouraged, None) => format!(", which is discouraged: {}", self.reason),
+            (Strength::Discouraged, Some(m)) => format!(", which is discouraged with {m}{reason}"),
+            (Strength::Discouraged, None) => format!(", which is discouraged{reason}"),
             (Strength::Reference, Some(m)) => format!("; this differs from the {m} reference pipeline, which {uses}"),
-            (Strength::Reference, None) => format!("; the reference pipeline {uses}: {}", self.reason),
-            (_, Some(m)) => format!("; {m} {verb} {rec}: {}", self.reason),
-            (_, None) => format!("; {rec} is {verb}d: {}", self.reason).replace("recommendsd", "recommended").replace("requiresd", "required"),
+            (Strength::Reference, None) if why => format!("; the reference pipeline {uses}{reason}"),
+            (Strength::Reference, None) => format!("; this differs from the reference pipeline, which {uses}"),
+            (_, Some(m)) => format!("; {m} {verb} {rec}{reason}"),
+            (_, None) => format!("; {rec} is {verb}d{reason}").replace("recommendsd", "recommended").replace("requiresd", "required"),
         }
     }
 
     /// One line for a terminal or a log: "Background removal is V-SHARP; MEDI recommends
     /// PDF: why [source]".
     pub fn line(&self) -> String {
-        format!("{} is {}{} [{}]", self.label, self.current_text(), self.departure(), self.source)
+        format!("{} is {}{} [{}]", self.label, self.current_text(), self.departure(true), self.source)
     }
 
     /// The methods text's Note line for this departure, without its full stop: what was done, and
-    /// what the method's reference uses. A `reference` departure says so more softly.
+    /// what the method's reference uses ("Background removal used LBV; this differs from the RTS
+    /// reference pipeline, which uses V-SHARP"). The rule's reason and source are for the log and
+    /// the TUI, not a methods section.
     pub fn note(&self) -> String {
         let verb = if self.current.iter().all(|n| n.value.is_string()) { "used" } else { "was" };
-        format!("{} {verb} {}{} ({})", self.label, self.current_text(), self.departure(), self.source)
+        format!("{} {verb} {}{}", self.label, self.current_text(), self.departure(false))
     }
 }
 

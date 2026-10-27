@@ -110,7 +110,7 @@ command. Two equally strong recommendations that disagree on one setting are lef
 choose. A dismissal is saved in the configuration (`dismissed_recommendations`), and stops
 applying once the setting changes. At the end of a run, the log lists what was applied,
 what was dismissed, and the departures that were kept. Each run's record keeps the same, and
-`methods.md` ends with a **Note** that lists the departures the runs kept.
+`methods.md` has a **Note**, before its references, that lists the departures the runs kept.
 
 ### Selecting runs
 

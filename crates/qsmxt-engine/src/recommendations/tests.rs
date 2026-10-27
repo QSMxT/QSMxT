@@ -221,7 +221,7 @@ fn reference_findings_are_information_only() {
     let before = c.clone();
     let (applied, _) = accept(&mut c, &found);
     assert!(applied.is_empty() && c == before, "--accept-recommendations leaves a reference departure");
-    assert!(r.note().contains("differs from the RTS reference pipeline, which uses V-SHARP"), "{}", r.note());
+    assert_eq!(r.note(), "Background removal used PDF; this differs from the RTS reference pipeline, which uses V-SHARP");
 }
 
 #[test]
@@ -295,7 +295,11 @@ fn the_note_says_what_was_done() {
         .collect::<Vec<_>>();
     let n = note(&counts(None, 1), 1);
     let line = n.departures.iter().find(|l| l.contains("recommends")).expect("a recommendation departed from");
-    assert!(line.starts_with("Echo time") && line.ends_with(").") && line.contains(rule.source), "{line}");
+    assert!(line.starts_with("Echo time") && line.ends_with('.'), "{line}");
+    // What was done and what the method recommends; why, and where that is recorded, is for the log.
+    let finding = recorded(&c, &facts).into_iter().find(|r| r.finding.rule == rule.id).unwrap().finding;
+    assert!(!line.contains(rule.source) && !line.contains(&finding.reason), "{line}");
+    assert!(finding.line().contains(rule.source) && finding.line().contains(&finding.reason));
     assert!(n.differences.iter().all(|l| l.contains("differs from the")), "{:?}", n.differences);
     // In some of a dataset's runs.
     assert!(note(&counts(None, 2), 5).departures[0].ends_with("; in 2 of 5 runs."));
