@@ -371,7 +371,9 @@ impl FileStore<'_> {
             Item::CorrectedMagnitude(n) => o.motion_mag_path(key, n),
             Item::CombinedMagnitude => o.magnitude_path(key),
             Item::BrainMask => o.mask_path(key),
-            Item::SuppliedMask => self.supplied_mask.clone()?,
+            // Found before the mask step reads it too, for that step's key.
+            Item::SuppliedMask => self.supplied_mask.clone()
+                .or_else(|| find_custom_mask(self.run, self.config.masking.custom_mask_tool.as_deref()?))?,
             Item::CoverageMask => o.motion_coverage_path(key),
             Item::FieldPpm => o.field_ppm_path(key),
             Item::TotalFieldHz => o.total_field_path(key),
