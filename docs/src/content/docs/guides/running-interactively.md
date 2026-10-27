@@ -65,9 +65,9 @@ you apply it:
 - **Apply all** sets every listed setting to the reference value.
 - **Choose per setting** lists the settings again with a choice on each (`↑`/`↓` to move,
   `←`/`→` to choose a value or to keep yours); `Enter` applies them.
-- **Keep mine** keeps your values and saves that in the configuration, so the pop-up does not
-  come back while the method stays chosen. Choosing the method again after switching away
-  shows it again.
+- **Keep mine** keeps your values and closes the pop-up. A difference from a reference
+  pipeline is information only, so nothing is saved; the pop-up comes back only when you choose
+  the method again after switching away.
 
 The pop-up opens once per method choice. If the same change also creates recommendations, they
 are listed first in the same pop-up. If your settings already match the reference pipeline, there is no pop-up.

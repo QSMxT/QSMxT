@@ -1791,8 +1791,9 @@ pub struct PipelineArgs {
 
     /// Stop offering a recommendation for the setting's current value: RULE=VALUE, the rule's id
     /// and the value it was dismissed for, as `qsmxt run --dry` lists them (e.g.
-    /// rts.bg-vsharp=pdf). Repeatable. A change to the setting brings the recommendation back;
-    /// a required one cannot be dismissed
+    /// field-mapping.phase-offsets=false). Repeatable. A change to the setting brings the
+    /// recommendation back. A required one cannot be dismissed, and a reference-pipeline
+    /// difference has nothing to dismiss
     #[arg(long = "dismiss-recommendation", value_name = "RULE=VALUE", num_args = 1)]
     pub dismiss_recommendation: Option<Vec<String>>,
 }

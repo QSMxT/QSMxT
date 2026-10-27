@@ -2506,13 +2506,14 @@ mod parity {
             ("num_echoes", |_| {}, |a| a.filter_state.num_echoes = "2".into()),
             // The memory-limit row's third state (auto, a number, none).
             ("no_mem_limit", |_| {}, |a| a.form.mem_limit_gb = "none".into()),
-            // A recommendation dismissed in the pop-up (RTS's reference background removal is
-            // V-SHARP).
+            // A recommendation dismissed in the pop-up (MEDI-mSMV without its prefilter is
+            // discouraged).
             ("dismiss_recommendation", |a| {
                 let at = |list: &[&str], v: &str| list.iter().position(|o| *o == v).unwrap();
-                a.set_field_select("qsm_algorithm", at(crate::tui::app::QSM_ALGO_OPTIONS, "rts"));
-                a.set_field_select("bf_algorithm", at(crate::tui::app::BF_OPTIONS, "pdf"));
-            }, |a| a.pipeline_state.dismissed.push(qsmxt_engine::Dismissal { rule: "rts.bg-vsharp".into(), chosen: "pdf".into() })),
+                a.set_field_select("qsm_algorithm", at(crate::tui::app::QSM_ALGO_OPTIONS, "medi"));
+                a.pipeline_state.medi_msmv = true;
+                a.pipeline_state.medi_msmv_prefilter = false;
+            }, |a| a.pipeline_state.dismissed.push(qsmxt_engine::Dismissal { rule: "medi-msmv.prefilter".into(), chosen: "false".into() })),
         ];
         for (what, setup, change) in surfaces {
             let mut base = App::new();

@@ -2694,6 +2694,10 @@ mod integration_tests {
         let config = super::run::build_config(None, &args.pipeline).unwrap();
         let runs = crate::bids::discovery::discover_runs(&bids, &Default::default()).unwrap();
         let text = super::recommend::dry_text(&config, &runs, true);
+        // The log warns of it, saying how to apply it.
+        let logged = super::recommend::found_lines(&config, &runs);
+        let line = logged.iter().find(|(_, l)| l.contains("(field-mapping.phase-offsets;")).unwrap_or_else(|| panic!("{logged:?}"));
+        assert!(line.0 && line.1.ends_with("; --accept-recommendations applies it)") && !line.1.contains("--dismiss"), "{line:?}");
         let at = text.find("  recommended:").unwrap_or_else(|| panic!("{text}"));
         assert!(text[at..].contains("field-mapping.phase-offsets"), "{text}");
         assert!(text.contains("keep the choice with --dismiss-recommendation field-mapping.phase-offsets=false"), "{text}");
@@ -2704,11 +2708,18 @@ mod integration_tests {
         dismissed.dismiss_recommendation = Some(vec!["field-mapping.phase-offsets=false".into()]);
         let config = super::run::build_config(None, &dismissed).unwrap();
         let text = super::recommend::dry_text(&config, &runs, true);
-        assert!(text.contains("  dismissed:") && text.contains("--accept-recommendations would change nothing."), "{text}");
+        // Dismissed, it is still a warning in the log, marked as kept.
+        let logged = super::recommend::found_lines(&config, &runs);
+        assert!(logged.iter().any(|(warn, l)| *warn && l.contains("(field-mapping.phase-offsets; dismissed, kept)")), "{logged:?}");
+        assert!(text.contains("  dismissed (kept):") && text.contains("--accept-recommendations would change nothing."), "{text}");
         assert!(qsmxt_engine::generate_command(&config).contains("--dismiss-recommendation field-mapping.phase-offsets=false"));
-        // An unknown rule is refused.
+        // An unknown rule is refused, and so is a reference-pipeline rule, which has nothing to
+        // dismiss.
         dismissed.dismiss_recommendation = Some(vec!["no.such-rule=1".into()]);
         assert!(super::run::build_config(None, &dismissed).is_err());
+        dismissed.dismiss_recommendation = Some(vec!["sti.unwrap-laplacian=romeo".into()]);
+        let e = super::run::build_config(None, &dismissed).unwrap_err().to_string();
+        assert!(e.contains("sti.unwrap-laplacian is a reference-pipeline note, not a recommendation; there is nothing to dismiss"), "{e}");
     }
 
     /// The fastest tiny pipeline, with a recommendation accepted: the run takes the recommended

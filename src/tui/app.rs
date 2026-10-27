@@ -2078,8 +2078,8 @@ pub struct PipelineFormState {
     /// How the reliable mask's sections combine: `--two-pass-mask-combine`. `None` = as the main
     /// mask's do ([`PipelineFormState::two_pass_combine_mode`]).
     pub two_pass_combine: Option<crate::pipeline::config::MaskCombine>,
-    /// The recommendations dismissed (Keep mine in a recommendation or reference pipeline pop-up), each for the value
-    /// its setting had then: `--dismiss-recommendation`, and so the run's config.
+    /// The recommendations dismissed (Keep mine on a `recommended` or `discouraged` finding), each
+    /// for the value its setting had then: `--dismiss-recommendation`, and so the run's config.
     pub dismissed: Vec<qsmxt_engine::Dismissal>,
     pub mask_preset: usize, // index into MASK_PRESET_OPTIONS (MASK_PRESET_CUSTOM = hand-edited)
     pub custom_mask_tool: String, // empty=off; "*"=any derivatives tool; else a tool name

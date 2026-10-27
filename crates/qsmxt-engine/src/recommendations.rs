@@ -66,6 +66,13 @@ impl Strength {
     pub fn actionable(self) -> bool {
         self != Strength::Reference
     }
+
+    /// Whether a finding of this strength can be dismissed ("Keep mine", `--dismiss-recommendation`):
+    /// `recommended` and `discouraged`. A `required` one must be followed, and a `reference` one is
+    /// information only: never applied, and in the methods Note either way.
+    pub fn dismissable(self) -> bool {
+        matches!(self, Strength::Recommended | Strength::Discouraged)
+    }
 }
 
 impl From<core::Strength> for Strength {
@@ -399,6 +406,13 @@ pub fn is_rule(id: &str) -> bool {
     core::RULES.iter().any(|r| r.id == id)
 }
 
+/// Whether `id` is a reference-pipeline rule (`reference` strength): it is never applied by
+/// `--accept-recommendations` and the methods Note lists its differences either way, so it has no
+/// dismissal ([`keep`], [`dismiss`]).
+pub fn is_reference_rule(id: &str) -> bool {
+    core::RULES.iter().any(|r| r.id == id && r.strength == core::Strength::Reference)
+}
+
 /// The QSMxT config path of a QSM.rs rule setting (`reference` → `qsm.reference`).
 pub fn qsmxt_path(core_path: &str) -> Option<&'static str> {
     setting_of(core_path).map(|(q, _)| q)
@@ -643,7 +657,7 @@ fn trigger_name(core_path: &str, value_name: &str) -> String {
 /// Mark each finding dismissed (by `config`'s dismissals) or in conflict with another.
 fn mark(config: &PipelineConfig, out: &mut [Recommendation]) {
     for r in out.iter_mut() {
-        r.dismissed = r.departs && r.strength != Strength::Required && config.dismissed_recommendations.iter()
+        r.dismissed = r.departs && r.strength.dismissable() && config.dismissed_recommendations.iter()
             .any(|d| d.rule == r.rule && d.chosen == chosen_text(&r.current));
     }
     let snapshot: Vec<(String, Strength, Value, bool)> =
@@ -781,9 +795,10 @@ pub fn marker(view: &[Recommendation], path: &str) -> Option<Marker> {
 
 /// Keep the setting of each finding at its current value: dismiss each for that value
 /// ([`Dismissal`], into a config's `dismissed_recommendations`), so it is not offered again while
-/// the setting keeps it. A `required` finding cannot be kept and is left. What "Keep mine" does.
+/// the setting keeps it. A `required` finding cannot be kept and is left; a `reference` one is
+/// information only and records nothing. What "Keep mine" does.
 pub fn keep(dismissals: &mut Vec<Dismissal>, findings: &[Recommendation]) {
-    for r in findings.iter().filter(|r| r.strength != Strength::Required) {
+    for r in findings.iter().filter(|r| r.strength.dismissable()) {
         dismissals.retain(|d| d.rule != r.rule);
         dismissals.push(Dismissal { rule: r.rule.clone(), chosen: chosen_text(&r.current) });
     }
@@ -799,9 +814,13 @@ pub fn apply_all(config: &mut PipelineConfig, findings: &[Recommendation]) -> Re
 // ─── Dismissing ───
 
 /// Dismiss the finding of `rule` on `config` for the setting's current value: it is no longer
-/// offered while the setting keeps that value. `Err` when the rule has no finding on `config`, or
-/// is `required` (the method cannot run otherwise).
+/// offered while the setting keeps that value. `Err` when the rule is a reference-pipeline note
+/// ([`reference_rule_refusal`]), has no finding on `config`, or is `required` (the method cannot
+/// run otherwise).
 pub fn dismiss(config: &mut PipelineConfig, rule: &str, facts: &Facts) -> Result<(), String> {
+    if is_reference_rule(rule) {
+        return Err(reference_rule_refusal(rule));
+    }
     let r = recommendations(config, facts).into_iter().find(|r| r.rule == rule)
         .ok_or_else(|| format!("no recommendation {rule} applies to this configuration"))?;
     if r.strength == Strength::Required {
@@ -811,6 +830,11 @@ pub fn dismiss(config: &mut PipelineConfig, rule: &str, facts: &Facts) -> Result
     config.dismissed_recommendations.retain(|d| d.rule != rule);
     config.dismissed_recommendations.push(Dismissal { rule: rule.to_string(), chosen });
     Ok(())
+}
+
+/// Why a reference-pipeline rule cannot be dismissed, as front ends say it.
+pub fn reference_rule_refusal(rule: &str) -> String {
+    format!("{rule} is a reference-pipeline note, not a recommendation; there is nothing to dismiss")
 }
 
 /// Take back the dismissal of `rule`.
@@ -825,8 +849,9 @@ pub fn prune_dismissals(config: &mut PipelineConfig, facts: &Facts) {
     let all = reference_values(config, facts);
     config.dismissed_recommendations.retain(|d| {
         let rule = core::RULES.iter().find(|r| r.id == d.rule);
+        let reference = rule.is_some_and(|r| r.strength == core::Strength::Reference);
         let silent_until_scan = rule.is_some_and(|r| r.needs_scan()) && facts.echo_count.is_none();
-        silent_until_scan || all.iter().any(|r| r.rule == d.rule && r.departs && r.dismissed)
+        !reference && (silent_until_scan || all.iter().any(|r| r.rule == d.rule && r.departs && r.dismissed))
     });
 }
 

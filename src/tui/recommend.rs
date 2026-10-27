@@ -8,14 +8,16 @@
 //! - **The recommendation pop-up** opens only when a change creates a `required`, `recommended`
 //!   or `discouraged` finding that is not dismissed. It gives the reason (the source behind `w`,
 //!   "why?"), **Apply** (the recommended value, preselected), the other values the rule allows,
-//!   and **Keep mine** (dismiss: kept in the form, and so in the run's config). Two equally
+//!   and **Keep mine** (dismiss: kept in the form, and so in the run's config; only a
+//!   `recommended` or `discouraged` finding has one). Two equally
 //!   strong findings that disagree on a setting are shown together, with nothing preselected.
 //!   Esc closes it and leaves the finding open, shown by its marker.
 //! - **The reference pipeline pop-up** ([`RefModal`]) opens when a method with a reference
 //!   pipeline is chosen ([`rec::chosen_methods`]) and the config differs from it
 //!   ([`rec::reference_differences`]): every difference, with **Apply all**, **Choose per
-//!   setting** and **Keep mine** (each difference dismissed for its value, so it is not offered
-//!   again while the method stays chosen). Nothing changes unless applied. When the same change
+//!   setting** and **Keep mine** (closes it: a reference difference is information only, so
+//!   nothing is recorded, and it is offered again only when the method is chosen again). Nothing
+//!   changes unless applied. When the same change
 //!   also creates recommendations, they lead the same pop-up.
 //! - **Pickers** ([`picker_noun`]): a selector whose choice can open that pop-up, or that has
 //!   more than three options, is chosen from a picker (Enter, or ←/→), never cycled, so no
@@ -384,8 +386,9 @@ impl App {
         }
     }
 
-    /// Keep the settings of `findings` as they are: each dismissed for its current value, in
-    /// the form and so in the run's config. A `required` one cannot be kept.
+    /// Keep the settings of `findings` as they are: each `recommended` or `discouraged` one
+    /// dismissed for its current value, in the form and so in the run's config ([`rec::keep`]). A
+    /// `reference` one records nothing, and a `required` one cannot be kept.
     fn keep_mine(&mut self, findings: &[Recommendation]) {
         rec::keep(&mut self.pipeline_state.dismissed, findings);
     }
@@ -781,8 +784,16 @@ mod tests {
         assert!(app.refs.modal.is_none());
         let c = super::super::command::config_from_app(&app).unwrap();
         assert_eq!(c.bg_removal.algorithm, qsmxt_engine::enums::BfAlgorithm::Vsharp, "nothing changed");
-        assert!(c.dismissed_recommendations.iter().any(|d| d.rule == "medi.bg-pdf" && d.chosen == "vsharp"));
+        // A reference difference is information only: nothing recorded, in the config or the command.
+        assert!(c.dismissed_recommendations.is_empty(), "{:?}", c.dismissed_recommendations);
+        assert!(!super::super::command::build_command_string(&app).contains("--dismiss-recommendation"));
+        // The background removal row keeps its ⓘ marker.
+        let bg = PipelineRow::AlgoSelect { label: "", field: "bf_algorithm", options: &[], help: &[] };
+        assert!(App::row_marker(&app.rule_view(), &bg).is_some_and(|m| !m.actionable && m.text.contains("MEDI")));
         // Another change, MEDI still chosen: no pop-up.
+        app.toggle_field("medi_merit");
+        app.check_recommendations();
+        assert!(app.refs.modal.is_none() && app.rec_modal.is_none());
         app.toggle_field("medi_merit");
         app.check_recommendations();
         assert!(app.refs.modal.is_none() && app.rec_modal.is_none());
@@ -810,7 +821,8 @@ mod tests {
         key(&mut app, KeyCode::Enter);
         let c = super::super::command::config_from_app(&app).unwrap();
         assert_eq!(c.bg_removal.algorithm, qsmxt_engine::enums::BfAlgorithm::Pdf, "item {bg} applied");
-        assert!(c.dismissed_recommendations.iter().any(|d| d.rule == "medi.mask-bet"), "the mask kept");
+        assert!(!c.masking.sections.iter().any(|s| matches!(s.generator, qsmxt_engine::masking::MaskOp::Bet { .. })), "the mask kept");
+        assert!(c.dismissed_recommendations.is_empty(), "keeping a reference difference records nothing");
         assert!(app.refs.modal.is_none(), "PDF's reference wants the mask just kept: not asked again");
     }
 

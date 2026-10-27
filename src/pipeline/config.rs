@@ -866,6 +866,10 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             if !qsmxt_engine::recommendations::is_rule(rule) {
                 return Err(QsmxtError::Config(format!("--dismiss-recommendation {d}: there is no rule {rule}")));
             }
+            if qsmxt_engine::recommendations::is_reference_rule(rule) {
+                return Err(QsmxtError::Config(format!("--dismiss-recommendation {d}: {}",
+                    qsmxt_engine::recommendations::reference_rule_refusal(rule))));
+            }
             config.dismissed_recommendations.retain(|x| x.rule != rule);
             config.dismissed_recommendations.push(qsmxt_engine::Dismissal { rule: rule.to_string(), chosen: chosen.to_string() });
         }

@@ -1013,9 +1013,17 @@ pub struct PipelineConfig {
     pub registration: crate::motion::RegistrationConfig,
     /// Recommendations the user chose not to follow ([`crate::recommendations`]), each for the
     /// value its setting had then: a change to the setting brings the recommendation back. They
-    /// change nothing a run computes.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// change nothing a run computes. A reference-pipeline rule's is dropped when read: there is
+    /// nothing to dismiss ([`crate::recommendations::is_reference_rule`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty", deserialize_with = "recommendation_dismissals")]
     pub dismissed_recommendations: Vec<Dismissal>,
+}
+
+/// `dismissed_recommendations` as read, less any of a reference-pipeline rule.
+fn recommendation_dismissals<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<Dismissal>, D::Error> {
+    let mut all = Vec::<Dismissal>::deserialize(d)?;
+    all.retain(|x| !crate::recommendations::is_reference_rule(&x.rule));
+    Ok(all)
 }
 
 /// A recommendation dismissed for one value of its setting ([`crate::recommendations::dismiss`]).

@@ -127,7 +127,8 @@ HD-QSM's `mu1_l2`) is left out of the file to take the derived value; on the com
 
 Recommendations you chose not to follow (see
 [Recommendations](/QSMxT/guides/running-noninteractively/#recommendations)) are kept in the
-file, each with the value of its setting at the time. A change to the setting brings the
+file, each with the value of its setting at the time. Only recommended and discouraged
+findings are kept; one for a reference-pipeline difference is dropped when the file is read. A change to the setting brings the
 recommendation back:
 
 ```toml
