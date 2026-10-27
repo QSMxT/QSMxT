@@ -2494,6 +2494,11 @@ mod parity {
             ("two-pass sections", |a| a.pipeline_state.two_pass = true, |a| {
                 a.pipeline_state.two_pass_sections[0].refinements.push(crate::pipeline::config::MaskOp::Erode { iterations: 2 });
             }),
+            ("two-pass combine", |a| {
+                a.pipeline_state.two_pass = true;
+                let extra = a.pipeline_state.two_pass_sections[0].clone();
+                a.pipeline_state.two_pass_sections.push(extra);
+            }, |a| a.pipeline_state.toggle_combine(crate::tui::app::MASK_TWO_PASS_BASE + 1)),
             // Run-level settings: not in the pipeline config, so compared on the run's arguments.
             ("config", |_| {}, |a| a.form.config_file = "c.toml".into()),
             ("include", |_| {}, |a| a.filter_state.include_pattern = "sub-1*".into()),
