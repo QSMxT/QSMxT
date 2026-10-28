@@ -193,6 +193,9 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             min_radius: cfg.bg_removal.vsharp.min_radius,
             radius_step: cfg.bg_removal.vsharp.radius_step,
             deconvolve: cfg.bg_removal.vsharp.deconvolve,
+            // qsm-core's SMV ball (STI Suite's); not a setting: it only reproduces one
+            // implementation or the other.
+            ball: qsm_core::bgremove::VsharpBall::default(),
             grid: cfg.bg_removal.vsharp.core_grid(),
         },
         pdf: qsm_core::bgremove::PdfParams {
@@ -958,6 +961,8 @@ mod tests {
         assert_eq!((bg.vsharp.deconvolve, bg.vsharp.threshold, bg.vsharp.max_radius, bg.vsharp.min_radius, bg.vsharp.radius_step),
                    (d.deconvolve, d.threshold, d.max_radius, d.min_radius, d.radius_step));
         assert_eq!(bg.vsharp.grid, d.grid);
+        assert_eq!(bg.vsharp.ball, d.ball);
+        assert_eq!(bg.vsharp.ball, qsm_core::bgremove::VsharpBall::StiSuite);
         cfg.bg_removal.vsharp.deconvolve = true;
         cfg.bg_removal.vsharp.radius_step = 2.0;
         let (_, bg, _, _) = to_pipeline_stages(&cfg);
