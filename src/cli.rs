@@ -3501,7 +3501,7 @@ pub struct SeparateCommonArgs {
 pub enum SeparateCommand {
     /// R2*-QSM closed-form (Dimov 2022) — QSM + R2* (GRE-only)
     R2starQsm(SeparateR2starQsmArgs),
-    /// DECOMPOSE-QSM signal-domain fit (Chen 2021) — QSM + multi-echo magnitude (GRE-only)
+    /// DECOMPOSE-QSM signal-domain fit (Chen 2021) — a QSM per echo + multi-echo magnitude (GRE-only)
     Decompose(SeparateDecomposeArgs),
     /// χ-separation iLSQR (Shin 2021) — local field + R2' + magnitude + QSM
     ChiSepIlsqr(SeparateChiSepIlsqrArgs),
@@ -3560,6 +3560,10 @@ pub struct SeparateDecomposeArgs {
     /// Multi-echo magnitude: one 4D file or several 3D files (space-separated)
     #[arg(long, num_args = 1.., required = true)]
     pub magnitude: Vec<PathBuf>,
+    /// QSM of each echo (ppm), which sets each echo's phase: one 4D file or one 3D file per echo
+    /// (space-separated; the same file may be given for every echo)
+    #[arg(long, num_args = 1.., required = true)]
+    pub qsm_per_echo: Vec<PathBuf>,
     /// GRE echo times in seconds (space- or comma-separated)
     #[arg(long, num_args = 1.., value_delimiter = ',', required = true)]
     pub echo_times: Vec<f64>,

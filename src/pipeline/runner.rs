@@ -3224,8 +3224,11 @@ mod chisep_support_tests {
         let r2prime = masked(f.output.r2prime_path(k));
         let r2star = masked(f.output.r2star_path(k));
         let mag = load_volume(&f.output.mag_path(k, 1)).unwrap();
+        let n_echoes = m.echo_times.len();
+        let qsm_per_echo = qsmxt_engine::stages::separation::repeat_per_echo(&qsm, n_echoes);
         let inputs = qsm_core::pipeline::SeparationInputs {
-            local_field_ppm: &field, qsm: &qsm, mask, r2prime: Some(&r2prime), r2star: Some(&r2star),
+            local_field_ppm: &field, qsm: &qsm, qsm_per_echo: Some(&qsm_per_echo), mask,
+            r2prime: Some(&r2prime), r2star: Some(&r2star),
             magnitude_rss: Some(&mag), magnitude_multi: Some(&mag), se_magnitude_multi: None,
         };
         let metadata = crate::pipeline::config::to_scan_metadata(

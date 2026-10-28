@@ -635,15 +635,21 @@ mod integration_tests {
             })
             .collect();
 
-        super::separate::execute(SeparateCommand::Decompose(SeparateDecomposeArgs {
-            common: separate_common(dir.path(), "dc"),
-            magnitude: mags,
+        let common = separate_common(dir.path(), "dc");
+        let args = |qsm_per_echo: Vec<PathBuf>| SeparateDecomposeArgs {
+            common: common.clone(),
+            magnitude: mags.clone(),
+            qsm_per_echo,
             echo_times: vec![0.004, 0.008, 0.012],
             n_inner: Some(1),
             chi_bound: None,
             max_lm_iter: Some(1),
-        }))
-        .unwrap();
+        };
+        // The per-echo QSM needs one map per echo.
+        let err = super::separate::execute(SeparateCommand::Decompose(args(vec![common.qsm.clone(); 2])))
+            .unwrap_err().to_string();
+        assert!(err.contains("--qsm-per-echo has 2 echoes but the magnitude has 3"), "{err}");
+        super::separate::execute(SeparateCommand::Decompose(args(vec![common.qsm.clone(); 3]))).unwrap();
         assert!(dir.path().join("dc_desc-paramagnetic_Chimap.nii").exists());
         assert!(dir.path().join("dc_desc-total_Chimap.nii").exists());
     }

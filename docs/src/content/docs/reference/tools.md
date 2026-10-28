@@ -185,7 +185,7 @@ Split a susceptibility map into paramagnetic and diamagnetic sources, writing
 | Subcommand | Method and inputs |
 | --- | --- |
 | `r2star-qsm` | R2\*-QSM closed form — QSM + R2\* |
-| `decompose` | DECOMPOSE-QSM — QSM + multi-echo magnitude |
+| `decompose` | DECOMPOSE-QSM — a QSM per echo (`--qsm-per-echo`) + multi-echo magnitude. `qsmxt run` gives its one QSM at every echo |
 | `chi-sep-ilsqr` | χ-separation, iLSQR — local field + R2′ + magnitude + QSM (`qsmxt run` reconstructs this QSM from the local field by iLSQR; here it is the one given) |
 | `chi-sep-medi` | χ-separation, MEDI — local field + R2′ + magnitude + QSM |
 | `wavesep` | WaveSep — QSM + R2′ |

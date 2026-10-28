@@ -1422,6 +1422,11 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
             if config.pipeline.do_qsm && config.qsm.reference != QsmReference::None { RECON_MASK_AGAIN } else { RECON_MASK },
             separation_changes(config).comma_with(),
         ));
+        // DECOMPOSE's signal phase comes from a QSM per echo; the pipeline has one QSM.
+        if config.separation.algorithm == SeparationAlgorithm::Decompose {
+            doc.say(&[Stage::ChiSeparation],
+                "The same susceptibility map was used for the signal phase at every echo.".to_string());
+        }
         // The networks' outputs as QSM.rs returns them.
         if matches!(config.separation.algorithm, SeparationAlgorithm::ChiSepNet | SeparationAlgorithm::SusepNet) {
             doc.say(&[Stage::ChiSeparation], "Negative χ+ and |χ−| values were set to zero.".to_string());

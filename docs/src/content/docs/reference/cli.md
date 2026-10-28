@@ -2630,7 +2630,7 @@ Susceptibility source separation
 | Subcommand | Description |
 | --- | --- |
 | [`r2star-qsm`](#qsmxt-separate-r2star-qsm) | R2\*-QSM closed-form (Dimov 2022) — QSM + R2\* (GRE-only) |
-| [`decompose`](#qsmxt-separate-decompose) | DECOMPOSE-QSM signal-domain fit (Chen 2021) — QSM + multi-echo magnitude (GRE-only) |
+| [`decompose`](#qsmxt-separate-decompose) | DECOMPOSE-QSM signal-domain fit (Chen 2021) — a QSM per echo + multi-echo magnitude (GRE-only) |
 | [`chi-sep-ilsqr`](#qsmxt-separate-chi-sep-ilsqr) | χ-separation iLSQR (Shin 2021) — local field + R2' + magnitude + QSM |
 | [`chi-sep-medi`](#qsmxt-separate-chi-sep-medi) | χ-separation MEDI — local field + R2' + magnitude + QSM |
 | [`wavesep`](#qsmxt-separate-wavesep) | WaveSep wavelet-L1 (Fang 2023) — QSM + R2' |
@@ -2660,10 +2660,10 @@ qsmxt separate r2star-qsm [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> 
 
 ### `qsmxt separate decompose`
 
-DECOMPOSE-QSM signal-domain fit (Chen 2021) — QSM + multi-echo magnitude (GRE-only)
+DECOMPOSE-QSM signal-domain fit (Chen 2021) — a QSM per echo + multi-echo magnitude (GRE-only)
 
 ```sh
-qsmxt separate decompose [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --magnitude <MAGNITUDE>... --echo-times <ECHO_TIMES>...
+qsmxt separate decompose [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --magnitude <MAGNITUDE>... --qsm-per-echo <QSM_PER_ECHO>... --echo-times <ECHO_TIMES>...
 ```
 
 | Argument | Description |
@@ -2674,6 +2674,7 @@ qsmxt separate decompose [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> -
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Default: `3`. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--magnitude <MAGNITUDE>` | Multi-echo magnitude: one 4D file or several 3D files (space-separated) Required. |
+| `--qsm-per-echo <QSM_PER_ECHO>` | QSM of each echo (ppm), which sets each echo's phase: one 4D file or one 3D file per echo (space-separated; the same file may be given for every echo) Required. |
 | `--echo-times <ECHO_TIMES>` | GRE echo times in seconds (space- or comma-separated) Required. |
 | `--n-inner <N_INNER>` | Inner alternating passes per voxel. |
 | `--chi-bound <CHI_BOUND>` | Upper bound on \|χ\| in the fit (ppm) |

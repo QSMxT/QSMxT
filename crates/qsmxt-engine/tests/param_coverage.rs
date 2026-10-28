@@ -103,7 +103,9 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     cover!(q::separation::ChiSepParams => c::ChiSepMediConfig, ignore: ["cf"]);
     cover!(q::separation::R2starQsmParams => c::R2starQsmConfig, ignore: ["b0"]);
     cover!(q::separation::WaveSepParams => c::WaveSepConfig);
-    cover!(q::separation::DecomposeParams => c::DecomposeConfig, ignore: ["b0"]);
+    // `unwrap_phase` is QSM.rs's deviation from the authors' code (off by default); QSMxT runs
+    // the authors' algorithm and does not offer it.
+    cover!(q::separation::DecomposeParams => c::DecomposeConfig, ignore: ["b0", "unwrap_phase"]);
     cover!(q::separation::HcChisepParams => c::HcChisepConfig, ignore: ["b0", "se_echo_times"]);
     cover!(q::separation::ChiSepNetParams => c::ChiSepNetConfig);
     cover!(q::separation::SusepNetParams => c::SusepNetConfig);

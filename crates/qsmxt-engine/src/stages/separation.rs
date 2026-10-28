@@ -118,6 +118,12 @@ pub fn separation_support(
     support
 }
 
+/// `map` at each of `n_echoes` echoes, voxel-major `(n_voxels, n_echoes)`: the per-echo QSM
+/// DECOMPOSE takes, from the pipeline's one QSM.
+pub fn repeat_per_echo(map: &[f64], n_echoes: usize) -> Vec<f64> {
+    map.iter().flat_map(|&v| std::iter::repeat_n(v, n_echoes)).collect()
+}
+
 /// Write 0 wherever `support` is 0.
 pub fn zero_outside(support: &[u8], map: &mut [f64]) {
     for (v, &s) in map.iter_mut().zip(support) {
@@ -225,7 +231,7 @@ mod tests {
     fn a_method_names_every_input_it_lacks() {
         let (qsm, mask) = ([0.0; 4], [1u8; 4]);
         let mut inputs = qsm_core::pipeline::SeparationInputs {
-            local_field_ppm: &[], qsm: &qsm, mask: &mask, r2prime: None, r2star: None,
+            local_field_ppm: &[], qsm: &qsm, qsm_per_echo: None, mask: &mask, r2prime: None, r2star: None,
             magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None,
         };
         assert_eq!(missing_inputs(SeparationAlgorithm::ChiSepIlsqr, &inputs), ["local field", "R2'", "magnitude"]);
@@ -233,5 +239,10 @@ mod tests {
         inputs.r2prime = Some(&r2prime);
         assert_eq!(missing_inputs(SeparationAlgorithm::WaveSep, &inputs), Vec::<&str>::new());
         assert_eq!(missing_inputs(SeparationAlgorithm::R2starQsm, &inputs), ["R2* or multi-echo magnitude"]);
+    }
+
+    #[test]
+    fn decompose_gets_the_qsm_at_every_echo() {
+        assert_eq!(repeat_per_echo(&[1.0, 2.0], 3), [1.0, 1.0, 1.0, 2.0, 2.0, 2.0]);
     }
 }

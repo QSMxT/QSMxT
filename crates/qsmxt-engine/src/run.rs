@@ -1694,7 +1694,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         };
 
         let missing = sep::missing_inputs(alg, &qsm_core::pipeline::SeparationInputs {
-            local_field_ppm: &local_field, qsm: &qsm, mask: &brain, r2prime: r2prime.as_deref(),
+            local_field_ppm: &local_field, qsm: &qsm, qsm_per_echo: None, mask: &brain, r2prime: r2prime.as_deref(),
             r2star: r2star.as_deref(), magnitude_rss: magnitude_rss.as_deref(),
             magnitude_multi: magnitude_multi.as_deref(), se_magnitude_multi: se_multi.as_deref(),
         });
@@ -1738,8 +1738,13 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         for map in [r2prime.as_mut(), r2star.as_mut()].into_iter().flatten() {
             sep::zero_outside(&support, map);
         }
+        // DECOMPOSE takes a QSM per echo (its authors run STAR-QSM on each echo); the pipeline
+        // has one, so it is given at every echo (said in the methods text).
+        let qsm_per_echo = (alg == crate::SeparationAlgorithm::Decompose)
+            .then(|| sep::repeat_per_echo(&qsm, self.n_echoes()));
         let inputs = qsm_core::pipeline::SeparationInputs {
-            local_field_ppm: &local_field, qsm: &qsm, mask: &support, r2prime: r2prime.as_deref(),
+            local_field_ppm: &local_field, qsm: &qsm, qsm_per_echo: qsm_per_echo.as_deref(),
+            mask: &support, r2prime: r2prime.as_deref(),
             r2star: r2star.as_deref(), magnitude_rss: magnitude_rss.as_deref(),
             magnitude_multi: magnitude_multi.as_deref(), se_magnitude_multi: se_multi.as_deref(),
         };
