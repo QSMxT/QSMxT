@@ -208,6 +208,8 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         sharp: qsm_core::bgremove::SharpParams {
             threshold: cfg.bg_removal.sharp.threshold,
             radius: cfg.bg_removal.sharp.radius,
+            // qsm-core's SHARP (SEPIA's); the QSM.jl variant is for parity only.
+            variant: qsm_core::bgremove::SharpVariant::default(),
         },
         resharp: qsm_core::bgremove::ResharpParams {
             radius: cfg.bg_removal.resharp.radius,

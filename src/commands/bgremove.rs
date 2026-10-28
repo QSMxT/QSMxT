@@ -147,6 +147,7 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             let sharp = bg::SharpParams {
                 threshold: args.threshold.unwrap_or(d.threshold),
                 radius: args.radius.unwrap_or(d.radius),
+                ..d
             };
             let config = qsm_core::pipeline::BgRemovalConfig { sharp, ..config_for(A::Sharp) };
             let out = remove_with(&args.common, config, None, &[], "SHARP")?;
