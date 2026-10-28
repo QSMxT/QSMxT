@@ -112,7 +112,9 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     cover!(q::inversion::StarParams => c::StarConfig, ignore: ["b0", "echo_times"]);
 
     // Background-field removal
-    cover!(q::bgremove::VsharpParams => c::VsharpConfig);
+    // `ball` picks which implementation's SMV ball to reproduce (STI Suite's, the default, or
+    // QSM.jl's); QSMxT runs qsm-core's default and offers no choice.
+    cover!(q::bgremove::VsharpParams => c::VsharpConfig, ignore: ["ball"]);
     cover!(q::bgremove::PdfParams => c::PdfConfig);
     cover!(q::bgremove::LbvParams => c::LbvConfig, ignore: ["max_iter"]);
     cover!(q::bgremove::IsmvParams => c::IsmvConfig);
