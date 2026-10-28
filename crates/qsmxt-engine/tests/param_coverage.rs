@@ -107,7 +107,9 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     cover!(q::separation::HcChisepParams => c::HcChisepConfig, ignore: ["b0", "se_echo_times"]);
     cover!(q::separation::ChiSepNetParams => c::ChiSepNetConfig);
     cover!(q::separation::SusepNetParams => c::SusepNetConfig);
-    cover!(q::inversion::TgvParams => c::TgvConfig);
+    // `reference_divergence` / `reference_edge_erosion` reproduce the reference package's quirks
+    // for parity; QSMxT runs qsm-core's defaults (exact adjoint, edge erosion) and offers no choice.
+    cover!(q::inversion::TgvParams => c::TgvConfig, ignore: ["reference_divergence", "reference_edge_erosion"]);
     // b0/echo_times come from scan metadata (the dispatcher fills them).
     cover!(q::inversion::StarParams => c::StarConfig, ignore: ["b0", "echo_times"]);
 

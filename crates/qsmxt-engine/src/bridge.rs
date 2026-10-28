@@ -372,6 +372,9 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             alpha1: cfg.inversion.tgv.alpha1 as f32,
             step_size: cfg.inversion.tgv.step_size as f32,
             te: cfg.inversion.tgv.te.into(),
+            // qsm-core's defaults (exact adjoint, erosion from the array's edge too); not
+            // settings: they only reproduce the reference package's quirks for parity.
+            ..Default::default()
         },
         qsmart: qsm_core::utils::QsmartParams {
             ilsqr_max_iter: cfg.inversion.qsmart.ilsqr_max_iter,
