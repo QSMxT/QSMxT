@@ -116,7 +116,9 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     cover!(q::bgremove::PdfParams => c::PdfConfig);
     cover!(q::bgremove::LbvParams => c::LbvConfig, ignore: ["max_iter"]);
     cover!(q::bgremove::IsmvParams => c::IsmvConfig);
-    cover!(q::bgremove::SharpParams => c::SharpConfig);
+    // `variant` picks which implementation to reproduce (SEPIA's, the default, or QSM.jl's for
+    // parity); QSMxT runs qsm-core's default and offers no choice.
+    cover!(q::bgremove::SharpParams => c::SharpConfig, ignore: ["variant"]);
     cover!(q::bgremove::ResharpParams => c::ResharpConfig);
     cover!(q::bgremove::HarperellaParams => c::HarperellaConfig);
     cover!(q::bgremove::IharperellaParams => c::IharperellaConfig);
