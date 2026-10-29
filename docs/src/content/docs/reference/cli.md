@@ -96,12 +96,16 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--rts-lsmr-iter <RTS_LSMR_ITER>` | RTS LSMR iterations. |
 | `--rts-tau <RTS_TAU>` | RTS: rho is raised when the primal residual falls by less than this factor (tau) |
 | `--rts-gamma <RTS_GAMMA>` | RTS: the factor rho is raised by (gamma) |
+| `--rts-pad <X> <Y> <Z>` | RTS zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--tv-lambda <TV_LAMBDA>` | TV lambda parameter. |
 | `--tv-rho <RHO>` | TV rho (ADMM penalty), or auto for 100 × lambda (default: auto) |
 | `--tv-tol <TV_TOL>` | TV tolerance. |
 | `--tv-max-iter <TV_MAX_ITER>` | TV max iterations. |
+| `--tv-pad <X> <Y> <Z>` | TV zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--tkd-threshold <TKD_THRESHOLD>` | TKD threshold. |
+| `--tkd-pad <X> <Y> <Z>` | TKD zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--tsvd-threshold <TSVD_THRESHOLD>` | TSVD threshold. |
+| `--tsvd-pad <X> <Y> <Z>` | TSVD zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--tgv-iterations <TGV_ITERATIONS>` | TGV iterations (default: from the voxel size, as the reference does) |
 | `--tgv-erosions <TGV_EROSIONS>` | TGV erosions. |
 | `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) |
@@ -109,6 +113,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--tgv-step-size <TGV_STEP_SIZE>` | TGV primal step size multiplier. |
 | `--tgv-te <TE>` | TGV: the echo time a field from several echoes is converted to phase at, and its weights are in radians at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first). A single echo is at its own. |
 | `--tikhonov-lambda <TIKHONOV_LAMBDA>` | Tikhonov lambda. |
+| `--tikhonov-pad <X> <Y> <Z>` | Tikhonov zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--nltv-lambda <NLTV_LAMBDA>` | NLTV lambda. |
 | `--nltv-rho <RHO>` | NLTV rho (ADMM penalty), or auto for 100 × lambda (default: auto) |
 | `--nltv-mu <NLTV_MU>` | NLTV mu (penalty parameter) |
@@ -117,6 +122,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--nltv-tol-newton <NLTV_TOL_NEWTON>` | NLTV convergence tolerance of the Newton iterations of the data-term subproblem. |
 | `--nltv-newton-iter <NLTV_NEWTON_ITER>` | NLTV maximum Newton iterations of the data-term subproblem. |
 | `--nltv-te <TE>` | NLTV: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
+| `--nltv-pad <X> <Y> <Z>` | NLTV zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--medi-lambda <MEDI_LAMBDA>` | MEDI lambda: the data-fidelity weight (larger fits the field more closely) |
 | `--medi-merit <MEDI_MERIT>` | MEDI: enable MERIT weighting. |
 | `--medi-csf <MEDI_CSF>` | MEDI+0 (Liu et al. 2018): zero-reference χ to the ventricular CSF, found from R2\*, and keep it uniform there (default: true). Needs at least 3 echoes; with fewer, MEDI runs without it. |
@@ -152,7 +158,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--tfi-tol <TFI_TOL>` | TFI outer tolerance. |
 | `--tfi-te <TE>` | TFI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing) |
 | `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve. |
-| `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve. |
+| `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve (default: 100) |
 | `--ilsqr-pad-mm <MM>` | iLSQR zero-padding in mm per side. |
 | `--star-pad <X> <Y> <Z>` | STAR-QSM zero-padding in voxels per side, X Y Z (default: 8 8 20) |
 | `--star-te <TE>` | Echo time STAR-QSM converts the field to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: sum) |
@@ -243,30 +249,38 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--r2star-qsm-r-const-3t <R2STAR_QSM_R_CONST_3T>` | R2\*-QSM relaxometric constant at 3T (Hz/ppm) |
 | `--decompose-n-inner <DECOMPOSE_N_INNER>` | DECOMPOSE inner alternating passes per voxel. |
 | `--decompose-chi-bound <DECOMPOSE_CHI_BOUND>` | DECOMPOSE upper bound on \|χ\| in the fit (ppm) |
-| `--decompose-max-lm-iter <DECOMPOSE_MAX_LM_ITER>` | DECOMPOSE Levenberg–Marquardt max iterations. |
-| `--chi-sep-ilsqr-dr-pos <CHI_SEP_ILSQR_DR_POS>` | χ-sep iLSQR paramagnetic relaxometric constant (Hz/ppm) |
-| `--chi-sep-ilsqr-dr-neg <CHI_SEP_ILSQR_DR_NEG>` | χ-sep iLSQR diamagnetic relaxometric constant (Hz/ppm) |
-| `--chi-sep-ilsqr-lambda1 <CHI_SEP_ILSQR_LAMBDA1>` | χ-sep iLSQR L1 edge-masked TV weight. |
-| `--chi-sep-ilsqr-percentage <CHI_SEP_ILSQR_PERCENTAGE>` | χ-sep iLSQR edge-mask keep fraction (0-1) |
-| `--chi-sep-ilsqr-r2p-min <CHI_SEP_ILSQR_R2P_MIN>` | χ-sep iLSQR R2' reliability window lower (Hz) |
-| `--chi-sep-ilsqr-r2p-max <CHI_SEP_ILSQR_R2P_MAX>` | χ-sep iLSQR R2' reliability window upper (Hz) |
-| `--chi-sep-ilsqr-max-iter <CHI_SEP_ILSQR_MAX_ITER>` | χ-sep iLSQR outer Gauss-Newton iterations. |
-| `--chi-sep-ilsqr-tol <CHI_SEP_ILSQR_TOL>` | χ-sep iLSQR outer relative-change tolerance. |
-| `--chi-sep-ilsqr-cg-max-iter <CHI_SEP_ILSQR_CG_MAX_ITER>` | χ-sep iLSQR inner CG max iterations. |
-| `--chi-sep-ilsqr-cg-tol <CHI_SEP_ILSQR_CG_TOL>` | χ-sep iLSQR inner CG relative tolerance. |
+| `--decompose-unwrap-phase <BOOL>` | DECOMPOSE: unwrap the phase along the echoes and limit χ to what the echo spacing can represent (default: false, as in the authors' code) |
+| `--decompose-max-iterations <DECOMPOSE_MAX_ITERATIONS>` | DECOMPOSE: maximum solver iterations of each fit (lsqcurvefit MaxIterations; default: 400) |
+| `--decompose-max-function-evaluations <DECOMPOSE_MAX_FUNCTION_EVALUATIONS>` | DECOMPOSE: maximum function evaluations of each fit (lsqcurvefit MaxFunctionEvaluations; default: 100 × the fit's parameters) |
+| `--decompose-function-tolerance <DECOMPOSE_FUNCTION_TOLERANCE>` | DECOMPOSE: relative cost change each fit stops at (lsqcurvefit FunctionTolerance; default: 1e-6) |
+| `--decompose-step-tolerance <DECOMPOSE_STEP_TOLERANCE>` | DECOMPOSE: relative step each fit stops at (lsqcurvefit StepTolerance; default: 1e-6) |
+| `--decompose-optimality-tolerance <DECOMPOSE_OPTIMALITY_TOLERANCE>` | DECOMPOSE: first-order optimality each fit stops at (lsqcurvefit OptimalityTolerance; default: 1e-6) |
+| `--decompose-finite-difference-step <DECOMPOSE_FINITE_DIFFERENCE_STEP>` | DECOMPOSE: relative finite-difference step of the Jacobian (lsqcurvefit FiniteDifferenceStepSize; default: √eps) |
+| `--decompose-typical-x <DECOMPOSE_TYPICAL_X>` | DECOMPOSE: typical magnitude of each fitted value (lsqcurvefit TypicalX; default: 1) |
+| `--chi-sep-ilsqr-dr-pos <HZ_PER_PPM>` | χ-sep iLSQR paramagnetic relaxometric constant (Hz/ppm), or auto for 137 × B0 / 2.9 T (default: auto) |
+| `--chi-sep-ilsqr-dr-neg <HZ_PER_PPM>` | χ-sep iLSQR diamagnetic relaxometric constant (Hz/ppm), or auto for 137 × B0 / 2.9 T (default: auto) |
+| `--chi-sep-ilsqr-pad <X> <Y> <Z>` | χ-sep iLSQR zero-padding at both ends of each axis in voxels, X Y Z (default: 16 16 16) |
+| `--chi-sep-ilsqr-cg-max-iter-lsqr <CHI_SEP_ILSQR_CG_MAX_ITER_LSQR>` | χ-sep iLSQR: maximum CG iterations of the LSQR step (default: 50) |
+| `--chi-sep-ilsqr-cg-tol-lsqr <CHI_SEP_ILSQR_CG_TOL_LSQR>` | χ-sep iLSQR: CG relative tolerance of the LSQR step (default: 0.02) |
+| `--chi-sep-ilsqr-cg-max-iter-sa <CHI_SEP_ILSQR_CG_MAX_ITER_SA>` | χ-sep iLSQR: maximum CG iterations of the streaking-removal step (default: 50) |
+| `--chi-sep-ilsqr-cg-tol-sa <CHI_SEP_ILSQR_CG_TOL_SA>` | χ-sep iLSQR: CG relative tolerance of the streaking-removal step (default: 0.02) |
+| `--chi-sep-ilsqr-d2-thr <CHI_SEP_ILSQR_D2_THR>` | χ-sep iLSQR: the streaking cone is where \|D\| is below this (default: 0.11) |
+| `--chi-sep-ilsqr-prc-w-i-min <CHI_SEP_ILSQR_PRC_W_I_MIN>` | χ-sep iLSQR: percentile of the field's Laplacian at which the LSQR weight is 1 (default: 60) |
+| `--chi-sep-ilsqr-prc-w-i-max <CHI_SEP_ILSQR_PRC_W_I_MAX>` | χ-sep iLSQR: percentile of the field's Laplacian at which the LSQR weight is 0 (default: 99.8) |
+| `--chi-sep-ilsqr-prc-w-g-min <CHI_SEP_ILSQR_PRC_W_G_MIN>` | χ-sep iLSQR: percentile of each gradient's magnitude at which the streaking-removal weight is 1 (default: 50) |
+| `--chi-sep-ilsqr-prc-w-g-max <CHI_SEP_ILSQR_PRC_W_G_MAX>` | χ-sep iLSQR: percentile of each gradient's magnitude at which the streaking-removal weight is 0 (default: 70) |
 | `--chi-sep-ilsqr-qsm-max-iter <CHI_SEP_ILSQR_QSM_MAX_ITER>` | χ-sep iLSQR: max iterations of the iLSQR that reconstructs, from the local field, the QSM χ-separation is initialised with (default: 100; not used with --use-custom-qsm) |
 | `--chi-sep-ilsqr-qsm-tol <CHI_SEP_ILSQR_QSM_TOL>` | χ-sep iLSQR: tolerance of that QSM's iLSQR. |
 | `--chi-sep-ilsqr-qsm-pad-mm <MM>` | χ-sep iLSQR: zero-padding of that QSM's iLSQR, in mm per side (default: 12) |
-| `--chi-sep-medi-lambda-para <CHI_SEP_MEDI_LAMBDA_PARA>` | χ-sep MEDI paramagnetic L1 weight. |
-| `--chi-sep-medi-lambda-dia <CHI_SEP_MEDI_LAMBDA_DIA>` | χ-sep MEDI diamagnetic L1 weight. |
-| `--chi-sep-medi-lambda-cpl <CHI_SEP_MEDI_LAMBDA_CPL>` | χ-sep MEDI field/R2' coupling weight. |
-| `--chi-sep-medi-dr-pos <CHI_SEP_MEDI_DR_POS>` | χ-sep MEDI paramagnetic relaxivity (Hz/ppm) |
-| `--chi-sep-medi-dr-neg <CHI_SEP_MEDI_DR_NEG>` | χ-sep MEDI diamagnetic relaxivity (Hz/ppm) |
-| `--chi-sep-medi-percentage <CHI_SEP_MEDI_PERCENTAGE>` | χ-sep MEDI edge-mask percentage (0-1) |
-| `--chi-sep-medi-cg-tol <CHI_SEP_MEDI_CG_TOL>` | χ-sep MEDI inner CG tolerance. |
-| `--chi-sep-medi-cg-max-iter <CHI_SEP_MEDI_CG_MAX_ITER>` | χ-sep MEDI inner CG max iterations. |
-| `--chi-sep-medi-max-iter <CHI_SEP_MEDI_MAX_ITER>` | χ-sep MEDI outer Gauss-Newton iterations. |
-| `--chi-sep-medi-tol <CHI_SEP_MEDI_TOL>` | χ-sep MEDI outer convergence tolerance. |
+| `--chi-sep-medi-lambda <CHI_SEP_MEDI_LAMBDA>` | χ-sep MEDI weight of the data terms against the L1 terms (default: 1) |
+| `--chi-sep-medi-lambda-csf <CHI_SEP_MEDI_LAMBDA_CSF>` | χ-sep MEDI weight of the CSF-uniformity term (default: 1) |
+| `--chi-sep-medi-dr-pos <HZ_PER_PPM>` | χ-sep MEDI paramagnetic relaxometric constant (Hz/ppm), or auto for 137 × B0 / 2.9 T (default: auto) |
+| `--chi-sep-medi-dr-neg <HZ_PER_PPM>` | χ-sep MEDI diamagnetic relaxometric constant (Hz/ppm), or auto for 137 × B0 / 2.9 T (default: auto) |
+| `--chi-sep-medi-pad <CHI_SEP_MEDI_PAD>` | χ-sep MEDI zero-padding at both ends of the third axis, in voxels (default: 5) |
+| `--chi-sep-medi-tol <CHI_SEP_MEDI_TOL>` | χ-sep MEDI: stop when the relative change falls below this (default: 0.03) |
+| `--chi-sep-medi-max-iter <CHI_SEP_MEDI_MAX_ITER>` | χ-sep MEDI maximum Gauss-Newton iterations (default: 30) |
+| `--chi-sep-medi-cg-tol <CHI_SEP_MEDI_CG_TOL>` | χ-sep MEDI inner CG tolerance (default: 0.05) |
+| `--chi-sep-medi-cg-max-iter <CHI_SEP_MEDI_CG_MAX_ITER>` | χ-sep MEDI inner CG max iterations (default: 100) |
 | `--wavesep-dr-pos <WAVESEP_DR_POS>` | WaveSep paramagnetic relaxivity (Hz/ppm) |
 | `--wavesep-dr-neg <WAVESEP_DR_NEG>` | WaveSep diamagnetic relaxivity (Hz/ppm) |
 | `--wavesep-alpha <WAVESEP_ALPHA>` | WaveSep proximal-gradient step size. |
@@ -303,9 +317,10 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--pdf-space <SPACE>` | PDF dipole kernel: image (the FFT of the dipole sampled on the voxel grid) or kspace (the analytic k-space kernel) (default: image) |
 | `--pdf-n-pad <VOXELS>` | PDF zero-padding around the mask's bounding box, in voxels; 0 runs on the full volume (default: 40) |
 | `--lbv-tol <LBV_TOL>` | LBV tolerance. |
-| `--ismv-tol <ISMV_TOL>` | iSMV tolerance. |
-| `--ismv-max-iter <ISMV_MAX_ITER>` | iSMV max iterations. |
-| `--ismv-radius <ISMV_RADIUS>` | iSMV kernel radius in mm. |
+| `--ismv-variant <VARIANT>` | iSMV implementation: wen2014 (the authors' paper and code) or qsmjl (QSM.jl's) (default: wen2014) |
+| `--ismv-tol <ISMV_TOL>` | iSMV tolerance: the relative change between iterates it stops at (qsmjl: the residual relative to the first) (default: 5e-5) |
+| `--ismv-max-iter <ISMV_MAX_ITER>` | iSMV max iterations (default: no limit) |
+| `--ismv-radius <MM>` | iSMV kernel radius in mm, or auto for 6 × the smallest voxel dimension (qsmjl: 2 × the largest) (default: auto) |
 | `--sharp-threshold <SHARP_THRESHOLD>` | SHARP threshold. |
 | `--sharp-radius <SHARP_RADIUS>` | SHARP kernel radius in mm. |
 | `--resharp-radius <RESHARP_RADIUS>` | RESHARP SMV kernel radius in mm. |
@@ -530,12 +545,16 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--rts-lsmr-iter <RTS_LSMR_ITER>` | RTS LSMR iterations. |
 | `--rts-tau <RTS_TAU>` | RTS: rho is raised when the primal residual falls by less than this factor (tau) |
 | `--rts-gamma <RTS_GAMMA>` | RTS: the factor rho is raised by (gamma) |
+| `--rts-pad <X> <Y> <Z>` | RTS zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--tv-lambda <TV_LAMBDA>` | TV lambda parameter. |
 | `--tv-rho <RHO>` | TV rho (ADMM penalty), or auto for 100 × lambda (default: auto) |
 | `--tv-tol <TV_TOL>` | TV tolerance. |
 | `--tv-max-iter <TV_MAX_ITER>` | TV max iterations. |
+| `--tv-pad <X> <Y> <Z>` | TV zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--tkd-threshold <TKD_THRESHOLD>` | TKD threshold. |
+| `--tkd-pad <X> <Y> <Z>` | TKD zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--tsvd-threshold <TSVD_THRESHOLD>` | TSVD threshold. |
+| `--tsvd-pad <X> <Y> <Z>` | TSVD zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--tgv-iterations <TGV_ITERATIONS>` | TGV iterations (default: from the voxel size, as the reference does) |
 | `--tgv-erosions <TGV_EROSIONS>` | TGV erosions. |
 | `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) |
@@ -543,6 +562,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--tgv-step-size <TGV_STEP_SIZE>` | TGV primal step size multiplier. |
 | `--tgv-te <TE>` | TGV: the echo time a field from several echoes is converted to phase at, and its weights are in radians at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first). A single echo is at its own. |
 | `--tikhonov-lambda <TIKHONOV_LAMBDA>` | Tikhonov lambda. |
+| `--tikhonov-pad <X> <Y> <Z>` | Tikhonov zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--nltv-lambda <NLTV_LAMBDA>` | NLTV lambda. |
 | `--nltv-rho <RHO>` | NLTV rho (ADMM penalty), or auto for 100 × lambda (default: auto) |
 | `--nltv-mu <NLTV_MU>` | NLTV mu (penalty parameter) |
@@ -551,6 +571,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--nltv-tol-newton <NLTV_TOL_NEWTON>` | NLTV convergence tolerance of the Newton iterations of the data-term subproblem. |
 | `--nltv-newton-iter <NLTV_NEWTON_ITER>` | NLTV maximum Newton iterations of the data-term subproblem. |
 | `--nltv-te <TE>` | NLTV: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
+| `--nltv-pad <X> <Y> <Z>` | NLTV zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--medi-lambda <MEDI_LAMBDA>` | MEDI lambda: the data-fidelity weight (larger fits the field more closely) |
 | `--medi-merit <MEDI_MERIT>` | MEDI: enable MERIT weighting. |
 | `--medi-csf <MEDI_CSF>` | MEDI+0 (Liu et al. 2018): zero-reference χ to the ventricular CSF, found from R2\*, and keep it uniform there (default: true). Needs at least 3 echoes; with fewer, MEDI runs without it. |
@@ -586,7 +607,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--tfi-tol <TFI_TOL>` | TFI outer tolerance. |
 | `--tfi-te <TE>` | TFI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing) |
 | `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve. |
-| `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve. |
+| `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve (default: 100) |
 | `--ilsqr-pad-mm <MM>` | iLSQR zero-padding in mm per side. |
 | `--star-pad <X> <Y> <Z>` | STAR-QSM zero-padding in voxels per side, X Y Z (default: 8 8 20) |
 | `--star-te <TE>` | Echo time STAR-QSM converts the field to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: sum) |
@@ -677,30 +698,38 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--r2star-qsm-r-const-3t <R2STAR_QSM_R_CONST_3T>` | R2\*-QSM relaxometric constant at 3T (Hz/ppm) |
 | `--decompose-n-inner <DECOMPOSE_N_INNER>` | DECOMPOSE inner alternating passes per voxel. |
 | `--decompose-chi-bound <DECOMPOSE_CHI_BOUND>` | DECOMPOSE upper bound on \|χ\| in the fit (ppm) |
-| `--decompose-max-lm-iter <DECOMPOSE_MAX_LM_ITER>` | DECOMPOSE Levenberg–Marquardt max iterations. |
-| `--chi-sep-ilsqr-dr-pos <CHI_SEP_ILSQR_DR_POS>` | χ-sep iLSQR paramagnetic relaxometric constant (Hz/ppm) |
-| `--chi-sep-ilsqr-dr-neg <CHI_SEP_ILSQR_DR_NEG>` | χ-sep iLSQR diamagnetic relaxometric constant (Hz/ppm) |
-| `--chi-sep-ilsqr-lambda1 <CHI_SEP_ILSQR_LAMBDA1>` | χ-sep iLSQR L1 edge-masked TV weight. |
-| `--chi-sep-ilsqr-percentage <CHI_SEP_ILSQR_PERCENTAGE>` | χ-sep iLSQR edge-mask keep fraction (0-1) |
-| `--chi-sep-ilsqr-r2p-min <CHI_SEP_ILSQR_R2P_MIN>` | χ-sep iLSQR R2' reliability window lower (Hz) |
-| `--chi-sep-ilsqr-r2p-max <CHI_SEP_ILSQR_R2P_MAX>` | χ-sep iLSQR R2' reliability window upper (Hz) |
-| `--chi-sep-ilsqr-max-iter <CHI_SEP_ILSQR_MAX_ITER>` | χ-sep iLSQR outer Gauss-Newton iterations. |
-| `--chi-sep-ilsqr-tol <CHI_SEP_ILSQR_TOL>` | χ-sep iLSQR outer relative-change tolerance. |
-| `--chi-sep-ilsqr-cg-max-iter <CHI_SEP_ILSQR_CG_MAX_ITER>` | χ-sep iLSQR inner CG max iterations. |
-| `--chi-sep-ilsqr-cg-tol <CHI_SEP_ILSQR_CG_TOL>` | χ-sep iLSQR inner CG relative tolerance. |
+| `--decompose-unwrap-phase <BOOL>` | DECOMPOSE: unwrap the phase along the echoes and limit χ to what the echo spacing can represent (default: false, as in the authors' code) |
+| `--decompose-max-iterations <DECOMPOSE_MAX_ITERATIONS>` | DECOMPOSE: maximum solver iterations of each fit (lsqcurvefit MaxIterations; default: 400) |
+| `--decompose-max-function-evaluations <DECOMPOSE_MAX_FUNCTION_EVALUATIONS>` | DECOMPOSE: maximum function evaluations of each fit (lsqcurvefit MaxFunctionEvaluations; default: 100 × the fit's parameters) |
+| `--decompose-function-tolerance <DECOMPOSE_FUNCTION_TOLERANCE>` | DECOMPOSE: relative cost change each fit stops at (lsqcurvefit FunctionTolerance; default: 1e-6) |
+| `--decompose-step-tolerance <DECOMPOSE_STEP_TOLERANCE>` | DECOMPOSE: relative step each fit stops at (lsqcurvefit StepTolerance; default: 1e-6) |
+| `--decompose-optimality-tolerance <DECOMPOSE_OPTIMALITY_TOLERANCE>` | DECOMPOSE: first-order optimality each fit stops at (lsqcurvefit OptimalityTolerance; default: 1e-6) |
+| `--decompose-finite-difference-step <DECOMPOSE_FINITE_DIFFERENCE_STEP>` | DECOMPOSE: relative finite-difference step of the Jacobian (lsqcurvefit FiniteDifferenceStepSize; default: √eps) |
+| `--decompose-typical-x <DECOMPOSE_TYPICAL_X>` | DECOMPOSE: typical magnitude of each fitted value (lsqcurvefit TypicalX; default: 1) |
+| `--chi-sep-ilsqr-dr-pos <HZ_PER_PPM>` | χ-sep iLSQR paramagnetic relaxometric constant (Hz/ppm), or auto for 137 × B0 / 2.9 T (default: auto) |
+| `--chi-sep-ilsqr-dr-neg <HZ_PER_PPM>` | χ-sep iLSQR diamagnetic relaxometric constant (Hz/ppm), or auto for 137 × B0 / 2.9 T (default: auto) |
+| `--chi-sep-ilsqr-pad <X> <Y> <Z>` | χ-sep iLSQR zero-padding at both ends of each axis in voxels, X Y Z (default: 16 16 16) |
+| `--chi-sep-ilsqr-cg-max-iter-lsqr <CHI_SEP_ILSQR_CG_MAX_ITER_LSQR>` | χ-sep iLSQR: maximum CG iterations of the LSQR step (default: 50) |
+| `--chi-sep-ilsqr-cg-tol-lsqr <CHI_SEP_ILSQR_CG_TOL_LSQR>` | χ-sep iLSQR: CG relative tolerance of the LSQR step (default: 0.02) |
+| `--chi-sep-ilsqr-cg-max-iter-sa <CHI_SEP_ILSQR_CG_MAX_ITER_SA>` | χ-sep iLSQR: maximum CG iterations of the streaking-removal step (default: 50) |
+| `--chi-sep-ilsqr-cg-tol-sa <CHI_SEP_ILSQR_CG_TOL_SA>` | χ-sep iLSQR: CG relative tolerance of the streaking-removal step (default: 0.02) |
+| `--chi-sep-ilsqr-d2-thr <CHI_SEP_ILSQR_D2_THR>` | χ-sep iLSQR: the streaking cone is where \|D\| is below this (default: 0.11) |
+| `--chi-sep-ilsqr-prc-w-i-min <CHI_SEP_ILSQR_PRC_W_I_MIN>` | χ-sep iLSQR: percentile of the field's Laplacian at which the LSQR weight is 1 (default: 60) |
+| `--chi-sep-ilsqr-prc-w-i-max <CHI_SEP_ILSQR_PRC_W_I_MAX>` | χ-sep iLSQR: percentile of the field's Laplacian at which the LSQR weight is 0 (default: 99.8) |
+| `--chi-sep-ilsqr-prc-w-g-min <CHI_SEP_ILSQR_PRC_W_G_MIN>` | χ-sep iLSQR: percentile of each gradient's magnitude at which the streaking-removal weight is 1 (default: 50) |
+| `--chi-sep-ilsqr-prc-w-g-max <CHI_SEP_ILSQR_PRC_W_G_MAX>` | χ-sep iLSQR: percentile of each gradient's magnitude at which the streaking-removal weight is 0 (default: 70) |
 | `--chi-sep-ilsqr-qsm-max-iter <CHI_SEP_ILSQR_QSM_MAX_ITER>` | χ-sep iLSQR: max iterations of the iLSQR that reconstructs, from the local field, the QSM χ-separation is initialised with (default: 100; not used with --use-custom-qsm) |
 | `--chi-sep-ilsqr-qsm-tol <CHI_SEP_ILSQR_QSM_TOL>` | χ-sep iLSQR: tolerance of that QSM's iLSQR. |
 | `--chi-sep-ilsqr-qsm-pad-mm <MM>` | χ-sep iLSQR: zero-padding of that QSM's iLSQR, in mm per side (default: 12) |
-| `--chi-sep-medi-lambda-para <CHI_SEP_MEDI_LAMBDA_PARA>` | χ-sep MEDI paramagnetic L1 weight. |
-| `--chi-sep-medi-lambda-dia <CHI_SEP_MEDI_LAMBDA_DIA>` | χ-sep MEDI diamagnetic L1 weight. |
-| `--chi-sep-medi-lambda-cpl <CHI_SEP_MEDI_LAMBDA_CPL>` | χ-sep MEDI field/R2' coupling weight. |
-| `--chi-sep-medi-dr-pos <CHI_SEP_MEDI_DR_POS>` | χ-sep MEDI paramagnetic relaxivity (Hz/ppm) |
-| `--chi-sep-medi-dr-neg <CHI_SEP_MEDI_DR_NEG>` | χ-sep MEDI diamagnetic relaxivity (Hz/ppm) |
-| `--chi-sep-medi-percentage <CHI_SEP_MEDI_PERCENTAGE>` | χ-sep MEDI edge-mask percentage (0-1) |
-| `--chi-sep-medi-cg-tol <CHI_SEP_MEDI_CG_TOL>` | χ-sep MEDI inner CG tolerance. |
-| `--chi-sep-medi-cg-max-iter <CHI_SEP_MEDI_CG_MAX_ITER>` | χ-sep MEDI inner CG max iterations. |
-| `--chi-sep-medi-max-iter <CHI_SEP_MEDI_MAX_ITER>` | χ-sep MEDI outer Gauss-Newton iterations. |
-| `--chi-sep-medi-tol <CHI_SEP_MEDI_TOL>` | χ-sep MEDI outer convergence tolerance. |
+| `--chi-sep-medi-lambda <CHI_SEP_MEDI_LAMBDA>` | χ-sep MEDI weight of the data terms against the L1 terms (default: 1) |
+| `--chi-sep-medi-lambda-csf <CHI_SEP_MEDI_LAMBDA_CSF>` | χ-sep MEDI weight of the CSF-uniformity term (default: 1) |
+| `--chi-sep-medi-dr-pos <HZ_PER_PPM>` | χ-sep MEDI paramagnetic relaxometric constant (Hz/ppm), or auto for 137 × B0 / 2.9 T (default: auto) |
+| `--chi-sep-medi-dr-neg <HZ_PER_PPM>` | χ-sep MEDI diamagnetic relaxometric constant (Hz/ppm), or auto for 137 × B0 / 2.9 T (default: auto) |
+| `--chi-sep-medi-pad <CHI_SEP_MEDI_PAD>` | χ-sep MEDI zero-padding at both ends of the third axis, in voxels (default: 5) |
+| `--chi-sep-medi-tol <CHI_SEP_MEDI_TOL>` | χ-sep MEDI: stop when the relative change falls below this (default: 0.03) |
+| `--chi-sep-medi-max-iter <CHI_SEP_MEDI_MAX_ITER>` | χ-sep MEDI maximum Gauss-Newton iterations (default: 30) |
+| `--chi-sep-medi-cg-tol <CHI_SEP_MEDI_CG_TOL>` | χ-sep MEDI inner CG tolerance (default: 0.05) |
+| `--chi-sep-medi-cg-max-iter <CHI_SEP_MEDI_CG_MAX_ITER>` | χ-sep MEDI inner CG max iterations (default: 100) |
 | `--wavesep-dr-pos <WAVESEP_DR_POS>` | WaveSep paramagnetic relaxivity (Hz/ppm) |
 | `--wavesep-dr-neg <WAVESEP_DR_NEG>` | WaveSep diamagnetic relaxivity (Hz/ppm) |
 | `--wavesep-alpha <WAVESEP_ALPHA>` | WaveSep proximal-gradient step size. |
@@ -737,9 +766,10 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--pdf-space <SPACE>` | PDF dipole kernel: image (the FFT of the dipole sampled on the voxel grid) or kspace (the analytic k-space kernel) (default: image) |
 | `--pdf-n-pad <VOXELS>` | PDF zero-padding around the mask's bounding box, in voxels; 0 runs on the full volume (default: 40) |
 | `--lbv-tol <LBV_TOL>` | LBV tolerance. |
-| `--ismv-tol <ISMV_TOL>` | iSMV tolerance. |
-| `--ismv-max-iter <ISMV_MAX_ITER>` | iSMV max iterations. |
-| `--ismv-radius <ISMV_RADIUS>` | iSMV kernel radius in mm. |
+| `--ismv-variant <VARIANT>` | iSMV implementation: wen2014 (the authors' paper and code) or qsmjl (QSM.jl's) (default: wen2014) |
+| `--ismv-tol <ISMV_TOL>` | iSMV tolerance: the relative change between iterates it stops at (qsmjl: the residual relative to the first) (default: 5e-5) |
+| `--ismv-max-iter <ISMV_MAX_ITER>` | iSMV max iterations (default: no limit) |
+| `--ismv-radius <MM>` | iSMV kernel radius in mm, or auto for 6 × the smallest voxel dimension (qsmjl: 2 × the largest) (default: auto) |
 | `--sharp-threshold <SHARP_THRESHOLD>` | SHARP threshold. |
 | `--sharp-radius <SHARP_RADIUS>` | SHARP kernel radius in mm. |
 | `--resharp-radius <RESHARP_RADIUS>` | RESHARP SMV kernel radius in mm. |
@@ -901,12 +931,16 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--rts-lsmr-iter <RTS_LSMR_ITER>` | RTS LSMR iterations. |
 | `--rts-tau <RTS_TAU>` | RTS: rho is raised when the primal residual falls by less than this factor (tau) |
 | `--rts-gamma <RTS_GAMMA>` | RTS: the factor rho is raised by (gamma) |
+| `--rts-pad <X> <Y> <Z>` | RTS zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--tv-lambda <TV_LAMBDA>` | TV lambda parameter. |
 | `--tv-rho <RHO>` | TV rho (ADMM penalty), or auto for 100 × lambda (default: auto) |
 | `--tv-tol <TV_TOL>` | TV tolerance. |
 | `--tv-max-iter <TV_MAX_ITER>` | TV max iterations. |
+| `--tv-pad <X> <Y> <Z>` | TV zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--tkd-threshold <TKD_THRESHOLD>` | TKD threshold. |
+| `--tkd-pad <X> <Y> <Z>` | TKD zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--tsvd-threshold <TSVD_THRESHOLD>` | TSVD threshold. |
+| `--tsvd-pad <X> <Y> <Z>` | TSVD zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--tgv-iterations <TGV_ITERATIONS>` | TGV iterations (default: from the voxel size, as the reference does) |
 | `--tgv-erosions <TGV_EROSIONS>` | TGV erosions. |
 | `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) |
@@ -914,6 +948,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--tgv-step-size <TGV_STEP_SIZE>` | TGV primal step size multiplier. |
 | `--tgv-te <TE>` | TGV: the echo time a field from several echoes is converted to phase at, and its weights are in radians at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first). A single echo is at its own. |
 | `--tikhonov-lambda <TIKHONOV_LAMBDA>` | Tikhonov lambda. |
+| `--tikhonov-pad <X> <Y> <Z>` | Tikhonov zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--nltv-lambda <NLTV_LAMBDA>` | NLTV lambda. |
 | `--nltv-rho <RHO>` | NLTV rho (ADMM penalty), or auto for 100 × lambda (default: auto) |
 | `--nltv-mu <NLTV_MU>` | NLTV mu (penalty parameter) |
@@ -922,6 +957,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--nltv-tol-newton <NLTV_TOL_NEWTON>` | NLTV convergence tolerance of the Newton iterations of the data-term subproblem. |
 | `--nltv-newton-iter <NLTV_NEWTON_ITER>` | NLTV maximum Newton iterations of the data-term subproblem. |
 | `--nltv-te <TE>` | NLTV: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
+| `--nltv-pad <X> <Y> <Z>` | NLTV zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--medi-lambda <MEDI_LAMBDA>` | MEDI lambda: the data-fidelity weight (larger fits the field more closely) |
 | `--medi-merit <MEDI_MERIT>` | MEDI: enable MERIT weighting. |
 | `--medi-csf <MEDI_CSF>` | MEDI+0 (Liu et al. 2018): zero-reference χ to the ventricular CSF, found from R2\*, and keep it uniform there (default: true). Needs at least 3 echoes; with fewer, MEDI runs without it. |
@@ -957,7 +993,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--tfi-tol <TFI_TOL>` | TFI outer tolerance. |
 | `--tfi-te <TE>` | TFI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing) |
 | `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve. |
-| `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve. |
+| `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve (default: 100) |
 | `--ilsqr-pad-mm <MM>` | iLSQR zero-padding in mm per side. |
 | `--star-pad <X> <Y> <Z>` | STAR-QSM zero-padding in voxels per side, X Y Z (default: 8 8 20) |
 | `--star-te <TE>` | Echo time STAR-QSM converts the field to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: sum) |
@@ -1048,30 +1084,38 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--r2star-qsm-r-const-3t <R2STAR_QSM_R_CONST_3T>` | R2\*-QSM relaxometric constant at 3T (Hz/ppm) |
 | `--decompose-n-inner <DECOMPOSE_N_INNER>` | DECOMPOSE inner alternating passes per voxel. |
 | `--decompose-chi-bound <DECOMPOSE_CHI_BOUND>` | DECOMPOSE upper bound on \|χ\| in the fit (ppm) |
-| `--decompose-max-lm-iter <DECOMPOSE_MAX_LM_ITER>` | DECOMPOSE Levenberg–Marquardt max iterations. |
-| `--chi-sep-ilsqr-dr-pos <CHI_SEP_ILSQR_DR_POS>` | χ-sep iLSQR paramagnetic relaxometric constant (Hz/ppm) |
-| `--chi-sep-ilsqr-dr-neg <CHI_SEP_ILSQR_DR_NEG>` | χ-sep iLSQR diamagnetic relaxometric constant (Hz/ppm) |
-| `--chi-sep-ilsqr-lambda1 <CHI_SEP_ILSQR_LAMBDA1>` | χ-sep iLSQR L1 edge-masked TV weight. |
-| `--chi-sep-ilsqr-percentage <CHI_SEP_ILSQR_PERCENTAGE>` | χ-sep iLSQR edge-mask keep fraction (0-1) |
-| `--chi-sep-ilsqr-r2p-min <CHI_SEP_ILSQR_R2P_MIN>` | χ-sep iLSQR R2' reliability window lower (Hz) |
-| `--chi-sep-ilsqr-r2p-max <CHI_SEP_ILSQR_R2P_MAX>` | χ-sep iLSQR R2' reliability window upper (Hz) |
-| `--chi-sep-ilsqr-max-iter <CHI_SEP_ILSQR_MAX_ITER>` | χ-sep iLSQR outer Gauss-Newton iterations. |
-| `--chi-sep-ilsqr-tol <CHI_SEP_ILSQR_TOL>` | χ-sep iLSQR outer relative-change tolerance. |
-| `--chi-sep-ilsqr-cg-max-iter <CHI_SEP_ILSQR_CG_MAX_ITER>` | χ-sep iLSQR inner CG max iterations. |
-| `--chi-sep-ilsqr-cg-tol <CHI_SEP_ILSQR_CG_TOL>` | χ-sep iLSQR inner CG relative tolerance. |
+| `--decompose-unwrap-phase <BOOL>` | DECOMPOSE: unwrap the phase along the echoes and limit χ to what the echo spacing can represent (default: false, as in the authors' code) |
+| `--decompose-max-iterations <DECOMPOSE_MAX_ITERATIONS>` | DECOMPOSE: maximum solver iterations of each fit (lsqcurvefit MaxIterations; default: 400) |
+| `--decompose-max-function-evaluations <DECOMPOSE_MAX_FUNCTION_EVALUATIONS>` | DECOMPOSE: maximum function evaluations of each fit (lsqcurvefit MaxFunctionEvaluations; default: 100 × the fit's parameters) |
+| `--decompose-function-tolerance <DECOMPOSE_FUNCTION_TOLERANCE>` | DECOMPOSE: relative cost change each fit stops at (lsqcurvefit FunctionTolerance; default: 1e-6) |
+| `--decompose-step-tolerance <DECOMPOSE_STEP_TOLERANCE>` | DECOMPOSE: relative step each fit stops at (lsqcurvefit StepTolerance; default: 1e-6) |
+| `--decompose-optimality-tolerance <DECOMPOSE_OPTIMALITY_TOLERANCE>` | DECOMPOSE: first-order optimality each fit stops at (lsqcurvefit OptimalityTolerance; default: 1e-6) |
+| `--decompose-finite-difference-step <DECOMPOSE_FINITE_DIFFERENCE_STEP>` | DECOMPOSE: relative finite-difference step of the Jacobian (lsqcurvefit FiniteDifferenceStepSize; default: √eps) |
+| `--decompose-typical-x <DECOMPOSE_TYPICAL_X>` | DECOMPOSE: typical magnitude of each fitted value (lsqcurvefit TypicalX; default: 1) |
+| `--chi-sep-ilsqr-dr-pos <HZ_PER_PPM>` | χ-sep iLSQR paramagnetic relaxometric constant (Hz/ppm), or auto for 137 × B0 / 2.9 T (default: auto) |
+| `--chi-sep-ilsqr-dr-neg <HZ_PER_PPM>` | χ-sep iLSQR diamagnetic relaxometric constant (Hz/ppm), or auto for 137 × B0 / 2.9 T (default: auto) |
+| `--chi-sep-ilsqr-pad <X> <Y> <Z>` | χ-sep iLSQR zero-padding at both ends of each axis in voxels, X Y Z (default: 16 16 16) |
+| `--chi-sep-ilsqr-cg-max-iter-lsqr <CHI_SEP_ILSQR_CG_MAX_ITER_LSQR>` | χ-sep iLSQR: maximum CG iterations of the LSQR step (default: 50) |
+| `--chi-sep-ilsqr-cg-tol-lsqr <CHI_SEP_ILSQR_CG_TOL_LSQR>` | χ-sep iLSQR: CG relative tolerance of the LSQR step (default: 0.02) |
+| `--chi-sep-ilsqr-cg-max-iter-sa <CHI_SEP_ILSQR_CG_MAX_ITER_SA>` | χ-sep iLSQR: maximum CG iterations of the streaking-removal step (default: 50) |
+| `--chi-sep-ilsqr-cg-tol-sa <CHI_SEP_ILSQR_CG_TOL_SA>` | χ-sep iLSQR: CG relative tolerance of the streaking-removal step (default: 0.02) |
+| `--chi-sep-ilsqr-d2-thr <CHI_SEP_ILSQR_D2_THR>` | χ-sep iLSQR: the streaking cone is where \|D\| is below this (default: 0.11) |
+| `--chi-sep-ilsqr-prc-w-i-min <CHI_SEP_ILSQR_PRC_W_I_MIN>` | χ-sep iLSQR: percentile of the field's Laplacian at which the LSQR weight is 1 (default: 60) |
+| `--chi-sep-ilsqr-prc-w-i-max <CHI_SEP_ILSQR_PRC_W_I_MAX>` | χ-sep iLSQR: percentile of the field's Laplacian at which the LSQR weight is 0 (default: 99.8) |
+| `--chi-sep-ilsqr-prc-w-g-min <CHI_SEP_ILSQR_PRC_W_G_MIN>` | χ-sep iLSQR: percentile of each gradient's magnitude at which the streaking-removal weight is 1 (default: 50) |
+| `--chi-sep-ilsqr-prc-w-g-max <CHI_SEP_ILSQR_PRC_W_G_MAX>` | χ-sep iLSQR: percentile of each gradient's magnitude at which the streaking-removal weight is 0 (default: 70) |
 | `--chi-sep-ilsqr-qsm-max-iter <CHI_SEP_ILSQR_QSM_MAX_ITER>` | χ-sep iLSQR: max iterations of the iLSQR that reconstructs, from the local field, the QSM χ-separation is initialised with (default: 100; not used with --use-custom-qsm) |
 | `--chi-sep-ilsqr-qsm-tol <CHI_SEP_ILSQR_QSM_TOL>` | χ-sep iLSQR: tolerance of that QSM's iLSQR. |
 | `--chi-sep-ilsqr-qsm-pad-mm <MM>` | χ-sep iLSQR: zero-padding of that QSM's iLSQR, in mm per side (default: 12) |
-| `--chi-sep-medi-lambda-para <CHI_SEP_MEDI_LAMBDA_PARA>` | χ-sep MEDI paramagnetic L1 weight. |
-| `--chi-sep-medi-lambda-dia <CHI_SEP_MEDI_LAMBDA_DIA>` | χ-sep MEDI diamagnetic L1 weight. |
-| `--chi-sep-medi-lambda-cpl <CHI_SEP_MEDI_LAMBDA_CPL>` | χ-sep MEDI field/R2' coupling weight. |
-| `--chi-sep-medi-dr-pos <CHI_SEP_MEDI_DR_POS>` | χ-sep MEDI paramagnetic relaxivity (Hz/ppm) |
-| `--chi-sep-medi-dr-neg <CHI_SEP_MEDI_DR_NEG>` | χ-sep MEDI diamagnetic relaxivity (Hz/ppm) |
-| `--chi-sep-medi-percentage <CHI_SEP_MEDI_PERCENTAGE>` | χ-sep MEDI edge-mask percentage (0-1) |
-| `--chi-sep-medi-cg-tol <CHI_SEP_MEDI_CG_TOL>` | χ-sep MEDI inner CG tolerance. |
-| `--chi-sep-medi-cg-max-iter <CHI_SEP_MEDI_CG_MAX_ITER>` | χ-sep MEDI inner CG max iterations. |
-| `--chi-sep-medi-max-iter <CHI_SEP_MEDI_MAX_ITER>` | χ-sep MEDI outer Gauss-Newton iterations. |
-| `--chi-sep-medi-tol <CHI_SEP_MEDI_TOL>` | χ-sep MEDI outer convergence tolerance. |
+| `--chi-sep-medi-lambda <CHI_SEP_MEDI_LAMBDA>` | χ-sep MEDI weight of the data terms against the L1 terms (default: 1) |
+| `--chi-sep-medi-lambda-csf <CHI_SEP_MEDI_LAMBDA_CSF>` | χ-sep MEDI weight of the CSF-uniformity term (default: 1) |
+| `--chi-sep-medi-dr-pos <HZ_PER_PPM>` | χ-sep MEDI paramagnetic relaxometric constant (Hz/ppm), or auto for 137 × B0 / 2.9 T (default: auto) |
+| `--chi-sep-medi-dr-neg <HZ_PER_PPM>` | χ-sep MEDI diamagnetic relaxometric constant (Hz/ppm), or auto for 137 × B0 / 2.9 T (default: auto) |
+| `--chi-sep-medi-pad <CHI_SEP_MEDI_PAD>` | χ-sep MEDI zero-padding at both ends of the third axis, in voxels (default: 5) |
+| `--chi-sep-medi-tol <CHI_SEP_MEDI_TOL>` | χ-sep MEDI: stop when the relative change falls below this (default: 0.03) |
+| `--chi-sep-medi-max-iter <CHI_SEP_MEDI_MAX_ITER>` | χ-sep MEDI maximum Gauss-Newton iterations (default: 30) |
+| `--chi-sep-medi-cg-tol <CHI_SEP_MEDI_CG_TOL>` | χ-sep MEDI inner CG tolerance (default: 0.05) |
+| `--chi-sep-medi-cg-max-iter <CHI_SEP_MEDI_CG_MAX_ITER>` | χ-sep MEDI inner CG max iterations (default: 100) |
 | `--wavesep-dr-pos <WAVESEP_DR_POS>` | WaveSep paramagnetic relaxivity (Hz/ppm) |
 | `--wavesep-dr-neg <WAVESEP_DR_NEG>` | WaveSep diamagnetic relaxivity (Hz/ppm) |
 | `--wavesep-alpha <WAVESEP_ALPHA>` | WaveSep proximal-gradient step size. |
@@ -1108,9 +1152,10 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--pdf-space <SPACE>` | PDF dipole kernel: image (the FFT of the dipole sampled on the voxel grid) or kspace (the analytic k-space kernel) (default: image) |
 | `--pdf-n-pad <VOXELS>` | PDF zero-padding around the mask's bounding box, in voxels; 0 runs on the full volume (default: 40) |
 | `--lbv-tol <LBV_TOL>` | LBV tolerance. |
-| `--ismv-tol <ISMV_TOL>` | iSMV tolerance. |
-| `--ismv-max-iter <ISMV_MAX_ITER>` | iSMV max iterations. |
-| `--ismv-radius <ISMV_RADIUS>` | iSMV kernel radius in mm. |
+| `--ismv-variant <VARIANT>` | iSMV implementation: wen2014 (the authors' paper and code) or qsmjl (QSM.jl's) (default: wen2014) |
+| `--ismv-tol <ISMV_TOL>` | iSMV tolerance: the relative change between iterates it stops at (qsmjl: the residual relative to the first) (default: 5e-5) |
+| `--ismv-max-iter <ISMV_MAX_ITER>` | iSMV max iterations (default: no limit) |
+| `--ismv-radius <MM>` | iSMV kernel radius in mm, or auto for 6 × the smallest voxel dimension (qsmjl: 2 × the largest) (default: auto) |
 | `--sharp-threshold <SHARP_THRESHOLD>` | SHARP threshold. |
 | `--sharp-radius <SHARP_RADIUS>` | SHARP kernel radius in mm. |
 | `--resharp-radius <RESHARP_RADIUS>` | RESHARP SMV kernel radius in mm. |
@@ -1762,9 +1807,10 @@ qsmxt bgremove ismv [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-o, --output <OUTPUT>` | Output local field NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--output-mask <OUTPUT_MASK>` | Output eroded mask (for algorithms that erode) |
-| `--tol <TOL>` | Tolerance. |
-| `--max-iter <MAX_ITER>` | Max iterations. |
-| `--radius <RADIUS>` | Radius factor (multiplied by max voxel size) |
+| `--variant <VARIANT>` | Implementation: wen2014 (the authors' paper and code) or qsmjl (QSM.jl's) (default: wen2014) |
+| `--tol <TOL>` | Tolerance: the relative change between iterates it stops at (qsmjl: the residual relative to the first) (default: 5e-5) |
+| `--max-iter <MAX_ITER>` | Max iterations (default: no limit) |
+| `--radius <RADIUS>` | Kernel radius in mm (default: 6 × the smallest voxel dimension; qsmjl: 2 × the largest) |
 
 ### `qsmxt bgremove sharp`
 
@@ -1923,6 +1969,7 @@ qsmxt invert rts [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--lsmr-iter <LSMR_ITER>` | LSMR iterations. |
 | `--tau <TAU>` | Rho is raised when the primal residual falls by less than this factor (tau) |
 | `--gamma <GAMMA>` | The factor rho is raised by (gamma) |
+| `--pad <X> <Y> <Z>` | Zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 
 ### `qsmxt invert tv`
 
@@ -1944,6 +1991,7 @@ qsmxt invert tv [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--rho <RHO>` | Rho (ADMM penalty), or auto for 100 × lambda (default: auto) |
 | `--tol <TOL>` | Tolerance. |
 | `--max-iter <MAX_ITER>` | Max iterations. |
+| `--pad <X> <Y> <Z>` | Zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 
 ### `qsmxt invert tkd`
 
@@ -1962,6 +2010,7 @@ qsmxt invert tkd [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--threshold <THRESHOLD>` | Threshold. |
+| `--pad <X> <Y> <Z>` | Zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 
 ### `qsmxt invert tsvd`
 
@@ -1980,6 +2029,7 @@ qsmxt invert tsvd [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--threshold <THRESHOLD>` | Threshold. |
+| `--pad <X> <Y> <Z>` | Zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 
 ### `qsmxt invert tgv`
 
@@ -2023,6 +2073,7 @@ qsmxt invert tikhonov [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--lambda <LAMBDA>` | Lambda. |
+| `--pad <X> <Y> <Z>` | Zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 
 ### `qsmxt invert nltv`
 
@@ -2051,6 +2102,7 @@ qsmxt invert nltv [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FI
 | `--tol-newton <TOL_NEWTON>` | Convergence tolerance of the Newton iterations of the data-term subproblem. |
 | `--newton-iter <NEWTON_ITER>` | Maximum Newton iterations of the data-term subproblem. |
 | `--te <TE>` | Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
+| `--pad <X> <Y> <Z>` | Zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 
 ### `qsmxt invert medi`
 
@@ -2141,7 +2193,7 @@ qsmxt invert ilsqr [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--tol <TOL>` | Tolerance. |
-| `--max-iter <MAX_ITER>` | Max iterations. |
+| `--max-iter <MAX_ITER>` | Max iterations of each LSQR solve (default: 100) |
 | `--pad-mm <MM>` | Zero-padding in mm per side. |
 
 ### `qsmxt invert star`
@@ -2630,9 +2682,9 @@ Susceptibility source separation
 | Subcommand | Description |
 | --- | --- |
 | [`r2star-qsm`](#qsmxt-separate-r2star-qsm) | R2\*-QSM closed-form (Dimov 2022) — QSM + R2\* (GRE-only) |
-| [`decompose`](#qsmxt-separate-decompose) | DECOMPOSE-QSM signal-domain fit (Chen 2021) — QSM + multi-echo magnitude (GRE-only) |
-| [`chi-sep-ilsqr`](#qsmxt-separate-chi-sep-ilsqr) | χ-separation iLSQR (Shin 2021) — local field + R2' + magnitude + QSM |
-| [`chi-sep-medi`](#qsmxt-separate-chi-sep-medi) | χ-separation MEDI — local field + R2' + magnitude + QSM |
+| [`decompose`](#qsmxt-separate-decompose) | DECOMPOSE-QSM signal-domain fit (Chen 2021) — a QSM per echo + multi-echo magnitude (GRE-only) |
+| [`chi-sep-ilsqr`](#qsmxt-separate-chi-sep-ilsqr) | χ-separation iLSQR (Shin 2021) — local field + R2' + QSM |
+| [`chi-sep-medi`](#qsmxt-separate-chi-sep-medi) | χ-separation MEDI — local field + R2' + multi-echo magnitude + QSM |
 | [`wavesep`](#qsmxt-separate-wavesep) | WaveSep wavelet-L1 (Fang 2023) — QSM + R2' |
 | [`hc-chisep`](#qsmxt-separate-hc-chisep) | Hollow-cylinder χ-separation (Stewart 2026) — QSM + R2' + multi-echo magnitude |
 | [`susep-net`](#qsmxt-separate-susep-net) | SUSEP-Net deep-learning separation — QSM + R2' + local field (weights downloaded on first use) |
@@ -2660,10 +2712,10 @@ qsmxt separate r2star-qsm [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> 
 
 ### `qsmxt separate decompose`
 
-DECOMPOSE-QSM signal-domain fit (Chen 2021) — QSM + multi-echo magnitude (GRE-only)
+DECOMPOSE-QSM signal-domain fit (Chen 2021) — a QSM per echo + multi-echo magnitude (GRE-only)
 
 ```sh
-qsmxt separate decompose [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --magnitude <MAGNITUDE>... --echo-times <ECHO_TIMES>...
+qsmxt separate decompose [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --magnitude <MAGNITUDE>... --qsm-per-echo <QSM_PER_ECHO>... --echo-times <ECHO_TIMES>...
 ```
 
 | Argument | Description |
@@ -2674,17 +2726,25 @@ qsmxt separate decompose [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> -
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Default: `3`. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--magnitude <MAGNITUDE>` | Multi-echo magnitude: one 4D file or several 3D files (space-separated) Required. |
+| `--qsm-per-echo <QSM_PER_ECHO>` | QSM of each echo (ppm), which sets each echo's phase: one 4D file or one 3D file per echo (space-separated; the same file may be given for every echo) Required. |
 | `--echo-times <ECHO_TIMES>` | GRE echo times in seconds (space- or comma-separated) Required. |
 | `--n-inner <N_INNER>` | Inner alternating passes per voxel. |
 | `--chi-bound <CHI_BOUND>` | Upper bound on \|χ\| in the fit (ppm) |
-| `--max-lm-iter <MAX_LM_ITER>` | Levenberg–Marquardt max iterations. |
+| `--unwrap-phase <BOOL>` | Unwrap the phase along the echoes and limit χ to what the echo spacing can represent (default: false, as in the authors' code) |
+| `--max-iterations <MAX_ITERATIONS>` | Maximum solver iterations of each fit (lsqcurvefit MaxIterations; default: 400) |
+| `--max-function-evaluations <MAX_FUNCTION_EVALUATIONS>` | Maximum function evaluations of each fit (lsqcurvefit MaxFunctionEvaluations; default: 100 × the fit's parameters) |
+| `--function-tolerance <FUNCTION_TOLERANCE>` | Relative cost change each fit stops at (lsqcurvefit FunctionTolerance; default: 1e-6) |
+| `--step-tolerance <STEP_TOLERANCE>` | Relative step each fit stops at (lsqcurvefit StepTolerance; default: 1e-6) |
+| `--optimality-tolerance <OPTIMALITY_TOLERANCE>` | First-order optimality each fit stops at (lsqcurvefit OptimalityTolerance; default: 1e-6) |
+| `--finite-difference-step <FINITE_DIFFERENCE_STEP>` | Relative finite-difference step of the Jacobian (lsqcurvefit FiniteDifferenceStepSize; default: √eps) |
+| `--typical-x <TYPICAL_X>` | Typical magnitude of each fitted value (lsqcurvefit TypicalX; default: 1) |
 
 ### `qsmxt separate chi-sep-ilsqr`
 
-χ-separation iLSQR (Shin 2021) — local field + R2' + magnitude + QSM
+χ-separation iLSQR (Shin 2021) — local field + R2' + QSM
 
 ```sh
-qsmxt separate chi-sep-ilsqr [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --local-field <LOCAL_FIELD> --r2prime <R2PRIME> --magnitude <MAGNITUDE>...
+qsmxt separate chi-sep-ilsqr [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --local-field <LOCAL_FIELD> --r2prime <R2PRIME>
 ```
 
 | Argument | Description |
@@ -2696,24 +2756,25 @@ qsmxt separate chi-sep-ilsqr [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPU
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--local-field <LOCAL_FIELD>` | Local (tissue) field NIfTI in ppm. Required. |
 | `--r2prime <R2PRIME>` | R2' map NIfTI in Hz. Required. |
-| `--magnitude <MAGNITUDE>` | Magnitude for SNR weighting + edge mask: one 4D file or several 3D files (RSS-combined) Required. |
-| `--dr-pos <DR_POS>` | Paramagnetic relaxometric constant (Hz/ppm) |
-| `--dr-neg <DR_NEG>` | Diamagnetic relaxometric constant (Hz/ppm) |
-| `--lambda1 <LAMBDA1>` | L1 edge-masked TV weight. |
-| `--percentage <PERCENTAGE>` | Edge-mask keep fraction (0-1) |
-| `--r2p-min <R2P_MIN>` | R2' reliability window lower (Hz) |
-| `--r2p-max <R2P_MAX>` | R2' reliability window upper (Hz) |
-| `--max-iter <MAX_ITER>` | Outer Gauss-Newton iterations. |
-| `--tol <TOL>` | Outer relative-change tolerance. |
-| `--cg-max-iter <CG_MAX_ITER>` | Inner CG max iterations. |
-| `--cg-tol <CG_TOL>` | Inner CG relative tolerance. |
+| `--dr-pos <DR_POS>` | Paramagnetic relaxometric constant (Hz/ppm) (default: 137 × B0 / 2.9 T) |
+| `--dr-neg <DR_NEG>` | Diamagnetic relaxometric constant (Hz/ppm) (default: 137 × B0 / 2.9 T) |
+| `--pad <X> <Y> <Z>` | Zero-padding at both ends of each axis in voxels, X Y Z (default: 16 16 16) |
+| `--cg-max-iter-lsqr <CG_MAX_ITER_LSQR>` | Maximum CG iterations of the LSQR step (default: 50) |
+| `--cg-tol-lsqr <CG_TOL_LSQR>` | CG relative tolerance of the LSQR step (default: 0.02) |
+| `--cg-max-iter-sa <CG_MAX_ITER_SA>` | Maximum CG iterations of the streaking-removal step (default: 50) |
+| `--cg-tol-sa <CG_TOL_SA>` | CG relative tolerance of the streaking-removal step (default: 0.02) |
+| `--d2-thr <D2_THR>` | The streaking cone is where \|D\| is below this (default: 0.11) |
+| `--prc-w-i-min <PRC_W_I_MIN>` | Percentile of the field's Laplacian at which the LSQR weight is 1 (default: 60) |
+| `--prc-w-i-max <PRC_W_I_MAX>` | Percentile of the field's Laplacian at which the LSQR weight is 0 (default: 99.8) |
+| `--prc-w-g-min <PRC_W_G_MIN>` | Percentile of each gradient's magnitude at which the streaking-removal weight is 1 (default: 50) |
+| `--prc-w-g-max <PRC_W_G_MAX>` | Percentile of each gradient's magnitude at which the streaking-removal weight is 0 (default: 70) |
 
 ### `qsmxt separate chi-sep-medi`
 
-χ-separation MEDI — local field + R2' + magnitude + QSM
+χ-separation MEDI — local field + R2' + multi-echo magnitude + QSM
 
 ```sh
-qsmxt separate chi-sep-medi [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --local-field <LOCAL_FIELD> --r2prime <R2PRIME> --magnitude <MAGNITUDE>...
+qsmxt separate chi-sep-medi [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --local-field <LOCAL_FIELD> --r2prime <R2PRIME> --magnitude <MAGNITUDE>... --echo-times <ECHO_TIMES>...
 ```
 
 | Argument | Description |
@@ -2725,17 +2786,17 @@ qsmxt separate chi-sep-medi [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--local-field <LOCAL_FIELD>` | Local (tissue) field NIfTI in ppm. Required. |
 | `--r2prime <R2PRIME>` | R2' map NIfTI in Hz. Required. |
-| `--magnitude <MAGNITUDE>` | Magnitude for edge weighting: one 4D file or several 3D files (RSS-combined) Required. |
-| `--lambda-para <LAMBDA_PARA>` | Paramagnetic L1 weight. |
-| `--lambda-dia <LAMBDA_DIA>` | Diamagnetic L1 weight. |
-| `--lambda-cpl <LAMBDA_CPL>` | Field/R2' coupling weight. |
-| `--dr-pos <DR_POS>` | Paramagnetic relaxivity (Hz/ppm) |
-| `--dr-neg <DR_NEG>` | Diamagnetic relaxivity (Hz/ppm) |
-| `--percentage <PERCENTAGE>` | Edge-mask percentage (0-1) |
-| `--cg-tol <CG_TOL>` | Inner CG tolerance. |
-| `--cg-max-iter <CG_MAX_ITER>` | Inner CG max iterations. |
-| `--max-iter <MAX_ITER>` | Outer Gauss-Newton iterations. |
-| `--tol <TOL>` | Outer convergence tolerance. |
+| `--magnitude <MAGNITUDE>` | Multi-echo magnitude: one 4D file or one 3D file per echo (space-separated) Required. |
+| `--echo-times <ECHO_TIMES>` | GRE echo times in seconds (space- or comma-separated) Required. |
+| `--lambda <LAMBDA>` | Weight of the data terms against the L1 terms (default: 1) |
+| `--lambda-csf <LAMBDA_CSF>` | Weight of the CSF-uniformity term (default: 1) |
+| `--dr-pos <DR_POS>` | Paramagnetic relaxometric constant (Hz/ppm) (default: 137 × B0 / 2.9 T) |
+| `--dr-neg <DR_NEG>` | Diamagnetic relaxometric constant (Hz/ppm) (default: 137 × B0 / 2.9 T) |
+| `--pad <PAD>` | Zero-padding at both ends of the third axis, in voxels (default: 5) |
+| `--tol <TOL>` | Stop when the relative change falls below this (default: 0.03) |
+| `--max-iter <MAX_ITER>` | Maximum Gauss-Newton iterations (default: 30) |
+| `--cg-tol <CG_TOL>` | Inner CG tolerance (default: 0.05) |
+| `--cg-max-iter <CG_MAX_ITER>` | Inner CG max iterations (default: 100) |
 
 ### `qsmxt separate wavesep`
 

@@ -357,18 +357,22 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             rts_lsmr_iter: parse_optional_usize(&ps.rts_lsmr_iter),
             rts_tau: parse_optional_f64(&ps.rts_tau),
             rts_gamma: parse_optional_f64(&ps.rts_gamma),
+            rts_pad: parse_i64_triple(&ps.rts_pad).map(|p| p.to_vec()),
         },
         tv_params: crate::cli::TvParamArgs {
             tv_lambda: parse_optional_f64(&ps.tv_lambda),
             tv_rho: parse_optional_f64(&ps.tv_rho).map(crate::cli::OrAuto::Value),
             tv_tol: parse_optional_f64(&ps.tv_tol),
             tv_max_iter: parse_optional_usize(&ps.tv_max_iter),
+            tv_pad: parse_i64_triple(&ps.tv_pad).map(|p| p.to_vec()),
         },
         tkd_params: crate::cli::TkdParamArgs {
             tkd_threshold: parse_optional_f64(&ps.tkd_threshold),
+            tkd_pad: parse_i64_triple(&ps.tkd_pad).map(|p| p.to_vec()),
         },
         tsvd_params: crate::cli::TsvdParamArgs {
             tsvd_threshold: parse_optional_f64(&ps.tsvd_threshold),
+            tsvd_pad: parse_i64_triple(&ps.tsvd_pad).map(|p| p.to_vec()),
         },
         tgv_params: crate::cli::TgvParamArgs {
             tgv_iterations: parse_optional_usize(&ps.tgv_iterations),
@@ -380,6 +384,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         },
         tikhonov_params: crate::cli::TikhonovParamArgs {
             tikhonov_lambda: parse_optional_f64(&ps.tikhonov_lambda),
+            tikhonov_pad: parse_i64_triple(&ps.tikhonov_pad).map(|p| p.to_vec()),
         },
         nltv_params: crate::cli::NltvParamArgs {
             nltv_lambda: parse_optional_f64(&ps.nltv_lambda),
@@ -390,6 +395,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             nltv_newton_iter: parse_optional_usize(&ps.nltv_newton_iter),
             nltv_tol_newton: parse_optional_f64(&ps.nltv_tol_newton),
             nltv_te: super::app::echo_time_choice(ps.nltv_te, &ps.nltv_te_ms),
+            nltv_pad: parse_i64_triple(&ps.nltv_pad).map(|p| p.to_vec()),
         },
         medi_params: crate::cli::MediParamArgs {
             medi_lambda: parse_optional_f64(&ps.medi_lambda),
@@ -574,30 +580,38 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             r2star_qsm_r_const_3t: parse_optional_f64(&ps.sep_r2starqsm_r_const_3t),
             decompose_n_inner: parse_optional_usize(&ps.sep_decompose_n_inner),
             decompose_chi_bound: parse_optional_f64(&ps.sep_decompose_chi_bound),
-            decompose_max_lm_iter: parse_optional_usize(&ps.sep_decompose_max_lm_iter),
-            chi_sep_ilsqr_dr_pos: parse_optional_f64(&ps.sep_ilsqr_dr_pos),
-            chi_sep_ilsqr_dr_neg: parse_optional_f64(&ps.sep_ilsqr_dr_neg),
-            chi_sep_ilsqr_lambda1: parse_optional_f64(&ps.sep_ilsqr_lambda1),
-            chi_sep_ilsqr_percentage: parse_optional_f64(&ps.sep_ilsqr_percentage),
-            chi_sep_ilsqr_r2p_min: parse_optional_f64(&ps.sep_ilsqr_r2p_min),
-            chi_sep_ilsqr_r2p_max: parse_optional_f64(&ps.sep_ilsqr_r2p_max),
-            chi_sep_ilsqr_max_iter: parse_optional_usize(&ps.sep_ilsqr_max_iter),
-            chi_sep_ilsqr_tol: parse_optional_f64(&ps.sep_ilsqr_tol),
-            chi_sep_ilsqr_cg_max_iter: parse_optional_usize(&ps.sep_ilsqr_cg_max_iter),
-            chi_sep_ilsqr_cg_tol: parse_optional_f64(&ps.sep_ilsqr_cg_tol),
+            decompose_unwrap_phase: Some(ps.sep_decompose_unwrap_phase),
+            decompose_max_iterations: parse_optional_usize(&ps.sep_decompose_max_iterations),
+            decompose_max_function_evaluations: parse_optional_usize(&ps.sep_decompose_max_fevals),
+            decompose_function_tolerance: parse_optional_f64(&ps.sep_decompose_function_tol),
+            decompose_step_tolerance: parse_optional_f64(&ps.sep_decompose_step_tol),
+            decompose_optimality_tolerance: parse_optional_f64(&ps.sep_decompose_optimality_tol),
+            decompose_finite_difference_step: parse_optional_f64(&ps.sep_decompose_fd_step),
+            decompose_typical_x: parse_optional_f64(&ps.sep_decompose_typical_x),
+            chi_sep_ilsqr_dr_pos: parse_optional_f64(&ps.sep_ilsqr_dr_pos).map(crate::cli::OrAuto::Value),
+            chi_sep_ilsqr_dr_neg: parse_optional_f64(&ps.sep_ilsqr_dr_neg).map(crate::cli::OrAuto::Value),
+            chi_sep_ilsqr_pad: parse_usize_triple(&ps.sep_ilsqr_pad).map(|p| p.to_vec()),
+            chi_sep_ilsqr_cg_max_iter_lsqr: parse_optional_usize(&ps.sep_ilsqr_cg_max_iter_lsqr),
+            chi_sep_ilsqr_cg_tol_lsqr: parse_optional_f64(&ps.sep_ilsqr_cg_tol_lsqr),
+            chi_sep_ilsqr_cg_max_iter_sa: parse_optional_usize(&ps.sep_ilsqr_cg_max_iter_sa),
+            chi_sep_ilsqr_cg_tol_sa: parse_optional_f64(&ps.sep_ilsqr_cg_tol_sa),
+            chi_sep_ilsqr_d2_thr: parse_optional_f64(&ps.sep_ilsqr_d2_thr),
+            chi_sep_ilsqr_prc_w_i_min: parse_optional_f64(&ps.sep_ilsqr_prc_w_i_min),
+            chi_sep_ilsqr_prc_w_i_max: parse_optional_f64(&ps.sep_ilsqr_prc_w_i_max),
+            chi_sep_ilsqr_prc_w_g_min: parse_optional_f64(&ps.sep_ilsqr_prc_w_g_min),
+            chi_sep_ilsqr_prc_w_g_max: parse_optional_f64(&ps.sep_ilsqr_prc_w_g_max),
             chi_sep_ilsqr_qsm_max_iter: parse_optional_usize(&ps.sep_ilsqr_qsm_max_iter),
             chi_sep_ilsqr_qsm_tol: parse_optional_f64(&ps.sep_ilsqr_qsm_tol),
             chi_sep_ilsqr_qsm_pad_mm: parse_optional_f64(&ps.sep_ilsqr_qsm_pad_mm),
-            chi_sep_medi_lambda_para: parse_optional_f64(&ps.sep_medi_lambda_para),
-            chi_sep_medi_lambda_dia: parse_optional_f64(&ps.sep_medi_lambda_dia),
-            chi_sep_medi_lambda_cpl: parse_optional_f64(&ps.sep_medi_lambda_cpl),
-            chi_sep_medi_dr_pos: parse_optional_f64(&ps.sep_medi_dr_pos),
-            chi_sep_medi_dr_neg: parse_optional_f64(&ps.sep_medi_dr_neg),
-            chi_sep_medi_percentage: parse_optional_f64(&ps.sep_medi_percentage),
+            chi_sep_medi_lambda: parse_optional_f64(&ps.sep_medi_lambda),
+            chi_sep_medi_lambda_csf: parse_optional_f64(&ps.sep_medi_lambda_csf),
+            chi_sep_medi_dr_pos: parse_optional_f64(&ps.sep_medi_dr_pos).map(crate::cli::OrAuto::Value),
+            chi_sep_medi_dr_neg: parse_optional_f64(&ps.sep_medi_dr_neg).map(crate::cli::OrAuto::Value),
+            chi_sep_medi_pad: parse_optional_usize(&ps.sep_medi_pad),
+            chi_sep_medi_tol: parse_optional_f64(&ps.sep_medi_tol),
+            chi_sep_medi_max_iter: parse_optional_usize(&ps.sep_medi_max_iter),
             chi_sep_medi_cg_tol: parse_optional_f64(&ps.sep_medi_cg_tol),
             chi_sep_medi_cg_max_iter: parse_optional_usize(&ps.sep_medi_cg_max_iter),
-            chi_sep_medi_max_iter: parse_optional_usize(&ps.sep_medi_max_iter),
-            chi_sep_medi_tol: parse_optional_f64(&ps.sep_medi_tol),
             wavesep_dr_pos: parse_optional_f64(&ps.sep_wavesep_dr_pos),
             wavesep_dr_neg: parse_optional_f64(&ps.sep_wavesep_dr_neg),
             wavesep_alpha: parse_optional_f64(&ps.sep_wavesep_alpha),
@@ -634,9 +648,10 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             lbv_tol: parse_optional_f64(&ps.lbv_tol),
         },
         ismv_params: crate::cli::IsmvParamArgs {
+            ismv_variant: qsmxt_engine::IsmvVariant::ALL.get(ps.ismv_variant).copied(),
             ismv_tol: parse_optional_f64(&ps.ismv_tol),
             ismv_max_iter: parse_optional_usize(&ps.ismv_max_iter),
-            ismv_radius: parse_optional_f64(&ps.ismv_radius),
+            ismv_radius: parse_optional_f64(&ps.ismv_radius).map(crate::cli::OrAuto::Value),
         },
         sharp_params: crate::cli::SharpParamArgs {
             sharp_threshold: parse_optional_f64(&ps.sharp_threshold),
@@ -857,6 +872,12 @@ fn parse_optional_f64(s: &str) -> Option<f64> {
 fn parse_usize_triple(s: &str) -> Option<[usize; 3]> {
     let v: Vec<usize> = s.split_whitespace().map(|t| t.parse().ok()).collect::<Option<_>>()?;
     <[usize; 3]>::try_from(v).ok()
+}
+
+/// Three whole numbers, negatives allowed ("-1 0 0"); `None` if not exactly three.
+fn parse_i64_triple(s: &str) -> Option<[i64; 3]> {
+    let v: Vec<i64> = s.split_whitespace().map(|t| t.parse().ok()).collect::<Option<_>>()?;
+    <[i64; 3]>::try_from(v).ok()
 }
 
 /// One count or more, separated by spaces or commas ("50 50 50 50"); `None` if empty or not counts.
@@ -1458,11 +1479,11 @@ mod tests {
         // Enabling chi-separation + selecting decompose + editing a param must all show up.
         app.pipeline_state.do_chi_separation = true;
         app.pipeline_state.separation_algorithm = 1; // decompose
-        app.pipeline_state.sep_decompose_max_lm_iter = "77".to_string();
+        app.pipeline_state.sep_decompose_max_iterations = "77".to_string();
         let cmd = build_command_string(&app);
         assert!(cmd.contains("--do-chisep"));
         assert!(cmd.contains("--chisep decompose"));
-        assert!(cmd.contains("--decompose-max-lm-iter 77"));
+        assert!(cmd.contains("--decompose-max-iterations 77"));
     }
 
     #[test]

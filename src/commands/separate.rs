@@ -12,7 +12,7 @@ use qsm_core::io::NiftiData;
 use qsm_core::pipeline::{
     SeparationInputs, SeparationConfig, SeparationAlgorithm, SeparationResult, ScanMetadata, run_separation,
 };
-use super::common::{load_nifti, load_mask, save_nifti, load_multiecho_voxel_major, rss_over_echoes};
+use super::common::{load_nifti, load_mask, save_nifti, load_echo_stack, load_multiecho_voxel_major};
 use crate::cli::{SeparateCommand, SeparateCommonArgs};
 use crate::error::QsmxtError;
 
@@ -88,9 +88,10 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
                 ..Default::default()
             };
             let inputs = SeparationInputs {
-                local_field_ppm: &[], qsm: &qsm.data, mask: &mask,
+                local_field_ppm: &[], qsm: &qsm.data, qsm_per_echo: None, mask: &mask,
                 r2prime: None, r2star: r2star.as_ref().map(|n| n.data.as_slice()),
                 magnitude_rss: None, magnitude_multi: mag.as_deref(), se_magnitude_multi: None,
+                n_std: None, mask_csf: None,
             };
             let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
                 .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
@@ -102,21 +103,35 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
             info!("Chi-separation (decompose, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
             let (multi, ne) = load_multiecho_voxel_major(&args.magnitude, n)?;
             check_echoes(ne, &metadata, "decompose")?;
+            let (qsm_per_echo, ne_qsm) = load_multiecho_voxel_major(&args.qsm_per_echo, n)?;
+            if ne_qsm != ne {
+                return Err(QsmxtError::Config(format!(
+                    "decompose: --qsm-per-echo has {ne_qsm} echoes but the magnitude has {ne}")));
+            }
             let d = qsm_core::separation::DecomposeParams::default();
             let cfg = SeparationConfig {
                 algorithm: SeparationAlgorithm::Decompose,
                 decompose: qsm_core::separation::DecomposeParams {
                     n_inner: args.n_inner.unwrap_or(d.n_inner),
                     chi_bound: args.chi_bound.unwrap_or(d.chi_bound),
-                    max_lm_iter: args.max_lm_iter.unwrap_or(d.max_lm_iter),
+                    unwrap_phase: args.unwrap_phase.unwrap_or(d.unwrap_phase),
+                    lsqcurvefit: qsm_core::solvers::LsqTrrOptions {
+                        max_iterations: args.max_iterations.unwrap_or(d.lsqcurvefit.max_iterations),
+                        max_function_evaluations: args.max_function_evaluations.or(d.lsqcurvefit.max_function_evaluations),
+                        function_tolerance: args.function_tolerance.unwrap_or(d.lsqcurvefit.function_tolerance),
+                        step_tolerance: args.step_tolerance.unwrap_or(d.lsqcurvefit.step_tolerance),
+                        optimality_tolerance: args.optimality_tolerance.unwrap_or(d.lsqcurvefit.optimality_tolerance),
+                        finite_difference_step: args.finite_difference_step.unwrap_or(d.lsqcurvefit.finite_difference_step),
+                        typical_x: args.typical_x.unwrap_or(d.lsqcurvefit.typical_x),
+                    },
                     ..d
                 },
                 ..Default::default()
             };
             let inputs = SeparationInputs {
-                local_field_ppm: &[], qsm: &qsm.data, mask: &mask,
+                local_field_ppm: &[], qsm: &qsm.data, qsm_per_echo: Some(&qsm_per_echo), mask: &mask,
                 r2prime: None, r2star: None, magnitude_rss: None,
-                magnitude_multi: Some(&multi), se_magnitude_multi: None,
+                magnitude_multi: Some(&multi), se_magnitude_multi: None, n_std: None, mask_csf: None,
             };
             let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
                 .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
@@ -124,34 +139,36 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
         }
         SeparateCommand::ChiSepIlsqr(args) => {
             let c = &args.common;
-            let (qsm, mask, metadata, n) = load_common(c, &[])?;
+            let (qsm, mask, metadata, _) = load_common(c, &[])?;
             info!("Chi-separation (chi-sep-ilsqr, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
             let local_field = load_nifti(&args.local_field)?;
             let r2prime = load_nifti(&args.r2prime)?;
-            let (multi, ne) = load_multiecho_voxel_major(&args.magnitude, n)?;
-            let mag_rss = rss_over_echoes(&multi, n, ne);
             let d = qsm_core::separation::ChiSepIlsqrParams::default();
+            let pad = match args.pad.as_deref() {
+                Some(&[x, y, z]) => [x, y, z],
+                _ => d.pad,
+            };
             let cfg = SeparationConfig {
                 algorithm: SeparationAlgorithm::ChiSepIlsqr,
                 chi_sep_ilsqr: qsm_core::separation::ChiSepIlsqrParams {
-                    dr_pos: args.dr_pos.unwrap_or(d.dr_pos),
-                    dr_neg: args.dr_neg.unwrap_or(d.dr_neg),
-                    lambda1: args.lambda1.unwrap_or(d.lambda1),
-                    percentage: args.percentage.unwrap_or(d.percentage),
-                    r2p_min: args.r2p_min.unwrap_or(d.r2p_min),
-                    r2p_max: args.r2p_max.unwrap_or(d.r2p_max),
-                    max_iter: args.max_iter.unwrap_or(d.max_iter),
-                    tol: args.tol.unwrap_or(d.tol),
-                    cg_max_iter: args.cg_max_iter.unwrap_or(d.cg_max_iter),
-                    cg_tol: args.cg_tol.unwrap_or(d.cg_tol),
+                    dr_pos: args.dr_pos.or(d.dr_pos),
+                    dr_neg: args.dr_neg.or(d.dr_neg),
+                    pad,
+                    cg_max_iter_lsqr: args.cg_max_iter_lsqr.unwrap_or(d.cg_max_iter_lsqr),
+                    cg_tol_lsqr: args.cg_tol_lsqr.unwrap_or(d.cg_tol_lsqr),
+                    cg_max_iter_sa: args.cg_max_iter_sa.unwrap_or(d.cg_max_iter_sa),
+                    cg_tol_sa: args.cg_tol_sa.unwrap_or(d.cg_tol_sa),
+                    d2_thr: args.d2_thr.unwrap_or(d.d2_thr),
+                    prc_w_i: (args.prc_w_i_min.unwrap_or(d.prc_w_i.0), args.prc_w_i_max.unwrap_or(d.prc_w_i.1)),
+                    prc_w_g: (args.prc_w_g_min.unwrap_or(d.prc_w_g.0), args.prc_w_g_max.unwrap_or(d.prc_w_g.1)),
                     ..d
                 },
                 ..Default::default()
             };
             let inputs = SeparationInputs {
-                local_field_ppm: &local_field.data, qsm: &qsm.data, mask: &mask,
+                local_field_ppm: &local_field.data, qsm: &qsm.data, qsm_per_echo: None, mask: &mask,
                 r2prime: Some(&r2prime.data), r2star: None,
-                magnitude_rss: Some(&mag_rss), magnitude_multi: None, se_magnitude_multi: None,
+                magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None, n_std: None, mask_csf: None,
             };
             let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
                 .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
@@ -159,34 +176,41 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
         }
         SeparateCommand::ChiSepMedi(args) => {
             let c = &args.common;
-            let (qsm, mask, metadata, n) = load_common(c, &[])?;
+            let (qsm, mask, metadata, n) = load_common(c, &args.echo_times)?;
             info!("Chi-separation (chi-sep-medi, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
             let local_field = load_nifti(&args.local_field)?;
             let r2prime = load_nifti(&args.r2prime)?;
-            let (multi, ne) = load_multiecho_voxel_major(&args.magnitude, n)?;
-            let mag_rss = rss_over_echoes(&multi, n, ne);
-            let d = qsm_core::separation::ChiSepParams::default();
+            let (echo_major, ne) = load_echo_stack(&args.magnitude, n)?;
+            check_echoes(ne, &metadata, "chi-sep-medi")?;
+            let mag_rss: Vec<f64> = (0..n)
+                .map(|v| (0..ne).map(|e| echo_major[e * n + v].powi(2)).sum::<f64>().sqrt())
+                .collect();
+            let (n_std, mask_csf) = qsmxt_engine::stages::separation::chi_sep_medi_inputs(
+                &echo_major, &args.echo_times, &mask, qsm.dims, qsm.voxel_size,
+            ).map_err(|e| QsmxtError::Config(e.to_string()))?;
+            info!("CSF mask of {} voxels from ARLO R2*", mask_csf.iter().filter(|&&m| m != 0).count());
+            let d = qsm_core::separation::ChiSepMediParams::default();
             let cfg = SeparationConfig {
                 algorithm: SeparationAlgorithm::ChiSepMedi,
-                chi_sep_medi: qsm_core::separation::ChiSepParams {
-                    lambda_para: args.lambda_para.unwrap_or(d.lambda_para),
-                    lambda_dia: args.lambda_dia.unwrap_or(d.lambda_dia),
-                    lambda_cpl: args.lambda_cpl.unwrap_or(d.lambda_cpl),
-                    dr_pos: args.dr_pos.unwrap_or(d.dr_pos),
-                    dr_neg: args.dr_neg.unwrap_or(d.dr_neg),
-                    percentage: args.percentage.unwrap_or(d.percentage),
+                chi_sep_medi: qsm_core::separation::ChiSepMediParams {
+                    lambda: args.lambda.unwrap_or(d.lambda),
+                    lambda_csf: args.lambda_csf.unwrap_or(d.lambda_csf),
+                    dr_pos: args.dr_pos.or(d.dr_pos),
+                    dr_neg: args.dr_neg.or(d.dr_neg),
+                    pad: args.pad.unwrap_or(d.pad),
+                    tol: args.tol.unwrap_or(d.tol),
+                    max_iter: args.max_iter.unwrap_or(d.max_iter),
                     cg_tol: args.cg_tol.unwrap_or(d.cg_tol),
                     cg_max_iter: args.cg_max_iter.unwrap_or(d.cg_max_iter),
-                    max_iter: args.max_iter.unwrap_or(d.max_iter),
-                    tol: args.tol.unwrap_or(d.tol),
                     ..d
                 },
                 ..Default::default()
             };
             let inputs = SeparationInputs {
-                local_field_ppm: &local_field.data, qsm: &qsm.data, mask: &mask,
+                local_field_ppm: &local_field.data, qsm: &qsm.data, qsm_per_echo: None, mask: &mask,
                 r2prime: Some(&r2prime.data), r2star: None,
                 magnitude_rss: Some(&mag_rss), magnitude_multi: None, se_magnitude_multi: None,
+                n_std: Some(&n_std), mask_csf: Some(&mask_csf),
             };
             let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
                 .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
@@ -212,9 +236,9 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
                 ..Default::default()
             };
             let inputs = SeparationInputs {
-                local_field_ppm: &[], qsm: &qsm.data, mask: &mask,
+                local_field_ppm: &[], qsm: &qsm.data, qsm_per_echo: None, mask: &mask,
                 r2prime: Some(&r2prime.data), r2star: None,
-                magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None,
+                magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None, n_std: None, mask_csf: None,
             };
             let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
                 .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
@@ -245,9 +269,9 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
                 ..Default::default()
             };
             let inputs = SeparationInputs {
-                local_field_ppm: &[], qsm: &qsm.data, mask: &mask,
+                local_field_ppm: &[], qsm: &qsm.data, qsm_per_echo: None, mask: &mask,
                 r2prime: Some(&r2prime.data), r2star: None, magnitude_rss: None,
-                magnitude_multi: Some(&multi), se_magnitude_multi: se_multi.as_deref(),
+                magnitude_multi: Some(&multi), se_magnitude_multi: se_multi.as_deref(), n_std: None, mask_csf: None,
             };
             let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
                 .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
@@ -267,9 +291,9 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
                 ..Default::default()
             };
             let inputs = SeparationInputs {
-                local_field_ppm: &local_field.data, qsm: &qsm.data, mask: &mask,
+                local_field_ppm: &local_field.data, qsm: &qsm.data, qsm_per_echo: None, mask: &mask,
                 r2prime: Some(&r2prime.data), r2star: None,
-                magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None,
+                magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None, n_std: None, mask_csf: None,
             };
             let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
                 .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
@@ -293,9 +317,9 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
                 ..Default::default()
             };
             let inputs = SeparationInputs {
-                local_field_ppm: &local_field.data, qsm: &qsm.data, mask: &mask,
+                local_field_ppm: &local_field.data, qsm: &qsm.data, qsm_per_echo: None, mask: &mask,
                 r2prime: Some(&r2prime.data), r2star: None,
-                magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None,
+                magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None, n_std: None, mask_csf: None,
             };
             let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
                 .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;

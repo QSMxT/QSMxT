@@ -635,15 +635,28 @@ mod integration_tests {
             })
             .collect();
 
-        super::separate::execute(SeparateCommand::Decompose(SeparateDecomposeArgs {
-            common: separate_common(dir.path(), "dc"),
-            magnitude: mags,
+        let common = separate_common(dir.path(), "dc");
+        let args = |qsm_per_echo: Vec<PathBuf>| SeparateDecomposeArgs {
+            common: common.clone(),
+            magnitude: mags.clone(),
+            qsm_per_echo,
             echo_times: vec![0.004, 0.008, 0.012],
             n_inner: Some(1),
             chi_bound: None,
-            max_lm_iter: Some(1),
-        }))
-        .unwrap();
+            unwrap_phase: None,
+            max_iterations: Some(1),
+            max_function_evaluations: None,
+            function_tolerance: None,
+            step_tolerance: None,
+            optimality_tolerance: None,
+            finite_difference_step: None,
+            typical_x: None,
+        };
+        // The per-echo QSM needs one map per echo.
+        let err = super::separate::execute(SeparateCommand::Decompose(args(vec![common.qsm.clone(); 2])))
+            .unwrap_err().to_string();
+        assert!(err.contains("--qsm-per-echo has 2 echoes but the magnitude has 3"), "{err}");
+        super::separate::execute(SeparateCommand::Decompose(args(vec![common.qsm.clone(); 3]))).unwrap();
         assert!(dir.path().join("dc_desc-paramagnetic_Chimap.nii").exists());
         assert!(dir.path().join("dc_desc-total_Chimap.nii").exists());
     }
@@ -663,21 +676,48 @@ mod integration_tests {
             common: separate_common(dir.path(), "il"),
             local_field,
             r2prime,
-            magnitude: vec![mag],
             dr_pos: None,
             dr_neg: None,
-            percentage: None,
-            max_iter: Some(1),
-            tol: None,
-            cg_max_iter: Some(1),
-            cg_tol: None,
-            lambda1: None,
-            r2p_min: None,
-            r2p_max: None,
+            pad: Some(vec![2, 2, 2]),
+            cg_max_iter_lsqr: Some(1),
+            cg_tol_lsqr: None,
+            cg_max_iter_sa: Some(1),
+            cg_tol_sa: None,
+            d2_thr: None,
+            prc_w_i_min: None,
+            prc_w_i_max: None,
+            prc_w_g_min: None,
+            prc_w_g_max: None,
         }))
         .unwrap();
         assert!(dir.path().join("il_desc-paramagnetic_Chimap.nii").exists());
         assert!(dir.path().join("il_desc-diamagnetic_Chimap.nii").exists());
+    }
+
+    /// χ-sep MEDI makes its noise map and CSF mask from the echoes' magnitudes, so it needs their
+    /// echo times, one per echo.
+    #[test]
+    fn test_separate_chi_sep_medi() {
+        let dir = tempfile::tempdir().unwrap();
+        let local_field = dir.path().join("lfs.nii");
+        let r2prime = dir.path().join("r2p.nii");
+        let mag = dir.path().join("mag.nii");
+        testutils::write_field(&local_field);
+        testutils::write_field(&r2prime);
+        testutils::write_magnitude(&mag);
+        let args = |echo_times: Vec<f64>| SeparateChiSepMediArgs {
+            common: separate_common(dir.path(), "me"),
+            local_field: local_field.clone(),
+            r2prime: r2prime.clone(),
+            magnitude: vec![mag.clone(); 3],
+            echo_times,
+            lambda: None, lambda_csf: None, dr_pos: None, dr_neg: None, pad: Some(0),
+            tol: None, max_iter: Some(1), cg_tol: None, cg_max_iter: Some(1),
+        };
+        let err = super::separate::execute(SeparateCommand::ChiSepMedi(args(vec![0.004, 0.008]))).unwrap_err().to_string();
+        assert!(err.contains("2 echo times but the magnitude has 3 echoes"), "{err}");
+        super::separate::execute(SeparateCommand::ChiSepMedi(args(vec![0.004, 0.008, 0.012]))).unwrap();
+        assert!(dir.path().join("me_desc-paramagnetic_Chimap.nii").exists());
     }
 
     /// `qsmxt segment` rejects a version it does not know rather than silently choosing one — the
@@ -857,7 +897,7 @@ mod integration_tests {
 
         super::invert::execute(InvertCommand::Tkd(InvertTkdArgs {
             common: common_invert(input, mask, output.clone()),
-            threshold: None,
+            threshold: None, pad: None,
         })).unwrap();
         assert!(output.exists());
     }
@@ -1844,7 +1884,7 @@ mod integration_tests {
             common: common_invert(input, mask, output.clone()),
             delta: None, mu: None,
             tol: Some(0.5), // loose tolerance for speed
-            rho: None, max_iter: None, lsmr_iter: None, tau: None, gamma: None,
+            rho: None, max_iter: None, lsmr_iter: None, tau: None, gamma: None, pad: Some(vec![-1, 2, 0]),
         })).unwrap();
         assert!(output.exists());
     }
@@ -1860,7 +1900,7 @@ mod integration_tests {
 
         super::invert::execute(InvertCommand::Tv(InvertTvArgs {
             common: common_invert(input, mask, output.clone()),
-            lambda: None, rho: None, tol: None, max_iter: None,
+            lambda: None, rho: None, tol: None, max_iter: None, pad: None,
         })).unwrap();
         assert!(output.exists());
     }
@@ -2056,7 +2096,7 @@ mod integration_tests {
 
         super::bgremove::execute(BgremoveCommand::Ismv(BgremoveIsmvArgs {
             common: common_bgremove(input, mask, output.clone()),
-            tol: None, max_iter: None, radius: None,
+            variant: None, tol: None, max_iter: Some(5), radius: None,
         })).unwrap();
         assert!(output.exists());
     }

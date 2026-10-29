@@ -3186,11 +3186,28 @@ mod chisep_support_tests {
         config
     }
 
+    /// The fixture's run, with three echoes for χ-sep MEDI (its CSF mask is made from ARLO R2*).
+    fn sep_meta(config: &PipelineConfig) -> RunMetadata {
+        let mut m = meta();
+        if config.separation.algorithm == SeparationAlgorithm::ChiSepMedi {
+            m.echo_times = vec![0.004, 0.008, 0.012];
+            m.n_echoes = 3;
+        }
+        m
+    }
+
+    /// Echo `e`'s magnitude (from 1): a decay over the brain mask.
+    fn magnitude(f: &Fixture, e: usize) -> Vec<f64> {
+        f.brain.iter().enumerate()
+            .map(|(i, &b)| if b != 0 { (100.0 + 0.1 * (i % 5) as f64) * (-0.02 * e as f64).exp() } else { 0.0 })
+            .collect()
+    }
+
     /// Reference the fixture, add the relaxation, magnitude and local-field inputs (defined over
     /// the whole brain mask, or the field over the support as background removal leaves it), and
     /// run the `chi_separation` step. Returns the (para, dia, total) maps it wrote.
     fn separate(f: &Fixture, config: &PipelineConfig) -> [Vec<f64>; 3] {
-        let m = meta();
+        let m = sep_meta(config);
         let k = &f.run.key;
         let over = |mask: &[u8], base: f64| -> Vec<f64> {
             mask.iter().enumerate()
@@ -3198,7 +3215,9 @@ mod chisep_support_tests {
         };
         save_volume(&f.output.r2star_path(k), &over(&f.brain, 20.0), &m).unwrap();
         save_volume(&f.output.r2prime_path(k), &over(&f.brain, 5.0), &m).unwrap();
-        save_volume(&f.output.mag_path(k, 1), &over(&f.brain, 100.0), &m).unwrap();
+        for e in 1..=m.n_echoes {
+            save_volume(&f.output.mag_path(k, e), &magnitude(f, e), &m).unwrap();
+        }
         let field: Vec<f64> = over(&f.support, 0.0).iter().zip(&f.support)
             .map(|(&v, &s)| if s != 0 { 0.01 + 0.001 * v } else { 0.0 }).collect();
         save_volume(&f.output.local_field_path(k), &field, &m).unwrap();
@@ -3212,7 +3231,7 @@ mod chisep_support_tests {
     /// The method run directly on `mask`, with every input zeroed outside it and the outputs
     /// zeroed outside it: what the step must produce when it fits over `mask`.
     fn direct(f: &Fixture, config: &PipelineConfig, mask: &[u8]) -> [Vec<f64>; 3] {
-        let m = meta();
+        let m = sep_meta(config);
         let k = &f.run.key;
         let masked = |p: PathBuf| -> Vec<f64> {
             let mut v = load_volume(&p).unwrap();
@@ -3223,10 +3242,24 @@ mod chisep_support_tests {
         let field = masked(f.output.local_field_path(k));
         let r2prime = masked(f.output.r2prime_path(k));
         let r2star = masked(f.output.r2star_path(k));
-        let mag = load_volume(&f.output.mag_path(k, 1)).unwrap();
+        let n_echoes = m.echo_times.len();
+        let echoes: Vec<Vec<f64>> = (1..=n_echoes).map(|e| load_volume(&f.output.mag_path(k, e)).unwrap()).collect();
+        let echo_major: Vec<f64> = echoes.concat();
+        let multi: Vec<f64> = (0..mask.len()).flat_map(|v| echoes.iter().map(move |m| m[v])).collect();
+        let rss: Vec<f64> = (0..mask.len()).map(|v| echoes.iter().map(|m| m[v] * m[v]).sum::<f64>().sqrt()).collect();
+        let (n_std, csf) = if config.separation.algorithm == SeparationAlgorithm::ChiSepMedi {
+            let (n, c) = qsmxt_engine::stages::separation::chi_sep_medi_inputs(
+                &echo_major, &m.echo_times, mask, m.dims, m.voxel_size).unwrap();
+            (Some(n), Some(c))
+        } else {
+            (None, None)
+        };
+        let qsm_per_echo = qsmxt_engine::stages::separation::repeat_per_echo(&qsm, n_echoes);
         let inputs = qsm_core::pipeline::SeparationInputs {
-            local_field_ppm: &field, qsm: &qsm, mask, r2prime: Some(&r2prime), r2star: Some(&r2star),
-            magnitude_rss: Some(&mag), magnitude_multi: Some(&mag), se_magnitude_multi: None,
+            local_field_ppm: &field, qsm: &qsm, qsm_per_echo: Some(&qsm_per_echo), mask,
+            r2prime: Some(&r2prime), r2star: Some(&r2star),
+            magnitude_rss: Some(&rss), magnitude_multi: Some(&multi), se_magnitude_multi: None,
+            n_std: n_std.as_deref(), mask_csf: csf.as_deref(),
         };
         let metadata = crate::pipeline::config::to_scan_metadata(
             m.dims, m.voxel_size, &m.echo_times, m.field_strength, m.b0_direction, Some(m.affine));
@@ -3274,21 +3307,27 @@ mod chisep_support_tests {
         assert_close(&out, &direct(&f, &config, &f.support));
     }
 
-    /// A spatial method that fits the local field: its fit domain is the support. Run over the
-    /// brain mask it gives a different answer, so matching the support run is not a coincidence.
+    /// χ-separation fits the support, not the brain mask. χ-sep MEDI, with the noise map and CSF
+    /// mask the step makes, matches the method run on the support. On this fixture its result is
+    /// its voxelwise initial guess, so WaveSep, whose wavelet fit is spatial, shows that the
+    /// domain matters: run over the brain mask it gives a different answer.
     ///
     /// The fixture's R2' and R2* cover the whole brain mask, rim included. The classical methods
     /// mask their inputs to the mask they are given, so restricting those maps is observable only
     /// through the networks (SUSEP-Net, χ-sepnet), whose weights the tests do not download.
     #[test]
-    fn chi_sep_medi_fits_the_support_not_the_brain_mask() {
+    fn chi_separation_fits_the_support_not_the_brain_mask() {
         let f = fixture();
-        // χ-sep MEDI separates the run's QSM (χ-sep iLSQR makes its own from the local field).
         let config = sep_config(SeparationAlgorithm::ChiSepMedi);
         let out = separate(&f, &config);
         assert_zero_outside(&out, &f.support);
         assert_close(&out, &direct(&f, &config, &f.support));
 
+        let f = fixture();
+        let config = sep_config(SeparationAlgorithm::WaveSep);
+        let out = separate(&f, &config);
+        assert_zero_outside(&out, &f.support);
+        assert_close(&out, &direct(&f, &config, &f.support));
         let over_brain = direct(&f, &config, &f.brain);
         let differs = out[2].iter().zip(&over_brain[2]).zip(&f.support)
             .any(|((&a, &b), &s)| s != 0 && (a - b).abs() > 1e-6);

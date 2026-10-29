@@ -643,8 +643,12 @@ fn chisep_problem_in(f: &ScanFacts, config: &PipelineConfig, w: &Words) -> Optio
         // Fits R2* itself from the magnitude when no R2* map is given, with ARLO either way.
         SeparationAlgorithm::R2starQsm => arlo_problem(f).map(|why| format!("needs R2*, which {why}")),
         SeparationAlgorithm::Decompose => magnitude(),
-        SeparationAlgorithm::ChiSepIlsqr | SeparationAlgorithm::ChiSepMedi =>
-            local_field().or_else(r2prime).or_else(magnitude),
+        // chi_sep_iLSQR takes the magnitude but never uses it.
+        SeparationAlgorithm::ChiSepIlsqr => local_field().or_else(r2prime),
+        // Its noise map is made from every echo's magnitude, and its CSF mask from ARLO R2*.
+        SeparationAlgorithm::ChiSepMedi => local_field().or_else(r2prime).or_else(magnitude)
+            .or_else(|| echo_noise_map_problem(f, "χ-separation (MEDI)"))
+            .or_else(|| arlo_problem(f).map(|why| format!("needs a CSF mask from R2*, which {why}"))),
         SeparationAlgorithm::HcChisep => r2prime().or_else(magnitude),
         SeparationAlgorithm::SusepNet | SeparationAlgorithm::ChiSepNet =>
             local_field().or_else(r2prime),
@@ -1288,6 +1292,22 @@ mod tests {
         let err = check(&run(&[0.005, 0.010], false), &c).finish().unwrap_err().to_string();
         assert!(err.contains("--do-swi") && err.contains("--do-r2starmap"), "{err}");
         assert!(check(&run(&EVEN, true), &c).finish().is_ok());
+    }
+
+    /// χ-sep MEDI's CSF mask is made from ARLO R2*, so it needs three echoes even with a supplied
+    /// R2' map; χ-sep iLSQR does not.
+    #[test]
+    fn chi_sep_medi_needs_r2star_for_its_csf_mask() {
+        for (algorithm, refused) in [(SeparationAlgorithm::ChiSepMedi, true), (SeparationAlgorithm::ChiSepIlsqr, false)] {
+            let mut c = PipelineConfig::default();
+            c.pipeline.do_chi_separation = true;
+            c.separation.algorithm = algorithm;
+            c.separation.custom_r2prime_tool = Some("mine".into());
+            let mut facts = run(&[0.005, 0.010], true);
+            facts.custom_r2prime = true;
+            let out = check(&facts, &enforced(c));
+            assert_eq!(out.errors.iter().any(|e| e.contains("CSF mask")), refused, "{algorithm:?}: {out:?}");
+        }
     }
 
     /// χ-sep-iLSQR fits the local field, which an end-to-end inversion never writes.

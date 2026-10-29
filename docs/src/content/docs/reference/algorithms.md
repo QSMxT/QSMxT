@@ -558,6 +558,15 @@ default) or `kspace` (the analytic k-space kernel).
 HARPERELLA and iHARPERELLA zero-pad the field by `--harperella-pad` / `--iharperella-pad`
 voxels per side, X Y Z (STI Suite's `padsize`, default `0 0 0`).
 
+iSMV (Wen et al. 2014) follows the authors' paper and code: a spherical mean value kernel of
+radius 6 × the smallest voxel dimension (6 mm at 1 mm), iterated until the relative change
+between iterates falls below 5 × 10⁻⁵ (`--ismv-tol`), with no iteration limit unless
+`--ismv-max-iter` gives one. `--ismv-radius` sets the radius in mm instead. The local field is
+zero outside the mask eroded by the kernel, and that eroded mask is what the inversion takes.
+`--ismv-variant qsmjl` runs QSM.jl's `ismv` instead, whose automatic radius is 2 × the largest
+voxel dimension and whose tolerance is the residual relative to the first; the tolerance and
+iteration limit keep their settings (QSM.jl's own are `--ismv-tol 0.001 --ismv-max-iter 500`).
+
 ### V-SHARP and its deconvolution
 
 V-SHARP (Wu et al. 2012) high-passes the field with spherical mean value (SMV)
@@ -688,6 +697,11 @@ sparse (L1) solve. Both run on the field zero-padded by `--star-pad` voxels per 
 phase at the echo time `--star-te` picks: `first`, `last`, `spacing` (TE2 − TE1), `sum` (the
 sum of the echo times, the default, as for a phase summed over the echoes), or a time in ms.
 Changing the padding or the echo time changes the result.
+
+RTS, TV, TKD, TSVD, Tikhonov and NLTV pad the field as QSM.jl does before their FFTs:
+`--rts-pad`, `--tv-pad`, `--tkd-pad`, `--tsvd-pad`, `--tikhonov-pad` and `--nltv-pad` X Y Z
+(default `0 0 0`) pad each axis by at least that many voxels and round it up to an
+FFT-efficient size; `-1` leaves an axis unpadded.
 
 #### Echo time
 
@@ -1098,20 +1112,41 @@ bring-your-own R2′ map or, with the default `--r2prime-strategy auto` and neit
 of those, R2PRIMEnet's prediction from R2\* (3 T only); see
 [Where R2′ comes from](#where-r2-comes-from) and [Input data](/QSMxT/reference/inputs/).
 
-`chi-sep-ilsqr` is initialised with a QSM that the χ-separation step
-reconstructs from the local field by iLSQR, as the χ-separation toolbox does,
-rather than with the run's own QSM: 100 iterations and 12 mm padding per side by
-default (`--chi-sep-ilsqr-qsm-max-iter`, `--chi-sep-ilsqr-qsm-tol`,
-`--chi-sep-ilsqr-qsm-pad-mm`). With `--use-custom-qsm` it takes the supplied QSM
-instead.
+`chi-sep-ilsqr` and `chi-sep-medi` are the χ-separation toolbox's `chi_sep_iLSQR` and
+`chi_sep_MEDI`, run as its script runs them.
 
-The four non-network methods share a relaxometric constant D_r of 137 Hz/ppm,
-from the original χ-separation paper (Shin et al. 2021), which was measured by
-regressing R2' against a single-orientation QSM. The χ-sepnet paper (Kim et al.
-2025) repeated that regression against COSMOS and got 114 Hz/ppm; that value is
-baked into χ-sepnet and SUSEP-Net as a training normalisation and is not a
-parameter there. If your χ_total is COSMOS-derived, 114 is the better match for
-the analytic methods too, and `--chi-sep-ilsqr-dr-pos` and friends set it.
+- `chi-sep-ilsqr` solves the two sources by LSQR, streaking removal and a non-negative
+  refinement, initialised from the QSM; it does not use the magnitude. It is initialised with a
+  QSM that the χ-separation step reconstructs from the local field by iLSQR, as the toolbox's
+  script does, rather than with the run's own QSM: 100 iterations and 12 mm padding per side
+  by default (`--chi-sep-ilsqr-qsm-max-iter`, `--chi-sep-ilsqr-qsm-tol`,
+  `--chi-sep-ilsqr-qsm-pad-mm`). With `--use-custom-qsm` it takes the supplied QSM instead.
+  It runs on the field zero-padded by `--chi-sep-ilsqr-pad` voxels at both ends of each axis
+  (default `16 16 16`).
+- `chi-sep-medi` is initialised from the run's QSM. It weights its data terms by a noise map
+  made from every echo's magnitude (MEDI toolbox `Fit_ppm_complex`), and keeps χ uniform in a
+  CSF mask found from ARLO R2\* (MEDI's `extract_CSF`), weighted by `--chi-sep-medi-lambda-csf`.
+  It needs the magnitude of every echo and at least three evenly spaced echoes.
+
+Their relaxometric constants D_r default to the toolbox's 137 × B0 / 2.9 T Hz/ppm (141.7 at
+3 T); `--chi-sep-ilsqr-dr-pos` / `-dr-neg` and `--chi-sep-medi-dr-pos` / `-dr-neg` set them
+(`auto` for the default). `wavesep` uses 137 Hz/ppm at every field strength, from the original
+χ-separation paper (Shin et al. 2021), which was measured by regressing R2' against a
+single-orientation QSM. The χ-sepnet paper (Kim et al. 2025) repeated that regression against
+COSMOS and got 114 Hz/ppm; that value is baked into χ-sepnet and SUSEP-Net as a training
+normalisation and is not a parameter there. If your χ_total is COSMOS-derived, 114 is the
+better match for the analytic methods too.
+
+`decompose` fits each voxel's multi-echo signal in three alternating stages, each solved by
+MATLAB `lsqcurvefit`'s trust-region-reflective method with its options:
+`--decompose-max-iterations` (default 400), `--decompose-max-function-evaluations` (default
+100 × the fit's parameters), `--decompose-function-tolerance`, `--decompose-step-tolerance`
+and `--decompose-optimality-tolerance` (default 1e-6 each), `--decompose-finite-difference-step`
+(default √eps) and `--decompose-typical-x` (default 1). It takes the phase of each echo on its
+principal branch, as the authors' code does; `--decompose-unwrap-phase true` unwraps it along
+the echoes and limits χ to what the echo spacing can represent. Its authors give it a QSM for
+each echo; `qsmxt run` has one QSM, which it uses at every echo, and the methods text says so.
+`qsmxt separate decompose` takes one per echo (`--qsm-per-echo`).
 
 χ-sepnet runs as a sliding window of 192×192×128-voxel patches;
 `--chi-sepnet-patch D H W` changes it (each a multiple of 16). SUSEP-Net runs

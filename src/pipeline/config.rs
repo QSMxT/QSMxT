@@ -443,12 +443,16 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.rts_params.rts_lsmr_iter { config.inversion.rts.lsmr_iter = v; }
         if let Some(v) = args.rts_params.rts_tau { config.inversion.rts.tau = v; }
         if let Some(v) = args.rts_params.rts_gamma { config.inversion.rts.gamma = v; }
+        if let Some(&[x, y, z]) = args.rts_params.rts_pad.as_deref() { config.inversion.rts.pad = [x, y, z]; }
         if let Some(v) = args.tv_params.tv_lambda { config.inversion.tv.lambda = v; }
         if let Some(v) = args.tv_params.tv_rho { config.inversion.tv.rho = v.value(); }
         if let Some(v) = args.tv_params.tv_tol { config.inversion.tv.tol = v; }
         if let Some(v) = args.tv_params.tv_max_iter { config.inversion.tv.max_iter = v; }
+        if let Some(&[x, y, z]) = args.tv_params.tv_pad.as_deref() { config.inversion.tv.pad = [x, y, z]; }
         if let Some(v) = args.tkd_params.tkd_threshold { config.inversion.tkd.threshold = v; }
+        if let Some(&[x, y, z]) = args.tkd_params.tkd_pad.as_deref() { config.inversion.tkd.pad = [x, y, z]; }
         if let Some(v) = args.tsvd_params.tsvd_threshold { config.inversion.tsvd.threshold = v; }
+        if let Some(&[x, y, z]) = args.tsvd_params.tsvd_pad.as_deref() { config.inversion.tsvd.pad = [x, y, z]; }
         if let Some(v) = args.ilsqr_params.ilsqr_tol { config.inversion.ilsqr.tol = v; }
         if let Some(v) = args.ilsqr_params.ilsqr_max_iter { config.inversion.ilsqr.max_iter = v; }
         if let Some(v) = args.ilsqr_params.ilsqr_pad_mm {
@@ -479,6 +483,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.heidi_params.heidi_denoise_conductance { config.inversion.heidi.denoise_conductance = v; }
         if let Some(v) = args.heidi_params.heidi_te { config.inversion.heidi.te = v; }
         if let Some(v) = args.tikhonov_params.tikhonov_lambda { config.inversion.tikhonov.lambda = v; }
+        if let Some(&[x, y, z]) = args.tikhonov_params.tikhonov_pad.as_deref() { config.inversion.tikhonov.pad = [x, y, z]; }
         if let Some(v) = args.nltv_params.nltv_lambda { config.inversion.nltv.lambda = v; }
         if let Some(v) = args.nltv_params.nltv_rho { config.inversion.nltv.rho = v.value(); }
         if let Some(v) = args.nltv_params.nltv_mu { config.inversion.nltv.mu = v; }
@@ -487,6 +492,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.nltv_params.nltv_newton_iter { config.inversion.nltv.max_iter_newton = v; }
         if let Some(v) = args.nltv_params.nltv_tol_newton { config.inversion.nltv.tol_newton = v; }
         if let Some(v) = args.nltv_params.nltv_te { config.inversion.nltv.te = v; }
+        if let Some(&[x, y, z]) = args.nltv_params.nltv_pad.as_deref() { config.inversion.nltv.pad = [x, y, z]; }
         if let Some(v) = args.medi_params.medi_lambda { config.inversion.medi.lambda = v; }
         if let Some(v) = args.medi_params.medi_max_iter { config.inversion.medi.max_iter = v; }
         if let Some(v) = args.medi_params.medi_cg_max_iter { config.inversion.medi.cg_max_iter = v; }
@@ -597,9 +603,10 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.pdf_params.pdf_space { config.bg_removal.pdf.space = v; }
         if let Some(v) = args.pdf_params.pdf_n_pad { config.bg_removal.pdf.n_pad = v; }
         if let Some(v) = args.lbv_params.lbv_tol { config.bg_removal.lbv.tol = v; }
+        if let Some(v) = args.ismv_params.ismv_variant { config.bg_removal.ismv.variant = v; }
         if let Some(v) = args.ismv_params.ismv_tol { config.bg_removal.ismv.tol = v; }
-        if let Some(v) = args.ismv_params.ismv_max_iter { config.bg_removal.ismv.max_iter = v; }
-        if let Some(v) = args.ismv_params.ismv_radius { config.bg_removal.ismv.radius = v; }
+        if let Some(v) = args.ismv_params.ismv_max_iter { config.bg_removal.ismv.max_iter = Some(v); }
+        if let Some(v) = args.ismv_params.ismv_radius { config.bg_removal.ismv.radius = v.value(); }
         if let Some(v) = args.sharp_params.sharp_threshold { config.bg_removal.sharp.threshold = v; }
         if let Some(v) = args.sharp_params.sharp_radius { config.bg_removal.sharp.radius = v; }
         if let Some(v) = args.resharp_params.resharp_radius { config.bg_removal.resharp.radius = v; }
@@ -694,30 +701,41 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = sp.r2star_qsm_r_const_3t { config.separation.r2star_qsm.r_const_3t = v; }
         if let Some(v) = sp.decompose_n_inner { config.separation.decompose.n_inner = v; }
         if let Some(v) = sp.decompose_chi_bound { config.separation.decompose.chi_bound = v; }
-        if let Some(v) = sp.decompose_max_lm_iter { config.separation.decompose.max_lm_iter = v; }
-        if let Some(v) = sp.chi_sep_ilsqr_dr_pos { config.separation.chi_sep_ilsqr.dr_pos = v; }
-        if let Some(v) = sp.chi_sep_ilsqr_dr_neg { config.separation.chi_sep_ilsqr.dr_neg = v; }
-        if let Some(v) = sp.chi_sep_ilsqr_lambda1 { config.separation.chi_sep_ilsqr.lambda1 = v; }
-        if let Some(v) = sp.chi_sep_ilsqr_percentage { config.separation.chi_sep_ilsqr.percentage = v; }
-        if let Some(v) = sp.chi_sep_ilsqr_r2p_min { config.separation.chi_sep_ilsqr.r2p_min = v; }
-        if let Some(v) = sp.chi_sep_ilsqr_r2p_max { config.separation.chi_sep_ilsqr.r2p_max = v; }
-        if let Some(v) = sp.chi_sep_ilsqr_max_iter { config.separation.chi_sep_ilsqr.max_iter = v; }
-        if let Some(v) = sp.chi_sep_ilsqr_tol { config.separation.chi_sep_ilsqr.tol = v; }
-        if let Some(v) = sp.chi_sep_ilsqr_cg_max_iter { config.separation.chi_sep_ilsqr.cg_max_iter = v; }
-        if let Some(v) = sp.chi_sep_ilsqr_cg_tol { config.separation.chi_sep_ilsqr.cg_tol = v; }
-        if let Some(v) = sp.chi_sep_ilsqr_qsm_max_iter { config.separation.chi_sep_ilsqr.qsm_ilsqr.max_iter = v; }
-        if let Some(v) = sp.chi_sep_ilsqr_qsm_tol { config.separation.chi_sep_ilsqr.qsm_ilsqr.tol = v; }
-        if let Some(v) = sp.chi_sep_ilsqr_qsm_pad_mm { config.separation.chi_sep_ilsqr.qsm_ilsqr.pad_mm = v; }
-        if let Some(v) = sp.chi_sep_medi_lambda_para { config.separation.chi_sep_medi.lambda_para = v; }
-        if let Some(v) = sp.chi_sep_medi_lambda_dia { config.separation.chi_sep_medi.lambda_dia = v; }
-        if let Some(v) = sp.chi_sep_medi_lambda_cpl { config.separation.chi_sep_medi.lambda_cpl = v; }
-        if let Some(v) = sp.chi_sep_medi_dr_pos { config.separation.chi_sep_medi.dr_pos = v; }
-        if let Some(v) = sp.chi_sep_medi_dr_neg { config.separation.chi_sep_medi.dr_neg = v; }
-        if let Some(v) = sp.chi_sep_medi_percentage { config.separation.chi_sep_medi.percentage = v; }
-        if let Some(v) = sp.chi_sep_medi_cg_tol { config.separation.chi_sep_medi.cg_tol = v; }
-        if let Some(v) = sp.chi_sep_medi_cg_max_iter { config.separation.chi_sep_medi.cg_max_iter = v; }
-        if let Some(v) = sp.chi_sep_medi_max_iter { config.separation.chi_sep_medi.max_iter = v; }
-        if let Some(v) = sp.chi_sep_medi_tol { config.separation.chi_sep_medi.tol = v; }
+        if let Some(v) = sp.decompose_unwrap_phase { config.separation.decompose.unwrap_phase = v; }
+        let lc = &mut config.separation.decompose.lsqcurvefit;
+        if let Some(v) = sp.decompose_max_iterations { lc.max_iterations = v; }
+        if let Some(v) = sp.decompose_max_function_evaluations { lc.max_function_evaluations = Some(v); }
+        if let Some(v) = sp.decompose_function_tolerance { lc.function_tolerance = v; }
+        if let Some(v) = sp.decompose_step_tolerance { lc.step_tolerance = v; }
+        if let Some(v) = sp.decompose_optimality_tolerance { lc.optimality_tolerance = v; }
+        if let Some(v) = sp.decompose_finite_difference_step { lc.finite_difference_step = v; }
+        if let Some(v) = sp.decompose_typical_x { lc.typical_x = v; }
+        let ci = &mut config.separation.chi_sep_ilsqr;
+        if let Some(v) = sp.chi_sep_ilsqr_dr_pos { ci.dr_pos = v.value(); }
+        if let Some(v) = sp.chi_sep_ilsqr_dr_neg { ci.dr_neg = v.value(); }
+        if let Some(&[x, y, z]) = sp.chi_sep_ilsqr_pad.as_deref() { ci.pad = [x, y, z]; }
+        if let Some(v) = sp.chi_sep_ilsqr_cg_max_iter_lsqr { ci.cg_max_iter_lsqr = v; }
+        if let Some(v) = sp.chi_sep_ilsqr_cg_tol_lsqr { ci.cg_tol_lsqr = v; }
+        if let Some(v) = sp.chi_sep_ilsqr_cg_max_iter_sa { ci.cg_max_iter_sa = v; }
+        if let Some(v) = sp.chi_sep_ilsqr_cg_tol_sa { ci.cg_tol_sa = v; }
+        if let Some(v) = sp.chi_sep_ilsqr_d2_thr { ci.d2_thr = v; }
+        if let Some(v) = sp.chi_sep_ilsqr_prc_w_i_min { ci.prc_w_i_min = v; }
+        if let Some(v) = sp.chi_sep_ilsqr_prc_w_i_max { ci.prc_w_i_max = v; }
+        if let Some(v) = sp.chi_sep_ilsqr_prc_w_g_min { ci.prc_w_g_min = v; }
+        if let Some(v) = sp.chi_sep_ilsqr_prc_w_g_max { ci.prc_w_g_max = v; }
+        if let Some(v) = sp.chi_sep_ilsqr_qsm_max_iter { ci.qsm_ilsqr.max_iter = v; }
+        if let Some(v) = sp.chi_sep_ilsqr_qsm_tol { ci.qsm_ilsqr.tol = v; }
+        if let Some(v) = sp.chi_sep_ilsqr_qsm_pad_mm { ci.qsm_ilsqr.pad_mm = v; }
+        let cm = &mut config.separation.chi_sep_medi;
+        if let Some(v) = sp.chi_sep_medi_lambda { cm.lambda = v; }
+        if let Some(v) = sp.chi_sep_medi_lambda_csf { cm.lambda_csf = v; }
+        if let Some(v) = sp.chi_sep_medi_dr_pos { cm.dr_pos = v.value(); }
+        if let Some(v) = sp.chi_sep_medi_dr_neg { cm.dr_neg = v.value(); }
+        if let Some(v) = sp.chi_sep_medi_pad { cm.pad = v; }
+        if let Some(v) = sp.chi_sep_medi_tol { cm.tol = v; }
+        if let Some(v) = sp.chi_sep_medi_max_iter { cm.max_iter = v; }
+        if let Some(v) = sp.chi_sep_medi_cg_tol { cm.cg_tol = v; }
+        if let Some(v) = sp.chi_sep_medi_cg_max_iter { cm.cg_max_iter = v; }
         if let Some(v) = sp.wavesep_dr_pos { config.separation.wavesep.dr_pos = v; }
         if let Some(v) = sp.wavesep_dr_neg { config.separation.wavesep.dr_neg = v; }
         if let Some(v) = sp.wavesep_alpha { config.separation.wavesep.alpha = v; }

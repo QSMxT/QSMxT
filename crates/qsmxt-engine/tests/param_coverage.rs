@@ -99,11 +99,16 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
 
     // Chi-separation methods. cf/b0 come from scan metadata; se_echo_times is set by the
     // runner from spin-echo data — none are user knobs.
-    cover!(q::separation::ChiSepIlsqrParams => c::ChiSepIlsqrConfig, ignore: ["cf"]);
-    cover!(q::separation::ChiSepParams => c::ChiSepMediConfig, ignore: ["cf"]);
+    // χ-sep iLSQR's percentile pairs `prc_w_i` / `prc_w_g` are `prc_w_*_min` / `_max` here.
+    cover!(q::separation::ChiSepIlsqrParams => c::ChiSepIlsqrConfig, ignore: ["cf", "prc_w_i", "prc_w_g"]);
+    assert_eq!(<c::ChiSepIlsqrConfig as Default>::default().params().prc_w_i, q::separation::ChiSepIlsqrParams::default().prc_w_i);
+    cover!(q::separation::ChiSepMediParams => c::ChiSepMediConfig, ignore: ["cf"]);
     cover!(q::separation::R2starQsmParams => c::R2starQsmConfig, ignore: ["b0"]);
     cover!(q::separation::WaveSepParams => c::WaveSepConfig);
-    cover!(q::separation::DecomposeParams => c::DecomposeConfig, ignore: ["b0"]);
+    // `solvers` picks each stage's solver; qsm-core has one (lsqcurvefit's trust-region-reflective
+    // method, the reference's), so there is nothing to choose yet.
+    cover!(q::separation::DecomposeParams => c::DecomposeConfig, ignore: ["b0", "solvers"]);
+    cover!(q::solvers::LsqTrrOptions => c::LsqcurvefitConfig);
     cover!(q::separation::HcChisepParams => c::HcChisepConfig, ignore: ["b0", "se_echo_times"]);
     cover!(q::separation::ChiSepNetParams => c::ChiSepNetConfig);
     cover!(q::separation::SusepNetParams => c::SusepNetConfig);

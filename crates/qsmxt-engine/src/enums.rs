@@ -218,6 +218,43 @@ impl From<qsm_core::bgremove::DipoleKernelSpace> for PdfSpace {
     }
 }
 
+/// Which implementation of iSMV runs (qsm-core `IsmvVariant`).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum IsmvVariant {
+    /// The authors' paper and code (Wen et al. 2014; the lab's `iSMV.m`).
+    #[default]
+    Wen2014,
+    /// QSM.jl's `ismv`.
+    Qsmjl,
+}
+impl IsmvVariant {
+    /// Every variant, in the order the CLI help and the TUI list them.
+    pub const ALL: [IsmvVariant; 2] = [Self::Wen2014, Self::Qsmjl];
+
+    /// The name the CLI, the config file and the TUI use.
+    pub fn as_str(self) -> &'static str {
+        match self { Self::Wen2014 => "wen2014", Self::Qsmjl => "qsmjl" }
+    }
+}
+impl fmt::Display for IsmvVariant {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl From<IsmvVariant> for qsm_core::bgremove::IsmvVariant {
+    fn from(v: IsmvVariant) -> Self {
+        use qsm_core::bgremove::IsmvVariant as V;
+        match v { IsmvVariant::Wen2014 => V::Wen2014, IsmvVariant::Qsmjl => V::QsmJl }
+    }
+}
+impl From<qsm_core::bgremove::IsmvVariant> for IsmvVariant {
+    fn from(v: qsm_core::bgremove::IsmvVariant) -> Self {
+        use qsm_core::bgremove::IsmvVariant as V;
+        match v { V::Wen2014 => Self::Wen2014, V::QsmJl => Self::Qsmjl }
+    }
+}
+
 /// WH-QSM's data weight (qsm-core `WhQsmWeight`).
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]

@@ -354,9 +354,10 @@ fn command_for(config: &PipelineConfig) -> String {
         }
         BfAlgorithm::Lbv => { emit_f64(&mut parts, "--lbv-tol", config.bg_removal.lbv.tol, d.bg_removal.lbv.tol); }
         BfAlgorithm::Ismv => {
+            emit_enum(&mut parts, "--ismv-variant", &config.bg_removal.ismv.variant, &d.bg_removal.ismv.variant);
             emit_f64(&mut parts, "--ismv-tol", config.bg_removal.ismv.tol, d.bg_removal.ismv.tol);
-            emit_usize(&mut parts, "--ismv-max-iter", config.bg_removal.ismv.max_iter, d.bg_removal.ismv.max_iter);
-            emit_f64(&mut parts, "--ismv-radius", config.bg_removal.ismv.radius, d.bg_removal.ismv.radius);
+            emit_opt_usize(&mut parts, "--ismv-max-iter", config.bg_removal.ismv.max_iter, d.bg_removal.ismv.max_iter);
+            emit_opt_f64(&mut parts, "--ismv-radius", config.bg_removal.ismv.radius, d.bg_removal.ismv.radius);
         }
         BfAlgorithm::Sharp => {
             emit_f64(&mut parts, "--sharp-threshold", config.bg_removal.sharp.threshold, d.bg_removal.sharp.threshold);
@@ -409,35 +410,48 @@ fn command_for(config: &PipelineConfig) -> String {
             SeparationAlgorithm::Decompose => {
                 emit_usize(&mut parts, "--decompose-n-inner", s.decompose.n_inner, ds.decompose.n_inner);
                 emit_f64(&mut parts, "--decompose-chi-bound", s.decompose.chi_bound, ds.decompose.chi_bound);
-                emit_usize(&mut parts, "--decompose-max-lm-iter", s.decompose.max_lm_iter, ds.decompose.max_lm_iter);
+                if s.decompose.unwrap_phase != ds.decompose.unwrap_phase {
+                    parts.push(format!("--decompose-unwrap-phase {}", s.decompose.unwrap_phase));
+                }
+                let (l, dl) = (&s.decompose.lsqcurvefit, &ds.decompose.lsqcurvefit);
+                emit_usize(&mut parts, "--decompose-max-iterations", l.max_iterations, dl.max_iterations);
+                emit_opt_usize(&mut parts, "--decompose-max-function-evaluations", l.max_function_evaluations, dl.max_function_evaluations);
+                emit_f64(&mut parts, "--decompose-function-tolerance", l.function_tolerance, dl.function_tolerance);
+                emit_f64(&mut parts, "--decompose-step-tolerance", l.step_tolerance, dl.step_tolerance);
+                emit_f64(&mut parts, "--decompose-optimality-tolerance", l.optimality_tolerance, dl.optimality_tolerance);
+                emit_f64(&mut parts, "--decompose-finite-difference-step", l.finite_difference_step, dl.finite_difference_step);
+                emit_f64(&mut parts, "--decompose-typical-x", l.typical_x, dl.typical_x);
             }
             SeparationAlgorithm::ChiSepIlsqr => {
-                emit_f64(&mut parts, "--chi-sep-ilsqr-dr-pos", s.chi_sep_ilsqr.dr_pos, ds.chi_sep_ilsqr.dr_pos);
-                emit_f64(&mut parts, "--chi-sep-ilsqr-dr-neg", s.chi_sep_ilsqr.dr_neg, ds.chi_sep_ilsqr.dr_neg);
-                emit_f64(&mut parts, "--chi-sep-ilsqr-lambda1", s.chi_sep_ilsqr.lambda1, ds.chi_sep_ilsqr.lambda1);
-                emit_f64(&mut parts, "--chi-sep-ilsqr-percentage", s.chi_sep_ilsqr.percentage, ds.chi_sep_ilsqr.percentage);
-                emit_f64(&mut parts, "--chi-sep-ilsqr-r2p-min", s.chi_sep_ilsqr.r2p_min, ds.chi_sep_ilsqr.r2p_min);
-                emit_f64(&mut parts, "--chi-sep-ilsqr-r2p-max", s.chi_sep_ilsqr.r2p_max, ds.chi_sep_ilsqr.r2p_max);
-                emit_usize(&mut parts, "--chi-sep-ilsqr-max-iter", s.chi_sep_ilsqr.max_iter, ds.chi_sep_ilsqr.max_iter);
-                emit_f64(&mut parts, "--chi-sep-ilsqr-tol", s.chi_sep_ilsqr.tol, ds.chi_sep_ilsqr.tol);
-                emit_usize(&mut parts, "--chi-sep-ilsqr-cg-max-iter", s.chi_sep_ilsqr.cg_max_iter, ds.chi_sep_ilsqr.cg_max_iter);
-                emit_f64(&mut parts, "--chi-sep-ilsqr-cg-tol", s.chi_sep_ilsqr.cg_tol, ds.chi_sep_ilsqr.cg_tol);
+                let (c, dc) = (&s.chi_sep_ilsqr, &ds.chi_sep_ilsqr);
+                emit_opt_f64(&mut parts, "--chi-sep-ilsqr-dr-pos", c.dr_pos, dc.dr_pos);
+                emit_opt_f64(&mut parts, "--chi-sep-ilsqr-dr-neg", c.dr_neg, dc.dr_neg);
+                emit_usize_arr3(&mut parts, "--chi-sep-ilsqr-pad", &c.pad, &dc.pad);
+                emit_usize(&mut parts, "--chi-sep-ilsqr-cg-max-iter-lsqr", c.cg_max_iter_lsqr, dc.cg_max_iter_lsqr);
+                emit_f64(&mut parts, "--chi-sep-ilsqr-cg-tol-lsqr", c.cg_tol_lsqr, dc.cg_tol_lsqr);
+                emit_usize(&mut parts, "--chi-sep-ilsqr-cg-max-iter-sa", c.cg_max_iter_sa, dc.cg_max_iter_sa);
+                emit_f64(&mut parts, "--chi-sep-ilsqr-cg-tol-sa", c.cg_tol_sa, dc.cg_tol_sa);
+                emit_f64(&mut parts, "--chi-sep-ilsqr-d2-thr", c.d2_thr, dc.d2_thr);
+                emit_f64(&mut parts, "--chi-sep-ilsqr-prc-w-i-min", c.prc_w_i_min, dc.prc_w_i_min);
+                emit_f64(&mut parts, "--chi-sep-ilsqr-prc-w-i-max", c.prc_w_i_max, dc.prc_w_i_max);
+                emit_f64(&mut parts, "--chi-sep-ilsqr-prc-w-g-min", c.prc_w_g_min, dc.prc_w_g_min);
+                emit_f64(&mut parts, "--chi-sep-ilsqr-prc-w-g-max", c.prc_w_g_max, dc.prc_w_g_max);
                 let (q, dq) = (&s.chi_sep_ilsqr.qsm_ilsqr, &ds.chi_sep_ilsqr.qsm_ilsqr);
                 emit_usize(&mut parts, "--chi-sep-ilsqr-qsm-max-iter", q.max_iter, dq.max_iter);
                 emit_f64(&mut parts, "--chi-sep-ilsqr-qsm-tol", q.tol, dq.tol);
                 emit_f64(&mut parts, "--chi-sep-ilsqr-qsm-pad-mm", q.pad_mm, dq.pad_mm);
             }
             SeparationAlgorithm::ChiSepMedi => {
-                emit_f64(&mut parts, "--chi-sep-medi-lambda-para", s.chi_sep_medi.lambda_para, ds.chi_sep_medi.lambda_para);
-                emit_f64(&mut parts, "--chi-sep-medi-lambda-dia", s.chi_sep_medi.lambda_dia, ds.chi_sep_medi.lambda_dia);
-                emit_f64(&mut parts, "--chi-sep-medi-lambda-cpl", s.chi_sep_medi.lambda_cpl, ds.chi_sep_medi.lambda_cpl);
-                emit_f64(&mut parts, "--chi-sep-medi-dr-pos", s.chi_sep_medi.dr_pos, ds.chi_sep_medi.dr_pos);
-                emit_f64(&mut parts, "--chi-sep-medi-dr-neg", s.chi_sep_medi.dr_neg, ds.chi_sep_medi.dr_neg);
-                emit_f64(&mut parts, "--chi-sep-medi-percentage", s.chi_sep_medi.percentage, ds.chi_sep_medi.percentage);
-                emit_f64(&mut parts, "--chi-sep-medi-cg-tol", s.chi_sep_medi.cg_tol, ds.chi_sep_medi.cg_tol);
-                emit_usize(&mut parts, "--chi-sep-medi-cg-max-iter", s.chi_sep_medi.cg_max_iter, ds.chi_sep_medi.cg_max_iter);
-                emit_usize(&mut parts, "--chi-sep-medi-max-iter", s.chi_sep_medi.max_iter, ds.chi_sep_medi.max_iter);
-                emit_f64(&mut parts, "--chi-sep-medi-tol", s.chi_sep_medi.tol, ds.chi_sep_medi.tol);
+                let (c, dc) = (&s.chi_sep_medi, &ds.chi_sep_medi);
+                emit_f64(&mut parts, "--chi-sep-medi-lambda", c.lambda, dc.lambda);
+                emit_f64(&mut parts, "--chi-sep-medi-lambda-csf", c.lambda_csf, dc.lambda_csf);
+                emit_opt_f64(&mut parts, "--chi-sep-medi-dr-pos", c.dr_pos, dc.dr_pos);
+                emit_opt_f64(&mut parts, "--chi-sep-medi-dr-neg", c.dr_neg, dc.dr_neg);
+                emit_usize(&mut parts, "--chi-sep-medi-pad", c.pad, dc.pad);
+                emit_f64(&mut parts, "--chi-sep-medi-tol", c.tol, dc.tol);
+                emit_usize(&mut parts, "--chi-sep-medi-max-iter", c.max_iter, dc.max_iter);
+                emit_f64(&mut parts, "--chi-sep-medi-cg-tol", c.cg_tol, dc.cg_tol);
+                emit_usize(&mut parts, "--chi-sep-medi-cg-max-iter", c.cg_max_iter, dc.cg_max_iter);
             }
             SeparationAlgorithm::WaveSep => {
                 emit_f64(&mut parts, "--wavesep-dr-pos", s.wavesep.dr_pos, ds.wavesep.dr_pos);
@@ -514,16 +528,27 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
             emit_usize(parts, "--rts-lsmr-iter", config.inversion.rts.lsmr_iter, d.inversion.rts.lsmr_iter);
             emit_f64(parts, "--rts-tau", config.inversion.rts.tau, d.inversion.rts.tau);
             emit_f64(parts, "--rts-gamma", config.inversion.rts.gamma, d.inversion.rts.gamma);
+            emit_i64_arr3(parts, "--rts-pad", &config.inversion.rts.pad, &d.inversion.rts.pad);
         }
         QsmAlgorithm::Tv => {
             emit_f64(parts, "--tv-lambda", config.inversion.tv.lambda, d.inversion.tv.lambda);
             emit_opt_f64(parts, "--tv-rho", config.inversion.tv.rho, d.inversion.tv.rho);
             emit_f64(parts, "--tv-tol", config.inversion.tv.tol, d.inversion.tv.tol);
             emit_usize(parts, "--tv-max-iter", config.inversion.tv.max_iter, d.inversion.tv.max_iter);
+            emit_i64_arr3(parts, "--tv-pad", &config.inversion.tv.pad, &d.inversion.tv.pad);
         }
-        QsmAlgorithm::Tkd => { emit_f64(parts, "--tkd-threshold", config.inversion.tkd.threshold, d.inversion.tkd.threshold); }
-        QsmAlgorithm::Tsvd => { emit_f64(parts, "--tsvd-threshold", config.inversion.tsvd.threshold, d.inversion.tsvd.threshold); }
-        QsmAlgorithm::Tikhonov => { emit_f64(parts, "--tikhonov-lambda", config.inversion.tikhonov.lambda, d.inversion.tikhonov.lambda); }
+        QsmAlgorithm::Tkd => {
+            emit_f64(parts, "--tkd-threshold", config.inversion.tkd.threshold, d.inversion.tkd.threshold);
+            emit_i64_arr3(parts, "--tkd-pad", &config.inversion.tkd.pad, &d.inversion.tkd.pad);
+        }
+        QsmAlgorithm::Tsvd => {
+            emit_f64(parts, "--tsvd-threshold", config.inversion.tsvd.threshold, d.inversion.tsvd.threshold);
+            emit_i64_arr3(parts, "--tsvd-pad", &config.inversion.tsvd.pad, &d.inversion.tsvd.pad);
+        }
+        QsmAlgorithm::Tikhonov => {
+            emit_f64(parts, "--tikhonov-lambda", config.inversion.tikhonov.lambda, d.inversion.tikhonov.lambda);
+            emit_i64_arr3(parts, "--tikhonov-pad", &config.inversion.tikhonov.pad, &d.inversion.tikhonov.pad);
+        }
         QsmAlgorithm::Nltv => {
             emit_f64(parts, "--nltv-lambda", config.inversion.nltv.lambda, d.inversion.nltv.lambda);
             emit_opt_f64(parts, "--nltv-rho", config.inversion.nltv.rho, d.inversion.nltv.rho);
@@ -533,6 +558,7 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
             emit_f64(parts, "--nltv-tol-newton", config.inversion.nltv.tol_newton, d.inversion.nltv.tol_newton);
             emit_usize(parts, "--nltv-newton-iter", config.inversion.nltv.max_iter_newton, d.inversion.nltv.max_iter_newton);
             emit_enum(parts, "--nltv-te", &config.inversion.nltv.te, &d.inversion.nltv.te);
+            emit_i64_arr3(parts, "--nltv-pad", &config.inversion.nltv.pad, &d.inversion.nltv.pad);
         }
         QsmAlgorithm::Medi => {
             emit_f64(parts, "--medi-lambda", config.inversion.medi.lambda, d.inversion.medi.lambda);
@@ -790,6 +816,9 @@ fn emit_enum<T: PartialEq + std::fmt::Display>(parts: &mut Vec<String>, flag: &s
 fn emit_usize_arr3(parts: &mut Vec<String>, flag: &str, val: &[usize; 3], default: &[usize; 3]) {
     if val != default { parts.push(format!("{} {} {} {}", flag, val[0], val[1], val[2])); }
 }
+fn emit_i64_arr3(parts: &mut Vec<String>, flag: &str, val: &[i64; 3], default: &[i64; 3]) {
+    if val != default { parts.push(format!("{} {} {} {}", flag, val[0], val[1], val[2])); }
+}
 fn emit_f64_arr3(parts: &mut Vec<String>, flag: &str, val: &[f64; 3], default: &[f64; 3]) {
     if val != default { parts.push(format!("{} {} {} {}", flag, val[0], val[1], val[2])); }
 }
@@ -994,10 +1023,11 @@ mod tests {
 
         // Selecting a non-default method emits it; editing a param emits that too.
         config.separation.algorithm = SeparationAlgorithm::Decompose;
-        config.separation.decompose.max_lm_iter = 99;
+        config.separation.decompose.lsqcurvefit.max_iterations = 99;
+        config.separation.decompose.unwrap_phase = true;
         let cmd = generate_command(&config);
         assert!(cmd.contains("--chisep decompose"));
-        assert!(cmd.contains("--decompose-max-lm-iter 99"));
+        assert!(cmd.contains("--decompose-max-iterations 99") && cmd.contains("--decompose-unwrap-phase true"), "{cmd}");
 
         // A param for a non-selected method must NOT leak into the command.
         assert!(!cmd.contains("--wavesep-alpha"));

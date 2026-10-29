@@ -1331,6 +1331,7 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("vsharp_radius_step", "bg_removal.vsharp.radius_step"), ("vsharp_grid", "bg_removal.vsharp.grid"),
     ("vsharp_grid_spacing", "bg_removal.vsharp.grid_spacing"), ("pdf_tol", "bg_removal.pdf.tol"), ("pdf_n_cg", "bg_removal.pdf.n_cg"),
     ("pdf_space", "bg_removal.pdf.space"), ("pdf_n_pad", "bg_removal.pdf.n_pad"), ("lbv_tol", "bg_removal.lbv.tol"),
+    ("ismv_variant", "bg_removal.ismv.variant"),
     ("ismv_tol", "bg_removal.ismv.tol"), ("ismv_max_iter", "bg_removal.ismv.max_iter"), ("ismv_radius", "bg_removal.ismv.radius"),
     ("sharp_threshold", "bg_removal.sharp.threshold"), ("sharp_radius", "bg_removal.sharp.radius"),
     ("resharp_radius", "bg_removal.resharp.radius"), ("resharp_tik_reg", "bg_removal.resharp.tik_reg"),
@@ -1354,6 +1355,8 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("tv_lambda", "inversion.tv.lambda"), ("tv_rho", "inversion.tv.rho"), ("tv_tol", "inversion.tv.tol"),
     ("tv_max_iter", "inversion.tv.max_iter"), ("tkd_threshold", "inversion.tkd.threshold"),
     ("tsvd_threshold", "inversion.tsvd.threshold"), ("tgv_iterations", "inversion.tgv.iterations"),
+    ("rts_pad", "inversion.rts.pad"), ("tv_pad", "inversion.tv.pad"), ("tkd_pad", "inversion.tkd.pad"),
+    ("tsvd_pad", "inversion.tsvd.pad"), ("tikhonov_pad", "inversion.tikhonov.pad"), ("nltv_pad", "inversion.nltv.pad"),
     ("tgv_erosions", "inversion.tgv.erosions"), ("tgv_alpha1", "inversion.tgv.alpha1"), ("tgv_alpha0", "inversion.tgv.alpha0"),
     ("tgv_step_size", "inversion.tgv.step_size"),
     ("tikhonov_lambda", "inversion.tikhonov.lambda"), ("nltv_lambda", "inversion.nltv.lambda"), ("nltv_mu", "inversion.nltv.mu"),
@@ -1422,20 +1425,31 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("multi_orientation_force", "multi_orientation.force"), ("qsm_reference", "qsm.reference"),
     ("do_chi_separation", "pipeline.do_chi_separation"), ("separation_algorithm", "separation.algorithm"),
     ("sep_r2starqsm_r_const_3t", "separation.r2star_qsm.r_const_3t"), ("sep_decompose_n_inner", "separation.decompose.n_inner"),
-    ("sep_decompose_chi_bound", "separation.decompose.chi_bound"), ("sep_decompose_max_lm_iter", "separation.decompose.max_lm_iter"),
+    ("sep_decompose_chi_bound", "separation.decompose.chi_bound"),
+    ("sep_decompose_unwrap_phase", "separation.decompose.unwrap_phase"),
+    ("sep_decompose_max_iterations", "separation.decompose.lsqcurvefit.max_iterations"),
+    ("sep_decompose_max_fevals", "separation.decompose.lsqcurvefit.max_function_evaluations"),
+    ("sep_decompose_function_tol", "separation.decompose.lsqcurvefit.function_tolerance"),
+    ("sep_decompose_step_tol", "separation.decompose.lsqcurvefit.step_tolerance"),
+    ("sep_decompose_optimality_tol", "separation.decompose.lsqcurvefit.optimality_tolerance"),
+    ("sep_decompose_fd_step", "separation.decompose.lsqcurvefit.finite_difference_step"),
+    ("sep_decompose_typical_x", "separation.decompose.lsqcurvefit.typical_x"),
     ("sep_ilsqr_dr_pos", "separation.chi_sep_ilsqr.dr_pos"), ("sep_ilsqr_dr_neg", "separation.chi_sep_ilsqr.dr_neg"),
-    ("sep_ilsqr_lambda1", "separation.chi_sep_ilsqr.lambda1"), ("sep_ilsqr_percentage", "separation.chi_sep_ilsqr.percentage"),
-    ("sep_ilsqr_r2p_min", "separation.chi_sep_ilsqr.r2p_min"), ("sep_ilsqr_r2p_max", "separation.chi_sep_ilsqr.r2p_max"),
-    ("sep_ilsqr_max_iter", "separation.chi_sep_ilsqr.max_iter"), ("sep_ilsqr_tol", "separation.chi_sep_ilsqr.tol"),
-    ("sep_ilsqr_cg_max_iter", "separation.chi_sep_ilsqr.cg_max_iter"), ("sep_ilsqr_cg_tol", "separation.chi_sep_ilsqr.cg_tol"),
+    ("sep_ilsqr_pad", "separation.chi_sep_ilsqr.pad"),
+    ("sep_ilsqr_cg_max_iter_lsqr", "separation.chi_sep_ilsqr.cg_max_iter_lsqr"),
+    ("sep_ilsqr_cg_tol_lsqr", "separation.chi_sep_ilsqr.cg_tol_lsqr"),
+    ("sep_ilsqr_cg_max_iter_sa", "separation.chi_sep_ilsqr.cg_max_iter_sa"),
+    ("sep_ilsqr_cg_tol_sa", "separation.chi_sep_ilsqr.cg_tol_sa"), ("sep_ilsqr_d2_thr", "separation.chi_sep_ilsqr.d2_thr"),
+    ("sep_ilsqr_prc_w_i_min", "separation.chi_sep_ilsqr.prc_w_i_min"), ("sep_ilsqr_prc_w_i_max", "separation.chi_sep_ilsqr.prc_w_i_max"),
+    ("sep_ilsqr_prc_w_g_min", "separation.chi_sep_ilsqr.prc_w_g_min"), ("sep_ilsqr_prc_w_g_max", "separation.chi_sep_ilsqr.prc_w_g_max"),
     ("sep_ilsqr_qsm_max_iter", "separation.chi_sep_ilsqr.qsm_ilsqr.max_iter"),
     ("sep_ilsqr_qsm_tol", "separation.chi_sep_ilsqr.qsm_ilsqr.tol"),
     ("sep_ilsqr_qsm_pad_mm", "separation.chi_sep_ilsqr.qsm_ilsqr.pad_mm"),
-    ("sep_medi_lambda_para", "separation.chi_sep_medi.lambda_para"), ("sep_medi_lambda_dia", "separation.chi_sep_medi.lambda_dia"),
-    ("sep_medi_lambda_cpl", "separation.chi_sep_medi.lambda_cpl"), ("sep_medi_dr_pos", "separation.chi_sep_medi.dr_pos"),
-    ("sep_medi_dr_neg", "separation.chi_sep_medi.dr_neg"), ("sep_medi_percentage", "separation.chi_sep_medi.percentage"),
-    ("sep_medi_cg_tol", "separation.chi_sep_medi.cg_tol"), ("sep_medi_cg_max_iter", "separation.chi_sep_medi.cg_max_iter"),
-    ("sep_medi_max_iter", "separation.chi_sep_medi.max_iter"), ("sep_medi_tol", "separation.chi_sep_medi.tol"),
+    ("sep_medi_lambda", "separation.chi_sep_medi.lambda"), ("sep_medi_lambda_csf", "separation.chi_sep_medi.lambda_csf"),
+    ("sep_medi_dr_pos", "separation.chi_sep_medi.dr_pos"), ("sep_medi_dr_neg", "separation.chi_sep_medi.dr_neg"),
+    ("sep_medi_pad", "separation.chi_sep_medi.pad"), ("sep_medi_tol", "separation.chi_sep_medi.tol"),
+    ("sep_medi_max_iter", "separation.chi_sep_medi.max_iter"), ("sep_medi_cg_tol", "separation.chi_sep_medi.cg_tol"),
+    ("sep_medi_cg_max_iter", "separation.chi_sep_medi.cg_max_iter"),
     ("sep_wavesep_dr_pos", "separation.wavesep.dr_pos"), ("sep_wavesep_dr_neg", "separation.wavesep.dr_neg"),
     ("sep_wavesep_alpha", "separation.wavesep.alpha"), ("sep_wavesep_lambda", "separation.wavesep.lambda"),
     ("sep_wavesep_wavelet_order", "separation.wavesep.wavelet_order"), ("sep_wavesep_max_iter", "separation.wavesep.max_iter"),
@@ -1798,6 +1812,13 @@ pub struct PipelineFormState {
 
     // TSVD
     pub tsvd_threshold: String,
+    /// QSM.jl's padding (x y z) of RTS, TV, TKD, TSVD, Tikhonov and NLTV.
+    pub rts_pad: String,
+    pub tv_pad: String,
+    pub tkd_pad: String,
+    pub tsvd_pad: String,
+    pub tikhonov_pad: String,
+    pub nltv_pad: String,
 
     // iLSQR
     pub ilsqr_tol: String,
@@ -1903,8 +1924,12 @@ pub struct PipelineFormState {
     pub lbv_tol: String,
 
     // iSMV
+    /// An index into ISMV_VARIANT_OPTIONS.
+    pub ismv_variant: usize,
     pub ismv_tol: String,
+    /// Blank: no limit.
     pub ismv_max_iter: String,
+    /// Blank: the variant's own radius.
     pub ismv_radius: String,
 
     // SHARP
@@ -2100,32 +2125,40 @@ pub struct PipelineFormState {
     // DECOMPOSE
     pub sep_decompose_n_inner: String,
     pub sep_decompose_chi_bound: String,
-    pub sep_decompose_max_lm_iter: String,
-    // χ-sep iLSQR
+    pub sep_decompose_unwrap_phase: bool,
+    pub sep_decompose_max_iterations: String,
+    /// Blank: 100 × the fit's parameters.
+    pub sep_decompose_max_fevals: String,
+    pub sep_decompose_function_tol: String,
+    pub sep_decompose_step_tol: String,
+    pub sep_decompose_optimality_tol: String,
+    pub sep_decompose_fd_step: String,
+    pub sep_decompose_typical_x: String,
+    /// Blank: 137 × B0 / 2.9 T (here and for χ-sep MEDI).
     pub sep_ilsqr_dr_pos: String,
     pub sep_ilsqr_dr_neg: String,
-    pub sep_ilsqr_lambda1: String,
-    pub sep_ilsqr_percentage: String,
-    pub sep_ilsqr_r2p_min: String,
-    pub sep_ilsqr_r2p_max: String,
-    pub sep_ilsqr_max_iter: String,
-    pub sep_ilsqr_tol: String,
-    pub sep_ilsqr_cg_max_iter: String,
-    pub sep_ilsqr_cg_tol: String,
+    pub sep_ilsqr_pad: String,
+    pub sep_ilsqr_cg_max_iter_lsqr: String,
+    pub sep_ilsqr_cg_tol_lsqr: String,
+    pub sep_ilsqr_cg_max_iter_sa: String,
+    pub sep_ilsqr_cg_tol_sa: String,
+    pub sep_ilsqr_d2_thr: String,
+    pub sep_ilsqr_prc_w_i_min: String,
+    pub sep_ilsqr_prc_w_i_max: String,
+    pub sep_ilsqr_prc_w_g_min: String,
+    pub sep_ilsqr_prc_w_g_max: String,
     pub sep_ilsqr_qsm_max_iter: String,
     pub sep_ilsqr_qsm_tol: String,
     pub sep_ilsqr_qsm_pad_mm: String,
-    // χ-sep MEDI
-    pub sep_medi_lambda_para: String,
-    pub sep_medi_lambda_dia: String,
-    pub sep_medi_lambda_cpl: String,
+    pub sep_medi_lambda: String,
+    pub sep_medi_lambda_csf: String,
     pub sep_medi_dr_pos: String,
     pub sep_medi_dr_neg: String,
-    pub sep_medi_percentage: String,
+    pub sep_medi_pad: String,
+    pub sep_medi_tol: String,
+    pub sep_medi_max_iter: String,
     pub sep_medi_cg_tol: String,
     pub sep_medi_cg_max_iter: String,
-    pub sep_medi_max_iter: String,
-    pub sep_medi_tol: String,
     // WaveSep
     pub sep_wavesep_dr_pos: String,
     pub sep_wavesep_dr_neg: String,
@@ -2160,7 +2193,8 @@ impl Default for PipelineFormState {
         let sep_r2starqsm = qsm_core::separation::R2starQsmParams::default();
         let sep_decompose = qsm_core::separation::DecomposeParams::default();
         let sep_ilsqr = qsm_core::separation::ChiSepIlsqrParams::default();
-        let sep_medi = qsm_core::separation::ChiSepParams::default();
+        let sep_medi = qsm_core::separation::ChiSepMediParams::default();
+        let inv_pad = |p: [i64; 3]| format!("{} {} {}", p[0], p[1], p[2]);
         let sep_wavesep = qsm_core::separation::WaveSepParams::default();
         let sep_hcchisep = qsm_core::separation::HcChisepParams::default();
         let fmt_default = |x: f64| format!("{}", x);
@@ -2274,6 +2308,12 @@ impl Default for PipelineFormState {
             tv_max_iter: format!("{}", tv.max_iter),
             tkd_threshold: format!("{}", tkd.threshold),
             tsvd_threshold: format!("{}", tkd.threshold),
+            rts_pad: inv_pad(rts.pad),
+            tv_pad: inv_pad(tv.pad),
+            tkd_pad: inv_pad(tkd.pad),
+            tsvd_pad: inv_pad(tkd.pad),
+            tikhonov_pad: inv_pad(qsm_core::inversion::TikhonovParams::default().pad),
+            nltv_pad: inv_pad(qsm_core::inversion::NltvParams::default().pad),
             ilsqr_tol: format!("{}", qsm_core::inversion::IlsqrParams::default().tol),
             ilsqr_max_iter: format!("{}", qsm_core::inversion::IlsqrParams::default().max_iter),
             ilsqr_pad_mm: format!("{}", qsm_core::inversion::IlsqrParams::default().pad_mm),
@@ -2355,9 +2395,10 @@ impl Default for PipelineFormState {
             pdf_space: pdf_space_index(qsmxt_engine::PdfConfig::default().space),
             pdf_n_pad: format!("{}", qsm_core::bgremove::PdfParams::default().n_pad),
             lbv_tol: format!("{}", qsm_core::bgremove::LbvParams::default().tol),
+            ismv_variant: ismv_variant_index(qsmxt_engine::IsmvConfig::default().variant),
             ismv_tol: format!("{}", qsm_core::bgremove::IsmvParams::default().tol),
-            ismv_max_iter: format!("{}", qsm_core::bgremove::IsmvParams::default().max_iter),
-            ismv_radius: format!("{}", qsm_core::bgremove::IsmvParams::default().radius),
+            ismv_max_iter: fmt_opt(qsm_core::bgremove::IsmvParams::default().max_iter),
+            ismv_radius: fmt_opt(qsm_core::bgremove::IsmvParams::default().radius),
             sharp_threshold: format!("{}", qsm_core::bgremove::SharpParams::default().threshold),
             sharp_radius: format!("{}", qsm_core::bgremove::SharpParams::default().radius),
             resharp_radius: format!("{}", qsm_core::bgremove::ResharpParams::default().radius),
@@ -2510,30 +2551,38 @@ impl Default for PipelineFormState {
             sep_r2starqsm_r_const_3t: fmt_default(sep_r2starqsm.r_const_3t),
             sep_decompose_n_inner: sep_decompose.n_inner.to_string(),
             sep_decompose_chi_bound: fmt_default(sep_decompose.chi_bound),
-            sep_decompose_max_lm_iter: sep_decompose.max_lm_iter.to_string(),
-            sep_ilsqr_dr_pos: fmt_default(sep_ilsqr.dr_pos),
-            sep_ilsqr_dr_neg: fmt_default(sep_ilsqr.dr_neg),
-            sep_ilsqr_lambda1: fmt_default(sep_ilsqr.lambda1),
-            sep_ilsqr_percentage: fmt_default(sep_ilsqr.percentage),
-            sep_ilsqr_r2p_min: fmt_default(sep_ilsqr.r2p_min),
-            sep_ilsqr_r2p_max: fmt_default(sep_ilsqr.r2p_max),
-            sep_ilsqr_max_iter: sep_ilsqr.max_iter.to_string(),
-            sep_ilsqr_tol: fmt_default(sep_ilsqr.tol),
-            sep_ilsqr_cg_max_iter: sep_ilsqr.cg_max_iter.to_string(),
-            sep_ilsqr_cg_tol: fmt_default(sep_ilsqr.cg_tol),
+            sep_decompose_unwrap_phase: sep_decompose.unwrap_phase,
+            sep_decompose_max_iterations: sep_decompose.lsqcurvefit.max_iterations.to_string(),
+            sep_decompose_max_fevals: fmt_opt(sep_decompose.lsqcurvefit.max_function_evaluations),
+            sep_decompose_function_tol: fmt_default(sep_decompose.lsqcurvefit.function_tolerance),
+            sep_decompose_step_tol: fmt_default(sep_decompose.lsqcurvefit.step_tolerance),
+            sep_decompose_optimality_tol: fmt_default(sep_decompose.lsqcurvefit.optimality_tolerance),
+            sep_decompose_fd_step: fmt_default(sep_decompose.lsqcurvefit.finite_difference_step),
+            sep_decompose_typical_x: fmt_default(sep_decompose.lsqcurvefit.typical_x),
+            sep_ilsqr_dr_pos: fmt_opt(sep_ilsqr.dr_pos),
+            sep_ilsqr_dr_neg: fmt_opt(sep_ilsqr.dr_neg),
+            sep_ilsqr_pad: fmt_triple(sep_ilsqr.pad),
+            sep_ilsqr_cg_max_iter_lsqr: sep_ilsqr.cg_max_iter_lsqr.to_string(),
+            sep_ilsqr_cg_tol_lsqr: fmt_default(sep_ilsqr.cg_tol_lsqr),
+            sep_ilsqr_cg_max_iter_sa: sep_ilsqr.cg_max_iter_sa.to_string(),
+            sep_ilsqr_cg_tol_sa: fmt_default(sep_ilsqr.cg_tol_sa),
+            sep_ilsqr_d2_thr: fmt_default(sep_ilsqr.d2_thr),
+            sep_ilsqr_prc_w_i_min: fmt_default(sep_ilsqr.prc_w_i.0),
+            sep_ilsqr_prc_w_i_max: fmt_default(sep_ilsqr.prc_w_i.1),
+            sep_ilsqr_prc_w_g_min: fmt_default(sep_ilsqr.prc_w_g.0),
+            sep_ilsqr_prc_w_g_max: fmt_default(sep_ilsqr.prc_w_g.1),
             sep_ilsqr_qsm_max_iter: sep_ilsqr.qsm_ilsqr.max_iter.to_string(),
             sep_ilsqr_qsm_tol: fmt_default(sep_ilsqr.qsm_ilsqr.tol),
             sep_ilsqr_qsm_pad_mm: fmt_default(sep_ilsqr.qsm_ilsqr.pad_mm),
-            sep_medi_lambda_para: fmt_default(sep_medi.lambda_para),
-            sep_medi_lambda_dia: fmt_default(sep_medi.lambda_dia),
-            sep_medi_lambda_cpl: fmt_default(sep_medi.lambda_cpl),
-            sep_medi_dr_pos: fmt_default(sep_medi.dr_pos),
-            sep_medi_dr_neg: fmt_default(sep_medi.dr_neg),
-            sep_medi_percentage: fmt_default(sep_medi.percentage),
+            sep_medi_lambda: fmt_default(sep_medi.lambda),
+            sep_medi_lambda_csf: fmt_default(sep_medi.lambda_csf),
+            sep_medi_dr_pos: fmt_opt(sep_medi.dr_pos),
+            sep_medi_dr_neg: fmt_opt(sep_medi.dr_neg),
+            sep_medi_pad: sep_medi.pad.to_string(),
+            sep_medi_tol: fmt_default(sep_medi.tol),
+            sep_medi_max_iter: sep_medi.max_iter.to_string(),
             sep_medi_cg_tol: fmt_default(sep_medi.cg_tol),
             sep_medi_cg_max_iter: sep_medi.cg_max_iter.to_string(),
-            sep_medi_max_iter: sep_medi.max_iter.to_string(),
-            sep_medi_tol: fmt_default(sep_medi.tol),
             sep_wavesep_dr_pos: fmt_default(sep_wavesep.dr_pos),
             sep_wavesep_dr_neg: fmt_default(sep_wavesep.dr_neg),
             sep_wavesep_alpha: fmt_default(sep_wavesep.alpha),
@@ -2707,6 +2756,15 @@ const PDF_SPACE_HELP: &[&str] = &[
 fn pdf_space_index(k: qsmxt_engine::PdfSpace) -> usize {
     qsmxt_engine::PdfSpace::ALL.iter().position(|&x| x == k).unwrap_or(0)
 }
+/// iSMV's implementations, in the CLI's names.
+pub const ISMV_VARIANT_OPTIONS: &[&str] = &["wen2014", "qsmjl"];
+const ISMV_VARIANT_HELP: &[&str] = &[
+    "The authors' paper and code (default)",
+    "QSM.jl's implementation",
+];
+fn ismv_variant_index(v: qsmxt_engine::IsmvVariant) -> usize {
+    qsmxt_engine::IsmvVariant::ALL.iter().position(|&x| x == v).unwrap_or(0)
+}
 /// Three values as a row shows them (`0 0 0`).
 fn fmt_triple(p: [usize; 3]) -> String {
     format!("{} {} {}", p[0], p[1], p[2])
@@ -2763,19 +2821,29 @@ impl PipelineFormState {
             1 => {
                 rows.push(PipelineRow::Param { label: "  Inner passes", field: "sep_decompose_n_inner", help: "Alternating 3-stage fit passes per voxel" });
                 rows.push(PipelineRow::Param { label: "  Chi bound (ppm)", field: "sep_decompose_chi_bound", help: "Upper bound on |χ| in the fit" });
-                rows.push(PipelineRow::Param { label: "  Max LM iter", field: "sep_decompose_max_lm_iter", help: "Levenberg–Marquardt max iterations" });
+                rows.push(PipelineRow::Toggle { label: "  Unwrap phase", field: "sep_decompose_unwrap_phase",
+                    help: "Unwrap the phase along the echoes and limit χ to what the echo spacing can represent (default: off, as in the authors' code)" });
+                rows.push(PipelineRow::Param { label: "  Max iter", field: "sep_decompose_max_iterations", help: "Maximum solver iterations per fit (lsqcurvefit MaxIterations)" });
+                rows.push(PipelineRow::Param { label: "  Max evaluations", field: "sep_decompose_max_fevals", help: "Maximum function evaluations per fit (lsqcurvefit MaxFunctionEvaluations). Blank = 100 × the fit's parameters" });
+                rows.push(PipelineRow::Param { label: "  Function tol", field: "sep_decompose_function_tol", help: "Stop when the cost changes by less than this, relatively (lsqcurvefit FunctionTolerance)" });
+                rows.push(PipelineRow::Param { label: "  Step tol", field: "sep_decompose_step_tol", help: "Stop when the step is smaller than this, relatively (lsqcurvefit StepTolerance)" });
+                rows.push(PipelineRow::Param { label: "  Optimality tol", field: "sep_decompose_optimality_tol", help: "Stop when the first-order optimality falls below this (lsqcurvefit OptimalityTolerance)" });
+                rows.push(PipelineRow::Param { label: "  FD step", field: "sep_decompose_fd_step", help: "Relative finite-difference step of the Jacobian (lsqcurvefit FiniteDifferenceStepSize)" });
+                rows.push(PipelineRow::Param { label: "  Typical x", field: "sep_decompose_typical_x", help: "Typical magnitude of each fitted value, for the finite differences (lsqcurvefit TypicalX)" });
             }
             2 => {
-                rows.push(PipelineRow::Param { label: "  Dr+ (Hz/ppm)", field: "sep_ilsqr_dr_pos", help: "Paramagnetic relaxometric constant" });
-                rows.push(PipelineRow::Param { label: "  Dr- (Hz/ppm)", field: "sep_ilsqr_dr_neg", help: "Diamagnetic relaxometric constant" });
-                rows.push(PipelineRow::Param { label: "  Lambda1", field: "sep_ilsqr_lambda1", help: "L1 edge-masked TV weight" });
-                rows.push(PipelineRow::Param { label: "  Percentage", field: "sep_ilsqr_percentage", help: "Edge-mask keep fraction (0-1)" });
-                rows.push(PipelineRow::Param { label: "  R2' min (Hz)", field: "sep_ilsqr_r2p_min", help: "R2' reliability window lower" });
-                rows.push(PipelineRow::Param { label: "  R2' max (Hz)", field: "sep_ilsqr_r2p_max", help: "R2' reliability window upper" });
-                rows.push(PipelineRow::Param { label: "  Max iter", field: "sep_ilsqr_max_iter", help: "Outer Gauss-Newton iterations" });
-                rows.push(PipelineRow::Param { label: "  Tolerance", field: "sep_ilsqr_tol", help: "Outer relative-change tolerance" });
-                rows.push(PipelineRow::Param { label: "  CG max iter", field: "sep_ilsqr_cg_max_iter", help: "Inner CG max iterations" });
-                rows.push(PipelineRow::Param { label: "  CG tolerance", field: "sep_ilsqr_cg_tol", help: "Inner CG relative tolerance" });
+                rows.push(PipelineRow::Param { label: "  Dr+ (Hz/ppm)", field: "sep_ilsqr_dr_pos", help: "Paramagnetic relaxometric constant. Blank = 137 × B0 / 2.9 T" });
+                rows.push(PipelineRow::Param { label: "  Dr- (Hz/ppm)", field: "sep_ilsqr_dr_neg", help: "Diamagnetic relaxometric constant. Blank = 137 × B0 / 2.9 T" });
+                rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "sep_ilsqr_pad", help: "Zero-padding at both ends of each axis, voxels (x y z) (default 16 16 16)" });
+                rows.push(PipelineRow::Param { label: "  LSQR CG iter", field: "sep_ilsqr_cg_max_iter_lsqr", help: "Maximum CG iterations of the LSQR step" });
+                rows.push(PipelineRow::Param { label: "  LSQR CG tol", field: "sep_ilsqr_cg_tol_lsqr", help: "CG relative tolerance of the LSQR step" });
+                rows.push(PipelineRow::Param { label: "  Streaking CG iter", field: "sep_ilsqr_cg_max_iter_sa", help: "Maximum CG iterations of the streaking-removal step, per source" });
+                rows.push(PipelineRow::Param { label: "  Streaking CG tol", field: "sep_ilsqr_cg_tol_sa", help: "CG relative tolerance of the streaking-removal step" });
+                rows.push(PipelineRow::Param { label: "  Cone threshold", field: "sep_ilsqr_d2_thr", help: "The streaking cone is where the dipole kernel |D| is below this" });
+                rows.push(PipelineRow::Param { label: "  Laplacian weight min %", field: "sep_ilsqr_prc_w_i_min", help: "Percentile of the field's Laplacian at which the LSQR weight is 1" });
+                rows.push(PipelineRow::Param { label: "  Laplacian weight max %", field: "sep_ilsqr_prc_w_i_max", help: "Percentile of the field's Laplacian at which the LSQR weight is 0" });
+                rows.push(PipelineRow::Param { label: "  Gradient weight min %", field: "sep_ilsqr_prc_w_g_min", help: "Percentile of each gradient's magnitude at which the streaking-removal weight is 1" });
+                rows.push(PipelineRow::Param { label: "  Gradient weight max %", field: "sep_ilsqr_prc_w_g_max", help: "Percentile of each gradient's magnitude at which the streaking-removal weight is 0" });
                 if self.custom_qsm_tool.trim().is_empty() {
                     rows.push(PipelineRow::Param { label: "  QSM max iter", field: "sep_ilsqr_qsm_max_iter",
                         help: "Maximum iterations of the iLSQR that reconstructs the QSM separated" });
@@ -2786,16 +2854,15 @@ impl PipelineFormState {
                 }
             }
             3 => {
-                rows.push(PipelineRow::Param { label: "  Lambda para", field: "sep_medi_lambda_para", help: "Paramagnetic L1 weight" });
-                rows.push(PipelineRow::Param { label: "  Lambda dia", field: "sep_medi_lambda_dia", help: "Diamagnetic L1 weight" });
-                rows.push(PipelineRow::Param { label: "  Lambda cpl", field: "sep_medi_lambda_cpl", help: "Field/R2' coupling weight" });
-                rows.push(PipelineRow::Param { label: "  Dr+ (Hz/ppm)", field: "sep_medi_dr_pos", help: "Paramagnetic relaxivity" });
-                rows.push(PipelineRow::Param { label: "  Dr- (Hz/ppm)", field: "sep_medi_dr_neg", help: "Diamagnetic relaxivity" });
-                rows.push(PipelineRow::Param { label: "  Percentage", field: "sep_medi_percentage", help: "Edge-mask percentage (0-1)" });
+                rows.push(PipelineRow::Param { label: "  Lambda", field: "sep_medi_lambda", help: "Weight of the data terms against the L1 terms" });
+                rows.push(PipelineRow::Param { label: "  Lambda CSF", field: "sep_medi_lambda_csf", help: "Weight of the CSF-uniformity term" });
+                rows.push(PipelineRow::Param { label: "  Dr+ (Hz/ppm)", field: "sep_medi_dr_pos", help: "Paramagnetic relaxometric constant. Blank = 137 × B0 / 2.9 T" });
+                rows.push(PipelineRow::Param { label: "  Dr- (Hz/ppm)", field: "sep_medi_dr_neg", help: "Diamagnetic relaxometric constant. Blank = 137 × B0 / 2.9 T" });
+                rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "sep_medi_pad", help: "Zero-padding at both ends of the third axis, voxels" });
+                rows.push(PipelineRow::Param { label: "  Tolerance", field: "sep_medi_tol", help: "Stop when the relative change falls below this" });
+                rows.push(PipelineRow::Param { label: "  Max iter", field: "sep_medi_max_iter", help: "Maximum Gauss-Newton iterations" });
                 rows.push(PipelineRow::Param { label: "  CG tolerance", field: "sep_medi_cg_tol", help: "Inner CG tolerance" });
                 rows.push(PipelineRow::Param { label: "  CG max iter", field: "sep_medi_cg_max_iter", help: "Inner CG max iterations" });
-                rows.push(PipelineRow::Param { label: "  Max iter", field: "sep_medi_max_iter", help: "Outer Gauss-Newton iterations" });
-                rows.push(PipelineRow::Param { label: "  Tolerance", field: "sep_medi_tol", help: "Outer convergence tolerance" });
             }
             4 => {
                 rows.push(PipelineRow::Param { label: "  Dr+ (Hz/ppm)", field: "sep_wavesep_dr_pos", help: "Paramagnetic relaxivity" });
@@ -3208,9 +3275,10 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "lbv_tol", help: "Convergence tolerance" });
             }
             3 => { // iSMV
-                rows.push(PipelineRow::Param { label: "  Tolerance", field: "ismv_tol", help: "Convergence tolerance" });
-                rows.push(PipelineRow::Param { label: "  Max iter", field: "ismv_max_iter", help: "Maximum iterations" });
-                rows.push(PipelineRow::Param { label: "  Radius", field: "ismv_radius", help: "SMV kernel radius (mm)" });
+                rows.push(PipelineRow::AlgoSelect { label: "  Variant", field: "ismv_variant", options: ISMV_VARIANT_OPTIONS, help: ISMV_VARIANT_HELP });
+                rows.push(PipelineRow::Param { label: "  Tolerance", field: "ismv_tol", help: "Stop when the relative change between iterates falls below this (QSM.jl: the residual relative to the first)" });
+                rows.push(PipelineRow::Param { label: "  Max iter", field: "ismv_max_iter", help: "Maximum iterations. Blank = no limit" });
+                rows.push(PipelineRow::Param { label: "  Radius", field: "ismv_radius", help: "SMV kernel radius (mm). Blank = 6 × the smallest voxel dimension (QSM.jl: 2 × the largest)" });
             }
             4 => { // SHARP
                 rows.push(PipelineRow::Param { label: "  Threshold", field: "sharp_threshold", help: "Deconvolution threshold" });
@@ -3279,18 +3347,22 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  LSMR iter", field: "rts_lsmr_iter", help: "LSMR iterations for step 1 (well-conditioned solve)" });
                 rows.push(PipelineRow::Param { label: "  Tau", field: "rts_tau", help: "Rho is raised when the primal residual falls by less than this factor" });
                 rows.push(PipelineRow::Param { label: "  Gamma", field: "rts_gamma", help: "Factor rho is raised by" });
+                rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "rts_pad", help: "Zero-padding before the FFTs, voxels (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default 0 0 0)" });
             }
             "tv" => { // TV
                 rows.push(PipelineRow::Param { label: "  Lambda", field: "tv_lambda", help: "L1 regularization weight (larger = smoother)" });
                 rows.push(PipelineRow::Param { label: "  Rho", field: "tv_rho", help: "ADMM penalty parameter. Blank = 100×lambda" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "tv_tol", help: "Convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Max iter", field: "tv_max_iter", help: "Maximum ADMM iterations" });
+                rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "tv_pad", help: "Zero-padding before the FFTs, voxels (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default 0 0 0)" });
             }
             "tkd" => { // TKD
                 rows.push(PipelineRow::Param { label: "  Threshold", field: "tkd_threshold", help: "Truncation threshold for k-space division (0.1-0.2)" });
+                rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "tkd_pad", help: "Zero-padding before the FFTs, voxels (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default 0 0 0)" });
             }
             "tsvd" => { // TSVD
                 rows.push(PipelineRow::Param { label: "  Threshold", field: "tsvd_threshold", help: "Truncation threshold for SVD (0.1-0.2)" });
+                rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "tsvd_pad", help: "Zero-padding before the FFTs, voxels (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default 0 0 0)" });
             }
             "tgv" => { // TGV
                 rows.push(PipelineRow::Param { label: "  Iterations", field: "tgv_iterations", help: "Primal-dual iterations. Blank = from the voxel size, as the reference does" });
@@ -3302,6 +3374,7 @@ impl PipelineFormState {
             }
             "tikhonov" => { // Tikhonov
                 rows.push(PipelineRow::Param { label: "  Lambda", field: "tikhonov_lambda", help: "L2 regularization weight" });
+                rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "tikhonov_pad", help: "Zero-padding before the FFTs, voxels (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default 0 0 0)" });
             }
             "nltv" => { // NLTV
                 rows.push(PipelineRow::Param { label: "  Lambda", field: "nltv_lambda", help: "Regularization parameter" });
@@ -3311,6 +3384,7 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Max iter", field: "nltv_max_iter", help: "Maximum ADMM iterations" });
                 rows.push(PipelineRow::Param { label: "  Newton tol", field: "nltv_tol_newton", help: "Convergence tolerance of the Newton iterations of the data-term subproblem" });
                 rows.push(PipelineRow::Param { label: "  Newton iter", field: "nltv_newton_iter", help: "Maximum Newton iterations of the data-term subproblem" });
+                rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "nltv_pad", help: "Zero-padding before the FFTs, voxels (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default 0 0 0)" });
                 self.push_echo_time(rows, "nltv");
             }
             "medi" => { // MEDI
@@ -3427,21 +3501,26 @@ impl PipelineFormState {
                         rows.push(PipelineRow::Param { label: "  LSMR iter", field: "rts_lsmr_iter", help: "LSMR iterations for step 1 (well-conditioned solve)" });
                         rows.push(PipelineRow::Param { label: "  Tau", field: "rts_tau", help: "Rho is raised when the primal residual falls by less than this factor" });
                         rows.push(PipelineRow::Param { label: "  Gamma", field: "rts_gamma", help: "Factor rho is raised by" });
+                        rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "rts_pad", help: "Zero-padding before the FFTs, voxels (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default 0 0 0)" });
                     }
                     2 => { // TV
                         rows.push(PipelineRow::Param { label: "  Lambda", field: "tv_lambda", help: "L1 regularization weight (larger = smoother)" });
                         rows.push(PipelineRow::Param { label: "  Rho", field: "tv_rho", help: "ADMM penalty parameter. Blank = 100×lambda" });
                         rows.push(PipelineRow::Param { label: "  Tolerance", field: "tv_tol", help: "Convergence tolerance" });
                         rows.push(PipelineRow::Param { label: "  Max iter", field: "tv_max_iter", help: "Maximum ADMM iterations" });
+                        rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "tv_pad", help: "Zero-padding before the FFTs, voxels (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default 0 0 0)" });
                     }
                     3 => { // TKD
                         rows.push(PipelineRow::Param { label: "  Threshold", field: "tkd_threshold", help: "Truncation threshold for k-space division (0.1-0.2)" });
+                        rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "tkd_pad", help: "Zero-padding before the FFTs, voxels (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default 0 0 0)" });
                     }
                     4 => { // TSVD
                         rows.push(PipelineRow::Param { label: "  Threshold", field: "tsvd_threshold", help: "Truncation threshold for SVD (0.1-0.2)" });
+                        rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "tsvd_pad", help: "Zero-padding before the FFTs, voxels (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default 0 0 0)" });
                     }
                     5 => { // Tikhonov
                         rows.push(PipelineRow::Param { label: "  Lambda", field: "tikhonov_lambda", help: "L2 regularization weight" });
+                        rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "tikhonov_pad", help: "Zero-padding before the FFTs, voxels (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default 0 0 0)" });
                     }
                     6 => { // NLTV
                         rows.push(PipelineRow::Param { label: "  Lambda", field: "nltv_lambda", help: "Regularization parameter" });
@@ -3451,6 +3530,7 @@ impl PipelineFormState {
                         rows.push(PipelineRow::Param { label: "  Max iter", field: "nltv_max_iter", help: "Maximum ADMM iterations" });
                         rows.push(PipelineRow::Param { label: "  Newton tol", field: "nltv_tol_newton", help: "Convergence tolerance of the Newton iterations of the data-term subproblem" });
                         rows.push(PipelineRow::Param { label: "  Newton iter", field: "nltv_newton_iter", help: "Maximum Newton iterations of the data-term subproblem" });
+                        rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "nltv_pad", help: "Zero-padding before the FFTs, voxels (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default 0 0 0)" });
                         self.push_echo_time(rows, "nltv");
                     }
                     7 => { // MEDI (QSMART already removes background, so SMV mode is omitted)
@@ -3657,6 +3737,7 @@ impl PipelineFormState {
         "rts_delta", "rts_mu", "rts_tol", "rts_rho", "rts_max_iter", "rts_lsmr_iter", "rts_tau", "rts_gamma",
         "tv_lambda", "tv_rho", "tv_tol", "tv_max_iter",
         "tkd_threshold", "tsvd_threshold",
+        "rts_pad", "tv_pad", "tkd_pad", "tsvd_pad", "tikhonov_pad", "nltv_pad",
         "ilsqr_tol", "ilsqr_max_iter", "ilsqr_pad_mm",
         "star_pad", "star_te_ms",
         "tgv_iterations", "tgv_erosions", "tgv_alpha1", "tgv_alpha0",
@@ -3918,30 +3999,43 @@ impl PipelineFormState {
             "sep_r2starqsm_r_const_3t" => &self.sep_r2starqsm_r_const_3t,
             "sep_decompose_n_inner" => &self.sep_decompose_n_inner,
             "sep_decompose_chi_bound" => &self.sep_decompose_chi_bound,
-            "sep_decompose_max_lm_iter" => &self.sep_decompose_max_lm_iter,
+            "sep_decompose_max_iterations" => &self.sep_decompose_max_iterations,
+            "sep_decompose_max_fevals" => &self.sep_decompose_max_fevals,
+            "sep_decompose_function_tol" => &self.sep_decompose_function_tol,
+            "sep_decompose_step_tol" => &self.sep_decompose_step_tol,
+            "sep_decompose_optimality_tol" => &self.sep_decompose_optimality_tol,
+            "sep_decompose_fd_step" => &self.sep_decompose_fd_step,
+            "sep_decompose_typical_x" => &self.sep_decompose_typical_x,
             "sep_ilsqr_dr_pos" => &self.sep_ilsqr_dr_pos,
             "sep_ilsqr_dr_neg" => &self.sep_ilsqr_dr_neg,
-            "sep_ilsqr_lambda1" => &self.sep_ilsqr_lambda1,
-            "sep_ilsqr_percentage" => &self.sep_ilsqr_percentage,
-            "sep_ilsqr_r2p_min" => &self.sep_ilsqr_r2p_min,
-            "sep_ilsqr_r2p_max" => &self.sep_ilsqr_r2p_max,
-            "sep_ilsqr_max_iter" => &self.sep_ilsqr_max_iter,
-            "sep_ilsqr_tol" => &self.sep_ilsqr_tol,
-            "sep_ilsqr_cg_max_iter" => &self.sep_ilsqr_cg_max_iter,
-            "sep_ilsqr_cg_tol" => &self.sep_ilsqr_cg_tol,
+            "sep_ilsqr_pad" => &self.sep_ilsqr_pad,
+            "sep_ilsqr_cg_max_iter_lsqr" => &self.sep_ilsqr_cg_max_iter_lsqr,
+            "sep_ilsqr_cg_tol_lsqr" => &self.sep_ilsqr_cg_tol_lsqr,
+            "sep_ilsqr_cg_max_iter_sa" => &self.sep_ilsqr_cg_max_iter_sa,
+            "sep_ilsqr_cg_tol_sa" => &self.sep_ilsqr_cg_tol_sa,
+            "sep_ilsqr_d2_thr" => &self.sep_ilsqr_d2_thr,
+            "sep_ilsqr_prc_w_i_min" => &self.sep_ilsqr_prc_w_i_min,
+            "sep_ilsqr_prc_w_i_max" => &self.sep_ilsqr_prc_w_i_max,
+            "sep_ilsqr_prc_w_g_min" => &self.sep_ilsqr_prc_w_g_min,
+            "sep_ilsqr_prc_w_g_max" => &self.sep_ilsqr_prc_w_g_max,
             "sep_ilsqr_qsm_max_iter" => &self.sep_ilsqr_qsm_max_iter,
             "sep_ilsqr_qsm_tol" => &self.sep_ilsqr_qsm_tol,
             "sep_ilsqr_qsm_pad_mm" => &self.sep_ilsqr_qsm_pad_mm,
-            "sep_medi_lambda_para" => &self.sep_medi_lambda_para,
-            "sep_medi_lambda_dia" => &self.sep_medi_lambda_dia,
-            "sep_medi_lambda_cpl" => &self.sep_medi_lambda_cpl,
+            "sep_medi_lambda" => &self.sep_medi_lambda,
+            "sep_medi_lambda_csf" => &self.sep_medi_lambda_csf,
             "sep_medi_dr_pos" => &self.sep_medi_dr_pos,
             "sep_medi_dr_neg" => &self.sep_medi_dr_neg,
-            "sep_medi_percentage" => &self.sep_medi_percentage,
+            "sep_medi_pad" => &self.sep_medi_pad,
+            "sep_medi_tol" => &self.sep_medi_tol,
+            "sep_medi_max_iter" => &self.sep_medi_max_iter,
             "sep_medi_cg_tol" => &self.sep_medi_cg_tol,
             "sep_medi_cg_max_iter" => &self.sep_medi_cg_max_iter,
-            "sep_medi_max_iter" => &self.sep_medi_max_iter,
-            "sep_medi_tol" => &self.sep_medi_tol,
+            "rts_pad" => &self.rts_pad,
+            "tv_pad" => &self.tv_pad,
+            "tkd_pad" => &self.tkd_pad,
+            "tsvd_pad" => &self.tsvd_pad,
+            "tikhonov_pad" => &self.tikhonov_pad,
+            "nltv_pad" => &self.nltv_pad,
             "sep_wavesep_dr_pos" => &self.sep_wavesep_dr_pos,
             "sep_wavesep_dr_neg" => &self.sep_wavesep_dr_neg,
             "sep_wavesep_alpha" => &self.sep_wavesep_alpha,
@@ -4174,30 +4268,43 @@ impl PipelineFormState {
             "sep_r2starqsm_r_const_3t" => Some(&mut self.sep_r2starqsm_r_const_3t),
             "sep_decompose_n_inner" => Some(&mut self.sep_decompose_n_inner),
             "sep_decompose_chi_bound" => Some(&mut self.sep_decompose_chi_bound),
-            "sep_decompose_max_lm_iter" => Some(&mut self.sep_decompose_max_lm_iter),
+            "sep_decompose_max_iterations" => Some(&mut self.sep_decompose_max_iterations),
+            "sep_decompose_max_fevals" => Some(&mut self.sep_decompose_max_fevals),
+            "sep_decompose_function_tol" => Some(&mut self.sep_decompose_function_tol),
+            "sep_decompose_step_tol" => Some(&mut self.sep_decompose_step_tol),
+            "sep_decompose_optimality_tol" => Some(&mut self.sep_decompose_optimality_tol),
+            "sep_decompose_fd_step" => Some(&mut self.sep_decompose_fd_step),
+            "sep_decompose_typical_x" => Some(&mut self.sep_decompose_typical_x),
             "sep_ilsqr_dr_pos" => Some(&mut self.sep_ilsqr_dr_pos),
             "sep_ilsqr_dr_neg" => Some(&mut self.sep_ilsqr_dr_neg),
-            "sep_ilsqr_lambda1" => Some(&mut self.sep_ilsqr_lambda1),
-            "sep_ilsqr_percentage" => Some(&mut self.sep_ilsqr_percentage),
-            "sep_ilsqr_r2p_min" => Some(&mut self.sep_ilsqr_r2p_min),
-            "sep_ilsqr_r2p_max" => Some(&mut self.sep_ilsqr_r2p_max),
-            "sep_ilsqr_max_iter" => Some(&mut self.sep_ilsqr_max_iter),
-            "sep_ilsqr_tol" => Some(&mut self.sep_ilsqr_tol),
-            "sep_ilsqr_cg_max_iter" => Some(&mut self.sep_ilsqr_cg_max_iter),
-            "sep_ilsqr_cg_tol" => Some(&mut self.sep_ilsqr_cg_tol),
+            "sep_ilsqr_pad" => Some(&mut self.sep_ilsqr_pad),
+            "sep_ilsqr_cg_max_iter_lsqr" => Some(&mut self.sep_ilsqr_cg_max_iter_lsqr),
+            "sep_ilsqr_cg_tol_lsqr" => Some(&mut self.sep_ilsqr_cg_tol_lsqr),
+            "sep_ilsqr_cg_max_iter_sa" => Some(&mut self.sep_ilsqr_cg_max_iter_sa),
+            "sep_ilsqr_cg_tol_sa" => Some(&mut self.sep_ilsqr_cg_tol_sa),
+            "sep_ilsqr_d2_thr" => Some(&mut self.sep_ilsqr_d2_thr),
+            "sep_ilsqr_prc_w_i_min" => Some(&mut self.sep_ilsqr_prc_w_i_min),
+            "sep_ilsqr_prc_w_i_max" => Some(&mut self.sep_ilsqr_prc_w_i_max),
+            "sep_ilsqr_prc_w_g_min" => Some(&mut self.sep_ilsqr_prc_w_g_min),
+            "sep_ilsqr_prc_w_g_max" => Some(&mut self.sep_ilsqr_prc_w_g_max),
             "sep_ilsqr_qsm_max_iter" => Some(&mut self.sep_ilsqr_qsm_max_iter),
             "sep_ilsqr_qsm_tol" => Some(&mut self.sep_ilsqr_qsm_tol),
             "sep_ilsqr_qsm_pad_mm" => Some(&mut self.sep_ilsqr_qsm_pad_mm),
-            "sep_medi_lambda_para" => Some(&mut self.sep_medi_lambda_para),
-            "sep_medi_lambda_dia" => Some(&mut self.sep_medi_lambda_dia),
-            "sep_medi_lambda_cpl" => Some(&mut self.sep_medi_lambda_cpl),
+            "sep_medi_lambda" => Some(&mut self.sep_medi_lambda),
+            "sep_medi_lambda_csf" => Some(&mut self.sep_medi_lambda_csf),
             "sep_medi_dr_pos" => Some(&mut self.sep_medi_dr_pos),
             "sep_medi_dr_neg" => Some(&mut self.sep_medi_dr_neg),
-            "sep_medi_percentage" => Some(&mut self.sep_medi_percentage),
+            "sep_medi_pad" => Some(&mut self.sep_medi_pad),
+            "sep_medi_tol" => Some(&mut self.sep_medi_tol),
+            "sep_medi_max_iter" => Some(&mut self.sep_medi_max_iter),
             "sep_medi_cg_tol" => Some(&mut self.sep_medi_cg_tol),
             "sep_medi_cg_max_iter" => Some(&mut self.sep_medi_cg_max_iter),
-            "sep_medi_max_iter" => Some(&mut self.sep_medi_max_iter),
-            "sep_medi_tol" => Some(&mut self.sep_medi_tol),
+            "rts_pad" => Some(&mut self.rts_pad),
+            "tv_pad" => Some(&mut self.tv_pad),
+            "tkd_pad" => Some(&mut self.tkd_pad),
+            "tsvd_pad" => Some(&mut self.tsvd_pad),
+            "tikhonov_pad" => Some(&mut self.tikhonov_pad),
+            "nltv_pad" => Some(&mut self.nltv_pad),
             "sep_wavesep_dr_pos" => Some(&mut self.sep_wavesep_dr_pos),
             "sep_wavesep_dr_neg" => Some(&mut self.sep_wavesep_dr_neg),
             "sep_wavesep_alpha" => Some(&mut self.sep_wavesep_alpha),
@@ -4235,6 +4342,7 @@ impl PipelineFormState {
             "star_te" => self.star_te,
             "whqsm_weight" => self.whqsm_weight,
             "pdf_space" => self.pdf_space,
+            "ismv_variant" => self.ismv_variant,
             "nltv_te" => self.nltv_te,
             "medi_te" => self.medi_te,
             "tfi_te" => self.tfi_te,
@@ -4276,6 +4384,7 @@ impl PipelineFormState {
             "star_te" => self.star_te = val.min(ECHO_TIME_OPTIONS.len() - 1),
             "whqsm_weight" => self.whqsm_weight = val.min(WHQSM_WEIGHT_OPTIONS.len() - 1),
             "pdf_space" => self.pdf_space = val.min(PDF_SPACE_OPTIONS.len() - 1),
+            "ismv_variant" => self.ismv_variant = val.min(ISMV_VARIANT_OPTIONS.len() - 1),
             "nltv_te" => self.nltv_te = val.min(ECHO_TIME_OPTIONS.len() - 1),
             "medi_te" => self.medi_te = val.min(ECHO_TIME_OPTIONS.len() - 1),
             "tfi_te" => self.tfi_te = val.min(ECHO_TIME_OPTIONS.len() - 1),
@@ -4345,6 +4454,7 @@ impl PipelineFormState {
             "motion_chain" => self.motion_chain,
             "r2primenet_ignore_field_mismatch" => self.r2primenet_ignore_field_mismatch,
             "vsharp_deconvolve" => self.vsharp_deconvolve,
+            "sep_decompose_unwrap_phase" => self.sep_decompose_unwrap_phase,
             _ => false,
         }
     }
@@ -4397,6 +4507,7 @@ impl PipelineFormState {
             "motion_chain" => self.motion_chain = !self.motion_chain,
             "r2primenet_ignore_field_mismatch" => self.r2primenet_ignore_field_mismatch = !self.r2primenet_ignore_field_mismatch,
             "vsharp_deconvolve" => self.vsharp_deconvolve = !self.vsharp_deconvolve,
+            "sep_decompose_unwrap_phase" => self.sep_decompose_unwrap_phase = !self.sep_decompose_unwrap_phase,
             _ => {}
         }
     }
@@ -8711,7 +8822,7 @@ mod tests {
         // And optional settings whose blank is the value qsm-core derives.
         const OPT_IN_EMPTY: &[&str] = &["dl_tile_size", "dl_tile_halo", "robust_fit_tuning", "sep_susepnet_patch",
             "tv_rho", "tgv_iterations", "fansi_mu1", "fansi_alpha0", "fansi_mu0", "l1qsm_mu1", "hdqsm_mu1_l2",
-            "medi_msmv_vessel_radius", "nltv_rho"];
+            "medi_msmv_vessel_radius", "nltv_rho", "ismv_max_iter", "ismv_radius"];
         let state = PipelineFormState::default();
         for &field_name in PipelineFormState::ALL_PARAM_FIELDS {
             let val = state.get_param(field_name);
