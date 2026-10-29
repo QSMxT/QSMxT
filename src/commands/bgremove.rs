@@ -106,6 +106,7 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
                 min_radius: args.min_radius.unwrap_or(d.min_radius),
                 radius_step: args.radius_step.unwrap_or(d.radius_step),
                 deconvolve: args.deconvolve.unwrap_or(d.deconvolve),
+                ball: bg::VsharpBall::default(),
                 grid: grid_cfg.core_grid(),
             };
             let config = qsm_core::pipeline::BgRemovalConfig { vsharp, ..config_for(A::Vsharp) };
@@ -147,6 +148,7 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             let sharp = bg::SharpParams {
                 threshold: args.threshold.unwrap_or(d.threshold),
                 radius: args.radius.unwrap_or(d.radius),
+                ..d
             };
             let config = qsm_core::pipeline::BgRemovalConfig { sharp, ..config_for(A::Sharp) };
             let out = remove_with(&args.common, config, None, &[], "SHARP")?;
