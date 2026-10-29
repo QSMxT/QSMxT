@@ -1652,7 +1652,10 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let mask_item = self.mask_item();
         let brain = self.store.mask(&mask_item)?;
 
-        // Multi-echo magnitude (voxel-major) and its RSS over echoes, when there is magnitude.
+        // Multi-echo magnitude (voxel-major) and its RSS over echoes, when there is magnitude;
+        // χ-sep MEDI also takes the echoes one volume after another, for its noise map and CSF mask.
+        let chi_sep_medi = alg == crate::SeparationAlgorithm::ChiSepMedi;
+        let mut echo_major = Vec::new();
         let (magnitude_multi, magnitude_rss) = if self.meta.has_magnitude {
             let n = self.n_echoes();
             let mut multi = stages::relaxometry::VoxelMajor::new(n_voxels, n);
@@ -1661,6 +1664,9 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                 let item = self.working_magnitude(e);
                 let echo = self.store.real(&item)?;
                 multi.set(e - 1, &echo, &format!("mag echo {e}"))?;
+                if chi_sep_medi {
+                    echo_major.extend_from_slice(&echo);
+                }
                 for (r, m) in rss.iter_mut().zip(&echo) {
                     *r += m * m;
                 }
@@ -1693,10 +1699,15 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             }
         };
 
+        // χ-sep MEDI's noise map and CSF mask are made below, on the support, from the magnitude:
+        // here they count as present when the magnitude is.
+        let makes_medi_inputs = chi_sep_medi && !echo_major.is_empty();
+        let (no_map, no_mask): (&[f64], &[u8]) = (&[], &[]);
         let missing = sep::missing_inputs(alg, &qsm_core::pipeline::SeparationInputs {
             local_field_ppm: &local_field, qsm: &qsm, qsm_per_echo: None, mask: &brain, r2prime: r2prime.as_deref(),
             r2star: r2star.as_deref(), magnitude_rss: magnitude_rss.as_deref(),
             magnitude_multi: magnitude_multi.as_deref(), se_magnitude_multi: se_multi.as_deref(),
+            n_std: makes_medi_inputs.then_some(no_map), mask_csf: makes_medi_inputs.then_some(no_mask),
         });
         if !missing.is_empty() {
             return Err(crate::EngineError::Config(format!(
@@ -1742,11 +1753,21 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         // has one, so it is given at every echo (said in the methods text).
         let qsm_per_echo = (alg == crate::SeparationAlgorithm::Decompose)
             .then(|| sep::repeat_per_echo(&qsm, self.n_echoes()));
+        let (n_std, mask_csf) = if chi_sep_medi {
+            let (n_std, csf) = sep::chi_sep_medi_inputs(
+                &echo_major, &self.meta.echo_times, &support, self.meta.dims, self.meta.voxel_size)?;
+            self.log(Level::Info, &format!("Chi-separation (MEDI): CSF mask of {} voxels from ARLO R2*",
+                stages::r2::count_set(&csf)));
+            (Some(n_std), Some(csf))
+        } else {
+            (None, None)
+        };
         let inputs = qsm_core::pipeline::SeparationInputs {
             local_field_ppm: &local_field, qsm: &qsm, qsm_per_echo: qsm_per_echo.as_deref(),
             mask: &support, r2prime: r2prime.as_deref(),
             r2star: r2star.as_deref(), magnitude_rss: magnitude_rss.as_deref(),
             magnitude_multi: magnitude_multi.as_deref(), se_magnitude_multi: se_multi.as_deref(),
+            n_std: n_std.as_deref(), mask_csf: mask_csf.as_deref(),
         };
         self.store.models(&step.models)?;
         let separated = sep::separate(inputs, mese.as_ref().map(|m| m.echo_times.as_slice()), &self.meta,
@@ -2161,8 +2182,8 @@ pub(crate) mod tests {
         qsmart.ilsqr_pad_mm = 0.0;
         qsmart.vasc_sphere_radius = 2;
         qsmart.frangi_scale_max = 1.0;
-        config.separation.chi_sep_ilsqr.max_iter = 3;
-        config.separation.chi_sep_ilsqr.cg_max_iter = 5;
+        config.separation.chi_sep_ilsqr.cg_max_iter_lsqr = 3;
+        config.separation.chi_sep_ilsqr.cg_max_iter_sa = 3;
         config
     }
 

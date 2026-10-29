@@ -178,6 +178,10 @@ pub struct RtsParamArgs {
     /// RTS: the factor rho is raised by (gamma)
     #[arg(long)]
     pub rts_gamma: Option<f64>,
+    /// RTS zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an
+    /// FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0)
+    #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"], allow_negative_numbers = true)]
+    pub rts_pad: Option<Vec<i64>>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -194,6 +198,10 @@ pub struct TvParamArgs {
     /// TV max iterations
     #[arg(long)]
     pub tv_max_iter: Option<usize>,
+    /// TV zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an
+    /// FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0)
+    #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"], allow_negative_numbers = true)]
+    pub tv_pad: Option<Vec<i64>>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -201,6 +209,10 @@ pub struct TkdParamArgs {
     /// TKD threshold
     #[arg(long)]
     pub tkd_threshold: Option<f64>,
+    /// TKD zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an
+    /// FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0)
+    #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"], allow_negative_numbers = true)]
+    pub tkd_pad: Option<Vec<i64>>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -208,6 +220,10 @@ pub struct TsvdParamArgs {
     /// TSVD threshold
     #[arg(long)]
     pub tsvd_threshold: Option<f64>,
+    /// TSVD zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an
+    /// FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0)
+    #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"], allow_negative_numbers = true)]
+    pub tsvd_pad: Option<Vec<i64>>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -254,6 +270,10 @@ pub struct TikhonovParamArgs {
     /// Tikhonov lambda
     #[arg(long)]
     pub tikhonov_lambda: Option<f64>,
+    /// Tikhonov zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an
+    /// FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0)
+    #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"], allow_negative_numbers = true)]
+    pub tikhonov_pad: Option<Vec<i64>>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -283,6 +303,10 @@ pub struct NltvParamArgs {
     /// (of the echo times), or a time in ms (default: first)
     #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
     pub nltv_te: Option<qsmxt_engine::EchoTimeChoice>,
+    /// NLTV zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an
+    /// FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0)
+    #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"], allow_negative_numbers = true)]
+    pub nltv_pad: Option<Vec<i64>>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -483,40 +507,75 @@ pub struct SeparationParamArgs {
     /// DECOMPOSE upper bound on |χ| in the fit (ppm)
     #[arg(long)]
     pub decompose_chi_bound: Option<f64>,
-    /// DECOMPOSE Levenberg–Marquardt max iterations
+    /// DECOMPOSE: unwrap the phase along the echoes and limit χ to what the echo spacing can
+    /// represent (default: false, as in the authors' code)
+    #[arg(long, value_name = "BOOL")]
+    pub decompose_unwrap_phase: Option<bool>,
+    /// DECOMPOSE: maximum solver iterations of each fit (lsqcurvefit MaxIterations; default: 400)
     #[arg(long)]
-    pub decompose_max_lm_iter: Option<usize>,
-    // χ-sep iLSQR (Shin)
-    /// χ-sep iLSQR paramagnetic relaxometric constant (Hz/ppm)
+    pub decompose_max_iterations: Option<usize>,
+    /// DECOMPOSE: maximum function evaluations of each fit (lsqcurvefit MaxFunctionEvaluations;
+    /// default: 100 × the fit's parameters)
     #[arg(long)]
-    pub chi_sep_ilsqr_dr_pos: Option<f64>,
-    /// χ-sep iLSQR diamagnetic relaxometric constant (Hz/ppm)
+    pub decompose_max_function_evaluations: Option<usize>,
+    /// DECOMPOSE: relative cost change each fit stops at (lsqcurvefit FunctionTolerance; default: 1e-6)
     #[arg(long)]
-    pub chi_sep_ilsqr_dr_neg: Option<f64>,
-    /// χ-sep iLSQR L1 edge-masked TV weight
+    pub decompose_function_tolerance: Option<f64>,
+    /// DECOMPOSE: relative step each fit stops at (lsqcurvefit StepTolerance; default: 1e-6)
     #[arg(long)]
-    pub chi_sep_ilsqr_lambda1: Option<f64>,
-    /// χ-sep iLSQR edge-mask keep fraction (0-1)
+    pub decompose_step_tolerance: Option<f64>,
+    /// DECOMPOSE: first-order optimality each fit stops at (lsqcurvefit OptimalityTolerance;
+    /// default: 1e-6)
     #[arg(long)]
-    pub chi_sep_ilsqr_percentage: Option<f64>,
-    /// χ-sep iLSQR R2' reliability window lower (Hz)
+    pub decompose_optimality_tolerance: Option<f64>,
+    /// DECOMPOSE: relative finite-difference step of the Jacobian (lsqcurvefit
+    /// FiniteDifferenceStepSize; default: √eps)
     #[arg(long)]
-    pub chi_sep_ilsqr_r2p_min: Option<f64>,
-    /// χ-sep iLSQR R2' reliability window upper (Hz)
+    pub decompose_finite_difference_step: Option<f64>,
+    /// DECOMPOSE: typical magnitude of each fitted value (lsqcurvefit TypicalX; default: 1)
     #[arg(long)]
-    pub chi_sep_ilsqr_r2p_max: Option<f64>,
-    /// χ-sep iLSQR outer Gauss-Newton iterations
+    pub decompose_typical_x: Option<f64>,
+    // χ-sep iLSQR (the χ-separation toolbox's chi_sep_iLSQR)
+    /// χ-sep iLSQR paramagnetic relaxometric constant (Hz/ppm), or auto for 137 × B0 / 2.9 T
+    /// (default: auto)
+    #[arg(long, value_name = "HZ_PER_PPM", value_parser = parse_or_auto)]
+    pub chi_sep_ilsqr_dr_pos: Option<OrAuto>,
+    /// χ-sep iLSQR diamagnetic relaxometric constant (Hz/ppm), or auto for 137 × B0 / 2.9 T
+    /// (default: auto)
+    #[arg(long, value_name = "HZ_PER_PPM", value_parser = parse_or_auto)]
+    pub chi_sep_ilsqr_dr_neg: Option<OrAuto>,
+    /// χ-sep iLSQR zero-padding at both ends of each axis in voxels, X Y Z (default: 16 16 16)
+    #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"])]
+    pub chi_sep_ilsqr_pad: Option<Vec<usize>>,
+    /// χ-sep iLSQR: maximum CG iterations of the LSQR step (default: 50)
     #[arg(long)]
-    pub chi_sep_ilsqr_max_iter: Option<usize>,
-    /// χ-sep iLSQR outer relative-change tolerance
+    pub chi_sep_ilsqr_cg_max_iter_lsqr: Option<usize>,
+    /// χ-sep iLSQR: CG relative tolerance of the LSQR step (default: 0.02)
     #[arg(long)]
-    pub chi_sep_ilsqr_tol: Option<f64>,
-    /// χ-sep iLSQR inner CG max iterations
+    pub chi_sep_ilsqr_cg_tol_lsqr: Option<f64>,
+    /// χ-sep iLSQR: maximum CG iterations of the streaking-removal step (default: 50)
     #[arg(long)]
-    pub chi_sep_ilsqr_cg_max_iter: Option<usize>,
-    /// χ-sep iLSQR inner CG relative tolerance
+    pub chi_sep_ilsqr_cg_max_iter_sa: Option<usize>,
+    /// χ-sep iLSQR: CG relative tolerance of the streaking-removal step (default: 0.02)
     #[arg(long)]
-    pub chi_sep_ilsqr_cg_tol: Option<f64>,
+    pub chi_sep_ilsqr_cg_tol_sa: Option<f64>,
+    /// χ-sep iLSQR: the streaking cone is where |D| is below this (default: 0.11)
+    #[arg(long)]
+    pub chi_sep_ilsqr_d2_thr: Option<f64>,
+    /// χ-sep iLSQR: percentile of the field's Laplacian at which the LSQR weight is 1 (default: 60)
+    #[arg(long)]
+    pub chi_sep_ilsqr_prc_w_i_min: Option<f64>,
+    /// χ-sep iLSQR: percentile of the field's Laplacian at which the LSQR weight is 0 (default: 99.8)
+    #[arg(long)]
+    pub chi_sep_ilsqr_prc_w_i_max: Option<f64>,
+    /// χ-sep iLSQR: percentile of each gradient's magnitude at which the streaking-removal weight
+    /// is 1 (default: 50)
+    #[arg(long)]
+    pub chi_sep_ilsqr_prc_w_g_min: Option<f64>,
+    /// χ-sep iLSQR: percentile of each gradient's magnitude at which the streaking-removal weight
+    /// is 0 (default: 70)
+    #[arg(long)]
+    pub chi_sep_ilsqr_prc_w_g_max: Option<f64>,
     /// χ-sep iLSQR: max iterations of the iLSQR that reconstructs, from the local field, the QSM
     /// χ-separation is initialised with (default: 100; not used with --use-custom-qsm)
     #[arg(long)]
@@ -527,37 +586,36 @@ pub struct SeparationParamArgs {
     /// χ-sep iLSQR: zero-padding of that QSM's iLSQR, in mm per side (default: 12)
     #[arg(long, value_name = "MM")]
     pub chi_sep_ilsqr_qsm_pad_mm: Option<f64>,
-    // χ-sep MEDI
-    /// χ-sep MEDI paramagnetic L1 weight
+    // χ-sep MEDI (the χ-separation toolbox's chi_sep_MEDI)
+    /// χ-sep MEDI weight of the data terms against the L1 terms (default: 1)
     #[arg(long)]
-    pub chi_sep_medi_lambda_para: Option<f64>,
-    /// χ-sep MEDI diamagnetic L1 weight
+    pub chi_sep_medi_lambda: Option<f64>,
+    /// χ-sep MEDI weight of the CSF-uniformity term (default: 1)
     #[arg(long)]
-    pub chi_sep_medi_lambda_dia: Option<f64>,
-    /// χ-sep MEDI field/R2' coupling weight
+    pub chi_sep_medi_lambda_csf: Option<f64>,
+    /// χ-sep MEDI paramagnetic relaxometric constant (Hz/ppm), or auto for 137 × B0 / 2.9 T
+    /// (default: auto)
+    #[arg(long, value_name = "HZ_PER_PPM", value_parser = parse_or_auto)]
+    pub chi_sep_medi_dr_pos: Option<OrAuto>,
+    /// χ-sep MEDI diamagnetic relaxometric constant (Hz/ppm), or auto for 137 × B0 / 2.9 T
+    /// (default: auto)
+    #[arg(long, value_name = "HZ_PER_PPM", value_parser = parse_or_auto)]
+    pub chi_sep_medi_dr_neg: Option<OrAuto>,
+    /// χ-sep MEDI zero-padding at both ends of the third axis, in voxels (default: 5)
     #[arg(long)]
-    pub chi_sep_medi_lambda_cpl: Option<f64>,
-    /// χ-sep MEDI paramagnetic relaxivity (Hz/ppm)
-    #[arg(long)]
-    pub chi_sep_medi_dr_pos: Option<f64>,
-    /// χ-sep MEDI diamagnetic relaxivity (Hz/ppm)
-    #[arg(long)]
-    pub chi_sep_medi_dr_neg: Option<f64>,
-    /// χ-sep MEDI edge-mask percentage (0-1)
-    #[arg(long)]
-    pub chi_sep_medi_percentage: Option<f64>,
-    /// χ-sep MEDI inner CG tolerance
-    #[arg(long)]
-    pub chi_sep_medi_cg_tol: Option<f64>,
-    /// χ-sep MEDI inner CG max iterations
-    #[arg(long)]
-    pub chi_sep_medi_cg_max_iter: Option<usize>,
-    /// χ-sep MEDI outer Gauss-Newton iterations
-    #[arg(long)]
-    pub chi_sep_medi_max_iter: Option<usize>,
-    /// χ-sep MEDI outer convergence tolerance
+    pub chi_sep_medi_pad: Option<usize>,
+    /// χ-sep MEDI: stop when the relative change falls below this (default: 0.03)
     #[arg(long)]
     pub chi_sep_medi_tol: Option<f64>,
+    /// χ-sep MEDI maximum Gauss-Newton iterations (default: 30)
+    #[arg(long)]
+    pub chi_sep_medi_max_iter: Option<usize>,
+    /// χ-sep MEDI inner CG tolerance (default: 0.05)
+    #[arg(long)]
+    pub chi_sep_medi_cg_tol: Option<f64>,
+    /// χ-sep MEDI inner CG max iterations (default: 100)
+    #[arg(long)]
+    pub chi_sep_medi_cg_max_iter: Option<usize>,
     // WaveSep (Fang)
     /// WaveSep paramagnetic relaxivity (Hz/ppm)
     #[arg(long)]
@@ -724,7 +782,7 @@ pub struct IlsqrParamArgs {
     /// iLSQR tolerance of the streaking-artefact solve
     #[arg(long)]
     pub ilsqr_tol: Option<f64>,
-    /// iLSQR max iterations of each LSQR solve
+    /// iLSQR max iterations of each LSQR solve (default: 100)
     #[arg(long)]
     pub ilsqr_max_iter: Option<usize>,
     /// iLSQR zero-padding in mm per side
@@ -774,6 +832,12 @@ pub fn parse_or_auto(s: &str) -> Result<OrAuto, String> {
 pub fn parse_whqsm_weight(s: &str) -> Result<qsmxt_engine::WhqsmWeight, String> {
     qsmxt_engine::WhqsmWeight::ALL.into_iter().find(|w| w.as_str() == s.trim())
         .ok_or_else(|| format!("expected flat, max-normalised or in-vivo, got '{s}'"))
+}
+
+/// An iSMV implementation: `wen2014` or `qsmjl`.
+pub fn parse_ismv_variant(s: &str) -> Result<qsmxt_engine::IsmvVariant, String> {
+    qsmxt_engine::IsmvVariant::ALL.into_iter().find(|v| v.as_str() == s.trim())
+        .ok_or_else(|| format!("expected wen2014 or qsmjl, got '{s}'"))
 }
 
 /// A PDF dipole kernel: `image` or `kspace`.
@@ -1011,15 +1075,21 @@ pub struct LbvParamArgs {
 
 #[derive(Args, Debug, Default, Clone)]
 pub struct IsmvParamArgs {
-    /// iSMV tolerance
+    /// iSMV implementation: wen2014 (the authors' paper and code) or qsmjl (QSM.jl's) (default:
+    /// wen2014)
+    #[arg(long, value_name = "VARIANT", value_parser = parse_ismv_variant)]
+    pub ismv_variant: Option<qsmxt_engine::IsmvVariant>,
+    /// iSMV tolerance: the relative change between iterates it stops at (qsmjl: the residual
+    /// relative to the first) (default: 5e-5)
     #[arg(long)]
     pub ismv_tol: Option<f64>,
-    /// iSMV max iterations
+    /// iSMV max iterations (default: no limit)
     #[arg(long)]
     pub ismv_max_iter: Option<usize>,
-    /// iSMV kernel radius in mm
-    #[arg(long)]
-    pub ismv_radius: Option<f64>,
+    /// iSMV kernel radius in mm, or auto for 6 × the smallest voxel dimension (qsmjl: 2 × the
+    /// largest) (default: auto)
+    #[arg(long, value_name = "MM", value_parser = parse_or_auto)]
+    pub ismv_radius: Option<OrAuto>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -2542,13 +2612,17 @@ pub struct BgremoveLbvArgs {
 pub struct BgremoveIsmvArgs {
     #[command(flatten)]
     pub common: BgremoveCommonArgs,
-    /// Tolerance
+    /// Implementation: wen2014 (the authors' paper and code) or qsmjl (QSM.jl's) (default: wen2014)
+    #[arg(long, value_name = "VARIANT", value_parser = parse_ismv_variant)]
+    pub variant: Option<qsmxt_engine::IsmvVariant>,
+    /// Tolerance: the relative change between iterates it stops at (qsmjl: the residual relative
+    /// to the first) (default: 5e-5)
     #[arg(long)]
     pub tol: Option<f64>,
-    /// Max iterations
+    /// Max iterations (default: no limit)
     #[arg(long)]
     pub max_iter: Option<usize>,
-    /// Radius factor (multiplied by max voxel size)
+    /// Kernel radius in mm (default: 6 × the smallest voxel dimension; qsmjl: 2 × the largest)
     #[arg(long)]
     pub radius: Option<f64>,
 }
@@ -2871,6 +2945,10 @@ pub struct InvertRtsArgs {
     /// The factor rho is raised by (gamma)
     #[arg(long)]
     pub gamma: Option<f64>,
+    /// Zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an
+    /// FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0)
+    #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"], allow_negative_numbers = true)]
+    pub pad: Option<Vec<i64>>,
 }
 
 #[derive(Parser, Debug)]
@@ -2889,6 +2967,10 @@ pub struct InvertTvArgs {
     /// Max iterations
     #[arg(long)]
     pub max_iter: Option<usize>,
+    /// Zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an
+    /// FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0)
+    #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"], allow_negative_numbers = true)]
+    pub pad: Option<Vec<i64>>,
 }
 
 #[derive(Parser, Debug)]
@@ -2898,6 +2980,10 @@ pub struct InvertTkdArgs {
     /// Threshold
     #[arg(long)]
     pub threshold: Option<f64>,
+    /// Zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an
+    /// FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0)
+    #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"], allow_negative_numbers = true)]
+    pub pad: Option<Vec<i64>>,
 }
 
 #[derive(Parser, Debug)]
@@ -2907,6 +2993,10 @@ pub struct InvertTsvdArgs {
     /// Threshold
     #[arg(long)]
     pub threshold: Option<f64>,
+    /// Zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an
+    /// FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0)
+    #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"], allow_negative_numbers = true)]
+    pub pad: Option<Vec<i64>>,
 }
 
 /// TGV of a field map in ppm, which TGV expresses as phase at the echo time `--te` picks.
@@ -2944,6 +3034,10 @@ pub struct InvertTikhonovArgs {
     /// Lambda
     #[arg(long)]
     pub lambda: Option<f64>,
+    /// Zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an
+    /// FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0)
+    #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"], allow_negative_numbers = true)]
+    pub pad: Option<Vec<i64>>,
 }
 
 #[derive(Parser, Debug)]
@@ -2981,6 +3075,10 @@ pub struct InvertNltvArgs {
     /// the echo times), or a time in ms (default: first)
     #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
     pub te: Option<qsmxt_engine::EchoTimeChoice>,
+    /// Zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an
+    /// FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0)
+    #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"], allow_negative_numbers = true)]
+    pub pad: Option<Vec<i64>>,
 }
 
 /// MEDI of a local field in ppm. It weights the data by a noise map and its edges by a magnitude it
@@ -3124,7 +3222,7 @@ pub struct InvertIlsqrArgs {
     /// Tolerance
     #[arg(long)]
     pub tol: Option<f64>,
-    /// Max iterations
+    /// Max iterations of each LSQR solve (default: 100)
     #[arg(long)]
     pub max_iter: Option<usize>,
     /// Zero-padding in mm per side
@@ -3503,9 +3601,9 @@ pub enum SeparateCommand {
     R2starQsm(SeparateR2starQsmArgs),
     /// DECOMPOSE-QSM signal-domain fit (Chen 2021) — a QSM per echo + multi-echo magnitude (GRE-only)
     Decompose(SeparateDecomposeArgs),
-    /// χ-separation iLSQR (Shin 2021) — local field + R2' + magnitude + QSM
+    /// χ-separation iLSQR (Shin 2021) — local field + R2' + QSM
     ChiSepIlsqr(SeparateChiSepIlsqrArgs),
-    /// χ-separation MEDI — local field + R2' + magnitude + QSM
+    /// χ-separation MEDI — local field + R2' + multi-echo magnitude + QSM
     ChiSepMedi(SeparateChiSepMediArgs),
     /// WaveSep wavelet-L1 (Fang 2023) — QSM + R2'
     Wavesep(SeparateWavesepArgs),
@@ -3573,9 +3671,33 @@ pub struct SeparateDecomposeArgs {
     /// Upper bound on |χ| in the fit (ppm)
     #[arg(long)]
     pub chi_bound: Option<f64>,
-    /// Levenberg–Marquardt max iterations
+    /// Unwrap the phase along the echoes and limit χ to what the echo spacing can represent
+    /// (default: false, as in the authors' code)
+    #[arg(long, value_name = "BOOL")]
+    pub unwrap_phase: Option<bool>,
+    /// Maximum solver iterations of each fit (lsqcurvefit MaxIterations; default: 400)
     #[arg(long)]
-    pub max_lm_iter: Option<usize>,
+    pub max_iterations: Option<usize>,
+    /// Maximum function evaluations of each fit (lsqcurvefit MaxFunctionEvaluations; default:
+    /// 100 × the fit's parameters)
+    #[arg(long)]
+    pub max_function_evaluations: Option<usize>,
+    /// Relative cost change each fit stops at (lsqcurvefit FunctionTolerance; default: 1e-6)
+    #[arg(long)]
+    pub function_tolerance: Option<f64>,
+    /// Relative step each fit stops at (lsqcurvefit StepTolerance; default: 1e-6)
+    #[arg(long)]
+    pub step_tolerance: Option<f64>,
+    /// First-order optimality each fit stops at (lsqcurvefit OptimalityTolerance; default: 1e-6)
+    #[arg(long)]
+    pub optimality_tolerance: Option<f64>,
+    /// Relative finite-difference step of the Jacobian (lsqcurvefit FiniteDifferenceStepSize;
+    /// default: √eps)
+    #[arg(long)]
+    pub finite_difference_step: Option<f64>,
+    /// Typical magnitude of each fitted value (lsqcurvefit TypicalX; default: 1)
+    #[arg(long)]
+    pub typical_x: Option<f64>,
 }
 
 #[derive(Parser, Debug)]
@@ -3588,41 +3710,49 @@ pub struct SeparateChiSepIlsqrArgs {
     /// R2' map NIfTI in Hz
     #[arg(long)]
     pub r2prime: PathBuf,
-    /// Magnitude for SNR weighting + edge mask: one 4D file or several 3D files (RSS-combined)
-    #[arg(long, num_args = 1.., required = true)]
-    pub magnitude: Vec<PathBuf>,
-    /// Paramagnetic relaxometric constant (Hz/ppm)
+    /// Paramagnetic relaxometric constant (Hz/ppm) (default: 137 × B0 / 2.9 T)
     #[arg(long)]
     pub dr_pos: Option<f64>,
-    /// Diamagnetic relaxometric constant (Hz/ppm)
+    /// Diamagnetic relaxometric constant (Hz/ppm) (default: 137 × B0 / 2.9 T)
     #[arg(long)]
     pub dr_neg: Option<f64>,
-    /// L1 edge-masked TV weight
+    /// Zero-padding at both ends of each axis in voxels, X Y Z (default: 16 16 16)
+    #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"])]
+    pub pad: Option<Vec<usize>>,
+    /// Maximum CG iterations of the LSQR step (default: 50)
     #[arg(long)]
-    pub lambda1: Option<f64>,
-    /// Edge-mask keep fraction (0-1)
+    pub cg_max_iter_lsqr: Option<usize>,
+    /// CG relative tolerance of the LSQR step (default: 0.02)
     #[arg(long)]
-    pub percentage: Option<f64>,
-    /// R2' reliability window lower (Hz)
+    pub cg_tol_lsqr: Option<f64>,
+    /// Maximum CG iterations of the streaking-removal step (default: 50)
     #[arg(long)]
-    pub r2p_min: Option<f64>,
-    /// R2' reliability window upper (Hz)
+    pub cg_max_iter_sa: Option<usize>,
+    /// CG relative tolerance of the streaking-removal step (default: 0.02)
     #[arg(long)]
-    pub r2p_max: Option<f64>,
-    /// Outer Gauss-Newton iterations
+    pub cg_tol_sa: Option<f64>,
+    /// The streaking cone is where |D| is below this (default: 0.11)
     #[arg(long)]
-    pub max_iter: Option<usize>,
-    /// Outer relative-change tolerance
+    pub d2_thr: Option<f64>,
+    /// Percentile of the field's Laplacian at which the LSQR weight is 1 (default: 60)
     #[arg(long)]
-    pub tol: Option<f64>,
-    /// Inner CG max iterations
+    pub prc_w_i_min: Option<f64>,
+    /// Percentile of the field's Laplacian at which the LSQR weight is 0 (default: 99.8)
     #[arg(long)]
-    pub cg_max_iter: Option<usize>,
-    /// Inner CG relative tolerance
+    pub prc_w_i_max: Option<f64>,
+    /// Percentile of each gradient's magnitude at which the streaking-removal weight is 1
+    /// (default: 50)
     #[arg(long)]
-    pub cg_tol: Option<f64>,
+    pub prc_w_g_min: Option<f64>,
+    /// Percentile of each gradient's magnitude at which the streaking-removal weight is 0
+    /// (default: 70)
+    #[arg(long)]
+    pub prc_w_g_max: Option<f64>,
 }
 
+/// χ-separation MEDI. Its data terms are weighted by a noise map made from every echo's
+/// magnitude, and its CSF term reads a CSF mask made from ARLO R2* of the echoes, so it takes the
+/// echoes' magnitudes and echo times (at least three, evenly spaced).
 #[derive(Parser, Debug)]
 pub struct SeparateChiSepMediArgs {
     #[command(flatten)]
@@ -3633,39 +3763,39 @@ pub struct SeparateChiSepMediArgs {
     /// R2' map NIfTI in Hz
     #[arg(long)]
     pub r2prime: PathBuf,
-    /// Magnitude for edge weighting: one 4D file or several 3D files (RSS-combined)
+    /// Multi-echo magnitude: one 4D file or one 3D file per echo (space-separated)
     #[arg(long, num_args = 1.., required = true)]
     pub magnitude: Vec<PathBuf>,
-    /// Paramagnetic L1 weight
+    /// GRE echo times in seconds (space- or comma-separated)
+    #[arg(long, num_args = 1.., value_delimiter = ',', required = true)]
+    pub echo_times: Vec<f64>,
+    /// Weight of the data terms against the L1 terms (default: 1)
     #[arg(long)]
-    pub lambda_para: Option<f64>,
-    /// Diamagnetic L1 weight
+    pub lambda: Option<f64>,
+    /// Weight of the CSF-uniformity term (default: 1)
     #[arg(long)]
-    pub lambda_dia: Option<f64>,
-    /// Field/R2' coupling weight
-    #[arg(long)]
-    pub lambda_cpl: Option<f64>,
-    /// Paramagnetic relaxivity (Hz/ppm)
+    pub lambda_csf: Option<f64>,
+    /// Paramagnetic relaxometric constant (Hz/ppm) (default: 137 × B0 / 2.9 T)
     #[arg(long)]
     pub dr_pos: Option<f64>,
-    /// Diamagnetic relaxivity (Hz/ppm)
+    /// Diamagnetic relaxometric constant (Hz/ppm) (default: 137 × B0 / 2.9 T)
     #[arg(long)]
     pub dr_neg: Option<f64>,
-    /// Edge-mask percentage (0-1)
+    /// Zero-padding at both ends of the third axis, in voxels (default: 5)
     #[arg(long)]
-    pub percentage: Option<f64>,
-    /// Inner CG tolerance
-    #[arg(long)]
-    pub cg_tol: Option<f64>,
-    /// Inner CG max iterations
-    #[arg(long)]
-    pub cg_max_iter: Option<usize>,
-    /// Outer Gauss-Newton iterations
-    #[arg(long)]
-    pub max_iter: Option<usize>,
-    /// Outer convergence tolerance
+    pub pad: Option<usize>,
+    /// Stop when the relative change falls below this (default: 0.03)
     #[arg(long)]
     pub tol: Option<f64>,
+    /// Maximum Gauss-Newton iterations (default: 30)
+    #[arg(long)]
+    pub max_iter: Option<usize>,
+    /// Inner CG tolerance (default: 0.05)
+    #[arg(long)]
+    pub cg_tol: Option<f64>,
+    /// Inner CG max iterations (default: 100)
+    #[arg(long)]
+    pub cg_max_iter: Option<usize>,
 }
 
 #[derive(Parser, Debug)]

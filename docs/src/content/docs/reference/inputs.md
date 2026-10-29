@@ -159,6 +159,7 @@ Evenly spaced means each echo spacing is within 0.02 ms of the first, so echo ti
 rounded to 0.01 ms in a sidecar (4.92, 9.84, 14.77, 19.68 ms) are accepted.
 | `--qsm-algorithm medi` with its CSF zero reference (`--medi-csf`, on by default) | at least 3 echoes for the CSF term (R2\* finds the CSF); with fewer, MEDI runs without it, and the run says so |
 | `--qsm-algorithm medi` with `--medi-msmv` | also at least 3 echoes (R2\* for its vessel mask) |
+| `--chisep chi-sep-medi` | the magnitude of every echo, and at least 3 increasing, evenly spaced echoes: it weights the data by a noise map made from the echoes, and finds its CSF mask from R2\* |
 | `--qsm-algorithm qsmart` | what its inner inversion (`--qsmart-inversion`) needs; an inner `medi` or `tfi` only with a single echo, since QSMART gives its inner inversion one combined magnitude. With magnitude, every echo's: QSMART detects vessels on their mean (`--qsmart-vessel-magnitude mean-n4`) |
 | `--qsm-algorithm ndi`, `nltv`, `fansi`, `fansi-tgv`, `l1qsm` | magnitude (the data weight) |
 | `--qsm-algorithm star` | nothing more, but with `--star-te spacing` the first two echo times in increasing order |

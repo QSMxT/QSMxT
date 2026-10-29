@@ -480,9 +480,25 @@ fn param_label(field: &str) -> Label {
         "chain" => Toggle("chained registration"),
         "lambda" => Eq("λ"),
         "lambda1" => Eq("λ1"),
-        "lambda_para" => Eq("λ (paramagnetic)"),
-        "lambda_dia" => Eq("λ (diamagnetic)"),
-        "lambda_cpl" => Eq("λ (coupling)"),
+        "lambda_csf" => Eq("λ (CSF)"),
+        "cg_max_iter_lsqr" => AtMost("LSQR conjugate-gradient iterations"),
+        "cg_tol_lsqr" => Eq("LSQR conjugate-gradient tolerance"),
+        "cg_max_iter_sa" => AtMost("streaking-removal conjugate-gradient iterations"),
+        "cg_tol_sa" => Eq("streaking-removal conjugate-gradient tolerance"),
+        "d2_thr" => Eq("streaking cone threshold"),
+        "prc_w_i_min" => Eq("lower Laplacian-weight percentile"),
+        "prc_w_i_max" => Eq("upper Laplacian-weight percentile"),
+        "prc_w_g_min" => Eq("lower gradient-weight percentile"),
+        "prc_w_g_max" => Eq("upper gradient-weight percentile"),
+        "unwrap_phase" => Toggle("echo-phase unwrapping"),
+        "max_function_evaluations" => AtMost("function evaluations"),
+        "function_tolerance" => Eq("function tolerance"),
+        "step_tolerance" => Eq("step tolerance"),
+        "optimality_tolerance" => Eq("optimality tolerance"),
+        "finite_difference_step" => Eq("finite-difference step"),
+        "typical_x" => Eq("typical x"),
+        "n_inner" => Count("alternating passes"),
+        "chi_bound" => Unit("χ bound", "ppm"),
         "alpha" => Eq("α"),
         "alpha0" => Eq("α0"),
         "alpha1" => Eq("α1"),
@@ -763,7 +779,19 @@ fn bg_removal_changes(config: &PipelineConfig) -> Changed {
     match b.algorithm {
         BfAlgorithm::Pdf => c.add_fields(&b.pdf, &d.pdf, &[]),
         BfAlgorithm::Lbv => c.add_fields(&b.lbv, &d.lbv, &[]),
-        BfAlgorithm::Ismv => c.add_fields(&b.ismv, &d.ismv, &[]),
+        BfAlgorithm::Ismv => {
+            c.add(b.ismv.variant != d.ismv.variant, || match b.ismv.variant {
+                IsmvVariant::Qsmjl => "QSM.jl's implementation".to_string(),
+                IsmvVariant::Wen2014 => "the authors' implementation".to_string(),
+            });
+            c.add_fields(&b.ismv, &d.ismv, &["variant", "radius"]);
+            // The radius is stated even at its default: it scales with the voxel size.
+            c.add(true, || match (b.ismv.radius, b.ismv.variant) {
+                (Some(r), _) => format!("SMV radius = {r} mm"),
+                (None, IsmvVariant::Wen2014) => "an SMV radius of 6 × the smallest voxel dimension".to_string(),
+                (None, IsmvVariant::Qsmjl) => "an SMV radius of 2 × the largest voxel dimension".to_string(),
+            });
+        }
         BfAlgorithm::Sharp => c.add_fields(&b.sharp, &d.sharp, &[]),
         BfAlgorithm::Resharp => c.add_fields(&b.resharp, &d.resharp, &[]),
         BfAlgorithm::Harperella => c.add_fields(&b.harperella, &d.harperella, &[]),
@@ -787,7 +815,10 @@ fn separation_changes(config: &PipelineConfig) -> Changed {
     let mut c = Changed::default();
     match s.algorithm {
         SeparationAlgorithm::R2starQsm => c.add_fields(&s.r2star_qsm, &d.r2star_qsm, &[]),
-        SeparationAlgorithm::Decompose => c.add_fields(&s.decompose, &d.decompose, &[]),
+        SeparationAlgorithm::Decompose => {
+            c.add_fields(&s.decompose, &d.decompose, &["lsqcurvefit"]);
+            c.add_fields(&s.decompose.lsqcurvefit, &d.decompose.lsqcurvefit, &[]);
+        }
         // Its QSM's iLSQR is worded with that QSM.
         SeparationAlgorithm::ChiSepIlsqr => c.add_fields(&s.chi_sep_ilsqr, &d.chi_sep_ilsqr, &["qsm_ilsqr"]),
         SeparationAlgorithm::ChiSepMedi => c.add_fields(&s.chi_sep_medi, &d.chi_sep_medi, &[]),
@@ -1426,6 +1457,20 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
         if config.separation.algorithm == SeparationAlgorithm::Decompose {
             doc.say(&[Stage::ChiSeparation],
                 "The same susceptibility map was used for the signal phase at every echo.".to_string());
+        }
+        match config.separation.algorithm {
+            SeparationAlgorithm::ChiSepIlsqr => doc.say(&[Stage::ChiSeparation],
+                "The two sources were initialised from the susceptibility map and solved by LSQR, \
+                 streaking removal and a non-negative refinement.".to_string()),
+            SeparationAlgorithm::ChiSepMedi => {
+                doc.cite(&CITE_ARLO);
+                doc.say(&[Stage::ChiSeparation],
+                    "The two sources were initialised from the susceptibility map, the data terms were \
+                     weighted by a noise map from the echo magnitudes, and the susceptibility within a \
+                     CSF mask from ARLO R2* (Pei et al., 2015) was regularised towards uniformity."
+                        .to_string());
+            }
+            _ => {}
         }
         // The networks' outputs as QSM.rs returns them.
         if matches!(config.separation.algorithm, SeparationAlgorithm::ChiSepNet | SeparationAlgorithm::SusepNet) {
@@ -3831,7 +3876,7 @@ mod defaults_only_tests {
             (|c| c.bg_removal.vsharp.min_radius = 3.0, "V-SHARP (Wu et al., 2012) with SMV kernel radii from 12 to 3 mm in 1 mm steps."),
             (|c| c.bg_removal.vsharp.radius_step = 2.0, "V-SHARP (Wu et al., 2012) with SMV kernel radii from 12 to 2 mm in 2 mm steps."),
             (|c| c.bg_removal.vsharp.deconvolve = true, "V-SHARP (Wu et al., 2012) with truncated-SVD deconvolution enabled."),
-            (|c| { c.bg_removal.algorithm = BfAlgorithm::Ismv; c.bg_removal.ismv.radius = 7.5; },
+            (|c| { c.bg_removal.algorithm = BfAlgorithm::Ismv; c.bg_removal.ismv.radius = Some(7.5); },
                 "iSMV (Wen et al., 2014) with SMV radius = 7.5 mm."),
             (|c| { c.bg_removal.algorithm = BfAlgorithm::Pdf; c.bg_removal.pdf.tol = 0.123; },
                 "PDF (Liu et al., 2011) with tolerance = 0.123."),
@@ -3880,8 +3925,10 @@ mod defaults_only_tests {
                 ", with the network applied as a sliding window of 128×128×64-voxel patches."),
             (|c| { c.pipeline.do_segmentation = true; c.segmentation.patch = Some(100); },
                 "structures, with the network applied as a sliding window of 112×112×112-voxel patches overlapping by at least half a patch, their posteriors Gaussian-weighted."),
-            (|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::ChiSepMedi; c.separation.chi_sep_medi.lambda_para = 1000.0; },
-                "λ (paramagnetic) = 1000"),
+            (|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::ChiSepMedi; c.separation.chi_sep_medi.lambda_csf = 10.0; },
+                "λ (CSF) = 10"),
+            (|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::Decompose; c.separation.decompose.lsqcurvefit.max_iterations = 50; c.separation.decompose.unwrap_phase = true; },
+                "with echo-phase unwrapping enabled and at most 50 iterations."),
             (|c| { c.pipeline.do_chi_separation = true; c.separation.r2star_qsm.r_const_3t = 123.0; },
                 "with relaxometric constant at 3 T = 123."),
             (|c| { c.pipeline.do_r2primemap = true; c.separation.r2prime_strategy = R2PrimeStrategy::R2primenet; c.separation.r2primenet.patch = [160, 160, 128]; },

@@ -122,8 +122,10 @@ weight = "flat"           # or "max-normalised", "in-vivo"
 `te = { seconds = 0.03 }` under `[inversion.star]` is `--star-te 30`, and
 `te = { seconds = 0.02 }` under `[inversion.medi]` is `--medi-te 20`. A setting the method derives from its others
 (`inversion.tv.rho`, `inversion.nltv.rho`, FANSI's `mu1`, `alpha0` and `mu0`, L1-QSM's `mu1`,
-HD-QSM's `mu1_l2`) is left out of the file to take the derived value; on the command line it is
-`auto`.
+HD-QSM's `mu1_l2`, iSMV's `radius`, χ-sep iLSQR's and χ-sep MEDI's `dr_pos` and `dr_neg`) is
+left out of the file to take the derived value; on the command line it is `auto`. So is a limit
+that is off by default (iSMV's `max_iter`, DECOMPOSE's
+`lsqcurvefit.max_function_evaluations`).
 
 Recommendations you chose not to follow (see
 [Recommendations](/QSMxT/guides/running-noninteractively/#recommendations)) are kept in the

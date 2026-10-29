@@ -324,14 +324,22 @@ pub(super) fn table() -> Vec<Def> {
         .gui("Zero-padding around the mask's bounding box; 0 runs on the full volume"),
         d("bg_removal.lbv.tol", Background, "Tolerance", "Convergence tolerance", Float).flag("--lbv-tol").parent("bg_removal.algorithm")
         .when(|x| x.bf("lbv")),
-        d("bg_removal.ismv.tol", Background, "Tolerance", "Convergence tolerance", Float).flag("--ismv-tol").parent("bg_removal.algorithm")
+        d("bg_removal.ismv.variant", Background, "Variant", "", Enum(vec![
+            o("wen2014", "wen2014", "Wen 2014", "The authors' paper and code (default)"),
+            o("qsmjl", "qsmjl", "QSM.jl", "QSM.jl's implementation"),
+        ])).flag("--ismv-variant").parent("bg_removal.algorithm")
+        .when(|x| x.bf("ismv"))
+        .gui("Which implementation of iSMV runs"),
+        // QSM.rs IsmvParams::validate: finite and > 0.
+        d("bg_removal.ismv.tol", Background, "Tolerance", "Stop when the relative change between iterates falls below this (QSM.jl: the residual relative to the first)", Float).above(0.0).flag("--ismv-tol").parent("bg_removal.algorithm")
         .when(|x| x.bf("ismv")),
         // QSM.rs bgremove/ismv.rs: 0 iterations give an all-zero local field.
-        d("bg_removal.ismv.max_iter", Background, "Max iter", "Maximum iterations", Int).min(1.0).flag("--ismv-max-iter").parent("bg_removal.algorithm")
+        d("bg_removal.ismv.max_iter", Background, "Max iter", "Maximum iterations. Blank = no limit", Int).min(1.0).optional().flag("--ismv-max-iter").parent("bg_removal.algorithm")
         .when(|x| x.bf("ismv")).full("Maximum iterations"),
-        d("bg_removal.ismv.radius", Background, "Radius", "SMV kernel radius (mm)", Float).units("mm").flag("--ismv-radius").parent("bg_removal.algorithm")
+        // QSM.rs IsmvParams::validate: finite and > 0.
+        d("bg_removal.ismv.radius", Background, "Radius", "SMV kernel radius (mm). Blank = 6 × the smallest voxel dimension (QSM.jl: 2 × the largest)", Float).above(0.0).optional().units("mm").flag("--ismv-radius").parent("bg_removal.algorithm")
         .when(|x| x.bf("ismv"))
-        .gui("SMV kernel radius"),
+        .gui("SMV kernel radius. Blank = 6 × the smallest voxel dimension (QSM.jl: 2 × the largest)"),
         // QSM.rs bgremove/sharp.rs: at <= 0 the DC bin is divided by ~0, giving inf/NaN.
         d("bg_removal.sharp.threshold", Background, "Threshold", "Deconvolution threshold", Float).above(0.0).flag("--sharp-threshold").parent("bg_removal.algorithm")
         .when(|x| x.bf("sharp")),
@@ -419,6 +427,10 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.inv("rts") || x.qsmart_inner("rts")),
         d("inversion.rts.gamma", Inversion, "Gamma", "Factor rho is raised by", Float).flag("--rts-gamma").parent("inversion.algorithm")
         .when(|x| x.inv("rts") || x.qsmart_inner("rts")),
+        // QSM.rs utils/padding.rs with_qsmjl_padding: < 0 leaves an axis unpadded.
+        d("inversion.rts.pad", Inversion, "Pad (voxels)", "Zero-padding before the FFTs, voxels (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default 0 0 0)", IntVec3).min(-1.0).units("voxels").flag("--rts-pad").parent("inversion.algorithm")
+        .when(|x| x.inv("rts") || x.qsmart_inner("rts")).full("Padding")
+        .gui("Zero-padding before the FFTs (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded"),
         d("inversion.tv.lambda", Inversion, "Lambda", "L1 regularization weight (larger = smoother)", Float).flag("--tv-lambda").parent("inversion.algorithm")
         .when(|x| x.inv("tv") || x.qsmart_inner("tv"))
         .gui("L1 regularisation weight (larger = smoother)"),
@@ -429,12 +441,24 @@ pub(super) fn table() -> Vec<Def> {
         // QSM.rs inversion/tv.rs: 0 iterations give an all-zero map.
         d("inversion.tv.max_iter", Inversion, "Max iter", "Maximum ADMM iterations", Int).min(1.0).flag("--tv-max-iter").parent("inversion.algorithm")
         .when(|x| x.inv("tv") || x.qsmart_inner("tv")).full("Maximum iterations"),
+        // QSM.rs utils/padding.rs with_qsmjl_padding: < 0 leaves an axis unpadded.
+        d("inversion.tv.pad", Inversion, "Pad (voxels)", "Zero-padding before the FFTs, voxels (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default 0 0 0)", IntVec3).min(-1.0).units("voxels").flag("--tv-pad").parent("inversion.algorithm")
+        .when(|x| x.inv("tv") || x.qsmart_inner("tv")).full("Padding")
+        .gui("Zero-padding before the FFTs (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded"),
         // QSM.rs inversion/tkd.rs: 1/threshold on the DC bin (D = 0) gives inf/NaN at <= 0.
         d("inversion.tkd.threshold", Inversion, "Threshold", "Truncation threshold for k-space division (0.1-0.2)", Float).above(0.0).below(qsm_core::kernels::MAX_ABS_DIPOLE).flag("--tkd-threshold").parent("inversion.algorithm")
         .when(|x| x.inv("tkd") || x.qsmart_inner("tkd")),
+        // QSM.rs utils/padding.rs with_qsmjl_padding: < 0 leaves an axis unpadded.
+        d("inversion.tkd.pad", Inversion, "Pad (voxels)", "Zero-padding before the FFTs, voxels (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default 0 0 0)", IntVec3).min(-1.0).units("voxels").flag("--tkd-pad").parent("inversion.algorithm")
+        .when(|x| x.inv("tkd") || x.qsmart_inner("tkd")).full("Padding")
+        .gui("Zero-padding before the FFTs (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded"),
         // QSM.rs inversion/tkd.rs: < 0 inverts D = 0 (NaN); >= 2/3 zeroes every bin.
         d("inversion.tsvd.threshold", Inversion, "Threshold", "Truncation threshold for SVD (0.1-0.2)", Float).min(0.0).below(qsm_core::kernels::MAX_ABS_DIPOLE).flag("--tsvd-threshold").parent("inversion.algorithm")
         .when(|x| x.inv("tsvd") || x.qsmart_inner("tsvd")),
+        // QSM.rs utils/padding.rs with_qsmjl_padding: < 0 leaves an axis unpadded.
+        d("inversion.tsvd.pad", Inversion, "Pad (voxels)", "Zero-padding before the FFTs, voxels (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default 0 0 0)", IntVec3).min(-1.0).units("voxels").flag("--tsvd-pad").parent("inversion.algorithm")
+        .when(|x| x.inv("tsvd") || x.qsmart_inner("tsvd")).full("Padding")
+        .gui("Zero-padding before the FFTs (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded"),
         // QSM.rs inversion/tgv.rs: 0 iterations give an all-zero map.
         d("inversion.tgv.iterations", Inversion, "Iterations", "Primal-dual iterations. Blank = from the voxel size, as the reference does", Int).min(1.0).optional().flag("--tgv-iterations").parent("inversion.algorithm")
         .when(|x| x.inv("tgv")),
@@ -457,6 +481,10 @@ pub(super) fn table() -> Vec<Def> {
         d("inversion.tikhonov.lambda", Inversion, "Lambda", "L2 regularization weight", Float).flag("--tikhonov-lambda").parent("inversion.algorithm")
         .when(|x| x.inv("tikhonov") || x.qsmart_inner("tikhonov"))
         .gui("L2 regularisation weight"),
+        // QSM.rs utils/padding.rs with_qsmjl_padding: < 0 leaves an axis unpadded.
+        d("inversion.tikhonov.pad", Inversion, "Pad (voxels)", "Zero-padding before the FFTs, voxels (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default 0 0 0)", IntVec3).min(-1.0).units("voxels").flag("--tikhonov-pad").parent("inversion.algorithm")
+        .when(|x| x.inv("tikhonov") || x.qsmart_inner("tikhonov")).full("Padding")
+        .gui("Zero-padding before the FFTs (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded"),
         d("inversion.nltv.lambda", Inversion, "Lambda", "Regularization parameter", Float).flag("--nltv-lambda").parent("inversion.algorithm")
         .when(|x| x.inv("nltv") || x.qsmart_inner("nltv"))
         .gui("Regularisation parameter"),
@@ -478,6 +506,10 @@ pub(super) fn table() -> Vec<Def> {
         .value("Echo time (ms)", "Echo time the field is converted to phase at, ms").flag("--nltv-te").parent("inversion.algorithm")
         .when(|x| x.inv("nltv") || x.qsmart_inner("nltv"))
         .gui("The echo time the field is converted to phase at").gui_value("Echo time", "The echo time the field is converted to phase at, in ms"),
+        // QSM.rs utils/padding.rs with_qsmjl_padding: < 0 leaves an axis unpadded.
+        d("inversion.nltv.pad", Inversion, "Pad (voxels)", "Zero-padding before the FFTs, voxels (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default 0 0 0)", IntVec3).min(-1.0).units("voxels").flag("--nltv-pad").parent("inversion.algorithm")
+        .when(|x| x.inv("nltv") || x.qsmart_inner("nltv")).full("Padding")
+        .gui("Zero-padding before the FFTs (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded"),
         d("inversion.medi.smv", Inversion, "SMV mode", "High-pass the local field with a spherical mean value (SMV) filter, removing residual background near the brain edge (MEDI-SMV)", Bool).flag("--no-medi-smv").parent("inversion.algorithm")
         .when(|x| x.inv("medi")),
         d("inversion.medi.smv_radius", Inversion, "SMV radius", "SMV radius in mm (also mSMV's)", Float).units("mm").flag("--medi-smv-radius").parent("inversion.algorithm")
@@ -861,31 +893,51 @@ pub(super) fn table() -> Vec<Def> {
         // QSM.rs separation/decompose.rs: a negative bound makes lb > ub and f64::clamp panics.
         d("separation.decompose.chi_bound", Separation, "Chi bound (ppm)", "Upper bound on |χ| in the fit", Float).min(0.0).units("ppm").flag("--decompose-chi-bound").parent("separation.algorithm")
         .when(|x| x.sep("decompose")).full("χ bound"),
-        d("separation.decompose.max_lm_iter", Separation, "Max LM iter", "Levenberg–Marquardt max iterations", Int).flag("--decompose-max-lm-iter").parent("separation.algorithm")
-        .when(|x| x.sep("decompose")).full("Maximum LM iterations")
-        .gui("Maximum Levenberg–Marquardt iterations"),
-        d("separation.chi_sep_ilsqr.dr_pos", Separation, "Dr+ (Hz/ppm)", "Paramagnetic relaxometric constant", Float).units("Hz/ppm").flag("--chi-sep-ilsqr-dr-pos").parent("separation.algorithm")
+        d("separation.decompose.unwrap_phase", Separation, "Unwrap phase", "Unwrap the phase along the echoes and limit χ to what the echo spacing can represent (default: off, as in the authors' code)", Bool).flag("--decompose-unwrap-phase").parent("separation.algorithm")
+        .when(|x| x.sep("decompose")).full("Echo-phase unwrapping")
+        .gui("Unwrap the phase along the echoes and limit χ to what the echo spacing can represent"),
+        // Each stage's fit: MATLAB lsqcurvefit's options (trust-region-reflective).
+        d("separation.decompose.lsqcurvefit.max_iterations", Separation, "Max iter", "Maximum solver iterations per fit (lsqcurvefit MaxIterations)", Int).min(1.0).flag("--decompose-max-iterations").parent("separation.algorithm")
+        .when(|x| x.sep("decompose")).full("Maximum iterations"),
+        d("separation.decompose.lsqcurvefit.max_function_evaluations", Separation, "Max evaluations", "Maximum function evaluations per fit (lsqcurvefit MaxFunctionEvaluations). Blank = 100 × the fit's parameters", Int).min(1.0).optional().flag("--decompose-max-function-evaluations").parent("separation.algorithm")
+        .when(|x| x.sep("decompose")).full("Maximum function evaluations"),
+        d("separation.decompose.lsqcurvefit.function_tolerance", Separation, "Function tol", "Stop when the cost changes by less than this, relatively (lsqcurvefit FunctionTolerance)", Float).min(0.0).flag("--decompose-function-tolerance").parent("separation.algorithm")
+        .when(|x| x.sep("decompose")).full("Function tolerance"),
+        d("separation.decompose.lsqcurvefit.step_tolerance", Separation, "Step tol", "Stop when the step is smaller than this, relatively (lsqcurvefit StepTolerance)", Float).min(0.0).flag("--decompose-step-tolerance").parent("separation.algorithm")
+        .when(|x| x.sep("decompose")).full("Step tolerance"),
+        d("separation.decompose.lsqcurvefit.optimality_tolerance", Separation, "Optimality tol", "Stop when the first-order optimality falls below this (lsqcurvefit OptimalityTolerance)", Float).min(0.0).flag("--decompose-optimality-tolerance").parent("separation.algorithm")
+        .when(|x| x.sep("decompose")).full("Optimality tolerance"),
+        d("separation.decompose.lsqcurvefit.finite_difference_step", Separation, "FD step", "Relative finite-difference step of the Jacobian (lsqcurvefit FiniteDifferenceStepSize)", Float).above(0.0).flag("--decompose-finite-difference-step").parent("separation.algorithm")
+        .when(|x| x.sep("decompose")).full("Finite-difference step"),
+        d("separation.decompose.lsqcurvefit.typical_x", Separation, "Typical x", "Typical magnitude of each fitted value, for the finite differences (lsqcurvefit TypicalX)", Float).above(0.0).flag("--decompose-typical-x").parent("separation.algorithm")
+        .when(|x| x.sep("decompose")).full("Typical x"),
+        // QSM.rs ChiSepIlsqrParams::validate: D_r finite and > 0; cone > 0; CG tolerances in (0, 1);
+        // percentiles 0 <= min < max <= 100 (the pairs are checked by qsm-core).
+        d("separation.chi_sep_ilsqr.dr_pos", Separation, "Dr+ (Hz/ppm)", "Paramagnetic relaxometric constant. Blank = 137 × B0 / 2.9 T", Float).above(0.0).optional().units("Hz/ppm").flag("--chi-sep-ilsqr-dr-pos").parent("separation.algorithm")
         .when(|x| x.sep("chi-sep-ilsqr")).full("Paramagnetic constant (Dr+)"),
-        d("separation.chi_sep_ilsqr.dr_neg", Separation, "Dr- (Hz/ppm)", "Diamagnetic relaxometric constant", Float).units("Hz/ppm").flag("--chi-sep-ilsqr-dr-neg").parent("separation.algorithm")
+        d("separation.chi_sep_ilsqr.dr_neg", Separation, "Dr- (Hz/ppm)", "Diamagnetic relaxometric constant. Blank = 137 × B0 / 2.9 T", Float).above(0.0).optional().units("Hz/ppm").flag("--chi-sep-ilsqr-dr-neg").parent("separation.algorithm")
         .when(|x| x.sep("chi-sep-ilsqr")).full("Diamagnetic constant (Dr−)"),
-        d("separation.chi_sep_ilsqr.lambda1", Separation, "Lambda1", "L1 edge-masked TV weight", Float).flag("--chi-sep-ilsqr-lambda1").parent("separation.algorithm")
-        .when(|x| x.sep("chi-sep-ilsqr")),
-        d("separation.chi_sep_ilsqr.percentage", Separation, "Percentage", "Edge-mask keep fraction (0-1)", Float).flag("--chi-sep-ilsqr-percentage").parent("separation.algorithm")
-        .when(|x| x.sep("chi-sep-ilsqr")),
-        d("separation.chi_sep_ilsqr.r2p_min", Separation, "R2' min (Hz)", "R2' reliability window lower", Float).units("Hz").flag("--chi-sep-ilsqr-r2p-min").parent("separation.algorithm")
-        .when(|x| x.sep("chi-sep-ilsqr")).full("R2' minimum")
-        .gui("Lower end of the R2' reliability window"),
-        d("separation.chi_sep_ilsqr.r2p_max", Separation, "R2' max (Hz)", "R2' reliability window upper", Float).units("Hz").flag("--chi-sep-ilsqr-r2p-max").parent("separation.algorithm")
-        .when(|x| x.sep("chi-sep-ilsqr")).full("R2' maximum")
-        .gui("Upper end of the R2' reliability window"),
-        d("separation.chi_sep_ilsqr.max_iter", Separation, "Max iter", "Outer Gauss-Newton iterations", Int).flag("--chi-sep-ilsqr-max-iter").parent("separation.algorithm")
-        .when(|x| x.sep("chi-sep-ilsqr")).full("Maximum iterations"),
-        d("separation.chi_sep_ilsqr.tol", Separation, "Tolerance", "Outer relative-change tolerance", Float).flag("--chi-sep-ilsqr-tol").parent("separation.algorithm")
-        .when(|x| x.sep("chi-sep-ilsqr")),
-        d("separation.chi_sep_ilsqr.cg_max_iter", Separation, "CG max iter", "Inner CG max iterations", Int).flag("--chi-sep-ilsqr-cg-max-iter").parent("separation.algorithm")
-        .when(|x| x.sep("chi-sep-ilsqr")).full("CG maximum iterations"),
-        d("separation.chi_sep_ilsqr.cg_tol", Separation, "CG tolerance", "Inner CG relative tolerance", Float).flag("--chi-sep-ilsqr-cg-tol").parent("separation.algorithm")
-        .when(|x| x.sep("chi-sep-ilsqr")),
+        d("separation.chi_sep_ilsqr.pad", Separation, "Pad (voxels)", "Zero-padding at both ends of each axis, voxels (x y z) (default 16 16 16)", IntVec3).units("voxels").flag("--chi-sep-ilsqr-pad").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-ilsqr")).full("Padding")
+        .gui("Zero-padding at both ends of each axis (x y z)"),
+        d("separation.chi_sep_ilsqr.cg_max_iter_lsqr", Separation, "LSQR CG iter", "Maximum CG iterations of the LSQR step", Int).flag("--chi-sep-ilsqr-cg-max-iter-lsqr").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-ilsqr")).full("LSQR CG maximum iterations"),
+        d("separation.chi_sep_ilsqr.cg_tol_lsqr", Separation, "LSQR CG tol", "CG relative tolerance of the LSQR step", Float).above(0.0).below(1.0).flag("--chi-sep-ilsqr-cg-tol-lsqr").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-ilsqr")).full("LSQR CG tolerance"),
+        d("separation.chi_sep_ilsqr.cg_max_iter_sa", Separation, "Streaking CG iter", "Maximum CG iterations of the streaking-removal step, per source", Int).flag("--chi-sep-ilsqr-cg-max-iter-sa").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-ilsqr")).full("Streaking-removal CG maximum iterations"),
+        d("separation.chi_sep_ilsqr.cg_tol_sa", Separation, "Streaking CG tol", "CG relative tolerance of the streaking-removal step", Float).above(0.0).below(1.0).flag("--chi-sep-ilsqr-cg-tol-sa").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-ilsqr")).full("Streaking-removal CG tolerance"),
+        d("separation.chi_sep_ilsqr.d2_thr", Separation, "Cone threshold", "The streaking cone is where the dipole kernel |D| is below this", Float).above(0.0).flag("--chi-sep-ilsqr-d2-thr").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-ilsqr")).full("Streaking cone threshold"),
+        d("separation.chi_sep_ilsqr.prc_w_i_min", Separation, "Laplacian weight min %", "Percentile of the field's Laplacian at which the LSQR weight is 1", Float).min(0.0).max(100.0).flag("--chi-sep-ilsqr-prc-w-i-min").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-ilsqr")).full("Laplacian-weight lower percentile"),
+        d("separation.chi_sep_ilsqr.prc_w_i_max", Separation, "Laplacian weight max %", "Percentile of the field's Laplacian at which the LSQR weight is 0", Float).min(0.0).max(100.0).flag("--chi-sep-ilsqr-prc-w-i-max").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-ilsqr")).full("Laplacian-weight upper percentile"),
+        d("separation.chi_sep_ilsqr.prc_w_g_min", Separation, "Gradient weight min %", "Percentile of each gradient's magnitude at which the streaking-removal weight is 1", Float).min(0.0).max(100.0).flag("--chi-sep-ilsqr-prc-w-g-min").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-ilsqr")).full("Gradient-weight lower percentile"),
+        d("separation.chi_sep_ilsqr.prc_w_g_max", Separation, "Gradient weight max %", "Percentile of each gradient's magnitude at which the streaking-removal weight is 0", Float).min(0.0).max(100.0).flag("--chi-sep-ilsqr-prc-w-g-max").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-ilsqr")).full("Gradient-weight upper percentile"),
         // The QSM χ-sep iLSQR is initialised with, reconstructed unless one is supplied. QSM.rs
         // inversion/ilsqr.rs: 0 iterations give an all-zero map; IlsqrParams::validate: pad >= 0.
         d("separation.chi_sep_ilsqr.qsm_ilsqr.max_iter", Separation, "QSM max iter", "Maximum iterations of the iLSQR that reconstructs the QSM separated", Int).min(1.0).flag("--chi-sep-ilsqr-qsm-max-iter").parent("separation.algorithm")
@@ -894,28 +946,27 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.sep("chi-sep-ilsqr") && x.c.separation.custom_qsm_tool.is_none()),
         d("separation.chi_sep_ilsqr.qsm_ilsqr.pad_mm", Separation, "QSM pad (mm)", "Zero-padding per side of the iLSQR that reconstructs the QSM separated", Float).min(0.0).units("mm").flag("--chi-sep-ilsqr-qsm-pad-mm").parent("separation.algorithm")
         .when(|x| x.sep("chi-sep-ilsqr") && x.c.separation.custom_qsm_tool.is_none()).full("QSM padding"),
-        d("separation.chi_sep_medi.lambda_para", Separation, "Lambda para", "Paramagnetic L1 weight", Float).flag("--chi-sep-medi-lambda-para").parent("separation.algorithm")
-        .when(|x| x.sep("chi-sep-medi")).full("Paramagnetic lambda"),
-        d("separation.chi_sep_medi.lambda_dia", Separation, "Lambda dia", "Diamagnetic L1 weight", Float).flag("--chi-sep-medi-lambda-dia").parent("separation.algorithm")
-        .when(|x| x.sep("chi-sep-medi")).full("Diamagnetic lambda"),
-        // QSM.rs separation/chi_sep_medi.rs: lambda_cpl weights both data terms; at 0 they drop out
-        // and the solution stays zero, and below 0 the problem is no longer convex.
-        d("separation.chi_sep_medi.lambda_cpl", Separation, "Lambda cpl", "Field/R2' coupling weight", Float).above(0.0).flag("--chi-sep-medi-lambda-cpl").parent("separation.algorithm")
-        .when(|x| x.sep("chi-sep-medi")).full("Coupling lambda"),
-        d("separation.chi_sep_medi.dr_pos", Separation, "Dr+ (Hz/ppm)", "Paramagnetic relaxivity", Float).units("Hz/ppm").flag("--chi-sep-medi-dr-pos").parent("separation.algorithm")
-        .when(|x| x.sep("chi-sep-medi")).full("Paramagnetic constant (Dr+)"),
-        d("separation.chi_sep_medi.dr_neg", Separation, "Dr- (Hz/ppm)", "Diamagnetic relaxivity", Float).units("Hz/ppm").flag("--chi-sep-medi-dr-neg").parent("separation.algorithm")
-        .when(|x| x.sep("chi-sep-medi")).full("Diamagnetic constant (Dr−)"),
-        d("separation.chi_sep_medi.percentage", Separation, "Percentage", "Edge-mask percentage (0-1)", Float).flag("--chi-sep-medi-percentage").parent("separation.algorithm")
+        // QSM.rs ChiSepMediParams::validate: λ, λ_CSF and the tolerances finite and >= 0; D_r finite
+        // and > 0; at least 1 iteration.
+        d("separation.chi_sep_medi.lambda", Separation, "Lambda", "Weight of the data terms against the L1 terms", Float).min(0.0).flag("--chi-sep-medi-lambda").parent("separation.algorithm")
         .when(|x| x.sep("chi-sep-medi")),
-        d("separation.chi_sep_medi.cg_tol", Separation, "CG tolerance", "Inner CG tolerance", Float).flag("--chi-sep-medi-cg-tol").parent("separation.algorithm")
+        d("separation.chi_sep_medi.lambda_csf", Separation, "Lambda CSF", "Weight of the CSF-uniformity term", Float).min(0.0).flag("--chi-sep-medi-lambda-csf").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-medi")).full("CSF lambda"),
+        d("separation.chi_sep_medi.dr_pos", Separation, "Dr+ (Hz/ppm)", "Paramagnetic relaxometric constant. Blank = 137 × B0 / 2.9 T", Float).above(0.0).optional().units("Hz/ppm").flag("--chi-sep-medi-dr-pos").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-medi")).full("Paramagnetic constant (Dr+)"),
+        d("separation.chi_sep_medi.dr_neg", Separation, "Dr- (Hz/ppm)", "Diamagnetic relaxometric constant. Blank = 137 × B0 / 2.9 T", Float).above(0.0).optional().units("Hz/ppm").flag("--chi-sep-medi-dr-neg").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-medi")).full("Diamagnetic constant (Dr−)"),
+        d("separation.chi_sep_medi.pad", Separation, "Pad (voxels)", "Zero-padding at both ends of the third axis, voxels", Int).units("voxels").flag("--chi-sep-medi-pad").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-medi")).full("Padding")
+        .gui("Zero-padding at both ends of the third axis"),
+        d("separation.chi_sep_medi.tol", Separation, "Tolerance", "Stop when the relative change falls below this", Float).min(0.0).flag("--chi-sep-medi-tol").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-medi")),
+        d("separation.chi_sep_medi.max_iter", Separation, "Max iter", "Maximum Gauss-Newton iterations", Int).min(1.0).flag("--chi-sep-medi-max-iter").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-medi")).full("Maximum iterations"),
+        d("separation.chi_sep_medi.cg_tol", Separation, "CG tolerance", "Inner CG tolerance", Float).min(0.0).flag("--chi-sep-medi-cg-tol").parent("separation.algorithm")
         .when(|x| x.sep("chi-sep-medi")),
         d("separation.chi_sep_medi.cg_max_iter", Separation, "CG max iter", "Inner CG max iterations", Int).flag("--chi-sep-medi-cg-max-iter").parent("separation.algorithm")
         .when(|x| x.sep("chi-sep-medi")).full("CG maximum iterations"),
-        d("separation.chi_sep_medi.max_iter", Separation, "Max iter", "Outer Gauss-Newton iterations", Int).flag("--chi-sep-medi-max-iter").parent("separation.algorithm")
-        .when(|x| x.sep("chi-sep-medi")).full("Maximum iterations"),
-        d("separation.chi_sep_medi.tol", Separation, "Tolerance", "Outer convergence tolerance", Float).flag("--chi-sep-medi-tol").parent("separation.algorithm")
-        .when(|x| x.sep("chi-sep-medi")),
         d("separation.wavesep.dr_pos", Separation, "Dr+ (Hz/ppm)", "Paramagnetic relaxivity", Float).units("Hz/ppm").flag("--wavesep-dr-pos").parent("separation.algorithm")
         .when(|x| x.sep("wavesep")).full("Paramagnetic constant (Dr+)"),
         d("separation.wavesep.dr_neg", Separation, "Dr- (Hz/ppm)", "Diamagnetic relaxivity", Float).units("Hz/ppm").flag("--wavesep-dr-neg").parent("separation.algorithm")

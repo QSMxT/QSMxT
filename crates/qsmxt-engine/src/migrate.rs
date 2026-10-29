@@ -17,7 +17,8 @@
 //!   since converting it would need each scan's echo times, field strength or voxel size. When its
 //!   method does not run, the value is dropped with a note.
 //! - Settings that no longer exist are dropped, with a warning where dropping one changes what a
-//!   run does; renamed ones keep their value under the new name.
+//!   run does; renamed ones keep their value under the new name. Both apply to a file of any
+//!   version.
 //! - A setting that never changed what a run computes (the linear and robust fits' reliability
 //!   threshold, QSM.rs#312) is dropped with a note from a file of any version, `schema_version = 2`
 //!   included: it was removed after that version was written.
@@ -70,8 +71,9 @@ threshold = [0.05]
 [bg_removal.pdf]
 tol = [0.00001]
 [bg_removal.ismv]
-tol = [0.001]
-max_iter = [500]
+tol = [0.000001, 0.001]
+max_iter = [50, 500]
+radius = [5.0]
 [bg_removal.resharp]
 radius = [6.0]
 max_iter = [30]
@@ -118,11 +120,17 @@ tol_update = [1.0]
 [inversion.heidi]
 gradient_mask_floor = [0.1]
 tol = [0.001]
-[separation.decompose]
-max_lm_iter = [30]
+[separation.decompose.lsqcurvefit]
+max_iterations = [30]
+[separation.chi_sep_ilsqr]
+dr_pos = [137.0]
+dr_neg = [137.0]
 [separation.chi_sep_medi]
-dr_pos = [114.0]
-dr_neg = [30.0]
+dr_pos = [114.0, 137.0]
+dr_neg = [30.0, 137.0]
+cg_tol = [0.01]
+max_iter = [10]
+tol = [0.1]
 lambda_para = [1000.0]
 lambda_dia = [1000.0]
 "#;
@@ -186,6 +194,66 @@ const REMOVED: &[(&str, &str, &str)] = &[
         "1.0",
         "WH-QSM converts the field to radians itself, at the scan's echo time and field strength",
     ),
+    (
+        "separation.chi_sep_ilsqr.lambda1",
+        "1.0",
+        "χ-separation (iLSQR) now follows the χ-separation toolbox's chi_sep_iLSQR, which has no such setting",
+    ),
+    (
+        "separation.chi_sep_ilsqr.percentage",
+        "0.9",
+        "χ-separation (iLSQR) now follows the χ-separation toolbox's chi_sep_iLSQR, which has no such setting",
+    ),
+    (
+        "separation.chi_sep_ilsqr.r2p_min",
+        "1.0",
+        "χ-separation (iLSQR) now follows the χ-separation toolbox's chi_sep_iLSQR, which has no such setting",
+    ),
+    (
+        "separation.chi_sep_ilsqr.r2p_max",
+        "30.0",
+        "χ-separation (iLSQR) now follows the χ-separation toolbox's chi_sep_iLSQR, which has no such setting",
+    ),
+    (
+        "separation.chi_sep_ilsqr.max_iter",
+        "30",
+        "χ-separation (iLSQR) now follows the χ-separation toolbox's chi_sep_iLSQR, which has no such setting",
+    ),
+    (
+        "separation.chi_sep_ilsqr.tol",
+        "0.01",
+        "χ-separation (iLSQR) now follows the χ-separation toolbox's chi_sep_iLSQR, which has no such setting",
+    ),
+    (
+        "separation.chi_sep_ilsqr.cg_max_iter",
+        "30",
+        "χ-separation (iLSQR) now follows the χ-separation toolbox's chi_sep_iLSQR, which has no such setting",
+    ),
+    (
+        "separation.chi_sep_ilsqr.cg_tol",
+        "0.05",
+        "χ-separation (iLSQR) now follows the χ-separation toolbox's chi_sep_iLSQR, which has no such setting",
+    ),
+    (
+        "separation.chi_sep_medi.lambda_para",
+        "30.0",
+        "χ-separation (MEDI) now follows the χ-separation toolbox's chi_sep_MEDI, which has no such setting",
+    ),
+    (
+        "separation.chi_sep_medi.lambda_dia",
+        "30.0",
+        "χ-separation (MEDI) now follows the χ-separation toolbox's chi_sep_MEDI, which has no such setting",
+    ),
+    (
+        "separation.chi_sep_medi.lambda_cpl",
+        "100.0",
+        "χ-separation (MEDI) now follows the χ-separation toolbox's chi_sep_MEDI, which has no such setting",
+    ),
+    (
+        "separation.chi_sep_medi.percentage",
+        "0.3",
+        "χ-separation (MEDI) now follows the χ-separation toolbox's chi_sep_MEDI, which has no such setting",
+    ),
 ];
 
 /// Settings that no longer exist and never changed what a run computes, and why: dropped with a
@@ -195,11 +263,12 @@ const REMOVED_UNUSED: &[(&str, &str)] = &[(
     "it set a reliability mask for the linear and robust fits that the field map never used",
 )];
 
-/// Settings renamed with their meaning (and unit) unchanged.
-const RENAMED: &[(&str, &str)] = &[(
-    "inversion.nltv.newton_iter",
-    "inversion.nltv.max_iter_newton",
-)];
+/// Settings renamed with their meaning (and unit) unchanged. DECOMPOSE's iteration limit is
+/// now that of `lsqcurvefit`'s solver, which every stage's fit runs.
+const RENAMED: &[(&str, &str)] = &[
+    ("inversion.nltv.newton_iter", "inversion.nltv.max_iter_newton"),
+    ("separation.decompose.max_lm_iter", "separation.decompose.lsqcurvefit.max_iterations"),
+];
 
 /// What kind of file without `schema_version` this is.
 #[derive(Clone, Copy, PartialEq)]
@@ -232,6 +301,7 @@ pub fn migrate(value: &mut toml::Table, out: &mut Migration) -> Result<(), Confi
             out.notes.push(format!("{path} = {v} is no longer a setting and is ignored: {why}"));
         }
     }
+    renamed_and_removed(value, out);
     if version < 2 {
         let kind = match (full, get(value, "pipeline.axial_resampling").is_some()) {
             (false, _) => Kind::Partial,
@@ -245,6 +315,35 @@ pub fn migrate(value: &mut toml::Table, out: &mut Migration) -> Result<(), Confi
         toml::Value::Integer(CONFIG_SCHEMA_VERSION as i64),
     );
     Ok(())
+}
+
+/// Settings renamed or removed since a file was written, whatever its version: a file `main`
+/// wrote at version 2 can hold them too. A removed setting holding anything but a default an
+/// earlier release wrote is warned about.
+fn renamed_and_removed(value: &mut toml::Table, out: &mut Migration) {
+    let old: toml::Table = toml::from_str(OLD_DEFAULTS).expect("OLD_DEFAULTS is TOML");
+    for (from, to) in RENAMED {
+        if let Some(v) = take(value, from) {
+            if get(value, to).is_none() {
+                set(value, to, v);
+            }
+        }
+    }
+    for (path, default, why) in REMOVED {
+        let Some(v) = take(value, path) else { continue };
+        let old_default: Option<toml::Value> = (!default.is_empty()).then(|| {
+            toml::from_str::<toml::Table>(&format!("v = {default}")).expect("a TOML value")["v"]
+                .clone()
+        });
+        let earlier = get(&old, path)
+            .and_then(toml::Value::as_array)
+            .is_some_and(|a| a.iter().any(|o| same(&v, o)));
+        if !earlier && old_default.is_some_and(|d| !same(&v, &d)) {
+            out.warnings.push(format!(
+                "{path} = {v} is no longer a setting and is ignored: {why}"
+            ));
+        }
+    }
 }
 
 fn from_v1(value: &mut toml::Table, kind: Kind, out: &mut Migration) -> Result<(), ConfigError> {
@@ -267,27 +366,6 @@ fn from_v1(value: &mut toml::Table, kind: Kind, out: &mut Migration) -> Result<(
             == Some("romeo")
             && s("field_mapping.phase_offset_removal").and_then(|v| v.as_bool()) != Some(false)
     };
-
-    for (from, to) in RENAMED {
-        if let Some(v) = take(value, from) {
-            if get(value, to).is_none() {
-                set(value, to, v);
-            }
-        }
-    }
-
-    for (path, default, why) in REMOVED {
-        let Some(v) = take(value, path) else { continue };
-        let old_default: Option<toml::Value> = (!default.is_empty()).then(|| {
-            toml::from_str::<toml::Table>(&format!("v = {default}")).expect("a TOML value")["v"]
-                .clone()
-        });
-        if old_default.is_some_and(|d| !same(&v, &d)) {
-            out.warnings.push(format!(
-                "{path} = {v} is no longer a setting and is ignored: {why}"
-            ));
-        }
-    }
 
     // TFI's `merit` did nothing before version 2 (TFI had no MERIT); it now turns MERIT on and off,
     // on by default, so an old value is not carried over.
@@ -968,6 +1046,26 @@ mod tests {
                 && !saved.contains("phase_scale"),
             "{saved}"
         );
+    }
+
+    /// DECOMPOSE's iteration limit keeps its value under lsqcurvefit's name, and the χ-separation
+    /// settings the toolbox's methods do not have are dropped, with a warning when one was changed,
+    /// in a file of any version. A full old file's DECOMPOSE default takes today's.
+    #[test]
+    fn decompose_and_chi_separation_settings_from_any_version() {
+        for version in ["", "schema_version = 2\n"] {
+            let (c, m) = read(&format!(
+                "{version}[separation.decompose]\nmax_lm_iter = 77\n[separation.chi_sep_medi]\n\
+                 lambda_para = 30.0\nlambda_cpl = 5.0\n[separation.chi_sep_ilsqr]\nlambda1 = 2.0\n")).unwrap();
+            assert_eq!(c.separation.decompose.lsqcurvefit.max_iterations, 77);
+            let warned = |p: &str| m.warnings.iter().any(|w| w.contains(p));
+            assert!(warned("separation.chi_sep_medi.lambda_cpl = 5.0") && warned("separation.chi_sep_ilsqr.lambda1 = 2.0"), "{m:?}");
+            assert!(!warned("lambda_para"), "an old default is not a question: {m:?}");
+            let saved = c.to_toml().unwrap();
+            assert!(!saved.contains("max_lm_iter") && !saved.contains("lambda_cpl"), "{saved}");
+        }
+        let (c, _) = read(V10_FULL).unwrap();
+        assert_eq!(c.separation.decompose, crate::DecomposeConfig::default());
     }
 
     /// A front end's saved JSON config (qsmbly keeps one in the browser) is migrated the same way:

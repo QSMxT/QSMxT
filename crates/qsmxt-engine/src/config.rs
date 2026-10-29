@@ -24,21 +24,25 @@ macro_rules! param_config {
 
 // ─── Algorithm parameter configs (each ~1-3 lines) ───
 
+// `pad` (RTS, TV, TKD, TSVD, Tikhonov, NLTV): QSM.jl's zero padding before the FFTs, voxels per
+// axis: a negative value leaves that axis unpadded, otherwise it is padded by at least that many
+// voxels and rounded up to an FFT-efficient size (QSM.jl's `pad`; default 0 0 0).
 param_config!(RtsConfig from qsm_core::inversion::RtsParams {
-    delta: f64, mu: f64, rho: f64, tol: f64, max_iter: usize, lsmr_iter: usize, tau: f64, gamma: f64
+    delta: f64, mu: f64, rho: f64, tol: f64, max_iter: usize, lsmr_iter: usize, tau: f64, gamma: f64,
+    pad: [i64; 3]
 });
 // `rho`: `None` is qsm-core's 100·λ, so it follows λ.
 param_config!(TvConfig from qsm_core::inversion::TvParams {
-    lambda: f64, rho: Option<f64>, tol: f64, max_iter: usize
+    lambda: f64, rho: Option<f64>, tol: f64, max_iter: usize, pad: [i64; 3]
 });
-param_config!(TkdConfig from qsm_core::inversion::TkdParams { threshold: f64 });
+param_config!(TkdConfig from qsm_core::inversion::TkdParams { threshold: f64, pad: [i64; 3] });
 // `te` (here and below): which of the scan's echo times the method converts the field from ppm to
 // radians at; each method's default is its reference code's. The scan's echo times and field
 // strength are not settings: qsm-core's dispatcher fills them in.
 // NLTV's `rho`: `None` is qsm-core's 100·λ, so it follows λ.
 param_config!(NltvConfig from qsm_core::inversion::NltvParams {
     lambda: f64, rho: Option<f64>, mu: f64, tol: f64, max_iter: usize, tol_newton: f64,
-    max_iter_newton: usize, te: EchoTimeChoice
+    max_iter_newton: usize, te: EchoTimeChoice, pad: [i64; 3]
 });
 param_config!(NdiConfig from qsm_core::inversion::NdiParams {
     tau: f64, alpha: f64, max_iter: usize, auto_stop: bool, te: EchoTimeChoice
@@ -279,16 +283,25 @@ impl Default for HeidiConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct ChiSepIlsqrConfig {
-    pub dr_pos: f64,
-    pub dr_neg: f64,
-    pub lambda1: f64,
-    pub percentage: f64,
-    pub r2p_min: f64,
-    pub r2p_max: f64,
-    pub max_iter: usize,
-    pub tol: f64,
-    pub cg_max_iter: usize,
-    pub cg_tol: f64,
+    /// Relaxometric constants in Hz/ppm; `None` is the toolbox's 137 × B0/2.9 T.
+    pub dr_pos: Option<f64>,
+    pub dr_neg: Option<f64>,
+    /// Zero padding at both ends of each axis, voxels (x y z).
+    pub pad: [usize; 3],
+    /// Step 1 (LSQR): CG iterations and relative tolerance.
+    pub cg_max_iter_lsqr: usize,
+    pub cg_tol_lsqr: f64,
+    /// Step 2 (streaking removal): CG iterations and relative tolerance.
+    pub cg_max_iter_sa: usize,
+    pub cg_tol_sa: f64,
+    /// The streaking cone is |D| < `d2_thr`.
+    pub d2_thr: f64,
+    /// Percentiles (0-100) of the field's Laplacian at which step 1's weight is 1 and 0.
+    pub prc_w_i_min: f64,
+    pub prc_w_i_max: f64,
+    /// Percentiles (0-100) of each gradient's magnitude at which step 2's weights are 1 and 0.
+    pub prc_w_g_min: f64,
+    pub prc_w_g_max: f64,
     /// The iLSQR of the susceptibility map χ-separation is initialised with, reconstructed from
     /// the local field (unless a QSM is supplied): the χ-separation toolbox's call by default.
     pub qsm_ilsqr: IlsqrConfig,
@@ -297,24 +310,91 @@ impl Default for ChiSepIlsqrConfig {
     fn default() -> Self {
         let p = qsm_core::separation::ChiSepIlsqrParams::default();
         Self {
-            dr_pos: p.dr_pos, dr_neg: p.dr_neg, lambda1: p.lambda1, percentage: p.percentage,
-            r2p_min: p.r2p_min, r2p_max: p.r2p_max, max_iter: p.max_iter, tol: p.tol,
-            cg_max_iter: p.cg_max_iter, cg_tol: p.cg_tol,
+            dr_pos: p.dr_pos, dr_neg: p.dr_neg, pad: p.pad,
+            cg_max_iter_lsqr: p.cg_max_iter_lsqr, cg_tol_lsqr: p.cg_tol_lsqr,
+            cg_max_iter_sa: p.cg_max_iter_sa, cg_tol_sa: p.cg_tol_sa, d2_thr: p.d2_thr,
+            prc_w_i_min: p.prc_w_i.0, prc_w_i_max: p.prc_w_i.1,
+            prc_w_g_min: p.prc_w_g.0, prc_w_g_max: p.prc_w_g.1,
             qsm_ilsqr: IlsqrConfig::from(&p.qsm_ilsqr),
         }
     }
 }
-param_config!(ChiSepMediConfig from qsm_core::separation::ChiSepParams {
-    lambda_para: f64, lambda_dia: f64, lambda_cpl: f64, dr_pos: f64, dr_neg: f64,
-    percentage: f64, cg_tol: f64, cg_max_iter: usize, max_iter: usize, tol: f64
+impl ChiSepIlsqrConfig {
+    /// qsm-core's parameters (`cf` is the dispatcher's, from the scan).
+    pub fn params(&self) -> qsm_core::separation::ChiSepIlsqrParams {
+        qsm_core::separation::ChiSepIlsqrParams {
+            dr_pos: self.dr_pos, dr_neg: self.dr_neg, pad: self.pad,
+            cg_max_iter_lsqr: self.cg_max_iter_lsqr, cg_tol_lsqr: self.cg_tol_lsqr,
+            cg_max_iter_sa: self.cg_max_iter_sa, cg_tol_sa: self.cg_tol_sa, d2_thr: self.d2_thr,
+            prc_w_i: (self.prc_w_i_min, self.prc_w_i_max),
+            prc_w_g: (self.prc_w_g_min, self.prc_w_g_max),
+            qsm_ilsqr: self.qsm_ilsqr.params(),
+            ..qsm_core::separation::ChiSepIlsqrParams::default()
+        }
+    }
+}
+// χ-separation MEDI (the SNU toolbox's `chi_sep_MEDI`): `dr_pos`/`dr_neg` `None` is the toolbox's
+// 137 × B0/2.9 T; `pad` is voxels of zeros at both ends of the third axis.
+param_config!(ChiSepMediConfig from qsm_core::separation::ChiSepMediParams {
+    lambda: f64, lambda_csf: f64, dr_pos: Option<f64>, dr_neg: Option<f64>, pad: usize,
+    tol: f64, max_iter: usize, cg_tol: f64, cg_max_iter: usize
 });
+impl ChiSepMediConfig {
+    /// qsm-core's parameters (`cf` is the dispatcher's, from the scan).
+    pub fn params(&self) -> qsm_core::separation::ChiSepMediParams {
+        qsm_core::separation::ChiSepMediParams {
+            lambda: self.lambda, lambda_csf: self.lambda_csf, dr_pos: self.dr_pos,
+            dr_neg: self.dr_neg, pad: self.pad, tol: self.tol, max_iter: self.max_iter,
+            cg_tol: self.cg_tol, cg_max_iter: self.cg_max_iter,
+            ..qsm_core::separation::ChiSepMediParams::default()
+        }
+    }
+}
 param_config!(R2starQsmConfig from qsm_core::separation::R2starQsmParams { r_const_3t: f64 });
 param_config!(WaveSepConfig from qsm_core::separation::WaveSepParams {
     dr_pos: f64, dr_neg: f64, alpha: f64, lambda: f64, wavelet_order: usize, max_iter: usize, tol: f64
 });
-param_config!(DecomposeConfig from qsm_core::separation::DecomposeParams {
-    n_inner: usize, chi_bound: f64, max_lm_iter: usize
+// MATLAB `lsqcurvefit`'s options (trust-region-reflective), which every DECOMPOSE stage is solved
+// with; MATLAB's defaults. `max_function_evaluations` `None` is MATLAB's 100 × the stage's number
+// of parameters.
+param_config!(LsqcurvefitConfig from qsm_core::solvers::LsqTrrOptions {
+    max_iterations: usize, max_function_evaluations: Option<usize>, function_tolerance: f64,
+    step_tolerance: f64, optimality_tolerance: f64, finite_difference_step: f64, typical_x: f64
 });
+impl LsqcurvefitConfig {
+    /// qsm-core's options.
+    pub fn options(&self) -> qsm_core::solvers::LsqTrrOptions {
+        qsm_core::solvers::LsqTrrOptions {
+            max_iterations: self.max_iterations,
+            max_function_evaluations: self.max_function_evaluations,
+            function_tolerance: self.function_tolerance,
+            step_tolerance: self.step_tolerance,
+            optimality_tolerance: self.optimality_tolerance,
+            finite_difference_step: self.finite_difference_step,
+            typical_x: self.typical_x,
+        }
+    }
+}
+/// DECOMPOSE-QSM. Written out rather than generated by `param_config!` because `lsqcurvefit` is a
+/// group of its own. `unwrap_phase`: unwrap the phase along the echoes and cap the χ search at what
+/// the echo spacing can represent; off by default, as in the authors' code.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct DecomposeConfig {
+    pub n_inner: usize,
+    pub chi_bound: f64,
+    pub unwrap_phase: bool,
+    pub lsqcurvefit: LsqcurvefitConfig,
+}
+impl Default for DecomposeConfig {
+    fn default() -> Self {
+        let p = qsm_core::separation::DecomposeParams::default();
+        Self {
+            n_inner: p.n_inner, chi_bound: p.chi_bound, unwrap_phase: p.unwrap_phase,
+            lsqcurvefit: LsqcurvefitConfig::default(),
+        }
+    }
+}
 param_config!(HcChisepConfig from qsm_core::separation::HcChisepParams {
     dr_pos_3t: f64, bin_hz: f64
 });
@@ -620,8 +700,10 @@ impl PdfConfig {
     }
 }
 param_config!(LbvConfig from qsm_core::bgremove::LbvParams { tol: f64 });
+// iSMV: `max_iter` `None` is no cap; `radius` `None` (mm) is the variant's own: 6 × the smallest
+// voxel dimension for Wen 2014, 2 × the largest for QSM.jl.
 param_config!(IsmvConfig from qsm_core::bgremove::IsmvParams {
-    tol: f64, max_iter: usize, radius: f64
+    variant: IsmvVariant, tol: f64, max_iter: Option<usize>, radius: Option<f64>
 });
 param_config!(SharpConfig from qsm_core::bgremove::SharpParams { threshold: f64, radius: f64 });
 param_config!(ResharpConfig from qsm_core::bgremove::ResharpParams {
@@ -682,12 +764,15 @@ pub enum TikhonovReg { Identity, Gradient, Laplacian }
 pub struct TikhonovConfig {
     pub lambda: f64,
     pub reg: TikhonovReg,
+    /// QSM.jl's zero padding before the FFTs (see `RtsConfig`).
+    pub pad: [i64; 3],
 }
 impl Default for TikhonovConfig {
     fn default() -> Self {
         let p = qsm_core::inversion::TikhonovParams::default();
         Self {
             lambda: p.lambda,
+            pad: p.pad,
             reg: match p.reg {
                 qsm_core::inversion::Regularization::Identity => TikhonovReg::Identity,
                 qsm_core::inversion::Regularization::Gradient => TikhonovReg::Gradient,
@@ -1810,9 +1895,9 @@ mod selected_toml_tests {
     #[test]
     fn chi_sep_medi_defaults_are_qsm_cores() {
         let ours = PipelineConfig::default().separation.chi_sep_medi;
-        let core = qsm_core::separation::ChiSepParams::default();
-        assert_eq!((ours.lambda_para, ours.lambda_dia, ours.lambda_cpl),
-                   (core.lambda_para, core.lambda_dia, core.lambda_cpl));
+        let core = qsm_core::separation::ChiSepMediParams::default();
+        assert_eq!((ours.lambda, ours.lambda_csf, ours.dr_pos, ours.dr_neg, ours.pad),
+                   (core.lambda, core.lambda_csf, core.dr_pos, core.dr_neg, core.pad));
     }
 
     /// Configs written before `combine`/`refinements` existed must still load, and keep the

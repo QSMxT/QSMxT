@@ -83,8 +83,12 @@ pub fn missing_inputs(
     let needs: Vec<(bool, &'static str)> = match algorithm {
         SeparationAlgorithm::R2starQsm => vec![(r2star || multi, "R2* or multi-echo magnitude")],
         SeparationAlgorithm::Decompose => vec![(multi, "multi-echo magnitude")],
-        SeparationAlgorithm::ChiSepIlsqr | SeparationAlgorithm::ChiSepMedi =>
-            vec![(field, "local field"), (r2prime, "R2'"), (rss, "magnitude")],
+        // The χ-separation toolbox's `chi_sep_iLSQR` takes the magnitude but never uses it.
+        SeparationAlgorithm::ChiSepIlsqr => vec![(field, "local field"), (r2prime, "R2'")],
+        SeparationAlgorithm::ChiSepMedi => vec![
+            (field, "local field"), (r2prime, "R2'"), (rss, "magnitude"),
+            (inputs.n_std.is_some(), "noise map"), (inputs.mask_csf.is_some(), "CSF mask"),
+        ],
         SeparationAlgorithm::WaveSep => vec![(r2prime, "R2'")],
         SeparationAlgorithm::HcChisep => vec![(r2prime, "R2'"), (multi, "multi-echo magnitude")],
         // SUSEP-Net / χ-sepnet (deep learning) consume [QSM, R2', local field] → [χ+, χ−].
@@ -122,6 +126,25 @@ pub fn separation_support(
 /// DECOMPOSE takes, from the pipeline's one QSM.
 pub fn repeat_per_echo(map: &[f64], n_echoes: usize) -> Vec<f64> {
     map.iter().flat_map(|&v| std::iter::repeat_n(v, n_echoes)).collect()
+}
+
+/// χ-sep MEDI's noise map and CSF mask, as the χ-separation toolbox's script makes them: `N_std`
+/// from every echo's magnitude (MEDI's `Fit_ppm_complex` noise), and the CSF mask from ARLO R2*
+/// inside `mask` (MEDI's `extract_CSF`, at its defaults). `echo_major` holds the echo magnitudes,
+/// one volume of `dims` voxels after another, at `echo_times` (s).
+pub fn chi_sep_medi_inputs(
+    echo_major: &[f64], echo_times: &[f64], mask: &[u8], dims: (usize, usize, usize),
+    voxel_size: (f64, f64, f64),
+) -> Result<(Vec<f64>, Vec<u8>), EngineError> {
+    let n_std = qsm_core::utils::fit_ppm_complex_noise(echo_major, echo_times.len());
+    let r2star = qsm_core::utils::r2star::arlo(echo_major, echo_times, mask.len())
+        .map_err(|e| EngineError::Config(format!("chi-separation (MEDI): the CSF mask's R2*: {e}")))?;
+    let (nx, ny, nz) = dims;
+    let (vx, vy, vz) = voxel_size;
+    let grid = qsm_core::Grid::new(nx, ny, nz, vx, vy, vz);
+    let d = qsm_core::inversion::MediParams::default();
+    let csf = qsm_core::inversion::extract_csf(&r2star, mask, &grid, d.csf_r2s_threshold, d.csf_erode);
+    Ok((n_std, csf))
 }
 
 /// Write 0 wherever `support` is 0.
@@ -232,9 +255,11 @@ mod tests {
         let (qsm, mask) = ([0.0; 4], [1u8; 4]);
         let mut inputs = qsm_core::pipeline::SeparationInputs {
             local_field_ppm: &[], qsm: &qsm, qsm_per_echo: None, mask: &mask, r2prime: None, r2star: None,
-            magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None,
+            magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None, n_std: None, mask_csf: None,
         };
-        assert_eq!(missing_inputs(SeparationAlgorithm::ChiSepIlsqr, &inputs), ["local field", "R2'", "magnitude"]);
+        assert_eq!(missing_inputs(SeparationAlgorithm::ChiSepIlsqr, &inputs), ["local field", "R2'"]);
+        assert_eq!(missing_inputs(SeparationAlgorithm::ChiSepMedi, &inputs),
+                   ["local field", "R2'", "magnitude", "noise map", "CSF mask"]);
         let r2prime = [1.0; 4];
         inputs.r2prime = Some(&r2prime);
         assert_eq!(missing_inputs(SeparationAlgorithm::WaveSep, &inputs), Vec::<&str>::new());

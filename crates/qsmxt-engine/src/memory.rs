@@ -542,8 +542,16 @@ fn separation_need(config: &PipelineConfig, s: &Scan) -> u64 {
     } else {
         (0, 0)
     };
+    // The χ-separation toolbox's methods: about 45 f64 per voxel of the padded grid (QSM.rs's
+    // measurement: 3.5 GB for χ-sep iLSQR, 2.7 GB for χ-sep MEDI, on 184×256×128 voxels).
+    let sep = &config.separation;
+    let workspace = match sep.algorithm {
+        SeparationAlgorithm::ChiSepIlsqr => 45 * F64 * padded_voxels(s, sep.chi_sep_ilsqr.pad),
+        SeparationAlgorithm::ChiSepMedi => 45 * F64 * padded_voxels(s, [0, 0, sep.chi_sep_medi.pad]),
+        _ => s.v(80),
+    };
     match chi_separation_network_bytes(s.dims, &config.separation) {
-        0 => maps + s.v(80).max(qsm_solve) + qsm_map,
+        0 => maps + workspace.max(qsm_solve) + qsm_map,
         net => maps + net,
     }
 }
@@ -645,6 +653,8 @@ pub fn reducing_settings(step: &Step, config: &PipelineConfig) -> Vec<&'static s
         Stage::ChiSeparation => match config.separation.algorithm {
             SeparationAlgorithm::ChiSepNet => vec!["separation.chi_sepnet.patch", "separation.algorithm"],
             SeparationAlgorithm::SusepNet => vec!["separation.susep_net.patch", "separation.algorithm"],
+            SeparationAlgorithm::ChiSepIlsqr => vec!["separation.chi_sep_ilsqr.pad", "separation.algorithm"],
+            SeparationAlgorithm::ChiSepMedi => vec!["separation.chi_sep_medi.pad", "separation.algorithm"],
             _ => vec!["separation.algorithm"],
         },
         _ => vec![],
@@ -878,7 +888,9 @@ mod tests {
             c.pipeline.do_swi = true; c.pipeline.do_smwi = true; c.pipeline.do_t2starmap = true;
             c.pipeline.do_analysis = true; c.motion_correction.enabled = true; c.masking.two_pass = true;
         })));
-        for s in [SeparationAlgorithm::ChiSepIlsqr, SeparationAlgorithm::ChiSepNet, SeparationAlgorithm::SusepNet] {
+        // χ-sep iLSQR (the χ-separation toolbox's) needs about 45 f64 per voxel of a grid padded by
+        // 16 voxels per side, 4.2 GB on the example: it does not fit the heap.
+        for s in [SeparationAlgorithm::ChiSepNet, SeparationAlgorithm::SusepNet] {
             configs.push((format!("{s}"), with(|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = s; })));
         }
         let mut over = Vec::new();

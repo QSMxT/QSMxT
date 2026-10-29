@@ -204,6 +204,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         },
         lbv: qsm_core::bgremove::LbvParams { tol: cfg.bg_removal.lbv.tol, max_iter: None },
         ismv: qsm_core::bgremove::IsmvParams {
+            variant: cfg.bg_removal.ismv.variant.into(),
             tol: cfg.bg_removal.ismv.tol,
             max_iter: cfg.bg_removal.ismv.max_iter,
             radius: cfg.bg_removal.ismv.radius,
@@ -237,10 +238,11 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
 
     let inversion = PInversion {
         algorithm: map_alg(cfg.inversion.algorithm),
-        tkd: qsm_core::inversion::TkdParams { threshold: cfg.inversion.tkd.threshold },
-        tsvd: qsm_core::inversion::TkdParams { threshold: cfg.inversion.tsvd.threshold },
+        tkd: qsm_core::inversion::TkdParams { threshold: cfg.inversion.tkd.threshold, pad: cfg.inversion.tkd.pad },
+        tsvd: qsm_core::inversion::TkdParams { threshold: cfg.inversion.tsvd.threshold, pad: cfg.inversion.tsvd.pad },
         tikhonov: qsm_core::inversion::TikhonovParams {
             lambda: cfg.inversion.tikhonov.lambda,
+            pad: cfg.inversion.tikhonov.pad,
             reg: match cfg.inversion.tikhonov.reg {
                 crate::config::TikhonovReg::Identity => qsm_core::inversion::Regularization::Identity,
                 crate::config::TikhonovReg::Gradient => qsm_core::inversion::Regularization::Gradient,
@@ -249,19 +251,20 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         },
         tv: qsm_core::inversion::TvParams {
             lambda: cfg.inversion.tv.lambda, rho: cfg.inversion.tv.rho,
-            tol: cfg.inversion.tv.tol, max_iter: cfg.inversion.tv.max_iter,
+            tol: cfg.inversion.tv.tol, max_iter: cfg.inversion.tv.max_iter, pad: cfg.inversion.tv.pad,
         },
         rts: qsm_core::inversion::RtsParams {
             delta: cfg.inversion.rts.delta, mu: cfg.inversion.rts.mu,
             rho: cfg.inversion.rts.rho, tol: cfg.inversion.rts.tol,
             max_iter: cfg.inversion.rts.max_iter, lsmr_iter: cfg.inversion.rts.lsmr_iter,
-            tau: cfg.inversion.rts.tau, gamma: cfg.inversion.rts.gamma,
+            tau: cfg.inversion.rts.tau, gamma: cfg.inversion.rts.gamma, pad: cfg.inversion.rts.pad,
         },
         nltv: qsm_core::inversion::NltvParams {
             lambda: cfg.inversion.nltv.lambda, rho: cfg.inversion.nltv.rho, mu: cfg.inversion.nltv.mu,
             tol: cfg.inversion.nltv.tol, max_iter: cfg.inversion.nltv.max_iter,
             tol_newton: cfg.inversion.nltv.tol_newton,
             max_iter_newton: cfg.inversion.nltv.max_iter_newton, te: cfg.inversion.nltv.te.into(),
+            pad: cfg.inversion.nltv.pad,
             // Field strength and echo times are scan parameters; the pipeline fills them in.
             ..Default::default()
         },
@@ -510,23 +513,8 @@ pub fn to_separation_config(cfg: &PipelineConfig) -> PSeparation {
     let s = &cfg.separation;
     PSeparation {
         algorithm: map_sep_alg(s.algorithm),
-        chi_sep_ilsqr: qsm_core::separation::ChiSepIlsqrParams {
-            dr_pos: s.chi_sep_ilsqr.dr_pos, dr_neg: s.chi_sep_ilsqr.dr_neg,
-            lambda1: s.chi_sep_ilsqr.lambda1, percentage: s.chi_sep_ilsqr.percentage,
-            r2p_min: s.chi_sep_ilsqr.r2p_min, r2p_max: s.chi_sep_ilsqr.r2p_max,
-            max_iter: s.chi_sep_ilsqr.max_iter, tol: s.chi_sep_ilsqr.tol,
-            cg_max_iter: s.chi_sep_ilsqr.cg_max_iter, cg_tol: s.chi_sep_ilsqr.cg_tol,
-            qsm_ilsqr: s.chi_sep_ilsqr.qsm_ilsqr.params(),
-            ..qsm_core::separation::ChiSepIlsqrParams::default()
-        },
-        chi_sep_medi: qsm_core::separation::ChiSepParams {
-            lambda_para: s.chi_sep_medi.lambda_para, lambda_dia: s.chi_sep_medi.lambda_dia,
-            lambda_cpl: s.chi_sep_medi.lambda_cpl, dr_pos: s.chi_sep_medi.dr_pos,
-            dr_neg: s.chi_sep_medi.dr_neg, percentage: s.chi_sep_medi.percentage,
-            cg_tol: s.chi_sep_medi.cg_tol, cg_max_iter: s.chi_sep_medi.cg_max_iter,
-            max_iter: s.chi_sep_medi.max_iter, tol: s.chi_sep_medi.tol,
-            ..qsm_core::separation::ChiSepParams::default()
-        },
+        chi_sep_ilsqr: s.chi_sep_ilsqr.params(),
+        chi_sep_medi: s.chi_sep_medi.params(),
         r2star_qsm: qsm_core::separation::R2starQsmParams {
             r_const_3t: s.r2star_qsm.r_const_3t,
             ..qsm_core::separation::R2starQsmParams::default()
@@ -538,7 +526,8 @@ pub fn to_separation_config(cfg: &PipelineConfig) -> PSeparation {
         },
         decompose: qsm_core::separation::DecomposeParams {
             n_inner: s.decompose.n_inner, chi_bound: s.decompose.chi_bound,
-            max_lm_iter: s.decompose.max_lm_iter,
+            unwrap_phase: s.decompose.unwrap_phase,
+            lsqcurvefit: s.decompose.lsqcurvefit.options(),
             ..qsm_core::separation::DecomposeParams::default()
         },
         hc_chisep: qsm_core::separation::HcChisepParams {
@@ -987,6 +976,44 @@ mod tests {
         cfg.separation.chi_sep_ilsqr.qsm_ilsqr.pad_mm = 3.0;
         let q = to_separation_config(&cfg).chi_sep_ilsqr.qsm_ilsqr;
         assert_eq!((q.max_iter, q.pad_mm), (7, 3.0));
+    }
+
+    /// The settings of iSMV, the QSM.jl inversions' padding and the χ-separation and DECOMPOSE
+    /// solvers reach qsm-core, defaulting to its own.
+    #[test]
+    fn ismv_padding_and_separation_settings_reach_core() {
+        let mut cfg = PipelineConfig::default();
+        let (_, bg, inv, _) = to_pipeline_stages(&cfg);
+        let d = qsm_core::bgremove::IsmvParams::default();
+        assert_eq!((bg.ismv.variant, bg.ismv.tol, bg.ismv.max_iter, bg.ismv.radius), (d.variant, d.tol, d.max_iter, d.radius));
+        assert_eq!((inv.tkd.pad, inv.rts.pad, inv.nltv.pad), ([0; 3], [0; 3], [0; 3]));
+        let sep = to_separation_config(&cfg);
+        let (di, dm, dd) = (qsm_core::separation::ChiSepIlsqrParams::default(),
+                            qsm_core::separation::ChiSepMediParams::default(),
+                            qsm_core::separation::DecomposeParams::default());
+        assert_eq!((sep.chi_sep_ilsqr.dr_pos, sep.chi_sep_ilsqr.pad, sep.chi_sep_ilsqr.prc_w_g), (di.dr_pos, di.pad, di.prc_w_g));
+        assert_eq!((sep.chi_sep_medi.lambda_csf, sep.chi_sep_medi.pad), (dm.lambda_csf, dm.pad));
+        assert_eq!((sep.decompose.unwrap_phase, sep.decompose.lsqcurvefit.max_iterations),
+                   (dd.unwrap_phase, dd.lsqcurvefit.max_iterations));
+
+        cfg.bg_removal.ismv.variant = crate::IsmvVariant::Qsmjl;
+        cfg.bg_removal.ismv.max_iter = Some(500);
+        cfg.bg_removal.ismv.radius = Some(3.0);
+        cfg.inversion.tkd.pad = [-1, 4, 0];
+        cfg.inversion.tikhonov.pad = [2; 3];
+        cfg.separation.chi_sep_ilsqr.prc_w_g_max = 80.0;
+        cfg.separation.chi_sep_medi.dr_pos = Some(120.0);
+        cfg.separation.decompose.unwrap_phase = true;
+        cfg.separation.decompose.lsqcurvefit.max_function_evaluations = Some(9);
+        let (_, bg, inv, _) = to_pipeline_stages(&cfg);
+        assert_eq!((bg.ismv.variant, bg.ismv.max_iter, bg.ismv.radius),
+                   (qsm_core::bgremove::IsmvVariant::QsmJl, Some(500), Some(3.0)));
+        assert_eq!((inv.tkd.pad, inv.tikhonov.pad), ([-1, 4, 0], [2; 3]));
+        let sep = to_separation_config(&cfg);
+        assert_eq!(sep.chi_sep_ilsqr.prc_w_g, (di.prc_w_g.0, 80.0));
+        assert_eq!(sep.chi_sep_medi.dr_pos, Some(120.0));
+        assert!(sep.decompose.unwrap_phase);
+        assert_eq!(sep.decompose.lsqcurvefit.max_function_evaluations, Some(9));
     }
 
     #[test]

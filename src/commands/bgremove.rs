@@ -135,9 +135,10 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
         BgremoveCommand::Ismv(args) => {
             let d = bg::IsmvParams::default();
             let ismv = bg::IsmvParams {
+                variant: args.variant.map_or(d.variant, Into::into),
                 tol: args.tol.unwrap_or(d.tol),
-                max_iter: args.max_iter.unwrap_or(d.max_iter),
-                radius: args.radius.unwrap_or(d.radius),
+                max_iter: args.max_iter.or(d.max_iter),
+                radius: args.radius.or(d.radius),
             };
             let config = qsm_core::pipeline::BgRemovalConfig { ismv, ..config_for(A::Ismv) };
             let out = remove_with(&args.common, config, None, &[], "iSMV")?;

@@ -100,6 +100,14 @@ fn lsqr_params(args: &crate::cli::LsqrParamArgs) -> qsm_core::inversion::LsqrQsm
 /// `run --qsm-algorithm heidi` on one set of numbers.
 /// STAR-QSM's settings from `qsmxt invert star`'s flags. The field strength and echo times are
 /// the scan's; qsm-core's dispatcher fills them in.
+/// QSM.jl's padding from `--pad X Y Z` (clap takes exactly three), or the default.
+fn pad3(given: Option<&[i64]>, default: [i64; 3]) -> [i64; 3] {
+    match given {
+        Some(&[x, y, z]) => [x, y, z],
+        _ => default,
+    }
+}
+
 fn star_params(args: &crate::cli::InvertStarArgs) -> qsm_core::inversion::StarParams {
     let d = qsm_core::inversion::StarParams::default();
     qsm_core::inversion::StarParams {
@@ -158,6 +166,7 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 lsmr_iter: args.lsmr_iter.unwrap_or(d.lsmr_iter),
                 tau: args.tau.unwrap_or(d.tau),
                 gamma: args.gamma.unwrap_or(d.gamma),
+                pad: pad3(args.pad.as_deref(), d.pad),
             };
             let config = qsm_core::pipeline::InversionConfig { rts, ..config_for(A::Rts) };
             let out = invert_with(&args.common, f64::NAN, &[], Magnitude::None, config, "RTS")?;
@@ -170,6 +179,7 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 rho: args.rho.map_or(d.rho, crate::cli::OrAuto::value),
                 tol: args.tol.unwrap_or(d.tol),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
+                pad: pad3(args.pad.as_deref(), d.pad),
             };
             let config = qsm_core::pipeline::InversionConfig { tv, ..config_for(A::Tv) };
             let out = invert_with(&args.common, f64::NAN, &[], Magnitude::None, config, "TV")?;
@@ -177,14 +187,14 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
         }
         InvertCommand::Tkd(args) => {
             let d = inv::TkdParams::default();
-            let tkd = inv::TkdParams { threshold: args.threshold.unwrap_or(d.threshold) };
+            let tkd = inv::TkdParams { threshold: args.threshold.unwrap_or(d.threshold), pad: pad3(args.pad.as_deref(), d.pad) };
             let config = qsm_core::pipeline::InversionConfig { tkd, ..config_for(A::Tkd) };
             let out = invert_with(&args.common, f64::NAN, &[], Magnitude::None, config, "TKD")?;
             (args.common, out)
         }
         InvertCommand::Tsvd(args) => {
             let d = inv::TkdParams::default();
-            let tsvd = inv::TkdParams { threshold: args.threshold.unwrap_or(d.threshold) };
+            let tsvd = inv::TkdParams { threshold: args.threshold.unwrap_or(d.threshold), pad: pad3(args.pad.as_deref(), d.pad) };
             let config = qsm_core::pipeline::InversionConfig { tsvd, ..config_for(A::Tsvd) };
             let out = invert_with(&args.common, f64::NAN, &[], Magnitude::None, config, "TSVD")?;
             (args.common, out)
@@ -227,7 +237,9 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
         }
         InvertCommand::Tikhonov(args) => {
             let d = inv::TikhonovParams::default();
-            let tikhonov = inv::TikhonovParams { lambda: args.lambda.unwrap_or(d.lambda), ..d };
+            let tikhonov = inv::TikhonovParams {
+                lambda: args.lambda.unwrap_or(d.lambda), pad: pad3(args.pad.as_deref(), d.pad), ..d
+            };
             let config = qsm_core::pipeline::InversionConfig { tikhonov, ..config_for(A::Tikhonov) };
             let out = invert_with(&args.common, f64::NAN, &[], Magnitude::None, config, "Tikhonov")?;
             (args.common, out)
@@ -243,6 +255,7 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 tol_newton: args.tol_newton.unwrap_or(d.tol_newton),
                 max_iter_newton: args.newton_iter.unwrap_or(d.max_iter_newton),
                 te: args.te.map_or(d.te, Into::into),
+                pad: pad3(args.pad.as_deref(), d.pad),
                 ..d
             };
             let config = qsm_core::pipeline::InversionConfig { nltv, ..config_for(A::Nltv) };
