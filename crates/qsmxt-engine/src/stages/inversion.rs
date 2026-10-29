@@ -197,6 +197,9 @@ pub fn tgv_params_from_config(c: &TgvConfig) -> qsm_core::inversion::TgvParams {
         erosions: c.erosions,
         step_size: c.step_size as f32,
         te: c.te.into(),
+        // qsm-core's defaults (exact adjoint, erosion from the array's edge too); not settings:
+        // they only reproduce the reference package's quirks for parity.
+        ..Default::default()
     }
 }
 
