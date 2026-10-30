@@ -1079,7 +1079,7 @@ mod integration_tests {
             erosions: Some(0),
             alpha1: None, alpha0: None,
             step_size: None, te: None,
-            reference_divergence: true, reference_edge_erosion: true,
+            reference_divergence: true, reference_edge_erosion: true, reference_output_box: true,
         })).unwrap();
         assert!(output.exists());
     }

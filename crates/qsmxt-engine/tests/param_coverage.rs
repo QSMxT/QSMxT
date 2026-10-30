@@ -112,10 +112,12 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     cover!(q::separation::HcChisepParams => c::HcChisepConfig, ignore: ["b0", "se_echo_times"]);
     cover!(q::separation::ChiSepNetParams => c::ChiSepNetConfig);
     cover!(q::separation::SusepNetParams => c::SusepNetConfig);
-    // `reference_divergence` / `reference_edge_erosion` reproduce the reference package's quirks
-    // for parity: the pipeline runs qsm-core's defaults (exact adjoint, edge erosion), and only
-    // `qsmxt invert tgv` offers them (--reference-divergence, --reference-edge-erosion).
-    cover!(q::inversion::TgvParams => c::TgvConfig, ignore: ["reference_divergence", "reference_edge_erosion"]);
+    // `reference_divergence` / `reference_edge_erosion` / `reference_output_box` reproduce the
+    // reference package's quirks and output for parity: the pipeline runs qsm-core's defaults
+    // (exact adjoint, edge erosion, χ inside the eroded mask), and only `qsmxt invert tgv` offers
+    // them (--reference-divergence, --reference-edge-erosion, --reference-output-box).
+    cover!(q::inversion::TgvParams => c::TgvConfig,
+           ignore: ["reference_divergence", "reference_edge_erosion", "reference_output_box"]);
     // b0/echo_times come from scan metadata (the dispatcher fills them).
     cover!(q::inversion::StarParams => c::StarConfig, ignore: ["b0", "echo_times"]);
 

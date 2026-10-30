@@ -579,6 +579,7 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             let params = qsm_core::inversion::TgvParams {
                 reference_divergence: args.reference_divergence,
                 reference_edge_erosion: args.reference_edge_erosion,
+                reference_output_box: args.reference_output_box,
                 ..params
             };
             // A field map in ppm, which TGV expresses as phase at the echo time --te picks and

@@ -183,10 +183,10 @@ with `--field-strength` and `--echo-times` (every echo's). `ndi`, `nltv`, `fansi
 need the magnitude of every echo (one 4D file or one file per echo). MEDI-mSMV is
 `qsmxt invert medi --msmv`.
 
-`qsmxt invert tgv --reference-divergence --reference-edge-erosion` reproduces
-QuantitativeSusceptibilityMappingTGV.jl's divergence and mask erosion, for comparison
-with that package; `qsmxt run` always uses the exact adjoint and erodes from the
-array's edge too.
+`qsmxt invert tgv --reference-divergence --reference-edge-erosion --reference-output-box`
+reproduces QuantitativeSusceptibilityMappingTGV.jl's divergence, mask erosion and output
+box, for comparison with that package; `qsmxt run` always uses the exact adjoint, erodes
+from the array's edge too, and returns χ inside the eroded mask only.
 
 ```sh
 # e.g. inspect the parameters of a method
