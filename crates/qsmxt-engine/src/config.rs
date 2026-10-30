@@ -162,7 +162,7 @@ impl From<&qsm_core::inversion::IlsqrParams> for IlsqrConfig {
 impl IlsqrConfig {
     /// qsm-core's parameters.
     pub fn params(&self) -> qsm_core::inversion::IlsqrParams {
-        qsm_core::inversion::IlsqrParams { tol: self.tol, max_iter: self.max_iter, pad_mm: self.pad_mm }
+        qsm_core::inversion::IlsqrParams { tol: self.tol, max_iter: self.max_iter, pad_mm: self.pad_mm, ..Default::default() }
     }
 }
 

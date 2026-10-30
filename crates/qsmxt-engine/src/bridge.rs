@@ -336,7 +336,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         },
         ilsqr: qsm_core::inversion::IlsqrParams {
             tol: cfg.inversion.ilsqr.tol, max_iter: cfg.inversion.ilsqr.max_iter,
-            pad_mm: cfg.inversion.ilsqr.pad_mm,
+            pad_mm: cfg.inversion.ilsqr.pad_mm, ..Default::default()
         },
         star: qsm_core::inversion::StarParams {
             pad: cfg.inversion.star.pad, te: cfg.inversion.star.te.into(),
