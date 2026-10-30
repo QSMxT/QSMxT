@@ -1832,9 +1832,9 @@ qsmxt bgremove sharp [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-o, --output <OUTPUT>` | Output local field NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--output-mask <OUTPUT_MASK>` | Output eroded mask (for algorithms that erode) |
-| `--threshold <THRESHOLD>` | Deconvolution (TSVD) threshold (default: 0.03) |
-| `--radius <RADIUS>` | Sphere radius in mm (default: 4) |
-| `--variant <VARIANT>` | Implementation: sepia (SEPIA's SHARP.m, the default) or qsmjl (QSM.jl's `sharp`) Values: `sepia`, `qsmjl`. |
+| `--threshold <THRESHOLD>` | Deconvolution (TSVD) threshold (default: 0.03; qsmjl: 0.05) |
+| `--radius <RADIUS>` | Sphere radius in mm (default: 4; qsmjl: 18 × the smallest voxel dimension) |
+| `--variant <VARIANT>` | Implementation: sepia (SEPIA's SHARP.m, the default) or qsmjl (QSM.jl's `sharp`, with its own defaults) Values: `sepia`, `qsmjl`. |
 
 ### `qsmxt bgremove resharp`
 

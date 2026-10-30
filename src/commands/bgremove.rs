@@ -150,11 +150,18 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             (args.common, out)
         }
         BgremoveCommand::Sharp(args) => {
-            let d = bg::SharpParams::default();
+            // Each variant's own defaults: SEPIA's (4 mm, 0.03), or QSM.jl's (18 × the smallest
+            // voxel dimension, 0.05), which depend on the grid.
+            let d = match args.variant {
+                Some(crate::cli::SharpVariantArg::Qsmjl) => {
+                    bg::SharpParams::qsmjl(&super::common::nifti_grid(&load_nifti(&args.common.input)?))
+                }
+                _ => bg::SharpParams::default(),
+            };
             let sharp = bg::SharpParams {
                 threshold: args.threshold.unwrap_or(d.threshold),
                 radius: args.radius.unwrap_or(d.radius),
-                variant: args.variant.map_or(d.variant, Into::into),
+                variant: d.variant,
             };
             let config = qsm_core::pipeline::BgRemovalConfig { sharp, ..config_for(A::Sharp) };
             let out = remove_with(&args.common, config, None, &[], "SHARP")?;

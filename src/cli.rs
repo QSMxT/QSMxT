@@ -2652,13 +2652,14 @@ pub struct BgremoveIsmvArgs {
 pub struct BgremoveSharpArgs {
     #[command(flatten)]
     pub common: BgremoveCommonArgs,
-    /// Deconvolution (TSVD) threshold (default: 0.03)
+    /// Deconvolution (TSVD) threshold (default: 0.03; qsmjl: 0.05)
     #[arg(long)]
     pub threshold: Option<f64>,
-    /// Sphere radius in mm (default: 4)
+    /// Sphere radius in mm (default: 4; qsmjl: 18 × the smallest voxel dimension)
     #[arg(long)]
     pub radius: Option<f64>,
-    /// Implementation: sepia (SEPIA's SHARP.m, the default) or qsmjl (QSM.jl's `sharp`)
+    /// Implementation: sepia (SEPIA's SHARP.m, the default) or qsmjl (QSM.jl's `sharp`, with its
+    /// own defaults)
     #[arg(long, value_enum)]
     pub variant: Option<SharpVariantArg>,
 }

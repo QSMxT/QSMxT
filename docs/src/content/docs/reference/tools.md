@@ -129,7 +129,8 @@ map made from them.
 `--max-radius`/`--min-radius`/`--radius-step` in mm, and `--grid <isotropic|native|finest>` with
 `--grid-spacing` in mm (the working grid, as `qsmxt run`'s `--vsharp-grid`).
 
-`qsmxt bgremove sharp --variant qsmjl` runs QSM.jl's SHARP, and `qsmxt bgremove vsharp
+`qsmxt bgremove sharp --variant qsmjl` runs QSM.jl's SHARP (at QSM.jl's defaults, 18 × the smallest
+voxel dimension and 0.05, unless `--radius`/`--threshold` say otherwise), and `qsmxt bgremove vsharp
 --ball qsmjl` QSM.jl's SMV ball, for comparison with that implementation; `qsmxt run`
 always runs the defaults.
 
