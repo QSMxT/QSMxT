@@ -113,20 +113,21 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     cover!(q::separation::ChiSepNetParams => c::ChiSepNetConfig);
     cover!(q::separation::SusepNetParams => c::SusepNetConfig);
     // `reference_divergence` / `reference_edge_erosion` reproduce the reference package's quirks
-    // for parity; QSMxT runs qsm-core's defaults (exact adjoint, edge erosion) and offers no choice.
+    // for parity: the pipeline runs qsm-core's defaults (exact adjoint, edge erosion), and only
+    // `qsmxt invert tgv` offers them (--reference-divergence, --reference-edge-erosion).
     cover!(q::inversion::TgvParams => c::TgvConfig, ignore: ["reference_divergence", "reference_edge_erosion"]);
     // b0/echo_times come from scan metadata (the dispatcher fills them).
     cover!(q::inversion::StarParams => c::StarConfig, ignore: ["b0", "echo_times"]);
 
     // Background-field removal
     // `ball` picks which implementation's SMV ball to reproduce (STI Suite's, the default, or
-    // QSM.jl's); QSMxT runs qsm-core's default and offers no choice.
+    // QSM.jl's): the pipeline runs qsm-core's default; `qsmxt bgremove vsharp --ball` offers both.
     cover!(q::bgremove::VsharpParams => c::VsharpConfig, ignore: ["ball"]);
     cover!(q::bgremove::PdfParams => c::PdfConfig);
     cover!(q::bgremove::LbvParams => c::LbvConfig, ignore: ["max_iter"]);
     cover!(q::bgremove::IsmvParams => c::IsmvConfig);
     // `variant` picks which implementation to reproduce (SEPIA's, the default, or QSM.jl's for
-    // parity); QSMxT runs qsm-core's default and offers no choice.
+    // parity): the pipeline runs qsm-core's default; `qsmxt bgremove sharp --variant` offers both.
     cover!(q::bgremove::SharpParams => c::SharpConfig, ignore: ["variant"]);
     cover!(q::bgremove::ResharpParams => c::ResharpConfig);
     cover!(q::bgremove::HarperellaParams => c::HarperellaConfig);

@@ -226,7 +226,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             radius_step: cfg.bg_removal.vsharp.radius_step,
             deconvolve: cfg.bg_removal.vsharp.deconvolve,
             // qsm-core's SMV ball (STI Suite's); not a setting: it only reproduces one
-            // implementation or the other.
+            // implementation or the other (`qsmxt bgremove vsharp --ball` offers both, for parity).
             ball: qsm_core::bgremove::VsharpBall::default(),
             grid: cfg.bg_removal.vsharp.core_grid(),
         },
@@ -244,7 +244,8 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         sharp: qsm_core::bgremove::SharpParams {
             threshold: cfg.bg_removal.sharp.threshold,
             radius: cfg.bg_removal.sharp.radius,
-            // qsm-core's SHARP (SEPIA's); the QSM.jl variant is for parity only.
+            // qsm-core's SHARP (SEPIA's); the QSM.jl variant is for parity only
+            // (`qsmxt bgremove sharp --variant`).
             variant: qsm_core::bgremove::SharpVariant::default(),
         },
         resharp: qsm_core::bgremove::ResharpParams {
@@ -408,7 +409,8 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             step_size: cfg.inversion.tgv.step_size as f32,
             te: cfg.inversion.tgv.te.into(),
             // qsm-core's defaults (exact adjoint, erosion from the array's edge too); not
-            // settings: they only reproduce the reference package's quirks for parity.
+            // settings: they only reproduce the reference package's quirks for parity
+            // (`qsmxt invert tgv --reference-divergence --reference-edge-erosion`).
             ..Default::default()
         },
         qsmart: qsm_core::utils::QsmartParams {

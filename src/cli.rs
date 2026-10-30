@@ -89,7 +89,7 @@ pub enum Command {
     T2star(T2starArgs),
     /// R2 mapping from multi-echo spin-echo (MESE) magnitude data (EPG)
     R2(R2Args),
-    /// R2' mapping (R2' = R2* - R2)
+    /// R2' mapping: measured as R2* - R2, or estimated from R2* by R2PRIMEnet
     R2prime(R2primeArgs),
     /// Inhomogeneity correction on magnitude data (makehomogeneous or N4)
     Homogeneity(HomogeneityArgs),
@@ -2547,6 +2547,9 @@ pub enum BgremoveCommand {
     Iharperella(BgremoveIharperellaArgs),
     /// BFRnet deep-learning background removal (weights downloaded on first use)
     Bfrnet(BgremoveBfrnetArgs),
+    /// iQFM deep-learning joint unwrapping and background removal — input is every echo's
+    /// WRAPPED phase (weights downloaded on first use)
+    Iqfm(PhaseNetArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -2584,6 +2587,10 @@ pub struct BgremoveVsharpArgs {
     /// Isotropic working-grid spacing in mm (default 1); used with --grid isotropic
     #[arg(long, value_name = "MM")]
     pub grid_spacing: Option<f64>,
+    /// SMV ball: `default` (the voxels within r + 1/6 mm, centre excluded; a ball fits where all
+    /// of it is in the mask) or `qsmjl` (QSM.jl's: within r, centre included)
+    #[arg(long, value_enum)]
+    pub ball: Option<VsharpBallArg>,
 }
 
 /// PDF weights the fit by a noise map it makes from every echo's magnitude (MEDI toolbox
@@ -2645,12 +2652,16 @@ pub struct BgremoveIsmvArgs {
 pub struct BgremoveSharpArgs {
     #[command(flatten)]
     pub common: BgremoveCommonArgs,
-    /// Threshold
+    /// Deconvolution (TSVD) threshold (default: 0.03; qsmjl: 0.05)
     #[arg(long)]
     pub threshold: Option<f64>,
-    /// Radius factor (multiplied by min voxel size)
+    /// Sphere radius in mm (default: 4; qsmjl: 18 × the smallest voxel dimension)
     #[arg(long)]
     pub radius: Option<f64>,
+    /// Implementation: sepia (SEPIA's SHARP.m, the default) or qsmjl (QSM.jl's `sharp`, with its
+    /// own defaults)
+    #[arg(long, value_enum)]
+    pub variant: Option<SharpVariantArg>,
 }
 
 #[derive(Parser, Debug)]
@@ -2914,10 +2925,43 @@ pub enum InvertCommand {
     ModlQsm(InvertDlArgs),
     /// NeXtQSM single-step reconstruction — input is the TOTAL field (weights downloaded on first use)
     Nextqsm(InvertDlArgs),
+    /// iQSM single-step reconstruction — input is every echo's WRAPPED phase (weights downloaded
+    /// on first use)
+    Iqsm(PhaseNetArgs),
+    /// iQSM+ orientation-adaptive single-step reconstruction — input is every echo's WRAPPED phase
+    /// (weights downloaded on first use)
+    IqsmPlus(PhaseNetArgs),
     /// COSMOS — multi-orientation least squares over 2+ co-registered orientations
     Cosmos(InvertCosmosArgs),
     /// STI (susceptibility tensor imaging) — 6+ co-registered orientations to a rank-2 tensor
     Sti(InvertStiArgs),
+}
+
+/// Args for the networks that work from every echo's wrapped phase: iQSM and iQSM+ (`qsmxt
+/// invert`, χ out) and iQFM (`qsmxt bgremove`, the local field out). They run as `qsmxt run`
+/// runs them, with no tunable parameters; weights are fetched on first use.
+#[derive(Parser, Debug)]
+pub struct PhaseNetArgs {
+    /// Wrapped phase NIfTI file in radians: 4D (x,y,z,echo), or 3D for one echo
+    pub input: PathBuf,
+    /// Binary brain mask NIfTI file
+    #[arg(short, long)]
+    pub mask: PathBuf,
+    /// Output NIfTI file in ppm (susceptibility for iqsm/iqsm-plus, the local field for iqfm)
+    #[arg(short, long)]
+    pub output: PathBuf,
+    /// Magnitude NIfTI file with the same echoes as the phase (4D), to weight the echo
+    /// combination (magnitude × TE²); without it the echoes are weighted by TE² alone
+    #[arg(long)]
+    pub magnitude: Option<PathBuf>,
+    #[command(flatten)]
+    pub scan: ScanParamArgs,
+    /// B0 direction (3 values)
+    #[arg(long, num_args = 3, allow_negative_numbers = true, default_values_t = [0.0, 0.0, 1.0])]
+    pub b0_direction: Vec<f64>,
+    /// Deep-learning overlap-tiling (opt-in).
+    #[command(flatten)]
+    pub tiling_params: TilingParamArgs,
 }
 
 /// Args for the deep-learning dipole inversions. They have no tunable parameters;
@@ -3039,6 +3083,15 @@ pub struct InvertTgvArgs {
     /// the echo times), or a time in ms (default: first)
     #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
     pub te: Option<qsmxt_engine::EchoTimeChoice>,
+    /// Use QuantitativeSusceptibilityMappingTGV.jl's divergence in the w update rather than the
+    /// exact adjoint of the symmetric gradient. Changes the result only on anisotropic voxels;
+    /// with --reference-edge-erosion it reproduces that package, for comparison with it
+    #[arg(long)]
+    pub reference_divergence: bool,
+    /// Erode the mask as QuantitativeSusceptibilityMappingTGV.jl does, not from the array's edge.
+    /// Changes the result only where the mask reaches an array face
+    #[arg(long)]
+    pub reference_edge_erosion: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -4015,22 +4068,38 @@ pub struct R2primeArgs {
     /// R2* map NIfTI in Hz
     #[arg(long)]
     pub r2star: PathBuf,
-    /// R2 map NIfTI in Hz
-    #[arg(long)]
-    pub r2: PathBuf,
+    /// R2 map NIfTI in Hz: R2' is measured, as R2* - R2
+    #[arg(long, required_unless_present = "r2primenet", conflicts_with = "r2primenet")]
+    pub r2: Option<PathBuf>,
+    /// Estimate R2' from the R2* map with R2PRIMEnet (deep learning, trained at 3 T; weights
+    /// downloaded on first use) instead of measuring it from an R2 map. Needs --field-strength
+    #[arg(long, requires = "field_strength")]
+    pub r2primenet: bool,
     /// Binary mask NIfTI file
     #[arg(short, long)]
     pub mask: PathBuf,
     /// Binary mask of where the R2 acquisition reached, if it does not cover the whole mask
     /// (a MESE slab). Without it, coverage is inferred from R2 > 0
-    #[arg(long)]
+    #[arg(long, conflicts_with = "r2primenet")]
     pub r2_coverage: Option<PathBuf>,
     /// Output R2' map NIfTI file
     #[arg(short, long)]
     pub output: PathBuf,
     /// Also write the mask of voxels where R2' is a measurement
-    #[arg(long)]
+    #[arg(long, conflicts_with = "r2primenet")]
     pub output_coverage: Option<PathBuf>,
+    /// B0 field strength in Tesla (--r2primenet: R2PRIMEnet refuses a field strength other than
+    /// 3 T unless --r2primenet-ignore-field-mismatch is given)
+    #[arg(long, conflicts_with = "r2")]
+    pub field_strength: Option<f64>,
+    /// Run R2PRIMEnet even when the acquisition is not at 3 T, the only field strength its
+    /// weights were trained at. The R2' is then uncalibrated
+    #[arg(long, conflicts_with = "r2")]
+    pub r2primenet_ignore_field_mismatch: bool,
+    /// R2PRIMEnet sliding-window patch in voxels, D H W, each a multiple of 16
+    /// (default: 192 192 128)
+    #[arg(long, num_args = 3, value_names = ["D", "H", "W"], conflicts_with = "r2")]
+    pub r2primenet_patch: Option<Vec<usize>>,
 }
 
 #[derive(Parser, Debug)]
@@ -4207,6 +4276,36 @@ pub enum BfAlgorithmArg {
     Bfrnet,
     /// iQFM deep-learning joint unwrapping + background removal from phase (weights downloaded on first use)
     Iqfm,
+}
+
+/// `qsmxt bgremove sharp --variant`.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum SharpVariantArg {
+    Sepia, Qsmjl,
+}
+
+impl From<SharpVariantArg> for qsm_core::bgremove::SharpVariant {
+    fn from(a: SharpVariantArg) -> Self {
+        match a {
+            SharpVariantArg::Sepia => Self::Sepia,
+            SharpVariantArg::Qsmjl => Self::QsmJl,
+        }
+    }
+}
+
+/// `qsmxt bgremove vsharp --ball`.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum VsharpBallArg {
+    Default, Qsmjl,
+}
+
+impl From<VsharpBallArg> for qsm_core::bgremove::VsharpBall {
+    fn from(a: VsharpBallArg) -> Self {
+        match a {
+            VsharpBallArg::Default => Self::StiSuite,
+            VsharpBallArg::Qsmjl => Self::QsmJl,
+        }
+    }
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

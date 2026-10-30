@@ -76,6 +76,102 @@ fn run_dl_inversion(
     invert_with(c, field_strength, &[], Magnitude::None, config, name)
 }
 
+/// The networks that work from every echo's wrapped phase.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum PhaseNet {
+    /// iQSM: χ (ppm).
+    Iqsm,
+    /// iQSM+: χ (ppm), with the B0 direction as a network input.
+    IqsmPlus,
+    /// iQFM: the local field (ppm).
+    Iqfm,
+}
+
+impl PhaseNet {
+    /// The model id (its weights) and the name it is logged under.
+    fn id_and_name(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Iqsm => ("iqsm", "iQSM"),
+            Self::IqsmPlus => ("iqsm-plus", "iQSM+"),
+            Self::Iqfm => ("iqfm", "iQFM"),
+        }
+    }
+}
+
+/// The inputs of a phase network, loaded and checked: every echo's phase scaled into [-π, π]
+/// (as `qsmxt run` reads it), every echo's magnitude if given, the mask, and the scan metadata.
+pub(super) struct PhaseNetInputs {
+    pub phases: Vec<Vec<f64>>,
+    pub magnitudes: Vec<Vec<f64>>,
+    pub mask: Vec<u8>,
+    pub metadata: qsm_core::pipeline::ScanMetadata,
+    pub reference: qsm_core::io::NiftiData,
+}
+
+pub(super) fn load_phase_net_inputs(args: &crate::cli::PhaseNetArgs) -> crate::Result<PhaseNetInputs> {
+    let phase = super::common::load_nifti_4d(&args.input)?;
+    let n_echoes = phase.echoes.len();
+    if args.scan.echo_times.len() != n_echoes {
+        return Err(QsmxtError::Config(format!(
+            "{} has {n_echoes} echo(es) but {} echo time(s) were given",
+            args.input.display(), args.scan.echo_times.len())));
+    }
+    let mut phases = phase.echoes.clone();
+    for p in &mut phases {
+        crate::pipeline::phase::scale_phase_to_pi(p);
+    }
+    let magnitudes = match &args.magnitude {
+        None => Vec::new(),
+        Some(path) => {
+            let mag = super::common::load_nifti_4d(path)?;
+            if mag.dims != phase.dims || mag.echoes.len() != n_echoes {
+                return Err(QsmxtError::Config(format!(
+                    "--magnitude {} is {:?} with {} echo(es), but the phase is {:?} with {n_echoes}",
+                    path.display(), mag.dims, mag.echoes.len(), phase.dims)));
+            }
+            mag.echoes
+        }
+    };
+    let (mask, mask_nifti) = load_mask(&args.mask)?;
+    if mask_nifti.dims != phase.dims {
+        return Err(QsmxtError::Config(format!(
+            "mask {} is {:?} but the phase is {:?}", args.mask.display(), mask_nifti.dims, phase.dims)));
+    }
+    let metadata = qsm_core::pipeline::ScanMetadata {
+        dims: phase.dims,
+        voxel_size: phase.voxel_size,
+        echo_times: args.scan.echo_times.clone(),
+        field_strength: args.scan.field_strength,
+        b0_direction: (args.b0_direction[0], args.b0_direction[1], args.b0_direction[2]),
+        slice_geometry: None,
+        affine: Some(phase.affine),
+    };
+    Ok(PhaseNetInputs { phases, magnitudes, mask, metadata, reference: phase.geometry_reference() })
+}
+
+/// Run iQSM, iQSM+ or iQFM on `args` as `qsmxt run` runs it (the raw map, no referencing), and
+/// write the result.
+pub(super) fn run_phase_net(args: &crate::cli::PhaseNetArgs, net: PhaseNet) -> crate::Result<()> {
+    let (id, name) = net.id_and_name();
+    crate::pipeline::runner::prefetch_weights(id, name)?;
+    let inputs = load_phase_net_inputs(args)?;
+    let (nx, ny, nz) = inputs.metadata.dims;
+    info!("{name} ({}x{}x{}, {} echo(es))", nx, ny, nz, inputs.phases.len());
+    let phases: Vec<&[f64]> = inputs.phases.iter().map(Vec::as_slice).collect();
+    let magnitudes: Vec<&[f64]> = inputs.magnitudes.iter().map(Vec::as_slice).collect();
+    let tile = args.tiling_params.tile_size.map(|core| (core, args.tiling_params.tile_halo.unwrap_or(8)));
+    let none = qsm_core::pipeline::QsmReference::None;
+    let out = match net {
+        PhaseNet::Iqsm => qsm_core::pipeline::run_iqsm(&phases, &magnitudes, &inputs.mask, &inputs.metadata, none, tile),
+        PhaseNet::IqsmPlus => qsm_core::pipeline::run_iqsm_plus(&phases, &magnitudes, &inputs.mask, &inputs.metadata, none, tile),
+        PhaseNet::Iqfm => qsm_core::pipeline::run_iqfm(&phases, &magnitudes, &inputs.mask, &inputs.metadata, tile),
+    }.map_err(|e| QsmxtError::Config(format!("{name}: {e}")))?;
+    save_nifti(&args.output, &out, &inputs.reference)?;
+    let what = if net == PhaseNet::Iqfm { "Local field" } else { "Susceptibility map" };
+    info!("{what} saved to {}", args.output.display());
+    Ok(())
+}
+
 /// Build `LsqrQsmParams` from the shared `--lsqr-*` group.
 ///
 /// Defaults come from [`LsqrConfig`] — the same struct `qsmxt run` starts from — so the two
@@ -151,6 +247,8 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
     let cmd = match cmd {
         InvertCommand::Cosmos(args) => return run_cosmos(args),
         InvertCommand::Sti(args) => return run_sti(args),
+        InvertCommand::Iqsm(args) => return run_phase_net(&args, PhaseNet::Iqsm),
+        InvertCommand::IqsmPlus(args) => return run_phase_net(&args, PhaseNet::IqsmPlus),
         other => other,
     };
 
@@ -478,6 +576,11 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 step_size: args.step_size.unwrap_or(d.step_size),
                 te: args.te.unwrap_or(d.te),
             });
+            let params = qsm_core::inversion::TgvParams {
+                reference_divergence: args.reference_divergence,
+                reference_edge_erosion: args.reference_edge_erosion,
+                ..params
+            };
             // A field map in ppm, which TGV expresses as phase at the echo time --te picks and
             // this field strength itself (qsm-core has no pipeline entry point for a field-map input).
             let chi = qsm_core::inversion::tgv_qsm(
@@ -499,7 +602,8 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
         InvertCommand::ModlQsm(args) => { let out = run_dl_inversion(&args.common, args.field_strength, A::ModlQsm, "MoDL-QSM")?; (args.common, out) }
         InvertCommand::Nextqsm(args) => { let out = run_dl_inversion(&args.common, args.field_strength, A::Nextqsm, "NeXtQSM")?; (args.common, out) }
         // Returned above; repeated here only to keep the match exhaustive.
-        InvertCommand::Cosmos(_) | InvertCommand::Sti(_) => unreachable!("dispatched above"),
+        InvertCommand::Cosmos(_) | InvertCommand::Sti(_) | InvertCommand::Iqsm(_)
+        | InvertCommand::IqsmPlus(_) => unreachable!("dispatched above"),
     };
 
     save_nifti(&common.output, &chi_data, &field_nifti)?;

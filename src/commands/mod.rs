@@ -226,6 +226,45 @@ mod integration_tests {
         assert!(output.exists());
     }
 
+    /// A 4D multi-echo magnitude is combined over its echoes by root-sum-of-squares before a
+    /// generator runs (as `qsmxt run` does for a `magnitude` section), not read as echo 1 alone.
+    #[test]
+    fn test_mask_combines_4d_magnitude_by_rss() {
+        let dir = tempfile::tempdir().unwrap();
+        let (e1, e2) = (dir.path().join("e1.nii"), dir.path().join("e2.nii"));
+        testutils::write_magnitude(&e1);
+        testutils::write_magnitude_decayed(&e2, 0.5);
+        let a = qsm_core::io::read_nifti_file(&e1).unwrap();
+        let b = qsm_core::io::read_nifti_file(&e2).unwrap();
+        let four_d = dir.path().join("mag4d.nii");
+        crate::nifti::write::write_volumes_4d(&four_d, &[&a.data, &b.data], a.dims, a.voxel_size, &a.affine).unwrap();
+
+        // Echo 1 alone and the RSS cross a threshold at different voxels.
+        let rss: Vec<f64> = a.data.iter().zip(&b.data).map(|(x, y)| (x * x + y * y).sqrt()).collect();
+        let threshold = {
+            // Halfway between two neighbouring values, so rounding cannot move a voxel across it.
+            let mut v: Vec<f64> = rss.iter().copied().filter(|&x| x > 0.0).collect();
+            v.sort_by(f64::total_cmp);
+            v.dedup();
+            (v[v.len() / 2] + v[v.len() / 2 + 1]) / 2.0
+        };
+        let output = dir.path().join("mask.nii");
+        super::mask::execute(MaskCommand::Value(MaskValueArgs {
+            common: common_mask(four_d.clone(), output.clone()), threshold,
+        })).unwrap();
+        let got = qsm_core::io::read_nifti_file(&output).unwrap().data;
+        let want: Vec<f64> = rss.iter().map(|&x| f64::from(u8::from(x > threshold))).collect();
+        let echo1: Vec<f64> = a.data.iter().map(|&x| f64::from(u8::from(x > threshold))).collect();
+        assert_ne!(want, echo1, "the test needs echo 1 and the RSS to give different masks");
+        assert_eq!(got, want);
+
+        // A mask-to-mask subcommand refuses a 4D input.
+        let err = super::mask::execute(MaskCommand::Erode(crate::cli::MaskErodeArgs {
+            common: common_mask(four_d, dir.path().join("eroded.nii")), iterations: 1,
+        })).unwrap_err();
+        assert!(format!("{err}").contains("2 volumes"), "{err}");
+    }
+
     #[test]
     fn test_mask_bet() {
         let dir = tempfile::tempdir().unwrap();
@@ -827,6 +866,7 @@ mod integration_tests {
         super::bgremove::execute(BgremoveCommand::Vsharp(BgremoveVsharpArgs {
             common: c,
             deconvolve: None, threshold: None, max_radius: None, min_radius: None, radius_step: None, grid: None, grid_spacing: None,
+            ball: None,
         })).unwrap();
         assert!(output.exists());
         assert!(output_mask.exists());
@@ -847,13 +887,105 @@ mod integration_tests {
         super::bgremove::execute(BgremoveCommand::Vsharp(BgremoveVsharpArgs {
             common: c,
             deconvolve: Some(true), threshold: None, max_radius: None, min_radius: None, radius_step: None, grid: None, grid_spacing: None,
+            ball: None,
         })).unwrap();
         let on = read(&output);
+        // `--ball qsmjl` reaches it too.
+        let mut c = common_bgremove(input.clone(), mask.clone(), output.clone());
+        c.output_mask = None;
+        super::bgremove::execute(BgremoveCommand::Vsharp(BgremoveVsharpArgs {
+            common: c,
+            deconvolve: None, threshold: None, max_radius: None, min_radius: None, radius_step: None, grid: None, grid_spacing: None,
+            ball: Some(crate::cli::VsharpBallArg::Qsmjl),
+        })).unwrap();
+        let qsmjl_ball = read(&output);
         let as_f32 = |v: Vec<f64>| v.into_iter().map(|x| x as f32).collect::<Vec<_>>();
         assert_eq!(as_f32(on), as_f32(core(&qsm_core::bgremove::VsharpParams {
             deconvolve: true, ..Default::default()
         })));
         assert_eq!(as_f32(off), as_f32(core(&qsm_core::bgremove::VsharpParams::default())));
+        assert_eq!(as_f32(qsmjl_ball), as_f32(core(&qsm_core::bgremove::VsharpParams {
+            ball: qsm_core::bgremove::VsharpBall::QsmJl, ..Default::default()
+        })));
+    }
+
+    /// `qsmxt invert iqsm`/`iqsm-plus` and `qsmxt bgremove iqfm` parse, and read every echo of
+    /// a 4D phase (scaled into [-π, π], as `qsmxt run` reads it), every echo's magnitude and the
+    /// scan's echo times; a mismatch is an error naming both counts. The networks themselves are
+    /// QSM.rs's to test.
+    #[test]
+    fn test_phase_net_subcommands_load_every_echo() {
+        use clap::Parser;
+        let dir = tempfile::tempdir().unwrap();
+        let p = |n: &str| dir.path().join(n);
+        testutils::write_phase(&p("e1.nii"));
+        testutils::write_magnitude(&p("m1.nii"));
+        testutils::write_mask(&p("mask.nii"));
+        let ph = qsm_core::io::read_nifti_file(&p("e1.nii")).unwrap();
+        let mag = qsm_core::io::read_nifti_file(&p("m1.nii")).unwrap();
+        let half: Vec<f64> = ph.data.iter().map(|v| v / 2.0).collect();
+        let w = |name: &str, vols: &[&[f64]]| {
+            crate::nifti::write::write_volumes_4d(&p(name), vols, ph.dims, ph.voxel_size, &ph.affine).unwrap();
+            p(name).display().to_string()
+        };
+        let (phase, magnitude) = (w("phase.nii", &[&ph.data, &half]), w("mag.nii", &[&mag.data, &mag.data]));
+        let mag1 = w("mag1.nii", &[&mag.data]);
+        let mask = p("mask.nii").display().to_string();
+
+        let parse = |args: &[String]| crate::cli::Cli::try_parse_from(args).map(|c| c.command);
+        let base = |sub: &[&'static str], mag: &str| -> Vec<String> {
+            let mut v: Vec<String> = ["qsmxt"].iter().chain(sub).map(|s| s.to_string()).collect();
+            v.extend([phase.clone(), "-m".into(), mask.clone(), "-o".into(), "o.nii".into(), "--magnitude".into(), mag.into(),
+                      "--field-strength".into(), "3".into(), "--echo-times".into(), "0.005".into(), "0.01".into()]);
+            v
+        };
+        for sub in [&["invert", "iqsm"][..], &["invert", "iqsm-plus"], &["bgremove", "iqfm"]] {
+            let args = base(sub, &magnitude);
+            let cmd = parse(&args).unwrap();
+            let a = match cmd {
+                Command::Invert { command: InvertCommand::Iqsm(a) | InvertCommand::IqsmPlus(a) } => a,
+                Command::Bgremove { command: BgremoveCommand::Iqfm(a) } => a,
+                other => panic!("{sub:?} parsed as {other:?}"),
+            };
+            let inputs = super::invert::load_phase_net_inputs(&a).unwrap();
+            assert_eq!((inputs.phases.len(), inputs.magnitudes.len()), (2, 2), "{sub:?}");
+            assert_eq!(inputs.metadata.echo_times, [0.005, 0.01]);
+            assert!(inputs.phases.iter().flatten().all(|v| v.abs() <= std::f64::consts::PI + 1e-12));
+        }
+
+        // One echo time for two echoes, and a magnitude with one echo for a phase with two.
+        let mut args = base(&["invert", "iqsm"], &magnitude);
+        args.pop();
+        let Command::Invert { command: InvertCommand::Iqsm(a) } = parse(&args).unwrap() else { panic!() };
+        let err = super::invert::load_phase_net_inputs(&a).err().unwrap();
+        assert!(format!("{err}").contains("2 echo(es) but 1 echo time"), "{err}");
+        let args = base(&["invert", "iqsm"], &mag1);
+        let Command::Invert { command: InvertCommand::Iqsm(a) } = parse(&args).unwrap() else { panic!() };
+        let err = super::invert::load_phase_net_inputs(&a).err().unwrap();
+        assert!(format!("{err}").contains("1 echo(es)"), "{err}");
+    }
+
+    /// `qsmxt r2prime --r2primenet` needs `--field-strength`, takes no R2 map, and refuses a
+    /// field strength other than 3 T (before any weights are fetched) unless told to run anyway.
+    #[test]
+    fn test_r2prime_r2primenet_flags() {
+        use clap::Parser;
+        let parse = |extra: &[&str]| {
+            let mut v = vec!["qsmxt", "r2prime", "--r2star", "r2s.nii", "-m", "m.nii", "-o", "o.nii"];
+            v.extend_from_slice(extra);
+            crate::cli::Cli::try_parse_from(v).map(|c| c.command)
+        };
+        assert!(parse(&[]).is_err(), "neither --r2 nor --r2primenet");
+        assert!(parse(&["--r2primenet"]).is_err(), "--r2primenet without --field-strength");
+        assert!(parse(&["--r2", "r2.nii", "--r2primenet", "--field-strength", "3"]).is_err());
+        assert!(parse(&["--r2", "r2.nii", "--field-strength", "3"]).is_err(), "--field-strength is R2PRIMEnet's");
+        assert!(parse(&["--r2", "r2.nii"]).is_ok());
+        let Command::R2prime(args) = parse(&["--r2primenet", "--field-strength", "7"]).unwrap() else { panic!() };
+        let err = super::r2prime::execute(args).unwrap_err();
+        assert!(format!("{err}").contains("--r2primenet-ignore-field-mismatch"), "{err}");
+        let Command::R2prime(args) = parse(&["--r2primenet", "--field-strength", "3", "--r2primenet-patch", "96", "96", "40"]).unwrap() else { panic!() };
+        let err = super::r2prime::execute(args).unwrap_err();
+        assert!(format!("{err}").contains("multiple of 16"), "{err}");
     }
 
     /// `qsmxt qsmart --intermediates DIR` writes QSMART's stage maps there under the names QSM-CI
@@ -973,6 +1105,7 @@ mod integration_tests {
             erosions: Some(0),
             alpha1: None, alpha0: None,
             step_size: None, te: None,
+            reference_divergence: true, reference_edge_erosion: true,
         })).unwrap();
         assert!(output.exists());
     }
@@ -2139,7 +2272,7 @@ mod integration_tests {
 
         super::bgremove::execute(BgremoveCommand::Sharp(BgremoveSharpArgs {
             common: common_bgremove(input, mask, output.clone()),
-            threshold: None, radius: None,
+            threshold: None, radius: None, variant: Some(crate::cli::SharpVariantArg::Qsmjl),
         })).unwrap();
         assert!(output.exists());
     }

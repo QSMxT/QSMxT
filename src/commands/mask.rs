@@ -8,7 +8,7 @@
 use log::info;
 use qsm_core::io::NiftiData;
 use qsm_core::pipeline::config::ScanMetadata;
-use super::common::{load_mask, load_nifti, save_mask};
+use super::common::{load_nifti, load_nifti_4d, save_mask};
 use crate::cli::{MaskCombineCliArgs, MaskCommand, MaskCommonArgs, MaskPresetArgs};
 use crate::error::QsmxtError;
 use crate::pipeline::config::{
@@ -23,6 +23,38 @@ fn scan_meta(nifti: &NiftiData) -> ScanMetadata {
 
 fn dims_str(nifti: &NiftiData) -> String {
     format!("{}x{}x{}", nifti.dims.0, nifti.dims.1, nifti.dims.2)
+}
+
+/// The image a generating subcommand reads: a 3-D image as it is, or a 4-D multi-echo magnitude
+/// combined over its echoes by root-sum-of-squares, as `qsmxt run` combines the echoes for a
+/// `magnitude` mask section (and as HD-BET's own pipeline does).
+fn load_image(path: &std::path::Path) -> crate::Result<NiftiData> {
+    let multi = load_nifti_4d(path)?;
+    let mut nifti = multi.geometry_reference();
+    nifti.data = match multi.echoes.len() {
+        1 => multi.echoes.into_iter().next().expect("one echo"),
+        n => {
+            info!("{}: {n} echoes, combined by root-sum-of-squares", path.display());
+            let echoes: Vec<&[f64]> = multi.echoes.iter().map(Vec::as_slice).collect();
+            qsm_core::pipeline::rss_combine(&echoes)
+                .map_err(|e| QsmxtError::Config(format!("{}: {e}", path.display())))?
+        }
+    };
+    Ok(nifti)
+}
+
+/// A binary mask (thresholded at 0.5). A 4-D file is refused: a mask has one volume, and reading
+/// only the first of several would silently drop the rest.
+fn load_mask(path: &std::path::Path) -> crate::Result<(Vec<u8>, NiftiData)> {
+    let multi = load_nifti_4d(path)?;
+    if multi.echoes.len() > 1 {
+        return Err(QsmxtError::Config(format!(
+            "{} has {} volumes, but a mask has one", path.display(), multi.echoes.len())));
+    }
+    let mut nifti = multi.geometry_reference();
+    nifti.data = multi.echoes.into_iter().next().expect("one volume");
+    let mask = nifti.data.iter().map(|&v| u8::from(v > 0.5)).collect();
+    Ok((mask, nifti))
 }
 
 /// Fetch the weights of any deep-learning op (HD-BET) before running, with a progress bar — or
@@ -67,7 +99,7 @@ fn refine_with(mask: Vec<u8>, ops: &[String], reference: &NiftiData, magnitude: 
 /// A generating subcommand: run `generator` on the input image, then the `--op` chain. The input
 /// doubles as the magnitude for `bet`/`hd-bet`/`signal-erode`, which is right when it is one.
 fn generate(common: &MaskCommonArgs, generator: MaskOp) -> crate::Result<()> {
-    let nifti = load_nifti(&common.input)?;
+    let nifti = load_image(&common.input)?;
     if let MaskOp::Threshold { method: crate::pipeline::config::MaskThresholdMethod::Otsu, .. } = &generator {
         info!("Otsu threshold: {:.4}", qsm_core::utils::otsu_threshold(&nifti.data, 256));
     }
@@ -125,7 +157,7 @@ fn mindgrab_op(args: &crate::cli::MaskMindGrabArgs) -> crate::Result<MaskOp> {
 /// `--quality` for the phase-quality sections when it is given; the sections fold with the
 /// recipe's combine mode; the recipe's own refinements run on the result, then the `--op` chain.
 fn preset(args: &MaskPresetArgs, recipe: MaskRecipe) -> crate::Result<()> {
-    let magnitude = load_nifti(&args.common.input)?;
+    let magnitude = load_image(&args.common.input)?;
     let quality = args.quality.as_deref().map(load_nifti).transpose()?;
     if let Some(q) = &quality {
         if q.dims != magnitude.dims {
@@ -184,7 +216,7 @@ fn combine(args: MaskCombineCliArgs, mode: MaskCombine) -> crate::Result<()> {
     }
 
     // Only `signal-erode` reads it, and only if asked for.
-    let magnitude = args.magnitude.as_deref().map(load_nifti).transpose()?;
+    let magnitude = args.magnitude.as_deref().map(load_image).transpose()?;
     if let Some(mag) = &magnitude {
         if mag.dims != reference.dims {
             return Err(QsmxtError::Config(format!(
