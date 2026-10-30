@@ -247,9 +247,9 @@ impl App {
             .unwrap_or_default()
     }
 
-    /// What the findings are worked out from: the form and the echo limit.
+    /// What the findings are worked out from: the form, the echo limit and the field strength.
     pub(super) fn rec_fingerprint(&self) -> String {
-        format!("{:?}{:?}{}", self.form, self.pipeline_state, self.filter_state.num_echoes)
+        format!("{:?}{:?}{}{:?}", self.form, self.pipeline_state, self.filter_state.num_echoes, self.rule_facts().field_strength)
     }
 
     /// After a change: drop the dismissals whose setting has changed, open the pop-up for the
@@ -261,6 +261,17 @@ impl App {
             return;
         }
         let form = self.rec_fingerprint();
+        // The next finding the last change created, once the pop-up before it is closed.
+        if form == self.rec_form && self.refs.pending.is_empty() && !self.rec_queue.is_empty() {
+            let view = self.rule_view();
+            while !self.rec_queue.is_empty() {
+                let rule = self.rec_queue.remove(0);
+                if let Some(r) = view.iter().find(|r| r.rule == rule && open(r)) {
+                    self.rec_modal = Some(RecModal::new(group(&view, r)));
+                    return;
+                }
+            }
+        }
         let mut created: Vec<Recommendation> = Vec::new();
         let mut view: Option<Vec<Recommendation>> = None;
         if form != self.rec_form {
@@ -317,6 +328,7 @@ impl App {
             return;
         };
         let group = group(&view, first);
+        self.rec_queue.clear();
         match reference {
             // One pop-up: the recommendations first, then the reference differences.
             Some((methods, diffs)) if created.iter().all(|r| r.strength != Strength::Required && !r.conflict) => {
@@ -329,7 +341,11 @@ impl App {
                 self.refs.pending = methods.into_iter().map(|m| (m, vec![])).collect();
                 self.rec_modal = Some(RecModal::new(group));
             }
-            None => self.rec_modal = Some(RecModal::new(group)),
+            None => {
+                self.rec_queue = created.iter().filter(|r| !group.iter().any(|g| g.setting == r.setting))
+                    .map(|r| r.rule.clone()).collect();
+                self.rec_modal = Some(RecModal::new(group));
+            }
         }
     }
 
@@ -475,8 +491,12 @@ impl App {
     /// departure and, for a chosen value, the setting has it.
     pub fn apply_recommendation(&mut self, rule: &str, value: Option<&Value>) -> Result<(), String> {
         let Some(r) = self.rule_view().into_iter().find(|r| r.rule == rule) else { return Ok(()) };
+        // Each value is tried on this scan: a trial form has no scan of its own, and a rule on the
+        // field strength (DECOMPOSE's at 7 T) would not apply to it at all.
+        let facts = self.rule_facts();
         let resolved = |app: &App| {
-            app.rule_view().iter().find(|x| x.rule == rule).is_none_or(|x| match value {
+            let view = super::command::config_from_app(app).map(|c| rec::reference_values(&c, &facts)).unwrap_or_default();
+            view.iter().find(|x| x.rule == rule).is_none_or(|x| match value {
                 None => !x.departs,
                 Some(v) => x.current.iter().all(|n| n.value == *v),
             })
@@ -756,6 +776,58 @@ mod tests {
         assert!(r.departs && r.setting == "separation.decompose.unwrap_phase" && r.reason.contains("3 T"), "{r:?}");
         app.toggle_field("sep_decompose_unwrap_phase");
         assert!(!fires(&app));
+    }
+
+    /// DECOMPOSE at 7 T offers both of its suggestions, unwrapping and the χ bound from the echo
+    /// spacing, each shown plainly; nothing changes until they are applied.
+    #[test]
+    fn decompose_at_7t_offers_unwrapping_and_the_echo_spacing_bound() {
+        let mut app = app();
+        app.toggle_field("do_chi_separation");
+        app.set_field_select("separation_algorithm", super::super::app::SEP_ALGO_OPTIONS.iter().position(|o| *o == "decompose").unwrap());
+        app.check_recommendations();
+        app.rec_modal = None;
+        app.refs.modal = None;
+        app.input_mode = super::super::app::InputMode::NIfTI;
+        app.nifti_state.field_strength = "7".into();
+        // Knowing the field strength opens the pop-up.
+        app.check_recommendations();
+        let shown: Vec<String> = app.rec_modal.take().map(|m| m.findings)
+            .or_else(|| app.refs.modal.take().map(|m| m.items.into_iter().map(|i| i.finding).collect()))
+            .expect("7 T opened the pop-up").into_iter().map(|r| r.rule).collect();
+        assert!(shown.iter().any(|r| r.ends_with("-7t")), "{shown:?}");
+        // Closed, the other 7 T suggestion opens next: both are offered.
+        app.check_recommendations();
+        let next: Vec<String> = app.rec_modal.take().expect("the second 7 T suggestion opened").findings
+            .into_iter().map(|r| r.rule).collect();
+        let mut both: Vec<String> = shown.into_iter().chain(next).collect();
+        both.sort();
+        assert_eq!(both, ["decompose.chi-bound-7t", "decompose.unwrap-7t"]);
+        app.check_recommendations();
+        assert!(app.rec_modal.is_none());
+        let view = app.rule_view();
+        let bound = view.iter().find(|r| r.rule == "decompose.chi-bound-7t").expect("the χ bound is offered");
+        assert!(bound.departs && bound.setting == "separation.decompose.chi_bound", "{bound:?}");
+        assert_eq!((bound.current_text(), bound.recommended.name.as_str()), ("0.5 ppm".to_string(), "From the echo spacing"));
+        assert!(view.iter().any(|r| r.rule == "decompose.unwrap-7t" && r.departs));
+        // The pop-up offers the value by its name.
+        let modal = RecModal::new(vec![bound.clone()]);
+        assert_eq!(RecModal::choice_label(&modal.choices[0]), "Apply: From the echo spacing");
+        assert_eq!(modal.choices.last(), Some(&RecChoice::Keep));
+        let c = super::super::command::config_from_app(&app).unwrap();
+        assert_eq!((c.separation.decompose.chi_bound, c.separation.decompose.unwrap_phase),
+                   (qsmxt_engine::ChiBoundChoice::Ppm(0.5), false), "offered, not applied");
+        app.apply_recommendation("decompose.chi-bound-7t", None).unwrap();
+        app.apply_recommendation("decompose.unwrap-7t", None).unwrap();
+        let left: Vec<_> = app.rule_view().into_iter().filter(|r| r.departs && r.rule.starts_with("decompose.") && r.rule.ends_with("-7t")).collect();
+        assert!(left.is_empty(), "{left:?}");
+        let c = super::super::command::config_from_app(&app).unwrap();
+        assert_eq!((c.separation.decompose.chi_bound, c.separation.decompose.unwrap_phase),
+                   (qsmxt_engine::ChiBoundChoice::EchoSpacing, true));
+        // The bound's own row is gone: it is computed.
+        let mut rows = Vec::new();
+        app.pipeline_state.separation_rows(&mut rows);
+        assert!(!rows.iter().any(|r| matches!(r, PipelineRow::Param { field: "sep_decompose_chi_bound", .. })));
     }
 
     /// A reference departure never opens the pop-up; its setting shows the reference value.

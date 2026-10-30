@@ -504,9 +504,10 @@ pub struct SeparationParamArgs {
     /// DECOMPOSE inner alternating passes per voxel
     #[arg(long)]
     pub decompose_n_inner: Option<usize>,
-    /// DECOMPOSE upper bound on |χ| in the fit (ppm)
-    #[arg(long)]
-    pub decompose_chi_bound: Option<f64>,
+    /// DECOMPOSE bound on |χ| in the fit: a number in ppm (default: 0.5), or echo-spacing to
+    /// compute it from the field strength and echo spacing
+    #[arg(long, value_name = "BOUND", value_parser = parse_chi_bound)]
+    pub decompose_chi_bound: Option<qsmxt_engine::ChiBoundChoice>,
     /// DECOMPOSE: unwrap the phase along the echoes (default: false, as in the authors' code)
     #[arg(long, value_name = "BOOL")]
     pub decompose_unwrap_phase: Option<bool>,
@@ -825,6 +826,11 @@ pub fn parse_or_auto(s: &str) -> Result<OrAuto, String> {
         "auto" => Ok(OrAuto::Auto),
         v => v.parse::<f64>().map(OrAuto::Value).map_err(|_| format!("expected a number or auto, got '{v}'")),
     }
+}
+
+/// DECOMPOSE's χ bound: `echo-spacing`, or a bound in ppm.
+pub fn parse_chi_bound(s: &str) -> Result<qsmxt_engine::ChiBoundChoice, String> {
+    qsmxt_engine::ChiBoundChoice::parse(s)
 }
 
 /// A WH-QSM data weight: `flat`, `max-normalised` or `in-vivo`.
@@ -3676,9 +3682,10 @@ pub struct SeparateDecomposeArgs {
     /// Inner alternating passes per voxel
     #[arg(long)]
     pub n_inner: Option<usize>,
-    /// Upper bound on |χ| in the fit (ppm)
-    #[arg(long)]
-    pub chi_bound: Option<f64>,
+    /// Bound on |χ| in the fit: a number in ppm (default: 0.5), or echo-spacing to compute it
+    /// from the field strength and echo spacing
+    #[arg(long, value_name = "BOUND", value_parser = parse_chi_bound)]
+    pub chi_bound: Option<qsmxt_engine::ChiBoundChoice>,
     /// Unwrap the phase along the echoes (default: false, as in the authors' code)
     #[arg(long, value_name = "BOOL")]
     pub unwrap_phase: Option<bool>,

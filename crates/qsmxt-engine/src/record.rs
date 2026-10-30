@@ -71,6 +71,8 @@ pub enum Topic {
     MediCsf,
     /// Whether motion correction was applied: it needs at least two echoes with magnitude images.
     MotionCorrection,
+    /// DECOMPOSE's χ bound, computed from the scan's field strength and echo spacing.
+    ChiBound,
 }
 
 /// What was decided.

@@ -280,6 +280,8 @@ fn every_setting_has_a_row_and_is_worded_as_the_tui_words_it() {
             }
             continue;
         }
+        // A number-or-choice setting's select starts with the number (its value row).
+        let tui = if matches!(s.value_type, ValueType::NumberOrChoice { .. }) { &tui[1..] } else { &tui[..] };
         if opts.len() != tui.len() {
             failures.push(format!("{p}: {} options, the TUI has {}", opts.len(), tui.len()));
             continue;

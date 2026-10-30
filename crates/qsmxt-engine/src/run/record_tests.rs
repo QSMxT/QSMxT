@@ -241,6 +241,39 @@ fn medi_csf_is_recorded_by_echo_count() {
     assert!(super::medi_csf_decision(&c, 5).is_none());
 }
 
+/// DECOMPOSE's χ bound from the echo spacing is recorded in ppm, from the run's field strength and
+/// echo times; a fixed bound and another method record nothing.
+#[test]
+fn decomposes_echo_spacing_chi_bound_is_recorded_in_ppm() {
+    let mut c = config();
+    let te = [0.004, 0.012, 0.020, 0.028];
+    assert!(super::chi_bound_decision(&c, 7.0, &te).is_none(), "not DECOMPOSE");
+    c.separation.algorithm = crate::SeparationAlgorithm::Decompose;
+    assert!(super::chi_bound_decision(&c, 7.0, &te).is_none(), "a fixed bound");
+    c.separation.decompose.chi_bound = crate::ChiBoundChoice::EchoSpacing;
+    let d = super::chi_bound_decision(&c, 7.0, &te).unwrap();
+    assert_eq!((d.topic, d.choice), (Topic::ChiBound, Choice::Computed));
+    assert_eq!(d.reason, "The χ search was bounded at 0.31 ppm, from the field strength and echo spacing.");
+    assert!(super::chi_bound_decision(&c, 7.0, &[]).is_none(), "no echo times give no bound");
+
+    // The methods text gives the bound when every run had the same one.
+    use crate::methods::methods_for_dataset;
+    use crate::record::{merge, StepRecord, StepState};
+    c.pipeline.do_chi_separation = true;
+    let run = |b0: f64| RunRecord {
+        steps: vec![StepRecord {
+            id: "chi_separation".into(), label: "χ-separation".into(), state: StepState::Computed,
+            decisions: super::chi_bound_decision(&c, b0, &te).into_iter().collect(),
+        }],
+        ..Default::default()
+    };
+    let text = |records: &[RunRecord]| methods_for_dataset(&c, &merge(records), "qsmxt").to_markdown();
+    let same = text(&[run(7.0), run(7.0)]);
+    assert!(same.contains("The χ search was bounded at 0.31 ppm, from the field strength and echo spacing."), "{same}");
+    let mixed = text(&[run(7.0), run(3.0)]);
+    assert!(mixed.contains("The χ search was bounded from each scan's field strength and echo spacing."), "{mixed}");
+}
+
 /// Motion correction is decided per run (#397): applied to a multi-echo run with magnitude, not
 /// to one with one echo or none, each recorded; the methods text says it plainly when every run
 /// had it, that it was not applied when none did, and the condition when the runs differ.

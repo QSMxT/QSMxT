@@ -896,8 +896,14 @@ pub(super) fn table() -> Vec<Def> {
         d("separation.decompose.n_inner", Separation, "Inner passes", "Alternating 3-stage fit passes per voxel", Int).flag("--decompose-n-inner").parent("separation.algorithm")
         .when(|x| x.sep("decompose")).full("Inner passes"),
         // QSM.rs separation/decompose.rs: a negative bound makes lb > ub and f64::clamp panics.
-        d("separation.decompose.chi_bound", Separation, "Chi bound (ppm)", "Upper bound on |χ| in the fit", Float).min(0.0).units("ppm").flag("--decompose-chi-bound").parent("separation.algorithm")
-        .when(|x| x.sep("decompose")).full("χ bound"),
+        d("separation.decompose.chi_bound", Separation, "Chi bound", "", NumberOr(vec![
+            o("echo-spacing", "echo-spacing", "From the echo spacing",
+              "The largest |χ| whose phase changes by less than π between echoes, from the field strength and echo spacing"),
+        ])).value("Chi bound (ppm)", "Upper bound on |χ| in the fit, ppm")
+        .min(0.0).units("ppm").flag("--decompose-chi-bound").parent("separation.algorithm")
+        .when(|x| x.sep("decompose")).full("χ bound")
+        .gui("The bound on |χ| in the fit: a fixed bound, or one from the field strength and echo spacing")
+        .gui_value("χ bound", "A fixed bound on |χ| in the fit"),
         d("separation.decompose.unwrap_phase", Separation, "Unwrap phase", "Unwrap the phase along the echoes (default: off, as in the authors' code)", Bool).flag("--decompose-unwrap-phase").parent("separation.algorithm")
         .when(|x| x.sep("decompose")).full("Echo-phase unwrapping")
         .gui("Unwrap the phase along the echoes"),

@@ -816,7 +816,11 @@ fn separation_changes(config: &PipelineConfig) -> Changed {
     match s.algorithm {
         SeparationAlgorithm::R2starQsm => c.add_fields(&s.r2star_qsm, &d.r2star_qsm, &[]),
         SeparationAlgorithm::Decompose => {
-            c.add_fields(&s.decompose, &d.decompose, &["lsqcurvefit"]);
+            // Unwrapping and a χ bound from the echo spacing have sentences of their own.
+            c.add_fields(&s.decompose, &d.decompose, &["lsqcurvefit", "unwrap_phase", "chi_bound"]);
+            if let ChiBoundChoice::Ppm(x) = s.decompose.chi_bound {
+                c.add(s.decompose.chi_bound != d.decompose.chi_bound, || format!("χ bound = {x} ppm"));
+            }
             c.add_fields(&s.decompose.lsqcurvefit, &d.decompose.lsqcurvefit, &[]);
         }
         // Its QSM's iLSQR is worded with that QSM.
@@ -1005,6 +1009,19 @@ fn two_pass_steps() -> Vec<Stage> {
 /// Uses "qsmxt" as the tool name by default.
 pub fn generate_methods(config: &PipelineConfig) -> String {
     generate_methods_for(config, "qsmxt")
+}
+
+/// DECOMPOSE's χ bound from the echo spacing: in ppm where every run that recorded it
+/// ([`Topic::ChiBound`]) had the same, and otherwise as where it came from.
+fn chi_bound_sentence(ran: Ran) -> String {
+    let reasons: std::collections::BTreeSet<&str> = ran.0.and_then(|r| r.step("chi_separation"))
+        .map(|s| s.decisions.iter().filter(|d| d.topic == Topic::ChiBound).map(|d| d.reason.as_str()).collect())
+        .unwrap_or_default();
+    match reasons.iter().next() {
+        Some(one) if reasons.len() == 1 => one.to_string(),
+        Some(_) => "The χ search was bounded from each scan's field strength and echo spacing.".to_string(),
+        None => "The χ search was bounded from the field strength and echo spacing.".to_string(),
+    }
 }
 
 /// Generate methods for a specific tool (e.g. "qsmxt" or "QSMbly"): [`Methods::to_markdown`].
@@ -1466,6 +1483,12 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
             } else {
                 "The same susceptibility map was used for the signal phase at every echo.".to_string()
             });
+            if config.separation.decompose.unwrap_phase {
+                doc.say(&[Stage::ChiSeparation], "The phase was unwrapped along the echoes.".to_string());
+            }
+            if config.separation.decompose.chi_bound == ChiBoundChoice::EchoSpacing {
+                doc.say(&[Stage::ChiSeparation], chi_bound_sentence(ran));
+            }
         }
         match config.separation.algorithm {
             SeparationAlgorithm::ChiSepIlsqr => doc.say(&[Stage::ChiSeparation],
@@ -3975,7 +3998,13 @@ mod defaults_only_tests {
             (|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::ChiSepMedi; c.separation.chi_sep_medi.lambda_csf = 10.0; },
                 "λ (CSF) = 10"),
             (|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::Decompose; c.separation.decompose.lsqcurvefit.max_iterations = 50; c.separation.decompose.unwrap_phase = true; },
-                "with echo-phase unwrapping enabled and at most 50 iterations."),
+                "with at most 50 iterations."),
+            (|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::Decompose; c.separation.decompose.unwrap_phase = true; },
+                "The phase was unwrapped along the echoes."),
+            (|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::Decompose; c.separation.decompose.chi_bound = ChiBoundChoice::Ppm(0.3); },
+                "with χ bound = 0.3 ppm."),
+            (|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::Decompose; c.separation.decompose.chi_bound = ChiBoundChoice::EchoSpacing; },
+                "The χ search was bounded from the field strength and echo spacing."),
             (|c| { c.pipeline.do_chi_separation = true; c.separation.r2star_qsm.r_const_3t = 123.0; },
                 "with relaxometric constant at 3 T = 123."),
             (|c| { c.pipeline.do_r2primemap = true; c.separation.r2prime_strategy = R2PrimeStrategy::R2primenet; c.separation.r2primenet.patch = [160, 160, 128]; },

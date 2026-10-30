@@ -198,6 +198,9 @@ pub enum ValueType {
     /// The echo time a method converts the field to phase at: a named echo time (`"first"`,
     /// `"sum"`), or a time the user gives (see [`EchoKind::Time`]).
     EchoTime { options: Vec<EchoOption> },
+    /// A number (in the setting's `units`, within its range), or one of the named `options`
+    /// (`"echo-spacing"`): DECOMPOSE's χ bound.
+    NumberOrChoice { options: Vec<EnumOption> },
     /// A mask recipe: a list of mask sections (`masking.sections` in the config). Edited with a
     /// mask builder rather than a field.
     MaskSections,
@@ -206,10 +209,11 @@ pub enum ValueType {
 }
 
 impl ValueType {
-    /// The choices of an enum, echo-reference or echo-time setting (none for other types).
+    /// The choices of an enum, echo-reference, echo-time or number-or-choice setting (none for
+    /// other types).
     pub fn options(&self) -> Vec<&EnumOption> {
         match self {
-            ValueType::Enum { options } => options.iter().collect(),
+            ValueType::Enum { options } | ValueType::NumberOrChoice { options } => options.iter().collect(),
             ValueType::EchoReference { options } | ValueType::EchoTime { options } => {
                 options.iter().map(|o| &o.option).collect()
             }
@@ -343,6 +347,8 @@ pub(crate) enum Ty {
     EchoReference(Vec<Opt>),
     /// The named echo times, then a time of the user's ([`EchoKind::Time`]).
     EchoTime,
+    /// A number, or one of these named choices ([`ValueType::NumberOrChoice`]).
+    NumberOr(Vec<Opt>),
     /// The SynthSeg regions ([`crate::regions::REGIONS`]).
     Regions,
     MaskSections,
@@ -581,6 +587,7 @@ fn build_schema() -> Vec<Setting> {
                 Ty::Enum(o) => ValueType::Enum { options: options(o) },
                 Ty::EchoReference(o) => ValueType::EchoReference { options: echo_options(o) },
                 Ty::EchoTime => ValueType::EchoTime { options: echo_time_options() },
+                Ty::NumberOr(o) => ValueType::NumberOrChoice { options: options(o) },
                 Ty::Regions => ValueType::Enum { options: region_options() },
                 Ty::MaskSections => ValueType::MaskSections,
                 Ty::MaskOps => ValueType::MaskOps,

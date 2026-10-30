@@ -1164,9 +1164,13 @@ MATLAB `lsqcurvefit`'s trust-region-reflective method with its options:
 and `--decompose-optimality-tolerance` (default 1e-6 each), `--decompose-finite-difference-step`
 (default √eps) and `--decompose-typical-x` (default 1). It takes the phase of each echo on its
 principal branch, as the authors' code does; `--decompose-unwrap-phase true` unwraps it along
-the echoes. At 7 T (6.5 T and above) the recommendations suggest it, since the method was
-designed for 3 T and the phase wraps between echoes at 7 T. `--decompose-chi-bound` (ppm) bounds
-|χ| in the fit. Its authors give it a QSM for each echo. With
+the echoes. `--decompose-chi-bound` bounds |χ| in the fit: a number in ppm (default 0.5, the
+authors'), or `echo-spacing`, which computes π / ((2/3)·γ·B0·ΔTE) from the scan, ΔTE being the
+largest of TE1 and the echo spacings: the largest |χ| whose phase changes by less than π between
+echoes (0.31 ppm at 7 T with 8 ms spacing). At 7 T (6.5 T and above) the recommendations suggest
+both, since the method was designed for 3 T and the phase wraps between echoes at 7 T. In a
+settings file the bound is `chi_bound = 0.5` or `chi_bound = "echo-spacing"` under
+`[separation.decompose]`. Its authors give it a QSM for each echo. With
 [`--qsm-per-echo true`](#per-echo-qsm), which choosing DECOMPOSE recommends, `qsmxt run` gives it
 each echo's map; otherwise it uses its one QSM at every echo. The methods text says which.
 `qsmxt separate decompose` takes one per echo (`--qsm-per-echo`).

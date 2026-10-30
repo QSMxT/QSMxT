@@ -580,7 +580,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         separation_params: crate::cli::SeparationParamArgs {
             r2star_qsm_r_const_3t: parse_optional_f64(&ps.sep_r2starqsm_r_const_3t),
             decompose_n_inner: parse_optional_usize(&ps.sep_decompose_n_inner),
-            decompose_chi_bound: parse_optional_f64(&ps.sep_decompose_chi_bound),
+            decompose_chi_bound: super::app::chi_bound_choice(ps.sep_decompose_chi_bound_mode, &ps.sep_decompose_chi_bound),
             decompose_unwrap_phase: Some(ps.sep_decompose_unwrap_phase),
             decompose_max_iterations: parse_optional_usize(&ps.sep_decompose_max_iterations),
             decompose_max_function_evaluations: parse_optional_usize(&ps.sep_decompose_max_fevals),

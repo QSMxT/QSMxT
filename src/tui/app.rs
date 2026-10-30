@@ -1425,7 +1425,7 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("multi_orientation_force", "multi_orientation.force"), ("qsm_reference", "qsm.reference"),
     ("do_chi_separation", "pipeline.do_chi_separation"), ("separation_algorithm", "separation.algorithm"),
     ("sep_r2starqsm_r_const_3t", "separation.r2star_qsm.r_const_3t"), ("sep_decompose_n_inner", "separation.decompose.n_inner"),
-    ("sep_decompose_chi_bound", "separation.decompose.chi_bound"),
+    ("sep_decompose_chi_bound_mode", "separation.decompose.chi_bound"), ("sep_decompose_chi_bound", "separation.decompose.chi_bound"),
     ("sep_decompose_unwrap_phase", "separation.decompose.unwrap_phase"),
     ("sep_decompose_max_iterations", "separation.decompose.lsqcurvefit.max_iterations"),
     ("sep_decompose_max_fevals", "separation.decompose.lsqcurvefit.max_function_evaluations"),
@@ -2126,6 +2126,8 @@ pub struct PipelineFormState {
     pub sep_r2starqsm_r_const_3t: String,
     // DECOMPOSE
     pub sep_decompose_n_inner: String,
+    /// [`CHI_BOUND_OPTIONS`]: a bound in ppm (`sep_decompose_chi_bound`) or from the echo spacing.
+    pub sep_decompose_chi_bound_mode: usize,
     pub sep_decompose_chi_bound: String,
     pub sep_decompose_unwrap_phase: bool,
     pub sep_decompose_max_iterations: String,
@@ -2193,7 +2195,7 @@ pub struct PipelineFormState {
 impl Default for PipelineFormState {
     fn default() -> Self {
         let sep_r2starqsm = qsm_core::separation::R2starQsmParams::default();
-        let sep_decompose = qsm_core::separation::DecomposeParams::default();
+        let sep_decompose = qsmxt_engine::DecomposeConfig::default();
         let sep_ilsqr = qsm_core::separation::ChiSepIlsqrParams::default();
         let sep_medi = qsm_core::separation::ChiSepMediParams::default();
         let inv_pad = |p: [i64; 3]| format!("{} {} {}", p[0], p[1], p[2]);
@@ -2553,7 +2555,11 @@ impl Default for PipelineFormState {
             },
             sep_r2starqsm_r_const_3t: fmt_default(sep_r2starqsm.r_const_3t),
             sep_decompose_n_inner: sep_decompose.n_inner.to_string(),
-            sep_decompose_chi_bound: fmt_default(sep_decompose.chi_bound),
+            sep_decompose_chi_bound_mode: chi_bound_index(sep_decompose.chi_bound),
+            sep_decompose_chi_bound: match sep_decompose.chi_bound {
+                qsmxt_engine::ChiBoundChoice::Ppm(x) => fmt_default(x),
+                qsmxt_engine::ChiBoundChoice::EchoSpacing => String::new(),
+            },
             sep_decompose_unwrap_phase: sep_decompose.unwrap_phase,
             sep_decompose_max_iterations: sep_decompose.lsqcurvefit.max_iterations.to_string(),
             sep_decompose_max_fevals: fmt_opt(sep_decompose.lsqcurvefit.max_function_evaluations),
@@ -2740,6 +2746,25 @@ pub fn echo_time_choice(index: usize, ms: &str) -> Option<qsmxt_engine::EchoTime
         None => None,
     }
 }
+/// DECOMPOSE's χ bound: a number in ppm (`sep_decompose_chi_bound`), or from the echo spacing.
+pub const CHI_BOUND_OPTIONS: &[&str] = &["ppm", "echo-spacing"];
+const CHI_BOUND_HELP: &[&str] = &[
+    "A fixed bound, in ppm (Chi bound (ppm); default: 0.5)",
+    "The largest |χ| whose phase changes by less than π between echoes, from the field strength and echo spacing",
+];
+/// The [`CHI_BOUND_OPTIONS`] entry of a χ bound.
+pub fn chi_bound_index(b: qsmxt_engine::ChiBoundChoice) -> usize {
+    match b { qsmxt_engine::ChiBoundChoice::Ppm(_) => 0, qsmxt_engine::ChiBoundChoice::EchoSpacing => 1 }
+}
+/// The χ bound a χ-bound select and its bound in ppm make, if they make one.
+pub fn chi_bound_choice(index: usize, ppm: &str) -> Option<qsmxt_engine::ChiBoundChoice> {
+    match CHI_BOUND_OPTIONS.get(index).copied() {
+        Some("ppm") if ppm.trim().is_empty() => None,
+        Some("ppm") => qsmxt_engine::ChiBoundChoice::parse(ppm).ok(),
+        Some(name) => qsmxt_engine::ChiBoundChoice::parse(name).ok(),
+        None => None,
+    }
+}
 /// WH-QSM's data weight, in the CLI's names.
 pub const WHQSM_WEIGHT_OPTIONS: &[&str] = &["flat", "max-normalised", "in-vivo"];
 const WHQSM_WEIGHT_HELP: &[&str] = &[
@@ -2805,7 +2830,7 @@ pub fn qsm_ref_help() -> &'static [&'static str] { &QSM_REF_HELP_V }
 
 impl PipelineFormState {
     /// The χ-separation tab: the method and its parameters, and the χ map it may read instead.
-    fn separation_rows(&self, rows: &mut Vec<PipelineRow>) {
+    pub(crate) fn separation_rows(&self, rows: &mut Vec<PipelineRow>) {
         rows.push(PipelineRow::Toggle {
             label: "Compute χ-separation", field: "do_chi_separation",
             help: "Split QSM into paramagnetic (χ+, iron) and diamagnetic (χ−, myelin) maps",
@@ -2823,7 +2848,10 @@ impl PipelineFormState {
             }
             1 => {
                 rows.push(PipelineRow::Param { label: "  Inner passes", field: "sep_decompose_n_inner", help: "Alternating 3-stage fit passes per voxel" });
-                rows.push(PipelineRow::Param { label: "  Chi bound (ppm)", field: "sep_decompose_chi_bound", help: "Upper bound on |χ| in the fit" });
+                rows.push(PipelineRow::AlgoSelect { label: "  Chi bound", field: "sep_decompose_chi_bound_mode", options: CHI_BOUND_OPTIONS, help: CHI_BOUND_HELP });
+                if CHI_BOUND_OPTIONS.get(self.sep_decompose_chi_bound_mode) == Some(&"ppm") {
+                    rows.push(PipelineRow::Param { label: "    Chi bound (ppm)", field: "sep_decompose_chi_bound", help: "Upper bound on |χ| in the fit, ppm" });
+                }
                 rows.push(PipelineRow::Toggle { label: "  Unwrap phase", field: "sep_decompose_unwrap_phase",
                     help: "Unwrap the phase along the echoes (default: off, as in the authors' code)" });
                 rows.push(PipelineRow::Param { label: "  Max iter", field: "sep_decompose_max_iterations", help: "Maximum solver iterations per fit (lsqcurvefit MaxIterations)" });
@@ -4366,6 +4394,7 @@ impl PipelineFormState {
             "whqsm_te" => self.whqsm_te,
             "heidi_te" => self.heidi_te,
             "tgv_te" => self.tgv_te,
+            "sep_decompose_chi_bound_mode" => self.sep_decompose_chi_bound_mode,
             "output_space" => self.output_space,
             "mask_preset" => self.mask_preset,
             "separation_algorithm" => self.separation_algorithm,
@@ -4408,6 +4437,7 @@ impl PipelineFormState {
             "whqsm_te" => self.whqsm_te = val.min(ECHO_TIME_OPTIONS.len() - 1),
             "heidi_te" => self.heidi_te = val.min(ECHO_TIME_OPTIONS.len() - 1),
             "tgv_te" => self.tgv_te = val.min(ECHO_TIME_OPTIONS.len() - 1),
+            "sep_decompose_chi_bound_mode" => self.sep_decompose_chi_bound_mode = val.min(CHI_BOUND_OPTIONS.len() - 1),
             "output_space" => self.output_space = val,
             "mask_preset" => {
                 self.mask_preset = val;
@@ -5255,6 +5285,9 @@ pub struct App {
     /// The recommendations open after the last change (rule and value), so that only a change
     /// that creates one opens the pop-up.
     pub rec_seen: Vec<(String, String)>,
+    /// Rules a change created findings for, on other settings than the pop-up shown: each is
+    /// offered in a pop-up of its own once the one before it is closed.
+    pub rec_queue: Vec<String>,
     /// The form as it was when `rec_seen` was taken (empty before the first check): a key that
     /// changed nothing is not checked.
     pub rec_form: String,
@@ -5581,6 +5614,7 @@ impl App {
             nifti_state: NiftiState::default(),
             rec_modal: None,
             rec_seen: Vec::new(),
+            rec_queue: Vec::new(),
             rec_form: String::new(),
             refs: Default::default(),
         }
