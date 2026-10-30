@@ -476,6 +476,25 @@ With `--unwrapping-algorithm laplacian` it gives per-echo Laplacian unwrapping a
 TE·exp(−TE/T2\*)-weighted mean of the unwrapped phases. When magnitude images are available, `phase-snr`, which uses the measured magnitude in each
 voxel, is generally preferable.
 
+### Per-echo QSM
+
+`--qsm-per-echo true` (off by default) reconstructs a QSM from each echo on its own instead of
+combining the echoes into one field map. Each echo's phase is unwrapped with
+`--unwrapping-algorithm` (ROMEO with that echo's magnitude) and divided by its own echo time,
+and background field removal, dipole inversion and referencing then run on that echo's field
+as they would on a single-echo scan, at its echo time. The run publishes each echo's map
+(`<run>_desc-echo<n>_Chimap.nii`, with its `EchoTime` in the sidecar) and, as the QSM
+(`<run>_Chimap.nii`), the mean of the echoes' maps with equal weights over the voxels where
+every echo's map is defined, referenced as any QSM is.
+
+Nothing combines or compares the echoes, so `--b0-estimation` and its settings, phase offset
+removal and bipolar correction do not run (the TUI hides them). DECOMPOSE takes the echoes'
+maps (see [Susceptibility source separation](#susceptibility-source-separation)), and choosing
+DECOMPOSE recommends this option. A single-echo scan's QSM is its echo's. Per-echo QSM is
+refused before processing with the routes that reconstruct from every echo at once (TGV,
+QSMART, iQSM, iQSM+ and iQFM), with two-pass artefact reduction, and with the χ-separation
+methods that fit the local field.
+
 ### Motion-robust echo combination
 
 `--b0-estimation robust-fit` (off by default) is the linear fit made robust to a bad
@@ -565,7 +584,8 @@ between iterates falls below 5 × 10⁻⁵ (`--ismv-tol`), with no iteration lim
 zero outside the mask eroded by the kernel, and that eroded mask is what the inversion takes.
 `--ismv-variant qsmjl` runs QSM.jl's `ismv` instead, whose automatic radius is 2 × the largest
 voxel dimension and whose tolerance is the residual relative to the first; the tolerance and
-iteration limit keep their settings (QSM.jl's own are `--ismv-tol 0.001 --ismv-max-iter 500`).
+iteration limit keep their settings (QSM.jl's own are `--ismv-tol 0.001 --ismv-max-iter 500`,
+which the recommendations offer as QSM.jl's reference values when the variant is chosen).
 
 ### V-SHARP and its deconvolution
 
@@ -1144,8 +1164,11 @@ MATLAB `lsqcurvefit`'s trust-region-reflective method with its options:
 and `--decompose-optimality-tolerance` (default 1e-6 each), `--decompose-finite-difference-step`
 (default √eps) and `--decompose-typical-x` (default 1). It takes the phase of each echo on its
 principal branch, as the authors' code does; `--decompose-unwrap-phase true` unwraps it along
-the echoes and limits χ to what the echo spacing can represent. Its authors give it a QSM for
-each echo; `qsmxt run` has one QSM, which it uses at every echo, and the methods text says so.
+the echoes. At 7 T (6.5 T and above) the recommendations suggest it, since the method was
+designed for 3 T and the phase wraps between echoes at 7 T. `--decompose-chi-bound` (ppm) bounds
+|χ| in the fit. Its authors give it a QSM for each echo. With
+[`--qsm-per-echo true`](#per-echo-qsm), which choosing DECOMPOSE recommends, `qsmxt run` gives it
+each echo's map; otherwise it uses its one QSM at every echo. The methods text says which.
 `qsmxt separate decompose` takes one per echo (`--qsm-per-echo`).
 
 χ-sepnet runs as a sliding window of 192×192×128-voxel patches;

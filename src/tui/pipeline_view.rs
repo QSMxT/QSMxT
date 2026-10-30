@@ -113,6 +113,14 @@ fn motion_runs(app: &App, config: &crate::pipeline::config::PipelineConfig) -> V
     runs
 }
 
+impl PipelineView {
+    /// The field strength of the run last read (the first selected one), when it was read: what
+    /// the pipeline rules that depend on it are checked against in the TUI.
+    pub fn read_field_strength(&self) -> Option<f64> {
+        self.run.as_ref().and_then(|(_, r)| r.as_ref().ok()).map(|r| r.magnetic_field_strength).filter(|&b| b > 0.0)
+    }
+}
+
 /// The first selected run's key and how many runs are selected, in a scanned BIDS dataset.
 fn first_selected(app: &App) -> Option<(String, usize)> {
     if app.input_mode != InputMode::Bids {

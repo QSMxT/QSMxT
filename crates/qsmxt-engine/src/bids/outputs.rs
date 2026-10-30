@@ -27,6 +27,7 @@ pub fn published_tail(item: &Item, scan_suffix: &str) -> Option<(Tail, &'static 
     let nii = |t: Tail| Some((t, "nii"));
     match *item {
         Item::Chi => nii(naming::chimap()),
+        Item::EchoChi(e) => nii(naming::chimap_desc(&format!("echo{e}"))),
         Item::ChiSupport => nii(naming::mask_desc("qsm")),
         Item::SinglePassChi => nii(naming::chimap_desc("singlepass")),
         Item::BrainMask => nii(naming::mask()),
@@ -134,6 +135,8 @@ pub fn description(item: &Item) -> Option<Description> {
         // The combined echoes of a per-coil run: one echo each, full field of view.
         Item::CombinedEchoPhase(_) | Item::CombinedEchoMagnitude(_) => image(FieldStrength, false),
         Item::Chi | Item::SinglePassChi => image(FieldAndEcho, true),
+        // One echo's map: its echo time is recorded by the step that made it.
+        Item::EchoChi(_) => image(FieldStrength, true),
         Item::BrainMask | Item::ChiSupport | Item::ReliableMask | Item::Segmentation
         | Item::R2primeCoverage | Item::CoverageMask => Some(MASK),
         Item::CombinedMagnitude | Item::Swi | Item::SwiMip => image(FieldAndEcho, false),
@@ -234,6 +237,16 @@ mod tests {
             subject: "01".into(), session: Some("pre".into()), acquisition: Some("gre".into()),
             reconstruction: None, inversion: None, run: Some("1".into()), suffix: "MEGRE".into(),
         }
+    }
+
+    /// Each echo's map of a per-echo QSM is published beside the QSM as `desc-echo<n>` (BIDS gives a
+    /// `Chimap` no `echo-` entity); its echo time is recorded by the step that made it.
+    #[test]
+    fn an_echos_map_is_published_with_its_echo() {
+        assert_eq!(published_path(&Item::EchoChi(2), &key(), None).unwrap(),
+                   "sub-01/ses-pre/anat/sub-01_ses-pre_acq-gre_run-1_desc-echo2_Chimap.nii");
+        assert_eq!(description(&Item::EchoChi(2)).unwrap().forward, Forward::FieldStrength);
+        assert_eq!(published_path(&Item::EchoRawChi(2), &key(), None), None);
     }
 
     /// Every item the engine calls published has a published file, under the BIDS name the engine

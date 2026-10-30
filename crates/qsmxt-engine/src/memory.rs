@@ -143,6 +143,7 @@ pub fn estimate(plan: &Plan, facts: &ScanFacts, profile: &MemoryProfile) -> Memo
 const BROWSER_RUNTIME_BYTES: u64 = 100_000_000;
 
 /// The scan as the estimate sees it.
+#[derive(Clone, Copy)]
 struct Scan {
     dims: [usize; 3],
     /// Voxels.
@@ -172,6 +173,12 @@ impl Scan {
     /// `per_voxel` bytes for every voxel.
     fn v(&self, per_voxel: u64) -> u64 {
         per_voxel * self.n
+    }
+
+    /// The scan as a step of a per-echo QSM sees it (one echo), or as it is.
+    fn per_echo(&self, config: &PipelineConfig) -> Scan {
+        let echoes = if crate::bridge::per_echo(config, self.echoes as usize) { 1 } else { self.echoes };
+        Scan { echoes, ..*self }
     }
 }
 
@@ -230,8 +237,9 @@ fn step_need(step: &Step, config: &PipelineConfig, s: &Scan) -> u64 {
         Stage::Relaxometry => s.v(8 * e + 25),
         Stage::R2 => r2_need(step, config, s),
         Stage::FieldMap => unwrap_need(config, s),
-        Stage::BackgroundRemoval(_) => bg_removal_need(config, s),
-        Stage::Inversion(_) => inversion_need(config, s),
+        // A per-echo QSM runs these one echo at a time, each as a single-echo scan's.
+        Stage::BackgroundRemoval(_) => bg_removal_need(config, &s.per_echo(config)),
+        Stage::Inversion(_) => inversion_need(config, &s.per_echo(config)),
         // From the total field: TGV's f32 workspace over the brain's bounding box (the whole
         // volume, at worst) and its stencils.
         Stage::Tgv(_) => s.v(TGV_PER_VOXEL),
@@ -239,6 +247,8 @@ fn step_need(step: &Step, config: &PipelineConfig, s: &Scan) -> u64 {
         // intermediates it keeps.
         Stage::Qsmart(_) => s.v(QSMART_PER_VOXEL),
         Stage::TwoPassCombination => s.v(27),
+        // A per-echo QSM's referencing also holds every echo's map, for their mean.
+        Stage::Reference if crate::bridge::per_echo(config, s.echoes as usize) => s.v(18 + F64 * e),
         Stage::Reference | Stage::SinglePassReference => s.v(18),
         Stage::Smwi => s.v(65),
         Stage::Segmentation => match step.models.is_empty() {
@@ -281,7 +291,8 @@ fn unwrap_need(config: &PipelineConfig, s: &Scan) -> u64 {
         // 5 echoes and 1.26 GB on 3, on 1 and 8 threads). A single echo is fitted as two.
         return (40 * e.max(2) + 89) * n;
     }
-    if e == 1 {
+    // One echo, or a per-echo QSM's fields, unwrapped one echo at a time.
+    if e == 1 || crate::bridge::per_echo(config, e as usize) {
         return 85 * n;
     }
     if !romeo {
@@ -542,16 +553,25 @@ fn separation_need(config: &PipelineConfig, s: &Scan) -> u64 {
     } else {
         (0, 0)
     };
-    // The χ-separation toolbox's methods: about 45 f64 per voxel of the padded grid (QSM.rs's
-    // measurement: 3.5 GB for χ-sep iLSQR, 2.7 GB for χ-sep MEDI, on 184×256×128 voxels).
+    // The χ-separation toolbox's methods. χ-sep iLSQR: at most 14.25 f64 per voxel of the padded
+    // grid and 7.5 per acquired voxel, whatever the mask (QSM.rs#341's bound; measured 1.20 GB
+    // heap, 1.34 GB resident, on 184×256×128 padded to 216×288×160). χ-sep MEDI: about 45 f64 per
+    // padded voxel (QSM.rs's measurement: 2.7 GB on 184×256×128).
     let sep = &config.separation;
     let workspace = match sep.algorithm {
-        SeparationAlgorithm::ChiSepIlsqr => 45 * F64 * padded_voxels(s, sep.chi_sep_ilsqr.pad),
+        SeparationAlgorithm::ChiSepIlsqr => F64 * (57 * padded_voxels(s, sep.chi_sep_ilsqr.pad) + 30 * s.n) / 4,
         SeparationAlgorithm::ChiSepMedi => 45 * F64 * padded_voxels(s, [0, 0, sep.chi_sep_medi.pad]),
         _ => s.v(80),
     };
+    // DECOMPOSE given a QSM per echo (`qsm.per_echo`): the echoes' maps, read before they are
+    // laid out voxel by voxel (counted in `maps`).
+    let echo_maps = if sep.algorithm == SeparationAlgorithm::Decompose && crate::bridge::per_echo(config, s.echoes as usize) {
+        s.v(s.echoes * F64)
+    } else {
+        0
+    };
     match chi_separation_network_bytes(s.dims, &config.separation) {
-        0 => maps + workspace.max(qsm_solve) + qsm_map,
+        0 => maps + echo_maps + workspace.max(qsm_solve) + qsm_map,
         net => maps + net,
     }
 }
@@ -752,6 +772,39 @@ mod tests {
         assert!(sep(&supplied) < sep(&own));
     }
 
+    /// A per-echo QSM's background removal and inversion run one echo at a time, as a single-echo
+    /// scan's; its referencing also holds every echo's map, and DECOMPOSE the echoes' maps.
+    #[test]
+    fn a_per_echo_qsm_is_estimated_one_echo_at_a_time() {
+        let f = example();
+        let medi = with(|c| { c.inversion.algorithm = QsmAlgorithm::Medi; c.bg_removal.algorithm = BfAlgorithm::Pdf; });
+        let mut per_echo = medi.clone();
+        per_echo.qsm.per_echo = true;
+        let (a, b) = (plan(&medi, &f), plan(&per_echo, &f));
+        let n = 184 * 256 * 128u64;
+        for step in ["bgremove", "invert"] {
+            assert_eq!(step_bytes(&a, step) - step_bytes(&b, step), (4 * 8 * n) * 13 / 10, "{step}: four echoes' magnitudes fewer");
+        }
+        assert!(step_bytes(&b, "unwrap") < step_bytes(&a, "unwrap"));
+        assert!(step_bytes(&b, "reference") > step_bytes(&a, "reference"));
+        let decompose = |c: &PipelineConfig| { let mut c = c.clone(); c.pipeline.do_chi_separation = true;
+            c.separation.algorithm = SeparationAlgorithm::Decompose; step_bytes(&plan(&c, &f), "chi_separation") };
+        assert!(decompose(&per_echo) > decompose(&medi));
+    }
+
+    /// χ-sep iLSQR's workspace is QSM.rs#341's bound: 14.25 f64 per padded voxel and 7.5 per
+    /// acquired voxel, about 1.5 GB on the example.
+    #[test]
+    fn chi_sep_ilsqr_takes_its_bound() {
+        let c = with(|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::ChiSepIlsqr;
+                           c.separation.custom_qsm_tool = Some("qsmxt".into()); });
+        let (n, padded) = (184 * 256 * 128u64, 216 * 288 * 160u64);
+        let workspace = 8 * (57 * padded + 30 * n) / 4;
+        assert!(workspace > 1_400_000_000 && workspace < 1_600_000_000, "{workspace}");
+        let maps = (2 * 5 * 8 + 40) * n;
+        assert_eq!(step_bytes(&plan(&c, &example()), "chi_separation"), (maps + workspace) * 13 / 10);
+    }
+
     /// Every step that computes has an estimate, the plan's peak is the largest of them, and the
     /// plan names the step that sets it.
     #[test]
@@ -888,9 +941,7 @@ mod tests {
             c.pipeline.do_swi = true; c.pipeline.do_smwi = true; c.pipeline.do_t2starmap = true;
             c.pipeline.do_analysis = true; c.motion_correction.enabled = true; c.masking.two_pass = true;
         })));
-        // χ-sep iLSQR (the χ-separation toolbox's) needs about 45 f64 per voxel of a grid padded by
-        // 16 voxels per side, 4.2 GB on the example: it does not fit the heap.
-        for s in [SeparationAlgorithm::ChiSepNet, SeparationAlgorithm::SusepNet] {
+        for s in [SeparationAlgorithm::ChiSepNet, SeparationAlgorithm::SusepNet, SeparationAlgorithm::ChiSepIlsqr] {
             configs.push((format!("{s}"), with(|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = s; })));
         }
         let mut over = Vec::new();

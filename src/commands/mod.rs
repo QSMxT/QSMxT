@@ -81,6 +81,7 @@ mod integration_tests {
                 bet_iterations: None,
                 bet_subdivisions: None,
                 qsm_reference: None,
+                qsm_per_echo: None,
                 rts_params: Default::default(),
                 tv_params: Default::default(),
                 tkd_params: Default::default(),
@@ -2631,6 +2632,17 @@ mod integration_tests {
             p.segmentation_params.use_custom_dseg = Some("mydseg".to_string());
             p.motion_params.motion_correction = true;
             p.export_dicom = true;
+        });
+
+        // A per-echo QSM: each echo's map beside the mean, and DECOMPOSE from them.
+        let bids = scratch.path().join("perecho");
+        testutils::create_multi_echo_bids(&bids);
+        run("perecho", &bids, &|a| {
+            a.pipeline.qsm_per_echo = Some(true);
+            a.pipeline.do_chi_separation = true;
+            a.pipeline.chi_separation_algorithm = Some(SeparationAlgorithmArg::Decompose);
+            a.pipeline.separation_params.decompose_n_inner = Some(1);
+            a.pipeline.separation_params.decompose_max_iterations = Some(5);
         });
 
         // Per-coil data: the MCPC-3D-S combined echoes.

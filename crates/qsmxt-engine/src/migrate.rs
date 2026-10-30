@@ -120,8 +120,6 @@ tol_update = [1.0]
 [inversion.heidi]
 gradient_mask_floor = [0.1]
 tol = [0.001]
-[separation.decompose.lsqcurvefit]
-max_iterations = [30]
 [separation.chi_sep_ilsqr]
 dr_pos = [137.0]
 dr_neg = [137.0]
@@ -264,7 +262,8 @@ const REMOVED_UNUSED: &[(&str, &str)] = &[(
 )];
 
 /// Settings renamed with their meaning (and unit) unchanged. DECOMPOSE's iteration limit is
-/// now that of `lsqcurvefit`'s solver, which every stage's fit runs.
+/// now that of `lsqcurvefit`'s solver, which every stage's fit runs; an old file's value is
+/// carried over as it is, the old default 30 included.
 const RENAMED: &[(&str, &str)] = &[
     ("inversion.nltv.newton_iter", "inversion.nltv.max_iter_newton"),
     ("separation.decompose.max_lm_iter", "separation.decompose.lsqcurvefit.max_iterations"),
@@ -669,7 +668,10 @@ mod tests {
     #[test]
     fn a_full_old_file_at_its_defaults_reads_as_todays_defaults() {
         let (c, m) = read(V10_FULL).unwrap();
-        assert_eq!(c, PipelineConfig::default());
+        // DECOMPOSE's iteration limit is carried over as it is, its old default 30 included.
+        let mut today = PipelineConfig::default();
+        today.separation.decompose.lsqcurvefit.max_iterations = 30;
+        assert_eq!(c, today);
         assert!(
             m.notes
                 .iter()
@@ -1050,7 +1052,7 @@ mod tests {
 
     /// DECOMPOSE's iteration limit keeps its value under lsqcurvefit's name, and the χ-separation
     /// settings the toolbox's methods do not have are dropped, with a warning when one was changed,
-    /// in a file of any version. A full old file's DECOMPOSE default takes today's.
+    /// in a file of any version. A full old file's 30 (its default then) is carried over as it is.
     #[test]
     fn decompose_and_chi_separation_settings_from_any_version() {
         for version in ["", "schema_version = 2\n"] {
@@ -1064,8 +1066,9 @@ mod tests {
             let saved = c.to_toml().unwrap();
             assert!(!saved.contains("max_lm_iter") && !saved.contains("lambda_cpl"), "{saved}");
         }
-        let (c, _) = read(V10_FULL).unwrap();
-        assert_eq!(c.separation.decompose, crate::DecomposeConfig::default());
+        let (c, m) = read(V10_FULL).unwrap();
+        assert_eq!(c.separation.decompose.lsqcurvefit.max_iterations, 30);
+        assert!(!m.notes.iter().chain(&m.warnings).any(|n| n.contains("lsqcurvefit")), "{m:?}");
     }
 
     /// A front end's saved JSON config (qsmbly keeps one in the browser) is migrated the same way:
@@ -1075,7 +1078,10 @@ mod tests {
         let old: toml::Table = toml::from_str(V10_FULL).unwrap();
         let json = serde_json::to_string(&old).unwrap();
         let (c, m) = PipelineConfig::from_json_migrating(&json).unwrap();
-        assert_eq!(c, PipelineConfig::default());
+        // DECOMPOSE's iteration limit is carried over as it is, its old default 30 included.
+        let mut carried = PipelineConfig::default();
+        carried.separation.decompose.lsqcurvefit.max_iterations = 30;
+        assert_eq!(c, carried);
         assert!(!m.notes.is_empty());
         let mut today = PipelineConfig::default();
         today.inversion.medi.lambda = 0.002;

@@ -331,6 +331,9 @@ pub fn plan_for(config: &PipelineConfig, facts: &ScanFacts, profile: &MemoryProf
              so there is no recipe to derive a reliable-phase mask from",
             config.masking.custom_mask_tool.as_deref().unwrap_or_default()));
     }
+    if p.do_qsm && config.qsm.per_echo && facts.n_echoes == 1 {
+        notes.push("A per-echo QSM of a single echo is the one QSM: the scan has one echo".to_string());
+    }
     // Switched on for a scan it cannot correct, it is left out with a warning in the check.
     let motion_corrected = config.motion_correction.enabled
         && requirements::motion_correction_note(facts, config).is_none();
@@ -478,6 +481,27 @@ pub(crate) mod tests {
 
     fn names(plan: &Plan) -> Vec<String> {
         plan.steps.iter().map(|s| s.stage.name()).collect()
+    }
+
+    /// A per-echo QSM takes the same steps, each over every echo, and writes each echo's maps;
+    /// on one echo it is that echo's QSM, with a note.
+    #[test]
+    fn a_per_echo_qsm_takes_the_same_steps_over_each_echo() {
+        let mut config = PipelineConfig::default();
+        config.qsm.per_echo = true;
+        let p = plan(&config, &facts());
+        assert_eq!(names(&p), names(&plan(&PipelineConfig::default(), &facts())));
+        let outputs = |name: &str| p.steps.iter().find(|s| s.name == name).unwrap().outputs.clone();
+        assert_eq!(outputs("unwrap"), (1..=5).map(Item::EchoField).collect::<Vec<_>>());
+        assert_eq!(outputs("invert"), (1..=5).map(Item::EchoRawChi).collect::<Vec<_>>());
+        assert!(outputs("reference").contains(&Item::EchoChi(5)) && outputs("reference").contains(&Item::Chi));
+        assert!(p.notes.is_empty() && p.check.errors.is_empty(), "{:?} {:?}", p.notes, p.check.errors);
+        let mut one = facts();
+        one.n_echoes = 1;
+        one.echo_times.truncate(1);
+        let p = plan(&config, &one);
+        assert_eq!(p.notes.len(), 1, "{:?}", p.notes);
+        assert!(!p.steps.iter().any(|s| s.outputs.contains(&Item::EchoChi(1))));
     }
 
     #[test]

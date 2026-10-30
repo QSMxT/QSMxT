@@ -486,6 +486,9 @@ fn command_for(config: &PipelineConfig) -> String {
     if spec != default_spec {
         parts.push(format!("--qsm-reference {spec}"));
     }
+    if config.qsm.per_echo != d.qsm.per_echo {
+        parts.push(format!("--qsm-per-echo {}", config.qsm.per_echo));
+    }
 
     // ── SWI params ──
     if config.pipeline.do_swi {
@@ -1820,6 +1823,14 @@ frangi_c = 400.0
         c.masking.inhomogeneity_correction = false;
         let cmd = generate_command(&c);
         assert!(cmd.contains("--no-inhomogeneity-correction"));
+    }
+
+    #[test]
+    fn a_per_echo_qsm_is_in_the_command() {
+        let mut config = PipelineConfig::default();
+        assert!(!generate_command(&config).contains("--qsm-per-echo"));
+        config.qsm.per_echo = true;
+        assert!(generate_command(&config).contains("--qsm-per-echo true"));
     }
 
     #[test]

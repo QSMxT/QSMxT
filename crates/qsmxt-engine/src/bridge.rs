@@ -129,6 +129,38 @@ pub fn skips_bgremove(config: &PipelineConfig) -> bool {
     !inversion_input(config, 1).needs_bg_removal()
 }
 
+/// Why a per-echo QSM (`qsm.per_echo`) cannot run with this configuration, or `None` when it can.
+///
+/// A per-echo reconstruction runs the field map, background removal, inversion and referencing on
+/// each echo's field on its own (qsm-core `pipeline::per_echo`). The routes that do not go
+/// through those steps, or that read every echo at once, have no per-echo form here: TGV and
+/// QSMART (their own reconstructions of the total field), iQSM/iQSM+ and iQFM (networks on every
+/// echo's phase), and two-pass artefact reduction. Nor have the χ-separation methods that fit the
+/// local field, of which a per-echo reconstruction has one per echo.
+pub fn per_echo_conflict(config: &PipelineConfig) -> Option<String> {
+    let inversion = config.inversion.algorithm;
+    let why = if matches!(inversion, QsmAlgorithm::Tgv | QsmAlgorithm::Qsmart | QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus) {
+        format!("{inversion} reconstructs from every echo at once")
+    } else if config.bg_removal.algorithm == BfAlgorithm::Iqfm && !skips_bgremove(config) {
+        "iQFM removes the background from every echo's phase at once".to_string()
+    } else if config.masking.two_pass {
+        "two-pass artefact reduction combines two reconstructions of one field".to_string()
+    } else if config.pipeline.do_chi_separation && crate::stages::separation::uses_field(config.separation.algorithm) {
+        format!("χ-separation ({}) fits the local field, and a per-echo QSM has one per echo", config.separation.algorithm)
+    } else {
+        return None;
+    };
+    Some(why)
+}
+
+/// Whether a run on a scan of `n_echoes` echoes reconstructs a QSM per echo: `qsm.per_echo` is on,
+/// QSM is reconstructed, the scan has more than one echo (one echo's QSM is already that echo's),
+/// and nothing rules it out ([`per_echo_conflict`]; a run asked for one anyway is refused at plan
+/// time, [`crate::requirements::scan_check`]).
+pub fn per_echo(config: &PipelineConfig, n_echoes: usize) -> bool {
+    config.qsm.per_echo && config.pipeline.do_qsm && n_echoes > 1 && per_echo_conflict(config).is_none()
+}
+
 pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
     PFieldMapping,
     PBgRemoval,
@@ -473,6 +505,7 @@ pub fn to_qsm_pipeline_config(cfg: &PipelineConfig) -> qsm_core::pipeline::QsmPi
         bg_removal,
         inversion,
         reference,
+        qsm_per_echo: cfg.qsm.per_echo,
     }
 }
 

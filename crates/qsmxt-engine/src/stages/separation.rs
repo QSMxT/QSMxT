@@ -32,6 +32,12 @@ pub fn params(config: &PipelineConfig, meta: &RunMetadata, has_mese: bool) -> se
     if let Some(patch) = patch {
         params["patch"] = patch;
     }
+    // DECOMPOSE given a per-echo QSM's echoes' maps rather than the one QSM at every echo.
+    if s.algorithm == SeparationAlgorithm::Decompose && s.custom_qsm_tool.is_none()
+        && crate::bridge::per_echo(config, meta.n_echoes)
+    {
+        params["qsm_per_echo"] = serde_json::json!(true);
+    }
     params
 }
 

@@ -78,6 +78,18 @@ pub enum Item {
     QsmartIntermediate(Pass, &'static str),
     /// The two passes' raw maps combined.
     CombinedRawChi,
+    /// Echo `n`'s field in ppm, a per-echo QSM's (`qsm.per_echo`): its phase unwrapped and
+    /// divided by its own echo time, zero outside the mask.
+    EchoField(usize),
+    /// Echo `n`'s local field in ppm, a per-echo QSM's.
+    EchoLocalField(usize),
+    /// Where echo `n`'s local field is defined.
+    EchoLocalFieldMask(usize),
+    /// Echo `n`'s raw (unreferenced) susceptibility map, a per-echo QSM's.
+    EchoRawChi(usize),
+    /// Echo `n`'s susceptibility map, referenced over its own support. The mean of the echoes'
+    /// maps is [`Item::Chi`].
+    EchoChi(usize),
     /// The final, referenced susceptibility map.
     Chi,
     /// Where the final map is defined.
@@ -173,6 +185,11 @@ impl Item {
             ("CorrectedPhase", a) => Item::CorrectedPhase(echo(a)?),
             ("CorrectedMagnitude", a) => Item::CorrectedMagnitude(echo(a)?),
             ("MeseMagnitude", a) => Item::MeseMagnitude(echo(a)?),
+            ("EchoField", a) => Item::EchoField(echo(a)?),
+            ("EchoLocalField", a) => Item::EchoLocalField(echo(a)?),
+            ("EchoLocalFieldMask", a) => Item::EchoLocalFieldMask(echo(a)?),
+            ("EchoRawChi", a) => Item::EchoRawChi(echo(a)?),
+            ("EchoChi", a) => Item::EchoChi(echo(a)?),
             ("LocalField", Some(a)) => Item::LocalField(pass(a)?),
             ("LocalFieldMask", Some(a)) => Item::LocalFieldMask(pass(a)?),
             ("RawChi", Some(a)) => Item::RawChi(pass(a)?),

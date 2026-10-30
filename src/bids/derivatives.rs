@@ -383,6 +383,22 @@ impl DerivativeOutputs {
         self.workflow_nifti_path(key, "scale_phase", naming::mcpc3ds_mask())
     }
 
+    /// A per-echo QSM's intermediates, in the steps' own directories, each with its echo: the
+    /// echo's field, local field and its mask, and unreferenced map. Its referenced map is published.
+    pub fn echo_field_path(&self, key: &AcquisitionKey, echo: usize) -> PathBuf {
+        self.workflow_nifti_path(key, "unwrap", naming::total_fieldmap_ppm().with("echo", echo.to_string()))
+    }
+    pub fn echo_local_field_path(&self, key: &AcquisitionKey, echo: usize) -> PathBuf {
+        self.workflow_nifti_path(key, "bgremove", Tail::new("localfield").with("echo", echo.to_string()))
+    }
+    pub fn echo_bg_mask_path(&self, key: &AcquisitionKey, echo: usize) -> PathBuf {
+        self.workflow_nifti_path(key, "bgremove", Tail::new("bgmask").with("echo", echo.to_string()))
+    }
+    pub fn echo_chi_raw_path(&self, key: &AcquisitionKey, echo: usize) -> PathBuf {
+        self.workflow_nifti_path(key, "invert", naming::unreferenced_chimap().with("echo", echo.to_string()))
+    }
+    pub fn echo_qsm_path(&self, key: &AcquisitionKey, echo: usize) -> PathBuf { self.published_item(key, Item::EchoChi(echo)) }
+
     pub fn phase_scaled_path(&self, key: &AcquisitionKey, echo: usize) -> PathBuf {
         self.workflow_nifti_path(key, "scale_phase", naming::scaled_phase_echo(echo, &key.suffix))
     }

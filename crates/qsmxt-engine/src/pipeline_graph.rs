@@ -286,10 +286,73 @@ impl Ctx<'_> {
         (1..=k).map(Item::MeseMagnitude).collect()
     }
 
+    /// Whether the run reconstructs a QSM per echo ([`crate::bridge::per_echo`]).
+    fn per_echo(&self) -> bool {
+        crate::bridge::per_echo(self.config, self.n())
+    }
+
+    /// The items a per-echo QSM's `stage` reads and writes, for the stages that run per echo.
+    fn io_per_echo(&self, stage: Stage) -> Option<(Vec<Item>, Vec<Item>)> {
+        let c = self.config;
+        let (mut reads, mut writes) = (Vec::new(), Vec::new());
+        match stage {
+            Stage::FieldMap => {
+                reads.extend(self.echo_phases());
+                reads.extend(self.echo_magnitudes());
+                reads.push(self.mask_item());
+                writes.extend(self.echoes(Item::EchoField));
+            }
+            Stage::BackgroundRemoval(p) => {
+                reads.extend(self.echoes(Item::EchoField));
+                if crate::stages::background::takes_echo_magnitudes(c) {
+                    reads.extend(self.echo_magnitudes());
+                }
+                reads.push(self.pass_mask(p));
+                for e in 1..=self.n() {
+                    writes.extend([Item::EchoLocalField(e), Item::EchoLocalFieldMask(e)]);
+                }
+            }
+            Stage::Inversion(p) => {
+                if skips_bgremove(c) {
+                    reads.extend(self.echoes(Item::EchoField));
+                    reads.push(self.pass_mask(p));
+                } else {
+                    reads.extend(self.echoes(Item::EchoLocalField));
+                    reads.extend(self.echoes(Item::EchoLocalFieldMask));
+                }
+                // Each echo's own magnitude, whichever magnitude the inversion takes.
+                if crate::stages::inversion::magnitude_input(c).is_some() {
+                    reads.extend(self.echo_magnitudes());
+                }
+                writes.extend(self.echoes(Item::EchoRawChi));
+            }
+            Stage::Reference => {
+                reads.extend(self.echoes(Item::EchoRawChi));
+                if skips_bgremove(c) {
+                    reads.push(self.pass_mask(Pass::Main));
+                } else {
+                    reads.extend(self.echoes(Item::EchoLocalFieldMask));
+                }
+                if c.qsm.reference == QsmReference::Region {
+                    reads.extend(self.segmentation());
+                }
+                writes.extend(self.echoes(Item::EchoChi));
+                writes.extend([Item::Chi, Item::ChiSupport]);
+            }
+            _ => return None,
+        }
+        Some((reads, writes))
+    }
+
     /// The items `stage` reads and writes, as the run reads and writes them.
     fn io(&self, stage: Stage, written: &[Item]) -> (Vec<Item>, Vec<Item>) {
         let (c, f) = (self.config, self.facts);
         let has = |i: &Item| written.contains(i);
+        if self.per_echo() {
+            if let Some(io) = self.io_per_echo(stage) {
+                return io;
+            }
+        }
         let mut reads = Vec::new();
         let mut writes = Vec::new();
         match stage {
@@ -540,6 +603,10 @@ impl Ctx<'_> {
                     if chi == Item::Chi && has(&Item::ChiSupport) {
                         reads.push(Item::ChiSupport);
                     }
+                    // DECOMPOSE takes a per-echo QSM's echoes' maps.
+                    if chi == Item::Chi && c.separation.algorithm == SeparationAlgorithm::Decompose && self.per_echo() {
+                        reads.extend(self.echoes(Item::EchoChi));
+                    }
                 }
                 reads.extend(self.echo_magnitudes());
                 let r2prime = if c.separation.custom_r2prime_tool.is_some() { Item::SuppliedR2prime } else { Item::R2prime };
@@ -622,7 +689,8 @@ impl Ctx<'_> {
             Stage::FieldMap => {
                 let fm = &c.field_mapping;
                 // MEDI's complex fit fits its own phase offset (crate::stages::field).
-                let removes_offsets = self.n() > 1 && fm.phase_offset_removal
+                let per_echo = self.per_echo();
+                let removes_offsets = self.n() > 1 && !per_echo && fm.phase_offset_removal
                     && fm.unwrapping_algorithm != UnwrappingAlgorithm::Laplacian
                     && fm.b0_estimation != B0Estimation::ComplexFit;
                 let id = if removes_offsets { "phase_offset_removal".to_string() } else { fm.unwrapping_algorithm.to_string() };
@@ -635,7 +703,9 @@ impl Ctx<'_> {
                     s.push("phase offsets removed".to_string());
                 }
                 s.extend(words::unwrapping_settings(c));
-                if self.n() > 1 {
+                if per_echo {
+                    s.push("each echo's field on its own".to_string());
+                } else if self.n() > 1 {
                     s.push(format!("B0 by {}", match fm.b0_estimation {
                         B0Estimation::WeightedAvg => "weighted average",
                         B0Estimation::LinearFit => "linear fit",

@@ -371,6 +371,9 @@ const SETTINGS: &[(&str, &str, Kind)] = &[
     ("bg_removal.vsharp.min_radius", "bg_removal.vsharp.min_radius", Kind::Same),
     ("bg_removal.vsharp.radius_step", "bg_removal.vsharp.radius_step", Kind::Same),
     ("bg_removal.vsharp.grid", "bg_removal.vsharp.grid", Kind::VsharpGrid),
+    ("bg_removal.ismv.variant", "bg_removal.ismv.variant", Kind::Same),
+    ("bg_removal.ismv.tol", "bg_removal.ismv.tol", Kind::Same),
+    ("bg_removal.ismv.max_iter", "bg_removal.ismv.max_iter", Kind::Same),
     ("bg_removal.resharp.radius", "bg_removal.resharp.radius", Kind::Same),
     ("bg_removal.resharp.max_iter", "bg_removal.resharp.max_iter", Kind::Same),
     ("inversion.algorithm", "inversion.algorithm", Kind::Same),
@@ -392,13 +395,19 @@ const SETTINGS: &[(&str, &str, Kind)] = &[
     ("inversion.qsmart.ilsqr_max_iter", "inversion.qsmart.ilsqr_max_iter", Kind::Same),
     ("inversion.qsmart.ilsqr_pad_mm", "inversion.qsmart.ilsqr_pad_mm", Kind::Same),
     ("reference", "qsm.reference", Kind::Same),
+    ("qsm_per_echo", "qsm.per_echo", Kind::Same),
     ("separation.algorithm", "separation.algorithm", Kind::Same),
+    ("separation.decompose.unwrap_phase", "separation.decompose.unwrap_phase", Kind::Same),
     ("segmentation.inference", "segmentation.patch", Kind::SynthSegInference),
     ("segmentation.inference.patch", "segmentation.patch", Kind::SynthSegPatch),
 ];
 
+/// A QSM.rs rule setting as QSMxT's: listed in [`SETTINGS`], or else the QSMxT setting at the same
+/// path, taken as it is ([`Kind::Same`]). So a rule QSM.rs adds on a setting QSMxT already has
+/// (`separation.decompose.chi_bound`, ...) is offered without a change here.
 fn setting_of(core_path: &str) -> Option<(&'static str, Kind)> {
     SETTINGS.iter().find(|(c, _, _)| *c == core_path).map(|&(_, q, k)| (q, k))
+        .or_else(|| setting(core_path).map(|s| (s.path, Kind::Same)))
 }
 
 /// Whether `id` names one of QSM.rs's rules.
@@ -565,7 +574,7 @@ fn applying() -> &'static [Rule] {
 /// The rule settings that belong to the QSM reconstruction: not in play when QSM is not
 /// reconstructed.
 fn reconstructs(core_path: &str) -> bool {
-    ["field_mapping.", "bg_removal.", "inversion.", "reference"].iter().any(|p| core_path.starts_with(p))
+    ["field_mapping.", "bg_removal.", "inversion.", "reference", "qsm_per_echo"].iter().any(|p| core_path.starts_with(p))
 }
 
 /// Every rule that applies to `config` on a scan with `facts`, in QSM.rs's order: its trigger is

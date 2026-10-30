@@ -8,7 +8,7 @@ use crate::scan::{scan_metadata, RunMetadata};
 /// not Laplacian unwrapping, which removes them by construction, nor MEDI's complex fit, which
 /// fits its own phase offset).
 fn removes_phase_offsets(config: &PipelineConfig, meta: &RunMetadata) -> bool {
-    meta.n_echoes > 1 && config.field_mapping.phase_offset_removal
+    meta.n_echoes > 1 && !crate::bridge::per_echo(config, meta.n_echoes) && config.field_mapping.phase_offset_removal
         && config.field_mapping.unwrapping_algorithm != crate::enums::UnwrappingAlgorithm::Laplacian
         && config.field_mapping.b0_estimation != crate::enums::B0Estimation::ComplexFit
 }
@@ -49,6 +49,10 @@ pub fn params(config: &PipelineConfig, meta: &RunMetadata) -> serde_json::Value 
         "laplacian_fft_pad": fm.laplacian_fft_pad,
         "laplacian_unmasked": fm.laplacian_unmasked,
     });
+    // A per-echo QSM's fields: each echo's own, without the echo combination.
+    if crate::bridge::per_echo(config, meta.n_echoes) {
+        params["per_echo"] = serde_json::json!(true);
+    }
     if fm.b0_estimation == crate::enums::B0Estimation::QsmartEchofit {
         params["qsmart_fit_threshold"] = match fm.qsmart_fit_threshold() {
             qsm_core::utils::QsmartFitThreshold::Percentile(p) => serde_json::json!({ "percentile": p }),
@@ -131,6 +135,23 @@ pub fn map_field(
         b0_field_ppm: field.b0_field_ppm, total_field_hz, robust_fit_report, reliability: field.reliability,
         qsmart_fit_threshold: field.qsmart_fit_threshold,
     })
+}
+
+/// One echo's field in ppm for a per-echo QSM (`qsm.per_echo`), from its wrapped phase (radians)
+/// and its magnitude, when there is one, inside `mask`: the echo unwrapped and divided by its own
+/// echo time, as one echo of a single-echo scan is (qsm-core `per_echo::run_field_mapping_per_echo`).
+/// `meta` is the echo's alone. The echo combination, phase-offset removal and bipolar correction
+/// do not apply.
+pub fn map_echo_field(
+    phase: &[f64], magnitude: Option<&[f64]>, mask: &[u8], meta: &RunMetadata, config: &PipelineConfig,
+) -> Result<Vec<f64>, EngineError> {
+    log::info!("Phase unwrapping ({}), echo at {:.2} ms", config.field_mapping.unwrapping_algorithm, meta.echo_times[0] * 1e3);
+    let (fm_config, _, _, _) = crate::bridge::to_pipeline_stages(config);
+    let magnitudes = magnitude.map(|m| [m]);
+    let mut fields = qsm_core::pipeline::per_echo::run_field_mapping_per_echo(
+        &[phase], magnitudes.as_ref().map(|m| m.as_slice()), mask, &scan_metadata(meta), &fm_config, &mut |_, _| {},
+    ).map_err(|e| EngineError::Config(format!("field mapping: {e}")))?;
+    Ok(fields.remove(0).b0_field_ppm)
 }
 
 #[cfg(test)]

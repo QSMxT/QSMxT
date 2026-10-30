@@ -1305,7 +1305,7 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("do_qsm", "pipeline.do_qsm"),
     ("unwrapping_algorithm", "field_mapping.unwrapping_algorithm"), ("laplacian_solver", "field_mapping.laplacian_solver"),
     ("laplacian_fft_pad", "field_mapping.laplacian_fft_pad"), ("laplacian_unmasked", "field_mapping.laplacian_unmasked"),
-    ("phase_offset_removal", "field_mapping.phase_offset_removal"),
+    ("qsm_per_echo", "qsm.per_echo"), ("phase_offset_removal", "field_mapping.phase_offset_removal"),
     ("phase_offset_sigma_mm", "field_mapping.phase_offset_sigma_mm"), ("bipolar_correction", "field_mapping.bipolar_correction"),
     ("romeo_individual", "field_mapping.romeo.individual"), ("romeo_template", "field_mapping.romeo.template"),
     ("romeo_correct_global", "field_mapping.romeo.correct_global"), ("romeo_phase_coherence", "field_mapping.romeo.phase_coherence"),
@@ -1697,6 +1697,8 @@ pub struct PipelineFormState {
     pub qsm_reference: usize,
 
     // Field mapping
+    /// A QSM per echo, and their mean (`qsm.per_echo`).
+    pub qsm_per_echo: bool,
     pub phase_offset_removal: bool,
     pub bipolar_correction: bool,
     pub romeo_individual: bool,
@@ -2219,6 +2221,7 @@ impl Default for PipelineFormState {
             unwrapping_algorithm: 0, // romeo
             bf_algorithm: 0, // vsharp
             qsm_reference: 0, // mean
+            qsm_per_echo: false,
             phase_offset_removal: true,
             bipolar_correction: false,
             romeo_individual: true,
@@ -2822,7 +2825,7 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Inner passes", field: "sep_decompose_n_inner", help: "Alternating 3-stage fit passes per voxel" });
                 rows.push(PipelineRow::Param { label: "  Chi bound (ppm)", field: "sep_decompose_chi_bound", help: "Upper bound on |χ| in the fit" });
                 rows.push(PipelineRow::Toggle { label: "  Unwrap phase", field: "sep_decompose_unwrap_phase",
-                    help: "Unwrap the phase along the echoes and limit χ to what the echo spacing can represent (default: off, as in the authors' code)" });
+                    help: "Unwrap the phase along the echoes (default: off, as in the authors' code)" });
                 rows.push(PipelineRow::Param { label: "  Max iter", field: "sep_decompose_max_iterations", help: "Maximum solver iterations per fit (lsqcurvefit MaxIterations)" });
                 rows.push(PipelineRow::Param { label: "  Max evaluations", field: "sep_decompose_max_fevals", help: "Maximum function evaluations per fit (lsqcurvefit MaxFunctionEvaluations). Blank = 100 × the fit's parameters" });
                 rows.push(PipelineRow::Param { label: "  Function tol", field: "sep_decompose_function_tol", help: "Stop when the cost changes by less than this, relatively (lsqcurvefit FunctionTolerance)" });
@@ -3077,12 +3080,20 @@ impl PipelineFormState {
     }
 
     /// QSM → Field map: unwrapping and the echo combination into one field map.
-    fn field_map_rows(&self, rows: &mut Vec<PipelineRow>) {
+    pub(crate) fn field_map_rows(&self, rows: &mut Vec<PipelineRow>) {
         let (_, field_mapping_all) = self.field_mapping_runs();
         let is_laplacian = self.unwrapping_algorithm == 1;
         if !field_mapping_all {
             rows.push(PipelineRow::Note { text: "Applies to multi-echo data only: TGV reconstructs a single echo from its wrapped phase".into() });
         }
+
+        // A QSM per echo: each echo unwrapped and reconstructed on its own, so nothing below that
+        // combines or compares echoes applies.
+        rows.push(PipelineRow::Toggle {
+            label: "Per-echo QSM", field: "qsm_per_echo",
+            help: "Reconstruct a QSM from each echo on its own (each echo's field map, background removal, inversion and referencing) and report their mean as the QSM, with each echo's map, instead of one QSM from the echo-combined field map. Multi-echo only",
+        });
+        let combines = !self.qsm_per_echo;
 
         // Unwrapping
         rows.push(PipelineRow::AlgoSelect {
@@ -3106,7 +3117,7 @@ impl PipelineFormState {
 
         // ROMEO's own settings, phase offset removal (HIP — ROMEO only) among them. MEDI's complex
         // fit fits its own phase offset, so none are removed first.
-        let removes_offsets = !self.b0_estimation_is("complex-fit");
+        let removes_offsets = combines && !self.b0_estimation_is("complex-fit");
         if !is_laplacian {
             if removes_offsets {
             rows.push(PipelineRow::Toggle {
@@ -3194,6 +3205,9 @@ impl PipelineFormState {
         }
 
         // B0 estimation
+        if !combines {
+            return;
+        }
         rows.push(PipelineRow::AlgoSelect {
             label: "B0 estimation", field: "b0_estimation",
             options: B0_ESTIMATION_OPTIONS, help: B0_ESTIMATION_HELP,
@@ -4411,6 +4425,7 @@ impl PipelineFormState {
         match field {
             "do_qsm" => self.do_qsm,
             "inhomogeneity_correction" => self.inhomogeneity_correction,
+            "qsm_per_echo" => self.qsm_per_echo,
             "phase_offset_removal" => self.phase_offset_removal,
             "bipolar_correction" => self.bipolar_correction,
             "romeo_individual" => self.romeo_individual,
@@ -4465,6 +4480,7 @@ impl PipelineFormState {
             "do_qsm" => self.do_qsm = !self.do_qsm,
             "do_chi_separation" => self.do_chi_separation = !self.do_chi_separation,
             "inhomogeneity_correction" => self.inhomogeneity_correction = !self.inhomogeneity_correction,
+            "qsm_per_echo" => self.qsm_per_echo = !self.qsm_per_echo,
             "phase_offset_removal" => self.phase_offset_removal = !self.phase_offset_removal,
             "bipolar_correction" => self.bipolar_correction = !self.bipolar_correction,
             "romeo_individual" => self.romeo_individual = !self.romeo_individual,

@@ -390,6 +390,16 @@ fn the_graph_is_what_a_run_does() {
     c.motion_correction.enabled = true;
     check_against_a_run(&c, &f, s);
 
+    // A per-echo QSM, separated by DECOMPOSE from the echoes' maps.
+    let (f, s) = phantom();
+    let mut c = config();
+    c.qsm.per_echo = true;
+    c.pipeline.do_chi_separation = true;
+    c.separation.algorithm = SeparationAlgorithm::Decompose;
+    c.separation.decompose.n_inner = 1;
+    c.separation.decompose.lsqcurvefit.max_iterations = 2;
+    check_against_a_run(&c, &f, s);
+
     let (f, s) = phantom();
     let mut c = config();
     c.inversion.algorithm = QsmAlgorithm::Tgv;

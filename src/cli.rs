@@ -507,8 +507,7 @@ pub struct SeparationParamArgs {
     /// DECOMPOSE upper bound on |χ| in the fit (ppm)
     #[arg(long)]
     pub decompose_chi_bound: Option<f64>,
-    /// DECOMPOSE: unwrap the phase along the echoes and limit χ to what the echo spacing can
-    /// represent (default: false, as in the authors' code)
+    /// DECOMPOSE: unwrap the phase along the echoes (default: false, as in the authors' code)
     #[arg(long, value_name = "BOOL")]
     pub decompose_unwrap_phase: Option<bool>,
     /// DECOMPOSE: maximum solver iterations of each fit (lsqcurvefit MaxIterations; default: 400)
@@ -1541,6 +1540,15 @@ pub struct PipelineArgs {
     /// name lists the valid ones
     #[arg(long, value_name = "SPEC")]
     pub qsm_reference: Option<String>,
+
+    /// Reconstruct a QSM from each echo on its own (each echo's phase unwrapped and divided by its
+    /// echo time, then background removal, dipole inversion and referencing per echo) and publish
+    /// each echo's map (`desc-echo<n>_Chimap`) and their mean as the QSM (`Chimap`), instead of one QSM
+    /// from the echo-combined field map. The echo combination (--b0-estimation), phase-offset
+    /// removal and bipolar correction do not run. DECOMPOSE takes the echoes' maps. Multi-echo only;
+    /// not with TGV, QSMART, iQSM, iQFM, two-pass, or χ-separation methods that fit the local field
+    #[arg(long, value_name = "BOOL")]
+    pub qsm_per_echo: Option<bool>,
 
     #[command(flatten)]
     pub rts_params: RtsParamArgs,
@@ -3671,8 +3679,7 @@ pub struct SeparateDecomposeArgs {
     /// Upper bound on |χ| in the fit (ppm)
     #[arg(long)]
     pub chi_bound: Option<f64>,
-    /// Unwrap the phase along the echoes and limit χ to what the echo spacing can represent
-    /// (default: false, as in the authors' code)
+    /// Unwrap the phase along the echoes (default: false, as in the authors' code)
     #[arg(long, value_name = "BOOL")]
     pub unwrap_phase: Option<bool>,
     /// Maximum solver iterations of each fit (lsqcurvefit MaxIterations; default: 400)

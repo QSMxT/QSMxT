@@ -228,9 +228,16 @@ fn open(r: &Recommendation) -> bool {
 }
 
 impl App {
-    /// What the rules know about the data from the form: the echo count it is limited to.
+    /// What the rules know about the data from the form: the echo count it is limited to, and the
+    /// field strength (typed for NIfTI input; the first selected run's, once the Pipeline view has
+    /// read it, for a BIDS dataset). A rule on an unknown fact stays silent.
     fn rule_facts(&self) -> Facts {
-        Facts { echo_count: self.filter_state.num_echoes.trim().parse().ok(), ..Default::default() }
+        let field_strength = match self.input_mode {
+            super::app::InputMode::NIfTI => self.nifti_state.field_strength.trim().parse().ok(),
+            super::app::InputMode::Bids => self.pipeline_view.read_field_strength(),
+            _ => None,
+        };
+        Facts { echo_count: self.filter_state.num_echoes.trim().parse().ok(), field_strength, ..Default::default() }
     }
 
     /// Every rule that applies to the form's config, departed from or not.
@@ -706,6 +713,49 @@ mod tests {
         app.toggle_field("medi_msmv_prefilter");
         app.check_recommendations();
         assert!(app.rec_modal.is_some());
+    }
+
+    /// Choosing DECOMPOSE offers a per-echo QSM (its authors' input); applying it switches the
+    /// form to per-echo, which hides the echo combination.
+    #[test]
+    fn choosing_decompose_offers_a_per_echo_qsm() {
+        let mut app = app();
+        app.toggle_field("do_chi_separation");
+        app.check_recommendations();
+        // The default method's reference pipeline pop-up: closed.
+        app.refs.modal = None;
+        select(&mut app, "separation_algorithm", "decompose", super::super::app::SEP_ALGO_OPTIONS);
+        // One pop-up: the recommendation first, then DECOMPOSE's reference pipeline.
+        let modal = app.refs.modal.take().expect("the choice opened the pop-up");
+        let finding = &modal.items.iter().find(|i| i.finding.rule == "decompose.qsm-per-echo").expect("per-echo QSM is offered").finding;
+        assert_eq!((finding.setting.as_str(), finding.strength), ("qsm.per_echo", Strength::Recommended));
+        assert!(!app.pipeline_state.qsm_per_echo, "offered, not applied");
+        app.apply_recommendation("decompose.qsm-per-echo", None).unwrap();
+        assert!(app.pipeline_state.qsm_per_echo);
+        assert!(super::super::command::config_from_app(&app).unwrap().qsm.per_echo);
+        let mut rows = Vec::new();
+        app.pipeline_state.field_map_rows(&mut rows);
+        assert!(!rows.iter().any(|r| matches!(r, PipelineRow::AlgoSelect { field: "b0_estimation", .. })));
+        assert!(rows.iter().any(|r| matches!(r, PipelineRow::Toggle { field: "qsm_per_echo", .. })));
+    }
+
+    /// DECOMPOSE at 7 T suggests its echo-phase unwrapping once the field strength is known; at
+    /// 3 T, or before it is known, nothing.
+    #[test]
+    fn decompose_at_7t_suggests_unwrapping_the_phase() {
+        let mut app = app();
+        app.toggle_field("do_chi_separation");
+        app.set_field_select("separation_algorithm", super::super::app::SEP_ALGO_OPTIONS.iter().position(|o| *o == "decompose").unwrap());
+        let fires = |app: &App| app.rule_view().iter().any(|r| r.rule == "decompose.unwrap-7t" && r.departs);
+        assert!(!fires(&app), "the field strength is not known");
+        app.input_mode = super::super::app::InputMode::NIfTI;
+        app.nifti_state.field_strength = "3".into();
+        assert!(!fires(&app));
+        app.nifti_state.field_strength = "7".into();
+        let r = app.rule_view().into_iter().find(|r| r.rule == "decompose.unwrap-7t").unwrap();
+        assert!(r.departs && r.setting == "separation.decompose.unwrap_phase" && r.reason.contains("3 T"), "{r:?}");
+        app.toggle_field("sep_decompose_unwrap_phase");
+        assert!(!fires(&app));
     }
 
     /// A reference departure never opens the pop-up; its setting shows the reference value.
