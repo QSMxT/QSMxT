@@ -4,8 +4,12 @@ use crate::cli::R2primeArgs;
 use crate::error::QsmxtError;
 
 pub fn execute(args: R2primeArgs) -> crate::Result<()> {
+    if args.r2primenet {
+        return estimate(&args);
+    }
+    let r2_path = args.r2.as_ref().expect("clap requires --r2 without --r2primenet");
     let r2star = load_nifti(&args.r2star)?;
-    let r2 = load_nifti(&args.r2)?;
+    let r2 = load_nifti(r2_path)?;
     let (mask, _) = load_mask(&args.mask)?;
     if r2star.data.len() != r2.data.len() || r2star.data.len() != mask.len() {
         return Err(QsmxtError::Config(format!(
@@ -61,6 +65,75 @@ pub fn execute(args: R2primeArgs) -> crate::Result<()> {
         info!("R2' coverage mask saved to {}", path.display());
     }
     Ok(())
+}
+
+/// R2PRIMEnet's settings from the flags, on QSMxT's defaults (the ones `qsmxt run` starts from).
+fn r2primenet_config(args: &R2primeArgs) -> qsmxt_engine::R2primenetConfig {
+    let d = qsmxt_engine::R2primenetConfig::default();
+    qsmxt_engine::R2primenetConfig {
+        patch: match args.r2primenet_patch.as_deref() {
+            Some(&[x, y, z]) => [x, y, z],
+            _ => d.patch,
+        },
+        ignore_field_mismatch: args.r2primenet_ignore_field_mismatch || d.ignore_field_mismatch,
+    }
+}
+
+/// `--r2primenet`: R2' estimated from R2* inside the mask, as `qsmxt run --r2prime-strategy
+/// r2primenet` estimates it.
+fn estimate(args: &R2primeArgs) -> crate::Result<()> {
+    let config = r2primenet_config(args);
+    config.validate().map_err(QsmxtError::Config)?;
+    let field_strength = args.field_strength.expect("clap requires --field-strength with --r2primenet");
+    // The check `qsmxt run --r2prime-strategy r2primenet` makes, before the weights are fetched.
+    use qsmxt_engine::requirements::{r2primenet_field_policy, R2primenetFieldPolicy as Policy};
+    match r2primenet_field_policy(field_strength, qsmxt_engine::R2PrimeStrategy::R2primenet, config.ignore_field_mismatch) {
+        Policy::Run => {}
+        Policy::RunUncalibrated => warn!(
+            "R2PRIMEnet's weights are trained at {} T and this is {field_strength} T: treat its R2' as uncalibrated",
+            qsm_core::relaxometry::TRAINED_B0_T),
+        Policy::Skip | Policy::Refuse => return Err(QsmxtError::Config(format!(
+            "R2PRIMEnet's weights are trained at {} T and this is {field_strength} T, so its R2' would be \
+             wrong in a way that looks plausible. Pass --r2primenet-ignore-field-mismatch to run it anyway",
+            qsm_core::relaxometry::TRAINED_B0_T))),
+    }
+    let r2star = load_nifti(&args.r2star)?;
+    let (mask, mask_nifti) = load_mask(&args.mask)?;
+    if mask_nifti.dims != r2star.dims {
+        return Err(QsmxtError::Config(format!(
+            "mask is {:?} but the R2* map is {:?}", mask_nifti.dims, r2star.dims)));
+    }
+    crate::pipeline::runner::prefetch_weights("r2primenet", "R2PRIMEnet")?;
+    info!("Estimating R2' from R2* with R2PRIMEnet");
+    let r2prime = run_r2primenet(&r2star, &mask, field_strength, &config)?;
+    save_nifti(&args.output, &r2prime, &r2star)?;
+    info!("R2' map (estimated by R2PRIMEnet) saved to {}", args.output.display());
+    Ok(())
+}
+
+#[cfg(feature = "dl")]
+fn run_r2primenet(
+    r2star: &qsm_core::io::NiftiData, mask: &[u8], field_strength: f64,
+    config: &qsmxt_engine::R2primenetConfig,
+) -> crate::Result<Vec<f64>> {
+    let params = qsmxt_engine::stages::r2::r2primenet_params(config)
+        .map_err(|e| QsmxtError::Config(e.to_string()))?;
+    let weights = qsm_core::models::primary_weight("r2primenet")
+        .map_err(|e| QsmxtError::Config(format!("r2primenet weights: {e}")))?;
+    qsm_core::relaxometry::r2primenet(
+        &r2star.data, mask, &super::common::nifti_grid(r2star), field_strength, &weights,
+        &qsm_core::relaxometry::R2PrimeNetNorm::default(), &params, |_, _| {},
+    ).map_err(|e| QsmxtError::Config(format!("R2PRIMEnet: {e}")))
+}
+
+/// Unreachable in practice: `prefetch_weights` refuses a deep-learning model first on a build
+/// without the `dl` feature.
+#[cfg(not(feature = "dl"))]
+fn run_r2primenet(
+    _r2star: &qsm_core::io::NiftiData, _mask: &[u8], _field_strength: f64,
+    _config: &qsmxt_engine::R2primenetConfig,
+) -> crate::Result<Vec<f64>> {
+    Err(QsmxtError::Config("R2PRIMEnet needs a build with deep-learning support".into()))
 }
 
 #[cfg(test)]
@@ -119,8 +192,9 @@ mod tests {
 
     fn args(c: &Case, r2_coverage: Option<PathBuf>, output_coverage: Option<PathBuf>) -> R2primeArgs {
         R2primeArgs {
-            r2star: c.r2star.clone(), r2: c.r2.clone(), mask: c.mask.clone(),
-            r2_coverage, output: c.out.clone(), output_coverage,
+            r2star: c.r2star.clone(), r2: Some(c.r2.clone()), r2primenet: false, mask: c.mask.clone(),
+            r2_coverage, output: c.out.clone(), output_coverage, field_strength: None,
+            r2primenet_ignore_field_mismatch: false, r2primenet_patch: None,
         }
     }
 

@@ -91,6 +91,11 @@ struct HarperellaArgs {
 pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
     use qsm_core::bgremove as bg;
     use qsm_core::pipeline::BgRemovalAlgorithm as A;
+    // iQFM reads every echo's phase rather than a field, so it does not share the match below.
+    let cmd = match cmd {
+        BgremoveCommand::Iqfm(args) => return super::invert::run_phase_net(&args, super::invert::PhaseNet::Iqfm),
+        other => other,
+    };
     let (common, (local_field_data, field_nifti, eroded_mask)) = match cmd {
         BgremoveCommand::Vsharp(args) => {
             // QSMxT's defaults (qsm-core's), the same as `qsmxt run`'s.
@@ -106,7 +111,7 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
                 min_radius: args.min_radius.unwrap_or(d.min_radius),
                 radius_step: args.radius_step.unwrap_or(d.radius_step),
                 deconvolve: args.deconvolve.unwrap_or(d.deconvolve),
-                ball: bg::VsharpBall::default(),
+                ball: args.ball.map_or(bg::VsharpBall::default(), Into::into),
                 grid: grid_cfg.core_grid(),
             };
             let config = qsm_core::pipeline::BgRemovalConfig { vsharp, ..config_for(A::Vsharp) };
@@ -149,7 +154,7 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             let sharp = bg::SharpParams {
                 threshold: args.threshold.unwrap_or(d.threshold),
                 radius: args.radius.unwrap_or(d.radius),
-                ..d
+                variant: args.variant.map_or(d.variant, Into::into),
             };
             let config = qsm_core::pipeline::BgRemovalConfig { sharp, ..config_for(A::Sharp) };
             let out = remove_with(&args.common, config, None, &[], "SHARP")?;
@@ -174,6 +179,7 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             let out = remove_with(&args.common, config_for(A::Bfrnet), None, &[], "BFRnet")?;
             (args.common, out)
         }
+        BgremoveCommand::Iqfm(_) => unreachable!("handled above"),
         BgremoveCommand::Harperella(args) => {
             let d = bg::HarperellaParams::default();
             let harperella = bg::HarperellaParams {

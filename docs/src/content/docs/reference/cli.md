@@ -1731,6 +1731,7 @@ Background field removal
 | [`harperella`](#qsmxt-bgremove-harperella) | HARPERELLA integrated phase unwrapping + background removal |
 | [`iharperella`](#qsmxt-bgremove-iharperella) | Improved HARPERELLA (iHARPERELLA) |
 | [`bfrnet`](#qsmxt-bgremove-bfrnet) | BFRnet deep-learning background removal (weights downloaded on first use) |
+| [`iqfm`](#qsmxt-bgremove-iqfm) | iQFM deep-learning joint unwrapping and background removal — input is every echo's WRAPPED phase (weights downloaded on first use) |
 
 ### `qsmxt bgremove vsharp`
 
@@ -1754,6 +1755,7 @@ qsmxt bgremove vsharp [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--radius-step <MM>` | Step between SMV kernel radii, in mm (default: 1); the radii run from --max-radius down to --min-radius. |
 | `--grid <GRID>` | Grid the background is estimated on: `isotropic` (default; spacing from --grid-spacing), `native` (the acquired grid), or `finest` (isotropic at the smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened). The local field keeps native resolution. Values: `native`, `finest`, `isotropic`. |
 | `--grid-spacing <MM>` | Isotropic working-grid spacing in mm (default 1); used with --grid isotropic. |
+| `--ball <BALL>` | SMV ball: `default` (the voxels within r + 1/6 mm, centre excluded; a ball fits where all of it is in the mask) or `qsmjl` (QSM.jl's: within r, centre included) Values: `default`, `qsmjl`. |
 
 ### `qsmxt bgremove pdf`
 
@@ -1830,8 +1832,9 @@ qsmxt bgremove sharp [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-o, --output <OUTPUT>` | Output local field NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--output-mask <OUTPUT_MASK>` | Output eroded mask (for algorithms that erode) |
-| `--threshold <THRESHOLD>` | Threshold. |
-| `--radius <RADIUS>` | Radius factor (multiplied by min voxel size) |
+| `--threshold <THRESHOLD>` | Deconvolution (TSVD) threshold (default: 0.03) |
+| `--radius <RADIUS>` | Sphere radius in mm (default: 4) |
+| `--variant <VARIANT>` | Implementation: sepia (SEPIA's SHARP.m, the default) or qsmjl (QSM.jl's `sharp`) Values: `sepia`, `qsmjl`. |
 
 ### `qsmxt bgremove resharp`
 
@@ -1910,6 +1913,26 @@ qsmxt bgremove bfrnet [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--output-mask <OUTPUT_MASK>` | Output eroded mask (for algorithms that erode) |
 
+### `qsmxt bgremove iqfm`
+
+iQFM deep-learning joint unwrapping and background removal — input is every echo's WRAPPED phase (weights downloaded on first use)
+
+```sh
+qsmxt bgremove iqfm [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... <INPUT>
+```
+
+| Argument | Description |
+| --- | --- |
+| `<INPUT>` | Wrapped phase NIfTI file in radians: 4D (x,y,z,echo), or 3D for one echo. Required. |
+| `-m, --mask <MASK>` | Binary brain mask NIfTI file. Required. |
+| `-o, --output <OUTPUT>` | Output NIfTI file in ppm (susceptibility for iqsm/iqsm-plus, the local field for iqfm) Required. |
+| `--magnitude <MAGNITUDE>` | Magnitude NIfTI file with the same echoes as the phase (4D), to weight the echo combination (magnitude × TE²); without it the echoes are weighted by TE² alone. |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
+| `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
+| `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
+
 ## `qsmxt invert`
 
 Dipole inversion
@@ -1945,6 +1968,8 @@ Dipole inversion
 | [`lpcnn`](#qsmxt-invert-lpcnn) | LPCNN deep-learning dipole inversion (weights downloaded on first use) |
 | [`modl-qsm`](#qsmxt-invert-modl-qsm) | MoDL-QSM deep-learning dipole inversion → χ33/STI component (weights downloaded on first use) |
 | [`nextqsm`](#qsmxt-invert-nextqsm) | NeXtQSM single-step reconstruction — input is the TOTAL field (weights downloaded on first use) |
+| [`iqsm`](#qsmxt-invert-iqsm) | iQSM single-step reconstruction — input is every echo's WRAPPED phase (weights downloaded on first use) |
+| [`iqsm-plus`](#qsmxt-invert-iqsm-plus) | iQSM+ orientation-adaptive single-step reconstruction — input is every echo's WRAPPED phase (weights downloaded on first use) |
 | [`cosmos`](#qsmxt-invert-cosmos) | COSMOS — multi-orientation least squares over 2+ co-registered orientations |
 | [`sti`](#qsmxt-invert-sti) | STI (susceptibility tensor imaging) — 6+ co-registered orientations to a rank-2 tensor |
 
@@ -2058,6 +2083,8 @@ qsmxt invert tgv [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIE
 | `--alpha0 <ALPHA0>` | Alpha0 (second-order weight), in radians at the echo time (--te) and the field strength. |
 | `--step-size <STEP_SIZE>` | Primal step size multiplier. |
 | `--te <TE>` | Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
+| `--reference-divergence` | Use QuantitativeSusceptibilityMappingTGV.jl's divergence in the w update rather than the exact adjoint of the symmetric gradient. Changes the result only on anisotropic voxels; with --reference-edge-erosion it reproduces that package, for comparison with it. |
+| `--reference-edge-erosion` | Erode the mask as QuantitativeSusceptibilityMappingTGV.jl does, not from the array's edge. Changes the result only where the mask reaches an array face. |
 
 ### `qsmxt invert tikhonov`
 
@@ -2639,6 +2666,46 @@ qsmxt invert nextqsm [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla (scan metadata) Default: `3`. |
 
+### `qsmxt invert iqsm`
+
+iQSM single-step reconstruction — input is every echo's WRAPPED phase (weights downloaded on first use)
+
+```sh
+qsmxt invert iqsm [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... <INPUT>
+```
+
+| Argument | Description |
+| --- | --- |
+| `<INPUT>` | Wrapped phase NIfTI file in radians: 4D (x,y,z,echo), or 3D for one echo. Required. |
+| `-m, --mask <MASK>` | Binary brain mask NIfTI file. Required. |
+| `-o, --output <OUTPUT>` | Output NIfTI file in ppm (susceptibility for iqsm/iqsm-plus, the local field for iqfm) Required. |
+| `--magnitude <MAGNITUDE>` | Magnitude NIfTI file with the same echoes as the phase (4D), to weight the echo combination (magnitude × TE²); without it the echoes are weighted by TE² alone. |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
+| `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
+| `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
+
+### `qsmxt invert iqsm-plus`
+
+iQSM+ orientation-adaptive single-step reconstruction — input is every echo's WRAPPED phase (weights downloaded on first use)
+
+```sh
+qsmxt invert iqsm-plus [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... <INPUT>
+```
+
+| Argument | Description |
+| --- | --- |
+| `<INPUT>` | Wrapped phase NIfTI file in radians: 4D (x,y,z,echo), or 3D for one echo. Required. |
+| `-m, --mask <MASK>` | Binary brain mask NIfTI file. Required. |
+| `-o, --output <OUTPUT>` | Output NIfTI file in ppm (susceptibility for iqsm/iqsm-plus, the local field for iqfm) Required. |
+| `--magnitude <MAGNITUDE>` | Magnitude NIfTI file with the same echoes as the phase (4D), to weight the echo combination (magnitude × TE²); without it the echoes are weighted by TE² alone. |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
+| `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
+| `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
+
 ### `qsmxt invert cosmos`
 
 COSMOS — multi-orientation least squares over 2+ co-registered orientations
@@ -3014,20 +3081,24 @@ qsmxt r2 [OPTIONS] --mask <MASK> --output <OUTPUT> --echo-times <ECHO_TIMES>... 
 
 ## `qsmxt r2prime`
 
-R2' mapping (R2' = R2\* - R2)
+R2' mapping: measured as R2\* - R2, or estimated from R2\* by R2PRIMEnet
 
 ```sh
-qsmxt r2prime [OPTIONS] --r2star <R2STAR> --r2 <R2> --mask <MASK> --output <OUTPUT>
+qsmxt r2prime [OPTIONS] --r2star <R2STAR> --mask <MASK> --output <OUTPUT>
 ```
 
 | Argument | Description |
 | --- | --- |
 | `--r2star <R2STAR>` | R2\* map NIfTI in Hz. Required. |
-| `--r2 <R2>` | R2 map NIfTI in Hz. Required. |
+| `--r2 <R2>` | R2 map NIfTI in Hz: R2' is measured, as R2\* - R2. |
+| `--r2primenet` | Estimate R2' from the R2\* map with R2PRIMEnet (deep learning, trained at 3 T; weights downloaded on first use) instead of measuring it from an R2 map. Needs --field-strength. |
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `--r2-coverage <R2_COVERAGE>` | Binary mask of where the R2 acquisition reached, if it does not cover the whole mask (a MESE slab). Without it, coverage is inferred from R2 &gt; 0. |
 | `-o, --output <OUTPUT>` | Output R2' map NIfTI file. Required. |
 | `--output-coverage <OUTPUT_COVERAGE>` | Also write the mask of voxels where R2' is a measurement. |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla (--r2primenet: R2PRIMEnet refuses a field strength other than 3 T unless --r2primenet-ignore-field-mismatch is given) |
+| `--r2primenet-ignore-field-mismatch` | Run R2PRIMEnet even when the acquisition is not at 3 T, the only field strength its weights were trained at. The R2' is then uncalibrated. |
+| `--r2primenet-patch <D> <H> <W>` | R2PRIMEnet sliding-window patch in voxels, D H W, each a multiple of 16 (default: 192 192 128) |
 
 ## `qsmxt homogeneity`
 

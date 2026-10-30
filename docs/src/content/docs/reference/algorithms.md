@@ -268,6 +268,9 @@ boundary leaves small non-zero values just outside the acquired slices, and
 nothing in the map distinguishes them from tissue. Pass `--r2-coverage` with a
 mask of where the acquisition actually reached, and `--output-coverage` to write
 out which voxels ended up measured.
+`qsmxt r2prime --r2primenet --field-strength <T>` is the standalone R2PRIMEnet
+prediction from an R2\* map, under the same field-strength rule as
+`--r2prime-strategy r2primenet`.
 
 R2PRIMEnet, which predicts R2′ from R2* when there is no R2 to subtract, is
 **trained at 3 T only**. R2* scales with field strength and the network takes
@@ -780,7 +783,8 @@ Deep-learning support requires a build with the default `dl` feature. `iqsm`
 and `iqsm-plus` reconstruct susceptibility directly from the wrapped phase, so
 they replace unwrapping, echo combination, background removal and inversion.
 `autoqsm` and `nextqsm` take the total field, so they replace background removal
-and inversion.
+and inversion. Standalone, they are `qsmxt invert iqsm` and `qsmxt invert iqsm-plus`,
+and iQFM is `qsmxt bgremove iqfm`, each reading the 4D wrapped phase.
 
 :::tip
 Not sure which to pick? The defaults (`threshold` → `romeo` → `vsharp` → `ilsqr`)
