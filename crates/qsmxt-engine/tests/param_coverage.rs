@@ -82,7 +82,8 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     cover!(q::inversion::WhQsmParams => c::WhqsmConfig, ignore: ["b0", "echo_times"]);
     cover!(q::inversion::HdQsmParams => c::HdqsmConfig);
     cover!(q::inversion::NdiParams => c::NdiConfig, ignore: ["b0", "echo_times"]);
-    cover!(q::inversion::IlsqrParams => c::IlsqrConfig);
+    // `precision` (astewartau/QSM.rs#372) becomes a setting in QSMxT#464.
+    cover!(q::inversion::IlsqrParams => c::IlsqrConfig, ignore: ["precision"]);
     cover!(q::swi::SmwiParams => c::SmwiConfig);
     // `inference` (FullVolume | SlidingWindow { patch, tile_step }) is `patch` here: None is the
     // whole volume, Some(p) a window of p at qsm-core's low-memory step (half a patch), which

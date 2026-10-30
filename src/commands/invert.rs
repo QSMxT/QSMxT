@@ -303,6 +303,7 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 tol: args.tol.unwrap_or(d.tol),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 pad_mm: args.pad_mm.unwrap_or(d.pad_mm),
+                ..d
             };
             ilsqr.validate().map_err(|e| QsmxtError::Config(format!("--pad-mm: {e}")))?;
             let config = qsm_core::pipeline::InversionConfig { ilsqr, ..config_for(A::Ilsqr) };

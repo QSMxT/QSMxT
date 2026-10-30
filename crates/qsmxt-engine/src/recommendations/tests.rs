@@ -234,6 +234,8 @@ fn reference_findings_are_information_only() {
     let mut c = PipelineConfig::default();
     c.inversion.algorithm = QsmAlgorithm::Rts;
     c.bg_removal.algorithm = BfAlgorithm::Pdf;
+    // At the suggested iteration count, so the only finding left is the reference difference.
+    c.bg_removal.pdf.n_cg = 300;
     let found = recommendations(&c, &Facts::default());
     let r = found.iter().find(|r| r.rule == "rts.bg-vsharp").unwrap();
     assert!(r.strength == Strength::Reference && !r.actionable());
@@ -299,6 +301,7 @@ fn a_reference_difference_has_no_dismissal() {
     let mut c = PipelineConfig::default();
     c.inversion.algorithm = QsmAlgorithm::Rts;
     c.bg_removal.algorithm = BfAlgorithm::Pdf;
+    c.bg_removal.pdf.n_cg = 300; // no pdf.cg-iterations suggestion to keep
     assert!(is_reference_rule("rts.bg-vsharp") && !is_reference_rule("medi-msmv.prefilter"));
     assert_eq!(dismiss(&mut c, "rts.bg-vsharp", &facts),
                Err("rts.bg-vsharp is a reference-pipeline note, not a recommendation; there is nothing to dismiss".into()));

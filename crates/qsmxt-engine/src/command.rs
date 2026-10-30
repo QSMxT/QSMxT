@@ -1211,11 +1211,11 @@ mod tests {
         let cmd = generate_command(&c);
         assert!(cmd.contains("--rts-tau 0.5") && cmd.contains("--rts-gamma 2"), "{cmd}");
         c.bg_removal.algorithm = BfAlgorithm::Pdf;
-        c.bg_removal.pdf.n_cg = 30;
+        c.bg_removal.pdf.n_cg = 300;
         c.bg_removal.pdf.space = PdfSpace::Kspace;
         c.bg_removal.pdf.n_pad = 0;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--pdf-n-cg 30") && cmd.contains("--pdf-space kspace") && cmd.contains("--pdf-n-pad 0"), "{cmd}");
+        assert!(cmd.contains("--pdf-n-cg 300") && cmd.contains("--pdf-space kspace") && cmd.contains("--pdf-n-pad 0"), "{cmd}");
         for (alg, flag) in [(BfAlgorithm::Harperella, "--harperella-pad"), (BfAlgorithm::Iharperella, "--iharperella-pad")] {
             let mut c = PipelineConfig::default();
             c.bg_removal.algorithm = alg;

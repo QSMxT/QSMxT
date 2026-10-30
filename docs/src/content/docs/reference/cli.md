@@ -314,7 +314,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--vsharp-grid <VSHARP_GRID>` | Grid V-SHARP estimates the background on: `isotropic` (default; spacing from --vsharp-grid-spacing), `native` (the acquired grid), or `finest` (isotropic at the smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened). The local field keeps native resolution. Values: `native`, `finest`, `isotropic`. |
 | `--vsharp-grid-spacing <MM>` | V-SHARP isotropic working-grid spacing in mm (default 1); used with --vsharp-grid isotropic. |
 | `--pdf-tol <PDF_TOL>` | PDF tolerance, relative to the noise level. |
-| `--pdf-n-cg <PDF_N_CG>` | PDF maximum conjugate-gradient iterations (default: 300) |
+| `--pdf-n-cg <PDF_N_CG>` | PDF maximum conjugate-gradient iterations (default: 30) |
 | `--pdf-space <SPACE>` | PDF dipole kernel: image (the FFT of the dipole sampled on the voxel grid) or kspace (the analytic k-space kernel) (default: image) |
 | `--pdf-n-pad <VOXELS>` | PDF zero-padding around the mask's bounding box, in voxels; 0 runs on the full volume (default: 40) |
 | `--lbv-tol <LBV_TOL>` | LBV tolerance. |
@@ -764,7 +764,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--vsharp-grid <VSHARP_GRID>` | Grid V-SHARP estimates the background on: `isotropic` (default; spacing from --vsharp-grid-spacing), `native` (the acquired grid), or `finest` (isotropic at the smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened). The local field keeps native resolution. Values: `native`, `finest`, `isotropic`. |
 | `--vsharp-grid-spacing <MM>` | V-SHARP isotropic working-grid spacing in mm (default 1); used with --vsharp-grid isotropic. |
 | `--pdf-tol <PDF_TOL>` | PDF tolerance, relative to the noise level. |
-| `--pdf-n-cg <PDF_N_CG>` | PDF maximum conjugate-gradient iterations (default: 300) |
+| `--pdf-n-cg <PDF_N_CG>` | PDF maximum conjugate-gradient iterations (default: 30) |
 | `--pdf-space <SPACE>` | PDF dipole kernel: image (the FFT of the dipole sampled on the voxel grid) or kspace (the analytic k-space kernel) (default: image) |
 | `--pdf-n-pad <VOXELS>` | PDF zero-padding around the mask's bounding box, in voxels; 0 runs on the full volume (default: 40) |
 | `--lbv-tol <LBV_TOL>` | LBV tolerance. |
@@ -1151,7 +1151,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--vsharp-grid <VSHARP_GRID>` | Grid V-SHARP estimates the background on: `isotropic` (default; spacing from --vsharp-grid-spacing), `native` (the acquired grid), or `finest` (isotropic at the smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened). The local field keeps native resolution. Values: `native`, `finest`, `isotropic`. |
 | `--vsharp-grid-spacing <MM>` | V-SHARP isotropic working-grid spacing in mm (default 1); used with --vsharp-grid isotropic. |
 | `--pdf-tol <PDF_TOL>` | PDF tolerance, relative to the noise level. |
-| `--pdf-n-cg <PDF_N_CG>` | PDF maximum conjugate-gradient iterations (default: 300) |
+| `--pdf-n-cg <PDF_N_CG>` | PDF maximum conjugate-gradient iterations (default: 30) |
 | `--pdf-space <SPACE>` | PDF dipole kernel: image (the FFT of the dipole sampled on the voxel grid) or kspace (the analytic k-space kernel) (default: image) |
 | `--pdf-n-pad <VOXELS>` | PDF zero-padding around the mask's bounding box, in voxels; 0 runs on the full volume (default: 40) |
 | `--lbv-tol <LBV_TOL>` | LBV tolerance. |
@@ -1776,7 +1776,7 @@ qsmxt bgremove pdf [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <F
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
 | `--magnitude <MAGNITUDE>` | Magnitude of every echo: one 4D NIfTI, or one 3D NIfTI per echo in echo order. Required. |
 | `--tol <TOL>` | Tolerance, relative to the noise level. |
-| `--n-cg <N_CG>` | Maximum conjugate-gradient iterations (default: 300) |
+| `--n-cg <N_CG>` | Maximum conjugate-gradient iterations (default: 30) |
 | `--space <SPACE>` | Dipole kernel: image (the FFT of the dipole sampled on the voxel grid) or kspace (the analytic k-space kernel) (default: image) |
 | `--n-pad <VOXELS>` | Zero-padding around the mask's bounding box, in voxels; 0 runs on the full volume (default: 40) |
 

@@ -1058,7 +1058,7 @@ pub struct PdfParamArgs {
     /// PDF tolerance, relative to the noise level
     #[arg(long)]
     pub pdf_tol: Option<f64>,
-    /// PDF maximum conjugate-gradient iterations (default: 300)
+    /// PDF maximum conjugate-gradient iterations (default: 30)
     #[arg(long)]
     pub pdf_n_cg: Option<usize>,
     /// PDF dipole kernel: image (the FFT of the dipole sampled on the voxel grid) or kspace (the
@@ -2607,7 +2607,7 @@ pub struct BgremovePdfArgs {
     /// Tolerance, relative to the noise level
     #[arg(long)]
     pub tol: Option<f64>,
-    /// Maximum conjugate-gradient iterations (default: 300)
+    /// Maximum conjugate-gradient iterations (default: 30)
     #[arg(long)]
     pub n_cg: Option<usize>,
     /// Dipole kernel: image (the FFT of the dipole sampled on the voxel grid) or kspace (the

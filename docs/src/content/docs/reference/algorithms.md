@@ -571,11 +571,13 @@ multi-echo data) and the wrapped-phase ones (`iqsm`,
 
 PDF weights its fit by a noise map made from every echo's magnitude (MEDI toolbox
 `Fit_ppm_complex`), so it needs the magnitude of every echo and evenly spaced echoes.
-It runs at most `--pdf-n-cg` conjugate-gradient iterations (default 300), on the mask's
+It runs at most `--pdf-n-cg` conjugate-gradient iterations (default 30), on the mask's
 bounding box zero-padded by
 `--pdf-n-pad` voxels (default 40; 0 runs on the full volume, and 1 is refused). `--pdf-space`
 picks the dipole kernel: `image` (the FFT of the dipole sampled on the voxel grid, the
-default) or `kspace` (the analytic k-space kernel).
+default) or `kspace` (the analytic k-space kernel). With PDF chosen, QSMxT recommends 300
+iterations (rule `pdf.cg-iterations`): 30 can stop far from convergence, and 300 costs about
+30 s more per 1 mm whole-brain scan.
 
 HARPERELLA and iHARPERELLA zero-pad the field by `--harperella-pad` / `--iharperella-pad`
 voxels per side, X Y Z (STI Suite's `padsize`, default `0 0 0`).
