@@ -1658,6 +1658,8 @@ qsmxt fieldmap romeo [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--robust-fit-flag-ratio <ROBUST_FIT_FLAG_RATIO>` | Motion-robust fit (reporting only): flag an echo whose outlier score exceeds this many times the best echo's (default 3; at least 1) |
 | `--complex-fit-reltol <COMPLEX_FIT_RELTOL>` | Complex fit (`--b0-estimation complex-fit`): stop once the update is this fraction of the first estimate, over the whole volume (default 1e-4) |
 | `--complex-fit-max-iter <COMPLEX_FIT_MAX_ITER>` | Complex fit: Gauss-Newton iterations at most (default 30) |
+| `--complex-fit-output <FILE>` | `--b0-estimation complex-fit`: also save the fit itself here, before spatial unwrapping: the phase accrued per echo spacing (radians, wrapped to [-π, π]; MEDI's `iFreq_raw`) |
+| `--complex-fit-noise-output <FILE>` | `--b0-estimation complex-fit`: also save the fit's noise map here: the standard deviation of the phase per echo spacing, in radians (MEDI's `N_std`) |
 | `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
 | `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
@@ -1712,6 +1714,8 @@ qsmxt fieldmap laplacian [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--robust-fit-flag-ratio <ROBUST_FIT_FLAG_RATIO>` | Motion-robust fit (reporting only): flag an echo whose outlier score exceeds this many times the best echo's (default 3; at least 1) |
 | `--complex-fit-reltol <COMPLEX_FIT_RELTOL>` | Complex fit (`--b0-estimation complex-fit`): stop once the update is this fraction of the first estimate, over the whole volume (default 1e-4) |
 | `--complex-fit-max-iter <COMPLEX_FIT_MAX_ITER>` | Complex fit: Gauss-Newton iterations at most (default 30) |
+| `--complex-fit-output <FILE>` | `--b0-estimation complex-fit`: also save the fit itself here, before spatial unwrapping: the phase accrued per echo spacing (radians, wrapped to [-π, π]; MEDI's `iFreq_raw`) |
+| `--complex-fit-noise-output <FILE>` | `--b0-estimation complex-fit`: also save the fit's noise map here: the standard deviation of the phase per echo spacing, in radians (MEDI's `N_std`) |
 | `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver: `dct` (unweighted least squares, Neumann/DCT solve) or `fft` (Schofield & Zhu, FFT solve on a zero-padded volume) Values: `dct`, `fft`, `mirror`. Default: `dct`. |
 | `--laplacian-fft-pad <VOXELS>` | Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or three (x y z) Default: `64`. |
 | `--laplacian-unmasked` | Unwrap the raw phase over the whole volume, instead of the phase set to zero outside the mask, as QSMART does. With `--b0-estimation qsmart-echofit` the fit then covers the whole volume (the saved field map is still set to zero outside the mask) |

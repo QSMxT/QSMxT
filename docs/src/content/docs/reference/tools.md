@@ -90,6 +90,12 @@ Turn multi-echo wrapped phase into one B0 field map in ppm, as the pipeline's
 field-mapping stage does: `romeo` (phase-offset removal, ROMEO unwrapping and the
 B0 fit) or `laplacian` (per-echo Laplacian unwrapping, then echo combination).
 
+With `--b0-estimation complex-fit` (MEDI's fit of the complex echoes, which needs
+`--magnitude` and evenly spaced echoes), `--complex-fit-output` also saves the fit
+before spatial unwrapping, the phase accrued per echo spacing (radians, wrapped), and
+`--complex-fit-noise-output` its noise map, the standard deviation of that phase
+(radians per echo spacing). MEDI calls these `iFreq_raw` and `N_std`.
+
 ## Background field removal — `qsmxt bgremove`
 
 Remove background fields from an unwrapped total field map in ppm:
