@@ -380,7 +380,6 @@ const SETTINGS: &[(&str, &str, Kind)] = &[
     ("inversion.star.pad", "inversion.star.pad", Kind::Same),
     ("inversion.ilsqr.max_iter", "inversion.ilsqr.max_iter", Kind::Same),
     ("inversion.ilsqr.pad_mm", "inversion.ilsqr.pad_mm", Kind::Same),
-    ("inversion.ilsqr.precision", "inversion.ilsqr.precision", Kind::Same),
     ("inversion.whqsm.weight", "inversion.whqsm.weight", Kind::Same),
     ("inversion.star.te", "inversion.star.te", Kind::Same),
     ("inversion.fansi.te", "inversion.fansi.te", Kind::Same),

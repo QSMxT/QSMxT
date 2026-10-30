@@ -161,6 +161,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve. |
 | `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve (default: 100) |
 | `--ilsqr-pad-mm <MM>` | iLSQR zero-padding in mm per side. |
+| `--ilsqr-precision <PRECISION>` | iLSQR arithmetic of the two LSQR solves: double, or single as the original implementation (default: double) |
 | `--star-pad <X> <Y> <Z>` | STAR-QSM zero-padding in voxels per side, X Y Z (default: 8 8 20) |
 | `--star-te <TE>` | Echo time STAR-QSM converts the field to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: sum) |
 | `--lsqr-residual-weighting <LSQR_RESIDUAL_WEIGHTING>` | LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly. |
@@ -611,6 +612,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve. |
 | `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve (default: 100) |
 | `--ilsqr-pad-mm <MM>` | iLSQR zero-padding in mm per side. |
+| `--ilsqr-precision <PRECISION>` | iLSQR arithmetic of the two LSQR solves: double, or single as the original implementation (default: double) |
 | `--star-pad <X> <Y> <Z>` | STAR-QSM zero-padding in voxels per side, X Y Z (default: 8 8 20) |
 | `--star-te <TE>` | Echo time STAR-QSM converts the field to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: sum) |
 | `--lsqr-residual-weighting <LSQR_RESIDUAL_WEIGHTING>` | LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly. |
@@ -998,6 +1000,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve. |
 | `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve (default: 100) |
 | `--ilsqr-pad-mm <MM>` | iLSQR zero-padding in mm per side. |
+| `--ilsqr-precision <PRECISION>` | iLSQR arithmetic of the two LSQR solves: double, or single as the original implementation (default: double) |
 | `--star-pad <X> <Y> <Z>` | STAR-QSM zero-padding in voxels per side, X Y Z (default: 8 8 20) |
 | `--star-te <TE>` | Echo time STAR-QSM converts the field to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: sum) |
 | `--lsqr-residual-weighting <LSQR_RESIDUAL_WEIGHTING>` | LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly. |
@@ -2225,6 +2228,7 @@ qsmxt invert ilsqr [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--tol <TOL>` | Tolerance. |
 | `--max-iter <MAX_ITER>` | Max iterations of each LSQR solve (default: 100) |
 | `--pad-mm <MM>` | Zero-padding in mm per side. |
+| `--precision <PRECISION>` | Arithmetic of the two LSQR solves: double, or single as the original implementation (default: double) |
 
 ### `qsmxt invert star`
 

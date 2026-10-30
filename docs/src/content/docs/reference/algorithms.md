@@ -366,6 +366,15 @@ the padded grid. Larger padding costs time and memory roughly in proportion to
 the padded grid. Too little padding lets a thin slab or small field of view wrap
 onto itself.
 
+### `--ilsqr-precision`
+
+`double` (the default) runs iLSQR's two LSQR solves in double precision.
+`single` runs them in single precision, as the original implementation does,
+and reproduces its output to within the original's own run-to-run differences
+between computers. It is slower and uses more memory. The solves stop after a
+fixed number of iterations, which amplifies rounding, so the two settings
+differ by about 0.1–2 % NRMSE.
+
 ## Coil combination
 
 Runs whose phase is stored per receive coil (`coil-<NN>` entity, see

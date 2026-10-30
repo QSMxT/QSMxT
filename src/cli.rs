@@ -788,7 +788,7 @@ pub struct IlsqrParamArgs {
     /// iLSQR zero-padding in mm per side
     #[arg(long, value_name = "MM")]
     pub ilsqr_pad_mm: Option<f64>,
-    /// iLSQR arithmetic of the two LSQR solves: double, or single as STI Suite computes them
+    /// iLSQR arithmetic of the two LSQR solves: double, or single as the original implementation
     /// (default: double)
     #[arg(long, value_name = "PRECISION", value_parser = parse_ilsqr_precision)]
     pub ilsqr_precision: Option<qsmxt_engine::IlsqrPrecision>,
@@ -3305,7 +3305,7 @@ pub struct InvertIlsqrArgs {
     /// Zero-padding in mm per side
     #[arg(long, value_name = "MM")]
     pub pad_mm: Option<f64>,
-    /// Arithmetic of the two LSQR solves: double, or single as STI Suite computes them
+    /// Arithmetic of the two LSQR solves: double, or single as the original implementation
     /// (default: double)
     #[arg(long, value_name = "PRECISION", value_parser = parse_ilsqr_precision)]
     pub precision: Option<qsmxt_engine::IlsqrPrecision>,

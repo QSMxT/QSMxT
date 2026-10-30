@@ -616,7 +616,7 @@ pub(super) fn table() -> Vec<Def> {
         .gui("Zero-padding per side. Larger costs time and memory"),
         d("inversion.ilsqr.precision", Inversion, "Precision", "", Enum(vec![
             o("double", "double", "Double", "Double precision (default)"),
-            o("single", "single", "Single", "Single precision, as STI Suite computes the solves; slower and uses more memory"),
+            o("single", "single", "Single", "Single precision, as the original implementation computes the solves; slower and uses more memory"),
         ])).flag("--ilsqr-precision").parent("inversion.algorithm")
         .when(|x| x.inv("ilsqr"))
         .gui("Arithmetic of the two least-squares solves"),

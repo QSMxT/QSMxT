@@ -2782,7 +2782,7 @@ fn whqsm_weight_index(w: qsmxt_engine::WhqsmWeight) -> usize {
 pub const ILSQR_PRECISION_OPTIONS: &[&str] = &["double", "single"];
 const ILSQR_PRECISION_HELP: &[&str] = &[
     "Double precision (default)",
-    "Single precision, as STI Suite computes the solves; slower and uses more memory",
+    "Single precision, as the original implementation computes the solves; slower and uses more memory",
 ];
 fn ilsqr_precision_index(p: qsmxt_engine::IlsqrPrecision) -> usize {
     qsmxt_engine::IlsqrPrecision::ALL.iter().position(|&x| x == p).unwrap_or(0)
