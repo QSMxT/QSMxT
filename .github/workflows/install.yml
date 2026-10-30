@@ -60,10 +60,10 @@ jobs:
       - name: Refuses a tampered archive, a missing entry and a missing manifest; installs a verified one
         shell: bash
         run: |
-          (cd mirror && exec python3 -m http.server 8765 >/dev/null 2>&1) &
+          (cd mirror && exec python3 -m http.server 8765 --bind 127.0.0.1) &
           SERVER=$!
           trap 'kill $SERVER' EXIT
-          sleep 2
+          for i in $(seq 30); do curl -sf -o /dev/null http://127.0.0.1:8765/ && break; sleep 1; done
           for m in tampered noentry nosums; do
             if INSTALL_DIR="$RUNNER_TEMP/bin-$m" QSMXT_VERSION="$TAG" \
                  QSMXT_DOWNLOAD_URL="http://127.0.0.1:8765/$m" sh install.sh; then
@@ -80,11 +80,12 @@ jobs:
       - name: Installs to ~/.local/bin without sudo, adds it to PATH once, upgrades in place, uninstalls
         shell: bash
         run: |
-          (cd mirror && exec python3 -m http.server 8765 >/dev/null 2>&1) &
+          # Its own port: the previous step's server may still hold 8765 on macOS.
+          (cd mirror && exec python3 -m http.server 8766 --bind 127.0.0.1) &
           SERVER=$!
           trap 'kill $SERVER' EXIT
-          sleep 2
-          export QSMXT_VERSION="$TAG" QSMXT_DOWNLOAD_URL="http://127.0.0.1:8765/good"
+          for i in $(seq 30); do curl -sf -o /dev/null http://127.0.0.1:8766/ && break; sleep 1; done
+          export QSMXT_VERSION="$TAG" QSMXT_DOWNLOAD_URL="http://127.0.0.1:8766/good"
           clean() { env -i HOME="$1" SHELL=/bin/zsh PATH=/usr/bin:/bin \
                       QSMXT_VERSION="$QSMXT_VERSION" QSMXT_DOWNLOAD_URL="$QSMXT_DOWNLOAD_URL" "${@:2}"; }
           fail() { echo "::error::$*"; exit 1; }
