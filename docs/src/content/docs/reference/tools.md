@@ -58,6 +58,11 @@ qsmxt mask and bet.nii phase.nii -o brain.nii --op fill-holes:0 --op erode:1
 qsmxt mask preset bet-and-phase mag_e1.nii --quality quality.nii -o brain.nii
 ```
 
+The subcommands that make a mask from an image (`otsu` to `robust`) take a 3D
+image, or a 4D multi-echo magnitude, whose echoes they combine by
+root-sum-of-squares first, as `qsmxt run` does for a `magnitude` mask section. The
+subcommands that take masks refuse a 4D file.
+
 `preset` reads its input image for every section; sections that read phase
 quality use `--quality` when given, and the input image otherwise, as
 `run --masking-input` would. `--op signal-erode` needs a magnitude image: for
@@ -105,8 +110,11 @@ Remove background fields from an unwrapped total field map in ppm:
 | `harperella` | HARPERELLA, joint unwrapping and background removal |
 | `iharperella` | Improved HARPERELLA |
 | `bfrnet` | BFRnet deep-learning background removal (weights downloaded on first use) |
+| `iqfm` | iQFM deep-learning joint unwrapping and background removal, from wrapped phase (weights downloaded on first use) |
 
-iQFM, the pipeline's `--bf-algorithm iqfm`, has no standalone command.
+`qsmxt bgremove iqfm` reads every echo's **wrapped phase** (one 4D file) instead of a
+field, with `--echo-times`, `--field-strength` and, to weight the echoes, the
+magnitude (`--magnitude`, 4D), and writes the local field in ppm.
 
 `qsmxt bgremove harperella` and `iharperella` read one wrapped echo in rad when
 given `--te` and `--field-strength`, or an unwrapped total field in ppm without them
@@ -120,6 +128,11 @@ map made from them.
 `qsmxt run`), `--threshold` (used only with deconvolution),
 `--max-radius`/`--min-radius`/`--radius-step` in mm, and `--grid <isotropic|native|finest>` with
 `--grid-spacing` in mm (the working grid, as `qsmxt run`'s `--vsharp-grid`).
+
+`qsmxt bgremove sharp --variant qsmjl` runs QSM.jl's SHARP (at QSM.jl's defaults, 18 × the smallest
+voxel dimension and 0.05, unless `--radius`/`--threshold` say otherwise), and `qsmxt bgremove vsharp
+--ball qsmjl` QSM.jl's SMV ball, for comparison with that implementation; `qsmxt run`
+always runs the defaults.
 
 ## Dipole inversion — `qsmxt invert`
 
@@ -149,6 +162,7 @@ take the local field, and `tfi`, `autoqsm` and `nextqsm` the **total** field:
 | `amp-pe` | Approximate Message Passing with Parameter Estimation |
 | `xqsm`, `qsmnet`, `qsmnet-plus`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm` | Deep-learning dipole inversions (weights downloaded on first use) |
 | `autoqsm`, `nextqsm` | Deep-learning single-step reconstructions from the total field |
+| `iqsm`, `iqsm-plus` | Deep-learning single-step reconstructions from wrapped phase (iQSM, and the orientation-adaptive iQSM+) |
 | `cosmos` | COSMOS — multi-orientation least squares (2+ orientations) |
 | `sti` | Susceptibility tensor imaging (6+ orientations) |
 
@@ -156,8 +170,10 @@ QSMART is its own command, `qsmxt qsmart`, since it takes the total field and
 runs its own two-stage reconstruction. To prepare its inputs as QSMART's authors do, map
 the field with `qsmxt fieldmap laplacian --laplacian-solver mirror --laplacian-unmasked
 --b0-estimation qsmart-echofit --reliability-output r0.nii`, then pass
-`--reliability r0.nii` and every echo's magnitude (4D) as `--magnitude`. iQSM and iQSM+, which reconstruct from
-wrapped phase, are pipeline-only (`run --qsm-algorithm iqsm`).
+`--reliability r0.nii` and every echo's magnitude (4D) as `--magnitude`. `iqsm` and
+`iqsm-plus` read every echo's wrapped phase (one 4D file) instead of a field, with
+`--echo-times`, `--field-strength`, `--b0-direction` (an input of iQSM+'s network) and,
+to weight the echoes, the magnitude (`--magnitude`, 4D).
 
 Each subcommand runs its method as `qsmxt run` does, through QSM.rs's pipeline: the
 field goes in in ppm, and the methods that work in radians (`ndi`, `nltv`, `fansi`,
@@ -166,6 +182,11 @@ with `--field-strength` and `--echo-times` (every echo's). `ndi`, `nltv`, `fansi
 `fansi-tgv` and `l1qsm` need `--magnitude` as their data weight; `medi` and `tfi`
 need the magnitude of every echo (one 4D file or one file per echo). MEDI-mSMV is
 `qsmxt invert medi --msmv`.
+
+`qsmxt invert tgv --reference-divergence --reference-edge-erosion` reproduces
+QuantitativeSusceptibilityMappingTGV.jl's divergence and mask erosion, for comparison
+with that package; `qsmxt run` always uses the exact adjoint and erodes from the
+array's edge too.
 
 ```sh
 # e.g. inspect the parameters of a method
@@ -201,7 +222,7 @@ Split a susceptibility map into paramagnetic and diamagnetic sources, writing
 | `r2star` | R2\* map from multi-echo magnitude |
 | `t2star` | T2\* map from multi-echo magnitude |
 | `r2` | R2 map from multi-echo spin-echo (MESE) magnitude (EPG fit) |
-| `r2prime` | R2' map from an R2\* and an R2 map, over the region R2 covers |
+| `r2prime` | R2' map from an R2\* and an R2 map, over the region R2 covers; or, with `--r2primenet`, estimated from the R2\* map alone by R2PRIMEnet |
 | `segment` | SynthSeg whole-brain segmentation of a magnitude image (`_dseg.nii` and its `.tsv` lookup) |
 | `quality-map` | ROMEO phase-quality map |
 
@@ -215,6 +236,15 @@ non-zero values just past its field of view, so say where it reached:
 ```sh
 qsmxt r2prime --r2star r2star.nii --r2 r2.nii -m mask.nii -o r2prime.nii \
   --r2-coverage mese_fov.nii --output-coverage r2prime_coverage.nii
+```
+
+Without an R2 map, `--r2primenet` estimates R2' from R2\* with R2PRIMEnet, as
+`qsmxt run --r2prime-strategy r2primenet` does. It needs `--field-strength`: the
+network is trained at 3 T and refuses another field strength unless
+`--r2primenet-ignore-field-mismatch` is given. An estimate is not a measurement.
+
+```sh
+qsmxt r2prime --r2star r2star.nii --r2primenet --field-strength 3 -m mask.nii -o r2prime.nii
 ```
 
 ## Image utilities
