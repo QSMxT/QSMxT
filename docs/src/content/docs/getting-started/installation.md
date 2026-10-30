@@ -20,14 +20,34 @@ curl -fsSL https://raw.githubusercontent.com/QSMxT/QSMxT/main/install.sh | sh
 irm https://raw.githubusercontent.com/QSMxT/QSMxT/main/install.ps1 | iex
 ```
 
-The installer places the `qsmxt` binary on your `PATH` and installs a pinned copy
+The installer needs no administrator rights. It installs `qsmxt` to
+`~/.local/bin` (or `/usr/local/bin` when run as root), adds that directory to your
+`PATH` in your shell's startup file if it isn't already there, and installs a pinned copy
 of [`dcm2niix`](https://github.com/rordenlab/dcm2niix) (used for DICOM → BIDS
-conversion) into `~/.qsmxt/bin`. Before extracting anything it checks the
+conversion) into `~/.qsmxt/bin`. If you already have a `qsmxt` on your `PATH` that
+you can write to, the installer upgrades that copy where it is. Before extracting anything it checks the
 archive against the release's `SHA256SUMS` file and stops if the file is
 missing, has no entry for the archive, or gives a different checksum.
 
 To install a specific release rather than the latest, set `QSMXT_VERSION`
 (for example `QSMXT_VERSION=v9.23.0`) before running the installer.
+
+To install somewhere else, set `INSTALL_DIR`. A directory you can't write to, such
+as `/usr/local/bin` for a system-wide install, makes the installer use `sudo`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/QSMxT/QSMxT/main/install.sh | INSTALL_DIR=/usr/local/bin sh
+```
+
+Set `QSMXT_NO_MODIFY_PATH=1` to leave your shell startup files alone; the installer
+then prints the line to add yourself.
+
+### HPC clusters and shared machines
+
+The default install works without `sudo`, so on a cluster you install `qsmxt` into
+your home directory with the same one-line command. A home directory shared with the
+compute nodes makes `qsmxt` available in your jobs as well, and `qsmxt update` keeps
+it current with no administrator involved.
 
 :::note
 Prebuilt `dcm2niix` is bundled for **x86_64 Linux, macOS, and x86_64 Windows**.
