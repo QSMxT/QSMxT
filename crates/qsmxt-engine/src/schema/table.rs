@@ -614,6 +614,12 @@ pub(super) fn table() -> Vec<Def> {
         d("inversion.ilsqr.pad_mm", Inversion, "Pad (mm)", "Zero-padding per side, mm. Larger costs time and memory", Float).min(0.0).units("mm").flag("--ilsqr-pad-mm").parent("inversion.algorithm")
         .when(|x| x.inv("ilsqr")).full("Padding")
         .gui("Zero-padding per side. Larger costs time and memory"),
+        d("inversion.ilsqr.precision", Inversion, "Precision", "", Enum(vec![
+            o("double", "double", "Double", "Double precision (default)"),
+            o("single", "single", "Single", "Single precision, as STI Suite computes the solves; slower and uses more memory"),
+        ])).flag("--ilsqr-precision").parent("inversion.algorithm")
+        .when(|x| x.inv("ilsqr"))
+        .gui("Arithmetic of the two least-squares solves"),
         d("inversion.star.pad", Inversion, "Pad (voxels)", "Zero-padding per side, voxels (x y z). Larger costs time and memory (default 8 8 20)", IntVec3).units("voxels").flag("--star-pad").parent("inversion.algorithm")
         .when(|x| x.inv("star")).full("Padding")
         .gui("Zero-padding per side (x y z). Larger costs time and memory"),

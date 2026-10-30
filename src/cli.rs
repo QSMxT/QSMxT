@@ -788,6 +788,10 @@ pub struct IlsqrParamArgs {
     /// iLSQR zero-padding in mm per side
     #[arg(long, value_name = "MM")]
     pub ilsqr_pad_mm: Option<f64>,
+    /// iLSQR arithmetic of the two LSQR solves: double, or single as STI Suite computes them
+    /// (default: double)
+    #[arg(long, value_name = "PRECISION", value_parser = parse_ilsqr_precision)]
+    pub ilsqr_precision: Option<qsmxt_engine::IlsqrPrecision>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -831,6 +835,12 @@ pub fn parse_or_auto(s: &str) -> Result<OrAuto, String> {
 /// DECOMPOSE's χ bound: `echo-spacing`, or a bound in ppm.
 pub fn parse_chi_bound(s: &str) -> Result<qsmxt_engine::ChiBoundChoice, String> {
     qsmxt_engine::ChiBoundChoice::parse(s)
+}
+
+/// iLSQR's arithmetic: `double` or `single`.
+pub fn parse_ilsqr_precision(s: &str) -> Result<qsmxt_engine::IlsqrPrecision, String> {
+    qsmxt_engine::IlsqrPrecision::ALL.into_iter().find(|p| p.as_str() == s.trim())
+        .ok_or_else(|| format!("expected double or single, got '{s}'"))
 }
 
 /// A WH-QSM data weight: `flat`, `max-normalised` or `in-vivo`.
@@ -3295,6 +3305,10 @@ pub struct InvertIlsqrArgs {
     /// Zero-padding in mm per side
     #[arg(long, value_name = "MM")]
     pub pad_mm: Option<f64>,
+    /// Arithmetic of the two LSQR solves: double, or single as STI Suite computes them
+    /// (default: double)
+    #[arg(long, value_name = "PRECISION", value_parser = parse_ilsqr_precision)]
+    pub precision: Option<qsmxt_engine::IlsqrPrecision>,
 }
 
 /// STAR-QSM. Its result depends on the scale of the field in radians, so it takes the scan's

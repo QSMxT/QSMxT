@@ -635,6 +635,7 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
             emit_f64(parts, "--ilsqr-tol", config.inversion.ilsqr.tol, d.inversion.ilsqr.tol);
             emit_usize(parts, "--ilsqr-max-iter", config.inversion.ilsqr.max_iter, d.inversion.ilsqr.max_iter);
             emit_f64(parts, "--ilsqr-pad-mm", config.inversion.ilsqr.pad_mm, d.inversion.ilsqr.pad_mm);
+            emit_enum(parts, "--ilsqr-precision", &config.inversion.ilsqr.precision, &d.inversion.ilsqr.precision);
         }
         QsmAlgorithm::Star => {
             let (c, dd) = (&config.inversion.star, &d.inversion.star);

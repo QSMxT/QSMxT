@@ -462,6 +462,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             ilsqr_tol: parse_optional_f64(&ps.ilsqr_tol),
             ilsqr_max_iter: parse_optional_usize(&ps.ilsqr_max_iter),
             ilsqr_pad_mm: parse_optional_f64(&ps.ilsqr_pad_mm),
+            ilsqr_precision: qsmxt_engine::IlsqrPrecision::ALL.get(ps.ilsqr_precision).copied(),
         },
         star_params: crate::cli::StarParamArgs {
             star_pad: parse_usize_triple(&ps.star_pad).map(|p| p.to_vec()),

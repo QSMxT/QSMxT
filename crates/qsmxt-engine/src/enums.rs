@@ -294,6 +294,43 @@ impl From<qsm_core::inversion::WhQsmWeight> for WhqsmWeight {
     }
 }
 
+/// Arithmetic of iLSQR's two LSQR solves (qsm-core `IlsqrPrecision`).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum IlsqrPrecision {
+    /// Double precision throughout (the default).
+    #[default]
+    Double,
+    /// Single precision, as STI Suite computes its solves.
+    Single,
+}
+impl IlsqrPrecision {
+    /// Every variant, in the order the CLI help and the TUI list them.
+    pub const ALL: [IlsqrPrecision; 2] = [Self::Double, Self::Single];
+
+    /// The name the CLI, the config file and the TUI use.
+    pub fn as_str(self) -> &'static str {
+        match self { Self::Double => "double", Self::Single => "single" }
+    }
+}
+impl fmt::Display for IlsqrPrecision {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl From<IlsqrPrecision> for qsm_core::inversion::IlsqrPrecision {
+    fn from(p: IlsqrPrecision) -> Self {
+        use qsm_core::inversion::IlsqrPrecision as P;
+        match p { IlsqrPrecision::Double => P::Double, IlsqrPrecision::Single => P::Single }
+    }
+}
+impl From<qsm_core::inversion::IlsqrPrecision> for IlsqrPrecision {
+    fn from(p: qsm_core::inversion::IlsqrPrecision) -> Self {
+        use qsm_core::inversion::IlsqrPrecision as P;
+        match p { P::Double => Self::Double, P::Single => Self::Single }
+    }
+}
+
 impl EchoTimeChoice {
     /// Why the choice cannot be used whatever the scan, if it cannot: a given echo time that is not
     /// a positive time. Against a scan's echo times, qsm-core's `EchoTime::resolve` decides
