@@ -116,6 +116,12 @@ impl Item {
             }
             Item::CombinedRawChi => ("Combined unreferenced susceptibility".into(), Some("ppm"), K::Chi,
                                      Some("desc-unreferenced_Chimap".into())),
+            Item::EchoField(_) => ("Echo field".into(), Some("ppm"), K::Field, Some("desc-totalppm_fieldmap".into())),
+            Item::EchoLocalField(_) => ("Echo local field".into(), Some("ppm"), K::Field, Some("localfield".into())),
+            Item::EchoLocalFieldMask(_) => ("Echo local field mask".into(), None, K::Mask, Some("bgmask".into())),
+            Item::EchoRawChi(_) => ("Echo unreferenced susceptibility".into(), Some("ppm"), K::Chi,
+                                    Some("desc-unreferenced_Chimap".into())),
+            Item::EchoChi(_) => ("Echo susceptibility".into(), Some("ppm"), K::Chi, Some("Chimap".into())),
             Item::Chi => ("Susceptibility".into(), Some("ppm"), K::Chi, Some("Chimap".into())),
             Item::ChiSupport => ("Susceptibility support".into(), None, K::Mask, Some("desc-qsm_mask".into())),
             Item::SinglePassChi => ("Single-pass susceptibility".into(), Some("ppm"), K::Chi, Some("desc-singlepass_Chimap".into())),
@@ -171,6 +177,8 @@ impl Item {
             Item::RegionStats, Item::MotionReport, Item::Swi, Item::SwiMip, Item::R2star, Item::T2star,
             Item::MeseMagnitude(1), Item::SuppliedR2, Item::R2, Item::SuppliedR2prime, Item::R2prime,
             Item::R2primeCoverage, Item::SuppliedChi, Item::SeparatedTotalChi,
+            Item::EchoField(1), Item::EchoLocalField(1), Item::EchoLocalFieldMask(1), Item::EchoRawChi(1),
+            Item::EchoChi(1),
         ];
         for p in [Pass::Main, Pass::Reliable] {
             items.extend([Item::LocalField(p), Item::LocalFieldMask(p), Item::RawChi(p)]);
@@ -192,7 +200,8 @@ impl Item {
             | Item::CoilPhase(_, e) | Item::CoilMagnitude(_, e)
             | Item::CombinedEchoPhase(e) | Item::CombinedEchoMagnitude(e)
             | Item::Phase(e) | Item::Magnitude(e) | Item::CorrectedPhase(e) | Item::CorrectedMagnitude(e)
-            | Item::MeseMagnitude(e) => Some(e),
+            | Item::MeseMagnitude(e) | Item::EchoField(e) | Item::EchoLocalField(e) | Item::EchoLocalFieldMask(e)
+            | Item::EchoRawChi(e) | Item::EchoChi(e) => Some(e),
             _ => None,
         }
     }

@@ -1542,6 +1542,15 @@ pub struct PipelineArgs {
     #[arg(long, value_name = "SPEC")]
     pub qsm_reference: Option<String>,
 
+    /// Reconstruct a QSM from each echo on its own (each echo's phase unwrapped and divided by its
+    /// echo time, then background removal, dipole inversion and referencing per echo) and publish
+    /// each echo's map (`echo-<n>_Chimap`) and their mean as the QSM (`Chimap`), instead of one QSM
+    /// from the echo-combined field map. The echo combination (--b0-estimation), phase-offset
+    /// removal and bipolar correction do not run. DECOMPOSE takes the echoes' maps. Multi-echo only;
+    /// not with TGV, QSMART, iQSM, iQFM, two-pass, or χ-separation methods that fit the local field
+    #[arg(long, value_name = "BOOL")]
+    pub qsm_per_echo: Option<bool>,
+
     #[command(flatten)]
     pub rts_params: RtsParamArgs,
     #[command(flatten)]

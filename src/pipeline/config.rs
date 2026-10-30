@@ -425,6 +425,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             config.qsm.reference = reference;
             config.qsm.reference_region = region;
         }
+        if let Some(v) = args.qsm_per_echo { config.qsm.per_echo = v; }
 
         // ── BET ──
         if let Some(v) = args.bet_fractional_intensity { config.bet.fractional_intensity = v; }

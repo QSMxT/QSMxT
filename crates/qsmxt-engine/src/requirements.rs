@@ -318,6 +318,21 @@ pub fn arlo_problem(f: &ScanFacts) -> Option<String> {
     })
 }
 
+/// Why a per-echo QSM (`qsm.per_echo`) cannot run on this scan with this configuration, if it
+/// cannot ([`crate::bridge::per_echo_conflict`]). On a single echo it is not a problem: that
+/// echo's QSM is the only one, and the plan says so.
+pub fn per_echo_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<String> {
+    if !(config.qsm.per_echo && config.pipeline.do_qsm && f.n_echoes > 1) {
+        return None;
+    }
+    crate::bridge::per_echo_conflict(config).map(|why| format!("cannot be used here: {why}"))
+}
+
+/// `f` as one of its echoes alone (0-based `e`): what each step of a per-echo QSM sees.
+fn one_echo(f: &ScanFacts, e: usize) -> ScanFacts {
+    ScanFacts { n_echoes: 1, echo_times: f.echo_times.get(e).map(|&t| vec![t]).unwrap_or_default(), ..f.clone() }
+}
+
 /// Why the noise map of MEDI, TFI and PDF (MEDI toolbox `Fit_ppm_complex`, from every echo's
 /// magnitude) cannot be made for this run, if it cannot: `method` names the method.
 fn echo_noise_map_problem(f: &ScanFacts, method: &str) -> Option<String> {
@@ -798,14 +813,27 @@ pub fn scan_check(f: &ScanFacts, config: &PipelineConfig) -> Check {
     let label = |path: &str| crate::schema::setting(path).map_or_else(|| path.to_string(), |s| s.full_label.to_string());
     // The reconstruction's own methods: what they need of the data.
     if config.pipeline.do_qsm {
+        if let Some(why) = per_echo_problem(f, config) {
+            let path = "qsm.per_echo";
+            out.errors.push(format!("--qsm-per-echo {why}"));
+            out.problems.push(Problem {
+                severity: Severity::Error, setting: Some(path), implied_by: None,
+                settings: vec![path], reason: why.clone(), message: format!("{} {why}", label(path)),
+            });
+        }
         let bg = config.bg_removal.algorithm;
+        // A per-echo QSM reconstructs each echo as a single-echo scan's: its methods are checked
+        // on each echo's, and no echo combination runs.
+        let per_echo = crate::bridge::per_echo(config, f.n_echoes);
+        let echoes: Vec<ScanFacts> = if per_echo { (0..f.n_echoes).map(|e| one_echo(f, e)).collect() } else { vec![f.clone()] };
+        let on_each = |check: fn(&ScanFacts, &PipelineConfig) -> Option<String>| echoes.iter().find_map(|f| check(f, config));
         let methods = [
             ("field_mapping.b0_estimation", "--b0-estimation", config.field_mapping.b0_estimation.to_string(),
-             if crate::bridge::field_mapping_runs(config, f.n_echoes) { field_mapping_problem(f, config) } else { None }),
+             if !per_echo && crate::bridge::field_mapping_runs(config, f.n_echoes) { field_mapping_problem(f, config) } else { None }),
             ("inversion.algorithm", "--qsm-algorithm", config.inversion.algorithm.to_string(),
-             inversion_problem(f, config)),
+             on_each(inversion_problem)),
             ("bg_removal.algorithm", "--bf-algorithm", bg.to_string(),
-             if crate::bridge::skips_bgremove(config) { None } else { bg_removal_problem(f, config) }),
+             if crate::bridge::skips_bgremove(config) { None } else { on_each(bg_removal_problem) }),
         ];
         for (path, flag, value, why) in methods {
             let Some(why) = why else { continue };
@@ -937,6 +965,34 @@ mod tests {
     const EVEN: [f64; 4] = [0.005, 0.010, 0.015, 0.020];
     /// An evenly spaced train as a sidecar rounds it (to 0.01 ms): spacings 4.92, 4.93, 4.91 ms.
     const ROUNDED: [f64; 4] = [0.00492, 0.00984, 0.01477, 0.01968];
+
+    /// A per-echo QSM is refused at plan time on a route without a per-echo form, on the setting
+    /// itself; a single echo's is that echo's QSM. Each echo is checked as a single-echo scan:
+    /// the echo combination's needs (MEDI's complex fit) are not asked of it.
+    #[test]
+    fn a_per_echo_qsm_is_refused_where_it_has_no_form() {
+        let mut c = PipelineConfig::default();
+        c.qsm.per_echo = true;
+        assert!(scan_check(&run(&EVEN, true), &c).errors.is_empty());
+        c.inversion.algorithm = QsmAlgorithm::Tgv;
+        let out = scan_check(&run(&EVEN, true), &c);
+        assert!(out.errors.iter().any(|e| e.starts_with("--qsm-per-echo cannot be used here: tgv")), "{out:?}");
+        assert!(out.problems.iter().any(|p| p.setting == Some("qsm.per_echo")));
+        assert!(scan_check(&run(&EVEN[..1], true), &c).errors.is_empty(), "one echo: nothing to refuse");
+        let mut c = PipelineConfig::default();
+        c.qsm.per_echo = true;
+        for edit in [|c: &mut PipelineConfig| c.masking.two_pass = true,
+                     |c: &mut PipelineConfig| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::ChiSepIlsqr; }] {
+            let mut c = c.clone();
+            edit(&mut c);
+            assert!(scan_check(&run(&EVEN, true), &c).errors.iter().any(|e| e.starts_with("--qsm-per-echo")), "{c:?}");
+        }
+        // Unevenly spaced echoes refuse MEDI's complex fit, which a per-echo QSM does not run.
+        c.field_mapping.b0_estimation = B0Estimation::ComplexFit;
+        let uneven = [0.005, 0.009, 0.020];
+        assert!(scan_check(&run(&uneven, true), &c).errors.iter().all(|e| !e.contains("--b0-estimation")), "{:?}",
+                scan_check(&run(&uneven, true), &c).errors);
+    }
 
     #[test]
     fn n4_refuses_a_grid_it_cannot_shrink() {

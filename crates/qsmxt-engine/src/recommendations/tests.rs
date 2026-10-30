@@ -15,6 +15,11 @@ fn facts_for(rule: &Rule) -> Option<Facts> {
         match fact {
             core::Fact::EchoCount => f.echo_count = Some(if max.is_some() { 2 } else { min.unwrap_or(2.0) as usize + 2 }),
             core::Fact::MinVoxelSize => f.voxel_size = Some((0.5, 0.5, 0.5)),
+            core::Fact::FieldStrength => f.field_strength = Some(match (min, max) {
+                (Some(m), _) => m + 0.5,
+                (None, Some(m)) => m - 0.5,
+                (None, None) => 3.0,
+            }),
             _ => return None,
         }
     }
@@ -66,6 +71,10 @@ fn violating(rule: &Rule) -> PipelineConfig {
         }
         if setting.starts_with("segmentation.") {
             c.pipeline.do_segmentation = true;
+        }
+        // A background-removal method's own setting is in play only with that method.
+        if let Some((method, _)) = setting.strip_prefix("bg_removal.").and_then(|r| r.split_once('.')) {
+            set(&mut c, "bg_removal.algorithm", &json!(method)).unwrap();
         }
         let v = match is {
             Test::OneOf { values } => core_json(&values[0]),

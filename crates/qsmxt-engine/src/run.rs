@@ -548,6 +548,24 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         self.meta.n_echoes
     }
 
+    /// Whether the run reconstructs a QSM per echo ([`crate::bridge::per_echo`]).
+    fn per_echo(&self) -> bool {
+        crate::bridge::per_echo(self.config, self.n_echoes())
+    }
+
+    /// The run's metadata for echo `e` (1-based) alone: each step of a per-echo QSM sees the echo
+    /// as a single-echo scan's (qsm-core `ScanMetadata::echo`).
+    fn echo_meta(&self, e: usize) -> RunMetadata {
+        RunMetadata { n_echoes: 1, echo_times: vec![self.meta.echo_times[e - 1]], ..self.meta.clone() }
+    }
+
+    /// Echo `e`'s magnitude, when the run has one: every magnitude a per-echo QSM's steps take
+    /// (a single echo's combined magnitude, and its echoes' stack, are that echo's).
+    fn one_echo_magnitude(&mut self, e: usize) -> Result<Option<Vec<f64>>, S::Error> {
+        let item = self.echo_magnitude(e);
+        if self.store.has(&item) { self.store.real(&item).map(Some) } else { Ok(None) }
+    }
+
     /// The mask the stages after motion correction work in: the brain mask, or with motion
     /// correction the part of it every echo still covers.
     fn mask_item(&self) -> Item {
@@ -968,6 +986,25 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let Some(key) = self.begin("unwrap", Some(&algorithm), &params, "Skipping unwrap (cached)",
                                    "Phase unwrapping / echo combination") else { return Ok(()) };
         let n = self.n_echoes();
+        if self.per_echo() {
+            // Each echo's field on its own, one echo at a time.
+            let mask_item = self.mask_item();
+            let mask = self.store.mask(&mask_item)?;
+            let mut outputs = Vec::with_capacity(n);
+            for e in 1..=n {
+                self.observer.progress(e - 1, n);
+                let phase_item = self.echo_phase(e);
+                let phase = self.store.real(&phase_item)?;
+                let magnitude = self.one_echo_magnitude(e)?;
+                let field = stages::field::map_echo_field(&phase, magnitude.as_deref(), &mask, &self.echo_meta(e), self.config)?;
+                self.put(Item::EchoField(e), Data::Real(&field))?;
+                outputs.push(Item::EchoField(e));
+            }
+            self.observer.progress(n, n);
+            return self.complete(Done {
+                step: "unwrap", algorithm: Some(&algorithm), params: &params, outcome: None, key: &key, outputs: &outputs,
+            }, "Phase unwrapping");
+        }
         let phase_items: Vec<Item> = (1..=n).map(|e| self.echo_phase(e)).collect();
         let phases = phase_items.iter().map(|i| self.store.real(i)).collect::<Result<Vec<_>, _>>()?;
         let mask_item = self.mask_item();
@@ -1020,7 +1057,10 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let label = pass_label(pass);
         let iqfm = self.config.bg_removal.algorithm == crate::enums::BfAlgorithm::Iqfm;
         let algorithm = format!("{}", self.config.bg_removal.algorithm);
-        let params = stages::background::params(self.config);
+        let mut params = stages::background::params(self.config);
+        if self.per_echo() {
+            params["per_echo"] = json!(true);
+        }
         let (skipping, doing) = if iqfm {
             ("Skipping iQFM field preparation (cached)", format!("iQFM field preparation{label}"))
         } else {
@@ -1029,6 +1069,29 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let Some(key) = self.begin(&name, Some(&algorithm), &params, skipping, &doing) else { return Ok(()) };
         let mask_item = self.pass_mask(pass);
         let outputs = [Item::LocalField(pass), Item::LocalFieldMask(pass)];
+        if self.per_echo() {
+            // Each echo's field on its own (iQFM, from every echo's phase, has no per-echo form).
+            let mask = self.store.mask(&mask_item)?;
+            self.store.models(&step.models)?;
+            if let Some(d) = self.reconstruction_box(&mask) {
+                self.decide(d);
+            }
+            let n = self.n_echoes();
+            let mut outputs = Vec::with_capacity(2 * n);
+            for e in 1..=n {
+                let field = self.store.real(&Item::EchoField(e))?;
+                let magnitude = if stages::background::takes_echo_magnitudes(self.config) { self.one_echo_magnitude(e)? } else { None };
+                self.log(Level::Info, &format!("Background removal ({algorithm}), echo {e} of {n}"));
+                let local = stages::background::remove_background(&field, &mask, magnitude.as_deref(), &self.echo_meta(e),
+                                                                  self.config, self.observer)?;
+                self.put(Item::EchoLocalField(e), Data::Real(&local.local_field_ppm))?;
+                self.put(Item::EchoLocalFieldMask(e), Data::Mask(&local.mask))?;
+                outputs.extend([Item::EchoLocalField(e), Item::EchoLocalFieldMask(e)]);
+            }
+            return self.complete(Done {
+                step: &name, algorithm: Some(&algorithm), params: &params, outcome: None, key: &key, outputs: &outputs,
+            }, &format!("Background removal ({algorithm}), each echo"));
+        }
         let local = if iqfm {
             let (phases, magnitudes) = self.phase_echoes()?;
             let mask = self.store.mask(&mask_item)?;
@@ -1071,16 +1134,57 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             self.log(Level::Info, "Skipping background removal (single-step inversion handles it internally)");
         }
         let algorithm = format!("{}", self.config.inversion.algorithm);
-        if let Some(d) = medi_csf_decision(self.config, self.n_echoes()) {
+        let per_echo = self.per_echo();
+        // A per-echo QSM inverts each echo as a single-echo scan's.
+        if let Some(d) = medi_csf_decision(self.config, if per_echo { 1 } else { self.n_echoes() }) {
             self.decide(d);
         }
         let mut params = stages::inversion::params(self.config);
-        // The echo time the field is converted to radians at, as the scan's echo times resolve it.
-        if let Some(te) = stages::inversion::resolved_te(self.config, &self.meta) {
+        // The echo time the field is converted to radians at, as the scan's echo times resolve it
+        // (each echo's own, for a per-echo QSM).
+        if per_echo {
+            let tes: Vec<Option<f64>> = (1..=self.n_echoes())
+                .map(|e| stages::inversion::resolved_te(self.config, &self.echo_meta(e))).collect();
+            params["per_echo"] = json!(true);
+            if tes.iter().any(Option::is_some) {
+                params["te_s"] = json!(tes);
+            }
+        } else if let Some(te) = stages::inversion::resolved_te(self.config, &self.meta) {
             params["te_s"] = serde_json::json!(te);
         }
         let Some(key) = self.begin(&name, Some(&algorithm), &params, "Skipping invert (cached)",
                                    &format!("Dipole inversion{label}")) else { return Ok(()) };
+        if per_echo {
+            let mask = self.store.mask(&self.pass_mask(pass))?;
+            self.store.models(&step.models)?;
+            let n = self.n_echoes();
+            let mut outputs = Vec::with_capacity(n);
+            for e in 1..=n {
+                // The total-field methods take the echo's field inside the mask, the others its
+                // local field inside the mask background removal left.
+                let (field, mask) = if skip_bgremove {
+                    (self.store.real(&Item::EchoField(e))?, mask.clone())
+                } else {
+                    (self.store.real(&Item::EchoLocalField(e))?, self.store.mask(&Item::EchoLocalFieldMask(e))?)
+                };
+                let magnitude = match stages::inversion::magnitude_input(self.config) {
+                    Some(_) => self.one_echo_magnitude(e)?,
+                    None => None,
+                };
+                if e == 1 {
+                    if let Some(d) = self.reconstruction_box(&mask) {
+                        self.decide(d);
+                    }
+                }
+                self.log(Level::Info, &format!("Dipole inversion ({algorithm}), echo {e} of {n}"));
+                let chi = stages::inversion::invert(&field, &mask, magnitude.as_deref(), &self.echo_meta(e), self.config, self.observer)?;
+                self.put(Item::EchoRawChi(e), Data::Real(&chi))?;
+                outputs.push(Item::EchoRawChi(e));
+            }
+            return self.complete(Done {
+                step: &name, algorithm: Some(&algorithm), params: &params, outcome: None, key: &key, outputs: &outputs,
+            }, &format!("Dipole inversion ({algorithm}), each echo"));
+        }
         let (field_item, mask_item) = if skip_bgremove {
             (Item::FieldPpm, self.pass_mask(pass))
         } else {
@@ -1239,16 +1343,6 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let Some(key) = self.begin(&name, Some(&method), &params, &format!("Skipping {name} (cached)"),
                                    "Referencing QSM") else { return Ok(()) };
         self.log(Level::Info, &format!("QSM referencing ({})", self.config.qsm.reference));
-        let (raw, supports, out) = if single_pass {
-            (Item::RawChi(Pass::Main), vec![self.support(Pass::Main)], Item::SinglePassChi)
-        } else if self.plan.two_pass {
-            (Item::CombinedRawChi, vec![self.support(Pass::Main), self.support(Pass::Reliable)], Item::Chi)
-        } else {
-            (Item::RawChi(Pass::Main), vec![self.support(Pass::Main)], Item::Chi)
-        };
-        let chi = self.store.real(&raw)?;
-        let declared = supports.iter().map(|s| self.store.mask(s)).collect::<Result<Vec<_>, _>>()?;
-        let declared_refs: Vec<&[u8]> = declared.iter().map(|m| m.as_slice()).collect();
         let dseg = match region {
             Some((spec, _)) => {
                 let Some(segmentation) = self.segmentation_item() else {
@@ -1260,6 +1354,19 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             }
             None => None,
         };
+        if !single_pass && self.per_echo() {
+            return self.reference_per_echo(&name, &method, &params, &key, dseg.as_deref());
+        }
+        let (raw, supports, out) = if single_pass {
+            (Item::RawChi(Pass::Main), vec![self.support(Pass::Main)], Item::SinglePassChi)
+        } else if self.plan.two_pass {
+            (Item::CombinedRawChi, vec![self.support(Pass::Main), self.support(Pass::Reliable)], Item::Chi)
+        } else {
+            (Item::RawChi(Pass::Main), vec![self.support(Pass::Main)], Item::Chi)
+        };
+        let chi = self.store.real(&raw)?;
+        let declared = supports.iter().map(|s| self.store.mask(s)).collect::<Result<Vec<_>, _>>()?;
+        let declared_refs: Vec<&[u8]> = declared.iter().map(|m| m.as_slice()).collect();
         let crate::referencing::Referenced { chi, support, offset } =
             crate::referencing::reference_chi(self.config, &chi, &declared_refs, dseg.as_deref())?;
         self.put(out, Data::Real(&chi))?;
@@ -1273,6 +1380,56 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         self.store.annotate(&out, crate::referencing::sidecar_fields(self.config, offset.as_ref()))?;
         self.complete(Done {
             step: &name, algorithm: Some(&method), params: &params, outcome: None, key: &key, outputs: &outputs,
+        }, "QSM referencing")
+    }
+
+    /// A per-echo QSM's referencing: each echo's map over the voxels it is defined on (published
+    /// with its echo time), and the QSM, the mean of the echoes' maps (qsm-core
+    /// `per_echo::mean_across_echoes`, equal weights) where every echo's is defined, referenced
+    /// as a QSM is. Referencing commutes with the mean over one support, so the QSM is also the
+    /// mean of the referenced echoes' maps there.
+    fn reference_per_echo(
+        &mut self, name: &str, method: &str, params: &Value, key: &str, dseg: Option<&[f64]>,
+    ) -> Result<(), S::Error> {
+        let n = self.n_echoes();
+        let skip_bgremove = crate::bridge::skips_bgremove(self.config);
+        let mut raws = Vec::with_capacity(n);
+        let mut common: Option<Vec<u8>> = None;
+        let mut outputs = Vec::with_capacity(n + 2);
+        for e in 1..=n {
+            let raw = self.store.real(&Item::EchoRawChi(e))?;
+            let declared_item = if skip_bgremove { self.pass_mask(Pass::Main) } else { Item::EchoLocalFieldMask(e) };
+            let declared = self.store.mask(&declared_item)?;
+            let crate::referencing::Referenced { chi, support, offset } =
+                crate::referencing::reference_chi(self.config, &raw, &[&declared], dseg)?;
+            self.put(Item::EchoChi(e), Data::Real(&chi))?;
+            let mut fields = crate::referencing::sidecar_fields(self.config, offset.as_ref());
+            fields.insert("EchoTime".into(), json!(self.meta.echo_times[e - 1]));
+            self.store.annotate(&Item::EchoChi(e), fields)?;
+            outputs.push(Item::EchoChi(e));
+            common = Some(match common {
+                None => support,
+                Some(c) => c.iter().zip(&support).map(|(&a, &b)| u8::from(a != 0 && b != 0)).collect(),
+            });
+            raws.push(raw);
+        }
+        let common = common.unwrap_or_default();
+        let mut mean = qsm_core::pipeline::per_echo::mean_across_echoes(&raws);
+        drop(raws);
+        for (m, &c) in mean.iter_mut().zip(&common) {
+            if c == 0 {
+                *m = 0.0;
+            }
+        }
+        self.log(Level::Info, &format!("QSM: the mean of {n} echoes' maps"));
+        let crate::referencing::Referenced { chi, support, offset } =
+            crate::referencing::reference_chi(self.config, &mean, &[&common], dseg)?;
+        self.put(Item::Chi, Data::Real(&chi))?;
+        self.put(Item::ChiSupport, Data::Mask(&support))?;
+        self.store.annotate(&Item::Chi, crate::referencing::sidecar_fields(self.config, offset.as_ref()))?;
+        outputs.extend([Item::Chi, Item::ChiSupport]);
+        self.complete(Done {
+            step: name, algorithm: Some(method), params, outcome: None, key, outputs: &outputs,
         }, "QSM referencing")
     }
 
@@ -1749,10 +1906,21 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         for map in [r2prime.as_mut(), r2star.as_mut()].into_iter().flatten() {
             sep::zero_outside(&support, map);
         }
-        // DECOMPOSE takes a QSM per echo (its authors run STAR-QSM on each echo); the pipeline
-        // has one, so it is given at every echo (said in the methods text).
-        let qsm_per_echo = (alg == crate::SeparationAlgorithm::Decompose)
-            .then(|| sep::repeat_per_echo(&qsm, self.n_echoes()));
+        // DECOMPOSE takes a QSM per echo (its authors run STAR-QSM on each echo): a per-echo QSM's
+        // echoes' maps, or else the one QSM given at every echo (said in the methods text).
+        let qsm_per_echo = if alg != crate::SeparationAlgorithm::Decompose {
+            None
+        } else if qsm_item == Some(Item::Chi) && self.per_echo() {
+            let mut maps = Vec::with_capacity(self.n_echoes());
+            for e in 1..=self.n_echoes() {
+                let mut map = self.store.real(&Item::EchoChi(e))?;
+                sep::zero_outside(&support, &mut map);
+                maps.push(map);
+            }
+            Some(qsm_core::pipeline::per_echo::voxel_major(&maps))
+        } else {
+            Some(sep::repeat_per_echo(&qsm, self.n_echoes()))
+        };
         let (n_std, mask_csf) = if chi_sep_medi {
             let (n_std, csf) = sep::chi_sep_medi_inputs(
                 &echo_major, &self.meta.echo_times, &support, self.meta.dims, self.meta.voxel_size)?;
@@ -2815,6 +2983,49 @@ pub(crate) mod tests {
         }
         assert!(real(Item::SeparatedChi(Contrast::Diamagnetic)).iter().all(|&v| v >= 0.0), "|χ−|");
         assert!(run_once(&config, &facts, &mut store).computed.is_empty());
+    }
+
+    /// A per-echo QSM runs the same steps on each echo's field, publishes each echo's referenced
+    /// map with its echo time, and the QSM is their mean where every echo's is defined; DECOMPOSE
+    /// takes the echoes' maps. Turning it on or off recomputes the reconstruction, not the mask.
+    #[test]
+    fn a_per_echo_qsm_runs_in_memory() {
+        let (facts, mut store) = phantom();
+        let mut config = config();
+        run_once(&config, &facts, &mut store);
+        config.qsm.per_echo = true;
+        config.pipeline.do_chi_separation = true;
+        config.separation.algorithm = crate::enums::SeparationAlgorithm::Decompose;
+        config.separation.decompose.n_inner = 1;
+        config.separation.decompose.lsqcurvefit.max_iterations = 2;
+        let events = run_once(&config, &facts, &mut store);
+        assert_eq!(events.computed, ["unwrap", "bgremove", "invert", "reference", "chi_separation"]);
+        let real = |store: &MemoryStore, item: Item| match store.get(&item) { Some(VolumeData::Real(v)) => v.clone(), _ => panic!("no {item:?}") };
+        let support = match store.get(&Item::ChiSupport) { Some(VolumeData::Mask(m)) => m.clone(), _ => panic!() };
+        let echoes: Vec<Vec<f64>> = (1..=TES.len()).map(|e| real(&store, Item::EchoChi(e))).collect();
+        for (e, te) in TES.iter().enumerate() {
+            assert_eq!(store.annotations(&Item::EchoChi(e + 1)).and_then(|a| a.get("EchoTime")), Some(&json!(te)));
+            assert!(store.get(&Item::EchoField(e + 1)).is_some() && store.get(&Item::EchoRawChi(e + 1)).is_some());
+        }
+        assert!(!events.outputs.contains(&Item::FieldPpm), "a per-echo QSM makes no echo-combined field");
+        // Referenced over one support, the mean of the echoes' maps is the QSM.
+        let chi = real(&store, Item::Chi);
+        let n_support = support.iter().filter(|&&s| s != 0).count();
+        assert!(n_support > 100, "{n_support}");
+        for v in 0..chi.len() {
+            if support[v] == 0 {
+                assert_eq!(chi[v], 0.0);
+                continue;
+            }
+            let mean = echoes.iter().map(|m| m[v]).sum::<f64>() / echoes.len() as f64;
+            assert!((chi[v] - mean).abs() < 1e-9, "voxel {v}: {} vs {mean}", chi[v]);
+        }
+        assert!(real(&store, Item::SeparatedTotalChi).iter().all(|v| v.is_finite()));
+        // Nothing changed: nothing to compute. Off again: the reconstruction is redone.
+        assert!(run_once(&config, &facts, &mut store).computed.is_empty());
+        config.qsm.per_echo = false;
+        let off = run_once(&config, &facts, &mut store);
+        assert_eq!(off.computed, ["unwrap", "bgremove", "invert", "reference", "chi_separation"]);
     }
 
     /// Without a MESE, R2′ is predicted by R2PRIMEnet (whose weights the plan lists), and a

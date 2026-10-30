@@ -55,6 +55,7 @@ pub fn published(n_echoes: usize) -> Vec<(Item, Kind)> {
         out.extend([
             (Item::CombinedEchoPhase(e), Phase(Item::CombinedEchoMagnitude(e))),
             (Item::CombinedEchoMagnitude(e), Continuous),
+            (Item::EchoChi(e), Continuous),
         ]);
     }
     out

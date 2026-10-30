@@ -1683,9 +1683,16 @@ pub struct QsmConfig {
     /// they never saw. Resolved by `qsmxt_engine::regions::resolve` where it is used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reference_region: Option<String>,
+    /// Reconstruct a QSM from each echo on its own instead of one from the echo-combined field
+    /// (qsm-core's `QsmPipelineConfig::qsm_per_echo`): each echo's phase is unwrapped and divided
+    /// by its own echo time, its background removed and its field inverted and referenced, and
+    /// the mean of the echoes' maps is the QSM ([`crate::bridge::per_echo`]). The echo combination
+    /// (`field_mapping.b0_estimation`), phase-offset removal and bipolar correction then do not
+    /// run. DECOMPOSE takes the echoes' maps. Off by default.
+    pub per_echo: bool,
 }
 impl Default for QsmConfig {
-    fn default() -> Self { Self { reference: QsmReference::Mean, reference_region: None } }
+    fn default() -> Self { Self { reference: QsmReference::Mean, reference_region: None, per_echo: false } }
 }
 
 impl QsmConfig {

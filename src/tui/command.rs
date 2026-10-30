@@ -348,6 +348,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         bet_iterations: if ps.uses_bet() { parse_optional_usize(&ps.bet_iterations) } else { None },
         bet_subdivisions: if ps.uses_bet() { parse_optional_usize(&ps.bet_subdivisions) } else { None },
         qsm_reference: Some(crate::tui::app::qsm_reference_spec(ps.qsm_reference)),
+        qsm_per_echo: Some(ps.qsm_per_echo),
         rts_params: crate::cli::RtsParamArgs {
             rts_delta: parse_optional_f64(&ps.rts_delta),
             rts_mu: parse_optional_f64(&ps.rts_mu),

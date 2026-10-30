@@ -132,7 +132,7 @@ const CITE_WAVESEP: Citation = Citation {
 
 const CITE_DECOMPOSE: Citation = Citation {
     key: "chen2021decompose",
-    text: "Chen, J., et al. (2021). \"DECOMPOSE-QSM: susceptibility source separation from a single gradient-echo acquisition.\" *Magnetic Resonance in Medicine*.",
+    text: "Chen, J., et al. (2021). \"Decompose quantitative susceptibility mapping (QSM) to sub-voxel diamagnetic and paramagnetic components based on gradient-echo MRI data.\" *NeuroImage*, 242:118477. https://doi.org/10.1016/j.neuroimage.2021.118477",
 };
 
 const CITE_HCCHISEP: Citation = Citation {
@@ -1253,6 +1253,12 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                 ));
             }
         }
+        if says_per_echo(config) {
+            doc.say(&[Stage::Reference],
+                "For multi-echo data, the susceptibility map reported is the mean across echoes of the \
+                 echoes' maps, over the voxels where every echo's map was defined; each echo's map is \
+                 reported too.".to_string());
+        }
     }
 
     // A supplied segmentation, every run's or some runs'.
@@ -1453,10 +1459,13 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
             if config.pipeline.do_qsm && config.qsm.reference != QsmReference::None { RECON_MASK_AGAIN } else { RECON_MASK },
             separation_changes(config).comma_with(),
         ));
-        // DECOMPOSE's signal phase comes from a QSM per echo; the pipeline has one QSM.
+        // DECOMPOSE's signal phase comes from a QSM per echo: a per-echo QSM's, or the one QSM.
         if config.separation.algorithm == SeparationAlgorithm::Decompose {
-            doc.say(&[Stage::ChiSeparation],
-                "The same susceptibility map was used for the signal phase at every echo.".to_string());
+            doc.say(&[Stage::ChiSeparation], if says_per_echo(config) && config.separation.custom_qsm_tool.is_none() {
+                "Each echo's susceptibility map was used for the signal phase at that echo.".to_string()
+            } else {
+                "The same susceptibility map was used for the signal phase at every echo.".to_string()
+            });
         }
         match config.separation.algorithm {
             SeparationAlgorithm::ChiSepIlsqr => doc.say(&[Stage::ChiSeparation],
@@ -1610,6 +1619,12 @@ fn describe_pad(p: [usize; 3]) -> String {
 /// Describe the field-mapping stage: phase offset / bipolar correction, phase
 /// unwrapping, and B0 estimation. Shared by the standard pipeline and QSMART
 /// (which consumes a pre-computed total field, so these steps still run).
+/// Whether the text describes a per-echo QSM (`qsm.per_echo`, where nothing rules it out): said
+/// "for multi-echo data", as a single echo's QSM is the only one there is.
+fn says_per_echo(config: &PipelineConfig) -> bool {
+    config.pipeline.do_qsm && config.qsm.per_echo && crate::bridge::per_echo_conflict(config).is_none()
+}
+
 fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
     let fm = &config.field_mapping;
     let d = FieldMappingConfig::default();
@@ -1645,12 +1660,20 @@ fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
     } else {
         String::new()
     };
+    // A per-echo QSM: each echo unwrapped on its own; nothing combines or compares the echoes.
+    let per_echo = says_per_echo(config);
+    if per_echo {
+        doc.say(&[Stage::FieldMap, Stage::BackgroundRemoval(Pass::Main), Stage::Inversion(Pass::Main), Stage::Reference],
+            "For multi-echo data, QSM was reconstructed separately for each echo: each echo's unwrapped \
+             phase was divided by its echo time to give that echo's field map, and background field \
+             removal, dipole inversion and referencing were applied to each echo's field map on its own.".to_string());
+    }
     // MEDI's complex fit fits its own phase offset, and takes no bipolar correction.
-    if fm.b0_estimation == B0Estimation::ComplexFit {
+    if fm.b0_estimation == B0Estimation::ComplexFit && !per_echo {
         describe_complex_fit(config, doc);
         return;
     }
-    match (fm.phase_offset_removal && romeo, fm.bipolar_correction && romeo) {
+    match (fm.phase_offset_removal && romeo && !per_echo, fm.bipolar_correction && romeo && !per_echo) {
         (true, true) => {
             doc.cite(&CITE_MCPC3DS);
             doc.cite(&CITE_BIPOLAR);
@@ -1703,6 +1726,10 @@ fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
         }
     }
 
+    // A per-echo QSM combines no echoes into a B0 field map.
+    if per_echo {
+        return;
+    }
     // B0 estimation. The linear fit's settings are shared with the robust fit.
     let mut linear = Changed::default();
     linear.add_fields(&fm.linear_fit, &d.linear_fit, &[]);
@@ -2381,6 +2408,26 @@ fn without_note(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A per-echo QSM is said plainly: each echo reconstructed on its own, the mean reported, and
+    /// no echo combination; DECOMPOSE takes each echo's map.
+    #[test]
+    fn a_per_echo_qsm_is_said_plainly() {
+        let mut c = PipelineConfig::default();
+        c.qsm.per_echo = true;
+        let text = generate_methods(&c);
+        assert!(text.contains("For multi-echo data, QSM was reconstructed separately for each echo"), "{text}");
+        assert!(text.contains("the susceptibility map reported is the mean across echoes"), "{text}");
+        assert!(!text.contains("B0 field map was estimated") && !text.contains("Phase offset removal"), "{text}");
+        c.pipeline.do_chi_separation = true;
+        c.separation.algorithm = SeparationAlgorithm::Decompose;
+        let text = generate_methods(&c);
+        assert!(text.contains("Each echo's susceptibility map was used for the signal phase at that echo."), "{text}");
+        c.qsm.per_echo = false;
+        let text = generate_methods(&c);
+        assert!(text.contains("The same susceptibility map was used for the signal phase at every echo.")
+                && !text.contains("separately for each echo:"), "{text}");
+    }
 
     /// The methods text without its Note: what was done, as the paragraph and references say it.
     fn paragraph(config: &PipelineConfig) -> String {

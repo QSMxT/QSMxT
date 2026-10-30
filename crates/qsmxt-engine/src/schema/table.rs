@@ -155,12 +155,12 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.laplacian).full("Laplacian unwrapping of the raw phase"),
         // MEDI's complex fit fits its own phase offset: QSM.rs does not remove them first.
         d("field_mapping.phase_offset_removal", FieldMap, "Phase offset removal", "Remove spatially-varying phase offset using HIP (Eckstein et al., 2018); multi-echo only", Bool).flag("--phase-offset-removal").parent("field_mapping.unwrapping_algorithm")
-        .when(|x| !x.laplacian && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit),
+        .when(|x| x.combines && !x.laplacian && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit),
         d("field_mapping.phase_offset_sigma_mm", FieldMap, "Sigma (mm)", "Gaussian smoothing sigma in mm (x y z)", FloatVec3).units("mm").flag("--phase-offset-sigma-mm").parent("field_mapping.phase_offset_removal")
-        .when(|x| !x.laplacian && x.c.field_mapping.phase_offset_removal && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit).full("Phase offset sigma")
+        .when(|x| x.combines && !x.laplacian && x.c.field_mapping.phase_offset_removal && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit).full("Phase offset sigma")
         .gui("Gaussian smoothing sigma (x y z)"),
         d("field_mapping.bipolar_correction", FieldMap, "Bipolar correction", "Remove the linear phase artefact of bipolar readout gradients (needs at least 3 echoes; fewer: skipped)", Bool).flag("--bipolar-correction").parent("field_mapping.phase_offset_removal")
-        .when(|x| !x.laplacian && x.c.field_mapping.phase_offset_removal && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit),
+        .when(|x| x.combines && !x.laplacian && x.c.field_mapping.phase_offset_removal && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit),
         d("field_mapping.romeo.individual", FieldMap, "Individual mode", "Unwrap each echo independently (recommended). Off = template-based temporal unwrapping.", Bool).flag("--no-romeo-individual").parent("field_mapping.unwrapping_algorithm")
         .when(|x| !x.laplacian).full("Unwrap echoes individually"),
         // The config counts echoes from 0; the TUI and --romeo-template from 1.
@@ -201,6 +201,10 @@ pub(super) fn table() -> Vec<Def> {
         d("field_mapping.romeo.wrap_addition", FieldMap, "Wrap addition", "Extra phase tolerance beyond π for neighbor differences [0,π]", Float).flag("--romeo-wrap-addition").parent("field_mapping.unwrapping_algorithm")
         .when(|x| !x.laplacian)
         .gui("Extra phase tolerance beyond π for neighbour differences, from 0 to π"),
+        // A per-echo QSM runs the field map, background removal, inversion and referencing on
+        // each echo on its own: the settings that combine or compare echoes are out of play.
+        d("qsm.per_echo", FieldMap, "Per-echo QSM", "Reconstruct a QSM from each echo on its own (each echo's field map, background removal, inversion and referencing) and report their mean as the QSM, with each echo's map, instead of one QSM from the echo-combined field map. Multi-echo only", Bool).basic().flag("--qsm-per-echo")
+        .gui("Reconstruct a QSM from each echo on its own and report their mean, instead of one QSM from the echo-combined field map"),
         d("field_mapping.b0_estimation", FieldMap, "B0 estimation", "", Enum(vec![
             o("weighted-avg", "weighted-avg", "Weighted average", "Weighted average of phase/TE across echoes (default)"),
             o("linear-fit", "linear-fit", "Linear fit", "Magnitude-weighted linear fit of phase vs TE"),
@@ -208,20 +212,21 @@ pub(super) fn table() -> Vec<Def> {
             o("qsmart-echofit", "qsmart-echofit", "QSMART echo fit", "QSMART's: magnitude-weighted fit of phase vs TE through the origin; marks the voxels QSMART leaves out"),
             o("complex-fit", "complex-fit", "Complex fit", "MEDI's field map (Fit_ppm_complex): a magnitude-weighted fit of the complex echoes, then unwrapping of the fitted phase. Needs the magnitude and evenly spaced echoes; no phase offset removal or bipolar correction"),
         ])).basic().flag("--b0-estimation")
-        .gui("How the unwrapped echoes are combined into one field map"),
+        .gui("How the unwrapped echoes are combined into one field map")
+        .when(|x| x.combines),
         d("field_mapping.qsmart_fit_threshold_mode", FieldMap, "Fit threshold", "", Enum(vec![
             o("percentile", "percentile", "Percentile", "A percentile of the blurred fit residual over the volume, as QSMART's authors run it (default)"),
             o("absolute", "absolute", "Fixed", "A fixed fit residual"),
         ])).flag("--qsmart-fit-threshold-mode").parent("field_mapping.b0_estimation")
-        .when(|x| x.c.field_mapping.b0_estimation == B0Estimation::QsmartEchofit).full("QSMART fit threshold")
+        .when(|x| x.combines && x.c.field_mapping.b0_estimation == B0Estimation::QsmartEchofit).full("QSMART fit threshold")
         .gui("How the fit residual at which a voxel is left out of QSMART's reconstruction is set"),
         // QSM.rs utils/qsmart.rs QsmartFitThreshold::validate refuses a percentile outside (0, 100].
         d("field_mapping.qsmart_fit_percentile", FieldMap, "Fit percentile", "Percentile of the blurred fit residual above which a voxel is left out of QSMART's reconstruction (default: 99)", Float).above(0.0).max(100.0).flag("--qsmart-fit-percentile").parent("field_mapping.qsmart_fit_threshold_mode")
-        .when(|x| x.c.field_mapping.b0_estimation == B0Estimation::QsmartEchofit && x.c.field_mapping.qsmart_fit_threshold_mode == QsmartFitThresholdMode::Percentile).full("QSMART fit percentile")
+        .when(|x| x.combines && x.c.field_mapping.b0_estimation == B0Estimation::QsmartEchofit && x.c.field_mapping.qsmart_fit_threshold_mode == QsmartFitThresholdMode::Percentile).full("QSMART fit percentile")
         .gui("Percentile of the blurred fit residual above which a voxel is left out of QSMART's reconstruction"),
         // QSM.rs utils/qsmart.rs QsmartFitThreshold::validate refuses a threshold that is not > 0.
         d("field_mapping.qsmart_fit_threshold", FieldMap, "Fit residual", "Blurred fit residual above which a voxel is left out of QSMART's reconstruction (default: 40)", Float).above(0.0).flag("--qsmart-fit-threshold").parent("field_mapping.qsmart_fit_threshold_mode")
-        .when(|x| x.c.field_mapping.b0_estimation == B0Estimation::QsmartEchofit && x.c.field_mapping.qsmart_fit_threshold_mode == QsmartFitThresholdMode::Absolute).full("QSMART fit residual")
+        .when(|x| x.combines && x.c.field_mapping.b0_estimation == B0Estimation::QsmartEchofit && x.c.field_mapping.qsmart_fit_threshold_mode == QsmartFitThresholdMode::Absolute).full("QSMART fit residual")
         .gui("Blurred fit residual above which a voxel is left out of QSMART's reconstruction"),
         d("field_mapping.b0_weight_type", FieldMap, "Weight type", "", Enum(vec![
             o("phase-snr", "phase-snr", "Phase SNR", "mag × TE — optimal for phase SNR (default)"),
@@ -231,42 +236,42 @@ pub(super) fn table() -> Vec<Def> {
             o("mag", "mag", "Magnitude", "Magnitude only"),
             o("assumed-decay", "assumed-decay", "Assumed decay", "Fixed TE·exp(−TE/T2*) per echo from an assumed T2* (no T2* map, no magnitude); phase-snr is generally better"),
         ])).flag("--b0-weight-type").parent("field_mapping.b0_estimation")
-        .when(|x| x.c.field_mapping.b0_estimation == B0Estimation::WeightedAvg).full("Echo weighting")
+        .when(|x| x.combines && x.c.field_mapping.b0_estimation == B0Estimation::WeightedAvg).full("Echo weighting")
         .gui("How each echo is weighted in the average"),
         // QSMxT fieldmap.rs and QSM.rs pipeline/field_mapping.rs refuse a T2* that is not > 0.
         d("field_mapping.b0_weight_assumed_t2star_ms", FieldMap, "Assumed T2* (ms)", "T2* assumed to compute the fixed echo weights; no T2* map is used (default: 40 ms)", Float).above(0.0).units("ms").flag("--b0-weight-assumed-t2star").parent("field_mapping.b0_weight_type")
-        .when(|x| x.c.field_mapping.b0_estimation == B0Estimation::WeightedAvg && x.c.field_mapping.b0_weight_type == B0WeightType::AssumedDecay).full("Assumed T2*")
+        .when(|x| x.combines && x.c.field_mapping.b0_estimation == B0Estimation::WeightedAvg && x.c.field_mapping.b0_weight_type == B0WeightType::AssumedDecay).full("Assumed T2*")
         .gui("T2* assumed to compute the fixed echo weights; no T2* map is used"),
         d("field_mapping.linear_fit.estimate_offset", FieldMap, "Estimate offset", "Fit a phase-offset term in the echo-time fit (robust fit: needs 4 echoes with it, 3 without)", Bool).flag("--linear-fit-estimate-offset").parent("field_mapping.b0_estimation")
-        .when(|x| matches!(x.c.field_mapping.b0_estimation, B0Estimation::LinearFit | B0Estimation::RobustFit)).context("Echo-time fit"),
+        .when(|x| x.combines && matches!(x.c.field_mapping.b0_estimation, B0Estimation::LinearFit | B0Estimation::RobustFit)).context("Echo-time fit"),
         d("field_mapping.robust_fit.loss", FieldMap, "Loss", "", Enum(vec![
             o("tukey", "tukey", "Tukey", "Tukey biweight: rejects an echo at a voxel past the tuning radius (default)"),
             o("huber", "huber", "Huber", "Huber: caps an outlying echo's influence but never rejects it"),
         ])).flag("--robust-fit-loss").parent("field_mapping.b0_estimation")
-        .when(|x| x.c.field_mapping.b0_estimation == B0Estimation::RobustFit).full("Loss function")
+        .when(|x| x.combines && x.c.field_mapping.b0_estimation == B0Estimation::RobustFit).full("Loss function")
         .gui("The loss that down-weights an echo departing from the straight line through the others"),
         // QSM.rs RobustFitParams::validate: tuning must be > 0.
         d("field_mapping.robust_fit.tuning", FieldMap, "Tuning", "Tuning radius in robust-scale units; blank = conventional (Tukey 4.685, Huber 1.345)", Float).above(0.0).optional().flag("--robust-fit-tuning").parent("field_mapping.b0_estimation")
-        .when(|x| x.c.field_mapping.b0_estimation == B0Estimation::RobustFit).full("Tuning radius")
+        .when(|x| x.combines && x.c.field_mapping.b0_estimation == B0Estimation::RobustFit).full("Tuning radius")
         .gui("Tuning radius in robust-scale units; empty for the conventional value (Tukey 4.685, Huber 1.345)"),
         d("field_mapping.robust_fit.iterations", FieldMap, "Iterations", "IRLS passes (0 = report only: the field map is the linear fit's)", Int).flag("--robust-fit-iterations").parent("field_mapping.b0_estimation")
-        .when(|x| x.c.field_mapping.b0_estimation == B0Estimation::RobustFit).full("Reweighting passes")
+        .when(|x| x.combines && x.c.field_mapping.b0_estimation == B0Estimation::RobustFit).full("Reweighting passes")
         .gui("Iteratively reweighted passes (0 reports only: the field map is the linear fit's)"),
         // QSM.rs RobustFitParams::validate: downweight level in (0, 1].
         d("field_mapping.robust_fit.downweight_level", FieldMap, "Downweight level", "Reporting only: a weight below this counts as down-weighted (0, 1]", Float).above(0.0).max(1.0).flag("--robust-fit-downweight-level").parent("field_mapping.b0_estimation")
-        .when(|x| x.c.field_mapping.b0_estimation == B0Estimation::RobustFit)
+        .when(|x| x.combines && x.c.field_mapping.b0_estimation == B0Estimation::RobustFit)
         .gui("Reporting only: a weight below this counts as down-weighted"),
         // QSM.rs RobustFitParams::validate: flag ratio >= 1.
         d("field_mapping.robust_fit.flag_ratio", FieldMap, "Flag ratio", "Reporting only: flag an echo whose outlier score exceeds this x the best echo's (>= 1)", Float).min(1.0).flag("--robust-fit-flag-ratio").parent("field_mapping.b0_estimation")
-        .when(|x| x.c.field_mapping.b0_estimation == B0Estimation::RobustFit)
+        .when(|x| x.combines && x.c.field_mapping.b0_estimation == B0Estimation::RobustFit)
         .gui("Reporting only: flag an echo whose outlier score exceeds this multiple of the best echo's"),
         // QSM.rs fit_ppm_complex (utils/multi_echo.rs) refuses a reltol that is not >= 0.
         d("field_mapping.complex_fit.reltol", FieldMap, "Rel tolerance", "Stop once the update is this fraction of the first estimate, over the whole volume (default 1e-4)", Float).min(0.0).flag("--complex-fit-reltol").parent("field_mapping.b0_estimation")
-        .when(|x| x.c.field_mapping.b0_estimation == B0Estimation::ComplexFit).full("Relative tolerance")
+        .when(|x| x.combines && x.c.field_mapping.b0_estimation == B0Estimation::ComplexFit).full("Relative tolerance")
         .gui("The fit stops once its update is this fraction of the first estimate, over the whole volume"),
         // 0 keeps the fit's starting estimate (a linear fit to the first three echoes' phase).
         d("field_mapping.complex_fit.max_iter", FieldMap, "Max iter", "Gauss-Newton iterations at most (default 30)", Int).flag("--complex-fit-max-iter").parent("field_mapping.b0_estimation")
-        .when(|x| x.c.field_mapping.b0_estimation == B0Estimation::ComplexFit).full("Maximum iterations")
+        .when(|x| x.combines && x.c.field_mapping.b0_estimation == B0Estimation::ComplexFit).full("Maximum iterations")
         .gui("Gauss-Newton iterations at most"),
         d("bg_removal.algorithm", Background, "BG removal", "", Enum(vec![
             o("vsharp", "vsharp", "V-SHARP", "Variable-kernel SHARP (V-SHARP) — https://doi.org/10.1002/mrm.23000"),
