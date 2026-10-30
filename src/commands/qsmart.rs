@@ -4,12 +4,62 @@
 //! consumes the TOTAL field rather than a local field. It is not a plain `invert`/`bgremove` step,
 //! hence its own top-level command. This mirrors the `qsmxt run` QSMART stage on NIfTI in/out.
 
+use std::path::{Path, PathBuf};
+
 use log::info;
+use qsm_core::io::NiftiData;
 
 use super::common::{load_mask, load_nifti, load_nifti_4d, nifti_grid, save_nifti};
 use crate::cli::QsmartArgs;
 use crate::error::QsmxtError;
 use crate::pipeline::config;
+
+/// The file name (without extension) `--intermediates` writes a QSMART intermediate under: the
+/// artifact names (`localfield`, `chimap`) with the stage, as QSM-CI names them.
+fn intermediate_file(name: &str) -> &str {
+    use qsmxt_engine::stages::qsmart::outputs as q;
+    match name {
+        q::LOCAL_FIELD_STAGE1 => "localfield_stage1",
+        q::CHI_STAGE1 => "chimap_stage1",
+        q::LOCAL_FIELD_STAGE2 => "localfield_stage2",
+        q::CHI_STAGE2 => "chimap_stage2",
+        other => other,
+    }
+}
+
+/// Writes each intermediate QSMART reports into `dir` as it is produced. The first failure is
+/// kept and returned after the run (the observer cannot return one).
+struct IntermediateWriter<'a> {
+    dir: &'a Path,
+    reference: &'a NiftiData,
+    written: Vec<PathBuf>,
+    error: Option<QsmxtError>,
+}
+
+impl IntermediateWriter<'_> {
+    fn write(&mut self, name: &str, data: &[f64]) {
+        if self.error.is_some() {
+            return;
+        }
+        let path = self.dir.join(format!("{}.nii", intermediate_file(name)));
+        match save_nifti(&path, data, self.reference) {
+            Ok(()) => self.written.push(path),
+            Err(e) => self.error = Some(e),
+        }
+    }
+}
+
+impl qsm_core::pipeline::Observer for IntermediateWriter<'_> {
+    fn output(&mut self, name: &'static str, volume: qsm_core::pipeline::VolumeRef<'_>) {
+        match volume {
+            qsm_core::pipeline::VolumeRef::Real(v) => self.write(name, v),
+            qsm_core::pipeline::VolumeRef::Mask(m) => {
+                let v: Vec<f64> = m.iter().map(|&x| f64::from(x)).collect();
+                self.write(name, &v);
+            }
+        }
+    }
+}
 
 pub fn execute(args: QsmartArgs) -> crate::Result<()> {
     let field = load_nifti(&args.input)?;
@@ -45,7 +95,23 @@ pub fn execute(args: QsmartArgs) -> crate::Result<()> {
         None => None,
     };
 
+    if let Some(dir) = &args.intermediates {
+        std::fs::create_dir_all(dir)?;
+    }
+    let mut writer = args.intermediates.as_deref().map(|dir| IntermediateWriter {
+        dir, reference: &field, written: Vec::new(), error: None,
+    });
+    if let (Some(w), Some(m), config::QsmartVesselMagnitude::MeanN4) =
+        (writer.as_mut(), &magnitude, cfg.inversion.qsmart.vessel_magnitude)
+    {
+        // QSMART's own vessel magnitude, made here from the echoes.
+        w.write(qsmxt_engine::stages::qsmart::VESSEL_MAGNITUDE, m);
+    }
     let mut progress = |_: usize, _: usize| {};
+    let observer: &mut dyn qsm_core::pipeline::Observer = match writer.as_mut() {
+        Some(w) => w,
+        None => &mut progress,
+    };
     let chi = qsm_core::pipeline::run_qsmart(
         &field.data,
         &mask,
@@ -54,9 +120,17 @@ pub fn execute(args: QsmartArgs) -> crate::Result<()> {
         &scan_meta,
         &inv_config,
         qsm_core::pipeline::QsmReference::None,
-        &mut progress,
+        observer,
     )
     .map_err(|e| QsmxtError::Config(format!("qsmart: {}", e)))?;
+    if let Some(w) = writer {
+        if let Some(e) = w.error {
+            return Err(e);
+        }
+        for path in &w.written {
+            info!("Intermediate saved to {}", path.display());
+        }
+    }
 
     save_nifti(&args.output, &chi, &field)?;
     info!("Susceptibility map saved to {}", args.output.display());
