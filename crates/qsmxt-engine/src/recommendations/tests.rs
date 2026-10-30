@@ -99,6 +99,13 @@ fn known() -> Facts {
     Facts { echo_count: Some(4), field_strength: Some(3.0), voxel_size: Some((1.0, 1.0, 1.0)), dims: Some((64, 64, 32)) }
 }
 
+/// A QSM.rs setting at a QSMxT setting's own path needs no entry in the table.
+#[test]
+fn a_rule_setting_at_a_qsmxt_path_maps_to_it() {
+    assert_eq!(setting_of("separation.decompose.chi_bound"), Some(("separation.decompose.chi_bound", Kind::Same)));
+    assert_eq!(setting_of("no.such.setting"), None);
+}
+
 #[test]
 fn every_rule_setting_is_a_qsmxt_setting() {
     for (core_path, _) in core::SETTINGS {

@@ -27,7 +27,7 @@ pub fn published_tail(item: &Item, scan_suffix: &str) -> Option<(Tail, &'static 
     let nii = |t: Tail| Some((t, "nii"));
     match *item {
         Item::Chi => nii(naming::chimap()),
-        Item::EchoChi(e) => nii(naming::chimap().with("echo", e.to_string())),
+        Item::EchoChi(e) => nii(naming::chimap_desc(&format!("echo{e}"))),
         Item::ChiSupport => nii(naming::mask_desc("qsm")),
         Item::SinglePassChi => nii(naming::chimap_desc("singlepass")),
         Item::BrainMask => nii(naming::mask()),
@@ -239,12 +239,12 @@ mod tests {
         }
     }
 
-    /// Each echo's map of a per-echo QSM is published beside the QSM, with its echo; its echo time
-    /// is recorded by the step that made it, not forwarded from a single-echo scan.
+    /// Each echo's map of a per-echo QSM is published beside the QSM as `desc-echo<n>` (BIDS gives a
+    /// `Chimap` no `echo-` entity); its echo time is recorded by the step that made it.
     #[test]
     fn an_echos_map_is_published_with_its_echo() {
         assert_eq!(published_path(&Item::EchoChi(2), &key(), None).unwrap(),
-                   "sub-01/ses-pre/anat/sub-01_ses-pre_acq-gre_run-1_echo-2_Chimap.nii");
+                   "sub-01/ses-pre/anat/sub-01_ses-pre_acq-gre_run-1_desc-echo2_Chimap.nii");
         assert_eq!(description(&Item::EchoChi(2)).unwrap().forward, Forward::FieldStrength);
         assert_eq!(published_path(&Item::EchoRawChi(2), &key(), None), None);
     }

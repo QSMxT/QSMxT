@@ -121,7 +121,7 @@ impl Item {
             Item::EchoLocalFieldMask(_) => ("Echo local field mask".into(), None, K::Mask, Some("bgmask".into())),
             Item::EchoRawChi(_) => ("Echo unreferenced susceptibility".into(), Some("ppm"), K::Chi,
                                     Some("desc-unreferenced_Chimap".into())),
-            Item::EchoChi(_) => ("Echo susceptibility".into(), Some("ppm"), K::Chi, Some("Chimap".into())),
+            Item::EchoChi(e) => ("Echo susceptibility".into(), Some("ppm"), K::Chi, Some(format!("desc-echo{e}_Chimap"))),
             Item::Chi => ("Susceptibility".into(), Some("ppm"), K::Chi, Some("Chimap".into())),
             Item::ChiSupport => ("Susceptibility support".into(), None, K::Mask, Some("desc-qsm_mask".into())),
             Item::SinglePassChi => ("Single-pass susceptibility".into(), Some("ppm"), K::Chi, Some("desc-singlepass_Chimap".into())),

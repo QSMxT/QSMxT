@@ -2825,7 +2825,7 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Inner passes", field: "sep_decompose_n_inner", help: "Alternating 3-stage fit passes per voxel" });
                 rows.push(PipelineRow::Param { label: "  Chi bound (ppm)", field: "sep_decompose_chi_bound", help: "Upper bound on |χ| in the fit" });
                 rows.push(PipelineRow::Toggle { label: "  Unwrap phase", field: "sep_decompose_unwrap_phase",
-                    help: "Unwrap the phase along the echoes and limit χ to what the echo spacing can represent (default: off, as in the authors' code)" });
+                    help: "Unwrap the phase along the echoes (default: off, as in the authors' code)" });
                 rows.push(PipelineRow::Param { label: "  Max iter", field: "sep_decompose_max_iterations", help: "Maximum solver iterations per fit (lsqcurvefit MaxIterations)" });
                 rows.push(PipelineRow::Param { label: "  Max evaluations", field: "sep_decompose_max_fevals", help: "Maximum function evaluations per fit (lsqcurvefit MaxFunctionEvaluations). Blank = 100 × the fit's parameters" });
                 rows.push(PipelineRow::Param { label: "  Function tol", field: "sep_decompose_function_tol", help: "Stop when the cost changes by less than this, relatively (lsqcurvefit FunctionTolerance)" });

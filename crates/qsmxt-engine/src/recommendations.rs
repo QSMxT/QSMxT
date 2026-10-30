@@ -402,8 +402,12 @@ const SETTINGS: &[(&str, &str, Kind)] = &[
     ("segmentation.inference.patch", "segmentation.patch", Kind::SynthSegPatch),
 ];
 
+/// A QSM.rs rule setting as QSMxT's: listed in [`SETTINGS`], or else the QSMxT setting at the same
+/// path, taken as it is ([`Kind::Same`]). So a rule QSM.rs adds on a setting QSMxT already has
+/// (`separation.decompose.chi_bound`, ...) is offered without a change here.
 fn setting_of(core_path: &str) -> Option<(&'static str, Kind)> {
     SETTINGS.iter().find(|(c, _, _)| *c == core_path).map(|&(_, q, k)| (q, k))
+        .or_else(|| setting(core_path).map(|s| (s.path, Kind::Same)))
 }
 
 /// Whether `id` names one of QSM.rs's rules.

@@ -88,7 +88,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--bet-subdivisions <BET_SUBDIVISIONS>` | BET icosphere subdivision level. Applies to every BET step in the masking recipe. |
 | `--bet-voxel-scale <FACTOR>` | Factor applied to the voxel sizes before BET runs. BET's surface model is tuned to a human brain in millimetres, so preclinical data has to be presented at human scale: 10 is the usual setting for mouse. 1 (the default) is the acquisition's own geometry. Applies to every BET step in the masking recipe. |
 | `--qsm-reference <SPEC>` | What the susceptibility map's zero is pinned to: `mean` (the mean over the voxels the map is defined on — the brain mask less the rim background-field removal eroded; the default), `none`, or a SynthSeg region — a structure with both sides merged (`thalamus`), one side (`left-thalamus`), the `ventricles` composite, a raw FreeSurfer id (`4`), or a comma-separated list of any of those. A region implies --do-segmentation. An unrecognised name lists the valid ones. |
-| `--qsm-per-echo <BOOL>` | Reconstruct a QSM from each echo on its own (each echo's phase unwrapped and divided by its echo time, then background removal, dipole inversion and referencing per echo) and publish each echo's map (`echo-<n>_Chimap`) and their mean as the QSM (`Chimap`), instead of one QSM from the echo-combined field map. The echo combination (--b0-estimation), phase-offset removal and bipolar correction do not run. DECOMPOSE takes the echoes' maps. Multi-echo only; not with TGV, QSMART, iQSM, iQFM, two-pass, or χ-separation methods that fit the local field. |
+| `--qsm-per-echo <BOOL>` | Reconstruct a QSM from each echo on its own (each echo's phase unwrapped and divided by its echo time, then background removal, dipole inversion and referencing per echo) and publish each echo's map (`desc-echo<n>_Chimap`) and their mean as the QSM (`Chimap`), instead of one QSM from the echo-combined field map. The echo combination (--b0-estimation), phase-offset removal and bipolar correction do not run. DECOMPOSE takes the echoes' maps. Multi-echo only; not with TGV, QSMART, iQSM, iQFM, two-pass, or χ-separation methods that fit the local field. |
 | `--rts-delta <RTS_DELTA>` | RTS delta parameter. |
 | `--rts-mu <RTS_MU>` | RTS mu parameter. |
 | `--rts-tol <RTS_TOL>` | RTS tolerance. |
@@ -250,7 +250,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--r2star-qsm-r-const-3t <R2STAR_QSM_R_CONST_3T>` | R2\*-QSM relaxometric constant at 3T (Hz/ppm) |
 | `--decompose-n-inner <DECOMPOSE_N_INNER>` | DECOMPOSE inner alternating passes per voxel. |
 | `--decompose-chi-bound <DECOMPOSE_CHI_BOUND>` | DECOMPOSE upper bound on \|χ\| in the fit (ppm) |
-| `--decompose-unwrap-phase <BOOL>` | DECOMPOSE: unwrap the phase along the echoes and limit χ to what the echo spacing can represent (default: false, as in the authors' code) |
+| `--decompose-unwrap-phase <BOOL>` | DECOMPOSE: unwrap the phase along the echoes (default: false, as in the authors' code) |
 | `--decompose-max-iterations <DECOMPOSE_MAX_ITERATIONS>` | DECOMPOSE: maximum solver iterations of each fit (lsqcurvefit MaxIterations; default: 400) |
 | `--decompose-max-function-evaluations <DECOMPOSE_MAX_FUNCTION_EVALUATIONS>` | DECOMPOSE: maximum function evaluations of each fit (lsqcurvefit MaxFunctionEvaluations; default: 100 × the fit's parameters) |
 | `--decompose-function-tolerance <DECOMPOSE_FUNCTION_TOLERANCE>` | DECOMPOSE: relative cost change each fit stops at (lsqcurvefit FunctionTolerance; default: 1e-6) |
@@ -538,7 +538,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--bet-subdivisions <BET_SUBDIVISIONS>` | BET icosphere subdivision level. Applies to every BET step in the masking recipe. |
 | `--bet-voxel-scale <FACTOR>` | Factor applied to the voxel sizes before BET runs. BET's surface model is tuned to a human brain in millimetres, so preclinical data has to be presented at human scale: 10 is the usual setting for mouse. 1 (the default) is the acquisition's own geometry. Applies to every BET step in the masking recipe. |
 | `--qsm-reference <SPEC>` | What the susceptibility map's zero is pinned to: `mean` (the mean over the voxels the map is defined on — the brain mask less the rim background-field removal eroded; the default), `none`, or a SynthSeg region — a structure with both sides merged (`thalamus`), one side (`left-thalamus`), the `ventricles` composite, a raw FreeSurfer id (`4`), or a comma-separated list of any of those. A region implies --do-segmentation. An unrecognised name lists the valid ones. |
-| `--qsm-per-echo <BOOL>` | Reconstruct a QSM from each echo on its own (each echo's phase unwrapped and divided by its echo time, then background removal, dipole inversion and referencing per echo) and publish each echo's map (`echo-<n>_Chimap`) and their mean as the QSM (`Chimap`), instead of one QSM from the echo-combined field map. The echo combination (--b0-estimation), phase-offset removal and bipolar correction do not run. DECOMPOSE takes the echoes' maps. Multi-echo only; not with TGV, QSMART, iQSM, iQFM, two-pass, or χ-separation methods that fit the local field. |
+| `--qsm-per-echo <BOOL>` | Reconstruct a QSM from each echo on its own (each echo's phase unwrapped and divided by its echo time, then background removal, dipole inversion and referencing per echo) and publish each echo's map (`desc-echo<n>_Chimap`) and their mean as the QSM (`Chimap`), instead of one QSM from the echo-combined field map. The echo combination (--b0-estimation), phase-offset removal and bipolar correction do not run. DECOMPOSE takes the echoes' maps. Multi-echo only; not with TGV, QSMART, iQSM, iQFM, two-pass, or χ-separation methods that fit the local field. |
 | `--rts-delta <RTS_DELTA>` | RTS delta parameter. |
 | `--rts-mu <RTS_MU>` | RTS mu parameter. |
 | `--rts-tol <RTS_TOL>` | RTS tolerance. |
@@ -700,7 +700,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--r2star-qsm-r-const-3t <R2STAR_QSM_R_CONST_3T>` | R2\*-QSM relaxometric constant at 3T (Hz/ppm) |
 | `--decompose-n-inner <DECOMPOSE_N_INNER>` | DECOMPOSE inner alternating passes per voxel. |
 | `--decompose-chi-bound <DECOMPOSE_CHI_BOUND>` | DECOMPOSE upper bound on \|χ\| in the fit (ppm) |
-| `--decompose-unwrap-phase <BOOL>` | DECOMPOSE: unwrap the phase along the echoes and limit χ to what the echo spacing can represent (default: false, as in the authors' code) |
+| `--decompose-unwrap-phase <BOOL>` | DECOMPOSE: unwrap the phase along the echoes (default: false, as in the authors' code) |
 | `--decompose-max-iterations <DECOMPOSE_MAX_ITERATIONS>` | DECOMPOSE: maximum solver iterations of each fit (lsqcurvefit MaxIterations; default: 400) |
 | `--decompose-max-function-evaluations <DECOMPOSE_MAX_FUNCTION_EVALUATIONS>` | DECOMPOSE: maximum function evaluations of each fit (lsqcurvefit MaxFunctionEvaluations; default: 100 × the fit's parameters) |
 | `--decompose-function-tolerance <DECOMPOSE_FUNCTION_TOLERANCE>` | DECOMPOSE: relative cost change each fit stops at (lsqcurvefit FunctionTolerance; default: 1e-6) |
@@ -925,7 +925,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--bet-subdivisions <BET_SUBDIVISIONS>` | BET icosphere subdivision level. Applies to every BET step in the masking recipe. |
 | `--bet-voxel-scale <FACTOR>` | Factor applied to the voxel sizes before BET runs. BET's surface model is tuned to a human brain in millimetres, so preclinical data has to be presented at human scale: 10 is the usual setting for mouse. 1 (the default) is the acquisition's own geometry. Applies to every BET step in the masking recipe. |
 | `--qsm-reference <SPEC>` | What the susceptibility map's zero is pinned to: `mean` (the mean over the voxels the map is defined on — the brain mask less the rim background-field removal eroded; the default), `none`, or a SynthSeg region — a structure with both sides merged (`thalamus`), one side (`left-thalamus`), the `ventricles` composite, a raw FreeSurfer id (`4`), or a comma-separated list of any of those. A region implies --do-segmentation. An unrecognised name lists the valid ones. |
-| `--qsm-per-echo <BOOL>` | Reconstruct a QSM from each echo on its own (each echo's phase unwrapped and divided by its echo time, then background removal, dipole inversion and referencing per echo) and publish each echo's map (`echo-<n>_Chimap`) and their mean as the QSM (`Chimap`), instead of one QSM from the echo-combined field map. The echo combination (--b0-estimation), phase-offset removal and bipolar correction do not run. DECOMPOSE takes the echoes' maps. Multi-echo only; not with TGV, QSMART, iQSM, iQFM, two-pass, or χ-separation methods that fit the local field. |
+| `--qsm-per-echo <BOOL>` | Reconstruct a QSM from each echo on its own (each echo's phase unwrapped and divided by its echo time, then background removal, dipole inversion and referencing per echo) and publish each echo's map (`desc-echo<n>_Chimap`) and their mean as the QSM (`Chimap`), instead of one QSM from the echo-combined field map. The echo combination (--b0-estimation), phase-offset removal and bipolar correction do not run. DECOMPOSE takes the echoes' maps. Multi-echo only; not with TGV, QSMART, iQSM, iQFM, two-pass, or χ-separation methods that fit the local field. |
 | `--rts-delta <RTS_DELTA>` | RTS delta parameter. |
 | `--rts-mu <RTS_MU>` | RTS mu parameter. |
 | `--rts-tol <RTS_TOL>` | RTS tolerance. |
@@ -1087,7 +1087,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--r2star-qsm-r-const-3t <R2STAR_QSM_R_CONST_3T>` | R2\*-QSM relaxometric constant at 3T (Hz/ppm) |
 | `--decompose-n-inner <DECOMPOSE_N_INNER>` | DECOMPOSE inner alternating passes per voxel. |
 | `--decompose-chi-bound <DECOMPOSE_CHI_BOUND>` | DECOMPOSE upper bound on \|χ\| in the fit (ppm) |
-| `--decompose-unwrap-phase <BOOL>` | DECOMPOSE: unwrap the phase along the echoes and limit χ to what the echo spacing can represent (default: false, as in the authors' code) |
+| `--decompose-unwrap-phase <BOOL>` | DECOMPOSE: unwrap the phase along the echoes (default: false, as in the authors' code) |
 | `--decompose-max-iterations <DECOMPOSE_MAX_ITERATIONS>` | DECOMPOSE: maximum solver iterations of each fit (lsqcurvefit MaxIterations; default: 400) |
 | `--decompose-max-function-evaluations <DECOMPOSE_MAX_FUNCTION_EVALUATIONS>` | DECOMPOSE: maximum function evaluations of each fit (lsqcurvefit MaxFunctionEvaluations; default: 100 × the fit's parameters) |
 | `--decompose-function-tolerance <DECOMPOSE_FUNCTION_TOLERANCE>` | DECOMPOSE: relative cost change each fit stops at (lsqcurvefit FunctionTolerance; default: 1e-6) |
@@ -2733,7 +2733,7 @@ qsmxt separate decompose [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> -
 | `--echo-times <ECHO_TIMES>` | GRE echo times in seconds (space- or comma-separated) Required. |
 | `--n-inner <N_INNER>` | Inner alternating passes per voxel. |
 | `--chi-bound <CHI_BOUND>` | Upper bound on \|χ\| in the fit (ppm) |
-| `--unwrap-phase <BOOL>` | Unwrap the phase along the echoes and limit χ to what the echo spacing can represent (default: false, as in the authors' code) |
+| `--unwrap-phase <BOOL>` | Unwrap the phase along the echoes (default: false, as in the authors' code) |
 | `--max-iterations <MAX_ITERATIONS>` | Maximum solver iterations of each fit (lsqcurvefit MaxIterations; default: 400) |
 | `--max-function-evaluations <MAX_FUNCTION_EVALUATIONS>` | Maximum function evaluations of each fit (lsqcurvefit MaxFunctionEvaluations; default: 100 × the fit's parameters) |
 | `--function-tolerance <FUNCTION_TOLERANCE>` | Relative cost change each fit stops at (lsqcurvefit FunctionTolerance; default: 1e-6) |

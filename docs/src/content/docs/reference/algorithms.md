@@ -483,7 +483,7 @@ combining the echoes into one field map. Each echo's phase is unwrapped with
 `--unwrapping-algorithm` (ROMEO with that echo's magnitude) and divided by its own echo time,
 and background field removal, dipole inversion and referencing then run on that echo's field
 as they would on a single-echo scan, at its echo time. The run publishes each echo's map
-(`<run>_echo-<n>_Chimap.nii`, with its `EchoTime` in the sidecar) and, as the QSM
+(`<run>_desc-echo<n>_Chimap.nii`, with its `EchoTime` in the sidecar) and, as the QSM
 (`<run>_Chimap.nii`), the mean of the echoes' maps with equal weights over the voxels where
 every echo's map is defined, referenced as any QSM is.
 
@@ -1164,9 +1164,9 @@ MATLAB `lsqcurvefit`'s trust-region-reflective method with its options:
 and `--decompose-optimality-tolerance` (default 1e-6 each), `--decompose-finite-difference-step`
 (default √eps) and `--decompose-typical-x` (default 1). It takes the phase of each echo on its
 principal branch, as the authors' code does; `--decompose-unwrap-phase true` unwraps it along
-the echoes and limits χ to what the echo spacing can represent; at 7 T (6.5 T and above) the
-recommendations suggest it, since the method was designed for 3 T and the phase wraps between
-echoes at 7 T. Its authors give it a QSM for each echo. With
+the echoes. At 7 T (6.5 T and above) the recommendations suggest it, since the method was
+designed for 3 T and the phase wraps between echoes at 7 T. `--decompose-chi-bound` (ppm) bounds
+|χ| in the fit. Its authors give it a QSM for each echo. With
 [`--qsm-per-echo true`](#per-echo-qsm), which choosing DECOMPOSE recommends, `qsmxt run` gives it
 each echo's map; otherwise it uses its one QSM at every echo. The methods text says which.
 `qsmxt separate decompose` takes one per echo (`--qsm-per-echo`).

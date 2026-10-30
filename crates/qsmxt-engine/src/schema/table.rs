@@ -898,9 +898,9 @@ pub(super) fn table() -> Vec<Def> {
         // QSM.rs separation/decompose.rs: a negative bound makes lb > ub and f64::clamp panics.
         d("separation.decompose.chi_bound", Separation, "Chi bound (ppm)", "Upper bound on |χ| in the fit", Float).min(0.0).units("ppm").flag("--decompose-chi-bound").parent("separation.algorithm")
         .when(|x| x.sep("decompose")).full("χ bound"),
-        d("separation.decompose.unwrap_phase", Separation, "Unwrap phase", "Unwrap the phase along the echoes and limit χ to what the echo spacing can represent (default: off, as in the authors' code)", Bool).flag("--decompose-unwrap-phase").parent("separation.algorithm")
+        d("separation.decompose.unwrap_phase", Separation, "Unwrap phase", "Unwrap the phase along the echoes (default: off, as in the authors' code)", Bool).flag("--decompose-unwrap-phase").parent("separation.algorithm")
         .when(|x| x.sep("decompose")).full("Echo-phase unwrapping")
-        .gui("Unwrap the phase along the echoes and limit χ to what the echo spacing can represent"),
+        .gui("Unwrap the phase along the echoes"),
         // Each stage's fit: MATLAB lsqcurvefit's options (trust-region-reflective).
         d("separation.decompose.lsqcurvefit.max_iterations", Separation, "Max iter", "Maximum solver iterations per fit (lsqcurvefit MaxIterations)", Int).min(1.0).flag("--decompose-max-iterations").parent("separation.algorithm")
         .when(|x| x.sep("decompose")).full("Maximum iterations"),
