@@ -876,7 +876,7 @@ mod tests {
                                 E::First, E::Last, E::First]);
         assert_eq!(inv.whqsm.weight, qsm_core::inversion::WhQsmWeight::Flat);
         assert_eq!((bg.pdf.n_cg, bg.pdf.n_pad, bg.harperella.pad, bg.iharperella.pad),
-                   (300, 40, [0, 0, 0], [0, 0, 0]));
+                   (30, 40, [0, 0, 0], [0, 0, 0]));
         let mut cfg = PipelineConfig::default();
         let i = &mut cfg.inversion;
         for te in [&mut i.nltv.te, &mut i.medi.te, &mut i.tfi.te, &mut i.ndi.te, &mut i.fansi.te,
@@ -886,7 +886,7 @@ mod tests {
         i.whqsm.weight = crate::WhqsmWeight::InVivo;
         (i.nltv.rho, i.nltv.tol_newton, i.rts.tau, i.rts.gamma) = (Some(0.3), 1e-5, 0.5, 2.0);
         cfg.bg_removal.pdf.space = crate::PdfSpace::Kspace;
-        (cfg.bg_removal.pdf.n_cg, cfg.bg_removal.pdf.n_pad) = (30, 0);
+        (cfg.bg_removal.pdf.n_cg, cfg.bg_removal.pdf.n_pad) = (300, 0);
         cfg.bg_removal.harperella.pad = [1, 2, 3];
         cfg.bg_removal.iharperella.pad = [4, 5, 6];
         let (_, bg, inv, _) = to_pipeline_stages(&cfg);
@@ -895,7 +895,7 @@ mod tests {
         assert_eq!((inv.nltv.rho, inv.nltv.tol_newton, inv.rts.tau, inv.rts.gamma), (Some(0.3), 1e-5, 0.5, 2.0));
         assert_eq!(bg.pdf.space, qsm_core::bgremove::DipoleKernelSpace::KSpace);
         assert_eq!((bg.pdf.n_cg, bg.pdf.n_pad, bg.harperella.pad, bg.iharperella.pad),
-                   (30, 0, [1, 2, 3], [4, 5, 6]));
+                   (300, 0, [1, 2, 3], [4, 5, 6]));
     }
 
     #[test]

@@ -581,11 +581,13 @@ multi-echo data) and the wrapped-phase ones (`iqsm`,
 
 PDF weights its fit by a noise map made from every echo's magnitude (MEDI toolbox
 `Fit_ppm_complex`), so it needs the magnitude of every echo and evenly spaced echoes.
-It runs at most `--pdf-n-cg` conjugate-gradient iterations (default 300), on the mask's
+It runs at most `--pdf-n-cg` conjugate-gradient iterations (default 30), on the mask's
 bounding box zero-padded by
 `--pdf-n-pad` voxels (default 40; 0 runs on the full volume, and 1 is refused). `--pdf-space`
 picks the dipole kernel: `image` (the FFT of the dipole sampled on the voxel grid, the
-default) or `kspace` (the analytic k-space kernel).
+default) or `kspace` (the analytic k-space kernel). With PDF chosen, QSMxT recommends 300
+iterations (rule `pdf.cg-iterations`): 30 can stop far from convergence, and 300 costs about
+30 s more per 1 mm whole-brain scan.
 
 HARPERELLA and iHARPERELLA zero-pad the field by `--harperella-pad` / `--iharperella-pad`
 voxels per side, X Y Z (STI Suite's `padsize`, default `0 0 0`).
@@ -1154,7 +1156,8 @@ of those, R2PRIMEnet's prediction from R2\* (3 T only); see
   QSM that the χ-separation step reconstructs from the local field by iLSQR, as the toolbox's
   script does, rather than with the run's own QSM: 100 iterations and 12 mm padding per side
   by default (`--chi-sep-ilsqr-qsm-max-iter`, `--chi-sep-ilsqr-qsm-tol`,
-  `--chi-sep-ilsqr-qsm-pad-mm`). With `--use-custom-qsm` it takes the supplied QSM instead.
+  `--chi-sep-ilsqr-qsm-pad-mm`, and `--chi-sep-ilsqr-qsm-precision` as for
+  [`--ilsqr-precision`](#--ilsqr-precision)). With `--use-custom-qsm` it takes the supplied QSM instead.
   It runs on the field zero-padded by `--chi-sep-ilsqr-pad` voxels at both ends of each axis
   (default `16 16 16`).
 - `chi-sep-medi` is initialised from the run's QSM. It weights its data terms by a noise map

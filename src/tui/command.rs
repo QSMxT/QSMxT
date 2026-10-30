@@ -605,6 +605,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             chi_sep_ilsqr_qsm_max_iter: parse_optional_usize(&ps.sep_ilsqr_qsm_max_iter),
             chi_sep_ilsqr_qsm_tol: parse_optional_f64(&ps.sep_ilsqr_qsm_tol),
             chi_sep_ilsqr_qsm_pad_mm: parse_optional_f64(&ps.sep_ilsqr_qsm_pad_mm),
+            chi_sep_ilsqr_qsm_precision: qsmxt_engine::IlsqrPrecision::ALL.get(ps.sep_ilsqr_qsm_precision).copied(),
             chi_sep_medi_lambda: parse_optional_f64(&ps.sep_medi_lambda),
             chi_sep_medi_lambda_csf: parse_optional_f64(&ps.sep_medi_lambda_csf),
             chi_sep_medi_dr_pos: parse_optional_f64(&ps.sep_medi_dr_pos).map(crate::cli::OrAuto::Value),

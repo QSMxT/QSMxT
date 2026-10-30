@@ -728,6 +728,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = sp.chi_sep_ilsqr_qsm_max_iter { ci.qsm_ilsqr.max_iter = v; }
         if let Some(v) = sp.chi_sep_ilsqr_qsm_tol { ci.qsm_ilsqr.tol = v; }
         if let Some(v) = sp.chi_sep_ilsqr_qsm_pad_mm { ci.qsm_ilsqr.pad_mm = v; }
+        if let Some(v) = sp.chi_sep_ilsqr_qsm_precision { ci.qsm_ilsqr.precision = v; }
         let cm = &mut config.separation.chi_sep_medi;
         if let Some(v) = sp.chi_sep_medi_lambda { cm.lambda = v; }
         if let Some(v) = sp.chi_sep_medi_lambda_csf { cm.lambda_csf = v; }

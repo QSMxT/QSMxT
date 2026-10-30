@@ -1445,6 +1445,7 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("sep_ilsqr_qsm_max_iter", "separation.chi_sep_ilsqr.qsm_ilsqr.max_iter"),
     ("sep_ilsqr_qsm_tol", "separation.chi_sep_ilsqr.qsm_ilsqr.tol"),
     ("sep_ilsqr_qsm_pad_mm", "separation.chi_sep_ilsqr.qsm_ilsqr.pad_mm"),
+    ("sep_ilsqr_qsm_precision", "separation.chi_sep_ilsqr.qsm_ilsqr.precision"),
     ("sep_medi_lambda", "separation.chi_sep_medi.lambda"), ("sep_medi_lambda_csf", "separation.chi_sep_medi.lambda_csf"),
     ("sep_medi_dr_pos", "separation.chi_sep_medi.dr_pos"), ("sep_medi_dr_neg", "separation.chi_sep_medi.dr_neg"),
     ("sep_medi_pad", "separation.chi_sep_medi.pad"), ("sep_medi_tol", "separation.chi_sep_medi.tol"),
@@ -2156,6 +2157,8 @@ pub struct PipelineFormState {
     pub sep_ilsqr_qsm_max_iter: String,
     pub sep_ilsqr_qsm_tol: String,
     pub sep_ilsqr_qsm_pad_mm: String,
+    /// An index into ILSQR_PRECISION_OPTIONS.
+    pub sep_ilsqr_qsm_precision: usize,
     pub sep_medi_lambda: String,
     pub sep_medi_lambda_csf: String,
     pub sep_medi_dr_pos: String,
@@ -2586,6 +2589,7 @@ impl Default for PipelineFormState {
             sep_ilsqr_qsm_max_iter: sep_ilsqr.qsm_ilsqr.max_iter.to_string(),
             sep_ilsqr_qsm_tol: fmt_default(sep_ilsqr.qsm_ilsqr.tol),
             sep_ilsqr_qsm_pad_mm: fmt_default(sep_ilsqr.qsm_ilsqr.pad_mm),
+            sep_ilsqr_qsm_precision: ilsqr_precision_index(sep_ilsqr.qsm_ilsqr.precision.into()),
             sep_medi_lambda: fmt_default(sep_medi.lambda),
             sep_medi_lambda_csf: fmt_default(sep_medi.lambda_csf),
             sep_medi_dr_pos: fmt_opt(sep_medi.dr_pos),
@@ -2894,6 +2898,8 @@ impl PipelineFormState {
                         help: "Tolerance of the iLSQR that reconstructs the QSM separated" });
                     rows.push(PipelineRow::Param { label: "  QSM pad (mm)", field: "sep_ilsqr_qsm_pad_mm",
                         help: "Zero-padding per side of the iLSQR that reconstructs the QSM separated" });
+                    rows.push(PipelineRow::AlgoSelect { label: "  QSM precision", field: "sep_ilsqr_qsm_precision",
+                        options: ILSQR_PRECISION_OPTIONS, help: ILSQR_PRECISION_HELP });
                 }
             }
             3 => {
@@ -4397,6 +4403,7 @@ impl PipelineFormState {
             "star_te" => self.star_te,
             "whqsm_weight" => self.whqsm_weight,
             "ilsqr_precision" => self.ilsqr_precision,
+            "sep_ilsqr_qsm_precision" => self.sep_ilsqr_qsm_precision,
             "pdf_space" => self.pdf_space,
             "ismv_variant" => self.ismv_variant,
             "nltv_te" => self.nltv_te,
@@ -4441,6 +4448,7 @@ impl PipelineFormState {
             "star_te" => self.star_te = val.min(ECHO_TIME_OPTIONS.len() - 1),
             "whqsm_weight" => self.whqsm_weight = val.min(WHQSM_WEIGHT_OPTIONS.len() - 1),
             "ilsqr_precision" => self.ilsqr_precision = val.min(ILSQR_PRECISION_OPTIONS.len() - 1),
+            "sep_ilsqr_qsm_precision" => self.sep_ilsqr_qsm_precision = val.min(ILSQR_PRECISION_OPTIONS.len() - 1),
             "pdf_space" => self.pdf_space = val.min(PDF_SPACE_OPTIONS.len() - 1),
             "ismv_variant" => self.ismv_variant = val.min(ISMV_VARIANT_OPTIONS.len() - 1),
             "nltv_te" => self.nltv_te = val.min(ECHO_TIME_OPTIONS.len() - 1),

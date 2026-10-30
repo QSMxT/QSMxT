@@ -586,6 +586,10 @@ pub struct SeparationParamArgs {
     /// χ-sep iLSQR: zero-padding of that QSM's iLSQR, in mm per side (default: 12)
     #[arg(long, value_name = "MM")]
     pub chi_sep_ilsqr_qsm_pad_mm: Option<f64>,
+    /// χ-sep iLSQR: arithmetic of that QSM's two LSQR solves: double, or single as the original
+    /// implementation (default: double)
+    #[arg(long, value_name = "PRECISION", value_parser = parse_ilsqr_precision)]
+    pub chi_sep_ilsqr_qsm_precision: Option<qsmxt_engine::IlsqrPrecision>,
     // χ-sep MEDI (the χ-separation toolbox's chi_sep_MEDI)
     /// χ-sep MEDI weight of the data terms against the L1 terms (default: 1)
     #[arg(long)]
@@ -1068,7 +1072,7 @@ pub struct PdfParamArgs {
     /// PDF tolerance, relative to the noise level
     #[arg(long)]
     pub pdf_tol: Option<f64>,
-    /// PDF maximum conjugate-gradient iterations (default: 300)
+    /// PDF maximum conjugate-gradient iterations (default: 30)
     #[arg(long)]
     pub pdf_n_cg: Option<usize>,
     /// PDF dipole kernel: image (the FFT of the dipole sampled on the voxel grid) or kspace (the
@@ -2617,7 +2621,7 @@ pub struct BgremovePdfArgs {
     /// Tolerance, relative to the noise level
     #[arg(long)]
     pub tol: Option<f64>,
-    /// Maximum conjugate-gradient iterations (default: 300)
+    /// Maximum conjugate-gradient iterations (default: 30)
     #[arg(long)]
     pub n_cg: Option<usize>,
     /// Dipole kernel: image (the FFT of the dipole sampled on the voxel grid) or kspace (the

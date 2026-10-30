@@ -2751,8 +2751,8 @@ mod tests {
         config.inversion.whqsm.weight = WhqsmWeight::InVivo;
         assert!(generate_methods(&config).contains("data weight = in-vivo"));
         config.bg_removal.algorithm = BfAlgorithm::Pdf;
-        config.bg_removal.pdf.n_cg = 30;
-        assert!(generate_methods(&config).contains("at most 30 conjugate-gradient iterations"));
+        config.bg_removal.pdf.n_cg = 300;
+        assert!(generate_methods(&config).contains("at most 300 conjugate-gradient iterations"));
     }
 
     #[test]
