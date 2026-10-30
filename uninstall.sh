@@ -4,8 +4,17 @@
 
 set -e
 
-INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
+# Without INSTALL_DIR, remove the qsmxt on PATH, else look where install.sh puts it.
+if [ -z "${INSTALL_DIR:-}" ]; then
+    FOUND=$(command -v qsmxt 2>/dev/null || true)
+    case "$FOUND" in
+        /*) INSTALL_DIR=$(dirname "$FOUND") ;;
+        *)  if [ -f "${HOME}/.local/bin/qsmxt" ]; then INSTALL_DIR="${HOME}/.local/bin"; else INSTALL_DIR=/usr/local/bin; fi ;;
+    esac
+fi
 BINARY="${INSTALL_DIR}/qsmxt"
+
+PATH_MARKER="# added by the QSMxT installer"
 
 if [ ! -f "$BINARY" ]; then
     echo "qsmxt not found at ${BINARY}"
@@ -35,3 +44,15 @@ if [ -d "$QSMXT_DIR" ]; then
     rmdir "${QSMXT_DIR}/bin" 2>/dev/null || true
     rmdir "$QSMXT_DIR" 2>/dev/null || true
 fi
+
+# Remove the PATH line install.sh added to shell startup files
+for RC in "${ZDOTDIR:-$HOME}/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile" \
+          "${XDG_CONFIG_HOME:-$HOME/.config}/fish/config.fish"; do
+    if [ -f "$RC" ] && grep -qF "$PATH_MARKER" "$RC"; then
+        TMP=$(mktemp)
+        grep -vF "$PATH_MARKER" "$RC" > "$TMP" || true
+        cat "$TMP" > "$RC"   # rewrite in place: keeps the file's permissions and any symlink
+        rm -f "$TMP"
+        echo "Removed the QSMxT PATH entry from ${RC}"
+    fi
+done

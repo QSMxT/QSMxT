@@ -5,12 +5,14 @@ on:
     branches: [main]
     paths:
       - 'install.sh'
+      - 'uninstall.sh'
       - 'install.ps1'
       - '.github/scripts/sha256sums.sh'
       - '.github/workflows/install.yml'
   pull_request:
     paths:
       - 'install.sh'
+      - 'uninstall.sh'
       - 'install.ps1'
       - '.github/scripts/sha256sums.sh'
       - '.github/workflows/install.yml'
@@ -58,10 +60,10 @@ jobs:
       - name: Refuses a tampered archive, a missing entry and a missing manifest; installs a verified one
         shell: bash
         run: |
-          (cd mirror && exec python3 -m http.server 8765 >/dev/null 2>&1) &
+          (cd mirror && exec python3 -m http.server 8765 --bind 127.0.0.1) &
           SERVER=$!
           trap 'kill $SERVER' EXIT
-          sleep 2
+          for i in $(seq 30); do curl -sf -o /dev/null http://127.0.0.1:8765/ && break; sleep 1; done
           for m in tampered noentry nosums; do
             if INSTALL_DIR="$RUNNER_TEMP/bin-$m" QSMXT_VERSION="$TAG" \
                  QSMXT_DOWNLOAD_URL="http://127.0.0.1:8765/$m" sh install.sh; then
@@ -74,6 +76,46 @@ jobs:
           INSTALL_DIR="$HOME/.local/bin" QSMXT_VERSION="$TAG" \
             QSMXT_DOWNLOAD_URL="http://127.0.0.1:8765/good" sh install.sh
           "$HOME/.local/bin/qsmxt" --version
+
+      - name: Installs to ~/.local/bin without sudo, adds it to PATH once, upgrades in place, uninstalls
+        shell: bash
+        run: |
+          # Its own port: the previous step's server may still hold 8765 on macOS.
+          (cd mirror && exec python3 -m http.server 8766 --bind 127.0.0.1) &
+          SERVER=$!
+          trap 'kill $SERVER' EXIT
+          for i in $(seq 30); do curl -sf -o /dev/null http://127.0.0.1:8766/ && break; sleep 1; done
+          export QSMXT_VERSION="$TAG" QSMXT_DOWNLOAD_URL="http://127.0.0.1:8766/good"
+          clean() { env -i HOME="$1" SHELL=/bin/zsh PATH=/usr/bin:/bin \
+                      QSMXT_VERSION="$QSMXT_VERSION" QSMXT_DOWNLOAD_URL="$QSMXT_DOWNLOAD_URL" "${@:2}"; }
+          fail() { echo "::error::$*"; exit 1; }
+
+          # Default for a non-root user: ~/.local/bin, and one PATH line however often it runs.
+          H="$RUNNER_TEMP/home-default"; mkdir -p "$H"
+          clean "$H" sh install.sh
+          clean "$H" sh install.sh
+          "$H/.local/bin/qsmxt" --version
+          [ "$(grep -c 'added by the QSMxT installer' "$H/.zshrc")" = 1 ] || fail "expected one PATH line in .zshrc"
+          grep -qF 'export PATH="$HOME/.local/bin:$PATH"' "$H/.zshrc" || fail "PATH line does not use \$HOME"
+
+          # QSMXT_NO_MODIFY_PATH leaves startup files alone.
+          H2="$RUNNER_TEMP/home-nomodify"; mkdir -p "$H2"
+          clean "$H2" QSMXT_NO_MODIFY_PATH=1 sh install.sh
+          [ -x "$H2/.local/bin/qsmxt" ] || fail "no binary in ~/.local/bin"
+          [ ! -e "$H2/.zshrc" ] || fail "QSMXT_NO_MODIFY_PATH=1 still wrote .zshrc"
+
+          # A writable qsmxt already on PATH is upgraded where it is.
+          H3="$RUNNER_TEMP/home-existing"; E="$RUNNER_TEMP/existing-bin"; mkdir -p "$H3" "$E"
+          printf '#!/bin/sh\necho old\n' > "$E/qsmxt"; chmod +x "$E/qsmxt"
+          env -i HOME="$H3" SHELL=/bin/zsh PATH="$E:/usr/bin:/bin" \
+            QSMXT_VERSION="$TAG" QSMXT_DOWNLOAD_URL="$QSMXT_DOWNLOAD_URL" sh install.sh
+          "$E/qsmxt" --version | grep -q '^qsmxt ' || fail "existing qsmxt was not replaced"
+          [ ! -e "$H3/.local/bin/qsmxt" ] || fail "installed a second copy instead of upgrading"
+
+          # uninstall.sh finds the ~/.local/bin copy and removes the PATH line.
+          clean "$H" sh uninstall.sh
+          [ ! -e "$H/.local/bin/qsmxt" ] || fail "uninstall left the binary"
+          ! grep -q 'added by the QSMxT installer' "$H/.zshrc" || fail "uninstall left the PATH line"
 
       - name: Installs the latest release from GitHub (once it publishes SHA256SUMS)
         shell: bash

@@ -6,7 +6,11 @@
 # extracted; a missing manifest, a missing entry or a mismatch aborts the install.
 #
 # Environment:
-#   INSTALL_DIR          where to put qsmxt (default /usr/local/bin)
+#   INSTALL_DIR          where to put qsmxt (default: an existing qsmxt on PATH that you
+#                        can write to; otherwise /usr/local/bin as root, ~/.local/bin
+#                        for everyone else, so no sudo is needed)
+#   QSMXT_NO_MODIFY_PATH set to 1 to leave shell startup files alone when the install
+#                        directory is not on PATH
 #   QSMXT_VERSION        install this release tag (e.g. v9.23.0) instead of the latest
 #   QSMXT_DOWNLOAD_URL   base URL holding <tag>/<archive> and <tag>/SHA256SUMS
 #                        (default: the GitHub release downloads; for mirrors and tests)
@@ -14,7 +18,24 @@
 set -e
 
 REPO="QSMxT/QSMxT"
-INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
+PATH_MARKER="# added by the QSMxT installer"
+
+# Where to install. An explicit INSTALL_DIR wins. Otherwise upgrade an existing qsmxt
+# in place when we can write to it (as `qsmxt update` does), and fall back to
+# /usr/local/bin for root and ~/.local/bin for everyone else. Without INSTALL_DIR we
+# never need sudo, which matters on HPC clusters and other shared machines.
+PREVIOUS=""
+if [ -z "${INSTALL_DIR:-}" ]; then
+    PREVIOUS=$(command -v qsmxt 2>/dev/null || true)
+    case "$PREVIOUS" in /*) ;; *) PREVIOUS="" ;; esac
+    if [ -n "$PREVIOUS" ] && [ -w "$PREVIOUS" ] && [ -w "$(dirname "$PREVIOUS")" ]; then
+        INSTALL_DIR=$(dirname "$PREVIOUS")
+    elif [ "$(id -u)" = 0 ]; then
+        INSTALL_DIR=/usr/local/bin
+    else
+        INSTALL_DIR="${HOME}/.local/bin"
+    fi
+fi
 DOWNLOAD_URL="${QSMXT_DOWNLOAD_URL:-https://github.com/${REPO}/releases/download}"
 
 # Detect OS and architecture
@@ -116,7 +137,6 @@ else
 fi
 
 chmod +x "${INSTALL_DIR}/qsmxt"
-echo "Installed qsmxt ${TAG} to ${INSTALL_DIR}/qsmxt"
 
 # Install bundled dcm2niix (present for x86_64-linux/macOS; ARM builds rely on PATH)
 if [ -f "${TMPDIR}/dcm2niix" ]; then
@@ -127,6 +147,55 @@ if [ -f "${TMPDIR}/dcm2niix" ]; then
     [ -f "${TMPDIR}/dcm2niix.LICENSE" ] && mv "${TMPDIR}/dcm2niix.LICENSE" "${QSMXT_BIN}/dcm2niix.LICENSE"
     echo "Installed bundled dcm2niix to ${QSMXT_BIN}/dcm2niix"
 fi
+
+# Put the install directory on PATH for future shells, once, in the startup file of
+# the user's login shell. A running shell cannot be changed from here; say how instead.
+NEEDS_PATH=0
+case ":${PATH}:" in
+    *":${INSTALL_DIR}:"*) ;;
+    *) NEEDS_PATH=1 ;;
+esac
+if [ "$NEEDS_PATH" = 1 ]; then
+    case "$INSTALL_DIR" in
+        "$HOME"/*) PATH_ENTRY="\$HOME${INSTALL_DIR#"$HOME"}" ;;
+        *) PATH_ENTRY="$INSTALL_DIR" ;;
+    esac
+    case "$(basename "${SHELL:-sh}")" in
+        zsh)  RC="${ZDOTDIR:-$HOME}/.zshrc"
+              LINE="export PATH=\"${PATH_ENTRY}:\$PATH\"  ${PATH_MARKER}" ;;
+        bash) if [ "$OS" = Darwin ]; then RC="$HOME/.bash_profile"; else RC="$HOME/.bashrc"; fi
+              LINE="export PATH=\"${PATH_ENTRY}:\$PATH\"  ${PATH_MARKER}" ;;
+        fish) RC="${XDG_CONFIG_HOME:-$HOME/.config}/fish/config.fish"
+              LINE="set -gx PATH \"${PATH_ENTRY}\" \$PATH  ${PATH_MARKER}" ;;
+        *)    RC="$HOME/.profile"
+              LINE="export PATH=\"${PATH_ENTRY}:\$PATH\"  ${PATH_MARKER}" ;;
+    esac
+    if [ "${QSMXT_NO_MODIFY_PATH:-0}" = 1 ]; then
+        echo ""
+        echo "${INSTALL_DIR} is not on your PATH. Add it with:"
+        echo "  export PATH=\"${INSTALL_DIR}:\$PATH\""
+    else
+        if ! grep -qsF "$LINE" "$RC"; then
+            mkdir -p "$(dirname "$RC")"
+            printf '\n%s\n' "$LINE" >> "$RC"
+            echo "Added ${INSTALL_DIR} to PATH in ${RC}"
+        fi
+        echo ""
+        echo "To use qsmxt in this terminal, run:"
+        echo "  export PATH=\"${INSTALL_DIR}:\$PATH\""
+        echo "New terminals and logins pick it up automatically."
+    fi
+fi
+
+# An older copy that comes first on PATH would keep running instead of this one.
+if [ "$NEEDS_PATH" = 1 ]; then SEARCH_PATH="${INSTALL_DIR}:${PATH}"; else SEARCH_PATH="$PATH"; fi
+RESOLVED=$(PATH="$SEARCH_PATH" command -v qsmxt 2>/dev/null || true)
+if [ -n "$RESOLVED" ] && [ "$RESOLVED" != "${INSTALL_DIR}/qsmxt" ]; then
+    echo ""
+    echo "Note: ${RESOLVED} comes before ${INSTALL_DIR} on your PATH, so 'qsmxt' still"
+    echo "runs that copy. Remove it, or put ${INSTALL_DIR} earlier on your PATH."
+fi
+echo "Installed qsmxt ${TAG} to ${INSTALL_DIR}/qsmxt"
 
 echo ""
 echo "Run 'qsmxt --version' to verify, or 'qsmxt tui' to get started."
