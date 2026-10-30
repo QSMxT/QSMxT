@@ -112,7 +112,8 @@ struct BidsNameParts<'a> {
     sub: &'a str,
     ses: Option<&'a str>,
     acq: &'a str,
-    run: u32,
+    /// `None` when the acquisition has a single run in the session.
+    run: Option<u32>,
     rec: Option<&'a str>,
     desc: Option<&'a str>,
     coil: Option<u32>,
@@ -133,8 +134,8 @@ fn build_bids_filename(p: &BidsNameParts) -> String {
     if let Some(rec) = p.rec {
         name.push_str(&format!("_rec-{}", rec));
     }
-    if p.run > 1 {
-        name.push_str(&format!("_run-{}", p.run));
+    if let Some(run) = p.run {
+        name.push_str(&format!("_run-{}", run));
     }
     if let Some(d) = p.desc {
         name.push_str(&format!("_desc-{}", d));
@@ -238,6 +239,19 @@ fn ge_note(series_type: SeriesType) -> Option<&'static str> {
     }
 }
 
+/// The BIDS `run-` label of each acquisition in a session: every run of a repeated
+/// acquisition is labelled (`run-1` included), and an acquisition acquired once gets none.
+fn bids_runs(acquisitions: &[super::DicomAcquisition]) -> Vec<Option<u32>> {
+    let mut runs_per_acq: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for acq in acquisitions {
+        *runs_per_acq.entry(acq.name.as_str()).or_default() += 1;
+    }
+    acquisitions
+        .iter()
+        .map(|acq| (runs_per_acq[acq.name.as_str()] > 1).then_some(acq.run_number))
+        .collect()
+}
+
 // ─── Main conversion ───
 
 /// Convert a DICOM session to BIDS format using dcm2niix, streaming
@@ -286,7 +300,8 @@ pub fn convert_session_streaming(
                 has_combined && has_uncombined
             });
 
-            for acq in &study.acquisitions {
+            let runs = bids_runs(&study.acquisitions);
+            for (acq, &run) in study.acquisitions.iter().zip(&runs) {
                 for series in &acq.series {
                     if series.series_type == SeriesType::Skip {
                         let _ = tx.send(ConvertMessage::Log(format!("Skipping: {} ({})", series.description, acq.name)));
@@ -306,7 +321,7 @@ pub fn convert_session_streaming(
                         sub_label,
                         ses_label.as_deref(),
                         &acq.name,
-                        acq.run_number,
+                        run,
                         rec,
                         output_dir,
                     );
@@ -337,7 +352,7 @@ fn convert_series(
     sub_label: &str,
     ses_label: Option<&str>,
     acq_name: &str,
-    run_number: u32,
+    run_number: Option<u32>,
     rec: Option<&str>,
     output_dir: &Path,
 ) -> SeriesConvertResult {
@@ -399,7 +414,7 @@ fn convert_coil_group(
     sub_label: &str,
     ses_label: Option<&str>,
     acq_name: &str,
-    run_number: u32,
+    run_number: Option<u32>,
     rec: Option<&str>,
     desc: Option<&str>,
     coil: Option<u32>,
@@ -705,7 +720,7 @@ mod tests {
     #[test]
     fn test_build_bids_filename_single_echo() {
         let name = build_bids_filename(&BidsNameParts {
-            sub: "01", ses: None, acq: "gre", run: 1, rec: None, desc: None, coil: None,
+            sub: "01", ses: None, acq: "gre", run: None, rec: None, desc: None, coil: None,
             echo: None, part: Some("mag"), suffix: "T2starw", extension: ".nii.gz",
         });
         assert_eq!(name, "sub-01_acq-gre_part-mag_T2starw.nii.gz");
@@ -714,7 +729,7 @@ mod tests {
     #[test]
     fn test_build_bids_filename_multi_echo() {
         let name = build_bids_filename(&BidsNameParts {
-            sub: "01", ses: Some("20240314"), acq: "gre", run: 1, rec: None, desc: None, coil: None,
+            sub: "01", ses: Some("20240314"), acq: "gre", run: None, rec: None, desc: None, coil: None,
             echo: Some(3), part: Some("phase"), suffix: "MEGRE", extension: ".json",
         });
         assert_eq!(name, "sub-01_ses-20240314_acq-gre_echo-3_part-phase_MEGRE.json");
@@ -723,16 +738,34 @@ mod tests {
     #[test]
     fn test_build_bids_filename_with_run() {
         let name = build_bids_filename(&BidsNameParts {
-            sub: "p025pre", ses: Some("20240314"), acq: "wip925B1mmPAT3eco6", run: 2, rec: None, desc: None, coil: None,
+            sub: "p025pre", ses: Some("20240314"), acq: "wip925B1mmPAT3eco6", run: Some(2), rec: None, desc: None, coil: None,
             echo: Some(1), part: Some("mag"), suffix: "MEGRE", extension: ".nii.gz",
         });
         assert_eq!(name, "sub-p025pre_ses-20240314_acq-wip925B1mmPAT3eco6_run-2_echo-1_part-mag_MEGRE.nii.gz");
     }
 
     #[test]
+    fn test_build_bids_filename_with_run_1() {
+        let name = build_bids_filename(&BidsNameParts {
+            sub: "01", ses: None, acq: "gre", run: Some(1), rec: None, desc: None, coil: None,
+            echo: Some(1), part: Some("phase"), suffix: "MEGRE", extension: ".nii",
+        });
+        assert_eq!(name, "sub-01_acq-gre_run-1_echo-1_part-phase_MEGRE.nii");
+    }
+
+    #[test]
+    fn repeated_acquisitions_label_every_run_and_single_ones_none() {
+        let acq = |name: &str, run_number| super::super::DicomAcquisition {
+            name: name.to_string(), run_number, series: Vec::new(),
+        };
+        let acqs = [acq("gre", 1), acq("mprage", 1), acq("gre", 2), acq("gre", 3)];
+        assert_eq!(bids_runs(&acqs), vec![Some(1), None, Some(2), Some(3)]);
+    }
+
+    #[test]
     fn test_build_bids_filename_with_rec() {
         let name = build_bids_filename(&BidsNameParts {
-            sub: "01", ses: None, acq: "gre", run: 1, rec: Some("uncombined"), desc: None, coil: None,
+            sub: "01", ses: None, acq: "gre", run: None, rec: Some("uncombined"), desc: None, coil: None,
             echo: Some(1), part: Some("mag"), suffix: "MEGRE", extension: ".nii.gz",
         });
         assert_eq!(name, "sub-01_acq-gre_rec-uncombined_echo-1_part-mag_MEGRE.nii.gz");
@@ -741,7 +774,7 @@ mod tests {
     #[test]
     fn test_build_bids_filename_with_coil() {
         let name = build_bids_filename(&BidsNameParts {
-            sub: "01", ses: None, acq: "gre", run: 1, rec: Some("uncombined"), desc: None, coil: Some(7),
+            sub: "01", ses: None, acq: "gre", run: None, rec: Some("uncombined"), desc: None, coil: Some(7),
             echo: Some(2), part: Some("phase"), suffix: "MEGRE", extension: ".nii.gz",
         });
         assert_eq!(name, "sub-01_acq-gre_rec-uncombined_coil-07_echo-2_part-phase_MEGRE.nii.gz");
@@ -750,7 +783,7 @@ mod tests {
     #[test]
     fn test_build_bids_filename_with_desc() {
         let name = build_bids_filename(&BidsNameParts {
-            sub: "01", ses: None, acq: "gre", run: 1, rec: None, desc: Some("filtered"), coil: None,
+            sub: "01", ses: None, acq: "gre", run: None, rec: None, desc: Some("filtered"), coil: None,
             echo: Some(1), part: Some("mag"), suffix: "MEGRE", extension: ".nii.gz",
         });
         assert_eq!(name, "sub-01_acq-gre_desc-filtered_echo-1_part-mag_MEGRE.nii.gz");
@@ -918,7 +951,7 @@ mod tests {
     #[test]
     fn test_build_bids_filename_t1w_no_part() {
         let name = build_bids_filename(&BidsNameParts {
-            sub: "01", ses: None, acq: "mprage", run: 1, rec: None, desc: None, coil: None,
+            sub: "01", ses: None, acq: "mprage", run: None, rec: None, desc: None, coil: None,
             echo: None, part: None, suffix: "T1w", extension: ".nii.gz",
         });
         assert_eq!(name, "sub-01_acq-mprage_T1w.nii.gz");
@@ -927,7 +960,7 @@ mod tests {
     #[test]
     fn test_build_bids_filename_t1w_no_part_with_session() {
         let name = build_bids_filename(&BidsNameParts {
-            sub: "02", ses: Some("20240101"), acq: "mprage", run: 1, rec: None, desc: None, coil: None,
+            sub: "02", ses: Some("20240101"), acq: "mprage", run: None, rec: None, desc: None, coil: None,
             echo: None, part: None, suffix: "T1w", extension: ".nii.gz",
         });
         assert_eq!(name, "sub-02_ses-20240101_acq-mprage_T1w.nii.gz");
