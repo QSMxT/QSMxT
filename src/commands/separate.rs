@@ -113,7 +113,7 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
                 algorithm: SeparationAlgorithm::Decompose,
                 decompose: qsm_core::separation::DecomposeParams {
                     n_inner: args.n_inner.unwrap_or(d.n_inner),
-                    chi_bound: args.chi_bound.unwrap_or(d.chi_bound),
+                    chi_bound: args.chi_bound.map(Into::into).unwrap_or(d.chi_bound),
                     unwrap_phase: args.unwrap_phase.unwrap_or(d.unwrap_phase),
                     lsqcurvefit: qsm_core::solvers::LsqTrrOptions {
                         max_iterations: args.max_iterations.unwrap_or(d.lsqcurvefit.max_iterations),

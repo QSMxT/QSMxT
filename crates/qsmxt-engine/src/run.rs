@@ -1800,6 +1800,9 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let supplied: Vec<Item> = [(s.custom_qsm_tool.is_some(), Item::SuppliedChi),
                                    (s.custom_r2prime_tool.is_some(), Item::SuppliedR2prime)]
             .into_iter().filter_map(|(read, item)| read.then_some(item)).collect();
+        if let Some(d) = chi_bound_decision(self.config, self.meta.field_strength, &self.meta.echo_times) {
+            self.decide(d);
+        }
         let params = self.with_supplied(sep::params(self.config, &self.meta, mese.is_some()), &supplied);
         let Some(key) = self.begin("chi_separation", Some(&alg_name), &params, "Skipping chi_separation (cached)",
                                    "Chi-separation") else { return Ok(()) };
@@ -2254,6 +2257,20 @@ fn motion_decision(applied: bool) -> Decision {
         Decision::new(Topic::MotionCorrection, Choice::NotApplied,
             "Motion correction was not applied: it needs at least two echoes with magnitude images.")
     }
+}
+
+/// The χ bound DECOMPOSE's search takes from the field strength `b0` (T) and `echo_times` (s),
+/// when it takes it from the echo spacing ([`Topic::ChiBound`]), in ppm, so the methods text can
+/// give it. `None` for another method, a fixed bound, or echo times that give no bound (qsm-core
+/// refuses the run).
+pub(crate) fn chi_bound_decision(config: &PipelineConfig, b0: f64, echo_times: &[f64]) -> Option<Decision> {
+    let s = &config.separation;
+    if s.algorithm != crate::SeparationAlgorithm::Decompose || s.decompose.chi_bound != crate::ChiBoundChoice::EchoSpacing {
+        return None;
+    }
+    let bound = s.decompose.chi_bound.resolve(b0, echo_times)?;
+    Some(Decision::new(Topic::ChiBound, Choice::Computed, format!(
+        "The χ search was bounded at {bound:.2} ppm, from the field strength and echo spacing.")))
 }
 
 /// Whether MEDI+0's CSF term is applied to a MEDI run of `n_echoes` echoes ([`Topic::MediCsf`]):

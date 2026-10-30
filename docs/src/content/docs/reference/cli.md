@@ -249,7 +249,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--amp-pe-tikhonov-beta <AMP_PE_TIKHONOV_BETA>` | AMP-PE L2-seed Tikhonov weight. |
 | `--r2star-qsm-r-const-3t <R2STAR_QSM_R_CONST_3T>` | R2\*-QSM relaxometric constant at 3T (Hz/ppm) |
 | `--decompose-n-inner <DECOMPOSE_N_INNER>` | DECOMPOSE inner alternating passes per voxel. |
-| `--decompose-chi-bound <DECOMPOSE_CHI_BOUND>` | DECOMPOSE upper bound on \|χ\| in the fit (ppm) |
+| `--decompose-chi-bound <BOUND>` | DECOMPOSE bound on \|χ\| in the fit: a number in ppm (default: 0.5), or echo-spacing to compute it from the field strength and echo spacing. |
 | `--decompose-unwrap-phase <BOOL>` | DECOMPOSE: unwrap the phase along the echoes (default: false, as in the authors' code) |
 | `--decompose-max-iterations <DECOMPOSE_MAX_ITERATIONS>` | DECOMPOSE: maximum solver iterations of each fit (lsqcurvefit MaxIterations; default: 400) |
 | `--decompose-max-function-evaluations <DECOMPOSE_MAX_FUNCTION_EVALUATIONS>` | DECOMPOSE: maximum function evaluations of each fit (lsqcurvefit MaxFunctionEvaluations; default: 100 × the fit's parameters) |
@@ -699,7 +699,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--amp-pe-tikhonov-beta <AMP_PE_TIKHONOV_BETA>` | AMP-PE L2-seed Tikhonov weight. |
 | `--r2star-qsm-r-const-3t <R2STAR_QSM_R_CONST_3T>` | R2\*-QSM relaxometric constant at 3T (Hz/ppm) |
 | `--decompose-n-inner <DECOMPOSE_N_INNER>` | DECOMPOSE inner alternating passes per voxel. |
-| `--decompose-chi-bound <DECOMPOSE_CHI_BOUND>` | DECOMPOSE upper bound on \|χ\| in the fit (ppm) |
+| `--decompose-chi-bound <BOUND>` | DECOMPOSE bound on \|χ\| in the fit: a number in ppm (default: 0.5), or echo-spacing to compute it from the field strength and echo spacing. |
 | `--decompose-unwrap-phase <BOOL>` | DECOMPOSE: unwrap the phase along the echoes (default: false, as in the authors' code) |
 | `--decompose-max-iterations <DECOMPOSE_MAX_ITERATIONS>` | DECOMPOSE: maximum solver iterations of each fit (lsqcurvefit MaxIterations; default: 400) |
 | `--decompose-max-function-evaluations <DECOMPOSE_MAX_FUNCTION_EVALUATIONS>` | DECOMPOSE: maximum function evaluations of each fit (lsqcurvefit MaxFunctionEvaluations; default: 100 × the fit's parameters) |
@@ -1086,7 +1086,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--amp-pe-tikhonov-beta <AMP_PE_TIKHONOV_BETA>` | AMP-PE L2-seed Tikhonov weight. |
 | `--r2star-qsm-r-const-3t <R2STAR_QSM_R_CONST_3T>` | R2\*-QSM relaxometric constant at 3T (Hz/ppm) |
 | `--decompose-n-inner <DECOMPOSE_N_INNER>` | DECOMPOSE inner alternating passes per voxel. |
-| `--decompose-chi-bound <DECOMPOSE_CHI_BOUND>` | DECOMPOSE upper bound on \|χ\| in the fit (ppm) |
+| `--decompose-chi-bound <BOUND>` | DECOMPOSE bound on \|χ\| in the fit: a number in ppm (default: 0.5), or echo-spacing to compute it from the field strength and echo spacing. |
 | `--decompose-unwrap-phase <BOOL>` | DECOMPOSE: unwrap the phase along the echoes (default: false, as in the authors' code) |
 | `--decompose-max-iterations <DECOMPOSE_MAX_ITERATIONS>` | DECOMPOSE: maximum solver iterations of each fit (lsqcurvefit MaxIterations; default: 400) |
 | `--decompose-max-function-evaluations <DECOMPOSE_MAX_FUNCTION_EVALUATIONS>` | DECOMPOSE: maximum function evaluations of each fit (lsqcurvefit MaxFunctionEvaluations; default: 100 × the fit's parameters) |
@@ -2732,7 +2732,7 @@ qsmxt separate decompose [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> -
 | `--qsm-per-echo <QSM_PER_ECHO>` | QSM of each echo (ppm), which sets each echo's phase: one 4D file or one 3D file per echo (space-separated; the same file may be given for every echo) Required. |
 | `--echo-times <ECHO_TIMES>` | GRE echo times in seconds (space- or comma-separated) Required. |
 | `--n-inner <N_INNER>` | Inner alternating passes per voxel. |
-| `--chi-bound <CHI_BOUND>` | Upper bound on \|χ\| in the fit (ppm) |
+| `--chi-bound <BOUND>` | Bound on \|χ\| in the fit: a number in ppm (default: 0.5), or echo-spacing to compute it from the field strength and echo spacing. |
 | `--unwrap-phase <BOOL>` | Unwrap the phase along the echoes (default: false, as in the authors' code) |
 | `--max-iterations <MAX_ITERATIONS>` | Maximum solver iterations of each fit (lsqcurvefit MaxIterations; default: 400) |
 | `--max-function-evaluations <MAX_FUNCTION_EVALUATIONS>` | Maximum function evaluations of each fit (lsqcurvefit MaxFunctionEvaluations; default: 100 × the fit's parameters) |

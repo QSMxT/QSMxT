@@ -43,6 +43,9 @@ fn candidates(core_path: &str) -> Vec<Value> {
                 ValueType::Bool => vec![json!(true), json!(false)],
                 ValueType::Enum { .. } | ValueType::EchoTime { .. } => s.value_type.options().into_iter()
                     .map(|o| o.value.clone()).filter(|v| v.is_string()).collect(),
+                // The named choices, and numbers.
+                ValueType::NumberOrChoice { .. } => s.value_type.options().into_iter()
+                    .map(|o| o.value.clone()).chain([json!(0.1), json!(0.5)]).collect(),
                 ValueType::Int => vec![json!(3), json!(500)],
                 ValueType::Float => vec![json!(0.5), json!(3), json!(20)],
                 ValueType::IntVec3 => vec![json!([2, 2, 2]), json!([30, 30, 30])],

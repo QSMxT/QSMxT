@@ -38,6 +38,12 @@ pub fn params(config: &PipelineConfig, meta: &RunMetadata, has_mese: bool) -> se
     {
         params["qsm_per_echo"] = serde_json::json!(true);
     }
+    // DECOMPOSE's unwrapping only unwraps since QSM.rs#345: it no longer also bounds the χ search
+    // at the echo spacing (now `chi_bound = "echo-spacing"`), so maps an older release fitted
+    // with it on are recomputed rather than reused.
+    if s.algorithm == SeparationAlgorithm::Decompose && s.decompose.unwrap_phase {
+        params["unwrap"] = serde_json::json!("echoes");
+    }
     params
 }
 
@@ -270,6 +276,22 @@ mod tests {
         inputs.r2prime = Some(&r2prime);
         assert_eq!(missing_inputs(SeparationAlgorithm::WaveSep, &inputs), Vec::<&str>::new());
         assert_eq!(missing_inputs(SeparationAlgorithm::R2starQsm, &inputs), ["R2* or multi-echo magnitude"]);
+    }
+
+    /// DECOMPOSE's cached maps from before unwrapping stopped bounding the χ search are not
+    /// reused with unwrapping on; with it off, and for the χ bound, the config's own values key it.
+    #[test]
+    fn decomposes_unwrapping_versions_its_cache_key() {
+        let meta = crate::stages::magnitude::tests::meta_4x4x4();
+        let mut c = PipelineConfig::default();
+        c.separation.algorithm = SeparationAlgorithm::Decompose;
+        assert!(params(&c, &meta, false).get("unwrap").is_none());
+        c.separation.decompose.unwrap_phase = true;
+        assert_eq!(params(&c, &meta, false)["unwrap"], "echoes");
+        let key = |c: &PipelineConfig| crate::cache::step_cache_key("chi_separation", None, &params(c, &meta, false), c);
+        let fixed = key(&c);
+        c.separation.decompose.chi_bound = crate::ChiBoundChoice::EchoSpacing;
+        assert_ne!(key(&c), fixed);
     }
 
     #[test]

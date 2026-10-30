@@ -687,6 +687,92 @@ impl From<EchoTimeChoice> for qsm_core::EchoTime {
         }
     }
 }
+/// DECOMPOSE's bound on |χ| in the fit (qsm-core `DecomposeChiBound`).
+///
+/// In the config and on the command line it is a number in ppm (`0.5`, the authors' and the
+/// default) or `"echo-spacing"`: π / ((2/3)·γ·B0·ΔTE_max), from the scan's field strength and
+/// echo times ([`ChiBoundChoice::parse`]). A settings file from before the choice existed held the
+/// number, and reads as it is.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ChiBoundChoice {
+    /// A fixed bound, in ppm.
+    Ppm(f64),
+    /// From the field strength and the echo spacing.
+    EchoSpacing,
+}
+impl ChiBoundChoice {
+    /// The named choices, in the order the CLI help and the TUI list them (after a bound in ppm).
+    pub const NAMED: [ChiBoundChoice; 1] = [Self::EchoSpacing];
+
+    /// A command-line value: `echo-spacing`, or a bound in ppm. Whether a number is a bound that
+    /// can be used is [`validate`](Self::validate)'s to say, as for a config file.
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match s.trim() {
+            "echo-spacing" => Ok(Self::EchoSpacing),
+            other => other.parse::<f64>().map(Self::Ppm)
+                .map_err(|_| format!("expected echo-spacing or a bound in ppm, got '{other}'")),
+        }
+    }
+
+    /// Why the bound cannot be used whatever the scan, if it cannot (qsm-core's check of a fixed
+    /// bound); one from the echo spacing is checked against the scan by qsm-core.
+    pub fn validate(&self) -> Result<(), String> {
+        let p = qsm_core::separation::DecomposeParams { chi_bound: (*self).into(), ..Default::default() };
+        p.validate().map_err(|e| e.0)
+    }
+
+    /// The bound in ppm at `b0` (T) and `echo_times` (s), as qsm-core resolves it.
+    pub fn resolve(self, b0: f64, echo_times: &[f64]) -> Option<f64> {
+        qsm_core::separation::DecomposeChiBound::from(self).resolve(b0, echo_times).ok()
+    }
+}
+impl fmt::Display for ChiBoundChoice {
+    /// The command-line form: `echo-spacing`, or the bound in ppm.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Ppm(x) => write!(f, "{x}"),
+            Self::EchoSpacing => f.write_str("echo-spacing"),
+        }
+    }
+}
+impl Serialize for ChiBoundChoice {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Ppm(x) => s.serialize_f64(*x),
+            Self::EchoSpacing => s.serialize_str("echo-spacing"),
+        }
+    }
+}
+impl<'de> Deserialize<'de> for ChiBoundChoice {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw { N(f64), S(String) }
+        match Raw::deserialize(d)? {
+            Raw::N(x) => Ok(Self::Ppm(x)),
+            Raw::S(s) => Self::parse(&s).map_err(serde::de::Error::custom),
+        }
+    }
+}
+impl From<ChiBoundChoice> for qsm_core::separation::DecomposeChiBound {
+    fn from(c: ChiBoundChoice) -> Self {
+        use qsm_core::separation::DecomposeChiBound as B;
+        match c {
+            ChiBoundChoice::Ppm(x) => B::Ppm(x),
+            ChiBoundChoice::EchoSpacing => B::EchoSpacing,
+        }
+    }
+}
+impl From<qsm_core::separation::DecomposeChiBound> for ChiBoundChoice {
+    fn from(b: qsm_core::separation::DecomposeChiBound) -> Self {
+        use qsm_core::separation::DecomposeChiBound as B;
+        match b {
+            B::Ppm(x) => Self::Ppm(x),
+            B::EchoSpacing => Self::EchoSpacing,
+        }
+    }
+}
+
 impl From<qsm_core::EchoTime> for EchoTimeChoice {
     fn from(e: qsm_core::EchoTime) -> Self {
         use qsm_core::EchoTime as E;

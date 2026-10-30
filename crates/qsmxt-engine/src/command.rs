@@ -409,7 +409,9 @@ fn command_for(config: &PipelineConfig) -> String {
             }
             SeparationAlgorithm::Decompose => {
                 emit_usize(&mut parts, "--decompose-n-inner", s.decompose.n_inner, ds.decompose.n_inner);
-                emit_f64(&mut parts, "--decompose-chi-bound", s.decompose.chi_bound, ds.decompose.chi_bound);
+                if s.decompose.chi_bound != ds.decompose.chi_bound {
+                    parts.push(format!("--decompose-chi-bound {}", s.decompose.chi_bound));
+                }
                 if s.decompose.unwrap_phase != ds.decompose.unwrap_phase {
                     parts.push(format!("--decompose-unwrap-phase {}", s.decompose.unwrap_phase));
                 }
@@ -1031,6 +1033,11 @@ mod tests {
         let cmd = generate_command(&config);
         assert!(cmd.contains("--chisep decompose"));
         assert!(cmd.contains("--decompose-max-iterations 99") && cmd.contains("--decompose-unwrap-phase true"), "{cmd}");
+        assert!(!cmd.contains("--decompose-chi-bound"), "{cmd}");
+        config.separation.decompose.chi_bound = crate::ChiBoundChoice::EchoSpacing;
+        assert!(generate_command(&config).contains("--decompose-chi-bound echo-spacing"));
+        config.separation.decompose.chi_bound = crate::ChiBoundChoice::Ppm(0.3);
+        assert!(generate_command(&config).contains("--decompose-chi-bound 0.3"));
 
         // A param for a non-selected method must NOT leak into the command.
         assert!(!cmd.contains("--wavesep-alpha"));

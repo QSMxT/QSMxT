@@ -558,7 +558,7 @@ pub fn to_separation_config(cfg: &PipelineConfig) -> PSeparation {
             max_iter: s.wavesep.max_iter, tol: s.wavesep.tol,
         },
         decompose: qsm_core::separation::DecomposeParams {
-            n_inner: s.decompose.n_inner, chi_bound: s.decompose.chi_bound,
+            n_inner: s.decompose.n_inner, chi_bound: s.decompose.chi_bound.into(),
             unwrap_phase: s.decompose.unwrap_phase,
             lsqcurvefit: s.decompose.lsqcurvefit.options(),
             ..qsm_core::separation::DecomposeParams::default()
@@ -1026,8 +1026,8 @@ mod tests {
                             qsm_core::separation::DecomposeParams::default());
         assert_eq!((sep.chi_sep_ilsqr.dr_pos, sep.chi_sep_ilsqr.pad, sep.chi_sep_ilsqr.prc_w_g), (di.dr_pos, di.pad, di.prc_w_g));
         assert_eq!((sep.chi_sep_medi.lambda_csf, sep.chi_sep_medi.pad), (dm.lambda_csf, dm.pad));
-        assert_eq!((sep.decompose.unwrap_phase, sep.decompose.lsqcurvefit.max_iterations),
-                   (dd.unwrap_phase, dd.lsqcurvefit.max_iterations));
+        assert_eq!((sep.decompose.unwrap_phase, sep.decompose.lsqcurvefit.max_iterations, sep.decompose.chi_bound),
+                   (dd.unwrap_phase, dd.lsqcurvefit.max_iterations, dd.chi_bound));
 
         cfg.bg_removal.ismv.variant = crate::IsmvVariant::Qsmjl;
         cfg.bg_removal.ismv.max_iter = Some(500);
@@ -1037,6 +1037,7 @@ mod tests {
         cfg.separation.chi_sep_ilsqr.prc_w_g_max = 80.0;
         cfg.separation.chi_sep_medi.dr_pos = Some(120.0);
         cfg.separation.decompose.unwrap_phase = true;
+        cfg.separation.decompose.chi_bound = crate::ChiBoundChoice::EchoSpacing;
         cfg.separation.decompose.lsqcurvefit.max_function_evaluations = Some(9);
         let (_, bg, inv, _) = to_pipeline_stages(&cfg);
         assert_eq!((bg.ismv.variant, bg.ismv.max_iter, bg.ismv.radius),
@@ -1046,6 +1047,9 @@ mod tests {
         assert_eq!(sep.chi_sep_ilsqr.prc_w_g, (di.prc_w_g.0, 80.0));
         assert_eq!(sep.chi_sep_medi.dr_pos, Some(120.0));
         assert!(sep.decompose.unwrap_phase);
+        assert_eq!(sep.decompose.chi_bound, qsm_core::separation::DecomposeChiBound::EchoSpacing);
+        cfg.separation.decompose.chi_bound = crate::ChiBoundChoice::Ppm(0.25);
+        assert_eq!(to_separation_config(&cfg).decompose.chi_bound, qsm_core::separation::DecomposeChiBound::Ppm(0.25));
         assert_eq!(sep.decompose.lsqcurvefit.max_function_evaluations, Some(9));
     }
 

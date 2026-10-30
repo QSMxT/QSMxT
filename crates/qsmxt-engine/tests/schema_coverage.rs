@@ -89,6 +89,9 @@ fn another(s: &Setting, cur: &Value) -> Vec<Value> {
         // The named echo times, and a time of the user's.
         ValueType::EchoTime { .. } => s.value_type.options().iter().map(|o| o.value.clone())
             .filter(|v| v.is_string()).chain([json!({ "seconds": 0.025 })]).filter(|v| v != cur).collect(),
+        // The named choices, and a number.
+        ValueType::NumberOrChoice { .. } => s.value_type.options().iter().map(|o| o.value.clone())
+            .chain([json!(pick_f(num(cur)))]).filter(|v| v != cur).collect(),
         ValueType::MaskSections => vec![serde_json::to_value(qsmxt_engine::masking::hd_bet_mask_sections()).unwrap()],
         ValueType::MaskOps => vec![json!([{ "op": "erode", "iterations": 2 }])],
     };
@@ -199,7 +202,8 @@ fn the_schema_is_well_formed() {
         }
         assert!(!s.also_in.contains(&s.section), "{}", s.path);
         assert_eq!(s.section.tab(), s.tab, "{}", s.path);
-        if matches!(s.value_type, ValueType::Enum { .. } | ValueType::EchoReference { .. } | ValueType::EchoTime { .. }) {
+        if matches!(s.value_type, ValueType::Enum { .. } | ValueType::EchoReference { .. } | ValueType::EchoTime { .. }
+                    | ValueType::NumberOrChoice { .. }) {
             let options = s.value_type.options();
             assert!(!options.is_empty(), "{}", s.path);
             for o in options {
@@ -462,6 +466,30 @@ fn each_methods_echo_time_and_pdf_padding_are_checked() {
     assert!(error("bg_removal.pdf.n_pad").is_some_and(|e| e.contains("at least 2")), "{view:?}");
 }
 
+/// DECOMPOSE's χ bound is a number in ppm or `echo-spacing`: both read, write and are in range,
+/// and the number is range-checked.
+#[test]
+fn decomposes_chi_bound_is_a_number_or_echo_spacing() {
+    let s = schema::setting("separation.decompose.chi_bound").unwrap();
+    let ValueType::NumberOrChoice { options } = &s.value_type else { panic!("{:?}", s.value_type) };
+    assert_eq!(options.iter().map(|o| o.value.clone()).collect::<Vec<_>>(), [json!("echo-spacing")]);
+    assert_eq!((s.default.clone(), s.units, s.min), (json!(0.5), Some("ppm"), Some(0.0)));
+    assert_eq!(serde_json::to_value(&s).unwrap()["type"], "number-or-choice");
+    let mut c = PipelineConfig::default();
+    c.pipeline.do_chi_separation = true;
+    c.separation.algorithm = qsmxt_engine::SeparationAlgorithm::Decompose;
+    for (v, bound) in [(json!("echo-spacing"), qsmxt_engine::ChiBoundChoice::EchoSpacing),
+                       (json!(0.3), qsmxt_engine::ChiBoundChoice::Ppm(0.3))] {
+        schema::set(&mut c, s.path, v.clone()).unwrap();
+        assert_eq!(c.separation.decompose.chi_bound, bound);
+        assert_eq!(schema::get(&c, s.path), Some(v));
+        assert!(schema::check_ranges(&c).is_ok());
+    }
+    assert!(schema::set(&mut c, s.path, json!("echo")).is_err());
+    schema::set(&mut c, s.path, json!(-1.0)).unwrap();
+    assert!(schema::check_ranges(&c).is_err());
+}
+
 #[test]
 fn an_echo_time_says_which_choice_is_a_time_of_the_users() {
     let s = schema::setting("inversion.star.te").unwrap();
@@ -535,7 +563,7 @@ fn a_value_out_of_range_is_an_error_on_its_own_setting() {
 /// in QSM.rs's words, and the plan-time check refuses the same config with the same message.
 #[test]
 fn qsm_rs_parameter_checks_reach_the_view_and_the_plan() {
-    use qsmxt_engine::{BfAlgorithm, QsmAlgorithm, SeparationAlgorithm, VsharpGrid};
+    use qsmxt_engine::{BfAlgorithm, QsmAlgorithm, SeparationAlgorithm, VsharpGrid, ChiBoundChoice};
     type Case = (&'static str, fn(&mut PipelineConfig), &'static str);
     let cases: Vec<Case> = vec![
         ("bg_removal.vsharp.min_radius", |c| { c.bg_removal.algorithm = BfAlgorithm::Vsharp; c.bg_removal.vsharp.min_radius = 0.0; },
@@ -556,7 +584,7 @@ fn qsm_rs_parameter_checks_reach_the_view_and_the_plan() {
         ("separation.decompose.chi_bound", |c| {
             c.pipeline.do_chi_separation = true;
             c.separation.algorithm = SeparationAlgorithm::Decompose;
-            c.separation.decompose.chi_bound = -0.1;
+            c.separation.decompose.chi_bound = ChiBoundChoice::Ppm(-0.1);
         }, "DECOMPOSE chi_bound = -0.1 is out of range: must be >= 0 ppm"),
         ("separation.wavesep.wavelet_order", |c| {
             c.pipeline.do_chi_separation = true;

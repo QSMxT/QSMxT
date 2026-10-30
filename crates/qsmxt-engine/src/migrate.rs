@@ -690,6 +690,26 @@ mod tests {
         assert_eq!((back, m), (c, super::Migration::default()));
     }
 
+    /// DECOMPOSE's χ bound was a number before it could be `echo-spacing`: an earlier file's
+    /// number reads as that bound in ppm, with nothing to say, and both forms round-trip.
+    #[test]
+    fn an_earlier_chi_bound_stays_that_number() {
+        use crate::ChiBoundChoice as B;
+        for file in [V9_FULL, V10_FULL] {
+            let (c, _) = read(file).unwrap();
+            assert_eq!(c.separation.decompose.chi_bound, B::Ppm(0.5));
+        }
+        for (old, bound) in [("[separation.decompose]\nchi_bound = 0.3\n", B::Ppm(0.3)),
+                             ("[separation.decompose]\nchi_bound = 1\n", B::Ppm(1.0)),
+                             ("schema_version = 2\n[separation.decompose]\nchi_bound = \"echo-spacing\"\n", B::EchoSpacing)] {
+            let (c, m) = read(old).unwrap();
+            assert_eq!((c.separation.decompose.chi_bound, m), (bound, super::Migration::default()), "{old}");
+            let (back, _) = read(&c.to_toml().unwrap()).unwrap();
+            assert_eq!(back.separation.decompose.chi_bound, bound);
+        }
+        assert!(read("[separation.decompose]\nchi_bound = \"spacing\"\n").is_err());
+    }
+
     /// Earlier files have no echo-time choices and none of the method settings QSM.rs v0.40.0 added
     /// (WH-QSM's weight, NLTV's ρ and Newton tolerance, RTS's τ and γ, PDF's iterations, kernel and
     /// padding, HARPERELLA's padding): they read as today's defaults, with nothing to say.
