@@ -370,10 +370,11 @@ onto itself.
 
 `double` (the default) runs iLSQR's two LSQR solves in double precision.
 `single` runs them in single precision, as the original implementation does,
-and reproduces its output to within the original's own run-to-run differences
-between computers. It is slower and uses more memory. The solves stop after a
-fixed number of iterations, which amplifies rounding, so the two settings
-differ by about 0.1–2 % NRMSE.
+and follows its output to within its own differences between computers. It is
+slower and uses more memory. On whole-head data both settings agree with the
+original to within 0.02 % NRMSE; the solves stop after a fixed number of
+iterations, which amplifies rounding, so on small noisy volumes only `single`
+follows it closely.
 
 ## Coil combination
 
