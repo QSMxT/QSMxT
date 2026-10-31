@@ -2470,6 +2470,14 @@ pub struct FieldmapCommonArgs {
     /// Complex fit: Gauss-Newton iterations at most (default 30)
     #[arg(long)]
     pub complex_fit_max_iter: Option<usize>,
+    /// `--b0-estimation complex-fit`: also save the fit itself here, before spatial unwrapping:
+    /// the phase accrued per echo spacing (radians, wrapped to [-π, π]; MEDI's `iFreq_raw`)
+    #[arg(long, value_name = "FILE")]
+    pub complex_fit_output: Option<PathBuf>,
+    /// `--b0-estimation complex-fit`: also save the fit's noise map here: the standard deviation
+    /// of the phase per echo spacing, in radians (MEDI's `N_std`)
+    #[arg(long, value_name = "FILE")]
+    pub complex_fit_noise_output: Option<PathBuf>,
 }
 
 #[derive(Subcommand, Debug)]

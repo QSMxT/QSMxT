@@ -213,6 +213,12 @@ fn run_field_mapping(
     apply_algo: &dyn Fn(&mut qsm_core::pipeline::config::FieldMappingConfig),
 ) -> crate::Result<()> {
     let params = resolve_scan_params(common)?;
+    if (common.complex_fit_output.is_some() || common.complex_fit_noise_output.is_some())
+        && common.b0_estimation != B0EstimationArg::ComplexFit
+    {
+        return Err(QsmxtError::Config(
+            "--complex-fit-output and --complex-fit-noise-output need --b0-estimation complex-fit".into()));
+    }
 
     // ── Load 4D phase ──
     let phase_me: MultiEcho = load_nifti_4d(&common.input)?;
@@ -312,11 +318,44 @@ fn run_field_mapping(
     let reference = phase_me.geometry_reference();
     save_nifti(&common.output, &field_ppm, &reference)?;
     info!("B0 field map (ppm) saved to {}", common.output.display());
+    if common.complex_fit_output.is_some() || common.complex_fit_noise_output.is_some() {
+        save_complex_fit(common, &config, &phase_slices, mag_option, &scan_meta, &reference)?;
+    }
     if let Some(path) = &common.reliability_output {
         let reliability = field.reliability.as_ref().ok_or_else(|| QsmxtError::Config(
             "--reliability-output: only --b0-estimation qsmart-echofit makes a reliability map".into()))?;
         super::common::save_mask(path, reliability, &reference)?;
         info!("Echo-fit reliability map saved to {}", path.display());
+    }
+    Ok(())
+}
+
+/// `--complex-fit-output` / `--complex-fit-noise-output`: MEDI's complex fit itself (QSM.rs's
+/// `fit_ppm_complex`, the fit the field map above was unwrapped from), before unwrapping, in
+/// MEDI's units: radians per echo spacing.
+fn save_complex_fit(
+    common: &FieldmapCommonArgs,
+    config: &qsm_core::pipeline::config::FieldMappingConfig,
+    phases: &[&[f64]],
+    magnitudes: Option<&[&[f64]]>,
+    meta: &qsm_core::pipeline::config::ScanMetadata,
+    reference: &qsm_core::io::NiftiData,
+) -> crate::Result<()> {
+    let qsm_core::pipeline::config::B0EstimationMethod::ComplexFit(params) = &config.b0_estimation else {
+        unreachable!("checked before the field mapping");
+    };
+    let magnitudes = magnitudes.ok_or_else(|| QsmxtError::Config(
+        "the complex fit needs every echo's magnitude (--magnitude)".into()))?;
+    let fit = qsm_core::utils::fit_ppm_complex(magnitudes, phases, &meta.echo_times, params)
+        .map_err(|e| QsmxtError::Config(format!("complex fit: {e}")))?;
+    for (path, data, what) in [
+        (&common.complex_fit_output, &fit.field, "Complex fit (rad per echo spacing)"),
+        (&common.complex_fit_noise_output, &fit.noise, "Complex fit noise map (rad per echo spacing)"),
+    ] {
+        if let Some(path) = path {
+            save_nifti(path, data, reference)?;
+            info!("{what} saved to {}", path.display());
+        }
     }
     Ok(())
 }
@@ -479,7 +518,7 @@ mod tests {
             robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
             robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
             qsmart_fit_threshold_mode: None, qsmart_fit_percentile: None, qsmart_fit_threshold: None,
-            reliability_output: None,
+            reliability_output: None, complex_fit_output: None, complex_fit_noise_output: None,
             complex_fit_reltol: None, complex_fit_max_iter: None,
         };
         let args = FieldmapRomeoArgs {
@@ -505,6 +544,42 @@ mod tests {
         );
     }
 
+    /// `--complex-fit-output` and `--complex-fit-noise-output` write MEDI's fit before
+    /// unwrapping, in radians per echo spacing: here the phase grows by 0.6 rad per echo, so the
+    /// fit is 0.6 everywhere and its noise map is positive. Without the complex fit they are
+    /// refused.
+    #[test]
+    fn test_fieldmap_writes_the_complex_fit_and_its_noise() {
+        use clap::Parser;
+        let dir = tempfile::tempdir().unwrap();
+        let p = |n: &str| dir.path().join(n).display().to_string();
+        let n = NX * NY * NZ;
+        write_nifti_4d(&dir.path().join("phase.nii"), &[vec![0.6; n], vec![1.2; n], vec![1.8; n]]);
+        write_nifti_4d(&dir.path().join("mag.nii"), &[vec![1.0; n], vec![0.8; n], vec![0.6; n]]);
+        qsm_core::io::save_nifti_to_file(
+            &dir.path().join("mask.nii"), &vec![1.0f64; n], (NX, NY, NZ), (1.0, 1.0, 1.0),
+            &[1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0, 0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0],
+        ).unwrap();
+        let run = |estimation: &str| {
+            let cli = crate::cli::Cli::try_parse_from([
+                "qsmxt", "fieldmap", "laplacian", &p("phase.nii"), "-m", &p("mask.nii"), "-o", &p("field.nii"),
+                "--magnitude", &p("mag.nii"), "--tes", "0.005", "0.01", "0.015", "--b0", "3",
+                "--b0-estimation", estimation,
+                "--complex-fit-output", &p("raw.nii"), "--complex-fit-noise-output", &p("n_std.nii"),
+            ]).unwrap();
+            let crate::cli::Command::Fieldmap { command } = cli.command else { panic!() };
+            execute(command)
+        };
+        run("complex-fit").unwrap();
+        let raw = qsm_core::io::read_nifti_file(&dir.path().join("raw.nii")).unwrap().data;
+        let noise = qsm_core::io::read_nifti_file(&dir.path().join("n_std.nii")).unwrap().data;
+        assert!(raw.iter().all(|&v| (v - 0.6).abs() < 1e-5), "{:?}", &raw[..4]);
+        assert!(noise.iter().all(|&v| v > 0.0 && v.is_finite()), "{:?}", &noise[..4]);
+
+        let err = run("weighted-avg").unwrap_err();
+        assert!(format!("{err}").contains("--b0-estimation complex-fit"), "{err}");
+    }
+
     /// Params JSON supplies TE and B0 when CLI flags are omitted.
     #[test]
     fn test_resolve_scan_params_from_json() {
@@ -527,7 +602,7 @@ mod tests {
             robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
             robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
             qsmart_fit_threshold_mode: None, qsmart_fit_percentile: None, qsmart_fit_threshold: None,
-            reliability_output: None,
+            reliability_output: None, complex_fit_output: None, complex_fit_noise_output: None,
             complex_fit_reltol: None, complex_fit_max_iter: None,
         };
         let p = resolve_scan_params(&common).unwrap();
@@ -564,7 +639,7 @@ mod tests {
             robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
             robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
             qsmart_fit_threshold_mode: None, qsmart_fit_percentile: None, qsmart_fit_threshold: None,
-            reliability_output: None,
+            reliability_output: None, complex_fit_output: None, complex_fit_noise_output: None,
             complex_fit_reltol: None, complex_fit_max_iter: None,
         };
         let args = FieldmapRomeoArgs {
