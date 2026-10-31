@@ -988,6 +988,32 @@ mod integration_tests {
         assert!(format!("{err}").contains("multiple of 16"), "{err}");
     }
 
+    /// `qsmxt qsmart --intermediates DIR` writes QSMART's stage maps there under the names QSM-CI
+    /// compares them by (TKD as the inner inversion, to keep it quick on 8³).
+    #[test]
+    fn test_qsmart_writes_its_intermediates() {
+        use clap::Parser;
+        let dir = tempfile::tempdir().unwrap();
+        let p = |n: &str| dir.path().join(n).display().to_string();
+        testutils::write_field(&dir.path().join("field.nii"));
+        testutils::write_mask(&dir.path().join("mask.nii"));
+        let cli = crate::cli::Cli::try_parse_from([
+            "qsmxt", "qsmart", &p("field.nii"), "-m", &p("mask.nii"), "-o", &p("chi.nii"),
+            "--field-strength", "3", "--echo-time", "0.02", "--qsmart-inversion", "tkd",
+            "--intermediates", &p("inter"),
+        ]).unwrap();
+        let Command::Qsmart(args) = cli.command else { panic!() };
+        super::qsmart::execute(args).unwrap();
+        assert!(dir.path().join("chi.nii").exists());
+        let mut written: Vec<String> = std::fs::read_dir(dir.path().join("inter")).unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        written.sort();
+        assert_eq!(written, ["chimap_stage1.nii", "chimap_stage2.nii", "localfield_stage1.nii",
+                             "localfield_stage2.nii", "vessel_mask.nii"]);
+        let vessels = qsm_core::io::read_nifti_file(&dir.path().join("inter/vessel_mask.nii")).unwrap();
+        assert!(vessels.data.iter().all(|&v| v == 0.0 || v == 1.0));
+    }
+
     #[test]
     fn test_bgremove_pdf() {
         let dir = tempfile::tempdir().unwrap();

@@ -3975,6 +3975,11 @@ pub struct QsmartArgs {
     /// qsmart-echofit --reliability-output`): both stages are reconstructed inside it
     #[arg(long)]
     pub reliability: Option<PathBuf>,
+    /// Also write QSMART's intermediate maps into this directory, as <name>.nii:
+    /// vessel_mask (1 = vessel), localfield_stage1, chimap_stage1, localfield_stage2 and
+    /// chimap_stage2 (ppm), and vessel_magnitude when QSMART makes its own (mean-n4)
+    #[arg(long, value_name = "DIR")]
+    pub intermediates: Option<PathBuf>,
     #[command(flatten)]
     pub qsmart_params: QsmartParamArgs,
 }

@@ -170,7 +170,10 @@ QSMART is its own command, `qsmxt qsmart`, since it takes the total field and
 runs its own two-stage reconstruction. To prepare its inputs as QSMART's authors do, map
 the field with `qsmxt fieldmap laplacian --laplacian-solver mirror --laplacian-unmasked
 --b0-estimation qsmart-echofit --reliability-output r0.nii`, then pass
-`--reliability r0.nii` and every echo's magnitude (4D) as `--magnitude`. `iqsm` and
+`--reliability r0.nii` and every echo's magnitude (4D) as `--magnitude`. `--intermediates DIR` also
+writes QSMART's own maps into `DIR` as `<name>.nii`: `vessel_mask` (1 = vessel),
+`localfield_stage1`, `chimap_stage1`, `localfield_stage2`, `chimap_stage2`, and
+`vessel_magnitude` when QSMART makes its own from the echoes. `iqsm` and
 `iqsm-plus` read every echo's wrapped phase (one 4D file) instead of a field, with
 `--echo-times`, `--field-strength`, `--b0-direction` (an input of iQSM+'s network) and,
 to weight the echoes, the magnitude (`--magnitude`, 4D).
