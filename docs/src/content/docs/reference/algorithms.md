@@ -798,10 +798,10 @@ they replace unwrapping, echo combination, background removal and inversion.
 and inversion. Standalone, they are `qsmxt invert iqsm` and `qsmxt invert iqsm-plus`,
 and iQFM is `qsmxt bgremove iqfm`, each reading the 4D wrapped phase.
 Each echo is reconstructed separately, and the echoes are combined with weights
-magnitude × TE² for iQSM and iQFM and (magnitude × TE)² for iQSM+, as in their
-authors' code. `qsmxt invert iqsm` and `qsmxt bgremove iqfm` also offer
-`--echo-weighting mag2-te2`, the (magnitude × TE)² weighting of the authors'
-Python code.
+(magnitude × TE)², the inverse of each echo's noise variance, as in the authors'
+Python code and in both of their iQSM+ implementations. `qsmxt invert iqsm` and
+`qsmxt bgremove iqfm` also offer `--echo-weighting mag-te2`, the magnitude × TE²
+weighting of the authors' MATLAB code.
 
 :::tip
 Not sure which to pick? The defaults (`threshold` → `romeo` → `vsharp` → `ilsqr`)

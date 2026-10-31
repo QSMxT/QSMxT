@@ -2993,10 +2993,10 @@ pub struct PhaseNetArgs {
 pub struct IqsmArgs {
     #[command(flatten)]
     pub net: PhaseNetArgs,
-    /// Echo weighting of the multi-echo combination: `mag-te2` weights each echo by
-    /// magnitude × TE², as in the authors' MATLAB code; `mag2-te2` by (magnitude × TE)², as in
-    /// the authors' Python code
-    #[arg(long, value_enum, default_value_t = IqsmEchoWeightingArg::MagTe2)]
+    /// Echo weighting of the multi-echo combination: `mag2-te2` weights each echo by
+    /// (magnitude × TE)², the inverse of its noise variance, as in the authors' Python code;
+    /// `mag-te2` by magnitude × TE², as in the authors' MATLAB code
+    #[arg(long, value_enum, default_value_t = IqsmEchoWeightingArg::Mag2Te2)]
     pub echo_weighting: IqsmEchoWeightingArg,
 }
 

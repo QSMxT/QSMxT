@@ -1942,7 +1942,7 @@ qsmxt bgremove iqfm [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
-| `--echo-weighting <ECHO_WEIGHTING>` | Echo weighting of the multi-echo combination: `mag-te2` weights each echo by magnitude × TE², as in the authors' MATLAB code; `mag2-te2` by (magnitude × TE)², as in the authors' Python code. Values: `mag-te2`, `mag2-te2`. Default: `mag-te2`. |
+| `--echo-weighting <ECHO_WEIGHTING>` | Echo weighting of the multi-echo combination: `mag2-te2` weights each echo by (magnitude × TE)², the inverse of its noise variance, as in the authors' Python code; `mag-te2` by magnitude × TE², as in the authors' MATLAB code. Values: `mag-te2`, `mag2-te2`. Default: `mag2-te2`. |
 
 ## `qsmxt invert`
 
@@ -2698,7 +2698,7 @@ qsmxt invert iqsm [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FI
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
-| `--echo-weighting <ECHO_WEIGHTING>` | Echo weighting of the multi-echo combination: `mag-te2` weights each echo by magnitude × TE², as in the authors' MATLAB code; `mag2-te2` by (magnitude × TE)², as in the authors' Python code. Values: `mag-te2`, `mag2-te2`. Default: `mag-te2`. |
+| `--echo-weighting <ECHO_WEIGHTING>` | Echo weighting of the multi-echo combination: `mag2-te2` weights each echo by (magnitude × TE)², the inverse of its noise variance, as in the authors' Python code; `mag-te2` by magnitude × TE², as in the authors' MATLAB code. Values: `mag-te2`, `mag2-te2`. Default: `mag2-te2`. |
 
 ### `qsmxt invert iqsm-plus`
 

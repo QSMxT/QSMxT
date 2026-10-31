@@ -967,7 +967,7 @@ mod integration_tests {
     }
 
     /// `--echo-weighting` of `qsmxt invert iqsm` and `qsmxt bgremove iqfm`: defaults to
-    /// magnitude × TE², maps each value to QSM.rs's weighting, and is refused by `invert iqsm-plus`.
+    /// (magnitude × TE)², maps each value to QSM.rs's weighting, and is refused by `invert iqsm-plus`.
     #[test]
     fn test_iqsm_echo_weighting_flag() {
         use clap::Parser;
@@ -988,7 +988,8 @@ mod integration_tests {
             a.echo_weighting.into()
         };
         for sub in [&["invert", "iqsm"][..], &["bgremove", "iqfm"]] {
-            assert_eq!(weighting(sub, &[]), W::MagnitudeTeSquared, "{sub:?}");
+            assert_eq!(weighting(sub, &[]), W::MagnitudeSquaredTeSquared, "{sub:?}");
+            assert_eq!(W::default(), W::MagnitudeSquaredTeSquared, "the pipeline's weighting");
             assert_eq!(weighting(sub, &["--echo-weighting", "mag-te2"]), W::MagnitudeTeSquared, "{sub:?}");
             assert_eq!(weighting(sub, &["--echo-weighting", "mag2-te2"]), W::MagnitudeSquaredTeSquared, "{sub:?}");
             assert!(parse(sub, &["--echo-weighting", "te2"]).is_err(), "{sub:?}");
