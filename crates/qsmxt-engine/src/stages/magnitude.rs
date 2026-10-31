@@ -69,7 +69,11 @@ pub fn homogeneity_correct(
             // The plan refuses settings and grids N4 cannot use up front; this covers runs
             // resumed from a cached state. No mask: the corrected magnitude is what masking is
             // made from.
-            qsm_core::utils::n4_bias_correction(data, None, &grid, &config.n4.core(), |_, _| {})
+            // The image's own header isn't carried this far: an axis-aligned geometry keeps N4's
+            // shrink offset what it was before QSM.rs took the geometry (QSM.rs#380). Passing the
+            // header's geometry is QSMxT's follow-up to that change.
+            let geometry = qsm_core::utils::ItkGeometry::axis_aligned([vsx, vsy, vsz]);
+            qsm_core::utils::n4_bias_correction(data, None, &grid, &geometry, &config.n4.core(), |_, _| {})
                 .map(|out| out.corrected)
                 .map_err(|e| EngineError::Config(format!("inhomogeneity correction: {e}")))
         }

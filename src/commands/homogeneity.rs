@@ -29,7 +29,11 @@ pub fn execute(args: HomogeneityArgs) -> crate::Result<()> {
                 "Applying N4 inhomogeneity correction to {} ({}x{}x{})",
                 args.input.display(), dims.0, dims.1, dims.2
             );
-            qsm_core::utils::n4_bias_correction(&nifti.data, None, &grid, &core, |_, _| {})?.corrected
+            // The input file's geometry as ITK reads it: it sets where N4's shrunk grid samples the
+            // image, as ANTs given this file (QSM.rs#380).
+            let geometry = qsm_core::io::read_itk_geometry_file(&args.input)
+                .map_err(|e| QsmxtError::Config(format!("{}: {e}", args.input.display())))?;
+            qsm_core::utils::n4_bias_correction(&nifti.data, None, &grid, &geometry, &core, |_, _| {})?.corrected
         }
     };
 
