@@ -318,9 +318,7 @@ fn run_field_mapping(
     let reference = phase_me.geometry_reference();
     save_nifti(&common.output, &field_ppm, &reference)?;
     info!("B0 field map (ppm) saved to {}", common.output.display());
-    if common.complex_fit_output.is_some() || common.complex_fit_noise_output.is_some() {
-        save_complex_fit(common, &config, &phase_slices, mag_option, &scan_meta, &reference)?;
-    }
+    save_complex_fit(common, field.complex_fit.as_ref(), &reference)?;
     if let Some(path) = &common.reliability_output {
         let reliability = field.reliability.as_ref().ok_or_else(|| QsmxtError::Config(
             "--reliability-output: only --b0-estimation qsmart-echofit makes a reliability map".into()))?;
@@ -330,24 +328,19 @@ fn run_field_mapping(
     Ok(())
 }
 
-/// `--complex-fit-output` / `--complex-fit-noise-output`: MEDI's complex fit itself (QSM.rs's
-/// `fit_ppm_complex`, the fit the field map above was unwrapped from), before unwrapping, in
-/// MEDI's units: radians per echo spacing.
+/// `--complex-fit-output` / `--complex-fit-noise-output`: MEDI's complex fit itself, as QSM.rs's
+/// field mapping returns it (`FieldMappingResult::complex_fit`, the fit the field map above was
+/// unwrapped from), before unwrapping, in MEDI's units: radians per echo spacing.
 fn save_complex_fit(
     common: &FieldmapCommonArgs,
-    config: &qsm_core::pipeline::config::FieldMappingConfig,
-    phases: &[&[f64]],
-    magnitudes: Option<&[&[f64]]>,
-    meta: &qsm_core::pipeline::config::ScanMetadata,
+    fit: Option<&qsm_core::utils::FitPpmComplexResult>,
     reference: &qsm_core::io::NiftiData,
 ) -> crate::Result<()> {
-    let qsm_core::pipeline::config::B0EstimationMethod::ComplexFit(params) = &config.b0_estimation else {
-        unreachable!("checked before the field mapping");
-    };
-    let magnitudes = magnitudes.ok_or_else(|| QsmxtError::Config(
-        "the complex fit needs every echo's magnitude (--magnitude)".into()))?;
-    let fit = qsm_core::utils::fit_ppm_complex(magnitudes, phases, &meta.echo_times, params)
-        .map_err(|e| QsmxtError::Config(format!("complex fit: {e}")))?;
+    if common.complex_fit_output.is_none() && common.complex_fit_noise_output.is_none() {
+        return Ok(());
+    }
+    let fit = fit.ok_or_else(|| QsmxtError::Config(
+        "--complex-fit-output and --complex-fit-noise-output need --b0-estimation complex-fit".into()))?;
     for (path, data, what) in [
         (&common.complex_fit_output, &fit.field, "Complex fit (rad per echo spacing)"),
         (&common.complex_fit_noise_output, &fit.noise, "Complex fit noise map (rad per echo spacing)"),
