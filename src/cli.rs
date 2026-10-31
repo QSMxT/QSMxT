@@ -3988,6 +3988,11 @@ pub struct QsmartArgs {
     /// chimap_stage2 (ppm), and vessel_magnitude when QSMART makes its own (mean-n4)
     #[arg(long, value_name = "DIR")]
     pub intermediates: Option<PathBuf>,
+    /// k-space grid of the dipole kernel in QSMART's stage combination: `fft` (default) or
+    /// `qsmart-reference`, the grid of the authors' adjust_offset.m, for comparison with their
+    /// code. They differ only when a matrix dimension is odd
+    #[arg(long, value_enum, default_value = "fft")]
+    pub qsmart_offset_grid: QsmartOffsetGridArg,
     #[command(flatten)]
     pub qsmart_params: QsmartParamArgs,
 }
@@ -4403,6 +4408,11 @@ pub enum QsmartFitThresholdModeArg {
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum VesselSizeUnitsArg {
     Voxels, Mm,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum QsmartOffsetGridArg {
+    Fft, QsmartReference,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

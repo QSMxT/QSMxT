@@ -179,7 +179,10 @@ the field with `qsmxt fieldmap laplacian --laplacian-solver mirror --laplacian-u
 `--reliability r0.nii` and every echo's magnitude (4D) as `--magnitude`. `--intermediates DIR` also
 writes QSMART's own maps into `DIR` as `<name>.nii`: `vessel_mask` (1 = vessel),
 `localfield_stage1`, `chimap_stage1`, `localfield_stage2`, `chimap_stage2`, and
-`vessel_magnitude` when QSMART makes its own from the echoes. `iqsm` and
+`vessel_magnitude` when QSMART makes its own from the echoes.
+`--qsmart-offset-grid qsmart-reference` combines the two stages on the k-space grid of the
+authors' code instead of the FFT grid; the two differ only when a matrix dimension is odd, and
+the option is there for comparing with their code. `iqsm` and
 `iqsm-plus` read every echo's wrapped phase (one 4D file) instead of a field, with
 `--echo-times`, `--field-strength`, `--b0-direction` (an input of iQSM+'s network) and,
 to weight the echoes, the magnitude (`--magnitude`, 4D).
