@@ -1408,7 +1408,7 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("whqsm_alpha1", "inversion.whqsm.alpha1"), ("whqsm_mu1", "inversion.whqsm.mu1"), ("whqsm_mu2", "inversion.whqsm.mu2"),
     ("whqsm_beta", "inversion.whqsm.beta"), ("whqsm_muh", "inversion.whqsm.muh"), ("whqsm_max_iter", "inversion.whqsm.max_iter"),
     ("whqsm_tol_update", "inversion.whqsm.tol_update"), ("whqsm_tol_delta", "inversion.whqsm.tol_delta"),
-    ("whqsm_weight", "inversion.whqsm.weight"),
+    ("whqsm_weight", "inversion.whqsm.weight"), ("ilsqr_precision", "inversion.ilsqr.precision"),
     ("hdqsm_alpha_l2", "inversion.hdqsm.alpha_l2"), ("hdqsm_mu1_l2", "inversion.hdqsm.mu1_l2"), ("hdqsm_mu2", "inversion.hdqsm.mu2"),
     ("hdqsm_max_iter_l1", "inversion.hdqsm.max_iter_l1"), ("hdqsm_max_iter_l2", "inversion.hdqsm.max_iter_l2"),
     ("hdqsm_tol_update", "inversion.hdqsm.tol_update"),
@@ -1445,6 +1445,7 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("sep_ilsqr_qsm_max_iter", "separation.chi_sep_ilsqr.qsm_ilsqr.max_iter"),
     ("sep_ilsqr_qsm_tol", "separation.chi_sep_ilsqr.qsm_ilsqr.tol"),
     ("sep_ilsqr_qsm_pad_mm", "separation.chi_sep_ilsqr.qsm_ilsqr.pad_mm"),
+    ("sep_ilsqr_qsm_precision", "separation.chi_sep_ilsqr.qsm_ilsqr.precision"),
     ("sep_medi_lambda", "separation.chi_sep_medi.lambda"), ("sep_medi_lambda_csf", "separation.chi_sep_medi.lambda_csf"),
     ("sep_medi_dr_pos", "separation.chi_sep_medi.dr_pos"), ("sep_medi_dr_neg", "separation.chi_sep_medi.dr_neg"),
     ("sep_medi_pad", "separation.chi_sep_medi.pad"), ("sep_medi_tol", "separation.chi_sep_medi.tol"),
@@ -2012,6 +2013,8 @@ pub struct PipelineFormState {
     pub whqsm_tol_delta: String,
     /// An index into WHQSM_WEIGHT_OPTIONS.
     pub whqsm_weight: usize,
+    /// An index into ILSQR_PRECISION_OPTIONS.
+    pub ilsqr_precision: usize,
 
     // The echo time each method converts the field to phase at: an index into
     // ECHO_TIME_OPTIONS, and the time in ms when the last (a given time) is chosen.
@@ -2154,6 +2157,8 @@ pub struct PipelineFormState {
     pub sep_ilsqr_qsm_max_iter: String,
     pub sep_ilsqr_qsm_tol: String,
     pub sep_ilsqr_qsm_pad_mm: String,
+    /// An index into ILSQR_PRECISION_OPTIONS.
+    pub sep_ilsqr_qsm_precision: usize,
     pub sep_medi_lambda: String,
     pub sep_medi_lambda_csf: String,
     pub sep_medi_dr_pos: String,
@@ -2501,6 +2506,7 @@ impl Default for PipelineFormState {
             whqsm_tol_update: format!("{}", whqsm.tol_update),
             whqsm_tol_delta: format!("{}", whqsm.tol_delta),
             whqsm_weight: whqsm_weight_index(qsmxt_engine::WhqsmConfig::default().weight),
+            ilsqr_precision: ilsqr_precision_index(qsmxt_engine::IlsqrConfig::default().precision),
             nltv_te: echo_time_index(qsmxt_engine::NltvConfig::default().te),
             nltv_te_ms: { let p = qsm_core::inversion::NltvParams::default(); echo_time_ms_default(p.te, &p.echo_times) },
             medi_te: echo_time_index(qsmxt_engine::MediConfig::default().te),
@@ -2583,6 +2589,7 @@ impl Default for PipelineFormState {
             sep_ilsqr_qsm_max_iter: sep_ilsqr.qsm_ilsqr.max_iter.to_string(),
             sep_ilsqr_qsm_tol: fmt_default(sep_ilsqr.qsm_ilsqr.tol),
             sep_ilsqr_qsm_pad_mm: fmt_default(sep_ilsqr.qsm_ilsqr.pad_mm),
+            sep_ilsqr_qsm_precision: ilsqr_precision_index(sep_ilsqr.qsm_ilsqr.precision.into()),
             sep_medi_lambda: fmt_default(sep_medi.lambda),
             sep_medi_lambda_csf: fmt_default(sep_medi.lambda_csf),
             sep_medi_dr_pos: fmt_opt(sep_medi.dr_pos),
@@ -2775,6 +2782,15 @@ const WHQSM_WEIGHT_HELP: &[&str] = &[
 fn whqsm_weight_index(w: qsmxt_engine::WhqsmWeight) -> usize {
     qsmxt_engine::WhqsmWeight::ALL.iter().position(|&x| x == w).unwrap_or(0)
 }
+/// iLSQR's arithmetic, in the CLI's names.
+pub const ILSQR_PRECISION_OPTIONS: &[&str] = &["double", "single"];
+const ILSQR_PRECISION_HELP: &[&str] = &[
+    "Double precision (default)",
+    "Single precision, as the original implementation computes the solves; slower and uses more memory",
+];
+fn ilsqr_precision_index(p: qsmxt_engine::IlsqrPrecision) -> usize {
+    qsmxt_engine::IlsqrPrecision::ALL.iter().position(|&x| x == p).unwrap_or(0)
+}
 /// PDF's dipole kernel, in the CLI's names.
 pub const PDF_SPACE_OPTIONS: &[&str] = &["image", "kspace"];
 const PDF_SPACE_HELP: &[&str] = &[
@@ -2882,6 +2898,8 @@ impl PipelineFormState {
                         help: "Tolerance of the iLSQR that reconstructs the QSM separated" });
                     rows.push(PipelineRow::Param { label: "  QSM pad (mm)", field: "sep_ilsqr_qsm_pad_mm",
                         help: "Zero-padding per side of the iLSQR that reconstructs the QSM separated" });
+                    rows.push(PipelineRow::AlgoSelect { label: "  QSM precision", field: "sep_ilsqr_qsm_precision",
+                        options: ILSQR_PRECISION_OPTIONS, help: ILSQR_PRECISION_HELP });
                 }
             }
             3 => {
@@ -3476,6 +3494,7 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "ilsqr_tol", help: "Convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Max iter", field: "ilsqr_max_iter", help: "Maximum iterations" });
                 rows.push(PipelineRow::Param { label: "  Pad (mm)", field: "ilsqr_pad_mm", help: "Zero-padding per side, mm. Larger costs time and memory" });
+                rows.push(PipelineRow::AlgoSelect { label: "  Precision", field: "ilsqr_precision", options: ILSQR_PRECISION_OPTIONS, help: ILSQR_PRECISION_HELP });
             }
             "star" => { // STAR-QSM
                 rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "star_pad", help: "Zero-padding per side, voxels (x y z). Larger costs time and memory (default 8 8 20)" });
@@ -4383,6 +4402,8 @@ impl PipelineFormState {
             "motion_reference" => self.motion_reference,
             "star_te" => self.star_te,
             "whqsm_weight" => self.whqsm_weight,
+            "ilsqr_precision" => self.ilsqr_precision,
+            "sep_ilsqr_qsm_precision" => self.sep_ilsqr_qsm_precision,
             "pdf_space" => self.pdf_space,
             "ismv_variant" => self.ismv_variant,
             "nltv_te" => self.nltv_te,
@@ -4426,6 +4447,8 @@ impl PipelineFormState {
             "motion_reference" => self.motion_reference = val,
             "star_te" => self.star_te = val.min(ECHO_TIME_OPTIONS.len() - 1),
             "whqsm_weight" => self.whqsm_weight = val.min(WHQSM_WEIGHT_OPTIONS.len() - 1),
+            "ilsqr_precision" => self.ilsqr_precision = val.min(ILSQR_PRECISION_OPTIONS.len() - 1),
+            "sep_ilsqr_qsm_precision" => self.sep_ilsqr_qsm_precision = val.min(ILSQR_PRECISION_OPTIONS.len() - 1),
             "pdf_space" => self.pdf_space = val.min(PDF_SPACE_OPTIONS.len() - 1),
             "ismv_variant" => self.ismv_variant = val.min(ISMV_VARIANT_OPTIONS.len() - 1),
             "nltv_te" => self.nltv_te = val.min(ECHO_TIME_OPTIONS.len() - 1),

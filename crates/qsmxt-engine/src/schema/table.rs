@@ -614,6 +614,12 @@ pub(super) fn table() -> Vec<Def> {
         d("inversion.ilsqr.pad_mm", Inversion, "Pad (mm)", "Zero-padding per side, mm. Larger costs time and memory", Float).min(0.0).units("mm").flag("--ilsqr-pad-mm").parent("inversion.algorithm")
         .when(|x| x.inv("ilsqr")).full("Padding")
         .gui("Zero-padding per side. Larger costs time and memory"),
+        d("inversion.ilsqr.precision", Inversion, "Precision", "", Enum(vec![
+            o("double", "double", "Double", "Double precision (default)"),
+            o("single", "single", "Single", "Single precision, as the original implementation computes the solves; slower and uses more memory"),
+        ])).flag("--ilsqr-precision").parent("inversion.algorithm")
+        .when(|x| x.inv("ilsqr"))
+        .gui("Arithmetic of the two least-squares solves"),
         d("inversion.star.pad", Inversion, "Pad (voxels)", "Zero-padding per side, voxels (x y z). Larger costs time and memory (default 8 8 20)", IntVec3).units("voxels").flag("--star-pad").parent("inversion.algorithm")
         .when(|x| x.inv("star")).full("Padding")
         .gui("Zero-padding per side (x y z). Larger costs time and memory"),
@@ -957,6 +963,12 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.sep("chi-sep-ilsqr") && x.c.separation.custom_qsm_tool.is_none()),
         d("separation.chi_sep_ilsqr.qsm_ilsqr.pad_mm", Separation, "QSM pad (mm)", "Zero-padding per side of the iLSQR that reconstructs the QSM separated", Float).min(0.0).units("mm").flag("--chi-sep-ilsqr-qsm-pad-mm").parent("separation.algorithm")
         .when(|x| x.sep("chi-sep-ilsqr") && x.c.separation.custom_qsm_tool.is_none()).full("QSM padding"),
+        d("separation.chi_sep_ilsqr.qsm_ilsqr.precision", Separation, "QSM precision", "", Enum(vec![
+            o("double", "double", "Double", "Double precision (default)"),
+            o("single", "single", "Single", "Single precision, as the original implementation computes the solves; slower and uses more memory"),
+        ])).flag("--chi-sep-ilsqr-qsm-precision").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-ilsqr") && x.c.separation.custom_qsm_tool.is_none())
+        .gui("Arithmetic of the two least-squares solves of the iLSQR that reconstructs the QSM separated"),
         // QSM.rs ChiSepMediParams::validate: λ, λ_CSF and the tolerances finite and >= 0; D_r finite
         // and > 0; at least 1 iteration.
         d("separation.chi_sep_medi.lambda", Separation, "Lambda", "Weight of the data terms against the L1 terms", Float).min(0.0).flag("--chi-sep-medi-lambda").parent("separation.algorithm")

@@ -889,9 +889,17 @@ mod tests {
         assert!(text.contains("Apply all") && text.contains("Choose per setting") && text.contains("Keep mine"));
         // Apply all (preselected).
         key(&mut app, KeyCode::Enter);
-        assert!(app.refs.modal.is_none() && app.rec_modal.is_none(), "PDF's reference adds nothing the pop-up did not decide");
+        assert!(app.refs.modal.is_none(), "PDF's reference adds nothing the pop-up did not decide");
+        // PDF at its default 30 CG iterations: the measured suggestion of 300 is offered, not taken.
+        let modal = app.rec_modal.as_ref().expect("PDF's iteration suggestion");
+        assert_eq!(modal.findings[0].rule, "pdf.cg-iterations");
         let c = super::super::command::config_from_app(&app).unwrap();
         assert_eq!(c.bg_removal.algorithm, qsmxt_engine::enums::BfAlgorithm::Pdf);
+        assert_eq!(c.bg_removal.pdf.n_cg, qsm_core::bgremove::PdfParams::default().n_cg, "nothing rewritten yet");
+        app.handle_rec_modal_key(KeyEvent::from(KeyCode::Enter));
+        assert!(app.rec_modal.is_none());
+        let c = super::super::command::config_from_app(&app).unwrap();
+        assert_eq!(c.bg_removal.pdf.n_cg, 300, "Apply (preselected) takes the suggestion");
         let medi = rec::chosen_methods(&c, &Facts::default()).into_iter().find(|m| m.name == "MEDI").unwrap();
         assert!(rec::reference_differences(&c, &Facts::default(), &medi).is_empty());
         let row = PipelineRow::AlgoSelect { label: "", field: "mask_preset", options: &[], help: &[] };
