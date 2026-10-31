@@ -410,7 +410,8 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             te: cfg.inversion.tgv.te.into(),
             // qsm-core's defaults (exact adjoint, erosion from the array's edge too); not
             // settings: they only reproduce the reference package's quirks for parity
-            // (`qsmxt invert tgv --reference-divergence --reference-edge-erosion`).
+            // (`qsmxt invert tgv --reference-divergence --reference-edge-erosion
+            // --reference-output-box`).
             ..Default::default()
         },
         qsmart: qsm_core::utils::QsmartParams {

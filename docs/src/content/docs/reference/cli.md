@@ -2089,8 +2089,9 @@ qsmxt invert tgv [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIE
 | `--alpha0 <ALPHA0>` | Alpha0 (second-order weight), in radians at the echo time (--te) and the field strength. |
 | `--step-size <STEP_SIZE>` | Primal step size multiplier. |
 | `--te <TE>` | Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
-| `--reference-divergence` | Use QuantitativeSusceptibilityMappingTGV.jl's divergence in the w update rather than the exact adjoint of the symmetric gradient. Changes the result only on anisotropic voxels; with --reference-edge-erosion it reproduces that package, for comparison with it. |
+| `--reference-divergence` | Use QuantitativeSusceptibilityMappingTGV.jl's divergence in the w update rather than the exact adjoint of the symmetric gradient. Changes the result only on anisotropic voxels; with --reference-edge-erosion and --reference-output-box it reproduces that package, for comparison with it. |
 | `--reference-edge-erosion` | Erode the mask as QuantitativeSusceptibilityMappingTGV.jl does, not from the array's edge. Changes the result only where the mask reaches an array face. |
+| `--reference-output-box` | Return χ over QuantitativeSusceptibilityMappingTGV.jl's whole output box, not only inside the eroded mask: adds the rim of up to two voxels just outside it, where no data constrain χ. |
 
 ### `qsmxt invert tikhonov`
 
