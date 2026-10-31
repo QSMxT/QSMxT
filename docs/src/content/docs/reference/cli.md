@@ -161,6 +161,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve. |
 | `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve (default: 100) |
 | `--ilsqr-pad-mm <MM>` | iLSQR zero-padding in mm per side. |
+| `--ilsqr-precision <PRECISION>` | iLSQR arithmetic of the two LSQR solves: double, or single as the original implementation (default: double) |
 | `--star-pad <X> <Y> <Z>` | STAR-QSM zero-padding in voxels per side, X Y Z (default: 8 8 20) |
 | `--star-te <TE>` | Echo time STAR-QSM converts the field to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: sum) |
 | `--lsqr-residual-weighting <LSQR_RESIDUAL_WEIGHTING>` | LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly. |
@@ -273,6 +274,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--chi-sep-ilsqr-qsm-max-iter <CHI_SEP_ILSQR_QSM_MAX_ITER>` | χ-sep iLSQR: max iterations of the iLSQR that reconstructs, from the local field, the QSM χ-separation is initialised with (default: 100; not used with --use-custom-qsm) |
 | `--chi-sep-ilsqr-qsm-tol <CHI_SEP_ILSQR_QSM_TOL>` | χ-sep iLSQR: tolerance of that QSM's iLSQR. |
 | `--chi-sep-ilsqr-qsm-pad-mm <MM>` | χ-sep iLSQR: zero-padding of that QSM's iLSQR, in mm per side (default: 12) |
+| `--chi-sep-ilsqr-qsm-precision <PRECISION>` | χ-sep iLSQR: arithmetic of that QSM's two LSQR solves: double, or single as the original implementation (default: double) |
 | `--chi-sep-medi-lambda <CHI_SEP_MEDI_LAMBDA>` | χ-sep MEDI weight of the data terms against the L1 terms (default: 1) |
 | `--chi-sep-medi-lambda-csf <CHI_SEP_MEDI_LAMBDA_CSF>` | χ-sep MEDI weight of the CSF-uniformity term (default: 1) |
 | `--chi-sep-medi-dr-pos <HZ_PER_PPM>` | χ-sep MEDI paramagnetic relaxometric constant (Hz/ppm), or auto for 137 × B0 / 2.9 T (default: auto) |
@@ -611,6 +613,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve. |
 | `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve (default: 100) |
 | `--ilsqr-pad-mm <MM>` | iLSQR zero-padding in mm per side. |
+| `--ilsqr-precision <PRECISION>` | iLSQR arithmetic of the two LSQR solves: double, or single as the original implementation (default: double) |
 | `--star-pad <X> <Y> <Z>` | STAR-QSM zero-padding in voxels per side, X Y Z (default: 8 8 20) |
 | `--star-te <TE>` | Echo time STAR-QSM converts the field to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: sum) |
 | `--lsqr-residual-weighting <LSQR_RESIDUAL_WEIGHTING>` | LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly. |
@@ -723,6 +726,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--chi-sep-ilsqr-qsm-max-iter <CHI_SEP_ILSQR_QSM_MAX_ITER>` | χ-sep iLSQR: max iterations of the iLSQR that reconstructs, from the local field, the QSM χ-separation is initialised with (default: 100; not used with --use-custom-qsm) |
 | `--chi-sep-ilsqr-qsm-tol <CHI_SEP_ILSQR_QSM_TOL>` | χ-sep iLSQR: tolerance of that QSM's iLSQR. |
 | `--chi-sep-ilsqr-qsm-pad-mm <MM>` | χ-sep iLSQR: zero-padding of that QSM's iLSQR, in mm per side (default: 12) |
+| `--chi-sep-ilsqr-qsm-precision <PRECISION>` | χ-sep iLSQR: arithmetic of that QSM's two LSQR solves: double, or single as the original implementation (default: double) |
 | `--chi-sep-medi-lambda <CHI_SEP_MEDI_LAMBDA>` | χ-sep MEDI weight of the data terms against the L1 terms (default: 1) |
 | `--chi-sep-medi-lambda-csf <CHI_SEP_MEDI_LAMBDA_CSF>` | χ-sep MEDI weight of the CSF-uniformity term (default: 1) |
 | `--chi-sep-medi-dr-pos <HZ_PER_PPM>` | χ-sep MEDI paramagnetic relaxometric constant (Hz/ppm), or auto for 137 × B0 / 2.9 T (default: auto) |
@@ -998,6 +1002,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve. |
 | `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve (default: 100) |
 | `--ilsqr-pad-mm <MM>` | iLSQR zero-padding in mm per side. |
+| `--ilsqr-precision <PRECISION>` | iLSQR arithmetic of the two LSQR solves: double, or single as the original implementation (default: double) |
 | `--star-pad <X> <Y> <Z>` | STAR-QSM zero-padding in voxels per side, X Y Z (default: 8 8 20) |
 | `--star-te <TE>` | Echo time STAR-QSM converts the field to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: sum) |
 | `--lsqr-residual-weighting <LSQR_RESIDUAL_WEIGHTING>` | LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly. |
@@ -1110,6 +1115,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--chi-sep-ilsqr-qsm-max-iter <CHI_SEP_ILSQR_QSM_MAX_ITER>` | χ-sep iLSQR: max iterations of the iLSQR that reconstructs, from the local field, the QSM χ-separation is initialised with (default: 100; not used with --use-custom-qsm) |
 | `--chi-sep-ilsqr-qsm-tol <CHI_SEP_ILSQR_QSM_TOL>` | χ-sep iLSQR: tolerance of that QSM's iLSQR. |
 | `--chi-sep-ilsqr-qsm-pad-mm <MM>` | χ-sep iLSQR: zero-padding of that QSM's iLSQR, in mm per side (default: 12) |
+| `--chi-sep-ilsqr-qsm-precision <PRECISION>` | χ-sep iLSQR: arithmetic of that QSM's two LSQR solves: double, or single as the original implementation (default: double) |
 | `--chi-sep-medi-lambda <CHI_SEP_MEDI_LAMBDA>` | χ-sep MEDI weight of the data terms against the L1 terms (default: 1) |
 | `--chi-sep-medi-lambda-csf <CHI_SEP_MEDI_LAMBDA_CSF>` | χ-sep MEDI weight of the CSF-uniformity term (default: 1) |
 | `--chi-sep-medi-dr-pos <HZ_PER_PPM>` | χ-sep MEDI paramagnetic relaxometric constant (Hz/ppm), or auto for 137 × B0 / 2.9 T (default: auto) |
@@ -2226,6 +2232,7 @@ qsmxt invert ilsqr [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--tol <TOL>` | Tolerance. |
 | `--max-iter <MAX_ITER>` | Max iterations of each LSQR solve (default: 100) |
 | `--pad-mm <MM>` | Zero-padding in mm per side. |
+| `--precision <PRECISION>` | Arithmetic of the two LSQR solves: double, or single as the original implementation (default: double) |
 
 ### `qsmxt invert star`
 

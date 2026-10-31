@@ -586,6 +586,10 @@ pub struct SeparationParamArgs {
     /// χ-sep iLSQR: zero-padding of that QSM's iLSQR, in mm per side (default: 12)
     #[arg(long, value_name = "MM")]
     pub chi_sep_ilsqr_qsm_pad_mm: Option<f64>,
+    /// χ-sep iLSQR: arithmetic of that QSM's two LSQR solves: double, or single as the original
+    /// implementation (default: double)
+    #[arg(long, value_name = "PRECISION", value_parser = parse_ilsqr_precision)]
+    pub chi_sep_ilsqr_qsm_precision: Option<qsmxt_engine::IlsqrPrecision>,
     // χ-sep MEDI (the χ-separation toolbox's chi_sep_MEDI)
     /// χ-sep MEDI weight of the data terms against the L1 terms (default: 1)
     #[arg(long)]
@@ -788,6 +792,10 @@ pub struct IlsqrParamArgs {
     /// iLSQR zero-padding in mm per side
     #[arg(long, value_name = "MM")]
     pub ilsqr_pad_mm: Option<f64>,
+    /// iLSQR arithmetic of the two LSQR solves: double, or single as the original implementation
+    /// (default: double)
+    #[arg(long, value_name = "PRECISION", value_parser = parse_ilsqr_precision)]
+    pub ilsqr_precision: Option<qsmxt_engine::IlsqrPrecision>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -831,6 +839,12 @@ pub fn parse_or_auto(s: &str) -> Result<OrAuto, String> {
 /// DECOMPOSE's χ bound: `echo-spacing`, or a bound in ppm.
 pub fn parse_chi_bound(s: &str) -> Result<qsmxt_engine::ChiBoundChoice, String> {
     qsmxt_engine::ChiBoundChoice::parse(s)
+}
+
+/// iLSQR's arithmetic: `double` or `single`.
+pub fn parse_ilsqr_precision(s: &str) -> Result<qsmxt_engine::IlsqrPrecision, String> {
+    qsmxt_engine::IlsqrPrecision::ALL.into_iter().find(|p| p.as_str() == s.trim())
+        .ok_or_else(|| format!("expected double or single, got '{s}'"))
 }
 
 /// A WH-QSM data weight: `flat`, `max-normalised` or `in-vivo`.
@@ -3300,6 +3314,10 @@ pub struct InvertIlsqrArgs {
     /// Zero-padding in mm per side
     #[arg(long, value_name = "MM")]
     pub pad_mm: Option<f64>,
+    /// Arithmetic of the two LSQR solves: double, or single as the original implementation
+    /// (default: double)
+    #[arg(long, value_name = "PRECISION", value_parser = parse_ilsqr_precision)]
+    pub precision: Option<qsmxt_engine::IlsqrPrecision>,
 }
 
 /// STAR-QSM. Its result depends on the scale of the field in radians, so it takes the scan's

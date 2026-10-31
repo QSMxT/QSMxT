@@ -153,17 +153,21 @@ param_config!(AmpPeConfig from qsm_core::inversion::AmpPeParams {
     damp_rate_par: f64, max_pe_spar_ite: usize, max_pe_est_ite: usize,
     cvg_thd: f64, tikhonov_beta: f64
 });
-param_config!(IlsqrConfig from qsm_core::inversion::IlsqrParams { tol: f64, max_iter: usize, pad_mm: f64 });
+// `precision`: the LSQR solves in double (default) or in STI Suite's single precision.
+param_config!(IlsqrConfig from qsm_core::inversion::IlsqrParams {
+    tol: f64, max_iter: usize, pad_mm: f64, precision: IlsqrPrecision
+});
 impl From<&qsm_core::inversion::IlsqrParams> for IlsqrConfig {
     fn from(p: &qsm_core::inversion::IlsqrParams) -> Self {
-        Self { tol: p.tol, max_iter: p.max_iter, pad_mm: p.pad_mm }
+        Self { tol: p.tol, max_iter: p.max_iter, pad_mm: p.pad_mm, precision: p.precision.into() }
     }
 }
 impl IlsqrConfig {
     /// qsm-core's parameters.
     pub fn params(&self) -> qsm_core::inversion::IlsqrParams {
-        // `precision` is qsm-core's default (double) until the setting lands (QSMxT#464).
-        qsm_core::inversion::IlsqrParams { tol: self.tol, max_iter: self.max_iter, pad_mm: self.pad_mm, ..Default::default() }
+        qsm_core::inversion::IlsqrParams {
+            tol: self.tol, max_iter: self.max_iter, pad_mm: self.pad_mm, precision: self.precision.into(),
+        }
     }
 }
 

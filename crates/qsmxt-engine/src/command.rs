@@ -442,6 +442,7 @@ fn command_for(config: &PipelineConfig) -> String {
                 emit_usize(&mut parts, "--chi-sep-ilsqr-qsm-max-iter", q.max_iter, dq.max_iter);
                 emit_f64(&mut parts, "--chi-sep-ilsqr-qsm-tol", q.tol, dq.tol);
                 emit_f64(&mut parts, "--chi-sep-ilsqr-qsm-pad-mm", q.pad_mm, dq.pad_mm);
+                emit_enum(&mut parts, "--chi-sep-ilsqr-qsm-precision", &q.precision, &dq.precision);
             }
             SeparationAlgorithm::ChiSepMedi => {
                 let (c, dc) = (&s.chi_sep_medi, &ds.chi_sep_medi);
@@ -635,6 +636,7 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
             emit_f64(parts, "--ilsqr-tol", config.inversion.ilsqr.tol, d.inversion.ilsqr.tol);
             emit_usize(parts, "--ilsqr-max-iter", config.inversion.ilsqr.max_iter, d.inversion.ilsqr.max_iter);
             emit_f64(parts, "--ilsqr-pad-mm", config.inversion.ilsqr.pad_mm, d.inversion.ilsqr.pad_mm);
+            emit_enum(parts, "--ilsqr-precision", &config.inversion.ilsqr.precision, &d.inversion.ilsqr.precision);
         }
         QsmAlgorithm::Star => {
             let (c, dd) = (&config.inversion.star, &d.inversion.star);
