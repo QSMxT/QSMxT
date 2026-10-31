@@ -23,9 +23,10 @@ default = ["dl"]
 dl = ["qsm-core/onnx", "qsm-core/download", "qsmxt-engine/onnx"]
 
 [dependencies]
+# TEMP: pinned to astewartau/QSM.rs#386's head (QsmartOffsetGrid); repin to main after it merges.
 # Pinned to a QSM.rs main commit. qsmxt-engine must move in lockstep (same rev), so qsmbly
 # (which pins qsmxt-engine) resolves the same qsm-core.
-qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "1d02123e91ec1b23dfed593290573165d5ee0f19", features = ["parallel"] }
+qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "c03d4d0e07a780395c66a007eac707e7b456a2c3", features = ["parallel"] }
 qsmxt-engine = { path = "crates/qsmxt-engine" }
 clap = { version = "4", features = ["derive"] }
 const_format = "0.2"

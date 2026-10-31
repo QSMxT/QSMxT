@@ -165,9 +165,10 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
                q::pipeline::FieldMappingConfig::default().laplacian_unmasked);
 
     // QSMART: ppm/b0_dir are runtime; frangi_scale_range is reshaped into
-    // frangi_scale_min/max in the config.
+    // frangi_scale_min/max in the config. adjust_offset_grid is a parity switch offered on the
+    // standalone `qsmxt qsmart` command only (--qsmart-offset-grid), not a pipeline setting.
     cover!(q::utils::QsmartParams => c::QsmartConfig,
-        ignore: ["ppm", "b0_dir", "frangi_scale_range"]);
+        ignore: ["ppm", "b0_dir", "frangi_scale_range", "adjust_offset_grid"]);
 
     // ROMEO exposes a deliberate subset of the unwrapper's knobs.
     cover!(q::unwrap::RomeoParams => c::RomeoConfig,

@@ -75,7 +75,13 @@ pub fn execute(args: QsmartArgs) -> crate::Result<()> {
     cfg.inversion.algorithm = config::QsmAlgorithm::Qsmart;
     config::apply_qsmart_overrides(&mut cfg, &args.qsmart_params);
     // The vessel sizes in voxels, converted from mm when given in mm, as `qsmxt run` does.
-    let inv_config = qsmxt_engine::stages::qsmart::vessel_sizes_in_voxels(&cfg, voxel_size);
+    let mut inv_config = qsmxt_engine::stages::qsmart::vessel_sizes_in_voxels(&cfg, voxel_size);
+    // A parity switch on this command only (not a pipeline setting): the authors' grid differs
+    // from the FFT grid only on odd matrix dimensions (QSM.rs QsmartOffsetGrid).
+    inv_config.qsmart.adjust_offset_grid = match args.qsmart_offset_grid {
+        crate::cli::QsmartOffsetGridArg::Fft => qsm_core::utils::QsmartOffsetGrid::Fft,
+        crate::cli::QsmartOffsetGridArg::QsmartReference => qsm_core::utils::QsmartOffsetGrid::QsmartReference,
+    };
 
     let scan_meta =
         config::to_scan_metadata(dims, voxel_size, &[args.echo_time], args.field_strength, b0, Some(field.affine));
