@@ -2986,6 +2986,7 @@ qsmxt qsmart [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_S
 | `--magnitude <MAGNITUDE>` | Magnitude NIfTI (optional; drives vasculature detection). With --qsmart-vessel-magnitude mean-n4 (the default) every echo's magnitude (4D), averaged and N4 bias-corrected; with `combined`, a combined magnitude (3D), used as it is. |
 | `--reliability <RELIABILITY>` | QSMART's reliability map from its echo fit (`qsmxt fieldmap laplacian --b0-estimation qsmart-echofit --reliability-output`): both stages are reconstructed inside it. |
 | `--intermediates <DIR>` | Also write QSMART's intermediate maps into this directory, as &lt;name&gt;.nii: vessel_mask (1 = vessel), localfield_stage1, chimap_stage1, localfield_stage2 and chimap_stage2 (ppm), and vessel_magnitude when QSMART makes its own (mean-n4) |
+| `--qsmart-offset-grid <QSMART_OFFSET_GRID>` | k-space grid of the dipole kernel in QSMART's stage combination: `fft` (default) or `qsmart-reference`, the grid of the authors' adjust_offset.m, for comparison with their code. They differ only when a matrix dimension is odd. Values: `fft`, `qsmart-reference`. Default: `fft`. |
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
 | `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
 | `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius, in --qsmart-vessel-units (default 8) |

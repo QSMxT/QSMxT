@@ -2282,7 +2282,7 @@ dependencies = [
 [[package]]
 name = "qsm-core"
 version = "0.0.0"
-source = "git+https://github.com/astewartau/QSM.rs.git?rev=c82a1fb82537ed048bc69da26d776ead68808885#c82a1fb82537ed048bc69da26d776ead68808885"
+source = "git+https://github.com/astewartau/QSM.rs.git?rev=e6e38df30dacb3d14f6373dc283e4e18df03f23f#e6e38df30dacb3d14f6373dc283e4e18df03f23f"
 dependencies = [
  "bytemuck",
  "delaunator",
@@ -2342,6 +2342,7 @@ version = "0.0.0"
 dependencies = [
  "getrandom 0.4.2",
  "log",
+ "nifti",
  "qsm-core",
  "serde",
  "serde_json",
