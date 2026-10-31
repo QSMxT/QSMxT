@@ -333,6 +333,32 @@ pub fn scan_metadata_in(meta: &RunMetadata, cb: &qsm_core::crop::CropBox) -> qsm
     m
 }
 
+/// The image geometry ITK (as ANTs runs N4) reads for a grid: qsm-core's
+/// [`ItkGeometry::from_nifti_header`](qsm_core::utils::ItkGeometry::from_nifti_header) of the
+/// NIfTI-1 header that carries the grid's `affine` as its sform (`sform_code` 1) and `voxel_size`
+/// as its `pixdim`. For a run that is not resampled this is the first phase image's own header
+/// orientation as it was read; after axial resampling it is the working grid's, which is the grid
+/// the magnitude is corrected on.
+///
+/// # Errors
+/// If ITK would refuse the orientation (a sform that is not orthonormal).
+pub fn itk_geometry(
+    dims: (usize, usize, usize), voxel_size: (f64, f64, f64), affine: &[f64; 16],
+) -> Result<qsm_core::utils::ItkGeometry, qsm_core::error::InputError> {
+    let row = |r: usize| [affine[4 * r] as f32, affine[4 * r + 1] as f32, affine[4 * r + 2] as f32, affine[4 * r + 3] as f32];
+    let h = nifti::NiftiHeader {
+        dim: [3, dims.0 as u16, dims.1 as u16, dims.2 as u16, 1, 1, 1, 1],
+        pixdim: [1.0, voxel_size.0 as f32, voxel_size.1 as f32, voxel_size.2 as f32, 1.0, 1.0, 1.0, 1.0],
+        qform_code: 0,
+        sform_code: 1,
+        srow_x: row(0),
+        srow_y: row(1),
+        srow_z: row(2),
+        ..Default::default()
+    };
+    qsm_core::utils::ItkGeometry::from_nifti_header(&h)
+}
+
 /// The affine of a sub-grid whose voxel (0,0,0) is voxel `origin` of the grid `affine` describes.
 fn cropped_affine(affine: &[f64; 16], origin: (isize, isize, isize)) -> [f64; 16] {
     let o = [origin.0 as f64, origin.1 as f64, origin.2 as f64];
@@ -422,6 +448,33 @@ pub fn grid_decision(meta: &RunMetadata, facts: &ScanFacts, config: &PipelineCon
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// N4 gets the geometry ITK reads from the scan's header: for an oblique, neurologically
+    /// stored grid, the same as qsm-core reads back from the NIfTI file of that grid.
+    #[test]
+    fn n4_geometry_is_what_itk_reads_from_the_header() {
+        let (c, s) = (0.3f64.cos(), 0.3f64.sin());
+        let affine = [
+            1.2 * c, 0.0, -2.0 * s, -90.5,
+            0.0, 1.1, 0.0, -110.25,
+            1.2 * s, 0.0, 2.0 * c, -60.0,
+            0.0, 0.0, 0.0, 1.0,
+        ];
+        let (dims, vs) = ((6, 5, 4), (1.2, 1.1, 2.0));
+        let file = qsm_core::io::save_nifti(&[0.0; 120], dims, vs, &affine).unwrap();
+        let read = qsm_core::io::load_itk_geometry(&file).unwrap();
+        let ours = itk_geometry(dims, vs, &affine).unwrap();
+        for i in 0..3 {
+            assert!((ours.origin[i] - read.origin[i]).abs() < 1e-4, "{ours:?} vs {read:?}");
+            assert!((ours.spacing[i] - read.spacing[i]).abs() < 1e-6, "{ours:?} vs {read:?}");
+            for j in 0..3 {
+                assert!((ours.direction[i][j] - read.direction[i][j]).abs() < 1e-5, "{ours:?} vs {read:?}");
+            }
+        }
+        // LPS: the RAS x and y of the origin are negated.
+        assert_eq!((ours.origin[0], ours.origin[1]), (90.5, 110.25));
+        assert_ne!(ours, qsm_core::utils::ItkGeometry::axis_aligned([1.2, 1.1, 2.0]));
+    }
 
     /// The run metadata a cached load step hands back is bit for bit what was saved (serde_json's
     /// `float_roundtrip`, #372): an oblique grid's affine one ulp off would put the rest of the run

@@ -283,7 +283,7 @@ pub fn iqsm(
     if plus {
         qsm_core::pipeline::run_iqsm_plus(phases, magnitudes, mask, &scan_meta, none, config.dl_tile())
     } else {
-        qsm_core::pipeline::run_iqsm(phases, magnitudes, mask, &scan_meta, none, config.dl_tile())
+        qsm_core::pipeline::run_iqsm(phases, magnitudes, mask, &scan_meta, none, config.dl_tile(), Default::default())
     }.map_err(|e| EngineError::Config(format!("{}: {}", alg, e)))
 }
 

@@ -943,8 +943,9 @@ mod integration_tests {
             let args = base(sub, &magnitude);
             let cmd = parse(&args).unwrap();
             let a = match cmd {
-                Command::Invert { command: InvertCommand::Iqsm(a) | InvertCommand::IqsmPlus(a) } => a,
-                Command::Bgremove { command: BgremoveCommand::Iqfm(a) } => a,
+                Command::Invert { command: InvertCommand::Iqsm(a) } => a.net,
+                Command::Invert { command: InvertCommand::IqsmPlus(a) } => a,
+                Command::Bgremove { command: BgremoveCommand::Iqfm(a) } => a.net,
                 other => panic!("{sub:?} parsed as {other:?}"),
             };
             let inputs = super::invert::load_phase_net_inputs(&a).unwrap();
@@ -957,12 +958,43 @@ mod integration_tests {
         let mut args = base(&["invert", "iqsm"], &magnitude);
         args.pop();
         let Command::Invert { command: InvertCommand::Iqsm(a) } = parse(&args).unwrap() else { panic!() };
-        let err = super::invert::load_phase_net_inputs(&a).err().unwrap();
+        let err = super::invert::load_phase_net_inputs(&a.net).err().unwrap();
         assert!(format!("{err}").contains("2 echo(es) but 1 echo time"), "{err}");
         let args = base(&["invert", "iqsm"], &mag1);
         let Command::Invert { command: InvertCommand::Iqsm(a) } = parse(&args).unwrap() else { panic!() };
-        let err = super::invert::load_phase_net_inputs(&a).err().unwrap();
+        let err = super::invert::load_phase_net_inputs(&a.net).err().unwrap();
         assert!(format!("{err}").contains("1 echo(es)"), "{err}");
+    }
+
+    /// `--echo-weighting` of `qsmxt invert iqsm` and `qsmxt bgremove iqfm`: defaults to
+    /// (magnitude × TE)², maps each value to QSM.rs's weighting, and is refused by `invert iqsm-plus`.
+    #[test]
+    fn test_iqsm_echo_weighting_flag() {
+        use clap::Parser;
+        use qsm_core::inversion::IqsmEchoWeighting as W;
+        let parse = |sub: &[&str], extra: &[&str]| {
+            let mut v = vec!["qsmxt"];
+            v.extend_from_slice(sub);
+            v.extend(["ph.nii", "-m", "m.nii", "-o", "o.nii", "--field-strength", "3", "--echo-times", "0.01"]);
+            v.extend_from_slice(extra);
+            Cli::try_parse_from(v).map(|c| c.command)
+        };
+        let weighting = |sub: &[&str], extra: &[&str]| -> W {
+            let a: IqsmArgs = match parse(sub, extra).unwrap() {
+                Command::Invert { command: InvertCommand::Iqsm(a) } => a,
+                Command::Bgremove { command: BgremoveCommand::Iqfm(a) } => a,
+                other => panic!("{sub:?} parsed as {other:?}"),
+            };
+            a.echo_weighting.into()
+        };
+        for sub in [&["invert", "iqsm"][..], &["bgremove", "iqfm"]] {
+            assert_eq!(weighting(sub, &[]), W::MagnitudeSquaredTeSquared, "{sub:?}");
+            assert_eq!(W::default(), W::MagnitudeSquaredTeSquared, "the pipeline's weighting");
+            assert_eq!(weighting(sub, &["--echo-weighting", "mag-te2"]), W::MagnitudeTeSquared, "{sub:?}");
+            assert_eq!(weighting(sub, &["--echo-weighting", "mag2-te2"]), W::MagnitudeSquaredTeSquared, "{sub:?}");
+            assert!(parse(sub, &["--echo-weighting", "te2"]).is_err(), "{sub:?}");
+        }
+        assert!(parse(&["invert", "iqsm-plus"], &["--echo-weighting", "mag2-te2"]).is_err());
     }
 
     /// `qsmxt r2prime --r2primenet` needs `--field-strength`, takes no R2 map, and refuses a

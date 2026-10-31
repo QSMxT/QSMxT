@@ -29,7 +29,11 @@ pub fn execute(args: HomogeneityArgs) -> crate::Result<()> {
                 "Applying N4 inhomogeneity correction to {} ({}x{}x{})",
                 args.input.display(), dims.0, dims.1, dims.2
             );
-            qsm_core::utils::n4_bias_correction(&nifti.data, None, &grid, &core, |_, _| {})?.corrected
+            // N4's shrink offsets depend on the image's physical geometry, which ITK reads from the
+            // header (its sform/qform choice, LPS origin and directions): read it the same way.
+            let geometry = qsm_core::io::read_itk_geometry_file(&args.input)
+                .map_err(|e| QsmxtError::NiftiIo(format!("{}: {e}", args.input.display())))?;
+            qsm_core::utils::n4_bias_correction(&nifti.data, None, &grid, &geometry, &core, |_, _| {})?.corrected
         }
     };
 

@@ -1936,12 +1936,13 @@ qsmxt bgremove iqfm [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <
 | `<INPUT>` | Wrapped phase NIfTI file in radians: 4D (x,y,z,echo), or 3D for one echo. Required. |
 | `-m, --mask <MASK>` | Binary brain mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output NIfTI file in ppm (susceptibility for iqsm/iqsm-plus, the local field for iqfm) Required. |
-| `--magnitude <MAGNITUDE>` | Magnitude NIfTI file with the same echoes as the phase (4D), to weight the echo combination (magnitude × TE²); without it the echoes are weighted by TE² alone. |
+| `--magnitude <MAGNITUDE>` | Magnitude NIfTI file with the same echoes as the phase (4D), to weight the echo combination by magnitude; without it the echoes are weighted by TE² alone. |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
+| `--echo-weighting <ECHO_WEIGHTING>` | Echo weighting of the multi-echo combination: `mag2-te2` weights each echo by (magnitude × TE)², the inverse of its noise variance, as in the authors' Python code; `mag-te2` by magnitude × TE², as in the authors' MATLAB code. Values: `mag-te2`, `mag2-te2`. Default: `mag2-te2`. |
 
 ## `qsmxt invert`
 
@@ -1979,7 +1980,7 @@ Dipole inversion
 | [`modl-qsm`](#qsmxt-invert-modl-qsm) | MoDL-QSM deep-learning dipole inversion → χ33/STI component (weights downloaded on first use) |
 | [`nextqsm`](#qsmxt-invert-nextqsm) | NeXtQSM single-step reconstruction — input is the TOTAL field (weights downloaded on first use) |
 | [`iqsm`](#qsmxt-invert-iqsm) | iQSM single-step reconstruction — input is every echo's WRAPPED phase (weights downloaded on first use) |
-| [`iqsm-plus`](#qsmxt-invert-iqsm-plus) | iQSM+ orientation-adaptive single-step reconstruction — input is every echo's WRAPPED phase (weights downloaded on first use) |
+| [`iqsm-plus`](#qsmxt-invert-iqsm-plus) | iQSM+ orientation-adaptive single-step reconstruction — input is every echo's WRAPPED phase; echoes are combined with (magnitude × TE)² weights (weights downloaded on first use) |
 | [`cosmos`](#qsmxt-invert-cosmos) | COSMOS — multi-orientation least squares over 2+ co-registered orientations |
 | [`sti`](#qsmxt-invert-sti) | STI (susceptibility tensor imaging) — 6+ co-registered orientations to a rank-2 tensor |
 
@@ -2691,16 +2692,17 @@ qsmxt invert iqsm [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FI
 | `<INPUT>` | Wrapped phase NIfTI file in radians: 4D (x,y,z,echo), or 3D for one echo. Required. |
 | `-m, --mask <MASK>` | Binary brain mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output NIfTI file in ppm (susceptibility for iqsm/iqsm-plus, the local field for iqfm) Required. |
-| `--magnitude <MAGNITUDE>` | Magnitude NIfTI file with the same echoes as the phase (4D), to weight the echo combination (magnitude × TE²); without it the echoes are weighted by TE² alone. |
+| `--magnitude <MAGNITUDE>` | Magnitude NIfTI file with the same echoes as the phase (4D), to weight the echo combination by magnitude; without it the echoes are weighted by TE² alone. |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
+| `--echo-weighting <ECHO_WEIGHTING>` | Echo weighting of the multi-echo combination: `mag2-te2` weights each echo by (magnitude × TE)², the inverse of its noise variance, as in the authors' Python code; `mag-te2` by magnitude × TE², as in the authors' MATLAB code. Values: `mag-te2`, `mag2-te2`. Default: `mag2-te2`. |
 
 ### `qsmxt invert iqsm-plus`
 
-iQSM+ orientation-adaptive single-step reconstruction — input is every echo's WRAPPED phase (weights downloaded on first use)
+iQSM+ orientation-adaptive single-step reconstruction — input is every echo's WRAPPED phase; echoes are combined with (magnitude × TE)² weights (weights downloaded on first use)
 
 ```sh
 qsmxt invert iqsm-plus [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... <INPUT>
@@ -2711,7 +2713,7 @@ qsmxt invert iqsm-plus [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strengt
 | `<INPUT>` | Wrapped phase NIfTI file in radians: 4D (x,y,z,echo), or 3D for one echo. Required. |
 | `-m, --mask <MASK>` | Binary brain mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output NIfTI file in ppm (susceptibility for iqsm/iqsm-plus, the local field for iqfm) Required. |
-| `--magnitude <MAGNITUDE>` | Magnitude NIfTI file with the same echoes as the phase (4D), to weight the echo combination (magnitude × TE²); without it the echoes are weighted by TE² alone. |
+| `--magnitude <MAGNITUDE>` | Magnitude NIfTI file with the same echoes as the phase (4D), to weight the echo combination by magnitude; without it the echoes are weighted by TE² alone. |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
