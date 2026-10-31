@@ -797,6 +797,11 @@ they replace unwrapping, echo combination, background removal and inversion.
 `autoqsm` and `nextqsm` take the total field, so they replace background removal
 and inversion. Standalone, they are `qsmxt invert iqsm` and `qsmxt invert iqsm-plus`,
 and iQFM is `qsmxt bgremove iqfm`, each reading the 4D wrapped phase.
+Each echo is reconstructed separately, and the echoes are combined with weights
+magnitude × TE² for iQSM and iQFM and (magnitude × TE)² for iQSM+, as in their
+authors' code. `qsmxt invert iqsm` and `qsmxt bgremove iqfm` also offer
+`--echo-weighting mag2-te2`, the (magnitude × TE)² weighting of the authors'
+Python code.
 
 :::tip
 Not sure which to pick? The defaults (`threshold` → `romeo` → `vsharp` → `ilsqr`)

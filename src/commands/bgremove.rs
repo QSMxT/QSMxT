@@ -93,7 +93,9 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
     use qsm_core::pipeline::BgRemovalAlgorithm as A;
     // iQFM reads every echo's phase rather than a field, so it does not share the match below.
     let cmd = match cmd {
-        BgremoveCommand::Iqfm(args) => return super::invert::run_phase_net(&args, super::invert::PhaseNet::Iqfm),
+        BgremoveCommand::Iqfm(args) => {
+            return super::invert::run_phase_net(&args.net, super::invert::PhaseNet::Iqfm, args.echo_weighting.into())
+        }
         other => other,
     };
     let (common, (local_field_data, field_nifti, eroded_mask)) = match cmd {

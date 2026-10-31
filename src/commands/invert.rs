@@ -151,7 +151,13 @@ pub(super) fn load_phase_net_inputs(args: &crate::cli::PhaseNetArgs) -> crate::R
 
 /// Run iQSM, iQSM+ or iQFM on `args` as `qsmxt run` runs it (the raw map, no referencing), and
 /// write the result.
-pub(super) fn run_phase_net(args: &crate::cli::PhaseNetArgs, net: PhaseNet) -> crate::Result<()> {
+///
+/// `echo_weighting` is iQSM's and iQFM's (`--echo-weighting`); iQSM+ has none.
+pub(super) fn run_phase_net(
+    args: &crate::cli::PhaseNetArgs,
+    net: PhaseNet,
+    echo_weighting: qsm_core::inversion::IqsmEchoWeighting,
+) -> crate::Result<()> {
     let (id, name) = net.id_and_name();
     crate::pipeline::runner::prefetch_weights(id, name)?;
     let inputs = load_phase_net_inputs(args)?;
@@ -162,9 +168,9 @@ pub(super) fn run_phase_net(args: &crate::cli::PhaseNetArgs, net: PhaseNet) -> c
     let tile = args.tiling_params.tile_size.map(|core| (core, args.tiling_params.tile_halo.unwrap_or(8)));
     let none = qsm_core::pipeline::QsmReference::None;
     let out = match net {
-        PhaseNet::Iqsm => qsm_core::pipeline::run_iqsm(&phases, &magnitudes, &inputs.mask, &inputs.metadata, none, tile),
+        PhaseNet::Iqsm => qsm_core::pipeline::run_iqsm(&phases, &magnitudes, &inputs.mask, &inputs.metadata, none, tile, echo_weighting),
         PhaseNet::IqsmPlus => qsm_core::pipeline::run_iqsm_plus(&phases, &magnitudes, &inputs.mask, &inputs.metadata, none, tile),
-        PhaseNet::Iqfm => qsm_core::pipeline::run_iqfm(&phases, &magnitudes, &inputs.mask, &inputs.metadata, tile),
+        PhaseNet::Iqfm => qsm_core::pipeline::run_iqfm(&phases, &magnitudes, &inputs.mask, &inputs.metadata, tile, echo_weighting),
     }.map_err(|e| QsmxtError::Config(format!("{name}: {e}")))?;
     save_nifti(&args.output, &out, &inputs.reference)?;
     let what = if net == PhaseNet::Iqfm { "Local field" } else { "Susceptibility map" };
@@ -247,8 +253,8 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
     let cmd = match cmd {
         InvertCommand::Cosmos(args) => return run_cosmos(args),
         InvertCommand::Sti(args) => return run_sti(args),
-        InvertCommand::Iqsm(args) => return run_phase_net(&args, PhaseNet::Iqsm),
-        InvertCommand::IqsmPlus(args) => return run_phase_net(&args, PhaseNet::IqsmPlus),
+        InvertCommand::Iqsm(args) => return run_phase_net(&args.net, PhaseNet::Iqsm, args.echo_weighting.into()),
+        InvertCommand::IqsmPlus(args) => return run_phase_net(&args, PhaseNet::IqsmPlus, Default::default()),
         other => other,
     };
 

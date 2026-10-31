@@ -2571,7 +2571,7 @@ pub enum BgremoveCommand {
     Bfrnet(BgremoveBfrnetArgs),
     /// iQFM deep-learning joint unwrapping and background removal — input is every echo's
     /// WRAPPED phase (weights downloaded on first use)
-    Iqfm(PhaseNetArgs),
+    Iqfm(IqsmArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -2949,9 +2949,9 @@ pub enum InvertCommand {
     Nextqsm(InvertDlArgs),
     /// iQSM single-step reconstruction — input is every echo's WRAPPED phase (weights downloaded
     /// on first use)
-    Iqsm(PhaseNetArgs),
-    /// iQSM+ orientation-adaptive single-step reconstruction — input is every echo's WRAPPED phase
-    /// (weights downloaded on first use)
+    Iqsm(IqsmArgs),
+    /// iQSM+ orientation-adaptive single-step reconstruction — input is every echo's WRAPPED phase;
+    /// echoes are combined with (magnitude × TE)² weights (weights downloaded on first use)
     IqsmPlus(PhaseNetArgs),
     /// COSMOS — multi-orientation least squares over 2+ co-registered orientations
     Cosmos(InvertCosmosArgs),
@@ -2961,7 +2961,8 @@ pub enum InvertCommand {
 
 /// Args for the networks that work from every echo's wrapped phase: iQSM and iQSM+ (`qsmxt
 /// invert`, χ out) and iQFM (`qsmxt bgremove`, the local field out). They run as `qsmxt run`
-/// runs them, with no tunable parameters; weights are fetched on first use.
+/// runs them, with no tunable parameters ([`IqsmArgs`] adds iQSM's and iQFM's echo weighting);
+/// weights are fetched on first use.
 #[derive(Parser, Debug)]
 pub struct PhaseNetArgs {
     /// Wrapped phase NIfTI file in radians: 4D (x,y,z,echo), or 3D for one echo
@@ -2973,7 +2974,7 @@ pub struct PhaseNetArgs {
     #[arg(short, long)]
     pub output: PathBuf,
     /// Magnitude NIfTI file with the same echoes as the phase (4D), to weight the echo
-    /// combination (magnitude × TE²); without it the echoes are weighted by TE² alone
+    /// combination by magnitude; without it the echoes are weighted by TE² alone
     #[arg(long)]
     pub magnitude: Option<PathBuf>,
     #[command(flatten)]
@@ -2984,6 +2985,39 @@ pub struct PhaseNetArgs {
     /// Deep-learning overlap-tiling (opt-in).
     #[command(flatten)]
     pub tiling_params: TilingParamArgs,
+}
+
+/// Args for iQSM (`qsmxt invert iqsm`) and iQFM (`qsmxt bgremove iqfm`): [`PhaseNetArgs`] and
+/// the echo weighting. The weighting is a standalone option only; `qsmxt run` uses the default.
+#[derive(Parser, Debug)]
+pub struct IqsmArgs {
+    #[command(flatten)]
+    pub net: PhaseNetArgs,
+    /// Echo weighting of the multi-echo combination: `mag-te2` weights each echo by
+    /// magnitude × TE², as in the authors' MATLAB code; `mag2-te2` by (magnitude × TE)², as in
+    /// the authors' Python code
+    #[arg(long, value_enum, default_value_t = IqsmEchoWeightingArg::MagTe2)]
+    pub echo_weighting: IqsmEchoWeightingArg,
+}
+
+/// `--echo-weighting` of `qsmxt invert iqsm` and `qsmxt bgremove iqfm`.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IqsmEchoWeightingArg {
+    /// magnitude × TE²
+    #[value(name = "mag-te2")]
+    MagTe2,
+    /// (magnitude × TE)²
+    #[value(name = "mag2-te2")]
+    Mag2Te2,
+}
+
+impl From<IqsmEchoWeightingArg> for qsm_core::inversion::IqsmEchoWeighting {
+    fn from(w: IqsmEchoWeightingArg) -> Self {
+        match w {
+            IqsmEchoWeightingArg::MagTe2 => Self::MagnitudeTeSquared,
+            IqsmEchoWeightingArg::Mag2Te2 => Self::MagnitudeSquaredTeSquared,
+        }
+    }
 }
 
 /// Args for the deep-learning dipole inversions. They have no tunable parameters;
