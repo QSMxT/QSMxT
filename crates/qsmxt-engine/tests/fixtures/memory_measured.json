@@ -3664,14 +3664,18 @@
   {
    "kind": "native",
    "name": "inv-heidi-t8",
-   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data",
+   "source": "native, allocations counted per step (e3 driver on QSMxT e426923), example data; inversion.algorithm = heidi then, LSQR+HEIDI now",
    "threads": 8,
    "echoes": 5,
    "browser_profile": true,
    "settings": [
     [
      "inversion.algorithm",
-     "heidi"
+     "lsqr"
+    ],
+    [
+     "inversion.heidi.enabled",
+     true
     ]
    ],
    "need": [

@@ -234,13 +234,16 @@ mod tests {
     }
 
     /// The config's list of inversions is the CLI's: what the counts below and the methods-text
-    /// route test iterate over is everything `--qsm-algorithm` accepts.
+    /// route test iterate over is everything `--qsm-algorithm` accepts, but for `heidi`
+    /// (LSQR+HEIDI), which is `lsqr` with `--heidi`.
     #[test]
     fn every_inversion_is_listed_once() {
         let cmd = crate::cli::Cli::command();
         let run = cmd.find_subcommand("run").unwrap();
         let arg = run.get_arguments().find(|a| a.get_long() == Some("qsm-algorithm")).unwrap();
-        let cli: Vec<String> = arg.get_possible_values().iter().map(|v| v.get_name().to_string()).collect();
+        let mut cli: Vec<String> = arg.get_possible_values().iter().map(|v| v.get_name().to_string()).collect();
+        let alias = cli.iter().position(|v| v == "heidi").expect("LSQR+HEIDI is --qsm-algorithm heidi");
+        cli.remove(alias);
         let all: Vec<String> = qsmxt_engine::QsmAlgorithm::ALL.iter().map(|a| a.to_string()).collect();
         assert_eq!(cli, all);
     }

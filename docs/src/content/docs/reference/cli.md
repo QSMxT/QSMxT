@@ -57,6 +57,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--exclude <EXCLUDE>` | Exclude runs matching these glob patterns (e.g. "\*mygrea\*") |
 | `--num-echoes <NUM_ECHOES>` | Limit number of echoes to process. |
 | `--qsm-algorithm <QSM_ALGORITHM>` | QSM dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `star`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
+| `--heidi` | HEIDI streaking reduction after the inversion: keep the map's well-conditioned k-space and refill the dipole cone under a homogeneity prior (`--heidi-*` sets it up). With LSQR this is HEIDI as published (`--qsm-algorithm heidi`); with two-pass it runs once, on the combined map. |
 | `--orientation-group <PATTERN>` | Group runs into multi-orientation sets and reconstruct each with COSMOS or STI. Takes an entity name (acq, run, rec, inv), a glob over the run key (`*acq-dir*`), or `re:` and a regex with one capture group. Orientations are co-registered if they need it. |
 | `--no-orientation-registration` | Do not co-register the orientations in a group — use this when they were already registered externally and a second interpolation is not wanted. A group that still needs registration is then refused instead of reconstructed. |
 | `--multi-orientation-algorithm <MULTI_ORIENTATION_ALGORITHM>` | Which reconstruction to run over each orientation group. Values: `cosmos`, `sti`. |
@@ -168,7 +169,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--no-lsqr-global-offset` | Do not fit a global field offset alongside χ. |
 | `--lsqr-tol <LSQR_TOL>` | LSQR convergence tolerance. |
 | `--lsqr-max-iter <LSQR_MAX_ITER>` | LSQR max iterations. |
-| `--heidi-cone-threshold <HEIDI_CONE_THRESHOLD>` | \|D(k)\| above which a coefficient is well-conditioned and kept from the LSQR seed. |
+| `--heidi-cone-threshold <HEIDI_CONE_THRESHOLD>` | \|D(k)\| above which a coefficient is well-conditioned and kept from the seed map. |
 | `--heidi-gradient-threshold <HEIDI_GRADIENT_THRESHOLD>` | Field-gradient threshold (ppm/mm); below it a direction reads as homogeneous. |
 | `--no-heidi-laplacian-correction` | Do not open the homogeneity masks where the field's Laplacian is large. |
 | `--heidi-laplacian-threshold <HEIDI_LAPLACIAN_THRESHOLD>` | Field-Laplacian threshold (ppm per voxel²) |
@@ -181,6 +182,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--heidi-denoise-iterations <HEIDI_DENOISE_ITERATIONS>` | Anisotropic-diffusion iterations. |
 | `--heidi-denoise-time-step <HEIDI_DENOISE_TIME_STEP>` | Anisotropic-diffusion time step. |
 | `--heidi-denoise-conductance <HEIDI_DENOISE_CONDUCTANCE>` | Anisotropic-diffusion conductance. |
+| `--heidi-denoise-reference-itk` | ITK 3.20's float arithmetic for the denoising, as the authors' code runs it (for comparison with it; the default computes its conductance scale in double precision) |
 | `--heidi-te <TE>` | HEIDI: the echo time the field stands for the phase of, in the conversion to HEIDI's units: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: last) |
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
 | `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
@@ -509,6 +511,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--dicom-outputs <DICOM_OUTPUTS>` | Restrict DICOM export to these maps (default: all produced); values as for `qsmxt run` (used with --export-dicom) |
 | `--accept-recommendations` | Apply the recommended value of every recommendation that is not dismissed before writing the jobs (as `qsmxt run --accept-recommendations`) |
 | `--qsm-algorithm <QSM_ALGORITHM>` | QSM dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `star`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
+| `--heidi` | HEIDI streaking reduction after the inversion: keep the map's well-conditioned k-space and refill the dipole cone under a homogeneity prior (`--heidi-*` sets it up). With LSQR this is HEIDI as published (`--qsm-algorithm heidi`); with two-pass it runs once, on the combined map. |
 | `--orientation-group <PATTERN>` | Group runs into multi-orientation sets and reconstruct each with COSMOS or STI. Takes an entity name (acq, run, rec, inv), a glob over the run key (`*acq-dir*`), or `re:` and a regex with one capture group. Orientations are co-registered if they need it. |
 | `--no-orientation-registration` | Do not co-register the orientations in a group — use this when they were already registered externally and a second interpolation is not wanted. A group that still needs registration is then refused instead of reconstructed. |
 | `--multi-orientation-algorithm <MULTI_ORIENTATION_ALGORITHM>` | Which reconstruction to run over each orientation group. Values: `cosmos`, `sti`. |
@@ -620,7 +623,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--no-lsqr-global-offset` | Do not fit a global field offset alongside χ. |
 | `--lsqr-tol <LSQR_TOL>` | LSQR convergence tolerance. |
 | `--lsqr-max-iter <LSQR_MAX_ITER>` | LSQR max iterations. |
-| `--heidi-cone-threshold <HEIDI_CONE_THRESHOLD>` | \|D(k)\| above which a coefficient is well-conditioned and kept from the LSQR seed. |
+| `--heidi-cone-threshold <HEIDI_CONE_THRESHOLD>` | \|D(k)\| above which a coefficient is well-conditioned and kept from the seed map. |
 | `--heidi-gradient-threshold <HEIDI_GRADIENT_THRESHOLD>` | Field-gradient threshold (ppm/mm); below it a direction reads as homogeneous. |
 | `--no-heidi-laplacian-correction` | Do not open the homogeneity masks where the field's Laplacian is large. |
 | `--heidi-laplacian-threshold <HEIDI_LAPLACIAN_THRESHOLD>` | Field-Laplacian threshold (ppm per voxel²) |
@@ -633,6 +636,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--heidi-denoise-iterations <HEIDI_DENOISE_ITERATIONS>` | Anisotropic-diffusion iterations. |
 | `--heidi-denoise-time-step <HEIDI_DENOISE_TIME_STEP>` | Anisotropic-diffusion time step. |
 | `--heidi-denoise-conductance <HEIDI_DENOISE_CONDUCTANCE>` | Anisotropic-diffusion conductance. |
+| `--heidi-denoise-reference-itk` | ITK 3.20's float arithmetic for the denoising, as the authors' code runs it (for comparison with it; the default computes its conductance scale in double precision) |
 | `--heidi-te <TE>` | HEIDI: the echo time the field stands for the phase of, in the conversion to HEIDI's units: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: last) |
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
 | `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
@@ -898,6 +902,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--exclude <EXCLUDE>` | Exclude runs matching these glob patterns (e.g. "\*mygrea\*") |
 | `--num-echoes <NUM_ECHOES>` | Limit number of echoes to process. |
 | `--qsm-algorithm <QSM_ALGORITHM>` | QSM dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `star`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
+| `--heidi` | HEIDI streaking reduction after the inversion: keep the map's well-conditioned k-space and refill the dipole cone under a homogeneity prior (`--heidi-*` sets it up). With LSQR this is HEIDI as published (`--qsm-algorithm heidi`); with two-pass it runs once, on the combined map. |
 | `--orientation-group <PATTERN>` | Group runs into multi-orientation sets and reconstruct each with COSMOS or STI. Takes an entity name (acq, run, rec, inv), a glob over the run key (`*acq-dir*`), or `re:` and a regex with one capture group. Orientations are co-registered if they need it. |
 | `--no-orientation-registration` | Do not co-register the orientations in a group — use this when they were already registered externally and a second interpolation is not wanted. A group that still needs registration is then refused instead of reconstructed. |
 | `--multi-orientation-algorithm <MULTI_ORIENTATION_ALGORITHM>` | Which reconstruction to run over each orientation group. Values: `cosmos`, `sti`. |
@@ -1009,7 +1014,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--no-lsqr-global-offset` | Do not fit a global field offset alongside χ. |
 | `--lsqr-tol <LSQR_TOL>` | LSQR convergence tolerance. |
 | `--lsqr-max-iter <LSQR_MAX_ITER>` | LSQR max iterations. |
-| `--heidi-cone-threshold <HEIDI_CONE_THRESHOLD>` | \|D(k)\| above which a coefficient is well-conditioned and kept from the LSQR seed. |
+| `--heidi-cone-threshold <HEIDI_CONE_THRESHOLD>` | \|D(k)\| above which a coefficient is well-conditioned and kept from the seed map. |
 | `--heidi-gradient-threshold <HEIDI_GRADIENT_THRESHOLD>` | Field-gradient threshold (ppm/mm); below it a direction reads as homogeneous. |
 | `--no-heidi-laplacian-correction` | Do not open the homogeneity masks where the field's Laplacian is large. |
 | `--heidi-laplacian-threshold <HEIDI_LAPLACIAN_THRESHOLD>` | Field-Laplacian threshold (ppm per voxel²) |
@@ -1022,6 +1027,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--heidi-denoise-iterations <HEIDI_DENOISE_ITERATIONS>` | Anisotropic-diffusion iterations. |
 | `--heidi-denoise-time-step <HEIDI_DENOISE_TIME_STEP>` | Anisotropic-diffusion time step. |
 | `--heidi-denoise-conductance <HEIDI_DENOISE_CONDUCTANCE>` | Anisotropic-diffusion conductance. |
+| `--heidi-denoise-reference-itk` | ITK 3.20's float arithmetic for the denoising, as the authors' code runs it (for comparison with it; the default computes its conductance scale in double precision) |
 | `--heidi-te <TE>` | HEIDI: the echo time the field stands for the phase of, in the conversion to HEIDI's units: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: last) |
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
 | `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
@@ -1962,7 +1968,7 @@ Dipole inversion
 | [`ilsqr`](#qsmxt-invert-ilsqr) | Iterative Least Squares QR |
 | [`star`](#qsmxt-invert-star) | STAR-QSM (Streaking Artifact Reduction): sparse inversion from a k-space initial guess |
 | [`lsqr`](#qsmxt-invert-lsqr) | Minimally regularised LSQR |
-| [`heidi`](#qsmxt-invert-heidi) | HEIDI (Homogeneity Enabled Incremental Dipole Inversion), seeded by an LSQR solve |
+| [`heidi`](#qsmxt-invert-heidi) | LSQR+HEIDI (Homogeneity Enabled Incremental Dipole Inversion), or HEIDI on another inversion's map (`--seed`) |
 | [`ndi`](#qsmxt-invert-ndi) | Nonlinear Dipole Inversion |
 | [`fansi`](#qsmxt-invert-fansi) | FANSI Nonlinear Total Variation |
 | [`fansi-tgv`](#qsmxt-invert-fansi-tgv) | FANSI Nonlinear Total Generalized Variation |
@@ -2285,7 +2291,7 @@ qsmxt invert lsqr [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 
 ### `qsmxt invert heidi`
 
-HEIDI (Homogeneity Enabled Incremental Dipole Inversion), seeded by an LSQR solve
+LSQR+HEIDI (Homogeneity Enabled Incremental Dipole Inversion), or HEIDI on another inversion's map (`--seed`)
 
 ```sh
 qsmxt invert heidi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... <INPUT>
@@ -2302,11 +2308,12 @@ qsmxt invert heidi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <F
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
 | `--magnitude <MAGNITUDE>` | Magnitude NIfTI (optional row weight of the LSQR seed): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. |
+| `--seed <SEED>` | A χ map (ppm) another inversion made of this field, to fill the cone of instead of running LSQR (`--lsqr-*` and `--magnitude` then do nothing). HEIDI suits a seed whose well-conditioned k-space is near data-consistent (TKD and TSVD with a threshold no larger than the cone threshold, small-λ Tikhonov, NDI, RTS); a regularised seed keeps its regularisation outside the cone. |
 | `--lsqr-residual-weighting <LSQR_RESIDUAL_WEIGHTING>` | LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly. |
 | `--no-lsqr-global-offset` | Do not fit a global field offset alongside χ. |
 | `--lsqr-tol <LSQR_TOL>` | LSQR convergence tolerance. |
 | `--lsqr-max-iter <LSQR_MAX_ITER>` | LSQR max iterations. |
-| `--heidi-cone-threshold <HEIDI_CONE_THRESHOLD>` | \|D(k)\| above which a coefficient is well-conditioned and kept from the LSQR seed. |
+| `--heidi-cone-threshold <HEIDI_CONE_THRESHOLD>` | \|D(k)\| above which a coefficient is well-conditioned and kept from the seed map. |
 | `--heidi-gradient-threshold <HEIDI_GRADIENT_THRESHOLD>` | Field-gradient threshold (ppm/mm); below it a direction reads as homogeneous. |
 | `--no-heidi-laplacian-correction` | Do not open the homogeneity masks where the field's Laplacian is large. |
 | `--heidi-laplacian-threshold <HEIDI_LAPLACIAN_THRESHOLD>` | Field-Laplacian threshold (ppm per voxel²) |
@@ -2319,6 +2326,7 @@ qsmxt invert heidi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <F
 | `--heidi-denoise-iterations <HEIDI_DENOISE_ITERATIONS>` | Anisotropic-diffusion iterations. |
 | `--heidi-denoise-time-step <HEIDI_DENOISE_TIME_STEP>` | Anisotropic-diffusion time step. |
 | `--heidi-denoise-conductance <HEIDI_DENOISE_CONDUCTANCE>` | Anisotropic-diffusion conductance. |
+| `--heidi-denoise-reference-itk` | ITK 3.20's float arithmetic for the denoising, as the authors' code runs it (for comparison with it; the default computes its conductance scale in double precision) |
 | `--heidi-te <TE>` | HEIDI: the echo time the field stands for the phase of, in the conversion to HEIDI's units: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: last) |
 
 ### `qsmxt invert ndi`

@@ -159,7 +159,7 @@ take the local field, and `tfi`, `autoqsm` and `nextqsm` the **total** field:
 | `ilsqr` | Iterative Least-Squares QR |
 | `star` | STAR-QSM — Streaking Artifact Reduction |
 | `lsqr` | Minimally regularised LSQR |
-| `heidi` | HEIDI — Homogeneity Enabled Incremental Dipole Inversion |
+| `heidi` | LSQR+HEIDI — Homogeneity Enabled Incremental Dipole Inversion; with `--seed`, HEIDI on another inversion's map |
 | `ndi` | Nonlinear Dipole Inversion |
 | `fansi` / `fansi-tgv` | FANSI nonlinear TV / TGV |
 | `l1qsm` | L1 data-fidelity QSM |
@@ -194,6 +194,11 @@ with `--field-strength` and `--echo-times` (every echo's). `ndi`, `nltv`, `fansi
 `fansi-tgv` and `l1qsm` need `--magnitude` as their data weight; `medi` and `tfi`
 need the magnitude of every echo (one 4D file or one file per echo). MEDI-mSMV is
 `qsmxt invert medi --msmv`.
+
+`qsmxt invert heidi` is LSQR+HEIDI, HEIDI as published. `qsmxt invert heidi --seed chi.nii`
+instead runs HEIDI on a map another inversion made of the same field, as `qsmxt run --heidi`
+does after it ([HEIDI streaking reduction](/QSMxT/reference/algorithms/#heidi-streaking-reduction)
+says which inversions suit it); `--lsqr-*` and `--magnitude` then do nothing.
 
 `qsmxt invert tgv --reference-divergence --reference-edge-erosion --reference-output-box`
 reproduces QuantitativeSusceptibilityMappingTGV.jl's divergence, mask erosion and output

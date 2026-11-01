@@ -648,10 +648,6 @@ fn inversion_changes(config: &PipelineConfig, alg: QsmAlgorithm) -> Changed {
             c.0.push(format!("the field converted to phase at {}", echo_time_prose(i.star.te)));
         }
         QsmAlgorithm::Lsqr => c.add_fields(&i.lsqr, &d.lsqr, &[]),
-        QsmAlgorithm::Heidi => {
-            c.add_fields(&i.lsqr, &d.lsqr, &[]);
-            c.add_fields(&i.heidi, &d.heidi, &TE);
-        }
         QsmAlgorithm::Ndi => c.add_fields(&i.ndi, &d.ndi, &TE),
         QsmAlgorithm::Fansi | QsmAlgorithm::FansiTgv => c.add_fields(&i.fansi, &d.fansi, &TE),
         QsmAlgorithm::L1qsm => c.add_fields(&i.l1qsm, &d.l1qsm, &TE),
@@ -1245,6 +1241,8 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
         // Two-pass wraps background removal and inversion, so it is described after both and
         // before referencing, which runs on the combined map.
         describe_two_pass(config, ran, &mut doc);
+        // HEIDI after the inversion, and after two-pass on the combined map.
+        describe_heidi(config, ran, &mut doc);
 
         // Referencing
         match config.qsm.reference {
@@ -1968,6 +1966,35 @@ fn describe_generator(
     }
 }
 
+/// HEIDI's sentence, when it ran: after the inversion (each echo's, for a per-echo QSM), or on a
+/// two-pass run's combined map.
+fn describe_heidi(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
+    let i = &config.inversion;
+    if !config.pipeline.do_qsm || !i.heidi.enabled {
+        return;
+    }
+    doc.cite(&CITE_HEIDI);
+    // As [`describe_two_pass`] decides whether two-pass ran.
+    let two_pass = config.masking.two_pass
+        && !(ran.count(Topic::TwoPass, Choice::NotApplied) > 0 && ran.ran(Stage::Mask(Pass::Reliable)) == 0);
+    let what = match (i.algorithm, two_pass) {
+        (_, true) => "the combined two-pass map".to_string(),
+        (QsmAlgorithm::Lsqr, false) => "the LSQR map, as published".to_string(),
+        (alg, false) => format!("the {} map", words::inversion(alg)),
+    };
+    let mut changed = Changed::default();
+    changed.add_fields(&i.heidi, &InversionConfig::default().heidi, &["enabled", "te"]);
+    if i.heidi.te != InversionConfig::default().heidi.te {
+        changed.0.push(format!("the field converted to phase at {}", echo_time_prose(i.heidi.te)));
+    }
+    let stages: &[Stage] = if two_pass { &[Stage::TwoPassCombination] } else { &[Stage::Inversion(Pass::Main)] };
+    doc.say(stages, format!(
+        "Streaking was reduced with HEIDI (Homogeneity Enabled Incremental Dipole Inversion) ({}) on {what}: its well-conditioned k-space coefficients \
+         were kept, and the dipole cone was filled by total variation weighted by the field's \
+         homogeneity{}.",
+        cite_inline(&CITE_HEIDI), changed.comma_with()));
+}
+
 /// Prose for two-pass artefact reduction, including the reliable-pass mask recipe.
 ///
 /// Named as "two-pass" throughout, matching both the paper and the `_desc-singlepass_` derivative
@@ -2311,7 +2338,6 @@ fn inversion_name_cite(alg: QsmAlgorithm) -> (&'static str, &'static Citation) {
         QsmAlgorithm::Ilsqr => ("iLSQR", &CITE_ILSQR),
         QsmAlgorithm::Star => ("STAR-QSM (Streaking Artifact Reduction)", &CITE_STAR),
         QsmAlgorithm::Lsqr => ("minimally regularised LSQR", &CITE_LSQR),
-        QsmAlgorithm::Heidi => ("HEIDI (Homogeneity Enabled Incremental Dipole Inversion)", &CITE_HEIDI),
         QsmAlgorithm::Ndi => ("NDI (Nonlinear Dipole Inversion)", &CITE_NDI),
         QsmAlgorithm::Fansi => ("FANSI (Nonlinear TV)", &CITE_NLTV),
         QsmAlgorithm::FansiTgv => ("FANSI (Nonlinear TGV)", &CITE_NLTV),
@@ -2550,6 +2576,20 @@ mod tests {
     }
 
     #[test]
+    fn heidi_after_another_inversion_and_after_two_pass() {
+        let mut config = PipelineConfig::default();
+        config.inversion.algorithm = QsmAlgorithm::Rts;
+        config.inversion.heidi.enabled = true;
+        let out = generate_methods(&config);
+        assert!(out.contains("with HEIDI") && out.contains("on the RTS map"), "out: {out}");
+        config.masking.two_pass = true;
+        let out = generate_methods(&config);
+        assert!(out.contains("on the combined two-pass map"), "out: {out}");
+        config.inversion.heidi.enabled = false;
+        assert!(!generate_methods(&config).contains("HEIDI"));
+    }
+
+    #[test]
     fn lsqr_and_heidi_are_named_and_cited() {
         let mut config = PipelineConfig::default();
         config.inversion.algorithm = QsmAlgorithm::Lsqr;
@@ -2557,7 +2597,8 @@ mod tests {
         assert!(out.contains("minimally regularised LSQR"), "out: {out}");
         assert!(out.contains("10.1118/1.3481505"), "LSQR citation missing: {out}");
 
-        config.inversion.algorithm = QsmAlgorithm::Heidi;
+        config.inversion.algorithm = QsmAlgorithm::Lsqr;
+        config.inversion.heidi.enabled = true;
         let out = generate_methods(&config);
         assert!(out.contains("HEIDI (Homogeneity Enabled Incremental Dipole Inversion)"), "out: {out}");
         assert!(out.contains("10.1016/j.neuroimage.2012.05.067"), "HEIDI citation missing: {out}");

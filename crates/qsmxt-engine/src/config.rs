@@ -231,7 +231,12 @@ impl Default for LsqrConfig {
     }
 }
 
-/// HEIDI (Schweser 2012), chained on [`LsqrConfig`].
+/// HEIDI (Schweser 2012): streaking reduction after the dipole inversion. Its cone fill keeps
+/// the well-conditioned k-space of the inversion's χ and refills the dipole cone under a
+/// field-homogeneity-weighted TV prior. With `inversion.algorithm = "lsqr"` this is HEIDI as
+/// published (LSQR+HEIDI; `heidi` on the command line and in the method picker); after any other
+/// local-field inversion it is QSM.rs's `heidi_cone_fill`, whose seed rules (`heidi.*`) say which
+/// methods suit it. With two-pass it runs once, on the combined map.
 ///
 /// `HeidiParams::denoise` is an `Option<AnisotropicDiffusionParams>`; it is flattened here into a
 /// `denoise` switch plus its three parameters, so it can be a checkbox and three numbers in the
@@ -239,6 +244,8 @@ impl Default for LsqrConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct HeidiConfig {
+    /// Run HEIDI after the inversion (QSM.rs `InversionConfig::apply_heidi`). Off by default.
+    pub enabled: bool,
     pub cone_threshold: f64,
     pub gradient_threshold: f64,
     pub apply_laplacian_correction: bool,
@@ -254,6 +261,9 @@ pub struct HeidiConfig {
     pub denoise_iterations: usize,
     pub denoise_time_step: f64,
     pub denoise_conductance: f64,
+    /// ITK 3.20's float arithmetic for the denoising (QSM.rs `reference_itk`), as the authors'
+    /// code runs it: for comparison with it.
+    pub denoise_reference_itk: bool,
     /// Which echo time the field stands for the phase of, in the conversion to HEIDI's units.
     pub te: EchoTimeChoice,
 }
@@ -261,9 +271,10 @@ impl Default for HeidiConfig {
     fn default() -> Self {
         let p = qsm_core::inversion::HeidiParams::default();
         let d = p.denoise.unwrap_or(qsm_core::utils::AnisotropicDiffusionParams {
-            iterations: 5, time_step: 0.05, conductance: 1.0,
+            iterations: 5, time_step: 0.05, conductance: 1.0, reference_itk: false,
         });
         Self {
+            enabled: false,
             cone_threshold: p.cone_threshold,
             gradient_threshold: p.gradient_threshold,
             apply_laplacian_correction: p.apply_laplacian_correction,
@@ -277,6 +288,7 @@ impl Default for HeidiConfig {
             denoise_iterations: d.iterations,
             denoise_time_step: d.time_step,
             denoise_conductance: d.conductance,
+            denoise_reference_itk: d.reference_itk,
             te: p.te.into(),
         }
     }
@@ -1639,8 +1651,9 @@ pub struct InversionConfig {
     pub whqsm: WhqsmConfig,
     pub hdqsm: HdqsmConfig,
     pub amp_pe: AmpPeConfig,
-    /// Shared by `lsqr` and `heidi` — HEIDI's seed is an LSQR solve.
+    /// LSQR, also HEIDI's reference seed.
     pub lsqr: LsqrConfig,
+    /// HEIDI after the inversion ([`HeidiConfig::enabled`]) and its settings.
     pub heidi: HeidiConfig,
     /// Overlap-tiling for the deep-learning networks (bounded memory). `tile_size` = the output
     /// core per patch (voxels); its presence enables tiling. `tile_halo` = context margin per side

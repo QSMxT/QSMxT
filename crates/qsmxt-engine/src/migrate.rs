@@ -301,6 +301,7 @@ pub fn migrate(value: &mut toml::Table, out: &mut Migration) -> Result<(), Confi
         }
     }
     renamed_and_removed(value, out);
+    heidi_is_lsqr_with_heidi(value, out);
     if version < 2 {
         let kind = match (full, get(value, "pipeline.axial_resampling").is_some()) {
             (false, _) => Kind::Partial,
@@ -343,6 +344,19 @@ fn renamed_and_removed(value: &mut toml::Table, out: &mut Migration) {
             ));
         }
     }
+}
+
+/// HEIDI was an inversion of its own (`inversion.algorithm = "heidi"`); it is now LSQR with HEIDI
+/// after it (`inversion.heidi.enabled`), the same reconstruction. A file of any version.
+fn heidi_is_lsqr_with_heidi(value: &mut toml::Table, out: &mut Migration) {
+    if get(value, "inversion.algorithm").and_then(toml::Value::as_str) != Some("heidi") {
+        return;
+    }
+    set(value, "inversion.algorithm", toml::Value::String("lsqr".into()));
+    set(value, "inversion.heidi.enabled", toml::Value::Boolean(true));
+    out.notes.push(
+        "inversion.algorithm = \"heidi\" is now LSQR with HEIDI after it (inversion.algorithm = \"lsqr\", \
+         inversion.heidi.enabled = true): the same reconstruction".into());
 }
 
 fn from_v1(value: &mut toml::Table, kind: Kind, out: &mut Migration) -> Result<(), ConfigError> {
@@ -1068,6 +1082,23 @@ mod tests {
                 && !saved.contains("phase_scale"),
             "{saved}"
         );
+    }
+
+    /// HEIDI, once an inversion of its own, reads as LSQR with HEIDI on, its settings kept, in a
+    /// file of any version.
+    #[test]
+    fn heidi_reads_as_lsqr_with_heidi() {
+        for version in ["", "schema_version = 2\n"] {
+            let (c, m) = read(&format!(
+                "{version}[inversion]\nalgorithm = \"heidi\"\n[inversion.heidi]\ncone_threshold = 0.08\n")).unwrap();
+            assert_eq!(c.inversion.algorithm, QsmAlgorithm::Lsqr);
+            assert!(c.inversion.heidi.enabled);
+            assert_eq!(c.inversion.heidi.cone_threshold, 0.08);
+            assert!(m.notes.iter().any(|n| n.contains("inversion.algorithm = \"heidi\"")), "{m:?}");
+            assert!(m.warnings.is_empty(), "{m:?}");
+            let saved = c.to_toml().unwrap();
+            assert!(saved.contains("algorithm = \"lsqr\"") && saved.contains("enabled = true"), "{saved}");
+        }
     }
 
     /// DECOMPOSE's iteration limit keeps its value under lsqcurvefit's name, and the χ-separation

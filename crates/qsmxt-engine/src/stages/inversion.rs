@@ -15,8 +15,18 @@ use crate::stages::crop::crop_box_for;
 /// A parameter missing here is a parameter whose change does not invalidate a cached
 /// reconstruction, so the run silently reuses a map computed with the old value.
 pub fn params(config: &PipelineConfig) -> serde_json::Value {
-    // Each method's settings serialised whole, so that a setting added to its config is recorded
-    // (and keyed) without anyone listing it here.
+    let mut key = method_params(config);
+    // HEIDI after the inversion, when it runs in this step (a two-pass run fills the combined
+    // map instead: [`heidi_params`]).
+    if config.inversion.heidi.enabled {
+        key["heidi"] = all(&config.inversion.heidi);
+    }
+    key
+}
+
+/// The inversion method's own settings, serialised whole, so that a setting added to its config
+/// is recorded (and keyed) without anyone listing it here.
+fn method_params(config: &PipelineConfig) -> serde_json::Value {
     let inv = &config.inversion;
     match inv.algorithm {
         QsmAlgorithm::Rts => all(&inv.rts),
@@ -39,10 +49,7 @@ pub fn params(config: &PipelineConfig) -> serde_json::Value {
         QsmAlgorithm::Whqsm => all(&inv.whqsm),
         QsmAlgorithm::Hdqsm => all(&inv.hdqsm),
         QsmAlgorithm::AmpPe => all(&inv.amp_pe),
-        // HEIDI's key carries the LSQR group too — its seed is an LSQR solve, so changing
-        // `--lsqr-tol` changes the HEIDI result and has to invalidate it.
         QsmAlgorithm::Lsqr => serde_json::json!({ "lsqr": all(&inv.lsqr) }),
-        QsmAlgorithm::Heidi => serde_json::json!({ "lsqr": all(&inv.lsqr), "heidi": all(&inv.heidi) }),
         // The networks have no parameters; a tiled run is a different result from a
         // whole-volume one, so the tiling is in the key.
         a if a.tileable() => match config.dl_tile() {
@@ -75,7 +82,7 @@ pub fn magnitude_input(config: &PipelineConfig) -> Option<MagnitudeInput> {
     use QsmAlgorithm as A;
     match config.inversion.algorithm {
         A::Medi | A::Tfi => Some(MagnitudeInput::Echoes),
-        A::Nltv | A::Ndi | A::Fansi | A::FansiTgv | A::L1qsm | A::Hdqsm | A::AmpPe | A::Lsqr | A::Heidi => {
+        A::Nltv | A::Ndi | A::Fansi | A::FansiTgv | A::L1qsm | A::Hdqsm | A::AmpPe | A::Lsqr => {
             Some(MagnitudeInput::Combined)
         }
         // WH-QSM weights by the magnitude only with a magnitude weight (WH_nlTV's default is flat).
@@ -117,6 +124,44 @@ pub fn invert(
         &mut |done, total| observer.progress(done, total),
     ).map_err(|e| EngineError::Config(format!("inversion: {}", e)))?;
     Ok(qsm_core::crop::uncrop_volume(&chi, &cb, 0.0))
+}
+
+/// HEIDI's settings, and the inversion its seed came from, for a two-pass run's combination
+/// step, which fills the combined map ([`heidi_cone_fill`]); `None` when HEIDI is off.
+pub fn heidi_params(config: &PipelineConfig) -> Option<serde_json::Value> {
+    let inv = &config.inversion;
+    inv.heidi.enabled.then(|| serde_json::json!({ "seed": inv.algorithm.to_string(), "heidi": all(&inv.heidi) }))
+}
+
+/// The config an inversion step runs with: a two-pass run inverts each pass without HEIDI and
+/// fills the combined map once ([`heidi_cone_fill`]).
+pub fn pass_config(config: &PipelineConfig, two_pass: bool) -> std::borrow::Cow<'_, PipelineConfig> {
+    if two_pass && config.inversion.heidi.enabled {
+        let mut c = config.clone();
+        c.inversion.heidi.enabled = false;
+        std::borrow::Cow::Owned(c)
+    } else {
+        std::borrow::Cow::Borrowed(config)
+    }
+}
+
+/// HEIDI's cone fill on `chi` (ppm), the combined map of a two-pass run, with the main pass's
+/// local field and mask ([`qsm_core::pipeline::run_heidi_cone_fill`]). Runs in the
+/// reconstruction box, as the inversion does.
+pub fn heidi_cone_fill(
+    chi: &[f64], local_field: &[f64], mask: &[u8], meta: &RunMetadata, config: &PipelineConfig,
+    observer: &mut dyn Observer,
+) -> Result<Vec<f64>, EngineError> {
+    let (_, _, inv_config, _) = crate::bridge::to_pipeline_stages(config);
+    let cb = crop_box_for(config, meta, mask, "HEIDI");
+    let filled = qsm_core::pipeline::run_heidi_cone_fill(
+        &qsm_core::crop::crop_volume(chi, &cb),
+        &qsm_core::crop::crop_volume(local_field, &cb),
+        &qsm_core::crop::crop_volume(mask, &cb),
+        &scan_metadata_in(meta, &cb), &inv_config,
+        &mut |done, total| observer.progress(done, total),
+    ).map_err(|e| EngineError::Config(format!("HEIDI: {}", e)))?;
+    Ok(qsm_core::crop::uncrop_volume(&filled, &cb, 0.0))
 }
 
 /// What TGV reconstructs from: the combined field map of a multi-echo run, or the first echo's
@@ -170,6 +215,12 @@ pub fn resolved_te(config: &PipelineConfig, meta: &RunMetadata) -> Option<f64> {
     qsm_core::EchoTime::from(te).resolve(&meta.echo_times).ok()
 }
 
+/// The echo time HEIDI converts the field at on this scan, when HEIDI runs after the inversion.
+pub fn resolved_heidi_te(config: &PipelineConfig, meta: &RunMetadata) -> Option<f64> {
+    let h = &config.inversion.heidi;
+    h.enabled.then(|| qsm_core::EchoTime::from(h.te).resolve(&meta.echo_times).ok()).flatten()
+}
+
 /// The echo time choice of inversion `alg`, for a method that converts the field from ppm to
 /// radians at one of the scan's echo times.
 pub fn echo_time_choice(config: &PipelineConfig, alg: QsmAlgorithm) -> Option<crate::EchoTimeChoice> {
@@ -182,7 +233,6 @@ pub fn echo_time_choice(config: &PipelineConfig, alg: QsmAlgorithm) -> Option<cr
         QsmAlgorithm::Fansi | QsmAlgorithm::FansiTgv => inv.fansi.te,
         QsmAlgorithm::L1qsm => inv.l1qsm.te,
         QsmAlgorithm::Whqsm => inv.whqsm.te,
-        QsmAlgorithm::Heidi => inv.heidi.te,
         QsmAlgorithm::Tgv => inv.tgv.te,
         _ => return None,
     })
@@ -330,7 +380,8 @@ mod tests {
             Some(&format!("{}", c.inversion.algorithm)), &params(c));
 
         let mut c = PipelineConfig::default();
-        c.inversion.algorithm = QsmAlgorithm::Heidi;
+        c.inversion.algorithm = QsmAlgorithm::Lsqr;
+        c.inversion.heidi.enabled = true;
         let base = key(&c);
 
         let mut edited = c.clone();
@@ -357,6 +408,7 @@ mod tests {
         // Plain LSQR must not be invalidated by HEIDI-only knobs it never reads.
         let mut l = PipelineConfig::default();
         l.inversion.algorithm = QsmAlgorithm::Lsqr;
+        assert_ne!(key(&l), base, "turning HEIDI off must invalidate the map");
         let lbase = key(&l);
         let mut edited = l.clone();
         edited.inversion.heidi.cone_threshold += 0.05;

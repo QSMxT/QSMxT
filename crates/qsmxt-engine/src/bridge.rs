@@ -41,7 +41,6 @@ fn map_alg(alg: QsmAlgorithm) -> PInvAlg {
         QsmAlgorithm::Ilsqr => PInvAlg::Ilsqr,
         QsmAlgorithm::Star => PInvAlg::Star,
         QsmAlgorithm::Lsqr => PInvAlg::Lsqr,
-        QsmAlgorithm::Heidi => PInvAlg::Heidi,
         QsmAlgorithm::Qsmart => PInvAlg::Qsmart,
         QsmAlgorithm::Ndi => PInvAlg::Ndi,
         QsmAlgorithm::Fansi => PInvAlg::Fansi,
@@ -447,6 +446,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             max_iter: cfg.inversion.lsqr.max_iter,
             ..Default::default()
         },
+        apply_heidi: cfg.inversion.heidi.enabled,
         heidi: qsm_core::inversion::HeidiParams {
             cone_threshold: cfg.inversion.heidi.cone_threshold,
             gradient_threshold: cfg.inversion.heidi.gradient_threshold,
@@ -463,6 +463,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
                 iterations: cfg.inversion.heidi.denoise_iterations,
                 time_step: cfg.inversion.heidi.denoise_time_step,
                 conductance: cfg.inversion.heidi.denoise_conductance,
+                reference_itk: cfg.inversion.heidi.denoise_reference_itk,
             }),
             te: cfg.inversion.heidi.te.into(),
             // Field strength and echo times are scan parameters the pipeline fills in.

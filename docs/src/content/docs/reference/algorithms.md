@@ -186,7 +186,7 @@ see [Output space](#output-space).
 
 | | behaviour on oblique data |
 |---|---|
-| all 21 classical dipole inversions, PDF, χ-sep iLSQR and MEDI | correct as acquired — B0 is an explicit parameter |
+| all 20 classical dipole inversions, HEIDI, PDF, χ-sep iLSQR and MEDI | correct as acquired — B0 is an explicit parameter |
 | SHARP, V-SHARP, RESHARP, iSMV, LBV, HARPERELLA, iHARPERELLA, BFRnet | unaffected — never uses B0 |
 | all 11 deep-learning inversions, SUSEP-Net, χ-sepnet, R2PRIMEnet, iQFM | **resampled first** — assumes B0 is +z |
 
@@ -661,8 +661,8 @@ reconstructions and deep-learning networks.
 | `tfi` | TFI — Total Field Inversion |
 | `ilsqr` | iLSQR — iterative LSQR with streaking-artefact correction (default) |
 | `star` | STAR-QSM — Streaking Artifact Reduction |
-| `lsqr` | Minimally regularised LSQR — HEIDI's seed |
-| `heidi` | HEIDI — Homogeneity Enabled Incremental Dipole Inversion |
+| `lsqr` | Minimally regularised LSQR |
+| `heidi` | LSQR+HEIDI — HEIDI as published: `lsqr` with [`--heidi`](#heidi-streaking-reduction) |
 | `qsmart` | QSMART two-stage reconstruction |
 | `ndi` | NDI — Nonlinear Dipole Inversion |
 | `fansi` | FANSI — Nonlinear TV |
@@ -671,6 +671,36 @@ reconstructions and deep-learning networks.
 | `whqsm` | WH-QSM — Weak-Harmonic |
 | `hdqsm` | HD-QSM — Hybrid data fidelity |
 | `amp-pe` | AMP-PE — Approximate Message Passing with Parameter Estimation |
+
+### HEIDI streaking reduction
+
+`--heidi` (in the TUI, the HEIDI checkbox under the inversion) runs HEIDI after the dipole
+inversion ([Schweser et al. 2012, *NeuroImage* 62:2083](https://doi.org/10.1016/j.neuroimage.2012.05.067)):
+the map's well-conditioned k-space coefficients are kept, and the dipole cone is refilled by
+total variation weighted by the local field's homogeneity. With `lsqr` this is HEIDI as
+published, which `--qsm-algorithm heidi` (LSQR+HEIDI in the TUI's method list, and
+`qsmxt invert heidi`) chooses in one go: a configuration stores it as `algorithm = "lsqr"`
+under `[inversion]` and `enabled = true` under `[inversion.heidi]` (a file that says
+`algorithm = "heidi"` reads as that, with a note). After another inversion it is the step the authors
+call PostProcCone, and SEPIA's "Streaking reduction by HEIDI" (`qsmxt invert heidi --seed` runs
+it on a map you already have).
+
+HEIDI keeps what the inversion did outside the cone, so it suits a map whose well-conditioned
+k-space is close to the data:
+
+| Inversion | HEIDI after it |
+| --- | --- |
+| `lsqr` | HEIDI as published |
+| `tkd`, `tsvd`, `tikhonov` (small λ), `ndi`, `rts` | suitable; QSMxT suggests `lsqr` (for RTS only as a note: RTS already fills the cone) |
+| `medi`, `tv`, `nltv`, the FANSI family, `ilsqr`, `star`, `amp-pe`, the deep-learning methods | discouraged: their regularisation outside the cone is kept |
+| `tfi`, `tgv`, `qsmart`, `autoqsm`, `nextqsm`, `iqsm`, `iqsm-plus` | not offered: no local field |
+
+The suggestions come up as recommendations (the TUI's pop-up, the log, `--dry`); QSMxT never
+changes the inversion itself. A run is refused when TKD's or TSVD's threshold is above HEIDI's
+cone threshold (`--heidi-cone-threshold`, 0.1): the coefficients they truncated would be kept as
+data. HEIDI is not offered for multi-orientation reconstructions or χ-separation. With
+two-pass artefact reduction both passes are inverted without it, and HEIDI runs once, on the
+combined map.
 
 ### QSMART
 

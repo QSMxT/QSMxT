@@ -73,6 +73,8 @@ pub fn initial_qsm(
     let (_, _, mut inversion, _) = crate::bridge::to_pipeline_stages(config);
     inversion.algorithm = qsm_core::pipeline::InversionAlgorithm::Ilsqr;
     inversion.ilsqr = crate::bridge::to_separation_config(config).chi_sep_ilsqr.qsm_ilsqr;
+    // The toolbox's iLSQR QSM, without HEIDI (χ-separation is not one of HEIDI's seeds).
+    inversion.apply_heidi = false;
     qsm_core::pipeline::run_dipole_inversion(
         local_field, mask, &scan_metadata(meta), &inversion, None, &mut |done, total| observer.progress(done, total),
     ).map_err(|e| EngineError::Config(format!("chi-separation: the iLSQR QSM: {}", e)))

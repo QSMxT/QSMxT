@@ -53,6 +53,7 @@ mod integration_tests {
             accept_recommendations: false,
             pipeline: PipelineArgs {
                 qsm_algorithm: None,
+                heidi: false,
                 orientation_group: None,
                 multi_orientation_algorithm: None,
                 multi_orientation_lambda: None,
@@ -2141,6 +2142,7 @@ mod integration_tests {
             common: common_invert(input, mask, output.clone()),
             scan: scan(&[0.02]),
             magnitude: vec![],
+            seed: None,
             lsqr_params: LsqrParamArgs { lsqr_max_iter: Some(5), ..Default::default() },
             heidi_params: HeidiParamArgs {
                 heidi_continuation_steps: Some(1),
@@ -2149,6 +2151,37 @@ mod integration_tests {
             },
         })).unwrap();
         assert!(output.exists());
+    }
+
+    /// `invert heidi --seed` fills the cone of a map another inversion made (no LSQR), on the
+    /// same grid; a seed of another size is refused.
+    #[test]
+    fn test_invert_heidi_on_a_seed() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("field.nii");
+        let mask = dir.path().join("mask.nii");
+        let seed = dir.path().join("seed.nii");
+        let output = dir.path().join("chi.nii");
+        testutils::write_field(&input);
+        testutils::write_mask(&mask);
+        testutils::write_field(&seed);
+        let args = |seed: std::path::PathBuf| InvertHeidiArgs {
+            common: common_invert(input.clone(), mask.clone(), output.clone()),
+            scan: scan(&[0.02]),
+            magnitude: vec![],
+            seed: Some(seed),
+            lsqr_params: LsqrParamArgs::default(),
+            heidi_params: HeidiParamArgs {
+                heidi_continuation_steps: Some(1),
+                heidi_inner_iterations: Some(2),
+                ..Default::default()
+            },
+        };
+        super::invert::execute(InvertCommand::Heidi(args(seed))).unwrap();
+        assert!(output.exists());
+        let small = dir.path().join("small.nii");
+        testutils::write_mismatched_volume(&small, 0.0);
+        assert!(super::invert::execute(InvertCommand::Heidi(args(small))).is_err());
     }
 
     /// `invert medi` takes every echo's magnitude (one file per echo here) with the echo times,

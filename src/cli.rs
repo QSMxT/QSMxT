@@ -882,11 +882,11 @@ pub struct LsqrParamArgs {
     pub lsqr_max_iter: Option<usize>,
 }
 
-/// HEIDI's own knobs. Its seed is an LSQR solve, so `--lsqr-*` applies to
-/// `--qsm-algorithm heidi` as well.
+/// HEIDI's own knobs, for `--heidi` (and `--qsm-algorithm heidi`, whose seed is an LSQR solve, so
+/// `--lsqr-*` applies there as well).
 #[derive(Args, Debug, Default, Clone)]
 pub struct HeidiParamArgs {
-    /// |D(k)| above which a coefficient is well-conditioned and kept from the LSQR seed
+    /// |D(k)| above which a coefficient is well-conditioned and kept from the seed map
     #[arg(long)]
     pub heidi_cone_threshold: Option<f64>,
     /// Field-gradient threshold (ppm/mm); below it a direction reads as homogeneous
@@ -927,6 +927,9 @@ pub struct HeidiParamArgs {
     /// Anisotropic-diffusion conductance
     #[arg(long)]
     pub heidi_denoise_conductance: Option<f64>,
+    /// ITK 3.20's float arithmetic for the denoising, as the authors' code runs it (for comparison with it; the default computes its conductance scale in double precision)
+    #[arg(long)]
+    pub heidi_denoise_reference_itk: bool,
     /// HEIDI: the echo time the field stands for the phase of, in the conversion to HEIDI's
     /// units: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms
     /// (default: last)
@@ -1400,6 +1403,13 @@ pub struct PipelineArgs {
     /// QSM dipole inversion algorithm (default: ilsqr)
     #[arg(long, value_enum)]
     pub qsm_algorithm: Option<QsmAlgorithmArg>,
+
+    /// HEIDI streaking reduction after the inversion: keep the map's well-conditioned k-space and
+    /// refill the dipole cone under a homogeneity prior (`--heidi-*` sets it up). With LSQR this
+    /// is HEIDI as published (`--qsm-algorithm heidi`); with two-pass it runs once, on the
+    /// combined map
+    #[arg(long)]
+    pub heidi: bool,
 
     /// Group runs into multi-orientation sets and reconstruct each with COSMOS or STI.
     /// Takes an entity name (acq, run, rec, inv), a glob over the run key (`*acq-dir*`), or
@@ -2912,7 +2922,8 @@ pub enum InvertCommand {
     Star(InvertStarArgs),
     /// Minimally regularised LSQR
     Lsqr(InvertLsqrArgs),
-    /// HEIDI (Homogeneity Enabled Incremental Dipole Inversion), seeded by an LSQR solve
+    /// LSQR+HEIDI (Homogeneity Enabled Incremental Dipole Inversion), or HEIDI on another
+    /// inversion's map (`--seed`)
     Heidi(InvertHeidiArgs),
     /// Nonlinear Dipole Inversion
     Ndi(InvertNdiArgs),
@@ -3397,8 +3408,10 @@ pub struct InvertLsqrArgs {
     pub lsqr_params: LsqrParamArgs,
 }
 
-/// HEIDI. It runs its own LSQR seed, so the `--lsqr-*` flags apply here too. Its result depends
-/// on the field's scale in phase units, so it takes the echo times and field strength.
+/// LSQR+HEIDI, HEIDI as published: it runs its own LSQR seed, so the `--lsqr-*` flags apply here
+/// too. With `--seed`, HEIDI instead reduces the streaking of a map another inversion made of the
+/// same field (`qsmxt run --heidi`'s step). Its result depends on the field's scale in phase units,
+/// so it takes the echo times and field strength.
 #[derive(Parser, Debug)]
 pub struct InvertHeidiArgs {
     #[command(flatten)]
@@ -3409,6 +3422,13 @@ pub struct InvertHeidiArgs {
     /// per echo; several echoes are RSS-combined
     #[arg(long, num_args = 1..)]
     pub magnitude: Vec<PathBuf>,
+    /// A χ map (ppm) another inversion made of this field, to fill the cone of instead of
+    /// running LSQR (`--lsqr-*` and `--magnitude` then do nothing). HEIDI suits a seed whose
+    /// well-conditioned k-space is near data-consistent (TKD and TSVD with a threshold no larger
+    /// than the cone threshold, small-λ Tikhonov, NDI, RTS); a regularised seed keeps its
+    /// regularisation outside the cone
+    #[arg(long)]
+    pub seed: Option<PathBuf>,
     #[command(flatten)]
     pub lsqr_params: LsqrParamArgs,
     #[command(flatten)]
@@ -4296,7 +4316,10 @@ pub struct QualityMapArgs {
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum QsmAlgorithmArg {
-    Rts, Tv, Tkd, Tsvd, Tgv, Tikhonov, Nltv, Medi, Tfi, Ilsqr, Star, Lsqr, Heidi, Qsmart,
+    Rts, Tv, Tkd, Tsvd, Tgv, Tikhonov, Nltv, Medi, Tfi, Ilsqr, Star, Lsqr,
+    /// LSQR+HEIDI, HEIDI as published: LSQR with HEIDI after it (`--qsm-algorithm lsqr --heidi`)
+    Heidi,
+    Qsmart,
     Ndi, Fansi, FansiTgv, L1qsm, Whqsm, Hdqsm, AmpPe,
     // Deep-learning dipole inversions (weights downloaded on first use).
     Xqsm, Qsmnet, QsmnetPlus, Autoqsm, Qsmgan, Ir2qsm, Lpcnn, ModlQsm, Nextqsm,

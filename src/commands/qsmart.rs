@@ -73,7 +73,7 @@ pub fn execute(args: QsmartArgs) -> crate::Result<()> {
     // Lower a QSMART pipeline config to the qsm-core inversion config, exactly like `qsmxt run`.
     let mut cfg = config::PipelineConfig::default();
     cfg.inversion.algorithm = config::QsmAlgorithm::Qsmart;
-    config::apply_qsmart_overrides(&mut cfg, &args.qsmart_params);
+    config::apply_qsmart_overrides(&mut cfg, &args.qsmart_params)?;
     // The vessel sizes in voxels, converted from mm when given in mm, as `qsmxt run` does.
     let mut inv_config = qsmxt_engine::stages::qsmart::vessel_sizes_in_voxels(&cfg, voxel_size);
     // A parity switch on this command only (not a pipeline setting): the authors' grid differs

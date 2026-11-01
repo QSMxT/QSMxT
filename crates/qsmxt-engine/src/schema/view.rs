@@ -124,6 +124,10 @@ impl Ctx<'_> {
     pub fn sep(&self, alg: &str) -> bool { self.c.pipeline.do_chi_separation && self.sep == alg }
     /// QSMART runs with this inner inversion.
     pub fn qsmart_inner(&self, alg: &str) -> bool { self.inv("qsmart") && self.qsmart_inner == alg }
+    /// HEIDI can follow the inversion: a single-orientation QSM from a local field.
+    pub fn heidi_offered(&self) -> bool { self.qsm && !self.grouped && !crate::bridge::skips_bgremove(self.c) }
+    /// HEIDI runs after the inversion.
+    pub fn heidi(&self) -> bool { self.qsm && !self.grouped && self.c.inversion.heidi.enabled }
 }
 
 /// `config` with the outputs other outputs need switched on, as a run applies them
