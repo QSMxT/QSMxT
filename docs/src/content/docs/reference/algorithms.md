@@ -1168,7 +1168,9 @@ of those, R2PRIMEnet's prediction from R2\* (3 T only); see
 - `chi-sep-medi` is initialised from the run's QSM. It weights its data terms by a noise map
   made from every echo's magnitude (MEDI toolbox `Fit_ppm_complex`), and keeps χ uniform in a
   CSF mask found from ARLO R2\* (MEDI's `extract_CSF`), weighted by `--chi-sep-medi-lambda-csf`.
-  It needs the magnitude of every echo and at least three evenly spaced echoes.
+  It needs the magnitude of every echo and at least three evenly spaced echoes. The standalone
+  `qsmxt separate chi-sep-medi --csf-mask` takes a CSF mask file instead, or `none` for no CSF
+  term, as the toolbox's GUI runs without a CSF mask.
 
 Their relaxometric constants D_r default to the toolbox's 137 × B0 / 2.9 T Hz/ppm (141.7 at
 3 T); `--chi-sep-ilsqr-dr-pos` / `-dr-neg` and `--chi-sep-medi-dr-pos` / `-dr-neg` set them

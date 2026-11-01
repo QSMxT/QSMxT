@@ -2872,6 +2872,7 @@ qsmxt separate chi-sep-medi [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT
 | `--r2prime <R2PRIME>` | R2' map NIfTI in Hz. Required. |
 | `--magnitude <MAGNITUDE>` | Multi-echo magnitude: one 4D file or one 3D file per echo (space-separated) Required. |
 | `--echo-times <ECHO_TIMES>` | GRE echo times in seconds (space- or comma-separated) Required. |
+| `--csf-mask <FILE\|none>` | CSF mask NIfTI for the CSF-uniformity term, or `none` for no CSF term (the toolbox's GUI without a CSF mask) (default: the CSF found from ARLO R2\* of the echoes, as the toolbox's script does) |
 | `--lambda <LAMBDA>` | Weight of the data terms against the L1 terms (default: 1) |
 | `--lambda-csf <LAMBDA_CSF>` | Weight of the CSF-uniformity term (default: 1) |
 | `--dr-pos <DR_POS>` | Paramagnetic relaxometric constant (Hz/ppm) (default: 137 × B0 / 2.9 T) |

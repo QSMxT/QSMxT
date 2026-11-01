@@ -745,19 +745,30 @@ mod integration_tests {
         testutils::write_field(&local_field);
         testutils::write_field(&r2prime);
         testutils::write_magnitude(&mag);
-        let args = |echo_times: Vec<f64>| SeparateChiSepMediArgs {
-            common: separate_common(dir.path(), "me"),
+        let args = |echo_times: Vec<f64>, csf_mask: Option<PathBuf>, prefix: &str| SeparateChiSepMediArgs {
+            common: separate_common(dir.path(), prefix),
             local_field: local_field.clone(),
             r2prime: r2prime.clone(),
             magnitude: vec![mag.clone(); 3],
             echo_times,
+            csf_mask,
             lambda: None, lambda_csf: None, dr_pos: None, dr_neg: None, pad: Some(0),
             tol: None, max_iter: Some(1), cg_tol: None, cg_max_iter: Some(1),
         };
-        let err = super::separate::execute(SeparateCommand::ChiSepMedi(args(vec![0.004, 0.008]))).unwrap_err().to_string();
+        let tes = vec![0.004, 0.008, 0.012];
+        let err = super::separate::execute(SeparateCommand::ChiSepMedi(args(vec![0.004, 0.008], None, "me"))).unwrap_err().to_string();
         assert!(err.contains("2 echo times but the magnitude has 3 echoes"), "{err}");
-        super::separate::execute(SeparateCommand::ChiSepMedi(args(vec![0.004, 0.008, 0.012]))).unwrap();
+        super::separate::execute(SeparateCommand::ChiSepMedi(args(tes.clone(), None, "me"))).unwrap();
         assert!(dir.path().join("me_desc-paramagnetic_Chimap.nii").exists());
+
+        // `--csf-mask none` is an all-zero CSF mask (no CSF term), the same as passing one.
+        let empty = dir.path().join("no_csf.nii");
+        qsm_core::io::save_nifti_to_file(&empty, &vec![0.0; testutils::N_VOXELS], (8, 8, 8), (1.0, 1.0, 1.0),
+            &[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]).unwrap();
+        super::separate::execute(SeparateCommand::ChiSepMedi(args(tes.clone(), Some("none".into()), "none"))).unwrap();
+        super::separate::execute(SeparateCommand::ChiSepMedi(args(tes, Some(empty), "file"))).unwrap();
+        let read = |p: &str| std::fs::read(dir.path().join(format!("{p}_desc-paramagnetic_Chimap.nii"))).unwrap();
+        assert_eq!(read("none"), read("file"));
     }
 
     /// `qsmxt segment` rejects a version it does not know rather than silently choosing one — the
