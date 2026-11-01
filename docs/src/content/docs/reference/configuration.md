@@ -119,6 +119,20 @@ te = "spacing"            # or "first", "last", "sum", or { seconds = 0.02 }
 weight = "flat"           # or "max-normalised", "in-vivo"
 ```
 
+HEIDI after the inversion ([HEIDI streaking reduction](/QSMxT/reference/algorithms/#heidi-streaking-reduction))
+is a switch under `[inversion.heidi]`; LSQR+HEIDI, HEIDI as published, is LSQR with it on:
+
+```toml
+[inversion]
+algorithm = "lsqr"
+
+[inversion.heidi]
+enabled = true            # --heidi; with "lsqr", the same as --qsm-algorithm heidi
+cone_threshold = 0.1
+```
+
+A file from an earlier QSMxT with `algorithm = "heidi"` reads as the above.
+
 `te = { seconds = 0.03 }` under `[inversion.star]` is `--star-te 30`, and
 `te = { seconds = 0.02 }` under `[inversion.medi]` is `--medi-te 20`. A setting the method derives from its others
 (`inversion.tv.rho`, `inversion.nltv.rho`, FANSI's `mu1`, `alpha0` and `mu0`, L1-QSM's `mu1`,

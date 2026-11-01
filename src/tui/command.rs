@@ -176,7 +176,7 @@ pub const SWI_SCALING_ARGS: [crate::cli::SwiScalingArg; 5] = {
     [S::Tanh, S::NegativeTanh, S::Positive, S::Negative, S::Triangular]
 };
 
-pub const QSM_ALGO_ARGS: [QsmAlgorithmArg; 32] = [
+pub const QSM_ALGO_ARGS: [QsmAlgorithmArg; 31] = [
         QsmAlgorithmArg::Rts,
         QsmAlgorithmArg::Tv,
         QsmAlgorithmArg::Tkd,
@@ -189,7 +189,6 @@ pub const QSM_ALGO_ARGS: [QsmAlgorithmArg; 32] = [
         QsmAlgorithmArg::Ilsqr,
         QsmAlgorithmArg::Star,
         QsmAlgorithmArg::Lsqr,
-        QsmAlgorithmArg::Heidi,
         QsmAlgorithmArg::Qsmart,
         QsmAlgorithmArg::Ndi,
         QsmAlgorithmArg::Fansi,
@@ -281,6 +280,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
     PipelineArgs {
         // Bounds-checked rather than indexed: the option list shrinks with the build (see #227).
         qsm_algorithm: Some(qsm_options.get(ps.qsm_algorithm).copied().unwrap_or_else(default_qsm_algorithm_arg)),
+        // The HEIDI checkbox (with LSQR, LSQR+HEIDI); not offered for multi-orientation runs.
+        heidi: ps.heidi_enabled && !grouped,
         multi_orientation_algorithm: orientation_group.as_ref().map(|_| {
             if orientation_algorithm == 1 {
                 crate::cli::MultiOrientAlgorithmArg::Sti

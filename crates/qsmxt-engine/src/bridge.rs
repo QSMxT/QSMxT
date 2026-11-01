@@ -41,7 +41,6 @@ fn map_alg(alg: QsmAlgorithm) -> PInvAlg {
         QsmAlgorithm::Ilsqr => PInvAlg::Ilsqr,
         QsmAlgorithm::Star => PInvAlg::Star,
         QsmAlgorithm::Lsqr => PInvAlg::Lsqr,
-        QsmAlgorithm::Heidi => PInvAlg::Heidi,
         QsmAlgorithm::Qsmart => PInvAlg::Qsmart,
         QsmAlgorithm::Ndi => PInvAlg::Ndi,
         QsmAlgorithm::Fansi => PInvAlg::Fansi,
@@ -447,6 +446,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             max_iter: cfg.inversion.lsqr.max_iter,
             ..Default::default()
         },
+        apply_heidi: cfg.inversion.heidi.enabled,
         heidi: qsm_core::inversion::HeidiParams {
             cone_threshold: cfg.inversion.heidi.cone_threshold,
             gradient_threshold: cfg.inversion.heidi.gradient_threshold,

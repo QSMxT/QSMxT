@@ -246,6 +246,8 @@ fn step_need(step: &Step, config: &PipelineConfig, s: &Scan) -> u64 {
         // Two background-field removals and iLSQR inversions, the vessel filter, and the
         // intermediates it keeps.
         Stage::Qsmart(_) => s.v(QSMART_PER_VOXEL),
+        // A two-pass run fills the combined map with HEIDI here.
+        Stage::TwoPassCombination if config.inversion.heidi.enabled => s.v(27).max(s.v(HEIDI_PER_VOXEL)),
         Stage::TwoPassCombination => s.v(27),
         // A per-echo QSM's referencing also holds every echo's map, for their mean.
         Stage::Reference if crate::bridge::per_echo(config, s.echoes as usize) => s.v(18 + F64 * e),
@@ -456,14 +458,13 @@ fn inversion_need(config: &PipelineConfig, s: &Scan) -> u64 {
     // The tileable networks: activations per patch voxel, measured on tiles of 64³ (56 + 2×4) on
     // the example in WASM and natively (xQSM and QSMnet also at 48³, which separates the parts).
     let dl = |net: Net| dl_need(s, config, net);
-    match config.inversion.algorithm {
+    let method = match config.inversion.algorithm {
         QsmAlgorithm::Tkd => 74 * n,
         QsmAlgorithm::Tsvd => 74 * n,
         QsmAlgorithm::Tikhonov => 82 * n,
         QsmAlgorithm::Ilsqr => 242 * n,
         QsmAlgorithm::Star => star_need(config, s),
         QsmAlgorithm::Lsqr => 147 * n,
-        QsmAlgorithm::Heidi => 194 * n,
         QsmAlgorithm::Tv => 147 * n,
         QsmAlgorithm::Nltv => 154 * n,
         QsmAlgorithm::Rts => 227 * n,
@@ -504,8 +505,14 @@ fn inversion_need(config: &PipelineConfig, s: &Scan) -> u64 {
         // single-threaded in WASM only (0.85 and 0.99 GB on the example at 56 + 2×4).
         QsmAlgorithm::Iqsm => dl(Net { id: "iqsm", per_voxel: 120, fixed: 0, whole: 583, native_tile: 473, browser_per_voxel: 120, once: 0, browser_per_helper: 0 }),
         QsmAlgorithm::IqsmPlus => dl(Net { id: "iqsm-plus", per_voxel: 120, fixed: 0, whole: 640, native_tile: 1_026, browser_per_voxel: 120, once: 0, browser_per_helper: 0 }),
-    }
+    };
+    // HEIDI after the inversion: its peak (measured with LSQR's seed held) or the method's.
+    if config.inversion.heidi.enabled { method.max(HEIDI_PER_VOXEL * n) } else { method }
 }
+
+/// HEIDI's peak per voxel: LSQR's seed and the cone fill's NESTA workspace (measured as
+/// LSQR+HEIDI, 194 B per voxel).
+const HEIDI_PER_VOXEL: u64 = 194;
 
 /// STAR-QSM: its complex working arrays are on the zero-padded grid (`inversion.star.pad` voxels
 /// per side, an odd extent grown by one), the field, mask and result on the acquired one.

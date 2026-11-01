@@ -701,3 +701,28 @@ fn arrows_between_the_same_boxes_are_one_and_labels_list_items_in_full() {
     assert_eq!(drawn.len(), 1);
     assert_eq!(drawn[0].label, ["Phase (as acquired)", "Magnitude (as acquired)", "Mask"]);
 }
+
+/// A two-pass run's HEIDI fills the combined map: the combination reads the main pass's local
+/// field (an arrow from its background removal) and is keyed on HEIDI's settings, and the passes
+/// are inverted without it.
+#[test]
+fn two_pass_heidi_runs_on_the_combined_map() {
+    let mut config = PipelineConfig::default();
+    config.masking.two_pass = true;
+    config.inversion.algorithm = QsmAlgorithm::Tkd;
+    let off = graph(&config, &facts());
+    assert!(!off.has_edge("bgremove", "twopass"));
+    config.inversion.heidi.enabled = true;
+    let g = graph(&config, &facts());
+    assert!(g.has_edge("bgremove", "twopass"), "HEIDI reads the main pass's local field");
+    assert_consistent(&g);
+    let key = |c: &PipelineConfig| crate::cache::step_cache_key("twopass", None, &serde_json::json!({}), c);
+    let mut changed = config.clone();
+    changed.inversion.heidi.cone_threshold = 0.05;
+    assert_ne!(key(&config), key(&changed), "HEIDI's settings key the combination");
+    let pass = crate::stages::inversion::pass_config(&config, true);
+    assert!(!pass.inversion.heidi.enabled, "the passes are inverted without HEIDI");
+    assert!(crate::stages::inversion::pass_config(&config, false).inversion.heidi.enabled);
+    assert!(crate::stages::inversion::params(&pass).get("heidi").is_none());
+    assert!(crate::stages::inversion::params(&config).get("heidi").is_some());
+}

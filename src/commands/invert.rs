@@ -58,6 +58,36 @@ fn invert_with(
     Ok((chi, field_nifti))
 }
 
+/// HEIDI's cone fill on `seed`, a χ map (ppm) another inversion made of `c.input` inside
+/// `c.mask` ([`qsm_core::pipeline::run_heidi_cone_fill`], as `qsmxt run --heidi` runs it).
+fn heidi_on_seed(
+    c: &InvertCommonArgs, seed: &std::path::Path, field_strength: f64, echo_times: &[f64],
+    config: &qsm_core::pipeline::InversionConfig,
+) -> crate::Result<(Vec<f64>, qsm_core::io::NiftiData)> {
+    let field_nifti = load_nifti(&c.input)?;
+    let (mask, _) = load_mask(&c.mask)?;
+    let seed_nifti = load_nifti(seed)?;
+    if seed_nifti.dims != field_nifti.dims {
+        return Err(QsmxtError::Config(format!(
+            "--seed {} is {:?} but the field is {:?}", seed.display(), seed_nifti.dims, field_nifti.dims)));
+    }
+    let (nx, ny, nz) = field_nifti.dims;
+    info!("HEIDI on {} ({}x{}x{})", seed.display(), nx, ny, nz);
+    let metadata = qsm_core::pipeline::ScanMetadata {
+        dims: field_nifti.dims,
+        voxel_size: field_nifti.voxel_size,
+        echo_times: echo_times.to_vec(),
+        field_strength,
+        b0_direction: (c.b0_direction[0], c.b0_direction[1], c.b0_direction[2]),
+        slice_geometry: None,
+        affine: Some(field_nifti.affine),
+    };
+    let chi = qsm_core::pipeline::run_heidi_cone_fill(
+        &seed_nifti.data, &field_nifti.data, &mask, &metadata, config, &mut |_, _| {},
+    ).map_err(|e| QsmxtError::Config(format!("HEIDI: {e}")))?;
+    Ok((chi, field_nifti))
+}
+
 /// An inversion config for `algorithm`, with qsm-core's settings for every other method.
 fn config_for(algorithm: qsm_core::pipeline::InversionAlgorithm) -> qsm_core::pipeline::InversionConfig {
     qsm_core::pipeline::InversionConfig { algorithm, ..Default::default() }
@@ -330,14 +360,19 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             (args.common, out)
         }
         InvertCommand::Heidi(args) => {
-            // HEIDI runs its own LSQR seed (qsm_heidi's), with the --lsqr-* settings.
+            // LSQR+HEIDI: HEIDI runs its own LSQR seed (qsm_heidi's), with the --lsqr-*
+            // settings; or, with --seed, fills the cone of a map another inversion made.
             let config = qsm_core::pipeline::InversionConfig {
                 lsqr: lsqr_params(&args.lsqr_params),
+                apply_heidi: true,
                 heidi: heidi_params(&args.heidi_params),
-                ..config_for(A::Heidi)
+                ..config_for(A::Lsqr)
             };
-            let out = invert_with(&args.common, args.scan.field_strength, &args.scan.echo_times,
-                Magnitude::Combined(&args.magnitude), config, "HEIDI")?;
+            let out = match &args.seed {
+                None => invert_with(&args.common, args.scan.field_strength, &args.scan.echo_times,
+                    Magnitude::Combined(&args.magnitude), config, "HEIDI")?,
+                Some(seed) => heidi_on_seed(&args.common, seed, args.scan.field_strength, &args.scan.echo_times, &config)?,
+            };
             (args.common, out)
         }
         InvertCommand::Tikhonov(args) => {

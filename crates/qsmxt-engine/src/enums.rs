@@ -4,7 +4,7 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum QsmAlgorithm {
-    Rts, Tv, Tkd, Tsvd, Tgv, Tikhonov, Nltv, Medi, Tfi, Ilsqr, Star, Lsqr, Heidi, Qsmart,
+    Rts, Tv, Tkd, Tsvd, Tgv, Tikhonov, Nltv, Medi, Tfi, Ilsqr, Star, Lsqr, Qsmart,
     Ndi, Fansi,
     #[serde(rename = "fansi-tgv")] FansiTgv,
     L1qsm, Whqsm, Hdqsm,
@@ -22,9 +22,9 @@ pub enum QsmAlgorithm {
 impl QsmAlgorithm {
     /// Every inversion, in the order the CLI lists them (`qsmxt`'s CLI reference test holds this
     /// to `--qsm-algorithm`'s values, so a new variant cannot be left out).
-    pub const ALL: [QsmAlgorithm; 32] = [
+    pub const ALL: [QsmAlgorithm; 31] = [
         Self::Rts, Self::Tv, Self::Tkd, Self::Tsvd, Self::Tgv, Self::Tikhonov, Self::Nltv,
-        Self::Medi, Self::Tfi, Self::Ilsqr, Self::Star, Self::Lsqr, Self::Heidi, Self::Qsmart,
+        Self::Medi, Self::Tfi, Self::Ilsqr, Self::Star, Self::Lsqr, Self::Qsmart,
         Self::Ndi, Self::Fansi, Self::FansiTgv, Self::L1qsm, Self::Whqsm, Self::Hdqsm, Self::AmpPe,
         Self::Xqsm, Self::Qsmnet, Self::QsmnetPlus, Self::Autoqsm, Self::Qsmgan, Self::Ir2qsm,
         Self::Lpcnn, Self::ModlQsm, Self::Nextqsm, Self::Iqsm, Self::IqsmPlus,
@@ -46,7 +46,7 @@ impl fmt::Display for QsmAlgorithm {
             Self::Rts => "rts", Self::Tv => "tv", Self::Tkd => "tkd", Self::Tsvd => "tsvd",
             Self::Tgv => "tgv", Self::Tikhonov => "tikhonov", Self::Nltv => "nltv",
             Self::Medi => "medi", Self::Tfi => "tfi", Self::Ilsqr => "ilsqr",
-            Self::Star => "star", Self::Lsqr => "lsqr", Self::Heidi => "heidi", Self::Qsmart => "qsmart",
+            Self::Star => "star", Self::Lsqr => "lsqr", Self::Qsmart => "qsmart",
             Self::Ndi => "ndi", Self::Fansi => "fansi", Self::FansiTgv => "fansi-tgv",
             Self::L1qsm => "l1qsm", Self::Whqsm => "whqsm", Self::Hdqsm => "hdqsm",
             Self::AmpPe => "amp-pe",

@@ -1379,6 +1379,7 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("star_pad", "inversion.star.pad"), ("star_te", "inversion.star.te"), ("star_te_ms", "inversion.star.te"),
     ("lsqr_residual_weighting", "inversion.lsqr.residual_weighting"), ("lsqr_fit_global_offset", "inversion.lsqr.fit_global_offset"),
     ("lsqr_tol", "inversion.lsqr.tol"), ("lsqr_max_iter", "inversion.lsqr.max_iter"),
+    ("heidi_enabled", "inversion.heidi.enabled"),
     ("heidi_cone_threshold", "inversion.heidi.cone_threshold"), ("heidi_gradient_threshold", "inversion.heidi.gradient_threshold"),
     ("heidi_apply_laplacian_correction", "inversion.heidi.apply_laplacian_correction"),
     ("heidi_laplacian_threshold", "inversion.heidi.laplacian_threshold"), ("heidi_gradient_mask_floor", "inversion.heidi.gradient_mask_floor"),
@@ -1565,8 +1566,7 @@ const QSM_ALGO_HELP: &[&str] = &[
     "TFI (Total Field Inversion) — inverts the total field directly (its own background removal). https://doi.org/10.1002/mrm.26331",
     "iLSQR (default) — iterative LSQR with streaking-artifact correction. https://doi.org/10.1016/j.neuroimage.2014.12.043",
     "STAR-QSM (Streaking Artifact Reduction) — sparse (L1) inversion from a k-space initial guess, for sources with a large susceptibility range. https://doi.org/10.1002/nbm.3383",
-    "LSQR (minimally regularised) — one least-squares solve for χ plus a residual field; the residual weight is the only regularisation. https://doi.org/10.1118/1.3481505",
-    "HEIDI (Homogeneity Enabled Incremental Dipole Inversion) — keeps the well-conditioned k-space of an LSQR solve and re-derives the dipole cone under a homogeneity prior. https://doi.org/10.1016/j.neuroimage.2012.05.067",
+    "LSQR (minimally regularised) — one least-squares solve for χ plus a residual field; the residual weight is the only regularisation. With HEIDI ticked, LSQR+HEIDI (HEIDI as published). https://doi.org/10.1118/1.3481505",
     "QSMART — two-stage spatially-dependent filtering plus inversion. https://doi.org/10.1016/j.neuroimage.2020.117701",
     "NDI (Nonlinear Dipole Inversion) — gradient-descent nonlinear fit. https://doi.org/10.1002/nbm.4271",
     "FANSI (Nonlinear TV) — fast nonlinear susceptibility inversion with a TV prior. https://doi.org/10.1002/mrm.27073",
@@ -1841,6 +1841,8 @@ pub struct PipelineFormState {
     pub lsqr_max_iter: String,
 
     // HEIDI
+    /// HEIDI after the inversion (built into the LSQR+HEIDI choice).
+    pub heidi_enabled: bool,
     pub heidi_cone_threshold: String,
     pub heidi_gradient_threshold: String,
     pub heidi_apply_laplacian_correction: bool,
@@ -2342,6 +2344,7 @@ impl Default for PipelineFormState {
             lsqr_fit_global_offset: lsqr.fit_global_offset,
             lsqr_tol: format!("{}", lsqr.tol),
             lsqr_max_iter: format!("{}", lsqr.max_iter),
+            heidi_enabled: heidi.enabled,
             heidi_cone_threshold: format!("{}", heidi.cone_threshold),
             heidi_gradient_threshold: format!("{}", heidi.gradient_threshold),
             heidi_apply_laplacian_correction: heidi.apply_laplacian_correction,
@@ -2626,7 +2629,7 @@ impl Default for PipelineFormState {
     }
 }
 
-pub const QSM_ALGO_OPTIONS: &[&str] = &["rts", "tv", "tkd", "tsvd", "tgv", "tikhonov", "nltv", "medi", "tfi", "ilsqr", "star", "lsqr", "heidi", "qsmart", "ndi", "fansi", "fansi-tgv", "l1qsm", "whqsm", "hdqsm", "amp-pe", "xqsm", "qsmnet", "qsmnet-plus", "autoqsm", "qsmgan", "ir2qsm", "lpcnn", "modl-qsm", "nextqsm", "iqsm", "iqsm-plus"];
+pub const QSM_ALGO_OPTIONS: &[&str] = &["rts", "tv", "tkd", "tsvd", "tgv", "tikhonov", "nltv", "medi", "tfi", "ilsqr", "star", "lsqr", "qsmart", "ndi", "fansi", "fansi-tgv", "l1qsm", "whqsm", "hdqsm", "amp-pe", "xqsm", "qsmnet", "qsmnet-plus", "autoqsm", "qsmgan", "ir2qsm", "lpcnn", "modl-qsm", "nextqsm", "iqsm", "iqsm-plus"];
 /// MEDI/TFI data weighting, in the CLI's order (0, 1).
 pub const DATA_WEIGHTING_OPTIONS: &[&str] = &["uniform", "magnitude SNR"];
 const DATA_WEIGHTING_HELP: &[&str] = &[
@@ -3388,6 +3391,37 @@ impl PipelineFormState {
         }
     }
 
+    /// HEIDI's settings.
+    fn heidi_rows(&self, rows: &mut Vec<PipelineRow>) {
+        rows.push(PipelineRow::Param { label: "  Cone threshold", field: "heidi_cone_threshold",
+            help: "|D(k)| above which a coefficient is kept from the inversion's map unchanged" });
+        rows.push(PipelineRow::Param { label: "  Gradient threshold", field: "heidi_gradient_threshold",
+            help: "Field-gradient threshold (ppm/mm); below it a direction reads as homogeneous" });
+        rows.push(PipelineRow::Toggle { label: "  Laplacian correction", field: "heidi_apply_laplacian_correction",
+            help: "Open the homogeneity masks where the field's Laplacian is large" });
+        if self.heidi_apply_laplacian_correction {
+            rows.push(PipelineRow::Param { label: "    Laplacian threshold", field: "heidi_laplacian_threshold",
+                help: "Field-Laplacian threshold (ppm per voxel²)" });
+        }
+        rows.push(PipelineRow::Param { label: "  Gradient mask floor", field: "heidi_gradient_mask_floor",
+            help: "TV weight kept where every direction reads as an edge (0 = upstream's binarised masks)" });
+        rows.push(PipelineRow::Param { label: "  Continuation steps", field: "heidi_continuation_steps",
+            help: "NESTA continuation steps on μ" });
+        rows.push(PipelineRow::Param { label: "  Inner iterations", field: "heidi_inner_iterations",
+            help: "Accelerated-gradient iterations per continuation step" });
+        rows.push(PipelineRow::Param { label: "  Mu min", field: "heidi_mu_min", help: "Final (smallest) smoothing parameter μ" });
+        rows.push(PipelineRow::Param { label: "  HEIDI tolerance", field: "heidi_tol",
+            help: "Relative objective change that ends an inner loop early (the default runs every iteration)" });
+        self.push_echo_time(rows, "heidi");
+        rows.push(PipelineRow::Toggle { label: "  Denoise field", field: "heidi_denoise",
+            help: "Anisotropic-diffusion smoothing of the field before its gradients are taken" });
+        if self.heidi_denoise {
+            rows.push(PipelineRow::Param { label: "    Denoise iter", field: "heidi_denoise_iterations", help: "Anisotropic-diffusion iterations" });
+            rows.push(PipelineRow::Param { label: "    Time step", field: "heidi_denoise_time_step", help: "Anisotropic-diffusion time step" });
+            rows.push(PipelineRow::Param { label: "    Conductance", field: "heidi_denoise_conductance", help: "Anisotropic-diffusion conductance" });
+        }
+    }
+
     /// QSM → Inversion: the dipole inversion and its parameters.
     fn inversion_rows(&self, rows: &mut Vec<PipelineRow>) {
         let alg = QSM_ALGO_OPTIONS.get(self.qsm_algorithm).copied().unwrap_or("");
@@ -3500,43 +3534,14 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "star_pad", help: "Zero-padding per side, voxels (x y z). Larger costs time and memory (default 8 8 20)" });
                 self.push_echo_time(rows, "star");
             }
-            // HEIDI seeds itself with an LSQR solve, so it shows both groups.
-            "lsqr" | "heidi" => {
+            // With the HEIDI checkbox below, LSQR+HEIDI.
+            "lsqr" => {
                 rows.push(PipelineRow::Param { label: "  Residual weight", field: "lsqr_residual_weighting",
                     help: "Weight w on the residual field — the only regularisation. Blank = scaled from B0; 0 drops the term and streaks badly" });
                 rows.push(PipelineRow::Toggle { label: "  Fit global offset", field: "lsqr_fit_global_offset",
                     help: "Fit a single global field offset alongside χ" });
                 rows.push(PipelineRow::Param { label: "  LSQR tolerance", field: "lsqr_tol", help: "LSQR convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  LSQR max iter", field: "lsqr_max_iter", help: "Maximum LSQR iterations" });
-                if alg == "heidi" {
-                    rows.push(PipelineRow::Param { label: "  Cone threshold", field: "heidi_cone_threshold",
-                        help: "|D(k)| above which a coefficient is taken from the LSQR seed unchanged" });
-                    rows.push(PipelineRow::Param { label: "  Gradient threshold", field: "heidi_gradient_threshold",
-                        help: "Field-gradient threshold (ppm/mm); below it a direction reads as homogeneous" });
-                    rows.push(PipelineRow::Toggle { label: "  Laplacian correction", field: "heidi_apply_laplacian_correction",
-                        help: "Open the homogeneity masks where the field's Laplacian is large" });
-                    if self.heidi_apply_laplacian_correction {
-                    rows.push(PipelineRow::Param { label: "    Laplacian threshold", field: "heidi_laplacian_threshold",
-                            help: "Field-Laplacian threshold (ppm per voxel²)" });
-                    }
-                    rows.push(PipelineRow::Param { label: "  Gradient mask floor", field: "heidi_gradient_mask_floor",
-                        help: "TV weight kept where every direction reads as an edge (0 = upstream's binarised masks)" });
-                    rows.push(PipelineRow::Param { label: "  Continuation steps", field: "heidi_continuation_steps",
-                        help: "NESTA continuation steps on μ" });
-                    rows.push(PipelineRow::Param { label: "  Inner iterations", field: "heidi_inner_iterations",
-                        help: "Accelerated-gradient iterations per continuation step" });
-                    rows.push(PipelineRow::Param { label: "  Mu min", field: "heidi_mu_min", help: "Final (smallest) smoothing parameter μ" });
-                    rows.push(PipelineRow::Param { label: "  HEIDI tolerance", field: "heidi_tol",
-                        help: "Relative objective change that ends an inner loop early (the default runs every iteration)" });
-                    self.push_echo_time(rows, "heidi");
-                    rows.push(PipelineRow::Toggle { label: "  Denoise field", field: "heidi_denoise",
-                        help: "Anisotropic-diffusion smoothing of the field before its gradients are taken" });
-                    if self.heidi_denoise {
-                    rows.push(PipelineRow::Param { label: "    Denoise iter", field: "heidi_denoise_iterations", help: "Anisotropic-diffusion iterations" });
-                    rows.push(PipelineRow::Param { label: "    Time step", field: "heidi_denoise_time_step", help: "Anisotropic-diffusion time step" });
-                    rows.push(PipelineRow::Param { label: "    Conductance", field: "heidi_denoise_conductance", help: "Anisotropic-diffusion conductance" });
-                    }
-                }
             }
             "qsmart" => { // QSMART
                 rows.push(PipelineRow::AlgoSelect {
@@ -3690,6 +3695,17 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Convergence", field: "amp_pe_cvg_thd", help: "GAMP inner convergence threshold" });
             }
             _ => {}
+        }
+
+        // HEIDI after the inversion: built into LSQR+HEIDI, a checkbox after any other inversion
+        // of a local field (and while it is on, so it can be turned off).
+        // LSQR+HEIDI is LSQR with it ticked. Not offered for multi-orientation reconstructions.
+        if !self.ctx.orientation_group && (self.inversion_needs_bg_removal() || self.heidi_enabled) {
+            rows.push(PipelineRow::Toggle { label: "HEIDI", field: "heidi_enabled",
+                help: "Streaking reduction after the inversion: keep the map's well-conditioned k-space and refill the dipole cone under a homogeneity prior (HEIDI). With LSQR this is HEIDI as published" });
+            if self.heidi_enabled {
+                self.heidi_rows(rows);
+            }
         }
 
         // Deep-learning overlap-tiling (optional). Shown for the tileable networks: the inversion,
@@ -4508,6 +4524,7 @@ impl PipelineFormState {
             "lsqr_fit_global_offset" => self.lsqr_fit_global_offset,
             "heidi_apply_laplacian_correction" => self.heidi_apply_laplacian_correction,
             "heidi_denoise" => self.heidi_denoise,
+            "heidi_enabled" => self.heidi_enabled,
             "ignore_slice_gap" => self.ignore_slice_gap,
             "axial_resampling" => self.axial_resampling,
             "crop_to_mask" => self.crop_to_mask,
@@ -4562,6 +4579,7 @@ impl PipelineFormState {
             "lsqr_fit_global_offset" => self.lsqr_fit_global_offset = !self.lsqr_fit_global_offset,
             "heidi_apply_laplacian_correction" => self.heidi_apply_laplacian_correction = !self.heidi_apply_laplacian_correction,
             "heidi_denoise" => self.heidi_denoise = !self.heidi_denoise,
+            "heidi_enabled" => self.heidi_enabled = !self.heidi_enabled,
             "ignore_slice_gap" => self.ignore_slice_gap = !self.ignore_slice_gap,
             "axial_resampling" => self.axial_resampling = !self.axial_resampling,
             "crop_to_mask" => self.crop_to_mask = !self.crop_to_mask,
@@ -10973,9 +10991,18 @@ mod tests {
         let f = fields(&ps);
         assert!(f.contains(&"lsqr_tol".to_string()), "{f:?}");
         assert!(f.contains(&"lsqr_fit_global_offset".to_string()), "{f:?}");
-        assert!(!f.iter().any(|x| x.starts_with("heidi_")), "plain LSQR must not show HEIDI rows: {f:?}");
+        assert!(f.contains(&"heidi_enabled".to_string()), "the HEIDI checkbox: {f:?}");
+        assert!(!f.iter().any(|x| x.starts_with("heidi_") && x != "heidi_enabled"),
+            "plain LSQR must not show HEIDI's settings: {f:?}");
 
-        ps.qsm_algorithm = idx("heidi");
+        // Ticked after another inversion, HEIDI's settings follow.
+        let tkd = PipelineFormState { qsm_algorithm: idx("tkd"), heidi_enabled: true, ..Default::default() };
+        assert!(fields(&tkd).contains(&"heidi_cone_threshold".to_string()));
+        assert!(!fields(&PipelineFormState { qsm_algorithm: idx("tgv"), ..Default::default() })
+            .contains(&"heidi_enabled".to_string()), "not offered without a local field");
+
+        // LSQR+HEIDI: LSQR with the checkbox ticked.
+        ps.heidi_enabled = true;
         let f = fields(&ps);
         assert!(f.contains(&"lsqr_tol".to_string()), "HEIDI seeds with LSQR: {f:?}");
         assert!(f.contains(&"heidi_cone_threshold".to_string()), "{f:?}");
@@ -11037,12 +11064,11 @@ mod tests {
         ps.bf_algorithm = BF_OPTIONS.iter().position(|o| *o == "iqfm").unwrap();
         assert!(!has_section(&ps, "fieldmap"), "iQFM unwraps and removes the background itself");
         ps.bf_algorithm = 0;
-        // LSQR and HEIDI are ordinary local-field inversions.
-        for alg in ["lsqr", "heidi"] {
-            ps.qsm_algorithm = idx(alg);
-            assert!(has_section(&ps, "bgremoval"), "{alg} inverts the local field");
-            assert!(has_section(&ps, "fieldmap"), "{alg} needs a field map");
-        }
+        // LSQR (and LSQR+HEIDI) is an ordinary local-field inversion.
+        ps.qsm_algorithm = idx("lsqr");
+        ps.heidi_enabled = true;
+        assert!(has_section(&ps, "bgremoval"), "LSQR inverts the local field");
+        assert!(has_section(&ps, "fieldmap"), "LSQR needs a field map");
     }
 
     /// Compute QSM off hides only the reconstruction: the geometry, motion correction, coil

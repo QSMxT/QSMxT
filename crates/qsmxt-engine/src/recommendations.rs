@@ -390,6 +390,7 @@ const SETTINGS: &[(&str, &str, Kind)] = &[
     ("inversion.medi.msmv.prefilter", "inversion.medi.msmv_prefilter", Kind::Same),
     ("inversion.medi.te", "inversion.medi.te", Kind::Same),
     ("inversion.tfi.te", "inversion.tfi.te", Kind::Same),
+    ("inversion.apply_heidi", "inversion.heidi.enabled", Kind::Same),
     ("inversion.heidi.te", "inversion.heidi.te", Kind::Same),
     ("inversion.qsmart.inversion", "inversion.qsmart.inversion", Kind::Same),
     ("inversion.qsmart.ilsqr_max_iter", "inversion.qsmart.ilsqr_max_iter", Kind::Same),

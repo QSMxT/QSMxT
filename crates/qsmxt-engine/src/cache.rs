@@ -83,7 +83,20 @@ pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value
         "swi" => json!({ "swi": config.swi }),
         "unwrap" => json!({ "field_mapping": config.field_mapping }),
         "bgremove" => json!({ "bg_removal": config.bg_removal, "crop": crop }),
+        // A two-pass run inverts each pass without HEIDI and fills the combined map ("twopass"),
+        // so HEIDI's settings leave its passes as they are. (Where the plan drops two-pass, the
+        // inversion's own parameters carry them: `stages::inversion::params`.)
+        "invert" if config.masking.two_pass => {
+            let mut inversion = serde_json::to_value(&config.inversion).unwrap_or_default();
+            if let Some(o) = inversion.as_object_mut() {
+                o.remove("heidi");
+            }
+            json!({ "inversion": inversion, "crop": crop })
+        }
         "invert" | "tgv" | "qsmart" => json!({ "inversion": config.inversion, "crop": crop }),
+        // A two-pass run's HEIDI fills the combined map here (left out when off, so the keys of
+        // runs from before it existed still match).
+        "twopass" if config.inversion.heidi.enabled => json!({ "masking": masking(), "heidi": config.inversion.heidi }),
         "twopass" => json!({ "masking": masking() }),
         "reference" | "reference-singlepass" => json!({ "qsm": config.qsm }),
         "segmentation" => json!({ "segmentation": config.segmentation }),

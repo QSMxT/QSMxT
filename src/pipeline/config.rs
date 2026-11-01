@@ -118,6 +118,11 @@ pub fn swi_scaling_arg_to_config(a: cli::SwiScalingArg) -> qsmxt_engine::SwiScal
     }
 }
 
+/// Whether `a` is LSQR+HEIDI (`heidi`), which also switches HEIDI on.
+pub fn heidi_alias(a: cli::QsmAlgorithmArg) -> bool {
+    a == cli::QsmAlgorithmArg::Heidi
+}
+
 /// Map a CLI dipole-inversion algorithm argument to the config enum.
 pub fn qsm_algorithm_arg_to_config(a: cli::QsmAlgorithmArg) -> QsmAlgorithm {
     match a {
@@ -133,7 +138,8 @@ pub fn qsm_algorithm_arg_to_config(a: cli::QsmAlgorithmArg) -> QsmAlgorithm {
         cli::QsmAlgorithmArg::Ilsqr => QsmAlgorithm::Ilsqr,
         cli::QsmAlgorithmArg::Star => QsmAlgorithm::Star,
         cli::QsmAlgorithmArg::Lsqr => QsmAlgorithm::Lsqr,
-        cli::QsmAlgorithmArg::Heidi => QsmAlgorithm::Heidi,
+        // LSQR+HEIDI: LSQR, with HEIDI switched on by the caller ([`heidi_alias`]).
+        cli::QsmAlgorithmArg::Heidi => QsmAlgorithm::Lsqr,
         cli::QsmAlgorithmArg::Qsmart => QsmAlgorithm::Qsmart,
         cli::QsmAlgorithmArg::Ndi => QsmAlgorithm::Ndi,
         cli::QsmAlgorithmArg::Fansi => QsmAlgorithm::Fansi,
@@ -194,7 +200,11 @@ pub fn apply_motion_overrides(config: &mut PipelineConfig, p: &cli::MotionParamA
 
 /// Apply QSMART parameter overrides onto a config. Shared by the `run` pipeline and the standalone
 /// `qsmxt qsmart` command so both honour the same flags.
-pub fn apply_qsmart_overrides(config: &mut PipelineConfig, p: &cli::QsmartParamArgs) {
+pub fn apply_qsmart_overrides(config: &mut PipelineConfig, p: &cli::QsmartParamArgs) -> crate::Result<()> {
+    if p.qsmart_inversion.is_some_and(heidi_alias) {
+        return Err(QsmxtError::Config(
+            "--qsmart-inversion heidi: HEIDI is not one of QSMART's inner inversions (its two stages are its own recipe)".into()));
+    }
     if let Some(v) = p.qsmart_ilsqr_pad_mm { config.inversion.qsmart.ilsqr_pad_mm = v; }
     if let Some(v) = p.qsmart_ilsqr_max_iter { config.inversion.qsmart.ilsqr_max_iter = v; }
     if let Some(v) = p.qsmart_vasc_sphere_radius { config.inversion.qsmart.vasc_sphere_radius = v; }
@@ -221,6 +231,7 @@ pub fn apply_qsmart_overrides(config: &mut PipelineConfig, p: &cli::QsmartParamA
             cli::QsmartVesselMagnitudeArg::Combined => QsmartVesselMagnitude::Combined,
         };
     }
+    Ok(())
 }
 
 /// Maps flat CLI flags to nested config fields.
@@ -315,6 +326,12 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         // ── Inversion algorithm ──
         if let Some(a) = args.qsm_algorithm {
             config.inversion.algorithm = qsm_algorithm_arg_to_config(a);
+            if heidi_alias(a) {
+                config.inversion.heidi.enabled = true;
+            }
+        }
+        if args.heidi {
+            config.inversion.heidi.enabled = true;
         }
 
         // ── Multi-orientation (COSMOS / STI) ──
@@ -465,7 +482,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.ilsqr_params.ilsqr_precision { config.inversion.ilsqr.precision = v; }
         if let Some(&[x, y, z]) = args.star_params.star_pad.as_deref() { config.inversion.star.pad = [x, y, z]; }
         if let Some(v) = args.star_params.star_te { config.inversion.star.te = v; }
-        // LSQR's params serve HEIDI too — its seed is an LSQR solve.
+        // LSQR's params, which serve LSQR+HEIDI too.
         if let Some(v) = args.lsqr_params.lsqr_residual_weighting { config.inversion.lsqr.residual_weighting = Some(v); }
         if args.lsqr_params.no_lsqr_global_offset { config.inversion.lsqr.fit_global_offset = false; }
         if let Some(v) = args.lsqr_params.lsqr_tol { config.inversion.lsqr.tol = v; }
@@ -590,7 +607,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.amp_pe_params.amp_pe_max_pe_est_ite { config.inversion.amp_pe.max_pe_est_ite = v; }
         if let Some(v) = args.amp_pe_params.amp_pe_cvg_thd { config.inversion.amp_pe.cvg_thd = v; }
         if let Some(v) = args.amp_pe_params.amp_pe_tikhonov_beta { config.inversion.amp_pe.tikhonov_beta = v; }
-        apply_qsmart_overrides(config, &args.qsmart_params);
+        apply_qsmart_overrides(config, &args.qsmart_params)?;
 
         // ── Background removal params ──
         if let Some(v) = args.vsharp_params.vsharp_deconvolve { config.bg_removal.vsharp.deconvolve = v; }
@@ -1104,6 +1121,21 @@ mod tests {
         let c = config_from_cli(&["qsmxt", "run", "<bids>", "--do-segmentation", "--synthseg-version", "v2",
                                   "--use-custom-dseg", "*"]);
         assert!(validate_segmentation(&c).is_ok());
+    }
+
+    /// `--qsm-algorithm heidi` is LSQR with HEIDI on, `--heidi` turns HEIDI on after any
+    /// inversion, and QSMART's inner inversion cannot be HEIDI.
+    #[test]
+    fn heidi_from_cli() {
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--qsm-algorithm", "heidi"]);
+        assert_eq!((c.inversion.algorithm, c.inversion.heidi.enabled), (QsmAlgorithm::Lsqr, true));
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--qsm-algorithm", "rts", "--heidi", "--heidi-cone-threshold", "0.2"]);
+        assert_eq!((c.inversion.algorithm, c.inversion.heidi.enabled, c.inversion.heidi.cone_threshold), (QsmAlgorithm::Rts, true, 0.2));
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--qsm-algorithm", "lsqr"]);
+        assert!(!c.inversion.heidi.enabled);
+        let cli = cli::Cli::try_parse_from(["qsmxt", "run", "<bids>", "--qsm-algorithm", "qsmart", "--qsmart-inversion", "heidi"]).unwrap();
+        let cli::Command::Run(a) = cli.command else { panic!("expected run") };
+        assert!(apply_run_overrides(&mut PipelineConfig::default(), &a.pipeline).is_err());
     }
 
     #[test]

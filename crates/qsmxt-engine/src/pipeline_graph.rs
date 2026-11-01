@@ -522,6 +522,10 @@ impl Ctx<'_> {
             Stage::TwoPassCombination => {
                 reads.extend([Item::RawChi(Pass::Reliable), Item::RawChi(Pass::Main), self.support(Pass::Reliable),
                               self.pass_mask(Pass::Main)]);
+                // HEIDI fills the combined map with the main pass's local field and mask.
+                if c.inversion.heidi.enabled {
+                    reads.extend([Item::LocalField(Pass::Main), Item::LocalFieldMask(Pass::Main)]);
+                }
                 writes.push(Item::CombinedRawChi);
             }
             Stage::Reference | Stage::SinglePassReference => {
@@ -724,9 +728,15 @@ impl Ctx<'_> {
                 Some(id) => ((Some(id.to_string()), Some(words::inversion(c.inversion.algorithm))), vec![]),
                 None => {
                     let alg = c.inversion.algorithm;
-                    ((Some(alg.to_string()), Some(words::inversion(alg))), words::inversion_settings(c, alg))
+                    let mut s = words::inversion_settings(c, alg);
+                    // HEIDI after the inversion; a two-pass run's fills the combined map.
+                    if c.inversion.heidi.enabled && !self.plan.two_pass {
+                        s.push("then HEIDI".into());
+                    }
+                    ((Some(alg.to_string()), Some(words::inversion(alg))), s)
                 }
             },
+            Stage::TwoPassCombination if c.inversion.heidi.enabled => (some("heidi", "then HEIDI"), vec![]),
             Stage::Tgv(_) => (some("tgv", "TGV"), words::inversion_settings(c, QsmAlgorithm::Tgv)),
             Stage::Qsmart(_) => {
                 let mut s = vec![format!("{} inversion", words::inversion(c.inversion.qsmart.inversion))];

@@ -1129,6 +1129,10 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
     fn inversion(&mut self, step: &Step, pass: Pass) -> Result<(), S::Error> {
         let name = step.stage.name();
         let label = pass_label(pass);
+        // A two-pass run inverts each pass without HEIDI, and fills the combined map once
+        // ([`Self::two_pass_combination`]).
+        let config = stages::inversion::pass_config(self.config, self.plan.two_pass);
+        let config: &PipelineConfig = &config;
         let skip_bgremove = crate::bridge::skips_bgremove(self.config);
         if skip_bgremove {
             self.log(Level::Info, "Skipping background removal (single-step inversion handles it internally)");
@@ -1139,7 +1143,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         if let Some(d) = medi_csf_decision(self.config, if per_echo { 1 } else { self.n_echoes() }) {
             self.decide(d);
         }
-        let mut params = stages::inversion::params(self.config);
+        let mut params = stages::inversion::params(config);
         // The echo time the field is converted to radians at, as the scan's echo times resolve it
         // (each echo's own, for a per-echo QSM).
         if per_echo {
@@ -1151,6 +1155,11 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             }
         } else if let Some(te) = stages::inversion::resolved_te(self.config, &self.meta) {
             params["te_s"] = serde_json::json!(te);
+        }
+        if !per_echo {
+            if let Some(te) = stages::inversion::resolved_heidi_te(config, &self.meta) {
+                params["heidi_te_s"] = serde_json::json!(te);
+            }
         }
         let Some(key) = self.begin(&name, Some(&algorithm), &params, "Skipping invert (cached)",
                                    &format!("Dipole inversion{label}")) else { return Ok(()) };
@@ -1177,7 +1186,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                     }
                 }
                 self.log(Level::Info, &format!("Dipole inversion ({algorithm}), echo {e} of {n}"));
-                let chi = stages::inversion::invert(&field, &mask, magnitude.as_deref(), &self.echo_meta(e), self.config, self.observer)?;
+                let chi = stages::inversion::invert(&field, &mask, magnitude.as_deref(), &self.echo_meta(e), config, self.observer)?;
                 self.put(Item::EchoRawChi(e), Data::Real(&chi))?;
                 outputs.push(Item::EchoRawChi(e));
             }
@@ -1199,7 +1208,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             self.decide(d);
         }
         self.log(Level::Info, &format!("Dipole inversion ({algorithm}){label}"));
-        let chi = stages::inversion::invert(&field, &mask, magnitude.as_deref(), &self.meta, self.config, self.observer)?;
+        let chi = stages::inversion::invert(&field, &mask, magnitude.as_deref(), &self.meta, config, self.observer)?;
         self.put(Item::RawChi(pass), Data::Real(&chi))?;
         self.complete(Done {
             step: &name, algorithm: Some(&algorithm), params: &params, outcome: None, key: &key,
@@ -1310,23 +1319,38 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         }, &format!("QSMART{}", pass_label(pass)))
     }
 
-    /// The two passes' raw maps combined into one ([`stages::inversion::combine_two_pass`]).
+    /// The two passes' raw maps combined into one ([`stages::inversion::combine_two_pass`]), and
+    /// HEIDI's cone fill on it when HEIDI is on ([`stages::inversion::heidi_cone_fill`], with the
+    /// main pass's local field and mask).
     fn two_pass_combination(&mut self) -> Result<(), S::Error> {
         let support = self.support(Pass::Reliable);
-        let params = json!({ "support": self.store.identity(&support) });
-        let Some(key) = self.begin("twopass", None, &params, "Skipping twopass (cached)",
-                                   "Combining two-pass reconstructions") else { return Ok(()) };
+        let mut params = json!({ "support": self.store.identity(&support) });
+        let heidi = stages::inversion::heidi_params(self.config);
+        if let Some(h) = &heidi {
+            params["heidi"] = h.clone();
+            if let Some(te) = stages::inversion::resolved_heidi_te(self.config, &self.meta) {
+                params["heidi"]["te_s"] = json!(te);
+            }
+        }
+        let doing = if heidi.is_some() { "Combining two-pass reconstructions, then HEIDI" } else { "Combining two-pass reconstructions" };
+        let Some(key) = self.begin("twopass", None, &params, "Skipping twopass (cached)", doing) else { return Ok(()) };
         let chi_reliable = self.store.real(&Item::RawChi(Pass::Reliable))?;
         let chi_main = self.store.real(&Item::RawChi(Pass::Main))?;
         let declared = self.store.mask(&support)?;
         let brain_item = self.pass_mask(Pass::Main);
         let brain = self.store.mask(&brain_item)?;
-        let combined = stages::inversion::combine_two_pass(&chi_reliable, &chi_main, &declared, &brain)?;
+        let mut combined = stages::inversion::combine_two_pass(&chi_reliable, &chi_main, &declared, &brain)?;
+        drop((chi_reliable, chi_main, declared, brain));
+        if heidi.is_some() {
+            let (field, mask) = (self.store.real(&Item::LocalField(Pass::Main))?, self.store.mask(&Item::LocalFieldMask(Pass::Main))?);
+            self.log(Level::Info, "HEIDI on the combined two-pass map");
+            combined = stages::inversion::heidi_cone_fill(&combined, &field, &mask, &self.meta, self.config, self.observer)?;
+        }
         self.put(Item::CombinedRawChi, Data::Real(&combined))?;
         self.complete(Done {
-            step: "twopass", algorithm: None, params: &params, outcome: None, key: &key,
+            step: "twopass", algorithm: heidi.is_some().then_some("heidi"), params: &params, outcome: None, key: &key,
             outputs: &[Item::CombinedRawChi],
-        }, "Two-pass combination")
+        }, if heidi.is_some() { "Two-pass combination and HEIDI" } else { "Two-pass combination" })
     }
 
     /// Reference a raw map over the voxels it is defined on ([`crate::referencing`]): the final
@@ -2915,6 +2939,28 @@ pub(crate) mod tests {
         let r = Run::new(&plan, &config, &facts, crate::stages::magnitude::tests::meta_4x4x4(), &mut store, &mut quiet);
         assert_eq!(r.support(Pass::Reliable), Item::LocalFieldMask(Pass::Reliable));
         assert_eq!(r.store.identity(&r.support(Pass::Reliable)), json!("LocalFieldMask(Reliable)"));
+    }
+
+    /// With HEIDI on, a two-pass run inverts each pass without it (their keys are unchanged) and
+    /// fills the combined map once: only the combination and the final referencing are recomputed.
+    #[test]
+    fn two_pass_heidi_fills_the_combined_map_in_memory() {
+        let (facts, mut store) = phantom();
+        let mut config = config();
+        config.inversion.tkd.threshold = 0.1;
+        config.masking.two_pass = true;
+        config.masking.two_pass_sections = Some(vec![MaskSection {
+            input: MaskingInput::Magnitude,
+            generator: MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(40.0) },
+            refinements: vec![],
+        }]);
+        run_once(&config, &facts, &mut store);
+        let plain = store.get(&Item::CombinedRawChi).unwrap().clone();
+        config.inversion.heidi.enabled = true;
+        (config.inversion.heidi.continuation_steps, config.inversion.heidi.inner_iterations) = (1, 2);
+        let events = run_once(&config, &facts, &mut store);
+        assert_eq!(events.computed, ["twopass", "reference"], "{:?}", events.computed);
+        assert_ne!(store.get(&Item::CombinedRawChi).unwrap(), &plain, "the combined map was not filled");
     }
 
     /// SWI and its minIP, T2*/R2*, and SMWI from the final map, all in memory: each projection on

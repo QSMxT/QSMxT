@@ -353,7 +353,30 @@ pub fn inversion_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<Strin
     if config.inversion.algorithm == QsmAlgorithm::Qsmart {
         return qsmart_inner_problem(f, config);
     }
-    method_problem(f, config, config.inversion.algorithm)
+    method_problem(f, config, config.inversion.algorithm).or_else(|| heidi_problem(f, config))
+}
+
+/// Why HEIDI cannot follow the inversion on this run's data, if it cannot. QSM.rs's rules
+/// (`heidi.*`) cover the method choice and the truncation thresholds at the default cone
+/// threshold; this covers what they cannot: another cone threshold
+/// ([`qsm_core::pipeline::heidi_seed_problem`]), the echo time, and multi-orientation runs.
+fn heidi_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<String> {
+    let h = &config.inversion.heidi;
+    if !h.enabled {
+        return None;
+    }
+    if config.multi_orientation.enabled() {
+        return Some("with HEIDI: HEIDI is not offered for multi-orientation reconstructions (it takes one \
+                     field); turn it off (--heidi)".into());
+    }
+    if let Err(e) = qsm_core::EchoTime::from(h.te).resolve(&f.echo_times) {
+        return Some(format!("with HEIDI cannot run on this scan with --heidi-te {}: {e}", h.te));
+    }
+    if h.cone_threshold != crate::config::HeidiConfig::default().cone_threshold {
+        let (_, _, core, _) = crate::bridge::to_pipeline_stages(config);
+        return qsm_core::pipeline::heidi_seed_problem(&core).map(|why| format!("with HEIDI: {why}"));
+    }
+    None
 }
 
 /// What dipole inversion `alg` needs of this run's data ([`inversion_problem`]).
@@ -963,6 +986,28 @@ mod tests {
     }
 
     const EVEN: [f64; 4] = [0.005, 0.010, 0.015, 0.020];
+
+    /// HEIDI's checks QSM.rs's rules cannot make: a TKD threshold above a cone threshold other
+    /// than the default, the echo time, and a multi-orientation run. At the default cone
+    /// threshold the rule `heidi.tkd-cone` refuses TKD's default 0.15.
+    #[test]
+    fn heidi_is_refused_where_it_cannot_follow_the_inversion() {
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = QsmAlgorithm::Tkd;
+        c.inversion.heidi.enabled = true;
+        let errors = |c: &PipelineConfig| scan_check(&run(&EVEN, true), c).errors;
+        assert!(errors(&c).iter().any(|e| e.contains("heidi.tkd-cone")), "{:?}", errors(&c));
+        c.inversion.tkd.threshold = 0.1;
+        assert!(errors(&c).is_empty(), "{:?}", errors(&c));
+        c.inversion.heidi.cone_threshold = 0.05;
+        assert!(errors(&c).iter().any(|e| e.contains("with HEIDI") && e.contains("cone threshold")), "{:?}", errors(&c));
+        c.inversion.heidi.cone_threshold = 0.1;
+        c.inversion.heidi.te = crate::EchoTimeChoice::Seconds(-1.0);
+        assert!(errors(&c).iter().any(|e| e.contains("--heidi-te")), "{:?}", errors(&c));
+        c.inversion.heidi.te = crate::EchoTimeChoice::Last;
+        c.multi_orientation.group_by = "acq".into();
+        assert!(errors(&c).iter().any(|e| e.contains("multi-orientation")), "{:?}", errors(&c));
+    }
     /// An evenly spaced train as a sidecar rounds it (to 0.01 ms): spacings 4.92, 4.93, 4.91 ms.
     const ROUNDED: [f64; 4] = [0.00492, 0.00984, 0.01477, 0.01968];
 
