@@ -254,3 +254,32 @@ jobs:
           gh api repos/astewartau/qsmbly/dispatches \
             -f event_type=qsmxt-engine-release \
             -f "client_payload[version]=${GITHUB_REF_NAME}"
+
+  # Tell QSM-CI (QSMxT/QSM-CI) a release is out, so its released parity track runs every enabled
+  # pair against it straight away (QSM-CI's parity-release.yml; it also checks daily, as a
+  # fallback). Runs after `checksums`, since QSM-CI verifies the musl archive against SHA256SUMS.
+  # Pre-releases are not GitHub's "latest" release, which is what QSM-CI checks, so they are not
+  # sent. Requires a QSM_CI_DISPATCH_TOKEN secret: a fine-grained PAT (or GitHub App token) scoped
+  # to QSMxT/QSM-CI with Contents: read and write (the default GITHUB_TOKEN cannot dispatch to
+  # another repo). Without it the job skips with a notice; it never fails a release, and it
+  # changes no release asset.
+  notify-qsm-ci:
+    name: Notify QSM-CI of the release
+    needs: checksums
+    if: ${{ !cancelled() && needs.checksums.result == 'success' && !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Dispatch qsmxt-release to QSMxT/QSM-CI
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.QSM_CI_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::QSM_CI_DISPATCH_TOKEN not set: QSM-CI not notified (its daily check will pick up ${GITHUB_REF_NAME})."
+            exit 0
+          fi
+          gh api repos/QSMxT/QSM-CI/dispatches \
+            -f event_type=qsmxt-release \
+            -f "client_payload[tag]=${GITHUB_REF_NAME}"
+          echo "::notice::QSM-CI notified of ${GITHUB_REF_NAME}"
