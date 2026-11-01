@@ -3901,6 +3901,11 @@ pub struct SeparateChiSepMediArgs {
     /// GRE echo times in seconds (space- or comma-separated)
     #[arg(long, num_args = 1.., value_delimiter = ',', required = true)]
     pub echo_times: Vec<f64>,
+    /// CSF mask NIfTI for the CSF-uniformity term, or `none` for no CSF term (the toolbox's GUI
+    /// without a CSF mask) (default: the CSF found from ARLO R2* of the echoes, as the toolbox's
+    /// script does)
+    #[arg(long, value_name = "FILE|none")]
+    pub csf_mask: Option<PathBuf>,
     /// Weight of the data terms against the L1 terms (default: 1)
     #[arg(long)]
     pub lambda: Option<f64>,

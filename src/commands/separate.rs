@@ -185,10 +185,33 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
             let mag_rss: Vec<f64> = (0..n)
                 .map(|v| (0..ne).map(|e| echo_major[e * n + v].powi(2)).sum::<f64>().sqrt())
                 .collect();
-            let (n_std, mask_csf) = qsmxt_engine::stages::separation::chi_sep_medi_inputs(
-                &echo_major, &args.echo_times, &mask, qsm.dims, qsm.voxel_size,
-            ).map_err(|e| QsmxtError::Config(e.to_string()))?;
-            info!("CSF mask of {} voxels from ARLO R2*", mask_csf.iter().filter(|&&m| m != 0).count());
+            let (n_std, mask_csf) = match args.csf_mask.as_deref() {
+                None => {
+                    let (n_std, csf) = qsmxt_engine::stages::separation::chi_sep_medi_inputs(
+                        &echo_major, &args.echo_times, &mask, qsm.dims, qsm.voxel_size,
+                    ).map_err(|e| QsmxtError::Config(e.to_string()))?;
+                    info!("CSF mask of {} voxels from ARLO R2*", csf.iter().filter(|&&m| m != 0).count());
+                    (n_std, csf)
+                }
+                Some(p) => {
+                    let n_std = qsm_core::utils::fit_ppm_complex_noise(&echo_major, ne);
+                    // An all-zero CSF mask turns the CSF term off in qsm-core, as the toolbox's
+                    // `mask_CSF = []` does.
+                    let csf = if p.as_os_str() == "none" {
+                        info!("No CSF mask: no CSF term");
+                        vec![0u8; n]
+                    } else {
+                        let (csf, _) = load_mask(p)?;
+                        if csf.len() != n {
+                            return Err(QsmxtError::Config(format!(
+                                "chi-sep-medi: the CSF mask has {} voxels, the QSM {}", csf.len(), n)));
+                        }
+                        info!("CSF mask of {} voxels from {}", csf.iter().filter(|&&m| m != 0).count(), p.display());
+                        csf
+                    };
+                    (n_std, csf)
+                }
+            };
             let d = qsm_core::separation::ChiSepMediParams::default();
             let cfg = SeparationConfig {
                 algorithm: SeparationAlgorithm::ChiSepMedi,
