@@ -675,6 +675,8 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.heidi() && x.c.inversion.heidi.denoise),
         d("inversion.heidi.denoise_conductance", Inversion, "Conductance", "Anisotropic-diffusion conductance", Float).flag("--heidi-denoise-conductance").parent("inversion.heidi.denoise").context("HEIDI")
         .when(|x| x.heidi() && x.c.inversion.heidi.denoise),
+        d("inversion.heidi.denoise_reference_itk", Inversion, "ITK float arithmetic", "ITK 3.20's float arithmetic for the denoising, as the authors' code runs it (for comparison with it; the default computes its conductance scale in double precision)", Bool).flag("--heidi-denoise-reference-itk").parent("inversion.heidi.denoise").context("HEIDI")
+        .when(|x| x.heidi() && x.c.inversion.heidi.denoise),
         d("inversion.qsmart.inversion", Inversion, "Inner inversion", "", Enum(vec![
             o("ilsqr", "ilsqr", "iLSQR", "iLSQR (default) — QSMART's original inner inversion"),
             o("rts", "rts", "RTS", "Rapid Two-Step (RTS)"),

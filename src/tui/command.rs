@@ -457,6 +457,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             heidi_denoise_iterations: parse_optional_usize(&ps.heidi_denoise_iterations),
             heidi_denoise_time_step: parse_optional_f64(&ps.heidi_denoise_time_step),
             heidi_denoise_conductance: parse_optional_f64(&ps.heidi_denoise_conductance),
+            heidi_denoise_reference_itk: ps.heidi_denoise_reference_itk,
             heidi_te: super::app::echo_time_choice(ps.heidi_te, &ps.heidi_te_ms),
         },
         ilsqr_params: crate::cli::IlsqrParamArgs {

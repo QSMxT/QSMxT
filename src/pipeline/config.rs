@@ -500,6 +500,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.heidi_params.heidi_denoise_iterations { config.inversion.heidi.denoise_iterations = v; }
         if let Some(v) = args.heidi_params.heidi_denoise_time_step { config.inversion.heidi.denoise_time_step = v; }
         if let Some(v) = args.heidi_params.heidi_denoise_conductance { config.inversion.heidi.denoise_conductance = v; }
+        if args.heidi_params.heidi_denoise_reference_itk { config.inversion.heidi.denoise_reference_itk = true; }
         if let Some(v) = args.heidi_params.heidi_te { config.inversion.heidi.te = v; }
         if let Some(v) = args.tikhonov_params.tikhonov_lambda { config.inversion.tikhonov.lambda = v; }
         if let Some(&[x, y, z]) = args.tikhonov_params.tikhonov_pad.as_deref() { config.inversion.tikhonov.pad = [x, y, z]; }

@@ -1387,6 +1387,7 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("heidi_mu_min", "inversion.heidi.mu_min"), ("heidi_tol", "inversion.heidi.tol"), ("heidi_denoise", "inversion.heidi.denoise"),
     ("heidi_denoise_iterations", "inversion.heidi.denoise_iterations"), ("heidi_denoise_time_step", "inversion.heidi.denoise_time_step"),
     ("heidi_denoise_conductance", "inversion.heidi.denoise_conductance"),
+    ("heidi_denoise_reference_itk", "inversion.heidi.denoise_reference_itk"),
     ("qsmart_inversion", "inversion.qsmart.inversion"), ("qsmart_ilsqr_max_iter", "inversion.qsmart.ilsqr_max_iter"),
     ("qsmart_ilsqr_pad_mm", "inversion.qsmart.ilsqr_pad_mm"), ("qsmart_sdf_sigma1_stage1", "inversion.qsmart.sdf_sigma1_stage1"),
     ("qsmart_sdf_sigma2_stage1", "inversion.qsmart.sdf_sigma2_stage1"), ("qsmart_sdf_sigma1_stage2", "inversion.qsmart.sdf_sigma1_stage2"),
@@ -1856,6 +1857,7 @@ pub struct PipelineFormState {
     pub heidi_denoise_iterations: String,
     pub heidi_denoise_time_step: String,
     pub heidi_denoise_conductance: String,
+    pub heidi_denoise_reference_itk: bool,
 
     // TGV
     pub tgv_iterations: String,
@@ -2358,6 +2360,7 @@ impl Default for PipelineFormState {
             heidi_denoise_iterations: format!("{}", heidi.denoise_iterations),
             heidi_denoise_time_step: format!("{}", heidi.denoise_time_step),
             heidi_denoise_conductance: format!("{}", heidi.denoise_conductance),
+            heidi_denoise_reference_itk: heidi.denoise_reference_itk,
             tgv_iterations: fmt_opt(tgv.iterations),
             tgv_erosions: format!("{}", tgv.erosions),
             tgv_alpha1: format!("{}", tgv.alpha1),
@@ -3419,6 +3422,8 @@ impl PipelineFormState {
             rows.push(PipelineRow::Param { label: "    Denoise iter", field: "heidi_denoise_iterations", help: "Anisotropic-diffusion iterations" });
             rows.push(PipelineRow::Param { label: "    Time step", field: "heidi_denoise_time_step", help: "Anisotropic-diffusion time step" });
             rows.push(PipelineRow::Param { label: "    Conductance", field: "heidi_denoise_conductance", help: "Anisotropic-diffusion conductance" });
+            rows.push(PipelineRow::Toggle { label: "    ITK float arithmetic", field: "heidi_denoise_reference_itk",
+                help: "ITK 3.20's float arithmetic for the denoising, as the authors' code runs it (for comparison with it; the default computes its conductance scale in double precision)" });
         }
     }
 
@@ -4525,6 +4530,7 @@ impl PipelineFormState {
             "heidi_apply_laplacian_correction" => self.heidi_apply_laplacian_correction,
             "heidi_denoise" => self.heidi_denoise,
             "heidi_enabled" => self.heidi_enabled,
+            "heidi_denoise_reference_itk" => self.heidi_denoise_reference_itk,
             "ignore_slice_gap" => self.ignore_slice_gap,
             "axial_resampling" => self.axial_resampling,
             "crop_to_mask" => self.crop_to_mask,
@@ -4580,6 +4586,7 @@ impl PipelineFormState {
             "heidi_apply_laplacian_correction" => self.heidi_apply_laplacian_correction = !self.heidi_apply_laplacian_correction,
             "heidi_denoise" => self.heidi_denoise = !self.heidi_denoise,
             "heidi_enabled" => self.heidi_enabled = !self.heidi_enabled,
+            "heidi_denoise_reference_itk" => self.heidi_denoise_reference_itk = !self.heidi_denoise_reference_itk,
             "ignore_slice_gap" => self.ignore_slice_gap = !self.ignore_slice_gap,
             "axial_resampling" => self.axial_resampling = !self.axial_resampling,
             "crop_to_mask" => self.crop_to_mask = !self.crop_to_mask,

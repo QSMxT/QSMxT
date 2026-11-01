@@ -261,6 +261,9 @@ pub struct HeidiConfig {
     pub denoise_iterations: usize,
     pub denoise_time_step: f64,
     pub denoise_conductance: f64,
+    /// ITK 3.20's float arithmetic for the denoising (QSM.rs `reference_itk`), as the authors'
+    /// code runs it: for comparison with it.
+    pub denoise_reference_itk: bool,
     /// Which echo time the field stands for the phase of, in the conversion to HEIDI's units.
     pub te: EchoTimeChoice,
 }
@@ -268,7 +271,7 @@ impl Default for HeidiConfig {
     fn default() -> Self {
         let p = qsm_core::inversion::HeidiParams::default();
         let d = p.denoise.unwrap_or(qsm_core::utils::AnisotropicDiffusionParams {
-            iterations: 5, time_step: 0.05, conductance: 1.0,
+            iterations: 5, time_step: 0.05, conductance: 1.0, reference_itk: false,
         });
         Self {
             enabled: false,
@@ -285,6 +288,7 @@ impl Default for HeidiConfig {
             denoise_iterations: d.iterations,
             denoise_time_step: d.time_step,
             denoise_conductance: d.conductance,
+            denoise_reference_itk: d.reference_itk,
             te: p.te.into(),
         }
     }

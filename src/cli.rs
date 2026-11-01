@@ -927,6 +927,9 @@ pub struct HeidiParamArgs {
     /// Anisotropic-diffusion conductance
     #[arg(long)]
     pub heidi_denoise_conductance: Option<f64>,
+    /// ITK 3.20's float arithmetic for the denoising, as the authors' code runs it (for comparison with it; the default computes its conductance scale in double precision)
+    #[arg(long)]
+    pub heidi_denoise_reference_itk: bool,
     /// HEIDI: the echo time the field stands for the phase of, in the conversion to HEIDI's
     /// units: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms
     /// (default: last)

@@ -463,6 +463,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
                 iterations: cfg.inversion.heidi.denoise_iterations,
                 time_step: cfg.inversion.heidi.denoise_time_step,
                 conductance: cfg.inversion.heidi.denoise_conductance,
+                reference_itk: cfg.inversion.heidi.denoise_reference_itk,
             }),
             te: cfg.inversion.heidi.te.into(),
             // Field strength and echo times are scan parameters the pipeline fills in.

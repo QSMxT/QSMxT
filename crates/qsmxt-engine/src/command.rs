@@ -800,6 +800,9 @@ fn emit_heidi_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &Pipel
         emit_usize(parts, "--heidi-denoise-iterations", c.denoise_iterations, dd.denoise_iterations);
         emit_f64(parts, "--heidi-denoise-time-step", c.denoise_time_step, dd.denoise_time_step);
         emit_f64(parts, "--heidi-denoise-conductance", c.denoise_conductance, dd.denoise_conductance);
+        if c.denoise_reference_itk {
+            parts.push("--heidi-denoise-reference-itk".into());
+        }
     }
     emit_enum(parts, "--heidi-te", &c.te, &dd.te);
 }

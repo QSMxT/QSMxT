@@ -267,6 +267,7 @@ fn heidi_params(args: &crate::cli::HeidiParamArgs) -> qsm_core::inversion::Heidi
                 iterations: args.heidi_denoise_iterations.unwrap_or(d.denoise_iterations),
                 time_step: args.heidi_denoise_time_step.unwrap_or(d.denoise_time_step),
                 conductance: args.heidi_denoise_conductance.unwrap_or(d.denoise_conductance),
+                reference_itk: d.denoise_reference_itk || args.heidi_denoise_reference_itk,
             }
         }),
         te: args.heidi_te.unwrap_or(d.te).into(),
