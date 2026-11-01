@@ -468,3 +468,35 @@ fn reference_triggers_are_the_method_settings() {
     }
     assert!(!t.contains(&"bg_removal.vsharp.max_radius"));
 }
+
+/// Ticking HEIDI (`inversion.heidi.enabled`, as qsmbly and the TUI set it) after any other
+/// inversion creates an actionable finding on the inversion that recommends LSQR, in QSMxT's
+/// terms and in the settings view; the config is not changed, and applying it chooses LSQR
+/// with HEIDI still on.
+#[test]
+fn ticking_heidi_offers_lsqr_and_changes_nothing() {
+    let facts = known();
+    for alg in ["rts", "tkd", "tikhonov", "ndi", "medi", "tv", "ilsqr", "star"] {
+        let mut c = PipelineConfig::default();
+        schema::set(&mut c, "inversion.algorithm", json!(alg)).unwrap();
+        schema::set(&mut c, "inversion.tkd.threshold", json!(0.1)).unwrap();
+        let before = recommendations(&c, &facts);
+        assert!(!before.iter().any(|r| r.rule.starts_with("heidi.")), "{alg}: {before:?}");
+        schema::set(&mut c, "inversion.heidi.enabled", json!(true)).unwrap();
+        let after = recommendations(&c, &facts);
+        let r = after.iter().find(|r| r.setting == "inversion.algorithm" && r.rule.starts_with("heidi.") && r.actionable())
+            .unwrap_or_else(|| panic!("{alg}: no LSQR offered: {after:?}"));
+        assert_eq!(r.recommended.value, json!("lsqr"), "{alg}");
+        assert!(matches!(r.strength, Strength::Recommended | Strength::Discouraged), "{alg}: {:?}", r.strength);
+        if alg != "medi" && alg != "tv" && alg != "ilsqr" && alg != "star" {
+            assert_eq!(r.strength, Strength::Recommended, "{alg}");
+        }
+        assert_eq!(schema::get(&c, "inversion.algorithm"), Some(json!(alg)), "{alg}: changed silently");
+        let view = schema::settings_view(&c, &view_facts(&facts));
+        assert!(view.iter().any(|v| v.path == "inversion.algorithm" && v.recommendations.iter().any(|x| x.rule == r.rule)), "{alg}");
+        let rule = r.rule.clone();
+        apply(&mut c, &rule, None).unwrap();
+        assert_eq!((schema::get(&c, "inversion.algorithm"), c.inversion.heidi.enabled), (Some(json!("lsqr")), true), "{alg}");
+        assert!(!recommendations(&c, &facts).iter().any(|r| r.rule.starts_with("heidi.seed")), "{alg}");
+    }
+}

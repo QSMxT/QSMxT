@@ -549,7 +549,18 @@ impl App {
                 }
             }
         }
-        match candidates.into_iter().find(resolved) {
+        // Apply means the recommended value: a rule that names values to avoid (heidi.seed-*,
+        // `discouraged` ones) is also resolved by others, so prefer the form that takes the
+        // recommended value, and only then any other that resolves it.
+        let takes_recommended = |app: &App| value.is_some() || super::command::config_from_app(app)
+            .map(|c| rec::reference_values(&c, &facts))
+            .unwrap_or_default()
+            .iter()
+            .find(|x| x.rule == rule)
+            .is_none_or(|x| x.current.iter().all(|n| n.value == r.recommended.value));
+        let pick = candidates.iter().position(|a| resolved(a) && takes_recommended(a))
+            .or_else(|| candidates.iter().position(resolved));
+        match pick.map(|i| candidates.swap_remove(i)) {
             Some(app) => {
                 self.form = app.form;
                 self.pipeline_state = app.pipeline_state;
@@ -733,6 +744,44 @@ mod tests {
         app.toggle_field("medi_msmv_prefilter");
         app.check_recommendations();
         assert!(app.rec_modal.is_some());
+    }
+
+    /// Ticking HEIDI after any other inversion opens the pop-up recommending LSQR, Apply
+    /// preselected; nothing changes until it is applied. After LSQR nothing opens.
+    #[test]
+    fn ticking_heidi_recommends_lsqr() {
+        let lsqr = QSM_ALGO_OPTIONS.iter().position(|o| *o == "lsqr").unwrap();
+        for (alg, rule) in [("rts", "heidi.seed-rts"), ("tikhonov", "heidi.seed-lsqr"), ("medi", "heidi.seed-regularised")] {
+            let mut app = app();
+            select(&mut app, "qsm_algorithm", alg, QSM_ALGO_OPTIONS);
+            // The method's own reference pipeline pop-up, if any: closed, nothing changes.
+            app.handle_ref_modal_key(KeyEvent::from(KeyCode::Esc));
+            app.rec_modal = None;
+            app.check_recommendations();
+            let chosen = app.pipeline_state.qsm_algorithm;
+            app.toggle_field("heidi_enabled");
+            app.check_recommendations();
+            let modal = app.rec_modal.as_ref().unwrap_or_else(|| panic!("{alg}: ticking HEIDI opened no pop-up"));
+            assert_eq!(modal.findings[0].rule, rule, "{alg}");
+            assert_eq!(modal.findings[0].recommended.value, serde_json::json!("lsqr"), "{alg}");
+            assert_eq!(modal.cursor, Some(0), "{alg}: Apply is preselected");
+            assert_eq!(app.pipeline_state.qsm_algorithm, chosen, "{alg}: nothing changes before Apply");
+            assert!(app.pipeline_state.heidi_enabled);
+            app.handle_rec_modal_key(KeyEvent::from(KeyCode::Enter));
+            assert_eq!(app.pipeline_state.qsm_algorithm, lsqr, "{alg}: Apply chooses LSQR");
+            assert!(app.pipeline_state.heidi_enabled, "{alg}: HEIDI stays ticked");
+            let config = super::super::command::config_from_app(&app).unwrap();
+            assert_eq!((config.inversion.algorithm, config.inversion.heidi.enabled), (crate::pipeline::config::QsmAlgorithm::Lsqr, true));
+        }
+        // LSQR+HEIDI is the reference: nothing to offer.
+        let mut app = app();
+        select(&mut app, "qsm_algorithm", "lsqr", QSM_ALGO_OPTIONS);
+        app.handle_ref_modal_key(KeyEvent::from(KeyCode::Esc));
+        app.rec_modal = None;
+        app.check_recommendations();
+        app.toggle_field("heidi_enabled");
+        app.check_recommendations();
+        assert!(app.rec_modal.is_none(), "{:?}", app.rec_modal.as_ref().map(|m| &m.findings[0].rule));
     }
 
     /// Choosing DECOMPOSE offers a per-echo QSM (its authors' input); applying it switches the
