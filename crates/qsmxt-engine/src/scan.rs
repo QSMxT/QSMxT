@@ -190,6 +190,10 @@ pub struct RunMetadata {
     /// gap. `None` = not known (or `--ignore-slice-gap`).
     #[serde(default)]
     pub slice_geometry: Option<(f64, usize)>,
+    /// The first phase image's header orientation, while the run works on that image's grid (not
+    /// resampled): the image geometry N4 is given is the one ITK reads from it ([`itk_geometry`]).
+    #[serde(default)]
+    pub orientation: Option<HeaderOrientation>,
 }
 
 /// How far B0 may sit from the slice normal before an axial-only algorithm is given resampled
@@ -235,7 +239,7 @@ pub fn resolve_geometry(
         b0_direction: (0.0, 0.0, 1.0),
         field_strength: facts.field_strength,
         has_magnitude: facts.has_magnitude,
-        source_geometry: None, slice_geometry: None,
+        source_geometry: None, slice_geometry: None, orientation: None,
     };
 
     if obliquity > 0.01 {
@@ -333,16 +337,90 @@ pub fn scan_metadata_in(meta: &RunMetadata, cb: &qsm_core::crop::CropBox) -> qsm
     m
 }
 
-/// The image geometry ITK (as ANTs runs N4) reads for a grid: qsm-core's
+/// The orientation fields of a NIfTI-1 header as the file stores them: `pixdim[0..=3]` (qfac and
+/// the voxel size), the qform (its code, quaternion and offset) and the sform (its code and rows).
+/// Carried from the first phase image to the inhomogeneity correction, so N4 gets exactly the
+/// image geometry ITK reads from that file ([`itk_geometry`]): the affine the run reads (sform,
+/// else qform, [`qsm_core::io::load_nifti`]) is not always the form ITK chooses, and an affine
+/// rebuilt from a quaternion is not bit for bit ITK's single-precision matrix.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct HeaderOrientation {
+    /// `pixdim[0]` (qfac), then `pixdim[1..=3]`.
+    pub pixdim: [f32; 4],
+    pub qform_code: i16,
+    /// `quatern_b`, `quatern_c`, `quatern_d`, `qoffset_x`, `qoffset_y`, `qoffset_z`.
+    pub quatern: [f32; 6],
+    pub sform_code: i16,
+    /// `srow_x`, `srow_y`, `srow_z`.
+    pub srow: [[f32; 4]; 3],
+}
+
+impl HeaderOrientation {
+    /// The orientation fields of `h`.
+    pub fn of(h: &nifti::NiftiHeader) -> Self {
+        Self {
+            pixdim: [h.pixdim[0], h.pixdim[1], h.pixdim[2], h.pixdim[3]],
+            qform_code: h.qform_code,
+            quatern: [h.quatern_b, h.quatern_c, h.quatern_d, h.quatern_x, h.quatern_y, h.quatern_z],
+            sform_code: h.sform_code,
+            srow: [h.srow_x, h.srow_y, h.srow_z],
+        }
+    }
+
+    /// The orientation fields of a NIfTI-1 file's header (`.nii` or `.nii.gz` bytes).
+    ///
+    /// # Errors
+    /// If the bytes do not start with a NIfTI-1 header.
+    pub fn read(bytes: &[u8]) -> Result<Self, String> {
+        let header = if bytes.starts_with(&[0x1f, 0x8b]) {
+            nifti::NiftiHeader::from_reader(flate2::read::GzDecoder::new(bytes))
+        } else {
+            nifti::NiftiHeader::from_reader(bytes)
+        };
+        header.map(|h| Self::of(&h)).map_err(|e| format!("the NIfTI header could not be read: {e}"))
+    }
+
+    /// A 3-D header of `dims` with these orientation fields.
+    fn header(&self, dims: (usize, usize, usize)) -> nifti::NiftiHeader {
+        nifti::NiftiHeader {
+            dim: [3, dims.0 as u16, dims.1 as u16, dims.2 as u16, 1, 1, 1, 1],
+            pixdim: [self.pixdim[0], self.pixdim[1], self.pixdim[2], self.pixdim[3], 1.0, 1.0, 1.0, 1.0],
+            qform_code: self.qform_code,
+            quatern_b: self.quatern[0],
+            quatern_c: self.quatern[1],
+            quatern_d: self.quatern[2],
+            quatern_x: self.quatern[3],
+            quatern_y: self.quatern[4],
+            quatern_z: self.quatern[5],
+            sform_code: self.sform_code,
+            srow_x: self.srow[0],
+            srow_y: self.srow[1],
+            srow_z: self.srow[2],
+            ..Default::default()
+        }
+    }
+}
+
+/// The image geometry ITK (as ANTs runs N4) reads for the run's grid: qsm-core's
 /// [`ItkGeometry::from_nifti_header`](qsm_core::utils::ItkGeometry::from_nifti_header) of the
-/// NIfTI-1 header that carries the grid's `affine` as its sform (`sform_code` 1) and `voxel_size`
-/// as its `pixdim`. For a run that is not resampled this is the first phase image's own header
-/// orientation as it was read; after axial resampling it is the working grid's, which is the grid
-/// the magnitude is corrected on.
+/// first phase image's own header ([`RunMetadata::orientation`]) when the run works on that
+/// image's grid, which is what `N4BiasFieldCorrection` reads from the file. Otherwise (the run is
+/// resampled onto an axial grid, or the front end did not read the header's orientation) that of
+/// the NIfTI-1 header carrying the working grid's `affine` as its sform (`sform_code` 1) and
+/// `voxel_size` as its `pixdim`: the grid the magnitude is corrected on.
 ///
 /// # Errors
-/// If ITK would refuse the orientation (a sform that is not orthonormal).
-pub fn itk_geometry(
+/// If ITK would refuse the orientation (no qform and a sform that is not orthonormal).
+pub fn itk_geometry(meta: &RunMetadata) -> Result<qsm_core::utils::ItkGeometry, qsm_core::error::InputError> {
+    match &meta.orientation {
+        Some(o) => qsm_core::utils::ItkGeometry::from_nifti_header(&o.header(meta.dims)),
+        None => itk_geometry_of_grid(meta.dims, meta.voxel_size, &meta.affine),
+    }
+}
+
+/// The image geometry ITK reads from the NIfTI-1 header that carries `affine` as its sform
+/// (`sform_code` 1) and `voxel_size` as its `pixdim`.
+fn itk_geometry_of_grid(
     dims: (usize, usize, usize), voxel_size: (f64, f64, f64), affine: &[f64; 16],
 ) -> Result<qsm_core::utils::ItkGeometry, qsm_core::error::InputError> {
     let row = |r: usize| [affine[4 * r] as f32, affine[4 * r + 1] as f32, affine[4 * r + 2] as f32, affine[4 * r + 3] as f32];
@@ -463,7 +541,7 @@ mod tests {
         let (dims, vs) = ((6, 5, 4), (1.2, 1.1, 2.0));
         let file = qsm_core::io::save_nifti(&[0.0; 120], dims, vs, &affine).unwrap();
         let read = qsm_core::io::load_itk_geometry(&file).unwrap();
-        let ours = itk_geometry(dims, vs, &affine).unwrap();
+        let ours = itk_geometry_of_grid(dims, vs, &affine).unwrap();
         for i in 0..3 {
             assert!((ours.origin[i] - read.origin[i]).abs() < 1e-4, "{ours:?} vs {read:?}");
             assert!((ours.spacing[i] - read.spacing[i]).abs() < 1e-6, "{ours:?} vs {read:?}");
@@ -474,6 +552,51 @@ mod tests {
         // LPS: the RAS x and y of the origin are negated.
         assert_eq!((ours.origin[0], ours.origin[1]), (90.5, 110.25));
         assert_ne!(ours, qsm_core::utils::ItkGeometry::axis_aligned([1.2, 1.1, 2.0]));
+    }
+
+    /// An oblique file whose qform and sform disagree (the sform an axis-aligned `ALIGNED_ANAT`
+    /// one): ITK reads the qform, and so does the run's N4, from the header orientation the run
+    /// carries, bit for bit. The affine the run reads (the sform) would give another geometry.
+    #[test]
+    fn n4_geometry_is_what_itk_reads_from_the_file_when_qform_and_sform_disagree() {
+        let (c, s) = (0.3f64.cos(), 0.3f64.sin());
+        let oblique = [
+            1.2 * c, 0.0, -2.0 * s, -90.5,
+            0.0, 1.1, 0.0, -110.25,
+            1.2 * s, 0.0, 2.0 * c, -60.0,
+            0.0, 0.0, 0.0, 1.0,
+        ];
+        let (dims, vs) = ((6, 5, 4), (1.2, 1.1, 2.0));
+        let mut file = qsm_core::io::save_nifti(&[0.0; 120], dims, vs, &oblique).unwrap();
+        // sform_code (offset 254) ALIGNED_ANAT, srow_x/y/z (280, 296, 312) axis-aligned.
+        file[254..256].copy_from_slice(&2i16.to_le_bytes());
+        let aligned: [f32; 12] = [1.2, 0.0, 0.0, -80.0, 0.0, 1.1, 0.0, -100.0, 0.0, 0.0, 2.0, -50.0];
+        for (k, v) in aligned.iter().enumerate() {
+            file[280 + 4 * k..284 + 4 * k].copy_from_slice(&v.to_le_bytes());
+        }
+        let itk = qsm_core::io::load_itk_geometry(&file).unwrap();
+        let read = qsm_core::io::load_nifti(&file).unwrap();
+        assert_eq!(read.affine[3], -80.0, "the run reads the sform");
+        let mut meta = RunMetadata {
+            dims, voxel_size: read.voxel_size, affine: read.affine, n_echoes: 1, echo_times: vec![0.01],
+            b0_direction: (0.0, 0.0, 1.0), field_strength: 3.0, has_magnitude: true,
+            source_geometry: None, slice_geometry: None, orientation: None,
+        };
+
+        meta.orientation = Some(HeaderOrientation::read(&file).unwrap());
+        assert_eq!(itk_geometry(&meta).unwrap(), itk);
+        meta.orientation = None;
+        assert_ne!(itk_geometry(&meta).unwrap(), itk, "the sform is not what ITK reads here");
+
+        // Gzipped, and through the JSON a front end keeps a grid in, the fields are the same.
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        std::io::Write::write_all(&mut gz, &file).unwrap();
+        let orientation = HeaderOrientation::read(&gz.finish().unwrap()).unwrap();
+        assert_eq!(Some(orientation), HeaderOrientation::read(&file).ok());
+        let grid = crate::store::Geometry { dims, voxel_size: read.voxel_size, affine: read.affine, orientation: Some(orientation) };
+        let json = serde_json::to_string(&grid).unwrap();
+        assert_eq!(serde_json::from_str::<crate::store::Geometry>(&json).unwrap(), grid);
+        assert!(HeaderOrientation::read(b"not a NIfTI file").is_err());
     }
 
     /// The run metadata a cached load step hands back is bit for bit what was saved (serde_json's

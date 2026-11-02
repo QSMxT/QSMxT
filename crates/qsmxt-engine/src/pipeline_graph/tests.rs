@@ -20,7 +20,7 @@ fn grid(resampled: bool) -> RunMetadata {
     RunMetadata {
         dims: f.dims, voxel_size: (1.0, 1.0, 1.0), affine, n_echoes: f.n_echoes, echo_times: f.echo_times,
         b0_direction: (0.0, 0.0, 1.0), field_strength: 3.0, has_magnitude: true,
-        source_geometry: resampled.then_some(((16, 16, 8), affine)), slice_geometry: None,
+        source_geometry: resampled.then_some(((16, 16, 8), affine)), slice_geometry: None, orientation: None,
     }
 }
 
@@ -421,7 +421,7 @@ fn the_graph_is_what_a_run_does() {
     let Some(VolumeData::Real(m)) = s.get(&Item::AcquiredMagnitude(1)).cloned() else { panic!() };
     let n = f.dims.0;
     let dseg: Vec<f64> = m.iter().enumerate().map(|(i, &v)| if v > 50.0 { if i % n < n / 2 { 10.0 } else { 49.0 } } else { 0.0 }).collect();
-    s.insert_on_grid(Item::SuppliedSegmentation, dseg, crate::store::Geometry { dims: f.dims, voxel_size: (1.0, 1.0, 1.0), affine });
+    s.insert_on_grid(Item::SuppliedSegmentation, dseg, crate::store::Geometry { dims: f.dims, voxel_size: (1.0, 1.0, 1.0), affine, orientation: None });
     f.custom_dseg = true;
     let mut c = config();
     c.pipeline.do_segmentation = true;

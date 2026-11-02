@@ -267,6 +267,9 @@ fn load<S: StageStore + ?Sized>(
         None => store.header()?,
     };
     let mut meta = crate::scan::resolve_geometry(header.dims, header.voxel_size, header.affine, facts, config);
+    if meta.source_geometry.is_none() {
+        meta.orientation = header.orientation;
+    }
     let mut decisions = Vec::new();
     meta.slice_geometry = match &header.sidecar {
         Some(sc) => {
@@ -2332,7 +2335,7 @@ pub(crate) mod tests {
 
     /// The phantom, its voxels placed in the world by `affine`.
     pub(crate) fn phantom_on(affine: [f64; 16]) -> (ScanFacts, MemoryStore) {
-        let header = Header { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine, sidecar: None };
+        let header = Header { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine, orientation: None, sidecar: None };
         let mut store = MemoryStore::new(header, json!("phantom-1"));
         let c = (N as f64 - 1.0) / 2.0;
         let inside = |x: usize, y: usize, z: usize| {
@@ -2534,7 +2537,7 @@ pub(crate) mod tests {
         (facts.custom_mask, facts.custom_dseg) = (true, true);
         let mut affine = [0.0; 16];
         for i in 0..4 { affine[5 * i] = 1.0; }
-        let grid = crate::store::Geometry { dims: facts.dims, voxel_size: (1.0, 1.0, 1.0), affine };
+        let grid = crate::store::Geometry { dims: facts.dims, voxel_size: (1.0, 1.0, 1.0), affine, orientation: None };
         store.insert_on_grid(Item::SuppliedSegmentation, vec![10.0; N * N * N], grid);
         let mut c = config();
         c.masking.custom_mask_tool = Some("bet".into());
@@ -2684,6 +2687,32 @@ pub(crate) mod tests {
         assert!(events.cached.is_empty(), "{:?}", events.cached);
         assert_eq!(events.computed[..first.computed.len() - 2], first.computed[..first.computed.len() - 2]);
         assert!(store.grid().is_some_and(|m| m.source_geometry.is_some()), "resampled for xQSM");
+    }
+
+    /// The load step hands N4 the first phase image's header orientation while the run works on
+    /// that image's grid, and not once the run is resampled onto another one.
+    #[test]
+    fn the_header_orientation_reaches_the_run_only_on_the_acquired_grid() {
+        let (c, s) = (20f64.to_radians().cos(), 20f64.to_radians().sin());
+        let affine = [1.0, 0.0, 0.0, 0.0, 0.0, c, -s, 0.0, 0.0, s, c, 0.0, 0.0, 0.0, 0.0, 1.0];
+        let (facts, _) = phantom_on(affine);
+        let orientation = crate::scan::HeaderOrientation {
+            pixdim: [1.0; 4], qform_code: 1, quatern: [0.17, 0.0, 0.0, 1.0, 2.0, 3.0],
+            sform_code: 0, srow: [[0.0; 4]; 3],
+        };
+        let header = Header { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine, orientation: Some(orientation), sidecar: None };
+        let mut config = config();
+        let loaded = |config: &PipelineConfig| {
+            let mut store = MemoryStore::new(header.clone(), json!("oriented"));
+            load(config, &facts, &mut store, &mut ()).unwrap().0
+        };
+        let meta = loaded(&config);
+        assert!(meta.source_geometry.is_none());
+        assert_eq!(meta.orientation, Some(orientation));
+        config.inversion.algorithm = QsmAlgorithm::Xqsm;
+        let meta = loaded(&config);
+        assert!(meta.source_geometry.is_some(), "resampled for xQSM");
+        assert_eq!(meta.orientation, None);
     }
 
     /// The load step's key on data where no axial-only algorithm is configured is the one earlier
@@ -2883,7 +2912,7 @@ pub(crate) mod tests {
         let dseg: Vec<f64> = m.iter().enumerate()
             .map(|(i, &v)| if v > 50.0 { if i % N < N / 2 { 10.0 } else { 49.0 } } else { 0.0 }).collect();
         store.insert_on_grid(Item::SuppliedSegmentation, dseg,
-                             crate::store::Geometry { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine });
+                             crate::store::Geometry { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine, orientation: None });
         facts.custom_dseg = true;
         let mut config = config();
         config.pipeline.do_segmentation = true;
@@ -3005,7 +3034,7 @@ pub(crate) mod tests {
         let tes: Vec<f64> = vec![0.01, 0.02, 0.03, 0.04];
         let mut affine = [0.0; 16];
         for i in 0..4 { affine[5 * i] = 1.0; }
-        let geometry = crate::store::Geometry { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine };
+        let geometry = crate::store::Geometry { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine, orientation: None };
         let Some(VolumeData::Real(m)) = store.get(&Item::AcquiredMagnitude(1)).cloned() else { panic!() };
         for (e, te) in tes.iter().enumerate() {
             let echo: Vec<f64> = m.iter().map(|&v| if v > 50.0 { 1000.0 * (-10.0f64 * te).exp() } else { 1.0 }).collect();
@@ -3129,7 +3158,7 @@ pub(crate) mod tests {
         let dseg: Vec<f64> = m.iter().enumerate()
             .map(|(i, &v)| if v > 50.0 { if i % N < N / 2 { 10.0 } else { 49.0 } } else { 0.0 }).collect();
         store.insert_on_grid(Item::SuppliedSegmentation, dseg.clone(),
-                             crate::store::Geometry { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine });
+                             crate::store::Geometry { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine, orientation: None });
         facts.custom_dseg = true;
         let mut config = config();
         config.pipeline.do_segmentation = true;
@@ -3162,7 +3191,7 @@ pub(crate) mod tests {
     fn a_replaced_supplied_file_recomputes_only_the_steps_that_read_it() {
         let mut affine = [0.0; 16];
         for i in 0..4 { affine[5 * i] = 1.0; }
-        let grid = crate::store::Geometry { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine };
+        let grid = crate::store::Geometry { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine, orientation: None };
         let sphere = |store: &MemoryStore, inside: f64| -> Vec<f64> {
             let Some(VolumeData::Real(m)) = store.get(&Item::AcquiredMagnitude(1)) else { panic!() };
             m.iter().map(|&v| if v > 50.0 { inside } else { 0.0 }).collect()
@@ -3560,7 +3589,7 @@ pub(crate) mod tests {
     fn a_supplied_map_on_another_grid_is_refused_before_the_first_step() {
         let mut identity = [0.0; 16];
         for i in 0..4 { identity[5 * i] = 1.0; }
-        let small = crate::store::Geometry { dims: (4, 4, 4), voxel_size: (1.0, 1.0, 1.0), affine: identity };
+        let small = crate::store::Geometry { dims: (4, 4, 4), voxel_size: (1.0, 1.0, 1.0), affine: identity, orientation: None };
         type Setup = fn(&mut PipelineConfig, &mut ScanFacts);
         let cases: [(Item, Setup); 4] = [
             (Item::SuppliedChi, |c, f| {
@@ -3617,7 +3646,7 @@ pub(crate) mod tests {
         let (c, s) = (20f64.to_radians().cos(), 20f64.to_radians().sin());
         let affine = [1.0, 0.0, 0.0, 0.0, 0.0, c, -s, 0.0, 0.0, s, c, 0.0, 0.0, 0.0, 0.0, 1.0];
         let (mut facts, mut store) = phantom_on(affine);
-        let acquired = crate::store::Geometry { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine };
+        let acquired = crate::store::Geometry { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine, orientation: None };
         let Some(VolumeData::Real(m)) = store.get(&Item::AcquiredMagnitude(1)).cloned() else { panic!() };
         let inside = |v: f64| m.iter().map(|&x| if x > 50.0 { v } else { 0.0 }).collect::<Vec<_>>();
         store.insert_on_grid(Item::SuppliedR2, inside(12.0), acquired.clone());
@@ -3651,7 +3680,7 @@ pub(crate) mod tests {
         let header = |manufacturer: &str| {
             let sidecar: crate::scan::QsmSidecar = serde_json::from_value(json!({
                 "EchoTime": 0.005, "MagneticFieldStrength": 3.0, "Manufacturer": manufacturer })).unwrap();
-            Header { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine, sidecar: Some(sidecar) }
+            Header { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine, orientation: None, sidecar: Some(sidecar) }
         };
 
         // Two coils, each seeing the scan with its own smooth sensitivity and phase offset.

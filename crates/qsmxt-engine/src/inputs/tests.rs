@@ -4,7 +4,7 @@ use serde_json::json;
 const AFFINE: [f64; 16] = [1., 0., 0., -2., 0., 1., 0., -2., 0., 0., 1., -2., 0., 0., 0., 1.];
 
 fn grid(dims: (usize, usize, usize)) -> Geometry {
-    Geometry { dims, voxel_size: (1.0, 1.0, 1.0), affine: AFFINE }
+    Geometry { dims, voxel_size: (1.0, 1.0, 1.0), affine: AFFINE, orientation: None }
 }
 
 fn g() -> Option<Geometry> {

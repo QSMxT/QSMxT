@@ -72,7 +72,7 @@ pub fn params(dst_dims: (usize, usize, usize)) -> serde_json::Value {
 
 /// The acquired grid, for writing a volume on it.
 pub fn acquired(dims: (usize, usize, usize), affine: &[f64; 16]) -> Geometry {
-    Geometry { dims, voxel_size: qsm_core::geometry::voxel_sizes_from_affine(affine), affine: *affine }
+    Geometry { dims, voxel_size: qsm_core::geometry::voxel_sizes_from_affine(affine), affine: *affine, orientation: None }
 }
 
 /// One volume of `kind` (not phase or a projection) from the working grid (`src`) onto the
