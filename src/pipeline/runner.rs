@@ -490,11 +490,15 @@ impl StageStore for FileStore<'_> {
 
     fn header(&mut self) -> crate::Result<Header> {
         let first = &self.run.echoes[0];
-        let first_phase = io::read_nifti_file(&first.phase_nifti)
-            .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", first.phase_nifti.display(), e)))?;
+        let failed = |e: String| QsmxtError::NiftiIo(format!("{}: {}", first.phase_nifti.display(), e));
+        let bytes = std::fs::read(&first.phase_nifti).map_err(|e| failed(e.to_string()))?;
+        let first_phase = io::load_nifti(&bytes).map_err(failed)?;
         validate_run_dims(self.run, &first_phase)?;
+        // N4 is given the image geometry ITK reads from this file's own header.
+        let orientation = qsmxt_engine::scan::HeaderOrientation::read(&bytes).map_err(failed)?;
         Ok(Header {
             dims: first_phase.dims, voxel_size: first_phase.voxel_size, affine: first_phase.affine,
+            orientation: Some(orientation),
             sidecar: crate::bids::sidecar::read_sidecar(&first.phase_json).ok(),
         })
     }
@@ -1111,6 +1115,39 @@ mod tests {
             assert_ne!(stage(Pass::Main).name(), stage(Pass::Reliable).name());
         }
         assert_eq!(Stage::Inversion(Pass::Main).name(), "invert", "the main pass keeps the unsuffixed step names");
+    }
+
+    /// The header a run starts from carries the first phase image's own orientation fields, so
+    /// N4 gets the image geometry ITK reads from that file (an oblique one here).
+    #[test]
+    fn the_header_carries_the_first_phase_images_orientation() {
+        use crate::bids::derivatives::DerivativeOutputs;
+        use crate::pipeline::graph::PipelineState;
+        use qsmxt_engine::store::StageStore;
+
+        let dir = tempfile::tempdir().unwrap();
+        let phase = dir.path().join("p.nii");
+        let (c, s) = (0.3f64.cos(), 0.3f64.sin());
+        let affine = [1.2 * c, 0.0, -2.0 * s, -90.5, 0.0, 1.1, 0.0, -110.25, 1.2 * s, 0.0, 2.0 * c, -60.0, 0.0, 0.0, 0.0, 1.0];
+        let bytes = qsm_core::io::save_nifti(&[0.0; 120], (6, 5, 4), (1.2, 1.1, 2.0), &affine).unwrap();
+        std::fs::write(&phase, &bytes).unwrap();
+        let run = run_with_echoes(vec![(phase.clone(), None)]);
+        let config = crate::pipeline::config::PipelineConfig::default();
+        let mut store = super::FileStore {
+            run: &run, config: &config, output: DerivativeOutputs::new(dir.path()),
+            meta: None, state: PipelineState::new(&config, &run.key), state_path: dir.path().join("s.json"),
+            started: None, step: None, supplied_mask: None, extra_outputs: Vec::new(),
+            metadata: None, working_grid_kept: false,
+        };
+        let header = store.header().unwrap();
+        let orientation = header.orientation.expect("read from the file");
+        assert_eq!(orientation, qsmxt_engine::scan::HeaderOrientation::read(&bytes).unwrap());
+        let meta = qsmxt_engine::scan::RunMetadata {
+            dims: header.dims, voxel_size: header.voxel_size, affine: header.affine, n_echoes: 1,
+            echo_times: vec![0.004], b0_direction: (0.0, 0.0, 1.0), field_strength: 3.0,
+            has_magnitude: false, source_geometry: None, slice_geometry: None, orientation: Some(orientation),
+        };
+        assert_eq!(qsmxt_engine::scan::itk_geometry(&meta).unwrap(), qsm_core::io::read_itk_geometry_file(&phase).unwrap());
     }
 
     /// The BIDS name the engine gives each item ([`qsmxt_engine::store::Item::meta`]) is the one
@@ -1818,7 +1855,7 @@ mod swi_export_tests {
             b0_direction: (0.0, 0.0, 1.0),
             field_strength: 3.0,
             has_magnitude: true,
-            source_geometry: None, slice_geometry: None,
+            source_geometry: None, slice_geometry: None, orientation: None,
         }
     }
 
@@ -2987,7 +3024,7 @@ mod reference_support_tests {
         RunMetadata {
             dims: DIMS, voxel_size: (1.0, 1.0, 1.0), affine: IDENTITY, n_echoes: 1,
             echo_times: vec![0.004], b0_direction: (0.0, 0.0, 1.0), field_strength: 3.0,
-            has_magnitude: true, source_geometry: None, slice_geometry: None,
+            has_magnitude: true, source_geometry: None, slice_geometry: None, orientation: None,
         }
     }
 

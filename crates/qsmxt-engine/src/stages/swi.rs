@@ -39,7 +39,7 @@ pub fn project_on(
     image: &[f64], grid: &qsm_core::Grid, affine: &[f64; 16], window: usize,
 ) -> Result<(Vec<f64>, Geometry), EngineError> {
     let mip = qsm_core::swi::create_mip(image, grid, affine, window).map_err(EngineError::Config)?;
-    let geometry = Geometry { dims: mip.grid.dims, voxel_size: mip.grid.voxel_size, affine: mip.affine };
+    let geometry = Geometry { dims: mip.grid.dims, voxel_size: mip.grid.voxel_size, affine: mip.affine, orientation: None };
     Ok((mip.data, geometry))
 }
 

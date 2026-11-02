@@ -69,7 +69,7 @@ pub fn homogeneity_correct(
             // The plan refuses settings and grids N4 cannot use up front; this covers runs
             // resumed from a cached state. No mask: the corrected magnitude is what masking is
             // made from.
-            let geometry = crate::scan::itk_geometry(meta.dims, meta.voxel_size, &meta.affine)
+            let geometry = crate::scan::itk_geometry(meta)
                 .map_err(|e| EngineError::Config(format!("inhomogeneity correction: {e}")))?;
             qsm_core::utils::n4_bias_correction(data, None, &grid, &geometry, &config.n4.core(), |_, _| {})
                 .map(|out| out.corrected)
@@ -88,7 +88,7 @@ pub(crate) mod tests {
             affine: [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
             n_echoes: 1, echo_times: vec![0.004], b0_direction: (0.0, 0.0, 1.0),
             field_strength: 3.0, has_magnitude: true,
-            source_geometry: None, slice_geometry: None,
+            source_geometry: None, slice_geometry: None, orientation: None,
         }
     }
 
@@ -141,7 +141,7 @@ pub(crate) mod tests {
         config.masking.inhomogeneity_method = InhomogeneityMethod::N4;
         config.n4.max_iterations = vec![2];
         let grid = qsm_core::Grid::new(8, 8, 8, 1.0, 1.0, 1.0);
-        let geometry = crate::scan::itk_geometry(meta.dims, meta.voxel_size, &meta.affine).unwrap();
+        let geometry = crate::scan::itk_geometry(&meta).unwrap();
         let n4 = qsm_core::utils::n4_bias_correction(&data, None, &grid, &geometry, &config.n4.core(), |_, _| {}).unwrap().corrected;
         assert_eq!(homogeneity_correct(&data, &meta, &config, "x").unwrap(), n4);
         assert_ne!(n4, made);

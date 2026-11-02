@@ -10,6 +10,8 @@ license = "GPL-3.0-only"
 qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "a44046ea02c3c05dc54e370486ee445edc7b5fc5" }
 # The NIfTI header type qsm-core reads ITK's image geometry from (N4); same version as qsm-core's.
 nifti = { version = "0.17", default-features = false }
+# Reads a gzipped NIfTI header's orientation fields ([`scan::HeaderOrientation::read`]); qsm-core's version.
+flate2 = "1"
 serde = { version = "1", features = ["derive"] }
 # preserve_order: the methods text lists changed settings in struct order.
 serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }

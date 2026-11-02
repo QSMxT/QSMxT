@@ -493,6 +493,7 @@ impl ScanInputs {
         let grid = self.geometry(&first)?;
         Some(Header {
             dims: grid.dims, voxel_size: grid.voxel_size, affine: grid.affine,
+            orientation: grid.orientation,
             sidecar: report.sidecars.first().cloned(),
         })
     }

@@ -181,7 +181,7 @@ mod tests {
         RunMetadata {
             dims, voxel_size: (1.0, 1.0, 1.0), affine, n_echoes: 1, echo_times: vec![0.01],
             b0_direction: (0.0, 0.0, 1.0), field_strength: 3.0, has_magnitude: true,
-            source_geometry: None, slice_geometry: None,
+            source_geometry: None, slice_geometry: None, orientation: None,
         }
     }
 

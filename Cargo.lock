@@ -2340,6 +2340,7 @@ dependencies = [
 name = "qsmxt-engine"
 version = "0.0.0"
 dependencies = [
+ "flate2",
  "getrandom 0.4.2",
  "log",
  "nifti",

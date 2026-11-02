@@ -244,6 +244,10 @@ pub struct Geometry {
     pub dims: (usize, usize, usize),
     pub voxel_size: (f64, f64, f64),
     pub affine: [f64; 16],
+    /// The orientation fields of the header the grid was read from, when it was read from a
+    /// file's header ([`crate::scan::HeaderOrientation::read`]); `None` for a grid the run made.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub orientation: Option<crate::scan::HeaderOrientation>,
 }
 
 /// An output, as a step hands it to the store.
@@ -267,6 +271,9 @@ pub struct Header {
     pub dims: (usize, usize, usize),
     pub voxel_size: (f64, f64, f64),
     pub affine: [f64; 16],
+    /// The first echo's header orientation fields as the file stores them, when the front end
+    /// read them: the image geometry N4 reads ([`crate::scan::itk_geometry`]).
+    pub orientation: Option<crate::scan::HeaderOrientation>,
     /// The first echo's sidecar, when it could be read.
     pub sidecar: Option<QsmSidecar>,
 }
@@ -1180,7 +1187,7 @@ mod tests {
     }
 
     fn header() -> Header {
-        Header { dims: (2, 1, 1), voxel_size: (1.0, 1.0, 1.0), affine: [0.0; 16], sidecar: None }
+        Header { dims: (2, 1, 1), voxel_size: (1.0, 1.0, 1.0), affine: [0.0; 16], orientation: None, sidecar: None }
     }
 
     /// The store reads and writes through its volumes, at their precision, and tells them the grid.
@@ -1327,7 +1334,7 @@ mod tests {
         store.record_scan("load-key", &meta, std::slice::from_ref(&gap)).unwrap();
         store.put(Item::FieldPpm, Data::Real(&[1.0, 2.0])).unwrap();
         store.put(Item::RobustFitReport, Data::Json(&serde_json::json!({ "fit": 1 }))).unwrap();
-        let mip = Geometry { dims: (2, 1, 1), voxel_size: (1.0, 1.0, 4.0), affine: [0.0; 16] };
+        let mip = Geometry { dims: (2, 1, 1), voxel_size: (1.0, 1.0, 4.0), affine: [0.0; 16], orientation: None };
         store.put(Item::SwiMip, Data::OnGrid(&[1.0, 2.0], &mip)).unwrap();
         let mut fields = serde_json::Map::new();
         fields.insert("Units".into(), "ppm".into());
