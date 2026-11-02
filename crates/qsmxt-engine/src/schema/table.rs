@@ -368,10 +368,10 @@ pub(super) fn table() -> Vec<Def> {
         d("bg_removal.resharp.tik_reg", Background, "Tik reg", "Tikhonov regularization parameter", Float).flag("--resharp-tik-reg").parent("bg_removal.algorithm")
         .when(|x| x.bf("resharp")).full("Tikhonov regularisation")
         .gui("Tikhonov regularisation parameter"),
-        d("bg_removal.resharp.tol", Background, "Tolerance", "CG convergence tolerance", Float).flag("--resharp-tol").parent("bg_removal.algorithm")
+        d("bg_removal.resharp.tol", Background, "Tolerance", "CGS relative tolerance", Float).flag("--resharp-tol").parent("bg_removal.algorithm")
         .when(|x| x.bf("resharp")),
-        // QSM.rs solvers/cg.rs: 0 iterations return x = 0, an all-zero local field.
-        d("bg_removal.resharp.max_iter", Background, "Max iter", "Maximum CG iterations", Int).min(1.0).flag("--resharp-max-iter").parent("bg_removal.algorithm")
+        // QSM.rs solvers/cgs.rs: 0 iterations return x = 0, an all-zero local field.
+        d("bg_removal.resharp.max_iter", Background, "Max iter", "Maximum CGS iterations", Int).min(1.0).flag("--resharp-max-iter").parent("bg_removal.algorithm")
         .when(|x| x.bf("resharp")).full("Maximum iterations"),
         d("bg_removal.harperella.radius", Background, "Radius", "SMV kernel radius in mm", Float).units("mm").flag("--harperella-radius").parent("bg_removal.algorithm")
         .when(|x| x.bf("harperella"))

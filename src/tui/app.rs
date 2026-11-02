@@ -3379,8 +3379,8 @@ impl PipelineFormState {
             5 => { // RESHARP
                 rows.push(PipelineRow::Param { label: "  Radius", field: "resharp_radius", help: "SMV kernel radius in mm" });
                 rows.push(PipelineRow::Param { label: "  Tik reg", field: "resharp_tik_reg", help: "Tikhonov regularization parameter" });
-                rows.push(PipelineRow::Param { label: "  Tolerance", field: "resharp_tol", help: "CG convergence tolerance" });
-                rows.push(PipelineRow::Param { label: "  Max iter", field: "resharp_max_iter", help: "Maximum CG iterations" });
+                rows.push(PipelineRow::Param { label: "  Tolerance", field: "resharp_tol", help: "CGS relative tolerance" });
+                rows.push(PipelineRow::Param { label: "  Max iter", field: "resharp_max_iter", help: "Maximum CGS iterations" });
             }
             6 => { // HARPERELLA
                 rows.push(PipelineRow::Param { label: "  Radius", field: "harperella_radius", help: "SMV kernel radius in mm" });

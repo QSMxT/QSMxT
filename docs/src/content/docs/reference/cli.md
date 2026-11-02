@@ -330,8 +330,8 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--sharp-radius <SHARP_RADIUS>` | SHARP kernel radius in mm. |
 | `--resharp-radius <RESHARP_RADIUS>` | RESHARP SMV kernel radius in mm. |
 | `--resharp-tik-reg <RESHARP_TIK_REG>` | RESHARP Tikhonov regularization parameter. |
-| `--resharp-tol <RESHARP_TOL>` | RESHARP CG convergence tolerance. |
-| `--resharp-max-iter <RESHARP_MAX_ITER>` | RESHARP maximum CG iterations. |
+| `--resharp-tol <RESHARP_TOL>` | RESHARP conjugate gradients squared (CGS) relative tolerance. |
+| `--resharp-max-iter <RESHARP_MAX_ITER>` | RESHARP maximum CGS iterations. |
 | `--harperella-radius <HARPERELLA_RADIUS>` | HARPERELLA SMV kernel radius in mm. |
 | `--harperella-max-iter <HARPERELLA_MAX_ITER>` | HARPERELLA maximum iterations. |
 | `--harperella-tol <HARPERELLA_TOL>` | HARPERELLA convergence tolerance. |
@@ -786,8 +786,8 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--sharp-radius <SHARP_RADIUS>` | SHARP kernel radius in mm. |
 | `--resharp-radius <RESHARP_RADIUS>` | RESHARP SMV kernel radius in mm. |
 | `--resharp-tik-reg <RESHARP_TIK_REG>` | RESHARP Tikhonov regularization parameter. |
-| `--resharp-tol <RESHARP_TOL>` | RESHARP CG convergence tolerance. |
-| `--resharp-max-iter <RESHARP_MAX_ITER>` | RESHARP maximum CG iterations. |
+| `--resharp-tol <RESHARP_TOL>` | RESHARP conjugate gradients squared (CGS) relative tolerance. |
+| `--resharp-max-iter <RESHARP_MAX_ITER>` | RESHARP maximum CGS iterations. |
 | `--harperella-radius <HARPERELLA_RADIUS>` | HARPERELLA SMV kernel radius in mm. |
 | `--harperella-max-iter <HARPERELLA_MAX_ITER>` | HARPERELLA maximum iterations. |
 | `--harperella-tol <HARPERELLA_TOL>` | HARPERELLA convergence tolerance. |
@@ -1179,8 +1179,8 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--sharp-radius <SHARP_RADIUS>` | SHARP kernel radius in mm. |
 | `--resharp-radius <RESHARP_RADIUS>` | RESHARP SMV kernel radius in mm. |
 | `--resharp-tik-reg <RESHARP_TIK_REG>` | RESHARP Tikhonov regularization parameter. |
-| `--resharp-tol <RESHARP_TOL>` | RESHARP CG convergence tolerance. |
-| `--resharp-max-iter <RESHARP_MAX_ITER>` | RESHARP maximum CG iterations. |
+| `--resharp-tol <RESHARP_TOL>` | RESHARP conjugate gradients squared (CGS) relative tolerance. |
+| `--resharp-max-iter <RESHARP_MAX_ITER>` | RESHARP maximum CGS iterations. |
 | `--harperella-radius <HARPERELLA_RADIUS>` | HARPERELLA SMV kernel radius in mm. |
 | `--harperella-max-iter <HARPERELLA_MAX_ITER>` | HARPERELLA maximum iterations. |
 | `--harperella-tol <HARPERELLA_TOL>` | HARPERELLA convergence tolerance. |
@@ -1935,8 +1935,8 @@ qsmxt bgremove resharp [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--output-mask <OUTPUT_MASK>` | Output eroded mask (for algorithms that erode) |
 | `--radius <RADIUS>` | SMV kernel radius in mm. |
 | `--tik-reg <TIK_REG>` | Tikhonov regularization parameter. |
-| `--tol <TOL>` | CG convergence tolerance. |
-| `--max-iter <MAX_ITER>` | Maximum CG iterations. |
+| `--tol <TOL>` | Conjugate gradients squared (CGS) relative tolerance. |
+| `--max-iter <MAX_ITER>` | Maximum CGS iterations. |
 
 ### `qsmxt bgremove harperella`
 
@@ -2289,6 +2289,8 @@ qsmxt invert tfi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIE
 | `--max-iter <MAX_ITER>` | Max outer iterations. |
 | `--tol <TOL>` | Outer tolerance. |
 | `--te <TE>` | Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing) |
+| `--kernel <KERNEL>` | Dipole kernel on a grid with an odd number of voxels along an axis: default samples the dipole on the Fourier grid; original samples it half a frequency step off, as the original implementation does, for comparison with it. Identical on even grids (default: default) Values: `default`, `original`. |
+| `--precision <PRECISION>` | Arithmetic: double, or single as the original implementation runs, for comparison with it (default: double) Values: `double`, `single`. |
 
 ### `qsmxt invert ilsqr`
 
