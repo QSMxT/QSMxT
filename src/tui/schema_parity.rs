@@ -372,7 +372,7 @@ fn the_printed_command_reproduces_the_tuis_run() {
         if fm.b0_estimation != qsmxt_engine::B0Estimation::WeightedAvg {
             assert_eq!(fm.b0_weight_type, qsmxt_engine::B0WeightType::PhaseSNR, "after {acts:?}");
         }
-        if fm.unwrapping_algorithm == qsmxt_engine::UnwrappingAlgorithm::Laplacian {
+        if fm.unwrapping_algorithm != qsmxt_engine::UnwrappingAlgorithm::Romeo {
             assert!(fm.romeo.individual, "after {acts:?}");
         }
     }

@@ -99,7 +99,19 @@ laplacian_solver = "mirror"   # or "dct" (the default), "fft"
 laplacian_unmasked = true     # the raw phase over the whole volume (default false)
 ```
 
-`laplacian_unmasked = true` is `--laplacian-unmasked`. See
+`laplacian_unmasked = true` is `--laplacian-unmasked`. PRELUDE's are in
+`[field_mapping.prelude]`:
+
+```toml
+[field_mapping]
+unwrapping_algorithm = "prelude"
+
+[field_mapping.prelude]
+labelling = "volume"          # or "auto" (the default), "slices"; --prelude-labelling
+num_phase_partitions = 6      # default 8; --prelude-partitions
+```
+
+See
 [phase unwrapping](/QSMxT/reference/algorithms/#phase-unwrapping) for what each does.
 
 A method that converts the field to phase at one echo time has a `te` setting naming it:

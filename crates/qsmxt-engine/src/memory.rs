@@ -297,6 +297,14 @@ fn unwrap_need(config: &PipelineConfig, s: &Scan) -> u64 {
     if e == 1 || crate::bridge::per_echo(config, e as usize) {
         return 85 * n;
     }
+    if fm.unwrapping_algorithm == UnwrappingAlgorithm::Prelude {
+        // PRELUDE: the echoes (and, with phase-offset removal, the offsets and their smoothing)
+        // as for ROMEO, then one echo unwrapped at a time: its copy, its region labels and the
+        // regions' interfaces. Not measured: the working memory is an allowance above what its
+        // arrays hold (8 + 4 B a voxel), for the interfaces between regions.
+        let base = if fm.phase_offset_removal { 34 * e + 62 } else { 25 * e + 56 };
+        return (base + PRELUDE_PER_ECHO) * n;
+    }
     if !romeo {
         // Laplacian: each echo unwrapped and kept, then the fit (with or without offsets). The
         // mirror solver works on the volume mirrored to twice its size along each axis, one echo
@@ -313,6 +321,10 @@ fn unwrap_need(config: &PipelineConfig, s: &Scan) -> u64 {
     // echo, the echoes in parallel, each with its own weights and region-growing state.
     (34 * e + 62) * n + romeo_threads(s) * ROMEO_PER_ECHO_THREAD * n
 }
+
+/// PRELUDE's working memory for the one echo it unwraps at a time, per voxel (an allowance; see
+/// `unwrap_need`).
+const PRELUDE_PER_ECHO: u64 = 40;
 
 /// ROMEO's per-echo working memory, held once per echo unwrapped at the same time.
 const ROMEO_PER_ECHO_THREAD: u64 = 31;
@@ -943,6 +955,7 @@ mod tests {
             configs.push((format!("{b}"), with(|c| c.bg_removal.algorithm = b)));
         }
         configs.push(("laplacian".into(), with(|c| c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian)));
+        configs.push(("prelude".into(), with(|c| c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Prelude)));
         configs.push(("hd-bet".into(), with(|c| c.masking.sections = crate::hd_bet_mask_sections())));
         configs.push(("everything".into(), with(|c| {
             c.pipeline.do_swi = true; c.pipeline.do_smwi = true; c.pipeline.do_t2starmap = true;
@@ -1028,6 +1041,9 @@ mod tests {
         let mut mirror = laplacian.clone();
         mirror.field_mapping.laplacian_solver = LaplacianSolver::Mirror;
         assert!(unwrap(&f, &mirror, 1) > unwrap(&f, &laplacian, 1));
+        // PRELUDE unwraps one echo at a time: no more for more threads; more for more echoes.
+        let prelude = with(|c| c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Prelude);
+        assert!(unwrap(&f, &prelude, 8) == unwrap(&f, &prelude, 1) && unwrap(&f, &prelude, 1) > unwrap(&three, &prelude, 1));
         // MEDI's complex fit: more echoes, not more threads; MEDI's zero padding enlarges its grid.
         let cf = with(|c| c.field_mapping.b0_estimation = B0Estimation::ComplexFit);
         assert!(unwrap(&f, &cf, 1) > unwrap(&three, &cf, 1) && unwrap(&f, &cf, 8) == unwrap(&f, &cf, 1));
