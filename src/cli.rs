@@ -2396,6 +2396,9 @@ pub struct CombineMcpc3dsArgs {
     /// Unwrapping used on the coil-summed HIP phase
     #[arg(long, value_enum, default_value = "romeo")]
     pub hip_unwrapping: UnwrapAlgorithmArg,
+    /// PRELUDE's settings, with `--hip-unwrapping prelude`
+    #[command(flatten)]
+    pub prelude_params: PreludeParamArgs,
 }
 
 #[derive(Subcommand, Debug)]
@@ -4608,6 +4611,20 @@ mod tests {
     fn parse(args: &[&str]) -> Cli {
         Cli::try_parse_from([&["qsmxt"][..], args].concat())
             .unwrap_or_else(|e| panic!("{args:?} did not parse:\n{e}"))
+    }
+
+    #[test]
+    fn combine_mcpc3ds_takes_prelude_settings_for_the_hip_unwrap() {
+        let cli = parse(&["combine", "mcpc3ds", "--phase", "p.nii", "--magnitude", "m.nii", "-o", "o",
+            "--hip-unwrapping", "prelude", "--prelude-labelling", "volume", "--prelude-partitions", "6"]);
+        let Command::Combine { command: CombineCommand::Mcpc3ds(a) } = cli.command
+            else { panic!("expected combine mcpc3ds") };
+        assert!(matches!(a.hip_unwrapping, UnwrapAlgorithmArg::Prelude));
+        assert_eq!(a.prelude_params.to_prelude_params(), qsm_core::unwrap::PreludeParams {
+            num_phase_partitions: 6,
+            labelling: qsm_core::unwrap::PreludeLabelling::Volume,
+            ..Default::default()
+        });
     }
 
     /// The defaults the V-SHARP radius step and χ-sep iLSQR's QSM help states are qsm-core's.

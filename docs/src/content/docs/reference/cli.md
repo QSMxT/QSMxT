@@ -1578,6 +1578,8 @@ qsmxt combine mcpc3ds [OPTIONS] --phase <PHASE>... --magnitude <MAGNITUDE>... --
 | `--num-echoes <NUM_ECHOES>` | Number of echoes when the file names carry no `echo-N` entity. |
 | `--sigma <X> <Y> <Z>` | Smoothing sigma (voxels) for the per-coil phase offsets (default 10 10 5) |
 | `--hip-unwrapping <HIP_UNWRAPPING>` | Unwrapping used on the coil-summed HIP phase. Values: `romeo`, `laplacian`, `prelude`. Default: `romeo`. |
+| `--prelude-labelling <PRELUDE_LABELLING>` | PRELUDE: how the initial regions are labelled (default: auto) Values: `auto`, `slices`, `volume`. |
+| `--prelude-partitions <N>` | PRELUDE: number of phase partitions the initial regions are formed from (default: 8) |
 
 ## `qsmxt unwrap`
 

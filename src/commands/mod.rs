@@ -3417,7 +3417,7 @@ mod multiorient_tests {
         super::combine::execute(CombineCommand::Mcpc3ds(CombineMcpc3dsArgs {
             phase: phases, magnitude: mags, output: d.join(unc.basename()),
             tes: Some(vec![0.005, 0.010]), num_echoes: None, sigma: None,
-            hip_unwrapping: UnwrapAlgorithmArg::Laplacian,
+            hip_unwrapping: UnwrapAlgorithmArg::Laplacian, prelude_params: Default::default(),
         })).unwrap();
         for e in 1..=2 {
             exists(name(pipeline.combined_phase_path(&unc, e)));
