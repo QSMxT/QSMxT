@@ -9,7 +9,7 @@ enum Magnitude<'a> {
     None,
     /// The combined magnitude (root-sum-of-squares over the echoes given): the data weight.
     Combined(&'a [std::path::PathBuf]),
-    /// Every echo's magnitude, stacked with the echo slowest (MEDI and TFI).
+    /// Every echo's magnitude, stacked with the echo slowest (MEDI, TFI and HD-QSM).
     Echoes(&'a [std::path::PathBuf]),
 }
 
@@ -520,7 +520,7 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 ..d
             };
             let config = qsm_core::pipeline::InversionConfig { hdqsm, ..config_for(A::Hdqsm) };
-            let out = invert_with(&args.common, f64::NAN, &[], Magnitude::Combined(&args.magnitude), config, "HD-QSM")?;
+            let out = invert_with(&args.common, f64::NAN, &args.echo_times, Magnitude::Echoes(&args.magnitude), config, "HD-QSM")?;
             (args.common, out)
         }
         InvertCommand::AmpPe(args) => {
