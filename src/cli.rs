@@ -3632,9 +3632,12 @@ pub struct InvertWhqsmArgs {
 pub struct InvertHdqsmArgs {
     #[command(flatten)]
     pub common: InvertCommonArgs,
-    /// Magnitude NIfTI (optional data weight): one 3D volume, a 4D one, or one per echo; several
-    /// echoes are RSS-combined
-    #[arg(long, num_args = 1..)]
+    /// Echo times in seconds, every echo's, in order
+    #[arg(long, num_args = 1.., required = true, alias = "echo-time")]
+    pub echo_times: Vec<f64>,
+    /// Magnitude of every echo (the data weight is their echo-time-weighted combination): one 4D
+    /// NIfTI, or one 3D NIfTI per echo in echo order
+    #[arg(long, num_args = 1.., required = true)]
     pub magnitude: Vec<PathBuf>,
     /// L2-stage TV weight (alpha_l2)
     #[arg(long)]

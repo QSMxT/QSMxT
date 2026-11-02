@@ -77,11 +77,13 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     // it is left off rather than offered.
     cover!(q::inversion::AmpPeParams => c::AmpPeConfig, ignore: ["normalize_weight"]);
     // b0/echo_times come from scan metadata; is_tgv is set by the dispatcher from the algorithm.
-    cover!(q::inversion::FansiParams => c::FansiConfig, ignore: ["b0", "echo_times", "is_tgv"]);
-    cover!(q::inversion::L1QsmParams => c::L1qsmConfig, ignore: ["b0", "echo_times"]);
-    cover!(q::inversion::WhQsmParams => c::WhqsmConfig, ignore: ["b0", "echo_times"]);
-    cover!(q::inversion::HdQsmParams => c::HdqsmConfig);
-    cover!(q::inversion::NdiParams => c::NdiConfig, ignore: ["b0", "echo_times"]);
+    // `kernel` (FANSI family, HD-QSM): FANSI's discrete dipole kernel, as the originals use; the
+    // continuous kernel is a qsm-core option QSMxT does not offer.
+    cover!(q::inversion::FansiParams => c::FansiConfig, ignore: ["b0", "echo_times", "is_tgv", "kernel"]);
+    cover!(q::inversion::L1QsmParams => c::L1qsmConfig, ignore: ["b0", "echo_times", "kernel"]);
+    cover!(q::inversion::WhQsmParams => c::WhqsmConfig, ignore: ["b0", "echo_times", "kernel"]);
+    cover!(q::inversion::HdQsmParams => c::HdqsmConfig, ignore: ["kernel"]);
+    cover!(q::inversion::NdiParams => c::NdiConfig, ignore: ["b0", "echo_times", "kernel"]);
     cover!(q::inversion::IlsqrParams => c::IlsqrConfig);
     cover!(q::swi::SmwiParams => c::SmwiConfig);
     // `inference` (FullVolume | SlidingWindow { patch, tile_step }) is `patch` here: None is the

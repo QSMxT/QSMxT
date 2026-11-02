@@ -2476,7 +2476,7 @@ qsmxt invert whqsm [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <F
 Hybrid Data-Fidelity QSM
 
 ```sh
-qsmxt invert hdqsm [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+qsmxt invert hdqsm [OPTIONS] --mask <MASK> --output <OUTPUT> --echo-times <ECHO_TIMES>... --magnitude <MAGNITUDE>... <INPUT>
 ```
 
 | Argument | Description |
@@ -2487,7 +2487,8 @@ qsmxt invert hdqsm [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
-| `--magnitude <MAGNITUDE>` | Magnitude NIfTI (optional data weight): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. |
+| `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
+| `--magnitude <MAGNITUDE>` | Magnitude of every echo (the data weight is their echo-time-weighted combination): one 4D NIfTI, or one 3D NIfTI per echo in echo order. Required. |
 | `--alpha-l2 <ALPHA_L2>` | L2-stage TV weight (alpha_l2) |
 | `--mu1-l2 <MU1_L2>` | L2-stage gradient-consistency ADMM weight (mu1_l2), or auto for 100 × alpha_l2 (default: auto) |
 | `--mu2 <MU2>` | Fidelity consistency weight (mu2) |

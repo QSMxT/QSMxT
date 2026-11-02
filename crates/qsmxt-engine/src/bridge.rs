@@ -381,6 +381,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             alpha_l2: cfg.inversion.hdqsm.alpha_l2, mu1_l2: cfg.inversion.hdqsm.mu1_l2,
             mu2: cfg.inversion.hdqsm.mu2, max_iter_l1: cfg.inversion.hdqsm.max_iter_l1,
             max_iter_l2: cfg.inversion.hdqsm.max_iter_l2, tol_update: cfg.inversion.hdqsm.tol_update,
+            ..Default::default()
         },
         // AMP-PE: `b0` is overridden from scan metadata by the qsm-core dispatcher.
         amp_pe: qsm_core::inversion::AmpPeParams {
