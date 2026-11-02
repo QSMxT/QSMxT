@@ -1132,10 +1132,10 @@ pub struct ResharpParamArgs {
     /// RESHARP Tikhonov regularization parameter
     #[arg(long)]
     pub resharp_tik_reg: Option<f64>,
-    /// RESHARP CG convergence tolerance
+    /// RESHARP conjugate gradients squared (CGS) relative tolerance
     #[arg(long)]
     pub resharp_tol: Option<f64>,
-    /// RESHARP maximum CG iterations
+    /// RESHARP maximum CGS iterations
     #[arg(long)]
     pub resharp_max_iter: Option<usize>,
 }
@@ -2706,10 +2706,10 @@ pub struct BgremoveResharpArgs {
     /// Tikhonov regularization parameter
     #[arg(long)]
     pub tik_reg: Option<f64>,
-    /// CG convergence tolerance
+    /// Conjugate gradients squared (CGS) relative tolerance
     #[arg(long)]
     pub tol: Option<f64>,
-    /// Maximum CG iterations
+    /// Maximum CGS iterations
     #[arg(long)]
     pub max_iter: Option<usize>,
 }
@@ -3352,6 +3352,15 @@ pub struct InvertTfiArgs {
     /// the echo times), or a time in ms (default: spacing)
     #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
     pub te: Option<qsmxt_engine::EchoTimeChoice>,
+    /// Dipole kernel on a grid with an odd number of voxels along an axis: default samples the
+    /// dipole on the Fourier grid; original samples it half a frequency step off, as the original
+    /// implementation does, for comparison with it. Identical on even grids (default: default)
+    #[arg(long, value_enum, value_name = "KERNEL")]
+    pub kernel: Option<TfiKernelArg>,
+    /// Arithmetic: double, or single as the original implementation runs, for comparison with
+    /// it (default: double)
+    #[arg(long, value_enum, value_name = "PRECISION")]
+    pub precision: Option<TfiPrecisionArg>,
 }
 
 #[derive(Parser, Debug)]
@@ -4387,6 +4396,36 @@ impl From<SharpVariantArg> for qsm_core::bgremove::SharpVariant {
         match a {
             SharpVariantArg::Sepia => Self::Sepia,
             SharpVariantArg::Qsmjl => Self::QsmJl,
+        }
+    }
+}
+
+/// `qsmxt invert tfi --kernel`.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum TfiKernelArg {
+    Default, Original,
+}
+
+impl From<TfiKernelArg> for qsm_core::inversion::TfiKernel {
+    fn from(a: TfiKernelArg) -> Self {
+        match a {
+            TfiKernelArg::Default => Self::Dft,
+            TfiKernelArg::Original => Self::MediOddGrid,
+        }
+    }
+}
+
+/// `qsmxt invert tfi --precision`.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum TfiPrecisionArg {
+    Double, Single,
+}
+
+impl From<TfiPrecisionArg> for qsm_core::inversion::TfiPrecision {
+    fn from(a: TfiPrecisionArg) -> Self {
+        match a {
+            TfiPrecisionArg::Double => Self::Double,
+            TfiPrecisionArg::Single => Self::Single,
         }
     }
 }

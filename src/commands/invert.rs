@@ -596,6 +596,8 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol: args.tol.unwrap_or(d.tol),
                 te: args.te.map_or(d.te, Into::into),
+                kernel: args.kernel.map_or(d.kernel, Into::into),
+                precision: args.precision.map_or(d.precision, Into::into),
                 ..d
             };
             let config = qsm_core::pipeline::InversionConfig { tfi, ..config_for(A::Tfi) };
