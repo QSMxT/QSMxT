@@ -10,7 +10,7 @@ use log::info;
 use super::common::{load_mask, load_nifti_4d, save_nifti, MultiEcho};
 use crate::cli::{
     B0EstimationArg, B0WeightTypeArg, FieldmapCommand, FieldmapCommonArgs, FieldmapLaplacianArgs,
-    FieldmapRomeoArgs,
+    FieldmapPreludeArgs, FieldmapRomeoArgs,
 };
 use crate::error::QsmxtError;
 use crate::cli::LaplacianSolverArg;
@@ -158,6 +158,11 @@ pub fn execute(cmd: FieldmapCommand) -> crate::Result<()> {
                 &|c| apply_laplacian(&args, solver, c),
             )
         }
+        FieldmapCommand::Prelude(args) => run_field_mapping(
+            &args.common,
+            qsm_core::pipeline::config::UnwrappingAlgorithm::Prelude,
+            &|c| apply_prelude(&args, c),
+        ),
     }
 }
 
@@ -189,6 +194,16 @@ fn apply_romeo(args: &FieldmapRomeoArgs, c: &mut qsm_core::pipeline::config::Fie
     }
     c.bipolar_correction = args.bipolar_correction;
     c.romeo_params = args.romeo_params.to_romeo_params();
+}
+
+/// `fieldmap prelude`'s own flags: phase offset removal and bipolar correction as with ROMEO.
+fn apply_prelude(args: &FieldmapPreludeArgs, c: &mut qsm_core::pipeline::config::FieldMappingConfig) {
+    if let Some(v) = args.phase_offset_removal { c.phase_offset_removal = v; }
+    if let Some(ref s) = args.phase_offset_sigma_mm {
+        if s.len() == 3 { c.phase_offset_sigma_mm = [s[0], s[1], s[2]]; }
+    }
+    c.bipolar_correction = args.bipolar_correction;
+    c.prelude_params = args.prelude_params.to_prelude_params();
 }
 
 /// The qsm-core field-mapping configuration for these flags. Starts from QSMxT's defaults — the
@@ -431,6 +446,49 @@ mod tests {
             let pipeline = qsmxt_engine::to_pipeline_stages(&config).0;
             assert_eq!(format!("{standalone:?}"), format!("{pipeline:?}"), "flags {flags:?}");
         }
+    }
+
+    /// `qsmxt fieldmap prelude` and `qsmxt run --unwrapping-algorithm prelude` build the same
+    /// field-mapping configuration from the same flags, PRELUDE's settings included.
+    #[test]
+    fn fieldmap_prelude_matches_run_for_the_same_flags() {
+        use clap::Parser;
+        let flag_sets: &[&[&str]] = &[
+            &[],
+            &["--prelude-labelling", "volume", "--prelude-partitions", "6"],
+            &["--prelude-labelling", "slices", "--phase-offset-sigma-mm", "2", "2", "1", "--bipolar-correction"],
+            &["--phase-offset-removal", "false", "--b0-estimation", "linear-fit"],
+        ];
+        for flags in flag_sets {
+            let mut fm = vec!["qsmxt", "fieldmap", "prelude", "p.nii", "--mask", "m.nii", "--output", "o.nii",
+                              "--tes", "0.005", "0.01", "--b0", "3"];
+            fm.extend_from_slice(flags);
+            let cli = crate::cli::Cli::try_parse_from(&fm).unwrap();
+            let crate::cli::Command::Fieldmap { command: FieldmapCommand::Prelude(args) } = cli.command else { panic!() };
+            let standalone = super::field_mapping_config(
+                &args.common, qsm_core::pipeline::config::UnwrappingAlgorithm::Prelude,
+                &|c| super::apply_prelude(&args, c));
+            assert_eq!(standalone.unwrapping_algorithm, qsm_core::pipeline::config::UnwrappingAlgorithm::Prelude);
+
+            let mut run = vec!["qsmxt", "run", "bids", "--unwrapping-algorithm", "prelude"];
+            run.extend_from_slice(flags);
+            let cli = crate::cli::Cli::try_parse_from(&run).unwrap();
+            let crate::cli::Command::Run(r) = cli.command else { panic!() };
+            let mut config = qsmxt_engine::PipelineConfig::default();
+            crate::pipeline::config::apply_run_overrides(&mut config, &r.pipeline).unwrap();
+            let pipeline = qsmxt_engine::to_pipeline_stages(&config).0;
+            assert_eq!(format!("{standalone:?}"), format!("{pipeline:?}"), "flags {flags:?}");
+        }
+        let cli = crate::cli::Cli::try_parse_from(["qsmxt", "fieldmap", "prelude", "p.nii", "--mask", "m.nii",
+            "--output", "o.nii", "--prelude-labelling", "volume", "--prelude-partitions", "6"]).unwrap();
+        let crate::cli::Command::Fieldmap { command: FieldmapCommand::Prelude(args) } = cli.command else { panic!() };
+        assert_eq!(args.prelude_params.to_prelude_params(), qsm_core::unwrap::PreludeParams {
+            num_phase_partitions: 6, labelling: qsm_core::unwrap::PreludeLabelling::Volume,
+            ..Default::default()
+        });
+        // No partitions is refused at the command line.
+        assert!(crate::cli::Cli::try_parse_from(["qsmxt", "fieldmap", "prelude", "p.nii", "--mask", "m.nii",
+            "--output", "o.nii", "--prelude-partitions", "0"]).is_err());
     }
 
     /// Write a minimal 4D float32 NIfTI (dim[0]=4) with per-echo volumes.

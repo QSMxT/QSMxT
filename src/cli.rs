@@ -1279,6 +1279,33 @@ impl RomeoParamArgs {
     }
 }
 
+/// PRELUDE's settings (`--unwrapping-algorithm prelude`), shared by `qsmxt run`, `qsmxt unwrap
+/// prelude` and `qsmxt fieldmap prelude`.
+#[derive(Args, Debug, Default, Clone)]
+pub struct PreludeParamArgs {
+    /// PRELUDE: how the initial regions are labelled (default: auto)
+    #[arg(long, value_enum)]
+    pub prelude_labelling: Option<PreludeLabellingArg>,
+    /// PRELUDE: number of phase partitions the initial regions are formed from (default: 8)
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u64).range(1..))]
+    pub prelude_partitions: Option<u64>,
+}
+
+impl PreludeParamArgs {
+    /// Apply these flags onto a PRELUDE configuration: the one place they are read.
+    pub fn apply_to(&self, p: &mut qsmxt_engine::PreludeConfig) {
+        if let Some(l) = self.prelude_labelling { p.labelling = l.into(); }
+        if let Some(n) = self.prelude_partitions { p.num_phase_partitions = n as usize; }
+    }
+
+    /// `qsm_core::unwrap::PreludeParams` for these flags, from the defaults.
+    pub fn to_prelude_params(&self) -> qsm_core::unwrap::PreludeParams {
+        let mut p = qsmxt_engine::PreludeConfig::default();
+        self.apply_to(&mut p);
+        (&p).into()
+    }
+}
+
 /// N4's settings (`--inhomogeneity-method n4`), shared by `qsmxt run` and `qsmxt homogeneity`.
 #[derive(Args, Debug, Default, Clone)]
 pub struct N4ParamArgs {
@@ -1642,6 +1669,8 @@ pub struct PipelineArgs {
     pub iharperella_params: IharperellaParamArgs,
     #[command(flatten)]
     pub romeo_params: RomeoParamArgs,
+    #[command(flatten)]
+    pub prelude_params: PreludeParamArgs,
     #[command(flatten)]
     pub swi_params: SwiParamArgs,
     #[command(flatten)]
@@ -2375,6 +2404,8 @@ pub enum UnwrapCommand {
     Romeo(UnwrapRomeoArgs),
     /// Laplacian-based unwrapping
     Laplacian(UnwrapLaplacianArgs),
+    /// PRELUDE region-merging unwrapping
+    Prelude(UnwrapPreludeArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -2394,6 +2425,14 @@ pub struct UnwrapRomeoArgs {
 pub struct UnwrapLaplacianArgs {
     #[command(flatten)]
     pub common: UnwrapCommonArgs,
+}
+
+#[derive(Parser, Debug)]
+pub struct UnwrapPreludeArgs {
+    #[command(flatten)]
+    pub common: UnwrapCommonArgs,
+    #[command(flatten)]
+    pub prelude_params: PreludeParamArgs,
 }
 
 // ── Fieldmap ──
@@ -2496,6 +2535,8 @@ pub enum FieldmapCommand {
     Romeo(FieldmapRomeoArgs),
     /// Laplacian-based multi-echo field mapping (per-echo unwrap + echo combination)
     Laplacian(FieldmapLaplacianArgs),
+    /// PRELUDE-based multi-echo field mapping (phase offset removal + per-echo unwrap + B0 fit)
+    Prelude(FieldmapPreludeArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -2537,6 +2578,24 @@ pub struct FieldmapLaplacianArgs {
     // unwrapping, so they are intentionally not exposed here. Each echo is unwrapped on its
     // own and the echoes are then combined by b0-estimation / b0-weight-type / linear-fit-*
     // on `common` (see `qsmxt_engine::fieldmap`).
+}
+
+#[derive(Parser, Debug)]
+pub struct FieldmapPreludeArgs {
+    #[command(flatten)]
+    pub common: FieldmapCommonArgs,
+    /// Enable phase offset removal for multi-echo data (default: true)
+    #[arg(long)]
+    pub phase_offset_removal: Option<bool>,
+    /// Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command
+    /// line's)
+    #[arg(long, num_args = 3)]
+    pub phase_offset_sigma_mm: Option<Vec<f64>>,
+    /// Enable bipolar gradient correction (requires >= 3 echoes)
+    #[arg(long)]
+    pub bipolar_correction: bool,
+    #[command(flatten)]
+    pub prelude_params: PreludeParamArgs,
 }
 
 // ── Bgremove ──
@@ -4364,7 +4423,28 @@ pub enum OutputSpaceArg {
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum UnwrapAlgorithmArg {
-    Romeo, Laplacian,
+    Romeo, Laplacian, Prelude,
+}
+
+/// `--prelude-labelling`.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum PreludeLabellingArg {
+    /// FSL prelude's default: slice by slice above 64 voxels in-plane, else over the whole volume
+    Auto,
+    /// Label regions slice by slice (FSL prelude --labelslices)
+    Slices,
+    /// Label regions over the whole volume (FSL prelude -f)
+    Volume,
+}
+
+impl From<PreludeLabellingArg> for qsmxt_engine::PreludeLabelling {
+    fn from(a: PreludeLabellingArg) -> Self {
+        match a {
+            PreludeLabellingArg::Auto => Self::Auto,
+            PreludeLabellingArg::Slices => Self::Slices,
+            PreludeLabellingArg::Volume => Self::Volume,
+        }
+    }
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

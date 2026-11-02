@@ -84,7 +84,35 @@ impl fmt::Display for SeparationAlgorithm {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
-pub enum UnwrappingAlgorithm { Romeo, Laplacian }
+pub enum UnwrappingAlgorithm { Romeo, Laplacian, Prelude }
+
+/// How PRELUDE labels its initial regions (qsm-core's `PreludeLabelling`).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum PreludeLabelling {
+    /// FSL prelude's default: slice by slice when the volume is over 64 voxels along x or y,
+    /// otherwise over the whole volume.
+    #[default]
+    Auto,
+    /// Slice by slice (FSL `--labelslices`).
+    Slices,
+    /// Over the whole volume (FSL `-f`).
+    Volume,
+}
+impl fmt::Display for PreludeLabelling {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", match self { Self::Auto => "auto", Self::Slices => "slices", Self::Volume => "volume" })
+    }
+}
+impl From<PreludeLabelling> for qsm_core::unwrap::PreludeLabelling {
+    fn from(l: PreludeLabelling) -> Self {
+        match l {
+            PreludeLabelling::Auto => Self::Auto,
+            PreludeLabelling::Slices => Self::Slices,
+            PreludeLabelling::Volume => Self::Volume,
+        }
+    }
+}
 
 /// Poisson solver behind Laplacian unwrapping (QSM.jl's `solver` names).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
@@ -110,7 +138,7 @@ impl fmt::Display for LaplacianSolver {
 }
 impl fmt::Display for UnwrappingAlgorithm {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", match self { Self::Romeo => "romeo", Self::Laplacian => "laplacian" })
+        write!(f, "{}", match self { Self::Romeo => "romeo", Self::Laplacian => "laplacian", Self::Prelude => "prelude" })
     }
 }
 

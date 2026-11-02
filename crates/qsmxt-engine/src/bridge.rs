@@ -170,12 +170,14 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         unwrapping_algorithm: match cfg.field_mapping.unwrapping_algorithm {
             UnwrappingAlgorithm::Romeo => PUnwrap::Romeo,
             UnwrappingAlgorithm::Laplacian => PUnwrap::Laplacian,
+            UnwrappingAlgorithm::Prelude => PUnwrap::Prelude,
         },
         phase_offset_removal: cfg.field_mapping.phase_offset_removal,
         phase_offset_sigma_mm: cfg.field_mapping.phase_offset_sigma_mm,
-        // Bipolar correction follows ROMEO's phase offset removal; Laplacian unwrapping has none.
+        // Bipolar correction follows the phase offset removal of ROMEO and PRELUDE; Laplacian
+        // unwrapping has none.
         bipolar_correction: cfg.field_mapping.bipolar_correction
-            && cfg.field_mapping.unwrapping_algorithm == UnwrappingAlgorithm::Romeo,
+            && cfg.field_mapping.unwrapping_algorithm != UnwrappingAlgorithm::Laplacian,
         b0_estimation: match cfg.field_mapping.b0_estimation {
             B0Estimation::WeightedAvg => PB0Method::WeightedAvg {
                 weighting: map_b0_weight_type(&cfg.field_mapping),
@@ -214,6 +216,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         },
         laplacian_unmasked: cfg.field_mapping.laplacian_unmasked,
         romeo_params: (&cfg.field_mapping.romeo).into(),
+        prelude_params: (&cfg.field_mapping.prelude).into(),
     };
 
     let bg_removal = PBgRemoval {
@@ -968,6 +971,28 @@ mod tests {
         let (fm, _, _, _) = to_pipeline_stages(&cfg);
         assert!(fm.laplacian_unmasked);
         assert_eq!(fm.unwrapping_algorithm, PUnwrap::Laplacian);
+    }
+
+    /// PRELUDE reaches qsm-core with its labelling and partitions; `correct_global` stays at
+    /// qsm-core's default, and bipolar correction applies as with ROMEO.
+    #[test]
+    fn prelude_reaches_core() {
+        let mut cfg = PipelineConfig::default();
+        assert_eq!(to_pipeline_stages(&cfg).0.prelude_params, qsm_core::unwrap::PreludeParams::default());
+        cfg.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Prelude;
+        cfg.field_mapping.prelude.labelling = PreludeLabelling::Volume;
+        cfg.field_mapping.prelude.num_phase_partitions = 6;
+        cfg.field_mapping.bipolar_correction = true;
+        let (fm, _, _, _) = to_pipeline_stages(&cfg);
+        assert_eq!(fm.unwrapping_algorithm, PUnwrap::Prelude);
+        assert_eq!(fm.prelude_params, qsm_core::unwrap::PreludeParams {
+            num_phase_partitions: 6,
+            labelling: qsm_core::unwrap::PreludeLabelling::Volume,
+            correct_global: qsm_core::unwrap::PreludeParams::default().correct_global,
+        });
+        assert!(fm.bipolar_correction);
+        cfg.field_mapping.prelude.labelling = PreludeLabelling::Slices;
+        assert_eq!(to_pipeline_stages(&cfg).0.prelude_params.labelling, qsm_core::unwrap::PreludeLabelling::Slices);
     }
 
     /// QSMART's echo fit reaches qsm-core with the unwrapping, phase offset removal and bipolar

@@ -135,14 +135,14 @@ pub fn coil_params(config: &PipelineConfig, meta: &RunMetadata, coil_numbers: &[
 
 /// Uncombined coils' echoes combined by MCPC-3D-S on the acquired grid: `phases[coil][echo]` in
 /// radians and `magnitudes` likewise. Each coil's phase offset is estimated from the difference of
-/// the first two echoes, unwrapped with ROMEO (or the Laplacian, when that is the run's unwrapper).
+/// the first two echoes, unwrapped with the run's unwrapper (PRELUDE at qsm-core's defaults).
 pub fn combine_coils(
     phases: &[Vec<Vec<f64>>], magnitudes: &[Vec<Vec<f64>>], meta: &RunMetadata, config: &PipelineConfig,
 ) -> Result<qsm_core::fieldmap::CoilCombinationResult, EngineError> {
-    let unwrap = if config.field_mapping.unwrapping_algorithm == crate::enums::UnwrappingAlgorithm::Laplacian {
-        qsm_core::unwrap::UnwrapMethod::Laplacian
-    } else {
-        qsm_core::unwrap::UnwrapMethod::Romeo
+    let unwrap = match config.field_mapping.unwrapping_algorithm {
+        crate::enums::UnwrappingAlgorithm::Romeo => qsm_core::unwrap::UnwrapMethod::Romeo,
+        crate::enums::UnwrappingAlgorithm::Laplacian => qsm_core::unwrap::UnwrapMethod::Laplacian,
+        crate::enums::UnwrappingAlgorithm::Prelude => qsm_core::unwrap::UnwrapMethod::Prelude,
     };
     Ok(qsm_core::fieldmap::mcpc3ds_combine(
         phases, magnitudes, &meta.echo_times, config.field_mapping.coil_combination_sigma, [0, 1], unwrap,
