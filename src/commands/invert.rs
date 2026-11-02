@@ -517,6 +517,7 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 max_iter_l1: args.max_iter_l1.unwrap_or(d.max_iter_l1),
                 max_iter_l2: args.max_iter_l2.unwrap_or(d.max_iter_l2),
                 tol_update: args.tol_update.unwrap_or(d.tol_update),
+                ..d
             };
             let config = qsm_core::pipeline::InversionConfig { hdqsm, ..config_for(A::Hdqsm) };
             let out = invert_with(&args.common, f64::NAN, &[], Magnitude::Combined(&args.magnitude), config, "HD-QSM")?;
