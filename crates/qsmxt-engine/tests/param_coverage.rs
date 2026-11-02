@@ -71,8 +71,9 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     cover!(q::inversion::MediParams => c::MediConfig, ignore: ["b0", "echo_times"]);
     assert_eq!(field_names::<q::inversion::MsmvParams>(), ["prefilter", "maxk", "vessel_radius"],
                "MsmvParams changed: expose it in MediConfig's msmv_* settings");
-    // b0/echo_times come from scan metadata.
-    cover!(q::inversion::TfiParams => c::TfiConfig, ignore: ["b0", "echo_times"]);
+    // b0/echo_times come from scan metadata. `kernel`/`precision` are parity switches, offered
+    // only on `qsmxt invert tfi`; the pipeline keeps QSM.rs's defaults.
+    cover!(q::inversion::TfiParams => c::TfiConfig, ignore: ["b0", "echo_times", "kernel", "precision"]);
     // normalize_weight: AMP-PE's solution does not depend on the weight's scale (QSM.rs #253), so
     // it is left off rather than offered.
     cover!(q::inversion::AmpPeParams => c::AmpPeConfig, ignore: ["normalize_weight"]);
