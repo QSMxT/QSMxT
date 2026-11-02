@@ -651,6 +651,12 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         },
         lbv_params: crate::cli::LbvParamArgs {
             lbv_tol: parse_optional_f64(&ps.lbv_tol),
+            lbv_depth: parse_optional_usize(&ps.lbv_depth),
+            lbv_peel: parse_optional_usize(&ps.lbv_peel),
+            lbv_n1: parse_optional_usize(&ps.lbv_n1),
+            lbv_n2: parse_optional_usize(&ps.lbv_n2),
+            lbv_n3: parse_optional_usize(&ps.lbv_n3),
+            lbv_precision: qsmxt_engine::LbvPrecision::ALL.get(ps.lbv_precision).copied(),
         },
         ismv_params: crate::cli::IsmvParamArgs {
             ismv_variant: qsmxt_engine::IsmvVariant::ALL.get(ps.ismv_variant).copied(),

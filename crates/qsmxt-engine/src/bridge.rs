@@ -233,7 +233,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             tol: cfg.bg_removal.pdf.tol, n_cg: cfg.bg_removal.pdf.n_cg,
             space: cfg.bg_removal.pdf.space.into(), n_pad: cfg.bg_removal.pdf.n_pad,
         },
-        lbv: qsm_core::bgremove::LbvParams { tol: cfg.bg_removal.lbv.tol, max_iter: None },
+        lbv: cfg.bg_removal.lbv.params(),
         ismv: qsm_core::bgremove::IsmvParams {
             variant: cfg.bg_removal.ismv.variant.into(),
             tol: cfg.bg_removal.ismv.tol,

@@ -425,7 +425,10 @@ fn bg_removal_need(config: &PipelineConfig, s: &Scan) -> u64 {
             let p = config.bg_removal.pdf.n_pad;
             (217 + 8 * s.echoes) * n + 34 * padded_voxels(s, [p, p, p])
         }
-        BfAlgorithm::Lbv => 37 * n,
+        // LBV: the field in radians, the multigrid's levels (right-hand side, solution and
+        // residual on each, about 8/7 of the volume in all), the interior's indices and the result
+        // (qsm-core's peak, counted by allocation: 50 B a voxel in double precision, 36 in single).
+        BfAlgorithm::Lbv => 68 * n,
         BfAlgorithm::Ismv => 114 * n,
         BfAlgorithm::Sharp => 59 * n,
         BfAlgorithm::Resharp => 123 * n,

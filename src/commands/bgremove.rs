@@ -8,7 +8,7 @@ type Removed = (Vec<f64>, qsm_core::io::NiftiData, Vec<u8>);
 /// Remove the background of `c.input` inside `c.mask` with `config` through qsm-core's pipeline
 /// dispatcher ([`qsm_core::pipeline::run_bg_removal`]), as `qsmxt run` does. `scan` and
 /// `magnitude` are the scan's field strength and echo times and every echo's magnitude, for the
-/// method that takes them (PDF); `None` otherwise. Returns the local field (ppm), its geometry
+/// methods that take them (PDF both, LBV the scan); `None` otherwise. Returns the local field (ppm), its geometry
 /// and the mask it is defined on.
 fn remove_with(
     c: &BgremoveCommonArgs, config: qsm_core::pipeline::BgRemovalConfig,
@@ -34,7 +34,7 @@ fn remove_with(
         dims: field_nifti.dims,
         voxel_size: field_nifti.voxel_size,
         echo_times,
-        // Only PDF reads it (for its noise map), and takes it with the echo times.
+        // Only PDF (its noise map) and LBV (its tolerance's units) read it, with the echo times.
         field_strength: scan.map_or(f64::NAN, |s| s.field_strength),
         b0_direction: (c.b0_direction[0], c.b0_direction[1], c.b0_direction[2]),
         slice_geometry: None,
@@ -133,10 +133,21 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             (args.common, out)
         }
         BgremoveCommand::Lbv(args) => {
+            // LBV's tolerance is in radians over the echo spacing, so it takes the scan's field
+            // strength and echo times.
             let d = bg::LbvParams::default();
-            let lbv = bg::LbvParams { tol: args.tol.unwrap_or(d.tol), ..d };
+            let lbv = bg::LbvParams {
+                tol: args.tol.unwrap_or(d.tol),
+                depth: args.depth.or(d.depth),
+                peel: args.peel.unwrap_or(d.peel),
+                n1: args.n1.unwrap_or(d.n1),
+                n2: args.n2.unwrap_or(d.n2),
+                n3: args.n3.unwrap_or(d.n3),
+                precision: args.precision.map_or(d.precision, Into::into),
+                ..d
+            };
             let config = qsm_core::pipeline::BgRemovalConfig { lbv, ..config_for(A::Lbv) };
-            let out = remove_with(&args.common, config, None, &[], "LBV")?;
+            let out = remove_with(&args.common, config, Some(&args.scan), &[], "LBV")?;
             (args.common, out)
         }
         BgremoveCommand::Ismv(args) => {

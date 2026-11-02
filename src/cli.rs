@@ -847,6 +847,12 @@ pub fn parse_ilsqr_precision(s: &str) -> Result<qsmxt_engine::IlsqrPrecision, St
         .ok_or_else(|| format!("expected double or single, got '{s}'"))
 }
 
+/// LBV's arithmetic: `double` or `single`.
+pub fn parse_lbv_precision(s: &str) -> Result<qsmxt_engine::LbvPrecision, String> {
+    qsmxt_engine::LbvPrecision::ALL.into_iter().find(|p| p.as_str() == s.trim())
+        .ok_or_else(|| format!("expected double or single, got '{s}'"))
+}
+
 /// A WH-QSM data weight: `flat`, `max-normalised` or `in-vivo`.
 pub fn parse_whqsm_weight(s: &str) -> Result<qsmxt_engine::WhqsmWeight, String> {
     qsmxt_engine::WhqsmWeight::ALL.into_iter().find(|w| w.as_str() == s.trim())
@@ -1090,9 +1096,28 @@ pub struct PdfParamArgs {
 
 #[derive(Args, Debug, Default, Clone)]
 pub struct LbvParamArgs {
-    /// LBV tolerance
+    /// LBV tolerance: stop the coarsest grid's relaxation when its summed absolute update falls
+    /// below this, in radians over the echo spacing (default: 0.01)
     #[arg(long)]
     pub lbv_tol: Option<f64>,
+    /// LBV coarsest multigrid level, at most 8 (default: log2 of the smallest dimension minus 3)
+    #[arg(long, value_name = "LEVEL")]
+    pub lbv_depth: Option<usize>,
+    /// LBV boundary layers removed from the mask beyond the first (default: 0)
+    #[arg(long, value_name = "LAYERS")]
+    pub lbv_peel: Option<usize>,
+    /// LBV relaxations on each grid before the coarser grid (default: 30)
+    #[arg(long)]
+    pub lbv_n1: Option<usize>,
+    /// LBV relaxations on each grid after the coarser grid (default: 100)
+    #[arg(long)]
+    pub lbv_n2: Option<usize>,
+    /// LBV relaxations on the finest grid at the end (default: 100)
+    #[arg(long)]
+    pub lbv_n3: Option<usize>,
+    /// LBV arithmetic: double, or single as the original implementation (default: double)
+    #[arg(long, value_name = "PRECISION", value_parser = parse_lbv_precision)]
+    pub lbv_precision: Option<qsmxt_engine::LbvPrecision>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -2656,9 +2681,30 @@ pub struct BgremovePdfArgs {
 pub struct BgremoveLbvArgs {
     #[command(flatten)]
     pub common: BgremoveCommonArgs,
-    /// Tolerance
+    #[command(flatten)]
+    pub scan: ScanParamArgs,
+    /// Tolerance: stop the coarsest grid's relaxation when its summed absolute update falls below
+    /// this, in radians over the echo spacing (default: 0.01)
     #[arg(long)]
     pub tol: Option<f64>,
+    /// Coarsest multigrid level, at most 8 (default: log2 of the smallest dimension minus 3)
+    #[arg(long, value_name = "LEVEL")]
+    pub depth: Option<usize>,
+    /// Boundary layers removed from the mask beyond the first (default: 0)
+    #[arg(long, value_name = "LAYERS")]
+    pub peel: Option<usize>,
+    /// Relaxations on each grid before the coarser grid (default: 30)
+    #[arg(long)]
+    pub n1: Option<usize>,
+    /// Relaxations on each grid after the coarser grid (default: 100)
+    #[arg(long)]
+    pub n2: Option<usize>,
+    /// Relaxations on the finest grid at the end (default: 100)
+    #[arg(long)]
+    pub n3: Option<usize>,
+    /// Arithmetic: double, or single as the original implementation (default: double)
+    #[arg(long, value_name = "PRECISION", value_parser = parse_lbv_precision)]
+    pub precision: Option<qsmxt_engine::LbvPrecision>,
 }
 
 #[derive(Parser, Debug)]

@@ -717,7 +717,24 @@ impl PdfConfig {
         Ok(())
     }
 }
-param_config!(LbvConfig from qsm_core::bgremove::LbvParams { tol: f64 });
+// LBV (LBV.m + mexMGv6): `tol` stops the coarsest-grid relaxation on the summed absolute update,
+// in radians over the echo spacing; `depth` `None` is automatic (log2 of the smallest dimension
+// minus 3); `peel`: boundary layers removed beyond the first; `n1`/`n2`: relaxations per level
+// before/after the coarser grid, `n3` on the finest grid at the end; `precision`: double (default)
+// or the original's single. qsm-core's dispatcher fills in the scan's echo times and field
+// strength; the radian conversion uses the echo spacing, as LBV.m's input does.
+param_config!(LbvConfig from qsm_core::bgremove::LbvParams {
+    tol: f64, depth: Option<usize>, peel: usize, n1: usize, n2: usize, n3: usize, precision: LbvPrecision
+});
+impl LbvConfig {
+    /// qsm-core's parameters (the scan's field strength and echo times are filled in later).
+    pub fn params(&self) -> qsm_core::bgremove::LbvParams {
+        qsm_core::bgremove::LbvParams {
+            tol: self.tol, depth: self.depth, peel: self.peel, n1: self.n1, n2: self.n2, n3: self.n3,
+            precision: self.precision.into(), ..Default::default()
+        }
+    }
+}
 // iSMV: `max_iter` `None` is no cap; `radius` `None` (mm) is the variant's own: 6 × the smallest
 // voxel dimension for Wen 2014, 2 × the largest for QSM.jl.
 param_config!(IsmvConfig from qsm_core::bgremove::IsmvParams {

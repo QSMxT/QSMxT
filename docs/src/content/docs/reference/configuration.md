@@ -178,7 +178,8 @@ A file without it is read as follows, and what changed is logged:
 - **Settings whose meaning changed** are refused when they hold anything but today's
   default and their method runs: TGV's `alpha0`/`alpha1` (now in radians at the echo time
   `inversion.tgv.te` picks, the first by default, and the field strength), MEDI's and TFI's `lambda` (now MEDI_L1's data
-  weight), and `field_mapping.phase_offset_sigma` (now `phase_offset_sigma_mm`, in mm).
+  weight), LBV's `tol` (now the multigrid's coarsest-grid tolerance, in radians over the echo
+  spacing), and `field_mapping.phase_offset_sigma` (now `phase_offset_sigma_mm`, in mm).
   The message says what changed. Give the value in the new terms and add `schema_version`
   with the current version at the top, or remove the setting to use the default. When the
   method does not run, the value is dropped with a note.
@@ -188,7 +189,8 @@ A file without it is read as follows, and what changed is logged:
   runs; in a full config file, sizes at the earlier defaults take today's.
 - Settings an earlier file does not have (each method's echo time `te`, WH-QSM's `weight`,
   NLTV's `rho` and `tol_newton`, RTS's `tau` and `gamma`, PDF's `n_cg`, `space` and `n_pad`,
-  HARPERELLA's and iHARPERELLA's `pad`) take today's defaults.
+  LBV's `depth`, `peel`, `n1`, `n2`, `n3` and `precision`, HARPERELLA's and iHARPERELLA's `pad`)
+  take today's defaults.
 - Settings that no longer exist are ignored, with a warning where that changes what a
   run does (for example `bg_removal.msmv_refine`: mSMV is now MEDI's option,
   `inversion.medi.msmv`).
