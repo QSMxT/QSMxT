@@ -366,6 +366,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             config.field_mapping.unwrapping_algorithm = match a {
                 cli::UnwrapAlgorithmArg::Romeo => UnwrappingAlgorithm::Romeo,
                 cli::UnwrapAlgorithmArg::Laplacian => UnwrappingAlgorithm::Laplacian,
+                cli::UnwrapAlgorithmArg::Prelude => UnwrappingAlgorithm::Prelude,
             };
         }
 
@@ -432,6 +433,8 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
 
         // ── ROMEO weights and unwrapping options ──
         args.romeo_params.apply_to(&mut config.field_mapping.romeo);
+        // ── PRELUDE ──
+        args.prelude_params.apply_to(&mut config.field_mapping.prelude);
 
         // ── QSM reference ──
         // Anything that is not `mean` or `none` is a region spec; whether it names real labels

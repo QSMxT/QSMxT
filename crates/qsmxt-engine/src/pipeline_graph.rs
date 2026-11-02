@@ -701,6 +701,7 @@ impl Ctx<'_> {
                 let label = match fm.unwrapping_algorithm {
                     UnwrappingAlgorithm::Romeo => "ROMEO",
                     UnwrappingAlgorithm::Laplacian => "Laplacian",
+                    UnwrappingAlgorithm::Prelude => "PRELUDE",
                 };
                 let mut s = Vec::new();
                 if removes_offsets {

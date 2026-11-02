@@ -974,4 +974,30 @@ mod range_tests {
         c.field_mapping.unwrapping_algorithm = crate::UnwrappingAlgorithm::Laplacian;
         assert!(shown(&c));
     }
+
+    /// PRELUDE's settings are shown only with PRELUDE, ROMEO's only with ROMEO; phase offset
+    /// removal and bipolar correction are shown with PRELUDE as with ROMEO. A partition count
+    /// below 1 is refused.
+    #[test]
+    fn prelude_settings_are_gated_on_prelude() {
+        let shown = |c: &PipelineConfig, path: &str| settings_view(c, &ViewFacts::default()).iter()
+            .any(|v| v.path == path && v.visible);
+        let mut c = PipelineConfig::default();
+        assert!(!shown(&c, "field_mapping.prelude.labelling") && !shown(&c, "field_mapping.prelude.num_phase_partitions"));
+        assert!(shown(&c, "field_mapping.romeo.individual"));
+        c.field_mapping.unwrapping_algorithm = crate::UnwrappingAlgorithm::Prelude;
+        for path in ["field_mapping.prelude.labelling", "field_mapping.prelude.num_phase_partitions",
+                     "field_mapping.phase_offset_removal", "field_mapping.bipolar_correction"] {
+            assert!(shown(&c, path), "{path}");
+        }
+        for path in ["field_mapping.romeo.individual", "field_mapping.romeo.correct_global", "field_mapping.laplacian_solver"] {
+            assert!(!shown(&c, path), "{path}");
+        }
+        assert_eq!(get(&c, "field_mapping.prelude.labelling"), Some(serde_json::json!("auto")));
+        set(&mut c, "field_mapping.prelude.labelling", serde_json::json!("volume")).unwrap();
+        assert_eq!(c.field_mapping.prelude.labelling, crate::PreludeLabelling::Volume);
+        assert!(check_ranges(&c).is_ok());
+        c.field_mapping.prelude.num_phase_partitions = 0;
+        assert!(check_ranges(&c).is_err());
+    }
 }

@@ -120,7 +120,7 @@ pub fn slice_chopping_json(c: &qsm_core::complex::SliceChopping) -> serde_json::
 
 /// The coil combination's parameters (the `scale_phase` step's, for uncombined coils).
 pub fn coil_params(config: &PipelineConfig, meta: &RunMetadata, coil_numbers: &[u32]) -> serde_json::Value {
-    serde_json::json!({
+    let mut p = serde_json::json!({
         "coil_combination": "mcpc3ds",
         "n_coils": coil_numbers.len(),
         "n_echoes": meta.n_echoes,
@@ -130,20 +130,38 @@ pub fn coil_params(config: &PipelineConfig, meta: &RunMetadata, coil_numbers: &[
         "hip_unwrapping": format!("{}", config.field_mapping.unwrapping_algorithm),
         "echo_times": meta.echo_times,
         "resampled_to_axial": meta.source_geometry.is_some(),
-    })
+    });
+    // PRELUDE's settings reach the HIP unwrap (`hip_unwrap_method`), so they key the step; only
+    // when PRELUDE runs, so other runs keep their keys.
+    if let qsm_core::unwrap::UnwrapMethod::Prelude(pp) = hip_unwrap_method(config) {
+        p["prelude"] = serde_json::json!({
+            "labelling": pp.labelling.id(),
+            "num_phase_partitions": pp.num_phase_partitions,
+        });
+    }
+    p
+}
+
+/// How MCPC-3D-S unwraps the HIP when combining coils: with the run's unwrapper, and with
+/// PRELUDE's configured settings when that is PRELUDE.
+pub fn hip_unwrap_method(config: &PipelineConfig) -> qsm_core::unwrap::UnwrapMethod {
+    match config.field_mapping.unwrapping_algorithm {
+        crate::enums::UnwrappingAlgorithm::Romeo => qsm_core::unwrap::UnwrapMethod::Romeo,
+        crate::enums::UnwrappingAlgorithm::Laplacian => qsm_core::unwrap::UnwrapMethod::Laplacian,
+        crate::enums::UnwrappingAlgorithm::Prelude => {
+            qsm_core::unwrap::UnwrapMethod::Prelude((&config.field_mapping.prelude).into())
+        }
+    }
 }
 
 /// Uncombined coils' echoes combined by MCPC-3D-S on the acquired grid: `phases[coil][echo]` in
 /// radians and `magnitudes` likewise. Each coil's phase offset is estimated from the difference of
-/// the first two echoes, unwrapped with ROMEO (or the Laplacian, when that is the run's unwrapper).
+/// the first two echoes, unwrapped with the run's unwrapper and its settings
+/// ([`hip_unwrap_method`]).
 pub fn combine_coils(
     phases: &[Vec<Vec<f64>>], magnitudes: &[Vec<Vec<f64>>], meta: &RunMetadata, config: &PipelineConfig,
 ) -> Result<qsm_core::fieldmap::CoilCombinationResult, EngineError> {
-    let unwrap = if config.field_mapping.unwrapping_algorithm == crate::enums::UnwrappingAlgorithm::Laplacian {
-        qsm_core::unwrap::UnwrapMethod::Laplacian
-    } else {
-        qsm_core::unwrap::UnwrapMethod::Romeo
-    };
+    let unwrap = hip_unwrap_method(config);
     Ok(qsm_core::fieldmap::mcpc3ds_combine(
         phases, magnitudes, &meta.echo_times, config.field_mapping.coil_combination_sigma, [0, 1], unwrap,
         &acquired_grid(meta),
@@ -206,6 +224,53 @@ mod tests {
             assert!(!negates_real_imaginary_phase(Some(m)), "{m}");
         }
         assert!(!negates_real_imaginary_phase(None));
+    }
+
+    /// PRELUDE's labelling and partitions reach MCPC-3D-S's HIP unwrap and key the step; other
+    /// unwrappers' keys carry no PRELUDE settings.
+    #[test]
+    fn coil_combination_runs_prelude_with_the_configured_settings() {
+        use crate::enums::{PreludeLabelling, UnwrappingAlgorithm};
+        let (nx, ny, nz) = (12, 6, 4);
+        let mut m = meta((nx, ny, nz));
+        m.n_echoes = 2;
+        m.echo_times = vec![0.005, 0.010];
+        let n = nx * ny * nz;
+        // Two coils, a field steep enough that the HIP wraps, and per-coil offsets.
+        type Coils = Vec<Vec<Vec<f64>>>;
+        let (phases, mags): (Coils, Coils) = (0..2)
+            .map(|c| {
+                let p = m.echo_times.iter().map(|&te| (0..n).map(|i| {
+                    let t = 500.0 * ((i % nx) as f64 - 5.5) * te + 0.7 * c as f64;
+                    t.sin().atan2(t.cos())
+                }).collect()).collect();
+                let a = (0..2).map(|_| (0..n).map(|i| 1.0 + ((i + c) % 3) as f64).collect()).collect();
+                (p, a)
+            })
+            .unzip();
+        let mut cfg = PipelineConfig::default();
+        cfg.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Prelude;
+        assert_eq!(hip_unwrap_method(&cfg), qsm_core::unwrap::UnwrapMethod::Prelude(Default::default()));
+        let default_run = combine_coils(&phases, &mags, &m, &cfg).unwrap();
+        let default_key = coil_params(&cfg, &m, &[1, 2]);
+        assert_eq!(default_key["prelude"]["num_phase_partitions"], 8);
+
+        cfg.field_mapping.prelude.num_phase_partitions = 1;
+        cfg.field_mapping.prelude.labelling = PreludeLabelling::Volume;
+        let want = qsm_core::unwrap::PreludeParams {
+            num_phase_partitions: 1,
+            labelling: qsm_core::unwrap::PreludeLabelling::Volume,
+            ..Default::default()
+        };
+        assert_eq!(hip_unwrap_method(&cfg), qsm_core::unwrap::UnwrapMethod::Prelude(want));
+        let set_run = combine_coils(&phases, &mags, &m, &cfg).unwrap();
+        assert_ne!(set_run.phases, default_run.phases, "the settings did not reach the HIP unwrap");
+        let key = coil_params(&cfg, &m, &[1, 2]);
+        assert_eq!(key["prelude"], serde_json::json!({"labelling": "volume", "num_phase_partitions": 1}));
+        assert_ne!(key, default_key);
+
+        cfg.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Romeo;
+        assert!(coil_params(&cfg, &m, &[1, 2]).get("prelude").is_none());
     }
 
     #[test]

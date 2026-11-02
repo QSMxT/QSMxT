@@ -12,6 +12,9 @@
 //!   `--b0-weight-type` mean the same as with ROMEO.
 //! * **`assumed-decay` weighting** is qsm-core's `B0WeightType::AssumedDecay`.
 //! * The **FFT Laplacian solver** is qsm-core's `LaplacianSolver::Fft`.
+//! * **PRELUDE** (`--unwrapping-algorithm prelude`) unwraps each echo on its own and aligns whole
+//!   turns between echoes, in qsm-core; phase offset removal and bipolar correction apply as with
+//!   ROMEO.
 //!
 //! * A **single Laplacian echo** is masked and demeaned, and **`linear-fit`** aligns the
 //!   Laplacian per-echo constants first (QSM.rs#167).
@@ -172,6 +175,7 @@ mod tests {
             FieldMappingConfig { b0_estimation: weighted(W::AssumedDecay { t2star_s: 0.040 }), ..lap.clone() },
             FieldMappingConfig { b0_estimation: B0EstimationMethod::LinearFit(LinearFitParams::default()), ..lap },
             FieldMappingConfig::default(),
+            FieldMappingConfig { unwrapping_algorithm: UnwrappingAlgorithm::Prelude, ..Default::default() },
             FieldMappingConfig { phase_offset_removal: false, b0_estimation: weighted(W::TEs), ..Default::default() },
             FieldMappingConfig {
                 phase_offset_removal: false, b0_estimation: B0EstimationMethod::RobustFit(Default::default()),

@@ -960,6 +960,39 @@ impl From<&RomeoConfig> for qsm_core::unwrap::RomeoParams {
     }
 }
 
+/// PRELUDE's settings (qsm-core's `PreludeParams`). `correct_global` stays at qsm-core's default.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct PreludeConfig {
+    /// Number of equal bins the phase range is cut into to form the initial regions.
+    pub num_phase_partitions: usize,
+    /// How the initial regions are labelled.
+    pub labelling: PreludeLabelling,
+}
+impl Default for PreludeConfig {
+    fn default() -> Self {
+        let p = qsm_core::unwrap::PreludeParams::default();
+        Self {
+            num_phase_partitions: p.num_phase_partitions,
+            labelling: match p.labelling {
+                qsm_core::unwrap::PreludeLabelling::Auto => PreludeLabelling::Auto,
+                qsm_core::unwrap::PreludeLabelling::Slices => PreludeLabelling::Slices,
+                qsm_core::unwrap::PreludeLabelling::Volume => PreludeLabelling::Volume,
+            },
+        }
+    }
+}
+
+impl From<&PreludeConfig> for qsm_core::unwrap::PreludeParams {
+    fn from(p: &PreludeConfig) -> Self {
+        Self {
+            num_phase_partitions: p.num_phase_partitions,
+            labelling: p.labelling.into(),
+            ..Self::default()
+        }
+    }
+}
+
 /// The patch of a SynthSeg sliding window, or `None` for the whole volume.
 pub(crate) fn synthseg_patch(inference: qsm_core::segment::SynthSegInference) -> Option<usize> {
     match inference {
@@ -1357,6 +1390,9 @@ pub struct FieldMappingConfig {
     /// phase inside the mask either way.
     pub laplacian_unmasked: bool,
     pub romeo: RomeoConfig,
+    /// PRELUDE's settings, used with `unwrapping_algorithm = "prelude"`.
+    #[serde(default)]
+    pub prelude: PreludeConfig,
     /// MEDI's complex fit (`b0_estimation = "complex-fit"`).
     #[serde(default)]
     pub complex_fit: ComplexFitConfig,
@@ -1507,6 +1543,7 @@ impl Default for FieldMappingConfig {
             laplacian_fft_pad: default_laplacian_fft_pad(),
             laplacian_unmasked: qsm_core::pipeline::FieldMappingConfig::default().laplacian_unmasked,
             romeo: RomeoConfig::default(),
+            prelude: PreludeConfig::default(),
             complex_fit: ComplexFitConfig::default(),
             linear_fit: LinearFitConfig::default(),
             robust_fit: RobustFitConfig::default(),
