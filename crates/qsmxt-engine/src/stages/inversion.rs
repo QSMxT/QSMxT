@@ -72,7 +72,8 @@ pub enum MagnitudeInput {
     /// by the magnitude.
     Combined,
     /// Every echo's magnitude, stacked with the echo slowest: MEDI and TFI, which make their
-    /// edge mask and noise map (MEDI toolbox `Fit_ppm_complex`) from the echoes.
+    /// edge mask and noise map (MEDI toolbox `Fit_ppm_complex`) from the echoes, and HD-QSM,
+    /// which weights by their echo-time-weighted combination (the paper's Eq. 2).
     Echoes,
 }
 
@@ -81,8 +82,8 @@ pub enum MagnitudeInput {
 pub fn magnitude_input(config: &PipelineConfig) -> Option<MagnitudeInput> {
     use QsmAlgorithm as A;
     match config.inversion.algorithm {
-        A::Medi | A::Tfi => Some(MagnitudeInput::Echoes),
-        A::Nltv | A::Ndi | A::Fansi | A::FansiTgv | A::L1qsm | A::Hdqsm | A::AmpPe | A::Lsqr => {
+        A::Medi | A::Tfi | A::Hdqsm => Some(MagnitudeInput::Echoes),
+        A::Nltv | A::Ndi | A::Fansi | A::FansiTgv | A::L1qsm | A::AmpPe | A::Lsqr => {
             Some(MagnitudeInput::Combined)
         }
         // WH-QSM weights by the magnitude only with a magnitude weight (WH_nlTV's default is flat).

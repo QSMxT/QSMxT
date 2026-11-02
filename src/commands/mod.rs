@@ -114,6 +114,7 @@ mod integration_tests {
                 harperella_params: Default::default(),
                 iharperella_params: Default::default(),
                 romeo_params: Default::default(),
+                prelude_params: Default::default(),
                 swi_params: Default::default(),
                 smwi_params: Default::default(),
                 segmentation_params: Default::default(),
@@ -830,6 +831,26 @@ mod integration_tests {
 
         super::unwrap::execute(UnwrapCommand::Laplacian(UnwrapLaplacianArgs {
             common: common_unwrap(phase, mask, output.clone()),
+        })).unwrap();
+        assert!(output.exists());
+    }
+
+    /// `qsmxt unwrap prelude` unwraps one 3D phase with its settings and writes the result.
+    #[test]
+    fn test_unwrap_prelude() {
+        let dir = tempfile::tempdir().unwrap();
+        let phase = dir.path().join("phase.nii");
+        let mask = dir.path().join("mask.nii");
+        let output = dir.path().join("unwrapped.nii");
+        testutils::write_phase(&phase);
+        testutils::write_mask(&mask);
+
+        super::unwrap::execute(UnwrapCommand::Prelude(crate::cli::UnwrapPreludeArgs {
+            common: common_unwrap(phase, mask, output.clone()),
+            prelude_params: crate::cli::PreludeParamArgs {
+                prelude_labelling: Some(crate::cli::PreludeLabellingArg::Volume),
+                prelude_partitions: Some(6),
+            },
         })).unwrap();
         assert!(output.exists());
     }
@@ -3396,7 +3417,7 @@ mod multiorient_tests {
         super::combine::execute(CombineCommand::Mcpc3ds(CombineMcpc3dsArgs {
             phase: phases, magnitude: mags, output: d.join(unc.basename()),
             tes: Some(vec![0.005, 0.010]), num_echoes: None, sigma: None,
-            hip_unwrapping: UnwrapAlgorithmArg::Laplacian,
+            hip_unwrapping: UnwrapAlgorithmArg::Laplacian, prelude_params: Default::default(),
         })).unwrap();
         for e in 1..=2 {
             exists(name(pipeline.combined_phase_path(&unc, e)));

@@ -50,6 +50,21 @@ pub fn execute(cmd: UnwrapCommand) -> crate::Result<()> {
             save_nifti(&args.common.output, &unwrapped, &phase_nifti)?;
             info!("Unwrapped phase saved to {}", args.common.output.display());
         }
+        UnwrapCommand::Prelude(args) => {
+            let phase_nifti = load_nifti(&args.common.input)?;
+            let (mask, _) = load_mask(&args.common.mask)?;
+            let grid = super::common::nifti_grid(&phase_nifti);
+            let mut phase_data = phase_nifti.data.clone();
+            phase::scale_phase_to_pi(&mut phase_data);
+            info!("Unwrapping phase (PRELUDE, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
+
+            let params = args.prelude_params.to_prelude_params();
+            debug!("PRELUDE params: {:?}", params);
+            let unwrapped = qsm_core::unwrap::unwrap_prelude(&phase_data, &mask, &grid, &params);
+
+            save_nifti(&args.common.output, &unwrapped, &phase_nifti)?;
+            info!("Unwrapped phase saved to {}", args.common.output.display());
+        }
     }
     Ok(())
 }

@@ -1305,6 +1305,7 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("do_qsm", "pipeline.do_qsm"),
     ("unwrapping_algorithm", "field_mapping.unwrapping_algorithm"), ("laplacian_solver", "field_mapping.laplacian_solver"),
     ("laplacian_fft_pad", "field_mapping.laplacian_fft_pad"), ("laplacian_unmasked", "field_mapping.laplacian_unmasked"),
+    ("prelude_labelling", "field_mapping.prelude.labelling"), ("prelude_partitions", "field_mapping.prelude.num_phase_partitions"),
     ("qsm_per_echo", "qsm.per_echo"), ("phase_offset_removal", "field_mapping.phase_offset_removal"),
     ("phase_offset_sigma_mm", "field_mapping.phase_offset_sigma_mm"), ("bipolar_correction", "field_mapping.bipolar_correction"),
     ("romeo_individual", "field_mapping.romeo.individual"), ("romeo_template", "field_mapping.romeo.template"),
@@ -1591,6 +1592,7 @@ const QSM_ALGO_HELP: &[&str] = &[
 const UNWRAP_HELP: &[&str] = &[
     "ROMEO region-growing unwrapping — https://doi.org/10.1002/mrm.28563",
     "Laplacian phase unwrapping (FFT-based) — https://doi.org/10.1364/OL.28.001194",
+    "PRELUDE region-merging unwrapping, each echo on its own — https://doi.org/10.1002/mrm.10354",
 ];
 const BF_HELP: &[&str] = &[
     "Variable-kernel SHARP (V-SHARP) — https://doi.org/10.1002/mrm.23000",
@@ -1723,6 +1725,10 @@ pub struct PipelineFormState {
     /// Laplacian unwrapping of the raw phase over the whole volume
     /// (`field_mapping.laplacian_unmasked`).
     pub laplacian_unmasked: bool,
+    /// Index into [`PRELUDE_LABELLING_OPTIONS`] (0 = auto, 1 = slices, 2 = volume).
+    pub prelude_labelling: usize,
+    /// PRELUDE's number of phase partitions.
+    pub prelude_partitions: String,
     /// Motion correction (off by default): reference index into [`MOTION_REFERENCE_OPTIONS`]
     /// (0 first, 1 last, 2 a given echo), and the rigid registration's settings.
     pub motion_correction: bool,
@@ -2248,6 +2254,9 @@ impl Default for PipelineFormState {
             laplacian_solver: 0, // dct
             laplacian_fft_pad: qsmxt_engine::default_laplacian_fft_pad()[0].to_string(),
             laplacian_unmasked: qsmxt_engine::FieldMappingConfig::default().laplacian_unmasked,
+            prelude_labelling: PRELUDE_LABELLING_OPTIONS.iter()
+                .position(|o| *o == qsmxt_engine::PreludeConfig::default().labelling.to_string()).unwrap_or(0),
+            prelude_partitions: qsmxt_engine::PreludeConfig::default().num_phase_partitions.to_string(),
             motion_correction: false,
             orientation_registration: true,
             multi_orientation_force: false,
@@ -2667,7 +2676,7 @@ const QSMART_INV_HELP: &[&str] = &[
     "Nonlinear Total Variation (NLTV)",
     "Morphology Enabled Dipole Inversion (MEDI)",
 ];
-pub const UNWRAP_OPTIONS: &[&str] = &["romeo", "laplacian"];
+pub const UNWRAP_OPTIONS: &[&str] = &["romeo", "laplacian", "prelude"];
 pub const BF_OPTIONS: &[&str] = &["vsharp", "pdf", "lbv", "ismv", "sharp", "resharp", "harperella", "iharperella", "bfrnet", "iqfm"];
 pub const B0_ESTIMATION_OPTIONS: &[&str] = &["weighted-avg", "linear-fit", "robust-fit", "qsmart-echofit", "complex-fit"];
 pub const ROBUST_FIT_LOSS_OPTIONS: &[&str] = &["tukey", "huber"];
@@ -2676,6 +2685,12 @@ const ROBUST_FIT_LOSS_HELP: &[&str] = &[
     "Huber: caps an outlying echo's influence but never rejects it",
 ];
 pub const LAPLACIAN_SOLVER_OPTIONS: &[&str] = &["dct", "fft", "mirror"];
+pub const PRELUDE_LABELLING_OPTIONS: &[&str] = &["auto", "slices", "volume"];
+const PRELUDE_LABELLING_HELP: &[&str] = &[
+    "As FSL prelude chooses: slice by slice above 64 voxels in-plane, else over the whole volume (default)",
+    "Label regions slice by slice (FSL prelude --labelslices)",
+    "Label regions over the whole volume (FSL prelude -f)",
+];
 pub const QSMART_VESSEL_MAGNITUDE_OPTIONS: &[&str] = &["mean-n4", "combined"];
 const QSMART_VESSEL_MAGNITUDE_HELP: &[&str] = &[
     "Mean over echoes, N4 bias-corrected, as QSMART prepares it (default)",
@@ -3135,6 +3150,7 @@ impl PipelineFormState {
     pub(crate) fn field_map_rows(&self, rows: &mut Vec<PipelineRow>) {
         let (_, field_mapping_all) = self.field_mapping_runs();
         let is_laplacian = self.unwrapping_algorithm == 1;
+        let is_romeo = self.unwrapping_algorithm == 0;
         if !field_mapping_all {
             rows.push(PipelineRow::Note { text: "Applies to multi-echo data only: TGV reconstructs a single echo from its wrapped phase".into() });
         }
@@ -3166,9 +3182,17 @@ impl PipelineFormState {
                 help: "Unwrap the raw phase over the whole volume, as QSMART does, instead of the phase set to zero outside the brain mask",
             });
         }
+        if self.unwrapping_algorithm == 2 {
+            rows.push(PipelineRow::AlgoSelect {
+                label: "  Labelling", field: "prelude_labelling",
+                options: PRELUDE_LABELLING_OPTIONS, help: PRELUDE_LABELLING_HELP,
+            });
+            rows.push(PipelineRow::Param { label: "  Phase partitions", field: "prelude_partitions",
+                help: "Number of phase bins the initial regions are formed from (default 8)" });
+        }
 
-        // ROMEO's own settings, phase offset removal (HIP — ROMEO only) among them. MEDI's complex
-        // fit fits its own phase offset, so none are removed first.
+        // Phase offset removal (HIP), with ROMEO and PRELUDE; then ROMEO's own settings. MEDI's
+        // complex fit fits its own phase offset, so none are removed first.
         let removes_offsets = combines && !self.b0_estimation_is("complex-fit");
         if !is_laplacian {
             if removes_offsets {
@@ -3186,6 +3210,8 @@ impl PipelineFormState {
                     help: "Remove the linear phase artefact of bipolar readout gradients (needs at least 3 echoes; fewer: skipped)",
                 });
             }
+        }
+        if is_romeo {
             rows.push(PipelineRow::Toggle {
                 label: "  Individual mode", field: "romeo_individual",
                 help: "Unwrap each echo independently (recommended). Off = template-based temporal unwrapping.",
@@ -3850,7 +3876,7 @@ impl PipelineFormState {
         "whqsm_alpha1", "whqsm_mu1", "whqsm_mu2", "whqsm_beta", "whqsm_muh", "whqsm_max_iter", "whqsm_tol_update", "whqsm_tol_delta",
         "hdqsm_alpha_l2", "hdqsm_mu1_l2", "hdqsm_mu2", "hdqsm_max_iter_l1", "hdqsm_max_iter_l2", "hdqsm_tol_update",
         "r2primenet_patch", "sep_chisepnet_patch", "sep_susepnet_patch",
-        "laplacian_fft_pad",
+        "laplacian_fft_pad", "prelude_partitions",
         "crop_margin_mm", "homogeneity_sigma_mm", "homogeneity_nbox", "coil_combination_sigma",
         "n4_shrink_factor", "n4_max_iterations", "n4_convergence_threshold", "n4_mesh", "n4_spline_order",
         "n4_bias_field_fwhm", "n4_wiener_noise", "n4_histogram_bins",
@@ -3929,6 +3955,7 @@ impl PipelineFormState {
             "heidi_laplacian_threshold" => &self.heidi_laplacian_threshold,
             "b0_weight_assumed_t2star_ms" => &self.b0_weight_assumed_t2star_ms,
             "laplacian_fft_pad" => &self.laplacian_fft_pad,
+            "prelude_partitions" => &self.prelude_partitions,
             "robust_fit_tuning" => &self.robust_fit_tuning,
             "robust_fit_iterations" => &self.robust_fit_iterations,
             "robust_fit_downweight_level" => &self.robust_fit_downweight_level,
@@ -4198,6 +4225,7 @@ impl PipelineFormState {
             "heidi_laplacian_threshold" => Some(&mut self.heidi_laplacian_threshold),
             "b0_weight_assumed_t2star_ms" => Some(&mut self.b0_weight_assumed_t2star_ms),
             "laplacian_fft_pad" => Some(&mut self.laplacian_fft_pad),
+            "prelude_partitions" => Some(&mut self.prelude_partitions),
             "robust_fit_tuning" => Some(&mut self.robust_fit_tuning),
             "robust_fit_iterations" => Some(&mut self.robust_fit_iterations),
             "robust_fit_downweight_level" => Some(&mut self.robust_fit_downweight_level),
@@ -4414,6 +4442,7 @@ impl PipelineFormState {
             "b0_estimation" => self.b0_estimation,
             "b0_weight_type" => self.b0_weight_type,
             "laplacian_solver" => self.laplacian_solver,
+            "prelude_labelling" => self.prelude_labelling,
             "qsmart_vessel_magnitude" => self.qsmart_vessel_magnitude,
             "qsmart_vessel_units" => self.qsmart_vessel_units,
             "qsmart_fit_threshold_mode" => self.qsmart_fit_threshold_mode,
@@ -4459,6 +4488,7 @@ impl PipelineFormState {
             "b0_estimation" => self.b0_estimation = val,
             "b0_weight_type" => self.b0_weight_type = val,
             "laplacian_solver" => self.laplacian_solver = val,
+            "prelude_labelling" => self.prelude_labelling = val,
             "qsmart_vessel_magnitude" => self.qsmart_vessel_magnitude = val,
             "qsmart_vessel_units" => self.qsmart_vessel_units = val,
             "qsmart_fit_threshold_mode" => self.qsmart_fit_threshold_mode = val,
@@ -8953,6 +8983,7 @@ mod tests {
             ("qsmart-inner", QSMART_INV_OPTIONS.len(), QSMART_INV_HELP.len()),
             ("unwrap", UNWRAP_OPTIONS.len(), UNWRAP_HELP.len()),
             ("laplacian-solver", LAPLACIAN_SOLVER_OPTIONS.len(), LAPLACIAN_SOLVER_HELP.len()),
+            ("prelude-labelling", PRELUDE_LABELLING_OPTIONS.len(), PRELUDE_LABELLING_HELP.len()),
             ("qsmart-vessel-magnitude", QSMART_VESSEL_MAGNITUDE_OPTIONS.len(), QSMART_VESSEL_MAGNITUDE_HELP.len()),
             ("qsmart-vessel-units", QSMART_VESSEL_UNITS_OPTIONS.len(), QSMART_VESSEL_UNITS_HELP.len()),
             ("qsmart-fit-threshold-mode", QSMART_FIT_THRESHOLD_MODE_OPTIONS.len(), QSMART_FIT_THRESHOLD_MODE_HELP.len()),
