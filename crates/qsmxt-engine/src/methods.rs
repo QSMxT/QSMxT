@@ -25,6 +25,25 @@ const CITE_LAPLACIAN_UNWRAP: Citation = Citation {
     text: "Schofield, M.A., Zhu, Y. (2003). \"Fast phase unwrapping algorithm for interferometric applications.\" *Optics Letters*, 28(14):1194-1196. https://doi.org/10.1364/OL.28.001194",
 };
 
+const CITE_PRELUDE: Citation = Citation {
+    key: "jenkinson2003",
+    text: "Jenkinson, M. (2003). \"Fast, automated, N-dimensional phase-unwrapping algorithm.\" *Magnetic Resonance in Medicine*, 49(1):193-197. https://doi.org/10.1002/mrm.10354",
+};
+
+/// PRELUDE's settings that differ from their defaults, as prose ("6 phase partitions").
+fn prelude_changes(fm: &FieldMappingConfig, d: &FieldMappingConfig) -> Changed {
+    let (p, pd) = (&fm.prelude, &d.prelude);
+    let mut changed = Changed::default();
+    changed.add(p.num_phase_partitions != pd.num_phase_partitions,
+        || format!("{} phase partition{}", p.num_phase_partitions, if p.num_phase_partitions == 1 { "" } else { "s" }));
+    changed.add(p.labelling != pd.labelling, || match p.labelling {
+        PreludeLabelling::Auto => "regions labelled slice by slice above 64 voxels in-plane".to_string(),
+        PreludeLabelling::Slices => "regions labelled slice by slice".to_string(),
+        PreludeLabelling::Volume => "regions labelled over the whole volume".to_string(),
+    });
+    changed
+}
+
 const CITE_UKB_QSM: Citation = Citation {
     key: "wang2022",
     text: "Wang, C., et al. (2022). \"Phenotypic and genetic associations of quantitative magnetic susceptibility in UK Biobank brain imaging.\" *Nature Neuroscience*, 25(6):818-831. https://doi.org/10.1038/s41593-022-01074-w",
@@ -1673,8 +1692,8 @@ fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
             "Before field mapping{scope}, every echo was rigidly co-registered to {reference} by maximising the normalised cross-correlation of the magnitude images over a multi-resolution pyramid{}, and the phase was resampled with it through the complex signal; the brain mask was restricted to voxels covered by every echo.",
             changed.paren()));
     }
-    // Phase offset removal and/or bipolar correction (ROMEO only: the Laplacian path skips both)
-    let romeo = fm.unwrapping_algorithm == UnwrappingAlgorithm::Romeo;
+    // Phase offset removal and/or bipolar correction (ROMEO and PRELUDE: the Laplacian path skips both)
+    let offsets_apply = fm.unwrapping_algorithm != UnwrappingAlgorithm::Laplacian;
     let sigma = if fm.phase_offset_sigma_mm.iter().zip(d.phase_offset_sigma_mm).any(|(a, b)| differs(*a, b)) {
         format!("; smoothing σ = {} mm",
             fm.phase_offset_sigma_mm.iter().map(|v| format!("{v}")).collect::<Vec<_>>().join(" × "))
@@ -1694,7 +1713,7 @@ fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
         describe_complex_fit(config, doc);
         return;
     }
-    match (fm.phase_offset_removal && romeo && !per_echo, fm.bipolar_correction && romeo && !per_echo) {
+    match (fm.phase_offset_removal && offsets_apply && !per_echo, fm.bipolar_correction && offsets_apply && !per_echo) {
         (true, true) => {
             doc.cite(&CITE_MCPC3DS);
             doc.cite(&CITE_BIPOLAR);
@@ -1744,6 +1763,12 @@ fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
             doc.cite(&CITE_LAPLACIAN_UNWRAP);
             doc.say(&[Stage::FieldMap], format!(
                 "Phase unwrapping was performed separately for each echo{whole} using the Laplacian method (Schofield & Zhu, 2003){solver}{pad}."));
+        }
+        UnwrappingAlgorithm::Prelude => {
+            doc.cite(&CITE_PRELUDE);
+            doc.say(&[Stage::FieldMap], format!(
+                "Phase unwrapping was performed separately for each echo using PRELUDE (Jenkinson, 2003){}.",
+                prelude_changes(fm, &d).with()));
         }
     }
 
@@ -1832,6 +1857,10 @@ fn describe_complex_fit(config: &PipelineConfig, doc: &mut Draft) {
             };
             doc.cite(&CITE_LAPLACIAN_UNWRAP);
             format!("the Laplacian method (Schofield & Zhu, 2003){solver}")
+        }
+        UnwrappingAlgorithm::Prelude => {
+            doc.cite(&CITE_PRELUDE);
+            format!("PRELUDE (Jenkinson, 2003){}", prelude_changes(fm, &d).with())
         }
     };
     doc.say(&[Stage::FieldMap], format!(
@@ -2241,15 +2270,18 @@ pub(crate) mod words {
     }
 
     /// ROMEO's settings that differ from their defaults; Laplacian unwrapping's solver, when it
-    /// is not the default one, and the raw phase, when it is unwrapped unmasked.
+    /// is not the default one, and the raw phase, when it is unwrapped unmasked; PRELUDE's
+    /// partitions and labelling, when they are not the defaults.
     pub(crate) fn unwrapping_settings(config: &PipelineConfig) -> Vec<String> {
         let (fm, d) = (&config.field_mapping, FieldMappingConfig::default());
         let mut c = Changed::default();
-        if fm.unwrapping_algorithm == UnwrappingAlgorithm::Romeo {
-            c.add_fields(&fm.romeo, &d.romeo, &[]);
-        } else {
-            c.add(fm.laplacian_solver != d.laplacian_solver, || format!("{} solver", fm.laplacian_solver));
-            c.add(fm.laplacian_unmasked != d.laplacian_unmasked, || "raw phase over the whole volume".to_string());
+        match fm.unwrapping_algorithm {
+            UnwrappingAlgorithm::Romeo => c.add_fields(&fm.romeo, &d.romeo, &[]),
+            UnwrappingAlgorithm::Laplacian => {
+                c.add(fm.laplacian_solver != d.laplacian_solver, || format!("{} solver", fm.laplacian_solver));
+                c.add(fm.laplacian_unmasked != d.laplacian_unmasked, || "raw phase over the whole volume".to_string());
+            }
+            UnwrappingAlgorithm::Prelude => c = prelude_changes(fm, &d),
         }
         c.0
     }
@@ -3039,6 +3071,36 @@ mod tests {
         config.field_mapping.romeo.individual = false;
         let out = generate_methods(&config);
         assert!(out.contains("using ROMEO (Dymerska et al., 2021) in template-based temporal mode."), "{out}");
+    }
+
+    /// PRELUDE at its defaults is stated plainly and cited; its settings are said only when
+    /// changed. Phase offset removal and bipolar correction are said as with ROMEO.
+    #[test]
+    fn test_prelude_methods() {
+        let mut config = PipelineConfig::default();
+        config.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Prelude;
+        let out = generate_methods(&config);
+        assert!(out.contains("Phase unwrapping was performed separately for each echo using PRELUDE (Jenkinson, 2003)."), "{out}");
+        assert!(out.contains("Jenkinson, M. (2003). \"Fast, automated, N-dimensional phase-unwrapping algorithm.\""), "{out}");
+        assert!(out.contains("https://doi.org/10.1002/mrm.10354"), "{out}");
+        assert!(out.contains("Phase offset removal"), "{out}");
+        for unsaid in ["using ROMEO", "partition", "labelled", "FSL", "STI", "Biobank"] {
+            assert!(!out.contains(unsaid), "{unsaid:?} in {out}");
+        }
+        config.field_mapping.bipolar_correction = true;
+        assert!(generate_methods(&config).contains("bipolar gradient correction"));
+
+        config.field_mapping.prelude.num_phase_partitions = 6;
+        let out = generate_methods(&config);
+        assert!(out.contains("using PRELUDE (Jenkinson, 2003) with 6 phase partitions."), "{out}");
+        config.field_mapping.prelude.labelling = PreludeLabelling::Volume;
+        let out = generate_methods(&config);
+        assert!(out.contains("using PRELUDE (Jenkinson, 2003) with 6 phase partitions and regions labelled over the whole volume."), "{out}");
+        config.field_mapping.prelude.num_phase_partitions = 8;
+        config.field_mapping.prelude.labelling = PreludeLabelling::Slices;
+        let out = generate_methods(&config);
+        assert!(out.contains("using PRELUDE (Jenkinson, 2003) with regions labelled slice by slice."), "{out}");
+        assert_eq!(words::unwrapping_settings(&config), ["regions labelled slice by slice"]);
     }
 
     #[test]

@@ -9,7 +9,7 @@ enum Magnitude<'a> {
     None,
     /// The combined magnitude (root-sum-of-squares over the echoes given): the data weight.
     Combined(&'a [std::path::PathBuf]),
-    /// Every echo's magnitude, stacked with the echo slowest (MEDI and TFI).
+    /// Every echo's magnitude, stacked with the echo slowest (MEDI, TFI and HD-QSM).
     Echoes(&'a [std::path::PathBuf]),
 }
 
@@ -517,9 +517,10 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 max_iter_l1: args.max_iter_l1.unwrap_or(d.max_iter_l1),
                 max_iter_l2: args.max_iter_l2.unwrap_or(d.max_iter_l2),
                 tol_update: args.tol_update.unwrap_or(d.tol_update),
+                ..d
             };
             let config = qsm_core::pipeline::InversionConfig { hdqsm, ..config_for(A::Hdqsm) };
-            let out = invert_with(&args.common, f64::NAN, &[], Magnitude::Combined(&args.magnitude), config, "HD-QSM")?;
+            let out = invert_with(&args.common, f64::NAN, &args.echo_times, Magnitude::Echoes(&args.magnitude), config, "HD-QSM")?;
             (args.common, out)
         }
         InvertCommand::AmpPe(args) => {
@@ -596,6 +597,8 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol: args.tol.unwrap_or(d.tol),
                 te: args.te.map_or(d.te, Into::into),
+                kernel: args.kernel.map_or(d.kernel, Into::into),
+                precision: args.precision.map_or(d.precision, Into::into),
                 ..d
             };
             let config = qsm_core::pipeline::InversionConfig { tfi, ..config_for(A::Tfi) };

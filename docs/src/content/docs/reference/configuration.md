@@ -99,7 +99,19 @@ laplacian_solver = "mirror"   # or "dct" (the default), "fft"
 laplacian_unmasked = true     # the raw phase over the whole volume (default false)
 ```
 
-`laplacian_unmasked = true` is `--laplacian-unmasked`. See
+`laplacian_unmasked = true` is `--laplacian-unmasked`. PRELUDE's are in
+`[field_mapping.prelude]`:
+
+```toml
+[field_mapping]
+unwrapping_algorithm = "prelude"
+
+[field_mapping.prelude]
+labelling = "volume"          # or "auto" (the default), "slices"; --prelude-labelling
+num_phase_partitions = 6      # default 8; --prelude-partitions
+```
+
+See
 [phase unwrapping](/QSMxT/reference/algorithms/#phase-unwrapping) for what each does.
 
 A method that converts the field to phase at one echo time has a `te` setting naming it:
@@ -178,8 +190,7 @@ A file without it is read as follows, and what changed is logged:
 - **Settings whose meaning changed** are refused when they hold anything but today's
   default and their method runs: TGV's `alpha0`/`alpha1` (now in radians at the echo time
   `inversion.tgv.te` picks, the first by default, and the field strength), MEDI's and TFI's `lambda` (now MEDI_L1's data
-  weight), LBV's `tol` (now the multigrid's coarsest-grid tolerance, in radians over the echo
-  spacing), and `field_mapping.phase_offset_sigma` (now `phase_offset_sigma_mm`, in mm).
+  weight), and `field_mapping.phase_offset_sigma` (now `phase_offset_sigma_mm`, in mm).
   The message says what changed. Give the value in the new terms and add `schema_version`
   with the current version at the top, or remove the setting to use the default. When the
   method does not run, the value is dropped with a note.
@@ -190,7 +201,9 @@ A file without it is read as follows, and what changed is logged:
 - Settings an earlier file does not have (each method's echo time `te`, WH-QSM's `weight`,
   NLTV's `rho` and `tol_newton`, RTS's `tau` and `gamma`, PDF's `n_cg`, `space` and `n_pad`,
   LBV's `depth`, `peel`, `n1`, `n2`, `n3` and `precision`, HARPERELLA's and iHARPERELLA's `pad`)
-  take today's defaults.
+  take today's defaults. LBV's `tol` is kept as written: an earlier file's 1e-6 (the old
+  solver's relative tolerance) now stops the multigrid's coarsest grid at 1e-6 radians, and the
+  recommendations suggest LBV.m's 0.01.
 - Settings that no longer exist are ignored, with a warning where that changes what a
   run does (for example `bg_removal.msmv_refine`: mSMV is now MEDI's option,
   `inversion.medi.msmv`).

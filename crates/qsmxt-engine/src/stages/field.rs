@@ -49,6 +49,12 @@ pub fn params(config: &PipelineConfig, meta: &RunMetadata) -> serde_json::Value 
         "laplacian_fft_pad": fm.laplacian_fft_pad,
         "laplacian_unmasked": fm.laplacian_unmasked,
     });
+    // PRELUDE and its settings, recorded only when it unwraps (the parameters of runs with
+    // another unwrapper stay as they were); with phase offset removal the step is not named for it.
+    if fm.unwrapping_algorithm == crate::enums::UnwrappingAlgorithm::Prelude {
+        params["unwrapping_algorithm"] = serde_json::json!("prelude");
+        params["prelude"] = serde_json::json!(fm.prelude);
+    }
     // A per-echo QSM's fields: each echo's own, without the echo combination.
     if crate::bridge::per_echo(config, meta.n_echoes) {
         params["per_echo"] = serde_json::json!(true);
@@ -176,6 +182,23 @@ mod tests {
         config.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
         assert_eq!(algorithm(&config, &meta(3)), "laplacian");
         assert_eq!(params(&config, &meta(3))["laplacian_echo_combination"], 2);
+    }
+
+    /// PRELUDE is named for the unwrap step as ROMEO is, and it and its settings are recorded in
+    /// the step's parameters; the parameters of the other unwrappers carry no PRELUDE settings.
+    #[test]
+    fn prelude_is_recorded_in_the_unwrap_step() {
+        let mut config = PipelineConfig::default();
+        assert!(params(&config, &meta(3)).get("prelude").is_none());
+        config.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Prelude;
+        assert_eq!(algorithm(&config, &meta(3)), "phase_offset_removal");
+        assert_eq!(algorithm(&config, &meta(1)), "prelude");
+        config.field_mapping.prelude.num_phase_partitions = 6;
+        config.field_mapping.prelude.labelling = crate::enums::PreludeLabelling::Slices;
+        let p = params(&config, &meta(3));
+        assert_eq!(p["unwrapping_algorithm"], "prelude");
+        assert_eq!(p["prelude"], serde_json::json!({ "num_phase_partitions": 6, "labelling": "slices" }));
+        assert_eq!(p["laplacian_echo_combination"], 0);
     }
 
     /// The unmasked Laplacian unwrapping is recorded in the unwrap step's parameters, so a field

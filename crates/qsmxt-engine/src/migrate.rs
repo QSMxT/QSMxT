@@ -11,9 +11,9 @@
 //!   setting. Any other value is kept as chosen.
 //! - **Any other file without `schema_version`** (hand-written, or a changed-settings file) holds
 //!   only what its author chose, so no value is reset.
-//! - **A setting whose meaning changed** (TGV's α, MEDI's and TFI's λ, LBV's tolerance, the
-//!   phase-offset smoothing, now in mm) is refused when it holds anything but today's default (or,
-//!   in a full file, an old default) and its method runs: the message says what changed and what to do,
+//! - **A setting whose meaning changed** (TGV's α, MEDI's and TFI's λ, the phase-offset
+//!   smoothing, now in mm) is refused when it holds anything but today's default (or, in a full
+//!   file, an old default) and its method runs: the message says what changed and what to do,
 //!   since converting it would need each scan's echo times, field strength or voxel size. When its
 //!   method does not run, the value is dropped with a note.
 //! - Settings that no longer exist are dropped, with a warning where dropping one changes what a
@@ -70,8 +70,6 @@ radius = [6.0]
 threshold = [0.05]
 [bg_removal.pdf]
 tol = [0.00001]
-[bg_removal.lbv]
-tol = [0.000001]
 [bg_removal.ismv]
 tol = [0.000001, 0.001]
 max_iter = [50, 500]
@@ -148,7 +146,6 @@ enum Changed {
     TgvAlpha,
     MediLambda,
     TfiLambda,
-    LbvTol,
 }
 
 const UNIT_CHANGES: &[(&str, Changed)] = &[
@@ -156,7 +153,6 @@ const UNIT_CHANGES: &[(&str, Changed)] = &[
     ("inversion.tgv.alpha1", Changed::TgvAlpha),
     ("inversion.medi.lambda", Changed::MediLambda),
     ("inversion.tfi.lambda", Changed::TfiLambda),
-    ("bg_removal.lbv.tol", Changed::LbvTol),
 ];
 
 /// Settings that no longer exist, and why: a warning when the file gives anything but the old
@@ -370,11 +366,10 @@ fn from_v1(value: &mut toml::Table, kind: Kind, out: &mut Migration) -> Result<(
     let full = kind != Kind::Partial;
     // Which methods this file runs, read before anything is taken out of it.
     let runs = |c: Changed| method_runs(value, &today, c);
-    let (tgv, medi, tfi, lbv) = (
+    let (tgv, medi, tfi) = (
         runs(Changed::TgvAlpha),
         runs(Changed::MediLambda),
         runs(Changed::TfiLambda),
-        runs(Changed::LbvTol),
     );
     let mcpc = {
         let s = |p: &str| get(value, p).or_else(|| get(&today, p)).cloned();
@@ -497,7 +492,6 @@ fn from_v1(value: &mut toml::Table, kind: Kind, out: &mut Migration) -> Result<(
             Changed::TgvAlpha => tgv,
             Changed::MediLambda => medi,
             Changed::TfiLambda => tfi,
-            Changed::LbvTol => lbv,
         };
         if !used {
             let v = take(value, &path).expect("present");
@@ -544,7 +538,6 @@ fn method_runs(value: &toml::Table, today: &toml::Table, changed: Changed) -> bo
         Changed::TgvAlpha => is("tgv"),
         Changed::MediLambda => is("medi"),
         Changed::TfiLambda => is("tfi"),
-        Changed::LbvTol => s("bg_removal.algorithm").as_deref() == Some("lbv"),
     }
 }
 
@@ -553,7 +546,6 @@ fn method_name(changed: Changed) -> &'static str {
         Changed::TgvAlpha => "TGV",
         Changed::MediLambda => "MEDI",
         Changed::TfiLambda => "TFI",
-        Changed::LbvTol => "LBV",
     }
 }
 
@@ -581,10 +573,6 @@ fn what_changed(changed: Changed, kind: Kind) -> String {
             "Earlier QSMxT versions passed λ to a solver of the field in radians at the first echo \
              time, weighted uniformly."
         }
-        (Changed::LbvTol, _) => {
-            "Earlier QSMxT versions stopped LBV's iterations when the largest change, relative to \
-             the field's largest value, fell below the tolerance."
-        }
     };
     format!("{source} {before}")
 }
@@ -603,10 +591,6 @@ fn consequence(changed: Changed) -> &'static str {
         Changed::TfiLambda =>
             "TFI's λ now weights the data term on the field in radians over the echo spacing, weighted \
              by the noise map, as MEDI_L1's does, so the same number is a much weaker fit.",
-        Changed::LbvTol =>
-            "LBV now solves by multigrid, as its authors' code does, and its tolerance stops the \
-             coarsest grid's relaxation on the summed absolute update, in radians over the echo \
-             spacing, so the same number stops it elsewhere.",
     }
 }
 
@@ -698,9 +682,11 @@ mod tests {
     #[test]
     fn a_full_old_file_at_its_defaults_reads_as_todays_defaults() {
         let (c, m) = read(V10_FULL).unwrap();
-        // DECOMPOSE's iteration limit is carried over as it is, its old default 30 included.
+        // DECOMPOSE's iteration limit is carried over as it is, its old default 30 included, and
+        // so is LBV's tolerance (the SOR solver's 1e-6; the rule lbv.tolerance suggests 0.01).
         let mut today = PipelineConfig::default();
         today.separation.decompose.lsqcurvefit.max_iterations = 30;
+        today.bg_removal.lbv.tol = 1e-6;
         assert_eq!(c, today);
         assert!(
             m.notes
@@ -918,19 +904,16 @@ mod tests {
         assert!(read(&inner).is_err());
     }
 
-    /// LBV's tolerance changed meaning (the SOR solver's relative stop → the multigrid's absolute
-    /// one, astewartau/QSM.rs#406): an old default takes today's, another value is refused when
-    /// LBV runs and dropped with a note when it does not.
+    /// LBV's tolerance is kept as written, even an earlier release's default (the SOR solver's
+    /// 1e-6): the rule `lbv.tolerance` suggests LBV.m's 0.01 instead (never a silent change).
     #[test]
-    fn an_old_lbv_tolerance() {
-        let (c, m) = read(&V10_FULL.replacen("[bg_removal]\nalgorithm = \"vsharp\"", "[bg_removal]\nalgorithm = \"lbv\"", 1)).unwrap();
-        assert_eq!(c.bg_removal.lbv.tol, 0.01);
-        assert!(m.notes.iter().any(|n| n.contains("bg_removal.lbv.tol = 0.000001") || n.contains("bg_removal.lbv.tol = 1e-6")), "{m:?}");
-        let e = read("[bg_removal]\nalgorithm = \"lbv\"\n[bg_removal.lbv]\ntol = 0.00002\n").unwrap_err().to_string();
-        assert!(e.contains("LBV now solves by multigrid"), "{e}");
-        let (c, m) = read("[bg_removal.lbv]\ntol = 0.00002\n").unwrap();
-        assert_eq!(c.bg_removal.lbv.tol, 0.01);
-        assert!(m.notes.iter().any(|n| n.contains("LBV does not run")), "{m:?}");
+    fn an_old_lbv_tolerance_is_kept() {
+        let full = V10_FULL.replacen("[bg_removal]\nalgorithm = \"vsharp\"", "[bg_removal]\nalgorithm = \"lbv\"", 1);
+        let (c, m) = read(&full).unwrap();
+        assert_eq!(c.bg_removal.lbv.tol, 1e-6);
+        assert!(!m.notes.iter().chain(&m.warnings).any(|n| n.contains("lbv")), "{m:?}");
+        let (c, _) = read("[bg_removal]\nalgorithm = \"lbv\"\n[bg_removal.lbv]\ntol = 0.00002\n").unwrap();
+        assert_eq!(c.bg_removal.lbv.tol, 2e-5);
     }
 
     /// A hand-written file holds what its author chose: today's MEDI λ is accepted silently, and
@@ -1160,9 +1143,10 @@ mod tests {
         let old: toml::Table = toml::from_str(V10_FULL).unwrap();
         let json = serde_json::to_string(&old).unwrap();
         let (c, m) = PipelineConfig::from_json_migrating(&json).unwrap();
-        // DECOMPOSE's iteration limit is carried over as it is, its old default 30 included.
+        // DECOMPOSE's iteration limit and LBV's tolerance are carried over as they are.
         let mut carried = PipelineConfig::default();
         carried.separation.decompose.lsqcurvefit.max_iterations = 30;
+        carried.bg_removal.lbv.tol = 1e-6;
         assert_eq!(c, carried);
         assert!(!m.notes.is_empty());
         let mut today = PipelineConfig::default();

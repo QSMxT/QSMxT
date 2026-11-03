@@ -139,8 +139,19 @@ pub(super) fn table() -> Vec<Def> {
         d("field_mapping.unwrapping_algorithm", FieldMap, "Unwrapping", "", Enum(vec![
             o("romeo", "romeo", "ROMEO", "ROMEO region-growing unwrapping — https://doi.org/10.1002/mrm.28563"),
             o("laplacian", "laplacian", "Laplacian", "Laplacian phase unwrapping (FFT-based) — https://doi.org/10.1364/OL.28.001194"),
+            o("prelude", "prelude", "PRELUDE", "PRELUDE region-merging unwrapping, each echo on its own — https://doi.org/10.1002/mrm.10354"),
         ])).basic().flag("--unwrapping-algorithm").full("Phase unwrapping")
         .gui("How the wrapped phase is unwrapped"),
+        d("field_mapping.prelude.labelling", FieldMap, "Labelling", "", Enum(vec![
+            o("auto", "auto", "Auto", "As FSL prelude chooses: slice by slice above 64 voxels in-plane, else over the whole volume (default)"),
+            o("slices", "slices", "Slices", "Label regions slice by slice (FSL prelude --labelslices)"),
+            o("volume", "volume", "Volume", "Label regions over the whole volume (FSL prelude -f)"),
+        ])).flag("--prelude-labelling").parent("field_mapping.unwrapping_algorithm")
+        .when(|x| x.prelude).full("PRELUDE labelling")
+        .gui("How PRELUDE labels its initial regions"),
+        d("field_mapping.prelude.num_phase_partitions", FieldMap, "Phase partitions", "Number of phase bins the initial regions are formed from (default 8)", Int).min(1.0).flag("--prelude-partitions").parent("field_mapping.unwrapping_algorithm")
+        .when(|x| x.prelude).full("PRELUDE phase partitions")
+        .gui("Number of phase bins the initial regions are formed from"),
         d("field_mapping.laplacian_solver", FieldMap, "Solver", "", Enum(vec![
             o("dct", "dct", "DCT", "Unweighted least squares, Neumann-boundary DCT solve (Ghiglia & Romero 1994; QSM.jl :dct) (default)"),
             o("fft", "fft", "FFT", "Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume"),
@@ -162,44 +173,44 @@ pub(super) fn table() -> Vec<Def> {
         d("field_mapping.bipolar_correction", FieldMap, "Bipolar correction", "Remove the linear phase artefact of bipolar readout gradients (needs at least 3 echoes; fewer: skipped)", Bool).flag("--bipolar-correction").parent("field_mapping.phase_offset_removal")
         .when(|x| x.combines && !x.laplacian && x.c.field_mapping.phase_offset_removal && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit),
         d("field_mapping.romeo.individual", FieldMap, "Individual mode", "Unwrap each echo independently (recommended). Off = template-based temporal unwrapping.", Bool).flag("--no-romeo-individual").parent("field_mapping.unwrapping_algorithm")
-        .when(|x| !x.laplacian).full("Unwrap echoes individually"),
+        .when(|x| x.romeo).full("Unwrap echoes individually"),
         // The config counts echoes from 0; the TUI and --romeo-template from 1.
         d("field_mapping.romeo.template", FieldMap, "Template echo", "Echo used for spatial unwrapping, counted from 0 (--romeo-template counts from 1)", Int).flag("--romeo-template").parent("field_mapping.romeo.individual")
-        .when(|x| !x.laplacian && !x.c.field_mapping.romeo.individual)
+        .when(|x| x.romeo && !x.c.field_mapping.romeo.individual)
         .gui("Echo used for spatial unwrapping, counted from 0"),
         d("field_mapping.romeo.correct_global", FieldMap, "Correct global", "Correct inter-echo 2π offsets after unwrapping", Bool).flag("--no-romeo-correct-global").parent("field_mapping.unwrapping_algorithm")
-        .when(|x| !x.laplacian).full("Correct global offsets"),
+        .when(|x| x.romeo).full("Correct global offsets"),
         d("field_mapping.romeo.phase_coherence", FieldMap, "Phase coherence", "Weight edges by neighbour phase coherence", Bool).flag("--no-romeo-phase-coherence").parent("field_mapping.unwrapping_algorithm")
-        .when(|x| !x.laplacian),
+        .when(|x| x.romeo),
         d("field_mapping.romeo.phase_gradient_coherence", FieldMap, "Phase gradient coherence", "Weight edges by inter-echo phase-gradient consistency (multi-echo)", Bool).flag("--no-romeo-phase-gradient-coherence").parent("field_mapping.unwrapping_algorithm")
-        .when(|x| !x.laplacian),
+        .when(|x| x.romeo),
         d("field_mapping.romeo.phase_linearity", FieldMap, "Phase linearity", "Weight edges by second-derivative smoothness", Bool).flag("--no-romeo-phase-linearity").parent("field_mapping.unwrapping_algorithm")
-        .when(|x| !x.laplacian),
+        .when(|x| x.romeo),
         d("field_mapping.romeo.mag_coherence", FieldMap, "Mag coherence", "Weight edges by neighbor magnitude coherence", Bool).flag("--no-romeo-mag-coherence").parent("field_mapping.unwrapping_algorithm")
-        .when(|x| !x.laplacian).full("Magnitude coherence")
+        .when(|x| x.romeo).full("Magnitude coherence")
         .gui("Weight edges by neighbour magnitude coherence"),
         d("field_mapping.romeo.mag_weight", FieldMap, "Mag weight", "Penalise low-signal voxels (off by default)", Bool).flag("--romeo-mag-weight").parent("field_mapping.unwrapping_algorithm")
-        .when(|x| !x.laplacian).full("Magnitude weight")
+        .when(|x| x.romeo).full("Magnitude weight")
         .gui("Penalise low-signal voxels"),
         d("field_mapping.romeo.mag_weight2", FieldMap, "Mag weight 2", "Penalise abnormally high signal / flow artefacts (off by default)", Bool).flag("--romeo-mag-weight2").parent("field_mapping.unwrapping_algorithm")
-        .when(|x| !x.laplacian).full("Magnitude weight 2")
+        .when(|x| x.romeo).full("Magnitude weight 2")
         .gui("Penalise abnormally high signal and flow artefacts"),
         d("field_mapping.romeo.bestpath", FieldMap, "Best-path weights", "Use Abdul-Rahman best-path weights instead of ROMEO weights", Bool).flag("--romeo-bestpath").parent("field_mapping.unwrapping_algorithm")
-        .when(|x| !x.laplacian),
+        .when(|x| x.romeo),
         d("field_mapping.romeo.temporal_uncertain_unwrapping", FieldMap, "Temporal uncertain", "Re-unwrap voxels whose temporal unwrapping is uncertain", Float)
         .value("Quality threshold", "Quality threshold (0, 1] below which a voxel is re-unwrapped").off(json!(0.0)).flag("--romeo-temporal-uncertain-unwrapping").parent("field_mapping.unwrapping_algorithm")
-        .when(|x| !x.laplacian).full("Temporal uncertain unwrapping"),
+        .when(|x| x.romeo).full("Temporal uncertain unwrapping"),
         d("field_mapping.romeo.max_seeds", FieldMap, "Max seeds", "Maximum number of seed regions (default 1)", Int).flag("--romeo-max-seeds").parent("field_mapping.unwrapping_algorithm")
-        .when(|x| !x.laplacian).full("Maximum seeds")
+        .when(|x| x.romeo).full("Maximum seeds")
         .gui("Maximum number of seed regions"),
         d("field_mapping.romeo.merge_regions", FieldMap, "Merge regions", "Merge neighboring regions after unwrapping", Bool).flag("--romeo-merge-regions").parent("field_mapping.unwrapping_algorithm")
-        .when(|x| !x.laplacian)
+        .when(|x| x.romeo)
         .gui("Merge neighbouring regions after unwrapping"),
         d("field_mapping.romeo.correct_regions", FieldMap, "Correct regions", "Shift each region's median to nearest 0 by n·2π", Bool).flag("--romeo-correct-regions").parent("field_mapping.unwrapping_algorithm")
-        .when(|x| !x.laplacian)
+        .when(|x| x.romeo)
         .gui("Shift each region by a multiple of 2π to bring its median nearest 0"),
         d("field_mapping.romeo.wrap_addition", FieldMap, "Wrap addition", "Extra phase tolerance beyond π for neighbor differences [0,π]", Float).flag("--romeo-wrap-addition").parent("field_mapping.unwrapping_algorithm")
-        .when(|x| !x.laplacian)
+        .when(|x| x.romeo)
         .gui("Extra phase tolerance beyond π for neighbour differences, from 0 to π"),
         // A per-echo QSM runs the field map, background removal, inversion and referencing on
         // each echo on its own: the settings that combine or compare echoes are out of play.
@@ -375,10 +386,10 @@ pub(super) fn table() -> Vec<Def> {
         d("bg_removal.resharp.tik_reg", Background, "Tik reg", "Tikhonov regularization parameter", Float).flag("--resharp-tik-reg").parent("bg_removal.algorithm")
         .when(|x| x.bf("resharp")).full("Tikhonov regularisation")
         .gui("Tikhonov regularisation parameter"),
-        d("bg_removal.resharp.tol", Background, "Tolerance", "CG convergence tolerance", Float).flag("--resharp-tol").parent("bg_removal.algorithm")
+        d("bg_removal.resharp.tol", Background, "Tolerance", "CGS relative tolerance", Float).flag("--resharp-tol").parent("bg_removal.algorithm")
         .when(|x| x.bf("resharp")),
-        // QSM.rs solvers/cg.rs: 0 iterations return x = 0, an all-zero local field.
-        d("bg_removal.resharp.max_iter", Background, "Max iter", "Maximum CG iterations", Int).min(1.0).flag("--resharp-max-iter").parent("bg_removal.algorithm")
+        // QSM.rs solvers/cgs.rs: 0 iterations return x = 0, an all-zero local field.
+        d("bg_removal.resharp.max_iter", Background, "Max iter", "Maximum CGS iterations", Int).min(1.0).flag("--resharp-max-iter").parent("bg_removal.algorithm")
         .when(|x| x.bf("resharp")).full("Maximum iterations"),
         d("bg_removal.harperella.radius", Background, "Radius", "SMV kernel radius in mm", Float).units("mm").flag("--harperella-radius").parent("bg_removal.algorithm")
         .when(|x| x.bf("harperella"))

@@ -396,6 +396,7 @@ Set with `--unwrapping-algorithm`.
 | --- | --- |
 | `romeo` | Rapid Opensource Minimum-spanning-tree Echo Optimisation (default) |
 | `laplacian` | Laplacian-based unwrapping (QSMART's reference) |
+| `prelude` | PRELUDE region-merging unwrapping (Jenkinson, 2003) |
 
 With `laplacian`, each echo is unwrapped on its own (the phase is set to zero outside
 the brain mask first) and the echoes are then combined by
@@ -423,6 +424,17 @@ file's `field_mapping.laplacian_fft_pad` takes a number or a three-element list.
 In the TUI,
 choosing Laplacian unwrapping shows a "Solver" selector and an "Unmasked phase" toggle,
 and `fft` a "FFT Pad (voxels)" field that accepts `64` or `64 64 32`.
+
+With `prelude`, each echo is unwrapped on its own and whole turns are then aligned
+between echoes; phase offset removal, bipolar correction and every `--b0-estimation`
+apply as with ROMEO. Its settings:
+
+| Option | Values | Default |
+| --- | --- | --- |
+| `--prelude-labelling` | `auto` (FSL prelude's default: slice by slice above 64 voxels in-plane, else over the whole volume), `slices` (slice by slice), `volume` (over the whole volume) | `auto` |
+| `--prelude-partitions` | Number of phase bins the initial regions are formed from (at least 1) | `8` |
+
+In the TUI, choosing PRELUDE shows a "Labelling" selector and a "Phase partitions" field.
 
 ## Motion correction
 

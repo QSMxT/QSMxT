@@ -196,8 +196,8 @@ mod tests {
         }
     }
 
-    /// QSMART's vessel magnitude and units, the echo fit's threshold and the unmasked Laplacian
-    /// unwrapping are keyed where they are read.
+    /// QSMART's vessel magnitude and units, the echo fit's threshold, the unmasked Laplacian
+    /// unwrapping and PRELUDE's settings are keyed where they are read.
     #[test]
     fn qsmarts_input_choices_are_keyed() {
         let p = serde_json::json!({});
@@ -212,6 +212,9 @@ mod tests {
         assert!(changed(|c| c.field_mapping.b0_estimation = crate::enums::B0Estimation::QsmartEchofit, "unwrap"));
         assert!(changed(|c| c.field_mapping.laplacian_solver = crate::enums::LaplacianSolver::Mirror, "unwrap"));
         assert!(changed(|c| c.field_mapping.laplacian_unmasked = true, "unwrap"));
+        assert!(changed(|c| c.field_mapping.unwrapping_algorithm = crate::enums::UnwrappingAlgorithm::Prelude, "unwrap"));
+        assert!(changed(|c| c.field_mapping.prelude.num_phase_partitions = 6, "unwrap"));
+        assert!(changed(|c| c.field_mapping.prelude.labelling = crate::enums::PreludeLabelling::Volume, "unwrap"));
         assert!(changed(|c| c.inversion.qsmart.vessel_magnitude = crate::enums::QsmartVesselMagnitude::Combined, "qsmart"));
         assert!(changed(|c| c.inversion.qsmart.vessel_size_units = crate::enums::VesselSizeUnits::Mm, "qsmart"));
         // A new field map invalidates QSMART, which reads it and its reliability map.

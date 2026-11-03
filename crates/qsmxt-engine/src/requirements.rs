@@ -384,7 +384,7 @@ fn method_problem(f: &ScanFacts, config: &PipelineConfig, alg: QsmAlgorithm) -> 
     let (_, _, core, _) = crate::bridge::to_pipeline_stages(config);
     let weighted = match alg {
         QsmAlgorithm::Ndi | QsmAlgorithm::Nltv | QsmAlgorithm::Fansi | QsmAlgorithm::FansiTgv
-        | QsmAlgorithm::L1qsm => true,
+        | QsmAlgorithm::L1qsm | QsmAlgorithm::Hdqsm => true,
         QsmAlgorithm::Whqsm => core.whqsm.weight.needs_magnitude(),
         _ => false,
     };
@@ -418,12 +418,12 @@ fn method_problem(f: &ScanFacts, config: &PipelineConfig, alg: QsmAlgorithm) -> 
 }
 
 /// Why QSMART cannot run its inner inversion on this run's data, if it cannot: what that method
-/// needs of the data ([`method_problem`]), and, for MEDI and TFI on several echoes, the magnitude of
-/// every echo, which QSM.rs does not give QSMART's inner inversion (it passes one combined
-/// magnitude; with a single echo the two are the same).
+/// needs of the data ([`method_problem`]), and, for MEDI, TFI and HD-QSM on several echoes, the
+/// magnitude of every echo, which QSM.rs does not give QSMART's inner inversion (it passes one
+/// combined magnitude; with a single echo the two are the same).
 fn qsmart_inner_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<String> {
     let inner = config.inversion.qsmart.inversion;
-    if matches!(inner, QsmAlgorithm::Medi | QsmAlgorithm::Tfi) && f.n_echoes > 1 {
+    if matches!(inner, QsmAlgorithm::Medi | QsmAlgorithm::Tfi | QsmAlgorithm::Hdqsm) && f.n_echoes > 1 {
         return Some(format!(
             "cannot use {inner} as its inner inversion on {} echoes: {inner} needs the magnitude of \
              every echo, and QSM.rs gives QSMART's inner inversion one combined magnitude. Choose \
@@ -1165,7 +1165,7 @@ mod tests {
         let with = |f: fn(&mut PipelineConfig)| { let mut c = PipelineConfig::default(); f(&mut c); c };
         assert!(check(&run(&EVEN, false), &PipelineConfig::default()).errors.is_empty());
         for alg in [QsmAlgorithm::Ndi, QsmAlgorithm::Nltv, QsmAlgorithm::Fansi, QsmAlgorithm::FansiTgv,
-                    QsmAlgorithm::L1qsm, QsmAlgorithm::Medi, QsmAlgorithm::Tfi] {
+                    QsmAlgorithm::L1qsm, QsmAlgorithm::Hdqsm, QsmAlgorithm::Medi, QsmAlgorithm::Tfi] {
             let mut c = PipelineConfig::default();
             c.inversion.algorithm = alg;
             let out = check(&run(&EVEN, false), &c);
@@ -1253,13 +1253,13 @@ mod tests {
         assert!(out.errors.len() == 1 && out.errors[0].contains("needs magnitude"), "{out:?}");
     }
 
-    /// QSMART's inner inversion gets the same checks as the inversion; inner MEDI or TFI is
+    /// QSMART's inner inversion gets the same checks as the inversion; inner MEDI, TFI or HD-QSM is
     /// refused only on several echoes, where QSM.rs cannot give it every echo's magnitude.
     #[test]
     fn qsmart_checks_its_inner_inversion() {
         let mut c = PipelineConfig::default();
         c.inversion.algorithm = QsmAlgorithm::Qsmart;
-        for inner in [QsmAlgorithm::Medi, QsmAlgorithm::Tfi] {
+        for inner in [QsmAlgorithm::Medi, QsmAlgorithm::Tfi, QsmAlgorithm::Hdqsm] {
             c.inversion.qsmart.inversion = inner;
             let out = check(&run(&EVEN, true), &c);
             assert!(out.errors.len() == 1 && out.errors[0].contains("--qsm-algorithm qsmart")

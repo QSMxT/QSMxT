@@ -1157,10 +1157,10 @@ pub struct ResharpParamArgs {
     /// RESHARP Tikhonov regularization parameter
     #[arg(long)]
     pub resharp_tik_reg: Option<f64>,
-    /// RESHARP CG convergence tolerance
+    /// RESHARP conjugate gradients squared (CGS) relative tolerance
     #[arg(long)]
     pub resharp_tol: Option<f64>,
-    /// RESHARP maximum CG iterations
+    /// RESHARP maximum CGS iterations
     #[arg(long)]
     pub resharp_max_iter: Option<usize>,
 }
@@ -1301,6 +1301,33 @@ impl RomeoParamArgs {
             // Phase gradient coherence compares two echoes; with one it is never computed.
             ("--no-romeo-phase-gradient-coherence", self.no_romeo_phase_gradient_coherence),
         ].iter().filter(|(_, set)| *set).map(|(f, _)| *f).collect()
+    }
+}
+
+/// PRELUDE's settings (`--unwrapping-algorithm prelude`), shared by `qsmxt run`, `qsmxt unwrap
+/// prelude` and `qsmxt fieldmap prelude`.
+#[derive(Args, Debug, Default, Clone)]
+pub struct PreludeParamArgs {
+    /// PRELUDE: how the initial regions are labelled (default: auto)
+    #[arg(long, value_enum)]
+    pub prelude_labelling: Option<PreludeLabellingArg>,
+    /// PRELUDE: number of phase partitions the initial regions are formed from (default: 8)
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u64).range(1..))]
+    pub prelude_partitions: Option<u64>,
+}
+
+impl PreludeParamArgs {
+    /// Apply these flags onto a PRELUDE configuration: the one place they are read.
+    pub fn apply_to(&self, p: &mut qsmxt_engine::PreludeConfig) {
+        if let Some(l) = self.prelude_labelling { p.labelling = l.into(); }
+        if let Some(n) = self.prelude_partitions { p.num_phase_partitions = n as usize; }
+    }
+
+    /// `qsm_core::unwrap::PreludeParams` for these flags, from the defaults.
+    pub fn to_prelude_params(&self) -> qsm_core::unwrap::PreludeParams {
+        let mut p = qsmxt_engine::PreludeConfig::default();
+        self.apply_to(&mut p);
+        (&p).into()
     }
 }
 
@@ -1667,6 +1694,8 @@ pub struct PipelineArgs {
     pub iharperella_params: IharperellaParamArgs,
     #[command(flatten)]
     pub romeo_params: RomeoParamArgs,
+    #[command(flatten)]
+    pub prelude_params: PreludeParamArgs,
     #[command(flatten)]
     pub swi_params: SwiParamArgs,
     #[command(flatten)]
@@ -2392,6 +2421,9 @@ pub struct CombineMcpc3dsArgs {
     /// Unwrapping used on the coil-summed HIP phase
     #[arg(long, value_enum, default_value = "romeo")]
     pub hip_unwrapping: UnwrapAlgorithmArg,
+    /// PRELUDE's settings, with `--hip-unwrapping prelude`
+    #[command(flatten)]
+    pub prelude_params: PreludeParamArgs,
 }
 
 #[derive(Subcommand, Debug)]
@@ -2400,6 +2432,8 @@ pub enum UnwrapCommand {
     Romeo(UnwrapRomeoArgs),
     /// Laplacian-based unwrapping
     Laplacian(UnwrapLaplacianArgs),
+    /// PRELUDE region-merging unwrapping
+    Prelude(UnwrapPreludeArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -2419,6 +2453,14 @@ pub struct UnwrapRomeoArgs {
 pub struct UnwrapLaplacianArgs {
     #[command(flatten)]
     pub common: UnwrapCommonArgs,
+}
+
+#[derive(Parser, Debug)]
+pub struct UnwrapPreludeArgs {
+    #[command(flatten)]
+    pub common: UnwrapCommonArgs,
+    #[command(flatten)]
+    pub prelude_params: PreludeParamArgs,
 }
 
 // ── Fieldmap ──
@@ -2521,6 +2563,8 @@ pub enum FieldmapCommand {
     Romeo(FieldmapRomeoArgs),
     /// Laplacian-based multi-echo field mapping (per-echo unwrap + echo combination)
     Laplacian(FieldmapLaplacianArgs),
+    /// PRELUDE-based multi-echo field mapping (phase offset removal + per-echo unwrap + B0 fit)
+    Prelude(FieldmapPreludeArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -2562,6 +2606,24 @@ pub struct FieldmapLaplacianArgs {
     // unwrapping, so they are intentionally not exposed here. Each echo is unwrapped on its
     // own and the echoes are then combined by b0-estimation / b0-weight-type / linear-fit-*
     // on `common` (see `qsmxt_engine::fieldmap`).
+}
+
+#[derive(Parser, Debug)]
+pub struct FieldmapPreludeArgs {
+    #[command(flatten)]
+    pub common: FieldmapCommonArgs,
+    /// Enable phase offset removal for multi-echo data (default: true)
+    #[arg(long)]
+    pub phase_offset_removal: Option<bool>,
+    /// Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command
+    /// line's)
+    #[arg(long, num_args = 3)]
+    pub phase_offset_sigma_mm: Option<Vec<f64>>,
+    /// Enable bipolar gradient correction (requires >= 3 echoes)
+    #[arg(long)]
+    pub bipolar_correction: bool,
+    #[command(flatten)]
+    pub prelude_params: PreludeParamArgs,
 }
 
 // ── Bgremove ──
@@ -2752,10 +2814,10 @@ pub struct BgremoveResharpArgs {
     /// Tikhonov regularization parameter
     #[arg(long)]
     pub tik_reg: Option<f64>,
-    /// CG convergence tolerance
+    /// Conjugate gradients squared (CGS) relative tolerance
     #[arg(long)]
     pub tol: Option<f64>,
-    /// Maximum CG iterations
+    /// Maximum CGS iterations
     #[arg(long)]
     pub max_iter: Option<usize>,
 }
@@ -3398,6 +3460,15 @@ pub struct InvertTfiArgs {
     /// the echo times), or a time in ms (default: spacing)
     #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
     pub te: Option<qsmxt_engine::EchoTimeChoice>,
+    /// Dipole kernel on a grid with an odd number of voxels along an axis: default samples the
+    /// dipole on the Fourier grid; original samples it half a frequency step off, as the original
+    /// implementation does, for comparison with it. Identical on even grids (default: default)
+    #[arg(long, value_enum, value_name = "KERNEL")]
+    pub kernel: Option<TfiKernelArg>,
+    /// Arithmetic: double, or single as the original implementation runs, for comparison with
+    /// it (default: double)
+    #[arg(long, value_enum, value_name = "PRECISION")]
+    pub precision: Option<TfiPrecisionArg>,
 }
 
 #[derive(Parser, Debug)]
@@ -3678,9 +3749,12 @@ pub struct InvertWhqsmArgs {
 pub struct InvertHdqsmArgs {
     #[command(flatten)]
     pub common: InvertCommonArgs,
-    /// Magnitude NIfTI (optional data weight): one 3D volume, a 4D one, or one per echo; several
-    /// echoes are RSS-combined
-    #[arg(long, num_args = 1..)]
+    /// Echo times in seconds, every echo's, in order
+    #[arg(long, num_args = 1.., required = true, alias = "echo-time")]
+    pub echo_times: Vec<f64>,
+    /// Magnitude of every echo (the data weight is their echo-time-weighted combination): one 4D
+    /// NIfTI, or one 3D NIfTI per echo in echo order
+    #[arg(long, num_args = 1.., required = true)]
     pub magnitude: Vec<PathBuf>,
     /// L2-stage TV weight (alpha_l2)
     #[arg(long)]
@@ -4410,7 +4484,28 @@ pub enum OutputSpaceArg {
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum UnwrapAlgorithmArg {
-    Romeo, Laplacian,
+    Romeo, Laplacian, Prelude,
+}
+
+/// `--prelude-labelling`.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum PreludeLabellingArg {
+    /// FSL prelude's default: slice by slice above 64 voxels in-plane, else over the whole volume
+    Auto,
+    /// Label regions slice by slice (FSL prelude --labelslices)
+    Slices,
+    /// Label regions over the whole volume (FSL prelude -f)
+    Volume,
+}
+
+impl From<PreludeLabellingArg> for qsmxt_engine::PreludeLabelling {
+    fn from(a: PreludeLabellingArg) -> Self {
+        match a {
+            PreludeLabellingArg::Auto => Self::Auto,
+            PreludeLabellingArg::Slices => Self::Slices,
+            PreludeLabellingArg::Volume => Self::Volume,
+        }
+    }
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
@@ -4433,6 +4528,36 @@ impl From<SharpVariantArg> for qsm_core::bgremove::SharpVariant {
         match a {
             SharpVariantArg::Sepia => Self::Sepia,
             SharpVariantArg::Qsmjl => Self::QsmJl,
+        }
+    }
+}
+
+/// `qsmxt invert tfi --kernel`.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum TfiKernelArg {
+    Default, Original,
+}
+
+impl From<TfiKernelArg> for qsm_core::inversion::TfiKernel {
+    fn from(a: TfiKernelArg) -> Self {
+        match a {
+            TfiKernelArg::Default => Self::Dft,
+            TfiKernelArg::Original => Self::MediOddGrid,
+        }
+    }
+}
+
+/// `qsmxt invert tfi --precision`.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum TfiPrecisionArg {
+    Double, Single,
+}
+
+impl From<TfiPrecisionArg> for qsm_core::inversion::TfiPrecision {
+    fn from(a: TfiPrecisionArg) -> Self {
+        match a {
+            TfiPrecisionArg::Double => Self::Double,
+            TfiPrecisionArg::Single => Self::Single,
         }
     }
 }
@@ -4574,6 +4699,20 @@ mod tests {
     fn parse(args: &[&str]) -> Cli {
         Cli::try_parse_from([&["qsmxt"][..], args].concat())
             .unwrap_or_else(|e| panic!("{args:?} did not parse:\n{e}"))
+    }
+
+    #[test]
+    fn combine_mcpc3ds_takes_prelude_settings_for_the_hip_unwrap() {
+        let cli = parse(&["combine", "mcpc3ds", "--phase", "p.nii", "--magnitude", "m.nii", "-o", "o",
+            "--hip-unwrapping", "prelude", "--prelude-labelling", "volume", "--prelude-partitions", "6"]);
+        let Command::Combine { command: CombineCommand::Mcpc3ds(a) } = cli.command
+            else { panic!("expected combine mcpc3ds") };
+        assert!(matches!(a.hip_unwrapping, UnwrapAlgorithmArg::Prelude));
+        assert_eq!(a.prelude_params.to_prelude_params(), qsm_core::unwrap::PreludeParams {
+            num_phase_partitions: 6,
+            labelling: qsm_core::unwrap::PreludeLabelling::Volume,
+            ..Default::default()
+        });
     }
 
     /// The defaults the V-SHARP radius step and χ-sep iLSQR's QSM help states are qsm-core's.

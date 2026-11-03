@@ -86,6 +86,10 @@ pub(crate) struct Ctx<'a> {
     pub grouped: bool,
     pub cosmos: bool,
     pub laplacian: bool,
+    /// ROMEO unwraps the phase (its settings apply).
+    pub romeo: bool,
+    /// PRELUDE unwraps the phase (its settings apply).
+    pub prelude: bool,
     /// The echoes are combined into one field map: not a per-echo QSM (`qsm.per_echo`).
     pub combines: bool,
     pub multi_coil: bool,
@@ -184,6 +188,8 @@ pub fn settings_view(config: &PipelineConfig, facts: &ViewFacts) -> Vec<SettingV
         grouped,
         cosmos: c.multi_orientation.algorithm == crate::config::MultiOrientAlgorithm::Cosmos,
         laplacian: c.field_mapping.unwrapping_algorithm == UnwrappingAlgorithm::Laplacian,
+        romeo: c.field_mapping.unwrapping_algorithm == UnwrappingAlgorithm::Romeo,
+        prelude: c.field_mapping.unwrapping_algorithm == UnwrappingAlgorithm::Prelude,
         combines: !c.qsm.per_echo,
         multi_coil: facts.multi_coil.unwrap_or(true),
         axial_forced: !crate::bridge::axial_only_algorithms(

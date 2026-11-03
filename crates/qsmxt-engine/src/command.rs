@@ -189,6 +189,8 @@ fn command_for(config: &PipelineConfig) -> String {
         }
     }
     if fm.laplacian_unmasked { parts.push("--laplacian-unmasked".into()); }
+    emit_enum(&mut parts, "--prelude-labelling", &fm.prelude.labelling, &d.field_mapping.prelude.labelling);
+    emit_usize(&mut parts, "--prelude-partitions", fm.prelude.num_phase_partitions, d.field_mapping.prelude.num_phase_partitions);
     // Motion correction (off by default).
     let (m, md) = (&config.motion_correction, &d.motion_correction);
     if m.enabled {
@@ -1597,6 +1599,34 @@ frangi_c = 400.0
         assert!(generate_command(&c).contains("--laplacian-fft-pad 12"));
         c.field_mapping.laplacian_fft_pad = [64, 64, 32];
         assert!(generate_command(&c).contains("--laplacian-fft-pad 64 64 32"));
+    }
+
+    /// PRELUDE is selected by `--unwrapping-algorithm prelude`; its settings are said only when
+    /// they are not the defaults and PRELUDE runs, and a config file keeps them.
+    #[test]
+    fn test_prelude_settings() {
+        let mut c = PipelineConfig::default();
+        c.field_mapping.prelude.labelling = PreludeLabelling::Volume;
+        c.field_mapping.prelude.num_phase_partitions = 6;
+        let cmd = generate_command(&c);
+        assert!(!cmd.contains("--prelude"), "ROMEO has no PRELUDE settings: {cmd}");
+        c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Prelude;
+        let cmd = generate_command(&c);
+        for said in ["--unwrapping-algorithm prelude", "--prelude-labelling volume", "--prelude-partitions 6"] {
+            assert!(cmd.contains(said), "{said:?} not in {cmd}");
+        }
+        assert!(!cmd.contains("--romeo"), "{cmd}");
+        let mut d = PipelineConfig::default();
+        d.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Prelude;
+        let cmd = generate_command(&d);
+        assert!(cmd.contains("--unwrapping-algorithm prelude") && !cmd.contains("--prelude-"), "defaults are not said: {cmd}");
+        let back = PipelineConfig::from_toml(&c.to_toml().unwrap()).unwrap();
+        assert_eq!(back.field_mapping.unwrapping_algorithm, UnwrappingAlgorithm::Prelude);
+        assert_eq!(back.field_mapping.prelude, c.field_mapping.prelude);
+        let f: FieldMappingConfig = toml::from_str("unwrapping_algorithm = \"prelude\"\n[prelude]\nlabelling = \"slices\"\n").unwrap();
+        assert_eq!((f.unwrapping_algorithm, f.prelude.labelling, f.prelude.num_phase_partitions),
+                   (UnwrappingAlgorithm::Prelude, PreludeLabelling::Slices, 8));
+        assert!(toml::from_str::<FieldMappingConfig>("[prelude]\nlabelling = \"planes\"\n").is_err());
     }
 
     /// The unmasked Laplacian unwrapping is said only when it is on and Laplacian unwrapping

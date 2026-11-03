@@ -242,7 +242,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
     let n4 = ps.inhomogeneity_correction && ps.inhomogeneity_method == 1;
 
     let qsm_options = QSM_ALGO_ARGS;
-    let unwrap_options = [UnwrapAlgorithmArg::Romeo, UnwrapAlgorithmArg::Laplacian];
+    let unwrap_options = [UnwrapAlgorithmArg::Romeo, UnwrapAlgorithmArg::Laplacian, UnwrapAlgorithmArg::Prelude];
     let bf_options = [
         BfAlgorithmArg::Vsharp,
         BfAlgorithmArg::Pdf,
@@ -306,9 +306,9 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         phase_offset_removal: Some(ps.phase_offset_removal),
         phase_offset_sigma_mm: parse_optional_f64_vec3(&ps.phase_offset_sigma_mm),
         coil_combination_sigma: parse_optional_f64_vec3(&ps.coil_combination_sigma),
-        // Part of HIP phase offset removal, which only ROMEO unwrapping runs.
+        // Part of HIP phase offset removal, which ROMEO and PRELUDE unwrapping run.
         // MEDI's complex fit removes no offsets, and refuses bipolar correction.
-        bipolar_correction: ps.unwrapping_algorithm == 0 && ps.phase_offset_removal && ps.bipolar_correction
+        bipolar_correction: ps.unwrapping_algorithm != 1 && ps.phase_offset_removal && ps.bipolar_correction
             && !ps.b0_estimation_is("complex-fit"),
         // Only when changed from the default, so a default form still yields a bare command.
         b0_estimation: match ps.b0_estimation {
@@ -705,6 +705,19 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             romeo_merge_regions: ps.romeo_merge_regions,
             romeo_correct_regions: ps.romeo_correct_regions,
             romeo_wrap_addition: parse_optional_f64(&ps.romeo_wrap_addition),
+        },
+        // Only when PRELUDE unwrapping is selected, and only when changed from the default.
+        prelude_params: {
+            let prelude = ps.unwrapping_algorithm == 2;
+            let d = qsmxt_engine::PreludeConfig::default();
+            crate::cli::PreludeParamArgs {
+                prelude_labelling: [crate::cli::PreludeLabellingArg::Auto, crate::cli::PreludeLabellingArg::Slices,
+                                    crate::cli::PreludeLabellingArg::Volume]
+                    .get(ps.prelude_labelling).copied()
+                    .filter(|&l| prelude && qsmxt_engine::PreludeLabelling::from(l) != d.labelling),
+                prelude_partitions: ps.prelude_partitions.trim().parse::<u64>().ok()
+                    .filter(|&n| prelude && n as usize != d.num_phase_partitions),
+            }
         },
         swi_params: crate::cli::SwiParamArgs {
             swi_hp_sigma: form.swi_hp_sigma_values(),
@@ -1183,6 +1196,40 @@ mod tests {
 
     /// The unmasked unwrapping is a Laplacian toggle, as the solver is: off by default and
     /// reaching the config and the command when on.
+    #[test]
+    fn prelude_settings() {
+        let mut app = default_app();
+        let fields = |app: &App| app.pipeline_state.all_rows().iter().filter_map(|r| match r {
+            crate::tui::app::PipelineRow::AlgoSelect { field, .. }
+            | crate::tui::app::PipelineRow::Param { field, .. }
+            | crate::tui::app::PipelineRow::Toggle { field, .. } => Some(field.to_string()),
+            _ => None,
+        }).collect::<Vec<_>>();
+        assert!(!fields(&app).contains(&"prelude_labelling".to_string()), "ROMEO has no PRELUDE settings");
+        app.pipeline_state.unwrapping_algorithm = 2; // prelude
+        let f = fields(&app);
+        for shown in ["prelude_labelling", "prelude_partitions", "phase_offset_removal"] {
+            assert!(f.contains(&shown.to_string()), "{shown}: {f:?}");
+        }
+        assert!(!f.iter().any(|f| f.starts_with("romeo_") || f.starts_with("laplacian_solver")), "{f:?}");
+        let a = pipeline_args_from_app(&app);
+        assert_eq!(a.unwrapping_algorithm, Some(crate::cli::UnwrapAlgorithmArg::Prelude));
+        assert_eq!((a.prelude_params.prelude_labelling, a.prelude_params.prelude_partitions), (None, None),
+                   "defaults stay off the command");
+        app.pipeline_state.set_select("prelude_labelling", 2);
+        app.pipeline_state.prelude_partitions = "6".into();
+        app.pipeline_state.bipolar_correction = true;
+        let c = config_from_app(&app).unwrap();
+        assert_eq!(c.field_mapping.unwrapping_algorithm, qsmxt_engine::UnwrappingAlgorithm::Prelude);
+        assert_eq!(c.field_mapping.prelude.labelling, qsmxt_engine::PreludeLabelling::Volume);
+        assert_eq!(c.field_mapping.prelude.num_phase_partitions, 6);
+        assert!(c.field_mapping.bipolar_correction, "bipolar correction applies with PRELUDE");
+        // Back to ROMEO: PRELUDE's settings are not passed.
+        app.pipeline_state.unwrapping_algorithm = 0;
+        let a = pipeline_args_from_app(&app);
+        assert_eq!((a.prelude_params.prelude_labelling, a.prelude_params.prelude_partitions), (None, None));
+    }
+
     #[test]
     fn laplacian_unmasked_toggle() {
         let mut app = default_app();
