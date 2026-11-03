@@ -13,8 +13,9 @@ const DL_STATUS: &str = "deep-learning models: DISABLED in this build (classical
     name = "qsmxt",
     version,
     long_version = const_format::formatcp!(
-        "{}\nQSM.rs (qsm-core): {}\n{}",
+        "{}{}\nQSM.rs (qsm-core): {}\n{}",
         env!("CARGO_PKG_VERSION"),
+        crate::commands::update::BUILD_COMMIT_SUFFIX,
         env!("QSM_CORE_DESCRIBE"),
         DL_STATUS,
     ),
@@ -133,8 +134,14 @@ pub struct UpdateArgs {
 
     /// Replace a development build (version 0.0.0) with the latest release. Without
     /// it, `qsmxt update` refuses on a dev build, since every release would look newer
-    #[arg(long)]
+    #[arg(long, conflicts_with = "main")]
     pub force: bool,
+
+    /// Build the latest commit on the main branch from source and install it in place of
+    /// this qsmxt. Needs the Rust toolchain (https://rustup.rs). `qsmxt update --force`
+    /// goes back to the latest release
+    #[arg(long)]
+    pub main: bool,
 }
 
 #[derive(Parser, Debug)]
