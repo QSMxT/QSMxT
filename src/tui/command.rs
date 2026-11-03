@@ -243,7 +243,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
     let n4 = ps.inhomogeneity_correction && ps.inhomogeneity_method == 1;
 
     let qsm_options = QSM_ALGO_ARGS;
-    let unwrap_options = [UnwrapAlgorithmArg::Romeo, UnwrapAlgorithmArg::Laplacian, UnwrapAlgorithmArg::Prelude];
+    let unwrap_options = [UnwrapAlgorithmArg::Romeo, UnwrapAlgorithmArg::Laplacian, UnwrapAlgorithmArg::Prelude,
+                          UnwrapAlgorithmArg::MediRegionGrowing];
     let bf_options = [
         BfAlgorithmArg::Vsharp,
         BfAlgorithmArg::Pdf,
@@ -307,7 +308,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         phase_offset_removal: Some(ps.phase_offset_removal),
         phase_offset_sigma_mm: parse_optional_f64_vec3(&ps.phase_offset_sigma_mm),
         coil_combination_sigma: parse_optional_f64_vec3(&ps.coil_combination_sigma),
-        // Part of HIP phase offset removal, which ROMEO and PRELUDE unwrapping run.
+        // Part of HIP phase offset removal, which ROMEO, PRELUDE and MEDI's region growing run.
         // MEDI's complex fit removes no offsets, and refuses bipolar correction.
         bipolar_correction: ps.unwrapping_algorithm != 1 && ps.phase_offset_removal && ps.bipolar_correction
             && !ps.b0_estimation_is("complex-fit"),
@@ -1234,6 +1235,28 @@ mod tests {
         app.pipeline_state.unwrapping_algorithm = 0;
         let a = pipeline_args_from_app(&app);
         assert_eq!((a.prelude_params.prelude_labelling, a.prelude_params.prelude_partitions), (None, None));
+    }
+
+    /// MEDI's region growing is the fourth unwrapper: it has no settings of its own, keeps phase
+    /// offset removal and bipolar correction as ROMEO does, and reaches the command and config.
+    #[test]
+    fn medi_region_growing_choice() {
+        let mut app = default_app();
+        app.pipeline_state.unwrapping_algorithm = 3; // medi-region-growing
+        let f: Vec<String> = app.pipeline_state.all_rows().iter().filter_map(|r| match r {
+            crate::tui::app::PipelineRow::AlgoSelect { field, .. }
+            | crate::tui::app::PipelineRow::Param { field, .. }
+            | crate::tui::app::PipelineRow::Toggle { field, .. } => Some(field.to_string()),
+            _ => None,
+        }).collect();
+        assert!(f.contains(&"phase_offset_removal".to_string()), "{f:?}");
+        assert!(!f.iter().any(|f| f.starts_with("romeo_") || f.starts_with("prelude_") || f.starts_with("laplacian_")), "{f:?}");
+        app.pipeline_state.bipolar_correction = true;
+        let a = pipeline_args_from_app(&app);
+        assert_eq!(a.unwrapping_algorithm, Some(crate::cli::UnwrapAlgorithmArg::MediRegionGrowing));
+        let c = config_from_app(&app).unwrap();
+        assert_eq!(c.field_mapping.unwrapping_algorithm, qsmxt_engine::UnwrappingAlgorithm::MediRegionGrowing);
+        assert!(c.field_mapping.bipolar_correction);
     }
 
     #[test]

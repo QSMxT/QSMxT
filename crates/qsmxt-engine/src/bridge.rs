@@ -172,11 +172,12 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             UnwrappingAlgorithm::Romeo => PUnwrap::Romeo,
             UnwrappingAlgorithm::Laplacian => PUnwrap::Laplacian,
             UnwrappingAlgorithm::Prelude => PUnwrap::Prelude,
+            UnwrappingAlgorithm::MediRegionGrowing => PUnwrap::MediRegionGrowing,
         },
         phase_offset_removal: cfg.field_mapping.phase_offset_removal,
         phase_offset_sigma_mm: cfg.field_mapping.phase_offset_sigma_mm,
-        // Bipolar correction follows the phase offset removal of ROMEO and PRELUDE; Laplacian
-        // unwrapping has none.
+        // Bipolar correction follows the phase offset removal of ROMEO, PRELUDE and MEDI's region
+        // growing; Laplacian unwrapping has none.
         bipolar_correction: cfg.field_mapping.bipolar_correction
             && cfg.field_mapping.unwrapping_algorithm != UnwrappingAlgorithm::Laplacian,
         b0_estimation: match cfg.field_mapping.b0_estimation {
@@ -981,6 +982,17 @@ mod tests {
         let (fm, _, _, _) = to_pipeline_stages(&cfg);
         assert!(fm.laplacian_unmasked);
         assert_eq!(fm.unwrapping_algorithm, PUnwrap::Laplacian);
+    }
+
+    /// MEDI's region growing reaches qsm-core, with bipolar correction as with ROMEO.
+    #[test]
+    fn medi_region_growing_reaches_core() {
+        let mut cfg = PipelineConfig::default();
+        cfg.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::MediRegionGrowing;
+        cfg.field_mapping.bipolar_correction = true;
+        let (fm, _, _, _) = to_pipeline_stages(&cfg);
+        assert_eq!(fm.unwrapping_algorithm, PUnwrap::MediRegionGrowing);
+        assert!(fm.bipolar_correction);
     }
 
     /// PRELUDE reaches qsm-core with its labelling and partitions; `correct_global` stays at

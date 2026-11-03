@@ -140,6 +140,7 @@ pub(super) fn table() -> Vec<Def> {
             o("romeo", "romeo", "ROMEO", "ROMEO region-growing unwrapping — https://doi.org/10.1002/mrm.28563"),
             o("laplacian", "laplacian", "Laplacian", "Laplacian phase unwrapping (FFT-based) — https://doi.org/10.1364/OL.28.001194"),
             o("prelude", "prelude", "PRELUDE", "PRELUDE region-merging unwrapping, each echo on its own — https://doi.org/10.1002/mrm.10354"),
+            o("medi-region-growing", "medi-region-growing", "MEDI region growing", "MEDI's magnitude-guided region-growing unwrapping; needs magnitude images — https://doi.org/10.1002/mrm.24272"),
         ])).basic().flag("--unwrapping-algorithm").full("Phase unwrapping")
         .gui("How the wrapped phase is unwrapped"),
         d("field_mapping.prelude.labelling", FieldMap, "Labelling", "", Enum(vec![

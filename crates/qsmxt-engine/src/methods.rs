@@ -1780,6 +1780,11 @@ fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
                 "Phase unwrapping was performed separately for each echo using PRELUDE (Jenkinson, 2003){}.",
                 prelude_changes(fm, &d).with()));
         }
+        UnwrappingAlgorithm::MediRegionGrowing => {
+            doc.cite(&CITE_FIT_PPM_COMPLEX);
+            doc.say(&[Stage::FieldMap],
+                "Phase unwrapping was performed separately for each echo using MEDI's magnitude-guided region growing (Liu et al., 2013).".to_string());
+        }
     }
 
     // A per-echo QSM combines no echoes into a B0 field map.
@@ -1871,6 +1876,9 @@ fn describe_complex_fit(config: &PipelineConfig, doc: &mut Draft) {
         UnwrappingAlgorithm::Prelude => {
             doc.cite(&CITE_PRELUDE);
             format!("PRELUDE (Jenkinson, 2003){}", prelude_changes(fm, &d).with())
+        }
+        UnwrappingAlgorithm::MediRegionGrowing => {
+            "MEDI's magnitude-guided region growing (unwrapPhase, MEDI toolbox)".to_string()
         }
     };
     doc.say(&[Stage::FieldMap], format!(
@@ -2292,6 +2300,7 @@ pub(crate) mod words {
                 c.add(fm.laplacian_unmasked != d.laplacian_unmasked, || "raw phase over the whole volume".to_string());
             }
             UnwrappingAlgorithm::Prelude => c = prelude_changes(fm, &d),
+            UnwrappingAlgorithm::MediRegionGrowing => {}
         }
         c.0
     }
@@ -3082,6 +3091,25 @@ mod tests {
         config.field_mapping.romeo.individual = false;
         let out = generate_methods(&config);
         assert!(out.contains("using ROMEO (Dymerska et al., 2021) in template-based temporal mode."), "{out}");
+    }
+
+    /// MEDI's region growing is stated plainly and cited, on the per-echo path and after the
+    /// complex fit; phase offset removal is said as with ROMEO.
+    #[test]
+    fn test_medi_region_growing_methods() {
+        let mut config = PipelineConfig::default();
+        config.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::MediRegionGrowing;
+        let out = generate_methods(&config);
+        assert!(out.contains("Phase unwrapping was performed separately for each echo using MEDI's magnitude-guided region growing (Liu et al., 2013)."), "{out}");
+        assert!(out.contains("https://doi.org/10.1002/mrm.24272"), "{out}");
+        assert!(out.contains("Phase offset removal"), "{out}");
+        for unsaid in ["using ROMEO", "mexUnwrap", "STI", "Biobank"] {
+            assert!(!out.contains(unsaid), "{unsaid:?} in {out}");
+        }
+        assert!(words::unwrapping_settings(&config).is_empty());
+        config.field_mapping.b0_estimation = B0Estimation::ComplexFit;
+        let out = generate_methods(&config);
+        assert!(out.contains("the fitted phase per echo spacing was unwrapped using MEDI's magnitude-guided region growing (unwrapPhase, MEDI toolbox) and divided by the echo spacing."), "{out}");
     }
 
     /// PRELUDE at its defaults is stated plainly and cited; its settings are said only when

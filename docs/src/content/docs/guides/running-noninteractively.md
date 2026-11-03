@@ -39,7 +39,7 @@ configurable — see [Algorithms](/QSMxT/reference/algorithms/).
 1. **Masking** — generate a brain/region mask (`--mask-preset`, or custom
    `--mask` sections).
 2. **Phase offset removal** — remove receiver phase offsets on multi-echo data.
-3. **Phase unwrapping** — `romeo`, `laplacian` or `prelude`.
+3. **Phase unwrapping** — `romeo`, `laplacian`, `prelude` or `medi-region-growing`.
 4. **Echo combination / B0 mapping** — combine echoes into a field map
    (`--b0-estimation`, `--b0-weight-type`).
 5. **Background field removal** — `vsharp`, `pdf`, `lbv`, and more.
@@ -64,7 +64,7 @@ qsmxt run study/bids \
 | Option | Choices |
 | --- | --- |
 | `--qsm-algorithm` | 20 classical (`rts`, `tv`, `tkd`, `tgv`, `medi`, `ilsqr`, …) and 12 deep-learning (`xqsm`, `qsmnet`, `iqsm`, …) |
-| `--unwrapping-algorithm` | `romeo`, `laplacian` (QSMART's reference), `prelude` |
+| `--unwrapping-algorithm` | `romeo`, `laplacian` (QSMART's reference), `prelude`, `medi-region-growing` |
 | `--bf-algorithm` | `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm` |
 | `--mask-preset` | `robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`, `rs2-net`, `mindgrab` |
 | `--masking-input` | `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality` |

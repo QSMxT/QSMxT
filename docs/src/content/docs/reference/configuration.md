@@ -111,6 +111,7 @@ labelling = "volume"          # or "auto" (the default), "slices"; --prelude-lab
 num_phase_partitions = 6      # default 8; --prelude-partitions
 ```
 
+MEDI's region growing, `unwrapping_algorithm = "medi-region-growing"`, has no settings.
 See
 [phase unwrapping](/QSMxT/reference/algorithms/#phase-unwrapping) for what each does.
 
