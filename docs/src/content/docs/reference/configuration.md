@@ -200,7 +200,10 @@ A file without it is read as follows, and what changed is logged:
   runs; in a full config file, sizes at the earlier defaults take today's.
 - Settings an earlier file does not have (each method's echo time `te`, WH-QSM's `weight`,
   NLTV's `rho` and `tol_newton`, RTS's `tau` and `gamma`, PDF's `n_cg`, `space` and `n_pad`,
-  HARPERELLA's and iHARPERELLA's `pad`) take today's defaults.
+  LBV's `depth`, `peel`, `n1`, `n2`, `n3` and `precision`, HARPERELLA's and iHARPERELLA's `pad`)
+  take today's defaults. LBV's `tol` is kept as written: an earlier file's 1e-6 (the old
+  solver's relative tolerance) now stops the multigrid's coarsest grid at 1e-6 radians, and the
+  recommendations suggest LBV.m's 0.01.
 - Settings that no longer exist are ignored, with a warning where that changes what a
   run does (for example `bg_removal.msmv_refine`: mSMV is now MEDI's option,
   `inversion.medi.msmv`).

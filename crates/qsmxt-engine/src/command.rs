@@ -354,7 +354,16 @@ fn command_for(config: &PipelineConfig) -> String {
             emit_enum(&mut parts, "--pdf-space", &p.space, &dp.space);
             emit_usize(&mut parts, "--pdf-n-pad", p.n_pad, dp.n_pad);
         }
-        BfAlgorithm::Lbv => { emit_f64(&mut parts, "--lbv-tol", config.bg_removal.lbv.tol, d.bg_removal.lbv.tol); }
+        BfAlgorithm::Lbv => {
+            let (p, dp) = (&config.bg_removal.lbv, &d.bg_removal.lbv);
+            emit_f64(&mut parts, "--lbv-tol", p.tol, dp.tol);
+            emit_opt_usize(&mut parts, "--lbv-depth", p.depth, dp.depth);
+            emit_usize(&mut parts, "--lbv-peel", p.peel, dp.peel);
+            emit_usize(&mut parts, "--lbv-n1", p.n1, dp.n1);
+            emit_usize(&mut parts, "--lbv-n2", p.n2, dp.n2);
+            emit_usize(&mut parts, "--lbv-n3", p.n3, dp.n3);
+            emit_enum(&mut parts, "--lbv-precision", &p.precision, &dp.precision);
+        }
         BfAlgorithm::Ismv => {
             emit_enum(&mut parts, "--ismv-variant", &config.bg_removal.ismv.variant, &d.bg_removal.ismv.variant);
             emit_f64(&mut parts, "--ismv-tol", config.bg_removal.ismv.tol, d.bg_removal.ismv.tol);

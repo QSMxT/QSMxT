@@ -359,6 +359,43 @@ impl From<qsm_core::inversion::IlsqrPrecision> for IlsqrPrecision {
     }
 }
 
+/// Arithmetic of LBV's multigrid solver (qsm-core `LbvPrecision`).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum LbvPrecision {
+    /// Double precision throughout (the default).
+    #[default]
+    Double,
+    /// Single precision, as the original implementation computes.
+    Single,
+}
+impl LbvPrecision {
+    /// Every variant, in the order the CLI help and the TUI list them.
+    pub const ALL: [LbvPrecision; 2] = [Self::Double, Self::Single];
+
+    /// The name the CLI, the config file and the TUI use.
+    pub fn as_str(self) -> &'static str {
+        match self { Self::Double => "double", Self::Single => "single" }
+    }
+}
+impl fmt::Display for LbvPrecision {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl From<LbvPrecision> for qsm_core::bgremove::LbvPrecision {
+    fn from(p: LbvPrecision) -> Self {
+        use qsm_core::bgremove::LbvPrecision as P;
+        match p { LbvPrecision::Double => P::Double, LbvPrecision::Single => P::Single }
+    }
+}
+impl From<qsm_core::bgremove::LbvPrecision> for LbvPrecision {
+    fn from(p: qsm_core::bgremove::LbvPrecision) -> Self {
+        use qsm_core::bgremove::LbvPrecision as P;
+        match p { P::Double => Self::Double, P::Single => Self::Single }
+    }
+}
+
 impl EchoTimeChoice {
     /// Why the choice cannot be used whatever the scan, if it cannot: a given echo time that is not
     /// a positive time. Against a scan's echo times, qsm-core's `EchoTime::resolve` decides

@@ -129,7 +129,9 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     // QSM.jl's): the pipeline runs qsm-core's default; `qsmxt bgremove vsharp --ball` offers both.
     cover!(q::bgremove::VsharpParams => c::VsharpConfig, ignore: ["ball"]);
     cover!(q::bgremove::PdfParams => c::PdfConfig);
-    cover!(q::bgremove::LbvParams => c::LbvConfig, ignore: ["max_iter"]);
+    // b0/echo_times come from scan metadata (the dispatcher fills them). `te` stays LBV.m's echo
+    // spacing: its input is the phase over the echo spacing, and `tol` already sets the scale.
+    cover!(q::bgremove::LbvParams => c::LbvConfig, ignore: ["b0", "echo_times", "te"]);
     cover!(q::bgremove::IsmvParams => c::IsmvConfig);
     // `variant` picks which implementation to reproduce (SEPIA's, the default, or QSM.jl's for
     // parity): the pipeline runs qsm-core's default; `qsmxt bgremove sharp --variant` offers both.

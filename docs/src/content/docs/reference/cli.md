@@ -321,7 +321,13 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--pdf-n-cg <PDF_N_CG>` | PDF maximum conjugate-gradient iterations (default: 30) |
 | `--pdf-space <SPACE>` | PDF dipole kernel: image (the FFT of the dipole sampled on the voxel grid) or kspace (the analytic k-space kernel) (default: image) |
 | `--pdf-n-pad <VOXELS>` | PDF zero-padding around the mask's bounding box, in voxels; 0 runs on the full volume (default: 40) |
-| `--lbv-tol <LBV_TOL>` | LBV tolerance. |
+| `--lbv-tol <LBV_TOL>` | LBV tolerance: stop the coarsest grid's relaxation when its summed absolute update falls below this, in radians over the echo spacing (default: 0.01) |
+| `--lbv-depth <LEVEL>` | LBV coarsest multigrid level, at most 8 (default: log2 of the smallest dimension minus 3) |
+| `--lbv-peel <LAYERS>` | LBV boundary layers removed from the mask beyond the first (default: 0) |
+| `--lbv-n1 <LBV_N1>` | LBV relaxations on each grid before the coarser grid (default: 30) |
+| `--lbv-n2 <LBV_N2>` | LBV relaxations on each grid after the coarser grid (default: 100) |
+| `--lbv-n3 <LBV_N3>` | LBV relaxations on the finest grid at the end (default: 100) |
+| `--lbv-precision <PRECISION>` | LBV arithmetic: double, or single as the original implementation (default: double) |
 | `--ismv-variant <VARIANT>` | iSMV implementation: wen2014 (the authors' paper and code) or qsmjl (QSM.jl's) (default: wen2014) |
 | `--ismv-tol <ISMV_TOL>` | iSMV tolerance: the relative change between iterates it stops at (qsmjl: the residual relative to the first) (default: 5e-5) |
 | `--ismv-max-iter <ISMV_MAX_ITER>` | iSMV max iterations (default: no limit) |
@@ -777,7 +783,13 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--pdf-n-cg <PDF_N_CG>` | PDF maximum conjugate-gradient iterations (default: 30) |
 | `--pdf-space <SPACE>` | PDF dipole kernel: image (the FFT of the dipole sampled on the voxel grid) or kspace (the analytic k-space kernel) (default: image) |
 | `--pdf-n-pad <VOXELS>` | PDF zero-padding around the mask's bounding box, in voxels; 0 runs on the full volume (default: 40) |
-| `--lbv-tol <LBV_TOL>` | LBV tolerance. |
+| `--lbv-tol <LBV_TOL>` | LBV tolerance: stop the coarsest grid's relaxation when its summed absolute update falls below this, in radians over the echo spacing (default: 0.01) |
+| `--lbv-depth <LEVEL>` | LBV coarsest multigrid level, at most 8 (default: log2 of the smallest dimension minus 3) |
+| `--lbv-peel <LAYERS>` | LBV boundary layers removed from the mask beyond the first (default: 0) |
+| `--lbv-n1 <LBV_N1>` | LBV relaxations on each grid before the coarser grid (default: 30) |
+| `--lbv-n2 <LBV_N2>` | LBV relaxations on each grid after the coarser grid (default: 100) |
+| `--lbv-n3 <LBV_N3>` | LBV relaxations on the finest grid at the end (default: 100) |
+| `--lbv-precision <PRECISION>` | LBV arithmetic: double, or single as the original implementation (default: double) |
 | `--ismv-variant <VARIANT>` | iSMV implementation: wen2014 (the authors' paper and code) or qsmjl (QSM.jl's) (default: wen2014) |
 | `--ismv-tol <ISMV_TOL>` | iSMV tolerance: the relative change between iterates it stops at (qsmjl: the residual relative to the first) (default: 5e-5) |
 | `--ismv-max-iter <ISMV_MAX_ITER>` | iSMV max iterations (default: no limit) |
@@ -1170,7 +1182,13 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--pdf-n-cg <PDF_N_CG>` | PDF maximum conjugate-gradient iterations (default: 30) |
 | `--pdf-space <SPACE>` | PDF dipole kernel: image (the FFT of the dipole sampled on the voxel grid) or kspace (the analytic k-space kernel) (default: image) |
 | `--pdf-n-pad <VOXELS>` | PDF zero-padding around the mask's bounding box, in voxels; 0 runs on the full volume (default: 40) |
-| `--lbv-tol <LBV_TOL>` | LBV tolerance. |
+| `--lbv-tol <LBV_TOL>` | LBV tolerance: stop the coarsest grid's relaxation when its summed absolute update falls below this, in radians over the echo spacing (default: 0.01) |
+| `--lbv-depth <LEVEL>` | LBV coarsest multigrid level, at most 8 (default: log2 of the smallest dimension minus 3) |
+| `--lbv-peel <LAYERS>` | LBV boundary layers removed from the mask beyond the first (default: 0) |
+| `--lbv-n1 <LBV_N1>` | LBV relaxations on each grid before the coarser grid (default: 30) |
+| `--lbv-n2 <LBV_N2>` | LBV relaxations on each grid after the coarser grid (default: 100) |
+| `--lbv-n3 <LBV_N3>` | LBV relaxations on the finest grid at the end (default: 100) |
+| `--lbv-precision <PRECISION>` | LBV arithmetic: double, or single as the original implementation (default: double) |
 | `--ismv-variant <VARIANT>` | iSMV implementation: wen2014 (the authors' paper and code) or qsmjl (QSM.jl's) (default: wen2014) |
 | `--ismv-tol <ISMV_TOL>` | iSMV tolerance: the relative change between iterates it stops at (qsmjl: the residual relative to the first) (default: 5e-5) |
 | `--ismv-max-iter <ISMV_MAX_ITER>` | iSMV max iterations (default: no limit) |
@@ -1867,7 +1885,7 @@ qsmxt bgremove pdf [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <F
 Laplacian Boundary Value
 
 ```sh
-qsmxt bgremove lbv [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+qsmxt bgremove lbv [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... <INPUT>
 ```
 
 | Argument | Description |
@@ -1877,7 +1895,15 @@ qsmxt bgremove lbv [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-o, --output <OUTPUT>` | Output local field NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--output-mask <OUTPUT_MASK>` | Output eroded mask (for algorithms that erode) |
-| `--tol <TOL>` | Tolerance. |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
+| `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
+| `--tol <TOL>` | Tolerance: stop the coarsest grid's relaxation when its summed absolute update falls below this, in radians over the echo spacing (default: 0.01) |
+| `--depth <LEVEL>` | Coarsest multigrid level, at most 8 (default: log2 of the smallest dimension minus 3) |
+| `--peel <LAYERS>` | Boundary layers removed from the mask beyond the first (default: 0) |
+| `--n1 <N1>` | Relaxations on each grid before the coarser grid (default: 30) |
+| `--n2 <N2>` | Relaxations on each grid after the coarser grid (default: 100) |
+| `--n3 <N3>` | Relaxations on the finest grid at the end (default: 100) |
+| `--precision <PRECISION>` | Arithmetic: double, or single as the original implementation (default: double) |
 
 ### `qsmxt bgremove ismv`
 

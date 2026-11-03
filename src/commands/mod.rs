@@ -2337,7 +2337,8 @@ mod integration_tests {
 
         super::bgremove::execute(BgremoveCommand::Lbv(BgremoveLbvArgs {
             common: common_bgremove(input, mask, output.clone()),
-            tol: None,
+            scan: crate::cli::ScanParamArgs { field_strength: 3.0, echo_times: vec![0.004, 0.008] },
+            tol: None, depth: None, peel: None, n1: None, n2: None, n3: None, precision: None,
         })).unwrap();
         assert!(output.exists());
     }

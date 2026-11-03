@@ -230,6 +230,20 @@ fn no_qsm_no_reconstruction_rules() {
     assert!(recommendations(&c, &Facts::default()).is_empty());
 }
 
+/// An earlier file's LBV tolerance (the old solver's 1e-6) loads as written, and the rule
+/// `lbv.tolerance` notes LBV.m's 0.01: the setting is never rewritten.
+#[test]
+fn an_earlier_lbv_tolerance_is_kept_and_noted() {
+    let (c, _) = PipelineConfig::from_toml_noting("[bg_removal]\nalgorithm = \"lbv\"\n[bg_removal.lbv]\ntol = 0.000001\n").unwrap();
+    assert_eq!(c.bg_removal.lbv.tol, 1e-6);
+    let found = recommendations(&c, &Facts::default());
+    let r = found.iter().find(|r| r.rule == "lbv.tolerance").expect("lbv.tolerance noted");
+    assert_eq!(r.strength, Strength::Reference);
+    let mut at_reference = c.clone();
+    at_reference.bg_removal.lbv.tol = 0.01;
+    assert!(!recommendations(&at_reference, &Facts::default()).iter().any(|r| r.rule == "lbv.tolerance"));
+}
+
 #[test]
 fn reference_findings_are_information_only() {
     let mut c = PipelineConfig::default();

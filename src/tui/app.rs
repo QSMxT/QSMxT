@@ -1332,6 +1332,8 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("vsharp_radius_step", "bg_removal.vsharp.radius_step"), ("vsharp_grid", "bg_removal.vsharp.grid"),
     ("vsharp_grid_spacing", "bg_removal.vsharp.grid_spacing"), ("pdf_tol", "bg_removal.pdf.tol"), ("pdf_n_cg", "bg_removal.pdf.n_cg"),
     ("pdf_space", "bg_removal.pdf.space"), ("pdf_n_pad", "bg_removal.pdf.n_pad"), ("lbv_tol", "bg_removal.lbv.tol"),
+    ("lbv_depth", "bg_removal.lbv.depth"), ("lbv_peel", "bg_removal.lbv.peel"), ("lbv_n1", "bg_removal.lbv.n1"),
+    ("lbv_n2", "bg_removal.lbv.n2"), ("lbv_n3", "bg_removal.lbv.n3"), ("lbv_precision", "bg_removal.lbv.precision"),
     ("ismv_variant", "bg_removal.ismv.variant"),
     ("ismv_tol", "bg_removal.ismv.tol"), ("ismv_max_iter", "bg_removal.ismv.max_iter"), ("ismv_radius", "bg_removal.ismv.radius"),
     ("sharp_threshold", "bg_removal.sharp.threshold"), ("sharp_radius", "bg_removal.sharp.radius"),
@@ -1935,6 +1937,14 @@ pub struct PipelineFormState {
 
     // LBV
     pub lbv_tol: String,
+    /// Blank = automatic
+    pub lbv_depth: String,
+    pub lbv_peel: String,
+    pub lbv_n1: String,
+    pub lbv_n2: String,
+    pub lbv_n3: String,
+    /// An index into LBV_PRECISION_OPTIONS.
+    pub lbv_precision: usize,
 
     // iSMV
     /// An index into ISMV_VARIANT_OPTIONS.
@@ -2420,6 +2430,12 @@ impl Default for PipelineFormState {
             pdf_space: pdf_space_index(qsmxt_engine::PdfConfig::default().space),
             pdf_n_pad: format!("{}", qsm_core::bgremove::PdfParams::default().n_pad),
             lbv_tol: format!("{}", qsm_core::bgremove::LbvParams::default().tol),
+            lbv_depth: fmt_opt(qsm_core::bgremove::LbvParams::default().depth),
+            lbv_peel: qsm_core::bgremove::LbvParams::default().peel.to_string(),
+            lbv_n1: qsm_core::bgremove::LbvParams::default().n1.to_string(),
+            lbv_n2: qsm_core::bgremove::LbvParams::default().n2.to_string(),
+            lbv_n3: qsm_core::bgremove::LbvParams::default().n3.to_string(),
+            lbv_precision: lbv_precision_index(qsmxt_engine::LbvConfig::default().precision),
             ismv_variant: ismv_variant_index(qsmxt_engine::IsmvConfig::default().variant),
             ismv_tol: format!("{}", qsm_core::bgremove::IsmvParams::default().tol),
             ismv_max_iter: fmt_opt(qsm_core::bgremove::IsmvParams::default().max_iter),
@@ -2811,6 +2827,15 @@ const ILSQR_PRECISION_HELP: &[&str] = &[
 ];
 fn ilsqr_precision_index(p: qsmxt_engine::IlsqrPrecision) -> usize {
     qsmxt_engine::IlsqrPrecision::ALL.iter().position(|&x| x == p).unwrap_or(0)
+}
+/// LBV's arithmetic, in the CLI's names.
+pub const LBV_PRECISION_OPTIONS: &[&str] = &["double", "single"];
+const LBV_PRECISION_HELP: &[&str] = &[
+    "Double precision (default)",
+    "Single precision, as the original implementation computes",
+];
+fn lbv_precision_index(p: qsmxt_engine::LbvPrecision) -> usize {
+    qsmxt_engine::LbvPrecision::ALL.iter().position(|&x| x == p).unwrap_or(0)
 }
 /// PDF's dipole kernel, in the CLI's names.
 pub const PDF_SPACE_OPTIONS: &[&str] = &["image", "kspace"];
@@ -3364,7 +3389,15 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "pdf_n_pad", help: "Zero-padding around the mask's bounding box, voxels; 0 = the full volume" });
             }
             2 => { // LBV
-                rows.push(PipelineRow::Param { label: "  Tolerance", field: "lbv_tol", help: "Convergence tolerance" });
+                rows.push(PipelineRow::Param { label: "  Tolerance", field: "lbv_tol",
+                    help: "Stop the coarsest grid's relaxation when its summed absolute update falls below this (radians over the echo spacing)" });
+                rows.push(PipelineRow::Param { label: "  Depth", field: "lbv_depth",
+                    help: "Coarsest multigrid level. Blank = automatic (log2 of the smallest dimension minus 3)" });
+                rows.push(PipelineRow::Param { label: "  Peel", field: "lbv_peel", help: "Boundary layers removed from the mask beyond the first" });
+                rows.push(PipelineRow::Param { label: "  Relaxations before", field: "lbv_n1", help: "Relaxations on each grid before the coarser grid" });
+                rows.push(PipelineRow::Param { label: "  Relaxations after", field: "lbv_n2", help: "Relaxations on each grid after the coarser grid" });
+                rows.push(PipelineRow::Param { label: "  Final relaxations", field: "lbv_n3", help: "Relaxations on the finest grid at the end" });
+                rows.push(PipelineRow::AlgoSelect { label: "  Precision", field: "lbv_precision", options: LBV_PRECISION_OPTIONS, help: LBV_PRECISION_HELP });
             }
             3 => { // iSMV
                 rows.push(PipelineRow::AlgoSelect { label: "  Variant", field: "ismv_variant", options: ISMV_VARIANT_OPTIONS, help: ISMV_VARIANT_HELP });
@@ -3859,6 +3892,7 @@ impl PipelineFormState {
         "phase_offset_sigma_mm", "romeo_template",
         "romeo_temporal_uncertain_unwrapping", "romeo_max_seeds", "romeo_wrap_addition",
         "vsharp_threshold", "vsharp_max_radius", "vsharp_min_radius", "vsharp_radius_step", "vsharp_grid_spacing", "pdf_tol", "lbv_tol",
+        "lbv_depth", "lbv_peel", "lbv_n1", "lbv_n2", "lbv_n3",
         "ismv_tol", "ismv_max_iter", "ismv_radius", "sharp_threshold", "sharp_radius",
         "resharp_radius", "resharp_tik_reg", "resharp_tol", "resharp_max_iter",
         "harperella_radius", "harperella_max_iter", "harperella_tol", "harperella_pad",
@@ -4033,6 +4067,11 @@ impl PipelineFormState {
             "vsharp_grid_spacing" => &self.vsharp_grid_spacing,
             "pdf_tol" => &self.pdf_tol,
             "lbv_tol" => &self.lbv_tol,
+            "lbv_depth" => &self.lbv_depth,
+            "lbv_peel" => &self.lbv_peel,
+            "lbv_n1" => &self.lbv_n1,
+            "lbv_n2" => &self.lbv_n2,
+            "lbv_n3" => &self.lbv_n3,
             "ismv_tol" => &self.ismv_tol,
             "ismv_max_iter" => &self.ismv_max_iter,
             "ismv_radius" => &self.ismv_radius,
@@ -4303,6 +4342,11 @@ impl PipelineFormState {
             "vsharp_grid_spacing" => Some(&mut self.vsharp_grid_spacing),
             "pdf_tol" => Some(&mut self.pdf_tol),
             "lbv_tol" => Some(&mut self.lbv_tol),
+            "lbv_depth" => Some(&mut self.lbv_depth),
+            "lbv_peel" => Some(&mut self.lbv_peel),
+            "lbv_n1" => Some(&mut self.lbv_n1),
+            "lbv_n2" => Some(&mut self.lbv_n2),
+            "lbv_n3" => Some(&mut self.lbv_n3),
             "ismv_tol" => Some(&mut self.ismv_tol),
             "ismv_max_iter" => Some(&mut self.ismv_max_iter),
             "ismv_radius" => Some(&mut self.ismv_radius),
@@ -4455,6 +4499,7 @@ impl PipelineFormState {
             "ilsqr_precision" => self.ilsqr_precision,
             "sep_ilsqr_qsm_precision" => self.sep_ilsqr_qsm_precision,
             "pdf_space" => self.pdf_space,
+            "lbv_precision" => self.lbv_precision,
             "ismv_variant" => self.ismv_variant,
             "nltv_te" => self.nltv_te,
             "medi_te" => self.medi_te,
@@ -4501,6 +4546,7 @@ impl PipelineFormState {
             "ilsqr_precision" => self.ilsqr_precision = val.min(ILSQR_PRECISION_OPTIONS.len() - 1),
             "sep_ilsqr_qsm_precision" => self.sep_ilsqr_qsm_precision = val.min(ILSQR_PRECISION_OPTIONS.len() - 1),
             "pdf_space" => self.pdf_space = val.min(PDF_SPACE_OPTIONS.len() - 1),
+            "lbv_precision" => self.lbv_precision = val.min(LBV_PRECISION_OPTIONS.len() - 1),
             "ismv_variant" => self.ismv_variant = val.min(ISMV_VARIANT_OPTIONS.len() - 1),
             "nltv_te" => self.nltv_te = val.min(ECHO_TIME_OPTIONS.len() - 1),
             "medi_te" => self.medi_te = val.min(ECHO_TIME_OPTIONS.len() - 1),
@@ -8950,7 +8996,7 @@ mod tests {
         // And optional settings whose blank is the value qsm-core derives.
         const OPT_IN_EMPTY: &[&str] = &["dl_tile_size", "dl_tile_halo", "robust_fit_tuning", "sep_susepnet_patch",
             "tv_rho", "tgv_iterations", "fansi_mu1", "fansi_alpha0", "fansi_mu0", "l1qsm_mu1", "hdqsm_mu1_l2",
-            "medi_msmv_vessel_radius", "nltv_rho", "ismv_max_iter", "ismv_radius"];
+            "medi_msmv_vessel_radius", "nltv_rho", "ismv_max_iter", "ismv_radius", "lbv_depth"];
         let state = PipelineFormState::default();
         for &field_name in PipelineFormState::ALL_PARAM_FIELDS {
             let val = state.get_param(field_name);

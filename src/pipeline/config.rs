@@ -625,7 +625,14 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.pdf_params.pdf_n_cg { config.bg_removal.pdf.n_cg = v; }
         if let Some(v) = args.pdf_params.pdf_space { config.bg_removal.pdf.space = v; }
         if let Some(v) = args.pdf_params.pdf_n_pad { config.bg_removal.pdf.n_pad = v; }
-        if let Some(v) = args.lbv_params.lbv_tol { config.bg_removal.lbv.tol = v; }
+        let lbv = &args.lbv_params;
+        if let Some(v) = lbv.lbv_tol { config.bg_removal.lbv.tol = v; }
+        if let Some(v) = lbv.lbv_depth { config.bg_removal.lbv.depth = Some(v); }
+        if let Some(v) = lbv.lbv_peel { config.bg_removal.lbv.peel = v; }
+        if let Some(v) = lbv.lbv_n1 { config.bg_removal.lbv.n1 = v; }
+        if let Some(v) = lbv.lbv_n2 { config.bg_removal.lbv.n2 = v; }
+        if let Some(v) = lbv.lbv_n3 { config.bg_removal.lbv.n3 = v; }
+        if let Some(v) = lbv.lbv_precision { config.bg_removal.lbv.precision = v; }
         if let Some(v) = args.ismv_params.ismv_variant { config.bg_removal.ismv.variant = v; }
         if let Some(v) = args.ismv_params.ismv_tol { config.bg_removal.ismv.tol = v; }
         if let Some(v) = args.ismv_params.ismv_max_iter { config.bg_removal.ismv.max_iter = Some(v); }

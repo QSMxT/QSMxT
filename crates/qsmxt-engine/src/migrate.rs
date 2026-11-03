@@ -682,9 +682,11 @@ mod tests {
     #[test]
     fn a_full_old_file_at_its_defaults_reads_as_todays_defaults() {
         let (c, m) = read(V10_FULL).unwrap();
-        // DECOMPOSE's iteration limit is carried over as it is, its old default 30 included.
+        // DECOMPOSE's iteration limit is carried over as it is, its old default 30 included, and
+        // so is LBV's tolerance (the SOR solver's 1e-6; the rule lbv.tolerance suggests 0.01).
         let mut today = PipelineConfig::default();
         today.separation.decompose.lsqcurvefit.max_iterations = 30;
+        today.bg_removal.lbv.tol = 1e-6;
         assert_eq!(c, today);
         assert!(
             m.notes
@@ -900,6 +902,18 @@ mod tests {
                 1,
             );
         assert!(read(&inner).is_err());
+    }
+
+    /// LBV's tolerance is kept as written, even an earlier release's default (the SOR solver's
+    /// 1e-6): the rule `lbv.tolerance` suggests LBV.m's 0.01 instead (never a silent change).
+    #[test]
+    fn an_old_lbv_tolerance_is_kept() {
+        let full = V10_FULL.replacen("[bg_removal]\nalgorithm = \"vsharp\"", "[bg_removal]\nalgorithm = \"lbv\"", 1);
+        let (c, m) = read(&full).unwrap();
+        assert_eq!(c.bg_removal.lbv.tol, 1e-6);
+        assert!(!m.notes.iter().chain(&m.warnings).any(|n| n.contains("lbv")), "{m:?}");
+        let (c, _) = read("[bg_removal]\nalgorithm = \"lbv\"\n[bg_removal.lbv]\ntol = 0.00002\n").unwrap();
+        assert_eq!(c.bg_removal.lbv.tol, 2e-5);
     }
 
     /// A hand-written file holds what its author chose: today's MEDI λ is accepted silently, and
@@ -1129,9 +1143,10 @@ mod tests {
         let old: toml::Table = toml::from_str(V10_FULL).unwrap();
         let json = serde_json::to_string(&old).unwrap();
         let (c, m) = PipelineConfig::from_json_migrating(&json).unwrap();
-        // DECOMPOSE's iteration limit is carried over as it is, its old default 30 included.
+        // DECOMPOSE's iteration limit and LBV's tolerance are carried over as they are.
         let mut carried = PipelineConfig::default();
         carried.separation.decompose.lsqcurvefit.max_iterations = 30;
+        carried.bg_removal.lbv.tol = 1e-6;
         assert_eq!(c, carried);
         assert!(!m.notes.is_empty());
         let mut today = PipelineConfig::default();

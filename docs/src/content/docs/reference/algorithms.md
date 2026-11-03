@@ -601,6 +601,17 @@ default) or `kspace` (the analytic k-space kernel). With PDF chosen, QSMxT recom
 iterations (rule `pdf.cg-iterations`): 30 can stop far from convergence, and 300 costs about
 30 s more per 1 mm whole-brain scan.
 
+LBV (Zhou et al. 2014) follows the authors' code (MEDI toolbox `LBV.m`): a full multigrid
+solve of the Laplace equation inside the mask, with the field in radians over the echo spacing
+(so it takes the field strength and echo times). Its settings are the original's:
+`--lbv-tol` (default 0.01) stops the coarsest grid's relaxation when its summed absolute update
+falls below it; `--lbv-depth` is the coarsest grid (default: log2 of the smallest dimension
+minus 3); `--lbv-peel` removes more boundary layers from the mask (default 0);
+`--lbv-n1`, `--lbv-n2` and `--lbv-n3` are the relaxations on each grid before and after the
+coarser one and on the finest grid at the end (30, 100, 100). `--lbv-precision single`
+computes in single precision as the original does (default: double). The local field is
+defined on the mask minus its boundary layer, which the inversion takes as its mask.
+
 HARPERELLA and iHARPERELLA zero-pad the field by `--harperella-pad` / `--iharperella-pad`
 voxels per side, X Y Z (STI Suite's `padsize`, default `0 0 0`).
 

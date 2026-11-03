@@ -338,8 +338,26 @@ pub(super) fn table() -> Vec<Def> {
         d("bg_removal.pdf.n_pad", Background, "Pad (voxels)", "Zero-padding around the mask's bounding box, voxels; 0 = the full volume", Int).min(0.0).units("voxels").flag("--pdf-n-pad").parent("bg_removal.algorithm")
         .when(|x| x.bf("pdf")).full("Padding")
         .gui("Zero-padding around the mask's bounding box; 0 runs on the full volume"),
-        d("bg_removal.lbv.tol", Background, "Tolerance", "Convergence tolerance", Float).flag("--lbv-tol").parent("bg_removal.algorithm")
+        // QSM.rs LbvParams::validate: tol finite and >= 0, depth at most 8.
+        d("bg_removal.lbv.tol", Background, "Tolerance", "Stop the coarsest grid's relaxation when its summed absolute update falls below this (radians over the echo spacing)", Float).min(0.0).flag("--lbv-tol").parent("bg_removal.algorithm")
+        .when(|x| x.bf("lbv"))
+        .gui("Stop the coarsest grid's relaxation when its summed absolute update falls below this"),
+        d("bg_removal.lbv.depth", Background, "Depth", "Coarsest multigrid level. Blank = automatic (log2 of the smallest dimension minus 3)", Int).min(0.0).max(8.0).optional().flag("--lbv-depth").parent("bg_removal.algorithm")
+        .when(|x| x.bf("lbv")).full("Multigrid depth"),
+        d("bg_removal.lbv.peel", Background, "Peel", "Boundary layers removed from the mask beyond the first", Int).min(0.0).units("voxels").flag("--lbv-peel").parent("bg_removal.algorithm")
+        .when(|x| x.bf("lbv")).full("Peeled layers"),
+        d("bg_removal.lbv.n1", Background, "Relaxations before", "Relaxations on each grid before the coarser grid", Int).min(0.0).flag("--lbv-n1").parent("bg_removal.algorithm")
         .when(|x| x.bf("lbv")),
+        d("bg_removal.lbv.n2", Background, "Relaxations after", "Relaxations on each grid after the coarser grid", Int).min(0.0).flag("--lbv-n2").parent("bg_removal.algorithm")
+        .when(|x| x.bf("lbv")),
+        d("bg_removal.lbv.n3", Background, "Final relaxations", "Relaxations on the finest grid at the end", Int).min(0.0).flag("--lbv-n3").parent("bg_removal.algorithm")
+        .when(|x| x.bf("lbv")),
+        d("bg_removal.lbv.precision", Background, "Precision", "", Enum(vec![
+            o("double", "double", "Double", "Double precision (default)"),
+            o("single", "single", "Single", "Single precision, as the original implementation computes"),
+        ])).flag("--lbv-precision").parent("bg_removal.algorithm")
+        .when(|x| x.bf("lbv"))
+        .gui("Arithmetic of the multigrid solver"),
         d("bg_removal.ismv.variant", Background, "Variant", "", Enum(vec![
             o("wen2014", "wen2014", "Wen 2014", "The authors' paper and code (default)"),
             o("qsmjl", "qsmjl", "QSM.jl", "QSM.jl's implementation"),

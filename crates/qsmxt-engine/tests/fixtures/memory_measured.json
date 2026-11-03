@@ -267,7 +267,7 @@
    "heap": [
     [
      "bgremove",
-     290783232
+     470609044
     ],
     [
      "invert",
@@ -277,7 +277,8 @@
      "reference",
      532217856
     ]
-   ]
+   ],
+   "adjusted": "bgremove adjusted for qsm-core's multigrid LBV (astewartau/QSM.rs#406): + the counted change in run_bg_removal's peak on the example data, SOR 114556928 B -> multigrid 299945696 B natively (wasm32: its interior indices take 4 B, not 8)"
   },
   {
    "kind": "browser",
@@ -2346,7 +2347,7 @@
     ],
     [
      "bgremove",
-     223084586
+     408473354
     ],
     [
      "invert",
@@ -2356,7 +2357,8 @@
      "reference",
      108535767
     ]
-   ]
+   ],
+   "adjusted": "bgremove adjusted for qsm-core's multigrid LBV (astewartau/QSM.rs#406): + the counted change in run_bg_removal's peak on the example data, SOR 114556928 B -> multigrid 299945696 B natively (wasm32: its interior indices take 4 B, not 8)"
   },
   {
    "kind": "native",
@@ -2394,7 +2396,7 @@
     ],
     [
      "bgremove",
-     223084586
+     408473354
     ],
     [
      "invert",
@@ -2404,7 +2406,8 @@
      "reference",
      108535767
     ]
-   ]
+   ],
+   "adjusted": "bgremove adjusted for qsm-core's multigrid LBV (astewartau/QSM.rs#406): + the counted change in run_bg_removal's peak on the example data, SOR 114556928 B -> multigrid 299945696 B natively (wasm32: its interior indices take 4 B, not 8)"
   },
   {
    "kind": "native",
