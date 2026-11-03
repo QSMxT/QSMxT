@@ -1054,7 +1054,8 @@ pub(super) fn table() -> Vec<Def> {
             o("toolbox", "toolbox", "Toolbox (default)", "The authors' route: the inputs in the network's training frame (B0 along z, 1 mm), the QSM channel from QSMnetME, R2' measured or predicted from R2* by R2PRIMEnet, the maps resampled back"),
             o("native", "native", "Network only", "The network alone on the acquired grid, given this run's QSM and R2', as a sliding window"),
         ])).flag("--chi-sepnet-route").parent("separation.algorithm")
-        .when(|x| x.sep("chi-sepnet")).full("χ-sepnet route"),
+        .when(|x| x.sep("chi-sepnet")).full("χ-sepnet route")
+        .gui("How χ-sepnet's inputs are prepared: the authors' route or the network alone"),
         d("separation.chi_sepnet.patch", Separation, "Patch", "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)", IntVec3).min(qsm_core::separation::chisepnet::POOL_MULTIPLE as f64).units("voxels").flag("--chi-sepnet-patch").parent("separation.chi_sepnet.route")
         .when(|x| x.sep("chi-sepnet") && x.c.separation.chi_sepnet.route == crate::ChiSepNetRoute::Native).full("χ-sepnet patch")
         .gui("Sliding-window patch D H W, each a multiple of 16"),

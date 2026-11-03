@@ -247,10 +247,17 @@ mod tests {
             c.separation.algorithm = alg;
             assert!(key(&c).get("patch").is_none(), "{alg}");
         }
+        // χ-sepnet: each route keys its own patch, and always its route.
         c.separation.chi_sepnet.patch = [128, 128, 64];
         c.separation.susep_net.patch = Some([64, 64, 64]);
         c.separation.algorithm = SeparationAlgorithm::ChiSepNet;
+        assert!(key(&c).get("patch").is_none(), "the toolbox route ignores the native patch");
+        assert_eq!(key(&c)["route"], "toolbox");
+        c.separation.chi_sepnet.frame_patch = Some([96, 96, 64]);
+        assert_eq!(key(&c)["patch"], serde_json::json!([96, 96, 64]));
+        c.separation.chi_sepnet.route = crate::ChiSepNetRoute::Native;
         assert_eq!(key(&c)["patch"], serde_json::json!([128, 128, 64]));
+        assert_eq!(key(&c)["route"], "native");
         c.separation.algorithm = SeparationAlgorithm::SusepNet;
         assert_eq!(key(&c)["patch"], serde_json::json!([64, 64, 64]));
         c.separation.algorithm = SeparationAlgorithm::WaveSep;

@@ -18,6 +18,10 @@
   [
    "bg_removal.vsharp.grid",
    "native"
+  ],
+  [
+   "separation.chi_sepnet.route",
+   "native"
   ]
  ],
  "records": [
