@@ -257,7 +257,7 @@ pub fn resolve_geometry(
     let forced_axial = !axial_only.is_empty() && tilted_for_axial_only(&affine);
     if forced_axial {
         log::info!(
-            "Resampling to axial because {} {} no B0 direction and {} assume it is +z; B0 is \
+            "Resampling to axial because {} {} no B0 direction and {} it is +z; B0 is \
              {:.1}° from the slice normal here",
             axial_only.join(", "),
             if axial_only.len() == 1 { "takes" } else { "take" },

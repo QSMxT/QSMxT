@@ -3289,7 +3289,7 @@ qsmxt resample [OPTIONS] [INPUT]
 | `--magnitude <MAGNITUDE>` | Magnitude paired with --phase. |
 | `--phase-out <PHASE_OUT>` | Where to write the resampled phase (default: &lt;phase stem&gt;_axial.nii) |
 | `--magnitude-out <MAGNITUDE_OUT>` | Where to write the resampled magnitude (default: &lt;magnitude stem&gt;_axial.nii) |
-| `--no-noise-fill` | Do not fill the empty corners of the new grid with seeded noise. Only the --phase / --magnitude pair is noise-filled (it seeds ROMEO); a plain volume's corners are zero. |
+| `--noise-fill` | Fill the empty corners of the new grid with seeded noise, as QSMxT 8.x did. Only the --phase / --magnitude pair can be noise-filled; by default the corners are zero. |
 
 ## `qsmxt quality-map`
 

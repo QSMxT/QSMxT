@@ -1224,7 +1224,7 @@ mod integration_tests {
         super::resample::execute(ResampleArgs {
             input: Some(input), output: Some(output.clone()),
             phase: None, magnitude: None, phase_out: None, magnitude_out: None,
-            no_noise_fill: false,
+            noise_fill: false, no_noise_fill: false,
         }).unwrap();
         assert!(output.exists());
     }
@@ -1244,22 +1244,25 @@ mod integration_tests {
             input: None, output: None,
             phase: Some(phase), magnitude: Some(magnitude),
             phase_out: Some(phase_out.clone()), magnitude_out: Some(magnitude_out.clone()),
-            no_noise_fill: true,
+            noise_fill: true, no_noise_fill: false,
         }).unwrap();
         assert!(phase_out.exists() && magnitude_out.exists());
     }
 
-    /// `--no-noise-fill` only applies to the phase/magnitude pair, and the pair's outputs only
+    /// `--noise-fill` only applies to the phase/magnitude pair, and the pair's outputs only
     /// to the pair: given with a plain volume they are refused rather than ignored (#279).
     #[test]
     fn resample_refuses_flags_that_do_not_apply() {
         use clap::Parser;
         let parse = |a: &[&str]| crate::cli::Cli::try_parse_from(
             [&["qsmxt", "resample"][..], a].concat());
+        assert!(parse(&["vol.nii", "--noise-fill"]).is_err());
         assert!(parse(&["vol.nii", "--no-noise-fill"]).is_err());
         assert!(parse(&["vol.nii", "--phase-out", "p.nii"]).is_err());
         assert!(parse(&["vol.nii", "--phase", "p.nii", "--magnitude", "m.nii"]).is_err());
         assert!(parse(&["--phase", "p.nii", "--magnitude", "m.nii", "--output", "o.nii"]).is_err());
+        assert!(parse(&["--phase", "p.nii", "--magnitude", "m.nii", "--noise-fill"]).is_ok());
+        // the old opt-out still parses, so existing scripts keep running
         assert!(parse(&["--phase", "p.nii", "--magnitude", "m.nii", "--no-noise-fill"]).is_ok());
         assert!(parse(&["vol.nii", "--output", "o.nii"]).is_ok());
     }
@@ -1279,7 +1282,7 @@ mod integration_tests {
     fn test_resample_requires_an_input() {
         let err = super::resample::execute(ResampleArgs {
             input: None, output: None, phase: None, magnitude: None,
-            phase_out: None, magnitude_out: None, no_noise_fill: false,
+            phase_out: None, magnitude_out: None, noise_fill: false, no_noise_fill: false,
         });
         assert!(err.is_err(), "no input should be an error, not a panic");
     }
