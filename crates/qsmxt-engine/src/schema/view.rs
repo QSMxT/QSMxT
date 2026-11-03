@@ -34,6 +34,10 @@ pub struct ViewFacts {
     /// The matrix size, when known.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dims: Option<[usize; 3]>,
+    /// The scanner's manufacturer, as the sidecar's `Manufacturer` gives it, when known: for the
+    /// rules that depend on the vendor.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manufacturer: Option<String>,
 }
 
 /// How a setting applies to a config.

@@ -154,6 +154,7 @@ mod integration_tests {
                 crop_to_mask: false,
                 ignore_slice_gap: false,
                 fft_padding: false,
+                tukey_window: None,
                 crop_margin_mm: None,
                 output_space: None,
                 mask_preset: None,

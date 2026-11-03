@@ -872,6 +872,7 @@ impl ScanInputs {
                     custom_qsm: false,
                     custom_r2: false,
                     custom_r2prime: false,
+                    manufacturer: manufacturer.clone(),
                 };
                 (Some(facts), sidecars)
             }

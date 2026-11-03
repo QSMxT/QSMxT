@@ -44,6 +44,7 @@ pub fn typical_scan() -> ScanFacts {
         custom_qsm: false,
         custom_r2: false,
         custom_r2prime: false,
+        manufacturer: None,
     }
 }
 
@@ -119,6 +120,18 @@ impl PipelineView {
     pub fn read_field_strength(&self) -> Option<f64> {
         self.run.as_ref().and_then(|(_, r)| r.as_ref().ok()).map(|r| r.magnetic_field_strength).filter(|&b| b > 0.0)
     }
+
+    /// The manufacturer in the first echo's sidecar of the run last read, when it gives one.
+    pub fn read_manufacturer(&self) -> Option<String> {
+        let run = self.run.as_ref().and_then(|(_, r)| r.as_ref().ok())?;
+        sidecar_manufacturer(&run.echoes.first()?.phase_json)
+    }
+}
+
+/// A BIDS sidecar's `Manufacturer`, when the file reads and gives one.
+pub fn sidecar_manufacturer(json: &std::path::Path) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(json).ok()?).ok()?;
+    v.get("Manufacturer")?.as_str().map(str::to_string)
 }
 
 /// The first selected run's key and how many runs are selected, in a scanned BIDS dataset.

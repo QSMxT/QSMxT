@@ -484,6 +484,7 @@ pub(crate) mod tests {
             mese_echo_times: None,
             custom_mask: false, custom_dseg: false, custom_qsm: false, custom_r2: false,
             custom_r2prime: false,
+            manufacturer: None,
         }
     }
 

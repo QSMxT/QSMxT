@@ -8,7 +8,7 @@ use crate::scan::RunMetadata;
 /// The `scale_phase` step's parameters. `real_imaginary` is `Some(negate_phase)` for a run given
 /// as real and imaginary parts: the sign convention follows from the sidecar, so it is a
 /// parameter (and keys the cache).
-pub fn params(meta: &RunMetadata, real_imaginary: Option<bool>) -> serde_json::Value {
+pub fn params(meta: &RunMetadata, real_imaginary: Option<bool>, config: &PipelineConfig) -> serde_json::Value {
     let mut params = serde_json::json!({
         "resampled_to_axial": meta.source_geometry.is_some(),
         "dims": [meta.dims.0, meta.dims.1, meta.dims.2],
@@ -17,7 +17,31 @@ pub fn params(meta: &RunMetadata, real_imaginary: Option<bool>) -> serde_json::V
         params["input"] = serde_json::json!("real_imaginary");
         params["negate_phase"] = serde_json::json!(negate_phase);
     }
+    add_tukey_window(&mut params, config);
     params
+}
+
+/// The k-space Tukey window's taper ratio, in a `scale_phase` step's parameters when it is on (a
+/// run without it keeps its parameters, and its cache key, as they were).
+fn add_tukey_window(params: &mut serde_json::Value, config: &PipelineConfig) {
+    if config.pipeline.tukey_window > 0.0 {
+        params["tukey_window"] = serde_json::json!(config.pipeline.tukey_window);
+    }
+}
+
+/// The k-space Tukey window (`--tukey-window`, qsm-core `utils::tukey_window`) on one echo on
+/// the acquired grid, in place: `phase` in radians. Nothing when the taper ratio is 0.
+pub fn tukey_window(magnitude: &mut [f64], phase: &mut [f64], meta: &RunMetadata, config: &PipelineConfig) {
+    let factor = config.pipeline.tukey_window;
+    if factor > 0.0 {
+        qsm_core::utils::tukey_window::tukey_window_mag_phase(magnitude, phase, acquired_grid(meta).dims, factor);
+    }
+}
+
+/// The log line for a run that applies the Tukey window, if it does.
+pub fn tukey_window_line(config: &PipelineConfig) -> Option<String> {
+    (config.pipeline.tukey_window > 0.0).then(|| format!(
+        "k-space Tukey window (taper ratio {}) applied to every echo's complex image", config.pipeline.tukey_window))
 }
 
 /// One echo on the working grid.
@@ -131,6 +155,7 @@ pub fn coil_params(config: &PipelineConfig, meta: &RunMetadata, coil_numbers: &[
         "echo_times": meta.echo_times,
         "resampled_to_axial": meta.source_geometry.is_some(),
     });
+    add_tukey_window(&mut p, config);
     // PRELUDE's settings reach the HIP unwrap (`hip_unwrap_method`), so they key the step; only
     // when PRELUDE runs, so other runs keep their keys.
     if let qsm_core::unwrap::UnwrapMethod::Prelude(pp) = hip_unwrap_method(config) {
@@ -273,11 +298,36 @@ mod tests {
         assert!(coil_params(&cfg, &m, &[1, 2]).get("prelude").is_none());
     }
 
+    /// The Tukey window keys the step only when it is on, and windows the echo on the acquired
+    /// grid as qsm-core does.
+    #[test]
+    fn the_tukey_window_keys_the_step_and_reaches_qsm_core() {
+        let m = meta((6, 5, 4));
+        let mut c = PipelineConfig::default();
+        assert!(params(&m, None, &c).get("tukey_window").is_none());
+        assert!(coil_params(&c, &m, &[1, 2]).get("tukey_window").is_none());
+        let (mut mag, mut phase) = (vec![1.0; 120], (0..120).map(|i| (i % 7) as f64 * 0.3 - 1.0).collect::<Vec<f64>>());
+        let (m0, p0) = (mag.clone(), phase.clone());
+        tukey_window(&mut mag, &mut phase, &m, &c);
+        assert_eq!((&mag, &phase), (&m0, &p0), "0 applies none");
+        assert!(tukey_window_line(&c).is_none());
+
+        c.pipeline.tukey_window = 0.4;
+        assert_eq!(params(&m, None, &c)["tukey_window"], 0.4);
+        assert_eq!(coil_params(&c, &m, &[1, 2])["tukey_window"], 0.4);
+        tukey_window(&mut mag, &mut phase, &m, &c);
+        let (mut want_m, mut want_p) = (m0, p0);
+        qsm_core::utils::tukey_window::tukey_window_mag_phase(&mut want_m, &mut want_p, (6, 5, 4), 0.4);
+        assert_eq!((mag, phase), (want_m, want_p));
+        assert!(tukey_window_line(&c).unwrap().contains("0.4"));
+    }
+
     #[test]
     fn the_cache_key_names_real_imaginary_input() {
         let m = meta((2, 2, 2));
-        assert!(params(&m, None).get("input").is_none());
-        let p = params(&m, Some(true));
+        let c = PipelineConfig::default();
+        assert!(params(&m, None, &c).get("input").is_none());
+        let p = params(&m, Some(true), &c);
         assert_eq!(p["input"], "real_imaginary");
         assert_eq!(p["negate_phase"], true);
     }

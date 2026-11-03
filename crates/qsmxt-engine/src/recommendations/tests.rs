@@ -8,9 +8,18 @@ use crate::schema::{self, ValueType, ViewFacts};
 /// The facts a rule's conditions need: multi-echo, at most two echoes, a fine voxel size. `None`
 /// for a rule that needs a browser (QSMxT's tests run natively).
 fn facts_for(rule: &Rule) -> Option<Facts> {
-    let mut f = Facts { echo_count: Some(4), field_strength: Some(3.0), voxel_size: Some((1.0, 1.0, 1.0)), dims: Some((64, 64, 32)) };
+    let mut f = Facts {
+        echo_count: Some(4), field_strength: Some(3.0), voxel_size: Some((1.0, 1.0, 1.0)), dims: Some((64, 64, 32)),
+        manufacturer: None,
+    };
     for c in rule.when {
         let Condition::Fact { fact, is } = c else { continue };
+        // A vendor rule: the first manufacturer it names, as a sidecar spells it.
+        if let (core::Fact::Manufacturer, Test::OneOf { values }) = (fact, is) {
+            let Some(core::Value::Choice(m)) = values.first() else { return None };
+            f.manufacturer = Some(m.to_uppercase());
+            continue;
+        }
         let Test::Range { min, max } = is else { return None };
         match fact {
             core::Fact::EchoCount => f.echo_count = Some(if max.is_some() { 2 } else { min.unwrap_or(2.0) as usize + 2 }),
@@ -100,7 +109,7 @@ fn native_rules() -> impl Iterator<Item = (&'static Rule, Facts)> {
 }
 
 fn known() -> Facts {
-    Facts { echo_count: Some(4), field_strength: Some(3.0), voxel_size: Some((1.0, 1.0, 1.0)), dims: Some((64, 64, 32)) }
+    Facts { echo_count: Some(4), field_strength: Some(3.0), voxel_size: Some((1.0, 1.0, 1.0)), dims: Some((64, 64, 32)), manufacturer: None }
 }
 
 /// A QSM.rs setting at a QSMxT setting's own path needs no entry in the table.
@@ -182,7 +191,7 @@ fn view_facts(f: &Facts) -> ViewFacts {
     ViewFacts {
         num_echoes: f.echo_count, field_strength: f.field_strength,
         voxel_size: f.voxel_size.map(|(x, y, z)| [x, y, z]), dims: f.dims.map(|(x, y, z)| [x, y, z]),
-        ..Default::default()
+        manufacturer: f.manufacturer.clone(), ..Default::default()
     }
 }
 
@@ -513,4 +522,32 @@ fn ticking_heidi_offers_lsqr_and_changes_nothing() {
         assert_eq!((schema::get(&c, "inversion.algorithm"), c.inversion.heidi.enabled), (Some(json!("lsqr")), true), "{alg}");
         assert!(!recommendations(&c, &facts).iter().any(|r| r.rule.starts_with("heidi.seed")), "{alg}");
     }
+}
+
+/// χ-sepnet's toolbox route offers the toolbox's Tukey window for the scan's manufacturer, as the
+/// sidecar spells it, and changes nothing until applied; the native route and an unknown
+/// manufacturer offer nothing.
+#[test]
+fn chi_sepnet_offers_the_vendor_tukey_window() {
+    let mut c = PipelineConfig::default();
+    c.pipeline.do_chi_separation = true;
+    schema::set(&mut c, "separation.algorithm", json!("chi-sepnet")).unwrap();
+    let tukey = |c: &PipelineConfig, m: Option<&str>| recommendations(c, &known().with_manufacturer(m.map(str::to_string)))
+        .into_iter().filter(|r| r.setting == "pipeline.tukey_window").collect::<Vec<_>>();
+    let r = tukey(&c, Some("SIEMENS")).pop().expect("Siemens: no Tukey window offered");
+    assert_eq!((r.rule.as_str(), r.strength, r.recommended.value.clone()), ("chi-sepnet.tukey-siemens-ge", Strength::Recommended, json!(0.4)));
+    assert_eq!(tukey(&c, Some("GE MEDICAL SYSTEMS")).len(), 1);
+    assert!(tukey(&c, Some("Philips Medical Systems")).is_empty(), "Philips: 0 is already the default");
+    assert!(tukey(&c, None).is_empty() && tukey(&c, Some("Canon_MEC")).is_empty());
+    assert_eq!(c.pipeline.tukey_window, 0.0, "changed silently");
+    let view = schema::settings_view(&c, &ViewFacts { manufacturer: Some("Siemens".into()), ..view_facts(&known()) });
+    assert!(view.iter().any(|v| v.path == "pipeline.tukey_window" && v.recommendations.iter().any(|x| x.rule == r.rule)));
+    apply(&mut c, &r.rule, None).unwrap();
+    assert_eq!(c.pipeline.tukey_window, 0.4);
+    assert!(tukey(&c, Some("Siemens")).is_empty());
+    assert_eq!(tukey(&c, Some("Philips")).pop().map(|r| r.recommended.value), Some(json!(0)));
+    let mut native = PipelineConfig { ..c.clone() };
+    native.pipeline.tukey_window = 0.0;
+    schema::set(&mut native, "separation.chi_sepnet.route", json!("native")).unwrap();
+    assert!(tukey(&native, Some("Siemens")).is_empty());
 }
