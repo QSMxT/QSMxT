@@ -323,30 +323,62 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
             (c.output.clone(), qsm, result)
         }
         SeparateCommand::ChiSepNet(args) => {
-            let c = &args.common;
-            let (qsm, mask, metadata, _) = load_common(c, &[])?;
-            info!("Chi-separation (chi-sepnet, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
-            crate::pipeline::runner::prefetch_weights("chi-sepnet", "chi-sepnet")?;
+            use qsm_core::separation::ChiSepNetRoute;
+            let route = match args.route {
+                crate::cli::ChiSepNetRouteArg::Toolbox => ChiSepNetRoute::Toolbox,
+                crate::cli::ChiSepNetRouteArg::Native => ChiSepNetRoute::Native,
+            };
+            // The local field is the reference grid: the toolbox route reads no QSM.
             let local_field = load_nifti(&args.local_field)?;
-            let r2prime = load_nifti(&args.r2prime)?;
-            // Weights download on first use.
-            let mut chi_sepnet = qsm_core::separation::ChiSepNetParams::default();
-            if let Some(p) = patch3(&args.patch) {
-                chi_sepnet.patch = p;
+            let (mask, _) = load_mask(&args.mask)?;
+            let bdir = (args.b0_direction[0], args.b0_direction[1], args.b0_direction[2]);
+            let metadata = qsmxt_engine::bridge::to_scan_metadata(
+                local_field.dims, local_field.voxel_size, &[], args.field_strength, bdir, Some(local_field.affine),
+            );
+            info!("Chi-separation (chi-sepnet, {} route, {}x{}x{})", match route {
+                ChiSepNetRoute::Toolbox => "toolbox", ChiSepNetRoute::Native => "native" },
+                local_field.dims.0, local_field.dims.1, local_field.dims.2);
+            let qsm = match (&args.qsm, route) {
+                (Some(p), _) => Some(load_nifti(p)?),
+                (None, ChiSepNetRoute::Native) => {
+                    return Err(QsmxtError::Config("chi-sepnet --route native needs --qsm".into()));
+                }
+                (None, ChiSepNetRoute::Toolbox) => None,
+            };
+            if route == ChiSepNetRoute::Native && args.r2prime.is_none() {
+                return Err(QsmxtError::Config("chi-sepnet --route native needs --r2prime".into()));
             }
+            let r2prime = args.r2prime.as_ref().map(|p| load_nifti(p)).transpose()?;
+            let r2star = args.r2star.as_ref().map(|p| load_nifti(p)).transpose()?;
+            crate::pipeline::runner::prefetch_weights("chi-sepnet", "chi-sepnet")?;
+            if route == ChiSepNetRoute::Toolbox {
+                crate::pipeline::runner::prefetch_weights("qsmnetme", "QSMnetME")?;
+                if r2prime.is_none() {
+                    crate::pipeline::runner::prefetch_weights("r2primenet", "R2PRIMEnet")?;
+                }
+            }
+            let chi_sepnet = qsm_core::separation::ChiSepNetParams {
+                route,
+                patch: patch3(&args.patch).unwrap_or(qsm_core::separation::ChiSepNetParams::default().patch),
+                frame_patch: patch3(&args.frame_patch),
+                ignore_field_mismatch: args.ignore_field_mismatch,
+            };
             let cfg = SeparationConfig {
                 algorithm: SeparationAlgorithm::ChiSepNet,
                 chi_sepnet,
                 ..Default::default()
             };
+            // The toolbox route does not read the QSM; the dispatcher takes one of the grid's size.
+            let zeros = vec![0.0; local_field.data.len()];
             let inputs = SeparationInputs {
-                local_field_ppm: &local_field.data, qsm: &qsm.data, qsm_per_echo: None, mask: &mask,
-                r2prime: Some(&r2prime.data), r2star: None,
+                local_field_ppm: &local_field.data, qsm: qsm.as_ref().map_or(&zeros, |q| &q.data),
+                qsm_per_echo: None, mask: &mask,
+                r2prime: r2prime.as_ref().map(|m| m.data.as_slice()), r2star: r2star.as_ref().map(|m| m.data.as_slice()),
                 magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None, n_std: None, mask_csf: None,
             };
             let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
                 .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
-            (c.output.clone(), qsm, result)
+            (args.output.clone(), local_field, result)
         }
     };
     save_result(&output, &result, &reference)?;

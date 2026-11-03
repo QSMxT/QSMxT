@@ -311,7 +311,7 @@ fn browser_defaults_are_qsmxts_except_where_the_browser_profile_changes_them() {
     let changed: Vec<&str> = schema::schema().into_iter()
         .filter(|s| s.browser_default != s.default).map(|s| s.path).collect();
     assert_eq!(changed, ["inversion.tile_size", "inversion.tile_halo", "separation.chi_sepnet.patch",
-        "separation.susep_net.patch", "separation.r2primenet.patch", "segmentation.patch"]);
+        "separation.chi_sepnet.frame_patch", "separation.susep_net.patch", "separation.r2primenet.patch", "segmentation.patch"]);
     for s in schema::schema() {
         assert_eq!(Some(s.browser_default.clone()), schema::get(&PipelineConfig::browser(), s.path), "{}", s.path);
     }
@@ -549,6 +549,7 @@ fn a_value_out_of_range_is_an_error_on_its_own_setting() {
     assert_eq!(error(&c, "separation.r2primenet.patch").as_deref(), Some("R2PRIMEnet patch W = 120 must be a positive multiple of 16 (four pooling levels)"));
     c.pipeline.do_chi_separation = true;
     c.separation.algorithm = qsmxt_engine::SeparationAlgorithm::ChiSepNet;
+    c.separation.chi_sepnet.route = qsmxt_engine::ChiSepNetRoute::Native;
     c.separation.chi_sepnet.patch = [128, 120, 64];
     assert_eq!(error(&c, "separation.chi_sepnet.patch").as_deref(), Some("χ-sepnet patch H = 120 must be a positive multiple of 16 (four pooling levels)"));
     c.separation.algorithm = qsmxt_engine::SeparationAlgorithm::SusepNet;

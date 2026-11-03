@@ -89,6 +89,7 @@ impl PipelineConfig {
         if chi_sepnet.patch == native.separation.chi_sepnet.patch {
             chi_sepnet.patch = BROWSER_CHI_SEPNET_PATCH;
         }
+        chi_sepnet.frame_patch.get_or_insert(BROWSER_CHI_SEPNET_PATCH);
         self.separation.susep_net.patch.get_or_insert(BROWSER_SUSEP_NET_PATCH);
     }
 }
@@ -119,6 +120,7 @@ mod tests {
         a["separation"]["r2primenet"]["patch"] = serde_json::json!(BROWSER_R2PRIMENET_PATCH);
         a["segmentation"]["patch"] = synthseg_low_memory_patch().into();
         a["separation"]["chi_sepnet"]["patch"] = serde_json::json!(BROWSER_CHI_SEPNET_PATCH);
+        a["separation"]["chi_sepnet"]["frame_patch"] = serde_json::json!(BROWSER_CHI_SEPNET_PATCH);
         a["separation"]["susep_net"]["patch"] = serde_json::json!(BROWSER_SUSEP_NET_PATCH);
         assert_eq!(a, b);
     }
@@ -184,7 +186,8 @@ mod tests {
     fn the_command_carries_the_chi_separation_patches() {
         use crate::SeparationAlgorithm::{ChiSepNet, SusepNet};
         for (alg, flag, own, other, [x, y, z]) in [
-            (ChiSepNet, "--chi-sepnet-patch", "chi-sepnet", "--susep-net-patch", BROWSER_CHI_SEPNET_PATCH),
+            // χ-sepnet's default route (the toolbox's) tiles its training frame.
+            (ChiSepNet, "--chi-sepnet-frame-patch", "chi-sepnet", "--susep-net-patch", BROWSER_CHI_SEPNET_PATCH),
             (SusepNet, "--susep-net-patch", "susep-net", "--chi-sepnet-patch", BROWSER_SUSEP_NET_PATCH),
         ] {
             let mut c = PipelineConfig::default();

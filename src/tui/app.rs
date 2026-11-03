@@ -1460,7 +1460,7 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("sep_wavesep_alpha", "separation.wavesep.alpha"), ("sep_wavesep_lambda", "separation.wavesep.lambda"),
     ("sep_wavesep_wavelet_order", "separation.wavesep.wavelet_order"), ("sep_wavesep_max_iter", "separation.wavesep.max_iter"),
     ("sep_wavesep_tol", "separation.wavesep.tol"), ("sep_hcchisep_dr_pos_3t", "separation.hc_chisep.dr_pos_3t"),
-    ("sep_hcchisep_bin_hz", "separation.hc_chisep.bin_hz"), ("sep_chisepnet_patch", "separation.chi_sepnet.patch"), ("sep_susepnet_patch", "separation.susep_net.patch"), ("custom_qsm_tool", "separation.custom_qsm_tool"),
+    ("sep_hcchisep_bin_hz", "separation.hc_chisep.bin_hz"), ("sep_chisepnet_route", "separation.chi_sepnet.route"), ("sep_chisepnet_patch", "separation.chi_sepnet.patch"), ("sep_chisepnet_frame_patch", "separation.chi_sepnet.frame_patch"), ("sep_susepnet_patch", "separation.susep_net.patch"), ("custom_qsm_tool", "separation.custom_qsm_tool"),
     ("do_swi", "pipeline.do_swi"), ("swi_unwrap", "swi.unwrap"), ("swi_scaling", "swi.scaling"), ("swi_strength", "swi.strength"),
     ("swi_hp_sigma", "swi.hp_sigma"), ("swi_mip_window", "swi.mip_window"), ("do_smwi", "pipeline.do_smwi"),
     ("smwi_threshold", "smwi.threshold_ppm"), ("smwi_power", "smwi.power"), ("smwi_mip_window", "smwi.mip_window"),
@@ -1489,6 +1489,12 @@ pub const MASK_GENERATOR_TYPES: &[&str] = &["threshold", "bet", "hd-bet", "mindg
 
 /// How R2' is obtained when no custom map is supplied.
 pub const R2PRIME_STRATEGY_OPTIONS: &[&str] = &["auto", "mese", "r2primenet"];
+/// χ-sepnet's input routes (`separation.chi_sepnet.route`), in [`CHI_SEPNET_ROUTE_HELP`]'s order.
+pub const CHI_SEPNET_ROUTE_OPTIONS: &[&str] = &["toolbox", "native"];
+pub const CHI_SEPNET_ROUTE_HELP: &[&str] = &[
+    "The authors' route: the inputs in the network's training frame (B0 along z, 1 mm), the QSM channel from QSMnetME, R2' measured or predicted from R2* by R2PRIMEnet, the maps resampled back",
+    "The network alone on the acquired grid, given this run's QSM and R2', as a sliding window",
+];
 pub const R2PRIME_STRATEGY_HELP: &[&str] = &[
     "Measure R2' = R2* - R2 from a MESE acquisition when one is present, else predict it from R2* with R2PRIMEnet",
     "Only ever measure R2' from a MESE acquisition - produces no R2' without spin-echo data",
@@ -1582,6 +1588,7 @@ const QSM_ALGO_HELP: &[&str] = &[
     "xQSM (deep learning; weights auto-downloaded) — octave-convolution U-net dipole inversion. https://doi.org/10.1002/nbm.4461",
     "QSMnet (deep learning; weights auto-downloaded) — 3D U-net dipole inversion. https://doi.org/10.1016/j.neuroimage.2018.06.030",
     "QSMnet+ (deep learning; weights auto-downloaded) — QSMnet trained for a wider susceptibility range. https://doi.org/10.1016/j.neuroimage.2020.116579",
+    "QSMnetME (deep learning; weights auto-downloaded) — the χ-separation toolbox's QSM network, trained on multi-echo data; rotates the field to B0 along z and resamples to 1 mm itself. https://doi.org/10.1002/hbm.70136",
     "AutoQSM (deep learning; weights auto-downloaded) — single-step reconstruction, no separate background removal. https://doi.org/10.1016/j.neuroimage.2019.116064",
     "QSMGAN (deep learning; weights auto-downloaded) — GAN-refined U-net dipole inversion. https://doi.org/10.1016/j.neuroimage.2019.116389",
     "IR2QSM (deep learning; weights auto-downloaded) — iterative unrolled U-net inversion. https://doi.org/10.1002/mp.17747",
@@ -2200,7 +2207,10 @@ pub struct PipelineFormState {
     pub sep_hcchisep_dr_pos_3t: String,
     pub sep_hcchisep_bin_hz: String,
     /// χ-sepnet's patch as "D H W"; SUSEP-Net's, or empty for the whole volume.
+    /// Index into [`CHI_SEPNET_ROUTE_OPTIONS`].
+    pub sep_chisepnet_route: usize,
     pub sep_chisepnet_patch: String,
+    pub sep_chisepnet_frame_patch: String,
     pub sep_susepnet_patch: String,
 
     // Pipeline tab UI state
@@ -2639,10 +2649,12 @@ impl Default for PipelineFormState {
             sep_wavesep_tol: fmt_default(sep_wavesep.tol),
             sep_hcchisep_dr_pos_3t: fmt_default(sep_hcchisep.dr_pos_3t),
             sep_hcchisep_bin_hz: fmt_default(sep_hcchisep.bin_hz),
+            sep_chisepnet_route: 0,
             sep_chisepnet_patch: {
                 let p = qsmxt_engine::ChiSepNetConfig::default().patch;
                 format!("{} {} {}", p[0], p[1], p[2])
             },
+            sep_chisepnet_frame_patch: String::new(),
             sep_susepnet_patch: String::new(),
             focus: 0,
             editing: false,
@@ -2657,7 +2669,7 @@ impl Default for PipelineFormState {
     }
 }
 
-pub const QSM_ALGO_OPTIONS: &[&str] = &["rts", "tv", "tkd", "tsvd", "tgv", "tikhonov", "nltv", "medi", "tfi", "ilsqr", "star", "lsqr", "qsmart", "ndi", "fansi", "fansi-tgv", "l1qsm", "whqsm", "hdqsm", "amp-pe", "xqsm", "qsmnet", "qsmnet-plus", "autoqsm", "qsmgan", "ir2qsm", "lpcnn", "modl-qsm", "nextqsm", "iqsm", "iqsm-plus"];
+pub const QSM_ALGO_OPTIONS: &[&str] = &["rts", "tv", "tkd", "tsvd", "tgv", "tikhonov", "nltv", "medi", "tfi", "ilsqr", "star", "lsqr", "qsmart", "ndi", "fansi", "fansi-tgv", "l1qsm", "whqsm", "hdqsm", "amp-pe", "xqsm", "qsmnet", "qsmnet-plus", "qsmnetme", "autoqsm", "qsmgan", "ir2qsm", "lpcnn", "modl-qsm", "nextqsm", "iqsm", "iqsm-plus"];
 /// MEDI/TFI data weighting, in the CLI's order (0, 1).
 pub const DATA_WEIGHTING_OPTIONS: &[&str] = &["uniform", "magnitude SNR"];
 const DATA_WEIGHTING_HELP: &[&str] = &[
@@ -2976,7 +2988,12 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Sliding window", field: "sep_susepnet_patch", help: "Run the network on patches D H W in voxels, each a multiple of 8, so its memory follows the patch instead of the volume; empty runs the whole volume at once" });
             }
             7 => {
-                rows.push(PipelineRow::Param { label: "  Patch", field: "sep_chisepnet_patch", help: "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)" });
+                rows.push(PipelineRow::AlgoSelect { label: "  Route", field: "sep_chisepnet_route", options: CHI_SEPNET_ROUTE_OPTIONS, help: CHI_SEPNET_ROUTE_HELP });
+                if self.sep_chisepnet_route == 1 {
+                    rows.push(PipelineRow::Param { label: "  Patch", field: "sep_chisepnet_patch", help: "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)" });
+                } else {
+                    rows.push(PipelineRow::Param { label: "  Sliding window", field: "sep_chisepnet_frame_patch", help: "Run the networks on patches D H W of the 1 mm frame, each a multiple of 16, so memory follows the patch; empty runs the whole frame at once" });
+                }
             }
             _ => {}
         }
@@ -3777,7 +3794,7 @@ impl PipelineFormState {
         // Matched by name so it survives option reordering.
         if matches!(
             QSM_ALGO_OPTIONS.get(self.qsm_algorithm).copied().unwrap_or(""),
-            "xqsm" | "qsmnet" | "qsmnet-plus" | "ir2qsm" | "lpcnn" | "modl-qsm" | "nextqsm" | "iqsm"
+            "xqsm" | "qsmnet" | "qsmnet-plus" | "qsmnetme" | "ir2qsm" | "lpcnn" | "modl-qsm" | "nextqsm" | "iqsm"
                 | "iqsm-plus"
         ) || (matches!(BF_OPTIONS.get(self.bf_algorithm).copied().unwrap_or(""), "bfrnet" | "iqfm")
             && self.inversion_needs_bg_removal())
@@ -3909,7 +3926,7 @@ impl PipelineFormState {
         "l1qsm_alpha1", "l1qsm_mu1", "l1qsm_mu2", "l1qsm_mu3", "l1qsm_lambda", "l1qsm_max_iter", "l1qsm_tol_update", "l1qsm_tol_delta",
         "whqsm_alpha1", "whqsm_mu1", "whqsm_mu2", "whqsm_beta", "whqsm_muh", "whqsm_max_iter", "whqsm_tol_update", "whqsm_tol_delta",
         "hdqsm_alpha_l2", "hdqsm_mu1_l2", "hdqsm_mu2", "hdqsm_max_iter_l1", "hdqsm_max_iter_l2", "hdqsm_tol_update",
-        "r2primenet_patch", "sep_chisepnet_patch", "sep_susepnet_patch",
+        "r2primenet_patch", "sep_chisepnet_patch", "sep_chisepnet_frame_patch", "sep_susepnet_patch",
         "laplacian_fft_pad", "prelude_partitions",
         "crop_margin_mm", "homogeneity_sigma_mm", "homogeneity_nbox", "coil_combination_sigma",
         "n4_shrink_factor", "n4_max_iterations", "n4_convergence_threshold", "n4_mesh", "n4_spline_order",
@@ -4194,6 +4211,7 @@ impl PipelineFormState {
             "sep_hcchisep_dr_pos_3t" => &self.sep_hcchisep_dr_pos_3t,
             "sep_hcchisep_bin_hz" => &self.sep_hcchisep_bin_hz,
             "sep_chisepnet_patch" => &self.sep_chisepnet_patch,
+            "sep_chisepnet_frame_patch" => &self.sep_chisepnet_frame_patch,
             "sep_susepnet_patch" => &self.sep_susepnet_patch,
             _ => "",
         }
@@ -4469,6 +4487,7 @@ impl PipelineFormState {
             "sep_hcchisep_dr_pos_3t" => Some(&mut self.sep_hcchisep_dr_pos_3t),
             "sep_hcchisep_bin_hz" => Some(&mut self.sep_hcchisep_bin_hz),
             "sep_chisepnet_patch" => Some(&mut self.sep_chisepnet_patch),
+            "sep_chisepnet_frame_patch" => Some(&mut self.sep_chisepnet_frame_patch),
             "sep_susepnet_patch" => Some(&mut self.sep_susepnet_patch),
             _ => None,
         }
@@ -4483,6 +4502,7 @@ impl PipelineFormState {
             "bf_algorithm" => self.bf_algorithm,
             "qsm_reference" => self.qsm_reference,
             "r2prime_strategy" => self.r2prime_strategy,
+            "sep_chisepnet_route" => self.sep_chisepnet_route,
             "b0_estimation" => self.b0_estimation,
             "b0_weight_type" => self.b0_weight_type,
             "laplacian_solver" => self.laplacian_solver,
@@ -4530,6 +4550,7 @@ impl PipelineFormState {
             "bf_algorithm" => self.bf_algorithm = val,
             "qsm_reference" => self.qsm_reference = val,
             "r2prime_strategy" => self.r2prime_strategy = val,
+            "sep_chisepnet_route" => self.sep_chisepnet_route = val.min(CHI_SEPNET_ROUTE_OPTIONS.len() - 1),
             "b0_estimation" => self.b0_estimation = val,
             "b0_weight_type" => self.b0_weight_type = val,
             "laplacian_solver" => self.laplacian_solver = val,
@@ -8994,7 +9015,7 @@ mod tests {
     fn test_all_param_fields_are_valid() {
         // Opt-in fields that intentionally default to empty (blank = feature off).
         // And optional settings whose blank is the value qsm-core derives.
-        const OPT_IN_EMPTY: &[&str] = &["dl_tile_size", "dl_tile_halo", "robust_fit_tuning", "sep_susepnet_patch",
+        const OPT_IN_EMPTY: &[&str] = &["dl_tile_size", "dl_tile_halo", "robust_fit_tuning", "sep_susepnet_patch", "sep_chisepnet_frame_patch",
             "tv_rho", "tgv_iterations", "fansi_mu1", "fansi_alpha0", "fansi_mu0", "l1qsm_mu1", "hdqsm_mu1_l2",
             "medi_msmv_vessel_radius", "nltv_rho", "ismv_max_iter", "ismv_radius", "lbv_depth"];
         let state = PipelineFormState::default();

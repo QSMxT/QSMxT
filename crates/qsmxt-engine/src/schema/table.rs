@@ -433,6 +433,7 @@ pub(super) fn table() -> Vec<Def> {
             o("xqsm", "xqsm", "xQSM", "xQSM (deep learning; weights auto-downloaded) — octave-convolution U-net dipole inversion. https://doi.org/10.1002/nbm.4461"),
             o("qsmnet", "qsmnet", "QSMnet", "QSMnet (deep learning; weights auto-downloaded) — 3D U-net dipole inversion. https://doi.org/10.1016/j.neuroimage.2018.06.030"),
             o("qsmnet-plus", "qsmnet-plus", "QSMnet+", "QSMnet+ (deep learning; weights auto-downloaded) — QSMnet trained for a wider susceptibility range. https://doi.org/10.1016/j.neuroimage.2020.116579"),
+            o("qsmnetme", "qsmnetme", "QSMnetME", "QSMnetME (deep learning; weights auto-downloaded) — the χ-separation toolbox's QSM network, trained on multi-echo data; rotates the field to B0 along z and resamples to 1 mm itself. https://doi.org/10.1002/hbm.70136"),
             o("autoqsm", "autoqsm", "AutoQSM", "AutoQSM (deep learning; weights auto-downloaded) — single-step reconstruction, no separate background removal. https://doi.org/10.1016/j.neuroimage.2019.116064"),
             o("qsmgan", "qsmgan", "QSMGAN", "QSMGAN (deep learning; weights auto-downloaded) — GAN-refined U-net dipole inversion. https://doi.org/10.1016/j.neuroimage.2019.116389"),
             o("ir2qsm", "ir2qsm", "IR2QSM", "IR2QSM (deep learning; weights auto-downloaded) — iterative unrolled U-net inversion. https://doi.org/10.1002/mp.17747"),
@@ -1049,9 +1050,18 @@ pub(super) fn table() -> Vec<Def> {
         .gui("R2' bin width for the anchored grid search"),
         // QSM.rs ChiSepNetParams::validate: each side a positive multiple of chisepnet::POOL_MULTIPLE
         // (16). The texts' "16" is pinned to it by a test.
-        d("separation.chi_sepnet.patch", Separation, "Patch", "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)", IntVec3).min(qsm_core::separation::chisepnet::POOL_MULTIPLE as f64).units("voxels").flag("--chi-sepnet-patch").parent("separation.algorithm")
-        .when(|x| x.sep("chi-sepnet")).full("χ-sepnet patch")
+        d("separation.chi_sepnet.route", Separation, "Route", "", Enum(vec![
+            o("toolbox", "toolbox", "Toolbox (default)", "The authors' route: the inputs in the network's training frame (B0 along z, 1 mm), the QSM channel from QSMnetME, R2' measured or predicted from R2* by R2PRIMEnet, the maps resampled back"),
+            o("native", "native", "Network only", "The network alone on the acquired grid, given this run's QSM and R2', as a sliding window"),
+        ])).flag("--chi-sepnet-route").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sepnet")).full("χ-sepnet route")
+        .gui("How χ-sepnet's inputs are prepared: the authors' route or the network alone"),
+        d("separation.chi_sepnet.patch", Separation, "Patch", "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)", IntVec3).min(qsm_core::separation::chisepnet::POOL_MULTIPLE as f64).units("voxels").flag("--chi-sepnet-patch").parent("separation.chi_sepnet.route")
+        .when(|x| x.sep("chi-sepnet") && x.c.separation.chi_sepnet.route == crate::ChiSepNetRoute::Native).full("χ-sepnet patch")
         .gui("Sliding-window patch D H W, each a multiple of 16"),
+        d("separation.chi_sepnet.frame_patch", Separation, "Sliding window", "Run the networks on patches D H W of the 1 mm frame, each a multiple of 16, so memory follows the patch; empty runs the whole frame at once", IntVec3).min(qsm_core::separation::chisepnet::POOL_MULTIPLE as f64).units("voxels").optional().flag("--chi-sepnet-frame-patch").parent("separation.chi_sepnet.route")
+        .when(|x| x.sep("chi-sepnet") && x.c.separation.chi_sepnet.route == crate::ChiSepNetRoute::Toolbox).full("χ-sepnet sliding window")
+        .gui("Patch size for running the networks piece by piece, which needs less memory, each a multiple of 16; empty runs the whole frame at once"),
         // QSM.rs SusepNetParams::validate: each side a positive multiple of susep_net::POOL_MULTIPLE
         // (8). The texts' "8" is pinned to it by a test.
         d("separation.susep_net.patch", Separation, "Sliding window", "Run the network on patches D H W in voxels, each a multiple of 8, so its memory follows the patch instead of the volume; empty runs the whole volume at once", IntVec3).min(qsm_core::separation::susep_net::POOL_MULTIPLE as f64).units("voxels").optional().flag("--susep-net-patch").parent("separation.algorithm")

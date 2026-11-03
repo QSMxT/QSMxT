@@ -457,13 +457,20 @@ pub struct SeparationConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct ChiSepNetConfig {
-    /// Sliding-window patch (D, H, W) in voxels; each a positive multiple of 16.
+    /// The input route: the authors' (`toolbox`, default) or the network alone (`native`).
+    pub route: ChiSepNetRoute,
+    /// `native`: the sliding-window patch (D, H, W) in voxels; each a positive multiple of 16.
     pub patch: [usize; 3],
+    /// `toolbox`: run each network as a sliding window of this patch over the training frame
+    /// (each a positive multiple of 16); `None` (default) runs the whole frame at once, as the
+    /// authors do.
+    pub frame_patch: Option<[usize; 3]>,
 }
 impl Default for ChiSepNetConfig {
     fn default() -> Self {
-        let (d, h, w) = qsm_core::separation::ChiSepNetParams::default().patch;
-        Self { patch: [d, h, w] }
+        let p = qsm_core::separation::ChiSepNetParams::default();
+        let (d, h, w) = p.patch;
+        Self { route: ChiSepNetRoute::default(), patch: [d, h, w], frame_patch: p.frame_patch.map(|(d, h, w)| [d, h, w]) }
     }
 }
 impl ChiSepNetConfig {
@@ -474,7 +481,15 @@ impl ChiSepNetConfig {
     /// qsm-core's parameters for these settings.
     pub fn params(&self) -> qsm_core::separation::ChiSepNetParams {
         let [d, h, w] = self.patch;
-        qsm_core::separation::ChiSepNetParams { patch: (d, h, w) }
+        qsm_core::separation::ChiSepNetParams {
+            route: match self.route {
+                ChiSepNetRoute::Toolbox => qsm_core::separation::ChiSepNetRoute::Toolbox,
+                ChiSepNetRoute::Native => qsm_core::separation::ChiSepNetRoute::Native,
+            },
+            patch: (d, h, w),
+            frame_patch: self.frame_patch.map(|[d, h, w]| (d, h, w)),
+            ..qsm_core::separation::ChiSepNetParams::default()
+        }
     }
 }
 

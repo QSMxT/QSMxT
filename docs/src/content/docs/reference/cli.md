@@ -56,7 +56,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--include <INCLUDE>` | Include only runs matching these glob patterns (e.g. "sub-1\*" "\*ses-pre\*") |
 | `--exclude <EXCLUDE>` | Exclude runs matching these glob patterns (e.g. "\*mygrea\*") |
 | `--num-echoes <NUM_ECHOES>` | Limit number of echoes to process. |
-| `--qsm-algorithm <QSM_ALGORITHM>` | QSM dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `star`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
+| `--qsm-algorithm <QSM_ALGORITHM>` | QSM dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `star`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `qsmnetme`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
 | `--heidi` | HEIDI streaking reduction after the inversion: keep the map's well-conditioned k-space and refill the dipole cone under a homogeneity prior (`--heidi-*` sets it up). With LSQR this is HEIDI as published (`--qsm-algorithm heidi`); with two-pass it runs once, on the combined map. |
 | `--orientation-group <PATTERN>` | Group runs into multi-orientation sets and reconstruct each with COSMOS or STI. Takes an entity name (acq, run, rec, inv), a glob over the run key (`*acq-dir*`), or `re:` and a regex with one capture group. Orientations are co-registered if they need it. |
 | `--no-orientation-registration` | Do not co-register the orientations in a group — use this when they were already registered externally and a second interpolation is not wanted. A group that still needs registration is then refused instead of reconstructed. |
@@ -187,7 +187,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
 | `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
 | `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius, in --qsmart-vessel-units (default 8) |
-| `--qsmart-inversion <QSMART_INVERSION>` | QSMART inner dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `star`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
+| `--qsmart-inversion <QSMART_INVERSION>` | QSMART inner dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `star`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `qsmnetme`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
 | `--qsmart-sdf-sigma1-stage1 <QSMART_SDF_SIGMA1_STAGE1>` | QSMART SDF sigma1, stage 1 (voxels) |
 | `--qsmart-sdf-sigma2-stage1 <QSMART_SDF_SIGMA2_STAGE1>` | QSMART SDF sigma2, stage 1 (voxels) |
 | `--qsmart-sdf-sigma1-stage2 <QSMART_SDF_SIGMA1_STAGE2>` | QSMART SDF sigma1, stage 2 (voxels) |
@@ -295,7 +295,9 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--wavesep-tol <WAVESEP_TOL>` | WaveSep relative-change stop tolerance. |
 | `--hc-chisep-dr-pos-3t <HC_CHISEP_DR_POS_3T>` | HC-ChiSep paramagnetic relaxivity at 3T (Hz/ppm) |
 | `--hc-chisep-bin-hz <HC_CHISEP_BIN_HZ>` | HC-ChiSep R2' bin width for the anchored grid search (Hz) |
-| `--chi-sepnet-patch <D> <H> <W>` | χ-sepnet sliding-window patch in voxels, D H W, each a multiple of 16 (default: 192 192 128, the authors') |
+| `--chi-sepnet-route <CHI_SEPNET_ROUTE>` | χ-sepnet's input route. `toolbox` (default), the authors': the inputs resampled to 1 mm with B0 along z, the susceptibility channel computed by QSMnetME, R2' measured or predicted from R2\* by R2PRIMEnet, the maps resampled back. `native`: the network alone on the acquired grid, given this run's QSM and R2'. Values: `toolbox`, `native`. |
+| `--chi-sepnet-patch <D> <H> <W>` | χ-sepnet (`--chi-sepnet-route native`) sliding-window patch in voxels, D H W, each a multiple of 16 (default: 192 192 128, the authors') |
+| `--chi-sepnet-frame-patch <D> <H> <W>` | χ-sepnet (`--chi-sepnet-route toolbox`): run the networks as a sliding window of patches this size over the 1 mm frame, D H W, each a multiple of 16, so memory follows the patch. Omit to run the whole frame at once, as the authors do. |
 | `--susep-net-patch <D> <H> <W>` | Run SUSEP-Net as a sliding window of patches this size in voxels, D H W, each a multiple of 8, so its memory follows the patch, not the volume. Omit to run the whole volume at once. |
 | `--motion-correction` | Rigidly co-register every echo onto a reference echo (estimated on magnitude, applied to phase through the complex signal) before field mapping, and restrict the mask to voxels every echo covers. Off by default. Needs magnitude images. |
 | `--motion-reference <first\|last\|N>` | Echo the others are aligned onto: `first` (default), `last`, or a 1-based echo number. |
@@ -518,7 +520,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--source-dicom <SOURCE_DICOM>` | Optional source DICOM directory; inherit patient/study identity from the original DICOMs when exporting (used with --export-dicom; each run's job exports its maps) |
 | `--dicom-outputs <DICOM_OUTPUTS>` | Restrict DICOM export to these maps (default: all produced); values as for `qsmxt run` (used with --export-dicom) |
 | `--accept-recommendations` | Apply the recommended value of every recommendation that is not dismissed before writing the jobs (as `qsmxt run --accept-recommendations`) |
-| `--qsm-algorithm <QSM_ALGORITHM>` | QSM dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `star`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
+| `--qsm-algorithm <QSM_ALGORITHM>` | QSM dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `star`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `qsmnetme`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
 | `--heidi` | HEIDI streaking reduction after the inversion: keep the map's well-conditioned k-space and refill the dipole cone under a homogeneity prior (`--heidi-*` sets it up). With LSQR this is HEIDI as published (`--qsm-algorithm heidi`); with two-pass it runs once, on the combined map. |
 | `--orientation-group <PATTERN>` | Group runs into multi-orientation sets and reconstruct each with COSMOS or STI. Takes an entity name (acq, run, rec, inv), a glob over the run key (`*acq-dir*`), or `re:` and a regex with one capture group. Orientations are co-registered if they need it. |
 | `--no-orientation-registration` | Do not co-register the orientations in a group — use this when they were already registered externally and a second interpolation is not wanted. A group that still needs registration is then refused instead of reconstructed. |
@@ -649,7 +651,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
 | `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
 | `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius, in --qsmart-vessel-units (default 8) |
-| `--qsmart-inversion <QSMART_INVERSION>` | QSMART inner dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `star`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
+| `--qsmart-inversion <QSMART_INVERSION>` | QSMART inner dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `star`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `qsmnetme`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
 | `--qsmart-sdf-sigma1-stage1 <QSMART_SDF_SIGMA1_STAGE1>` | QSMART SDF sigma1, stage 1 (voxels) |
 | `--qsmart-sdf-sigma2-stage1 <QSMART_SDF_SIGMA2_STAGE1>` | QSMART SDF sigma2, stage 1 (voxels) |
 | `--qsmart-sdf-sigma1-stage2 <QSMART_SDF_SIGMA1_STAGE2>` | QSMART SDF sigma1, stage 2 (voxels) |
@@ -757,7 +759,9 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--wavesep-tol <WAVESEP_TOL>` | WaveSep relative-change stop tolerance. |
 | `--hc-chisep-dr-pos-3t <HC_CHISEP_DR_POS_3T>` | HC-ChiSep paramagnetic relaxivity at 3T (Hz/ppm) |
 | `--hc-chisep-bin-hz <HC_CHISEP_BIN_HZ>` | HC-ChiSep R2' bin width for the anchored grid search (Hz) |
-| `--chi-sepnet-patch <D> <H> <W>` | χ-sepnet sliding-window patch in voxels, D H W, each a multiple of 16 (default: 192 192 128, the authors') |
+| `--chi-sepnet-route <CHI_SEPNET_ROUTE>` | χ-sepnet's input route. `toolbox` (default), the authors': the inputs resampled to 1 mm with B0 along z, the susceptibility channel computed by QSMnetME, R2' measured or predicted from R2\* by R2PRIMEnet, the maps resampled back. `native`: the network alone on the acquired grid, given this run's QSM and R2'. Values: `toolbox`, `native`. |
+| `--chi-sepnet-patch <D> <H> <W>` | χ-sepnet (`--chi-sepnet-route native`) sliding-window patch in voxels, D H W, each a multiple of 16 (default: 192 192 128, the authors') |
+| `--chi-sepnet-frame-patch <D> <H> <W>` | χ-sepnet (`--chi-sepnet-route toolbox`): run the networks as a sliding window of patches this size over the 1 mm frame, D H W, each a multiple of 16, so memory follows the patch. Omit to run the whole frame at once, as the authors do. |
 | `--susep-net-patch <D> <H> <W>` | Run SUSEP-Net as a sliding window of patches this size in voxels, D H W, each a multiple of 8, so its memory follows the patch, not the volume. Omit to run the whole volume at once. |
 | `--motion-correction` | Rigidly co-register every echo onto a reference echo (estimated on magnitude, applied to phase through the complex signal) before field mapping, and restrict the mask to voxels every echo covers. Off by default. Needs magnitude images. |
 | `--motion-reference <first\|last\|N>` | Echo the others are aligned onto: `first` (default), `last`, or a 1-based echo number. |
@@ -917,7 +921,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--include <INCLUDE>` | Include only runs matching these glob patterns (e.g. "sub-1\*" "\*ses-pre\*") |
 | `--exclude <EXCLUDE>` | Exclude runs matching these glob patterns (e.g. "\*mygrea\*") |
 | `--num-echoes <NUM_ECHOES>` | Limit number of echoes to process. |
-| `--qsm-algorithm <QSM_ALGORITHM>` | QSM dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `star`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
+| `--qsm-algorithm <QSM_ALGORITHM>` | QSM dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `star`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `qsmnetme`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
 | `--heidi` | HEIDI streaking reduction after the inversion: keep the map's well-conditioned k-space and refill the dipole cone under a homogeneity prior (`--heidi-*` sets it up). With LSQR this is HEIDI as published (`--qsm-algorithm heidi`); with two-pass it runs once, on the combined map. |
 | `--orientation-group <PATTERN>` | Group runs into multi-orientation sets and reconstruct each with COSMOS or STI. Takes an entity name (acq, run, rec, inv), a glob over the run key (`*acq-dir*`), or `re:` and a regex with one capture group. Orientations are co-registered if they need it. |
 | `--no-orientation-registration` | Do not co-register the orientations in a group — use this when they were already registered externally and a second interpolation is not wanted. A group that still needs registration is then refused instead of reconstructed. |
@@ -1048,7 +1052,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
 | `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
 | `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius, in --qsmart-vessel-units (default 8) |
-| `--qsmart-inversion <QSMART_INVERSION>` | QSMART inner dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `star`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
+| `--qsmart-inversion <QSMART_INVERSION>` | QSMART inner dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `star`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `qsmnetme`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
 | `--qsmart-sdf-sigma1-stage1 <QSMART_SDF_SIGMA1_STAGE1>` | QSMART SDF sigma1, stage 1 (voxels) |
 | `--qsmart-sdf-sigma2-stage1 <QSMART_SDF_SIGMA2_STAGE1>` | QSMART SDF sigma2, stage 1 (voxels) |
 | `--qsmart-sdf-sigma1-stage2 <QSMART_SDF_SIGMA1_STAGE2>` | QSMART SDF sigma1, stage 2 (voxels) |
@@ -1156,7 +1160,9 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--wavesep-tol <WAVESEP_TOL>` | WaveSep relative-change stop tolerance. |
 | `--hc-chisep-dr-pos-3t <HC_CHISEP_DR_POS_3T>` | HC-ChiSep paramagnetic relaxivity at 3T (Hz/ppm) |
 | `--hc-chisep-bin-hz <HC_CHISEP_BIN_HZ>` | HC-ChiSep R2' bin width for the anchored grid search (Hz) |
-| `--chi-sepnet-patch <D> <H> <W>` | χ-sepnet sliding-window patch in voxels, D H W, each a multiple of 16 (default: 192 192 128, the authors') |
+| `--chi-sepnet-route <CHI_SEPNET_ROUTE>` | χ-sepnet's input route. `toolbox` (default), the authors': the inputs resampled to 1 mm with B0 along z, the susceptibility channel computed by QSMnetME, R2' measured or predicted from R2\* by R2PRIMEnet, the maps resampled back. `native`: the network alone on the acquired grid, given this run's QSM and R2'. Values: `toolbox`, `native`. |
+| `--chi-sepnet-patch <D> <H> <W>` | χ-sepnet (`--chi-sepnet-route native`) sliding-window patch in voxels, D H W, each a multiple of 16 (default: 192 192 128, the authors') |
+| `--chi-sepnet-frame-patch <D> <H> <W>` | χ-sepnet (`--chi-sepnet-route toolbox`): run the networks as a sliding window of patches this size over the 1 mm frame, D H W, each a multiple of 16, so memory follows the patch. Omit to run the whole frame at once, as the authors do. |
 | `--susep-net-patch <D> <H> <W>` | Run SUSEP-Net as a sliding window of patches this size in voxels, D H W, each a multiple of 8, so its memory follows the patch, not the volume. Omit to run the whole volume at once. |
 | `--motion-correction` | Rigidly co-register every echo onto a reference echo (estimated on magnitude, applied to phase through the complex signal) before field mapping, and restrict the mask to voxels every echo covers. Off by default. Needs magnitude images. |
 | `--motion-reference <first\|last\|N>` | Echo the others are aligned onto: `first` (default), `last`, or a 1-based echo number. |
@@ -2071,6 +2077,7 @@ Dipole inversion
 | [`xqsm`](#qsmxt-invert-xqsm) | xQSM deep-learning dipole inversion (weights downloaded on first use) |
 | [`qsmnet`](#qsmxt-invert-qsmnet) | QSMnet deep-learning dipole inversion (weights downloaded on first use) |
 | [`qsmnet-plus`](#qsmxt-invert-qsmnet-plus) | QSMnet+ deep-learning dipole inversion (weights downloaded on first use) |
+| [`qsmnetme`](#qsmxt-invert-qsmnetme) | QSMnetME deep-learning dipole inversion, the χ-separation toolbox's QSM network (weights downloaded on first use) |
 | [`autoqsm`](#qsmxt-invert-autoqsm) | AutoQSM single-step reconstruction — input is the TOTAL field (weights downloaded on first use) |
 | [`qsmgan`](#qsmxt-invert-qsmgan) | QSMGAN deep-learning dipole inversion (weights downloaded on first use) |
 | [`ir2qsm`](#qsmxt-invert-ir2qsm) | IR2QSM deep-learning dipole inversion (weights downloaded on first use) |
@@ -2674,6 +2681,24 @@ qsmxt invert qsmnet-plus [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla (scan metadata) Default: `3`. |
 
+### `qsmxt invert qsmnetme`
+
+QSMnetME deep-learning dipole inversion, the χ-separation toolbox's QSM network (weights downloaded on first use)
+
+```sh
+qsmxt invert qsmnetme [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+```
+
+| Argument | Description |
+| --- | --- |
+| `<INPUT>` | Input local field NIfTI file. Required. |
+| `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
+| `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
+| `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla (scan metadata) Default: `3`. |
+
 ### `qsmxt invert autoqsm`
 
 AutoQSM single-step reconstruction — input is the TOTAL field (weights downloaded on first use)
@@ -2875,7 +2900,7 @@ Susceptibility source separation
 | [`wavesep`](#qsmxt-separate-wavesep) | WaveSep wavelet-L1 (Fang 2023) — QSM + R2' |
 | [`hc-chisep`](#qsmxt-separate-hc-chisep) | Hollow-cylinder χ-separation (Stewart 2026) — QSM + R2' + multi-echo magnitude |
 | [`susep-net`](#qsmxt-separate-susep-net) | SUSEP-Net deep-learning separation — QSM + R2' + local field (weights downloaded on first use) |
-| [`chi-sepnet`](#qsmxt-separate-chi-sepnet) | χ-sepnet deep-learning separation — QSM + R2' + local field (weights downloaded on first use) |
+| [`chi-sepnet`](#qsmxt-separate-chi-sepnet) | χ-sepnet deep-learning separation — local field + R2' or R2\* (weights downloaded on first use) |
 
 ### `qsmxt separate r2star-qsm`
 
@@ -3050,26 +3075,30 @@ qsmxt separate susep-net [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> -
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--local-field <LOCAL_FIELD>` | Local (tissue) field NIfTI in ppm. Required. |
 | `--r2prime <R2PRIME>` | R2' map NIfTI in Hz. Required. |
-| `--patch <D> <H> <W>` | Sliding-window patch in voxels, D H W. χ-sepnet: each a multiple of 16 (default: 192 192 128, the authors'). SUSEP-Net: each a multiple of 8 (default: the whole volume at once) |
+| `--patch <D> <H> <W>` | Sliding-window patch in voxels, D H W, each a multiple of 8 (default: the whole volume at once) |
 
 ### `qsmxt separate chi-sepnet`
 
-χ-sepnet deep-learning separation — QSM + R2' + local field (weights downloaded on first use)
+χ-sepnet deep-learning separation — local field + R2' or R2\* (weights downloaded on first use)
 
 ```sh
-qsmxt separate chi-sepnet [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --local-field <LOCAL_FIELD> --r2prime <R2PRIME>
+qsmxt separate chi-sepnet [OPTIONS] --mask <MASK> --output <OUTPUT> --local-field <LOCAL_FIELD> <--r2prime <R2PRIME>|--r2star <R2STAR>>
 ```
 
 | Argument | Description |
 | --- | --- |
-| `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm. Required. |
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names. Required. |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Default: `3`. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--local-field <LOCAL_FIELD>` | Local (tissue) field NIfTI in ppm. Required. |
-| `--r2prime <R2PRIME>` | R2' map NIfTI in Hz. Required. |
-| `--patch <D> <H> <W>` | Sliding-window patch in voxels, D H W. χ-sepnet: each a multiple of 16 (default: 192 192 128, the authors'). SUSEP-Net: each a multiple of 8 (default: the whole volume at once) |
+| `--r2prime <R2PRIME>` | R2' map NIfTI in Hz (χ-sepnet-R2') |
+| `--r2star <R2STAR>` | R2\* map NIfTI in Hz (χ-sepnet-R2\*: R2' predicted by R2PRIMEnet; `--route toolbox` only) |
+| `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm; `--route native` only (the toolbox route makes its own with QSMnetME) |
+| `--route <ROUTE>` | Input route: `toolbox` (default; the authors': training frame, QSMnetME susceptibility channel) or `native` (the network alone on the acquired grid, given --qsm) Values: `toolbox`, `native`. Default: `toolbox`. |
+| `--patch <D> <H> <W>` | `--route native`: sliding-window patch in voxels, D H W, each a multiple of 16 (default: 192 192 128, the authors') |
+| `--frame-patch <D> <H> <W>` | `--route toolbox`: run the networks as a sliding window of this patch over the 1 mm frame, D H W, each a multiple of 16 (default: the whole frame at once, as the authors do) |
+| `--ignore-field-mismatch` | With --r2star: run R2PRIMEnet even when the field strength is not 3 T (uncalibrated) |
 
 ## `qsmxt qsmart`
 
@@ -3094,7 +3123,7 @@ qsmxt qsmart [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_S
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
 | `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
 | `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius, in --qsmart-vessel-units (default 8) |
-| `--qsmart-inversion <QSMART_INVERSION>` | QSMART inner dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `star`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
+| `--qsmart-inversion <QSMART_INVERSION>` | QSMART inner dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `star`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `qsmnetme`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
 | `--qsmart-sdf-sigma1-stage1 <QSMART_SDF_SIGMA1_STAGE1>` | QSMART SDF sigma1, stage 1 (voxels) |
 | `--qsmart-sdf-sigma2-stage1 <QSMART_SDF_SIGMA2_STAGE1>` | QSMART SDF sigma2, stage 1 (voxels) |
 | `--qsmart-sdf-sigma1-stage2 <QSMART_SDF_SIGMA1_STAGE2>` | QSMART SDF sigma1, stage 2 (voxels) |

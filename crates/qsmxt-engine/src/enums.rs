@@ -12,6 +12,7 @@ pub enum QsmAlgorithm {
     // Deep-learning dipole inversions (require qsm-core's `onnx` feature + downloadable weights).
     Xqsm, Qsmnet,
     #[serde(rename = "qsmnet-plus")] QsmnetPlus,
+    Qsmnetme,
     Autoqsm, Qsmgan, Ir2qsm, Lpcnn,
     #[serde(rename = "modl-qsm")] ModlQsm,
     Nextqsm,
@@ -22,11 +23,11 @@ pub enum QsmAlgorithm {
 impl QsmAlgorithm {
     /// Every inversion, in the order the CLI lists them (`qsmxt`'s CLI reference test holds this
     /// to `--qsm-algorithm`'s values, so a new variant cannot be left out).
-    pub const ALL: [QsmAlgorithm; 31] = [
+    pub const ALL: [QsmAlgorithm; 32] = [
         Self::Rts, Self::Tv, Self::Tkd, Self::Tsvd, Self::Tgv, Self::Tikhonov, Self::Nltv,
         Self::Medi, Self::Tfi, Self::Ilsqr, Self::Star, Self::Lsqr, Self::Qsmart,
         Self::Ndi, Self::Fansi, Self::FansiTgv, Self::L1qsm, Self::Whqsm, Self::Hdqsm, Self::AmpPe,
-        Self::Xqsm, Self::Qsmnet, Self::QsmnetPlus, Self::Autoqsm, Self::Qsmgan, Self::Ir2qsm,
+        Self::Xqsm, Self::Qsmnet, Self::QsmnetPlus, Self::Qsmnetme, Self::Autoqsm, Self::Qsmgan, Self::Ir2qsm,
         Self::Lpcnn, Self::ModlQsm, Self::Nextqsm, Self::Iqsm, Self::IqsmPlus,
     ];
 
@@ -35,7 +36,7 @@ impl QsmAlgorithm {
     pub fn tileable(self) -> bool {
         matches!(
             self,
-            Self::Xqsm | Self::Qsmnet | Self::QsmnetPlus | Self::Ir2qsm | Self::Lpcnn | Self::ModlQsm
+            Self::Xqsm | Self::Qsmnet | Self::QsmnetPlus | Self::Qsmnetme | Self::Ir2qsm | Self::Lpcnn | Self::ModlQsm
                 | Self::Nextqsm | Self::Iqsm | Self::IqsmPlus
         )
     }
@@ -51,7 +52,7 @@ impl fmt::Display for QsmAlgorithm {
             Self::L1qsm => "l1qsm", Self::Whqsm => "whqsm", Self::Hdqsm => "hdqsm",
             Self::AmpPe => "amp-pe",
             Self::Xqsm => "xqsm", Self::Qsmnet => "qsmnet",
-            Self::QsmnetPlus => "qsmnet-plus", Self::Autoqsm => "autoqsm",
+            Self::QsmnetPlus => "qsmnet-plus", Self::Qsmnetme => "qsmnetme", Self::Autoqsm => "autoqsm",
             Self::Qsmgan => "qsmgan", Self::Ir2qsm => "ir2qsm", Self::Lpcnn => "lpcnn",
             Self::ModlQsm => "modl-qsm", Self::Nextqsm => "nextqsm",
             Self::Iqsm => "iqsm", Self::IqsmPlus => "iqsm-plus",
@@ -716,6 +717,30 @@ impl fmt::Display for R2PrimeStrategy {
         })
     }
 }
+/// Which route χ-sepnet's inputs take (qsm-core `ChiSepNetRoute`).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ChiSepNetRoute {
+    /// The authors' route: the inputs in the networks' training frame (B0 along z, 1 mm), the QSM
+    /// channel from QSMnetME, R2′ from a measured map or from R2* by R2PRIMEnet, mapped back.
+    #[default]
+    Toolbox,
+    /// The network alone on the acquired grid, given the run's QSM and R2′, as a sliding window.
+    Native,
+}
+impl fmt::Display for ChiSepNetRoute {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", match self { Self::Toolbox => "toolbox", Self::Native => "native" })
+    }
+}
+pub fn parse_chi_sepnet_route(s: &str) -> Option<ChiSepNetRoute> {
+    match s.trim() {
+        "toolbox" => Some(ChiSepNetRoute::Toolbox),
+        "native" => Some(ChiSepNetRoute::Native),
+        _ => None,
+    }
+}
+
 pub fn parse_r2prime_strategy(s: &str) -> Option<R2PrimeStrategy> {
     match s.trim() {
         "auto" => Some(R2PrimeStrategy::Auto),

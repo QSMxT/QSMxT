@@ -2,7 +2,7 @@
 //! paramagnetic (χ+) and diamagnetic (χ−) sources.
 
 use crate::config::PipelineConfig;
-use crate::enums::SeparationAlgorithm;
+use crate::enums::{ChiSepNetRoute, SeparationAlgorithm};
 use crate::error::EngineError;
 use crate::observe::Observer;
 use crate::scan::{scan_metadata, RunMetadata};
@@ -25,10 +25,22 @@ pub fn params(config: &PipelineConfig, meta: &RunMetadata, has_mese: bool) -> se
         "domain": "support",
     });
     let patch = match s.algorithm {
-        SeparationAlgorithm::ChiSepNet if s.chi_sepnet != d.chi_sepnet => Some(serde_json::json!(s.chi_sepnet.patch)),
+        SeparationAlgorithm::ChiSepNet if s.chi_sepnet.route == ChiSepNetRoute::Native && s.chi_sepnet.patch != d.chi_sepnet.patch =>
+            Some(serde_json::json!(s.chi_sepnet.patch)),
+        SeparationAlgorithm::ChiSepNet if s.chi_sepnet.route == ChiSepNetRoute::Toolbox => {
+            s.chi_sepnet.frame_patch.map(|p| serde_json::json!(p))
+        }
         SeparationAlgorithm::SusepNet if s.susep_net != d.susep_net => Some(serde_json::json!(s.susep_net.patch)),
         _ => None,
     };
+    // χ-sepnet's route is always in the key: maps made by the network alone (the only route
+    // before the toolbox's) are not reused for the toolbox's, which is the default.
+    if s.algorithm == SeparationAlgorithm::ChiSepNet {
+        params["route"] = serde_json::json!(s.chi_sepnet.route.to_string());
+        if s.chi_sepnet.route == ChiSepNetRoute::Toolbox && s.r2primenet.ignore_field_mismatch {
+            params["ignore_field_mismatch"] = serde_json::json!(true);
+        }
+    }
     if let Some(patch) = patch {
         params["patch"] = patch;
     }
@@ -105,9 +117,10 @@ pub fn missing_inputs(
         ],
         SeparationAlgorithm::WaveSep => vec![(r2prime, "R2'")],
         SeparationAlgorithm::HcChisep => vec![(r2prime, "R2'"), (multi, "multi-echo magnitude")],
-        // SUSEP-Net / χ-sepnet (deep learning) consume [QSM, R2', local field] → [χ+, χ−].
-        SeparationAlgorithm::SusepNet | SeparationAlgorithm::ChiSepNet =>
-            vec![(field, "local field"), (r2prime, "R2'")],
+        // SUSEP-Net (deep learning) consumes [QSM, R2', local field] → [χ+, χ−].
+        SeparationAlgorithm::SusepNet => vec![(field, "local field"), (r2prime, "R2'")],
+        // χ-sepnet: the local field and R2', or R2* (its toolbox route predicts R2' itself).
+        SeparationAlgorithm::ChiSepNet => vec![(field, "local field"), (r2prime || r2star, "R2' or R2*")],
     };
     needs.into_iter().filter(|(have, _)| !have).map(|(_, what)| what).collect()
 }
@@ -234,10 +247,17 @@ mod tests {
             c.separation.algorithm = alg;
             assert!(key(&c).get("patch").is_none(), "{alg}");
         }
+        // χ-sepnet: each route keys its own patch, and always its route.
         c.separation.chi_sepnet.patch = [128, 128, 64];
         c.separation.susep_net.patch = Some([64, 64, 64]);
         c.separation.algorithm = SeparationAlgorithm::ChiSepNet;
+        assert!(key(&c).get("patch").is_none(), "the toolbox route ignores the native patch");
+        assert_eq!(key(&c)["route"], "toolbox");
+        c.separation.chi_sepnet.frame_patch = Some([96, 96, 64]);
+        assert_eq!(key(&c)["patch"], serde_json::json!([96, 96, 64]));
+        c.separation.chi_sepnet.route = crate::ChiSepNetRoute::Native;
         assert_eq!(key(&c)["patch"], serde_json::json!([128, 128, 64]));
+        assert_eq!(key(&c)["route"], "native");
         c.separation.algorithm = SeparationAlgorithm::SusepNet;
         assert_eq!(key(&c)["patch"], serde_json::json!([64, 64, 64]));
         c.separation.algorithm = SeparationAlgorithm::WaveSep;

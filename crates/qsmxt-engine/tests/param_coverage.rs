@@ -113,7 +113,9 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     cover!(q::separation::DecomposeParams => c::DecomposeConfig, ignore: ["b0", "solvers"]);
     cover!(q::solvers::LsqTrrOptions => c::LsqcurvefitConfig);
     cover!(q::separation::HcChisepParams => c::HcChisepConfig, ignore: ["b0", "se_echo_times"]);
-    cover!(q::separation::ChiSepNetParams => c::ChiSepNetConfig);
+    // The bridge sets ignore_field_mismatch from separation.r2primenet (one setting for R2PRIMEnet
+    // wherever it runs, the R2 step or χ-sepnet's toolbox route).
+    cover!(q::separation::ChiSepNetParams => c::ChiSepNetConfig, ignore: ["ignore_field_mismatch"]);
     cover!(q::separation::SusepNetParams => c::SusepNetConfig);
     // `reference_divergence` / `reference_edge_erosion` / `reference_output_box` reproduce the
     // reference package's quirks and output for parity: the pipeline runs qsm-core's defaults

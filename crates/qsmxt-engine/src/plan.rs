@@ -395,7 +395,15 @@ pub fn plan_for(config: &PipelineConfig, facts: &ScanFacts, profile: &MemoryProf
             add(Stage::Smwi, vec![]);
         }
         if p.do_chi_separation {
-            add(Stage::ChiSeparation, model(&config.separation.algorithm.to_string()).into_iter().collect());
+            let mut models: Vec<&'static str> = model(&config.separation.algorithm.to_string()).into_iter().collect();
+            // χ-sepnet's toolbox route makes its QSM channel with QSMnetME, and its R2' from R2*
+            // with R2PRIMEnet when no R2' is measured (decided at run time, so fetched with it).
+            if config.separation.algorithm == crate::SeparationAlgorithm::ChiSepNet
+                && config.separation.chi_sepnet.route == crate::ChiSepNetRoute::Toolbox
+            {
+                models.extend(["qsmnetme", "r2primenet"]);
+            }
+            add(Stage::ChiSeparation, models);
         }
         // Last of the map-producing stages: it summarises every map the run made.
         if p.do_analysis {
