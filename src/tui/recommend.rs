@@ -1095,7 +1095,8 @@ mod tests {
         assert!(app.goto_field("qsm_algorithm"));
         let text = screen(&mut app, "A method picker row and its footer");
         assert!(text.contains("[ medi ▾ ]") && text.contains("Enter: choose method") && text.contains("Enter:Choose method"), "{text}");
-        assert!(app.goto_field("unwrapping_algorithm"));
+        app.pipeline_state.unwrapping_algorithm = 1; // laplacian: its three solvers are cycled
+        assert!(app.goto_field("laplacian_solver"));
         let text = screen(&mut app, "A cycled row and its footer");
         assert!(text.contains("◀ ") && text.contains("←→:Change") && !text.contains("Enter:Choose"), "{text}");
     }

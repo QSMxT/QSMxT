@@ -9493,7 +9493,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pipeline_enter_opens_algo_modal_and_left_right_cycles() {
+    fn test_pipeline_enter_and_left_right_open_the_unwrapping_picker() {
         let mut app = App::new();
         assert!(app.goto_field("unwrapping_algorithm"));
         // Navigate to unwrapping_algorithm AlgoSelect
@@ -9523,10 +9523,17 @@ mod tests {
         assert!(app.algo_modal.is_none());
         assert_eq!(app.pipeline_state.unwrapping_algorithm, 1); // laplacian
 
-        // Focus is restored to the selector after confirming; Left still cycles inline (no modal).
+        // Focus is restored to the selector after confirming. With four unwrappers the row is a
+        // picker: Left opens it too, rather than cycling.
         app.handle_key(key(KeyCode::Left));
+        assert_eq!(app.pipeline_state.unwrapping_algorithm, 1);
+        assert!(matches!(
+            app.algo_modal.as_ref().unwrap().target,
+            AlgoModalTarget::Select(ref f) if f == "unwrapping_algorithm"
+        ));
+        app.handle_key(key(KeyCode::Up));
+        app.handle_key(key(KeyCode::Enter));
         assert_eq!(app.pipeline_state.unwrapping_algorithm, 0);
-        assert!(app.algo_modal.is_none());
     }
 
     #[test]
