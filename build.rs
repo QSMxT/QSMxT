@@ -71,6 +71,17 @@ fn main() {
     // Browsable source at exactly that commit (empty for a local dependency).
     println!("cargo:rustc-env=QSM_CORE_CODE_URL={code_url}");
 
+    // The QSMxT commit a `qsmxt update --main` build was made from, which that command passes
+    // in; empty for release and local builds. Anything but a full commit hash is dropped.
+    let build_commit = std::env::var("QSMXT_BUILD_COMMIT").unwrap_or_default();
+    let build_commit = if build_commit.len() == 40 && build_commit.chars().all(|c| c.is_ascii_hexdigit()) {
+        build_commit
+    } else {
+        String::new()
+    };
+    println!("cargo:rustc-env=QSMXT_BUILD_COMMIT={build_commit}");
+    println!("cargo:rerun-if-env-changed=QSMXT_BUILD_COMMIT");
+
     println!("cargo:rerun-if-changed=Cargo.lock");
     println!("cargo:rerun-if-changed=Cargo.toml");
 }

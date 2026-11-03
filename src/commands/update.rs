@@ -78,6 +78,20 @@ pub fn is_dev_build() -> bool {
     strip_v(current_version()) == DEV_VERSION
 }
 
+/// The main-branch commit this binary was built from by `qsmxt update --main`; empty for
+/// release and local builds.
+pub const BUILD_COMMIT: &str = env!("QSMXT_BUILD_COMMIT");
+
+/// Appended to the version in `qsmxt --version`, so a main build says which commit it is.
+pub const BUILD_COMMIT_SUFFIX: &str = if BUILD_COMMIT.is_empty() {
+    ""
+} else {
+    const_format::concatcp!(" (main ", BUILD_COMMIT, ")")
+};
+
+/// The repository `qsmxt update --main` builds from.
+const GIT_URL: &str = "https://github.com/QSMxT/QSMxT";
+
 /// Splits `vX.Y.Z-pre` into its numeric components and its pre-release suffix.
 ///
 /// Missing components read as zero, so `9.2` and `9.2.0` compare equal. Anything
@@ -328,7 +342,6 @@ fn download_verified(
 /// Downloads and installs the release for the given tag.
 fn install_release(tag: &str) -> crate::Result<()> {
     let target = detect_target()?;
-    let dir = install_dir()?;
 
     #[cfg(target_os = "windows")]
     let archive_ext = "zip";
@@ -412,14 +425,33 @@ fn install_release(tag: &str) -> crate::Result<()> {
     let bin_name = "qsmxt";
 
     let extracted = tmp.path().join(bin_name);
-    let dest = dir.join(bin_name);
-
     if !extracted.exists() {
         return Err(QsmxtError::Update(format!(
             "Expected binary '{}' not found in archive",
             bin_name
         )));
     }
+
+    let dest = install_binary(&extracted)?;
+
+    // Install the bundled dcm2niix (if present in the archive) into ~/.qsmxt/bin,
+    // mirroring the install scripts so `find_dcm2niix()` picks it up.
+    install_bundled_dcm2niix(tmp.path());
+
+    println!("Updated qsmxt to {} at {}", tag, dest.display());
+    Ok(())
+}
+
+/// Replaces the running qsmxt with the binary at `extracted`, and returns where it went.
+fn install_binary(extracted: &std::path::Path) -> crate::Result<std::path::PathBuf> {
+    let dir = install_dir()?;
+
+    #[cfg(target_os = "windows")]
+    let bin_name = "qsmxt.exe";
+    #[cfg(not(target_os = "windows"))]
+    let bin_name = "qsmxt";
+
+    let dest = dir.join(bin_name);
 
     // Install the new binary.
     //
@@ -442,13 +474,13 @@ fn install_release(tag: &str) -> crate::Result<()> {
     // Stage next to `dest`, falling back to sudo when the directory isn't
     // writable by the current user. std::fs::copy preserves the file mode, so
     // the staged binary keeps its executable bit.
-    if std::fs::copy(&extracted, &staged).is_err() {
+    if std::fs::copy(extracted, &staged).is_err() {
         #[cfg(not(target_os = "windows"))]
         {
             println!("Installing to {} (requires sudo)...", dir.display());
             let status = Command::new("sudo")
                 .args(["cp", "-f"])
-                .arg(&extracted)
+                .arg(extracted)
                 .arg(&staged)
                 .status()
                 .map_err(|e| {
@@ -532,12 +564,7 @@ fn install_release(tag: &str) -> crate::Result<()> {
         }
     }
 
-    // Install the bundled dcm2niix (if present in the archive) into ~/.qsmxt/bin,
-    // mirroring the install scripts so `find_dcm2niix()` picks it up.
-    install_bundled_dcm2niix(tmp.path());
-
-    println!("Updated qsmxt to {} at {}", tag, dest.display());
-    Ok(())
+    Ok(dest)
 }
 
 /// Copies the extracted dcm2niix (if any) into the qsmxt bin dir (`~/.qsmxt/bin`).
@@ -584,7 +611,169 @@ fn install_bundled_dcm2niix(extract_dir: &std::path::Path) {
 }
 
 pub fn execute(args: UpdateArgs) -> crate::Result<()> {
+    if args.main {
+        return execute_main_with(args.yes, BUILD_COMMIT, find_cargo, fetch_main_commit, build_main, |built| {
+            install_binary(built).map(|_| ())
+        });
+    }
     execute_with(args, current_version(), fetch_latest_release, install_release)
+}
+
+/// Finds `cargo`: on `PATH`, or where rustup puts it (`~/.cargo/bin`), which a shell
+/// opened before rustup was installed doesn't have on its `PATH` yet.
+fn find_cargo() -> Option<std::path::PathBuf> {
+    let works = |cargo: &std::path::Path| {
+        Command::new(cargo)
+            .arg("--version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+    };
+    let on_path = std::path::PathBuf::from("cargo");
+    if works(&on_path) {
+        return Some(on_path);
+    }
+    let cargo_home = env::var_os("CARGO_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            let home = env::var_os("HOME").or_else(|| env::var_os("USERPROFILE"))?;
+            Some(std::path::PathBuf::from(home).join(".cargo"))
+        })?;
+    let rustup_cargo = cargo_home.join("bin").join(if cfg!(windows) { "cargo.exe" } else { "cargo" });
+    works(&rustup_cargo).then_some(rustup_cargo)
+}
+
+/// Is `s` a full 40-character git commit hash?
+fn is_commit_hash(s: &str) -> bool {
+    s.len() == 40 && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// Asks GitHub for the commit at the head of main.
+fn fetch_main_commit() -> crate::Result<String> {
+    let url = format!("https://api.github.com/repos/{}/commits/main", REPO);
+    let mut req = ureq::get(&url)
+        // Asks for the bare commit hash rather than the whole commit as JSON.
+        .set("Accept", "application/vnd.github.sha")
+        .set("User-Agent", USER_AGENT);
+    if let Ok(token) = env::var("GITHUB_TOKEN") {
+        req = req.set("Authorization", &format!("token {}", token));
+    }
+    let sha = req
+        .call()
+        .map_err(|e| QsmxtError::Update(format!("Failed to look up the main branch on GitHub: {}", e)))?
+        .into_string()
+        .map_err(|e| QsmxtError::Update(format!("Failed to read GitHub API response: {}", e)))?;
+    let sha = sha.trim().to_ascii_lowercase();
+    if !is_commit_hash(&sha) {
+        return Err(QsmxtError::Update(format!("GitHub returned an unexpected commit for main: {:?}", sha)));
+    }
+    Ok(sha)
+}
+
+/// The `cargo install` arguments that build `commit` into `root/bin`.
+///
+/// `--locked` builds with main's own Cargo.lock, so the result has exactly the QSM.rs
+/// commit main pins. The ONNX engine doesn't build for Windows on ARM, so that build
+/// leaves the deep-learning models out, as its release build does.
+fn cargo_install_args(commit: &str, root: &std::path::Path) -> Vec<std::ffi::OsString> {
+    let mut args: Vec<std::ffi::OsString> = ["install", "--git", GIT_URL, "--rev", commit, "--locked", "--root"]
+        .into_iter()
+        .map(Into::into)
+        .collect();
+    args.push(root.as_os_str().to_owned());
+    if cfg!(all(target_os = "windows", target_arch = "aarch64")) {
+        args.push("--no-default-features".into());
+    }
+    args.push("qsmxt".into());
+    args
+}
+
+/// Builds `commit` with `cargo install` into a temporary directory, then hands the built
+/// binary to `install`. Cargo's output goes straight to the terminal.
+fn build_main(
+    cargo: &std::path::Path,
+    commit: &str,
+    install: &mut dyn FnMut(&std::path::Path) -> crate::Result<()>,
+) -> crate::Result<()> {
+    let root = tempfile::tempdir()
+        .map_err(|e| QsmxtError::Update(format!("Failed to create temp directory: {}", e)))?;
+    // With the temporary bin directory on cargo's PATH, cargo doesn't tell the user to add
+    // it to theirs: the binary is moved out of it before anyone could run it from there.
+    let mut path = vec![root.path().join("bin")];
+    path.extend(env::var_os("PATH").iter().flat_map(env::split_paths));
+    let path = env::join_paths(path)
+        .map_err(|e| QsmxtError::Update(format!("Failed to set PATH for cargo: {}", e)))?;
+    let status = Command::new(cargo)
+        .args(cargo_install_args(commit, root.path()))
+        .env("QSMXT_BUILD_COMMIT", commit)
+        .env("PATH", path)
+        .status()
+        .map_err(|e| QsmxtError::Update(format!("Failed to run {}: {}", cargo.display(), e)))?;
+    if !status.success() {
+        return Err(QsmxtError::Update(
+            "Building main failed (see cargo's output above); the installed qsmxt was left as it was".to_string(),
+        ));
+    }
+    let built = root.path().join("bin").join(if cfg!(windows) { "qsmxt.exe" } else { "qsmxt" });
+    if !built.exists() {
+        return Err(QsmxtError::Update(format!("cargo finished but {} is missing", built.display())));
+    }
+    install(&built)
+}
+
+/// `qsmxt update --main`, with the toolchain lookup, the GitHub lookup, the build and the
+/// installer injected, so the decision logic can be tested without any of them.
+fn execute_main_with(
+    yes: bool,
+    running_commit: &str,
+    find_cargo: impl FnOnce() -> Option<std::path::PathBuf>,
+    fetch_commit: impl FnOnce() -> crate::Result<String>,
+    build: impl FnOnce(&std::path::Path, &str, &mut dyn FnMut(&std::path::Path) -> crate::Result<()>) -> crate::Result<()>,
+    mut install: impl FnMut(&std::path::Path) -> crate::Result<()>,
+) -> crate::Result<()> {
+    if running_commit.is_empty() {
+        println!("Current version: {}", current_version());
+    } else {
+        println!("Current version: main at {}", running_commit);
+    }
+
+    // Before the network: with no toolchain there is nothing to do with the answer.
+    let cargo = find_cargo().ok_or_else(|| {
+        QsmxtError::Update(
+            "`qsmxt update --main` builds QSMxT from source, which needs the Rust toolchain. \
+             Install it from https://rustup.rs, then run this again."
+                .to_string(),
+        )
+    })?;
+
+    println!("Checking the main branch...");
+    let commit = fetch_commit()?;
+
+    if commit == running_commit {
+        println!("You are already running the latest main ({}).", commit);
+        return Ok(());
+    }
+
+    println!("Latest main: {} ({}/commit/{})", commit, GIT_URL, commit);
+
+    let should_update = if yes {
+        true
+    } else {
+        print!("Build it from source and install it in place of this qsmxt? This takes several minutes. [y/N] ");
+        io::stdout().flush()?;
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        matches!(input.trim().to_lowercase().as_str(), "y" | "yes")
+    };
+    if !should_update {
+        println!("Update cancelled.");
+        return Ok(());
+    }
+
+    build(&cargo, &commit, &mut install)?;
+    println!("Updated qsmxt to main at {}. Run `qsmxt update --force` to go back to the latest release.", commit);
+    Ok(())
 }
 
 /// [`execute`] with the version, the release lookup and the installer injected, so the
@@ -606,7 +795,8 @@ fn execute_with(
         return Err(QsmxtError::Update(format!(
             "This is a development build (version {}), not a release, so there is nothing \
              to compare against. Refusing to replace it; run `qsmxt update --force` to \
-             install the latest release over it.",
+             install the latest release over it, or `qsmxt update --main` to build the \
+             latest main.",
             DEV_VERSION
         )));
     }
@@ -1269,7 +1459,7 @@ mod tests {
     #[test]
     fn a_dev_build_refuses_to_update_without_touching_the_network() {
         let err = execute_with(
-            crate::cli::UpdateArgs { yes: true, force: false },
+            crate::cli::UpdateArgs { yes: true, force: false, main: false },
             "0.0.0",
             || panic!("a dev build must not look up the latest release"),
             |_| panic!("a dev build must not install anything"),
@@ -1283,7 +1473,7 @@ mod tests {
     fn a_forced_dev_build_installs_the_latest_release() {
         let mut installed = None;
         execute_with(
-            crate::cli::UpdateArgs { yes: true, force: true },
+            crate::cli::UpdateArgs { yes: true, force: true, main: false },
             "0.0.0",
             || Ok(Release { tag: "v9.23.0".into(), notes: String::new(), html_url: String::new() }),
             |tag| {
@@ -1298,11 +1488,81 @@ mod tests {
     #[test]
     fn a_release_build_is_not_offered_an_older_or_equal_release() {
         execute_with(
-            crate::cli::UpdateArgs { yes: true, force: false },
+            crate::cli::UpdateArgs { yes: true, force: false, main: false },
             "9.23.0",
             || Ok(Release { tag: "v9.23.0".into(), notes: String::new(), html_url: String::new() }),
             |_| panic!("already up to date"),
         )
         .unwrap();
+    }
+
+    const MAIN: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    #[test]
+    fn update_main_without_cargo_points_at_rustup_before_touching_the_network() {
+        let err = execute_main_with(
+            true,
+            "",
+            || None,
+            || panic!("no toolchain: nothing to look up"),
+            |_, _, _| panic!("no toolchain: nothing to build"),
+            |_| panic!("no toolchain: nothing to install"),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("Rust toolchain") && err.contains("https://rustup.rs"), "{err}");
+    }
+
+    #[test]
+    fn update_main_builds_the_latest_commit_and_installs_the_result() {
+        let mut built = None;
+        let mut installed = None;
+        execute_main_with(
+            true,
+            "",
+            || Some("/opt/cargo".into()),
+            || Ok(MAIN.to_string()),
+            |cargo, commit, install| {
+                built = Some((cargo.to_path_buf(), commit.to_string()));
+                install(std::path::Path::new("/tmp/build/bin/qsmxt"))
+            },
+            |bin| {
+                installed = Some(bin.to_path_buf());
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(built, Some(("/opt/cargo".into(), MAIN.to_string())));
+        assert_eq!(installed, Some("/tmp/build/bin/qsmxt".into()));
+    }
+
+    #[test]
+    fn update_main_does_not_rebuild_the_commit_already_running() {
+        execute_main_with(
+            true,
+            MAIN,
+            || Some("cargo".into()),
+            || Ok(MAIN.to_string()),
+            |_, _, _| panic!("already on main's latest commit"),
+            |_| panic!("already on main's latest commit"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn update_main_builds_that_exact_commit_from_the_lock_file() {
+        let args = cargo_install_args(MAIN, std::path::Path::new("/tmp/root"));
+        let args: Vec<_> = args.iter().map(|a| a.to_str().unwrap()).collect();
+        let expected_prefix =
+            ["install", "--git", GIT_URL, "--rev", MAIN, "--locked", "--root", "/tmp/root"];
+        assert_eq!(args[..expected_prefix.len()], expected_prefix);
+        assert_eq!(args.last(), Some(&"qsmxt"));
+    }
+
+    #[test]
+    fn update_main_and_force_cannot_be_combined() {
+        use clap::Parser;
+        assert!(crate::cli::Cli::try_parse_from(["qsmxt", "update", "--main", "--force"]).is_err());
+        assert!(crate::cli::Cli::try_parse_from(["qsmxt", "update", "--main"]).is_ok());
     }
 }
