@@ -1867,6 +1867,18 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let mut r2star = if self.store.has(&Item::R2star) { Some(self.store.real(&Item::R2star)?) } else { None };
         let r2prime_item = if self.config.separation.custom_r2prime_tool.is_some() { Item::SuppliedR2prime } else { Item::R2prime };
         let mut r2prime = if self.store.has(&r2prime_item) { Some(self.map(&r2prime_item)?) } else { None };
+        // χ-sepnet's toolbox route predicts R2' from R2* itself, with R2PRIMEnet in its training
+        // frame, as the authors do; it takes an R2' only when that is measured or supplied.
+        if alg == crate::SeparationAlgorithm::ChiSepNet
+            && self.config.separation.chi_sepnet.route == crate::ChiSepNetRoute::Toolbox
+            && self.config.separation.custom_r2prime_tool.is_none()
+            && !(self.store.has(&Item::R2) && self.config.separation.r2prime_strategy != crate::R2PrimeStrategy::R2primenet)
+        {
+            if r2star.is_some() {
+                self.log(Level::Info, "Chi-separation (chi-sepnet): R2' predicted from R2* inside the network's route");
+            }
+            r2prime = None;
+        }
         // The MESE's echoes on this run's grid, for HC-ChiSep. Voxels outside its FOV are zero,
         // the same as voxels outside the brain.
         let se_multi = match &mese {
@@ -3138,6 +3150,8 @@ pub(crate) mod tests {
         config.pipeline.do_r2primemap = true;
         config.pipeline.do_chi_separation = true;
         config.separation.algorithm = crate::enums::SeparationAlgorithm::ChiSepNet;
+        // The network alone, given the R2' the R2 step predicts (the toolbox route predicts its own).
+        config.separation.chi_sepnet.route = crate::ChiSepNetRoute::Native;
         config.separation.r2primenet.patch = [16, 16, 16];
         let plan = crate::plan::plan(&config, &facts);
         assert_eq!(plan.models, ["r2primenet", "chi-sepnet"]);

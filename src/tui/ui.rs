@@ -483,7 +483,7 @@ fn draw_algo_modal(f: &mut Frame, modal: &AlgoModal, area: Rect) {
 fn is_deep_learning_algo(name: &str) -> bool {
     matches!(
         name,
-        "xqsm" | "qsmnet" | "qsmnet-plus" | "autoqsm" | "qsmgan" | "ir2qsm" | "lpcnn"
+        "xqsm" | "qsmnet" | "qsmnet-plus" | "qsmnetme" | "autoqsm" | "qsmgan" | "ir2qsm" | "lpcnn"
             | "modl-qsm" | "nextqsm" | "iqsm" | "iqsm-plus" | "bfrnet" | "iqfm"
             | "susep-net" | "chi-sepnet" | "hd-bet" | "rs2-net" | "mindgrab"
     )

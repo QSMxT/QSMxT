@@ -486,9 +486,16 @@ fn command_for(config: &PipelineConfig) -> String {
                 emit_f64(&mut parts, "--hc-chisep-bin-hz", s.hc_chisep.bin_hz, ds.hc_chisep.bin_hz);
             }
             SeparationAlgorithm::ChiSepNet => {
+                if s.chi_sepnet.route != ds.chi_sepnet.route {
+                    parts.push(format!("--chi-sepnet-route {}", s.chi_sepnet.route));
+                }
+                // Each route's own patch: the other route does not read it.
                 let p = s.chi_sepnet.patch;
-                if p != ds.chi_sepnet.patch {
+                if s.chi_sepnet.route == crate::ChiSepNetRoute::Native && p != ds.chi_sepnet.patch {
                     parts.push(format!("--chi-sepnet-patch {} {} {}", p[0], p[1], p[2]));
+                }
+                if let (crate::ChiSepNetRoute::Toolbox, Some(p)) = (s.chi_sepnet.route, s.chi_sepnet.frame_patch) {
+                    parts.push(format!("--chi-sepnet-frame-patch {} {} {}", p[0], p[1], p[2]));
                 }
             }
             SeparationAlgorithm::SusepNet => {
@@ -784,7 +791,7 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
         }
         // Deep-learning inversions have no per-net params (weights + fixed graph); their
         // tiling is emitted below, with BFRnet's and iQFM's.
-        QsmAlgorithm::Xqsm | QsmAlgorithm::Qsmnet | QsmAlgorithm::QsmnetPlus
+        QsmAlgorithm::Xqsm | QsmAlgorithm::Qsmnet | QsmAlgorithm::QsmnetPlus | QsmAlgorithm::Qsmnetme
         | QsmAlgorithm::Ir2qsm | QsmAlgorithm::Lpcnn | QsmAlgorithm::ModlQsm
         | QsmAlgorithm::Nextqsm | QsmAlgorithm::Autoqsm | QsmAlgorithm::Qsmgan
         | QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus => {}
@@ -927,7 +934,7 @@ mod tests {
     fn test_dl_algorithms_command() {
         use crate::enums::{BfAlgorithm, QsmAlgorithm, SeparationAlgorithm};
         for a in [
-            QsmAlgorithm::Xqsm, QsmAlgorithm::Qsmnet, QsmAlgorithm::QsmnetPlus,
+            QsmAlgorithm::Xqsm, QsmAlgorithm::Qsmnet, QsmAlgorithm::QsmnetPlus, QsmAlgorithm::Qsmnetme,
             QsmAlgorithm::Autoqsm, QsmAlgorithm::Qsmgan, QsmAlgorithm::Ir2qsm,
             QsmAlgorithm::Lpcnn, QsmAlgorithm::ModlQsm, QsmAlgorithm::Nextqsm,
             QsmAlgorithm::Iqsm, QsmAlgorithm::IqsmPlus,

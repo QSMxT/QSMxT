@@ -251,7 +251,7 @@ const CITE_SUSEPNET: Citation = Citation {
 
 const CITE_CHISEPNET: Citation = Citation {
     key: "kim2025chisepnet",
-    text: "Kim, M., et al. (SNU-LIST). \"χ-sepnet: deep learning χ-separation network.\" https://github.com/SNU-LIST/chi-separation",
+    text: "Kim, M., et al. (2025). \"χ-sepnet: Deep neural network for magnetic susceptibility source separation.\" *Human Brain Mapping*, 46(4):e70136. https://doi.org/10.1002/hbm.70136",
 };
 
 const CITE_QSMGAN: Citation = Citation {
@@ -843,10 +843,20 @@ fn separation_changes(config: &PipelineConfig) -> Changed {
         SeparationAlgorithm::ChiSepMedi => c.add_fields(&s.chi_sep_medi, &d.chi_sep_medi, &[]),
         SeparationAlgorithm::WaveSep => c.add_fields(&s.wavesep, &d.wavesep, &[]),
         SeparationAlgorithm::HcChisep => c.add_fields(&s.hc_chisep, &d.hc_chisep, &[]),
-        SeparationAlgorithm::ChiSepNet => {
-            let [x, y, z] = s.chi_sepnet.patch;
-            c.add(s.chi_sepnet != d.chi_sepnet, || format!("{x}×{y}×{z}-voxel sliding-window patches"));
-        }
+        SeparationAlgorithm::ChiSepNet => match s.chi_sepnet.route {
+            ChiSepNetRoute::Toolbox => {
+                c.add(true, || "the inputs resampled to 1 mm with B0 along z and the susceptibility \
+                    channel computed by QSMnetME, as in the χ-separation toolbox, and the maps resampled back".to_string());
+                if let Some([x, y, z]) = s.chi_sepnet.frame_patch {
+                    c.add(true, || format!("the networks applied as a sliding window of {x}×{y}×{z}-voxel patches"));
+                }
+            }
+            ChiSepNetRoute::Native => {
+                c.add(true, || "the network applied on the acquired grid to this run's QSM".to_string());
+                let [x, y, z] = s.chi_sepnet.patch;
+                c.add(s.chi_sepnet.patch != d.chi_sepnet.patch, || format!("{x}×{y}×{z}-voxel sliding-window patches"));
+            }
+        },
         SeparationAlgorithm::SusepNet => {
             if let Some([x, y, z]) = s.susep_net.patch {
                 c.add(true, || format!("the network applied as a sliding window of {x}×{y}×{z}-voxel patches"));
@@ -2380,6 +2390,7 @@ fn inversion_name_cite(alg: QsmAlgorithm) -> (&'static str, &'static Citation) {
         QsmAlgorithm::Xqsm => ("xQSM (deep-learning dipole inversion)", &CITE_XQSM),
         QsmAlgorithm::Qsmnet => ("QSMnet (deep-learning dipole inversion)", &CITE_QSMNET),
         QsmAlgorithm::QsmnetPlus => ("QSMnet+ (deep-learning dipole inversion)", &CITE_QSMNET_PLUS),
+        QsmAlgorithm::Qsmnetme => ("QSMnetME (deep-learning dipole inversion)", &CITE_CHISEPNET),
         QsmAlgorithm::Autoqsm => ("AutoQSM (single-step deep-learning reconstruction)", &CITE_AUTOQSM),
         QsmAlgorithm::Qsmgan => ("QSMGAN (GAN-refined deep-learning dipole inversion)", &CITE_QSMGAN),
         QsmAlgorithm::Ir2qsm => ("IR2QSM (unrolled deep-learning dipole inversion)", &CITE_IR2QSM),
@@ -2449,7 +2460,7 @@ fn cite_inline(cite: &Citation) -> &'static str {
         "wei2019autoqsm" => "Wei et al., 2019",
         "zhang2023bfrnet" => "Zhang et al., 2023",
         "li2025susepnet" => "Li et al., 2025",
-        "kim2025chisepnet" => "Kim et al. (SNU-LIST)",
+        "kim2025chisepnet" => "Kim et al., 2025",
         "chen2020qsmgan" => "Chen et al., 2020",
         "lai2020lpcnn" => "Lai et al., 2020",
         "li2025ir2qsm" => "Li et al., 2025",
@@ -3800,6 +3811,7 @@ mod tests {
             (QsmAlgorithm::Xqsm, "xQSM"),
             (QsmAlgorithm::Qsmnet, "QSMnet"),
             (QsmAlgorithm::QsmnetPlus, "QSMnet+"),
+            (QsmAlgorithm::Qsmnetme, "QSMnetME"),
             (QsmAlgorithm::Autoqsm, "AutoQSM"),
             (QsmAlgorithm::Qsmgan, "QSMGAN"),
             (QsmAlgorithm::Ir2qsm, "IR2QSM"),

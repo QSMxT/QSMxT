@@ -52,6 +52,7 @@ fn map_alg(alg: QsmAlgorithm) -> PInvAlg {
         QsmAlgorithm::Xqsm => PInvAlg::Xqsm,
         QsmAlgorithm::Qsmnet => PInvAlg::Qsmnet,
         QsmAlgorithm::QsmnetPlus => PInvAlg::QsmnetPlus,
+        QsmAlgorithm::Qsmnetme => PInvAlg::Qsmnetme,
         QsmAlgorithm::Autoqsm => PInvAlg::Autoqsm,
         QsmAlgorithm::Qsmgan => PInvAlg::Qsmgan,
         QsmAlgorithm::Ir2qsm => PInvAlg::Ir2qsm,
@@ -576,7 +577,11 @@ pub fn to_separation_config(cfg: &PipelineConfig) -> PSeparation {
             dr_pos_3t: s.hc_chisep.dr_pos_3t, bin_hz: s.hc_chisep.bin_hz,
             ..qsm_core::separation::HcChisepParams::default()
         },
-        chi_sepnet: s.chi_sepnet.params(),
+        // The toolbox route runs R2PRIMEnet itself from R2*, under the same field-strength rule.
+        chi_sepnet: qsm_core::separation::ChiSepNetParams {
+            ignore_field_mismatch: s.r2primenet.ignore_field_mismatch,
+            ..s.chi_sepnet.params()
+        },
         susep_net: s.susep_net.params(),
     }
 }
@@ -756,7 +761,10 @@ pub fn axial_only_algorithms(cfg: &PipelineConfig, facts: RunOrientationFacts) -
 
     if cfg.pipeline.do_chi_separation {
         let sep = map_sep_alg(cfg.separation.algorithm);
-        note(sep.orientation_support().requires_axial(), "chi-separation",
+        // χ-sepnet's toolbox route rotates its inputs itself; the network alone assumes B0 along z.
+        let native_chisepnet = cfg.separation.algorithm == crate::SeparationAlgorithm::ChiSepNet
+            && cfg.separation.chi_sepnet.route == crate::ChiSepNetRoute::Native;
+        note(sep.orientation_support().requires_axial() || native_chisepnet, "chi-separation",
              cfg.separation.algorithm.to_string());
     }
 
@@ -836,7 +844,7 @@ mod tests {
         use crate::enums::{BfAlgorithm as B, QsmAlgorithm as Q, SeparationAlgorithm as S};
         let mut cfg = PipelineConfig::default();
         for a in [
-            Q::Xqsm, Q::Qsmnet, Q::QsmnetPlus, Q::Autoqsm, Q::Qsmgan, Q::Ir2qsm,
+            Q::Xqsm, Q::Qsmnet, Q::QsmnetPlus, Q::Qsmnetme, Q::Autoqsm, Q::Qsmgan, Q::Ir2qsm,
             Q::Lpcnn, Q::ModlQsm, Q::Nextqsm, Q::Iqsm, Q::IqsmPlus,
         ] {
             cfg.inversion.algorithm = a;

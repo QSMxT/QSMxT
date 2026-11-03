@@ -187,8 +187,9 @@ see [Output space](#output-space).
 | | behaviour on oblique data |
 |---|---|
 | all 20 classical dipole inversions, HEIDI, PDF, χ-sep iLSQR and MEDI | correct as acquired — B0 is an explicit parameter |
+| QSMnetME, χ-sepnet (its default route) | correct as acquired — rotate their inputs to B0 along z themselves, as their authors' toolbox does |
 | SHARP, V-SHARP, RESHARP, iSMV, LBV, HARPERELLA, iHARPERELLA, BFRnet | unaffected — never uses B0 |
-| all 11 deep-learning inversions, SUSEP-Net, χ-sepnet, R2PRIMEnet, iQFM | **resampled first** — assumes B0 is +z |
+| the other deep-learning inversions, SUSEP-Net, R2PRIMEnet, iQFM, χ-sepnet with `--chi-sepnet-route native` | **resampled first** — assumes B0 is +z |
 
 Background removal by the spherical mean value property is genuinely
 direction-independent rather than merely untested, which is why PDF is the only
@@ -833,6 +834,7 @@ config file, and blank in the TUI.
 | `xqsm` | xQSM | ✓ |
 | `qsmnet` | QSMnet | ✓ |
 | `qsmnet-plus` | QSMnet+ | ✓ |
+| `qsmnetme` | QSMnetME — the χ-separation toolbox's network | ✓ |
 | `ir2qsm` | IR2QSM — unrolled | ✓ |
 | `lpcnn` | LPCNN — learned-proximal | ✓ |
 | `modl-qsm` | MoDL-QSM — model-based | ✓ |
@@ -1252,8 +1254,14 @@ settings file the bound is `chi_bound = 0.5` or `chi_bound = "echo-spacing"` und
 each echo's map; otherwise it uses its one QSM at every echo. The methods text says which.
 `qsmxt separate decompose` takes one per echo (`--qsm-per-echo`).
 
-χ-sepnet runs as a sliding window of 192×192×128-voxel patches;
-`--chi-sepnet-patch D H W` changes it (each a multiple of 16). SUSEP-Net runs
+χ-sepnet runs its authors' route by default (`--chi-sepnet-route toolbox`): the local field
+and R2′ are resampled to 1 mm with B0 along z, its susceptibility channel is computed there by
+QSMnetME, and the maps are resampled back. Without a measured R2′ it predicts R2′ from R2* with
+R2PRIMEnet inside that route (3 T only, as `--r2primenet-ignore-field-mismatch` describes). The
+networks run on the whole 1 mm frame at once; `--chi-sepnet-frame-patch D H W` runs them as a
+sliding window instead (each a multiple of 16). `--chi-sepnet-route native` runs the network alone
+on the acquired grid with the run's QSM, as a sliding window of 192×192×128-voxel patches
+(`--chi-sepnet-patch D H W`, each a multiple of 16). SUSEP-Net runs
 the whole volume in one pass; `--susep-net-patch D H W` runs it as a sliding
 window of that size instead (each a multiple of 8), so its memory follows the
 patch rather than the volume.

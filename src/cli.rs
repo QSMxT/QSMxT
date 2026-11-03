@@ -650,10 +650,21 @@ pub struct SeparationParamArgs {
     #[arg(long)]
     pub hc_chisep_bin_hz: Option<f64>,
     // χ-sepnet / SUSEP-Net (deep learning)
-    /// χ-sepnet sliding-window patch in voxels, D H W, each a multiple of 16
-    /// (default: 192 192 128, the authors')
+    /// χ-sepnet's input route. `toolbox` (default), the authors': the inputs resampled to 1 mm
+    /// with B0 along z, the susceptibility channel computed by QSMnetME, R2' measured or predicted
+    /// from R2* by R2PRIMEnet, the maps resampled back. `native`: the network alone on the
+    /// acquired grid, given this run's QSM and R2'
+    #[arg(long, value_enum)]
+    pub chi_sepnet_route: Option<ChiSepNetRouteArg>,
+    /// χ-sepnet (`--chi-sepnet-route native`) sliding-window patch in voxels, D H W, each a
+    /// multiple of 16 (default: 192 192 128, the authors')
     #[arg(long, num_args = 3, value_names = ["D", "H", "W"])]
     pub chi_sepnet_patch: Option<Vec<usize>>,
+    /// χ-sepnet (`--chi-sepnet-route toolbox`): run the networks as a sliding window of patches
+    /// this size over the 1 mm frame, D H W, each a multiple of 16, so memory follows the patch.
+    /// Omit to run the whole frame at once, as the authors do
+    #[arg(long, num_args = 3, value_names = ["D", "H", "W"])]
+    pub chi_sepnet_frame_patch: Option<Vec<usize>>,
     /// Run SUSEP-Net as a sliding window of patches this size in voxels, D H W, each a multiple
     /// of 8, so its memory follows the patch, not the volume. Omit to run the whole volume at once
     #[arg(long, num_args = 3, value_names = ["D", "H", "W"])]
@@ -3054,6 +3065,8 @@ pub enum InvertCommand {
     Qsmnet(InvertDlArgs),
     /// QSMnet+ deep-learning dipole inversion (weights downloaded on first use)
     QsmnetPlus(InvertDlArgs),
+    /// QSMnetME deep-learning dipole inversion, the χ-separation toolbox's QSM network (weights downloaded on first use)
+    Qsmnetme(InvertDlArgs),
     /// AutoQSM single-step reconstruction — input is the TOTAL field (weights downloaded on first use)
     Autoqsm(InvertDlArgs),
     /// QSMGAN deep-learning dipole inversion (weights downloaded on first use)
@@ -3883,9 +3896,9 @@ pub enum SeparateCommand {
     HcChisep(SeparateHcChisepArgs),
     /// SUSEP-Net deep-learning separation — QSM + R2' + local field (weights downloaded on first use)
     SusepNet(SeparateSusepNetArgs),
-    /// χ-sepnet deep-learning separation — QSM + R2' + local field (weights downloaded on first use)
+    /// χ-sepnet deep-learning separation — local field + R2' or R2* (weights downloaded on first use)
     #[command(name = "chi-sepnet")]
-    ChiSepNet(SeparateSusepNetArgs),
+    ChiSepNet(SeparateChiSepNetArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -3898,10 +3911,55 @@ pub struct SeparateSusepNetArgs {
     /// R2' map NIfTI in Hz
     #[arg(long)]
     pub r2prime: PathBuf,
-    /// Sliding-window patch in voxels, D H W. χ-sepnet: each a multiple of 16 (default: 192 192
-    /// 128, the authors'). SUSEP-Net: each a multiple of 8 (default: the whole volume at once)
+    /// Sliding-window patch in voxels, D H W, each a multiple of 8 (default: the whole volume at once)
     #[arg(long, num_args = 3, value_names = ["D", "H", "W"])]
     pub patch: Option<Vec<usize>>,
+}
+
+#[derive(Parser, Debug)]
+#[command(group(clap::ArgGroup::new("chisepnet_r2").required(true).args(["r2prime", "r2star"])))]
+pub struct SeparateChiSepNetArgs {
+    /// Binary mask NIfTI file
+    #[arg(short, long)]
+    pub mask: PathBuf,
+    /// Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii
+    /// and {prefix}_desc-total_Chimap.nii — the pipeline's names
+    #[arg(short, long)]
+    pub output: PathBuf,
+    /// B0 field strength in Tesla
+    #[arg(long, default_value_t = 3.0)]
+    pub field_strength: f64,
+    /// B0 direction (3 values)
+    #[arg(long, num_args = 3, allow_negative_numbers = true, default_values_t = [0.0, 0.0, 1.0])]
+    pub b0_direction: Vec<f64>,
+    /// Local (tissue) field NIfTI in ppm
+    #[arg(long)]
+    pub local_field: PathBuf,
+    /// R2' map NIfTI in Hz (χ-sepnet-R2')
+    #[arg(long)]
+    pub r2prime: Option<PathBuf>,
+    /// R2* map NIfTI in Hz (χ-sepnet-R2*: R2' predicted by R2PRIMEnet; `--route toolbox` only)
+    #[arg(long)]
+    pub r2star: Option<PathBuf>,
+    /// Conventional QSM (χ_total) NIfTI in ppm; `--route native` only (the toolbox route makes its
+    /// own with QSMnetME)
+    #[arg(long)]
+    pub qsm: Option<PathBuf>,
+    /// Input route: `toolbox` (default; the authors': training frame, QSMnetME susceptibility
+    /// channel) or `native` (the network alone on the acquired grid, given --qsm)
+    #[arg(long, value_enum, default_value = "toolbox")]
+    pub route: ChiSepNetRouteArg,
+    /// `--route native`: sliding-window patch in voxels, D H W, each a multiple of 16 (default:
+    /// 192 192 128, the authors')
+    #[arg(long, num_args = 3, value_names = ["D", "H", "W"])]
+    pub patch: Option<Vec<usize>>,
+    /// `--route toolbox`: run the networks as a sliding window of this patch over the 1 mm frame,
+    /// D H W, each a multiple of 16 (default: the whole frame at once, as the authors do)
+    #[arg(long, num_args = 3, value_names = ["D", "H", "W"])]
+    pub frame_patch: Option<Vec<usize>>,
+    /// With --r2star: run R2PRIMEnet even when the field strength is not 3 T (uncalibrated)
+    #[arg(long)]
+    pub ignore_field_mismatch: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -4442,9 +4500,17 @@ pub enum QsmAlgorithmArg {
     Qsmart,
     Ndi, Fansi, FansiTgv, L1qsm, Whqsm, Hdqsm, AmpPe,
     // Deep-learning dipole inversions (weights downloaded on first use).
-    Xqsm, Qsmnet, QsmnetPlus, Autoqsm, Qsmgan, Ir2qsm, Lpcnn, ModlQsm, Nextqsm,
+    Xqsm, Qsmnet, QsmnetPlus, Qsmnetme, Autoqsm, Qsmgan, Ir2qsm, Lpcnn, ModlQsm, Nextqsm,
     // End-to-end DL reconstructions from wrapped phase (no separate unwrap/BFR).
     Iqsm, IqsmPlus,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum ChiSepNetRouteArg {
+    /// The authors' route (training frame, QSMnetME susceptibility channel)
+    Toolbox,
+    /// The network alone on the acquired grid, given the QSM
+    Native,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

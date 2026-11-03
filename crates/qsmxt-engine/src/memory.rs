@@ -146,6 +146,9 @@ const BROWSER_RUNTIME_BYTES: u64 = 100_000_000;
 #[derive(Clone, Copy)]
 struct Scan {
     dims: [usize; 3],
+    /// The χ-separation toolbox's training frame for this grid (B0 along z, 1 mm), where
+    /// χ-sepnet's route and QSMnetME run their networks.
+    frame: [usize; 3],
     /// Voxels.
     n: u64,
     echoes: u64,
@@ -159,8 +162,12 @@ struct Scan {
 impl Scan {
     fn of(facts: &ScanFacts, profile: &MemoryProfile) -> Self {
         let (x, y, z) = facts.dims;
+        let frame = qsm_core::utils::chisep_frame::TrainingFrame::new(
+            facts.dims, facts.voxel_size.unwrap_or((1.0, 1.0, 1.0)), facts.b0_dir.unwrap_or((0.0, 0.0, 1.0)),
+        ).dims();
         Scan {
             dims: [x, y, z],
+            frame: [frame.0, frame.1, frame.2],
             n: x as u64 * y as u64 * z as u64,
             echoes: facts.n_echoes.max(1) as u64,
             coils: facts.n_coils.max(1) as u64,
@@ -505,6 +512,18 @@ fn inversion_need(config: &PipelineConfig, s: &Scan) -> u64 {
         // On the whole volume each of these is more than the WASM heap holds on the example.
         QsmAlgorithm::Qsmnet => dl(Net { id: "qsmnet", per_voxel: 50, fixed: 820_000_000, whole: 563, native_tile: 563, browser_per_voxel: 50, once: 0, browser_per_helper: 0 }),
         QsmAlgorithm::QsmnetPlus => dl(Net { id: "qsmnet-plus", per_voxel: 50, fixed: 820_000_000, whole: 563, native_tile: 563, browser_per_voxel: 50, once: 0, browser_per_helper: 0 }),
+        // QSMnetME runs on the χ-separation toolbox's training frame (B0 along z, 1 mm), the whole
+        // frame at once or, tiled, in patches of `tile_size + 2·tile_halo` rounded up to 16. Its
+        // graph is R2PRIMEnet's: 841 B per frame voxel measured natively at 192×256×128 (QSM.rs
+        // memory_calibration), plus the spline resampling's arrays over the frame and the grid.
+        QsmAlgorithm::Qsmnetme => {
+            let frame: u64 = s.frame.iter().map(|&d| d as u64).product();
+            let window = match config.dl_tile() {
+                Some((core, halo)) => ((core + 2 * halo).max(16).div_ceil(16) * 16).pow(3) as u64,
+                None => frame,
+            };
+            window * 841 + 114_000_000 + 64 * frame + 32 * n
+        }
         QsmAlgorithm::Xqsm => dl(Net { id: "xqsm", per_voxel: 53, fixed: 0, whole: 905, native_tile: 767, browser_per_voxel: 30, once: 0, browser_per_helper: 0 }),
         QsmAlgorithm::Nextqsm => dl(Net { id: "nextqsm", per_voxel: 40, fixed: 0, whole: 1_556, native_tile: 1_556, browser_per_voxel: 40, once: 0, browser_per_helper: 440_000_000 }),
         // LPCNN measured natively on 4 threads and in WASM on one (which separates its parts);
@@ -592,7 +611,7 @@ fn separation_need(config: &PipelineConfig, s: &Scan) -> u64 {
     } else {
         0
     };
-    match chi_separation_network_bytes(s.dims, &config.separation) {
+    match chi_separation_network_bytes(s.dims, s.frame, &config.separation) {
         0 => maps + echo_maps + workspace.max(qsm_solve) + qsm_map,
         net => maps + net,
     }
@@ -648,7 +667,20 @@ pub fn synthseg_bytes(dims: [usize; 3], patch: Option<usize>) -> u64 {
 /// included): χ-sepnet 4.5 GB at its authors' 192×192×128 patch and 1.7 GB at 128×128×64;
 /// SUSEP-Net 12.5 GB on the whole volume and 3.1 GB at 128×128×64; on 136×136×72, SUSEP-Net
 /// 2.8 GB at 128×128×64 and 2.0 GB at 96×96×64.
-pub fn chi_separation_network_bytes(dims: [usize; 3], config: &SeparationConfig) -> u64 {
+///
+/// χ-sepnet's toolbox route runs its networks (QSMnetME, R2PRIMEnet, χ-sepnet: the same graph
+/// size, one at a time) on the whole training frame `frame` (or its `frame_patch`), plus the
+/// spline resampling's working arrays over the acquired grid and the frame.
+pub fn chi_separation_network_bytes(dims: [usize; 3], frame: [usize; 3], config: &SeparationConfig) -> u64 {
+    if config.algorithm == SeparationAlgorithm::ChiSepNet && config.chi_sepnet.route == crate::ChiSepNetRoute::Toolbox {
+        let frame_n: u64 = frame.iter().map(|&d| d as u64).product();
+        let window: u64 = match config.chi_sepnet.frame_patch {
+            Some(p) => p.iter().map(|&d| d as u64).product(),
+            None => frame_n,
+        };
+        let native_n: u64 = dims.iter().map(|&d| d as u64).product();
+        return window * CHI_SEPNET_PER_VOXEL + CHI_SEPNET_FIXED + 64 * frame_n + 32 * native_n;
+    }
     // (activation bytes per patch voxel, parsed model and fixed overhead, pooling multiple)
     let (patch, per_voxel, fixed, multiple) = match config.algorithm {
         SeparationAlgorithm::ChiSepNet => (Some(config.chi_sepnet.patch), CHI_SEPNET_PER_VOXEL, CHI_SEPNET_FIXED,

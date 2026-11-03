@@ -168,7 +168,7 @@ take the local field, and `tfi`, `autoqsm` and `nextqsm` the **total** field:
 | `whqsm` | Weak-harmonic QSM |
 | `hdqsm` | Hybrid data-fidelity QSM |
 | `amp-pe` | Approximate Message Passing with Parameter Estimation |
-| `xqsm`, `qsmnet`, `qsmnet-plus`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm` | Deep-learning dipole inversions (weights downloaded on first use) |
+| `xqsm`, `qsmnet`, `qsmnet-plus`, `qsmnetme`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm` | Deep-learning dipole inversions (weights downloaded on first use) |
 | `autoqsm`, `nextqsm` | Deep-learning single-step reconstructions from the total field |
 | `iqsm`, `iqsm-plus` | Deep-learning single-step reconstructions from wrapped phase (iQSM, and the orientation-adaptive iQSM+) |
 | `cosmos` | COSMOS — multi-orientation least squares (2+ orientations) |
@@ -231,7 +231,7 @@ Split a susceptibility map into paramagnetic and diamagnetic sources, writing
 | `wavesep` | WaveSep — QSM + R2′ |
 | `hc-chisep` | Hollow-cylinder χ-separation — QSM + R2′ + multi-echo magnitude |
 | `susep-net` | SUSEP-Net (deep learning) — QSM + R2′ + local field |
-| `chi-sepnet` | χ-sepnet (deep learning) — QSM + R2′ + local field |
+| `chi-sepnet` | χ-sepnet (deep learning) — local field + R2′ or R2* (the authors' route; `--route native` takes a QSM too) |
 
 ## Supplementary maps
 

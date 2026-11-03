@@ -176,7 +176,7 @@ pub const SWI_SCALING_ARGS: [crate::cli::SwiScalingArg; 5] = {
     [S::Tanh, S::NegativeTanh, S::Positive, S::Negative, S::Triangular]
 };
 
-pub const QSM_ALGO_ARGS: [QsmAlgorithmArg; 31] = [
+pub const QSM_ALGO_ARGS: [QsmAlgorithmArg; 32] = [
         QsmAlgorithmArg::Rts,
         QsmAlgorithmArg::Tv,
         QsmAlgorithmArg::Tkd,
@@ -200,6 +200,7 @@ pub const QSM_ALGO_ARGS: [QsmAlgorithmArg; 31] = [
         QsmAlgorithmArg::Xqsm,
         QsmAlgorithmArg::Qsmnet,
         QsmAlgorithmArg::QsmnetPlus,
+        QsmAlgorithmArg::Qsmnetme,
         QsmAlgorithmArg::Autoqsm,
         QsmAlgorithmArg::Qsmgan,
         QsmAlgorithmArg::Ir2qsm,
@@ -626,7 +627,12 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             wavesep_tol: parse_optional_f64(&ps.sep_wavesep_tol),
             hc_chisep_dr_pos_3t: parse_optional_f64(&ps.sep_hcchisep_dr_pos_3t),
             hc_chisep_bin_hz: parse_optional_f64(&ps.sep_hcchisep_bin_hz),
+            chi_sepnet_route: Some(match ps.sep_chisepnet_route {
+                1 => crate::cli::ChiSepNetRouteArg::Native,
+                _ => crate::cli::ChiSepNetRouteArg::Toolbox,
+            }),
             chi_sepnet_patch: parse_usize_triple(&ps.sep_chisepnet_patch).map(|p| p.to_vec()),
+            chi_sepnet_frame_patch: parse_usize_triple(&ps.sep_chisepnet_frame_patch).map(|p| p.to_vec()),
             susep_net_patch: parse_usize_triple(&ps.sep_susepnet_patch).map(|p| p.to_vec()),
         },
         vsharp_params: crate::cli::VsharpParamArgs {
@@ -2501,7 +2507,7 @@ mod parity {
                     let v = match (field, a.field_text(field)) {
                         ("source_dicom" | "dicom_outputs" | "slurm_account" | "slurm_partition", _) => "x1".to_string(),
                         // Empty is the whole volume; a patch is three numbers.
-                        ("sep_susepnet_patch", "") => "64 64 32".to_string(),
+                        ("sep_susepnet_patch" | "sep_chisepnet_frame_patch", "") => "64 64 32".to_string(),
                         (_, v) => bumped(v),
                     };
                     *a.field_text_mut(field).unwrap_or_else(|| panic!("{field} not editable")) = v.clone();

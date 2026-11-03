@@ -249,16 +249,13 @@ mod tests {
     }
 
     /// "N classical and M deep-learning" wherever the docs count the inversions. Deep learning is
-    /// what QSM.rs says assumes B0 along z (`OrientationSupport::AxialOnly`).
+    /// what runs a network from QSM.rs's model registry (QSMnetME does, though it rotates its
+    /// input itself and so takes any B0 direction).
     #[test]
     fn inversion_counts_in_the_docs_are_right() {
-        use qsmxt_engine::bridge::{axial_only_algorithms, RunOrientationFacts};
         let (mut classical, mut dl) = (0, 0);
         for alg in qsmxt_engine::QsmAlgorithm::ALL {
-            let mut cfg = qsmxt_engine::PipelineConfig::default();
-            cfg.inversion.algorithm = alg;
-            let axial = axial_only_algorithms(&cfg, RunOrientationFacts { has_measured_r2: true });
-            if axial.iter().any(|a| a.starts_with("dipole inversion")) { dl += 1 } else { classical += 1 }
+            if qsm_core::models::find_model(&alg.to_string()).is_some() { dl += 1 } else { classical += 1 }
         }
         for path in doc_pages() {
             let text = std::fs::read_to_string(&path).unwrap();

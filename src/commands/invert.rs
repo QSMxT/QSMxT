@@ -642,6 +642,7 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
         InvertCommand::Xqsm(args) => { let out = run_dl_inversion(&args.common, args.field_strength, A::Xqsm, "xQSM")?; (args.common, out) }
         InvertCommand::Qsmnet(args) => { let out = run_dl_inversion(&args.common, args.field_strength, A::Qsmnet, "QSMnet")?; (args.common, out) }
         InvertCommand::QsmnetPlus(args) => { let out = run_dl_inversion(&args.common, args.field_strength, A::QsmnetPlus, "QSMnet+")?; (args.common, out) }
+        InvertCommand::Qsmnetme(args) => { let out = run_dl_inversion(&args.common, args.field_strength, A::Qsmnetme, "QSMnetME")?; (args.common, out) }
         InvertCommand::Autoqsm(args) => { let out = run_dl_inversion(&args.common, args.field_strength, A::Autoqsm, "AutoQSM")?; (args.common, out) }
         InvertCommand::Qsmgan(args) => { let out = run_dl_inversion(&args.common, args.field_strength, A::Qsmgan, "QSMGAN")?; (args.common, out) }
         InvertCommand::Ir2qsm(args) => { let out = run_dl_inversion(&args.common, args.field_strength, A::Ir2qsm, "IR2QSM")?; (args.common, out) }

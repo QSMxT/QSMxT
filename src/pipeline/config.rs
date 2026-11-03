@@ -151,6 +151,7 @@ pub fn qsm_algorithm_arg_to_config(a: cli::QsmAlgorithmArg) -> QsmAlgorithm {
         cli::QsmAlgorithmArg::Xqsm => QsmAlgorithm::Xqsm,
         cli::QsmAlgorithmArg::Qsmnet => QsmAlgorithm::Qsmnet,
         cli::QsmAlgorithmArg::QsmnetPlus => QsmAlgorithm::QsmnetPlus,
+        cli::QsmAlgorithmArg::Qsmnetme => QsmAlgorithm::Qsmnetme,
         cli::QsmAlgorithmArg::Autoqsm => QsmAlgorithm::Autoqsm,
         cli::QsmAlgorithmArg::Qsmgan => QsmAlgorithm::Qsmgan,
         cli::QsmAlgorithmArg::Ir2qsm => QsmAlgorithm::Ir2qsm,
@@ -776,7 +777,14 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = sp.wavesep_tol { config.separation.wavesep.tol = v; }
         if let Some(v) = sp.hc_chisep_dr_pos_3t { config.separation.hc_chisep.dr_pos_3t = v; }
         if let Some(v) = sp.hc_chisep_bin_hz { config.separation.hc_chisep.bin_hz = v; }
+        if let Some(v) = sp.chi_sepnet_route {
+            config.separation.chi_sepnet.route = match v {
+                cli::ChiSepNetRouteArg::Toolbox => qsmxt_engine::ChiSepNetRoute::Toolbox,
+                cli::ChiSepNetRouteArg::Native => qsmxt_engine::ChiSepNetRoute::Native,
+            };
+        }
         if let Some(&[d, h, w]) = sp.chi_sepnet_patch.as_deref() { config.separation.chi_sepnet.patch = [d, h, w]; }
+        if let Some(&[d, h, w]) = sp.chi_sepnet_frame_patch.as_deref() { config.separation.chi_sepnet.frame_patch = Some([d, h, w]); }
         if let Some(&[d, h, w]) = sp.susep_net_patch.as_deref() { config.separation.susep_net.patch = Some([d, h, w]); }
         // ── Mask sections ──
         if let Some(preset) = args.mask_preset {
@@ -1009,7 +1017,7 @@ mod tests {
     fn dl_qsm_args_map_to_config() {
         use crate::cli::QsmAlgorithmArg as A;
         for a in [
-            A::Xqsm, A::Qsmnet, A::QsmnetPlus, A::Autoqsm, A::Qsmgan, A::Ir2qsm,
+            A::Xqsm, A::Qsmnet, A::QsmnetPlus, A::Qsmnetme, A::Autoqsm, A::Qsmgan, A::Ir2qsm,
             A::Lpcnn, A::ModlQsm, A::Nextqsm, A::Iqsm, A::IqsmPlus,
         ] {
             // Each DL arg maps to a distinct config algorithm whose Display is a non-empty id.
