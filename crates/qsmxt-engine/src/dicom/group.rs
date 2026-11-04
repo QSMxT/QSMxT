@@ -470,7 +470,7 @@ where
         let subject = majority(images.iter().map(|f| f.patient_id.as_str()));
         let odd: Vec<&FileMeta> = images.iter().filter(|f| f.patient_id != subject).collect();
         if !odd.is_empty() {
-            let f = &images[0];
+            let f = images.iter().find(|f| f.patient_id == subject).unwrap_or(&images[0]);
             let shown: Vec<String> = odd.iter().take(3).map(|o| format!("{} ({})", o.path.display(), o.patient_id)).collect();
             report.warnings.push(format!(
                 "series {} '{}': {} of its {} files name a different patient: {}{}; the whole series is filed under sub-{} like its other files",
