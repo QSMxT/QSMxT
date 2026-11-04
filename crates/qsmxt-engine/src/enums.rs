@@ -85,7 +85,14 @@ impl fmt::Display for SeparationAlgorithm {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
-pub enum UnwrappingAlgorithm { Romeo, Laplacian, Prelude }
+pub enum UnwrappingAlgorithm {
+    Romeo,
+    Laplacian,
+    Prelude,
+    /// MEDI's region growing (qsm-core's `UnwrappingAlgorithm::MediRegionGrowing`).
+    #[serde(rename = "medi-region-growing")]
+    MediRegionGrowing,
+}
 
 /// How PRELUDE labels its initial regions (qsm-core's `PreludeLabelling`).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -139,7 +146,7 @@ impl fmt::Display for LaplacianSolver {
 }
 impl fmt::Display for UnwrappingAlgorithm {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", match self { Self::Romeo => "romeo", Self::Laplacian => "laplacian", Self::Prelude => "prelude" })
+        write!(f, "{}", match self { Self::Romeo => "romeo", Self::Laplacian => "laplacian", Self::Prelude => "prelude", Self::MediRegionGrowing => "medi-region-growing" })
     }
 }
 

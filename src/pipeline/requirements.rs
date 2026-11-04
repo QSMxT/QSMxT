@@ -32,6 +32,10 @@ pub fn scan_facts(run: &QsmRun, config: &PipelineConfig) -> ScanFacts {
         custom_qsm: found(s.custom_qsm_tool.as_deref(), "*_Chimap.nii*", &["desc-"]),
         custom_r2: found(s.custom_r2_tool.as_deref(), "*_R2map.nii*", &[]),
         custom_r2prime: found(s.custom_r2prime_tool.as_deref(), "*_R2primemap.nii*", &[]),
+        // The first echo's sidecar (already read once by discovery, so it parses).
+        manufacturer: run.echoes.first()
+            .and_then(|e| crate::bids::sidecar::read_sidecar(&e.phase_json).ok())
+            .and_then(|sc| sc.manufacturer),
     }
 }
 

@@ -80,6 +80,19 @@ A build from source reports version `0.0.0` and has no release to compare
 against, so `qsmxt update` refuses to replace it. Use `qsmxt update --force` to
 install the latest release over it anyway.
 
+### Trying the main branch
+
+```sh
+qsmxt update --main
+```
+
+This builds the latest commit on the `main` branch from source and installs it in
+place of your `qsmxt`. It needs the Rust toolchain (install it from
+[rustup.rs](https://rustup.rs)) and takes several minutes. Main may contain
+changes that are not yet released or documented. `qsmxt --version` shows the
+commit you are running, and running `qsmxt update --main` again moves to the
+newest commit. To go back to the latest release, run `qsmxt update --force`.
+
 `qsmxt tui` also checks for new releases in the background and offers the update
 in a pop-up when one is available. The check runs on its own thread and its
 result is cached for 24 hours, so it never delays startup. From the pop-up,

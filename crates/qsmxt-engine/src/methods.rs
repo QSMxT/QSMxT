@@ -1140,6 +1140,13 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
         doc.say(&[], format!("MRI processing was performed using {} ({}).", tool, author_year));
     }
 
+    // The k-space Tukey window comes before every other step.
+    if config.pipeline.tukey_window > 0.0 {
+        doc.say(&[Stage::ScalePhase], format!(
+            "Before any other processing, each echo's complex image was multiplied in k-space by a Tukey \
+             window with a taper ratio of {}.", config.pipeline.tukey_window));
+    }
+
     // Masking (inhomogeneity correction is described inline)
     describe_masking(config, ran, &mut doc);
 
@@ -1780,6 +1787,11 @@ fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
                 "Phase unwrapping was performed separately for each echo using PRELUDE (Jenkinson, 2003){}.",
                 prelude_changes(fm, &d).with()));
         }
+        UnwrappingAlgorithm::MediRegionGrowing => {
+            doc.cite(&CITE_FIT_PPM_COMPLEX);
+            doc.say(&[Stage::FieldMap],
+                "Phase unwrapping was performed separately for each echo using MEDI's magnitude-guided region growing (Liu et al., 2013).".to_string());
+        }
     }
 
     // A per-echo QSM combines no echoes into a B0 field map.
@@ -1871,6 +1883,9 @@ fn describe_complex_fit(config: &PipelineConfig, doc: &mut Draft) {
         UnwrappingAlgorithm::Prelude => {
             doc.cite(&CITE_PRELUDE);
             format!("PRELUDE (Jenkinson, 2003){}", prelude_changes(fm, &d).with())
+        }
+        UnwrappingAlgorithm::MediRegionGrowing => {
+            "MEDI's magnitude-guided region growing (unwrapPhase, MEDI toolbox)".to_string()
         }
     };
     doc.say(&[Stage::FieldMap], format!(
@@ -2292,6 +2307,7 @@ pub(crate) mod words {
                 c.add(fm.laplacian_unmasked != d.laplacian_unmasked, || "raw phase over the whole volume".to_string());
             }
             UnwrappingAlgorithm::Prelude => c = prelude_changes(fm, &d),
+            UnwrappingAlgorithm::MediRegionGrowing => {}
         }
         c.0
     }
@@ -3084,6 +3100,25 @@ mod tests {
         assert!(out.contains("using ROMEO (Dymerska et al., 2021) in template-based temporal mode."), "{out}");
     }
 
+    /// MEDI's region growing is stated plainly and cited, on the per-echo path and after the
+    /// complex fit; phase offset removal is said as with ROMEO.
+    #[test]
+    fn test_medi_region_growing_methods() {
+        let mut config = PipelineConfig::default();
+        config.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::MediRegionGrowing;
+        let out = generate_methods(&config);
+        assert!(out.contains("Phase unwrapping was performed separately for each echo using MEDI's magnitude-guided region growing (Liu et al., 2013)."), "{out}");
+        assert!(out.contains("https://doi.org/10.1002/mrm.24272"), "{out}");
+        assert!(out.contains("Phase offset removal"), "{out}");
+        for unsaid in ["using ROMEO", "mexUnwrap", "STI", "Biobank"] {
+            assert!(!out.contains(unsaid), "{unsaid:?} in {out}");
+        }
+        assert!(words::unwrapping_settings(&config).is_empty());
+        config.field_mapping.b0_estimation = B0Estimation::ComplexFit;
+        let out = generate_methods(&config);
+        assert!(out.contains("the fitted phase per echo spacing was unwrapped using MEDI's magnitude-guided region growing (unwrapPhase, MEDI toolbox) and divided by the echo spacing."), "{out}");
+    }
+
     /// PRELUDE at its defaults is stated plainly and cited; its settings are said only when
     /// changed. Phase offset removal and bipolar correction are said as with ROMEO.
     #[test]
@@ -3378,6 +3413,18 @@ mod tests {
         let out = generate_methods(&config);
         assert!(out.contains("MRI processing"));
         assert!(!out.contains("Dipole inversion"));
+    }
+
+    /// The Tukey window is said only when it is on, with its taper ratio, for any output.
+    #[test]
+    fn the_tukey_window_is_said_when_on() {
+        let mut config = PipelineConfig::default();
+        assert!(!generate_methods(&config).contains("Tukey"));
+        config.pipeline.tukey_window = 0.4;
+        assert!(generate_methods(&config).contains("multiplied in k-space by a Tukey window with a taper ratio of 0.4"));
+        config.pipeline.do_qsm = false;
+        config.pipeline.do_r2starmap = true;
+        assert!(generate_methods(&config).contains("Tukey window"));
     }
 
     #[test]

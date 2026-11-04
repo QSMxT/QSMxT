@@ -5,6 +5,11 @@
 //! the engine's, for the config the form builds ([`super::command::config_from_app`]); the TUI
 //! holds no rules.
 //!
+//! - **Two kinds, labelled apart** ([`rec::Kind`]): a reasoned finding (required, recommended,
+//!   discouraged) is labelled by its strength ("Recommended") with its reason, and its value is
+//!   preselected; an original authors' setting (a `reference` rule: what the method's authors
+//!   did, with no reason given that it is better) is labelled "Original authors' setting" and is
+//!   never preselected.
 //! - **The recommendation pop-up** opens only when a change creates a `required`, `recommended`
 //!   or `discouraged` finding that is not dismissed. It gives the reason (the source behind `w`,
 //!   "why?"), **Apply** (the recommended value, preselected), the other values the rule allows,
@@ -14,11 +19,14 @@
 //!   Esc closes it and leaves the finding open, shown by its marker.
 //! - **The reference pipeline pop-up** ([`RefModal`]) opens when a method with a reference
 //!   pipeline is chosen ([`rec::chosen_methods`]) and the config differs from it
-//!   ([`rec::reference_differences`]): every difference, with **Apply all**, **Choose per
-//!   setting** and **Keep mine** (closes it: a reference difference is information only, so
-//!   nothing is recorded, and it is offered again only when the method is chosen again). Nothing
-//!   changes unless applied. When the same change
-//!   also creates recommendations, they lead the same pop-up.
+//!   ([`rec::reference_differences`]): every difference from the authors' settings, and first
+//!   any recommendations the same change created. Its buttons ([`RefButton`]): **Apply
+//!   recommended** (preselected when there are recommendations: applies them and keeps every
+//!   authors' setting as it is), **Apply all** / **Apply the authors' settings**, **Choose per
+//!   setting** (recommendations start on their value, authors' settings on "keep") and **Keep
+//!   mine** (closes it: an authors' setting has nothing to dismiss, so nothing is recorded, and
+//!   it is offered again only when the method is chosen again). With only authors' settings,
+//!   nothing is preselected. Nothing changes unless applied.
 //! - **Pickers** ([`picker_noun`]): a selector whose choice can open that pop-up, or that has
 //!   more than three options, is chosen from a picker (Enter, or ←/→), never cycled, so no
 //!   method is chosen on the way to another.
@@ -29,7 +37,7 @@
 //!   row is tried until the engine no longer finds the departure.
 
 use crossterm::event::{KeyCode, KeyEvent};
-pub use qsmxt_engine::recommendations::Strength;
+pub use qsmxt_engine::recommendations::{Kind, Strength};
 use qsmxt_engine::recommendations::{self as rec, Facts, Marker, Recommendation, Trigger};
 use serde_json::Value;
 
@@ -67,10 +75,12 @@ impl RecModal {
     }
 
     /// The details of a setting: `findings` are the rules it departs from, offered ones first.
+    /// Apply is preselected only for a recommendation, never for an authors' setting.
     pub fn details(findings: Vec<Recommendation>) -> Self {
         let conflict = findings.iter().any(|r| r.conflict && open(r));
+        let offered = findings.first().is_some_and(open);
         let choices = choices(&findings);
-        RecModal { findings, choices, cursor: (!conflict).then_some(0), why: true, details: true }
+        RecModal { findings, choices, cursor: (!conflict && offered).then_some(0), why: true, details: true }
     }
 
     pub fn title(&self) -> String {
@@ -82,8 +92,8 @@ impl RecModal {
             }
         }
         match r.strength {
-            Strength::Reference if methods.len() == 1 => format!(" {} ", rec::reference_title(&r.trigger)),
-            Strength::Reference => format!(" {}: reference pipelines of {} ", r.label, methods.join(", ")),
+            Strength::Reference if methods.len() == 1 => format!(" {}: {} ", Kind::Reference.label(), rec::reference_title(&r.trigger)),
+            Strength::Reference => format!(" {}s: {} of {} ", Kind::Reference.label(), r.label, methods.join(", ")),
             _ if self.details && self.findings.len() > 1 => format!(" {} ", r.label),
             Strength::Required => format!(" {} requires a change ", r.trigger.name),
             Strength::Discouraged => format!(" Discouraged with {} ", r.trigger.name),
@@ -115,9 +125,15 @@ fn choices(findings: &[Recommendation]) -> Vec<RecChoice> {
         }
     }
     let several = findings.len() > 1;
+    // An authors' setting is offered as theirs, not as advice.
+    let authors = findings.iter().all(|r| r.kind == Kind::Reference);
     let mut out: Vec<RecChoice> = methods_of.into_iter().map(|(value, name, who, rule, recommended)| {
         let who = if several { format!(" ({})", who.join(", ")) } else { String::new() };
-        let (value, label) = if recommended { (None, format!("Apply: {name}{who}")) } else { (Some(value), format!("Use {name} instead{who}")) };
+        let (value, label) = match (recommended, authors) {
+            (true, false) => (None, format!("Apply: {name}{who}")),
+            (true, true) => (None, format!("Use the authors' setting: {name}{who}")),
+            (false, _) => (Some(value), format!("Use {name} instead{who}")),
+        };
         RecChoice::Apply { rule, value, label }
     }).collect();
     // A required one cannot be dismissed: the method cannot run otherwise.
@@ -140,11 +156,18 @@ pub struct RefItem {
 }
 
 impl RefItem {
+    /// A recommendation starts on its value; an authors' setting on keeping the current value.
     fn new(finding: Recommendation) -> Self {
         let mut options = vec![Some((None, finding.recommended.name.clone()))];
         options.extend(finding.alternatives().into_iter().map(|a| Some((Some(a.value.clone()), a.name.clone()))));
         options.push(None);
-        RefItem { finding, also: vec![], options, pick: 0 }
+        let pick = if finding.kind == Kind::Reasoned { 0 } else { options.len() - 1 };
+        RefItem { finding, also: vec![], options, pick }
+    }
+
+    /// The pick for a button: the recommended value, or keeping the current one.
+    fn take(&mut self, apply: bool) {
+        self.pick = if apply { 0 } else { self.options.len() - 1 };
     }
 
     /// What is picked, as the per-setting view says it: "PDF", "keep V-SHARP".
@@ -161,8 +184,16 @@ impl RefItem {
     }
 }
 
-/// The buttons of the reference pipeline pop-up.
-pub const REF_BUTTONS: [&str; 3] = ["Apply all", "Choose per setting", "Keep mine"];
+/// A button of the reference pipeline pop-up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefButton {
+    /// Apply the recommendations; keep every authors' setting as it is.
+    ApplyRecommended,
+    /// Apply everything, the authors' settings too.
+    ApplyAll,
+    ChoosePerSetting,
+    KeepMine,
+}
 
 /// The reference pipeline pop-up: where the config differs from the reference pipelines of the
 /// methods a change chose, led by the recommendations the same change created.
@@ -173,8 +204,11 @@ pub struct RefModal {
     /// The recommendations the change created (`recommended` and `discouraged` ones), then the
     /// differences from the reference pipelines, one per setting and value.
     pub items: Vec<RefItem>,
-    /// The highlighted button ([`REF_BUTTONS`]).
-    pub cursor: usize,
+    /// The buttons, for what the pop-up holds ([`RefModal::new`]).
+    pub buttons: Vec<RefButton>,
+    /// The highlighted button: the first ("Apply recommended") when there are recommendations,
+    /// none when it holds only authors' settings, which are never preselected.
+    pub cursor: Option<usize>,
     /// Choosing per setting: the highlighted setting.
     pub row: Option<usize>,
 }
@@ -190,7 +224,31 @@ impl RefModal {
                 None => items.push(RefItem::new(r)),
             }
         }
-        RefModal { methods, items, cursor: 0, row: None }
+        let reasoned = items.iter().any(|i| i.finding.kind == Kind::Reasoned);
+        let authors = items.iter().any(|i| i.finding.kind == Kind::Reference);
+        let mut buttons = Vec::new();
+        if reasoned {
+            buttons.push(RefButton::ApplyRecommended);
+        }
+        if authors {
+            buttons.push(RefButton::ApplyAll);
+        }
+        buttons.extend([RefButton::ChoosePerSetting, RefButton::KeepMine]);
+        RefModal { methods, items, buttons, cursor: reasoned.then_some(0), row: None }
+    }
+
+    /// A button's label, for what the pop-up holds.
+    pub fn button_label(&self, b: RefButton) -> &'static str {
+        let reasoned = self.buttons.contains(&RefButton::ApplyRecommended);
+        let authors = self.buttons.contains(&RefButton::ApplyAll);
+        match b {
+            RefButton::ApplyRecommended if authors => "Apply recommended",
+            RefButton::ApplyRecommended => "Apply",
+            RefButton::ApplyAll if reasoned => "Apply all, with the authors' settings",
+            RefButton::ApplyAll => "Apply the authors' settings",
+            RefButton::ChoosePerSetting => "Choose per setting",
+            RefButton::KeepMine => "Keep mine",
+        }
     }
 
     pub fn title(&self) -> String {
@@ -228,16 +286,21 @@ fn open(r: &Recommendation) -> bool {
 }
 
 impl App {
-    /// What the rules know about the data from the form: the echo count it is limited to, and the
+    /// What the rules know about the data from the form: the echo count it is limited to, the
     /// field strength (typed for NIfTI input; the first selected run's, once the Pipeline view has
-    /// read it, for a BIDS dataset). A rule on an unknown fact stays silent.
+    /// read it, for a BIDS dataset) and the manufacturer (the first phase image's sidecar; the
+    /// first selected run's). A rule on an unknown fact stays silent.
     fn rule_facts(&self) -> Facts {
-        let field_strength = match self.input_mode {
-            super::app::InputMode::NIfTI => self.nifti_state.field_strength.trim().parse().ok(),
-            super::app::InputMode::Bids => self.pipeline_view.read_field_strength(),
-            _ => None,
+        let (field_strength, manufacturer) = match self.input_mode {
+            super::app::InputMode::NIfTI => (
+                self.nifti_state.field_strength.trim().parse().ok(),
+                self.nifti_state.phase_files.first()
+                    .and_then(|p| super::pipeline_view::sidecar_manufacturer(&crate::dicom::convert::nii_to_json_path(p))),
+            ),
+            super::app::InputMode::Bids => (self.pipeline_view.read_field_strength(), self.pipeline_view.read_manufacturer()),
+            _ => (None, None),
         };
-        Facts { echo_count: self.filter_state.num_echoes.trim().parse().ok(), field_strength, ..Default::default() }
+        Facts { echo_count: self.filter_state.num_echoes.trim().parse().ok(), field_strength, manufacturer, ..Default::default() }
     }
 
     /// Every rule that applies to the form's config, departed from or not.
@@ -419,11 +482,12 @@ impl App {
     pub fn handle_ref_modal_key(&mut self, key: KeyEvent) {
         let Some(modal) = self.refs.modal.as_mut() else { return };
         let per_setting = modal.row.is_some();
+        let n = modal.buttons.len();
         match (key.code, modal.row) {
             (KeyCode::Esc, Some(_)) => modal.row = None,
             (KeyCode::Esc, None) => self.refs.modal = None,
-            (KeyCode::Left | KeyCode::Char('h'), None) => modal.cursor = (modal.cursor + REF_BUTTONS.len() - 1) % REF_BUTTONS.len(),
-            (KeyCode::Right | KeyCode::Char('l') | KeyCode::Tab, None) => modal.cursor = (modal.cursor + 1) % REF_BUTTONS.len(),
+            (KeyCode::Left | KeyCode::Char('h'), None) => modal.cursor = Some(modal.cursor.map_or(n - 1, |c| (c + n - 1) % n)),
+            (KeyCode::Right | KeyCode::Char('l') | KeyCode::Tab, None) => modal.cursor = Some(modal.cursor.map_or(0, |c| (c + 1) % n)),
             (KeyCode::Up | KeyCode::Char('k'), Some(i)) => modal.row = Some((i + modal.items.len() - 1) % modal.items.len()),
             (KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab, Some(i)) => modal.row = Some((i + 1) % modal.items.len()),
             (KeyCode::Left | KeyCode::Right | KeyCode::Char('h') | KeyCode::Char('l') | KeyCode::Char(' '), Some(i)) => {
@@ -431,14 +495,19 @@ impl App {
                 let n = item.options.len();
                 item.pick = if key.code == KeyCode::Left || key.code == KeyCode::Char('h') { (item.pick + n - 1) % n } else { (item.pick + 1) % n };
             }
-            (KeyCode::Enter, None) if modal.cursor == 1 => modal.row = Some(0),
+            // Nothing preselected: Enter waits for a choice.
+            (KeyCode::Enter, None) if modal.cursor.is_none() => {}
+            (KeyCode::Enter, None) if modal.cursor.map(|c| modal.buttons[c]) == Some(RefButton::ChoosePerSetting) => modal.row = Some(0),
             (KeyCode::Enter, _) => {
                 let mut items = modal.items.clone();
                 if !per_setting {
-                    // Apply all: each item's recommended value; Keep mine: none.
-                    let pick = if modal.cursor == 0 { 0 } else { usize::MAX };
+                    let button = modal.cursor.map(|c| modal.buttons[c]);
                     for item in &mut items {
-                        item.pick = if pick == 0 { 0 } else { item.options.len() - 1 };
+                        item.take(match button {
+                            Some(RefButton::ApplyRecommended) => item.finding.kind == Kind::Reasoned,
+                            Some(RefButton::ApplyAll) => true,
+                            _ => false,
+                        });
                     }
                 }
                 self.refs.modal = None;
@@ -597,8 +666,9 @@ impl App {
         let path = row_path(row)?;
         let parts: Vec<String> = view.iter().filter(|r| r.setting == path).map(|r| {
             let what = match (r.departs, r.strength, r.dismissed) {
-                (false, _, _) => "Reference",
-                (true, Strength::Reference, _) => "Differs from the reference",
+                (false, Strength::Reference, _) => "Authors' setting",
+                (false, _, _) => "Recommended",
+                (true, Strength::Reference, _) => "Differs from the authors' setting",
                 (true, _, true) => "Dismissed",
                 (true, Strength::Required, _) => "Required",
                 (true, Strength::Discouraged, _) => "Discouraged",
@@ -886,12 +956,12 @@ mod tests {
         select(&mut app, "qsm_algorithm", "rts", QSM_ALGO_OPTIONS);
         let row = PipelineRow::AlgoSelect { label: "", field: "bf_algorithm", options: &[], help: &[] };
         let text = App::row_reference(&app.rule_view(), &row).unwrap();
-        assert!(text.starts_with("Reference: V-SHARP (RTS; QSM.jl README.md"), "{text}");
+        assert!(text.starts_with("Authors' setting: V-SHARP (RTS; QSM.jl README.md"), "{text}");
         select(&mut app, "bf_algorithm", "pdf", super::super::app::BF_OPTIONS);
         assert!(app.rec_modal.is_none(), "information only");
         assert!(app.refs.modal.as_ref().is_none_or(|m| m.methods[0].name == "PDF"), "only a method just chosen opens its reference");
         assert_eq!(App::row_marker(&app.rule_view(), &row).map(|m| (m.actionable, m.text)), Some((false, "RTS: V-SHARP".into())));
-        assert!(App::row_reference(&app.rule_view(), &row).unwrap().starts_with("Differs from the reference: V-SHARP"));
+        assert!(App::row_reference(&app.rule_view(), &row).unwrap().starts_with("Differs from the authors' setting: V-SHARP"));
     }
 
     /// The screen with its pop-ups, as text (the PR's renders: `--nocapture` prints them).
@@ -931,24 +1001,37 @@ mod tests {
         let mut app = medi_chosen();
         let modal = app.refs.modal.as_ref().expect("MEDI's reference pipeline pop-up");
         assert_eq!(modal.title(), " MEDI's reference pipeline ");
+        // Only the authors' settings: nothing preselected, so Enter alone changes nothing.
+        assert_eq!((modal.cursor, modal.buttons[0]), (None, RefButton::ApplyAll));
+        assert!(modal.items.iter().all(|i| i.finding.kind == Kind::Reference && i.options[i.pick].is_none()));
         let s = settings(modal);
         assert!(s.contains(&"bg_removal.algorithm") && s.contains(&"masking.sections"), "{s:?}");
         let text = screen(&mut app, "MEDI chosen");
         assert!(text.contains("V-SHARP → PDF") && text.contains("threshold → BET") && text.contains("README.m:124"), "{text}");
-        assert!(text.contains("Apply all") && text.contains("Choose per setting") && text.contains("Keep mine"));
-        // Apply all (preselected).
+        assert!(text.contains("Original authors' settings") && text.contains("none is preselected"), "{text}");
+        assert!(text.contains("Apply the authors' settings") && text.contains("Choose per setting") && text.contains("Keep mine"));
         key(&mut app, KeyCode::Enter);
-        assert!(app.refs.modal.is_none(), "PDF's reference adds nothing the pop-up did not decide");
-        // PDF at its default 30 CG iterations: the measured suggestion of 300 is offered, not taken.
-        let modal = app.rec_modal.as_ref().expect("PDF's iteration suggestion");
-        assert_eq!(modal.findings[0].rule, "pdf.cg-iterations");
+        assert!(app.refs.modal.is_some(), "Enter waits for a choice");
+        // Apply the authors' settings, chosen.
+        key(&mut app, KeyCode::Right);
+        key(&mut app, KeyCode::Enter);
+        // The complex fit is now chosen, and PDF: one pop-up, PDF's measured suggestion of 300 CG
+        // iterations first (preselected), then the complex fit's authors' unwrapper (not).
+        let modal = app.refs.modal.as_ref().expect("the complex fit's authors' setting, with PDF's suggestion");
+        assert_eq!(modal.title(), " The reference for Complex fit ");
+        let rules: Vec<&str> = modal.items.iter().map(|i| i.finding.rule.as_str()).collect();
+        assert_eq!(rules, ["pdf.cg-iterations", "complex-fit.unwrap-region-growing"]);
+        assert_eq!((modal.cursor, modal.buttons[0]), (Some(0), RefButton::ApplyRecommended));
+        let text = screen(&mut app, "MEDI's settings applied: PDF's suggestion and the complex fit's unwrapper");
+        assert!(text.contains("Recommended, each for the reason given") && text.contains("Apply recommended"), "{text}");
         let c = super::super::command::config_from_app(&app).unwrap();
         assert_eq!(c.bg_removal.algorithm, qsmxt_engine::enums::BfAlgorithm::Pdf);
         assert_eq!(c.bg_removal.pdf.n_cg, qsm_core::bgremove::PdfParams::default().n_cg, "nothing rewritten yet");
-        app.handle_rec_modal_key(KeyEvent::from(KeyCode::Enter));
-        assert!(app.rec_modal.is_none());
+        key(&mut app, KeyCode::Enter);
+        assert!(app.refs.modal.is_none() && app.rec_modal.is_none());
         let c = super::super::command::config_from_app(&app).unwrap();
-        assert_eq!(c.bg_removal.pdf.n_cg, 300, "Apply (preselected) takes the suggestion");
+        assert_eq!(c.bg_removal.pdf.n_cg, 300, "Apply recommended (preselected) takes the suggestion");
+        assert_eq!(c.field_mapping.unwrapping_algorithm, qsmxt_engine::enums::UnwrappingAlgorithm::Romeo, "and keeps ROMEO");
         let medi = rec::chosen_methods(&c, &Facts::default()).into_iter().find(|m| m.name == "MEDI").unwrap();
         assert!(rec::reference_differences(&c, &Facts::default(), &medi).is_empty());
         let row = PipelineRow::AlgoSelect { label: "", field: "mask_preset", options: &[], help: &[] };
@@ -958,7 +1041,8 @@ mod tests {
     #[test]
     fn keep_mine_is_not_offered_again_until_the_method_is_chosen_again() {
         let mut app = medi_chosen();
-        app.refs.modal.as_mut().unwrap().cursor = 2;
+        let m = app.refs.modal.as_mut().unwrap();
+        m.cursor = m.buttons.iter().position(|b| *b == RefButton::KeepMine);
         key(&mut app, KeyCode::Enter);
         assert!(app.refs.modal.is_none());
         let c = super::super::command::config_from_app(&app).unwrap();
@@ -986,15 +1070,19 @@ mod tests {
     #[test]
     fn choosing_per_setting_applies_some_and_keeps_the_rest() {
         let mut app = medi_chosen();
-        app.refs.modal.as_mut().unwrap().cursor = 1;
+        let m = app.refs.modal.as_mut().unwrap();
+        m.cursor = m.buttons.iter().position(|b| *b == RefButton::ChoosePerSetting);
         key(&mut app, KeyCode::Enter);
         let modal = app.refs.modal.as_ref().unwrap();
         assert_eq!(modal.row, Some(0));
         let mask = settings(modal).iter().position(|s| *s == "masking.sections").unwrap();
         let bg = settings(modal).iter().position(|s| *s == "bg_removal.algorithm").unwrap();
-        // Keep the mask (its last choice); everything else takes the reference.
+        // The authors' settings start on "keep", none preselected.
+        assert!(modal.items.iter().all(|i| i.finding.kind == Kind::Reasoned || i.options[i.pick].is_none()));
+        // Keep the mask (its last choice); take the background removal.
         let keep = modal.items[mask].options.len() - 1;
         app.refs.modal.as_mut().unwrap().items[mask].pick = keep;
+        app.refs.modal.as_mut().unwrap().items[bg].pick = 0;
         app.refs.modal.as_mut().unwrap().row = Some(mask);
         screen(&mut app, "MEDI, choosing per setting");
         key(&mut app, KeyCode::Enter);
@@ -1026,10 +1114,15 @@ mod tests {
         key(&mut app, KeyCode::Char('!'));
         let modal = app.rec_modal.as_ref().expect("details");
         assert!(modal.details);
-        assert_eq!(modal.title(), " QSMART's reference pipeline ");
-        assert_eq!(modal.choices[0], RecChoice::Apply { rule: "qsmart.mask-bet".into(), value: None, label: "Apply: BET".into() });
+        assert_eq!(modal.title(), " Original authors' setting: QSMART's reference pipeline ");
+        assert_eq!(modal.choices[0], RecChoice::Apply { rule: "qsmart.mask-bet".into(), value: None, label: "Use the authors' setting: BET".into() });
+        assert_eq!(modal.cursor, None, "an authors' setting is never preselected");
         let text = screen(&mut app, "QSMART mask details (!)");
-        assert!(text.contains("QSMART's reference pipeline uses BET") && text.contains("Source"), "{text}");
+        assert!(text.contains("Original authors' setting (not a recommendation)")
+            && text.contains("QSMART's reference pipeline uses BET") && text.contains("Source"), "{text}");
+        key(&mut app, KeyCode::Enter);
+        assert!(app.rec_modal.is_some(), "Enter waits for a choice");
+        key(&mut app, KeyCode::Down);
         key(&mut app, KeyCode::Enter);
         assert_eq!(App::row_marker(&app.rule_view(), &row), None);
     }
@@ -1095,7 +1188,8 @@ mod tests {
         assert!(app.goto_field("qsm_algorithm"));
         let text = screen(&mut app, "A method picker row and its footer");
         assert!(text.contains("[ medi ▾ ]") && text.contains("Enter: choose method") && text.contains("Enter:Choose method"), "{text}");
-        assert!(app.goto_field("unwrapping_algorithm"));
+        app.pipeline_state.unwrapping_algorithm = 1; // laplacian: its three solvers are cycled
+        assert!(app.goto_field("laplacian_solver"));
         let text = screen(&mut app, "A cycled row and its footer");
         assert!(text.contains("◀ ") && text.contains("←→:Change") && !text.contains("Enter:Choose"), "{text}");
     }

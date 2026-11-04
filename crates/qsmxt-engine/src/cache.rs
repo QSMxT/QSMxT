@@ -51,7 +51,14 @@ pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value
     });
     let masking = || serde_json::to_value(&config.masking).unwrap_or_default();
     match base {
-        "scale_phase" => json!({ "coil_combination_sigma": config.field_mapping.coil_combination_sigma }),
+        "scale_phase" => {
+            let mut c = json!({ "coil_combination_sigma": config.field_mapping.coil_combination_sigma });
+            // Only when on, so a run without it keeps its key.
+            if config.pipeline.tukey_window > 0.0 {
+                c["tukey_window"] = json!(config.pipeline.tukey_window);
+            }
+            c
+        }
         "magnitude" => json!({
             "inhomogeneity_correction": config.masking.inhomogeneity_correction,
             "inhomogeneity_method": config.masking.inhomogeneity_method,
@@ -213,6 +220,7 @@ mod tests {
         assert!(changed(|c| c.field_mapping.laplacian_solver = crate::enums::LaplacianSolver::Mirror, "unwrap"));
         assert!(changed(|c| c.field_mapping.laplacian_unmasked = true, "unwrap"));
         assert!(changed(|c| c.field_mapping.unwrapping_algorithm = crate::enums::UnwrappingAlgorithm::Prelude, "unwrap"));
+        assert!(changed(|c| c.field_mapping.unwrapping_algorithm = crate::enums::UnwrappingAlgorithm::MediRegionGrowing, "unwrap"));
         assert!(changed(|c| c.field_mapping.prelude.num_phase_partitions = 6, "unwrap"));
         assert!(changed(|c| c.field_mapping.prelude.labelling = crate::enums::PreludeLabelling::Volume, "unwrap"));
         assert!(changed(|c| c.inversion.qsmart.vessel_magnitude = crate::enums::QsmartVesselMagnitude::Combined, "qsmart"));

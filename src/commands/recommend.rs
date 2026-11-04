@@ -1,15 +1,22 @@
 //! What `qsmxt run` and `qsmxt slurm` say about the pipeline rules' findings
 //! ([`qsmxt_engine::recommendations`]): at plan time, in `--dry`, applied with
-//! `--accept-recommendations`, and in the end-of-run summary. No setting changes without
-//! `--accept-recommendations`.
+//! `--accept-recommendations` (the reasoned recommendations) or `--accept-reference-settings`
+//! (the original authors' settings), and in the end-of-run summary. No setting changes without
+//! one of them. The two kinds are said apart everywhere: "Recommended" (with its reason) or
+//! "Original authors' setting".
 
 use std::collections::BTreeMap;
 
 use log::{info, warn};
-use qsmxt_engine::recommendations::{self as rec, Facts, Recommendation, Strength};
+use qsmxt_engine::recommendations::{self as rec, Accept, Facts, Kind, Recommendation, Strength};
 
 use crate::bids::discovery::QsmRun;
 use crate::pipeline::config::PipelineConfig;
+
+/// What `--accept-recommendations` and `--accept-reference-settings` ask to apply.
+pub(crate) fn which(recommendations: bool, reference: bool) -> Accept {
+    Accept { recommendations, reference }
+}
 
 /// A finding over the dataset: found for these runs (all of them when it does not depend on the
 /// scan).
@@ -38,7 +45,7 @@ pub(crate) fn found(config: &PipelineConfig, runs: &[QsmRun]) -> Vec<Found> {
     out
 }
 
-/// What `--accept-recommendations` did.
+/// What `--accept-recommendations` / `--accept-reference-settings` did.
 #[derive(Default)]
 pub(crate) struct Accepted {
     /// The findings applied, as they were before.
@@ -47,12 +54,34 @@ pub(crate) struct Accepted {
     pub per_run: std::collections::HashMap<String, Vec<Recommendation>>,
 }
 
-/// Apply every finding `--accept-recommendations` takes (QSMxT's engine decides which:
-/// [`rec::accept`]), over every run's scan, and say what changed.
-pub(crate) fn accept(config: &mut PipelineConfig, runs: &[QsmRun]) -> Accepted {
+/// The findings `which` applies, applied to `config` until none is left: a value applied can
+/// choose a method whose own rules then apply (the authors' complex fit for MEDI, then the
+/// unwrapper the authors pair with it). Returns the findings applied, each once, and those left
+/// because they conflict.
+fn accept_all(config: &mut PipelineConfig, runs: &[QsmRun], which: Accept) -> (Vec<Recommendation>, Vec<Recommendation>) {
+    let mut applied: Vec<Recommendation> = Vec::new();
+    let mut conflicting = Vec::new();
+    // A few rounds at most: each round only applies values that rules ask for, and a rule once
+    // followed no longer fires.
+    for _ in 0..4 {
+        let all: Vec<Recommendation> = found(config, runs).into_iter().map(|f| f.finding).collect();
+        let (now, left) = rec::accept(config, &all, which);
+        conflicting = left;
+        let new: Vec<Recommendation> = now.into_iter().filter(|r| !applied.iter().any(|a| a.rule == r.rule)).collect();
+        if new.is_empty() {
+            break;
+        }
+        applied.extend(new);
+    }
+    (applied, conflicting)
+}
+
+/// Apply every finding `--accept-recommendations` and `--accept-reference-settings` take
+/// (`which`; QSMxT's engine decides which findings: [`rec::accept`]), over every run's scan, and
+/// say what changed.
+pub(crate) fn accept(config: &mut PipelineConfig, runs: &[QsmRun], which: Accept) -> Accepted {
     let before = config.clone();
-    let all: Vec<Recommendation> = found(config, runs).into_iter().map(|f| f.finding).collect();
-    let (applied, conflicting) = rec::accept(config, &all);
+    let (applied, conflicting) = accept_all(config, runs, which);
     let mut per_run = std::collections::HashMap::new();
     for (key, f) in facts(runs, &before) {
         let had: Vec<Recommendation> = rec::recommendations(&before, &f).into_iter()
@@ -60,12 +89,21 @@ pub(crate) fn accept(config: &mut PipelineConfig, runs: &[QsmRun]) -> Accepted {
         per_run.insert(key, had);
     }
     for r in &applied {
-        info!("Applied ({}): {}: {} → {} [{}]", r.strength.label(), r.label, r.current_text(), r.recommended.name, r.rule);
+        info!("Applied ({}): {}: {} → {} [{}]", applied_label(r), r.label, r.current_text(), r.recommended.name, r.rule);
     }
     for r in &conflicting {
-        warn!("Not applied: {} ({}), which another as strong recommendation disagrees with: {}", r.rule, r.strength.label(), r.line());
+        warn!("Not applied: {} ({}), which another as strong suggestion disagrees with: {}", r.rule, applied_label(r), r.line());
     }
     Accepted { applied, per_run }
+}
+
+/// What kind of finding was applied: "recommended", "discouraged", "required" or "original
+/// authors' setting".
+fn applied_label(r: &Recommendation) -> String {
+    match r.kind {
+        Kind::Reference => Kind::Reference.label().to_lowercase(),
+        Kind::Reasoned => r.strength.label().to_string(),
+    }
 }
 
 /// How many of the runs, when not all.
@@ -79,8 +117,8 @@ fn dismiss_flag(r: &Recommendation) -> String {
 }
 
 /// The plan-time lines of `qsmxt run`: every departure the run keeps, a warning for a
-/// recommended or discouraged one (dismissed or not) and information for a reference-pipeline
-/// difference. A required one is refused by the run's checks
+/// recommended or discouraged one (dismissed or not) and information for a difference from the
+/// original authors' setting. A required one is refused by the run's checks
 /// ([`crate::pipeline::requirements::check_runs`]).
 pub(crate) fn log_found(config: &PipelineConfig, runs: &[QsmRun]) {
     for line in found_lines(config, runs) {
@@ -98,7 +136,7 @@ pub(crate) fn found_lines(config: &PipelineConfig, runs: &[QsmRun]) -> Vec<(bool
         let at = of_runs(f, runs.len());
         match (r.strength, r.dismissed) {
             (Strength::Required, _) => None,
-            (Strength::Reference, _) => Some((false, format!("Differs from the reference pipeline{at}: {} ({})", r.line(), r.rule))),
+            (Strength::Reference, _) => Some((false, format!("Differs from the original authors' setting{at}: {} ({}; --accept-reference-settings applies it)", r.line(), r.rule))),
             (s, true) => Some((true, format!("{}{at}: {} ({}; dismissed, kept)", capitalised(s.label()), r.line(), r.rule))),
             (s, false) => Some((true, format!("{}{at}: {} ({}; --accept-recommendations applies it)",
                                              capitalised(s.label()), r.line(), r.rule))),
@@ -113,13 +151,26 @@ fn capitalised(s: &str) -> String {
 
 /// What `qsmxt run --dry` prints: every finding for the config and dataset, grouped by strength,
 /// the dismissed ones apart; each covered setting's reference value; and with
-/// `--accept-recommendations`, the settings that would change and the resulting command.
-pub(crate) fn print_dry(config: &PipelineConfig, runs: &[QsmRun], accept: bool) {
+/// `--accept-recommendations` or `--accept-reference-settings`, the settings that would change
+/// and the resulting command.
+pub(crate) fn print_dry(config: &PipelineConfig, runs: &[QsmRun], accept: Accept) {
     print!("{}", dry_text(config, runs, accept));
 }
 
+/// The flags `which` stands for, as the dry run names them.
+fn flags(which: Accept) -> String {
+    let mut f = Vec::new();
+    if which.recommendations {
+        f.push("--accept-recommendations");
+    }
+    if which.reference {
+        f.push("--accept-reference-settings");
+    }
+    f.join(" ")
+}
+
 /// [`print_dry`]'s text.
-pub(crate) fn dry_text(config: &PipelineConfig, runs: &[QsmRun], accept: bool) -> String {
+pub(crate) fn dry_text(config: &PipelineConfig, runs: &[QsmRun], accept: Accept) -> String {
     use std::fmt::Write;
     let mut out = String::new();
     let found = found(config, runs);
@@ -131,9 +182,9 @@ pub(crate) fn dry_text(config: &PipelineConfig, runs: &[QsmRun], accept: bool) -
         type Belongs = Box<dyn Fn(&Recommendation) -> bool>;
         let groups: [(&str, Belongs); 5] = [
             ("required (the run is refused as configured)", Box::new(|r| r.strength == Strength::Required)),
-            ("recommended", Box::new(|r| !r.dismissed && r.strength == Strength::Recommended)),
-            ("discouraged", Box::new(|r| !r.dismissed && r.strength == Strength::Discouraged)),
-            ("reference (information only)", Box::new(|r| r.strength == Strength::Reference)),
+            ("recommended (--accept-recommendations applies them)", Box::new(|r| !r.dismissed && r.strength == Strength::Recommended)),
+            ("discouraged (--accept-recommendations applies the alternative)", Box::new(|r| !r.dismissed && r.strength == Strength::Discouraged)),
+            ("original authors' settings (not recommendations; --accept-reference-settings applies them)", Box::new(|r| r.kind == Kind::Reference)),
             ("dismissed (kept)", Box::new(|r| r.dismissed && r.strength.dismissable())),
         ];
         for (heading, belongs) in &groups {
@@ -169,22 +220,22 @@ pub(crate) fn dry_text(config: &PipelineConfig, runs: &[QsmRun], accept: bool) -
             let _ = writeln!(out, "  {line}");
         }
     }
-    if accept {
+    if accept.any() {
         let mut changed = config.clone();
-        let all: Vec<Recommendation> = found.iter().map(|f| f.finding.clone()).collect();
-        let (applied, conflicting) = rec::accept(&mut changed, &all);
+        let (applied, conflicting) = accept_all(&mut changed, runs, accept);
+        let flags = flags(accept);
         out.push('\n');
         if applied.is_empty() {
-            let _ = writeln!(out, "--accept-recommendations would change nothing.");
+            let _ = writeln!(out, "{flags} would change nothing.");
         } else {
-            let _ = writeln!(out, "With --accept-recommendations, the run would use:");
+            let _ = writeln!(out, "With {flags}, the run would use:");
             for r in &applied {
-                let _ = writeln!(out, "  {}: {} → {} ({})", r.label, r.current_text(), r.recommended.name, r.rule);
+                let _ = writeln!(out, "  {}: {} → {} ({}; {})", r.label, r.current_text(), r.recommended.name, applied_label(r), r.rule);
             }
             let _ = writeln!(out, "  i.e. {}", qsmxt_engine::generate_command(&changed));
         }
         for r in &conflicting {
-            let _ = writeln!(out, "  not applied, as another equally strong recommendation disagrees: {} ({})", r.line(), r.rule);
+            let _ = writeln!(out, "  not applied, as another equally strong suggestion disagrees: {} ({})", r.line(), r.rule);
         }
     }
     out
@@ -206,10 +257,10 @@ pub(crate) fn summary(config: &PipelineConfig, runs: &[QsmRun], accepted: &Accep
     }
     let mut out = vec!["Recommendations:".to_string()];
     for r in &accepted.applied {
-        out.push(format!("  applied ({}): {}: {} (was {}) [{}]", r.strength.label(), r.label, r.recommended.name, r.current_text(), r.rule));
+        out.push(format!("  applied ({}): {}: {} (was {}) [{}]", applied_label(r), r.label, r.recommended.name, r.current_text(), r.rule));
     }
     let wants = |r: &Recommendation| match r.strength {
-        Strength::Reference => format!("the {} reference pipeline uses {}", r.trigger.name, r.recommended.name),
+        Strength::Reference => format!("the original authors' setting ({}) is {}", r.trigger.name, r.recommended.name),
         Strength::Discouraged => format!("which is discouraged with {}", r.trigger.name),
         _ => format!("{} recommends {}", r.trigger.name, r.recommended.name),
     };
@@ -221,7 +272,7 @@ pub(crate) fn summary(config: &PipelineConfig, runs: &[QsmRun], accepted: &Accep
     for f in found.iter().filter(|f| !f.finding.dismissed) {
         let r = &f.finding;
         out.push(format!("  kept ({}): {}: {}; {}{} [{}]",
-                         r.strength.label(), r.label, r.current_text(), wants(r), of_runs(f, runs.len()), r.rule));
+                         applied_label(r), r.label, r.current_text(), wants(r), of_runs(f, runs.len()), r.rule));
     }
     out
 }

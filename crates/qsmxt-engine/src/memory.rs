@@ -223,6 +223,9 @@ fn step_need(step: &Step, config: &PipelineConfig, s: &Scan) -> u64 {
         // One echo at a time; uncombined coils are combined (MCPC-3D-S) first, with every coil's
         // phase and magnitude held at once.
         Stage::ScalePhase if s.coils > 1 => (2 * s.coils * e + 4 + 2 * e) * F64 * n,
+        // The k-space Tukey window holds the echo's phase and magnitude, its complex image and
+        // the FFT's scratch (counted, not measured).
+        Stage::ScalePhase if config.pipeline.tukey_window > 0.0 => s.v(48),
         Stage::ScalePhase => s.v(8),
         // Every echo's magnitude, read and combined, and the correction's working memory: N4's
         // is less than makehomogeneous's (measured: 8 B a voxel an echo and 33 more).
@@ -304,6 +307,13 @@ fn unwrap_need(config: &PipelineConfig, s: &Scan) -> u64 {
     if e == 1 || crate::bridge::per_echo(config, e as usize) {
         return 85 * n;
     }
+    if fm.unwrapping_algorithm == UnwrappingAlgorithm::MediRegionGrowing {
+        // MEDI's region growing: the echoes (and offsets) as for ROMEO, then one echo at a time:
+        // the combined magnitude, its f32 magnitude and phase, the planned flags, the `pre`
+        // links and the heap (8 + 4 + 4 + 1 + 16 + 8 B a voxel). Counted, not measured.
+        let base = if fm.phase_offset_removal { 34 * e + 62 } else { 25 * e + 56 };
+        return (base + MEDI_REGION_GROWING_PER_ECHO) * n;
+    }
     if fm.unwrapping_algorithm == UnwrappingAlgorithm::Prelude {
         // PRELUDE: the echoes (and, with phase-offset removal, the offsets and their smoothing)
         // as for ROMEO, then one echo unwrapped at a time: its copy, its region labels and the
@@ -332,6 +342,10 @@ fn unwrap_need(config: &PipelineConfig, s: &Scan) -> u64 {
 /// PRELUDE's working memory for the one echo it unwraps at a time, per voxel (an allowance; see
 /// `unwrap_need`).
 const PRELUDE_PER_ECHO: u64 = 40;
+
+/// MEDI's region growing's working memory for the one echo it unwraps at a time, per voxel (its
+/// arrays; see `unwrap_need`).
+const MEDI_REGION_GROWING_PER_ECHO: u64 = 41;
 
 /// ROMEO's per-echo working memory, held once per echo unwrapped at the same time.
 const ROMEO_PER_ECHO_THREAD: u64 = 31;
@@ -763,7 +777,7 @@ pub fn estimate_peak_memory_bytes(
         field_strength: 3.0,
         b0_dir: None,
         mese_echo_times: None,
-        custom_mask: false, custom_dseg: false, custom_qsm: false, custom_r2: false, custom_r2prime: false,
+        custom_mask: false, custom_dseg: false, custom_qsm: false, custom_r2: false, custom_r2prime: false, manufacturer: None,
     };
     crate::plan::plan(config, &facts).peak_memory_bytes
 }
@@ -797,7 +811,7 @@ mod tests {
             field_strength: 3.0,
             b0_dir: None,
             mese_echo_times: None,
-            custom_mask: false, custom_dseg: false, custom_qsm: false, custom_r2: false, custom_r2prime: false,
+            custom_mask: false, custom_dseg: false, custom_qsm: false, custom_r2: false, custom_r2prime: false, manufacturer: None,
         }
     }
 
@@ -991,6 +1005,7 @@ mod tests {
         }
         configs.push(("laplacian".into(), with(|c| c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian)));
         configs.push(("prelude".into(), with(|c| c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Prelude)));
+        configs.push(("medi-region-growing".into(), with(|c| c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::MediRegionGrowing)));
         configs.push(("hd-bet".into(), with(|c| c.masking.sections = crate::hd_bet_mask_sections())));
         configs.push(("everything".into(), with(|c| {
             c.pipeline.do_swi = true; c.pipeline.do_smwi = true; c.pipeline.do_t2starmap = true;

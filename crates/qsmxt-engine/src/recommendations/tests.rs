@@ -8,9 +8,18 @@ use crate::schema::{self, ValueType, ViewFacts};
 /// The facts a rule's conditions need: multi-echo, at most two echoes, a fine voxel size. `None`
 /// for a rule that needs a browser (QSMxT's tests run natively).
 fn facts_for(rule: &Rule) -> Option<Facts> {
-    let mut f = Facts { echo_count: Some(4), field_strength: Some(3.0), voxel_size: Some((1.0, 1.0, 1.0)), dims: Some((64, 64, 32)) };
+    let mut f = Facts {
+        echo_count: Some(4), field_strength: Some(3.0), voxel_size: Some((1.0, 1.0, 1.0)), dims: Some((64, 64, 32)),
+        manufacturer: None,
+    };
     for c in rule.when {
         let Condition::Fact { fact, is } = c else { continue };
+        // A vendor rule: the first manufacturer it names, as a sidecar spells it.
+        if let (core::Fact::Manufacturer, Test::OneOf { values }) = (fact, is) {
+            let Some(core::Value::Choice(m)) = values.first() else { return None };
+            f.manufacturer = Some(m.to_uppercase());
+            continue;
+        }
         let Test::Range { min, max } = is else { return None };
         match fact {
             core::Fact::EchoCount => f.echo_count = Some(if max.is_some() { 2 } else { min.unwrap_or(2.0) as usize + 2 }),
@@ -31,13 +40,13 @@ fn candidates(core_path: &str) -> Vec<Value> {
     let (path, kind) = setting_of(core_path).unwrap();
     let ids = |xs: &[&str]| xs.iter().map(|x| json!(x)).collect();
     match kind {
-        Kind::MaskGenerator => ids(&["threshold", "bet", "hd-bet", "mindgrab"]),
-        Kind::HdBetInference => ids(&["full-volume", "sliding-window", "low-memory"]),
-        Kind::LaplacianSolver => ids(&["dct", "fft-12", "fft", "mirror"]),
-        Kind::VsharpGrid => ids(&["native", "isotropic-finest", "isotropic-1mm"]),
-        Kind::SynthSegInference => ids(&["full-volume", "low-memory"]),
-        Kind::SynthSegPatch => vec![json!(96), json!(160)],
-        Kind::Same => {
+        Mapping::MaskGenerator => ids(&["threshold", "bet", "hd-bet", "mindgrab"]),
+        Mapping::HdBetInference => ids(&["full-volume", "sliding-window", "low-memory"]),
+        Mapping::LaplacianSolver => ids(&["dct", "fft-12", "fft", "mirror"]),
+        Mapping::VsharpGrid => ids(&["native", "isotropic-finest", "isotropic-1mm"]),
+        Mapping::SynthSegInference => ids(&["full-volume", "low-memory"]),
+        Mapping::SynthSegPatch => vec![json!(96), json!(160)],
+        Mapping::Same => {
             let s = schema::setting(path).unwrap();
             match &s.value_type {
                 ValueType::Bool => vec![json!(true), json!(false)],
@@ -100,13 +109,13 @@ fn native_rules() -> impl Iterator<Item = (&'static Rule, Facts)> {
 }
 
 fn known() -> Facts {
-    Facts { echo_count: Some(4), field_strength: Some(3.0), voxel_size: Some((1.0, 1.0, 1.0)), dims: Some((64, 64, 32)) }
+    Facts { echo_count: Some(4), field_strength: Some(3.0), voxel_size: Some((1.0, 1.0, 1.0)), dims: Some((64, 64, 32)), manufacturer: None }
 }
 
 /// A QSM.rs setting at a QSMxT setting's own path needs no entry in the table.
 #[test]
 fn a_rule_setting_at_a_qsmxt_path_maps_to_it() {
-    assert_eq!(setting_of("separation.decompose.chi_bound"), Some(("separation.decompose.chi_bound", Kind::Same)));
+    assert_eq!(setting_of("separation.decompose.chi_bound"), Some(("separation.decompose.chi_bound", Mapping::Same)));
     assert_eq!(setting_of("no.such.setting"), None);
 }
 
@@ -182,7 +191,7 @@ fn view_facts(f: &Facts) -> ViewFacts {
     ViewFacts {
         num_echoes: f.echo_count, field_strength: f.field_strength,
         voxel_size: f.voxel_size.map(|(x, y, z)| [x, y, z]), dims: f.dims.map(|(x, y, z)| [x, y, z]),
-        ..Default::default()
+        manufacturer: f.manufacturer.clone(), ..Default::default()
     }
 }
 
@@ -255,9 +264,48 @@ fn reference_findings_are_information_only() {
     let r = found.iter().find(|r| r.rule == "rts.bg-vsharp").unwrap();
     assert!(r.strength == Strength::Reference && !r.actionable());
     let before = c.clone();
-    let (applied, _) = accept(&mut c, &found);
+    let (applied, _) = accept(&mut c, &found, Accept { recommendations: true, reference: false });
     assert!(applied.is_empty() && c == before, "--accept-recommendations leaves a reference departure");
     assert_eq!(r.note(), "Background removal used PDF; this differs from the RTS reference pipeline, which uses V-SHARP");
+    // --accept-reference-settings applies it.
+    assert_eq!((r.kind, r.kind.label()), (Kind::Reference, "Original authors' setting"));
+    let (applied, _) = accept(&mut c, &found, Accept { recommendations: false, reference: true });
+    assert!(applied.iter().any(|a| a.rule == "rts.bg-vsharp") && c.bg_removal.algorithm == BfAlgorithm::Vsharp, "{applied:?}");
+}
+
+/// Each finding carries its kind, from QSM.rs: the authors' setting for a `reference` rule,
+/// reasoned for every other; and the JSON a front end reads says so.
+#[test]
+fn findings_carry_their_kind() {
+    for rule in core::RULES {
+        let Some(facts) = facts_for(rule) else { continue };
+        let c = violating(rule);
+        let Some(r) = recommendations(&c, &facts).into_iter().find(|r| r.rule == rule.id) else { continue };
+        assert_eq!(r.kind, Kind::from(rule.kind()), "{}", rule.id);
+        assert_eq!(r.kind == Kind::Reference, r.strength == Strength::Reference, "{}", rule.id);
+        assert_eq!(r.kind == Kind::Reasoned, r.actionable(), "{}: only reasoned findings are preselected", rule.id);
+        assert_eq!(serde_json::to_value(&r).unwrap()["kind"], serde_json::to_value(r.kind).unwrap());
+    }
+    assert_eq!(Kind::Reasoned.label(), "Recommended");
+}
+
+/// A reasoned finding outranks an authors' setting on the same setting when both are accepted,
+/// and the complex fit's unwrapper (MEDI's region growing) is applied only as an authors' setting.
+#[test]
+fn accepting_the_authors_settings_keeps_romeo_unless_asked() {
+    let mut c = PipelineConfig::default();
+    schema::set(&mut c, "field_mapping.b0_estimation", json!("complex-fit")).unwrap();
+    // TKD has no unwrapper of its own (QSMxT's default iLSQR has STI Suite's Laplacian, which
+    // would disagree with MEDI's region growing, and so neither would be applied).
+    schema::set(&mut c, "inversion.algorithm", json!("tkd")).unwrap();
+    let found = recommendations(&c, &known());
+    let r = found.iter().find(|r| r.rule == "complex-fit.unwrap-region-growing").expect("the authors' unwrapper is shown");
+    assert!(r.kind == Kind::Reference && !r.actionable());
+    let mut kept = c.clone();
+    accept(&mut kept, &found, Accept { recommendations: true, reference: false });
+    assert_eq!(kept.field_mapping.unwrapping_algorithm, UnwrappingAlgorithm::Romeo, "ROMEO stays");
+    accept(&mut c, &found, Accept { recommendations: true, reference: true });
+    assert_eq!(c.field_mapping.unwrapping_algorithm, UnwrappingAlgorithm::MediRegionGrowing);
 }
 
 #[test]
@@ -267,7 +315,7 @@ fn accepting_applies_the_strongest_actionable_finding() {
     let facts = Facts::default();
     let found = recommendations(&c, &facts);
     assert!(found.iter().any(|r| r.rule == rule.id && r.strength == Strength::Discouraged));
-    let (applied, conflicting) = accept(&mut c, &found);
+    let (applied, conflicting) = accept(&mut c, &found, Accept { recommendations: true, reference: false });
     assert!(applied.iter().any(|r| r.rule == rule.id) && conflicting.is_empty(), "{applied:?}");
     assert!(c.inversion.medi.msmv_prefilter);
     // Dismissed, it is left as it is.
@@ -275,7 +323,7 @@ fn accepting_applies_the_strongest_actionable_finding() {
     dismiss(&mut c, rule.id, &facts).unwrap();
     let found = recommendations(&c, &facts);
     assert!(found.iter().any(|r| r.rule == rule.id && r.dismissed));
-    let (applied, _) = accept(&mut c, &found);
+    let (applied, _) = accept(&mut c, &found, Accept { recommendations: true, reference: false });
     assert!(!applied.iter().any(|r| r.rule == rule.id) && !c.inversion.medi.msmv_prefilter);
 }
 
@@ -512,5 +560,41 @@ fn ticking_heidi_offers_lsqr_and_changes_nothing() {
         apply(&mut c, &rule, None).unwrap();
         assert_eq!((schema::get(&c, "inversion.algorithm"), c.inversion.heidi.enabled), (Some(json!("lsqr")), true), "{alg}");
         assert!(!recommendations(&c, &facts).iter().any(|r| r.rule.starts_with("heidi.seed")), "{alg}");
+    }
+}
+
+/// χ-sepnet's toolbox route offers the toolbox's Tukey window for the scan's manufacturer, as the
+/// sidecar spells it, as the authors' setting, and changes nothing until applied; the native
+/// route and an unknown manufacturer offer nothing. χ-sep-MEDI and χ-sep-iLSQR offer it too.
+#[test]
+fn chi_sepnet_offers_the_vendor_tukey_window() {
+    let mut c = PipelineConfig::default();
+    c.pipeline.do_chi_separation = true;
+    schema::set(&mut c, "separation.algorithm", json!("chi-sepnet")).unwrap();
+    let tukey = |c: &PipelineConfig, m: Option<&str>| recommendations(c, &known().with_manufacturer(m.map(str::to_string)))
+        .into_iter().filter(|r| r.setting == "pipeline.tukey_window").collect::<Vec<_>>();
+    let r = tukey(&c, Some("SIEMENS")).pop().expect("Siemens: no Tukey window offered");
+    assert_eq!((r.rule.as_str(), r.strength, r.recommended.value.clone()), ("chi-sepnet.tukey-siemens-ge", Strength::Reference, json!(0.4)));
+    assert_eq!(r.kind, Kind::Reference);
+    assert_eq!(tukey(&c, Some("GE MEDICAL SYSTEMS")).len(), 1);
+    assert!(tukey(&c, Some("Philips Medical Systems")).is_empty(), "Philips: 0 is already the default");
+    assert!(tukey(&c, None).is_empty() && tukey(&c, Some("Canon_MEC")).is_empty());
+    assert_eq!(c.pipeline.tukey_window, 0.0, "changed silently");
+    let view = schema::settings_view(&c, &ViewFacts { manufacturer: Some("Siemens".into()), ..view_facts(&known()) });
+    assert!(view.iter().any(|v| v.path == "pipeline.tukey_window" && v.recommendations.iter().any(|x| x.rule == r.rule)));
+    apply(&mut c, &r.rule, None).unwrap();
+    assert_eq!(c.pipeline.tukey_window, 0.4);
+    assert!(tukey(&c, Some("Siemens")).is_empty());
+    assert_eq!(tukey(&c, Some("Philips")).pop().map(|r| r.recommended.value), Some(json!(0)));
+    let mut native = PipelineConfig { ..c.clone() };
+    native.pipeline.tukey_window = 0.0;
+    schema::set(&mut native, "separation.chi_sepnet.route", json!("native")).unwrap();
+    assert!(tukey(&native, Some("Siemens")).is_empty());
+    for alg in ["chi-sep-medi", "chi-sep-ilsqr"] {
+        let mut c = PipelineConfig::default();
+        c.pipeline.do_chi_separation = true;
+        schema::set(&mut c, "separation.algorithm", json!(alg)).unwrap();
+        let r = tukey(&c, Some("Siemens")).pop().unwrap_or_else(|| panic!("{alg}: no Tukey window offered"));
+        assert_eq!((r.rule.as_str(), r.kind, r.recommended.value.clone()), ("chi-sep.tukey-siemens-ge", Kind::Reference, json!(0.4)), "{alg}");
     }
 }

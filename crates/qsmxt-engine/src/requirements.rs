@@ -308,6 +308,13 @@ fn spacing_deviation(tes: &[f64], first_as_reference: bool) -> (f64, f64) {
 
 /// Why ARLO cannot fit R2* on this run's GRE echoes, if it cannot: it needs the magnitude and the
 /// echo times QSM.rs's ARLO takes ([`qsm_core::r2star::arlo_echo_times_problem`]).
+/// Why the k-space Tukey window cannot run on this scan: it windows the complex image, so it needs
+/// the magnitude.
+pub fn tukey_window_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<String> {
+    (config.pipeline.tukey_window > 0.0 && !f.has_magnitude)
+        .then(|| "needs magnitude images: it windows each echo's complex image".to_string())
+}
+
 pub fn arlo_problem(f: &ScanFacts) -> Option<String> {
     if !f.has_magnitude {
         return Some("needs magnitude images, and this run has none".into());
@@ -460,6 +467,15 @@ pub fn field_mapping_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<S
     }
     qsm_core::fieldmap::echo_spacing_problem(&f.echo_times)
         .map(|why| format!("{why} (it fits the phase per echo spacing)"))
+}
+
+/// Why the configured phase unwrapping cannot run on this run's data, if it cannot: MEDI's region
+/// growing (QSM.rs `UnwrappingAlgorithm::MediRegionGrowing`) orders its growth by the magnitude,
+/// so it needs magnitude images.
+pub fn unwrapping_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<String> {
+    (config.field_mapping.unwrapping_algorithm == crate::enums::UnwrappingAlgorithm::MediRegionGrowing
+        && !f.has_magnitude)
+        .then(|| "needs magnitude images (it grows in order of the magnitude), and this run has none".into())
 }
 
 /// The note for MEDI+0's CSF term on a run with fewer than 3 echoes (MEDI, or QSMART's inner
@@ -833,6 +849,14 @@ pub fn scan_check(f: &ScanFacts, config: &PipelineConfig) -> Check {
             settings: vec![path, "n4.shrink_factor"], reason: why.clone(), message: why,
         });
     }
+    if let Some(why) = tukey_window_problem(f, config) {
+        let path = "pipeline.tukey_window";
+        out.errors.push(format!("--tukey-window {why}"));
+        out.problems.push(Problem {
+            severity: Severity::Error, setting: Some(path), implied_by: None,
+            settings: vec![path], reason: why.clone(), message: format!("Tukey window {why}"),
+        });
+    }
     let label = |path: &str| crate::schema::setting(path).map_or_else(|| path.to_string(), |s| s.full_label.to_string());
     // The reconstruction's own methods: what they need of the data.
     if config.pipeline.do_qsm {
@@ -853,6 +877,8 @@ pub fn scan_check(f: &ScanFacts, config: &PipelineConfig) -> Check {
         let methods = [
             ("field_mapping.b0_estimation", "--b0-estimation", config.field_mapping.b0_estimation.to_string(),
              if !per_echo && crate::bridge::field_mapping_runs(config, f.n_echoes) { field_mapping_problem(f, config) } else { None }),
+            ("field_mapping.unwrapping_algorithm", "--unwrapping-algorithm", config.field_mapping.unwrapping_algorithm.to_string(),
+             if crate::bridge::field_mapping_runs(config, f.n_echoes) { unwrapping_problem(f, config) } else { None }),
             ("inversion.algorithm", "--qsm-algorithm", config.inversion.algorithm.to_string(),
              on_each(inversion_problem)),
             ("bg_removal.algorithm", "--bf-algorithm", bg.to_string(),
@@ -977,6 +1003,7 @@ mod tests {
             real_imaginary: false,
             custom_mask: false, custom_dseg: false, custom_qsm: false, custom_r2: false,
             custom_r2prime: false,
+            manufacturer: None,
         }
     }
 
@@ -1574,6 +1601,19 @@ mod tests {
         // Without the complex fit none of this applies.
         c.field_mapping.b0_estimation = B0Estimation::WeightedAvg;
         assert!(check(&run(&[0.005, 0.010, 0.020], false), &c).errors.is_empty());
+    }
+
+    /// MEDI's region growing needs magnitude images; the other unwrappers do not.
+    #[test]
+    fn medi_region_growing_needs_the_magnitude() {
+        let mut c = PipelineConfig::default();
+        c.field_mapping.unwrapping_algorithm = crate::enums::UnwrappingAlgorithm::MediRegionGrowing;
+        assert!(check(&run(&EVEN, true), &c).errors.is_empty());
+        let out = check(&run(&EVEN, false), &c);
+        assert!(out.errors.len() == 1 && out.errors[0].contains("--unwrapping-algorithm medi-region-growing needs magnitude images"), "{out:?}");
+        assert_eq!(out.problems[0].settings, ["field_mapping.unwrapping_algorithm"]);
+        c.field_mapping.unwrapping_algorithm = crate::enums::UnwrappingAlgorithm::Romeo;
+        assert!(check(&run(&EVEN, false), &c).errors.is_empty());
     }
 
     /// MEDI+0's CSF term on fewer than 3 echoes is a warning that MEDI runs without it, not an

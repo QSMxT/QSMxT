@@ -13,8 +13,9 @@ const DL_STATUS: &str = "deep-learning models: DISABLED in this build (classical
     name = "qsmxt",
     version,
     long_version = const_format::formatcp!(
-        "{}\nQSM.rs (qsm-core): {}\n{}",
+        "{}{}\nQSM.rs (qsm-core): {}\n{}",
         env!("CARGO_PKG_VERSION"),
+        crate::commands::update::BUILD_COMMIT_SUFFIX,
         env!("QSM_CORE_DESCRIBE"),
         DL_STATUS,
     ),
@@ -133,8 +134,14 @@ pub struct UpdateArgs {
 
     /// Replace a development build (version 0.0.0) with the latest release. Without
     /// it, `qsmxt update` refuses on a dev build, since every release would look newer
-    #[arg(long)]
+    #[arg(long, conflicts_with = "main")]
     pub force: bool,
+
+    /// Build the latest commit on the main branch from source and install it in place of
+    /// this qsmxt. Needs the Rust toolchain (https://rustup.rs). `qsmxt update --force`
+    /// goes back to the latest release
+    #[arg(long)]
+    pub main: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -1892,6 +1899,12 @@ pub struct PipelineArgs {
     #[arg(long)]
     pub fft_padding: bool,
 
+    /// Apply a k-space Tukey window with this taper ratio (0 to 1) to each echo's complex image
+    /// before every other step, as the χ-separation toolbox does: 0.4 for Siemens and GE data, 0
+    /// for Philips. Default 0 (none). Needs magnitude images.
+    #[arg(long)]
+    pub tukey_window: Option<f64>,
+
     /// Margin in mm around the mask when --crop-to-mask is set (default 32). Below ~32 mm the
     /// reconstruction starts to differ from the uncropped one; it must also clear the largest
     /// SMV kernel in use, and V-SHARP defaults to 12 mm.
@@ -2018,16 +2031,26 @@ pub struct RunArgs {
     /// Print the processing plan, the pipeline graph and the methods text without running
     /// anything or writing any file. Also lists what the configuration departs from in the
     /// chosen methods' reference pipelines, for every run's scan, and each covered setting's
-    /// reference value; with --accept-recommendations, the settings that would change
+    /// reference value; with --accept-recommendations or --accept-reference-settings, the
+    /// settings that would change
     #[arg(long)]
     pub dry: bool,
 
-    /// Apply the recommended value of every recommendation that is not dismissed (required,
-    /// recommended and discouraged findings; reference ones are information only) before
-    /// running. Two equally strong recommendations that disagree on a setting are left for you
-    /// to choose. Without it, no setting is ever changed
+    /// Apply the recommended value of every reasoned recommendation that is not dismissed
+    /// (required, recommended and discouraged findings, each with its reason) before running.
+    /// The original authors' settings are not applied; see --accept-reference-settings. Two
+    /// equally strong recommendations that disagree on a setting are left for you to choose.
+    /// Without it, no setting is ever changed
     #[arg(long)]
     pub accept_recommendations: bool,
+
+    /// Apply the original authors' settings of the chosen methods (what their code, paper or
+    /// README does, where no reason is given that it is better) before running, so the run
+    /// follows the methods' reference pipelines. Two methods whose authors' settings disagree on
+    /// a setting are left for you to choose; a reasoned recommendation on the same setting wins
+    /// when --accept-recommendations is also given
+    #[arg(long)]
+    pub accept_reference_settings: bool,
 
     /// Enable debug logging
     #[arg(long)]
@@ -2199,10 +2222,15 @@ pub struct SlurmArgs {
     #[arg(long, num_args = 1.., value_delimiter = ',')]
     pub dicom_outputs: Option<Vec<String>>,
 
-    /// Apply the recommended value of every recommendation that is not dismissed before writing
-    /// the jobs (as `qsmxt run --accept-recommendations`)
+    /// Apply the recommended value of every reasoned recommendation that is not dismissed
+    /// before writing the jobs (as `qsmxt run --accept-recommendations`)
     #[arg(long)]
     pub accept_recommendations: bool,
+
+    /// Apply the original authors' settings of the chosen methods before writing the jobs (as
+    /// `qsmxt run --accept-reference-settings`)
+    #[arg(long)]
+    pub accept_reference_settings: bool,
 
     #[command(flatten)]
     pub pipeline: PipelineArgs,
@@ -2445,6 +2473,21 @@ pub enum UnwrapCommand {
     Laplacian(UnwrapLaplacianArgs),
     /// PRELUDE region-merging unwrapping
     Prelude(UnwrapPreludeArgs),
+    /// MEDI's magnitude-guided region-growing unwrapping (takes no mask)
+    MediRegionGrowing(UnwrapMediRegionGrowingArgs),
+}
+
+/// `qsmxt unwrap medi-region-growing`: no mask, as MEDI's unwrapper grows over the whole volume.
+#[derive(Parser, Debug)]
+pub struct UnwrapMediRegionGrowingArgs {
+    /// Input wrapped phase NIfTI file
+    pub input: PathBuf,
+    /// Magnitude NIfTI file (3D): the order in which the volume is unwrapped. Required.
+    #[arg(long)]
+    pub magnitude: PathBuf,
+    /// Output unwrapped phase NIfTI file
+    #[arg(short, long)]
+    pub output: PathBuf,
 }
 
 #[derive(Parser, Debug)]
@@ -2576,6 +2619,25 @@ pub enum FieldmapCommand {
     Laplacian(FieldmapLaplacianArgs),
     /// PRELUDE-based multi-echo field mapping (phase offset removal + per-echo unwrap + B0 fit)
     Prelude(FieldmapPreludeArgs),
+    /// MEDI region-growing field mapping (phase offset removal + per-echo unwrap + B0 fit; with
+    /// `--b0-estimation complex-fit`, MEDI's field map). Needs `--magnitude`.
+    MediRegionGrowing(FieldmapMediRegionGrowingArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct FieldmapMediRegionGrowingArgs {
+    #[command(flatten)]
+    pub common: FieldmapCommonArgs,
+    /// Enable phase offset removal for multi-echo data (default: true)
+    #[arg(long)]
+    pub phase_offset_removal: Option<bool>,
+    /// Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command
+    /// line's)
+    #[arg(long, num_args = 3)]
+    pub phase_offset_sigma_mm: Option<Vec<f64>>,
+    /// Enable bipolar gradient correction (requires >= 3 echoes)
+    #[arg(long)]
+    pub bipolar_correction: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -4554,7 +4616,7 @@ pub enum OutputSpaceArg {
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum UnwrapAlgorithmArg {
-    Romeo, Laplacian, Prelude,
+    Romeo, Laplacian, Prelude, MediRegionGrowing,
 }
 
 /// `--prelude-labelling`.

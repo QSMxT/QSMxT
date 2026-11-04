@@ -702,6 +702,7 @@ impl Ctx<'_> {
                     UnwrappingAlgorithm::Romeo => "ROMEO",
                     UnwrappingAlgorithm::Laplacian => "Laplacian",
                     UnwrappingAlgorithm::Prelude => "PRELUDE",
+                    UnwrappingAlgorithm::MediRegionGrowing => "MEDI region growing",
                 };
                 let mut s = Vec::new();
                 if removes_offsets {

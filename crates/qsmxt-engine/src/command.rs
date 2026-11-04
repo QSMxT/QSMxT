@@ -126,6 +126,7 @@ fn command_for(config: &PipelineConfig) -> String {
     if config.pipeline.fft_padding != d.pipeline.fft_padding {
         parts.push("--fft-padding".to_string());
     }
+    emit_f64(&mut parts, "--tukey-window", config.pipeline.tukey_window, d.pipeline.tukey_window);
     emit_f64(&mut parts, "--crop-margin-mm", config.pipeline.crop_margin_mm, d.pipeline.crop_margin_mm);
     if config.pipeline.output_space != d.pipeline.output_space {
         parts.push(format!("--output-space {}", config.pipeline.output_space));
@@ -1606,6 +1607,20 @@ frangi_c = 400.0
         assert!(generate_command(&c).contains("--laplacian-fft-pad 12"));
         c.field_mapping.laplacian_fft_pad = [64, 64, 32];
         assert!(generate_command(&c).contains("--laplacian-fft-pad 64 64 32"));
+    }
+
+    /// MEDI's region growing is selected by `--unwrapping-algorithm medi-region-growing`, and a
+    /// config file keeps it.
+    #[test]
+    fn test_medi_region_growing_command() {
+        let mut c = PipelineConfig::default();
+        c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::MediRegionGrowing;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--unwrapping-algorithm medi-region-growing") && !cmd.contains("--romeo"), "{cmd}");
+        let back = PipelineConfig::from_toml(&c.to_toml().unwrap()).unwrap();
+        assert_eq!(back.field_mapping.unwrapping_algorithm, UnwrappingAlgorithm::MediRegionGrowing);
+        let f: FieldMappingConfig = toml::from_str("unwrapping_algorithm = \"medi-region-growing\"\n").unwrap();
+        assert_eq!(f.unwrapping_algorithm, UnwrappingAlgorithm::MediRegionGrowing);
     }
 
     /// PRELUDE is selected by `--unwrapping-algorithm prelude`; its settings are said only when

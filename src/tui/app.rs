@@ -1289,7 +1289,8 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("n4_max_iterations", "n4.max_iterations"), ("n4_convergence_threshold", "n4.convergence_threshold"),
     ("n4_mesh", "n4.mesh"), ("n4_spline_order", "n4.spline_order"), ("n4_bias_field_fwhm", "n4.bias_field_fwhm"),
     ("n4_wiener_noise", "n4.wiener_noise"), ("n4_histogram_bins", "n4.histogram_bins"),
-    ("ignore_slice_gap", "pipeline.ignore_slice_gap"), ("crop_to_mask", "pipeline.crop_to_mask"),
+    ("ignore_slice_gap", "pipeline.ignore_slice_gap"), ("tukey_window", "pipeline.tukey_window"),
+    ("crop_to_mask", "pipeline.crop_to_mask"),
     ("crop_margin_mm", "pipeline.crop_margin_mm"), ("fft_padding", "pipeline.fft_padding"),
     ("coil_combination_sigma", "field_mapping.coil_combination_sigma"),
     ("custom_mask_tool", "masking.custom_mask_tool"), ("two_pass", "masking.two_pass"),
@@ -1602,6 +1603,7 @@ const UNWRAP_HELP: &[&str] = &[
     "ROMEO region-growing unwrapping — https://doi.org/10.1002/mrm.28563",
     "Laplacian phase unwrapping (FFT-based) — https://doi.org/10.1364/OL.28.001194",
     "PRELUDE region-merging unwrapping, each echo on its own — https://doi.org/10.1002/mrm.10354",
+    "MEDI's magnitude-guided region-growing unwrapping; needs magnitude images — https://doi.org/10.1002/mrm.24272",
 ];
 const BF_HELP: &[&str] = &[
     "Variable-kernel SHARP (V-SHARP) — https://doi.org/10.1002/mrm.23000",
@@ -1766,6 +1768,8 @@ pub struct PipelineFormState {
     pub inhomogeneity_correction: bool,
     /// Reconstruct a 2D acquisition whose sidecar says its slices leave a gap.
     pub ignore_slice_gap: bool,
+    /// Taper ratio of the k-space Tukey window on each echo (`--tukey-window`; 0 = none).
+    pub tukey_window: String,
     // Performance and output grid (Preprocessing → Geometry).
     pub crop_to_mask: bool,
     pub crop_margin_mm: String,
@@ -2298,6 +2302,7 @@ impl Default for PipelineFormState {
             reg_min_overlap: format!("{}", qsmxt_engine::RegistrationConfig::default().min_overlap),
             inhomogeneity_correction: true,
             ignore_slice_gap: false,
+            tukey_window: fmt_default(qsmxt_engine::PipelineToggles::default().tukey_window),
             crop_to_mask: false,
             crop_margin_mm: fmt_default(qsmxt_engine::PipelineToggles::default().crop_margin_mm),
             fft_padding: false,
@@ -2704,7 +2709,7 @@ const QSMART_INV_HELP: &[&str] = &[
     "Nonlinear Total Variation (NLTV)",
     "Morphology Enabled Dipole Inversion (MEDI)",
 ];
-pub const UNWRAP_OPTIONS: &[&str] = &["romeo", "laplacian", "prelude"];
+pub const UNWRAP_OPTIONS: &[&str] = &["romeo", "laplacian", "prelude", "medi-region-growing"];
 pub const BF_OPTIONS: &[&str] = &["vsharp", "pdf", "lbv", "ismv", "sharp", "resharp", "harperella", "iharperella", "bfrnet", "iqfm"];
 pub const B0_ESTIMATION_OPTIONS: &[&str] = &["weighted-avg", "linear-fit", "robust-fit", "qsmart-echofit", "complex-fit"];
 pub const ROBUST_FIT_LOSS_OPTIONS: &[&str] = &["tukey", "huber"];
@@ -3085,6 +3090,8 @@ impl PipelineFormState {
             label: "Ignore slice gap", field: "ignore_slice_gap",
             help: "Reconstruct even if the sidecar's SliceThickness is thinner than the slice pitch (gapped 2D data gives a wrong map)",
         });
+        rows.push(PipelineRow::Param { label: "Tukey window", field: "tukey_window",
+            help: "Taper ratio of a k-space Tukey window applied to each echo's complex image before every other step: 0 applies none; the χ-separation toolbox uses 0.4 for Siemens and GE data and 0 for Philips. Needs magnitude" });
         if qsm {
             rows.push(PipelineRow::Toggle {
                 label: "Crop to mask", field: "crop_to_mask",
@@ -3928,7 +3935,7 @@ impl PipelineFormState {
         "hdqsm_alpha_l2", "hdqsm_mu1_l2", "hdqsm_mu2", "hdqsm_max_iter_l1", "hdqsm_max_iter_l2", "hdqsm_tol_update",
         "r2primenet_patch", "sep_chisepnet_patch", "sep_chisepnet_frame_patch", "sep_susepnet_patch",
         "laplacian_fft_pad", "prelude_partitions",
-        "crop_margin_mm", "homogeneity_sigma_mm", "homogeneity_nbox", "coil_combination_sigma",
+        "crop_margin_mm", "tukey_window", "homogeneity_sigma_mm", "homogeneity_nbox", "coil_combination_sigma",
         "n4_shrink_factor", "n4_max_iterations", "n4_convergence_threshold", "n4_mesh", "n4_spline_order",
         "n4_bias_field_fwhm", "n4_wiener_noise", "n4_histogram_bins",
         "tgv_step_size",
@@ -3946,6 +3953,7 @@ impl PipelineFormState {
         match field {
             "obliquity_threshold" => &self.obliquity_threshold,
             "crop_margin_mm" => &self.crop_margin_mm,
+            "tukey_window" => &self.tukey_window,
             "homogeneity_sigma_mm" => &self.homogeneity_sigma_mm,
             "homogeneity_nbox" => &self.homogeneity_nbox,
             "n4_shrink_factor" => &self.n4_shrink_factor,
@@ -4222,6 +4230,7 @@ impl PipelineFormState {
         match field {
             "obliquity_threshold" => Some(&mut self.obliquity_threshold),
             "crop_margin_mm" => Some(&mut self.crop_margin_mm),
+            "tukey_window" => Some(&mut self.tukey_window),
             "homogeneity_sigma_mm" => Some(&mut self.homogeneity_sigma_mm),
             "homogeneity_nbox" => Some(&mut self.homogeneity_nbox),
             "n4_shrink_factor" => Some(&mut self.n4_shrink_factor),
@@ -9492,7 +9501,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pipeline_enter_opens_algo_modal_and_left_right_cycles() {
+    fn test_pipeline_enter_and_left_right_open_the_unwrapping_picker() {
         let mut app = App::new();
         assert!(app.goto_field("unwrapping_algorithm"));
         // Navigate to unwrapping_algorithm AlgoSelect
@@ -9522,10 +9531,17 @@ mod tests {
         assert!(app.algo_modal.is_none());
         assert_eq!(app.pipeline_state.unwrapping_algorithm, 1); // laplacian
 
-        // Focus is restored to the selector after confirming; Left still cycles inline (no modal).
+        // Focus is restored to the selector after confirming. With four unwrappers the row is a
+        // picker: Left opens it too, rather than cycling.
         app.handle_key(key(KeyCode::Left));
+        assert_eq!(app.pipeline_state.unwrapping_algorithm, 1);
+        assert!(matches!(
+            app.algo_modal.as_ref().unwrap().target,
+            AlgoModalTarget::Select(ref f) if f == "unwrapping_algorithm"
+        ));
+        app.handle_key(key(KeyCode::Up));
+        app.handle_key(key(KeyCode::Enter));
         assert_eq!(app.pipeline_state.unwrapping_algorithm, 0);
-        assert!(app.algo_modal.is_none());
     }
 
     #[test]

@@ -87,15 +87,18 @@ qsmxt combine mcpc3ds \
 
 ## Phase unwrapping — `qsmxt unwrap`
 
-Unwrap a wrapped phase image (`romeo`, `laplacian` or `prelude`; `prelude` takes
-`--prelude-labelling` and `--prelude-partitions`).
+Unwrap a wrapped phase image (`romeo`, `laplacian`, `prelude` or
+`medi-region-growing`; `prelude` takes `--prelude-labelling` and
+`--prelude-partitions`, and `medi-region-growing` takes a `--magnitude` and no mask).
 
 ## Field mapping — `qsmxt fieldmap`
 
 Turn multi-echo wrapped phase into one B0 field map in ppm, as the pipeline's
 field-mapping stage does: `romeo` (phase-offset removal, ROMEO unwrapping and the
-B0 fit), `laplacian` (per-echo Laplacian unwrapping, then echo combination) or
-`prelude` (phase-offset removal, per-echo PRELUDE unwrapping and the B0 fit).
+B0 fit), `laplacian` (per-echo Laplacian unwrapping, then echo combination),
+`prelude` (phase-offset removal, per-echo PRELUDE unwrapping and the B0 fit) or
+`medi-region-growing` (the same with MEDI's region growing; needs `--magnitude`).
+`qsmxt fieldmap medi-region-growing --b0-estimation complex-fit` is MEDI's field map.
 
 With `--b0-estimation complex-fit` (MEDI's fit of the complex echoes, which needs
 `--magnitude` and evenly spaced echoes), `--complex-fit-output` also saves the fit

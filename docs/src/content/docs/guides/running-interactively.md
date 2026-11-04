@@ -56,26 +56,39 @@ the other values the method allows, and **Keep mine**. `w` shows the source. **K
 your choice and saves it in the configuration, so the pop-up does not come back until the
 setting changes. `Esc` closes the pop-up and leaves the setting marked ⚑.
 
+Suggestions come in two kinds, labelled differently:
+
+- **Recommended** (also *Required* or *Discouraged*): there is a stated reason another value is
+  better. The pop-up gives the reason, and the recommended value is preselected.
+- **Original authors' setting**: what the method's authors used, with no reason given that it is
+  better. It is shown so that you can reproduce their pipeline, but it is not a recommendation,
+  so it is never preselected.
+
 When you choose a method that has a reference pipeline (for example MEDI, QSMART or iLSQR) and
 your settings differ from it, a pop-up titled with that pipeline (*MEDI's reference pipeline*)
-lists each setting that differs: your value, the reference value, why the reference uses it,
-and the source (the paper, or the file and line in the authors' code). Nothing changes unless
-you apply it:
+lists each setting that differs: your value, the authors' value, why they use it, and the source
+(the paper, or the file and line in the authors' code). If the same change also creates
+recommendations, they are listed first. Nothing changes unless you apply it:
 
-- **Apply all** sets every listed setting to the reference value.
+- **Apply recommended** (preselected when there are recommendations) applies the
+  recommendations and keeps your values where only the authors' setting differs.
+- **Apply all, with the authors' settings** (**Apply the authors' settings** when there are no
+  recommendations) also sets every authors' setting.
 - **Choose per setting** lists the settings again with a choice on each (`↑`/`↓` to move,
-  `←`/`→` to choose a value or to keep yours); `Enter` applies them.
-- **Keep mine** keeps your values and closes the pop-up. A difference from a reference
-  pipeline is information only, so nothing is saved; the pop-up comes back only when you choose
-  the method again after switching away.
+  `←`/`→` to choose a value or to keep yours); `Enter` applies them. Recommendations start on
+  the recommended value, authors' settings on keeping yours.
+- **Keep mine** keeps your values and closes the pop-up. An authors' setting has nothing to
+  dismiss, so nothing is saved; the pop-up comes back only when you choose the method again
+  after switching away.
 
-The pop-up opens once per method choice. If the same change also creates recommendations, they
-are listed first in the same pop-up. If your settings already match the reference pipeline, there is no pop-up.
+When the pop-up holds only authors' settings, no button is preselected: press `←`/`→` to pick
+one. The pop-up opens once per method choice. If your settings already match the reference
+pipeline, there is no pop-up.
 
 A setting that departs from a rule is marked with the method whose rule it is and what that
 rule uses, for example `ⓘ MEDI: BET`, or `ⓘ MEDI, PDF: BET` when several methods' references
 agree. ⚑ marks a recommendation (or something required or discouraged) that is still open; ⓘ
-marks a difference from a reference pipeline, or a recommendation you kept. Press `!` on a
+marks a difference from an original authors' setting, or a recommendation you kept. Press `!` on a
 marked setting to see its details: whose rule it is, what it uses, why, the source, and
 **Apply** with the other values it allows. The line under the help gives each covered setting's
 reference value and its source, whether or not the setting differs.

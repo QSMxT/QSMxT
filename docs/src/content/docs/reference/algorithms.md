@@ -377,6 +377,17 @@ original to within 0.02 % NRMSE; the solves stop after a fixed number of
 iterations, which amplifies rounding, so on small noisy volumes only `single`
 follows it closely.
 
+## Tukey windowing
+
+`--tukey-window R` multiplies each echo's complex image (magnitude and phase together) in
+k-space by a Tukey window with taper ratio `R` (0 to 1), on the acquired grid, before every
+other step: the mask, the magnitude, R2* and all phase processing see the windowed echoes. It is
+the χ-separation toolbox's preprocessing, which uses 0.4 for Siemens and GE data and 0 for
+Philips. Off by default (`0`), and it needs magnitude images. With χ-separation MEDI, χ-separation
+iLSQR or χ-sepnet's toolbox route, the vendor's value (read from the sidecar's `Manufacturer`) is
+shown as the original authors' setting. It is not preselected, and the setting changes only if you
+apply it (or run with `--accept-reference-settings`).
+
 ## Coil combination
 
 Runs whose phase is stored per receive coil (`coil-<NN>` entity, see
@@ -398,6 +409,7 @@ Set with `--unwrapping-algorithm`.
 | `romeo` | Rapid Opensource Minimum-spanning-tree Echo Optimisation (default) |
 | `laplacian` | Laplacian-based unwrapping (QSMART's reference) |
 | `prelude` | PRELUDE region-merging unwrapping (Jenkinson, 2003) |
+| `medi-region-growing` | MEDI's magnitude-guided region-growing unwrapping (Liu et al., 2013) |
 
 With `laplacian`, each echo is unwrapped on its own (the phase is set to zero outside
 the brain mask first) and the echoes are then combined by
@@ -436,6 +448,18 @@ apply as with ROMEO. Its settings:
 | `--prelude-partitions` | Number of phase bins the initial regions are formed from (at least 1) | `8` |
 
 In the TUI, choosing PRELUDE shows a "Labelling" selector and a "Phase partitions" field.
+
+With `medi-region-growing`, the phase is unwrapped by MEDI's region growing, which
+needs magnitude images: it starts at the centre of the field of view and grows
+through the voxels above 0.5 % of the brightest magnitude, brightest first. It takes
+no mask: it grows over the whole field of view, and voxels it does not reach keep
+their wrapped phase. With `--b0-estimation complex-fit` it unwraps MEDI's fit once,
+ordered by the root-sum-of-squares magnitude of the echoes, which gives MEDI's own
+field map. With the other B0 estimations each echo is unwrapped on its own, ordered
+by that same magnitude, and whole turns are then aligned between echoes; phase
+offset removal and bipolar correction apply as with ROMEO. It has no settings. With
+`--b0-estimation complex-fit`, it is shown as the original authors' setting (MEDI's pipeline
+pairs the two); ROMEO stays the default.
 
 ## Motion correction
 
@@ -1261,7 +1285,10 @@ R2PRIMEnet inside that route (3 T only, as `--r2primenet-ignore-field-mismatch` 
 networks run on the whole 1 mm frame at once; `--chi-sepnet-frame-patch D H W` runs them as a
 sliding window instead (each a multiple of 16). `--chi-sepnet-route native` runs the network alone
 on the acquired grid with the run's QSM, as a sliding window of 192×192×128-voxel patches
-(`--chi-sepnet-patch D H W`, each a multiple of 16). SUSEP-Net runs
+(`--chi-sepnet-patch D H W`, each a multiple of 16). On the toolbox route, and with χ-separation
+MEDI and iLSQR, the toolbox's [Tukey windowing](#tukey-windowing) of the echoes is shown by
+manufacturer as the original authors' setting (`--tukey-window 0.4` for Siemens and GE, none for
+Philips). SUSEP-Net runs
 the whole volume in one pass; `--susep-net-patch D H W` runs it as a sliding
 window of that size instead (each a multiple of 8), so its memory follows the
 patch rather than the volume.
