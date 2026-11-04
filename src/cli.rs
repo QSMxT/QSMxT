@@ -2458,6 +2458,21 @@ pub enum UnwrapCommand {
     Laplacian(UnwrapLaplacianArgs),
     /// PRELUDE region-merging unwrapping
     Prelude(UnwrapPreludeArgs),
+    /// MEDI's magnitude-guided region-growing unwrapping (takes no mask)
+    MediRegionGrowing(UnwrapMediRegionGrowingArgs),
+}
+
+/// `qsmxt unwrap medi-region-growing`: no mask, as MEDI's unwrapper grows over the whole volume.
+#[derive(Parser, Debug)]
+pub struct UnwrapMediRegionGrowingArgs {
+    /// Input wrapped phase NIfTI file
+    pub input: PathBuf,
+    /// Magnitude NIfTI file (3D): the order in which the volume is unwrapped. Required.
+    #[arg(long)]
+    pub magnitude: PathBuf,
+    /// Output unwrapped phase NIfTI file
+    #[arg(short, long)]
+    pub output: PathBuf,
 }
 
 #[derive(Parser, Debug)]
@@ -2589,6 +2604,25 @@ pub enum FieldmapCommand {
     Laplacian(FieldmapLaplacianArgs),
     /// PRELUDE-based multi-echo field mapping (phase offset removal + per-echo unwrap + B0 fit)
     Prelude(FieldmapPreludeArgs),
+    /// MEDI region-growing field mapping (phase offset removal + per-echo unwrap + B0 fit; with
+    /// `--b0-estimation complex-fit`, MEDI's field map). Needs `--magnitude`.
+    MediRegionGrowing(FieldmapMediRegionGrowingArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct FieldmapMediRegionGrowingArgs {
+    #[command(flatten)]
+    pub common: FieldmapCommonArgs,
+    /// Enable phase offset removal for multi-echo data (default: true)
+    #[arg(long)]
+    pub phase_offset_removal: Option<bool>,
+    /// Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command
+    /// line's)
+    #[arg(long, num_args = 3)]
+    pub phase_offset_sigma_mm: Option<Vec<f64>>,
+    /// Enable bipolar gradient correction (requires >= 3 echoes)
+    #[arg(long)]
+    pub bipolar_correction: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -4563,7 +4597,7 @@ pub enum OutputSpaceArg {
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum UnwrapAlgorithmArg {
-    Romeo, Laplacian, Prelude,
+    Romeo, Laplacian, Prelude, MediRegionGrowing,
 }
 
 /// `--prelude-labelling`.

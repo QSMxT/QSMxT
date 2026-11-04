@@ -220,6 +220,7 @@ mod tests {
         assert!(changed(|c| c.field_mapping.laplacian_solver = crate::enums::LaplacianSolver::Mirror, "unwrap"));
         assert!(changed(|c| c.field_mapping.laplacian_unmasked = true, "unwrap"));
         assert!(changed(|c| c.field_mapping.unwrapping_algorithm = crate::enums::UnwrappingAlgorithm::Prelude, "unwrap"));
+        assert!(changed(|c| c.field_mapping.unwrapping_algorithm = crate::enums::UnwrappingAlgorithm::MediRegionGrowing, "unwrap"));
         assert!(changed(|c| c.field_mapping.prelude.num_phase_partitions = 6, "unwrap"));
         assert!(changed(|c| c.field_mapping.prelude.labelling = crate::enums::PreludeLabelling::Volume, "unwrap"));
         assert!(changed(|c| c.inversion.qsmart.vessel_magnitude = crate::enums::QsmartVesselMagnitude::Combined, "qsmart"));

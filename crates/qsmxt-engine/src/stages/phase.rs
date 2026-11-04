@@ -176,6 +176,7 @@ pub fn hip_unwrap_method(config: &PipelineConfig) -> qsm_core::unwrap::UnwrapMet
         crate::enums::UnwrappingAlgorithm::Prelude => {
             qsm_core::unwrap::UnwrapMethod::Prelude((&config.field_mapping.prelude).into())
         }
+        crate::enums::UnwrappingAlgorithm::MediRegionGrowing => qsm_core::unwrap::UnwrapMethod::MediRegionGrowing,
     }
 }
 

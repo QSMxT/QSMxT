@@ -12,6 +12,9 @@
 //!   `--b0-weight-type` mean the same as with ROMEO.
 //! * **`assumed-decay` weighting** is qsm-core's `B0WeightType::AssumedDecay`.
 //! * The **FFT Laplacian solver** is qsm-core's `LaplacianSolver::Fft`.
+//! * **MEDI's region growing** (`--unwrapping-algorithm medi-region-growing`) takes no mask and
+//!   needs the magnitude; in qsm-core, each echo on its own with whole turns aligned, or once
+//!   after the complex fit (MEDI's field map).
 //! * **PRELUDE** (`--unwrapping-algorithm prelude`) unwraps each echo on its own and aligns whole
 //!   turns between echoes, in qsm-core; phase offset removal and bipolar correction apply as with
 //!   ROMEO.

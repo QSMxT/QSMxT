@@ -55,6 +55,10 @@ pub fn params(config: &PipelineConfig, meta: &RunMetadata) -> serde_json::Value 
         params["unwrapping_algorithm"] = serde_json::json!("prelude");
         params["prelude"] = serde_json::json!(fm.prelude);
     }
+    // Likewise MEDI's region growing (it has no settings).
+    if fm.unwrapping_algorithm == crate::enums::UnwrappingAlgorithm::MediRegionGrowing {
+        params["unwrapping_algorithm"] = serde_json::json!("medi-region-growing");
+    }
     // A per-echo QSM's fields: each echo's own, without the echo combination.
     if crate::bridge::per_echo(config, meta.n_echoes) {
         params["per_echo"] = serde_json::json!(true);
@@ -182,6 +186,18 @@ mod tests {
         config.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
         assert_eq!(algorithm(&config, &meta(3)), "laplacian");
         assert_eq!(params(&config, &meta(3))["laplacian_echo_combination"], 2);
+    }
+
+    /// MEDI's region growing is named for the unwrap step as ROMEO is, and recorded in the step's
+    /// parameters, so a field map from another unwrapper is not reused for it.
+    #[test]
+    fn medi_region_growing_is_recorded_in_the_unwrap_step() {
+        let mut config = PipelineConfig::default();
+        assert!(params(&config, &meta(3)).get("unwrapping_algorithm").is_none());
+        config.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::MediRegionGrowing;
+        assert_eq!(algorithm(&config, &meta(3)), "phase_offset_removal");
+        assert_eq!(algorithm(&config, &meta(1)), "medi-region-growing");
+        assert_eq!(params(&config, &meta(3))["unwrapping_algorithm"], "medi-region-growing");
     }
 
     /// PRELUDE is named for the unwrap step as ROMEO is, and it and its settings are recorded in

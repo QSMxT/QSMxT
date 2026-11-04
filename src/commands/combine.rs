@@ -135,6 +135,7 @@ fn mcpc3ds(args: CombineMcpc3dsArgs) -> crate::Result<()> {
         UnwrapAlgorithmArg::Romeo => qsm_core::unwrap::UnwrapMethod::Romeo,
         UnwrapAlgorithmArg::Laplacian => qsm_core::unwrap::UnwrapMethod::Laplacian,
         UnwrapAlgorithmArg::Prelude => qsm_core::unwrap::UnwrapMethod::Prelude(args.prelude_params.to_prelude_params()),
+        UnwrapAlgorithmArg::MediRegionGrowing => qsm_core::unwrap::UnwrapMethod::MediRegionGrowing,
     };
     let combined = qsm_core::utils::mcpc3ds_combine(&phases, &mags, &tes, sigma, [0, 1], unwrap, &grid)?;
     drop(phases);

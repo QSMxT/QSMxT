@@ -10,7 +10,7 @@ use log::info;
 use super::common::{load_mask, load_nifti_4d, save_nifti, MultiEcho};
 use crate::cli::{
     B0EstimationArg, B0WeightTypeArg, FieldmapCommand, FieldmapCommonArgs, FieldmapLaplacianArgs,
-    FieldmapPreludeArgs, FieldmapRomeoArgs,
+    FieldmapMediRegionGrowingArgs, FieldmapPreludeArgs, FieldmapRomeoArgs,
 };
 use crate::error::QsmxtError;
 use crate::cli::LaplacianSolverArg;
@@ -163,6 +163,18 @@ pub fn execute(cmd: FieldmapCommand) -> crate::Result<()> {
             qsm_core::pipeline::config::UnwrappingAlgorithm::Prelude,
             &|c| apply_prelude(&args, c),
         ),
+        FieldmapCommand::MediRegionGrowing(args) => {
+            if args.common.magnitude.is_none() {
+                return Err(QsmxtError::Config(
+                    "fieldmap medi-region-growing needs --magnitude: MEDI's region growing unwraps in \
+                     order of the magnitude".into()));
+            }
+            run_field_mapping(
+                &args.common,
+                qsm_core::pipeline::config::UnwrappingAlgorithm::MediRegionGrowing,
+                &|c| apply_medi_region_growing(&args, c),
+            )
+        }
     }
 }
 
@@ -204,6 +216,16 @@ fn apply_prelude(args: &FieldmapPreludeArgs, c: &mut qsm_core::pipeline::config:
     }
     c.bipolar_correction = args.bipolar_correction;
     c.prelude_params = args.prelude_params.to_prelude_params();
+}
+
+/// `fieldmap medi-region-growing`'s own flags: phase offset removal and bipolar correction as
+/// with ROMEO.
+fn apply_medi_region_growing(args: &FieldmapMediRegionGrowingArgs, c: &mut qsm_core::pipeline::config::FieldMappingConfig) {
+    if let Some(v) = args.phase_offset_removal { c.phase_offset_removal = v; }
+    if let Some(ref s) = args.phase_offset_sigma_mm {
+        if s.len() == 3 { c.phase_offset_sigma_mm = [s[0], s[1], s[2]]; }
+    }
+    c.bipolar_correction = args.bipolar_correction;
 }
 
 /// The qsm-core field-mapping configuration for these flags. Starts from QSMxT's defaults — the
@@ -446,6 +468,43 @@ mod tests {
             let pipeline = qsmxt_engine::to_pipeline_stages(&config).0;
             assert_eq!(format!("{standalone:?}"), format!("{pipeline:?}"), "flags {flags:?}");
         }
+    }
+
+    /// `qsmxt fieldmap medi-region-growing` and `qsmxt run --unwrapping-algorithm
+    /// medi-region-growing` build the same field-mapping configuration from the same flags; the
+    /// standalone command refuses to run without `--magnitude`.
+    #[test]
+    fn fieldmap_medi_region_growing_matches_run_for_the_same_flags() {
+        use clap::Parser;
+        let flag_sets: &[&[&str]] = &[
+            &[],
+            &["--b0-estimation", "complex-fit"],
+            &["--phase-offset-sigma-mm", "2", "2", "1", "--bipolar-correction"],
+            &["--phase-offset-removal", "false", "--b0-estimation", "linear-fit"],
+        ];
+        for flags in flag_sets {
+            let mut fm = vec!["qsmxt", "fieldmap", "medi-region-growing", "p.nii", "--mask", "m.nii", "--output", "o.nii",
+                              "--magnitude", "mag.nii", "--tes", "0.005", "0.01", "--b0", "3"];
+            fm.extend_from_slice(flags);
+            let cli = crate::cli::Cli::try_parse_from(&fm).unwrap();
+            let crate::cli::Command::Fieldmap { command: FieldmapCommand::MediRegionGrowing(args) } = cli.command else { panic!() };
+            let standalone = super::field_mapping_config(
+                &args.common, qsm_core::pipeline::config::UnwrappingAlgorithm::MediRegionGrowing,
+                &|c| super::apply_medi_region_growing(&args, c));
+            let mut run = vec!["qsmxt", "run", "bids", "--unwrapping-algorithm", "medi-region-growing"];
+            run.extend_from_slice(flags);
+            let cli = crate::cli::Cli::try_parse_from(&run).unwrap();
+            let crate::cli::Command::Run(r) = cli.command else { panic!() };
+            let mut config = qsmxt_engine::PipelineConfig::default();
+            crate::pipeline::config::apply_run_overrides(&mut config, &r.pipeline).unwrap();
+            let pipeline = qsmxt_engine::to_pipeline_stages(&config).0;
+            assert_eq!(format!("{standalone:?}"), format!("{pipeline:?}"), "flags {flags:?}");
+        }
+        let cli = crate::cli::Cli::try_parse_from(["qsmxt", "fieldmap", "medi-region-growing", "p.nii", "--mask", "m.nii",
+            "--output", "o.nii", "--tes", "0.005", "0.01", "--b0", "3"]).unwrap();
+        let crate::cli::Command::Fieldmap { command } = cli.command else { panic!() };
+        let err = super::execute(command).unwrap_err().to_string();
+        assert!(err.contains("needs --magnitude"), "{err}");
     }
 
     /// `qsmxt fieldmap prelude` and `qsmxt run --unwrapping-algorithm prelude` build the same
