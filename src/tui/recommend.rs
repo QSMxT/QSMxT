@@ -228,16 +228,21 @@ fn open(r: &Recommendation) -> bool {
 }
 
 impl App {
-    /// What the rules know about the data from the form: the echo count it is limited to, and the
+    /// What the rules know about the data from the form: the echo count it is limited to, the
     /// field strength (typed for NIfTI input; the first selected run's, once the Pipeline view has
-    /// read it, for a BIDS dataset). A rule on an unknown fact stays silent.
+    /// read it, for a BIDS dataset) and the manufacturer (the first phase image's sidecar; the
+    /// first selected run's). A rule on an unknown fact stays silent.
     fn rule_facts(&self) -> Facts {
-        let field_strength = match self.input_mode {
-            super::app::InputMode::NIfTI => self.nifti_state.field_strength.trim().parse().ok(),
-            super::app::InputMode::Bids => self.pipeline_view.read_field_strength(),
-            _ => None,
+        let (field_strength, manufacturer) = match self.input_mode {
+            super::app::InputMode::NIfTI => (
+                self.nifti_state.field_strength.trim().parse().ok(),
+                self.nifti_state.phase_files.first()
+                    .and_then(|p| super::pipeline_view::sidecar_manufacturer(&crate::dicom::convert::nii_to_json_path(p))),
+            ),
+            super::app::InputMode::Bids => (self.pipeline_view.read_field_strength(), self.pipeline_view.read_manufacturer()),
+            _ => (None, None),
         };
-        Facts { echo_count: self.filter_state.num_echoes.trim().parse().ok(), field_strength, ..Default::default() }
+        Facts { echo_count: self.filter_state.num_echoes.trim().parse().ok(), field_strength, manufacturer, ..Default::default() }
     }
 
     /// Every rule that applies to the form's config, departed from or not.

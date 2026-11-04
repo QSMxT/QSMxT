@@ -1378,13 +1378,20 @@ pub struct PipelineToggles {
     /// contiguous grid, so a gapped volume gives a wrong susceptibility map.
     #[serde(default)]
     pub ignore_slice_gap: bool,
+    /// Taper ratio of the χ-separation toolbox's k-space Tukey window, applied to every echo's
+    /// complex image on the acquired grid before any other stage reads it (qsm-core
+    /// `utils::tukey_window`; the `scale_phase` step). 0 (the default) applies none; the toolbox
+    /// recommends 0.4 for Siemens and GE and 0 for Philips, which χ-sepnet's toolbox route
+    /// suggests through the pipeline rules. Needs magnitude.
+    #[serde(default)]
+    pub tukey_window: f64,
 }
 impl Default for PipelineToggles {
     fn default() -> Self {
         Self { do_qsm: true, do_swi: false, do_smwi: false,
             do_segmentation: false, do_analysis: false, do_t2starmap: false, do_r2starmap: false, do_r2map: false, do_r2primemap: false, do_chi_separation: false, export_dicom: false, axial_resampling: false, obliquity_threshold: DEFAULT_OBLIQUITY_THRESHOLD,
             crop_to_mask: false, fft_padding: false, crop_margin_mm: default_crop_margin_mm(),
-            output_space: OutputSpace::Acquired, ignore_slice_gap: false }
+            output_space: OutputSpace::Acquired, ignore_slice_gap: false, tukey_window: 0.0 }
     }
 }
 

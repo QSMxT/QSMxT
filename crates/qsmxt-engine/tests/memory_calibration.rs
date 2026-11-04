@@ -42,7 +42,7 @@ fn facts(fx: &Value, echoes: usize) -> ScanFacts {
         field_strength: s["field_strength"].as_f64().unwrap(),
         b0_dir: None,
         mese_echo_times: None,
-        custom_mask: false, custom_dseg: false, custom_qsm: false, custom_r2: false, custom_r2prime: false,
+        custom_mask: false, custom_dseg: false, custom_qsm: false, custom_r2: false, custom_r2prime: false, manufacturer: None,
     }
 }
 

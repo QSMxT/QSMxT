@@ -80,6 +80,14 @@ histogram_bins = 200
 See [inhomogeneity correction](/QSMxT/reference/algorithms/#inhomogeneity-correction)
 for what each does.
 
+The [Tukey window](/QSMxT/reference/algorithms/#tukey-windowing) on the echoes is
+`pipeline.tukey_window`, its taper ratio (`--tukey-window`; 0, the default, applies none):
+
+```toml
+[pipeline]
+tukey_window = 0.4   # Siemens and GE, as the χ-separation toolbox uses; 0 for Philips
+```
+
 With two-pass artefact reduction, the reliable mask's sections and how they combine are
 `masking.two_pass_sections` and `masking.two_pass_combine` (`"or"` or `"and"`; left out, it is
 the main mask's `masking.combine`):

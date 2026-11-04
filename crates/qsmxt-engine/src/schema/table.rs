@@ -60,6 +60,7 @@ pub(super) fn table() -> Vec<Def> {
         d("n4.histogram_bins", Geometry, "Histogram bins", "Bins of the log-intensity histogram", Int).min(2.0).flag("--n4-histogram-bins").parent("masking.inhomogeneity_method")
         .when(n4_on).context("N4"),
         d("pipeline.ignore_slice_gap", Geometry, "Ignore slice gap", "Reconstruct even if the sidecar's SliceThickness is thinner than the slice pitch (gapped 2D data gives a wrong map)", Bool).flag("--ignore-slice-gap"),
+        d("pipeline.tukey_window", Geometry, "Tukey window", "Taper ratio of a k-space Tukey window applied to each echo's complex image before every other step: 0 applies none; the χ-separation toolbox uses 0.4 for Siemens and GE data and 0 for Philips. Needs magnitude", Float).min(0.0).max(1.0).flag("--tukey-window").full("Tukey window in k-space"),
         d("pipeline.crop_to_mask", Geometry, "Crop to mask", "Run the FFT-bound stages on a box around the mask (faster; outputs stay on the full grid). Off by default", Bool).flag("--crop-to-mask")
         .when(|x| x.qsm)
         .gui("Run the FFT-bound stages on a box around the mask (faster; outputs stay on the full grid)"),

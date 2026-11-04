@@ -40,6 +40,9 @@ sub-*/[ses-*/]anat/*_part-phase_*.nii[.gz]
 ```
 
 with matching JSON sidecars containing `EchoTime` and `MagneticFieldStrength`.
+A sidecar's `Manufacturer`, when it has one, decides the phase sign of real/imaginary
+input and the recommendations that depend on the vendor (the
+[Tukey window](/QSMxT/reference/algorithms/#tukey-windowing) with χ-sepnet).
 Multi-echo data uses the BIDS `echo-<N>` entity. Magnitude images sit alongside
 as `*_part-mag_*`, and are optional for a basic QSM run but required by most
 other outputs.

@@ -805,6 +805,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         crop_to_mask: ps.crop_to_mask,
         ignore_slice_gap: ps.ignore_slice_gap,
         fft_padding: ps.fft_padding,
+        tukey_window: parse_optional_f64(&ps.tukey_window),
         crop_margin_mm: if ps.crop_to_mask { parse_optional_f64(&ps.crop_margin_mm) } else { None },
         output_space: Some(if ps.output_space == 1 { crate::cli::OutputSpaceArg::Working } else { crate::cli::OutputSpaceArg::Acquired }),
         mask_preset: None,

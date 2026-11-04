@@ -43,7 +43,8 @@ pub fn run<S: StageStore + ?Sized>(
     let mut record = RunRecord {
         steps: vec![load_record],
         resampled: Some(meta.source_geometry.is_some()),
-        recommendations: crate::recommendations::recorded(config, &crate::recommendations::Facts::of_run(&meta)),
+        recommendations: crate::recommendations::recorded(
+            config, &crate::recommendations::Facts::of_run(&meta).with_manufacturer(facts.manufacturer.clone())),
     };
     if !plan.processes() {
         observer.log(Level::Info, "No outputs enabled — nothing to process");
@@ -666,31 +667,47 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
     /// Every echo's phase in radians, on the working grid. Each echo is read, brought onto the
     /// working grid and kept before the next is read.
     fn scale_phase(&mut self) -> Result<(), S::Error> {
-        let params = stages::phase::params(&self.meta, None);
+        let params = stages::phase::params(&self.meta, None, self.config);
         let resampled = self.meta.source_geometry.is_some();
+        // The Tukey window changes the magnitude too, so it is kept like a resampled run's.
+        let windowed = self.config.pipeline.tukey_window > 0.0;
         let doing = if resampled { "Resampling to axial + rescaling phase" } else { "Rescaling phase to radians" };
         let Some(key) = self.begin("scale_phase", None, &params, "Skipping scale_phase (cached)", doing) else { return Ok(()) };
+        if let Some(line) = stages::phase::tukey_window_line(self.config) {
+            self.log(Level::Info, &line);
+        }
         let n = self.n_echoes();
         let (mut phases, mut magnitudes) = (Vec::new(), Vec::new());
         for e in 1..=n {
-            let phase = self.store.real(&Item::AcquiredPhase(e))?;
-            // Only resampling reads the magnitude: otherwise it is kept as it is.
-            let magnitude = if resampled && self.store.has(&Item::AcquiredMagnitude(e)) {
+            let mut phase = self.store.real(&Item::AcquiredPhase(e))?;
+            // Only resampling and the Tukey window read the magnitude: otherwise it is kept as it is.
+            let magnitude = if (resampled || windowed) && self.store.has(&Item::AcquiredMagnitude(e)) {
                 Some(self.store.real(&Item::AcquiredMagnitude(e))?)
             } else {
                 None
             };
-            let out = stages::phase::working_echo(phase, magnitude, false, &self.meta);
+            let out = if windowed {
+                // The plan refuses the window without magnitude; this covers a direct caller.
+                let Some(mut mag) = magnitude else {
+                    return Err(crate::EngineError::Config(format!(
+                        "echo {e}: the Tukey window (--tukey-window) needs the echo's magnitude")).into());
+                };
+                qsm_core::pipeline::scale_phase_to_pi(&mut phase);
+                stages::phase::tukey_window(&mut mag, &mut phase, &self.meta, self.config);
+                stages::phase::working_echo(phase, Some(mag), true, &self.meta)
+            } else {
+                stages::phase::working_echo(phase, magnitude, false, &self.meta)
+            };
             self.put(Item::Phase(e), Data::Real(&out.phase))?;
             phases.push(Item::Phase(e));
-            // A resampled run keeps the magnitude it resampled with the phase.
-            if let (Some(mag), true) = (&out.magnitude, resampled && self.meta.has_magnitude) {
+            // A resampled or windowed run keeps the magnitude it made with the phase.
+            if let (Some(mag), true) = (&out.magnitude, (resampled || windowed) && self.meta.has_magnitude) {
                 self.put(Item::Magnitude(e), Data::Real(mag))?;
                 magnitudes.push(Item::Magnitude(e));
             }
         }
         // Raw (uncorrected) per-echo magnitudes as they are, for MCPC-3D-S, linear fit and ROMEO.
-        if !resampled && self.meta.has_magnitude {
+        if !resampled && !windowed && self.meta.has_magnitude {
             for e in 1..=n {
                 if self.store.has(&Item::AcquiredMagnitude(e)) {
                     self.put(Item::Magnitude(e), Data::Same(Item::AcquiredMagnitude(e)))?;
@@ -712,7 +729,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
     fn scale_real_imaginary(&mut self) -> Result<(), S::Error> {
         let manufacturer = self.store.sidecar()?.and_then(|s| s.manufacturer);
         let negate_phase = stages::phase::negates_real_imaginary_phase(manufacturer.as_deref());
-        let params = stages::phase::params(&self.meta, Some(negate_phase));
+        let params = stages::phase::params(&self.meta, Some(negate_phase), self.config);
         let Some(key) = self.begin("scale_phase", None, &params, "Skipping scale_phase (cached)",
                                    "Converting real/imaginary to magnitude/phase") else { return Ok(()) };
         let n = self.n_echoes();
@@ -753,8 +770,13 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         }
         let resampled = self.meta.source_geometry.is_some();
         let outcome = Some(("real_imaginary_conversion", stages::phase::slice_chopping_json(&converted.chopping)));
+        if let Some(line) = stages::phase::tukey_window_line(self.config) {
+            self.log(Level::Info, &line);
+        }
         let (mut phases, mut magnitudes) = (Vec::new(), Vec::new());
-        for (i, (phase, mag)) in converted.phases.into_iter().zip(converted.magnitudes).enumerate() {
+        for (i, (mut phase, mut mag)) in converted.phases.into_iter().zip(converted.magnitudes).enumerate() {
+            // On the acquired grid, as converted (no-op unless --tukey-window).
+            stages::phase::tukey_window(&mut mag, &mut phase, &self.meta, self.config);
             let out = stages::phase::working_echo(phase, Some(mag), true, &self.meta);
             self.put(Item::Phase(i + 1), Data::Real(&out.phase))?;
             phases.push(Item::Phase(i + 1));
@@ -817,10 +839,16 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             phases.push(cp);
             magnitudes.push(cm);
         }
-        let combined = stages::phase::combine_coils(&phases, &magnitudes, &self.meta, self.config)?;
+        let mut combined = stages::phase::combine_coils(&phases, &magnitudes, &self.meta, self.config)?;
         drop((phases, magnitudes));
+        if let Some(line) = stages::phase::tukey_window_line(self.config) {
+            self.log(Level::Info, &line);
+        }
         let mut outputs = Vec::new();
         for e in 1..=n {
+            // The combined echo on the acquired grid (no-op unless --tukey-window).
+            let (m, p) = (&mut combined.magnitudes[e - 1], &mut combined.phases[e - 1]);
+            stages::phase::tukey_window(m, p, &self.meta, self.config);
             let echo = stages::phase::combined_echo(&combined.magnitudes[e - 1], &combined.phases[e - 1], &self.meta);
             let magnitude = echo.magnitude.unwrap_or_default();
             self.put(Item::Phase(e), Data::Real(&echo.phase))?;
@@ -2378,7 +2406,7 @@ pub(crate) mod tests {
             voxel_size: None,
             n_coils: 1, real_imaginary: false, field_strength: 3.0, b0_dir: None,
             mese_echo_times: None, custom_mask: false, custom_dseg: false, custom_qsm: false,
-            custom_r2: false, custom_r2prime: false,
+            custom_r2: false, custom_r2prime: false, manufacturer: None,
         };
         (facts, store)
     }
@@ -2587,6 +2615,37 @@ pub(crate) mod tests {
         let mut events = Events::default();
         run(&plan, config, facts, store, &mut events).unwrap();
         events
+    }
+
+    /// `--tukey-window` windows every echo's magnitude and phase before any other step reads
+    /// them, as qsm-core's `tukey_window_mag_phase` does, and keys `scale_phase` (only when on).
+    #[test]
+    fn the_tukey_window_reaches_every_echo_before_the_other_steps() {
+        let (facts, mut store) = phantom();
+        let acquired: Vec<(Vec<f64>, Vec<f64>)> = (1..=TES.len()).map(|e| {
+            let get = |i: Item| match store.get(&i) { Some(VolumeData::Real(v)) => v.clone(), _ => panic!() };
+            (get(Item::AcquiredMagnitude(e)), get(Item::AcquiredPhase(e)))
+        }).collect();
+        let mut c = config();
+        c.pipeline.do_qsm = false;
+        c.pipeline.do_r2starmap = true;
+        assert!(run_once(&c, &facts, &mut store).computed.iter().any(|s| s == "scale_phase"));
+        assert_eq!(store.get(&Item::Magnitude(2)), store.get(&Item::AcquiredMagnitude(2)), "off: as acquired");
+
+        c.pipeline.tukey_window = 0.4;
+        assert!(run_once(&c, &facts, &mut store).computed.iter().any(|s| s == "scale_phase"), "the window keys the step");
+        for (e, (mag, phase)) in acquired.into_iter().enumerate() {
+            let (mut m, mut p) = (mag, phase);
+            qsm_core::pipeline::scale_phase_to_pi(&mut p);
+            qsm_core::utils::tukey_window::tukey_window_mag_phase(&mut m, &mut p, (N, N, N), 0.4);
+            assert_eq!(store.get(&Item::Magnitude(e + 1)), Some(&VolumeData::Real(m)), "echo {}", e + 1);
+            assert_eq!(store.get(&Item::Phase(e + 1)), Some(&VolumeData::Real(p)), "echo {}", e + 1);
+        }
+
+        // Without magnitude it is refused at plan time.
+        let no_mag = ScanFacts { has_magnitude: false, ..facts };
+        let err = crate::requirements::scan_check(&no_mag, &c).errors.join("\n");
+        assert!(err.contains("--tukey-window needs magnitude"), "{err}");
     }
 
     /// An empty brain mask stops the run at the mask step, computed or supplied (#251); a section
