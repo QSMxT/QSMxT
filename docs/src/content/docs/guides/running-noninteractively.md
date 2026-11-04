@@ -86,29 +86,35 @@ setting on its own.
 
 - **Required**: the method cannot run otherwise (MEDI-mSMV on fewer than three echoes). The
   run is refused, with the change that resolves it.
-- **Recommended** or **discouraged**: the authors recommend another value, QSM.rs measured one
-  to be better, or the combination is known to fail. Each is logged as a warning before the
-  runs start, a dismissed one too (marked "dismissed, kept").
-- **Reference**: the reference pipeline used another value, without its authors saying it is
-  needed or better. This is information only: it is logged as such, never applied, listed in
-  the methods Note, and has nothing to dismiss (`--dismiss-recommendation` refuses it).
+- **Recommended** or **discouraged**: there is a stated reason another value is better. The
+  authors give it, QSM.rs measured it, or the combination is known to fail. Each is logged as
+  a warning before the runs start, a dismissed one too (marked "dismissed, kept").
+  `--accept-recommendations` applies them.
+- **Original authors' setting**: the method's authors used another value (their code, paper or
+  README does it), and no reason is given that it is better. It is not a recommendation. It is
+  logged as information, listed in the methods Note, and applied only with
+  `--accept-reference-settings`. It has nothing to dismiss (`--dismiss-recommendation` refuses
+  it).
 
 ```sh
 # List every recommendation for this configuration and dataset, and each covered
 # setting's reference value
 qsmxt run study/bids --qsm-algorithm medi --dry
 
-# Apply every recommended value that is not dismissed (reference ones are left as they are)
+# Apply every recommended value that is not dismissed (the authors' settings are left as they are)
 qsmxt run study/bids --qsm-algorithm medi --accept-recommendations
+
+# Also follow the chosen methods' original settings (here MEDI's PDF, BET and complex fit)
+qsmxt run study/bids --qsm-algorithm medi --accept-recommendations --accept-reference-settings
 
 # Keep a choice: dismiss a recommended or discouraged finding for the setting's current value
 qsmxt run study/bids --qsm-algorithm fansi --fansi-te first \
   --dismiss-recommendation fansi.te-spacing=first
 ```
 
-`--dry --accept-recommendations` shows the settings that would change and the resulting
-command. Two equally strong recommendations that disagree on one setting are left for you to
-choose. A dismissal is saved in the configuration (`dismissed_recommendations`), and stops
+`--dry` with either flag shows the settings that would change and the resulting command. Two
+equally strong suggestions that disagree on one setting are left for you to choose, and a
+recommendation wins over an authors' setting on the same setting. A dismissal is saved in the configuration (`dismissed_recommendations`), and stops
 applying once the setting changes. At the end of a run, the log lists what was applied,
 what was dismissed, and the departures that were kept. Each run's record keeps the same, and
 `methods.md` has a **Note**, before its references, that lists the departures the runs kept.

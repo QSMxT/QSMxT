@@ -2031,16 +2031,26 @@ pub struct RunArgs {
     /// Print the processing plan, the pipeline graph and the methods text without running
     /// anything or writing any file. Also lists what the configuration departs from in the
     /// chosen methods' reference pipelines, for every run's scan, and each covered setting's
-    /// reference value; with --accept-recommendations, the settings that would change
+    /// reference value; with --accept-recommendations or --accept-reference-settings, the
+    /// settings that would change
     #[arg(long)]
     pub dry: bool,
 
-    /// Apply the recommended value of every recommendation that is not dismissed (required,
-    /// recommended and discouraged findings; reference ones are information only) before
-    /// running. Two equally strong recommendations that disagree on a setting are left for you
-    /// to choose. Without it, no setting is ever changed
+    /// Apply the recommended value of every reasoned recommendation that is not dismissed
+    /// (required, recommended and discouraged findings, each with its reason) before running.
+    /// The original authors' settings are not applied; see --accept-reference-settings. Two
+    /// equally strong recommendations that disagree on a setting are left for you to choose.
+    /// Without it, no setting is ever changed
     #[arg(long)]
     pub accept_recommendations: bool,
+
+    /// Apply the original authors' settings of the chosen methods (what their code, paper or
+    /// README does, where no reason is given that it is better) before running, so the run
+    /// follows the methods' reference pipelines. Two methods whose authors' settings disagree on
+    /// a setting are left for you to choose; a reasoned recommendation on the same setting wins
+    /// when --accept-recommendations is also given
+    #[arg(long)]
+    pub accept_reference_settings: bool,
 
     /// Enable debug logging
     #[arg(long)]
@@ -2212,10 +2222,15 @@ pub struct SlurmArgs {
     #[arg(long, num_args = 1.., value_delimiter = ',')]
     pub dicom_outputs: Option<Vec<String>>,
 
-    /// Apply the recommended value of every recommendation that is not dismissed before writing
-    /// the jobs (as `qsmxt run --accept-recommendations`)
+    /// Apply the recommended value of every reasoned recommendation that is not dismissed
+    /// before writing the jobs (as `qsmxt run --accept-recommendations`)
     #[arg(long)]
     pub accept_recommendations: bool,
+
+    /// Apply the original authors' settings of the chosen methods before writing the jobs (as
+    /// `qsmxt run --accept-reference-settings`)
+    #[arg(long)]
+    pub accept_reference_settings: bool,
 
     #[command(flatten)]
     pub pipeline: PipelineArgs,

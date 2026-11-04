@@ -167,6 +167,7 @@ fn draw_rec_modal(f: &mut Frame, modal: &super::recommend::RecModal, area: Rect)
     let text_w = popup_w.saturating_sub(6).max(10) as usize;
     let mut lines = vec![Line::from("")];
     for r in &modal.findings {
+        lines.push(kind_tag(r));
         let head = format!("{} is {}.", r.label, r.current_text());
         lines.extend(tip_lines(&head, text_w));
         let wants = match r.strength {
@@ -213,6 +214,19 @@ fn draw_rec_modal(f: &mut Frame, modal: &super::recommend::RecModal, area: Rect)
     f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), text_area);
 }
 
+/// What kind of finding it is, as its first line: a reasoned one by its strength ("Recommended",
+/// with its reason below) in yellow, an original authors' setting in cyan.
+fn kind_tag(r: &qsmxt_engine::recommendations::Recommendation) -> Line<'static> {
+    use qsmxt_engine::recommendations::{Kind, Strength};
+    let (text, color) = match (r.kind, r.strength) {
+        (Kind::Reference, _) => (format!("{} (not a recommendation)", Kind::Reference.label()), Color::Cyan),
+        (_, Strength::Required) => ("Required".to_string(), Color::Yellow),
+        (_, Strength::Discouraged) => ("Discouraged".to_string(), Color::Yellow),
+        _ => (Kind::Reasoned.label().to_string(), Color::Yellow),
+    };
+    Line::from(Span::styled(text, Style::default().fg(color).add_modifier(Modifier::BOLD)))
+}
+
 /// "MEDI's reference pipeline", for a reference finding's line.
 fn rec_reference_of(r: &qsmxt_engine::recommendations::Recommendation) -> String {
     qsmxt_engine::recommendations::reference_title(&r.trigger)
@@ -223,7 +237,7 @@ fn rec_reference_of(r: &qsmxt_engine::recommendations::Recommendation) -> String
 /// created), as current → reference value, with why and the source; then the buttons, or, when
 /// choosing per setting, a choice on each setting.
 fn draw_ref_modal(f: &mut Frame, modal: &super::recommend::RefModal, area: Rect) {
-    use super::recommend::{Strength, REF_BUTTONS};
+    use super::recommend::Strength;
     let popup_w = 84.min(area.width);
     let text_w = popup_w.saturating_sub(6).max(10) as usize;
     let dim = Style::default().fg(Color::DarkGray);
@@ -234,16 +248,22 @@ fn draw_ref_modal(f: &mut Frame, modal: &super::recommend::RefModal, area: Rect)
     let mut item_lines = Vec::new();
     for (n, item) in modal.items.iter().enumerate() {
         let r = &item.finding;
+        let heading = |text: String, color: Color| -> Vec<Line<'static>> {
+            tip_lines(&text, text_w).into_iter()
+                .map(|l| Line::from(l.spans.into_iter().map(|s| Span::styled(s.content, Style::default().fg(color).add_modifier(Modifier::BOLD))).collect::<Vec<_>>()))
+                .collect()
+        };
         if r.strength == Strength::Reference && !heading_done {
             heading_done = true;
             if offered {
                 lines.push(Line::from(""));
             }
             let uses = if modal.several() { "use" } else { "uses" };
-            lines.extend(tip_lines(&format!("Where your settings differ from what {} {uses}:", modal.whose()), text_w));
+            lines.extend(heading(format!("Original authors' settings: where yours differ from what {} {uses}. \
+                These are not recommendations, so none is preselected:", modal.whose()), Color::Cyan));
             lines.push(Line::from(""));
         } else if n == 0 {
-            lines.extend(tip_lines("Recommendations:", text_w));
+            lines.extend(heading("Recommended, each for the reason given (preselected):".to_string(), Color::Yellow));
             lines.push(Line::from(""));
         }
         let to = match modal.row {
@@ -285,11 +305,12 @@ fn draw_ref_modal(f: &mut Frame, modal: &super::recommend::RefModal, area: Rect)
         "\u{2191}\u{2193} setting   \u{2190}\u{2192} choose   Enter apply these   Esc back"
     } else {
         let mut buttons = Vec::new();
-        for (i, label) in REF_BUTTONS.iter().enumerate() {
+        for (i, b) in modal.buttons.iter().enumerate() {
+            let label = modal.button_label(*b);
             if i > 0 {
                 buttons.push(Span::raw("   "));
             }
-            let style = if i == modal.cursor {
+            let style = if Some(i) == modal.cursor {
                 Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::Gray)
@@ -298,7 +319,11 @@ fn draw_ref_modal(f: &mut Frame, modal: &super::recommend::RefModal, area: Rect)
         }
         footer.push(Line::from(buttons).alignment(Alignment::Center));
         footer.push(Line::from(""));
-        "\u{2190}\u{2192} choose   Enter select   Esc close (nothing changes)"
+        if modal.cursor.is_some() {
+            "\u{2190}\u{2192} choose   Enter select   Esc close (nothing changes)"
+        } else {
+            "\u{2190}\u{2192} choose (nothing is preselected)   Enter select   Esc close (nothing changes)"
+        }
     };
     footer.push(Line::from(Span::styled(hint, dim)).alignment(Alignment::Center));
 

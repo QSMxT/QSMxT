@@ -199,7 +199,13 @@ pub(crate) fn current_run_records(
         }
         match std::fs::read_to_string(&path).map_err(|e| e.to_string())
             .and_then(|t| serde_json::from_str::<crate::pipeline::runner::RunRecordFile>(&t).map_err(|e| e.to_string())) {
-            Ok(file) => out.push((name.to_string(), file)),
+            Ok(mut file) => {
+                // A record from before findings carried their kind: the kind follows the strength.
+                for r in &mut file.record.recommendations {
+                    r.finding.kind = r.finding.strength.kind();
+                }
+                out.push((name.to_string(), file))
+            }
             Err(e) => warn!("{name}: its run record cannot be read ({}: {e}); re-run it to include it", path.display()),
         }
     }
@@ -373,8 +379,9 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
     // What the chosen methods' rules recommend is only ever applied when asked, before the
     // checks (a required one would otherwise refuse the run).
     let as_configured = config.clone();
-    let accepted = if args.accept_recommendations {
-        super::recommend::accept(&mut config, &runs)
+    let which = super::recommend::which(args.accept_recommendations, args.accept_reference_settings);
+    let accepted = if which.any() {
+        super::recommend::accept(&mut config, &runs, which)
     } else {
         super::recommend::Accepted::default()
     };
@@ -473,7 +480,7 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
             );
         }
         print_planned(&derivatives_dir, &config, &runs);
-        super::recommend::print_dry(&as_configured, &runs, args.accept_recommendations);
+        super::recommend::print_dry(&as_configured, &runs, which);
         return Ok(());
     }
     super::recommend::log_found(&config, &runs);
