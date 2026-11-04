@@ -1,9 +1,10 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc;
 
-use super::{find_collisions, parse_dcm2niix_suffix, plan_session, CoilType, DicomSession, SeriesType, Target};
+use super::{clean_bids_label, find_collisions, parse_dcm2niix_suffix, plan_session, CoilType, DicomSession, SeriesType, Target};
 
 /// Message sent from the conversion thread to the UI.
 pub enum ConvertMessage {
@@ -209,12 +210,25 @@ fn split_extension(file_name: &str) -> Option<(&str, &'static str)> {
     None
 }
 
-/// Run dcm2niix on `files` in a fresh working folder; its outputs are `<work>/out*/<base>…`.
-/// A 4D output (images dcm2niix merged) is converted again without merging, so every volume
-/// becomes its own file. An unsuccessful exit is an error: nothing of the series is used.
-fn run_dcm2niix(dcm2niix: &Path, files: &[PathBuf], work: &Path, base: &str, log: &mut Vec<String>) -> Result<Vec<PathBuf>, String> {
+/// What QSMxT knows about a dcm2niix output that dcm2niix's name may not say: the echo time of
+/// the files it was run on, or which volume of a 4D image it is.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct Known {
+    echo_te: Option<f64>,
+    volume: Option<usize>,
+}
+
+fn is_nifti(p: &Path) -> bool {
+    let s = p.to_string_lossy();
+    s.ends_with(".nii.gz") || s.ends_with(".nii")
+}
+
+/// Run dcm2niix once on `files` in `work`; its outputs (`<base>…`), sorted.
+fn dcm2niix_once(dcm2niix: &Path, files: &[PathBuf], work: &Path, base: &str, log: &mut Vec<String>) -> Result<Vec<PathBuf>, String> {
     let input = work.join("in");
+    let out = work.join("out");
     fs::create_dir_all(&input).map_err(|e| format!("cannot create {}: {e}", input.display()))?;
+    fs::create_dir_all(&out).map_err(|e| format!("cannot create {}: {e}", out.display()))?;
     for (i, src) in files.iter().enumerate() {
         let ext = src.extension().and_then(|e| e.to_str()).unwrap_or("dcm");
         let dst = input.join(format!("{i:06}.{ext}"));
@@ -222,52 +236,120 @@ fn run_dcm2niix(dcm2niix: &Path, files: &[PathBuf], work: &Path, base: &str, log
             fs::copy(src, &dst).map_err(|e| format!("cannot copy {}: {e}", src.display()))?;
         }
     }
-    let run = |merge: &str, out: &Path, log: &mut Vec<String>| -> Result<Vec<PathBuf>, String> {
-        fs::create_dir_all(out).map_err(|e| format!("cannot create {}: {e}", out.display()))?;
-        let output = Command::new(dcm2niix)
-            .args(["-o", &out.to_string_lossy(), "-f", base, "-z", "y", "-m", merge])
-            .arg(&input)
-            .output()
-            .map_err(|e| format!("cannot run dcm2niix: {e}"))?;
-        let mut last = String::new();
-        for line in String::from_utf8_lossy(&output.stdout).lines().chain(String::from_utf8_lossy(&output.stderr).lines()) {
-            if !line.trim().is_empty() {
-                log.push(format!("  dcm2niix: {line}"));
-                last = line.trim().to_string();
-            }
-        }
-        if !output.status.success() {
-            return Err(format!("exit code {:?}{}", output.status.code(), if last.is_empty() { String::new() } else { format!(": {last}") }));
-        }
-        let mut outputs: Vec<PathBuf> = fs::read_dir(out)
-            .into_iter()
-            .flatten()
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with(base)))
-            .collect();
-        outputs.sort();
-        Ok(outputs)
-    };
-    let first = run("o", &work.join("out"), log)?;
-    let merged: Vec<usize> = first
-        .iter()
-        .filter(|p| p.to_string_lossy().ends_with(".nii.gz") || p.to_string_lossy().ends_with(".nii"))
-        .filter_map(|p| nifti_4d_size(p))
-        .collect();
-    if let Some(n) = merged.first() {
-        log.push(format!("  dcm2niix merged {n} volumes into one 4D image; converting again with one file per volume"));
-        match run("n", &work.join("out-split"), log) {
-            Ok(split)
-                if !split.is_empty()
-                    && !split.iter().any(|p| (p.to_string_lossy().ends_with(".nii.gz") || p.to_string_lossy().ends_with(".nii")) && nifti_4d_size(p).is_some()) =>
-            {
-                return Ok(split)
-            }
-            _ => log.push(format!("  dcm2niix could not separate the volumes; keeping the 4D image with all {n} of them")),
+    let output = Command::new(dcm2niix)
+        .args(["-o", &out.to_string_lossy(), "-f", base, "-z", "y", "-m", "o"])
+        .arg(&input)
+        .output()
+        .map_err(|e| format!("cannot run dcm2niix: {e}"))?;
+    let mut last = String::new();
+    for line in String::from_utf8_lossy(&output.stdout).lines().chain(String::from_utf8_lossy(&output.stderr).lines()) {
+        if !line.trim().is_empty() {
+            log.push(format!("  dcm2niix: {line}"));
+            last = line.trim().to_string();
         }
     }
-    Ok(first)
+    if !output.status.success() {
+        return Err(format!("exit code {:?}{}", output.status.code(), if last.is_empty() { String::new() } else { format!(": {last}") }));
+    }
+    let mut outputs: Vec<PathBuf> = fs::read_dir(&out)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with(base)))
+        .collect();
+    outputs.sort();
+    Ok(outputs)
+}
+
+/// Run dcm2niix over groups of files, one working folder each; every output carries its group's
+/// `Known`. `None` when some group still gives a 4D image.
+fn dcm2niix_groups(
+    dcm2niix: &Path, groups: Vec<(Known, Vec<PathBuf>)>, work: &Path, base: &str, log: &mut Vec<String>,
+) -> Result<Option<Vec<(PathBuf, Known)>>, String> {
+    let mut all = Vec::new();
+    for (k, (known, files)) in groups.into_iter().enumerate() {
+        let outputs = dcm2niix_once(dcm2niix, &files, &work.join(format!("g{k}")), base, log)?;
+        if outputs.iter().any(|p| is_nifti(p) && nifti_4d_size(p).is_some()) {
+            return Ok(None);
+        }
+        all.extend(outputs.into_iter().map(|p| (p, known)));
+    }
+    Ok(Some(all))
+}
+
+/// Convert a series' files with dcm2niix in a fresh working folder.
+///
+/// When dcm2niix merges images into one 4D file (echoes it cannot tell apart from their tags),
+/// QSMxT separates them itself: it runs dcm2niix once per echo time, and when every file has the
+/// same echo time, once per volume (the n-th file at each slice position is volume n). Every echo
+/// or volume then becomes its own file. If that does not separate them either, the 4D image is
+/// kept whole. An unsuccessful dcm2niix exit is an error: nothing of the series is used.
+fn run_dcm2niix(
+    dcm2niix: &Path, files: &[PathBuf], info: &HashMap<PathBuf, (Option<f64>, String)>, work: &Path, base: &str, log: &mut Vec<String>,
+) -> Result<Vec<(PathBuf, Known)>, String> {
+    let first = dcm2niix_once(dcm2niix, files, &work.join("all"), base, log)?;
+    let Some(n) = first.iter().filter(|p| is_nifti(p)).find_map(|p| nifti_4d_size(p)) else {
+        return Ok(first.into_iter().map(|p| (p, Known::default())).collect());
+    };
+
+    // By echo time.
+    let mut by_te: Vec<(Option<f64>, Vec<PathBuf>)> = Vec::new();
+    for f in files {
+        let te = info.get(f).and_then(|i| i.0);
+        match by_te.iter_mut().find(|(t, _)| match (t, te) { (Some(a), Some(b)) => (a - b).abs() < 0.01, (None, None) => true, _ => false }) {
+            Some((_, v)) => v.push(f.clone()),
+            None => by_te.push((te, vec![f.clone()])),
+        }
+    }
+    if by_te.len() > 1 {
+        log.push(format!("  dcm2niix merged {n} volumes into one 4D image; converting each of the {} echo times separately", by_te.len()));
+        let groups = by_te.into_iter().map(|(te, v)| (Known { echo_te: te, volume: None }, v)).collect();
+        if let Some(out) = dcm2niix_groups(dcm2niix, groups, &work.join("by-te"), base, log)? {
+            return Ok(out);
+        }
+    } else {
+        // By volume: the n-th file at each slice position (files are in instance order).
+        let mut seen: HashMap<String, usize> = HashMap::new();
+        let mut volumes: Vec<Vec<PathBuf>> = Vec::new();
+        for f in files {
+            let pos = info.get(f).map(|i| i.1.clone()).unwrap_or_default();
+            let k = seen.entry(pos).or_insert(0);
+            if volumes.len() <= *k {
+                volumes.push(Vec::new());
+            }
+            volumes[*k].push(f.clone());
+            *k += 1;
+        }
+        if volumes.len() > 1 && volumes.iter().all(|v| v.len() == volumes[0].len()) {
+            log.push(format!(
+                "  dcm2niix merged {n} volumes into one 4D image, and their echo tags do not tell them apart; \
+                 converting each of the {} volumes separately (rec-…volN)", volumes.len()
+            ));
+            let groups = volumes.into_iter().enumerate().map(|(k, v)| (Known { echo_te: None, volume: Some(k + 1) }, v)).collect();
+            if let Some(out) = dcm2niix_groups(dcm2niix, groups, &work.join("by-volume"), base, log)? {
+                return Ok(out);
+            }
+        }
+    }
+    log.push(format!("  Warning: dcm2niix merged {n} volumes into one 4D image that QSMxT could not separate; keeping it whole"));
+    Ok(first.into_iter().map(|p| (p, Known::default())).collect())
+}
+
+/// Phase units for a phase image's sidecar, which BIDS requires: "rad" when dcm2niix wrote it
+/// already scaled to radians (non-integer values within ±π after the NIfTI scaling, as Philips
+/// phase is), "arbitrary" for integer-coded phase (Siemens, GE).
+fn phase_units(nifti: &Path) -> &'static str {
+    let Ok(data) = qsm_core::io::read_nifti_file(nifti) else { return "arbitrary" };
+    let limit = std::f64::consts::PI + 0.05;
+    let mut fractional = false;
+    for &v in data.data.iter().filter(|v| v.is_finite()) {
+        if v.abs() > limit {
+            return "arbitrary";
+        }
+        fractional |= v.fract().abs() > 1e-6;
+    }
+    if fractional { "rad" } else { "arbitrary" }
 }
 
 /// One converted file waiting to be moved into the dataset.
@@ -279,7 +361,7 @@ struct Staged {
 }
 
 /// Fix up a sidecar dcm2niix wrote: EchoTime in seconds, and the `Units` BIDS requires for a
-/// phase image ("arbitrary": scanners store phase as integers).
+/// phase image (see [`phase_units`]). Run after its image is in place.
 fn fix_sidecar(path: &Path) {
     let Ok(content) = fs::read_to_string(path) else { return };
     let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) else { return };
@@ -292,7 +374,9 @@ fn fix_sidecar(path: &Path) {
     }
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
     if name.contains("_part-phase_") && json.get("Units").is_none() {
-        json["Units"] = serde_json::json!("arbitrary");
+        let stem = path.with_extension("");
+        let image = [stem.with_extension("nii.gz"), stem.with_extension("nii")].into_iter().find(|p| p.exists());
+        json["Units"] = serde_json::json!(image.map(|p| phase_units(&p)).unwrap_or("arbitrary"));
         changed = true;
     }
     if changed {
@@ -362,6 +446,12 @@ pub fn convert_session_streaming(
             for plan in plans.iter().filter(|p| p.r.sub == si && p.r.study == sti) {
                 let series = session.series_ref(&plan.r);
                 let owner = series.display_name();
+                let info: HashMap<PathBuf, (Option<f64>, String)> = series
+                    .files
+                    .iter()
+                    .enumerate()
+                    .map(|(i, f)| (f.clone(), (series.file_echo_times.get(i).copied().flatten(), series.file_positions.get(i).cloned().unwrap_or_default())))
+                    .collect();
                 let mut log = Vec::new();
                 match &plan.target {
                     Target::Skip => {
@@ -371,13 +461,25 @@ pub fn convert_session_streaming(
                     Target::Extra { dir, prefix } => {
                         counter += 1;
                         send(ConvertMessage::Log(format!("Keeping {owner} in extra_data ({} files)", series.num_files)));
-                        match run_dcm2niix(&dcm2niix, &series.files, &work_root.join(counter.to_string()), prefix, &mut log) {
+                        match run_dcm2niix(&dcm2niix, &series.files, &info, &work_root.join(counter.to_string()), prefix, &mut log) {
                             Ok(outputs) => {
-                                for out in outputs {
+                                for (out, known) in outputs {
                                     let Some(name) = out.file_name().and_then(|n| n.to_str()).map(str::to_string) else { continue };
                                     if split_extension(&name).is_none() {
                                         continue;
                                     }
+                                    // Volumes QSMxT separated get their number in the name.
+                                    let name = match known.volume.or(known.echo_te.map(|_| 0)) {
+                                        Some(_) => {
+                                            let tag = match (known.volume, known.echo_te) {
+                                                (Some(v), _) => format!("_vol{v}"),
+                                                (None, Some(te)) => format!("_te{}", clean_bids_label(&format!("{te}"))),
+                                                _ => String::new(),
+                                            };
+                                            name.replacen(prefix.as_str(), &format!("{prefix}{tag}"), 1)
+                                        }
+                                        None => name,
+                                    };
                                     staged.push(Staged { from: out, rel: format!("{}/{}", dir.join("/"), name), owner: owner.clone() });
                                 }
                             }
@@ -397,12 +499,21 @@ pub fn convert_session_streaming(
                         let base = "qsmxt";
                         for (coil, files) in groups {
                             counter += 1;
-                            match run_dcm2niix(&dcm2niix, files, &work_root.join(counter.to_string()), base, &mut log) {
+                            match run_dcm2niix(&dcm2niix, files, &info, &work_root.join(counter.to_string()), base, &mut log) {
                                 Ok(outputs) => {
-                                    for out in outputs {
+                                    for (out, known) in outputs {
                                         let Some(name) = out.file_name().and_then(|n| n.to_str()).map(str::to_string) else { continue };
                                         let Some((stem_part, ext)) = split_extension(&name) else { continue };
-                                        let sfx = parse_dcm2niix_suffix(stem_part.strip_prefix(base).unwrap_or(""));
+                                        let mut sfx = parse_dcm2niix_suffix(stem_part.strip_prefix(base).unwrap_or(""));
+                                        if let Some(te) = known.echo_te {
+                                            sfx.echo_te = Some(te);
+                                            sfx.echo_num = None;
+                                        }
+                                        if let Some(v) = known.volume {
+                                            // The echo tags are what could not tell the volumes apart.
+                                            sfx.echo_num = None;
+                                            sfx.extra.push(format!("vol{v}"));
+                                        }
                                         let bids_name = stem.file_name(&sfx, coil, ext);
                                         staged.push(Staged { from: out.clone(), rel: format!("{}/{}", stem.dir().join("/"), bids_name), owner: owner.clone() });
                                     }
@@ -447,12 +558,13 @@ pub fn convert_session_streaming(
                         continue;
                     }
                 }
-                if s.rel.ends_with(".json") {
-                    fix_sidecar(&dest);
-                }
                 if !s.rel.ends_with(".json") {
                     send(ConvertMessage::Log(format!("  -> {}", s.rel)));
                 }
+            }
+            // Sidecars last: a phase sidecar's Units depends on its image.
+            for s in staged.iter().filter(|s| s.rel.ends_with(".json") && !clashing.contains(&&s.rel)) {
+                fix_sidecar(&output_dir.join(&s.rel));
             }
         }
     }

@@ -304,6 +304,36 @@ fn uncombined_coils() {
 }
 
 #[test]
+fn same_echo_tags() {
+    let (_d, s) = scan("same_echo_tags");
+    let Some(c) = convert(&s) else { return };
+    let mut want = Vec::new();
+    for e in 1..=3 {
+        want.push(format!("acq-fl3dvibeQSM_echo-{e}_part-mag_MEGRE"));
+        want.push(format!("acq-fl3dvibeQSM_echo-{e}_part-phase_MEGRE"));
+    }
+    // The scanner QSM's echoes cannot be told apart by their tags: one file per volume.
+    for v in 1..=3 {
+        want.push(format!("acq-fl3dvibeQSM_rec-scannervol{v}_Chimap"));
+    }
+    want.sort();
+    assert_images(&c, &anat(&want.iter().map(String::as_str).collect::<Vec<_>>()));
+}
+
+#[test]
+fn philips_radian_phase() {
+    let (_d, s) = scan("philips_radian_phase");
+    let Some(c) = convert(&s) else { return };
+    let units = |name: &str| -> String {
+        let p = c.root.join(format!("sub-synth01/ses-20240101/anat/{PREFIX}_acq-WIPQSM2e_echo-1_part-{name}_MEGRE.json"));
+        let j: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+        j["Units"].as_str().unwrap_or("").to_string()
+    };
+    assert_eq!(units("phase"), "rad", "{}", c.log.join("\n"));
+    assert_eq!(units("mag"), "");
+}
+
+#[test]
 fn a_name_two_series_would_share_is_an_error_and_neither_is_written() {
     let (_d, mut s) = scan("duplicate_different");
     // Relabel the extra magnitude back to Magnitude: it now clashes with series 9.

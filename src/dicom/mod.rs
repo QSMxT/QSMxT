@@ -60,6 +60,10 @@ fn element_i32(obj: &InMemDicomObject, tag: Tag) -> Option<i32> {
     (b.len() == 2).then(|| i16::from_le_bytes([b[0], b[1]]) as i32)
 }
 
+fn items(obj: &InMemDicomObject, tag: Tag) -> &[InMemDicomObject] {
+    obj.element_opt(tag).ok().flatten().and_then(|e| e.items()).unwrap_or(&[])
+}
+
 fn first_item(obj: &InMemDicomObject, tag: Tag) -> Option<&InMemDicomObject> {
     obj.element_opt(tag).ok().flatten()?.items()?.first()
 }
@@ -127,6 +131,20 @@ fn file_meta(obj: &InMemDicomObject, path: &Path) -> Option<FileMeta> {
         sop_class_uid: element_str(obj, tags::SOP_CLASS_UID),
         is_enhanced: false,
         frames: element_i32(obj, tags::NUMBER_OF_FRAMES).unwrap_or(1).max(1) as u32,
+        sop_instance_uid: element_str(obj, tags::SOP_INSTANCE_UID),
+        referenced_series: items(obj, tags::REFERENCED_SERIES_SEQUENCE)
+            .iter()
+            .map(|i| element_str(i, tags::SERIES_INSTANCE_UID))
+            .filter(|u| !u.is_empty())
+            .collect(),
+        source_images: items(obj, tags::SOURCE_IMAGE_SEQUENCE)
+            .iter()
+            .chain(items(obj, tags::REFERENCED_IMAGE_SEQUENCE).iter())
+            .map(|i| element_str(i, tags::REFERENCED_SOP_INSTANCE_UID))
+            .filter(|u| !u.is_empty())
+            .take(4)
+            .collect(),
+        image_position: element_str(obj, tags::IMAGE_POSITION_PATIENT),
     };
     m.acquisition_time = [tags::ACQUISITION_TIME, tags::ACQUISITION_DATE_TIME, tags::SERIES_TIME, tags::CONTENT_TIME]
         .into_iter()

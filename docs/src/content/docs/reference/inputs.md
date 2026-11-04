@@ -120,10 +120,18 @@ the scanner's phase combination is generally not suitable for QSM. Pass
 | Scanner T1 map | `*_T1map` |
 | Scanner SWI | `*_rec-swi_part-mag_T2starw` |
 | Scanner minimum-intensity projection | `*_rec-mip_T2starw` |
-| Another reconstruction of the same images | `*_rec-<label>_…`, e.g. `rec-filtered`, `rec-aspire` |
+| Another reconstruction of the same images | `*_rec-<label>_…`, e.g. `rec-filtered`, `rec-scanner` |
 
 The plain original image of each kind is the one without a `rec-` label; that is
-the one `qsmxt run` uses. Any other series (scouts, reformats, FLAIR, diffusion,
+the one `qsmxt run` uses. The magnitude follows the phase: when the phase comes
+from a particular reconstruction (ASPIRE's coil combination, say), the magnitude
+from that reconstruction is the main one, and the scanner's own combination is
+`rec-scanner`. A scanner map without a protocol name (Bruker's parametric maps) is
+filed with the acquisition it was made from. When dcm2niix cannot separate the
+echoes of a series into files, QSMxT converts each echo time separately, or, when
+the echo tags are the same for every image, each volume (`rec-…volN`). Phase
+sidecars get the `Units` BIDS requires: `rad` when the phase is already in
+radians (as dcm2niix writes Philips phase), otherwise `arbitrary`. Any other series (scouts, reformats, FLAIR, diffusion,
 Dixon, other vendor maps) is kept in `sub-*/[ses-*/]extra_data/` as dcm2niix
 names it. These are not BIDS files, and `.bidsignore` lists `extra_data`. The
 `.bidsignore` also lists the MP2RAGE inversion images, because BIDS requires

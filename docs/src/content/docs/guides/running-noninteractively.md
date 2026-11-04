@@ -398,7 +398,8 @@ images.
   `rec-scanner_T2starmap`/`rec-scanner_R2starmap`, SWI `rec-swi_part-mag_T2starw`,
   minimum-intensity projection `rec-mip_T2starw`, filtered magnitude
   `rec-filtered`. Other reconstructions of the same images get a `rec-` label from
-  their image type or description.
+  their image type or description; the magnitude from the same reconstruction as
+  the phase is the main one.
 - **T1-weighted structurals** — MPRAGE, SPACE/TFE T1, MP2RAGE `UNI` images and
   other T1w series are `T1w`; MP2RAGE inversion images are `inv-1`/`inv-2`
   `MP2RAGE`, and its T1 map `T1map`.

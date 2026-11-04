@@ -42,6 +42,11 @@ pub struct Series {
     pub headerless: bool,
     /// Instance number of the first file, less one.
     pub first_instance: usize,
+    /// Write every echo with the first echo's EchoTime and EchoNumbers (tags that do not tell
+    /// the echoes apart, as some scanner reconstructions export).
+    pub same_echo_tags: bool,
+    /// RescaleSlope and RescaleIntercept.
+    pub rescale: Option<(f64, f64)>,
 }
 
 impl Series {
@@ -67,6 +72,8 @@ impl Series {
             seed: (number as u16).wrapping_mul(7),
             headerless: false,
             first_instance: 0,
+            same_echo_tags: false,
+            rescale: None,
         }
     }
     pub fn protocol(mut self, p: &str) -> Self { self.protocol = p.into(); self }
@@ -82,6 +89,8 @@ impl Series {
     pub fn no_echo_numbers(mut self) -> Self { self.echo_numbers = false; self }
     pub fn first_instance(mut self, n: usize) -> Self { self.first_instance = n; self }
     pub fn patient(mut self, p: &str) -> Self { self.patient = p.into(); self }
+    pub fn same_echo_tags(mut self) -> Self { self.same_echo_tags = true; self }
+    pub fn rescale(mut self, slope: f64, intercept: f64) -> Self { self.rescale = Some((slope, intercept)); self }
 }
 
 fn ds(v: f64) -> String {
@@ -120,13 +129,14 @@ fn slice(s: &Series, echo: usize, k: usize, instance: usize) -> InMemDicomObject
     put(tags::MR_ACQUISITION_TYPE, VR::CS, "3D".into());
     put(tags::SLICE_THICKNESS, VR::DS, "1".into());
     put(tags::REPETITION_TIME, VR::DS, "30".into());
-    put(tags::ECHO_TIME, VR::DS, ds(s.tes[echo]).as_str().into());
+    let tag_echo = if s.same_echo_tags { 0 } else { echo };
+    put(tags::ECHO_TIME, VR::DS, ds(s.tes[tag_echo]).as_str().into());
     if let Some(ti) = s.inversion_time {
         put(tags::INVERSION_TIME, VR::DS, ds(ti).as_str().into());
     }
     put(tags::IMAGING_FREQUENCY, VR::DS, "123.2".into());
     if s.echo_numbers {
-        put(tags::ECHO_NUMBERS, VR::IS, (echo + 1).to_string().as_str().into());
+        put(tags::ECHO_NUMBERS, VR::IS, (tag_echo + 1).to_string().as_str().into());
     }
     put(tags::MAGNETIC_FIELD_STRENGTH, VR::DS, "3".into());
     put(tags::FLIP_ANGLE, VR::DS, "15".into());
@@ -150,6 +160,11 @@ fn slice(s: &Series, echo: usize, k: usize, instance: usize) -> InMemDicomObject
     put(tags::BITS_STORED, VR::US, PrimitiveValue::from(12u16));
     put(tags::HIGH_BIT, VR::US, PrimitiveValue::from(11u16));
     put(tags::PIXEL_REPRESENTATION, VR::US, PrimitiveValue::from(0u16));
+    if let Some((slope, intercept)) = s.rescale {
+        put(tags::RESCALE_SLOPE, VR::DS, format!("{slope:.10}").as_str().into());
+        put(tags::RESCALE_INTERCEPT, VR::DS, format!("{intercept:.8}").as_str().into());
+        put(tags::RESCALE_TYPE, VR::LO, "normalized".into());
+    }
     if let Some(c) = &s.coil {
         put(Tag(0x0051, 0x0010), VR::LO, "SIEMENS MR HEADER".into());
         put(Tag(0x0051, 0x100F), VR::LO, c.as_str().into());
@@ -245,6 +260,8 @@ pub const FIXTURES: &[&str] = &[
     "ge_private_type",
     "mp2rage",
     "uncombined_coils",
+    "same_echo_tags",
+    "philips_radian_phase",
 ];
 
 /// Write fixture `name` into `dir`.
@@ -343,6 +360,21 @@ pub fn write_fixture(name: &str, dir: &Path) {
             write_series(dir, &Series::new("16", 16, p, &["ORIGINAL", "PRIMARY", "M", "ND"]).coil("HEA;HEP").tes(&[9.4, 20.0]));
             write_series(dir, &Series::new("17", 17, p, &["ORIGINAL", "PRIMARY", "M", "ND", "NORM", "FM", "FIL"]).coil("HEA;HEP").tes(&[9.4, 20.0]));
             write_series(dir, &Series::new("19", 19, p, P).coil("HEA;HEP").tes(&[9.4, 20.0]));
+        }
+        "same_echo_tags" => {
+            // A scanner QSM series whose echoes all carry the same echo time and number.
+            let p = "fl3d_vibe_QSM";
+            write_series(dir, &Series::new("20", 20, p, M).tes(&[4.0, 8.0, 12.0]));
+            write_series(dir, &Series::new("21", 21, p, P).tes(&[4.0, 8.0, 12.0]));
+            write_series(dir, &Series::new("22", 22, "fl3d_vibe_QSM_QSM", &["ORIGINAL", "PRIMARY", "QSM", "ND"]).protocol(p)
+                .tes(&[4.0, 8.0, 12.0]).same_echo_tags());
+        }
+        "philips_radian_phase" => {
+            let p = "WIP QSM 2e";
+            let mk = |uid: &str, it: &[&str]| Series::new(uid, 301, "QSM 2e", it).protocol(p).manufacturer("Philips").tes(&[5.0, 10.0]);
+            write_series(dir, &mk("301m", &["ORIGINAL", "PRIMARY", "M_FFE", "M", "FFE"]));
+            // Philips scales its phase to radians: values 0…4000 → −π…3.0.
+            write_series(dir, &mk("301p", &["ORIGINAL", "PRIMARY", "PHASE MAP", "P", "FFE"]).rescale(std::f64::consts::TAU / 4096.0, -std::f64::consts::PI).first_instance(100));
         }
         other => panic!("no fixture {other}"),
     }

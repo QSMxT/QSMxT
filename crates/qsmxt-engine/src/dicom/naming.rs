@@ -16,7 +16,9 @@
 //! Within one run, the plain ORIGINAL image of each kind is the main file. Any other
 //! reconstruction of the same kind gets a `rec-` label: from the ImageType marker that sets it
 //! apart (`FIL` → `rec-filtered`, `ASPIRE` → `rec-aspire`), else from its description
-//! (`…_UNI-DEN` → `rec-uniden`), else from its series number. Uncombined coil images get
+//! (`…_UNI-DEN` → `rec-uniden`), else from its series number. The magnitude follows the phase:
+//! when the run's phase is a particular reconstruction (ASPIRE), the magnitude of that
+//! reconstruction is the main one and the scanner's plain combination becomes `rec-scanner`. Uncombined coil images get
 //! `rec-uncombined` when the scanner's combined images are there too, and a `coil-NN` entity
 //! (a QSMxT extension of BIDS, listed in `.bidsignore`). `desc-` is never used: BIDS allows it only
 //! in derivatives.
@@ -246,7 +248,8 @@ fn desc_label(s: &DicomSeries) -> String {
     let p = p.trim_start_matches("wip").trim();
     let rest = if !p.is_empty() && d.contains(p) { d.replacen(p, "", 1) } else { d };
     let label = clean_bids_label(&rest.replace("_rr", ""));
-    if label.is_empty() { format!("s{}", s.series_number) } else { label }
+    // A long description makes an unreadable label; the series number is clearer.
+    if label.is_empty() || label.len() > 20 { format!("s{}", s.series_number) } else { label }
 }
 
 fn tes_overlap(a: &DicomSeries, b: &DicomSeries) -> bool {
@@ -306,8 +309,11 @@ fn reconstruction_labels(acq: &DicomAcquisition, inv: &HashMap<usize, u32>) -> H
             None => slots.push((key, vec![i])),
         }
     }
+    // Phase first: a magnitude follows the phase's reconstruction.
+    slots.sort_by_key(|(k, _)| k.0 != SeriesType::Phase);
+    let mut phase_recon: HashMap<bool, Vec<String>> = HashMap::new();
     let mut labels: HashMap<usize, Option<String>> = HashMap::new();
-    for (_, mut members) in slots {
+    for ((kind, per_coil, _), mut members) in slots {
         members.sort_by_key(|&i| acq.series[i].series_number);
         let mut from_tokens: HashMap<usize, bool> = HashMap::new();
         for &i in &members {
@@ -325,6 +331,28 @@ fn reconstruction_labels(acq: &DicomAcquisition, inv: &HashMap<usize, u32>) -> H
         if !members.iter().any(|i| labels[i].is_none()) {
             if let Some(&first) = members.first() {
                 labels.insert(first, None);
+            }
+        }
+        // The main magnitude is the one from the same reconstruction as the main phase (ASPIRE's
+        // magnitude next to ASPIRE's phase, rather than the scanner's own coil combination).
+        if kind == SeriesType::Magnitude {
+            if let Some(tokens) = phase_recon.get(&per_coil).filter(|t| !t.is_empty()) {
+                let main = members.iter().copied().find(|i| labels[i].is_none());
+                let same = members.iter().copied().find(|&i| recon_tokens(&acq.series[i].image_type) == *tokens);
+                if let (Some(main), Some(same)) = (main, same) {
+                    if main != same {
+                        let toks = recon_tokens(&acq.series[main].image_type);
+                        let demoted = if toks.is_empty() { "scanner".to_string() } else { recon_token_label(&toks) };
+                        labels.insert(main, Some(demoted));
+                        from_tokens.insert(main, true);
+                        labels.insert(same, None);
+                    }
+                }
+            }
+        }
+        if kind == SeriesType::Phase {
+            if let Some(&main) = members.iter().find(|i| labels[i].is_none()) {
+                phase_recon.insert(per_coil, recon_tokens(&acq.series[main].image_type));
             }
         }
         // Labels still shared by series holding the same echoes: tell them apart.

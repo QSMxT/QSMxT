@@ -120,6 +120,35 @@ fn settings_of(files: &[&FileMeta], coil_type: CoilType) -> Vec<String> {
 struct Built {
     series: DicomSeries,
     acq_base: String,
+    referenced_series: Vec<String>,
+    source_images: Vec<String>,
+    sop_uids: std::collections::HashSet<String>,
+}
+
+/// The series a derived series without a protocol name (a Bruker parametric map) was made from:
+/// the series it references, else the series holding an image it names as its source, else the
+/// series it was acquired with (same acquisition time) or, for Bruker's numbering
+/// (scan × 10000 + reconstruction), the latest earlier reconstruction of the same scan.
+fn parent_of(built: &[Built], i: usize) -> Option<usize> {
+    let b = &built[i];
+    let base_uid = |s: &DicomSeries| s.series_uid.split('#').next().unwrap_or("").to_string();
+    let candidates = || built.iter().enumerate().filter(move |(j, c)| *j != i && !c.series.protocol_name.trim().is_empty());
+    if let Some((j, _)) = candidates().find(|(_, c)| b.referenced_series.contains(&base_uid(&c.series))) {
+        return Some(j);
+    }
+    if let Some((j, _)) = candidates().find(|(_, c)| b.source_images.iter().any(|u| c.sop_uids.contains(u))) {
+        return Some(j);
+    }
+    let n = b.series.series_number;
+    candidates()
+        .filter(|(_, c)| {
+            let m = c.series.series_number;
+            let same_time = matches!((b.series.acquisition_time, c.series.acquisition_time), (Some(x), Some(y)) if (x - y).abs() < 1.0);
+            let same_scan = n >= 10000 && m < n && m / 10000 == n / 10000;
+            same_time || same_scan
+        })
+        .max_by_key(|(_, c)| c.series.series_number)
+        .map(|(j, _)| j)
 }
 
 /// One series from a set of files of one SeriesInstanceUID.
@@ -219,7 +248,12 @@ fn build_series(uid: String, files: &[&FileMeta]) -> Built {
             acquisition_time,
             settings: settings_of(files, coil_type),
             note: None,
+            file_echo_times: files.iter().map(|f| f.echo_times.first().copied()).collect(),
+            file_positions: files.iter().map(|f| f.image_position.clone()).collect(),
         },
+        referenced_series: files.iter().flat_map(|f| f.referenced_series.iter().cloned()).collect(),
+        source_images: files.iter().flat_map(|f| f.source_images.iter().cloned()).take(16).collect(),
+        sop_uids: files.iter().map(|f| f.sop_instance_uid.clone()).filter(|u| !u.is_empty()).collect(),
     }
 }
 
@@ -487,7 +521,19 @@ where
     let mut subjects = Vec::new();
     for (patient_id, dates) in tree {
         let mut studies = Vec::new();
-        for (study_date, built) in dates {
+        for (study_date, mut built) in dates {
+            // A derived series without a protocol name joins the acquisition it was made from.
+            for i in 0..built.len() {
+                if !built[i].series.protocol_name.trim().is_empty() || built[i].series.original {
+                    continue;
+                }
+                if let Some(j) = parent_of(&built, i) {
+                    let (acq, time, name) = (built[j].acq_base.clone(), built[j].series.acquisition_time, built[j].series.display_name());
+                    built[i].acq_base = acq;
+                    built[i].series.acquisition_time = time;
+                    built[i].series.note = Some(format!("made from {name}"));
+                }
+            }
             let acquisitions = form_acquisitions(&patient_id, built, &mut report, &mut identical);
             studies.push(DicomStudy { study_date, acquisitions });
         }

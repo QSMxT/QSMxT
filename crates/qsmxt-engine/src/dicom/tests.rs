@@ -177,7 +177,8 @@ fn bruker_magnitude_without_part_marker_and_its_t2star_map() {
     assert_eq!(n[0].1, SeriesType::Magnitude);
     assert_eq!(n[0].2, "sub-p1_ses-20240101_acq-T2starmapMGE_echo-<N>_part-mag_MEGRE");
     assert_eq!(n[1].1, SeriesType::T2starMap);
-    assert!(n[1].2.ends_with("_rec-scanner_T2starmap"), "{}", n[1].2);
+    // The map has no protocol name: it joins the acquisition it was made from.
+    assert_eq!(n[1].2, "sub-p1_ses-20240101_acq-T2starmapMGE_rec-scanner_T2starmap");
 }
 
 #[test]
@@ -288,7 +289,7 @@ fn uncombined_coils_need_two_coil_elements() {
 }
 
 #[test]
-fn aspire_prefers_the_magnitude_without_the_aspire_marker() {
+fn aspire_magnitude_follows_the_aspire_phase() {
     let p = "ASPIRE_bipolar";
     let mut files = series("am", 23, "Aspire_M_ASPIRE_bipolar", p, &["ORIGINAL", "PRIMARY", "M", "ASPIRE", "DIS2D"], &[2.0, 4.0], 100.0, 2);
     files.extend(series("ap", 24, "Aspire_P_ASPIRE_bipolar", p, &["ORIGINAL", "PRIMARY", "P", "ASPIRE", "DIS2D"], &[2.0, 4.0], 100.0, 2));
@@ -297,8 +298,10 @@ fn aspire_prefers_the_magnitude_without_the_aspire_marker() {
     files.extend(series("cx", 22, "Aspire_magCxSum_ASPIRE_bipolar", p, &[], &[2.0, 4.0], 100.0, 2));
     files.extend(series("qm", 21, "Aspire_Qmetric_ASPIRE_bipolar", p, &[], &[2.0, 4.0], 100.0, 2));
     let s = build_session(files, never_identical);
-    assert_eq!(name_of(&s, "ASPIRE_bipolar", SeriesType::Magnitude), "sub-p1_ses-20240101_acq-ASPIREbipolar_echo-<N>_part-mag_MEGRE");
-    assert_eq!(name_of(&s, "Aspire_M_ASPIRE_bipolar", SeriesType::Magnitude), "sub-p1_ses-20240101_acq-ASPIREbipolar_rec-aspire_echo-<N>_part-mag_MEGRE");
+    // The magnitude of the phase's reconstruction (ASPIRE) is the main one; the scanner's own
+    // coil combination gets rec-scanner.
+    assert_eq!(name_of(&s, "Aspire_M_ASPIRE_bipolar", SeriesType::Magnitude), "sub-p1_ses-20240101_acq-ASPIREbipolar_echo-<N>_part-mag_MEGRE");
+    assert_eq!(name_of(&s, "ASPIRE_bipolar", SeriesType::Magnitude), "sub-p1_ses-20240101_acq-ASPIREbipolar_rec-scanner_echo-<N>_part-mag_MEGRE");
     assert_eq!(name_of(&s, "Aspire_P_ASPIRE_bipolar", SeriesType::Phase), "sub-p1_ses-20240101_acq-ASPIREbipolar_echo-<N>_part-phase_MEGRE");
     assert_eq!(name_of(&s, "Aspire_magCxSum_ASPIRE_bipolar", SeriesType::Magnitude), "sub-p1_ses-20240101_acq-ASPIREbipolar_rec-aspiremagcxsum_echo-<N>_part-mag_MEGRE");
     assert_eq!(name_of(&s, "R2star_ASPIRE_bipolar", SeriesType::R2starMap), "sub-p1_ses-20240101_acq-ASPIREbipolar_rec-scanner_R2starmap");
@@ -390,4 +393,24 @@ fn series_type_cycles() {
 fn normalize_description() {
     assert_eq!(normalize_series_description("t2star_qsm_RR_RR"), "t2star_qsm");
     assert_eq!(clean_bids_label("p025_pre^^^^"), "p025pre");
+}
+
+#[test]
+fn a_derived_series_without_protocol_joins_its_scan_by_bruker_numbering() {
+    let mut files = series("mge", 90001, "", "T2star_map_MGE", &["ORIGINAL", "PRIMARY", "OTHER"], &[3.3, 6.6], 100.0, 2);
+    files.extend(series("mge2", 120001, "", "T2star_map_MGE", &["ORIGINAL", "PRIMARY", "OTHER"], &[3.3, 6.6], 4000.0, 2));
+    let mut map = series("map", 120002, "Parametric image for T2* relaxation", "", &["DERIVED", "SECONDARY", "OTHER"], &[3.3], 0.0, 2);
+    for f in &mut map {
+        f.acquisition_time = None;
+    }
+    files.extend(map);
+    for f in &mut files {
+        f.scanning_sequence = vec!["RM".into()];
+    }
+    let s = build_session(files, never_identical);
+    let n = names(&s);
+    let map = n.iter().find(|x| x.1 == SeriesType::T2starMap).unwrap();
+    assert_eq!(map.2, "sub-p1_ses-20240101_acq-T2starmapMGE_rec-scanner_run-2_T2starmap");
+    let s_map = s.flat_series().into_iter().map(|r| s.series_ref(&r).clone()).find(|x| x.series_number == 120002).unwrap();
+    assert_eq!(s_map.note.as_deref(), Some("made from series 120001 'T2star_map_MGE'"));
 }

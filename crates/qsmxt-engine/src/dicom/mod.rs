@@ -163,6 +163,14 @@ pub struct FileMeta {
     pub is_enhanced: bool,
     /// Frames in the file (1 for a classic single-frame file).
     pub frames: u32,
+    pub sop_instance_uid: String,
+    /// SeriesInstanceUIDs the file says it was derived from (ReferencedSeriesSequence).
+    pub referenced_series: Vec<String>,
+    /// SOPInstanceUIDs of the images it was derived from (SourceImageSequence,
+    /// ReferencedImageSequence).
+    pub source_images: Vec<String>,
+    /// ImagePositionPatient, as written.
+    pub image_position: String,
 }
 
 /// A group of DICOM files that form a single series.
@@ -200,6 +208,10 @@ pub struct DicomSeries {
     pub settings: Vec<String>,
     /// Why the series got its type, when that is not obvious (a duplicate, say).
     pub note: Option<String>,
+    /// Each file's echo time (ms), in the order of `files`.
+    pub file_echo_times: Vec<Option<f64>>,
+    /// Each file's ImagePositionPatient, in the order of `files`.
+    pub file_positions: Vec<String>,
 }
 
 impl DicomSeries {
