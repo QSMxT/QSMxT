@@ -66,7 +66,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--cosmos-magnitude-weighting` | COSMOS: weight each orientation by its combined magnitude (conjugate-gradient solve) |
 | `--cosmos-tol <COSMOS_TOL>` | Magnitude-weighted COSMOS: conjugate-gradient tolerance (needs --cosmos-magnitude-weighting) |
 | `--cosmos-max-iter <COSMOS_MAX_ITER>` | Magnitude-weighted COSMOS: conjugate-gradient iteration cap (needs --cosmos-magnitude-weighting) |
-| `--unwrapping-algorithm <UNWRAPPING_ALGORITHM>` | Unwrapping algorithm (default: romeo) Values: `romeo`, `laplacian`, `prelude`. |
+| `--unwrapping-algorithm <UNWRAPPING_ALGORITHM>` | Unwrapping algorithm (default: romeo) Values: `romeo`, `laplacian`, `prelude`, `medi-region-growing`. |
 | `--bf-algorithm <BF_ALGORITHM>` | Background field removal algorithm (default: vsharp; pdf with --qsm-algorithm medi, as in its authors' pipeline) Values: `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm`. |
 | `--masking-input <MASKING_INPUT>` | Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude) Values: `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality`. |
 | `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
@@ -531,7 +531,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--cosmos-magnitude-weighting` | COSMOS: weight each orientation by its combined magnitude (conjugate-gradient solve) |
 | `--cosmos-tol <COSMOS_TOL>` | Magnitude-weighted COSMOS: conjugate-gradient tolerance (needs --cosmos-magnitude-weighting) |
 | `--cosmos-max-iter <COSMOS_MAX_ITER>` | Magnitude-weighted COSMOS: conjugate-gradient iteration cap (needs --cosmos-magnitude-weighting) |
-| `--unwrapping-algorithm <UNWRAPPING_ALGORITHM>` | Unwrapping algorithm (default: romeo) Values: `romeo`, `laplacian`, `prelude`. |
+| `--unwrapping-algorithm <UNWRAPPING_ALGORITHM>` | Unwrapping algorithm (default: romeo) Values: `romeo`, `laplacian`, `prelude`, `medi-region-growing`. |
 | `--bf-algorithm <BF_ALGORITHM>` | Background field removal algorithm (default: vsharp; pdf with --qsm-algorithm medi, as in its authors' pipeline) Values: `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm`. |
 | `--masking-input <MASKING_INPUT>` | Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude) Values: `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality`. |
 | `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
@@ -933,7 +933,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--cosmos-magnitude-weighting` | COSMOS: weight each orientation by its combined magnitude (conjugate-gradient solve) |
 | `--cosmos-tol <COSMOS_TOL>` | Magnitude-weighted COSMOS: conjugate-gradient tolerance (needs --cosmos-magnitude-weighting) |
 | `--cosmos-max-iter <COSMOS_MAX_ITER>` | Magnitude-weighted COSMOS: conjugate-gradient iteration cap (needs --cosmos-magnitude-weighting) |
-| `--unwrapping-algorithm <UNWRAPPING_ALGORITHM>` | Unwrapping algorithm (default: romeo) Values: `romeo`, `laplacian`, `prelude`. |
+| `--unwrapping-algorithm <UNWRAPPING_ALGORITHM>` | Unwrapping algorithm (default: romeo) Values: `romeo`, `laplacian`, `prelude`, `medi-region-growing`. |
 | `--bf-algorithm <BF_ALGORITHM>` | Background field removal algorithm (default: vsharp; pdf with --qsm-algorithm medi, as in its authors' pipeline) Values: `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm`. |
 | `--masking-input <MASKING_INPUT>` | Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude) Values: `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality`. |
 | `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
@@ -1604,7 +1604,7 @@ qsmxt combine mcpc3ds [OPTIONS] --phase <PHASE>... --magnitude <MAGNITUDE>... --
 | `--tes <TES>` | Echo times in seconds, one per echo (read from the phase JSON sidecars when omitted) |
 | `--num-echoes <NUM_ECHOES>` | Number of echoes when the file names carry no `echo-N` entity. |
 | `--sigma <X> <Y> <Z>` | Smoothing sigma (voxels) for the per-coil phase offsets (default 10 10 5) |
-| `--hip-unwrapping <HIP_UNWRAPPING>` | Unwrapping used on the coil-summed HIP phase. Values: `romeo`, `laplacian`, `prelude`. Default: `romeo`. |
+| `--hip-unwrapping <HIP_UNWRAPPING>` | Unwrapping used on the coil-summed HIP phase. Values: `romeo`, `laplacian`, `prelude`, `medi-region-growing`. Default: `romeo`. |
 | `--prelude-labelling <PRELUDE_LABELLING>` | PRELUDE: how the initial regions are labelled (default: auto) Values: `auto`, `slices`, `volume`. |
 | `--prelude-partitions <N>` | PRELUDE: number of phase partitions the initial regions are formed from (default: 8) |
 
@@ -1617,6 +1617,7 @@ Phase unwrapping
 | [`romeo`](#qsmxt-unwrap-romeo) | ROMEO region-growing unwrapping |
 | [`laplacian`](#qsmxt-unwrap-laplacian) | Laplacian-based unwrapping |
 | [`prelude`](#qsmxt-unwrap-prelude) | PRELUDE region-merging unwrapping |
+| [`medi-region-growing`](#qsmxt-unwrap-medi-region-growing) | MEDI's magnitude-guided region-growing unwrapping (takes no mask) |
 
 ### `qsmxt unwrap romeo`
 
@@ -1681,6 +1682,20 @@ qsmxt unwrap prelude [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--prelude-labelling <PRELUDE_LABELLING>` | PRELUDE: how the initial regions are labelled (default: auto) Values: `auto`, `slices`, `volume`. |
 | `--prelude-partitions <N>` | PRELUDE: number of phase partitions the initial regions are formed from (default: 8) |
 
+### `qsmxt unwrap medi-region-growing`
+
+MEDI's magnitude-guided region-growing unwrapping (takes no mask)
+
+```sh
+qsmxt unwrap medi-region-growing --magnitude <MAGNITUDE> --output <OUTPUT> <INPUT>
+```
+
+| Argument | Description |
+| --- | --- |
+| `<INPUT>` | Input wrapped phase NIfTI file. Required. |
+| `--magnitude <MAGNITUDE>` | Magnitude NIfTI file (3D): the order in which the volume is unwrapped. Required. Required. |
+| `-o, --output <OUTPUT>` | Output unwrapped phase NIfTI file. Required. |
+
 ## `qsmxt fieldmap`
 
 B0 field mapping from multi-echo phase (NIfTI in, ppm out)
@@ -1690,6 +1705,7 @@ B0 field mapping from multi-echo phase (NIfTI in, ppm out)
 | [`romeo`](#qsmxt-fieldmap-romeo) | ROMEO-based multi-echo field mapping (phase offset removal + unwrap + B0 fit) |
 | [`laplacian`](#qsmxt-fieldmap-laplacian) | Laplacian-based multi-echo field mapping (per-echo unwrap + echo combination) |
 | [`prelude`](#qsmxt-fieldmap-prelude) | PRELUDE-based multi-echo field mapping (phase offset removal + per-echo unwrap + B0 fit) |
+| [`medi-region-growing`](#qsmxt-fieldmap-medi-region-growing) | MEDI region-growing field mapping (phase offset removal + per-echo unwrap + B0 fit; with `--b0-estimation complex-fit`, MEDI's field map). Needs `--magnitude` |
 
 ### `qsmxt fieldmap romeo`
 
@@ -1824,6 +1840,44 @@ qsmxt fieldmap prelude [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
 | `--prelude-labelling <PRELUDE_LABELLING>` | PRELUDE: how the initial regions are labelled (default: auto) Values: `auto`, `slices`, `volume`. |
 | `--prelude-partitions <N>` | PRELUDE: number of phase partitions the initial regions are formed from (default: 8) |
+
+### `qsmxt fieldmap medi-region-growing`
+
+MEDI region-growing field mapping (phase offset removal + per-echo unwrap + B0 fit; with `--b0-estimation complex-fit`, MEDI's field map). Needs `--magnitude`
+
+```sh
+qsmxt fieldmap medi-region-growing [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+```
+
+| Argument | Description |
+| --- | --- |
+| `<INPUT>` | Input multi-echo wrapped phase NIfTI file (4D: x,y,z,echo) Required. |
+| `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
+| `-o, --output <OUTPUT>` | Output B0 field map NIfTI file (in ppm) Required. |
+| `--magnitude <MAGNITUDE>` | Multi-echo magnitude NIfTI file (4D; improves weighting) |
+| `--tes <TES>` | Echo times in seconds (space-separated, one per echo) |
+| `--b0 <B0>` | Field strength in Tesla (alias: --field-strength) |
+| `--params <PARAMS>` | JSON params file: {"TE":[..seconds], "B0":&lt;tesla&gt;, "voxel_size":[..], "B0_dir":[..]}. --tes / --b0 override values from this file when both are present. |
+| `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method. Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. Default: `weighted-avg`. |
+| `--qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>` | `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is marked unreliable is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`; default), or a fixed residual (`--qsmart-fit-threshold`). Without it, giving one of those two selects its mode. Values: `percentile`, `absolute`. |
+| `--qsmart-fit-percentile <QSMART_FIT_PERCENTILE>` | `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is marked unreliable (default 99) |
+| `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is marked unreliable, instead of a percentile (40 when the mode is `absolute` and none is given) |
+| `--reliability-output <RELIABILITY_OUTPUT>` | `--b0-estimation qsmart-echofit`: also save its reliability map (1 = reliable) here, for `qsmxt qsmart --reliability`. |
+| `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted-averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) from the echo times and an assumed T2\* (no T2\* map, no magnitude; Wang et al. 2022). `phase-snr` is generally preferable with magnitude. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. Default: `phase-snr`. |
+| `--b0-weight-assumed-t2star <MS>` | T2\* in ms assumed by `--b0-weight-type assumed-decay` (no T2\* map is used) Default: `40`. |
+| `--linear-fit-estimate-offset <LINEAR_FIT_ESTIMATE_OFFSET>` | Linear and robust fit: estimate a phase offset term (default: true). The robust fit needs 4 echoes with it, 3 without. |
+| `--robust-fit-loss <ROBUST_FIT_LOSS>` | Motion-robust fit (`--b0-estimation robust-fit`): loss turning residuals into weights. `tukey` (default) rejects echoes past the tuning radius; `huber` caps but never rejects. Values: `tukey`, `huber`. |
+| `--robust-fit-tuning <ROBUST_FIT_TUNING>` | Motion-robust fit: tuning radius in robust-scale units (default: the loss's conventional value, Tukey 4.685 / Huber 1.345). Smaller is more aggressive. |
+| `--robust-fit-iterations <ROBUST_FIT_ITERATIONS>` | Motion-robust fit: IRLS passes (default 3; 0 = report only, the field is the linear fit's) |
+| `--robust-fit-downweight-level <ROBUST_FIT_DOWNWEIGHT_LEVEL>` | Motion-robust fit (reporting only): a robust weight below this counts as down-weighted (default 0.75; in (0, 1]) |
+| `--robust-fit-flag-ratio <ROBUST_FIT_FLAG_RATIO>` | Motion-robust fit (reporting only): flag an echo whose outlier score exceeds this many times the best echo's (default 3; at least 1) |
+| `--complex-fit-reltol <COMPLEX_FIT_RELTOL>` | Complex fit (`--b0-estimation complex-fit`): stop once the update is this fraction of the first estimate, over the whole volume (default 1e-4) |
+| `--complex-fit-max-iter <COMPLEX_FIT_MAX_ITER>` | Complex fit: Gauss-Newton iterations at most (default 30) |
+| `--complex-fit-output <FILE>` | `--b0-estimation complex-fit`: also save the fit itself here, before spatial unwrapping: the phase accrued per echo spacing (radians, wrapped to [-π, π]; MEDI's `iFreq_raw`) |
+| `--complex-fit-noise-output <FILE>` | `--b0-estimation complex-fit`: also save the fit's noise map here: the standard deviation of the phase per echo spacing, in radians (MEDI's `N_std`) |
+| `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
+| `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
+| `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
 
 ## `qsmxt bgremove`
 

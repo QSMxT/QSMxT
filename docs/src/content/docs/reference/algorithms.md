@@ -408,6 +408,7 @@ Set with `--unwrapping-algorithm`.
 | `romeo` | Rapid Opensource Minimum-spanning-tree Echo Optimisation (default) |
 | `laplacian` | Laplacian-based unwrapping (QSMART's reference) |
 | `prelude` | PRELUDE region-merging unwrapping (Jenkinson, 2003) |
+| `medi-region-growing` | MEDI's magnitude-guided region-growing unwrapping (Liu et al., 2013) |
 
 With `laplacian`, each echo is unwrapped on its own (the phase is set to zero outside
 the brain mask first) and the echoes are then combined by
@@ -446,6 +447,16 @@ apply as with ROMEO. Its settings:
 | `--prelude-partitions` | Number of phase bins the initial regions are formed from (at least 1) | `8` |
 
 In the TUI, choosing PRELUDE shows a "Labelling" selector and a "Phase partitions" field.
+
+With `medi-region-growing`, the phase is unwrapped by MEDI's region growing, which
+needs magnitude images: it starts at the centre of the field of view and grows
+through the voxels above 0.5 % of the brightest magnitude, brightest first. It takes
+no mask: it grows over the whole field of view, and voxels it does not reach keep
+their wrapped phase. With `--b0-estimation complex-fit` it unwraps MEDI's fit once,
+ordered by the root-sum-of-squares magnitude of the echoes, which gives MEDI's own
+field map. With the other B0 estimations each echo is unwrapped on its own, ordered
+by that same magnitude, and whole turns are then aligned between echoes; phase
+offset removal and bipolar correction apply as with ROMEO. It has no settings.
 
 ## Motion correction
 

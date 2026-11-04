@@ -469,6 +469,15 @@ pub fn field_mapping_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<S
         .map(|why| format!("{why} (it fits the phase per echo spacing)"))
 }
 
+/// Why the configured phase unwrapping cannot run on this run's data, if it cannot: MEDI's region
+/// growing (QSM.rs `UnwrappingAlgorithm::MediRegionGrowing`) orders its growth by the magnitude,
+/// so it needs magnitude images.
+pub fn unwrapping_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<String> {
+    (config.field_mapping.unwrapping_algorithm == crate::enums::UnwrappingAlgorithm::MediRegionGrowing
+        && !f.has_magnitude)
+        .then(|| "needs magnitude images (it grows in order of the magnitude), and this run has none".into())
+}
+
 /// The note for MEDI+0's CSF term on a run with fewer than 3 echoes (MEDI, or QSMART's inner
 /// MEDI): QSM.rs's MEDI finds the CSF from ARLO R2*, which needs 3 echoes, and runs without the
 /// term otherwise.
@@ -868,6 +877,8 @@ pub fn scan_check(f: &ScanFacts, config: &PipelineConfig) -> Check {
         let methods = [
             ("field_mapping.b0_estimation", "--b0-estimation", config.field_mapping.b0_estimation.to_string(),
              if !per_echo && crate::bridge::field_mapping_runs(config, f.n_echoes) { field_mapping_problem(f, config) } else { None }),
+            ("field_mapping.unwrapping_algorithm", "--unwrapping-algorithm", config.field_mapping.unwrapping_algorithm.to_string(),
+             if crate::bridge::field_mapping_runs(config, f.n_echoes) { unwrapping_problem(f, config) } else { None }),
             ("inversion.algorithm", "--qsm-algorithm", config.inversion.algorithm.to_string(),
              on_each(inversion_problem)),
             ("bg_removal.algorithm", "--bf-algorithm", bg.to_string(),
@@ -1590,6 +1601,19 @@ mod tests {
         // Without the complex fit none of this applies.
         c.field_mapping.b0_estimation = B0Estimation::WeightedAvg;
         assert!(check(&run(&[0.005, 0.010, 0.020], false), &c).errors.is_empty());
+    }
+
+    /// MEDI's region growing needs magnitude images; the other unwrappers do not.
+    #[test]
+    fn medi_region_growing_needs_the_magnitude() {
+        let mut c = PipelineConfig::default();
+        c.field_mapping.unwrapping_algorithm = crate::enums::UnwrappingAlgorithm::MediRegionGrowing;
+        assert!(check(&run(&EVEN, true), &c).errors.is_empty());
+        let out = check(&run(&EVEN, false), &c);
+        assert!(out.errors.len() == 1 && out.errors[0].contains("--unwrapping-algorithm medi-region-growing needs magnitude images"), "{out:?}");
+        assert_eq!(out.problems[0].settings, ["field_mapping.unwrapping_algorithm"]);
+        c.field_mapping.unwrapping_algorithm = crate::enums::UnwrappingAlgorithm::Romeo;
+        assert!(check(&run(&EVEN, false), &c).errors.is_empty());
     }
 
     /// MEDI+0's CSF term on fewer than 3 echoes is a warning that MEDI runs without it, not an

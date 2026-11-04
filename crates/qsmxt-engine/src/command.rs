@@ -1609,6 +1609,20 @@ frangi_c = 400.0
         assert!(generate_command(&c).contains("--laplacian-fft-pad 64 64 32"));
     }
 
+    /// MEDI's region growing is selected by `--unwrapping-algorithm medi-region-growing`, and a
+    /// config file keeps it.
+    #[test]
+    fn test_medi_region_growing_command() {
+        let mut c = PipelineConfig::default();
+        c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::MediRegionGrowing;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--unwrapping-algorithm medi-region-growing") && !cmd.contains("--romeo"), "{cmd}");
+        let back = PipelineConfig::from_toml(&c.to_toml().unwrap()).unwrap();
+        assert_eq!(back.field_mapping.unwrapping_algorithm, UnwrappingAlgorithm::MediRegionGrowing);
+        let f: FieldMappingConfig = toml::from_str("unwrapping_algorithm = \"medi-region-growing\"\n").unwrap();
+        assert_eq!(f.unwrapping_algorithm, UnwrappingAlgorithm::MediRegionGrowing);
+    }
+
     /// PRELUDE is selected by `--unwrapping-algorithm prelude`; its settings are said only when
     /// they are not the defaults and PRELUDE runs, and a config file keeps them.
     #[test]

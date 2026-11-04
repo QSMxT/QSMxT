@@ -368,6 +368,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
                 cli::UnwrapAlgorithmArg::Romeo => UnwrappingAlgorithm::Romeo,
                 cli::UnwrapAlgorithmArg::Laplacian => UnwrappingAlgorithm::Laplacian,
                 cli::UnwrapAlgorithmArg::Prelude => UnwrappingAlgorithm::Prelude,
+                cli::UnwrapAlgorithmArg::MediRegionGrowing => UnwrappingAlgorithm::MediRegionGrowing,
             };
         }
 

@@ -1603,6 +1603,7 @@ const UNWRAP_HELP: &[&str] = &[
     "ROMEO region-growing unwrapping — https://doi.org/10.1002/mrm.28563",
     "Laplacian phase unwrapping (FFT-based) — https://doi.org/10.1364/OL.28.001194",
     "PRELUDE region-merging unwrapping, each echo on its own — https://doi.org/10.1002/mrm.10354",
+    "MEDI's magnitude-guided region-growing unwrapping; needs magnitude images — https://doi.org/10.1002/mrm.24272",
 ];
 const BF_HELP: &[&str] = &[
     "Variable-kernel SHARP (V-SHARP) — https://doi.org/10.1002/mrm.23000",
@@ -2708,7 +2709,7 @@ const QSMART_INV_HELP: &[&str] = &[
     "Nonlinear Total Variation (NLTV)",
     "Morphology Enabled Dipole Inversion (MEDI)",
 ];
-pub const UNWRAP_OPTIONS: &[&str] = &["romeo", "laplacian", "prelude"];
+pub const UNWRAP_OPTIONS: &[&str] = &["romeo", "laplacian", "prelude", "medi-region-growing"];
 pub const BF_OPTIONS: &[&str] = &["vsharp", "pdf", "lbv", "ismv", "sharp", "resharp", "harperella", "iharperella", "bfrnet", "iqfm"];
 pub const B0_ESTIMATION_OPTIONS: &[&str] = &["weighted-avg", "linear-fit", "robust-fit", "qsmart-echofit", "complex-fit"];
 pub const ROBUST_FIT_LOSS_OPTIONS: &[&str] = &["tukey", "huber"];
@@ -9500,7 +9501,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pipeline_enter_opens_algo_modal_and_left_right_cycles() {
+    fn test_pipeline_enter_and_left_right_open_the_unwrapping_picker() {
         let mut app = App::new();
         assert!(app.goto_field("unwrapping_algorithm"));
         // Navigate to unwrapping_algorithm AlgoSelect
@@ -9530,10 +9531,17 @@ mod tests {
         assert!(app.algo_modal.is_none());
         assert_eq!(app.pipeline_state.unwrapping_algorithm, 1); // laplacian
 
-        // Focus is restored to the selector after confirming; Left still cycles inline (no modal).
+        // Focus is restored to the selector after confirming. With four unwrappers the row is a
+        // picker: Left opens it too, rather than cycling.
         app.handle_key(key(KeyCode::Left));
+        assert_eq!(app.pipeline_state.unwrapping_algorithm, 1);
+        assert!(matches!(
+            app.algo_modal.as_ref().unwrap().target,
+            AlgoModalTarget::Select(ref f) if f == "unwrapping_algorithm"
+        ));
+        app.handle_key(key(KeyCode::Up));
+        app.handle_key(key(KeyCode::Enter));
         assert_eq!(app.pipeline_state.unwrapping_algorithm, 0);
-        assert!(app.algo_modal.is_none());
     }
 
     #[test]

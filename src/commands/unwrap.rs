@@ -50,6 +50,22 @@ pub fn execute(cmd: UnwrapCommand) -> crate::Result<()> {
             save_nifti(&args.common.output, &unwrapped, &phase_nifti)?;
             info!("Unwrapped phase saved to {}", args.common.output.display());
         }
+        UnwrapCommand::MediRegionGrowing(args) => {
+            let phase_nifti = load_nifti(&args.input)?;
+            let grid = super::common::nifti_grid(&phase_nifti);
+            let mut phase_data = phase_nifti.data.clone();
+            phase::scale_phase_to_pi(&mut phase_data);
+            let mag = load_nifti(&args.magnitude)?.data;
+            if mag.len() != phase_data.len() {
+                return Err(crate::error::QsmxtError::Config(format!(
+                    "--magnitude has {} voxels and the phase {}: give one 3D magnitude on the phase's grid",
+                    mag.len(), phase_data.len())));
+            }
+            info!("Unwrapping phase (MEDI region growing, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
+            let unwrapped = qsm_core::unwrap::unwrap_medi_region_growing(&phase_data, &mag, &grid);
+            save_nifti(&args.output, &unwrapped, &phase_nifti)?;
+            info!("Unwrapped phase saved to {}", args.output.display());
+        }
         UnwrapCommand::Prelude(args) => {
             let phase_nifti = load_nifti(&args.common.input)?;
             let (mask, _) = load_mask(&args.common.mask)?;

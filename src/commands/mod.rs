@@ -836,6 +836,27 @@ mod integration_tests {
         assert!(output.exists());
     }
 
+    /// `qsmxt unwrap medi-region-growing` unwraps one 3D phase in order of its magnitude, with no
+    /// mask, and writes the result; a magnitude on another grid is refused.
+    #[test]
+    fn test_unwrap_medi_region_growing() {
+        let dir = tempfile::tempdir().unwrap();
+        let phase = dir.path().join("phase.nii");
+        let mag = dir.path().join("mag.nii");
+        let output = dir.path().join("unwrapped.nii");
+        testutils::write_phase(&phase);
+        testutils::write_magnitude(&mag);
+        super::unwrap::execute(UnwrapCommand::MediRegionGrowing(crate::cli::UnwrapMediRegionGrowingArgs {
+            input: phase.clone(), magnitude: mag, output: output.clone(),
+        })).unwrap();
+        assert!(output.exists());
+        let other = dir.path().join("other.nii");
+        testutils::write_mismatched_volume(&other, 1.0);
+        assert!(super::unwrap::execute(UnwrapCommand::MediRegionGrowing(crate::cli::UnwrapMediRegionGrowingArgs {
+            input: phase, magnitude: other, output,
+        })).is_err());
+    }
+
     /// `qsmxt unwrap prelude` unwraps one 3D phase with its settings and writes the result.
     #[test]
     fn test_unwrap_prelude() {

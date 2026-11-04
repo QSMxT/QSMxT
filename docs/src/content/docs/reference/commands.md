@@ -30,7 +30,7 @@ pipeline, and run the same code as the corresponding pipeline stage. See
 | --- | --- |
 | `mask` | Masking: thresholds, BET, HD-BET, RS2-Net, MindGrab, the `--mask-preset` recipes, morphology, and/or |
 | `combine` | Multi-coil phase combination (MCPC-3D-S) |
-| `unwrap` | Phase unwrapping (ROMEO, Laplacian, PRELUDE) |
+| `unwrap` | Phase unwrapping (ROMEO, Laplacian, PRELUDE, MEDI region growing) |
 | `fieldmap` | Multi-echo B0 field mapping from phase, in ppm |
 | `bgremove` | Background field removal (V-SHARP, PDF, LBV, …, BFRnet) |
 | `invert` | Dipole inversion: every classical and deep-learning method, plus COSMOS and STI |
