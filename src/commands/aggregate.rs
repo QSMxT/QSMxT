@@ -15,10 +15,12 @@ use crate::cli::AggregateArgs;
 pub fn execute(args: AggregateArgs) -> crate::Result<()> {
     let base_dir = args.output_dir.as_deref().unwrap_or(&args.bids_dir);
     let derivatives_dir = base_dir.join("derivatives").join("qsmxt");
-    std::fs::create_dir_all(&derivatives_dir)?;
 
     // Held until qsmxt.log is opened below, where the workers' logs go first.
     run::init_logging(run::LogSink::Buffer(Vec::new()), args.debug);
+    // Before anything is created: the default output directory is inside it.
+    discovery::require_bids_dir(&args.bids_dir)?;
+    std::fs::create_dir_all(&derivatives_dir)?;
 
     let config = run::build_config(args.config.as_deref(), &args.pipeline)?;
 
@@ -29,8 +31,7 @@ pub fn execute(args: AggregateArgs) -> crate::Result<()> {
     };
     let runs = discovery::discover_runs(&args.bids_dir, &filter)?;
     if runs.is_empty() {
-        eprintln!("No QSM-compatible runs found in {}", args.bids_dir.display());
-        return Ok(());
+        return Err(discovery::no_runs(&args.bids_dir, &filter));
     }
 
     // qsmxt.log: what each worker logged, in run order, then this step's own lines — the same

@@ -472,7 +472,13 @@ too — you don't have to use the command line to scale out.
 
 Even without a scheduler, a single `qsmxt run` is parallel. QSMxT processes runs
 concurrently and detects available memory to choose a safe degree of parallelism
-automatically, so it fills your cores without exhausting RAM.
+automatically, so it fills your cores without exhausting RAM. Inside a Slurm job or a
+container, the job's or container's memory limit counts, not the whole machine's memory:
+the log's `Memory:` line says which applied. `--mem-limit-gb` sets the limit yourself.
+
+`qsmxt run`, `slurm`, `aggregate` and `validate` exit with an error (status 1) when the
+BIDS directory does not exist, or when it has no runs to process (none at all, or none
+that match `--include`, `--exclude` and `--num-echoes`).
 
 ### Caching plays nicely with retries
 

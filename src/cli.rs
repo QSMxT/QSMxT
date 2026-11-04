@@ -2056,7 +2056,8 @@ pub struct RunArgs {
     #[arg(long)]
     pub debug: bool,
 
-    /// Memory limit in GB for concurrent run scheduling (auto-detected if not specified)
+    /// Memory limit in GB for concurrent run scheduling (if not specified: the memory available,
+    /// within a Slurm job's or container's memory limit when there is one)
     #[arg(long)]
     pub mem_limit_gb: Option<f64>,
 
