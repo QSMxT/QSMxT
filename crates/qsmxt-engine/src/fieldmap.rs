@@ -105,6 +105,18 @@ pub fn log_robust_fit_report(report: &qsm_core::pipeline::RobustFitReport) {
     }
 }
 
+/// Log how much of `mask` the field map left without a field (`valid_mask`, qsm-core's
+/// `FieldMappingResult::valid_mask`), and return that number of voxels.
+pub fn log_field_mask(mask: &[u8], valid_mask: &[u8]) -> usize {
+    let in_mask = mask.iter().filter(|&&m| m != 0).count();
+    let excluded = mask.iter().zip(valid_mask).filter(|(&m, &v)| m != 0 && v == 0).count();
+    if excluded > 0 {
+        log::info!("Field map: {excluded} voxels ({:.2} % of the mask) excluded where the phase offset could not be \
+                    estimated; the following steps work in the rest", 100.0 * excluded as f64 / in_mask.max(1) as f64);
+    }
+    excluded
+}
+
 /// Log the blurred fit residual QSMART's echo fit cut its reliability map at.
 pub fn log_qsmart_fit_threshold(threshold: f64) {
     log::info!("QSMART echo fit: reliability threshold at a blurred residual of {threshold:.2}");

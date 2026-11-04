@@ -169,7 +169,9 @@ pub fn downstream_steps(step_name: &str) -> Option<&'static [&'static str]> {
         "t2star_r2star" => &["r2_r2prime", "chi_separation", "analysis"],
         "r2_r2prime" => &["chi_separation", "analysis"],
         "chi_separation" => &["analysis"],
-        "unwrap" => &["bgremove", "invert", "tgv", "qsmart", "reference"],
+        // The field map says where the field is defined, the mask the reconstructions and the
+        // reliable-phase mask are restricted to.
+        "unwrap" => &["mask-reliable", "bgremove", "invert", "tgv", "qsmart", "reference"],
         "bgremove" => &["invert", "reference"],
         "invert" | "tgv" | "qsmart" => &["reference"],
         // Both consumers of the referenced χ map: SMWI's weighting, and the per-structure stats.

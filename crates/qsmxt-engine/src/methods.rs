@@ -1752,6 +1752,12 @@ fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
         }
         (false, false) => {}
     }
+    // Where the phase offset could not be estimated there is no field ([`Topic::FieldMask`]); said
+    // when a run left any voxel out.
+    if ran.count(Topic::FieldMask, Choice::Partial) > 0 {
+        doc.say(&[Stage::FieldMap],
+            "Voxels where the phase offset could not be estimated were excluded from the field map and all later steps.".to_string());
+    }
 
     // Unwrapping
     match fm.unwrapping_algorithm {
@@ -2217,6 +2223,11 @@ fn describe_masking(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
             if section_count == 1 { "resulting" } else { "combined" },
             join_list(&combined_descs)
         ));
+    }
+    // The scanner's own masking of the phase ([`Topic::ScannerMaskedPhase`]): said when a run had any.
+    if ran.count(Topic::ScannerMaskedPhase, Choice::Partial) > 0 {
+        doc.say(&[Stage::Mask(Pass::Main)],
+            "Voxels where the scanner recorded no phase (a constant value in every echo) were left out of the mask.".to_string());
     }
 
     // Exactly the consensus recipe — say so, and cite it.

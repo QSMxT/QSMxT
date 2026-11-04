@@ -66,6 +66,11 @@ pub enum Item {
     /// QSMART's reliability map `R_0` from its echo fit (1 = reliable), over the whole volume:
     /// where QSMART reconstructs, within the brain mask.
     FieldReliability,
+    /// The run's mask restricted to where the total field is defined: phase-offset removal leaves
+    /// no field where it could not estimate the phase offset (qsm-core's
+    /// `FieldMappingResult::valid_mask`). Background removal and the reconstructions of the total
+    /// field run inside it.
+    FieldMask,
     /// A pass's local field in ppm.
     LocalField(Pass),
     /// Where a pass's local field is defined.
@@ -207,8 +212,8 @@ impl Item {
             (name, None) => [
                 Item::CoilCombinationMask, Item::CombinedMagnitude, Item::BrainMask, Item::SuppliedMask,
                 Item::CoverageMask, Item::FieldPpm, Item::TotalFieldHz, Item::TotalFieldMagnitude,
-                Item::RobustFitReport, Item::FieldReliability, Item::ReliableMask, Item::CombinedRawChi, Item::Chi, Item::ChiSupport,
-                Item::SinglePassChi, Item::Segmentation, Item::SuppliedSegmentation, Item::SegmentationLabels,
+                Item::RobustFitReport, Item::FieldReliability, Item::FieldMask, Item::ReliableMask, Item::CombinedRawChi,
+                Item::Chi, Item::ChiSupport, Item::SinglePassChi, Item::Segmentation, Item::SuppliedSegmentation, Item::SegmentationLabels,
                 Item::SegmentationVolumes, Item::RegionStats, Item::MotionReport, Item::Swi, Item::SwiMip,
                 Item::R2star, Item::T2star, Item::SuppliedR2, Item::R2, Item::SuppliedR2prime, Item::R2prime,
                 Item::R2primeCoverage, Item::SuppliedChi, Item::SeparatedTotalChi,

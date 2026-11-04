@@ -2282,7 +2282,7 @@ dependencies = [
 [[package]]
 name = "qsm-core"
 version = "0.0.0"
-source = "git+https://github.com/astewartau/QSM.rs.git?rev=de9231e7e2095fc48b883cecad0e5b407e9edcef#de9231e7e2095fc48b883cecad0e5b407e9edcef"
+source = "git+https://github.com/astewartau/QSM.rs.git?rev=0cc597c9f222717544563a1adcdb13f8322fb0e1#0cc597c9f222717544563a1adcdb13f8322fb0e1"
 dependencies = [
  "bytemuck",
  "delaunator",
@@ -2315,6 +2315,7 @@ dependencies = [
  "crossterm",
  "dicom",
  "env_logger",
+ "flate2",
  "fontdue",
  "glob",
  "indicatif",

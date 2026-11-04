@@ -73,6 +73,12 @@ pub enum Topic {
     MotionCorrection,
     /// DECOMPOSE's χ bound, computed from the scan's field strength and echo spacing.
     ChiBound,
+    /// Part of the mask without a field: the phase offset could not be estimated there
+    /// ([`Choice::Partial`]).
+    FieldMask,
+    /// Part of the field of view without phase, written by the scanner as a constant, left out
+    /// of the mask ([`Choice::Partial`]).
+    ScannerMaskedPhase,
 }
 
 /// What was decided.
@@ -103,7 +109,8 @@ pub enum Choice {
     Predicted,
     /// Not made: nothing to make it from.
     Unavailable,
-    /// Over part of the brain mask only ([`Topic::R2Coverage`], [`Topic::R2primeCoverage`]).
+    /// Over part of the brain mask only ([`Topic::R2Coverage`], [`Topic::R2primeCoverage`],
+    /// [`Topic::FieldMask`]).
     Partial,
     /// Uncalibrated ([`Topic::R2primenetCalibration`]).
     Uncalibrated,

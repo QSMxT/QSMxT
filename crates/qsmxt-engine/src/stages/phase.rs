@@ -16,6 +16,10 @@ pub fn params(meta: &RunMetadata, real_imaginary: Option<bool>, config: &Pipelin
     if let Some(negate_phase) = real_imaginary {
         params["input"] = serde_json::json!("real_imaginary");
         params["negate_phase"] = serde_json::json!(negate_phase);
+    } else if meta.source_geometry.is_none() && config.pipeline.tukey_window <= 0.0 && meta.has_magnitude {
+        // The magnitudes are kept as acquired, and their copies are now real `.nii` files, not
+        // gzipped data under a `.nii` name: runs from before that are copied again.
+        params["magnitude_copy"] = serde_json::json!(2);
     }
     add_tukey_window(&mut params, config);
     params

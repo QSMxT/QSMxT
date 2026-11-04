@@ -241,6 +241,7 @@ impl Ctx<'_> {
 
     fn pass_mask(&self, pass: Pass) -> Item {
         match pass {
+            Pass::Main if crate::run::field_mask_written(self.plan, self.config, self.n()) => Item::FieldMask,
             Pass::Main => self.mask_item(),
             Pass::Reliable => Item::ReliableMask,
         }
@@ -424,7 +425,7 @@ impl Ctx<'_> {
             Stage::Mask(Pass::Reliable) => {
                 reads.extend(self.echoes(Item::Phase));
                 reads.extend(self.magnitudes());
-                reads.push(self.mask_item());
+                reads.push(self.pass_mask(Pass::Main));
                 writes.push(Item::ReliableMask);
             }
             Stage::Motion => {
@@ -440,6 +441,9 @@ impl Ctx<'_> {
                 reads.extend(self.echo_magnitudes());
                 reads.push(self.mask_item());
                 writes.extend([Item::FieldPpm, Item::TotalFieldHz]);
+                if !self.per_echo() {
+                    writes.push(Item::FieldMask);
+                }
                 if f.has_magnitude {
                     writes.push(Item::TotalFieldMagnitude);
                 }

@@ -343,10 +343,13 @@ fn run_field_mapping(
         qsmxt_engine::fieldmap::log_qsmart_fit_threshold(t);
     }
     let mut field_ppm = field.b0_field_ppm;
+    // Where the field is defined: the mask less the voxels phase offset removal could not
+    // estimate an offset for (qsm-core's `valid_mask`).
+    qsmxt_engine::fieldmap::log_field_mask(&mask, &field.valid_mask);
 
-    // run_field_mapping already restricts to the mask, but multiply defensively so
-    // out-of-brain voxels are exactly zero (matching the qsm-ci masked-ppm output).
-    for (v, &m) in field_ppm.iter_mut().zip(mask.iter()) {
+    // run_field_mapping already restricts to that mask, but multiply defensively so the voxels
+    // outside it are exactly zero (matching the qsm-ci masked-ppm output).
+    for (v, &m) in field_ppm.iter_mut().zip(field.valid_mask.iter()) {
         if m == 0 {
             *v = 0.0;
         }
@@ -361,6 +364,10 @@ fn run_field_mapping(
             "--reliability-output: only --b0-estimation qsmart-echofit makes a reliability map".into()))?;
         super::common::save_mask(path, reliability, &reference)?;
         info!("Echo-fit reliability map saved to {}", path.display());
+    }
+    if let Some(path) = &common.field_mask_output {
+        super::common::save_mask(path, &field.valid_mask, &reference)?;
+        info!("Field mask saved to {}", path.display());
     }
     Ok(())
 }
@@ -594,6 +601,7 @@ mod tests {
         let phase_path = dir.path().join("phase.nii");
         let mask_path = dir.path().join("mask.nii");
         let out_path = dir.path().join("field.nii");
+        let field_mask_path = dir.path().join("field_mask.nii");
 
         let n = NX * NY * NZ;
         let b0 = 3.0;
@@ -628,7 +636,7 @@ mod tests {
             robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
             robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
             qsmart_fit_threshold_mode: None, qsmart_fit_percentile: None, qsmart_fit_threshold: None,
-            reliability_output: None, complex_fit_output: None, complex_fit_noise_output: None,
+            reliability_output: None, field_mask_output: Some(field_mask_path.clone()), complex_fit_output: None, complex_fit_noise_output: None,
             complex_fit_reltol: None, complex_fit_max_iter: None,
         };
         let args = FieldmapRomeoArgs {
@@ -644,6 +652,8 @@ mod tests {
 
         let out = qsm_core::io::read_nifti_file(&out_path).unwrap();
         assert_eq!(out.data.len(), n);
+        // Without offset removal the field is defined over the whole mask.
+        assert!(qsm_core::io::read_nifti_file(&field_mask_path).unwrap().data.iter().all(|&v| v == 1.0));
 
         let expected_ppm = freq_hz * 1e6 / (qsm_core::constants::GAMMA_BAR_HZ_PER_T * b0);
         let mean: f64 = out.data.iter().sum::<f64>() / n as f64;
@@ -712,7 +722,7 @@ mod tests {
             robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
             robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
             qsmart_fit_threshold_mode: None, qsmart_fit_percentile: None, qsmart_fit_threshold: None,
-            reliability_output: None, complex_fit_output: None, complex_fit_noise_output: None,
+            reliability_output: None, field_mask_output: None, complex_fit_output: None, complex_fit_noise_output: None,
             complex_fit_reltol: None, complex_fit_max_iter: None,
         };
         let p = resolve_scan_params(&common).unwrap();
@@ -749,7 +759,7 @@ mod tests {
             robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
             robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
             qsmart_fit_threshold_mode: None, qsmart_fit_percentile: None, qsmart_fit_threshold: None,
-            reliability_output: None, complex_fit_output: None, complex_fit_noise_output: None,
+            reliability_output: None, field_mask_output: None, complex_fit_output: None, complex_fit_noise_output: None,
             complex_fit_reltol: None, complex_fit_max_iter: None,
         };
         let args = FieldmapRomeoArgs {

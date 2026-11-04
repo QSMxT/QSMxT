@@ -14,6 +14,9 @@ pub fn params(config: &PipelineConfig) -> serde_json::Value {
         "combine": format!("{}", config.masking.combine),
         "refinements": config.masking.refinements.iter().map(|o| format!("{}", o)).collect::<Vec<_>>(),
         "custom_mask_tool": config.masking.custom_mask_tool,
+        // Every recipe's mask leaves out the voxels where the scanner wrote no phase
+        // ([`ScannerMasked`]); masks from before that are made again.
+        "scanner_masked_phase": 1,
     })
 }
 
@@ -24,6 +27,7 @@ pub fn reliable_params(config: &PipelineConfig) -> serde_json::Value {
         "sections": sections.iter().map(|s| format!("{}", s)).collect::<Vec<_>>(),
         "combine": format!("{}", config.masking.resolved_two_pass_combine()),
         "refinements": config.masking.refinements.iter().map(|o| format!("{}", o)).collect::<Vec<_>>(),
+        "scanner_masked_phase": 1,
     })
 }
 
@@ -56,12 +60,24 @@ pub fn build_mask(
     phases: &[&[f64]],
     magnitudes: Vec<Vec<f64>>,
     meta: &RunMetadata,
-) -> Result<Vec<u8>, EngineError> {
+) -> Result<MaskPreview, EngineError> {
     let mut inputs = MaskInputs::default();
     inputs.fill::<EngineError>(sections, config, String::new(), meta, || Ok((
         phases.iter().map(|p| p.to_vec()).collect(), magnitudes,
     )))?;
-    Ok(preview(sections, combine, config, &inputs, meta, Upto::Recipe)?.mask)
+    preview(sections, combine, config, &inputs, meta, Upto::Recipe)
+}
+
+/// Where the scanner wrote no phase (qsm-core's `mask::scanner_masked_phase`): Philips, for one,
+/// writes a constant phase (−π once scaled) in every echo outside its own signal mask. A
+/// phase-quality mask rates that flat phase as highly reliable and takes it in, so every
+/// recipe's mask is restricted to the voxels that have data ([`preview`] of the whole recipe).
+#[derive(Debug, Clone, Default)]
+pub struct ScannerMasked {
+    /// 1 where the phase holds data.
+    pub has_data: Vec<u8>,
+    /// Voxels of the field of view without data (0: the scanner masked nothing).
+    pub voxels: usize,
 }
 
 /// The images mask sections work from, built once and kept for previews: for each input a
@@ -84,6 +100,8 @@ pub struct MaskInputs {
     /// The magnitude each input's sections (and the refinements after combining, which see the
     /// RSS) work with; `None` for a phase-only run.
     magnitudes: std::collections::HashMap<MaskingInput, Option<std::sync::Arc<Vec<f64>>>>,
+    /// Where the scanner wrote no phase, from every echo's phase.
+    scanner_masked: Option<std::sync::Arc<ScannerMasked>>,
 }
 
 /// Every echo's phase, and every echo's magnitude (none for a phase-only run).
@@ -112,6 +130,7 @@ impl MaskInputs {
         if self.key.as_deref() != Some(key.as_str()) {
             self.images.clear();
             self.magnitudes.clear();
+            self.scanner_masked = None;
             self.key = Some(key);
         }
         let wanted_images: Vec<MaskingInput> = sections.iter().map(|s| s.input).collect();
@@ -120,10 +139,16 @@ impl MaskInputs {
             wanted_images.iter().copied().chain(std::iter::once(MaskingInput::Magnitude)).collect();
         if wanted_images.iter().all(|i| self.images.contains_key(i))
             && wanted_magnitudes.iter().all(|i| self.magnitudes.contains_key(i))
+            && self.scanner_masked.is_some()
         {
             return Ok(());
         }
         let (phases, magnitudes) = load()?;
+        if self.scanner_masked.is_none() {
+            let refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
+            let found = qsm_core::mask::scanner_masked_phase(&refs);
+            self.scanner_masked = Some(std::sync::Arc::new(ScannerMasked { has_data: found.has_data, voxels: found.n_masked }));
+        }
         let magnitudes = if config.masking.inhomogeneity_correction {
             magnitudes.into_iter().enumerate()
                 .map(|(i, m)| homogeneity_correct(&m, meta, config, &format!("echo {}'s magnitude", i + 1)))
@@ -162,6 +187,11 @@ impl MaskInputs {
         self.images.get(&input)
     }
 
+    /// Where the scanner wrote no phase, once filled.
+    pub fn scanner_masked(&self) -> Option<&ScannerMasked> {
+        self.scanner_masked.as_deref()
+    }
+
     fn magnitude(&self, input: MaskingInput) -> Option<&[f64]> {
         self.magnitudes.get(&input).and_then(|m| m.as_deref()).map(|m| m.as_slice())
     }
@@ -177,7 +207,7 @@ impl MaskInputs {
                 total += a.len() * std::mem::size_of::<f64>();
             }
         }
-        total
+        total + self.scanner_masked.as_ref().map_or(0, |s| s.has_data.len())
     }
 }
 
@@ -215,6 +245,11 @@ pub struct MaskPreview {
     pub otsu: f64,
     /// The voxels in the mask.
     pub voxels: usize,
+    /// The voxels the recipe's mask had where the scanner wrote no phase, which it was cut down
+    /// by ([`ScannerMasked`]; 0 for a section on its own, which is not cut).
+    pub scanner_masked_removed: usize,
+    /// The voxels of the field of view where the scanner wrote no phase (0 when it masked none).
+    pub scanner_masked_voxels: usize,
 }
 
 /// The mask `sections` make (folded with `combine`, then the configured refinements),
@@ -278,11 +313,25 @@ pub fn preview(
             (mask, 0)
         }
     };
+    // The whole recipe's mask, without the voxels where the scanner wrote no phase.
+    let mut mask = mask;
+    let mut scanner_masked_removed = 0;
+    if let (Upto::Recipe, Some(s)) = (upto, inputs.scanner_masked()) {
+        if s.voxels > 0 {
+            for (m, &h) in mask.iter_mut().zip(&s.has_data) {
+                if *m != 0 && h == 0 {
+                    *m = 0;
+                    scanner_masked_removed += 1;
+                }
+            }
+        }
+    }
     let input = sections[shown].input;
     let image = inputs.image(input).ok_or_else(|| missing(input))?.clone();
     let otsu = qsm_core::utils::otsu_threshold(&image, 256);
     let voxels = mask.iter().filter(|&&v| v != 0).count();
-    Ok(MaskPreview { mask, input, image, otsu, voxels })
+    let scanner_masked_voxels = inputs.scanner_masked().map_or(0, |s| s.voxels);
+    Ok(MaskPreview { mask, input, image, otsu, voxels, scanner_masked_removed, scanner_masked_voxels })
 }
 
 /// A supplied mask (`data` on its own grid, `dims` and `affine`) on the run's working grid:
@@ -399,7 +448,7 @@ mod tests {
         let mut config = PipelineConfig::default();
         config.masking.inhomogeneity_correction = false;
         config.masking.refinements = refinements;
-        build_mask(sections, combine, &config, &[], vec![magnitude.to_vec()], &meta(dims))
+        build_mask(sections, combine, &config, &[], vec![magnitude.to_vec()], &meta(dims)).map(|p| p.mask)
     }
 
     /// A reliable mask with no holes, or no voxels, makes the second reconstruction pointless —
@@ -522,7 +571,33 @@ mod tests {
 
         config.masking.inhomogeneity_correction = false;
         let mask = build_mask(&sections, MaskCombine::Or, &config, &[], vec![vec![1.0; 64]], &meta).unwrap();
-        assert_eq!(mask.len(), 64);
+        assert_eq!(mask.mask.len(), 64);
+    }
+
+    /// Whatever the recipe, the mask leaves out the voxels where the scanner wrote a constant phase
+    /// in every echo, and says how many; a scan without any loses nothing.
+    #[test]
+    fn a_recipes_mask_leaves_out_the_voxels_where_the_scanner_wrote_no_phase() {
+        let meta = crate::stages::magnitude::tests::meta_4x4x4();
+        let mut config = PipelineConfig::default();
+        config.masking.inhomogeneity_correction = false;
+        let sections = vec![MaskSection {
+            input: MaskingInput::Magnitude,
+            generator: MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(0.0) },
+            refinements: vec![],
+        }];
+        let measured = |e: usize| -> Vec<f64> { (0..64).map(|i| 0.01 * (i + 1) as f64 * (e + 1) as f64).collect() };
+        let masked = |e: usize| -> Vec<f64> {
+            measured(e).into_iter().enumerate().map(|(i, p)| if i < 24 { -std::f64::consts::PI } else { p }).collect()
+        };
+        let (p1, p2) = (masked(0), masked(1));
+        let built = build_mask(&sections, MaskCombine::Or, &config, &[&p1, &p2], vec![vec![1.0; 64]; 2], &meta).unwrap();
+        assert_eq!((built.scanner_masked_removed, built.scanner_masked_voxels, built.voxels), (24, 24, 40));
+        assert!(built.mask[..24].iter().all(|&m| m == 0) && built.mask[24..].iter().all(|&m| m == 1));
+
+        let (p1, p2) = (measured(0), measured(1));
+        let built = build_mask(&sections, MaskCombine::Or, &config, &[&p1, &p2], vec![vec![1.0; 64]; 2], &meta).unwrap();
+        assert_eq!((built.scanner_masked_removed, built.scanner_masked_voxels, built.voxels), (0, 0, 64));
     }
 
     #[test]

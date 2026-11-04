@@ -576,9 +576,12 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         if self.plan.motion_corrected { Item::CoverageMask } else { Item::BrainMask }
     }
 
-    /// The mask a reconstruction pass runs on.
+    /// The mask a reconstruction pass runs on: the main pass's is where the total field is
+    /// defined ([`Item::FieldMask`]) when the run maps one field from every echo, the run's mask
+    /// otherwise; the reliable pass's is made inside that.
     fn pass_mask(&self, pass: Pass) -> Item {
         match pass {
+            Pass::Main if field_mask_written(self.plan, self.config, self.n_echoes()) => Item::FieldMask,
             Pass::Main => self.mask_item(),
             Pass::Reliable => Item::ReliableMask,
         }
@@ -922,12 +925,32 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
 
     /// Build a mask from `sections`, with the weights of the deep-learning `models` it runs ready
     /// first: every echo's phase, and every echo's magnitude (none for a phase-only run).
+    /// Voxels where the scanner wrote no phase are left out ([`stages::mask::ScannerMasked`]), and
+    /// how many is logged and, for the main mask, recorded.
     fn build_mask(&mut self, sections: &[crate::masking::MaskSection], combine: crate::masking::MaskCombine,
                   models: &[&'static str]) -> Result<Vec<u8>, S::Error> {
         let (phases, magnitudes) = self.echoes()?;
         self.store.models(models)?;
         let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
-        Ok(stages::mask::build_mask(sections, combine, self.config, &phase_refs, magnitudes, &self.meta)?)
+        let built = stages::mask::build_mask(sections, combine, self.config, &phase_refs, magnitudes, &self.meta)?;
+        let removed = built.scanner_masked_removed;
+        if removed > 0 {
+            let fov = built.mask.len().max(1);
+            let without = built.scanner_masked_voxels;
+            let kept = built.voxels;
+            self.log(Level::Info, &format!(
+                "{:.1} % of the field of view has no phase (written by the scanner as a constant): {removed} voxels \
+                 ({:.1} % of the recipe's mask) left out of the mask",
+                100.0 * without as f64 / fov as f64, 100.0 * removed as f64 / (kept + removed).max(1) as f64));
+            if !self.decisions.iter().any(|d| d.topic == Topic::ScannerMaskedPhase) {
+                self.decide(Decision::new(Topic::ScannerMaskedPhase, Choice::Partial,
+                    "Voxels where the scanner recorded no phase were left out of the mask.")
+                    .with_detail(format!("{removed} voxels ({:.1} % of the recipe's mask; {:.1} % of the field of view has no phase)",
+                                         100.0 * removed as f64 / (kept + removed).max(1) as f64,
+                                         100.0 * without as f64 / fov as f64)));
+            }
+        }
+        Ok(built.mask)
     }
 
     fn mask(&mut self, step: &Step) -> Result<(), S::Error> {
@@ -1000,7 +1023,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         self.log(Level::Info, &format!("Creating the reliable-phase mask ({} section(s), combined with {combine})",
                                        sections.len()));
         let reliable = self.build_mask(&sections, combine, &step.models)?;
-        let main_item = self.mask_item();
+        let main_item = self.pass_mask(Pass::Main);
         let main = self.store.mask(&main_item)?;
         let restricted = stages::mask::reliable_mask(&reliable, &main)?;
         self.put(Item::ReliableMask, Data::Mask(&restricted))?;
@@ -1051,13 +1074,21 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let mag_refs: Vec<&[f64]> = magnitudes.iter().map(|m| m.as_slice()).collect();
         let field = stages::field::map_field(&phase_refs, &mag_refs, &mask, &self.meta, self.config)?;
         drop(phases);
+        if field.excluded > 0 {
+            let in_mask = mask.iter().filter(|&&m| m != 0).count();
+            self.decide(Decision::new(Topic::FieldMask, Choice::Partial,
+                "Voxels where the phase offset could not be estimated were excluded from the field map and every step after it.")
+                .with_detail(format!("{} voxels ({:.2} % of the mask)", field.excluded,
+                                     100.0 * field.excluded as f64 / in_mask.max(1) as f64)));
+        }
 
         self.put(Item::FieldPpm, Data::Real(&field.b0_field_ppm))?;
         self.put(Item::TotalFieldHz, Data::Real(&field.total_field_hz))?;
+        self.put(Item::FieldMask, Data::Mask(&field.field_mask))?;
         let first_echo_time = self.meta.echo_times[0];
         let fields = |item: &Item| crate::bids::outputs::step_fields(item, first_echo_time).unwrap_or_default();
         self.store.annotate(&Item::TotalFieldHz, fields(&Item::TotalFieldHz))?;
-        let mut outputs = vec![Item::FieldPpm, Item::TotalFieldHz];
+        let mut outputs = vec![Item::FieldPpm, Item::TotalFieldHz, Item::FieldMask];
         // A published field map is paired with a magnitude for anatomical reference: the first
         // echo's, the one with the most signal.
         if let Some(first) = magnitudes.first() {
@@ -2303,6 +2334,12 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             step: "output_space", algorithm: None, params: &params, outcome: None, key: &key, outputs: &items,
         }, "Output space")
     }
+}
+
+/// Whether the field-mapping step writes [`Item::FieldMask`]: when it maps one total field from
+/// every echo (not a per-echo QSM's echo fields, nor a route without a field map).
+pub(crate) fn field_mask_written(plan: &Plan, config: &PipelineConfig, n_echoes: usize) -> bool {
+    plan.has(Stage::FieldMap) && !crate::bridge::per_echo(config, n_echoes)
 }
 
 /// How a pass is named in progress messages and the log: nothing for a single-pass run's (only)

@@ -210,6 +210,8 @@ pub const FMAP_SUFFIXES: [&str; 2] = ["fieldmap", "magnitude"];
 pub fn total_fieldmap_ppm() -> Tail { Tail::new("fieldmap").with("desc", "totalppm") }
 /// QSMART's echo-fit reliability map, kept beside the total field (a workflow intermediate).
 pub fn echofit_reliability_mask() -> Tail { mask_desc("echofit") }
+/// The mask the total field is defined in, kept beside it (a workflow intermediate).
+pub fn field_mask() -> Tail { mask_desc("field") }
 /// A susceptibility map before referencing (a workflow intermediate).
 pub fn unreferenced_chimap() -> Tail { chimap_desc("unreferenced") }
 

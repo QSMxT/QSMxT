@@ -195,9 +195,38 @@ fn preset(args: &MaskPresetArgs, recipe: MaskRecipe) -> crate::Result<()> {
     if recipe.sections.len() > 1 {
         info!("Combined {} sections with {}", recipe.sections.len(), recipe.combine);
     }
-    let mask = refine(mask, &recipe.refinements, &magnitude, Some(&magnitude.data))?;
+    let mut mask = refine(mask, &recipe.refinements, &magnitude, Some(&magnitude.data))?;
+    if let Some(path) = &args.phase {
+        leave_out_scanner_masked(&mut mask, path, &magnitude)?;
+    }
     let mask = refine_with(mask, &args.common.ops, &magnitude, Some(&magnitude.data))?;
     save_and_log(&args.common, &mask, &magnitude)
+}
+
+/// `--phase`: the voxels where the scanner wrote no phase leave the mask, as they leave every
+/// recipe's mask in `qsmxt run` (qsmxt-engine's `stages::mask::ScannerMasked`).
+fn leave_out_scanner_masked(mask: &mut [u8], path: &std::path::Path, reference: &NiftiData) -> crate::Result<()> {
+    let phase = load_nifti_4d(path)?;
+    let dims = phase.geometry_reference().dims;
+    if dims != reference.dims {
+        return Err(QsmxtError::Config(format!(
+            "--phase {} is {:?} but the input image is {:?}", path.display(), dims, reference.dims,
+        )));
+    }
+    let echoes: Vec<&[f64]> = phase.echoes.iter().map(|e| e.as_slice()).collect();
+    let found = qsm_core::mask::scanner_masked_phase(&echoes);
+    let mut removed = 0;
+    for (m, &has_data) in mask.iter_mut().zip(&found.has_data) {
+        if *m != 0 && has_data == 0 {
+            *m = 0;
+            removed += 1;
+        }
+    }
+    if found.n_masked > 0 {
+        info!("{:.1} % of the field of view has no phase (written by the scanner as a constant): {removed} voxels left out of the mask",
+              100.0 * found.n_masked as f64 / mask.len().max(1) as f64);
+    }
+    Ok(())
 }
 
 /// Fold masks together with `mode`, then apply `--op` refinements to the result — the standalone
@@ -250,7 +279,7 @@ pub fn execute(cmd: MaskCommand) -> crate::Result<()> {
         MaskCommand::Mindgrab(args) => { let op = mindgrab_op(&args)?; generate(&args.common, op) }
         MaskCommand::Preset(args) => { let recipe = mask_preset_recipe(args.preset)?; preset(&args, recipe) }
         MaskCommand::Robust(args) => preset(
-            &MaskPresetArgs { preset: crate::cli::MaskPresetArg::RobustThreshold, common: args.common, quality: None },
+            &MaskPresetArgs { preset: crate::cli::MaskPresetArg::RobustThreshold, common: args.common, quality: None, phase: None },
             mask_preset_recipe(crate::cli::MaskPresetArg::RobustThreshold)?,
         ),
         MaskCommand::Erode(args) => refine_file(&args.common, MaskOp::Erode { iterations: args.iterations }),
