@@ -340,6 +340,9 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(ref p) = args.orientation_group {
             config.multi_orientation.group_by = p.clone();
         }
+        if let Some(ref r) = args.orientation_reference {
+            config.multi_orientation.reference = r.clone();
+        }
         if let Some(a) = args.multi_orientation_algorithm {
             config.multi_orientation.algorithm = match a {
                 cli::MultiOrientAlgorithmArg::Cosmos => MultiOrientAlgorithm::Cosmos,

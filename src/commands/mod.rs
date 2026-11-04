@@ -58,6 +58,7 @@ mod integration_tests {
                 orientation_group: None,
                 multi_orientation_algorithm: None,
                 multi_orientation_lambda: None,
+                orientation_reference: None,
                 multi_orientation_force: false,
                 no_orientation_registration: false,
                 cosmos_magnitude_weighting: false,
@@ -1985,6 +1986,49 @@ mod integration_tests {
         let deriv = out.join("derivatives/qsmxt");
         assert!(deriv.join("sub-1/ses-1/anat/sub-1_ses-1_desc-cosmos_Chimap.nii").exists());
         assert!(niftis_with_mtime(&deriv.join("workflow")).is_empty(), "workflow/ still holds images");
+    }
+
+    /// `--orientation-reference` decides the group's frame: the sidecar names it, whichever run
+    /// sorts first.
+    #[test]
+    fn the_orientation_reference_is_the_groups_frame() {
+        let dir = tempfile::tempdir().unwrap();
+        let bids = dir.path().join("bids");
+        let out = dir.path().join("out");
+        testutils::create_multi_orientation_bids(&bids);
+        let mut args = default_run_args(bids, out.clone());
+        args.dry = false;
+        args.no_mem_limit = true;
+        args.include = Some(vec!["*acq-dir*".to_string()]);
+        args.pipeline.orientation_group = Some("acq".to_string());
+        args.pipeline.orientation_reference = Some("dir3".to_string());
+        args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
+        args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
+        super::run::execute(args).unwrap();
+        let sidecar = out.join("derivatives/qsmxt/sub-1/ses-1/anat/sub-1_ses-1_desc-cosmos_Chimap.json");
+        let sidecar: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(sidecar).unwrap()).unwrap();
+        let reference = sidecar["ReferenceOrientation"].as_str().unwrap();
+        assert!(reference.contains("acq-dir3"), "{reference}");
+    }
+
+    /// A reference that matches no orientation is refused before any run's pipeline starts,
+    /// not after hours of them at the fan-in.
+    #[test]
+    fn an_unmatched_orientation_reference_refuses_the_run_up_front() {
+        let dir = tempfile::tempdir().unwrap();
+        let bids = dir.path().join("bids");
+        let out = dir.path().join("out");
+        testutils::create_multi_orientation_bids(&bids);
+        let mut args = default_run_args(bids, out.clone());
+        args.dry = false;
+        args.no_mem_limit = true;
+        args.include = Some(vec!["*acq-dir*".to_string()]);
+        args.pipeline.orientation_group = Some("acq".to_string());
+        args.pipeline.orientation_reference = Some("Neutral".to_string());
+        args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
+        let err = super::run::execute(args).unwrap_err().to_string();
+        assert!(err.contains("orientation reference 'Neutral' matches none"), "{err}");
+        assert!(!out.join("derivatives/qsmxt/workflow").exists(), "a pipeline ran before the refusal");
     }
 
     /// The table summarises what the run made, so a run that makes no susceptibility map at all

@@ -293,6 +293,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             }
         }),
         multi_orientation_lambda: orientation_lambda,
+        orientation_reference: Some(app.filter_state.orientation_reference.trim().to_string())
+            .filter(|r| grouped && !r.is_empty()),
         orientation_group,
         multi_orientation_force: grouped && ps.multi_orientation_force,
         no_orientation_registration: grouped && !ps.orientation_registration,
@@ -2579,6 +2581,7 @@ mod parity {
             ("orientation_group", |_| {}, |a| a.filter_state.orientation_group = "acq".into()),
             ("orientation_algorithm", |a| a.filter_state.orientation_group = "acq".into(), |a| a.filter_state.orientation_algorithm = 1),
             ("orientation_lambda", |a| a.filter_state.orientation_group = "acq".into(), |a| a.filter_state.orientation_lambda = "0.5".into()),
+            ("orientation_reference", |a| a.filter_state.orientation_group = "acq".into(), |a| a.filter_state.orientation_reference = "Neutral".into()),
             ("bet_smoothness", |a| a.pipeline_state.set_select("mask_preset", 1), |a| a.pipeline_state.bet_smoothness = "2".into()),
             ("bet_gradient_threshold", |a| a.pipeline_state.set_select("mask_preset", 1), |a| a.pipeline_state.bet_gradient_threshold = "0.3".into()),
             ("bet_iterations", |a| a.pipeline_state.set_select("mask_preset", 1), |a| a.pipeline_state.bet_iterations = "500".into()),

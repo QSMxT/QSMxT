@@ -904,6 +904,7 @@ pub(super) fn table() -> Vec<Def> {
         .gui("How the orientations of a group are combined into one map"),
         d("multi_orientation.lambda", MultiOrientation, "Lambda", "Regularization (blank = 0, plain least squares). Raise for 2 orientations or single-axis rotations", Float).flag("--multi-orientation-lambda").parent("multi_orientation.group_by")
         .gui("Regularisation weight; 0 is plain least squares. Raise it for 2 orientations or single-axis rotations"),
+        d("multi_orientation.reference", MultiOrientation, "Reference orientation", "Orientation the others are registered onto, whose grid and segmentation the group map uses: a glob over the run key (*acq-Neutral*) or a word in it. Blank = first by name. Pick the neutral head position", Text).flag("--orientation-reference").parent("multi_orientation.group_by"),
         d("multi_orientation.magnitude_weighting", MultiOrientation, "COSMOS magnitude weighting", "COSMOS groups: weight each orientation by its combined magnitude (conjugate-gradient solve). Off = closed-form least squares", Bool).flag("--cosmos-magnitude-weighting").parent("multi_orientation.algorithm")
         .when(|x| x.cosmos),
         // QSMxT MultiOrientationConfig::validate: tolerance must be > 0.

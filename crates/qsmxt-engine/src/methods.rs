@@ -1582,10 +1582,16 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
         // How the orientations got onto one grid is part of the method, not an implementation
         // detail: it determines where the B0 directions came from, which is half the input.
         if config.multi_orientation.register {
+            let reference = config.multi_orientation.reference.trim();
+            let target = if reference.is_empty() {
+                "the first orientation's grid".to_string()
+            } else {
+                format!("the grid of the reference orientation ({reference})")
+            };
             doc.say(&[], format!(
                 "Orientations that were not already on a common grid were rigidly co-registered \
                  (6 degrees of freedom, normalized cross-correlation over a multi-resolution \
-                 pyramid{}) onto the first orientation's grid using the magnitude images, and each \
+                 pyramid{}) onto {target} using the magnitude images, and each \
                  orientation's B0 direction was derived from the recovered rotation.",
                 registration_changes(config).semi(),
             ));

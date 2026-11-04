@@ -2876,6 +2876,21 @@ mod orientation_block_tests {
         assert!(text.contains("needs 6"), "{text}");
     }
 
+    /// The reference orientation is listed first and marked; one that matches no member is
+    /// reported where the groups would be, as the run would refuse it.
+    #[test]
+    fn the_reference_orientation_is_marked_and_checked() {
+        let (mut app, _d) = app_with_orientations();
+        app.filter_state.orientation_group = "*acq-dir*".into();
+        app.filter_state.orientation_reference = "dir3".into();
+        let text = screen_text(&render_app_sized(&mut app, 200, 60));
+        let line = text.lines().find(|l| l.contains("3 orientations")).unwrap_or_else(|| panic!("{text}"));
+        assert!(line.contains("(acq-dir3_MEGRE [reference], acq-dir1"), "{line}");
+        app.filter_state.orientation_reference = "dir9".into();
+        let text = screen_text(&render_app_sized(&mut app, 200, 60));
+        assert!(text.contains("matches none"), "{text}");
+    }
+
     #[test]
     fn an_invalid_pattern_is_reported_inline() {
         let (mut app, _d) = app_with_orientations();

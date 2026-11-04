@@ -1487,6 +1487,12 @@ pub struct PipelineArgs {
     #[arg(long, value_name = "PATTERN")]
     pub orientation_group: Option<String>,
 
+    /// The orientation each group is registered onto, and whose grid and segmentation the
+    /// group map uses: a glob over the run key (`*acq-Neutral*`) or a word in it. Must match one
+    /// run per group. Default: the first run in name order
+    #[arg(long, value_name = "PATTERN")]
+    pub orientation_reference: Option<String>,
+
     /// Do not co-register the orientations in a group — use this when they were already
     /// registered externally and a second interpolation is not wanted. A group that still needs
     /// registration is then refused instead of reconstructed
