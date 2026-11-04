@@ -9,7 +9,7 @@
 use log::info;
 use qsm_core::geometry::{
     b0_angle_from_affine, obliquity_axes_from_affine, obliquity_from_affine,
-    resample_complex_to_axial, resample_to_axial, AxialResampleParams,
+    resample_complex_to_axial, resample_to_axial, AxialResampleParams, QSMXT8_NOISE_FILL_FRACTION,
 };
 
 use super::common::{load_nifti, save_nifti};
@@ -37,7 +37,7 @@ fn report(label: &str, affine: &[f64; 16], dims: (usize, usize, usize)) {
 
 pub fn execute(args: ResampleArgs) -> crate::Result<()> {
     let params = AxialResampleParams {
-        noise_fill_fraction: if args.no_noise_fill { None } else { AxialResampleParams::default().noise_fill_fraction },
+        noise_fill_fraction: args.noise_fill.then_some(QSMXT8_NOISE_FILL_FRACTION),
     };
 
     if let (Some(phase_path), Some(mag_path)) = (args.phase.as_ref(), args.magnitude.as_ref()) {
