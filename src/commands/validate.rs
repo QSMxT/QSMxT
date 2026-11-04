@@ -65,8 +65,6 @@ pub fn execute(args: ValidateArgs) -> crate::Result<()> {
     let runs = discovery::discover_runs(&args.bids_dir, &filter)?;
 
     if runs.is_empty() {
-        println!("No QSM-compatible runs found in {}", args.bids_dir.display());
-        println!();
         println!("Expected BIDS structure:");
         println!("  sub-*/[ses-*/]anat/*_part-phase_*.nii[.gz]");
         println!("  with matching JSON sidecars containing EchoTime and MagneticFieldStrength");
@@ -75,7 +73,8 @@ pub fn execute(args: ValidateArgs) -> crate::Result<()> {
         println!("  sub-*/[ses-*/]anat/*_part-mag_*.nii[.gz]   (magnitude — R2*/T2*, SWI, GRE-only separation)");
         println!("  sub-*/[ses-*/]anat/*_echo-*_MESE.nii[.gz]  (multi-echo spin-echo — R2, hence R2' for separation)");
         println!("  derivatives/<tool>/.../anat/*_Chimap|_R2map|_R2primemap|_mask.nii  (bring-your-own inputs)");
-        return Ok(());
+        println!();
+        return Err(discovery::no_runs(&args.bids_dir, &filter));
     }
 
     let mut subjects: Vec<&str> = runs.iter().map(|r| r.key.subject.as_str()).collect();

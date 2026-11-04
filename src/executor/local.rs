@@ -12,6 +12,9 @@ pub struct ExecutionConfig {
     pub n_procs: usize,
     /// Memory limit in bytes for concurrent run scheduling (None = no limit)
     pub mem_limit_bytes: Option<u64>,
+    /// What set the memory limit, for the log: e.g. " (within this job's or container's limit
+    /// of 48.0 GB)" ([`crate::pipeline::memory::Available::describe`]); empty for the system's.
+    pub mem_limit_source: String,
     /// Force re-run, ignoring cached state
     pub force: bool,
     /// Optional source DICOM directory for `--export-dicom` (metadata inheritance).
@@ -153,9 +156,10 @@ fn compute_concurrency(
     let effective = exec_config.n_procs.min(max_by_memory);
 
     info!(
-        "Memory: {} per run (est.), {} available — {} concurrent run(s) (requested {})",
+        "Memory: {} per run (est.), {} available{} — {} concurrent run(s) (requested {})",
         memory::format_bytes(per_run),
         memory::format_bytes(mem_limit),
+        exec_config.mem_limit_source,
         effective,
         exec_config.n_procs,
     );
@@ -208,6 +212,7 @@ mod tests {
         let exec = ExecutionConfig {
             n_procs: 8,
             mem_limit_bytes: None,
+            mem_limit_source: String::new(),
             force: false,
             source_dicom: None,
             dicom_outputs: None,
@@ -222,6 +227,7 @@ mod tests {
         let exec = ExecutionConfig {
             n_procs: 8,
             mem_limit_bytes: Some(1024 * 1024 * 1024),
+            mem_limit_source: String::new(),
             force: false,
             source_dicom: None,
             dicom_outputs: None,
@@ -240,6 +246,7 @@ mod tests {
         let exec = ExecutionConfig {
             n_procs: 16,
             mem_limit_bytes: Some(per_run * 2),
+            mem_limit_source: String::new(),
             force: false,
             source_dicom: None,
             dicom_outputs: None,
@@ -257,6 +264,7 @@ mod tests {
         let exec = ExecutionConfig {
             n_procs: 16,
             mem_limit_bytes: Some(per_run),
+            mem_limit_source: String::new(),
             force: false,
             source_dicom: None,
             dicom_outputs: None,

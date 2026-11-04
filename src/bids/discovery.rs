@@ -153,8 +153,33 @@ fn prefer_phase(key: &AcquisitionKey, mut files: Vec<(PathBuf, BidsEntities)>) -
     files
 }
 
-/// Discover all QSM runs in a BIDS directory.
+/// Refuse an input BIDS directory that does not exist or is not a directory: a mistyped path is
+/// an error, not an empty dataset.
+pub fn require_bids_dir(bids_dir: &Path) -> crate::Result<()> {
+    if !bids_dir.exists() {
+        return Err(QsmxtError::BidsDiscovery(format!("{} does not exist", bids_dir.display())));
+    }
+    if !bids_dir.is_dir() {
+        return Err(QsmxtError::BidsDiscovery(format!("{} is not a directory", bids_dir.display())));
+    }
+    Ok(())
+}
+
+/// The error for a BIDS directory in which `filter` leaves no run to process: commands that need
+/// runs fail with it, so a script does not take an empty dataset (or a filter that matches
+/// nothing) for success.
+pub fn no_runs(bids_dir: &Path, filter: &DiscoveryFilter) -> QsmxtError {
+    let filtered = filter.include.is_some() || filter.exclude.is_some() || filter.num_echoes.is_some();
+    QsmxtError::BidsDiscovery(format!(
+        "no QSM-compatible runs found in {}{}",
+        bids_dir.display(),
+        if filtered { " that match --include, --exclude and --num-echoes" } else { "" },
+    ))
+}
+
+/// Discover all QSM runs in a BIDS directory, which must exist ([`require_bids_dir`]).
 pub fn discover_runs(bids_dir: &Path, filter: &DiscoveryFilter) -> crate::Result<Vec<QsmRun>> {
+    require_bids_dir(bids_dir)?;
     // Collect all phase (and real-part) files
     let mut phase_files: Vec<(PathBuf, BidsEntities)> = Vec::new();
 

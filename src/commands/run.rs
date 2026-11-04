@@ -340,6 +340,12 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
     // stderr only — it must not create directories in the dataset, and its whole purpose is to
     // show what a real run would do, warnings included. A worker (`--no-dataset-steps`) holds its
     // lines until it knows which runs it has, which name its log.
+    // A missing input directory is refused before anything is created: the default output
+    // directory is inside it.
+    if let Err(e) = discovery::require_bids_dir(&args.bids_dir) {
+        init_logging(LogSink::Discard, args.debug);
+        return Err(e);
+    }
     if args.dry {
         init_logging(LogSink::Discard, args.debug);
     } else if args.no_dataset_steps {
@@ -372,8 +378,7 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
     let runs = discovery::discover_runs(&args.bids_dir, &filter)?;
 
     if runs.is_empty() {
-        eprintln!("No QSM-compatible runs found in {}", args.bids_dir.display());
-        return Ok(());
+        return Err(discovery::no_runs(&args.bids_dir, &filter));
     }
 
     // What the chosen methods' rules recommend is only ever applied when asked, before the
@@ -407,15 +412,17 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
             .unwrap_or(1)
     });
 
-    let mem_limit_bytes = if args.no_mem_limit {
-        None
+    // What limited it goes into the "Memory: … available" line.
+    let (mem_limit_bytes, mem_limit_source) = if args.no_mem_limit {
+        (None, String::new())
     } else if let Some(gb) = args.mem_limit_gb {
-        Some((gb * 1024.0 * 1024.0 * 1024.0) as u64)
+        (Some((gb * 1024.0 * 1024.0 * 1024.0) as u64), " (--mem-limit-gb)".to_string())
     } else {
-        // Auto-detect: use MemAvailable, reserve 1 GB for OS
-        let available = memory::available_memory_bytes();
+        // Auto-detect: what the system, or a Slurm job's or container's limit, leaves; 1 GB
+        // reserved for the OS.
+        let available = memory::available_memory();
         let reserved = 1024 * 1024 * 1024; // 1 GB
-        Some(available.saturating_sub(reserved))
+        (Some(available.bytes.saturating_sub(reserved)), available.describe())
     };
 
     if args.dry {
@@ -474,8 +481,9 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
                 .unwrap_or(n_procs);
             println!();
             println!(
-                "Memory: {} available, max {} concurrent run(s)",
+                "Memory: {} available{}, max {} concurrent run(s)",
                 memory::format_bytes(mem),
+                mem_limit_source,
                 max_concurrent,
             );
         }
@@ -512,6 +520,7 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
     let exec_config = executor::local::ExecutionConfig {
         n_procs,
         mem_limit_bytes,
+        mem_limit_source,
         force: args.force,
         source_dicom: args.source_dicom.clone(),
         dicom_outputs: args.dicom_outputs.clone(),

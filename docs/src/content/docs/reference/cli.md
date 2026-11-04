@@ -448,7 +448,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--accept-recommendations` | Apply the recommended value of every reasoned recommendation that is not dismissed (required, recommended and discouraged findings, each with its reason) before running. The original authors' settings are not applied; see --accept-reference-settings. Two equally strong recommendations that disagree on a setting are left for you to choose. Without it, no setting is ever changed. |
 | `--accept-reference-settings` | Apply the original authors' settings of the chosen methods (what their code, paper or README does, where no reason is given that it is better) before running, so the run follows the methods' reference pipelines. Two methods whose authors' settings disagree on a setting are left for you to choose; a reasoned recommendation on the same setting wins when --accept-recommendations is also given. |
 | `--debug` | Enable debug logging. |
-| `--mem-limit-gb <MEM_LIMIT_GB>` | Memory limit in GB for concurrent run scheduling (auto-detected if not specified) |
+| `--mem-limit-gb <MEM_LIMIT_GB>` | Memory limit in GB for concurrent run scheduling (if not specified: the memory available, within a Slurm job's or container's memory limit when there is one) |
 | `--no-mem-limit` | Disable memory-aware concurrency limiting. |
 | `--force` | Force re-run, ignoring cached pipeline state. |
 | `--clean-intermediates` | Once every run (and any multi-orientation combination) is done, delete the intermediate images under workflow/. Published outputs, per-step provenance and the cache state are kept: a re-run with the same configuration recomputes nothing, one with a changed configuration recomputes the intermediates it needs. |

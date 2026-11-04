@@ -1455,12 +1455,14 @@ mod integration_tests {
         }).unwrap();
     }
 
+    /// No runs is an error (exit 1), so a script does not take it for success.
     #[test]
     fn test_validate_empty_dir() {
         let dir = tempfile::tempdir().unwrap();
-        super::validate::execute(ValidateArgs {
+        let err = super::validate::execute(ValidateArgs {
             bids_dir: dir.path().to_path_buf(), include: None, exclude: None,
-        }).unwrap();
+        }).unwrap_err().to_string();
+        assert!(err.contains("no QSM-compatible runs found"), "{err}");
     }
 
     // --- Run (dry) ---
@@ -1494,7 +1496,57 @@ mod integration_tests {
     fn test_run_dry_empty_bids() {
         let dir = tempfile::tempdir().unwrap();
         let args = default_run_args(dir.path().to_path_buf(), dir.path().join("out"));
-        super::run::execute(args).unwrap();
+        let err = super::run::execute(args).unwrap_err().to_string();
+        assert!(err.contains("no QSM-compatible runs found") && !err.contains("--include"), "{err}");
+    }
+
+    /// A filter that leaves nothing says so.
+    #[test]
+    fn run_with_a_filter_that_matches_nothing_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        testutils::create_single_echo_bids(dir.path());
+        let mut args = default_run_args(dir.path().to_path_buf(), dir.path().join("out"));
+        args.include = Some(vec!["*nothing-like-this*".to_string()]);
+        let err = super::run::execute(args).unwrap_err().to_string();
+        assert!(err.contains("no QSM-compatible runs found") && err.contains("--include"), "{err}");
+    }
+
+    /// A BIDS directory that does not exist (a mistyped path) is an error in every command that
+    /// reads one, and nothing is created in its place (the default output goes inside it).
+    #[test]
+    fn a_missing_bids_dir_is_an_error_everywhere() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("no-such-dataset");
+        let expect = |r: crate::Result<()>| {
+            let err = r.unwrap_err().to_string();
+            assert!(err.contains("does not exist"), "{err}");
+        };
+        let mut run = default_run_args(missing.clone(), missing.clone());
+        run.output_dir = None;
+        expect(super::run::execute(run));
+        let mut real = default_run_args(missing.clone(), missing.clone());
+        real.output_dir = None;
+        real.dry = false;
+        expect(super::run::execute(real));
+        expect(super::validate::execute(ValidateArgs { bids_dir: missing.clone(), include: None, exclude: None }));
+        let mut agg = aggregate_args(missing.clone(), missing.clone(), vec![]);
+        agg.output_dir = None;
+        expect(super::aggregate::execute(agg));
+        expect(super::slurm::execute(SlurmArgs {
+            accept_recommendations: false, accept_reference_settings: false,
+            bids_dir: missing.clone(), output_dir: None, account: "a".to_string(), partition: None,
+            config: None, time: "01:00:00".to_string(), mem: None, cpus_per_task: 1, submit: false,
+            include: None, exclude: None, num_echoes: None, force: false, clean_intermediates: false,
+            debug: false, source_dicom: None, dicom_outputs: None, pipeline: Default::default(),
+        }));
+        assert!(!missing.exists(), "nothing is created for a missing dataset");
+
+        // A file is not a dataset either.
+        let file = dir.path().join("a-file");
+        std::fs::write(&file, "").unwrap();
+        let err = super::validate::execute(ValidateArgs { bids_dir: file, include: None, exclude: None })
+            .unwrap_err().to_string();
+        assert!(err.contains("is not a directory"), "{err}");
     }
 
     // --- Run (actual execution) ---

@@ -16,8 +16,7 @@ pub fn execute(args: SlurmArgs) -> crate::Result<()> {
     let runs = discovery::discover_runs(&args.bids_dir, &filter)?;
 
     if runs.is_empty() {
-        println!("No QSM-compatible runs found");
-        return Ok(());
+        return Err(discovery::no_runs(&args.bids_dir, &filter));
     }
 
     // Applied here, so every job reads the same configuration file.
