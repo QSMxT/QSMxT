@@ -501,6 +501,7 @@ pub fn convert_session_streaming(
                             counter += 1;
                             match run_dcm2niix(&dcm2niix, files, &info, &work_root.join(counter.to_string()), base, &mut log) {
                                 Ok(outputs) => {
+                                    let images = outputs.iter().filter(|(p, _)| is_nifti(p)).count();
                                     for (out, known) in outputs {
                                         let Some(name) = out.file_name().and_then(|n| n.to_str()).map(str::to_string) else { continue };
                                         let Some((stem_part, ext)) = split_extension(&name) else { continue };
@@ -513,6 +514,11 @@ pub fn convert_session_streaming(
                                             // The echo tags are what could not tell the volumes apart.
                                             sfx.echo_num = None;
                                             sfx.extra.push(format!("vol{v}"));
+                                        }
+                                        // A lone map computed at a late echo: nothing to tell apart.
+                                        if images == 1 && !stem.allows_echo {
+                                            sfx.echo_num = None;
+                                            sfx.echo_te = None;
                                         }
                                         let bids_name = stem.file_name(&sfx, coil, ext);
                                         staged.push(Staged { from: out.clone(), rel: format!("{}/{}", stem.dir().join("/"), bids_name), owner: owner.clone() });

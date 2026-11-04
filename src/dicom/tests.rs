@@ -191,6 +191,16 @@ fn clinical_series() {
 }
 
 #[test]
+fn scanner_map_at_last_echo() {
+    let (_d, s) = scan("scanner_map_at_last_echo");
+    let Some(c) = convert(&s) else { return };
+    let maps: Vec<&String> = c.images.iter().filter(|f| f.ends_with("R2starmap.nii.gz")).collect();
+    assert_eq!(maps.len(), 1, "{:?}\n{}", c.images, c.log.join("\n"));
+    assert!(maps[0].contains("_rec-scanner_R2starmap"), "{maps:?}");
+    assert!(c.errors.is_empty(), "{:?}", c.errors);
+}
+
+#[test]
 fn bruker_te_suffix() {
     let (_d, s) = scan("bruker_te_suffix");
     assert_eq!(types(&s).iter().map(|t| t.1).collect::<Vec<_>>(), vec![SeriesType::Magnitude, SeriesType::T2starMap]);

@@ -203,7 +203,7 @@ pub fn classify_series(f: &SeriesFacts) -> SeriesType {
     }
 
     // 2. The scanner's QSM-related reconstructions.
-    if has(&it, &["QSM"]) || (scanner_named && (desc_l.ends_with("_qsm") || desc_l == "qsm")) {
+    if has(&it, &["QSM"]) || (scanner_named && !desc_l.starts_with("r2star") && (desc_l.ends_with("_qsm") || desc_l == "qsm")) {
         return SeriesType::ScannerQsm;
     }
     if has(&it, &["SWI"]) || (scanner_named && desc_l.starts_with("swi_images")) {
@@ -301,6 +301,7 @@ mod tests {
         assert_eq!(classify(&[], "fl3d_vibe_QSM_QSM", "fl3d_vibe_QSM", &["GR"]), SeriesType::ScannerQsm);
         assert_eq!(classify(&["ORIGINAL", "PRIMARY", "T2_STAR MAP", "ND"], "T2Star_Images", "gre_MapT2star_4TEs", &["GR"]), SeriesType::T2starMap);
         assert_eq!(classify(&["ORIGINAL", "PRIMARY", "M", "DIS2D"], "R2star_ASPIRE_bipolar", "ASPIRE_bipolar", &["GR"]), SeriesType::R2starMap);
+        assert_eq!(classify(&["ORIGINAL", "PRIMARY", "M", "DIS2D"], "R2star_gre_qsm", "gre_qsm", &["GR"]), SeriesType::R2starMap);
         // A protocol named after a map is still the acquisition.
         assert_eq!(classify(&["ORIGINAL", "PRIMARY", "M", "ND"], "gre_MapT2star_4TEs", "gre_MapT2star_4TEs", &["GR"]), SeriesType::Magnitude);
         // Bruker: no part marker, research-mode sequence; the parametric map by its description.

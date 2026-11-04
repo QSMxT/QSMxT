@@ -47,6 +47,8 @@ pub struct Series {
     pub same_echo_tags: bool,
     /// RescaleSlope and RescaleIntercept.
     pub rescale: Option<(f64, f64)>,
+    /// EchoNumbers of a single-echo series, when it is not 1.
+    pub echo_number: Option<u32>,
 }
 
 impl Series {
@@ -74,6 +76,7 @@ impl Series {
             first_instance: 0,
             same_echo_tags: false,
             rescale: None,
+            echo_number: None,
         }
     }
     pub fn protocol(mut self, p: &str) -> Self { self.protocol = p.into(); self }
@@ -90,6 +93,7 @@ impl Series {
     pub fn first_instance(mut self, n: usize) -> Self { self.first_instance = n; self }
     pub fn patient(mut self, p: &str) -> Self { self.patient = p.into(); self }
     pub fn same_echo_tags(mut self) -> Self { self.same_echo_tags = true; self }
+    pub fn echo_number(mut self, n: u32) -> Self { self.echo_number = Some(n); self }
     pub fn rescale(mut self, slope: f64, intercept: f64) -> Self { self.rescale = Some((slope, intercept)); self }
 }
 
@@ -136,7 +140,7 @@ fn slice(s: &Series, echo: usize, k: usize, instance: usize) -> InMemDicomObject
     }
     put(tags::IMAGING_FREQUENCY, VR::DS, "123.2".into());
     if s.echo_numbers {
-        put(tags::ECHO_NUMBERS, VR::IS, (tag_echo + 1).to_string().as_str().into());
+        put(tags::ECHO_NUMBERS, VR::IS, s.echo_number.unwrap_or(tag_echo as u32 + 1).to_string().as_str().into());
     }
     put(tags::MAGNETIC_FIELD_STRENGTH, VR::DS, "3".into());
     put(tags::FLIP_ANGLE, VR::DS, "15".into());
@@ -253,6 +257,7 @@ pub const FIXTURES: &[&str] = &[
     "repeat_other_echoes",
     "clinical_series",
     "bruker_te_suffix",
+    "scanner_map_at_last_echo",
     "headerless",
     "incomplete_export",
     "phoenix_report",
@@ -309,6 +314,12 @@ pub fn write_fixture(name: &str, dir: &Path) {
             };
             write_series(dir, &mk("90001", 90001, "", &["ORIGINAL", "PRIMARY", "OTHER"]).protocol("T2star_map_MGE").tes(&[3.3, 6.6, 9.9]));
             write_series(dir, &mk("90002", 90002, "Parametric image for T2* relaxation", &["DERIVED", "SECONDARY", "OTHER"]).protocol("").tes(&[3.3]));
+        }
+        "scanner_map_at_last_echo" => {
+            write_series(dir, &Series::new("9", 9, gre, M).tes(&[5.0, 10.0]));
+            write_series(dir, &Series::new("10", 10, gre, P).tes(&[5.0, 10.0]));
+            let map = Series::new("11", 11, &format!("R2star_{gre}"), &["DERIVED", "PRIMARY", "R2_STAR MAP"]).protocol(gre);
+            write_series(dir, &map.tes(&[10.0]).echo_number(2));
         }
         "headerless" => {
             write_series(dir, &Series::new("9", 9, gre, M));
