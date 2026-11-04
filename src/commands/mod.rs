@@ -51,6 +51,7 @@ mod integration_tests {
             clean_intermediates: false,
             no_dataset_steps: false,
             accept_recommendations: false,
+            accept_reference_settings: false,
             pipeline: PipelineArgs {
                 qsm_algorithm: None,
                 heidi: false,
@@ -2408,6 +2409,7 @@ mod integration_tests {
 
         super::slurm::execute(SlurmArgs {
             accept_recommendations: false,
+            accept_reference_settings: false,
             bids_dir: bids,
             output_dir: Some(out.clone()),
             account: "testacct".to_string(),
@@ -2434,6 +2436,7 @@ mod integration_tests {
 
         super::slurm::execute(SlurmArgs {
             accept_recommendations: false,
+            accept_reference_settings: false,
             bids_dir: bids,
             output_dir: Some(out.clone()),
             account: "testacct".to_string(),
@@ -2585,6 +2588,7 @@ mod integration_tests {
         let dist = dir.path().join("dist");
         super::slurm::execute(SlurmArgs {
             accept_recommendations: false,
+            accept_reference_settings: false,
             bids_dir: bids.clone(), output_dir: Some(dist.clone()),
             account: "acct".into(), partition: None, config: None, time: "01:00:00".into(),
             mem: None, cpus_per_task: 1, submit: false,
@@ -3024,21 +3028,22 @@ mod integration_tests {
         let args = departing_args(bids.clone(), dir.path().join("out"));
         let config = super::run::build_config(None, &args.pipeline).unwrap();
         let runs = crate::bids::discovery::discover_runs(&bids, &Default::default()).unwrap();
-        let text = super::recommend::dry_text(&config, &runs, true);
+        let recommendations = qsmxt_engine::recommendations::Accept { recommendations: true, reference: false };
+        let text = super::recommend::dry_text(&config, &runs, recommendations);
         // The log warns of it, saying how to apply it.
         let logged = super::recommend::found_lines(&config, &runs);
         let line = logged.iter().find(|(_, l)| l.contains("(field-mapping.phase-offsets;")).unwrap_or_else(|| panic!("{logged:?}"));
         assert!(line.0 && line.1.ends_with("; --accept-recommendations applies it)") && !line.1.contains("--dismiss"), "{line:?}");
-        let at = text.find("  recommended:").unwrap_or_else(|| panic!("{text}"));
+        let at = text.find("  recommended (--accept-recommendations applies them):").unwrap_or_else(|| panic!("{text}"));
         assert!(text[at..].contains("field-mapping.phase-offsets"), "{text}");
         assert!(text.contains("keep the choice with --dismiss-recommendation field-mapping.phase-offsets=false"), "{text}");
         assert!(text.contains("With --accept-recommendations, the run would use:")
-            && text.contains("Phase offset removal: off → on (field-mapping.phase-offsets)"), "{text}");
+            && text.contains("Phase offset removal: off → on (recommended; field-mapping.phase-offsets)"), "{text}");
         // Dismissed, it is listed as such and nothing would change.
         let mut dismissed = departing_args(bids.clone(), dir.path().join("out")).pipeline;
         dismissed.dismiss_recommendation = Some(vec!["field-mapping.phase-offsets=false".into()]);
         let config = super::run::build_config(None, &dismissed).unwrap();
-        let text = super::recommend::dry_text(&config, &runs, true);
+        let text = super::recommend::dry_text(&config, &runs, recommendations);
         // Dismissed, it is still a warning in the log, marked as kept.
         let logged = super::recommend::found_lines(&config, &runs);
         assert!(logged.iter().any(|(warn, l)| *warn && l.contains("(field-mapping.phase-offsets; dismissed, kept)")), "{logged:?}");
@@ -3051,6 +3056,44 @@ mod integration_tests {
         dismissed.dismiss_recommendation = Some(vec!["sti.unwrap-laplacian=romeo".into()]);
         let e = super::run::build_config(None, &dismissed).unwrap_err().to_string();
         assert!(e.contains("sti.unwrap-laplacian is a reference-pipeline note, not a recommendation; there is nothing to dismiss"), "{e}");
+    }
+
+    /// The original authors' settings are said apart from recommendations: information in the
+    /// log, their own group in `--dry`, and applied by `--accept-reference-settings` only, not by
+    /// `--accept-recommendations`. With the complex fit, MEDI's region-growing unwrapper is the
+    /// authors' setting; ROMEO stays.
+    #[test]
+    fn authors_settings_are_applied_only_when_asked() {
+        use qsmxt_engine::recommendations::Accept;
+        let dir = tempfile::tempdir().unwrap();
+        let bids = dir.path().join("bids");
+        testutils::create_multi_echo_bids(&bids);
+        let mut args = departing_args(bids.clone(), dir.path().join("out"));
+        args.pipeline.phase_offset_removal = None;
+        args.pipeline.b0_estimation = Some(crate::cli::B0EstimationArg::ComplexFit);
+        let config = super::run::build_config(None, &args.pipeline).unwrap();
+        let runs = crate::bids::discovery::discover_runs(&bids, &Default::default()).unwrap();
+        let logged = super::recommend::found_lines(&config, &runs);
+        let line = logged.iter().find(|(_, l)| l.contains("(complex-fit.unwrap-region-growing;")).unwrap_or_else(|| panic!("{logged:?}"));
+        assert!(!line.0 && line.1.starts_with("Differs from the original authors' setting")
+            && line.1.ends_with("; --accept-reference-settings applies it)"), "{line:?}");
+        let both = Accept { recommendations: true, reference: true };
+        let none = super::recommend::dry_text(&config, &runs, Accept::default());
+        let at = none.find("  original authors' settings (not recommendations; --accept-reference-settings applies them):")
+            .unwrap_or_else(|| panic!("{none}"));
+        assert!(none[at..].contains("complex-fit.unwrap-region-growing"), "{none}");
+        let recommended = super::recommend::dry_text(&config, &runs, Accept { recommendations: true, reference: false });
+        assert!(!recommended.contains("; complex-fit.unwrap-region-growing)"), "{recommended}");
+        let authors = super::recommend::dry_text(&config, &runs, both);
+        assert!(authors.contains("With --accept-recommendations --accept-reference-settings, the run would use:")
+            && authors.contains("(original authors' setting; complex-fit.unwrap-region-growing)"), "{authors}");
+        let mut c = config.clone();
+        let accepted = super::recommend::accept(&mut c, &runs, Accept { recommendations: false, reference: true });
+        assert_eq!(c.field_mapping.unwrapping_algorithm, qsmxt_engine::enums::UnwrappingAlgorithm::MediRegionGrowing);
+        assert!(accepted.applied.iter().all(|r| r.kind == qsmxt_engine::recommendations::Kind::Reference), "{:?}", accepted.applied);
+        let mut c = config.clone();
+        super::recommend::accept(&mut c, &runs, Accept { recommendations: true, reference: false });
+        assert_eq!(c.field_mapping.unwrapping_algorithm, config.field_mapping.unwrapping_algorithm, "ROMEO stays");
     }
 
     /// The fastest tiny pipeline, with a recommendation accepted: the run takes the recommended

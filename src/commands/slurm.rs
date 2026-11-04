@@ -21,8 +21,9 @@ pub fn execute(args: SlurmArgs) -> crate::Result<()> {
     }
 
     // Applied here, so every job reads the same configuration file.
-    if args.accept_recommendations {
-        super::recommend::accept(&mut config, &runs);
+    let which = super::recommend::which(args.accept_recommendations, args.accept_reference_settings);
+    if which.any() {
+        super::recommend::accept(&mut config, &runs, which);
     }
 
     // Refuse before writing or submitting a job that would fail on its node.

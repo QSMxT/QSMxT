@@ -8,12 +8,20 @@
 //! time, the run record and the methods text's Note section from the run.
 //!
 //! - **Nothing is changed silently.** A finding is shown; [`apply`] (the TUI's or qsmbly's
-//!   Apply, `qsmxt run --accept-recommendations`) changes a setting only when asked.
+//!   Apply, `qsmxt run --accept-recommendations` or `--accept-reference-settings`) changes a
+//!   setting only when asked.
+//! - **Two kinds** ([`Kind`], QSM.rs's): a rule is either **the original authors' setting**
+//!   (`reference`: their code, paper or README does it, with no reason given why it is better)
+//!   or **a reasoned recommendation** (`reasoned`: required, recommended or discouraged, for the
+//!   reason it gives). Front ends label the two differently ([`Kind::label`]); a reasoned
+//!   finding is preselected and applied by `--accept-recommendations`; an authors' setting is
+//!   shown but never preselected, and applied only when picked or with
+//!   `--accept-reference-settings` ([`accept`]).
 //! - **Strength** ([`Strength`]) is QSM.rs's. A `required` finding stops the run as configured
 //!   (a plan-time error, [`crate::requirements::scan_check`]); `recommended` and `discouraged`
 //!   findings are offered (a modal when a change creates one, a marker afterwards); a
-//!   `reference` finding is information only: it is never applied by `--accept-recommendations`,
-//!   and its Note line is the softer "differs from the reference pipeline".
+//!   `reference` finding is the authors' setting: its Note line is the softer "differs from the
+//!   reference pipeline".
 //! - **By method** ([`by_method`]): a method's `reference` rules are its reference pipeline. A
 //!   front end offers it when the method is chosen ([`chosen_methods`] before and after a change)
 //!   and the config differs from it ([`reference_differences`]): Apply all ([`apply_all`]), per
@@ -61,8 +69,9 @@ impl Strength {
         }
     }
 
-    /// Whether a finding of this strength is offered as a change (a modal, `--accept-recommendations`):
-    /// every strength but `reference`.
+    /// Whether a finding of this strength is offered as a change with the recommended value
+    /// preselected (a modal, `--accept-recommendations`): the reasoned ones, every strength but
+    /// `reference`.
     pub fn actionable(self) -> bool {
         self != Strength::Reference
     }
@@ -86,11 +95,52 @@ impl From<core::Strength> for Strength {
     }
 }
 
+/// Whether a rule is the original authors' setting or a reasoned recommendation (QSM.rs's
+/// `Kind`; the `reference` strength is the authors' setting, every other strength is reasoned).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Kind {
+    /// What the method's authors did, with no reason given why it is better: shown, never
+    /// preselected, applied only when picked or with `--accept-reference-settings`.
+    Reference,
+    /// Needed or better for the reason the rule gives: preselected, and applied by
+    /// `--accept-recommendations`.
+    #[default]
+    Reasoned,
+}
+
+impl Kind {
+    /// How front ends label it: "Original authors' setting" or "Recommended".
+    pub fn label(self) -> &'static str {
+        match self {
+            Kind::Reference => "Original authors' setting",
+            Kind::Reasoned => "Recommended",
+        }
+    }
+}
+
+impl From<core::Kind> for Kind {
+    fn from(k: core::Kind) -> Self {
+        match k {
+            core::Kind::Reference => Kind::Reference,
+            core::Kind::Reasoned => Kind::Reasoned,
+        }
+    }
+}
+
+impl Strength {
+    /// The kind of a finding of this strength.
+    pub fn kind(self) -> Kind {
+        if self == Strength::Reference { Kind::Reference } else { Kind::Reasoned }
+    }
+}
+
 /// What a rule rests on (QSM.rs's `Basis`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Basis {
-    /// The authors say so: their paper, README or a comment in their code.
+    /// The authors say so: their paper, README or a comment in their code (for an authors'
+    /// setting, without saying why).
     Stated,
     /// QSM.rs measured it, and recorded the measurement in the method's docs.
     Measured,
@@ -167,6 +217,11 @@ pub struct Trigger {
 pub struct Recommendation {
     /// QSM.rs's rule id (`medi.bg-pdf`).
     pub rule: String,
+    /// The original authors' setting, or a reasoned recommendation. Follows `strength`; a run
+    /// record written before findings carried it reads as reasoned until its reader sets it
+    /// from the strength.
+    #[serde(default)]
+    pub kind: Kind,
     pub strength: Strength,
     pub basis: Basis,
     /// The QSMxT config path of the setting the rule is about (`bg_removal.algorithm`; the mask
@@ -213,9 +268,15 @@ impl Recommendation {
         names.join(", ")
     }
 
-    /// Offered as a change: a departure that is not `reference` strength.
+    /// Offered as a change, preselected: a departure from a reasoned rule.
     pub fn actionable(&self) -> bool {
         self.departs && self.strength.actionable()
+    }
+
+    /// A departure from the original authors' setting: shown, applied only when picked or with
+    /// `--accept-reference-settings`.
+    pub fn authors_setting(&self) -> bool {
+        self.departs && self.kind == Kind::Reference
     }
 
     /// The other values the rule allows besides the recommended one (for a choice).
@@ -346,7 +407,7 @@ impl Facts {
 
 /// How a QSM.rs setting is one of QSMxT's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Kind {
+enum Mapping {
     /// The same value at `qsmxt` (choices by the same names; numbers, flags and vectors as they
     /// are).
     Same,
@@ -366,62 +427,62 @@ enum Kind {
 }
 
 /// Each of QSM.rs's rule settings ([`core::SETTINGS`]), as a QSMxT setting.
-const SETTINGS: &[(&str, &str, Kind)] = &[
-    ("masking.generator", "masking.sections", Kind::MaskGenerator),
-    ("masking.hd_bet.inference", "masking.sections", Kind::HdBetInference),
-    ("field_mapping.unwrapping_algorithm", "field_mapping.unwrapping_algorithm", Kind::Same),
-    ("field_mapping.b0_estimation", "field_mapping.b0_estimation", Kind::Same),
-    ("field_mapping.b0_estimation.weighting", "field_mapping.b0_weight_type", Kind::Same),
-    ("field_mapping.phase_offset_removal", "field_mapping.phase_offset_removal", Kind::Same),
-    ("field_mapping.phase_offset_sigma_mm", "field_mapping.phase_offset_sigma_mm", Kind::Same),
-    ("field_mapping.bipolar_correction", "field_mapping.bipolar_correction", Kind::Same),
-    ("field_mapping.laplacian_solver", "field_mapping.laplacian_solver", Kind::LaplacianSolver),
-    ("field_mapping.laplacian_unmasked", "field_mapping.laplacian_unmasked", Kind::Same),
-    ("bg_removal.algorithm", "bg_removal.algorithm", Kind::Same),
-    ("bg_removal.vsharp.deconvolve", "bg_removal.vsharp.deconvolve", Kind::Same),
-    ("bg_removal.vsharp.max_radius", "bg_removal.vsharp.max_radius", Kind::Same),
-    ("bg_removal.vsharp.min_radius", "bg_removal.vsharp.min_radius", Kind::Same),
-    ("bg_removal.vsharp.radius_step", "bg_removal.vsharp.radius_step", Kind::Same),
-    ("bg_removal.vsharp.grid", "bg_removal.vsharp.grid", Kind::VsharpGrid),
-    ("bg_removal.ismv.variant", "bg_removal.ismv.variant", Kind::Same),
-    ("bg_removal.ismv.tol", "bg_removal.ismv.tol", Kind::Same),
-    ("bg_removal.ismv.max_iter", "bg_removal.ismv.max_iter", Kind::Same),
-    ("bg_removal.resharp.radius", "bg_removal.resharp.radius", Kind::Same),
-    ("bg_removal.resharp.max_iter", "bg_removal.resharp.max_iter", Kind::Same),
-    ("inversion.algorithm", "inversion.algorithm", Kind::Same),
-    ("inversion.star.pad", "inversion.star.pad", Kind::Same),
-    ("inversion.ilsqr.max_iter", "inversion.ilsqr.max_iter", Kind::Same),
-    ("inversion.ilsqr.pad_mm", "inversion.ilsqr.pad_mm", Kind::Same),
-    ("inversion.whqsm.weight", "inversion.whqsm.weight", Kind::Same),
-    ("inversion.star.te", "inversion.star.te", Kind::Same),
-    ("inversion.fansi.te", "inversion.fansi.te", Kind::Same),
-    ("inversion.ndi.te", "inversion.ndi.te", Kind::Same),
-    ("inversion.l1qsm.te", "inversion.l1qsm.te", Kind::Same),
-    ("inversion.whqsm.te", "inversion.whqsm.te", Kind::Same),
-    ("inversion.medi.msmv", "inversion.medi.msmv", Kind::Same),
-    ("inversion.medi.msmv.prefilter", "inversion.medi.msmv_prefilter", Kind::Same),
-    ("inversion.medi.te", "inversion.medi.te", Kind::Same),
-    ("inversion.tfi.te", "inversion.tfi.te", Kind::Same),
-    ("inversion.apply_heidi", "inversion.heidi.enabled", Kind::Same),
-    ("inversion.heidi.te", "inversion.heidi.te", Kind::Same),
-    ("inversion.qsmart.inversion", "inversion.qsmart.inversion", Kind::Same),
-    ("inversion.qsmart.ilsqr_max_iter", "inversion.qsmart.ilsqr_max_iter", Kind::Same),
-    ("inversion.qsmart.ilsqr_pad_mm", "inversion.qsmart.ilsqr_pad_mm", Kind::Same),
-    ("reference", "qsm.reference", Kind::Same),
-    ("qsm_per_echo", "qsm.per_echo", Kind::Same),
-    ("tukey_window", "pipeline.tukey_window", Kind::Same),
-    ("separation.algorithm", "separation.algorithm", Kind::Same),
-    ("separation.decompose.unwrap_phase", "separation.decompose.unwrap_phase", Kind::Same),
-    ("segmentation.inference", "segmentation.patch", Kind::SynthSegInference),
-    ("segmentation.inference.patch", "segmentation.patch", Kind::SynthSegPatch),
+const SETTINGS: &[(&str, &str, Mapping)] = &[
+    ("masking.generator", "masking.sections", Mapping::MaskGenerator),
+    ("masking.hd_bet.inference", "masking.sections", Mapping::HdBetInference),
+    ("field_mapping.unwrapping_algorithm", "field_mapping.unwrapping_algorithm", Mapping::Same),
+    ("field_mapping.b0_estimation", "field_mapping.b0_estimation", Mapping::Same),
+    ("field_mapping.b0_estimation.weighting", "field_mapping.b0_weight_type", Mapping::Same),
+    ("field_mapping.phase_offset_removal", "field_mapping.phase_offset_removal", Mapping::Same),
+    ("field_mapping.phase_offset_sigma_mm", "field_mapping.phase_offset_sigma_mm", Mapping::Same),
+    ("field_mapping.bipolar_correction", "field_mapping.bipolar_correction", Mapping::Same),
+    ("field_mapping.laplacian_solver", "field_mapping.laplacian_solver", Mapping::LaplacianSolver),
+    ("field_mapping.laplacian_unmasked", "field_mapping.laplacian_unmasked", Mapping::Same),
+    ("bg_removal.algorithm", "bg_removal.algorithm", Mapping::Same),
+    ("bg_removal.vsharp.deconvolve", "bg_removal.vsharp.deconvolve", Mapping::Same),
+    ("bg_removal.vsharp.max_radius", "bg_removal.vsharp.max_radius", Mapping::Same),
+    ("bg_removal.vsharp.min_radius", "bg_removal.vsharp.min_radius", Mapping::Same),
+    ("bg_removal.vsharp.radius_step", "bg_removal.vsharp.radius_step", Mapping::Same),
+    ("bg_removal.vsharp.grid", "bg_removal.vsharp.grid", Mapping::VsharpGrid),
+    ("bg_removal.ismv.variant", "bg_removal.ismv.variant", Mapping::Same),
+    ("bg_removal.ismv.tol", "bg_removal.ismv.tol", Mapping::Same),
+    ("bg_removal.ismv.max_iter", "bg_removal.ismv.max_iter", Mapping::Same),
+    ("bg_removal.resharp.radius", "bg_removal.resharp.radius", Mapping::Same),
+    ("bg_removal.resharp.max_iter", "bg_removal.resharp.max_iter", Mapping::Same),
+    ("inversion.algorithm", "inversion.algorithm", Mapping::Same),
+    ("inversion.star.pad", "inversion.star.pad", Mapping::Same),
+    ("inversion.ilsqr.max_iter", "inversion.ilsqr.max_iter", Mapping::Same),
+    ("inversion.ilsqr.pad_mm", "inversion.ilsqr.pad_mm", Mapping::Same),
+    ("inversion.whqsm.weight", "inversion.whqsm.weight", Mapping::Same),
+    ("inversion.star.te", "inversion.star.te", Mapping::Same),
+    ("inversion.fansi.te", "inversion.fansi.te", Mapping::Same),
+    ("inversion.ndi.te", "inversion.ndi.te", Mapping::Same),
+    ("inversion.l1qsm.te", "inversion.l1qsm.te", Mapping::Same),
+    ("inversion.whqsm.te", "inversion.whqsm.te", Mapping::Same),
+    ("inversion.medi.msmv", "inversion.medi.msmv", Mapping::Same),
+    ("inversion.medi.msmv.prefilter", "inversion.medi.msmv_prefilter", Mapping::Same),
+    ("inversion.medi.te", "inversion.medi.te", Mapping::Same),
+    ("inversion.tfi.te", "inversion.tfi.te", Mapping::Same),
+    ("inversion.apply_heidi", "inversion.heidi.enabled", Mapping::Same),
+    ("inversion.heidi.te", "inversion.heidi.te", Mapping::Same),
+    ("inversion.qsmart.inversion", "inversion.qsmart.inversion", Mapping::Same),
+    ("inversion.qsmart.ilsqr_max_iter", "inversion.qsmart.ilsqr_max_iter", Mapping::Same),
+    ("inversion.qsmart.ilsqr_pad_mm", "inversion.qsmart.ilsqr_pad_mm", Mapping::Same),
+    ("reference", "qsm.reference", Mapping::Same),
+    ("qsm_per_echo", "qsm.per_echo", Mapping::Same),
+    ("tukey_window", "pipeline.tukey_window", Mapping::Same),
+    ("separation.algorithm", "separation.algorithm", Mapping::Same),
+    ("separation.decompose.unwrap_phase", "separation.decompose.unwrap_phase", Mapping::Same),
+    ("segmentation.inference", "segmentation.patch", Mapping::SynthSegInference),
+    ("segmentation.inference.patch", "segmentation.patch", Mapping::SynthSegPatch),
 ];
 
 /// A QSM.rs rule setting as QSMxT's: listed in [`SETTINGS`], or else the QSMxT setting at the same
-/// path, taken as it is ([`Kind::Same`]). So a rule QSM.rs adds on a setting QSMxT already has
+/// path, taken as it is ([`Mapping::Same`]). So a rule QSM.rs adds on a setting QSMxT already has
 /// (`separation.decompose.chi_bound`, ...) is offered without a change here.
-fn setting_of(core_path: &str) -> Option<(&'static str, Kind)> {
+fn setting_of(core_path: &str) -> Option<(&'static str, Mapping)> {
     SETTINGS.iter().find(|(c, _, _)| *c == core_path).map(|&(_, q, k)| (q, k))
-        .or_else(|| setting(core_path).map(|s| (s.path, Kind::Same)))
+        .or_else(|| setting(core_path).map(|s| (s.path, Mapping::Same)))
 }
 
 /// Whether `id` names one of QSM.rs's rules.
@@ -483,7 +544,7 @@ fn num_text(v: &Value) -> String {
 }
 
 /// A value's display name for the QSMxT setting at `path` (of `kind`).
-fn name_of(path: &str, kind: Kind, value: &Value) -> String {
+fn name_of(path: &str, kind: Mapping, value: &Value) -> String {
     let text = |v: &Value| match v {
         Value::String(s) => s.clone(),
         Value::Bool(true) => "on".into(),
@@ -493,39 +554,39 @@ fn name_of(path: &str, kind: Kind, value: &Value) -> String {
         other => num_text(other),
     };
     match kind {
-        Kind::MaskGenerator => {
+        Mapping::MaskGenerator => {
             let op = value.as_str().unwrap_or_default();
             mask_steps().iter().find(|s| s.op == op)
                 .map_or_else(|| op.to_string(), |s| s.name.to_string())
         }
-        Kind::HdBetInference => match value.as_str().unwrap_or_default() {
+        Mapping::HdBetInference => match value.as_str().unwrap_or_default() {
             "full-volume" => "whole volume".into(),
             "sliding-window" => "sliding window".into(),
             "low-memory" => "low-memory sliding window".into(),
             other => other.replace('-', " "),
         },
-        Kind::LaplacianSolver => match value.as_str().unwrap_or_default() {
+        Mapping::LaplacianSolver => match value.as_str().unwrap_or_default() {
             "dct" => "DCT".into(),
             "fft-12" => "FFT, 12-voxel padding".into(),
             "fft" => "FFT".into(),
             "mirror" => "mirror".into(),
             other => other.into(),
         },
-        Kind::VsharpGrid => match value.as_str().unwrap_or_default() {
+        Mapping::VsharpGrid => match value.as_str().unwrap_or_default() {
             "native" => "acquired grid".into(),
             "isotropic-finest" => "isotropic at the finest voxel size".into(),
             "isotropic-1mm" => "1 mm isotropic grid".into(),
             "isotropic" => "isotropic grid".into(),
             other => other.into(),
         },
-        Kind::SynthSegInference => match value.as_str().unwrap_or_default() {
+        Mapping::SynthSegInference => match value.as_str().unwrap_or_default() {
             "full-volume" => "whole volume".into(),
             "low-memory" => "low-memory sliding window".into(),
             "sliding-window" => "sliding window".into(),
             other => other.into(),
         },
-        Kind::SynthSegPatch => format!("{}-voxel window", text(value)),
-        Kind::Same => {
+        Mapping::SynthSegPatch => format!("{}-voxel window", text(value)),
+        Mapping::Same => {
             let Some(s) = setting(path) else { return text(value) };
             if let Some(o) = s.value_type.options().into_iter().find(|o| o.value == *value) {
                 return o.name.clone();
@@ -538,12 +599,12 @@ fn name_of(path: &str, kind: Kind, value: &Value) -> String {
     }
 }
 
-/// The current value(s) of a QSM.rs setting in QSMxT's terms: for a [`Kind::Same`] setting, the
+/// The current value(s) of a QSM.rs setting in QSMxT's terms: for a [`Mapping::Same`] setting, the
 /// config's own value (QSMxT's region referencing is `none` to QSM.rs, but `region` here).
 fn current_named(config: &Value, core_path: &str, core_current: &[Current]) -> Vec<Named> {
     let Some((path, kind)) = setting_of(core_path) else { return vec![] };
     match kind {
-        Kind::Same => {
+        Mapping::Same => {
             let v = path.split('.').try_fold(config, |v, k| v.get(k)).cloned().unwrap_or(Value::Null);
             vec![Named { name: name_of(path, kind, &v), value: v }]
         }
@@ -555,7 +616,7 @@ fn current_named(config: &Value, core_path: &str, core_current: &[Current]) -> V
 }
 
 fn named(core_path: &str, v: &core::Value) -> Named {
-    let (path, kind) = setting_of(core_path).unwrap_or(("", Kind::Same));
+    let (path, kind) = setting_of(core_path).unwrap_or(("", Mapping::Same));
     let v = core_json(v);
     Named { name: name_of(path, kind, &v), value: v }
 }
@@ -650,6 +711,7 @@ fn recommendation(
     };
     Recommendation {
         rule: rule.id.to_string(),
+        kind: rule.kind().into(),
         strength: rule.strength.into(),
         basis: rule.basis.into(),
         setting: qsmxt_path(rule.setting).unwrap_or(rule.setting).to_string(),
@@ -673,6 +735,8 @@ fn trigger_name(core_path: &str, value_name: &str) -> String {
     match core_path {
         "inversion.algorithm" | "bg_removal.algorithm" | "masking.generator" => value_name.to_string(),
         "separation.algorithm" => value_name.to_string(),
+        // The echo combination by its method's name: "Complex fit" (MEDI's Fit_ppm_complex).
+        "field_mapping.b0_estimation" => value_name.to_string(),
         _ => format!("{} {}", label_of(core_path).to_lowercase(), value_name),
     }
 }
@@ -913,10 +977,10 @@ fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -> Result<()
     let (path, kind) = setting_of(core_path).ok_or_else(|| format!("QSMxT has no setting for {core_path}"))?;
     let id = value.as_str().unwrap_or_default();
     match kind {
-        Kind::Same => {
+        Mapping::Same => {
             crate::schema::set(config, path, value.clone())?;
         }
-        Kind::MaskGenerator => {
+        Mapping::MaskGenerator => {
             // The preset whose sections all start with that generator (`bet` → BET on the
             // magnitude, then erode).
             let (_, recipe) = crate::masking::mask_presets().into_iter()
@@ -926,7 +990,7 @@ fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -> Result<()
             config.masking.combine = recipe.combine;
             config.masking.refinements = recipe.refinements;
         }
-        Kind::HdBetInference => {
+        Mapping::HdBetInference => {
             let patch = match id {
                 "full-volume" => None,
                 "sliding-window" => Some(MaskOp::hd_bet_default_patch()),
@@ -941,7 +1005,7 @@ fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -> Result<()
                 }
             }
         }
-        Kind::LaplacianSolver => {
+        Mapping::LaplacianSolver => {
             let fm = &mut config.field_mapping;
             fm.laplacian_solver = match id {
                 "dct" => LaplacianSolver::Dct,
@@ -956,7 +1020,7 @@ fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -> Result<()
                 other => return Err(format!("unknown Laplacian solver {other}")),
             };
         }
-        Kind::VsharpGrid => {
+        Mapping::VsharpGrid => {
             let v = &mut config.bg_removal.vsharp;
             v.grid = match id {
                 "native" => VsharpGrid::Native,
@@ -969,14 +1033,14 @@ fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -> Result<()
                 other => return Err(format!("unknown V-SHARP grid {other}")),
             };
         }
-        Kind::SynthSegInference => {
+        Mapping::SynthSegInference => {
             config.segmentation.patch = crate::config::synthseg_patch(match id {
                 "full-volume" => qsm_core::segment::SynthSegInference::FullVolume,
                 "low-memory" => qsm_core::segment::SynthSegInference::LOW_MEMORY,
                 other => return Err(format!("SynthSeg inference {other} needs a window size")),
             });
         }
-        Kind::SynthSegPatch => {
+        Mapping::SynthSegPatch => {
             config.segmentation.patch = Some(value.as_u64().ok_or_else(|| format!("{value} is not a window size"))? as usize);
         }
     }
@@ -989,10 +1053,26 @@ fn op_id(op: &MaskOp) -> &'static str {
     mask_steps().iter().find(|s| s.kind == kind).map_or("", |s| s.op)
 }
 
-/// What `--accept-recommendations` changes: on each setting, the strongest actionable finding
-/// that is not dismissed, unless two as strong disagree there. Returns the findings applied (as
-/// they were before the change) and those left because they conflict.
-pub fn accept(config: &mut PipelineConfig, findings: &[Recommendation]) -> (Vec<Recommendation>, Vec<Recommendation>) {
+/// What [`accept`] applies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Accept {
+    /// The reasoned findings (`--accept-recommendations`).
+    pub recommendations: bool,
+    /// The original authors' settings (`--accept-reference-settings`).
+    pub reference: bool,
+}
+
+impl Accept {
+    pub fn any(self) -> bool {
+        self.recommendations || self.reference
+    }
+}
+
+/// What `--accept-recommendations` and `--accept-reference-settings` change: on each setting,
+/// the strongest finding of the kinds `which` takes that is not dismissed, unless two as strong
+/// disagree there. A reasoned finding outranks an authors' setting on the same setting. Returns
+/// the findings applied (as they were before the change) and those left because they conflict.
+pub fn accept(config: &mut PipelineConfig, findings: &[Recommendation], which: Accept) -> (Vec<Recommendation>, Vec<Recommendation>) {
     let mut applied = Vec::new();
     let mut conflicting = Vec::new();
     let mut settings: Vec<&str> = Vec::new();
@@ -1001,9 +1081,12 @@ pub fn accept(config: &mut PipelineConfig, findings: &[Recommendation]) -> (Vec<
             settings.push(&r.setting);
         }
     }
+    let takes = |r: &Recommendation| r.departs && !r.dismissed && match r.kind {
+        Kind::Reasoned => which.recommendations && r.actionable(),
+        Kind::Reference => which.reference,
+    };
     for s in settings {
-        let open: Vec<&Recommendation> = findings.iter()
-            .filter(|r| r.setting == s && r.actionable() && !r.dismissed).collect();
+        let open: Vec<&Recommendation> = findings.iter().filter(|r| r.setting == s && takes(r)).collect();
         let Some(top) = open.iter().map(|r| r.strength).max() else { continue };
         let strongest: Vec<&Recommendation> = open.into_iter().filter(|r| r.strength == top).collect();
         let mut values: Vec<&Value> = strongest.iter().map(|r| &r.recommended.value).collect();
