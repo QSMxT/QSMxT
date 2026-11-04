@@ -126,6 +126,7 @@ fn command_for(config: &PipelineConfig) -> String {
     if config.pipeline.fft_padding != d.pipeline.fft_padding {
         parts.push("--fft-padding".to_string());
     }
+    emit_f64(&mut parts, "--tukey-window", config.pipeline.tukey_window, d.pipeline.tukey_window);
     emit_f64(&mut parts, "--crop-margin-mm", config.pipeline.crop_margin_mm, d.pipeline.crop_margin_mm);
     if config.pipeline.output_space != d.pipeline.output_space {
         parts.push(format!("--output-space {}", config.pipeline.output_space));

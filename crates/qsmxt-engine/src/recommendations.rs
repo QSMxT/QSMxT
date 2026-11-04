@@ -286,6 +286,8 @@ pub struct Facts {
     /// mm.
     pub voxel_size: Option<(f64, f64, f64)>,
     pub dims: Option<(usize, usize, usize)>,
+    /// The sidecar's `Manufacturer`, as it gives it.
+    pub manufacturer: Option<String>,
 }
 
 impl Facts {
@@ -296,17 +298,25 @@ impl Facts {
             field_strength: Some(f.field_strength),
             voxel_size: f.voxel_size,
             dims: Some(f.dims),
+            manufacturer: f.manufacturer.clone(),
         }
     }
 
-    /// A loaded run's facts, all known.
+    /// A loaded run's facts: all those of its metadata. The metadata does not carry the
+    /// manufacturer; [`Self::with_manufacturer`] adds the scan's.
     pub fn of_run(m: &crate::scan::RunMetadata) -> Self {
         Facts {
             echo_count: Some(m.n_echoes),
             field_strength: Some(m.field_strength),
             voxel_size: Some(m.voxel_size),
             dims: Some(m.dims),
+            manufacturer: None,
         }
+    }
+
+    /// These facts with the scan's manufacturer.
+    pub fn with_manufacturer(self, manufacturer: Option<String>) -> Self {
+        Facts { manufacturer, ..self }
     }
 
     /// What a settings view knows ([`crate::schema::ViewFacts`]).
@@ -316,6 +326,7 @@ impl Facts {
             field_strength: v.field_strength,
             voxel_size: v.voxel_size.map(|[x, y, z]| (x, y, z)),
             dims: v.dims.map(|[x, y, z]| (x, y, z)),
+            manufacturer: v.manufacturer.clone(),
         }
     }
 
@@ -325,6 +336,7 @@ impl Facts {
             echo_count: self.echo_count,
             voxel_size: self.voxel_size,
             dims: self.dims,
+            manufacturer: self.manufacturer.as_deref().map(core::Manufacturer::from_name),
             target: core::Target::current(),
         }
     }
@@ -397,6 +409,7 @@ const SETTINGS: &[(&str, &str, Kind)] = &[
     ("inversion.qsmart.ilsqr_pad_mm", "inversion.qsmart.ilsqr_pad_mm", Kind::Same),
     ("reference", "qsm.reference", Kind::Same),
     ("qsm_per_echo", "qsm.per_echo", Kind::Same),
+    ("tukey_window", "pipeline.tukey_window", Kind::Same),
     ("separation.algorithm", "separation.algorithm", Kind::Same),
     ("separation.decompose.unwrap_phase", "separation.decompose.unwrap_phase", Kind::Same),
     ("segmentation.inference", "segmentation.patch", Kind::SynthSegInference),

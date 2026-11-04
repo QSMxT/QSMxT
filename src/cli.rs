@@ -1899,6 +1899,12 @@ pub struct PipelineArgs {
     #[arg(long)]
     pub fft_padding: bool,
 
+    /// Apply a k-space Tukey window with this taper ratio (0 to 1) to each echo's complex image
+    /// before every other step, as the χ-separation toolbox does: 0.4 for Siemens and GE data, 0
+    /// for Philips. Default 0 (none). Needs magnitude images.
+    #[arg(long)]
+    pub tukey_window: Option<f64>,
+
     /// Margin in mm around the mask when --crop-to-mask is set (default 32). Below ~32 mm the
     /// reconstruction starts to differ from the uncropped one; it must also clear the largest
     /// SMV kernel in use, and V-SHARP defaults to 12 mm.

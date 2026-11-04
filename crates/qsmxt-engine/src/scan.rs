@@ -45,6 +45,10 @@ pub struct ScanFacts {
     pub custom_r2: bool,
     /// An R2' map from `--use-custom-r2prime`'s tool was found.
     pub custom_r2prime: bool,
+    /// The sidecar's `Manufacturer`, when it has one: for the pipeline rules that depend on the
+    /// vendor ([`crate::recommendations`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manufacturer: Option<String>,
 }
 
 impl ScanFacts {
@@ -52,8 +56,8 @@ impl ScanFacts {
     /// every echo's sidecar, in echo order: what a front end that holds the files itself (qsmbly)
     /// has. Echo times are each sidecar's; the field strength and `B0_dir` are read as `qsmxt`
     /// reads a BIDS run's (the last echo that has one wins; a `B0_dir` without three components
-    /// is ignored, with a warning). No bring-your-own derivatives: a front end that has them sets
-    /// those fields itself.
+    /// is ignored, with a warning), and the manufacturer is the first sidecar's. No
+    /// bring-your-own derivatives: a front end that has them sets those fields itself.
     pub fn from_sidecars(
         dims: (usize, usize, usize), sidecars: &[QsmSidecar], has_magnitude: bool,
     ) -> Result<Self, EngineError> {
@@ -86,6 +90,7 @@ impl ScanFacts {
             custom_qsm: false,
             custom_r2: false,
             custom_r2prime: false,
+            manufacturer: sidecars[0].manufacturer.clone(),
         })
     }
 }

@@ -377,6 +377,16 @@ original to within 0.02 % NRMSE; the solves stop after a fixed number of
 iterations, which amplifies rounding, so on small noisy volumes only `single`
 follows it closely.
 
+## Tukey windowing
+
+`--tukey-window R` multiplies each echo's complex image (magnitude and phase together) in
+k-space by a Tukey window with taper ratio `R` (0 to 1), on the acquired grid, before every
+other step: the mask, the magnitude, R2* and all phase processing see the windowed echoes. It is
+the χ-separation toolbox's preprocessing, which uses 0.4 for Siemens and GE data and 0 for
+Philips. Off by default (`0`), and it needs magnitude images. With χ-sepnet's toolbox route the
+vendor's value is offered as a recommendation, read from the sidecar's `Manufacturer`; the
+setting is not changed unless the recommendation is applied.
+
 ## Coil combination
 
 Runs whose phase is stored per receive coil (`coil-<NN>` entity, see
@@ -1261,7 +1271,9 @@ R2PRIMEnet inside that route (3 T only, as `--r2primenet-ignore-field-mismatch` 
 networks run on the whole 1 mm frame at once; `--chi-sepnet-frame-patch D H W` runs them as a
 sliding window instead (each a multiple of 16). `--chi-sepnet-route native` runs the network alone
 on the acquired grid with the run's QSM, as a sliding window of 192×192×128-voxel patches
-(`--chi-sepnet-patch D H W`, each a multiple of 16). SUSEP-Net runs
+(`--chi-sepnet-patch D H W`, each a multiple of 16). On the toolbox route the toolbox's
+[Tukey windowing](#tukey-windowing) of the echoes is recommended by manufacturer
+(`--tukey-window 0.4` for Siemens and GE, none for Philips). SUSEP-Net runs
 the whole volume in one pass; `--susep-net-patch D H W` runs it as a sliding
 window of that size instead (each a multiple of 8), so its memory follows the
 patch rather than the volume.

@@ -308,6 +308,13 @@ fn spacing_deviation(tes: &[f64], first_as_reference: bool) -> (f64, f64) {
 
 /// Why ARLO cannot fit R2* on this run's GRE echoes, if it cannot: it needs the magnitude and the
 /// echo times QSM.rs's ARLO takes ([`qsm_core::r2star::arlo_echo_times_problem`]).
+/// Why the k-space Tukey window cannot run on this scan: it windows the complex image, so it needs
+/// the magnitude.
+pub fn tukey_window_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<String> {
+    (config.pipeline.tukey_window > 0.0 && !f.has_magnitude)
+        .then(|| "needs magnitude images: it windows each echo's complex image".to_string())
+}
+
 pub fn arlo_problem(f: &ScanFacts) -> Option<String> {
     if !f.has_magnitude {
         return Some("needs magnitude images, and this run has none".into());
@@ -833,6 +840,14 @@ pub fn scan_check(f: &ScanFacts, config: &PipelineConfig) -> Check {
             settings: vec![path, "n4.shrink_factor"], reason: why.clone(), message: why,
         });
     }
+    if let Some(why) = tukey_window_problem(f, config) {
+        let path = "pipeline.tukey_window";
+        out.errors.push(format!("--tukey-window {why}"));
+        out.problems.push(Problem {
+            severity: Severity::Error, setting: Some(path), implied_by: None,
+            settings: vec![path], reason: why.clone(), message: format!("Tukey window {why}"),
+        });
+    }
     let label = |path: &str| crate::schema::setting(path).map_or_else(|| path.to_string(), |s| s.full_label.to_string());
     // The reconstruction's own methods: what they need of the data.
     if config.pipeline.do_qsm {
@@ -977,6 +992,7 @@ mod tests {
             real_imaginary: false,
             custom_mask: false, custom_dseg: false, custom_qsm: false, custom_r2: false,
             custom_r2prime: false,
+            manufacturer: None,
         }
     }
 

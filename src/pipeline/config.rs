@@ -891,6 +891,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if args.crop_to_mask { config.pipeline.crop_to_mask = true; }
         if args.ignore_slice_gap { config.pipeline.ignore_slice_gap = true; }
         if args.fft_padding { config.pipeline.fft_padding = true; }
+        if let Some(v) = args.tukey_window { config.pipeline.tukey_window = v; }
         if let Some(v) = args.crop_margin_mm { config.pipeline.crop_margin_mm = v; }
         if let Some(v) = args.output_space {
             config.pipeline.output_space = match v {

@@ -1140,6 +1140,13 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
         doc.say(&[], format!("MRI processing was performed using {} ({}).", tool, author_year));
     }
 
+    // The k-space Tukey window comes before every other step.
+    if config.pipeline.tukey_window > 0.0 {
+        doc.say(&[Stage::ScalePhase], format!(
+            "Before any other processing, each echo's complex image was multiplied in k-space by a Tukey \
+             window with a taper ratio of {}.", config.pipeline.tukey_window));
+    }
+
     // Masking (inhomogeneity correction is described inline)
     describe_masking(config, ran, &mut doc);
 
@@ -3378,6 +3385,18 @@ mod tests {
         let out = generate_methods(&config);
         assert!(out.contains("MRI processing"));
         assert!(!out.contains("Dipole inversion"));
+    }
+
+    /// The Tukey window is said only when it is on, with its taper ratio, for any output.
+    #[test]
+    fn the_tukey_window_is_said_when_on() {
+        let mut config = PipelineConfig::default();
+        assert!(!generate_methods(&config).contains("Tukey"));
+        config.pipeline.tukey_window = 0.4;
+        assert!(generate_methods(&config).contains("multiplied in k-space by a Tukey window with a taper ratio of 0.4"));
+        config.pipeline.do_qsm = false;
+        config.pipeline.do_r2starmap = true;
+        assert!(generate_methods(&config).contains("Tukey window"));
     }
 
     #[test]

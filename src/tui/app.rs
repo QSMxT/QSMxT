@@ -1289,7 +1289,8 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("n4_max_iterations", "n4.max_iterations"), ("n4_convergence_threshold", "n4.convergence_threshold"),
     ("n4_mesh", "n4.mesh"), ("n4_spline_order", "n4.spline_order"), ("n4_bias_field_fwhm", "n4.bias_field_fwhm"),
     ("n4_wiener_noise", "n4.wiener_noise"), ("n4_histogram_bins", "n4.histogram_bins"),
-    ("ignore_slice_gap", "pipeline.ignore_slice_gap"), ("crop_to_mask", "pipeline.crop_to_mask"),
+    ("ignore_slice_gap", "pipeline.ignore_slice_gap"), ("tukey_window", "pipeline.tukey_window"),
+    ("crop_to_mask", "pipeline.crop_to_mask"),
     ("crop_margin_mm", "pipeline.crop_margin_mm"), ("fft_padding", "pipeline.fft_padding"),
     ("coil_combination_sigma", "field_mapping.coil_combination_sigma"),
     ("custom_mask_tool", "masking.custom_mask_tool"), ("two_pass", "masking.two_pass"),
@@ -1766,6 +1767,8 @@ pub struct PipelineFormState {
     pub inhomogeneity_correction: bool,
     /// Reconstruct a 2D acquisition whose sidecar says its slices leave a gap.
     pub ignore_slice_gap: bool,
+    /// Taper ratio of the k-space Tukey window on each echo (`--tukey-window`; 0 = none).
+    pub tukey_window: String,
     // Performance and output grid (Preprocessing → Geometry).
     pub crop_to_mask: bool,
     pub crop_margin_mm: String,
@@ -2298,6 +2301,7 @@ impl Default for PipelineFormState {
             reg_min_overlap: format!("{}", qsmxt_engine::RegistrationConfig::default().min_overlap),
             inhomogeneity_correction: true,
             ignore_slice_gap: false,
+            tukey_window: fmt_default(qsmxt_engine::PipelineToggles::default().tukey_window),
             crop_to_mask: false,
             crop_margin_mm: fmt_default(qsmxt_engine::PipelineToggles::default().crop_margin_mm),
             fft_padding: false,
@@ -3085,6 +3089,8 @@ impl PipelineFormState {
             label: "Ignore slice gap", field: "ignore_slice_gap",
             help: "Reconstruct even if the sidecar's SliceThickness is thinner than the slice pitch (gapped 2D data gives a wrong map)",
         });
+        rows.push(PipelineRow::Param { label: "Tukey window", field: "tukey_window",
+            help: "Taper ratio of a k-space Tukey window applied to each echo's complex image before every other step: 0 applies none; the χ-separation toolbox uses 0.4 for Siemens and GE data and 0 for Philips. Needs magnitude" });
         if qsm {
             rows.push(PipelineRow::Toggle {
                 label: "Crop to mask", field: "crop_to_mask",
@@ -3928,7 +3934,7 @@ impl PipelineFormState {
         "hdqsm_alpha_l2", "hdqsm_mu1_l2", "hdqsm_mu2", "hdqsm_max_iter_l1", "hdqsm_max_iter_l2", "hdqsm_tol_update",
         "r2primenet_patch", "sep_chisepnet_patch", "sep_chisepnet_frame_patch", "sep_susepnet_patch",
         "laplacian_fft_pad", "prelude_partitions",
-        "crop_margin_mm", "homogeneity_sigma_mm", "homogeneity_nbox", "coil_combination_sigma",
+        "crop_margin_mm", "tukey_window", "homogeneity_sigma_mm", "homogeneity_nbox", "coil_combination_sigma",
         "n4_shrink_factor", "n4_max_iterations", "n4_convergence_threshold", "n4_mesh", "n4_spline_order",
         "n4_bias_field_fwhm", "n4_wiener_noise", "n4_histogram_bins",
         "tgv_step_size",
@@ -3946,6 +3952,7 @@ impl PipelineFormState {
         match field {
             "obliquity_threshold" => &self.obliquity_threshold,
             "crop_margin_mm" => &self.crop_margin_mm,
+            "tukey_window" => &self.tukey_window,
             "homogeneity_sigma_mm" => &self.homogeneity_sigma_mm,
             "homogeneity_nbox" => &self.homogeneity_nbox,
             "n4_shrink_factor" => &self.n4_shrink_factor,
@@ -4222,6 +4229,7 @@ impl PipelineFormState {
         match field {
             "obliquity_threshold" => Some(&mut self.obliquity_threshold),
             "crop_margin_mm" => Some(&mut self.crop_margin_mm),
+            "tukey_window" => Some(&mut self.tukey_window),
             "homogeneity_sigma_mm" => Some(&mut self.homogeneity_sigma_mm),
             "homogeneity_nbox" => Some(&mut self.homogeneity_nbox),
             "n4_shrink_factor" => Some(&mut self.n4_shrink_factor),

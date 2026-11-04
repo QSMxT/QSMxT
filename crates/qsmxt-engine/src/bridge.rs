@@ -516,6 +516,7 @@ pub fn to_qsm_pipeline_config(cfg: &PipelineConfig) -> qsm_core::pipeline::QsmPi
         inversion,
         reference,
         qsm_per_echo: cfg.qsm.per_echo,
+        tukey_window: cfg.pipeline.tukey_window,
     }
 }
 
