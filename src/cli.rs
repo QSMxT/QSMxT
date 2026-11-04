@@ -4525,9 +4525,13 @@ pub struct ResampleArgs {
     /// Where to write the resampled magnitude (default: <magnitude stem>_axial.nii)
     #[arg(long, requires = "phase")]
     pub magnitude_out: Option<PathBuf>,
-    /// Do not fill the empty corners of the new grid with seeded noise. Only the --phase /
-    /// --magnitude pair is noise-filled (it seeds ROMEO); a plain volume's corners are zero
+    /// Fill the empty corners of the new grid with seeded noise, as QSMxT 8.x did. Only the
+    /// --phase / --magnitude pair can be noise-filled; by default the corners are zero
     #[arg(long, requires = "phase")]
+    pub noise_fill: bool,
+    /// No longer has any effect: the corners are zero unless --noise-fill is given. Kept so
+    /// existing scripts keep running
+    #[arg(long, requires = "phase", conflicts_with = "noise_fill", hide = true)]
     pub no_noise_fill: bool,
 }
 
