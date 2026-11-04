@@ -186,9 +186,12 @@ fn a_series_is_never_split_across_patients() {
     let mut pha = series("b", 5, "QSM", "QSM", P, &[20.0], 100.0, 4);
     pha[2].patient_id = "NACC1".into();
     pha[2].series_description = "Other name".into();
+    pha[2].protocol_name = "Other protocol".into();
     files.extend(pha);
     let s = build_session(files, never_identical);
     assert_eq!(s.subjects.len(), 1);
+    // The odd file does not rename the series: magnitude and phase stay one acquisition.
+    assert_eq!(s.subjects[0].studies[0].acquisitions.len(), 1);
     assert_eq!(s.subjects[0].patient_id, "p1");
     assert_eq!(s.total_series(), 2);
     let w = &s.report.warnings;

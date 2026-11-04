@@ -84,7 +84,7 @@ pub fn classification_lines(session: &dicom::DicomSession, unique: &[dicom::Uniq
             } else {
                 String::new()
             };
-            let target = plans.iter().find(|p| p.r == g.refs[0]).map(|p| target_label(&p.target)).unwrap_or_default();
+            let target = plans.iter().find(|p| p.r == g.refs[0]).map(|p| unique_target_label(g, &p.target)).unwrap_or_default();
             let note = s.note.as_ref().map(|n| format!(" ({n})")).unwrap_or_default();
             format!(
                 "  acq-{:<22} {:<26} [{}]{}{}{} -> {}{}",
@@ -92,6 +92,17 @@ pub fn classification_lines(session: &dicom::DicomSession, unique: &[dicom::Uniq
             )
         })
         .collect()
+}
+
+/// Where a unique series goes: like [`target_label`], with `echo-<N>` when its instances (one
+/// series per echo) hold several echoes.
+pub fn unique_target_label(g: &dicom::UniqueSeries, t: &dicom::Target) -> String {
+    let label = target_label(t);
+    if g.echo_times.len() > 1 && g.refs.len() > 1 {
+        label.replacen("_echo-1_", "_echo-<N>_", 1)
+    } else {
+        label
+    }
 }
 
 /// Where a series goes, in a few words.

@@ -205,7 +205,8 @@ pub struct DicomSeries {
 impl DicomSeries {
     /// `series 9 'gre_qsm'`: how messages name a series.
     pub fn display_name(&self) -> String {
-        format!("series {} '{}'", self.series_number, self.description)
+        let name = if self.description.is_empty() { &self.protocol_name } else { &self.description };
+        format!("series {} '{}'", self.series_number, name)
     }
 }
 

@@ -1438,7 +1438,7 @@ fn draw_dicom_series_section(
         let target = plans
             .iter()
             .find(|p| p.r == g.refs[0])
-            .map(|p| format!("  → {}", crate::commands::dicom::target_label(&p.target)))
+            .map(|p| format!("  → {}", crate::commands::dicom::unique_target_label(g, &p.target)))
             .unwrap_or_default();
         let files_label = if n_subjects > 1 {
             format!("  ({} files × {} subjects)", series.num_files, n_subjects)

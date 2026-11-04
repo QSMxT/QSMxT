@@ -258,8 +258,13 @@ fn run_dcm2niix(dcm2niix: &Path, files: &[PathBuf], work: &Path, base: &str, log
     if let Some(n) = merged.first() {
         log.push(format!("  dcm2niix merged {n} volumes into one 4D image; converting again with one file per volume"));
         match run("n", &work.join("out-split"), log) {
-            Ok(split) if !split.is_empty() => return Ok(split),
-            _ => log.push("  Warning: converting again did not work; keeping the 4D image".to_string()),
+            Ok(split)
+                if !split.is_empty()
+                    && !split.iter().any(|p| (p.to_string_lossy().ends_with(".nii.gz") || p.to_string_lossy().ends_with(".nii")) && nifti_4d_size(p).is_some()) =>
+            {
+                return Ok(split)
+            }
+            _ => log.push(format!("  dcm2niix could not separate the volumes; keeping the 4D image with all {n} of them")),
         }
     }
     Ok(first)

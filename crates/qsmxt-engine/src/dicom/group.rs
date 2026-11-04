@@ -124,8 +124,15 @@ struct Built {
 
 /// One series from a set of files of one SeriesInstanceUID.
 fn build_series(uid: String, files: &[&FileMeta]) -> Built {
-    let first = files[0];
-    let description = normalize_series_description(&first.series_description);
+    // The series' names are what most of its files say (one odd file must not rename it).
+    let protocol = majority(files.iter().map(|f| f.protocol_name.as_str()));
+    let raw_description = majority(files.iter().map(|f| f.series_description.as_str()));
+    let first = files
+        .iter()
+        .copied()
+        .find(|f| f.protocol_name == protocol && f.series_description == raw_description)
+        .unwrap_or(files[0]);
+    let description = normalize_series_description(&raw_description);
     let component = file_component(first);
 
     let mut echo_times = Vec::new();
@@ -405,7 +412,9 @@ fn check_part_counts(run_label: &str, series: &[DicomSeries], report: &mut ScanR
 
 /// Instance numbers of a single-frame series with gaps (some images missing from the export).
 fn check_instance_gaps(files: &[FileMeta], report: &mut ScanReport) {
-    if files.iter().any(|f| f.frames > 1) {
+    // Multi-frame files, and UIDs holding several kinds of image (Philips numbers those its own
+    // way), have no reliable count.
+    if files.iter().any(|f| f.frames > 1) || files.iter().any(|f| f.image_type != files[0].image_type) {
         return;
     }
     let mut nums: Vec<i32> = match files.iter().map(|f| f.instance_number).collect::<Option<Vec<_>>>() {
@@ -536,7 +545,12 @@ where
                 report.notes.push(format!(
                     "sub-{subject}: protocol {name} was run with different settings ({n_groups} variants); \
                      series {} are acq-{acq_name}",
-                    runs.iter().flatten().map(|s| s.series_number.to_string()).collect::<Vec<_>>().join(", ")
+                    {
+                        let mut nums: Vec<i32> = runs.iter().flatten().map(|s| s.series_number).collect();
+                        nums.sort_unstable();
+                        nums.dedup();
+                        nums.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(", ")
+                    }
                 ));
             }
             let n_runs = runs.len();
