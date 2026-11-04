@@ -364,33 +364,65 @@ qsmxt dicom-convert /data/dicoms study/bids --dry-run
 Example output:
 
 ```
-Detected 4 unique series (auto-classified):
-  acq-SWI3mm   SWI_3mm   [Magnitude] 2×TEs=[9.4…19.7]ms (uncombined, 32 coils)
-  acq-SWI3mm   SWI_3mm   [Magnitude] 2×TEs=[9.4…19.7]ms
-  acq-SWI3mm   SWI_3mm   [Magnitude] 2×TEs=[9.4…19.7]ms (filtered)
-  acq-SWI3mm   SWI_3mm   [Phase]     2×TEs=[9.4…19.7]ms
+Detected 6 unique series (auto-classified):
+  acq-SWI3mm   SWI_3mm   [Magnitude] 2×TEs=[9.4…19.7]ms (uncombined, 32 coils) -> sub-01_acq-SWI3mm_rec-uncombined_coil-<NN>_echo-<N>_part-mag_MEGRE
+  acq-SWI3mm   SWI_3mm   [Magnitude] 2×TEs=[9.4…19.7]ms -> sub-01_acq-SWI3mm_echo-<N>_part-mag_MEGRE
+  acq-SWI3mm   SWI_3mm   [Magnitude] 2×TEs=[9.4…19.7]ms -> sub-01_acq-SWI3mm_rec-filtered_echo-<N>_part-mag_MEGRE
+  acq-SWI3mm   SWI_3mm   [Phase]     2×TEs=[9.4…19.7]ms (uncombined, 32 coils) -> sub-01_acq-SWI3mm_rec-uncombined_coil-<NN>_echo-<N>_part-phase_MEGRE
+  acq-SWI3mm   SWI_3mm   [Phase]     2×TEs=[9.4…19.7]ms -> sub-01_acq-SWI3mm_echo-<N>_part-phase_MEGRE
+  acq-t1scout  t1_scout  [Extra] TE=2.0ms -> extra_data/1_t1scout
 ```
 
 Each row is a unique series, deduplicated across subjects, so you review a
-classification once even if many subjects share it.
+classification once even if many subjects share it. The arrow shows the name it
+will get. Warnings follow the list: an incomplete export (missing slices, empty
+files, magnitude and phase with different numbers of images), a series whose
+files name different patients, and two original series that look like the same
+images.
 
 ### What it handles
 
-- **Gradient-echo magnitude and phase** — split correctly even when a vendor packs
-  both under a single `SeriesInstanceUID` (e.g. some Philips/GE exports).
-- **Multi-echo** — echoes are detected and labelled `echo-N`; the dry run reports
-  the echo count and TE range.
-- **T1-weighted structurals** — MPRAGE / MP2RAGE / T1w series are recognised as
-  `T1w`, not magnitude.
+- **Gradient-echo magnitude, phase, real and imaginary images** — from the DICOM
+  image type, GE's private image-type tag, or the Enhanced DICOM frame type; split
+  correctly even when a vendor packs them under a single `SeriesInstanceUID`
+  (some Philips and GE exports). Only gradient-echo sequences are labelled this way.
+- **Echoes** — a single-echo acquisition is named `T2starw`, a multi-echo one
+  `MEGRE` with `echo-N`. Series exported one echo at a time are numbered by echo
+  time.
+- **Runs and acquisitions** — series of one protocol acquired together are one
+  run. A repeat with the same settings is `run-2`; a repeat with different
+  settings (echo times, TR, flip angle, matrix, slice thickness, voxel size,
+  receive coil) is a separate acquisition, `acq-<protocol>2`.
+- **The scanner's own reconstructions** — kept next to the images they came from,
+  each with its own name: susceptibility map `rec-scanner_Chimap`, T2\*/R2\* maps
+  `rec-scanner_T2starmap`/`rec-scanner_R2starmap`, SWI `rec-swi_part-mag_T2starw`,
+  minimum-intensity projection `rec-mip_T2starw`, filtered magnitude
+  `rec-filtered`. Other reconstructions of the same images get a `rec-` label from
+  their image type or description; the magnitude from the same reconstruction as
+  the phase is the main one.
+- **T1-weighted structurals** — MPRAGE, SPACE/TFE T1, MP2RAGE `UNI` images and
+  other T1w series are `T1w`; MP2RAGE inversion images are `inv-1`/`inv-2`
+  `MP2RAGE`, and its T1 map `T1map`.
 - **Individual coil images** — each coil element of an uncombined acquisition is
-  converted separately and labelled `rec-uncombined_coil-NN`, instead of
-  overwriting one another.
-- **Derived reconstructions** — a scanner-filtered magnitude (e.g. a SWI-filtered
-  series) is kept alongside the plain one with a `desc-filtered` label rather than
-  colliding with it.
+  converted separately with a `coil-NN` label (`rec-uncombined` when the
+  scanner-combined images are there too). A series with a single coil element is
+  the combined image.
+- **Duplicates** — the same images exported twice are converted once; two
+  different original reconstructions of one acquisition keep the first and put
+  the other in `extra_data/`.
+- **Everything else** — scouts, reformats, FLAIR, diffusion, Dixon and other
+  vendor maps are kept in `sub-*/[ses-*/]extra_data/` as dcm2niix names them,
+  outside BIDS (listed in `.bidsignore`). Reports, presentation states and other
+  non-image files are listed and skipped.
+- **DICOM files without the DICOM file header** (older exports) are read as well.
 
-Output is a BIDS tree of `sub-*/anat/` NIfTIs with JSON sidecars (`EchoTime` in
-seconds), ready for the pipeline. Already have NIfTIs? You can assemble a BIDS
+No two series are ever written to the same file: all names are decided before
+anything is written, and a name two series would share is reported as an error
+naming both. A series dcm2niix cannot convert leaves nothing behind.
+
+Output is a BIDS tree of `sub-*/[ses-*/]anat/` NIfTIs with JSON sidecars
+(`EchoTime` in seconds), a `dataset_description.json`, a README and a
+`.bidsignore`, ready for the pipeline. Already have NIfTIs? You can assemble a BIDS
 dataset by hand — see [Input data](/QSMxT/reference/inputs/) for the expected
 layout, and run [`qsmxt validate`](/QSMxT/reference/inputs/#checking-a-dataset)
 to check it's pipeline-ready.
