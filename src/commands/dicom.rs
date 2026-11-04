@@ -21,32 +21,13 @@ pub fn execute(args: DicomConvertArgs) -> crate::Result<()> {
         )));
     }
 
+    let plans = dicom::plan_session(&session);
     println!("\nDetected {} unique series (auto-classified):", unique.len());
-    for g in &unique {
-        let s = session.series_ref(&g.refs[0]);
-        let echo = match s.echo_times.as_slice() {
-            [] => String::new(),
-            [te] => format!(" TE={:.1}ms", te),
-            tes => format!(" {}×TEs=[{:.1}…{:.1}]ms", tes.len(), tes[0], tes[tes.len() - 1]),
-        };
-        let n_subjects = g.subject_count();
-        let subjects = if n_subjects > 1 {
-            format!(" ×{} subjects", n_subjects)
-        } else {
-            String::new()
-        };
-        let coil = if s.coil_type == dicom::CoilType::Uncombined {
-            format!(" (uncombined, {} coils)", s.coil_groups.len())
-        } else {
-            String::new()
-        };
-        let recon = dicom::recon_desc(&s.image_type)
-            .map(|d| format!(" ({})", d))
-            .unwrap_or_default();
-        println!(
-            "  acq-{:<22} {:<26} [{}]{}{}{}{}",
-            g.acq_name, s.description, s.series_type.label(), echo, coil, recon, subjects
-        );
+    for line in classification_lines(&session, &unique, &plans) {
+        println!("{line}");
+    }
+    for line in report_lines(&session.report) {
+        println!("{line}");
     }
 
     if args.dry_run {
@@ -82,4 +63,63 @@ pub fn execute(args: DicomConvertArgs) -> crate::Result<()> {
         ));
     }
     Ok(())
+}
+
+/// One line per unique series: acquisition, description, type, echoes, coils, subjects, and the
+/// name it gets.
+pub fn classification_lines(session: &dicom::DicomSession, unique: &[dicom::UniqueSeries], plans: &[dicom::SeriesPlan]) -> Vec<String> {
+    unique
+        .iter()
+        .map(|g| {
+            let s = session.series_ref(&g.refs[0]);
+            let echo = match g.echo_times.as_slice() {
+                [] => String::new(),
+                [te] => format!(" TE={:.1}ms", te),
+                tes => format!(" {}×TEs=[{:.1}…{:.1}]ms", tes.len(), tes[0], tes[tes.len() - 1]),
+            };
+            let n_subjects = g.subject_count();
+            let subjects = if n_subjects > 1 { format!(" ×{} subjects", n_subjects) } else { String::new() };
+            let coil = if s.coil_type == dicom::CoilType::Uncombined {
+                format!(" (uncombined, {} coils)", s.coil_groups.len())
+            } else {
+                String::new()
+            };
+            let target = plans.iter().find(|p| p.r == g.refs[0]).map(|p| target_label(&p.target)).unwrap_or_default();
+            let note = s.note.as_ref().map(|n| format!(" ({n})")).unwrap_or_default();
+            format!(
+                "  acq-{:<22} {:<26} [{}]{}{}{} -> {}{}",
+                g.acq_name, s.description, s.series_type.label(), echo, coil, subjects, target, note
+            )
+        })
+        .collect()
+}
+
+/// Where a series goes, in a few words.
+pub fn target_label(t: &dicom::Target) -> String {
+    match t {
+        dicom::Target::Bids(stem) => stem.preview(),
+        dicom::Target::Extra { prefix, .. } => format!("extra_data/{prefix}"),
+        dicom::Target::Skip => "not converted".to_string(),
+    }
+}
+
+/// The scan's warnings, notes and skipped series.
+pub fn report_lines(r: &dicom::ScanReport) -> Vec<String> {
+    let mut out = Vec::new();
+    if r.not_dicom > 0 {
+        out.push(format!("\n{} file{} not DICOM and {} ignored.", r.not_dicom, if r.not_dicom == 1 { " is" } else { "s are" }, if r.not_dicom == 1 { "was" } else { "were" }));
+    }
+    if !r.skipped.is_empty() {
+        out.push("\nNot images, not converted:".to_string());
+        out.extend(r.skipped.iter().map(|s| format!("  {s}")));
+    }
+    if !r.notes.is_empty() {
+        out.push("\nNotes:".to_string());
+        out.extend(r.notes.iter().map(|s| format!("  {s}")));
+    }
+    if !r.warnings.is_empty() {
+        out.push("\nWarnings:".to_string());
+        out.extend(r.warnings.iter().map(|s| format!("  {s}")));
+    }
+    out
 }

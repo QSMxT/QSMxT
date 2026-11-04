@@ -12,6 +12,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # The dcm2niix the DICOM conversion tests run (the version releases bundle; see release.yml).
+  DCM2NIIX_VERSION: v1.0.20260724
 
 jobs:
   # One job, and the tests run once. Coverage used to be a separate job that re-ran the whole
@@ -38,6 +40,15 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov,cargo-nextest
+
+      # The DICOM conversion tests convert tiny synthetic series with dcm2niix (they skip the
+      # conversion checks without it).
+      - name: Install dcm2niix
+        run: |
+          mkdir -p "$RUNNER_TEMP/dcm2niix"
+          curl -fsSL "https://github.com/rordenlab/dcm2niix/releases/download/${DCM2NIIX_VERSION}/dcm2niix_lnx.zip" -o "$RUNNER_TEMP/dcm2niix.zip"
+          unzip -o -q "$RUNNER_TEMP/dcm2niix.zip" -d "$RUNNER_TEMP/dcm2niix"
+          echo "QSMXT_DCM2NIIX=$RUNNER_TEMP/dcm2niix/dcm2niix" >> "$GITHUB_ENV"
 
       # No separate `cargo check`: clippy checks the same targets, and fails on what check would.
       - name: Clippy
@@ -107,7 +118,9 @@ jobs:
   # The derivatives of a run that makes every output QSMxT names have to pass the BIDS validator
   # with only the documented `.bidsignore` entries (#275). The fixture (an ignored test) writes
   # one derivatives dataset per case — a full multi-echo run, per-coil data, COSMOS, STI and an
-  # oblique run left on its working grid — and each is validated as it stands.
+  # oblique run left on its working grid — and each is validated as it stands. The same job
+  # validates the raw BIDS `qsmxt dicom-convert` writes from the synthetic DICOM fixtures (the job
+  # keeps its name, which branch protection may refer to).
   bids-validator:
     name: BIDS validator (derivatives)
     runs-on: ubuntu-latest
@@ -121,6 +134,17 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+          cache: true
+
+      # The DICOM conversion tests convert tiny synthetic series with dcm2niix (they skip the
+      # conversion checks without it).
+      - name: Install dcm2niix
+        run: |
+          mkdir -p "$RUNNER_TEMP/dcm2niix"
+          curl -fsSL "https://github.com/rordenlab/dcm2niix/releases/download/${DCM2NIIX_VERSION}/dcm2niix_lnx.zip" -o "$RUNNER_TEMP/dcm2niix.zip"
+          unzip -o -q "$RUNNER_TEMP/dcm2niix.zip" -d "$RUNNER_TEMP/dcm2niix"
+          echo "QSMXT_DCM2NIIX=$RUNNER_TEMP/dcm2niix/dcm2niix" >> "$GITHUB_ENV"
+
 
       - name: Write a full-feature run's derivatives
         run: >
@@ -131,6 +155,24 @@ jobs:
         run: |
           status=0
           for d in "$RUNNER_TEMP"/bids/*/derivatives/qsmxt; do
+            echo "::group::$d"
+            deno run -A jsr:@bids/validator@3.0.2 "$d" || status=1
+            echo "::endgroup::"
+          done
+          exit $status
+
+      # The raw BIDS `qsmxt dicom-convert` writes from each synthetic DICOM export pattern (a
+      # scanner's SWI/QSM next to the magnitude, duplicates, repeats, MP2RAGE, per-coil images,
+      # headerless files, …) must validate with no errors; `extra_data/` is in its `.bidsignore`.
+      - name: Convert the synthetic DICOM fixtures
+        run: >
+          QSMXT_DICOM_FIXTURE_OUT="$RUNNER_TEMP/dicom-bids"
+          cargo test --bin qsmxt -- --ignored --exact dicom::tests::dicom_bids_validator_fixture
+
+      - name: Validate the converted fixtures
+        run: |
+          status=0
+          for d in "$RUNNER_TEMP"/dicom-bids/*/; do
             echo "::group::$d"
             deno run -A jsr:@bids/validator@3.0.2 "$d" || status=1
             echo "::endgroup::"

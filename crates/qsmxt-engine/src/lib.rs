@@ -17,6 +17,7 @@ pub use qsm_core;
 
 pub mod error;
 pub mod bids;
+pub mod dicom;
 pub mod enums;
 pub mod masking;
 pub mod regions;

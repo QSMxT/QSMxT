@@ -84,7 +84,10 @@ from the real and imaginary parts. Per-coil real/imaginary data is not supported
 ### Uncombined receive coils
 
 Data exported per coil element (Siemens "save uncombined")
-is recognised by the BIDS `coil-<NN>` entity that `qsmxt dicom-convert` writes:
+is recognised by a `coil-<NN>` entity, which `qsmxt dicom-convert` writes. BIDS has
+no entity for a coil element yet, so this is a QSMxT extension: the converted
+dataset's `.bidsignore` lists `*_coil-*` so that the BIDS validator accepts the
+dataset.
 
 ```
 sub-*/[ses-*/]anat/*_rec-uncombined_coil-01_echo-1_part-phase_MEGRE.nii.gz
@@ -103,6 +106,28 @@ When the same acquisition is present both per coil and scanner-combined, the
 per-coil run is used and the scanner-combined one is skipped (a log line says so):
 the scanner's phase combination is generally not suitable for QSM. Pass
 `--exclude "*rec-uncombined*"` to process the scanner-combined data instead.
+
+## What `qsmxt dicom-convert` writes
+
+| Series | Name in `sub-*/[ses-*/]anat/` |
+| --- | --- |
+| Gradient-echo magnitude / phase / real / imaginary, one echo | `*_part-mag_T2starw` (`part-phase`, `part-real`, `part-imag`) |
+| The same, several echoes | `*_echo-<N>_part-mag_MEGRE` |
+| T1-weighted structural (MPRAGE, SPACE/TFE T1, MP2RAGE `UNI`) | `*_T1w` |
+| MP2RAGE inversion images | `*_inv-<N>_MP2RAGE` |
+| Scanner susceptibility map | `*_rec-scanner_Chimap` |
+| Scanner T2\* / R2\* map | `*_rec-scanner_T2starmap`, `*_rec-scanner_R2starmap` |
+| Scanner T1 map | `*_T1map` |
+| Scanner SWI | `*_rec-swi_part-mag_T2starw` |
+| Scanner minimum-intensity projection | `*_rec-mip_T2starw` |
+| Another reconstruction of the same images | `*_rec-<label>_…`, e.g. `rec-filtered`, `rec-aspire` |
+
+The plain original image of each kind is the one without a `rec-` label; that is
+the one `qsmxt run` uses. Any other series (scouts, reformats, FLAIR, diffusion,
+Dixon, other vendor maps) is kept in `sub-*/[ses-*/]extra_data/` as dcm2niix
+names it. These are not BIDS files, and `.bidsignore` lists `extra_data`. The
+`.bidsignore` also lists the MP2RAGE inversion images, because BIDS requires
+sidecar fields for them (such as `NumberShots`) that DICOM headers do not carry.
 
 ## GE data
 

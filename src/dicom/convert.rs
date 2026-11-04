@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc;
 
-use super::{CoilType, DicomSession, SeriesType};
+use super::{find_collisions, parse_dcm2niix_suffix, plan_session, CoilType, DicomSession, SeriesType, Target};
 
 /// Message sent from the conversion thread to the UI.
 pub enum ConvertMessage {
@@ -88,101 +88,6 @@ fn find_dcm2niix_on_path() -> Option<PathBuf> {
     }
 }
 
-/// BIDS suffix for a series type.
-fn bids_suffix(series_type: SeriesType) -> &'static str {
-    match series_type {
-        SeriesType::T1w => "T1w",
-        _ => "MEGRE",
-    }
-}
-
-/// BIDS part label for a series type (if applicable).
-fn bids_part(series_type: SeriesType) -> Option<&'static str> {
-    match series_type {
-        SeriesType::Magnitude => Some("mag"),
-        SeriesType::Phase => Some("phase"),
-        SeriesType::Real => Some("real"),
-        SeriesType::Imaginary => Some("imag"),
-        _ => None,
-    }
-}
-
-/// Parameters for building a BIDS filename.
-struct BidsNameParts<'a> {
-    sub: &'a str,
-    ses: Option<&'a str>,
-    acq: &'a str,
-    /// `None` when the acquisition has a single run in the session.
-    run: Option<u32>,
-    rec: Option<&'a str>,
-    desc: Option<&'a str>,
-    coil: Option<u32>,
-    echo: Option<u32>,
-    part: Option<&'a str>,
-    suffix: &'a str,
-    extension: &'a str,
-}
-
-/// Build the BIDS filename for a converted file.
-/// Order: sub-X[_ses-Y]_acq-Z[_rec-R][_run-N][_desc-D][_coil-NN][_echo-N][_part-P]_SUFFIX
-fn build_bids_filename(p: &BidsNameParts) -> String {
-    let mut name = format!("sub-{}", p.sub);
-    if let Some(ses) = p.ses {
-        name.push_str(&format!("_ses-{}", ses));
-    }
-    name.push_str(&format!("_acq-{}", p.acq));
-    if let Some(rec) = p.rec {
-        name.push_str(&format!("_rec-{}", rec));
-    }
-    if let Some(run) = p.run {
-        name.push_str(&format!("_run-{}", run));
-    }
-    if let Some(d) = p.desc {
-        name.push_str(&format!("_desc-{}", d));
-    }
-    if let Some(c) = p.coil {
-        name.push_str(&format!("_coil-{:02}", c));
-    }
-    if let Some(e) = p.echo {
-        name.push_str(&format!("_echo-{}", e));
-    }
-    if let Some(pt) = p.part {
-        name.push_str(&format!("_part-{}", pt));
-    }
-    name.push_str(&format!("_{}", p.suffix));
-    name.push_str(p.extension);
-    name
-}
-
-/// Parse dcm2niix suffixes from a temp output filename.
-/// dcm2niix appends things like `_e1`, `_e2`, `_ph`, `_e1_ph`, `_e1_real`, `_e1_imaginary` to
-/// the base name. Returns (echo_number, BIDS part implied by the suffix, if any).
-fn parse_dcm2niix_suffixes(filename: &str, base: &str) -> (Option<u32>, Option<&'static str>) {
-    let remainder = filename.strip_prefix(base).unwrap_or("");
-    let mut echo: Option<u32> = None;
-    let mut file_part = None;
-
-    for part in remainder.split('_') {
-        if part.is_empty() {
-            continue;
-        }
-        match part {
-            "ph" => file_part = Some("phase"),
-            "real" => file_part = Some("real"),
-            "imaginary" => file_part = Some("imag"),
-            _ => {
-                if let Some(num_str) = part.strip_prefix('e') {
-                    if let Ok(n) = num_str.parse::<u32>() {
-                        echo = Some(n);
-                    }
-                }
-            }
-        }
-    }
-
-    (echo, file_part)
-}
-
 // ─── 4D file detection ───
 
 /// Check if a NIfTI file is 4D by reading the header only.
@@ -239,365 +144,316 @@ fn ge_note(series_type: SeriesType) -> Option<&'static str> {
     }
 }
 
-/// The BIDS `run-` label of each acquisition in a session: every run of a repeated
-/// acquisition is labelled (`run-1` included), and an acquisition acquired once gets none.
-fn bids_runs(acquisitions: &[super::DicomAcquisition]) -> Vec<Option<u32>> {
-    let mut runs_per_acq: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
-    for acq in acquisitions {
-        *runs_per_acq.entry(acq.name.as_str()).or_default() += 1;
-    }
-    acquisitions
-        .iter()
-        .map(|acq| (runs_per_acq[acq.name.as_str()] > 1).then_some(acq.run_number))
-        .collect()
-}
-
 // ─── Main conversion ───
 
-/// Convert a DICOM session to BIDS format using dcm2niix, streaming
-/// log/error messages via the provided channel. Sends `Done` when finished.
+/// `.bidsignore` entries of a converted dataset: the series kept unconverted in `extra_data/`,
+/// per-coil images (`coil-` is a QSMxT extension of BIDS), and MP2RAGE inversion images (BIDS
+/// requires sidecar fields for them, such as `NumberShots`, that DICOM headers do not carry).
+pub const RAW_BIDSIGNORE: &[&str] = &["extra_data", "*_coil-*", "*_MP2RAGE.*"];
+
+const README_EXTRA_NOTE: &str = "Series that QSMxT does not use (scouts, reformats, other contrasts, \
+other scanner maps) are kept in sub-*/[ses-*/]extra_data/ as dcm2niix named them. They are not \
+converted to BIDS and are listed in .bidsignore.";
+
+/// Write the dataset-level files of a converted dataset: `dataset_description.json` (unless one
+/// is there), `.bidsignore` (adding QSMxT's entries to any already there) and a README.
+fn write_dataset_files(output_dir: &Path, has_extra: bool) -> std::io::Result<()> {
+    let desc = output_dir.join("dataset_description.json");
+    if !desc.exists() {
+        let json = serde_json::json!({
+            "Name": "QSMxT DICOM conversion",
+            "BIDSVersion": "1.10.0",
+            "DatasetType": "raw",
+            "GeneratedBy": [
+                {"Name": "qsmxt", "Version": env!("CARGO_PKG_VERSION"), "CodeURL": "https://github.com/QSMxT/qsmxt"},
+                {"Name": "dcm2niix", "CodeURL": "https://github.com/rordenlab/dcm2niix"}
+            ]
+        });
+        fs::write(&desc, serde_json::to_string_pretty(&json).unwrap_or_default())?;
+    }
+
+    let ignore = output_dir.join(".bidsignore");
+    let mut text = fs::read_to_string(&ignore).unwrap_or_default();
+    for entry in RAW_BIDSIGNORE {
+        if !text.lines().any(|l| l.trim() == *entry) {
+            if !text.is_empty() && !text.ends_with('\n') {
+                text.push('\n');
+            }
+            text.push_str(entry);
+            text.push('\n');
+        }
+    }
+    fs::write(&ignore, text)?;
+
+    let readme = output_dir.join("README");
+    let mut text = fs::read_to_string(&readme)
+        .unwrap_or_else(|_| "BIDS dataset converted from DICOM by qsmxt dicom-convert (dcm2niix).\n".to_string());
+    if has_extra && !text.contains("extra_data/") {
+        if !text.ends_with('\n') {
+            text.push('\n');
+        }
+        text.push('\n');
+        text.push_str(README_EXTRA_NOTE);
+        text.push('\n');
+    }
+    fs::write(&readme, text)
+}
+
+/// The extension of a dcm2niix output that goes into the dataset, and the name without it.
+fn split_extension(file_name: &str) -> Option<(&str, &'static str)> {
+    for ext in [".nii.gz", ".nii", ".json", ".bval", ".bvec"] {
+        if let Some(stem) = file_name.strip_suffix(ext) {
+            return Some((stem, ext));
+        }
+    }
+    None
+}
+
+/// Run dcm2niix on `files` in a fresh working folder; its outputs are `<work>/out*/<base>…`.
+/// A 4D output (images dcm2niix merged) is converted again without merging, so every volume
+/// becomes its own file. An unsuccessful exit is an error: nothing of the series is used.
+fn run_dcm2niix(dcm2niix: &Path, files: &[PathBuf], work: &Path, base: &str, log: &mut Vec<String>) -> Result<Vec<PathBuf>, String> {
+    let input = work.join("in");
+    fs::create_dir_all(&input).map_err(|e| format!("cannot create {}: {e}", input.display()))?;
+    for (i, src) in files.iter().enumerate() {
+        let ext = src.extension().and_then(|e| e.to_str()).unwrap_or("dcm");
+        let dst = input.join(format!("{i:06}.{ext}"));
+        if fs::hard_link(src, &dst).is_err() {
+            fs::copy(src, &dst).map_err(|e| format!("cannot copy {}: {e}", src.display()))?;
+        }
+    }
+    let run = |merge: &str, out: &Path, log: &mut Vec<String>| -> Result<Vec<PathBuf>, String> {
+        fs::create_dir_all(out).map_err(|e| format!("cannot create {}: {e}", out.display()))?;
+        let output = Command::new(dcm2niix)
+            .args(["-o", &out.to_string_lossy(), "-f", base, "-z", "y", "-m", merge])
+            .arg(&input)
+            .output()
+            .map_err(|e| format!("cannot run dcm2niix: {e}"))?;
+        let mut last = String::new();
+        for line in String::from_utf8_lossy(&output.stdout).lines().chain(String::from_utf8_lossy(&output.stderr).lines()) {
+            if !line.trim().is_empty() {
+                log.push(format!("  dcm2niix: {line}"));
+                last = line.trim().to_string();
+            }
+        }
+        if !output.status.success() {
+            return Err(format!("exit code {:?}{}", output.status.code(), if last.is_empty() { String::new() } else { format!(": {last}") }));
+        }
+        let mut outputs: Vec<PathBuf> = fs::read_dir(out)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with(base)))
+            .collect();
+        outputs.sort();
+        Ok(outputs)
+    };
+    let first = run("o", &work.join("out"), log)?;
+    let merged: Vec<usize> = first
+        .iter()
+        .filter(|p| p.to_string_lossy().ends_with(".nii.gz") || p.to_string_lossy().ends_with(".nii"))
+        .filter_map(|p| nifti_4d_size(p))
+        .collect();
+    if let Some(n) = merged.first() {
+        log.push(format!("  dcm2niix merged {n} volumes into one 4D image; converting again with one file per volume"));
+        match run("n", &work.join("out-split"), log) {
+            Ok(split) if !split.is_empty() => return Ok(split),
+            _ => log.push("  Warning: converting again did not work; keeping the 4D image".to_string()),
+        }
+    }
+    Ok(first)
+}
+
+/// One converted file waiting to be moved into the dataset.
+struct Staged {
+    from: PathBuf,
+    /// Path relative to the dataset root.
+    rel: String,
+    owner: String,
+}
+
+/// Fix up a sidecar dcm2niix wrote: EchoTime in seconds, and the `Units` BIDS requires for a
+/// phase image ("arbitrary": scanners store phase as integers).
+fn fix_sidecar(path: &Path) {
+    let Ok(content) = fs::read_to_string(path) else { return };
+    let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) else { return };
+    let mut changed = false;
+    if let Some(et) = json.get("EchoTime").and_then(|v| v.as_f64()) {
+        if et > 1.0 {
+            json["EchoTime"] = serde_json::json!(et / 1000.0);
+            changed = true;
+        }
+    }
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    if name.contains("_part-phase_") && json.get("Units").is_none() {
+        json["Units"] = serde_json::json!("arbitrary");
+        changed = true;
+    }
+    if changed {
+        if let Ok(out) = serde_json::to_string_pretty(&json) {
+            let _ = fs::write(path, out);
+        }
+    }
+}
+
+/// Convert a DICOM session to BIDS with dcm2niix, streaming log and error messages through `tx`,
+/// then `Done`.
+///
+/// Every series of a session is converted into a working folder first, and every name is
+/// decided before anything moves into the dataset: a name two series would share is an error
+/// naming both, and neither is written there. A series dcm2niix fails on leaves nothing behind.
 pub fn convert_session_streaming(
     session: &DicomSession,
     output_dir: &Path,
     tx: &mpsc::Sender<ConvertMessage>,
 ) {
+    let send = |m: ConvertMessage| {
+        let _ = tx.send(m);
+    };
     let dcm2niix = match find_dcm2niix() {
         Some(p) => p,
         None => {
-            let _ = tx.send(ConvertMessage::Error(
+            send(ConvertMessage::Error(
                 "dcm2niix not found: no bundled copy in ~/.qsmxt/bin and not on PATH. \
                  Reinstall qsmxt or install dcm2niix manually."
                     .to_string(),
             ));
-            let _ = tx.send(ConvertMessage::Done { bids_dir: output_dir.to_path_buf() });
+            send(ConvertMessage::Done { bids_dir: output_dir.to_path_buf() });
             return;
         }
     };
-
     if let Err(e) = fs::create_dir_all(output_dir) {
-        let _ = tx.send(ConvertMessage::Error(format!("Failed to create output directory: {}", e)));
-        let _ = tx.send(ConvertMessage::Done { bids_dir: output_dir.to_path_buf() });
+        send(ConvertMessage::Error(format!("Failed to create output directory: {}", e)));
+        send(ConvertMessage::Done { bids_dir: output_dir.to_path_buf() });
         return;
     }
+    send(ConvertMessage::Log(format!("Output BIDS directory: {}", output_dir.display())));
+    send(ConvertMessage::Log(format!("Using dcm2niix: {}", dcm2niix.display())));
 
-    let _ = tx.send(ConvertMessage::Log(format!("Output BIDS directory: {}", output_dir.display())));
-    let _ = tx.send(ConvertMessage::Log(format!("Using dcm2niix: {}", dcm2niix.display())));
+    let plans = plan_session(session);
+    let has_extra = plans.iter().any(|p| matches!(p.target, Target::Extra { .. }));
+    if let Err(e) = write_dataset_files(output_dir, has_extra) {
+        send(ConvertMessage::Error(format!("Failed to write the dataset files: {e}")));
+    }
+    for w in &session.report.warnings {
+        send(ConvertMessage::Log(format!("Warning: {w}")));
+    }
+    for n in &session.report.notes {
+        send(ConvertMessage::Log(format!("Note: {n}")));
+    }
+    for s in &session.report.skipped {
+        send(ConvertMessage::Log(format!("Skipped (not an image): {s}")));
+    }
 
-    for subject in &session.subjects {
-        let sub_label = &subject.patient_id;
+    let work_root = output_dir.join(".qsmxt_dcm2niix");
+    let _ = fs::remove_dir_all(&work_root);
+    let mut counter = 0usize;
 
-        for study in &subject.studies {
-            let ses_label = if study.study_date.is_empty() {
-                None
-            } else {
-                Some(study.study_date.replace('-', ""))
-            };
+    for (si, subject) in session.subjects.iter().enumerate() {
+        for (sti, _study) in subject.studies.iter().enumerate() {
+            let mut staged: Vec<Staged> = Vec::new();
+            let mut failed: Vec<String> = Vec::new();
+            for plan in plans.iter().filter(|p| p.r.sub == si && p.r.study == sti) {
+                let series = session.series_ref(&plan.r);
+                let owner = series.display_name();
+                let mut log = Vec::new();
+                match &plan.target {
+                    Target::Skip => {
+                        let why = series.note.as_ref().map(|n| format!(" ({n})")).unwrap_or_default();
+                        send(ConvertMessage::Log(format!("Skipping {owner}{why}")));
+                    }
+                    Target::Extra { dir, prefix } => {
+                        counter += 1;
+                        send(ConvertMessage::Log(format!("Keeping {owner} in extra_data ({} files)", series.num_files)));
+                        match run_dcm2niix(&dcm2niix, &series.files, &work_root.join(counter.to_string()), prefix, &mut log) {
+                            Ok(outputs) => {
+                                for out in outputs {
+                                    let Some(name) = out.file_name().and_then(|n| n.to_str()).map(str::to_string) else { continue };
+                                    if split_extension(&name).is_none() {
+                                        continue;
+                                    }
+                                    staged.push(Staged { from: out, rel: format!("{}/{}", dir.join("/"), name), owner: owner.clone() });
+                                }
+                            }
+                            Err(e) => log.push(format!("  Warning: dcm2niix could not convert {owner} ({e}); it is left out")),
+                        }
+                    }
+                    Target::Bids(stem) => {
+                        send(ConvertMessage::Log(format!("Converting: {owner} ({} files) -> {}", series.num_files, stem.preview())));
+                        if let Some(note) = is_ge_manufacturer(&series.manufacturer).then(|| ge_note(series.series_type)).flatten() {
+                            log.push(note.to_string());
+                        }
+                        let groups: Vec<(Option<u32>, &[PathBuf])> = if series.coil_type == CoilType::Uncombined && !series.coil_groups.is_empty() {
+                            series.coil_groups.iter().map(|g| (g.coil_num, g.files.as_slice())).collect()
+                        } else {
+                            vec![(None, series.files.as_slice())]
+                        };
+                        let base = "qsmxt";
+                        for (coil, files) in groups {
+                            counter += 1;
+                            match run_dcm2niix(&dcm2niix, files, &work_root.join(counter.to_string()), base, &mut log) {
+                                Ok(outputs) => {
+                                    for out in outputs {
+                                        let Some(name) = out.file_name().and_then(|n| n.to_str()).map(str::to_string) else { continue };
+                                        let Some((stem_part, ext)) = split_extension(&name) else { continue };
+                                        let sfx = parse_dcm2niix_suffix(stem_part.strip_prefix(base).unwrap_or(""));
+                                        let bids_name = stem.file_name(&sfx, coil, ext);
+                                        staged.push(Staged { from: out.clone(), rel: format!("{}/{}", stem.dir().join("/"), bids_name), owner: owner.clone() });
+                                    }
+                                }
+                                Err(e) => {
+                                    let coil = coil.map(|c| format!(" (coil {c})")).unwrap_or_default();
+                                    send(ConvertMessage::Error(format!("dcm2niix failed for {owner}{coil}: {e}; nothing of this series was converted")));
+                                    failed.push(owner.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+                for line in log {
+                    send(ConvertMessage::Log(line));
+                }
+            }
 
-            // Check if any acquisition has both combined and uncombined coils
-            let has_mixed_coils = study.acquisitions.iter().any(|acq| {
-                let has_combined = acq.series.iter().any(|s| s.coil_type == CoilType::Combined);
-                let has_uncombined = acq.series.iter().any(|s| s.coil_type == CoilType::Uncombined);
-                has_combined && has_uncombined
-            });
-
-            let runs = bids_runs(&study.acquisitions);
-            for (acq, &run) in study.acquisitions.iter().zip(&runs) {
-                for series in &acq.series {
-                    if series.series_type == SeriesType::Skip {
-                        let _ = tx.send(ConvertMessage::Log(format!("Skipping: {} ({})", series.description, acq.name)));
+            staged.retain(|s| !failed.contains(&s.owner));
+            let entries: Vec<(String, String)> = staged.iter().map(|s| (s.rel.clone(), s.owner.clone())).collect();
+            let clashes = find_collisions(&entries);
+            for (name, a, b) in &clashes {
+                let msg = if a == b {
+                    format!("{name}: two images of {a} would both be written there; neither was")
+                } else {
+                    format!("{name}: {a} and {b} would both be written there; neither was")
+                };
+                send(ConvertMessage::Error(msg));
+            }
+            let clashing: Vec<&String> = clashes.iter().map(|c| &c.0).collect();
+            for s in &staged {
+                if clashing.contains(&&s.rel) {
+                    continue;
+                }
+                let dest = output_dir.join(&s.rel);
+                if let Some(parent) = dest.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                if fs::rename(&s.from, &dest).is_err() {
+                    if let Err(e) = fs::copy(&s.from, &dest) {
+                        send(ConvertMessage::Error(format!("Failed to write {}: {e}", dest.display())));
                         continue;
                     }
-
-                    // Add _rec-uncombined only when both combined and uncombined exist
-                    let rec = if has_mixed_coils && series.coil_type == CoilType::Uncombined {
-                        Some("uncombined")
-                    } else {
-                        None
-                    };
-
-                    let result = convert_series(
-                        &dcm2niix,
-                        series,
-                        sub_label,
-                        ses_label.as_deref(),
-                        &acq.name,
-                        run,
-                        rec,
-                        output_dir,
-                    );
-
-                    for line in result.log_lines {
-                        let _ = tx.send(ConvertMessage::Log(line));
-                    }
-                    for err in result.errors {
-                        let _ = tx.send(ConvertMessage::Error(err));
-                    }
+                }
+                if s.rel.ends_with(".json") {
+                    fix_sidecar(&dest);
+                }
+                if !s.rel.ends_with(".json") {
+                    send(ConvertMessage::Log(format!("  -> {}", s.rel)));
                 }
             }
         }
     }
 
-    let _ = tx.send(ConvertMessage::Done { bids_dir: output_dir.to_path_buf() });
-}
-
-struct SeriesConvertResult {
-    log_lines: Vec<String>,
-    errors: Vec<String>,
-}
-
-#[allow(clippy::too_many_arguments)]
-fn convert_series(
-    dcm2niix: &Path,
-    series: &super::DicomSeries,
-    sub_label: &str,
-    ses_label: Option<&str>,
-    acq_name: &str,
-    run_number: Option<u32>,
-    rec: Option<&str>,
-    output_dir: &Path,
-) -> SeriesConvertResult {
-    let mut log_lines = Vec::new();
-    let mut errors = Vec::new();
-
-    let suffix = bids_suffix(series.series_type);
-    let part = bids_part(series.series_type);
-    let is_ge = is_ge_manufacturer(&series.manufacturer);
-    // Scanner-derived recons (e.g. filtered) get a `desc-` label so they don't
-    // collide with the plain reconstruction of the same series.
-    let desc = super::recon_desc(&series.image_type);
-
-    // Build output subdirectory
-    let mut sub_dir = output_dir.join(format!("sub-{}", sub_label));
-    if let Some(ses) = ses_label {
-        sub_dir = sub_dir.join(format!("ses-{}", ses));
-    }
-    let anat_dir = sub_dir.join("anat");
-
-    if let Err(e) = fs::create_dir_all(&anat_dir) {
-        errors.push(format!("Failed to create directory {}: {}", anat_dir.display(), e));
-        return SeriesConvertResult { log_lines, errors };
-    }
-
-    // Uncombined acquisitions split into one group per coil element so dcm2niix
-    // runs cleanly per coil and the outputs get distinct `coil-NN` labels.
-    // Combined / single-coil series are a single group with no coil label.
-    let temp_dir = output_dir.join(".tmp_dcm2niix");
-    let groups: Vec<(Option<u32>, &[PathBuf])> = if series.coil_groups.is_empty() {
-        vec![(None, series.files.as_slice())]
-    } else {
-        series.coil_groups.iter().map(|g| (g.coil_num, g.files.as_slice())).collect()
-    };
-    let multi_coil = groups.len() > 1;
-
-    for (coil_num, files) in groups {
-        let coil = if multi_coil { coil_num } else { None };
-        convert_coil_group(
-            dcm2niix, files, series, suffix, part, is_ge,
-            sub_label, ses_label, acq_name, run_number, rec, desc, coil,
-            &anat_dir, &temp_dir, &mut log_lines, &mut errors,
-        );
-    }
-
-    SeriesConvertResult { log_lines, errors }
-}
-
-/// Convert one coil group's DICOM files (or a whole combined series) via dcm2niix
-/// and rename the outputs to BIDS. `coil` adds a `coil-NN` entity when set.
-#[allow(clippy::too_many_arguments)]
-fn convert_coil_group(
-    dcm2niix: &Path,
-    files: &[PathBuf],
-    series: &super::DicomSeries,
-    suffix: &str,
-    part: Option<&str>,
-    is_ge: bool,
-    sub_label: &str,
-    ses_label: Option<&str>,
-    acq_name: &str,
-    run_number: Option<u32>,
-    rec: Option<&str>,
-    desc: Option<&str>,
-    coil: Option<u32>,
-    anat_dir: &Path,
-    temp_dir: &Path,
-    log_lines: &mut Vec<String>,
-    errors: &mut Vec<String>,
-) {
-    // Create temp directory for dcm2niix
-    let _ = fs::remove_dir_all(temp_dir);
-    if let Err(e) = fs::create_dir_all(temp_dir) {
-        errors.push(format!("Failed to create temp directory: {}", e));
-        return;
-    }
-
-    // Copy DICOM files to temp directory
-    for (i, src) in files.iter().enumerate() {
-        let ext = src.extension().and_then(|e| e.to_str()).unwrap_or("dcm");
-        let dst = temp_dir.join(format!("{:06}.{}", i, ext));
-        if let Err(e) = fs::copy(src, &dst) {
-            errors.push(format!("Failed to copy {}: {}", src.display(), e));
-        }
-    }
-
-    let coil_label = coil.map(|c| format!(" coil-{:02}", c)).unwrap_or_default();
-    log_lines.push(format!(
-        "Converting: {}{} ({} files)",
-        series.description, coil_label, files.len(),
-    ));
-
-    if let Some(note) = is_ge.then(|| ge_note(series.series_type)).flatten() {
-        log_lines.push(note.to_string());
-    }
-
-    // Run dcm2niix with a temp filename — we'll rename outputs ourselves
-    let temp_base = "temp_output";
-    let dcm2niix_result = Command::new(dcm2niix)
-        .args(["-o", &temp_dir.to_string_lossy()])
-        .args(["-f", temp_base])
-        .args(["-z", "y"])
-        .args(["-m", "o"])
-        .arg(temp_dir)
-        .output();
-
-    match dcm2niix_result {
-        Ok(output) => {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
-
-            for line in stdout.lines() {
-                if !line.trim().is_empty() {
-                    log_lines.push(format!("  dcm2niix: {}", line));
-                }
-            }
-            for line in stderr.lines() {
-                if !line.trim().is_empty() {
-                    log_lines.push(format!("  dcm2niix: {}", line));
-                }
-            }
-
-            if !output.status.success() {
-                errors.push(format!("dcm2niix failed for {}: exit code {:?}", series.description, output.status.code()));
-            }
-        }
-        Err(e) => {
-            errors.push(format!("Failed to run dcm2niix: {}. Is it installed?", e));
-            let _ = fs::remove_dir_all(temp_dir);
-            return;
-        }
-    }
-
-    // Check for 4D NIfTI files produced by dcm2niix
-    let nii_files: Vec<PathBuf> = fs::read_dir(temp_dir)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| {
-            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            name.starts_with(temp_base) && (name.ends_with(".nii.gz") || name.ends_with(".nii"))
-        })
-        .collect();
-
-    for nii_path in &nii_files {
-        if let Some(n_vols) = nifti_4d_size(nii_path) {
-            log_lines.push(format!(
-                "  Warning: 4D NIfTI detected ({} volumes) — dcm2niix merged echoes. \
-                 Re-running with -m n to produce separate files.",
-                n_vols
-            ));
-
-            // Re-run dcm2niix without merging
-            let _ = fs::remove_file(nii_path);
-            let json_path = nii_to_json_path(nii_path);
-            let _ = fs::remove_file(&json_path);
-
-            let rerun = Command::new(dcm2niix)
-                .args(["-o", &temp_dir.to_string_lossy()])
-                .args(["-f", temp_base])
-                .args(["-z", "y"])
-                .args(["-m", "n"]) // don't merge
-                .arg(temp_dir)
-                .output();
-
-            if let Ok(output) = rerun {
-                for line in String::from_utf8_lossy(&output.stdout).lines() {
-                    if !line.trim().is_empty() {
-                        log_lines.push(format!("  dcm2niix (rerun): {}", line));
-                    }
-                }
-            }
-            break; // only need to rerun once
-        }
-    }
-
-    // Collect all dcm2niix output files
-    let final_outputs: Vec<PathBuf> = fs::read_dir(temp_dir)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| {
-            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            name.starts_with(temp_base)
-        })
-        .collect();
-
-    // Rename to proper BIDS names and move to anat directory
-    for temp_path in &final_outputs {
-        let filename = temp_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-
-        let (stem, extension) = if let Some(s) = filename.strip_suffix(".nii.gz") {
-            (s, ".nii.gz")
-        } else if let Some(s) = filename.strip_suffix(".json") {
-            (s, ".json")
-        } else if let Some(s) = filename.strip_suffix(".bval") {
-            (s, ".bval")
-        } else if let Some(s) = filename.strip_suffix(".bvec") {
-            (s, ".bvec")
-        } else {
-            continue;
-        };
-
-        // Parse dcm2niix suffixes
-        let (echo, suffix_part) = parse_dcm2niix_suffixes(stem, temp_base);
-        let file_part = suffix_part.or(part);
-
-        let bids_name = build_bids_filename(&BidsNameParts {
-            sub: sub_label, ses: ses_label, acq: acq_name, run: run_number,
-            rec, desc, coil, echo, part: file_part, suffix, extension,
-        });
-
-        let dest = anat_dir.join(&bids_name);
-        if let Err(e) = fs::rename(temp_path, &dest) {
-            if let Err(e2) = fs::copy(temp_path, &dest) {
-                errors.push(format!("Failed to move {} -> {}: {} / {}", filename, bids_name, e, e2));
-                continue;
-            }
-        }
-
-        // Post-process JSON sidecars: ensure EchoTime is in seconds
-        if extension == ".json" {
-            let Ok(content) = fs::read_to_string(&dest) else { continue };
-            let Ok(mut json): Result<serde_json::Value, _> = serde_json::from_str(&content) else { continue };
-
-            // Ensure EchoTime is in seconds (some scanners report in ms)
-            if let Some(et) = json.get("EchoTime").and_then(|v| v.as_f64()) {
-                if et > 1.0 {
-                    // Likely in milliseconds, convert to seconds
-                    json["EchoTime"] = serde_json::json!(et / 1000.0);
-                    if let Ok(output) = serde_json::to_string_pretty(&json) {
-                        let _ = fs::write(&dest, output);
-                    }
-                }
-            }
-
-        }
-
-        log_lines.push(format!("  -> {}", bids_name));
-    }
-
-    // Clean up temp directory
-    let _ = fs::remove_dir_all(temp_dir);
+    let _ = fs::remove_dir_all(&work_root);
+    send(ConvertMessage::Done { bids_dir: output_dir.to_path_buf() });
 }
 
 #[cfg(test)]
@@ -705,163 +561,30 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_parse_dcm2niix_suffixes() {
-        assert_eq!(parse_dcm2niix_suffixes("temp_output", "temp_output"), (None, None));
-        assert_eq!(parse_dcm2niix_suffixes("temp_output_e1", "temp_output"), (Some(1), None));
-        assert_eq!(parse_dcm2niix_suffixes("temp_output_e2", "temp_output"), (Some(2), None));
-        assert_eq!(parse_dcm2niix_suffixes("temp_output_ph", "temp_output"), (None, Some("phase")));
-        assert_eq!(parse_dcm2niix_suffixes("temp_output_e1_ph", "temp_output"), (Some(1), Some("phase")));
-        assert_eq!(parse_dcm2niix_suffixes("temp_output_e12_ph", "temp_output"), (Some(12), Some("phase")));
-        assert_eq!(parse_dcm2niix_suffixes("temp_output_e3_real", "temp_output"), (Some(3), Some("real")));
-        assert_eq!(parse_dcm2niix_suffixes("temp_output_e3_imaginary", "temp_output"), (Some(3), Some("imag")));
-    }
 
-    #[test]
-    fn test_build_bids_filename_single_echo() {
-        let name = build_bids_filename(&BidsNameParts {
-            sub: "01", ses: None, acq: "gre", run: None, rec: None, desc: None, coil: None,
-            echo: None, part: Some("mag"), suffix: "T2starw", extension: ".nii.gz",
-        });
-        assert_eq!(name, "sub-01_acq-gre_part-mag_T2starw.nii.gz");
-    }
 
-    #[test]
-    fn test_build_bids_filename_multi_echo() {
-        let name = build_bids_filename(&BidsNameParts {
-            sub: "01", ses: Some("20240314"), acq: "gre", run: None, rec: None, desc: None, coil: None,
-            echo: Some(3), part: Some("phase"), suffix: "MEGRE", extension: ".json",
-        });
-        assert_eq!(name, "sub-01_ses-20240314_acq-gre_echo-3_part-phase_MEGRE.json");
-    }
 
-    #[test]
-    fn test_build_bids_filename_with_run() {
-        let name = build_bids_filename(&BidsNameParts {
-            sub: "p025pre", ses: Some("20240314"), acq: "wip925B1mmPAT3eco6", run: Some(2), rec: None, desc: None, coil: None,
-            echo: Some(1), part: Some("mag"), suffix: "MEGRE", extension: ".nii.gz",
-        });
-        assert_eq!(name, "sub-p025pre_ses-20240314_acq-wip925B1mmPAT3eco6_run-2_echo-1_part-mag_MEGRE.nii.gz");
-    }
 
-    #[test]
-    fn test_build_bids_filename_with_run_1() {
-        let name = build_bids_filename(&BidsNameParts {
-            sub: "01", ses: None, acq: "gre", run: Some(1), rec: None, desc: None, coil: None,
-            echo: Some(1), part: Some("phase"), suffix: "MEGRE", extension: ".nii",
-        });
-        assert_eq!(name, "sub-01_acq-gre_run-1_echo-1_part-phase_MEGRE.nii");
-    }
 
-    #[test]
-    fn repeated_acquisitions_label_every_run_and_single_ones_none() {
-        let acq = |name: &str, run_number| super::super::DicomAcquisition {
-            name: name.to_string(), run_number, series: Vec::new(),
-        };
-        let acqs = [acq("gre", 1), acq("mprage", 1), acq("gre", 2), acq("gre", 3)];
-        assert_eq!(bids_runs(&acqs), vec![Some(1), None, Some(2), Some(3)]);
-    }
 
-    #[test]
-    fn test_build_bids_filename_with_rec() {
-        let name = build_bids_filename(&BidsNameParts {
-            sub: "01", ses: None, acq: "gre", run: None, rec: Some("uncombined"), desc: None, coil: None,
-            echo: Some(1), part: Some("mag"), suffix: "MEGRE", extension: ".nii.gz",
-        });
-        assert_eq!(name, "sub-01_acq-gre_rec-uncombined_echo-1_part-mag_MEGRE.nii.gz");
-    }
 
-    #[test]
-    fn test_build_bids_filename_with_coil() {
-        let name = build_bids_filename(&BidsNameParts {
-            sub: "01", ses: None, acq: "gre", run: None, rec: Some("uncombined"), desc: None, coil: Some(7),
-            echo: Some(2), part: Some("phase"), suffix: "MEGRE", extension: ".nii.gz",
-        });
-        assert_eq!(name, "sub-01_acq-gre_rec-uncombined_coil-07_echo-2_part-phase_MEGRE.nii.gz");
-    }
 
-    #[test]
-    fn test_build_bids_filename_with_desc() {
-        let name = build_bids_filename(&BidsNameParts {
-            sub: "01", ses: None, acq: "gre", run: None, rec: None, desc: Some("filtered"), coil: None,
-            echo: Some(1), part: Some("mag"), suffix: "MEGRE", extension: ".nii.gz",
-        });
-        assert_eq!(name, "sub-01_acq-gre_desc-filtered_echo-1_part-mag_MEGRE.nii.gz");
-    }
 
-    // ─── bids_suffix tests ───
 
-    #[test]
-    fn test_bids_suffix_t1w() {
-        assert_eq!(bids_suffix(SeriesType::T1w), "T1w");
-    }
 
-    #[test]
-    fn test_bids_suffix_magnitude() {
-        assert_eq!(bids_suffix(SeriesType::Magnitude), "MEGRE");
-    }
 
-    #[test]
-    fn test_bids_suffix_phase() {
-        assert_eq!(bids_suffix(SeriesType::Phase), "MEGRE");
-    }
 
-    #[test]
-    fn test_bids_suffix_real() {
-        assert_eq!(bids_suffix(SeriesType::Real), "MEGRE");
-    }
 
-    #[test]
-    fn test_bids_suffix_imaginary() {
-        assert_eq!(bids_suffix(SeriesType::Imaginary), "MEGRE");
-    }
 
-    #[test]
-    fn test_bids_suffix_extra() {
-        assert_eq!(bids_suffix(SeriesType::Extra), "MEGRE");
-    }
 
-    #[test]
-    fn test_bids_suffix_skip() {
-        assert_eq!(bids_suffix(SeriesType::Skip), "MEGRE");
-    }
 
-    // ─── bids_part tests ───
 
-    #[test]
-    fn test_bids_part_magnitude() {
-        assert_eq!(bids_part(SeriesType::Magnitude), Some("mag"));
-    }
 
-    #[test]
-    fn test_bids_part_phase() {
-        assert_eq!(bids_part(SeriesType::Phase), Some("phase"));
-    }
 
-    #[test]
-    fn test_bids_part_real() {
-        assert_eq!(bids_part(SeriesType::Real), Some("real"));
-    }
 
-    #[test]
-    fn test_bids_part_imaginary() {
-        assert_eq!(bids_part(SeriesType::Imaginary), Some("imag"));
-    }
 
-    #[test]
-    fn test_bids_part_t1w() {
-        assert_eq!(bids_part(SeriesType::T1w), None);
-    }
 
-    #[test]
-    fn test_bids_part_extra() {
-        assert_eq!(bids_part(SeriesType::Extra), None);
-    }
 
-    #[test]
-    fn test_bids_part_skip() {
-        assert_eq!(bids_part(SeriesType::Skip), None);
-    }
 
     // ─── nii_to_json_path tests ───
 
@@ -946,23 +669,6 @@ mod tests {
         assert!(ge_note(SeriesType::Magnitude).is_none());
     }
 
-    // ─── build_bids_filename with T1w suffix and no part ───
 
-    #[test]
-    fn test_build_bids_filename_t1w_no_part() {
-        let name = build_bids_filename(&BidsNameParts {
-            sub: "01", ses: None, acq: "mprage", run: None, rec: None, desc: None, coil: None,
-            echo: None, part: None, suffix: "T1w", extension: ".nii.gz",
-        });
-        assert_eq!(name, "sub-01_acq-mprage_T1w.nii.gz");
-    }
 
-    #[test]
-    fn test_build_bids_filename_t1w_no_part_with_session() {
-        let name = build_bids_filename(&BidsNameParts {
-            sub: "02", ses: Some("20240101"), acq: "mprage", run: None, rec: None, desc: None, coil: None,
-            echo: None, part: None, suffix: "T1w", extension: ".nii.gz",
-        });
-        assert_eq!(name, "sub-02_ses-20240101_acq-mprage_T1w.nii.gz");
-    }
 }

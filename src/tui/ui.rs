@@ -1399,6 +1399,7 @@ fn draw_dicom_series_section(
 
     // One row per UNIQUE series (shared across subjects), not per per-subject instance.
     let groups = session.unique_series();
+    let plans = crate::dicom::plan_session(session);
     let mut acq_counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
     for g in &groups {
         *acq_counts.entry(g.acq_name.as_str()).or_default() += 1;
@@ -1424,7 +1425,7 @@ fn draw_dicom_series_section(
         let n_subjects = g.subject_count();
         let series_focused = !in_io && ds.focus == super::app::DicomFocus::Series(flat_idx);
         let type_label = series.series_type.label();
-        let echo_info = match series.echo_times.as_slice() {
+        let echo_info = match g.echo_times.as_slice() {
             [] => String::new(),
             [te] => format!(" TE={:.1}ms", te),
             tes => format!(" {}×TEs=[{:.1}…{:.1}]ms", tes.len(), tes[0], tes[tes.len() - 1]),
@@ -1434,10 +1435,11 @@ fn draw_dicom_series_section(
         } else {
             echo_info
         };
-        let echo_info = match crate::dicom::recon_desc(&series.image_type) {
-            Some(d) => format!("{} [{}]", echo_info, d),
-            None => echo_info,
-        };
+        let target = plans
+            .iter()
+            .find(|p| p.r == g.refs[0])
+            .map(|p| format!("  → {}", crate::commands::dicom::target_label(&p.target)))
+            .unwrap_or_default();
         let files_label = if n_subjects > 1 {
             format!("  ({} files × {} subjects)", series.num_files, n_subjects)
         } else {
@@ -1454,8 +1456,10 @@ fn draw_dicom_series_section(
             crate::dicom::SeriesType::Skip => Style::default().fg(Color::DarkGray),
             crate::dicom::SeriesType::Phase => Style::default().fg(Color::Cyan),
             crate::dicom::SeriesType::Magnitude => Style::default().fg(Color::Green),
-            crate::dicom::SeriesType::T1w => Style::default().fg(Color::Magenta),
-            _ => Style::default().fg(Color::White),
+            crate::dicom::SeriesType::T1w | crate::dicom::SeriesType::Inversion | crate::dicom::SeriesType::T1map => Style::default().fg(Color::Magenta),
+            crate::dicom::SeriesType::Real | crate::dicom::SeriesType::Imaginary => Style::default().fg(Color::Cyan),
+            crate::dicom::SeriesType::Extra => Style::default().fg(Color::DarkGray),
+            _ => Style::default().fg(Color::Blue),
         };
 
         let line = if series_focused {
@@ -1468,6 +1472,7 @@ fn draw_dicom_series_section(
                 Span::styled(type_label, type_style.add_modifier(Modifier::BOLD)),
                 Span::styled(" >", Style::default().fg(Color::DarkGray)),
                 Span::styled(files_label, Style::default().fg(Color::DarkGray)),
+                Span::styled(target, Style::default().fg(Color::DarkGray)),
             ])
         } else {
             Line::from(vec![
@@ -1477,9 +1482,39 @@ fn draw_dicom_series_section(
                 ),
                 Span::styled(format!("[{}]", type_label), type_style),
                 Span::styled(files_label, Style::default().fg(Color::DarkGray)),
+                Span::styled(target, Style::default().fg(Color::DarkGray)),
             ])
         };
         lines.push(line);
+        if series_focused {
+            if let Some(note) = &series.note {
+                lines.push(Line::from(Span::styled(format!("      {note}"), Style::default().fg(Color::DarkGray))));
+            }
+        }
+    }
+
+    // What the scan found besides the series: problems, and what it left out.
+    let report = &session.report;
+    if !report.warnings.is_empty() {
+        lines.push(Line::from(""));
+        for w in &report.warnings {
+            lines.push(Line::from(Span::styled(format!("  ⚠ {w}"), Style::default().fg(Color::Yellow))));
+        }
+    }
+    if !report.notes.is_empty() || !report.skipped.is_empty() || report.not_dicom > 0 {
+        lines.push(Line::from(""));
+        for n in &report.notes {
+            lines.push(Line::from(Span::styled(format!("  {n}"), Style::default().fg(Color::DarkGray))));
+        }
+        for s in &report.skipped {
+            lines.push(Line::from(Span::styled(format!("  Not an image, not converted: {s}"), Style::default().fg(Color::DarkGray))));
+        }
+        if report.not_dicom > 0 {
+            lines.push(Line::from(Span::styled(
+                format!("  {} file(s) in the folder are not DICOM and are ignored", report.not_dicom),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
     }
 
     // dcm2niix availability indicator (uses the cached resolution)
