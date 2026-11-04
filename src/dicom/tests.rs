@@ -201,6 +201,22 @@ fn scanner_map_at_last_echo() {
 }
 
 #[test]
+fn bruker_fit_of_extra() {
+    let (_d, s) = scan("bruker_fit_of_extra");
+    let plans = plan_session(&s);
+    let target = |n: i32| plans.iter().find(|p| s.series_ref(&p.r).series_number == n).map(|p| p.target.clone()).unwrap();
+    assert!(matches!(target(90002), Target::Bids(_)));
+    assert!(matches!(target(90003), Target::Extra { .. }));
+    assert!(matches!(target(90004), Target::Extra { .. }));
+    let Some(c) = convert(&s) else { return };
+    let maps: Vec<&String> = c.images.iter().filter(|f| f.contains("/anat/") && f.ends_with("T2starmap.nii.gz")).collect();
+    assert_eq!(maps.len(), 1, "only the fit of the magnitude: {:?}\n{}", c.images, c.log.join("\n"));
+    assert!(c.images.iter().any(|f| f.contains("/extra_data/90004")), "{:?}", c.images);
+    assert!(c.log.iter().any(|l| l.contains("series 90004") && l.contains("kept there too")), "{}", c.log.join("\n"));
+    assert!(c.errors.is_empty(), "{:?}", c.errors);
+}
+
+#[test]
 fn bruker_te_suffix() {
     let (_d, s) = scan("bruker_te_suffix");
     assert_eq!(types(&s).iter().map(|t| t.1).collect::<Vec<_>>(), vec![SeriesType::Magnitude, SeriesType::T2starMap]);

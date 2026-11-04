@@ -125,30 +125,45 @@ struct Built {
     sop_uids: std::collections::HashSet<String>,
 }
 
-/// The series a derived series without a protocol name (a Bruker parametric map) was made from:
-/// the series it references, else the series holding an image it names as its source, else the
-/// series it was acquired with (same acquisition time) or, for Bruker's numbering
-/// (scan × 10000 + reconstruction), the latest earlier reconstruction of the same scan.
-fn parent_of(built: &[Built], i: usize) -> Option<usize> {
+/// The series a derived series without a protocol name (a Bruker parametric map) was made from,
+/// and whether the link is firm enough for the map to follow that series into `extra_data/`.
+///
+/// In order: the series it references; the series holding an image it names as its source; for
+/// Bruker's numbering (scan x 10000 + reconstruction), the latest earlier reconstruction of the
+/// same scan, so 90002 is made from 90001 and 90004 from 90003; the series acquired at the same
+/// time, the nearest before it in number. All reconstructions of a Bruker scan share an
+/// acquisition time, so the numbering has to come before the time.
+///
+/// A series classified as not for QSM is no source by image or by time: ReferencedImageSequence
+/// usually names the localizer the slices were planned on, and reformats share the time of the
+/// scan they reformat. Several series at the same time do not say which one it came from, so that
+/// link only files the map with the acquisition.
+fn parent_of(built: &[Built], i: usize) -> Option<(usize, bool)> {
     let b = &built[i];
     let base_uid = |s: &DicomSeries| s.series_uid.split('#').next().unwrap_or("").to_string();
     let candidates = || built.iter().enumerate().filter(move |(j, c)| *j != i && !c.series.protocol_name.trim().is_empty());
     if let Some((j, _)) = candidates().find(|(_, c)| b.referenced_series.contains(&base_uid(&c.series))) {
-        return Some(j);
+        return Some((j, true));
     }
-    if let Some((j, _)) = candidates().find(|(_, c)| b.source_images.iter().any(|u| c.sop_uids.contains(u))) {
-        return Some(j);
+    let for_qsm = |c: &Built| c.series.series_type != SeriesType::Extra;
+    if let Some((j, _)) = candidates().find(|(_, c)| for_qsm(c) && b.source_images.iter().any(|u| c.sop_uids.contains(u))) {
+        return Some((j, true));
     }
     let n = b.series.series_number;
-    candidates()
-        .filter(|(_, c)| {
-            let m = c.series.series_number;
-            let same_time = matches!((b.series.acquisition_time, c.series.acquisition_time), (Some(x), Some(y)) if (x - y).abs() < 1.0);
-            let same_scan = n >= 10000 && m < n && m / 10000 == n / 10000;
-            same_time || same_scan
-        })
-        .max_by_key(|(_, c)| c.series.series_number)
-        .map(|(j, _)| j)
+    if n >= 10000 {
+        let earlier = candidates()
+            .filter(|(_, c)| c.series.series_number < n && c.series.series_number / 10000 == n / 10000)
+            .max_by_key(|(_, c)| c.series.series_number);
+        if let Some((j, _)) = earlier {
+            return Some((j, true));
+        }
+    }
+    let same_time: Vec<(usize, i32)> = candidates()
+        .filter(|(_, c)| for_qsm(c) && matches!((b.series.acquisition_time, c.series.acquisition_time), (Some(x), Some(y)) if (x - y).abs() < 1.0))
+        .map(|(j, c)| (j, c.series.series_number))
+        .collect();
+    let nearest = same_time.iter().filter(|(_, m)| *m < n).max_by_key(|(_, m)| *m).or_else(|| same_time.iter().min_by_key(|(_, m)| *m))?;
+    Some((nearest.0, same_time.len() == 1))
 }
 
 /// One series from a set of files of one SeriesInstanceUID.
@@ -416,6 +431,7 @@ where
                     a.display_name(), b.display_name(), kind.label().to_lowercase(), a.display_name(), b.display_name()
                 ));
                 b.series_type = SeriesType::Extra;
+                b.auto_type = SeriesType::Extra;
             }
         }
     }
@@ -522,24 +538,49 @@ where
     for (patient_id, dates) in tree {
         let mut studies = Vec::new();
         for (study_date, mut built) in dates {
+            let mut made_from: BTreeMap<String, String> = BTreeMap::new();
             // A derived series without a protocol name joins the acquisition it was made from.
             for i in 0..built.len() {
                 if !built[i].series.protocol_name.trim().is_empty() || built[i].series.original {
                     continue;
                 }
-                if let Some(j) = parent_of(&built, i) {
+                if let Some((j, firm)) = parent_of(&built, i) {
                     let (acq, time, name) = (built[j].acq_base.clone(), built[j].series.acquisition_time, built[j].series.display_name());
                     built[i].acq_base = acq;
                     built[i].series.acquisition_time = time;
                     built[i].series.note = Some(format!("made from {name}"));
+                    if firm {
+                        made_from.insert(built[i].series.series_uid.clone(), built[j].series.series_uid.clone());
+                    }
                 }
             }
-            let acquisitions = form_acquisitions(&patient_id, built, &mut report, &mut identical);
+            let mut acquisitions = form_acquisitions(&patient_id, built, &mut report, &mut identical);
+            follow_into_extra(&patient_id, &mut acquisitions, &made_from, &mut report);
             studies.push(DicomStudy { study_date, acquisitions });
         }
         subjects.push(DicomSubject { patient_id, studies });
     }
     DicomSession { subjects, report }
+}
+
+/// A derived series made from a series that went to `extra_data/` goes there too. Its own row in
+/// the listing comes from `auto_type`, as this is classification rather than a relabelling.
+fn follow_into_extra(subject: &str, acquisitions: &mut [DicomAcquisition], made_from: &BTreeMap<String, String>, report: &mut ScanReport) {
+    let mut extra: BTreeMap<String, String> = BTreeMap::new();
+    for s in acquisitions.iter().flat_map(|a| a.series.iter()) {
+        if s.series_type == SeriesType::Extra {
+            extra.insert(s.series_uid.clone(), s.display_name());
+        }
+    }
+    for s in acquisitions.iter_mut().flat_map(|a| a.series.iter_mut()) {
+        let Some(source) = made_from.get(&s.series_uid).and_then(|p| extra.get(p)) else { continue };
+        if s.series_type.is_bids() {
+            s.series_type = SeriesType::Extra;
+            s.auto_type = SeriesType::Extra;
+            s.note = Some(format!("made from {source}, which is kept in extra_data"));
+            report.notes.push(format!("sub-{subject}: {} was made from {source}, which is kept in extra_data; it is kept there too", s.display_name()));
+        }
+    }
 }
 
 /// Acquisitions (one per run) of one session.

@@ -414,3 +414,78 @@ fn a_derived_series_without_protocol_joins_its_scan_by_bruker_numbering() {
     let s_map = s.flat_series().into_iter().map(|r| s.series_ref(&r).clone()).find(|x| x.series_number == 120002).unwrap();
     assert_eq!(s_map.note.as_deref(), Some("made from series 120001 'T2star_map_MGE'"));
 }
+
+/// A Bruker scan: 90001 magnitude, 90002 its fit, 90003 a second reconstruction, 90004 its fit,
+/// all with one acquisition time.
+fn bruker_scan() -> Vec<FileMeta> {
+    let o = &["ORIGINAL", "PRIMARY", "OTHER"];
+    let d = &["DERIVED", "SECONDARY", "OTHER"];
+    let fit = "Parametric image for T2* relaxation";
+    let mut files = series("s1", 90001, "", "T2star_map_MGE", o, &[3.3, 6.6], 100.0, 2);
+    files.extend(series("s2", 90002, fit, "", d, &[3.3], 100.0, 2));
+    files.extend(series("s3", 90003, "", "T2star_map_MGE", o, &[3.3, 6.6], 100.0, 2));
+    files.extend(series("s4", 90004, fit, "", d, &[3.3], 100.0, 2));
+    for f in &mut files {
+        f.scanning_sequence = vec!["RM".into()];
+    }
+    files
+}
+
+fn by_number(s: &DicomSession, n: i32) -> DicomSeries {
+    s.flat_series().into_iter().map(|r| s.series_ref(&r).clone()).find(|x| x.series_number == n).unwrap()
+}
+
+#[test]
+fn a_map_follows_its_own_reconstruction_into_extra_data() {
+    let s = build_session(bruker_scan(), never_identical);
+    assert_eq!(by_number(&s, 90001).series_type, SeriesType::Magnitude);
+    assert_eq!(by_number(&s, 90003).series_type, SeriesType::Extra);
+    // By number, although 90003 was acquired at the same time and comes later.
+    let good = by_number(&s, 90002);
+    assert_eq!(good.series_type, SeriesType::T2starMap);
+    assert_eq!(good.note.as_deref(), Some("made from series 90001 'T2star_map_MGE'"));
+    let moved = by_number(&s, 90004);
+    assert_eq!(moved.series_type, SeriesType::Extra);
+    assert!(moved.note.as_deref().unwrap().contains("series 90003"), "{:?}", moved.note);
+    assert!(s.report.notes.iter().any(|n| n.contains("series 90004") && n.contains("series 90003") && n.contains("extra_data")), "{:?}", s.report.notes);
+    // The listing shows it apart from the map that stays.
+    assert!(s.unique_series().iter().any(|g| g.refs.len() == 1 && s.series_ref(&g.refs[0]).series_number == 90004));
+    assert!(s.unique_series().iter().any(|g| g.refs.len() == 1 && s.series_ref(&g.refs[0]).series_number == 90002));
+}
+
+#[test]
+fn a_referenced_source_outranks_the_numbering() {
+    let mut files = bruker_scan();
+    for f in files.iter_mut().filter(|f| f.series_number == 90002) {
+        f.referenced_series = vec!["s3".into()];
+    }
+    let s = build_session(files, never_identical);
+    assert_eq!(by_number(&s, 90002).series_type, SeriesType::Extra);
+}
+
+#[test]
+fn a_map_does_not_follow_a_localizer_it_references() {
+    let mut files = series("loc", 1, "localizer", "localizer", M, &[3.0], 50.0, 2);
+    files[0].sop_instance_uid = "scout-image".into();
+    let uid_of_scout = files[0].sop_instance_uid.clone();
+    files.extend(series("mag", 2, "gre", "gre", M, &[5.0], 100.0, 2));
+    let mut map = series("map", 3, "Parametric image for T2* relaxation", "", &["DERIVED", "SECONDARY", "OTHER"], &[5.0], 100.0, 2);
+    for f in &mut map {
+        f.source_images = vec![uid_of_scout.clone()];
+    }
+    files.extend(map);
+    let s = build_session(files, never_identical);
+    assert_eq!(by_number(&s, 1).series_type, SeriesType::Extra);
+    assert_eq!(by_number(&s, 3).series_type, SeriesType::T2starMap);
+}
+
+#[test]
+fn several_series_at_one_time_do_not_send_a_map_to_extra_data() {
+    let o = &["ORIGINAL", "PRIMARY", "M"];
+    let mut files = series("a", 5, "gre", "gre", o, &[5.0], 100.0, 2);
+    files.extend(series("b", 6, "gre", "gre", o, &[5.0], 100.0, 2));
+    files.extend(series("map", 7, "Parametric image for T2* relaxation", "", &["DERIVED", "SECONDARY", "OTHER"], &[5.0], 100.0, 2));
+    let s = build_session(files, never_identical);
+    assert_eq!(by_number(&s, 6).series_type, SeriesType::Extra);
+    assert_eq!(by_number(&s, 7).series_type, SeriesType::T2starMap);
+}

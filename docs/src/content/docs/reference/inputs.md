@@ -127,7 +127,8 @@ the one `qsmxt run` uses. The magnitude follows the phase: when the phase comes
 from a particular reconstruction (ASPIRE's coil combination, say), the magnitude
 from that reconstruction is the main one, and the scanner's own combination is
 `rec-scanner`. A scanner map without a protocol name (Bruker's parametric maps) is
-filed with the acquisition it was made from. When dcm2niix cannot separate the
+filed with the acquisition it was made from. A map made from a series that
+is kept in `extra_data/` goes there too. When dcm2niix cannot separate the
 echoes of a series into files, QSMxT converts each echo time separately, or, when
 the echo tags are the same for every image, each volume (`rec-…volN`). Phase
 sidecars get the `Units` BIDS requires: `rad` when the phase is already in

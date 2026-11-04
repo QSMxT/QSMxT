@@ -258,6 +258,7 @@ pub const FIXTURES: &[&str] = &[
     "clinical_series",
     "bruker_te_suffix",
     "scanner_map_at_last_echo",
+    "bruker_fit_of_extra",
     "headerless",
     "incomplete_export",
     "phoenix_report",
@@ -320,6 +321,17 @@ pub fn write_fixture(name: &str, dir: &Path) {
             write_series(dir, &Series::new("10", 10, gre, P).tes(&[5.0, 10.0]));
             let map = Series::new("11", 11, &format!("R2star_{gre}"), &["DERIVED", "PRIMARY", "R2_STAR MAP"]).protocol(gre);
             write_series(dir, &map.tes(&[10.0]).echo_number(2));
+        }
+        "bruker_fit_of_extra" => {
+            let mk = |uid: &str, n: i32, d: &str, it: &[&str]| {
+                Series::new(uid, n, d, it).manufacturer("Bruker BioSpin MRI GmbH").scanning("RM").no_echo_numbers()
+            };
+            let (original, derived): (&[&str], &[&str]) = (&["ORIGINAL", "PRIMARY", "OTHER"], &["DERIVED", "SECONDARY", "OTHER"]);
+            let fit = "Parametric image for T2* relaxation";
+            write_series(dir, &mk("90001", 90001, "", original).protocol("T2star_map_MGE").tes(&[3.3, 6.6]));
+            write_series(dir, &mk("90002", 90002, fit, derived).protocol("").tes(&[3.3]));
+            write_series(dir, &mk("90003", 90003, "", original).protocol("T2star_map_MGE").tes(&[3.3, 6.6]));
+            write_series(dir, &mk("90004", 90004, fit, derived).protocol("").tes(&[3.3]));
         }
         "headerless" => {
             write_series(dir, &Series::new("9", 9, gre, M));
