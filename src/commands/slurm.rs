@@ -28,6 +28,7 @@ pub fn execute(args: SlurmArgs) -> crate::Result<()> {
 
     // Refuse before writing or submitting a job that would fail on its node.
     crate::pipeline::requirements::check_runs(&runs, &config)?;
+    super::run::orientation_groups(&runs, &config).map_err(crate::error::QsmxtError::Config)?;
     super::recommend::log_found(&config, &runs);
 
     let base_dir = args.output_dir.as_deref().unwrap_or(&args.bids_dir);

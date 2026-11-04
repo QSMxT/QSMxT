@@ -15,7 +15,8 @@
 //! # Getting the orientations onto one grid
 //!
 //! COSMOS and STI need the orientations on one common grid, and this module now produces that
-//! rather than only demanding it. The first member's grid is the common one, and every other
+//! rather than only demanding it. The first member's grid is the common one — the reference
+//! that `--orientation-reference` puts first, else the first by name — and every other
 //! member is rigidly co-registered onto it
 //! ([`qsm_core::registration::register_rigid`]) before its local field is resampled across.
 //!
@@ -402,9 +403,11 @@ const WARN_REGISTRATION_NCC: f64 = 0.8;
 
 /// Co-register every member onto the first member's grid.
 ///
-/// Member 0 gets the identity, so it is the reference by construction and its own field and mask
-/// pass through without interpolation. Everything else is registered on magnitude, then its field
-/// (continuous, so trilinear is safe) and its mask (nearest neighbour) are resampled across.
+/// The first member is the reference: `--orientation-reference`'s pick, else the first by name
+/// ([`crate::bids::orientation::apply_reference`]). Member 0 gets the identity, so it is the
+/// reference by construction and its own field and mask pass through without interpolation.
+/// Everything else is registered on magnitude, then its field (continuous, so trilinear is safe)
+/// and its mask (nearest neighbour) are resampled across.
 fn register_group(
     loaded: &[MemberData],
     members: &[&QsmRun],
@@ -476,8 +479,10 @@ fn register_group(
             return Err(QsmxtError::Config(format!(
                 "registering {} onto {} reached a correlation of only {:.3} (overlap {:.2}) — \
                 that is not an alignment. Check that the two magnitudes are of the same \
-                subject and that the masks cover the brain; if they were co-registered \
-                elsewhere, pass --no-orientation-registration",
+                subject and that the masks cover the brain. If the two are far apart, a \
+                reference between them (--orientation-reference, e.g. the neutral position) \
+                shortens the rotation to recover; if they were co-registered elsewhere, pass \
+                --no-orientation-registration",
                 members[t].key, members[0].key, transform.ncc, transform.overlap
             )));
         }

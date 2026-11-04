@@ -388,6 +388,13 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
 
     // Every requested output every run can produce, before any run starts (#193, #273).
     crate::pipeline::requirements::check_runs(&runs, &config)?;
+    // The orientation groups resolve now, not after hours of per-run pipelines: a reference that
+    // matches no member would otherwise only surface at the fan-in. A worker sees only its share
+    // of the runs, so its partial groups prove nothing; the aggregation step checks the whole.
+    if !args.no_dataset_steps && !args.dry {
+        orientation_groups(&runs, &config)
+            .map_err(crate::error::QsmxtError::Config)?;
+    }
 
     // Count unique subjects
     let mut subjects: Vec<&str> = runs.iter().map(|r| r.key.subject.as_str()).collect();
@@ -582,11 +589,9 @@ pub(crate) fn run_dataset_steps(steps: &DatasetSteps) -> Vec<String> {
     let mut prov_groups = Vec::new();
     let mut group_keys: Vec<crate::bids::entities::AcquisitionKey> = Vec::new();
     if config.multi_orientation.enabled() {
-        match crate::bids::orientation::parse_pattern(&config.multi_orientation.group_by) {
+        match orientation_groups(runs, config) {
             Err(e) => group_failures.push(e),
-            Ok(None) => {}
-            Ok(Some(pattern)) => {
-                let groups = crate::bids::orientation::group_runs(runs, &pattern);
+            Ok(groups) => {
                 if groups.is_empty() {
                     warn!(
                         "--orientation-group '{}' matched no set of 2+ runs in a session; \
@@ -714,6 +719,22 @@ fn print_planned(derivatives_dir: &std::path::Path, config: &PipelineConfig, run
     print!("{}", crate::pipeline::methods::generate_methods(config));
 }
 
+/// The orientation groups `config` forms over `runs`, each with its reference member first
+/// (`--orientation-reference`). Empty when multi-orientation is off.
+pub(crate) fn orientation_groups(
+    runs: &[discovery::QsmRun],
+    config: &crate::pipeline::config::PipelineConfig,
+) -> Result<Vec<crate::bids::orientation::OrientationGroup>, String> {
+    let m = &config.multi_orientation;
+    let Some(pattern) = crate::bids::orientation::parse_pattern(&m.group_by)? else {
+        return Ok(Vec::new());
+    };
+    let mut groups = crate::bids::orientation::group_runs(runs, &pattern);
+    let keys: Vec<String> = runs.iter().map(|r| r.key.to_string()).collect();
+    crate::bids::orientation::apply_reference(&mut groups, &keys, &m.reference)?;
+    Ok(groups)
+}
+
 /// Print the orientation groups a `--dry` run would reconstruct, with the direction table and
 /// the go/no-go verdict for each.
 ///
@@ -728,9 +749,7 @@ fn print_orientation_groups(
         return Ok(());
     }
     let kind = crate::pipeline::multiorient::kind_of(config);
-    let pattern = crate::bids::orientation::parse_pattern(&config.multi_orientation.group_by)?
-        .ok_or_else(|| "pattern is empty".to_string())?;
-    let groups = crate::bids::orientation::group_runs(runs, &pattern);
+    let groups = orientation_groups(runs, config)?;
 
     println!();
     if groups.is_empty() {

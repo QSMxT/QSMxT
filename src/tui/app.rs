@@ -882,6 +882,8 @@ pub struct FilterTreeState {
     /// Index into [`ORIENTATION_ALGORITHMS`].
     pub orientation_algorithm: usize,
     pub orientation_lambda: String,
+    /// `--orientation-reference`; empty = the first member by name.
+    pub orientation_reference: String,
     pub scanned_bids_dir: Option<String>,
     pub scroll_offset: usize,
     /// Set when the user manually toggles tree checkboxes (pattern may not match)
@@ -910,6 +912,7 @@ impl Default for FilterTreeState {
             orientation_cursor: 0,
             orientation_algorithm: 0,
             orientation_lambda: String::new(),
+            orientation_reference: String::new(),
             scanned_bids_dir: None,
             scroll_offset: 0,
             manual_override: false,
@@ -1034,14 +1037,22 @@ impl FilterTreeState {
             }
         });
 
-        let groups = crate::bids::orientation::group_keys(&keys, &pattern);
+        let mut groups = crate::bids::orientation::group_keys(&keys, &pattern);
         let grouped: usize = groups.iter().map(|g| g.members.len()).sum();
+        // The reference is listed first, as the run will use it; one that does not resolve is
+        // shown as the error the run would refuse with.
+        let strings: Vec<String> = keys.iter().map(|(_, s)| s.clone()).collect();
+        let error = crate::bids::orientation::apply_reference(
+            &mut groups, &strings, &self.orientation_reference).err();
         OrientationPreview {
-            error: None,
+            error,
             groups: groups
                 .into_iter()
                 .map(|g| {
-                    let members = g.members.iter().map(|&i| displays[i].clone()).collect();
+                    let mut members: Vec<String> = g.members.iter().map(|&i| displays[i].clone()).collect();
+                    if let Some(first) = members.first_mut() {
+                        first.push_str(" [reference]");
+                    }
                     (g.label, members)
                 })
                 .collect(),
@@ -1426,6 +1437,7 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("amp_pe_cvg_thd", "inversion.amp_pe.cvg_thd"),
     ("dl_tiling", "inversion.tile_size"), ("dl_tile_size", "inversion.tile_size"), ("dl_tile_halo", "inversion.tile_halo"),
     ("orientation_algorithm", "multi_orientation.algorithm"), ("orientation_lambda", "multi_orientation.lambda"),
+    ("orientation_reference", "multi_orientation.reference"),
     ("cosmos_magnitude_weighting", "multi_orientation.magnitude_weighting"), ("cosmos_tol", "multi_orientation.cosmos_tol"),
     ("cosmos_max_iter", "multi_orientation.cosmos_max_iter"), ("orientation_registration", "multi_orientation.register"),
     ("multi_orientation_force", "multi_orientation.force"), ("qsm_reference", "qsm.reference"),
@@ -3824,6 +3836,8 @@ impl PipelineFormState {
         });
         rows.push(PipelineRow::Param { label: "Lambda", field: "orientation_lambda",
             help: "Regularization (blank = 0, plain least squares). Raise for 2 orientations or single-axis rotations" });
+        rows.push(PipelineRow::Param { label: "Reference orientation", field: "orientation_reference",
+            help: "Orientation the others are registered onto, whose grid and segmentation the group map uses: a glob over the run key (*acq-Neutral*) or a word in it. Blank = first by name. Pick the neutral head position" });
         if self.ctx.orientation_cosmos {
             rows.push(PipelineRow::Toggle {
                 label: "COSMOS magnitude weighting", field: "cosmos_magnitude_weighting",
@@ -7694,6 +7708,7 @@ impl App {
         match (self.form.text(field), field) {
             (Some(s), _) => s,
             (None, "orientation_lambda") => &self.filter_state.orientation_lambda,
+            (None, "orientation_reference") => &self.filter_state.orientation_reference,
             (None, _) => self.pipeline_state.get_param(field),
         }
     }
@@ -7703,6 +7718,8 @@ impl App {
             self.form.text_mut(field)
         } else if field == "orientation_lambda" {
             Some(&mut self.filter_state.orientation_lambda)
+        } else if field == "orientation_reference" {
+            Some(&mut self.filter_state.orientation_reference)
         } else {
             self.pipeline_state.get_param_mut(field)
         }
@@ -7820,6 +7837,7 @@ impl App {
             "slurm_account" => "(required)",
             "mem_limit_gb" | "n_procs" => "auto",
             "orientation_lambda" => "0 (none)",
+            "orientation_reference" => "first by name",
             _ if self.form.text(field).is_some() => "(empty)",
             _ => "(default)",
         }
@@ -7837,6 +7855,7 @@ impl App {
         let (form, ps) = (RunForm::default(), PipelineFormState::default());
         match field {
             "orientation_lambda" => return self.filter_state.orientation_lambda.clear(),
+            "orientation_reference" => return self.filter_state.orientation_reference.clear(),
             "orientation_algorithm" => return self.filter_state.orientation_algorithm = 0,
             "segmentation_source" | "do_segmentation" => {
                 self.pipeline_state.custom_dseg_tool.clear();

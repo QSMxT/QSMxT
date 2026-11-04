@@ -1225,7 +1225,16 @@ pub struct MultiOrientationConfig {
     /// degenerate set produces a plausible map that is not the method asked for, so this
     /// should stay off unless the metadata is known-good and the check is known-wrong.
     pub force: bool,
-    /// Allow QSMxT to rigidly co-register the orientations onto the first member's grid.
+    /// Which orientation of each group is the reference: a glob over the run key
+    /// (`*acq-Neutral*`), or a plain word matched anywhere in it. Empty = the first in
+    /// discovery order. Must match exactly one member of every group.
+    ///
+    /// The reference is the common frame. The other orientations are registered onto it, and the
+    /// group map is written on its grid and referenced and analysed on its segmentation. Pick the
+    /// neutral head position: it is the smallest rotation from every other orientation, which
+    /// keeps registration inside its capture range, and it gives the output a standard view.
+    pub reference: String,
+    /// Allow QSMxT to rigidly co-register the orientations onto the reference member's grid.
     ///
     /// On by default, and it costs nothing when there is nothing to do: registration runs only
     /// when the group actually needs it — the members disagree on dimensions or affine, or the
@@ -1256,6 +1265,7 @@ impl Default for MultiOrientationConfig {
     fn default() -> Self {
         Self {
             group_by: String::new(),
+            reference: String::new(),
             algorithm: MultiOrientAlgorithm::Cosmos,
             lambda: 0.0,
             force: false,

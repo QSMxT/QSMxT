@@ -22,6 +22,9 @@ fn command_for(config: &PipelineConfig) -> String {
     if config.multi_orientation.enabled() {
         let m = &config.multi_orientation;
         parts.push(format!("--orientation-group {}", shell_quote(&m.group_by)));
+        if !m.reference.trim().is_empty() {
+            parts.push(format!("--orientation-reference {}", shell_quote(m.reference.trim())));
+        }
         parts.push(format!("--multi-orientation-algorithm {}", m.algorithm));
         emit_f64(&mut parts, "--multi-orientation-lambda", m.lambda, d.multi_orientation.lambda);
     }
@@ -2053,5 +2056,15 @@ mod multiorient_command_tests {
         assert!(cmd.contains("--orientation-group acq"), "{cmd}");
         assert!(cmd.contains("--multi-orientation-algorithm sti"), "{cmd}");
         assert!(cmd.contains("--multi-orientation-lambda 0.001"), "{cmd}");
+    }
+
+    #[test]
+    fn the_orientation_reference_is_rendered_only_when_set() {
+        let mut config = PipelineConfig::default();
+        config.multi_orientation.group_by = "acq".into();
+        assert!(!generate_command(&config).contains("--orientation-reference"));
+        config.multi_orientation.reference = "*acq-Neutral*".into();
+        let cmd = generate_command(&config);
+        assert!(cmd.contains("--orientation-reference '*acq-Neutral*'"), "{cmd}");
     }
 }

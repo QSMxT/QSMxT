@@ -30,8 +30,10 @@
 //! # Why the orientation label carries no ordering
 //!
 //! COSMOS and STI are both symmetric sums over orientations — neither cares which one is
-//! "first". The only thing an ordering could decide is which orientation becomes the common
-//! frame, and that is better chosen from the geometry than from whoever numbered the files.
+//! "first". The only thing an ordering decides is which orientation becomes the common frame
+//! (registration target, output grid, segmentation), and that is the user's call — usually the
+//! neutral head position, from which every other orientation is the smallest rotation away —
+//! made with `--orientation-reference` ([`apply_reference`]) rather than by numbering files.
 //! So the capture group exists to *separate* groups, never to index within one.
 
 use super::discovery::{matches_glob, QsmRun};
@@ -106,7 +108,8 @@ pub fn parse_pattern(pattern: &str) -> Result<Option<GroupPattern>, String> {
 pub struct OrientationGroup {
     /// Display label — the shared part of the members' keys, e.g. `sub-01_ses-01`.
     pub label: String,
-    /// Indices into the slice that was grouped, in discovery order.
+    /// Indices into the slice that was grouped, in discovery order except that
+    /// [`apply_reference`] moves the reference orientation first.
     pub members: Vec<usize>,
 }
 
@@ -181,6 +184,59 @@ pub fn group_runs(runs: &[QsmRun], pattern: &GroupPattern) -> Vec<OrientationGro
     let keys: Vec<(AcquisitionKey, String)> =
         runs.iter().map(|r| (r.key.clone(), r.key.to_string())).collect();
     group_keys(&keys, pattern)
+}
+
+/// Move each group's reference orientation to the front of its members.
+///
+/// The first member is the common frame: the others are registered onto it, and the group map
+/// is written on its grid and referenced on its segmentation. Without a `reference` that is
+/// the first run in discovery order, which is an accident of naming — and when it is one of
+/// the extreme orientations, the others are registered across the largest rotations in the
+/// set, which can exceed what rigid registration captures. `reference` is a glob over the run
+/// key (`*Neutral*`); a plain word with no glob characters matches anywhere in the key. It
+/// must match exactly one member of every group, so a typo cannot quietly fall back to the
+/// first member.
+pub fn apply_reference(
+    groups: &mut [OrientationGroup],
+    key_strings: &[String],
+    reference: &str,
+) -> Result<(), String> {
+    let r = reference.trim();
+    if r.is_empty() {
+        return Ok(());
+    }
+    let glob = if r.contains(['*', '?']) { r.to_string() } else { format!("*{r}*") };
+    for group in groups.iter_mut() {
+        let hits: Vec<usize> = (0..group.members.len())
+            .filter(|&j| matches_glob(&key_strings[group.members[j]], &glob))
+            .collect();
+        let names = |js: &mut dyn Iterator<Item = usize>| {
+            js.map(|j| key_strings[group.members[j]].as_str()).collect::<Vec<_>>().join(", ")
+        };
+        match hits.as_slice() {
+            [j] => {
+                let m = group.members.remove(*j);
+                group.members.insert(0, m);
+            }
+            [] => {
+                return Err(format!(
+                    "orientation reference '{r}' matches none of {}'s orientations ({})",
+                    group.label,
+                    names(&mut (0..group.members.len()))
+                ))
+            }
+            _ => {
+                return Err(format!(
+                    "orientation reference '{r}' matches {} of {}'s orientations ({}); it must \
+                     pick out one",
+                    hits.len(),
+                    group.label,
+                    names(&mut hits.iter().copied())
+                ))
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -352,5 +408,45 @@ mod tests {
             ("01", None, Some("DIR2"), None),
         ];
         assert_eq!(group(&specs, "*acq-dir*").len(), 1);
+    }
+
+    fn referenced(specs: &[KeySpec], pattern: &str, reference: &str) -> Result<Vec<Vec<String>>, String> {
+        let ks = keys(specs);
+        let strings: Vec<String> = ks.iter().map(|(_, s)| s.clone()).collect();
+        let mut groups = group(specs, pattern);
+        apply_reference(&mut groups, &strings, reference)?;
+        Ok(groups.iter().map(|g| g.members.iter().map(|&i| strings[i].clone()).collect()).collect())
+    }
+
+    const HEAD_POSITIONS: [KeySpec<'static>; 3] = [
+        ("01", None, Some("ChinDownLeft"), None),
+        ("01", None, Some("ChinUpRight"), None),
+        ("01", None, Some("Neutral"), None),
+    ];
+
+    /// The reference moves to the front; the rest keep their order.
+    #[test]
+    fn the_reference_becomes_the_first_member() {
+        let groups = referenced(&HEAD_POSITIONS, "acq", "*acq-Neutral*").unwrap();
+        assert!(groups[0][0].contains("acq-Neutral"), "{groups:?}");
+        assert!(groups[0][1].contains("ChinDownLeft") && groups[0][2].contains("ChinUpRight"), "{groups:?}");
+        // A plain word matches anywhere in the key.
+        assert_eq!(referenced(&HEAD_POSITIONS, "acq", "Neutral").unwrap(), groups);
+    }
+
+    #[test]
+    fn no_reference_keeps_discovery_order() {
+        let groups = referenced(&HEAD_POSITIONS, "acq", " ").unwrap();
+        assert!(groups[0][0].contains("ChinDownLeft"), "{groups:?}");
+    }
+
+    /// A reference that misses, or is ambiguous, is refused rather than falling back to the
+    /// first member.
+    #[test]
+    fn a_reference_must_pick_out_exactly_one_member() {
+        let err = referenced(&HEAD_POSITIONS, "acq", "Supine").unwrap_err();
+        assert!(err.contains("matches none") && err.contains("ChinUpRight"), "{err}");
+        let err = referenced(&HEAD_POSITIONS, "acq", "*acq-Chin*").unwrap_err();
+        assert!(err.contains("matches 2") && err.contains("pick out one"), "{err}");
     }
 }

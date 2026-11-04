@@ -1038,9 +1038,25 @@ declare `B0_dir` in each orientation's sidecar.
 
 ### Registration
 
-COSMOS and STI need the orientations on one grid, and QSMxT puts them there. The
-first member of a group is the reference, and every other member is rigidly
-co-registered onto it before its local field is resampled across.
+COSMOS and STI need the orientations on one grid, and QSMxT puts them there. One
+member of each group is the reference, and every other member is rigidly
+co-registered onto it before its local field is resampled across. The group map is
+written on the reference's grid, and referenced and analysed on its segmentation.
+
+By default the reference is the first member by name, which is rarely a deliberate
+choice. Name it with `--orientation-reference` (`multi_orientation.reference`): a
+glob over the run key, or a word that appears in it. It must match exactly one
+member of every group, or the run is refused before it starts.
+
+```bash
+qsmxt run bids/ out/ --orientation-group acq --orientation-reference Neutral
+```
+
+Choose the neutral head position. Every other orientation is then the smallest
+rotation away from it, which keeps registration within its capture range (below),
+and the group map comes out in the usual view. With the reference at one extreme,
+say chin-down-left, the opposite extreme can be twice as far away as it is from
+neutral.
 
 Two things to know about how it works:
 
@@ -1087,6 +1103,8 @@ within 0.01°. That is the search's capture range rather than a property of your
 data, and it is set by the pyramid depth — worth knowing because it is finite.
 Beyond it the failure is not subtle: the search lands in a local minimum tens of
 degrees out, correlation collapses, and the group is refused by the floor below.
+If that happens to the orientation farthest from the reference, a more central
+`--orientation-reference` is the fix.
 
 A correlation below 0.5 is treated as a failed registration and the group is
 refused — a bad alignment produces a plausible-looking susceptibility map, which
