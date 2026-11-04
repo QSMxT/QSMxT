@@ -457,7 +457,7 @@ mod integration_tests {
         // `robust` is `preset robust-threshold`, not a third copy of the recipe.
         let via_preset = dir.path().join("preset.nii");
         super::mask::execute(MaskCommand::Preset(MaskPresetArgs {
-            preset: MaskPresetArg::RobustThreshold, common: common_mask(input, via_preset.clone()), quality: None,
+            preset: MaskPresetArg::RobustThreshold, common: common_mask(input, via_preset.clone()), quality: None, phase: None,
         })).unwrap();
         assert_eq!(read_mask(&output), read_mask(&via_preset));
     }
@@ -475,11 +475,11 @@ mod integration_tests {
         let with_quality = dir.path().join("with.nii");
         super::mask::execute(MaskCommand::Preset(MaskPresetArgs {
             preset: MaskPresetArg::BetAndPhase, common: common_mask(mag.clone(), with_quality.clone()),
-            quality: Some(quality.clone()),
+            quality: Some(quality.clone()), phase: None,
         })).unwrap();
         let without = dir.path().join("without.nii");
         super::mask::execute(MaskCommand::Preset(MaskPresetArgs {
-            preset: MaskPresetArg::BetAndPhase, common: common_mask(mag.clone(), without.clone()), quality: None,
+            preset: MaskPresetArg::BetAndPhase, common: common_mask(mag.clone(), without.clone()), quality: None, phase: None,
         })).unwrap();
         let (w, wo) = (read_mask(&with_quality), read_mask(&without));
         assert_ne!(w, wo, "--quality was not read");
@@ -491,9 +491,33 @@ mod integration_tests {
         testutils::write_mismatched_volume(&small, 1.0);
         let err = super::mask::execute(MaskCommand::Preset(MaskPresetArgs {
             preset: MaskPresetArg::BetAndPhase, common: common_mask(mag, dir.path().join("x.nii")),
-            quality: Some(small),
+            quality: Some(small), phase: None,
         })).unwrap_err();
         assert!(format!("{err}").contains("--quality"), "{err}");
+    }
+
+    /// `--phase`: the voxels where the scanner wrote a constant phase leave the mask.
+    #[test]
+    fn test_mask_preset_leaves_out_scanner_masked_phase() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mag, phase) = (dir.path().join("mag.nii"), dir.path().join("phase.nii"));
+        testutils::write_magnitude(&mag);
+        // One constant value everywhere but the first slice.
+        testutils::write_mask_where(&phase, |i| i >= 64);
+        let preset = |output: &std::path::Path, phase: Option<std::path::PathBuf>| super::mask::execute(MaskCommand::Preset(MaskPresetArgs {
+            preset: MaskPresetArg::RobustThreshold, common: common_mask(mag.clone(), output.to_path_buf()), quality: None, phase,
+        }));
+        let (with, without) = (dir.path().join("with.nii"), dir.path().join("without.nii"));
+        preset(&with, Some(phase)).unwrap();
+        preset(&without, None).unwrap();
+        assert!(read_mask(&without)[64..].contains(&1));
+        assert!(read_mask(&with)[64..].iter().all(|&v| v == 0));
+
+        // --phase must be on the input's grid.
+        let small = dir.path().join("small.nii");
+        testutils::write_mismatched_volume(&small, 1.0);
+        let err = preset(&dir.path().join("x.nii"), Some(small)).unwrap_err();
+        assert!(format!("{err}").contains("--phase"), "{err}");
     }
 
     #[test]

@@ -380,6 +380,7 @@ impl FileStore<'_> {
             Item::TotalFieldMagnitude => o.total_field_magnitude_path(key),
             Item::RobustFitReport => robust_fit_report_path(&o.field_ppm_path(key)),
             Item::FieldReliability => o.field_reliability_path(key),
+            Item::FieldMask => o.field_mask_path(key),
             Item::LocalField(p) => pass(p, o.local_field_path(key), o.reliable_local_field_path(key)),
             Item::LocalFieldMask(p) => pass(p, o.bg_mask_path(key), o.reliable_bg_mask_path(key)),
             Item::RawChi(p) => pass(p, o.chi_raw_path(key), o.reliable_chi_raw_path(key)),
@@ -478,6 +479,29 @@ impl FileStore<'_> {
 
     fn meta(&self) -> &RunMetadata {
         self.meta.as_ref().expect("the run's grid is known before any output is written")
+    }
+}
+
+/// Copy a NIfTI file to `dest`, compressed as `dest`'s name says: a `.nii.gz` source copied to a
+/// `.nii` name is decompressed (and the other way round), so every file is what its name says;
+/// other readers (nibabel) refuse gzipped data under a `.nii` name.
+fn copy_nifti(source: &Path, dest: &Path) -> std::io::Result<()> {
+    let gz = |p: &Path| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("gz"));
+    match (gz(source), gz(dest)) {
+        (true, false) => {
+            let mut from = flate2::read::MultiGzDecoder::new(std::io::BufReader::new(std::fs::File::open(source)?));
+            let mut to = std::io::BufWriter::new(std::fs::File::create(dest)?);
+            std::io::copy(&mut from, &mut to)?;
+            std::io::Write::flush(&mut to)
+        }
+        (false, true) => {
+            let mut from = std::io::BufReader::new(std::fs::File::open(source)?);
+            let mut to = flate2::write::GzEncoder::new(
+                std::io::BufWriter::new(std::fs::File::create(dest)?), flate2::Compression::default());
+            std::io::copy(&mut from, &mut to)?;
+            std::io::Write::flush(&mut to.finish()?)
+        }
+        _ => std::fs::copy(source, dest).map(|_| ()),
     }
 }
 
@@ -669,7 +693,7 @@ impl StageStore for FileStore<'_> {
                 if let Some(parent) = path.parent() {
                     std::fs::create_dir_all(parent)?;
                 }
-                std::fs::copy(source, &path)?;
+                copy_nifti(&source, &path)?;
             }
         }
         if let (Item::RegionStats, Data::Text(table)) = (item, data) {
@@ -1082,6 +1106,30 @@ fn check_slice_gap(
 
 #[cfg(test)]
 mod tests {
+    /// A copy is compressed as its name says, so other readers can open it (nibabel refuses
+    /// gzipped data under a `.nii` name).
+    #[test]
+    fn a_nifti_copy_is_compressed_as_its_name_says() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let gz = dir.path().join("a.nii.gz");
+        let bytes = b"not really a NIfTI, the copy does not read it".to_vec();
+        let mut e = flate2::write::GzEncoder::new(std::fs::File::create(&gz).unwrap(), flate2::Compression::default());
+        e.write_all(&bytes).unwrap();
+        e.finish().unwrap();
+        let is_gz = |p: &std::path::Path| std::fs::read(p).unwrap().starts_with(&[0x1f, 0x8b]);
+
+        let plain = dir.path().join("plain.nii");
+        super::copy_nifti(&gz, &plain).unwrap();
+        assert_eq!(std::fs::read(&plain).unwrap(), bytes);
+        let zipped = dir.path().join("zipped.nii.gz");
+        super::copy_nifti(&plain, &zipped).unwrap();
+        assert!(is_gz(&zipped));
+        let same = dir.path().join("same.nii.gz");
+        super::copy_nifti(&gz, &same).unwrap();
+        assert_eq!(std::fs::read(&same).unwrap(), std::fs::read(&gz).unwrap());
+    }
+
     /// The two passes must not share a single output path. If they did, the second pass would
     /// overwrite the first's local field, eroded mask or raw map — and the combination would be
     /// one reconstruction blended with itself.

@@ -359,8 +359,8 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--romeo-template <ROMEO_TEMPLATE>` | ROMEO: template echo index (1-indexed, only for template mode) |
 | `--romeo-individual` | ROMEO: use individual per-echo unwrapping (default) |
 | `--no-romeo-individual` | ROMEO: use template-based temporal unwrapping (disables individual mode) |
-| `--romeo-correct-global` | ROMEO: enable inter-echo 2π offset correction (default: off) |
-| `--no-romeo-correct-global` | ROMEO: disable inter-echo 2π offset correction. |
+| `--romeo-correct-global` | ROMEO: correct global 2π offsets, of each echo and between echoes (default: on) |
+| `--no-romeo-correct-global` | ROMEO: do not correct global 2π offsets. |
 | `--romeo-temporal-uncertain-unwrapping <ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING>` | ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0.5) |
 | `--romeo-max-seeds <ROMEO_MAX_SEEDS>` | ROMEO: maximum number of seed regions (default: 1) |
 | `--romeo-merge-regions` | ROMEO: merge neighboring regions after unwrapping (default: off) |
@@ -827,8 +827,8 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--romeo-template <ROMEO_TEMPLATE>` | ROMEO: template echo index (1-indexed, only for template mode) |
 | `--romeo-individual` | ROMEO: use individual per-echo unwrapping (default) |
 | `--no-romeo-individual` | ROMEO: use template-based temporal unwrapping (disables individual mode) |
-| `--romeo-correct-global` | ROMEO: enable inter-echo 2π offset correction (default: off) |
-| `--no-romeo-correct-global` | ROMEO: disable inter-echo 2π offset correction. |
+| `--romeo-correct-global` | ROMEO: correct global 2π offsets, of each echo and between echoes (default: on) |
+| `--no-romeo-correct-global` | ROMEO: do not correct global 2π offsets. |
 | `--romeo-temporal-uncertain-unwrapping <ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING>` | ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0.5) |
 | `--romeo-max-seeds <ROMEO_MAX_SEEDS>` | ROMEO: maximum number of seed regions (default: 1) |
 | `--romeo-merge-regions` | ROMEO: merge neighboring regions after unwrapping (default: off) |
@@ -1230,8 +1230,8 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--romeo-template <ROMEO_TEMPLATE>` | ROMEO: template echo index (1-indexed, only for template mode) |
 | `--romeo-individual` | ROMEO: use individual per-echo unwrapping (default) |
 | `--no-romeo-individual` | ROMEO: use template-based temporal unwrapping (disables individual mode) |
-| `--romeo-correct-global` | ROMEO: enable inter-echo 2π offset correction (default: off) |
-| `--no-romeo-correct-global` | ROMEO: disable inter-echo 2π offset correction. |
+| `--romeo-correct-global` | ROMEO: correct global 2π offsets, of each echo and between echoes (default: on) |
+| `--no-romeo-correct-global` | ROMEO: do not correct global 2π offsets. |
 | `--romeo-temporal-uncertain-unwrapping <ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING>` | ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0.5) |
 | `--romeo-max-seeds <ROMEO_MAX_SEEDS>` | ROMEO: maximum number of seed regions (default: 1) |
 | `--romeo-merge-regions` | ROMEO: merge neighboring regions after unwrapping (default: off) |
@@ -1465,6 +1465,7 @@ qsmxt mask preset [OPTIONS] --output <OUTPUT> <PRESET> <INPUT>
 | `-o, --output <OUTPUT>` | Output mask NIfTI file. Required. |
 | `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
 | `--quality <QUALITY>` | Phase-quality map (from `qsmxt quality-map`) for the sections that read phase quality. Without it those sections read the input image instead, as `run --masking-input` would. |
+| `--phase <PHASE>` | Phase image (3-D, or 4-D multi-echo): the mask leaves out voxels where the scanner recorded no phase (a constant value in every echo), as `qsmxt run` does for every recipe. A phase-quality map rates that flat phase as reliable, so give this with `--quality`. |
 
 ### `qsmxt mask robust`
 
@@ -1649,8 +1650,8 @@ qsmxt unwrap romeo [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--romeo-template <ROMEO_TEMPLATE>` | ROMEO: template echo index (1-indexed, only for template mode) |
 | `--romeo-individual` | ROMEO: use individual per-echo unwrapping (default) |
 | `--no-romeo-individual` | ROMEO: use template-based temporal unwrapping (disables individual mode) |
-| `--romeo-correct-global` | ROMEO: enable inter-echo 2π offset correction (default: off) |
-| `--no-romeo-correct-global` | ROMEO: disable inter-echo 2π offset correction. |
+| `--romeo-correct-global` | ROMEO: correct global 2π offsets, of each echo and between echoes (default: on) |
+| `--no-romeo-correct-global` | ROMEO: do not correct global 2π offsets. |
 | `--romeo-temporal-uncertain-unwrapping <ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING>` | ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0.5) |
 | `--romeo-max-seeds <ROMEO_MAX_SEEDS>` | ROMEO: maximum number of seed regions (default: 1) |
 | `--romeo-merge-regions` | ROMEO: merge neighboring regions after unwrapping (default: off) |
@@ -1734,6 +1735,7 @@ qsmxt fieldmap romeo [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--qsmart-fit-percentile <QSMART_FIT_PERCENTILE>` | `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is marked unreliable (default 99) |
 | `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is marked unreliable, instead of a percentile (40 when the mode is `absolute` and none is given) |
 | `--reliability-output <RELIABILITY_OUTPUT>` | `--b0-estimation qsmart-echofit`: also save its reliability map (1 = reliable) here, for `qsmxt qsmart --reliability`. |
+| `--field-mask-output <FIELD_MASK_OUTPUT>` | Also save the mask the field map is defined in here: the mask, less the voxels where phase offset removal could not estimate the phase offset (the field is 0 there). Pass it to `qsmxt bgremove` and the inversions in place of the mask. |
 | `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted-averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) from the echo times and an assumed T2\* (no T2\* map, no magnitude; Wang et al. 2022). `phase-snr` is generally preferable with magnitude. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. Default: `phase-snr`. |
 | `--b0-weight-assumed-t2star <MS>` | T2\* in ms assumed by `--b0-weight-type assumed-decay` (no T2\* map is used) Default: `40`. |
 | `--linear-fit-estimate-offset <LINEAR_FIT_ESTIMATE_OFFSET>` | Linear and robust fit: estimate a phase offset term (default: true). The robust fit needs 4 echoes with it, 3 without. |
@@ -1760,8 +1762,8 @@ qsmxt fieldmap romeo [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--romeo-template <ROMEO_TEMPLATE>` | ROMEO: template echo index (1-indexed, only for template mode) |
 | `--romeo-individual` | ROMEO: use individual per-echo unwrapping (default) |
 | `--no-romeo-individual` | ROMEO: use template-based temporal unwrapping (disables individual mode) |
-| `--romeo-correct-global` | ROMEO: enable inter-echo 2π offset correction (default: off) |
-| `--no-romeo-correct-global` | ROMEO: disable inter-echo 2π offset correction. |
+| `--romeo-correct-global` | ROMEO: correct global 2π offsets, of each echo and between echoes (default: on) |
+| `--no-romeo-correct-global` | ROMEO: do not correct global 2π offsets. |
 | `--romeo-temporal-uncertain-unwrapping <ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING>` | ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0.5) |
 | `--romeo-max-seeds <ROMEO_MAX_SEEDS>` | ROMEO: maximum number of seed regions (default: 1) |
 | `--romeo-merge-regions` | ROMEO: merge neighboring regions after unwrapping (default: off) |
@@ -1790,6 +1792,7 @@ qsmxt fieldmap laplacian [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--qsmart-fit-percentile <QSMART_FIT_PERCENTILE>` | `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is marked unreliable (default 99) |
 | `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is marked unreliable, instead of a percentile (40 when the mode is `absolute` and none is given) |
 | `--reliability-output <RELIABILITY_OUTPUT>` | `--b0-estimation qsmart-echofit`: also save its reliability map (1 = reliable) here, for `qsmxt qsmart --reliability`. |
+| `--field-mask-output <FIELD_MASK_OUTPUT>` | Also save the mask the field map is defined in here: the mask, less the voxels where phase offset removal could not estimate the phase offset (the field is 0 there). Pass it to `qsmxt bgremove` and the inversions in place of the mask. |
 | `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted-averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) from the echo times and an assumed T2\* (no T2\* map, no magnitude; Wang et al. 2022). `phase-snr` is generally preferable with magnitude. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. Default: `phase-snr`. |
 | `--b0-weight-assumed-t2star <MS>` | T2\* in ms assumed by `--b0-weight-type assumed-decay` (no T2\* map is used) Default: `40`. |
 | `--linear-fit-estimate-offset <LINEAR_FIT_ESTIMATE_OFFSET>` | Linear and robust fit: estimate a phase offset term (default: true). The robust fit needs 4 echoes with it, 3 without. |
@@ -1828,6 +1831,7 @@ qsmxt fieldmap prelude [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--qsmart-fit-percentile <QSMART_FIT_PERCENTILE>` | `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is marked unreliable (default 99) |
 | `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is marked unreliable, instead of a percentile (40 when the mode is `absolute` and none is given) |
 | `--reliability-output <RELIABILITY_OUTPUT>` | `--b0-estimation qsmart-echofit`: also save its reliability map (1 = reliable) here, for `qsmxt qsmart --reliability`. |
+| `--field-mask-output <FIELD_MASK_OUTPUT>` | Also save the mask the field map is defined in here: the mask, less the voxels where phase offset removal could not estimate the phase offset (the field is 0 there). Pass it to `qsmxt bgremove` and the inversions in place of the mask. |
 | `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted-averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) from the echo times and an assumed T2\* (no T2\* map, no magnitude; Wang et al. 2022). `phase-snr` is generally preferable with magnitude. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. Default: `phase-snr`. |
 | `--b0-weight-assumed-t2star <MS>` | T2\* in ms assumed by `--b0-weight-type assumed-decay` (no T2\* map is used) Default: `40`. |
 | `--linear-fit-estimate-offset <LINEAR_FIT_ESTIMATE_OFFSET>` | Linear and robust fit: estimate a phase offset term (default: true). The robust fit needs 4 echoes with it, 3 without. |
@@ -1868,6 +1872,7 @@ qsmxt fieldmap medi-region-growing [OPTIONS] --mask <MASK> --output <OUTPUT> <IN
 | `--qsmart-fit-percentile <QSMART_FIT_PERCENTILE>` | `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is marked unreliable (default 99) |
 | `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is marked unreliable, instead of a percentile (40 when the mode is `absolute` and none is given) |
 | `--reliability-output <RELIABILITY_OUTPUT>` | `--b0-estimation qsmart-echofit`: also save its reliability map (1 = reliable) here, for `qsmxt qsmart --reliability`. |
+| `--field-mask-output <FIELD_MASK_OUTPUT>` | Also save the mask the field map is defined in here: the mask, less the voxels where phase offset removal could not estimate the phase offset (the field is 0 there). Pass it to `qsmxt bgremove` and the inversions in place of the mask. |
 | `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted-averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) from the echo times and an assumed T2\* (no T2\* map, no magnitude; Wang et al. 2022). `phase-snr` is generally preferable with magnitude. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. Default: `phase-snr`. |
 | `--b0-weight-assumed-t2star <MS>` | T2\* in ms assumed by `--b0-weight-type assumed-decay` (no T2\* map is used) Default: `40`. |
 | `--linear-fit-estimate-offset <LINEAR_FIT_ESTIMATE_OFFSET>` | Linear and robust fit: estimate a phase offset term (default: true). The robust fit needs 4 echoes with it, 3 without. |

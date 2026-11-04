@@ -48,6 +48,9 @@ pub fn params(config: &PipelineConfig, meta: &RunMetadata) -> serde_json::Value 
         "laplacian_solver": format!("{}", fm.laplacian_solver),
         "laplacian_fft_pad": fm.laplacian_fft_pad,
         "laplacian_unmasked": fm.laplacian_unmasked,
+        // qsm-core's field-valid mask (MCPC-3D-S's undefined offsets excluded, ROMEO.jl's NaN
+        // semantics) and its multi-echo ROMEO fixes: field maps from before them are recomputed.
+        "field_mask": 1,
     });
     // PRELUDE and its settings, recorded only when it unwraps (the parameters of runs with
     // another unwrapper stay as they were); with phase offset removal the step is not named for it.
@@ -88,6 +91,12 @@ pub struct FieldMap {
     /// The blurred fit residual `R_0` was cut at, when the echoes were combined by QSMART's echo
     /// fit: the value the percentile resolved to, or the fixed threshold.
     pub qsmart_fit_threshold: Option<f64>,
+    /// Where the field is defined: `mask` less the voxels where the phase offset could not be
+    /// estimated (qsm-core's `FieldMappingResult::valid_mask`; `mask` itself on every path that
+    /// does not remove phase offsets).
+    pub field_mask: Vec<u8>,
+    /// How many voxels of `mask` that left out.
+    pub excluded: usize,
 }
 
 /// Map the total field from every echo's wrapped phase (radians) on the run's working grid, inside
@@ -141,9 +150,10 @@ pub fn map_field(
     if let Some(t) = field.qsmart_fit_threshold {
         crate::fieldmap::log_qsmart_fit_threshold(t);
     }
+    let excluded = crate::fieldmap::log_field_mask(mask, &field.valid_mask);
     Ok(FieldMap {
         b0_field_ppm: field.b0_field_ppm, total_field_hz, robust_fit_report, reliability: field.reliability,
-        qsmart_fit_threshold: field.qsmart_fit_threshold,
+        qsmart_fit_threshold: field.qsmart_fit_threshold, field_mask: field.valid_mask, excluded,
     })
 }
 

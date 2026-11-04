@@ -3,6 +3,7 @@
 
 use super::tests::{config, phantom, with_mese};
 use super::*;
+use crate::masking::{MaskOp, MaskSection, MaskThresholdMethod, MaskingInput};
 use crate::methods::{generate_methods_for, methods_for_run, methods_structured};
 use crate::pipeline_graph::{pipeline_graph, pipeline_graph_after};
 use crate::record::{Choice, StepState, Topic};
@@ -16,6 +17,49 @@ fn run_recorded(config: &PipelineConfig, facts: &ScanFacts, store: &mut MemorySt
 
 fn states(record: &RunRecord) -> Vec<(&str, StepState)> {
     record.steps.iter().map(|s| (s.id.as_str(), s.state)).collect()
+}
+
+/// Where phase offset removal could not estimate an offset (here, far from the signal, with a
+/// small smoothing kernel) the field-mapping step leaves voxels out of [`Item::FieldMask`]; the
+/// steps after it work inside that mask, and the run record and the methods say so.
+#[test]
+fn the_steps_after_the_field_map_work_where_the_field_is_defined() {
+    let (facts, mut store) = phantom();
+    // The phantom's background is noise here, so that it is measured phase the mask takes in.
+    for e in 1..=facts.n_echoes {
+        let Some(VolumeData::Real(p)) = store.get(&Item::AcquiredPhase(e)).cloned() else { panic!() };
+        let noisy: Vec<f64> = p.iter().enumerate()
+            .map(|(i, &v)| if v == 0.0 { ((i * 37 + e * 101) % 628) as f64 / 100.0 - std::f64::consts::PI } else { v })
+            .collect();
+        store.insert(Item::AcquiredPhase(e), VolumeData::Real(noisy));
+    }
+    let mut config = config();
+    config.masking.sections = vec![MaskSection {
+        input: MaskingInput::Magnitude,
+        generator: MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(0.0) },
+        refinements: vec![],
+    }];
+    config.field_mapping.unwrapping_algorithm = crate::enums::UnwrappingAlgorithm::Romeo;
+    config.field_mapping.phase_offset_removal = true;
+    config.field_mapping.phase_offset_sigma_mm = [1.0, 1.0, 1.0];
+    let (plan, record) = run_recorded(&config, &facts, &mut store);
+
+    let mask = |store: &MemoryStore, item: &Item| match store.get(item) {
+        Some(VolumeData::Mask(m)) => m.clone(),
+        other => panic!("{item:?}: {other:?}"),
+    };
+    let (brain, field_mask, local) = (mask(&store, &Item::BrainMask), mask(&store, &Item::FieldMask),
+                                      mask(&store, &Item::LocalFieldMask(crate::plan::Pass::Main)));
+    let count = |m: &[u8]| m.iter().filter(|&&v| v != 0).count();
+    assert_eq!(count(&brain), brain.len());
+    assert!(count(&field_mask) > 0 && count(&field_mask) < count(&brain), "{}", count(&field_mask));
+    assert!(local.iter().zip(&field_mask).all(|(&l, &f)| l == 0 || f != 0), "the local field stays in the field mask");
+    let Some(VolumeData::Real(field)) = store.get(&Item::FieldPpm) else { panic!() };
+    assert!(field.iter().zip(&field_mask).all(|(&v, &f)| f != 0 || v == 0.0), "no field outside it");
+
+    let decision = record.step("unwrap").unwrap().decisions.iter().find(|d| d.topic == Topic::FieldMask).expect("recorded");
+    assert_eq!(decision.choice, Choice::Partial);
+    assert!(methods_for_run(&config, &plan, &record, "qsmxt").to_markdown().contains("phase offset could not be estimated"));
 }
 
 /// A run that decides nothing records every step computed, then reused; its methods text is the

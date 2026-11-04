@@ -67,7 +67,10 @@ fn graphs_of_a_table_of_configurations() {
         assert!(g.has_edge(from, to), "{from} -> {to}: {:?}", g.edges);
     }
     assert!(!g.has_edge("unwrap", "invert"), "a local-field inversion reads the local field, not the total");
+    assert!(g.node("unwrap").unwrap().writes.contains(&item_key(&Item::FieldMask)));
     let bg = g.node("bgremove").unwrap();
+    assert!(bg.reads.contains(&item_key(&Item::FieldMask)) && !bg.reads.contains(&item_key(&Item::BrainMask)),
+            "background removal works where the field is defined: {:?}", bg.reads);
     assert_eq!((bg.algorithm.as_deref(), bg.algorithm_label.as_deref()), (Some("vsharp"), Some("V-SHARP")));
     assert_eq!(bg.settings, ["SMV kernel radii from 12 to 2 mm in 1 mm steps"]);
     assert_eq!(g.node("invert").unwrap().algorithm_label.as_deref(), Some("iLSQR"));
@@ -88,7 +91,7 @@ fn graphs_of_a_table_of_configurations() {
     }
     assert_eq!(branch("unwrap"), None);
     assert!(g.has_edge("unwrap", "bgremove") && g.has_edge("unwrap", "bgremove-reliable"));
-    assert!(g.has_edge("mask", "mask-reliable"), "the reliable mask is restricted to the brain mask");
+    assert!(g.has_edge("unwrap", "mask-reliable"), "the reliable mask is restricted to the mask of the total field");
     assert!(g.has_edge("invert", "twopass") && g.has_edge("invert-reliable", "twopass"));
     assert!(g.has_edge("twopass", "reference") && g.has_edge("invert", "reference-singlepass"));
     assert!(!g.has_edge("invert", "reference"), "the final map is the combination's");
@@ -198,7 +201,7 @@ fn graphs_of_a_table_of_configurations() {
     config.motion_correction.enabled = true;
     let g = graph(&config, &facts());
     assert_eq!(g.node("motion").unwrap().enabled_by.as_deref(), Some("motion_correction.enabled"));
-    assert!(g.has_edge("motion", "unwrap") && g.has_edge("motion", "bgremove") && !g.has_edge("mask", "unwrap"));
+    assert!(g.has_edge("motion", "unwrap") && g.has_edge("unwrap", "bgremove") && !g.has_edge("mask", "unwrap"));
     assert_consistent(&g);
 
     // Uncombined coils: the combination's algorithm on the phase-scaling box.
@@ -260,8 +263,7 @@ fn the_default_graph_in_mermaid() {
     scale_phase -->|"Phase, Magnitude"| mask
     scale_phase -->|"Phase, Magnitude"| unwrap
     mask -->|"Brain mask"| unwrap
-    unwrap -->|"Total field"| bgremove
-    mask -->|"Brain mask"| bgremove
+    unwrap -->|"Total field, Field mask"| bgremove
     bgremove -->|"Local field, Local field mask"| invert
     invert -->|"Unreferenced susceptibility"| reference
     bgremove -->|"Local field mask"| reference
@@ -441,7 +443,7 @@ fn plan_steps_carry_their_name_label_algorithm_and_outputs() {
     let bg = plan.steps.iter().find(|s| s.stage == Stage::BackgroundRemoval(Pass::Main)).unwrap();
     assert_eq!((bg.name.as_str(), bg.label.as_str()), ("bgremove", "Background-field removal"));
     assert_eq!((bg.algorithm.as_deref(), bg.algorithm_label.as_deref()), (Some("vsharp"), Some("V-SHARP")));
-    assert_eq!(bg.reads, [Item::FieldPpm, Item::BrainMask]);
+    assert_eq!(bg.reads, [Item::FieldPpm, Item::FieldMask]);
     assert_eq!(bg.outputs, [Item::LocalField(Pass::Main), Item::LocalFieldMask(Pass::Main)]);
     let mask = plan.steps.iter().find(|s| s.name == "mask").unwrap();
     assert_eq!((mask.algorithm.as_deref(), mask.outputs.as_slice()), (None, [Item::BrainMask].as_slice()));
@@ -600,8 +602,7 @@ fn the_graph_as_text() {
     assert!(text.contains(concat!(
         " 6 Background-field removal · V-SHARP\n",
         "     SMV kernel radii from 12 to 2 mm in 1 mm steps\n",
-        "     ← 5 Field map: Total field\n",
-        "     ← 4 Brain mask: Brain mask\n")), "{text}");
+        "     ← 5 Field map: Total field, Field mask\n")), "{text}");
     assert!(text.contains("     only when the run is resampled\n"), "{text}");
     // Every arrow is a line.
     let g = graph(&PipelineConfig::default(), &facts());

@@ -341,6 +341,10 @@ impl DerivativeOutputs {
     pub fn field_reliability_path(&self, key: &AcquisitionKey) -> PathBuf {
         self.workflow_nifti_path(key, "unwrap", naming::echofit_reliability_mask())
     }
+    /// The mask the total field is defined in, beside it.
+    pub fn field_mask_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.workflow_nifti_path(key, "unwrap", naming::field_mask())
+    }
     pub fn local_field_path(&self, key: &AcquisitionKey) -> PathBuf { self.workflow_nifti_path(key, "bgremove", Tail::new("localfield")) }
     pub fn bg_mask_path(&self, key: &AcquisitionKey) -> PathBuf { self.workflow_nifti_path(key, "bgremove", Tail::new("bgmask")) }
     pub fn chi_raw_path(&self, key: &AcquisitionKey) -> PathBuf {

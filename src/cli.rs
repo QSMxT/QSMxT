@@ -1247,10 +1247,10 @@ pub struct RomeoParamArgs {
     /// ROMEO: use template-based temporal unwrapping (disables individual mode)
     #[arg(long)]
     pub no_romeo_individual: bool,
-    /// ROMEO: enable inter-echo 2π offset correction (default: off)
+    /// ROMEO: correct global 2π offsets, of each echo and between echoes (default: on)
     #[arg(long)]
     pub romeo_correct_global: bool,
-    /// ROMEO: disable inter-echo 2π offset correction
+    /// ROMEO: do not correct global 2π offsets
     #[arg(long)]
     pub no_romeo_correct_global: bool,
     /// ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0.5)
@@ -2416,6 +2416,11 @@ pub struct MaskPresetArgs {
     /// Without it those sections read the input image instead, as `run --masking-input` would.
     #[arg(long)]
     pub quality: Option<PathBuf>,
+    /// Phase image (3-D, or 4-D multi-echo): the mask leaves out voxels where the scanner recorded
+    /// no phase (a constant value in every echo), as `qsmxt run` does for every recipe. A
+    /// phase-quality map rates that flat phase as reliable, so give this with `--quality`
+    #[arg(long)]
+    pub phase: Option<PathBuf>,
 }
 
 // ── Unwrap ──
@@ -2570,6 +2575,11 @@ pub struct FieldmapCommonArgs {
     /// `qsmxt qsmart --reliability`
     #[arg(long)]
     pub reliability_output: Option<PathBuf>,
+    /// Also save the mask the field map is defined in here: the mask, less the voxels where
+    /// phase offset removal could not estimate the phase offset (the field is 0 there). Pass it
+    /// to `qsmxt bgremove` and the inversions in place of the mask
+    #[arg(long)]
+    pub field_mask_output: Option<PathBuf>,
     /// B0 weighted-averaging weight type. `assumed-decay` gives each echo's phase a fixed weight
     /// TE·exp(−TE/T2*) from the echo times and an assumed T2* (no T2* map, no magnitude; Wang et
     /// al. 2022). `phase-snr` is generally preferable with magnitude

@@ -43,6 +43,11 @@ For full control, compose custom mask sections with `--mask` (repeatable),
 e.g. `--mask magnitude,bet:0.5,erode:2`. Each section names its input
 followed by a generator and refinement operations.
 
+Some scanners write a constant phase where they recorded none (Philips, for
+example, outside its own signal mask). Such a phase looks flat and reliable, so
+every recipe's mask leaves those voxels out, and the log and the methods say so.
+`qsmxt mask preset --phase` does the same for a standalone mask.
+
 - **Generators:** `threshold[:otsu|fixed:<v>|percentile:<p>]`, `bet[:<f>][:scale=<s>]`,
   `hd-bet[:full|window|<X>x<Y>x<Z>|low-memory][:tta][:step=<s>]`, `rs2-net[:tta][:step=<s>]` and `mindgrab[:tta]`. HD-BET runs on the
   whole volume by default (`full`; about 6–8 GB measured). `window` runs 192×192×96
@@ -403,6 +408,12 @@ the combined echoes as usual.
 ## Phase unwrapping
 
 Set with `--unwrapping-algorithm`.
+
+Phase offset removal cannot estimate an offset far from where the signal is
+strong. Those voxels of the mask get no field: the field map and every later step
+leave them out, and the mask they work in is saved beside the field map
+(`desc-field_mask`; `--field-mask-output` for `qsmxt fieldmap`). The log and the
+methods say how many there were.
 
 | Value | Method |
 | --- | --- |
