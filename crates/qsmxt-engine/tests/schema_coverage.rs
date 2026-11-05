@@ -279,10 +279,15 @@ fn the_derivatives_tools_are_supplied_files_in_the_browser() {
         schema::set(&mut c, p, json!(schema::BROWSER_SUPPLIED_TOOL)).unwrap();
     }
     assert_eq!(by["pipeline.export_dicom"], Browser::Unavailable);
-    // A single run has no other orientations to group.
-    assert_eq!(by["multi_orientation.group_by"], Browser::Unavailable);
+    // A page holds one scan, so it has no other orientations to group, and the rest of the
+    // section only says how a group is combined (#496).
+    let orientation: Vec<_> = by.keys().filter(|p| p.starts_with("multi_orientation.")).collect();
+    assert_eq!(orientation.len(), 9, "{orientation:?}");
+    for p in orientation {
+        assert_eq!(by[p], Browser::Unavailable, "{p}");
+    }
     let others = by.values().filter(|&&b| b == Browser::Available).count();
-    assert_eq!(others, by.len() - 7);
+    assert_eq!(others, by.len() - 15);
 }
 
 #[test]

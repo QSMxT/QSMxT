@@ -942,8 +942,8 @@ mod tests {
     /// A browser's heap holds the run's weights from the start, so every step carries them.
     #[test]
     fn a_browser_heap_holds_the_weights_for_the_whole_run() {
-        let config = with(|c| { c.apply_browser_profile(); c.inversion.algorithm = QsmAlgorithm::Xqsm; });
-        let tkd = with(|c| { c.apply_browser_profile(); c.inversion.algorithm = QsmAlgorithm::Tkd; });
+        let config = with(|c| { let _ = c.apply_browser_profile(); c.inversion.algorithm = QsmAlgorithm::Xqsm; });
+        let tkd = with(|c| { let _ = c.apply_browser_profile(); c.inversion.algorithm = QsmAlgorithm::Tkd; });
         let (a, b) = (plan_for(&config, &example(), &MemoryProfile::browser(4)),
                       plan_for(&tkd, &example(), &MemoryProfile::browser(4)));
         let xqsm_weights = model_bytes("xqsm");
@@ -956,7 +956,7 @@ mod tests {
     #[test]
     fn an_over_budget_chi_sepnet_names_the_patch_of_its_route() {
         let config = |route, frame_patch| with(|c| {
-            c.apply_browser_profile();
+            let _ = c.apply_browser_profile();
             c.pipeline.do_chi_separation = true;
             c.separation.algorithm = SeparationAlgorithm::ChiSepNet;
             c.separation.chi_sepnet.route = route;
@@ -979,7 +979,7 @@ mod tests {
     fn a_browser_run_over_the_heap_names_the_step_and_what_reduces_it() {
         // SUSEP-Net on the whole volume, as natively; everything else as the browser runs it.
         let config = with(|c| {
-            c.apply_browser_profile();
+            let _ = c.apply_browser_profile();
             c.pipeline.do_chi_separation = true;
             c.separation.algorithm = SeparationAlgorithm::SusepNet;
             c.separation.susep_net.patch = None;
@@ -1004,7 +1004,7 @@ mod tests {
         // The browser profile's patch fits.
         let mut fitted = config.clone();
         fitted.separation.susep_net.patch = None;
-        fitted.apply_browser_profile();
+        let _ = fitted.apply_browser_profile();
         assert!(plan_for(&fitted, &example(), &MemoryProfile::browser(4)).over_budget.is_none());
         // Natively the whole run is planned; R2PRIMEnet at its authors' patch is first to
         // exceed the heap when nothing is changed for the browser.
@@ -1040,7 +1040,7 @@ mod tests {
         }
         let mut over = Vec::new();
         for (name, mut config) in configs {
-            config.apply_browser_profile();
+            let _ = config.apply_browser_profile();
             // qsmbly runs a plan with networks on its deep-learning bundle, on 4 threads; the
             // classical bundle on as many as the device has.
             let threads: &[usize] = if plan(&config, &example()).models.is_empty() { &[1, 4, 16] } else { &[1, 4] };
@@ -1096,7 +1096,7 @@ mod tests {
         for alg in [SeparationAlgorithm::ChiSepNet, SeparationAlgorithm::SusepNet] {
             let mut c = with(|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = alg; });
             let native = at(&c, "chi_separation", 1);
-            c.apply_browser_profile();
+            let _ = c.apply_browser_profile();
             assert!(at(&c, "chi_separation", 1) < native, "{alg}");
         }
         let r2 = |patch| with(|c| { c.pipeline.do_r2primemap = true; c.separation.r2primenet.patch = patch; });

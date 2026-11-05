@@ -53,7 +53,7 @@ fn facts(fx: &Value, echoes: usize) -> ScanFacts {
 fn config(fx: &Value, r: &Value, browser: bool) -> PipelineConfig {
     let mut c = PipelineConfig::default();
     if browser {
-        c.apply_browser_profile();
+        let _ = c.apply_browser_profile();
     }
     for s in fx["earlier_defaults"].as_array().unwrap().iter().chain(r["settings"].as_array().unwrap()) {
         let (path, value) = (s[0].as_str().unwrap(), s[1].clone());

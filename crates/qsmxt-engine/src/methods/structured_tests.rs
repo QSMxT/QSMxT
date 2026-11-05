@@ -326,16 +326,30 @@ fn as_planned(plan: &crate::plan::Plan, config: &PipelineConfig) -> RunRecord {
 
 /// A run, or a dataset of runs, that decided nothing at run time gets the configuration's text,
 /// byte for byte, with the same steps named: over the whole spread of configurations and scans.
+/// Only a group is not the configuration's to say: with no group combined, the text is as if none
+/// was asked for, and with one combined, it is the configuration's without its condition (#496).
 #[test]
 fn a_run_that_decided_nothing_gets_the_configurations_text() {
     for (name, c) in configs() {
+        let mut alone = c.clone();
+        alone.multi_orientation = Default::default();
         for tool in ["qsmxt", "QSMbly"] {
-            let text = generate_methods_for(&c, tool);
+            let text = generate_methods_for(&alone, tool);
             for (scan, f) in scans() {
                 let p = plan(&c, &f);
                 let record = as_planned(&p, &c);
                 let run = methods_for_run(&c, &p, &record, tool);
-                assert_eq!(run, methods_structured(&c, &p, tool), "{name} on {scan} [{tool}]");
+                assert_eq!(run, methods_structured(&alone, &p, tool), "{name} on {scan} [{tool}]");
+                if c.multi_orientation.enabled() {
+                    let mut member = record.clone();
+                    assert!(member.set_orientation_group(Some("group")), "{name} on {scan}");
+                    assert_eq!(
+                        methods_for_run(&c, &p, &member, tool).to_markdown(),
+                        generate_methods_for(&c, tool).replace(
+                            "Where a session held several head orientations of the same object, local field maps from those orientations",
+                            "Local field maps from multiple head orientations"),
+                        "{name} on {scan} [{tool}]");
+                }
                 let merged = crate::record::merge(&[record.clone(), record.clone(), record]);
                 assert_eq!(methods_for_dataset(&c, &merged, tool).to_markdown(), text, "{name} on {scan} [{tool}]");
             }
