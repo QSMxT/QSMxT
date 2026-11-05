@@ -618,8 +618,12 @@ impl Ctx<'_> {
                 }
                 reads.extend(self.echo_magnitudes());
                 let r2prime = if c.separation.custom_r2prime_tool.is_some() { Item::SuppliedR2prime } else { Item::R2prime };
+                // χ-sepnet's toolbox route makes its own R2′ unless it is given a measured one, so
+                // an R2′ map predicted beside it is no input to it.
+                let route_estimates = crate::config::chisepnet_route_can_estimate_r2prime(c)
+                    && !(has(&Item::R2) && c.separation.r2prime_strategy != R2PrimeStrategy::R2primenet);
                 for item in [Item::R2star, r2prime, Item::LocalField(Pass::Main)] {
-                    if has(&item) {
+                    if has(&item) && !(route_estimates && item == Item::R2prime) {
                         reads.push(item);
                     }
                 }
@@ -855,7 +859,7 @@ pub fn pipeline_graph(plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, g
 ///
 /// [`PipelineGraph::differs_from`] says whether it differs from the planned graph.
 pub fn pipeline_graph_after(plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, record: &RunRecord) -> PipelineGraph {
-    let config = &config.normalised().0;
+    let config = &config.normalised_as_planned(plan);
     let ran = as_decided(facts, record.decisions().map(|(_, d)| d));
     let mut graph = pipeline_graph_on(plan, config, &ran, record.resampled);
     for node in &mut graph.nodes {
@@ -949,7 +953,7 @@ fn setup_text(settings: &[String], node: &Node) -> String {
 /// its whole grid: the planned graph a run's graph after it ([`pipeline_graph_after`]) is compared
 /// with.
 pub fn pipeline_graph_on(plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, resampled: Option<bool>) -> PipelineGraph {
-    let config = &config.normalised().0;
+    let config = &config.normalised_as_planned(plan);
     let ctx = Ctx { plan, config, facts };
     let mut nodes: Vec<Node> = Vec::new();
     let mut edges: Vec<Edge> = Vec::new();

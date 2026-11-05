@@ -1061,7 +1061,7 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
 /// scan's facts), sentence by sentence, each naming the steps of `plan`'s pipeline graph it
 /// describes. Its [`Methods::to_markdown`] is [`generate_methods_for`]'s text.
 pub fn methods_structured(config: &PipelineConfig, plan: &Plan, tool: &str) -> Methods {
-    let config = &config.normalised().0;
+    let config = &config.normalised_as_planned(plan);
     let mut methods = draft(config, tool, Ran::default()).finish(config, Some(plan));
     methods.note = crate::recommendations::config_note(config);
     methods
@@ -1071,9 +1071,10 @@ pub fn methods_structured(config: &PipelineConfig, plan: &Plan, tool: &str) -> M
 /// record): it says what was done, as [`methods_structured`] does for the plan, where the run
 /// decided something the configuration does not (a supplied mask used, or not found and computed
 /// instead; R2′ measured rather than predicted; a step that had nothing to work on). A run that
-/// decided nothing gets [`methods_structured`]'s text.
+/// decided nothing gets [`methods_structured`]'s text, less multi-orientation, which is said only
+/// of a run whose record shows its group was combined.
 pub fn methods_for_run(config: &PipelineConfig, plan: &Plan, record: &RunRecord, tool: &str) -> Methods {
-    let config = &config.normalised().0;
+    let config = &config.normalised_as_planned(plan);
     let merged = DatasetRecord::from(record);
     let mut methods = draft(config, tool, Ran(Some(&merged))).finish_drawn(|stage| {
         plan.has(*stage) && !crate::pipeline_graph::left_out(plan, config, *stage, record.resampled)
@@ -1086,11 +1087,52 @@ pub fn methods_for_run(config: &PipelineConfig, plan: &Plan, record: &RunRecord,
 /// a choice every run made is said as for one run; where the runs differ, the configuration's
 /// wording ("where available") stands. Each sentence names the steps some run did something in.
 pub fn methods_for_dataset(config: &PipelineConfig, record: &DatasetRecord, tool: &str) -> Methods {
-    let config = &config.normalised().0;
+    let mut config = config.normalised().0;
+    // χ-sepnet's toolbox route: the R2′ maps the scans that could measure one made.
+    if record.count(Topic::ChiSeparationR2prime, Choice::Measured) > 0 {
+        config.pipeline.do_r2primemap = true;
+        crate::config::enforce_separation_dependencies(&mut config);
+    }
+    let config = &config;
     let mut methods = draft(config, tool, Ran(Some(record)))
         .finish_drawn(|stage| record.step(&stage.name()).is_some_and(|s| s.ran() > 0));
     methods.note = crate::recommendations::note(&record.recommendations, record.runs);
     methods
+}
+
+/// Where χ-sepnet's toolbox route got its R2′: its own estimate unless it is given a measured one.
+fn chisepnet_r2prime_sentences(doc: &mut Draft, config: &PipelineConfig, ran: Ran) {
+    let (measured, estimated) = (ran.count(Topic::ChiSeparationR2prime, Choice::Measured),
+                                 ran.count(Topic::ChiSeparationR2prime, Choice::Predicted));
+    if measured > 0 && estimated == 0 {
+        doc.say(&[Stage::ChiSeparation], "χ-separation used the measured R2'.".to_string());
+        return;
+    }
+    doc.cite(&CITE_R2PRIMENET);
+    let unknown = measured == 0 && estimated == 0;
+    let always = config.separation.r2prime_strategy == R2PrimeStrategy::R2primenet;
+    let estimate = "estimated from R2* with R2PRIMEnet (Kim et al., 2025) in the network's training frame";
+    doc.say(&[Stage::ChiSeparation], if measured > 0 || (unknown && !always) {
+        format!("χ-separation used R2' measured as R2* - R2 where a multi-echo spin-echo acquisition \
+                 was available, and otherwise its own R2', {estimate}.")
+    } else {
+        format!("χ-separation used its own R2', {estimate}.")
+    });
+    // Only a map a run did make, and that was estimated: a measured one is what the route used.
+    if config.pipeline.do_r2primemap && (unknown || ran.count(Topic::R2primeSource, Choice::Predicted) > 0) {
+        doc.say(&[Stage::ChiSeparation], if measured > 0 || (unknown && !always) {
+            "Where R2' was estimated, the R2' map in the outputs was not an input to χ-separation.".to_string()
+        } else {
+            "The R2' map in the outputs was not an input to χ-separation.".to_string()
+        });
+    }
+    // The R2′ sentences say this where a map was made; the route's own estimate is off 3 T too.
+    let off_field = ran.count(Topic::R2primenetCalibration, Choice::Uncalibrated) > 0 || unknown;
+    if config.separation.r2primenet.ignore_field_mismatch && off_field && !config.pipeline.do_r2primemap {
+        doc.say(&[Stage::ChiSeparation],
+            "R2PRIMEnet, whose weights were trained at 3 T, was also applied to data acquired at other \
+             field strengths.".to_string());
+    }
 }
 
 /// What the runs the text describes did ([`DatasetRecord`]; one run's is a dataset of one). With
@@ -1542,6 +1584,9 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
         if matches!(config.separation.algorithm, SeparationAlgorithm::ChiSepNet | SeparationAlgorithm::SusepNet) {
             doc.say(&[Stage::ChiSeparation], "Negative χ+ and |χ−| values were set to zero.".to_string());
         }
+        if crate::config::chisepnet_route_can_estimate_r2prime(config) {
+            chisepnet_r2prime_sentences(&mut doc, config, ran);
+        }
         if crate::stages::separation::reconstructs_qsm(config) {
             let mut q = Changed::default();
             q.add_fields(&config.separation.chi_sep_ilsqr.qsm_ilsqr, &SeparationConfig::default().chi_sep_ilsqr.qsm_ilsqr, &[]);
@@ -1554,28 +1599,36 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
 
     // Multi-orientation. Described after the per-orientation pipeline because that is the
     // order it runs in: each orientation is unwrapped and background-corrected on its own,
-    // and only the local fields are combined.
-    if config.multi_orientation.enabled() {
+    // and only the local fields are combined. Whether a group forms depends on the runs, so the
+    // setting alone says nothing happened: the record does ([`Topic::OrientationGroup`]). Before
+    // any run, or where only some runs were combined, the wording is conditional (#496).
+    let combined = ran.count(Topic::OrientationGroup, Choice::Applied);
+    let every_run = combined > 0 && combined == ran.runs();
+    if config.multi_orientation.enabled() && (ran.0.is_none() || combined > 0) {
+        let fields = if every_run {
+            "Local field maps from multiple head orientations"
+        } else {
+            "Where a session held several head orientations of the same object, local field maps \
+             from those orientations"
+        };
         match config.multi_orientation.algorithm {
             MultiOrientAlgorithm::Cosmos => {
                 doc.cite(&CITE_COSMOS);
-                doc.say(&[], 
-                    "Local field maps from multiple head orientations, co-registered onto a common \
+                doc.say(&[], format!(
+                    "{fields}, co-registered onto a common \
                      grid, were combined by Calculation Of Susceptibility through Multiple \
                      Orientation Sampling (COSMOS; Liu et al., 2009), using each orientation's B0 \
-                     direction expressed in that common frame."
-                        .to_string(),
+                     direction expressed in that common frame."),
                 );
             }
             MultiOrientAlgorithm::Sti => {
                 doc.cite(&CITE_STI);
-                doc.say(&[], 
-                    "Local field maps from multiple head orientations, co-registered onto a common \
+                doc.say(&[], format!(
+                    "{fields}, co-registered onto a common \
                      grid, were combined by susceptibility tensor imaging (STI; Liu, 2010), \
                      yielding the six independent components of the symmetric susceptibility \
                      tensor along with mean magnetic susceptibility (MMS), magnetic susceptibility \
-                     anisotropy (MSA) and the principal eigenvector."
-                        .to_string(),
+                     anisotropy (MSA) and the principal eigenvector."),
                 );
             }
         }

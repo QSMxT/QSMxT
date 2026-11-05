@@ -27,6 +27,9 @@
 //!   and the config differs from it ([`reference_differences`]): Apply all ([`apply_all`]), per
 //!   setting ([`apply`]), or Keep mine ([`keep`], dismissals, so it is not offered again for the
 //!   same values). A setting's [`marker`] names whose rule it departs from and what that uses.
+//! - **Findings chosen together** ([`settle`]) get one answer on every host: on each setting the
+//!   strongest takes it, so a reasoned finding outranks an authors' setting, and two as strong
+//!   that disagree leave the setting for the user (#493).
 //! - **Every rule that applies is shown**, departed from or not ([`reference_values`]), so a
 //!   setting covered by a rule always shows its reference value and source next to its own.
 //! - **Dismissals** ([`crate::config::Dismissal`]) are kept in the config, with the value they
@@ -902,11 +905,16 @@ pub fn keep(dismissals: &mut Vec<Dismissal>, findings: &[Recommendation]) {
     }
 }
 
-/// Apply each finding's recommended value ([`apply`]), in order: what "Apply all" does. Every
-/// finding is tried; `Err` lists those that could not be applied.
-pub fn apply_all(config: &mut PipelineConfig, findings: &[Recommendation]) -> Result<(), String> {
-    let errors: Vec<String> = findings.iter().filter_map(|r| apply(config, &r.rule, None).err()).collect();
-    if errors.is_empty() { Ok(()) } else { Err(errors.join("; ")) }
+/// Apply the findings the user chose together: what "Apply all" does, with the precedence
+/// [`settle`] gives (the same as [`accept`]'s), so the order of `findings` does not matter. A
+/// finding left by that precedence changes nothing and is not an error: the returned [`Settled`]
+/// says which findings were applied and which were left, and the setting keeps its value and goes
+/// on showing them. Every finding `settle` takes is tried; `Err` lists those that could not be
+/// applied.
+pub fn apply_all(config: &mut PipelineConfig, findings: &[Recommendation]) -> Result<Settled, String> {
+    let settled = settle(findings);
+    let errors: Vec<String> = settled.apply.iter().filter_map(|r| apply(config, &r.rule, None).err()).collect();
+    if errors.is_empty() { Ok(settled) } else { Err(errors.join("; ")) }
 }
 
 // ─── Dismissing ───
@@ -1079,39 +1087,73 @@ impl Accept {
     }
 }
 
-/// What `--accept-recommendations` and `--accept-reference-settings` change: on each setting,
-/// the strongest finding of the kinds `which` takes that is not dismissed, unless two as strong
-/// disagree there. A reasoned finding outranks an authors' setting on the same setting. Returns
-/// the findings applied (as they were before the change) and those left because they conflict.
-pub fn accept(config: &mut PipelineConfig, findings: &[Recommendation], which: Accept) -> (Vec<Recommendation>, Vec<Recommendation>) {
-    let mut applied = Vec::new();
-    let mut conflicting = Vec::new();
+/// What findings chosen together come to, setting by setting ([`settle`]). Every host decides this
+/// here (#493): `qsmxt run` through [`accept`], qsmbly through [`apply_all`], the TUI through
+/// [`settle`] on its pop-up's picks.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Settled {
+    /// The findings whose value the setting takes: the strongest on each setting, with any weaker
+    /// one that wants the same value.
+    pub apply: Vec<Recommendation>,
+    /// The findings left because they are as strong as each other on one setting and want
+    /// different values. The setting keeps its value for the user to choose.
+    pub conflicting: Vec<Recommendation>,
+    /// The findings left because a stronger one on the setting wants another value.
+    pub outranked: Vec<Recommendation>,
+}
+
+/// The precedence of findings chosen together, in any order and with nothing changed: on each
+/// setting, the strongest finding that is open (departed from and not dismissed) takes it, so a
+/// reasoned finding outranks an authors' setting, unless two as strong disagree, when none is
+/// taken. Findings on other settings are unaffected.
+pub fn settle(findings: &[Recommendation]) -> Settled {
+    settle_where(findings, |_| true)
+}
+
+/// [`settle`] over the findings `takes` lets in.
+fn settle_where(findings: &[Recommendation], takes: impl Fn(&Recommendation) -> bool) -> Settled {
+    let mut settled = Settled::default();
     let mut settings: Vec<&str> = Vec::new();
     for r in findings {
         if !settings.contains(&r.setting.as_str()) {
             settings.push(&r.setting);
         }
     }
-    let takes = |r: &Recommendation| r.departs && !r.dismissed && match r.kind {
-        Kind::Reasoned => which.recommendations && r.actionable(),
-        Kind::Reference => which.reference,
-    };
     for s in settings {
-        let open: Vec<&Recommendation> = findings.iter().filter(|r| r.setting == s && takes(r)).collect();
+        let open: Vec<&Recommendation> = findings.iter()
+            .filter(|r| r.setting == s && r.departs && !r.dismissed && takes(r)).collect();
         let Some(top) = open.iter().map(|r| r.strength).max() else { continue };
-        let strongest: Vec<&Recommendation> = open.into_iter().filter(|r| r.strength == top).collect();
-        let mut values: Vec<&Value> = strongest.iter().map(|r| &r.recommended.value).collect();
-        values.dedup();
-        if values.len() > 1 {
-            conflicting.extend(strongest.into_iter().cloned());
+        let strongest: Vec<&Recommendation> = open.iter().copied().filter(|r| r.strength == top).collect();
+        let value = &strongest[0].recommended.value;
+        if strongest.iter().any(|r| r.recommended.value != *value) {
+            let (level, weaker): (Vec<_>, Vec<_>) = open.into_iter().partition(|r| r.strength == top);
+            settled.conflicting.extend(level.into_iter().cloned());
+            settled.outranked.extend(weaker.into_iter().cloned());
             continue;
         }
-        match apply(config, &strongest[0].rule, None) {
-            Ok(()) => applied.extend(strongest.into_iter().cloned()),
-            Err(e) => log::warn!("could not apply {}: {e}", strongest[0].rule),
+        let (same, other): (Vec<_>, Vec<_>) = open.into_iter().partition(|r| r.recommended.value == *value);
+        settled.apply.extend(same.into_iter().cloned());
+        settled.outranked.extend(other.into_iter().cloned());
+    }
+    settled
+}
+
+/// What `--accept-recommendations` and `--accept-reference-settings` change: the findings of the
+/// kinds `which` takes, as [`settle`] decides among them. Returns the findings applied (as they
+/// were before the change) and those left because they conflict.
+pub fn accept(config: &mut PipelineConfig, findings: &[Recommendation], which: Accept) -> (Vec<Recommendation>, Vec<Recommendation>) {
+    let settled = settle_where(findings, |r| match r.kind {
+        Kind::Reasoned => which.recommendations && r.actionable(),
+        Kind::Reference => which.reference,
+    });
+    let mut applied = Vec::new();
+    for r in settled.apply {
+        match apply(config, &r.rule, None) {
+            Ok(()) => applied.push(r),
+            Err(e) => log::warn!("could not apply {}: {e}", r.rule),
         }
     }
-    (applied, conflicting)
+    (applied, settled.conflicting)
 }
 
 /// Every recommendation for a config across the scans it runs on: those that do not depend on

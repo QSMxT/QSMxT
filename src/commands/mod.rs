@@ -651,6 +651,19 @@ mod integration_tests {
 
     /// r2star-qsm needs an R2* map or the magnitude to fit one from; with neither it must say so
     /// rather than run on nothing.
+    /// A patch χ-sepnet cannot take is refused before the images load or the weights download.
+    #[test]
+    fn separate_chi_sepnet_refuses_a_bad_frame_patch_first() {
+        use clap::Parser;
+        let cli = crate::cli::Cli::try_parse_from([
+            "qsmxt", "separate", "chi-sepnet", "--local-field", "absent.nii", "--mask", "absent.nii",
+            "--r2star", "absent.nii", "--output", "out", "--frame-patch", "100", "128", "64",
+        ]).unwrap();
+        let crate::cli::Command::Separate { command } = cli.command else { panic!() };
+        let e = super::separate::execute(command).unwrap_err().to_string();
+        assert!(e.contains("χ-sepnet frame patch D = 100 must be a positive multiple of 16"), "{e}");
+    }
+
     #[test]
     fn test_separate_r2star_qsm_needs_an_input() {
         let dir = tempfile::tempdir().unwrap();
@@ -2033,6 +2046,46 @@ mod integration_tests {
         let sidecar: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(sidecar).unwrap()).unwrap();
         let reference = sidecar["ReferenceOrientation"].as_str().unwrap();
         assert!(reference.contains("acq-dir3"), "{reference}");
+
+        // The group was combined, so each member's methods and the dataset's say so (#496).
+        let deriv = out.join("derivatives/qsmxt");
+        let combined = "Local field maps from multiple head orientations";
+        let dataset = std::fs::read_to_string(deriv.join("methods.md")).unwrap();
+        assert!(dataset.contains(combined) && dataset.contains("(COSMOS; Liu et al., 2009)"), "{dataset}");
+        let run_methods: Vec<_> = glob::glob(&deriv.join("workflow/**/*_methods.md").to_string_lossy())
+            .unwrap().flatten().collect();
+        assert_eq!(run_methods.len(), 3, "{run_methods:?}");
+        for path in &run_methods {
+            let text = std::fs::read_to_string(path).unwrap();
+            assert!(text.contains(combined), "{}: {text}", path.display());
+        }
+    }
+
+    /// A pattern that groups nothing processes every run alone, and neither the run's methods nor
+    /// the dataset's say otherwise (#496).
+    #[test]
+    fn a_group_that_never_formed_is_not_in_the_methods() {
+        let dir = tempfile::tempdir().unwrap();
+        let bids = dir.path().join("bids");
+        let out = dir.path().join("out");
+        testutils::create_multi_orientation_bids(&bids);
+        let mut args = default_run_args(bids, out.clone());
+        args.dry = false;
+        args.no_mem_limit = true;
+        args.include = Some(vec!["*acq-highres*".to_string()]);
+        args.pipeline.orientation_group = Some("acq".to_string());
+        args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
+        args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
+        super::run::execute(args).unwrap();
+        let deriv = out.join("derivatives/qsmxt");
+        let mut files: Vec<_> = glob::glob(&deriv.join("workflow/**/*_methods.md").to_string_lossy())
+            .unwrap().flatten().collect();
+        assert_eq!(files.len(), 1, "{files:?}");
+        files.push(deriv.join("methods.md"));
+        for path in &files {
+            let text = std::fs::read_to_string(path).unwrap();
+            assert!(!text.contains("COSMOS") && !text.contains("orientation"), "{}: {text}", path.display());
+        }
     }
 
     /// A reference that matches no orientation is refused before any run's pipeline starts,

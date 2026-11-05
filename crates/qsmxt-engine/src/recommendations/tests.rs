@@ -470,6 +470,138 @@ fn reference_differences_of_a_chosen_method() {
     assert_eq!(reference_differences(&kept, &facts, &medi).len(), diffs.len());
 }
 
+/// MEDI with χ-separation by χ-sep, and LBV chosen: MEDI's authors use PDF, χ-sep's V-SHARP.
+fn two_authors_disagree() -> (PipelineConfig, Vec<Recommendation>) {
+    let mut c = PipelineConfig::default();
+    c.pipeline.do_chi_separation = true;
+    schema::set(&mut c, "inversion.algorithm", json!("medi")).unwrap();
+    schema::set(&mut c, "separation.algorithm", json!("chi-sep-ilsqr")).unwrap();
+    schema::set(&mut c, "bg_removal.algorithm", json!("lbv")).unwrap();
+    let found = recommendations(&c, &known());
+    let on_bg: Vec<&str> = found.iter().filter(|r| r.setting == "bg_removal.algorithm").map(|r| r.rule.as_str()).collect();
+    assert!(on_bg.contains(&"medi.bg-pdf") && on_bg.contains(&"chi-sep.bg-vsharp"), "{on_bg:?}");
+    (c, found)
+}
+
+/// FANSI with Laplacian unwrapping and the complex fit on several echoes: FANSI's measured
+/// suggestion (discouraged, ROMEO) and the complex fit's authors' unwrapper want different values.
+fn reasoned_and_authors_disagree() -> (PipelineConfig, Vec<Recommendation>) {
+    let mut c = PipelineConfig::default();
+    schema::set(&mut c, "inversion.algorithm", json!("fansi")).unwrap();
+    schema::set(&mut c, "field_mapping.b0_estimation", json!("complex-fit")).unwrap();
+    schema::set(&mut c, "field_mapping.unwrapping_algorithm", json!("laplacian")).unwrap();
+    let found: Vec<Recommendation> = recommendations(&c, &known());
+    let rules: Vec<&str> = found.iter().map(|r| r.rule.as_str()).collect();
+    assert!(rules.contains(&"fansi.no-laplacian-multi-echo") && rules.contains(&"complex-fit.unwrap-region-growing"), "{rules:?}");
+    (c, found)
+}
+
+/// A reasoned finding beats an authors' setting on one setting, in either order, and the setting
+/// is not overwritten by whichever came last.
+#[test]
+fn apply_all_lets_a_reasoned_finding_beat_an_authors_setting() {
+    let (c, found) = reasoned_and_authors_disagree();
+    let mut backwards = found.clone();
+    backwards.reverse();
+    for findings in [found, backwards] {
+        let mut applied = c.clone();
+        let settled = apply_all(&mut applied, &findings).unwrap();
+        assert_eq!(applied.field_mapping.unwrapping_algorithm, UnwrappingAlgorithm::Romeo);
+        assert!(settled.outranked.iter().any(|r| r.rule == "complex-fit.unwrap-region-growing"), "{settled:?}");
+        assert!(settled.apply.iter().any(|r| r.rule == "fansi.no-laplacian-multi-echo") && settled.conflicting.is_empty(), "{settled:?}");
+    }
+}
+
+/// Two authors' settings that disagree leave the setting for the user: it keeps its value, nothing
+/// is recorded, the setting stays marked, and `apply_all` reports them. The others are applied.
+#[test]
+fn apply_all_leaves_two_authors_settings_that_disagree_to_the_user() {
+    let (c, found) = two_authors_disagree();
+    let mut backwards = found.clone();
+    backwards.reverse();
+    for findings in [found, backwards] {
+        let mut applied = c.clone();
+        let settled = apply_all(&mut applied, &findings).unwrap();
+        assert_eq!(applied.bg_removal.algorithm, BfAlgorithm::Lbv);
+        let left: Vec<&str> = settled.conflicting.iter().map(|r| r.rule.as_str()).collect();
+        assert!(left.contains(&"medi.bg-pdf") && left.contains(&"chi-sep.bg-vsharp"), "{left:?}");
+        assert!(settled.apply.iter().all(|r| r.setting != "bg_removal.algorithm"), "{settled:?}");
+        assert_eq!(applied.dismissed_recommendations, c.dismissed_recommendations);
+        let after = recommendations(&applied, &known());
+        assert!(after.iter().any(|r| r.setting == "bg_removal.algorithm" && r.departs), "still shown");
+    }
+}
+
+/// `accept`, `apply_all` and `settle` are one answer: taking every kind, `accept` and `apply_all`
+/// reach the same config, and report the same conflicts.
+#[test]
+fn accept_and_apply_all_give_one_answer() {
+    for (c, found) in [two_authors_disagree(), reasoned_and_authors_disagree()] {
+        let (mut accepted, mut all) = (c.clone(), c.clone());
+        let (applied, conflicting) = accept(&mut accepted, &found, Accept { recommendations: true, reference: true });
+        let settled = apply_all(&mut all, &found).unwrap();
+        assert_eq!(accepted, all);
+        assert_eq!((applied, conflicting), (settled.apply, settled.conflicting));
+    }
+}
+
+/// Only what the user chose and is still open changes a setting: a finding not departed from, or
+/// dismissed, changes nothing, nor do settings no finding is about.
+#[test]
+fn apply_all_changes_only_open_findings() {
+    let rule = core::RULES.iter().find(|r| r.id == "medi-msmv.prefilter").unwrap();
+    let c = violating(rule);
+    let facts = Facts::default();
+    let open = recommendations(&c, &facts).into_iter().find(|r| r.rule == rule.id).unwrap();
+
+    let mut dismissed = open.clone();
+    dismissed.dismissed = true;
+    let mut followed = open.clone();
+    followed.departs = false;
+    for finding in [dismissed, followed] {
+        let mut same = c.clone();
+        let settled = apply_all(&mut same, &[finding]).unwrap();
+        assert_eq!(same, c);
+        assert_eq!(settled, Settled::default());
+    }
+    assert_eq!(apply_all(&mut c.clone(), &[]).unwrap(), Settled::default());
+
+    let mut changed = c.clone();
+    apply_all(&mut changed, &[open]).unwrap();
+    assert!(changed.inversion.medi.msmv_prefilter);
+    changed.inversion.medi.msmv_prefilter = c.inversion.medi.msmv_prefilter;
+    assert_eq!(changed, c, "nothing else changes");
+}
+
+/// Findings that agree on a value are all applied, whatever their strengths; a weaker one that
+/// wants the same value as the strongest is not left out.
+#[test]
+fn findings_that_agree_are_applied_together() {
+    let mut c = PipelineConfig::default();
+    schema::set(&mut c, "inversion.algorithm", json!("medi")).unwrap();
+    schema::set(&mut c, "bg_removal.algorithm", json!("pdf")).unwrap();
+    let found = recommendations(&c, &known());
+    let masks: Vec<&str> = found.iter().filter(|r| r.setting == "masking.sections").map(|r| r.rule.as_str()).collect();
+    assert!(masks.contains(&"medi.mask-bet") && masks.contains(&"pdf.mask-bet"), "{masks:?}");
+    let settled = settle(&found);
+    assert!(masks.iter().all(|m| settled.apply.iter().any(|r| r.rule == *m)), "{settled:?}");
+    assert!(settled.conflicting.is_empty() && settled.outranked.is_empty());
+}
+
+/// A finding `apply` cannot carry out is an error naming why; the others are still tried.
+#[test]
+fn apply_all_tries_every_finding_and_lists_what_failed() {
+    let rule = core::RULES.iter().find(|r| r.id == "medi-msmv.prefilter").unwrap();
+    let mut c = violating(rule);
+    let good = recommendations(&c, &Facts::default()).into_iter().find(|r| r.rule == rule.id).unwrap();
+    let mut bad = good.clone();
+    bad.rule = "no.such.rule".into();
+    bad.setting = "no.such.setting".into();
+    let e = apply_all(&mut c, &[bad, good]).unwrap_err();
+    assert!(e.contains("no rule no.such.rule"), "{e}");
+    assert!(c.inversion.medi.msmv_prefilter, "the other finding was still applied");
+}
+
 /// With Laplacian unwrapping, QSMART's and iLSQR's reference pipelines offer the unmasked
 /// unwrapping, in QSMxT's setting, and applying it sets only that.
 #[test]

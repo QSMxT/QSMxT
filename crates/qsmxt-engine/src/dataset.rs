@@ -337,4 +337,115 @@ mod tests {
             ["Skipped in 1 of 3 runs"]
         );
     }
+
+    /// A group setting alone says nothing happened: multi-orientation is said of the runs whose
+    /// record shows their group was combined, and citing it goes with saying it (#496).
+    #[test]
+    fn multi_orientation_is_said_only_of_runs_a_group_combined() {
+        let mut config = PipelineConfig::default();
+        config.multi_orientation.group_by = "acq".into();
+        config.multi_orientation.reference = "*acq-Neutral*".into();
+        let f = facts();
+        let plan = crate::plan::plan(&config, &f);
+        let alone = record(&plan, &[]);
+        let mut member = alone.clone();
+        assert!(member.set_orientation_group(Some("sub-1_ses-1")));
+        assert!(!member.set_orientation_group(Some("sub-1_ses-1")), "said once");
+        let run = |r: &RunRecord| crate::methods::methods_for_run(&config, &plan, r, "qsmxt").to_markdown();
+        let dataset = |runs: &[&RunRecord]| {
+            let runs: Vec<_> = runs.iter().map(|r| (&plan, &f, *r)).collect();
+            summarise(&config, &runs, "qsmxt").unwrap().methods.to_markdown()
+        };
+        let definite = "Local field maps from multiple head orientations, co-registered";
+        let conditional = "Where a session held several head orientations of the same object";
+
+        for text in [run(&alone), dataset(&[&alone, &alone])] {
+            for absent in ["COSMOS", "orientation", "Liu et al., 2009"] {
+                assert!(!text.contains(absent), "{absent}: {text}");
+            }
+        }
+        for text in [run(&member), dataset(&[&member, &member])] {
+            assert!(text.contains(definite) && text.contains("(COSMOS; Liu et al., 2009)"), "{text}");
+            assert!(text.contains("the grid of the reference orientation (*acq-Neutral*)"), "{text}");
+            assert!(!text.contains(conditional), "{text}");
+        }
+        let mixed = dataset(&[&member, &alone, &alone]);
+        assert!(mixed.contains(conditional) && mixed.contains("(COSMOS; Liu et al., 2009)"), "{mixed}");
+        assert!(!mixed.contains(definite), "{mixed}");
+
+        // An earlier fan-in's claim is taken back.
+        assert!(member.set_orientation_group(None));
+        assert_eq!(member, alone);
+    }
+
+    /// Before any run nothing has been combined, so the configuration's text is conditional.
+    #[test]
+    fn multi_orientation_before_a_run_does_not_say_it_happened() {
+        let mut config = PipelineConfig::default();
+        config.multi_orientation.group_by = "acq".into();
+        let plan = crate::plan::plan(&config, &facts());
+        for text in [
+            crate::methods::generate_methods_for(&config, "qsmxt"),
+            crate::methods::methods_structured(&config, &plan, "qsmxt").to_markdown(),
+        ] {
+            assert!(text.contains("Where a session held several head orientations of the same object, local field maps"), "{text}");
+            assert!(!text.contains("Local field maps from multiple"), "{text}");
+        }
+    }
+
+    /// χ-sepnet's toolbox route, as its runs recorded it: its own estimate, with or beside a
+    /// published R2′, or a measured one; and the configuration's wording before a run.
+    #[test]
+    fn the_toolbox_routes_r2prime_is_said_as_the_runs_used_it() {
+        use crate::record::{Choice::*, Topic::ChiSeparationR2prime};
+        let mut config = PipelineConfig::default();
+        config.pipeline.do_chi_separation = true;
+        config.separation.algorithm = crate::SeparationAlgorithm::ChiSepNet;
+        let own = "χ-separation used its own R2', estimated from R2* with R2PRIMEnet (Kim et al., 2025) in the network's training frame.";
+        let not_input = "The R2' map in the outputs was not an input to χ-separation.";
+        let f = facts();
+        let plan = crate::plan::plan(&config, &f);
+        let used = |plan, choice| record(plan, &[("chi_separation", crate::record::Decision::new(ChiSeparationR2prime, choice, "why"))]);
+
+        let run = crate::methods::methods_for_run(&config, &plan, &used(&plan, Predicted), "qsmxt").to_markdown();
+        assert!(run.contains(own) && !run.contains(not_input), "{run}");
+        assert!(run.contains("R2PRIMEnet") && run.contains("Kim"), "{run}");
+        assert!(!run.contains("R2' was estimated from the R2* map"), "no R2′ map was made: {run}");
+
+        let mut asked = config.clone();
+        asked.pipeline.do_r2primemap = true;
+        let plan2 = crate::plan::plan(&asked, &f);
+        let asked_record = record(&plan2, &[
+            ("r2_r2prime", crate::record::Decision::new(crate::record::Topic::R2primeSource, Predicted, "why")),
+            ("chi_separation", crate::record::Decision::new(ChiSeparationR2prime, Predicted, "why")),
+        ]);
+        let run = crate::methods::methods_for_run(&asked, &plan2, &asked_record, "qsmxt").to_markdown();
+        assert!(run.contains(own) && run.contains(not_input), "{run}");
+
+        let mut with_mese = f.clone();
+        with_mese.mese_echo_times = Some(vec![0.01, 0.02, 0.03, 0.04]);
+        let measured_plan = crate::plan::plan(&config, &with_mese);
+        let measured = used(&measured_plan, Measured);
+        let run = crate::methods::methods_for_run(&config, &measured_plan, &measured, "qsmxt").to_markdown();
+        assert!(run.contains("χ-separation used the measured R2'.") && !run.contains(own), "{run}");
+
+        // A dataset of both: the sentence covers each, and the measuring runs' R2′ is said.
+        let estimated = used(&plan, Predicted);
+        let both = summarise(&config, &[(&measured_plan, &with_mese, &measured), (&plan, &f, &estimated)], "qsmxt")
+            .unwrap().methods.to_markdown();
+        assert!(both.contains("χ-separation used R2' measured as R2* - R2 where a multi-echo spin-echo acquisition was available, and otherwise its own R2'"), "{both}");
+
+        // Before a run: what the configuration does.
+        let text = crate::methods::generate_methods_for(&config, "qsmxt");
+        assert!(text.contains("otherwise its own R2', estimated from R2* with R2PRIMEnet"), "{text}");
+        let mut always = config.clone();
+        always.separation.r2prime_strategy = crate::R2PrimeStrategy::R2primenet;
+        assert!(crate::methods::generate_methods_for(&always, "qsmxt").contains(own));
+
+        // The network alone is told nothing of the kind.
+        let mut native = config.clone();
+        native.separation.chi_sepnet.route = crate::ChiSepNetRoute::Native;
+        let text = crate::methods::generate_methods_for(&native, "qsmxt");
+        assert!(!text.contains("χ-separation used"), "{text}");
+    }
 }

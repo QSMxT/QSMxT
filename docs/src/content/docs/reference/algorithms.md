@@ -251,7 +251,8 @@ comes from one of three places, chosen by `--r2prime-strategy`:
 `--use-custom-r2prime <TOOL>` bypasses all three and reads an R2′ map from
 `derivatives/<TOOL>/`. So with the default `auto`, an R2′-based separation does not
 need a MESE: without one it runs on R2PRIMEnet's prediction, which is trained at
-3 T only (see below), and the R2′ sidecar's `R2primeSource` says which it was.
+3 T only (see below), and the R2′ sidecar's `R2primeSource` says which it was. χ-sepnet's
+default route makes that prediction itself ([below](#susceptibility-source-separation)).
 
 Both measured and predicted R2′ maps have negative values set to zero.
 
@@ -966,6 +967,12 @@ averaging it away.
 
 Both are off unless you name an **orientation group**.
 
+A run's methods and the dataset's describe the combination only for runs a group
+actually combined. Before a run, as in `--dry` and the planned `methods.md`, the text
+says "where a session held several head orientations". A browser page holds one scan,
+so it has no groups: it clears these settings when it reads a settings file, and tells
+you.
+
 ### Naming the orientation group
 
 BIDS has no entity meaning "the same object at a different orientation", so
@@ -1310,7 +1317,10 @@ each echo's map; otherwise it uses its one QSM at every echo. The methods text s
 χ-sepnet runs its authors' route by default (`--chi-sepnet-route toolbox`): the local field
 and R2′ are resampled to 1 mm with B0 along z, its susceptibility channel is computed there by
 QSMnetME, and the maps are resampled back. Without a measured R2′ it predicts R2′ from R2* with
-R2PRIMEnet inside that route (3 T only, as `--r2primenet-ignore-field-mismatch` describes). The
+R2PRIMEnet inside that route (3 T only, as `--r2primenet-ignore-field-mismatch` describes). That
+needs R2* only, so no `r2_r2prime` step runs. `--do-r2primemap` on such a run also publishes an R2′
+map made by R2PRIMEnet on the run's own grid; χ-sepnet does not read it, and its sidecar says so
+(`R2primeUsedByChiSeparation: false`). The χ+/χ− sidecars record the R2′ the route used. The
 networks run on the whole 1 mm frame at once; `--chi-sepnet-frame-patch D H W` runs them as a
 sliding window instead (each a multiple of 16). `--chi-sepnet-route native` runs the network alone
 on the acquired grid with the run's QSM, as a sliding window of 192×192×128-voxel patches

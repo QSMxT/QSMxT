@@ -26,7 +26,9 @@
 //!   setting** (recommendations start on their value, authors' settings on "keep") and **Keep
 //!   mine** (closes it: an authors' setting has nothing to dismiss, so nothing is recorded, and
 //!   it is offered again only when the method is chosen again). With only authors' settings,
-//!   Keep mine is preselected. Nothing changes unless applied.
+//!   Keep mine is preselected. Nothing changes unless applied. What is applied together follows
+//!   [`rec::settle`], as on every host: a reasoned finding outranks an authors' setting, and two
+//!   authors' settings that disagree leave the setting as it is, marked, to choose with `!`.
 //! - **Pickers** ([`picker_noun`]): a selector whose choice can open that pop-up, or that has
 //!   more than three options, is chosen from a picker (Enter, or ←/→), never cycled, so no
 //!   method is chosen on the way to another.
@@ -176,6 +178,18 @@ impl RefItem {
     /// The pick for a button: the recommended value, or keeping the current one.
     fn take(&mut self, apply: bool) {
         self.pick = if apply { 0 } else { self.options.len() - 1 };
+    }
+
+    /// The item's findings as picked, each wanting the picked value: none when keeping the
+    /// current one.
+    fn picked(&self) -> Vec<Recommendation> {
+        let Some((value, _)) = &self.options[self.pick] else { return vec![] };
+        std::iter::once(&self.finding).chain(&self.also).cloned().map(|mut r| {
+            if let Some(v) = value {
+                r.recommended.value = v.clone();
+            }
+            r
+        }).collect()
     }
 
     /// What is picked, as the per-setting view says it: "PDF", "keep V-SHARP".
@@ -545,35 +559,58 @@ impl App {
         }
     }
 
-    /// Carry out the reference pipeline pop-up's choices: apply each picked value, keep the
-    /// rest. A method an applied value chooses is offered without the settings just decided.
+    /// Carry out the reference pipeline pop-up's choices: the picks [`rec::settle`] takes are
+    /// applied, the items kept are kept, and a pick it leaves changes nothing and stays marked. A
+    /// method an applied value chooses is offered without the settings just decided.
     fn decide(&mut self, items: &[RefItem]) {
+        let picked: Vec<Recommendation> = items.iter().flat_map(RefItem::picked).collect();
+        let settled = rec::settle(&picked);
         let mut errors = Vec::new();
         let mut kept = Vec::new();
         let mut applied: Vec<&str> = Vec::new();
+        let mut outranked = 0;
+        let mut disagreeing = 0;
+        let mut disagree_on: Vec<&str> = Vec::new();
         for item in items {
+            let finding = &item.finding;
             match &item.options[item.pick] {
-                // Two methods that want different values of one setting: the first applied wins.
-                Some(_) if applied.contains(&item.finding.setting.as_str()) => {}
+                Some(_) if settled.conflicting.iter().any(|r| r.rule == finding.rule) => {
+                    disagreeing += 1;
+                    if !disagree_on.contains(&finding.label.as_str()) {
+                        disagree_on.push(&finding.label);
+                    }
+                }
+                Some(_) if !settled.apply.iter().any(|r| r.rule == finding.rule) => outranked += 1,
+                // Agrees with one already applied.
+                Some(_) if applied.contains(&finding.setting.as_str()) => {}
                 Some((value, _)) => {
-                    applied.push(&item.finding.setting);
-                    if let Err(e) = self.apply_recommendation(&item.finding.rule, value.as_ref()) {
+                    applied.push(&finding.setting);
+                    if let Err(e) = self.apply_recommendation(&finding.rule, value.as_ref()) {
                         errors.push(e);
                     }
                 }
                 None => {
-                    kept.push(item.finding.clone());
+                    kept.push(finding.clone());
                     kept.extend(item.also.iter().cloned());
                 }
             }
         }
         self.keep_mine(&kept);
         let kept_items = items.iter().filter(|i| i.options[i.pick].is_none()).count();
-        self.status_message = Some(match (items.len() - kept_items, kept_items) {
-            (0, _) => "Kept your settings".to_string(),
+        let mut status = match (items.len() - kept_items - outranked - disagreeing, kept_items) {
+            (0, _) if outranked + disagreeing == 0 => "Kept your settings".to_string(),
+            (0, 0) => "Applied nothing".to_string(),
+            (0, k) => format!("Kept {k}"),
             (n, 0) => format!("Applied {n} setting{}", if n == 1 { "" } else { "s" }),
             (n, k) => format!("Applied {n}, kept {k}"),
-        });
+        };
+        if outranked > 0 {
+            status += &format!("; {outranked} not applied: a stronger suggestion wants another value");
+        }
+        if !disagree_on.is_empty() {
+            status += &format!("; left {} as set: the suggestions disagree (! to choose)", disagree_on.join(", "));
+        }
+        self.status_message = Some(status);
         if !errors.is_empty() {
             self.error_message = Some(errors.join("; "));
         }
@@ -1088,6 +1125,74 @@ mod tests {
 
     fn settings(modal: &RefModal) -> Vec<&str> {
         modal.items.iter().map(|i| i.finding.setting.as_str()).collect()
+    }
+
+    /// A form whose reference differences include two authors' settings that disagree: MEDI's PDF
+    /// and χ-separation's V-SHARP, with LBV chosen. The pop-up for them, on Apply all.
+    fn disagreeing_bg_removal() -> (App, Vec<RefItem>) {
+        let mut app = medi_chosen();
+        app.refs.modal = None;
+        app.toggle_field("do_chi_separation");
+        let at = |o: &[&str], v: &str| o.iter().position(|x| *x == v).unwrap();
+        app.set_field_select("separation_algorithm", at(super::super::app::SEP_ALGO_OPTIONS, "chi-sep-ilsqr"));
+        app.set_field_select("bf_algorithm", at(super::super::app::BF_OPTIONS, "lbv"));
+        let found: Vec<Recommendation> = app.rule_view().into_iter().filter(|r| r.authors_setting()).collect();
+        let mut modal = RefModal::new(vec![found[0].trigger.clone()], found);
+        modal.items.iter_mut().for_each(|i| i.take(true));
+        (app, modal.items)
+    }
+
+    /// Apply all leaves a setting the authors disagree on as it is, says so, and records nothing;
+    /// the other settings are applied.
+    #[test]
+    fn apply_all_leaves_authors_settings_that_disagree() {
+        let (mut app, items) = disagreeing_bg_removal();
+        let bg: Vec<&str> = items.iter().filter(|i| i.finding.setting == "bg_removal.algorithm").map(|i| i.finding.rule.as_str()).collect();
+        assert!(bg.len() >= 2, "{bg:?}");
+        assert!(items.iter().any(|i| i.finding.setting == "masking.sections"));
+        app.decide(&items);
+        let c = super::super::command::config_from_app(&app).unwrap();
+        assert_eq!(c.bg_removal.algorithm, qsmxt_engine::enums::BfAlgorithm::Lbv, "the user's value stays");
+        assert!(c.dismissed_recommendations.is_empty(), "nothing is recorded for a setting left");
+        assert_eq!(c.masking.sections, qsmxt_engine::masking::mask_presets().into_iter().find(|(_, r)| r.sections.iter().all(|s| matches!(s.generator, qsmxt_engine::masking::MaskOp::Bet { .. }))).unwrap().1.sections);
+        let status = app.status_message.clone().unwrap();
+        assert!(status.contains("left Background removal as set") && status.contains("! to choose"), "{status}");
+    }
+
+    /// Choosing per setting, one of the two is kept: the other is then the only one picked, and
+    /// applied.
+    #[test]
+    fn keeping_one_of_two_disagreeing_authors_settings_applies_the_other() {
+        let (mut app, mut items) = disagreeing_bg_removal();
+        let first = items.iter().position(|i| i.finding.setting == "bg_removal.algorithm").unwrap();
+        let wanted = items.iter().rfind(|i| i.finding.setting == "bg_removal.algorithm").unwrap().finding.recommended.value.clone();
+        items[first].take(false);
+        app.decide(&items);
+        let c = super::super::command::config_from_app(&app).unwrap();
+        assert_eq!(serde_json::to_value(c.bg_removal.algorithm).unwrap(), wanted);
+    }
+
+    /// A reasoned finding outranks an authors' setting on Apply all, whichever the pop-up lists
+    /// first: FANSI's suggested ROMEO over the complex fit's authors' unwrapper.
+    #[test]
+    fn apply_all_lets_a_recommendation_outrank_an_authors_setting() {
+        let mut app = app();
+        select(&mut app, "qsm_algorithm", "fansi", QSM_ALGO_OPTIONS);
+        let at = |o: &[&str], v: &str| o.iter().position(|x| *x == v).unwrap();
+        app.set_field_select("b0_estimation", at(super::super::app::B0_ESTIMATION_OPTIONS, "complex-fit"));
+        app.set_field_select("unwrapping_algorithm", at(super::super::app::UNWRAP_OPTIONS, "laplacian"));
+        app.filter_state.num_echoes = "4".into();
+        let found: Vec<Recommendation> = app.rule_view().into_iter()
+            .filter(|r| r.departs && r.setting == "field_mapping.unwrapping_algorithm").collect();
+        assert!(found.iter().any(|r| r.kind == Kind::Reasoned) && found.iter().any(|r| r.kind == Kind::Reference), "{found:?}");
+        let mut modal = RefModal::new(vec![found[0].trigger.clone()], found);
+        modal.items.reverse();
+        modal.items.iter_mut().for_each(|i| i.take(true));
+        let items = modal.items;
+        app.decide(&items);
+        let c = super::super::command::config_from_app(&app).unwrap();
+        assert_eq!(c.field_mapping.unwrapping_algorithm, qsmxt_engine::enums::UnwrappingAlgorithm::Romeo);
+        assert!(app.status_message.as_deref().unwrap().contains("a stronger suggestion"));
     }
 
     #[test]

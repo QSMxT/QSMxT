@@ -57,6 +57,8 @@ pub enum Topic {
     R2primeSource,
     /// The part of the brain mask R2′ was measured over.
     R2primeCoverage,
+    /// The R2′ χ-sepnet's toolbox route used: measured, or its own estimate.
+    ChiSeparationR2prime,
     /// R2PRIMEnet run off the field strength it was trained at.
     R2primenetCalibration,
     /// R2PRIMEnet run on a grid whose B0 is not along the slice normal.
@@ -79,6 +81,9 @@ pub enum Topic {
     /// Part of the field of view without phase, written by the scanner as a constant, left out
     /// of the mask ([`Choice::Partial`]).
     ScannerMaskedPhase,
+    /// The run's local field was combined with the other orientations of its group
+    /// ([`Choice::Applied`]). The group is the dataset's, so this is recorded after the fan-in.
+    OrientationGroup,
 }
 
 /// What was decided.
@@ -128,7 +133,7 @@ pub enum Choice {
     Kept,
     /// Summarised ([`Topic::AnalysisMaps`]).
     Summarised,
-    /// Applied ([`Topic::MediCsf`], [`Topic::MotionCorrection`]).
+    /// Applied ([`Topic::MediCsf`], [`Topic::MotionCorrection`], [`Topic::OrientationGroup`]).
     Applied,
 }
 
@@ -215,6 +220,22 @@ impl RunRecord {
         self.steps
             .iter()
             .flat_map(|s| s.decisions.iter().map(move |d| (s, d)))
+    }
+
+    /// Say whether the run's local field went into an orientation group, and which: `None` takes
+    /// back what an earlier fan-in said. Returns whether the record changed. The decision is on
+    /// background-field removal, whose output the group reads; a run without that step has no
+    /// local field, and a group refuses it before it gets this far.
+    pub fn set_orientation_group(&mut self, group: Option<&str>) -> bool {
+        let id = crate::plan::Stage::BackgroundRemoval(crate::plan::Pass::Main).name();
+        let Some(step) = self.steps.iter_mut().find(|s| s.id == id) else { return false };
+        let before = step.decisions.clone();
+        step.decisions.retain(|d| d.topic != Topic::OrientationGroup);
+        if let Some(group) = group {
+            step.decisions.push(Decision::new(Topic::OrientationGroup, Choice::Applied,
+                "The local field was combined with the other orientations of its group.").with_detail(group));
+        }
+        step.decisions != before
     }
 
     /// Whether anything was decided at run time.

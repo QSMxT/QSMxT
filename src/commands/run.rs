@@ -583,12 +583,6 @@ pub(crate) fn run_dataset_steps(steps: &DatasetSteps) -> Vec<String> {
     let DatasetSteps { derivatives_dir, runs, completed, config, force, clean_intermediates, command_line } = *steps;
     let output = DerivativeOutputs::new(derivatives_dir);
 
-    // The methods text and pipeline graph from what the runs did, and the runs that differ.
-    // Best-effort: the planned ones are already written.
-    if let Err(e) = write_dataset_summary(derivatives_dir, config) {
-        warn!("Could not describe the dataset from its runs' records: {}", e);
-    }
-
     // Multi-orientation fan-in. Members have just produced their own local fields (and their
     // own single-orientation maps, which are what you check registration against), so the
     // groups can now be combined — before the tables below, which include the group maps. A
@@ -597,6 +591,8 @@ pub(crate) fn run_dataset_steps(steps: &DatasetSteps) -> Vec<String> {
     let mut group_failures = Vec::new();
     let mut prov_groups = Vec::new();
     let mut group_keys: Vec<crate::bids::entities::AcquisitionKey> = Vec::new();
+    let mut combined: std::collections::HashMap<&crate::bids::entities::AcquisitionKey, String> =
+        std::collections::HashMap::new();
     if config.multi_orientation.enabled() {
         match orientation_groups(runs, config) {
             Err(e) => group_failures.push(e),
@@ -620,6 +616,7 @@ pub(crate) fn run_dataset_steps(steps: &DatasetSteps) -> Vec<String> {
                                 info!("  wrote {}", p.display());
                             }
                             group_keys.push(crate::pipeline::multiorient::group_key(&members));
+                            combined.extend(members.iter().map(|&m| (&m.key, group.label.clone())));
                             prov_groups.push(crate::bids::bidsprov::ProvGroup {
                                 key: crate::pipeline::multiorient::group_key(&members),
                                 magnetic_field_strength: members[0].magnetic_field_strength,
@@ -633,6 +630,21 @@ pub(crate) fn run_dataset_steps(steps: &DatasetSteps) -> Vec<String> {
                 }
             }
         }
+    }
+
+    // What the fan-in did belongs to the members' records, whose methods say it. Every run is
+    // checked, since a record can still say an earlier fan-in combined it.
+    for run in runs {
+        let group = combined.get(&run.key).map(String::as_str);
+        if let Err(e) = crate::pipeline::runner::record_orientation_group(run, config, &output, group) {
+            warn!("{}: could not record its orientation group: {}", run.key, e);
+        }
+    }
+
+    // The methods text and pipeline graph from what the runs did, and the runs that differ.
+    // Best-effort: the planned ones are already written.
+    if let Err(e) = write_dataset_summary(derivatives_dir, config) {
+        warn!("Could not describe the dataset from its runs' records: {}", e);
     }
 
     // Every key with outputs: the runs, then the orientation groups.
@@ -835,6 +847,13 @@ mod tests {
         std::fs::write(&path, "[bg_removal.vsharp]\nmin_radius = 0.0\n").unwrap();
         let e = super::build_config(Some(&path), &pipeline_args(&[])).unwrap_err().to_string();
         assert!(e.contains("bg_removal.vsharp.min_radius"), "{e}");
+
+        // χ-sepnet's patch on the toolbox route is refused before the weights download.
+        let chi_sepnet = ["--do-chisep", "--chisep", "chi-sepnet"];
+        let frame = |p: &[&'static str]| [&chi_sepnet[..], &["--chi-sepnet-frame-patch"], p].concat();
+        let e = super::build_config(None, &pipeline_args(&frame(&["100", "128", "64"]))).unwrap_err().to_string();
+        assert!(e.contains("separation.chi_sepnet.frame_patch (--chi-sepnet-frame-patch): χ-sepnet frame patch D = 100"), "{e}");
+        assert!(super::build_config(None, &pipeline_args(&frame(&["128", "128", "64"]))).is_ok());
 
         // In range, or set on a method that does not run: accepted.
         assert!(super::build_config(None, &pipeline_args(&["--tkd-threshold", "0"])).is_ok());
