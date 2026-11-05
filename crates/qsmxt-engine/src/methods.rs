@@ -1071,7 +1071,8 @@ pub fn methods_structured(config: &PipelineConfig, plan: &Plan, tool: &str) -> M
 /// record): it says what was done, as [`methods_structured`] does for the plan, where the run
 /// decided something the configuration does not (a supplied mask used, or not found and computed
 /// instead; R2′ measured rather than predicted; a step that had nothing to work on). A run that
-/// decided nothing gets [`methods_structured`]'s text.
+/// decided nothing gets [`methods_structured`]'s text, less multi-orientation, which is said only
+/// of a run whose record shows its group was combined.
 pub fn methods_for_run(config: &PipelineConfig, plan: &Plan, record: &RunRecord, tool: &str) -> Methods {
     let config = &config.normalised().0;
     let merged = DatasetRecord::from(record);
@@ -1554,28 +1555,36 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
 
     // Multi-orientation. Described after the per-orientation pipeline because that is the
     // order it runs in: each orientation is unwrapped and background-corrected on its own,
-    // and only the local fields are combined.
-    if config.multi_orientation.enabled() {
+    // and only the local fields are combined. Whether a group forms depends on the runs, so the
+    // setting alone says nothing happened: the record does ([`Topic::OrientationGroup`]). Before
+    // any run, or where only some runs were combined, the wording is conditional (#496).
+    let combined = ran.count(Topic::OrientationGroup, Choice::Applied);
+    let every_run = combined > 0 && combined == ran.runs();
+    if config.multi_orientation.enabled() && (ran.0.is_none() || combined > 0) {
+        let fields = if every_run {
+            "Local field maps from multiple head orientations"
+        } else {
+            "Where a session held several head orientations of the same object, local field maps \
+             from those orientations"
+        };
         match config.multi_orientation.algorithm {
             MultiOrientAlgorithm::Cosmos => {
                 doc.cite(&CITE_COSMOS);
-                doc.say(&[], 
-                    "Local field maps from multiple head orientations, co-registered onto a common \
+                doc.say(&[], format!(
+                    "{fields}, co-registered onto a common \
                      grid, were combined by Calculation Of Susceptibility through Multiple \
                      Orientation Sampling (COSMOS; Liu et al., 2009), using each orientation's B0 \
-                     direction expressed in that common frame."
-                        .to_string(),
+                     direction expressed in that common frame."),
                 );
             }
             MultiOrientAlgorithm::Sti => {
                 doc.cite(&CITE_STI);
-                doc.say(&[], 
-                    "Local field maps from multiple head orientations, co-registered onto a common \
+                doc.say(&[], format!(
+                    "{fields}, co-registered onto a common \
                      grid, were combined by susceptibility tensor imaging (STI; Liu, 2010), \
                      yielding the six independent components of the symmetric susceptibility \
                      tensor along with mean magnetic susceptibility (MMS), magnetic susceptibility \
-                     anisotropy (MSA) and the principal eigenvector."
-                        .to_string(),
+                     anisotropy (MSA) and the principal eigenvector."),
                 );
             }
         }

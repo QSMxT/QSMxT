@@ -966,6 +966,12 @@ averaging it away.
 
 Both are off unless you name an **orientation group**.
 
+A run's methods and the dataset's describe the combination only for runs a group
+actually combined. Before a run, as in `--dry` and the planned `methods.md`, the text
+says "where a session held several head orientations". A browser page holds one scan,
+so it has no groups: it clears these settings when it reads a settings file, and tells
+you.
+
 ### Naming the orientation group
 
 BIDS has no entity meaning "the same object at a different orientation", so

@@ -1896,7 +1896,7 @@ mod tests {
         c.masking.sections = qsmxt_engine::masking::hd_bet_mask_sections();
         c.pipeline.do_r2primemap = true;
         c.separation.r2prime_strategy = qsmxt_engine::R2PrimeStrategy::R2primenet;
-        c.apply_browser_profile();
+        let _ = c.apply_browser_profile();
 
         let cmd = generate_command(&c);
         let argv: Vec<String> = cmd.split_whitespace().map(|s| s.to_string()).collect();

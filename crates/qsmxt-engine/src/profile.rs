@@ -7,9 +7,11 @@
 //! and writes them into the config, so the TOML, the generated `qsmxt run` command and the
 //! methods text all carry them and QSMxT reproduces a browser run exactly.
 //!
-//! Everything else stays QSMxT's default.
+//! Everything else stays QSMxT's default, with one exception that is not about memory: a page holds
+//! one scan, so it has no orientations to group. It clears the multi-orientation settings a file
+//! brought in and says so, because it could not have run them and must not export them (#496).
 
-use crate::config::{synthseg_low_memory_patch, PipelineConfig};
+use crate::config::{synthseg_low_memory_patch, MultiOrientationConfig, PipelineConfig};
 use crate::masking::{hd_bet_low_memory_patch, MaskOp, MaskSection};
 
 /// Overlap-tiling core of the deep-learning networks in the browser (the inversions, iQSM/iQSM+,
@@ -44,12 +46,14 @@ impl PipelineConfig {
     /// QSMxT's defaults with the browser profile applied: what a browser run starts from.
     pub fn browser() -> Self {
         let mut c = Self::default();
-        c.apply_browser_profile();
+        let _ = c.apply_browser_profile();
         c
     }
 
-    /// Replace each of QSMxT's defaults the browser cannot run with the browser's value,
-    /// leaving every setting the user changed alone. Idempotent.
+    /// Replace each of QSMxT's defaults the browser cannot run with the browser's value, and
+    /// clear the multi-orientation settings. Returns a warning for each setting the user chose
+    /// that this took away, for the front end to show: a page imports a file through this.
+    /// Every other setting the user changed is left alone. Idempotent.
     ///
     /// - The deep-learning networks are tiled ([`BROWSER_TILE_SIZE`] / [`BROWSER_TILE_HALO`])
     ///   when tiling is not set: the inversions, iQSM/iQSM+, BFRnet and iQFM. The tile options only reach the run (and the command) for the
@@ -60,10 +64,13 @@ impl PipelineConfig {
     /// - SynthSeg on the whole volume runs as a sliding window with qsm-core's low-memory patch.
     /// - χ-sepnet at its authors' patch runs at [`BROWSER_CHI_SEPNET_PATCH`], and SUSEP-Net on the
     ///   whole volume as a sliding window of [`BROWSER_SUSEP_NET_PATCH`].
+    /// - `multi_orientation.*` goes back to its defaults: the page runs one scan on its own
+    ///   whatever they say, so only the exported command and settings file would carry them.
     ///
     /// Front ends apply it again after a change that can bring a native default back, such as
     /// a mask preset with an HD-BET step.
-    pub fn apply_browser_profile(&mut self) {
+    #[must_use = "a warning says which of the user's settings were cleared: show it"]
+    pub fn apply_browser_profile(&mut self) -> Vec<String> {
         let native = Self::default();
         let inv = &mut self.inversion;
         if inv.tile_size.is_none() {
@@ -91,7 +98,28 @@ impl PipelineConfig {
         }
         chi_sepnet.frame_patch.get_or_insert(BROWSER_CHI_SEPNET_PATCH);
         self.separation.susep_net.patch.get_or_insert(BROWSER_SUSEP_NET_PATCH);
+        clear_multi_orientation(self).into_iter().collect()
     }
+}
+
+/// Put `multi_orientation.*` back to its defaults, and the warning naming what was set, if anything
+/// was.
+fn clear_multi_orientation(c: &mut PipelineConfig) -> Option<String> {
+    let native = MultiOrientationConfig::default();
+    if c.multi_orientation == native {
+        return None;
+    }
+    let (set, default) = (serde_json::to_value(&c.multi_orientation).ok()?, serde_json::to_value(&native).ok()?);
+    let changed: Vec<String> = set.as_object()?.iter()
+        .filter(|(k, v)| default.get(k.as_str()) != Some(*v))
+        .map(|(k, v)| format!("multi_orientation.{k} = {v}"))
+        .collect();
+    c.multi_orientation = native;
+    Some(format!(
+        "Multi-orientation settings cleared ({}): a browser page holds one scan, so there are no \
+         orientations to combine. The scan is processed on its own, and the exported command and \
+         settings file leave them out.",
+        changed.join(", ")))
 }
 
 fn browser_section(s: &mut MaskSection) {
@@ -128,7 +156,7 @@ mod tests {
     #[test]
     fn the_profile_is_idempotent_and_keeps_what_the_user_set() {
         let mut c = PipelineConfig::browser();
-        c.apply_browser_profile();
+        let _ = c.apply_browser_profile();
         assert_eq!(serde_json::to_value(&c).unwrap(), serde_json::to_value(PipelineConfig::browser()).unwrap());
 
         let mut c = PipelineConfig::default();
@@ -141,7 +169,7 @@ mod tests {
         if let MaskOp::HdBet { patch, .. } = &mut c.masking.sections[0].generator {
             *patch = Some([160, 160, 80]);
         }
-        c.apply_browser_profile();
+        let _ = c.apply_browser_profile();
         assert_eq!(c.inversion.tile_size, Some(40));
         assert_eq!(c.inversion.tile_halo, None, "the user's tiling keeps its own (default) halo");
         assert_eq!(c.separation.r2primenet.patch, [96, 96, 64]);
@@ -166,7 +194,7 @@ mod tests {
         c.separation.r2prime_strategy = crate::R2PrimeStrategy::R2primenet;
         c.pipeline.do_segmentation = true;
         let native = generate_command(&c);
-        c.apply_browser_profile();
+        let _ = c.apply_browser_profile();
         let cmd = generate_command(&c);
         assert!(cmd.contains(&format!("--tile-size {BROWSER_TILE_SIZE}")), "{cmd}");
         assert!(cmd.contains(&format!("--tile-halo {BROWSER_TILE_HALO}")), "{cmd}");
@@ -195,10 +223,33 @@ mod tests {
             c.separation.algorithm = alg;
             let native = generate_command(&c);
             assert!(native.contains(&format!("--chisep {own}")) && !native.contains(flag), "{native}");
-            c.apply_browser_profile();
+            let _ = c.apply_browser_profile();
             let cmd = generate_command(&c);
             assert!(cmd.contains(&format!("{flag} {x} {y} {z}")), "{cmd}");
             assert!(!cmd.contains(other), "{cmd}");
         }
+    }
+
+    /// A page runs one scan, so it can't export a group it never made, and what it took away is
+    /// said (#496).
+    #[test]
+    fn multi_orientation_from_a_file_is_cleared_with_a_warning() {
+        let (mut c, _) = PipelineConfig::from_toml_migrating(
+            "[multi_orientation]\ngroup_by = \"acq\"\nreference = \"*acq-Neutral*\"\nforce = true\n").unwrap();
+        let warnings = c.apply_browser_profile();
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        for said in ["multi_orientation.group_by = \"acq\"", "multi_orientation.reference = \"*acq-Neutral*\"", "multi_orientation.force = true"] {
+            assert!(warnings[0].contains(said), "{}", warnings[0]);
+        }
+        assert_eq!(c.multi_orientation, MultiOrientationConfig::default());
+        let command = generate_command(&c);
+        assert!(!command.contains("orientation"), "{command}");
+        assert!(c.apply_browser_profile().is_empty(), "already cleared");
+    }
+
+    #[test]
+    fn a_config_without_multi_orientation_gets_no_warning() {
+        assert!(PipelineConfig::default().apply_browser_profile().is_empty());
+        assert!(PipelineConfig::browser().apply_browser_profile().is_empty());
     }
 }

@@ -337,4 +337,59 @@ mod tests {
             ["Skipped in 1 of 3 runs"]
         );
     }
+
+    /// A group setting alone says nothing happened: multi-orientation is said of the runs whose
+    /// record shows their group was combined, and citing it goes with saying it (#496).
+    #[test]
+    fn multi_orientation_is_said_only_of_runs_a_group_combined() {
+        let mut config = PipelineConfig::default();
+        config.multi_orientation.group_by = "acq".into();
+        config.multi_orientation.reference = "*acq-Neutral*".into();
+        let f = facts();
+        let plan = crate::plan::plan(&config, &f);
+        let alone = record(&plan, &[]);
+        let mut member = alone.clone();
+        assert!(member.set_orientation_group(Some("sub-1_ses-1")));
+        assert!(!member.set_orientation_group(Some("sub-1_ses-1")), "said once");
+        let run = |r: &RunRecord| crate::methods::methods_for_run(&config, &plan, r, "qsmxt").to_markdown();
+        let dataset = |runs: &[&RunRecord]| {
+            let runs: Vec<_> = runs.iter().map(|r| (&plan, &f, *r)).collect();
+            summarise(&config, &runs, "qsmxt").unwrap().methods.to_markdown()
+        };
+        let definite = "Local field maps from multiple head orientations, co-registered";
+        let conditional = "Where a session held several head orientations of the same object";
+
+        for text in [run(&alone), dataset(&[&alone, &alone])] {
+            for absent in ["COSMOS", "orientation", "Liu et al., 2009"] {
+                assert!(!text.contains(absent), "{absent}: {text}");
+            }
+        }
+        for text in [run(&member), dataset(&[&member, &member])] {
+            assert!(text.contains(definite) && text.contains("(COSMOS; Liu et al., 2009)"), "{text}");
+            assert!(text.contains("the grid of the reference orientation (*acq-Neutral*)"), "{text}");
+            assert!(!text.contains(conditional), "{text}");
+        }
+        let mixed = dataset(&[&member, &alone, &alone]);
+        assert!(mixed.contains(conditional) && mixed.contains("(COSMOS; Liu et al., 2009)"), "{mixed}");
+        assert!(!mixed.contains(definite), "{mixed}");
+
+        // An earlier fan-in's claim is taken back.
+        assert!(member.set_orientation_group(None));
+        assert_eq!(member, alone);
+    }
+
+    /// Before any run nothing has been combined, so the configuration's text is conditional.
+    #[test]
+    fn multi_orientation_before_a_run_does_not_say_it_happened() {
+        let mut config = PipelineConfig::default();
+        config.multi_orientation.group_by = "acq".into();
+        let plan = crate::plan::plan(&config, &facts());
+        for text in [
+            crate::methods::generate_methods_for(&config, "qsmxt"),
+            crate::methods::methods_structured(&config, &plan, "qsmxt").to_markdown(),
+        ] {
+            assert!(text.contains("Where a session held several head orientations of the same object, local field maps"), "{text}");
+            assert!(!text.contains("Local field maps from multiple"), "{text}");
+        }
+    }
 }

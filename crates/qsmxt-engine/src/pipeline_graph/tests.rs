@@ -727,3 +727,26 @@ fn two_pass_heidi_runs_on_the_combined_map() {
     assert!(crate::stages::inversion::params(&pass).get("heidi").is_none());
     assert!(crate::stages::inversion::params(&config).get("heidi").is_some());
 }
+
+/// The graph draws a run's own steps. A group is the dataset's, so a run's graph says nothing
+/// about one from the setting alone, before or after the run; the fan-in's decision only notes the
+/// box whose output it read (#496).
+#[test]
+fn a_group_setting_alone_draws_nothing() {
+    let f = facts();
+    let mut grouped = PipelineConfig::default();
+    grouped.multi_orientation.group_by = "acq".into();
+    let plan = crate::plan::plan(&grouped, &f);
+    let planned = pipeline_graph(&plan, &grouped, &f, None);
+    assert_eq!(planned, pipeline_graph(&crate::plan::plan(&PipelineConfig::default(), &f), &PipelineConfig::default(), &f, None));
+    assert!(!planned.to_text().contains("COSMOS") && !planned.to_text().contains("rientation"), "{}", planned.to_text());
+
+    let steps = plan.steps.iter().map(|s| crate::record::StepRecord {
+        id: s.stage.name(), label: s.stage.label(), state: crate::record::StepState::Computed, decisions: vec![],
+    }).collect();
+    let mut record = crate::record::RunRecord { steps, ..Default::default() };
+    assert!(!pipeline_graph_after(&plan, &grouped, &f, &record).to_text().contains("rientation"));
+    record.set_orientation_group(Some("sub-1_ses-1"));
+    let after = pipeline_graph_after(&plan, &grouped, &f, &record);
+    assert!(!after.differs_from(&planned), "the same steps ran");
+}
