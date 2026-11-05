@@ -474,22 +474,21 @@ impl Default for ChiSepNetConfig {
     }
 }
 impl ChiSepNetConfig {
-    /// Why the patch cannot be used, if it cannot (QSM.rs's `ChiSepNetParams::validate`).
+    /// Why the route's patch cannot be used, if it cannot (QSM.rs's `ChiSepNetParams::validate`).
     pub fn validate(&self) -> Result<(), String> {
         self.params().validate()
     }
-    /// qsm-core's parameters for these settings.
+    /// qsm-core's parameters for these settings. Each route reads one patch: the other's value is
+    /// a hidden setting, left at qsm-core's default so what is left behind in it cannot stop a run
+    /// or hide a problem with the patch in use (#495).
     pub fn params(&self) -> qsm_core::separation::ChiSepNetParams {
-        let [d, h, w] = self.patch;
-        qsm_core::separation::ChiSepNetParams {
-            route: match self.route {
-                ChiSepNetRoute::Toolbox => qsm_core::separation::ChiSepNetRoute::Toolbox,
-                ChiSepNetRoute::Native => qsm_core::separation::ChiSepNetRoute::Native,
-            },
-            patch: (d, h, w),
-            frame_patch: self.frame_patch.map(|[d, h, w]| (d, h, w)),
-            ..qsm_core::separation::ChiSepNetParams::default()
-        }
+        let d = qsm_core::separation::ChiSepNetParams::default();
+        let [pd, ph, pw] = self.patch;
+        let (route, patch, frame_patch) = match self.route {
+            ChiSepNetRoute::Toolbox => (qsm_core::separation::ChiSepNetRoute::Toolbox, d.patch, self.frame_patch.map(|[d, h, w]| (d, h, w))),
+            ChiSepNetRoute::Native => (qsm_core::separation::ChiSepNetRoute::Native, (pd, ph, pw), d.frame_patch),
+        };
+        qsm_core::separation::ChiSepNetParams { route, patch, frame_patch, ..d }
     }
 }
 
@@ -2121,6 +2120,7 @@ mod r2primenet_config_tests {
         for (path, m) in [
             ("separation.r2primenet.patch", qsm_core::relaxometry::POOL_MULTIPLE),
             ("separation.chi_sepnet.patch", qsm_core::separation::chisepnet::POOL_MULTIPLE),
+            ("separation.chi_sepnet.frame_patch", qsm_core::separation::chisepnet::POOL_MULTIPLE),
             ("separation.susep_net.patch", qsm_core::separation::susep_net::POOL_MULTIPLE),
         ] {
             let s = crate::schema::settings().iter().find(|s| s.path == path).unwrap();

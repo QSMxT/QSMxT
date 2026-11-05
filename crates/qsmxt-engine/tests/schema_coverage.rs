@@ -552,6 +552,15 @@ fn a_value_out_of_range_is_an_error_on_its_own_setting() {
     c.separation.chi_sepnet.route = qsmxt_engine::ChiSepNetRoute::Native;
     c.separation.chi_sepnet.patch = [128, 120, 64];
     assert_eq!(error(&c, "separation.chi_sepnet.patch").as_deref(), Some("χ-sepnet patch H = 120 must be a positive multiple of 16 (four pooling levels)"));
+    // The toolbox route's own patch, against that setting and not the hidden one.
+    c.separation.chi_sepnet.route = qsmxt_engine::ChiSepNetRoute::Toolbox;
+    c.separation.chi_sepnet.frame_patch = Some([100, 128, 64]);
+    assert_eq!(error(&c, "separation.chi_sepnet.frame_patch").as_deref(), Some("χ-sepnet frame patch D = 100 must be a positive multiple of 16 (four pooling levels)"));
+    assert_eq!(error(&c, "separation.chi_sepnet.patch"), None);
+    let e = schema::check_ranges(&c).unwrap_err().to_string();
+    assert!(e.contains("separation.chi_sepnet.frame_patch (--chi-sepnet-frame-patch): χ-sepnet frame patch D = 100"), "{e}");
+    c.separation.chi_sepnet.frame_patch = None;
+    assert_eq!(error(&c, "separation.chi_sepnet.frame_patch"), None, "empty runs the whole frame");
     c.separation.algorithm = qsmxt_engine::SeparationAlgorithm::SusepNet;
     c.separation.susep_net.patch = Some([128, 128, 12]);
     assert_eq!(error(&c, "separation.susep_net.patch").as_deref(), Some("SUSEP-Net patch W = 12 must be a positive multiple of 8 (three pooling levels)"));

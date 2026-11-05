@@ -857,6 +857,20 @@ pub fn scan_check(f: &ScanFacts, config: &PipelineConfig) -> Check {
             settings: vec![path], reason: why.clone(), message: format!("Tukey window {why}"),
         });
     }
+    // Otherwise only the run refuses it: a browser run would first download the weights (#495).
+    if config.pipeline.do_chi_separation && config.separation.algorithm == SeparationAlgorithm::ChiSepNet {
+        if let Err(why) = config.separation.chi_sepnet.validate() {
+            let path = match config.separation.chi_sepnet.route {
+                crate::ChiSepNetRoute::Toolbox => "separation.chi_sepnet.frame_patch",
+                crate::ChiSepNetRoute::Native => "separation.chi_sepnet.patch",
+            };
+            out.errors.push(why.clone());
+            out.problems.push(Problem {
+                severity: Severity::Error, setting: Some(path), implied_by: None,
+                settings: vec![path], reason: why.clone(), message: why,
+            });
+        }
+    }
     let label = |path: &str| crate::schema::setting(path).map_or_else(|| path.to_string(), |s| s.full_label.to_string());
     // The reconstruction's own methods: what they need of the data.
     if config.pipeline.do_qsm {
