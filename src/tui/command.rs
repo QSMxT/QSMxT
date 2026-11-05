@@ -2059,7 +2059,7 @@ mod tests {
     fn choosing_medi_leaves_the_background_removal_alone() {
         use crate::cli::BfAlgorithmArg;
         use qsmxt_engine::BfAlgorithm;
-        let medi = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|a| *a == "medi").unwrap();
+        let medi = crate::tui::app::QSM_PICKER_OPTIONS.iter().position(|a| *a == "medi").unwrap();
         let bf = |name: &str| crate::tui::app::BF_OPTIONS.iter().position(|o| *o == name).unwrap();
         let mut app = default_app();
         app.form.bids_dir = "/bids".to_string();
@@ -2092,7 +2092,7 @@ mod tests {
     #[test]
     fn qsmart_leaves_the_field_mapping_and_mask_alone() {
         use qsmxt_engine::{B0Estimation, LaplacianSolver, UnwrappingAlgorithm, default_mask_sections};
-        let qsmart = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|a| *a == "qsmart").unwrap();
+        let qsmart = crate::tui::app::QSM_PICKER_OPTIONS.iter().position(|a| *a == "qsmart").unwrap();
         let mut app = default_app();
         app.form.bids_dir = "/bids".to_string();
         app.pipeline_state.set_select("qsm_algorithm", qsmart);
@@ -2624,7 +2624,7 @@ mod parity {
             // discouraged).
             ("dismiss_recommendation", |a| {
                 let at = |list: &[&str], v: &str| list.iter().position(|o| *o == v).unwrap();
-                a.set_field_select("qsm_algorithm", at(crate::tui::app::QSM_ALGO_OPTIONS, "medi"));
+                a.set_field_select("qsm_algorithm", at(&crate::tui::app::QSM_PICKER_OPTIONS, "medi"));
                 a.pipeline_state.medi_msmv = true;
                 a.pipeline_state.medi_msmv_prefilter = false;
             }, |a| a.pipeline_state.dismissed.push(qsmxt_engine::Dismissal { rule: "medi-msmv.prefilter".into(), chosen: "false".into() })),

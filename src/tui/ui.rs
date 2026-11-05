@@ -38,11 +38,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         draw_algo_modal(f, modal, f.area());
     }
 
-    if let Some(ref modal) = app.rec_modal {
+    if let Some(ref mut modal) = app.rec_modal {
         draw_rec_modal(f, modal, f.area());
     }
 
-    if let Some(ref modal) = app.refs.modal {
+    if let Some(ref mut modal) = app.refs.modal {
         draw_ref_modal(f, modal, f.area());
     }
 
@@ -162,8 +162,8 @@ fn picker_button(value: &str, focused: bool) -> Vec<Span<'static>> {
 
 /// The recommendation pop-up ([`super::recommend`]): what the setting is, what the method
 /// recommends and why, and the choices.
-fn draw_rec_modal(f: &mut Frame, modal: &super::recommend::RecModal, area: Rect) {
-    let popup_w = 76.min(area.width);
+fn draw_rec_modal(f: &mut Frame, modal: &mut super::recommend::RecModal, area: Rect) {
+    let popup_w = advice_modal_width(area);
     let text_w = popup_w.saturating_sub(6).max(10) as usize;
     let mut lines = vec![Line::from("")];
     for r in &modal.findings {
@@ -187,31 +187,67 @@ fn draw_rec_modal(f: &mut Frame, modal: &super::recommend::RecModal, area: Rect)
         }
         lines.push(Line::from(""));
     }
+    let mut footer = Vec::new();
     for (i, c) in modal.choices.iter().enumerate() {
         let style = if modal.cursor == Some(i) {
             Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::Gray)
         };
-        lines.push(Line::from(Span::styled(format!(" {} ", super::recommend::RecModal::choice_label(c)), style)));
+        footer.push(Line::from(Span::styled(format!(" {} ", super::recommend::RecModal::choice_label(c)), style)));
     }
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        format!("\u{2191}\u{2193} choose   Enter select   w {}   Esc {}", if modal.why { "hide why" } else { "why?" }, if modal.details { "close" } else { "later" }),
-        Style::default().fg(Color::DarkGray),
-    )).alignment(Alignment::Center));
-
-    let popup = centered_rect(popup_w, lines.len() as u16 + 2, area);
-    f.render_widget(Clear, popup);
+    footer.push(Line::from(""));
+    let hint = format!("\u{2191}\u{2193} choose   Enter select   w {}   Esc {}", if modal.why { "hide why" } else { "why?" }, if modal.details { "close" } else { "later" });
     let color = if modal.findings.iter().all(|r| r.strength == super::recommend::Strength::Reference) { Color::Cyan } else { Color::Yellow };
+    let title = modal.title();
+    draw_advice_modal(f, area, popup_w, &title, color, lines, footer, &hint, "PgUp/PgDn scroll", &mut modal.scroll);
+}
+
+/// How wide the advice pop-ups are: wide enough to keep a long reason short, on any terminal.
+fn advice_modal_width(area: Rect) -> u16 {
+    const MAX_WIDTH: u16 = 110;
+    MAX_WIDTH.min(area.width.saturating_sub(4)).max(area.width.min(40))
+}
+
+/// An advice pop-up: its text scrolls, with a scrollbar when it does not all fit, above a footer
+/// (the choices and `hint`) that always stays in view.
+#[allow(clippy::too_many_arguments)]
+fn draw_advice_modal(
+    f: &mut Frame, area: Rect, popup_w: u16, title: &str, color: Color,
+    lines: Vec<Line<'static>>, mut footer: Vec<Line<'static>>, hint: &str, scroll_hint: &str, scroll: &mut u16,
+) {
+    let chrome = footer.len() as u16 + 1 + 2;
+    let popup = centered_rect(popup_w, lines.len() as u16 + chrome, area);
+    let body_h = popup.height.saturating_sub(chrome);
+    let max_scroll = (lines.len() as u16).saturating_sub(body_h);
+    *scroll = (*scroll).min(max_scroll);
+    let hint = if max_scroll > 0 { format!("{scroll_hint}   {hint}") } else { hint.to_string() };
+    footer.push(Line::from(Span::styled(hint, Style::default().fg(Color::DarkGray))).alignment(Alignment::Center));
+
+    f.render_widget(Clear, popup);
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(color))
-        .title(Span::styled(modal.title(), Style::default().add_modifier(Modifier::BOLD)));
+        .title(Span::styled(title.to_string(), Style::default().add_modifier(Modifier::BOLD)));
     let inner = block.inner(popup);
     f.render_widget(block, popup);
     let text_area = Rect { x: inner.x + 2, width: inner.width.saturating_sub(4), ..inner };
-    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), text_area);
+    let [body, foot] = Layout::default().direction(Direction::Vertical)
+        .constraints([Constraint::Min(0), Constraint::Length(footer.len() as u16)]).areas(text_area);
+    f.render_widget(Paragraph::new(lines).scroll((*scroll, 0)), body);
+    f.render_widget(Paragraph::new(footer), foot);
+    if max_scroll > 0 {
+        // On the pop-up's right border, beside the text.
+        let bar = Rect { x: popup.x + popup.width - 1, y: body.y, width: 1, height: body.height };
+        let mut state = ScrollbarState::new(max_scroll as usize)
+            .viewport_content_length(body.height as usize)
+            .position(*scroll as usize);
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(None)
+            .end_symbol(None)
+            .thumb_style(Style::default().fg(color));
+        f.render_stateful_widget(scrollbar, bar, &mut state);
+    }
 }
 
 /// What kind of finding it is, as its first line: a reasoned one by its strength ("Recommended",
@@ -236,11 +272,10 @@ fn rec_reference_of(r: &qsmxt_engine::recommendations::Recommendation) -> String
 /// from the chosen method's reference pipeline (after any recommendations the same change
 /// created), as current → reference value, with why and the source; then the buttons, or, when
 /// choosing per setting, a choice on each setting.
-fn draw_ref_modal(f: &mut Frame, modal: &super::recommend::RefModal, area: Rect) {
+fn draw_ref_modal(f: &mut Frame, modal: &mut super::recommend::RefModal, area: Rect) {
     use super::recommend::Strength;
-    let popup_w = 84.min(area.width);
+    let popup_w = advice_modal_width(area);
     let text_w = popup_w.saturating_sub(6).max(10) as usize;
-    let dim = Style::default().fg(Color::DarkGray);
     let src = Style::default().fg(Color::Cyan);
     let mut lines = vec![Line::from("")];
     let offered = modal.items.iter().any(|i| i.finding.strength != Strength::Reference);
@@ -260,7 +295,7 @@ fn draw_ref_modal(f: &mut Frame, modal: &super::recommend::RefModal, area: Rect)
             }
             let uses = if modal.several() { "use" } else { "uses" };
             lines.extend(heading(format!("Original authors' settings: where yours differ from what {} {uses}. \
-                These are not recommendations, so none is preselected:", modal.whose()), Color::Cyan));
+                These are not recommendations, so none is applied unless you choose it:", modal.whose().replacen("The reference", "the reference", 1)), Color::Cyan));
             lines.push(Line::from(""));
         } else if n == 0 {
             lines.extend(heading("Recommended, each for the reason given (preselected):".to_string(), Color::Yellow));
@@ -304,45 +339,44 @@ fn draw_ref_modal(f: &mut Frame, modal: &super::recommend::RefModal, area: Rect)
     let hint = if modal.row.is_some() {
         "\u{2191}\u{2193} setting   \u{2190}\u{2192} choose   Enter apply these   Esc back"
     } else {
-        let mut buttons = Vec::new();
+        // The buttons flow onto further rows, so that none is ever cut off.
+        let mut row: Vec<Span<'static>> = Vec::new();
+        let mut row_w = 0;
         for (i, b) in modal.buttons.iter().enumerate() {
             let label = modal.button_label(*b);
-            if i > 0 {
-                buttons.push(Span::raw("   "));
+            let w = label.chars().count() + 2;
+            if row_w > 0 && row_w + 3 + w > text_w {
+                footer.push(Line::from(std::mem::take(&mut row)).alignment(Alignment::Center));
+                row_w = 0;
+            }
+            if row_w > 0 {
+                row.push(Span::raw("   "));
+                row_w += 3;
             }
             let style = if Some(i) == modal.cursor {
                 Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::Gray)
             };
-            buttons.push(Span::styled(format!(" {label} "), style));
+            row.push(Span::styled(format!(" {label} "), style));
+            row_w += w;
         }
-        footer.push(Line::from(buttons).alignment(Alignment::Center));
+        footer.push(Line::from(row).alignment(Alignment::Center));
         footer.push(Line::from(""));
-        if modal.cursor.is_some() {
-            "\u{2190}\u{2192} choose   Enter select   Esc close (nothing changes)"
-        } else {
-            "\u{2190}\u{2192} choose (nothing is preselected)   Enter select   Esc close (nothing changes)"
-        }
+        "\u{2190}\u{2192} choose   Enter select   Esc close (nothing changes)"
     };
-    footer.push(Line::from(Span::styled(hint, dim)).alignment(Alignment::Center));
 
-    // The buttons stay in view; a list taller than the screen scrolls to the setting being chosen.
-    let popup = centered_rect(popup_w, (lines.len() + footer.len()) as u16 + 2, area);
-    f.render_widget(Clear, popup);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(if offered { Color::Yellow } else { Color::Cyan }))
-        .title(Span::styled(modal.title(), Style::default().add_modifier(Modifier::BOLD)));
-    let inner = block.inner(popup);
-    f.render_widget(block, popup);
-    let text_area = Rect { x: inner.x + 2, width: inner.width.saturating_sub(4), ..inner };
-    let [body, foot] = Layout::default().direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(footer.len() as u16)]).areas(text_area);
-    let focus_line = modal.row.and_then(|n| item_lines.get(n).copied()).unwrap_or(0);
-    let scroll = (focus_line + 4).saturating_sub(body.height as usize) as u16;
-    f.render_widget(Paragraph::new(lines).scroll((scroll, 0)), body);
-    f.render_widget(Paragraph::new(footer), foot);
+    // Choosing per setting, the list follows the highlighted setting.
+    if let Some(n) = modal.row {
+        let start = item_lines.get(n).copied().unwrap_or(0) as u16;
+        let end = item_lines.get(n + 1).map_or(lines.len(), |&l| l) as u16;
+        let body_h = area.height.saturating_sub(footer.len() as u16 + 3);
+        modal.scroll = modal.scroll.min(start).max(end.saturating_sub(body_h).min(start));
+    }
+    let color = if offered { Color::Yellow } else { Color::Cyan };
+    let title = modal.title();
+    let scroll_hint = if modal.row.is_some() { "PgUp/PgDn scroll" } else { "\u{2191}\u{2193} scroll" };
+    draw_advice_modal(f, area, popup_w, &title, color, lines, footer, hint, scroll_hint, &mut modal.scroll);
 }
 
 /// "A new version is available" pop-up, raised once by the launch-time release check.
@@ -1667,10 +1701,17 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 }
             }
             PipelineRow::Param { label, field, help } => {
-                let val = app.field_text(field).to_string();
+                let exact = app.field_text(field).to_string();
+                // A long number reads rounded; the field keeps every digit, and the help line and
+                // editing show them.
+                let rounded = if focused && ps_editing { None } else { compact_number(&exact) };
                 if focused {
-                    focused_help = Some(help.to_string());
+                    focused_help = Some(match &rounded {
+                        Some(_) => format!("{help} (exact value: {exact})"),
+                        None => help.to_string(),
+                    });
                 }
+                let val = rounded.unwrap_or(exact);
                 let label_style = if focused {
                     Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
                 } else {
@@ -2076,6 +2117,9 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 let mut line = line;
                 let (mark, color) = if m.actionable { ("⚑", Color::Yellow) } else { ("ⓘ", Color::DarkGray) };
                 line.spans.push(Span::styled(format!(" {mark} {}", m.text), Style::default().fg(color)));
+                if focused {
+                    line.spans.push(Span::styled(" (! for advice)", Style::default().fg(Color::Yellow)));
+                }
                 line
             }
             None => line,
@@ -2283,6 +2327,9 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
             (None, Some(PipelineRow::Toggle { .. })) => keys.push(("Space", "Toggle")),
             _ => keys.push(("\u{2190}\u{2192}", "Change")),
         }
+        if row.as_ref().is_some_and(|r| App::row_marker(&app.rule_view(), r).is_some()) {
+            keys.push(("!", "Advice"));
+        }
         if row.as_ref().is_some_and(|r| app.pipeline_state.row_removes_section(r)) {
             keys.push(("d", "Remove section"));
         }
@@ -2305,6 +2352,26 @@ fn draw_keys(f: &mut Frame, keys: Vec<(&str, &str)>, area: ratatui::layout::Rect
     }
 
     f.render_widget(Paragraph::new(Line::from(help)), area);
+}
+
+/// A number with too many digits to read (a default converted between units, or machine epsilon),
+/// to four significant figures, or `None` when it is short enough as it is.
+fn compact_number(text: &str) -> Option<String> {
+    const SHORT: usize = 10;
+    if text.len() <= SHORT || !text.contains('.') {
+        return None;
+    }
+    let x: f64 = text.parse().ok()?;
+    if x == 0.0 || !x.is_finite() {
+        return None;
+    }
+    if (1e-3..1e6).contains(&x.abs()) {
+        let decimals = (3 - x.abs().log10().floor() as i32).max(0) as usize;
+        let fixed = format!("{x:.decimals$}");
+        Some(if fixed.contains('.') { fixed.trim_end_matches('0').trim_end_matches('.').to_string() } else { fixed })
+    } else {
+        Some(format!("{x:.2e}"))
+    }
 }
 
 /// HD-BET's inference choices and what each costs in memory, from the mask schema.
@@ -2949,4 +3016,34 @@ mod orientation_block_tests {
         assert!(text.contains("STI — rank-2"), "{text}");
     }
 
+    /// Long numbers read rounded; short ones and non-numbers as they are.
+    #[test]
+    fn long_numbers_read_rounded() {
+        assert_eq!(super::compact_number("0.003924908970520748").as_deref(), Some("0.003925"));
+        assert_eq!(super::compact_number("0.05943433583931419").as_deref(), Some("0.05943"));
+        assert_eq!(super::compact_number("0.0000000000000002220446049250313").as_deref(), Some("2.22e-16"));
+        assert_eq!(super::compact_number("1234.56789012345").as_deref(), Some("1235"));
+        for short in ["0.1", "0.00105", "500", "12 12 12", "not.a.number.at.all", "12345678901234"] {
+            assert_eq!(super::compact_number(short), None, "{short}");
+        }
+    }
+
+    /// HEIDI's rows show the rounded defaults, but the form keeps every digit: the defaults are
+    /// not sent as changes, and the help line gives the exact value.
+    #[test]
+    fn heidi_defaults_read_rounded_and_stay_exact() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let mut app = crate::tui::app::App::new();
+        app.pipeline_state.set_select("qsm_algorithm", crate::tui::app::QSM_PICKER_OPTIONS.iter().position(|o| *o == crate::tui::app::LSQR_HEIDI).unwrap());
+        assert!(app.goto_field("heidi_gradient_threshold"));
+        let mut t = Terminal::new(TestBackend::new(200, 60)).unwrap();
+        t.draw(|f| super::draw(f, &mut app)).unwrap();
+        let buf = t.backend().buffer();
+        let text = (0..buf.area.height).map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect::<String>()).collect::<Vec<_>>().join("\n");
+        assert!(text.contains("0.003925") && text.contains("2.22e-16") && text.contains("0.05943"), "{text}");
+        assert!(text.contains("exact value: 0.003924908970520748"), "{text}");
+        assert!(!text.contains("0.0000000000000002220446049250313"), "{text}");
+        let c = crate::tui::command::config_from_app(&app).unwrap();
+        assert_eq!(c.inversion.heidi, qsmxt_engine::HeidiConfig { enabled: true, ..Default::default() });
+    }
 }

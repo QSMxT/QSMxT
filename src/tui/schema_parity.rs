@@ -228,7 +228,9 @@ fn every_setting_has_a_row_and_is_worded_as_the_tui_words_it() {
                     PipelineRow::Param { field, label, help } | PipelineRow::Toggle { field, label, help } => (*field, *label, help.to_string()),
                     PipelineRow::AlgoSelect { field, label, options: opts, help } => {
                         if let Some(p) = path_of(field) {
+                            // The inversion picker's LSQR+HEIDI is an alias of two settings, not a value.
                             options.entry(p).or_insert_with(|| opts.iter().zip(help.iter())
+                                .filter(|(o, _)| **o != crate::tui::app::LSQR_HEIDI)
                                 .map(|(o, h)| (o.to_string(), h.to_string())).collect());
                         }
                         (*field, *label, String::new())

@@ -1493,6 +1493,11 @@ pub fn field_path(field: &str) -> Option<&'static str> {
     FIELD_PATHS.iter().find(|(f, _)| *f == field).map(|(_, p)| *p)
 }
 
+/// The form field of a config setting path: [`field_path`]'s inverse.
+pub fn field_of_path(path: &str) -> Option<&'static str> {
+    FIELD_PATHS.iter().find(|(_, p)| *p == path).map(|(f, _)| *f)
+}
+
 pub const MASK_OP_TYPES: &[&str] = &[
     "threshold", "bet", "hd-bet", "erode", "dilate", "close", "fill-holes", "gaussian", "signal-erode",
 ];
@@ -2721,6 +2726,24 @@ const QSMART_INV_HELP: &[&str] = &[
     "Nonlinear Total Variation (NLTV)",
     "Morphology Enabled Dipole Inversion (MEDI)",
 ];
+/// The inversion picker's alias for LSQR with the HEIDI box ticked. The form never holds it: it
+/// keeps `qsm_algorithm` on `lsqr`, and `heidi_enabled`.
+pub const LSQR_HEIDI: &str = "lsqr+heidi";
+const LSQR_HEIDI_HELP: &str = "LSQR+HEIDI (HEIDI as published) — LSQR with the HEIDI box ticked: LSQR, then the dipole cone refilled under a homogeneity prior. https://doi.org/10.1016/j.neuroimage.2012.05.067";
+
+/// `list`, with `alias` after the entry for LSQR.
+fn with_lsqr_heidi<T: Copy>(list: &[T], alias: T) -> Vec<T> {
+    let at = QSM_ALGO_OPTIONS.iter().position(|o| *o == "lsqr").expect("LSQR is an inversion") + 1;
+    let mut out = list.to_vec();
+    out.insert(at, alias);
+    out
+}
+
+/// The inversion row's options: [`QSM_ALGO_OPTIONS`] and the LSQR+HEIDI alias. The row's selection
+/// is an index into these; `qsm_algorithm` is an index into `QSM_ALGO_OPTIONS`.
+pub static QSM_PICKER_OPTIONS: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::new(|| with_lsqr_heidi(QSM_ALGO_OPTIONS, LSQR_HEIDI));
+static QSM_PICKER_HELP: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::new(|| with_lsqr_heidi(QSM_ALGO_HELP, LSQR_HEIDI_HELP));
+
 pub const UNWRAP_OPTIONS: &[&str] = &["romeo", "laplacian", "prelude", "medi-region-growing"];
 pub const BF_OPTIONS: &[&str] = &["vsharp", "pdf", "lbv", "ismv", "sharp", "resharp", "harperella", "iharperella", "bfrnet", "iqfm"];
 pub const B0_ESTIMATION_OPTIONS: &[&str] = &["weighted-avg", "linear-fit", "robust-fit", "qsmart-echofit", "complex-fit"];
@@ -3527,7 +3550,7 @@ impl PipelineFormState {
         let alg = QSM_ALGO_OPTIONS.get(self.qsm_algorithm).copied().unwrap_or("");
         rows.push(PipelineRow::AlgoSelect {
             label: "QSM inversion", field: "qsm_algorithm",
-            options: QSM_ALGO_OPTIONS, help: QSM_ALGO_HELP,
+            options: &QSM_PICKER_OPTIONS, help: &QSM_PICKER_HELP,
         });
 
         // Algorithm-specific params
@@ -4519,7 +4542,11 @@ impl PipelineFormState {
     /// Get a select value by field name.
     pub fn get_select(&self, field: &str) -> usize {
         match field {
-            "qsm_algorithm" => self.qsm_algorithm,
+            "qsm_algorithm" => {
+                let name = QSM_ALGO_OPTIONS.get(self.qsm_algorithm).copied().unwrap_or("");
+                let name = if name == "lsqr" && self.heidi_enabled && !self.ctx.orientation_group { LSQR_HEIDI } else { name };
+                QSM_PICKER_OPTIONS.iter().position(|o| *o == name).unwrap_or(0)
+            }
             "qsmart_inversion" => self.qsmart_inversion,
             "unwrapping_algorithm" => self.unwrapping_algorithm,
             "bf_algorithm" => self.bf_algorithm,
@@ -4567,7 +4594,20 @@ impl PipelineFormState {
     /// Set a select value by field name.
     pub fn set_select(&mut self, field: &str, val: usize) {
         match field {
-            "qsm_algorithm" => self.qsm_algorithm = val,
+            "qsm_algorithm" => {
+                let name = QSM_PICKER_OPTIONS.get(val).copied().unwrap_or("");
+                // LSQR+HEIDI and plain LSQR are two choices of one row.
+                if name == "lsqr" {
+                    self.heidi_enabled = false;
+                }
+                let name = if name == LSQR_HEIDI {
+                    self.heidi_enabled = true;
+                    "lsqr"
+                } else {
+                    name
+                };
+                self.qsm_algorithm = QSM_ALGO_OPTIONS.iter().position(|o| *o == name).unwrap_or(self.qsm_algorithm);
+            }
             "qsmart_inversion" => self.qsmart_inversion = val,
             "unwrapping_algorithm" => self.unwrapping_algorithm = val,
             "bf_algorithm" => self.bf_algorithm = val,
@@ -11425,7 +11465,7 @@ mod tests {
     /// the default back.
     #[test]
     fn qsmart_keeps_the_mask() {
-        let qsmart = QSM_ALGO_OPTIONS.iter().position(|a| *a == "qsmart").unwrap();
+        let qsmart = QSM_PICKER_OPTIONS.iter().position(|a| *a == "qsmart").unwrap();
         let mut app = App::new();
         let before = app.pipeline_state.mask_sections.clone();
         app.pipeline_state.set_select("qsm_algorithm", qsmart);
