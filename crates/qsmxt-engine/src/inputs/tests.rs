@@ -86,7 +86,16 @@ fn facts_come_from_the_headers_and_sidecars() {
     assert_eq!(report.sidecars[0].manufacturer.as_deref(), Some("Siemens"));
     // The same facts as from the sidecars alone.
     let sidecars: Vec<_> = inputs.echoes.iter().map(|e| QsmSidecar::from_json(e.sidecar.as_ref().unwrap()).unwrap()).collect();
-    assert_eq!(report.facts, Some(ScanFacts::from_sidecars((4, 4, 4), &sidecars, true).unwrap()));
+    let from_sidecars = ScanFacts::from_sidecars((4, 4, 4), &sidecars, true).unwrap();
+    assert_eq!(report.facts, Some(ScanFacts { voxel_size: Some((1.0, 1.0, 1.0)), ..from_sidecars }));
+}
+
+/// The voxel size comes from the first echo's first image: the rules that depend on it read it.
+#[test]
+fn the_voxel_size_is_the_first_images() {
+    let mut inputs = ScanInputs { echoes: vec![echo(Some(0.004), true), echo(Some(0.008), true)], ..Default::default() };
+    inputs.echoes[0].phase.as_mut().unwrap().voxel_size = (0.5, 0.5, 2.0);
+    assert_eq!(inputs.facts().facts.unwrap().voxel_size, Some((0.5, 0.5, 2.0)));
 }
 
 #[test]

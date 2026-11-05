@@ -8,6 +8,7 @@ use crate::config::PipelineConfig;
 use crate::enums::*;
 use crate::masking::{MaskOp, MaskSection};
 use crate::requirements::Output;
+use crate::scan::ScanFacts;
 
 use super::Section;
 
@@ -38,6 +39,49 @@ pub struct ViewFacts {
     /// rules that depend on the vendor.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub manufacturer: Option<String>,
+}
+
+impl ViewFacts {
+    /// What the runs of a dataset say together: each fact when every run agrees on it, otherwise
+    /// not known; multi-coil when any run is. Without runs, nothing is known.
+    pub fn from_scans(scans: &[ScanFacts]) -> Self {
+        /// The value every run gives, if they all give the same one.
+        fn common<T: PartialEq>(mut values: impl Iterator<Item = Option<T>>) -> Option<T> {
+            let first = values.next()??;
+            values.all(|v| v.as_ref() == Some(&first)).then_some(first)
+        }
+        ViewFacts {
+            num_echoes: common(scans.iter().map(|s| Some(s.n_echoes))),
+            multi_coil: (!scans.is_empty()).then(|| scans.iter().any(|s| s.n_coils > 1)),
+            has_magnitude: common(scans.iter().map(|s| Some(s.has_magnitude))),
+            field_strength: common(scans.iter().map(|s| Some(s.field_strength))),
+            voxel_size: common(scans.iter().map(|s| s.voxel_size.map(|(x, y, z)| [x, y, z]))),
+            dims: common(scans.iter().map(|s| Some([s.dims.0, s.dims.1, s.dims.2]))),
+            manufacturer: common(scans.iter().map(|s| s.manufacturer.clone())),
+        }
+    }
+
+    /// What example facts say while no scan is loaded (qsmbly plans with the example's before
+    /// one is): only what shapes the pipeline, its echoes, coils and magnitude. The example's
+    /// field strength, voxel size, matrix and manufacturer are not the user's data, so the rules
+    /// that depend on the scan stay silent.
+    pub fn of_example(example: &ScanFacts) -> Self {
+        let scan = Self::from(example);
+        ViewFacts {
+            num_echoes: scan.num_echoes,
+            multi_coil: scan.multi_coil,
+            has_magnitude: scan.has_magnitude,
+            ..Default::default()
+        }
+    }
+}
+
+/// Everything a loaded scan says: what shapes the pipeline, and what the rules that depend on the
+/// scan read. For example facts, see [`ViewFacts::of_example`].
+impl From<&ScanFacts> for ViewFacts {
+    fn from(scan: &ScanFacts) -> Self {
+        Self::from_scans(std::slice::from_ref(scan))
+    }
 }
 
 /// How a setting applies to a config.
@@ -440,6 +484,61 @@ mod tests {
         c.bg_removal.algorithm = crate::enums::BfAlgorithm::Vsharp;
         c.inversion.algorithm = QsmAlgorithm::Xqsm;
         assert_eq!(note(&c), None, "xQSM");
+    }
+
+    fn scan() -> ScanFacts {
+        ScanFacts {
+            voxel_size: Some((1.0, 1.0, 2.0)),
+            manufacturer: Some("Philips".into()),
+            ..crate::plan::tests::facts()
+        }
+    }
+
+    /// A loaded scan's facts all reach the view.
+    #[test]
+    fn a_scan_says_everything_it_knows() {
+        assert_eq!(ViewFacts::from(&scan()), ViewFacts {
+            num_echoes: Some(5),
+            multi_coil: Some(false),
+            has_magnitude: Some(true),
+            field_strength: Some(3.0),
+            voxel_size: Some([1.0, 1.0, 2.0]),
+            dims: Some([16, 16, 8]),
+            manufacturer: Some("Philips".into()),
+        });
+    }
+
+    /// Example facts shape the pipeline but say nothing about the user's data.
+    #[test]
+    fn an_example_says_only_what_shapes_the_pipeline() {
+        assert_eq!(ViewFacts::of_example(&scan()), ViewFacts {
+            num_echoes: Some(5),
+            multi_coil: Some(false),
+            has_magnitude: Some(true),
+            ..Default::default()
+        });
+    }
+
+    /// Runs that agree say what one says; what they disagree on is not known; one multi-coil run
+    /// makes the dataset multi-coil.
+    #[test]
+    fn runs_say_together_what_they_agree_on() {
+        assert_eq!(ViewFacts::from_scans(&[]), ViewFacts::default());
+        assert_eq!(ViewFacts::from_scans(&[scan(), scan()]), ViewFacts::from(&scan()));
+        let other = ScanFacts {
+            n_echoes: 4,
+            n_coils: 8,
+            has_magnitude: false,
+            field_strength: 7.0,
+            voxel_size: None,
+            dims: (16, 16, 16),
+            manufacturer: Some("GE".into()),
+            ..scan()
+        };
+        assert_eq!(ViewFacts::from_scans(&[scan(), other]), ViewFacts {
+            multi_coil: Some(true),
+            ..Default::default()
+        });
     }
 
     /// Motion correction on a run it cannot correct is flagged on its switch (#397).

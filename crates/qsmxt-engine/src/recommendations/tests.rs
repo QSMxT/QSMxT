@@ -563,6 +563,25 @@ fn ticking_heidi_offers_lsqr_and_changes_nothing() {
     }
 }
 
+/// A loaded scan's manufacturer reaches the vendor rules through its facts; example facts stay
+/// silent, whatever manufacturer they name.
+#[test]
+fn the_vendor_rules_read_a_loaded_scans_manufacturer_only() {
+    let mut c = PipelineConfig::default();
+    c.pipeline.do_chi_separation = true;
+    schema::set(&mut c, "separation.algorithm", json!("chi-sepnet")).unwrap();
+    let scan = crate::scan::ScanFacts {
+        voxel_size: Some((1.0, 1.0, 1.0)),
+        manufacturer: Some("Siemens".into()),
+        ..crate::plan::tests::facts()
+    };
+    let offered = |view: &ViewFacts| schema::settings_view(&c, view).into_iter()
+        .find(|v| v.path == "pipeline.tukey_window").unwrap().recommendations.into_iter()
+        .map(|r| r.rule).collect::<Vec<_>>();
+    assert_eq!(offered(&ViewFacts::from(&scan)), ["chi-sepnet.tukey-siemens-ge"]);
+    assert!(offered(&ViewFacts::of_example(&scan)).is_empty());
+}
+
 /// χ-sepnet's toolbox route offers the toolbox's Tukey window for the scan's manufacturer, as the
 /// sidecar spells it, as the authors' setting, and changes nothing until applied; the native
 /// route and an unknown manufacturer offer nothing. χ-sep-MEDI and χ-sep-iLSQR offer it too.
