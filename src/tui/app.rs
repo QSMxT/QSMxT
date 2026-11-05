@@ -7951,8 +7951,14 @@ impl App {
             if self.pipeline_state.r2prime_strategy != 1 {
                 rows.push(Toggle { label: "    R2PRIMEnet off 3 T", field: "r2primenet_ignore_field_mismatch",
                     help: "Run R2PRIMEnet on non-3 T data (trained at 3 T only; the R2' is uncalibrated). Off: auto skips R2', r2primenet errors" });
-                rows.push(Param { label: "    R2PRIMEnet patch", field: "r2primenet_patch",
-                    help: "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)" });
+                // χ-sepnet's toolbox route runs R2PRIMEnet on its own frame, not at this patch.
+                let route_estimates = self.pipeline_state.do_chi_separation
+                    && SEP_ALGO_OPTIONS.get(self.pipeline_state.separation_algorithm).copied() == Some("chi-sepnet")
+                    && self.pipeline_state.sep_chisepnet_route == 0;
+                if self.form.do_r2primemap || !route_estimates {
+                    rows.push(Param { label: "    R2PRIMEnet patch", field: "r2primenet_patch",
+                        help: "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)" });
+                }
             }
         }
         rows

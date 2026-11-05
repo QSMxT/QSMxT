@@ -83,6 +83,9 @@ pub fn execute_local(
 
                     // Optional DICOM export (best-effort: never fails the run).
                     if config.pipeline.export_dicom {
+                        // χ-sepnet's toolbox route computes R2′ only on the scans that can measure it.
+                        let facts = crate::pipeline::requirements::scan_facts(run, config);
+                        let config = &config.normalised_for(&facts).0;
                         let opts = crate::dicom::export::DicomExportOptions {
                             export_swi: config.pipeline.do_swi,
                             export_t2star: config.pipeline.do_t2starmap,

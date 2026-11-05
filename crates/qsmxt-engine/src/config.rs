@@ -637,8 +637,25 @@ pub fn enforce_smwi_dependencies(config: &mut PipelineConfig) {
     }
 }
 
+/// χ-separation by χ-sepnet's toolbox route that may estimate its own R2′: with no R2′ supplied
+/// and R2′ not restricted to being measured. The route runs R2PRIMEnet on R2* itself, in the
+/// network's training frame, unless it is given an R2′ measured as R2* − R2. So it needs R2*, and
+/// a run's R2′ map only where this scan can measure one
+/// ([`crate::requirements::measures_r2prime_for_chisepnet`]); otherwise the map is the user's
+/// output to ask for, and is not what the route uses.
+pub fn chisepnet_route_can_estimate_r2prime(config: &PipelineConfig) -> bool {
+    let s = &config.separation;
+    config.pipeline.do_chi_separation
+        && s.algorithm == SeparationAlgorithm::ChiSepNet
+        && s.chi_sepnet.route == ChiSepNetRoute::Toolbox
+        && s.custom_r2prime_tool.is_none()
+        && s.r2prime_strategy != R2PrimeStrategy::Mese
+}
+
 pub fn enforce_separation_dependencies(config: &mut PipelineConfig) {
-    if config.pipeline.do_chi_separation {
+    if chisepnet_route_can_estimate_r2prime(config) {
+        config.pipeline.do_r2starmap = true;
+    } else if config.pipeline.do_chi_separation {
         match config.separation.algorithm {
             // Uses R2* directly (fit from the GRE magnitude); no R2/R2' needed.
             SeparationAlgorithm::R2starQsm => config.pipeline.do_r2starmap = true,
@@ -1991,14 +2008,41 @@ mod selected_toml_tests {
 
     #[test]
     fn dl_separation_forces_r2prime() {
-        // χ-sepnet (like susep-net) consumes local field + QSM + R2', so it must force R2'.
-        for alg in [SeparationAlgorithm::SusepNet, SeparationAlgorithm::ChiSepNet] {
+        // SUSEP-Net and the network alone consume local field + QSM + R2', so they must force R2'.
+        let mut native = PipelineConfig::default();
+        native.separation.chi_sepnet.route = ChiSepNetRoute::Native;
+        native.separation.algorithm = SeparationAlgorithm::ChiSepNet;
+        let mut susep = PipelineConfig::default();
+        susep.separation.algorithm = SeparationAlgorithm::SusepNet;
+        for mut c in [native, susep] {
+            c.pipeline.do_chi_separation = true;
+            enforce_separation_dependencies(&mut c);
+            assert!(c.pipeline.do_r2primemap, "{:?} must force R2'", c.separation.algorithm);
+        }
+    }
+
+    /// χ-sepnet's toolbox route estimates its own R2′ from R2*, so it asks for R2* alone, and an
+    /// R2′ map stays the user's to ask for. R2′ only ever measured is forced as on any method.
+    #[test]
+    fn the_toolbox_route_needs_only_r2star() {
+        let toolbox = |edit: fn(&mut PipelineConfig)| {
             let mut c = PipelineConfig::default();
             c.pipeline.do_chi_separation = true;
-            c.separation.algorithm = alg;
+            c.separation.algorithm = SeparationAlgorithm::ChiSepNet;
+            edit(&mut c);
             enforce_separation_dependencies(&mut c);
-            assert!(c.pipeline.do_r2primemap, "{:?} must force R2'", alg);
-        }
+            c.pipeline
+        };
+        let p = toolbox(|_| {});
+        assert!(p.do_r2starmap && !p.do_r2primemap && !p.do_r2map, "{p:?}");
+        let p = toolbox(|c| c.separation.r2prime_strategy = R2PrimeStrategy::R2primenet);
+        assert!(p.do_r2starmap && !p.do_r2primemap && !p.do_r2map, "{p:?}");
+        let p = toolbox(|c| c.pipeline.do_r2primemap = true);
+        assert!(p.do_r2primemap && p.do_r2starmap && p.do_r2map, "the user's request stands: {p:?}");
+        let p = toolbox(|c| c.separation.r2prime_strategy = R2PrimeStrategy::Mese);
+        assert!(p.do_r2primemap && p.do_r2starmap && p.do_r2map, "{p:?}");
+        let p = toolbox(|c| c.separation.custom_r2prime_tool = Some("mine".into()));
+        assert!(!p.do_r2primemap && !p.do_r2starmap && !p.do_r2map, "a supplied R2′ is used as it is: {p:?}");
     }
 
     /// χ-sep MEDI's defaults come from qsm-core rather than a copy here, so the config, schema,

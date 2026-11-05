@@ -2067,4 +2067,15 @@ mod multiorient_command_tests {
         let cmd = generate_command(&config);
         assert!(cmd.contains("--orientation-reference '*acq-Neutral*'"), "{cmd}");
     }
+    /// χ-sepnet's toolbox route implies R2*; an R2′ map the user asked for is a flag of its own.
+    #[test]
+    fn the_toolbox_route_implies_only_r2star() {
+        let mut c = PipelineConfig::default();
+        c.pipeline.do_chi_separation = true;
+        c.separation.algorithm = crate::SeparationAlgorithm::ChiSepNet;
+        let cmd = generate_command(&c);
+        assert!(!cmd.contains("--do-r2primemap") && !cmd.contains("--do-r2map") && !cmd.contains("--do-r2starmap"), "{cmd}");
+        c.pipeline.do_r2primemap = true;
+        assert!(generate_command(&c).contains("--do-r2primemap"));
+    }
 }

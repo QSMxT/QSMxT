@@ -1137,7 +1137,9 @@ pub(super) fn table() -> Vec<Def> {
         // QSMxT R2primenetConfig::validate: each side a positive multiple of QSM.rs's
         // relaxometry::POOL_MULTIPLE (16; QSM.rs utils/r2primenet.rs asserts it). The texts' "16" is pinned to it by a test.
         d("separation.r2primenet.patch", Relaxometry, "R2PRIMEnet patch", "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)", IntVec3).min(qsm_core::relaxometry::POOL_MULTIPLE as f64).units("voxels").flag("--r2primenet-patch").parent("separation.r2prime_strategy")
-        .when(|x| x.computes_r2prime && x.c.separation.r2prime_strategy != R2PrimeStrategy::Mese)
+        // χ-sepnet's toolbox route runs R2PRIMEnet on its own frame, not at this patch.
+        .when(|x| x.computes_r2prime && x.c.separation.r2prime_strategy != R2PrimeStrategy::Mese
+            && (x.c.pipeline.do_r2primemap || !crate::config::chisepnet_route_can_estimate_r2prime(x.c)))
         .gui("Sliding-window patch D H W, each a multiple of 16"),
         d("pipeline.do_segmentation", Segmentation, "Segmentation", "Whole-brain parcellation: SynthSeg straight off the GRE magnitude, or one supplied in derivatives. Forced on by the statistics and a region reference", Bool).basic().flag("--do-segmentation"),
         d("segmentation.custom_dseg_tool", Segmentation, "Derivatives tool", "The dseg from <bids>/derivatives/<tool>/: * = any tool, or a tool name; SynthSeg runs where none is found", Text).optional().flag("--use-custom-dseg").parent("pipeline.do_segmentation")

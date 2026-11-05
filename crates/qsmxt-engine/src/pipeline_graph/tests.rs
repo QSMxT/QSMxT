@@ -727,3 +727,26 @@ fn two_pass_heidi_runs_on_the_combined_map() {
     assert!(crate::stages::inversion::params(&pass).get("heidi").is_none());
     assert!(crate::stages::inversion::params(&config).get("heidi").is_some());
 }
+
+/// χ-sepnet's toolbox route is drawn as it runs: an R2′ the user asked for is no input to it, and
+/// a measured one is.
+#[test]
+fn the_toolbox_route_is_drawn_reading_only_what_it_uses() {
+    let mut config = PipelineConfig::default();
+    config.pipeline.do_chi_separation = true;
+    config.separation.algorithm = SeparationAlgorithm::ChiSepNet;
+    let g = graph(&config, &facts());
+    assert!(!ids(&g).contains(&"r2_r2prime"), "{:?}", ids(&g));
+    assert!(g.has_edge("t2star_r2star", "chi_separation"), "{:?}", g.edges);
+
+    config.pipeline.do_r2primemap = true;
+    let g = graph(&config, &facts());
+    assert!(ids(&g).contains(&"r2_r2prime"), "{:?}", ids(&g));
+    assert!(!g.has_edge("r2_r2prime", "chi_separation"), "{:?}", g.edges);
+    config.pipeline.do_r2primemap = false;
+
+    let mut f = facts();
+    f.mese_echo_times = Some(vec![0.01, 0.02, 0.03, 0.04]);
+    let g = graph(&config, &f);
+    assert!(g.has_edge("r2_r2prime", "chi_separation"), "{:?}", g.edges);
+}
