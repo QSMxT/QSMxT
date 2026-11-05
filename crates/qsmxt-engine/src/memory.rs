@@ -956,7 +956,7 @@ mod tests {
     #[test]
     fn an_over_budget_chi_sepnet_names_the_patch_of_its_route() {
         let config = |route, frame_patch| with(|c| {
-            c.apply_browser_profile();
+            let _ = c.apply_browser_profile();
             c.pipeline.do_chi_separation = true;
             c.separation.algorithm = SeparationAlgorithm::ChiSepNet;
             c.separation.chi_sepnet.route = route;
