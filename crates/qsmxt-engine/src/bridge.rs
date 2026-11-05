@@ -1212,6 +1212,19 @@ mod tests {
                 "nothing orientation-sensitive runs in this configuration: {listed:?}");
     }
 
+    /// χ-sepnet's toolbox route rotates its inputs and runs R2PRIMEnet in its own frame, so it is
+    /// no reason to resample the run; an R2′ map the user asks for still is.
+    #[test]
+    fn the_toolbox_routes_own_r2primenet_is_not_gated() {
+        let mut cfg = PipelineConfig::default();
+        cfg.pipeline.do_chi_separation = true;
+        cfg.separation.algorithm = crate::SeparationAlgorithm::ChiSepNet;
+        crate::config::enforce_separation_dependencies(&mut cfg);
+        assert!(!gate(&cfg, false).iter().any(|s| s.contains("r2primenet")), "{:?}", gate(&cfg, false));
+        cfg.pipeline.do_r2primemap = true;
+        assert!(gate(&cfg, false).iter().any(|s| s.contains("r2primenet")), "{:?}", gate(&cfg, false));
+    }
+
     #[test]
     fn r2primenet_strategy_is_gated_even_with_a_measured_r2() {
         let mut cfg = cfg_needing_r2prime();

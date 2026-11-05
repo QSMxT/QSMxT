@@ -120,7 +120,9 @@ pub fn implied_by(config: &PipelineConfig, out: Output) -> Option<String> {
             }
         }
         Output::R2star => {
-            if p.do_chi_separation && s.algorithm == SeparationAlgorithm::R2starQsm {
+            if (p.do_chi_separation && s.algorithm == SeparationAlgorithm::R2starQsm)
+                || crate::config::chisepnet_route_can_estimate_r2prime(config)
+            {
                 Some(chisep())
             } else if computes_r2prime {
                 Some(implied_by(config, Output::R2prime).unwrap_or_else(|| "--do-r2primemap".into()))
@@ -133,7 +135,9 @@ pub fn implied_by(config: &PipelineConfig, out: Output) -> Option<String> {
         {
             Some(implied_by(config, Output::R2prime).unwrap_or_else(|| "--do-r2primemap".into()))
         }
-        Output::R2prime if p.do_chi_separation && r2prime_based && s.custom_r2prime_tool.is_none() => {
+        Output::R2prime if p.do_chi_separation && r2prime_based && s.custom_r2prime_tool.is_none()
+            && !crate::config::chisepnet_route_can_estimate_r2prime(config) =>
+        {
             Some(chisep())
         }
         _ => None,
@@ -590,6 +594,15 @@ fn r2_problem_in(f: &ScanFacts, config: &PipelineConfig, w: &Words) -> Option<St
         Some(_) => None,
         None => mese_problem(f),
     }
+}
+
+/// Whether this scan gives χ-sepnet's toolbox route an R2′ measured as R2* − R2, which it takes in
+/// place of its own estimate: there is an R2 to subtract and R2* to subtract it from.
+pub fn measures_r2prime_for_chisepnet(f: &ScanFacts, config: &PipelineConfig) -> bool {
+    crate::config::chisepnet_route_can_estimate_r2prime(config)
+        && config.separation.r2prime_strategy != R2PrimeStrategy::R2primenet
+        && r2_problem(f, config).is_none()
+        && arlo_problem(f).is_none()
 }
 
 /// Why R2' cannot be had for this run, if it cannot.
@@ -1628,5 +1641,28 @@ mod tests {
         assert!(check(&run(&EVEN, true), &c).warnings.is_empty());
         c.inversion.medi.csf = false;
         assert!(check(&run(&[0.005, 0.010], true), &c).warnings.is_empty());
+    }
+    /// χ-sepnet's toolbox route: R2* is its input, so an R2* that cannot be had is implied by
+    /// χ-separation, and R2′ is implied by nothing. What R2PRIMEnet cannot do on the scan still
+    /// refuses χ-separation, since the route runs it.
+    #[test]
+    fn the_toolbox_route_implies_r2star_and_not_r2prime() {
+        let mut c = PipelineConfig::default();
+        c.pipeline.do_chi_separation = true;
+        c.separation.algorithm = SeparationAlgorithm::ChiSepNet;
+        crate::config::enforce_separation_dependencies(&mut c);
+        assert_eq!(implied_by(&c, Output::R2prime), None);
+        assert!(implied_by(&c, Output::R2star).is_some_and(|by| by.starts_with("--do-chisep")));
+        c.separation.chi_sepnet.route = crate::ChiSepNetRoute::Native;
+        assert!(implied_by(&c, Output::R2prime).is_some(), "the network alone reads the R2 step's");
+        c.separation.chi_sepnet.route = crate::ChiSepNetRoute::Toolbox;
+
+        let f = run(&[0.005, 0.010, 0.015], true);
+        assert!(check(&f, &c).errors.is_empty() && check(&f, &c).warnings.is_empty());
+        let off_field = ScanFacts { field_strength: 7.0, ..f.clone() };
+        assert!(check(&off_field, &c).errors.iter().any(|e| e.contains("R2PRIMEnet")), "{:?}", check(&off_field, &c));
+        assert!(measures_r2prime_for_chisepnet(
+            &ScanFacts { mese_echo_times: Some(vec![0.01, 0.02, 0.03]), ..f.clone() }, &c));
+        assert!(!measures_r2prime_for_chisepnet(&f, &c));
     }
 }

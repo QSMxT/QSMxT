@@ -337,4 +337,59 @@ mod tests {
             ["Skipped in 1 of 3 runs"]
         );
     }
+    /// χ-sepnet's toolbox route, as its runs recorded it: its own estimate, with or beside a
+    /// published R2′, or a measured one; and the configuration's wording before a run.
+    #[test]
+    fn the_toolbox_routes_r2prime_is_said_as_the_runs_used_it() {
+        use crate::record::{Choice::*, Topic::ChiSeparationR2prime};
+        let mut config = PipelineConfig::default();
+        config.pipeline.do_chi_separation = true;
+        config.separation.algorithm = crate::SeparationAlgorithm::ChiSepNet;
+        let own = "χ-separation used its own R2', estimated from R2* with R2PRIMEnet (Kim et al., 2025) in the network's training frame.";
+        let not_input = "The R2' map in the outputs was not an input to χ-separation.";
+        let f = facts();
+        let plan = crate::plan::plan(&config, &f);
+        let used = |plan, choice| record(plan, &[("chi_separation", crate::record::Decision::new(ChiSeparationR2prime, choice, "why"))]);
+
+        let run = crate::methods::methods_for_run(&config, &plan, &used(&plan, Predicted), "qsmxt").to_markdown();
+        assert!(run.contains(own) && !run.contains(not_input), "{run}");
+        assert!(run.contains("R2PRIMEnet") && run.contains("Kim"), "{run}");
+        assert!(!run.contains("R2' was estimated from the R2* map"), "no R2′ map was made: {run}");
+
+        let mut asked = config.clone();
+        asked.pipeline.do_r2primemap = true;
+        let plan2 = crate::plan::plan(&asked, &f);
+        let asked_record = record(&plan2, &[
+            ("r2_r2prime", crate::record::Decision::new(crate::record::Topic::R2primeSource, Predicted, "why")),
+            ("chi_separation", crate::record::Decision::new(ChiSeparationR2prime, Predicted, "why")),
+        ]);
+        let run = crate::methods::methods_for_run(&asked, &plan2, &asked_record, "qsmxt").to_markdown();
+        assert!(run.contains(own) && run.contains(not_input), "{run}");
+
+        let mut with_mese = f.clone();
+        with_mese.mese_echo_times = Some(vec![0.01, 0.02, 0.03, 0.04]);
+        let measured_plan = crate::plan::plan(&config, &with_mese);
+        let measured = used(&measured_plan, Measured);
+        let run = crate::methods::methods_for_run(&config, &measured_plan, &measured, "qsmxt").to_markdown();
+        assert!(run.contains("χ-separation used the measured R2'.") && !run.contains(own), "{run}");
+
+        // A dataset of both: the sentence covers each, and the measuring runs' R2′ is said.
+        let estimated = used(&plan, Predicted);
+        let both = summarise(&config, &[(&measured_plan, &with_mese, &measured), (&plan, &f, &estimated)], "qsmxt")
+            .unwrap().methods.to_markdown();
+        assert!(both.contains("χ-separation used R2' measured as R2* - R2 where a multi-echo spin-echo acquisition was available, and otherwise its own R2'"), "{both}");
+
+        // Before a run: what the configuration does.
+        let text = crate::methods::generate_methods_for(&config, "qsmxt");
+        assert!(text.contains("otherwise its own R2', estimated from R2* with R2PRIMEnet"), "{text}");
+        let mut always = config.clone();
+        always.separation.r2prime_strategy = crate::R2PrimeStrategy::R2primenet;
+        assert!(crate::methods::generate_methods_for(&always, "qsmxt").contains(own));
+
+        // The network alone is told nothing of the kind.
+        let mut native = config.clone();
+        native.separation.chi_sepnet.route = crate::ChiSepNetRoute::Native;
+        let text = crate::methods::generate_methods_for(&native, "qsmxt");
+        assert!(!text.contains("χ-separation used"), "{text}");
+    }
 }

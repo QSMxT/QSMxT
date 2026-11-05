@@ -298,7 +298,7 @@ fn may_predict_r2prime(facts: &ScanFacts, config: &PipelineConfig) -> bool {
 /// Plan one run of `config` on the scan `facts` describes, as `qsmxt run` runs it: its memory
 /// figures are native, with the volumes in files ([`MemoryProfile::NATIVE`]).
 ///
-/// `config` is normalised first ([`PipelineConfig::normalised`]), so it may be given as the user
+/// `config` is normalised first ([`PipelineConfig::normalised_for`]), so it may be given as the user
 /// left it: the plan is that of the configuration `qsmxt run` would take, which it holds
 /// ([`Plan::config`]), with what was changed ([`Plan::adjustments`]).
 pub fn plan(config: &PipelineConfig, facts: &ScanFacts) -> Plan {
@@ -309,7 +309,7 @@ pub fn plan(config: &PipelineConfig, facts: &ScanFacts) -> Plan {
 /// [`MemoryProfile::browser`]). Where the host has a limit and a step's estimate exceeds it, the
 /// plan names the step ([`Plan::over_budget`]) and warns of it in [`Plan::check`].
 pub fn plan_for(config: &PipelineConfig, facts: &ScanFacts, profile: &MemoryProfile) -> Plan {
-    let (normalised, adjustments) = config.normalised();
+    let (normalised, adjustments) = config.normalised_for(facts);
     let config = &normalised;
     let p = &config.pipeline;
     let wanted = |o: Output| requirements::wanted(facts, config, o);
@@ -729,5 +729,26 @@ pub(crate) mod tests {
         let p = plan(&config, &facts());
         assert!(!p.processes());
         assert_eq!(names(&p), ["load"]);
+    }
+    /// χ-sepnet's toolbox route with nothing to measure from runs no R2 step, whose memory leaves
+    /// the plan, and still fetches R2PRIMEnet; its step's own estimate covers the route's networks.
+    #[test]
+    fn the_toolbox_route_plans_no_r2_step_of_its_own() {
+        let mut config = PipelineConfig::default();
+        config.pipeline.do_chi_separation = true;
+        config.separation.algorithm = crate::SeparationAlgorithm::ChiSepNet;
+        let chi_sep_bytes = |p: &Plan| p.steps.iter().find(|s| s.stage == Stage::ChiSeparation).unwrap().memory_bytes;
+
+        let route = plan(&config, &facts());
+        assert!(!route.has(Stage::R2), "{:?}", names(&route));
+        assert!(route.has(Stage::Relaxometry), "{:?}", names(&route));
+        assert_eq!(route.models.iter().filter(|m| **m == "r2primenet").count(), 1, "{:?}", route.models);
+        assert!(!route.config.pipeline.do_r2primemap && !route.adjustments.iter().any(|a| a.setting == "pipeline.do_r2primemap"));
+
+        let mut asked = config.clone();
+        asked.pipeline.do_r2primemap = true;
+        let asked = plan(&asked, &facts());
+        assert_eq!(asked.steps.iter().find(|s| s.stage == Stage::R2).unwrap().models, ["r2primenet"]);
+        assert_eq!(chi_sep_bytes(&asked), chi_sep_bytes(&route), "the route's own networks either way");
     }
 }
