@@ -73,7 +73,9 @@ recommendations, they are listed first. Nothing changes unless you apply it:
 - **Apply recommended** (preselected when there are recommendations) applies the
   recommendations and keeps your values where only the authors' setting differs.
 - **Apply all, with the authors' settings** (**Apply the authors' settings** when there are no
-  recommendations) also sets every authors' setting.
+  recommendations) also sets every authors' setting. A recommendation wins over an authors'
+  setting on the same setting, and two authors' settings that disagree leave that setting as it
+  is, marked, for you to choose.
 - **Choose per setting** lists the settings again with a choice on each (`↑`/`↓` to move,
   `←`/`→` to choose a value or to keep yours); `Enter` applies them. Recommendations start on
   the recommended value, authors' settings on keeping yours.

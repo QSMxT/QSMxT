@@ -739,7 +739,10 @@ pub fn reducing_settings(step: &Step, config: &PipelineConfig) -> Vec<&'static s
         Stage::Segmentation => vec!["segmentation.patch"],
         Stage::R2 if !step.models.is_empty() => vec!["separation.r2primenet.patch"],
         Stage::ChiSeparation => match config.separation.algorithm {
-            SeparationAlgorithm::ChiSepNet => vec!["separation.chi_sepnet.patch", "separation.algorithm"],
+            SeparationAlgorithm::ChiSepNet => match config.separation.chi_sepnet.route {
+                crate::ChiSepNetRoute::Toolbox => vec!["separation.chi_sepnet.frame_patch", "separation.algorithm"],
+                crate::ChiSepNetRoute::Native => vec!["separation.chi_sepnet.patch", "separation.algorithm"],
+            },
             SeparationAlgorithm::SusepNet => vec!["separation.susep_net.patch", "separation.algorithm"],
             SeparationAlgorithm::ChiSepIlsqr => vec!["separation.chi_sep_ilsqr.pad", "separation.algorithm"],
             SeparationAlgorithm::ChiSepMedi => vec!["separation.chi_sep_medi.pad", "separation.algorithm"],
@@ -947,6 +950,27 @@ mod tests {
         assert!(xqsm_weights > 20_000_000);
         assert_eq!(step_bytes(&a, "magnitude") - step_bytes(&b, "magnitude"), xqsm_weights);
         assert_eq!(a.memory_budget_bytes, Some(WASM32_HEAP_BYTES));
+    }
+
+    /// An over-budget χ-sepnet names the patch its route runs on: the hidden one would not help.
+    #[test]
+    fn an_over_budget_chi_sepnet_names_the_patch_of_its_route() {
+        let config = |route, frame_patch| with(|c| {
+            c.apply_browser_profile();
+            c.pipeline.do_chi_separation = true;
+            c.separation.algorithm = SeparationAlgorithm::ChiSepNet;
+            c.separation.chi_sepnet.route = route;
+            c.separation.chi_sepnet.frame_patch = frame_patch;
+        });
+        let settings = |c: &PipelineConfig| {
+            let plan = plan_for(c, &example(), &MemoryProfile::browser(4));
+            reducing_settings(plan.steps.iter().find(|s| s.name == "chi_separation").unwrap(), c)
+        };
+        assert_eq!(settings(&config(crate::ChiSepNetRoute::Toolbox, None)), ["separation.chi_sepnet.frame_patch", "separation.algorithm"]);
+        assert_eq!(settings(&config(crate::ChiSepNetRoute::Native, None)), ["separation.chi_sepnet.patch", "separation.algorithm"]);
+        // Over the heap on the whole frame, the plan's answer is that setting.
+        let whole_frame = plan_for(&config(crate::ChiSepNetRoute::Toolbox, None), &example(), &MemoryProfile::browser(4));
+        assert_eq!(whole_frame.over_budget.unwrap().settings[0], "separation.chi_sepnet.frame_patch");
     }
 
     /// A browser run that would not fit is warned of before it starts: the plan names the step

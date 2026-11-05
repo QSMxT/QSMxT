@@ -57,6 +57,8 @@ pub enum Topic {
     R2primeSource,
     /// The part of the brain mask R2′ was measured over.
     R2primeCoverage,
+    /// The R2′ χ-sepnet's toolbox route used: measured, or its own estimate.
+    ChiSeparationR2prime,
     /// R2PRIMEnet run off the field strength it was trained at.
     R2primenetCalibration,
     /// R2PRIMEnet run on a grid whose B0 is not along the slice normal.

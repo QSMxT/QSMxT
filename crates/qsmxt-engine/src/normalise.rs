@@ -73,26 +73,7 @@ impl PipelineConfig {
                 "QSM is computed: SMWI weights the magnitude by the susceptibility map"));
         }
 
-        let before = c.clone();
-        enforce_separation_dependencies(&mut c);
-        let method = || crate::methods::separation_name(c.separation.algorithm);
-        if turned_on(&before, &c, |c| c.pipeline.do_r2primemap) {
-            out.push(note("pipeline.do_r2primemap", "pipeline.do_chi_separation",
-                format!("The R2′ map is computed: χ-separation by {} needs it", method())));
-        }
-        if turned_on(&before, &c, |c| c.pipeline.do_r2starmap) {
-            out.push(if c.pipeline.do_chi_separation && c.separation.algorithm == SeparationAlgorithm::R2starQsm {
-                note("pipeline.do_r2starmap", "pipeline.do_chi_separation",
-                    format!("The R2* map is computed: χ-separation by {} needs it", method()))
-            } else {
-                note("pipeline.do_r2starmap", "pipeline.do_r2primemap",
-                    "The R2* map is computed: R2′ is computed from it")
-            });
-        }
-        if turned_on(&before, &c, |c| c.pipeline.do_r2map) {
-            out.push(note("pipeline.do_r2map", "pipeline.do_r2primemap",
-                "The R2 map is computed: R2′ is measured as R2* − R2 where it can be"));
-        }
+        separation_dependencies(&mut c, &mut out);
 
         let before = c.clone();
         enforce_reference_dependencies(&mut c);
@@ -107,6 +88,26 @@ impl PipelineConfig {
 
         (c, out)
     }
+
+    /// [`Self::normalised`], for a run on the scan `facts` describes: what [`crate::plan::plan`]
+    /// plans and the run takes. χ-sepnet's toolbox route estimates its own R2′ unless this scan
+    /// can measure one, so only here is it known that the R2′ map is needed.
+    pub fn normalised_for(&self, facts: &crate::scan::ScanFacts) -> (PipelineConfig, Vec<Adjustment>) {
+        let (mut c, mut out) = self.normalised();
+        if crate::requirements::measures_r2prime_for_chisepnet(facts, &c) {
+            measure_r2prime_for_chisepnet(&mut c, &mut out);
+        }
+        (c, out)
+    }
+
+    /// [`Self::normalised_for`] the scan `plan` was made for ([`crate::plan::Plan::config`]).
+    pub fn normalised_as_planned(&self, plan: &crate::plan::Plan) -> PipelineConfig {
+        let (mut c, mut out) = self.normalised();
+        if plan.config.pipeline.do_r2primemap && crate::config::chisepnet_route_can_estimate_r2prime(&c) {
+            measure_r2prime_for_chisepnet(&mut c, &mut out);
+        }
+        c
+    }
 }
 
 fn turned_on(before: &PipelineConfig, after: &PipelineConfig, get: impl Fn(&PipelineConfig) -> bool) -> bool {
@@ -115,6 +116,44 @@ fn turned_on(before: &PipelineConfig, after: &PipelineConfig, get: impl Fn(&Pipe
 
 fn note(setting: &'static str, because: &'static str, message: impl Into<String>) -> Adjustment {
     Adjustment { setting, because, message: message.into() }
+}
+
+/// [`enforce_separation_dependencies`], saying what it turned on.
+fn separation_dependencies(c: &mut PipelineConfig, out: &mut Vec<Adjustment>) {
+    let before = c.clone();
+    enforce_separation_dependencies(c);
+    let method = crate::methods::separation_name(c.separation.algorithm);
+    if turned_on(&before, c, |c| c.pipeline.do_r2primemap) {
+        out.push(note("pipeline.do_r2primemap", "pipeline.do_chi_separation",
+            format!("The R2′ map is computed: χ-separation by {method} needs it")));
+    }
+    if turned_on(&before, c, |c| c.pipeline.do_r2starmap) {
+        let separation_reads_it = c.pipeline.do_chi_separation
+            && (c.separation.algorithm == SeparationAlgorithm::R2starQsm
+                || crate::config::chisepnet_route_can_estimate_r2prime(c));
+        out.push(if separation_reads_it {
+            note("pipeline.do_r2starmap", "pipeline.do_chi_separation",
+                format!("The R2* map is computed: χ-separation by {method} needs it"))
+        } else {
+            note("pipeline.do_r2starmap", "pipeline.do_r2primemap",
+                "The R2* map is computed: R2′ is computed from it")
+        });
+    }
+    if turned_on(&before, c, |c| c.pipeline.do_r2map) {
+        out.push(note("pipeline.do_r2map", "pipeline.do_r2primemap",
+            "The R2 map is computed: R2′ is measured as R2* − R2 where it can be"));
+    }
+}
+
+/// The scan can measure R2′, and χ-sepnet's toolbox route takes a measured R2′ when it has one.
+fn measure_r2prime_for_chisepnet(c: &mut PipelineConfig, out: &mut Vec<Adjustment>) {
+    if !c.pipeline.do_r2primemap {
+        c.pipeline.do_r2primemap = true;
+        out.push(note("pipeline.do_r2primemap", "pipeline.do_chi_separation", format!(
+            "The R2′ map is computed: χ-separation by {} uses R2′ measured as R2* − R2 where it can be",
+            crate::methods::separation_name(c.separation.algorithm))));
+    }
+    separation_dependencies(c, out);
 }
 
 #[cfg(test)]
@@ -272,5 +311,39 @@ mod tests {
         let mut c = PipelineConfig::default();
         c.field_mapping.b0_estimation = crate::enums::B0Estimation::QsmartEchofit;
         assert_eq!(c.normalised().0, c);
+    }
+    /// χ-sepnet's toolbox route needs R2* and says so, leaves R2′ as the user set it, and asks for
+    /// the map only on a scan that can measure it.
+    #[test]
+    fn the_toolbox_route_says_only_what_it_needs() {
+        let mut c = PipelineConfig::default();
+        c.pipeline.do_chi_separation = true;
+        c.separation.algorithm = SeparationAlgorithm::ChiSepNet;
+        let (n, notes) = c.normalised();
+        assert!(!n.pipeline.do_r2primemap && !n.pipeline.do_r2map && n.pipeline.do_r2starmap);
+        let notes: Vec<_> = notes.iter().map(|a| (a.setting, a.because, a.message.as_str())).collect();
+        assert_eq!(notes, [("pipeline.do_r2starmap", "pipeline.do_chi_separation",
+            "The R2* map is computed: χ-separation by χ-sepnet (deep-learning source separation) needs it")]);
+
+        let mut facts = crate::scan::ScanFacts {
+            dims: (8, 8, 8), voxel_size: None, n_echoes: 3, echo_times: vec![0.01, 0.02, 0.03], has_magnitude: true,
+            n_coils: 1, real_imaginary: false, field_strength: 3.0, b0_dir: None, mese_echo_times: None,
+            custom_mask: false, custom_dseg: false, custom_qsm: false, custom_r2: false, custom_r2prime: false,
+            manufacturer: None,
+        };
+        assert_eq!(c.normalised_for(&facts).0, n, "nothing to measure from");
+        facts.mese_echo_times = Some(vec![0.01, 0.02, 0.03, 0.04]);
+        let (measured, notes) = c.normalised_for(&facts);
+        assert!(measured.pipeline.do_r2primemap && measured.pipeline.do_r2map);
+        assert!(notes.iter().any(|a| a.setting == "pipeline.do_r2primemap"
+            && a.message.contains("measured as R2* − R2")), "{notes:?}");
+        assert_eq!(measured.normalised_for(&facts).0, measured);
+        assert!(measured.normalised_for(&facts).1.is_empty());
+
+        // A saved config with the toggle on is the user's request, on any scan.
+        let mut saved = n.clone();
+        saved.pipeline.do_r2primemap = true;
+        let (kept, _) = saved.normalised();
+        assert!(kept.pipeline.do_r2primemap);
     }
 }

@@ -271,11 +271,26 @@ mod tests {
         c.separation.susep_net.patch = Some([128, 128, 4]);
         assert!(check_patch(&c).is_ok(), "not the method");
         c.separation.algorithm = SeparationAlgorithm::ChiSepNet;
+        c.separation.chi_sepnet.route = ChiSepNetRoute::Native;
         let e = check_patch(&c).unwrap_err().to_string();
         assert!(e.contains("χ-sepnet patch H = 120 must be a positive multiple of 16"), "{e}");
         c.separation.algorithm = SeparationAlgorithm::SusepNet;
         let e = check_patch(&c).unwrap_err().to_string();
         assert!(e.contains("SUSEP-Net patch W = 4 must be a positive multiple of 8"), "{e}");
+        // Each route is checked on the patch it runs on: a value left in the other is ignored.
+        c.separation.algorithm = SeparationAlgorithm::ChiSepNet;
+        c.separation.chi_sepnet.route = ChiSepNetRoute::Toolbox;
+        c.separation.chi_sepnet.frame_patch = Some([100, 128, 64]);
+        let e = check_patch(&c).unwrap_err().to_string();
+        assert!(e.contains("χ-sepnet frame patch D = 100 must be a positive multiple of 16"), "{e}");
+        c.separation.chi_sepnet.frame_patch = Some([128, 128, 64]);
+        assert!(check_patch(&c).is_ok(), "the network-only patch is not used here");
+        assert_eq!(c.separation.chi_sepnet.params().frame_patch, Some((128, 128, 64)));
+        c.separation.chi_sepnet.route = ChiSepNetRoute::Native;
+        c.separation.chi_sepnet.frame_patch = Some([100, 128, 64]);
+        c.separation.chi_sepnet.patch = [128, 128, 64];
+        assert!(check_patch(&c).is_ok(), "the toolbox's frame patch is not used here");
+        assert_eq!(c.separation.chi_sepnet.params().frame_patch, None);
         // The browser's are fine, and the configs map onto qsm-core's defaults.
         let b = PipelineConfig::browser();
         assert!(b.separation.chi_sepnet.validate().is_ok() && b.separation.susep_net.validate().is_ok());

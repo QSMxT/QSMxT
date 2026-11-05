@@ -651,6 +651,19 @@ mod integration_tests {
 
     /// r2star-qsm needs an R2* map or the magnitude to fit one from; with neither it must say so
     /// rather than run on nothing.
+    /// A patch χ-sepnet cannot take is refused before the images load or the weights download.
+    #[test]
+    fn separate_chi_sepnet_refuses_a_bad_frame_patch_first() {
+        use clap::Parser;
+        let cli = crate::cli::Cli::try_parse_from([
+            "qsmxt", "separate", "chi-sepnet", "--local-field", "absent.nii", "--mask", "absent.nii",
+            "--r2star", "absent.nii", "--output", "out", "--frame-patch", "100", "128", "64",
+        ]).unwrap();
+        let crate::cli::Command::Separate { command } = cli.command else { panic!() };
+        let e = super::separate::execute(command).unwrap_err().to_string();
+        assert!(e.contains("χ-sepnet frame patch D = 100 must be a positive multiple of 16"), "{e}");
+    }
+
     #[test]
     fn test_separate_r2star_qsm_needs_an_input() {
         let dir = tempfile::tempdir().unwrap();

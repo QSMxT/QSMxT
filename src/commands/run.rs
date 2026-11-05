@@ -848,6 +848,13 @@ mod tests {
         let e = super::build_config(Some(&path), &pipeline_args(&[])).unwrap_err().to_string();
         assert!(e.contains("bg_removal.vsharp.min_radius"), "{e}");
 
+        // χ-sepnet's patch on the toolbox route is refused before the weights download.
+        let chi_sepnet = ["--do-chisep", "--chisep", "chi-sepnet"];
+        let frame = |p: &[&'static str]| [&chi_sepnet[..], &["--chi-sepnet-frame-patch"], p].concat();
+        let e = super::build_config(None, &pipeline_args(&frame(&["100", "128", "64"]))).unwrap_err().to_string();
+        assert!(e.contains("separation.chi_sepnet.frame_patch (--chi-sepnet-frame-patch): χ-sepnet frame patch D = 100"), "{e}");
+        assert!(super::build_config(None, &pipeline_args(&frame(&["128", "128", "64"]))).is_ok());
+
         // In range, or set on a method that does not run: accepted.
         assert!(super::build_config(None, &pipeline_args(&["--tkd-threshold", "0"])).is_ok());
         assert!(super::build_config(None, &pipeline_args(&[])).is_ok());

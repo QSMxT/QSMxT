@@ -34,7 +34,7 @@ use crate::store::{Completed, Contrast, Data, Item, StageStore, Supplied};
 pub fn run<S: StageStore + ?Sized>(
     plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, store: &mut S, observer: &mut dyn Observer,
 ) -> Result<RunRecord, S::Error> {
-    let config = &config.normalised().0;
+    let config = &config.normalised_as_planned(plan);
     // Every front end's config is held to the settings' ranges (qsmxt checks them earlier too).
     crate::schema::check_ranges(config)?;
     let (meta, load_record, _) = load(config, facts, store, observer)?;
@@ -109,7 +109,7 @@ impl ExpectedState {
 pub fn dry_run<V: crate::store::Volumes>(
     plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, store: &crate::store::MemoryStore<V>,
 ) -> Result<Vec<Expected>, crate::EngineError> {
-    let config = &config.normalised().0;
+    let config = &config.normalised_as_planned(plan);
     crate::schema::check_ranges(config)?;
     let before = store.recorded_keys();
     let mut shadow = store.shadow();
@@ -158,7 +158,7 @@ pub fn run_step<S: StageStore + ?Sized>(
     plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, meta: &RunMetadata, step: &Step, store: &mut S,
     observer: &mut dyn Observer,
 ) -> Result<StepRecord, S::Error> {
-    Run::new(plan, &config.normalised().0, facts, meta.clone(), store, observer).take(step)
+    Run::new(plan, &config.normalised_as_planned(plan), facts, meta.clone(), store, observer).take(step)
 }
 
 /// A mask `sections` make (folded with `combine`, then `config`'s refinements after combining), or
@@ -178,7 +178,7 @@ pub fn preview_mask<S: StageStore + ?Sized>(
     inputs: &mut stages::mask::MaskInputs, sections: &[crate::masking::MaskSection],
     combine: crate::masking::MaskCombine, upto: stages::mask::Upto,
 ) -> Result<stages::mask::MaskPreview, S::Error> {
-    let config = &config.normalised().0;
+    let config = &config.normalised_as_planned(plan);
     crate::schema::check_ranges(config)?;
     let Some(at) = plan.steps.iter().position(|s| s.stage == Stage::Mask(Pass::Main)) else {
         return Err(crate::EngineError::Config("this run makes no brain mask to preview".into()).into());
@@ -1819,6 +1819,10 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                             source.insert("R2primenetTrainedFieldStrength".into(),
                                           json!(qsm_core::relaxometry::TRAINED_B0_T));
                             source.insert("R2primenetCalibrated".into(), json!(policy == R2primenetFieldPolicy::Run));
+                            // χ-sepnet's toolbox route makes its own, in its training frame.
+                            if crate::config::chisepnet_route_can_estimate_r2prime(config) {
+                                source.insert("R2primeUsedByChiSeparation".into(), json!(false));
+                            }
                             Some(predicted)
                         }
                     }
@@ -1889,6 +1893,8 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         if let Some(d) = chi_bound_decision(self.config, self.meta.field_strength, &self.meta.echo_times) {
             self.decide(d);
         }
+        let route_estimates_r2prime = self.chisepnet_route_estimates_r2prime();
+        self.decide_chisepnet_r2prime(route_estimates_r2prime);
         let params = self.with_supplied(sep::params(self.config, &self.meta, mese.is_some()), &supplied);
         let Some(key) = self.begin("chi_separation", Some(&alg_name), &params, "Skipping chi_separation (cached)",
                                    "Chi-separation") else { return Ok(()) };
@@ -1928,11 +1934,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let mut r2prime = if self.store.has(&r2prime_item) { Some(self.map(&r2prime_item)?) } else { None };
         // χ-sepnet's toolbox route predicts R2' from R2* itself, with R2PRIMEnet in its training
         // frame, as the authors do; it takes an R2' only when that is measured or supplied.
-        if alg == crate::SeparationAlgorithm::ChiSepNet
-            && self.config.separation.chi_sepnet.route == crate::ChiSepNetRoute::Toolbox
-            && self.config.separation.custom_r2prime_tool.is_none()
-            && !(self.store.has(&Item::R2) && self.config.separation.r2prime_strategy != crate::R2PrimeStrategy::R2primenet)
-        {
+        if route_estimates_r2prime {
             if r2star.is_some() {
                 self.log(Level::Info, "Chi-separation (chi-sepnet): R2' predicted from R2* inside the network's route");
             }
@@ -2044,11 +2046,59 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         self.put(Item::SeparatedChi(Contrast::Paramagnetic), Data::Real(&separated.paramagnetic))?;
         self.put(Item::SeparatedChi(Contrast::Diamagnetic), Data::Real(&separated.diamagnetic))?;
         self.put(Item::SeparatedTotalChi, Data::Real(&separated.total))?;
+        // What χ-sepnet's toolbox route used, recorded with what it made: R2′ is no output of it.
+        if crate::config::chisepnet_route_can_estimate_r2prime(self.config) {
+            let mut used = serde_json::Map::new();
+            used.insert("R2primeSource".into(), json!(if route_estimates_r2prime { "predicted" } else { "measured" }));
+            used.insert("R2primeMethod".into(), json!(if route_estimates_r2prime {
+                "R2PRIMEnet (from R2*, within chi-separation)"
+            } else {
+                "R2* - R2"
+            }));
+            for item in [Item::SeparatedChi(Contrast::Paramagnetic), Item::SeparatedChi(Contrast::Diamagnetic),
+                         Item::SeparatedTotalChi] {
+                self.store.annotate(&item, used.clone())?;
+            }
+        }
         self.complete(Done {
             step: "chi_separation", algorithm: Some(&alg_name), params: &params, outcome: None, key: &key,
             outputs: &[Item::SeparatedChi(Contrast::Paramagnetic), Item::SeparatedChi(Contrast::Diamagnetic),
                        Item::SeparatedTotalChi],
         }, &format!("Chi-separation ({alg_name})"))
+    }
+
+    /// Whether χ-sepnet's toolbox route makes its own R2′ on this run: it has none measured to take.
+    fn chisepnet_route_estimates_r2prime(&mut self) -> bool {
+        crate::config::chisepnet_route_can_estimate_r2prime(self.config)
+            && !(self.config.separation.r2prime_strategy != crate::R2PrimeStrategy::R2primenet
+                && self.store.has(&Item::R2) && self.store.has(&Item::R2prime))
+    }
+
+    /// Where χ-sepnet's toolbox route got its R2′ on this run.
+    fn decide_chisepnet_r2prime(&mut self, estimates: bool) {
+        use crate::requirements::{r2primenet_field_message, r2primenet_field_policy, R2primenetFieldPolicy};
+        if !crate::config::chisepnet_route_can_estimate_r2prime(self.config) {
+            return;
+        }
+        if !estimates {
+            self.decide(Decision::new(Topic::ChiSeparationR2prime, Choice::Measured,
+                "χ-separation used the R2′ measured as R2* − R2."));
+            return;
+        }
+        self.decide(Decision::new(Topic::ChiSeparationR2prime, Choice::Predicted,
+            "χ-separation used its own R2′, estimated from R2* by R2PRIMEnet in the network's training frame."));
+        let sep = &self.config.separation;
+        let field = self.meta.field_strength;
+        if r2primenet_field_policy(field, sep.r2prime_strategy, sep.r2primenet.ignore_field_mismatch)
+            == R2primenetFieldPolicy::RunUncalibrated
+        {
+            self.log(Level::Warn, &format!(
+                "{}. Running anyway (--r2primenet-ignore-field-mismatch): treat this chi-separation, built on \
+                 its R2', as uncalibrated.", r2primenet_field_message(field)));
+            self.decide(Decision::new(Topic::R2primenetCalibration, Choice::Uncalibrated,
+                "R2PRIMEnet was run off the field strength it was trained at, so its R2′ is uncalibrated.")
+                .with_detail(format!("{field} T")));
+        }
     }
 
     /// Retrospective motion correction: every echo co-registered onto the reference echo and the
@@ -2531,8 +2581,8 @@ pub(crate) mod tests {
     /// record reading: computing nothing.
     fn dry_recorded(config: &PipelineConfig, facts: &ScanFacts, store: &MemoryStore) -> (Plan, Vec<(String, Vec<Item>)>) {
         // As every entry point takes it ([`PipelineConfig::normalised`]).
-        let config = &config.normalised().0;
         let plan = crate::plan::plan(config, facts);
+        let config = &plan.config;
         let mut recorder = Recorder::new(store.shadow());
         dry_steps(&plan, config, facts, &mut recorder).unwrap();
         (plan, recorder.completed.into_iter().map(|(step, inputs, _)| (step, inputs)).collect())
@@ -3254,6 +3304,106 @@ pub(crate) mod tests {
         run(&plan, &config, &facts, &mut store, &mut ()).unwrap();
         assert_eq!(store.annotations(&Item::R2prime).and_then(|a| a.get("R2primeSource")), Some(&json!("predicted")));
         assert!(store.get(&Item::SeparatedTotalChi).is_some());
+    }
+
+    /// χ-sepnet's toolbox route, with an R2′ map asked for: the map's sidecar says the route did
+    /// not use it and the χ maps' say what it did. Run with `--ignored`; skipped where the weights
+    /// have not been downloaded.
+    #[test]
+    #[ignore]
+    fn the_toolbox_route_records_the_r2prime_it_used() {
+        let present = |id: &str| qsm_core::models::find_model(id)
+            .is_some_and(|m| m.files.iter().all(qsm_core::models::weight_file_present));
+        if !cfg!(feature = "onnx") || !["r2primenet", "chi-sepnet", "qsmnetme"].iter().all(|m| present(m)) {
+            eprintln!("skipped: χ-sepnet's route's weights are not available here");
+            return;
+        }
+        let (facts, mut store) = phantom();
+        let mut config = config();
+        config.pipeline.do_r2primemap = true;
+        config.pipeline.do_chi_separation = true;
+        config.separation.algorithm = crate::enums::SeparationAlgorithm::ChiSepNet;
+        config.separation.r2primenet.patch = [16, 16, 16];
+        let plan = crate::plan::plan(&config, &facts);
+        run(&plan, &config, &facts, &mut store, &mut ()).unwrap();
+        let of = |store: &MemoryStore, item: &Item, key: &str| store.annotations(item).and_then(|a| a.get(key)).cloned();
+        assert_eq!(of(&store, &Item::R2prime, "R2primeSource"), Some(json!("predicted")));
+        assert_eq!(of(&store, &Item::R2prime, "R2primeUsedByChiSeparation"), Some(json!(false)));
+        assert_eq!(of(&store, &Item::SeparatedTotalChi, "R2primeSource"), Some(json!("predicted")));
+        assert!(store.get(&Item::SeparatedTotalChi).is_some());
+    }
+
+    /// χ-sepnet's toolbox route on a dry run: the steps that run, what its step records reading,
+    /// and the R2′ it records using. Nothing is computed, so no network runs.
+    #[test]
+    fn the_toolbox_route_estimates_r2prime_unless_it_is_measured() {
+        let toolbox = |edit: fn(&mut PipelineConfig)| {
+            let mut c = config();
+            c.pipeline.do_chi_separation = true;
+            c.separation.algorithm = crate::enums::SeparationAlgorithm::ChiSepNet;
+            edit(&mut c);
+            c
+        };
+        let dry = |config: &PipelineConfig, facts: &ScanFacts, store: &MemoryStore| {
+            let plan = crate::plan::plan(config, facts);
+            let mut shadow = store.shadow();
+            let records = dry_steps(&plan, &plan.config, facts, &mut shadow).unwrap();
+            let chi_sep = records.iter().find(|r| r.id == "chi_separation").unwrap().clone();
+            (plan, records.into_iter().map(|r| r.id).collect::<Vec<_>>(), chi_sep)
+        };
+        let reads_r2prime = |plan: &Plan| plan.steps.iter().find(|s| s.stage == Stage::ChiSeparation)
+            .unwrap().reads.contains(&Item::R2prime);
+        let (facts, store) = phantom();
+
+        // Nothing asked for: no R2 step, R2* read, the weights fetched for the route.
+        let (plan, steps, chi_sep) = dry(&toolbox(|_| {}), &facts, &store);
+        assert!(!steps.iter().any(|s| s == "r2_r2prime"), "{steps:?}");
+        assert!(steps.iter().any(|s| s == "t2star_r2star"), "{steps:?}");
+        assert!(plan.models.contains(&"r2primenet"), "{:?}", plan.models);
+        assert!(!reads_r2prime(&plan));
+        assert_eq!(chi_sep.decision(crate::record::Topic::ChiSeparationR2prime).unwrap().choice,
+                   crate::record::Choice::Predicted);
+
+        // Asked for: it runs, for the user, and is not what the route reads.
+        let (plan, steps, chi_sep) = dry(&toolbox(|c| c.pipeline.do_r2primemap = true), &facts, &store);
+        assert!(steps.iter().any(|s| s == "r2_r2prime"), "{steps:?}");
+        assert!(!reads_r2prime(&plan));
+        assert_eq!(chi_sep.decision(crate::record::Topic::ChiSeparationR2prime).unwrap().choice,
+                   crate::record::Choice::Predicted);
+
+        // With a MESE: measured and given to the route, and published, without being asked for.
+        let (mut mese_facts, mut mese_store) = phantom();
+        with_mese(&mut mese_facts, &mut mese_store);
+        let (plan, steps, chi_sep) = dry(&toolbox(|_| {}), &mese_facts, &mese_store);
+        assert!(steps.iter().any(|s| s == "r2_r2prime"), "{steps:?}");
+        assert!(reads_r2prime(&plan));
+        assert!(plan.config.pipeline.do_r2primemap && plan.config.pipeline.do_r2map);
+        assert_eq!(chi_sep.decision(crate::record::Topic::ChiSeparationR2prime).unwrap().choice,
+                   crate::record::Choice::Measured);
+
+        // A MESE R2′ is told not to be measured from: the route's own, and no R2 step.
+        let (plan, steps, chi_sep) = dry(
+            &toolbox(|c| c.separation.r2prime_strategy = crate::R2PrimeStrategy::R2primenet), &mese_facts, &mese_store);
+        assert!(!steps.iter().any(|s| s == "r2_r2prime"), "{steps:?}");
+        assert!(!reads_r2prime(&plan));
+        assert_eq!(chi_sep.decision(crate::record::Topic::ChiSeparationR2prime).unwrap().choice,
+                   crate::record::Choice::Predicted);
+
+        // Off 3 T, told to go ahead: the estimate is recorded as uncalibrated with no R2 step.
+        let (mut off_facts, off_store) = phantom();
+        off_facts.field_strength = 7.0;
+        let (_, steps, chi_sep) = dry(
+            &toolbox(|c| c.separation.r2primenet.ignore_field_mismatch = true), &off_facts, &off_store);
+        assert!(!steps.iter().any(|s| s == "r2_r2prime"), "{steps:?}");
+        assert_eq!(chi_sep.decision(crate::record::Topic::R2primenetCalibration).unwrap().choice,
+                   crate::record::Choice::Uncalibrated);
+
+        // The network alone is given the R2 step's R2′, as before.
+        let (plan, steps, chi_sep) = dry(
+            &toolbox(|c| c.separation.chi_sepnet.route = crate::ChiSepNetRoute::Native), &facts, &store);
+        assert!(steps.iter().any(|s| s == "r2_r2prime"), "{steps:?}");
+        assert!(reads_r2prime(&plan));
+        assert!(chi_sep.decision(crate::record::Topic::ChiSeparationR2prime).is_none());
     }
 
     /// A supplied segmentation, a region reference measured on it, and the statistics of every map

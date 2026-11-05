@@ -328,6 +328,14 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
                 crate::cli::ChiSepNetRouteArg::Toolbox => ChiSepNetRoute::Toolbox,
                 crate::cli::ChiSepNetRouteArg::Native => ChiSepNetRoute::Native,
             };
+            let chi_sepnet = qsm_core::separation::ChiSepNetParams {
+                route,
+                patch: patch3(&args.patch).unwrap_or(qsm_core::separation::ChiSepNetParams::default().patch),
+                frame_patch: patch3(&args.frame_patch),
+                ignore_field_mismatch: args.ignore_field_mismatch,
+            };
+            // Before the weights download and the images load.
+            chi_sepnet.validate().map_err(QsmxtError::Config)?;
             // The local field is the reference grid: the toolbox route reads no QSM.
             let local_field = load_nifti(&args.local_field)?;
             let (mask, _) = load_mask(&args.mask)?;
@@ -357,12 +365,6 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
                     crate::pipeline::runner::prefetch_weights("r2primenet", "R2PRIMEnet")?;
                 }
             }
-            let chi_sepnet = qsm_core::separation::ChiSepNetParams {
-                route,
-                patch: patch3(&args.patch).unwrap_or(qsm_core::separation::ChiSepNetParams::default().patch),
-                frame_patch: patch3(&args.frame_patch),
-                ignore_field_mismatch: args.ignore_field_mismatch,
-            };
             let cfg = SeparationConfig {
                 algorithm: SeparationAlgorithm::ChiSepNet,
                 chi_sepnet,
