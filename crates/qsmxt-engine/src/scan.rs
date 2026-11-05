@@ -16,7 +16,8 @@ use crate::record::{Choice, Decision, Topic};
 pub struct ScanFacts {
     /// The matrix size of the first echo, as acquired.
     pub dims: (usize, usize, usize),
-    /// The voxel size in mm, when the front end read it from the header (the pipeline rules that
+    /// The voxel size in mm, when the front end read it from the header, as
+    /// [`crate::inputs::ScanInputs::facts`] does from the first image (the pipeline rules that
     /// depend on it stay silent until it is known: [`crate::recommendations`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub voxel_size: Option<(f64, f64, f64)>,

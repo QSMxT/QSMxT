@@ -397,11 +397,16 @@ pub fn plan_for(config: &PipelineConfig, facts: &ScanFacts, profile: &MemoryProf
         if p.do_chi_separation {
             let mut models: Vec<&'static str> = model(&config.separation.algorithm.to_string()).into_iter().collect();
             // χ-sepnet's toolbox route makes its QSM channel with QSMnetME, and its R2' from R2*
-            // with R2PRIMEnet when no R2' is measured (decided at run time, so fetched with it).
+            // with R2PRIMEnet unless it is given one. A supplied R2' it is always given. Whether
+            // R2' is measured is decided at run time (a MESE can prove unusable when it is read),
+            // so otherwise the weights are fetched with it.
             if config.separation.algorithm == crate::SeparationAlgorithm::ChiSepNet
                 && config.separation.chi_sepnet.route == crate::ChiSepNetRoute::Toolbox
             {
-                models.extend(["qsmnetme", "r2primenet"]);
+                models.push("qsmnetme");
+                if !(config.separation.custom_r2prime_tool.is_some() && facts.custom_r2prime) {
+                    models.push("r2primenet");
+                }
             }
             add(Stage::ChiSeparation, models);
         }
@@ -637,6 +642,28 @@ pub(crate) mod tests {
         config.separation.r2prime_strategy = R2PrimeStrategy::Auto;
         f.field_strength = 7.0;
         assert!(r2_models(&config, &f).is_empty(), "not run off its training field strength");
+    }
+
+    /// χ-sepnet's toolbox route lists R2PRIMEnet unless it is sure to be given an R2′: a supplied
+    /// one, as the run passes it. A named tool whose map was not found supplies nothing.
+    #[test]
+    fn the_toolbox_route_lists_r2primenet_unless_an_r2prime_is_supplied() {
+        let mut config = PipelineConfig::default();
+        config.pipeline.do_chi_separation = true;
+        config.separation.algorithm = crate::SeparationAlgorithm::ChiSepNet;
+        config.separation.chi_sepnet.route = crate::ChiSepNetRoute::Toolbox;
+        let models = |config: &PipelineConfig, f: &ScanFacts| {
+            plan(config, f).steps.iter().find(|s| s.stage == Stage::ChiSeparation).unwrap().models.clone()
+        };
+        let mut f = facts();
+        assert_eq!(models(&config, &f), ["chi-sepnet", "qsmnetme", "r2primenet"], "nothing supplied");
+        f.mese_echo_times = Some(vec![0.01, 0.02, 0.03, 0.04]);
+        assert_eq!(models(&config, &f), ["chi-sepnet", "qsmnetme", "r2primenet"], "the MESE may yet give no R2");
+        config.separation.custom_r2prime_tool = Some("mine".into());
+        assert_eq!(models(&config, &f), ["chi-sepnet", "qsmnetme", "r2primenet"], "named, but not found");
+        f.custom_r2prime = true;
+        assert_eq!(models(&config, &f), ["chi-sepnet", "qsmnetme"]);
+        assert!(!plan(&config, &f).models.contains(&"r2primenet"), "nor does any other step need it");
     }
 
     /// A configuration as a front end holds it (only the outputs asked for) is planned as `qsmxt
