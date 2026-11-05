@@ -749,3 +749,22 @@ fn chi_sepnet_offers_the_vendor_tukey_window() {
         assert_eq!((r.rule.as_str(), r.kind, r.recommended.value.clone()), ("chi-sep.tukey-siemens-ge", Kind::Reference, json!(0.4)), "{alg}");
     }
 }
+
+/// The Note always says whose rule it is: the choice a discouraged value is discouraged with, and
+/// why, and which reference pipeline a value differs from.
+#[test]
+fn notes_name_the_rule_they_come_from() {
+    let mut c = PipelineConfig::default();
+    c.inversion.algorithm = QsmAlgorithm::Medi;
+    c.inversion.heidi.enabled = true;
+    let found = recommendations(&c, &Facts::default());
+    let r = found.iter().find(|r| r.rule == "heidi.seed-regularised").unwrap();
+    assert_eq!(r.note(), format!("QSM inversion used MEDI, which is discouraged with HEIDI streaking reduction: {}", r.reason));
+
+    let mut c = PipelineConfig::default();
+    c.field_mapping.b0_estimation = crate::enums::B0Estimation::ComplexFit;
+    c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
+    let found = recommendations(&c, &Facts::default());
+    let r = found.iter().find(|r| r.rule == "complex-fit.unwrap-region-growing").unwrap();
+    assert_eq!(r.note(), "Phase unwrapping used Laplacian; this differs from the Complex fit reference pipeline, which uses MEDI region growing");
+}

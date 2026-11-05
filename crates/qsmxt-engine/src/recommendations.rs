@@ -290,10 +290,15 @@ impl Recommendation {
         }
     }
 
-    /// The method the rule is scoped to, when it is one ("MEDI"); `None` when the trigger is
-    /// another setting's value, or the setting itself.
+    /// The choice the rule is scoped to ("MEDI", "HEIDI streaking reduction"); `None` when its
+    /// trigger is the setting itself, or a fact about the scan.
+    fn scope(&self) -> Option<&str> {
+        (!self.trigger.name.is_empty() && self.trigger.setting != self.setting).then_some(&self.trigger.name)
+    }
+
+    /// [`Self::scope`], when that choice is a method.
     fn method(&self) -> Option<&str> {
-        (METHOD_SETTINGS.contains(&self.trigger.setting.as_str()) && self.trigger.setting != self.setting).then_some(&self.trigger.name)
+        self.scope().filter(|_| METHOD_SETTINGS.contains(&self.trigger.setting.as_str()))
     }
 
     /// The setting is a flag.
@@ -303,20 +308,25 @@ impl Recommendation {
 
     /// What the departure is from, after the current value: "; MEDI recommends PDF: why",
     /// ", which is discouraged with NDI: why", "; this differs from the MEDI reference pipeline,
-    /// which uses BET". With `why` off, the rule's reason is left out: what the methods text says.
+    /// which uses BET". Each names the choice the rule is scoped to, so the reader can tell whose
+    /// it is. With `why` off, the rule's reason is left out, but for a discouraged value, which
+    /// the sentence alone would not explain: what the methods text says.
     fn departure(&self, why: bool) -> String {
         let rec = if self.flag() { format!("turning it {}", self.recommended.name) } else { self.recommended.name.clone() };
         let uses = if self.flag() { format!("has it {}", self.recommended.name) } else { format!("uses {}", self.recommended.name) };
         let verb = if self.strength == Strength::Required { "requires" } else { "recommends" };
-        let reason = if why { format!(": {}", self.reason) } else { String::new() };
-        match (self.strength, self.method()) {
-            (Strength::Discouraged, Some(m)) => format!(", which is discouraged with {m}{reason}"),
-            (Strength::Discouraged, None) => format!(", which is discouraged{reason}"),
-            (Strength::Reference, Some(m)) => format!("; this differs from the {m} reference pipeline, which {uses}"),
-            (Strength::Reference, None) if why => format!("; the reference pipeline {uses}{reason}"),
-            (Strength::Reference, None) => format!("; this differs from the reference pipeline, which {uses}"),
-            (_, Some(m)) => format!("; {m} {verb} {rec}{reason}"),
-            (_, None) => format!("; {rec} is {verb}d{reason}").replace("recommendsd", "recommended").replace("requiresd", "required"),
+        let reason = if why || self.strength == Strength::Discouraged { format!(": {}", self.reason) } else { String::new() };
+        let needed = if self.strength == Strength::Required { "required" } else { "recommended" };
+        match (self.strength, self.method(), self.scope()) {
+            (Strength::Discouraged, _, Some(s)) => format!(", which is discouraged with {s}{reason}"),
+            (Strength::Discouraged, _, None) => format!(", which is discouraged{reason}"),
+            (Strength::Reference, Some(m), _) => format!("; this differs from the {m} reference pipeline, which {uses}"),
+            (Strength::Reference, None, Some(s)) => format!("; this differs from the reference pipeline for {s}, which {uses}"),
+            (Strength::Reference, None, None) if why => format!("; the reference pipeline {uses}{reason}"),
+            (Strength::Reference, None, None) => format!("; this differs from the reference pipeline, which {uses}"),
+            (_, Some(m), _) => format!("; {m} {verb} {rec}{reason}"),
+            (_, None, Some(s)) => format!("; {rec} is {needed} with {s}{reason}"),
+            (_, None, None) => format!("; {rec} is {needed}{reason}"),
         }
     }
 
@@ -328,8 +338,8 @@ impl Recommendation {
 
     /// The methods text's Note line for this departure, without its full stop: what was done, and
     /// what the method's reference uses ("Background removal used LBV; this differs from the RTS
-    /// reference pipeline, which uses V-SHARP"). The rule's reason and source are for the log and
-    /// the TUI, not a methods section.
+    /// reference pipeline, which uses V-SHARP"). The source, and the reason unless the value is
+    /// discouraged, are for the log and the TUI, not a methods section.
     pub fn note(&self) -> String {
         let verb = if self.current.iter().all(|n| n.value.is_string()) { "used" } else { "was" };
         format!("{} {verb} {}{}", self.label, self.current_text(), self.departure(false))
@@ -337,7 +347,7 @@ impl Recommendation {
 }
 
 /// The settings whose values are methods (a rule triggered by one is that method's).
-const METHOD_SETTINGS: [&str; 4] = ["inversion.algorithm", "bg_removal.algorithm", "masking.sections", "separation.algorithm"];
+const METHOD_SETTINGS: [&str; 5] = ["inversion.algorithm", "bg_removal.algorithm", "masking.sections", "separation.algorithm", "field_mapping.b0_estimation"];
 
 // ─── What is known about the scan ───
 
@@ -740,6 +750,7 @@ fn trigger_name(core_path: &str, value_name: &str) -> String {
         "separation.algorithm" => value_name.to_string(),
         // The echo combination by its method's name: "Complex fit" (MEDI's Fit_ppm_complex).
         "field_mapping.b0_estimation" => value_name.to_string(),
+        "inversion.apply_heidi" => "HEIDI streaking reduction".to_string(),
         _ => format!("{} {}", label_of(core_path).to_lowercase(), value_name),
     }
 }

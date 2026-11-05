@@ -62,7 +62,7 @@ Suggestions come in two kinds, labelled differently:
   better. The pop-up gives the reason, and the recommended value is preselected.
 - **Original authors' setting**: what the method's authors used, with no reason given that it is
   better. It is shown so that you can reproduce their pipeline, but it is not a recommendation,
-  so it is never preselected.
+  so its value is never preselected: **Keep mine** is.
 
 When you choose a method that has a reference pipeline (for example MEDI, QSMART or iLSQR) and
 your settings differ from it, a pop-up titled with that pipeline (*MEDI's reference pipeline*)
@@ -83,17 +83,20 @@ recommendations, they are listed first. Nothing changes unless you apply it:
   dismiss, so nothing is saved; the pop-up comes back only when you choose the method again
   after switching away.
 
-When the pop-up holds only authors' settings, no button is preselected: press `←`/`→` to pick
-one. The pop-up opens once per method choice. If your settings already match the reference
-pipeline, there is no pop-up.
+When the pop-up holds only authors' settings, **Keep mine** is preselected: press `←`/`→` to pick
+another button. The pop-up opens once per method choice. If your settings already match the
+reference pipeline, there is no pop-up. A pop-up too long for the terminal scrolls above its
+buttons, with a scrollbar: `↑`/`↓` or `PgUp`/`PgDn`.
 
 A setting that departs from a rule is marked with the method whose rule it is and what that
 rule uses, for example `ⓘ MEDI: BET`, or `ⓘ MEDI, PDF: BET` when several methods' references
 agree. ⚑ marks a recommendation (or something required or discouraged) that is still open; ⓘ
 marks a difference from an original authors' setting, or a recommendation you kept. Press `!` on a
-marked setting to see its details: whose rule it is, what it uses, why, the source, and
-**Apply** with the other values it allows. The line under the help gives each covered setting's
-reference value and its source, whether or not the setting differs.
+marked setting (the row and the key bar say so when it is highlighted) to see its advice: whose
+rule it is, what it uses, why, the source, and **Apply** with the other values it allows. A
+recommendation's value is preselected, and for an authors' setting **Keep mine** is. The line under
+the help gives each covered setting's reference value and its source, whether or not the setting
+differs.
 
 ## Layout
 

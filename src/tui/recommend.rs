@@ -8,8 +8,8 @@
 //! - **Two kinds, labelled apart** ([`rec::Kind`]): a reasoned finding (required, recommended,
 //!   discouraged) is labelled by its strength ("Recommended") with its reason, and its value is
 //!   preselected; an original authors' setting (a `reference` rule: what the method's authors
-//!   did, with no reason given that it is better) is labelled "Original authors' setting" and is
-//!   never preselected.
+//!   did, with no reason given that it is better) is labelled "Original authors' setting", and
+//!   its value is never preselected: Keep mine is.
 //! - **The recommendation pop-up** opens only when a change creates a `required`, `recommended`
 //!   or `discouraged` finding that is not dismissed. It gives the reason (the source behind `w`,
 //!   "why?"), **Apply** (the recommended value, preselected), the other values the rule allows,
@@ -26,7 +26,7 @@
 //!   setting** (recommendations start on their value, authors' settings on "keep") and **Keep
 //!   mine** (closes it: an authors' setting has nothing to dismiss, so nothing is recorded, and
 //!   it is offered again only when the method is chosen again). With only authors' settings,
-//!   nothing is preselected. Nothing changes unless applied. What is applied together follows
+//!   Keep mine is preselected. Nothing changes unless applied. What is applied together follows
 //!   [`rec::settle`], as on every host: a reasoned finding outranks an authors' setting, and two
 //!   authors' settings that disagree leave the setting as it is, marked, to choose with `!`.
 //! - **Pickers** ([`picker_noun`]): a selector whose choice can open that pop-up, or that has
@@ -64,6 +64,8 @@ pub struct RecModal {
     pub cursor: Option<usize>,
     /// Show the sources ("why?").
     pub why: bool,
+    /// How far the text above the choices is scrolled (PgUp/PgDn), when it does not all fit.
+    pub scroll: u16,
     /// The details of a marked setting, opened with `!`: every rule the setting departs from,
     /// `reference` ones included, with their sources.
     pub details: bool,
@@ -73,16 +75,22 @@ impl RecModal {
     pub fn new(findings: Vec<Recommendation>) -> Self {
         let conflict = findings.len() > 1;
         let choices = choices(&findings);
-        RecModal { findings, choices, cursor: (!conflict).then_some(0), why: false, details: false }
+        RecModal { findings, choices, cursor: (!conflict).then_some(0), why: false, scroll: 0, details: false }
     }
 
     /// The details of a setting: `findings` are the rules it departs from, offered ones first.
-    /// Apply is preselected only for a recommendation, never for an authors' setting.
+    /// Apply is preselected for a recommendation, Keep mine for an authors' setting, and nothing
+    /// when recommendations disagree.
     pub fn details(findings: Vec<Recommendation>) -> Self {
         let conflict = findings.iter().any(|r| r.conflict && open(r));
-        let offered = findings.first().is_some_and(open);
+        let reasoned = findings.first().is_some_and(|r| r.kind == Kind::Reasoned);
         let choices = choices(&findings);
-        RecModal { findings, choices, cursor: (!conflict && offered).then_some(0), why: true, details: true }
+        let cursor = match (conflict, reasoned) {
+            (true, _) => None,
+            (false, true) => Some(0),
+            (false, false) => choices.iter().position(|c| *c == RecChoice::Keep),
+        };
+        RecModal { findings, choices, cursor, why: true, scroll: 0, details: true }
     }
 
     pub fn title(&self) -> String {
@@ -221,10 +229,12 @@ pub struct RefModal {
     /// The buttons, for what the pop-up holds ([`RefModal::new`]).
     pub buttons: Vec<RefButton>,
     /// The highlighted button: the first ("Apply recommended") when there are recommendations,
-    /// none when it holds only authors' settings, which are never preselected.
+    /// Keep mine when it holds only authors' settings, whose values are never preselected.
     pub cursor: Option<usize>,
     /// Choosing per setting: the highlighted setting.
     pub row: Option<usize>,
+    /// How far the list above the buttons is scrolled, when it does not all fit.
+    pub scroll: u16,
 }
 
 impl RefModal {
@@ -248,7 +258,8 @@ impl RefModal {
             buttons.push(RefButton::ApplyAll);
         }
         buttons.extend([RefButton::ChoosePerSetting, RefButton::KeepMine]);
-        RefModal { methods, items, buttons, cursor: reasoned.then_some(0), row: None }
+        let cursor = if reasoned { 0 } else { buttons.len() - 1 };
+        RefModal { methods, items, buttons, cursor: Some(cursor), row: None, scroll: 0 }
     }
 
     /// A button's label, for what the pop-up holds.
@@ -292,6 +303,20 @@ pub struct RefState {
     /// Methods just chosen whose pop-up has not been shown, each with the settings it leaves
     /// out (those the pop-up that chose it had just decided).
     pub pending: Vec<(Trigger, Vec<String>)>,
+}
+
+/// A pop-up's scroll position after a scrolling key. Drawing clamps it to what the text needs.
+fn scrolled(scroll: u16, key: KeyCode) -> u16 {
+    const PAGE: u16 = 10;
+    match key {
+        KeyCode::Up | KeyCode::Char('k') => scroll.saturating_sub(1),
+        KeyCode::Down | KeyCode::Char('j') => scroll.saturating_add(1),
+        KeyCode::PageUp => scroll.saturating_sub(PAGE),
+        KeyCode::PageDown => scroll.saturating_add(PAGE),
+        KeyCode::Home => 0,
+        KeyCode::End => u16::MAX,
+        _ => scroll,
+    }
 }
 
 /// A finding offered as a change and not dismissed: what can open the pop-up or show a badge.
@@ -455,6 +480,7 @@ impl App {
         let Some(modal) = self.rec_modal.as_mut() else { return };
         let n = modal.choices.len();
         match key.code {
+            KeyCode::PageUp | KeyCode::PageDown | KeyCode::Home | KeyCode::End => modal.scroll = scrolled(modal.scroll, key.code),
             KeyCode::Esc => self.rec_modal = None,
             KeyCode::Char('w') | KeyCode::Char('?') => modal.why = !modal.why,
             KeyCode::Up | KeyCode::Left | KeyCode::Char('k') => {
@@ -498,6 +524,8 @@ impl App {
         let per_setting = modal.row.is_some();
         let n = modal.buttons.len();
         match (key.code, modal.row) {
+            (KeyCode::PageUp | KeyCode::PageDown | KeyCode::Home | KeyCode::End, _)
+            | (KeyCode::Up | KeyCode::Down | KeyCode::Char('k') | KeyCode::Char('j'), None) => modal.scroll = scrolled(modal.scroll, key.code),
             (KeyCode::Esc, Some(_)) => modal.row = None,
             (KeyCode::Esc, None) => self.refs.modal = None,
             (KeyCode::Left | KeyCode::Char('h'), None) => modal.cursor = Some(modal.cursor.map_or(n - 1, |c| (c + n - 1) % n)),
@@ -607,6 +635,16 @@ impl App {
                 Some(v) => x.current.iter().all(|n| n.value == *v),
             })
         };
+        // A rule's value can fix more than its setting: "FFT, 12-voxel padding" is a solver and its
+        // padding, which has a row of its own. Each candidate takes those too.
+        let companions = self.rule_companions(rule, value, &r.setting);
+        let clone_form = || {
+            let mut app = self.clone_form();
+            for (field, v) in &companions {
+                app.set_companion(field, v);
+            }
+            app
+        };
         let mut candidates: Vec<App> = Vec::new();
         for (_, _, rows) in self.all_pages() {
             for row in rows {
@@ -624,13 +662,17 @@ impl App {
                 match &row {
                     PipelineRow::AlgoSelect { options, .. } => {
                         for i in 0..options.len() {
-                            let mut app = self.clone_form();
+                            let mut app = clone_form();
+                            // A value of this setting only: the inversion's LSQR entries also say
+                            // whether HEIDI is on, and a rule on HEIDI's seed must leave it on.
+                            let heidi = app.pipeline_state.heidi_enabled;
                             app.set_field_select(field, i);
+                            app.pipeline_state.heidi_enabled = heidi;
                             candidates.push(app);
                         }
                     }
                     PipelineRow::Toggle { .. } => {
-                        let mut app = self.clone_form();
+                        let mut app = clone_form();
                         app.toggle_field(field);
                         candidates.push(app);
                     }
@@ -645,7 +687,7 @@ impl App {
                             other => vec![other.to_string()],
                         };
                         for t in texts {
-                            let mut app = self.clone_form();
+                            let mut app = clone_form();
                             if let Some(s) = app.field_text_mut(field) {
                                 *s = t;
                             }
@@ -678,6 +720,34 @@ impl App {
                 Ok(())
             }
             None => Err(format!("{} cannot be set to {} here: change it on its row", r.label, r.recommended.name)),
+        }
+    }
+
+    /// The other form fields applying `rule` sets, and their values: the engine's [`rec::apply`]
+    /// on the form's config, read back from what it changed beyond `setting`.
+    fn rule_companions(&self, rule: &str, value: Option<&Value>, setting: &str) -> Vec<(&'static str, Value)> {
+        let Ok(before) = super::command::config_from_app(self) else { return vec![] };
+        let mut after = before.clone();
+        if rec::apply(&mut after, rule, value).is_err() {
+            return vec![];
+        }
+        let (Ok(before), Ok(after)) = (serde_json::to_value(&before), serde_json::to_value(&after)) else { return vec![] };
+        let mut changed = Vec::new();
+        changed_settings(&before, &after, String::new(), &mut changed);
+        changed.into_iter()
+            .filter(|(path, _)| path != setting)
+            .filter_map(|(path, v)| super::app::field_of_path(&path).map(|field| (field, v)))
+            .collect()
+    }
+
+    /// Set a form field to a value of its setting, as a companion of an applied value.
+    fn set_companion(&mut self, field: &str, value: &Value) {
+        if let Value::Bool(on) = value {
+            if self.field_toggle(field) != *on {
+                self.toggle_field(field);
+            }
+        } else if let Some(text) = self.field_text_mut(field) {
+            *text = field_text_of(value);
         }
     }
 
@@ -723,6 +793,30 @@ impl App {
         }
         let marked = view.iter().any(|r| r.setting == path && r.departs);
         Some(format!("{}{}", parts.join(" · "), if marked { " — ! for details" } else { "" }))
+    }
+}
+
+/// The settings that differ between two configs (as JSON), by path, with their new values.
+fn changed_settings(before: &Value, after: &Value, path: String, out: &mut Vec<(String, Value)>) {
+    match (before, after) {
+        (Value::Object(b), Value::Object(a)) => {
+            for (k, v) in a {
+                let path = if path.is_empty() { k.clone() } else { format!("{path}.{k}") };
+                changed_settings(b.get(k).unwrap_or(&Value::Null), v, path, out);
+            }
+        }
+        _ if before != after => out.push((path, after.clone())),
+        _ => {}
+    }
+}
+
+/// A value as a text row holds it: one number for a vector with the same value on every axis.
+fn field_text_of(value: &Value) -> String {
+    let plain = |v: &Value| v.as_str().map_or_else(|| v.to_string(), str::to_string);
+    match value {
+        Value::Array(xs) if xs.iter().all(|x| Some(x) == xs.first()) && !xs.is_empty() => plain(&xs[0]),
+        Value::Array(xs) => xs.iter().map(plain).collect::<Vec<_>>().join(" "),
+        other => plain(other),
     }
 }
 
@@ -776,7 +870,7 @@ fn group(view: &[Recommendation], first: &Recommendation) -> Vec<Recommendation>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::app::QSM_ALGO_OPTIONS;
+    use super::super::app::{QSM_ALGO_OPTIONS, QSM_PICKER_OPTIONS, LSQR_HEIDI};
 
     fn app() -> App {
         let mut app = App::new_for_trial();
@@ -792,7 +886,7 @@ mod tests {
     /// MEDI with mSMV and its prefilter off: discouraged (`medi-msmv.prefilter`).
     fn medi_msmv_without_prefilter() -> App {
         let mut app = app();
-        select(&mut app, "qsm_algorithm", "medi", QSM_ALGO_OPTIONS);
+        select(&mut app, "qsm_algorithm", "medi", &QSM_PICKER_OPTIONS);
         assert!(app.rec_modal.is_none(), "MEDI at its defaults departs from nothing it is offered");
         // Its reference pipeline pop-up: closed, nothing changes.
         app.handle_ref_modal_key(KeyEvent::from(KeyCode::Esc));
@@ -860,7 +954,7 @@ mod tests {
         let lsqr = QSM_ALGO_OPTIONS.iter().position(|o| *o == "lsqr").unwrap();
         for (alg, rule) in [("rts", "heidi.seed-rts"), ("tikhonov", "heidi.seed-lsqr"), ("medi", "heidi.seed-regularised")] {
             let mut app = app();
-            select(&mut app, "qsm_algorithm", alg, QSM_ALGO_OPTIONS);
+            select(&mut app, "qsm_algorithm", alg, &QSM_PICKER_OPTIONS);
             // The method's own reference pipeline pop-up, if any: closed, nothing changes.
             app.handle_ref_modal_key(KeyEvent::from(KeyCode::Esc));
             app.rec_modal = None;
@@ -882,7 +976,7 @@ mod tests {
         }
         // LSQR+HEIDI is the reference: nothing to offer.
         let mut app = app();
-        select(&mut app, "qsm_algorithm", "lsqr", QSM_ALGO_OPTIONS);
+        select(&mut app, "qsm_algorithm", "lsqr", &QSM_PICKER_OPTIONS);
         app.handle_ref_modal_key(KeyEvent::from(KeyCode::Esc));
         app.rec_modal = None;
         app.check_recommendations();
@@ -990,7 +1084,7 @@ mod tests {
     #[test]
     fn reference_departures_are_information_only() {
         let mut app = app();
-        select(&mut app, "qsm_algorithm", "rts", QSM_ALGO_OPTIONS);
+        select(&mut app, "qsm_algorithm", "rts", &QSM_PICKER_OPTIONS);
         let row = PipelineRow::AlgoSelect { label: "", field: "bf_algorithm", options: &[], help: &[] };
         let text = App::row_reference(&app.rule_view(), &row).unwrap();
         assert!(text.starts_with("Authors' setting: V-SHARP (RTS; QSM.jl README.md"), "{text}");
@@ -1025,7 +1119,7 @@ mod tests {
         let mut app = app();
         assert_eq!(super::super::app::MASK_PRESET_OPTIONS[app.pipeline_state.mask_preset], "robust-threshold");
         assert!(app.refs.modal.is_none(), "nothing at start-up");
-        select(&mut app, "qsm_algorithm", "medi", QSM_ALGO_OPTIONS);
+        select(&mut app, "qsm_algorithm", "medi", &QSM_PICKER_OPTIONS);
         app
     }
 
@@ -1107,23 +1201,22 @@ mod tests {
         let modal = app.refs.modal.as_ref().expect("MEDI's reference pipeline pop-up");
         assert_eq!(modal.title(), " MEDI's reference pipeline ");
         // Only the authors' settings: nothing preselected, so Enter alone changes nothing.
-        assert_eq!((modal.cursor, modal.buttons[0]), (None, RefButton::ApplyAll));
+        assert_eq!(modal.buttons[0], RefButton::ApplyAll);
+        assert_eq!(modal.cursor.map(|c| modal.buttons[c]), Some(RefButton::KeepMine), "Keep mine is preselected");
         assert!(modal.items.iter().all(|i| i.finding.kind == Kind::Reference && i.options[i.pick].is_none()));
         let s = settings(modal);
         assert!(s.contains(&"bg_removal.algorithm") && s.contains(&"masking.sections"), "{s:?}");
         let text = screen(&mut app, "MEDI chosen");
         assert!(text.contains("V-SHARP → PDF") && text.contains("threshold → BET") && text.contains("README.m:124"), "{text}");
-        assert!(text.contains("Original authors' settings") && text.contains("none is preselected"), "{text}");
+        assert!(text.contains("Original authors' settings") && text.contains("none is applied unless you choose it"), "{text}");
         assert!(text.contains("Apply the authors' settings") && text.contains("Choose per setting") && text.contains("Keep mine"));
-        key(&mut app, KeyCode::Enter);
-        assert!(app.refs.modal.is_some(), "Enter waits for a choice");
         // Apply the authors' settings, chosen.
         key(&mut app, KeyCode::Right);
         key(&mut app, KeyCode::Enter);
         // The complex fit is now chosen, and PDF: one pop-up, PDF's measured suggestion of 300 CG
         // iterations first (preselected), then the complex fit's authors' unwrapper (not).
         let modal = app.refs.modal.as_ref().expect("the complex fit's authors' setting, with PDF's suggestion");
-        assert_eq!(modal.title(), " The reference for Complex fit ");
+        assert_eq!(modal.title(), " Complex fit's reference pipeline ");
         let rules: Vec<&str> = modal.items.iter().map(|i| i.finding.rule.as_str()).collect();
         assert_eq!(rules, ["pdf.cg-iterations", "complex-fit.unwrap-region-growing"]);
         assert_eq!((modal.cursor, modal.buttons[0]), (Some(0), RefButton::ApplyRecommended));
@@ -1166,9 +1259,9 @@ mod tests {
         app.check_recommendations();
         assert!(app.refs.modal.is_none() && app.rec_modal.is_none());
         // Away and back: offered again.
-        select(&mut app, "qsm_algorithm", "rts", QSM_ALGO_OPTIONS);
+        select(&mut app, "qsm_algorithm", "rts", &QSM_PICKER_OPTIONS);
         assert!(app.refs.modal.is_none());
-        select(&mut app, "qsm_algorithm", "medi", QSM_ALGO_OPTIONS);
+        select(&mut app, "qsm_algorithm", "medi", &QSM_PICKER_OPTIONS);
         assert!(app.refs.modal.as_ref().is_some_and(|m| m.methods[0].name == "MEDI"));
     }
 
@@ -1205,7 +1298,7 @@ mod tests {
         let mut app = app();
         app.set_field_select("mask_preset", 1);
         app.check_recommendations();
-        select(&mut app, "qsm_algorithm", "qsmart", QSM_ALGO_OPTIONS);
+        select(&mut app, "qsm_algorithm", "qsmart", &QSM_PICKER_OPTIONS);
         app.refs.modal = None;
         app.set_field_select("mask_preset", 0);
         app.check_recommendations();
@@ -1221,12 +1314,10 @@ mod tests {
         assert!(modal.details);
         assert_eq!(modal.title(), " Original authors' setting: QSMART's reference pipeline ");
         assert_eq!(modal.choices[0], RecChoice::Apply { rule: "qsmart.mask-bet".into(), value: None, label: "Use the authors' setting: BET".into() });
-        assert_eq!(modal.cursor, None, "an authors' setting is never preselected");
+        assert_eq!(modal.cursor.map(|c| &modal.choices[c]), Some(&RecChoice::Keep), "an authors' setting: Keep mine is preselected");
         let text = screen(&mut app, "QSMART mask details (!)");
         assert!(text.contains("Original authors' setting (not a recommendation)")
             && text.contains("QSMART's reference pipeline uses BET") && text.contains("Source"), "{text}");
-        key(&mut app, KeyCode::Enter);
-        assert!(app.rec_modal.is_some(), "Enter waits for a choice");
         key(&mut app, KeyCode::Down);
         key(&mut app, KeyCode::Enter);
         assert_eq!(App::row_marker(&app.rule_view(), &row), None);
@@ -1239,14 +1330,14 @@ mod tests {
         let mut app = app();
         // MEDI with mSMV and the prefilter off is discouraged; choosing MEDI with them set
         // creates that and chooses MEDI at once.
-        select(&mut app, "qsm_algorithm", "medi", QSM_ALGO_OPTIONS);
+        select(&mut app, "qsm_algorithm", "medi", &QSM_PICKER_OPTIONS);
         app.refs.modal = None;
         app.toggle_field("medi_msmv");
         app.toggle_field("medi_msmv_prefilter");
         app.check_recommendations();
         app.rec_modal = None;
-        select(&mut app, "qsm_algorithm", "rts", QSM_ALGO_OPTIONS);
-        select(&mut app, "qsm_algorithm", "medi", QSM_ALGO_OPTIONS);
+        select(&mut app, "qsm_algorithm", "rts", &QSM_PICKER_OPTIONS);
+        select(&mut app, "qsm_algorithm", "medi", &QSM_PICKER_OPTIONS);
         assert!(app.rec_modal.is_none());
         let modal = app.refs.modal.as_ref().expect("one pop-up");
         assert_eq!(modal.items[0].finding.rule, "medi-msmv.prefilter", "the recommendation first");
@@ -1288,7 +1379,7 @@ mod tests {
         assert_eq!(app.field_select("qsm_algorithm"), before, "not cycled");
         assert!(app.algo_modal.is_some(), "the picker opened");
         app.algo_modal = None;
-        select(&mut app, "qsm_algorithm", "medi", QSM_ALGO_OPTIONS);
+        select(&mut app, "qsm_algorithm", "medi", &QSM_PICKER_OPTIONS);
         app.refs.modal = None;
         assert!(app.goto_field("qsm_algorithm"));
         let text = screen(&mut app, "A method picker row and its footer");
@@ -1307,5 +1398,131 @@ mod tests {
             let row = path == "masking.sections" || super::super::app::FIELD_PATHS.iter().any(|(_, p)| *p == path);
             assert!(row, "{core_path} ({path}) has no TUI row");
         }
+    }
+
+    /// iLSQR's reference Laplacian solver is a solver and its padding, which has a row of its own.
+    #[test]
+    fn apply_sets_every_field_a_rules_value_needs() {
+        let mut app = app();
+        select(&mut app, "unwrapping_algorithm", "laplacian", super::super::app::UNWRAP_OPTIONS);
+        app.refs.modal = None;
+        for solver in ["dct", "fft", "mirror"] {
+            app.set_field_select("laplacian_solver", super::super::app::LAPLACIAN_SOLVER_OPTIONS.iter().position(|o| *o == solver).unwrap());
+            let row = PipelineRow::AlgoSelect { label: "", field: "laplacian_solver", options: &[], help: &[] };
+            assert_eq!(App::row_marker(&app.rule_view(), &row).map(|m| m.text), Some("iLSQR: FFT, 12-voxel padding".into()), "{solver}");
+        }
+        app.apply_recommendation("sti.laplacian-solver", None).unwrap();
+        assert_eq!(app.pipeline_state.laplacian_solver, 1, "FFT");
+        assert_eq!(app.pipeline_state.laplacian_fft_pad, "12");
+        let c = super::super::command::config_from_app(&app).unwrap();
+        assert_eq!(c.field_mapping.laplacian_fft_pad, [12; 3]);
+        let row = PipelineRow::AlgoSelect { label: "", field: "laplacian_solver", options: &[], help: &[] };
+        assert_eq!(App::row_marker(&app.rule_view(), &row), None, "the marker goes");
+    }
+
+    /// `!` on a marked setting is announced, on the row and in the key bar.
+    #[test]
+    fn a_marked_row_says_bang_opens_its_advice() {
+        let mut app = app();
+        select(&mut app, "qsm_algorithm", "qsmart", &QSM_PICKER_OPTIONS);
+        app.refs.modal = None;
+        app.set_field_select("mask_preset", 0);
+        app.check_recommendations();
+        assert!(app.goto_field("mask_preset"));
+        let text = screen(&mut app, "a marked row");
+        assert!(text.contains("(! for advice)") && text.contains("!:Advice"), "{text}");
+        assert!(app.goto_field("qsm_algorithm"));
+        let text = screen(&mut app, "an unmarked row");
+        assert!(!text.contains("(! for advice)") && !text.contains("!:Advice"), "{text}");
+    }
+
+    /// `!` preselects by kind: a recommendation's value, Keep mine for an authors' setting.
+    #[test]
+    fn details_preselect_by_kind() {
+        let mut app = medi_msmv_without_prefilter();
+        app.rec_modal = None;
+        app.refs.modal = None;
+        assert!(app.goto_field("medi_msmv_prefilter"));
+        key(&mut app, KeyCode::Char('!'));
+        let modal = app.rec_modal.as_ref().expect("details");
+        assert!(matches!(modal.cursor.map(|c| &modal.choices[c]), Some(RecChoice::Apply { .. })), "a recommendation: the change");
+    }
+
+    /// The buttons all show, on any width, and the text scrolls above them with a scrollbar.
+    #[test]
+    fn long_pop_ups_keep_their_buttons_and_scroll() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let draw = |app: &mut App, w, h| {
+            let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
+            t.draw(|f| super::super::ui::draw(f, app)).unwrap();
+            let buf = t.backend().buffer();
+            (0..buf.area.height).map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect::<String>()).collect::<Vec<_>>().join("\n")
+        };
+        let mut app = app();
+        select(&mut app, "qsm_algorithm", "medi", &QSM_PICKER_OPTIONS);
+        assert!(app.refs.modal.is_some());
+        for (w, h) in [(145, 12), (80, 12), (60, 16)] {
+            let text = draw(&mut app, w, h);
+            assert!(text.contains("Keep mine") && text.contains("Choose per setting"), "{w}x{h}:\n{text}");
+            assert!(text.contains("Esc close"), "the hint stays too, {w}x{h}:\n{text}");
+        }
+        // Scrolling moves the text under the buttons, and stops at its end.
+        let top = draw(&mut app, 145, 12);
+        assert!(top.contains('█') || top.contains('║'), "a scrollbar:\n{top}");
+        key(&mut app, KeyCode::End);
+        let bottom = draw(&mut app, 145, 12);
+        assert_ne!(top, bottom);
+        let at_end = app.refs.modal.as_ref().unwrap().scroll;
+        assert!(at_end > 0 && at_end < u16::MAX, "drawing clamps it: {at_end}");
+        key(&mut app, KeyCode::Up);
+        assert_eq!(app.refs.modal.as_ref().unwrap().scroll, at_end - 1);
+        assert!(bottom.contains("Keep mine"));
+
+        // The details pop-up: its choices stay in view however long the text.
+        let mut app = medi_msmv_without_prefilter();
+        app.rec_modal = None;
+        app.refs.modal = None;
+        assert!(app.goto_field("medi_msmv_prefilter"));
+        key(&mut app, KeyCode::Char('!'));
+        let text = draw(&mut app, 80, 10);
+        assert!(text.contains("Keep mine"), "{text}");
+        key(&mut app, KeyCode::PageDown);
+        assert!(app.rec_modal.as_ref().unwrap().scroll > 0 || !text.contains("PgUp/PgDn"));
+    }
+
+    /// LSQR+HEIDI in the picker is LSQR with HEIDI on: one representation, and the box and the
+    /// picker agree whichever is used.
+    #[test]
+    fn lsqr_heidi_is_an_alias_for_lsqr_with_the_box_ticked() {
+        use super::super::app::{AlgoModal, AlgoModalTarget};
+        let at = |name: &str| QSM_PICKER_OPTIONS.iter().position(|o| *o == name).unwrap();
+        let pick = |app: &mut App, name: &str| {
+            app.algo_modal = Some(AlgoModal {
+                target: AlgoModalTarget::Select("qsm_algorithm".into()), title: String::new(),
+                options: vec![], help: vec![], cursor: at(name),
+            });
+            key(app, KeyCode::Enter);
+        };
+        let lsqr = QSM_ALGO_OPTIONS.iter().position(|o| *o == "lsqr").unwrap();
+        let mut app = app();
+        pick(&mut app, LSQR_HEIDI);
+        assert_eq!((app.pipeline_state.qsm_algorithm, app.pipeline_state.heidi_enabled), (lsqr, true));
+        assert_eq!(app.field_select("qsm_algorithm"), at(LSQR_HEIDI), "shown as the alias");
+        let c = super::super::command::config_from_app(&app).unwrap();
+        assert_eq!(c.inversion.algorithm, qsmxt_engine::QsmAlgorithm::Lsqr);
+        assert!(c.inversion.heidi.enabled);
+        assert!(app.rec_modal.is_none(), "HEIDI's reference seed: no recommendation");
+        app.refs.modal = None; // LSQR's own reference pipeline, as for plain LSQR.
+
+        pick(&mut app, "lsqr");
+        assert_eq!((app.pipeline_state.qsm_algorithm, app.pipeline_state.heidi_enabled), (lsqr, false), "plain LSQR means no HEIDI");
+        assert_eq!(app.field_select("qsm_algorithm"), at("lsqr"));
+        app.toggle_field("heidi_enabled");
+        assert_eq!(app.field_select("qsm_algorithm"), at(LSQR_HEIDI), "ticking the box on LSQR is the same choice");
+
+        // A method after it keeps the box, as the box does for any method, and says so.
+        pick(&mut app, "medi");
+        assert!(app.pipeline_state.heidi_enabled);
+        assert_eq!(app.field_select("qsm_algorithm"), at("medi"));
     }
 }

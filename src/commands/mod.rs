@@ -3307,7 +3307,7 @@ mod integration_tests {
         let methods = std::fs::read_to_string(out.join("derivatives/qsmxt/methods.md")).unwrap();
         let note = &methods[methods.find("## Note").unwrap_or_else(|| panic!("{methods}"))..];
         assert!(note.contains("Departures from the methods' recommendations:")
-            && note.contains("- Phase offset removal was off; turning it on is recommended.\n"), "{note}");
+            && note.contains("- Phase offset removal was off; Weighted average recommends turning it on.\n"), "{note}");
         assert!(methods.find("## Note").unwrap() < methods.find("## References").unwrap(), "the Note is before the references");
     }
 }
