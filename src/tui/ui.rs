@@ -56,6 +56,18 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
 }
 
+/// The most rows a setting's reference values take under its help.
+const MAX_REFERENCE_ROWS: usize = 3;
+
+/// A help text, word-wrapped to `width` columns and indented like the rows above it.
+fn help_lines(text: &str, width: u16, color: Color) -> Vec<Line<'static>> {
+    tip_lines(text, width.saturating_sub(3).max(10) as usize).into_iter().map(|l| {
+        let mut spans = vec![Span::raw("  ")];
+        spans.extend(l.spans.into_iter().map(|s| Span::styled(s.content, s.style.fg(color))));
+        Line::from(spans)
+    }).collect()
+}
+
 /// Word-wrap `text` to `width` columns, drawing `backticked` parts as commands.
 fn tip_lines(text: &str, width: usize) -> Vec<Line<'static>> {
     let code = Style::default().fg(Color::Yellow);
@@ -172,6 +184,7 @@ fn draw_rec_modal(f: &mut Frame, modal: &mut super::recommend::RecModal, area: R
         lines.extend(tip_lines(&head, text_w));
         let wants = match r.strength {
             super::recommend::Strength::Discouraged => format!("This is discouraged with {}: {}", r.trigger.name, r.reason),
+            super::recommend::Strength::Required if modal.changed => format!("{} cannot run with it: {}", r.trigger.name, r.reason),
             super::recommend::Strength::Required => format!("{} requires {}: {}", r.trigger.name, r.recommended.name, r.reason),
             super::recommend::Strength::Reference => format!("{} uses {}: {}", rec_reference_of(r), r.recommended.name, r.reason),
             _ => format!("{} recommends {}: {}", r.trigger.name, r.recommended.name, r.reason),
@@ -629,19 +642,64 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    // Split into scrollable content + help text area
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(4), Constraint::Length(2)])
-        .split(inner);
-    let content_area = chunks[0];
-    let help_area = chunks[1];
-
     let io_field_count = super::app::App::INPUT_IO_FIELDS;
     let in_io = app.active_field < io_field_count;
     let is_bids = app.input_mode == super::app::InputMode::Bids;
     let is_nifti = app.input_mode == super::app::InputMode::NIfTI;
     let is_example = app.input_mode == super::app::InputMode::Example;
+
+    // Help text, wrapped, under the scrollable content: at least two rows so the form does not
+    // jump between short ones, at most half the panel.
+    let help_text = if in_io {
+        match app.active_field {
+            0 => "Enter: choose input mode (BIDS / NIfTI / DICOM / Example)",
+            1 => match app.input_mode {
+                super::app::InputMode::Bids => "Path to BIDS-formatted dataset directory",
+                super::app::InputMode::NIfTI => "Directory with NIfTI files + JSON sidecars (optional, for auto-scan)",
+                super::app::InputMode::DicomToBids => "Path to directory containing DICOM files",
+                super::app::InputMode::Example => "Directory to create the example dataset in (added to if it exists)",
+            },
+            2 => if is_bids || is_example { "Output directory (defaults to BIDS directory)" } else { "Output BIDS directory (empty = auto-generate)" },
+            3 => "Optional pipeline configuration file (TOML)",
+            _ => "",
+        }
+    } else if is_nifti {
+        match &app.nifti_state.focus {
+            super::app::NiftiFocus::AddMagnitude | super::app::NiftiFocus::AddPhase => "Enter: type glob/path to add files",
+            super::app::NiftiFocus::MagFile(_) | super::app::NiftiFocus::PhaseFile(_) => "Shift+J/K: reorder, d: remove",
+            super::app::NiftiFocus::EchoTimes => "Enter: edit echo times (comma-separated, in ms)",
+            super::app::NiftiFocus::FieldStrength => "Enter: edit field strength (in Tesla)",
+            super::app::NiftiFocus::B0Direction => "Enter: edit B0 direction (comma-separated x,y,z)",
+            super::app::NiftiFocus::ConvertButton => "Enter: convert NIfTI files to BIDS directory",
+        }
+    } else if is_bids {
+        match app.filter_state.focus {
+            super::app::FilterFocus::Include => "Glob patterns to include (space-separated, e.g. sub-1* *ses-pre*)",
+            super::app::FilterFocus::Exclude => "Glob patterns to exclude (space-separated, e.g. *mygrea*)",
+            super::app::FilterFocus::OrientationGroup => {
+                "Runs that are the same object at a different angle: an entity (acq, run, rec, inv), a glob (*acq-dir*), or re:<regex>. Empty = off. How they combine: QSM → Multi-orientation"
+            }
+            super::app::FilterFocus::TreeNode(_) => "Space/Enter: toggle, Left/Right: expand/collapse",
+            super::app::FilterFocus::NumEchoes => "Limit number of echoes to process",
+        }
+    } else if is_example {
+        if app.example_state.cursor == super::app::ExampleState::BUTTON {
+            "Enter: download the ticked acquisitions and build the dataset"
+        } else {
+            "Space/Enter: tick an acquisition (several can share one dataset), r: reset"
+        }
+    } else {
+        match app.dicom_state.focus {
+            super::app::DicomFocus::Series(_) => "Left/Right: change type, Enter: cycle type",
+            super::app::DicomFocus::ConvertButton => "Enter: run dcm2niix conversion",
+        }
+    };
+    let help = help_lines(help_text, inner.width, Color::DarkGray);
+    let help_rows = (help.len() as u16).clamp(2, (inner.height / 2).max(2));
+    let [content_area, help_area] = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(4), Constraint::Length(help_rows)])
+        .areas(inner);
 
     // Build lines for IO fields
     let mut lines: Vec<Line> = Vec::new();
@@ -866,8 +924,7 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
             }
         }
     } else if is_example {
-        // ─── Example mode: acquisition picker ───
-        draw_example_section(&app.example_state, in_io, &mut lines);
+        // ─── Example mode: drawn below, with the list in a region of its own ───
     } else {
         // ─── DICOM mode: series classification ───
         draw_dicom_series_section(&app.dicom_state, &mut lines, in_io);
@@ -921,16 +978,7 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
             None
         }
     } else if is_example {
-        // Picker rows start after the IO fields + blank + header. The cursor indexes the
-        // registry, but only `example_rows` is rendered, so map through it; a cursor with
-        // no rendered row (the list collapsed mid-fetch) falls back to the button.
-        let offset = io_field_count + 2;
-        let rows = example_rows(&app.example_state);
-        let row = rows.iter().position(|(i, _)| *i == app.example_state.cursor);
-        Some(match row {
-            Some(r) => offset + r,
-            None => offset + example_button_offset(&app.example_state),
-        })
+        None
     } else {
         // DICOM series area
         let offset = io_field_count + 2; // blank + header
@@ -962,75 +1010,31 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         }
     };
 
-    let scroll_offset = match app.input_mode {
-        super::app::InputMode::Bids => &mut app.form_scroll_offset,
-        super::app::InputMode::NIfTI => &mut app.nifti_state.scroll_offset,
-        super::app::InputMode::DicomToBids => &mut app.dicom_state.scroll_offset,
-        super::app::InputMode::Example => &mut app.example_state.scroll_offset,
+    // How far the IO fields are scrolled: the example list scrolls on its own, under them.
+    let io_scroll = match app.input_mode {
+        super::app::InputMode::Bids => {
+            render_scrollable(f, content_area, lines, &mut app.form_scroll_offset, focused_line);
+            app.form_scroll_offset
+        }
+        super::app::InputMode::NIfTI => {
+            render_scrollable(f, content_area, lines, &mut app.nifti_state.scroll_offset, focused_line);
+            app.nifti_state.scroll_offset
+        }
+        super::app::InputMode::DicomToBids => {
+            render_scrollable(f, content_area, lines, &mut app.dicom_state.scroll_offset, focused_line);
+            app.dicom_state.scroll_offset
+        }
+        super::app::InputMode::Example => {
+            let focused = in_io.then_some(app.active_field);
+            draw_example_picker(f, &mut app.example_state, content_area, lines, in_io, focused)
+        }
     };
-    render_scrollable(f, content_area, lines, scroll_offset, focused_line);
 
-    // Help text
-    let help_text = if in_io {
-        match app.active_field {
-            0 => "Enter: choose input mode (BIDS / NIfTI / DICOM / Example)",
-            1 => match app.input_mode {
-                super::app::InputMode::Bids => "Path to BIDS-formatted dataset directory",
-                super::app::InputMode::NIfTI => "Directory with NIfTI files + JSON sidecars (optional, for auto-scan)",
-                super::app::InputMode::DicomToBids => "Path to directory containing DICOM files",
-                super::app::InputMode::Example => "Directory to create the example dataset in (added to if it exists)",
-            },
-            2 => if is_bids || is_example { "Output directory (defaults to BIDS directory)" } else { "Output BIDS directory (empty = auto-generate)" },
-            3 => "Optional pipeline configuration file (TOML)",
-            _ => "",
-        }
-    } else if is_nifti {
-        match &app.nifti_state.focus {
-            super::app::NiftiFocus::AddMagnitude | super::app::NiftiFocus::AddPhase => "Enter: type glob/path to add files",
-            super::app::NiftiFocus::MagFile(_) | super::app::NiftiFocus::PhaseFile(_) => "Shift+J/K: reorder, d: remove",
-            super::app::NiftiFocus::EchoTimes => "Enter: edit echo times (comma-separated, in ms)",
-            super::app::NiftiFocus::FieldStrength => "Enter: edit field strength (in Tesla)",
-            super::app::NiftiFocus::B0Direction => "Enter: edit B0 direction (comma-separated x,y,z)",
-            super::app::NiftiFocus::ConvertButton => "Enter: convert NIfTI files to BIDS directory",
-        }
-    } else if is_bids {
-        match app.filter_state.focus {
-            super::app::FilterFocus::Include => "Glob patterns to include (space-separated, e.g. sub-1* *ses-pre*)",
-            super::app::FilterFocus::Exclude => "Glob patterns to exclude (space-separated, e.g. *mygrea*)",
-            super::app::FilterFocus::OrientationGroup => {
-                "Runs that are the same object at a different angle: an entity (acq, run, rec, inv), a glob (*acq-dir*), or re:<regex>. Empty = off. How they combine: QSM → Multi-orientation"
-            }
-            super::app::FilterFocus::TreeNode(_) => "Space/Enter: toggle, Left/Right: expand/collapse",
-            super::app::FilterFocus::NumEchoes => "Limit number of echoes to process",
-        }
-    } else if is_example {
-        if app.example_state.cursor >= super::app::ExampleState::button_index() {
-            "Enter: download the ticked acquisitions and build the dataset"
-        } else {
-            "Space/Enter: tick an acquisition (several can share one dataset), r: reset"
-        }
-    } else {
-        match app.dicom_state.focus {
-            super::app::DicomFocus::Series(_) => "Left/Right: change type, Enter: cycle type",
-            super::app::DicomFocus::ConvertButton => "Enter: run dcm2niix conversion",
-        }
-    };
-    if !help_text.is_empty() {
-        let help_para = Paragraph::new(Line::from(Span::styled(
-            format!("  {}", help_text),
-            Style::default().fg(Color::DarkGray),
-        )));
-        f.render_widget(help_para, help_area);
-    }
+    f.render_widget(Paragraph::new(help), help_area);
 
     // Set cursor if editing IO text field
     if app.editing && in_io && app.active_field > 0 {
-        let scroll = match app.input_mode {
-            super::app::InputMode::Bids => app.form_scroll_offset,
-            super::app::InputMode::NIfTI => app.nifti_state.scroll_offset,
-            super::app::InputMode::DicomToBids => app.dicom_state.scroll_offset,
-            super::app::InputMode::Example => app.example_state.scroll_offset,
-        };
+        let scroll = io_scroll;
         let line = app.active_field;
         if line >= scroll && line < scroll + content_area.height as usize {
             let y = content_area.y + (line - scroll) as u16;
@@ -1089,48 +1093,55 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
 }
 
 /// Render the NIfTI configuration section (used within the unified input tab).
-/// Which acquisition rows the picker renders, as `(registry index, example)`.
-///
-/// While idle it is the whole catalogue. Once a fetch starts the catalogue is just
-/// noise and would push the progress log off a short terminal, so it collapses to the
-/// acquisitions actually being fetched.
-fn example_rows(
-    state: &super::app::ExampleState,
-) -> Vec<(usize, &'static crate::example::Example)> {
-    crate::example::EXAMPLES
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| {
-            state.status == super::app::ConvertStatus::Idle
-                || state.selected.get(*i).copied().unwrap_or(false)
-        })
-        .collect()
-}
-
-/// Line offset of the Download button within the picker, relative to the first
-/// acquisition row (the list, then a blank line).
-fn example_button_offset(state: &super::app::ExampleState) -> usize {
-    example_rows(state).len() + 1
-}
-
-/// Render the example-dataset picker: the acquisition rows from [`example_rows`],
-/// then a Download button carrying the current status, then the progress log.
-fn draw_example_section(
-    state: &super::app::ExampleState,
+/// Draw the example-dataset picker under the IO fields in `lines`: the Download button with its
+/// status and progress log stay in view, and the acquisitions scroll in a region of their own.
+/// A terminal too short for that scrolls it all as one. Returns how far the IO fields scrolled.
+fn draw_example_picker(
+    f: &mut Frame,
+    state: &mut super::app::ExampleState,
+    area: Rect,
+    mut lines: Vec<Line<'_>>,
     in_io: bool,
-    lines: &mut Vec<Line<'_>>,
-) {
-    use super::app::ConvertStatus;
+    focused_io: Option<usize>,
+) -> usize {
+    /// The list's borders and one row.
+    const MIN_LIST: usize = 3;
+    let button_line = lines.len();
+    // A long log leaves the list room, but always shows its last lines: they may be the error.
+    let log_room = (area.height as usize).saturating_sub(button_line + 2 + MIN_LIST).clamp(2, 8);
+    draw_example_button(state, in_io, log_room, &mut lines);
+    let rows = example_rows(state, in_io);
+    let focused_row = if in_io { None } else { state.acquisition() };
 
-    lines.push(Line::from(Span::styled(
-        "  -- Example acquisitions (one in-vivo subject, Siemens 3T) --",
-        Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
-    )));
+    const TITLE: &str = " Example acquisitions (one in-vivo subject, Siemens 3T) ";
+    if area.height as usize >= lines.len() + MIN_LIST {
+        let [head, list] = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(lines.len() as u16), Constraint::Min(0)])
+            .areas(area);
+        f.render_widget(Paragraph::new(lines), head);
+        let border = if focused_row.is_some() { Color::Yellow } else { Color::DarkGray };
+        let block = Block::default().borders(Borders::ALL).title(TITLE).border_style(Style::default().fg(border));
+        let inner = block.inner(list);
+        f.render_widget(block, list);
+        render_scrollable(f, inner, rows, &mut state.scroll_offset, focused_row);
+        0
+    } else {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(format!(" {TITLE}"), Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD))));
+        let first_row = lines.len();
+        let focused = focused_io.or(Some(focused_row.map_or(button_line, |r| first_row + r)));
+        lines.extend(rows);
+        render_scrollable(f, area, lines, &mut state.scroll_offset, focused);
+        state.scroll_offset
+    }
+}
 
-    let button = super::app::ExampleState::button_index();
-    for (i, example) in example_rows(state) {
+/// One row for each acquisition, ticked or not.
+fn example_rows(state: &super::app::ExampleState, in_io: bool) -> Vec<Line<'static>> {
+    crate::example::EXAMPLES.iter().enumerate().map(|(i, example)| {
         let ticked = state.selected.get(i).copied().unwrap_or(false);
-        let focused = !in_io && state.cursor == i;
+        let focused = !in_io && state.acquisition() == Some(i);
         let name_style = if focused {
             Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
         } else if ticked {
@@ -1138,20 +1149,27 @@ fn draw_example_section(
         } else {
             Style::default().fg(Color::Gray)
         };
-        lines.push(Line::from(vec![
+        Line::from(vec![
             Span::styled(
-                format!("  [{}] ", if ticked { "x" } else { " " }),
+                format!(" [{}] ", if ticked { "x" } else { " " }),
                 if ticked { Style::default().fg(Color::Green) } else { Style::default().fg(Color::DarkGray) },
             ),
             Span::styled(format!("{:<28}", example.id), name_style),
             Span::styled(example.describe(), Style::default().fg(Color::DarkGray)),
-        ]));
-    }
+        ])
+    }).collect()
+}
 
-    lines.push(Line::from(""));
+/// The Download button, carrying the current status, then the last `log_room` lines of the log.
+fn draw_example_button(
+    state: &super::app::ExampleState,
+    in_io: bool,
+    log_room: usize,
+    lines: &mut Vec<Line<'_>>,
+) {
+    use super::app::ConvertStatus;
 
-    // Download button, carrying the current status.
-    let focused = !in_io && state.cursor >= button;
+    let focused = !in_io && state.cursor == super::app::ExampleState::BUTTON;
     let (label, style) = match state.status {
         ConvertStatus::Converting => (
             match state.progress() {
@@ -1194,7 +1212,7 @@ fn draw_example_section(
     if !state.log.is_empty() {
         lines.push(Line::from(""));
         // Only the tail matters while a long multi-acquisition fetch runs.
-        for line in state.log.iter().rev().take(8).rev() {
+        for line in state.log.iter().rev().take(log_room).rev() {
             let style = if line.starts_with("Error:") {
                 Style::default().fg(Color::Red)
             } else {
@@ -1637,16 +1655,6 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
 
     // The sub-tabs (second tab row), when the tab has more than one; then the form and its help.
     let bar = super::tabs::subtab_rows(app);
-    let help_rows = if reference.is_some() { 3 } else { 2 };
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(bar), Constraint::Min(4), Constraint::Length(help_rows)])
-        .split(inner);
-    if bar > 0 {
-        super::tabs::draw_subtabs(f, app, chunks[0]);
-    }
-    let form_area = chunks[1];
-    let help_area = chunks[2];
 
     // One label column per page, wide enough for its longest label (within reason).
     let lw = rows.iter().filter_map(|r| match r {
@@ -2133,28 +2141,38 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     // Determine which line is focused for auto-scroll (the top while the sub-tab strip has it)
     let focused_line = if on_strip { Some(0) } else { focusable.get(ps_focus).copied() };
 
+    // The help, wrapped, and under it the reference values of the setting: at least two rows of
+    // help so the form does not jump between short ones, at most half the panel together.
+    let help = focused_help.as_deref().map_or_else(Vec::new, |h| help_lines(h, inner.width, Color::DarkGray));
+    let mut refs = reference.as_deref().map_or_else(Vec::new, |r| help_lines(r, inner.width, Color::Cyan));
+    // Sources can run long, and `!` shows them in full.
+    if refs.len() > MAX_REFERENCE_ROWS {
+        refs.truncate(MAX_REFERENCE_ROWS);
+        refs[MAX_REFERENCE_ROWS - 1].spans.push(Span::styled(" …", Style::default().fg(Color::Cyan)));
+    }
+    let help_rows = (help.len().max(2) + refs.len()) as u16;
+    let help_rows = help_rows.min((inner.height.saturating_sub(bar) / 2).max(2));
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(bar), Constraint::Min(4), Constraint::Length(help_rows)])
+        .split(inner);
+    if bar > 0 {
+        super::tabs::draw_subtabs(f, app, chunks[0]);
+    }
+    let form_area = chunks[1];
+    let help_area = chunks[2];
+
     let scroll_offset = &mut app.pipeline_state.scroll_offset;
     render_scrollable(f, form_area, lines, scroll_offset, focused_line);
     let scroll = *scroll_offset;
 
     // Render help text, and under it the reference values of the setting
-    let help_area = match &reference {
-        Some(text) => {
-            let [help, refs] = Layout::default().direction(Direction::Vertical)
-                .constraints([Constraint::Length(2), Constraint::Length(1)]).areas(help_area);
-            f.render_widget(Paragraph::new(Line::from(Span::styled(
-                format!("  {text}"), Style::default().fg(Color::Cyan)))), refs);
-            help
-        }
-        None => help_area,
-    };
-    if let Some(help) = focused_help {
-        let help_para = Paragraph::new(Line::from(Span::styled(
-            format!("  {}", help),
-            Style::default().fg(Color::DarkGray),
-        ))).wrap(ratatui::widgets::Wrap { trim: false });
-        f.render_widget(help_para, help_area);
+    let mut text = help;
+    if text.len() < 2 && !refs.is_empty() {
+        text.resize(2, Line::from(""));
     }
+    text.extend(refs);
+    f.render_widget(Paragraph::new(text), help_area);
 
     // Set cursor if editing a param or threshold value
     if ps_editing || app.pipeline_state.mask_threshold_editing {
@@ -2319,9 +2337,13 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
             None if app.active_tab == TAB_INPUT && app.active_field == 0 => Some("Choose input mode".to_string()),
             None => None,
         };
+        let in_picker = app.active_tab == TAB_INPUT && app.input_mode == super::app::InputMode::Example
+            && app.active_field >= App::INPUT_IO_FIELDS;
         let mut keys = vec![(tabs.as_str(), "Tabs"), ("[ ]", "Sub-tabs"), ("\u{2191}\u{2193}", "Navigate")];
         match (&choose, &row) {
             (Some(c), _) => keys.push(("Enter", c.as_str())),
+            (None, None) if in_picker && app.example_state.cursor == super::app::ExampleState::BUTTON => keys.push(("Enter", "Download")),
+            (None, None) if in_picker => keys.push(("Space", "Tick")),
             (None, None) if !rows_tab => keys.extend([("\u{2190}\u{2192}/Space", "Change"), ("Enter", "Edit")]),
             (None, Some(PipelineRow::Param { .. })) => keys.push(("Enter", "Edit")),
             (None, Some(PipelineRow::Toggle { .. })) => keys.push(("Space", "Toggle")),
@@ -2479,13 +2501,13 @@ pub(super) mod tests {
 
     #[test]
     fn example_mode_opens_on_the_download_button() {
-        // Moving focus into the picker scrolls to the cursor, which starts on the
-        // button so that fetching the default acquisition is a single Enter.
+        // Focus enters the picker on the button, so that fetching the default acquisition
+        // is a single Enter.
         let mut app = example_app();
         app.active_field = App::INPUT_IO_FIELDS;
         assert_eq!(
             app.example_state.cursor,
-            crate::tui::app::ExampleState::button_index()
+            crate::tui::app::ExampleState::BUTTON
         );
         let text = screen_text(&render_app(&mut app));
         assert!(text.contains("Download"), "button missing:\n{text}");
@@ -2504,14 +2526,45 @@ pub(super) mod tests {
 
     #[test]
     fn example_picker_tracks_the_cursor_without_panicking() {
-        // Walk from the IO fields to the Download button and back, rendering each step.
-        // This is what catches focused-line arithmetic that runs off the end of `lines`.
+        // Walk from the button to the last acquisition: the focused row stays in view and the
+        // IO fields stay above it, at any height, and scrolling never covers the button. A
+        // terminal too short for the separate list still shows the focused row.
         let mut app = example_app();
         app.active_field = App::INPUT_IO_FIELDS;
-        for cursor in 0..=crate::tui::app::ExampleState::button_index() {
-            app.example_state.cursor = cursor;
-            let _ = render_app(&mut app);
+        for height in [16, 24, 30, 60] {
+            app.example_state.scroll_offset = 0;
+            for cursor in 0..=crate::tui::app::ExampleState::last_row() {
+                app.example_state.cursor = cursor;
+                let text = screen_text(&render_app_sized(&mut app, 120, height));
+                assert!(text.contains("Output directory") || height < 24, "{height}, {cursor}:\n{text}");
+                assert!(text.contains("[ Download ]") || height < 24, "{height}, {cursor}:\n{text}");
+                if let Some(i) = app.example_state.acquisition() {
+                    let id = crate::example::EXAMPLES[i].id;
+                    assert!(text.contains(id), "{height}, {id}:\n{text}");
+                }
+            }
         }
+    }
+
+    /// The button is above the list.
+    #[test]
+    fn example_download_button_is_above_the_list() {
+        let mut app = example_app();
+        let text = screen_text(&render_app(&mut app));
+        assert!(text.find("[ Download ]").unwrap() < text.find("prisma-bridge-run1").unwrap(), "{text}");
+    }
+
+    /// A help text longer than a line is wrapped, on the Input tab as on the settings tabs.
+    #[test]
+    fn long_help_wraps() {
+        let mut app = App::new();
+        app.input_mode = crate::tui::app::InputMode::Bids;
+        app.form.bids_dir = "/some/dir".to_string();
+        app.active_field = App::INPUT_IO_FIELDS;
+        app.filter_state.focus = crate::tui::app::FilterFocus::OrientationGroup;
+        let text = screen_text(&render_app_sized(&mut app, 60, 30));
+        assert!(text.contains("Runs that are the same object"), "{text}");
+        assert!(text.contains("Multi-orientation"), "the end of the text is cut off:\n{text}");
     }
 
     #[test]

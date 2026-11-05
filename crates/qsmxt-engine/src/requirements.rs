@@ -928,7 +928,8 @@ pub fn scan_check(f: &ScanFacts, config: &PipelineConfig) -> Check {
             continue;
         }
         let path = crate::schema::setting(&r.setting).map(|s| s.path);
-        let why = format!("{} is {}, and {} requires {}: {}", r.label, r.current_text(), r.trigger.name, r.recommended.name, r.reason);
+        let or_off = if r.flag_trigger().is_some() { format!(" Or turn off {}.", r.flag_name()) } else { String::new() };
+        let why = format!("{} is {}, and {} requires {}: {}.{or_off}", r.label, r.current_text(), r.trigger.name, r.recommended.name, r.reason);
         out.errors.push(format!("{why} (rule {}; --accept-recommendations applies it)", r.rule));
         out.problems.push(Problem {
             severity: Severity::Error, setting: path, implied_by: None, settings: path.into_iter().collect(),
@@ -1051,6 +1052,7 @@ mod tests {
         c.inversion.heidi.enabled = true;
         let errors = |c: &PipelineConfig| scan_check(&run(&EVEN, true), c).errors;
         assert!(errors(&c).iter().any(|e| e.contains("heidi.tkd-cone")), "{:?}", errors(&c));
+        assert!(errors(&c).iter().any(|e| e.contains("Or turn off HEIDI streaking reduction")), "{:?}", errors(&c));
         c.inversion.tkd.threshold = 0.1;
         assert!(errors(&c).is_empty(), "{:?}", errors(&c));
         c.inversion.heidi.cone_threshold = 0.05;

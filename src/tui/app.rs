@@ -590,11 +590,12 @@ pub struct ExampleState {
     /// Directory the BIDS dataset is created in (or added to). Blank means
     /// [`EXAMPLE_DEFAULT_DIR`].
     pub output_dir: String,
-    /// Focus within the picker: an index into [`crate::example::EXAMPLES`], or
-    /// `EXAMPLES.len()` for the Download button below the list.
+    /// Focus within the picker: [`Self::BUTTON`] for the Download button above the list, or
+    /// the row of an acquisition ([`Self::acquisition`]).
     pub cursor: usize,
     /// Which acquisitions are ticked. Parallel to `EXAMPLES`.
     pub selected: Vec<bool>,
+    /// How far the acquisition list is scrolled.
     pub scroll_offset: usize,
     pub status: ConvertStatus,
     pub log: Vec<String>,
@@ -610,7 +611,7 @@ impl Default for ExampleState {
         let mut selected = vec![false; crate::example::EXAMPLES.len()];
         // Tick the default acquisition and start on the Download button: the common
         // case is "just give me an example dataset", which is then a single Enter.
-        // Arrowing up from the button walks into the list to pick something else.
+        // Arrowing down from the button walks into the list to pick something else.
         let default_idx = crate::example::EXAMPLES
             .iter()
             .position(|e| e.id == crate::example::DEFAULT_ID)
@@ -618,7 +619,7 @@ impl Default for ExampleState {
         selected[default_idx] = true;
         Self {
             output_dir: String::new(),
-            cursor: Self::button_index(),
+            cursor: Self::BUTTON,
             selected,
             scroll_offset: 0,
             status: ConvertStatus::Idle,
@@ -630,9 +631,18 @@ impl Default for ExampleState {
 }
 
 impl ExampleState {
-    /// Index of the Download button in the focus order (one past the last acquisition).
-    pub fn button_index() -> usize {
+    /// The Download button's place in the focus order: first, above the list.
+    pub const BUTTON: usize = 0;
+
+    /// The last place in the focus order: the last acquisition.
+    pub fn last_row() -> usize {
         crate::example::EXAMPLES.len()
+    }
+
+    /// The acquisition the cursor is on, as an index into [`crate::example::EXAMPLES`]; `None`
+    /// on the button.
+    pub fn acquisition(&self) -> Option<usize> {
+        self.cursor.checked_sub(1)
     }
 
     /// The dataset directory, with `~` expanded and the default applied.
@@ -664,7 +674,7 @@ impl ExampleState {
     }
 
     pub fn toggle_selected(&mut self) {
-        if let Some(slot) = self.selected.get_mut(self.cursor) {
+        if let Some(slot) = self.acquisition().and_then(|i| self.selected.get_mut(i)) {
             *slot = !*slot;
         }
     }
@@ -5499,6 +5509,8 @@ pub struct App {
     /// The form as it was when `rec_seen` was taken (empty before the first check): a key that
     /// changed nothing is not checked.
     pub rec_form: String,
+    /// The config as it was at the same point, to tell which settings a change changed.
+    pub rec_config: Option<serde_json::Value>,
     /// The reference pipeline pop-up opened when a method is chosen, and what it is worked out
     /// from ([`super::recommend::RefState`]).
     pub refs: super::recommend::RefState,
@@ -5824,6 +5836,7 @@ impl App {
             rec_seen: Vec::new(),
             rec_queue: Vec::new(),
             rec_form: String::new(),
+            rec_config: None,
             refs: Default::default(),
         }
     }
@@ -6130,27 +6143,27 @@ impl App {
 
     /// Keys for the example-dataset picker (Input tab, past the IO fields).
     fn handle_example_tab_key(&mut self, key: KeyEvent) {
-        let button = ExampleState::button_index();
+        let on_button = self.example_state.cursor == ExampleState::BUTTON;
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
             // 1..=N, Tab, Shift-Tab: one rule for every tab (see `switch_tab`).
             _ if self.switch_tab(key) => {}
             KeyCode::Up | KeyCode::Char('k') => {
-                if self.example_state.cursor == 0 {
+                if on_button {
                     // Back up into the IO fields above the picker.
                     self.active_field = Self::INPUT_IO_FIELDS - 1;
                 } else {
                     self.example_state.cursor -= 1;
                 }
             }
-            KeyCode::Down | KeyCode::Char('j') if self.example_state.cursor < button => {
+            KeyCode::Down | KeyCode::Char('j') if self.example_state.cursor < ExampleState::last_row() => {
                 self.example_state.cursor += 1;
             }
-            KeyCode::Char(' ') if self.example_state.cursor < button => {
+            KeyCode::Char(' ') if !on_button => {
                 self.example_state.toggle_selected();
             }
             KeyCode::Enter => {
-                if self.example_state.cursor < button {
+                if !on_button {
                     self.example_state.toggle_selected();
                 } else if let Err(msg) = self.example_state.start_download() {
                     self.error_message = Some(msg);
@@ -8138,7 +8151,7 @@ mod tests {
     #[test]
     fn example_state_starts_on_the_button_with_the_default_ticked() {
         let app = example_app();
-        assert_eq!(app.example_state.cursor, ExampleState::button_index());
+        assert_eq!(app.example_state.cursor, ExampleState::BUTTON);
         let picked = app.example_state.selected_examples();
         assert_eq!(picked.len(), 1);
         assert_eq!(picked[0].id, crate::example::DEFAULT_ID);
@@ -8148,11 +8161,12 @@ mod tests {
     #[test]
     fn example_picker_navigates_and_ticks() {
         let mut app = example_app();
-        let button = ExampleState::button_index();
 
-        // Up from the button walks into the list; Space ticks a second acquisition.
-        app.handle_key(key(KeyCode::Up));
-        assert_eq!(app.example_state.cursor, button - 1);
+        // Down from the button walks into the list, one row at a time; Space ticks a second
+        // acquisition.
+        app.handle_key(key(KeyCode::Down));
+        app.handle_key(key(KeyCode::Down));
+        assert_eq!(app.example_state.acquisition(), Some(1));
         app.handle_key(key(KeyCode::Char(' ')));
         assert_eq!(app.example_state.selected_examples().len(), 2);
 
@@ -8160,16 +8174,29 @@ mod tests {
         app.handle_key(key(KeyCode::Char(' ')));
         assert_eq!(app.example_state.selected_examples().len(), 1);
 
-        // Down cannot walk past the button.
+        // Down cannot walk past the last acquisition.
+        for _ in 0..=ExampleState::last_row() {
+            app.handle_key(key(KeyCode::Down));
+        }
+        assert_eq!(app.example_state.cursor, ExampleState::last_row());
+    }
+
+    /// From the IO fields, Down reaches the button, and the next Down the first acquisition.
+    #[test]
+    fn example_picker_is_walked_in_the_order_it_is_drawn() {
+        let mut app = example_app();
+        app.active_field = App::INPUT_IO_FIELDS - 1;
         app.handle_key(key(KeyCode::Down));
+        assert_eq!((app.active_field, app.example_state.cursor), (App::INPUT_IO_FIELDS, ExampleState::BUTTON));
         app.handle_key(key(KeyCode::Down));
-        assert_eq!(app.example_state.cursor, button);
+        assert_eq!(app.example_state.acquisition(), Some(0));
+        assert_eq!(crate::example::EXAMPLES[0].id, "prisma-bridge-run1");
     }
 
     #[test]
     fn example_picker_returns_to_the_io_fields_from_the_top() {
         let mut app = example_app();
-        app.example_state.cursor = 0;
+        app.example_state.cursor = ExampleState::BUTTON;
         app.handle_key(key(KeyCode::Up));
         assert_eq!(app.active_field, App::INPUT_IO_FIELDS - 1);
     }
@@ -8202,10 +8229,10 @@ mod tests {
     fn example_reset_clears_state_when_idle() {
         let mut app = example_app();
         app.example_state.output_dir = "somewhere".to_string();
-        app.example_state.cursor = 0;
+        app.example_state.cursor = 1;
         app.handle_key(key(KeyCode::Char('r')));
         assert!(app.example_state.output_dir.is_empty());
-        assert_eq!(app.example_state.cursor, ExampleState::button_index());
+        assert_eq!(app.example_state.cursor, ExampleState::BUTTON);
     }
 
     #[test]
