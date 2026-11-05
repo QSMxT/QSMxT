@@ -619,6 +619,35 @@ pub(crate) mod tests {
         }]);
     }
 
+    /// A χ-sepnet patch that isn't a multiple of 16 is an error in the plan, against the setting
+    /// its route uses, so a front end refuses it before downloading the weights.
+    #[test]
+    fn a_bad_chi_sepnet_patch_is_refused_by_the_plan() {
+        let mut c = PipelineConfig::default();
+        c.pipeline.do_chi_separation = true;
+        c.separation.algorithm = crate::enums::SeparationAlgorithm::ChiSepNet;
+        let on = |c: &PipelineConfig, path: &str| plan(c, &facts()).check.problems.iter()
+            .find(|p| p.setting == Some(path)).map(|p| (p.severity, p.message.clone()));
+        c.separation.chi_sepnet.frame_patch = Some([100, 128, 64]);
+        let message = "χ-sepnet frame patch D = 100 must be a positive multiple of 16 (four pooling levels)";
+        assert_eq!(on(&c, "separation.chi_sepnet.frame_patch"), Some((requirements::Severity::Error, message.to_string())));
+        assert!(plan(&c, &facts()).check.errors.iter().any(|e| e == message));
+
+        c.separation.chi_sepnet.frame_patch = Some([128, 128, 64]);
+        assert_eq!(on(&c, "separation.chi_sepnet.frame_patch"), None);
+
+        // The network-only route's patch: its own setting, and the toolbox's value is not checked.
+        c.separation.chi_sepnet.route = crate::ChiSepNetRoute::Native;
+        c.separation.chi_sepnet.frame_patch = Some([100, 128, 64]);
+        assert_eq!(on(&c, "separation.chi_sepnet.frame_patch"), None);
+        c.separation.chi_sepnet.patch = [128, 120, 64];
+        assert_eq!(on(&c, "separation.chi_sepnet.patch").unwrap().0, requirements::Severity::Error);
+
+        // Not asked for, nothing is refused.
+        c.pipeline.do_chi_separation = false;
+        assert_eq!(on(&c, "separation.chi_sepnet.patch"), None);
+    }
+
     /// R2PRIMEnet is listed wherever the R2 step may run it: R2′ asked for with no R2 to subtract,
     /// or with R2 to come from a MESE that may prove unusable, but not when R2 is supplied or the
     /// strategy only measures.
