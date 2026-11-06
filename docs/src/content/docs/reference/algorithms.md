@@ -1047,6 +1047,16 @@ What QSMxT still refuses rather than guesses:
 - the directions were *declared* and span less than 3° → error. The dataset is
   stating that the orientations are the same; contradicting it from the images
   would be guessing;
+- COSMOS with directions too close to condition it → error. The closed form
+  divides by the sum of the orientations' squared dipole kernels, so directions a
+  few degrees apart leave the magic-angle cone almost as ill-conditioned as one
+  orientation does, and with no regularisation the cone fills with amplified
+  noise. QSMxT measures the share of a single orientation's cone (|D| < 0.1) the
+  set still leaves ill-conditioned, and refuses above 25%. Three runs of one head
+  position, re-registered, leave about 55% (their small movements between runs
+  are 1–3°); two orientations pass from about 13° apart, and designed sets leave
+  none. The log shows the share for every group
+  (`3 orientations, spread 30°, rank 3, 0% of the magic-angle cone uncovered`);
 - STI with fewer than six orientations, or with a coplanar direction set → error.
   Neither is something registration can fix: they are properties of the
   acquisition.
