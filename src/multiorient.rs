@@ -101,13 +101,14 @@ impl fmt::Display for MultiOrientKind {
     }
 }
 
-/// Minimum pairwise angle (degrees) below which a direction set is treated as degenerate.
+/// Minimum pairwise angle (degrees) below which directions are taken to be the same: affines
+/// that cannot describe a rotation, and STI sets measured at one orientation. Three degrees is
+/// comfortably below any deliberate repositioning and comfortably above the rounding in a
+/// stored direction vector.
 ///
-/// Rotating a head 17 degrees already moves the magic-angle cone clear of where it started
-/// (see the COSMOS module docs in qsm-core), so a set whose *widest* separation is under a
-/// few degrees is measuring one orientation N times, whatever the file names say. Three
-/// degrees is comfortably below any deliberate repositioning and comfortably above the
-/// rounding in a stored direction vector.
+/// COSMOS asks more than this: whether the directions condition its inversion at all
+/// (`qsm_core::inversion::uncovered_cone`). Three runs of one head position, re-registered,
+/// differ by about 3° and still leave half the magic-angle cone as a single orientation does.
 pub const MIN_SPREAD_DEG: f64 = 3.0;
 
 /// Summary of a direction set, for display and for the go/no-go decision.
@@ -120,6 +121,10 @@ pub struct OrientationCheck {
     pub min_pairwise_deg: f64,
     /// Numerical rank of the direction set: 1 = all parallel, 2 = coplanar, 3 = spanning.
     pub rank: usize,
+    /// The share of a single orientation's ill-conditioned cone the set still leaves
+    /// ill-conditioned (`qsm_core::inversion::uncovered_cone`): 1 for one orientation, 0 when
+    /// it is covered.
+    pub uncovered_cone: f64,
     /// `Err` means refuse to reconstruct; the string says why, in the user's terms.
     pub verdict: Result<(), String>,
 }
@@ -133,8 +138,8 @@ impl OrientationCheck {
     pub fn summary(&self) -> String {
         match &self.verdict {
             Ok(()) => format!(
-                "{} orientations, spread {:.0}°, rank {}",
-                self.n, self.max_pairwise_deg, self.rank
+                "{} orientations, spread {:.0}°, rank {}, {:.0}% of the magic-angle cone uncovered",
+                self.n, self.max_pairwise_deg, self.rank, 100.0 * self.uncovered_cone
             ),
             Err(why) => why.clone(),
         }
@@ -209,6 +214,8 @@ pub fn check_directions(orientations: &[Orientation], kind: MultiOrientKind) -> 
         min_deg = 0.0;
     }
     let rank = direction_rank(&dirs);
+    let uncovered = qsm_core::inversion::uncovered_cone(&dirs);
+    let all_affine = orientations.iter().all(|o| o.source == DirectionSource::Affine);
 
     let min_n = match kind {
         MultiOrientKind::Cosmos => 2,
@@ -219,26 +226,34 @@ pub fn check_directions(orientations: &[Orientation], kind: MultiOrientKind) -> 
         Err(format!(
             "{kind} needs at least {min_n} orientations, found {n}"
         ))
-    } else if max_deg < MIN_SPREAD_DEG {
-        // The headline failure. Say which of the two dataset shapes it probably is, since the
-        // fix differs, and name the source so the user knows where to look.
-        let all_affine = orientations.iter().all(|o| o.source == DirectionSource::Affine);
-        if all_affine {
-            Err(format!(
+    } else if max_deg < MIN_SPREAD_DEG && all_affine {
+        // Affines that agree describe no rotation: say so, and how to recover one.
+        Err(format!(
                 "all {n} B0 directions came from the NIfTI affines and are within {max_deg:.1}° \
                  of each other — the affines are effectively identical, so they cannot describe \
                  a rotation. Either the orientations share one prescribed slab, or they were \
                  already resampled into a common frame. Let QSMxT recover the rotations by \
                  co-registering the orientations, supply a `B0_dir` in each sidecar, or pass \
                  the directions explicitly"
-            ))
-        } else {
-            Err(format!(
-                "the {n} B0 directions are within {max_deg:.1}° of each other — this is one \
-                 orientation measured {n} times, not a multi-orientation set. {kind} needs at \
-                 least {MIN_SPREAD_DEG:.0}° of separation"
-            ))
-        }
+        ))
+    } else if kind == MultiOrientKind::Cosmos && uncovered > qsm_core::inversion::MAX_UNCOVERED_CONE {
+        // Directions this close leave the cone amplified as if there were one orientation.
+        Err(format!(
+            "the {n} B0 directions are at most {max_deg:.1}° apart, which leaves {:.0}% of the \
+             magic-angle cone as ill-conditioned as a single orientation does (COSMOS needs \
+             {:.0}% or less) — this is in effect one orientation measured {n} times, not a \
+             multi-orientation set, and COSMOS would fill the cone with amplified noise. \
+             Acquire orientations tilted further apart (two need about 13°, three spread \
+             around B0 less), or pass --multi-orientation-force to reconstruct anyway",
+            100.0 * uncovered,
+            100.0 * qsm_core::inversion::MAX_UNCOVERED_CONE
+        ))
+    } else if max_deg < MIN_SPREAD_DEG {
+        Err(format!(
+            "the {n} B0 directions are within {max_deg:.1}° of each other — this is one \
+             orientation measured {n} times, not a multi-orientation set. {kind} needs at \
+             least {MIN_SPREAD_DEG:.0}° of separation"
+        ))
     } else if kind == MultiOrientKind::Sti && rank < 3 {
         Err(format!(
             "the {n} B0 directions are coplanar (rank {rank}) — STI cannot determine all six \
@@ -249,7 +264,7 @@ pub fn check_directions(orientations: &[Orientation], kind: MultiOrientKind) -> 
         Ok(())
     };
 
-    OrientationCheck { n, max_pairwise_deg: max_deg, min_pairwise_deg: min_deg, rank, verdict }
+    OrientationCheck { n, max_pairwise_deg: max_deg, min_pairwise_deg: min_deg, rank, uncovered_cone: uncovered, verdict }
 }
 
 /// Resolve B0 directions for a set of orientations, preferring a declared direction over an
@@ -375,6 +390,34 @@ mod tests {
             .collect();
         let why = check_directions(&dirs, MultiOrientKind::Cosmos).verdict.unwrap_err();
         assert!(why.contains("one orientation measured 3 times"), "{why}");
+    }
+
+    /// Three runs of one head position, re-registered: B0 1.1°, 2.6° and 3.3° apart, past the old
+    /// 3° spread. COSMOS refuses them for the cone they leave; force is the way through, and two
+    /// orientations far enough apart pass.
+    #[test]
+    fn cosmos_refuses_directions_too_close_to_cover_the_cone() {
+        let runs = vec![
+            orient("run-1", (0.0, 0.0, 1.0), DirectionSource::Registration),
+            orient("run-2", (0.003, -0.019, 1.0), DirectionSource::Registration),
+            orient("run-3", (-0.042, 0.016, 0.999), DirectionSource::Registration),
+        ];
+        let check = check_directions(&runs, MultiOrientKind::Cosmos);
+        assert!(check.max_pairwise_deg > MIN_SPREAD_DEG, "{}", check.max_pairwise_deg);
+        let why = check.verdict.unwrap_err();
+        assert!(why.contains("55% of the") && why.contains("--multi-orientation-force"), "{why}");
+
+        let pair = |deg: f64| {
+            let a = deg.to_radians();
+            vec![
+                orient("a", (0.0, 0.0, 1.0), DirectionSource::Sidecar),
+                orient("b", (a.sin(), 0.0, a.cos()), DirectionSource::Sidecar),
+            ]
+        };
+        assert!(check_directions(&pair(10.0), MultiOrientKind::Cosmos).verdict.is_err());
+        let ok = check_directions(&pair(15.0), MultiOrientKind::Cosmos);
+        assert!(ok.is_ok(), "{:?}", ok.verdict);
+        assert!(ok.summary().contains("% of the magic-angle cone uncovered"), "{}", ok.summary());
     }
 
     #[test]
