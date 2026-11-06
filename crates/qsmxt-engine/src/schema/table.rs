@@ -15,8 +15,8 @@ use qsm_core::utils::wavelet::SUPPORTED_ORDERS as WAVELET_ORDERS;
 
 pub(super) fn table() -> Vec<Def> {
     vec![
-        d("multi_orientation.group_by", Input, "Orientations", "Runs that are the same object at a different angle: an entity (acq, run, rec, inv), a glob (*acq-dir*), or re:<regex>. Empty = off. How they combine: QSM → Multi-orientation", Text).basic().off(json!("")).flag("--orientation-group").full("Orientation grouping")
-        .gui("Runs that are the same object at a different angle, matched by an entity (acq, run, rec, inv), a glob (*acq-dir*) or re:<regex>; empty turns grouping off. How the orientations are combined is set under Multi-orientation").unavailable_in_browser(),
+        d("multi_orientation.group_by", Input, "Orientations", "Runs that are the same object at a different angle: an entity (acq, run, rec, inv), a glob (*acq-dir*), re:<regex>, or runs:<groups>. Empty = off. How they combine: QSM → COSMOS/STI", Text).basic().off(json!("")).flag("--orientation-group").full("Orientation grouping")
+        .gui("Runs that are the same object at a different angle, matched by an entity (acq, run, rec, inv), a glob (*acq-dir*), re:<regex> or runs:<groups>; empty turns grouping off. How the orientations are combined is set under COSMOS/STI").unavailable_in_browser(),
         d("pipeline.axial_resampling", Geometry, "Axial resampling", "Resample oblique acquisitions onto an axial grid when they are tilted more than the threshold. Off: reconstruct on the acquired grid with the true B0 direction", Bool).basic().flag("--axial-resampling"),
         // QSMxT: --obliquity-threshold and the config file refuse a negative threshold (src/pipeline/config.rs, PipelineConfig::from_toml_migrating).
         d("pipeline.obliquity_threshold", Geometry, "Obliquity threshold (°)", "Resample only data more oblique than this, in degrees", Float).min(0.0).units("deg").flag("--obliquity-threshold").parent("pipeline.axial_resampling")

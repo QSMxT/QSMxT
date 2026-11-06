@@ -677,9 +677,9 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
             super::app::FilterFocus::Include => "Glob patterns to include (space-separated, e.g. sub-1* *ses-pre*)",
             super::app::FilterFocus::Exclude => "Glob patterns to exclude (space-separated, e.g. *mygrea*)",
             super::app::FilterFocus::OrientationGroup => {
-                "Runs that are the same object at a different angle: an entity (acq, run, rec, inv), a glob (*acq-dir*), or re:<regex>. Empty = off. How they combine: QSM → Multi-orientation"
+                "Runs that are the same object at a different angle: an entity (acq, run, rec, inv), a glob (*acq-dir*), or re:<regex>. Empty = off. Or give runs their groups with ←/→ in the list below. How they combine: QSM → COSMOS/STI"
             }
-            super::app::FilterFocus::TreeNode(_) => "Space/Enter: toggle, Left/Right: expand/collapse",
+            super::app::FilterFocus::TreeNode(_) => "Space/Enter: tick. ←/→: a run's orientation group and reference; a subject or session: collapse/expand",
             super::app::FilterFocus::NumEchoes => "Limit number of echoes to process",
         }
     } else if is_example {
@@ -852,6 +852,9 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 lines.push(Line::from(""));
 
                 let visible = app.filter_state.visible_rows();
+                let preview = app.filter_state.orientation_preview();
+                let groups = app.filter_state.orientation_groups();
+                let need = orientations_needed(app.filter_state.orientation_algorithm);
                 for (i, row) in visible.iter().enumerate() {
                     let focused = !in_io && app.filter_state.focus == super::app::FilterFocus::TreeNode(i);
                     let line = match row {
@@ -896,7 +899,30 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                             } else {
                                 Style::default().fg(color)
                             };
-                            Line::from(Span::styled(format!("{}{} {}", indent, marker, leaf.display), style))
+                            let mut spans = vec![Span::styled(format!("{}{} {}", indent, marker, leaf.display), style)];
+                            // Its orientation group, marked where the group is too small to run.
+                            // Its orientation group: ◀ ▶ around it on the focused run, which ←/→
+                            // changes; marked where the group is too small to run.
+                            if let Some(tag) = groups.iter().enumerate().find_map(|(g, members)| {
+                                let at = members.iter().position(|k| *k == leaf.key_string)?;
+                                let size = members.iter().filter(|k| preview.order.contains(k)).count();
+                                let mut tag = format!("group {}", g + 1);
+                                if at == 0 && size > 1 {
+                                    tag.push_str("; reference");
+                                }
+                                if size < 2 {
+                                    tag.push_str("; needs another run");
+                                } else if size < need {
+                                    tag.push_str(&format!("; {size} of the {need} needed"));
+                                }
+                                Some((tag, size < need))
+                            }).or_else(|| focused.then(|| ("no group".to_string(), false))) {
+                                let (tag, short) = tag;
+                                let color = if short { Color::Red } else if focused { Color::Yellow } else { Color::Cyan };
+                                let text = if focused { format!("  ◀ {tag} ▶") } else { format!("  ({tag})") };
+                                spans.push(Span::styled(text, Style::default().fg(color)));
+                            }
+                            Line::from(spans)
                         }
                     };
                     lines.push(line);
@@ -1042,31 +1068,25 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
             f.set_cursor_position((x, y));
         }
     }
-    // Set cursor if editing filter include/exclude/num_echoes (BIDS mode only)
-    if is_bids && app.filter_state.include_editing {
-        let offset = io_field_count + 2;
-        let scroll = app.form_scroll_offset;
-        if offset >= scroll && offset < scroll + content_area.height as usize {
-            let y = content_area.y + (offset - scroll) as u16;
-            let x = content_area.x + 12 + app.filter_state.include_cursor as u16;
-            f.set_cursor_position((x, y));
-        }
-    } else if is_bids && app.filter_state.exclude_editing {
-        let offset = io_field_count + 2 + 1;
-        let scroll = app.form_scroll_offset;
-        if offset >= scroll && offset < scroll + content_area.height as usize {
-            let y = content_area.y + (offset - scroll) as u16;
-            let x = content_area.x + 12 + app.filter_state.exclude_cursor as u16;
-            f.set_cursor_position((x, y));
-        }
-    } else if is_bids && app.filter_state.num_echoes_editing {
-        let offset = io_field_count + 2 + 1;
-        let vis_len = app.filter_state.visible_rows().len();
-        let line = offset + vis_len + 2;
+    // Set cursor if editing a filter text field (BIDS mode only): on the focused line, after
+    // its label.
+    let fs = &app.filter_state;
+    let editing_at = if fs.include_editing {
+        Some(("  Include:  ".len(), fs.include_cursor))
+    } else if fs.exclude_editing {
+        Some(("  Exclude:  ".len(), fs.exclude_cursor))
+    } else if fs.orientation_editing {
+        Some((ORIENTATIONS_LABEL.len(), fs.orientation_cursor))
+    } else if fs.num_echoes_editing {
+        Some((14, fs.num_echoes_cursor))
+    } else {
+        None
+    };
+    if let (true, Some((label, cursor)), Some(line)) = (is_bids, editing_at, focused_line) {
         let scroll = app.form_scroll_offset;
         if line >= scroll && line < scroll + content_area.height as usize {
             let y = content_area.y + (line - scroll) as u16;
-            let x = content_area.x + 14 + app.filter_state.num_echoes_cursor as u16;
+            let x = content_area.x + (label + cursor) as u16;
             f.set_cursor_position((x, y));
         }
     }
@@ -2339,11 +2359,16 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         };
         let in_picker = app.active_tab == TAB_INPUT && app.input_mode == super::app::InputMode::Example
             && app.active_field >= App::INPUT_IO_FIELDS;
+        let on_run = app.active_tab == TAB_INPUT && app.input_mode == super::app::InputMode::Bids
+            && app.active_field >= App::INPUT_IO_FIELDS
+            && matches!(app.filter_state.focus, super::app::FilterFocus::TreeNode(i)
+                if matches!(app.filter_state.visible_rows().get(i), Some(super::app::TreeRow::Run { .. })));
         let mut keys = vec![(tabs.as_str(), "Tabs"), ("[ ]", "Sub-tabs"), ("\u{2191}\u{2193}", "Navigate")];
         match (&choose, &row) {
             (Some(c), _) => keys.push(("Enter", c.as_str())),
             (None, None) if in_picker && app.example_state.cursor == super::app::ExampleState::BUTTON => keys.push(("Enter", "Download")),
             (None, None) if in_picker => keys.push(("Space", "Tick")),
+            (None, None) if on_run => keys.extend([("Space", "Tick"), ("\u{2190}\u{2192}", "Orientation group")]),
             (None, None) if !rows_tab => keys.extend([("\u{2190}\u{2192}/Space", "Change"), ("Enter", "Edit")]),
             (None, Some(PipelineRow::Param { .. })) => keys.push(("Enter", "Edit")),
             (None, Some(PipelineRow::Toggle { .. })) => keys.push(("Space", "Toggle")),
@@ -2564,7 +2589,7 @@ pub(super) mod tests {
         app.filter_state.focus = crate::tui::app::FilterFocus::OrientationGroup;
         let text = screen_text(&render_app_sized(&mut app, 60, 30));
         assert!(text.contains("Runs that are the same object"), "{text}");
-        assert!(text.contains("Multi-orientation"), "the end of the text is cut off:\n{text}");
+        assert!(text.contains("COSMOS/STI"), "the end of the text is cut off:\n{text}");
     }
 
     #[test]
@@ -2877,6 +2902,14 @@ pub(super) mod tests {
 /// pattern that matches the wrong runs does not error: it silently reconstructs the wrong
 /// set, or matches nothing and falls back to ordinary single-orientation processing. Showing
 /// the groups as they are typed is what makes that visible.
+/// The orientation pattern's label, which its cursor follows.
+const ORIENTATIONS_LABEL: &str = "  Orientations: ";
+
+/// How many orientations a group needs for the chosen reconstruction: STI six, COSMOS two.
+fn orientations_needed(algorithm: usize) -> usize {
+    if algorithm == 1 { 6 } else { 2 }
+}
+
 fn orientation_block(app: &App, in_io: bool) -> Vec<Line<'static>> {
     use super::app::{FilterFocus, ORIENTATION_ALGORITHMS};
 
@@ -2892,13 +2925,16 @@ fn orientation_block(app: &App, in_io: bool) -> Vec<Line<'static>> {
 
     let mut lines = Vec::new();
 
+    let listed = crate::bids::orientation::listed_groups(&fs.orientation_group).filter(|_| !fs.orientation_editing);
     let value = if fs.orientation_group.is_empty() && !fs.orientation_editing {
-        Span::styled("(off)", Style::default().fg(Color::DarkGray))
+        Span::styled("(off: type a pattern, or ←/→ on runs below)", Style::default().fg(Color::DarkGray))
+    } else if listed.is_some() {
+        Span::styled("chosen with ←/→ in the runs below", Style::default().fg(Color::Cyan))
     } else {
         Span::styled(fs.orientation_group.clone(), Style::default().fg(Color::Cyan))
     };
     lines.push(Line::from(vec![
-        Span::styled("  Orientations: ", label_style(FilterFocus::OrientationGroup)),
+        Span::styled(ORIENTATIONS_LABEL, label_style(FilterFocus::OrientationGroup)),
         value,
     ]));
 
@@ -2906,12 +2942,7 @@ fn orientation_block(app: &App, in_io: bool) -> Vec<Line<'static>> {
         return lines;
     }
 
-    let algo = ORIENTATION_ALGORITHMS[fs.orientation_algorithm.min(ORIENTATION_ALGORITHMS.len() - 1)];
-    // Its settings live with the reconstruction they shape (QSM → Multi-orientation).
-    lines.push(Line::from(Span::styled(
-        format!("    combined as {algo} (QSM → Multi-orientation)"),
-        Style::default().fg(Color::DarkGray),
-    )));
+    let algo = ORIENTATION_ALGORITHMS[fs.orientation_algorithm.min(ORIENTATION_ALGORITHMS.len() - 1)].to_uppercase();
 
     let preview = fs.orientation_preview();
     if let Some(err) = preview.error {
@@ -2924,34 +2955,32 @@ fn orientation_block(app: &App, in_io: bool) -> Vec<Line<'static>> {
 
     if preview.groups.is_empty() {
         lines.push(Line::from(Span::styled(
-            "    ✗ no orientation groups — the pattern matches fewer than 2 runs per session",
+            if listed.is_some() {
+                "    ✗ no orientation group yet — give at least 2 runs of one session the same group"
+            } else {
+                "    ✗ no orientation groups — the pattern matches fewer than 2 runs per session"
+            },
             Style::default().fg(Color::Red),
         )));
         return lines;
     }
 
-    // STI needs six orientations and COSMOS two; flagging a short group here saves a run that
-    // would only fail once the field maps had been computed.
-    let need = if fs.orientation_algorithm == 1 { 6 } else { 2 };
-    for (label, members) in &preview.groups {
-        let short = members.len() < need;
-        let style = if short {
-            Style::default().fg(Color::Red)
-        } else {
-            Style::default().fg(Color::Green)
-        };
-        let marker = if short { "✗" } else { "◉" };
-        lines.push(Line::from(Span::styled(
-            format!(
-                "    {marker} {label}: {} orientation{} ({}){}",
-                members.len(),
-                if members.len() == 1 { "" } else { "s" },
-                members.join(", "),
-                if short { format!(" — needs {need}") } else { String::new() },
-            ),
-            style,
-        )));
+    // One line for all the groups: each run's group is marked against it in the tree. STI needs
+    // six orientations and COSMOS two; flagging a short group here saves a run that would only
+    // fail once the field maps had been computed.
+    let need = orientations_needed(fs.orientation_algorithm);
+    let sizes: Vec<usize> = preview.groups.iter().map(|(_, m)| m.len()).collect();
+    let (least, most) = (sizes.iter().min().copied().unwrap_or(0), sizes.iter().max().copied().unwrap_or(0));
+    let n = sizes.len();
+    let of = if least == most { format!("{most}") } else { format!("{least}–{most}") };
+    let short = sizes.iter().filter(|&&k| k < need).count();
+    let (marker, style) = if short > 0 { ("✗", Style::default().fg(Color::Red)) } else { ("◉", Style::default().fg(Color::Green)) };
+    let mut summary = format!("    {marker} {n} group{} of {of} orientations, marked in the runs below; combined with {algo} (3 QSM → COSMOS/STI)",
+        if n == 1 { "" } else { "s" });
+    if short > 0 {
+        summary.push_str(&format!(" — {short} {} fewer than the {need} {algo} needs", if short == 1 { "has" } else { "have" }));
     }
+    lines.push(Line::from(Span::styled(summary, style)));
     if preview.ungrouped > 0 {
         lines.push(Line::from(Span::styled(
             format!(
@@ -2994,7 +3023,7 @@ mod orientation_block_tests {
         let (mut app, _d) = app_with_orientations();
         let text = screen_text(&render_app_sized(&mut app, 140, 60));
         assert!(text.contains("Orientations:"), "{text}");
-        assert!(text.contains("(off)"), "{text}");
+        assert!(text.contains("(off: type a pattern"), "{text}");
         assert!(!text.contains("Combine as:"), "settings should stay hidden:\n{text}");
     }
 
@@ -3005,8 +3034,9 @@ mod orientation_block_tests {
         let (mut app, _d) = app_with_orientations();
         app.filter_state.orientation_group = "*acq-dir*".into();
         let text = screen_text(&render_app_sized(&mut app, 140, 60));
-        assert!(text.contains("combined as cosmos"), "{text}");
-        assert!(text.contains("3 orientations"), "{text}");
+        assert!(text.contains("1 group of 3 orientations"), "{text}");
+        assert!(text.contains("combined with COSMOS"), "{text}");
+        assert_eq!(text.matches("(group 1").count(), 3, "each member is marked:\n{text}");
         // The unrelated acquisition is reported as left out, not silently swallowed.
         assert!(text.contains("matched no group"), "{text}");
     }
@@ -3028,7 +3058,8 @@ mod orientation_block_tests {
         app.filter_state.orientation_group = "*acq-dir*".into();
         app.filter_state.orientation_algorithm = 1; // sti
         let text = screen_text(&render_app_sized(&mut app, 140, 60));
-        assert!(text.contains("needs 6"), "{text}");
+        assert!(text.contains("fewer than the 6 STI needs"), "{text}");
+        assert!(text.contains("3 of the 6 needed"), "{text}");
     }
 
     /// The reference orientation is listed first and marked; one that matches no member is
@@ -3039,11 +3070,30 @@ mod orientation_block_tests {
         app.filter_state.orientation_group = "*acq-dir*".into();
         app.filter_state.orientation_reference = "dir3".into();
         let text = screen_text(&render_app_sized(&mut app, 200, 60));
-        let line = text.lines().find(|l| l.contains("3 orientations")).unwrap_or_else(|| panic!("{text}"));
-        assert!(line.contains("(acq-dir3_MEGRE [reference], acq-dir1"), "{line}");
+        let line = text.lines().find(|l| l.contains("(group 1; reference)")).unwrap_or_else(|| panic!("{text}"));
+        assert!(line.contains("acq-dir3_MEGRE"), "{line}");
+        assert_eq!(text.matches("reference)").count(), 1, "{text}");
         app.filter_state.orientation_reference = "dir9".into();
         let text = screen_text(&render_app_sized(&mut app, 200, 60));
         assert!(text.contains("matches none"), "{text}");
+    }
+
+    /// Editing the pattern shows a cursor in it, after what is typed.
+    #[test]
+    fn editing_the_pattern_shows_a_cursor() {
+        let (mut app, _d) = app_with_orientations();
+        app.active_field = App::INPUT_IO_FIELDS;
+        app.filter_state.focus = crate::tui::app::FilterFocus::OrientationGroup;
+        app.filter_state.orientation_group = "acq".into();
+        app.filter_state.orientation_editing = true;
+        app.filter_state.orientation_cursor = 3;
+        let mut t = render_app_sized(&mut app, 140, 60);
+        let at = t.get_cursor_position().unwrap();
+        let text = screen_text(&t);
+        let row = text.lines().nth(at.y as usize).unwrap();
+        assert!(row.contains("Orientations: acq"), "{row}");
+        let col = row[..row.find("acq").unwrap()].chars().count() + 3;
+        assert_eq!(at.x as usize, col, "{row}");
     }
 
     #[test]
@@ -3054,7 +3104,7 @@ mod orientation_block_tests {
         assert!(text.contains("does not tell"), "{text}");
     }
 
-    /// The grouping's settings are rows of QSM → Multi-orientation, with the algorithms' help.
+    /// The grouping's settings are rows of QSM → COSMOS/STI, with the algorithms' help.
     #[test]
     fn orientation_settings_are_on_the_qsm_tab() {
         let (mut app, _d) = app_with_orientations();
@@ -3062,7 +3112,7 @@ mod orientation_block_tests {
         app.active_tab = crate::tui::app::TAB_QSM;
         assert!(app.goto_field("orientation_algorithm"));
         let text = screen_text(&render_app_sized(&mut app, 140, 60));
-        assert!(text.contains("Multi-orientation") && text.contains("Combine as"), "{text}");
+        assert!(text.contains("COSMOS/STI") && text.contains("Combine as"), "{text}");
         assert!(text.contains("COSMOS — scalar susceptibility"), "help follows the choice:\n{text}");
         app.set_field_select("orientation_algorithm", 1);
         let text = screen_text(&render_app_sized(&mut app, 140, 60));

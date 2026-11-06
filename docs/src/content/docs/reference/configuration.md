@@ -49,7 +49,7 @@ off unless `group_by` names a pattern:
 
 ```toml
 [multi_orientation]
-group_by = "*acq-dir*"   # entity name, glob, or re:<regex> — empty = off
+group_by = "*acq-dir*"   # entity name, glob, re:<regex> or runs:<groups> — empty = off
 reference = ""           # glob or word picking each group's reference — empty = first by name
 algorithm = "cosmos"     # or "sti"
 lambda = 0.0

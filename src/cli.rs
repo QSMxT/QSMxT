@@ -1482,8 +1482,10 @@ pub struct PipelineArgs {
     pub heidi: bool,
 
     /// Group runs into multi-orientation sets and reconstruct each with COSMOS or STI.
-    /// Takes an entity name (acq, run, rec, inv), a glob over the run key (`*acq-dir*`), or
-    /// `re:` and a regex with one capture group. Orientations are co-registered if they need it
+    /// Takes an entity name (acq, run, rec, inv), a glob over the run key (`*acq-dir*`), `re:`
+    /// and a regex with one capture group, or `runs:` and the groups' run keys (`,` between
+    /// runs, `;` between groups, each group's reference first). Orientations are co-registered
+    /// if they need it
     #[arg(long, value_name = "PATTERN")]
     pub orientation_group: Option<String>,
 

@@ -543,7 +543,7 @@ impl Page {
             Page::FieldMap => "Field map",
             Page::Background => "Background",
             Page::Inversion => "Inversion",
-            Page::MultiOrientation => "Multi-orientation",
+            Page::MultiOrientation => "COSMOS/STI",
             Page::Reference => "Reference",
             Page::Separation => "χ-separation",
             Page::SwiSmwi => "SWI/SMWI",
@@ -844,6 +844,24 @@ pub const ORIENTATION_ALGORITHM_HELP: [&str; 2] = [
     "STI — rank-2 susceptibility tensor; needs 6+ orientations that are not coplanar",
 ];
 
+/// Where ←/→ can put a run of the tree ([`FilterTreeState::orientation_slots`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrientationSlot {
+    /// In no orientation group.
+    None,
+    /// In group `n` (from 0), not its reference.
+    Member(usize),
+    /// In group `n`, its reference.
+    Reference(usize),
+    /// In a group of its own, to put others with.
+    New,
+}
+
+/// A run's subject and session, which an orientation group stays within.
+fn session_of(key: &crate::bids::entities::AcquisitionKey) -> String {
+    format!("{}/{}", key.subject, key.session.as_deref().unwrap_or(""))
+}
+
 /// What an orientation-group pattern currently matches.
 #[derive(Debug, Clone, Default)]
 pub struct OrientationPreview {
@@ -853,6 +871,11 @@ pub struct OrientationPreview {
     pub groups: Vec<(String, Vec<String>)>,
     /// Selected runs the pattern did not put in any group. These process normally.
     pub ungrouped: usize,
+    /// Each grouped run, by its key: its group's number (from 1, in group order) and whether it
+    /// is the group's reference. Shown against the run in the tree.
+    pub member_of: std::collections::HashMap<String, (usize, bool)>,
+    /// The selected runs' keys, in discovery order.
+    pub order: Vec<String>,
 }
 
 /// Which text field is being edited in the filter area.
@@ -1054,7 +1077,19 @@ impl FilterTreeState {
         let strings: Vec<String> = keys.iter().map(|(_, s)| s.clone()).collect();
         let error = crate::bids::orientation::apply_reference(
             &mut groups, &strings, &self.orientation_reference).err();
+        let resolved = error.is_none();
+        let member_of = groups.iter().enumerate()
+            .flat_map(|(g, group)| group.members.iter().enumerate()
+                .map(move |(j, &i)| (i, (g + 1, j == 0 && resolved))))
+            .map(|(i, tag)| (strings[i].clone(), tag))
+            .collect();
+        let error = error.or_else(|| {
+            let run_keys: Vec<_> = keys.iter().map(|(k, _)| k.clone()).collect();
+            crate::bids::orientation::distinct_outputs(&groups, &run_keys).err()
+        });
         OrientationPreview {
+            member_of,
+            order: strings.clone(),
             error,
             groups: groups
                 .into_iter()
@@ -1167,6 +1202,110 @@ impl FilterTreeState {
                 }
             }
         }
+    }
+
+    /// The focused run of the tree, if a run is focused.
+    fn focused_run(&mut self) -> Option<&mut crate::bids::discovery::BidsRunLeaf> {
+        let FilterFocus::TreeNode(idx) = self.focus else { return None };
+        let row = self.visible_rows().get(idx).cloned()?;
+        let tree = self.tree.as_mut()?;
+        match row {
+            TreeRow::Run { sub, ses: Some(sei), run } => Some(&mut tree.subjects[sub].sessions[sei].runs[run]),
+            TreeRow::Run { sub, ses: None, run } => Some(&mut tree.subjects[sub].runs[run]),
+            _ => None,
+        }
+    }
+
+    /// The orientation groups as run keys, each with its reference first: as listed (`runs:`),
+    /// or as a typed pattern groups the selected runs now.
+    pub fn orientation_groups(&self) -> Vec<Vec<String>> {
+        if let Some(groups) = crate::bids::orientation::listed_groups(&self.orientation_group) {
+            return groups;
+        }
+        let preview = self.orientation_preview();
+        let mut groups: Vec<Vec<String>> = vec![Vec::new(); preview.groups.len()];
+        let mut members: Vec<(&String, &(usize, bool))> = preview.member_of.iter().collect();
+        members.sort_by_key(|(k, (g, reference))| (*g, !*reference, preview.order.iter().position(|o| o == *k)));
+        for (key, (g, _)) in members {
+            groups[g - 1].push(key.clone());
+        }
+        groups
+    }
+
+    /// Where ←/→ can put the focused run, in order, and where it is now: no group, then each
+    /// group of its session as a member and as the reference, then a new group.
+    pub fn orientation_slots(&mut self) -> Option<(Vec<OrientationSlot>, usize)> {
+        let groups = self.orientation_groups();
+        let run = self.focused_run()?;
+        let (key, session) = (run.key_string.clone(), session_of(&run.key));
+        let keys = self.run_keys();
+        let same_session = |k: &String| keys.get(k).is_some_and(|s| *s == session);
+        let mut slots = vec![OrientationSlot::None];
+        let mut now = 0;
+        for (g, members) in groups.iter().enumerate() {
+            let others: Vec<&String> = members.iter().filter(|k| **k != key).collect();
+            if others.is_empty() || !others.iter().all(|k| same_session(k)) {
+                continue;
+            }
+            for slot in [OrientationSlot::Member(g), OrientationSlot::Reference(g)] {
+                let here = match slot {
+                    OrientationSlot::Member(_) => members.iter().skip(1).any(|k| *k == key),
+                    _ => members.first() == Some(&key),
+                };
+                if here {
+                    now = slots.len();
+                }
+                slots.push(slot);
+            }
+        }
+        if groups.iter().any(|g| g.as_slice() == [key.clone()]) {
+            now = slots.len();
+        }
+        slots.push(OrientationSlot::New);
+        Some((slots, now))
+    }
+
+    /// ←/→ on a run: move it to the slot before or after its own ([`Self::orientation_slots`]).
+    /// The groups are kept as the pattern itself, listed (`runs:`), each with its reference
+    /// first, so the config and the command line need nothing new. A typed pattern's groups
+    /// are where this starts from.
+    pub fn move_orientation(&mut self, forward: bool) {
+        let Some((slots, now)) = self.orientation_slots() else { return };
+        let next = if forward { (now + 1).min(slots.len() - 1) } else { now.saturating_sub(1) };
+        if next == now {
+            return;
+        }
+        let mut groups = self.orientation_groups();
+        let Some(run) = self.focused_run() else { return };
+        let key = run.key_string.clone();
+        if slots[next] != OrientationSlot::None {
+            // Only a selected run is processed, so grouping one selects it.
+            run.selected = true;
+        }
+        for g in &mut groups {
+            g.retain(|k| *k != key);
+        }
+        match slots[next] {
+            OrientationSlot::None => {}
+            OrientationSlot::Member(g) => groups[g].push(key),
+            OrientationSlot::Reference(g) => groups[g].insert(0, key),
+            OrientationSlot::New => groups.push(vec![key]),
+        }
+        self.orientation_group = crate::bids::orientation::runs_pattern(&groups);
+        self.orientation_cursor = self.orientation_group.len();
+        // Each group's reference is now its first run.
+        self.orientation_reference.clear();
+    }
+
+    /// Every run's key, with its subject and session.
+    fn run_keys(&self) -> std::collections::HashMap<String, String> {
+        let mut out = std::collections::HashMap::new();
+        if let Some(ref tree) = self.tree {
+            tree.for_each_run(|leaf| {
+                out.insert(leaf.key_string.clone(), session_of(&leaf.key));
+            });
+        }
+        out
     }
 
     /// Toggle collapse on the focused subject or session.
@@ -3861,7 +4000,7 @@ impl PipelineFormState {
 
     }
 
-    /// QSM → Multi-orientation: how an orientation group (Input tab) is reconstructed.
+    /// QSM → COSMOS/STI: how an orientation group (Input tab) is reconstructed.
     fn multi_orientation_rows(&self, rows: &mut Vec<PipelineRow>) {
         rows.push(PipelineRow::AlgoSelect {
             label: "Combine as", field: "orientation_algorithm",
@@ -3933,7 +4072,15 @@ impl PipelineFormState {
             Page::FieldMap => { self.push_qsm_toggle(&mut rows); self.field_map_rows(&mut rows) }
             Page::Background => { self.push_qsm_toggle(&mut rows); self.background_rows(&mut rows) }
             Page::Inversion => { self.push_qsm_toggle(&mut rows); self.inversion_rows(&mut rows) }
-            Page::MultiOrientation => { self.push_qsm_toggle(&mut rows); self.multi_orientation_rows(&mut rows) }
+            Page::MultiOrientation => {
+                self.push_qsm_toggle(&mut rows);
+                if self.ctx.orientation_group {
+                    self.multi_orientation_rows(&mut rows);
+                } else {
+                    rows.push(PipelineRow::Note { text: "No orientation groups: runs of one head at different angles, reconstructed together.".into() });
+                    rows.push(PipelineRow::Note { text: "Choose them on 1 Input → Orientations, and these settings apply.".into() });
+                }
+            }
             Page::Reference => { self.push_qsm_toggle(&mut rows); self.reference_rows(&mut rows) }
             Page::Separation => self.separation_rows(&mut rows),
             _ => {}
@@ -6321,7 +6468,10 @@ impl App {
             KeyCode::Up | KeyCode::Char('k') => self.filter_state.focus_prev(),
             KeyCode::Down | KeyCode::Char('j') => self.filter_state.focus_next(),
 
-            // Collapse/expand
+            // A run: its orientation group. A subject or session: collapse/expand.
+            KeyCode::Left | KeyCode::Right if self.filter_state.focused_run().is_some() => {
+                self.filter_state.move_orientation(key.code == KeyCode::Right);
+            }
             KeyCode::Left | KeyCode::Right => self.filter_state.toggle_collapse(),
 
             // Toggle / interact
@@ -7576,7 +7726,8 @@ impl App {
                 if ps.field_mapping_runs().0 { pages.push(Page::FieldMap); }
                 if ps.inversion_needs_bg_removal() { pages.push(Page::Background); }
                 pages.push(Page::Inversion);
-                if ps.ctx.orientation_group { pages.push(Page::MultiOrientation); }
+                // Shown without a group too, to say where groups are chosen.
+                pages.push(Page::MultiOrientation);
                 pages.push(Page::Reference);
                 pages
             }
@@ -8909,11 +9060,15 @@ mod tests {
     fn qsm_sub_tabs_follow_the_stages_that_run() {
         let mut app = App::new();
         let idx = |name: &str| QSM_ALGO_OPTIONS.iter().position(|o| *o == name).unwrap();
-        assert_eq!(app.pages(TAB_QSM), vec![Page::FieldMap, Page::Background, Page::Inversion, Page::Reference]);
+        assert_eq!(app.pages(TAB_QSM), vec![Page::FieldMap, Page::Background, Page::Inversion, Page::MultiOrientation, Page::Reference]);
         app.pipeline_state.qsm_algorithm = idx("iqsm");
-        assert_eq!(app.pages(TAB_QSM), vec![Page::Inversion, Page::Reference]);
+        assert_eq!(app.pages(TAB_QSM), vec![Page::Inversion, Page::MultiOrientation, Page::Reference]);
+        // Without a group, COSMOS/STI says where groups are chosen; with one, it has its settings.
+        let rows = |app: &App| app.synced_pipeline(Page::MultiOrientation, &app.row_context()).visible_rows();
+        assert!(!rows(&app).iter().any(|r| matches!(r, PipelineRow::AlgoSelect { field: "orientation_algorithm", .. })));
+        assert!(rows(&app).iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("1 Input → Orientations"))));
         app.filter_state.orientation_group = "acq".into();
-        assert!(app.pages(TAB_QSM).contains(&Page::MultiOrientation));
+        assert!(rows(&app).iter().any(|r| matches!(r, PipelineRow::AlgoSelect { field: "orientation_algorithm", .. })));
         app.pipeline_state.do_qsm = false;
         app.filter_state.orientation_group.clear();
         assert_eq!(app.pages(TAB_QSM), vec![Page::QsmOff]);
@@ -9012,7 +9167,83 @@ mod tests {
         assert!(!tree.subjects[0].runs[0].selected);
     }
 
-    /// The Input tab keeps only the pattern: its settings are on QSM → Multi-orientation, so
+    /// ←/→ on a run walks it through no group, each group of its session as a member and as
+    /// the reference, and a new group; the groups are kept as a `runs:` pattern. A typed
+    /// pattern's groups are where it starts.
+    #[test]
+    fn arrows_give_runs_their_orientation_groups() {
+        let dir = tempfile::tempdir().unwrap();
+        crate::testutils::create_multi_orientation_bids(dir.path());
+        let mut app = App::new();
+        app.active_tab = TAB_INPUT;
+        app.form.bids_dir = dir.path().to_string_lossy().into_owned();
+        app.filter_state.maybe_rescan(&app.form.bids_dir.clone());
+        app.active_field = App::INPUT_IO_FIELDS;
+        let rows = app.filter_state.visible_rows();
+        let runs: Vec<usize> = (0..rows.len()).filter(|&i| matches!(rows[i], TreeRow::Run { .. })).collect();
+        let press = |app: &mut App, i: usize, code: KeyCode| {
+            app.filter_state.focus = FilterFocus::TreeNode(i);
+            app.handle_key(KeyEvent::new(code, KeyModifiers::NONE));
+        };
+        let slot = |app: &mut App, i: usize| {
+            app.filter_state.focus = FilterFocus::TreeNode(i);
+            let (slots, now) = app.filter_state.orientation_slots().unwrap();
+            slots[now]
+        };
+        // → puts the first run in a new group; the next run's → joins it, then is its reference.
+        press(&mut app, runs[0], KeyCode::Right);
+        assert_eq!(slot(&mut app, runs[0]), OrientationSlot::New);
+        press(&mut app, runs[1], KeyCode::Right);
+        assert_eq!(slot(&mut app, runs[1]), OrientationSlot::Member(0));
+        let preview = app.filter_state.orientation_preview();
+        assert_eq!(preview.groups.len(), 1);
+        press(&mut app, runs[1], KeyCode::Right);
+        assert_eq!(slot(&mut app, runs[1]), OrientationSlot::Reference(0));
+        assert_eq!(app.filter_state.orientation_groups()[0][0], app.filter_state.orientation_preview().order[runs_order(&app, runs[1])]);
+        // → again: a second group of its own; ← back.
+        press(&mut app, runs[1], KeyCode::Right);
+        assert_eq!(slot(&mut app, runs[1]), OrientationSlot::New);
+        press(&mut app, runs[1], KeyCode::Left);
+        assert_eq!(slot(&mut app, runs[1]), OrientationSlot::Reference(0));
+        // ← all the way: out of every group, and with nothing grouped, off.
+        for run in [runs[1], runs[0]] {
+            for _ in 0..4 {
+                press(&mut app, run, KeyCode::Left);
+            }
+            assert_eq!(slot(&mut app, run), OrientationSlot::None);
+        }
+        assert!(app.filter_state.orientation_group.is_empty(), "{}", app.filter_state.orientation_group);
+
+        // From a typed pattern, the arrows start with what it grouped.
+        app.filter_state.orientation_group = "*acq-dir*".into();
+        let grouped = app.filter_state.orientation_preview().member_of.len();
+        let member = runs.iter().copied().find(|&i| slot(&mut app, i) != OrientationSlot::None).unwrap();
+        press(&mut app, member, KeyCode::Left);
+        assert!(app.filter_state.orientation_group.starts_with("runs:"));
+        let listed: usize = app.filter_state.orientation_groups().iter().map(Vec::len).sum();
+        assert_eq!(listed, grouped);
+        assert!(crate::bids::orientation::parse_pattern(&app.filter_state.orientation_group).unwrap().is_some());
+
+        // ←/→ on a subject or session still collapses and expands it.
+        let subject = (0..rows.len()).find(|&i| matches!(rows[i], TreeRow::Subject(_))).unwrap();
+        let before = app.filter_state.visible_rows().len();
+        press(&mut app, subject, KeyCode::Left);
+        assert!(app.filter_state.visible_rows().len() < before);
+    }
+
+    /// The position of the run at tree row `i` among the selected runs.
+    fn runs_order(app: &App, i: usize) -> usize {
+        let rows = app.filter_state.visible_rows();
+        let TreeRow::Run { sub, ses, run } = rows[i] else { panic!() };
+        let tree = app.filter_state.tree.as_ref().unwrap();
+        let key = match ses {
+            Some(sei) => &tree.subjects[sub].sessions[sei].runs[run].key_string,
+            None => &tree.subjects[sub].runs[run].key_string,
+        };
+        app.filter_state.orientation_preview().order.iter().position(|k| k == key).unwrap()
+    }
+
+    /// The Input tab keeps only the pattern: its settings are on QSM → COSMOS/STI, so
     /// focus goes from the pattern straight to the tree, set or not.
     #[test]
     fn the_input_tab_has_only_the_orientation_pattern() {
