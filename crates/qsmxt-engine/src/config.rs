@@ -1230,7 +1230,9 @@ pub struct Dismissal {
 #[serde(default)]
 pub struct MultiOrientationConfig {
     /// Orientation-group pattern: an entity name (`acq`, `run`, `rec`, `inv`), a glob over the
-    /// run key (`*acq-dir*`), or `re:` and a regex with one capture group. Empty = off.
+    /// run key (`*acq-dir*`), `re:` and a regex with one capture group, or `runs:` and the
+    /// groups' run keys (`,` between runs, `;` between groups, each group's reference first).
+    /// Empty = off.
     pub group_by: String,
     /// Which reconstruction to run over each group.
     pub algorithm: MultiOrientAlgorithm,

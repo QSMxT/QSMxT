@@ -112,7 +112,7 @@ tab without sub-tabs opens on its first setting.
 
 | Tab | Sub-tabs | What is there |
 |---|---|---|
-| 1 Input | — | Input mode, dataset/output/config paths, include/exclude patterns and the run tree, number of echoes, and the orientation groups: a pattern, or runs picked by hand with `o` in the run tree (`f` makes one the reference), each run marked with its group |
+| 1 Input | — | Input mode, dataset/output/config paths, include/exclude patterns and the run tree, number of echoes, and the orientation groups: a pattern, or groups given to runs with ←/→ in the run tree (one of them the reference), each run marked with its group |
 | 2 Preprocessing | Geometry · Masking · Motion | Axial resampling and output space, inhomogeneity correction, slice-gap check, crop to mask, FFT padding, coil combination (multi-coil data); the mask recipe, custom masks and the two-pass reliable mask; motion correction and its rigid registration |
 | 3 QSM | Field map · Background · Inversion · COSMOS/STI · Reference | *Compute QSM*, then one page per stage, shown only when that stage runs: unwrapping and B0 estimation; background-field removal (inversions of a local field only); the dipole inversion; how an orientation group is reconstructed (without one, where to choose it); the χ reference |
 | 4 χ-separation | — | χ-separation method and its parameters |

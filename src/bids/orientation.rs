@@ -26,6 +26,10 @@
 //!    glob genuinely cannot express: two separate orientation sets in one session. The
 //!    captured span is the orientation, everything outside it is the group key, so
 //!    `re:.*acq-(?:lowres|highres)-dir(.+?)_.*` keeps the two sets apart.
+//! 4. **`runs:` and the groups themselves** — run keys separated by `,`, groups by `;`, the
+//!    first of each group its reference: `runs:sub-01_acq-a_run-1_MEGRE,sub-01_acq-a_run-2_MEGRE`.
+//!    What the TUI writes when runs are given their groups by hand. It names exact runs, so
+//!    it does not carry over to subjects it does not list.
 //!
 //! # Why the orientation label carries no ordering
 //!
@@ -47,6 +51,26 @@ pub enum GroupPattern {
     /// Tier 3: the capture group (when present) is removed from the run key to form the
     /// group key, so two sets in one session stay apart.
     Regex(regex::Regex),
+    /// Tier 4: the groups as lists of run keys, each in order, its reference first.
+    Runs(Vec<Vec<String>>),
+}
+
+/// How tier 4 starts.
+pub const RUNS_PREFIX: &str = "runs:";
+
+/// Tier 4's groups, from the pattern text: `None` for any other tier.
+pub fn listed_groups(pattern: &str) -> Option<Vec<Vec<String>>> {
+    let list = pattern.trim().strip_prefix(RUNS_PREFIX)?;
+    Some(list.split(';')
+        .map(|g| g.split(',').map(|k| k.trim().to_string()).filter(|k| !k.is_empty()).collect::<Vec<_>>())
+        .filter(|g| !g.is_empty())
+        .collect())
+}
+
+/// Tier 4's text for `groups`, each listed with its reference first; empty (off) for none.
+pub fn runs_pattern(groups: &[Vec<String>]) -> String {
+    let groups: Vec<String> = groups.iter().filter(|g| !g.is_empty()).map(|g| g.join(",")).collect();
+    if groups.is_empty() { String::new() } else { format!("{RUNS_PREFIX}{}", groups.join(";")) }
 }
 
 /// Entity shorthands that expand to a glob. These are the entities QSMxT's filename parser
@@ -63,6 +87,17 @@ pub fn parse_pattern(pattern: &str) -> Result<Option<GroupPattern>, String> {
     let p = pattern.trim();
     if p.is_empty() || p.eq_ignore_ascii_case("none") {
         return Ok(None);
+    }
+
+    if let Some(groups) = listed_groups(p) {
+        if groups.is_empty() {
+            return Ok(None);
+        }
+        let mut seen = std::collections::HashSet::new();
+        if let Some(k) = groups.iter().flatten().find(|k| !seen.insert(k.as_str())) {
+            return Err(format!("orientation group: {k} is listed twice; a run belongs to one group"));
+        }
+        return Ok(Some(GroupPattern::Runs(groups)));
     }
 
     if let Some(rest) = p.strip_prefix("re:") {
@@ -126,6 +161,16 @@ fn group_key_for(key: &AcquisitionKey, key_str: &str, pattern: &GroupPattern) ->
                 None => format!("sub-{}", key.subject),
             })
         }
+        // A listed group within one subject and session: the session, then its place in the
+        // list, so two groups in one session stay apart.
+        GroupPattern::Runs(groups) => {
+            let i = groups.iter().position(|g| g.iter().any(|k| k == key_str))?;
+            let session = match &key.session {
+                Some(ses) => format!("sub-{}_ses-{}", key.subject, ses),
+                None => format!("sub-{}", key.subject),
+            };
+            Some(format!("{session} group {}", i + 1))
+        }
         GroupPattern::Regex(re) => {
             let caps = re.captures(key_str)?;
             match caps.get(1) {
@@ -170,13 +215,41 @@ pub fn group_keys(
         }
     }
 
+    // A listed group keeps its order: its reference first.
+    let place = |i: usize| match pattern {
+        GroupPattern::Runs(groups) => groups.iter().flatten().position(|k| *k == keys[i].1).unwrap_or(usize::MAX),
+        _ => i,
+    };
     order
         .into_iter()
         .filter_map(|label| {
-            let members = buckets.remove(&label).unwrap_or_default();
+            let mut members = buckets.remove(&label).unwrap_or_default();
+            members.sort_by_key(|&i| place(i));
             (members.len() >= 2).then_some(OrientationGroup { label, members })
         })
         .collect()
+}
+
+/// Refuse groups that would write the same outputs. A group's outputs are named by the entities
+/// its members share ([`crate::pipeline::multiorient::group_key_of`]), so two groups in one
+/// session that differ only in what varies within each (`run-1,run-2` and `run-3,run-4`) would
+/// overwrite each other.
+pub fn distinct_outputs(groups: &[OrientationGroup], keys: &[AcquisitionKey]) -> Result<(), String> {
+    let mut seen: Vec<(String, &str)> = Vec::new();
+    for g in groups {
+        let members: Vec<&AcquisitionKey> = g.members.iter().map(|&i| &keys[i]).collect();
+        let out = crate::pipeline::multiorient::group_key_of(&members).to_string();
+        if let Some((_, other)) = seen.iter().find(|(o, _)| *o == out) {
+            return Err(format!(
+                "orientation groups {other} and {} would both write {out}: their runs differ in \
+                 nothing the two groups do not share, so the outputs cannot be told apart. Group \
+                 runs that differ in another entity (acq, rec) apart",
+                g.label
+            ));
+        }
+        seen.push((out, &g.label));
+    }
+    Ok(())
 }
 
 /// Group discovered runs into orientation sets.
@@ -272,6 +345,48 @@ mod tests {
     fn group(specs: &[KeySpec], pattern: &str) -> Vec<OrientationGroup> {
         let p = parse_pattern(pattern).unwrap().expect("pattern should be active");
         group_keys(&keys(specs), &p)
+    }
+
+    /// Tier 4: the groups as listed, two in one session, each with its first run as the
+    /// reference; a run listed twice is refused, and nothing listed is off.
+    #[test]
+    fn listed_groups_are_taken_as_listed() {
+        let specs = [
+            ("01", Some("01"), Some("a"), Some("1")),
+            ("01", Some("01"), Some("a"), Some("2")),
+            ("01", Some("01"), Some("b"), Some("1")),
+            ("01", Some("01"), Some("b"), Some("2")),
+            ("01", Some("01"), Some("c"), Some("1")),
+        ];
+        let k = |i: usize| keys(&specs)[i].1.clone();
+        let pattern = runs_pattern(&[vec![k(1), k(0)], vec![k(2), k(3)], vec![k(4)]]);
+        assert_eq!(listed_groups(&pattern).unwrap().len(), 3);
+        let groups = group(&specs, &pattern);
+        assert_eq!(groups.len(), 2, "a group of one is not a group");
+        assert_eq!(groups[0].members, vec![1, 0], "the reference, listed first, stays first");
+        assert_eq!(groups[1].members, vec![2, 3]);
+        assert_ne!(groups[0].label, groups[1].label);
+        let all: Vec<AcquisitionKey> = keys(&specs).into_iter().map(|(k, _)| k).collect();
+        assert!(distinct_outputs(&groups, &all).is_ok());
+
+        assert!(parse_pattern(&runs_pattern(&[vec![k(0), k(1)], vec![k(1), k(2)]])).unwrap_err().contains("twice"));
+        assert!(parse_pattern("runs:").unwrap().is_none());
+        assert_eq!(runs_pattern(&[]), "");
+    }
+
+    /// Two groups that differ only in what varies within each would write the same files.
+    #[test]
+    fn groups_that_would_write_the_same_outputs_are_refused() {
+        let specs = [
+            ("01", Some("01"), Some("a"), Some("1")),
+            ("01", Some("01"), Some("a"), Some("2")),
+            ("01", Some("01"), Some("a"), Some("3")),
+            ("01", Some("01"), Some("a"), Some("4")),
+        ];
+        let k = |i: usize| keys(&specs)[i].1.clone();
+        let groups = group(&specs, &runs_pattern(&[vec![k(0), k(1)], vec![k(2), k(3)]]));
+        let all: Vec<AcquisitionKey> = keys(&specs).into_iter().map(|(k, _)| k).collect();
+        assert!(distinct_outputs(&groups, &all).unwrap_err().contains("would both write"));
     }
 
     #[test]

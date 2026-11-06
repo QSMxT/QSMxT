@@ -753,6 +753,8 @@ pub(crate) fn orientation_groups(
     let mut groups = crate::bids::orientation::group_runs(runs, &pattern);
     let keys: Vec<String> = runs.iter().map(|r| r.key.to_string()).collect();
     crate::bids::orientation::apply_reference(&mut groups, &keys, &m.reference)?;
+    let run_keys: Vec<_> = runs.iter().map(|r| r.key.clone()).collect();
+    crate::bids::orientation::distinct_outputs(&groups, &run_keys)?;
     Ok(groups)
 }
 

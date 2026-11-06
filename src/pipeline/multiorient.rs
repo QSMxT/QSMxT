@@ -65,9 +65,14 @@ use crate::pipeline::config::PipelineConfig;
 /// but share a meaningful `rec` should keep the `rec` in the output name; blanking every
 /// entity that *could* have varied would throw that away.
 pub fn group_key(members: &[&QsmRun]) -> AcquisitionKey {
-    let first = members[0].key.clone();
+    group_key_of(&members.iter().map(|m| &m.key).collect::<Vec<_>>())
+}
+
+/// [`group_key`], from the members' keys.
+pub fn group_key_of(members: &[&AcquisitionKey]) -> AcquisitionKey {
+    let first = members[0].clone();
     let agree = |f: fn(&AcquisitionKey) -> &Option<String>| {
-        members.iter().all(|m| f(&m.key) == f(&first))
+        members.iter().all(|m| f(m) == f(&first))
     };
     AcquisitionKey {
         subject: first.subject.clone(),

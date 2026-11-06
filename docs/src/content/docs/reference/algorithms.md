@@ -978,13 +978,14 @@ you.
 BIDS has no entity meaning "the same object at a different orientation", so
 nothing in the dataset can declare the intention to do COSMOS — you do, with
 `--orientation-group`. The pattern's only job is to say which runs belong
-together, and it takes three forms:
+together, and it takes four forms:
 
 | Form | Example | Use it when |
 | --- | --- | --- |
 | Entity name | `acq` | Every run with that entity in the session is an orientation |
 | Glob over the run key | `*acq-dir*` | The session also holds unrelated acquisitions |
 | `re:` + regex with one capture | `re:.*-dir(\d+)_.*` | One session holds *two* orientation sets |
+| `runs:` + the groups' run keys | `runs:sub-01_acq-a_run-1_MEGRE,sub-01_acq-a_run-2_MEGRE` | You pick the runs by hand: what the TUI writes when you give runs their groups with ←/→. `,` between runs, `;` between groups, each group's reference first |
 
 The glob form is usually what you want. A session like this:
 

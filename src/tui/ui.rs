@@ -677,9 +677,9 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
             super::app::FilterFocus::Include => "Glob patterns to include (space-separated, e.g. sub-1* *ses-pre*)",
             super::app::FilterFocus::Exclude => "Glob patterns to exclude (space-separated, e.g. *mygrea*)",
             super::app::FilterFocus::OrientationGroup => {
-                "Runs that are the same object at a different angle: an entity (acq, run, rec, inv), a glob (*acq-dir*), or re:<regex>. Empty = off. Or pick runs by hand with o in the list below. How they combine: QSM → COSMOS/STI"
+                "Runs that are the same object at a different angle: an entity (acq, run, rec, inv), a glob (*acq-dir*), or re:<regex>. Empty = off. Or give runs their groups with ←/→ in the list below. How they combine: QSM → COSMOS/STI"
             }
-            super::app::FilterFocus::TreeNode(_) => "Space/Enter: toggle, Left/Right: expand/collapse, o: add to or take out of its orientation group, f: make it the group's reference",
+            super::app::FilterFocus::TreeNode(_) => "Space/Enter: tick. ←/→: a run's orientation group and reference; a subject or session: collapse/expand",
             super::app::FilterFocus::NumEchoes => "Limit number of echoes to process",
         }
     } else if is_example {
@@ -853,6 +853,7 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
 
                 let visible = app.filter_state.visible_rows();
                 let preview = app.filter_state.orientation_preview();
+                let groups = app.filter_state.orientation_groups();
                 let need = orientations_needed(app.filter_state.orientation_algorithm);
                 for (i, row) in visible.iter().enumerate() {
                     let focused = !in_io && app.filter_state.focus == super::app::FilterFocus::TreeNode(i);
@@ -900,22 +901,26 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                             };
                             let mut spans = vec![Span::styled(format!("{}{} {}", indent, marker, leaf.display), style)];
                             // Its orientation group, marked where the group is too small to run.
-                            let picked = app.filter_state.picked_runs().is_some_and(|p| p.contains(&leaf.key_string));
-                            if picked && !preview.member_of.contains_key(&leaf.key_string) {
-                                spans.push(Span::styled("  (picked; pick another run of this session)", Style::default().fg(Color::Yellow)));
-                            }
-                            if let Some(&(group, reference)) = preview.member_of.get(&leaf.key_string) {
-                                let size = preview.groups.get(group - 1).map_or(0, |(_, m)| m.len());
-                                let short = size < need;
-                                let mut tag = format!("  (group {group}");
-                                if reference {
+                            // Its orientation group: ◀ ▶ around it on the focused run, which ←/→
+                            // changes; marked where the group is too small to run.
+                            if let Some(tag) = groups.iter().enumerate().find_map(|(g, members)| {
+                                let at = members.iter().position(|k| *k == leaf.key_string)?;
+                                let size = members.iter().filter(|k| preview.order.contains(k)).count();
+                                let mut tag = format!("group {}", g + 1);
+                                if at == 0 && size > 1 {
                                     tag.push_str("; reference");
                                 }
-                                if short {
+                                if size < 2 {
+                                    tag.push_str("; needs another run");
+                                } else if size < need {
                                     tag.push_str(&format!("; {size} of the {need} needed"));
                                 }
-                                tag.push(')');
-                                spans.push(Span::styled(tag, Style::default().fg(if short { Color::Red } else { Color::Cyan })));
+                                Some((tag, size < need))
+                            }).or_else(|| focused.then(|| ("no group".to_string(), false))) {
+                                let (tag, short) = tag;
+                                let color = if short { Color::Red } else if focused { Color::Yellow } else { Color::Cyan };
+                                let text = if focused { format!("  ◀ {tag} ▶") } else { format!("  ({tag})") };
+                                spans.push(Span::styled(text, Style::default().fg(color)));
                             }
                             Line::from(spans)
                         }
@@ -2354,11 +2359,16 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         };
         let in_picker = app.active_tab == TAB_INPUT && app.input_mode == super::app::InputMode::Example
             && app.active_field >= App::INPUT_IO_FIELDS;
+        let on_run = app.active_tab == TAB_INPUT && app.input_mode == super::app::InputMode::Bids
+            && app.active_field >= App::INPUT_IO_FIELDS
+            && matches!(app.filter_state.focus, super::app::FilterFocus::TreeNode(i)
+                if matches!(app.filter_state.visible_rows().get(i), Some(super::app::TreeRow::Run { .. })));
         let mut keys = vec![(tabs.as_str(), "Tabs"), ("[ ]", "Sub-tabs"), ("\u{2191}\u{2193}", "Navigate")];
         match (&choose, &row) {
             (Some(c), _) => keys.push(("Enter", c.as_str())),
             (None, None) if in_picker && app.example_state.cursor == super::app::ExampleState::BUTTON => keys.push(("Enter", "Download")),
             (None, None) if in_picker => keys.push(("Space", "Tick")),
+            (None, None) if on_run => keys.extend([("Space", "Tick"), ("\u{2190}\u{2192}", "Orientation group")]),
             (None, None) if !rows_tab => keys.extend([("\u{2190}\u{2192}/Space", "Change"), ("Enter", "Edit")]),
             (None, Some(PipelineRow::Param { .. })) => keys.push(("Enter", "Edit")),
             (None, Some(PipelineRow::Toggle { .. })) => keys.push(("Space", "Toggle")),
@@ -2915,12 +2925,11 @@ fn orientation_block(app: &App, in_io: bool) -> Vec<Line<'static>> {
 
     let mut lines = Vec::new();
 
-    let picked = fs.picked_runs().filter(|_| !fs.orientation_editing);
+    let listed = crate::bids::orientation::listed_groups(&fs.orientation_group).filter(|_| !fs.orientation_editing);
     let value = if fs.orientation_group.is_empty() && !fs.orientation_editing {
-        Span::styled("(off)", Style::default().fg(Color::DarkGray))
-    } else if let Some(picked) = picked {
-        Span::styled(format!("{} run{} picked by hand (o in the list below)", picked.len(), if picked.len() == 1 { "" } else { "s" }),
-            Style::default().fg(Color::Cyan))
+        Span::styled("(off: type a pattern, or ←/→ on runs below)", Style::default().fg(Color::DarkGray))
+    } else if listed.is_some() {
+        Span::styled("chosen with ←/→ in the runs below", Style::default().fg(Color::Cyan))
     } else {
         Span::styled(fs.orientation_group.clone(), Style::default().fg(Color::Cyan))
     };
@@ -2946,8 +2955,8 @@ fn orientation_block(app: &App, in_io: bool) -> Vec<Line<'static>> {
 
     if preview.groups.is_empty() {
         lines.push(Line::from(Span::styled(
-            if fs.picked_runs().is_some() {
-                "    ✗ no orientation group yet — pick at least 2 runs of one session"
+            if listed.is_some() {
+                "    ✗ no orientation group yet — give at least 2 runs of one session the same group"
             } else {
                 "    ✗ no orientation groups — the pattern matches fewer than 2 runs per session"
             },
@@ -3014,7 +3023,7 @@ mod orientation_block_tests {
         let (mut app, _d) = app_with_orientations();
         let text = screen_text(&render_app_sized(&mut app, 140, 60));
         assert!(text.contains("Orientations:"), "{text}");
-        assert!(text.contains("(off)"), "{text}");
+        assert!(text.contains("(off: type a pattern"), "{text}");
         assert!(!text.contains("Combine as:"), "settings should stay hidden:\n{text}");
     }
 
