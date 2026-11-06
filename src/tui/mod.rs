@@ -58,8 +58,9 @@ pub fn run_tui() -> crate::Result<()> {
 
     // Main loop
     loop {
-        // Pick up the launch-time release check (no-op once it has been handled).
-        app.poll_update_check();
+        // Pick up the launch-time release check and announcements, and open the pop-up that is
+        // due (no-op once they have been handled).
+        app.poll_launch_checks();
         // Always poll for background DICOM scan/convert completion
         app.dicom_state.poll_scan();
         // Resolve dcm2niix once for the availability indicator (cached).

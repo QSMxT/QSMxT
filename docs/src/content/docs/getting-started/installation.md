@@ -93,14 +93,33 @@ changes that are not yet released or documented. `qsmxt --version` shows the
 commit you are running, and running `qsmxt update --main` again moves to the
 newest commit. To go back to the latest release, run `qsmxt update --force`.
 
-`qsmxt tui` also checks for new releases in the background and offers the update
-in a pop-up when one is available. The check runs on its own thread and its
-result is cached for 24 hours, so it never delays startup. From the pop-up,
-`Enter` installs the update, `Esc` defers it to the next launch, and `d` skips
-that release for good.
+`qsmxt tui` also checks for a new release each time it starts and offers the
+update in a pop-up when one is available. The check runs in the background with
+a short timeout, so it never delays startup and makes no difference without an
+internet connection; offline, the result of the last check that succeeded is
+used. From the pop-up, `Enter` installs the update and `Esc` closes it until the
+next start.
 
-Set `QSMXT_NO_UPDATE_CHECK=1` to turn the background check off entirely. It is
-also skipped automatically when `CI` is set and in local development builds.
+Set `QSMXT_NO_UPDATE_CHECK=1` to turn the background check off entirely (this
+also turns off the announcements below). It is also skipped automatically when
+`CI` is set and in local development builds.
+
+### Announcements
+
+The QSMxT team publishes announcements, such as a problem found in a release and
+the version that fixes it. `qsmxt tui` fetches them in the background when it
+starts and shows a new one once in a pop-up. An announcement about a problem
+that can give wrong results is shown each time the TUI starts, for as long as
+the version you run is affected. Press `n` on the TUI's tab bar to read every
+announcement, or run:
+
+```sh
+qsmxt news
+```
+
+The last announcements fetched are saved in `~/.qsmxt/announcements.toml`, so
+they can be read offline, and the ones already shown are recorded in
+`~/.qsmxt/announcements-seen.json`.
 
 ## Manual download
 

@@ -21,11 +21,29 @@ pub struct Release {
     pub html_url: String,
 }
 
+/// An HTTP client for the requests made on their own at TUI startup (the release check and
+/// the announcements). Whatever the network does, a request gives up within a few seconds, so
+/// no background thread is left waiting on a hung connection.
+pub fn quick_agent() -> ureq::Agent {
+    use std::time::Duration;
+    ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(3))
+        .timeout_read(Duration::from_secs(3))
+        .timeout(Duration::from_secs(5))
+        .user_agent(USER_AGENT)
+        .build()
+}
+
 /// Fetches latest release info from the GitHub API.
 pub fn fetch_latest_release() -> crate::Result<Release> {
+    fetch_latest_release_with(&ureq::agent())
+}
+
+/// [`fetch_latest_release`] through `agent`.
+fn fetch_latest_release_with(agent: &ureq::Agent) -> crate::Result<Release> {
     let url = format!("https://api.github.com/repos/{}/releases/latest", REPO);
 
-    let mut req = ureq::get(&url)
+    let mut req = agent.get(&url)
         .set("Accept", "application/vnd.github+json")
         .set("User-Agent", USER_AGENT);
     if let Ok(token) = env::var("GITHUB_TOKEN") {
@@ -160,18 +178,25 @@ fn parse_version(s: &str) -> Option<([u64; 3], Option<String>)> {
 /// allowed to nag the user into "updating" to something we cannot reason about. A
 /// pre-release sorts below the matching release (`9.2.0-rc1` < `9.2.0`), per semver.
 pub fn is_newer(latest: &str, current: &str) -> bool {
-    let (Some((l_core, l_pre)), Some((c_core, c_pre))) =
-        (parse_version(latest), parse_version(current))
-    else {
-        return false;
-    };
+    compare_versions(latest, current) == Some(std::cmp::Ordering::Greater)
+}
 
-    match l_core.cmp(&c_core) {
-        std::cmp::Ordering::Greater => true,
-        std::cmp::Ordering::Less => false,
+/// How version `a` compares with version `b`, or `None` when either is unparseable.
+///
+/// A pre-release sorts below the matching release (`9.2.0-rc1` < `9.2.0`), per semver; two
+/// pre-releases of the same version compare equal.
+pub fn compare_versions(a: &str, b: &str) -> Option<std::cmp::Ordering> {
+    use std::cmp::Ordering;
+    let ((a_core, a_pre), (b_core, b_pre)) = (parse_version(a)?, parse_version(b)?);
+    Some(match a_core.cmp(&b_core) {
         // Same numbers: only a release is newer than a pre-release of itself.
-        std::cmp::Ordering::Equal => l_pre.is_none() && c_pre.is_some(),
-    }
+        Ordering::Equal => match (a_pre.is_some(), b_pre.is_some()) {
+            (false, true) => Ordering::Greater,
+            (true, false) => Ordering::Less,
+            _ => Ordering::Equal,
+        },
+        other => other,
+    })
 }
 
 /// Streams `url` into `dest`, reporting `(downloaded, total)` as bytes arrive.
@@ -881,18 +906,17 @@ fn execute_with(
 
 /// Background update check used by the TUI.
 ///
-/// Two things keep this off the startup path. The check runs on its own thread, so the
-/// UI draws its first frame without waiting on the network; and the answer is cached on
-/// disk for [`TTL_SECS`], so the common case is a single small file read and no HTTP at
-/// all. Nothing here can fail the TUI: every error path degrades to "no update to show".
+/// Every launch asks GitHub, so a release is announced the first time QSMxT opens after it is
+/// published. The check runs on its own thread with short timeouts ([`super::quick_agent`]), so
+/// the UI draws its first frame without waiting on the network, and nothing waits for the thread
+/// at exit. The last answer is kept on disk only as the fallback for a launch that cannot reach
+/// GitHub (offline, rate-limited). Nothing here can fail the TUI: every error path degrades to
+/// "no update to show".
 pub mod check {
-    use super::{fetch_latest_release, is_dev_build, is_newer, current_version};
+    use super::{current_version, fetch_latest_release_with, is_dev_build, is_newer, quick_agent, Release};
     use std::path::PathBuf;
     use std::sync::mpsc;
     use std::time::{SystemTime, UNIX_EPOCH};
-
-    /// How long a check result is reused before we ask GitHub again.
-    const TTL_SECS: u64 = 24 * 60 * 60;
 
     /// Set to any non-empty value to disable the check entirely.
     pub const OPT_OUT_ENV: &str = "QSMXT_NO_UPDATE_CHECK";
@@ -904,8 +928,8 @@ pub mod check {
         pub html_url: String,
     }
 
-    /// What we persist between runs: the last answer, when we got it, and any release
-    /// the user asked not to be reminded about.
+    /// What we persist between runs: the last answer and when we got it. Fields this version
+    /// no longer writes (an earlier `dismissed_tag`) are ignored when read.
     #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
     struct Cache {
         #[serde(default)]
@@ -914,10 +938,6 @@ pub mod check {
         latest_tag: String,
         #[serde(default)]
         html_url: String,
-        /// A tag the user dismissed with "don't remind me"; suppressed until a newer
-        /// release supersedes it.
-        #[serde(default)]
-        dismissed_tag: String,
     }
 
     /// Serializes tests that point `$QSMXT_UPDATE_CACHE` at a temp file. The variable is
@@ -967,73 +987,59 @@ pub mod check {
         }
     }
 
+    /// Is the check turned off, by the user or for CI? (Announcements follow the same switch.)
+    pub fn is_opted_out() -> bool {
+        std::env::var_os(OPT_OUT_ENV).is_some_and(|v| !v.is_empty())
+            || std::env::var_os("CI").is_some_and(|v| !v.is_empty())
+    }
+
     /// Should we skip the check altogether?
     ///
     /// Dev builds carry the 0.0.0 placeholder, so every release would look newer; CI
     /// runs are not interactive and should not spend a request on this.
     pub fn is_disabled() -> bool {
-        if std::env::var_os(OPT_OUT_ENV).is_some_and(|v| !v.is_empty()) {
-            return true;
-        }
-        if std::env::var_os("CI").is_some_and(|v| !v.is_empty()) {
-            return true;
-        }
-        is_dev_build()
-    }
-
-    /// Record that the user does not want reminding about `tag` again.
-    pub fn dismiss(tag: &str) {
-        let mut cache = load();
-        cache.dismissed_tag = tag.to_string();
-        store(&cache);
-    }
-
-    /// Has the user dismissed `tag`?
-    pub fn is_dismissed(tag: &str) -> bool {
-        !tag.is_empty() && load().dismissed_tag == tag
+        is_opted_out() || is_dev_build()
     }
 
     /// Start the check on a background thread.
     ///
     /// Returns `None` when checking is disabled. Otherwise the receiver yields exactly
     /// one message: `Some(info)` if a newer release exists, `None` if not (or if the
-    /// check failed — an unreachable GitHub is not worth reporting to the user).
+    /// check failed with nothing cached — an unreachable GitHub is not worth reporting).
+    /// The thread is detached: nothing joins it, so a slow network never delays exit.
     pub fn spawn() -> Option<mpsc::Receiver<Option<UpdateInfo>>> {
         if is_disabled() {
             return None;
         }
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
-            let _ = tx.send(run());
+            let _ = tx.send(run(|| fetch_latest_release_with(&quick_agent())));
         });
         Some(rx)
     }
 
-    /// The check itself: serve from cache when it is fresh, otherwise ask GitHub.
-    fn run() -> Option<UpdateInfo> {
-        let cached = load();
-        let age = now_secs().saturating_sub(cached.checked_at);
-        if age < TTL_SECS && !cached.latest_tag.is_empty() {
-            return newer_than_running(&cached.latest_tag, &cached.html_url);
-        }
-
-        let release = match fetch_latest_release() {
-            Ok(r) => r,
-            Err(e) => {
-                // Offline, rate-limited, or GitHub is down: stay silent.
-                log::debug!("update check failed: {e}");
-                return None;
+    /// The check itself: ask GitHub (through `fetch`) and remember the answer; when that
+    /// fails, fall back to the last answer we had.
+    fn run(fetch: impl FnOnce() -> crate::Result<Release>) -> Option<UpdateInfo> {
+        match fetch() {
+            Ok(release) => {
+                store(&Cache {
+                    checked_at: now_secs(),
+                    latest_tag: release.tag.clone(),
+                    html_url: release.html_url.clone(),
+                });
+                newer_than_running(&release.tag, &release.html_url)
             }
-        };
-
-        store(&Cache {
-            checked_at: now_secs(),
-            latest_tag: release.tag.clone(),
-            html_url: release.html_url.clone(),
-            dismissed_tag: cached.dismissed_tag,
-        });
-
-        newer_than_running(&release.tag, &release.html_url)
+            Err(e) => {
+                // Offline, rate-limited, or GitHub is down: use what we last heard, silently.
+                log::debug!("update check failed: {e}");
+                let cached = load();
+                if cached.latest_tag.is_empty() {
+                    return None;
+                }
+                newer_than_running(&cached.latest_tag, &cached.html_url)
+            }
+        }
     }
 
     fn newer_than_running(tag: &str, html_url: &str) -> Option<UpdateInfo> {
@@ -1046,64 +1052,127 @@ pub mod check {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use crate::error::QsmxtError;
 
-        /// Write a cache entry `age_secs` old and point the check at it.
-        fn seed(dir: &std::path::Path, age_secs: u64, tag: &str) {
-            let path = dir.join("update-check.json");
-            std::env::set_var("QSMXT_UPDATE_CACHE", &path);
+        fn release(tag: &str) -> crate::Result<Release> {
+            Ok(Release { tag: tag.into(), notes: String::new(), html_url: format!("https://example.com/{tag}") })
+        }
+
+        fn offline() -> crate::Result<Release> {
+            Err(QsmxtError::Update("offline".into()))
+        }
+
+        /// Point the cache at a file in `dir` holding `tag`, checked a minute ago.
+        fn seed(dir: &std::path::Path, tag: &str) {
+            std::env::set_var("QSMXT_UPDATE_CACHE", dir.join("update-check.json"));
             store(&Cache {
-                checked_at: now_secs().saturating_sub(age_secs),
+                checked_at: now_secs().saturating_sub(60),
                 latest_tag: tag.to_string(),
                 html_url: format!("https://example.com/{tag}"),
-                dismissed_tag: String::new(),
             });
         }
 
-        /// The point of the cache: a launch inside the TTL answers from disk and makes no
-        /// HTTP request at all. The sentinel tag proves it — a real fetch would return the
-        /// actual latest release, which is not v99.0.0.
+        /// A release published since the last check is announced on the very next launch: a
+        /// fresh cache does not stand in for asking GitHub.
         #[test]
-        fn a_fresh_cache_answers_without_touching_the_network() {
+        fn every_launch_asks_github_even_with_a_fresh_cache() {
             let _guard = env_lock();
             let dir = tempfile::tempdir().unwrap();
-            seed(dir.path(), 60, "v99.0.0");
+            seed(dir.path(), "v0.0.0");
 
-            let got = run().expect("a newer release should be reported");
-            assert_eq!(got.tag, "v99.0.0", "the answer must come from the cache");
+            let got = run(|| release("v99.0.0")).expect("the new release should be reported");
+            assert_eq!(got.tag, "v99.0.0");
+            assert_eq!(load().latest_tag, "v99.0.0", "the answer is remembered for offline launches");
+
+            std::env::remove_var("QSMXT_UPDATE_CACHE");
+        }
+
+        /// Offline, the last answer we had is used.
+        #[test]
+        fn an_unreachable_github_falls_back_to_the_cache() {
+            let _guard = env_lock();
+            let dir = tempfile::tempdir().unwrap();
+            seed(dir.path(), "v99.0.0");
+
+            let got = run(offline).expect("the cached release should be reported");
+            assert_eq!(got.tag, "v99.0.0");
             assert_eq!(got.html_url, "https://example.com/v99.0.0");
 
             std::env::remove_var("QSMXT_UPDATE_CACHE");
         }
 
-        /// A cached release that is not newer than what is running yields nothing, so the
-        /// TUI stays silent rather than prompting every launch for 24 hours.
+        /// Offline with nothing cached, or with a cached release that is not newer, there is
+        /// nothing to say.
         #[test]
-        fn a_fresh_cache_of_an_older_release_reports_nothing() {
+        fn offline_without_a_newer_cached_release_reports_nothing() {
             let _guard = env_lock();
             let dir = tempfile::tempdir().unwrap();
-            seed(dir.path(), 60, "v0.0.0");
-
-            assert!(run().is_none());
+            std::env::set_var("QSMXT_UPDATE_CACHE", dir.path().join("update-check.json"));
+            assert!(run(offline).is_none());
+            seed(dir.path(), "v0.0.0");
+            assert!(run(offline).is_none());
+            assert!(run(|| release("v0.0.0")).is_none());
 
             std::env::remove_var("QSMXT_UPDATE_CACHE");
         }
 
-        /// Dismissing a release must not discard the cached result, or the next launch
-        /// would spend an HTTP request re-learning what it already knew.
+        /// A cache written when a release could be skipped still loads; the skip no longer
+        /// applies, so the release is offered.
         #[test]
-        fn dismissing_preserves_the_cached_result() {
+        fn a_cache_with_a_skipped_release_still_loads() {
             let _guard = env_lock();
             let dir = tempfile::tempdir().unwrap();
-            seed(dir.path(), 60, "v99.0.0");
+            let path = dir.path().join("update-check.json");
+            std::fs::write(
+                &path,
+                r#"{"checked_at":1,"latest_tag":"v99.0.0","html_url":"https://example.com/r","dismissed_tag":"v99.0.0"}"#,
+            )
+            .unwrap();
+            std::env::set_var("QSMXT_UPDATE_CACHE", &path);
 
-            dismiss("v99.0.0");
-
-            let cache = load();
-            assert_eq!(cache.latest_tag, "v99.0.0", "the check result should survive");
-            assert_ne!(cache.checked_at, 0, "the timestamp should survive");
-            assert_eq!(cache.dismissed_tag, "v99.0.0");
+            assert_eq!(load().latest_tag, "v99.0.0");
+            assert_eq!(run(offline).map(|i| i.tag).as_deref(), Some("v99.0.0"));
 
             std::env::remove_var("QSMXT_UPDATE_CACHE");
+        }
+
+        /// The cache directory is created when it does not exist yet.
+        #[test]
+        fn the_cache_is_written_into_a_missing_directory() {
+            let _guard = env_lock();
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("a").join("b").join("update-check.json");
+            std::env::set_var("QSMXT_UPDATE_CACHE", &path);
+
+            run(|| release("v9.23.0"));
+            assert!(path.is_file(), "the cache file should have been created");
+
+            std::env::remove_var("QSMXT_UPDATE_CACHE");
+        }
+
+        /// A corrupt cache is ignored, and replaced by the next answer.
+        #[test]
+        fn a_corrupt_cache_file_is_ignored_rather_than_fatal() {
+            let _guard = env_lock();
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("update-check.json");
+            std::fs::write(&path, b"{ not json").unwrap();
+            std::env::set_var("QSMXT_UPDATE_CACHE", &path);
+
+            assert!(run(offline).is_none());
+            run(|| release("v9.23.0"));
+            assert_eq!(load().latest_tag, "v9.23.0");
+
+            std::env::remove_var("QSMXT_UPDATE_CACHE");
+        }
+
+        /// A request that can't connect gives up rather than hanging the thread: nothing is
+        /// listening on port 1, and the agent's timeouts bound the wait either way.
+        #[test]
+        fn the_quick_agent_fails_fast() {
+            let start = std::time::Instant::now();
+            assert!(quick_agent().get("http://127.0.0.1:1/").call().is_err());
+            assert!(start.elapsed() < std::time::Duration::from_secs(6));
         }
     }
 }
@@ -1165,6 +1234,16 @@ mod tests {
     }
 
     #[test]
+    fn compare_versions_orders_releases_and_prereleases() {
+        use std::cmp::Ordering::*;
+        assert_eq!(compare_versions("10.0.0", "v10.0.0"), Some(Equal));
+        assert_eq!(compare_versions("9.10.0", "9.9.0"), Some(Greater));
+        assert_eq!(compare_versions("11.0.1-rc1", "11.0.1"), Some(Less));
+        assert_eq!(compare_versions("11.0.1-rc1", "11.0.1-rc2"), Some(Equal));
+        assert_eq!(compare_versions("soon", "11.0.1"), None);
+    }
+
+    #[test]
     fn short_versions_pad_with_zeros() {
         assert!(!is_newer("v9.22", "9.22.0"));
         assert!(is_newer("v9.23", "9.22.5"));
@@ -1193,53 +1272,6 @@ mod tests {
         std::env::set_var(check::OPT_OUT_ENV, "1");
         assert!(check::is_disabled());
         std::env::remove_var(check::OPT_OUT_ENV);
-    }
-
-    #[test]
-    fn a_dismissed_tag_is_remembered_and_superseded_by_a_newer_one() {
-        let _guard = env_lock();
-        let dir = tempfile::tempdir().unwrap();
-        std::env::set_var("QSMXT_UPDATE_CACHE", dir.path().join("update-check.json"));
-
-        assert!(!check::is_dismissed("v9.23.0"), "nothing dismissed yet");
-
-        check::dismiss("v9.23.0");
-        assert!(check::is_dismissed("v9.23.0"));
-        // A later release is a different tag, so the user hears about it again.
-        assert!(!check::is_dismissed("v9.24.0"));
-
-        std::env::remove_var("QSMXT_UPDATE_CACHE");
-    }
-
-    #[test]
-    fn dismiss_survives_a_missing_cache_directory() {
-        let _guard = env_lock();
-        let dir = tempfile::tempdir().unwrap();
-        // Two levels that do not exist yet — dismiss must create them, not silently fail.
-        let path = dir.path().join("a").join("b").join("update-check.json");
-        std::env::set_var("QSMXT_UPDATE_CACHE", &path);
-
-        check::dismiss("v9.23.0");
-        assert!(path.is_file(), "the cache file should have been created");
-        assert!(check::is_dismissed("v9.23.0"));
-
-        std::env::remove_var("QSMXT_UPDATE_CACHE");
-    }
-
-    #[test]
-    fn a_corrupt_cache_file_is_ignored_rather_than_fatal() {
-        let _guard = env_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("update-check.json");
-        std::fs::write(&path, b"{ not json").unwrap();
-        std::env::set_var("QSMXT_UPDATE_CACHE", &path);
-
-        assert!(!check::is_dismissed("v9.23.0"));
-        // And it can be overwritten with something valid.
-        check::dismiss("v9.23.0");
-        assert!(check::is_dismissed("v9.23.0"));
-
-        std::env::remove_var("QSMXT_UPDATE_CACHE");
     }
 
     /// A loopback HTTP server serving a fixed body, so the download path can be

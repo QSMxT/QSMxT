@@ -5642,6 +5642,17 @@ pub struct App {
     pub update_modal: Option<UpdateModal>,
     /// Background release check started at launch.
     pub update_state: UpdateState,
+    /// A newer release the check found, waiting for its turn among the pop-ups
+    /// ([`App::show_next_pop_up`]).
+    pub pending_update: Option<UpdateModal>,
+    /// An announcement pop-up, or the history of them all (`n` on the tab bar).
+    pub news_modal: Option<NewsModal>,
+    /// Background fetch of the announcements started at launch.
+    pub news_state: NewsState,
+    /// What that fetch came back with, once it has.
+    pub news: Option<crate::commands::news::Loaded>,
+    /// Announcements still to pop up, in order (critical first, then newest first).
+    pub news_queue: Vec<crate::commands::news::Announcement>,
     /// The "Did you know?" pop-up: shown at launch (unless tips are off) and on `?`.
     pub tip_modal: Option<TipModal>,
     /// The recommendation pop-up, opened when a change creates a recommendation
@@ -5705,36 +5716,78 @@ pub enum UpdateChoice {
     Update,
     /// Not now — ask again next launch.
     Later,
-    /// Don't remind me about this release again.
-    Skip,
 }
 
-/// Holds the receiver for the launch-time release check.
+/// An announcement pop-up ([`crate::commands::news`]), or the history of all of them.
+#[derive(Debug, Clone)]
+pub struct NewsModal {
+    /// The announcement popping up, or every announcement (newest first) in the history.
+    pub items: Vec<crate::commands::news::Announcement>,
+    /// The history (opened with `n`), rather than a pop-up.
+    pub history: bool,
+    /// A line above the history: that the announcements could not be read and these are the
+    /// saved copy, or that they are still being fetched.
+    pub note: Option<String>,
+    pub scroll: u16,
+}
+
+/// Holds the receiver for a launch-time background job (the release check, the announcements).
 ///
-/// The check runs on its own thread and the result is picked up by [`Self::poll`] on a
-/// later frame, so nothing about startup waits on the network. When checking is disabled
-/// (opt-out, CI, or a dev build) the receiver is `None` and `poll` never yields anything.
-#[derive(Debug, Default)]
-pub struct UpdateState {
-    receiver: Option<std::sync::mpsc::Receiver<Option<crate::commands::update::check::UpdateInfo>>>,
-    /// Set once the result has been taken, so we only raise the prompt a single time.
+/// The job runs on its own thread and the result is picked up by [`Self::poll`] on a
+/// later frame, so nothing about startup waits on the network. When the job is disabled
+/// (opt-out, CI, or for the release check a dev build) the receiver is `None` and `poll`
+/// never yields anything. Nothing joins the thread, so it never delays exit either.
+#[derive(Debug)]
+pub struct Background<T> {
+    receiver: Option<std::sync::mpsc::Receiver<T>>,
+    /// Set once the result has been taken (or there will be none).
     done: bool,
 }
+
+/// The launch-time release check: `Some` newer release, or `None`.
+pub type UpdateState = Background<Option<crate::commands::update::check::UpdateInfo>>;
+
+/// The launch-time announcements fetch.
+pub type NewsState = Background<crate::commands::news::Loaded>;
 
 impl UpdateState {
     pub fn start() -> Self {
         Self { receiver: crate::commands::update::check::spawn(), done: false }
     }
+}
 
-    /// A state that never produces a result — for tests that drive the prompt directly.
-    #[cfg(test)]
+impl NewsState {
+    /// Tests never fetch: a dev build would, and the tests must stay off the network.
+    pub fn start() -> Self {
+        #[cfg(not(test))]
+        return Self { receiver: crate::commands::news::spawn(), done: false };
+        #[cfg(test)]
+        Self::disabled()
+    }
+}
+
+impl<T> Background<T> {
+    /// A job that never produces a result.
     pub fn disabled() -> Self {
         Self { receiver: None, done: true }
     }
 
-    /// Non-blocking: returns the newer release exactly once, the first frame after the
-    /// background check finishes. A failed or still-running check yields `None`.
-    pub fn poll(&mut self) -> Option<crate::commands::update::check::UpdateInfo> {
+    /// A job that has already produced `value`, for tests.
+    #[cfg(test)]
+    pub fn ready(value: T) -> Self {
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(value).unwrap();
+        Self { receiver: Some(rx), done: false }
+    }
+
+    /// Has the result been taken, or is there none to come?
+    pub fn finished(&self) -> bool {
+        self.done
+    }
+
+    /// Non-blocking: returns the result exactly once, the first frame after the
+    /// background job finishes. A failed or still-running job yields `None`.
+    pub fn poll(&mut self) -> Option<T> {
         if self.done {
             return None;
         }
@@ -5746,7 +5799,7 @@ impl UpdateState {
             Ok(found) => {
                 self.done = true;
                 self.receiver = None;
-                found
+                Some(found)
             }
             // Still working; try again next frame.
             Err(std::sync::mpsc::TryRecvError::Empty) => None,
@@ -5942,15 +5995,16 @@ impl Default for RunForm {
 
 impl App {
     pub fn new() -> Self {
-        Self::with_update_state(UpdateState::start())
+        Self::with_background(UpdateState::start(), NewsState::start())
     }
 
-    /// A form with no release check, for trying a value on ([`super::recommend`]).
+    /// A form with no release check or announcements, for trying a value on
+    /// ([`super::recommend`]).
     pub(super) fn new_for_trial() -> Self {
-        Self::with_update_state(UpdateState { receiver: None, done: true })
+        Self::with_background(UpdateState::disabled(), NewsState::disabled())
     }
 
-    fn with_update_state(update_state: UpdateState) -> Self {
+    fn with_background(update_state: UpdateState, news_state: NewsState) -> Self {
         App {
             active_tab: 0,
             sub_page: [None; TAB_NAMES.len()],
@@ -5974,6 +6028,11 @@ impl App {
             algo_modal: None,
             update_modal: None,
             update_state,
+            pending_update: None,
+            news_modal: None,
+            news_state,
+            news: None,
+            news_queue: Vec::new(),
             tip_modal: None,
             input_mode: InputMode::Bids,
             example_state: ExampleState::default(),
@@ -6083,12 +6142,14 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
-        // The recommendation pop-up captures input under the update prompt and the tips.
-        if self.rec_modal.is_some() && self.update_modal.is_none() && self.tip_modal.is_none() {
+        // The recommendation pop-up captures input under the update prompt, the announcements
+        // and the tips.
+        let above = self.update_modal.is_some() || self.news_modal.is_some() || self.tip_modal.is_some();
+        if self.rec_modal.is_some() && !above {
             self.handle_rec_modal_key(key);
             return;
         }
-        if self.refs.modal.is_some() && self.update_modal.is_none() && self.tip_modal.is_none() {
+        if self.refs.modal.is_some() && !above {
             self.handle_ref_modal_key(key);
             return;
         }
@@ -6103,6 +6164,11 @@ impl App {
         // The update prompt sits on top of everything, including an algorithm modal.
         if self.update_modal.is_some() {
             self.handle_update_modal_key(key);
+            return;
+        }
+
+        if self.news_modal.is_some() {
+            self.handle_news_modal_key(key);
             return;
         }
 
@@ -7019,17 +7085,107 @@ impl App {
     // ─── Pipeline tab key handling ───
 
     /// Keys while the algorithm-selection modal is open: ↑↓/jk move, Enter/Space confirm, Esc/q cancel.
-    /// Pick up the background release check and raise the prompt when it finds one.
-    ///
-    /// Called once per frame from the main loop. A release the user has already told us
-    /// to skip is dropped silently, and the prompt never displaces an algorithm modal
-    /// the user is in the middle of.
-    pub fn poll_update_check(&mut self) {
-        let Some(info) = self.update_state.poll() else { return };
-        if crate::commands::update::check::is_dismissed(&info.tag) {
+    /// Pick up the launch-time release check and announcements, and open the next pop-up
+    /// that is due ([`Self::show_next_pop_up`]). Called once per frame from the main loop.
+    pub fn poll_launch_checks(&mut self) {
+        if let Some(Some(info)) = self.update_state.poll() {
+            self.pending_update = Some(UpdateModal { tag: info.tag, html_url: info.html_url });
+        }
+        if let Some(loaded) = self.news_state.poll() {
+            self.receive_news(loaded);
+        }
+        self.show_next_pop_up();
+    }
+
+    /// Take the announcements the background fetch came back with: queue those due to pop up.
+    pub fn receive_news(&mut self, loaded: crate::commands::news::Loaded) {
+        use crate::commands::{news, update};
+        self.news_queue = news::pop_ups(&loaded.items, update::current_version(), &news::load_seen());
+        self.news = Some(loaded);
+    }
+
+    /// Open the next pop-up that is due, when its turn comes. One pop-up at a time, in this
+    /// order: critical announcements, then the update prompt, then ordinary announcements. The
+    /// update prompt waits until the announcements are in (so a critical one is not shown after
+    /// it), and ordinary announcements until the release check is done. Announcements never
+    /// open over another pop-up (a tip, an algorithm list, advice); the update prompt does, as
+    /// it always has.
+    pub fn show_next_pop_up(&mut self) {
+        if self.update_modal.is_some() || self.news_modal.is_some() {
             return;
         }
-        self.update_modal = Some(UpdateModal { tag: info.tag, html_url: info.html_url });
+        let other_open = self.tip_modal.is_some()
+            || self.algo_modal.is_some()
+            || self.rec_modal.is_some()
+            || self.refs.modal.is_some();
+        if self.news_queue.first().is_some_and(|a| a.critical) {
+            if !other_open {
+                let next = self.news_queue.remove(0);
+                self.open_news(next);
+            }
+            return;
+        }
+        if self.pending_update.is_some() {
+            if self.news_state.finished() {
+                self.update_modal = self.pending_update.take();
+            }
+            return;
+        }
+        if !other_open && self.update_state.finished() && !self.news_queue.is_empty() {
+            let next = self.news_queue.remove(0);
+            self.open_news(next);
+        }
+    }
+
+    fn open_news(&mut self, item: crate::commands::news::Announcement) {
+        self.news_modal = Some(NewsModal { items: vec![item], history: false, note: None, scroll: 0 });
+    }
+
+    /// Open the history of announcements, newest first: what the launch fetch got, or the copy
+    /// saved last time while it is still running.
+    pub fn open_news_history(&mut self) {
+        let (items, note) = match &self.news {
+            Some(loaded) => (
+                loaded.items.clone(),
+                loaded.error.as_ref().map(|_| {
+                    "The announcements could not be read, so these are the ones saved the last time they could.".to_string()
+                }),
+            ),
+            None if self.news_state.finished() => (crate::commands::news::load_cached(), None),
+            None => (
+                crate::commands::news::load_cached(),
+                Some("Checking for new announcements; these are the ones saved last time.".to_string()),
+            ),
+        };
+        self.news_modal = Some(NewsModal { items, history: true, note, scroll: 0 });
+    }
+
+    /// Keys while an announcement pop-up or the history is open: ↑↓/PgUp/PgDn/Home scroll, `c`
+    /// copies a pop-up's link, Enter/Esc/q close it. Closing a pop-up records it as shown.
+    pub fn handle_news_modal_key(&mut self, key: KeyEvent) {
+        let Some(m) = self.news_modal.as_mut() else { return };
+        match key.code {
+            KeyCode::Up | KeyCode::Char('k') => m.scroll = m.scroll.saturating_sub(1),
+            KeyCode::Down | KeyCode::Char('j') => m.scroll = m.scroll.saturating_add(1),
+            KeyCode::PageUp => m.scroll = m.scroll.saturating_sub(10),
+            KeyCode::PageDown => m.scroll = m.scroll.saturating_add(10),
+            KeyCode::Home => m.scroll = 0,
+            KeyCode::Char('c') | KeyCode::Char('y') if !m.history => {
+                if let Some(link) = m.items.first().and_then(|a| a.link.clone()) {
+                    self.clipboard = Some(link);
+                    self.status_message = Some("Link copied to clipboard".to_string());
+                }
+            }
+            KeyCode::Enter | KeyCode::Esc | KeyCode::Char('q') => {
+                let m = self.news_modal.take().expect("checked above");
+                if !m.history {
+                    for a in &m.items {
+                        crate::commands::news::mark_seen(&a.id);
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 
     /// Handle a key while the update prompt is open. Returns what the user chose.
@@ -7039,12 +7195,6 @@ impl App {
                 self.update_modal = None;
                 self.should_update = true;
                 UpdateChoice::Update
-            }
-            KeyCode::Char('d') | KeyCode::Char('D') => {
-                if let Some(m) = self.update_modal.take() {
-                    crate::commands::update::check::dismiss(&m.tag);
-                }
-                UpdateChoice::Skip
             }
             KeyCode::Esc | KeyCode::Char('l') | KeyCode::Char('L') => {
                 self.update_modal = None;
@@ -7793,6 +7943,7 @@ impl App {
             KeyCode::Down | KeyCode::Char('j') | KeyCode::Enter => self.tab_focus = false,
             KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
             KeyCode::F(5) => self.try_run(),
+            KeyCode::Char('n') => self.open_news_history(),
             _ => {
                 self.switch_tab(key);
             }
@@ -8475,24 +8626,20 @@ mod tests {
     }
 
     #[test]
-    fn update_prompt_esc_defers_without_recording_anything() {
-        let _guard = cache_guard();
+    fn update_prompt_esc_defers_to_the_next_start() {
         let mut app = update_app();
         assert_eq!(app.handle_update_modal_key(key(KeyCode::Esc)), UpdateChoice::Later);
         assert!(!app.should_update);
         assert!(app.update_modal.is_none());
-        // "Later" means later — the same release is offered again next launch.
-        assert!(!crate::commands::update::check::is_dismissed("v9.23.0"));
     }
 
+    /// There is no way to skip a release: the prompt comes back at every start until the
+    /// user updates, so `d` does nothing.
     #[test]
-    fn update_prompt_d_remembers_the_skipped_release() {
-        let _guard = cache_guard();
+    fn update_prompt_has_no_skip() {
         let mut app = update_app();
-        assert_eq!(app.handle_update_modal_key(key(KeyCode::Char('d'))), UpdateChoice::Skip);
-        assert!(!app.should_update);
-        assert!(app.update_modal.is_none());
-        assert!(crate::commands::update::check::is_dismissed("v9.23.0"));
+        assert_eq!(app.handle_update_modal_key(key(KeyCode::Char('d'))), UpdateChoice::Ignored);
+        assert!(app.update_modal.is_some());
     }
 
     /// An unrelated keystroke must not dismiss the prompt by accident — it is modal,
@@ -8517,23 +8664,6 @@ mod tests {
         assert!(app.update_modal.is_some());
     }
 
-    /// A release the user already skipped must not come back on the next launch.
-    #[test]
-    fn poll_does_not_reopen_a_skipped_release() {
-        let _guard = cache_guard();
-        crate::commands::update::check::dismiss("v9.23.0");
-
-        let mut app = App::new();
-        app.update_state = UpdateState::disabled();
-        app.update_modal = None;
-        // Simulate the background check reporting the skipped release.
-        if crate::commands::update::check::is_dismissed("v9.23.0") {
-            // poll_update_check applies exactly this rule.
-        }
-        app.poll_update_check();
-        assert!(app.update_modal.is_none());
-    }
-
     /// A dev build must not spawn a network check just by opening the TUI.
     #[test]
     fn a_dev_build_starts_no_background_check() {
@@ -8541,26 +8671,154 @@ mod tests {
         assert!(state.poll().is_none());
     }
 
-    /// Point the update cache at a temp file for the duration of a test.
-    ///
-    /// Takes the same lock as the `commands::update` tests: `$QSMXT_UPDATE_CACHE` is
-    /// process-global, so two modules guarding it with separate mutexes would race.
-    fn cache_guard() -> CacheGuard {
-        let guard = crate::commands::update::check::env_lock();
-        let dir = tempfile::tempdir().unwrap();
-        std::env::set_var("QSMXT_UPDATE_CACHE", dir.path().join("update-check.json"));
-        CacheGuard { _guard: guard, _dir: dir }
+    /// An app whose launch checks have come back: `update` the newer release found (if any),
+    /// `news` the announcements fetched.
+    fn launched(update: Option<&str>, news: Vec<crate::commands::news::Announcement>) -> App {
+        let mut app = App::new();
+        app.update_state = UpdateState::ready(update.map(|tag| crate::commands::update::check::UpdateInfo {
+            tag: tag.into(),
+            html_url: "https://example.com/r".into(),
+        }));
+        app.news_state = NewsState::ready(crate::commands::news::Loaded { items: news, error: None });
+        app
     }
 
-    struct CacheGuard {
-        _guard: std::sync::MutexGuard<'static, ()>,
-        _dir: tempfile::TempDir,
+    use crate::commands::news::tests::item;
+
+    /// The pop-ups' order: critical announcements, the update prompt, then ordinary ones
+    /// (newest first), one at a time; closing one records it as shown.
+    #[test]
+    fn launch_pop_ups_come_one_at_a_time_in_order() {
+        let t = crate::commands::news::TestDir::new();
+        let mut app = launched(Some("v99.0.0"), vec![
+            item("old", "2026-11-01", false, None),
+            item("new", "2026-11-05", false, None),
+            item("crit", "2026-10-01", true, None),
+        ]);
+        app.poll_launch_checks();
+        let shown = |app: &App| app.news_modal.as_ref().map(|m| m.items[0].id.clone());
+        assert_eq!(shown(&app).as_deref(), Some("crit"), "critical first");
+        assert!(app.update_modal.is_none(), "no pop-up opens over another");
+
+        app.handle_key(key(KeyCode::Enter));
+        app.poll_launch_checks();
+        assert!(app.update_modal.is_some(), "then the update prompt");
+        assert!(app.news_modal.is_none());
+
+        app.handle_key(key(KeyCode::Esc));
+        app.poll_launch_checks();
+        assert_eq!(shown(&app).as_deref(), Some("new"), "then ordinary news, newest first");
+        app.handle_key(key(KeyCode::Esc));
+        app.poll_launch_checks();
+        assert_eq!(shown(&app).as_deref(), Some("old"));
+        app.handle_key(key(KeyCode::Char('q')));
+        app.poll_launch_checks();
+        assert!(app.news_modal.is_none() && app.update_modal.is_none());
+
+        // Next start: only the critical one (and the update) come back.
+        let mut app = launched(Some("v99.0.0"), vec![
+            item("old", "2026-11-01", false, None),
+            item("new", "2026-11-05", false, None),
+            item("crit", "2026-10-01", true, None),
+        ]);
+        app.poll_launch_checks();
+        assert_eq!(shown(&app).as_deref(), Some("crit"));
+        app.handle_key(key(KeyCode::Enter));
+        app.poll_launch_checks();
+        assert!(app.update_modal.is_some());
+        app.handle_key(key(KeyCode::Esc));
+        app.poll_launch_checks();
+        assert!(app.news_modal.is_none(), "ordinary news pops up once");
+        drop(t);
     }
 
-    impl Drop for CacheGuard {
-        fn drop(&mut self) {
-            std::env::remove_var("QSMXT_UPDATE_CACHE");
-        }
+    /// Announcements wait while another pop-up (the startup tip, an algorithm list) is open.
+    #[test]
+    fn announcements_wait_for_other_pop_ups() {
+        let _t = crate::commands::news::TestDir::new();
+        let mut app = launched(None, vec![item("crit", "2026-10-01", true, None), item("a", "2026-11-01", false, None)]);
+        app.tip_modal = Some(TipModal::new(crate::tui::tips::TIPS[0], true));
+        app.poll_launch_checks();
+        assert!(app.news_modal.is_none(), "not over the tip");
+        app.tip_modal = None;
+        app.poll_launch_checks();
+        assert_eq!(app.news_modal.as_ref().unwrap().items[0].id, "crit");
+    }
+
+    /// The update prompt waits for the announcements (a critical one goes first), and ordinary
+    /// announcements wait for the release check (the prompt goes first).
+    #[test]
+    fn each_pop_up_waits_for_the_check_that_goes_before_it() {
+        let _t = crate::commands::news::TestDir::new();
+        let mut app = launched(Some("v99.0.0"), Vec::new());
+        let (_tx, rx) = std::sync::mpsc::channel();
+        app.news_state = NewsState { receiver: Some(rx), done: false };
+        app.poll_launch_checks();
+        assert!(app.update_modal.is_none(), "the announcements are still being fetched");
+
+        let mut app = launched(None, vec![item("a", "2026-11-01", false, None)]);
+        let (_tx2, rx2) = std::sync::mpsc::channel();
+        app.update_state = UpdateState { receiver: Some(rx2), done: false };
+        app.poll_launch_checks();
+        assert!(app.news_modal.is_none(), "the release check is still running");
+    }
+
+    /// An announcement for other versions does not pop up; nor does a ranged one on a dev build.
+    #[test]
+    fn announcements_for_other_versions_do_not_pop_up() {
+        let _t = crate::commands::news::TestDir::new();
+        let mut app = launched(None, vec![item("a", "2026-11-01", true, Some(("1.0.0", "2.0.0")))]);
+        app.poll_launch_checks();
+        assert!(app.news_modal.is_none());
+        assert!(app.news_queue.is_empty());
+    }
+
+    /// `n` on the tab bar opens every announcement, newest first, including those already
+    /// shown; it closes without recording anything.
+    #[test]
+    fn n_on_the_tab_bar_opens_the_history() {
+        let _t = crate::commands::news::TestDir::new();
+        let mut app = launched(None, vec![item("new", "2026-11-05", false, None), item("old", "2026-11-01", false, Some(("1.0.0", "2.0.0")))]);
+        app.poll_launch_checks();
+        app.news_modal = None;
+        app.news_queue.clear();
+        app.tab_focus = true;
+        app.handle_key(key(KeyCode::Char('n')));
+        let m = app.news_modal.as_ref().expect("the history should open");
+        assert!(m.history);
+        assert_eq!(m.items.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["new", "old"]);
+        app.handle_key(key(KeyCode::Down));
+        assert_eq!(app.news_modal.as_ref().unwrap().scroll, 1, "↓ scrolls");
+        app.handle_key(key(KeyCode::Esc));
+        assert!(app.news_modal.is_none());
+        assert!(!app.should_quit, "Esc closes the history, not the TUI");
+        assert!(crate::commands::news::load_seen().is_empty(), "reading the history records nothing");
+    }
+
+    /// Offline, the history is the saved copy, and says so.
+    #[test]
+    fn the_history_offline_is_the_saved_copy() {
+        let _t = crate::commands::news::TestDir::new();
+        crate::commands::news::load(|| Ok("[[announcement]]\nid=\"a\"\ndate=\"2026-11-01\"\ntitle=\"Saved\"\nbody=\"b\"\n".into()));
+        let mut app = App::new();
+        app.receive_news(crate::commands::news::load(|| Err("offline".into())));
+        app.open_news_history();
+        let m = app.news_modal.as_ref().unwrap();
+        assert_eq!(m.items[0].title, "Saved");
+        assert!(m.note.as_deref().is_some_and(|n| n.contains("could not be read")));
+    }
+
+    /// `c` in a pop-up copies its link.
+    #[test]
+    fn c_copies_an_announcements_link() {
+        let _t = crate::commands::news::TestDir::new();
+        let mut a = item("a", "2026-11-01", false, None);
+        a.link = Some("https://example.com/a".into());
+        let mut app = launched(None, vec![a]);
+        app.poll_launch_checks();
+        app.handle_key(key(KeyCode::Char('c')));
+        assert_eq!(app.clipboard.as_deref(), Some("https://example.com/a"));
+        assert!(app.news_modal.is_some(), "copying does not close it");
     }
 
     #[test]

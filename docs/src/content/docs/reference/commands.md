@@ -19,6 +19,7 @@ for the complete, authoritative options of any command.
 | [`aggregate`](/QSMxT/guides/running-noninteractively/#how-the-jobs-divide-the-work) | Run the dataset-level steps over runs processed with `run --no-dataset-steps` |
 | [`tui`](/QSMxT/guides/running-interactively/) | Launch the interactive TUI |
 | `update` | Check for and install the latest release |
+| [`news`](/QSMxT/getting-started/installation/#announcements) | Show the announcements from the QSMxT team, newest first |
 
 ## Standalone NIfTI tools
 

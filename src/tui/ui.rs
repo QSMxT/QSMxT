@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use super::app::{AlgoModal, App, PipelineRow, TipModal, UpdateModal, TAB_NAMES, TAB_INPUT, TAB_METHODS};
+use super::app::{AlgoModal, App, NewsModal, PipelineRow, TipModal, UpdateModal, TAB_NAMES, TAB_INPUT, TAB_METHODS};
 use super::command;
 
 pub fn draw(f: &mut Frame, app: &mut App) {
@@ -48,6 +48,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     if let Some(ref modal) = app.tip_modal {
         draw_tip_modal(f, modal, f.area());
+    }
+
+    if let Some(ref mut modal) = app.news_modal {
+        draw_news_modal(f, modal, f.area());
     }
 
     // Drawn last so it sits above the other pop-ups, matching the input routing.
@@ -392,7 +396,75 @@ fn draw_ref_modal(f: &mut Frame, modal: &mut super::recommend::RefModal, area: R
     draw_advice_modal(f, area, popup_w, &title, color, lines, footer, hint, scroll_hint, &mut modal.scroll);
 }
 
-/// "A new version is available" pop-up, raised once by the launch-time release check.
+/// An announcement pop-up, or the history of them all ([`NewsModal`]): each announcement's date,
+/// title, wrapped body, the versions it affects and its link.
+fn draw_news_modal(f: &mut Frame, modal: &mut NewsModal, area: Rect) {
+    let popup_w = advice_modal_width(area).min(84);
+    let text_w = popup_w.saturating_sub(6).max(10) as usize;
+    let dim = Style::default().fg(Color::DarkGray);
+    let restyle = |lines: Vec<Line<'static>>, style: Style| -> Vec<Line<'static>> {
+        lines.into_iter()
+            .map(|l| Line::from(l.spans.into_iter().map(|s| Span::styled(s.content, s.style.patch(style))).collect::<Vec<_>>()))
+            .collect()
+    };
+    let mut lines = vec![Line::from("")];
+    if let Some(note) = &modal.note {
+        lines.extend(restyle(tip_lines(note, text_w), dim));
+        lines.push(Line::from(""));
+    }
+    if modal.items.is_empty() {
+        lines.push(Line::from("There are no announcements."));
+        lines.push(Line::from(""));
+    }
+    for (i, a) in modal.items.iter().enumerate() {
+        if i > 0 {
+            lines.push(Line::from(Span::styled("\u{2500}".repeat(text_w), dim)));
+            lines.push(Line::from(""));
+        }
+        let mut head = vec![Span::styled(a.date.clone(), dim)];
+        if a.critical {
+            head.push(Span::styled("  Important", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)));
+        }
+        lines.push(Line::from(head));
+        lines.extend(restyle(tip_lines(&a.title, text_w), Style::default().add_modifier(Modifier::BOLD)));
+        for p in a.paragraphs() {
+            lines.push(Line::from(""));
+            lines.extend(tip_lines(&p, text_w));
+        }
+        let mut notes = a.affects_text().unwrap_or_default();
+        if a.critical && !modal.history {
+            let until = match a.affects.as_ref().and_then(|r| r.fixed_in.as_deref()) {
+                Some(fixed) => format!(" This shows each time QSMxT starts until you update to {fixed} or later (`qsmxt update`)."),
+                None => " This shows each time QSMxT starts.".to_string(),
+            };
+            notes.push_str(&until);
+        }
+        if !notes.is_empty() {
+            lines.push(Line::from(""));
+            lines.extend(restyle(tip_lines(notes.trim(), text_w), dim));
+        }
+        if let Some(link) = &a.link {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(link.clone(), Style::default().fg(Color::Cyan).add_modifier(Modifier::UNDERLINED))));
+        }
+        lines.push(Line::from(""));
+    }
+    let critical = !modal.history && modal.items.iter().any(|a| a.critical);
+    let (title, color) = match (modal.history, critical) {
+        (true, _) => (" Announcements ", Color::Cyan),
+        (false, true) => (" Important announcement ", Color::Red),
+        (false, false) => (" Announcement ", Color::Cyan),
+    };
+    let has_link = !modal.history && modal.items.iter().any(|a| a.link.is_some());
+    let hint = match (modal.history, has_link) {
+        (true, _) => "Esc close",
+        (false, true) => "c copy link   Enter close",
+        (false, false) => "Enter close",
+    };
+    draw_advice_modal(f, area, popup_w, title, color, lines, Vec::new(), hint, "\u{2191}\u{2193} scroll", &mut modal.scroll);
+}
+
+/// "A new version is available" pop-up, raised by the launch-time release check.
 fn draw_update_modal(f: &mut Frame, modal: &UpdateModal, area: Rect) {
     let running = crate::commands::update::current_version();
     let lines = vec![
@@ -416,9 +488,7 @@ fn draw_update_modal(f: &mut Frame, modal: &UpdateModal, area: Rect) {
             Span::styled("Enter", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
             Span::raw(" update now   "),
             Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(" later   "),
-            Span::styled("d", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(" skip this version"),
+            Span::raw(" later"),
         ]),
     ];
 
@@ -2338,7 +2408,7 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     let keys: Vec<(&str, &str)> = if app.editing || app.pipeline_state.editing {
         vec![("Esc", "Cancel"), ("Enter", "Confirm")]
     } else if app.tab_focus {
-        vec![("\u{2190}\u{2192}", "Tabs"), ("\u{2193}/Enter", "Open tab"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
+        vec![("\u{2190}\u{2192}", "Tabs"), ("\u{2193}/Enter", "Open tab"), ("F5", "Run"), ("?", "Tip"), ("n", "News"), ("q", "Quit")]
     } else if app.active_tab == TAB_METHODS && app.on_subtabs() {
         vec![(&tabs, "Tabs"), ("\u{2190}\u{2192}/[ ]", "Sub-tabs"), ("\u{2193}/Enter", "Open"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else if app.active_tab == TAB_METHODS && app.page() == Some(super::app::Page::Pipeline) {
@@ -2635,7 +2705,55 @@ pub(super) mod tests {
         );
         assert!(text.contains("update now"), "missing the accept hint:\n{text}");
         assert!(text.contains("later"), "missing the defer hint:\n{text}");
-        assert!(text.contains("skip this version"), "missing the skip hint:\n{text}");
+        assert!(!text.contains("skip"), "a release cannot be skipped:\n{text}");
+    }
+
+    /// An announcement pop-up shows its date, title, wrapped body, range and link; a critical
+    /// one says it comes back until the update.
+    #[test]
+    fn an_announcement_pop_up_shows_everything_in_it() {
+        use crate::tui::app::NewsModal;
+        let mut a = crate::commands::news::tests::item("a", "2026-11-06", true, Some(("10.0.0", "11.0.1")));
+        a.title = "Wrong results from the thing".into();
+        a.body = format!("{}\n\nSecond paragraph.", "word ".repeat(40));
+        a.link = Some("https://example.com/a".into());
+        let mut app = App::new();
+        app.news_modal = Some(NewsModal { items: vec![a], history: false, note: None, scroll: 0 });
+        let text = screen_text(&render_app_sized(&mut app, 120, 40));
+        for want in ["Important announcement", "2026-11-06", "Important", "Wrong results from the thing",
+                     "Second paragraph.", "Affects versions from 10.0.0; fixed in 11.0.1.",
+                     "until you update to 11.0.1", "https://example.com/a", "c copy link", "Enter close"] {
+            assert!(text.contains(want), "missing {want:?}:\n{text}");
+        }
+        assert!(text.lines().all(|l| l.matches("word").count() < 40), "the body is wrapped:\n{text}");
+    }
+
+    /// The history scrolls when it does not fit, and an empty one says so.
+    #[test]
+    fn the_announcement_history_scrolls_and_says_when_empty() {
+        use crate::tui::app::NewsModal;
+        let items: Vec<_> = (0..12).map(|i| crate::commands::news::tests::item(&format!("n{i}"), &format!("2026-11-{:02}", 20 - i), false, None)).collect();
+        let mut app = App::new();
+        app.news_modal = Some(NewsModal { items, history: true, note: None, scroll: 0 });
+        let text = screen_text(&render_app(&mut app));
+        assert!(text.contains("Announcements") && text.contains("Title n0"), "{text}");
+        assert!(text.contains("scroll"), "a long history scrolls:\n{text}");
+        assert!(!text.contains("Title n11"), "{text}");
+        app.news_modal.as_mut().unwrap().scroll = 500;
+        let text = screen_text(&render_app(&mut app));
+        assert!(text.contains("Title n11"), "scrolled to the end:\n{text}");
+
+        app.news_modal = Some(NewsModal { items: Vec::new(), history: true, note: None, scroll: 0 });
+        let text = screen_text(&render_app(&mut app));
+        assert!(text.contains("There are no announcements."), "{text}");
+    }
+
+    /// The tab bar's key hints include the history.
+    #[test]
+    fn the_tab_bar_key_bar_offers_the_news() {
+        let mut app = App::new();
+        app.tab_focus = true;
+        assert!(footer(&mut app).contains("n:News"), "{}", footer(&mut app));
     }
 
     /// The prompt is drawn after the algorithm modal so it is answered first — the key

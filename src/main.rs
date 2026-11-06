@@ -58,6 +58,7 @@ fn main() {
         Command::Example(args) => commands::example::execute(args),
         Command::Tui => tui::run_tui(),
         Command::Update(args) => commands::update::execute(args),
+        Command::News => commands::news::execute(),
     };
 
     if let Err(e) = result {
