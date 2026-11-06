@@ -73,7 +73,15 @@ pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value
                 o.remove("two_pass_sections");
                 o.remove("two_pass_combine");
             }
-            json!({ "masking": m, "bet": config.bet })
+            let mut c = json!({ "masking": m, "bet": config.bet });
+            // The mask corrects the echoes it is made from for inhomogeneity itself
+            // ([`crate::stages::mask::build_mask`]), so it reads those settings: it does not read
+            // the magnitude step's output, which is what would otherwise make it stale when they
+            // change. Only when on, so a run without it keeps its key.
+            if config.masking.inhomogeneity_correction {
+                c["inhomogeneity"] = crate::stages::magnitude::params(config);
+            }
+            c
         }
         "mask" => {
             // Unset, the reliable mask's combine mode is the main mask's, already in the key:

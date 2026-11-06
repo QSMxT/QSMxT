@@ -328,7 +328,8 @@ pub struct Completed<'a> {
     pub outcome: Option<(&'static str, serde_json::Value)>,
     /// Its cache key ([`crate::cache::step_cache_key`]).
     pub key: &'a str,
-    /// What it read, in the order provenance lists them.
+    /// What it read, in the order provenance lists them. A store keeps it with the step: it is
+    /// what makes the step stale ([`crate::graph::readers`]).
     pub inputs: &'a [Item],
     /// What it wrote, in the order provenance lists them.
     pub outputs: &'a [Item],
@@ -341,16 +342,16 @@ pub struct Completed<'a> {
 ///
 /// A step is cached under its name and its key, a string the engine derives from the step's
 /// parameters and the configuration it reads; a store compares keys, it never builds one. A step
-/// recomputed under a different key than it last had makes everything [downstream of it]
-/// stale.
+/// recomputed under a different key than it last had makes every recorded step that read what it
+/// wrote ([its readers]) stale: what each step read is recorded with it ([`Completed::inputs`]).
 ///
 /// A step's record holds only while the outputs it names are still the ones it wrote. Steps of
 /// different names can write the same output (each inversion algorithm's step writes the pass's
 /// raw map), so a step is not cached while another step's record names one of its outputs
 /// ([`sharing_outputs`]), and recording a step forgets every other step that named one of the
-/// outputs it has just replaced, with everything downstream of it.
+/// outputs it has just replaced, with every step that read what it wrote.
 ///
-/// [downstream of it]: crate::graph::downstream_of
+/// [its readers]: crate::graph::readers
 pub trait StageStore {
     /// The store's own errors: file I/O for `qsmxt`. The engine's become one of them.
     type Error: From<EngineError>;
@@ -427,7 +428,7 @@ pub trait StageStore {
     fn recorded_key(&mut self, step: &str) -> Option<String>;
 
     /// Whether `step`'s outputs are kept under `key`. A step recorded under another key is stale,
-    /// and so is everything downstream of it.
+    /// and so is every recorded step that read what it wrote.
     fn cached(&mut self, step: &str, key: &str) -> bool;
 
     /// `step` is about to be computed.
@@ -454,7 +455,7 @@ pub trait StageStore {
     fn annotation(&mut self, item: &Item) -> serde_json::Map<String, serde_json::Value>;
 
     /// `step` did not run this time, and what it left (`outputs`) no longer applies: drop them,
-    /// and forget the step and everything downstream of it.
+    /// and forget the step and every recorded step that read what it wrote.
     fn discard(&mut self, step: &str, outputs: &[Item]) -> Result<(), Self::Error>;
 
     /// The run's outputs stay on the working grid it was resampled to (`--output-space working`):
@@ -549,6 +550,10 @@ pub trait Volumes {
 pub struct Recorded {
     /// Each completed step: the key it was recorded under, and its outputs.
     pub steps: std::collections::BTreeMap<String, (String, Vec<String>)>,
+    /// What each completed step read ([`Completed::inputs`]), which decides what makes it stale
+    /// ([`crate::graph::readers`]). Records from before it was kept have none.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub reads: std::collections::BTreeMap<String, Vec<String>>,
     /// The load step's key and the grid it decided.
     pub scan: Option<(String, RunMetadata)>,
     pub reports: std::collections::BTreeMap<String, serde_json::Value>,
@@ -643,6 +648,9 @@ pub struct MemoryStore<V = InMemory> {
     working_grid: HashMap<Item, Option<Geometry>>,
     /// Each recorded step's key, and the outputs it recorded.
     steps: HashMap<String, (String, Vec<Item>)>,
+    /// What each recorded step read ([`Completed::inputs`]); none for a step restored from a record
+    /// made before stores kept it. An entry for a step no longer recorded means nothing.
+    reads: HashMap<String, Vec<Item>>,
     scan: Option<(String, RunMetadata)>,
     /// What each recorded step, and the load step, decided.
     decisions: HashMap<String, Vec<Decision>>,
@@ -684,7 +692,7 @@ impl<V: Volumes> MemoryStore<V> {
         Self {
             header: Some(header), identity, volumes, geometries: HashMap::new(), reports: HashMap::new(),
             annotations: HashMap::new(), supplied: None, supplied_identities: HashMap::new(), mese: None, current: None,
-            working_grid: HashMap::new(), steps: HashMap::new(), scan: None, decisions: HashMap::new(),
+            working_grid: HashMap::new(), steps: HashMap::new(), reads: HashMap::new(), scan: None, decisions: HashMap::new(),
         }
     }
 
@@ -752,6 +760,7 @@ impl<V: Volumes> MemoryStore<V> {
         let keys = |items: &[Item]| items.iter().map(Item::key).collect();
         Recorded {
             steps: self.steps.iter().map(|(s, (k, out))| (s.clone(), (k.clone(), keys(out)))).collect(),
+            reads: self.reads.iter().filter(|(s, _)| self.steps.contains_key(*s)).map(|(s, r)| (s.clone(), keys(r))).collect(),
             scan: self.scan.clone(),
             reports: self.reports.iter().map(|(i, v)| (i.key(), v.clone())).collect(),
             annotations: self.annotations.iter().map(|(i, a)| (i.key(), a.clone())).collect(),
@@ -772,6 +781,11 @@ impl<V: Volumes> MemoryStore<V> {
         self.steps = recorded.steps.into_iter().filter_map(|(step, (key, outputs))| {
             let outputs = outputs.iter().map(|k| Item::from_key(k)).collect::<Option<Vec<_>>>()?;
             Some((step, (key, outputs)))
+        }).collect();
+        // A step that read an item this engine does not have is left as one recorded without what
+        // it read: the fixed table says what makes it stale.
+        self.reads = recorded.reads.into_iter().filter_map(|(step, read)| {
+            Some((step, read.iter().map(|k| Item::from_key(k)).collect::<Option<Vec<_>>>()?))
         }).collect();
         self.scan = recorded.scan;
         self.decisions = recorded.decisions.into_iter().collect();
@@ -807,12 +821,18 @@ impl<V: Volumes> MemoryStore<V> {
         self.changed();
     }
 
+    /// Forget `step` and every recorded step that read what it recorded writing.
     fn forget(&mut self, step: &str) {
-        self.steps.remove(step);
-        for ds in crate::graph::downstream_of(step) {
-            self.steps.remove(&ds);
+        let outputs = self.steps.remove(step).map(|(_, outputs)| outputs).unwrap_or_default();
+        for r in self.readers(step, &outputs) {
+            self.steps.remove(&r);
         }
         self.changed();
+    }
+
+    /// The recorded steps that read one of `outputs` of `step` ([`crate::graph::readers`]).
+    fn readers(&self, step: &str, outputs: &[Item]) -> Vec<String> {
+        crate::graph::readers(step, outputs, self.steps.keys().map(|s| (s.as_str(), self.reads.get(s).map(Vec::as_slice))))
     }
 
     /// The other recorded steps naming one of `outputs` ([`sharing_outputs`]).
@@ -850,6 +870,7 @@ impl<V: Volumes> MemoryStore<V> {
             current: None,
             working_grid: self.working_grid.clone(),
             steps: self.steps.clone(),
+            reads: self.reads.clone(),
             scan: self.scan.clone(),
             decisions: self.decisions.clone(),
         }
@@ -1114,12 +1135,19 @@ impl<V: Volumes> StageStore for MemoryStore<V> {
         for other in self.sharing(c.step, c.outputs) {
             self.forget(&other);
         }
-        if self.steps.get(c.step).map(|(k, _)| k.as_str()) != Some(c.key) {
-            for ds in crate::graph::downstream_of(c.step) {
-                self.steps.remove(&ds);
+        match self.steps.get(c.step) {
+            Some((key, _)) if key == c.key => {}
+            // Whatever read what it wrote before, or writes now, read something else.
+            before => {
+                let mut written = c.outputs.to_vec();
+                written.extend(before.into_iter().flat_map(|(_, out)| out.iter().copied()));
+                for r in self.readers(c.step, &written) {
+                    self.steps.remove(&r);
+                }
             }
         }
         self.steps.insert(c.step.to_string(), (c.key.to_string(), c.outputs.to_vec()));
+        self.reads.insert(c.step.to_string(), c.inputs.to_vec());
         self.decisions.insert(c.step.to_string(), c.decisions.to_vec());
         self.changed();
         Ok(())
@@ -1232,30 +1260,30 @@ mod tests {
     #[test]
     fn a_step_that_writes_another_ones_output_takes_its_place() {
         let raw = Item::RawChi(Pass::Main);
-        let done = |store: &mut MemoryStore, step: &str, key: &str, outputs: &[Item]| {
+        let done = |store: &mut MemoryStore, step: &str, key: &str, inputs: &[Item], outputs: &[Item]| {
             store.start(step);
             for &item in outputs {
                 store.put(item, Data::Real(&[1.0, 2.0])).unwrap();
             }
             store.record(&Completed {
-                step, algorithm: None, params: &serde_json::json!({}), outcome: None, key, inputs: &[], outputs,
+                step, algorithm: None, params: &serde_json::json!({}), outcome: None, key, inputs, outputs,
                 decisions: &[],
             }).unwrap();
         };
         let mut store = MemoryStore::new(header(), serde_json::json!(1));
-        done(&mut store, "invert", "a", &[raw]);
-        done(&mut store, "reference", "r", &[Item::Chi]);
+        done(&mut store, "invert", "a", &[], &[raw]);
+        done(&mut store, "reference", "r", &[raw], &[Item::Chi]);
         let mut fields = serde_json::Map::new();
         fields.insert("QsmReferenceOffsetPpm".into(), 0.5.into());
         store.annotate(&Item::Chi, fields).unwrap();
-        done(&mut store, "swi", "s", &[Item::Swi]);
-        done(&mut store, "output_space", "o", &[Item::Chi, Item::Swi]);
+        done(&mut store, "swi", "s", &[], &[Item::Swi]);
+        done(&mut store, "output_space", "o", &[Item::Chi, Item::Swi], &[Item::Chi, Item::Swi]);
         assert!(store.annotations(&Item::Chi).is_some(), "returned to the acquired grid, it is the same output");
-        done(&mut store, "tgv", "b", &[raw]);
+        done(&mut store, "tgv", "b", &[], &[raw]);
         let steps = store.recorded().steps;
         assert!(!steps.contains_key("invert") && !steps.contains_key("reference"), "{steps:?}");
         assert!(store.cached("tgv", "b"));
-        done(&mut store, "reference", "r", &[Item::Chi]);
+        done(&mut store, "reference", "r", &[raw], &[Item::Chi]);
         assert!(store.annotations(&Item::Chi).is_none(), "a new map keeps nothing recorded about the old one");
 
         let mut both = store.recorded();

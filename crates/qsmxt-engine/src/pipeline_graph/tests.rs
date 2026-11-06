@@ -24,8 +24,9 @@ fn grid(resampled: bool) -> RunMetadata {
     }
 }
 
-/// Every arrow is a data dependency the cache's invalidation table also has: a step reading
-/// another's output is stale when that output changes. The load step stands for the scan, whose
+/// Every arrow is a data dependency the fixed invalidation table also has, so a step recorded
+/// without what it read ([`crate::graph::readers`]'s fallback) is stale whenever one it reads from
+/// changes. The load step stands for the scan, whose
 /// supplied inputs are keyed by the steps that read them rather than by the load step.
 fn assert_consistent(g: &PipelineGraph) {
     for e in &g.edges {

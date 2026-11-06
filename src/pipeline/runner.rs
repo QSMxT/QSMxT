@@ -820,14 +820,19 @@ impl StageStore for FileStore<'_> {
         // downstream steps' own parameter hashes would not notice. Recomputed with the same
         // parameters — its files were missing, or cleaned — it made the same output, and what
         // read it stays cached.
-        let same_as_before = self.state.completed_steps.get(c.step)
-            .is_some_and(|r| r.params_hash.as_deref() == Some(c.key));
-        if !same_as_before {
-            for ds in crate::pipeline::graph::downstream_of(c.step) {
-                self.state.completed_steps.remove(&ds);
+        // What read it is what recorded reading one of the files it wrote before or writes now.
+        match self.state.completed_steps.get(c.step) {
+            Some(r) if r.params_hash.as_deref() == Some(c.key) => {}
+            before => {
+                let mut written = outputs.clone();
+                written.extend(before.into_iter().flat_map(|r| r.outputs.iter().cloned()));
+                for ds in self.state.readers(c.step, &written) {
+                    self.state.completed_steps.remove(&ds);
+                }
             }
         }
         self.state.mark_completed_with_metadata(c.step, outputs, Some(c.key.to_string()), self.metadata.take());
+        self.state.set_inputs(c.step, inputs);
         self.state.set_decisions(c.step, c.decisions);
         self.state.save(&self.state_path)
     }
@@ -2764,6 +2769,73 @@ mod oblique_run_tests {
                     }).collect();
                     assert_eq!(makers, [step.as_str()], "{:?}, two-pass {two_pass}", &sequence[..=i]);
                 }
+            }
+        }
+    }
+
+    /// `qsmxt run` on an output directory where a χ-sepnet toolbox run finished, now asking for
+    /// the R2′ map (#502): the state file keeps what each step read, so the R2 step, computed for
+    /// the first time, leaves χ-separation cached on the route that estimates its own R2′. On
+    /// the route that reads the R2 step's R2′, computing it again makes χ-separation stale. A state written before steps kept
+    /// what they read falls back to the fixed table, which makes it stale either way. The steps
+    /// are recorded as the engine records them (the plan's reads and writes) and not computed:
+    /// the networks are not what is under test.
+    #[test]
+    fn asking_for_the_r2prime_map_reuses_chi_separation_unless_it_reads_it() {
+        use qsmxt_engine::enums::ChiSepNetRoute;
+        let dir = tempfile::tempdir().unwrap();
+        let run = oblique_run(dir.path(), "a", 3);
+        let k = &run.key;
+        for (route, legacy, kept) in [(ChiSepNetRoute::Toolbox, false, true), (ChiSepNetRoute::Native, false, false),
+                                      (ChiSepNetRoute::Toolbox, true, false)] {
+            let output = DerivativeOutputs::new(&dir.path().join(format!("{route}-{legacy}")));
+            let state_path = output.state_path(k);
+            let mut config = fast_config();
+            config.pipeline.do_chi_separation = true;
+            config.separation.algorithm = SeparationAlgorithm::ChiSepNet;
+            config.separation.chi_sepnet.route = route;
+            fn store<'a>(run: &'a QsmRun, config: &'a PipelineConfig, output: &DerivativeOutputs, state_path: &Path) -> FileStore<'a> {
+                FileStore {
+                    run, config, output: output.clone(), meta: None,
+                    state: PipelineState::load_or_create(state_path, config, &run.key, false), state_path: state_path.to_path_buf(),
+                    started: None, step: None, supplied_mask: None, extra_outputs: Vec::new(), metadata: None,
+                    working_grid_kept: false,
+                }
+            }
+            let record = |store: &mut FileStore, step: &qsmxt_engine::plan::Step, key: &str| {
+                store.start(&step.name);
+                store.record(&Completed {
+                    step: &step.name, algorithm: step.algorithm.as_deref(), params: &serde_json::json!({}),
+                    outcome: None, key, inputs: &step.reads, outputs: &step.outputs, decisions: &[],
+                }).unwrap();
+            };
+            let plan = qsmxt_engine::plan::plan(&config, &requirements::scan_facts(&run, &config));
+            let mut first = store(&run, &config, &output, &state_path);
+            for step in plan.steps.iter().filter(|s| !matches!(s.stage, Stage::Load | Stage::Motion | Stage::OutputSpace)) {
+                record(&mut first, step, "k");
+            }
+            assert!(first.state.completed_steps.contains_key("chi_separation"));
+            drop(first);
+            if legacy {
+                let mut state = PipelineState::load_or_create(&state_path, &config, k, false);
+                state.completed_steps.values_mut().for_each(|r| r.inputs = None);
+                state.save(&state_path).unwrap();
+            }
+
+            config.pipeline.do_r2primemap = true;
+            let plan = qsmxt_engine::plan::plan(&config, &requirements::scan_facts(&run, &config));
+            let mut again = store(&run, &config, &output, &state_path);
+            // The toolbox route took no R2 step until the map was asked for; the network-only route
+            // reads the R2 step's R2′, which is computed again here under another key.
+            assert_eq!(again.state.completed_steps.contains_key("r2_r2prime"), route == ChiSepNetRoute::Native);
+            let r2 = plan.steps.iter().find(|s| s.stage == Stage::R2).unwrap();
+            record(&mut again, r2, "k2");
+            let cached: Vec<&str> = plan.steps.iter().map(|s| s.name.as_str())
+                .filter(|s| again.state.completed_steps.contains_key(*s)).collect();
+            assert_eq!(cached.contains(&"chi_separation"), kept, "{route}, legacy state {legacy}: {cached:?}");
+            // Nothing else read the map.
+            for step in plan.steps.iter().filter(|s| !matches!(s.stage, Stage::Load | Stage::Motion | Stage::OutputSpace | Stage::ChiSeparation)) {
+                assert!(cached.contains(&step.name.as_str()), "{route}, legacy state {legacy}: {} went stale: {cached:?}", step.name);
             }
         }
     }

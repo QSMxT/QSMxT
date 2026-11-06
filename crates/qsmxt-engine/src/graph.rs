@@ -2,12 +2,46 @@
 //!
 //! A step's cache key ([`crate::cache::step_cache_key`]) covers its own parameters and the
 //! configuration it reads, not its inputs. When a step is recomputed with other parameters, every
-//! step that read its old output is stale, and this table says which those are. Every front end
-//! invalidates by it, so a re-run recomputes the same steps whichever front end runs it.
+//! step that read its old output is stale. A store records what each step read when it was
+//! computed ([`crate::store::Completed::inputs`], the plan's reads for it), and [`readers`] says
+//! which recorded steps read what a step wrote: what each step reads depends on the plan (χ-sepnet's
+//! toolbox route reads R2′ only where it can be measured or is supplied), so a fixed table would
+//! recompute steps that never read the output. Every front end invalidates by it, so a re-run
+//! recomputes the same steps whichever front end runs it.
+//!
+//! The fixed table ([`downstream_of`]) is what a step recorded before stores kept what it read
+//! falls back to: it holds every edge any plan has, and more.
 
 use crate::cache::RELIABLE_SUFFIX;
+use crate::store::OUTPUT_SPACE;
 
-/// Every step that has to be re-run when `step_name` changes, the two-pass steps included.
+/// The recorded steps that read what `step` wrote (`outputs`, as the store names them: [`crate::store::Item`]s,
+/// `qsmxt`'s paths), and so are stale once it is computed again under another key or forgotten.
+/// `recorded` is each recorded step's name with what it recorded reading.
+///
+/// A step that recorded what it read is stale exactly when it read one of `outputs`; one recorded
+/// before stores kept that (`None`) is stale when the fixed table ([`downstream_of`]) says so.
+/// The return to the acquired grid (`output_space`) neither makes a step stale nor is made stale
+/// here: it rewrites other steps' outputs in place, and a store undoes it before any of them is
+/// computed again or read, and redoes it after.
+pub fn readers<'a, T: PartialEq + 'a>(
+    step: &str, outputs: &[T], recorded: impl IntoIterator<Item = (&'a str, Option<&'a [T]>)>,
+) -> Vec<String> {
+    if step == OUTPUT_SPACE {
+        return Vec::new();
+    }
+    let table = downstream_of(step);
+    recorded.into_iter()
+        .filter(|&(other, read)| other != step && other != OUTPUT_SPACE && match read {
+            Some(read) => read.iter().any(|i| outputs.contains(i)),
+            None => table.iter().any(|d| d == other),
+        })
+        .map(|(other, _)| other.to_string())
+        .collect()
+}
+
+/// Every step that may have to be re-run when `step_name` changes, the two-pass steps included,
+/// whatever the plan: what [`readers`] falls back to for a step recorded without what it read.
 ///
 /// Two-pass duplicates the mask, background-removal and inversion steps under
 /// [`RELIABLE_SUFFIX`], so each of those is stale exactly when its main-pass twin is; and the
