@@ -1227,14 +1227,15 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let Some(key) = self.begin(&name, Some(&algorithm), &params, "Skipping invert (cached)",
                                    &format!("Dipole inversion{label}")) else { return Ok(()) };
         if per_echo {
-            let mask = self.store.mask(&self.pass_mask(pass))?;
+            // Read only by the total-field methods: the others each take their echo's own mask.
+            let mask = if skip_bgremove { Some(self.store.mask(&self.pass_mask(pass))?) } else { None };
             self.store.models(&step.models)?;
             let n = self.n_echoes();
             let mut outputs = Vec::with_capacity(n);
             for e in 1..=n {
                 // The total-field methods take the echo's field inside the mask, the others its
                 // local field inside the mask background removal left.
-                let (field, mask) = if skip_bgremove {
+                let (field, mask) = if let Some(mask) = &mask {
                     (self.store.real(&Item::EchoField(e))?, mask.clone())
                 } else {
                     (self.store.real(&Item::EchoLocalField(e))?, self.store.mask(&Item::EchoLocalFieldMask(e))?)
@@ -2446,9 +2447,10 @@ pub(crate) fn medi_csf_decision(config: &PipelineConfig, n_echoes: usize) -> Opt
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::enums::{BfAlgorithm, QsmAlgorithm};
+    use crate::enums::{BfAlgorithm, QsmAlgorithm, SeparationAlgorithm};
     use crate::masking::{MaskOp, MaskSection, MaskThresholdMethod, MaskingInput};
     use crate::store::{Header, MemoryStore};
+    use std::collections::HashMap;
 
     const N: usize = 16;
     const TES: [f64; 3] = [0.005, 0.010, 0.015];
@@ -2501,8 +2503,8 @@ pub(crate) mod tests {
 
     /// A quick configuration for a tiny phantom: a magnitude threshold for the mask, Laplacian
     /// unwrapping, LBV (which does not erode a small brain away) and TKD. The iterative
-    /// algorithms a test switches to (TGV, QSMART, χ-separation) get a few iterations, no padding
-    /// and small kernels: the tests check what a run computes, keeps and records, not how good
+    /// algorithms a test switches to (TGV, QSMART, iLSQR, LSQR, χ-separation) get a few
+    /// iterations, no padding and small kernels: the tests check what a run computes, keeps and records, not how good
     /// the maps are.
     pub(crate) fn config() -> PipelineConfig {
         let mut config = PipelineConfig::default();
@@ -2524,6 +2526,11 @@ pub(crate) mod tests {
         qsmart.frangi_scale_max = 1.0;
         config.separation.chi_sep_ilsqr.cg_max_iter_lsqr = 3;
         config.separation.chi_sep_ilsqr.cg_max_iter_sa = 3;
+        config.separation.chi_sep_ilsqr.pad = [0, 0, 0];
+        config.separation.chi_sep_ilsqr.qsm_ilsqr.pad_mm = 0.0;
+        config.separation.chi_sep_ilsqr.qsm_ilsqr.max_iter = 2;
+        (config.inversion.ilsqr.pad_mm, config.inversion.ilsqr.max_iter) = (0.0, 2);
+        config.inversion.lsqr.max_iter = 5;
         config
     }
 
@@ -2532,11 +2539,23 @@ pub(crate) mod tests {
     pub(crate) struct Recorder<St> {
         pub inner: St,
         pub completed: Vec<(String, Vec<Item>, Vec<Item>)>,
+        /// Every item each step asked the store for while it was computed (from its `start` to
+        /// its `record`), by step; what is read outside a step is under `""`.
+        pub asked: HashMap<String, Vec<Item>>,
+        current: Option<String>,
     }
 
     impl<St> Recorder<St> {
         pub(crate) fn new(inner: St) -> Self {
-            Recorder { inner, completed: Vec::new() }
+            Recorder { inner, completed: Vec::new(), asked: HashMap::new(), current: None }
+        }
+
+        fn ask(&mut self, item: &Item) {
+            let step = self.current.clone().unwrap_or_default();
+            let asked = self.asked.entry(step).or_default();
+            if !asked.contains(item) {
+                asked.push(*item);
+            }
         }
     }
 
@@ -2552,28 +2571,36 @@ pub(crate) mod tests {
         }
         fn decisions(&mut self, step: &str) -> Vec<Decision> { self.inner.decisions(step) }
         fn begin(&mut self, meta: &RunMetadata) -> Result<(), Self::Error> { self.inner.begin(meta) }
-        fn has(&mut self, item: &Item) -> bool { self.inner.has(item) }
-        fn real(&mut self, item: &Item) -> Result<Vec<f64>, Self::Error> { self.inner.real(item) }
-        fn mask(&mut self, item: &Item) -> Result<Vec<u8>, Self::Error> { self.inner.mask(item) }
+        // Outside a step, whether an item is there decides a key (the statistics': which maps it
+        // summarises), which is what keys are for: only a step's own look counts as reading.
+        fn has(&mut self, item: &Item) -> bool {
+            if self.current.is_some() {
+                self.ask(item);
+            }
+            self.inner.has(item)
+        }
+        fn real(&mut self, item: &Item) -> Result<Vec<f64>, Self::Error> { self.ask(item); self.inner.real(item) }
+        fn mask(&mut self, item: &Item) -> Result<Vec<u8>, Self::Error> { self.ask(item); self.inner.mask(item) }
         fn supplied_mask(&mut self) -> Supplied { self.inner.supplied_mask() }
         fn mese(&mut self) -> Option<crate::store::Mese> { self.inner.mese() }
-        fn supplied(&mut self, item: &Item) -> Supplied { self.inner.supplied(item) }
+        fn supplied(&mut self, item: &Item) -> Supplied { self.ask(item); self.inner.supplied(item) }
         fn supplied_grid(&mut self, item: &Item) -> Option<crate::store::SuppliedGrid> {
             self.inner.supplied_grid(item)
         }
         fn identity(&mut self, item: &Item) -> Value { self.inner.identity(item) }
         fn recorded_key(&mut self, step: &str) -> Option<String> { self.inner.recorded_key(step) }
         fn cached(&mut self, step: &str, key: &str) -> bool { self.inner.cached(step, key) }
-        fn start(&mut self, step: &str) { self.inner.start(step) }
+        fn start(&mut self, step: &str) { self.current = Some(step.to_string()); self.inner.start(step) }
         fn put(&mut self, item: Item, data: Data<'_>) -> Result<(), Self::Error> { self.inner.put(item, data) }
         fn annotate(&mut self, item: &Item, fields: serde_json::Map<String, Value>) -> Result<(), Self::Error> {
             self.inner.annotate(item, fields)
         }
-        fn report(&mut self, item: &Item) -> Option<Value> { self.inner.report(item) }
-        fn annotation(&mut self, item: &Item) -> serde_json::Map<String, Value> { self.inner.annotation(item) }
+        fn report(&mut self, item: &Item) -> Option<Value> { self.ask(item); self.inner.report(item) }
+        fn annotation(&mut self, item: &Item) -> serde_json::Map<String, Value> { self.ask(item); self.inner.annotation(item) }
         fn discard(&mut self, step: &str, outputs: &[Item]) -> Result<(), Self::Error> { self.inner.discard(step, outputs) }
         fn record(&mut self, c: &Completed<'_>) -> Result<(), Self::Error> {
             self.completed.push((c.step.to_string(), c.inputs.to_vec(), c.outputs.to_vec()));
+            self.current = None;
             self.inner.record(c)
         }
     }
@@ -2674,6 +2701,276 @@ pub(crate) mod tests {
         c.qsm.reference_region = Some("thalamus".into());
         c.pipeline.do_analysis = true;
         check(&c, &facts, &store);
+    }
+
+    /// What each step asks its store for while it is computed, of what another step writes, is
+    /// among what it records reading: a store invalidates a step by what it recorded reading
+    /// ([`crate::graph::readers`]), so an item read and not recorded would leave the step cached
+    /// when that item changed. That is the direction that must never be weak, so the steps are
+    /// computed here, not dry-run: every inversion that runs without a network, single- and
+    /// multi-echo, one pass and two; every other output, with and without a MESE; motion
+    /// correction; a supplied mask and segmentation with a region reference; a per-echo QSM; and
+    /// a resampled run's return to the acquired grid.
+    #[test]
+    fn every_step_records_reading_everything_it_reads() {
+        fn check(config: &PipelineConfig, facts: &ScanFacts, store: MemoryStore) -> usize {
+            let plan = crate::plan::plan(config, facts);
+            if !plan.models.is_empty() {
+                return 0;
+            }
+            // What some step other than loading writes: what a store can see change.
+            let written: Vec<Item> = plan.steps.iter()
+                .filter(|s| !matches!(s.stage, Stage::Load | Stage::OutputSpace))
+                .flat_map(|s| s.outputs.iter().copied()).collect();
+            let mut recorder = Recorder::new(store);
+            // A step that cannot run (χ-separation of one echo has no R2*) stops the run; what
+            // was computed before it is checked.
+            let _ = run(&plan, config, facts, &mut recorder, &mut ());
+            for (step, inputs, outputs) in &recorder.completed {
+                let unrecorded: Vec<&Item> = recorder.asked.get(step).into_iter().flatten()
+                    .filter(|i| written.contains(i) && !inputs.contains(i) && !outputs.contains(i)).collect();
+                assert!(unrecorded.is_empty(), "{step} read {unrecorded:?} without recording it ({}, {} echo(es), two-pass {}): it recorded {inputs:?}",
+                        config.inversion.algorithm, facts.n_echoes, plan.two_pass);
+            }
+            let outside: Vec<&Item> = recorder.asked.get("").into_iter().flatten().filter(|i| written.contains(i)).collect();
+            assert!(outside.is_empty(), "read outside any step: {outside:?}");
+            recorder.completed.len()
+        }
+        let one_echo = |facts: &mut ScanFacts| {
+            facts.n_echoes = 1;
+            facts.echo_times.truncate(1);
+        };
+        let reliable = vec![MaskSection {
+            input: MaskingInput::Magnitude,
+            generator: MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(40.0) },
+            refinements: vec![],
+        }];
+        let mut runs: Vec<(PipelineConfig, ScanFacts, MemoryStore)> = Vec::new();
+        // One inversion of each kind: those whose plans read and write alike are wired alike, so
+        // the first of them stands for the rest (the iterative ones cost seconds here).
+        let mut kinds = Vec::new();
+        for algorithm in QsmAlgorithm::ALL {
+            for single in [false, true] {
+                for two_pass in [false, true] {
+                    let (mut facts, store) = phantom();
+                    if single {
+                        one_echo(&mut facts);
+                    }
+                    let mut c = config();
+                    c.inversion.algorithm = algorithm;
+                    c.inversion.tgv.iterations = Some(2);
+                    c.masking.two_pass = two_pass;
+                    c.masking.two_pass_sections = Some(reliable.clone());
+                    let plan = crate::plan::plan(&c, &facts);
+                    let kind: Vec<_> = plan.steps.iter().map(|s| (s.name.clone(), s.reads.clone(), s.outputs.clone())).collect();
+                    if !kinds.contains(&kind) {
+                        kinds.push(kind);
+                        runs.push((c, facts, store));
+                    }
+                }
+            }
+        }
+
+        // Every other output, the statistics over a supplied segmentation: R2′ measured from a
+        // MESE, or supplied; multi- and single-echo; with motion correction and without.
+        let supplied = |store: &mut MemoryStore, item: Item, inside: f64| {
+            let mut affine = [0.0; 16];
+            for i in 0..4 { affine[5 * i] = 1.0; }
+            let Some(VolumeData::Real(m)) = store.get(&Item::AcquiredMagnitude(1)).cloned() else { panic!() };
+            let data: Vec<f64> = m.iter().enumerate()
+                .map(|(i, &v)| if v > 50.0 { if i % N < N / 2 { inside } else { 49.0 } } else { 0.0 }).collect();
+            store.insert(item, VolumeData::Real(data));
+            let grid = crate::store::Geometry { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine, orientation: None };
+            store.supply(item, grid, format!("{item:?}"));
+        };
+        for (single, mese, separation) in [(false, true, SeparationAlgorithm::ChiSepIlsqr), (true, true, SeparationAlgorithm::ChiSepIlsqr),
+                                            (false, false, SeparationAlgorithm::ChiSepIlsqr), (false, true, SeparationAlgorithm::Decompose)] {
+            let (mut facts, mut store) = phantom();
+            let mut c = config();
+            if mese {
+                with_mese(&mut facts, &mut store);
+                c.separation.r2prime_strategy = crate::R2PrimeStrategy::Mese;
+            } else {
+                facts.custom_r2prime = true;
+                c.separation.custom_r2prime_tool = Some("mine".into());
+                supplied(&mut store, Item::SuppliedR2prime, 5.0);
+            }
+            if single {
+                one_echo(&mut facts);
+            }
+            facts.custom_dseg = true;
+            supplied(&mut store, Item::SuppliedSegmentation, 10.0);
+            c.segmentation.custom_dseg_tool = Some("mine".into());
+            let p = &mut c.pipeline;
+            (p.do_swi, p.do_smwi, p.do_t2starmap, p.do_r2starmap, p.do_r2map, p.do_r2primemap) = (true, true, true, true, mese, true);
+            (p.do_chi_separation, p.do_segmentation, p.do_analysis) = (true, true, true);
+            c.swi.mip_window = 4;
+            c.smwi.mip_window = 4;
+            c.separation.algorithm = separation;
+            c.separation.decompose.n_inner = 1;
+            c.separation.decompose.lsqcurvefit.max_iterations = 2;
+            c.motion_correction.enabled = !single;
+            runs.push((c, facts, store));
+        }
+
+        // A supplied mask, with the reference measured on a region of the supplied segmentation.
+        let (mut facts, mut store) = phantom();
+        (facts.custom_mask, facts.custom_dseg) = (true, true);
+        supplied(&mut store, Item::SuppliedSegmentation, 10.0);
+        supplied(&mut store, Item::SuppliedMask, 1.0);
+        let mut c = config();
+        c.masking.custom_mask_tool = Some("bet".into());
+        c.segmentation.custom_dseg_tool = Some("synthseg".into());
+        c.qsm.reference = crate::enums::QsmReference::Region;
+        c.qsm.reference_region = Some("thalamus".into());
+        (c.pipeline.do_segmentation, c.pipeline.do_analysis, c.pipeline.do_r2starmap) = (true, true, true);
+        runs.push((c, facts, store));
+
+        // A per-echo QSM, with χ-separation from it.
+        let (facts, store) = phantom();
+        let mut c = config();
+        c.qsm.per_echo = true;
+        c.pipeline.do_chi_separation = true;
+        c.separation.algorithm = SeparationAlgorithm::Decompose;
+        c.separation.decompose.n_inner = 1;
+        c.separation.decompose.lsqcurvefit.max_iterations = 2;
+        runs.push((c, facts, store));
+
+        // An oblique scan resampled to axial and returned to the acquired grid.
+        let (c20, s20) = (20f64.to_radians().cos(), 20f64.to_radians().sin());
+        let (facts, store) = phantom_on([1.0, 0.0, 0.0, 0.0, 0.0, c20, -s20, 0.0, 0.0, s20, c20, 0.0, 0.0, 0.0, 0.0, 1.0]);
+        let mut c = config();
+        c.pipeline.axial_resampling = true;
+        c.pipeline.obliquity_threshold = 5.0;
+        c.pipeline.do_swi = true;
+        c.swi.mip_window = 4;
+        runs.push((c, facts, store));
+        // Each run on a thread of its own: they share nothing.
+        let computed: usize = std::thread::scope(|scope| {
+            let handles: Vec<_> = runs.iter_mut()
+                .map(|(c, facts, store)| {
+                    let store = std::mem::take(store);
+                    scope.spawn(move || check(c, facts, store))
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).sum()
+        });
+        assert!(computed > 100, "too few steps computed to say anything: {computed}");
+    }
+
+    /// A step's key covers everything that changes what it computes besides what it reads. A
+    /// step is made stale only by a step that wrote what it read ([`crate::graph::readers`]), so
+    /// a setting it takes that is in no key of its own (only in an upstream step's) would leave it
+    /// cached, computed under the old setting. One run of a configuration with every output
+    /// that runs without a network, then one run of each edit of a setting, each on a fresh
+    /// store: every step that has the same key in both and read the same data in both wrote the
+    /// same data in both.
+    #[test]
+    fn a_step_with_its_key_and_inputs_unchanged_computes_the_same() {
+        use crate::enums::{InhomogeneityMethod, LaplacianSolver, QsmReference};
+        type Edit = fn(&mut PipelineConfig);
+        let base = || {
+            let (mut facts, mut store) = phantom();
+            with_mese(&mut facts, &mut store);
+            let mut affine = [0.0; 16];
+            for i in 0..4 { affine[5 * i] = 1.0; }
+            let Some(VolumeData::Real(m)) = store.get(&Item::AcquiredMagnitude(1)).cloned() else { panic!() };
+            let dseg: Vec<f64> = m.iter().enumerate()
+                .map(|(i, &v)| if v > 50.0 { if i % N < N / 2 { 10.0 } else { 49.0 } } else { 0.0 }).collect();
+            store.insert(Item::SuppliedSegmentation, VolumeData::Real(dseg));
+            store.supply(Item::SuppliedSegmentation,
+                         crate::store::Geometry { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine, orientation: None }, "dseg");
+            facts.custom_dseg = true;
+            let mut c = config();
+            c.segmentation.custom_dseg_tool = Some("mine".into());
+            c.masking.inhomogeneity_correction = true;
+            c.masking.two_pass = true;
+            c.masking.two_pass_sections = Some(vec![MaskSection {
+                input: MaskingInput::Magnitude,
+                generator: MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(40.0) },
+                refinements: vec![],
+            }]);
+            let p = &mut c.pipeline;
+            (p.do_swi, p.do_smwi, p.do_t2starmap, p.do_r2starmap, p.do_r2map, p.do_r2primemap) = (true, true, true, true, true, true);
+            (p.do_chi_separation, p.do_segmentation, p.do_analysis) = (true, true, true);
+            c.swi.mip_window = 4;
+            c.smwi.mip_window = 4;
+            c.separation.algorithm = SeparationAlgorithm::ChiSepIlsqr;
+            c.separation.r2prime_strategy = crate::R2PrimeStrategy::Mese;
+            (c, facts, store)
+        };
+        // What a run computed: each step's key and inputs, and the store it left.
+        let computed = |edit: Edit| {
+            let (mut c, facts, store) = base();
+            edit(&mut c);
+            let plan = crate::plan::plan(&c, &facts);
+            let mut recorder = Recorder::new(store);
+            run(&plan, &c, &facts, &mut recorder, &mut ()).unwrap();
+            let keys = recorder.inner.recorded_keys();
+            (recorder.completed, keys, recorder.inner)
+        };
+        // HEIDI is left out: its settings key the two-pass combination explicitly, and it takes
+        // a minute here.
+        let edits: [(&str, Edit); 16] = [
+            ("homogeneity.sigma_mm", |c| c.homogeneity.sigma_mm *= 2.0),
+            ("masking.inhomogeneity_method", |c| c.masking.inhomogeneity_method = InhomogeneityMethod::N4),
+            ("masking.inhomogeneity_correction", |c| c.masking.inhomogeneity_correction = false),
+            ("masking.refinements", |c| c.masking.refinements.push(MaskOp::Erode { iterations: 1 })),
+            ("masking.two_pass_sections", |c| c.masking.two_pass_sections.as_mut().unwrap()[0].generator =
+                MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(20.0) }),
+            ("field_mapping.laplacian_solver", |c| c.field_mapping.laplacian_solver = LaplacianSolver::Fft),
+            ("bg_removal.lbv.tol", |c| c.bg_removal.lbv.tol *= 100.0),
+            ("inversion.tkd.threshold", |c| c.inversion.tkd.threshold *= 2.0),
+            ("qsm.reference", |c| c.qsm.reference = QsmReference::None),
+            ("swi.strength", |c| c.swi.strength *= 2.0),
+            ("smwi.power", |c| c.smwi.power *= 2.0),
+            ("separation.chi_sep_ilsqr", |c| c.separation.chi_sep_ilsqr.cg_max_iter_lsqr += 1),
+            ("separation.chi_sep_ilsqr.qsm_ilsqr", |c| c.separation.chi_sep_ilsqr.qsm_ilsqr.max_iter += 1),
+            ("pipeline.crop_to_mask", |c| c.pipeline.crop_to_mask = !c.pipeline.crop_to_mask),
+            ("pipeline.fft_padding", |c| c.pipeline.fft_padding = !c.pipeline.fft_padding),
+            ("pipeline.tukey_window", |c| c.pipeline.tukey_window = 0.2),
+        ];
+        fn same(a: Option<&VolumeData>, b: Option<&VolumeData>) -> bool {
+            match (a, b) {
+                (Some(VolumeData::Real(a)), Some(VolumeData::Real(b))) => {
+                    let scale = a.iter().fold(1.0f64, |m, v| m.max(v.abs()));
+                    a.len() == b.len() && a.iter().zip(b).all(|(x, y)| (x - y).abs() <= 1e-6 * scale)
+                }
+                (Some(VolumeData::Mask(a)), Some(VolumeData::Mask(b))) => a == b,
+                (None, None) => true,
+                _ => false,
+            }
+        }
+        let held = |store: &MemoryStore, item: &Item| (store.get(item).cloned(), store.report(item).cloned());
+        let (before, before_keys, before_store) = computed(|_| {});
+        assert!(before.len() > 15, "{:?}", before.iter().map(|c| &c.0).collect::<Vec<_>>());
+        let mut checked = 0;
+        std::thread::scope(|scope| {
+            let runs: Vec<_> = edits.iter().map(|&(name, edit)| (name, scope.spawn(move || computed(edit)))).collect();
+            for (name, handle) in runs {
+                let (after, after_keys, after_store) = handle.join().unwrap();
+                for (step, inputs, outputs) in &after {
+                    let Some((_, read_before, _)) = before.iter().find(|(s, ..)| s == step) else { continue };
+                    if before_keys.get(step) != after_keys.get(step) || read_before != inputs {
+                        continue;
+                    }
+                    let read_same = inputs.iter().all(|i| {
+                        let ((a, ra), (b, rb)) = (held(&before_store, i), held(&after_store, i));
+                        same(a.as_ref(), b.as_ref()) && ra == rb
+                    });
+                    if !read_same {
+                        continue;
+                    }
+                    checked += 1;
+                    for o in outputs {
+                        let ((a, ra), (b, rb)) = (held(&before_store, o), held(&after_store, o));
+                        assert!(same(a.as_ref(), b.as_ref()) && ra == rb,
+                                "{step}: same key and inputs, but {o:?} differs when {name} changes: its key misses it");
+                    }
+                }
+            }
+        });
+        assert!(checked > 50, "too few steps compared: {checked}");
     }
 
     /// Which steps were computed and which were cached, in order.
@@ -3036,7 +3333,8 @@ pub(crate) mod tests {
         expect_then_run(&config, &facts, &mut store);
     }
 
-    /// R2 and R2′ from a MESE, and chi-separation, before and after a new mask.
+    /// R2 and R2′ from a MESE, and chi-separation, before and after a new mask. χ-sep iLSQR makes
+    /// its own QSM from the local field, so a new inversion leaves it as it was.
     #[test]
     fn a_dry_run_follows_relaxometry_and_chi_separation() {
         let (mut facts, mut store) = phantom();
@@ -3051,8 +3349,9 @@ pub(crate) mod tests {
         expect_then_run(&config, &facts, &mut store);
         config.inversion.tkd.threshold *= 2.0;
         let e = expect_then_run(&config, &facts, &mut store);
-        assert_eq!(states(&e, &["r2_r2prime", "chi_separation"]),
-                   [("r2_r2prime", ExpectedState::Cached), ("chi_separation", ExpectedState::Stale)]);
+        assert_eq!(states(&e, &["r2_r2prime", "reference", "chi_separation"]),
+                   [("r2_r2prime", ExpectedState::Cached), ("reference", ExpectedState::Stale),
+                    ("chi_separation", ExpectedState::Cached)]);
         // The iLSQR of the QSM χ-sep iLSQR makes for itself is in its key.
         config.separation.chi_sep_ilsqr.qsm_ilsqr.max_iter = 5;
         let e = expect_then_run(&config, &facts, &mut store);
@@ -3332,6 +3631,152 @@ pub(crate) mod tests {
         assert_eq!(of(&store, &Item::R2prime, "R2primeUsedByChiSeparation"), Some(json!(false)));
         assert_eq!(of(&store, &Item::SeparatedTotalChi, "R2primeSource"), Some(json!("predicted")));
         assert!(store.get(&Item::SeparatedTotalChi).is_some());
+    }
+
+    /// A store with every step of `config`'s plan recorded as a run records it (under its key,
+    /// with what it read and wrote), computing nothing: a dry run's shadow of `store`. `None`
+    /// when the run would stop at a step.
+    fn recorded_as_run<'a>(config: &PipelineConfig, facts: &ScanFacts, store: &'a MemoryStore)
+        -> Option<(Plan, MemoryStore<crate::store::Shadow<'a, crate::store::InMemory>>)> {
+        let plan = crate::plan::plan(config, facts);
+        let mut done = store.shadow();
+        dry_steps(&plan, &plan.config, facts, &mut done).ok()?;
+        Some((plan, done))
+    }
+
+    /// Asking for the R2′ map after a χ-sepnet toolbox run that estimated its own R2′ (#502):
+    /// only the map is computed. χ-separation does not read it, so it stays cached; it used to
+    /// be recomputed (15 minutes in the browser) because every R2′ step was taken to feed it.
+    #[test]
+    fn asking_for_the_r2prime_map_after_a_toolbox_run_computes_only_the_map() {
+        let (facts, store) = phantom();
+        let mut c = config();
+        c.pipeline.do_chi_separation = true;
+        c.separation.algorithm = SeparationAlgorithm::ChiSepNet;
+        let (plan, done) = recorded_as_run(&c, &facts, &store).unwrap();
+        assert!(!plan.has(Stage::R2) && plan.has(Stage::ChiSeparation), "{:?}", plan.steps);
+        c.pipeline.do_r2primemap = true;
+        let plan = crate::plan::plan(&c, &facts);
+        let e = dry_run(&plan, &c, &facts, &done).unwrap();
+        let computes: Vec<(&str, ExpectedState)> = e.iter().filter(|e| e.state.computes()).map(|e| (e.id.as_str(), e.state)).collect();
+        assert_eq!(computes, [("r2_r2prime", ExpectedState::WillRun)], "{e:?}");
+    }
+
+    /// Whatever a step reads, it is stale once the step that wrote it is computed again under
+    /// another key. For every step of the plans of a table of configurations (every inversion,
+    /// one echo and several, one pass and two; every χ-separation with and without a MESE, with
+    /// and without motion correction, from one QSM or one per echo; supplied maps), recorded as
+    /// a run records them: each step recorded again under a new key leaves no step whose plan
+    /// reads one of its outputs cached. On χ-sepnet's toolbox route with nothing to measure R2′
+    /// from, R2′ is not one of χ-separation's inputs, and a new R2′ leaves it cached; on every
+    /// other route that reads R2′ it does not.
+    #[test]
+    fn a_step_computed_again_makes_every_step_that_reads_its_outputs_stale() {
+        let reliable = vec![MaskSection {
+            input: MaskingInput::Magnitude,
+            generator: MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(40.0) },
+            refinements: vec![],
+        }];
+        let mut table: Vec<(String, PipelineConfig, ScanFacts, MemoryStore)> = Vec::new();
+        for algorithm in QsmAlgorithm::ALL {
+            for single in [false, true] {
+                for two_pass in [false, true] {
+                    let (mut facts, store) = phantom();
+                    if single {
+                        facts.n_echoes = 1;
+                        facts.echo_times.truncate(1);
+                    }
+                    let mut c = config();
+                    c.inversion.algorithm = algorithm;
+                    c.masking.two_pass = two_pass;
+                    c.masking.two_pass_sections = Some(reliable.clone());
+                    table.push((format!("{algorithm}, {} echo(es), two-pass {two_pass}", facts.n_echoes), c, facts, store));
+                }
+            }
+        }
+        let separations = [SeparationAlgorithm::ChiSepIlsqr, SeparationAlgorithm::ChiSepMedi, SeparationAlgorithm::ChiSepNet,
+                           SeparationAlgorithm::SusepNet, SeparationAlgorithm::Decompose, SeparationAlgorithm::R2starQsm];
+        for separation in separations {
+            for (mese, motion, per_echo, native) in [(false, false, false, false), (true, false, false, false), (false, true, false, false),
+                                                     (true, true, false, false), (false, false, true, false), (false, false, false, true),
+                                                     (true, false, false, true)] {
+                let (mut facts, mut store) = phantom();
+                if mese {
+                    with_mese(&mut facts, &mut store);
+                }
+                let mut c = config();
+                let p = &mut c.pipeline;
+                (p.do_swi, p.do_smwi, p.do_t2starmap, p.do_r2starmap, p.do_r2map, p.do_r2primemap) = (true, true, true, true, mese, true);
+                (p.do_chi_separation, p.do_analysis) = (true, true);
+                c.separation.algorithm = separation;
+                c.motion_correction.enabled = motion;
+                c.qsm.per_echo = per_echo;
+                if native {
+                    c.separation.chi_sepnet.route = crate::ChiSepNetRoute::Native;
+                }
+                table.push((format!("{separation}, MESE {mese}, motion {motion}, per echo {per_echo}, native {native}"), c, facts, store));
+            }
+        }
+        // Supplied R2′ and χ, a supplied mask, and a region reference on a supplied segmentation.
+        for separation in [SeparationAlgorithm::ChiSepNet, SeparationAlgorithm::ChiSepIlsqr] {
+            let (mut facts, mut store) = phantom();
+            let mut affine = [0.0; 16];
+            for i in 0..4 { affine[5 * i] = 1.0; }
+            let grid = crate::store::Geometry { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine, orientation: None };
+            for (item, value) in [(Item::SuppliedR2prime, 5.0), (Item::SuppliedChi, 0.01), (Item::SuppliedSegmentation, 10.0), (Item::SuppliedMask, 1.0)] {
+                store.insert(item, VolumeData::Real(vec![value; N * N * N]));
+                store.supply(item, grid.clone(), format!("{item:?}"));
+            }
+            (facts.custom_r2prime, facts.custom_qsm, facts.custom_dseg, facts.custom_mask) = (true, true, true, true);
+            let mut c = config();
+            c.separation.custom_r2prime_tool = Some("mine".into());
+            c.separation.custom_qsm_tool = Some("mine".into());
+            c.segmentation.custom_dseg_tool = Some("mine".into());
+            c.masking.custom_mask_tool = Some("mine".into());
+            c.qsm.reference = crate::enums::QsmReference::Region;
+            c.qsm.reference_region = Some("thalamus".into());
+            let p = &mut c.pipeline;
+            (p.do_r2starmap, p.do_r2primemap, p.do_chi_separation, p.do_segmentation, p.do_analysis) = (true, true, true, true, true);
+            c.separation.algorithm = separation;
+            table.push((format!("{separation}, everything supplied"), c, facts, store));
+        }
+
+        // Each configuration on a thread of its own: (reads checked, χ-separations left cached by a
+        // new R2 step, made stale by one).
+        let check = |(name, config, facts, store): &(String, PipelineConfig, ScanFacts, MemoryStore)| {
+            let (mut checked, mut kept_on_the_toolbox_route, mut stale_elsewhere) = (0, 0, 0);
+            let Some((plan, done)) = recorded_as_run(config, facts, store) else { return (0, 0, 0) };
+            for x in plan.steps.iter().filter(|s| !matches!(s.stage, Stage::Load | Stage::OutputSpace)) {
+                let Some(key) = done.recorded_keys().get(&x.name).cloned() else { continue };
+                let mut again = done.shadow();
+                again.record(&Completed {
+                    step: &x.name, algorithm: None, params: &json!({}), outcome: None, key: &format!("{key}, again"),
+                    inputs: &x.reads, outputs: &x.outputs, decisions: &[],
+                }).unwrap();
+                let left = again.recorded_keys();
+                for y in plan.steps.iter().filter(|y| y.name != x.name && done.recorded_keys().contains_key(&y.name)) {
+                    if y.reads.iter().any(|i| x.outputs.contains(i)) {
+                        assert!(!left.contains_key(&y.name), "{name}: {} reads {:?} from {} and is still cached after it",
+                                y.name, y.reads.iter().filter(|i| x.outputs.contains(i)).collect::<Vec<_>>(), x.name);
+                        checked += 1;
+                        if x.stage == Stage::R2 && y.stage == Stage::ChiSeparation {
+                            stale_elsewhere += 1;
+                        }
+                    } else if x.stage == Stage::R2 && y.stage == Stage::ChiSeparation {
+                        assert!(left.contains_key(&y.name), "{name}: χ-separation reads no R2 step output: {:?}", y.reads);
+                        kept_on_the_toolbox_route += 1;
+                    }
+                }
+            }
+            (checked, kept_on_the_toolbox_route, stale_elsewhere)
+        };
+        let (checked, kept_on_the_toolbox_route, stale_elsewhere) = std::thread::scope(|scope| {
+            let handles: Vec<_> = table.chunks(8).map(|chunk| scope.spawn(move || chunk.iter().map(check)
+                .fold((0, 0, 0), |a, b| (a.0 + b.0, a.1 + b.1, a.2 + b.2)))).collect();
+            handles.into_iter().map(|h| h.join().unwrap()).fold((0, 0, 0), |a, b| (a.0 + b.0, a.1 + b.1, a.2 + b.2))
+        });
+        assert!(checked > 1000, "too few reads checked: {checked}");
+        assert!(kept_on_the_toolbox_route > 0 && stale_elsewhere > 0, "{kept_on_the_toolbox_route} {stale_elsewhere}");
     }
 
     /// χ-sepnet's toolbox route on a dry run: the steps that run, what its step records reading,

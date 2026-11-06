@@ -8,7 +8,6 @@ use crate::error::QsmxtError;
 use crate::pipeline::config::PipelineConfig;
 use qsmxt_engine::cache::config_hash;
 pub use qsmxt_engine::cache::step_params_hash;
-pub use qsmxt_engine::graph::downstream_of;
 
 pub use qsmxt_engine::scan::RunMetadata;
 
@@ -30,6 +29,12 @@ pub struct StepRecord {
     /// that reuses it. Not part of the cache key.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub decisions: Vec<qsmxt_engine::record::Decision>,
+    /// The files the step read when it was computed (the engine's
+    /// [`Completed::inputs`](qsmxt_engine::store::Completed::inputs)): it is stale when a step
+    /// that wrote one of them is computed again ([`qsmxt_engine::graph::readers`]). None for the
+    /// load step and for a state written before it was kept, which fall back to the fixed table.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inputs: Option<Vec<PathBuf>>,
 }
 
 /// Persistent pipeline state, serialised to JSON.
@@ -232,9 +237,16 @@ impl PipelineState {
         }
         self.completed_steps.insert(
             step_name.to_string(),
-            StepRecord { outputs, metadata, params_hash, outputs_removed: false, decisions: Vec::new() },
+            StepRecord { outputs, metadata, params_hash, outputs_removed: false, decisions: Vec::new(), inputs: None },
         );
         self.current_step = None;
+    }
+
+    /// Keep the files a completed step read when it was computed.
+    pub fn set_inputs(&mut self, step_name: &str, inputs: Vec<PathBuf>) {
+        if let Some(r) = self.completed_steps.get_mut(step_name) {
+            r.inputs = Some(inputs);
+        }
     }
 
     /// Keep what a completed step decided when it was computed.
@@ -265,13 +277,18 @@ impl PipelineState {
             self.completed_steps.iter().map(|(s, r)| (s.as_str(), r.outputs.as_slice())))
     }
 
-    /// Invalidate a step and all steps that depend on it.
-    #[allow(dead_code)]
+    /// Invalidate a step and every recorded step that read what it recorded writing.
     pub fn invalidate(&mut self, step_name: &str) {
-        self.completed_steps.remove(step_name);
-        for ds in downstream_of(step_name) {
+        let outputs = self.completed_steps.remove(step_name).map(|r| r.outputs).unwrap_or_default();
+        for ds in self.readers(step_name, &outputs) {
             self.completed_steps.remove(&ds);
         }
+    }
+
+    /// The recorded steps that read one of `outputs` of `step_name` ([`qsmxt_engine::graph::readers`]).
+    pub fn readers(&self, step_name: &str, outputs: &[PathBuf]) -> Vec<String> {
+        qsmxt_engine::graph::readers(step_name, outputs,
+            self.completed_steps.iter().map(|(s, r)| (s.as_str(), r.inputs.as_deref())))
     }
 
     /// Get all completed step names.
@@ -366,7 +383,7 @@ pub fn clean_intermediates(output_dir: &Path, key: &AcquisitionKey) -> crate::Re
 mod tests {
     use super::*;
     use qsmxt_engine::cache::RELIABLE_SUFFIX;
-    use qsmxt_engine::graph::downstream_steps;
+    use qsmxt_engine::graph::{downstream_of, downstream_steps};
 
     /// Every step the runner records has an entry in the invalidation table (#272: `motion` and
     /// `reference-singlepass` had none, so nothing they fed was ever invalidated through them).
@@ -457,7 +474,7 @@ mod tests {
 
         state.completed_steps.insert("invert".into(), StepRecord {
             outputs: vec![raw.clone()], metadata: None, params_hash: Some("a".into()), outputs_removed: false,
-            decisions: Vec::new(),
+            decisions: Vec::new(), inputs: None,
         });
         assert!(!state.is_step_cached_with_hash("invert", Some("a")));
         assert!(!state.completed_steps.contains_key("invert"));

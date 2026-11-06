@@ -10,8 +10,9 @@
 //! The arrows are data flow: an item a step reads, from the step that last wrote it before it.
 //! The load step stands for the scan: the acquired echoes and anything supplied with the scan (a
 //! brain mask, a segmentation, a MESE) enter the pipeline there. Which steps a change makes stale
-//! is a wider relation ([`crate::graph::downstream_of`]: every step reads the grid the load step
-//! decides, say); every arrow here is also an edge of that one.
+//! follows the same reads: a step a run recorded reading an item is stale once the step that wrote
+//! it is computed again ([`crate::graph::readers`]). Every arrow here is also an edge of the fixed
+//! table a step recorded without what it read falls back to ([`crate::graph::downstream_of`]).
 
 use serde::{Deserialize, Serialize};
 
