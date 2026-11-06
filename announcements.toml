@@ -1,0 +1,37 @@
+# Announcements shown to QSMxT users.
+#
+# The TUI (`qsmxt tui`) fetches this file from the main branch every time it starts and pops up
+# what is new; `qsmxt news` prints every announcement. Publishing an announcement means
+# committing it here to main: users see it the next time they start QSMxT. Releases from the
+# first one with this file onwards read it.
+#
+# Each announcement is a table:
+#
+#   [[announcement]]
+#   id = "2026-11-06-short-name"   # unique, never reused (it records the announcement as shown)
+#   date = "2026-11-06"            # YYYY-MM-DD; announcements are listed newest first
+#   title = "One line"
+#   body = """
+#   Plain text, wrapped to the screen. A blank line starts a new paragraph, and text in
+#   `backticks` is shown as a command."""
+#   link = "https://..."           # optional
+#   critical = false               # optional, default false
+#   affects = { from = "10.0.0", fixed_in = "11.0.1" }   # optional; either end may be left out
+#
+# Who sees it, and how often:
+#
+# - Without `affects`, every version (including builds from source). With it, only versions
+#   from `from` (included) up to `fixed_in` (not included); builds from source never.
+# - An ordinary announcement pops up once; after that it is in the history (`n` on the TUI's tab
+#   bar, or `qsmxt news`).
+# - A `critical = true` announcement pops up every time QSMxT starts while the running version is
+#   in its `affects` range (always, without one), so give a critical announcement a `fixed_in`.
+#   Use it for problems that can give wrong results; tell users to run `qsmxt update`.
+#
+# To try an announcement before publishing it, run QSMxT with
+# `QSMXT_ANNOUNCEMENTS_URL=file:///path/to/announcements.toml` and, to see pop-ups again, with
+# `QSMXT_ANNOUNCEMENTS_DIR` set to an empty directory. `cargo test --bin qsmxt news` checks
+# that this file parses and that every announcement in it is valid; an invalid one is left out
+# without a word. To withdraw an announcement, delete it. Keep old ones as the history.
+#
+# Add new announcements below this line.

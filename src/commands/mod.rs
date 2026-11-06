@@ -9,6 +9,7 @@ pub mod homogeneity;
 pub mod init;
 pub mod invert;
 pub mod mask;
+pub mod news;
 pub mod qsmart;
 pub mod recommend;
 pub mod quality_map;

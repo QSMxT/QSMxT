@@ -105,6 +105,8 @@ pub enum Command {
     Tui,
     /// Check for updates and optionally install the latest version
     Update(UpdateArgs),
+    /// Show the announcements from the QSMxT team, newest first
+    News,
 }
 
 #[derive(Parser, Debug)]

@@ -34,6 +34,10 @@ pub const TIPS: &[Tip] = &[
     ),
     tip("You can update QSMxT from the terminal with `qsmxt update`.", None),
     tip(
+        "Press `n` on the tab bar (`↑` from the top of a tab) to read the announcements from the QSMxT team, or run `qsmxt news`.",
+        None,
+    ),
+    tip(
         "A setting marked ⚑ departs from what its method recommends, and one marked ⓘ from what its reference pipeline used; the marker names the method (`ⓘ MEDI: BET`). Press `!` on it for the details, and `qsmxt run --dry` lists them all.",
         None,
     ),

@@ -39,6 +39,7 @@ text. For what the options *do*, see [Commands](/QSMxT/reference/commands/),
 - [`qsmxt example`](#qsmxt-example)
 - [`qsmxt tui`](#qsmxt-tui)
 - [`qsmxt update`](#qsmxt-update)
+- [`qsmxt news`](#qsmxt-news)
 
 ## `qsmxt run`
 
@@ -3411,3 +3412,11 @@ qsmxt update [OPTIONS]
 | `-y, --yes` | Update without prompting for confirmation. |
 | `--force` | Replace a development build (version 0.0.0) with the latest release. Without it, `qsmxt update` refuses on a dev build, since every release would look newer. |
 | `--main` | Build the latest commit on the main branch from source and install it in place of this qsmxt. Needs the Rust toolchain (https://rustup.rs). `qsmxt update --force` goes back to the latest release. |
+
+## `qsmxt news`
+
+Show the announcements from the QSMxT team, newest first
+
+```sh
+qsmxt news
+```

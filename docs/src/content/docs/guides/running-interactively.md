@@ -48,6 +48,19 @@ startup** button turns them back on. The setting is saved in `~/.qsmxt/tips.json
 the `QSMXT_NO_TIPS` environment variable also turns tips off, for example on a shared
 install.
 
+## Updates and announcements
+
+When a newer release is available, the TUI says so in a pop-up when it starts: `Enter` updates
+QSMxT and `Esc` closes the pop-up until the next start. Announcements from the QSMxT team (for
+example a problem found in a release, and the version that fixes it) pop up once; one about a
+problem that can give wrong results pops up each time the TUI starts until you update past it.
+Only one pop-up opens at a time: important announcements first, then the update, then other
+announcements. In an announcement, `↑`/`↓` scroll, `c` copies its link and `Enter` closes it.
+Press `n` on the tab bar to read every announcement, newest first, or run `qsmxt news`. Both
+checks run in the background and never delay startup; without an internet connection the
+announcements saved last time are shown. See
+[Keeping up to date](/QSMxT/getting-started/installation/#keeping-up-to-date).
+
 ## Recommendations
 
 When a change makes a setting depart from what a chosen method recommends (or requires, or
@@ -149,6 +162,7 @@ happen: *Run*, *Dry run*, *Write SLURM scripts* or *Submit SLURM jobs*.
 | `Enter`, `c`, `y` | Methods › Methods text | copy the methods text to the clipboard |
 | `F5` | anywhere | run |
 | `?` | anywhere | show a tip (and turn startup tips on or off) |
+| `n` | tab bar | read the announcements |
 | `q`, `Esc` | anywhere | quit |
 
 Copying goes through the terminal (the OSC 52 escape sequence), so it reaches the clipboard of
