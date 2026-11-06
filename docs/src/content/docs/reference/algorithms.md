@@ -1185,7 +1185,7 @@ least squares and is right whenever three or more orientations cover k-space; 1e
 to 1e-2 helps with two orientations, or when the rotations share a single axis and
 streaking survives.
 
-`--cosmos-magnitude-weighting` (TUI: QSM → Multi-orientation → COSMOS
+`--cosmos-magnitude-weighting` (TUI: QSM → COSMOS/STI → COSMOS
 Magnitude Weighting) weights each orientation's field by its combined magnitude, so
 low-signal voxels count for less, and solves by conjugate gradient; `--cosmos-tol`
 and `--cosmos-max-iter` (default 1e-6 and 100) set that solve, and are refused
