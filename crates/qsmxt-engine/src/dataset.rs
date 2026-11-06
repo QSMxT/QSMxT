@@ -196,7 +196,7 @@ mod tests {
                 })
                 .collect(),
             resampled: Some(false),
-            recommendations: vec![],
+            ..Default::default()
         }
     }
 
@@ -376,6 +376,45 @@ mod tests {
         // An earlier fan-in's claim is taken back.
         assert!(member.set_orientation_group(None));
         assert_eq!(member, alone);
+    }
+
+    /// The setting alone says no DICOM was written: export is said of the runs whose record shows
+    /// it, and before any run, of the setting, which a native run carries out (#504).
+    #[test]
+    fn dicom_export_is_said_only_of_runs_that_exported() {
+        let mut config = PipelineConfig::default();
+        config.pipeline.export_dicom = true;
+        let f = facts();
+        let plan = crate::plan::plan(&config, &f);
+        let none = record(&plan, &[]);
+        let mut done = none.clone();
+        assert!(done.set_dicom_exported(true));
+        assert!(!done.set_dicom_exported(true), "said once");
+        let run = |r: &RunRecord| crate::methods::methods_for_run(&config, &plan, r, "qsmxt").to_markdown();
+        let dataset = |runs: &[&RunRecord]| {
+            let runs: Vec<_> = runs.iter().map(|r| (&plan, &f, *r)).collect();
+            summarise(&config, &runs, "qsmxt").unwrap()
+        };
+        let all = "Final maps were additionally exported as DICOM series.";
+        let some = "For some of the runs, final maps were additionally exported as DICOM series.";
+
+        for text in [run(&none), dataset(&[&none, &none]).methods.to_markdown()] {
+            assert!(!text.contains("DICOM"), "{text}");
+        }
+        for text in [run(&done), dataset(&[&done, &done]).methods.to_markdown()] {
+            assert!(text.contains(all) && !text.contains(some), "{text}");
+        }
+        let mixed = dataset(&[&done, &none, &done]);
+        assert!(mixed.methods.to_markdown().contains(some), "{}", mixed.methods.to_markdown());
+        assert_eq!(mixed.changed, [1], "the run that exported nothing is the exception");
+        for text in [
+            crate::methods::generate_methods_for(&config, "qsmxt"),
+            crate::methods::methods_structured(&config, &plan, "qsmxt").to_markdown(),
+        ] {
+            assert!(text.contains(all), "{text}");
+        }
+        assert!(done.set_dicom_exported(false));
+        assert_eq!(done, none);
     }
 
     /// Before any run nothing has been combined, so the configuration's text is conditional.

@@ -7,9 +7,10 @@
 //! and writes them into the config, so the TOML, the generated `qsmxt run` command and the
 //! methods text all carry them and QSMxT reproduces a browser run exactly.
 //!
-//! Everything else stays QSMxT's default, with one exception that is not about memory: a page holds
-//! one scan, so it has no orientations to group. It clears the multi-orientation settings a file
-//! brought in and says so, because it could not have run them and must not export them (#496).
+//! Everything else stays QSMxT's default, with two exceptions that are not about memory, settings a
+//! page cannot carry out: a page holds one scan, so it has no orientations to group (#496), and it
+//! writes no DICOM (#504). It clears these when a file brings them in and says so, because it could
+//! not have done them and must not export them or describe them as done.
 
 use crate::config::{synthseg_low_memory_patch, MultiOrientationConfig, PipelineConfig};
 use crate::masking::{hd_bet_low_memory_patch, MaskOp, MaskSection};
@@ -51,7 +52,7 @@ impl PipelineConfig {
     }
 
     /// Replace each of QSMxT's defaults the browser cannot run with the browser's value, and
-    /// clear the multi-orientation settings. Returns a warning for each setting the user chose
+    /// clear the multi-orientation settings and DICOM export. Returns a warning for each setting the user chose
     /// that this took away, for the front end to show: a page imports a file through this.
     /// Every other setting the user changed is left alone. Idempotent.
     ///
@@ -66,6 +67,8 @@ impl PipelineConfig {
     ///   whole volume as a sliding window of [`BROWSER_SUSEP_NET_PATCH`].
     /// - `multi_orientation.*` goes back to its defaults: the page runs one scan on its own
     ///   whatever they say, so only the exported command and settings file would carry them.
+    /// - `pipeline.export_dicom` is turned off: a page writes no DICOM, so only the exported
+    ///   command, the settings file and the methods text would say it did.
     ///
     /// Front ends apply it again after a change that can bring a native default back, such as
     /// a mask preset with an HD-BET step.
@@ -98,7 +101,17 @@ impl PipelineConfig {
         }
         chi_sepnet.frame_patch.get_or_insert(BROWSER_CHI_SEPNET_PATCH);
         self.separation.susep_net.patch.get_or_insert(BROWSER_SUSEP_NET_PATCH);
-        clear_multi_orientation(self).into_iter().collect()
+        let mut warnings: Vec<String> = clear_multi_orientation(self).into_iter().collect();
+        if self.pipeline.export_dicom {
+            self.pipeline.export_dicom = false;
+            warnings.push(
+                "DICOM export turned off (pipeline.export_dicom = true): a browser page writes no \
+                 DICOM series. The exported command and settings file leave it out, and the methods \
+                 do not mention it."
+                    .to_string(),
+            );
+        }
+        warnings
     }
 }
 
@@ -245,6 +258,21 @@ mod tests {
         let command = generate_command(&c);
         assert!(!command.contains("orientation"), "{command}");
         assert!(c.apply_browser_profile().is_empty(), "already cleared");
+    }
+
+    /// A page writes no DICOM, so it neither exports the setting nor describes it as done, and
+    /// says it turned it off (#504).
+    #[test]
+    fn dicom_export_from_a_file_is_turned_off_with_a_warning() {
+        let (mut c, _) = PipelineConfig::from_toml_migrating("[pipeline]\nexport_dicom = true\n").unwrap();
+        assert!(generate_command(&c).contains("--export-dicom"));
+        let warnings = c.apply_browser_profile();
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].contains("pipeline.export_dicom = true"), "{}", warnings[0]);
+        assert!(!c.pipeline.export_dicom);
+        assert!(!generate_command(&c).contains("dicom"), "{}", generate_command(&c));
+        assert!(!crate::methods::generate_methods_for(&c, "QSMbly").contains("DICOM"));
+        assert!(c.apply_browser_profile().is_empty(), "already off");
     }
 
     #[test]

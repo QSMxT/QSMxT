@@ -321,18 +321,22 @@ fn as_planned(plan: &crate::plan::Plan, config: &PipelineConfig) -> RunRecord {
         }).collect(),
         resampled: None,
         recommendations: crate::recommendations::recorded(config, &Default::default()),
+        dicom_exported: false,
     }
 }
 
 /// A run, or a dataset of runs, that decided nothing at run time gets the configuration's text,
 /// byte for byte, with the same steps named: over the whole spread of configurations and scans.
-/// Only a group is not the configuration's to say: with no group combined, the text is as if none
-/// was asked for, and with one combined, it is the configuration's without its condition (#496).
+/// Only a group and DICOM export are not the configuration's to say: with no group combined or
+/// nothing exported, the text is as if neither was asked for; with a group combined, it is the
+/// configuration's without its condition (#496), and with the maps exported, the configuration's
+/// (#504).
 #[test]
 fn a_run_that_decided_nothing_gets_the_configurations_text() {
     for (name, c) in configs() {
         let mut alone = c.clone();
         alone.multi_orientation = Default::default();
+        alone.pipeline.export_dicom = false;
         for tool in ["qsmxt", "QSMbly"] {
             let text = generate_methods_for(&alone, tool);
             for (scan, f) in scans() {
@@ -348,6 +352,12 @@ fn a_run_that_decided_nothing_gets_the_configurations_text() {
                         generate_methods_for(&c, tool).replace(
                             "Where a session held several head orientations of the same object, local field maps from those orientations",
                             "Local field maps from multiple head orientations"),
+                        "{name} on {scan} [{tool}]");
+                }
+                if c.pipeline.export_dicom && !c.multi_orientation.enabled() {
+                    let mut exported = record.clone();
+                    assert!(exported.set_dicom_exported(true), "{name} on {scan}");
+                    assert_eq!(methods_for_run(&c, &p, &exported, tool), methods_structured(&c, &p, tool),
                         "{name} on {scan} [{tool}]");
                 }
                 let merged = crate::record::merge(&[record.clone(), record.clone(), record]);

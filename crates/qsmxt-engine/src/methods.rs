@@ -1071,8 +1071,8 @@ pub fn methods_structured(config: &PipelineConfig, plan: &Plan, tool: &str) -> M
 /// record): it says what was done, as [`methods_structured`] does for the plan, where the run
 /// decided something the configuration does not (a supplied mask used, or not found and computed
 /// instead; R2′ measured rather than predicted; a step that had nothing to work on). A run that
-/// decided nothing gets [`methods_structured`]'s text, less multi-orientation, which is said only
-/// of a run whose record shows its group was combined.
+/// decided nothing gets [`methods_structured`]'s text, less multi-orientation and DICOM export,
+/// which are said only of a run whose record shows its group was combined or its maps exported.
 pub fn methods_for_run(config: &PipelineConfig, plan: &Plan, record: &RunRecord, tool: &str) -> Methods {
     let config = &config.normalised_as_planned(plan);
     let merged = DatasetRecord::from(record);
@@ -1154,6 +1154,11 @@ impl Ran<'_> {
     /// The runs that chose `choice` about `topic`.
     fn count(&self, topic: Topic, choice: Choice) -> usize {
         self.0.map_or(0, |r| r.count(topic, choice))
+    }
+
+    /// The runs whose final maps were exported as DICOM series.
+    fn dicom_exported(&self) -> usize {
+        self.0.map_or(0, |r| r.dicom_exported)
     }
 
     /// The plan of some run had `stage`, and no run did anything in it.
@@ -1679,9 +1684,17 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
         }
     }
 
-    // DICOM export
-    if config.pipeline.export_dicom {
-        doc.say(&[], "Final maps were additionally exported as DICOM series.".to_string());
+    // DICOM export. It is the front end's, after the run, and can fail without failing the run, so
+    // the setting alone says nothing happened: the record does ([`RunRecord::dicom_exported`]).
+    // Before any run the setting is described, as a native run exports; a browser run never does
+    // (the browser profile clears the setting).
+    let exported = ran.dicom_exported();
+    if config.pipeline.export_dicom && (ran.0.is_none() || exported > 0) {
+        doc.say(&[], if ran.0.is_none() || exported == ran.runs() {
+            "Final maps were additionally exported as DICOM series.".to_string()
+        } else {
+            "For some of the runs, final maps were additionally exported as DICOM series.".to_string()
+        });
     }
 
     doc

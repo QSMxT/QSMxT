@@ -96,13 +96,14 @@ struct DicomIdentity {
 /// reflects any resampling applied during processing; acquisition metadata
 /// (echo time, field strength) comes from the run.
 ///
-/// Errors from a single map are propagated; callers may choose to treat DICOM
-/// export as best-effort (see the runner hook).
+/// Returns how many series were written: none when no map it was set to export exists. Errors
+/// from a single map are propagated; callers may choose to treat DICOM export as best-effort (see
+/// the runner hook).
 pub fn export_run_dicoms(
     run: &QsmRun,
     output: &DerivativeOutputs,
     opts: &DicomExportOptions,
-) -> crate::Result<()> {
+) -> crate::Result<usize> {
     let key = &run.key;
     // The names the run published under (its working space, when it stayed there).
     let output = &output.published(key);
@@ -143,6 +144,7 @@ pub fn export_run_dicoms(
     let field_strength = run.magnetic_field_strength;
     let first_te = run.echo_times.first().copied();
 
+    let mut written = 0;
     for map in &maps {
         if !map.path.exists() {
             continue;
@@ -159,9 +161,10 @@ pub fn export_run_dicoms(
             key,
         })?;
         info!("{}: -> {} ({} slices)", key, dir.display(), n);
+        written += 1;
     }
 
-    Ok(())
+    Ok(written)
 }
 
 /// Build the run's shared DICOM identity, inheriting from `source_dicom` when set.
@@ -857,7 +860,10 @@ mod tests {
             source_dicom: None,
             outputs_filter: None,
         };
-        export_run_dicoms(&run, &output, &opts).unwrap();
+        assert_eq!(export_run_dicoms(&run, &output, &opts).unwrap(), 7);
+        // Nothing to export is no series, which the run's record then does not claim.
+        let empty = tempfile::tempdir().unwrap();
+        assert_eq!(export_run_dicoms(&run, &DerivativeOutputs::new(empty.path()), &opts).unwrap(), 0);
 
         // Each enabled map produced its own DICOM series folder with nz slices.
         for suffix in [

@@ -99,7 +99,7 @@ keeps the names valid. A run with no such twin keeps its name.
 | `prov/` | BIDS-Prov (BEP028) records of every step |
 | `workflow/` | Cached intermediates (removed by `--clean-intermediates`), and per run its methods text, a record of what each step did and why (`*_runrecord.json`) and its pipeline graph |
 | `slurm/` | Job scripts and their logs (`qsmxt slurm`) |
-| `sub-<X>/extra_files/` | DICOM series (`--export-dicom`) |
+| `sub-<X>/extra_files/` | DICOM series (`--export-dicom`). The export follows the run and a failure does not fail it, so the methods mention it only for runs that wrote series. A browser page writes no DICOM: it turns the setting off when it reads a settings file, and tells you |
 
 ## Names BIDS does not define, and `.bidsignore`
 

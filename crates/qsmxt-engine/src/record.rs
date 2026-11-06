@@ -208,6 +208,10 @@ pub struct RunRecord {
     /// the run, dismissed, or kept.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub recommendations: Vec<crate::recommendations::Recorded>,
+    /// The run's final maps were exported as DICOM series. The export is the front end's, after the
+    /// run (`qsmxt run --export-dicom`), so this is recorded then; a browser run never sets it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub dicom_exported: bool,
 }
 
 impl RunRecord {
@@ -236,6 +240,14 @@ impl RunRecord {
                 "The local field was combined with the other orientations of its group.").with_detail(group));
         }
         step.decisions != before
+    }
+
+    /// Say whether the run's final maps were exported as DICOM series. Returns whether the record
+    /// changed.
+    pub fn set_dicom_exported(&mut self, exported: bool) -> bool {
+        let changed = self.dicom_exported != exported;
+        self.dicom_exported = exported;
+        changed
     }
 
     /// Whether anything was decided at run time.
@@ -291,6 +303,10 @@ impl DatasetStep {
     }
 }
 
+fn is_zero(n: &usize) -> bool {
+    *n == 0
+}
+
 /// Every run of a dataset, merged.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct DatasetRecord {
@@ -301,6 +317,9 @@ pub struct DatasetRecord {
     pub steps: Vec<DatasetStep>,
     /// The runs resampled to axial.
     pub resampled: usize,
+    /// The runs whose final maps were exported as DICOM series ([`RunRecord::dicom_exported`]).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub dicom_exported: usize,
     /// Every finding any run kept ([`RunRecord::recommendations`]), once, with how many runs kept
     /// it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -370,6 +389,7 @@ pub fn merge(records: &[RunRecord]) -> DatasetRecord {
         if record.resampled == Some(true) {
             out.resampled += 1;
         }
+        out.dicom_exported += usize::from(record.dicom_exported);
         for r in &record.recommendations {
             match out.recommendations.iter_mut().find(|c| c.recorded == *r) {
                 Some(c) => c.runs += 1,
@@ -468,7 +488,7 @@ mod tests {
                 ),
             ],
             resampled: Some(false),
-            recommendations: vec![],
+            ..Default::default()
         };
         let json = serde_json::to_value(&record).unwrap();
         assert_eq!(
@@ -504,7 +524,8 @@ mod tests {
                 step("invert", StepState::Computed, vec![]),
             ],
             resampled: Some(true),
-            recommendations: vec![],
+            dicom_exported: true,
+            ..Default::default()
         };
         let b = RunRecord {
             steps: vec![
@@ -514,11 +535,12 @@ mod tests {
                 step("invert", StepState::Cached, vec![]),
             ],
             resampled: Some(false),
-            recommendations: vec![],
+            ..Default::default()
         };
         let m = merge(&[a.clone(), a, b]);
         assert_eq!(m.runs, 3);
         assert_eq!(m.resampled, 2);
+        assert_eq!(m.dicom_exported, 2);
         let ids: Vec<&str> = m.steps.iter().map(|s| s.id.as_str()).collect();
         assert_eq!(ids, ["load", "mask", "r2_r2prime", "invert"]);
         let mask = m.step("mask").unwrap();
