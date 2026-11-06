@@ -327,6 +327,21 @@ pub(crate) fn record_orientation_group(
     write_run_files(run, config, &file.scan, &plan, &file.record, output)
 }
 
+/// Say in `run`'s record, and the files made from it, whether its final maps were exported as DICOM
+/// series ([`qsmxt_engine::record::RunRecord::set_dicom_exported`]). A run with no record did not
+/// finish, so there is nothing to say.
+pub(crate) fn record_dicom_export(
+    run: &QsmRun, config: &PipelineConfig, output: &DerivativeOutputs, exported: bool,
+) -> crate::Result<()> {
+    let Ok(text) = std::fs::read_to_string(output.run_record_path(&run.key)) else { return Ok(()) };
+    let mut file: RunRecordFile = serde_json::from_str(&text).map_err(|e| QsmxtError::Config(e.to_string()))?;
+    if !file.record.set_dicom_exported(exported) {
+        return Ok(());
+    }
+    let plan = qsmxt_engine::plan::plan(config, &file.scan);
+    write_run_files(run, config, &file.scan, &plan, &file.record, output)
+}
+
 /// `qsmxt run`'s [`StageStore`]: a run's volumes as files under the derivatives directory, named
 /// by [`DerivativeOutputs`], its step cache in the run's state file ([`PipelineState`]), and a
 /// provenance record for every step.

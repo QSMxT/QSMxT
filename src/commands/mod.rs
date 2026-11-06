@@ -2088,6 +2088,44 @@ mod integration_tests {
         }
     }
 
+    /// DICOM export happens after the run and can come to nothing without failing it, so the
+    /// methods say it only of a run that wrote series, and a later run's export is taken back into
+    /// them (#504).
+    #[test]
+    fn methods_say_dicom_export_only_when_series_were_written() {
+        let dir = tempfile::tempdir().unwrap();
+        let bids = dir.path().join("bids");
+        let out = dir.path().join("out");
+        testutils::create_multi_echo_bids(&bids);
+        let args = |outputs: Option<Vec<String>>| {
+            let mut args = default_run_args(bids.clone(), out.clone());
+            args.dry = false;
+            args.no_mem_limit = true;
+            args.pipeline.export_dicom = true;
+            args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
+            args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
+            args.dicom_outputs = outputs;
+            args
+        };
+        let deriv = out.join("derivatives/qsmxt");
+        let texts = || {
+            let mut files: Vec<_> = glob::glob(&deriv.join("workflow/**/*_methods.md").to_string_lossy())
+                .unwrap().flatten().collect();
+            assert_eq!(files.len(), 1, "{files:?}");
+            files.push(deriv.join("methods.md"));
+            files.iter().map(|p| std::fs::read_to_string(p).unwrap()).collect::<Vec<_>>()
+        };
+        // Only R2 maps, which this run does not make: nothing is written.
+        super::run::execute(args(Some(vec!["R2map".to_string()]))).unwrap();
+        for text in texts() {
+            assert!(!text.contains("DICOM"), "{text}");
+        }
+        super::run::execute(args(None)).unwrap();
+        for text in texts() {
+            assert!(text.contains("Final maps were additionally exported as DICOM series."), "{text}");
+        }
+    }
+
     /// A reference that matches no orientation is refused before any run's pipeline starts,
     /// not after hours of them at the fan-in.
     #[test]

@@ -45,6 +45,7 @@ pub fn run<S: StageStore + ?Sized>(
         resampled: Some(meta.source_geometry.is_some()),
         recommendations: crate::recommendations::recorded(
             config, &crate::recommendations::Facts::of_run(&meta).with_manufacturer(facts.manufacturer.clone())),
+        dicom_exported: false,
     };
     if !plan.processes() {
         observer.log(Level::Info, "No outputs enabled — nothing to process");

@@ -1,4 +1,4 @@
-use log::{error, info};
+use log::{error, info, warn};
 use rayon::prelude::*;
 
 use crate::bids::derivatives::DerivativeOutputs;
@@ -64,15 +64,15 @@ pub fn execute_local(
                 Ok(()) => {
                     info!("{}: Done ({:.1}s)", run.key, elapsed.as_secs_f64());
                     // Log final output paths
-                    let output = &output.published(&run.key);
+                    let published = &output.published(&run.key);
                     let final_paths: Vec<_> = [
-                        output.qsm_path(&run.key),
-                        output.mask_path(&run.key),
-                        output.magnitude_path(&run.key),
-                        output.swi_path(&run.key),
-                        output.swi_mip_path(&run.key),
-                        output.t2star_path(&run.key),
-                        output.r2star_path(&run.key),
+                        published.qsm_path(&run.key),
+                        published.mask_path(&run.key),
+                        published.magnitude_path(&run.key),
+                        published.swi_path(&run.key),
+                        published.swi_mip_path(&run.key),
+                        published.t2star_path(&run.key),
+                        published.r2star_path(&run.key),
                     ]
                     .into_iter()
                     .filter(|p| p.exists())
@@ -85,19 +85,32 @@ pub fn execute_local(
                     if config.pipeline.export_dicom {
                         // χ-sepnet's toolbox route computes R2′ only on the scans that can measure it.
                         let facts = crate::pipeline::requirements::scan_facts(run, config);
-                        let config = &config.normalised_for(&facts).0;
+                        let normalised = &config.normalised_for(&facts).0;
                         let opts = crate::dicom::export::DicomExportOptions {
-                            export_swi: config.pipeline.do_swi,
-                            export_t2star: config.pipeline.do_t2starmap,
-                            export_r2star: config.pipeline.do_r2starmap,
-                            export_r2: config.pipeline.do_r2map,
-                            export_r2prime: config.pipeline.do_r2primemap,
-                            export_chisep: config.pipeline.do_chi_separation,
+                            export_swi: normalised.pipeline.do_swi,
+                            export_t2star: normalised.pipeline.do_t2starmap,
+                            export_r2star: normalised.pipeline.do_r2starmap,
+                            export_r2: normalised.pipeline.do_r2map,
+                            export_r2prime: normalised.pipeline.do_r2primemap,
+                            export_chisep: normalised.pipeline.do_chi_separation,
                             source_dicom: exec_config.source_dicom.as_deref(),
                             outputs_filter: exec_config.dicom_outputs.as_deref(),
                         };
-                        if let Err(e) = crate::dicom::export::export_run_dicoms(run, output, &opts) {
-                            error!("{}: DICOM export failed - {}", run.key, e);
+                        let exported = match crate::dicom::export::export_run_dicoms(run, output, &opts) {
+                            Ok(0) => {
+                                warn!("{}: DICOM export wrote nothing: no map it was set to export was found", run.key);
+                                false
+                            }
+                            Ok(_) => true,
+                            Err(e) => {
+                                error!("{}: DICOM export failed - {}", run.key, e);
+                                false
+                            }
+                        };
+                        // The methods say it only of a run that did it. The record is the one the
+                        // run wrote, of the settings it was given.
+                        if let Err(e) = runner::record_dicom_export(run, config, output, exported) {
+                            warn!("{}: could not record its DICOM export: {}", run.key, e);
                         }
                     }
                 }
