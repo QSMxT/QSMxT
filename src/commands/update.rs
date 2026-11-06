@@ -82,12 +82,46 @@ pub fn is_dev_build() -> bool {
 /// release and local builds.
 pub const BUILD_COMMIT: &str = env!("QSMXT_BUILD_COMMIT");
 
-/// Appended to the version in `qsmxt --version`, so a main build says which commit it is.
-pub const BUILD_COMMIT_SUFFIX: &str = if BUILD_COMMIT.is_empty() {
-    ""
-} else {
+/// Appended to the version in `qsmxt --version`, so a main build, or any unreleased build from a
+/// checkout, says which commit it is.
+pub const BUILD_COMMIT_SUFFIX: &str = if !BUILD_COMMIT.is_empty() {
     const_format::concatcp!(" (main ", BUILD_COMMIT, ")")
+} else if !SOURCE_COMMIT.is_empty() && unreleased(env!("CARGO_PKG_VERSION")) {
+    const_format::concatcp!(" (rev ", SOURCE_COMMIT, ")")
+} else {
+    ""
 };
+
+/// The QSMxT commit the build was made from: `qsmxt update --main`'s, else the source checkout's;
+/// empty when neither is known.
+pub const SOURCE_COMMIT: &str = env!("QSMXT_SOURCE_COMMIT");
+
+/// What this build is, for people: the release version, or for an unreleased build (0.0.0 until
+/// the release workflow sets the version from the tag) `rev-` and the commit it was built from,
+/// as QSM.rs is described.
+pub fn describe_version() -> String {
+    describe(env!("CARGO_PKG_VERSION"), SOURCE_COMMIT)
+}
+
+/// Version 0.0.0: what Cargo.toml says until the release workflow sets it from the tag.
+const fn unreleased(version: &str) -> bool {
+    let (v, u) = (version.as_bytes(), b"0.0.0");
+    if v.len() != u.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < v.len() {
+        if v[i] != u[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+fn describe(version: &str, commit: &str) -> String {
+    if unreleased(version) && !commit.is_empty() { format!("rev-{commit}") } else { version.to_string() }
+}
 
 /// The repository `qsmxt update --main` builds from.
 const GIT_URL: &str = "https://github.com/QSMxT/QSMxT";
@@ -1077,6 +1111,17 @@ pub mod check {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A release says its version; an unreleased build the commit it was built from, or 0.0.0
+    /// when that is not known.
+    #[test]
+    fn unreleased_builds_are_described_by_their_commit() {
+        let c = "17b871647026eb9a80b57e1e3c37d06361f53c49";
+        assert_eq!(describe("0.0.0", c), format!("rev-{c}"));
+        assert_eq!(describe("10.1.0", c), "10.1.0");
+        assert_eq!(describe("0.0.0", ""), "0.0.0");
+        assert!(unreleased("0.0.0") && !unreleased("0.0.01") && !unreleased("10.0.0"));
+    }
 
     /// Shared with the TUI tests: `$QSMXT_UPDATE_CACHE` is process-global.
     use check::env_lock;

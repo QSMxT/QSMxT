@@ -86,10 +86,10 @@ fn palette() -> Palette {
 }
 
 fn version() -> String {
-    // Development builds describe QSM.rs by a full commit hash: keep the line short.
-    let core = env!("QSM_CORE_DESCRIBE");
-    let core = if core.chars().count() > 16 { format!("{}…", core.chars().take(15).collect::<String>()) } else { core.to_string() };
-    format!("QSMxT {} · QSM.rs {core}", env!("CARGO_PKG_VERSION"))
+    // Development builds describe QSMxT and QSM.rs by a full commit hash: keep the line short.
+    let short = |s: &str| if s.chars().count() > 16 { format!("{}…", s.chars().take(15).collect::<String>()) } else { s.to_string() };
+    let qsmxt = crate::commands::update::describe_version();
+    format!("QSMxT {} · QSM.rs {}", short(&qsmxt), short(env!("QSM_CORE_DESCRIBE")))
 }
 
 fn w(s: &str) -> usize {
@@ -360,7 +360,8 @@ pub(super) mod tests {
     fn the_versions_sit_in_the_rule_when_there_is_room() {
         let mut app = App::new();
         let t = render(&mut app, 120, 40);
-        assert!(row(&t, 1).contains(&format!("QSMxT {}", env!("CARGO_PKG_VERSION"))), "{}", row(&t, 1));
+        let qsmxt: String = crate::commands::update::describe_version().chars().take(15).collect();
+        assert!(row(&t, 1).contains(&format!("QSMxT {qsmxt}")), "{}", row(&t, 1));
     }
 
     #[test]

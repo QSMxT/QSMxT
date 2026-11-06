@@ -82,6 +82,34 @@ fn main() {
     println!("cargo:rustc-env=QSMXT_BUILD_COMMIT={build_commit}");
     println!("cargo:rerun-if-env-changed=QSMXT_BUILD_COMMIT");
 
+    // The QSMxT commit this build was made from, so an unreleased build (version 0.0.0 until the
+    // release workflow sets it from the tag) can say which one it is: the commit `qsmxt update
+    // --main` passed in, else the source checkout's own, else empty (a source tarball).
+    let source_commit = if build_commit.is_empty() { git(&["rev-parse", "HEAD"]).unwrap_or_default() } else { build_commit };
+    let source_commit = if source_commit.len() == 40 && source_commit.chars().all(|c| c.is_ascii_hexdigit()) {
+        source_commit
+    } else {
+        String::new()
+    };
+    println!("cargo:rustc-env=QSMXT_SOURCE_COMMIT={source_commit}");
+    // Rebuild the string when the checkout moves: HEAD, the branch it points to, packed refs.
+    let mut watched = vec!["HEAD".to_string(), "packed-refs".to_string()];
+    if let Some(branch) = git(&["symbolic-ref", "-q", "HEAD"]) {
+        watched.push(branch);
+    }
+    for path in watched {
+        if let Some(path) = git(&["rev-parse", "--path-format=absolute", "--git-path", &path]) {
+            println!("cargo:rerun-if-changed={path}");
+        }
+    }
+
     println!("cargo:rerun-if-changed=Cargo.lock");
     println!("cargo:rerun-if-changed=Cargo.toml");
+}
+
+/// `git <args>` in the source directory, trimmed; `None` when git or the repository is missing.
+fn git(args: &[&str]) -> Option<String> {
+    let dir = std::env::var("CARGO_MANIFEST_DIR").ok()?;
+    let out = std::process::Command::new("git").arg("-C").arg(dir).args(args).output().ok()?;
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string()).filter(|s| !s.is_empty())
 }
