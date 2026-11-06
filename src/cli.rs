@@ -1529,8 +1529,7 @@ pub struct PipelineArgs {
     #[arg(long, value_enum)]
     pub unwrapping_algorithm: Option<UnwrapAlgorithmArg>,
 
-    /// Background field removal algorithm (default: vsharp; pdf with --qsm-algorithm medi, as in
-    /// its authors' pipeline)
+    /// Background field removal algorithm (default: vsharp)
     #[arg(long, value_enum)]
     pub bf_algorithm: Option<BfAlgorithmArg>,
 
