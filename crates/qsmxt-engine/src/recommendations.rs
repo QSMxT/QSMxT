@@ -290,6 +290,20 @@ impl Recommendation {
         }
     }
 
+    /// The rule is scoped to a flag that is on ("HEIDI streaking reduction"), so the finding also
+    /// resolves by turning that flag off. Returns its config path. A method has no such way out:
+    /// nothing says which other method to choose.
+    pub fn flag_trigger(&self) -> Option<&str> {
+        (self.kind == Kind::Reasoned && self.trigger.value == Value::Bool(true) && self.trigger.setting != self.setting)
+            .then_some(self.trigger.setting.as_str())
+    }
+
+    /// The flag of [`Self::flag_trigger`], as "turn off" names it: "HEIDI streaking reduction",
+    /// "bipolar correction".
+    pub fn flag_name(&self) -> &str {
+        self.trigger.name.strip_suffix(" on").unwrap_or(&self.trigger.name)
+    }
+
     /// The choice the rule is scoped to ("MEDI", "HEIDI streaking reduction"); `None` when its
     /// trigger is the setting itself, or a fact about the scan.
     fn scope(&self) -> Option<&str> {

@@ -17,6 +17,10 @@
 //!   `recommended` or `discouraged` finding has one). Two equally
 //!   strong findings that disagree on a setting are shown together, with nothing preselected.
 //!   Esc closes it and leaves the finding open, shown by its marker.
+//! - **The setting just changed is respected** ([`RecModal::changed`]): when a change makes a
+//!   setting depart from a rule scoped to a flag that is on ([`Recommendation::flag_trigger`]),
+//!   such as choosing QSMART with HEIDI ticked, the pop-up preselects turning that flag off, and
+//!   changing the setting back is the other choice. It comes before any reference pipeline pop-up.
 //! - **The reference pipeline pop-up** ([`RefModal`]) opens when a method with a reference
 //!   pipeline is chosen ([`rec::chosen_methods`]) and the config differs from it
 //!   ([`rec::reference_differences`]): every difference from the authors' settings, and first
@@ -50,6 +54,8 @@ use super::app::{App, PipelineRow};
 pub enum RecChoice {
     /// Set the setting to `value` (the rule's recommended one when `None`), resolving `rule`.
     Apply { rule: String, value: Option<Value>, label: String },
+    /// Turn off the flag the finding is scoped to (`setting`, its config path).
+    TurnOff { setting: String, label: String },
     /// Keep the setting as it is: dismiss the findings, for its current value.
     Keep,
 }
@@ -69,13 +75,30 @@ pub struct RecModal {
     /// The details of a marked setting, opened with `!`: every rule the setting departs from,
     /// `reference` ones included, with their sources.
     pub details: bool,
+    /// The finding's setting is the one just changed ([`Self::changed`]).
+    pub changed: bool,
 }
 
 impl RecModal {
     pub fn new(findings: Vec<Recommendation>) -> Self {
         let conflict = findings.len() > 1;
         let choices = choices(&findings);
-        RecModal { findings, choices, cursor: (!conflict).then_some(0), why: false, scroll: 0, details: false }
+        RecModal { findings, choices, cursor: (!conflict).then_some(0), why: false, scroll: 0, details: false, changed: false }
+    }
+
+    /// `findings` are on the setting just changed, and scoped to a flag that is on: turning the
+    /// flag off comes first and is preselected, then changing the setting back, then the rest.
+    pub fn changed(findings: Vec<Recommendation>) -> Self {
+        let mut choices = choices(&findings);
+        for c in &mut choices {
+            if let RecChoice::Apply { value: None, label, .. } = c {
+                let name = &findings[0].recommended.name;
+                *label = format!("Use {name} instead");
+            }
+        }
+        let off = turn_off_choices(&findings);
+        choices.splice(0..0, off);
+        RecModal { findings, choices, cursor: Some(0), why: false, scroll: 0, details: false, changed: true }
     }
 
     /// The details of a setting: `findings` are the rules it departs from, offered ones first.
@@ -84,13 +107,16 @@ impl RecModal {
     pub fn details(findings: Vec<Recommendation>) -> Self {
         let conflict = findings.iter().any(|r| r.conflict && open(r));
         let reasoned = findings.first().is_some_and(|r| r.kind == Kind::Reasoned);
-        let choices = choices(&findings);
+        let mut choices = choices(&findings);
+        // Before Keep mine: the flag's own row may be hidden, as HEIDI's is with QSMART.
+        let keep = choices.iter().position(|c| *c == RecChoice::Keep).unwrap_or(choices.len());
+        choices.splice(keep..keep, turn_off_choices(&findings));
         let cursor = match (conflict, reasoned) {
             (true, _) => None,
             (false, true) => Some(0),
             (false, false) => choices.iter().position(|c| *c == RecChoice::Keep),
         };
-        RecModal { findings, choices, cursor, why: true, scroll: 0, details: true }
+        RecModal { findings, choices, cursor, why: true, scroll: 0, details: true, changed: false }
     }
 
     pub fn title(&self) -> String {
@@ -105,6 +131,7 @@ impl RecModal {
             Strength::Reference if methods.len() == 1 => format!(" {}: {} ", Kind::Reference.label(), rec::reference_title(&r.trigger)),
             Strength::Reference => format!(" {}s: {} of {} ", Kind::Reference.label(), r.label, methods.join(", ")),
             _ if self.details && self.findings.len() > 1 => format!(" {} ", r.label),
+            Strength::Required if self.changed => format!(" {} requires a change ", r.current_text()),
             Strength::Required => format!(" {} requires a change ", r.trigger.name),
             Strength::Discouraged => format!(" Discouraged with {} ", r.trigger.name),
             _ if self.findings.len() > 1 => " Recommendations disagree ".to_string(),
@@ -114,7 +141,7 @@ impl RecModal {
 
     pub fn choice_label(c: &RecChoice) -> &str {
         match c {
-            RecChoice::Apply { label, .. } => label,
+            RecChoice::Apply { label, .. } | RecChoice::TurnOff { label, .. } => label,
             RecChoice::Keep => "Keep mine",
         }
     }
@@ -149,6 +176,20 @@ fn choices(findings: &[Recommendation]) -> Vec<RecChoice> {
     // A required one cannot be dismissed: the method cannot run otherwise.
     if findings.iter().all(|r| r.strength != Strength::Required) {
         out.push(RecChoice::Keep);
+    }
+    out
+}
+
+/// "Turn off HEIDI streaking reduction", once for each flag `findings` are scoped to that has a
+/// row to turn off.
+fn turn_off_choices(findings: &[Recommendation]) -> Vec<RecChoice> {
+    let mut out: Vec<RecChoice> = Vec::new();
+    for r in findings {
+        let Some(setting) = r.flag_trigger() else { continue };
+        let choice = RecChoice::TurnOff { setting: setting.to_string(), label: format!("Turn off {}", r.flag_name()) };
+        if super::app::field_of_path(setting).is_some() && !out.contains(&choice) {
+            out.push(choice);
+        }
     }
     out
 }
@@ -376,6 +417,7 @@ impl App {
         }
         let mut created: Vec<Recommendation> = Vec::new();
         let mut view: Option<Vec<Recommendation>> = None;
+        let mut just_changed: Vec<String> = Vec::new();
         if form != self.rec_form {
             // The first check takes the form as it opened: only a change opens a pop-up.
             let opening = self.rec_form.is_empty();
@@ -387,6 +429,12 @@ impl App {
                     self.pipeline_state.dismissed = c.dismissed_recommendations;
                 }
             }
+            let config = super::command::config_from_app(self).ok().and_then(|c| serde_json::to_value(c).ok());
+            let mut changed = Vec::new();
+            if let (Some(before), Some(after)) = (&self.rec_config, &config) {
+                changed_settings(before, after, String::new(), &mut changed);
+            }
+            self.rec_config = config;
             let v = self.rule_view();
             let now: Vec<(String, String)> =
                 v.iter().filter(|r| open(r)).map(|r| (r.rule.clone(), rec::chosen_text(&r.current))).collect();
@@ -394,6 +442,7 @@ impl App {
                 open(r) && !self.rec_seen.contains(&(r.rule.clone(), rec::chosen_text(&r.current)))
             }).cloned().collect();
             self.rec_seen = now;
+            just_changed = changed.into_iter().map(|(path, _)| path).collect();
             let chosen = self.note_methods(&v, &[]);
             if opening {
                 self.refs.pending.clear();
@@ -429,6 +478,21 @@ impl App {
             }
             return;
         };
+        // A setting just changed, against a flag that is on and was not: offer the flag first.
+        let touched = |path: &str| just_changed.iter().any(|c| c == path || c.starts_with(&format!("{path}.")));
+        let against_flag = created.iter().find(|r| {
+            r.flag_trigger().is_some_and(|flag| !touched(flag) && super::app::field_of_path(flag).is_some()) && touched(&r.setting)
+        });
+        if let Some(r) = against_flag {
+            let group = group(&view, r);
+            self.rec_queue = created.iter().filter(|c| !group.iter().any(|g| g.setting == c.setting))
+                .map(|c| c.rule.clone()).collect();
+            if let Some((methods, _)) = reference {
+                self.refs.pending = methods.into_iter().map(|m| (m, vec![])).collect();
+            }
+            self.rec_modal = Some(RecModal::changed(group));
+            return;
+        }
         let group = group(&view, first);
         self.rec_queue.clear();
         match reference {
@@ -497,6 +561,11 @@ impl App {
                     RecChoice::Apply { rule, value, .. } => {
                         if let Err(e) = self.apply_recommendation(&rule, value.as_ref()) {
                             self.error_message = Some(e);
+                        }
+                    }
+                    RecChoice::TurnOff { setting, .. } => {
+                        if let Some(field) = super::app::field_of_path(&setting) {
+                            self.set_companion(field, &Value::Bool(false));
                         }
                     }
                     RecChoice::Keep => self.keep_mine(&findings),
@@ -771,7 +840,9 @@ impl App {
     /// as its reference, marked where the current value differs.
     pub fn row_reference(view: &[Recommendation], row: &PipelineRow) -> Option<String> {
         let path = row_path(row)?;
-        let parts: Vec<String> = view.iter().filter(|r| r.setting == path).map(|r| {
+        // One entry for what several rules say alike: each HEIDI seed rule recommends LSQR.
+        let mut parts: Vec<(String, Vec<&str>)> = Vec::new();
+        for r in view.iter().filter(|r| r.setting == path) {
             let what = match (r.departs, r.strength, r.dismissed) {
                 (false, Strength::Reference, _) => "Authors' setting",
                 (false, _, _) => "Recommended",
@@ -786,8 +857,14 @@ impl App {
             } else {
                 r.recommended.name.clone()
             };
-            format!("{what}: {value} ({}; {})", r.trigger.name, r.source)
-        }).collect();
+            let head = format!("{what}: {value} ({}", r.trigger.name);
+            match parts.iter_mut().find(|(h, _)| *h == head) {
+                Some((_, sources)) if sources.contains(&r.source.as_str()) => {}
+                Some((_, sources)) => sources.push(&r.source),
+                None => parts.push((head, vec![&r.source])),
+            }
+        }
+        let parts: Vec<String> = parts.into_iter().map(|(head, sources)| format!("{head}; {})", sources.join("; "))).collect();
         if parts.is_empty() {
             return None;
         }
@@ -1292,6 +1369,82 @@ mod tests {
     }
 
     /// QSMART, then the threshold mask: the mask row is marked ⓘ with QSMART's reference, and
+    /// An app with HEIDI ticked and its pop-ups closed, then `method` chosen.
+    fn method_chosen_with_heidi(method: &str) -> App {
+        let chosen = QSM_PICKER_OPTIONS.iter().position(|o| *o == method).unwrap();
+        let mut app = app();
+        app.toggle_field("heidi_enabled");
+        app.check_recommendations();
+        while app.rec_modal.is_some() || app.refs.modal.is_some() {
+            key(&mut app, KeyCode::Esc);
+            app.check_recommendations();
+        }
+        app.pipeline_state.set_select("qsm_algorithm", chosen);
+        app.check_recommendations();
+        app
+    }
+
+    /// HEIDI ticked, then a method it cannot follow chosen: the method stays chosen and the pop-up
+    /// offers to turn HEIDI off, ahead of the method's reference pipeline. Ticking HEIDI on a
+    /// method is the other way round: the method is what is offered to change.
+    #[test]
+    fn choosing_a_method_against_heidi_offers_to_turn_heidi_off() {
+        for method in ["tfi", "tgv", "qsmart", "autoqsm", "nextqsm", "iqsm", "iqsm-plus"] {
+            let mut app = method_chosen_with_heidi(method);
+            let chosen = app.pipeline_state.qsm_algorithm;
+            let modal = app.rec_modal.as_ref().expect("the pop-up opens");
+            assert_eq!(modal.title(), format!(" {} requires a change ", modal.findings[0].current_text()), "{method}");
+            assert_eq!(modal.cursor, Some(0), "{method}");
+            assert_eq!(RecModal::choice_label(&modal.choices[0]), "Turn off HEIDI streaking reduction", "{method}");
+            assert_eq!(RecModal::choice_label(&modal.choices[1]), "Use LSQR instead", "{method}");
+            assert_eq!(modal.choices.len(), 2, "{method}: a required finding has no Keep mine");
+
+            key(&mut app, KeyCode::Enter);
+            assert!(!app.pipeline_state.heidi_enabled, "{method}: HEIDI is off");
+            assert_eq!(app.pipeline_state.qsm_algorithm, chosen, "{method} stays chosen");
+        }
+    }
+
+    /// The same for a method HEIDI only discourages, where the reference pipeline pop-up would
+    /// otherwise have offered to change the method back along with the authors' settings.
+    #[test]
+    fn a_discouraged_method_just_chosen_is_not_changed_back_by_default() {
+        let mut app = method_chosen_with_heidi("medi");
+        let medi = app.pipeline_state.qsm_algorithm;
+        let modal = app.rec_modal.as_ref().expect("the pop-up opens");
+        assert_eq!(RecModal::choice_label(&modal.choices[0]), "Turn off HEIDI streaking reduction");
+        assert!(modal.choices.contains(&RecChoice::Keep));
+        key(&mut app, KeyCode::Enter);
+        assert!(!app.pipeline_state.heidi_enabled);
+        assert_eq!(app.pipeline_state.qsm_algorithm, medi);
+    }
+
+    /// With HEIDI's row hidden, `!` on the inversion is the way to turn it off later.
+    #[test]
+    fn details_of_a_setting_against_a_flag_offer_to_turn_it_off() {
+        let chosen = |name: &str| QSM_PICKER_OPTIONS.iter().position(|o| *o == name).unwrap();
+        let mut app = app();
+        app.pipeline_state.heidi_enabled = true;
+        app.pipeline_state.set_select("qsm_algorithm", chosen("qsmart"));
+        let here: Vec<_> = app.rule_view().into_iter().filter(|r| r.setting == "inversion.algorithm" && r.departs).collect();
+        let modal = RecModal::details(here);
+        assert!(modal.choices.iter().any(|c| matches!(c, RecChoice::TurnOff { .. })), "{:?}", modal.choices);
+    }
+
+    /// Rules that say the same thing on a setting read as one entry, naming each source once.
+    #[test]
+    fn a_rows_reference_says_each_thing_once() {
+        let mut app = app();
+        app.pipeline_state.heidi_enabled = true;
+        app.pipeline_state.set_select("qsm_algorithm", QSM_PICKER_OPTIONS.iter().position(|o| *o == "lsqr").unwrap());
+        app.pipeline_state.heidi_enabled = true;
+        let view = app.rule_view();
+        let row = app.all_pages().into_iter().flat_map(|(_, _, rows)| rows)
+            .find(|r| matches!(r, PipelineRow::AlgoSelect { field: "qsm_algorithm", .. })).unwrap();
+        let text = App::row_reference(&view, &row).unwrap();
+        assert_eq!(text.matches("Recommended: LSQR").count(), 1, "{text}");
+    }
+
     /// `!` opens its details with Apply.
     #[test]
     fn a_reference_marker_names_the_method_and_bang_opens_its_details() {
