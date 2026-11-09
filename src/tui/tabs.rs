@@ -198,6 +198,7 @@ pub fn draw_header(f: &mut Frame, app: &App, area: Rect) {
             x += gap;
         }
         let (digit, name) = l.split_at(1);
+        app.hits.add(Rect { x, y: y0, width: w(l) as u16, height: 1 }, super::mouse::Hit::Tab(i));
         if i == active {
             underline = (x.saturating_sub(1), x + w(l) as u16 + 1);
             // Yellow while the tab bar has focus, as the sub-tab strip does.
@@ -290,6 +291,7 @@ pub fn draw_subtabs(f: &mut Frame, app: &App, area: Rect) {
         if i > lo {
             x += 1;
         }
+        app.hits.add(Rect { x, y, width: w(item) as u16, height: 1 }, super::mouse::Hit::SubTab(i));
         let st = if i == cur {
             let bg = if focused { Color::Yellow } else { Color::Cyan };
             Style::default().fg(Color::Black).bg(bg).add_modifier(Modifier::BOLD)

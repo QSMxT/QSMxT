@@ -1,6 +1,7 @@
 mod app;
 mod clipboard;
 mod command;
+mod mouse;
 mod pipeline_view;
 mod pipelines_tab;
 mod recommend;
@@ -13,6 +14,7 @@ mod schema_parity;
 use std::io;
 
 use crossterm::{
+    event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -34,6 +36,7 @@ fn new_terminal<B: Backend>(backend: B) -> io::Result<Terminal<B>> {
 }
 
 fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) {
+    let _ = execute!(terminal.backend_mut(), DisableMouseCapture);
     let _ = disable_raw_mode();
     let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
     let _ = terminal.show_cursor();
@@ -43,6 +46,7 @@ pub fn run_tui() -> crate::Result<()> {
     // Install panic hook to restore terminal on panic
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic| {
+        let _ = execute!(io::stdout(), DisableMouseCapture);
         let _ = disable_raw_mode();
         let _ = execute!(io::stdout(), LeaveAlternateScreen);
         original_hook(panic);
@@ -52,6 +56,10 @@ pub fn run_tui() -> crate::Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
+    // Clicks and the wheel ([`mouse`]), unless the mouse is left to the terminal.
+    if mouse::enabled() {
+        execute!(stdout, EnableMouseCapture)?;
+    }
     let mut terminal = new_terminal(CrosstermBackend::new(stdout))?;
 
     let mut app = App::new();
@@ -97,7 +105,11 @@ pub fn run_tui() -> crate::Result<()> {
 
         // Use poll with timeout so the UI refreshes during background scans
         if crossterm::event::poll(std::time::Duration::from_millis(100))? {
-            if let crossterm::event::Event::Key(key) = crossterm::event::read()? {
+            let event = crossterm::event::read()?;
+            if let crossterm::event::Event::Mouse(ev) = event {
+                app.handle_mouse(ev);
+            }
+            if let crossterm::event::Event::Key(key) = event {
                 // Windows delivers both Press and Release events for every
                 // keystroke; only act on Press or every action fires twice.
                 if key.kind == crossterm::event::KeyEventKind::Press {

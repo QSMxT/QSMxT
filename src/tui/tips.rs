@@ -34,6 +34,10 @@ pub const TIPS: &[Tip] = &[
     ),
     tip("You can update QSMxT from the terminal with `qsmxt update`.", None),
     tip(
+        "The mouse works too: click a tab, a setting or a pop-up's button, and scroll with the wheel. Hold Shift while dragging to select text.",
+        None,
+    ),
+    tip(
         "The Pipeline tab (2) starts you from an original toolbox's whole pipeline, such as the MEDI toolbox's or QSMART's, and shows every change first. On the command line, use `--pipeline medi-toolbox`.",
         None,
     ),

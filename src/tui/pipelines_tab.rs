@@ -387,6 +387,9 @@ pub fn draw(f: &mut Frame, app: &mut App, area: Rect) {
         Span::styled("Now: ", muted()),
         Span::styled(status.text(), Style::default().fg(if current.is_some() { Color::Green } else { Color::Gray })),
     ]));
+    // The entries and the heading between them, for clicks.
+    let entries = pipelines::pipelines().len() as u16 + 1;
+    app.hits.add(Rect { height: entries.min(cols[0].height), ..cols[0] }, super::mouse::Hit::Pipelines);
     f.render_widget(Paragraph::new(list), cols[0]);
 
     let p = app.highlighted_pipeline();
@@ -418,7 +421,7 @@ pub fn draw(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 /// The preview: every change, what is reset, then Apply / Cancel.
-pub fn draw_preview(f: &mut Frame, m: &mut PreviewModal, area: Rect) {
+pub fn draw_preview(f: &mut Frame, m: &mut PreviewModal, area: Rect, hits: &super::mouse::Hits) {
     let w = area.width.saturating_sub(8).min(110);
     let mut lines = vec![
         Line::from(""),
@@ -455,9 +458,11 @@ pub fn draw_preview(f: &mut Frame, m: &mut PreviewModal, area: Rect) {
     } else {
         Span::styled(format!(" {label} "), Style::default().fg(Color::Gray))
     };
-    f.render_widget(Paragraph::new(Line::from(vec![
+    let buttons = Line::from(vec![
         button(format!("Apply {}", m.pipeline.name), m.button == 0), Span::raw("    "), button("Cancel".into(), m.button == 1),
-    ])).alignment(ratatui::layout::Alignment::Center), parts[1]);
+    ]).alignment(ratatui::layout::Alignment::Center);
+    hits.add_buttons(parts[1], std::slice::from_ref(&buttons));
+    f.render_widget(Paragraph::new(buttons), parts[1]);
     f.render_widget(Paragraph::new(Line::from(vec![
         Span::styled("←→", Style::default().fg(Color::Yellow)), Span::styled(" choose   ", muted()),
         Span::styled("Enter", Style::default().fg(Color::Yellow)), Span::styled(" select   ", muted()),
