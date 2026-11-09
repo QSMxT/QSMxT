@@ -34,6 +34,10 @@ pub const TIPS: &[Tip] = &[
     ),
     tip("You can update QSMxT from the terminal with `qsmxt update`.", None),
     tip(
+        "The Pipeline tab (2) starts you from an original toolbox's whole pipeline, such as the MEDI toolbox's or QSMART's, and shows every change first. On the command line, use `--pipeline medi-toolbox`.",
+        None,
+    ),
+    tip(
         "Press `n` on the tab bar (`↑` from the top of a tab) to read the announcements from the QSMxT team, or run `qsmxt news`.",
         None,
     ),
@@ -54,11 +58,11 @@ pub const TIPS: &[Tip] = &[
         None,
     ),
     tip(
-        "The Methods tab (7) writes a methods paragraph for your current settings. Press `c` there to copy it.",
+        "The Methods tab (8) writes a methods paragraph for your current settings. Press `c` there to copy it.",
         None,
     ),
     tip(
-        "The Methods tab's Pipeline sub-tab shows every step your settings run, the memory a run needs and the models it downloads. Press `s` there to save it as an SVG.",
+        "The Methods tab's Graph sub-tab shows every step your settings run, the memory a run needs and the models it downloads. Press `s` there to save it as an SVG.",
         None,
     ),
     tip(

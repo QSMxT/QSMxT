@@ -281,6 +281,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
     let inputs = app.input_relevance();
 
     PipelineArgs {
+        // The form holds every setting; the chosen pipeline is set on the config afterwards.
+        pipeline: None,
         // Bounds-checked rather than indexed: the option list shrinks with the build (see #227).
         qsm_algorithm: Some(qsm_options.get(ps.qsm_algorithm).copied().unwrap_or_else(default_qsm_algorithm_arg)),
         // The HEIDI checkbox (with LSQR, LSQR+HEIDI); not offered for multi-orientation runs.
@@ -344,6 +346,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
                 .map(|p| if p[0] == p[1] && p[1] == p[2] { vec![p[0]] } else { p.to_vec() })
         } else { None },
         laplacian_unmasked: ps.unwrapping_algorithm == 1 && ps.laplacian_unmasked,
+        no_laplacian_unmasked: false,
         // BET is edited per mask step in the TUI, so its settings travel inside the sections.
         bet_fractional_intensity: None,
         // The TUI's voxel scale lives on the mask recipe's BET step, so it travels in
@@ -1000,6 +1003,9 @@ pub fn methods_text(app: &App) -> Result<String, String> {
 pub fn config_from_app(app: &App) -> crate::Result<PipelineConfig> {
     let mut config = PipelineConfig::default();
     crate::pipeline::config::apply_run_overrides(&mut config, &pipeline_args_from_app(app))?;
+    // The pipeline chosen on the Pipeline tab, while the form still makes its choices.
+    config.reference_pipeline = app.pipeline_state.reference_pipeline.clone()
+        .filter(|id| qsmxt_engine::pipelines::chosen(&config, id));
     Ok(config)
 }
 
@@ -2671,6 +2677,10 @@ mod parity {
             // The TUI resolves recommendations in its pop-up, before the run.
             ("--accept-recommendations", "the pop-up applies them"),
             ("--accept-reference-settings", "the pop-up applies them"),
+            // Chosen on the Pipeline tab, which no settings row covers.
+            ("--pipeline", "the Pipeline tab"),
+            // Only against a pipeline that turns it on; QSMxT's default is off.
+            ("--no-laplacian-unmasked", "restates the default"),
         ];
         for (flag, why) in not_emitted {
             assert!(!covered.contains(*flag), "{flag} is allow-listed ({why}) but the TUI emits it: drop it from the list");

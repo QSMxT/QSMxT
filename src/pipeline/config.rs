@@ -324,6 +324,12 @@ pub fn validate_reference_region(config: &PipelineConfig) -> crate::Result<()> {
 /// A value that cannot be parsed is an error, never a warning and a default: the flag was asked
 /// for, and a run with some other setting would be worse than no run.
 pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs) -> crate::Result<()> {
+        // ── Pipeline ──
+        // First, so that every other flag changes the pipeline's settings.
+        if let Some(id) = &args.pipeline {
+            qsmxt_engine::pipelines::choose(config, id, &qsmxt_engine::schema::ViewFacts::default())
+                .map_err(QsmxtError::Config)?;
+        }
         // ── Inversion algorithm ──
         if let Some(a) = args.qsm_algorithm {
             config.inversion.algorithm = qsm_algorithm_arg_to_config(a);
@@ -429,6 +435,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             })?;
         }
         if args.laplacian_unmasked { config.field_mapping.laplacian_unmasked = true; }
+        if args.no_laplacian_unmasked { config.field_mapping.laplacian_unmasked = false; }
         if let Some(ref s) = args.coil_combination_sigma {
             if s.len() == 3 { config.field_mapping.coil_combination_sigma = [s[0], s[1], s[2]]; }
         }
@@ -1911,6 +1918,39 @@ mod tests {
         assert_eq!(rebuilt.separation.r2primenet.patch, BROWSER_R2PRIMENET_PATCH, "{cmd}");
         assert_eq!(rebuilt.masking.sections, c.masking.sections, "{cmd}");
         assert_eq!(generate_command(&rebuilt), cmd);
+    }
+
+    /// A config on a pipeline is `--pipeline <id>` plus its departures, and the command rebuilds
+    /// it: for every pipeline, as chosen and with a departure.
+    #[test]
+    fn pipelines_round_trip_through_the_command() {
+        use qsmxt_engine::pipelines;
+        let facts = qsmxt_engine::schema::ViewFacts::default();
+        let rebuild = |cmd: &str| {
+            let argv: Vec<&str> = cmd.split_whitespace().collect();
+            let cli = cli::Cli::try_parse_from(&argv).unwrap_or_else(|e| panic!("{e}\ncmd: {cmd}"));
+            let cli::Command::Run(run_args) = cli.command else { panic!("expected Run") };
+            let mut rebuilt = PipelineConfig::default();
+            apply_run_overrides(&mut rebuilt, &run_args.pipeline).unwrap();
+            rebuilt
+        };
+        for p in pipelines::pipelines().into_iter().filter(|p| p.is_toolbox()) {
+            let mut c = PipelineConfig::default();
+            pipelines::choose(&mut c, p.id, &facts).unwrap();
+            let cmd = generate_command(&c);
+            assert_eq!(cmd, format!("qsmxt run <bids_dir> --pipeline {}", p.id));
+            assert_eq!(generate_command(&rebuild(&cmd)), cmd);
+            assert!(pipelines::status(&rebuild(&cmd), &facts).departures.is_empty(), "{cmd}");
+            // Another setting: its flag follows.
+            c.pipeline.do_swi = true;
+            let cmd = generate_command(&c);
+            assert_eq!(cmd, format!("qsmxt run <bids_dir> --pipeline {} --do-swi", p.id));
+            assert_eq!(generate_command(&rebuild(&cmd)), cmd);
+        }
+        // The flags after --pipeline win.
+        let c = rebuild("qsmxt run <bids_dir> --pipeline medi-toolbox --bf-algorithm vsharp");
+        assert_eq!(c.bg_removal.algorithm, qsmxt_engine::BfAlgorithm::Vsharp);
+        assert_eq!(pipelines::status(&c, &facts).text(), "MEDI toolbox · 1 departure");
     }
 
     /// The browser's R2PRIMEnet patch is the one qsm-core sizes for a WASM heap.

@@ -499,12 +499,14 @@ fn fmt_opt<T: std::fmt::Display>(v: Option<T>) -> String {
 }
 
 pub const TAB_INPUT: usize = 0;
-pub const TAB_PREPROCESSING: usize = 1;
-pub const TAB_QSM: usize = 2;
-pub const TAB_SEPARATION: usize = 3;
-pub const TAB_OUTPUTS: usize = 4;
-pub const TAB_EXECUTION: usize = 5;
-pub const TAB_METHODS: usize = 6;
+/// The pipeline to start from ([`super::pipelines_tab`]).
+pub const TAB_PIPELINE: usize = 1;
+pub const TAB_PREPROCESSING: usize = 2;
+pub const TAB_QSM: usize = 3;
+pub const TAB_SEPARATION: usize = 4;
+pub const TAB_OUTPUTS: usize = 5;
+pub const TAB_EXECUTION: usize = 6;
+pub const TAB_METHODS: usize = 7;
 
 /// A sub-tab: the second tab row, switched with `[` and `]`. A tab with a single page
 /// (Separation, Execution) shows no second row. The Methods tab's two pages are views, not rows.
@@ -552,7 +554,7 @@ impl Page {
             Page::Export => "Export",
             Page::Execution => "Execution",
             Page::MethodsText => "Methods text",
-            Page::Pipeline => "Pipeline",
+            Page::Pipeline => "Graph",
         }
     }
 
@@ -798,8 +800,9 @@ fn expand_tilde(path: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(path)
 }
 
-pub const TAB_NAMES: [&str; 7] = [
+pub const TAB_NAMES: [&str; 8] = [
     "Input",
+    "Pipeline",
     "Preprocessing",
     "QSM",
     "χ-separation",
@@ -2308,6 +2311,9 @@ pub struct PipelineFormState {
     /// The recommendations dismissed (Keep mine on a `recommended` or `discouraged` finding), each
     /// for the value its setting had then: `--dismiss-recommendation`, and so the run's config.
     pub dismissed: Vec<qsmxt_engine::Dismissal>,
+    /// The toolbox pipeline chosen on the Pipeline tab: the config's `reference_pipeline`, while
+    /// the form still makes its choices ([`super::pipelines_tab`]).
+    pub reference_pipeline: Option<String>,
     pub mask_preset: usize, // index into MASK_PRESET_OPTIONS (MASK_PRESET_CUSTOM = hand-edited)
     pub custom_mask_tool: String, // empty=off; "*"=any derivatives tool; else a tool name
 
@@ -2758,6 +2764,7 @@ impl Default for PipelineFormState {
             two_pass_sections: qsmxt_engine::default_two_pass_sections(),
             two_pass_combine: None,
             dismissed: vec![],
+            reference_pipeline: None,
             mask_preset: 0, // robust threshold
             custom_mask_tool: String::new(),
             do_chi_separation: false,
@@ -5672,6 +5679,8 @@ pub struct App {
     /// The reference pipeline pop-up opened when a method is chosen, and what it is worked out
     /// from ([`super::recommend::RefState`]).
     pub refs: super::recommend::RefState,
+    /// The Pipeline tab ([`super::pipelines_tab`]).
+    pub pipelines: super::pipelines_tab::PipelinesState,
 }
 
 /// The "Did you know?" pop-up, with two buttons: OK, and one that turns startup tips off
@@ -6044,6 +6053,7 @@ impl App {
             rec_form: String::new(),
             rec_config: None,
             refs: Default::default(),
+            pipelines: Default::default(),
         }
     }
 
@@ -6157,6 +6167,12 @@ impl App {
             self.review_recommendations();
             return;
         }
+        // P: the Pipeline tab, from any settings page.
+        if key.code == KeyCode::Char('P') && !self.is_typing() && Self::is_rows_tab(self.active_tab) && !self.tab_focus {
+            self.active_tab = TAB_PIPELINE;
+            self.reset_view();
+            return;
+        }
         self.handle_key_unchecked(key);
     }
 
@@ -6202,6 +6218,10 @@ impl App {
         // Route tab 0 (Input) to its combined IO + filter handler
         if self.active_tab == TAB_INPUT {
             self.handle_input_tab_key(key);
+            return;
+        }
+        if self.active_tab == TAB_PIPELINE {
+            self.handle_pipeline_tab_key(key);
             return;
         }
         // The row-based tabs share one handler (the page is synced first).
@@ -8238,6 +8258,12 @@ impl App {
     /// reset reveals, until none are new (and the mask recipe, on the Masking page).
     fn reset_current_page(&mut self) {
         let Some(page) = self.page() else { return };
+        self.reset_page(page);
+        self.reset_view();
+    }
+
+    /// Every setting on `page` back to its default (`R`, and a pipeline's stages).
+    pub(super) fn reset_page(&mut self, page: Page) {
         if page == Page::Masking {
             let d = PipelineFormState::default();
             let ps = &mut self.pipeline_state;
@@ -8255,7 +8281,6 @@ impl App {
             if fields.is_empty() { break; }
             fields.iter().for_each(|f| self.reset_field(f));
         }
-        self.reset_view();
     }
 
     /// Other outputs → SWI/SMWI.
@@ -9306,10 +9331,10 @@ mod tests {
         assert_eq!(app.page(), Some(Page::Geometry));
         // The sub-tab is remembered per tab; a main-tab switch resets focus too.
         app.handle_key(key(KeyCode::Down));
-        app.handle_key(key(KeyCode::Char('3')));
+        app.handle_key(key(KeyCode::Char('4')));
         assert_eq!(app.active_tab, TAB_QSM);
         assert_eq!(app.focus(), 0);
-        app.handle_key(key(KeyCode::Char('2')));
+        app.handle_key(key(KeyCode::Char('3')));
         assert_eq!(app.page(), Some(Page::Geometry));
     }
 
@@ -10601,7 +10626,7 @@ mod tests {
     #[test]
     fn the_pipeline_is_the_methods_tabs_second_sub_tab() {
         let mut app = App::new();
-        app.handle_key(key(KeyCode::Char('7')));
+        app.handle_key(key(KeyCode::Char('8')));
         assert_eq!(app.active_tab, TAB_METHODS);
         assert_eq!(app.pages(TAB_METHODS), vec![Page::MethodsText, Page::Pipeline]);
         assert_eq!(app.page(), Some(Page::MethodsText));
@@ -10622,7 +10647,7 @@ mod tests {
         assert!(app.on_subtabs());
         app.handle_key(key(KeyCode::Up));
         assert!(app.tab_focus);
-        assert!(!TAB_NAMES.contains(&"Pipeline"));
+        assert!(!TAB_NAMES.contains(&"Graph"), "the graph is a Methods sub-tab");
     }
 
     #[test]
@@ -12811,7 +12836,7 @@ mod tests {
     #[test]
     fn a_stage_with_sub_tabs_opens_on_its_sub_tab_strip() {
         let mut app = App::new();
-        app.handle_key(key(KeyCode::Char('2')));
+        app.handle_key(key(KeyCode::Char('3')));
         assert_eq!(app.active_tab, TAB_PREPROCESSING);
         assert!(app.on_subtabs());
         assert_eq!(app.page(), Some(Page::Masking), "Preprocessing opens on Masking");
@@ -12833,7 +12858,7 @@ mod tests {
     #[test]
     fn down_enters_the_sub_tab_and_up_from_its_first_row_returns() {
         let mut app = App::new();
-        app.handle_key(key(KeyCode::Char('2'))); // Masking, the default
+        app.handle_key(key(KeyCode::Char('3'))); // Masking, the default
         let first = app.focusable_rows().len();
         assert!(first > 1);
         app.handle_key(key(KeyCode::Down));
@@ -12863,7 +12888,7 @@ mod tests {
     #[test]
     fn left_and_right_change_a_choice_on_a_row_not_the_sub_tab() {
         let mut app = App::new();
-        app.handle_key(key(KeyCode::Char('3')));
+        app.handle_key(key(KeyCode::Char('4')));
         assert!(app.on_subtabs());
         let page = app.page();
         app.handle_key(key(KeyCode::Down));
@@ -12880,7 +12905,7 @@ mod tests {
     #[test]
     fn row_keys_do_nothing_on_the_strip() {
         let mut app = App::new();
-        app.handle_key(key(KeyCode::Char('2')));
+        app.handle_key(key(KeyCode::Char('3')));
         app.handle_key(key(KeyCode::Right)); // Masking
         let before = crate::tui::command::build_command_string(&app);
         for k in [KeyCode::Char(' '), KeyCode::Char('d'), KeyCode::Delete, KeyCode::Char('r')] {
@@ -12913,12 +12938,14 @@ mod tests {
     fn tab_switching_and_quitting_work_from_the_strip() {
         let mut app = App::new();
         app.handle_key(key(KeyCode::Tab));
+        assert_eq!(app.active_tab, TAB_PIPELINE);
+        app.handle_key(key(KeyCode::Tab));
         assert_eq!(app.active_tab, TAB_PREPROCESSING);
         assert!(app.on_subtabs());
         app.handle_key(key(KeyCode::Tab));
         assert_eq!(app.active_tab, TAB_QSM);
         assert!(app.on_subtabs());
-        app.handle_key(key(KeyCode::Char('5')));
+        app.handle_key(key(KeyCode::Char('6')));
         assert_eq!(app.active_tab, TAB_OUTPUTS);
         assert!(app.on_subtabs());
         app.handle_key(key(KeyCode::Char('q')));
@@ -13054,17 +13081,19 @@ mod tests {
         assert!(app.tab_focus);
         assert_eq!(app.active_tab, TAB_INPUT);
         app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.active_tab, TAB_PIPELINE);
+        app.handle_key(key(KeyCode::Right));
         assert_eq!(app.active_tab, TAB_PREPROCESSING);
         assert!(app.tab_focus);
         assert!(!app.on_subtabs(), "the sub-tab strip must not look focused under the tab bar");
         app.handle_key(key(KeyCode::Right));
         assert_eq!(app.active_tab, TAB_QSM);
-        app.handle_key(key(KeyCode::Left));
-        app.handle_key(key(KeyCode::Left));
-        app.handle_key(key(KeyCode::Left));
+        for _ in 0..TAB_QSM + 1 {
+            app.handle_key(key(KeyCode::Left));
+        }
         assert_eq!(app.active_tab, TAB_NAMES.len() - 1, "← from the first tab wraps to the last");
         // Digits still work and keep the bar focused.
-        app.handle_key(key(KeyCode::Char('2')));
+        app.handle_key(key(KeyCode::Char('3')));
         assert_eq!(app.active_tab, TAB_PREPROCESSING);
         assert!(app.tab_focus);
         // ↓ goes into the tab: onto its sub-tab strip, here.
@@ -13078,7 +13107,7 @@ mod tests {
     #[test]
     fn the_tab_bar_is_reachable_from_every_tab() {
         let mut app = App::new();
-        app.handle_key(key(KeyCode::Char('6')));
+        app.handle_key(key(KeyCode::Char('7')));
         app.handle_key(key(KeyCode::Up));
         assert!(app.tab_focus);
         app.handle_key(key(KeyCode::Enter));
@@ -13105,7 +13134,7 @@ mod tests {
     #[test]
     fn setting_keys_do_nothing_on_the_tab_bar() {
         let mut app = App::new();
-        app.handle_key(key(KeyCode::Char('3')));
+        app.handle_key(key(KeyCode::Char('4')));
         app.handle_key(key(KeyCode::Up));
         assert!(app.tab_focus);
         let before = crate::tui::command::build_command_string(&app);

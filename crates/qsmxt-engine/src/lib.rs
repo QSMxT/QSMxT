@@ -32,6 +32,7 @@ pub mod scan;
 pub mod inputs;
 pub mod requirements;
 pub mod recommendations;
+pub mod pipelines;
 pub mod memory;
 pub mod cache;
 pub mod graph;

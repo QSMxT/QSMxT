@@ -1472,6 +1472,14 @@ pub struct SwiParamArgs {
 /// on the command line) means the same thing whether it runs locally or on SLURM.
 #[derive(Args, Debug, Default)]
 pub struct PipelineArgs {
+    /// Start from a pipeline: qsmxt-defaults, or an original toolbox's (medi-toolbox,
+    /// sti-suite-ilsqr, sti-suite-star, qsmart, heidi, chi-sep-ilsqr, chi-sep-medi, chi-sepnet,
+    /// decompose). The stages it covers (masking, field mapping, background removal, inversion,
+    /// referencing, χ-separation) go back to QSMxT's defaults and then take the toolbox's
+    /// settings; the other flags given then change any setting
+    #[arg(long, value_parser = clap::builder::PossibleValuesParser::new(qsmxt_engine::pipelines::ids()))]
+    pub pipeline: Option<String>,
+
     /// QSM dipole inversion algorithm (default: ilsqr)
     #[arg(long, value_enum)]
     pub qsm_algorithm: Option<QsmAlgorithmArg>,
@@ -1612,6 +1620,11 @@ pub struct PipelineArgs {
     /// qsmart-echofit` the field map is then kept over the whole volume
     #[arg(long)]
     pub laplacian_unmasked: bool,
+
+    /// `--unwrapping-algorithm laplacian`: unwrap the phase set to zero outside the brain mask
+    /// (the default), after a `--pipeline` that unwraps the whole volume
+    #[arg(long, conflicts_with = "laplacian_unmasked")]
+    pub no_laplacian_unmasked: bool,
 
     /// BET fractional intensity (0.0-1.0; smaller = larger brain). Applies to every BET step in
     /// the masking recipe, overriding a `bet:<f>` in a --mask spec

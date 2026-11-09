@@ -530,7 +530,7 @@ pub fn qsmxt_path(core_path: &str) -> Option<&'static str> {
 }
 
 /// A rule's value (or a QSM.rs current value) as JSON, as QSM.rs serialises it.
-fn core_json(v: &core::Value) -> Value {
+pub(crate) fn core_json(v: &core::Value) -> Value {
     match *v {
         core::Value::Bool(b) => json!(b),
         core::Value::Number(x) => number(x),
@@ -1006,7 +1006,7 @@ pub fn apply(config: &mut PipelineConfig, rule: &str, pick: Option<&Value>) -> R
 }
 
 /// Set the QSM.rs setting `core_path` to `value` (QSM.rs's terms) in `config`.
-fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -> Result<(), String> {
+pub(crate) fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -> Result<(), String> {
     let (path, kind) = setting_of(core_path).ok_or_else(|| format!("QSMxT has no setting for {core_path}"))?;
     let id = value.as_str().unwrap_or_default();
     match kind {

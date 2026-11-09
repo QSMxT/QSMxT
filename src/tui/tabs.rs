@@ -25,7 +25,7 @@ use ratatui::{
 use super::app::{App, TAB_NAMES};
 
 /// Short names, used for inactive tabs when the full names do not fit the width.
-const SHORT: [&str; TAB_NAMES.len()] = ["Input", "Prep", "QSM", "χ-sep", "Outputs", "Exec", "Methods"];
+const SHORT: [&str; TAB_NAMES.len()] = ["Input", "Pipe", "Prep", "QSM", "χ-sep", "Outputs", "Exec", "Methods"];
 
 /// The greys the design is drawn with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -212,11 +212,25 @@ pub fn draw_header(f: &mut Frame, app: &App, area: Rect) {
     let (ux0, ux1) = underline;
     put(buf, area, ux0, y1, &"━".repeat((ux1 - ux0) as usize), Style::default().fg(accent));
 
-    // The versions sit in the rule, right-aligned, unless they would cross the underline.
+    // The pipeline the settings follow, then the versions, right-aligned in the rule. Without
+    // room for both, the pipeline stays and the versions go; neither crosses the underline.
     let ver = format!(" {} ", version());
-    let vx = area.right().saturating_sub(w(&ver) as u16 + 2);
-    if vx > ux1 + 1 && vx > area.x {
+    let status = app.pipeline_status_text().map(|s| (format!(" Pipeline: {s} "), s));
+    let fits = |x: u16| x > ux1 + 1 && x > area.x;
+    let right = area.right().saturating_sub(2);
+    let status_w = status.as_ref().map_or(0, |(t, _)| w(t) as u16 + 1);
+    let vx = right.saturating_sub(w(&ver) as u16);
+    let show_ver = fits(vx.saturating_sub(status_w));
+    if show_ver {
         put(buf, area, vx, y1, &ver, Style::default().fg(pal.muted));
+    }
+    if let Some((text, s)) = status {
+        let end = if show_ver { vx.saturating_sub(1) } else { right };
+        let sx = end.saturating_sub(w(&text) as u16);
+        if fits(sx) {
+            let color = if s.contains("departure") { Color::Yellow } else if s == "Custom" { pal.muted } else { Color::Green };
+            put(buf, area, sx, y1, &text, Style::default().fg(color).add_modifier(Modifier::BOLD));
+        }
     }
 }
 
@@ -367,7 +381,7 @@ pub(super) mod tests {
     #[test]
     fn sub_tabs_are_pills_with_a_hint_and_a_counter() {
         let mut app = App::new();
-        goto(&mut app, 1, Some(Page::Masking));
+        goto(&mut app, crate::tui::app::TAB_PREPROCESSING, Some(Page::Masking));
         let t = render(&mut app, 120, 40);
         // Row 2 is the panel's top border with its breadcrumb title; row 3 the pills.
         assert!(row(&t, 2).contains("Preprocessing › Masking"), "{}", row(&t, 2));
@@ -398,9 +412,9 @@ pub(super) mod tests {
     fn sub_tabs_fit_or_window_on_narrow_terminals() {
         let mut app = App::new();
         app.filter_state.orientation_group = "acq".into();
-        let pages = app.pages(2);
+        let pages = app.pages(crate::tui::app::TAB_QSM);
         let last = *pages.last().unwrap();
-        goto(&mut app, 2, Some(last));
+        goto(&mut app, crate::tui::app::TAB_QSM, Some(last));
         let t = render(&mut app, 80, 24);
         let pills = row(&t, 3);
         for p in &pages {
@@ -416,7 +430,7 @@ pub(super) mod tests {
     fn the_basic_palette_uses_only_the_16_named_colours() {
         PALETTE.with(|c| c.set(Some(Palette::BASIC)));
         let mut app = App::new();
-        goto(&mut app, 1, Some(Page::Masking));
+        goto(&mut app, crate::tui::app::TAB_PREPROCESSING, Some(Page::Masking));
         let t = render(&mut app, 120, 40);
         PALETTE.with(|c| c.set(None));
         let buf = t.backend().buffer();
@@ -454,7 +468,7 @@ pub(super) mod tests {
     fn a_focused_sub_tab_strip_looks_focused() {
         for (width, height) in [(120, 40), (80, 24)] {
             let mut app = App::new();
-            key(&mut app, crossterm::event::KeyCode::Char('2')); // Masking, the default
+            key(&mut app, crossterm::event::KeyCode::Char('3')); // Masking, the default
             let t = render(&mut app, width, height);
             let pills = row(&t, 3);
             let at = |s: &str| pills.find(s).map(|b| pills[..b].chars().count() as u16 + 1).unwrap();
@@ -479,7 +493,7 @@ pub(super) mod tests {
             let mut app = App::new();
             goto(&mut app, crate::tui::app::TAB_SEPARATION, None);
             let t = render(&mut app, width, height);
-            assert!(row(&t, 0).contains("4 χ-separation"), "{width}x{height}:\n{}", row(&t, 0));
+            assert!(row(&t, 0).contains("5 χ-separation"), "{width}x{height}:\n{}", row(&t, 0));
             assert!(row(&t, 2).contains(" χ-separation "), "{width}x{height}:\n{}", row(&t, 2));
         }
     }

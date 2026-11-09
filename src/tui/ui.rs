@@ -6,10 +6,12 @@ use ratatui::{
     Frame,
 };
 
-use super::app::{AlgoModal, App, NewsModal, PipelineRow, TipModal, UpdateModal, TAB_NAMES, TAB_INPUT, TAB_METHODS};
+use super::app::{AlgoModal, App, NewsModal, PipelineRow, TipModal, UpdateModal, TAB_NAMES, TAB_INPUT, TAB_METHODS, TAB_PIPELINE};
 use super::command;
 
 pub fn draw(f: &mut Frame, app: &mut App) {
+    // The header's pipeline status, worked out once per change of the form.
+    app.pipeline_status();
     // Compute command preview height dynamically
     let cmd = command::build_command_string(app);
     let available_width = f.area().width.saturating_sub(4) as usize; // borders + padding
@@ -44,6 +46,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     if let Some(ref mut modal) = app.refs.modal {
         draw_ref_modal(f, modal, f.area());
+    }
+
+    if let Some(ref mut modal) = app.pipelines.preview {
+        super::pipelines_tab::draw_preview(f, modal, f.area());
     }
 
     if let Some(ref modal) = app.tip_modal {
@@ -678,6 +684,10 @@ fn render_scrollable(
 fn draw_form(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     if app.active_tab == TAB_INPUT {
         draw_input_tab(f, app, area);
+        return;
+    }
+    if app.active_tab == TAB_PIPELINE {
+        super::pipelines_tab::draw(f, app, area);
         return;
     }
     if App::is_rows_tab(app.active_tab) {
@@ -2409,6 +2419,10 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         vec![("Esc", "Cancel"), ("Enter", "Confirm")]
     } else if app.tab_focus {
         vec![("\u{2190}\u{2192}", "Tabs"), ("\u{2193}/Enter", "Open tab"), ("F5", "Run"), ("?", "Tip"), ("n", "News"), ("q", "Quit")]
+    } else if app.active_tab == TAB_PIPELINE && app.pipelines.preview.is_some() {
+        vec![("\u{2190}\u{2192}", "Choose"), ("Enter", "Select"), ("\u{2191}\u{2193}", "Scroll"), ("Esc", "Close (nothing changes)")]
+    } else if app.active_tab == TAB_PIPELINE {
+        vec![(&tabs, "Tabs"), ("\u{2191}\u{2193}", "Choose a pipeline"), ("Enter", "Preview and apply"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else if app.active_tab == TAB_METHODS && app.on_subtabs() {
         vec![(&tabs, "Tabs"), ("\u{2190}\u{2192}/[ ]", "Sub-tabs"), ("\u{2193}/Enter", "Open"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else if app.active_tab == TAB_METHODS && app.page() == Some(super::app::Page::Pipeline) {
@@ -2449,6 +2463,9 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         }
         if row.as_ref().is_some_and(|r| app.pipeline_state.row_removes_section(r)) {
             keys.push(("d", "Remove section"));
+        }
+        if rows_tab {
+            keys.push(("P", "Pipeline"));
         }
         keys.extend([("r", "Reset"), ("R", "Reset page"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]);
         draw_keys(f, keys, area);
@@ -2866,7 +2883,7 @@ pub(super) mod tests {
     #[test]
     fn test_draw_algorithms_tab() {
         let mut app = App::new();
-        app.active_tab = 2;
+        app.active_tab = super::super::app::TAB_QSM;
         app.active_field = 0;
         let _ = render_app(&mut app);
         // Move through fields
@@ -2926,7 +2943,7 @@ pub(super) mod tests {
     #[test]
     fn test_draw_parameters_tab() {
         let mut app = App::new();
-        app.active_tab = 2; // QSM tab
+        app.active_tab = super::super::app::TAB_QSM;
         let _ = render_app(&mut app);
         // Change algorithm
         app.pipeline_state.qsm_algorithm = 3; // TSVD
@@ -2936,7 +2953,7 @@ pub(super) mod tests {
     #[test]
     fn test_draw_execution_tab_with_flags() {
         let mut app = App::new();
-        app.active_tab = 3;
+        app.active_tab = super::super::app::TAB_SEPARATION;
         app.form.do_swi = true;
         app.form.do_t2starmap = true;
         app.form.dry_run = true;
@@ -2955,7 +2972,7 @@ pub(super) mod tests {
     #[test]
     fn test_draw_select_not_focused() {
         let mut app = App::new();
-        app.active_tab = 2;
+        app.active_tab = super::super::app::TAB_QSM;
         app.active_field = 1; // field 0 (select) not focused
         let _ = render_app(&mut app);
     }
