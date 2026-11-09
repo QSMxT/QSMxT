@@ -25,7 +25,7 @@ dl = ["qsm-core/onnx", "qsm-core/download", "qsmxt-engine/onnx"]
 [dependencies]
 # Pinned to a QSM.rs main commit. qsmxt-engine must move in lockstep (same rev), so qsmbly
 # (which pins qsmxt-engine) resolves the same qsm-core.
-qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "ce931a38e829695795ab56ecb082bdad94e2cb49", features = ["parallel"] }
+qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "83efa22cf3c1cffae03b67d769fad69349e5342b", features = ["parallel"] }
 qsmxt-engine = { path = "crates/qsmxt-engine" }
 clap = { version = "4", features = ["derive"] }
 const_format = "0.2"
