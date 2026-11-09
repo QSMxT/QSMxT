@@ -403,6 +403,12 @@ pub(super) fn table() -> Vec<Def> {
         d("bg_removal.harperella.pad", Background, "Pad (voxels)", "Zero-padding per side, voxels (x y z). Larger costs time and memory (default 0 0 0)", IntVec3).units("voxels").flag("--harperella-pad").parent("bg_removal.algorithm")
         .when(|x| x.bf("harperella")).full("Padding")
         .gui("Zero-padding per side (x y z). Larger costs time and memory"),
+        d("bg_removal.harperella.rim", Background, "Boundary rim", "", Enum(vec![
+            o("whole", "whole", "Whole", "Zero every Laplacian value in the brain's boundary rim (default)"),
+            o("sti", "sti", "Largest 20 % (STI)", "Zero the 20 % largest Laplacian values in the rim, as STI Suite does"),
+        ])).flag("--harperella-rim").parent("bg_removal.algorithm")
+        .when(|x| x.bf("harperella"))
+        .gui("Which Laplacian values in the brain's boundary rim are set to zero"),
         d("bg_removal.iharperella.max_iter", Background, "Max iter", "Maximum iterations", Int).flag("--iharperella-max-iter").parent("bg_removal.algorithm")
         .when(|x| x.bf("iharperella")).full("Maximum iterations"),
         d("bg_removal.iharperella.tol", Background, "Tolerance", "Convergence tolerance", Float).flag("--iharperella-tol").parent("bg_removal.algorithm")
@@ -410,6 +416,12 @@ pub(super) fn table() -> Vec<Def> {
         d("bg_removal.iharperella.pad", Background, "Pad (voxels)", "Zero-padding per side, voxels (x y z). Larger costs time and memory (default 0 0 0)", IntVec3).units("voxels").flag("--iharperella-pad").parent("bg_removal.algorithm")
         .when(|x| x.bf("iharperella")).full("Padding")
         .gui("Zero-padding per side (x y z). Larger costs time and memory"),
+        d("bg_removal.iharperella.rim", Background, "Boundary rim", "", Enum(vec![
+            o("whole", "whole", "Whole", "Zero every Laplacian value in the brain's boundary rim"),
+            o("sti", "sti", "Largest 20 % (STI)", "Zero the 20 % largest Laplacian values in the rim, as STI Suite does (default)"),
+        ])).flag("--iharperella-rim").parent("bg_removal.algorithm")
+        .when(|x| x.bf("iharperella"))
+        .gui("Which Laplacian values in the brain's boundary rim are set to zero"),
         d("pipeline.do_qsm", Inversion, "Compute QSM", "Enable QSM reconstruction (disable to only run the other outputs)", Bool).basic().flag("--no-qsm").also(&[FieldMap, Background, MultiOrientation, Reference]),
         d("inversion.algorithm", Inversion, "QSM inversion", "", Enum(vec![
             o("rts", "rts", "RTS", "RTS (Rapid Two-Step) — fast two-step k-space inversion with streaking removal. https://doi.org/10.1016/j.neuroimage.2017.11.018"),
@@ -780,6 +792,12 @@ pub(super) fn table() -> Vec<Def> {
         .value("Echo time (ms)", "Echo time the field is converted to phase at, ms").flag("--ndi-te").parent("inversion.algorithm")
         .when(|x| x.inv("ndi"))
         .gui("The echo time the field is converted to phase at").gui_value("Echo time", "The echo time the field is converted to phase at, in ms"),
+        d("inversion.ndi.weight_norm", Inversion, "Weight normaliser", "", Enum(vec![
+            o("global-max", "global-max", "Global maximum", "The magnitude's maximum over the whole image, as FANSI (default)"),
+            o("mask-p999", "mask-p999", "Brain 99.9th percentile", "The magnitude's 99.9th percentile inside the mask; more consistent in vivo"),
+        ])).flag("--ndi-weight-norm").parent("inversion.algorithm")
+        .when(|x| x.inv("ndi"))
+        .gui("What the magnitude is divided by to make the data weight"),
         d("inversion.fansi.alpha1", Inversion, "Alpha1", "First-order (TV/TGV) L1 penalty weight", Float).flag("--fansi-alpha1").parent("inversion.algorithm")
         .when(|x| x.inv("fansi") || x.inv("fansi-tgv")).context("FANSI"),
         d("inversion.fansi.mu1", Inversion, "Mu1", "Gradient-consistency ADMM weight. Blank = 100×alpha1", Float).above(0.0).optional().flag("--fansi-mu1").parent("inversion.algorithm")
@@ -840,7 +858,8 @@ pub(super) fn table() -> Vec<Def> {
         d("inversion.whqsm.tol_delta", Inversion, "Tol delta", "Inner Newton stopping tolerance", Float).flag("--whqsm-tol-delta").parent("inversion.algorithm")
         .when(|x| x.inv("whqsm")).full("Newton tolerance"),
         d("inversion.whqsm.weight", Inversion, "Data weight", "", Enum(vec![
-            o("flat", "flat", "Flat", "1 in the mask, no magnitude (default)"),
+            o("flat", "flat", "Flat", "1 over the whole volume, no magnitude, as WH_nlTV.m (default)"),
+            o("flat-in-mask", "flat-in-mask", "Flat in mask", "1 inside the mask only, no magnitude"),
             o("max-normalised", "max-normalised", "Max-normalised", "The magnitude over its maximum in the mask; needs magnitude images"),
             o("in-vivo", "in-vivo", "In vivo", "min(2 × magnitude / maximum, 1) in the mask, as NDI weights; needs magnitude images"),
         ])).flag("--whqsm-weight").parent("inversion.algorithm")

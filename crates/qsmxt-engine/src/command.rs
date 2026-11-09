@@ -409,11 +409,13 @@ fn command_for(config: &PipelineConfig, d: &PipelineConfig, pipeline: Option<&st
             emit_usize(&mut parts, "--harperella-max-iter", config.bg_removal.harperella.max_iter, d.bg_removal.harperella.max_iter);
             emit_f64(&mut parts, "--harperella-tol", config.bg_removal.harperella.tol, d.bg_removal.harperella.tol);
             emit_usize_arr3(&mut parts, "--harperella-pad", &config.bg_removal.harperella.pad, &d.bg_removal.harperella.pad);
+            emit_enum(&mut parts, "--harperella-rim", &config.bg_removal.harperella.rim, &d.bg_removal.harperella.rim);
         }
         BfAlgorithm::Iharperella => {
             emit_usize(&mut parts, "--iharperella-max-iter", config.bg_removal.iharperella.max_iter, d.bg_removal.iharperella.max_iter);
             emit_f64(&mut parts, "--iharperella-tol", config.bg_removal.iharperella.tol, d.bg_removal.iharperella.tol);
             emit_usize_arr3(&mut parts, "--iharperella-pad", &config.bg_removal.iharperella.pad, &d.bg_removal.iharperella.pad);
+            emit_enum(&mut parts, "--iharperella-rim", &config.bg_removal.iharperella.rim, &d.bg_removal.iharperella.rim);
         }
         // BFRnet / iQFM (deep learning) have no user-tunable parameters.
         BfAlgorithm::Bfrnet | BfAlgorithm::Iqfm => {}
@@ -753,6 +755,7 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
                 parts.push(format!("--ndi-auto-stop {}", config.inversion.ndi.auto_stop));
             }
             emit_enum(parts, "--ndi-te", &config.inversion.ndi.te, &d.inversion.ndi.te);
+            emit_enum(parts, "--ndi-weight-norm", &config.inversion.ndi.weight_norm, &d.inversion.ndi.weight_norm);
         }
         QsmAlgorithm::Fansi | QsmAlgorithm::FansiTgv => {
             let fa = &config.inversion.fansi;
@@ -1288,6 +1291,25 @@ mod tests {
             c.bg_removal.iharperella.pad = [2, 4, 6];
             assert!(generate_command(&c).contains(&format!("{flag} 2 4 6")));
         }
+        // the boundary rim, NDI's weight normaliser and WH-QSM's flat-in-mask weight: only when
+        // they differ from the method's default
+        for (alg, flag, rim) in [(BfAlgorithm::Harperella, "--harperella-rim", HarperellaRim::Sti),
+                                 (BfAlgorithm::Iharperella, "--iharperella-rim", HarperellaRim::Whole)] {
+            let mut c = PipelineConfig::default();
+            c.bg_removal.algorithm = alg;
+            assert!(!generate_command(&c).contains("-rim"));
+            c.bg_removal.harperella.rim = rim;
+            c.bg_removal.iharperella.rim = rim;
+            assert!(generate_command(&c).contains(&format!("{flag} {rim}")), "{}", generate_command(&c));
+        }
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = QsmAlgorithm::Ndi;
+        assert!(!generate_command(&c).contains("--ndi-weight-norm"));
+        c.inversion.ndi.weight_norm = NdiWeightNorm::MaskP999;
+        assert!(generate_command(&c).contains("--ndi-weight-norm mask-p999"));
+        c.inversion.algorithm = QsmAlgorithm::Whqsm;
+        c.inversion.whqsm.weight = WhqsmWeight::FlatInMask;
+        assert!(generate_command(&c).contains("--whqsm-weight flat-in-mask"));
     }
 
     /// The new settings in a config file: an echo time as a name or `{ seconds = … }`, the WH-QSM
