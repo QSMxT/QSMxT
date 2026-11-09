@@ -22,6 +22,9 @@ qsmxt tui
   and press Download. The TUI fetches them, writes a BIDS dataset, and drops you
   straight into BIDS mode pointed at it. (See
   [Fetch an example](/QSMxT/getting-started/quick-start/#no-data-yet-fetch-an-example).)
+- **Start from a pipeline** — QSMxT's defaults, or an original toolbox's whole
+  pipeline (the MEDI toolbox, STI Suite, QSMART, ...) on the Pipeline tab. (See
+  [Pipelines](#pipelines).)
 - **Choose algorithms** for masking, unwrapping, background-field removal, and
   dipole inversion from menus — no need to memorise flag names or valid values.
 - **Adjust parameters** for each stage, with sensible defaults pre-filled.
@@ -60,6 +63,29 @@ Press `n` on the tab bar to read every announcement, newest first, or run `qsmxt
 checks run in the background and never delay startup; without an internet connection the
 announcements saved last time are shown. See
 [Keeping up to date](/QSMxT/getting-started/installation/#keeping-up-to-date).
+
+## Pipelines
+
+The Pipeline tab lists QSMxT's defaults and the original toolboxes' pipelines: the MEDI
+toolbox, STI Suite (iLSQR and STAR-QSM), QSMART, the HEIDI package, the χ-separation toolbox
+(iLSQR, MEDI and χ-sepnet) and DECOMPOSE. Next to the list, the highlighted pipeline is
+compared with your settings: each setting choosing it would change, from your value to the
+pipeline's.
+
+`Enter` opens a preview of those changes. **Apply** makes them; `Esc` or **Cancel** changes
+nothing. A toolbox pipeline is its method and the original authors' settings that method
+brings with it (the same ones its reference pipeline pop-up offers, see
+[Recommendations](#recommendations)), so choosing the MEDI toolbox sets MEDI with BET, the
+complex fit, region-growing unwrapping and PDF. The stages it covers start from QSMxT's
+defaults first, so a value you changed there earlier is reset too; every other setting stays as
+it is. A reasoned recommendation is not part of a pipeline: it is shown in the preview and
+offered as usual afterwards.
+
+The header shows the pipeline your settings follow, on every tab: `Pipeline: MEDI toolbox`.
+Change a setting afterwards and it reads `MEDI toolbox · 1 departure`; change the method itself
+and it reads `Custom`. Press `P` on any settings page to come back to the Pipeline tab. The
+command preview starts with `--pipeline medi-toolbox`, followed only by the flags where your
+settings depart from it.
 
 ## Recommendations
 
@@ -113,7 +139,7 @@ differs.
 
 ## Layout
 
-The top row holds the tabs; press a digit (`1`–`7`) or `Tab`/`Shift-Tab` to switch. You can
+The top row holds the tabs; press a digit (`1`–`8`) or `Tab`/`Shift-Tab` to switch. You can
 also press `↑` at the top of a tab to put focus on the tab bar (the current tab turns yellow).
 `←`/`→` then move between tabs, and `↓` or `Enter` go into the tab. A tab
 with more than one page shows a strip of sub-tabs along the top of its panel, and opens with
@@ -126,12 +152,13 @@ tab without sub-tabs opens on its first setting.
 | Tab | Sub-tabs | What is there |
 |---|---|---|
 | 1 Input | — | Input mode, dataset/output/config paths, include/exclude patterns and the run tree, number of echoes, and the orientation groups: a pattern, or groups given to runs with ←/→ in the run tree (one of them the reference), each run marked with its group |
-| 2 Preprocessing | Geometry · Masking · Motion | Axial resampling and output space, inhomogeneity correction, slice-gap check, crop to mask, FFT padding, coil combination (multi-coil data); the mask recipe, custom masks and the two-pass reliable mask; motion correction and its rigid registration |
-| 3 QSM | Field map · Background · Inversion · COSMOS/STI · Reference | *Compute QSM*, then one page per stage, shown only when that stage runs: unwrapping and B0 estimation; background-field removal (inversions of a local field only); the dipole inversion; how an orientation group is reconstructed (without one, where to choose it); the χ reference |
-| 4 χ-separation | — | χ-separation method and its parameters |
-| 5 Other outputs | SWI/SMWI · Relaxometry · Segmentation · Export | SWI and SMWI; T2\*, R2\*, R2 and R2′ maps, the R2′ source and supplied maps; segmentation (SynthSeg or a dseg from derivatives) and per-structure statistics; DICOM export |
-| 6 Execution | — | Local or SLURM, each with its own settings; debug logging, force re-run, clean-up; and a button that does what `F5` does |
-| 7 Methods | Methods text · Pipeline | The methods text for the current settings; `Enter` (or `c`) copies it to the clipboard. Pipeline: the pipeline the current settings run, step by step: each step's algorithm and settings, and the steps it reads from and what it reads. Above it, the peak memory the run is estimated to need and the deep-learning models it uses, with their download sizes. It is planned on the first selected run's scan (a typical scan until one is chosen). `Enter` (or `s`) saves it as an SVG drawing and opens it |
+| 2 Pipeline | — | The pipeline to start from: QSMxT's defaults or an original toolbox's, and what choosing it changes (see [Pipelines](#pipelines)) |
+| 3 Preprocessing | Geometry · Masking · Motion | Axial resampling and output space, inhomogeneity correction, slice-gap check, crop to mask, FFT padding, coil combination (multi-coil data); the mask recipe, custom masks and the two-pass reliable mask; motion correction and its rigid registration |
+| 4 QSM | Field map · Background · Inversion · COSMOS/STI · Reference | *Compute QSM*, then one page per stage, shown only when that stage runs: unwrapping and B0 estimation; background-field removal (inversions of a local field only); the dipole inversion; how an orientation group is reconstructed (without one, where to choose it); the χ reference |
+| 5 χ-separation | — | χ-separation method and its parameters |
+| 6 Other outputs | SWI/SMWI · Relaxometry · Segmentation · Export | SWI and SMWI; T2\*, R2\*, R2 and R2′ maps, the R2′ source and supplied maps; segmentation (SynthSeg or a dseg from derivatives) and per-structure statistics; DICOM export |
+| 7 Execution | — | Local or SLURM, each with its own settings; debug logging, force re-run, clean-up; and a button that does what `F5` does |
+| 8 Methods | Methods text · Graph | The methods text for the current settings; `Enter` (or `c`) copies it to the clipboard. Graph: the pipeline the current settings run, step by step: each step's algorithm and settings, and the steps it reads from and what it reads. Above it, the peak memory the run is estimated to need and the deep-learning models it uses, with their download sizes. It is planned on the first selected run's scan (a typical scan until one is chosen). `Enter` (or `s`) saves it as an SVG drawing and opens it |
 
 Settings appear only where and when they apply: a sub-setting sits indented under the
 checkbox or choice it belongs to, and a map another output needs reads as ticked (and says why
@@ -146,7 +173,7 @@ happen: *Run*, *Dry run*, *Write SLURM scripts* or *Submit SLURM jobs*.
 
 | Key | Where | Does |
 |---|---|---|
-| `1`–`7`, `Tab`, `Shift-Tab` | anywhere | switch tab |
+| `1`–`8`, `Tab`, `Shift-Tab` | anywhere | switch tab |
 | `←` `→` | tab bar | previous / next tab |
 | `↓`, `Enter` | tab bar | go into the tab |
 | `←` `→` | sub-tab strip | previous / next sub-tab |
@@ -158,7 +185,9 @@ happen: *Run*, *Dry run*, *Write SLURM scripts* or *Submit SLURM jobs*.
 | `Space` | settings | tick a checkbox |
 | `Enter` | settings | open a button's list or edit a value; on the Execution tab's button, run |
 | `r` / `R` | settings | reset the setting / the whole sub-tab |
-| `Enter`, `s` | Methods › Pipeline | save the pipeline as an SVG drawing and open it |
+| `P` | settings | go to the Pipeline tab |
+| `↑` `↓`, `Enter` | Pipeline | choose a pipeline; preview its changes, then Apply or Cancel |
+| `Enter`, `s` | Methods › Graph | save the pipeline as an SVG drawing and open it |
 | `Enter`, `c`, `y` | Methods › Methods text | copy the methods text to the clipboard |
 | `F5` | anywhere | run |
 | `?` | anywhere | show a tip (and turn startup tips on or off) |

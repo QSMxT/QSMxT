@@ -281,6 +281,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
     let inputs = app.input_relevance();
 
     PipelineArgs {
+        // The form holds every setting; the chosen pipeline is set on the config afterwards.
+        pipeline: None,
         // Bounds-checked rather than indexed: the option list shrinks with the build (see #227).
         qsm_algorithm: Some(qsm_options.get(ps.qsm_algorithm).copied().unwrap_or_else(default_qsm_algorithm_arg)),
         // The HEIDI checkbox (with LSQR, LSQR+HEIDI); not offered for multi-orientation runs.
@@ -1000,6 +1002,9 @@ pub fn methods_text(app: &App) -> Result<String, String> {
 pub fn config_from_app(app: &App) -> crate::Result<PipelineConfig> {
     let mut config = PipelineConfig::default();
     crate::pipeline::config::apply_run_overrides(&mut config, &pipeline_args_from_app(app))?;
+    // The pipeline chosen on the Pipeline tab, while the form still makes its choices.
+    config.reference_pipeline = app.pipeline_state.reference_pipeline.clone()
+        .filter(|id| qsmxt_engine::pipelines::chosen(&config, id));
     Ok(config)
 }
 

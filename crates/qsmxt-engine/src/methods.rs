@@ -1186,6 +1186,13 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
     } else {
         doc.say(&[], format!("MRI processing was performed using {} ({}).", tool, author_year));
     }
+    // The toolbox pipeline the settings were chosen from, while its choices hold; the settings
+    // below say where they depart from it.
+    if let Some(p) = config.reference_pipeline.as_deref()
+        .filter(|id| crate::pipelines::chosen(config, id))
+        .and_then(qsm_core::pipeline::reference_pipelines::reference_pipeline) {
+        doc.say(&[], format!("Processing followed the {} pipeline.", p.toolbox));
+    }
 
     // The k-space Tukey window comes before every other step.
     if config.pipeline.tukey_window > 0.0 {

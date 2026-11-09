@@ -77,6 +77,27 @@ with `--mask-preset` — e.g. `--mask-preset bet --masking-input magnitude-first
 runs BET on the first-echo magnitude. For fully custom masking, see `--mask`
 in [Algorithms](/QSMxT/reference/algorithms/#masking).
 
+### Pipelines
+
+`--pipeline` starts from a whole pipeline: `qsmxt-defaults`, or an original toolbox's
+(`medi-toolbox`, `sti-suite-ilsqr`, `sti-suite-star`, `qsmart`, `heidi`, `chi-sep-ilsqr`,
+`chi-sep-medi`, `chi-sepnet`, `decompose`). A toolbox pipeline is its method and the original
+authors' settings that method brings with it (see [Recommendations](#recommendations)). The
+stages it covers (masking, field mapping, background removal, inversion, referencing,
+χ-separation) start from QSMxT's defaults; every other flag given then changes any setting.
+
+```sh
+# The MEDI toolbox's pipeline: BET, the complex fit, region-growing unwrapping, PDF, MEDI
+qsmxt run study/bids --pipeline medi-toolbox
+
+# The same, with a different MEDI regularisation weight
+qsmxt run study/bids --pipeline medi-toolbox --medi-lambda 500
+```
+
+The run's settings file (`pipeline_config.toml`) records the pipeline as
+`reference_pipeline`, and the TUI's command preview writes a configuration on a pipeline as
+`--pipeline` plus the flags where it departs from it.
+
 ### Recommendations
 
 Many methods only work as intended with certain other settings: the ones their authors used.

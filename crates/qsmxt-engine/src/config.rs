@@ -1201,6 +1201,11 @@ pub struct PipelineConfig {
     /// nothing to dismiss ([`crate::recommendations::is_reference_rule`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty", deserialize_with = "recommendation_dismissals")]
     pub dismissed_recommendations: Vec<Dismissal>,
+    /// The toolbox pipeline the settings were chosen from ([`crate::pipelines`], `--pipeline`):
+    /// a label that changes nothing a run computes. While its choices hold, the config is said to
+    /// follow that pipeline, with its departures.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference_pipeline: Option<String>,
 }
 
 /// `dismissed_recommendations` as read, less any of a reference-pipeline rule.

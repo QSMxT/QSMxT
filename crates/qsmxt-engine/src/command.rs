@@ -9,13 +9,30 @@ use crate::enums::*;
 /// Settings that do not apply to the configuration (the TUI hides them; see
 /// [`crate::schema::settings_view`]) are left out: they cannot change the run, so saying them
 /// only makes the command longer and suggests they matter.
+///
+/// A config that follows a toolbox pipeline ([`crate::pipelines::followed`]) starts with
+/// `--pipeline <id>`, and its other flags are where it departs from that pipeline.
 pub fn generate_command(config: &PipelineConfig) -> String {
-    command_for(&crate::schema::prune_hidden(&config.normalised().0, &crate::schema::ViewFacts::default()))
+    let facts = crate::schema::ViewFacts::default();
+    let pruned = crate::schema::prune_hidden(&config.normalised().0, &facts);
+    let pipeline = crate::pipelines::followed(config, &facts).and_then(|id| {
+        let base = crate::pipelines::target(&PipelineConfig::default(), id, &facts).ok()?;
+        Some((id, crate::schema::prune_hidden(&base.normalised().0, &facts)))
+    });
+    match pipeline {
+        Some((id, base)) => command_for(&pruned, &base, Some(id)),
+        None => command_for(&pruned, &PipelineConfig::default(), None),
+    }
 }
 
-fn command_for(config: &PipelineConfig) -> String {
-    let d = PipelineConfig::default();
+/// The command for `config`, with flags where it differs from `d`: QSMxT's defaults, or
+/// `pipeline`'s settings.
+fn command_for(config: &PipelineConfig, d: &PipelineConfig, pipeline: Option<&str>) -> String {
+    let d = d.clone();
     let mut parts: Vec<String> = vec!["qsmxt".into(), "run".into(), "<bids_dir>".into()];
+    if let Some(id) = pipeline {
+        parts.push(format!("--pipeline {id}"));
+    }
 
     // ── Multi-orientation (COSMOS / STI) ──
     // The pattern is what switches it on, so the other flags only appear alongside it.
@@ -93,7 +110,7 @@ fn command_for(config: &PipelineConfig) -> String {
         && !implied(|c| c.pipeline.do_r2starmap = false, |c| c.pipeline.do_r2starmap) {
         parts.push("--do-r2starmap".into());
     }
-    if config.pipeline.do_chi_separation { parts.push("--do-chisep".into()); }
+    if config.pipeline.do_chi_separation && !d.pipeline.do_chi_separation { parts.push("--do-chisep".into()); }
     if let Some(tool) = &config.separation.custom_qsm_tool { parts.push(format!("--use-custom-qsm {}", tool)); }
     if let Some(tool) = &config.separation.custom_r2_tool { parts.push(format!("--use-custom-r2 {}", tool)); }
     if let Some(tool) = &config.separation.custom_r2prime_tool { parts.push(format!("--use-custom-r2prime {}", tool)); }
@@ -404,7 +421,9 @@ fn command_for(config: &PipelineConfig) -> String {
     emit_inversion_params(&mut parts, config, &d, config.inversion.algorithm);
     // HEIDI after the inversion, with its settings away from their defaults.
     if config.inversion.heidi.enabled {
-        parts.push("--heidi".into());
+        if !d.inversion.heidi.enabled {
+            parts.push("--heidi".into());
+        }
         emit_heidi_params(&mut parts, config, &d);
     }
     // Overlap tiling, for any network that takes it (the inversion, or BFRnet/iQFM in background

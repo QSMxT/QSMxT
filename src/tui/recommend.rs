@@ -370,7 +370,7 @@ impl App {
     /// field strength (typed for NIfTI input; the first selected run's, once the Pipeline view has
     /// read it, for a BIDS dataset) and the manufacturer (the first phase image's sidecar; the
     /// first selected run's). A rule on an unknown fact stays silent.
-    fn rule_facts(&self) -> Facts {
+    pub(super) fn rule_facts(&self) -> Facts {
         let (field_strength, manufacturer) = match self.input_mode {
             super::app::InputMode::NIfTI => (
                 self.nifti_state.field_strength.trim().parse().ok(),
@@ -821,7 +821,7 @@ impl App {
     }
 
     /// A copy of the form, for trying a value on.
-    fn clone_form(&self) -> App {
+    pub(super) fn clone_form(&self) -> App {
         let mut app = App::new_for_trial();
         app.form = self.form.clone();
         app.pipeline_state = self.pipeline_state.clone();

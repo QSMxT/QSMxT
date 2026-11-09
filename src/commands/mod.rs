@@ -54,6 +54,7 @@ mod integration_tests {
             accept_recommendations: false,
             accept_reference_settings: false,
             pipeline: PipelineArgs {
+                pipeline: None,
                 qsm_algorithm: None,
                 heidi: false,
                 orientation_group: None,
