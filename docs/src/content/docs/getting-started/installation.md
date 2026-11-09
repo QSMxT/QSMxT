@@ -88,7 +88,10 @@ qsmxt update --main
 
 This builds the latest commit on the `main` branch from source and installs it in
 place of your `qsmxt`. It needs the Rust toolchain (install it from
-[rustup.rs](https://rustup.rs)) and takes several minutes. Main may contain
+[rustup.rs](https://rustup.rs)) and takes several minutes the first time. The build
+is kept in `~/.qsmxt/build`, so a later `qsmxt update --main` rebuilds only QSMxT itself
+(and QSM.rs when main has moved to another QSM.rs commit), not its dependencies. The
+cache is emptied when it grows past 10 GB; delete the folder to free the space sooner. Main may contain
 changes that are not yet released or documented. `qsmxt --version` shows the
 commit you are running, and running `qsmxt update --main` again moves to the
 newest commit. To go back to the latest release, run `qsmxt update --force`.

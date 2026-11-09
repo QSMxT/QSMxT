@@ -730,17 +730,22 @@ fn fetch_main_commit() -> crate::Result<String> {
     Ok(sha)
 }
 
-/// The `cargo install` arguments that build `commit` into `root/bin`.
+/// The `cargo install` arguments that build `commit` into `root/bin`, keeping cargo's build
+/// in `target` (else cargo builds in a directory of its own that it deletes afterwards).
 ///
 /// `--locked` builds with main's own Cargo.lock, so the result has exactly the QSM.rs
 /// commit main pins. The ONNX engine doesn't build for Windows on ARM, so that build
 /// leaves the deep-learning models out, as its release build does.
-fn cargo_install_args(commit: &str, root: &std::path::Path) -> Vec<std::ffi::OsString> {
+fn cargo_install_args(commit: &str, root: &std::path::Path, target: Option<&std::path::Path>) -> Vec<std::ffi::OsString> {
     let mut args: Vec<std::ffi::OsString> = ["install", "--git", GIT_URL, "--rev", commit, "--locked", "--root"]
         .into_iter()
         .map(Into::into)
         .collect();
     args.push(root.as_os_str().to_owned());
+    if let Some(target) = target {
+        args.push("--target-dir".into());
+        args.push(target.as_os_str().to_owned());
+    }
     if cfg!(all(target_os = "windows", target_arch = "aarch64")) {
         args.push("--no-default-features".into());
     }
@@ -748,8 +753,52 @@ fn cargo_install_args(commit: &str, root: &std::path::Path) -> Vec<std::ffi::OsS
     args
 }
 
+/// Where `qsmxt update --main` keeps cargo's build between updates, `~/.qsmxt/build`, so an
+/// update rebuilds only what changed: QSMxT itself, and QSM.rs when main pins another commit.
+/// The dependencies (the ONNX engine among them) are built once. `$QSMXT_BUILD_CACHE`
+/// overrides it. Without a home directory, cargo builds from scratch as it does by default.
+fn build_cache_dir() -> Option<std::path::PathBuf> {
+    if let Some(p) = env::var_os("QSMXT_BUILD_CACHE") {
+        return Some(p.into());
+    }
+    let home = env::var_os("HOME").or_else(|| env::var_os("USERPROFILE"))?;
+    Some(std::path::PathBuf::from(home).join(".qsmxt").join("build"))
+}
+
+/// The build cache's size above which it is emptied before a build.
+const BUILD_CACHE_LIMIT_BYTES: u64 = 10 << 30;
+
+/// Keep the build cache from growing without bound. Each commit is checked out at a path of its
+/// own, so cargo never reuses QSMxT's own crates from an earlier update: their outputs are
+/// removed before each build (they are rebuilt either way). Outputs of dependencies that are no
+/// longer used (an earlier QSM.rs pin) still collect, so a cache past
+/// [`BUILD_CACHE_LIMIT_BYTES`] is emptied and rebuilt once.
+fn prune_build_cache(dir: &std::path::Path) {
+    fn size(p: &std::path::Path) -> u64 {
+        match std::fs::symlink_metadata(p) {
+            Ok(m) if m.is_dir() => std::fs::read_dir(p).into_iter().flatten().flatten().map(|e| size(&e.path())).sum(),
+            Ok(m) => m.len(),
+            Err(_) => 0,
+        }
+    }
+    if size(dir) > BUILD_CACHE_LIMIT_BYTES {
+        let _ = std::fs::remove_dir_all(dir);
+        return;
+    }
+    let ours = |name: &str| ["qsmxt-", "qsmxt_engine-", "libqsmxt_engine-"].iter().any(|p| name.starts_with(p));
+    for sub in ["deps", ".fingerprint", "build", "incremental"] {
+        for e in std::fs::read_dir(dir.join("release").join(sub)).into_iter().flatten().flatten() {
+            if e.file_name().to_str().is_some_and(ours) {
+                let p = e.path();
+                let _ = if p.is_dir() { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
+            }
+        }
+    }
+}
+
 /// Builds `commit` with `cargo install` into a temporary directory, then hands the built
-/// binary to `install`. Cargo's output goes straight to the terminal.
+/// binary to `install`. Cargo's output goes straight to the terminal; its build is kept in
+/// [`build_cache_dir`] for the next update.
 fn build_main(
     cargo: &std::path::Path,
     commit: &str,
@@ -763,8 +812,12 @@ fn build_main(
     path.extend(env::var_os("PATH").iter().flat_map(env::split_paths));
     let path = env::join_paths(path)
         .map_err(|e| QsmxtError::Update(format!("Failed to set PATH for cargo: {}", e)))?;
+    let cache = build_cache_dir();
+    if let Some(dir) = &cache {
+        prune_build_cache(dir);
+    }
     let status = Command::new(cargo)
-        .args(cargo_install_args(commit, root.path()))
+        .args(cargo_install_args(commit, root.path(), cache.as_deref()))
         .env("QSMXT_BUILD_COMMIT", commit)
         .env("PATH", path)
         .status()
@@ -1628,12 +1681,33 @@ mod tests {
 
     #[test]
     fn update_main_builds_that_exact_commit_from_the_lock_file() {
-        let args = cargo_install_args(MAIN, std::path::Path::new("/tmp/root"));
+        let args = cargo_install_args(MAIN, std::path::Path::new("/tmp/root"), Some(std::path::Path::new("/tmp/cache")));
         let args: Vec<_> = args.iter().map(|a| a.to_str().unwrap()).collect();
         let expected_prefix =
-            ["install", "--git", GIT_URL, "--rev", MAIN, "--locked", "--root", "/tmp/root"];
+            ["install", "--git", GIT_URL, "--rev", MAIN, "--locked", "--root", "/tmp/root", "--target-dir", "/tmp/cache"];
         assert_eq!(args[..expected_prefix.len()], expected_prefix);
         assert_eq!(args.last(), Some(&"qsmxt"));
+        let args = cargo_install_args(MAIN, std::path::Path::new("/tmp/root"), None);
+        assert!(!args.iter().any(|a| a == "--target-dir"), "no cache, cargo's own");
+    }
+
+    /// QSMxT's own outputs go before each build and the dependencies' stay; a cache past the
+    /// limit is emptied.
+    #[test]
+    fn the_build_cache_keeps_the_dependencies() {
+        let dir = tempfile::tempdir().unwrap();
+        let deps = dir.path().join("release").join("deps");
+        let prints = dir.path().join("release").join(".fingerprint");
+        std::fs::create_dir_all(&deps).unwrap();
+        std::fs::create_dir_all(prints.join("qsmxt-0123abcd")).unwrap();
+        for f in ["qsmxt-0123abcd", "libqsmxt_engine-0123abcd.rlib", "libtract_core-0123abcd.rlib", "libqsm_core-0123abcd.rlib"] {
+            std::fs::write(deps.join(f), b"x").unwrap();
+        }
+        prune_build_cache(dir.path());
+        let left: Vec<String> = std::fs::read_dir(&deps).unwrap().flatten().map(|e| e.file_name().into_string().unwrap()).collect();
+        assert!(left.contains(&"libtract_core-0123abcd.rlib".to_string()) && left.contains(&"libqsm_core-0123abcd.rlib".to_string()), "{left:?}");
+        assert!(!left.iter().any(|f| f.starts_with("qsmxt-") || f.starts_with("libqsmxt_engine-")), "{left:?}");
+        assert!(!prints.join("qsmxt-0123abcd").exists());
     }
 
     #[test]

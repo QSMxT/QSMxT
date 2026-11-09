@@ -140,7 +140,8 @@ pub struct UpdateArgs {
     pub force: bool,
 
     /// Build the latest commit on the main branch from source and install it in place of
-    /// this qsmxt. Needs the Rust toolchain (https://rustup.rs). `qsmxt update --force`
+    /// this qsmxt. Needs the Rust toolchain (https://rustup.rs). The build is kept in
+    /// ~/.qsmxt/build, so the next update rebuilds only what changed. `qsmxt update --force`
     /// goes back to the latest release
     #[arg(long)]
     pub main: bool,
