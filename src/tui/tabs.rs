@@ -212,19 +212,23 @@ pub fn draw_header(f: &mut Frame, app: &App, area: Rect) {
     let (ux0, ux1) = underline;
     put(buf, area, ux0, y1, &"━".repeat((ux1 - ux0) as usize), Style::default().fg(accent));
 
-    // The versions sit in the rule, right-aligned, unless they would cross the underline.
+    // The pipeline the settings follow, then the versions, right-aligned in the rule. Without
+    // room for both, the pipeline stays and the versions go; neither crosses the underline.
     let ver = format!(" {} ", version());
-    let vx = area.right().saturating_sub(w(&ver) as u16 + 2);
-    if vx > ux1 + 1 && vx > area.x {
+    let status = app.pipeline_status_text().map(|s| (format!(" Pipeline: {s} "), s));
+    let fits = |x: u16| x > ux1 + 1 && x > area.x;
+    let right = area.right().saturating_sub(2);
+    let status_w = status.as_ref().map_or(0, |(t, _)| w(t) as u16 + 1);
+    let vx = right.saturating_sub(w(&ver) as u16);
+    let show_ver = fits(vx.saturating_sub(status_w));
+    if show_ver {
         put(buf, area, vx, y1, &ver, Style::default().fg(pal.muted));
     }
-    // The pipeline the settings follow, in the rule before the versions (P goes to its tab).
-    if let Some(status) = app.pipeline_status_text() {
-        let text = format!(" Pipeline: {status} ");
-        let end = if vx > ux1 + 1 && vx > area.x { vx.saturating_sub(1) } else { area.right().saturating_sub(2) };
+    if let Some((text, s)) = status {
+        let end = if show_ver { vx.saturating_sub(1) } else { right };
         let sx = end.saturating_sub(w(&text) as u16);
-        if sx > ux1 + 1 && sx > area.x {
-            let color = if status.contains("departure") { Color::Yellow } else if status == "Custom" { pal.muted } else { Color::Green };
+        if fits(sx) {
+            let color = if s.contains("departure") { Color::Yellow } else if s == "Custom" { pal.muted } else { Color::Green };
             put(buf, area, sx, y1, &text, Style::default().fg(color).add_modifier(Modifier::BOLD));
         }
     }

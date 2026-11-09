@@ -399,6 +399,15 @@ impl App {
     /// findings the change created, and note the methods it chose. A chosen method's reference
     /// pipeline pop-up opens once nothing else is open. Nothing
     /// while a value is being typed.
+    /// Take the form as it is now as reviewed: a change whose every effect the user has just
+    /// seen and accepted (a pipeline's preview, which lists its recommendations too) opens no
+    /// pop-up. Its findings keep their markers.
+    pub(super) fn mark_recommendations_reviewed(&mut self) {
+        self.rec_form.clear();
+        self.rec_queue.clear();
+        self.check_recommendations();
+    }
+
     pub fn check_recommendations(&mut self) {
         if self.is_typing() || self.rec_modal.is_some() || self.refs.modal.is_some() {
             return;

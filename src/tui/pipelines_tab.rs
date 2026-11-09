@@ -139,7 +139,7 @@ impl App {
         let target = pipelines::target(&config, id, &facts)?;
         let advice = qsmxt_engine::recommendations::recommendations(&target, &self.rule_facts()).into_iter()
             .filter(|r| r.kind == qsmxt_engine::recommendations::Kind::Reasoned && !r.dismissed)
-            .map(|r| format!("{}: {} ({})", r.label, r.recommended.name, r.reason))
+            .map(|r| format!("{} {}", r.label, r.recommended.name))
             .collect();
         Ok(Compared { changes, stages: stages.iter().map(|s| s.label()).collect(), advice })
     }
@@ -234,6 +234,8 @@ impl App {
         self.pipeline_state = trial.pipeline_state;
         self.filter_state = trial.filter_state;
         self.pipelines.cached = None;
+        // The preview listed everything this changes, recommendations included.
+        self.mark_recommendations_reviewed();
         Ok(())
     }
 
@@ -342,7 +344,7 @@ fn summary_lines(p: &Pipeline, c: &Compared) -> Vec<Line<'static>> {
     for a in &c.advice {
         lines.push(Line::from(vec![
             Span::styled("ⓘ ", Style::default().fg(Color::Cyan)),
-            Span::styled(format!("Recommended, not part of the pipeline: {a}"), Style::default().fg(Color::Gray)),
+            Span::styled(format!("Recommended, not part of the pipeline: {a} (press ! on the setting for the reason)"), Style::default().fg(Color::Gray)),
         ]));
     }
     lines
@@ -421,7 +423,7 @@ pub fn draw_preview(f: &mut Frame, m: &mut PreviewModal, area: Rect) {
     let mut lines = vec![
         Line::from(""),
         Line::from(Span::styled(
-            format!("{} as {} runs it. Applying it changes these settings:", p_name(&m.pipeline), m.pipeline.toolbox.unwrap_or("QSMxT")),
+            format!("Choosing {} changes these settings:", p_name(&m.pipeline)),
             Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
         Line::from(""),
     ];
@@ -431,7 +433,9 @@ pub fn draw_preview(f: &mut Frame, m: &mut PreviewModal, area: Rect) {
     if let Some(s) = m.pipeline.source {
         lines.push(Line::from(Span::styled(format!("Source: {s}"), muted())));
     }
-    let body = lines.len() as u16;
+    // Lines as they wrap in the text area.
+    let text_w = w.saturating_sub(6).max(10) as usize;
+    let body = lines.iter().map(|l| l.width().max(1).div_ceil(text_w) as u16).sum::<u16>();
     let h = (body + 6).min(area.height.saturating_sub(2));
     let popup = Rect { x: area.x + (area.width - w) / 2, y: area.y + (area.height.saturating_sub(h)) / 2, width: w, height: h };
     f.render_widget(Clear, popup);
@@ -463,7 +467,10 @@ pub fn draw_preview(f: &mut Frame, m: &mut PreviewModal, area: Rect) {
 
 /// The pipeline's name as the preview's sentence starts.
 fn p_name(p: &Pipeline) -> String {
-    if p.is_toolbox() { format!("The {} pipeline", p.name) } else { "QSMxT's defaults".to_string() }
+    match p.toolbox {
+        Some(t) if p.is_toolbox() => format!("the {} pipeline ({t})", p.name),
+        _ => "QSMxT's defaults".to_string(),
+    }
 }
 
 #[cfg(test)]
@@ -515,6 +522,8 @@ mod tests {
         assert!(super::super::command::build_command_string(&app).contains("--pipeline medi-toolbox"));
         *app.field_text_mut("medi_lambda").expect("MEDI's lambda row") = "500".into();
         assert_eq!(app.pipeline_status().text(), "MEDI toolbox · 1 departure");
+        let header = screen(&mut app).lines().nth(1).unwrap_or_default().to_string();
+        assert!(header.contains("Pipeline: MEDI toolbox · 1 departure"), "{header}");
         let cmd = super::super::command::build_command_string(&app);
         assert!(cmd.contains("--pipeline medi-toolbox --medi-lambda 500"), "{cmd}");
         app.choose_pipeline("medi-toolbox").unwrap();
@@ -545,9 +554,36 @@ mod tests {
         key(&mut app, KeyCode::Esc);
         assert_eq!(app.pipeline_status().text(), "MEDI toolbox");
         // P from a settings page comes back here.
+        app.check_recommendations();
+        let _ = screen(&mut app);
         key(&mut app, KeyCode::Char('4'));
+        assert_eq!(app.active_tab, super::super::app::TAB_QSM, "rec {:?} ref {:?}", app.rec_modal.is_some(), app.refs.modal.is_some());
         key(&mut app, KeyCode::Down);
         key(&mut app, KeyCode::Char('P'));
         assert_eq!(app.active_tab, super::super::app::TAB_PIPELINE);
+    }
+}
+
+#[cfg(test)]
+mod live {
+    use super::*;
+    use crossterm::event::{KeyEvent, KeyModifiers};
+
+    /// As the event loop runs it (a check and a draw before each key): after Apply no pop-up
+    /// opens, so the next key reaches the tab.
+    #[test]
+    fn keys_after_apply_like_the_event_loop() {
+        let mut app = App::new();
+        let step = |app: &mut App, code: KeyCode| {
+            app.check_recommendations();
+            let mut t = ratatui::Terminal::new(ratatui::backend::TestBackend::new(140, 42)).unwrap();
+            t.draw(|f| super::super::ui::draw(f, app)).unwrap();
+            app.handle_key(KeyEvent::new(code, KeyModifiers::NONE));
+        };
+        for k in [KeyCode::Esc, KeyCode::Char('2'), KeyCode::Down, KeyCode::Enter, KeyCode::Enter, KeyCode::Char('4')] {
+            step(&mut app, k);
+        }
+        assert_eq!(app.active_tab, super::super::app::TAB_QSM, "a digit after Apply switches tab");
+        assert!(app.rec_modal.is_none() && app.refs.modal.is_none(), "Apply opens no pop-up: the preview showed it all");
     }
 }

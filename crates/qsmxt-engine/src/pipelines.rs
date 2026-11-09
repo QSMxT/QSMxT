@@ -202,6 +202,7 @@ fn applied(config: &PipelineConfig, id: &str, facts: &ViewFacts) -> Result<Appli
             _ => {}
         }
     }
+    stages.sort_by_key(|s| STAGES.iter().position(|x| x == s));
     let mut c = config.clone();
     reset(&mut c, &stages)?;
     follow(&mut c, p, &facts)?;
