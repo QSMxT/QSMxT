@@ -138,7 +138,13 @@ te = "sum"                # or "first", "last", "spacing", or { seconds = 0.03 }
 te = "spacing"            # or "first", "last", "sum", or { seconds = 0.02 }
 
 [inversion.whqsm]
-weight = "flat"           # or "max-normalised", "in-vivo"
+weight = "flat"           # or "flat-in-mask", "max-normalised", "in-vivo"
+
+[inversion.ndi]
+weight_norm = "global-max"  # or "mask-p999"
+
+[bg_removal.harperella]
+rim = "whole"             # or "sti" (iHARPERELLA's default)
 ```
 
 HEIDI after the inversion ([HEIDI streaking reduction](/QSMxT/reference/algorithms/#heidi-streaking-reduction))
@@ -210,7 +216,8 @@ A file without it is read as follows, and what changed is logged:
   runs; in a full config file, sizes at the earlier defaults take today's.
 - Settings an earlier file does not have (each method's echo time `te`, WH-QSM's `weight`,
   NLTV's `rho` and `tol_newton`, RTS's `tau` and `gamma`, PDF's `n_cg`, `space` and `n_pad`,
-  LBV's `depth`, `peel`, `n1`, `n2`, `n3` and `precision`, HARPERELLA's and iHARPERELLA's `pad`)
+  LBV's `depth`, `peel`, `n1`, `n2`, `n3` and `precision`, HARPERELLA's and iHARPERELLA's `pad`
+  and `rim`, NDI's `weight_norm`)
   take today's defaults. LBV's `tol` is kept as written: an earlier file's 1e-6 (the old
   solver's relative tolerance) now stops the multigrid's coarsest grid at 1e-6 radians, and the
   recommendations suggest LBV.m's 0.01.

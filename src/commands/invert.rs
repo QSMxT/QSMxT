@@ -414,6 +414,7 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 auto_stop,
                 te: args.te.map_or(d.te, Into::into),
+                weight_norm: args.weight_norm.map_or(d.weight_norm, Into::into),
                 ..d
             };
             let config = qsm_core::pipeline::InversionConfig { ndi, ..config_for(A::Ndi) };

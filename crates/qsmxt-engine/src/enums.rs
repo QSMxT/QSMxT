@@ -291,13 +291,91 @@ impl From<qsm_core::bgremove::IsmvVariant> for IsmvVariant {
     }
 }
 
+/// Which Laplacian values in HARPERELLA's / iHARPERELLA's boundary rim are set to zero (qsm-core
+/// `HarperellaRim`). HARPERELLA defaults to the whole rim, iHARPERELLA to STI's rule.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum HarperellaRim {
+    /// Every rim value.
+    #[serde(rename = "whole")]
+    Whole,
+    /// The 20 % of rim values largest in magnitude (STI Suite's `iHARPERELLA`).
+    #[serde(rename = "sti")]
+    Sti,
+}
+impl HarperellaRim {
+    /// Every variant, in the order the CLI help and the TUI list them.
+    pub const ALL: [HarperellaRim; 2] = [Self::Whole, Self::Sti];
+
+    /// The name the CLI, the config file and the TUI use (qsm-core's `HarperellaRim::id`).
+    pub fn as_str(self) -> &'static str {
+        qsm_core::bgremove::HarperellaRim::from(self).id()
+    }
+}
+impl fmt::Display for HarperellaRim {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl From<HarperellaRim> for qsm_core::bgremove::HarperellaRim {
+    fn from(r: HarperellaRim) -> Self {
+        use qsm_core::bgremove::HarperellaRim as R;
+        match r { HarperellaRim::Whole => R::Whole, HarperellaRim::Sti => R::StiLargest }
+    }
+}
+impl From<qsm_core::bgremove::HarperellaRim> for HarperellaRim {
+    fn from(r: qsm_core::bgremove::HarperellaRim) -> Self {
+        use qsm_core::bgremove::HarperellaRim as R;
+        match r { R::Whole => Self::Whole, R::StiLargest => Self::Sti }
+    }
+}
+
+/// What NDI divides the magnitude by to make its data weight (qsm-core `NdiWeightNorm`).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub enum NdiWeightNorm {
+    /// The magnitude's maximum over the whole image (FANSI `script_invivo.m`).
+    #[default]
+    #[serde(rename = "global-max")]
+    GlobalMax,
+    /// The 99.9th percentile of the magnitude inside the mask.
+    #[serde(rename = "mask-p999")]
+    MaskP999,
+}
+impl NdiWeightNorm {
+    /// Every variant, in the order the CLI help and the TUI list them.
+    pub const ALL: [NdiWeightNorm; 2] = [Self::GlobalMax, Self::MaskP999];
+
+    /// The name the CLI, the config file and the TUI use (qsm-core's `NdiWeightNorm::id`).
+    pub fn as_str(self) -> &'static str {
+        qsm_core::inversion::NdiWeightNorm::from(self).id()
+    }
+}
+impl fmt::Display for NdiWeightNorm {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl From<NdiWeightNorm> for qsm_core::inversion::NdiWeightNorm {
+    fn from(n: NdiWeightNorm) -> Self {
+        use qsm_core::inversion::NdiWeightNorm as N;
+        match n { NdiWeightNorm::GlobalMax => N::GlobalMax, NdiWeightNorm::MaskP999 => N::MaskP999 }
+    }
+}
+impl From<qsm_core::inversion::NdiWeightNorm> for NdiWeightNorm {
+    fn from(n: qsm_core::inversion::NdiWeightNorm) -> Self {
+        use qsm_core::inversion::NdiWeightNorm as N;
+        match n { N::GlobalMax => Self::GlobalMax, N::MaskP999 => Self::MaskP999 }
+    }
+}
+
 /// WH-QSM's data weight (qsm-core `WhQsmWeight`).
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum WhqsmWeight {
-    /// 1 in the mask, no magnitude (`WH_nlTV.m`'s own default).
+    /// 1 over the whole volume, no magnitude (`WH_nlTV.m`'s own default).
     #[default]
     Flat,
+    /// 1 inside the mask only, no magnitude.
+    FlatInMask,
     /// The magnitude in the mask over its maximum. Needs the magnitude.
     MaxNormalised,
     /// `min(2·magnitude/max, 1)` in the mask, as NDI weights. Needs the magnitude.
@@ -305,11 +383,14 @@ pub enum WhqsmWeight {
 }
 impl WhqsmWeight {
     /// Every variant, in the order the CLI help and the TUI list them.
-    pub const ALL: [WhqsmWeight; 3] = [Self::Flat, Self::MaxNormalised, Self::InVivo];
+    pub const ALL: [WhqsmWeight; 4] = [Self::Flat, Self::FlatInMask, Self::MaxNormalised, Self::InVivo];
 
     /// The name the CLI, the config file and the TUI use.
     pub fn as_str(self) -> &'static str {
-        match self { Self::Flat => "flat", Self::MaxNormalised => "max-normalised", Self::InVivo => "in-vivo" }
+        match self {
+            Self::Flat => "flat", Self::FlatInMask => "flat-in-mask", Self::MaxNormalised => "max-normalised",
+            Self::InVivo => "in-vivo",
+        }
     }
 }
 impl fmt::Display for WhqsmWeight {
@@ -320,13 +401,19 @@ impl fmt::Display for WhqsmWeight {
 impl From<WhqsmWeight> for qsm_core::inversion::WhQsmWeight {
     fn from(w: WhqsmWeight) -> Self {
         use qsm_core::inversion::WhQsmWeight as W;
-        match w { WhqsmWeight::Flat => W::Flat, WhqsmWeight::MaxNormalised => W::MaxNormalised, WhqsmWeight::InVivo => W::InVivo }
+        match w {
+            WhqsmWeight::Flat => W::Flat, WhqsmWeight::FlatInMask => W::FlatInMask,
+            WhqsmWeight::MaxNormalised => W::MaxNormalised, WhqsmWeight::InVivo => W::InVivo,
+        }
     }
 }
 impl From<qsm_core::inversion::WhQsmWeight> for WhqsmWeight {
     fn from(w: qsm_core::inversion::WhQsmWeight) -> Self {
         use qsm_core::inversion::WhQsmWeight as W;
-        match w { W::Flat => Self::Flat, W::MaxNormalised => Self::MaxNormalised, W::InVivo => Self::InVivo }
+        match w {
+            W::Flat => Self::Flat, W::FlatInMask => Self::FlatInMask,
+            W::MaxNormalised => Self::MaxNormalised, W::InVivo => Self::InVivo,
+        }
     }
 }
 

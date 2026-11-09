@@ -207,6 +207,7 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol: args.tol.unwrap_or(d.tol),
                 pad: args.pad.as_deref().map_or(d.pad, |p| [p[0], p[1], p[2]]),
+                rim: args.rim.map_or(d.rim, Into::into),
             };
             let config = qsm_core::pipeline::BgRemovalConfig { harperella, ..config_for(A::Harperella) };
             harperella_with(&HarperellaArgs {
@@ -220,6 +221,7 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol: args.tol.unwrap_or(d.tol),
                 pad: args.pad.as_deref().map_or(d.pad, |p| [p[0], p[1], p[2]]),
+                rim: args.rim.map_or(d.rim, Into::into),
             };
             let config = qsm_core::pipeline::BgRemovalConfig { iharperella, ..config_for(A::Iharperella) };
             harperella_with(&HarperellaArgs {

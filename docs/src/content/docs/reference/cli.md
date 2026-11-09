@@ -207,6 +207,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--ndi-max-iter <NDI_MAX_ITER>` | NDI max iterations. |
 | `--ndi-auto-stop <NDI_AUTO_STOP>` | NDI: stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto); --ndi-max-iter is then the maximum. |
 | `--ndi-te <TE>` | NDI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
+| `--ndi-weight-norm <NORM>` | NDI magnitude-weight normaliser: global-max (the magnitude's maximum, as FANSI; default) or mask-p999 (its 99.9th percentile inside the mask; more consistent in vivo) |
 | `--fansi-alpha1 <FANSI_ALPHA1>` | FANSI first-order (TV/TGV) L1 penalty weight (alpha1) |
 | `--fansi-mu1 <MU1>` | FANSI gradient-consistency ADMM weight (mu1), or auto for 100 × alpha1 (default: auto) |
 | `--fansi-mu2 <FANSI_MU2>` | FANSI fidelity-consistency ADMM weight (mu2) |
@@ -233,7 +234,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--whqsm-max-iter <WHQSM_MAX_ITER>` | WH-QSM max outer iterations. |
 | `--whqsm-tol-update <WHQSM_TOL_UPDATE>` | WH-QSM percent-update convergence tolerance. |
 | `--whqsm-tol-delta <WHQSM_TOL_DELTA>` | WH-QSM inner Newton convergence tolerance. |
-| `--whqsm-weight <WEIGHT>` | WH-QSM data weight: flat (1 in the mask), max-normalised (the magnitude over its maximum) or in-vivo (min(2 × magnitude / maximum, 1)); the last two need magnitude images (default: flat) |
+| `--whqsm-weight <WEIGHT>` | WH-QSM data weight: flat (1 over the whole volume, WH_nlTV.m's default), flat-in-mask (1 inside the mask only), max-normalised (the magnitude over its maximum) or in-vivo (min(2 × magnitude / maximum, 1)); the last two need magnitude images (default: flat) |
 | `--whqsm-te <TE>` | WH-QSM: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 | `--hdqsm-alpha-l2 <HDQSM_ALPHA_L2>` | HD-QSM L2-stage TV weight (alpha_l2) |
 | `--hdqsm-mu1-l2 <MU1_L2>` | HD-QSM L2-stage gradient-consistency ADMM weight (mu1_l2), or auto for 100 × alpha_l2 (default: auto) |
@@ -346,9 +347,11 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--harperella-max-iter <HARPERELLA_MAX_ITER>` | HARPERELLA maximum iterations. |
 | `--harperella-tol <HARPERELLA_TOL>` | HARPERELLA convergence tolerance. |
 | `--harperella-pad <X> <Y> <Z>` | HARPERELLA zero-padding in voxels per side, X Y Z (default: 0 0 0) |
+| `--harperella-rim <RIM>` | HARPERELLA boundary rim: whole (zero every Laplacian value in the rim; default) or sti (zero the 20 % largest, as STI Suite does) |
 | `--iharperella-max-iter <IHARPERELLA_MAX_ITER>` | iHARPERELLA maximum iterations. |
 | `--iharperella-tol <IHARPERELLA_TOL>` | iHARPERELLA convergence tolerance. |
 | `--iharperella-pad <X> <Y> <Z>` | iHARPERELLA zero-padding in voxels per side, X Y Z (default: 0 0 0) |
+| `--iharperella-rim <RIM>` | iHARPERELLA boundary rim: whole (zero every Laplacian value in the rim) or sti (zero the 20 % largest, as STI Suite does; default) |
 | `--no-romeo-phase-coherence` | ROMEO: disable phase coherence weights (default: on) |
 | `--no-romeo-phase-gradient-coherence` | ROMEO: disable phase gradient coherence weights (default: on) |
 | `--no-romeo-phase-linearity` | ROMEO: disable phase linearity weights (default: on) |
@@ -675,6 +678,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--ndi-max-iter <NDI_MAX_ITER>` | NDI max iterations. |
 | `--ndi-auto-stop <NDI_AUTO_STOP>` | NDI: stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto); --ndi-max-iter is then the maximum. |
 | `--ndi-te <TE>` | NDI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
+| `--ndi-weight-norm <NORM>` | NDI magnitude-weight normaliser: global-max (the magnitude's maximum, as FANSI; default) or mask-p999 (its 99.9th percentile inside the mask; more consistent in vivo) |
 | `--fansi-alpha1 <FANSI_ALPHA1>` | FANSI first-order (TV/TGV) L1 penalty weight (alpha1) |
 | `--fansi-mu1 <MU1>` | FANSI gradient-consistency ADMM weight (mu1), or auto for 100 × alpha1 (default: auto) |
 | `--fansi-mu2 <FANSI_MU2>` | FANSI fidelity-consistency ADMM weight (mu2) |
@@ -701,7 +705,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--whqsm-max-iter <WHQSM_MAX_ITER>` | WH-QSM max outer iterations. |
 | `--whqsm-tol-update <WHQSM_TOL_UPDATE>` | WH-QSM percent-update convergence tolerance. |
 | `--whqsm-tol-delta <WHQSM_TOL_DELTA>` | WH-QSM inner Newton convergence tolerance. |
-| `--whqsm-weight <WEIGHT>` | WH-QSM data weight: flat (1 in the mask), max-normalised (the magnitude over its maximum) or in-vivo (min(2 × magnitude / maximum, 1)); the last two need magnitude images (default: flat) |
+| `--whqsm-weight <WEIGHT>` | WH-QSM data weight: flat (1 over the whole volume, WH_nlTV.m's default), flat-in-mask (1 inside the mask only), max-normalised (the magnitude over its maximum) or in-vivo (min(2 × magnitude / maximum, 1)); the last two need magnitude images (default: flat) |
 | `--whqsm-te <TE>` | WH-QSM: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 | `--hdqsm-alpha-l2 <HDQSM_ALPHA_L2>` | HD-QSM L2-stage TV weight (alpha_l2) |
 | `--hdqsm-mu1-l2 <MU1_L2>` | HD-QSM L2-stage gradient-consistency ADMM weight (mu1_l2), or auto for 100 × alpha_l2 (default: auto) |
@@ -814,9 +818,11 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--harperella-max-iter <HARPERELLA_MAX_ITER>` | HARPERELLA maximum iterations. |
 | `--harperella-tol <HARPERELLA_TOL>` | HARPERELLA convergence tolerance. |
 | `--harperella-pad <X> <Y> <Z>` | HARPERELLA zero-padding in voxels per side, X Y Z (default: 0 0 0) |
+| `--harperella-rim <RIM>` | HARPERELLA boundary rim: whole (zero every Laplacian value in the rim; default) or sti (zero the 20 % largest, as STI Suite does) |
 | `--iharperella-max-iter <IHARPERELLA_MAX_ITER>` | iHARPERELLA maximum iterations. |
 | `--iharperella-tol <IHARPERELLA_TOL>` | iHARPERELLA convergence tolerance. |
 | `--iharperella-pad <X> <Y> <Z>` | iHARPERELLA zero-padding in voxels per side, X Y Z (default: 0 0 0) |
+| `--iharperella-rim <RIM>` | iHARPERELLA boundary rim: whole (zero every Laplacian value in the rim) or sti (zero the 20 % largest, as STI Suite does; default) |
 | `--no-romeo-phase-coherence` | ROMEO: disable phase coherence weights (default: on) |
 | `--no-romeo-phase-gradient-coherence` | ROMEO: disable phase gradient coherence weights (default: on) |
 | `--no-romeo-phase-linearity` | ROMEO: disable phase linearity weights (default: on) |
@@ -1078,6 +1084,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--ndi-max-iter <NDI_MAX_ITER>` | NDI max iterations. |
 | `--ndi-auto-stop <NDI_AUTO_STOP>` | NDI: stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto); --ndi-max-iter is then the maximum. |
 | `--ndi-te <TE>` | NDI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
+| `--ndi-weight-norm <NORM>` | NDI magnitude-weight normaliser: global-max (the magnitude's maximum, as FANSI; default) or mask-p999 (its 99.9th percentile inside the mask; more consistent in vivo) |
 | `--fansi-alpha1 <FANSI_ALPHA1>` | FANSI first-order (TV/TGV) L1 penalty weight (alpha1) |
 | `--fansi-mu1 <MU1>` | FANSI gradient-consistency ADMM weight (mu1), or auto for 100 × alpha1 (default: auto) |
 | `--fansi-mu2 <FANSI_MU2>` | FANSI fidelity-consistency ADMM weight (mu2) |
@@ -1104,7 +1111,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--whqsm-max-iter <WHQSM_MAX_ITER>` | WH-QSM max outer iterations. |
 | `--whqsm-tol-update <WHQSM_TOL_UPDATE>` | WH-QSM percent-update convergence tolerance. |
 | `--whqsm-tol-delta <WHQSM_TOL_DELTA>` | WH-QSM inner Newton convergence tolerance. |
-| `--whqsm-weight <WEIGHT>` | WH-QSM data weight: flat (1 in the mask), max-normalised (the magnitude over its maximum) or in-vivo (min(2 × magnitude / maximum, 1)); the last two need magnitude images (default: flat) |
+| `--whqsm-weight <WEIGHT>` | WH-QSM data weight: flat (1 over the whole volume, WH_nlTV.m's default), flat-in-mask (1 inside the mask only), max-normalised (the magnitude over its maximum) or in-vivo (min(2 × magnitude / maximum, 1)); the last two need magnitude images (default: flat) |
 | `--whqsm-te <TE>` | WH-QSM: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 | `--hdqsm-alpha-l2 <HDQSM_ALPHA_L2>` | HD-QSM L2-stage TV weight (alpha_l2) |
 | `--hdqsm-mu1-l2 <MU1_L2>` | HD-QSM L2-stage gradient-consistency ADMM weight (mu1_l2), or auto for 100 × alpha_l2 (default: auto) |
@@ -1217,9 +1224,11 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--harperella-max-iter <HARPERELLA_MAX_ITER>` | HARPERELLA maximum iterations. |
 | `--harperella-tol <HARPERELLA_TOL>` | HARPERELLA convergence tolerance. |
 | `--harperella-pad <X> <Y> <Z>` | HARPERELLA zero-padding in voxels per side, X Y Z (default: 0 0 0) |
+| `--harperella-rim <RIM>` | HARPERELLA boundary rim: whole (zero every Laplacian value in the rim; default) or sti (zero the 20 % largest, as STI Suite does) |
 | `--iharperella-max-iter <IHARPERELLA_MAX_ITER>` | iHARPERELLA maximum iterations. |
 | `--iharperella-tol <IHARPERELLA_TOL>` | iHARPERELLA convergence tolerance. |
 | `--iharperella-pad <X> <Y> <Z>` | iHARPERELLA zero-padding in voxels per side, X Y Z (default: 0 0 0) |
+| `--iharperella-rim <RIM>` | iHARPERELLA boundary rim: whole (zero every Laplacian value in the rim) or sti (zero the 20 % largest, as STI Suite does; default) |
 | `--no-romeo-phase-coherence` | ROMEO: disable phase coherence weights (default: on) |
 | `--no-romeo-phase-gradient-coherence` | ROMEO: disable phase gradient coherence weights (default: on) |
 | `--no-romeo-phase-linearity` | ROMEO: disable phase linearity weights (default: on) |
@@ -2058,6 +2067,7 @@ qsmxt bgremove harperella [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--te <TE>` | Echo time (s) of a wrapped-phase input. With --field-strength, the input is one wrapped echo in rad (the published method); without both, it is an unwrapped total field in ppm. The local field is written in ppm either way. |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength (T) of a wrapped-phase input — see --te. |
 | `--pad <X> <Y> <Z>` | Zero-padding in voxels per side, X Y Z (default: 0 0 0) |
+| `--rim <RIM>` | Boundary rim: whole (zero every Laplacian value in the rim; default) or sti (zero the 20 % largest, as STI Suite does) |
 
 ### `qsmxt bgremove iharperella`
 
@@ -2078,6 +2088,7 @@ qsmxt bgremove iharperella [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--te <TE>` | Echo time (s) of a wrapped-phase input. With --field-strength, the input is one wrapped echo in rad, unwrapped by HARPERELLA's Laplacian; without both, it is an unwrapped total field in ppm, which iHARPERELLA takes as it is. The local field is written in ppm either way. |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength (T) of a wrapped-phase input — see --te. |
 | `--pad <X> <Y> <Z>` | Zero-padding in voxels per side, X Y Z (default: 0 0 0) |
+| `--rim <RIM>` | Boundary rim: whole (zero every Laplacian value in the rim) or sti (zero the 20 % largest, as STI Suite does; default) |
 
 ### `qsmxt bgremove bfrnet`
 
@@ -2519,6 +2530,7 @@ qsmxt invert ndi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIE
 | `--max-iter <MAX_ITER>` | Max iterations (the maximum, with --auto-stop) |
 | `--auto-stop <AUTO_STOP>` | Stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto) |
 | `--te <TE>` | Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
+| `--weight-norm <NORM>` | Magnitude-weight normaliser: global-max (the magnitude's maximum, as FANSI; default) or mask-p999 (its 99.9th percentile inside the mask; more consistent in vivo) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
 | `--magnitude <MAGNITUDE>` | Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. Required. |
@@ -2636,7 +2648,7 @@ qsmxt invert whqsm [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <F
 | `--max-iter <MAX_ITER>` | Max iterations. |
 | `--tol-update <TOL_UPDATE>` | Percent-update convergence tolerance. |
 | `--tol-delta <TOL_DELTA>` | Inner Newton convergence tolerance. |
-| `--weight <WEIGHT>` | Data weight: flat (1 in the mask), max-normalised (the magnitude over its maximum) or in-vivo (min(2 × magnitude / maximum, 1)); the last two need --magnitude (default: flat) |
+| `--weight <WEIGHT>` | Data weight: flat (1 over the whole volume, WH_nlTV.m's default), flat-in-mask (1 inside the mask only), max-normalised (the magnitude over its maximum) or in-vivo (min(2 × magnitude / maximum, 1)); the last two need --magnitude (default: flat) |
 | `--magnitude <MAGNITUDE>` | Magnitude NIfTI, for a magnitude data weight (--weight): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. |
 | `--te <TE>` | Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 

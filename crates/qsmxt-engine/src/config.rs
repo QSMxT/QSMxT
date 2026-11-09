@@ -44,8 +44,9 @@ param_config!(NltvConfig from qsm_core::inversion::NltvParams {
     lambda: f64, rho: Option<f64>, mu: f64, tol: f64, max_iter: usize, tol_newton: f64,
     max_iter_newton: usize, te: EchoTimeChoice, pad: [i64; 3]
 });
+// NDI's `weight_norm`: what the magnitude is divided by to make the data weight.
 param_config!(NdiConfig from qsm_core::inversion::NdiParams {
-    tau: f64, alpha: f64, max_iter: usize, auto_stop: bool, te: EchoTimeChoice
+    tau: f64, alpha: f64, max_iter: usize, auto_stop: bool, te: EchoTimeChoice, weight_norm: NdiWeightNorm
 });
 // FANSI's `mu1`, `alpha0` and `mu0`, L1-QSM's `mu1` and HD-QSM's `mu1_l2`: `None` is the value
 // qsm-core derives from the method's other weights (FANSI: 100·α1, 2·α1, 2·μ1; L1-QSM: 100·α1;
@@ -775,13 +776,15 @@ param_config!(SharpConfig from qsm_core::bgremove::SharpParams { threshold: f64,
 param_config!(ResharpConfig from qsm_core::bgremove::ResharpParams {
     radius: f64, tik_reg: f64, tol: f64, max_iter: usize
 });
-// `pad`: zero padding per side, voxels per axis (STI Suite's `padsize`).
+// `pad`: zero padding per side, voxels per axis (STI Suite's `padsize`). `rim`: which boundary-rim
+// Laplacian values are set to zero (qsm-core's defaults: the whole rim for HARPERELLA, STI's 20 %
+// largest for iHARPERELLA).
 param_config!(HarperellaConfig from qsm_core::bgremove::HarperellaParams {
-    radius: f64, max_iter: usize, tol: f64, pad: [usize; 3]
+    radius: f64, max_iter: usize, tol: f64, pad: [usize; 3], rim: HarperellaRim
 });
 // iHARPERELLA has no SMV kernel, so no radius (QSM.rs#169).
 param_config!(IharperellaConfig from qsm_core::bgremove::IharperellaParams {
-    max_iter: usize, tol: f64, pad: [usize; 3]
+    max_iter: usize, tol: f64, pad: [usize; 3], rim: HarperellaRim
 });
 param_config!(BetConfig from qsm_core::bet::BetParams {
     fractional_intensity: f64, smoothness: f64, gradient_threshold: f64,

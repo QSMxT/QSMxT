@@ -1304,6 +1304,8 @@ mod tests {
         let mut c = PipelineConfig::default();
         c.inversion.algorithm = QsmAlgorithm::Whqsm;
         assert!(check(&run(&EVEN, false), &c).errors.is_empty());
+        c.inversion.whqsm.weight = crate::WhqsmWeight::FlatInMask;
+        assert!(check(&run(&EVEN, false), &c).errors.is_empty());
         c.inversion.whqsm.weight = crate::WhqsmWeight::MaxNormalised;
         let out = check(&run(&EVEN, false), &c);
         assert!(out.errors.len() == 1 && out.errors[0].contains("needs magnitude"), "{out:?}");

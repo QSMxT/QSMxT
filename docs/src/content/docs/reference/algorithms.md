@@ -650,7 +650,11 @@ computes in single precision as the original does (default: double). The local f
 defined on the mask minus its boundary layer, which the inversion takes as its mask.
 
 HARPERELLA and iHARPERELLA zero-pad the field by `--harperella-pad` / `--iharperella-pad`
-voxels per side, X Y Z (STI Suite's `padsize`, default `0 0 0`).
+voxels per side, X Y Z (STI Suite's `padsize`, default `0 0 0`). Both set the Laplacian to zero
+in the brain's boundary rim, where it holds the step at the mask edge rather than tissue:
+`--harperella-rim` / `--iharperella-rim` `whole` zeroes every value in the rim, and `sti` the
+20 % largest in magnitude, as STI Suite's `iHARPERELLA` does. HARPERELLA defaults to `whole`
+and iHARPERELLA to `sti`.
 
 iSMV (Wen et al. 2014) follows the authors' paper and code: a spherical mean value kernel of
 radius 6 × the smallest voxel dimension (6 mm at 1 mm), iterated until the relative change
@@ -848,9 +852,13 @@ A run that cannot use the choice is refused before processing.
 
 #### Other method settings
 
-- WH-QSM's data weight, `--whqsm-weight`: `flat` (1 in the mask, the default), `max-normalised`
-  (the magnitude over its maximum) or `in-vivo` (min(2 × magnitude / maximum, 1)). The last two
-  need magnitude images.
+- WH-QSM's data weight, `--whqsm-weight`: `flat` (1 over the whole volume, `WH_nlTV.m`'s
+  default), `flat-in-mask` (1 inside the mask only), `max-normalised` (the magnitude over its
+  maximum) or `in-vivo` (min(2 × magnitude / maximum, 1)). The last two need magnitude images.
+- NDI divides the magnitude by `--ndi-weight-norm` to make its data weight: `global-max` (the
+  magnitude's maximum over the whole image, as FANSI, the default) or `mask-p999` (its 99.9th
+  percentile inside the mask, which is more consistent in vivo, where the maximum is often a
+  bright scalp or vessel voxel outside the brain).
 - RTS raises its ADMM penalty ρ by `--rts-gamma` (default 5) whenever the primal residual falls
   by less than a factor of `--rts-tau` (default 0.7).
 - NLTV's ADMM penalty `--nltv-rho` and TV's `--tv-rho` default to 100 × λ. NLTV's data-term

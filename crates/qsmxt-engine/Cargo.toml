@@ -7,7 +7,9 @@ license = "GPL-3.0-only"
 
 [dependencies]
 # See the note in the root Cargo.toml. Must match the root pin exactly.
-qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", tag = "v0.41.0" }
+# TEMP: pinned to QSM.rs integration/bfr-dipole-options (#437 + #438); repin to QSM.rs main
+# after #437 and #438 merge.
+qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "3069bab7ca9baef5b8fbef9f99dfb116752191ba" }
 # The NIfTI header type qsm-core reads ITK's image geometry from (N4); same version as qsm-core's.
 nifti = { version = "0.17", default-features = false }
 # Reads a gzipped NIfTI header's orientation fields ([`scan::HeaderOrientation::read`]); qsm-core's version.

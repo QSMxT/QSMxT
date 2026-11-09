@@ -1503,11 +1503,13 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("harperella_radius", "bg_removal.harperella.radius"), ("harperella_max_iter", "bg_removal.harperella.max_iter"),
     ("harperella_tol", "bg_removal.harperella.tol"), ("harperella_pad", "bg_removal.harperella.pad"), ("iharperella_max_iter", "bg_removal.iharperella.max_iter"),
     ("iharperella_tol", "bg_removal.iharperella.tol"), ("iharperella_pad", "bg_removal.iharperella.pad"),
+    ("harperella_rim", "bg_removal.harperella.rim"), ("iharperella_rim", "bg_removal.iharperella.rim"),
     ("qsm_algorithm", "inversion.algorithm"),
     ("nltv_te", "inversion.nltv.te"), ("nltv_te_ms", "inversion.nltv.te"),
     ("medi_te", "inversion.medi.te"), ("medi_te_ms", "inversion.medi.te"),
     ("tfi_te", "inversion.tfi.te"), ("tfi_te_ms", "inversion.tfi.te"),
     ("ndi_te", "inversion.ndi.te"), ("ndi_te_ms", "inversion.ndi.te"),
+    ("ndi_weight_norm", "inversion.ndi.weight_norm"),
     ("fansi_te", "inversion.fansi.te"), ("fansi_te_ms", "inversion.fansi.te"),
     ("l1qsm_te", "inversion.l1qsm.te"), ("l1qsm_te_ms", "inversion.l1qsm.te"),
     ("whqsm_te", "inversion.whqsm.te"), ("whqsm_te_ms", "inversion.whqsm.te"),
@@ -2147,11 +2149,15 @@ pub struct PipelineFormState {
     pub harperella_max_iter: String,
     pub harperella_tol: String,
     pub harperella_pad: String,
+    /// An index into HARPERELLA_RIM_OPTIONS.
+    pub harperella_rim: usize,
 
     // iHARPERELLA
     pub iharperella_max_iter: String,
     pub iharperella_tol: String,
     pub iharperella_pad: String,
+    /// An index into HARPERELLA_RIM_OPTIONS.
+    pub iharperella_rim: usize,
 
     // QSMART
     pub qsmart_ilsqr_max_iter: String,
@@ -2178,6 +2184,8 @@ pub struct PipelineFormState {
     pub ndi_alpha: String,
     pub ndi_max_iter: String,
     pub ndi_auto_stop: bool,
+    /// An index into NDI_WEIGHT_NORM_OPTIONS.
+    pub ndi_weight_norm: usize,
 
     // FANSI (nlTV / nlTGV — shared)
     pub fansi_alpha1: String,
@@ -2631,9 +2639,11 @@ impl Default for PipelineFormState {
             harperella_max_iter: format!("{}", qsm_core::bgremove::HarperellaParams::default().max_iter),
             harperella_tol: format!("{}", qsm_core::bgremove::HarperellaParams::default().tol),
             harperella_pad: fmt_triple(qsm_core::bgremove::HarperellaParams::default().pad),
+            harperella_rim: harperella_rim_index(qsmxt_engine::HarperellaConfig::default().rim),
             iharperella_max_iter: format!("{}", qsm_core::bgremove::IharperellaParams::default().max_iter),
             iharperella_tol: format!("{}", qsm_core::bgremove::IharperellaParams::default().tol),
             iharperella_pad: fmt_triple(qsm_core::bgremove::IharperellaParams::default().pad),
+            iharperella_rim: harperella_rim_index(qsmxt_engine::IharperellaConfig::default().rim),
             do_qsm: true,
             romeo_phase_gradient_coherence: qsm_core::unwrap::RomeoParams::default().phase_gradient_coherence,
             romeo_mag_coherence: qsm_core::unwrap::RomeoParams::default().mag_coherence,
@@ -2690,6 +2700,7 @@ impl Default for PipelineFormState {
             ndi_alpha: format!("{}", ndi.alpha),
             ndi_max_iter: format!("{}", ndi.max_iter),
             ndi_auto_stop: ndi.auto_stop,
+            ndi_weight_norm: ndi_weight_norm_index(qsmxt_engine::NdiConfig::default().weight_norm),
 
             fansi_alpha1: format!("{}", fansi.alpha1),
             fansi_mu1: fmt_opt(fansi.mu1),
@@ -3011,9 +3022,10 @@ pub fn chi_bound_choice(index: usize, ppm: &str) -> Option<qsmxt_engine::ChiBoun
     }
 }
 /// WH-QSM's data weight, in the CLI's names.
-pub const WHQSM_WEIGHT_OPTIONS: &[&str] = &["flat", "max-normalised", "in-vivo"];
+pub const WHQSM_WEIGHT_OPTIONS: &[&str] = &["flat", "flat-in-mask", "max-normalised", "in-vivo"];
 const WHQSM_WEIGHT_HELP: &[&str] = &[
-    "1 in the mask, no magnitude (default)",
+    "1 over the whole volume, no magnitude, as WH_nlTV.m (default)",
+    "1 inside the mask only, no magnitude",
     "The magnitude over its maximum in the mask; needs magnitude images",
     "min(2 × magnitude / maximum, 1) in the mask, as NDI weights; needs magnitude images",
 ];
@@ -3046,6 +3058,28 @@ const PDF_SPACE_HELP: &[&str] = &[
 ];
 fn pdf_space_index(k: qsmxt_engine::PdfSpace) -> usize {
     qsmxt_engine::PdfSpace::ALL.iter().position(|&x| x == k).unwrap_or(0)
+}
+/// HARPERELLA's / iHARPERELLA's boundary rim, in the CLI's names.
+pub const HARPERELLA_RIM_OPTIONS: &[&str] = &["whole", "sti"];
+const HARPERELLA_RIM_HELP: &[&str] = &[
+    "Zero every Laplacian value in the brain's boundary rim (default)",
+    "Zero the 20 % largest Laplacian values in the rim, as STI Suite does",
+];
+const IHARPERELLA_RIM_HELP: &[&str] = &[
+    "Zero every Laplacian value in the brain's boundary rim",
+    "Zero the 20 % largest Laplacian values in the rim, as STI Suite does (default)",
+];
+fn harperella_rim_index(r: qsmxt_engine::HarperellaRim) -> usize {
+    qsmxt_engine::HarperellaRim::ALL.iter().position(|&x| x == r).unwrap_or(0)
+}
+/// NDI's magnitude-weight normaliser, in the CLI's names.
+pub const NDI_WEIGHT_NORM_OPTIONS: &[&str] = &["global-max", "mask-p999"];
+const NDI_WEIGHT_NORM_HELP: &[&str] = &[
+    "The magnitude's maximum over the whole image, as FANSI (default)",
+    "The magnitude's 99.9th percentile inside the mask; more consistent in vivo",
+];
+fn ndi_weight_norm_index(n: qsmxt_engine::NdiWeightNorm) -> usize {
+    qsmxt_engine::NdiWeightNorm::ALL.iter().position(|&x| x == n).unwrap_or(0)
 }
 /// iSMV's implementations, in the CLI's names.
 pub const ISMV_VARIANT_OPTIONS: &[&str] = &["wen2014", "qsmjl"];
@@ -3628,11 +3662,13 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Max iter", field: "harperella_max_iter", help: "Maximum iterations" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "harperella_tol", help: "Convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "harperella_pad", help: "Zero-padding per side, voxels (x y z). Larger costs time and memory (default 0 0 0)" });
+                rows.push(PipelineRow::AlgoSelect { label: "  Boundary rim", field: "harperella_rim", options: HARPERELLA_RIM_OPTIONS, help: HARPERELLA_RIM_HELP });
             }
             7 => { // iHARPERELLA
                 rows.push(PipelineRow::Param { label: "  Max iter", field: "iharperella_max_iter", help: "Maximum iterations" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "iharperella_tol", help: "Convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "iharperella_pad", help: "Zero-padding per side, voxels (x y z). Larger costs time and memory (default 0 0 0)" });
+                rows.push(PipelineRow::AlgoSelect { label: "  Boundary rim", field: "iharperella_rim", options: HARPERELLA_RIM_OPTIONS, help: IHARPERELLA_RIM_HELP });
             }
             _ => {}
         }
@@ -3910,6 +3946,7 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Max iter", field: "ndi_max_iter", help: "Number of iterations" });
                 rows.push(PipelineRow::Toggle { label: "  Auto stop", field: "ndi_auto_stop", help: "Stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto)" });
                 self.push_echo_time(rows, "ndi");
+                rows.push(PipelineRow::AlgoSelect { label: "  Weight normaliser", field: "ndi_weight_norm", options: NDI_WEIGHT_NORM_OPTIONS, help: NDI_WEIGHT_NORM_HELP });
             }
             "fansi" | "fansi-tgv" => { // shared params
                 rows.push(PipelineRow::Param { label: "  Alpha1", field: "fansi_alpha1", help: "First-order (TV/TGV) L1 penalty weight" });
@@ -4728,6 +4765,9 @@ impl PipelineFormState {
             "pdf_space" => self.pdf_space,
             "lbv_precision" => self.lbv_precision,
             "ismv_variant" => self.ismv_variant,
+            "harperella_rim" => self.harperella_rim,
+            "iharperella_rim" => self.iharperella_rim,
+            "ndi_weight_norm" => self.ndi_weight_norm,
             "nltv_te" => self.nltv_te,
             "medi_te" => self.medi_te,
             "tfi_te" => self.tfi_te,
@@ -4789,6 +4829,9 @@ impl PipelineFormState {
             "pdf_space" => self.pdf_space = val.min(PDF_SPACE_OPTIONS.len() - 1),
             "lbv_precision" => self.lbv_precision = val.min(LBV_PRECISION_OPTIONS.len() - 1),
             "ismv_variant" => self.ismv_variant = val.min(ISMV_VARIANT_OPTIONS.len() - 1),
+            "harperella_rim" => self.harperella_rim = val.min(HARPERELLA_RIM_OPTIONS.len() - 1),
+            "iharperella_rim" => self.iharperella_rim = val.min(HARPERELLA_RIM_OPTIONS.len() - 1),
+            "ndi_weight_norm" => self.ndi_weight_norm = val.min(NDI_WEIGHT_NORM_OPTIONS.len() - 1),
             "nltv_te" => self.nltv_te = val.min(ECHO_TIME_OPTIONS.len() - 1),
             "medi_te" => self.medi_te = val.min(ECHO_TIME_OPTIONS.len() - 1),
             "tfi_te" => self.tfi_te = val.min(ECHO_TIME_OPTIONS.len() - 1),

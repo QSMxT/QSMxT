@@ -571,6 +571,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.ndi_params.ndi_max_iter { config.inversion.ndi.max_iter = v; }
         if let Some(v) = args.ndi_params.ndi_auto_stop { config.inversion.ndi.auto_stop = v; }
         if let Some(v) = args.ndi_params.ndi_te { config.inversion.ndi.te = v; }
+        if let Some(v) = args.ndi_params.ndi_weight_norm { config.inversion.ndi.weight_norm = v; }
         if let Some(v) = args.fansi_params.fansi_alpha1 { config.inversion.fansi.alpha1 = v; }
         if let Some(v) = args.fansi_params.fansi_mu1 { config.inversion.fansi.mu1 = v.value(); }
         if let Some(v) = args.fansi_params.fansi_mu2 { config.inversion.fansi.mu2 = v; }
@@ -652,9 +653,11 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.harperella_params.harperella_max_iter { config.bg_removal.harperella.max_iter = v; }
         if let Some(v) = args.harperella_params.harperella_tol { config.bg_removal.harperella.tol = v; }
         if let Some(&[x, y, z]) = args.harperella_params.harperella_pad.as_deref() { config.bg_removal.harperella.pad = [x, y, z]; }
+        if let Some(v) = args.harperella_params.harperella_rim { config.bg_removal.harperella.rim = v; }
         if let Some(v) = args.iharperella_params.iharperella_max_iter { config.bg_removal.iharperella.max_iter = v; }
         if let Some(v) = args.iharperella_params.iharperella_tol { config.bg_removal.iharperella.tol = v; }
         if let Some(&[x, y, z]) = args.iharperella_params.iharperella_pad.as_deref() { config.bg_removal.iharperella.pad = [x, y, z]; }
+        if let Some(v) = args.iharperella_params.iharperella_rim { config.bg_removal.iharperella.rim = v; }
 
         // ── SWI ──
         if let Some(ref s) = args.swi_params.swi_hp_sigma {
@@ -1219,7 +1222,14 @@ mod tests {
         apply_run_overrides(&mut c, &args(&["qsmxt", "run", "<bids>", "--tv-rho", "auto", "--nltv-rho", "auto",
             "--hdqsm-mu1-l2", "auto"])).unwrap();
         assert_eq!((c.inversion.tv.rho, c.inversion.nltv.rho, c.inversion.hdqsm.mu1_l2), (None, None, None));
-        for bad in [["--medi-te", "median"], ["--whqsm-weight", "heavy"], ["--pdf-space", "real"], ["--tv-rho", "x"]] {
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--harperella-rim", "sti", "--iharperella-rim", "whole",
+            "--ndi-weight-norm", "mask-p999", "--whqsm-weight", "flat-in-mask"]);
+        assert_eq!((c.bg_removal.harperella.rim, c.bg_removal.iharperella.rim),
+                   (qsmxt_engine::HarperellaRim::Sti, qsmxt_engine::HarperellaRim::Whole));
+        assert_eq!((c.inversion.ndi.weight_norm, c.inversion.whqsm.weight),
+                   (qsmxt_engine::NdiWeightNorm::MaskP999, qsmxt_engine::WhqsmWeight::FlatInMask));
+        for bad in [["--medi-te", "median"], ["--whqsm-weight", "heavy"], ["--pdf-space", "real"], ["--tv-rho", "x"],
+                    ["--harperella-rim", "edge"], ["--ndi-weight-norm", "max"]] {
             assert!(cli::Cli::try_parse_from(["qsmxt", "run", "<bids>", bad[0], bad[1]]).is_err(), "{bad:?}");
         }
     }

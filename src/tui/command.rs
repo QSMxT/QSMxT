@@ -510,6 +510,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             ndi_max_iter: parse_optional_usize(&ps.ndi_max_iter),
             ndi_auto_stop: Some(ps.ndi_auto_stop),
             ndi_te: super::app::echo_time_choice(ps.ndi_te, &ps.ndi_te_ms),
+            ndi_weight_norm: qsmxt_engine::NdiWeightNorm::ALL.get(ps.ndi_weight_norm).copied(),
         },
         fansi_params: crate::cli::FansiParamArgs {
             fansi_alpha1: parse_optional_f64(&ps.fansi_alpha1),
@@ -689,11 +690,13 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             harperella_max_iter: parse_optional_usize(&ps.harperella_max_iter),
             harperella_tol: parse_optional_f64(&ps.harperella_tol),
             harperella_pad: parse_usize_triple(&ps.harperella_pad).map(|p| p.to_vec()),
+            harperella_rim: qsmxt_engine::HarperellaRim::ALL.get(ps.harperella_rim).copied(),
         },
         iharperella_params: crate::cli::IharperellaParamArgs {
             iharperella_max_iter: parse_optional_usize(&ps.iharperella_max_iter),
             iharperella_tol: parse_optional_f64(&ps.iharperella_tol),
             iharperella_pad: parse_usize_triple(&ps.iharperella_pad).map(|p| p.to_vec()),
+            iharperella_rim: qsmxt_engine::HarperellaRim::ALL.get(ps.iharperella_rim).copied(),
         },
         romeo_params: crate::cli::RomeoParamArgs {
             no_romeo_phase_coherence: !ps.romeo_phase_coherence,

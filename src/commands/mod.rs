@@ -1207,6 +1207,8 @@ mod integration_tests {
         let e = super::invert::execute(whqsm(Some(qsmxt_engine::WhqsmWeight::InVivo), None, &[0.01, 0.02]))
             .unwrap_err().to_string();
         assert!(e.contains("--weight in-vivo needs --magnitude"), "{e}");
+        // flat-in-mask, like flat, takes no magnitude
+        super::invert::execute(whqsm(Some(qsmxt_engine::WhqsmWeight::FlatInMask), None, &[0.01, 0.02])).unwrap();
         let e = super::invert::execute(whqsm(None, Some(qsmxt_engine::EchoTimeChoice::Spacing), &[0.02, 0.01]))
             .unwrap_err().to_string();
         assert!(e.contains("echo spacing"), "{e}");
@@ -2490,7 +2492,7 @@ mod integration_tests {
         testutils::write_magnitude(&magnitude);
         super::invert::execute(InvertCommand::Ndi(InvertNdiArgs {
             common: common_invert(input, mask, output.clone()),
-            tau: None, alpha: None, max_iter: Some(2), auto_stop: None, te: None,
+            tau: None, alpha: None, max_iter: Some(2), auto_stop: None, te: None, weight_norm: None,
             scan: scan(&[0.02]),
             magnitude: vec![magnitude],
         })).unwrap();
