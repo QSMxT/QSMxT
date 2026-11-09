@@ -85,6 +85,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares, Neumann/DCT solve; default), `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume) or `mirror` (the same on the volume mirrored along each axis, as QSMART unwraps) Values: `dct`, `fft`, `mirror`. |
 | `--laplacian-fft-pad <VOXELS>` | Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or three (x y z). Default 64. |
 | `--laplacian-unmasked` | `--unwrapping-algorithm laplacian`: unwrap the raw phase over the whole volume, instead of the phase set to zero outside the brain mask, as QSMART does. With `--b0-estimation qsmart-echofit` the field map is then kept over the whole volume. |
+| `--no-laplacian-unmasked` | `--unwrapping-algorithm laplacian`: unwrap the phase set to zero outside the brain mask (the default), after a `--pipeline` that unwraps the whole volume. |
 | `--bet-fractional-intensity <BET_FRACTIONAL_INTENSITY>` | BET fractional intensity (0.0-1.0; smaller = larger brain). Applies to every BET step in the masking recipe, overriding a `bet:<f>` in a --mask spec. |
 | `--bet-smoothness <BET_SMOOTHNESS>` | BET surface smoothness factor. Applies to every BET step in the masking recipe. |
 | `--bet-gradient-threshold <BET_GRADIENT_THRESHOLD>` | BET gradient threshold (-1 to 1). Applies to every BET step in the masking recipe. |
@@ -554,6 +555,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares, Neumann/DCT solve; default), `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume) or `mirror` (the same on the volume mirrored along each axis, as QSMART unwraps) Values: `dct`, `fft`, `mirror`. |
 | `--laplacian-fft-pad <VOXELS>` | Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or three (x y z). Default 64. |
 | `--laplacian-unmasked` | `--unwrapping-algorithm laplacian`: unwrap the raw phase over the whole volume, instead of the phase set to zero outside the brain mask, as QSMART does. With `--b0-estimation qsmart-echofit` the field map is then kept over the whole volume. |
+| `--no-laplacian-unmasked` | `--unwrapping-algorithm laplacian`: unwrap the phase set to zero outside the brain mask (the default), after a `--pipeline` that unwraps the whole volume. |
 | `--bet-fractional-intensity <BET_FRACTIONAL_INTENSITY>` | BET fractional intensity (0.0-1.0; smaller = larger brain). Applies to every BET step in the masking recipe, overriding a `bet:<f>` in a --mask spec. |
 | `--bet-smoothness <BET_SMOOTHNESS>` | BET surface smoothness factor. Applies to every BET step in the masking recipe. |
 | `--bet-gradient-threshold <BET_GRADIENT_THRESHOLD>` | BET gradient threshold (-1 to 1). Applies to every BET step in the masking recipe. |
@@ -958,6 +960,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares, Neumann/DCT solve; default), `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume) or `mirror` (the same on the volume mirrored along each axis, as QSMART unwraps) Values: `dct`, `fft`, `mirror`. |
 | `--laplacian-fft-pad <VOXELS>` | Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or three (x y z). Default 64. |
 | `--laplacian-unmasked` | `--unwrapping-algorithm laplacian`: unwrap the raw phase over the whole volume, instead of the phase set to zero outside the brain mask, as QSMART does. With `--b0-estimation qsmart-echofit` the field map is then kept over the whole volume. |
+| `--no-laplacian-unmasked` | `--unwrapping-algorithm laplacian`: unwrap the phase set to zero outside the brain mask (the default), after a `--pipeline` that unwraps the whole volume. |
 | `--bet-fractional-intensity <BET_FRACTIONAL_INTENSITY>` | BET fractional intensity (0.0-1.0; smaller = larger brain). Applies to every BET step in the masking recipe, overriding a `bet:<f>` in a --mask spec. |
 | `--bet-smoothness <BET_SMOOTHNESS>` | BET surface smoothness factor. Applies to every BET step in the masking recipe. |
 | `--bet-gradient-threshold <BET_GRADIENT_THRESHOLD>` | BET gradient threshold (-1 to 1). Applies to every BET step in the masking recipe. |

@@ -209,7 +209,10 @@ fn command_for(config: &PipelineConfig, d: &PipelineConfig, pipeline: Option<&st
             });
         }
     }
-    if fm.laplacian_unmasked { parts.push("--laplacian-unmasked".into()); }
+    // On after a pipeline that turns it on (STI Suite, QSMART), so said either way.
+    if fm.laplacian_unmasked != d.field_mapping.laplacian_unmasked {
+        parts.push(if fm.laplacian_unmasked { "--laplacian-unmasked" } else { "--no-laplacian-unmasked" }.into());
+    }
     emit_enum(&mut parts, "--prelude-labelling", &fm.prelude.labelling, &d.field_mapping.prelude.labelling);
     emit_usize(&mut parts, "--prelude-partitions", fm.prelude.num_phase_partitions, d.field_mapping.prelude.num_phase_partitions);
     // Motion correction (off by default).

@@ -435,6 +435,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             })?;
         }
         if args.laplacian_unmasked { config.field_mapping.laplacian_unmasked = true; }
+        if args.no_laplacian_unmasked { config.field_mapping.laplacian_unmasked = false; }
         if let Some(ref s) = args.coil_combination_sigma {
             if s.len() == 3 { config.field_mapping.coil_combination_sigma = [s[0], s[1], s[2]]; }
         }
@@ -1940,10 +1941,10 @@ mod tests {
             assert_eq!(cmd, format!("qsmxt run <bids_dir> --pipeline {}", p.id));
             assert_eq!(generate_command(&rebuild(&cmd)), cmd);
             assert!(pipelines::status(&rebuild(&cmd), &facts).departures.is_empty(), "{cmd}");
-            // A departure: the BET fractional intensity.
-            c.bet.fractional_intensity = 0.3;
+            // Another setting: its flag follows.
+            c.pipeline.do_swi = true;
             let cmd = generate_command(&c);
-            assert!(cmd.starts_with(&format!("qsmxt run <bids_dir> --pipeline {} ", p.id)) && cmd.contains("0.3"), "{cmd}");
+            assert_eq!(cmd, format!("qsmxt run <bids_dir> --pipeline {} --do-swi", p.id));
             assert_eq!(generate_command(&rebuild(&cmd)), cmd);
         }
         // The flags after --pipeline win.

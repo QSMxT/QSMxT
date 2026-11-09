@@ -1621,6 +1621,11 @@ pub struct PipelineArgs {
     #[arg(long)]
     pub laplacian_unmasked: bool,
 
+    /// `--unwrapping-algorithm laplacian`: unwrap the phase set to zero outside the brain mask
+    /// (the default), after a `--pipeline` that unwraps the whole volume
+    #[arg(long, conflicts_with = "laplacian_unmasked")]
+    pub no_laplacian_unmasked: bool,
+
     /// BET fractional intensity (0.0-1.0; smaller = larger brain). Applies to every BET step in
     /// the masking recipe, overriding a `bet:<f>` in a --mask spec
     #[arg(long)]

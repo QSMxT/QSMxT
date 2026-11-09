@@ -198,8 +198,8 @@ fn applied(config: &PipelineConfig, id: &str, facts: &ViewFacts) -> Result<Appli
     for path in set {
         match section_of(path) {
             Some((_, s)) if STAGES.contains(&s) => if !stages.contains(&s) { stages.push(s) },
-            Some((p, _)) => if !extra.contains(&p) { extra.push(p) },
-            None => {}
+            Some((p, _)) if !extra.contains(&p) => extra.push(p),
+            _ => {}
         }
     }
     let mut c = config.clone();
@@ -333,11 +333,13 @@ pub fn status(config: &PipelineConfig, facts: &ViewFacts) -> Status {
         .unwrap_or(Status { pipeline: None, departures: vec![] })
 }
 
-/// The pipeline `config` follows for its command line and settings file: the one [`status`]
-/// names, if a toolbox's.
-pub fn followed(config: &PipelineConfig, facts: &ViewFacts) -> Option<&'static str> {
-    let id = status(config, facts).pipeline.map(|p| p.id)?;
-    (id != QSMXT_DEFAULTS).then_some(id)
+/// The toolbox pipeline `config` was chosen from, for its command line: the one it remembers,
+/// while its choices hold. A cheap check, unlike [`status`], so a front end can render the
+/// command on every change; a config that matches a pipeline without remembering it is written
+/// out in full.
+pub fn followed(config: &PipelineConfig, _facts: &ViewFacts) -> Option<&'static str> {
+    let id = config.reference_pipeline.as_deref().filter(|id| chosen(config, id))?;
+    REFERENCE_PIPELINES.iter().find(|p| p.id == id).map(|p| p.id)
 }
 
 #[cfg(test)]
