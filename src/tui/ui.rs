@@ -10,6 +10,8 @@ use super::app::{AlgoModal, App, NewsModal, PipelineRow, TipModal, UpdateModal, 
 use super::command;
 
 pub fn draw(f: &mut Frame, app: &mut App) {
+    // Each drawer records where its clickable things are.
+    app.hits.clear();
     // The header's pipeline status, worked out once per change of the form.
     app.pipeline_status();
     // Compute command preview height dynamically
@@ -37,27 +39,27 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     draw_help_bar(f, app, chunks[3]);
 
     if let Some(ref modal) = app.algo_modal {
-        draw_algo_modal(f, modal, f.area());
+        draw_algo_modal(f, modal, f.area(), &app.hits);
     }
 
     if let Some(ref mut modal) = app.rec_modal {
-        draw_rec_modal(f, modal, f.area());
+        draw_rec_modal(f, modal, f.area(), &app.hits);
     }
 
     if let Some(ref mut modal) = app.refs.modal {
-        draw_ref_modal(f, modal, f.area());
+        draw_ref_modal(f, modal, f.area(), &app.hits);
     }
 
     if let Some(ref mut modal) = app.pipelines.preview {
-        super::pipelines_tab::draw_preview(f, modal, f.area());
+        super::pipelines_tab::draw_preview(f, modal, f.area(), &app.hits);
     }
 
     if let Some(ref modal) = app.tip_modal {
-        draw_tip_modal(f, modal, f.area());
+        draw_tip_modal(f, modal, f.area(), &app.hits);
     }
 
     if let Some(ref mut modal) = app.news_modal {
-        draw_news_modal(f, modal, f.area());
+        draw_news_modal(f, modal, f.area(), &app.hits);
     }
 
     // Drawn last so it sits above the other pop-ups, matching the input routing.
@@ -122,7 +124,7 @@ fn tip_lines(text: &str, width: usize) -> Vec<Line<'static>> {
 }
 
 /// The "Did you know?" pop-up: a tip, its link, and the OK / turn-tips-off buttons.
-fn draw_tip_modal(f: &mut Frame, modal: &TipModal, area: Rect) {
+fn draw_tip_modal(f: &mut Frame, modal: &TipModal, area: Rect, hits: &super::mouse::Hits) {
     let popup_w = 68.min(area.width);
     let text_w = popup_w.saturating_sub(6).max(10) as usize;
 
@@ -168,6 +170,9 @@ fn draw_tip_modal(f: &mut Frame, modal: &TipModal, area: Rect) {
     let inner = block.inner(popup);
     f.render_widget(block, popup);
     let text_area = Rect { x: inner.x + 2, width: inner.width.saturating_sub(4), ..inner };
+    // The buttons sit three lines from the bottom: buttons, a blank, the hint.
+    let at = lines.len().saturating_sub(3);
+    hits.add_buttons(Rect { y: text_area.y + at as u16, height: 1, ..text_area }, &lines[at..at + 1]);
     f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), text_area);
 }
 
@@ -184,7 +189,7 @@ fn picker_button(value: &str, focused: bool) -> Vec<Span<'static>> {
 
 /// The recommendation pop-up ([`super::recommend`]): what the setting is, what the method
 /// recommends and why, and the choices.
-fn draw_rec_modal(f: &mut Frame, modal: &mut super::recommend::RecModal, area: Rect) {
+fn draw_rec_modal(f: &mut Frame, modal: &mut super::recommend::RecModal, area: Rect, hits: &super::mouse::Hits) {
     let popup_w = advice_modal_width(area);
     let text_w = popup_w.saturating_sub(6).max(10) as usize;
     let mut lines = vec![Line::from("")];
@@ -223,7 +228,7 @@ fn draw_rec_modal(f: &mut Frame, modal: &mut super::recommend::RecModal, area: R
     let hint = format!("\u{2191}\u{2193} choose   Enter select   w {}   Esc {}", if modal.why { "hide why" } else { "why?" }, if modal.details { "close" } else { "later" });
     let color = if modal.findings.iter().all(|r| r.strength == super::recommend::Strength::Reference) { Color::Cyan } else { Color::Yellow };
     let title = modal.title();
-    draw_advice_modal(f, area, popup_w, &title, color, lines, footer, &hint, "PgUp/PgDn scroll", &mut modal.scroll);
+    draw_advice_modal(f, area, popup_w, &title, color, lines, footer, &hint, "PgUp/PgDn scroll", &mut modal.scroll, hits);
 }
 
 /// How wide the advice pop-ups are: wide enough to keep a long reason short, on any terminal.
@@ -238,7 +243,9 @@ fn advice_modal_width(area: Rect) -> u16 {
 fn draw_advice_modal(
     f: &mut Frame, area: Rect, popup_w: u16, title: &str, color: Color,
     lines: Vec<Line<'static>>, mut footer: Vec<Line<'static>>, hint: &str, scroll_hint: &str, scroll: &mut u16,
+    hits: &super::mouse::Hits,
 ) {
+    let buttons = footer.clone();
     let chrome = footer.len() as u16 + 1 + 2;
     let popup = centered_rect(popup_w, lines.len() as u16 + chrome, area);
     let body_h = popup.height.saturating_sub(chrome);
@@ -259,6 +266,7 @@ fn draw_advice_modal(
         .constraints([Constraint::Min(0), Constraint::Length(footer.len() as u16)]).areas(text_area);
     f.render_widget(Paragraph::new(lines).scroll((*scroll, 0)), body);
     f.render_widget(Paragraph::new(footer), foot);
+    hits.add_buttons(foot, &buttons);
     if max_scroll > 0 {
         // On the pop-up's right border, beside the text.
         let bar = Rect { x: popup.x + popup.width - 1, y: body.y, width: 1, height: body.height };
@@ -295,7 +303,7 @@ fn rec_reference_of(r: &qsmxt_engine::recommendations::Recommendation) -> String
 /// from the chosen method's reference pipeline (after any recommendations the same change
 /// created), as current → reference value, with why and the source; then the buttons, or, when
 /// choosing per setting, a choice on each setting.
-fn draw_ref_modal(f: &mut Frame, modal: &mut super::recommend::RefModal, area: Rect) {
+fn draw_ref_modal(f: &mut Frame, modal: &mut super::recommend::RefModal, area: Rect, hits: &super::mouse::Hits) {
     use super::recommend::Strength;
     let popup_w = advice_modal_width(area);
     let text_w = popup_w.saturating_sub(6).max(10) as usize;
@@ -399,12 +407,12 @@ fn draw_ref_modal(f: &mut Frame, modal: &mut super::recommend::RefModal, area: R
     let color = if offered { Color::Yellow } else { Color::Cyan };
     let title = modal.title();
     let scroll_hint = if modal.row.is_some() { "PgUp/PgDn scroll" } else { "\u{2191}\u{2193} scroll" };
-    draw_advice_modal(f, area, popup_w, &title, color, lines, footer, hint, scroll_hint, &mut modal.scroll);
+    draw_advice_modal(f, area, popup_w, &title, color, lines, footer, hint, scroll_hint, &mut modal.scroll, hits);
 }
 
 /// An announcement pop-up, or the history of them all ([`NewsModal`]): each announcement's date,
 /// title, wrapped body, the versions it affects and its link.
-fn draw_news_modal(f: &mut Frame, modal: &mut NewsModal, area: Rect) {
+fn draw_news_modal(f: &mut Frame, modal: &mut NewsModal, area: Rect, hits: &super::mouse::Hits) {
     let popup_w = advice_modal_width(area).min(84);
     let text_w = popup_w.saturating_sub(6).max(10) as usize;
     let dim = Style::default().fg(Color::DarkGray);
@@ -467,7 +475,7 @@ fn draw_news_modal(f: &mut Frame, modal: &mut NewsModal, area: Rect) {
         (false, true) => "c copy link   Enter close",
         (false, false) => "Enter close",
     };
-    draw_advice_modal(f, area, popup_w, title, color, lines, Vec::new(), hint, "\u{2191}\u{2193} scroll", &mut modal.scroll);
+    draw_advice_modal(f, area, popup_w, title, color, lines, Vec::new(), hint, "\u{2191}\u{2193} scroll", &mut modal.scroll, hits);
 }
 
 /// "A new version is available" pop-up, raised by the launch-time release check.
@@ -527,7 +535,7 @@ fn centered_rect(w: u16, h: u16, area: Rect) -> Rect {
 
 /// Pop-up list to choose one algorithm option, showing every option at once (scrolls if needed)
 /// plus the highlighted option's help.
-fn draw_algo_modal(f: &mut Frame, modal: &AlgoModal, area: Rect) {
+fn draw_algo_modal(f: &mut Frame, modal: &AlgoModal, area: Rect, hits: &super::mouse::Hits) {
     // Cap the visible list rather than growing to fit every option — a long list (e.g. the 29 QSM
     // algorithms) then scrolls (with a scrollbar) instead of overflowing the screen and pushing
     // the tooltip/hotkey footer off the bottom. Reserve room for a 3-line wrapped tooltip + a
@@ -592,6 +600,7 @@ fn draw_algo_modal(f: &mut Frame, modal: &AlgoModal, area: Rect) {
     let mut state = ListState::default();
     state.select(Some(modal.cursor));
     f.render_stateful_widget(list, list_area, &mut state);
+    hits.add(list_area, super::mouse::Hit::Picker { offset: state.offset() });
 
     if let Some(sb_area) = sb_area {
         let mut sb_state = ScrollbarState::new(modal.options.len())
@@ -2265,6 +2274,7 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     let scroll_offset = &mut app.pipeline_state.scroll_offset;
     render_scrollable(f, form_area, lines, scroll_offset, focused_line);
     let scroll = *scroll_offset;
+    app.hits.add(form_area, super::mouse::Hit::Rows { scroll });
 
     // Render help text, and under it the reference values of the setting
     let mut text = help;

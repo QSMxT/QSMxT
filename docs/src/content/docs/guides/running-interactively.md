@@ -198,7 +198,28 @@ Copying goes through the terminal (the OSC 52 escape sequence), so it reaches th
 the machine you are typing on even when QSMxT runs on a remote server over SSH. Most current
 terminals support it (iTerm2, kitty, WezTerm, Alacritty, foot, Windows Terminal; xterm with
 `allowWindowOps`). Inside tmux, set `set -g set-clipboard on`. If the clipboard stays empty,
-select the text in the Methods tab with the mouse instead.
+select the text in the Methods tab with the mouse instead, holding Shift (Option in iTerm2) while
+you drag, since the TUI uses the mouse itself (see [Mouse](#mouse)).
+
+## Mouse
+
+Everything can also be done with the mouse:
+
+- **Click a tab or a sub-tab** to switch to it.
+- **Click a setting** to use it: a checkbox ticks, a button (`[ … ▾ ]`) opens its list, and a
+  value opens for editing. A short choice (`◀ … ▶`) is focused by the first click and takes the
+  next value on the next. Any other row, such as *Add section* or the Execution tab's run
+  button, is focused by the first click and pressed by the second.
+- **In a list** (a method's list, the Pipeline tab's pipelines), the first click highlights an
+  entry and the second chooses it.
+- **Click a pop-up's button** to press it. While a pop-up is open, the rest of the screen does
+  not answer clicks, just as it does not answer keys.
+- **The wheel** does what `↑`/`↓` do: it moves through the settings and lists, and scrolls the
+  methods text, the graph and the pop-ups that scroll. It stays on the page rather than moving up
+  to the sub-tabs or the tabs.
+
+With the mouse in use, most terminals select text only while you hold Shift (Option in iTerm2).
+To leave the mouse to the terminal entirely, set `QSMXT_NO_MOUSE=1`.
 
 The Pipeline sub-tab's drawing is written to the system's temporary folder. Over SSH, or with no
 display, QSMxT does not try to open it and shows where it was written instead, so you can copy

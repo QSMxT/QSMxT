@@ -5681,6 +5681,8 @@ pub struct App {
     pub refs: super::recommend::RefState,
     /// The Pipeline tab ([`super::pipelines_tab`]).
     pub pipelines: super::pipelines_tab::PipelinesState,
+    /// Where the clickable things of the last frame are ([`super::mouse`]).
+    pub hits: super::mouse::Hits,
 }
 
 /// The "Did you know?" pop-up, with two buttons: OK, and one that turns startup tips off
@@ -6054,6 +6056,7 @@ impl App {
             rec_config: None,
             refs: Default::default(),
             pipelines: Default::default(),
+            hits: Default::default(),
         }
     }
 
@@ -8025,7 +8028,7 @@ impl App {
         self.pipeline_state.focus
     }
 
-    fn set_focus(&mut self, focus: usize) {
+    pub(super) fn set_focus(&mut self, focus: usize) {
         self.pipeline_state.focus = focus;
     }
 
