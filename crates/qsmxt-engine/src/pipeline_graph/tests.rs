@@ -133,9 +133,11 @@ fn graphs_of_a_table_of_configurations() {
     for from in ["t2star_r2star", "r2_r2prime", "bgremove", "load"] {
         assert!(g.has_edge(from, "chi_separation"), "{from}: {:?}", g.edges);
     }
-    // χ-sep iLSQR makes its QSM from the local field; χ-sep MEDI separates the run's.
+    // χ-sep iLSQR and χ-sep MEDI make their QSM from the local field; DECOMPOSE separates the run's.
     assert!(!g.has_edge("reference", "chi_separation"), "{:?}", g.edges);
     config.separation.algorithm = SeparationAlgorithm::ChiSepMedi;
+    assert!(!graph(&config, &f).has_edge("reference", "chi_separation"));
+    config.separation.algorithm = SeparationAlgorithm::Decompose;
     assert!(graph(&config, &f).has_edge("reference", "chi_separation"));
     config.separation.algorithm = SeparationAlgorithm::ChiSepIlsqr;
     assert!(g.has_edge("t2star_r2star", "r2_r2prime") && g.has_edge("load", "r2_r2prime"));

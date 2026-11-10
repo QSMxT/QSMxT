@@ -60,7 +60,7 @@ pub(super) fn table() -> Vec<Def> {
         d("n4.histogram_bins", Geometry, "Histogram bins", "Bins of the log-intensity histogram", Int).min(2.0).flag("--n4-histogram-bins").parent("masking.inhomogeneity_method")
         .when(n4_on).context("N4"),
         d("pipeline.ignore_slice_gap", Geometry, "Ignore slice gap", "Reconstruct even if the sidecar's SliceThickness is thinner than the slice pitch (gapped 2D data gives a wrong map)", Bool).flag("--ignore-slice-gap"),
-        d("pipeline.tukey_window", Geometry, "Tukey window", "Taper ratio of a k-space Tukey window applied to each echo's complex image before every other step: 0 applies none; the χ-separation toolbox uses 0.4 for Siemens and GE data and 0 for Philips. Needs magnitude", Float).min(0.0).max(1.0).flag("--tukey-window").full("Tukey window in k-space"),
+        d("pipeline.tukey_window", Geometry, "Tukey window", "Taper ratio of a k-space Tukey window applied to each echo's complex image before every other step: 0 applies none; the χ-separation toolbox uses 0.4, and 0 for Philips data. Needs magnitude", Float).min(0.0).max(1.0).flag("--tukey-window").full("Tukey window in k-space"),
         d("pipeline.crop_to_mask", Geometry, "Crop to mask", "Run the FFT-bound stages on a box around the mask (faster; outputs stay on the full grid). Off by default", Bool).flag("--crop-to-mask")
         .when(|x| x.qsm)
         .gui("Run the FFT-bound stages on a box around the mask (faster; outputs stay on the full grid)"),
@@ -998,16 +998,16 @@ pub(super) fn table() -> Vec<Def> {
         // The QSM χ-sep iLSQR is initialised with, reconstructed unless one is supplied. QSM.rs
         // inversion/ilsqr.rs: 0 iterations give an all-zero map; IlsqrParams::validate: pad >= 0.
         d("separation.chi_sep_ilsqr.qsm_ilsqr.max_iter", Separation, "QSM max iter", "Maximum iterations of the iLSQR that reconstructs the QSM separated", Int).min(1.0).flag("--chi-sep-ilsqr-qsm-max-iter").parent("separation.algorithm")
-        .when(|x| x.sep("chi-sep-ilsqr") && x.c.separation.custom_qsm_tool.is_none()).full("QSM maximum iterations"),
+        .when(|x| x.sep("chi-sep-ilsqr") && x.c.separation.custom_qsm_tool.is_none()).context("χ-separation (iLSQR)").full("QSM maximum iterations"),
         d("separation.chi_sep_ilsqr.qsm_ilsqr.tol", Separation, "QSM tolerance", "Tolerance of the iLSQR that reconstructs the QSM separated", Float).flag("--chi-sep-ilsqr-qsm-tol").parent("separation.algorithm")
-        .when(|x| x.sep("chi-sep-ilsqr") && x.c.separation.custom_qsm_tool.is_none()),
+        .when(|x| x.sep("chi-sep-ilsqr") && x.c.separation.custom_qsm_tool.is_none()).context("χ-separation (iLSQR)"),
         d("separation.chi_sep_ilsqr.qsm_ilsqr.pad_mm", Separation, "QSM pad (mm)", "Zero-padding per side of the iLSQR that reconstructs the QSM separated", Float).min(0.0).units("mm").flag("--chi-sep-ilsqr-qsm-pad-mm").parent("separation.algorithm")
-        .when(|x| x.sep("chi-sep-ilsqr") && x.c.separation.custom_qsm_tool.is_none()).full("QSM padding"),
+        .when(|x| x.sep("chi-sep-ilsqr") && x.c.separation.custom_qsm_tool.is_none()).context("χ-separation (iLSQR)").full("QSM padding"),
         d("separation.chi_sep_ilsqr.qsm_ilsqr.precision", Separation, "QSM precision", "", Enum(vec![
             o("double", "double", "Double", "Double precision (default)"),
             o("single", "single", "Single", "Single precision, as the original implementation computes the solves; slower and uses more memory"),
         ])).flag("--chi-sep-ilsqr-qsm-precision").parent("separation.algorithm")
-        .when(|x| x.sep("chi-sep-ilsqr") && x.c.separation.custom_qsm_tool.is_none())
+        .when(|x| x.sep("chi-sep-ilsqr") && x.c.separation.custom_qsm_tool.is_none()).context("χ-separation (iLSQR)")
         .gui("Arithmetic of the two least-squares solves of the iLSQR that reconstructs the QSM separated"),
         // QSM.rs ChiSepMediParams::validate: λ, λ_CSF and the tolerances finite and >= 0; D_r finite
         // and > 0; at least 1 iteration.
@@ -1030,6 +1030,20 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.sep("chi-sep-medi")),
         d("separation.chi_sep_medi.cg_max_iter", Separation, "CG max iter", "Inner CG max iterations", Int).flag("--chi-sep-medi-cg-max-iter").parent("separation.algorithm")
         .when(|x| x.sep("chi-sep-medi")).full("CG maximum iterations"),
+        // The QSM χ-sep MEDI is initialised with, reconstructed unless one is supplied: the same
+        // iLSQR the χ-separation toolbox makes for both of its iterative methods.
+        d("separation.chi_sep_medi.qsm_ilsqr.max_iter", Separation, "QSM max iter", "Maximum iterations of the iLSQR that reconstructs the QSM χ-separation starts from", Int).min(1.0).flag("--chi-sep-medi-qsm-max-iter").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-medi") && x.c.separation.custom_qsm_tool.is_none()).context("χ-separation (MEDI)").full("QSM maximum iterations"),
+        d("separation.chi_sep_medi.qsm_ilsqr.tol", Separation, "QSM tolerance", "Tolerance of the iLSQR that reconstructs the QSM χ-separation starts from", Float).flag("--chi-sep-medi-qsm-tol").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-medi") && x.c.separation.custom_qsm_tool.is_none()).context("χ-separation (MEDI)"),
+        d("separation.chi_sep_medi.qsm_ilsqr.pad_mm", Separation, "QSM pad (mm)", "Zero-padding per side of the iLSQR that reconstructs the QSM χ-separation starts from", Float).min(0.0).units("mm").flag("--chi-sep-medi-qsm-pad-mm").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-medi") && x.c.separation.custom_qsm_tool.is_none()).context("χ-separation (MEDI)").full("QSM padding"),
+        d("separation.chi_sep_medi.qsm_ilsqr.precision", Separation, "QSM precision", "", Enum(vec![
+            o("double", "double", "Double", "Double precision (default)"),
+            o("single", "single", "Single", "Single precision, as the original implementation computes the solves; slower and uses more memory"),
+        ])).flag("--chi-sep-medi-qsm-precision").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-medi") && x.c.separation.custom_qsm_tool.is_none()).context("χ-separation (MEDI)")
+        .gui("Arithmetic of the two least-squares solves of the iLSQR that reconstructs the QSM χ-separation starts from"),
         d("separation.wavesep.dr_pos", Separation, "Dr+ (Hz/ppm)", "Paramagnetic relaxivity", Float).units("Hz/ppm").flag("--wavesep-dr-pos").parent("separation.algorithm")
         .when(|x| x.sep("wavesep")).full("Paramagnetic constant (Dr+)"),
         d("separation.wavesep.dr_neg", Separation, "Dr- (Hz/ppm)", "Diamagnetic relaxivity", Float).units("Hz/ppm").flag("--wavesep-dr-neg").parent("separation.algorithm")

@@ -840,7 +840,7 @@ fn separation_changes(config: &PipelineConfig) -> Changed {
         }
         // Its QSM's iLSQR is worded with that QSM.
         SeparationAlgorithm::ChiSepIlsqr => c.add_fields(&s.chi_sep_ilsqr, &d.chi_sep_ilsqr, &["qsm_ilsqr"]),
-        SeparationAlgorithm::ChiSepMedi => c.add_fields(&s.chi_sep_medi, &d.chi_sep_medi, &[]),
+        SeparationAlgorithm::ChiSepMedi => c.add_fields(&s.chi_sep_medi, &d.chi_sep_medi, &["qsm_ilsqr"]),
         SeparationAlgorithm::WaveSep => c.add_fields(&s.wavesep, &d.wavesep, &[]),
         SeparationAlgorithm::HcChisep => c.add_fields(&s.hc_chisep, &d.hc_chisep, &[]),
         SeparationAlgorithm::ChiSepNet => match s.chi_sepnet.route {
@@ -1601,7 +1601,12 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
         }
         if crate::stages::separation::reconstructs_qsm(config) {
             let mut q = Changed::default();
-            q.add_fields(&config.separation.chi_sep_ilsqr.qsm_ilsqr, &SeparationConfig::default().chi_sep_ilsqr.qsm_ilsqr, &[]);
+            let defaults = SeparationConfig::default();
+            let d = match config.separation.algorithm {
+                SeparationAlgorithm::ChiSepMedi => &defaults.chi_sep_medi.qsm_ilsqr,
+                _ => &defaults.chi_sep_ilsqr.qsm_ilsqr,
+            };
+            q.add_fields(crate::stages::separation::initial_qsm_ilsqr(config), d, &[]);
             doc.cite(&CITE_ILSQR);
             doc.say(&[Stage::ChiSeparation], format!(
                 "The susceptibility map separated was reconstructed from the local field by iLSQR ({}){}.",
@@ -2531,6 +2536,8 @@ fn cite_inline(cite: &Citation) -> &'static str {
     match cite.key {
         "wu2012" => "Wu et al., 2012",
         "schweser2011" => "Schweser et al., 2011",
+        "schweser2010" => "Schweser et al., 2010",
+        "schweser2012" => "Schweser et al., 2012",
         "liu2011pdf" => "Liu et al., 2011",
         "wen2014" => "Wen et al., 2014",
         "zhou2014" => "Zhou et al., 2014",
@@ -2873,7 +2880,8 @@ mod tests {
         assert!(out.contains("with SMV kernel radii from 8 to 2 mm in 1 mm steps, truncated-SVD deconvolution enabled, and a deconvolution threshold of 0.1."), "{out}");
     }
 
-    /// χ-sep iLSQR says it reconstructed the QSM it separated, and any iLSQR setting changed.
+    /// χ-sep iLSQR and χ-sep MEDI say they reconstructed the QSM they separated, and any iLSQR
+    /// setting changed.
     #[test]
     fn chi_sep_ilsqr_methods_state_its_own_qsm() {
         let mut config = PipelineConfig::default();
@@ -2888,6 +2896,10 @@ mod tests {
         assert!(!generate_methods(&config).contains(own));
         config.separation.custom_qsm_tool = None;
         config.separation.algorithm = SeparationAlgorithm::ChiSepMedi;
+        assert!(generate_methods(&config).contains(&format!("{own}.")), "χ-sep MEDI's own settings, at their defaults");
+        config.separation.chi_sep_medi.qsm_ilsqr.max_iter = 40;
+        assert!(generate_methods(&config).contains(&format!("{own} with at most 40 iterations.")), "{}", generate_methods(&config));
+        config.separation.algorithm = SeparationAlgorithm::Decompose;
         assert!(!generate_methods(&config).contains(own));
     }
 

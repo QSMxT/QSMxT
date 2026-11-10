@@ -70,21 +70,34 @@ pub fn check_patch(config: &PipelineConfig) -> Result<(), EngineError> {
     .map_err(EngineError::Config)
 }
 
-/// Whether the step reconstructs the QSM it separates: χ-sep iLSQR, unless a QSM is supplied, is
-/// initialised with an iLSQR QSM of the same local field, as the χ-separation toolbox makes it
-/// (QSM.rs `ChiSepIlsqrParams::qsm_ilsqr`).
+/// Whether the step reconstructs the QSM it separates: χ-sep iLSQR and χ-sep MEDI, unless a QSM
+/// is supplied, are initialised with an iLSQR QSM of the same local field, unreferenced, as the
+/// χ-separation toolbox makes it for both (`Chisep_script.m` l. 145, 153-161; QSM.rs
+/// `ChiSepIlsqrParams::qsm_ilsqr`, `ChiSepMediParams::qsm_ilsqr`). The run's own QSM is published
+/// as it is, and not separated.
 pub fn reconstructs_qsm(config: &PipelineConfig) -> bool {
-    config.separation.algorithm == SeparationAlgorithm::ChiSepIlsqr && config.separation.custom_qsm_tool.is_none()
+    matches!(config.separation.algorithm, SeparationAlgorithm::ChiSepIlsqr | SeparationAlgorithm::ChiSepMedi)
+        && config.separation.custom_qsm_tool.is_none()
 }
 
-/// The QSM χ-sep iLSQR is initialised with ([`reconstructs_qsm`]): iLSQR of `local_field` (ppm)
-/// inside `mask`, with `separation.chi_sep_ilsqr.qsm_ilsqr`. Unreferenced, in ppm.
+/// The settings of the iLSQR that reconstructs the QSM ([`reconstructs_qsm`]): the selected
+/// method's `qsm_ilsqr`.
+pub fn initial_qsm_ilsqr(config: &PipelineConfig) -> &crate::config::IlsqrConfig {
+    match config.separation.algorithm {
+        SeparationAlgorithm::ChiSepMedi => &config.separation.chi_sep_medi.qsm_ilsqr,
+        _ => &config.separation.chi_sep_ilsqr.qsm_ilsqr,
+    }
+}
+
+/// The QSM χ-sep iLSQR and χ-sep MEDI are initialised with ([`reconstructs_qsm`]): iLSQR of
+/// `local_field` (ppm) inside `mask`, with the method's `qsm_ilsqr` ([`initial_qsm_ilsqr`]).
+/// Unreferenced, in ppm.
 pub fn initial_qsm(
     local_field: &[f64], mask: &[u8], meta: &RunMetadata, config: &PipelineConfig, observer: &mut dyn Observer,
 ) -> Result<Vec<f64>, EngineError> {
     let (_, _, mut inversion, _) = crate::bridge::to_pipeline_stages(config);
     inversion.algorithm = qsm_core::pipeline::InversionAlgorithm::Ilsqr;
-    inversion.ilsqr = crate::bridge::to_separation_config(config).chi_sep_ilsqr.qsm_ilsqr;
+    inversion.ilsqr = initial_qsm_ilsqr(config).params();
     // The toolbox's iLSQR QSM, without HEIDI (χ-separation is not one of HEIDI's seeds).
     inversion.apply_heidi = false;
     qsm_core::pipeline::run_dipole_inversion(

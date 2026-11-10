@@ -1061,6 +1061,14 @@ mod tests {
         cfg.separation.chi_sep_ilsqr.qsm_ilsqr.pad_mm = 3.0;
         let q = to_separation_config(&cfg).chi_sep_ilsqr.qsm_ilsqr;
         assert_eq!((q.max_iter, q.pad_mm), (7, 3.0));
+        // χ-sep MEDI's: the same call by default, its own setting.
+        let q = to_separation_config(&cfg).chi_sep_medi.qsm_ilsqr;
+        assert_eq!((q.max_iter, q.pad_mm, q.tol), (d.max_iter, d.pad_mm, d.tol));
+        cfg.separation.chi_sep_medi.qsm_ilsqr.max_iter = 9;
+        assert_eq!(to_separation_config(&cfg).chi_sep_medi.qsm_ilsqr.max_iter, 9);
+        assert_eq!(crate::stages::separation::initial_qsm_ilsqr(&cfg).max_iter, 7);
+        cfg.separation.algorithm = crate::enums::SeparationAlgorithm::ChiSepMedi;
+        assert_eq!(crate::stages::separation::initial_qsm_ilsqr(&cfg).max_iter, 9);
     }
 
     /// The settings of iSMV, the QSM.jl inversions' padding and the χ-separation and DECOMPOSE

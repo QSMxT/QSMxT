@@ -2379,12 +2379,18 @@ mod integration_tests {
         testutils::write_field(&input);
         testutils::write_mask(&mask);
 
-        super::invert::execute(InvertCommand::Lsqr(InvertLsqrArgs {
-            common: common_invert(input, mask, output.clone()),
-            magnitude: vec![],
+        let magnitude = dir.path().join("mag.nii");
+        testutils::write_magnitude(&magnitude);
+        let args = |magnitude: Vec<std::path::PathBuf>| InvertLsqrArgs {
+            common: common_invert(input.clone(), mask.clone(), output.clone()),
+            magnitude,
             b0: 3.0,
             lsqr_params: LsqrParamArgs { lsqr_max_iter: Some(5), ..Default::default() },
-        })).unwrap();
+        };
+        // LSQR is weighted by the magnitude, as the HEIDI package weights it.
+        let err = super::invert::execute(InvertCommand::Lsqr(args(vec![]))).unwrap_err().to_string();
+        assert!(err.contains("--magnitude"), "{err}");
+        super::invert::execute(InvertCommand::Lsqr(args(vec![magnitude]))).unwrap();
         assert!(output.exists());
     }
 
@@ -2399,10 +2405,12 @@ mod integration_tests {
         testutils::write_field(&input);
         testutils::write_mask(&mask);
 
+        let magnitude = dir.path().join("mag.nii");
+        testutils::write_magnitude(&magnitude);
         super::invert::execute(InvertCommand::Heidi(InvertHeidiArgs {
             common: common_invert(input, mask, output.clone()),
             scan: scan(&[0.02]),
-            magnitude: vec![],
+            magnitude: vec![magnitude],
             seed: None,
             lsqr_params: LsqrParamArgs { lsqr_max_iter: Some(5), ..Default::default() },
             heidi_params: HeidiParamArgs {

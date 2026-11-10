@@ -630,6 +630,20 @@ pub struct SeparationParamArgs {
     /// χ-sep MEDI inner CG max iterations (default: 100)
     #[arg(long)]
     pub chi_sep_medi_cg_max_iter: Option<usize>,
+    /// χ-sep MEDI: max iterations of the iLSQR that reconstructs, from the local field, the QSM
+    /// χ-separation is initialised with (default: 100; not used with --use-custom-qsm)
+    #[arg(long)]
+    pub chi_sep_medi_qsm_max_iter: Option<usize>,
+    /// χ-sep MEDI: tolerance of that QSM's iLSQR
+    #[arg(long)]
+    pub chi_sep_medi_qsm_tol: Option<f64>,
+    /// χ-sep MEDI: zero-padding of that QSM's iLSQR, in mm per side (default: 12)
+    #[arg(long, value_name = "MM")]
+    pub chi_sep_medi_qsm_pad_mm: Option<f64>,
+    /// χ-sep MEDI: arithmetic of that QSM's two LSQR solves: double, or single as the original
+    /// implementation (default: double)
+    #[arg(long, value_name = "PRECISION", value_parser = parse_ilsqr_precision)]
+    pub chi_sep_medi_qsm_precision: Option<qsmxt_engine::IlsqrPrecision>,
     // WaveSep (Fang)
     /// WaveSep paramagnetic relaxivity (Hz/ppm)
     #[arg(long)]
@@ -1923,8 +1937,8 @@ pub struct PipelineArgs {
     pub fft_padding: bool,
 
     /// Apply a k-space Tukey window with this taper ratio (0 to 1) to each echo's complex image
-    /// before every other step, as the χ-separation toolbox does: 0.4 for Siemens and GE data, 0
-    /// for Philips. Default 0 (none). Needs magnitude images.
+    /// before every other step, as the χ-separation toolbox does: 0.4, and 0 for Philips data.
+    /// Default 0 (none). Needs magnitude images.
     #[arg(long)]
     pub tukey_window: Option<f64>,
 
@@ -3623,9 +3637,9 @@ pub struct InvertStarArgs {
 pub struct InvertLsqrArgs {
     #[command(flatten)]
     pub common: InvertCommonArgs,
-    /// Magnitude NIfTI (optional row weight; its scale does not change the solution): one 3D
-    /// volume, a 4D one, or one per echo; several echoes are RSS-combined
-    #[arg(long, num_args = 1..)]
+    /// Magnitude NIfTI, LSQR's row weight as the HEIDI package's (its scale does not change the
+    /// solution): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined
+    #[arg(long, num_args = 1.., required = true)]
     pub magnitude: Vec<PathBuf>,
     /// B0 field strength in Tesla — sets the default residual weighting
     #[arg(long, default_value_t = 3.0)]
@@ -3644,9 +3658,9 @@ pub struct InvertHeidiArgs {
     pub common: InvertCommonArgs,
     #[command(flatten)]
     pub scan: ScanParamArgs,
-    /// Magnitude NIfTI (optional row weight of the LSQR seed): one 3D volume, a 4D one, or one
-    /// per echo; several echoes are RSS-combined
-    #[arg(long, num_args = 1..)]
+    /// Magnitude NIfTI, the row weight of the LSQR seed as the HEIDI package's (not needed with
+    /// --seed): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined
+    #[arg(long, num_args = 1.., required_unless_present = "seed")]
     pub magnitude: Vec<PathBuf>,
     /// A χ map (ppm) another inversion made of this field, to fill the cone of instead of
     /// running LSQR (`--lsqr-*` and `--magnitude` then do nothing). HEIDI suits a seed whose

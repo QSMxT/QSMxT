@@ -1621,6 +1621,10 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("sep_medi_pad", "separation.chi_sep_medi.pad"), ("sep_medi_tol", "separation.chi_sep_medi.tol"),
     ("sep_medi_max_iter", "separation.chi_sep_medi.max_iter"), ("sep_medi_cg_tol", "separation.chi_sep_medi.cg_tol"),
     ("sep_medi_cg_max_iter", "separation.chi_sep_medi.cg_max_iter"),
+    ("sep_medi_qsm_max_iter", "separation.chi_sep_medi.qsm_ilsqr.max_iter"),
+    ("sep_medi_qsm_tol", "separation.chi_sep_medi.qsm_ilsqr.tol"),
+    ("sep_medi_qsm_pad_mm", "separation.chi_sep_medi.qsm_ilsqr.pad_mm"),
+    ("sep_medi_qsm_precision", "separation.chi_sep_medi.qsm_ilsqr.precision"),
     ("sep_wavesep_dr_pos", "separation.wavesep.dr_pos"), ("sep_wavesep_dr_neg", "separation.wavesep.dr_neg"),
     ("sep_wavesep_alpha", "separation.wavesep.alpha"), ("sep_wavesep_lambda", "separation.wavesep.lambda"),
     ("sep_wavesep_wavelet_order", "separation.wavesep.wavelet_order"), ("sep_wavesep_max_iter", "separation.wavesep.max_iter"),
@@ -2371,6 +2375,11 @@ pub struct PipelineFormState {
     pub sep_medi_max_iter: String,
     pub sep_medi_cg_tol: String,
     pub sep_medi_cg_max_iter: String,
+    pub sep_medi_qsm_max_iter: String,
+    pub sep_medi_qsm_tol: String,
+    pub sep_medi_qsm_pad_mm: String,
+    /// An index into ILSQR_PRECISION_OPTIONS.
+    pub sep_medi_qsm_precision: usize,
     // WaveSep
     pub sep_wavesep_dr_pos: String,
     pub sep_wavesep_dr_neg: String,
@@ -2818,6 +2827,10 @@ impl Default for PipelineFormState {
             sep_medi_max_iter: sep_medi.max_iter.to_string(),
             sep_medi_cg_tol: fmt_default(sep_medi.cg_tol),
             sep_medi_cg_max_iter: sep_medi.cg_max_iter.to_string(),
+            sep_medi_qsm_max_iter: sep_medi.qsm_ilsqr.max_iter.to_string(),
+            sep_medi_qsm_tol: fmt_default(sep_medi.qsm_ilsqr.tol),
+            sep_medi_qsm_pad_mm: fmt_default(sep_medi.qsm_ilsqr.pad_mm),
+            sep_medi_qsm_precision: ilsqr_precision_index(sep_medi.qsm_ilsqr.precision.into()),
             sep_wavesep_dr_pos: fmt_default(sep_wavesep.dr_pos),
             sep_wavesep_dr_neg: fmt_default(sep_wavesep.dr_neg),
             sep_wavesep_alpha: fmt_default(sep_wavesep.alpha),
@@ -3166,6 +3179,16 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Max iter", field: "sep_medi_max_iter", help: "Maximum Gauss-Newton iterations" });
                 rows.push(PipelineRow::Param { label: "  CG tolerance", field: "sep_medi_cg_tol", help: "Inner CG tolerance" });
                 rows.push(PipelineRow::Param { label: "  CG max iter", field: "sep_medi_cg_max_iter", help: "Inner CG max iterations" });
+                if self.custom_qsm_tool.trim().is_empty() {
+                    rows.push(PipelineRow::Param { label: "  QSM max iter", field: "sep_medi_qsm_max_iter",
+                        help: "Maximum iterations of the iLSQR that reconstructs the QSM χ-separation starts from" });
+                    rows.push(PipelineRow::Param { label: "  QSM tolerance", field: "sep_medi_qsm_tol",
+                        help: "Tolerance of the iLSQR that reconstructs the QSM χ-separation starts from" });
+                    rows.push(PipelineRow::Param { label: "  QSM pad (mm)", field: "sep_medi_qsm_pad_mm",
+                        help: "Zero-padding per side of the iLSQR that reconstructs the QSM χ-separation starts from" });
+                    rows.push(PipelineRow::AlgoSelect { label: "  QSM precision", field: "sep_medi_qsm_precision",
+                        options: ILSQR_PRECISION_OPTIONS, help: ILSQR_PRECISION_HELP });
+                }
             }
             4 => {
                 rows.push(PipelineRow::Param { label: "  Dr+ (Hz/ppm)", field: "sep_wavesep_dr_pos", help: "Paramagnetic relaxivity" });
@@ -3282,7 +3305,7 @@ impl PipelineFormState {
             help: "Reconstruct even if the sidecar's SliceThickness is thinner than the slice pitch (gapped 2D data gives a wrong map)",
         });
         rows.push(PipelineRow::Param { label: "Tukey window", field: "tukey_window",
-            help: "Taper ratio of a k-space Tukey window applied to each echo's complex image before every other step: 0 applies none; the χ-separation toolbox uses 0.4 for Siemens and GE data and 0 for Philips. Needs magnitude" });
+            help: "Taper ratio of a k-space Tukey window applied to each echo's complex image before every other step: 0 applies none; the χ-separation toolbox uses 0.4, and 0 for Philips data. Needs magnitude" });
         if qsm {
             rows.push(PipelineRow::Toggle {
                 label: "Crop to mask", field: "crop_to_mask",
@@ -4404,6 +4427,9 @@ impl PipelineFormState {
             "sep_medi_max_iter" => &self.sep_medi_max_iter,
             "sep_medi_cg_tol" => &self.sep_medi_cg_tol,
             "sep_medi_cg_max_iter" => &self.sep_medi_cg_max_iter,
+            "sep_medi_qsm_max_iter" => &self.sep_medi_qsm_max_iter,
+            "sep_medi_qsm_tol" => &self.sep_medi_qsm_tol,
+            "sep_medi_qsm_pad_mm" => &self.sep_medi_qsm_pad_mm,
             "rts_pad" => &self.rts_pad,
             "tv_pad" => &self.tv_pad,
             "tkd_pad" => &self.tkd_pad,
@@ -4681,6 +4707,9 @@ impl PipelineFormState {
             "sep_medi_max_iter" => Some(&mut self.sep_medi_max_iter),
             "sep_medi_cg_tol" => Some(&mut self.sep_medi_cg_tol),
             "sep_medi_cg_max_iter" => Some(&mut self.sep_medi_cg_max_iter),
+            "sep_medi_qsm_max_iter" => Some(&mut self.sep_medi_qsm_max_iter),
+            "sep_medi_qsm_tol" => Some(&mut self.sep_medi_qsm_tol),
+            "sep_medi_qsm_pad_mm" => Some(&mut self.sep_medi_qsm_pad_mm),
             "rts_pad" => Some(&mut self.rts_pad),
             "tv_pad" => Some(&mut self.tv_pad),
             "tkd_pad" => Some(&mut self.tkd_pad),
@@ -4732,6 +4761,7 @@ impl PipelineFormState {
             "whqsm_weight" => self.whqsm_weight,
             "ilsqr_precision" => self.ilsqr_precision,
             "sep_ilsqr_qsm_precision" => self.sep_ilsqr_qsm_precision,
+            "sep_medi_qsm_precision" => self.sep_medi_qsm_precision,
             "pdf_space" => self.pdf_space,
             "lbv_precision" => self.lbv_precision,
             "ismv_variant" => self.ismv_variant,
@@ -4793,6 +4823,7 @@ impl PipelineFormState {
             "whqsm_weight" => self.whqsm_weight = val.min(WHQSM_WEIGHT_OPTIONS.len() - 1),
             "ilsqr_precision" => self.ilsqr_precision = val.min(ILSQR_PRECISION_OPTIONS.len() - 1),
             "sep_ilsqr_qsm_precision" => self.sep_ilsqr_qsm_precision = val.min(ILSQR_PRECISION_OPTIONS.len() - 1),
+            "sep_medi_qsm_precision" => self.sep_medi_qsm_precision = val.min(ILSQR_PRECISION_OPTIONS.len() - 1),
             "pdf_space" => self.pdf_space = val.min(PDF_SPACE_OPTIONS.len() - 1),
             "lbv_precision" => self.lbv_precision = val.min(LBV_PRECISION_OPTIONS.len() - 1),
             "ismv_variant" => self.ismv_variant = val.min(ISMV_VARIANT_OPTIONS.len() - 1),

@@ -14,9 +14,16 @@ fn facts_for(rule: &Rule) -> Option<Facts> {
     };
     for c in rule.when {
         let Condition::Fact { fact, is } = c else { continue };
-        // A vendor rule: the first manufacturer it names, as a sidecar spells it.
+        // A vendor rule: the first manufacturer it names, as a sidecar spells it, or one it does
+        // not name.
         if let (core::Fact::Manufacturer, Test::OneOf { values }) = (fact, is) {
             let Some(core::Value::Choice(m)) = values.first() else { return None };
+            f.manufacturer = Some(m.to_uppercase());
+            continue;
+        }
+        if let (core::Fact::Manufacturer, Test::NoneOf { values }) = (fact, is) {
+            let m = ["siemens", "ge", "philips", "canon"].into_iter()
+                .find(|m| !values.contains(&core::Value::Choice(m)))?;
             f.manufacturer = Some(m.to_uppercase());
             continue;
         }
@@ -390,12 +397,29 @@ fn a_reference_difference_has_no_dismissal() {
 #[test]
 fn findings_of_two_triggers_on_one_setting_are_both_reported() {
     let mut c = PipelineConfig::default();
+    c.inversion.algorithm = QsmAlgorithm::Medi;
+    c.pipeline.do_chi_separation = true;
+    c.separation.algorithm = SeparationAlgorithm::Decompose;
+    let found = recommendations(&c, &Facts::default());
+    // MEDI's pipeline references nothing after the inversion, DECOMPOSE's the mean (the default).
+    assert!(found.iter().any(|r| r.rule == "medi.reference-none"));
+    assert!(!found.iter().any(|r| r.rule == "decompose.reference-mean"));
+    c.qsm.reference = crate::enums::QsmReference::None;
+    let found = recommendations(&c, &Facts::default());
+    assert!(found.iter().any(|r| r.rule == "decompose.reference-mean"));
+    assert!(!found.iter().any(|r| r.rule == "medi.reference-none"));
+}
+
+/// The χ-separation toolbox runs STI Suite's iLSQR but unwraps with ROMEO: STI Suite's
+/// unwrapping rule does not apply under it, so only the toolbox's is reported.
+#[test]
+fn sti_suite_unwrapping_does_not_apply_under_the_chi_separation_toolbox() {
+    let mut c = PipelineConfig::default();
     c.inversion.algorithm = QsmAlgorithm::Ilsqr;
+    assert!(recommendations(&c, &Facts::default()).iter().any(|r| r.rule == "sti.unwrap-laplacian"));
     c.pipeline.do_chi_separation = true;
     c.separation.algorithm = SeparationAlgorithm::ChiSepIlsqr;
-    let found = recommendations(&c, &Facts::default());
-    // iLSQR's reference unwraps with the Laplacian, χ-separation's with ROMEO (the default).
-    assert!(found.iter().any(|r| r.rule == "sti.unwrap-laplacian"));
+    assert!(!recommendations(&c, &Facts::default()).iter().any(|r| r.rule.starts_with("sti.")));
     c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
     let found = recommendations(&c, &Facts::default());
     assert!(found.iter().any(|r| r.rule == "chi-sep.unwrap-romeo"));
@@ -710,13 +734,14 @@ fn the_vendor_rules_read_a_loaded_scans_manufacturer_only() {
     let offered = |view: &ViewFacts| schema::settings_view(&c, view).into_iter()
         .find(|v| v.path == "pipeline.tukey_window").unwrap().recommendations.into_iter()
         .map(|r| r.rule).collect::<Vec<_>>();
-    assert_eq!(offered(&ViewFacts::from(&scan)), ["chi-sepnet.tukey-siemens-ge"]);
+    assert_eq!(offered(&ViewFacts::from(&scan)), ["chi-sepnet.tukey-not-philips"]);
     assert!(offered(&ViewFacts::of_example(&scan)).is_empty());
 }
 
 /// χ-sepnet's toolbox route offers the toolbox's Tukey window for the scan's manufacturer, as the
-/// sidecar spells it, as the authors' setting, and changes nothing until applied; the native
-/// route and an unknown manufacturer offer nothing. χ-sep-MEDI and χ-sep-iLSQR offer it too.
+/// sidecar spells it, as the authors' setting, and changes nothing until applied: 0.4 for every
+/// known manufacturer but Philips. The native route and an unknown manufacturer offer nothing.
+/// χ-sep-MEDI and χ-sep-iLSQR offer it too.
 #[test]
 fn chi_sepnet_offers_the_vendor_tukey_window() {
     let mut c = PipelineConfig::default();
@@ -725,11 +750,12 @@ fn chi_sepnet_offers_the_vendor_tukey_window() {
     let tukey = |c: &PipelineConfig, m: Option<&str>| recommendations(c, &known().with_manufacturer(m.map(str::to_string)))
         .into_iter().filter(|r| r.setting == "pipeline.tukey_window").collect::<Vec<_>>();
     let r = tukey(&c, Some("SIEMENS")).pop().expect("Siemens: no Tukey window offered");
-    assert_eq!((r.rule.as_str(), r.strength, r.recommended.value.clone()), ("chi-sepnet.tukey-siemens-ge", Strength::Reference, json!(0.4)));
+    assert_eq!((r.rule.as_str(), r.strength, r.recommended.value.clone()), ("chi-sepnet.tukey-not-philips", Strength::Reference, json!(0.4)));
     assert_eq!(r.kind, Kind::Reference);
     assert_eq!(tukey(&c, Some("GE MEDICAL SYSTEMS")).len(), 1);
     assert!(tukey(&c, Some("Philips Medical Systems")).is_empty(), "Philips: 0 is already the default");
-    assert!(tukey(&c, None).is_empty() && tukey(&c, Some("Canon_MEC")).is_empty());
+    assert!(tukey(&c, None).is_empty());
+    assert_eq!(tukey(&c, Some("Canon_MEC")).pop().map(|r| r.recommended.value), Some(json!(0.4)));
     assert_eq!(c.pipeline.tukey_window, 0.0, "changed silently");
     let view = schema::settings_view(&c, &ViewFacts { manufacturer: Some("Siemens".into()), ..view_facts(&known()) });
     assert!(view.iter().any(|v| v.path == "pipeline.tukey_window" && v.recommendations.iter().any(|x| x.rule == r.rule)));
@@ -746,7 +772,7 @@ fn chi_sepnet_offers_the_vendor_tukey_window() {
         c.pipeline.do_chi_separation = true;
         schema::set(&mut c, "separation.algorithm", json!(alg)).unwrap();
         let r = tukey(&c, Some("Siemens")).pop().unwrap_or_else(|| panic!("{alg}: no Tukey window offered"));
-        assert_eq!((r.rule.as_str(), r.kind, r.recommended.value.clone()), ("chi-sep.tukey-siemens-ge", Kind::Reference, json!(0.4)), "{alg}");
+        assert_eq!((r.rule.as_str(), r.kind, r.recommended.value.clone()), ("chi-sep.tukey-not-philips", Kind::Reference, json!(0.4)), "{alg}");
     }
 }
 

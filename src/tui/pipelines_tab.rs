@@ -350,8 +350,15 @@ fn summary_lines(p: &Pipeline, c: &Compared) -> Vec<Line<'static>> {
     if p.not_reproduced.is_empty() && p.is_toolbox() {
         lines.push(Line::from(Span::styled("Every step of the toolbox's pipeline is reproduced.", Style::default().fg(Color::Green))));
     }
-    for s in &p.not_reproduced {
-        lines.push(Line::from(Span::styled(format!("Not reproduced: {s}"), Style::default().fg(Color::Yellow))));
+    if !p.not_reproduced.is_empty() {
+        lines.push(Line::from(Span::styled("Not reproduced from the toolbox's pipeline:",
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))));
+        for s in &p.not_reproduced {
+            lines.push(Line::from(vec![
+                Span::styled("  • ", Style::default().fg(Color::Yellow)),
+                Span::styled(s.to_string(), Style::default().fg(Color::Gray)),
+            ]));
+        }
     }
     for a in &c.advice {
         lines.push(Line::from(vec![
@@ -580,6 +587,28 @@ mod tests {
         assert!(cmd.contains("--pipeline medi-toolbox --medi-lambda 500"), "{cmd}");
         app.choose_pipeline("medi-toolbox").unwrap();
         assert_eq!(app.pipeline_status().text(), "MEDI toolbox");
+    }
+
+    /// What a toolbox pipeline does not reproduce, a line each under one heading, in the tab's
+    /// comparison and in the preview, where it can be scrolled to.
+    #[test]
+    fn the_steps_not_reproduced_are_listed() {
+        let mut app = four_echoes();
+        key(&mut app, KeyCode::Char('2'));
+        let at = pipelines::ids().iter().position(|id| *id == "chi-sep-medi").unwrap();
+        for _ in 0..at {
+            key(&mut app, KeyCode::Down);
+        }
+        let p = pipelines::pipeline("chi-sep-medi").unwrap();
+        assert!(p.not_reproduced.len() > 3);
+        let text = screen(&mut app);
+        assert_eq!(text.matches("Not reproduced from the toolbox's pipeline:").count(), 1, "{text}");
+        assert!(text.contains(&format!("• {}", &p.not_reproduced[0][..30])), "{text}");
+        key(&mut app, KeyCode::Enter);
+        let m = app.pipelines.preview.as_ref().expect("the preview");
+        let lines = summary_lines(&m.pipeline, &m.compared);
+        let items = lines.iter().filter(|l| l.spans.first().is_some_and(|s| s.content == "  • ")).count();
+        assert_eq!(items, p.not_reproduced.len());
     }
 
     /// The tab: the list, the comparison, Enter's preview, and Apply.

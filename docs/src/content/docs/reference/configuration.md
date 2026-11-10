@@ -86,7 +86,7 @@ The [Tukey window](/QSMxT/reference/algorithms/#tukey-windowing) on the echoes i
 
 ```toml
 [pipeline]
-tukey_window = 0.4   # Siemens and GE, as the χ-separation toolbox uses; 0 for Philips
+tukey_window = 0.4   # as the χ-separation toolbox uses; 0 for Philips
 ```
 
 With two-pass artefact reduction, the reliable mask's sections and how they combine are

@@ -429,10 +429,48 @@ mod tests {
         assert!(c.pipeline.do_swi);
     }
 
+    /// MEDI's, QSMART's and HEIDI's pipelines reference nothing after the inversion, as their
+    /// toolboxes; the others keep QSMxT's mean. MEDI's methods text says so.
+    #[test]
+    fn toolboxes_that_reference_nothing() {
+        use crate::enums::QsmReference;
+        for p in pipelines() {
+            let mut c = PipelineConfig::default();
+            choose(&mut c, p.id, &facts()).unwrap();
+            let none = ["medi-toolbox", "qsmart", "heidi"].contains(&p.id);
+            assert_eq!(c.qsm.reference, if none { QsmReference::None } else { QsmReference::Mean }, "{}", p.id);
+        }
+        let mut c = PipelineConfig::default();
+        choose(&mut c, "medi-toolbox", &facts()).unwrap();
+        let text = crate::methods::generate_methods(&c);
+        assert!(text.contains("No susceptibility referencing was applied") && !text.contains("referenced to the mean"), "{text}");
+    }
+
+    /// The χ-separation toolbox's pipelines, with the manufacturer known or not: no departures,
+    /// no reference rule departed from (so no "ROMEO differs from iLSQR's reference" in the
+    /// methods Note), and the Tukey window by manufacturer: 0.4 but for Philips, the default
+    /// when the manufacturer is not known.
+    #[test]
+    fn chi_sep_pipelines_follow_the_toolbox_without_notes() {
+        for (m, tukey) in [(Some("Siemens"), 0.4), (Some("Canon_MEC"), 0.4), (Some("Philips"), 0.0), (None, 0.0)] {
+            let f = ViewFacts { manufacturer: m.map(str::to_string), voxel_size: Some([1.0; 3]), ..facts() };
+            for id in ["chi-sep-ilsqr", "chi-sep-medi", "chi-sepnet"] {
+                let mut c = PipelineConfig::default();
+                choose(&mut c, id, &f).unwrap();
+                let s = status(&c, &f);
+                assert!(s.departures.is_empty(), "{id} {m:?}: {:?}", s.departures);
+                let departed: Vec<_> = rec::recommendations(&c, &Facts::of_view(&f)).into_iter()
+                    .filter(|r| r.strength == Strength::Reference).map(|r| r.rule).collect();
+                assert!(departed.is_empty(), "{id} {m:?}: {departed:?}");
+                assert!(crate::recommendations::config_note(&c).differences.is_empty(), "{id} {m:?}");
+                assert_eq!(c.pipeline.tukey_window, tukey, "{id} {m:?}");
+            }
+        }
+    }
+
     #[test]
     fn an_unknown_pipeline_names_the_choices() {
         let e = changes(&PipelineConfig::default(), "nope", &facts()).unwrap_err();
         assert!(e.contains("medi-toolbox"), "{e}");
     }
 }
-

@@ -791,6 +791,14 @@ pub(crate) mod tests {
         let p = planned(|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::ChiSepIlsqr; });
         assert!(p.has(Stage::Relaxometry) && p.has(Stage::R2) && p.has(Stage::ChiSeparation), "{:?}", names(&p));
         assert!(step(&p, "chi_separation").unwrap().reads.contains(&Item::R2prime));
+        // χ-sep iLSQR and χ-sep MEDI reconstruct their own iLSQR QSM from the local field, as the
+        // χ-separation toolbox does: they read the field's mask, not the run's (referenced) QSM.
+        let ilsqr = planned(|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::ChiSepIlsqr; });
+        let medi = planned(|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::ChiSepMedi; });
+        for p in [ilsqr, medi] {
+            let reads = &step(&p, "chi_separation").unwrap().reads;
+            assert!(reads.contains(&Item::LocalFieldMask(Pass::Main)) && !reads.contains(&Item::Chi), "{reads:?}");
+        }
 
         // A region reference: the segmentation it is measured on, before the reference.
         let p = planned(|c| { c.qsm.reference = QsmReference::Region; c.qsm.reference_region = Some("thalamus".into()); });

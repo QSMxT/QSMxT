@@ -603,7 +603,8 @@ const R2PRIMENET_FIXED: u64 = 225_000_000;
 /// χ-separation: the maps it reads and the method's workspace, or a network at its patch.
 fn separation_need(config: &PipelineConfig, s: &Scan) -> u64 {
     let maps = s.v(2 * s.echoes * F64 + 40);
-    // χ-sep iLSQR's own QSM: an iLSQR inversion before the separation, its map held through it.
+    // χ-sep iLSQR's and χ-sep MEDI's own QSM: an iLSQR inversion before the separation, its map
+    // held through it.
     let (qsm_solve, qsm_map) = if crate::stages::separation::reconstructs_qsm(config) {
         let mut ilsqr = config.clone();
         ilsqr.inversion.algorithm = QsmAlgorithm::Ilsqr;
@@ -831,19 +832,21 @@ mod tests {
         p.steps.iter().find(|s| s.name == name).unwrap_or_else(|| panic!("no {name}")).memory_bytes
     }
 
-    /// χ-sep iLSQR's step reconstructs its QSM with iLSQR, so it needs at least the iLSQR
-    /// inversion's working memory; separating a supplied QSM does not.
+    /// χ-sep iLSQR's and χ-sep MEDI's steps reconstruct their QSM with iLSQR, so they need at
+    /// least the iLSQR inversion's working memory; separating a supplied QSM does not.
     #[test]
     fn chi_sep_ilsqr_counts_the_ilsqr_of_its_own_qsm() {
         let mut f = example();
         f.mese_echo_times = Some(vec![0.01, 0.02, 0.03, 0.04]);
         let sep = |c: &PipelineConfig| step_bytes(&plan(c, &f), "chi_separation");
-        let own = with(|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::ChiSepIlsqr; });
         let ilsqr = step_bytes(&plan(&with(|c| c.inversion.algorithm = QsmAlgorithm::Ilsqr), &f), "invert");
-        assert!(sep(&own) >= ilsqr, "{} < {ilsqr}", sep(&own));
-        let supplied = with(|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = SeparationAlgorithm::ChiSepIlsqr;
-                                  c.separation.custom_qsm_tool = Some("qsmxt".into()); });
-        assert!(sep(&supplied) < sep(&own));
+        for alg in [SeparationAlgorithm::ChiSepIlsqr, SeparationAlgorithm::ChiSepMedi] {
+            let own = with(|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = alg; });
+            assert!(sep(&own) >= ilsqr, "{alg}: {} < {ilsqr}", sep(&own));
+            let supplied = with(|c| { c.pipeline.do_chi_separation = true; c.separation.algorithm = alg;
+                                      c.separation.custom_qsm_tool = Some("qsmxt".into()); });
+            assert!(sep(&supplied) < sep(&own), "{alg}");
+        }
     }
 
     /// A per-echo QSM's background removal and inversion run one echo at a time, as a single-echo

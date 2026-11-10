@@ -58,6 +58,15 @@ fn invert_with(
     Ok((chi, field_nifti))
 }
 
+/// LSQR is weighted by the magnitude, as the HEIDI package always weights it (it warns without
+/// one: qsm_heidi computesusceptibility_heidi.m:821-822), so `--magnitude` is required.
+fn require_magnitude(magnitude: &[std::path::PathBuf], name: &str) -> crate::Result<()> {
+    if magnitude.is_empty() {
+        return Err(QsmxtError::Config(format!("{name} needs --magnitude (its data weight)")));
+    }
+    Ok(())
+}
+
 /// HEIDI's cone fill on `seed`, a χ map (ppm) another inversion made of `c.input` inside
 /// `c.mask` ([`qsm_core::pipeline::run_heidi_cone_fill`], as `qsmxt run --heidi` runs it).
 fn heidi_on_seed(
@@ -354,6 +363,7 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             (args.common, out)
         }
         InvertCommand::Lsqr(args) => {
+            require_magnitude(&args.magnitude, "LSQR")?;
             let config = qsm_core::pipeline::InversionConfig {
                 lsqr: lsqr_params(&args.lsqr_params), ..config_for(A::Lsqr)
             };
@@ -369,6 +379,9 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 heidi: heidi_params(&args.heidi_params),
                 ..config_for(A::Lsqr)
             };
+            if args.seed.is_none() {
+                require_magnitude(&args.magnitude, "HEIDI's LSQR seed")?;
+            }
             let out = match &args.seed {
                 None => invert_with(&args.common, args.scan.field_strength, &args.scan.echo_times,
                     Magnitude::Combined(&args.magnitude), config, "HEIDI")?,

@@ -728,7 +728,8 @@ fn recommendation(
             let hit = hit.cloned().unwrap_or(Named { value: Value::Null, name: String::new() });
             Trigger { setting: path.to_string(), value: hit.value, name: trigger_name(setting, &hit.name) }
         }
-        Condition::Fact { .. } => Trigger { setting: String::new(), value: Value::Null, name: String::new() },
+        // A trigger is a choice (QSM.rs's rules), so these do not occur.
+        Condition::Fact { .. } | Condition::Unless { .. } => Trigger { setting: String::new(), value: Value::Null, name: String::new() },
     };
     let names = |values: &[core::Value]| values.iter().map(|v| named(rule.setting, v)).collect();
     let allowed = match rule.expect {
