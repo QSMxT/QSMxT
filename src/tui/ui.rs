@@ -2285,9 +2285,20 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
             Some(m) => {
                 let mut line = line;
                 let (mark, color) = if m.actionable { ("⚑", Color::Yellow) } else { ("ⓘ", Color::DarkGray) };
-                line.spans.push(Span::styled(format!(" {mark} {}", m.text), Style::default().fg(color)));
+                // The rule's text gives way (…) so the `!` hint stays on screen: `!` shows it all.
+                let hint = " (! for advice)";
+                let used = line.width() + 3 + if focused { hint.chars().count() } else { 0 };
+                let room = (inner.width as usize).saturating_sub(used);
+                let text = if m.text.chars().count() <= room {
+                    m.text.clone()
+                } else {
+                    let mut t: String = m.text.chars().take(room.saturating_sub(1)).collect();
+                    t.push('…');
+                    t
+                };
+                line.spans.push(Span::styled(format!(" {mark} {text}"), Style::default().fg(color)));
                 if focused {
-                    line.spans.push(Span::styled(" (! for advice)", Style::default().fg(Color::Yellow)));
+                    line.spans.push(Span::styled(hint, Style::default().fg(Color::Yellow)));
                 }
                 line
             }
