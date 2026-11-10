@@ -223,8 +223,47 @@ fn is_nifti(p: &Path) -> bool {
     s.ends_with(".nii.gz") || s.ends_with(".nii")
 }
 
+/// How a conversion treats what identifies the study.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ConvertOptions {
+    /// Keep the study's DICOM UIDs (StudyInstanceUID, SeriesInstanceUID, StudyID, and the
+    /// FrameOfReferenceUID QSMxT adds) and dates in the sidecars: dcm2niix's `-ba o`, which still
+    /// strips the patient's identity. Off: `-ba y`, fully de-identified. The UIDs let a DICOM export
+    /// file its series into the original study, and also let anyone holding that study link the
+    /// dataset back to it, so such a dataset is not for sharing outside the site.
+    pub keep_dicom_uids: bool,
+}
+
+/// dcm2niix, and the options it runs with.
+struct Dcm2niix<'a> {
+    exe: &'a Path,
+    keep_uids: bool,
+}
+
+/// The FrameOfReferenceUID of the first of `files` that has one (dcm2niix does not write it).
+fn frame_of_reference_uid(files: &[PathBuf]) -> Option<String> {
+    files.iter().find_map(|f| {
+        let obj = dicom::object::OpenFileOptions::new().read_until(dicom::dictionary_std::tags::PIXEL_DATA).open_file(f).ok()?;
+        let uid = obj.element(dicom::dictionary_std::tags::FRAME_OF_REFERENCE_UID).ok()?.to_str().ok()?
+            .trim_end_matches('\0').trim().to_string();
+        (!uid.is_empty()).then_some(uid)
+    })
+}
+
+/// Add `FrameOfReferenceUID` to a sidecar dcm2niix wrote, under the DICOM keyword as BIDS
+/// recommends for metadata it does not define.
+fn add_frame_of_reference(json_path: &Path, uid: &str) {
+    let Ok(content) = fs::read_to_string(json_path) else { return };
+    let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) else { return };
+    let Some(obj) = json.as_object_mut() else { return };
+    obj.insert("FrameOfReferenceUID".into(), serde_json::json!(uid));
+    if let Ok(out) = serde_json::to_string_pretty(&json) {
+        let _ = fs::write(json_path, out);
+    }
+}
+
 /// Run dcm2niix once on `files` in `work`; its outputs (`<base>…`), sorted.
-fn dcm2niix_once(dcm2niix: &Path, files: &[PathBuf], work: &Path, base: &str, log: &mut Vec<String>) -> Result<Vec<PathBuf>, String> {
+fn dcm2niix_once(d: &Dcm2niix, files: &[PathBuf], work: &Path, base: &str, log: &mut Vec<String>) -> Result<Vec<PathBuf>, String> {
     let input = work.join("in");
     let out = work.join("out");
     fs::create_dir_all(&input).map_err(|e| format!("cannot create {}: {e}", input.display()))?;
@@ -236,8 +275,8 @@ fn dcm2niix_once(dcm2niix: &Path, files: &[PathBuf], work: &Path, base: &str, lo
             fs::copy(src, &dst).map_err(|e| format!("cannot copy {}: {e}", src.display()))?;
         }
     }
-    let output = Command::new(dcm2niix)
-        .args(["-o", &out.to_string_lossy(), "-f", base, "-z", "y", "-m", "o"])
+    let output = Command::new(d.exe)
+        .args(["-o", &out.to_string_lossy(), "-f", base, "-z", "y", "-m", "o", "-ba", if d.keep_uids { "o" } else { "y" }])
         .arg(&input)
         .output()
         .map_err(|e| format!("cannot run dcm2niix: {e}"))?;
@@ -259,13 +298,18 @@ fn dcm2niix_once(dcm2niix: &Path, files: &[PathBuf], work: &Path, base: &str, lo
         .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with(base)))
         .collect();
     outputs.sort();
+    if d.keep_uids {
+        if let Some(uid) = frame_of_reference_uid(files) {
+            outputs.iter().filter(|p| p.extension().is_some_and(|e| e == "json")).for_each(|p| add_frame_of_reference(p, &uid));
+        }
+    }
     Ok(outputs)
 }
 
 /// Run dcm2niix over groups of files, one working folder each; every output carries its group's
 /// `Known`. `None` when some group still gives a 4D image.
 fn dcm2niix_groups(
-    dcm2niix: &Path, groups: Vec<(Known, Vec<PathBuf>)>, work: &Path, base: &str, log: &mut Vec<String>,
+    dcm2niix: &Dcm2niix, groups: Vec<(Known, Vec<PathBuf>)>, work: &Path, base: &str, log: &mut Vec<String>,
 ) -> Result<Option<Vec<(PathBuf, Known)>>, String> {
     let mut all = Vec::new();
     for (k, (known, files)) in groups.into_iter().enumerate() {
@@ -286,7 +330,7 @@ fn dcm2niix_groups(
 /// or volume then becomes its own file. If that does not separate them either, the 4D image is
 /// kept whole. An unsuccessful dcm2niix exit is an error: nothing of the series is used.
 fn run_dcm2niix(
-    dcm2niix: &Path, files: &[PathBuf], info: &HashMap<PathBuf, (Option<f64>, String)>, work: &Path, base: &str, log: &mut Vec<String>,
+    dcm2niix: &Dcm2niix, files: &[PathBuf], info: &HashMap<PathBuf, (Option<f64>, String)>, work: &Path, base: &str, log: &mut Vec<String>,
 ) -> Result<Vec<(PathBuf, Known)>, String> {
     let first = dcm2niix_once(dcm2niix, files, &work.join("all"), base, log)?;
     let Some(n) = first.iter().filter(|p| is_nifti(p)).find_map(|p| nifti_4d_size(p)) else {
@@ -395,6 +439,7 @@ fn fix_sidecar(path: &Path) {
 pub fn convert_session_streaming(
     session: &DicomSession,
     output_dir: &Path,
+    options: ConvertOptions,
     tx: &mpsc::Sender<ConvertMessage>,
 ) {
     let send = |m: ConvertMessage| {
@@ -419,6 +464,11 @@ pub fn convert_session_streaming(
     }
     send(ConvertMessage::Log(format!("Output BIDS directory: {}", output_dir.display())));
     send(ConvertMessage::Log(format!("Using dcm2niix: {}", dcm2niix.display())));
+    let runner = Dcm2niix { exe: &dcm2niix, keep_uids: options.keep_dicom_uids };
+    if options.keep_dicom_uids {
+        send(ConvertMessage::Log("Keeping the study's DICOM UIDs and dates in the sidecars (patient identity is still \
+            removed): don't share this dataset outside your site".to_string()));
+    }
 
     let plans = plan_session(session);
     let has_extra = plans.iter().any(|p| matches!(p.target, Target::Extra { .. }));
@@ -461,7 +511,7 @@ pub fn convert_session_streaming(
                     Target::Extra { dir, prefix } => {
                         counter += 1;
                         send(ConvertMessage::Log(format!("Keeping {owner} in extra_data ({} files)", series.num_files)));
-                        match run_dcm2niix(&dcm2niix, &series.files, &info, &work_root.join(counter.to_string()), prefix, &mut log) {
+                        match run_dcm2niix(&runner, &series.files, &info, &work_root.join(counter.to_string()), prefix, &mut log) {
                             Ok(outputs) => {
                                 for (out, known) in outputs {
                                     let Some(name) = out.file_name().and_then(|n| n.to_str()).map(str::to_string) else { continue };
@@ -499,7 +549,7 @@ pub fn convert_session_streaming(
                         let base = "qsmxt";
                         for (coil, files) in groups {
                             counter += 1;
-                            match run_dcm2niix(&dcm2niix, files, &info, &work_root.join(counter.to_string()), base, &mut log) {
+                            match run_dcm2niix(&runner, files, &info, &work_root.join(counter.to_string()), base, &mut log) {
                                 Ok(outputs) => {
                                     let images = outputs.iter().filter(|(p, _)| is_nifti(p)).count();
                                     for (out, known) in outputs {
@@ -583,6 +633,36 @@ pub fn convert_session_streaming(
 mod tests {
     use super::*;
     use std::sync::Mutex;
+
+    /// The FrameOfReferenceUID is read from the series' first file that has one, and added to
+    /// the sidecar beside what dcm2niix wrote.
+    #[test]
+    fn the_frame_of_reference_goes_into_the_sidecar() {
+        use dicom::core::{DataElement, VR};
+        use dicom::dictionary_std::{tags, uids};
+        use dicom::object::{meta::FileMetaTableBuilder, InMemDicomObject};
+        let dir = tempfile::tempdir().unwrap();
+        let write = |name: &str, for_uid: Option<&str>| {
+            let mut o = InMemDicomObject::new_empty();
+            o.put(DataElement::new(tags::SOP_CLASS_UID, VR::UI, uids::MR_IMAGE_STORAGE));
+            o.put(DataElement::new(tags::SOP_INSTANCE_UID, VR::UI, "2.25.1"));
+            if let Some(u) = for_uid { o.put(DataElement::new(tags::FRAME_OF_REFERENCE_UID, VR::UI, u)); }
+            let p = dir.path().join(name);
+            o.with_meta(FileMetaTableBuilder::new().transfer_syntax(uids::EXPLICIT_VR_LITTLE_ENDIAN)
+                .media_storage_sop_class_uid(uids::MR_IMAGE_STORAGE).media_storage_sop_instance_uid("2.25.1"))
+                .unwrap().write_to_file(&p).unwrap();
+            p
+        };
+        let files = [write("a.dcm", None), write("b.dcm", Some("2.25.42"))];
+        assert_eq!(frame_of_reference_uid(&files).as_deref(), Some("2.25.42"));
+        assert_eq!(frame_of_reference_uid(&files[..1]), None);
+        let json = dir.path().join("x.json");
+        fs::write(&json, r#"{"EchoTime": 0.02, "StudyInstanceUID": "2.25.7"}"#).unwrap();
+        add_frame_of_reference(&json, "2.25.42");
+        let v: serde_json::Value = serde_json::from_str(&fs::read_to_string(&json).unwrap()).unwrap();
+        assert_eq!((v["FrameOfReferenceUID"].as_str(), v["StudyInstanceUID"].as_str(), v["EchoTime"].as_f64()),
+                   (Some("2.25.42"), Some("2.25.7"), Some(0.02)));
+    }
 
     /// Serializes tests that mutate process-wide environment variables.
     static ENV_LOCK: Mutex<()> = Mutex::new(());

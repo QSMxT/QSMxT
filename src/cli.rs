@@ -166,6 +166,13 @@ pub struct DicomConvertArgs {
     /// Print the auto-detected series classification and exit without converting
     #[arg(long)]
     pub dry_run: bool,
+
+    /// Keep the study's DICOM UIDs (Study, Series and Frame of Reference) and dates in the
+    /// sidecars, so `qsmxt run --export-dicom` files its series into the original study. Patient
+    /// identity is still removed, but the UIDs link the dataset to the original study: don't
+    /// share such a dataset outside your site
+    #[arg(long)]
+    pub keep_dicom_uids: bool,
 }
 
 // ─── Shared algorithm parameter groups (prefixed, used by RunArgs) ───

@@ -38,8 +38,9 @@ pub fn execute(args: DicomConvertArgs) -> crate::Result<()> {
     println!("\nConverting to BIDS at {}...", args.output_dir.display());
     let (tx, rx) = mpsc::channel();
     let out = args.output_dir.clone();
+    let options = dicom::convert::ConvertOptions { keep_dicom_uids: args.keep_dicom_uids };
     let handle = std::thread::spawn(move || {
-        dicom::convert::convert_session_streaming(&session, &out, &tx);
+        dicom::convert::convert_session_streaming(&session, &out, options, &tx);
     });
 
     let mut had_error = false;

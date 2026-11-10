@@ -783,6 +783,7 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     } else {
         match app.dicom_state.focus {
             super::app::DicomFocus::Series(_) => "Left/Right: change type, Enter: cycle type",
+            super::app::DicomFocus::KeepUids => "Space/Enter: keep the study's DICOM UIDs and dates in the sidecars, so a DICOM export files its series into the original study. Patient identity is still removed, but the UIDs link the dataset to that study: don't share it outside your site",
             super::app::DicomFocus::ConvertButton => "Enter: run dcm2niix conversion",
         }
     };
@@ -795,6 +796,8 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
 
     // Build lines for IO fields
     let mut lines: Vec<Line> = Vec::new();
+    // Where the DICOM section drew its toggle and Convert button.
+    let mut dicom_lines: Option<(usize, usize)> = None;
 
     // Field 0: Mode selector
     let mode_focused = in_io && app.active_field == 0 && !app.tab_focus;
@@ -1045,13 +1048,12 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         // ─── Example mode: drawn below, with the list in a region of its own ───
     } else {
         // ─── DICOM mode: series classification ───
-        draw_dicom_series_section(&app.dicom_state, &mut lines, in_io);
+        dicom_lines = draw_dicom_series_section(&app.dicom_state, &mut lines, in_io);
     }
 
     // Where each focusable thing is drawn, for scrolling to the focused one and for the mouse.
     // IO fields: mode(1) + dir fields(3) = 4 lines total (no blank between mode and dirs)
     use super::mouse::InputTarget;
-    let total_lines = lines.len();
     // The orientation block sits between Exclude and the tree, so it pushes everything
     // below it down. One helper renders it and reports its height, so the two cannot drift.
     let ori = if is_bids { orientation_block(app, in_io).len() } else { 0 };
@@ -1116,7 +1118,8 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                         }
                         None
                     }
-                    super::app::DicomFocus::ConvertButton => Some(total_lines.saturating_sub(1)),
+                    super::app::DicomFocus::KeepUids => dicom_lines.map(|(keep, _)| keep),
+                    super::app::DicomFocus::ConvertButton => dicom_lines.map(|(_, convert)| convert),
                 }
             }
             _ => None,
@@ -1134,6 +1137,7 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         targets.extend(app.nifti_state.focusable_items().into_iter().map(InputTarget::Nifti));
     } else if let (super::app::InputMode::DicomToBids, Some(session)) = (app.input_mode, &app.dicom_state.session) {
         targets.extend((0..session.unique_series().len()).map(|i| InputTarget::Dicom(super::app::DicomFocus::Series(i))));
+        targets.push(InputTarget::Dicom(super::app::DicomFocus::KeepUids));
         targets.push(InputTarget::Dicom(super::app::DicomFocus::ConvertButton));
     }
     let target_lines: Vec<(usize, InputTarget)> = targets.into_iter().filter_map(|t| Some((line_of(t)?, t))).collect();
@@ -1555,17 +1559,18 @@ fn draw_nifti_section(
 }
 
 /// Render the DICOM series classification section (used within the unified input tab).
+/// Returns the lines of the keep-UIDs toggle and the Convert button, when they are drawn.
 fn draw_dicom_series_section(
     ds: &super::app::DicomConvertState,
     lines: &mut Vec<Line<'_>>,
     in_io: bool,
-) {
+) -> Option<(usize, usize)> {
     if ds.dicom_dir.trim().is_empty() {
         lines.push(Line::from(Span::styled(
             "  Set DICOM directory above first",
             Style::default().fg(Color::DarkGray),
         )));
-        return;
+        return None;
     }
 
     if ds.scan_status == super::app::ScanStatus::Scanning {
@@ -1574,7 +1579,7 @@ fn draw_dicom_series_section(
             format!("  Scanning DICOM directory... ({} files examined)", n),
             Style::default().fg(Color::Yellow),
         )));
-        return;
+        return None;
     }
 
     if let Some(ref err) = ds.scan_error {
@@ -1582,7 +1587,7 @@ fn draw_dicom_series_section(
             format!("  Scan error: {}", err),
             Style::default().fg(Color::Red),
         )));
-        return;
+        return None;
     }
 
     let Some(ref session) = ds.session else {
@@ -1590,7 +1595,7 @@ fn draw_dicom_series_section(
             "  No DICOM files found in directory",
             Style::default().fg(Color::DarkGray),
         )));
-        return;
+        return None;
     };
 
     lines.push(Line::from(Span::styled(
@@ -1743,8 +1748,24 @@ fn draw_dicom_series_section(
         }
     }
 
+    // Whether the study's UIDs stay in the sidecars (dcm2niix -ba o).
+    lines.push(Line::from(""));
+    let keep_line = lines.len();
+    let keep_focused = !in_io && ds.focus == super::app::DicomFocus::KeepUids;
+    lines.push(Line::from(vec![
+        Span::styled("  Keep DICOM UIDs: ", if keep_focused {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        }),
+        if ds.keep_uids { Span::styled("[x]", Style::default().fg(Color::Green)) } else { Span::styled("[ ]", Style::default().fg(Color::Gray)) },
+        Span::styled(if ds.keep_uids { "  links the dataset to the original study: don't share it outside your site" } else { "" },
+            Style::default().fg(Color::Yellow)),
+    ]));
+
     // Convert button
     lines.push(Line::from(""));
+    let convert_line = lines.len();
     let convert_focused = !in_io && ds.focus == super::app::DicomFocus::ConvertButton;
     let convert_style = if convert_focused {
         Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
@@ -1778,6 +1799,7 @@ fn draw_dicom_series_section(
             lines.push(Line::from(Span::styled(format!("  {}", log_line), style)));
         }
     }
+    Some((keep_line, convert_line))
 }
 
 /// A row-based tab (all but Input and Methods): its sub-tabs, then one named row per setting.

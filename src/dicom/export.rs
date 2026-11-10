@@ -282,7 +282,12 @@ fn build_identity(run: &QsmRun, source_dicom: Option<&Path>) -> DicomIdentity {
 
     // The acquisition fields a converter keeps in the BIDS sidecar (dcm2niix does by default),
     // for when there is no source DICOM; a source DICOM's own values win over them.
+    // A dataset converted with `qsmxt dicom-convert --keep-dicom-uids` (or dcm2niix `-ba o`/`n`)
+    // also keeps the study's UIDs there, so the series file into the original study.
     if let Some(sc) = run.echoes.first().and_then(|e| read_sidecar_acquisition(&e.phase_json)) {
+        if !sc.study_uid.is_empty() { id.study_uid = sc.study_uid.clone(); }
+        if !sc.frame_of_reference_uid.is_empty() { id.frame_of_reference_uid = sc.frame_of_reference_uid.clone(); }
+        if !sc.study_id.is_empty() { id.study_id = sc.study_id.clone(); }
         id.apply_acquisition(sc);
     }
 
@@ -299,7 +304,7 @@ fn build_identity(run: &QsmRun, source_dicom: Option<&Path>) -> DicomIdentity {
                 id.patient_sex = src.patient_sex;
                 id.study_date = src.study_date;
                 id.study_time = src.study_time;
-                id.study_id = src.study_id;
+                if !src.study_id.is_empty() { id.study_id = src.study_id; }
                 id.accession_number = src.accession_number;
                 id.referring_physician = src.referring_physician;
             }
@@ -330,7 +335,8 @@ impl DicomIdentity {
 /// The acquisition fields of a BIDS sidecar, under the names BIDS and dcm2niix give them:
 /// `RepetitionTime` (BIDS, seconds; DICOM wants ms), `EchoTrainLength`, `PatientPosition` (the
 /// DICOM keywords, as dcm2niix writes them), `BodyPart` (BIDS; DICOM's Body Part Examined) and
-/// `Manufacturer`. `None` when the file cannot be read.
+/// `Manufacturer`; and the study's `StudyInstanceUID`, `FrameOfReferenceUID` and `StudyID` when
+/// the conversion kept them. Never patient identity. `None` when the file cannot be read.
 fn read_sidecar_acquisition(path: &Path) -> Option<DicomIdentity> {
     let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
     let text = |k: &str| json.get(k).and_then(|v| v.as_str()).map(|s| s.trim().to_string()).unwrap_or_default();
@@ -341,6 +347,9 @@ fn read_sidecar_acquisition(path: &Path) -> Option<DicomIdentity> {
         body_part: text("BodyPart"),
         repetition_time: number("RepetitionTime").map(|s| fmt_ds(s * 1000.0)).unwrap_or_default(),
         echo_train_length: number("EchoTrainLength").map(|n| format!("{}", n.round() as i64)).unwrap_or_default(),
+        study_uid: text("StudyInstanceUID"),
+        frame_of_reference_uid: text("FrameOfReferenceUID"),
+        study_id: text("StudyID"),
         ..Default::default()
     })
 }
@@ -970,7 +979,9 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let json = tmp.path().join("echo-1_part-phase_MEGRE.json");
         std::fs::write(&json, r#"{"RepetitionTime": 0.028, "EchoTrainLength": 4, "PatientPosition": "HFS",
-            "BodyPart": "BRAIN", "Manufacturer": "Siemens", "EchoTime": 0.004}"#).unwrap();
+            "BodyPart": "BRAIN", "Manufacturer": "Siemens", "EchoTime": 0.004,
+            "StudyInstanceUID": "1.3.12.2.1107.5.2.43.1", "FrameOfReferenceUID": "1.3.12.2.1107.5.2.43.2",
+            "StudyID": "7", "PatientName": "Doe^Jane"}"#).unwrap();
         let run = crate::bids::discovery::QsmRun {
             key: AcquisitionKey { subject: "01".into(), session: None, acquisition: None, reconstruction: None,
                                   inversion: None, run: None, suffix: "MEGRE".into() },
@@ -984,7 +995,10 @@ mod tests {
         let id = build_identity(&run, None);
         assert_eq!((id.repetition_time.as_str(), id.echo_train_length.as_str()), ("28", "4"));
         assert_eq!((id.patient_position.as_str(), id.body_part.as_str(), id.manufacturer.as_str()), ("HFS", "BRAIN", "Siemens"));
-        assert!(id.patient_id.is_empty(), "no identity from a sidecar");
+        assert!(id.patient_name.is_empty(), "no patient identity from a sidecar, even one that has it");
+        // UIDs a --keep-dicom-uids conversion kept: the series file into the original study.
+        assert_eq!((id.study_uid.as_str(), id.frame_of_reference_uid.as_str(), id.study_id.as_str()),
+                   ("1.3.12.2.1107.5.2.43.1", "1.3.12.2.1107.5.2.43.2", "7"));
 
         // A source DICOM with only some of them: its values win, the sidecar fills the rest.
         let src_dir = tmp.path().join("src");

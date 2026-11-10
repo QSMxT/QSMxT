@@ -16,6 +16,8 @@ qsmxt tui
 - **Convert DICOMs to BIDS** — point at a DICOM directory, review the automatic
   series classification, relabel anything that needs it, and convert. (See
   [DICOM → BIDS](/QSMxT/guides/running-noninteractively/#converting-dicoms-to-bids) for what the classifier handles.)
+  Tick *Keep DICOM UIDs* above *Convert to BIDS* to keep the study's UIDs for a
+  later DICOM export ([not for sharing](/QSMxT/guides/running-noninteractively/#keeping-the-studys-dicom-uids)).
 - **Point at a dataset** and let QSMxT discover the phase/magnitude runs.
 - **Download an example dataset** — no data of your own to hand? Set
   **Input mode → Example dataset**, tick one or more real in-vivo acquisitions,
