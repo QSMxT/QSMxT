@@ -460,6 +460,7 @@ fn command_for(config: &PipelineConfig, d: &PipelineConfig, pipeline: Option<&st
                 if s.decompose.unwrap_phase != ds.decompose.unwrap_phase {
                     parts.push(format!("--decompose-unwrap-phase {}", s.decompose.unwrap_phase));
                 }
+                emit_enum(&mut parts, "--decompose-fit", &s.decompose.fit, &ds.decompose.fit);
                 let (l, dl) = (&s.decompose.lsqcurvefit, &ds.decompose.lsqcurvefit);
                 emit_usize(&mut parts, "--decompose-max-iterations", l.max_iterations, dl.max_iterations);
                 emit_opt_usize(&mut parts, "--decompose-max-function-evaluations", l.max_function_evaluations, dl.max_function_evaluations);
@@ -747,6 +748,7 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
             emit_f64(parts, "--qsmart-frangi-c", q.frangi_c, dq.frangi_c);
             emit_enum(parts, "--qsmart-vessel-units", &q.vessel_size_units, &dq.vessel_size_units);
             emit_enum(parts, "--qsmart-vessel-magnitude", &q.vessel_magnitude, &dq.vessel_magnitude);
+            emit_enum(parts, "--qsmart-offset-grid", &q.offset_grid, &dq.offset_grid);
         }
         QsmAlgorithm::Ndi => {
             emit_f64(parts, "--ndi-tau", config.inversion.ndi.tau, d.inversion.ndi.tau);
@@ -853,8 +855,9 @@ fn emit_heidi_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &Pipel
         emit_usize(parts, "--heidi-denoise-iterations", c.denoise_iterations, dd.denoise_iterations);
         emit_f64(parts, "--heidi-denoise-time-step", c.denoise_time_step, dd.denoise_time_step);
         emit_f64(parts, "--heidi-denoise-conductance", c.denoise_conductance, dd.denoise_conductance);
-        if c.denoise_reference_itk {
-            parts.push("--heidi-denoise-reference-itk".into());
+        // Said only where it differs from the base: QSMxT's defaults (off), or the HEIDI pipeline (on).
+        if c.denoise_reference_itk != dd.denoise_reference_itk {
+            parts.push(if c.denoise_reference_itk { "--heidi-denoise-reference-itk" } else { "--no-heidi-denoise-reference-itk" }.into());
         }
     }
     emit_enum(parts, "--heidi-te", &c.te, &dd.te);
@@ -1372,21 +1375,23 @@ mod tests {
         assert!(!cmd.contains("--laplacian-unmasked"), "{cmd}");
         c.field_mapping.laplacian_unmasked = true;
         assert!(generate_command(&c).contains("--laplacian-unmasked"));
-        c.field_mapping.qsmart_fit_percentile = 95.0;
         c.inversion.qsmart.vessel_magnitude = QsmartVesselMagnitude::Combined;
         c.inversion.qsmart.vessel_size_units = VesselSizeUnits::Mm;
         let cmd = generate_command(&c);
-        for flag in ["--qsmart-fit-percentile 95", "--qsmart-vessel-magnitude combined", "--qsmart-vessel-units mm"] {
+        for flag in ["--qsmart-vessel-magnitude combined", "--qsmart-vessel-units mm"] {
             assert!(cmd.contains(flag), "{cmd}");
         }
-        assert!(!cmd.contains("--qsmart-fit-threshold"), "{cmd}");
-        // A fixed threshold: the mode, and the threshold when changed; not the percentile.
-        c.field_mapping.qsmart_fit_threshold_mode = QsmartFitThresholdMode::Absolute;
-        let cmd = generate_command(&c);
-        assert!(cmd.contains("--qsmart-fit-threshold-mode absolute") && !cmd.contains("--qsmart-fit-percentile")
-                && !cmd.contains("--qsmart-fit-threshold "), "{cmd}");
+        // The default fixed threshold (QSMART v1.0's 40): nothing; the threshold when changed.
         c.field_mapping.qsmart_fit_threshold = 30.0;
-        assert!(generate_command(&c).contains("--qsmart-fit-threshold 30"), "{}", generate_command(&c));
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--qsmart-fit-threshold 30") && !cmd.contains("--qsmart-fit-threshold-mode")
+                && !cmd.contains("--qsmart-fit-percentile"), "{cmd}");
+        // A percentile: the mode, and the percentile when changed; not the threshold.
+        c.field_mapping.qsmart_fit_threshold_mode = QsmartFitThresholdMode::Percentile;
+        c.field_mapping.qsmart_fit_percentile = 95.0;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--qsmart-fit-threshold-mode percentile") && cmd.contains("--qsmart-fit-percentile 95")
+                && !cmd.contains("--qsmart-fit-threshold "), "{cmd}");
     }
 
     #[test]

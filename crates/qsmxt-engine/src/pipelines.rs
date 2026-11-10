@@ -162,11 +162,15 @@ fn follow(config: &mut PipelineConfig, p: &ReferencePipeline, facts: &Facts) -> 
             set.push("pipeline.do_chi_separation");
         }
     }
+    // The rule settings followed so far, by QSM.rs path: several are parts of one QSMxT setting
+    // (the mask recipe's generator, input, BET f and erosion are all `masking.sections`), and each
+    // is followed on its own.
+    let mut followed: Vec<&'static str> = Vec::new();
     loop {
         let view = rec::reference_values(config, facts);
         let next: Vec<_> = view.iter()
             .filter(|r| r.strength == Strength::Reference && set.contains(&r.trigger.setting.as_str()))
-            .filter(|r| !set.contains(&r.setting.as_str()))
+            .filter(|r| rec::core_setting(&r.rule).is_some_and(|c| !followed.contains(&c)))
             .collect();
         let Some(first) = next.first() else { break };
         // One setting at a time, the first rule on it in QSM.rs's order: what it sets can change
@@ -175,7 +179,10 @@ fn follow(config: &mut PipelineConfig, p: &ReferencePipeline, facts: &Facts) -> 
         if first.departs {
             rec::apply(config, &first.rule, None)?;
         }
-        set.push(path);
+        followed.extend(rec::core_setting(&first.rule));
+        if !set.contains(&path) {
+            set.push(path);
+        }
     }
     Ok(set)
 }
@@ -195,6 +202,17 @@ fn applied(config: &PipelineConfig, id: &str, facts: &ViewFacts) -> Result<Appli
                 _ => {}
             }
         }
+    }
+    // The χ-separation toolbox takes a measured R2′, so its iterative pipelines measure R2′
+    // and never predict it (decided 2026-11-10). A scan without one gets QSMxT's offer to
+    // predict it instead (`qsmxt.chi-sep-predict-r2prime`, a recommendation), never a silent switch.
+    c.separation.r2prime_strategy = if matches!(id, "chi-sep-ilsqr" | "chi-sep-medi") {
+        crate::enums::R2PrimeStrategy::Mese
+    } else {
+        PipelineConfig::default().separation.r2prime_strategy
+    };
+    if !extra.contains(&"separation.r2prime_strategy") {
+        extra.push("separation.r2prime_strategy");
     }
     Ok(Applied { config: c, stages: STAGES.to_vec(), extra })
 }
@@ -272,6 +290,31 @@ pub fn choose(config: &mut PipelineConfig, id: &str, facts: &ViewFacts) -> Resul
     Ok(())
 }
 
+/// A pipeline chosen before the scan was known (the command line's `--pipeline`), completed on
+/// the scan with `facts`: what its reference rules set on this scan that they did not set without
+/// one (MEDI's multi-echo choices, the χ-separation toolbox's echo weights and its vendor's Tukey
+/// window), on each setting still as the pipeline left it. A setting changed since (a command-line
+/// flag after `--pipeline`) is kept. Applying a pipeline resets every reconstruction stage first,
+/// so what it sets depends only on the pipeline and the scan, and what it set without a scan can be
+/// recomputed here. Returns the completed config and its changes, for the log; nothing for a config
+/// that follows no chosen pipeline.
+pub fn on_scan(config: &PipelineConfig, facts: &ViewFacts) -> Result<(PipelineConfig, Vec<Change>), String> {
+    let Some(id) = config.reference_pipeline.as_deref().filter(|id| chosen(config, id)) else {
+        return Ok((config.clone(), vec![]));
+    };
+    let blind = applied(config, id, &ViewFacts::default())?;
+    let seen = applied(config, id, facts)?;
+    let mut completed = config.clone();
+    let mut done = Vec::new();
+    for change in differences(&blind.config, &seen.config, &seen, facts) {
+        if schema::get(config, change.path) == schema::get(&blind.config, change.path) {
+            schema::set(&mut completed, change.path, change.to.clone())?;
+            done.push(change);
+        }
+    }
+    Ok((completed, done))
+}
+
 /// Which pipeline a config follows, and where it departs from it.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Status {
@@ -336,6 +379,7 @@ pub fn followed(config: &PipelineConfig, _facts: &ViewFacts) -> Option<&'static 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::recommendations::Recommendation;
 
     fn facts() -> ViewFacts {
         ViewFacts { num_echoes: Some(4), field_strength: Some(3.0), ..Default::default() }
@@ -464,6 +508,69 @@ mod tests {
                 assert_eq!(c.pipeline.tukey_window, tukey, "{id} {m:?}");
             }
         }
+    }
+
+    /// A pipeline chosen before the scan was read (the command line's `--pipeline`) is completed on
+    /// the scan: the χ-separation toolbox on a 4-echo Siemens scan gets its echo weights (assumed
+    /// decay, a multi-echo rule) and its Tukey window (0.4, a vendor rule), as choosing it with the
+    /// scan known does; a setting changed after the choice is kept; a config that chose no
+    /// pipeline is left alone.
+    #[test]
+    fn a_pipeline_chosen_blind_is_completed_on_the_scan() {
+        let scan = ViewFacts { manufacturer: Some("Siemens".into()), voxel_size: Some([1.0; 3]), ..facts() };
+        let mut blind = PipelineConfig::default();
+        choose(&mut blind, "chi-sep-ilsqr", &ViewFacts::default()).unwrap();
+        assert_eq!(blind.pipeline.tukey_window, 0.0);
+        let (done, changes) = on_scan(&blind, &scan).unwrap();
+        let mut seen = PipelineConfig::default();
+        choose(&mut seen, "chi-sep-ilsqr", &scan).unwrap();
+        assert_eq!(done.pipeline.tukey_window, 0.4);
+        assert_eq!(done.field_mapping.b0_weight_type, seen.field_mapping.b0_weight_type);
+        assert_eq!(serde_json::to_value(&done).unwrap(), serde_json::to_value(&seen).unwrap());
+        let paths: Vec<_> = changes.iter().map(|c| c.path).collect();
+        assert!(paths.contains(&"pipeline.tukey_window") && paths.contains(&"field_mapping.b0_weight_type"), "{paths:?}");
+
+        // `--pipeline chi-sep-ilsqr --tukey-window 0.2`: the flag stands.
+        let mut flagged = blind.clone();
+        flagged.pipeline.tukey_window = 0.2;
+        let (done, _) = on_scan(&flagged, &scan).unwrap();
+        assert_eq!((done.pipeline.tukey_window, done.field_mapping.b0_weight_type), (0.2, seen.field_mapping.b0_weight_type));
+
+        let (same, changes) = on_scan(&PipelineConfig::default(), &scan).unwrap();
+        assert!(changes.is_empty());
+        assert_eq!(serde_json::to_value(&same).unwrap(), serde_json::to_value(PipelineConfig::default()).unwrap());
+    }
+
+    /// The χ-separation toolbox's iterative pipelines measure R2′ and never predict it. On a scan
+    /// known to have none, QSMxT offers prediction as its own recommendation (preselected, labelled
+    /// not the toolbox's); with a measured or supplied R2′, or before the scan is known, nothing.
+    #[test]
+    fn chi_sep_pipelines_measure_r2prime_and_qsmxt_offers_to_predict_it() {
+        use crate::enums::R2PrimeStrategy;
+        for id in ["chi-sep-ilsqr", "chi-sep-medi"] {
+            let mut c = PipelineConfig::default();
+            choose(&mut c, id, &facts()).unwrap();
+            assert_eq!(c.separation.r2prime_strategy, R2PrimeStrategy::Mese, "{id}");
+            let offer = |measured: Option<bool>| -> Vec<Recommendation> {
+                rec::recommendations(&c, &Facts { measured_r2prime: measured, ..Facts::of_view(&facts()) })
+                    .into_iter().filter(|r| r.rule == "qsmxt.chi-sep-predict-r2prime").collect()
+            };
+            let found = offer(Some(false));
+            assert_eq!(found.len(), 1, "{id}");
+            let r = &found[0];
+            assert_eq!((r.strength, r.basis, r.setting.as_str()), (Strength::Recommended, rec::Basis::Qsmxt, "separation.r2prime_strategy"));
+            assert_eq!(r.recommended.value, serde_json::json!("auto"));
+            assert!(r.basis.label().contains("not offered by the reference toolbox"));
+            assert!(offer(Some(true)).is_empty() && offer(None).is_empty(), "{id}");
+            let mut supplied = c.clone();
+            supplied.separation.custom_r2prime_tool = Some("mine".into());
+            assert!(rec::recommendations(&supplied, &Facts { measured_r2prime: Some(false), ..Facts::default() })
+                .iter().all(|r| r.rule != "qsmxt.chi-sep-predict-r2prime"), "{id}");
+        }
+        // χ-sepnet takes its own route to R2′, and is left as it was.
+        let mut c = PipelineConfig::default();
+        choose(&mut c, "chi-sepnet", &facts()).unwrap();
+        assert_eq!(c.separation.r2prime_strategy, R2PrimeStrategy::default());
     }
 
     #[test]

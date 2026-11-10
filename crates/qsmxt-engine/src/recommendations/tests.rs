@@ -10,7 +10,7 @@ use crate::schema::{self, ValueType, ViewFacts};
 fn facts_for(rule: &Rule) -> Option<Facts> {
     let mut f = Facts {
         echo_count: Some(4), field_strength: Some(3.0), voxel_size: Some((1.0, 1.0, 1.0)), dims: Some((64, 64, 32)),
-        manufacturer: None,
+        manufacturer: None, measured_r2prime: None,
     };
     for c in rule.when {
         let Condition::Fact { fact, is } = c else { continue };
@@ -53,6 +53,11 @@ fn candidates(core_path: &str) -> Vec<Value> {
         Mapping::VsharpGrid => ids(&["native", "isotropic-finest", "isotropic-1mm"]),
         Mapping::SynthSegInference => ids(&["full-volume", "low-memory"]),
         Mapping::SynthSegPatch => vec![json!(96), json!(160)],
+        Mapping::MaskInput => ids(&["magnitude-first", "magnitude", "magnitude-last", "phase-quality"]),
+        Mapping::Inhomogeneity => ids(&["none", "makehomogeneous", "n4"]),
+        Mapping::BetFraction => vec![json!(0.2), json!(0.5)],
+        Mapping::Erosion => vec![json!(0), json!(2)],
+        Mapping::QsmartFitThreshold => ids(&["absolute-40", "percentile-99"]),
         Mapping::Same => {
             let s = schema::setting(path).unwrap();
             match &s.value_type {
@@ -102,6 +107,10 @@ fn violating(rule: &Rule) -> PipelineConfig {
         };
         set(&mut c, setting, &v).unwrap_or_else(|e| panic!("{}: trigger {setting} = {v}: {e}", rule.id));
     }
+    // BET's fraction is in play only with a BET step.
+    if rule.setting == "masking.bet.fractional_intensity" {
+        set(&mut c, "masking.generator", &json!("bet")).unwrap();
+    }
     let bad = candidates(rule.setting).into_iter().find(|v| !passes(&rule.expect, v))
         .unwrap_or_else(|| panic!("{}: nothing departs from it", rule.id));
     set(&mut c, rule.setting, &bad).unwrap_or_else(|e| panic!("{}: {} = {bad}: {e}", rule.id, rule.setting));
@@ -116,7 +125,7 @@ fn native_rules() -> impl Iterator<Item = (&'static Rule, Facts)> {
 }
 
 fn known() -> Facts {
-    Facts { echo_count: Some(4), field_strength: Some(3.0), voxel_size: Some((1.0, 1.0, 1.0)), dims: Some((64, 64, 32)), manufacturer: None }
+    Facts { echo_count: Some(4), field_strength: Some(3.0), voxel_size: Some((1.0, 1.0, 1.0)), dims: Some((64, 64, 32)), manufacturer: None, measured_r2prime: None }
 }
 
 /// A QSM.rs setting at a QSMxT setting's own path needs no entry in the table.
@@ -151,8 +160,9 @@ fn the_iqfm_placeholder_is_named_by_no_rule() {
 }
 
 /// QSMxT's defaults depart from no recommendation. Its default inversion, iLSQR, differs from the
-/// STI Suite reference pipeline in the unwrapping and (multi-echo) the echo combination: those are
-/// `reference` findings, information only.
+/// STI Suite reference pipeline (its GUI) in the unwrapping, the iteration count, the precision and
+/// (multi-echo) the echo combination: those are `reference` findings, information only, and the
+/// methods Note leaves them out while the config follows QSMxT's defaults.
 #[test]
 fn defaults_depart_only_from_reference_choices() {
     let mut c = PipelineConfig::default();
@@ -161,8 +171,8 @@ fn defaults_depart_only_from_reference_choices() {
         assert_eq!(r.strength, Strength::Reference, "{r:?}");
         r.rule
     }).collect::<Vec<_>>();
-    assert_eq!(ids(&Facts::default()), ["sti.unwrap-laplacian"]);
-    assert_eq!(ids(&known()), ["sti.unwrap-laplacian", "sti.echo-weights"]);
+    assert_eq!(ids(&Facts::default()), ["sti.unwrap-laplacian", "sti.ilsqr-iterations", "sti.ilsqr-single"]);
+    assert_eq!(ids(&known()), ["sti.unwrap-laplacian", "sti.echo-weights", "sti.ilsqr-iterations", "sti.ilsqr-single"]);
 }
 
 /// Each rule fires on a config that departs from it, in QSMxT's setting and terms, and applying
@@ -690,12 +700,12 @@ fn markers_name_the_method() {
     set(&mut c, "masking.generator", &json!("threshold")).unwrap();
     let view = reference_values(&c, &facts);
     let m = marker(&view, "masking.sections").unwrap();
-    assert_eq!(m, Marker { actionable: false, text: "QSMART: BET".into() });
+    assert_eq!(m, Marker { actionable: false, text: "QSMART: BET, first echo, no erosion".into() });
     // Two methods whose references agree share the value.
     let mut c = medi_vsharp_threshold();
     set(&mut c, "bg_removal.algorithm", &json!("pdf")).unwrap();
     let m = marker(&reference_values(&c, &facts), "masking.sections").unwrap();
-    assert_eq!(m.text, "MEDI, PDF: BET");
+    assert_eq!(m.text, "MEDI, PDF: BET · MEDI: RSS magnitude, no erosion");
     // An offered finding is flagged and named first.
     let rule = core::RULES.iter().find(|r| r.id == "medi-msmv.prefilter").unwrap();
     let c = violating(rule);

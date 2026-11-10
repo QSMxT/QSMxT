@@ -228,8 +228,8 @@ pub(super) fn table() -> Vec<Def> {
         .gui("How the unwrapped echoes are combined into one field map")
         .when(|x| x.combines),
         d("field_mapping.qsmart_fit_threshold_mode", FieldMap, "Fit threshold", "", Enum(vec![
-            o("percentile", "percentile", "Percentile", "A percentile of the blurred fit residual over the volume, as QSMART's authors run it (default)"),
-            o("absolute", "absolute", "Fixed", "A fixed fit residual"),
+            o("percentile", "percentile", "Percentile", "A percentile of the blurred fit residual over the volume, as the authors' October 2020 demo runs it"),
+            o("absolute", "absolute", "Fixed", "A fixed fit residual, as QSMART v1.0 runs it (default)"),
         ])).flag("--qsmart-fit-threshold-mode").parent("field_mapping.b0_estimation")
         .when(|x| x.combines && x.c.field_mapping.b0_estimation == B0Estimation::QsmartEchofit).full("QSMART fit threshold")
         .gui("How the fit residual at which a voxel is left out of QSMART's reconstruction is set"),
@@ -665,7 +665,8 @@ pub(super) fn table() -> Vec<Def> {
             o("double", "double", "Double", "Double precision (default)"),
             o("single", "single", "Single", "Single precision, as the original implementation computes the solves; slower and uses more memory"),
         ])).flag("--ilsqr-precision").parent("inversion.algorithm")
-        .when(|x| x.inv("ilsqr"))
+        // QSMART's iLSQR stages take it too.
+        .when(|x| x.inv("ilsqr") || x.qsmart_inner("ilsqr"))
         .gui("Arithmetic of the two least-squares solves"),
         d("inversion.star.pad", Inversion, "Pad (voxels)", "Zero-padding per side, voxels (x y z). Larger costs time and memory (default 8 8 20)", IntVec3).units("voxels").flag("--star-pad").parent("inversion.algorithm")
         .when(|x| x.inv("star")).full("Padding")
@@ -766,6 +767,12 @@ pub(super) fn table() -> Vec<Def> {
         ])).flag("--qsmart-vessel-magnitude").parent("inversion.algorithm")
         .when(|x| x.inv("qsmart")).full("Vessel detection magnitude")
         .gui("The magnitude vessels are detected on"),
+        d("inversion.qsmart.offset_grid", Inversion, "Offset grid", "", Enum(vec![
+            o("fft", "fft", "FFT", "The FFT frequency grid (default)"),
+            o("qsmart-reference", "qsmart-reference", "QSMART's", "The grid QSMART's adjust_offset.m builds, half a step off the FFT grid on odd matrix sizes, as the QSMART pipeline runs it"),
+        ])).flag("--qsmart-offset-grid").parent("inversion.algorithm")
+        .when(|x| x.inv("qsmart")).full("Offset adjustment grid")
+        .gui("The dipole grid QSMART's offset adjustment uses"),
         d("inversion.qsmart.vessel_size_units", Inversion, "Vessel size units", "", Enum(vec![
             o("voxels", "voxels", "Voxels", "Vessel radius and scales in voxels, as QSMART gives them (default)"),
             o("mm", "mm", "mm", "Vessel radius and scales in mm, converted to voxels with the mean voxel size"),
@@ -976,6 +983,12 @@ pub(super) fn table() -> Vec<Def> {
         d("separation.decompose.unwrap_phase", Separation, "Unwrap phase", "Unwrap the phase along the echoes (default: off, as in the authors' code)", Bool).flag("--decompose-unwrap-phase").parent("separation.algorithm")
         .when(|x| x.sep("decompose")).full("Echo-phase unwrapping")
         .gui("Unwrap the phase along the echoes"),
+        d("separation.decompose.fit", Separation, "Fit", "", Enum(vec![
+            o("reference-code", "reference-code", "Reference code", "Tim Ho's script: lsqcurvefit for every stage, magnitudes scaled by their global maximum (default)"),
+            o("paper", "paper", "Paper", "Chen et al. 2021: amplitudes summing to one and R2*0 by linear least squares, χ± by lsqnonlin, each voxel scaled to S(0) = 1"),
+        ])).flag("--decompose-fit").parent("separation.algorithm")
+        .when(|x| x.sep("decompose")).full("DECOMPOSE fit")
+        .gui("The fit DECOMPOSE runs: its reference code's or its paper's"),
         // Each stage's fit: MATLAB lsqcurvefit's options (trust-region-reflective).
         d("separation.decompose.lsqcurvefit.max_iterations", Separation, "Max iter", "Maximum solver iterations per fit (lsqcurvefit MaxIterations)", Int).min(1.0).flag("--decompose-max-iterations").parent("separation.algorithm")
         .when(|x| x.sep("decompose")).full("Maximum iterations"),

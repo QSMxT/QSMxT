@@ -327,7 +327,7 @@ mod tests {
 
         let mut facts = crate::scan::ScanFacts {
             dims: (8, 8, 8), voxel_size: None, n_echoes: 3, echo_times: vec![0.01, 0.02, 0.03], has_magnitude: true,
-            n_coils: 1, real_imaginary: false, field_strength: 3.0, b0_dir: None, mese_echo_times: None,
+            n_coils: 1, real_imaginary: false, field_strength: 3.0, nominal_field_strength: None, imaging_frequency: None, b0_dir: None, mese_echo_times: None,
             custom_mask: false, custom_dseg: false, custom_qsm: false, custom_r2: false, custom_r2prime: false,
             manufacturer: None,
         };

@@ -233,6 +233,12 @@ pub fn run_pipeline_applied(
     applied: &[qsmxt_engine::recommendations::Recommendation],
     progress: &dyn Fn(&str),
 ) -> crate::Result<()> {
+    // A `--pipeline` chosen before the scan was read, completed on this scan.
+    let (completed, changes) = requirements::run_config(qsm_run, config)?;
+    for c in &changes {
+        log::info!("{}: {}: {} → {} (the pipeline's on this scan)", qsm_run.key, c.label, c.from_text, c.to_text);
+    }
+    let config = &completed;
     let state_path = output.state_path(&qsm_run.key);
     let state = PipelineState::load_or_create(&state_path, config, &qsm_run.key, force);
 

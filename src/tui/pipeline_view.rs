@@ -37,6 +37,8 @@ pub fn typical_scan() -> ScanFacts {
         n_coils: 1,
         real_imaginary: false,
         field_strength: 3.0,
+        nominal_field_strength: None,
+        imaging_frequency: None,
         b0_dir: None,
         mese_echo_times: None,
         custom_mask: false,
@@ -119,6 +121,11 @@ impl PipelineView {
     /// the pipeline rules that depend on it are checked against in the TUI.
     pub fn read_field_strength(&self) -> Option<f64> {
         self.run.as_ref().and_then(|(_, r)| r.as_ref().ok()).map(|r| r.magnetic_field_strength).filter(|&b| b > 0.0)
+    }
+
+    /// Whether the run last read has a multi-echo spin-echo (MESE) acquisition to measure R2′ from.
+    pub fn read_has_mese(&self) -> Option<bool> {
+        self.run.as_ref().and_then(|(_, r)| r.as_ref().ok()).map(|r| r.mese.is_some())
     }
 
     /// The manufacturer in the first echo's sidecar of the run last read, when it gives one.

@@ -779,9 +779,10 @@ and the methods Note list those that differ:
 | Phase unwrapping | `laplacian` | `--unwrapping-algorithm` |
 | Laplacian solver | `mirror` | `--laplacian-solver` |
 | Phase that is unwrapped | each echo's raw phase, over the whole volume | `--laplacian-unmasked` |
-| Echo combination | `qsmart-echofit`: a magnitude-weighted fit of phase against TE through the origin, which also marks the voxels whose blurred fit residual exceeds the 99th percentile; QSMART leaves those out | `--b0-estimation`; the threshold with `--qsmart-fit-percentile`, or a fixed residual with `--qsmart-fit-threshold` (`--qsmart-fit-threshold-mode percentile\|absolute`) |
+| Echo combination | `qsmart-echofit`: a magnitude-weighted fit of phase against TE through the origin, which also marks the voxels whose blurred fit residual exceeds a threshold (QSMART v1.0's fixed 40 by default); QSMART leaves those out | `--b0-estimation`; the fixed residual with `--qsmart-fit-threshold`, or a percentile of the residual with `--qsmart-fit-percentile` (`--qsmart-fit-threshold-mode absolute\|percentile`) |
 | Magnitude for vessel detection | `mean-n4`: the mean over echoes, N4 bias-corrected ([Tustison et al. 2010](https://doi.org/10.1109/TMI.2010.2046908)) | `--qsmart-vessel-magnitude combined` for the combined magnitude (root sum of squares, inhomogeneity-corrected unless `--no-inhomogeneity-correction`) |
 | Vessel sizes (`--qsmart-vasc-sphere-radius`, `--qsmart-frangi-scale-*`) | voxels: 8, and scales 0.5 to 6 in steps of 0.5 | `--qsmart-vessel-units mm` to give them in mm, converted with the mean voxel size |
+| Offset adjustment grid | `adjust_offset.m`'s own grid, half a step off the FFT grid on odd matrix sizes (the QSMART pipeline uses it) | `--qsmart-offset-grid qsmart-reference`; the default is the FFT grid (`fft`) |
 
 QSMART's echo fit combines the echoes as the field mapping leaves them, so it also runs
 after ROMEO unwrapping, with or without phase offset removal and bipolar correction; under
@@ -1318,12 +1319,18 @@ COSMOS and got 114 Hz/ppm; that value is baked into χ-sepnet and SUSEP-Net as a
 normalisation and is not a parameter there. If your χ_total is COSMOS-derived, 114 is the
 better match for the analytic methods too.
 
-`decompose` fits each voxel's multi-echo signal in three alternating stages, each solved by
+`decompose` fits each voxel's multi-echo signal in three alternating stages. By default
+(`--decompose-fit reference-code`) it runs the fit of the authors' public code, each stage solved by
 MATLAB `lsqcurvefit`'s trust-region-reflective method with its options:
 `--decompose-max-iterations` (default 400), `--decompose-max-function-evaluations` (default
 100 × the fit's parameters), `--decompose-function-tolerance`, `--decompose-step-tolerance`
 and `--decompose-optimality-tolerance` (default 1e-6 each), `--decompose-finite-difference-step`
-(default √eps) and `--decompose-typical-x` (default 1). It takes the phase of each echo on its
+(default √eps) and `--decompose-typical-x` (default 1). `--decompose-fit paper`, which the
+DECOMPOSE pipeline uses, runs the paper's fit instead (Chen et al. 2021, §2.2): the three
+amplitudes constrained to sum to one and R2*₀ fitted by linear least squares, χ± by
+trust-region-reflective least squares, and each voxel's magnitude scaled to its signal at TE = 0,
+extrapolated from the first two echoes (the paper does not say how it scales the data; this is
+QSM.rs's reading). It takes the phase of each echo on its
 principal branch, as the authors' code does; `--decompose-unwrap-phase true` unwraps it along
 the echoes. `--decompose-chi-bound` bounds |χ| in the fit: a number in ppm (default 0.5, the
 authors'), or `echo-spacing`, which computes π / ((2/3)·γ·B0·ΔTE) from the scan, ΔTE being the

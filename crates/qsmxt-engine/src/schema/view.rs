@@ -39,6 +39,10 @@ pub struct ViewFacts {
     /// rules that depend on the vendor.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub manufacturer: Option<String>,
+    /// Whether the runs have a measured R2′ to give χ-separation: a multi-echo spin-echo (MESE)
+    /// acquisition, or a supplied R2′ map (`None` = not known, or mixed).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub measured_r2prime: Option<bool>,
 }
 
 impl ViewFacts {
@@ -58,6 +62,7 @@ impl ViewFacts {
             voxel_size: common(scans.iter().map(|s| s.voxel_size.map(|(x, y, z)| [x, y, z]))),
             dims: common(scans.iter().map(|s| Some([s.dims.0, s.dims.1, s.dims.2]))),
             manufacturer: common(scans.iter().map(|s| s.manufacturer.clone())),
+            measured_r2prime: common(scans.iter().map(|s| Some(s.mese_echo_times.is_some() || s.custom_r2prime))),
         }
     }
 
@@ -506,6 +511,7 @@ mod tests {
             voxel_size: Some([1.0, 1.0, 2.0]),
             dims: Some([16, 16, 8]),
             manufacturer: Some("Philips".into()),
+            measured_r2prime: Some(false),
         });
     }
 
@@ -531,6 +537,8 @@ mod tests {
             n_coils: 8,
             has_magnitude: false,
             field_strength: 7.0,
+            nominal_field_strength: None,
+            imaging_frequency: None,
             voxel_size: None,
             dims: (16, 16, 16),
             manufacturer: Some("GE".into()),
@@ -538,6 +546,8 @@ mod tests {
         };
         assert_eq!(ViewFacts::from_scans(&[scan(), other]), ViewFacts {
             multi_coil: Some(true),
+            // Neither has a MESE or a supplied R2′.
+            measured_r2prime: Some(false),
             ..Default::default()
         });
     }

@@ -387,7 +387,14 @@ impl App {
             super::app::InputMode::Bids => (self.pipeline_view.read_field_strength(), self.pipeline_view.read_manufacturer()),
             _ => (None, None),
         };
-        Facts { echo_count: self.filter_state.num_echoes.trim().parse().ok(), field_strength, manufacturer, ..Default::default() }
+        // A measured R2′ only from a BIDS run's MESE (a supplied map is a setting, which the rule
+        // reads itself); unknown otherwise, so QSMxT's offer to predict R2′ waits for the scan.
+        let measured_r2prime = match self.input_mode {
+            super::app::InputMode::Bids => self.pipeline_view.read_has_mese(),
+            _ => None,
+        };
+        Facts { echo_count: self.filter_state.num_echoes.trim().parse().ok(), field_strength, manufacturer,
+                measured_r2prime, ..Default::default() }
     }
 
     /// Every rule that applies to the form's config, departed from or not.
@@ -669,10 +676,11 @@ impl App {
                     }
                 }
                 Some(_) if !settled.apply.iter().any(|r| r.rule == finding.rule) => outranked += 1,
-                // Agrees with one already applied.
-                Some(_) if applied.contains(&finding.setting.as_str()) => {}
+                // Agrees with one already applied on the same setting (by QSM.rs's path: the mask
+                // recipe's generator, input and erosion are parts of one QSMxT setting).
+                Some(_) if applied.contains(&rec::rule_setting(finding)) => {}
                 Some((value, _)) => {
-                    applied.push(&finding.setting);
+                    applied.push(rec::rule_setting(finding));
                     if let Err(e) = self.apply_recommendation(&finding.rule, value.as_ref()) {
                         errors.push(e);
                     }
@@ -681,6 +689,21 @@ impl App {
                     kept.push(finding.clone());
                     kept.extend(item.also.iter().cloned());
                 }
+            }
+        }
+        // A value applied later can undo an earlier one on another part of the same setting (a
+        // mask preset brings its erosion back): apply what still departs once more.
+        let facts = self.rule_facts();
+        for item in items {
+            let (finding, Some((value, _))) = (&item.finding, &item.options[item.pick]) else { continue };
+            if !settled.apply.iter().any(|r| r.rule == finding.rule) {
+                continue;
+            }
+            let still = super::command::config_from_app(self).ok()
+                .map(|c| rec::reference_values(&c, &facts))
+                .is_some_and(|v| v.iter().any(|x| x.rule == finding.rule && x.departs));
+            if still {
+                let _ = self.apply_recommendation(&finding.rule, value.as_ref());
             }
         }
         self.keep_mine(&kept);
@@ -782,6 +805,36 @@ impl App {
                             candidates.push(app);
                         }
                     }
+                }
+            }
+        }
+        // Settings the rows cannot set value by value: a mask recipe no preset gives (the
+        // toolboxes' BET without erosion, QSMART's first echo), set as the hand-edited recipe; and
+        // the inhomogeneity correction's three ways (none, makehomogeneous, N4), a toggle and its
+        // method. Each is the form the engine's own apply gives.
+        if let Ok(mut after) = super::command::config_from_app(self) {
+            if rec::apply(&mut after, rule, value).is_ok() {
+                match r.setting.as_str() {
+                    "masking.sections" => {
+                        let mut app = clone_form();
+                        app.pipeline_state.mask_preset = super::app::MASK_PRESET_CUSTOM;
+                        app.pipeline_state.mask_sections = after.masking.sections.clone();
+                        // First: the engine's own result, before any preset that also resolves the rule
+                        // (HD-BET's recipe has no erosion step either).
+                        candidates.insert(0, app);
+                    }
+                    "masking.inhomogeneity_correction" => {
+                        let mut app = clone_form();
+                        if app.field_toggle("inhomogeneity_correction") != after.masking.inhomogeneity_correction {
+                            app.toggle_field("inhomogeneity_correction");
+                        }
+                        app.set_field_select("inhomogeneity_method",
+                            usize::from(after.masking.inhomogeneity_method == qsmxt_engine::enums::InhomogeneityMethod::N4));
+                        // First: the engine's own result, before any preset that also resolves the rule
+                        // (HD-BET's recipe has no erosion step either).
+                        candidates.insert(0, app);
+                    }
+                    _ => {}
                 }
             }
         }
@@ -1270,7 +1323,10 @@ mod tests {
         let c = super::super::command::config_from_app(&app).unwrap();
         assert_eq!(c.bg_removal.algorithm, qsmxt_engine::enums::BfAlgorithm::Lbv, "the user's value stays");
         assert!(c.dismissed_recommendations.is_empty(), "nothing is recorded for a setting left");
-        assert_eq!(c.masking.sections, qsmxt_engine::masking::mask_presets().into_iter().find(|(_, r)| r.sections.iter().all(|s| matches!(s.generator, qsmxt_engine::masking::MaskOp::Bet { .. }))).unwrap().1.sections);
+        // The mask is the toolboxes' recipe: BET on the magnitude, not eroded (MEDI's and the
+        // χ-separation toolbox's mask rules agree on it).
+        assert!(c.masking.sections.iter().all(|s| matches!(s.generator, qsmxt_engine::masking::MaskOp::Bet { .. })
+            && !s.refinements.iter().any(|op| matches!(op, qsmxt_engine::masking::MaskOp::Erode { .. }))), "{:?}", c.masking.sections);
         let status = app.status_message.clone().unwrap();
         assert!(status.contains("left Background removal as set") && status.contains("! to choose"), "{status}");
     }
@@ -1347,7 +1403,8 @@ mod tests {
         assert_eq!(c.bg_removal.pdf.n_cg, 300, "Apply recommended (preselected) takes the suggestion");
         assert_eq!(c.field_mapping.unwrapping_algorithm, qsmxt_engine::enums::UnwrappingAlgorithm::Romeo, "and keeps ROMEO");
         let medi = rec::chosen_methods(&c, &Facts::default()).into_iter().find(|m| m.name == "MEDI").unwrap();
-        assert!(rec::reference_differences(&c, &Facts::default(), &medi).is_empty());
+        let left: Vec<String> = rec::reference_differences(&c, &Facts::default(), &medi).into_iter().map(|r| r.rule).collect();
+        assert!(left.is_empty(), "{left:?}");
         let row = PipelineRow::AlgoSelect { label: "", field: "mask_preset", options: &[], help: &[] };
         assert_eq!(App::row_marker(&app.rule_view(), &row), None, "the mask is BET now");
     }
@@ -1497,7 +1554,7 @@ mod tests {
         assert!(app.refs.modal.is_none() && app.rec_modal.is_none(), "a mask change chooses no method");
         let row = PipelineRow::AlgoSelect { label: "", field: "mask_preset", options: &[], help: &[] };
         let m = App::row_marker(&app.rule_view(), &row).unwrap();
-        assert_eq!((m.actionable, m.text.as_str()), (false, "QSMART: BET"));
+        assert_eq!((m.actionable, m.text.as_str()), (false, "QSMART: BET, first echo, no erosion"));
         assert!(app.goto_field("mask_preset"));
         let text = screen(&mut app, "QSMART with the threshold mask");
         assert!(text.contains("ⓘ QSMART: BET"), "{text}");
@@ -1505,14 +1562,16 @@ mod tests {
         let modal = app.rec_modal.as_ref().expect("details");
         assert!(modal.details);
         assert_eq!(modal.title(), " Original authors' setting: QSMART's reference pipeline ");
-        assert_eq!(modal.choices[0], RecChoice::Apply { rule: "qsmart.mask-bet".into(), value: None, label: "Use the authors' setting: BET".into() });
+        assert_eq!(modal.choices[0], RecChoice::Apply { rule: "qsmart.mask-bet".into(), value: None, label: "Use the authors' setting: BET (QSMART)".into() });
         assert_eq!(modal.cursor.map(|c| &modal.choices[c]), Some(&RecChoice::Keep), "an authors' setting: Keep mine is preselected");
         let text = screen(&mut app, "QSMART mask details (!)");
         assert!(text.contains("Original authors' setting (not a recommendation)")
             && text.contains("QSMART's reference pipeline uses BET") && text.contains("Source"), "{text}");
         key(&mut app, KeyCode::Down);
         key(&mut app, KeyCode::Enter);
-        assert_eq!(App::row_marker(&app.rule_view(), &row), None);
+        // BET now; the recipe's other parts (QSMART's first echo, f 0.2, no erosion) are their
+        // own rules, still marked.
+        assert!(App::row_marker(&app.rule_view(), &row).is_none_or(|m| !m.text.contains("BET")));
     }
 
     /// A change that creates a recommendation and chooses a method opens one pop-up, the

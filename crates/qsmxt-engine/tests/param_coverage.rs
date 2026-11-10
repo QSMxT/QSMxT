@@ -110,7 +110,9 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     cover!(q::separation::WaveSepParams => c::WaveSepConfig);
     // `solvers` picks each stage's solver; qsm-core has one (lsqcurvefit's trust-region-reflective
     // method, the reference's), so there is nothing to choose yet.
-    cover!(q::separation::DecomposeParams => c::DecomposeConfig, ignore: ["b0", "solvers"]);
+    // The stage solvers and the magnitude scale are chosen together by `fit` (reference-code or
+    // paper: DecomposeParams::default or ::paper).
+    cover!(q::separation::DecomposeParams => c::DecomposeConfig, ignore: ["b0", "solvers", "normalisation"]);
     cover!(q::solvers::LsqTrrOptions => c::LsqcurvefitConfig);
     cover!(q::separation::HcChisepParams => c::HcChisepConfig, ignore: ["b0", "se_echo_times"]);
     // The bridge sets ignore_field_mismatch from separation.r2primenet (one setting for R2PRIMEnet

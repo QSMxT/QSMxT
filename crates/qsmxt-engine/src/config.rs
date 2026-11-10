@@ -429,13 +429,16 @@ pub struct DecomposeConfig {
     pub chi_bound: ChiBoundChoice,
     pub unwrap_phase: bool,
     pub lsqcurvefit: LsqcurvefitConfig,
+    /// The reference code's fit (default) or the paper's, which the DECOMPOSE pipeline runs.
+    #[serde(default)]
+    pub fit: DecomposeFit,
 }
 impl Default for DecomposeConfig {
     fn default() -> Self {
         let p = qsm_core::separation::DecomposeParams::default();
         Self {
             n_inner: p.n_inner, chi_bound: p.chi_bound.into(), unwrap_phase: p.unwrap_phase,
-            lsqcurvefit: LsqcurvefitConfig::default(),
+            lsqcurvefit: LsqcurvefitConfig::default(), fit: DecomposeFit::default(),
         }
     }
 }
@@ -937,6 +940,10 @@ pub struct QsmartConfig {
     /// The magnitude vessels are detected on: the mean over echoes, N4 bias-corrected (default),
     /// or the run's combined magnitude.
     pub vessel_magnitude: QsmartVesselMagnitude,
+    /// The dipole grid of the offset adjustment: the FFT grid (default), or `adjust_offset.m`'s
+    /// own (`qsmart-reference`), as the QSMART pipeline runs it.
+    #[serde(default)]
+    pub offset_grid: QsmartOffsetGrid,
     /// The units of `vasc_sphere_radius` and the Frangi scales: voxels (default, as QSMART
     /// specifies them) or mm (converted with the mean voxel size).
     ///
@@ -966,6 +973,7 @@ impl Default for QsmartConfig {
             frangi_scale_ratio: p.frangi_scale_ratio,
             frangi_c: p.frangi_c,
             vessel_magnitude: QsmartVesselMagnitude::default(),
+            offset_grid: QsmartOffsetGrid::default(),
             vessel_size_units: VesselSizeUnits::default(),
         }
     }
@@ -2578,6 +2586,10 @@ mod qsmart_inputs_tests {
         fm.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
         fm.laplacian_unmasked = true;
         assert!(fm.validate().is_ok());
+        fm.qsmart_fit_threshold = 0.0;
+        assert!(fm.validate().is_err());
+        fm.qsmart_fit_threshold = 40.0;
+        fm.qsmart_fit_threshold_mode = crate::enums::QsmartFitThresholdMode::Percentile;
         fm.qsmart_fit_percentile = 0.0;
         assert!(fm.validate().is_err());
         assert!(FieldMappingConfig::default().validate().is_ok());

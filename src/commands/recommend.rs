@@ -30,12 +30,14 @@ fn facts(runs: &[QsmRun], config: &PipelineConfig) -> Vec<(String, Facts)> {
     runs.iter().map(|r| (r.key.to_string(), Facts::of_scan(&crate::pipeline::requirements::scan_facts(r, config)))).collect()
 }
 
-/// Every finding on `config` across the dataset's runs, each once (by rule and current value),
-/// with the runs it was found for.
+/// Every finding on `config` across the dataset's runs (each run's `--pipeline` completed on its
+/// scan, as it will run), each once (by rule and current value), with the runs it was found for.
 pub(crate) fn found(config: &PipelineConfig, runs: &[QsmRun]) -> Vec<Found> {
     let mut out: Vec<Found> = Vec::new();
-    for (key, f) in facts(runs, config) {
-        for r in rec::recommendations(config, &f) {
+    for (run, (key, f)) in runs.iter().zip(facts(runs, config)) {
+        // Each run's config as it will run: a `--pipeline` completed on its scan.
+        let completed = crate::pipeline::requirements::run_config(run, config).map(|(c, _)| c);
+        for r in rec::recommendations(completed.as_ref().unwrap_or(config), &f) {
             match out.iter_mut().find(|o| o.finding.rule == r.rule && o.finding.current == r.current) {
                 Some(o) => o.runs.push(key.clone()),
                 None => out.push(Found { finding: r, runs: vec![key.clone()] }),
@@ -172,6 +174,8 @@ fn flags(which: Accept) -> String {
 /// [`print_dry`]'s text.
 pub(crate) fn dry_text(config: &PipelineConfig, runs: &[QsmRun], accept: Accept) -> String {
     use std::fmt::Write;
+    // As the runs will run: a `--pipeline` completed on their scans.
+    let config = &crate::pipeline::requirements::planned_config(config, runs);
     let mut out = String::new();
     let found = found(config, runs);
     out.push('\n');
