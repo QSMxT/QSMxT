@@ -56,17 +56,15 @@ pub struct Pipeline {
     pub toolbox: Option<&'static str>,
     /// Where the pipeline is written down.
     pub source: Option<&'static str>,
-    /// Steps of the toolbox's pipeline QSMxT does not reproduce.
-    pub not_reproduced: Vec<&'static str>,
 }
 
 impl Pipeline {
     fn defaults() -> Self {
-        Pipeline { id: QSMXT_DEFAULTS, name: "QSMxT defaults", toolbox: None, source: None, not_reproduced: vec![] }
+        Pipeline { id: QSMXT_DEFAULTS, name: "QSMxT defaults", toolbox: None, source: None }
     }
 
     fn of(p: &'static ReferencePipeline) -> Self {
-        Pipeline { id: p.id, name: p.name, toolbox: Some(p.toolbox), source: Some(p.source), not_reproduced: p.not_reproduced.to_vec() }
+        Pipeline { id: p.id, name: p.name, toolbox: Some(p.toolbox), source: Some(p.source) }
     }
 
     /// Whether this is one of the original toolboxes' pipelines (not QSMxT's defaults).
