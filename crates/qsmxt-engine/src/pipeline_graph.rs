@@ -613,6 +613,9 @@ impl Ctx<'_> {
                 reads.extend(self.echo_phases());
                 reads.extend(self.echo_magnitudes());
                 writes.extend([Item::Swi, Item::SwiMip]);
+                if c.swi.filtered_phase {
+                    writes.push(Item::SwiPhase);
+                }
             }
             Stage::Smwi => {
                 reads.extend([Item::Chi, Item::CombinedMagnitude]);

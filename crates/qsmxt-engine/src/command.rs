@@ -567,6 +567,7 @@ fn command_for(config: &PipelineConfig, d: &PipelineConfig, pipeline: Option<&st
         if config.swi.scaling != d.swi.scaling { parts.push(format!("--swi-scaling {}", config.swi.scaling)); }
         emit_f64(&mut parts, "--swi-strength", config.swi.strength, d.swi.strength);
         emit_usize(&mut parts, "--swi-mip-window", config.swi.mip_window, d.swi.mip_window);
+        if config.swi.filtered_phase { parts.push("--swi-filtered-phase".into()); }
     }
 
     // ── Dismissed recommendations ──
@@ -1164,6 +1165,12 @@ mod tests {
         assert!(!cmd.contains("--swi-unwrapping"), "{cmd}");
         config.swi.unwrap = crate::SwiUnwrap::Romeo;
         assert!(generate_command(&config).contains("--swi-unwrapping romeo"));
+        assert!(!generate_command(&config).contains("--swi-filtered-phase"));
+        config.swi.filtered_phase = true;
+        assert!(generate_command(&config).contains("--swi-filtered-phase"));
+        // Without SWI there is no filtered phase to write.
+        config.pipeline.do_swi = false;
+        assert!(!generate_command(&config).contains("--swi-filtered-phase"));
     }
 
     #[test]

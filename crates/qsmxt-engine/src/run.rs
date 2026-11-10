@@ -1630,13 +1630,20 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let mag_items: Vec<Item> = (1..=n).map(|e| self.echo_magnitude(e)).collect();
         let phases = phase_items.iter().map(|i| self.store.real(i)).collect::<Result<Vec<_>, _>>()?;
         let magnitudes = mag_items.iter().map(|i| self.store.real(i)).collect::<Result<Vec<_>, _>>()?;
-        let swi = stages::swi::swi(&phases, &magnitudes, &self.meta, self.config)?;
+        let stages::swi::Swi { projected: swi, filtered_phase } =
+            stages::swi::swi(&phases, &magnitudes, &self.meta, self.config)?;
         drop((phases, magnitudes));
         self.put(Item::Swi, Data::Real(&swi.image))?;
         self.put(Item::SwiMip, Data::OnGrid(&swi.mip, &swi.mip_geometry))?;
+        let mut outputs = vec![Item::Swi, Item::SwiMip];
+        if let Some(phase) = filtered_phase {
+            self.put(Item::SwiPhase, Data::Real(&phase))?;
+            self.store.annotate(&Item::SwiPhase, crate::bids::outputs::swi_phase_fields(n))?;
+            outputs.push(Item::SwiPhase);
+        }
         self.complete(Done {
             step: "swi", algorithm: Some("clear-swi"), params: &params, outcome: None, key: &key,
-            outputs: &[Item::Swi, Item::SwiMip],
+            outputs: &outputs,
         }, "SWI")
     }
 
@@ -3659,6 +3666,33 @@ pub(crate) mod tests {
         let events = run_once(&config, &facts, &mut store);
         assert_eq!(events.computed, ["twopass", "reference"], "{:?}", events.computed);
         assert_ne!(store.get(&Item::CombinedRawChi).unwrap(), &plain, "the combined map was not filled");
+    }
+
+    /// SWI's filtered phase is kept from the SWI step only when asked for, with its units, and
+    /// asking for it (or no longer) computes the step again; off, SWI stays cached as it was.
+    #[test]
+    fn the_swi_filtered_phase_is_kept_when_asked_for() {
+        let (facts, mut store) = phantom();
+        let mut config = config();
+        config.pipeline.do_qsm = false;
+        config.pipeline.do_swi = true;
+        config.swi.mip_window = 4;
+        let events = run_once(&config, &facts, &mut store);
+        assert!(events.computed.iter().any(|c| c == "swi"), "{:?}", events.computed);
+        assert!(!store.has(&Item::SwiPhase) && !events.outputs.contains(&Item::SwiPhase));
+
+        config.swi.filtered_phase = true;
+        let events = run_once(&config, &facts, &mut store);
+        assert!(events.computed.iter().any(|c| c == "swi"), "{:?}", events.computed);
+        assert!(events.outputs.contains(&Item::SwiPhase));
+        let Some(VolumeData::Real(phase)) = store.get(&Item::SwiPhase) else { panic!("no filtered phase") };
+        assert!(phase.iter().any(|&v| v != 0.0) && phase.contains(&0.0), "0 outside CLEAR-SWI's mask only");
+        let units = if facts.n_echoes > 1 { "Hz" } else { "rad" };
+        assert_eq!(store.annotations(&Item::SwiPhase).unwrap()["Units"], units);
+        assert!(run_once(&config, &facts, &mut store).computed.is_empty());
+
+        config.swi.filtered_phase = false;
+        assert!(run_once(&config, &facts, &mut store).computed.iter().any(|c| c == "swi"));
     }
 
     /// SWI and its minIP, T2*/R2*, and SMWI from the final map, all in memory: each projection on

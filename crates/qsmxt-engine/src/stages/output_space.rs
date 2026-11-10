@@ -41,6 +41,7 @@ pub fn published(n_echoes: usize) -> Vec<(Item, Kind)> {
         (Item::CombinedMagnitude, Continuous),
         (Item::TotalFieldHz, Continuous), (Item::TotalFieldMagnitude, Continuous),
         (Item::Swi, Continuous), (Item::SwiMip, Projection(Item::Swi)),
+        (Item::SwiPhase, Continuous),
         (Item::T2star, Continuous), (Item::R2star, Continuous),
         (Item::R2, Continuous), (Item::R2prime, Continuous), (Item::R2primeCoverage, Mask),
         (Item::SeparatedTotalChi, Continuous), (Item::Segmentation, Labels),

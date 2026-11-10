@@ -207,6 +207,8 @@ impl DerivativeOutputs {
     pub fn magnitude_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_item(key, Item::CombinedMagnitude) }
     pub fn swi_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_item(key, Item::Swi) }
     pub fn swi_mip_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_item(key, Item::SwiMip) }
+    /// CLEAR-SWI's high-pass filtered phase (`_desc-swi_phase.nii`), when asked for.
+    pub fn swi_phase_path(&self, key: &AcquisitionKey) -> PathBuf { self.published_item(key, Item::SwiPhase) }
     /// Discrete whole-brain segmentation (`_dseg.nii`) and its BIDS label lookup table.
     ///
     /// BIDS pairs a `dseg` image with a `.tsv` carrying `index` and `name` columns, so the integer

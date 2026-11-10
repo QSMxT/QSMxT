@@ -518,11 +518,12 @@ pub struct DicomMap {
 }
 
 /// Every map DICOM export writes, in series order ([`crate::dicom::export`]).
-pub const DICOM_MAPS: [DicomMap; 16] = [
+pub const DICOM_MAPS: [DicomMap; 17] = [
     DicomMap { field: "dicom_out_magnitude", suffix: "magnitude", label: "  Magnitude", group: "magnitude" },
     DicomMap { field: "dicom_out_chimap", suffix: "Chimap", label: "  χ (QSM)", group: "χ" },
     DicomMap { field: "dicom_out_swi", suffix: "swi", label: "  SWI", group: "SWI" },
     DicomMap { field: "dicom_out_minip", suffix: "minIP", label: "  SWI minIP", group: "SWI" },
+    DicomMap { field: "dicom_out_swi_phase", suffix: "desc-swi_phase", label: "  SWI filtered phase", group: "SWI phase" },
     DicomMap { field: "dicom_out_smwi_para", suffix: "desc-paramagnetic_smwi", label: "  Paramagnetic SMWI", group: "SMWI" },
     DicomMap { field: "dicom_out_smwi_dia", suffix: "desc-diamagnetic_smwi", label: "  Diamagnetic SMWI", group: "SMWI" },
     DicomMap { field: "dicom_out_smwi_para_minip", suffix: "desc-paramagneticsmwi_minIP", label: "  Paramagnetic SMWI minIP", group: "SMWI" },
@@ -1700,7 +1701,8 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("sep_wavesep_tol", "separation.wavesep.tol"), ("sep_hcchisep_dr_pos_3t", "separation.hc_chisep.dr_pos_3t"),
     ("sep_hcchisep_bin_hz", "separation.hc_chisep.bin_hz"), ("sep_chisepnet_route", "separation.chi_sepnet.route"), ("sep_chisepnet_patch", "separation.chi_sepnet.patch"), ("sep_chisepnet_frame_patch", "separation.chi_sepnet.frame_patch"), ("sep_susepnet_patch", "separation.susep_net.patch"), ("custom_qsm_tool", "separation.custom_qsm_tool"),
     ("do_swi", "pipeline.do_swi"), ("swi_unwrap", "swi.unwrap"), ("swi_scaling", "swi.scaling"), ("swi_strength", "swi.strength"),
-    ("swi_hp_sigma", "swi.hp_sigma"), ("swi_mip_window", "swi.mip_window"), ("do_smwi", "pipeline.do_smwi"),
+    ("swi_hp_sigma", "swi.hp_sigma"), ("swi_mip_window", "swi.mip_window"),
+    ("swi_filtered_phase", "swi.filtered_phase"), ("do_smwi", "pipeline.do_smwi"),
     ("smwi_threshold", "smwi.threshold_ppm"), ("smwi_power", "smwi.power"), ("smwi_mip_window", "smwi.mip_window"),
     ("do_t2starmap", "pipeline.do_t2starmap"), ("do_r2starmap", "pipeline.do_r2starmap"), ("do_r2map", "pipeline.do_r2map"),
     ("custom_r2_tool", "separation.custom_r2_tool"), ("do_r2primemap", "pipeline.do_r2primemap"),
@@ -6301,6 +6303,8 @@ pub struct RunForm {
     /// High-pass sigma per axis, "x y z" in voxels.
     pub swi_hp_sigma: String,
     pub swi_mip_window: String,
+    /// Also write the filtered phase the SWI is weighted by (`desc-swi_phase`).
+    pub swi_filtered_phase: bool,
     pub do_t2starmap: bool,
     pub do_r2starmap: bool,
     pub do_r2map: bool,
@@ -6365,7 +6369,7 @@ impl RunForm {
         slurm_mem, slurm_cpus,
     ]);
     named_fields!(flag, flag_mut, bool, [
-        do_swi, do_t2starmap, do_r2starmap, do_r2map, do_r2primemap, export_dicom, do_smwi,
+        do_swi, swi_filtered_phase, do_t2starmap, do_r2starmap, do_r2map, do_r2primemap, export_dicom, do_smwi,
         do_segmentation, do_analysis, synthseg_flip_averaging, synthseg_topology_cleanup, synthseg_smoothing,
         dry_run, debug, force, clean_intermediates, slurm_submit,
     ]);
@@ -6401,6 +6405,7 @@ impl Default for RunForm {
             swi_strength: format!("{}", swi.strength),
             swi_hp_sigma: format!("{} {} {}", swi.hp_sigma[0], swi.hp_sigma[1], swi.hp_sigma[2]),
             swi_mip_window: format!("{}", swi.mip_window),
+            swi_filtered_phase: false,
             do_t2starmap: false,
             do_r2starmap: false,
             do_r2map: false,
@@ -8816,6 +8821,8 @@ impl App {
             rows.push(Param { label: "  Strength", field: "swi_strength", help: "Phase scaling strength (higher = stronger phase contrast)" });
             rows.push(Param { label: "  HP sigma (x y z)", field: "swi_hp_sigma", help: "High-pass filter sigma per axis, in voxels (x y z): background phase removal. Set z to 0 for thin axial slices" });
             rows.push(Param { label: "  mIP window", field: "swi_mip_window", help: "Minimum intensity projection window size in slices" });
+            rows.push(Toggle { label: "  Filtered phase", field: "swi_filtered_phase",
+                help: "Also write the high-pass filtered phase the SWI is weighted by (desc-swi_phase): Hz for several echoes, radians for one" });
         }
         rows.push(PipelineRow::Separator);
         rows.push(Toggle { label: "Compute SMWI", field: "do_smwi", help: "Susceptibility map-weighted imaging — weights the magnitude by a mask built from χ, not from filtered phase. Needs QSM" });
@@ -8937,6 +8944,7 @@ impl App {
             "magnitude" => true,
             "χ" => self.qsm_on(),
             "SWI" => self.form.do_swi,
+            "SWI phase" => self.form.do_swi && self.form.swi_filtered_phase,
             "SMWI" => self.form.do_smwi,
             "T2*" => self.field_toggle("do_t2starmap"),
             "R2*" => self.field_toggle("do_r2starmap"),
@@ -11006,6 +11014,24 @@ mod tests {
         assert!(shows(&mut app, TAB_RECONSTRUCTION, "swi_scaling")); // SWI Scaling
         assert!(shows(&mut app, TAB_RECONSTRUCTION, "swi_strength")); // SWI Strength
         assert!(shows(&mut app, TAB_RECONSTRUCTION, "swi_mip_window")); // SWI MIP Window
+        assert!(shows(&mut app, TAB_RECONSTRUCTION, "swi_filtered_phase"));
+    }
+
+    /// The filtered phase is ticked under SWI, and then listed for DICOM export.
+    #[test]
+    fn swi_filtered_phase_is_an_swi_output_and_exportable() {
+        let mut app = App::new();
+        let phase = dicom_map("dicom_out_swi_phase").unwrap();
+        app.form.do_swi = true;
+        assert!(!app.form.swi_filtered_phase && !app.dicom_map_made(phase), "off by default");
+        app.form.swi_filtered_phase = true;
+        assert!(app.dicom_map_made(phase));
+        app.form.dicom_unticked = vec!["desc-swi_phase".into()];
+        assert!(!app.dicom_outputs().unwrap().iter().any(|m| m == "desc-swi_phase"));
+        // Without SWI there is no phase, and the row is hidden.
+        app.form.do_swi = false;
+        assert!(!app.dicom_map_made(phase));
+        assert!(!shows(&mut app, TAB_RECONSTRUCTION, "swi_filtered_phase"));
     }
 
     #[test]

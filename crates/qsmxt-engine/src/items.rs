@@ -138,6 +138,8 @@ impl Item {
             Item::MotionReport => ("Motion report".into(), None, K::Report, Some("motion".into())),
             Item::Swi => ("SWI".into(), None, K::Swi, Some("swi".into())),
             Item::SwiMip => ("SWI minimum-intensity projection".into(), None, K::Swi, Some("minIP".into())),
+            // Hz or radians by the number of echoes: the step records which in the sidecar.
+            Item::SwiPhase => ("SWI filtered phase".into(), None, K::Swi, Some("desc-swi_phase".into())),
             Item::Smwi(c) => (format!("SMWI ({})", c.name()), None, K::Swi, Some(format!("desc-{}_smwi", c.name()))),
             Item::SmwiMip(c) => (format!("SMWI minimum-intensity projection ({})", c.name()), None, K::Swi,
                                  Some(format!("desc-{}smwi_minIP", c.name()))),
@@ -181,7 +183,7 @@ impl Item {
             Item::CombinedRawChi,
             Item::Chi, Item::ChiSupport, Item::SinglePassChi, Item::Segmentation,
             Item::SuppliedSegmentation, Item::SegmentationLabels, Item::SegmentationVolumes,
-            Item::RegionStats, Item::MotionReport, Item::Swi, Item::SwiMip, Item::R2star, Item::T2star,
+            Item::RegionStats, Item::MotionReport, Item::Swi, Item::SwiMip, Item::SwiPhase, Item::R2star, Item::T2star,
             Item::MeseMagnitude(1), Item::SuppliedR2, Item::R2, Item::SuppliedR2prime, Item::R2prime,
             Item::R2primeCoverage, Item::SuppliedChi, Item::SeparatedTotalChi,
             Item::EchoField(1), Item::EchoLocalField(1), Item::EchoLocalFieldMask(1), Item::EchoRawChi(1),

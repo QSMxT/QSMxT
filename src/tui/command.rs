@@ -788,6 +788,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         complex_fit_max_iter: if ps.b0_estimation_is("complex-fit") { parse_optional_usize(&ps.complex_fit_max_iter) } else { None },
         no_qsm: !ps.do_qsm,
         do_swi: form.do_swi,
+        // Its flag implies SWI, so it goes with SWI or not at all.
+        swi_filtered_phase: form.do_swi && form.swi_filtered_phase,
         do_smwi: form.do_smwi,
         do_segmentation: form.do_segmentation,
         do_analysis: form.do_analysis,
@@ -1734,10 +1736,16 @@ mod tests {
         app.form.debug = true;
         let args = build_run_args(&app).unwrap();
         assert!(args.pipeline.do_swi);
+        assert!(!args.pipeline.swi_filtered_phase);
         assert!(args.pipeline.do_t2starmap);
         assert!(args.pipeline.do_r2starmap);
         assert!(args.pipeline.inhomogeneity_correction);
         assert!(args.dry);
+        app.form.swi_filtered_phase = true;
+        assert!(build_run_args(&app).unwrap().pipeline.swi_filtered_phase);
+        // Ticked under SWI and SWI then turned off: the flag (which implies SWI) is not passed.
+        app.form.do_swi = false;
+        assert!(!build_run_args(&app).unwrap().pipeline.swi_filtered_phase);
         assert!(args.debug);
         assert_eq!(args.pipeline.phase_offset_removal, Some(true)); // default mcpc3ds
     }

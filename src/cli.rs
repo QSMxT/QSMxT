@@ -10,8 +10,8 @@ const DL_STATUS: &str = "deep-learning models: DISABLED in this build (classical
 
 /// The maps `--dicom-outputs` can name: the exported series' suffixes, in lower case (matched
 /// case-insensitively). One value per use, so a list cannot swallow the BIDS directory after it.
-pub const DICOM_OUTPUT_TOKENS: [&str; 16] = [
-    "magnitude", "chimap", "swi", "minip", "desc-paramagnetic_smwi", "desc-diamagnetic_smwi", "desc-paramagneticsmwi_minip",
+pub const DICOM_OUTPUT_TOKENS: [&str; 17] = [
+    "magnitude", "chimap", "swi", "minip", "desc-swi_phase", "desc-paramagnetic_smwi", "desc-diamagnetic_smwi", "desc-paramagneticsmwi_minip",
     "desc-diamagneticsmwi_minip", "t2starmap", "r2starmap", "r2map", "r2primemap",
     "desc-paramagnetic_chimap", "desc-diamagnetic_chimap", "desc-total_chimap", "dseg",
 ];
@@ -1910,6 +1910,12 @@ pub struct PipelineArgs {
     /// Also compute SWI
     #[arg(long)]
     pub do_swi: bool,
+
+    /// Also write CLEAR-SWI's high-pass filtered phase, the phase the SWI is weighted by
+    /// (`_desc-swi_phase.nii`): Hz for several echoes, radians for one, 0 outside CLEAR-SWI's head
+    /// mask. Implies --do-swi
+    #[arg(long)]
+    pub swi_filtered_phase: bool,
 
     /// Also segment the brain from the GRE magnitude with SynthSeg, writing a FreeSurfer-labelled
     /// `_dseg.nii` and its BIDS lookup table. Needs no T1w and no registration. Needs a
@@ -4515,6 +4521,15 @@ pub struct SwiArgs {
     /// names them)
     #[arg(long)]
     pub mip_output: Option<PathBuf>,
+    /// Also write CLEAR-SWI's high-pass filtered phase, the phase the SWI is weighted by: Hz for
+    /// several echoes, radians for one, 0 outside the mask (`qsmxt run --swi-filtered-phase`)
+    #[arg(long)]
+    pub filtered_phase: bool,
+    /// Output path for the filtered phase (default: the --output name with its `swi` suffix
+    /// replaced by `desc-swi_phase`, or `_desc-swi_phase` appended — `sub-01_swi.nii` →
+    /// `sub-01_desc-swi_phase.nii`, as the pipeline names it). Implies --filtered-phase
+    #[arg(long)]
+    pub filtered_phase_output: Option<PathBuf>,
     #[command(flatten)]
     pub swi_params: SwiParamArgs,
 }

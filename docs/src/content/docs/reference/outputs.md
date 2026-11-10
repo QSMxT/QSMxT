@@ -25,6 +25,7 @@ Below, `<run>` is the run's BIDS basename: its `sub-`, `ses-`, `acq-`, `rec-`,
 | `<run>_desc-reliable_mask.nii` | The reliable-phase mask of a two-pass run | `--two-pass` |
 | `<run>_desc-motioncoverage_mask.nii` | The mask every motion-corrected echo still covers | `--motion-correction` |
 | `<run>_swi.nii`, `<run>_minIP.nii` | SWI and its minimum-intensity projection | `--do-swi` |
+| `<run>_desc-swi_phase.nii` | The high-pass filtered phase the SWI is weighted by: CLEAR-SWI's Gaussian high-pass (in-plane by default) within its head mask from the first echo's magnitude, 0 outside it. **Hz** for multi-echo data, **radians** for one echo (the sidecar's `Units`) | `--swi-filtered-phase` |
 | `<run>_desc-paramagnetic_smwi.nii`, `<run>_desc-diamagnetic_smwi.nii` | SMWI per contrast | `--do-smwi` |
 | `<run>_desc-paramagneticsmwi_minIP.nii`, `<run>_desc-diamagneticsmwi_minIP.nii` | Their minimum-intensity projections | `--do-smwi` |
 | `<run>_T2starmap.nii`, `<run>_R2starmap.nii` | T2\* (s) and R2\* (s⁻¹) | `--do-t2starmap`, `--do-r2starmap` |
@@ -111,6 +112,7 @@ in the derivatives' `.bidsignore`, so the dataset passes the BIDS validator:
 | `R2primemap` | BIDS has no suffix for R2′ |
 | `swi`, `minIP` | The suffixes proposed by BEP004 (SWI), not yet in a released BIDS |
 | `smwi` | SMWI, named on the same BEP004 scheme |
+| `phase` | SWI's filtered phase (`desc-swi_phase`); BIDS deprecates `phase` as a suffix for raw phase |
 | `evec` | BIDS has no suffix for an orientation field; an eigenvector is not a susceptibility, so it is not a `Chimap` |
 | `*_stats.tsv`, `*_stats.png`, `desc-reference_summary.tsv` | `stats` is not a BIDS suffix |
 | `workflow`, `prov`, `logs`, `slurm`, `extra_files`, `changes`, `methods.md`, `pipeline.mmd`, `pipeline.svg`, `pipeline_config.toml`, `*.log` | Not BIDS data files |
@@ -126,3 +128,4 @@ given a run's basename as the prefix they write exactly the pipeline's names:
 | `qsmxt separate … -o <prefix>` | `<prefix>_desc-paramagnetic_Chimap.nii`, `<prefix>_desc-diamagnetic_Chimap.nii`, `<prefix>_desc-total_Chimap.nii` |
 | `qsmxt combine mcpc3ds -o <prefix>` | `<prefix>_rec-mcpc3ds_echo-<N>_part-{phase,mag}_<suffix>.nii` (`rec-mcpc3ds` replaces a `rec-` in the prefix; `<suffix>` is the inputs', `MEGRE` without one) and `<prefix>_desc-mcpc3ds_mask.nii` |
 | `qsmxt swi … --mip -o <name>_swi.nii` | `<name>_minIP.nii` beside it, unless `--mip-output` says otherwise |
+| `qsmxt swi … --filtered-phase -o <name>_swi.nii` | `<name>_desc-swi_phase.nii` beside it, unless `--filtered-phase-output` says otherwise |

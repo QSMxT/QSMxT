@@ -711,6 +711,8 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         // ── Pipeline toggles ──
         if args.no_qsm { config.pipeline.do_qsm = false; }
         if args.do_swi { config.pipeline.do_swi = true; }
+        // The filtered phase comes from the SWI computation, so asking for it asks for SWI.
+        if args.swi_filtered_phase { config.pipeline.do_swi = true; config.swi.filtered_phase = true; }
         if args.do_smwi { config.pipeline.do_smwi = true; }
         if args.do_segmentation { config.pipeline.do_segmentation = true; }
         if args.do_analysis { config.pipeline.do_analysis = true; }

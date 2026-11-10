@@ -131,6 +131,9 @@ pub enum Item {
     Swi,
     /// The SWI's minimum-intensity projection, on its own grid ([`Data::OnGrid`]).
     SwiMip,
+    /// CLEAR-SWI's high-pass filtered phase: Hz for several echoes, radians for one (its
+    /// sidecar's `Units`).
+    SwiPhase,
     /// A susceptibility map-weighted image, suppressing one sign of χ.
     Smwi(Contrast),
     /// An SMWI's minimum-intensity projection, on its own grid.
@@ -245,7 +248,7 @@ impl Item {
                 Item::RobustFitReport, Item::FieldReliability, Item::FieldMask, Item::ReliableMask, Item::CombinedRawChi,
                 Item::Chi, Item::ChiSupport, Item::SinglePassChi, Item::Segmentation, Item::SuppliedSegmentation, Item::SegmentationLabels,
                 Item::SegmentationVolumes, Item::RegionStats, Item::MotionReport, Item::Swi, Item::SwiMip,
-                Item::R2star, Item::T2star, Item::SuppliedR2, Item::R2, Item::SuppliedR2prime, Item::R2prime,
+                Item::SwiPhase, Item::R2star, Item::T2star, Item::SuppliedR2, Item::R2, Item::SuppliedR2prime, Item::R2prime,
                 Item::R2primeCoverage, Item::SuppliedChi, Item::SeparatedTotalChi,
             ].into_iter().find(|item| item.key() == name)?,
             _ => return None,
@@ -1381,7 +1384,7 @@ mod tests {
             Item::QsmartIntermediate(Pass::Reliable, q::CHI_STAGE2), Item::CombinedRawChi, Item::Chi,
             Item::ChiSupport, Item::SinglePassChi, Item::Segmentation, Item::SuppliedSegmentation,
             Item::SegmentationLabels, Item::SegmentationVolumes, Item::RegionStats, Item::MotionReport, Item::Swi,
-            Item::SwiMip, Item::R2star, Item::T2star, Item::MeseMagnitude(6), Item::SuppliedR2, Item::R2,
+            Item::SwiMip, Item::SwiPhase, Item::R2star, Item::T2star, Item::MeseMagnitude(6), Item::SuppliedR2, Item::R2,
             Item::SuppliedR2prime, Item::R2prime, Item::R2primeCoverage, Item::SuppliedChi, Item::SeparatedTotalChi,
         ];
         for c in Contrast::BOTH {

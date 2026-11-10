@@ -47,7 +47,7 @@ pub fn project_on(
 pub fn swi_params(config: &PipelineConfig, meta: &RunMetadata) -> Result<serde_json::Value, EngineError> {
     let s = &config.swi;
     let mip_dims = mip_dims(meta, s.mip_window)?;
-    Ok(serde_json::json!({
+    let mut params = serde_json::json!({
         "unwrap": s.unwrap,
         "scaling": s.scaling,
         "strength": s.strength,
@@ -60,23 +60,38 @@ pub fn swi_params(config: &PipelineConfig, meta: &RunMetadata) -> Result<serde_j
         // Part of the cache key so a minIP written with full-volume dimensions before this was
         // fixed (issue #211) is rebuilt rather than kept.
         "mip_dims": mip_dims,
-    }))
+    });
+    // Only when asked for, so SWIs cached without it stay valid while it is off.
+    if s.filtered_phase {
+        params["filtered_phase"] = serde_json::Value::Bool(true);
+    }
+    Ok(params)
+}
+
+/// The SWI, its minIP and, when asked for, the high-pass filtered phase it was weighted by.
+pub struct Swi {
+    pub projected: Projected,
+    /// CLEAR-SWI's filtered phase: Hz for several echoes, radians for one; 0 outside its mask.
+    pub filtered_phase: Option<Vec<f64>>,
 }
 
 /// CLEAR-SWI over every echo, and its minIP.
 ///
 /// The phase is filtered within CLEAR-SWI's own mask (from the first echo's magnitude) rather
-/// than the brain mask, as CLEAR-SWI does: the SWI covers the head, not just the brain.
+/// than the brain mask, as CLEAR-SWI does: the SWI covers the head, not just the brain. The
+/// filtered phase is kept from the same computation when `swi.filtered_phase` asks for it.
 pub fn swi(
     phases: &[Vec<f64>], magnitudes: &[Vec<f64>], meta: &RunMetadata, config: &PipelineConfig,
-) -> Result<Projected, EngineError> {
-    let image = qsm_core::swi::calculate_swi(
+) -> Result<Swi, EngineError> {
+    let result = qsm_core::swi::calculate_swi(
         phases, magnitudes, &meta.echo_times, None, &grid(meta), &config.swi.to_params(),
-    )?.swi;
+    )?;
+    let filtered_phase = config.swi.filtered_phase.then_some(result.filtered_phase);
+    let image = result.swi;
     // The projection carries its own geometry: shorter than the SWI along the slice axis, and
     // centred on each slab. Writing it under the run's dimensions is issue #211.
     let (mip, mip_geometry) = project(&image, meta, config.swi.mip_window)?;
-    Ok(Projected { image, mip, mip_geometry })
+    Ok(Swi { projected: Projected { image, mip, mip_geometry }, filtered_phase })
 }
 
 /// The `smwi` step's parameters.

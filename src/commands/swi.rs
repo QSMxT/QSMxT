@@ -18,6 +18,14 @@ fn swi_params(p: &crate::cli::SwiParamArgs) -> qsm_core::swi::SwiParams {
     c.to_params()
 }
 
+/// Where the filtered phase goes, when it is asked for.
+fn filtered_phase_path(args: &SwiArgs) -> Option<std::path::PathBuf> {
+    match &args.filtered_phase_output {
+        Some(path) => Some(path.clone()),
+        None => args.filtered_phase.then(|| crate::bids::naming::phase_beside_swi(&args.output)),
+    }
+}
+
 pub fn execute(args: SwiArgs) -> crate::Result<()> {
     let n_echoes = args.phase.len();
     if args.magnitude.len() != n_echoes {
@@ -52,10 +60,16 @@ pub fn execute(args: SwiArgs) -> crate::Result<()> {
 
     info!("Computing CLEAR-SWI ({} echo{}, {}x{}x{})",
           n_echoes, if n_echoes == 1 { "" } else { "es" }, grid.nx(), grid.ny(), grid.nz());
-    let swi = qsm_core::swi::calculate_swi(&phases, &mags, &tes, mask.as_deref(), &grid, &params)?.swi;
+    let result = qsm_core::swi::calculate_swi(&phases, &mags, &tes, mask.as_deref(), &grid, &params)?;
+    let swi = result.swi;
 
     save_nifti(&args.output, &swi, &reference)?;
     info!("SWI saved to {}", args.output.display());
+
+    if let Some(path) = filtered_phase_path(&args) {
+        save_nifti(&path, &result.filtered_phase, &reference)?;
+        info!("Filtered phase ({}) saved to {}", if n_echoes > 1 { "Hz" } else { "rad" }, path.display());
+    }
 
     if args.mip {
         // The projection is shorter than the SWI and centred on each slab, so it is written with
@@ -73,6 +87,21 @@ pub fn execute(args: SwiArgs) -> crate::Result<()> {
 #[cfg(test)]
 mod tests {
     use clap::Parser;
+
+    /// `--swi-filtered-phase` asks for SWI too, survives the config file, and is rendered back.
+    #[test]
+    fn swi_filtered_phase_implies_swi_and_round_trips() {
+        let cli = crate::cli::Cli::try_parse_from(["qsmxt", "run", "bids", "--swi-filtered-phase"]).unwrap();
+        let crate::cli::Command::Run(run) = cli.command else { panic!("expected run") };
+        let mut config = crate::pipeline::config::PipelineConfig::default();
+        assert!(!config.swi.filtered_phase, "off by default");
+        crate::pipeline::config::apply_run_overrides(&mut config, &run.pipeline).unwrap();
+        assert!(config.pipeline.do_swi && config.swi.filtered_phase);
+        let back = crate::pipeline::config::PipelineConfig::from_toml(&config.to_toml().unwrap()).unwrap();
+        assert!(back.swi.filtered_phase);
+        let cmd = qsmxt_engine::command::generate_command(&back);
+        assert!(cmd.contains("--do-swi") && cmd.contains("--swi-filtered-phase"), "{cmd}");
+    }
 
     /// Every scaling reaches qsm-core unchanged through both `qsmxt run` and `qsmxt swi`, under
     /// both spellings of negative-tanh; anything else does not parse (#266: `negative-tanh` ran
