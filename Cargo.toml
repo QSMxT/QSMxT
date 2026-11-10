@@ -25,8 +25,9 @@ dl = ["qsm-core/onnx", "qsm-core/download", "qsmxt-engine/onnx"]
 [dependencies]
 # Pinned to a QSM.rs main commit. qsmxt-engine must move in lockstep (same rev), so qsmbly
 # (which pins qsmxt-engine) resolves the same qsm-core.
-# TEMP: pinned to the QSM.rs fix-phase-scaling-shared branch (astewartau/QSM.rs#450, one phase
-# conversion for every echo); move to QSM.rs main once it merges.
+# TEMP: pinned to QSM.rs#450's branch head (one phase conversion for every echo; merged as
+# f90c29b on top of #447, which needs the toolbox-parity engine adaptation). Move to QSM.rs main
+# once that QSMxT PR has merged.
 qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "b001fdbc41ccdcd368e61837da9fd586bd4452d4", features = ["parallel"] }
 qsmxt-engine = { path = "crates/qsmxt-engine" }
 clap = { version = "4", features = ["derive"] }
