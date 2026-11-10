@@ -73,13 +73,20 @@ fn page_of(section: Section) -> Option<Page> {
     })
 }
 
-/// A value as a text row holds it: one number for a vector with the same value on every axis.
-fn field_text_of(value: &Value) -> String {
+/// The texts a parameter row may take for `value`, the shortest first: a list of equal values as
+/// one, then written out.
+fn field_texts_of(value: &Value) -> Vec<String> {
     let plain = |v: &Value| v.as_str().map_or_else(|| v.to_string(), str::to_string);
     match value {
-        Value::Array(xs) if !xs.is_empty() && xs.iter().all(|x| Some(x) == xs.first()) => plain(&xs[0]),
-        Value::Array(xs) => xs.iter().map(plain).collect::<Vec<_>>().join(" "),
-        other => plain(other),
+        Value::Array(xs) => {
+            let all = xs.iter().map(plain).collect::<Vec<_>>().join(" ");
+            if xs.len() > 1 && xs.iter().all(|x| Some(x) == xs.first()) {
+                vec![plain(&xs[0]), all]
+            } else {
+                vec![all]
+            }
+        }
+        other => vec![plain(other)],
     }
 }
 
@@ -303,11 +310,16 @@ impl App {
                         candidates.push(app);
                     }
                     _ => {
-                        let mut app = self.clone_form();
-                        if let Some(s) = app.field_text_mut(field) {
-                            *s = field_text_of(value);
+                        // A list of equal values reads as one where the row takes one for every
+                        // axis, but a row that wants all three (STAR-QSM's pad, `0 0 0` for
+                        // DECOMPOSE) takes them written out.
+                        for text in field_texts_of(value) {
+                            let mut app = self.clone_form();
+                            if let Some(s) = app.field_text_mut(field) {
+                                *s = text;
+                            }
+                            candidates.push(app);
                         }
-                        candidates.push(app);
                     }
                 }
                 if let Some(app) = candidates.into_iter().find(|a| takes(a)) {
