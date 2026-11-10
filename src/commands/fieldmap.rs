@@ -271,11 +271,9 @@ fn run_field_mapping(
         )));
     }
 
-    // Scale each echo into [-pi, pi] to be robust to unscaled radian/int inputs.
+    // Into radians in [-pi, pi], with one conversion for every echo (scale_phases_to_pi).
     let mut phases: Vec<Vec<f64>> = phase_me.echoes.clone();
-    for p in phases.iter_mut() {
-        phase::scale_phase_to_pi(p);
-    }
+    phase::scale_phases_to_pi(&mut phases);
     let phase_slices: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
 
     // ── Optional 4D magnitude ──

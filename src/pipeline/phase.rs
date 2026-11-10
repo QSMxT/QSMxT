@@ -1,5 +1,5 @@
 // Delegate to qsm-core's canonical implementations
-pub use qsm_core::pipeline::scale_phase_to_pi;
+pub use qsm_core::pipeline::{scale_phase_to_pi, scale_phases_to_pi};
 
 // Scan geometry lives in qsm-core so every host computes it the same way; see
 // `qsm_core::geometry` for why the voxel scaling must be factored out of the affine before the

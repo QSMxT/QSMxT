@@ -156,9 +156,7 @@ pub(super) fn load_phase_net_inputs(args: &crate::cli::PhaseNetArgs) -> crate::R
             args.input.display(), args.scan.echo_times.len())));
     }
     let mut phases = phase.echoes.clone();
-    for p in &mut phases {
-        crate::pipeline::phase::scale_phase_to_pi(p);
-    }
+    crate::pipeline::phase::scale_phases_to_pi(&mut phases);
     let magnitudes = match &args.magnitude {
         None => Vec::new(),
         Some(path) => {

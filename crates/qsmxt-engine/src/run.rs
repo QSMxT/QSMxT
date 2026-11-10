@@ -744,11 +744,14 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                                    "Rescaling phase to radians") else { return Ok(()) };
         let n = self.n_echoes();
         let mut outputs = Vec::new();
-        for e in 1..=n {
-            let mut phase = self.store.real(&Item::AcquiredPhase(e))?;
-            qsm_core::pipeline::scale_phase_to_pi(&mut phase);
-            self.put_echo(e, (chain.scaled_phase(e), &phase), None, &mut outputs)?;
+        // One conversion for every echo (qsm_core::pipeline::scale_phases_to_pi): echoes scaled
+        // separately would not keep the phase differences between them.
+        let mut phases = (1..=n).map(|e| self.store.real(&Item::AcquiredPhase(e))).collect::<Result<Vec<_>, _>>()?;
+        qsm_core::pipeline::scale_phases_to_pi(&mut phases);
+        for (e, phase) in (1..=n).zip(&phases) {
+            self.put_echo(e, (chain.scaled_phase(e), phase), None, &mut outputs)?;
         }
+        drop(phases);
         // Raw (uncorrected) per-echo magnitudes as they are, for MCPC-3D-S, linear fit and ROMEO.
         if chain.copies_magnitude() {
             for e in 1..=n {
@@ -850,13 +853,12 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             let (mut cp, mut cm) = (Vec::with_capacity(n), Vec::with_capacity(n));
             for e in 1..=n {
                 let (phase_item, mag_item) = (Item::CoilPhase(c, e), Item::CoilMagnitude(c, e));
-                let mut p = self.store.real(&phase_item)?;
+                let p = self.store.real(&phase_item)?;
                 if p.len() != acquired {
                     let what = self.store.identity(&phase_item);
                     return Err(crate::EngineError::DimensionMismatch(format!(
                         "{} has {} voxels, expected {acquired}", what.as_str().unwrap_or_default(), p.len())).into());
                 }
-                qsm_core::pipeline::scale_phase_to_pi(&mut p);
                 if !self.store.has(&mag_item) {
                     return Err(crate::EngineError::Config(format!(
                         "coil {number} echo {e}: magnitude required for MCPC-3D-S")).into());
@@ -872,6 +874,11 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             }
             phases.push(cp);
             magnitudes.push(cm);
+        }
+        // One conversion for every coil and echo (qsm_core::pipeline::scale_phases_to_pi).
+        {
+            let mut all: Vec<&mut Vec<f64>> = phases.iter_mut().flatten().collect();
+            qsm_core::pipeline::scale_phases_to_pi(&mut all);
         }
         let combined = stages::phase::combine_coils(&phases, &magnitudes, &self.meta, self.config)?;
         drop((phases, magnitudes));
@@ -2580,8 +2587,11 @@ pub(crate) mod tests {
         let (mut field_hz, mut magnitude) = (vec![0.0; N * N * N], vec![0.0; N * N * N]);
         for z in 0..N { for y in 0..N { for x in 0..N {
             let i = x + y * N + z * N * N;
+            // Tens of Hz, so the later echoes wrap, and nonzero outside the object too, as
+            // acquired phase is: phase that never reaches ±π is taken as radians as it is
+            // (scale_phases_to_pi), and phase that is exactly 0 reads as "the scanner wrote none".
+            field_hz[i] = 40.0 * ((x as f64 - c) / 6.0) + 20.0 * ((z as f64 - c) / 6.0).powi(2);
             if inside(x, y, z) {
-                field_hz[i] = 4.0 * ((x as f64 - c) / 6.0) + 2.0 * ((z as f64 - c) / 6.0).powi(2);
                 magnitude[i] = 100.0;
             } else {
                 magnitude[i] = 1.0;
@@ -3068,10 +3078,10 @@ pub(crate) mod tests {
                     if before_keys.get(step) != after_keys.get(step) || read_before != inputs {
                         continue;
                     }
-                    let read_same = inputs.iter().all(|i| {
-                        let ((a, ra), (b, rb)) = (held(&before_store, i), held(&after_store, i));
-                        same(a.as_ref(), b.as_ref()) && ra == rb
-                    });
+                    // Bitwise: an iterative step (χ-separation's LSQR) can turn a rounding-level
+                    // change in its input (1e-12 relative) into a visible one, so "the same inputs"
+                    // has to mean identical ones for the outputs to be held to the tolerance.
+                    let read_same = inputs.iter().all(|i| held(&before_store, i) == held(&after_store, i));
                     if !read_same {
                         continue;
                     }
@@ -3135,9 +3145,13 @@ pub(crate) mod tests {
         let on = run_once(&c, &facts, &mut store).computed;
         assert!(on.iter().any(|s| s == "tukey_window"), "{on:?}");
         assert!(on.iter().any(|s| s == "scale_phase"), "phase scaling now leaves the echoes for the window: {on:?}");
+        let mut acquired = acquired;
+        {
+            let mut ps: Vec<&mut Vec<f64>> = acquired.iter_mut().map(|(_, p)| p).collect();
+            qsm_core::pipeline::scale_phases_to_pi(&mut ps);
+        }
         for (e, (mag, phase)) in acquired.into_iter().enumerate() {
             let (mut m, mut p) = (mag, phase);
-            qsm_core::pipeline::scale_phase_to_pi(&mut p);
             qsm_core::utils::tukey_window::tukey_window_mag_phase(&mut m, &mut p, (N, N, N), 0.4);
             assert_eq!(store.get(&Item::Magnitude(e + 1)), Some(&VolumeData::Real(m)), "echo {}", e + 1);
             assert_eq!(store.get(&Item::Phase(e + 1)), Some(&VolumeData::Real(p)), "echo {}", e + 1);
@@ -3176,11 +3190,15 @@ pub(crate) mod tests {
             assert_eq!(phase_steps, want);
             let meta = store.grid().unwrap().clone();
             assert!(meta.source_geometry.is_some());
+            let mut acquired = acquired;
+            {
+                let mut ps: Vec<&mut Vec<f64>> = acquired.iter_mut().map(|(_, p)| p).collect();
+                qsm_core::pipeline::scale_phases_to_pi(&mut ps);
+            }
             for (e, (mag, phase)) in acquired.into_iter().enumerate() {
                 let e = e + 1;
                 // The single step's operations, called directly.
                 let (mut m, mut p) = (mag, phase);
-                qsm_core::pipeline::scale_phase_to_pi(&mut p);
                 c.pipeline.tukey_window = tukey;
                 crate::stages::phase::tukey_window(&mut m, &mut p, &meta, &c);
                 let want = crate::stages::phase::working_echo(p, Some(m), true, &meta);
@@ -4657,8 +4675,9 @@ pub(crate) mod tests {
         run_once(&c, &f, &mut coils);
         let meta = resampled(&coils);
         assert!(meta.source_geometry.is_some());
-        for p in coil_phases.iter_mut().flatten() {
-            qsm_core::pipeline::scale_phase_to_pi(p);
+        {
+            let mut all: Vec<&mut Vec<f64>> = coil_phases.iter_mut().flatten().collect();
+            qsm_core::pipeline::scale_phases_to_pi(&mut all);
         }
         let combined = crate::stages::phase::combine_coils(&coil_phases, &coil_mags, &meta, &c).unwrap();
         for e in 1..=TES.len() {
