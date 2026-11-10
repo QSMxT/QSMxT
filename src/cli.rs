@@ -10,10 +10,10 @@ const DL_STATUS: &str = "deep-learning models: DISABLED in this build (classical
 
 /// The maps `--dicom-outputs` can name: the exported series' suffixes, in lower case (matched
 /// case-insensitively). One value per use, so a list cannot swallow the BIDS directory after it.
-pub const DICOM_OUTPUT_TOKENS: [&str; 14] = [
+pub const DICOM_OUTPUT_TOKENS: [&str; 15] = [
     "chimap", "swi", "minip", "desc-paramagnetic_smwi", "desc-diamagnetic_smwi", "desc-paramagneticsmwi_minip",
     "desc-diamagneticsmwi_minip", "t2starmap", "r2starmap", "r2map", "r2primemap",
-    "desc-paramagnetic_chimap", "desc-diamagnetic_chimap", "desc-total_chimap",
+    "desc-paramagnetic_chimap", "desc-diamagnetic_chimap", "desc-total_chimap", "dseg",
 ];
 
 #[derive(Parser, Debug)]

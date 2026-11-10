@@ -511,7 +511,7 @@ pub struct DicomMap {
 }
 
 /// Every map DICOM export writes, in series order ([`crate::dicom::export`]).
-pub const DICOM_MAPS: [DicomMap; 14] = [
+pub const DICOM_MAPS: [DicomMap; 15] = [
     DicomMap { field: "dicom_out_chimap", suffix: "Chimap", label: "  χ (QSM)", group: "χ" },
     DicomMap { field: "dicom_out_swi", suffix: "swi", label: "  SWI", group: "SWI" },
     DicomMap { field: "dicom_out_minip", suffix: "minIP", label: "  SWI minIP", group: "SWI" },
@@ -526,6 +526,7 @@ pub const DICOM_MAPS: [DicomMap; 14] = [
     DicomMap { field: "dicom_out_chi_para", suffix: "desc-paramagnetic_Chimap", label: "  Paramagnetic χ", group: "χ-separation" },
     DicomMap { field: "dicom_out_chi_dia", suffix: "desc-diamagnetic_Chimap", label: "  Diamagnetic χ", group: "χ-separation" },
     DicomMap { field: "dicom_out_chi_total", suffix: "desc-total_Chimap", label: "  Total χ", group: "χ-separation" },
+    DicomMap { field: "dicom_out_dseg", suffix: "dseg", label: "  Segmentation (DICOM SEG)", group: "segmentation" },
 ];
 
 /// The Export map a tick row's field names.
@@ -8651,7 +8652,19 @@ impl App {
             let (made, not_made): (Vec<_>, Vec<_>) = DICOM_MAPS.iter().partition(|m| self.dicom_map_made(m));
             for m in made {
                 rows.push(Toggle { label: m.label, field: m.field,
-                    help: "Space ticks or unticks the map. While every map is ticked all are exported, and a map turned on later is ticked too; a ticks them all" });
+                    help: if m.field == "dicom_out_dseg" {
+                        "The segmentation as one DICOM Segmentation object, its structures coded and coloured, drawn on the exported χ series: it needs χ exported too"
+                    } else {
+                        "Space ticks or unticks the map. While every map is ticked all are exported, and a map turned on later is ticked too; a ticks them all"
+                    } });
+            }
+            // The SEG references the χ series: say so when it would be written without it.
+            let chi = dicom_map("dicom_out_chimap").expect("in the table");
+            let seg = dicom_map("dicom_out_dseg").expect("in the table");
+            if self.dicom_map_made(seg) && self.field_toggle(seg.field)
+                && !(self.dicom_map_made(chi) && self.field_toggle(chi.field))
+            {
+                rows.push(Note { text: "The segmentation is not exported without χ: its SEG is drawn on the χ series.".into() });
             }
             let mut names: Vec<&str> = not_made.iter().map(|m| m.group).collect();
             names.dedup();
@@ -8683,6 +8696,7 @@ impl App {
             "R2" => self.field_toggle("do_r2map"),
             "R2′" => self.field_toggle("do_r2primemap"),
             "χ-separation" => self.pipeline_state.do_chi_separation,
+            "segmentation" => self.field_toggle("do_segmentation"),
             _ => false,
         }
     }
@@ -13222,6 +13236,22 @@ mod tests {
         assert!(crate::tui::command::build_run_args(&app).unwrap().dicom_outputs.is_some());
         app.form.export_dicom = false;
         assert!(crate::tui::command::build_run_args(&app).unwrap().dicom_outputs.is_none());
+    }
+
+    /// The segmentation is listed when one is made, and the checklist says its SEG needs χ.
+    #[test]
+    fn the_segmentation_is_exported_on_the_chi_series() {
+        let mut app = App::new();
+        app.form.export_dicom = true;
+        let fields = |app: &App| app.page_rows(Page::Export).iter().filter_map(row_field).collect::<Vec<_>>();
+        assert!(!fields(&app).contains(&"dicom_out_dseg"), "no segmentation, no SEG");
+        app.form.do_segmentation = true;
+        assert!(fields(&app).contains(&"dicom_out_dseg"));
+        let note = |app: &App| app.page_rows(Page::Export).iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("not exported without χ")));
+        assert!(!note(&app));
+        app.toggle_field("dicom_out_chimap");
+        assert!(note(&app), "χ unticked: the SEG would have nothing to be drawn on");
+        assert_eq!(app.dicom_outputs(), Some(vec!["dseg".to_string()]));
     }
 
     /// The checklist's maps are the ones `--dicom-outputs` accepts.

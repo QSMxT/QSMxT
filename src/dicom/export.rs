@@ -16,6 +16,11 @@
 //! Otherwise that identity is synthesized (patient fields left empty; a stable
 //! StudyInstanceUID is derived from the subject/session). New Series/SOP UIDs are
 //! always generated — these are distinct derived series.
+//!
+//! The run's segmentation goes out as a DICOM Segmentation object referencing the χ series
+//! ([`seg`]).
+
+mod seg;
 
 use std::hash::{Hash, Hasher};
 use std::path::Path;
@@ -58,9 +63,20 @@ pub struct DicomExportOptions<'a> {
     /// Optional subset of map suffixes to export (case-insensitive tokens like
     /// `chimap`, `swi`, `minip`, `desc-paramagnetic_smwi`, `desc-paramagneticsmwi_minip` (and
     /// the diamagnetic pair), `t2starmap`, `r2starmap`, `r2map`, `r2primemap`,
-    /// `desc-paramagnetic_chimap`, `desc-diamagnetic_chimap`, `desc-total_chimap`).
+    /// `desc-paramagnetic_chimap`, `desc-diamagnetic_chimap`, `desc-total_chimap`, `dseg`).
     /// `None` = all produced.
     pub outputs_filter: Option<&'a [String]>,
+    /// Export the segmentation as a DICOM SEG, when the run makes or reads one.
+    pub segmentation: Option<SegmentationExport>,
+}
+
+/// How the run's segmentation is to be described in its DICOM SEG.
+pub struct SegmentationExport {
+    /// The labels are SynthSeg's FreeSurfer ids, which have standard codes; otherwise (a supplied
+    /// segmentation) each label is coded generically and named from the `dseg.tsv`.
+    pub synthseg: bool,
+    /// What made it: "SynthSeg 1.0", or the derivatives tool a supplied one came from.
+    pub algorithm: String,
 }
 
 /// The SMWI series' suffixes, (SMWI, its minIP), paramagnetic then diamagnetic: the published
@@ -169,6 +185,7 @@ pub fn export_run_dicoms(
     let first_te = run.echo_times.first().copied();
 
     let mut written = 0;
+    let mut chi_exported = false;
     for map in &maps {
         if !map.path.exists() {
             continue;
@@ -186,9 +203,70 @@ pub fn export_run_dicoms(
         })?;
         info!("{}: -> {} ({} slices)", key, dir.display(), n);
         written += 1;
+        chi_exported |= map.suffix == "Chimap";
+    }
+
+    if let Some(seg) = &opts.segmentation {
+        let selected = opts.outputs_filter.is_none_or(|f| suffix_selected("dseg", f));
+        let dseg = output.dseg_path(key);
+        if selected && dseg.exists() && export_segmentation(key, output, seg, &dseg, &identity, chi_exported) {
+            written += 1;
+        }
     }
 
     Ok(written)
+}
+
+/// The segmentation as a DICOM SEG on the exported χ series; whether one was written. Best-effort:
+/// the maps are out already, so a problem here is a warning, not a failed export.
+fn export_segmentation(
+    key: &crate::bids::entities::AcquisitionKey, output: &DerivativeOutputs, seg: &SegmentationExport,
+    dseg: &Path, identity: &DicomIdentity, chi_exported: bool,
+) -> bool {
+    let chi = output.qsm_path(key);
+    if !chi_exported {
+        warn!("{key}: the segmentation is not exported as DICOM: its SEG references the χ series, which this run does not export");
+        return false;
+    }
+    let reference = match io::read_nifti_file(&chi) {
+        Ok(v) => v,
+        Err(e) => {
+            warn!("{key}: DICOM SEG not written: {}: {e}", chi.display());
+            return false;
+        }
+    };
+    let lookup = output.dseg_lookup_path(key);
+    let out_dir = output.dicom_dir(key, "dseg");
+    let result = seg::export_segmentation(seg::SegExport {
+        source: seg::SegSource {
+            dseg,
+            lookup: lookup.exists().then_some(lookup.as_path()),
+            synthseg: seg.synthseg,
+            algorithm: &seg.algorithm,
+        },
+        reference: seg::Reference {
+            series_uid: &make_uid(&[&key.basename(), "Chimap"]),
+            dims: reference.dims,
+            affine: &reference.affine,
+        },
+        identity,
+        key,
+        out_dir: &out_dir,
+    });
+    match result {
+        Ok(0) => {
+            warn!("{key}: DICOM SEG not written: the segmentation has no labelled voxel");
+            false
+        }
+        Ok(n) => {
+            info!("{}: -> {} ({} segments)", key, out_dir.display(), n);
+            true
+        }
+        Err(e) => {
+            warn!("{key}: DICOM SEG not written: {e}");
+            false
+        }
+    }
 }
 
 /// Build the run's shared DICOM identity, inheriting from `source_dicom` when set.
@@ -371,7 +449,7 @@ fn export_map(m: ExportMap) -> crate::Result<usize> {
             .map(|&v| (((v - intercept) / slope).round()).clamp(0.0, 65535.0) as u16)
             .collect();
 
-        let sop_uid = format!("{}.{}", series_uid, k + 1);
+        let sop_uid = seg::slice_uid(&series_uid, k);
         let obj = build_slice(BuildSlice {
             pixels,
             nx,
@@ -672,6 +750,7 @@ fn series_number_for(suffix: &str) -> i32 {
         "desc-diamagnetic_smwi" => 12,
         "desc-paramagneticsmwi_minIP" => 13,
         "desc-diamagneticsmwi_minIP" => 14,
+        "dseg" => 15,
         _ => 99,
     }
 }
@@ -937,7 +1016,7 @@ mod tests {
             "Chimap", "swi", "minIP", "T2starmap", "R2starmap", "R2map", "R2primemap",
             "desc-paramagnetic_Chimap", "desc-diamagnetic_Chimap", "desc-total_Chimap",
             "desc-paramagnetic_smwi", "desc-diamagnetic_smwi", "desc-paramagneticsmwi_minIP",
-            "desc-diamagneticsmwi_minIP",
+            "desc-diamagneticsmwi_minIP", "dseg",
         ];
         let mut nums: Vec<i32> = suffixes.iter().map(|s| series_number_for(s)).collect();
         assert!(nums.iter().all(|&n| n != 99), "a known suffix fell through to the fallback");
@@ -1015,6 +1094,7 @@ mod tests {
             export_chisep: true,
             source_dicom: None,
             outputs_filter: None,
+            segmentation: None,
         };
         assert_eq!(export_run_dicoms(&run, &output, &opts).unwrap(), 11);
         // Nothing to export is no series, which the run's record then does not claim.
@@ -1056,6 +1136,132 @@ mod tests {
         assert!((g.row_spacing - 1.0).abs() < 1e-12);
         assert!((g.col_spacing - 1.0).abs() < 1e-12);
     }
+
+    /// A run with χ and a segmentation on a 3x4x2 grid: left thalamus (10) on both slices, right
+    /// thalamus (49) and CSF (24) on the second only.
+    fn seg_fixture(tsv: Option<&str>) -> (tempfile::TempDir, DerivativeOutputs, crate::bids::discovery::QsmRun) {
+        use crate::bids::entities::AcquisitionKey;
+        let tmp = tempfile::tempdir().unwrap();
+        let output = DerivativeOutputs::new(tmp.path());
+        let key = AcquisitionKey {
+            subject: "01".to_string(), session: None, acquisition: None, reconstruction: None,
+            inversion: None, run: None, suffix: "MEGRE".to_string(),
+        };
+        let (dims, vox) = ((3usize, 4usize, 2usize), (1.0, 1.0, 2.0));
+        let affine = [1.0, 0.0, 0.0, 5.0, 0.0, 1.0, 0.0, 6.0, 0.0, 0.0, 2.0, 7.0, 0.0, 0.0, 0.0, 1.0];
+        let mut labels = vec![0.0; 24];
+        labels[0] = 10.0;
+        labels[12] = 10.0;
+        labels[13] = 49.0;
+        labels[23] = 24.0;
+        let chi: Vec<f64> = (0..24).map(|i| i as f64 * 0.01).collect();
+        for (p, d) in [(output.qsm_path(&key), &chi), (output.dseg_path(&key), &labels)] {
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            io::save_nifti_to_file(&p, d, dims, vox, &affine).unwrap();
+        }
+        if let Some(t) = tsv {
+            std::fs::write(output.dseg_lookup_path(&key), t).unwrap();
+        }
+        let run = crate::bids::discovery::QsmRun {
+            key, echoes: vec![], coils: None, magnetic_field_strength: 3.0, echo_times: vec![0.02],
+            b0_dir: None, dims, has_magnitude: true, mese: None,
+        };
+        (tmp, output, run)
+    }
+
+    fn seg_opts(synthseg: bool, filter: Option<&[String]>) -> DicomExportOptions<'_> {
+        DicomExportOptions {
+            export_swi: false, export_smwi: false, export_t2star: false, export_r2star: false, export_r2: false,
+            export_r2prime: false, export_chisep: false, source_dicom: None, outputs_filter: filter,
+            segmentation: Some(SegmentationExport { synthseg, algorithm: "SynthSeg 1.0".into() }),
+        }
+    }
+
+    fn items(obj: &InMemDicomObject, tag: dicom::core::Tag) -> Vec<InMemDicomObject> {
+        obj.element(tag).unwrap().items().unwrap().to_vec()
+    }
+
+    fn text(obj: &InMemDicomObject, tag: dicom::core::Tag) -> String {
+        obj.element(tag).unwrap().to_str().unwrap().trim().to_string()
+    }
+
+    #[test]
+    fn the_segmentation_is_a_seg_on_the_chi_series() {
+        let (_tmp, output, run) = seg_fixture(Some("index\tname\n10\tleft thalamus\n49\tright thalamus\n24\tcsf\n"));
+        assert_eq!(export_run_dicoms(&run, &output, &seg_opts(true, None)).unwrap(), 2, "χ and the SEG");
+        let key = &run.key;
+        let file = output.dicom_dir(key, "dseg").join(format!("{}_dseg.dcm", key.basename()));
+        let obj = open_file(&file).expect("a DICOM SEG");
+        assert_eq!(text(&obj, tags::SOP_CLASS_UID), uids::SEGMENTATION_STORAGE);
+        assert_eq!(text(&obj, tags::MODALITY), "SEG");
+        assert_eq!(text(&obj, tags::SEGMENTATION_TYPE), "BINARY");
+        // Segments in label order (CSF 24, left thalamus 10 → 10 first), one frame per slice each is on.
+        let segs = items(&obj, tags::SEGMENT_SEQUENCE);
+        let names: Vec<String> = segs.iter().map(|s| text(s, tags::SEGMENT_LABEL)).collect();
+        assert_eq!(names, ["left thalamus", "csf", "right thalamus"]);
+        assert_eq!(text(&obj, tags::NUMBER_OF_FRAMES), "4");
+        assert_eq!(obj.element(tags::PIXEL_DATA).unwrap().to_bytes().unwrap().len(), 6, "4 frames x 12 bits, even");
+        let ty = &items(&segs[0], tags::SEGMENTED_PROPERTY_TYPE_CODE_SEQUENCE)[0];
+        assert_eq!(text(ty, tags::CODE_VALUE), "42695009");
+        let lab = segs[0].element(tags::RECOMMENDED_DISPLAY_CIE_LAB_VALUE).unwrap().to_multi_int::<u16>().unwrap();
+        assert_eq!(lab, seg::dicom_lab([0, 118, 14]), "FreeSurfer's thalamus green");
+        assert_eq!(text(&items(ty, tags::SEGMENTED_PROPERTY_TYPE_MODIFIER_CODE_SEQUENCE)[0], tags::CODE_VALUE), "7771000");
+        // It references the χ series that was exported with it, slice by slice.
+        let chi_series = make_uid(&[&key.basename(), "Chimap"]);
+        let refs = items(&obj, tags::REFERENCED_SERIES_SEQUENCE);
+        assert_eq!(text(&refs[0], tags::SERIES_INSTANCE_UID), chi_series);
+        assert_eq!(items(&refs[0], tags::REFERENCED_INSTANCE_SEQUENCE).len(), 2);
+        let chi_slice = open_file(output.dicom_dir(key, "Chimap").join(format!("{}_Chimap_0002.dcm", key.basename()))).unwrap();
+        let frame = &items(&obj, tags::PER_FRAME_FUNCTIONAL_GROUPS_SEQUENCE)[1];
+        let source = &items(&items(frame, tags::DERIVATION_IMAGE_SEQUENCE)[0], tags::SOURCE_IMAGE_SEQUENCE)[0];
+        assert_eq!(text(source, tags::REFERENCED_SOP_INSTANCE_UID), text(&chi_slice, tags::SOP_INSTANCE_UID));
+        assert_eq!(text(&obj, tags::FRAME_OF_REFERENCE_UID), text(&chi_slice, tags::FRAME_OF_REFERENCE_UID));
+    }
+
+    #[test]
+    fn without_the_chi_series_there_is_no_seg() {
+        let (_tmp, output, run) = seg_fixture(None);
+        let only_seg = vec!["dseg".to_string()];
+        assert_eq!(export_run_dicoms(&run, &output, &seg_opts(true, Some(&only_seg))).unwrap(), 0);
+        assert!(!output.dicom_dir(&run.key, "dseg").exists());
+        // Filtered out, it is not written either.
+        let only_chi = vec!["chimap".to_string()];
+        assert_eq!(export_run_dicoms(&run, &output, &seg_opts(true, Some(&only_chi))).unwrap(), 1);
+        assert!(!output.dicom_dir(&run.key, "dseg").exists());
+    }
+
+    #[test]
+    fn a_supplied_segmentation_is_coded_generically_and_named_from_its_table() {
+        let (_tmp, output, run) = seg_fixture(Some("index\tname\n10\tlesion\n"));
+        assert_eq!(export_run_dicoms(&run, &output, &seg_opts(false, None)).unwrap(), 2);
+        let file = output.dicom_dir(&run.key, "dseg").join(format!("{}_dseg.dcm", run.key.basename()));
+        let segs = items(&open_file(&file).unwrap(), tags::SEGMENT_SEQUENCE);
+        let names: Vec<String> = segs.iter().map(|s| text(s, tags::SEGMENT_LABEL)).collect();
+        assert_eq!(names, ["lesion", "label 24", "label 49"]);
+        let ty = &items(&segs[0], tags::SEGMENTED_PROPERTY_TYPE_CODE_SEQUENCE)[0];
+        assert_eq!(text(ty, tags::CODE_VALUE), "128319008");
+        assert!(ty.element(tags::SEGMENTED_PROPERTY_TYPE_MODIFIER_CODE_SEQUENCE).is_err());
+    }
+
+    #[test]
+    fn every_synthseg_label_has_a_code_and_a_colour() {
+        for version in [qsm_core::segment::SynthSegVersion::V1, qsm_core::segment::SynthSegVersion::V2] {
+            for &id in version.labels().ids.iter().filter(|&&id| id != 0) {
+                assert!(seg::synthseg_code(id as i64).is_some(), "SynthSeg label {id} has no DICOM code");
+                assert!(seg::synthseg_rgb(id as i64).is_some(), "SynthSeg label {id} has no colour");
+            }
+        }
+    }
+
+    /// White is L* 100 with no colour; the primaries land where CIELab puts them.
+    #[test]
+    fn colours_are_scaled_cielab() {
+        assert_eq!(seg::dicom_lab([255, 255, 255]), [65535, 32896, 32896]);
+        assert_eq!(seg::dicom_lab([0, 0, 0]), [0, 32896, 32896]);
+        let [l, a, b] = seg::dicom_lab([255, 0, 0]); // L* 53.2, a* 80.1, b* 67.2
+        let unscale = |v: u16, lo: f64, hi: f64| lo + f64::from(v) / 65535.0 * (hi - lo);
+        assert!((unscale(l, 0.0, 100.0) - 53.24).abs() < 0.1);
+        assert!((unscale(a, -128.0, 127.0) - 80.09).abs() < 0.1);
+        assert!((unscale(b, -128.0, 127.0) - 67.20).abs() < 0.1);
+    }
 }
-
-

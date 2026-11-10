@@ -96,6 +96,7 @@ pub fn execute_local(
                             export_chisep: normalised.pipeline.do_chi_separation,
                             source_dicom: exec_config.source_dicom.as_deref(),
                             outputs_filter: exec_config.dicom_outputs.as_deref(),
+                            segmentation: segmentation_export(normalised, facts.custom_dseg),
                         };
                         let exported = match crate::dicom::export::export_run_dicoms(run, output, &opts) {
                             Ok(0) => {
@@ -135,6 +136,29 @@ pub fn execute_local(
 }
 
 /// Compute the effective number of concurrent threads based on memory constraints.
+/// The DICOM SEG description of the run's segmentation, when it makes one (SynthSeg) or reads one
+/// (`supplied`: a `dseg` from `--use-custom-dseg`'s tool was found for the scan; without one,
+/// SynthSeg runs instead).
+fn segmentation_export(config: &PipelineConfig, supplied: bool) -> Option<crate::dicom::export::SegmentationExport> {
+    let seg = &config.segmentation;
+    if !config.pipeline.do_segmentation && seg.custom_dseg_tool.is_none() {
+        return None;
+    }
+    Some(match seg.custom_dseg_tool.as_deref() {
+        Some(tool) if supplied => crate::dicom::export::SegmentationExport {
+            synthseg: false,
+            algorithm: if tool == "*" { "supplied segmentation".into() } else { tool.to_string() },
+        },
+        _ => crate::dicom::export::SegmentationExport {
+            synthseg: true,
+            algorithm: match seg.version {
+                crate::pipeline::config::SynthSegVersion::V1 => "SynthSeg 1.0".into(),
+                crate::pipeline::config::SynthSegVersion::V2 => "SynthSeg 2.0".into(),
+            },
+        },
+    })
+}
+
 fn compute_concurrency(
     runs: &[QsmRun],
     config: &PipelineConfig,
@@ -190,6 +214,22 @@ mod tests {
     use crate::bids::discovery::{EchoFiles, QsmRun};
     use crate::bids::entities::AcquisitionKey;
     use std::path::PathBuf;
+
+    /// The SEG is coded as SynthSeg's when SynthSeg made the segmentation, including when a
+    /// supplied one was asked for and not found; generically when a supplied one was read.
+    #[test]
+    fn the_seg_says_where_the_segmentation_came_from() {
+        let mut c = PipelineConfig::default();
+        assert!(segmentation_export(&c, false).is_none(), "no segmentation, no SEG");
+        c.pipeline.do_segmentation = true;
+        let s = segmentation_export(&c, false).unwrap();
+        assert!(s.synthseg && s.algorithm == "SynthSeg 1.0");
+        c.pipeline.do_segmentation = false;
+        c.segmentation.custom_dseg_tool = Some("fastsurfer".into());
+        let s = segmentation_export(&c, true).unwrap();
+        assert!(!s.synthseg && s.algorithm == "fastsurfer");
+        assert!(segmentation_export(&c, false).unwrap().synthseg, "none found: SynthSeg ran instead");
+    }
 
     fn dummy_run(dims: (usize, usize, usize), n_echoes: usize) -> QsmRun {
         QsmRun {
