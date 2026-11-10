@@ -509,7 +509,7 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
     }
 
     // Log version info
-    info!("qsmxt {}", env!("CARGO_PKG_VERSION"));
+    info!("qsmxt {}", crate::commands::update::describe_version());
     info!("QSM.rs {}", env!("QSM_CORE_DESCRIBE"));
     info!(
         "Processing {} run(s) across {} subject(s)",

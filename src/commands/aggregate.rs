@@ -49,7 +49,7 @@ pub fn execute(args: AggregateArgs) -> crate::Result<()> {
     }
     run::attach_log_file(log)?;
 
-    info!("qsmxt {}", env!("CARGO_PKG_VERSION"));
+    info!("qsmxt {}", crate::commands::update::describe_version());
     info!("QSM.rs {}", env!("QSM_CORE_DESCRIBE"));
     info!("Dataset-level steps over {} run(s)", runs.len());
 
