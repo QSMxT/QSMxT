@@ -434,7 +434,8 @@ mod tests {
         }
         assert!(s.contains("Dipole inversion · iLSQR"), "{s}");
         assert!(s.contains("← 6 Background-field removal: Local field, Local field mask"), "{s}");
-        assert!(s.contains("only when the run is resampled"), "{s}");
+        // The defaults keep the acquired grid: nothing resampled, nothing returned to it.
+        assert!(!s.contains("only when the run is resampled") && !s.contains("Return to the acquired grid"), "{s}");
         let peak = qsmxt_engine::memory::format_bytes(p.plan.peak_memory_bytes);
         assert!(s.contains(&format!("Memory   peak about {peak}")), "{s}");
         assert!(s.contains("Models   none"), "{s}");

@@ -80,6 +80,10 @@ impl Item {
             Item::CombinedEchoPhase(_) => ("Coil-combined phase".into(), Some("rad"), K::Phase, None),
             Item::CombinedEchoMagnitude(_) => ("Coil-combined magnitude".into(), None, K::Magnitude, None),
             Item::CoilCombinationMask => ("Coil-combination mask".into(), None, K::Mask, Some("desc-mcpc3ds_mask".into())),
+            Item::ScaledPhase(_) => ("Phase (acquired grid)".into(), Some("rad"), K::Phase, None),
+            Item::ScaledMagnitude(_) => ("Magnitude (acquired grid)".into(), None, K::Magnitude, None),
+            Item::WindowedPhase(_) => ("Windowed phase (acquired grid)".into(), Some("rad"), K::Phase, None),
+            Item::WindowedMagnitude(_) => ("Windowed magnitude (acquired grid)".into(), None, K::Magnitude, None),
             Item::Phase(_) => ("Phase".into(), Some("rad"), K::Phase, None),
             Item::Magnitude(_) => ("Magnitude".into(), None, K::Magnitude, None),
             Item::CorrectedPhase(_) => ("Motion-corrected phase".into(), Some("rad"), K::Phase, None),
@@ -169,7 +173,8 @@ impl Item {
         let mut items = vec![
             Item::AcquiredPhase(1), Item::AcquiredMagnitude(1), Item::AcquiredReal(1), Item::AcquiredImaginary(1),
             Item::CoilPhase(1, 1), Item::CoilMagnitude(1, 1), Item::CombinedEchoPhase(1),
-            Item::CombinedEchoMagnitude(1), Item::CoilCombinationMask, Item::Phase(1), Item::Magnitude(1),
+            Item::CombinedEchoMagnitude(1), Item::CoilCombinationMask, Item::ScaledPhase(1), Item::ScaledMagnitude(1),
+            Item::WindowedPhase(1), Item::WindowedMagnitude(1), Item::Phase(1), Item::Magnitude(1),
             Item::CorrectedPhase(1), Item::CorrectedMagnitude(1), Item::CombinedMagnitude, Item::BrainMask,
             Item::SuppliedMask, Item::CoverageMask, Item::FieldPpm, Item::TotalFieldHz,
             Item::TotalFieldMagnitude, Item::RobustFitReport, Item::FieldReliability, Item::FieldMask, Item::ReliableMask,
@@ -201,6 +206,7 @@ impl Item {
             Item::AcquiredPhase(e) | Item::AcquiredMagnitude(e) | Item::AcquiredReal(e) | Item::AcquiredImaginary(e)
             | Item::CoilPhase(_, e) | Item::CoilMagnitude(_, e)
             | Item::CombinedEchoPhase(e) | Item::CombinedEchoMagnitude(e)
+            | Item::ScaledPhase(e) | Item::ScaledMagnitude(e) | Item::WindowedPhase(e) | Item::WindowedMagnitude(e)
             | Item::Phase(e) | Item::Magnitude(e) | Item::CorrectedPhase(e) | Item::CorrectedMagnitude(e)
             | Item::MeseMagnitude(e) | Item::EchoField(e) | Item::EchoLocalField(e) | Item::EchoLocalFieldMask(e)
             | Item::EchoRawChi(e) | Item::EchoChi(e) => Some(e),
@@ -266,5 +272,8 @@ pub(crate) mod tests {
         assert!(Item::RegionStats.meta().published);
         assert!(!Item::RawChi(Pass::Main).meta().published && !Item::FieldPpm.meta().published);
         assert!(!Item::Phase(1).meta().published && !Item::AcquiredPhase(1).meta().published);
+        for item in [Item::ScaledPhase(1), Item::ScaledMagnitude(1), Item::WindowedPhase(1), Item::WindowedMagnitude(1)] {
+            assert!(!item.meta().published, "{item:?} is an intermediate");
+        }
     }
 }

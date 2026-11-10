@@ -409,6 +409,14 @@ impl DerivativeOutputs {
     pub fn mag_path(&self, key: &AcquisitionKey, echo: usize) -> PathBuf {
         self.workflow_nifti_path(key, "scale_phase", naming::magnitude_echo(echo, &key.suffix))
     }
+    /// One echo's phase (radians) and magnitude on the acquired grid, as a phase step before the
+    /// last (`step`: phase scaling, the Tukey window) leaves them for the next.
+    pub fn acquired_grid_phase_path(&self, key: &AcquisitionKey, step: &str, echo: usize) -> PathBuf {
+        self.workflow_nifti_path(key, step, naming::acquired_grid_echo(echo, "phase", &key.suffix))
+    }
+    pub fn acquired_grid_mag_path(&self, key: &AcquisitionKey, step: &str, echo: usize) -> PathBuf {
+        self.workflow_nifti_path(key, step, naming::acquired_grid_echo(echo, "mag", &key.suffix))
+    }
     /// Motion-corrected echoes, the mask every echo covers, and the motion report.
     pub fn motion_phase_path(&self, key: &AcquisitionKey, echo: usize) -> PathBuf {
         self.workflow_nifti_path(key, "motion", naming::scaled_phase_echo(echo, &key.suffix))

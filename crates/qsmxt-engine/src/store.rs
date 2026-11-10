@@ -37,8 +37,22 @@ pub enum Item {
     CombinedEchoPhase(usize),
     /// Echo `n`'s magnitude combined from the uncombined coils, published.
     CombinedEchoMagnitude(usize),
-    /// The mask the coil combination estimated each coil's phase offset in.
+    /// The mask the coil combination estimated each coil's phase offset in, on the acquired grid.
     CoilCombinationMask,
+    /// Echo `n`'s phase in radians on the acquired grid, from phase scaling, when the Tukey window
+    /// or the resampling to an axial grid comes after it (otherwise phase scaling writes
+    /// [`Item::Phase`] itself).
+    ScaledPhase(usize),
+    /// Echo `n`'s magnitude on the acquired grid, from phase scaling, when phase scaling makes one
+    /// (from real and imaginary parts, or combined from uncombined coils) and another step comes
+    /// after it.
+    ScaledMagnitude(usize),
+    /// Echo `n`'s phase after the k-space Tukey window, on the acquired grid, when the run is
+    /// resampled to an axial grid after it.
+    WindowedPhase(usize),
+    /// Echo `n`'s magnitude after the k-space Tukey window, on the acquired grid, when the run is
+    /// resampled after it.
+    WindowedMagnitude(usize),
     /// Echo `n`'s phase in radians, on the working grid.
     Phase(usize),
     /// Echo `n`'s magnitude on the working grid.
@@ -185,6 +199,10 @@ impl Item {
             ("CoilMagnitude", a) => { let (c, e) = pair(a)?; Item::CoilMagnitude(c, e) }
             ("CombinedEchoPhase", a) => Item::CombinedEchoPhase(echo(a)?),
             ("CombinedEchoMagnitude", a) => Item::CombinedEchoMagnitude(echo(a)?),
+            ("ScaledPhase", a) => Item::ScaledPhase(echo(a)?),
+            ("ScaledMagnitude", a) => Item::ScaledMagnitude(echo(a)?),
+            ("WindowedPhase", a) => Item::WindowedPhase(echo(a)?),
+            ("WindowedMagnitude", a) => Item::WindowedMagnitude(echo(a)?),
             ("Phase", a) => Item::Phase(echo(a)?),
             ("Magnitude", a) => Item::Magnitude(echo(a)?),
             ("CorrectedPhase", a) => Item::CorrectedPhase(echo(a)?),
@@ -1297,8 +1315,10 @@ mod tests {
     }
 
     /// Which differently named steps write the same output, over every inversion, single- and
-    /// two-pass, with every output on: only the inversions' raw map. Not a rule the stores rely on
-    /// ([`sharing_outputs`] holds for any), but the list of what they meet.
+    /// two-pass, with every output on: only the inversions' raw map, and the working echoes, which
+    /// the last of the phase steps writes (phase scaling, or the resampling where an axial-only
+    /// inversion may resample). Not a rule the stores rely on ([`sharing_outputs`] holds for any),
+    /// but the list of what they meet.
     #[test]
     fn only_the_inversion_steps_write_the_same_output() {
         use crate::enums::QsmAlgorithm;
@@ -1321,11 +1341,16 @@ mod tests {
             }
         }
         writers.retain(|_, steps| steps.len() > 1);
-        let names = |s: &[&str]| s.iter().map(|n| n.to_string()).collect();
-        assert_eq!(writers, HashMap::from([
+        let names = |s: &[&str]| s.iter().map(|n| n.to_string()).collect::<std::collections::BTreeSet<String>>();
+        let mut want = HashMap::from([
             (Item::RawChi(Pass::Main), names(&["invert", "qsmart", "tgv"])),
             (Item::RawChi(Pass::Reliable), names(&["invert-reliable", "qsmart-reliable", "tgv-reliable"])),
-        ]));
+        ]);
+        for e in 1..=facts.n_echoes {
+            want.insert(Item::Phase(e), names(&["scale_phase", "resample_axial"]));
+            want.insert(Item::Magnitude(e), names(&["scale_phase", "resample_axial"]));
+        }
+        assert_eq!(writers, want);
     }
 
     #[test]
@@ -1334,7 +1359,8 @@ mod tests {
         let mut items = vec![
             Item::AcquiredPhase(1), Item::AcquiredMagnitude(12), Item::AcquiredReal(3), Item::AcquiredImaginary(2), Item::CoilPhase(3, 1),
             Item::CoilMagnitude(1, 4), Item::CombinedEchoPhase(2), Item::CombinedEchoMagnitude(3),
-            Item::CoilCombinationMask, Item::Phase(3), Item::Magnitude(2), Item::CorrectedPhase(4),
+            Item::CoilCombinationMask, Item::ScaledPhase(2), Item::ScaledMagnitude(3), Item::WindowedPhase(4),
+            Item::WindowedMagnitude(1), Item::Phase(3), Item::Magnitude(2), Item::CorrectedPhase(4),
             Item::CorrectedMagnitude(5), Item::CombinedMagnitude, Item::BrainMask, Item::SuppliedMask,
             Item::CoverageMask, Item::FieldPpm, Item::TotalFieldHz, Item::TotalFieldMagnitude,
             Item::RobustFitReport, Item::LocalField(Pass::Main), Item::LocalFieldMask(Pass::Reliable),

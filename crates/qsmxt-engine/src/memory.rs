@@ -223,10 +223,13 @@ fn step_need(step: &Step, config: &PipelineConfig, s: &Scan) -> u64 {
         // One echo at a time; uncombined coils are combined (MCPC-3D-S) first, with every coil's
         // phase and magnitude held at once.
         Stage::ScalePhase if s.coils > 1 => (2 * s.coils * e + 4 + 2 * e) * F64 * n,
+        Stage::ScalePhase => s.v(8),
         // The k-space Tukey window holds the echo's phase and magnitude, its complex image and
         // the FFT's scratch (counted, not measured).
-        Stage::ScalePhase if config.pipeline.tukey_window > 0.0 => s.v(48),
-        Stage::ScalePhase => s.v(8),
+        Stage::TukeyWindow => s.v(48),
+        // One echo's phase and magnitude, their complex image and the resampled pair (counted,
+        // not measured; nothing when the run is not resampled).
+        Stage::ResampleAxial => s.v(48),
         // Every echo's magnitude, read and combined, and the correction's working memory: N4's
         // is less than makehomogeneous's (measured: 8 B a voxel an echo and 33 more).
         Stage::Magnitude => match n4 {

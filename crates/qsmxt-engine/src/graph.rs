@@ -106,6 +106,8 @@ pub fn downstream_steps(step_name: &str) -> Option<&'static [&'static str]> {
             "resample",
             "motion",
             "scale_phase",
+            "tukey_window",
+            "resample_axial",
             "inhomog",
             "magnitude",
             "mask",
@@ -118,6 +120,8 @@ pub fn downstream_steps(step_name: &str) -> Option<&'static [&'static str]> {
             "qsmart",
             "reference",
         ],
+        // No run records a step by this name (the resampling to an axial grid is `resample_axial`):
+        // an entry the table has had since v9.0.0, left as it is.
         "resample" => &[
             "motion",
             "scale_phase",
@@ -134,8 +138,41 @@ pub fn downstream_steps(step_name: &str) -> Option<&'static [&'static str]> {
             "reference",
         ],
         // The per-echo phase and magnitude every later stage reads (the combined magnitude, R2*,
-        // the separation's echoes), as well as the field.
+        // the separation's echoes), as well as the field: through the Tukey window and the
+        // resampling when they run, directly otherwise.
         "scale_phase" => &[
+            "tukey_window",
+            "resample_axial",
+            "magnitude",
+            "t2star_r2star",
+            "chi_separation",
+            "mask",
+            "motion",
+            "swi",
+            "unwrap",
+            "bgremove",
+            "invert",
+            "tgv",
+            "qsmart",
+            "reference",
+        ],
+        // Echoes the same steps read, on the acquired grid or the working one.
+        "tukey_window" => &[
+            "resample_axial",
+            "magnitude",
+            "t2star_r2star",
+            "chi_separation",
+            "mask",
+            "motion",
+            "swi",
+            "unwrap",
+            "bgremove",
+            "invert",
+            "tgv",
+            "qsmart",
+            "reference",
+        ],
+        "resample_axial" => &[
             "magnitude",
             "t2star_r2star",
             "chi_separation",
@@ -247,7 +284,7 @@ mod tests {
                      "bgremove-reliable", "invert-reliable", "twopass", "reference", "chi_separation", "analysis"] {
             assert!(ds.contains(&step.to_string()), "motion should invalidate {step}: {ds:?}");
         }
-        for parent in ["mask", "scale_phase", "load", "resample"] {
+        for parent in ["mask", "scale_phase", "tukey_window", "resample_axial", "load", "resample"] {
             assert!(downstream_of(parent).contains(&"motion".to_string()), "{parent} should invalidate motion");
         }
     }

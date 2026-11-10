@@ -31,7 +31,7 @@ const CONTEXT_URL: &str = "https://purl.org/nidash/bidsprov/context.json";
 /// because the file on disk is then the later step's. `load` records no step. A test keeps this
 /// list in step with the runner.
 pub const STEPS: &[&str] = &[
-    "motion", "scale_phase", "magnitude", "mask", "mask-reliable", "segmentation", "swi",
+    "motion", "scale_phase", "tukey_window", "resample_axial", "magnitude", "mask", "mask-reliable", "segmentation", "swi",
     "t2star_r2star", "r2_r2prime", "unwrap",
     "bgremove", "bgremove-reliable", "tgv", "tgv-reliable", "qsmart", "qsmart-reliable",
     "invert", "invert-reliable", "twopass", "reference-singlepass", "reference",
@@ -500,7 +500,7 @@ mod tests {
                 names.push(stage.name());
             }
         }
-        for stage in [Stage::ScalePhase, Stage::Magnitude, Stage::FieldMap, Stage::TwoPassCombination,
+        for stage in [Stage::ScalePhase, Stage::TukeyWindow, Stage::ResampleAxial, Stage::Magnitude, Stage::FieldMap, Stage::TwoPassCombination,
                       Stage::Reference, Stage::SinglePassReference, Stage::Swi, Stage::Smwi,
                       Stage::Relaxometry, Stage::R2, Stage::ChiSeparation, Stage::Motion,
                       Stage::Segmentation, Stage::Analysis, Stage::OutputSpace] {
