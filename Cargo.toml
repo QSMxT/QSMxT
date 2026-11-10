@@ -27,7 +27,7 @@ dl = ["qsm-core/onnx", "qsm-core/download", "qsmxt-engine/onnx"]
 # (which pins qsmxt-engine) resolves the same qsm-core.
 # TEMP: pinned to the QSM.rs fix-phase-scaling-shared branch (astewartau/QSM.rs#450, one phase
 # conversion for every echo); move to QSM.rs main once it merges.
-qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "b1b470e09278a3081ad6aeea74d005f38241be6e", features = ["parallel"] }
+qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "b001fdbc41ccdcd368e61837da9fd586bd4452d4", features = ["parallel"] }
 qsmxt-engine = { path = "crates/qsmxt-engine" }
 clap = { version = "4", features = ["derive"] }
 const_format = "0.2"
