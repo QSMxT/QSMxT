@@ -71,6 +71,61 @@ pub(super) fn synthseg_code(id: i64) -> Option<(Code, Option<Code>)> {
     Some((ty, side))
 }
 
+/// The display colour of a SynthSeg (FreeSurfer) label: FreeSurfer's own, from
+/// `distribution/FreeSurferColorLUT.txt` of FreeSurfer v8.2.0 (unchanged on its dev branch as of
+/// 2026-11-10), so the structures look as they do in FreeSurfer, Freeview and Slicer.
+pub(super) fn synthseg_rgb(id: i64) -> Option<[u8; 3]> {
+    Some(match id {
+        2 | 41 => [245, 245, 245],
+        3 | 42 => [205, 62, 78],
+        4 | 43 => [120, 18, 134],
+        5 | 44 => [196, 58, 250],
+        7 | 46 => [220, 248, 164],
+        8 | 47 => [230, 148, 34],
+        10 | 49 => [0, 118, 14],
+        11 | 50 => [122, 186, 220],
+        12 | 51 => [236, 13, 176],
+        13 => [12, 48, 255],
+        52 => [13, 48, 255],
+        14 => [204, 182, 142],
+        15 => [42, 204, 164],
+        16 => [119, 159, 176],
+        17 | 53 => [220, 216, 20],
+        18 | 54 => [103, 255, 255],
+        24 => [60, 60, 60],
+        26 | 58 => [255, 165, 0],
+        28 => [145, 42, 42],
+        60 => [165, 42, 42],
+        _ => return None,
+    })
+}
+
+/// Colours for a supplied segmentation's labels, in turn by segment: distinct on a dark
+/// background, and fixed, so the same file always looks the same.
+const FALLBACK_RGB: [[u8; 3]; 12] = [
+    [230, 159, 0], [86, 180, 233], [0, 158, 115], [240, 228, 66], [0, 114, 178], [213, 94, 0],
+    [204, 121, 167], [255, 255, 255], [153, 153, 255], [255, 102, 102], [102, 204, 102], [204, 153, 51],
+];
+
+/// sRGB (D65) as a DICOM CIELab triple: L* over 0–100 and a*, b* over −128–127, each scaled to
+/// 0–65535 (PS3.3 C.10.7.1.1).
+pub(super) fn dicom_lab([r, g, b]: [u8; 3]) -> [u16; 3] {
+    let lin = |c: u8| {
+        let c = f64::from(c) / 255.0;
+        if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+    };
+    let (r, g, b) = (lin(r), lin(g), lin(b));
+    // XYZ relative to the D65 white.
+    let x = (0.4124564 * r + 0.3575761 * g + 0.1804375 * b) / 0.95047;
+    let y = 0.2126729 * r + 0.7151522 * g + 0.0721750 * b;
+    let z = (0.0193339 * r + 0.1191920 * g + 0.9503041 * b) / 1.08883;
+    let f = |t: f64| if t > 216.0 / 24389.0 { t.cbrt() } else { (24389.0 / 27.0 * t + 16.0) / 116.0 };
+    let (fx, fy, fz) = (f(x), f(y), f(z));
+    let (l, a, bb) = (116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz));
+    let scale = |v: f64, lo: f64, hi: f64| (((v - lo) / (hi - lo)) * 65535.0).round().clamp(0.0, 65535.0) as u16;
+    [scale(l, 0.0, 100.0), scale(a, -128.0, 127.0), scale(bb, -128.0, 127.0)]
+}
+
 /// The segmentation to export and how its labels are to be read.
 pub(super) struct SegSource<'a> {
     pub dseg: &'a Path,
@@ -103,6 +158,7 @@ struct Segment {
     name: String,
     ty: Code,
     side: Option<Code>,
+    rgb: [u8; 3],
 }
 
 /// SOP Instance UID of slice `k` (0-based) of an exported map series ([`super::export_map`]).
@@ -127,11 +183,13 @@ pub(super) fn export_segmentation(s: SegExport) -> crate::Result<usize> {
 
     let names = src.lookup.map(read_lookup).unwrap_or_default();
     let present: std::collections::BTreeSet<i64> = labels.iter().copied().filter(|&l| l > 0).collect();
-    let segments: Vec<Segment> = present.into_iter().map(|label| {
+    let segments: Vec<Segment> = present.into_iter().enumerate().map(|(i, label)| {
         let name = names.get(&label).cloned().unwrap_or_else(|| format!("label {label}"));
         let (ty, side) = if src.synthseg { synthseg_code(label) } else { None }
             .unwrap_or((INTRACRANIAL_STRUCTURE, None));
-        Segment { label, name, ty, side }
+        let rgb = if src.synthseg { synthseg_rgb(label) } else { None }
+            .unwrap_or(FALLBACK_RGB[i % FALLBACK_RGB.len()]);
+        Segment { label, name, ty, side, rgb }
     }).collect();
     if segments.is_empty() {
         return Ok(0);
@@ -285,6 +343,8 @@ fn build_seg(
             el(tags::SEGMENT_ALGORITHM_NAME, VR::LO, s.source.algorithm),
             seq(tags::SEGMENTED_PROPERTY_CATEGORY_CODE_SEQUENCE, vec![code_item(ANATOMICAL_STRUCTURE)]),
             seq(tags::SEGMENTED_PROPERTY_TYPE_CODE_SEQUENCE, vec![ty]),
+            DataElement::new(tags::RECOMMENDED_DISPLAY_CIE_LAB_VALUE, VR::US,
+                PrimitiveValue::U16(dicom_lab(seg.rgb).as_ref().into())),
         ])
     }).collect()));
 

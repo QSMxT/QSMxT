@@ -1203,6 +1203,8 @@ mod tests {
         assert_eq!(obj.element(tags::PIXEL_DATA).unwrap().to_bytes().unwrap().len(), 6, "4 frames x 12 bits, even");
         let ty = &items(&segs[0], tags::SEGMENTED_PROPERTY_TYPE_CODE_SEQUENCE)[0];
         assert_eq!(text(ty, tags::CODE_VALUE), "42695009");
+        let lab = segs[0].element(tags::RECOMMENDED_DISPLAY_CIE_LAB_VALUE).unwrap().to_multi_int::<u16>().unwrap();
+        assert_eq!(lab, seg::dicom_lab([0, 118, 14]), "FreeSurfer's thalamus green");
         assert_eq!(text(&items(ty, tags::SEGMENTED_PROPERTY_TYPE_MODIFIER_CODE_SEQUENCE)[0], tags::CODE_VALUE), "7771000");
         // It references the χ series that was exported with it, slice by slice.
         let chi_series = make_uid(&[&key.basename(), "Chimap"]);
@@ -1242,13 +1244,24 @@ mod tests {
     }
 
     #[test]
-    fn every_synthseg_label_has_a_code() {
+    fn every_synthseg_label_has_a_code_and_a_colour() {
         for version in [qsm_core::segment::SynthSegVersion::V1, qsm_core::segment::SynthSegVersion::V2] {
             for &id in version.labels().ids.iter().filter(|&&id| id != 0) {
                 assert!(seg::synthseg_code(id as i64).is_some(), "SynthSeg label {id} has no DICOM code");
+                assert!(seg::synthseg_rgb(id as i64).is_some(), "SynthSeg label {id} has no colour");
             }
         }
     }
+
+    /// White is L* 100 with no colour; the primaries land where CIELab puts them.
+    #[test]
+    fn colours_are_scaled_cielab() {
+        assert_eq!(seg::dicom_lab([255, 255, 255]), [65535, 32896, 32896]);
+        assert_eq!(seg::dicom_lab([0, 0, 0]), [0, 32896, 32896]);
+        let [l, a, b] = seg::dicom_lab([255, 0, 0]); // L* 53.2, a* 80.1, b* 67.2
+        let unscale = |v: u16, lo: f64, hi: f64| lo + f64::from(v) / 65535.0 * (hi - lo);
+        assert!((unscale(l, 0.0, 100.0) - 53.24).abs() < 0.1);
+        assert!((unscale(a, -128.0, 127.0) - 80.09).abs() < 0.1);
+        assert!((unscale(b, -128.0, 127.0) - 67.20).abs() < 0.1);
+    }
 }
-
-
