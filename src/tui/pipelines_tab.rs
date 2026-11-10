@@ -602,8 +602,8 @@ mod tests {
         // P from a settings page comes back here.
         app.check_recommendations();
         let _ = screen(&mut app);
-        key(&mut app, KeyCode::Char('4'));
-        assert_eq!(app.active_tab, super::super::app::TAB_QSM, "rec {:?} ref {:?}", app.rec_modal.is_some(), app.refs.modal.is_some());
+        key(&mut app, KeyCode::Char('3'));
+        assert_eq!(app.active_tab, super::super::app::TAB_RECONSTRUCTION, "rec {:?} ref {:?}", app.rec_modal.is_some(), app.refs.modal.is_some());
         key(&mut app, KeyCode::Down);
         key(&mut app, KeyCode::Char('P'));
         assert_eq!(app.active_tab, super::super::app::TAB_PIPELINE);
@@ -636,8 +636,8 @@ mod live {
         assert_eq!(m.cursor, Some(0), "its Apply is preselected");
         step(&mut app, KeyCode::Enter);
         assert_eq!(super::super::command::config_from_app(&app).unwrap().bg_removal.pdf.n_cg, 300);
-        step(&mut app, KeyCode::Char('4'));
+        step(&mut app, KeyCode::Char('3'));
         assert!(app.rec_modal.is_none() && app.refs.modal.is_none(), "no reference pipeline pop-up: the pipeline is the authors'");
-        assert_eq!(app.active_tab, super::super::app::TAB_QSM, "a digit after the pop-up switches tab");
+        assert_eq!(app.active_tab, super::super::app::TAB_RECONSTRUCTION, "a digit after the pop-up switches tab");
     }
 }

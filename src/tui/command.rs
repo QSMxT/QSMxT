@@ -78,7 +78,7 @@ pub fn build_command_string(app: &App) -> String {
         if form.force { parts.push("--force".to_string()); }
         if form.clean_intermediates { parts.push("--clean-intermediates".to_string()); }
         if form.debug { parts.push("--debug".to_string()); }
-        push_dicom_export(&mut parts, form);
+        push_dicom_export(&mut parts, app);
     } else {
         if form.dry_run {
             parts.push("--dry".to_string());
@@ -96,19 +96,20 @@ pub fn build_command_string(app: &App) -> String {
         }
         if form.force { parts.push("--force".to_string()); }
         if form.clean_intermediates { parts.push("--clean-intermediates".to_string()); }
-        push_dicom_export(&mut parts, form);
+        push_dicom_export(&mut parts, app);
     }
 
     parts.join(" ")
 }
 
 /// DICOM export's run settings — the same in both modes (under SLURM each run's job exports).
-fn push_dicom_export(parts: &mut Vec<String>, form: &super::app::RunForm) {
+fn push_dicom_export(parts: &mut Vec<String>, app: &App) {
+    let form = &app.form;
     if form.export_dicom {
         if let Some(p) = parse_optional_path(&form.source_dicom) {
             parts.push(format!("--source-dicom {}", p.display()));
         }
-        if let Some(o) = parse_dicom_outputs(&form.dicom_outputs) {
+        if let Some(o) = app.dicom_outputs() {
             parts.push(format!("--dicom-outputs {}", o.join(",")));
         }
     }
@@ -140,7 +141,7 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
         num_echoes: parse_optional_usize(&app.filter_state.num_echoes),
         n_procs: parse_optional_usize(&form.n_procs),
         source_dicom: if form.export_dicom { parse_optional_path(&form.source_dicom) } else { None },
-        dicom_outputs: if form.export_dicom { parse_dicom_outputs(&form.dicom_outputs) } else { None },
+        dicom_outputs: if form.export_dicom { app.dicom_outputs() } else { None },
         dry: form.dry_run,
         debug: form.debug,
         mem_limit_gb: form.mem_limit().0,
@@ -887,13 +888,6 @@ fn parse_optional_path(s: &str) -> Option<PathBuf> {
     }
 }
 
-/// `--dicom-outputs` takes a comma-separated list; spaces are accepted too.
-fn parse_dicom_outputs(s: &str) -> Option<Vec<String>> {
-    let v: Vec<String> = s.split(|c: char| c == ',' || c.is_whitespace())
-        .filter(|t| !t.is_empty()).map(str::to_string).collect();
-    (!v.is_empty()).then_some(v)
-}
-
 #[allow(dead_code)]
 fn parse_optional_string_vec(s: &str) -> Option<Vec<String>> {
     let trimmed = s.trim();
@@ -988,7 +982,7 @@ pub fn build_slurm_args(app: &App) -> crate::Result<SlurmArgs> {
         clean_intermediates: form.clean_intermediates,
         debug: form.debug,
         source_dicom: if form.export_dicom { parse_optional_path(&form.source_dicom) } else { None },
-        dicom_outputs: if form.export_dicom { parse_dicom_outputs(&form.dicom_outputs) } else { None },
+        dicom_outputs: if form.export_dicom { app.dicom_outputs() } else { None },
         pipeline: pipeline_args_from_app(app),
     })
 }
@@ -1997,7 +1991,9 @@ mod tests {
         app.form.debug = true;
         app.form.export_dicom = true;
         app.form.source_dicom = "/dicom".to_string();
-        app.form.dicom_outputs = "Chimap, swi".to_string();
+        // SWI makes swi and minIP; unticking minIP exports χ and SWI only.
+        app.form.do_swi = true;
+        app.form.dicom_unticked = vec!["minip".to_string()];
 
         let args = build_slurm_args(&app).unwrap();
         assert!(args.debug);

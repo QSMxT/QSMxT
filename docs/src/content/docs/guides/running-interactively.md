@@ -34,9 +34,9 @@ qsmxt tui
   but every run (from the TUI or the CLI) records its resolved settings in
   `derivatives/qsmxt/pipeline_config.toml`, which `--config` (or the TUI's
   *Config file* field) loads back.
-- **Export results as DICOM** — tick *Export DICOM* under Other outputs → Export to
-  write every final map as a DICOM series alongside the NIfTIs, ready for a PACS
-  or a clinical viewer. (See
+- **Export results as DICOM** — tick *Export DICOM* in the Reconstruction tab's
+  DICOM section, and the maps to export, to write them as DICOM series alongside
+  the NIfTIs, ready for a PACS or a clinical viewer. (See
   [Exporting results as DICOM](/QSMxT/guides/running-noninteractively/#exporting-results-as-dicom).)
 - **Run the pipeline** and watch progress without leaving the terminal.
 - **Submit to a cluster** — generate and launch SLURM jobs for large cohorts
@@ -139,31 +139,44 @@ differs.
 
 ## Layout
 
-The top row holds the tabs; press a digit (`1`–`8`) or `Tab`/`Shift-Tab` to switch. You can
+The top row holds the tabs; press a digit (`1`–`5`) or `Tab`/`Shift-Tab` to switch. You can
 also press `↑` at the top of a tab to put focus on the tab bar (the current tab turns yellow).
-`←`/`→` then move between tabs, and `↓` or `Enter` go into the tab. A tab
-with more than one page shows a strip of sub-tabs along the top of its panel, and opens with
-focus on that strip (the current sub-tab turns yellow): `←`/`→` choose a sub-tab, and `↓` or
-`Enter` go into its settings. Preprocessing opens on Masking; the others open on their first
-sub-tab. `↑` from the first setting goes back up to the strip, and `↑`
-from the strip goes up to the tab bar. `[` and `]` switch sub-tabs from anywhere on the tab. A
-tab without sub-tabs opens on its first setting.
+`←`/`→` then move between tabs, and `↓` or `Enter` go into the tab.
 
-| Tab | Sub-tabs | What is there |
+The Reconstruction tab holds every setting of the run, in sections listed in a sidebar on its
+left and grouped as the run goes: *Preprocessing* (Geometry, Masking, Motion), *QSM* (Field map,
+Background, Inversion, COSMOS/STI, Reference), *Other outputs* (χ-separation, SWI/SMWI,
+Relaxometry, Segmentation) and *Export* (DICOM). It opens on Masking, with focus in the sidebar
+(the current section turns yellow): `↑`/`↓` choose a section, and `→` or `Enter` go into its
+settings; `↑` from the first setting goes back to the sidebar, and `↑` from the first section to
+the tab bar. `[` and `]` switch sections from anywhere on the tab. A mouse click on a section
+opens it, and on a group's heading opens the group's first section.
+
+The sidebar lists every section whatever the settings, and marks how each stands: `off` (dimmed)
+when its output is not made, such as χ-separation until it is ticked (the QSM heading reads `off`
+when QSM is); `–` (dimmed) when the settings skip its stage, such as background removal for an
+inversion that takes the total field, which the section then explains; `⚑` when a setting in it
+has advice offered as a change, and `ⓘ` for information only (see [Recommendations](#recommendations)). On a short
+terminal the sidebar drops its blank lines, then turns its headings into rules, then scrolls
+around the current section (`▲`/`▼`). Narrower than 78 columns, the sections become a strip of
+sub-tabs along the top of the panel instead, chosen with `←`/`→`, with `↓` going into them. The
+Methods tab's two pages are such a strip too.
+
+| Tab | Pages | What is there |
 |---|---|---|
 | 1 Input | — | Input mode, dataset/output/config paths, include/exclude patterns and the run tree, number of echoes, and the orientation groups: a pattern, or groups given to runs with ←/→ in the run tree (one of them the reference), each run marked with its group |
 | 2 Pipeline | — | The pipeline to start from: QSMxT's defaults or an original toolbox's, and what choosing it changes (see [Pipelines](#pipelines)) |
-| 3 Preprocessing | Geometry · Masking · Motion | Axial resampling and output space, inhomogeneity correction, slice-gap check, crop to mask, FFT padding, coil combination (multi-coil data); the mask recipe, custom masks and the two-pass reliable mask; motion correction and its rigid registration |
-| 4 QSM | Field map · Background · Inversion · COSMOS/STI · Reference | *Compute QSM*, then one page per stage, shown only when that stage runs: unwrapping and B0 estimation; background-field removal (inversions of a local field only); the dipole inversion; how an orientation group is reconstructed (without one, where to choose it); the χ reference |
-| 5 χ-separation | — | χ-separation method and its parameters |
-| 6 Other outputs | SWI/SMWI · Relaxometry · Segmentation · Export | SWI and SMWI; T2\*, R2\*, R2 and R2′ maps, the R2′ source and supplied maps; segmentation (SynthSeg or a dseg from derivatives) and per-structure statistics; DICOM export |
-| 7 Execution | — | Local or SLURM, each with its own settings; debug logging, force re-run, clean-up; and a button that does what `F5` does |
-| 8 Methods | Methods text · Graph | The methods text for the current settings; `Enter` (or `c`) copies it to the clipboard. Graph: the pipeline the current settings run, step by step: each step's algorithm and settings, and the steps it reads from and what it reads. Above it, the peak memory the run is estimated to need and the deep-learning models it uses, with their download sizes. It is planned on the first selected run's scan (a typical scan until one is chosen). `Enter` (or `s`) saves it as an SVG drawing and opens it |
+| 3 Reconstruction | Preprocessing: Geometry · Masking · Motion | Axial resampling and output space, inhomogeneity correction, slice-gap check, crop to mask, FFT padding, coil combination (multi-coil data); the mask recipe, custom masks and the two-pass reliable mask; motion correction and its rigid registration |
+| | QSM: Field map · Background · Inversion · COSMOS/STI · Reference | *Compute QSM* at the top of each, then: unwrapping and B0 estimation; background-field removal (inversions of a local field only); the dipole inversion; how an orientation group is reconstructed (without one, where to choose it); the χ reference |
+| | Other outputs: χ-separation · SWI/SMWI · Relaxometry · Segmentation | χ-separation method and its parameters; SWI and SMWI; T2\*, R2\*, R2 and R2′ maps, the R2′ source and supplied maps; segmentation (SynthSeg or a dseg from derivatives) and per-structure statistics |
+| | Export: DICOM | DICOM export: the source DICOM to inherit the study from, and a tick for each map the settings make (all ticked to begin with; a map turned on later is ticked too; `a` ticks them all) |
+| 4 Execution | — | Local or SLURM, each with its own settings; debug logging, force re-run, clean-up; and a button that does what `F5` does |
+| 5 Methods | Methods text · Graph | The methods text for the current settings; `Enter` (or `c`) copies it to the clipboard. Graph: the pipeline the current settings run, step by step: each step's algorithm and settings, and the steps it reads from and what it reads. Above it, the peak memory the run is estimated to need and the deep-learning models it uses, with their download sizes. It is planned on the first selected run's scan (a typical scan until one is chosen). `Enter` (or `s`) saves it as an SVG drawing and opens it |
 
 Settings appear only where and when they apply: a sub-setting sits indented under the
 checkbox or choice it belongs to, and a map another output needs reads as ticked (and says why
 when you try to untick it). `↑`/`↓` move, `Space` ticks a checkbox, `Enter` edits a value, `r`
-resets the focused setting, `R` the whole sub-tab, and `F5` runs. A short choice of up to three
+resets the focused setting, `R` the whole section, and `F5` runs. A short choice of up to three
 values (for example ROMEO or Laplacian unwrapping) shows as `◀ romeo ▶` when focused and changes
 with `←`/`→`. A method (the inversion, background removal, χ-separation), or a choice with more
 than three values, shows as a button, `[ medi ▾ ]`: `Enter` (or `←`/`→`) opens the list to choose
@@ -173,18 +186,21 @@ happen: *Run*, *Dry run*, *Write SLURM scripts* or *Submit SLURM jobs*.
 
 | Key | Where | Does |
 |---|---|---|
-| `1`–`8`, `Tab`, `Shift-Tab` | anywhere | switch tab |
+| `1`–`5`, `Tab`, `Shift-Tab` | anywhere | switch tab |
 | `←` `→` | tab bar | previous / next tab |
 | `↓`, `Enter` | tab bar | go into the tab |
-| `←` `→` | sub-tab strip | previous / next sub-tab |
-| `↓`, `Enter` | sub-tab strip | go into the sub-tab's settings |
-| `[` `]` | any tab with sub-tabs | previous / next sub-tab |
+| `↑` `↓`, `Home` `End` | Reconstruction sidebar | previous / next section, first / last; `↑` from the first goes up to the tab bar |
+| `→`, `Enter` | Reconstruction sidebar | go into the section's settings |
+| `←` `→` | sub-tab strip (Methods; Reconstruction when narrow) | previous / next page |
+| `↓`, `Enter` | sub-tab strip | go into the page |
 | `↑` | sub-tab strip | go up to the tab bar |
-| `↑` `↓` | settings | move; `↑` from the first setting returns to the strip, or to the tab bar on a tab without sub-tabs |
+| `[` `]` | any tab with sections or sub-tabs | previous / next one |
+| `↑` `↓` | settings | move; `↑` from the first setting returns to the sidebar or strip, or to the tab bar on a tab without either |
 | `←` `→` | settings | change a short choice (`◀ … ▶`); on a button (`[ … ▾ ]`), open its list |
 | `Space` | settings | tick a checkbox |
 | `Enter` | settings | open a button's list or edit a value; on the Execution tab's button, run |
-| `r` / `R` | settings | reset the setting / the whole sub-tab |
+| `r` / `R` | settings | reset the setting / the whole section |
+| `a` | Reconstruction › DICOM | tick every map to export |
 | `P` | settings | go to the Pipeline tab |
 | `↑` `↓`, `Enter` | Pipeline | choose a pipeline; preview its changes, then Apply or Cancel |
 | `Enter`, `s` | Methods › Graph | save the pipeline as an SVG drawing and open it |
@@ -205,7 +221,8 @@ you drag, since the TUI uses the mouse itself (see [Mouse](#mouse)).
 
 Everything can also be done with the mouse:
 
-- **Click a tab or a sub-tab** to switch to it.
+- **Click a tab, a section in the sidebar, or a sub-tab** to switch to it. A group's heading
+  in the sidebar opens its first section.
 - **Click a setting** to use it: a checkbox ticks, a button (`[ … ▾ ]`) opens its list, and a
   value opens for editing. A short choice (`◀ … ▶`) is focused by the first click and takes the
   next value on the next. Any other row, such as *Add section* or the Execution tab's run
@@ -216,12 +233,12 @@ Everything can also be done with the mouse:
   not answer clicks, just as it does not answer keys.
 - **The wheel** does what `↑`/`↓` do: it moves through the settings and lists, and scrolls the
   methods text, the graph and the pop-ups that scroll. It stays on the page rather than moving up
-  to the sub-tabs or the tabs.
+  to the sidebar, the sub-tabs or the tabs.
 
 With the mouse in use, most terminals select text only while you hold Shift (Option in iTerm2).
 To leave the mouse to the terminal entirely, set `QSMXT_NO_MOUSE=1`.
 
-The Pipeline sub-tab's drawing is written to the system's temporary folder. Over SSH, or with no
+The Methods › Graph drawing is written to the system's temporary folder. Over SSH, or with no
 display, QSMxT does not try to open it and shows where it was written instead, so you can copy
 it to your own computer. A run writes the same drawing next to its results (`pipeline.svg`).
 

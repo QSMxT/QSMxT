@@ -501,22 +501,57 @@ fn fmt_opt<T: std::fmt::Display>(v: Option<T>) -> String {
 pub const TAB_INPUT: usize = 0;
 /// The pipeline to start from ([`super::pipelines_tab`]).
 pub const TAB_PIPELINE: usize = 1;
-pub const TAB_PREPROCESSING: usize = 2;
-pub const TAB_QSM: usize = 3;
-pub const TAB_SEPARATION: usize = 4;
-pub const TAB_OUTPUTS: usize = 5;
-pub const TAB_EXECUTION: usize = 6;
-pub const TAB_METHODS: usize = 7;
+/// A map DICOM export can write: its tick row's field, the series suffix (`--dicom-outputs`
+/// token), the label, and the output it belongs to (for "not made by these settings").
+pub struct DicomMap {
+    pub field: &'static str,
+    pub suffix: &'static str,
+    pub label: &'static str,
+    pub group: &'static str,
+}
 
-/// A sub-tab: the second tab row, switched with `[` and `]`. A tab with a single page
-/// (Separation, Execution) shows no second row. The Methods tab's two pages are views, not rows.
+/// Every map DICOM export writes, in series order ([`crate::dicom::export`]).
+pub const DICOM_MAPS: [DicomMap; 10] = [
+    DicomMap { field: "dicom_out_chimap", suffix: "Chimap", label: "  χ (QSM)", group: "χ" },
+    DicomMap { field: "dicom_out_swi", suffix: "swi", label: "  SWI", group: "SWI" },
+    DicomMap { field: "dicom_out_minip", suffix: "minIP", label: "  SWI minIP", group: "SWI" },
+    DicomMap { field: "dicom_out_t2starmap", suffix: "T2starmap", label: "  T2* map", group: "T2*" },
+    DicomMap { field: "dicom_out_r2starmap", suffix: "R2starmap", label: "  R2* map", group: "R2*" },
+    DicomMap { field: "dicom_out_r2map", suffix: "R2map", label: "  R2 map", group: "R2" },
+    DicomMap { field: "dicom_out_r2primemap", suffix: "R2primemap", label: "  R2′ map", group: "R2′" },
+    DicomMap { field: "dicom_out_chi_para", suffix: "desc-paramagnetic_Chimap", label: "  Paramagnetic χ", group: "χ-separation" },
+    DicomMap { field: "dicom_out_chi_dia", suffix: "desc-diamagnetic_Chimap", label: "  Diamagnetic χ", group: "χ-separation" },
+    DicomMap { field: "dicom_out_chi_total", suffix: "desc-total_Chimap", label: "  Total χ", group: "χ-separation" },
+];
+
+/// The Export map a tick row's field names.
+pub fn dicom_map(field: &str) -> Option<&'static DicomMap> {
+    DICOM_MAPS.iter().find(|m| m.field == field)
+}
+
+/// Where a Reconstruction section stands for the current settings ([`App::section_state`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SectionState {
+    On,
+    /// Its output is not made (χ-separation, SWI/SMWI, …, DICOM export, or QSM itself).
+    Off,
+    /// The settings skip its stage: no field mapping, no background removal, no orientation groups.
+    NotApplicable,
+}
+
+/// Every reconstruction setting, its sections ([`Page::RECONSTRUCTION`]) in a sidebar.
+pub const TAB_RECONSTRUCTION: usize = 2;
+pub const TAB_EXECUTION: usize = 3;
+pub const TAB_METHODS: usize = 4;
+
+/// A page of a tab: a section of the Reconstruction tab's sidebar, or a sub-tab, switched with
+/// `[` and `]`. A tab with a single page (Execution) shows neither. The Methods tab's two pages
+/// are views, not rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Page {
     Geometry,
     Masking,
     Motion,
-    /// The QSM tab while QSM is not reconstructed: only the switch that turns it on.
-    QsmOff,
     FieldMap,
     Background,
     Inversion,
@@ -541,7 +576,6 @@ impl Page {
             Page::Geometry => "Geometry",
             Page::Masking => "Masking",
             Page::Motion => "Motion",
-            Page::QsmOff => "QSM",
             Page::FieldMap => "Field map",
             Page::Background => "Background",
             Page::Inversion => "Inversion",
@@ -551,7 +585,7 @@ impl Page {
             Page::SwiSmwi => "SWI/SMWI",
             Page::Relaxometry => "Relaxometry",
             Page::Segmentation => "Segmentation",
-            Page::Export => "Export",
+            Page::Export => "DICOM",
             Page::Execution => "Execution",
             Page::MethodsText => "Methods text",
             Page::Pipeline => "Graph",
@@ -565,10 +599,29 @@ impl Page {
             | Page::MethodsText | Page::Pipeline)
     }
 
+    /// The Reconstruction tab's sections, in sidebar order.
+    pub const RECONSTRUCTION: [Page; 13] = [
+        Page::Geometry, Page::Masking, Page::Motion, Page::FieldMap, Page::Background, Page::Inversion,
+        Page::MultiOrientation, Page::Reference, Page::Separation, Page::SwiSmwi, Page::Relaxometry,
+        Page::Segmentation, Page::Export,
+    ];
+
+    /// The sidebar group a Reconstruction section is in.
+    pub fn group(self) -> &'static str {
+        match self {
+            Page::Geometry | Page::Masking | Page::Motion => "Preprocessing",
+            Page::FieldMap | Page::Background | Page::Inversion | Page::MultiOrientation | Page::Reference => "QSM",
+            Page::Separation | Page::SwiSmwi | Page::Relaxometry | Page::Segmentation => "Other outputs",
+            Page::Export => "Export",
+            Page::Execution => "Execution",
+            Page::MethodsText | Page::Pipeline => "Methods",
+        }
+    }
+
     /// Every page, in tab order.
     #[cfg(test)]
-    pub const ALL: [Page; 17] = [
-        Page::Geometry, Page::Masking, Page::Motion, Page::QsmOff, Page::FieldMap, Page::Background,
+    pub const ALL: [Page; 16] = [
+        Page::Geometry, Page::Masking, Page::Motion, Page::FieldMap, Page::Background,
         Page::Inversion, Page::MultiOrientation, Page::Reference, Page::Separation, Page::SwiSmwi,
         Page::Relaxometry, Page::Segmentation, Page::Export, Page::Execution, Page::MethodsText,
         Page::Pipeline,
@@ -800,13 +853,10 @@ fn expand_tilde(path: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(path)
 }
 
-pub const TAB_NAMES: [&str; 8] = [
+pub const TAB_NAMES: [&str; 5] = [
     "Input",
     "Pipeline",
-    "Preprocessing",
-    "QSM",
-    "χ-separation",
-    "Other outputs",
+    "Reconstruction",
     "Execution",
     "Methods",
 ];
@@ -4135,8 +4185,21 @@ impl PipelineFormState {
             Page::Geometry => self.geometry_rows(&mut rows),
             Page::Masking => self.masking_rows(&mut rows),
             Page::Motion => self.motion_rows(&mut rows),
-            Page::QsmOff => self.push_qsm_toggle(&mut rows),
+            // A QSM section shows the switch alone while QSM is off, and says why when the
+            // settings skip its stage: the sidebar lists every section whatever the settings.
+            Page::FieldMap | Page::Background | Page::Inversion | Page::MultiOrientation | Page::Reference
+                if !self.qsm_runs() => self.push_qsm_toggle(&mut rows),
+            Page::FieldMap if !self.field_mapping_runs().0 => {
+                self.push_qsm_toggle(&mut rows);
+                rows.push(PipelineRow::Note { text: "No field mapping with these settings: the inversion takes the wrapped phase".into() });
+                rows.push(PipelineRow::Note { text: "itself (iQSM, iQSM+, single-echo TGV), or iQFM makes the field from it.".into() });
+            }
             Page::FieldMap => { self.push_qsm_toggle(&mut rows); self.field_map_rows(&mut rows) }
+            Page::Background if !self.inversion_needs_bg_removal() => {
+                self.push_qsm_toggle(&mut rows);
+                rows.push(PipelineRow::Note { text: "No background removal with these settings: the inversion takes the total field".into() });
+                rows.push(PipelineRow::Note { text: "or the wrapped phase itself (see Inversion).".into() });
+            }
             Page::Background => { self.push_qsm_toggle(&mut rows); self.background_rows(&mut rows) }
             Page::Inversion => { self.push_qsm_toggle(&mut rows); self.inversion_rows(&mut rows) }
             Page::MultiOrientation => {
@@ -5690,6 +5753,9 @@ pub struct App {
     pub sub_page: [Option<Page>; TAB_NAMES.len()],
     /// Focus is on the sub-tab strip rather than the rows (see [`App::on_subtabs`]).
     pub subtab_focus: bool,
+    /// Whether the last frame drew the Reconstruction tab's sections as a sidebar (wide enough)
+    /// rather than as a strip of pills; the keys follow what is on screen.
+    pub sidebar_layout: std::cell::Cell<bool>,
     /// Focus is on the main tab bar: ←/→ switch tabs, ↓ or Enter go into the tab.
     pub tab_focus: bool,
     pub active_field: usize,
@@ -5948,9 +6014,11 @@ pub struct RunForm {
     pub do_r2map: bool,
     pub do_r2primemap: bool,
     pub export_dicom: bool,
-    /// DICOM export: source DICOM directory to inherit identity from, and which maps to export.
+    /// DICOM export: source DICOM directory to inherit identity from, and the maps unticked on
+    /// the Export section (by series suffix, lower case). The unticked ones are kept rather than
+    /// the ticked, so a map turned on later is exported unless it is unticked too.
     pub source_dicom: String,
-    pub dicom_outputs: String,
+    pub dicom_unticked: Vec<String>,
     pub do_smwi: bool,
     pub do_segmentation: bool,
     pub do_analysis: bool,
@@ -6000,7 +6068,7 @@ macro_rules! named_fields {
 impl RunForm {
     named_fields!(text, text_mut, String, [
         swi_strength, swi_hp_sigma, swi_mip_window,
-        source_dicom, dicom_outputs, synthseg_crop, synthseg_patch, synthseg_sigma, smwi_threshold, smwi_power,
+        source_dicom, synthseg_crop, synthseg_patch, synthseg_sigma, smwi_threshold, smwi_power,
         smwi_mip_window, n_procs, mem_limit_gb, slurm_account, slurm_partition, slurm_time,
         slurm_mem, slurm_cpus,
     ]);
@@ -6047,7 +6115,7 @@ impl Default for RunForm {
             do_r2primemap: false,
             export_dicom: false,
             source_dicom: String::new(),
-            dicom_outputs: String::new(),
+            dicom_unticked: Vec::new(),
             do_smwi: false,
             do_segmentation: false,
             do_analysis: false,
@@ -6094,6 +6162,7 @@ impl App {
             active_tab: 0,
             sub_page: [None; TAB_NAMES.len()],
             subtab_focus: false,
+            sidebar_layout: std::cell::Cell::new(true),
             tab_focus: false,
             active_field: 0,
             editing: false,
@@ -7563,10 +7632,35 @@ impl App {
             return;
         }
 
+        // In the sidebar: ↑/↓ choose the section, → or Enter go into its rows, ↑ from the first
+        // goes up to the tab bar. ← does nothing: in the rows it changes a value.
+        if self.on_subtabs() && self.sidebar() {
+            let pages = self.pages(self.active_tab);
+            let cur = self.page().and_then(|p| pages.iter().position(|&q| q == p)).unwrap_or(0);
+            match key.code {
+                KeyCode::Up | KeyCode::Char('k') if cur == 0 => {
+                    self.tab_focus = true;
+                    return;
+                }
+                KeyCode::Up | KeyCode::Char('k') => return self.goto_page_index(cur - 1),
+                KeyCode::Down | KeyCode::Char('j') => return self.goto_page_index(cur + 1),
+                KeyCode::Home => return self.goto_page_index(0),
+                KeyCode::End => return self.goto_page_index(pages.len() - 1),
+                KeyCode::Right | KeyCode::Char('l') | KeyCode::Enter => {
+                    self.subtab_focus = false;
+                    self.set_focus(0);
+                    return;
+                }
+                KeyCode::Char('q' | '[' | ']' | 'R') | KeyCode::Esc | KeyCode::Tab | KeyCode::BackTab | KeyCode::F(5) => {}
+                KeyCode::Char(c) if c.is_ascii_digit() => {}
+                _ => return,
+            }
+        }
+
         // On the sub-tab strip: ←/→ choose the sub-tab, ↓ or Enter go into its rows, ↑ goes up
         // to the tab bar. Tab switching, `[`/`]`, `R`, F5 and quitting work as on the rows;
         // nothing else applies.
-        if self.on_subtabs() {
+        if self.on_subtabs() && !self.sidebar() {
             match key.code {
                 KeyCode::Left => return self.cycle_page(-1),
                 KeyCode::Right => return self.cycle_page(1),
@@ -7835,6 +7929,8 @@ impl App {
             }
 
             // Reset focused field to default
+            // `a` on the Export section: tick every map.
+            KeyCode::Char('a') if self.page() == Some(Page::Export) => self.form.dicom_unticked.clear(),
             KeyCode::Char('r') => self.reset_row_field(),
             // Reset every setting of the tab to its default
             KeyCode::Char('R') => self.reset_current_tab(),
@@ -7945,7 +8041,7 @@ impl App {
 
     /// Whether a tab is drawn and driven as named rows ([`PipelineRow`]).
     pub fn is_rows_tab(tab: usize) -> bool {
-        matches!(tab, TAB_PREPROCESSING | TAB_QSM | TAB_SEPARATION | TAB_OUTPUTS | TAB_EXECUTION)
+        matches!(tab, TAB_RECONSTRUCTION | TAB_EXECUTION)
     }
 
     /// The pipeline form as it decides its rows now: its context fresh from the rest of the form.
@@ -7956,30 +8052,11 @@ impl App {
         ps
     }
 
-    /// A tab's sub-tabs, as they apply now: the QSM tab shows a stage only when it runs.
+    /// A tab's pages. The Reconstruction tab lists every section whatever the settings, so the
+    /// sidebar keeps its shape; one that does not apply says why ([`App::section_state`]).
     pub fn pages(&self, tab: usize) -> Vec<Page> {
-        if tab == TAB_QSM { self.pages_in(tab, &self.row_context()) } else { self.pages_in(tab, &RowContext::default()) }
-    }
-
-    fn pages_in(&self, tab: usize, ctx: &RowContext) -> Vec<Page> {
         match tab {
-            TAB_PREPROCESSING => vec![Page::Geometry, Page::Masking, Page::Motion],
-            TAB_QSM => {
-                let ps = self.synced_pipeline(Page::Inversion, ctx);
-                if !ps.qsm_runs() {
-                    return vec![Page::QsmOff];
-                }
-                let mut pages = Vec::new();
-                if ps.field_mapping_runs().0 { pages.push(Page::FieldMap); }
-                if ps.inversion_needs_bg_removal() { pages.push(Page::Background); }
-                pages.push(Page::Inversion);
-                // Shown without a group too, to say where groups are chosen.
-                pages.push(Page::MultiOrientation);
-                pages.push(Page::Reference);
-                pages
-            }
-            TAB_SEPARATION => vec![Page::Separation],
-            TAB_OUTPUTS => vec![Page::SwiSmwi, Page::Relaxometry, Page::Segmentation, Page::Export],
+            TAB_RECONSTRUCTION => Page::RECONSTRUCTION.to_vec(),
             TAB_EXECUTION => vec![Page::Execution],
             TAB_METHODS => vec![Page::MethodsText, Page::Pipeline],
             _ => Vec::new(),
@@ -7995,10 +8072,56 @@ impl App {
             .or_else(|| pages.first().copied())
     }
 
-    /// The sub-tab a tab opens on before one is chosen, when it is not the first: Preprocessing
-    /// opens on Masking, the page most runs need to look at.
+    /// The page a tab opens on before one is chosen, when it is not the first: Reconstruction
+    /// opens on Masking, the section most runs need to look at.
     fn default_page(tab: usize) -> Option<Page> {
-        (tab == TAB_PREPROCESSING).then_some(Page::Masking)
+        (tab == TAB_RECONSTRUCTION).then_some(Page::Masking)
+    }
+
+    /// Whether a Reconstruction section's stage or output is part of the run now, for the
+    /// sidebar: on, off (its output is not made), or not applicable to the current settings.
+    pub fn section_state(&self, page: Page) -> SectionState {
+        let ps = &self.pipeline_state;
+        let on = |b: bool| if b { SectionState::On } else { SectionState::Off };
+        match page {
+            Page::FieldMap | Page::Background | Page::Inversion | Page::MultiOrientation | Page::Reference => {
+                let ps = self.synced_pipeline(page, &self.row_context());
+                if !ps.qsm_runs() {
+                    SectionState::Off
+                } else if (page == Page::FieldMap && !ps.field_mapping_runs().0)
+                    || (page == Page::Background && !ps.inversion_needs_bg_removal())
+                    || (page == Page::MultiOrientation && !ps.ctx.orientation_group)
+                {
+                    SectionState::NotApplicable
+                } else {
+                    SectionState::On
+                }
+            }
+            Page::Separation => on(ps.do_chi_separation),
+            Page::SwiSmwi => on(self.form.do_swi || self.form.do_smwi),
+            Page::Relaxometry => on(["do_t2starmap", "do_r2starmap", "do_r2map", "do_r2primemap"].iter().any(|f| self.field_toggle(f))),
+            Page::Segmentation => on(self.field_toggle("do_segmentation") || self.form.do_analysis),
+            Page::Export => on(self.form.export_dicom),
+            _ => SectionState::On,
+        }
+    }
+
+    /// Whether QSM is reconstructed now (Compute QSM, or another output needs it).
+    pub fn qsm_on(&self) -> bool {
+        self.synced_pipeline(Page::Inversion, &self.row_context()).qsm_runs()
+    }
+
+    /// The badge a Reconstruction section carries for the rules' findings on its rows: `Some(true)`
+    /// when one is offered as a change (⚑), `Some(false)` for information only (ⓘ).
+    pub fn section_marker(&self, view: &[qsmxt_engine::recommendations::Recommendation], page: Page) -> Option<bool> {
+        let mut any = None;
+        for row in self.page_rows(page) {
+            if let Some(m) = App::row_marker(view, &row) {
+                if m.actionable { return Some(true); }
+                any = Some(false);
+            }
+        }
+        any
     }
 
     /// Move to the next (`delta` 1) or previous (-1) sub-tab of the active tab, wrapping. Focus
@@ -8021,7 +8144,23 @@ impl App {
         (Self::is_rows_tab(self.active_tab) || self.active_tab == TAB_METHODS) && self.pages(self.active_tab).len() > 1
     }
 
-    /// Whether focus is on the sub-tab strip rather than on a row (or the tab bar above).
+    /// Whether the active tab's pages are a sidebar (the Reconstruction tab on a wide terminal).
+    pub fn sidebar(&self) -> bool {
+        self.active_tab == TAB_RECONSTRUCTION && self.sidebar_layout.get()
+    }
+
+    /// Open the active tab's page `i` (clamped), keeping focus where it is.
+    fn goto_page_index(&mut self, i: usize) {
+        let pages = self.pages(self.active_tab);
+        let Some(&page) = pages.get(i.min(pages.len().saturating_sub(1))) else { return };
+        let on_strip = self.on_subtabs();
+        self.sub_page[self.active_tab] = Some(page);
+        self.reset_view();
+        self.sync_pipeline_mode();
+        self.subtab_focus = on_strip;
+    }
+
+    /// Whether focus is on the sub-tab strip or the sidebar rather than on a row (or the tab bar).
     pub fn on_subtabs(&self) -> bool {
         self.subtab_focus && self.has_subtabs() && !self.tab_focus
     }
@@ -8071,11 +8210,11 @@ impl App {
         self.page_rows_in(page, &self.row_context())
     }
 
-    /// Every sub-tab of every tab with its rows, as they apply now (the context worked out once).
+    /// Every page of every tab with its rows, as they apply now (the context worked out once).
     pub fn all_pages(&self) -> Vec<(usize, Page, Vec<PipelineRow>)> {
         let ctx = self.row_context();
         (0..TAB_NAMES.len())
-            .flat_map(|t| self.pages_in(t, &ctx).into_iter().map(move |p| (t, p)))
+            .flat_map(|t| self.pages(t).into_iter().map(move |p| (t, p)))
             .map(|(t, p)| (t, p, self.page_rows_in(p, &ctx)))
             .collect()
     }
@@ -8222,6 +8361,9 @@ impl App {
 
     /// A checkbox as it reads: an output another option forces on reads as checked.
     pub fn field_toggle(&self, field: &str) -> bool {
+        if let Some(m) = dicom_map(field) {
+            return !self.form.dicom_unticked.iter().any(|u| u.eq_ignore_ascii_case(m.suffix));
+        }
         if field == "do_segmentation" {
             return self.segmentation_on();
         }
@@ -8241,6 +8383,9 @@ impl App {
 
     /// Flip a checkbox — refused, with the reason, while another option forces it on.
     pub fn toggle_field(&mut self, field: &str) {
+        if let Some(m) = dicom_map(field) {
+            return self.toggle_dicom_map(m);
+        }
         if field == "do_qsm" {
             // QSM another output needs runs whatever this says: refuse, as for the other maps.
             let was = std::mem::replace(&mut self.pipeline_state.do_qsm, false);
@@ -8305,6 +8450,9 @@ impl App {
     /// Reset one named field to its default, whichever form it lives in.
     pub(crate) fn reset_field(&mut self, field: &str) {
         let (form, ps) = (RunForm::default(), PipelineFormState::default());
+        if let Some(m) = dicom_map(field) {
+            return self.form.dicom_unticked.retain(|u| !u.eq_ignore_ascii_case(m.suffix));
+        }
         match field {
             "orientation_lambda" => return self.filter_state.orientation_lambda.clear(),
             "orientation_reference" => return self.filter_state.orientation_reference.clear(),
@@ -8452,15 +8600,77 @@ impl App {
         rows
     }
 
-    /// Other outputs → Export.
+    /// Export → DICOM: the switch, the source DICOM, and a tick per map the settings make.
     fn export_rows(&self) -> Vec<PipelineRow> {
-        use PipelineRow::{Param, Toggle};
+        use PipelineRow::{Note, Param, Toggle};
         let mut rows = vec![Toggle { label: "Export DICOM", field: "export_dicom", help: "Also write final maps as DICOM series into each subject's extra_files/ folder" }];
         if self.form.export_dicom {
             rows.push(Param { label: "  Source DICOM dir", field: "source_dicom", help: "Original DICOM directory: the exported series inherit its patient/study identity (empty = none)" });
-            rows.push(Param { label: "  DICOM outputs", field: "dicom_outputs", help: "Comma-separated maps to export, e.g. Chimap,desc-total_chimap (empty = all)" });
+            rows.push(PipelineRow::Separator);
+            rows.push(Note { text: "Maps to export (what these settings make):".into() });
+            let (made, not_made): (Vec<_>, Vec<_>) = DICOM_MAPS.iter().partition(|m| self.dicom_map_made(m));
+            for m in made {
+                rows.push(Toggle { label: m.label, field: m.field,
+                    help: "Space ticks or unticks the map. While every map is ticked all are exported, and a map turned on later is ticked too; a ticks them all" });
+            }
+            let mut names: Vec<&str> = not_made.iter().map(|m| m.group).collect();
+            names.dedup();
+            if !names.is_empty() {
+                // A note is one line: wrap the names to fit beside the sidebar on 80 columns.
+                let mut line = String::from("Not made by these settings:");
+                for (i, name) in names.iter().enumerate() {
+                    let item = format!(" {name}{}", if i + 1 == names.len() { "." } else { "," });
+                    if line.chars().count() + item.chars().count() > 48 {
+                        rows.push(Note { text: std::mem::take(&mut line).into() });
+                    }
+                    line.push_str(&item);
+                }
+                rows.push(Note { text: line.into() });
+                rows.push(Note { text: "Turn one on and it is listed here, ticked.".into() });
+            }
         }
         rows
+    }
+
+    /// Whether the current settings make an exportable map.
+    fn dicom_map_made(&self, m: &DicomMap) -> bool {
+        match m.group {
+            "χ" => self.qsm_on(),
+            "SWI" => self.form.do_swi,
+            "T2*" => self.field_toggle("do_t2starmap"),
+            "R2*" => self.field_toggle("do_r2starmap"),
+            "R2" => self.field_toggle("do_r2map"),
+            "R2′" => self.field_toggle("do_r2primemap"),
+            "χ-separation" => self.pipeline_state.do_chi_separation,
+            _ => false,
+        }
+    }
+
+    /// `--dicom-outputs`: the maps made and ticked, when any made map is unticked; `None`
+    /// exports every map made.
+    pub fn dicom_outputs(&self) -> Option<Vec<String>> {
+        let made: Vec<&DicomMap> = DICOM_MAPS.iter().filter(|m| self.dicom_map_made(m)).collect();
+        let unticked = |m: &&DicomMap| self.form.dicom_unticked.iter().any(|u| u.eq_ignore_ascii_case(m.suffix));
+        if !made.iter().any(unticked) {
+            return None;
+        }
+        Some(made.into_iter().filter(|m| !unticked(m)).map(|m| m.suffix.to_string()).collect())
+    }
+
+    /// Tick or untick an Export map. The last ticked map is not unticked: that would export
+    /// nothing, which Export DICOM itself says.
+    fn toggle_dicom_map(&mut self, m: &DicomMap) {
+        let pos = self.form.dicom_unticked.iter().position(|u| u.eq_ignore_ascii_case(m.suffix));
+        if let Some(i) = pos {
+            self.form.dicom_unticked.remove(i);
+            return;
+        }
+        let ticked = DICOM_MAPS.iter().filter(|d| self.dicom_map_made(d) && self.field_toggle(d.field)).count();
+        if ticked <= 1 {
+            self.error_message = Some("That is the only map left to export: untick Export DICOM instead.".to_string());
+            return;
+        }
+        self.form.dicom_unticked.push(m.suffix.to_lowercase());
     }
 
     /// The Execution tab: local or SLURM, each mode's own settings, then what applies to both.
@@ -8926,7 +9136,7 @@ mod tests {
     #[test]
     fn test_algo_modal_opens_on_enter_over_algoselect() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
+        app.active_tab = TAB_RECONSTRUCTION;
         // The QSM tab's first focusable row is the "Compute QSM" toggle; move to the inversion
         // AlgoSelect and open it.
         let opened = (0..40).any(|_| {
@@ -9262,7 +9472,7 @@ mod tests {
     #[test]
     fn test_filter_tab_routes_to_filter_handler() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
+        app.active_tab = TAB_RECONSTRUCTION;
         // Should not crash — filter handler takes over
         app.handle_key(key(KeyCode::Down));
         app.handle_key(key(KeyCode::Up));
@@ -9281,8 +9491,8 @@ mod tests {
     #[test]
     fn test_text_value_unknown_returns_empty() {
         let mut app = App::new();
-        app.active_tab = TAB_OUTPUTS; // Algorithms tab - no text fields
-        focus_on(&mut app, TAB_OUTPUTS, "do_swi");
+        app.active_tab = TAB_RECONSTRUCTION; // Algorithms tab - no text fields
+        focus_on(&mut app, TAB_RECONSTRUCTION, "do_swi");
         assert_eq!(app.text_value(), "");
     }
 
@@ -9390,51 +9600,66 @@ mod tests {
     #[test]
     fn brackets_switch_sub_tabs_and_reset_focus() {
         let mut app = App::new();
-        app.active_tab = TAB_PREPROCESSING;
+        app.active_tab = TAB_RECONSTRUCTION;
         app.sync_pipeline_mode();
-        // Masking, the second sub-tab, is the one Preprocessing opens on.
-        assert_eq!(app.pages(TAB_PREPROCESSING), vec![Page::Geometry, Page::Masking, Page::Motion]);
+        // Masking, the second section, is the one Reconstruction opens on.
+        assert_eq!(app.pages(TAB_RECONSTRUCTION)[..3], [Page::Geometry, Page::Masking, Page::Motion]);
         assert_eq!(app.page(), Some(Page::Masking));
         app.handle_key(key(KeyCode::Down));
         assert_eq!(app.focus(), 1);
         app.handle_key(key(KeyCode::Char(']')));
         assert_eq!(app.page(), Some(Page::Motion));
         assert_eq!(app.focus(), 0, "a sub-tab switch starts at the top");
-        app.handle_key(key(KeyCode::Char(']')));
-        assert_eq!(app.page(), Some(Page::Geometry), "wraps");
-        app.handle_key(key(KeyCode::Char(']')));
-        assert_eq!(app.page(), Some(Page::Masking));
+        app.handle_key(key(KeyCode::Char('[')));
         app.handle_key(key(KeyCode::Char('[')));
         assert_eq!(app.page(), Some(Page::Geometry));
-        // The sub-tab is remembered per tab; a main-tab switch resets focus too.
+        app.handle_key(key(KeyCode::Char('[')));
+        assert_eq!(app.page(), Some(Page::Export), "wraps");
+        app.handle_key(key(KeyCode::Char(']')));
+        assert_eq!(app.page(), Some(Page::Geometry));
+        // The section is remembered per tab; a main-tab switch resets focus too.
         app.handle_key(key(KeyCode::Down));
         app.handle_key(key(KeyCode::Char('4')));
-        assert_eq!(app.active_tab, TAB_QSM);
+        assert_eq!(app.active_tab, TAB_EXECUTION);
         assert_eq!(app.focus(), 0);
         app.handle_key(key(KeyCode::Char('3')));
         assert_eq!(app.page(), Some(Page::Geometry));
     }
 
-    /// The QSM tab shows a sub-tab for each stage that runs, and only the switch when none do.
+    /// Every QSM section stays in the sidebar; one whose stage the settings skip is marked not
+    /// applicable and says why, and with QSM off each shows the switch alone.
     #[test]
-    fn qsm_sub_tabs_follow_the_stages_that_run() {
+    fn qsm_sections_stay_and_say_whether_their_stage_runs() {
         let mut app = App::new();
         let idx = |name: &str| QSM_ALGO_OPTIONS.iter().position(|o| *o == name).unwrap();
-        assert_eq!(app.pages(TAB_QSM), vec![Page::FieldMap, Page::Background, Page::Inversion, Page::MultiOrientation, Page::Reference]);
+        assert_eq!(app.pages(TAB_RECONSTRUCTION), Page::RECONSTRUCTION.to_vec());
+        let state = |app: &App, p| app.section_state(p);
+        assert_eq!(state(&app, Page::FieldMap), SectionState::On);
+        assert_eq!(state(&app, Page::Background), SectionState::On);
         app.pipeline_state.qsm_algorithm = idx("iqsm");
-        assert_eq!(app.pages(TAB_QSM), vec![Page::Inversion, Page::MultiOrientation, Page::Reference]);
+        assert_eq!(app.pages(TAB_RECONSTRUCTION), Page::RECONSTRUCTION.to_vec(), "the list keeps its shape");
+        assert_eq!(state(&app, Page::FieldMap), SectionState::NotApplicable);
+        assert_eq!(state(&app, Page::Background), SectionState::NotApplicable);
+        let rows = |app: &App, p| app.synced_pipeline(p, &app.row_context()).visible_rows();
+        assert!(rows(&app, Page::Background).iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("No background removal"))));
+        assert!(!rows(&app, Page::Background).iter().any(|r| matches!(r, PipelineRow::AlgoSelect { field: "bf_algorithm", .. })));
+        assert!(rows(&app, Page::FieldMap).iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("No field mapping"))));
         // Without a group, COSMOS/STI says where groups are chosen; with one, it has its settings.
-        let rows = |app: &App| app.synced_pipeline(Page::MultiOrientation, &app.row_context()).visible_rows();
-        assert!(!rows(&app).iter().any(|r| matches!(r, PipelineRow::AlgoSelect { field: "orientation_algorithm", .. })));
-        assert!(rows(&app).iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("1 Input → Orientations"))));
+        assert_eq!(state(&app, Page::MultiOrientation), SectionState::NotApplicable);
+        assert!(!rows(&app, Page::MultiOrientation).iter().any(|r| matches!(r, PipelineRow::AlgoSelect { field: "orientation_algorithm", .. })));
+        assert!(rows(&app, Page::MultiOrientation).iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("1 Input → Orientations"))));
         app.filter_state.orientation_group = "acq".into();
-        assert!(rows(&app).iter().any(|r| matches!(r, PipelineRow::AlgoSelect { field: "orientation_algorithm", .. })));
+        assert_eq!(state(&app, Page::MultiOrientation), SectionState::On);
+        assert!(rows(&app, Page::MultiOrientation).iter().any(|r| matches!(r, PipelineRow::AlgoSelect { field: "orientation_algorithm", .. })));
+        // QSM off: every QSM section is off and shows only the switch.
         app.pipeline_state.do_qsm = false;
-        app.filter_state.orientation_group.clear();
-        assert_eq!(app.pages(TAB_QSM), vec![Page::QsmOff]);
+        for p in [Page::FieldMap, Page::Background, Page::Inversion, Page::MultiOrientation, Page::Reference] {
+            assert_eq!(state(&app, p), SectionState::Off, "{p:?}");
+            assert!(rows(&app, p).iter().all(|r| matches!(r, PipelineRow::Toggle { field: "do_qsm", .. } | PipelineRow::Separator)), "{p:?}");
+        }
         // A forced QSM keeps the stages.
         app.form.do_smwi = true;
-        assert!(app.pages(TAB_QSM).contains(&Page::Inversion));
+        assert_eq!(state(&app, Page::Inversion), SectionState::On);
     }
 
     // --- Filter tree tests ---
@@ -9802,8 +10027,8 @@ mod tests {
     #[test]
     fn test_field_visibility_other_tabs() {
         let mut app = App::new();
-        assert!(shows(&mut app, TAB_OUTPUTS, "do_swi"));
-        assert!(shows(&mut app, TAB_OUTPUTS, "do_r2starmap"));
+        assert!(shows(&mut app, TAB_RECONSTRUCTION, "do_swi"));
+        assert!(shows(&mut app, TAB_RECONSTRUCTION, "do_r2starmap"));
     }
 
     // --- SLURM form fields ---
@@ -10095,7 +10320,7 @@ mod tests {
     #[test]
     fn test_pipeline_tab_navigate_down_up() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
+        app.active_tab = TAB_RECONSTRUCTION;
         assert_eq!(app.pipeline_state.focus, 0);
         app.handle_key(key(KeyCode::Down));
         assert_eq!(app.pipeline_state.focus, 1);
@@ -10113,7 +10338,7 @@ mod tests {
     #[test]
     fn test_pipeline_tab_navigate_clamp_bottom() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
+        app.active_tab = TAB_RECONSTRUCTION;
         app.sync_pipeline_mode();
         let max = app.focusable_rows().len().saturating_sub(1);
         app.pipeline_state.focus = max;
@@ -10124,18 +10349,18 @@ mod tests {
     #[test]
     fn test_pipeline_tab_switch_from_pipeline() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
+        app.active_tab = TAB_RECONSTRUCTION;
         app.handle_key(key(KeyCode::Tab));
-        assert_eq!(app.active_tab, TAB_SEPARATION);
-        app.active_tab = TAB_QSM;
+        assert_eq!(app.active_tab, TAB_EXECUTION);
+        app.active_tab = TAB_RECONSTRUCTION;
         app.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
-        assert_eq!(app.active_tab, TAB_PREPROCESSING);
+        assert_eq!(app.active_tab, TAB_PIPELINE);
     }
 
     #[test]
     fn test_pipeline_tab_number_switch() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
+        app.active_tab = TAB_RECONSTRUCTION;
         app.handle_key(key(KeyCode::Char('3')));
         assert_eq!(app.active_tab, 2);
     }
@@ -10143,14 +10368,14 @@ mod tests {
     #[test]
     fn test_switch_to_separation_resets_focus_to_first_row() {
         let mut app = App::new();
-        // Sit deep in the QSM tab, past the number of rows Separation will have.
-        app.active_tab = TAB_QSM;
+        // Sit deep in the Field map section, past the number of rows χ-separation will have.
+        app.active_tab = TAB_RECONSTRUCTION;
+        app.sub_page[TAB_RECONSTRUCTION] = Some(Page::FieldMap);
         app.sync_pipeline_mode();
         let qsm_max = app.pipeline_state.focusable_rows().len().saturating_sub(1);
         app.pipeline_state.focus = qsm_max;
-        // Switch to Separation; mode changes, so focus must reset to the first selectable row.
-        app.active_tab = TAB_SEPARATION;
-        app.sync_pipeline_mode();
+        // Switch to χ-separation; the page changes, so focus must reset to the first row.
+        for _ in 0..5 { app.handle_key(key(KeyCode::Char(']'))); }
         assert_eq!(app.pipeline_state.page, Page::Separation);
         assert_eq!(app.pipeline_state.focus, 0);
         // And it must be in range for the Separation row set.
@@ -10264,7 +10489,9 @@ mod tests {
     #[test]
     fn test_pipeline_toggle_do_qsm() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
+        app.active_tab = TAB_RECONSTRUCTION;
+        app.sub_page[TAB_RECONSTRUCTION] = Some(Page::Inversion);
+        app.sync_pipeline_mode();
         // Focus 0 should be the do_qsm toggle
         app.pipeline_state.focus = 0;
         assert!(app.pipeline_state.do_qsm);
@@ -10299,7 +10526,7 @@ mod tests {
     #[test]
     fn test_pipeline_quit_from_pipeline_tab() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
+        app.active_tab = TAB_RECONSTRUCTION;
         app.handle_key(key(KeyCode::Char('q')));
         assert!(app.should_quit);
     }
@@ -10307,7 +10534,7 @@ mod tests {
     #[test]
     fn test_pipeline_esc_from_pipeline_tab() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
+        app.active_tab = TAB_RECONSTRUCTION;
         app.handle_key(key(KeyCode::Esc));
         assert!(app.should_quit);
     }
@@ -10315,7 +10542,7 @@ mod tests {
     #[test]
     fn test_pipeline_f5_from_pipeline_tab() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
+        app.active_tab = TAB_RECONSTRUCTION;
         app.form.bids_dir = "/tmp/bids".to_string();
         app.handle_key(key(KeyCode::F(5)));
         assert!(app.should_run);
@@ -10400,8 +10627,8 @@ mod tests {
     #[test]
     fn test_supplementary_toggle_swi() {
         let mut app = App::new();
-        app.active_tab = TAB_OUTPUTS;
-        focus_on(&mut app, TAB_OUTPUTS, "do_swi");
+        app.active_tab = TAB_RECONSTRUCTION;
+        focus_on(&mut app, TAB_RECONSTRUCTION, "do_swi");
         assert!(!app.form.do_swi);
         app.handle_key(key(KeyCode::Enter));
         assert!(app.form.do_swi);
@@ -10412,8 +10639,8 @@ mod tests {
     #[test]
     fn test_supplementary_toggle_t2star() {
         let mut app = App::new();
-        app.active_tab = TAB_OUTPUTS;
-        focus_on(&mut app, TAB_OUTPUTS, "do_t2starmap");
+        app.active_tab = TAB_RECONSTRUCTION;
+        focus_on(&mut app, TAB_RECONSTRUCTION, "do_t2starmap");
         assert!(!app.form.do_t2starmap);
         app.handle_key(key(KeyCode::Enter));
         assert!(app.form.do_t2starmap);
@@ -10422,8 +10649,8 @@ mod tests {
     #[test]
     fn test_supplementary_toggle_r2star() {
         let mut app = App::new();
-        app.active_tab = TAB_OUTPUTS;
-        focus_on(&mut app, TAB_OUTPUTS, "do_r2starmap");
+        app.active_tab = TAB_RECONSTRUCTION;
+        focus_on(&mut app, TAB_RECONSTRUCTION, "do_r2starmap");
         assert!(!app.form.do_r2starmap);
         app.handle_key(key(KeyCode::Char(' ')));
         assert!(app.form.do_r2starmap);
@@ -10432,9 +10659,9 @@ mod tests {
     #[test]
     fn test_supplementary_swi_scaling_select() {
         let mut app = App::new();
-        app.active_tab = TAB_OUTPUTS;
+        app.active_tab = TAB_RECONSTRUCTION;
         app.form.do_swi = true; // make SWI fields visible
-        focus_on(&mut app, TAB_OUTPUTS, "swi_scaling");
+        focus_on(&mut app, TAB_RECONSTRUCTION, "swi_scaling");
         assert_eq!(app.form.swi_scaling, 0); // tanh
         step(&mut app, 1);
         assert_eq!(app.form.swi_scaling, 1); // negative-tanh
@@ -10445,9 +10672,9 @@ mod tests {
     #[test]
     fn test_supplementary_edit_swi_strength() {
         let mut app = App::new();
-        app.active_tab = TAB_OUTPUTS;
+        app.active_tab = TAB_RECONSTRUCTION;
         app.form.do_swi = true;
-        focus_on(&mut app, TAB_OUTPUTS, "swi_strength");
+        focus_on(&mut app, TAB_RECONSTRUCTION, "swi_strength");
         app.handle_key(key(KeyCode::Enter));
         assert!(app.pipeline_state.editing);
         // Type something
@@ -10460,8 +10687,8 @@ mod tests {
     #[test]
     fn test_supplementary_navigate_fields() {
         let mut app = App::new();
-        app.active_tab = TAB_OUTPUTS;
-        focus_on(&mut app, TAB_OUTPUTS, "do_swi");
+        app.active_tab = TAB_RECONSTRUCTION;
+        focus_on(&mut app, TAB_RECONSTRUCTION, "do_swi");
         // SWI fields are hidden when do_swi is false, so Down from Compute SWI skips to SMWI
         app.handle_key(key(KeyCode::Down));
         assert_eq!(app.focused_field_name().as_deref(), Some("do_smwi"));
@@ -10473,22 +10700,22 @@ mod tests {
     fn test_supplementary_swi_visible_when_enabled() {
         let mut app = App::new();
         app.form.do_swi = true;
-        assert!(shows(&mut app, TAB_OUTPUTS, "swi_scaling")); // SWI Scaling
-        assert!(shows(&mut app, TAB_OUTPUTS, "swi_strength")); // SWI Strength
-        assert!(shows(&mut app, TAB_OUTPUTS, "swi_mip_window")); // SWI MIP Window
+        assert!(shows(&mut app, TAB_RECONSTRUCTION, "swi_scaling")); // SWI Scaling
+        assert!(shows(&mut app, TAB_RECONSTRUCTION, "swi_strength")); // SWI Strength
+        assert!(shows(&mut app, TAB_RECONSTRUCTION, "swi_mip_window")); // SWI MIP Window
     }
 
     #[test]
     fn test_supplementary_swi_hidden_when_disabled() {
         let mut app = App::new();
-        assert!(!shows(&mut app, TAB_OUTPUTS, "swi_scaling"));
-        assert!(!shows(&mut app, TAB_OUTPUTS, "swi_mip_window"));
+        assert!(!shows(&mut app, TAB_RECONSTRUCTION, "swi_scaling"));
+        assert!(!shows(&mut app, TAB_RECONSTRUCTION, "swi_mip_window"));
     }
 
     #[test]
     fn test_supplementary_tab_switch() {
         let mut app = App::new();
-        app.active_tab = TAB_OUTPUTS;
+        app.active_tab = TAB_RECONSTRUCTION;
         app.handle_key(key(KeyCode::Tab));
         assert_eq!(app.active_tab, TAB_EXECUTION);
     }
@@ -10496,8 +10723,8 @@ mod tests {
     #[test]
     fn test_supplementary_reset_field() {
         let mut app = App::new();
-        app.active_tab = TAB_OUTPUTS;
-        focus_on(&mut app, TAB_OUTPUTS, "do_swi");
+        app.active_tab = TAB_RECONSTRUCTION;
+        focus_on(&mut app, TAB_RECONSTRUCTION, "do_swi");
         app.form.do_swi = true;
         app.handle_key(key(KeyCode::Char('r')));
         assert!(!app.form.do_swi); // reset to default
@@ -10506,16 +10733,18 @@ mod tests {
     #[test]
     fn test_supplementary_reset_tab() {
         let mut app = App::new();
-        app.active_tab = TAB_OUTPUTS;
+        app.active_tab = TAB_RECONSTRUCTION;
         app.form.do_swi = true;
         app.form.do_t2starmap = true;
         app.form.do_r2starmap = true;
         app.form.swi_scaling = 3;
+        app.sub_page[TAB_RECONSTRUCTION] = Some(Page::SwiSmwi);
+        app.sync_pipeline_mode();
         app.handle_key(key(KeyCode::Char('R')));
         assert!(!app.form.do_swi);
         assert_eq!(app.form.swi_scaling, 0);
         assert!(app.form.do_t2starmap && app.form.do_r2starmap, "Relaxometry is another page");
-        focus_on(&mut app, TAB_OUTPUTS, "do_t2starmap");
+        focus_on(&mut app, TAB_RECONSTRUCTION, "do_t2starmap");
         app.handle_key(key(KeyCode::Char('R')));
         assert!(!app.form.do_t2starmap && !app.form.do_r2starmap);
     }
@@ -10703,7 +10932,7 @@ mod tests {
     #[test]
     fn the_pipeline_is_the_methods_tabs_second_sub_tab() {
         let mut app = App::new();
-        app.handle_key(key(KeyCode::Char('8')));
+        app.handle_key(key(KeyCode::Char('5')));
         assert_eq!(app.active_tab, TAB_METHODS);
         assert_eq!(app.pages(TAB_METHODS), vec![Page::MethodsText, Page::Pipeline]);
         assert_eq!(app.page(), Some(Page::MethodsText));
@@ -11493,9 +11722,9 @@ mod tests {
     #[test]
     fn test_reset_supplementary_fields() {
         let mut app = App::new();
-        app.active_tab = TAB_OUTPUTS;
+        app.active_tab = TAB_RECONSTRUCTION;
         app.form.do_swi = true;
-        focus_on(&mut app, TAB_OUTPUTS, "swi_strength");
+        focus_on(&mut app, TAB_RECONSTRUCTION, "swi_strength");
         app.form.swi_strength = "999".to_string();
         app.handle_key(key(KeyCode::Char('r')));
         let defaults = RunForm::default();
@@ -11687,19 +11916,20 @@ mod tests {
         let mut app = App::new();
         let thalamus = qsm_ref_options().iter().position(|o| *o == "thalamus")
             .expect("thalamus should be offered");
-        assert!(shows(&mut app, TAB_QSM, "qsm_reference"));
-        assert!(!shows(&mut app, TAB_OUTPUTS, "qsm_reference"), "one copy only");
-        focus_on(&mut app, TAB_QSM, "qsm_reference");
+        assert!(shows(&mut app, TAB_RECONSTRUCTION, "qsm_reference"));
+        let copies = app.all_pages().iter().filter(|(_, _, rows)| rows.iter().any(|r| row_field(r) == Some("qsm_reference"))).count();
+        assert_eq!(copies, 1, "one copy only");
+        focus_on(&mut app, TAB_RECONSTRUCTION, "qsm_reference");
         app.set_field_select("qsm_reference", thalamus);
         // A region forces segmentation, which reads as on where it is set up.
         assert!(app.field_toggle("do_segmentation"));
-        assert!(shows(&mut app, TAB_OUTPUTS, "synthseg_version"));
+        assert!(shows(&mut app, TAB_RECONSTRUCTION, "synthseg_version"));
     }
 
     #[test]
     fn a_region_reference_forces_segmentation_visibly() {
         let mut app = App::new();
-        app.active_tab = TAB_OUTPUTS;
+        app.active_tab = TAB_RECONSTRUCTION;
         assert!(!app.field_toggle("do_segmentation"), "off by default");
 
         let region = qsm_ref_options().iter().position(|o| *o == "ventricles").unwrap();
@@ -11707,11 +11937,11 @@ mod tests {
         assert!(app.field_toggle("do_segmentation"),
                 "a region reference needs SynthSeg, so it must read as checked");
         for f in SYNTHSEG_ROWS {
-            assert!(shows(&mut app, TAB_OUTPUTS, f),
+            assert!(shows(&mut app, TAB_RECONSTRUCTION, f),
                     "{f} shapes the parcellation the reference is measured on");
         }
 
-        focus_on(&mut app, TAB_OUTPUTS, "do_segmentation");
+        focus_on(&mut app, TAB_RECONSTRUCTION, "do_segmentation");
         app.handle_key(key(KeyCode::Enter));
         assert!(!app.form.do_segmentation, "the underlying flag is untouched");
         let msg = app.error_message.clone().expect("a refusal should explain itself");
@@ -11744,14 +11974,14 @@ mod tests {
     #[test]
     fn statistics_force_segmentation_visibly() {
         let mut app = App::new();
-        app.active_tab = TAB_OUTPUTS;
+        app.active_tab = TAB_RECONSTRUCTION;
 
         // Off by default: unchecked, and its settings hidden.
         assert!(!app.field_toggle("do_segmentation"));
         for f in SYNTHSEG_ROWS {
-            assert!(!shows(&mut app, TAB_OUTPUTS, f), "{f} should be hidden");
+            assert!(!shows(&mut app, TAB_RECONSTRUCTION, f), "{f} should be hidden");
         }
-        assert!(shows(&mut app, TAB_OUTPUTS, "do_analysis"), "the statistics are reachable on their own");
+        assert!(shows(&mut app, TAB_RECONSTRUCTION, "do_analysis"), "the statistics are reachable on their own");
 
         // A config or CLI run can arrive with the statistics already on; segmentation is then in
         // force, so the block must be visible rather than hiding a setting that is taking effect.
@@ -11759,12 +11989,12 @@ mod tests {
         assert!(app.field_toggle("do_segmentation"),
                 "segmentation is forced, so it must read as checked");
         for f in SYNTHSEG_ROWS {
-            assert!(shows(&mut app, TAB_OUTPUTS, f),
+            assert!(shows(&mut app, TAB_RECONSTRUCTION, f),
                     "{f} shapes the forced segmentation and must be reachable");
         }
 
         // And it cannot be turned off from under them; the refusal says why.
-        focus_on(&mut app, TAB_OUTPUTS, "do_segmentation");
+        focus_on(&mut app, TAB_RECONSTRUCTION, "do_segmentation");
         app.handle_key(key(KeyCode::Enter));
         assert!(!app.form.do_segmentation, "the underlying flag is untouched");
         assert!(app.field_toggle("do_segmentation"), "still forced, so still checked");
@@ -11890,7 +12120,8 @@ mod tests {
                      "mask_preset", "custom_mask_tool", "two_pass"] {
             assert!(f.contains(&kept.to_string()), "{kept} hidden with QSM off: {f:?}");
         }
-        for gone in ["#FieldMap", "#Background", "#Inversion", "#Reference", "crop_to_mask", "fft_padding"] {
+        // The QSM sections stay listed but hold only the switch.
+        for gone in ["unwrapping_algorithm", "bf_algorithm", "qsm_algorithm", "qsm_reference", "crop_to_mask", "fft_padding"] {
             assert!(!f.contains(&gone.to_string()), "{gone} shown with QSM off: {f:?}");
         }
         // Motion correction's own settings follow it, not QSM.
@@ -11901,7 +12132,7 @@ mod tests {
         // SMWI needs a χ map: QSM runs regardless, and its settings are on show, with the reason.
         app.form.do_smwi = true;
         let f = fields(&mut app);
-        assert!(f.contains(&"#Inversion".to_string()) && f.contains(&"#FieldMap".to_string()), "{f:?}");
+        assert!(f.contains(&"qsm_algorithm".to_string()) && f.contains(&"unwrapping_algorithm".to_string()), "{f:?}");
         assert!(app.pipeline_state.all_rows().iter().any(|r|
             matches!(r, PipelineRow::Note { text } if text.contains("SMWI"))), "the forced QSM says why");
     }
@@ -11968,11 +12199,11 @@ mod tests {
         app.pipeline_state.custom_dseg_tool = "freesurfer".into();
         assert!(app.field_toggle("do_segmentation"), "a supplied segmentation is a segmentation");
         assert_eq!(app.field_select("segmentation_source"), 1);
-        assert!(!shows(&mut app, TAB_OUTPUTS, "synthseg_version"), "no SynthSeg settings to show");
-        assert!(shows(&mut app, TAB_OUTPUTS, "custom_dseg_tool"));
-        assert!(shows(&mut app, TAB_OUTPUTS, "do_analysis"), "the statistics stay reachable");
+        assert!(!shows(&mut app, TAB_RECONSTRUCTION, "synthseg_version"), "no SynthSeg settings to show");
+        assert!(shows(&mut app, TAB_RECONSTRUCTION, "custom_dseg_tool"));
+        assert!(shows(&mut app, TAB_RECONSTRUCTION, "do_analysis"), "the statistics stay reachable");
         // The statistics need one, whichever the source: turning it off is refused.
-        focus_on(&mut app, TAB_OUTPUTS, "do_segmentation");
+        focus_on(&mut app, TAB_RECONSTRUCTION, "do_segmentation");
         app.handle_key(key(KeyCode::Enter));
         assert!(app.error_message.is_some() && app.pipeline_state.custom_dseg_tool == "freesurfer");
         // Back to SynthSeg: the supplied one is dropped, SynthSeg asked for.
@@ -11994,8 +12225,8 @@ mod tests {
         assert!(!app.field_toggle("do_r2starmap"));
         app.form.do_r2primemap = true;
         assert!(app.field_toggle("do_r2starmap"), "R2' = R2* - R2");
-        app.active_tab = TAB_OUTPUTS;
-        focus_on(&mut app, TAB_OUTPUTS, "do_r2starmap");
+        app.active_tab = TAB_RECONSTRUCTION;
+        focus_on(&mut app, TAB_RECONSTRUCTION, "do_r2starmap");
         app.handle_key(key(KeyCode::Enter));
         assert!(!app.form.do_r2starmap && app.error_message.as_deref().is_some_and(|m| m.contains("--do-r2primemap")));
     }
@@ -12558,7 +12789,9 @@ mod tests {
     #[test]
     fn test_reset_pipeline_toggle_field() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
+        app.active_tab = TAB_RECONSTRUCTION;
+        app.sub_page[TAB_RECONSTRUCTION] = Some(Page::Inversion);
+        app.sync_pipeline_mode();
         // Focus 0 is do_qsm toggle
         app.pipeline_state.focus = 0;
         app.pipeline_state.do_qsm = false;
@@ -12573,7 +12806,7 @@ mod tests {
         let mut app = App::new();
         app.form.do_swi = true;
         // One row for the three axes.
-        focus_on(&mut app, TAB_OUTPUTS, "swi_hp_sigma");
+        focus_on(&mut app, TAB_RECONSTRUCTION, "swi_hp_sigma");
         assert_eq!(app.form.swi_hp_sigma_values().map(|v| v.len()), Some(3), "the default parses");
         app.handle_key(key(KeyCode::Enter));
         assert!(app.pipeline_state.editing);
@@ -12908,122 +13141,215 @@ mod tests {
         assert!(exc.is_none());
     }
 
-    // ─── The sub-tab strip: focus, arrows, and back ───
+    // ─── Export → DICOM: the checklist of maps ───
+
+    /// The checklist lists the maps the settings make, all ticked; unticking one passes the
+    /// rest to --dicom-outputs; a map turned on later is ticked; the last one stays ticked.
+    #[test]
+    fn the_dicom_checklist_follows_what_the_settings_make() {
+        let mut app = App::new();
+        app.form.export_dicom = true;
+        app.form.do_swi = true;
+        let fields: Vec<&str> = app.page_rows(Page::Export).iter().filter_map(row_field).collect();
+        assert!(["dicom_out_chimap", "dicom_out_swi", "dicom_out_minip"].iter().all(|f| fields.contains(f)), "{fields:?}");
+        assert!(!fields.contains(&"dicom_out_t2starmap"), "T2* is not made: {fields:?}");
+        assert!(app.page_rows(Page::Export).iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("Not made") && text.contains("T2*"))));
+        assert_eq!(app.dicom_outputs(), None, "all ticked: no --dicom-outputs");
+
+        app.toggle_field("dicom_out_minip");
+        assert!(!app.field_toggle("dicom_out_minip"));
+        assert_eq!(app.dicom_outputs(), Some(vec!["Chimap".to_string(), "swi".to_string()]));
+        // A map turned on later is exported too.
+        app.form.do_r2starmap = true;
+        assert_eq!(app.dicom_outputs(), Some(vec!["Chimap".to_string(), "swi".to_string(), "R2starmap".to_string()]));
+        // The last ticked map stays ticked.
+        app.toggle_field("dicom_out_swi");
+        app.toggle_field("dicom_out_r2starmap");
+        app.toggle_field("dicom_out_chimap");
+        assert!(app.field_toggle("dicom_out_chimap"), "the last map is not unticked");
+        assert!(app.error_message.as_deref().is_some_and(|e| e.contains("untick Export DICOM")));
+        // `a` ticks them all; `r` resets one.
+        goto_page(&mut app, Page::Export);
+        app.handle_key(key(KeyCode::Char('a')));
+        assert_eq!(app.dicom_outputs(), None);
+        app.toggle_field("dicom_out_swi");
+        app.reset_field("dicom_out_swi");
+        assert!(app.field_toggle("dicom_out_swi"));
+        // Only while exporting.
+        app.toggle_field("dicom_out_swi");
+        app.form.bids_dir = "/b".into();
+        assert!(crate::tui::command::build_run_args(&app).unwrap().dicom_outputs.is_some());
+        app.form.export_dicom = false;
+        assert!(crate::tui::command::build_run_args(&app).unwrap().dicom_outputs.is_none());
+    }
+
+    /// The checklist's maps are the ones `--dicom-outputs` accepts.
+    #[test]
+    fn the_checklist_and_the_cli_name_the_same_maps() {
+        let mut ours: Vec<String> = DICOM_MAPS.iter().map(|m| m.suffix.to_lowercase()).collect();
+        let mut cli: Vec<String> = crate::cli::DICOM_OUTPUT_TOKENS.iter().map(|t| t.to_string()).collect();
+        ours.sort();
+        cli.sort();
+        assert_eq!(ours, cli);
+    }
+
+    /// `--dicom-outputs` takes one map per use or a comma list, and refuses unknown names.
+    #[test]
+    fn dicom_outputs_repeat_or_comma_separate() {
+        use clap::Parser;
+        let parse = |extra: &[&str]| {
+            let mut argv = vec!["qsmxt", "run", "bids", "--export-dicom"];
+            argv.extend_from_slice(extra);
+            crate::cli::Cli::try_parse_from(argv)
+        };
+        for args in [&["--dicom-outputs", "chimap,swi"][..], &["--dicom-outputs", "Chimap", "--dicom-outputs", "SWI"][..]] {
+            let crate::cli::Command::Run(r) = parse(args).unwrap().command else { panic!() };
+            let got: Vec<String> = r.dicom_outputs.unwrap().iter().map(|s| s.to_lowercase()).collect();
+            assert_eq!(got, ["chimap", "swi"], "{args:?}");
+        }
+        assert!(parse(&["--dicom-outputs", "chimapp"]).is_err(), "an unknown map is refused");
+        // A space-separated list no longer swallows the BIDS directory.
+        let argv = ["qsmxt", "run", "--export-dicom", "--dicom-outputs", "chimap", "bids"];
+        let crate::cli::Command::Run(r) = crate::cli::Cli::try_parse_from(argv).unwrap().command else { panic!() };
+        assert_eq!(r.bids_dir, std::path::PathBuf::from("bids"));
+    }
+
+    // ─── The Reconstruction sidebar (and its pill strip when narrow): focus, arrows, back ───
 
     #[test]
-    fn a_stage_with_sub_tabs_opens_on_its_sub_tab_strip() {
+    fn reconstruction_opens_on_its_sidebar_at_masking() {
         let mut app = App::new();
         app.handle_key(key(KeyCode::Char('3')));
-        assert_eq!(app.active_tab, TAB_PREPROCESSING);
-        assert!(app.on_subtabs());
-        assert_eq!(app.page(), Some(Page::Masking), "Preprocessing opens on Masking");
-        // ←/→ move along the strip, wrapping, and focus stays on it.
-        app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.active_tab, TAB_RECONSTRUCTION);
+        assert!(app.on_subtabs() && app.sidebar());
+        assert_eq!(app.page(), Some(Page::Masking), "Reconstruction opens on Masking");
+        // ↓/↑ move through the sections, across groups, without wrapping; focus stays.
+        app.handle_key(key(KeyCode::Down));
         assert_eq!(app.page(), Some(Page::Motion));
+        app.handle_key(key(KeyCode::Down));
+        assert_eq!(app.page(), Some(Page::FieldMap), "into the next group");
         assert!(app.on_subtabs());
-        app.handle_key(key(KeyCode::Right));
-        assert_eq!(app.page(), Some(Page::Geometry), "wraps");
-        app.handle_key(key(KeyCode::Left));
-        assert_eq!(app.page(), Some(Page::Motion), "wraps back");
-        assert!(app.on_subtabs());
-        // `[`/`]` still switch too.
-        app.handle_key(key(KeyCode::Char(']')));
+        app.handle_key(key(KeyCode::End));
+        assert_eq!(app.page(), Some(Page::Export));
+        app.handle_key(key(KeyCode::Down));
+        assert_eq!(app.page(), Some(Page::Export), "no wrap at the end");
+        app.handle_key(key(KeyCode::Home));
         assert_eq!(app.page(), Some(Page::Geometry));
+        // `[`/`]` switch too, wrapping.
+        app.handle_key(key(KeyCode::Char('[')));
+        assert_eq!(app.page(), Some(Page::Export));
+        assert!(app.on_subtabs());
+        // ← does nothing in the sidebar.
+        app.handle_key(key(KeyCode::Left));
+        assert_eq!(app.page(), Some(Page::Export));
         assert!(app.on_subtabs());
     }
 
     #[test]
-    fn down_enters_the_sub_tab_and_up_from_its_first_row_returns() {
+    fn right_enters_the_section_and_up_from_its_first_row_returns() {
         let mut app = App::new();
         app.handle_key(key(KeyCode::Char('3'))); // Masking, the default
-        let first = app.focusable_rows().len();
-        assert!(first > 1);
-        app.handle_key(key(KeyCode::Down));
+        assert!(app.focusable_rows().len() > 1);
+        app.handle_key(key(KeyCode::Right));
         assert!(!app.on_subtabs());
         assert_eq!(app.focus(), 0);
         assert_eq!(app.page(), Some(Page::Masking));
         app.handle_key(key(KeyCode::Down));
         assert_eq!(app.focus(), 1);
         app.handle_key(key(KeyCode::Up));
-        assert_eq!(app.focus(), 0);
+        app.handle_key(key(KeyCode::Up));
+        assert!(app.on_subtabs(), "↑ from the first row goes back to the sidebar");
+        assert_eq!(app.page(), Some(Page::Masking));
+        // Enter goes in too; from the first section ↑ goes to the tab bar and ↓ comes back.
+        app.handle_key(key(KeyCode::Enter));
         assert!(!app.on_subtabs());
         app.handle_key(key(KeyCode::Up));
-        assert!(app.on_subtabs());
-        // Up on the strip goes to the tab bar, Down comes back; Enter also goes into the rows.
+        app.handle_key(key(KeyCode::Home));
+        assert_eq!(app.page(), Some(Page::Geometry));
         app.handle_key(key(KeyCode::Up));
         assert!(app.tab_focus);
         app.handle_key(key(KeyCode::Down));
-        assert!(!app.tab_focus);
-        assert!(app.on_subtabs());
-        app.handle_key(key(KeyCode::Enter));
-        assert!(!app.on_subtabs());
-        assert_eq!(app.focus(), 0);
-        assert_eq!(app.page(), Some(Page::Masking));
+        assert!(!app.tab_focus && app.on_subtabs());
+        assert_eq!(app.page(), Some(Page::Geometry));
     }
 
-    /// On the strip, ←/→ switch sub-tabs; on a row they still change the row's choice.
+    /// In the sidebar ↑/↓ choose sections; on a row ←/→ still change the row's choice.
     #[test]
-    fn left_and_right_change_a_choice_on_a_row_not_the_sub_tab() {
+    fn left_and_right_change_a_choice_on_a_row_not_the_section() {
         let mut app = App::new();
-        app.handle_key(key(KeyCode::Char('4')));
-        assert!(app.on_subtabs());
-        let page = app.page();
-        app.handle_key(key(KeyCode::Down));
-        let field = app.focused_field_name();
-        let before = app.focused_row().map(|r| matches!(r, PipelineRow::Toggle { .. } | PipelineRow::AlgoSelect { .. }));
-        assert_eq!(before, Some(true), "first QSM row should be a choice or checkbox");
+        app.handle_key(key(KeyCode::Char('3')));
+        app.handle_key(key(KeyCode::Char(']'))); // Motion
+        app.handle_key(key(KeyCode::Char(']'))); // Field map
+        assert_eq!(app.page(), Some(Page::FieldMap));
         app.handle_key(key(KeyCode::Right));
-        assert_eq!(app.page(), page, "→ on a row switched the sub-tab");
+        let field = app.focused_field_name();
+        assert!(matches!(app.focused_row(), Some(PipelineRow::Toggle { .. } | PipelineRow::AlgoSelect { .. })));
+        app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.page(), Some(Page::FieldMap), "→ on a row switched the section");
         assert!(!app.on_subtabs());
         assert_eq!(app.focused_field_name(), field);
     }
 
-    /// Keys that act on a row do nothing while the strip has focus.
+    /// Keys that act on a row do nothing while the sidebar has focus.
     #[test]
-    fn row_keys_do_nothing_on_the_strip() {
+    fn row_keys_do_nothing_in_the_sidebar() {
         let mut app = App::new();
         app.handle_key(key(KeyCode::Char('3')));
-        app.handle_key(key(KeyCode::Right)); // Masking
         let before = crate::tui::command::build_command_string(&app);
         for k in [KeyCode::Char(' '), KeyCode::Char('d'), KeyCode::Delete, KeyCode::Char('r')] {
             app.handle_key(key(k));
-            assert!(app.on_subtabs(), "{k:?} left the strip");
+            assert!(app.on_subtabs(), "{k:?} left the sidebar");
         }
         assert_eq!(crate::tui::command::build_command_string(&app), before);
         assert!(app.algo_modal.is_none());
     }
 
-    /// Tabs without sub-tabs behave as before: focus starts on the first row.
+    /// Too narrow for the sidebar, the sections are a pill strip: ←/→ move along it, wrapping,
+    /// and ↓ enters the rows.
     #[test]
-    fn a_stage_without_sub_tabs_opens_on_its_first_row() {
+    fn a_narrow_terminal_keeps_the_pill_strip_keys() {
         let mut app = App::new();
-        for tab in [TAB_SEPARATION, TAB_EXECUTION] {
-            app.handle_key(key(KeyCode::Char(char::from_digit(tab as u32 + 1, 10).unwrap())));
-            assert_eq!(app.active_tab, tab);
-            assert!(!app.on_subtabs());
-            assert_eq!(app.focus(), 0);
-            app.handle_key(key(KeyCode::Up));
-            assert!(!app.on_subtabs());
-            assert!(app.tab_focus, "↑ from the first row goes to the tab bar");
-            app.handle_key(key(KeyCode::Down));
-            assert!(!app.tab_focus);
-        }
+        app.sidebar_layout.set(false);
+        app.handle_key(key(KeyCode::Char('3')));
+        assert!(app.on_subtabs() && !app.sidebar());
+        app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.page(), Some(Page::Motion));
+        app.handle_key(key(KeyCode::Left));
+        app.handle_key(key(KeyCode::Left));
+        app.handle_key(key(KeyCode::Left));
+        assert_eq!(app.page(), Some(Page::Export), "wraps");
+        app.handle_key(key(KeyCode::Down));
+        assert!(!app.on_subtabs());
+        assert_eq!(app.focus(), 0);
     }
 
-    /// Tab, Shift-Tab and the digits land on the strip of a stage with sub-tabs; `q` still quits.
+    /// The Execution tab has no pages to choose: focus starts on its first row.
     #[test]
-    fn tab_switching_and_quitting_work_from_the_strip() {
+    fn a_tab_without_sections_opens_on_its_first_row() {
+        let mut app = App::new();
+        app.handle_key(key(KeyCode::Char(char::from_digit(TAB_EXECUTION as u32 + 1, 10).unwrap())));
+        assert_eq!(app.active_tab, TAB_EXECUTION);
+        assert!(!app.on_subtabs());
+        assert_eq!(app.focus(), 0);
+        app.handle_key(key(KeyCode::Up));
+        assert!(app.tab_focus, "↑ from the first row goes to the tab bar");
+        app.handle_key(key(KeyCode::Down));
+        assert!(!app.tab_focus);
+    }
+
+    /// Tab, Shift-Tab and the digits land on the sidebar; `q` still quits from it.
+    #[test]
+    fn tab_switching_and_quitting_work_from_the_sidebar() {
         let mut app = App::new();
         app.handle_key(key(KeyCode::Tab));
         assert_eq!(app.active_tab, TAB_PIPELINE);
         app.handle_key(key(KeyCode::Tab));
-        assert_eq!(app.active_tab, TAB_PREPROCESSING);
+        assert_eq!(app.active_tab, TAB_RECONSTRUCTION);
         assert!(app.on_subtabs());
         app.handle_key(key(KeyCode::Tab));
-        assert_eq!(app.active_tab, TAB_QSM);
-        assert!(app.on_subtabs());
-        app.handle_key(key(KeyCode::Char('6')));
-        assert_eq!(app.active_tab, TAB_OUTPUTS);
+        assert_eq!(app.active_tab, TAB_EXECUTION);
+        app.handle_key(key(KeyCode::Char('3')));
+        assert_eq!(app.active_tab, TAB_RECONSTRUCTION);
         assert!(app.on_subtabs());
         app.handle_key(key(KeyCode::Char('q')));
         assert!(app.should_quit);
@@ -13160,20 +13486,20 @@ mod tests {
         app.handle_key(key(KeyCode::Right));
         assert_eq!(app.active_tab, TAB_PIPELINE);
         app.handle_key(key(KeyCode::Right));
-        assert_eq!(app.active_tab, TAB_PREPROCESSING);
+        assert_eq!(app.active_tab, TAB_RECONSTRUCTION);
         assert!(app.tab_focus);
-        assert!(!app.on_subtabs(), "the sub-tab strip must not look focused under the tab bar");
+        assert!(!app.on_subtabs(), "the sidebar must not look focused under the tab bar");
         app.handle_key(key(KeyCode::Right));
-        assert_eq!(app.active_tab, TAB_QSM);
-        for _ in 0..TAB_QSM + 1 {
+        assert_eq!(app.active_tab, TAB_EXECUTION);
+        for _ in 0..TAB_EXECUTION + 1 {
             app.handle_key(key(KeyCode::Left));
         }
         assert_eq!(app.active_tab, TAB_NAMES.len() - 1, "← from the first tab wraps to the last");
         // Digits still work and keep the bar focused.
         app.handle_key(key(KeyCode::Char('3')));
-        assert_eq!(app.active_tab, TAB_PREPROCESSING);
+        assert_eq!(app.active_tab, TAB_RECONSTRUCTION);
         assert!(app.tab_focus);
-        // ↓ goes into the tab: onto its sub-tab strip, here.
+        // ↓ goes into the tab: onto its sidebar, here.
         app.handle_key(key(KeyCode::Down));
         assert!(!app.tab_focus);
         assert!(app.on_subtabs());

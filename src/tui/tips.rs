@@ -62,7 +62,7 @@ pub const TIPS: &[Tip] = &[
         None,
     ),
     tip(
-        "The Methods tab (8) writes a methods paragraph for your current settings. Press `c` there to copy it.",
+        "The Methods tab (5) writes a methods paragraph for your current settings. Press `c` there to copy it.",
         None,
     ),
     tip(
@@ -74,7 +74,7 @@ pub const TIPS: &[Tip] = &[
         None,
     ),
     tip(
-        "QSMxT can write its results as DICOM for a PACS or a clinical viewer. Tick Export DICOM on the Other outputs tab, or pass `--export-dicom`.",
+        "QSMxT can write its results as DICOM for a PACS or a clinical viewer. Tick Export DICOM in the Reconstruction tab's DICOM section, or pass `--export-dicom`.",
         None,
     ),
     tip(
@@ -91,7 +91,7 @@ pub const TIPS: &[Tip] = &[
     ),
     tip("`qsmxt validate` checks a BIDS dataset before you run anything on it.", None),
     tip(
-        "QSMxT does more than QSM: SWI and SMWI, R2*, T2*, R2 and R2' maps, χ-separation and SynthSeg segmentation are on the Other outputs and χ-separation tabs.",
+        "QSMxT does more than QSM: SWI and SMWI, R2*, T2*, R2 and R2' maps, χ-separation and SynthSeg segmentation are in the Reconstruction tab's Other outputs sections.",
         None,
     ),
     tip(

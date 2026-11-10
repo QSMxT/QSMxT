@@ -300,12 +300,16 @@ supplementary maps are exported once you've asked for them:
 | Total χ | `--do-chisep` | `desc-total_Chimap` |
 
 To export only some of them, pass those tokens to `--dicom-outputs`
-(case-insensitive, comma- or space-separated):
+(case-insensitive), comma-separated or by repeating the flag; a name that is not
+in the table is refused:
 
 ```sh
 qsmxt run study/bids --do-chisep --export-dicom \
-  --dicom-outputs chimap,desc-paramagnetic_chimap,desc-diamagnetic_chimap
+  --dicom-outputs chimap,desc-paramagnetic_chimap --dicom-outputs desc-diamagnetic_chimap
 ```
+
+In the TUI, the Reconstruction tab's DICOM section lists the maps the settings
+make, each ticked; untick the ones to leave out.
 
 SMWI, the [segmentation](/QSMxT/reference/algorithms/#segmentation-and-per-structure-statistics)
 and the [multi-orientation](/QSMxT/reference/algorithms/#multi-orientation-cosmos-and-sti)

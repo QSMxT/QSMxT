@@ -8,6 +8,13 @@ const DL_STATUS: &str = "deep-learning models: enabled";
 #[cfg(not(feature = "dl"))]
 const DL_STATUS: &str = "deep-learning models: DISABLED in this build (classical algorithms only)";
 
+/// The maps `--dicom-outputs` can name: the exported series' suffixes, in lower case (matched
+/// case-insensitively). One value per use, so a list cannot swallow the BIDS directory after it.
+pub const DICOM_OUTPUT_TOKENS: [&str; 10] = [
+    "chimap", "swi", "minip", "t2starmap", "r2starmap", "r2map", "r2primemap",
+    "desc-paramagnetic_chimap", "desc-diamagnetic_chimap", "desc-total_chimap",
+];
+
 #[derive(Parser, Debug)]
 #[command(
     name = "qsmxt",
@@ -2082,11 +2089,10 @@ pub struct RunArgs {
     #[arg(long)]
     pub source_dicom: Option<PathBuf>,
 
-    /// Restrict DICOM export to these maps (default: all produced). Values:
-    /// chimap, swi, minip, t2starmap, r2starmap, r2map, r2primemap,
-    /// desc-paramagnetic_chimap, desc-diamagnetic_chimap, desc-total_chimap
-    /// (used with --export-dicom)
-    #[arg(long, num_args = 1.., value_delimiter = ',')]
+    /// Restrict DICOM export to these maps (default: all produced); repeat the flag or
+    /// comma-separate them (used with --export-dicom)
+    #[arg(long, value_delimiter = ',', action = clap::ArgAction::Append, ignore_case = true,
+          value_parser = clap::builder::PossibleValuesParser::new(DICOM_OUTPUT_TOKENS))]
     pub dicom_outputs: Option<Vec<String>>,
 
     /// Print the processing plan, the pipeline graph and the methods text without running
@@ -2279,9 +2285,10 @@ pub struct SlurmArgs {
     #[arg(long)]
     pub source_dicom: Option<PathBuf>,
 
-    /// Restrict DICOM export to these maps (default: all produced); values as for `qsmxt run`
-    /// (used with --export-dicom)
-    #[arg(long, num_args = 1.., value_delimiter = ',')]
+    /// Restrict DICOM export to these maps (default: all produced); repeat the flag or
+    /// comma-separate them (used with --export-dicom)
+    #[arg(long, value_delimiter = ',', action = clap::ArgAction::Append, ignore_case = true,
+          value_parser = clap::builder::PossibleValuesParser::new(DICOM_OUTPUT_TOKENS))]
     pub dicom_outputs: Option<Vec<String>>,
 
     /// Apply the recommended value of every reasoned recommendation that is not dismissed
