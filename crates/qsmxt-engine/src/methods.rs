@@ -1865,7 +1865,7 @@ fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
         }
         (true, false) => {
             doc.cite(&CITE_MCPC3DS);
-            doc.say(&[Stage::FieldMap], format!("Phase offset removal was performed using the HIP method (Eckstein et al., 2018{sigma})."));
+            doc.say(&[Stage::FieldMap], format!("Phase offset removal was performed using MCPC-3D-S (Eckstein et al., 2018{sigma})."));
         }
         (false, true) => {
             doc.cite(&CITE_BIPOLAR);
