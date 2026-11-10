@@ -305,6 +305,7 @@ supplementary maps are exported once you've asked for them:
 | Paramagnetic χ | `--do-chisep` | `desc-paramagnetic_Chimap` |
 | Diamagnetic χ | `--do-chisep` | `desc-diamagnetic_Chimap` |
 | Total χ | `--do-chisep` | `desc-total_Chimap` |
+| Segmentation (a DICOM SEG, below) | `--do-segmentation`, `--use-custom-dseg` | `dseg` |
 
 To export only some of them, pass those tokens to `--dicom-outputs`
 (case-insensitive), comma-separated or by repeating the flag; a name that is not
@@ -318,9 +319,22 @@ qsmxt run study/bids --do-chisep --export-dicom \
 In the TUI, the Reconstruction tab's DICOM section lists the maps the settings
 make, each ticked; untick the ones to leave out.
 
-The [segmentation](/QSMxT/reference/algorithms/#segmentation-and-per-structure-statistics)
-and the [multi-orientation](/QSMxT/reference/algorithms/#multi-orientation-cosmos-and-sti)
+The [multi-orientation](/QSMxT/reference/algorithms/#multi-orientation-cosmos-and-sti)
 reconstructions stay NIfTI-only.
+
+**The segmentation as a DICOM SEG.** The
+[segmentation](/QSMxT/reference/algorithms/#segmentation-and-per-structure-statistics)
+is written as one DICOM Segmentation object (`sub-01_dseg_dicoms/sub-01_dseg.dcm`):
+each structure is a binary segment, drawn on the χ series it was exported with, so
+a viewer overlays it there (OHIF, Weasis 4.3 or later, and 3D Slicer with the
+QuantitativeReporting extension; check your PACS's DICOM conformance statement for
+*Segmentation Storage*). It therefore needs χ in the same export: with χ left out of
+`--dicom-outputs`, or no QSM, the segmentation is not exported and the log says so.
+SynthSeg's structures are coded with the standard's codes for brain structures
+(DICOM PS3.16 CID 7153 and CID 7140), with left and right as modifiers, so a viewer
+can name them in any language. A supplied segmentation (`--use-custom-dseg`) need not
+use FreeSurfer's numbering, so its labels are coded only as intracranial structures
+and named from its `dseg.tsv`.
 
 **Filing them beside the source study.** By default the derived series carry a synthesised identity: patient fields are
 left empty and a stable `StudyInstanceUID` is derived from the subject and
@@ -359,7 +373,7 @@ A few more things worth knowing:
   are filled in too: from `--source-dicom` when given, else from the run's BIDS
   sidecar (`PatientPosition`, `RepetitionTime`, `EchoTrainLength`, `BodyPart`,
   as dcm2niix and `qsmxt dicom-convert` write them), else left empty rather than
-  guessed.
+  guessed. The segmentation is a *Segmentation Storage* object.
 - Export is best-effort: a failure is logged and the run still succeeds.
 - `--export-dicom` is a pipeline setting, so it can live in a
   [config file](/QSMxT/reference/configuration/) as `export_dicom = true` under
