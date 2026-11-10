@@ -48,12 +48,17 @@ struct Converted {
 
 /// Convert a session, if dcm2niix is available.
 fn convert_to(session: &DicomSession, out: &Path) -> Option<(Vec<String>, Vec<String>)> {
+    convert_with(session, out, convert::ConvertOptions::default())
+}
+
+/// Convert a session with `options`, if dcm2niix is available.
+fn convert_with(session: &DicomSession, out: &Path, options: convert::ConvertOptions) -> Option<(Vec<String>, Vec<String>)> {
     if convert::find_dcm2niix().is_none() {
         eprintln!("dcm2niix not found: skipping the conversion checks");
         return None;
     }
     let (tx, rx) = mpsc::channel();
-    convert::convert_session_streaming(session, out, &tx);
+    convert::convert_session_streaming(session, out, options, &tx);
     drop(tx);
     let (mut errors, mut log) = (Vec::new(), Vec::new());
     for m in rx {
@@ -91,6 +96,31 @@ fn assert_images(c: &Converted, want: &[String]) {
     let want: Vec<&String> = want.iter().collect();
     assert_eq!(got, want, "errors: {:?}\nlog:\n{}", c.errors, c.log.join("\n"));
     assert!(c.errors.is_empty(), "{:?}", c.errors);
+}
+
+/// By default the sidecars carry no study UIDs (dcm2niix -ba y); `--keep-dicom-uids` keeps
+/// dcm2niix's Study/Series UIDs (-ba o) and adds the FrameOfReferenceUID, and still no patient.
+#[test]
+fn study_uids_only_when_asked_for() {
+    let (_d, s) = scan("swi_qsm_and_magnitude");
+    let sidecar = |root: &Path| -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(root.join(format!(
+            "sub-synth01/ses-20240101/anat/{PREFIX}_acq-t2starSWIandQSM_part-phase_T2starw.json"))).unwrap()).unwrap()
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let (plain, kept) = (dir.path().join("plain"), dir.path().join("kept"));
+    let Some((errors, _)) = convert_to(&s, &plain) else { return };
+    assert!(errors.is_empty(), "{errors:?}");
+    let json = sidecar(&plain);
+    for key in ["StudyInstanceUID", "SeriesInstanceUID", "FrameOfReferenceUID", "PatientName", "PatientID"] {
+        assert!(json.get(key).is_none(), "{key} in a de-identified sidecar");
+    }
+    let (errors, _) = convert_with(&s, &kept, convert::ConvertOptions { keep_dicom_uids: true }).unwrap();
+    assert!(errors.is_empty(), "{errors:?}");
+    let json = sidecar(&kept);
+    let study = json["StudyInstanceUID"].as_str().expect("StudyInstanceUID kept");
+    assert_eq!(json["FrameOfReferenceUID"].as_str(), Some(format!("{study}.9").as_str()), "{json}");
+    assert!(json.get("PatientName").is_none() && json.get("PatientID").is_none(), "{json}");
 }
 
 #[test]

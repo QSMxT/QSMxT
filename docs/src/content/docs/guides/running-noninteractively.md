@@ -348,6 +348,13 @@ the maps land beside the acquisition they came from:
 qsmxt run study/bids --export-dicom --source-dicom /data/dicoms/sub-01
 ```
 
+Without the original DICOMs to hand, a dataset converted with
+[`qsmxt dicom-convert --keep-dicom-uids`](#keeping-the-studys-dicom-uids) does
+nearly as well: its sidecars keep the study's `StudyInstanceUID` and
+`FrameOfReferenceUID`, so the exported series file into the original study and
+line up with its images, though with no patient fields. `--source-dicom` still
+wins where it is given.
+
 `SeriesInstanceUID` and `SOPInstanceUID` are always newly generated: these are
 distinct derived series, never a rewrite of the originals. Every instance is
 tagged `DERIVED\SECONDARY`, and each map gets a stable `SeriesNumber` so viewers
@@ -430,6 +437,29 @@ will get. Warnings follow the list: an incomplete export (missing slices, empty
 files, magnitude and phase with different numbers of images), a series whose
 files name different patients, and two original series that look like the same
 images.
+
+### Keeping the study's DICOM UIDs
+
+By default the conversion is fully de-identified (dcm2niix's `-ba y`): the
+sidecars carry the acquisition parameters but no patient fields, dates or DICOM
+UIDs. `--keep-dicom-uids` keeps the study's `StudyInstanceUID`,
+`SeriesInstanceUID`, `StudyID` and dates (dcm2niix's `-ba o`, which still strips
+the patient's name, ID, birth date and the like) and adds the
+`FrameOfReferenceUID`, under the DICOM keywords as BIDS recommends for metadata it
+does not define:
+
+```sh
+qsmxt dicom-convert /data/dicoms study/bids --keep-dicom-uids
+```
+
+A later [DICOM export](#exporting-results-as-dicom) then files its series into
+the original study in a PACS, without `--source-dicom`.
+
+:::caution[Not for sharing]
+The UIDs name no one, but anyone holding the original study can link such a
+dataset back to it, and through it to the patient. Keep a dataset converted with
+`--keep-dicom-uids` inside your site; convert again without it to share.
+:::
 
 ### What it handles
 

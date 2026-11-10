@@ -27,6 +27,8 @@ pub enum InputMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DicomFocus {
     Series(usize), // index into flat series list
+    /// Keep the study's DICOM UIDs in the sidecars ([`dicom::convert::ConvertOptions`]).
+    KeepUids,
     ConvertButton,
 }
 
@@ -56,6 +58,8 @@ pub struct DicomConvertState {
     pub scroll_offset: usize,
     pub dicom_dir: String,
     pub output_dir: String,
+    /// Convert with `--keep-dicom-uids`.
+    pub keep_uids: bool,
     pub scan_status: ScanStatus,
     pub scan_error: Option<String>,
     scan_receiver: Option<mpsc::Receiver<Result<dicom::DicomSession, String>>>,
@@ -79,6 +83,7 @@ impl Default for DicomConvertState {
             scroll_offset: 0,
             dicom_dir: String::new(),
             output_dir: String::new(),
+            keep_uids: false,
             scan_status: ScanStatus::Idle,
             scan_error: None,
             scan_receiver: None,
@@ -228,9 +233,10 @@ impl DicomConvertState {
                 if i + 1 < series_count {
                     self.focus = DicomFocus::Series(i + 1);
                 } else {
-                    self.focus = DicomFocus::ConvertButton;
+                    self.focus = DicomFocus::KeepUids;
                 }
             }
+            DicomFocus::KeepUids => self.focus = DicomFocus::ConvertButton,
             DicomFocus::ConvertButton => {}
         }
     }
@@ -239,7 +245,8 @@ impl DicomConvertState {
         match self.focus {
             DicomFocus::Series(0) => {} // at top of series, handle_dicom_tab_key goes to IO
             DicomFocus::Series(i) => self.focus = DicomFocus::Series(i - 1),
-            DicomFocus::ConvertButton => {
+            DicomFocus::ConvertButton => self.focus = DicomFocus::KeepUids,
+            DicomFocus::KeepUids => {
                 let series_count = self.session.as_ref().map(|s| s.unique_series_count()).unwrap_or(0);
                 if series_count > 0 {
                     self.focus = DicomFocus::Series(series_count - 1);
@@ -6914,6 +6921,7 @@ impl App {
             KeyCode::Enter | KeyCode::Char(' ') => {
                 match self.dicom_state.focus {
                     DicomFocus::Series(_) => self.relabel_focused_unique_series(true),
+                    DicomFocus::KeepUids => self.dicom_state.keep_uids = !self.dicom_state.keep_uids,
                     DicomFocus::ConvertButton => {
                         self.run_dicom_conversion();
                     }
@@ -6994,11 +7002,12 @@ impl App {
 
         let session = self.dicom_state.session.clone().unwrap();
         let output_path = std::path::PathBuf::from(&output_dir);
+        let options = dicom::convert::ConvertOptions { keep_dicom_uids: self.dicom_state.keep_uids };
         let (tx, rx) = mpsc::channel();
         self.dicom_state.convert_receiver = Some(rx);
 
         std::thread::spawn(move || {
-            dicom::convert::convert_session_streaming(&session, &output_path, &tx);
+            dicom::convert::convert_session_streaming(&session, &output_path, options, &tx);
         });
     }
 
@@ -11555,12 +11564,16 @@ mod tests {
     #[test]
     fn test_dicom_focus_next_prev_no_session() {
         let mut ds = DicomConvertState::default();
-        // No session, so focus_next from Series(0) goes to ConvertButton
+        // No session, so focus_next from Series(0) goes to the keep-UIDs toggle, then the button
+        ds.focus_next();
+        assert_eq!(ds.focus, DicomFocus::KeepUids);
         ds.focus_next();
         assert_eq!(ds.focus, DicomFocus::ConvertButton);
-        // focus_prev from ConvertButton with no session stays at ConvertButton
+        // Back up to the toggle; with no session there is no series above it
         ds.focus_prev();
-        assert_eq!(ds.focus, DicomFocus::ConvertButton);
+        assert_eq!(ds.focus, DicomFocus::KeepUids);
+        ds.focus_prev();
+        assert_eq!(ds.focus, DicomFocus::KeepUids);
     }
 
     #[test]
@@ -11569,7 +11582,12 @@ mod tests {
         app.input_mode = InputMode::DicomToBids;
         app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
-        // No session, so focus_next just goes to ConvertButton
+        // No session, so ↓ goes to the keep-UIDs toggle, which Space flips, then the button
+        app.handle_key(key(KeyCode::Down));
+        assert_eq!(app.dicom_state.focus, DicomFocus::KeepUids);
+        assert!(!app.dicom_state.keep_uids, "off by default: a fully de-identified dataset");
+        app.handle_key(key(KeyCode::Char(' ')));
+        assert!(app.dicom_state.keep_uids);
         app.handle_key(key(KeyCode::Down));
         assert_eq!(app.dicom_state.focus, DicomFocus::ConvertButton);
     }

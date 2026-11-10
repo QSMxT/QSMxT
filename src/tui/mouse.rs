@@ -260,6 +260,8 @@ impl App {
             InputTarget::Nifti(NiftiFocus::MagFile(_) | NiftiFocus::PhaseFile(_)) => None,
             InputTarget::Nifti(NiftiFocus::ConvertButton) => again.then_some(KeyCode::Enter),
             InputTarget::Nifti(_) => Some(KeyCode::Enter),
+            // A tick box ticks on the first click, as the example acquisitions do.
+            InputTarget::Dicom(super::app::DicomFocus::KeepUids) => Some(KeyCode::Char(' ')),
             InputTarget::Dicom(_) => again.then_some(KeyCode::Enter),
             InputTarget::Example(c) if c != ExampleState::BUTTON => Some(KeyCode::Char(' ')),
             InputTarget::Example(_) => again.then_some(KeyCode::Enter),
