@@ -273,6 +273,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         },
         sdf: qsm_core::bgremove::SdfParams::default(),
         tile: cfg.dl_tile(),
+        erode_voxels: cfg.bg_removal.erode_voxels,
     };
 
     let inversion = PInversion {
@@ -495,7 +496,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
 /// ([`crate::recommendations`]).
 ///
 /// iQFM has no QSM.rs background removal (the runner calls `run_iqfm` itself), so it goes to the
-/// rules as iHARPERELLA, which no rule names: a rule about the background removal then sees a
+/// rules as HARPERELLA, which no rule names (iHARPERELLA has `iharperella.whole-rim`): a rule about the background removal then sees a
 /// method it does not expect, and none is triggered by it. `map_bf_alg`'s V-SHARP placeholder
 /// would pass the rules that expect V-SHARP.
 ///
@@ -505,7 +506,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
 pub fn to_qsm_pipeline_config(cfg: &PipelineConfig) -> qsm_core::pipeline::QsmPipelineConfig {
     let (field_mapping, mut bg_removal, inversion, reference) = to_pipeline_stages(cfg);
     if cfg.bg_removal.algorithm == BfAlgorithm::Iqfm {
-        bg_removal.algorithm = PBgAlg::Iharperella;
+        bg_removal.algorithm = PBgAlg::Harperella;
     }
     qsm_core::pipeline::QsmPipelineConfig {
         masking: qsm_core::pipeline::MaskingConfig {

@@ -857,6 +857,32 @@ fn the_toolbox_route_is_drawn_reading_only_what_it_uses() {
     assert!(g.has_edge("r2_r2prime", "chi_separation"), "{:?}", g.edges);
 }
 
+/// An oblique scan on χ-sepnet's toolbox route stays on the acquired grid (#497): no resampling
+/// step and no return, the B0 direction comes from the header, and the route itself maps its inputs
+/// into the networks' frame (checked in QSM.rs's `tests/chisep_orientation.rs`). Wiring only.
+#[test]
+fn an_oblique_scan_on_the_chisepnet_toolbox_route_stays_on_the_acquired_grid() {
+    let mut config = PipelineConfig::default();
+    config.pipeline.do_chi_separation = true;
+    config.separation.algorithm = SeparationAlgorithm::ChiSepNet;
+    assert_eq!(config.separation.chi_sepnet.route, crate::ChiSepNetRoute::Toolbox);
+    let f = facts();
+    let g = graph(&config, &f);
+    assert!(g.node("resample_axial").is_none() && g.node("output_space").is_none(), "{:?}", ids(&g));
+    assert!(!crate::scan::can_resample(&f, &config));
+    assert_consistent(&g);
+
+    // A 20° oblique header: kept on its grid, B0 rotated into it.
+    let (cos, sin) = (20f64.to_radians().cos(), 20f64.to_radians().sin());
+    let affine = [1.0, 0.0, 0.0, 0.0, 0.0, cos, -sin, 0.0, 0.0, sin, cos, 0.0, 0.0, 0.0, 0.0, 1.0];
+    let meta = crate::scan::resolve_geometry(f.dims, (1.0, 1.0, 1.0), affine, &f, &config);
+    assert!(meta.source_geometry.is_none(), "not resampled");
+    assert_eq!(meta.dims, f.dims);
+    assert!((meta.b0_direction.2 - 1.0).abs() > 1e-3, "B0 from the header: {:?}", meta.b0_direction);
+    let g = pipeline_graph(&crate::plan::plan(&config, &f), &config, &f, Some(&meta));
+    assert!(g.node("resample_axial").is_none() && g.node("output_space").is_none(), "{:?}", ids(&g));
+}
+
 /// A run that windows and may be resampled: phase scaling, the Tukey window and the resampling
 /// in data order, the resampling and the return conditional on the header, and the magnitude
 /// windowed with the phase.

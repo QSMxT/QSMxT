@@ -69,6 +69,7 @@ mod integration_tests {
                 cosmos_max_iter: None,
                 unwrapping_algorithm: None,
                 bf_algorithm: None,
+                bf_erode_voxels: None,
                 masking_input: None,
                 phase_offset_removal: None,
                 phase_offset_sigma_mm: None,

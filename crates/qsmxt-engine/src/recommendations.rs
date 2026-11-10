@@ -46,7 +46,7 @@ use crate::config::{Dismissal, PipelineConfig};
 use crate::enums::*;
 use crate::masking::MaskOp;
 
-/// How strongly a rule applies (QSM.rs's `Strength`). Ordered `Reference < Discouraged <
+/// How strongly a rule applies (QSM.rs's `Strength`). Ordered `Reference < Suggested < Discouraged <
 /// Recommended < Required`: on one setting, the strongest finding takes precedence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -54,6 +54,10 @@ pub enum Strength {
     /// What the method's reference pipeline used, where its authors never said it is needed or
     /// better. Information only.
     Reference,
+    /// What QSM.rs measured to be better on some data but not all (in vivo, not on the simulated
+    /// head): offered with its reason, but Keep mine is preselected and `--accept-recommendations`
+    /// leaves it ([`Strength::preselected`]).
+    Suggested,
     /// A combination known to fail.
     Discouraged,
     /// What the authors recommend, or what QSM.rs measured to be better.
@@ -66,24 +70,30 @@ impl Strength {
     pub fn label(self) -> &'static str {
         match self {
             Strength::Reference => "reference",
+            Strength::Suggested => "suggested",
             Strength::Discouraged => "discouraged",
             Strength::Recommended => "recommended",
             Strength::Required => "required",
         }
     }
 
-    /// Whether a finding of this strength is offered as a change with the recommended value
-    /// preselected (a modal, `--accept-recommendations`): the reasoned ones, every strength but
-    /// `reference`.
+    /// Whether a finding of this strength is offered as a change (a modal, a badge): the reasoned
+    /// ones, every strength but `reference`.
     pub fn actionable(self) -> bool {
         self != Strength::Reference
     }
 
+    /// Whether the change is preselected and applied by `--accept-recommendations`: every reasoned
+    /// strength but `suggested` (QSM.rs's `Strength::preselected`).
+    pub fn preselected(self) -> bool {
+        matches!(self, Strength::Discouraged | Strength::Recommended | Strength::Required)
+    }
+
     /// Whether a finding of this strength can be dismissed ("Keep mine", `--dismiss-recommendation`):
-    /// `recommended` and `discouraged`. A `required` one must be followed, and a `reference` one is
+    /// `recommended`, `suggested` and `discouraged`. A `required` one must be followed, and a `reference` one is
     /// information only: never applied, and in the methods Note either way.
     pub fn dismissable(self) -> bool {
-        matches!(self, Strength::Recommended | Strength::Discouraged)
+        matches!(self, Strength::Recommended | Strength::Suggested | Strength::Discouraged)
     }
 }
 
@@ -91,6 +101,7 @@ impl From<core::Strength> for Strength {
     fn from(s: core::Strength) -> Self {
         match s {
             core::Strength::Reference => Strength::Reference,
+            core::Strength::Suggested => Strength::Suggested,
             core::Strength::Discouraged => Strength::Discouraged,
             core::Strength::Recommended => Strength::Recommended,
             core::Strength::Required => Strength::Required,
@@ -471,6 +482,7 @@ const SETTINGS: &[(&str, &str, Mapping)] = &[
     ("bg_removal.vsharp.min_radius", "bg_removal.vsharp.min_radius", Mapping::Same),
     ("bg_removal.vsharp.radius_step", "bg_removal.vsharp.radius_step", Mapping::Same),
     ("bg_removal.vsharp.grid", "bg_removal.vsharp.grid", Mapping::VsharpGrid),
+    ("bg_removal.iharperella.rim", "bg_removal.iharperella.rim", Mapping::Same),
     ("bg_removal.ismv.variant", "bg_removal.ismv.variant", Mapping::Same),
     ("bg_removal.ismv.tol", "bg_removal.ismv.tol", Mapping::Same),
     ("bg_removal.ismv.max_iter", "bg_removal.ismv.max_iter", Mapping::Same),
@@ -484,6 +496,7 @@ const SETTINGS: &[(&str, &str, Mapping)] = &[
     ("inversion.star.te", "inversion.star.te", Mapping::Same),
     ("inversion.fansi.te", "inversion.fansi.te", Mapping::Same),
     ("inversion.ndi.te", "inversion.ndi.te", Mapping::Same),
+    ("inversion.ndi.weight_norm", "inversion.ndi.weight_norm", Mapping::Same),
     ("inversion.l1qsm.te", "inversion.l1qsm.te", Mapping::Same),
     ("inversion.whqsm.te", "inversion.whqsm.te", Mapping::Same),
     ("inversion.medi.msmv", "inversion.medi.msmv", Mapping::Same),
@@ -1158,7 +1171,7 @@ fn settle_where(findings: &[Recommendation], takes: impl Fn(&Recommendation) -> 
 /// were before the change) and those left because they conflict.
 pub fn accept(config: &mut PipelineConfig, findings: &[Recommendation], which: Accept) -> (Vec<Recommendation>, Vec<Recommendation>) {
     let settled = settle_where(findings, |r| match r.kind {
-        Kind::Reasoned => which.recommendations && r.actionable(),
+        Kind::Reasoned => which.recommendations && r.actionable() && r.strength.preselected(),
         Kind::Reference => which.reference,
     });
     let mut applied = Vec::new();

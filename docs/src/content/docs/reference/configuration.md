@@ -145,6 +145,9 @@ weight_norm = "global-max"  # or "mask-p999"
 
 [bg_removal.harperella]
 rim = "whole"             # or "sti" (iHARPERELLA's default)
+
+[bg_removal]
+erode_voxels = 0          # erode the mask by N voxels before background removal; --bf-erode-voxels
 ```
 
 HEIDI after the inversion ([HEIDI streaking reduction](/QSMxT/reference/algorithms/#heidi-streaking-reduction))
@@ -171,7 +174,7 @@ that is off by default (iSMV's `max_iter`, DECOMPOSE's
 
 Recommendations you chose not to follow (see
 [Recommendations](/QSMxT/guides/running-noninteractively/#recommendations)) are kept in the
-file, each with the value of its setting at the time. Only recommended and discouraged
+file, each with the value of its setting at the time. Only recommended, suggested and discouraged
 findings are kept; one for a reference-pipeline difference is dropped when the file is read. A change to the setting brings the
 recommendation back:
 

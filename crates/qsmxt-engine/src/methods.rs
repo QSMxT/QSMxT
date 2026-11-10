@@ -1297,6 +1297,12 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                     let alg = &config.bg_removal.algorithm;
                     let (name, cite) = bg_removal_name_cite(*alg);
                     doc.cite(cite);
+                    let erode = config.bg_removal.erode_voxels;
+                    if erode > 0 {
+                        doc.say(&both(Stage::BackgroundRemoval), format!(
+                            "Before background field removal, the brain mask was eroded by {erode} voxel{}.",
+                            if erode == 1 { "" } else { "s" }));
+                    }
                     if *alg == BfAlgorithm::Vsharp {
                         let (v, d) = (&config.bg_removal.vsharp, VsharpConfig::default());
                         let mut changed = Changed::default();
@@ -2990,6 +2996,11 @@ mod tests {
         config.bg_removal.algorithm = BfAlgorithm::Pdf;
         config.bg_removal.pdf.n_cg = 300;
         assert!(generate_methods(&config).contains("at most 300 conjugate-gradient iterations"));
+        assert!(!generate_methods(&config).contains("was eroded by"));
+        config.bg_removal.erode_voxels = 3;
+        assert!(generate_methods(&config).contains("Before background field removal, the brain mask was eroded by 3 voxels."));
+        config.bg_removal.erode_voxels = 1;
+        assert!(generate_methods(&config).contains("eroded by 1 voxel."));
     }
 
     #[test]

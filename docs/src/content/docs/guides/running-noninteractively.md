@@ -111,6 +111,9 @@ setting on its own.
   authors give it, QSM.rs measured it, or the combination is known to fail. Each is logged as
   a warning before the runs start, a dismissed one too (marked "dismissed, kept").
   `--accept-recommendations` applies them.
+- **Suggested**: measured to be better on some data but not all (for example in vivo, but not on
+  the simulated head). Logged with its reason like a recommendation, but `--accept-recommendations`
+  leaves it, and it is not listed in the methods Note. Apply it by setting the value yourself.
 - **Original authors' setting**: the method's authors used another value (their code, paper or
   README does it), and no reason is given that it is better. It is not a recommendation. It is
   logged as information, listed in the methods Note, and applied only with

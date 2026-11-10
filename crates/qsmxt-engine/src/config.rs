@@ -1753,6 +1753,11 @@ pub struct BgRemovalConfig {
     pub resharp: ResharpConfig,
     pub harperella: HarperellaConfig,
     pub iharperella: IharperellaConfig,
+    /// Erode the brain mask by this many voxels after field mapping, before background removal
+    /// (qsm-core's `BgRemovalConfig::erode_voxels`); 0 = none. The field map is not masked again,
+    /// so the method still sees the field just outside the eroded mask. Eroding in the masking
+    /// stage instead would mask the field map too.
+    pub erode_voxels: usize,
 }
 impl Default for BgRemovalConfig {
     fn default() -> Self {
@@ -1762,6 +1767,7 @@ impl Default for BgRemovalConfig {
             lbv: LbvConfig::default(), ismv: IsmvConfig::default(),
             sharp: SharpConfig::default(), resharp: ResharpConfig::default(),
             harperella: HarperellaConfig::default(), iharperella: IharperellaConfig::default(),
+            erode_voxels: 0,
         }
     }
 }

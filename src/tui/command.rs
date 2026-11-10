@@ -309,6 +309,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         // effect, and iQFM there is refused (#276). Said when not the general default.
         bf_algorithm: (ps.inversion_needs_bg_removal() && ps.bf_algorithm != 0)
             .then(|| bf_options[ps.bf_algorithm]),
+        bf_erode_voxels: (ps.inversion_needs_bg_removal() && bf_options.get(ps.bf_algorithm).copied() != Some(crate::cli::BfAlgorithmArg::Iqfm))
+            .then(|| parse_optional_usize(&ps.bf_erode_voxels)).flatten().filter(|&n| n > 0),
         masking_input: None,
         phase_offset_removal: Some(ps.phase_offset_removal),
         phase_offset_sigma_mm: parse_optional_f64_vec3(&ps.phase_offset_sigma_mm),

@@ -99,6 +99,9 @@ Suggestions come in two kinds, labelled differently:
 
 - **Recommended** (also *Required* or *Discouraged*): there is a stated reason another value is
   better. The pop-up gives the reason, and the recommended value is preselected.
+- **Suggested**: measured to be better on some data but not all (for example in vivo, but not
+  on the simulated head), such as NDI's in-mask weight normaliser. The pop-up gives the reason,
+  but **Keep mine** is preselected.
 - **Original authors' setting**: what the method's authors used, with no reason given that it is
   better. It is shown so that you can reproduce their pipeline, but it is not a recommendation,
   so its value is never preselected: **Keep mine** is.

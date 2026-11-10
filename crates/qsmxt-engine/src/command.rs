@@ -355,6 +355,7 @@ fn command_for(config: &PipelineConfig, d: &PipelineConfig, pipeline: Option<&st
     if config.bg_removal.algorithm != d.bg_removal.algorithm {
         parts.push(format!("--bf-algorithm {}", config.bg_removal.algorithm));
     }
+    emit_usize(&mut parts, "--bf-erode-voxels", config.bg_removal.erode_voxels, d.bg_removal.erode_voxels);
     match config.bg_removal.algorithm {
         BfAlgorithm::Vsharp => {
             if config.bg_removal.vsharp.deconvolve != d.bg_removal.vsharp.deconvolve {
@@ -1302,6 +1303,10 @@ mod tests {
             c.bg_removal.iharperella.rim = rim;
             assert!(generate_command(&c).contains(&format!("{flag} {rim}")), "{}", generate_command(&c));
         }
+        let mut c = PipelineConfig::default();
+        assert!(!generate_command(&c).contains("--bf-erode-voxels"));
+        c.bg_removal.erode_voxels = 3;
+        assert!(generate_command(&c).contains("--bf-erode-voxels 3"), "{}", generate_command(&c));
         let mut c = PipelineConfig::default();
         c.inversion.algorithm = QsmAlgorithm::Ndi;
         assert!(!generate_command(&c).contains("--ndi-weight-norm"));
