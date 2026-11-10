@@ -1171,7 +1171,7 @@ mod tests {
 
     fn seg_opts(synthseg: bool, filter: Option<&[String]>) -> DicomExportOptions<'_> {
         DicomExportOptions {
-            export_swi: false, export_t2star: false, export_r2star: false, export_r2: false,
+            export_swi: false, export_smwi: false, export_t2star: false, export_r2star: false, export_r2: false,
             export_r2prime: false, export_chisep: false, source_dicom: None, outputs_filter: filter,
             segmentation: Some(SegmentationExport { synthseg, algorithm: "SynthSeg 1.0".into() }),
         }
