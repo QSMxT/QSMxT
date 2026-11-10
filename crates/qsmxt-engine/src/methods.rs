@@ -777,9 +777,11 @@ fn medi_msmv(config: &PipelineConfig, doc: &mut Draft) -> String {
 fn qsmart_changes(config: &PipelineConfig) -> Changed {
     let (q, d) = (&config.inversion.qsmart, QsmartConfig::default());
     let mut c = Changed::default();
-    let mut skip = vec!["inversion", "vessel_magnitude", "vessel_size_units"];
+    let mut skip = vec!["inversion", "vessel_magnitude", "vessel_size_units", "offset_grid"];
     skip.extend(QSMART_VESSEL_SIZE_KEYS);
     c.add_fields(q, &d, &skip);
+    c.add(q.offset_grid == crate::enums::QsmartOffsetGrid::QsmartReference,
+        || "the stages' offset adjusted on the dipole grid of QSMART's adjust_offset.m".to_string());
     // In other units than the default, the sizes are said whatever they are: the default numbers
     // mean something else.
     let u = q.vessel_size_units;
@@ -852,7 +854,11 @@ fn separation_changes(config: &PipelineConfig) -> Changed {
         SeparationAlgorithm::R2starQsm => c.add_fields(&s.r2star_qsm, &d.r2star_qsm, &[]),
         SeparationAlgorithm::Decompose => {
             // Unwrapping and a χ bound from the echo spacing have sentences of their own.
-            c.add_fields(&s.decompose, &d.decompose, &["lsqcurvefit", "unwrap_phase", "chi_bound"]);
+            c.add_fields(&s.decompose, &d.decompose, &["lsqcurvefit", "unwrap_phase", "chi_bound", "fit"]);
+            c.add(s.decompose.fit == crate::enums::DecomposeFit::Paper, || "the paper's fit (the \
+                compartment amplitudes constrained to sum to one and R2*₀ fitted by linear least squares, \
+                χ± by trust-region-reflective least squares, each voxel's magnitude scaled to its signal \
+                at TE = 0, extrapolated from the first two echoes)".to_string());
             if let ChiBoundChoice::Ppm(x) = s.decompose.chi_bound {
                 c.add(s.decompose.chi_bound != d.decompose.chi_bound, || format!("χ bound = {x} ppm"));
             }
@@ -3132,7 +3138,7 @@ mod tests {
         for said in ["separately for each echo, on the raw phase over the whole volume, using the Laplacian method",
                      "on the volume mirrored along each axis",
                      "fit of phase vs echo time through the origin, as in QSMART (Yaghmaie et al., 2021)",
-                     "voxels whose blurred fit residual exceeded its 99th percentile were excluded from the QSMART reconstruction",
+                     "voxels whose blurred fit residual exceeded 40 were excluded from the QSMART reconstruction",
                      "mean magnitude over echoes, bias-corrected with N4 (Tustison et al., 2010)",
                      "https://doi.org/10.1109/TMI.2010.2046908"] {
             assert!(out.contains(said), "{said:?} not in: {out}");
@@ -3875,8 +3881,9 @@ mod tests {
         }];
         let out = generate_methods(&config);
         // One iteration is what a bare `erode` means, so it is not stated.
-        assert!(out.contains("followed by erosion."), "{out}");
-        assert!(!out.contains("iteration"), "{out}");
+        let text = out.split("## Note").next().unwrap();
+        assert!(text.contains("followed by erosion."), "{out}");
+        assert!(!text.contains("iteration"), "{out}");
     }
 
     #[test]

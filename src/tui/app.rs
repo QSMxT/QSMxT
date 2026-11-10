@@ -1565,7 +1565,7 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("qsmart_vasc_sphere_radius", "inversion.qsmart.vasc_sphere_radius"), ("qsmart_frangi_scale_min", "inversion.qsmart.frangi_scale_min"),
     ("qsmart_frangi_scale_max", "inversion.qsmart.frangi_scale_max"), ("qsmart_frangi_scale_ratio", "inversion.qsmart.frangi_scale_ratio"),
     ("qsmart_frangi_c", "inversion.qsmart.frangi_c"),
-    ("qsmart_vessel_magnitude", "inversion.qsmart.vessel_magnitude"), ("qsmart_vessel_units", "inversion.qsmart.vessel_size_units"),
+    ("qsmart_vessel_magnitude", "inversion.qsmart.vessel_magnitude"), ("qsmart_offset_grid", "inversion.qsmart.offset_grid"), ("qsmart_vessel_units", "inversion.qsmart.vessel_size_units"),
     ("qsmart_fit_threshold_mode", "field_mapping.qsmart_fit_threshold_mode"),
     ("qsmart_fit_percentile", "field_mapping.qsmart_fit_percentile"), ("qsmart_fit_threshold", "field_mapping.qsmart_fit_threshold"),
     ("ndi_tau", "inversion.ndi.tau"), ("ndi_alpha", "inversion.ndi.alpha"), ("ndi_max_iter", "inversion.ndi.max_iter"),
@@ -1599,6 +1599,7 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("sep_r2starqsm_r_const_3t", "separation.r2star_qsm.r_const_3t"), ("sep_decompose_n_inner", "separation.decompose.n_inner"),
     ("sep_decompose_chi_bound_mode", "separation.decompose.chi_bound"), ("sep_decompose_chi_bound", "separation.decompose.chi_bound"),
     ("sep_decompose_unwrap_phase", "separation.decompose.unwrap_phase"),
+    ("sep_decompose_fit", "separation.decompose.fit"),
     ("sep_decompose_max_iterations", "separation.decompose.lsqcurvefit.max_iterations"),
     ("sep_decompose_max_fevals", "separation.decompose.lsqcurvefit.max_function_evaluations"),
     ("sep_decompose_function_tol", "separation.decompose.lsqcurvefit.function_tolerance"),
@@ -2185,6 +2186,8 @@ pub struct PipelineFormState {
     pub qsmart_frangi_c: String,
     /// Index into [`QSMART_VESSEL_MAGNITUDE_OPTIONS`].
     pub qsmart_vessel_magnitude: usize,
+    /// Index into [`QSMART_OFFSET_GRID_OPTIONS`].
+    pub qsmart_offset_grid: usize,
     /// Index into [`QSMART_VESSEL_UNITS_OPTIONS`].
     pub qsmart_vessel_units: usize,
 
@@ -2350,6 +2353,8 @@ pub struct PipelineFormState {
     pub sep_decompose_chi_bound_mode: usize,
     pub sep_decompose_chi_bound: String,
     pub sep_decompose_unwrap_phase: bool,
+    /// Index into [`DECOMPOSE_FIT_OPTIONS`].
+    pub sep_decompose_fit: usize,
     pub sep_decompose_max_iterations: String,
     /// Blank: 100 × the fit's parameters.
     pub sep_decompose_max_fevals: String,
@@ -2712,6 +2717,7 @@ impl Default for PipelineFormState {
             qsmart_frangi_scale_ratio: format!("{}", qsm_core::utils::QsmartParams::default().frangi_scale_ratio),
             qsmart_frangi_c: format!("{}", qsm_core::utils::QsmartParams::default().frangi_c),
             qsmart_vessel_magnitude: 0, // mean-n4
+            qsmart_offset_grid: 0,      // fft
             qsmart_vessel_units: 0,     // voxels
 
             ndi_tau: format!("{}", ndi.tau),
@@ -2809,6 +2815,7 @@ impl Default for PipelineFormState {
                 qsmxt_engine::ChiBoundChoice::EchoSpacing => String::new(),
             },
             sep_decompose_unwrap_phase: sep_decompose.unwrap_phase,
+            sep_decompose_fit: 0, // reference-code
             sep_decompose_max_iterations: sep_decompose.lsqcurvefit.max_iterations.to_string(),
             sep_decompose_max_fevals: fmt_opt(sep_decompose.lsqcurvefit.max_function_evaluations),
             sep_decompose_function_tol: fmt_default(sep_decompose.lsqcurvefit.function_tolerance),
@@ -2942,6 +2949,16 @@ const PRELUDE_LABELLING_HELP: &[&str] = &[
     "Label regions slice by slice (FSL prelude --labelslices)",
     "Label regions over the whole volume (FSL prelude -f)",
 ];
+pub const QSMART_OFFSET_GRID_OPTIONS: &[&str] = &["fft", "qsmart-reference"];
+const QSMART_OFFSET_GRID_HELP: &[&str] = &[
+    "The FFT frequency grid (default)",
+    "The grid QSMART's adjust_offset.m builds, half a step off the FFT grid on odd matrix sizes, as the QSMART pipeline runs it",
+];
+pub const DECOMPOSE_FIT_OPTIONS: &[&str] = &["reference-code", "paper"];
+const DECOMPOSE_FIT_HELP: &[&str] = &[
+    "Tim Ho's script: lsqcurvefit for every stage, magnitudes scaled by their global maximum (default)",
+    "Chen et al. 2021: amplitudes summing to one and R2*0 by linear least squares, χ± by lsqnonlin, each voxel scaled to S(0) = 1",
+];
 pub const QSMART_VESSEL_MAGNITUDE_OPTIONS: &[&str] = &["mean-n4", "combined"];
 const QSMART_VESSEL_MAGNITUDE_HELP: &[&str] = &[
     "Mean over echoes, N4 bias-corrected, as QSMART prepares it (default)",
@@ -2949,8 +2966,8 @@ const QSMART_VESSEL_MAGNITUDE_HELP: &[&str] = &[
 ];
 pub const QSMART_FIT_THRESHOLD_MODE_OPTIONS: &[&str] = &["percentile", "absolute"];
 const QSMART_FIT_THRESHOLD_MODE_HELP: &[&str] = &[
-    "A percentile of the blurred fit residual over the volume, as QSMART's authors run it (default)",
-    "A fixed fit residual",
+    "A percentile of the blurred fit residual over the volume, as the authors' October 2020 demo runs it",
+    "A fixed fit residual, as QSMART v1.0 runs it (default)",
 ];
 pub const QSMART_VESSEL_UNITS_OPTIONS: &[&str] = &["voxels", "mm"];
 const QSMART_VESSEL_UNITS_HELP: &[&str] = &[
@@ -3174,6 +3191,8 @@ impl PipelineFormState {
                 }
                 rows.push(PipelineRow::Toggle { label: "  Unwrap phase", field: "sep_decompose_unwrap_phase",
                     help: "Unwrap the phase along the echoes (default: off, as in the authors' code)" });
+                rows.push(PipelineRow::AlgoSelect { label: "  Fit", field: "sep_decompose_fit",
+                    options: DECOMPOSE_FIT_OPTIONS, help: DECOMPOSE_FIT_HELP });
                 rows.push(PipelineRow::Param { label: "  Max iter", field: "sep_decompose_max_iterations", help: "Maximum solver iterations per fit (lsqcurvefit MaxIterations)" });
                 rows.push(PipelineRow::Param { label: "  Max evaluations", field: "sep_decompose_max_fevals", help: "Maximum function evaluations per fit (lsqcurvefit MaxFunctionEvaluations). Blank = 100 × the fit's parameters" });
                 rows.push(PipelineRow::Param { label: "  Function tol", field: "sep_decompose_function_tol", help: "Stop when the cost changes by less than this, relatively (lsqcurvefit FunctionTolerance)" });
@@ -3903,6 +3922,7 @@ impl PipelineFormState {
                         rows.push(PipelineRow::Param { label: "  iLSQR tolerance", field: "ilsqr_tol", help: "Streaking-stage LSQR tolerance (shared with iLSQR)" });
                         rows.push(PipelineRow::Param { label: "  iLSQR max iter", field: "qsmart_ilsqr_max_iter", help: "Maximum iLSQR iterations per stage (tolerance: iLSQR's)" });
                         rows.push(PipelineRow::Param { label: "  iLSQR pad (mm)", field: "qsmart_ilsqr_pad_mm", help: "Zero-padding of the inner iLSQR solves, mm per side (default: 6)" });
+                        rows.push(PipelineRow::AlgoSelect { label: "  iLSQR precision", field: "ilsqr_precision", options: ILSQR_PRECISION_OPTIONS, help: ILSQR_PRECISION_HELP });
                     }
                     1 => { // RTS
                         rows.push(PipelineRow::Param { label: "  Delta", field: "rts_delta", help: "Threshold for ill-conditioned k-space region" });
@@ -3970,6 +3990,8 @@ impl PipelineFormState {
                 // voxels or mm.
                 rows.push(PipelineRow::AlgoSelect { label: "  Vessel magnitude", field: "qsmart_vessel_magnitude",
                     options: QSMART_VESSEL_MAGNITUDE_OPTIONS, help: QSMART_VESSEL_MAGNITUDE_HELP });
+                rows.push(PipelineRow::AlgoSelect { label: "  Offset grid", field: "qsmart_offset_grid",
+                    options: QSMART_OFFSET_GRID_OPTIONS, help: QSMART_OFFSET_GRID_HELP });
                 rows.push(PipelineRow::AlgoSelect { label: "  Vessel size units", field: "qsmart_vessel_units",
                     options: QSMART_VESSEL_UNITS_OPTIONS, help: QSMART_VESSEL_UNITS_HELP });
                 rows.push(PipelineRow::Param { label: "  Vasc radius", field: "qsmart_vasc_sphere_radius", help: "Bottom-hat sphere radius for vasculature detection, in the vessel size units" });
@@ -4798,6 +4820,8 @@ impl PipelineFormState {
             "laplacian_solver" => self.laplacian_solver,
             "prelude_labelling" => self.prelude_labelling,
             "qsmart_vessel_magnitude" => self.qsmart_vessel_magnitude,
+            "qsmart_offset_grid" => self.qsmart_offset_grid,
+            "sep_decompose_fit" => self.sep_decompose_fit,
             "qsmart_vessel_units" => self.qsmart_vessel_units,
             "qsmart_fit_threshold_mode" => self.qsmart_fit_threshold_mode,
             "inhomogeneity_method" => self.inhomogeneity_method,
@@ -4863,6 +4887,8 @@ impl PipelineFormState {
             "laplacian_solver" => self.laplacian_solver = val,
             "prelude_labelling" => self.prelude_labelling = val,
             "qsmart_vessel_magnitude" => self.qsmart_vessel_magnitude = val,
+            "qsmart_offset_grid" => self.qsmart_offset_grid = val,
+            "sep_decompose_fit" => self.sep_decompose_fit = val,
             "qsmart_vessel_units" => self.qsmart_vessel_units = val,
             "qsmart_fit_threshold_mode" => self.qsmart_fit_threshold_mode = val,
             "inhomogeneity_method" => self.inhomogeneity_method = val,

@@ -552,6 +552,42 @@ impl fmt::Display for QsmartFitThresholdMode {
     }
 }
 
+/// The dipole grid of QSMART's offset adjustment (`inversion.qsmart.offset_grid`; QSM.rs's
+/// `QsmartOffsetGrid`).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum QsmartOffsetGrid {
+    /// The FFT frequency grid (default).
+    #[default]
+    Fft,
+    /// The grid QSMART's `adjust_offset.m` builds (half a step off the FFT grid on odd matrix
+    /// sizes), as the QSMART pipeline runs it.
+    QsmartReference,
+}
+impl fmt::Display for QsmartOffsetGrid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", match self { Self::Fft => "fft", Self::QsmartReference => "qsmart-reference" })
+    }
+}
+
+/// DECOMPOSE's fit (`separation.decompose.fit`; QSM.rs's `DecomposeParams::fit_id`).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum DecomposeFit {
+    /// Tim Ho's script (lsqcurvefit for every stage, magnitudes scaled by their global maximum),
+    /// which QSM-CI's reference container runs (default).
+    #[default]
+    ReferenceCode,
+    /// Chen et al. 2021's fit: the amplitudes with C+ + C− + C0 = 1 and R2*0 by linear least
+    /// squares, χ± by lsqnonlin, each voxel scaled to S(0) = 1 (as the DECOMPOSE pipeline runs it).
+    Paper,
+}
+impl fmt::Display for DecomposeFit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", match self { Self::ReferenceCode => "reference-code", Self::Paper => "paper" })
+    }
+}
+
 /// The magnitude QSMART detects vessels on (`inversion.qsmart.vessel_magnitude`).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]

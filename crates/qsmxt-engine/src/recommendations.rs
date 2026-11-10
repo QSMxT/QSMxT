@@ -105,6 +105,8 @@ impl From<core::Strength> for Strength {
             core::Strength::Discouraged => Strength::Discouraged,
             core::Strength::Recommended => Strength::Recommended,
             core::Strength::Required => Strength::Required,
+            // TEMP(QSM.rs#448): until QSMxT's own #448 change (Suggested) lands; drop on rebase.
+            core::Strength::Suggested => Strength::Reference,
         }
     }
 }
@@ -472,6 +474,17 @@ enum Mapping {
     SynthSegInference,
     /// SynthSeg's window edge: its `patch`.
     SynthSegPatch,
+    /// Each mask section's input image (`magnitude-first`, `magnitude`, ...): every section's.
+    MaskInput,
+    /// `none`, `makehomogeneous` or `n4`: `masking.inhomogeneity_correction` and its method.
+    Inhomogeneity,
+    /// Each BET step's fractional intensity: every BET step's.
+    BetFraction,
+    /// Each mask section's erosion, voxels: its `erode` refinements, replaced by one of that many
+    /// iterations (none for 0).
+    Erosion,
+    /// QSMART's echo-fit threshold (`absolute-40`, `percentile-99`, ...): its mode and value.
+    QsmartFitThreshold,
 }
 
 /// Each of QSM.rs's rule settings ([`core::SETTINGS`]), as a QSMxT setting.
@@ -518,6 +531,12 @@ const SETTINGS: &[(&str, &str, Mapping)] = &[
     ("inversion.qsmart.inversion", "inversion.qsmart.inversion", Mapping::Same),
     ("inversion.qsmart.ilsqr_max_iter", "inversion.qsmart.ilsqr_max_iter", Mapping::Same),
     ("inversion.qsmart.ilsqr_pad_mm", "inversion.qsmart.ilsqr_pad_mm", Mapping::Same),
+    ("masking.input", "masking.sections", Mapping::MaskInput),
+    ("masking.inhomogeneity_correction", "masking.inhomogeneity_correction", Mapping::Inhomogeneity),
+    ("masking.bet.fractional_intensity", "masking.sections", Mapping::BetFraction),
+    ("masking.erosion", "masking.sections", Mapping::Erosion),
+    ("inversion.heidi.denoise_itk", "inversion.heidi.denoise_reference_itk", Mapping::Same),
+    ("field_mapping.b0_estimation.qsmart_fit_threshold", "field_mapping.qsmart_fit_threshold_mode", Mapping::QsmartFitThreshold),
     ("reference", "qsm.reference", Mapping::Same),
     ("qsm_per_echo", "qsm.per_echo", Mapping::Same),
     ("tukey_window", "pipeline.tukey_window", Mapping::Same),
@@ -533,6 +552,12 @@ const SETTINGS: &[(&str, &str, Mapping)] = &[
 fn setting_of(core_path: &str) -> Option<(&'static str, Mapping)> {
     SETTINGS.iter().find(|(c, _, _)| *c == core_path).map(|&(_, q, k)| (q, k))
         .or_else(|| setting(core_path).map(|s| (s.path, Mapping::Same)))
+}
+
+/// The QSM.rs setting path of rule `id` (several QSM.rs settings can be parts of one QSMxT
+/// setting); `None` for an unknown rule or one of QSMxT's own.
+pub fn core_setting(id: &str) -> Option<&'static str> {
+    core::RULES.iter().find(|r| r.id == id).map(|r| r.setting)
 }
 
 /// Whether `id` names one of QSM.rs's rules.
@@ -636,6 +661,32 @@ fn name_of(path: &str, kind: Mapping, value: &Value) -> String {
             other => other.into(),
         },
         Mapping::SynthSegPatch => format!("{}-voxel window", text(value)),
+        Mapping::MaskInput => match value.as_str().unwrap_or_default() {
+            "magnitude-first" => "first echo".into(),
+            "magnitude" => "RSS magnitude".into(),
+            "magnitude-last" => "last echo".into(),
+            "phase-quality" => "phase quality".into(),
+            other => other.into(),
+        },
+        Mapping::Inhomogeneity => match value.as_str().unwrap_or_default() {
+            "none" => "none".into(),
+            "makehomogeneous" => "makehomogeneous".into(),
+            "n4" => "N4".into(),
+            other => other.into(),
+        },
+        Mapping::BetFraction => format!("f = {}", text(value)),
+        Mapping::Erosion => match value.as_f64() {
+            Some(n) if n == 0.0 => "no erosion".into(),
+            Some(n) if n == 1.0 => "1 voxel".into(),
+            _ => format!("{} voxels", text(value)),
+        },
+        Mapping::QsmartFitThreshold => match value.as_str().unwrap_or_default() {
+            "absolute-40" => "fixed residual 40 (QSMART v1.0)".into(),
+            "absolute" => "a fixed residual".into(),
+            "percentile-99" => "99th percentile".into(),
+            "percentile" => "a percentile".into(),
+            other => other.into(),
+        },
         Mapping::Same => {
             let Some(s) = setting(path) else { return text(value) };
             if let Some(o) = s.value_type.options().into_iter().find(|o| o.value == *value) {
@@ -848,11 +899,13 @@ fn mark(config: &PipelineConfig, out: &mut [Recommendation]) {
         r.dismissed = r.departs && r.strength.dismissable() && config.dismissed_recommendations.iter()
             .any(|d| d.rule == r.rule && d.chosen == chosen_text(&r.current));
     }
+    // By QSM.rs's setting, as [`settle`] groups them.
     let snapshot: Vec<(String, Strength, Value, bool)> =
-        out.iter().map(|r| (r.setting.clone(), r.strength, r.recommended.value.clone(), r.departs)).collect();
+        out.iter().map(|r| (rule_setting(r).to_string(), r.strength, r.recommended.value.clone(), r.departs)).collect();
     for (i, r) in out.iter_mut().enumerate() {
+        let key = rule_setting(r).to_string();
         r.conflict = r.departs && snapshot.iter().enumerate().any(|(j, (s, st, v, d))| {
-            j != i && *d && *s == r.setting && *st == r.strength && *v != r.recommended.value
+            j != i && *d && *s == key && *st == r.strength && *v != r.recommended.value
         });
     }
 }
@@ -977,7 +1030,17 @@ pub fn marker(view: &[Recommendation], path: &str) -> Option<Marker> {
             None => groups.push((value, vec![who])),
         }
     }
-    let text = groups.iter().map(|(v, names)| format!("{}: {v}", names.join(", "))).collect::<Vec<_>>().join(" · ");
+    // The values of one set of methods together: a mask recipe's parts ("QSMART: BET,
+    // magnitude-first, no erosion") read as one.
+    let mut by_methods: Vec<(Vec<String>, Vec<String>)> = Vec::new();
+    for (value, names) in groups {
+        match by_methods.iter_mut().find(|(n, _)| *n == names) {
+            Some((_, values)) => values.push(value),
+            None => by_methods.push((names, vec![value])),
+        }
+    }
+    let text = by_methods.iter().map(|(names, values)| format!("{}: {}", names.join(", "), values.join(", ")))
+        .collect::<Vec<_>>().join(" · ");
     Some(Marker { actionable: here.iter().any(|r| open(r)), text })
 }
 
@@ -1149,6 +1212,62 @@ pub(crate) fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -
         Mapping::SynthSegPatch => {
             config.segmentation.patch = Some(value.as_u64().ok_or_else(|| format!("{value} is not a window size"))? as usize);
         }
+        Mapping::MaskInput => {
+            let input = crate::masking::parse_masking_input(id).ok_or_else(|| format!("unknown mask input {id}"))?;
+            for s in &mut config.masking.sections {
+                s.input = input;
+            }
+        }
+        Mapping::Inhomogeneity => {
+            let m = &mut config.masking;
+            match id {
+                "none" => m.inhomogeneity_correction = false,
+                "makehomogeneous" => {
+                    m.inhomogeneity_correction = true;
+                    m.inhomogeneity_method = crate::enums::InhomogeneityMethod::Makehomogeneous;
+                }
+                "n4" => {
+                    m.inhomogeneity_correction = true;
+                    m.inhomogeneity_method = crate::enums::InhomogeneityMethod::N4;
+                }
+                other => return Err(format!("unknown inhomogeneity correction {other}")),
+            }
+        }
+        Mapping::BetFraction => {
+            let f = value.as_f64().ok_or_else(|| format!("{value} is not a fractional intensity"))?;
+            for s in &mut config.masking.sections {
+                for op in std::iter::once(&mut s.generator).chain(s.refinements.iter_mut()) {
+                    if let MaskOp::Bet { fractional_intensity, .. } = op {
+                        *fractional_intensity = f;
+                    }
+                }
+            }
+        }
+        Mapping::Erosion => {
+            let n = value.as_u64().or_else(|| value.as_f64().map(|v| v as u64))
+                .ok_or_else(|| format!("{value} is not a number of voxels"))? as usize;
+            for s in &mut config.masking.sections {
+                s.refinements.retain(|op| !matches!(op, MaskOp::Erode { .. }));
+                if n > 0 {
+                    s.refinements.push(MaskOp::Erode { iterations: n });
+                }
+            }
+        }
+        Mapping::QsmartFitThreshold => {
+            use crate::enums::QsmartFitThresholdMode as M;
+            let fm = &mut config.field_mapping;
+            match id {
+                "absolute-40" => {
+                    fm.qsmart_fit_threshold_mode = M::Absolute;
+                    fm.qsmart_fit_threshold = qsm_core::utils::QSMART_FIT_THRESHOLD;
+                }
+                "percentile-99" => {
+                    fm.qsmart_fit_threshold_mode = M::Percentile;
+                    fm.qsmart_fit_percentile = qsm_core::utils::QSMART_FIT_PERCENTILE;
+                }
+                other => return Err(format!("QSMART fit threshold {other} needs its value")),
+            }
+        }
     }
     Ok(())
 }
@@ -1193,6 +1312,12 @@ pub struct Settled {
 /// setting, the strongest finding that is open (departed from and not dismissed) takes it, so a
 /// reasoned finding outranks an authors' setting, unless two as strong disagree, when none is
 /// taken. Findings on other settings are unaffected.
+/// The setting a finding is about, by QSM.rs's path where it has one (QSMxT's own findings by
+/// QSMxT's).
+pub fn rule_setting(r: &Recommendation) -> &str {
+    core_setting(&r.rule).unwrap_or(&r.setting)
+}
+
 pub fn settle(findings: &[Recommendation]) -> Settled {
     settle_where(findings, |_| true)
 }
@@ -1200,15 +1325,18 @@ pub fn settle(findings: &[Recommendation]) -> Settled {
 /// [`settle`] over the findings `takes` lets in.
 fn settle_where(findings: &[Recommendation], takes: impl Fn(&Recommendation) -> bool) -> Settled {
     let mut settled = Settled::default();
+    // By QSM.rs's setting: several are parts of one QSMxT setting (the mask recipe's generator,
+    // input, BET f and erosion are all `masking.sections`), and findings on different parts do not
+    // compete.
     let mut settings: Vec<&str> = Vec::new();
     for r in findings {
-        if !settings.contains(&r.setting.as_str()) {
-            settings.push(&r.setting);
+        if !settings.contains(&rule_setting(r)) {
+            settings.push(rule_setting(r));
         }
     }
     for s in settings {
         let open: Vec<&Recommendation> = findings.iter()
-            .filter(|r| r.setting == s && r.departs && !r.dismissed && takes(r)).collect();
+            .filter(|r| rule_setting(r) == s && r.departs && !r.dismissed && takes(r)).collect();
         let Some(top) = open.iter().map(|r| r.strength).max() else { continue };
         let strongest: Vec<&Recommendation> = open.iter().copied().filter(|r| r.strength == top).collect();
         let value = &strongest[0].recommended.value;
@@ -1284,10 +1412,28 @@ pub struct Recorded {
 
 /// The findings a run of `config` on a scan with `facts` keeps: every departure, dismissed or not.
 pub fn recorded(config: &PipelineConfig, facts: &Facts) -> Vec<Recorded> {
-    recommendations(config, facts).into_iter().map(|r| {
+    // A config that follows QSMxT's defaults exactly made QSMxT's choices, not departures from a
+    // toolbox the user picked: no differences from reference pipelines are recorded for it (Ashley,
+    // 2026-11-10). Against a chosen toolbox pipeline, or once the defaults are departed from, they
+    // are.
+    let defaults = follows_defaults(config);
+    recommendations(config, facts).into_iter().filter(|r| !(defaults && r.strength == Strength::Reference)).map(|r| {
         let outcome = if r.dismissed { Outcome::Dismissed } else { Outcome::Kept };
         Recorded { finding: r, outcome }
     }).collect()
+}
+
+/// Whether `config` is the QSMxT-defaults pipeline as it stands: every reconstruction setting at
+/// its default (the same whatever the scan, so judged on the config alone), and no toolbox
+/// pipeline remembered. Combining orientations (COSMOS, STI) is not part of it: it combines the
+/// reconstructions the reference rules are about, and changes none of their settings.
+fn follows_defaults(config: &PipelineConfig) -> bool {
+    config.reference_pipeline.is_none()
+        && crate::pipelines::target(config, crate::pipelines::QSMXT_DEFAULTS, &crate::schema::ViewFacts::default())
+            .is_ok_and(|mut t| {
+                t.multi_orientation = config.multi_orientation.clone();
+                serde_json::to_value(&t).ok() == serde_json::to_value(config).ok()
+            })
 }
 
 /// The methods text's Note for the findings a dataset's `runs` kept (one run's: `runs` 1): the

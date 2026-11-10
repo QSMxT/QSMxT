@@ -525,6 +525,10 @@ pub struct SeparationParamArgs {
     /// DECOMPOSE: unwrap the phase along the echoes (default: false, as in the authors' code)
     #[arg(long, value_name = "BOOL")]
     pub decompose_unwrap_phase: Option<bool>,
+    /// DECOMPOSE's fit: `reference-code` (Tim Ho's script; default) or `paper` (Chen et al. 2021:
+    /// amplitudes summing to one, per-voxel S(0) = 1 scale), as the DECOMPOSE pipeline runs it
+    #[arg(long, value_enum)]
+    pub decompose_fit: Option<DecomposeFitArg>,
     /// DECOMPOSE: maximum solver iterations of each fit (lsqcurvefit MaxIterations; default: 400)
     #[arg(long)]
     pub decompose_max_iterations: Option<usize>,
@@ -985,8 +989,12 @@ pub struct HeidiParamArgs {
     #[arg(long)]
     pub heidi_denoise_conductance: Option<f64>,
     /// ITK 3.20's float arithmetic for the denoising, as the authors' code runs it (for comparison with it; the default computes its conductance scale in double precision)
-    #[arg(long)]
+    #[arg(long, conflicts_with = "no_heidi_denoise_reference_itk")]
     pub heidi_denoise_reference_itk: bool,
+    /// The denoising in double precision, after a pipeline that turns ITK's float arithmetic on
+    /// (the HEIDI pipeline)
+    #[arg(long)]
+    pub no_heidi_denoise_reference_itk: bool,
     /// HEIDI: the echo time the field stands for the phase of, in the conversion to HEIDI's
     /// units: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms
     /// (default: last)
@@ -1048,6 +1056,11 @@ pub struct QsmartParamArgs {
     /// echoes, inhomogeneity-corrected unless --no-inhomogeneity-correction)
     #[arg(long, value_enum)]
     pub qsmart_vessel_magnitude: Option<QsmartVesselMagnitudeArg>,
+    /// The dipole grid of QSMART's offset adjustment: `fft` (default) or `qsmart-reference`
+    /// (`adjust_offset.m`'s own, half a step off the FFT grid on odd matrix sizes, as the QSMART
+    /// pipeline runs it)
+    #[arg(long, value_enum)]
+    pub qsmart_offset_grid: Option<QsmartOffsetGridArg>,
 }
 
 /// Retrospective motion correction: rigid co-registration of every echo onto a reference echo
@@ -1617,7 +1630,7 @@ pub struct PipelineArgs {
 
     /// `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is left out of
     /// QSMART's reconstruction is set: a percentile of the blurred residual over the volume
-    /// (`--qsmart-fit-percentile`; default), or a fixed residual (`--qsmart-fit-threshold`).
+    /// (`--qsmart-fit-percentile`), or a fixed residual (`--qsmart-fit-threshold`; default, QSMART v1.0's 40).
     /// Without it, giving one of those two selects its mode
     #[arg(long, value_enum)]
     pub qsmart_fit_threshold_mode: Option<QsmartFitThresholdModeArg>,
@@ -2619,7 +2632,7 @@ pub struct FieldmapCommonArgs {
     pub b0_estimation: B0EstimationArg,
     /// `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is marked
     /// unreliable is set: a percentile of the blurred residual over the volume
-    /// (`--qsmart-fit-percentile`; default), or a fixed residual (`--qsmart-fit-threshold`).
+    /// (`--qsmart-fit-percentile`), or a fixed residual (`--qsmart-fit-threshold`; default, QSMART v1.0's 40).
     /// Without it, giving one of those two selects its mode
     #[arg(long, value_enum)]
     pub qsmart_fit_threshold_mode: Option<QsmartFitThresholdModeArg>,
@@ -4157,6 +4170,10 @@ pub struct SeparateDecomposeArgs {
     /// Unwrap the phase along the echoes (default: false, as in the authors' code)
     #[arg(long, value_name = "BOOL")]
     pub unwrap_phase: Option<bool>,
+    /// The fit: `reference-code` (Tim Ho's script; default) or `paper` (Chen et al. 2021:
+    /// amplitudes summing to one, per-voxel S(0) = 1 scale)
+    #[arg(long, value_enum)]
+    pub fit: Option<DecomposeFitArg>,
     /// Maximum solver iterations of each fit (lsqcurvefit MaxIterations; default: 400)
     #[arg(long)]
     pub max_iterations: Option<usize>,
@@ -4377,11 +4394,6 @@ pub struct QsmartArgs {
     /// chimap_stage2 (ppm), and vessel_magnitude when QSMART makes its own (mean-n4)
     #[arg(long, value_name = "DIR")]
     pub intermediates: Option<PathBuf>,
-    /// k-space grid of the dipole kernel in QSMART's stage combination: `fft` (default) or
-    /// `qsmart-reference`, the grid of the authors' adjust_offset.m, for comparison with their
-    /// code. They differ only when a matrix dimension is odd
-    #[arg(long, value_enum, default_value = "fft")]
-    pub qsmart_offset_grid: QsmartOffsetGridArg,
     #[command(flatten)]
     pub qsmart_params: QsmartParamArgs,
 }
@@ -4868,6 +4880,11 @@ pub enum VesselSizeUnitsArg {
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum QsmartOffsetGridArg {
     Fft, QsmartReference,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum DecomposeFitArg {
+    ReferenceCode, Paper,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

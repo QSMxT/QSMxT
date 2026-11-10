@@ -162,11 +162,15 @@ fn follow(config: &mut PipelineConfig, p: &ReferencePipeline, facts: &Facts) -> 
             set.push("pipeline.do_chi_separation");
         }
     }
+    // The rule settings followed so far, by QSM.rs path: several are parts of one QSMxT setting
+    // (the mask recipe's generator, input, BET f and erosion are all `masking.sections`), and each
+    // is followed on its own.
+    let mut followed: Vec<&'static str> = Vec::new();
     loop {
         let view = rec::reference_values(config, facts);
         let next: Vec<_> = view.iter()
             .filter(|r| r.strength == Strength::Reference && set.contains(&r.trigger.setting.as_str()))
-            .filter(|r| !set.contains(&r.setting.as_str()))
+            .filter(|r| rec::core_setting(&r.rule).is_some_and(|c| !followed.contains(&c)))
             .collect();
         let Some(first) = next.first() else { break };
         // One setting at a time, the first rule on it in QSM.rs's order: what it sets can change
@@ -175,7 +179,10 @@ fn follow(config: &mut PipelineConfig, p: &ReferencePipeline, facts: &Facts) -> 
         if first.departs {
             rec::apply(config, &first.rule, None)?;
         }
-        set.push(path);
+        followed.extend(rec::core_setting(&first.rule));
+        if !set.contains(&path) {
+            set.push(path);
+        }
     }
     Ok(set)
 }

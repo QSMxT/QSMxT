@@ -222,6 +222,8 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
     };
 
     let bg_removal = PBgRemoval {
+        // TEMP(QSM.rs#448): until QSMxT's own #448 change (erode before background removal) lands.
+        erode_voxels: 0,
         algorithm: map_bf_alg(cfg.bg_removal.algorithm),
         vsharp: qsm_core::bgremove::VsharpParams {
             threshold: cfg.bg_removal.vsharp.threshold,
@@ -424,6 +426,10 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             ..Default::default()
         },
         qsmart: qsm_core::utils::QsmartParams {
+            adjust_offset_grid: match cfg.inversion.qsmart.offset_grid {
+                crate::enums::QsmartOffsetGrid::Fft => qsm_core::utils::QsmartOffsetGrid::Fft,
+                crate::enums::QsmartOffsetGrid::QsmartReference => qsm_core::utils::QsmartOffsetGrid::QsmartReference,
+            },
             ilsqr_max_iter: cfg.inversion.qsmart.ilsqr_max_iter,
             ilsqr_pad_mm: cfg.inversion.qsmart.ilsqr_pad_mm,
             // NOTE: vasc_sphere_radius and frangi scales are in `vessel_size_units` here; the
@@ -510,7 +516,13 @@ pub fn to_qsm_pipeline_config(cfg: &PipelineConfig) -> qsm_core::pipeline::QsmPi
     }
     qsm_core::pipeline::QsmPipelineConfig {
         masking: qsm_core::pipeline::MaskingConfig {
-            inhomogeneity_correction: cfg.masking.inhomogeneity_correction,
+            // What the masking input is corrected with (QSMxT applies it; QSM.rs's config only
+            // records it, for the mask rules).
+            inhomogeneity_correction: match (cfg.masking.inhomogeneity_correction, cfg.masking.inhomogeneity_method) {
+                (false, _) => qsm_core::pipeline::InhomogeneityCorrection::None,
+                (true, crate::enums::InhomogeneityMethod::N4) => qsm_core::pipeline::InhomogeneityCorrection::N4,
+                (true, _) => qsm_core::pipeline::InhomogeneityCorrection::Makehomogeneous,
+            },
             homogeneity_sigma_mm: cfg.homogeneity.sigma_mm,
             homogeneity_nbox: cfg.homogeneity.nbox,
             sections: to_mask_sections(&cfg.masking.sections, &cfg.bet),
@@ -572,11 +584,18 @@ pub fn to_separation_config(cfg: &PipelineConfig) -> PSeparation {
             lambda: s.wavesep.lambda, wavelet_order: s.wavesep.wavelet_order,
             max_iter: s.wavesep.max_iter, tol: s.wavesep.tol,
         },
-        decompose: qsm_core::separation::DecomposeParams {
-            n_inner: s.decompose.n_inner, chi_bound: s.decompose.chi_bound.into(),
-            unwrap_phase: s.decompose.unwrap_phase,
-            lsqcurvefit: s.decompose.lsqcurvefit.options(),
-            ..qsm_core::separation::DecomposeParams::default()
+        decompose: {
+            // The fit's solvers and scale: the reference code's (the default) or the paper's.
+            let fit = match s.decompose.fit {
+                crate::enums::DecomposeFit::ReferenceCode => qsm_core::separation::DecomposeParams::default(),
+                crate::enums::DecomposeFit::Paper => qsm_core::separation::DecomposeParams::paper(),
+            };
+            qsm_core::separation::DecomposeParams {
+                n_inner: s.decompose.n_inner, chi_bound: s.decompose.chi_bound.into(),
+                unwrap_phase: s.decompose.unwrap_phase,
+                lsqcurvefit: s.decompose.lsqcurvefit.options(),
+                ..fit
+            }
         },
         hc_chisep: qsm_core::separation::HcChisepParams {
             dr_pos_3t: s.hc_chisep.dr_pos_3t, bin_hz: s.hc_chisep.bin_hz,

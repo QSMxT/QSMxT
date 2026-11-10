@@ -232,6 +232,12 @@ pub fn apply_qsmart_overrides(config: &mut PipelineConfig, p: &cli::QsmartParamA
             cli::QsmartVesselMagnitudeArg::Combined => QsmartVesselMagnitude::Combined,
         };
     }
+    if let Some(g) = p.qsmart_offset_grid {
+        config.inversion.qsmart.offset_grid = match g {
+            cli::QsmartOffsetGridArg::Fft => qsmxt_engine::QsmartOffsetGrid::Fft,
+            cli::QsmartOffsetGridArg::QsmartReference => qsmxt_engine::QsmartOffsetGrid::QsmartReference,
+        };
+    }
     Ok(())
 }
 
@@ -517,6 +523,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.heidi_params.heidi_denoise_time_step { config.inversion.heidi.denoise_time_step = v; }
         if let Some(v) = args.heidi_params.heidi_denoise_conductance { config.inversion.heidi.denoise_conductance = v; }
         if args.heidi_params.heidi_denoise_reference_itk { config.inversion.heidi.denoise_reference_itk = true; }
+        if args.heidi_params.no_heidi_denoise_reference_itk { config.inversion.heidi.denoise_reference_itk = false; }
         if let Some(v) = args.heidi_params.heidi_te { config.inversion.heidi.te = v; }
         if let Some(v) = args.tikhonov_params.tikhonov_lambda { config.inversion.tikhonov.lambda = v; }
         if let Some(&[x, y, z]) = args.tikhonov_params.tikhonov_pad.as_deref() { config.inversion.tikhonov.pad = [x, y, z]; }
@@ -748,6 +755,12 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = sp.decompose_n_inner { config.separation.decompose.n_inner = v; }
         if let Some(v) = sp.decompose_chi_bound { config.separation.decompose.chi_bound = v; }
         if let Some(v) = sp.decompose_unwrap_phase { config.separation.decompose.unwrap_phase = v; }
+        if let Some(v) = sp.decompose_fit {
+            config.separation.decompose.fit = match v {
+                cli::DecomposeFitArg::ReferenceCode => qsmxt_engine::DecomposeFit::ReferenceCode,
+                cli::DecomposeFitArg::Paper => qsmxt_engine::DecomposeFit::Paper,
+            };
+        }
         let lc = &mut config.separation.decompose.lsqcurvefit;
         if let Some(v) = sp.decompose_max_iterations { lc.max_iterations = v; }
         if let Some(v) = sp.decompose_max_function_evaluations { lc.max_function_evaluations = Some(v); }
@@ -1450,7 +1463,7 @@ mod tests {
                    qsm_core::utils::QsmartFitThreshold::Percentile(95.0));
         // The mode as given wins.
         let fm = qsmart(&["--qsmart-fit-threshold-mode", "percentile", "--qsmart-fit-threshold", "30"]);
-        assert_eq!(fm.qsmart_fit_threshold(), qsm_core::utils::QsmartFitThreshold::default());
+        assert_eq!(fm.qsmart_fit_threshold(), qsm_core::utils::QsmartFitThreshold::Percentile(qsm_core::utils::QSMART_FIT_PERCENTILE));
         assert_eq!(qsmart(&["--qsmart-fit-threshold-mode", "absolute"]).qsmart_fit_threshold(),
                    qsm_core::utils::QsmartFitThreshold::Absolute(qsm_core::utils::QSMART_FIT_THRESHOLD));
         let c = config_from_cli(&["qsmxt", "run", "<bids>", "--qsm-algorithm", "qsmart",

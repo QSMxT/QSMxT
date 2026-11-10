@@ -108,7 +108,10 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
                 return Err(QsmxtError::Config(format!(
                     "decompose: --qsm-per-echo has {ne_qsm} echoes but the magnitude has {ne}")));
             }
-            let d = qsm_core::separation::DecomposeParams::default();
+            let d = match args.fit {
+                Some(crate::cli::DecomposeFitArg::Paper) => qsm_core::separation::DecomposeParams::paper(),
+                _ => qsm_core::separation::DecomposeParams::default(),
+            };
             let cfg = SeparationConfig {
                 algorithm: SeparationAlgorithm::Decompose,
                 decompose: qsm_core::separation::DecomposeParams {

@@ -468,6 +468,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             heidi_denoise_time_step: parse_optional_f64(&ps.heidi_denoise_time_step),
             heidi_denoise_conductance: parse_optional_f64(&ps.heidi_denoise_conductance),
             heidi_denoise_reference_itk: ps.heidi_denoise_reference_itk,
+            no_heidi_denoise_reference_itk: !ps.heidi_denoise_reference_itk,
             heidi_te: super::app::echo_time_choice(ps.heidi_te, &ps.heidi_te_ms),
         },
         ilsqr_params: crate::cli::IlsqrParamArgs {
@@ -508,6 +509,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
                 .get(ps.qsmart_vessel_units).copied(),
             qsmart_vessel_magnitude: [crate::cli::QsmartVesselMagnitudeArg::MeanN4, crate::cli::QsmartVesselMagnitudeArg::Combined]
                 .get(ps.qsmart_vessel_magnitude).copied(),
+            qsmart_offset_grid: [crate::cli::QsmartOffsetGridArg::Fft, crate::cli::QsmartOffsetGridArg::QsmartReference]
+                .get(ps.qsmart_offset_grid).copied(),
         },
         ndi_params: crate::cli::NdiParamArgs {
             ndi_tau: parse_optional_f64(&ps.ndi_tau),
@@ -596,6 +599,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             decompose_n_inner: parse_optional_usize(&ps.sep_decompose_n_inner),
             decompose_chi_bound: super::app::chi_bound_choice(ps.sep_decompose_chi_bound_mode, &ps.sep_decompose_chi_bound),
             decompose_unwrap_phase: Some(ps.sep_decompose_unwrap_phase),
+            decompose_fit: [crate::cli::DecomposeFitArg::ReferenceCode, crate::cli::DecomposeFitArg::Paper]
+                .get(ps.sep_decompose_fit).copied(),
             decompose_max_iterations: parse_optional_usize(&ps.sep_decompose_max_iterations),
             decompose_max_function_evaluations: parse_optional_usize(&ps.sep_decompose_max_fevals),
             decompose_function_tolerance: parse_optional_f64(&ps.sep_decompose_function_tol),
@@ -2129,6 +2134,7 @@ mod tests {
 
         app.pipeline_state.set_select("qsmart_vessel_magnitude", 1);
         app.pipeline_state.set_select("qsmart_vessel_units", 1);
+        app.pipeline_state.set_select("qsmart_fit_threshold_mode", 0);
         app.pipeline_state.qsmart_fit_percentile = "95".into();
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.inversion.qsmart.vessel_magnitude, qsmxt_engine::QsmartVesselMagnitude::Combined);

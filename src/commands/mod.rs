@@ -730,6 +730,7 @@ mod integration_tests {
             n_inner: Some(1),
             chi_bound: None,
             unwrap_phase: None,
+            fit: None,
             max_iterations: Some(1),
             max_function_evaluations: None,
             function_tolerance: None,

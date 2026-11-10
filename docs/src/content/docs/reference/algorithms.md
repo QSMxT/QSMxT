@@ -779,7 +779,7 @@ and the methods Note list those that differ:
 | Phase unwrapping | `laplacian` | `--unwrapping-algorithm` |
 | Laplacian solver | `mirror` | `--laplacian-solver` |
 | Phase that is unwrapped | each echo's raw phase, over the whole volume | `--laplacian-unmasked` |
-| Echo combination | `qsmart-echofit`: a magnitude-weighted fit of phase against TE through the origin, which also marks the voxels whose blurred fit residual exceeds the 99th percentile; QSMART leaves those out | `--b0-estimation`; the threshold with `--qsmart-fit-percentile`, or a fixed residual with `--qsmart-fit-threshold` (`--qsmart-fit-threshold-mode percentile\|absolute`) |
+| Echo combination | `qsmart-echofit`: a magnitude-weighted fit of phase against TE through the origin, which also marks the voxels whose blurred fit residual exceeds a threshold (QSMART v1.0's fixed 40 by default); QSMART leaves those out | `--b0-estimation`; the fixed residual with `--qsmart-fit-threshold`, or a percentile of the residual with `--qsmart-fit-percentile` (`--qsmart-fit-threshold-mode absolute\|percentile`) |
 | Magnitude for vessel detection | `mean-n4`: the mean over echoes, N4 bias-corrected ([Tustison et al. 2010](https://doi.org/10.1109/TMI.2010.2046908)) | `--qsmart-vessel-magnitude combined` for the combined magnitude (root sum of squares, inhomogeneity-corrected unless `--no-inhomogeneity-correction`) |
 | Vessel sizes (`--qsmart-vasc-sphere-radius`, `--qsmart-frangi-scale-*`) | voxels: 8, and scales 0.5 to 6 in steps of 0.5 | `--qsmart-vessel-units mm` to give them in mm, converted with the mean voxel size |
 
