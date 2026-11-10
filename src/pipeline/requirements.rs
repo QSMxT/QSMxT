@@ -7,6 +7,21 @@ use crate::pipeline::config::PipelineConfig;
 pub use qsmxt_engine::requirements::*;
 pub use qsmxt_engine::scan::ScanFacts;
 
+/// How the run's phase is converted to ppm, for the run listing: the centre frequency when its
+/// sidecar gives `ImagingFrequency` (`, ppm from ImagingFrequency 123.200 MHz = 2.894 T`), else
+/// a note that the nominal field strength is used.
+pub fn centre_frequency_note(run: &QsmRun) -> String {
+    let f = run.echoes.first()
+        .and_then(|e| crate::bids::sidecar::read_sidecar(&e.phase_json).ok())
+        .and_then(|sc| sc.imaging_frequency)
+        .filter(|f| f.is_finite() && *f > 0.0);
+    match f {
+        Some(f) => format!(", ppm from ImagingFrequency {f:.3} MHz = {:.4} T",
+            qsmxt_engine::scan::working_field_strength(run.magnetic_field_strength, Some(f))),
+        None => ", no ImagingFrequency: ppm from the nominal field".to_string(),
+    }
+}
+
 /// The facts about one run that decide what it can produce. Built from the discovered run; the
 /// bring-your-own derivatives the config names are looked up here, not per stage.
 pub fn scan_facts(run: &QsmRun, config: &PipelineConfig) -> ScanFacts {
@@ -15,6 +30,9 @@ pub fn scan_facts(run: &QsmRun, config: &PipelineConfig) -> ScanFacts {
     let found = |tool: Option<&str>, glob: &str, exclude: &[&str]| {
         tool.and_then(|t| find(run, t, glob, exclude)).is_some()
     };
+    // The first echo's sidecar (already read once by discovery, so it parses).
+    let sidecar = run.echoes.first().and_then(|e| crate::bids::sidecar::read_sidecar(&e.phase_json).ok());
+    let imaging_frequency = sidecar.as_ref().and_then(|sc| sc.imaging_frequency).filter(|f| f.is_finite() && *f > 0.0);
     ScanFacts {
         dims: run.dims,
         voxel_size: None,
@@ -23,7 +41,9 @@ pub fn scan_facts(run: &QsmRun, config: &PipelineConfig) -> ScanFacts {
         has_magnitude: run.has_magnitude,
         n_coils: run.coils.as_ref().map_or(1, |c| c.len()),
         real_imaginary: run.echoes.first().is_some_and(|e| e.imaginary_nifti.is_some()),
-        field_strength: run.magnetic_field_strength,
+        field_strength: qsmxt_engine::scan::working_field_strength(run.magnetic_field_strength, imaging_frequency),
+        nominal_field_strength: imaging_frequency.map(|_| run.magnetic_field_strength),
+        imaging_frequency,
         b0_dir: run.b0_dir,
         mese_echo_times: run.mese.as_ref().map(|m| m.echo_times.clone()),
         custom_mask: config.masking.custom_mask_tool.as_deref()
@@ -32,10 +52,7 @@ pub fn scan_facts(run: &QsmRun, config: &PipelineConfig) -> ScanFacts {
         custom_qsm: found(s.custom_qsm_tool.as_deref(), "*_Chimap.nii*", &["desc-"]),
         custom_r2: found(s.custom_r2_tool.as_deref(), "*_R2map.nii*", &[]),
         custom_r2prime: found(s.custom_r2prime_tool.as_deref(), "*_R2primemap.nii*", &[]),
-        // The first echo's sidecar (already read once by discovery, so it parses).
-        manufacturer: run.echoes.first()
-            .and_then(|e| crate::bids::sidecar::read_sidecar(&e.phase_json).ok())
-            .and_then(|sc| sc.manufacturer),
+        manufacturer: sidecar.and_then(|sc| sc.manufacturer),
     }
 }
 

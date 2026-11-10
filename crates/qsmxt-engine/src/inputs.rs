@@ -842,6 +842,11 @@ impl ScanInputs {
             && field_strength.is_some_and(|t| t.is_finite() && t > 0.0);
         let (facts, sidecars) = match (usable, first, field_strength) {
             (true, Some(grid), Some(field_strength)) => {
+                // The centre frequency, as for the field strength: the last sidecar that gives one.
+                let imaging_frequency = (field_source != Source::Typed)
+                    .then(|| sidecars().rev().find_map(|s| number(Some(s), "ImagingFrequency")))
+                    .flatten()
+                    .filter(|f| f.is_finite() && *f > 0.0);
                 let sidecars = self.echoes.iter().zip(&echo_times).map(|(echo, &te)| {
                     let mut sc = echo.sidecar.as_ref()
                         .and_then(|v| {
@@ -854,6 +859,10 @@ impl ScanInputs {
                         .unwrap_or_else(|| QsmSidecar::bare(te, field_strength));
                     sc.b0_dir = b0_dir.map(|(x, y, z)| vec![x, y, z]);
                     sc.manufacturer = manufacturer.clone();
+                    // A typed field strength is what the user wants phase converted with.
+                    if field_source == Source::Typed {
+                        sc.imaging_frequency = None;
+                    }
                     sc
                 }).collect();
                 let facts = ScanFacts {
@@ -864,7 +873,9 @@ impl ScanInputs {
                     has_magnitude,
                     n_coils,
                     real_imaginary: encoding == Encoding::RealImaginary,
-                    field_strength,
+                    field_strength: crate::scan::working_field_strength(field_strength, imaging_frequency),
+                    nominal_field_strength: imaging_frequency.map(|_| field_strength),
+                    imaging_frequency,
                     b0_dir,
                     mese_echo_times,
                     custom_mask: false,

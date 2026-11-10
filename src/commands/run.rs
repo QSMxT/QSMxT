@@ -459,12 +459,13 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
                 nx, ny, nz, run.echoes.len(), n_coils, run.has_magnitude, &config,
             );
             println!(
-                "  {} ({} echo(es){}, {}x{}x{}, B0={:.1}T, est. {})",
+                "  {} ({} echo(es){}, {}x{}x{}, B0={:.1}T{}, est. {})",
                 run.key,
                 run.echoes.len(),
                 if n_coils > 1 { format!(" x {} uncombined coils (MCPC-3D-S)", n_coils) } else { String::new() },
                 nx, ny, nz,
                 run.magnetic_field_strength,
+                crate::pipeline::requirements::centre_frequency_note(run),
                 memory::format_bytes(est),
             );
         }

@@ -1115,6 +1115,15 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let params = stages::field::params(self.config, &self.meta);
         let Some(key) = self.begin("unwrap", Some(&algorithm), &params, "Skipping unwrap (cached)",
                                    "Phase unwrapping / echo combination") else { return Ok(()) };
+        match centre_frequency_decision(self.facts) {
+            Some(d) => {
+                self.log(Level::Warn, &format!("{} ({})", d.reason, d.detail.as_deref().unwrap_or_default()));
+                self.decide(d);
+            }
+            None => self.log(Level::Info, &format!(
+                "Phase converted to ppm with the scanner's centre frequency, {:.4} MHz ({:.4} T)",
+                self.facts.imaging_frequency.unwrap_or_default(), self.facts.field_strength)),
+        }
         let n = self.n_echoes();
         if self.per_echo() {
             // Each echo's field on its own, one echo at a time.
@@ -2504,6 +2513,19 @@ pub(crate) fn chi_bound_decision(config: &PipelineConfig, b0: f64, echo_times: &
         "The χ search was bounded at {bound:.2} ppm, from the field strength and echo spacing.")))
 }
 
+/// The run's phase is converted to ppm with the scanner's `ImagingFrequency` when the scan gives
+/// one (decided 2026-11-10: every run, as the MEDI and χ-separation toolboxes do), else with γ̄
+/// times the nominal field strength. Only the fallback is recorded ([`Topic::CentreFrequency`]),
+/// so the methods text can say it.
+pub(crate) fn centre_frequency_decision(facts: &ScanFacts) -> Option<Decision> {
+    facts.imaging_frequency.is_none().then(|| {
+        Decision::new(Topic::CentreFrequency, Choice::Unavailable,
+            "Phase was converted to ppm with the nominal field strength: the data gave no centre \
+             frequency (ImagingFrequency).")
+            .with_detail(format!("{} T", facts.field_strength))
+    })
+}
+
 /// Whether MEDI+0's CSF term is applied to a MEDI run of `n_echoes` echoes ([`Topic::MediCsf`]):
 /// QSM.rs applies it on three or more and runs MEDI without it on fewer (the plan warns), so the
 /// methods text can say what was done. `None` for another inversion or with the term off.
@@ -2569,7 +2591,9 @@ pub(crate) mod tests {
         let facts = ScanFacts {
             dims: (N, N, N), n_echoes: TES.len(), echo_times: TES.to_vec(), has_magnitude: true,
             voxel_size: None,
-            n_coils: 1, real_imaginary: false, field_strength: 3.0, b0_dir: None,
+            n_coils: 1, real_imaginary: false, field_strength: 3.0, nominal_field_strength: Some(3.0),
+            // 3 T exactly: an ordinary scan converts with its centre frequency and records nothing.
+            imaging_frequency: Some(3.0 * qsm_core::constants::GAMMA_BAR_MHZ_PER_T), b0_dir: None,
             mese_echo_times: None, custom_mask: false, custom_dseg: false, custom_qsm: false,
             custom_r2: false, custom_r2prime: false, manufacturer: None,
         };

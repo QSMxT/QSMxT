@@ -84,6 +84,9 @@ pub enum Topic {
     /// The run's local field was combined with the other orientations of its group
     /// ([`Choice::Applied`]). The group is the dataset's, so this is recorded after the fan-in.
     OrientationGroup,
+    /// Phase converted to ppm with γ̄ times the nominal field strength, because the data gave no
+    /// centre frequency (`ImagingFrequency`; [`Choice::Unavailable`]). Using it is not recorded.
+    CentreFrequency,
 }
 
 /// What was decided.

@@ -354,3 +354,23 @@ fn motion_correction_is_decided_per_run_and_said_for_the_runs_it_was_applied_to(
     let mixed = text(&[eligible, single, no_mag]);
     assert!(mixed.contains("Before field mapping, in runs with more than one echo and magnitude images, every echo"), "{mixed}");
 }
+
+/// A scan without a centre frequency falls back to the nominal field strength, records it on the
+/// field map, and the methods text says so; with one (the phantom's), nothing is recorded.
+#[test]
+fn a_scan_without_imaging_frequency_records_the_nominal_fallback() {
+    let (mut facts, mut store) = phantom();
+    let config = config();
+    let (_, record) = run_recorded(&config, &facts, &mut store);
+    assert!(record.step("unwrap").unwrap().decision(Topic::CentreFrequency).is_none());
+
+    let (_, mut store) = phantom();
+    facts.imaging_frequency = None;
+    facts.nominal_field_strength = None;
+    let (plan, record) = run_recorded(&config, &facts, &mut store);
+    let d = record.step("unwrap").unwrap().decision(Topic::CentreFrequency).expect("recorded");
+    assert_eq!((d.choice, d.detail.as_deref()), (Choice::Unavailable, Some("3 T")));
+    let text = methods_for_run(&config, &plan, &record, "qsmxt").to_markdown();
+    assert!(text.contains("converted to ppm with the nominal field strength, as the data gave no centre frequency"), "{text}");
+    assert!(generate_methods_for(&config, "qsmxt").contains("converted to ppm with the scanner's centre frequency (ImagingFrequency)."));
+}

@@ -531,6 +531,8 @@ mod tests {
             n_coils: 8,
             has_magnitude: false,
             field_strength: 7.0,
+            nominal_field_strength: None,
+            imaging_frequency: None,
             voxel_size: None,
             dims: (16, 16, 16),
             manufacturer: Some("GE".into()),

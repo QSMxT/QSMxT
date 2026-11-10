@@ -1029,6 +1029,8 @@ mod tests {
             has_magnitude,
             n_coils: 1,
             field_strength: 3.0,
+            nominal_field_strength: None,
+            imaging_frequency: None,
             b0_dir: None,
             mese_echo_times: None,
             real_imaginary: false,

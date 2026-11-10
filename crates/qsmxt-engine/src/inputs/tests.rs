@@ -385,3 +385,27 @@ fn the_report_serialises_for_a_front_end() {
     assert_eq!(today["echoes"][0].as_object().unwrap().keys().collect::<Vec<_>>(), ["phase", "magnitude", "sidecar"]);
     assert!(today.get("mese").is_none());
 }
+
+/// A sidecar's `ImagingFrequency` sets the field phase is converted with (the nominal one is kept
+/// beside it), and goes into the sidecars a run reads; a typed field strength wins over it.
+#[test]
+fn imaging_frequency_sets_the_working_field_unless_one_is_typed() {
+    let with_cf = |te: f64| {
+        let mut v = sidecar(te);
+        v["ImagingFrequency"] = json!(123.2);
+        EchoInput { phase: g(), magnitude: Some(grid((4, 4, 4))), sidecar: Some(v), ..Default::default() }
+    };
+    let mut inputs = ScanInputs { echoes: vec![with_cf(0.004), with_cf(0.008)], ..Default::default() };
+    let report = inputs.facts();
+    let facts = report.facts.clone().unwrap();
+    assert!((facts.field_strength - 123.2 / qsm_core::constants::GAMMA_BAR_MHZ_PER_T).abs() < 1e-12);
+    assert_eq!((facts.nominal_field_strength, facts.imaging_frequency), (Some(3.0), Some(123.2)));
+    assert_eq!(report.sidecars[0].imaging_frequency, Some(123.2));
+    // The same facts as from the sidecars alone (qsmbly's route).
+    let sidecars: Vec<_> = inputs.echoes.iter().map(|e| QsmSidecar::from_json(e.sidecar.as_ref().unwrap()).unwrap()).collect();
+    assert_eq!(ScanFacts::from_sidecars((4, 4, 4), &sidecars, true).unwrap().field_strength, facts.field_strength);
+
+    inputs.overrides.field_strength = Some(2.89);
+    let facts = inputs.facts().facts.unwrap();
+    assert_eq!((facts.field_strength, facts.nominal_field_strength, facts.imaging_frequency), (2.89, None, None));
+}

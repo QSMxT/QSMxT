@@ -1783,6 +1783,22 @@ fn describe_pad(p: [usize; 3]) -> String {
     if p[0] == p[1] && p[1] == p[2] { p[0].to_string() } else { format!("{}×{}×{}", p[0], p[1], p[2]) }
 }
 
+/// What phase was converted to ppm with: the scanner's centre frequency, which is QSMxT's rule,
+/// unless runs recorded falling back to the nominal field strength ([`Topic::CentreFrequency`]):
+/// all of them, or some ("where the data gave it").
+fn describe_centre_frequency(ran: Ran, doc: &mut Draft) {
+    let fell_back = ran.count(Topic::CentreFrequency, Choice::Unavailable);
+    doc.say(&[Stage::FieldMap], if fell_back == 0 {
+        "Phase was converted to ppm with the scanner's centre frequency (ImagingFrequency)."
+    } else if fell_back >= ran.runs() {
+        "Phase was converted to ppm with the nominal field strength, as the data gave no centre \
+         frequency (ImagingFrequency)."
+    } else {
+        "Phase was converted to ppm with the scanner's centre frequency (ImagingFrequency) where the \
+         data gave it, and with the nominal field strength otherwise."
+    }.to_string());
+}
+
 /// Describe the field-mapping stage: phase offset / bipolar correction, phase
 /// unwrapping, and B0 estimation. Shared by the standard pipeline and QSMART
 /// (which consumes a pre-computed total field, so these steps still run).
@@ -1793,6 +1809,7 @@ fn says_per_echo(config: &PipelineConfig) -> bool {
 }
 
 fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
+    describe_centre_frequency(ran, doc);
     let fm = &config.field_mapping;
     let d = FieldMappingConfig::default();
     let m = &config.motion_correction;

@@ -37,6 +37,8 @@ pub fn typical_scan() -> ScanFacts {
         n_coils: 1,
         real_imaginary: false,
         field_strength: 3.0,
+        nominal_field_strength: None,
+        imaging_frequency: None,
         b0_dir: None,
         mese_echo_times: None,
         custom_mask: false,

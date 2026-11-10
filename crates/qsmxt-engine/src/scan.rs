@@ -30,8 +30,17 @@ pub struct ScanFacts {
     pub n_coils: usize,
     /// Given as real and imaginary parts rather than magnitude and phase.
     pub real_imaginary: bool,
-    /// Tesla.
+    /// Tesla: the field strength phase is converted to ppm with, `ImagingFrequency / γ̄` when the
+    /// scan gives a centre frequency, else the nominal one ([`working_field_strength`]).
     pub field_strength: f64,
+    /// The nominal field strength (`MagneticFieldStrength`), when it differs from
+    /// [`field_strength`](Self::field_strength) because the scan gives `ImagingFrequency`; what
+    /// output sidecars and the methods text report as the scanner's field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nominal_field_strength: Option<f64>,
+    /// `ImagingFrequency` (MHz), when the scan gives it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imaging_frequency: Option<f64>,
     /// B0 direction in voxel coordinates, when a sidecar declares `B0_dir`.
     pub b0_dir: Option<(f64, f64, f64)>,
     /// Echo times of a matched multi-echo spin-echo (MESE) acquisition, if there is one.
@@ -83,7 +92,9 @@ impl ScanFacts {
             has_magnitude,
             n_coils: 1,
             real_imaginary: false,
-            field_strength: last.magnetic_field_strength,
+            field_strength: last.working_field_strength(),
+            nominal_field_strength: last.imaging_frequency.map(|_| last.magnetic_field_strength),
+            imaging_frequency: last.imaging_frequency,
             b0_dir,
             mese_echo_times: None,
             custom_mask: false,
@@ -134,6 +145,21 @@ pub struct QsmSidecar {
     /// `Manufacturer`, which decides the phase sign convention of real/imaginary input.
     #[serde(rename = "Manufacturer", default, skip_serializing_if = "Option::is_none")]
     pub manufacturer: Option<String>,
+    /// `ImagingFrequency` (MHz): the scanner's centre frequency. When given, phase is converted to
+    /// ppm with it ([`QsmSidecar::working_field_strength`]).
+    #[serde(rename = "ImagingFrequency", default, skip_serializing_if = "Option::is_none")]
+    pub imaging_frequency: Option<f64>,
+}
+
+/// The field strength phase is converted to ppm with: `ImagingFrequency / γ̄` when the sidecar
+/// gives a centre frequency, else the nominal `MagneticFieldStrength`. The toolboxes that convert
+/// with the scanner's frequency (MEDI, the χ-separation toolbox) read it from the header; on a
+/// Siemens "3 T" (2.89 T) the two differ by about 3.5 % (decided 2026-11-10, every run).
+pub fn working_field_strength(nominal: f64, imaging_frequency: Option<f64>) -> f64 {
+    match imaging_frequency {
+        Some(f) if f.is_finite() && f > 0.0 => f / qsm_core::constants::GAMMA_BAR_MHZ_PER_T,
+        _ => nominal,
+    }
 }
 
 impl QsmSidecar {
@@ -142,7 +168,13 @@ impl QsmSidecar {
         QsmSidecar {
             echo_time, magnetic_field_strength, b0_dir: None, slice_thickness: None,
             mr_acquisition_type: None, slice_encoding_direction: None, manufacturer: None,
+            imaging_frequency: None,
         }
+    }
+
+    /// The field strength this sidecar's phase is converted to ppm with ([`working_field_strength`]).
+    pub fn working_field_strength(&self) -> f64 {
+        working_field_strength(self.magnetic_field_strength, self.imaging_frequency)
     }
 
     /// The QSM-relevant fields of a parsed sidecar. `Err` names the required field that is
@@ -171,6 +203,7 @@ impl QsmSidecar {
             mr_acquisition_type: string("MRAcquisitionType"),
             slice_encoding_direction: string("SliceEncodingDirection"),
             manufacturer: string("Manufacturer"),
+            imaging_frequency: value.get("ImagingFrequency").and_then(|v| v.as_f64()),
         })
     }
 }
@@ -666,7 +699,7 @@ mod tests {
         QsmSidecar {
             echo_time: 0.004, magnetic_field_strength: 3.0, b0_dir: None,
             slice_thickness: thickness, mr_acquisition_type: acq.map(str::to_string),
-            slice_encoding_direction: dir.map(str::to_string), manufacturer: None,
+            slice_encoding_direction: dir.map(str::to_string), manufacturer: None, imaging_frequency: None,
         }
     }
 
