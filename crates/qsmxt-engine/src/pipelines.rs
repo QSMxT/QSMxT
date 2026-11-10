@@ -9,11 +9,11 @@
 //! - **A toolbox pipeline is QSM.rs's**: its starting choices, then every original authors'
 //!   setting (`reference` rule) those choices trigger, followed through ([`target`]). QSMxT adds
 //!   no settings of its own to a pipeline.
-//! - **The stages it covers start from QSMxT's defaults** ([`STAGES`]): every setting of a covered
-//!   stage goes back to its default before the pipeline's settings apply, so a value changed
-//!   earlier (MEDI's λ) is not kept under the toolbox's name. A setting the pipeline sets outside
-//!   those stages (the χ-separation toolbox's Tukey window) is set on its own. Everything else
-//!   stays as it is.
+//! - **Every pipeline starts from QSMxT's defaults** ([`STAGES`]): every reconstruction setting
+//!   (preprocessing, QSM, χ-separation) goes back to its default before the pipeline's settings
+//!   apply, whichever stages the pipeline itself sets, so nothing carries over from a pipeline
+//!   chosen before (DECOMPOSE under the MEDI toolbox's name) or from a value changed earlier
+//!   (MEDI's λ). The Input page, the Outputs tab and the execution settings stay as they are.
 //! - **Reasoned recommendations are not part of a pipeline.** A pipeline is what the authors ran;
 //!   a recommendation its choices trigger (PDF's measured iteration count) is still offered by
 //!   [`crate::recommendations`] as usual.
@@ -37,10 +37,13 @@ use crate::schema::{self, Section, ViewFacts};
 /// The id of QSMxT's own defaults, listed first.
 pub const QSMXT_DEFAULTS: &str = "qsmxt-defaults";
 
-/// The stages a pipeline can cover: those whose settings a pipeline resets to the defaults
-/// before its own apply.
-pub const STAGES: [Section; 6] =
-    [Section::Masking, Section::FieldMap, Section::Background, Section::Inversion, Section::Reference, Section::Separation];
+/// The reconstruction stages: every one goes back to QSMxT's defaults when a pipeline is chosen,
+/// before the pipeline's own settings apply. The Input page and the Outputs tab are not among
+/// them.
+pub const STAGES: [Section; 9] = [
+    Section::Geometry, Section::Masking, Section::Motion, Section::FieldMap, Section::Background,
+    Section::Inversion, Section::MultiOrientation, Section::Reference, Section::Separation,
+];
 
 /// A pipeline a front end lists.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -179,34 +182,23 @@ fn follow(config: &mut PipelineConfig, p: &ReferencePipeline, facts: &Facts) -> 
     Ok(set)
 }
 
-/// What choosing `id` makes of `config`, on a scan with `facts`.
+/// What choosing `id` makes of `config`, on a scan with `facts`: every stage back to its
+/// defaults, then the pipeline's settings.
 fn applied(config: &PipelineConfig, id: &str, facts: &ViewFacts) -> Result<Applied, String> {
     let facts = Facts::of_view(facts);
-    if id == QSMXT_DEFAULTS {
-        let mut c = config.clone();
-        reset(&mut c, &STAGES)?;
-        return Ok(Applied { config: c, stages: STAGES.to_vec(), extra: vec![] });
-    }
-    let p = REFERENCE_PIPELINES.iter().find(|p| p.id == id).ok_or_else(|| unknown(id))?;
-    // Which stages it covers: those of the settings it sets, found from a config with every
-    // stage at its default, so the user's other settings do not decide its extent.
-    let mut probe = config.clone();
-    reset(&mut probe, &STAGES)?;
-    let set = follow(&mut probe, p, &facts)?;
-    let mut stages: Vec<Section> = Vec::new();
+    let mut c = config.clone();
+    reset(&mut c, &STAGES)?;
     let mut extra: Vec<&'static str> = Vec::new();
-    for path in set {
-        match section_of(path) {
-            Some((_, s)) if STAGES.contains(&s) => if !stages.contains(&s) { stages.push(s) },
-            Some((p, _)) if !extra.contains(&p) => extra.push(p),
-            _ => {}
+    if id != QSMXT_DEFAULTS {
+        let p = REFERENCE_PIPELINES.iter().find(|p| p.id == id).ok_or_else(|| unknown(id))?;
+        for path in follow(&mut c, p, &facts)? {
+            match section_of(path) {
+                Some((p, s)) if !STAGES.contains(&s) && !extra.contains(&p) => extra.push(p),
+                _ => {}
+            }
         }
     }
-    stages.sort_by_key(|s| STAGES.iter().position(|x| x == s));
-    let mut c = config.clone();
-    reset(&mut c, &stages)?;
-    follow(&mut c, p, &facts)?;
-    Ok(Applied { config: c, stages, extra })
+    Ok(Applied { config: c, stages: STAGES.to_vec(), extra })
 }
 
 /// The stages choosing `id` resets to the defaults ([`STAGES`]), and the settings outside them
@@ -409,7 +401,26 @@ mod tests {
         assert_eq!(followed(&c, &facts()), None);
     }
 
-    /// Settings outside the stages a pipeline covers stay as they are.
+    /// Nothing carries over from a pipeline chosen before: choosing one after another is the same
+    /// as choosing it on QSMxT's defaults, and QSMxT's defaults are the defaults.
+    #[test]
+    fn nothing_carries_over_between_pipelines() {
+        let fresh = |id: &str| { let mut c = PipelineConfig::default(); choose(&mut c, id, &facts()).unwrap(); c };
+        let ids = ids();
+        for order in [ids.clone(), ids.iter().rev().copied().collect()] {
+            let mut c = PipelineConfig::default();
+            c.inversion.medi.lambda = 500.0;
+            for id in order {
+                choose(&mut c, id, &facts()).unwrap();
+                assert_eq!(serde_json::to_value(&c).unwrap(), serde_json::to_value(fresh(id)).unwrap(), "{id}");
+            }
+        }
+        let mut c = fresh("decompose");
+        choose(&mut c, QSMXT_DEFAULTS, &facts()).unwrap();
+        assert_eq!(serde_json::to_value(&c).unwrap(), serde_json::to_value(PipelineConfig::default()).unwrap());
+    }
+
+    /// The Outputs tab stays as it is.
     #[test]
     fn other_stages_are_kept() {
         let mut c = PipelineConfig::default();

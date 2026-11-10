@@ -213,25 +213,43 @@ pub fn draw_header(f: &mut Frame, app: &App, area: Rect) {
     let (ux0, ux1) = underline;
     put(buf, area, ux0, y1, &"━".repeat((ux1 - ux0) as usize), Style::default().fg(accent));
 
-    // The pipeline the settings follow, then the versions, right-aligned in the rule. Without
-    // room for both, the pipeline stays and the versions go; neither crosses the underline.
-    let ver = format!(" {} ", version());
-    let status = app.pipeline_status_text().map(|s| (format!(" Pipeline: {s} "), s));
-    let fits = |x: u16| x > ux1 + 1 && x > area.x;
-    let right = area.right().saturating_sub(2);
-    let status_w = status.as_ref().map_or(0, |(t, _)| w(t) as u16 + 1);
-    let vx = right.saturating_sub(w(&ver) as u16);
-    let show_ver = fits(vx.saturating_sub(status_w));
-    if show_ver {
-        put(buf, area, vx, y1, &ver, Style::default().fg(pal.muted));
-    }
-    if let Some((text, s)) = status {
-        let end = if show_ver { vx.saturating_sub(1) } else { right };
-        let sx = end.saturating_sub(w(&text) as u16);
-        if fits(sx) {
-            let color = if s.contains("departure") { Color::Yellow } else if s == "Custom" { pal.muted } else { Color::Green };
-            put(buf, area, sx, y1, &text, Style::default().fg(color).add_modifier(Modifier::BOLD));
+    // The pipeline the settings follow, then the versions, set into the rule, right-aligned
+    // after the underline. When the active tab leaves too little room there, the versions move
+    // before it (from the left), and then the pipeline too. Without room for both, the pipeline
+    // stays and the versions go; neither crosses the underline.
+    let status = app.pipeline_status_text().map(|s| {
+        let color = if s.contains("departure") { Color::Yellow } else if s == "Custom" { pal.muted } else { Color::Green };
+        (format!(" Pipeline: {s} "), Style::default().fg(color).add_modifier(Modifier::BOLD))
+    });
+    let ver = (format!(" {} ", version()), Style::default().fg(pal.muted));
+    // The columns free on each side of the underline, clear of it and of the edges: text after
+    // it is right-aligned, text before it starts at the left.
+    let after = (ux1 + 2, area.right().saturating_sub(2));
+    let before = (area.x + 2, ux0.saturating_sub(1));
+    let width_of = |items: &[&(String, Style)]| (items.iter().map(|(t, _)| w(t)).sum::<usize>() + items.len().saturating_sub(1)) as u16;
+    let fits = |items: &[&(String, Style)], (lo, hi): (u16, u16)| width_of(items) <= hi.saturating_sub(lo);
+    let mut place = |items: &[&(String, Style)], side_after: bool| {
+        let mut x = if side_after { after.1 - width_of(items) } else { before.0 };
+        for (text, style) in items {
+            x = put(buf, area, x, y1, text, *style) + 1;
         }
+    };
+    let both: Vec<&(String, Style)> = status.iter().chain(std::iter::once(&ver)).collect();
+    let (pipeline, versions): (Vec<_>, Vec<_>) = (status.iter().collect(), vec![&ver]);
+    if fits(&both, after) {
+        place(&both, true);
+    } else if fits(&pipeline, after) && (fits(&versions, before) || !fits(&both, before)) {
+        if fits(&versions, before) {
+            place(&versions, false);
+        }
+        place(&pipeline, true);
+    } else if fits(&both, before) {
+        place(&both, false);
+    } else if fits(&pipeline, before) {
+        if fits(&versions, after) {
+            place(&versions, true);
+        }
+        place(&pipeline, false);
     }
 }
 
@@ -372,12 +390,25 @@ pub(super) mod tests {
         }
     }
 
+    /// On every tab, with a pipeline in the rule too: after the underline when it is on the left,
+    /// before it when the active tab is too far right; never across it.
     #[test]
     fn the_versions_sit_in_the_rule_when_there_is_room() {
-        let mut app = App::new();
-        let t = render(&mut app, 120, 40);
         let qsmxt: String = crate::commands::update::describe_version().chars().take(15).collect();
-        assert!(row(&t, 1).contains(&format!("QSMxT {qsmxt}")), "{}", row(&t, 1));
+        for tab in 0..TAB_NAMES.len() {
+            let mut app = App::new();
+            app.choose_pipeline("medi-toolbox").unwrap();
+            goto(&mut app, tab, None);
+            let t = render(&mut app, 140, 40);
+            let rule = row(&t, 1);
+            assert!(rule.contains(&format!("QSMxT {qsmxt}")), "tab {tab}:\n{}\n{rule}", row(&t, 0));
+            assert!(rule.contains("Pipeline: MEDI toolbox"), "tab {tab}:\n{rule}");
+            let bar: String = rule.chars().filter(|c| *c == '━').collect();
+            let label = row(&t, 0);
+            let col = label[..label.find(&format!("{} {}", tab + 1, TAB_NAMES[tab])).unwrap()].chars().count();
+            assert_eq!(bar.chars().count(), w(&format!("{} {}", tab + 1, TAB_NAMES[tab])) + 2, "tab {tab}: the underline is whole:\n{rule}");
+            assert_eq!(rule.chars().nth(col), Some('━'), "tab {tab}:\n{rule}");
+        }
     }
 
     #[test]

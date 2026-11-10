@@ -9,6 +9,9 @@
 //!   - A checkbox: ticks it. A picker button (`[ … ▾ ]`) or a value to edit: opens it. A short
 //!     choice (`◀ … ▶`): the first click focuses it, the next takes the next value. Any other row
 //!     (Add section, Run): the first click focuses it, the next presses it.
+//!   - On the Input page: a field to type in, or the input-mode picker, opens; a run or an example
+//!     acquisition ticks; anything else (a subject, a series, a button) is focused by the first
+//!     click and pressed by the next.
 //!   - A pipeline, or a picker's entry: the first click highlights it, the next chooses it.
 //!   - A pop-up's button: presses it.
 //! - **While a pop-up is open**, only its own entries and buttons answer, as only its keys do.
@@ -24,7 +27,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 use ratatui::layout::{Alignment, Rect};
 use ratatui::text::Line;
 
-use super::app::{focusable_indices, App, PipelineRow};
+use super::app::{focusable_indices, App, DicomFocus, ExampleState, FilterFocus, InputMode, NiftiFocus, PipelineRow, TreeRow};
 
 /// Set (to anything non-empty) to leave the mouse to the terminal.
 pub const OPT_OUT_ENV: &str = "QSMXT_NO_MOUSE";
@@ -49,6 +52,21 @@ pub enum Hit {
     Picker { offset: usize },
     /// The open pop-up's button, by index.
     Button(usize),
+    /// A line of the Input page.
+    Input(InputTarget),
+}
+
+/// What a line of the Input page focuses: the input-mode picker and the directory/config fields
+/// above, then whatever the input mode puts below them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputTarget {
+    /// The input-mode picker (0) or a directory/config field (1-3).
+    Io(usize),
+    Filter(FilterFocus),
+    Nifti(NiftiFocus),
+    Dicom(DicomFocus),
+    /// The example picker's cursor: the Download button or an acquisition.
+    Example(usize),
 }
 
 impl Hit {
@@ -195,6 +213,59 @@ impl App {
                 }
             }
             Hit::Button(i) => self.press_button(i),
+            Hit::Input(target) => self.click_input(target),
+        }
+    }
+
+    /// What the Input page has focused.
+    pub(super) fn input_target(&self) -> InputTarget {
+        if self.active_field < Self::INPUT_IO_FIELDS {
+            return InputTarget::Io(self.active_field);
+        }
+        match self.input_mode {
+            InputMode::Bids => InputTarget::Filter(self.filter_state.focus),
+            InputMode::NIfTI => InputTarget::Nifti(self.nifti_state.focus),
+            InputMode::DicomToBids => InputTarget::Dicom(self.dicom_state.focus),
+            InputMode::Example => InputTarget::Example(self.example_state.cursor),
+        }
+    }
+
+    /// A click on a line of the Input page: focus it, then act as its key does.
+    fn click_input(&mut self, target: InputTarget) {
+        let current = self.input_target();
+        if self.is_typing() {
+            if current == target {
+                return;
+            }
+            // Typing elsewhere ends as Enter ends it, keeping (and applying) the text.
+            self.handle_key(key(KeyCode::Enter));
+        }
+        let again = current == target && !self.tab_focus;
+        self.tab_focus = false;
+        let below = Self::INPUT_IO_FIELDS;
+        match target {
+            InputTarget::Io(i) => self.active_field = i,
+            InputTarget::Filter(f) => (self.active_field, self.filter_state.focus) = (below, f),
+            InputTarget::Nifti(f) => (self.active_field, self.nifti_state.focus) = (below, f),
+            InputTarget::Dicom(f) => (self.active_field, self.dicom_state.focus) = (below, f),
+            InputTarget::Example(c) => (self.active_field, self.example_state.cursor) = (below, c),
+        }
+        let code = match target {
+            InputTarget::Io(_) => Some(KeyCode::Enter),
+            InputTarget::Filter(FilterFocus::TreeNode(i)) if matches!(self.filter_state.visible_rows().get(i), Some(TreeRow::Run { .. })) => {
+                Some(KeyCode::Char(' '))
+            }
+            InputTarget::Filter(FilterFocus::TreeNode(_)) => again.then_some(KeyCode::Enter),
+            InputTarget::Filter(_) => Some(KeyCode::Enter),
+            InputTarget::Nifti(NiftiFocus::MagFile(_) | NiftiFocus::PhaseFile(_)) => None,
+            InputTarget::Nifti(NiftiFocus::ConvertButton) => again.then_some(KeyCode::Enter),
+            InputTarget::Nifti(_) => Some(KeyCode::Enter),
+            InputTarget::Dicom(_) => again.then_some(KeyCode::Enter),
+            InputTarget::Example(c) if c != ExampleState::BUTTON => Some(KeyCode::Char(' ')),
+            InputTarget::Example(_) => again.then_some(KeyCode::Enter),
+        };
+        if let Some(code) = code {
+            self.handle_key(key(code));
         }
     }
 
@@ -356,6 +427,56 @@ mod tests {
         }
         assert_eq!(app.focus(), 0);
         assert!(!app.tab_focus && !app.on_subtabs(), "the wheel does not leave the page");
+    }
+
+    /// The Input page: the mode picker and the directories open on a click; a click elsewhere
+    /// ends typing; a run ticks; Include opens for typing.
+    #[test]
+    fn the_input_page_answers_clicks() {
+        use crate::tui::app::{FilterFocus, InputMode, TreeRow, TAB_INPUT};
+        let dir = tempfile::tempdir().unwrap();
+        crate::testutils::create_multi_orientation_bids(dir.path());
+        let mut app = App::new_for_trial();
+        assert_eq!(app.active_tab, TAB_INPUT);
+        click(&mut app, "Input mode:");
+        assert!(app.algo_modal.is_some(), "the mode picker opens");
+        app.algo_modal = None;
+        click(&mut app, "BIDS directory:");
+        assert!(app.editing && app.active_field == 1, "the directory opens for typing");
+        app.form.bids_dir = dir.path().to_string_lossy().into_owned();
+        app.cursor_pos = app.form.bids_dir.len();
+        click(&mut app, "Config file:");
+        assert_eq!(app.active_field, 3, "a click elsewhere ends typing and opens that field");
+        click(&mut app, "Output directory:");
+        app.handle_key(key(KeyCode::Esc));
+        assert!(!app.editing);
+        app.filter_state.maybe_rescan(&app.form.bids_dir.clone());
+        let rows = app.filter_state.visible_rows();
+        let run = rows.iter().position(|r| matches!(r, TreeRow::Run { .. })).expect("a run");
+        let name = {
+            let tree = app.filter_state.tree.as_ref().unwrap();
+            let TreeRow::Run { sub, ses, run: r } = rows[run] else { unreachable!() };
+            match ses {
+                Some(sei) => tree.subjects[sub].sessions[sei].runs[r].display.clone(),
+                None => tree.subjects[sub].runs[r].display.clone(),
+            }
+        };
+        let before = app.filter_state.tree.as_ref().unwrap().selected_runs();
+        click(&mut app, &name);
+        assert_eq!(app.filter_state.focus, FilterFocus::TreeNode(run));
+        assert_ne!(app.filter_state.tree.as_ref().unwrap().selected_runs(), before, "a click ticks a run");
+        click(&mut app, "Include:");
+        assert!(app.filter_state.include_editing, "Include opens for typing");
+        // The example page: an acquisition ticks; the Download button is focused, not pressed.
+        app.filter_state.include_editing = false;
+        app.input_mode = InputMode::Example;
+        let example = crate::example::EXAMPLES[1].id;
+        let ticked = app.example_state.selected[1];
+        click(&mut app, example);
+        assert_eq!(app.example_state.selected[1], !ticked);
+        click(&mut app, "[ Download ]");
+        assert_eq!(app.example_state.cursor, crate::tui::app::ExampleState::BUTTON);
+        assert_eq!(app.example_state.status, crate::tui::app::ConvertStatus::Idle, "one click only focuses it");
     }
 
     #[test]
