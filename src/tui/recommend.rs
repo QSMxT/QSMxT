@@ -399,16 +399,19 @@ impl App {
     /// findings the change created, and note the methods it chose. A chosen method's reference
     /// pipeline pop-up opens once nothing else is open. Nothing
     /// while a value is being typed.
-    /// Take the form as it is now as reviewed: a change whose every effect the user has just
-    /// seen and accepted (a pipeline's preview, which lists its recommendations too) opens no
-    /// pop-up. Its findings keep their markers.
-    pub(super) fn mark_recommendations_reviewed(&mut self) {
-        self.rec_form.clear();
-        self.rec_queue.clear();
-        self.check_recommendations();
+    pub fn check_recommendations(&mut self) {
+        self.check_recommendations_with(true);
     }
 
-    pub fn check_recommendations(&mut self) {
+    /// After a pipeline is applied: the reasoned recommendations its choices trigger (PDF's
+    /// iteration count) open their pop-up as after any change, but no reference pipeline pop-up
+    /// does: the pipeline is the authors' settings.
+    pub(super) fn check_recommendations_after_pipeline(&mut self) {
+        self.rec_queue.clear();
+        self.check_recommendations_with(false);
+    }
+
+    fn check_recommendations_with(&mut self, offer_reference: bool) {
         if self.is_typing() || self.rec_modal.is_some() || self.refs.modal.is_some() {
             return;
         }
@@ -458,7 +461,7 @@ impl App {
                 return;
             }
             // A method no longer chosen is not offered.
-            self.refs.pending.retain(|(m, _)| chosen.contains(m));
+            self.refs.pending.retain(|(m, _)| chosen.contains(m) && offer_reference);
             view = Some(v);
         }
         let view = view.unwrap_or_else(|| if self.refs.pending.is_empty() { vec![] } else { self.rule_view() });

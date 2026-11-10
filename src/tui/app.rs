@@ -251,7 +251,7 @@ impl DicomConvertState {
 
 // ─── NIfTI input state ───
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NiftiFocus {
     AddMagnitude,
     MagFile(usize),
@@ -473,7 +473,7 @@ impl NiftiState {
         let items = self.focusable_items();
         if let Some(pos) = items.iter().position(|f| f == &self.focus) {
             if pos + 1 < items.len() {
-                self.focus = items[pos + 1].clone();
+                self.focus = items[pos + 1];
             }
         }
     }
@@ -482,7 +482,7 @@ impl NiftiState {
         let items = self.focusable_items();
         if let Some(pos) = items.iter().position(|f| f == &self.focus) {
             if pos > 0 {
-                self.focus = items[pos - 1].clone();
+                self.focus = items[pos - 1];
                 return true;
             }
         }

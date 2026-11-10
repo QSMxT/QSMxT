@@ -9,7 +9,9 @@
 //! - **Applying** resets the pages the pipeline covers ([`pipelines::covers`]), then sets each
 //!   change on its row, as the recommendation pop-up's Apply does, until the form's config follows
 //!   the pipeline. The choice is remembered in the form (and so in the config:
-//!   `reference_pipeline`).
+//!   `reference_pipeline`). The reasoned recommendations its choices trigger (PDF's iteration
+//!   count, DECOMPOSE's per-echo QSM), which are not part of it, then open their pop-up as after
+//!   any change.
 //! - **The status** ([`pipelines::status`]: "MEDI toolbox", "MEDI toolbox · 1 departure",
 //!   "Custom") sits in the header's rule on every tab, cached by the form's fingerprint. `P` on a
 //!   settings page comes here.
@@ -234,8 +236,8 @@ impl App {
         self.pipeline_state = trial.pipeline_state;
         self.filter_state = trial.filter_state;
         self.pipelines.cached = None;
-        // The preview listed everything this changes, recommendations included.
-        self.mark_recommendations_reviewed();
+        // The recommendations its choices trigger, which are not part of it, are offered now.
+        self.check_recommendations_after_pipeline();
         Ok(())
     }
 
@@ -518,6 +520,19 @@ mod tests {
         }
     }
 
+    /// The recommendations a pipeline's choices trigger are not part of it, but open their
+    /// pop-up once it is applied: DECOMPOSE's per-echo QSM.
+    #[test]
+    fn applying_offers_the_recommendations_it_does_not_include() {
+        let mut app = four_echoes();
+        app.check_recommendations();
+        app.choose_pipeline("decompose").unwrap();
+        let m = app.rec_modal.as_ref().expect("a recommendation pop-up");
+        assert!(m.findings.iter().any(|r| r.rule == "decompose.qsm-per-echo"), "{:?}", m.findings);
+        assert_eq!(m.cursor, Some(0), "its Apply is preselected");
+        assert!(app.refs.modal.is_none() && app.refs.pending.is_empty(), "no reference pipeline pop-up");
+    }
+
     /// A value changed on a covered page goes back to the pipeline's; changing a setting after
     /// choosing is a departure; the command says the pipeline and the departure.
     #[test]
@@ -574,8 +589,9 @@ mod live {
     use super::*;
     use crossterm::event::{KeyEvent, KeyModifiers};
 
-    /// As the event loop runs it (a check and a draw before each key): after Apply no pop-up
-    /// opens, so the next key reaches the tab.
+    /// As the event loop runs it (a check and a draw before each key): after Apply the
+    /// recommendation the pipeline does not include (PDF's iterations) opens its pop-up, with
+    /// Apply preselected, and no reference pipeline pop-up follows it.
     #[test]
     fn keys_after_apply_like_the_event_loop() {
         let mut app = App::new();
@@ -585,10 +601,17 @@ mod live {
             t.draw(|f| super::super::ui::draw(f, app)).unwrap();
             app.handle_key(KeyEvent::new(code, KeyModifiers::NONE));
         };
-        for k in [KeyCode::Esc, KeyCode::Char('2'), KeyCode::Down, KeyCode::Enter, KeyCode::Enter, KeyCode::Char('4')] {
+        for k in [KeyCode::Esc, KeyCode::Char('2'), KeyCode::Down, KeyCode::Enter, KeyCode::Enter] {
             step(&mut app, k);
         }
-        assert_eq!(app.active_tab, super::super::app::TAB_QSM, "a digit after Apply switches tab");
-        assert!(app.rec_modal.is_none() && app.refs.modal.is_none(), "Apply opens no pop-up: the preview showed it all");
+        assert_eq!(app.pipeline_status().text(), "MEDI toolbox");
+        let m = app.rec_modal.as_ref().expect("Apply offers PDF's iteration count");
+        assert!(m.findings.iter().any(|r| r.setting == "bg_removal.pdf.n_cg"), "{:?}", m.findings);
+        assert_eq!(m.cursor, Some(0), "its Apply is preselected");
+        step(&mut app, KeyCode::Enter);
+        assert_eq!(super::super::command::config_from_app(&app).unwrap().bg_removal.pdf.n_cg, 300);
+        step(&mut app, KeyCode::Char('4'));
+        assert!(app.rec_modal.is_none() && app.refs.modal.is_none(), "no reference pipeline pop-up: the pipeline is the authors'");
+        assert_eq!(app.active_tab, super::super::app::TAB_QSM, "a digit after the pop-up switches tab");
     }
 }

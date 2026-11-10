@@ -1045,85 +1045,95 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         draw_dicom_series_section(&app.dicom_state, &mut lines, in_io);
     }
 
+    // Where each focusable thing is drawn, for scrolling to the focused one and for the mouse.
     // IO fields: mode(1) + dir fields(3) = 4 lines total (no blank between mode and dirs)
-    let focused_line = if in_io {
-        Some(app.active_field) // field 0 = mode line, 1-3 = dirs
-    } else if is_bids {
-        // Filter area starts after IO fields + separator + header
-        let offset = io_field_count + 2; // +2 for blank + header
-        // The orientation block sits between Exclude and the tree, so it pushes everything
-        // below it down. One helper renders it and reports its height, so the two cannot drift.
-        let ori = orientation_block(app, in_io).len();
-        match app.filter_state.focus {
-            super::app::FilterFocus::Include => Some(offset),
-            super::app::FilterFocus::Exclude => Some(offset + 1),
-            super::app::FilterFocus::OrientationGroup => Some(offset + 2),
-            super::app::FilterFocus::TreeNode(i) => Some(offset + ori + i + 3),
-            super::app::FilterFocus::NumEchoes => {
-                let vis_len = app.filter_state.visible_rows().len();
-                Some(offset + ori + vis_len + 4)
+    use super::mouse::InputTarget;
+    let total_lines = lines.len();
+    // The orientation block sits between Exclude and the tree, so it pushes everything
+    // below it down. One helper renders it and reports its height, so the two cannot drift.
+    let ori = if is_bids { orientation_block(app, in_io).len() } else { 0 };
+    let line_of = |target: InputTarget| -> Option<usize> {
+        match target {
+            InputTarget::Io(i) => Some(i),
+            InputTarget::Filter(focus) if is_bids => {
+                // Filter area starts after IO fields + separator + header
+                let offset = io_field_count + 2; // +2 for blank + header
+                Some(match focus {
+                    super::app::FilterFocus::Include => offset,
+                    super::app::FilterFocus::Exclude => offset + 1,
+                    super::app::FilterFocus::OrientationGroup => offset + 2,
+                    super::app::FilterFocus::TreeNode(i) => offset + ori + i + 3,
+                    super::app::FilterFocus::NumEchoes => offset + ori + app.filter_state.visible_rows().len() + 4,
+                })
             }
-        }
-    } else if is_nifti {
-        // NIfTI section: compute line position from focus
-        // Layout: blank, (optional scan_info), mag_header, AddMag, mag files...,
-        // blank, phase_header, AddPhase, phase files..., blank, params_header, EchoTimes, FieldStrength, B0Direction
-        let has_scan_info = !app.nifti_state.magnitude_files.is_empty()
-            || !app.nifti_state.phase_files.is_empty()
-            || !app.nifti_state.scan_log.is_empty();
-        let offset = io_field_count + 1 + (has_scan_info as usize) + 1; // blank + (scan_info?) + header
-        let items = app.nifti_state.focusable_items();
-        if let Some(pos) = items.iter().position(|f| f == &app.nifti_state.focus) {
-            let mut line = offset;
-            for (idx, item) in items.iter().enumerate() {
-                if idx == pos { break; }
-                match item {
-                    super::app::NiftiFocus::AddMagnitude => line += 1,
-                    super::app::NiftiFocus::MagFile(_) => line += 1,
-                    super::app::NiftiFocus::AddPhase => line += 3,      // line + blank + header + add line
-                    super::app::NiftiFocus::PhaseFile(_) => line += 1,
-                    super::app::NiftiFocus::EchoTimes => line += 3,     // line + blank + header + param
-                    super::app::NiftiFocus::FieldStrength => line += 1,
-                    super::app::NiftiFocus::B0Direction => line += 1,
-                    super::app::NiftiFocus::ConvertButton => line += 2, // blank + button
-                }
-            }
-            Some(line)
-        } else {
-            None
-        }
-    } else if is_example {
-        None
-    } else {
-        // DICOM series area
-        let offset = io_field_count + 2; // blank + header
-        match app.dicom_state.focus {
-            super::app::DicomFocus::Series(i) => {
-                // Mirror the unique-series render layout: an acq header line whenever
-                // the acquisition name changes, then one line per unique series.
-                if let Some(ref session) = app.dicom_state.session {
-                    let mut line_offset = offset;
-                    let mut current_acq: Option<String> = None;
-                    let mut found = None;
-                    for (current_flat, g) in session.unique_series().iter().enumerate() {
-                        if current_acq.as_deref() != Some(g.acq_name.as_str()) {
-                            current_acq = Some(g.acq_name.clone());
-                            line_offset += 1; // acq header
-                        }
-                        if current_flat == i {
-                            found = Some(line_offset);
-                            break;
-                        }
-                        line_offset += 1;
+            InputTarget::Nifti(focus) if is_nifti => {
+                // NIfTI section: compute line position from focus
+                // Layout: blank, (optional scan_info), mag_header, AddMag, mag files...,
+                // blank, phase_header, AddPhase, phase files..., blank, params_header, EchoTimes, FieldStrength, B0Direction
+                let has_scan_info = !app.nifti_state.magnitude_files.is_empty()
+                    || !app.nifti_state.phase_files.is_empty()
+                    || !app.nifti_state.scan_log.is_empty();
+                let offset = io_field_count + 1 + (has_scan_info as usize) + 1; // blank + (scan_info?) + header
+                let items = app.nifti_state.focusable_items();
+                let pos = items.iter().position(|f| *f == focus)?;
+                let mut line = offset;
+                for item in &items[..pos] {
+                    match item {
+                        super::app::NiftiFocus::AddMagnitude => line += 1,
+                        super::app::NiftiFocus::MagFile(_) => line += 1,
+                        super::app::NiftiFocus::AddPhase => line += 3,      // line + blank + header + add line
+                        super::app::NiftiFocus::PhaseFile(_) => line += 1,
+                        super::app::NiftiFocus::EchoTimes => line += 3,     // line + blank + header + param
+                        super::app::NiftiFocus::FieldStrength => line += 1,
+                        super::app::NiftiFocus::B0Direction => line += 1,
+                        super::app::NiftiFocus::ConvertButton => line += 2, // blank + button
                     }
-                    found
-                } else {
-                    None
+                }
+                Some(line)
+            }
+            InputTarget::Dicom(focus) if app.input_mode == super::app::InputMode::DicomToBids => {
+                // DICOM series area
+                let offset = io_field_count + 2; // blank + header
+                match focus {
+                    super::app::DicomFocus::Series(i) => {
+                        // Mirror the unique-series render layout: an acq header line whenever
+                        // the acquisition name changes, then one line per unique series.
+                        let session = app.dicom_state.session.as_ref()?;
+                        let mut line_offset = offset;
+                        let mut current_acq: Option<String> = None;
+                        for (current_flat, g) in session.unique_series().iter().enumerate() {
+                            if current_acq.as_deref() != Some(g.acq_name.as_str()) {
+                                current_acq = Some(g.acq_name.clone());
+                                line_offset += 1; // acq header
+                            }
+                            if current_flat == i {
+                                return Some(line_offset);
+                            }
+                            line_offset += 1;
+                        }
+                        None
+                    }
+                    super::app::DicomFocus::ConvertButton => Some(total_lines.saturating_sub(1)),
                 }
             }
-            super::app::DicomFocus::ConvertButton => Some(lines.len().saturating_sub(1)),
+            _ => None,
         }
     };
+    let focused_line = if in_io || !is_example { line_of(app.input_target()) } else { None };
+    // Everything a click can focus, with its line.
+    let mut targets: Vec<InputTarget> = (0..io_field_count).map(InputTarget::Io).collect();
+    if is_bids && app.filter_state.tree.as_ref().is_some_and(|t| !t.subjects.is_empty()) && !app.form.bids_dir.trim().is_empty() {
+        use super::app::FilterFocus as F;
+        targets.extend([F::Include, F::Exclude, F::OrientationGroup].map(InputTarget::Filter));
+        targets.extend((0..app.filter_state.visible_rows().len()).map(|i| InputTarget::Filter(F::TreeNode(i))));
+        targets.push(InputTarget::Filter(F::NumEchoes));
+    } else if is_nifti {
+        targets.extend(app.nifti_state.focusable_items().into_iter().map(InputTarget::Nifti));
+    } else if let (super::app::InputMode::DicomToBids, Some(session)) = (app.input_mode, &app.dicom_state.session) {
+        targets.extend((0..session.unique_series().len()).map(|i| InputTarget::Dicom(super::app::DicomFocus::Series(i))));
+        targets.push(InputTarget::Dicom(super::app::DicomFocus::ConvertButton));
+    }
+    let target_lines: Vec<(usize, InputTarget)> = targets.into_iter().filter_map(|t| Some((line_of(t)?, t))).collect();
 
     // How far the IO fields are scrolled: the example list scrolls on its own, under them.
     let io_scroll = match app.input_mode {
@@ -1141,9 +1151,13 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         }
         super::app::InputMode::Example => {
             let focused = in_io.then_some(app.active_field);
-            draw_example_picker(f, &mut app.example_state, content_area, lines, in_io, focused)
+            draw_example_picker(f, &mut app.example_state, &app.hits, content_area, lines, in_io, focused)
         }
     };
+    // The example picker records its own lines (its list scrolls apart from the IO fields).
+    if !is_example {
+        add_line_hits(&app.hits, content_area, io_scroll, target_lines);
+    }
 
     f.render_widget(Paragraph::new(help), help_area);
 
@@ -1205,9 +1219,20 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
 /// Draw the example-dataset picker under the IO fields in `lines`: the Download button with its
 /// status and progress log stay in view, and the acquisitions scroll in a region of their own.
 /// A terminal too short for that scrolls it all as one. Returns how far the IO fields scrolled.
+/// Record a click target for each of `targets` (by line) that is in view in `area`, scrolled by
+/// `scroll` lines.
+fn add_line_hits(hits: &super::mouse::Hits, area: Rect, scroll: usize, targets: impl IntoIterator<Item = (usize, super::mouse::InputTarget)>) {
+    for (line, target) in targets {
+        if line >= scroll && line < scroll + area.height as usize {
+            hits.add(Rect { y: area.y + (line - scroll) as u16, height: 1, ..area }, super::mouse::Hit::Input(target));
+        }
+    }
+}
+
 fn draw_example_picker(
     f: &mut Frame,
     state: &mut super::app::ExampleState,
+    hits: &super::mouse::Hits,
     area: Rect,
     mut lines: Vec<Line<'_>>,
     in_io: bool,
@@ -1234,6 +1259,8 @@ fn draw_example_picker(
         let inner = block.inner(list);
         f.render_widget(block, list);
         render_scrollable(f, inner, rows, &mut state.scroll_offset, focused_row);
+        add_line_hits(hits, head, 0, example_targets(button_line, 0).take(super::app::App::INPUT_IO_FIELDS + 1));
+        add_line_hits(hits, inner, state.scroll_offset, example_targets(0, 0).skip(super::app::App::INPUT_IO_FIELDS + 1));
         0
     } else {
         lines.push(Line::from(""));
@@ -1242,8 +1269,18 @@ fn draw_example_picker(
         let focused = focused_io.or(Some(focused_row.map_or(button_line, |r| first_row + r)));
         lines.extend(rows);
         render_scrollable(f, area, lines, &mut state.scroll_offset, focused);
+        add_line_hits(hits, area, state.scroll_offset, example_targets(button_line, first_row));
         state.scroll_offset
     }
+}
+
+/// The example page's click targets with their lines: the IO fields, the Download button on
+/// `button_line`, then the acquisitions from `first_row`.
+fn example_targets(button_line: usize, first_row: usize) -> impl Iterator<Item = (usize, super::mouse::InputTarget)> {
+    use super::{app::ExampleState, mouse::InputTarget};
+    let io = (0..super::app::App::INPUT_IO_FIELDS).map(|i| (i, InputTarget::Io(i)));
+    let rows = (0..crate::example::EXAMPLES.len()).map(move |r| (first_row + r, InputTarget::Example(r + 1)));
+    io.chain(std::iter::once((button_line, InputTarget::Example(ExampleState::BUTTON)))).chain(rows)
 }
 
 /// One row for each acquisition, ticked or not.
