@@ -83,7 +83,13 @@ impl RecModal {
     pub fn new(findings: Vec<Recommendation>) -> Self {
         let conflict = findings.len() > 1;
         let choices = choices(&findings);
-        RecModal { findings, choices, cursor: (!conflict).then_some(0), why: false, scroll: 0, details: false, changed: false }
+        // A suggestion (not preselected) starts on Keep mine.
+        let cursor = match conflict {
+            true => None,
+            false if findings.iter().all(|r| r.strength.preselected()) => Some(0),
+            false => choices.iter().position(|c| *c == RecChoice::Keep),
+        };
+        RecModal { findings, choices, cursor, why: false, scroll: 0, details: false, changed: false }
     }
 
     /// `findings` are on the setting just changed, and scoped to a flag that is on: turning the
@@ -106,7 +112,7 @@ impl RecModal {
     /// when recommendations disagree.
     pub fn details(findings: Vec<Recommendation>) -> Self {
         let conflict = findings.iter().any(|r| r.conflict && open(r));
-        let reasoned = findings.first().is_some_and(|r| r.kind == Kind::Reasoned);
+        let reasoned = findings.first().is_some_and(|r| r.kind == Kind::Reasoned && r.strength.preselected());
         let mut choices = choices(&findings);
         // Before Keep mine: the flag's own row may be hidden, as HEIDI's is with QSMART.
         let keep = choices.iter().position(|c| *c == RecChoice::Keep).unwrap_or(choices.len());
@@ -134,6 +140,7 @@ impl RecModal {
             Strength::Required if self.changed => format!(" {} requires a change ", r.current_text()),
             Strength::Required => format!(" {} requires a change ", r.trigger.name),
             Strength::Discouraged => format!(" Discouraged with {} ", r.trigger.name),
+            Strength::Suggested if self.findings.len() == 1 => format!(" {} suggests a change ", r.trigger.name),
             _ if self.findings.len() > 1 => " Recommendations disagree ".to_string(),
             _ => format!(" {} recommends a change ", r.trigger.name),
         }
@@ -212,7 +219,7 @@ impl RefItem {
         let mut options = vec![Some((None, finding.recommended.name.clone()))];
         options.extend(finding.alternatives().into_iter().map(|a| Some((Some(a.value.clone()), a.name.clone()))));
         options.push(None);
-        let pick = if finding.kind == Kind::Reasoned { 0 } else { options.len() - 1 };
+        let pick = if finding.kind == Kind::Reasoned && finding.strength.preselected() { 0 } else { options.len() - 1 };
         RefItem { finding, also: vec![], options, pick }
     }
 
@@ -627,7 +634,7 @@ impl App {
                     let button = modal.cursor.map(|c| modal.buttons[c]);
                     for item in &mut items {
                         item.take(match button {
-                            Some(RefButton::ApplyRecommended) => item.finding.kind == Kind::Reasoned,
+                            Some(RefButton::ApplyRecommended) => item.finding.kind == Kind::Reasoned && item.finding.strength.preselected(),
                             Some(RefButton::ApplyAll) => true,
                             _ => false,
                         });
@@ -863,6 +870,7 @@ impl App {
                 (true, Strength::Required, _) => "Required",
                 (true, Strength::Discouraged, _) => "Discouraged",
                 (true, Strength::Recommended, _) => "Recommended",
+                (true, Strength::Suggested, _) => "Suggested",
             };
             let value = if r.strength == Strength::Discouraged && r.departs {
                 format!("not {}", r.current_text())
@@ -1008,6 +1016,25 @@ mod tests {
         let config = super::super::command::config_from_app(&app).unwrap();
         assert!(config.inversion.medi.msmv_prefilter);
         assert!(!app.rule_view().iter().any(|r| r.rule == "medi-msmv.prefilter" && r.departs));
+    }
+
+    /// A suggestion (not preselected) opens on Keep mine, and a reference pop-up item starts on
+    /// keeping the current value; iHARPERELLA's whole rim (a recommendation) starts on Apply.
+    #[test]
+    fn a_suggestion_starts_on_keep_mine() {
+        let mut a = app();
+        select(&mut a, "qsm_algorithm", "ndi", &QSM_PICKER_OPTIONS);
+        let ndi: Vec<_> = a.rule_view().into_iter().filter(|r| r.rule == "ndi.weight-norm-in-vivo" && r.departs).collect();
+        assert_eq!(ndi.len(), 1, "{ndi:?}");
+        let modal = RecModal::new(ndi.clone());
+        assert_eq!(modal.cursor, modal.choices.iter().position(|c| *c == RecChoice::Keep));
+        let item = RefItem::new(ndi[0].clone());
+        assert_eq!(item.pick, item.options.len() - 1);
+        let mut b = app();
+        b.pipeline_state.set_select("bf_algorithm", super::super::app::BF_OPTIONS.iter().position(|o| *o == "iharperella").unwrap());
+        let rim: Vec<_> = b.rule_view().into_iter().filter(|r| r.rule == "iharperella.whole-rim" && r.departs).collect();
+        assert_eq!(rim.len(), 1);
+        assert_eq!(RecModal::new(rim).cursor, Some(0));
     }
 
     #[test]

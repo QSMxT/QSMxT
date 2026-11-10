@@ -289,6 +289,7 @@ fn kind_tag(r: &qsmxt_engine::recommendations::Recommendation) -> Line<'static> 
         (Kind::Reference, _) => (format!("{} (not a recommendation)", Kind::Reference.label()), Color::Cyan),
         (_, Strength::Required) => ("Required".to_string(), Color::Yellow),
         (_, Strength::Discouraged) => ("Discouraged".to_string(), Color::Yellow),
+        (_, Strength::Suggested) => ("Suggested (not preselected)".to_string(), Color::Yellow),
         _ => (Kind::Reasoned.label().to_string(), Color::Yellow),
     };
     Line::from(Span::styled(text, Style::default().fg(color).add_modifier(Modifier::BOLD)))

@@ -299,6 +299,10 @@ pub(super) fn table() -> Vec<Def> {
             o("iqfm", "iqfm", "iQFM", "iQFM deep-learning joint unwrapping + background removal from phase (weights auto-downloaded) — https://doi.org/10.1016/j.neuroimage.2022.119410"),
         ])).basic().flag("--bf-algorithm").full("Background removal")
         .gui("How the background field, from sources outside the mask, is removed to leave the local field"),
+        d("bg_removal.erode_voxels", Background, "Erode mask", "Erode the brain mask after field mapping, before background removal (0 = none)", Int)
+        .min(0.0).units("voxels").flag("--bf-erode-voxels")
+        .when(|x| !x.bf("iqfm"))
+        .gui("Erode the brain mask before background removal; the field map itself is not masked again"),
         d("bg_removal.vsharp.deconvolve", Background, "Deconvolve", "Undo the SMV high-pass with a truncated-SVD deconvolution (default: off)", Bool).flag("--vsharp-deconvolve").parent("bg_removal.algorithm")
         .when(|x| x.bf("vsharp"))
         .gui("Undo the SMV high-pass with a truncated-SVD deconvolution"),

@@ -137,16 +137,16 @@ fn every_rule_setting_is_a_qsmxt_setting() {
     }
 }
 
-/// iQFM reaches the rules as iHARPERELLA, which must stay a choice no rule names.
+/// iQFM reaches the rules as HARPERELLA, which must stay a choice no rule names.
 #[test]
 fn the_iqfm_placeholder_is_named_by_no_rule() {
     let names = |t: &Test| match t {
-        Test::OneOf { values } | Test::NoneOf { values } => values.contains(&core::Value::Choice("iharperella")),
+        Test::OneOf { values } | Test::NoneOf { values } => values.contains(&core::Value::Choice("harperella")),
         Test::Range { .. } => false,
     };
     for r in core::RULES {
         let in_when = r.when.iter().any(|c| matches!(c, Condition::Setting { is, .. } if names(is)));
-        assert!(!in_when && !names(&r.expect), "{} names iHARPERELLA", r.id);
+        assert!(!in_when && !names(&r.expect), "{} names HARPERELLA", r.id);
     }
 }
 
@@ -278,6 +278,36 @@ fn reference_findings_are_information_only() {
     assert_eq!((r.kind, r.kind.label()), (Kind::Reference, "Original authors' setting"));
     let (applied, _) = accept(&mut c, &found, Accept { recommendations: false, reference: true });
     assert!(applied.iter().any(|a| a.rule == "rts.bg-vsharp") && c.bg_removal.algorithm == BfAlgorithm::Vsharp, "{applied:?}");
+}
+
+/// A suggestion (QSM.rs's `Strength::Suggested`: NDI's in-mask normaliser, WH-QSM's in-mask flat
+/// weight) is offered with its reason, but `--accept-recommendations` leaves it, it can be kept,
+/// and it is not a departure in the methods Note. iHARPERELLA's whole rim is a plain recommendation.
+#[test]
+fn suggestions_are_offered_but_not_applied() {
+    for (alg, rule) in [(QsmAlgorithm::Ndi, "ndi.weight-norm-in-vivo"), (QsmAlgorithm::Whqsm, "whqsm.flat-in-mask-in-vivo")] {
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = alg;
+        let found = recommendations(&c, &Facts::default());
+        let r = found.iter().find(|r| r.rule == rule).unwrap_or_else(|| panic!("{rule}: {found:?}"));
+        assert!(r.strength == Strength::Suggested && r.kind == Kind::Reasoned && r.actionable(), "{rule}");
+        assert!(!r.strength.preselected() && r.strength.dismissable(), "{rule}");
+        let before = c.clone();
+        let (applied, _) = accept(&mut c, &found, Accept { recommendations: true, reference: true });
+        assert!(!applied.iter().any(|a| a.rule == rule) && c.inversion.ndi == before.inversion.ndi
+            && c.inversion.whqsm == before.inversion.whqsm, "{rule}: {applied:?}");
+        assert!(crate::recommendations::config_note(&c).departures.iter().all(|l| !l.contains("normalis") && !l.contains("weight")),
+            "{rule}: {:?}", crate::recommendations::config_note(&c));
+        apply(&mut c, rule, None).unwrap();
+        assert!(!recommendations(&c, &Facts::default()).iter().any(|r| r.rule == rule && r.departs), "{rule}");
+    }
+    let mut c = PipelineConfig::default();
+    c.bg_removal.algorithm = BfAlgorithm::Iharperella;
+    let found = recommendations(&c, &Facts::default());
+    let r = found.iter().find(|r| r.rule == "iharperella.whole-rim").unwrap();
+    assert!(r.strength == Strength::Recommended && r.strength.preselected());
+    accept(&mut c, &found, Accept { recommendations: true, reference: false });
+    assert_eq!(c.bg_removal.iharperella.rim, HarperellaRim::Whole);
 }
 
 /// Each finding carries its kind, from QSM.rs: the authors' setting for a `reference` rule,

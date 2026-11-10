@@ -1582,6 +1582,11 @@ pub struct PipelineArgs {
     #[arg(long, value_enum)]
     pub bf_algorithm: Option<BfAlgorithmArg>,
 
+    /// Erode the brain mask by N voxels after field mapping, before background removal; the field
+    /// map is not masked again (default: 0, none)
+    #[arg(long, value_name = "N")]
+    pub bf_erode_voxels: Option<usize>,
+
     /// Masking input image (overrides the input of the configured mask sections;
     /// combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude)
     #[arg(long, value_enum)]

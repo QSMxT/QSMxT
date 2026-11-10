@@ -1494,7 +1494,7 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("vsharp_threshold", "bg_removal.vsharp.threshold"), ("vsharp_max_radius", "bg_removal.vsharp.max_radius"),
     ("vsharp_min_radius", "bg_removal.vsharp.min_radius"),
     ("vsharp_radius_step", "bg_removal.vsharp.radius_step"), ("vsharp_grid", "bg_removal.vsharp.grid"),
-    ("vsharp_grid_spacing", "bg_removal.vsharp.grid_spacing"), ("pdf_tol", "bg_removal.pdf.tol"), ("pdf_n_cg", "bg_removal.pdf.n_cg"),
+    ("vsharp_grid_spacing", "bg_removal.vsharp.grid_spacing"), ("pdf_tol", "bg_removal.pdf.tol"), ("pdf_n_cg", "bg_removal.pdf.n_cg"), ("bf_erode_voxels", "bg_removal.erode_voxels"),
     ("pdf_space", "bg_removal.pdf.space"), ("pdf_n_pad", "bg_removal.pdf.n_pad"), ("lbv_tol", "bg_removal.lbv.tol"),
     ("lbv_depth", "bg_removal.lbv.depth"), ("lbv_peel", "bg_removal.lbv.peel"), ("lbv_n1", "bg_removal.lbv.n1"),
     ("lbv_n2", "bg_removal.lbv.n2"), ("lbv_n3", "bg_removal.lbv.n3"), ("lbv_precision", "bg_removal.lbv.precision"),
@@ -2117,6 +2117,8 @@ pub struct PipelineFormState {
     // PDF
     pub pdf_tol: String,
     pub pdf_n_cg: String,
+    /// Erode the mask by this many voxels before background removal (`bg_removal.erode_voxels`).
+    pub bf_erode_voxels: String,
     /// An index into PDF_SPACE_OPTIONS.
     pub pdf_space: usize,
     pub pdf_n_pad: String,
@@ -2631,6 +2633,7 @@ impl Default for PipelineFormState {
             vsharp_grid_spacing: format!("{}", qsmxt_engine::VsharpConfig::default().grid_spacing),
             pdf_tol: format!("{}", qsm_core::bgremove::PdfParams::default().tol),
             pdf_n_cg: format!("{}", qsm_core::bgremove::PdfParams::default().n_cg),
+            bf_erode_voxels: "0".to_string(),
             pdf_space: pdf_space_index(qsmxt_engine::PdfConfig::default().space),
             pdf_n_pad: format!("{}", qsm_core::bgremove::PdfParams::default().n_pad),
             lbv_tol: format!("{}", qsm_core::bgremove::LbvParams::default().tol),
@@ -3637,6 +3640,11 @@ impl PipelineFormState {
             label: "BG removal", field: "bf_algorithm",
             options: BF_OPTIONS, help: BF_HELP,
         });
+        // iQFM has no separate background-removal stage to erode the mask for.
+        if BF_OPTIONS.get(self.bf_algorithm).copied() != Some("iqfm") {
+            rows.push(PipelineRow::Param { label: "  Erode mask", field: "bf_erode_voxels",
+                help: "Erode the brain mask after field mapping, before background removal (0 = none)" });
+        }
         match self.bf_algorithm {
             0 => { // V-SHARP
                 rows.push(PipelineRow::Toggle { label: "  Deconvolve", field: "vsharp_deconvolve",
@@ -4181,7 +4189,7 @@ impl PipelineFormState {
         "ismv_tol", "ismv_max_iter", "ismv_radius", "sharp_threshold", "sharp_radius",
         "resharp_radius", "resharp_tik_reg", "resharp_tol", "resharp_max_iter",
         "harperella_radius", "harperella_max_iter", "harperella_tol", "harperella_pad",
-        "iharperella_max_iter", "iharperella_tol", "iharperella_pad", "pdf_n_cg", "pdf_n_pad",
+        "iharperella_max_iter", "iharperella_tol", "iharperella_pad", "pdf_n_cg", "pdf_n_pad", "bf_erode_voxels",
         "bet_smoothness", "bet_gradient_threshold", "bet_iterations", "bet_subdivisions",
         "medi_msmv_maxk", "medi_msmv_vessel_radius",
         "qsmart_ilsqr_max_iter", "qsmart_ilsqr_pad_mm", "qsmart_vasc_sphere_radius",
@@ -4250,6 +4258,7 @@ impl PipelineFormState {
             "harperella_pad" => &self.harperella_pad,
             "iharperella_pad" => &self.iharperella_pad,
             "pdf_n_cg" => &self.pdf_n_cg,
+            "bf_erode_voxels" => &self.bf_erode_voxels,
             "pdf_n_pad" => &self.pdf_n_pad,
             "nltv_te_ms" => &self.nltv_te_ms,
             "medi_te_ms" => &self.medi_te_ms,
@@ -4530,6 +4539,7 @@ impl PipelineFormState {
             "harperella_pad" => Some(&mut self.harperella_pad),
             "iharperella_pad" => Some(&mut self.iharperella_pad),
             "pdf_n_cg" => Some(&mut self.pdf_n_cg),
+            "bf_erode_voxels" => Some(&mut self.bf_erode_voxels),
             "pdf_n_pad" => Some(&mut self.pdf_n_pad),
             "nltv_te_ms" => Some(&mut self.nltv_te_ms),
             "medi_te_ms" => Some(&mut self.medi_te_ms),

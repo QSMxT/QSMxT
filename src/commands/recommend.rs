@@ -180,10 +180,11 @@ pub(crate) fn dry_text(config: &PipelineConfig, runs: &[QsmRun], accept: Accept)
     } else {
         let _ = writeln!(out, "Recommendations (QSM.rs's pipeline rules for the chosen methods):");
         type Belongs = Box<dyn Fn(&Recommendation) -> bool>;
-        let groups: [(&str, Belongs); 5] = [
+        let groups: [(&str, Belongs); 6] = [
             ("required (the run is refused as configured)", Box::new(|r| r.strength == Strength::Required)),
             ("recommended (--accept-recommendations applies them)", Box::new(|r| !r.dismissed && r.strength == Strength::Recommended)),
             ("discouraged (--accept-recommendations applies the alternative)", Box::new(|r| !r.dismissed && r.strength == Strength::Discouraged)),
+            ("suggested (better on some data, e.g. in vivo; --accept-recommendations leaves them)", Box::new(|r| !r.dismissed && r.strength == Strength::Suggested)),
             ("original authors' settings (not recommendations; --accept-reference-settings applies them)", Box::new(|r| r.kind == Kind::Reference)),
             ("dismissed (kept)", Box::new(|r| r.dismissed && r.strength.dismissable())),
         ];
@@ -262,6 +263,7 @@ pub(crate) fn summary(config: &PipelineConfig, runs: &[QsmRun], accepted: &Accep
     let wants = |r: &Recommendation| match r.strength {
         Strength::Reference => format!("the original authors' setting ({}) is {}", r.trigger.name, r.recommended.name),
         Strength::Discouraged => format!("which is discouraged with {}", r.trigger.name),
+        Strength::Suggested => format!("{} suggests {}", r.trigger.name, r.recommended.name),
         _ => format!("{} recommends {}", r.trigger.name, r.recommended.name),
     };
     for f in found.iter().filter(|f| f.finding.dismissed) {

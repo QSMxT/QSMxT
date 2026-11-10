@@ -71,6 +71,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--cosmos-max-iter <COSMOS_MAX_ITER>` | Magnitude-weighted COSMOS: conjugate-gradient iteration cap (needs --cosmos-magnitude-weighting) |
 | `--unwrapping-algorithm <UNWRAPPING_ALGORITHM>` | Unwrapping algorithm (default: romeo) Values: `romeo`, `laplacian`, `prelude`, `medi-region-growing`. |
 | `--bf-algorithm <BF_ALGORITHM>` | Background field removal algorithm (default: vsharp) Values: `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm`. |
+| `--bf-erode-voxels <N>` | Erode the brain mask by N voxels after field mapping, before background removal; the field map is not masked again (default: 0, none) |
 | `--masking-input <MASKING_INPUT>` | Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude) Values: `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality`. |
 | `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
 | `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
@@ -548,6 +549,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--cosmos-max-iter <COSMOS_MAX_ITER>` | Magnitude-weighted COSMOS: conjugate-gradient iteration cap (needs --cosmos-magnitude-weighting) |
 | `--unwrapping-algorithm <UNWRAPPING_ALGORITHM>` | Unwrapping algorithm (default: romeo) Values: `romeo`, `laplacian`, `prelude`, `medi-region-growing`. |
 | `--bf-algorithm <BF_ALGORITHM>` | Background field removal algorithm (default: vsharp) Values: `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm`. |
+| `--bf-erode-voxels <N>` | Erode the brain mask by N voxels after field mapping, before background removal; the field map is not masked again (default: 0, none) |
 | `--masking-input <MASKING_INPUT>` | Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude) Values: `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality`. |
 | `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
 | `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
@@ -960,6 +962,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--cosmos-max-iter <COSMOS_MAX_ITER>` | Magnitude-weighted COSMOS: conjugate-gradient iteration cap (needs --cosmos-magnitude-weighting) |
 | `--unwrapping-algorithm <UNWRAPPING_ALGORITHM>` | Unwrapping algorithm (default: romeo) Values: `romeo`, `laplacian`, `prelude`, `medi-region-growing`. |
 | `--bf-algorithm <BF_ALGORITHM>` | Background field removal algorithm (default: vsharp) Values: `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm`. |
+| `--bf-erode-voxels <N>` | Erode the brain mask by N voxels after field mapping, before background removal; the field map is not masked again (default: 0, none) |
 | `--masking-input <MASKING_INPUT>` | Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude) Values: `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality`. |
 | `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
 | `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
