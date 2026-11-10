@@ -411,6 +411,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--n4-bias-field-fwhm <N4_BIAS_FIELD_FWHM>` | N4: FWHM of the Gaussian modelling the bias field's blurring of the log-intensity histogram (default 0.15) |
 | `--n4-wiener-noise <N4_WIENER_NOISE>` | N4: noise term of the Wiener deconvolution of the histogram (default 0.01) |
 | `--n4-histogram-bins <N4_HISTOGRAM_BINS>` | N4: bins of the log-intensity histogram (default 200) |
+| `--n4-geometry <GEOMETRY>` | N4: the image geometry it is given: `scanner` (the scan's header, as ANTs reads the acquired NIfTI; the default) or `make-nii` (the axis-aligned header MATLAB's make_nii writes, as QSMART runs N4). N4's shrunk grid falls where the header puts it. |
 | `--linear-fit-estimate-offset <LINEAR_FIT_ESTIMATE_OFFSET>` | Linear and robust fit: estimate a phase offset term (default: true). The robust fit needs 4 echoes with it, 3 without. |
 | `--robust-fit-loss <ROBUST_FIT_LOSS>` | Motion-robust fit (`--b0-estimation robust-fit`): loss turning residuals into weights. `tukey` (default) rejects echoes past the tuning radius; `huber` caps but never rejects. Values: `tukey`, `huber`. |
 | `--robust-fit-tuning <ROBUST_FIT_TUNING>` | Motion-robust fit: tuning radius in robust-scale units (default: the loss's conventional value, Tukey 4.685 / Huber 1.345). Smaller is more aggressive. |
@@ -894,6 +895,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--n4-bias-field-fwhm <N4_BIAS_FIELD_FWHM>` | N4: FWHM of the Gaussian modelling the bias field's blurring of the log-intensity histogram (default 0.15) |
 | `--n4-wiener-noise <N4_WIENER_NOISE>` | N4: noise term of the Wiener deconvolution of the histogram (default 0.01) |
 | `--n4-histogram-bins <N4_HISTOGRAM_BINS>` | N4: bins of the log-intensity histogram (default 200) |
+| `--n4-geometry <GEOMETRY>` | N4: the image geometry it is given: `scanner` (the scan's header, as ANTs reads the acquired NIfTI; the default) or `make-nii` (the axis-aligned header MATLAB's make_nii writes, as QSMART runs N4). N4's shrunk grid falls where the header puts it. |
 | `--linear-fit-estimate-offset <LINEAR_FIT_ESTIMATE_OFFSET>` | Linear and robust fit: estimate a phase offset term (default: true). The robust fit needs 4 echoes with it, 3 without. |
 | `--robust-fit-loss <ROBUST_FIT_LOSS>` | Motion-robust fit (`--b0-estimation robust-fit`): loss turning residuals into weights. `tukey` (default) rejects echoes past the tuning radius; `huber` caps but never rejects. Values: `tukey`, `huber`. |
 | `--robust-fit-tuning <ROBUST_FIT_TUNING>` | Motion-robust fit: tuning radius in robust-scale units (default: the loss's conventional value, Tukey 4.685 / Huber 1.345). Smaller is more aggressive. |
@@ -1311,6 +1313,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--n4-bias-field-fwhm <N4_BIAS_FIELD_FWHM>` | N4: FWHM of the Gaussian modelling the bias field's blurring of the log-intensity histogram (default 0.15) |
 | `--n4-wiener-noise <N4_WIENER_NOISE>` | N4: noise term of the Wiener deconvolution of the histogram (default 0.01) |
 | `--n4-histogram-bins <N4_HISTOGRAM_BINS>` | N4: bins of the log-intensity histogram (default 200) |
+| `--n4-geometry <GEOMETRY>` | N4: the image geometry it is given: `scanner` (the scan's header, as ANTs reads the acquired NIfTI; the default) or `make-nii` (the axis-aligned header MATLAB's make_nii writes, as QSMART runs N4). N4's shrunk grid falls where the header puts it. |
 | `--linear-fit-estimate-offset <LINEAR_FIT_ESTIMATE_OFFSET>` | Linear and robust fit: estimate a phase offset term (default: true). The robust fit needs 4 echoes with it, 3 without. |
 | `--robust-fit-loss <ROBUST_FIT_LOSS>` | Motion-robust fit (`--b0-estimation robust-fit`): loss turning residuals into weights. `tukey` (default) rejects echoes past the tuning radius; `huber` caps but never rejects. Values: `tukey`, `huber`. |
 | `--robust-fit-tuning <ROBUST_FIT_TUNING>` | Motion-robust fit: tuning radius in robust-scale units (default: the loss's conventional value, Tukey 4.685 / Huber 1.345). Smaller is more aggressive. |
@@ -3252,6 +3255,7 @@ qsmxt qsmart [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_S
 | `--magnitude <MAGNITUDE>` | Magnitude NIfTI (optional; drives vasculature detection). With --qsmart-vessel-magnitude mean-n4 (the default) every echo's magnitude (4D), averaged and N4 bias-corrected; with `combined`, a combined magnitude (3D), used as it is. |
 | `--reliability <RELIABILITY>` | QSMART's reliability map from its echo fit (`qsmxt fieldmap laplacian --b0-estimation qsmart-echofit --reliability-output`): both stages are reconstructed inside it. |
 | `--intermediates <DIR>` | Also write QSMART's intermediate maps into this directory, as &lt;name&gt;.nii: vessel_mask (1 = vessel), localfield_stage1, chimap_stage1, localfield_stage2 and chimap_stage2 (ppm), and vessel_magnitude when QSMART makes its own (mean-n4) |
+| `--ilsqr-precision <PRECISION>` | Arithmetic of the inner iLSQR's two LSQR solves (`--qsmart-inversion ilsqr`): double, or single as STI Suite's QSM_iLSQR, which QSMART calls (default: double; `qsmxt run --ilsqr-precision`) |
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
 | `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
 | `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius, in --qsmart-vessel-units (default 8) |
@@ -3405,6 +3409,7 @@ qsmxt homogeneity [OPTIONS] --output <OUTPUT> <INPUT>
 | `--n4-bias-field-fwhm <N4_BIAS_FIELD_FWHM>` | N4: FWHM of the Gaussian modelling the bias field's blurring of the log-intensity histogram (default 0.15) |
 | `--n4-wiener-noise <N4_WIENER_NOISE>` | N4: noise term of the Wiener deconvolution of the histogram (default 0.01) |
 | `--n4-histogram-bins <N4_HISTOGRAM_BINS>` | N4: bins of the log-intensity histogram (default 200) |
+| `--n4-geometry <GEOMETRY>` | N4: the image geometry it is given: `scanner` (the scan's header, as ANTs reads the acquired NIfTI; the default) or `make-nii` (the axis-aligned header MATLAB's make_nii writes, as QSMART runs N4). N4's shrunk grid falls where the header puts it. |
 
 ## `qsmxt resample`
 

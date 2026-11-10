@@ -1514,6 +1514,7 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("n4_max_iterations", "n4.max_iterations"), ("n4_convergence_threshold", "n4.convergence_threshold"),
     ("n4_mesh", "n4.mesh"), ("n4_spline_order", "n4.spline_order"), ("n4_bias_field_fwhm", "n4.bias_field_fwhm"),
     ("n4_wiener_noise", "n4.wiener_noise"), ("n4_histogram_bins", "n4.histogram_bins"),
+    ("n4_geometry", "masking.n4_geometry"),
     ("ignore_slice_gap", "pipeline.ignore_slice_gap"), ("tukey_window", "pipeline.tukey_window"),
     ("crop_to_mask", "pipeline.crop_to_mask"),
     ("crop_margin_mm", "pipeline.crop_margin_mm"), ("fft_padding", "pipeline.fft_padding"),
@@ -2030,6 +2031,8 @@ pub struct PipelineFormState {
     pub n4_bias_field_fwhm: String,
     pub n4_wiener_noise: String,
     pub n4_histogram_bins: String,
+    /// An index into N4_GEOMETRY_OPTIONS.
+    pub n4_geometry: usize,
     /// MCPC-3D-S coil combination smoothing (x y z voxels), for uncombined multi-coil runs.
     pub coil_combination_sigma: String,
     pub romeo_phase_coherence: bool,
@@ -2584,6 +2587,7 @@ impl Default for PipelineFormState {
             n4_bias_field_fwhm: fmt_default(qsmxt_engine::N4Config::default().bias_field_fwhm),
             n4_wiener_noise: fmt_default(qsmxt_engine::N4Config::default().wiener_noise),
             n4_histogram_bins: qsmxt_engine::N4Config::default().histogram_bins.to_string(),
+            n4_geometry: n4_geometry_index(qsmxt_engine::MaskingConfig::default().n4_geometry),
             coil_combination_sigma: {
                 let s = qsmxt_engine::FieldMappingConfig::default().coil_combination_sigma;
                 format!("{} {} {}", s[0], s[1], s[2])
@@ -3046,6 +3050,15 @@ const INHOMOGENEITY_METHOD_HELP: &[&str] = &[
     "Divide by a smoothed estimate of the receive sensitivity (MriResearchTools' makehomogeneous) (default)",
     "N4 bias field correction, as ANTs' N4BiasFieldCorrection: a B-spline bias field fitted to sharpen the intensity histogram — https://doi.org/10.1109/TMI.2010.2046908",
 ];
+/// The image geometry N4 is given, in the CLI's names.
+pub const N4_GEOMETRY_OPTIONS: &[&str] = &["scanner", "make-nii"];
+const N4_GEOMETRY_HELP: &[&str] = &[
+    "The scan's header, as ANTs reads the acquired NIfTI (default)",
+    "The axis-aligned header MATLAB's make_nii writes, as QSMART runs N4",
+];
+fn n4_geometry_index(g: qsmxt_engine::N4Geometry) -> usize {
+    qsmxt_engine::N4Geometry::ALL.iter().position(|&x| x == g).unwrap_or(0)
+}
 pub const VSHARP_GRID_OPTIONS: &[&str] = &["native", "finest", "isotropic"];
 const VSHARP_GRID_HELP: &[&str] = &[
     "The acquired voxel grid",
@@ -3442,6 +3455,8 @@ impl PipelineFormState {
                     help: "Noise term of the Wiener deconvolution of the histogram" });
                 rows.push(PipelineRow::Param { label: "    Histogram bins", field: "n4_histogram_bins",
                     help: "Bins of the log-intensity histogram" });
+                rows.push(PipelineRow::AlgoSelect { label: "    Geometry", field: "n4_geometry",
+                    options: N4_GEOMETRY_OPTIONS, help: N4_GEOMETRY_HELP });
             }
         }
         rows.push(PipelineRow::Toggle {
@@ -4926,6 +4941,7 @@ impl PipelineFormState {
             "qsmart_vessel_units" => self.qsmart_vessel_units,
             "qsmart_fit_threshold_mode" => self.qsmart_fit_threshold_mode,
             "inhomogeneity_method" => self.inhomogeneity_method,
+            "n4_geometry" => self.n4_geometry,
             "vsharp_grid" => self.vsharp_grid,
             "robust_fit_loss" => self.robust_fit_loss,
             "motion_reference" => self.motion_reference,
@@ -4994,6 +5010,7 @@ impl PipelineFormState {
             "qsmart_vessel_units" => self.qsmart_vessel_units = val,
             "qsmart_fit_threshold_mode" => self.qsmart_fit_threshold_mode = val,
             "inhomogeneity_method" => self.inhomogeneity_method = val,
+            "n4_geometry" => self.n4_geometry = val.min(N4_GEOMETRY_OPTIONS.len() - 1),
             "vsharp_grid" => self.vsharp_grid = val,
             "robust_fit_loss" => self.robust_fit_loss = val,
             "motion_reference" => self.motion_reference = val,

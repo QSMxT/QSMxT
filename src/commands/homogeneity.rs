@@ -30,9 +30,14 @@ pub fn execute(args: HomogeneityArgs) -> crate::Result<()> {
                 args.input.display(), dims.0, dims.1, dims.2
             );
             // N4's shrink offsets depend on the image's physical geometry, which ITK reads from the
-            // header (its sform/qform choice, LPS origin and directions): read it the same way.
-            let geometry = qsm_core::io::read_itk_geometry_file(&args.input)
-                .map_err(|e| QsmxtError::NiftiIo(format!("{}: {e}", args.input.display())))?;
+            // header (its sform/qform choice, LPS origin and directions): read it the same way, or
+            // take make_nii's axis-aligned header for the file's voxel size (`--n4-geometry`).
+            let geometry = match args.n4_params.n4_geometry.unwrap_or_default() {
+                qsmxt_engine::N4Geometry::Scanner => qsm_core::io::read_itk_geometry_file(&args.input)
+                    .map_err(|e| QsmxtError::NiftiIo(format!("{}: {e}", args.input.display())))?,
+                qsmxt_engine::N4Geometry::MakeNii =>
+                    qsm_core::utils::ItkGeometry::make_nii((grid.vsx(), grid.vsy(), grid.vsz())),
+            };
             qsm_core::utils::n4_bias_correction(&nifti.data, None, &grid, &geometry, &core, |_, _| {})?.corrected
         }
     };

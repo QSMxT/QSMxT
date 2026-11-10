@@ -190,7 +190,9 @@ writes QSMART's own maps into `DIR` as `<name>.nii`: `vessel_mask` (1 = vessel),
 `vessel_magnitude` when QSMART makes its own from the echoes.
 `--qsmart-offset-grid qsmart-reference` combines the two stages on the k-space grid of the
 authors' code instead of the FFT grid; the two differ only when a matrix dimension is odd, and
-the option is there for comparing with their code. `iqsm` and
+the option is there for comparing with their code. `--ilsqr-precision single` runs the inner
+iLSQR's two LSQR solves in single precision, as STI Suite's `QSM_iLSQR`, which QSMART calls,
+does (`--pipeline qsmart` does the same). `iqsm` and
 `iqsm-plus` read every echo's wrapped phase (one 4D file) instead of a field, with
 `--echo-times`, `--field-strength`, `--b0-direction` (an input of iQSM+'s network) and,
 to weight the echoes, the magnitude (`--magnitude`, 4D).
@@ -277,7 +279,7 @@ qsmxt r2prime --r2star r2star.nii --r2primenet --field-strength 3 -m mask.nii -o
 
 | Command | Purpose |
 | --- | --- |
-| `homogeneity` | Correct intensity inhomogeneity on magnitude data, with `makehomogeneous` (default) or N4 (`--method n4`) |
+| `homogeneity` | Correct intensity inhomogeneity on magnitude data, with `makehomogeneous` (default) or N4 (`--method n4`; `--n4-geometry make-nii` gives N4 the axis-aligned header MATLAB's `make_nii` writes, as QSMART does) |
 | `resample` | Resample an oblique volume to axial orientation. Continuous data (magnitude, an unwrapped field, χ) as a positional argument; **wrapped phase needs `--phase` with `--magnitude`** so the interpolation goes through the complex domain |
 
 ```sh

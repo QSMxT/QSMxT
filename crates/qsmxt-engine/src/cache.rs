@@ -59,6 +59,7 @@ pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value
             "inhomogeneity_method": config.masking.inhomogeneity_method,
             "homogeneity": config.homogeneity,
             "n4": config.n4,
+            "n4_geometry": config.masking.n4_geometry,
         }),
         // The main mask is not the two-pass one, so its settings stay out of the main mask's key.
         "mask" if step == base => {
@@ -199,7 +200,11 @@ mod tests {
         shrink.n4.shrink_factor += 1;
         let mut levels = n4.clone();
         levels.n4.max_iterations.push(10);
+        let mut make_nii = n4.clone();
+        make_nii.masking.n4_geometry = crate::enums::N4Geometry::MakeNii;
+        assert_ne!(step_cache_key("mask", None, &p, &make_nii), step_cache_key("mask", None, &p, &n4));
         for step in ["magnitude", "mask-reliable"] {
+            assert_ne!(step_cache_key(step, None, &p, &make_nii), step_cache_key(step, None, &p, &n4), "{step}");
             assert_ne!(step_cache_key(step, None, &p, &n4), step_cache_key(step, None, &p, &base), "{step}");
             assert_ne!(step_cache_key(step, None, &p, &shrink), step_cache_key(step, None, &p, &n4), "{step}");
             assert_ne!(step_cache_key(step, None, &p, &levels), step_cache_key(step, None, &p, &n4), "{step}");

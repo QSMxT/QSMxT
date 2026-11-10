@@ -689,6 +689,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.homogeneity_nbox { config.homogeneity.nbox = v; }
         if let Some(m) = args.inhomogeneity_method { config.masking.inhomogeneity_method = m.into(); }
         args.n4_params.apply_to(&mut config.n4);
+        if let Some(v) = args.n4_params.n4_geometry { config.masking.n4_geometry = v; }
 
         // ── Linear and robust fit ──
         if let Some(l) = args.robust_fit_loss {
@@ -1276,6 +1277,20 @@ mod tests {
             shrink_factor: 2, max_iterations: vec![20, 10], convergence_threshold: 0.001, mesh: [2, 2, 1],
             spline_order: 2, bias_field_fwhm: 0.2, wiener_noise: 0.02, histogram_bins: 100,
         });
+        assert_eq!(c.masking.n4_geometry, qsmxt_engine::N4Geometry::Scanner);
+    }
+
+    /// N4's geometry from the command line and a config file, and back to the same command line.
+    #[test]
+    fn n4_geometry_from_the_command_line() {
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--inhomogeneity-method", "n4", "--n4-geometry", "make-nii"]);
+        assert_eq!(c.masking.n4_geometry, qsmxt_engine::N4Geometry::MakeNii);
+        let cmd = qsmxt_engine::generate_command(&c);
+        assert!(cmd.contains("--n4-geometry make-nii"), "{cmd}");
+        assert!(cli::Cli::try_parse_from(["qsmxt", "run", "<bids>", "--n4-geometry", "nifti"]).is_err());
+        let c = PipelineConfig::from_toml("[masking]\ninhomogeneity_method = \"n4\"\nn4_geometry = \"make-nii\"\n").unwrap();
+        assert_eq!(c.masking.n4_geometry, qsmxt_engine::N4Geometry::MakeNii);
+        assert_eq!(PipelineConfig::from_toml("").unwrap().masking.n4_geometry, qsmxt_engine::N4Geometry::Scanner);
     }
 
     #[test]

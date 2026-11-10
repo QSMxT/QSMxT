@@ -168,6 +168,47 @@ impl fmt::Display for InhomogeneityMethod {
     }
 }
 
+/// The image geometry N4 is given when it corrects the magnitude (`masking.n4_geometry`;
+/// qsm-core `N4Geometry`). N4 fits on a shrunk image whose voxel offsets ITK derives from the
+/// header, so the geometry changes the correction.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub enum N4Geometry {
+    /// The scan's header, as ANTs reads the acquired NIfTI.
+    #[default]
+    #[serde(rename = "scanner")]
+    Scanner,
+    /// The axis-aligned header MATLAB's `make_nii(img, vox)` writes, as QSMART hands N4 the
+    /// magnitude.
+    #[serde(rename = "make-nii")]
+    MakeNii,
+}
+impl N4Geometry {
+    /// Every variant, in the order the CLI help and the TUI list them.
+    pub const ALL: [N4Geometry; 2] = [Self::Scanner, Self::MakeNii];
+
+    /// The name the CLI, the config file and the TUI use (qsm-core's `N4Geometry::id`).
+    pub fn as_str(self) -> &'static str {
+        qsm_core::pipeline::N4Geometry::from(self).id()
+    }
+}
+impl fmt::Display for N4Geometry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl From<N4Geometry> for qsm_core::pipeline::N4Geometry {
+    fn from(g: N4Geometry) -> Self {
+        use qsm_core::pipeline::N4Geometry as G;
+        match g { N4Geometry::Scanner => G::Scanner, N4Geometry::MakeNii => G::MakeNii }
+    }
+}
+impl From<qsm_core::pipeline::N4Geometry> for N4Geometry {
+    fn from(g: qsm_core::pipeline::N4Geometry) -> Self {
+        use qsm_core::pipeline::N4Geometry as G;
+        match g { G::Scanner => Self::Scanner, G::MakeNii => Self::MakeNii }
+    }
+}
+
 /// Grid V-SHARP estimates the background field on (qsm-core `VsharpGrid`).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]

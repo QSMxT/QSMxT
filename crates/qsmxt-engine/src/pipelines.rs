@@ -485,6 +485,23 @@ mod tests {
         assert!(text.contains("morphological closing (radius 2 voxels)"), "{text}");
     }
 
+    /// QSMART hands N4 a file make_nii wrote, so its pipeline gives N4 make_nii's geometry; every
+    /// other pipeline keeps the scan's header (QSM.rs's rules). The command line names the
+    /// pipeline, not the setting.
+    #[test]
+    fn n4_runs_on_make_niis_geometry_only_for_qsmart() {
+        use crate::enums::N4Geometry;
+        for p in pipelines() {
+            let mut c = PipelineConfig::default();
+            choose(&mut c, p.id, &facts()).unwrap();
+            let want = if p.id == "qsmart" { N4Geometry::MakeNii } else { N4Geometry::Scanner };
+            assert_eq!(c.masking.n4_geometry, want, "{}", p.id);
+        }
+        let mut c = PipelineConfig::default();
+        choose(&mut c, "qsmart", &facts()).unwrap();
+        assert!(!crate::command::generate_command(&c).contains("--n4-geometry"));
+    }
+
     /// MEDI's BET.m runs bet2 on the array as stored, and so does the χ-separation toolbox, which
     /// calls it; every other pipeline's BET reads the image as FSL does (QSM.rs's rules).
     #[test]

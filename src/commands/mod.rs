@@ -1278,6 +1278,12 @@ mod integration_tests {
         };
         super::homogeneity::execute(args(2)).unwrap();
         assert!(output.exists());
+        // --n4-geometry make-nii takes make_nii's header for the file's voxel size.
+        std::fs::remove_file(&output).unwrap();
+        let mut a = args(2);
+        a.n4_params.n4_geometry = Some(qsmxt_engine::N4Geometry::MakeNii);
+        super::homogeneity::execute(a).unwrap();
+        assert!(output.exists());
         let e = super::homogeneity::execute(args(5)).unwrap_err().to_string();
         assert!(e.contains("--n4-shrink-factor") && e.contains("--method makehomogeneous"), "{e}");
     }

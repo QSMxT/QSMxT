@@ -153,6 +153,7 @@ takes:
 | `--n4-bias-field-fwhm` | FWHM of the Gaussian modelling the bias field's blurring of the log-intensity histogram | 0.15 |
 | `--n4-wiener-noise` | noise term of the Wiener deconvolution of that histogram | 0.01 |
 | `--n4-histogram-bins` | bins of the histogram | 200 |
+| `--n4-geometry` | the image geometry N4 is given: `scanner` (the scan's header, as ANTs reads the acquired NIfTI) or `make-nii` (the axis-aligned header MATLAB's `make_nii` writes, as QSMART runs N4) | `scanner` |
 
 The defaults are those of `N4BiasFieldCorrection` given only an input and an
 output. N4 runs on the whole image, without a mask, because the corrected
@@ -161,6 +162,11 @@ shrunk by the shrink factor, so it needs at least twice that many voxels along
 each axis (8 at the default of 4); a thinner acquisition is refused before
 processing starts, naming the axis that is too short, and a lower `--n4-shrink-factor`
 or `makehomogeneous` will run it.
+
+Where the shrunk grid falls depends on the image's header, so the geometry N4
+is given changes the correction slightly. QSMART writes the magnitude it hands
+N4 with `make_nii`, whose header is axis-aligned at the voxel size;
+`--pipeline qsmart` sets `--n4-geometry make-nii` to match.
 
 The two methods give different images. `makehomogeneous` returns the magnitude
 divided by its sensitivity estimate, about 1 in tissue; N4 keeps the image's own
