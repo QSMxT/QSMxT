@@ -521,6 +521,7 @@ pub fn to_qsm_pipeline_config(cfg: &PipelineConfig) -> qsm_core::pipeline::QsmPi
                 (true, crate::enums::InhomogeneityMethod::N4) => qsm_core::pipeline::InhomogeneityCorrection::N4,
                 (true, _) => qsm_core::pipeline::InhomogeneityCorrection::Makehomogeneous,
             },
+            n4_geometry: cfg.masking.n4_geometry.into(),
             homogeneity_sigma_mm: cfg.homogeneity.sigma_mm,
             homogeneity_nbox: cfg.homogeneity.nbox,
             sections: to_mask_sections(&cfg.masking.sections, &cfg.bet),

@@ -923,6 +923,12 @@ pub fn parse_bet_orientation(s: &str) -> Result<qsmxt_engine::BetOrientation, St
         .ok_or_else(|| format!("expected fsl or as-stored, got '{s}'"))
 }
 
+/// The image geometry N4 is given: `scanner` or `make-nii`.
+pub fn parse_n4_geometry(s: &str) -> Result<qsmxt_engine::N4Geometry, String> {
+    qsmxt_engine::N4Geometry::ALL.into_iter().find(|g| g.as_str() == s.trim())
+        .ok_or_else(|| format!("expected scanner or make-nii, got '{s}'"))
+}
+
 /// HARPERELLA's / iHARPERELLA's boundary rim: `whole` or `sti`.
 pub fn parse_harperella_rim(s: &str) -> Result<qsmxt_engine::HarperellaRim, String> {
     qsmxt_engine::HarperellaRim::ALL.into_iter().find(|r| r.as_str() == s.trim())
@@ -1454,6 +1460,11 @@ pub struct N4ParamArgs {
     /// N4: bins of the log-intensity histogram (default 200)
     #[arg(long)]
     pub n4_histogram_bins: Option<usize>,
+    /// N4: the image geometry it is given: `scanner` (the scan's header, as ANTs reads the
+    /// acquired NIfTI; the default) or `make-nii` (the axis-aligned header MATLAB's make_nii
+    /// writes, as QSMART runs N4). N4's shrunk grid falls where the header puts it
+    #[arg(long, value_name = "GEOMETRY", value_parser = parse_n4_geometry)]
+    pub n4_geometry: Option<qsmxt_engine::N4Geometry>,
 }
 
 impl N4ParamArgs {
@@ -4435,6 +4446,11 @@ pub struct QsmartArgs {
     /// chimap_stage2 (ppm), and vessel_magnitude when QSMART makes its own (mean-n4)
     #[arg(long, value_name = "DIR")]
     pub intermediates: Option<PathBuf>,
+    /// Arithmetic of the inner iLSQR's two LSQR solves (`--qsmart-inversion ilsqr`): double, or
+    /// single as STI Suite's QSM_iLSQR, which QSMART calls (default: double; `qsmxt run
+    /// --ilsqr-precision`)
+    #[arg(long, value_name = "PRECISION", value_parser = parse_ilsqr_precision)]
+    pub ilsqr_precision: Option<qsmxt_engine::IlsqrPrecision>,
     #[command(flatten)]
     pub qsmart_params: QsmartParamArgs,
 }

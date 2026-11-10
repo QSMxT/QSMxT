@@ -773,6 +773,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
                 n4_bias_field_fwhm: parse_optional_f64(&ps.n4_bias_field_fwhm),
                 n4_wiener_noise: parse_optional_f64(&ps.n4_wiener_noise),
                 n4_histogram_bins: parse_optional_usize(&ps.n4_histogram_bins),
+                n4_geometry: qsmxt_engine::N4Geometry::ALL.get(ps.n4_geometry).copied(),
             }
         } else { Default::default() },
         linear_fit_estimate_offset: Some(ps.linear_fit_estimate_offset),
@@ -1181,11 +1182,16 @@ mod tests {
         app.pipeline_state.n4_max_iterations = "20 10".into();
         app.pipeline_state.n4_mesh = "2 2 1".into();
         app.pipeline_state.n4_shrink_factor = "2".into();
+        assert!(fields(&app).contains(&"n4_geometry".to_string()));
+        assert_eq!(config_from_app(&app).unwrap().masking.n4_geometry, qsmxt_engine::N4Geometry::Scanner);
+        app.pipeline_state.set_select("n4_geometry", 1);
         let c = config_from_app(&app).unwrap();
+        assert_eq!(c.masking.n4_geometry, qsmxt_engine::N4Geometry::MakeNii);
         assert_eq!(c.masking.inhomogeneity_method, qsmxt_engine::InhomogeneityMethod::N4);
         assert_eq!((c.n4.max_iterations.clone(), c.n4.mesh, c.n4.shrink_factor), (vec![20, 10], [2, 2, 1], 2));
         let a = pipeline_args_from_app(&app);
         assert_eq!(a.inhomogeneity_method, Some(crate::cli::InhomogeneityMethodArg::N4));
+        assert_eq!(a.n4_params.n4_geometry, Some(qsmxt_engine::N4Geometry::MakeNii));
         assert!(a.homogeneity_sigma_mm.is_none(), "makehomogeneous's settings stay off with N4");
         app.pipeline_state.inhomogeneity_correction = false;
         assert!(!fields(&app).contains(&"inhomogeneity_method".to_string()));

@@ -61,6 +61,16 @@ impl qsm_core::pipeline::Observer for IntermediateWriter<'_> {
     }
 }
 
+/// The QSMART pipeline configuration the flags describe, as `qsmxt run` would hold it.
+fn pipeline_config(args: &QsmartArgs) -> crate::Result<config::PipelineConfig> {
+    let mut cfg = config::PipelineConfig::default();
+    cfg.inversion.algorithm = config::QsmAlgorithm::Qsmart;
+    config::apply_qsmart_overrides(&mut cfg, &args.qsmart_params)?;
+    // The inner iLSQR's arithmetic is iLSQR's own setting, as in `qsmxt run`.
+    if let Some(p) = args.ilsqr_precision { cfg.inversion.ilsqr.precision = p; }
+    Ok(cfg)
+}
+
 pub fn execute(args: QsmartArgs) -> crate::Result<()> {
     let field = load_nifti(&args.input)?;
     let (mask, _) = load_mask(&args.mask)?;
@@ -71,9 +81,7 @@ pub fn execute(args: QsmartArgs) -> crate::Result<()> {
     info!("QSMART ({}x{}x{})", dims.0, dims.1, dims.2);
 
     // Lower a QSMART pipeline config to the qsm-core inversion config, exactly like `qsmxt run`.
-    let mut cfg = config::PipelineConfig::default();
-    cfg.inversion.algorithm = config::QsmAlgorithm::Qsmart;
-    config::apply_qsmart_overrides(&mut cfg, &args.qsmart_params)?;
+    let cfg = pipeline_config(&args)?;
     // The vessel sizes in voxels, converted from mm when given in mm, as `qsmxt run` does.
     // `--qsmart-offset-grid` is among the QSMART settings, as for `qsmxt run`.
     let inv_config = qsmxt_engine::stages::qsmart::vessel_sizes_in_voxels(&cfg, voxel_size);
@@ -136,4 +144,33 @@ pub fn execute(args: QsmartArgs) -> crate::Result<()> {
     save_nifti(&args.output, &chi, &field)?;
     info!("Susceptibility map saved to {}", args.output.display());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    fn args(extra: &[&str]) -> crate::cli::QsmartArgs {
+        let mut argv = vec!["qsmxt", "qsmart", "field.nii", "-m", "mask.nii", "-o", "chi.nii",
+                            "--field-strength", "3", "--echo-time", "0.02"];
+        argv.extend_from_slice(extra);
+        match crate::cli::Cli::try_parse_from(argv).unwrap().command {
+            crate::cli::Command::Qsmart(a) => a,
+            _ => panic!("expected qsmart"),
+        }
+    }
+
+    /// `--ilsqr-precision` reaches the inner iLSQR's parameters; without it, double as before.
+    #[test]
+    fn ilsqr_precision_reaches_the_inner_ilsqr() {
+        use qsm_core::inversion::IlsqrPrecision as P;
+        let inner = |a| {
+            let cfg = super::pipeline_config(&a).unwrap();
+            qsmxt_engine::stages::qsmart::vessel_sizes_in_voxels(&cfg, (1.0, 1.0, 1.0)).ilsqr.precision
+        };
+        assert_eq!(inner(args(&[])), P::Double);
+        assert_eq!(inner(args(&["--ilsqr-precision", "single"])), P::Single);
+        assert!(crate::cli::Cli::try_parse_from(["qsmxt", "qsmart", "f", "-m", "m", "-o", "o",
+            "--field-strength", "3", "--echo-time", "0.02", "--ilsqr-precision", "half"]).is_err());
+    }
 }

@@ -66,6 +66,7 @@ and `[n4]` for N4:
 [masking]
 inhomogeneity_correction = true
 inhomogeneity_method = "n4"   # or "makehomogeneous" (the default)
+n4_geometry = "scanner"       # or "make-nii" (QSMART's axis-aligned header)
 
 [n4]
 shrink_factor = 4

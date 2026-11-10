@@ -178,6 +178,7 @@ fn command_for(config: &PipelineConfig, d: &PipelineConfig, pipeline: Option<&st
         emit_f64(&mut parts, "--n4-bias-field-fwhm", n.bias_field_fwhm, dn.bias_field_fwhm);
         emit_f64(&mut parts, "--n4-wiener-noise", n.wiener_noise, dn.wiener_noise);
         emit_usize(&mut parts, "--n4-histogram-bins", n.histogram_bins, dn.histogram_bins);
+        emit_enum(&mut parts, "--n4-geometry", &config.masking.n4_geometry, &d.masking.n4_geometry);
     }
 
     // ── Custom masks (BYO from derivatives) ──
@@ -1961,9 +1962,10 @@ frangi_c = 400.0
         c.n4.max_iterations = vec![20, 10];
         c.n4.mesh = [2, 2, 1];
         c.n4.wiener_noise = 0.02;
+        c.masking.n4_geometry = crate::enums::N4Geometry::MakeNii;
         let cmd = generate_command(&c);
         for f in ["--inhomogeneity-method n4", "--n4-shrink-factor 2", "--n4-max-iterations 20 10",
-                  "--n4-mesh 2 2 1", "--n4-wiener-noise 0.02"] {
+                  "--n4-mesh 2 2 1", "--n4-wiener-noise 0.02", "--n4-geometry make-nii"] {
             assert!(cmd.contains(f), "{f} missing: {cmd}");
         }
         assert!(!cmd.contains("--homogeneity-sigma-mm") && !cmd.contains("--n4-spline-order"), "{cmd}");

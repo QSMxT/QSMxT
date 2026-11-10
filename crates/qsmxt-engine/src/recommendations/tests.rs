@@ -114,6 +114,10 @@ fn violating(rule: &Rule) -> PipelineConfig {
     if rule.setting.starts_with("masking.bet.") {
         set(&mut c, "masking.generator", &json!("bet")).unwrap();
     }
+    // N4's geometry is in play only with N4.
+    if rule.setting == "masking.n4_geometry" {
+        set(&mut c, "masking.inhomogeneity_correction", &json!("n4")).unwrap();
+    }
     let bad = candidates(rule.setting).into_iter().find(|v| !passes(&rule.expect, v))
         .unwrap_or_else(|| panic!("{}: nothing departs from it", rule.id));
     set(&mut c, rule.setting, &bad).unwrap_or_else(|e| panic!("{}: {} = {bad}: {e}", rule.id, rule.setting));

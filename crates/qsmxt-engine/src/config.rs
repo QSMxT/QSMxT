@@ -1671,6 +1671,10 @@ pub struct MaskingConfig {
     /// How the magnitude is corrected for inhomogeneity: `makehomogeneous` (default) or `n4`.
     #[serde(default)]
     pub inhomogeneity_method: InhomogeneityMethod,
+    /// The image geometry N4 is given: `scanner` (the scan's header, default) or `make-nii` (the
+    /// axis-aligned header MATLAB's `make_nii` writes, as QSMART runs N4).
+    #[serde(default)]
+    pub n4_geometry: N4Geometry,
     pub sections: Vec<MaskSection>,
     /// How `sections` fold into one mask: `or` (union, the default) or `and` (intersection).
     #[serde(default)]
@@ -1705,6 +1709,7 @@ impl Default for MaskingConfig {
         Self {
             inhomogeneity_correction: true,
             inhomogeneity_method: InhomogeneityMethod::default(),
+            n4_geometry: N4Geometry::default(),
             sections: default_mask_sections(),
             combine: MaskCombine::default(),
             refinements: vec![],
