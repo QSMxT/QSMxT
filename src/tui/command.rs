@@ -2696,6 +2696,8 @@ mod parity {
             ("--pipeline", "the Pipeline tab"),
             // Only against a pipeline that turns it on; QSMxT's default is off.
             ("--no-laplacian-unmasked", "restates the default"),
+            // Likewise against the HEIDI pipeline, which turns ITK's float arithmetic on.
+            ("--no-heidi-denoise-reference-itk", "restates the default"),
         ];
         for (flag, why) in not_emitted {
             assert!(!covered.contains(*flag), "{flag} is allow-listed ({why}) but the TUI emits it: drop it from the list");

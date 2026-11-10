@@ -31,7 +31,7 @@ use serde_json::Value;
 use qsm_core::pipeline::reference_pipelines::{ReferencePipeline, REFERENCE_PIPELINES};
 
 use crate::config::PipelineConfig;
-use crate::recommendations::{self as rec, Facts, Recommendation, Strength};
+use crate::recommendations::{self as rec, Facts, Strength};
 use crate::schema::{self, Section, ViewFacts};
 
 /// The id of QSMxT's own defaults, listed first.
@@ -379,6 +379,7 @@ pub fn followed(config: &PipelineConfig, _facts: &ViewFacts) -> Option<&'static 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::recommendations::Recommendation;
 
     fn facts() -> ViewFacts {
         ViewFacts { num_echoes: Some(4), field_strength: Some(3.0), ..Default::default() }

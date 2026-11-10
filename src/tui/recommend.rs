@@ -1323,7 +1323,10 @@ mod tests {
         let c = super::super::command::config_from_app(&app).unwrap();
         assert_eq!(c.bg_removal.algorithm, qsmxt_engine::enums::BfAlgorithm::Lbv, "the user's value stays");
         assert!(c.dismissed_recommendations.is_empty(), "nothing is recorded for a setting left");
-        assert_eq!(c.masking.sections, qsmxt_engine::masking::mask_presets().into_iter().find(|(_, r)| r.sections.iter().all(|s| matches!(s.generator, qsmxt_engine::masking::MaskOp::Bet { .. }))).unwrap().1.sections);
+        // The mask is the toolboxes' recipe: BET on the magnitude, not eroded (MEDI's and the
+        // χ-separation toolbox's mask rules agree on it).
+        assert!(c.masking.sections.iter().all(|s| matches!(s.generator, qsmxt_engine::masking::MaskOp::Bet { .. })
+            && !s.refinements.iter().any(|op| matches!(op, qsmxt_engine::masking::MaskOp::Erode { .. }))), "{:?}", c.masking.sections);
         let status = app.status_message.clone().unwrap();
         assert!(status.contains("left Background removal as set") && status.contains("! to choose"), "{status}");
     }

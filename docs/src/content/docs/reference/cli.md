@@ -78,7 +78,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--coil-combination-sigma <COIL_COMBINATION_SIGMA>` | MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets (3 values, in voxels; default 10 10 5, as in MriResearchTools). Only used for uncombined multi-coil runs. |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
 | `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (default: weighted-avg) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. |
-| `--qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>` | `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is left out of QSMART's reconstruction is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`; default), or a fixed residual (`--qsmart-fit-threshold`). Without it, giving one of those two selects its mode. Values: `percentile`, `absolute`. |
+| `--qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>` | `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is left out of QSMART's reconstruction is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`), or a fixed residual (`--qsmart-fit-threshold`; default, QSMART v1.0's 40). Without it, giving one of those two selects its mode. Values: `percentile`, `absolute`. |
 | `--qsmart-fit-percentile <QSMART_FIT_PERCENTILE>` | `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is left out of QSMART's reconstruction (default 99) |
 | `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is left out of QSMART's reconstruction, instead of a percentile (40 when the mode is `absolute` and none is given) |
 | `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) computed from the echo times and an assumed T2\* (`--b0-weight-assumed-t2star`), the same in every voxel: no T2\* map, no magnitude (Wang et al. 2022, Nat Neurosci 25:818). `phase-snr`, which uses the measured magnitude in each voxel, is generally preferable when magnitude is available. Applies to Laplacian unwrapping as well as ROMEO. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. |
@@ -188,6 +188,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--heidi-denoise-time-step <HEIDI_DENOISE_TIME_STEP>` | Anisotropic-diffusion time step. |
 | `--heidi-denoise-conductance <HEIDI_DENOISE_CONDUCTANCE>` | Anisotropic-diffusion conductance. |
 | `--heidi-denoise-reference-itk` | ITK 3.20's float arithmetic for the denoising, as the authors' code runs it (for comparison with it; the default computes its conductance scale in double precision) |
+| `--no-heidi-denoise-reference-itk` | The denoising in double precision, after a pipeline that turns ITK's float arithmetic on (the HEIDI pipeline) |
 | `--heidi-te <TE>` | HEIDI: the echo time the field stands for the phase of, in the conversion to HEIDI's units: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: last) |
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
 | `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
@@ -205,6 +206,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--qsmart-frangi-c <QSMART_FRANGI_C>` | QSMART Frangi C noise threshold. |
 | `--qsmart-vessel-units <QSMART_VESSEL_UNITS>` | Units of QSMART's vessel sizes (--qsmart-vasc-sphere-radius and the Frangi scales): `voxels` (default, as QSMART gives them) or `mm` (converted to voxels with the mean voxel size) Values: `voxels`, `mm`. |
 | `--qsmart-vessel-magnitude <QSMART_VESSEL_MAGNITUDE>` | The magnitude QSMART detects vessels on: `mean-n4` (the mean over echoes, N4 bias-corrected, as QSMART prepares it; default) or `combined` (the root sum of squares over echoes, inhomogeneity-corrected unless --no-inhomogeneity-correction) Values: `mean-n4`, `combined`. |
+| `--qsmart-offset-grid <QSMART_OFFSET_GRID>` | The dipole grid of QSMART's offset adjustment: `fft` (default) or `qsmart-reference` (`adjust_offset.m`'s own, half a step off the FFT grid on odd matrix sizes, as the QSMART pipeline runs it) Values: `fft`, `qsmart-reference`. |
 | `--ndi-tau <NDI_TAU>` | NDI gradient-descent step size (tau) |
 | `--ndi-alpha <NDI_ALPHA>` | NDI L2 regularization weight (alpha) |
 | `--ndi-max-iter <NDI_MAX_ITER>` | NDI max iterations. |
@@ -260,6 +262,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--decompose-n-inner <DECOMPOSE_N_INNER>` | DECOMPOSE inner alternating passes per voxel. |
 | `--decompose-chi-bound <BOUND>` | DECOMPOSE bound on \|χ\| in the fit: a number in ppm (default: 0.5), or echo-spacing to compute it from the field strength and echo spacing. |
 | `--decompose-unwrap-phase <BOOL>` | DECOMPOSE: unwrap the phase along the echoes (default: false, as in the authors' code) |
+| `--decompose-fit <DECOMPOSE_FIT>` | DECOMPOSE's fit: `reference-code` (Tim Ho's script; default) or `paper` (Chen et al. 2021: amplitudes summing to one, per-voxel S(0) = 1 scale), as the DECOMPOSE pipeline runs it. Values: `reference-code`, `paper`. |
 | `--decompose-max-iterations <DECOMPOSE_MAX_ITERATIONS>` | DECOMPOSE: maximum solver iterations of each fit (lsqcurvefit MaxIterations; default: 400) |
 | `--decompose-max-function-evaluations <DECOMPOSE_MAX_FUNCTION_EVALUATIONS>` | DECOMPOSE: maximum function evaluations of each fit (lsqcurvefit MaxFunctionEvaluations; default: 100 × the fit's parameters) |
 | `--decompose-function-tolerance <DECOMPOSE_FUNCTION_TOLERANCE>` | DECOMPOSE: relative cost change each fit stops at (lsqcurvefit FunctionTolerance; default: 1e-6) |
@@ -556,7 +559,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--coil-combination-sigma <COIL_COMBINATION_SIGMA>` | MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets (3 values, in voxels; default 10 10 5, as in MriResearchTools). Only used for uncombined multi-coil runs. |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
 | `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (default: weighted-avg) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. |
-| `--qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>` | `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is left out of QSMART's reconstruction is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`; default), or a fixed residual (`--qsmart-fit-threshold`). Without it, giving one of those two selects its mode. Values: `percentile`, `absolute`. |
+| `--qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>` | `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is left out of QSMART's reconstruction is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`), or a fixed residual (`--qsmart-fit-threshold`; default, QSMART v1.0's 40). Without it, giving one of those two selects its mode. Values: `percentile`, `absolute`. |
 | `--qsmart-fit-percentile <QSMART_FIT_PERCENTILE>` | `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is left out of QSMART's reconstruction (default 99) |
 | `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is left out of QSMART's reconstruction, instead of a percentile (40 when the mode is `absolute` and none is given) |
 | `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) computed from the echo times and an assumed T2\* (`--b0-weight-assumed-t2star`), the same in every voxel: no T2\* map, no magnitude (Wang et al. 2022, Nat Neurosci 25:818). `phase-snr`, which uses the measured magnitude in each voxel, is generally preferable when magnitude is available. Applies to Laplacian unwrapping as well as ROMEO. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. |
@@ -666,6 +669,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--heidi-denoise-time-step <HEIDI_DENOISE_TIME_STEP>` | Anisotropic-diffusion time step. |
 | `--heidi-denoise-conductance <HEIDI_DENOISE_CONDUCTANCE>` | Anisotropic-diffusion conductance. |
 | `--heidi-denoise-reference-itk` | ITK 3.20's float arithmetic for the denoising, as the authors' code runs it (for comparison with it; the default computes its conductance scale in double precision) |
+| `--no-heidi-denoise-reference-itk` | The denoising in double precision, after a pipeline that turns ITK's float arithmetic on (the HEIDI pipeline) |
 | `--heidi-te <TE>` | HEIDI: the echo time the field stands for the phase of, in the conversion to HEIDI's units: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: last) |
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
 | `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
@@ -683,6 +687,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--qsmart-frangi-c <QSMART_FRANGI_C>` | QSMART Frangi C noise threshold. |
 | `--qsmart-vessel-units <QSMART_VESSEL_UNITS>` | Units of QSMART's vessel sizes (--qsmart-vasc-sphere-radius and the Frangi scales): `voxels` (default, as QSMART gives them) or `mm` (converted to voxels with the mean voxel size) Values: `voxels`, `mm`. |
 | `--qsmart-vessel-magnitude <QSMART_VESSEL_MAGNITUDE>` | The magnitude QSMART detects vessels on: `mean-n4` (the mean over echoes, N4 bias-corrected, as QSMART prepares it; default) or `combined` (the root sum of squares over echoes, inhomogeneity-corrected unless --no-inhomogeneity-correction) Values: `mean-n4`, `combined`. |
+| `--qsmart-offset-grid <QSMART_OFFSET_GRID>` | The dipole grid of QSMART's offset adjustment: `fft` (default) or `qsmart-reference` (`adjust_offset.m`'s own, half a step off the FFT grid on odd matrix sizes, as the QSMART pipeline runs it) Values: `fft`, `qsmart-reference`. |
 | `--ndi-tau <NDI_TAU>` | NDI gradient-descent step size (tau) |
 | `--ndi-alpha <NDI_ALPHA>` | NDI L2 regularization weight (alpha) |
 | `--ndi-max-iter <NDI_MAX_ITER>` | NDI max iterations. |
@@ -738,6 +743,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--decompose-n-inner <DECOMPOSE_N_INNER>` | DECOMPOSE inner alternating passes per voxel. |
 | `--decompose-chi-bound <BOUND>` | DECOMPOSE bound on \|χ\| in the fit: a number in ppm (default: 0.5), or echo-spacing to compute it from the field strength and echo spacing. |
 | `--decompose-unwrap-phase <BOOL>` | DECOMPOSE: unwrap the phase along the echoes (default: false, as in the authors' code) |
+| `--decompose-fit <DECOMPOSE_FIT>` | DECOMPOSE's fit: `reference-code` (Tim Ho's script; default) or `paper` (Chen et al. 2021: amplitudes summing to one, per-voxel S(0) = 1 scale), as the DECOMPOSE pipeline runs it. Values: `reference-code`, `paper`. |
 | `--decompose-max-iterations <DECOMPOSE_MAX_ITERATIONS>` | DECOMPOSE: maximum solver iterations of each fit (lsqcurvefit MaxIterations; default: 400) |
 | `--decompose-max-function-evaluations <DECOMPOSE_MAX_FUNCTION_EVALUATIONS>` | DECOMPOSE: maximum function evaluations of each fit (lsqcurvefit MaxFunctionEvaluations; default: 100 × the fit's parameters) |
 | `--decompose-function-tolerance <DECOMPOSE_FUNCTION_TOLERANCE>` | DECOMPOSE: relative cost change each fit stops at (lsqcurvefit FunctionTolerance; default: 1e-6) |
@@ -969,7 +975,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--coil-combination-sigma <COIL_COMBINATION_SIGMA>` | MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets (3 values, in voxels; default 10 10 5, as in MriResearchTools). Only used for uncombined multi-coil runs. |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
 | `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (default: weighted-avg) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. |
-| `--qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>` | `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is left out of QSMART's reconstruction is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`; default), or a fixed residual (`--qsmart-fit-threshold`). Without it, giving one of those two selects its mode. Values: `percentile`, `absolute`. |
+| `--qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>` | `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is left out of QSMART's reconstruction is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`), or a fixed residual (`--qsmart-fit-threshold`; default, QSMART v1.0's 40). Without it, giving one of those two selects its mode. Values: `percentile`, `absolute`. |
 | `--qsmart-fit-percentile <QSMART_FIT_PERCENTILE>` | `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is left out of QSMART's reconstruction (default 99) |
 | `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is left out of QSMART's reconstruction, instead of a percentile (40 when the mode is `absolute` and none is given) |
 | `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) computed from the echo times and an assumed T2\* (`--b0-weight-assumed-t2star`), the same in every voxel: no T2\* map, no magnitude (Wang et al. 2022, Nat Neurosci 25:818). `phase-snr`, which uses the measured magnitude in each voxel, is generally preferable when magnitude is available. Applies to Laplacian unwrapping as well as ROMEO. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. |
@@ -1079,6 +1085,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--heidi-denoise-time-step <HEIDI_DENOISE_TIME_STEP>` | Anisotropic-diffusion time step. |
 | `--heidi-denoise-conductance <HEIDI_DENOISE_CONDUCTANCE>` | Anisotropic-diffusion conductance. |
 | `--heidi-denoise-reference-itk` | ITK 3.20's float arithmetic for the denoising, as the authors' code runs it (for comparison with it; the default computes its conductance scale in double precision) |
+| `--no-heidi-denoise-reference-itk` | The denoising in double precision, after a pipeline that turns ITK's float arithmetic on (the HEIDI pipeline) |
 | `--heidi-te <TE>` | HEIDI: the echo time the field stands for the phase of, in the conversion to HEIDI's units: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: last) |
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
 | `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
@@ -1096,6 +1103,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--qsmart-frangi-c <QSMART_FRANGI_C>` | QSMART Frangi C noise threshold. |
 | `--qsmart-vessel-units <QSMART_VESSEL_UNITS>` | Units of QSMART's vessel sizes (--qsmart-vasc-sphere-radius and the Frangi scales): `voxels` (default, as QSMART gives them) or `mm` (converted to voxels with the mean voxel size) Values: `voxels`, `mm`. |
 | `--qsmart-vessel-magnitude <QSMART_VESSEL_MAGNITUDE>` | The magnitude QSMART detects vessels on: `mean-n4` (the mean over echoes, N4 bias-corrected, as QSMART prepares it; default) or `combined` (the root sum of squares over echoes, inhomogeneity-corrected unless --no-inhomogeneity-correction) Values: `mean-n4`, `combined`. |
+| `--qsmart-offset-grid <QSMART_OFFSET_GRID>` | The dipole grid of QSMART's offset adjustment: `fft` (default) or `qsmart-reference` (`adjust_offset.m`'s own, half a step off the FFT grid on odd matrix sizes, as the QSMART pipeline runs it) Values: `fft`, `qsmart-reference`. |
 | `--ndi-tau <NDI_TAU>` | NDI gradient-descent step size (tau) |
 | `--ndi-alpha <NDI_ALPHA>` | NDI L2 regularization weight (alpha) |
 | `--ndi-max-iter <NDI_MAX_ITER>` | NDI max iterations. |
@@ -1151,6 +1159,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--decompose-n-inner <DECOMPOSE_N_INNER>` | DECOMPOSE inner alternating passes per voxel. |
 | `--decompose-chi-bound <BOUND>` | DECOMPOSE bound on \|χ\| in the fit: a number in ppm (default: 0.5), or echo-spacing to compute it from the field strength and echo spacing. |
 | `--decompose-unwrap-phase <BOOL>` | DECOMPOSE: unwrap the phase along the echoes (default: false, as in the authors' code) |
+| `--decompose-fit <DECOMPOSE_FIT>` | DECOMPOSE's fit: `reference-code` (Tim Ho's script; default) or `paper` (Chen et al. 2021: amplitudes summing to one, per-voxel S(0) = 1 scale), as the DECOMPOSE pipeline runs it. Values: `reference-code`, `paper`. |
 | `--decompose-max-iterations <DECOMPOSE_MAX_ITERATIONS>` | DECOMPOSE: maximum solver iterations of each fit (lsqcurvefit MaxIterations; default: 400) |
 | `--decompose-max-function-evaluations <DECOMPOSE_MAX_FUNCTION_EVALUATIONS>` | DECOMPOSE: maximum function evaluations of each fit (lsqcurvefit MaxFunctionEvaluations; default: 100 × the fit's parameters) |
 | `--decompose-function-tolerance <DECOMPOSE_FUNCTION_TOLERANCE>` | DECOMPOSE: relative cost change each fit stops at (lsqcurvefit FunctionTolerance; default: 1e-6) |
@@ -1762,7 +1771,7 @@ qsmxt fieldmap romeo [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--b0 <B0>` | Field strength in Tesla (alias: --field-strength) |
 | `--params <PARAMS>` | JSON params file: {"TE":[..seconds], "B0":&lt;tesla&gt;, "voxel_size":[..], "B0_dir":[..]}. --tes / --b0 override values from this file when both are present. |
 | `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method. Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. Default: `weighted-avg`. |
-| `--qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>` | `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is marked unreliable is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`; default), or a fixed residual (`--qsmart-fit-threshold`). Without it, giving one of those two selects its mode. Values: `percentile`, `absolute`. |
+| `--qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>` | `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is marked unreliable is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`), or a fixed residual (`--qsmart-fit-threshold`; default, QSMART v1.0's 40). Without it, giving one of those two selects its mode. Values: `percentile`, `absolute`. |
 | `--qsmart-fit-percentile <QSMART_FIT_PERCENTILE>` | `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is marked unreliable (default 99) |
 | `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is marked unreliable, instead of a percentile (40 when the mode is `absolute` and none is given) |
 | `--reliability-output <RELIABILITY_OUTPUT>` | `--b0-estimation qsmart-echofit`: also save its reliability map (1 = reliable) here, for `qsmxt qsmart --reliability`. |
@@ -1819,7 +1828,7 @@ qsmxt fieldmap laplacian [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--b0 <B0>` | Field strength in Tesla (alias: --field-strength) |
 | `--params <PARAMS>` | JSON params file: {"TE":[..seconds], "B0":&lt;tesla&gt;, "voxel_size":[..], "B0_dir":[..]}. --tes / --b0 override values from this file when both are present. |
 | `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method. Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. Default: `weighted-avg`. |
-| `--qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>` | `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is marked unreliable is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`; default), or a fixed residual (`--qsmart-fit-threshold`). Without it, giving one of those two selects its mode. Values: `percentile`, `absolute`. |
+| `--qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>` | `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is marked unreliable is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`), or a fixed residual (`--qsmart-fit-threshold`; default, QSMART v1.0's 40). Without it, giving one of those two selects its mode. Values: `percentile`, `absolute`. |
 | `--qsmart-fit-percentile <QSMART_FIT_PERCENTILE>` | `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is marked unreliable (default 99) |
 | `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is marked unreliable, instead of a percentile (40 when the mode is `absolute` and none is given) |
 | `--reliability-output <RELIABILITY_OUTPUT>` | `--b0-estimation qsmart-echofit`: also save its reliability map (1 = reliable) here, for `qsmxt qsmart --reliability`. |
@@ -1858,7 +1867,7 @@ qsmxt fieldmap prelude [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--b0 <B0>` | Field strength in Tesla (alias: --field-strength) |
 | `--params <PARAMS>` | JSON params file: {"TE":[..seconds], "B0":&lt;tesla&gt;, "voxel_size":[..], "B0_dir":[..]}. --tes / --b0 override values from this file when both are present. |
 | `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method. Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. Default: `weighted-avg`. |
-| `--qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>` | `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is marked unreliable is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`; default), or a fixed residual (`--qsmart-fit-threshold`). Without it, giving one of those two selects its mode. Values: `percentile`, `absolute`. |
+| `--qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>` | `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is marked unreliable is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`), or a fixed residual (`--qsmart-fit-threshold`; default, QSMART v1.0's 40). Without it, giving one of those two selects its mode. Values: `percentile`, `absolute`. |
 | `--qsmart-fit-percentile <QSMART_FIT_PERCENTILE>` | `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is marked unreliable (default 99) |
 | `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is marked unreliable, instead of a percentile (40 when the mode is `absolute` and none is given) |
 | `--reliability-output <RELIABILITY_OUTPUT>` | `--b0-estimation qsmart-echofit`: also save its reliability map (1 = reliable) here, for `qsmxt qsmart --reliability`. |
@@ -1899,7 +1908,7 @@ qsmxt fieldmap medi-region-growing [OPTIONS] --mask <MASK> --output <OUTPUT> <IN
 | `--b0 <B0>` | Field strength in Tesla (alias: --field-strength) |
 | `--params <PARAMS>` | JSON params file: {"TE":[..seconds], "B0":&lt;tesla&gt;, "voxel_size":[..], "B0_dir":[..]}. --tes / --b0 override values from this file when both are present. |
 | `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method. Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. Default: `weighted-avg`. |
-| `--qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>` | `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is marked unreliable is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`; default), or a fixed residual (`--qsmart-fit-threshold`). Without it, giving one of those two selects its mode. Values: `percentile`, `absolute`. |
+| `--qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>` | `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is marked unreliable is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`), or a fixed residual (`--qsmart-fit-threshold`; default, QSMART v1.0's 40). Without it, giving one of those two selects its mode. Values: `percentile`, `absolute`. |
 | `--qsmart-fit-percentile <QSMART_FIT_PERCENTILE>` | `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is marked unreliable (default 99) |
 | `--qsmart-fit-threshold <QSMART_FIT_THRESHOLD>` | `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is marked unreliable, instead of a percentile (40 when the mode is `absolute` and none is given) |
 | `--reliability-output <RELIABILITY_OUTPUT>` | `--b0-estimation qsmart-echofit`: also save its reliability map (1 = reliable) here, for `qsmxt qsmart --reliability`. |
@@ -2528,6 +2537,7 @@ qsmxt invert heidi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <F
 | `--heidi-denoise-time-step <HEIDI_DENOISE_TIME_STEP>` | Anisotropic-diffusion time step. |
 | `--heidi-denoise-conductance <HEIDI_DENOISE_CONDUCTANCE>` | Anisotropic-diffusion conductance. |
 | `--heidi-denoise-reference-itk` | ITK 3.20's float arithmetic for the denoising, as the authors' code runs it (for comparison with it; the default computes its conductance scale in double precision) |
+| `--no-heidi-denoise-reference-itk` | The denoising in double precision, after a pipeline that turns ITK's float arithmetic on (the HEIDI pipeline) |
 | `--heidi-te <TE>` | HEIDI: the echo time the field stands for the phase of, in the conversion to HEIDI's units: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: last) |
 
 ### `qsmxt invert ndi`
@@ -3044,6 +3054,7 @@ qsmxt separate decompose [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> -
 | `--n-inner <N_INNER>` | Inner alternating passes per voxel. |
 | `--chi-bound <BOUND>` | Bound on \|χ\| in the fit: a number in ppm (default: 0.5), or echo-spacing to compute it from the field strength and echo spacing. |
 | `--unwrap-phase <BOOL>` | Unwrap the phase along the echoes (default: false, as in the authors' code) |
+| `--fit <FIT>` | The fit: `reference-code` (Tim Ho's script; default) or `paper` (Chen et al. 2021: amplitudes summing to one, per-voxel S(0) = 1 scale) Values: `reference-code`, `paper`. |
 | `--max-iterations <MAX_ITERATIONS>` | Maximum solver iterations of each fit (lsqcurvefit MaxIterations; default: 400) |
 | `--max-function-evaluations <MAX_FUNCTION_EVALUATIONS>` | Maximum function evaluations of each fit (lsqcurvefit MaxFunctionEvaluations; default: 100 × the fit's parameters) |
 | `--function-tolerance <FUNCTION_TOLERANCE>` | Relative cost change each fit stops at (lsqcurvefit FunctionTolerance; default: 1e-6) |
@@ -3220,7 +3231,6 @@ qsmxt qsmart [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_S
 | `--magnitude <MAGNITUDE>` | Magnitude NIfTI (optional; drives vasculature detection). With --qsmart-vessel-magnitude mean-n4 (the default) every echo's magnitude (4D), averaged and N4 bias-corrected; with `combined`, a combined magnitude (3D), used as it is. |
 | `--reliability <RELIABILITY>` | QSMART's reliability map from its echo fit (`qsmxt fieldmap laplacian --b0-estimation qsmart-echofit --reliability-output`): both stages are reconstructed inside it. |
 | `--intermediates <DIR>` | Also write QSMART's intermediate maps into this directory, as &lt;name&gt;.nii: vessel_mask (1 = vessel), localfield_stage1, chimap_stage1, localfield_stage2 and chimap_stage2 (ppm), and vessel_magnitude when QSMART makes its own (mean-n4) |
-| `--qsmart-offset-grid <QSMART_OFFSET_GRID>` | k-space grid of the dipole kernel in QSMART's stage combination: `fft` (default) or `qsmart-reference`, the grid of the authors' adjust_offset.m, for comparison with their code. They differ only when a matrix dimension is odd. Values: `fft`, `qsmart-reference`. Default: `fft`. |
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
 | `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
 | `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius, in --qsmart-vessel-units (default 8) |
@@ -3237,6 +3247,7 @@ qsmxt qsmart [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_S
 | `--qsmart-frangi-c <QSMART_FRANGI_C>` | QSMART Frangi C noise threshold. |
 | `--qsmart-vessel-units <QSMART_VESSEL_UNITS>` | Units of QSMART's vessel sizes (--qsmart-vasc-sphere-radius and the Frangi scales): `voxels` (default, as QSMART gives them) or `mm` (converted to voxels with the mean voxel size) Values: `voxels`, `mm`. |
 | `--qsmart-vessel-magnitude <QSMART_VESSEL_MAGNITUDE>` | The magnitude QSMART detects vessels on: `mean-n4` (the mean over echoes, N4 bias-corrected, as QSMART prepares it; default) or `combined` (the root sum of squares over echoes, inhomogeneity-corrected unless --no-inhomogeneity-correction) Values: `mean-n4`, `combined`. |
+| `--qsmart-offset-grid <QSMART_OFFSET_GRID>` | The dipole grid of QSMART's offset adjustment: `fft` (default) or `qsmart-reference` (`adjust_offset.m`'s own, half a step off the FFT grid on odd matrix sizes, as the QSMART pipeline runs it) Values: `fft`, `qsmart-reference`. |
 
 ## `qsmxt swi`
 
