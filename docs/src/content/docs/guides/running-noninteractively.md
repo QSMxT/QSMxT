@@ -286,11 +286,12 @@ study/bids/derivatives/qsmxt/
             └── …
 ```
 
-Every final map the run produced is exported. χ needs no extra flag; the
+Every final map the run produced is exported. The magnitude and χ need no extra flag; the
 supplementary maps are exported once you've asked for them:
 
 | Map | Produced by | Folder suffix / `--dicom-outputs` token |
 | --- | --- | --- |
+| Magnitude (the echoes combined) | any run with magnitude images | `magnitude` |
 | Susceptibility (χ) | the default pipeline | `Chimap` |
 | SWI | `--do-swi` | `swi` |
 | SWI minIP | `--do-swi` | `minIP` |
@@ -325,11 +326,13 @@ reconstructions stay NIfTI-only.
 **The segmentation as a DICOM SEG.** The
 [segmentation](/QSMxT/reference/algorithms/#segmentation-and-per-structure-statistics)
 is written as one DICOM Segmentation object (`sub-01_dseg_dicoms/sub-01_dseg.dcm`):
-each structure is a binary segment, drawn on the χ series it was exported with, so
-a viewer overlays it there (OHIF, Weasis 4.3 or later, and 3D Slicer with the
-QuantitativeReporting extension; check your PACS's DICOM conformance statement for
-*Segmentation Storage*). It therefore needs χ in the same export: with χ left out of
-`--dicom-outputs`, or no QSM, the segmentation is not exported and the log says so.
+each structure is a binary segment, drawn on a series exported with it on the
+same grid, so a viewer overlays it there (OHIF, Weasis 4.3 or later, and 3D Slicer
+with the QuantitativeReporting extension; check your PACS's DICOM conformance
+statement for *Segmentation Storage*). The series is the first of these the export
+writes: the magnitude, χ, SWI, T2\*, R2\*, R2, R2′, the χ-separation maps, SMWI (not
+a minIP, which is a projection); the log names it. A `--dicom-outputs` that selects
+`dseg` and none of those the run makes is refused before the run.
 SynthSeg's structures are coded with the standard's codes for brain structures
 (DICOM PS3.16 CID 7153 and CID 7140), with left and right as modifiers, so a viewer
 can name them in any language. A supplied segmentation (`--use-custom-dseg`) need not

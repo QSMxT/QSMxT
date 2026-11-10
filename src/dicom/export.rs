@@ -61,7 +61,7 @@ pub struct DicomExportOptions<'a> {
     /// Optional source DICOM directory to inherit patient/study identity from.
     pub source_dicom: Option<&'a Path>,
     /// Optional subset of map suffixes to export (case-insensitive tokens like
-    /// `chimap`, `swi`, `minip`, `desc-paramagnetic_smwi`, `desc-paramagneticsmwi_minip` (and
+    /// `magnitude`, `chimap`, `swi`, `minip`, `desc-paramagnetic_smwi`, `desc-paramagneticsmwi_minip` (and
     /// the diamagnetic pair), `t2starmap`, `r2starmap`, `r2map`, `r2primemap`,
     /// `desc-paramagnetic_chimap`, `desc-diamagnetic_chimap`, `desc-total_chimap`, `dseg`).
     /// `None` = all produced.
@@ -139,11 +139,10 @@ pub fn export_run_dicoms(
     let key = &run.key;
     // The names the run published under (its working space, when it stayed there).
     let output = &output.published(key);
-    let mut maps: Vec<MapExport> = vec![MapExport {
-        suffix: "Chimap",
-        path: output.qsm_path(key),
-        description: "QSMxT Chimap".to_string(),
-    }];
+    let mut maps: Vec<MapExport> = vec![
+        MapExport { suffix: "magnitude", path: output.magnitude_path(key), description: "QSMxT magnitude".to_string() },
+        MapExport { suffix: "Chimap", path: output.qsm_path(key), description: "QSMxT Chimap".to_string() },
+    ];
     if opts.export_swi {
         maps.push(MapExport { suffix: "swi", path: output.swi_path(key), description: "QSMxT SWI".to_string() });
         maps.push(MapExport { suffix: "minIP", path: output.swi_mip_path(key), description: "QSMxT SWI minIP".to_string() });
@@ -185,7 +184,7 @@ pub fn export_run_dicoms(
     let first_te = run.echo_times.first().copied();
 
     let mut written = 0;
-    let mut chi_exported = false;
+    let mut exported: Vec<(&'static str, &Path)> = Vec::new();
     for map in &maps {
         if !map.path.exists() {
             continue;
@@ -203,13 +202,13 @@ pub fn export_run_dicoms(
         })?;
         info!("{}: -> {} ({} slices)", key, dir.display(), n);
         written += 1;
-        chi_exported |= map.suffix == "Chimap";
+        exported.push((map.suffix, map.path.as_path()));
     }
 
     if let Some(seg) = &opts.segmentation {
         let selected = opts.outputs_filter.is_none_or(|f| suffix_selected("dseg", f));
         let dseg = output.dseg_path(key);
-        if selected && dseg.exists() && export_segmentation(key, output, seg, &dseg, &identity, chi_exported) {
+        if selected && dseg.exists() && export_segmentation(key, output, seg, &dseg, &identity, &exported) {
             written += 1;
         }
     }
@@ -217,24 +216,68 @@ pub fn export_run_dicoms(
     Ok(written)
 }
 
-/// The segmentation as a DICOM SEG on the exported χ series; whether one was written. Best-effort:
-/// the maps are out already, so a problem here is a warning, not a failed export.
+/// The series a DICOM SEG may be drawn on, in the order it prefers them: the magnitude the
+/// segmentation is usually made from, then χ, then the other maps. Projections (minIPs) are not
+/// the slices a segmentation was cut from, so they are not among them. The published maps share
+/// one grid, so the first of these the run exports is the reference.
+pub const SEG_REFERENCES: [&str; 12] = [
+    "magnitude", "Chimap", "swi", "T2starmap", "R2starmap", "R2map", "R2primemap",
+    "desc-paramagnetic_Chimap", "desc-diamagnetic_Chimap", "desc-total_Chimap",
+    "desc-paramagnetic_smwi", "desc-diamagnetic_smwi",
+];
+
+/// Refuse, before a run, a DICOM export that selects the segmentation (`dseg`) and none of the
+/// maps its SEG could be drawn on ([`SEG_REFERENCES`]) among those the run makes.
+pub fn check_outputs(filter: Option<&[String]>, config: &crate::pipeline::config::PipelineConfig) -> Result<(), String> {
+    let Some(filter) = filter else { return Ok(()) };
+    let p = &config.pipeline;
+    let segmentation = p.do_segmentation || config.segmentation.custom_dseg_tool.is_some();
+    if !config.pipeline.export_dicom || !segmentation || !suffix_selected("dseg", filter) {
+        return Ok(());
+    }
+    let made = |suffix: &str| match suffix {
+        "magnitude" => true,
+        "Chimap" => p.do_qsm,
+        "swi" => p.do_swi,
+        "T2starmap" => p.do_t2starmap,
+        "R2starmap" => p.do_r2starmap,
+        "R2map" => p.do_r2map,
+        "R2primemap" => p.do_r2primemap,
+        "desc-paramagnetic_smwi" | "desc-diamagnetic_smwi" => p.do_smwi,
+        _ => p.do_chi_separation,
+    };
+    if SEG_REFERENCES.iter().any(|s| made(s) && suffix_selected(s, filter)) {
+        return Ok(());
+    }
+    Err("--dicom-outputs selects the segmentation (dseg) but no map its DICOM SEG can be drawn on: \
+         add magnitude, chimap or another map the run makes (swi, r2starmap, ...) to --dicom-outputs".into())
+}
+
+/// The segmentation as a DICOM SEG on the first exported series on its grid ([`SEG_REFERENCES`]);
+/// whether one was written. Best-effort: the maps are out already, so a problem here is a
+/// warning, not a failed export.
 fn export_segmentation(
     key: &crate::bids::entities::AcquisitionKey, output: &DerivativeOutputs, seg: &SegmentationExport,
-    dseg: &Path, identity: &DicomIdentity, chi_exported: bool,
+    dseg: &Path, identity: &DicomIdentity, exported: &[(&'static str, &Path)],
 ) -> bool {
-    let chi = output.qsm_path(key);
-    if !chi_exported {
-        warn!("{key}: the segmentation is not exported as DICOM: its SEG references the χ series, which this run does not export");
-        return false;
-    }
-    let reference = match io::read_nifti_file(&chi) {
-        Ok(v) => v,
+    let grid = match io::read_nifti_file(dseg) {
+        Ok(v) => (v.dims, v.affine),
         Err(e) => {
-            warn!("{key}: DICOM SEG not written: {}: {e}", chi.display());
+            warn!("{key}: DICOM SEG not written: {}: {e}", dseg.display());
             return false;
         }
     };
+    let same_grid = |path: &Path| io::read_nifti_file(path).ok()
+        .filter(|v| v.dims == grid.0 && v.affine.iter().zip(&grid.1).all(|(a, b)| (a - b).abs() < 1e-4));
+    let found = SEG_REFERENCES.iter()
+        .filter_map(|r| exported.iter().find(|(s, _)| s == r))
+        .find_map(|&(suffix, path)| same_grid(path).map(|v| (suffix, v)));
+    let Some((suffix, reference)) = found else {
+        warn!("{key}: the segmentation is not exported as DICOM: its SEG is drawn on an exported series on its grid \
+               (magnitude, χ or another map), and this run exports none");
+        return false;
+    };
+    info!("{key}: DICOM SEG drawn on the {suffix} series");
     let lookup = output.dseg_lookup_path(key);
     let out_dir = output.dicom_dir(key, "dseg");
     let result = seg::export_segmentation(seg::SegExport {
@@ -245,7 +288,7 @@ fn export_segmentation(
             algorithm: &seg.algorithm,
         },
         reference: seg::Reference {
-            series_uid: &make_uid(&[&key.basename(), "Chimap"]),
+            series_uid: &make_uid(&[&key.basename(), suffix]),
             dims: reference.dims,
             affine: &reference.affine,
         },
@@ -760,6 +803,7 @@ fn series_number_for(suffix: &str) -> i32 {
         "desc-paramagneticsmwi_minIP" => 13,
         "desc-diamagneticsmwi_minIP" => 14,
         "dseg" => 15,
+        "magnitude" => 16,
         _ => 99,
     }
 }
@@ -1030,7 +1074,7 @@ mod tests {
             "Chimap", "swi", "minIP", "T2starmap", "R2starmap", "R2map", "R2primemap",
             "desc-paramagnetic_Chimap", "desc-diamagnetic_Chimap", "desc-total_Chimap",
             "desc-paramagnetic_smwi", "desc-diamagnetic_smwi", "desc-paramagneticsmwi_minIP",
-            "desc-diamagneticsmwi_minIP", "dseg",
+            "desc-diamagneticsmwi_minIP", "dseg", "magnitude",
         ];
         let mut nums: Vec<i32> = suffixes.iter().map(|s| series_number_for(s)).collect();
         assert!(nums.iter().all(|&n| n != 99), "a known suffix fell through to the fallback");
@@ -1169,7 +1213,8 @@ mod tests {
         labels[13] = 49.0;
         labels[23] = 24.0;
         let chi: Vec<f64> = (0..24).map(|i| i as f64 * 0.01).collect();
-        for (p, d) in [(output.qsm_path(&key), &chi), (output.dseg_path(&key), &labels)] {
+        let magnitude: Vec<f64> = (0..24).map(|i| 100.0 + i as f64).collect();
+        for (p, d) in [(output.qsm_path(&key), &chi), (output.magnitude_path(&key), &magnitude), (output.dseg_path(&key), &labels)] {
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
             io::save_nifti_to_file(&p, d, dims, vox, &affine).unwrap();
         }
@@ -1202,7 +1247,9 @@ mod tests {
     #[test]
     fn the_segmentation_is_a_seg_on_the_chi_series() {
         let (_tmp, output, run) = seg_fixture(Some("index\tname\n10\tleft thalamus\n49\tright thalamus\n24\tcsf\n"));
-        assert_eq!(export_run_dicoms(&run, &output, &seg_opts(true, None)).unwrap(), 2, "χ and the SEG");
+        // Without the magnitude, χ is the series it is drawn on.
+        let filter = vec!["chimap".to_string(), "dseg".to_string()];
+        assert_eq!(export_run_dicoms(&run, &output, &seg_opts(true, Some(&filter))).unwrap(), 2, "χ and the SEG");
         let key = &run.key;
         let file = output.dicom_dir(key, "dseg").join(format!("{}_dseg.dcm", key.basename()));
         let obj = open_file(&file).expect("a DICOM SEG");
@@ -1232,8 +1279,41 @@ mod tests {
         assert_eq!(text(&obj, tags::FRAME_OF_REFERENCE_UID), text(&chi_slice, tags::FRAME_OF_REFERENCE_UID));
     }
 
+    /// The magnitude is exported as a series of its own, and is the SEG's first choice of series.
     #[test]
-    fn without_the_chi_series_there_is_no_seg() {
+    fn the_segmentation_is_drawn_on_the_magnitude_first() {
+        let (_tmp, output, run) = seg_fixture(None);
+        assert_eq!(export_run_dicoms(&run, &output, &seg_opts(true, None)).unwrap(), 3, "magnitude, χ and the SEG");
+        let key = &run.key;
+        let obj = open_file(output.dicom_dir(key, "dseg").join(format!("{}_dseg.dcm", key.basename()))).unwrap();
+        let refs = items(&obj, tags::REFERENCED_SERIES_SEQUENCE);
+        assert_eq!(text(&refs[0], tags::SERIES_INSTANCE_UID), make_uid(&[&key.basename(), "magnitude"]));
+        let mag_slice = open_file(output.dicom_dir(key, "magnitude").join(format!("{}_magnitude_0001.dcm", key.basename()))).unwrap();
+        assert_eq!(text(&mag_slice, tags::SERIES_NUMBER), "16");
+        let frame = &items(&obj, tags::PER_FRAME_FUNCTIONAL_GROUPS_SEQUENCE)[0];
+        let source = &items(&items(frame, tags::DERIVATION_IMAGE_SEQUENCE)[0], tags::SOURCE_IMAGE_SEQUENCE)[0];
+        assert_eq!(text(source, tags::REFERENCED_SOP_INSTANCE_UID), text(&mag_slice, tags::SOP_INSTANCE_UID));
+    }
+
+    /// A run refuses a DICOM export that selects the segmentation and nothing to draw it on.
+    #[test]
+    fn dseg_alone_is_refused_before_the_run() {
+        let mut config = crate::pipeline::config::PipelineConfig::default();
+        config.pipeline.export_dicom = true;
+        config.pipeline.do_segmentation = true;
+        let f = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert!(check_outputs(None, &config).is_ok(), "everything exported");
+        let err = check_outputs(Some(&f(&["dseg"])), &config).unwrap_err();
+        assert!(err.contains("magnitude, chimap"), "{err}");
+        assert!(check_outputs(Some(&f(&["dseg", "swi"])), &config).is_err(), "SWI is not made");
+        config.pipeline.do_swi = true;
+        assert!(check_outputs(Some(&f(&["dseg", "swi"])), &config).is_ok());
+        assert!(check_outputs(Some(&f(&["dseg", "magnitude"])), &config).is_ok());
+        assert!(check_outputs(Some(&f(&["chimap"])), &config).is_ok(), "no segmentation selected");
+    }
+
+    #[test]
+    fn without_a_series_to_be_drawn_on_there_is_no_seg() {
         let (_tmp, output, run) = seg_fixture(None);
         let only_seg = vec!["dseg".to_string()];
         assert_eq!(export_run_dicoms(&run, &output, &seg_opts(true, Some(&only_seg))).unwrap(), 0);
@@ -1247,7 +1327,7 @@ mod tests {
     #[test]
     fn a_supplied_segmentation_is_coded_generically_and_named_from_its_table() {
         let (_tmp, output, run) = seg_fixture(Some("index\tname\n10\tlesion\n"));
-        assert_eq!(export_run_dicoms(&run, &output, &seg_opts(false, None)).unwrap(), 2);
+        assert_eq!(export_run_dicoms(&run, &output, &seg_opts(false, None)).unwrap(), 3);
         let file = output.dicom_dir(&run.key, "dseg").join(format!("{}_dseg.dcm", run.key.basename()));
         let segs = items(&open_file(&file).unwrap(), tags::SEGMENT_SEQUENCE);
         let names: Vec<String> = segs.iter().map(|s| text(s, tags::SEGMENT_LABEL)).collect();
@@ -1279,3 +1359,4 @@ mod tests {
         assert!((unscale(b, -128.0, 127.0) - 67.20).abs() < 0.1);
     }
 }
+

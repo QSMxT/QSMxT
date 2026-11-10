@@ -2,9 +2,10 @@
 //! 1.2.840.10008.5.1.4.1.1.66.4), next to the exported maps.
 //!
 //! One multi-frame instance holds every structure as a BINARY segment: one frame per slice that
-//! has any voxel of it, bit-packed. Each frame points at the χ series' slice it was cut from, so
-//! the SEG needs the χ map exported in the same run, on the same grid (the published `dseg` and
-//! `Chimap` share it). A viewer overlays it on that series: OHIF, Weasis, and 3D Slicer with the
+//! has any voxel of it, bit-packed. Each frame points at the slice of an exported series on the
+//! segmentation's grid it was cut from: the magnitude, else χ, else another map
+//! ([`super::SEG_REFERENCES`]), so the SEG needs one of them exported in the same run (the
+//! published maps and the `dseg` share one grid). A viewer overlays it on that series: OHIF, Weasis, and 3D Slicer with the
 //! QuantitativeReporting extension.
 //!
 //! SynthSeg's labels are coded (category, type, laterality) from DICOM PS3.16 (see
@@ -137,7 +138,7 @@ pub(super) struct SegSource<'a> {
     pub algorithm: &'a str,
 }
 
-/// The exported χ series the segmentation was made on.
+/// The exported series on the segmentation's grid the SEG is drawn on.
 pub(super) struct Reference<'a> {
     pub series_uid: &'a str,
     pub dims: (usize, usize, usize),
@@ -176,7 +177,7 @@ pub(super) fn export_segmentation(s: SegExport) -> crate::Result<usize> {
     let same_affine = vol.affine.iter().zip(s.reference.affine).all(|(a, b)| (a - b).abs() < 1e-4);
     if vol.dims != s.reference.dims || !same_affine {
         return Err(QsmxtError::Dicom(format!(
-            "{}: the segmentation is not on the χ map's grid, so a SEG cannot reference it", src.dseg.display())));
+            "{}: the segmentation is not on the reference series' grid, so a SEG cannot reference it", src.dseg.display())));
     }
     let npix = nx * ny;
     let labels: Vec<i64> = vol.data.iter().map(|&v| if v.is_finite() { v.round() as i64 } else { 0 }).collect();
@@ -377,7 +378,7 @@ fn build_seg(
     ]));
 
     // Multi-frame Functional Groups. Shared: the grid. Per frame: where it is, which segment,
-    // and the χ slice it was derived from.
+    // and the reference series' slice it was derived from.
     put(seq(tags::SHARED_FUNCTIONAL_GROUPS_SEQUENCE, vec![item([
         seq(tags::PIXEL_MEASURES_SEQUENCE, vec![item([
             ds3(tags::PIXEL_SPACING, &[g.row_spacing, g.col_spacing]),
@@ -393,7 +394,7 @@ fn build_seg(
             el(tags::REFERENCED_SOP_CLASS_UID, VR::UI, uids::MR_IMAGE_STORAGE),
             el(tags::REFERENCED_SOP_INSTANCE_UID, VR::UI, slice_uid(s.reference.series_uid, k).as_str()),
             seq(tags::PURPOSE_OF_REFERENCE_CODE_SEQUENCE, vec![source_purpose.clone()]),
-            // Same grid as the χ slice ([`export_segmentation`] refuses any other).
+            // Same grid as the reference slice ([`export_segmentation`] refuses any other).
             el(tags::SPATIAL_LOCATIONS_PRESERVED, VR::CS, "YES"),
         ]);
         item([
@@ -408,7 +409,7 @@ fn build_seg(
         ])
     }).collect()));
 
-    // Common Instance Reference: the χ series, every slice.
+    // Common Instance Reference: the reference series, every slice.
     let (_, _, rz) = s.reference.dims;
     put(seq(tags::REFERENCED_SERIES_SEQUENCE, vec![item([
         el(tags::SERIES_INSTANCE_UID, VR::UI, s.reference.series_uid),

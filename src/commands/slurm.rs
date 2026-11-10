@@ -27,6 +27,8 @@ pub fn execute(args: SlurmArgs) -> crate::Result<()> {
 
     // Refuse before writing or submitting a job that would fail on its node.
     crate::pipeline::requirements::check_runs(&runs, &config)?;
+    // A DICOM SEG is drawn on another exported series: refuse a selection that leaves it none.
+    crate::dicom::export::check_outputs(args.dicom_outputs.as_deref(), &config).map_err(crate::error::QsmxtError::Config)?;
     super::run::orientation_groups(&runs, &config).map_err(crate::error::QsmxtError::Config)?;
     super::recommend::log_found(&config, &runs);
 
