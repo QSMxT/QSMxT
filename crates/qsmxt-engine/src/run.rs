@@ -669,6 +669,14 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
     fn inversion_magnitude(&mut self) -> Result<Option<Vec<f64>>, S::Error> {
         match stages::inversion::magnitude_input(self.config) {
             Some(stages::inversion::MagnitudeInput::Combined) => self.combined_magnitude(),
+            Some(stages::inversion::MagnitudeInput::Rss) => {
+                let (nx, ny, nz) = self.meta.dims;
+                let n = nx * ny * nz;
+                Ok(self.echo_magnitude_stack()?.map(|stack| {
+                    let echoes: Vec<&[f64]> = stack.chunks(n).collect();
+                    qsm_core::pipeline::rss_combine(&echoes).unwrap_or_default()
+                }))
+            }
             Some(stages::inversion::MagnitudeInput::Echoes) => self.echo_magnitude_stack(),
             None => Ok(None),
         }

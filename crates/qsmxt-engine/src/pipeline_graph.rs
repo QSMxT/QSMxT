@@ -546,7 +546,7 @@ impl Ctx<'_> {
                         Some(MagnitudeInput::Combined) if has(&Item::CombinedMagnitude) => {
                             reads.push(Item::CombinedMagnitude);
                         }
-                        Some(MagnitudeInput::Echoes) => reads.extend(self.echo_magnitudes()),
+                        Some(MagnitudeInput::Echoes | MagnitudeInput::Rss) => reads.extend(self.echo_magnitudes()),
                         _ => {}
                     }
                 }

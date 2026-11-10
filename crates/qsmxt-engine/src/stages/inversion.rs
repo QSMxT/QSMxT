@@ -71,6 +71,10 @@ pub enum MagnitudeInput {
     /// The combined magnitude, when the run has one: the data weight of the methods that weight
     /// by the magnitude.
     Combined,
+    /// The root sum of squares of the echo magnitudes, with no inhomogeneity correction: LSQR (and
+    /// HEIDI after it), whose package weights by the magnitude it is given as it is; QSM-CI's
+    /// verified reference gives it the RSS (audit 2026-11-10).
+    Rss,
     /// Every echo's magnitude, stacked with the echo slowest: MEDI and TFI, which make their
     /// edge mask and noise map (MEDI toolbox `Fit_ppm_complex`) from the echoes, and HD-QSM,
     /// which weights by their echo-time-weighted combination (the paper's Eq. 2).
@@ -83,7 +87,8 @@ pub fn magnitude_input(config: &PipelineConfig) -> Option<MagnitudeInput> {
     use QsmAlgorithm as A;
     match config.inversion.algorithm {
         A::Medi | A::Tfi | A::Hdqsm => Some(MagnitudeInput::Echoes),
-        A::Nltv | A::Ndi | A::Fansi | A::FansiTgv | A::L1qsm | A::AmpPe | A::Lsqr => {
+        A::Lsqr => Some(MagnitudeInput::Rss),
+        A::Nltv | A::Ndi | A::Fansi | A::FansiTgv | A::L1qsm | A::AmpPe => {
             Some(MagnitudeInput::Combined)
         }
         // WH-QSM weights by the magnitude only with a magnitude weight (WH_nlTV's default is flat).
