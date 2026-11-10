@@ -202,10 +202,17 @@ fn build_identity(run: &QsmRun, source_dicom: Option<&Path>) -> DicomIdentity {
         ..Default::default()
     };
 
+    // The acquisition fields a converter keeps in the BIDS sidecar (dcm2niix does by default),
+    // for when there is no source DICOM; a source DICOM's own values win over them.
+    if let Some(sc) = run.echoes.first().and_then(|e| read_sidecar_acquisition(&e.phase_json)) {
+        id.apply_acquisition(sc);
+    }
+
     if let Some(dir) = source_dicom {
         match read_source_template(dir) {
             Some(src) => {
                 info!("DICOM export: inheriting patient/study identity from {}", dir.display());
+                id.apply_acquisition(src.clone());
                 if !src.study_uid.is_empty() { id.study_uid = src.study_uid; }
                 if !src.frame_of_reference_uid.is_empty() { id.frame_of_reference_uid = src.frame_of_reference_uid; }
                 id.patient_name = src.patient_name;
@@ -217,12 +224,6 @@ fn build_identity(run: &QsmRun, source_dicom: Option<&Path>) -> DicomIdentity {
                 id.study_id = src.study_id;
                 id.accession_number = src.accession_number;
                 id.referring_physician = src.referring_physician;
-                if !src.manufacturer.is_empty() { id.manufacturer = src.manufacturer; }
-                id.patient_position = src.patient_position;
-                id.laterality = src.laterality;
-                id.body_part = src.body_part;
-                id.repetition_time = src.repetition_time;
-                id.echo_train_length = src.echo_train_length;
             }
             None => warn!(
                 "DICOM export: no readable DICOM found under --source-dicom {}; synthesizing identity",
@@ -232,6 +233,38 @@ fn build_identity(run: &QsmRun, source_dicom: Option<&Path>) -> DicomIdentity {
     }
 
     id
+}
+
+impl DicomIdentity {
+    /// Take `other`'s manufacturer and acquisition fields where it has them, keeping ours where
+    /// it does not.
+    fn apply_acquisition(&mut self, other: DicomIdentity) {
+        let take = |mine: &mut String, theirs: String| if !theirs.is_empty() { *mine = theirs };
+        take(&mut self.manufacturer, other.manufacturer);
+        take(&mut self.patient_position, other.patient_position);
+        take(&mut self.laterality, other.laterality);
+        take(&mut self.body_part, other.body_part);
+        take(&mut self.repetition_time, other.repetition_time);
+        take(&mut self.echo_train_length, other.echo_train_length);
+    }
+}
+
+/// The acquisition fields of a BIDS sidecar, under the names BIDS and dcm2niix give them:
+/// `RepetitionTime` (BIDS, seconds; DICOM wants ms), `EchoTrainLength`, `PatientPosition` (the
+/// DICOM keywords, as dcm2niix writes them), `BodyPart` (BIDS; DICOM's Body Part Examined) and
+/// `Manufacturer`. `None` when the file cannot be read.
+fn read_sidecar_acquisition(path: &Path) -> Option<DicomIdentity> {
+    let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
+    let text = |k: &str| json.get(k).and_then(|v| v.as_str()).map(|s| s.trim().to_string()).unwrap_or_default();
+    let number = |k: &str| json.get(k).and_then(|v| v.as_f64());
+    Some(DicomIdentity {
+        manufacturer: text("Manufacturer"),
+        patient_position: text("PatientPosition"),
+        body_part: text("BodyPart"),
+        repetition_time: number("RepetitionTime").map(|s| fmt_ds(s * 1000.0)).unwrap_or_default(),
+        echo_train_length: number("EchoTrainLength").map(|n| format!("{}", n.round() as i64)).unwrap_or_default(),
+        ..Default::default()
+    })
 }
 
 /// Read identity tags from the first readable DICOM under `dir` (recursive).
@@ -850,6 +883,44 @@ mod tests {
         assert_eq!(synth.manufacturer, "QSMxT");
     }
 
+    /// Without a source DICOM the acquisition fields come from the run's sidecar (dcm2niix's
+    /// names, TR in seconds); a source DICOM's values win where it has them.
+    #[test]
+    fn acquisition_fields_come_from_the_sidecar_unless_a_source_dicom_has_them() {
+        use crate::bids::entities::AcquisitionKey;
+        let tmp = tempfile::tempdir().unwrap();
+        let json = tmp.path().join("echo-1_part-phase_MEGRE.json");
+        std::fs::write(&json, r#"{"RepetitionTime": 0.028, "EchoTrainLength": 4, "PatientPosition": "HFS",
+            "BodyPart": "BRAIN", "Manufacturer": "Siemens", "EchoTime": 0.004}"#).unwrap();
+        let run = crate::bids::discovery::QsmRun {
+            key: AcquisitionKey { subject: "01".into(), session: None, acquisition: None, reconstruction: None,
+                                  inversion: None, run: None, suffix: "MEGRE".into() },
+            echoes: vec![crate::bids::discovery::EchoFiles {
+                echo_number: 1, phase_nifti: tmp.path().join("p.nii"), phase_json: json,
+                magnitude_nifti: None, magnitude_json: None, imaginary_nifti: None,
+            }],
+            coils: None, magnetic_field_strength: 3.0, echo_times: vec![0.004], b0_dir: None,
+            dims: (2, 2, 2), has_magnitude: false, mese: None,
+        };
+        let id = build_identity(&run, None);
+        assert_eq!((id.repetition_time.as_str(), id.echo_train_length.as_str()), ("28", "4"));
+        assert_eq!((id.patient_position.as_str(), id.body_part.as_str(), id.manufacturer.as_str()), ("HFS", "BRAIN", "Siemens"));
+        assert!(id.patient_id.is_empty(), "no identity from a sidecar");
+
+        // A source DICOM with only some of them: its values win, the sidecar fills the rest.
+        let src_dir = tmp.path().join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let mut src = InMemDicomObject::new_empty();
+        src.put(DataElement::new(tags::SOP_CLASS_UID, VR::UI, uids::MR_IMAGE_STORAGE));
+        src.put(DataElement::new(tags::SOP_INSTANCE_UID, VR::UI, "2.25.999"));
+        src.put(DataElement::new(tags::REPETITION_TIME, VR::DS, "30"));
+        src.with_meta(FileMetaTableBuilder::new().transfer_syntax(uids::EXPLICIT_VR_LITTLE_ENDIAN)
+            .media_storage_sop_class_uid(uids::MR_IMAGE_STORAGE).media_storage_sop_instance_uid("2.25.999"))
+            .unwrap().write_to_file(src_dir.join("t.dcm")).unwrap();
+        let id = build_identity(&run, Some(&src_dir));
+        assert_eq!((id.repetition_time.as_str(), id.echo_train_length.as_str(), id.body_part.as_str()), ("30", "4", "BRAIN"));
+    }
+
     #[test]
     fn test_suffix_selected() {
         let filter = vec!["chimap".to_string(), "T2starmap".to_string()];
@@ -986,4 +1057,5 @@ mod tests {
         assert!((g.col_spacing - 1.0).abs() < 1e-12);
     }
 }
+
 

@@ -354,9 +354,12 @@ A few more things worth knowing:
   overlays the source acquisition in a viewer and reflects any
   [oblique resampling](/QSMxT/reference/algorithms/#oblique-acquisitions) the run
   applied.
-- Instances are uncompressed *MR Image Storage*, Explicit VR Little Endian. With
-  `--source-dicom`, the acquisition's patient position, repetition time, echo
-  train length, body part and laterality are copied too; without it they are left empty rather than guessed.
+- Instances are uncompressed *MR Image Storage*, Explicit VR Little Endian. The acquisition's
+  patient position, repetition time, echo train length, body part and laterality
+  are filled in too: from `--source-dicom` when given, else from the run's BIDS
+  sidecar (`PatientPosition`, `RepetitionTime`, `EchoTrainLength`, `BodyPart`,
+  as dcm2niix and `qsmxt dicom-convert` write them), else left empty rather than
+  guessed.
 - Export is best-effort: a failure is logged and the run still succeeds.
 - `--export-dicom` is a pipeline setting, so it can live in a
   [config file](/QSMxT/reference/configuration/) as `export_dicom = true` under
