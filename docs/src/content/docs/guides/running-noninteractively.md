@@ -294,6 +294,10 @@ supplementary maps are exported once you've asked for them:
 | Susceptibility (χ) | the default pipeline | `Chimap` |
 | SWI | `--do-swi` | `swi` |
 | SWI minIP | `--do-swi` | `minIP` |
+| Paramagnetic SMWI | `--do-smwi` | `desc-paramagnetic_smwi` |
+| Diamagnetic SMWI | `--do-smwi` | `desc-diamagnetic_smwi` |
+| Paramagnetic SMWI minIP | `--do-smwi` | `desc-paramagneticsmwi_minIP` |
+| Diamagnetic SMWI minIP | `--do-smwi` | `desc-diamagneticsmwi_minIP` |
 | T2\* | `--do-t2starmap` | `T2starmap` |
 | R2\* | `--do-r2starmap` | `R2starmap` |
 | R2 | `--do-r2map` | `R2map` |
@@ -314,7 +318,7 @@ qsmxt run study/bids --do-chisep --export-dicom \
 In the TUI, the Reconstruction tab's DICOM section lists the maps the settings
 make, each ticked; untick the ones to leave out.
 
-SMWI, the [segmentation](/QSMxT/reference/algorithms/#segmentation-and-per-structure-statistics)
+The [segmentation](/QSMxT/reference/algorithms/#segmentation-and-per-structure-statistics)
 and the [multi-orientation](/QSMxT/reference/algorithms/#multi-orientation-cosmos-and-sti)
 reconstructions stay NIfTI-only.
 
@@ -350,7 +354,12 @@ A few more things worth knowing:
   overlays the source acquisition in a viewer and reflects any
   [oblique resampling](/QSMxT/reference/algorithms/#oblique-acquisitions) the run
   applied.
-- Instances are uncompressed *MR Image Storage*, Explicit VR Little Endian.
+- Instances are uncompressed *MR Image Storage*, Explicit VR Little Endian. The acquisition's
+  patient position, repetition time, echo train length, body part and laterality
+  are filled in too: from `--source-dicom` when given, else from the run's BIDS
+  sidecar (`PatientPosition`, `RepetitionTime`, `EchoTrainLength`, `BodyPart`,
+  as dcm2niix and `qsmxt dicom-convert` write them), else left empty rather than
+  guessed.
 - Export is best-effort: a failure is logged and the run still succeeds.
 - `--export-dicom` is a pipeline setting, so it can live in a
   [config file](/QSMxT/reference/configuration/) as `export_dicom = true` under
