@@ -162,6 +162,9 @@ pub enum Basis {
     ReferenceChoice,
     /// What QSM.rs's implementation does (e.g. a setting it ignores in some combination).
     Implementation,
+    /// QSMxT's own recommendation, outside the reference pipeline: something the original
+    /// toolbox does not offer, which QSMxT can do instead ([`qsmxt_findings`]).
+    Qsmxt,
 }
 
 impl Basis {
@@ -171,6 +174,7 @@ impl Basis {
             Basis::Measured => "measured in QSM.rs",
             Basis::ReferenceChoice => "the reference pipeline's choice",
             Basis::Implementation => "QSM.rs's implementation",
+            Basis::Qsmxt => "QSMxT's recommendation, not offered by the reference toolbox",
         }
     }
 }
@@ -387,6 +391,9 @@ pub struct Facts {
     pub dims: Option<(usize, usize, usize)>,
     /// The sidecar's `Manufacturer`, as it gives it.
     pub manufacturer: Option<String>,
+    /// Whether the scan has a measured R2′ for χ-separation (a MESE acquisition, or a supplied
+    /// map): QSMxT's own `qsmxt.chi-sep-predict-r2prime` fires only when it is known to have none.
+    pub measured_r2prime: Option<bool>,
 }
 
 impl Facts {
@@ -398,6 +405,7 @@ impl Facts {
             voxel_size: f.voxel_size,
             dims: Some(f.dims),
             manufacturer: f.manufacturer.clone(),
+            measured_r2prime: Some(f.mese_echo_times.is_some() || f.custom_r2prime),
         }
     }
 
@@ -410,6 +418,7 @@ impl Facts {
             voxel_size: Some(m.voxel_size),
             dims: Some(m.dims),
             manufacturer: None,
+            measured_r2prime: None,
         }
     }
 
@@ -426,6 +435,7 @@ impl Facts {
             voxel_size: v.voxel_size.map(|[x, y, z]| (x, y, z)),
             dims: v.dims.map(|[x, y, z]| (x, y, z)),
             manufacturer: v.manufacturer.clone(),
+            measured_r2prime: v.measured_r2prime,
         }
     }
 
@@ -716,8 +726,57 @@ pub fn reference_values(config: &PipelineConfig, facts: &Facts) -> Vec<Recommend
         let departs = core::check(rule, &input, &scan).is_some();
         Some(recommendation(&json, rule, &input, &scan, &applies.current, departs))
     }).collect();
+    out.extend(qsmxt_findings(c, facts));
     mark(config, &mut out);
     out
+}
+
+/// QSMxT's own recommendations, beside QSM.rs's rules ([`Basis::Qsmxt`]).
+///
+/// `qsmxt.chi-sep-predict-r2prime`: the χ-separation toolbox's iLSQR and MEDI methods take a
+/// measured R2′, and their toolbox pipelines measure it only (`r2prime_strategy = mese`; decided
+/// 2026-11-10). On a scan known to have none (no MESE, no supplied map), the run cannot go ahead
+/// as configured; QSMxT can predict R2′ from R2* with R2PRIMEnet instead, which this offers,
+/// labelled as QSMxT's and not the toolbox's. A recommendation, so a front end preselects it.
+fn qsmxt_findings(c: &PipelineConfig, facts: &Facts) -> Vec<Recommendation> {
+    use crate::enums::{R2PrimeStrategy, SeparationAlgorithm as S};
+    let s = &c.separation;
+    let iterative = matches!(s.algorithm, S::ChiSepIlsqr | S::ChiSepMedi);
+    if !(c.pipeline.do_chi_separation && iterative && s.r2prime_strategy == R2PrimeStrategy::Mese
+        && s.custom_r2prime_tool.is_none() && facts.measured_r2prime == Some(false))
+    {
+        return vec![];
+    }
+    let named = |v: &str| {
+        let value = Value::String(v.into());
+        Named { name: name_of("separation.r2prime_strategy", Mapping::Same, &value), value }
+    };
+    let method = serde_json::to_value(s.algorithm).unwrap_or(Value::Null);
+    vec![Recommendation {
+        rule: "qsmxt.chi-sep-predict-r2prime".into(),
+        kind: Kind::Reasoned,
+        strength: Strength::Recommended,
+        basis: Basis::Qsmxt,
+        setting: "separation.r2prime_strategy".into(),
+        label: label_of("separation.r2prime_strategy"),
+        trigger: Trigger {
+            setting: "separation.algorithm".into(),
+            name: name_of("separation.algorithm", Mapping::Same, &method),
+            value: method,
+        },
+        current: vec![named("mese")],
+        recommended: named("auto"),
+        allowed: Allowed::OneOf { values: vec![named("auto"), named("r2primenet")] },
+        reason: "This scan has no measured R2' (no multi-echo spin-echo acquisition and no supplied \
+                 map), and the χ-separation toolbox only takes a measured one. QSMxT can instead \
+                 predict R2' from R2* with R2PRIMEnet (Kim et al., 2025): a QSMxT recommendation, \
+                 not part of the toolbox's pipeline".into(),
+        source: "QSMxT; Kim et al. 2025 (R2PRIMEnet)".into(),
+        needs_scan: true,
+        departs: true,
+        dismissed: false,
+        conflict: false,
+    }]
 }
 
 /// The findings on `config` on a scan with `facts`: every rule that applies and is departed from.

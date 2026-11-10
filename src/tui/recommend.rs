@@ -387,7 +387,14 @@ impl App {
             super::app::InputMode::Bids => (self.pipeline_view.read_field_strength(), self.pipeline_view.read_manufacturer()),
             _ => (None, None),
         };
-        Facts { echo_count: self.filter_state.num_echoes.trim().parse().ok(), field_strength, manufacturer, ..Default::default() }
+        // A measured R2′ only from a BIDS run's MESE (a supplied map is a setting, which the rule
+        // reads itself); unknown otherwise, so QSMxT's offer to predict R2′ waits for the scan.
+        let measured_r2prime = match self.input_mode {
+            super::app::InputMode::Bids => self.pipeline_view.read_has_mese(),
+            _ => None,
+        };
+        Facts { echo_count: self.filter_state.num_echoes.trim().parse().ok(), field_strength, manufacturer,
+                measured_r2prime, ..Default::default() }
     }
 
     /// Every rule that applies to the form's config, departed from or not.

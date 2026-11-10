@@ -608,6 +608,13 @@ pub fn measures_r2prime_for_chisepnet(f: &ScanFacts, config: &PipelineConfig) ->
         && arlo_problem(f).is_none()
 }
 
+/// χ-separation by the toolbox's iterative methods (χ-sep-iLSQR, χ-sep-MEDI), which take a
+/// measured R2′.
+fn c_is_chisep_iterative(config: &PipelineConfig) -> bool {
+    use crate::enums::SeparationAlgorithm as S;
+    config.pipeline.do_chi_separation && matches!(config.separation.algorithm, S::ChiSepIlsqr | S::ChiSepMedi)
+}
+
 /// Why R2' cannot be had for this run, if it cannot.
 pub fn r2prime_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<String> {
     r2prime_problem_in(f, config, &Words::flags())
@@ -624,12 +631,26 @@ fn r2prime_problem_in(f: &ScanFacts, config: &PipelineConfig, w: &Words) -> Opti
     }
     let r2 = r2_problem_in(f, config, w);
     match s.r2prime_strategy {
-        R2PrimeStrategy::Mese => r2.map(|why| if w.labels {
-            format!("measures R2' as R2* − R2 (with {}), and R2 {why}",
-                w.choice("separation.r2prime_strategy", "mese", ""))
-        } else {
-            w.note("separation.r2prime_strategy");
-            format!("--r2prime-strategy mese measures R2' as R2* − R2, and R2 {why}")
+        R2PrimeStrategy::Mese => r2.map(|why| {
+            // The χ-separation toolbox's pipelines measure R2′ only; prediction is QSMxT's offer.
+            let toolbox = c_is_chisep_iterative(config);
+            if w.labels {
+                let predict = if toolbox {
+                    format!("; {} predicts it with R2PRIMEnet instead (QSMxT's recommendation; the \
+                             χ-separation toolbox takes a measured R2')",
+                        w.choice("separation.r2prime_strategy", "auto", ""))
+                } else { String::new() };
+                format!("measures R2' as R2* − R2 (with {}), and R2 {why}{predict}",
+                    w.choice("separation.r2prime_strategy", "mese", ""))
+            } else {
+                w.note("separation.r2prime_strategy");
+                let predict = if toolbox {
+                    "; --r2prime-strategy auto predicts it with R2PRIMEnet instead (QSMxT's \
+                     recommendation; the χ-separation toolbox takes a measured R2'), or supply one \
+                     with --use-custom-r2prime"
+                } else { "" };
+                format!("--r2prime-strategy mese measures R2' as R2* − R2, and R2 {why}{predict}")
+            }
         }),
         R2PrimeStrategy::Auto if r2.is_none() => None,
         strategy => {
@@ -1701,4 +1722,20 @@ mod tests {
             &ScanFacts { mese_echo_times: Some(vec![0.01, 0.02, 0.03]), ..f.clone() }, &c));
         assert!(!measures_r2prime_for_chisepnet(&f, &c));
     }
+
+    /// A χ-separation toolbox pipeline on a scan with no MESE and no supplied R2′ is refused at
+    /// plan time, and the message names the option that predicts R2′ instead.
+    #[test]
+    fn chi_sep_pipeline_without_measured_r2prime_is_refused_with_the_prediction_hint() {
+        let mut c = PipelineConfig::default();
+        crate::pipelines::choose(&mut c, "chi-sep-ilsqr", &crate::schema::ViewFacts::default()).unwrap();
+        let out = scan_check(&run(&[0.004, 0.008, 0.012, 0.016], true), &c);
+        let refused: Vec<_> = out.problems.iter().filter(|p| p.severity == Severity::Error).collect();
+        assert!(refused.iter().any(|p| p.message.contains("predicts it with R2PRIMEnet instead")
+            && p.message.contains("QSMxT's recommendation")), "{refused:?}");
+        assert!(out.errors.iter().any(|e| e.contains("--r2prime-strategy auto predicts it with R2PRIMEnet")), "{:?}", out.errors);
+        let ok = scan_check(&with_mese(run(&[0.004, 0.008, 0.012, 0.016], true), &[0.01, 0.02, 0.03]), &c);
+        assert!(ok.problems.iter().all(|p| !p.message.contains("R2PRIMEnet instead")), "{:?}", ok.problems);
+    }
+
 }

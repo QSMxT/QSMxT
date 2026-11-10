@@ -10,7 +10,7 @@ use crate::schema::{self, ValueType, ViewFacts};
 fn facts_for(rule: &Rule) -> Option<Facts> {
     let mut f = Facts {
         echo_count: Some(4), field_strength: Some(3.0), voxel_size: Some((1.0, 1.0, 1.0)), dims: Some((64, 64, 32)),
-        manufacturer: None,
+        manufacturer: None, measured_r2prime: None,
     };
     for c in rule.when {
         let Condition::Fact { fact, is } = c else { continue };
@@ -116,7 +116,7 @@ fn native_rules() -> impl Iterator<Item = (&'static Rule, Facts)> {
 }
 
 fn known() -> Facts {
-    Facts { echo_count: Some(4), field_strength: Some(3.0), voxel_size: Some((1.0, 1.0, 1.0)), dims: Some((64, 64, 32)), manufacturer: None }
+    Facts { echo_count: Some(4), field_strength: Some(3.0), voxel_size: Some((1.0, 1.0, 1.0)), dims: Some((64, 64, 32)), manufacturer: None, measured_r2prime: None }
 }
 
 /// A QSM.rs setting at a QSMxT setting's own path needs no entry in the table.

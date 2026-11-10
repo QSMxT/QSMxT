@@ -31,7 +31,7 @@ use serde_json::Value;
 use qsm_core::pipeline::reference_pipelines::{ReferencePipeline, REFERENCE_PIPELINES};
 
 use crate::config::PipelineConfig;
-use crate::recommendations::{self as rec, Facts, Strength};
+use crate::recommendations::{self as rec, Facts, Recommendation, Strength};
 use crate::schema::{self, Section, ViewFacts};
 
 /// The id of QSMxT's own defaults, listed first.
@@ -195,6 +195,17 @@ fn applied(config: &PipelineConfig, id: &str, facts: &ViewFacts) -> Result<Appli
                 _ => {}
             }
         }
+    }
+    // The χ-separation toolbox takes a measured R2′, so its iterative pipelines measure R2′
+    // and never predict it (decided 2026-11-10). A scan without one gets QSMxT's offer to
+    // predict it instead (`qsmxt.chi-sep-predict-r2prime`, a recommendation), never a silent switch.
+    c.separation.r2prime_strategy = if matches!(id, "chi-sep-ilsqr" | "chi-sep-medi") {
+        crate::enums::R2PrimeStrategy::Mese
+    } else {
+        PipelineConfig::default().separation.r2prime_strategy
+    };
+    if !extra.contains(&"separation.r2prime_strategy") {
+        extra.push("separation.r2prime_strategy");
     }
     Ok(Applied { config: c, stages: STAGES.to_vec(), extra })
 }
@@ -520,6 +531,38 @@ mod tests {
         let (same, changes) = on_scan(&PipelineConfig::default(), &scan).unwrap();
         assert!(changes.is_empty());
         assert_eq!(serde_json::to_value(&same).unwrap(), serde_json::to_value(PipelineConfig::default()).unwrap());
+    }
+
+    /// The χ-separation toolbox's iterative pipelines measure R2′ and never predict it. On a scan
+    /// known to have none, QSMxT offers prediction as its own recommendation (preselected, labelled
+    /// not the toolbox's); with a measured or supplied R2′, or before the scan is known, nothing.
+    #[test]
+    fn chi_sep_pipelines_measure_r2prime_and_qsmxt_offers_to_predict_it() {
+        use crate::enums::R2PrimeStrategy;
+        for id in ["chi-sep-ilsqr", "chi-sep-medi"] {
+            let mut c = PipelineConfig::default();
+            choose(&mut c, id, &facts()).unwrap();
+            assert_eq!(c.separation.r2prime_strategy, R2PrimeStrategy::Mese, "{id}");
+            let offer = |measured: Option<bool>| -> Vec<Recommendation> {
+                rec::recommendations(&c, &Facts { measured_r2prime: measured, ..Facts::of_view(&facts()) })
+                    .into_iter().filter(|r| r.rule == "qsmxt.chi-sep-predict-r2prime").collect()
+            };
+            let found = offer(Some(false));
+            assert_eq!(found.len(), 1, "{id}");
+            let r = &found[0];
+            assert_eq!((r.strength, r.basis, r.setting.as_str()), (Strength::Recommended, rec::Basis::Qsmxt, "separation.r2prime_strategy"));
+            assert_eq!(r.recommended.value, serde_json::json!("auto"));
+            assert!(r.basis.label().contains("not offered by the reference toolbox"));
+            assert!(offer(Some(true)).is_empty() && offer(None).is_empty(), "{id}");
+            let mut supplied = c.clone();
+            supplied.separation.custom_r2prime_tool = Some("mine".into());
+            assert!(rec::recommendations(&supplied, &Facts { measured_r2prime: Some(false), ..Facts::default() })
+                .iter().all(|r| r.rule != "qsmxt.chi-sep-predict-r2prime"), "{id}");
+        }
+        // χ-sepnet takes its own route to R2′, and is left as it was.
+        let mut c = PipelineConfig::default();
+        choose(&mut c, "chi-sepnet", &facts()).unwrap();
+        assert_eq!(c.separation.r2prime_strategy, R2PrimeStrategy::default());
     }
 
     #[test]
