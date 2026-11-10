@@ -6,12 +6,12 @@
 //!   settings ([`pipelines::changes`]).
 //! - **Choosing** (Enter) opens a preview of every change ([`PreviewModal`]): Apply (preselected:
 //!   choosing the pipeline is the request) or Cancel. Nothing changes before Apply.
-//! - **Applying** resets the pages the pipeline covers ([`pipelines::covers`]), then sets each
+//! - **Applying** resets every reconstruction page, shown settings and hidden ones
+//!   ([`pipelines::covers`]; not the Input page or the Outputs and Execution tabs), then sets each
 //!   change on its row, as the recommendation pop-up's Apply does, until the form's config follows
 //!   the pipeline. The choice is remembered in the form (and so in the config:
 //!   `reference_pipeline`). The reasoned recommendations its choices trigger (PDF's iteration
-//!   count, DECOMPOSE's per-echo QSM), which are not part of it, then open their pop-up as after
-//!   any change.
+//!   count), which are not part of it, then open their pop-up as after any change.
 //! - **The status** ([`pipelines::status`]: "MEDI toolbox", "MEDI toolbox · 1 departure",
 //!   "Custom") sits in the header's rule on every tab, cached by the form's fingerprint. `P` on a
 //!   settings page comes here.
@@ -60,7 +60,10 @@ pub struct PreviewModal {
 /// The page a stage's settings are on.
 fn page_of(section: Section) -> Option<Page> {
     Some(match section {
+        Section::Geometry => Page::Geometry,
         Section::Masking => Page::Masking,
+        Section::Motion => Page::Motion,
+        Section::MultiOrientation => Page::MultiOrientation,
         Section::FieldMap => Page::FieldMap,
         Section::Background => Page::Background,
         Section::Inversion => Page::Inversion,
@@ -209,6 +212,13 @@ impl App {
         let mut trial = self.clone_form();
         for page in stages.iter().filter_map(|s| page_of(*s)) {
             trial.reset_page(page);
+        }
+        // And the settings out of view (under an option that is off), which would otherwise come
+        // back with their old values when it is turned on.
+        for s in qsmxt_engine::schema::settings().iter().filter(|s| stages.contains(&s.section)) {
+            if let Some(field) = super::app::field_of_path(s.path) {
+                trial.reset_field(field);
+            }
         }
         trial.pipeline_state.reference_pipeline = (id != pipelines::QSMXT_DEFAULTS).then(|| id.to_string());
         // A change can bring rows into view (PDF's settings once PDF is chosen): set what can be
@@ -521,16 +531,38 @@ mod tests {
     }
 
     /// The recommendations a pipeline's choices trigger are not part of it, but open their
-    /// pop-up once it is applied: DECOMPOSE's per-echo QSM.
+    /// pop-up once it is applied: PDF's iterations under the MEDI toolbox. DECOMPOSE's per-echo
+    /// QSM is what its authors ran, so it is part of its pipeline and offers nothing.
     #[test]
     fn applying_offers_the_recommendations_it_does_not_include() {
         let mut app = four_echoes();
         app.check_recommendations();
-        app.choose_pipeline("decompose").unwrap();
+        app.choose_pipeline("medi-toolbox").unwrap();
         let m = app.rec_modal.as_ref().expect("a recommendation pop-up");
-        assert!(m.findings.iter().any(|r| r.rule == "decompose.qsm-per-echo"), "{:?}", m.findings);
+        assert!(m.findings.iter().any(|r| r.setting == "bg_removal.pdf.n_cg"), "{:?}", m.findings);
         assert_eq!(m.cursor, Some(0), "its Apply is preselected");
         assert!(app.refs.modal.is_none() && app.refs.pending.is_empty(), "no reference pipeline pop-up");
+        app.rec_modal = None;
+        app.choose_pipeline("decompose").unwrap();
+        assert!(super::super::command::config_from_app(&app).unwrap().qsm.per_echo, "DECOMPOSE's QSM is per echo");
+        assert!(!app.rule_view().iter().any(|r| r.rule == "decompose.qsm-per-echo" && r.departs));
+    }
+
+    /// Nothing carries over from a pipeline chosen before, shown or hidden: the form's config is
+    /// the same as choosing the pipeline on a fresh form, and QSMxT's defaults are the defaults.
+    #[test]
+    fn nothing_carries_over_between_pipelines() {
+        let config = |app: &App| serde_json::to_value(super::super::command::config_from_app(app).unwrap()).unwrap();
+        let fresh = |id: &str| { let mut app = four_echoes(); app.choose_pipeline(id).unwrap(); config(&app) };
+        let ids = pipelines::ids();
+        let mut app = four_echoes();
+        for id in ids.iter().chain(ids.iter().rev()) {
+            app.choose_pipeline(id).unwrap();
+            assert_eq!(config(&app), fresh(id), "{id}");
+        }
+        app.choose_pipeline("chi-sep-ilsqr").unwrap();
+        app.choose_pipeline(pipelines::QSMXT_DEFAULTS).unwrap();
+        assert_eq!(config(&app), config(&four_echoes()), "QSMxT defaults are the defaults");
     }
 
     /// A value changed on a covered page goes back to the pipeline's; changing a setting after
