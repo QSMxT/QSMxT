@@ -12,6 +12,8 @@ use super::command;
 pub fn draw(f: &mut Frame, app: &mut App) {
     // Each drawer records where its clickable things are.
     app.hits.clear();
+    // The Reconstruction tab's sections are a sidebar when there is room beside the rows.
+    app.sidebar_layout.set(f.area().width >= super::tabs::SIDEBAR_MIN_WIDTH);
     // The header's pipeline status, worked out once per change of the form.
     app.pipeline_status();
     // Compute command preview height dynamically
@@ -1781,8 +1783,20 @@ fn draw_dicom_series_section(
 /// A row-based tab (all but Input and Methods): its sub-tabs, then one named row per setting.
 fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     let block = super::tabs::panel(app);
-    let inner = block.inner(area);
+    let mut inner = block.inner(area);
     f.render_widget(block, area);
+    if app.sidebar() {
+        let sw = super::tabs::SIDEBAR_WIDTH.min(inner.width);
+        super::tabs::draw_sidebar(f, app, Rect { width: sw, ..inner });
+        // The divider meets the panel's border.
+        let x = inner.x + sw - 1;
+        // (Not where the title is written over the top border.)
+        let buf = f.buffer_mut();
+        let faint = buf[(area.x, area.y)].fg;
+        if buf[(x, area.y)].symbol() == "─" { buf[(x, area.y)].set_symbol("┬").set_fg(faint); }
+        if buf[(x, area.bottom() - 1)].symbol() == "─" { buf[(x, area.bottom() - 1)].set_symbol("┴").set_fg(faint); }
+        inner = Rect { x: inner.x + sw + 1, width: inner.width.saturating_sub(sw + 1), ..inner };
+    }
 
     // Build lines and collect state from pipeline_state before mutable borrow
     let rows = app.rows();
@@ -2281,7 +2295,9 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         };
         lines.push(line);
     }
-    if on_strip {
+    if on_strip && app.sidebar() {
+        focused_help = Some("↑/↓ choose a section; → or Enter to go to its settings; ↑ from the first to the tabs".to_string());
+    } else if on_strip {
         focused_help = Some("←/→ choose a sub-tab; ↓ or Enter to go to its settings; ↑ to the tabs".to_string());
     }
 
@@ -2477,8 +2493,12 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         vec![(&tabs, "Tabs"), ("[ ]", "Sub-tabs"), ("\u{2191}\u{2193}", "Scroll"), ("Enter/s", "Open as SVG"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else if app.active_tab == TAB_METHODS {
         vec![(&tabs, "Tabs"), ("[ ]", "Sub-tabs"), ("\u{2191}\u{2193}", "Scroll"), ("Enter/c", "Copy to clipboard"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
+    } else if app.on_subtabs() && app.sidebar() {
+        vec![(&tabs, "Tabs"), ("\u{2191}\u{2193}/[ ]", "Sections"), ("\u{2192}/Enter", "Settings"), ("R", "Reset section"),
+             ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else if app.on_subtabs() {
-        vec![(&tabs, "Tabs"), ("\u{2190}\u{2192}/[ ]", "Sub-tabs"), ("\u{2193}/Enter", "Settings"), ("R", "Reset page"),
+        let what = if app.active_tab == super::app::TAB_RECONSTRUCTION { "Sections" } else { "Sub-tabs" };
+        vec![(&tabs, "Tabs"), ("\u{2190}\u{2192}/[ ]", what), ("\u{2193}/Enter", "Settings"), ("R", "Reset page"),
              ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else {
         // The row's own keys: Enter for a picker, ←/→ for a row that cycles, Enter to edit text.
@@ -2495,7 +2515,8 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
             && app.active_field >= App::INPUT_IO_FIELDS
             && matches!(app.filter_state.focus, super::app::FilterFocus::TreeNode(i)
                 if matches!(app.filter_state.visible_rows().get(i), Some(super::app::TreeRow::Run { .. })));
-        let mut keys = vec![(tabs.as_str(), "Tabs"), ("[ ]", "Sub-tabs"), ("\u{2191}\u{2193}", "Navigate")];
+        let recon = app.active_tab == super::app::TAB_RECONSTRUCTION;
+        let mut keys = vec![(tabs.as_str(), "Tabs"), ("[ ]", if recon { "Sections" } else { "Sub-tabs" }), ("\u{2191}\u{2193}", "Navigate")];
         match (&choose, &row) {
             (Some(c), _) => keys.push(("Enter", c.as_str())),
             (None, None) if in_picker && app.example_state.cursor == super::app::ExampleState::BUTTON => keys.push(("Enter", "Download")),
@@ -2515,7 +2536,7 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         if rows_tab {
             keys.push(("P", "Pipeline"));
         }
-        keys.extend([("r", "Reset"), ("R", "Reset page"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]);
+        keys.extend([("r", "Reset"), ("R", if recon { "Reset section" } else { "Reset page" }), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]);
         draw_keys(f, keys, area);
         return;
     };
@@ -2599,7 +2620,8 @@ pub(super) mod tests {
         let indent_of = |text: &str, label: &str| -> usize {
             let line = text.lines().find(|l| l.contains(label))
                 .unwrap_or_else(|| panic!("{label} not on screen:\n{text}"));
-            line.find(label).expect("just matched")
+            // In columns: the sidebar beside the rows draws multi-byte characters (χ, │).
+            line[..line.find(label).expect("just matched")].chars().count()
         };
         let mut app = App::new();
         app.form.do_swi = true;
@@ -2619,8 +2641,8 @@ pub(super) mod tests {
         for child in ["SynthSeg version", "Crop", "Flip averaging", "Topology cleanup", "Posterior smoothing"] {
             assert!(indent_of(&text, child) > source, "{child} belongs under the source:\n{text}");
         }
-        // The sub-tab row is drawn, the active one among them.
-        assert!(text.contains("SWI/SMWI") && text.contains("Relaxometry") && text.contains("Export"), "{text}");
+        // The sidebar is drawn beside them.
+        assert!(text.contains("SWI/SMWI") && text.contains("Relaxometry") && text.contains("DICOM"), "{text}");
     }
 
     #[test]
@@ -2931,7 +2953,7 @@ pub(super) mod tests {
     #[test]
     fn test_draw_algorithms_tab() {
         let mut app = App::new();
-        app.active_tab = super::super::app::TAB_QSM;
+        app.active_tab = super::super::app::TAB_RECONSTRUCTION;
         app.active_field = 0;
         let _ = render_app(&mut app);
         // Move through fields
@@ -2991,7 +3013,7 @@ pub(super) mod tests {
     #[test]
     fn test_draw_parameters_tab() {
         let mut app = App::new();
-        app.active_tab = super::super::app::TAB_QSM;
+        app.active_tab = super::super::app::TAB_RECONSTRUCTION;
         let _ = render_app(&mut app);
         // Change algorithm
         app.pipeline_state.qsm_algorithm = 3; // TSVD
@@ -3001,7 +3023,7 @@ pub(super) mod tests {
     #[test]
     fn test_draw_execution_tab_with_flags() {
         let mut app = App::new();
-        app.active_tab = super::super::app::TAB_SEPARATION;
+        app.active_tab = super::super::app::TAB_RECONSTRUCTION;
         app.form.do_swi = true;
         app.form.do_t2starmap = true;
         app.form.dry_run = true;
@@ -3020,7 +3042,7 @@ pub(super) mod tests {
     #[test]
     fn test_draw_select_not_focused() {
         let mut app = App::new();
-        app.active_tab = super::super::app::TAB_QSM;
+        app.active_tab = super::super::app::TAB_RECONSTRUCTION;
         app.active_field = 1; // field 0 (select) not focused
         let _ = render_app(&mut app);
     }
@@ -3158,7 +3180,7 @@ fn orientation_block(app: &App, in_io: bool) -> Vec<Line<'static>> {
     let of = if least == most { format!("{most}") } else { format!("{least}–{most}") };
     let short = sizes.iter().filter(|&&k| k < need).count();
     let (marker, style) = if short > 0 { ("✗", Style::default().fg(Color::Red)) } else { ("◉", Style::default().fg(Color::Green)) };
-    let mut summary = format!("    {marker} {n} group{} of {of} orientations, marked in the runs below; combined with {algo} (3 QSM → COSMOS/STI)",
+    let mut summary = format!("    {marker} {n} group{} of {of} orientations, marked in the runs below; {algo} on 3 Reconstruction › COSMOS/STI",
         if n == 1 { "" } else { "s" });
     if short > 0 {
         summary.push_str(&format!(" — {short} {} fewer than the {need} {algo} needs", if short == 1 { "has" } else { "have" }));
@@ -3218,7 +3240,7 @@ mod orientation_block_tests {
         app.filter_state.orientation_group = "*acq-dir*".into();
         let text = screen_text(&render_app_sized(&mut app, 140, 60));
         assert!(text.contains("1 group of 3 orientations"), "{text}");
-        assert!(text.contains("combined with COSMOS"), "{text}");
+        assert!(text.contains("COSMOS on 3 Reconstruction › COSMOS/STI"), "{text}");
         assert_eq!(text.matches("(group 1").count(), 3, "each member is marked:\n{text}");
         // The unrelated acquisition is reported as left out, not silently swallowed.
         assert!(text.contains("matched no group"), "{text}");
@@ -3292,7 +3314,7 @@ mod orientation_block_tests {
     fn orientation_settings_are_on_the_qsm_tab() {
         let (mut app, _d) = app_with_orientations();
         app.filter_state.orientation_group = "*acq-dir*".into();
-        app.active_tab = crate::tui::app::TAB_QSM;
+        app.active_tab = crate::tui::app::TAB_RECONSTRUCTION;
         assert!(app.goto_field("orientation_algorithm"));
         let text = screen_text(&render_app_sized(&mut app, 140, 60));
         assert!(text.contains("COSMOS/STI") && text.contains("Combine as"), "{text}");

@@ -320,7 +320,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::app::{Page, TAB_PIPELINE, TAB_PREPROCESSING, TAB_QSM};
+    use crate::tui::app::{Page, TAB_PIPELINE, TAB_RECONSTRUCTION};
     use ratatui::{backend::TestBackend, Terminal};
 
     /// Draw a frame (recording where things are) and return its text, one string per row.
@@ -346,14 +346,18 @@ mod tests {
     }
 
     #[test]
-    fn tabs_and_sub_tabs_switch_on_a_click() {
+    fn tabs_and_sections_switch_on_a_click() {
         let mut app = App::new_for_trial();
-        click(&mut app, "Preprocessing");
-        assert_eq!(app.active_tab, TAB_PREPROCESSING);
-        click(&mut app, " Motion ");
+        click(&mut app, "3 Reconstruction");
+        assert_eq!(app.active_tab, TAB_RECONSTRUCTION);
+        click(&mut app, "   Motion ");
         assert_eq!(app.page(), Some(Page::Motion));
-        click(&mut app, "4 QSM");
-        assert_eq!(app.active_tab, TAB_QSM);
+        assert!(app.on_subtabs(), "a click on a section focuses the sidebar");
+        // A group's heading opens its first section.
+        click(&mut app, " OTHER OUTPUTS");
+        assert_eq!(app.page(), Some(Page::Separation));
+        click(&mut app, "4 Execution");
+        assert_eq!(app.active_tab, crate::tui::app::TAB_EXECUTION);
     }
 
     /// A picker button opens its list; an entry is highlighted by one click and chosen by the
@@ -362,8 +366,8 @@ mod tests {
     fn pickers_entries_and_pop_up_buttons() {
         let mut app = App::new_for_trial();
         app.check_recommendations();
-        click(&mut app, "4 QSM");
-        click(&mut app, " Inversion ");
+        click(&mut app, "3 Reconstruction");
+        click(&mut app, "   Inversion ");
         click(&mut app, "QSM inversion");
         assert!(app.algo_modal.is_some(), "the picker opens");
         click(&mut app, "  tkd");
@@ -376,7 +380,7 @@ mod tests {
         app.check_recommendations();
         assert!(app.rec_modal.is_some(), "ticking HEIDI on TKD recommends LSQR");
         click(&mut app, "1 Input");
-        assert_eq!(app.active_tab, TAB_QSM, "the tabs do not answer under a pop-up");
+        assert_eq!(app.active_tab, TAB_RECONSTRUCTION, "the tabs do not answer under a pop-up");
         click(&mut app, " Keep mine ");
         assert!(app.rec_modal.is_none(), "the button closes it");
     }
@@ -384,8 +388,8 @@ mod tests {
     #[test]
     fn a_checkbox_ticks_and_a_value_opens_for_editing() {
         let mut app = App::new_for_trial();
-        click(&mut app, "4 QSM");
-        click(&mut app, " Inversion ");
+        click(&mut app, "3 Reconstruction");
+        click(&mut app, "   Inversion ");
         let before = app.pipeline_state.heidi_enabled;
         click(&mut app, "HEIDI");
         assert_ne!(app.pipeline_state.heidi_enabled, before);
@@ -393,7 +397,7 @@ mod tests {
         assert!(app.pipeline_state.editing, "a value opens for editing");
         click(&mut app, "Tolerance");
         assert!(app.pipeline_state.editing, "another value: that one");
-        click(&mut app, "4 QSM");
+        click(&mut app, "3 Reconstruction");
         assert!(!app.pipeline_state.editing, "a click elsewhere ends editing");
     }
 
@@ -415,8 +419,8 @@ mod tests {
     #[test]
     fn the_wheel_stays_on_the_page() {
         let mut app = App::new_for_trial();
-        click(&mut app, "4 QSM");
-        click(&mut app, " Inversion ");
+        click(&mut app, "3 Reconstruction");
+        click(&mut app, "   Inversion ");
         click(&mut app, "QSM inversion");
         app.algo_modal = None;
         let at = app.focus();

@@ -19,7 +19,7 @@ const NOT_CONFIG: &[&str] = &[
     // Expands into the mask recipe (masking.sections and friends), which the recipe rows edit.
     "mask_preset",
     // Run options of `qsmxt run`, not settings of the config.
-    "source_dicom", "dicom_outputs", "execution_mode", "dry_run", "n_procs", "mem_limit_gb", "slurm_account",
+    "source_dicom", "execution_mode", "dry_run", "n_procs", "mem_limit_gb", "slurm_account",
     "slurm_partition", "slurm_time", "slurm_mem", "slurm_cpus", "slurm_submit", "debug", "force", "clean_intermediates",
 ];
 
@@ -37,7 +37,7 @@ fn row_paths(app: &App, row: &PipelineRow) -> Vec<&'static str> {
     };
     match row {
         AlgoSelect { field, .. } | Param { field, .. } | Toggle { field, .. } => {
-            if NOT_CONFIG.contains(field) {
+            if NOT_CONFIG.contains(field) || dicom_map(field).is_some() {
                 return vec![];
             }
             let path = path_of(field).unwrap_or_else(|| panic!("TUI row {field} is not mapped to a schema setting"));
@@ -64,7 +64,7 @@ fn section_of(page: Page) -> Option<Section> {
         Page::Geometry => Section::Geometry,
         Page::Masking => Section::Masking,
         Page::Motion => Section::Motion,
-        Page::QsmOff | Page::Inversion => Section::Inversion,
+        Page::Inversion => Section::Inversion,
         Page::FieldMap => Section::FieldMap,
         Page::Background => Section::Background,
         Page::MultiOrientation => Section::MultiOrientation,

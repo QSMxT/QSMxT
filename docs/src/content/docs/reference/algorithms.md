@@ -1433,8 +1433,8 @@ subject's run **fails** rather than falling back to `mean` — a map that was
 quietly referenced to something else looks fine and cannot be compared with the
 rest of the cohort.
 
-In the TUI the setting is **QSM → Reference → QSM reference**. Picking a region
-there turns segmentation on: **Other outputs → Segmentation** then reads as ticked,
+In the TUI the setting is **Reconstruction › QSM › Reference → QSM reference**. Picking a region
+there turns segmentation on: **Other outputs › Segmentation** then reads as ticked,
 with its source (SynthSeg or a dseg from derivatives) and settings.
 
 ## Susceptibility-weighted imaging
