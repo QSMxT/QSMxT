@@ -24,6 +24,11 @@ pub fn params(config: &PipelineConfig, meta: &RunMetadata, has_mese: bool) -> se
         // older release (the eroded rim taken as χ = 0) are recomputed rather than reused.
         "domain": "support",
     });
+    // R2′ and R2* reach these methods unmasked (`takes_relaxation_unmasked`): maps an older
+    // release fitted with them zeroed outside the support are recomputed rather than reused.
+    if takes_relaxation_unmasked(config) {
+        params["relaxation_maps"] = serde_json::json!("unmasked");
+    }
     let patch = match s.algorithm {
         SeparationAlgorithm::ChiSepNet if s.chi_sepnet.route == ChiSepNetRoute::Native && s.chi_sepnet.patch != d.chi_sepnet.patch =>
             Some(serde_json::json!(s.chi_sepnet.patch)),
@@ -103,6 +108,30 @@ pub fn initial_qsm(
     qsm_core::pipeline::run_dipole_inversion(
         local_field, mask, &scan_metadata(meta), &inversion, None, &mut |done, total| observer.progress(done, total),
     ).map_err(|e| EngineError::Config(format!("chi-separation: the iLSQR QSM: {}", e)))
+}
+
+/// Whether the method takes R2′ and R2* as they are outside the support, as the χ-separation
+/// toolbox's `Chisep_script.m` (v1.1.3) passes them: R2′ as the user has it and R2* as
+/// `r2star_arlo` gives it over the brain mask, with the background-removal mask
+/// (`mask_brain_new`) as the method's mask. The other methods get both zeroed outside the support.
+///
+/// - χ-sep iLSQR reads R2′ just past its mask (QSM.rs#455: step 1 starts from the unmasked
+///   voxelwise solution, whose values there reach step 2's forward differences).
+/// - χ-sep MEDI is given them the same way, by the same script (QSM.rs matches the toolbox given
+///   the unmasked R2′; values just outside the mask reach its result).
+/// - χ-sepnet's toolbox route interpolates R2′ (or R2*) into its training frame before masking it
+///   there, so values just outside the mask reach the frame's edge voxels. The network alone
+///   (`route = native`) z-scores and masks each channel on the acquired grid first, so it keeps
+///   them zeroed.
+///
+/// The maps the method writes are 0 outside the support either way ([`Separated`]).
+pub fn takes_relaxation_unmasked(config: &PipelineConfig) -> bool {
+    let s = &config.separation;
+    match s.algorithm {
+        SeparationAlgorithm::ChiSepIlsqr | SeparationAlgorithm::ChiSepMedi => true,
+        SeparationAlgorithm::ChiSepNet => s.chi_sepnet.route == ChiSepNetRoute::Toolbox,
+        _ => false,
+    }
 }
 
 /// Whether `algorithm` fits the local field.
@@ -196,6 +225,18 @@ pub fn zero_outside(support: &[u8], map: &mut [f64]) {
     }
 }
 
+/// R2′ or R2* as the configured method takes it: 0 outside `support`, or, for a method that takes
+/// them unmasked ([`takes_relaxation_unmasked`]), only where there is no finite value there (a
+/// supplied map's NaN background is no measurement).
+pub fn restrict_relaxation(config: &PipelineConfig, support: &[u8], map: &mut [f64]) {
+    let unmasked = takes_relaxation_unmasked(config);
+    for (v, &s) in map.iter_mut().zip(support) {
+        if s == 0 && (!unmasked || !v.is_finite()) {
+            *v = 0.0;
+        }
+    }
+}
+
 /// The separated maps: χ+, |χ−| and the net χ, each 0 outside the support it was fitted on.
 pub struct Separated {
     pub paramagnetic: Vec<f64>,
@@ -234,6 +275,38 @@ pub fn separate(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// R2′ and R2* reach the χ-separation toolbox's methods (and χ-sepnet's toolbox route) as
+    /// they are outside the support, NaN aside; every other method gets them zeroed there.
+    #[test]
+    fn the_toolbox_methods_take_relaxation_maps_unmasked() {
+        let support = [1u8, 0, 0, 1];
+        let given = [2.0, 3.0, f64::NAN, 4.0];
+        let mut c = PipelineConfig::default();
+        let restricted = |c: &PipelineConfig| {
+            let mut m = given;
+            restrict_relaxation(c, &support, &mut m);
+            m
+        };
+        for (algorithm, route, unmasked) in [
+            (SeparationAlgorithm::ChiSepIlsqr, ChiSepNetRoute::Toolbox, true),
+            (SeparationAlgorithm::ChiSepMedi, ChiSepNetRoute::Toolbox, true),
+            (SeparationAlgorithm::ChiSepNet, ChiSepNetRoute::Toolbox, true),
+            (SeparationAlgorithm::ChiSepNet, ChiSepNetRoute::Native, false),
+            (SeparationAlgorithm::WaveSep, ChiSepNetRoute::Toolbox, false),
+            (SeparationAlgorithm::HcChisep, ChiSepNetRoute::Toolbox, false),
+            (SeparationAlgorithm::SusepNet, ChiSepNetRoute::Toolbox, false),
+            (SeparationAlgorithm::R2starQsm, ChiSepNetRoute::Toolbox, false),
+        ] {
+            c.separation.algorithm = algorithm;
+            c.separation.chi_sepnet.route = route;
+            let want = if unmasked { [2.0, 3.0, 0.0, 4.0] } else { [2.0, 0.0, 0.0, 4.0] };
+            assert_eq!(restricted(&c), want, "{algorithm:?} {route:?}");
+            // ... and maps fitted the other way are not reused.
+            let meta = crate::stages::magnitude::tests::meta_4x4x4();
+            assert_eq!(params(&c, &meta, false).get("relaxation_maps").is_some(), unmasked, "{algorithm:?} {route:?}");
+        }
+    }
 
     #[test]
     fn separation_support_rules() {

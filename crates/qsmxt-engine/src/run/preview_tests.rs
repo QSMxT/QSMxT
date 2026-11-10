@@ -261,3 +261,76 @@ fn preview_speed() {
         }
     }
 }
+
+/// Volumes kept as `qsmxt run` keeps them: float32, except the items it keeps in double precision
+/// ([`Item::kept_in_double`]).
+#[derive(Default)]
+struct AsQsmxt(crate::store::InMemory);
+
+impl crate::store::Volumes for AsQsmxt {
+    fn contains(&self, item: &Item) -> bool { self.0.contains(item) }
+    fn get(&self, item: &Item) -> Result<Option<VolumeData>, crate::EngineError> { self.0.get(item) }
+    fn insert(&mut self, item: Item, volume: qsm_core::pipeline::VolumeRef<'_>) -> Result<(), crate::EngineError> {
+        match volume {
+            qsm_core::pipeline::VolumeRef::Real(v) if !item.kept_in_double() => {
+                let single: Vec<f64> = v.iter().map(|&x| x as f32 as f64).collect();
+                self.0.insert(item, qsm_core::pipeline::VolumeRef::Real(&single))
+            }
+            other => self.0.insert(item, other),
+        }
+    }
+    fn remove(&mut self, item: &Item) -> bool { self.0.remove(item) }
+    fn set_aside(&mut self, item: &Item) -> bool { self.0.set_aside(item) }
+    fn put_back(&mut self, item: &Item) -> bool { self.0.put_back(item) }
+    fn drop_aside(&mut self, item: &Item) { self.0.drop_aside(item) }
+}
+
+/// The RSS a mask section reads is that of the echoes as the Tukey window computed them, in double
+/// precision, as the χ-separation toolbox computes it before its BET rounds it: not the RSS of the
+/// windowed echoes rounded to float32 by a store that keeps volumes in float32.
+#[test]
+fn the_masking_rss_is_that_of_the_windowed_echoes_in_double_precision() {
+    use crate::store::Volumes;
+    let (facts, phantom) = phantom();
+    // The phantom's echoes as float32 files give them (an input is not rounded by QSMxT).
+    let mut volumes = AsQsmxt::default();
+    let mut acquired = Vec::new();
+    for e in 1..=facts.n_echoes {
+        let get = |i: Item| match phantom.get(&i) { Some(VolumeData::Real(v)) => v.iter().map(|&x| x as f32 as f64).collect::<Vec<_>>(), _ => panic!() };
+        let (m, p) = (get(Item::AcquiredMagnitude(e)), get(Item::AcquiredPhase(e)));
+        volumes.insert(Item::AcquiredMagnitude(e), qsm_core::pipeline::VolumeRef::Real(&m)).unwrap();
+        volumes.insert(Item::AcquiredPhase(e), qsm_core::pipeline::VolumeRef::Real(&p)).unwrap();
+        acquired.push((m, p));
+    }
+    let header = crate::store::Header { dims: (16, 16, 16), voxel_size: (1.0, 1.0, 1.0),
+        affine: [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0], orientation: None, sidecar: None };
+    let mut store = MemoryStore::with_volumes(header, json!("phantom-f32"), volumes);
+    let mut c = config();
+    c.pipeline.tukey_window = 0.4;
+    c.masking.sections[0].input = MaskingInput::Magnitude;
+    let plan = crate::plan::plan(&c, &facts);
+    let p = preview_mask(&plan, &c, &facts, &mut store, &mut (), &mut MaskInputs::default(),
+                         &c.masking.sections, c.masking.combine, Upto::Recipe).unwrap();
+
+    // What the run computes: phase scaled to radians (kept in float32 by the store), then the
+    // window, in double precision.
+    let mut phases: Vec<Vec<f64>> = acquired.iter().map(|(_, p)| p.clone()).collect();
+    {
+        let mut ps: Vec<&mut Vec<f64>> = phases.iter_mut().collect();
+        qsm_core::pipeline::scale_phases_to_pi(&mut ps);
+    }
+    let windowed: Vec<Vec<f64>> = acquired.iter().zip(&phases).map(|((m, _), p)| {
+        let (mut m, mut p) = (m.clone(), p.iter().map(|&x| x as f32 as f64).collect::<Vec<_>>());
+        qsm_core::utils::tukey_window::tukey_window_mag_phase(&mut m, &mut p, (16, 16, 16), 0.4);
+        m
+    }).collect();
+    let rss = |echoes: &[Vec<f64>]| -> Vec<f64> {
+        (0..echoes[0].len()).map(|i| echoes.iter().map(|e| e[i] * e[i]).sum::<f64>().sqrt()).collect()
+    };
+    let largest_rel = |a: &[f64], b: &[f64]| a.iter().zip(b).filter(|(_, y)| **y != 0.0)
+        .map(|(x, y)| ((x - y) / y).abs()).fold(0.0, f64::max);
+    let double = rss(&windowed);
+    let single = rss(&windowed.iter().map(|e| e.iter().map(|&x| x as f32 as f64).collect()).collect::<Vec<_>>());
+    assert!(largest_rel(&single, &double) > 1e-9, "the phantom does not tell the two apart");
+    assert!(largest_rel(&p.image, &double) < 1e-13, "{}", largest_rel(&p.image, &double));
+}

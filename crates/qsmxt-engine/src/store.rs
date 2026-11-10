@@ -161,6 +161,18 @@ pub enum Item {
 }
 
 impl Item {
+    /// Whether a store that keeps volumes in float32 (`qsmxt run`'s NIfTI files) keeps this one in
+    /// double precision: the magnitude echoes QSMxT computes before masking (made from coils or
+    /// real and imaginary parts, Tukey-windowed, resampled to an axial grid). The mask and every
+    /// later step read them as computed, as the toolboxes, which keep double throughout, do: the
+    /// χ-separation toolbox's BET rounds only the RSS of its windowed echoes to single, and the RSS
+    /// of float32-rounded echoes differs from that in the last bit at about half of the head's
+    /// voxels, which moves BET's surface (QSMxT/QSM-CI#421). A magnitude kept as it was given
+    /// ([`Data::Same`]) is the input file's, already exact.
+    pub fn kept_in_double(&self) -> bool {
+        matches!(self, Item::ScaledMagnitude(_) | Item::WindowedMagnitude(_) | Item::Magnitude(_))
+    }
+
     /// The name a front end keeps the item under: as Rust writes it (`AcquiredPhase(1)`,
     /// `LocalField(Main)`, `CoilPhase(2, 1)`, `QsmartIntermediate(Main, "vessel_mask")`).
     /// [`Item::from_key`] reads it back.
@@ -518,8 +530,9 @@ pub const OUTPUT_SPACE: &str = "output_space";
 ///
 /// The store decides what is cached; the volumes only hold data. Precision is the volumes': a
 /// step's real-valued outputs reach [`Volumes::insert`] in double precision, and `qsmxt` keeps
-/// them as float32 (its NIfTI files), so volumes that round them to float32 likewise give every
-/// later step the values `qsmxt run` reads back. The default keeps them as they are.
+/// them as float32 (its NIfTI files) except those [`Item::kept_in_double`], so volumes that round
+/// the others to float32 likewise give every later step the values `qsmxt run` reads back. The
+/// default keeps them all as they are.
 pub trait Volumes {
     /// Whether `item` is held.
     fn contains(&self, item: &Item) -> bool;

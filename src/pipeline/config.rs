@@ -2011,6 +2011,18 @@ mod tests {
             assert_eq!(cmd, format!("qsmxt run <bids_dir> --pipeline {} --do-swi", p.id));
             assert_eq!(generate_command(&rebuild(&cmd)), cmd);
         }
+        // A departure from a pipeline's ROMEO settings back to QSMxT's (the χ-separation toolbox's
+        // romeo3 weights and no global correction) has a flag, which reads back.
+        let mut c = PipelineConfig::default();
+        pipelines::choose(&mut c, "chi-sep-ilsqr", &facts).unwrap();
+        assert!(!c.field_mapping.romeo.phase_linearity && !c.field_mapping.romeo.correct_global);
+        (c.field_mapping.romeo.phase_linearity, c.field_mapping.romeo.correct_global) = (true, true);
+        let cmd = generate_command(&c);
+        assert_eq!(cmd, "qsmxt run <bids_dir> --pipeline chi-sep-ilsqr --romeo-correct-global --romeo-phase-linearity");
+        let back = rebuild(&cmd);
+        assert!(back.field_mapping.romeo.phase_linearity && back.field_mapping.romeo.correct_global);
+        assert_eq!(generate_command(&back), cmd);
+        assert!(cli::Cli::try_parse_from(["qsmxt", "run", "d", "--romeo-phase-linearity", "--no-romeo-phase-linearity"]).is_err());
         // The flags after --pipeline win.
         let c = rebuild("qsmxt run <bids_dir> --pipeline medi-toolbox --bf-algorithm vsharp");
         assert_eq!(c.bg_removal.algorithm, qsmxt_engine::BfAlgorithm::Vsharp);

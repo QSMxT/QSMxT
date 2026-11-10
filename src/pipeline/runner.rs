@@ -17,7 +17,7 @@ use qsmxt_engine::store::{Completed, Contrast, Data, Header, Item, StageStore, S
 use crate::pipeline::memory;
 use crate::pipeline::requirements;
 use crate::pipeline::stats;
-use crate::nifti::write::write_volume;
+use crate::nifti::write::{write_volume, write_volume_f64};
 use crate::error::QsmxtError;
 
 /// Provenance record written to each workflow step directory.
@@ -713,10 +713,15 @@ impl StageStore for FileStore<'_> {
                 std::fs::remove_file(sidecar)?;
             }
         }
+        // Float32, as published, except the intermediates later steps must read as computed.
+        let write = if item.kept_in_double() { write_volume_f64 } else { write_volume };
         match data {
-            Data::Real(v) => save_volume(&path, v, self.meta())?,
+            Data::Real(v) => {
+                let m = self.meta();
+                write(&path, v, m.dims, m.voxel_size, &m.affine)?
+            }
             Data::Mask(m) => save_mask(&path, m, self.meta())?,
-            Data::OnGrid(v, g) => write_volume(&path, v, g.dims, g.voxel_size, &g.affine)?,
+            Data::OnGrid(v, g) => write(&path, v, g.dims, g.voxel_size, &g.affine)?,
             Data::Text(t) => {
                 if let Some(parent) = path.parent() {
                     std::fs::create_dir_all(parent)?;
@@ -1241,6 +1246,42 @@ mod tests {
             has_magnitude: false, source_geometry: None, slice_geometry: None, orientation: Some(orientation),
         };
         assert_eq!(qsmxt_engine::scan::itk_geometry(&meta).unwrap(), qsm_core::io::read_itk_geometry_file(&phase).unwrap());
+    }
+
+    /// `qsmxt run` keeps volumes in float32, except the magnitude echoes QSMxT computes before
+    /// masking (`Item::kept_in_double`), which a later step reads back exactly as computed, on the
+    /// working grid and on the acquired grid.
+    #[test]
+    fn computed_magnitude_echoes_are_kept_in_double_precision() {
+        use crate::bids::derivatives::DerivativeOutputs;
+        use crate::pipeline::graph::PipelineState;
+        use qsmxt_engine::store::{Data, Item, StageStore};
+
+        let dir = tempfile::tempdir().unwrap();
+        let run = run_with_echoes(vec![(dir.path().join("p.nii"), Some(dir.path().join("m.nii")))]);
+        let config = crate::pipeline::config::PipelineConfig::default();
+        let affine = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0];
+        let meta = qsmxt_engine::scan::RunMetadata {
+            dims: (4, 3, 2), voxel_size: (1.0, 1.0, 1.0), affine, n_echoes: 1,
+            echo_times: vec![0.004], b0_direction: (0.0, 0.0, 1.0), field_strength: 3.0,
+            has_magnitude: true, source_geometry: None, slice_geometry: None, orientation: None,
+        };
+        let mut store = super::FileStore {
+            run: &run, config: &config, output: DerivativeOutputs::new(dir.path()),
+            meta: Some(meta), state: PipelineState::new(&config, &run.key), state_path: dir.path().join("s.json"),
+            started: None, step: Some("tukey_window".into()), supplied_mask: None, extra_outputs: Vec::new(),
+            metadata: None, working_grid_kept: false,
+        };
+        let data: Vec<f64> = (0..24).map(|i| 100.0 / 3.0 + i as f64 * 1e-10).collect();
+        let single: Vec<f64> = data.iter().map(|&v| v as f32 as f64).collect();
+        assert_ne!(single, data);
+        let grid = qsmxt_engine::store::Geometry { dims: (4, 3, 2), voxel_size: (1.0, 1.0, 1.0), affine, orientation: None };
+        store.put(Item::Magnitude(1), Data::Real(&data)).unwrap();
+        store.put(Item::WindowedMagnitude(1), Data::OnGrid(&data, &grid)).unwrap();
+        store.put(Item::Phase(1), Data::Real(&data)).unwrap();
+        assert_eq!(store.real(&Item::Magnitude(1)).unwrap(), data);
+        assert_eq!(store.real(&Item::WindowedMagnitude(1)).unwrap(), data);
+        assert_eq!(store.real(&Item::Phase(1)).unwrap(), single);
     }
 
     /// The BIDS name the engine gives each item ([`qsmxt_engine::store::Item::meta`]) is the one
@@ -3463,7 +3504,8 @@ mod chisep_support_tests {
             .map(|p| load_volume(&p).unwrap())
     }
 
-    /// The method run directly on `mask`, with every input zeroed outside it and the outputs
+    /// The method run directly on `mask`, with every input zeroed outside it (R2′ and R2* as the
+    /// method takes them) and the outputs
     /// zeroed outside it: what the step must produce when it fits over `mask`.
     fn direct(f: &Fixture, config: &PipelineConfig, mask: &[u8]) -> [Vec<f64>; 3] {
         let m = sep_meta(config);
@@ -3484,8 +3526,14 @@ mod chisep_support_tests {
             masked(f.output.qsm_path(k))
         };
         let field = masked(f.output.local_field_path(k));
-        let r2prime = masked(f.output.r2prime_path(k));
-        let r2star = masked(f.output.r2star_path(k));
+        // R2′ and R2* as the method takes them: unmasked for the χ-separation toolbox's methods.
+        let relaxation = |p: PathBuf| -> Vec<f64> {
+            let mut v = load_volume(&p).unwrap();
+            qsmxt_engine::stages::separation::restrict_relaxation(config, mask, &mut v);
+            v
+        };
+        let r2prime = relaxation(f.output.r2prime_path(k));
+        let r2star = relaxation(f.output.r2star_path(k));
         let n_echoes = m.echo_times.len();
         let echoes: Vec<Vec<f64>> = (1..=n_echoes).map(|e| load_volume(&f.output.mag_path(k, e)).unwrap()).collect();
         let echo_major: Vec<f64> = echoes.concat();
@@ -3557,9 +3605,9 @@ mod chisep_support_tests {
     /// its voxelwise initial guess, so WaveSep, whose wavelet fit is spatial, shows that the
     /// domain matters: run over the brain mask it gives a different answer.
     ///
-    /// The fixture's R2' and R2* cover the whole brain mask, rim included. The classical methods
-    /// mask their inputs to the mask they are given, so restricting those maps is observable only
-    /// through the networks (SUSEP-Net, χ-sepnet), whose weights the tests do not download.
+    /// The fixture's R2' and R2* cover the whole brain mask, rim included. χ-sep MEDI takes them
+    /// as they are on the rim, as the χ-separation toolbox's script passes them, and its result
+    /// depends on them there; the other methods get them zeroed outside the support.
     #[test]
     fn chi_separation_fits_the_support_not_the_brain_mask() {
         let f = fixture();

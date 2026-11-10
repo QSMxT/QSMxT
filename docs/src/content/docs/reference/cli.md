@@ -365,7 +365,8 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--iharperella-rim <RIM>` | iHARPERELLA boundary rim: whole (zero every Laplacian value in the rim) or sti (zero the 20 % largest, as STI Suite does; default) |
 | `--no-romeo-phase-coherence` | ROMEO: disable phase coherence weights (default: on) |
 | `--no-romeo-phase-gradient-coherence` | ROMEO: disable phase gradient coherence weights (default: on) |
-| `--no-romeo-phase-linearity` | ROMEO: disable phase linearity weights (default: on) |
+| `--no-romeo-phase-linearity` | ROMEO: disable phase linearity weights (default: on; the romeo command line's romeo3 weights) |
+| `--romeo-phase-linearity` | ROMEO: enable phase linearity weights (default: on; for a --pipeline that turns them off) |
 | `--no-romeo-mag-coherence` | ROMEO: disable magnitude coherence weights (default: on) |
 | `--romeo-mag-weight` | ROMEO: enable magnitude weighting (default: off) |
 | `--no-romeo-mag-weight` | ROMEO: disable magnitude weighting (overrides --romeo-mag-weight; kept for compatibility) |
@@ -849,7 +850,8 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--iharperella-rim <RIM>` | iHARPERELLA boundary rim: whole (zero every Laplacian value in the rim) or sti (zero the 20 % largest, as STI Suite does; default) |
 | `--no-romeo-phase-coherence` | ROMEO: disable phase coherence weights (default: on) |
 | `--no-romeo-phase-gradient-coherence` | ROMEO: disable phase gradient coherence weights (default: on) |
-| `--no-romeo-phase-linearity` | ROMEO: disable phase linearity weights (default: on) |
+| `--no-romeo-phase-linearity` | ROMEO: disable phase linearity weights (default: on; the romeo command line's romeo3 weights) |
+| `--romeo-phase-linearity` | ROMEO: enable phase linearity weights (default: on; for a --pipeline that turns them off) |
 | `--no-romeo-mag-coherence` | ROMEO: disable magnitude coherence weights (default: on) |
 | `--romeo-mag-weight` | ROMEO: enable magnitude weighting (default: off) |
 | `--no-romeo-mag-weight` | ROMEO: disable magnitude weighting (overrides --romeo-mag-weight; kept for compatibility) |
@@ -1267,7 +1269,8 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--iharperella-rim <RIM>` | iHARPERELLA boundary rim: whole (zero every Laplacian value in the rim) or sti (zero the 20 % largest, as STI Suite does; default) |
 | `--no-romeo-phase-coherence` | ROMEO: disable phase coherence weights (default: on) |
 | `--no-romeo-phase-gradient-coherence` | ROMEO: disable phase gradient coherence weights (default: on) |
-| `--no-romeo-phase-linearity` | ROMEO: disable phase linearity weights (default: on) |
+| `--no-romeo-phase-linearity` | ROMEO: disable phase linearity weights (default: on; the romeo command line's romeo3 weights) |
+| `--romeo-phase-linearity` | ROMEO: enable phase linearity weights (default: on; for a --pipeline that turns them off) |
 | `--no-romeo-mag-coherence` | ROMEO: disable magnitude coherence weights (default: on) |
 | `--romeo-mag-weight` | ROMEO: enable magnitude weighting (default: off) |
 | `--no-romeo-mag-weight` | ROMEO: disable magnitude weighting (overrides --romeo-mag-weight; kept for compatibility) |
@@ -1705,7 +1708,8 @@ qsmxt unwrap romeo [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--magnitude <MAGNITUDE>` | Magnitude image (improves quality) |
 | `--no-romeo-phase-coherence` | ROMEO: disable phase coherence weights (default: on) |
 | `--no-romeo-phase-gradient-coherence` | ROMEO: disable phase gradient coherence weights (default: on) |
-| `--no-romeo-phase-linearity` | ROMEO: disable phase linearity weights (default: on) |
+| `--no-romeo-phase-linearity` | ROMEO: disable phase linearity weights (default: on; the romeo command line's romeo3 weights) |
+| `--romeo-phase-linearity` | ROMEO: enable phase linearity weights (default: on; for a --pipeline that turns them off) |
 | `--no-romeo-mag-coherence` | ROMEO: disable magnitude coherence weights (default: on) |
 | `--romeo-mag-weight` | ROMEO: enable magnitude weighting (default: off) |
 | `--no-romeo-mag-weight` | ROMEO: disable magnitude weighting (overrides --romeo-mag-weight; kept for compatibility) |
@@ -1817,7 +1821,8 @@ qsmxt fieldmap romeo [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
 | `--no-romeo-phase-coherence` | ROMEO: disable phase coherence weights (default: on) |
 | `--no-romeo-phase-gradient-coherence` | ROMEO: disable phase gradient coherence weights (default: on) |
-| `--no-romeo-phase-linearity` | ROMEO: disable phase linearity weights (default: on) |
+| `--no-romeo-phase-linearity` | ROMEO: disable phase linearity weights (default: on; the romeo command line's romeo3 weights) |
+| `--romeo-phase-linearity` | ROMEO: enable phase linearity weights (default: on; for a --pipeline that turns them off) |
 | `--no-romeo-mag-coherence` | ROMEO: disable magnitude coherence weights (default: on) |
 | `--romeo-mag-weight` | ROMEO: enable magnitude weighting (default: off) |
 | `--no-romeo-mag-weight` | ROMEO: disable magnitude weighting (overrides --romeo-mag-weight; kept for compatibility) |

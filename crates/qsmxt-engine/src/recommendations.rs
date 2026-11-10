@@ -496,6 +496,14 @@ enum Mapping {
     CloseRadius,
     /// QSMART's echo-fit threshold (`absolute-40`, `percentile-99`, ...): its mode and value.
     QsmartFitThreshold,
+    /// ROMEO's edge weights by ROMEO.jl's preset name (`romeo4`, `romeo3`, `romeo2`, `romeo6`,
+    /// `bestpath`; qsm-core's `RomeoParams::weights_id`): QSMxT's six weight flags and best-path
+    /// switch, set together. Shown on the phase-linearity flag, the one that tells `romeo4` (QSMxT's
+    /// default) from `romeo3` (the `romeo` command line's).
+    RomeoWeights,
+    /// ROMEO's template echo, counted from 1 as ROMEO's `--template` and `--romeo-template` count
+    /// it; QSMxT's config counts from 0.
+    RomeoTemplate,
 }
 
 /// Each of QSM.rs's rule settings ([`core::SETTINGS`]), as a QSMxT setting.
@@ -552,6 +560,9 @@ const SETTINGS: &[(&str, &str, Mapping)] = &[
     ("masking.bet.orientation", "bet.orientation", Mapping::Same),
     ("inversion.heidi.denoise_itk", "inversion.heidi.denoise_reference_itk", Mapping::Same),
     ("field_mapping.b0_estimation.qsmart_fit_threshold", "field_mapping.qsmart_fit_threshold_mode", Mapping::QsmartFitThreshold),
+    // `individual`, `correct_global` and `temporal_uncertain_unwrapping` are at QSMxT's own paths.
+    ("field_mapping.romeo.weights", "field_mapping.romeo.phase_linearity", Mapping::RomeoWeights),
+    ("field_mapping.romeo.template", "field_mapping.romeo.template", Mapping::RomeoTemplate),
     ("reference", "qsm.reference", Mapping::Same),
     ("qsm_per_echo", "qsm.per_echo", Mapping::Same),
     ("tukey_window", "pipeline.tukey_window", Mapping::Same),
@@ -714,6 +725,16 @@ fn name_of(path: &str, kind: Mapping, value: &Value) -> String {
             "percentile" => "a percentile".into(),
             other => other.into(),
         },
+        Mapping::RomeoWeights => match value.as_str().unwrap_or_default() {
+            "romeo4" => "romeo4 (with phase linearity)".into(),
+            "romeo3" => "romeo3 (without phase linearity)".into(),
+            "romeo2" => "romeo2 (phase and magnitude coherence)".into(),
+            "romeo6" => "romeo6 (with magnitude weights)".into(),
+            "bestpath" => "best-path weights".into(),
+            "custom" => "a custom combination of weights".into(),
+            other => other.into(),
+        },
+        Mapping::RomeoTemplate => text(value),
         Mapping::Same => {
             let Some(s) = setting(path) else { return text(value) };
             if let Some(o) = s.value_type.options().into_iter().find(|o| o.value == *value) {
@@ -754,6 +775,7 @@ fn label_of(core_path: &str) -> String {
         "masking.generator" => "Brain mask".into(),
         "masking.hd_bet.inference" => "HD-BET inference".into(),
         "segmentation.inference" => "SynthSeg inference".into(),
+        "field_mapping.romeo.weights" => "ROMEO weights".into(),
         _ => {
             let path = qsmxt_path(core_path).unwrap_or(core_path);
             setting(path).map_or_else(|| path.to_string(), |s| match s.context {
@@ -1329,6 +1351,32 @@ pub(crate) fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -
                 }
                 other => return Err(format!("QSMART fit threshold {other} needs its value")),
             }
+        }
+        Mapping::RomeoWeights => {
+            use qsm_core::unwrap::{RomeoParams, RomeoWeightType as W};
+            let preset = match id {
+                "romeo4" => W::Romeo4,
+                "romeo3" => W::Romeo3,
+                "romeo2" => W::Romeo2,
+                "romeo6" => W::Romeo6,
+                "bestpath" => W::BestPath,
+                other => return Err(format!("ROMEO weights {other} are not a preset QSMxT can set")),
+            };
+            let p = RomeoParams::from_weight_type(preset);
+            let r = &mut config.field_mapping.romeo;
+            r.phase_coherence = p.phase_coherence;
+            r.phase_gradient_coherence = p.phase_gradient_coherence;
+            r.phase_linearity = p.phase_linearity;
+            r.mag_coherence = p.mag_coherence;
+            r.mag_weight = p.mag_weight;
+            r.mag_weight2 = p.mag_weight2;
+            r.bestpath = p.bestpath;
+        }
+        Mapping::RomeoTemplate => {
+            let echo = value.as_u64().or_else(|| value.as_f64().filter(|v| *v >= 1.0 && v.fract() == 0.0).map(|v| v as u64))
+                .filter(|&e| e >= 1)
+                .ok_or_else(|| format!("{value} is not an echo, counted from 1"))?;
+            config.field_mapping.romeo.template = echo as usize - 1;
         }
     }
     Ok(())

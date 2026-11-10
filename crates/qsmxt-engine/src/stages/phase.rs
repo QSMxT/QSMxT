@@ -111,6 +111,7 @@ pub fn params(meta: &RunMetadata, real_imaginary: Option<bool>, chain: &Chain) -
     if let Some(negate_phase) = real_imaginary {
         params["input"] = serde_json::json!("real_imaginary");
         params["negate_phase"] = serde_json::json!(negate_phase);
+        params["magnitude"] = serde_json::json!(MAGNITUDE_KEPT);
     } else if chain.copies_magnitude() {
         // The magnitudes are kept as acquired, and their copies are now real `.nii` files, not
         // gzipped data under a `.nii` name: runs from before that are copied again.
@@ -118,6 +119,12 @@ pub fn params(meta: &RunMetadata, real_imaginary: Option<bool>, chain: &Chain) -
     }
     params
 }
+
+/// How the steps that compute the magnitude echoes (from coils or real and imaginary parts, the
+/// Tukey window, the resampling) keep them: in double precision ([`Item::kept_in_double`]). In
+/// their parameters, so echoes an older release kept in float32 are computed again rather than
+/// read back rounded.
+pub const MAGNITUDE_KEPT: &str = "double";
 
 /// The `tukey_window` step's parameters: the taper ratio, the acquired grid it windows, and
 /// whether it writes the echoes for the resampling or as the working echoes.
@@ -127,6 +134,7 @@ pub fn tukey_params(meta: &RunMetadata, config: &PipelineConfig, chain: &Chain) 
         "tukey_window": config.pipeline.tukey_window,
         "dims": [d.0, d.1, d.2],
         "then_resampled": chain.resampled,
+        "magnitude": MAGNITUDE_KEPT,
     })
 }
 
@@ -134,11 +142,15 @@ pub fn tukey_params(meta: &RunMetadata, config: &PipelineConfig, chain: &Chain) 
 /// windowed echoes.
 pub fn resample_params(meta: &RunMetadata, chain: &Chain) -> serde_json::Value {
     let d = acquired_grid(meta).dims;
-    serde_json::json!({
+    let mut p = serde_json::json!({
         "from_dims": [d.0, d.1, d.2],
         "dims": [meta.dims.0, meta.dims.1, meta.dims.2],
         "windowed": chain.windowed,
-    })
+    });
+    if chain.has_magnitude {
+        p["magnitude"] = serde_json::json!(MAGNITUDE_KEPT);
+    }
+    p
 }
 
 /// The k-space Tukey window (`--tukey-window`, qsm-core `utils::tukey_window`) on one echo on
@@ -267,6 +279,7 @@ pub fn coil_params(config: &PipelineConfig, meta: &RunMetadata, coil_numbers: &[
         "hip_unwrapping": format!("{}", config.field_mapping.unwrapping_algorithm),
         "echo_times": meta.echo_times,
         "resampled_to_axial": false,
+        "magnitude": MAGNITUDE_KEPT,
     });
     if !chain.scaling_is_last() {
         if let Some(o) = p.as_object_mut() {
@@ -458,5 +471,28 @@ mod tests {
         let p = params(&m, Some(true), &ALONE);
         assert_eq!(p["input"], "real_imaginary");
         assert_eq!(p["negate_phase"], true);
+    }
+
+    /// The steps that compute the magnitude echoes say they keep them in double precision, so
+    /// echoes an older release rounded to float32 are not reused; one that copies the given
+    /// magnitude, or a resampling without one, says nothing.
+    #[test]
+    fn the_steps_that_compute_magnitudes_are_keyed_by_their_precision() {
+        let m = meta((2, 2, 2));
+        let c = PipelineConfig::default();
+        let windowed = Chain { windowed: true, resampled: true, ..ALONE };
+        for p in [params(&m, Some(false), &ALONE), coil_params(&c, &m, &[1, 2], &ALONE),
+                  tukey_params(&m, &c, &windowed), resample_params(&m, &windowed)] {
+            assert_eq!(p["magnitude"], MAGNITUDE_KEPT, "{p}");
+        }
+        assert!(params(&m, None, &ALONE).get("magnitude").is_none());
+        assert!(resample_params(&m, &Chain { has_magnitude: false, ..windowed }).get("magnitude").is_none());
+        use Item::*;
+        for item in [ScaledMagnitude(1), WindowedMagnitude(1), Magnitude(1)] {
+            assert!(item.kept_in_double(), "{item:?}");
+        }
+        for item in [AcquiredMagnitude(1), Phase(1), ScaledPhase(1), CombinedEchoMagnitude(1), CombinedMagnitude, Chi] {
+            assert!(!item.kept_in_double(), "{item:?}");
+        }
     }
 }

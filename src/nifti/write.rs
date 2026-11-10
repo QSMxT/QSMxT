@@ -25,6 +25,47 @@ pub fn write_volume(
         .map_err(QsmxtError::NiftiIo)
 }
 
+/// Write an `f64` volume as a double-precision NIfTI (datatype FLOAT64), creating the output
+/// directory if it does not exist: for the intermediates a later step must read as they were
+/// computed ([`qsmxt_engine::Item::kept_in_double`]). The header is [`write_volume`]'s (qsm-core's),
+/// with the datatype and bit depth changed; a `.nii.gz` path is gzipped.
+pub fn write_volume_f64(
+    path: &Path,
+    data: &[f64],
+    dims: (usize, usize, usize),
+    voxel_size: (f64, f64, f64),
+    affine: &[f64; 16],
+) -> crate::Result<()> {
+    /// NIfTI-1: `datatype` and `bitpix` (i16 each), `vox_offset` (f32).
+    const DATATYPE: usize = 70;
+    const BITPIX: usize = 72;
+    const VOX_OFFSET: usize = 108;
+    const DT_FLOAT64: i16 = 64;
+    match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => std::fs::create_dir_all(parent)?,
+        _ => {}
+    }
+    let fail = |e: String| QsmxtError::NiftiIo(format!("{}: {e}", path.display()));
+    // qsm-core's header (and its check that the payload matches the dimensions), float32 data.
+    let mut bytes = qsm_core::io::save_nifti(data, dims, voxel_size, affine).map_err(fail)?;
+    let offset = f32::from_le_bytes(bytes[VOX_OFFSET..VOX_OFFSET + 4].try_into().expect("4 bytes")) as usize;
+    bytes.truncate(offset);
+    bytes[DATATYPE..DATATYPE + 2].copy_from_slice(&DT_FLOAT64.to_le_bytes());
+    bytes[BITPIX..BITPIX + 2].copy_from_slice(&64i16.to_le_bytes());
+    bytes.reserve(data.len() * 8);
+    for v in data {
+        bytes.extend_from_slice(&v.to_le_bytes());
+    }
+    if path.to_string_lossy().ends_with(".nii.gz") {
+        use std::io::Write;
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        gz.write_all(&bytes)?;
+        bytes = gz.finish()?;
+    }
+    std::fs::write(path, &bytes)?;
+    Ok(())
+}
+
 /// Write several volumes on one grid as a single 4D NIfTI, the volumes along the fourth axis in
 /// the order given, creating the output directory if it does not exist.
 ///
@@ -117,6 +158,28 @@ mod tests {
         assert!(err.contains("short.nii"), "{err}");
         assert!(err.contains("120 voxels"), "{err}");
         assert!(!path.exists(), "nothing should be written for a mismatch");
+    }
+
+    /// Double precision reads back bit for bit (plain and gzipped), where float32 rounds; the
+    /// geometry is the float32 writer's.
+    #[test]
+    fn a_double_precision_volume_reads_back_exactly() {
+        let dir = tempfile::tempdir().unwrap();
+        let data: Vec<f64> = (0..24).map(|i| 1.0 / 3.0 + i as f64 * 1e-9).collect();
+        assert!(data.iter().any(|&v| v as f32 as f64 != v));
+        let affine = [0.5, 0.0, 0.0, -3.0, 0.0, 2.0, 0.0, 4.0, 0.0, 0.0, 1.5, 7.0, 0.0, 0.0, 0.0, 1.0];
+        for name in ["d.nii", "d.nii.gz"] {
+            let path = dir.path().join("nested").join(name);
+            write_volume_f64(&path, &data, (2, 3, 4), (0.5, 2.0, 1.5), &affine).unwrap();
+            let back = qsm_core::io::read_nifti_file(&path).unwrap();
+            assert_eq!(back.data, data, "{name}");
+            let single = dir.path().join(format!("s-{name}"));
+            write_volume(&single, &data, (2, 3, 4), (0.5, 2.0, 1.5), &affine).unwrap();
+            let s = qsm_core::io::read_nifti_file(&single).unwrap();
+            assert_ne!(s.data, data);
+            assert_eq!((back.dims, back.voxel_size, back.affine), (s.dims, s.voxel_size, s.affine), "{name}");
+        }
+        assert!(write_volume_f64(&dir.path().join("short.nii"), &[1.0; 5], (2, 3, 4), (1.0, 1.0, 1.0), &AFFINE).is_err());
     }
 
     #[test]

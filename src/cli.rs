@@ -1301,9 +1301,12 @@ pub struct RomeoParamArgs {
     /// ROMEO: disable phase gradient coherence weights (default: on)
     #[arg(long)]
     pub no_romeo_phase_gradient_coherence: bool,
-    /// ROMEO: disable phase linearity weights (default: on)
+    /// ROMEO: disable phase linearity weights (default: on; the romeo command line's romeo3 weights)
     #[arg(long)]
     pub no_romeo_phase_linearity: bool,
+    /// ROMEO: enable phase linearity weights (default: on; for a --pipeline that turns them off)
+    #[arg(long, conflicts_with = "no_romeo_phase_linearity")]
+    pub romeo_phase_linearity: bool,
     /// ROMEO: disable magnitude coherence weights (default: on)
     #[arg(long)]
     pub no_romeo_mag_coherence: bool,
@@ -1360,6 +1363,7 @@ impl RomeoParamArgs {
         if self.no_romeo_phase_coherence { r.phase_coherence = false; }
         if self.no_romeo_phase_gradient_coherence { r.phase_gradient_coherence = false; }
         if self.no_romeo_phase_linearity { r.phase_linearity = false; }
+        if self.romeo_phase_linearity { r.phase_linearity = true; }
         if self.no_romeo_mag_coherence { r.mag_coherence = false; }
         // Weight component flags (default-false → enabled via positive flag)
         if self.romeo_mag_weight { r.mag_weight = true; }
