@@ -112,19 +112,23 @@ fn mcpc3ds(args: CombineMcpc3dsArgs) -> crate::Result<()> {
         let mut cp = Vec::with_capacity(n_echoes);
         let mut cm = Vec::with_capacity(n_echoes);
         for e in 0..n_echoes {
-            let mut p = load_nifti(&phase_files[c][e])?.data;
+            let p = load_nifti(&phase_files[c][e])?.data;
             let m = load_nifti(&mag_files[c][e])?.data;
             if p.len() != n || m.len() != n {
                 return Err(QsmxtError::DimensionMismatch(format!(
                     "coil {} echo {}: {} / {} voxels, expected {} (all inputs must share one grid)",
                     c + 1, e + 1, p.len(), m.len(), n)));
             }
-            phase::scale_phase_to_pi(&mut p);
             cp.push(p);
             cm.push(m);
         }
         phases.push(cp);
         mags.push(cm);
+    }
+    // Into radians, with one conversion for every coil and echo (scale_phases_to_pi).
+    {
+        let mut all: Vec<&mut Vec<f64>> = phases.iter_mut().flatten().collect();
+        phase::scale_phases_to_pi(&mut all);
     }
 
     let sigma = match &args.sigma {

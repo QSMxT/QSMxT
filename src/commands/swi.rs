@@ -38,11 +38,11 @@ pub fn execute(args: SwiArgs) -> crate::Result<()> {
     let mut mags = Vec::with_capacity(n_echoes);
     let reference = load_nifti(&args.magnitude[0])?;
     for (p, m) in args.phase.iter().zip(&args.magnitude) {
-        let mut ph = load_nifti(p)?.data;
-        phase::scale_phase_to_pi(&mut ph);
-        phases.push(ph);
+        phases.push(load_nifti(p)?.data);
         mags.push(load_nifti(m)?.data);
     }
+    // Into radians, with one conversion for every echo (scale_phases_to_pi).
+    phase::scale_phases_to_pi(&mut phases);
     let mask = match &args.mask {
         Some(path) => Some(load_mask(path)?.0),
         None => None,
