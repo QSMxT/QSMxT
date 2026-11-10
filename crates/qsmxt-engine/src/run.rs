@@ -2103,12 +2103,14 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             stages::r2::count_set(&support), stages::r2::count_set(&brain)));
         // The maps combined with χ voxel by voxel take the same support, so no method — the
         // spatial and deep-learning ones included — sees values on the rim that χ does not have.
+        // The χ-separation toolbox's methods take R2′ and R2* as its script passes them, unmasked
+        // ([`sep::takes_relaxation_unmasked`]); what they write is still 0 outside the support.
         sep::zero_outside(&support, &mut qsm);
         if uses_field {
             sep::zero_outside(&support, &mut local_field);
         }
         for map in [r2prime.as_mut(), r2star.as_mut()].into_iter().flatten() {
-            sep::zero_outside(&support, map);
+            sep::restrict_relaxation(self.config, &support, map);
         }
         // DECOMPOSE takes a QSM per echo (its authors run STAR-QSM on each echo): a per-echo QSM's
         // echoes' maps, or else the one QSM given at every echo (said in the methods text).
@@ -3741,6 +3743,48 @@ pub(crate) mod tests {
         }
         assert!(real(Item::SeparatedChi(Contrast::Diamagnetic)).iter().all(|&v| v >= 0.0), "|χ−|");
         assert!(run_once(&config, &facts, &mut store).computed.is_empty());
+    }
+
+    /// χ-sep iLSQR takes a supplied R2′ as it is outside the χ support, as the toolbox's script
+    /// passes it: its values there reach the fit (QSM.rs's `chi_sep_ilsqr` reads them just past
+    /// the mask), and the maps it writes are still 0 outside the support.
+    #[test]
+    fn r2prime_reaches_chi_sep_ilsqr_unmasked() {
+        // R2′ of 5 Hz on `inside` (none: where the magnitude is bright), `outside` elsewhere; the
+        // maps written and the support.
+        let separated = |inside: Option<&[u8]>, outside: f64| {
+            let (mut facts, mut store) = phantom();
+            let mut affine = [0.0; 16];
+            for i in 0..4 { affine[5 * i] = 1.0; }
+            let Some(VolumeData::Real(m)) = store.get(&Item::AcquiredMagnitude(1)).cloned() else { panic!() };
+            let r2p: Vec<f64> = m.iter().enumerate()
+                .map(|(i, &v)| if inside.map_or(v > 50.0, |s| s[i] != 0) { 5.0 } else { outside }).collect();
+            store.insert(Item::SuppliedR2prime, VolumeData::Real(r2p));
+            let grid = crate::store::Geometry { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine, orientation: None };
+            store.supply(Item::SuppliedR2prime, grid, "r2prime");
+            facts.custom_r2prime = true;
+            let mut c = config();
+            c.separation.custom_r2prime_tool = Some("mine".into());
+            c.pipeline.do_chi_separation = true;
+            c.separation.algorithm = SeparationAlgorithm::ChiSepIlsqr;
+            run_once(&c, &facts, &mut store);
+            let support = match store.get(&Item::ChiSupport) { Some(VolumeData::Mask(m)) => m.clone(), _ => panic!() };
+            assert!(support.contains(&0) && support.iter().any(|&s| s != 0));
+            let maps: Vec<Vec<f64>> = [Item::SeparatedChi(Contrast::Paramagnetic), Item::SeparatedChi(Contrast::Diamagnetic),
+                                       Item::SeparatedTotalChi].into_iter()
+                .map(|item| match store.get(&item) { Some(VolumeData::Real(v)) => v.clone(), _ => panic!("no {item:?}") })
+                .collect();
+            for map in &maps {
+                assert!(map.iter().zip(&support).all(|(&v, &s)| s != 0 || v == 0.0), "written outside the support");
+            }
+            (maps, support)
+        };
+        let (_, support) = separated(None, 0.0);
+        let (zero, _) = separated(Some(&support), 0.0);
+        let (nonzero, _) = separated(Some(&support), 30.0);
+        assert_ne!(zero[0], nonzero[0], "R2′ outside the support did not reach χ-sep iLSQR");
+        // NaN outside is no measurement: as 0.
+        assert_eq!(separated(Some(&support), f64::NAN).0, zero);
     }
 
     /// A per-echo QSM runs the same steps on each echo's field, publishes each echo's referenced

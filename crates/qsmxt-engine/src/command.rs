@@ -278,9 +278,15 @@ fn command_for(config: &PipelineConfig, d: &PipelineConfig, pipeline: Option<&st
     let mut emit_bool = |val: bool, default: bool, on: &str, off: &str| {
         if val != default { parts.push(if val { on } else { off }.to_string()); }
     };
-    debug_assert!(rd.phase_coherence && rd.phase_gradient_coherence && rd.phase_linearity && rd.mag_coherence
-        && !rd.mag_weight2 && !rd.bestpath && !rd.merge_regions && !rd.correct_regions,
+    // `d` is QSMxT's defaults, or a pipeline's: the χ-separation toolbox's turns phase linearity
+    // off (romeo3), individual unwrapping and global correction off, which have flags both ways.
+    let qd = PipelineConfig::default().field_mapping.romeo;
+    debug_assert!(qd.phase_coherence && qd.phase_gradient_coherence && qd.phase_linearity && qd.mag_coherence
+        && !qd.mag_weight2 && !qd.bestpath && !qd.merge_regions && !qd.correct_regions,
         "a ROMEO default changed: check the flags below still exist for the new direction");
+    debug_assert!(rd.phase_coherence && rd.phase_gradient_coherence && rd.mag_coherence
+        && !rd.mag_weight2 && !rd.bestpath && !rd.merge_regions && !rd.correct_regions,
+        "a pipeline changes a ROMEO weight that has a flag one way only");
     emit_bool(r.individual, rd.individual, "--romeo-individual", "--no-romeo-individual");
     emit_bool(r.correct_global, rd.correct_global, "--romeo-correct-global", "--no-romeo-correct-global");
     emit_bool(r.phase_coherence, rd.phase_coherence, "--romeo-phase-coherence", "--no-romeo-phase-coherence");

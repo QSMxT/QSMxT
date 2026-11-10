@@ -521,6 +521,49 @@ mod tests {
         assert!(!crate::command::generate_command(&c).contains("--bet-orientation"));
     }
 
+    /// The χ-separation toolbox runs mritools' `romeo` command line (QSM.rs's rules
+    /// `chi-sep.romeo-*`): its pipelines unwrap with romeo3 weights (no phase linearity), from the
+    /// first echo as template, without global correction or re-unwrapping of uncertain voxels.
+    /// Every other pipeline keeps QSMxT's ROMEO settings, and so does QSMxT's own default
+    /// inversion; choosing QSMnetME suggests the command line's (`qsmnetme.romeo-*`).
+    #[test]
+    fn the_chi_separation_pipelines_unwrap_as_the_romeo_command_line() {
+        use crate::config::RomeoConfig;
+        let cli = RomeoConfig {
+            individual: false, correct_global: false, template: 0, phase_linearity: false,
+            temporal_uncertain_unwrapping: 0.0, ..RomeoConfig::default()
+        };
+        assert_eq!(qsm_core::unwrap::RomeoParams::from(&cli).weights_id(), "romeo3");
+        for p in pipelines() {
+            let mut c = PipelineConfig::default();
+            choose(&mut c, p.id, &facts()).unwrap();
+            let toolbox = ["chi-sep-ilsqr", "chi-sep-medi", "chi-sepnet"].contains(&p.id);
+            assert_eq!(c.field_mapping.romeo, if toolbox { cli.clone() } else { RomeoConfig::default() }, "{}", p.id);
+        }
+        // Chosen before the scan is known (`--pipeline`), the multi-echo settings follow on it.
+        let mut c = PipelineConfig::default();
+        choose(&mut c, "chi-sep-medi", &ViewFacts::default()).unwrap();
+        assert!(c.field_mapping.romeo.individual && !c.field_mapping.romeo.phase_linearity);
+        let (done, _) = on_scan(&c, &facts()).unwrap();
+        assert_eq!(done.field_mapping.romeo, cli);
+        // QSMnetME: the same settings, offered as its authors' and applied when accepted.
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = crate::enums::QsmAlgorithm::Qsmnetme;
+        let f = Facts::of_view(&facts());
+        let diffs: Vec<_> = rec::reference_values(&c, &f).into_iter()
+            .filter(|r| r.rule.starts_with("qsmnetme.romeo-") && r.departs).collect();
+        assert_eq!(diffs.iter().map(|r| r.rule.as_str()).collect::<Vec<_>>(),
+                   ["qsmnetme.romeo-weights", "qsmnetme.romeo-template", "qsmnetme.romeo-no-global-correction"]);
+        for r in &diffs {
+            rec::apply(&mut c, &r.rule, None).unwrap();
+        }
+        // Template mode brings its echo and its re-unwrapping into play.
+        for r in rec::reference_values(&c, &f).into_iter().filter(|r| r.rule.starts_with("qsmnetme.romeo-") && r.departs) {
+            rec::apply(&mut c, &r.rule, None).unwrap();
+        }
+        assert_eq!(c.field_mapping.romeo, cli);
+    }
+
     /// The Outputs tab stays as it is.
     #[test]
     fn other_stages_are_kept() {

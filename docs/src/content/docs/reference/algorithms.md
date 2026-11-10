@@ -409,7 +409,9 @@ follows it closely.
 k-space by a Tukey window with taper ratio `R` (0 to 1), on the acquired grid, before every
 other step: the mask, the magnitude, R2* and all phase processing see the windowed echoes. It is
 the χ-separation toolbox's preprocessing, which uses 0.4, and 0 for Philips data. Off by default
-(`0`), and it needs magnitude images. With χ-separation MEDI, χ-separation iLSQR or χ-sepnet's
+(`0`), and it needs magnitude images. The windowed magnitudes are kept in double precision
+(as are magnitudes made from coils or real and imaginary parts, and resampled ones), so the mask
+is made from them as computed. With χ-separation MEDI, χ-separation iLSQR or χ-sepnet's
 toolbox route, the value for the scanner's manufacturer (read from the sidecar's `Manufacturer`;
 nothing is shown when it is not known) is shown as the original authors' setting. It is not preselected, and the setting changes only if you
 apply it (or run with `--accept-reference-settings`).
@@ -442,6 +444,14 @@ methods say how many there were.
 | `laplacian` | Laplacian-based unwrapping (QSMART's reference) |
 | `prelude` | PRELUDE region-merging unwrapping (Jenkinson, 2003) |
 | `medi-region-growing` | MEDI's magnitude-guided region-growing unwrapping (Liu et al., 2013) |
+
+The χ-separation toolbox and QSMnetME run ROMEO through its command line, whose settings
+differ from QSMxT's: romeo3 weights (`--no-romeo-phase-linearity`), template unwrapping from
+the first echo (`--no-romeo-individual --romeo-template 1`), no global correction
+(`--no-romeo-correct-global`) and no re-unwrapping of uncertain voxels
+(`--romeo-temporal-uncertain-unwrapping 0`). Choosing χ-separation iLSQR, MEDI or χ-sepnet, or
+QSMnetME, shows these as the original authors' settings, and `--pipeline chi-sep-ilsqr`,
+`chi-sep-medi` and `chi-sepnet` use them.
 
 With `laplacian`, each echo is unwrapped on its own (the phase is set to zero outside
 the brain mask first) and the echoes are then combined by
@@ -1390,7 +1400,11 @@ support, written as `desc-qsm_mask` (see [Referencing](#referencing)) — not ov
 the whole brain mask: the rim that background-field removal eroded has no χ to
 separate. The methods that also fit the local field are limited to where that
 field is defined. R2' and R2\* are restricted to the same voxels before fitting,
-and all three outputs are 0 outside them. With a bring-your-own QSM, the support
+except for `chi-sep-ilsqr`, `chi-sep-medi` and χ-sepnet's toolbox route, which take
+them as the χ-separation toolbox's script passes them: R2′ as measured or supplied
+and R2\* over the brain mask (`chi_sep_iLSQR` reads R2′ just outside its mask, and
+the toolbox route resamples it before masking). All three outputs are 0 outside
+the support. With a bring-your-own QSM, the support
 is the brain mask less the voxels where that map is 0.
 
 ## Referencing

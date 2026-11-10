@@ -61,6 +61,8 @@ fn candidates(core_path: &str) -> Vec<Value> {
         Mapping::Majority => vec![json!(true), json!(false)],
         Mapping::CloseRadius => vec![json!(0), json!(2)],
         Mapping::QsmartFitThreshold => ids(&["absolute-40", "percentile-99"]),
+        Mapping::RomeoWeights => ids(&["romeo3", "romeo4", "romeo2", "romeo6", "bestpath"]),
+        Mapping::RomeoTemplate => vec![json!(1), json!(2)],
         Mapping::Same => {
             let s = schema::setting(path).unwrap();
             match &s.value_type {
@@ -113,6 +115,10 @@ fn violating(rule: &Rule) -> PipelineConfig {
     // BET's fraction and orientation are in play only with a BET step.
     if rule.setting.starts_with("masking.bet.") {
         set(&mut c, "masking.generator", &json!("bet")).unwrap();
+    }
+    // ROMEO's template echo and uncertain re-unwrapping are in play only in template mode.
+    if ["field_mapping.romeo.template", "field_mapping.romeo.temporal_uncertain_unwrapping"].contains(&rule.setting) {
+        set(&mut c, "field_mapping.romeo.individual", &json!(false)).unwrap();
     }
     // N4's geometry is in play only with N4.
     if rule.setting == "masking.n4_geometry" {
