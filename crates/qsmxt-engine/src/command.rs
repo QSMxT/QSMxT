@@ -514,6 +514,7 @@ fn command_for(config: &PipelineConfig, d: &PipelineConfig, pipeline: Option<&st
                 emit_f64(&mut parts, "--chi-sep-medi-qsm-tol", q.tol, dq.tol);
                 emit_f64(&mut parts, "--chi-sep-medi-qsm-pad-mm", q.pad_mm, dq.pad_mm);
                 emit_enum(&mut parts, "--chi-sep-medi-qsm-precision", &q.precision, &dq.precision);
+                emit_enum(&mut parts, "--chi-sep-medi-csf-r2star", &c.csf_r2star, &dc.csf_r2star);
             }
             SeparationAlgorithm::WaveSep => {
                 emit_f64(&mut parts, "--wavesep-dr-pos", s.wavesep.dr_pos, ds.wavesep.dr_pos);

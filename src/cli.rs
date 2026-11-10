@@ -667,6 +667,10 @@ pub struct SeparationParamArgs {
     /// implementation (default: double)
     #[arg(long, value_name = "PRECISION", value_parser = parse_ilsqr_precision)]
     pub chi_sep_medi_qsm_precision: Option<qsmxt_engine::IlsqrPrecision>,
+    /// χ-sep MEDI: the R2* its CSF mask is extracted from: arlo (MEDI's ARLO; the default) or
+    /// nnls (the χ-separation toolbox's r2star_nnls, which its script runs)
+    #[arg(long, value_name = "METHOD", value_parser = parse_chi_sep_csf_r2star)]
+    pub chi_sep_medi_csf_r2star: Option<qsmxt_engine::ChiSepCsfR2star>,
     // WaveSep (Fang)
     /// WaveSep paramagnetic relaxivity (Hz/ppm)
     #[arg(long)]
@@ -900,6 +904,12 @@ pub fn parse_chi_bound(s: &str) -> Result<qsmxt_engine::ChiBoundChoice, String> 
 }
 
 /// iLSQR's arithmetic: `double` or `single`.
+/// The R2* χ-sep MEDI's CSF mask is extracted from: `arlo` or `nnls`.
+pub fn parse_chi_sep_csf_r2star(s: &str) -> Result<qsmxt_engine::ChiSepCsfR2star, String> {
+    qsmxt_engine::ChiSepCsfR2star::ALL.into_iter().find(|m| m.as_str() == s.trim())
+        .ok_or_else(|| format!("expected arlo or nnls, got '{s}'"))
+}
+
 pub fn parse_ilsqr_precision(s: &str) -> Result<qsmxt_engine::IlsqrPrecision, String> {
     qsmxt_engine::IlsqrPrecision::ALL.into_iter().find(|p| p.as_str() == s.trim())
         .ok_or_else(|| format!("expected double or single, got '{s}'"))
@@ -4306,8 +4316,8 @@ pub struct SeparateChiSepIlsqrArgs {
 }
 
 /// χ-separation MEDI. Its data terms are weighted by a noise map made from every echo's
-/// magnitude, and its CSF term reads a CSF mask made from ARLO R2* of the echoes, so it takes the
-/// echoes' magnitudes and echo times (at least three, evenly spaced).
+/// magnitude, and its CSF term reads a CSF mask made from R2* of the echoes (ARLO, or the
+/// χ-separation toolbox's NNLS fit), so it takes the echoes' magnitudes and echo times.
 #[derive(Parser, Debug)]
 pub struct SeparateChiSepMediArgs {
     #[command(flatten)]
@@ -4325,10 +4335,14 @@ pub struct SeparateChiSepMediArgs {
     #[arg(long, num_args = 1.., value_delimiter = ',', required = true)]
     pub echo_times: Vec<f64>,
     /// CSF mask NIfTI for the CSF-uniformity term, or `none` for no CSF term (the toolbox's GUI
-    /// without a CSF mask) (default: the CSF found from ARLO R2* of the echoes, as the toolbox's
-    /// script does)
+    /// without a CSF mask) (default: the CSF found from R2* of the echoes, as the toolbox's
+    /// script does; see --csf-r2star)
     #[arg(long, value_name = "FILE|none")]
     pub csf_mask: Option<PathBuf>,
+    /// The R2* the CSF mask is found from when no --csf-mask is given: arlo (MEDI's ARLO; the
+    /// default) or nnls (the χ-separation toolbox's r2star_nnls, which its script runs)
+    #[arg(long, value_name = "METHOD", value_parser = parse_chi_sep_csf_r2star)]
+    pub csf_r2star: Option<qsmxt_engine::ChiSepCsfR2star>,
     /// Weight of the data terms against the L1 terms (default: 1)
     #[arg(long)]
     pub lambda: Option<f64>,

@@ -190,10 +190,11 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
                 .collect();
             let (n_std, mask_csf) = match args.csf_mask.as_deref() {
                 None => {
+                    let method = args.csf_r2star.unwrap_or_default();
                     let (n_std, csf) = qsmxt_engine::stages::separation::chi_sep_medi_inputs(
-                        &echo_major, &args.echo_times, &mask, qsm.dims, qsm.voxel_size,
+                        &echo_major, &args.echo_times, &mask, qsm.dims, qsm.voxel_size, method,
                     ).map_err(|e| QsmxtError::Config(e.to_string()))?;
-                    info!("CSF mask of {} voxels from ARLO R2*", csf.iter().filter(|&&m| m != 0).count());
+                    info!("CSF mask of {} voxels from {} R2*", csf.iter().filter(|&&m| m != 0).count(), method.label());
                     (n_std, csf)
                 }
                 Some(p) => {

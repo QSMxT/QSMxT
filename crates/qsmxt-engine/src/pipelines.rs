@@ -502,6 +502,36 @@ mod tests {
         assert!(!crate::command::generate_command(&c).contains("--n4-geometry"));
     }
 
+    /// The χ-separation toolbox's script finds χ-sep MEDI's CSF mask from its NNLS R2*, so that
+    /// pipeline takes nnls; every other configuration keeps ARLO (QSM.rs's rule
+    /// chi-sep-medi.csf-r2star-nnls). The command line names the pipeline, not the setting.
+    #[test]
+    fn chi_sep_medis_csf_r2star_is_the_toolboxs_nnls() {
+        use crate::enums::ChiSepCsfR2star;
+        for p in pipelines() {
+            let mut c = PipelineConfig::default();
+            choose(&mut c, p.id, &facts()).unwrap();
+            let want = if p.id == "chi-sep-medi" { ChiSepCsfR2star::Nnls } else { ChiSepCsfR2star::Arlo };
+            assert_eq!(c.separation.chi_sep_medi.csf_r2star, want, "{}", p.id);
+        }
+        let mut c = PipelineConfig::default();
+        choose(&mut c, "chi-sep-medi", &facts()).unwrap();
+        assert!(!crate::command::generate_command(&c).contains("--chi-sep-medi-csf-r2star"));
+        let text = crate::methods::generate_methods(&c);
+        assert!(text.contains("CSF mask from R2* from a non-negative least-squares"), "{text}");
+    }
+
+    /// DECOMPOSE's STAR-QSM runs unpadded, as QSM_star does without 'padsize' (QSM.rs's rule
+    /// decompose.star-pad); a STAR-QSM chosen otherwise keeps the GUI's [8 8 20].
+    #[test]
+    fn decomposes_star_qsm_is_unpadded() {
+        let mut c = PipelineConfig::default();
+        choose(&mut c, "decompose", &facts()).unwrap();
+        assert_eq!(c.inversion.algorithm, crate::enums::QsmAlgorithm::Star);
+        assert_eq!(c.inversion.star.pad, [0, 0, 0]);
+        assert_eq!(PipelineConfig::default().inversion.star.pad, [8, 8, 20]);
+    }
+
     /// MEDI's BET.m runs bet2 on the array as stored, and so does the χ-separation toolbox, which
     /// calls it; every other pipeline's BET reads the image as FSL does (QSM.rs's rules).
     #[test]

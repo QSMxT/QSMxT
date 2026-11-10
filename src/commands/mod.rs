@@ -800,7 +800,7 @@ mod integration_tests {
             r2prime: r2prime.clone(),
             magnitude: vec![mag.clone(); 3],
             echo_times,
-            csf_mask,
+            csf_mask, csf_r2star: None,
             lambda: None, lambda_csf: None, dr_pos: None, dr_neg: None, pad: Some(0),
             tol: None, max_iter: Some(1), cg_tol: None, cg_max_iter: Some(1),
         };
@@ -809,6 +809,10 @@ mod integration_tests {
         assert!(err.contains("2 echo times but the magnitude has 3 echoes"), "{err}");
         super::separate::execute(SeparateCommand::ChiSepMedi(args(tes.clone(), None, "me"))).unwrap();
         assert!(dir.path().join("me_desc-paramagnetic_Chimap.nii").exists());
+        // `--csf-r2star nnls`: the CSF mask from the χ-separation toolbox's NNLS R2*.
+        let nnls = SeparateChiSepMediArgs { csf_r2star: Some(qsmxt_engine::ChiSepCsfR2star::Nnls), ..args(tes.clone(), None, "nnls") };
+        super::separate::execute(SeparateCommand::ChiSepMedi(nnls)).unwrap();
+        assert!(dir.path().join("nnls_desc-paramagnetic_Chimap.nii").exists());
 
         // `--csf-mask none` is an all-zero CSF mask (no CSF term), the same as passing one.
         let empty = dir.path().join("no_csf.nii");

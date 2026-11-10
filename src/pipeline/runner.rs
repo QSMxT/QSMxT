@@ -3541,7 +3541,8 @@ mod chisep_support_tests {
         let rss: Vec<f64> = (0..mask.len()).map(|v| echoes.iter().map(|m| m[v] * m[v]).sum::<f64>().sqrt()).collect();
         let (n_std, csf) = if config.separation.algorithm == SeparationAlgorithm::ChiSepMedi {
             let (n, c) = qsmxt_engine::stages::separation::chi_sep_medi_inputs(
-                &echo_major, &m.echo_times, mask, m.dims, m.voxel_size).unwrap();
+                &echo_major, &m.echo_times, mask, m.dims, m.voxel_size,
+                config.separation.chi_sep_medi.csf_r2star).unwrap();
             (Some(n), Some(c))
         } else {
             (None, None)
