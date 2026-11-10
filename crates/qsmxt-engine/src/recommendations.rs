@@ -105,8 +105,6 @@ impl From<core::Strength> for Strength {
             core::Strength::Discouraged => Strength::Discouraged,
             core::Strength::Recommended => Strength::Recommended,
             core::Strength::Required => Strength::Required,
-            // TEMP(QSM.rs#448): until QSMxT's own #448 change (Suggested) lands; drop on rebase.
-            core::Strength::Suggested => Strength::Reference,
         }
     }
 }
@@ -676,8 +674,8 @@ fn name_of(path: &str, kind: Mapping, value: &Value) -> String {
         },
         Mapping::BetFraction => format!("f = {}", text(value)),
         Mapping::Erosion => match value.as_f64() {
-            Some(n) if n == 0.0 => "no erosion".into(),
-            Some(n) if n == 1.0 => "1 voxel".into(),
+            Some(0.0) => "no erosion".into(),
+            Some(1.0) => "1 voxel".into(),
             _ => format!("{} voxels", text(value)),
         },
         Mapping::QsmartFitThreshold => match value.as_str().unwrap_or_default() {

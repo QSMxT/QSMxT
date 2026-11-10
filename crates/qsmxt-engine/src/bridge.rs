@@ -222,8 +222,6 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
     };
 
     let bg_removal = PBgRemoval {
-        // TEMP(QSM.rs#448): until QSMxT's own #448 change (erode before background removal) lands.
-        erode_voxels: 0,
         algorithm: map_bf_alg(cfg.bg_removal.algorithm),
         vsharp: qsm_core::bgremove::VsharpParams {
             threshold: cfg.bg_removal.vsharp.threshold,
