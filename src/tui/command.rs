@@ -359,6 +359,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         bet_gradient_threshold: if ps.uses_bet() { parse_optional_f64(&ps.bet_gradient_threshold) } else { None },
         bet_iterations: if ps.uses_bet() { parse_optional_usize(&ps.bet_iterations) } else { None },
         bet_subdivisions: if ps.uses_bet() { parse_optional_usize(&ps.bet_subdivisions) } else { None },
+        bet_orientation: if ps.uses_bet() { qsmxt_engine::BetOrientation::ALL.get(ps.bet_orientation).copied() } else { None },
         qsm_reference: Some(crate::tui::app::qsm_reference_spec(ps.qsm_reference)),
         qsm_per_echo: Some(ps.qsm_per_echo),
         rts_params: crate::cli::RtsParamArgs {
@@ -2603,6 +2604,7 @@ mod parity {
             ("bet_gradient_threshold", |a| a.pipeline_state.set_select("mask_preset", 1), |a| a.pipeline_state.bet_gradient_threshold = "0.3".into()),
             ("bet_iterations", |a| a.pipeline_state.set_select("mask_preset", 1), |a| a.pipeline_state.bet_iterations = "500".into()),
             ("bet_subdivisions", |a| a.pipeline_state.set_select("mask_preset", 1), |a| a.pipeline_state.bet_subdivisions = "3".into()),
+            ("bet_orientation", |a| a.pipeline_state.set_select("mask_preset", 1), |a| a.pipeline_state.bet_orientation = 1),
             ("cosmos_magnitude_weighting", |a| a.filter_state.orientation_group = "acq".into(), |a| a.pipeline_state.cosmos_magnitude_weighting = true),
             ("cosmos_tol", |a| { a.filter_state.orientation_group = "acq".into(); a.pipeline_state.cosmos_magnitude_weighting = true; }, |a| a.pipeline_state.cosmos_tol = "1e-4".into()),
             ("cosmos_max_iter", |a| { a.filter_state.orientation_group = "acq".into(); a.pipeline_state.cosmos_magnitude_weighting = true; }, |a| a.pipeline_state.cosmos_max_iter = "250".into()),

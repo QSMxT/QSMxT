@@ -671,10 +671,13 @@ fn convert_mask_op(op: &crate::masking::MaskOp, bet: &crate::config::BetConfig) 
                 gradient_threshold: bet.gradient_threshold,
                 iterations: bet.iterations,
                 subdivisions: bet.subdivisions,
+                orientation: bet.orientation.into(),
             }),
         crate::masking::MaskOp::Erode { iterations } => PMaskOp::Erode { iterations: *iterations },
         crate::masking::MaskOp::Dilate { iterations } => PMaskOp::Dilate { iterations: *iterations },
         crate::masking::MaskOp::Close { radius } => PMaskOp::Close { radius: *radius },
+        crate::masking::MaskOp::MinIntensity { value } => PMaskOp::MinIntensity { value: *value },
+        crate::masking::MaskOp::Majority => PMaskOp::Majority,
         crate::masking::MaskOp::FillHoles { max_size } => PMaskOp::FillHoles { max_size: *max_size },
         crate::masking::MaskOp::GaussianSmooth { sigma_mm } => PMaskOp::GaussianSmooth { sigma_mm: *sigma_mm },
         crate::masking::MaskOp::SignalErode { threshold, depth_cap, global_erosions, bias_sigma, min_component } =>
@@ -813,6 +816,40 @@ mod tests {
                 (0.4, 2.0, 0.3, 500, 3)),
             other => panic!("wrong op {other:?}"),
         }
+    }
+
+    /// `[bet] orientation` reaches every BET step (QSM.rs#452), and QSMART's mask ops reach
+    /// qsm-core as its own.
+    #[test]
+    fn bet_orientation_and_qsmart_mask_ops_reach_core() {
+        use qsm_core::bet::BetOrientation as O;
+        let orientation = |bet: &crate::config::BetConfig| match convert_mask_op(&crate::masking::MaskOp::bet(0.5), bet) {
+            PMaskOp::Bet(p) => p.orientation,
+            other => panic!("wrong op {other:?}"),
+        };
+        assert_eq!(orientation(&crate::config::BetConfig::default()), O::Fsl);
+        assert_eq!(O::default(), O::Fsl);
+        let bet = crate::config::BetConfig { orientation: crate::BetOrientation::AsStored, ..Default::default() };
+        assert_eq!(orientation(&bet), O::AsStored);
+        for o in crate::BetOrientation::ALL {
+            assert_eq!(crate::BetOrientation::from(O::from(o)), o);
+            assert_eq!(o.as_str(), O::from(o).id());
+        }
+        let c: PipelineConfig = toml::from_str("[bet]\norientation = \"as-stored\"\n").unwrap();
+        assert_eq!(c.bet.orientation, crate::BetOrientation::AsStored);
+        assert!(toml::from_str::<PipelineConfig>("[bet]\norientation = \"left\"\n").is_err());
+        assert_eq!(convert_mask_op_d(&crate::masking::MaskOp::MinIntensity { value: 100.0 }), PMaskOp::MinIntensity { value: 100.0 });
+        assert_eq!(convert_mask_op_d(&crate::masking::MaskOp::Majority), PMaskOp::Majority);
+        // Through the whole config, in order.
+        let mut c = PipelineConfig::default();
+        c.bet.orientation = crate::BetOrientation::AsStored;
+        c.masking.sections[0].generator = crate::masking::MaskOp::bet(0.2);
+        c.masking.sections[0].refinements = vec![crate::masking::MaskOp::MinIntensity { value: 100.0 },
+            crate::masking::MaskOp::Majority, crate::masking::MaskOp::Close { radius: 2 }];
+        let core = to_qsm_pipeline_config(&c);
+        let s = &core.masking.sections[0];
+        assert!(matches!(&s.generator, PMaskOp::Bet(p) if p.orientation == O::AsStored));
+        assert_eq!(s.refinements, [PMaskOp::MinIntensity { value: 100.0 }, PMaskOp::Majority, PMaskOp::Close { radius: 2 }]);
     }
 
     #[test]

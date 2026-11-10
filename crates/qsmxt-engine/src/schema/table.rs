@@ -95,6 +95,12 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.uses_bet).context("BET"),
         d("bet.subdivisions", Masking, "Subdivisions", "BET icosphere subdivision level (shared by every BET step)", Int).flag("--bet-subdivisions").parent("masking.sections")
         .when(|x| x.uses_bet).context("BET"),
+        d("bet.orientation", Masking, "Orientation", "", Enum(vec![
+            o("fsl", "fsl", "As FSL reads it", "Left-right reversed for a neurologically stored image, as FSL's bet reads a NIfTI file (default)"),
+            o("as-stored", "as-stored", "As stored", "The voxels in the order they are stored, as MEDI's BET.m runs bet2"),
+        ])).flag("--bet-orientation").parent("masking.sections")
+        .when(|x| x.uses_bet).context("BET")
+        .gui("Which way round BET sees the left-right axis (shared by every BET step)"),
         d("masking.two_pass_sections", Masking, "Reliable mask", "The mask the second pass reconstructs on: its holes are left unfilled. Empty = the main mask without its hole filling", MaskSections).optional().parent("masking.two_pass")
         .when(|x| x.c.masking.two_pass),
         d("masking.two_pass_combine", Masking, "Combined with", "How the reliable mask's sections are combined: OR keeps a voxel any section keeps, AND only one every section keeps. Empty = as the main mask's sections are", Enum(vec![

@@ -20,7 +20,7 @@ Generate or refine binary masks.
 | `otsu` | Otsu automatic thresholding |
 | `value` | Fixed-value thresholding |
 | `percentile` | Percentile thresholding |
-| `bet` | Brain extraction (BET) |
+| `bet` | Brain extraction (BET); `--orientation as-stored` runs it on the voxels as stored, as MEDI's `BET.m` does |
 | `hd-bet` | Deep-learning brain extraction (HD-BET); whole volume by default; `--window`, `--low-memory` or `--patch XxYxZ` for sliding-window patches, `--tta`. Weights are downloaded on first use |
 | `rs2-net` | Deep-learning **rodent** brain extraction (RS2-Net); `--tta`, `--tile-step`. Weights are downloaded on first use |
 | `mindgrab` | Deep-learning brain extraction for any contrast (MindGrab); `--tta`. Needs the image's NIfTI affine. Weights are downloaded on first use |
@@ -28,13 +28,14 @@ Generate or refine binary masks.
 | `robust` | Alias for `preset robust-threshold` |
 | `erode` / `dilate` | Morphological erosion / dilation |
 | `close` | Morphological closing |
+| `majority` | 3×3×3 majority filter (MATLAB's `bwmorph3` `'majority'`) |
 | `fill-holes` | Fill holes in a binary mask (`--max-size 0`, the default, is automatic: 5% of the volume) |
 | `smooth` | Gaussian smooth (re-thresholded at 0.5) |
 | `and` / `or` | Intersect / union two or more masks on the same grid |
 
 Every subcommand is the first link of a chain: it does its own operation, then
 applies any `--op` refinements in order — `erode:2`, `fill-holes:0`, `close:1`,
-`gaussian:4.0`, `signal-erode`, the same spellings as a `--mask` section. So
+`gaussian:4.0`, `majority`, `min-intensity:100`, `signal-erode`, the same spellings as a `--mask` section. So
 `qsmxt mask erode m.nii -o out.nii --op fill-holes` erodes, then fills. What each
 op does is defined once, in the same code the pipeline runs, so a mask built
 here matches the one a `--mask` section would produce.
@@ -65,8 +66,10 @@ subcommands that take masks refuse a 4D file.
 
 `preset` reads its input image for every section; sections that read phase
 quality use `--quality` when given, and the input image otherwise, as
-`run --masking-input` would. `--op signal-erode` needs a magnitude image: for
-`and`/`or`, whose inputs are masks, pass it as `--magnitude`.
+`run --masking-input` would; `--bet-orientation` sets its BET steps' orientation.
+`--op signal-erode` needs a magnitude image, and `--op min-intensity` the image
+whose intensity it reads: for `and`/`or`, whose inputs are masks, pass it as
+`--magnitude`.
 
 ## Coil combination — `qsmxt combine`
 

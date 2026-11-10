@@ -350,6 +350,7 @@ fn command_for(config: &PipelineConfig, d: &PipelineConfig, pipeline: Option<&st
     emit_usize(&mut parts, "--bet-iterations", config.bet.iterations, d.bet.iterations);
     emit_usize(&mut parts, "--bet-subdivisions", config.bet.subdivisions, d.bet.subdivisions);
     emit_f64(&mut parts, "--bet-voxel-scale", config.bet.voxel_scale, d.bet.voxel_scale);
+    emit_enum(&mut parts, "--bet-orientation", &config.bet.orientation, &d.bet.orientation);
 
     // ── Background removal ──
     if config.bg_removal.algorithm != d.bg_removal.algorithm {

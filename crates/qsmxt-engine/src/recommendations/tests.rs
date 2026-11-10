@@ -57,6 +57,9 @@ fn candidates(core_path: &str) -> Vec<Value> {
         Mapping::Inhomogeneity => ids(&["none", "makehomogeneous", "n4"]),
         Mapping::BetFraction => vec![json!(0.2), json!(0.5)],
         Mapping::Erosion => vec![json!(0), json!(2)],
+        Mapping::MinIntensity => vec![json!(0), json!(100)],
+        Mapping::Majority => vec![json!(true), json!(false)],
+        Mapping::CloseRadius => vec![json!(0), json!(2)],
         Mapping::QsmartFitThreshold => ids(&["absolute-40", "percentile-99"]),
         Mapping::Same => {
             let s = schema::setting(path).unwrap();
@@ -107,8 +110,8 @@ fn violating(rule: &Rule) -> PipelineConfig {
         };
         set(&mut c, setting, &v).unwrap_or_else(|e| panic!("{}: trigger {setting} = {v}: {e}", rule.id));
     }
-    // BET's fraction is in play only with a BET step.
-    if rule.setting == "masking.bet.fractional_intensity" {
+    // BET's fraction and orientation are in play only with a BET step.
+    if rule.setting.starts_with("masking.bet.") {
         set(&mut c, "masking.generator", &json!("bet")).unwrap();
     }
     let bad = candidates(rule.setting).into_iter().find(|v| !passes(&rule.expect, v))
@@ -520,7 +523,13 @@ fn reference_differences_of_a_chosen_method() {
 
     let mut applied = c.clone();
     apply_all(&mut applied, &diffs).unwrap();
+    // BET's orientation is in play only once there is a BET step, which applying `medi.mask-bet`
+    // put in: it is the one difference left, and applying it leaves none.
+    let left = reference_differences(&applied, &facts, &medi);
+    assert_eq!(left.iter().map(|r| r.rule.as_str()).collect::<Vec<_>>(), ["medi.bet-as-stored"]);
+    apply_all(&mut applied, &left).unwrap();
     assert!(reference_differences(&applied, &facts, &medi).is_empty());
+    assert_eq!(applied.bet.orientation, crate::enums::BetOrientation::AsStored);
     assert_eq!(applied.bg_removal.algorithm, BfAlgorithm::Pdf);
 
     // Kept, nothing changes and nothing is recorded: a reference difference is information only.
@@ -700,7 +709,8 @@ fn markers_name_the_method() {
     set(&mut c, "masking.generator", &json!("threshold")).unwrap();
     let view = reference_values(&c, &facts);
     let m = marker(&view, "masking.sections").unwrap();
-    assert_eq!(m, Marker { actionable: false, text: "QSMART: BET, first echo, no erosion".into() });
+    assert_eq!(m, Marker { actionable: false,
+        text: "QSMART: BET, first echo, intensity threshold 100, majority filter, closing radius 2, no erosion".into() });
     // Two methods whose references agree share the value.
     let mut c = medi_vsharp_threshold();
     set(&mut c, "bg_removal.algorithm", &json!("pdf")).unwrap();
@@ -833,4 +843,39 @@ fn notes_name_the_rule_they_come_from() {
     let found = recommendations(&c, &Facts::default());
     let r = found.iter().find(|r| r.rule == "complex-fit.unwrap-region-growing").unwrap();
     assert_eq!(r.note(), "Phase unwrapping used Laplacian; this differs from the Complex fit reference pipeline, which uses MEDI region growing");
+}
+
+/// QSMART's mask refinements land in `brainmask.m`'s order (threshold, majority, closing) after
+/// the generator, whatever order they are set in, and a user's own closing keeps its place; 0 and
+/// off take them out again.
+#[test]
+fn qsmarts_mask_refinements_are_placed_in_brainmask_m_order() {
+    let mut c = PipelineConfig::default();
+    set(&mut c, "masking.generator", &json!("bet")).unwrap();
+    let before = c.masking.sections[0].refinements.clone();
+    for (path, v) in [("masking.close_radius", json!(2)), ("masking.majority", json!(true)), ("masking.min_intensity", json!(100))] {
+        set(&mut c, path, &v).unwrap();
+    }
+    let mut want = vec![MaskOp::MinIntensity { value: 100.0 }, MaskOp::Majority, MaskOp::Close { radius: 2 }];
+    want.extend(before.iter().cloned());
+    assert_eq!(c.masking.sections[0].refinements, want);
+    // Set again, nothing is duplicated.
+    set(&mut c, "masking.min_intensity", &json!(50)).unwrap();
+    set(&mut c, "masking.majority", &json!(true)).unwrap();
+    assert_eq!(c.masking.sections[0].refinements[..2], [MaskOp::MinIntensity { value: 50.0 }, MaskOp::Majority]);
+    for (path, v) in [("masking.close_radius", json!(0)), ("masking.majority", json!(false)), ("masking.min_intensity", json!(0))] {
+        set(&mut c, path, &v).unwrap();
+    }
+    assert_eq!(c.masking.sections[0].refinements, before);
+    // A closing already in the recipe keeps its place and takes the radius.
+    c.masking.sections[0].refinements = vec![MaskOp::Dilate { iterations: 1 }, MaskOp::Close { radius: 1 }];
+    set(&mut c, "masking.close_radius", &json!(2)).unwrap();
+    assert_eq!(c.masking.sections[0].refinements, [MaskOp::Dilate { iterations: 1 }, MaskOp::Close { radius: 2 }]);
+    // Named as QSMxT's recipe reads them.
+    for (path, v, name) in [("masking.min_intensity", json!(100), "intensity threshold 100"), ("masking.majority", json!(true), "majority filter"),
+                            ("masking.close_radius", json!(2), "closing radius 2"), ("masking.close_radius", json!(0), "no closing")] {
+        let (q, kind) = setting_of(path).unwrap();
+        assert_eq!((q, name_of(q, kind, &v).as_str()), ("masking.sections", name));
+    }
+    assert_eq!(setting_of("masking.bet.orientation"), Some(("bet.orientation", Mapping::Same)));
 }

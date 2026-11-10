@@ -332,7 +332,8 @@ impl Recommendation {
 
     /// The setting is a flag.
     fn flag(&self) -> bool {
-        self.recommended.value.is_boolean()
+        // A part of the mask recipe (its majority filter) is named by its value, like the others.
+        self.recommended.value.is_boolean() && self.setting != "masking.sections"
     }
 
     /// What the departure is from, after the current value: "; MEDI recommends PDF: why",
@@ -370,7 +371,9 @@ impl Recommendation {
     /// reference pipeline, which uses V-SHARP"). The source, and the reason unless the value is
     /// discouraged, are for the log and the TUI, not a methods section.
     pub fn note(&self) -> String {
-        let verb = if self.current.iter().all(|n| n.value.is_string()) { "used" } else { "was" };
+        // The mask recipe's parts are named as what it used ("no erosion", "majority filter").
+        let used = self.setting == "masking.sections" || self.current.iter().all(|n| n.value.is_string());
+        let verb = if used { "used" } else { "was" };
         format!("{} {verb} {}{}", self.label, self.current_text(), self.departure(false))
     }
 }
@@ -481,6 +484,16 @@ enum Mapping {
     /// Each mask section's erosion, voxels: its `erode` refinements, replaced by one of that many
     /// iterations (none for 0).
     Erosion,
+    /// Each mask section's lowest input intensity kept: its `min-intensity` refinement (0 =
+    /// none), placed first, right after the generator (QSMART's `brainmask.m` thresholds BET's
+    /// brain image before anything else).
+    MinIntensity,
+    /// Each mask section's majority filter (a flag): its `majority` refinement, placed after any
+    /// `min-intensity`.
+    Majority,
+    /// Each mask section's closing radius, voxels: its first `close` refinement's radius (0 = no
+    /// closing); a new one is placed after any `min-intensity` and `majority`.
+    CloseRadius,
     /// QSMART's echo-fit threshold (`absolute-40`, `percentile-99`, ...): its mode and value.
     QsmartFitThreshold,
 }
@@ -533,6 +546,10 @@ const SETTINGS: &[(&str, &str, Mapping)] = &[
     ("masking.inhomogeneity_correction", "masking.inhomogeneity_correction", Mapping::Inhomogeneity),
     ("masking.bet.fractional_intensity", "masking.sections", Mapping::BetFraction),
     ("masking.erosion", "masking.sections", Mapping::Erosion),
+    ("masking.min_intensity", "masking.sections", Mapping::MinIntensity),
+    ("masking.majority", "masking.sections", Mapping::Majority),
+    ("masking.close_radius", "masking.sections", Mapping::CloseRadius),
+    ("masking.bet.orientation", "bet.orientation", Mapping::Same),
     ("inversion.heidi.denoise_itk", "inversion.heidi.denoise_reference_itk", Mapping::Same),
     ("field_mapping.b0_estimation.qsmart_fit_threshold", "field_mapping.qsmart_fit_threshold_mode", Mapping::QsmartFitThreshold),
     ("reference", "qsm.reference", Mapping::Same),
@@ -677,6 +694,18 @@ fn name_of(path: &str, kind: Mapping, value: &Value) -> String {
             Some(0.0) => "no erosion".into(),
             Some(1.0) => "1 voxel".into(),
             _ => format!("{} voxels", text(value)),
+        },
+        Mapping::MinIntensity => match value.as_f64() {
+            Some(0.0) => "no intensity threshold".into(),
+            _ => format!("intensity threshold {}", text(value)),
+        },
+        Mapping::Majority => match value.as_bool() {
+            Some(true) => "majority filter".into(),
+            _ => "no majority filter".into(),
+        },
+        Mapping::CloseRadius => match value.as_f64() {
+            Some(0.0) => "no closing".into(),
+            _ => format!("closing radius {}", text(value)),
         },
         Mapping::QsmartFitThreshold => match value.as_str().unwrap_or_default() {
             "absolute-40" => "fixed residual 40 (QSMART v1.0)".into(),
@@ -1248,6 +1277,41 @@ pub(crate) fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -
                 s.refinements.retain(|op| !matches!(op, MaskOp::Erode { .. }));
                 if n > 0 {
                     s.refinements.push(MaskOp::Erode { iterations: n });
+                }
+            }
+        }
+        Mapping::MinIntensity => {
+            let v = value.as_f64().filter(|v| v.is_finite() && *v >= 0.0)
+                .ok_or_else(|| format!("{value} is not an intensity"))?;
+            for s in &mut config.masking.sections {
+                s.refinements.retain(|op| !matches!(op, MaskOp::MinIntensity { .. }));
+                if v > 0.0 {
+                    s.refinements.insert(0, MaskOp::MinIntensity { value: v });
+                }
+            }
+        }
+        Mapping::Majority => {
+            let on = value.as_bool().ok_or_else(|| format!("{value} is not on or off"))?;
+            for s in &mut config.masking.sections {
+                s.refinements.retain(|op| !matches!(op, MaskOp::Majority));
+                if on {
+                    let at = s.refinements.iter().take_while(|op| matches!(op, MaskOp::MinIntensity { .. })).count();
+                    s.refinements.insert(at, MaskOp::Majority);
+                }
+            }
+        }
+        Mapping::CloseRadius => {
+            let r = value.as_u64().or_else(|| value.as_f64().filter(|v| *v >= 0.0).map(|v| v as u64))
+                .ok_or_else(|| format!("{value} is not a radius in voxels"))? as usize;
+            for s in &mut config.masking.sections {
+                if r == 0 {
+                    s.refinements.retain(|op| !matches!(op, MaskOp::Close { .. }));
+                } else if let Some(MaskOp::Close { radius }) = s.refinements.iter_mut().find(|op| matches!(op, MaskOp::Close { .. })) {
+                    *radius = r;
+                } else {
+                    let at = s.refinements.iter()
+                        .take_while(|op| matches!(op, MaskOp::MinIntensity { .. } | MaskOp::Majority)).count();
+                    s.refinements.insert(at, MaskOp::Close { radius: r });
                 }
             }
         }

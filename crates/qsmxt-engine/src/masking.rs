@@ -80,6 +80,12 @@ pub enum MaskOp {
     Erode { iterations: usize },
     Dilate { iterations: usize },
     Close { radius: usize },
+    /// Keep only the mask voxels whose section input is at least `value` (NaN dropped): QSMART's
+    /// threshold on BET's brain image (`brainmask.m`, `mask(BET_map < mag_threshold) = 0`).
+    MinIntensity { value: f64 },
+    /// MATLAB's `bwmorph3(mask, 'majority')`, one pass: a voxel is in the mask when at least 14
+    /// of its 3×3×3 neighbourhood (itself included) are, voxels beyond the volume counting as out.
+    Majority,
     FillHoles { max_size: usize },
     GaussianSmooth { sigma_mm: f64 },
     /// Signal-gated erosion (QSM-CI): peel only low-signal boundary voxels (sinus / skull-base
@@ -180,6 +186,10 @@ impl MaskOp {
             Self::Erode { iterations } => ("erode", "iterations", *iterations),
             Self::Dilate { iterations } => ("dilate", "iterations", *iterations),
             Self::Close { radius } => ("close", "radius", *radius),
+            // A value of 0 or less keeps every voxel of a magnitude: a no-op, refused like the
+            // ones above.
+            Self::MinIntensity { value } if !(value.is_finite() && *value > 0.0) =>
+                return Err(format!("min-intensity: value must be a positive number, got {value}")),
             _ => return Ok(()),
         };
         if v == 0 {
@@ -268,6 +278,8 @@ impl fmt::Display for MaskOp {
             Self::Erode { iterations } => write!(f, "erode:{}", iterations),
             Self::Dilate { iterations } => write!(f, "dilate:{}", iterations),
             Self::Close { radius } => write!(f, "close:{}", radius),
+            Self::MinIntensity { value } => write!(f, "min-intensity:{}", value),
+            Self::Majority => write!(f, "majority"),
             Self::FillHoles { max_size } => write!(f, "fill-holes:{}", max_size),
             Self::GaussianSmooth { sigma_mm } => write!(f, "gaussian:{:.1}", sigma_mm),
             Self::SignalErode { threshold, depth_cap, global_erosions, bias_sigma, min_component } =>
@@ -537,6 +549,23 @@ pub fn parse_mask_op(s: &str) -> crate::Result<MaskOp> {
             op.validate().map_err(ConfigError::Parse)?;
             Ok(op)
         }
+        // `min-intensity:<value>`: no default, the value is in the input image's units.
+        "min-intensity" => {
+            let value = match parts.get(1).filter(|s| !s.is_empty()) {
+                None => return Err(ConfigError::Parse(
+                    "min-intensity: give the lowest intensity kept, e.g. min-intensity:100".into())),
+                Some(_) => arg::<f64>(&parts, 1, 1, 0.0)?,
+            };
+            let op = MaskOp::MinIntensity { value };
+            op.validate().map_err(ConfigError::Parse)?;
+            Ok(op)
+        }
+        "majority" => {
+            if parts.len() > 1 {
+                return Err(ConfigError::Parse(format!("majority: takes no arguments, got '{}'", parts[1..].join(":"))));
+            }
+            Ok(MaskOp::Majority)
+        }
         // Bare `fill-holes` is the automatic cap (5% of the volume) — what every preset spells as
         // `fill-holes:0` and what the TUI adds — rather than a 1000-voxel cap nothing else used.
         "fill-holes" => Ok(MaskOp::FillHoles { max_size: arg(&parts, 1, 1, 0)? }),
@@ -742,6 +771,31 @@ mod tests {
     fn test_parse_close() {
         let op = parse_mask_op("close:5").unwrap();
         assert!(matches!(op, MaskOp::Close { radius: 5 }));
+    }
+
+    /// QSMART's threshold and majority filter: parsed, written back, refused when malformed, and
+    /// in the config as `op = "min-intensity"` / `op = "majority"`.
+    #[test]
+    fn min_intensity_and_majority_round_trip() {
+        let op = parse_mask_op("min-intensity:100").unwrap();
+        assert_eq!(op, MaskOp::MinIntensity { value: 100.0 });
+        assert_eq!(format!("{op}"), "min-intensity:100");
+        assert_eq!(parse_mask_op("min-intensity:0.25").unwrap(), MaskOp::MinIntensity { value: 0.25 });
+        assert_eq!(parse_mask_op("majority").unwrap(), MaskOp::Majority);
+        assert_eq!(format!("{}", MaskOp::Majority), "majority");
+        for op in [MaskOp::MinIntensity { value: 100.0 }, MaskOp::MinIntensity { value: 0.25 }, MaskOp::Majority] {
+            assert_eq!(parse_mask_op(&op.compact_spec()).unwrap(), op);
+            assert!(!op.is_generator());
+            let json = serde_json::to_value(&op).unwrap();
+            assert_eq!(serde_json::from_value::<MaskOp>(json).unwrap(), op);
+        }
+        assert_eq!(serde_json::to_value(MaskOp::Majority).unwrap(), serde_json::json!({ "op": "majority" }));
+        assert_eq!(serde_json::to_value(MaskOp::MinIntensity { value: 100.0 }).unwrap(),
+                   serde_json::json!({ "op": "min-intensity", "value": 100.0 }));
+        for bad in ["min-intensity", "min-intensity:", "min-intensity:x", "min-intensity:0", "min-intensity:-5",
+                    "min-intensity:1:2", "majority:1"] {
+            assert!(parse_mask_op(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

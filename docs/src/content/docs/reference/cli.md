@@ -93,6 +93,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--bet-iterations <BET_ITERATIONS>` | BET surface evolution iterations. Applies to every BET step in the masking recipe. |
 | `--bet-subdivisions <BET_SUBDIVISIONS>` | BET icosphere subdivision level. Applies to every BET step in the masking recipe. |
 | `--bet-voxel-scale <FACTOR>` | Factor applied to the voxel sizes before BET runs. BET's surface model is tuned to a human brain in millimetres, so preclinical data has to be presented at human scale: 10 is the usual setting for mouse. 1 (the default) is the acquisition's own geometry. Applies to every BET step in the masking recipe. |
+| `--bet-orientation <ORIENTATION>` | Which way round BET sees the left-right axis: `fsl` (the default; reversed for a neurologically stored image, as FSL's bet reads a NIfTI file) or `as-stored` (the voxels in the order they are stored, as MEDI's BET.m runs bet2). Applies to every BET step in the masking recipe. |
 | `--qsm-reference <SPEC>` | What the susceptibility map's zero is pinned to: `mean` (the mean over the voxels the map is defined on — the brain mask less the rim background-field removal eroded; the default), `none`, or a SynthSeg region — a structure with both sides merged (`thalamus`), one side (`left-thalamus`), the `ventricles` composite, a raw FreeSurfer id (`4`), or a comma-separated list of any of those. A region implies --do-segmentation. An unrecognised name lists the valid ones. |
 | `--qsm-per-echo <BOOL>` | Reconstruct a QSM from each echo on its own (each echo's phase unwrapped and divided by its echo time, then background removal, dipole inversion and referencing per echo) and publish each echo's map (`desc-echo<n>_Chimap`) and their mean as the QSM (`Chimap`), instead of one QSM from the echo-combined field map. The echo combination (--b0-estimation), phase-offset removal and bipolar correction do not run. DECOMPOSE takes the echoes' maps. Multi-echo only; not with TGV, QSMART, iQSM, iQFM, two-pass, or χ-separation methods that fit the local field. |
 | `--rts-delta <RTS_DELTA>` | RTS delta parameter. |
@@ -449,7 +450,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--output-space <OUTPUT_SPACE>` | Grid to write derivatives on when the run was resampled to axial. `acquired` (default) puts them back where the data came from, so transforms you already hold still apply; `working` leaves them on the resampled grid and avoids a second interpolation. Values: `acquired`, `working`. |
 | `--mask-preset <MASK_PRESET>` | Mask preset: robust-threshold, bet, hd-bet (HD-BET deep-learning brain extraction + signal-gated erosion; needs a deep-learning build), bet-and-phase (BET on the magnitude AND a thresholded phase-quality map, then hole-filled and eroded), rs2-net (RS2-Net deep-learning rodent brain extraction), or mindgrab (MindGrab deep-learning brain extraction for any contrast; needs a deep-learning build) Values: `robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`, `rs2-net`, `mindgrab`. |
 | `--use-custom-masks <USE_CUSTOM_MASKS>` | Prefer a bring-your-own mask from BIDS derivatives when present (else compute it). Bare flag = first matching derivatives tool (alphabetical); give a name (e.g. `bet`) to restrict to `derivatives/<tool>/sub-*/anat/*_mask.nii*`. Always falls back. |
-| `--mask <MASK_SECTIONS_CLI>` | Define a mask section (repeatable; multiple sections are combined with --mask-combine). Format: &lt;input&gt;,&lt;generator&gt;,&lt;refinement1&gt;,&lt;refinement2&gt;,... Example: phase-quality,threshold:otsu,dilate:2,fill-holes:0,erode:2 Example: magnitude,bet:0.5,erode:2 Example: magnitude,hd-bet,signal-erode (HD-BET: `hd-bet[:full\|window\|XxYxZ\|low-memory][:tta][:step=F]`; signal-erode: `signal-erode[:threshold[:depth_cap[:global_erosions[:bias_sigma[:min_component]]]]]`) |
+| `--mask <MASK_SECTIONS_CLI>` | Define a mask section (repeatable; multiple sections are combined with --mask-combine). Format: &lt;input&gt;,&lt;generator&gt;,&lt;refinement1&gt;,&lt;refinement2&gt;,... Example: phase-quality,threshold:otsu,dilate:2,fill-holes:0,erode:2 Example: magnitude,bet:0.5,erode:2 Example: magnitude-first,bet:0.2,min-intensity:100,majority,close:2 (QSMART's mask) Example: magnitude,hd-bet,signal-erode (HD-BET: `hd-bet[:full\|window\|XxYxZ\|low-memory][:tta][:step=F]`; signal-erode: `signal-erode[:threshold[:depth_cap[:global_erosions[:bias_sigma[:min_component]]]]]`) |
 | `--mask-combine <MASK_COMBINE>` | How to combine multiple --mask sections: `or` (union, the default) or `and` (intersection — a voxel survives only where every section keeps it) Values: `or`, `and`. |
 | `--mask-refine <MASK_REFINEMENTS_CLI>` | Refinement applied to the combined mask, after --mask-combine (repeatable). Takes the same refinement ops as --mask, e.g. `erode:2` or `fill-holes:0`; generators (threshold/bet/hd-bet) belong in a --mask section instead. Example: --mask-combine and --mask-refine fill-holes:0 --mask-refine erode:1. |
 | `--two-pass` | Two-pass artefact reduction: reconstruct a second time against a mask whose holes are left unfilled, and keep that reconstruction wherever it is defined. Strong susceptibility sources (air-tissue interfaces, haemorrhage, implants) make the phase around them unrecoverable; leaving those voxels out keeps their streaking from spreading, while the ordinary mask still supplies values inside the holes. Roughly doubles background removal and inversion time, and is not free of downsides — where the holes were not artefactual it can be worse than a single pass. Based on doi:10.1002/mrm.29048 (Stewart et al.). Off by default. The conventional single-pass map is kept alongside as `_desc-singlepass_Chimap.nii`. |
@@ -575,6 +576,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--bet-iterations <BET_ITERATIONS>` | BET surface evolution iterations. Applies to every BET step in the masking recipe. |
 | `--bet-subdivisions <BET_SUBDIVISIONS>` | BET icosphere subdivision level. Applies to every BET step in the masking recipe. |
 | `--bet-voxel-scale <FACTOR>` | Factor applied to the voxel sizes before BET runs. BET's surface model is tuned to a human brain in millimetres, so preclinical data has to be presented at human scale: 10 is the usual setting for mouse. 1 (the default) is the acquisition's own geometry. Applies to every BET step in the masking recipe. |
+| `--bet-orientation <ORIENTATION>` | Which way round BET sees the left-right axis: `fsl` (the default; reversed for a neurologically stored image, as FSL's bet reads a NIfTI file) or `as-stored` (the voxels in the order they are stored, as MEDI's BET.m runs bet2). Applies to every BET step in the masking recipe. |
 | `--qsm-reference <SPEC>` | What the susceptibility map's zero is pinned to: `mean` (the mean over the voxels the map is defined on — the brain mask less the rim background-field removal eroded; the default), `none`, or a SynthSeg region — a structure with both sides merged (`thalamus`), one side (`left-thalamus`), the `ventricles` composite, a raw FreeSurfer id (`4`), or a comma-separated list of any of those. A region implies --do-segmentation. An unrecognised name lists the valid ones. |
 | `--qsm-per-echo <BOOL>` | Reconstruct a QSM from each echo on its own (each echo's phase unwrapped and divided by its echo time, then background removal, dipole inversion and referencing per echo) and publish each echo's map (`desc-echo<n>_Chimap`) and their mean as the QSM (`Chimap`), instead of one QSM from the echo-combined field map. The echo combination (--b0-estimation), phase-offset removal and bipolar correction do not run. DECOMPOSE takes the echoes' maps. Multi-echo only; not with TGV, QSMART, iQSM, iQFM, two-pass, or χ-separation methods that fit the local field. |
 | `--rts-delta <RTS_DELTA>` | RTS delta parameter. |
@@ -931,7 +933,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--output-space <OUTPUT_SPACE>` | Grid to write derivatives on when the run was resampled to axial. `acquired` (default) puts them back where the data came from, so transforms you already hold still apply; `working` leaves them on the resampled grid and avoids a second interpolation. Values: `acquired`, `working`. |
 | `--mask-preset <MASK_PRESET>` | Mask preset: robust-threshold, bet, hd-bet (HD-BET deep-learning brain extraction + signal-gated erosion; needs a deep-learning build), bet-and-phase (BET on the magnitude AND a thresholded phase-quality map, then hole-filled and eroded), rs2-net (RS2-Net deep-learning rodent brain extraction), or mindgrab (MindGrab deep-learning brain extraction for any contrast; needs a deep-learning build) Values: `robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`, `rs2-net`, `mindgrab`. |
 | `--use-custom-masks <USE_CUSTOM_MASKS>` | Prefer a bring-your-own mask from BIDS derivatives when present (else compute it). Bare flag = first matching derivatives tool (alphabetical); give a name (e.g. `bet`) to restrict to `derivatives/<tool>/sub-*/anat/*_mask.nii*`. Always falls back. |
-| `--mask <MASK_SECTIONS_CLI>` | Define a mask section (repeatable; multiple sections are combined with --mask-combine). Format: &lt;input&gt;,&lt;generator&gt;,&lt;refinement1&gt;,&lt;refinement2&gt;,... Example: phase-quality,threshold:otsu,dilate:2,fill-holes:0,erode:2 Example: magnitude,bet:0.5,erode:2 Example: magnitude,hd-bet,signal-erode (HD-BET: `hd-bet[:full\|window\|XxYxZ\|low-memory][:tta][:step=F]`; signal-erode: `signal-erode[:threshold[:depth_cap[:global_erosions[:bias_sigma[:min_component]]]]]`) |
+| `--mask <MASK_SECTIONS_CLI>` | Define a mask section (repeatable; multiple sections are combined with --mask-combine). Format: &lt;input&gt;,&lt;generator&gt;,&lt;refinement1&gt;,&lt;refinement2&gt;,... Example: phase-quality,threshold:otsu,dilate:2,fill-holes:0,erode:2 Example: magnitude,bet:0.5,erode:2 Example: magnitude-first,bet:0.2,min-intensity:100,majority,close:2 (QSMART's mask) Example: magnitude,hd-bet,signal-erode (HD-BET: `hd-bet[:full\|window\|XxYxZ\|low-memory][:tta][:step=F]`; signal-erode: `signal-erode[:threshold[:depth_cap[:global_erosions[:bias_sigma[:min_component]]]]]`) |
 | `--mask-combine <MASK_COMBINE>` | How to combine multiple --mask sections: `or` (union, the default) or `and` (intersection — a voxel survives only where every section keeps it) Values: `or`, `and`. |
 | `--mask-refine <MASK_REFINEMENTS_CLI>` | Refinement applied to the combined mask, after --mask-combine (repeatable). Takes the same refinement ops as --mask, e.g. `erode:2` or `fill-holes:0`; generators (threshold/bet/hd-bet) belong in a --mask section instead. Example: --mask-combine and --mask-refine fill-holes:0 --mask-refine erode:1. |
 | `--two-pass` | Two-pass artefact reduction: reconstruct a second time against a mask whose holes are left unfilled, and keep that reconstruction wherever it is defined. Strong susceptibility sources (air-tissue interfaces, haemorrhage, implants) make the phase around them unrecoverable; leaving those voxels out keeps their streaking from spreading, while the ordinary mask still supplies values inside the holes. Roughly doubles background removal and inversion time, and is not free of downsides — where the holes were not artefactual it can be worse than a single pass. Based on doi:10.1002/mrm.29048 (Stewart et al.). Off by default. The conventional single-pass map is kept alongside as `_desc-singlepass_Chimap.nii`. |
@@ -991,6 +993,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--bet-iterations <BET_ITERATIONS>` | BET surface evolution iterations. Applies to every BET step in the masking recipe. |
 | `--bet-subdivisions <BET_SUBDIVISIONS>` | BET icosphere subdivision level. Applies to every BET step in the masking recipe. |
 | `--bet-voxel-scale <FACTOR>` | Factor applied to the voxel sizes before BET runs. BET's surface model is tuned to a human brain in millimetres, so preclinical data has to be presented at human scale: 10 is the usual setting for mouse. 1 (the default) is the acquisition's own geometry. Applies to every BET step in the masking recipe. |
+| `--bet-orientation <ORIENTATION>` | Which way round BET sees the left-right axis: `fsl` (the default; reversed for a neurologically stored image, as FSL's bet reads a NIfTI file) or `as-stored` (the voxels in the order they are stored, as MEDI's BET.m runs bet2). Applies to every BET step in the masking recipe. |
 | `--qsm-reference <SPEC>` | What the susceptibility map's zero is pinned to: `mean` (the mean over the voxels the map is defined on — the brain mask less the rim background-field removal eroded; the default), `none`, or a SynthSeg region — a structure with both sides merged (`thalamus`), one side (`left-thalamus`), the `ventricles` composite, a raw FreeSurfer id (`4`), or a comma-separated list of any of those. A region implies --do-segmentation. An unrecognised name lists the valid ones. |
 | `--qsm-per-echo <BOOL>` | Reconstruct a QSM from each echo on its own (each echo's phase unwrapped and divided by its echo time, then background removal, dipole inversion and referencing per echo) and publish each echo's map (`desc-echo<n>_Chimap`) and their mean as the QSM (`Chimap`), instead of one QSM from the echo-combined field map. The echo combination (--b0-estimation), phase-offset removal and bipolar correction do not run. DECOMPOSE takes the echoes' maps. Multi-echo only; not with TGV, QSMART, iQSM, iQFM, two-pass, or χ-separation methods that fit the local field. |
 | `--rts-delta <RTS_DELTA>` | RTS delta parameter. |
@@ -1347,7 +1350,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--output-space <OUTPUT_SPACE>` | Grid to write derivatives on when the run was resampled to axial. `acquired` (default) puts them back where the data came from, so transforms you already hold still apply; `working` leaves them on the resampled grid and avoids a second interpolation. Values: `acquired`, `working`. |
 | `--mask-preset <MASK_PRESET>` | Mask preset: robust-threshold, bet, hd-bet (HD-BET deep-learning brain extraction + signal-gated erosion; needs a deep-learning build), bet-and-phase (BET on the magnitude AND a thresholded phase-quality map, then hole-filled and eroded), rs2-net (RS2-Net deep-learning rodent brain extraction), or mindgrab (MindGrab deep-learning brain extraction for any contrast; needs a deep-learning build) Values: `robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`, `rs2-net`, `mindgrab`. |
 | `--use-custom-masks <USE_CUSTOM_MASKS>` | Prefer a bring-your-own mask from BIDS derivatives when present (else compute it). Bare flag = first matching derivatives tool (alphabetical); give a name (e.g. `bet`) to restrict to `derivatives/<tool>/sub-*/anat/*_mask.nii*`. Always falls back. |
-| `--mask <MASK_SECTIONS_CLI>` | Define a mask section (repeatable; multiple sections are combined with --mask-combine). Format: &lt;input&gt;,&lt;generator&gt;,&lt;refinement1&gt;,&lt;refinement2&gt;,... Example: phase-quality,threshold:otsu,dilate:2,fill-holes:0,erode:2 Example: magnitude,bet:0.5,erode:2 Example: magnitude,hd-bet,signal-erode (HD-BET: `hd-bet[:full\|window\|XxYxZ\|low-memory][:tta][:step=F]`; signal-erode: `signal-erode[:threshold[:depth_cap[:global_erosions[:bias_sigma[:min_component]]]]]`) |
+| `--mask <MASK_SECTIONS_CLI>` | Define a mask section (repeatable; multiple sections are combined with --mask-combine). Format: &lt;input&gt;,&lt;generator&gt;,&lt;refinement1&gt;,&lt;refinement2&gt;,... Example: phase-quality,threshold:otsu,dilate:2,fill-holes:0,erode:2 Example: magnitude,bet:0.5,erode:2 Example: magnitude-first,bet:0.2,min-intensity:100,majority,close:2 (QSMART's mask) Example: magnitude,hd-bet,signal-erode (HD-BET: `hd-bet[:full\|window\|XxYxZ\|low-memory][:tta][:step=F]`; signal-erode: `signal-erode[:threshold[:depth_cap[:global_erosions[:bias_sigma[:min_component]]]]]`) |
 | `--mask-combine <MASK_COMBINE>` | How to combine multiple --mask sections: `or` (union, the default) or `and` (intersection — a voxel survives only where every section keeps it) Values: `or`, `and`. |
 | `--mask-refine <MASK_REFINEMENTS_CLI>` | Refinement applied to the combined mask, after --mask-combine (repeatable). Takes the same refinement ops as --mask, e.g. `erode:2` or `fill-holes:0`; generators (threshold/bet/hd-bet) belong in a --mask section instead. Example: --mask-combine and --mask-refine fill-holes:0 --mask-refine erode:1. |
 | `--two-pass` | Two-pass artefact reduction: reconstruct a second time against a mask whose holes are left unfilled, and keep that reconstruction wherever it is defined. Strong susceptibility sources (air-tissue interfaces, haemorrhage, implants) make the phase around them unrecoverable; leaving those voxels out keeps their streaking from spreading, while the ordinary mask still supplies values inside the holes. Roughly doubles background removal and inversion time, and is not free of downsides — where the holes were not artefactual it can be worse than a single pass. Based on doi:10.1002/mrm.29048 (Stewart et al.). Off by default. The conventional single-pass map is kept alongside as `_desc-singlepass_Chimap.nii`. |
@@ -1376,6 +1379,7 @@ Masking operations
 | [`erode`](#qsmxt-mask-erode) | Erode a binary mask |
 | [`dilate`](#qsmxt-mask-dilate) | Dilate a binary mask |
 | [`close`](#qsmxt-mask-close) | Morphological closing on a binary mask |
+| [`majority`](#qsmxt-mask-majority) | 3x3x3 majority filter on a binary mask (MATLAB's bwmorph3 'majority') |
 | [`fill-holes`](#qsmxt-mask-fill-holes) | Fill holes in a binary mask |
 | [`smooth`](#qsmxt-mask-smooth) | Gaussian smooth a binary mask (re-thresholds at 0.5) |
 | [`and`](#qsmxt-mask-and) | Intersect binary masks: keep voxels every input keeps (the `run --mask-combine and`) |
@@ -1393,7 +1397,7 @@ qsmxt mask otsu [OPTIONS] --output <OUTPUT> <INPUT>
 | --- | --- |
 | `<INPUT>` | Input NIfTI file (an image for the generating subcommands, a mask for the rest) Required. |
 | `-o, --output <OUTPUT>` | Output mask NIfTI file. Required. |
-| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
+| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, majority (3x3x3 majority filter), min-intensity:100 (remove voxels below 100 in the input image; needs an image input), signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
 
 ### `qsmxt mask value`
 
@@ -1407,7 +1411,7 @@ qsmxt mask value [OPTIONS] --output <OUTPUT> --threshold <THRESHOLD> <INPUT>
 | --- | --- |
 | `<INPUT>` | Input NIfTI file (an image for the generating subcommands, a mask for the rest) Required. |
 | `-o, --output <OUTPUT>` | Output mask NIfTI file. Required. |
-| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
+| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, majority (3x3x3 majority filter), min-intensity:100 (remove voxels below 100 in the input image; needs an image input), signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
 | `--threshold <THRESHOLD>` | Threshold value. Required. |
 
 ### `qsmxt mask percentile`
@@ -1422,7 +1426,7 @@ qsmxt mask percentile [OPTIONS] --output <OUTPUT> --percentile <PERCENTILE> <INP
 | --- | --- |
 | `<INPUT>` | Input NIfTI file (an image for the generating subcommands, a mask for the rest) Required. |
 | `-o, --output <OUTPUT>` | Output mask NIfTI file. Required. |
-| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
+| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, majority (3x3x3 majority filter), min-intensity:100 (remove voxels below 100 in the input image; needs an image input), signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
 | `--percentile <PERCENTILE>` | Percentile value (0-100) Required. |
 
 ### `qsmxt mask bet`
@@ -1437,9 +1441,10 @@ qsmxt mask bet [OPTIONS] --output <OUTPUT> <INPUT>
 | --- | --- |
 | `<INPUT>` | Input NIfTI file (an image for the generating subcommands, a mask for the rest) Required. |
 | `-o, --output <OUTPUT>` | Output mask NIfTI file. Required. |
-| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
+| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, majority (3x3x3 majority filter), min-intensity:100 (remove voxels below 100 in the input image; needs an image input), signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
 | `--fractional-intensity <FRACTIONAL_INTENSITY>` | Fractional intensity (0.0-1.0, smaller = larger brain) Default: `0.5`. |
 | `--voxel-scale <FACTOR>` | Factor applied to the voxel sizes before BET runs — 10 for mouse data, 1 for the acquisition's own geometry (see --bet-voxel-scale). Prefer `mask rs2-net`, which masks rodent brains without the trick. |
+| `--orientation <ORIENTATION>` | Which way round BET sees the left-right axis: fsl (default) or as-stored (see --bet-orientation) |
 
 ### `qsmxt mask hd-bet`
 
@@ -1453,7 +1458,7 @@ qsmxt mask hd-bet [OPTIONS] --output <OUTPUT> <INPUT>
 | --- | --- |
 | `<INPUT>` | Input NIfTI file (an image for the generating subcommands, a mask for the rest) Required. |
 | `-o, --output <OUTPUT>` | Output mask NIfTI file. Required. |
-| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
+| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, majority (3x3x3 majority filter), min-intensity:100 (remove voxels below 100 in the input image; needs an image input), signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
 | `--window` | Run in 192x192x96 sliding-window patches (about 3.6–4.5 GB measured) instead of on the whole volume (the default; about 6–8 GB measured, and about twice as fast) |
 | `--low-memory` | Use 128x128x64 sliding-window patches (about 1.5–1.9 GB measured) |
 | `--patch <PATCH>` | Sliding-window patch size XxYxZ in voxels at 1 mm (multiples of 32x32x16) |
@@ -1472,7 +1477,7 @@ qsmxt mask rs2-net [OPTIONS] --output <OUTPUT> <INPUT>
 | --- | --- |
 | `<INPUT>` | Input NIfTI file (an image for the generating subcommands, a mask for the rest) Required. |
 | `-o, --output <OUTPUT>` | Output mask NIfTI file. Required. |
-| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
+| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, majority (3x3x3 majority filter), min-intensity:100 (remove voxels below 100 in the input image; needs an image input), signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
 | `--tta` | 8-fold mirroring test-time augmentation (about 8x slower) |
 | `--tile-step <TILE_STEP>` | Sliding-window step as a fraction of the patch, in (0, 1]. Larger steps mean fewer patches and a shorter run: 0.5 (default) is nnU-Net's own, 1.0 abuts the patches. |
 
@@ -1488,7 +1493,7 @@ qsmxt mask mindgrab [OPTIONS] --output <OUTPUT> <INPUT>
 | --- | --- |
 | `<INPUT>` | Input NIfTI file (an image for the generating subcommands, a mask for the rest) Required. |
 | `-o, --output <OUTPUT>` | Output mask NIfTI file. Required. |
-| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
+| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, majority (3x3x3 majority filter), min-intensity:100 (remove voxels below 100 in the input image; needs an image input), signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
 | `--tta` | Left-right flip test-time augmentation (about 2x slower) |
 
 ### `qsmxt mask preset`
@@ -1504,9 +1509,10 @@ qsmxt mask preset [OPTIONS] --output <OUTPUT> <PRESET> <INPUT>
 | `<PRESET>` | Which recipe — the same names as `run --mask-preset`. Values: `robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`, `rs2-net`, `mindgrab`. Required. |
 | `<INPUT>` | Input NIfTI file (an image for the generating subcommands, a mask for the rest) Required. |
 | `-o, --output <OUTPUT>` | Output mask NIfTI file. Required. |
-| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
+| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, majority (3x3x3 majority filter), min-intensity:100 (remove voxels below 100 in the input image; needs an image input), signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
 | `--quality <QUALITY>` | Phase-quality map (from `qsmxt quality-map`) for the sections that read phase quality. Without it those sections read the input image instead, as `run --masking-input` would. |
 | `--phase <PHASE>` | Phase image (3-D, or 4-D multi-echo): the mask leaves out voxels where the scanner recorded no phase (a constant value in every echo), as `qsmxt run` does for every recipe. A phase-quality map rates that flat phase as reliable, so give this with `--quality`. |
+| `--bet-orientation <ORIENTATION>` | Which way round the recipe's BET steps see the left-right axis: fsl (default) or as-stored (see `run --bet-orientation`) |
 
 ### `qsmxt mask robust`
 
@@ -1520,7 +1526,7 @@ qsmxt mask robust [OPTIONS] --output <OUTPUT> <INPUT>
 | --- | --- |
 | `<INPUT>` | Input NIfTI file (an image for the generating subcommands, a mask for the rest) Required. |
 | `-o, --output <OUTPUT>` | Output mask NIfTI file. Required. |
-| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
+| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, majority (3x3x3 majority filter), min-intensity:100 (remove voxels below 100 in the input image; needs an image input), signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
 
 ### `qsmxt mask erode`
 
@@ -1534,7 +1540,7 @@ qsmxt mask erode [OPTIONS] --output <OUTPUT> <INPUT>
 | --- | --- |
 | `<INPUT>` | Input NIfTI file (an image for the generating subcommands, a mask for the rest) Required. |
 | `-o, --output <OUTPUT>` | Output mask NIfTI file. Required. |
-| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
+| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, majority (3x3x3 majority filter), min-intensity:100 (remove voxels below 100 in the input image; needs an image input), signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
 | `--iterations <ITERATIONS>` | Number of erosion iterations. Default: `1`. |
 
 ### `qsmxt mask dilate`
@@ -1549,7 +1555,7 @@ qsmxt mask dilate [OPTIONS] --output <OUTPUT> <INPUT>
 | --- | --- |
 | `<INPUT>` | Input NIfTI file (an image for the generating subcommands, a mask for the rest) Required. |
 | `-o, --output <OUTPUT>` | Output mask NIfTI file. Required. |
-| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
+| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, majority (3x3x3 majority filter), min-intensity:100 (remove voxels below 100 in the input image; needs an image input), signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
 | `--iterations <ITERATIONS>` | Number of dilation iterations. Default: `1`. |
 
 ### `qsmxt mask close`
@@ -1564,8 +1570,22 @@ qsmxt mask close [OPTIONS] --output <OUTPUT> <INPUT>
 | --- | --- |
 | `<INPUT>` | Input NIfTI file (an image for the generating subcommands, a mask for the rest) Required. |
 | `-o, --output <OUTPUT>` | Output mask NIfTI file. Required. |
-| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
+| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, majority (3x3x3 majority filter), min-intensity:100 (remove voxels below 100 in the input image; needs an image input), signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
 | `--radius <RADIUS>` | Closing radius. Default: `1`. |
+
+### `qsmxt mask majority`
+
+3x3x3 majority filter on a binary mask (MATLAB's bwmorph3 'majority')
+
+```sh
+qsmxt mask majority [OPTIONS] --output <OUTPUT> <INPUT>
+```
+
+| Argument | Description |
+| --- | --- |
+| `<INPUT>` | Input NIfTI file (an image for the generating subcommands, a mask for the rest) Required. |
+| `-o, --output <OUTPUT>` | Output mask NIfTI file. Required. |
+| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, majority (3x3x3 majority filter), min-intensity:100 (remove voxels below 100 in the input image; needs an image input), signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
 
 ### `qsmxt mask fill-holes`
 
@@ -1579,7 +1599,7 @@ qsmxt mask fill-holes [OPTIONS] --output <OUTPUT> <INPUT>
 | --- | --- |
 | `<INPUT>` | Input NIfTI file (an image for the generating subcommands, a mask for the rest) Required. |
 | `-o, --output <OUTPUT>` | Output mask NIfTI file. Required. |
-| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
+| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, majority (3x3x3 majority filter), min-intensity:100 (remove voxels below 100 in the input image; needs an image input), signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
 | `--max-size <MAX_SIZE>` | Maximum hole size in voxels (0 = automatic, 5% of the volume — what every preset uses) Default: `0`. |
 
 ### `qsmxt mask smooth`
@@ -1594,7 +1614,7 @@ qsmxt mask smooth [OPTIONS] --output <OUTPUT> <INPUT>
 | --- | --- |
 | `<INPUT>` | Input NIfTI file (an image for the generating subcommands, a mask for the rest) Required. |
 | `-o, --output <OUTPUT>` | Output mask NIfTI file. Required. |
-| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
+| `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, majority (3x3x3 majority filter), min-intensity:100 (remove voxels below 100 in the input image; needs an image input), signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
 | `--sigma <SIGMA>` | Gaussian sigma in mm. Default: `4`. |
 
 ### `qsmxt mask and`

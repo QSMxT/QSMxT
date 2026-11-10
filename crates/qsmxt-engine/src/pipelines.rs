@@ -462,6 +462,48 @@ mod tests {
         assert_eq!(serde_json::to_value(&c).unwrap(), serde_json::to_value(PipelineConfig::default()).unwrap());
     }
 
+    /// QSMART's pipeline masks as `brainmask.m` does (QSM.rs's rules): BET with f = 0.2 on the
+    /// N4-corrected first echo, then the threshold at 100, the majority filter and a closing of
+    /// radius 2, in that order, and no erosion. Its methods text says so.
+    #[test]
+    fn the_qsmart_pipeline_masks_as_brainmask_m() {
+        use crate::masking::{MaskOp, MaskingInput};
+        let mut c = PipelineConfig::default();
+        choose(&mut c, "qsmart", &facts()).unwrap();
+        let m = &c.masking;
+        assert_eq!(m.sections.len(), 1);
+        assert_eq!(m.sections[0].input, MaskingInput::MagnitudeFirst);
+        assert!(matches!(m.sections[0].generator, MaskOp::Bet { fractional_intensity, .. } if fractional_intensity == 0.2),
+                "{:?}", m.sections[0].generator);
+        assert_eq!(m.sections[0].refinements,
+                   [MaskOp::MinIntensity { value: 100.0 }, MaskOp::Majority, MaskOp::Close { radius: 2 }]);
+        assert!(m.inhomogeneity_correction);
+        assert_eq!(m.inhomogeneity_method, crate::enums::InhomogeneityMethod::N4);
+        assert_eq!(c.bet.orientation, crate::enums::BetOrientation::Fsl);
+        let text = crate::methods::generate_methods(&c);
+        assert!(text.contains("removal of voxels with an intensity below 100, a 3×3×3 majority filter"), "{text}");
+        assert!(text.contains("morphological closing (radius 2 voxels)"), "{text}");
+    }
+
+    /// MEDI's BET.m runs bet2 on the array as stored, and so does the χ-separation toolbox, which
+    /// calls it; every other pipeline's BET reads the image as FSL does (QSM.rs's rules).
+    #[test]
+    fn bet_runs_as_stored_only_for_medis_bet_m() {
+        use crate::enums::BetOrientation;
+        for p in pipelines() {
+            let mut c = PipelineConfig::default();
+            choose(&mut c, p.id, &facts()).unwrap();
+            let as_stored = ["medi-toolbox", "chi-sep-ilsqr", "chi-sep-medi", "chi-sepnet"].contains(&p.id);
+            assert_eq!(c.bet.orientation, if as_stored { BetOrientation::AsStored } else { BetOrientation::Fsl }, "{}", p.id);
+            let text = crate::methods::generate_methods(&c);
+            assert_eq!(text.contains("in its stored voxel order as MEDI's BET.m runs it"), as_stored, "{}: {text}", p.id);
+        }
+        // The command line names the pipeline, not the setting it implies.
+        let mut c = PipelineConfig::default();
+        choose(&mut c, "medi-toolbox", &facts()).unwrap();
+        assert!(!crate::command::generate_command(&c).contains("--bet-orientation"));
+    }
+
     /// The Outputs tab stays as it is.
     #[test]
     fn other_stages_are_kept() {

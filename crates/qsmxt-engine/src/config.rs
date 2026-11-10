@@ -814,9 +814,11 @@ param_config!(HarperellaConfig from qsm_core::bgremove::HarperellaParams {
 param_config!(IharperellaConfig from qsm_core::bgremove::IharperellaParams {
     max_iter: usize, tol: f64, pad: [usize; 3], rim: HarperellaRim
 });
+// `orientation`: which way round every BET step sees the left-right axis: `fsl` (x reversed for a
+// neurologically stored image, as FSL's `bet` reads a file) or `as-stored` (as MEDI's `BET.m`).
 param_config!(BetConfig from qsm_core::bet::BetParams {
     fractional_intensity: f64, smoothness: f64, gradient_threshold: f64,
-    iterations: usize, subdivisions: usize, voxel_scale: f64
+    iterations: usize, subdivisions: usize, voxel_scale: f64, orientation: BetOrientation
 });
 param_config!(HomogeneityConfig from qsm_core::utils::HomogeneityParams {
     sigma_mm: f64, nbox: usize

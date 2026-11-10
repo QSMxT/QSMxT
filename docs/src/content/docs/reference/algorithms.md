@@ -58,7 +58,10 @@ every recipe's mask leaves those voxels out, and the log and the methods say so.
   the run time.
 - **Refinements:** `erode[:<n>]`, `dilate[:<n>]`, `close[:<r>]`, `fill-holes[:<max>]`
   (`0`, or omitted, is automatic: holes up to 5% of the volume),
-  `gaussian[:<sigma_mm>]`, and
+  `gaussian[:<sigma_mm>]`, `min-intensity:<v>` (remove the mask's voxels whose
+  intensity in the section's input image is below `<v>`), `majority` (a 3×3×3
+  majority filter, MATLAB's `bwmorph3` `'majority'`: a voxel is kept when at least
+  14 of its 27 neighbours, itself included, are in the mask), and
   `signal-erode[:<threshold>[:<depth_cap>[:<global_erosions>[:<bias_sigma>[:<min_component>]]]]]`.
   `signal-erode` removes only boundary voxels whose bias-corrected magnitude is
   below `threshold` × the in-mask median (default 0.80). It works inward through
@@ -78,7 +81,18 @@ every recipe's mask leaves those voxels out, and the log and the methods say so.
   budget. The default of 1 is the QSM-CI harmonization setting.
 
 For example, `--mask magnitude,hd-bet:low-memory,signal-erode` is the `hd-bet`
-preset with the low-memory patch size.
+preset with the low-memory patch size, and
+`--mask magnitude-first,bet:0.20,min-intensity:100,majority,close:2` is QSMART's
+mask (`brainmask.m`), which `--pipeline qsmart` sets up with N4 correction.
+
+BET's surface settings (`--bet-smoothness`, `--bet-gradient-threshold`,
+`--bet-iterations`, `--bet-subdivisions`, `--bet-voxel-scale`) and its
+orientation apply to every BET step. `--bet-orientation fsl` (the default) runs
+BET on the image as FSL's `bet` reads a NIfTI file, left-right reversed when the
+image is stored neurologically. `--bet-orientation as-stored` runs it on the
+voxels in the order they are stored, as MEDI's `BET.m` hands its bet2 mex the
+array; the MEDI toolbox and χ-separation pipelines use it. BET's surface is not
+symmetric, so the two masks differ slightly at the brain's edge.
 
 ### Combining sections
 
@@ -152,8 +166,8 @@ The two methods give different images. `makehomogeneous` returns the magnitude
 divided by its sensitivity estimate, about 1 in tissue; N4 keeps the image's own
 intensity scale. Otsu and percentile thresholds, BET, the deep-learning brain
 extractors and `signal-erode` do not depend on that scale, but a
-`threshold:fixed:<v>` step on a magnitude input does: choose `<v>` for the
-method in use.
+`threshold:fixed:<v>` or `min-intensity:<v>` step on a magnitude input does:
+choose `<v>` for the method in use.
 
 `qsmxt homogeneity` runs either on a single image (`--method makehomogeneous|n4`,
 with the same N4 options).

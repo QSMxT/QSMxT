@@ -367,6 +367,44 @@ impl From<qsm_core::inversion::NdiWeightNorm> for NdiWeightNorm {
     }
 }
 
+/// Which way round BET sees the image's left-right axis (qsm-core `BetOrientation`).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub enum BetOrientation {
+    /// As FSL's `bet` reads a NIfTI file: x reversed when the header is neurological.
+    #[default]
+    #[serde(rename = "fsl")]
+    Fsl,
+    /// The voxels in the order they are stored, as MEDI's `BET.m` hands its bet2 mex the array.
+    #[serde(rename = "as-stored")]
+    AsStored,
+}
+impl BetOrientation {
+    /// Every variant, in the order the CLI help and the TUI list them.
+    pub const ALL: [BetOrientation; 2] = [Self::Fsl, Self::AsStored];
+
+    /// The name the CLI, the config file and the TUI use (qsm-core's `BetOrientation::id`).
+    pub fn as_str(self) -> &'static str {
+        qsm_core::bet::BetOrientation::from(self).id()
+    }
+}
+impl fmt::Display for BetOrientation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl From<BetOrientation> for qsm_core::bet::BetOrientation {
+    fn from(o: BetOrientation) -> Self {
+        use qsm_core::bet::BetOrientation as O;
+        match o { BetOrientation::Fsl => O::Fsl, BetOrientation::AsStored => O::AsStored }
+    }
+}
+impl From<qsm_core::bet::BetOrientation> for BetOrientation {
+    fn from(o: qsm_core::bet::BetOrientation) -> Self {
+        use qsm_core::bet::BetOrientation as O;
+        match o { O::Fsl => Self::Fsl, O::AsStored => Self::AsStored }
+    }
+}
+
 /// WH-QSM's data weight (qsm-core `WhQsmWeight`).
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]

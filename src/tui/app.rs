@@ -1521,6 +1521,7 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("custom_mask_tool", "masking.custom_mask_tool"), ("two_pass", "masking.two_pass"),
     ("bet_smoothness", "bet.smoothness"), ("bet_gradient_threshold", "bet.gradient_threshold"),
     ("bet_iterations", "bet.iterations"), ("bet_subdivisions", "bet.subdivisions"),
+    ("bet_orientation", "bet.orientation"),
     ("motion_correction", "motion_correction.enabled"), ("motion_reference", "motion_correction.reference"),
     ("motion_reference_echo", "motion_correction.reference"), ("motion_chain", "motion_correction.chain"),
     ("motion_chain_levels", "motion_correction.chain_levels"), ("motion_min_ncc", "motion_correction.min_ncc"),
@@ -1720,7 +1721,8 @@ pub fn field_of_path(path: &str) -> Option<&'static str> {
 }
 
 pub const MASK_OP_TYPES: &[&str] = &[
-    "threshold", "bet", "hd-bet", "erode", "dilate", "close", "fill-holes", "gaussian", "signal-erode",
+    "threshold", "bet", "hd-bet", "erode", "dilate", "close", "min-intensity", "majority", "fill-holes", "gaussian",
+    "signal-erode",
 ];
 
 /// Ops that create a mask (the section's generator); the rest are refinements.
@@ -2373,6 +2375,8 @@ pub struct PipelineFormState {
     pub bet_gradient_threshold: String,
     pub bet_iterations: String,
     pub bet_subdivisions: String,
+    /// An index into BET_ORIENTATION_OPTIONS.
+    pub bet_orientation: usize,
     /// How the sections fold together (OR = union, AND = intersection).
     pub mask_combine: crate::pipeline::config::MaskCombine,
     /// Refinements applied to the combined mask, after `mask_combine`.
@@ -2849,6 +2853,7 @@ impl Default for PipelineFormState {
             bet_gradient_threshold: format!("{}", qsm_core::bet::BetParams::default().gradient_threshold),
             bet_iterations: format!("{}", qsm_core::bet::BetParams::default().iterations),
             bet_subdivisions: format!("{}", qsm_core::bet::BetParams::default().subdivisions),
+            bet_orientation: bet_orientation_index(qsmxt_engine::BetConfig::default().orientation),
             mask_combine: crate::pipeline::config::MaskCombine::Or,
             mask_combined_refinements: vec![],
             two_pass: false,
@@ -3173,6 +3178,27 @@ const IHARPERELLA_RIM_HELP: &[&str] = &[
 ];
 fn harperella_rim_index(r: qsmxt_engine::HarperellaRim) -> usize {
     qsmxt_engine::HarperellaRim::ALL.iter().position(|&x| x == r).unwrap_or(0)
+}
+/// A minimum intensity one ←/→ step on: by a tenth of its order of magnitude (100 → 110 or 90,
+/// 0.5 → 0.55 or 0.45), so a magnitude in any units can be adjusted. Stays above 0.
+fn step_min_intensity(value: f64, delta: isize) -> f64 {
+    // Going down from a power of ten steps by the smaller order (100 → 99, not 90 → 0 eventually).
+    let base = if delta < 0 { value * (1.0 - 1e-9) } else { value };
+    let step = 10f64.powf(base.max(f64::MIN_POSITIVE).log10().floor() - 1.0);
+    let next = value + delta as f64 * step;
+    // Round to the step, so repeated steps do not accumulate floating-point noise.
+    let next = (next / step).round() * step;
+    if next > 0.0 { next } else { value }
+}
+
+/// BET's left-right orientation, in the CLI's names.
+pub const BET_ORIENTATION_OPTIONS: &[&str] = &["fsl", "as-stored"];
+const BET_ORIENTATION_HELP: &[&str] = &[
+    "Left-right reversed for a neurologically stored image, as FSL's bet reads a NIfTI file (default)",
+    "The voxels in the order they are stored, as MEDI's BET.m runs bet2",
+];
+fn bet_orientation_index(o: qsmxt_engine::BetOrientation) -> usize {
+    qsmxt_engine::BetOrientation::ALL.iter().position(|&x| x == o).unwrap_or(0)
 }
 /// NDI's magnitude-weight normaliser, in the CLI's names.
 pub const NDI_WEIGHT_NORM_OPTIONS: &[&str] = &["global-max", "mask-p999"];
@@ -4913,6 +4939,7 @@ impl PipelineFormState {
             "ismv_variant" => self.ismv_variant,
             "harperella_rim" => self.harperella_rim,
             "iharperella_rim" => self.iharperella_rim,
+            "bet_orientation" => self.bet_orientation,
             "ndi_weight_norm" => self.ndi_weight_norm,
             "nltv_te" => self.nltv_te,
             "medi_te" => self.medi_te,
@@ -4980,6 +5007,7 @@ impl PipelineFormState {
             "ismv_variant" => self.ismv_variant = val.min(ISMV_VARIANT_OPTIONS.len() - 1),
             "harperella_rim" => self.harperella_rim = val.min(HARPERELLA_RIM_OPTIONS.len() - 1),
             "iharperella_rim" => self.iharperella_rim = val.min(HARPERELLA_RIM_OPTIONS.len() - 1),
+            "bet_orientation" => self.bet_orientation = val.min(BET_ORIENTATION_OPTIONS.len() - 1),
             "ndi_weight_norm" => self.ndi_weight_norm = val.min(NDI_WEIGHT_NORM_OPTIONS.len() - 1),
             "nltv_te" => self.nltv_te = val.min(ECHO_TIME_OPTIONS.len() - 1),
             "medi_te" => self.medi_te = val.min(ECHO_TIME_OPTIONS.len() - 1),
@@ -5132,6 +5160,8 @@ impl PipelineFormState {
             MaskOp::Erode { iterations } => ("erode", format!("{}", iterations)),
             MaskOp::Dilate { iterations } => ("dilate", format!("{}", iterations)),
             MaskOp::Close { radius } => ("close", format!("{}", radius)),
+            MaskOp::MinIntensity { value } => ("min-intensity", format!("{}", value)),
+            MaskOp::Majority => ("majority", "3×3×3".to_string()),
             MaskOp::FillHoles { max_size } => ("fill-holes", if *max_size == 0 { "auto".to_string() } else { format!("{}", max_size) }),
             MaskOp::GaussianSmooth { sigma_mm } => ("gaussian", format!("{}", sigma_mm)),
             MaskOp::HdBet { patch, tta, tile_step } => {
@@ -5170,6 +5200,8 @@ impl PipelineFormState {
             MaskOp::Threshold { .. } => format!("{} (←/→ to change the method)", step.help),
             MaskOp::HdBet { .. } | MaskOp::Rs2Net { .. } | MaskOp::MindGrab { .. } =>
                 format!("{} (needs a deep-learning build)", step.help),
+            // Nothing to adjust.
+            MaskOp::Majority => step.help.to_string(),
             // The row shows the step's first parameter (signal-erode's threshold); the rest have
             // rows of their own.
             _ => format!("{} (←/→ to adjust)", step.params.first().map_or(step.help, |p| p.help)),
@@ -5338,6 +5370,7 @@ impl PipelineFormState {
         rows.push(PipelineRow::Param { label: "Gradient threshold", field: "bet_gradient_threshold", help: "BET gradient threshold, -1 to 1 (shared by every BET step)" });
         rows.push(PipelineRow::Param { label: "Iterations", field: "bet_iterations", help: "BET surface evolution iterations (shared by every BET step)" });
         rows.push(PipelineRow::Param { label: "Subdivisions", field: "bet_subdivisions", help: "BET icosphere subdivision level (shared by every BET step)" });
+        rows.push(PipelineRow::AlgoSelect { label: "Orientation", field: "bet_orientation", options: BET_ORIENTATION_OPTIONS, help: BET_ORIENTATION_HELP });
     }
 
     /// The first section, main mask then two-pass mask, whose generator is BET.
@@ -5631,6 +5664,10 @@ impl PipelineFormState {
             MaskOp::Close { radius } => {
                 *radius = (*radius as isize + delta).max(1) as usize;
             }
+            MaskOp::MinIntensity { value } => {
+                *value = step_min_intensity(*value, delta);
+            }
+            MaskOp::Majority => {}
             MaskOp::FillHoles { max_size } => {
                 *max_size = (*max_size as isize + delta * 100).max(0) as usize;
             }
@@ -13095,15 +13132,15 @@ mod tests {
         let rows = app.rows();
         let start = rows.iter().position(|r| matches!(r, PipelineRow::MaskOpGenerator { section: 0 }))
             .expect("generator row");
-        let block: Vec<String> = rows[start..start + 7].iter().map(|r| match r {
+        let block: Vec<String> = rows[start..start + 8].iter().map(|r| match r {
             PipelineRow::MaskOpGenerator { .. } => "generator".to_string(),
             PipelineRow::MaskOpGeneratorParam { .. } => "frac".to_string(),
             PipelineRow::MaskOpBetVoxelScale { .. } => "scale".to_string(),
-            PipelineRow::Param { field, .. } => field.to_string(),
+            PipelineRow::Param { field, .. } | PipelineRow::AlgoSelect { field, .. } => field.to_string(),
             other => format!("{other:?}"),
         }).collect();
         assert_eq!(block, ["generator", "frac", "scale", "bet_smoothness", "bet_gradient_threshold",
-            "bet_iterations", "bet_subdivisions"]);
+            "bet_iterations", "bet_subdivisions", "bet_orientation"]);
         // Listed once, however many BET steps share them.
         let count = |app: &App| app.rows().iter()
             .filter(|r| matches!(r, PipelineRow::Param { field: "bet_smoothness", .. })).count();
