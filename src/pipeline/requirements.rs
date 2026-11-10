@@ -7,6 +7,26 @@ use crate::pipeline::config::PipelineConfig;
 pub use qsmxt_engine::requirements::*;
 pub use qsmxt_engine::scan::ScanFacts;
 
+/// `config` for `run`: a pipeline chosen on the command line (`--pipeline`, applied before any scan
+/// was read) completed with the scan's facts ([`qsmxt_engine::pipelines::on_scan`]), with the
+/// changes it made, for the log. Unchanged when no pipeline was chosen.
+pub fn run_config(run: &QsmRun, config: &PipelineConfig) -> crate::Result<(PipelineConfig, Vec<qsmxt_engine::pipelines::Change>)> {
+    let facts = scan_facts(run, config);
+    qsmxt_engine::pipelines::on_scan(config, &qsmxt_engine::schema::ViewFacts::from(&facts))
+        .map_err(crate::error::QsmxtError::Config)
+}
+
+/// The config the runs will run, for text about them all (the dry run's methods, graph and
+/// settings): each run's [`run_config`] when they all agree, else `config` as given.
+pub fn planned_config(config: &PipelineConfig, runs: &[QsmRun]) -> PipelineConfig {
+    let completed: Vec<PipelineConfig> = runs.iter().filter_map(|r| run_config(r, config).ok().map(|(c, _)| c)).collect();
+    let same = |a: &PipelineConfig, b: &PipelineConfig| serde_json::to_value(a).ok() == serde_json::to_value(b).ok();
+    match completed.first() {
+        Some(first) if completed.len() == runs.len() && completed.iter().all(|c| same(c, first)) => first.clone(),
+        _ => config.clone(),
+    }
+}
+
 /// How the run's phase is converted to ppm, for the run listing: the centre frequency when its
 /// sidecar gives `ImagingFrequency` (`, ppm from ImagingFrequency 123.200 MHz = 2.894 T`), else
 /// a note that the nominal field strength is used.

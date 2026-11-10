@@ -468,6 +468,11 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
                 crate::pipeline::requirements::centre_frequency_note(run),
                 memory::format_bytes(est),
             );
+            if let Ok((_, changes)) = crate::pipeline::requirements::run_config(run, &config) {
+                for c in changes {
+                    println!("    {}: {} → {} (the pipeline's on this scan)", c.label, c.from_text, c.to_text);
+                }
+            }
         }
         if let Err(e) = print_orientation_groups(&runs, &config) {
             eprintln!("  orientation grouping: {e}");
@@ -729,6 +734,8 @@ pub(crate) fn finish(
 /// from the configuration and each run's scan. Nothing is written: a dry run leaves the dataset
 /// alone.
 fn print_planned(derivatives_dir: &std::path::Path, config: &PipelineConfig, runs: &[discovery::QsmRun]) {
+    // A `--pipeline` is completed on each scan: show what the runs will run when they agree.
+    let config = &crate::pipeline::requirements::planned_config(config, runs);
     let output = DerivativeOutputs::new(derivatives_dir);
     if let Some(graph) = dataset_graph(config, runs) {
         println!();

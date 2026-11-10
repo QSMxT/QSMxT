@@ -40,6 +40,8 @@ fn facts(fx: &Value, echoes: usize) -> ScanFacts {
         n_coils: 1,
         real_imaginary: false,
         field_strength: s["field_strength"].as_f64().unwrap(),
+        nominal_field_strength: None,
+        imaging_frequency: None,
         b0_dir: None,
         mese_echo_times: None,
         custom_mask: false, custom_dseg: false, custom_qsm: false, custom_r2: false, custom_r2prime: false, manufacturer: None,
