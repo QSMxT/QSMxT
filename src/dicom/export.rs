@@ -41,6 +41,8 @@ const UID_ROOT: &str = "2.25";
 pub struct DicomExportOptions<'a> {
     /// Export the SWI and minIP maps if present.
     pub export_swi: bool,
+    /// Export the SMWI maps and their minIPs (paramagnetic and diamagnetic) if present.
+    pub export_smwi: bool,
     /// Export the T2* map if present.
     pub export_t2star: bool,
     /// Export the R2* map if present.
@@ -54,11 +56,19 @@ pub struct DicomExportOptions<'a> {
     /// Optional source DICOM directory to inherit patient/study identity from.
     pub source_dicom: Option<&'a Path>,
     /// Optional subset of map suffixes to export (case-insensitive tokens like
-    /// `chimap`, `swi`, `minip`, `t2starmap`, `r2starmap`, `r2map`, `r2primemap`,
+    /// `chimap`, `swi`, `minip`, `desc-paramagnetic_smwi`, `desc-paramagneticsmwi_minip` (and
+    /// the diamagnetic pair), `t2starmap`, `r2starmap`, `r2map`, `r2primemap`,
     /// `desc-paramagnetic_chimap`, `desc-diamagnetic_chimap`, `desc-total_chimap`).
     /// `None` = all produced.
     pub outputs_filter: Option<&'a [String]>,
 }
+
+/// The SMWI series' suffixes, (SMWI, its minIP), paramagnetic then diamagnetic: the published
+/// names' tails ([`qsmxt_engine::bids::naming::smwi`], `smwi_minip`).
+const SMWI_SUFFIXES: [(&str, &str); 2] = [
+    ("desc-paramagnetic_smwi", "desc-paramagneticsmwi_minIP"),
+    ("desc-diamagnetic_smwi", "desc-diamagneticsmwi_minIP"),
+];
 
 /// A final map eligible for DICOM export.
 struct MapExport {
@@ -88,6 +98,12 @@ struct DicomIdentity {
     accession_number: String,
     referring_physician: String,
     manufacturer: String,
+    // MR attributes a viewer may read the series by (Type 2/2C): the source's, else empty.
+    patient_position: String,
+    laterality: String,
+    body_part: String,
+    repetition_time: String,
+    echo_train_length: String,
 }
 
 /// Export all enabled final maps for a completed run as DICOM series.
@@ -115,6 +131,14 @@ pub fn export_run_dicoms(
     if opts.export_swi {
         maps.push(MapExport { suffix: "swi", path: output.swi_path(key), description: "QSMxT SWI".to_string() });
         maps.push(MapExport { suffix: "minIP", path: output.swi_mip_path(key), description: "QSMxT SWI minIP".to_string() });
+    }
+    if opts.export_smwi {
+        use qsmxt_engine::store::Contrast;
+        for (contrast, name) in [(Contrast::Paramagnetic, "paramagnetic"), (Contrast::Diamagnetic, "diamagnetic")] {
+            let (smwi, minip) = SMWI_SUFFIXES[usize::from(contrast == Contrast::Diamagnetic)];
+            maps.push(MapExport { suffix: smwi, path: output.smwi_path(key, contrast), description: format!("QSMxT {name} SMWI") });
+            maps.push(MapExport { suffix: minip, path: output.smwi_mip_path(key, contrast), description: format!("QSMxT {name} SMWI minIP") });
+        }
     }
     if opts.export_t2star {
         maps.push(MapExport { suffix: "T2starmap", path: output.t2star_path(key), description: "QSMxT T2* map".to_string() });
@@ -194,6 +218,11 @@ fn build_identity(run: &QsmRun, source_dicom: Option<&Path>) -> DicomIdentity {
                 id.accession_number = src.accession_number;
                 id.referring_physician = src.referring_physician;
                 if !src.manufacturer.is_empty() { id.manufacturer = src.manufacturer; }
+                id.patient_position = src.patient_position;
+                id.laterality = src.laterality;
+                id.body_part = src.body_part;
+                id.repetition_time = src.repetition_time;
+                id.echo_train_length = src.echo_train_length;
             }
             None => warn!(
                 "DICOM export: no readable DICOM found under --source-dicom {}; synthesizing identity",
@@ -223,6 +252,11 @@ fn read_source_template(dir: &Path) -> Option<DicomIdentity> {
         accession_number: get(tags::ACCESSION_NUMBER),
         referring_physician: get(tags::REFERRING_PHYSICIAN_NAME),
         manufacturer: get(tags::MANUFACTURER),
+        patient_position: get(tags::PATIENT_POSITION),
+        laterality: get(tags::LATERALITY),
+        body_part: get(tags::BODY_PART_EXAMINED),
+        repetition_time: get(tags::REPETITION_TIME),
+        echo_train_length: get(tags::ECHO_TRAIN_LENGTH),
     })
 }
 
@@ -313,6 +347,7 @@ fn export_map(m: ExportMap) -> crate::Result<usize> {
             slope,
             intercept,
             description: m.description,
+            suffix: m.suffix,
             series_uid: &series_uid,
             sop_uid: &sop_uid,
             identity: m.identity,
@@ -348,6 +383,7 @@ struct BuildSlice<'a> {
     slope: f64,
     intercept: f64,
     description: &'a str,
+    suffix: &'a str,
     series_uid: &'a str,
     sop_uid: &'a str,
     identity: &'a DicomIdentity,
@@ -365,8 +401,12 @@ fn build_slice(s: BuildSlice) -> InMemDicomObject {
     // SOP Common
     obj.put(DataElement::new(tags::SOP_CLASS_UID, VR::UI, uids::MR_IMAGE_STORAGE));
     obj.put(DataElement::new(tags::SOP_INSTANCE_UID, VR::UI, s.sop_uid));
-    // DERIVED (computed), SECONDARY (not the original acquisition).
-    obj.put(DataElement::new(tags::IMAGE_TYPE, VR::CS, PrimitiveValue::Strs(["DERIVED".to_string(), "SECONDARY".to_string()].into_iter().collect())));
+    // DERIVED (computed), SECONDARY (not the original acquisition), and the MR image flavour: a
+    // minimum-intensity projection is a PROJECTION IMAGE; no other defined term fits a QSMxT map
+    // (T2 MAP is T2, not T2*), so OTHER.
+    let flavour = if s.suffix.ends_with("minIP") { "PROJECTION IMAGE" } else { "OTHER" };
+    obj.put(DataElement::new(tags::IMAGE_TYPE, VR::CS, PrimitiveValue::Strs(
+        ["DERIVED", "SECONDARY", flavour].into_iter().map(str::to_string).collect())));
 
     // Patient module (Type 2 — present, possibly empty).
     obj.put(DataElement::new(tags::PATIENT_NAME, VR::PN, id.patient_name.as_str()));
@@ -387,6 +427,16 @@ fn build_slice(s: BuildSlice) -> InMemDicomObject {
     obj.put(DataElement::new(tags::MODALITY, VR::CS, "MR"));
     obj.put(DataElement::new(tags::SERIES_DESCRIPTION, VR::LO, s.description));
     obj.put(DataElement::new(tags::SERIES_NUMBER, VR::IS, s.series_number.to_string()));
+    // Type 2C. Laterality is for a paired body part: the source's when it has one; absent when the
+    // source names an (unpaired) body part, which is then copied; else present and empty, as
+    // QSMxT does not know the body part. The patient position is the source's or empty.
+    if !id.laterality.is_empty() || id.body_part.is_empty() {
+        obj.put(DataElement::new(tags::LATERALITY, VR::CS, id.laterality.as_str()));
+    }
+    if !id.body_part.is_empty() {
+        obj.put(DataElement::new(tags::BODY_PART_EXAMINED, VR::CS, id.body_part.as_str()));
+    }
+    obj.put(DataElement::new(tags::PATIENT_POSITION, VR::CS, id.patient_position.as_str()));
     obj.put(DataElement::new(tags::FRAME_OF_REFERENCE_UID, VR::UI, id.frame_of_reference_uid.as_str()));
     obj.put(DataElement::new(tags::POSITION_REFERENCE_INDICATOR, VR::LO, ""));
     obj.put(DataElement::new(tags::MANUFACTURER, VR::LO, id.manufacturer.as_str()));
@@ -397,6 +447,10 @@ fn build_slice(s: BuildSlice) -> InMemDicomObject {
     obj.put(DataElement::new(tags::SEQUENCE_VARIANT, VR::CS, "NONE"));
     obj.put(DataElement::new(tags::SCAN_OPTIONS, VR::CS, ""));
     obj.put(DataElement::new(tags::MR_ACQUISITION_TYPE, VR::CS, "3D"));
+    // Type 2C/2: the acquisition's, when --source-dicom gives them; QSMxT does not know them
+    // otherwise (BIDS sidecars need not carry them), so empty rather than guessed.
+    obj.put(DataElement::new(tags::REPETITION_TIME, VR::DS, id.repetition_time.as_str()));
+    obj.put(DataElement::new(tags::ECHO_TRAIN_LENGTH, VR::IS, id.echo_train_length.as_str()));
 
     // Acquisition metadata (best-effort).
     if s.field_strength > 0.0 {
@@ -581,6 +635,10 @@ fn series_number_for(suffix: &str) -> i32 {
         "desc-paramagnetic_Chimap" => 8,
         "desc-diamagnetic_Chimap" => 9,
         "desc-total_Chimap" => 10,
+        "desc-paramagnetic_smwi" => 11,
+        "desc-diamagnetic_smwi" => 12,
+        "desc-paramagneticsmwi_minIP" => 13,
+        "desc-diamagneticsmwi_minIP" => 14,
         _ => 99,
     }
 }
@@ -714,6 +772,13 @@ mod tests {
         assert_eq!(px.len(), nx * ny * 2);
         // Rescale present.
         assert!(obj.element(tags::RESCALE_SLOPE).is_ok());
+        // MR Image Type has its third value, and the Type 2/2C attributes are present, empty
+        // without a source DICOM.
+        let image_type: Vec<String> = obj.element(tags::IMAGE_TYPE).unwrap().to_multi_str().unwrap().to_vec();
+        assert_eq!(image_type, ["DERIVED", "SECONDARY", "OTHER"]);
+        for tag in [tags::LATERALITY, tags::PATIENT_POSITION, tags::REPETITION_TIME, tags::ECHO_TRAIN_LENGTH] {
+            assert_eq!(obj.element(tag).unwrap().to_str().unwrap().trim(), "", "{tag}");
+        }
     }
 
     #[test]
@@ -732,6 +797,10 @@ mod tests {
         src.put(DataElement::new(tags::STUDY_INSTANCE_UID, VR::UI, "1.2.3.4"));
         src.put(DataElement::new(tags::FRAME_OF_REFERENCE_UID, VR::UI, "5.6.7.8"));
         src.put(DataElement::new(tags::MANUFACTURER, VR::LO, "ACME"));
+        src.put(DataElement::new(tags::PATIENT_POSITION, VR::CS, "HFS"));
+        src.put(DataElement::new(tags::REPETITION_TIME, VR::DS, "28"));
+        src.put(DataElement::new(tags::ECHO_TRAIN_LENGTH, VR::IS, "4"));
+        src.put(DataElement::new(tags::BODY_PART_EXAMINED, VR::CS, "HEAD"));
         src.with_meta(
             FileMetaTableBuilder::new()
                 .transfer_syntax(uids::EXPLICIT_VR_LITTLE_ENDIAN)
@@ -770,6 +839,9 @@ mod tests {
         assert_eq!(id.study_uid, "1.2.3.4");
         assert_eq!(id.frame_of_reference_uid, "5.6.7.8");
         assert_eq!(id.manufacturer, "ACME");
+        assert_eq!((id.patient_position.as_str(), id.repetition_time.as_str(), id.echo_train_length.as_str()), ("HFS", "28", "4"));
+        assert!(id.laterality.is_empty(), "absent from the source: empty");
+        assert_eq!(id.body_part, "HEAD");
 
         // Without a source, identity is synthesized (empty patient, non-empty UIDs).
         let synth = build_identity(&run, None);
@@ -793,6 +865,8 @@ mod tests {
         let suffixes = [
             "Chimap", "swi", "minIP", "T2starmap", "R2starmap", "R2map", "R2primemap",
             "desc-paramagnetic_Chimap", "desc-diamagnetic_Chimap", "desc-total_Chimap",
+            "desc-paramagnetic_smwi", "desc-diamagnetic_smwi", "desc-paramagneticsmwi_minIP",
+            "desc-diamagneticsmwi_minIP",
         ];
         let mut nums: Vec<i32> = suffixes.iter().map(|s| series_number_for(s)).collect();
         assert!(nums.iter().all(|&n| n != 99), "a known suffix fell through to the fallback");
@@ -802,7 +876,7 @@ mod tests {
     }
 
     #[test]
-    fn test_export_run_dicoms_covers_chisep_r2_r2prime() {
+    fn test_export_run_dicoms_covers_chisep_r2_r2prime_smwi() {
         use crate::bids::entities::AcquisitionKey;
 
         let tmp = tempfile::tempdir().unwrap();
@@ -837,6 +911,16 @@ mod tests {
         write(output.chi_para_path(&key));
         write(output.chi_dia_path(&key));
         write(output.chi_sep_total_path(&key));
+        use qsmxt_engine::store::Contrast;
+        for c in [Contrast::Paramagnetic, Contrast::Diamagnetic] {
+            write(output.smwi_path(&key, c));
+            write(output.smwi_mip_path(&key, c));
+        }
+        // The series are named after the published files' tails.
+        for (c, (smwi, minip)) in [Contrast::Paramagnetic, Contrast::Diamagnetic].into_iter().zip(SMWI_SUFFIXES) {
+            assert!(output.smwi_path(&key, c).to_string_lossy().ends_with(&format!("_{smwi}.nii")), "{smwi}");
+            assert!(output.smwi_mip_path(&key, c).to_string_lossy().ends_with(&format!("_{minip}.nii")), "{minip}");
+        }
 
         let run = crate::bids::discovery::QsmRun {
             key: key.clone(),
@@ -852,6 +936,7 @@ mod tests {
 
         let opts = DicomExportOptions {
             export_swi: false,
+            export_smwi: true,
             export_t2star: false,
             export_r2star: true,
             export_r2: true,
@@ -860,7 +945,7 @@ mod tests {
             source_dicom: None,
             outputs_filter: None,
         };
-        assert_eq!(export_run_dicoms(&run, &output, &opts).unwrap(), 7);
+        assert_eq!(export_run_dicoms(&run, &output, &opts).unwrap(), 11);
         // Nothing to export is no series, which the run's record then does not claim.
         let empty = tempfile::tempdir().unwrap();
         assert_eq!(export_run_dicoms(&run, &DerivativeOutputs::new(empty.path()), &opts).unwrap(), 0);
@@ -869,6 +954,8 @@ mod tests {
         for suffix in [
             "Chimap", "R2starmap", "R2map", "R2primemap",
             "desc-paramagnetic_Chimap", "desc-diamagnetic_Chimap", "desc-total_Chimap",
+            "desc-paramagnetic_smwi", "desc-diamagnetic_smwi", "desc-paramagneticsmwi_minIP",
+            "desc-diamagneticsmwi_minIP",
         ] {
             let dir = output.dicom_dir(&key, suffix);
             assert!(dir.is_dir(), "missing DICOM dir for {suffix}");
@@ -899,3 +986,4 @@ mod tests {
         assert!((g.col_spacing - 1.0).abs() < 1e-12);
     }
 }
+

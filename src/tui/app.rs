@@ -511,10 +511,14 @@ pub struct DicomMap {
 }
 
 /// Every map DICOM export writes, in series order ([`crate::dicom::export`]).
-pub const DICOM_MAPS: [DicomMap; 10] = [
+pub const DICOM_MAPS: [DicomMap; 14] = [
     DicomMap { field: "dicom_out_chimap", suffix: "Chimap", label: "  χ (QSM)", group: "χ" },
     DicomMap { field: "dicom_out_swi", suffix: "swi", label: "  SWI", group: "SWI" },
     DicomMap { field: "dicom_out_minip", suffix: "minIP", label: "  SWI minIP", group: "SWI" },
+    DicomMap { field: "dicom_out_smwi_para", suffix: "desc-paramagnetic_smwi", label: "  Paramagnetic SMWI", group: "SMWI" },
+    DicomMap { field: "dicom_out_smwi_dia", suffix: "desc-diamagnetic_smwi", label: "  Diamagnetic SMWI", group: "SMWI" },
+    DicomMap { field: "dicom_out_smwi_para_minip", suffix: "desc-paramagneticsmwi_minIP", label: "  Paramagnetic SMWI minIP", group: "SMWI" },
+    DicomMap { field: "dicom_out_smwi_dia_minip", suffix: "desc-diamagneticsmwi_minIP", label: "  Diamagnetic SMWI minIP", group: "SMWI" },
     DicomMap { field: "dicom_out_t2starmap", suffix: "T2starmap", label: "  T2* map", group: "T2*" },
     DicomMap { field: "dicom_out_r2starmap", suffix: "R2starmap", label: "  R2* map", group: "R2*" },
     DicomMap { field: "dicom_out_r2map", suffix: "R2map", label: "  R2 map", group: "R2" },
@@ -8673,6 +8677,7 @@ impl App {
         match m.group {
             "χ" => self.qsm_on(),
             "SWI" => self.form.do_swi,
+            "SMWI" => self.form.do_smwi,
             "T2*" => self.field_toggle("do_t2starmap"),
             "R2*" => self.field_toggle("do_r2starmap"),
             "R2" => self.field_toggle("do_r2map"),

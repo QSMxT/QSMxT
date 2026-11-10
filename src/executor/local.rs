@@ -88,6 +88,7 @@ pub fn execute_local(
                         let normalised = &config.normalised_for(&facts).0;
                         let opts = crate::dicom::export::DicomExportOptions {
                             export_swi: normalised.pipeline.do_swi,
+                            export_smwi: normalised.pipeline.do_smwi,
                             export_t2star: normalised.pipeline.do_t2starmap,
                             export_r2star: normalised.pipeline.do_r2starmap,
                             export_r2: normalised.pipeline.do_r2map,
