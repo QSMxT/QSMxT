@@ -7,7 +7,7 @@ license = "GPL-3.0-only"
 
 [dependencies]
 # See the note in the root Cargo.toml. Must match the root pin exactly.
-qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "153dc9b003ff558e3735ae8aa9886cee328e467f" }
+qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "70c49d042d3e15b772202dc0cb55041cdac7c32d" }
 # The NIfTI header type qsm-core reads ITK's image geometry from (N4); same version as qsm-core's.
 nifti = { version = "0.17", default-features = false }
 # Reads a gzipped NIfTI header's orientation fields ([`scan::HeaderOrientation::read`]); qsm-core's version.
