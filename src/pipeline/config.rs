@@ -473,6 +473,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.bet_iterations { config.bet.iterations = v; }
         if let Some(v) = args.bet_subdivisions { config.bet.subdivisions = v; }
         if let Some(v) = args.bet_voxel_scale { config.bet.voxel_scale = v; }
+        if let Some(v) = args.bet_orientation { config.bet.orientation = v; }
 
         // ── Inversion params ──
         if let Some(v) = args.rts_params.rts_delta { config.inversion.rts.delta = v; }
@@ -1584,6 +1585,24 @@ mod tests {
                    (2.0, -0.2, 500, 3));
         let c = PipelineConfig::from_toml("[bet]\nsmoothness = 2.0\niterations = 500\n").unwrap();
         assert_eq!((c.bet.smoothness, c.bet.iterations), (2.0, 500));
+    }
+
+    /// QSMART's mask recipe and BET's orientation, from the command line and a config file, and
+    /// back to the same command line.
+    #[test]
+    fn mask_recipe_ops_and_bet_orientation_from_the_command_line() {
+        let args = ["qsmxt", "run", "<bids>", "--mask", "magnitude-first,bet:0.20,min-intensity:100,majority,close:2",
+                    "--bet-orientation", "as-stored"];
+        let c = config_from_cli(&args);
+        assert_eq!(c.masking.sections[0].refinements,
+                   [MaskOp::MinIntensity { value: 100.0 }, MaskOp::Majority, MaskOp::Close { radius: 2 }]);
+        assert_eq!(c.bet.orientation, qsmxt_engine::BetOrientation::AsStored);
+        let cmd = qsmxt_engine::generate_command(&c);
+        assert!(cmd.contains("min-intensity:100,majority,close:2") && cmd.contains("--bet-orientation as-stored"), "{cmd}");
+        assert_eq!(config_from_cli(&["qsmxt", "run", "<bids>"]).bet.orientation, qsmxt_engine::BetOrientation::Fsl);
+        assert!(cli::Cli::try_parse_from(["qsmxt", "run", "<bids>", "--bet-orientation", "left"]).is_err());
+        let c = PipelineConfig::from_toml("[bet]\norientation = \"as-stored\"\n").unwrap();
+        assert_eq!(c.bet.orientation, qsmxt_engine::BetOrientation::AsStored);
     }
 
     /// The flag is the whole recipe's answer: it also wins over a `scale=` spelled out in

@@ -917,6 +917,12 @@ pub fn parse_whqsm_weight(s: &str) -> Result<qsmxt_engine::WhqsmWeight, String> 
         .ok_or_else(|| format!("expected flat, flat-in-mask, max-normalised or in-vivo, got '{s}'"))
 }
 
+/// BET's left-right orientation: `fsl` or `as-stored`.
+pub fn parse_bet_orientation(s: &str) -> Result<qsmxt_engine::BetOrientation, String> {
+    qsmxt_engine::BetOrientation::ALL.into_iter().find(|o| o.as_str() == s.trim())
+        .ok_or_else(|| format!("expected fsl or as-stored, got '{s}'"))
+}
+
 /// HARPERELLA's / iHARPERELLA's boundary rim: `whole` or `sti`.
 pub fn parse_harperella_rim(s: &str) -> Result<qsmxt_engine::HarperellaRim, String> {
     qsmxt_engine::HarperellaRim::ALL.into_iter().find(|r| r.as_str() == s.trim())
@@ -1726,6 +1732,13 @@ pub struct PipelineArgs {
     #[arg(long, value_name = "FACTOR")]
     pub bet_voxel_scale: Option<f64>,
 
+    /// Which way round BET sees the left-right axis: `fsl` (the default; reversed for a
+    /// neurologically stored image, as FSL's bet reads a NIfTI file) or `as-stored` (the voxels in
+    /// the order they are stored, as MEDI's BET.m runs bet2). Applies to every BET step in the
+    /// masking recipe
+    #[arg(long, value_name = "ORIENTATION", value_parser = parse_bet_orientation)]
+    pub bet_orientation: Option<qsmxt_engine::BetOrientation>,
+
     /// What the susceptibility map's zero is pinned to: `mean` (the mean over the voxels the map
     /// is defined on — the brain mask less the rim background-field removal eroded; the default),
     /// `none`, or a SynthSeg region — a structure with both sides merged (`thalamus`), one side
@@ -2029,6 +2042,7 @@ pub struct PipelineArgs {
     /// Format: <input>,<generator>,<refinement1>,<refinement2>,...
     /// Example: phase-quality,threshold:otsu,dilate:2,fill-holes:0,erode:2
     /// Example: magnitude,bet:0.5,erode:2
+    /// Example: magnitude-first,bet:0.2,min-intensity:100,majority,close:2   (QSMART's mask)
     /// Example: magnitude,hd-bet,signal-erode   (HD-BET: `hd-bet[:full|window|XxYxZ|low-memory][:tta][:step=F]`;
     ///   signal-erode: `signal-erode[:threshold[:depth_cap[:global_erosions[:bias_sigma[:min_component]]]]]`)
     #[arg(long = "mask", num_args = 1)]
@@ -2343,8 +2357,10 @@ pub struct MaskCommonArgs {
     #[arg(short, long)]
     pub output: PathBuf,
     /// Further refinement, applied in order after the subcommand's own operation (repeatable).
-    /// Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0,
-    /// signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input)
+    /// Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, majority (3x3x3 majority
+    /// filter), min-intensity:100 (remove voxels below 100 in the input image; needs an image
+    /// input), signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude
+    /// input)
     #[arg(long = "op")]
     pub ops: Vec<String>,
 }
@@ -2376,6 +2392,8 @@ pub enum MaskCommand {
     Dilate(MaskDilateArgs),
     /// Morphological closing on a binary mask
     Close(MaskCloseArgs),
+    /// 3x3x3 majority filter on a binary mask (MATLAB's bwmorph3 'majority')
+    Majority(MaskMajorityArgs),
     /// Fill holes in a binary mask
     FillHoles(MaskFillHolesArgs),
     /// Gaussian smooth a binary mask (re-thresholds at 0.5)
@@ -2439,6 +2457,10 @@ pub struct MaskBetArgs {
     /// rodent brains without the trick
     #[arg(long, value_name = "FACTOR")]
     pub voxel_scale: Option<f64>,
+    /// Which way round BET sees the left-right axis: fsl (default) or as-stored (see
+    /// --bet-orientation)
+    #[arg(long, value_name = "ORIENTATION", value_parser = parse_bet_orientation)]
+    pub orientation: Option<qsmxt_engine::BetOrientation>,
 }
 
 #[derive(Parser, Debug)]
@@ -2509,6 +2531,10 @@ pub struct MaskPresetArgs {
     /// phase-quality map rates that flat phase as reliable, so give this with `--quality`
     #[arg(long)]
     pub phase: Option<PathBuf>,
+    /// Which way round the recipe's BET steps see the left-right axis: fsl (default) or
+    /// as-stored (see `run --bet-orientation`)
+    #[arg(long, value_name = "ORIENTATION", value_parser = parse_bet_orientation)]
+    pub bet_orientation: Option<qsmxt_engine::BetOrientation>,
 }
 
 // ── Unwrap ──
@@ -4601,6 +4627,12 @@ pub struct MaskCloseArgs {
     /// Closing radius
     #[arg(long, default_value_t = 1)]
     pub radius: usize,
+}
+
+#[derive(Parser, Debug)]
+pub struct MaskMajorityArgs {
+    #[command(flatten)]
+    pub common: MaskCommonArgs,
 }
 
 #[derive(Parser, Debug)]

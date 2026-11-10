@@ -2048,6 +2048,8 @@ fn describe_refinements(ops: &[MaskOp], doc: &mut Draft) -> Vec<String> {
         }
         MaskOp::Close { radius } if *op != default_of("close") => format!("morphological closing (radius {radius} voxels)"),
         MaskOp::Close { .. } => "morphological closing".to_string(),
+        MaskOp::MinIntensity { value } => format!("removal of voxels with an intensity below {value}"),
+        MaskOp::Majority => "a 3×3×3 majority filter".to_string(),
         MaskOp::FillHoles { max_size: 0 } => "hole-filling".to_string(),
         MaskOp::FillHoles { max_size } => format!("hole-filling (holes of at most {} voxels)", max_size),
         MaskOp::GaussianSmooth { sigma_mm } if *op != default_of("gaussian") => format!("Gaussian smoothing (σ = {sigma_mm} mm)"),
@@ -2128,7 +2130,12 @@ fn describe_generator(
             // millimetre-scale surface model was fitted to.
             changed.add(differs(*voxel_scale, crate::masking::bet_default_voxel_scale()),
                 || format!("voxel sizes scaled by {voxel_scale}x"));
-            format!("BET brain extraction (Smith, 2002{}) of {}", changed.semi(), input_desc)
+            // BET as MEDI's BET.m runs bet2: on the array, so on the voxels as they are stored.
+            let orientation = match b.orientation {
+                crate::enums::BetOrientation::Fsl => "",
+                crate::enums::BetOrientation::AsStored => ", in its stored voxel order as MEDI's BET.m runs it",
+            };
+            format!("BET brain extraction (Smith, 2002{}) of {}{orientation}", changed.semi(), input_desc)
         }
         MaskOp::Rs2Net { tta, tile_step } => {
             doc.cite(&CITE_RS2NET);

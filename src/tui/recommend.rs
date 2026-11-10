@@ -728,6 +728,20 @@ impl App {
         let skip: Vec<String> = items.iter().map(|i| i.finding.setting.clone()).collect();
         let view = self.rule_view();
         self.note_methods(&view, &skip);
+        // A method's difference that only comes into play with a value just applied (BET's
+        // orientation, once the mask is BET) is offered next, as the pop-up did not show it.
+        let presented: Vec<&str> = items.iter().map(|i| i.finding.rule.as_str()).collect();
+        for m in rec::by_method(&view) {
+            if !items.iter().any(|i| i.finding.trigger == m.method) || self.refs.pending.iter().any(|(p, _)| *p == m.method) {
+                continue;
+            }
+            let new: Vec<String> = m.differences().into_iter()
+                .filter(|r| !presented.contains(&r.rule.as_str())).map(|r| r.setting).collect();
+            if !new.is_empty() {
+                let skip = skip.iter().filter(|s| !new.contains(s)).cloned().collect();
+                self.refs.pending.push((m.method, skip));
+            }
+        }
         self.check_recommendations();
     }
 
@@ -1388,9 +1402,10 @@ mod tests {
         // The complex fit is now chosen, and PDF: one pop-up, PDF's measured suggestion of 300 CG
         // iterations first (preselected), then the complex fit's authors' unwrapper (not).
         let modal = app.refs.modal.as_ref().expect("the complex fit's authors' setting, with PDF's suggestion");
-        assert_eq!(modal.title(), " Complex fit's reference pipeline ");
+        assert_eq!(modal.title(), " Complex fit's and MEDI's reference pipelines ");
         let rules: Vec<&str> = modal.items.iter().map(|i| i.finding.rule.as_str()).collect();
-        assert_eq!(rules, ["pdf.cg-iterations", "complex-fit.unwrap-region-growing"]);
+        // MEDI's BET orientation came into play with the BET mask just applied: offered with them.
+        assert_eq!(rules, ["pdf.cg-iterations", "complex-fit.unwrap-region-growing", "medi.bet-as-stored"]);
         assert_eq!((modal.cursor, modal.buttons[0]), (Some(0), RefButton::ApplyRecommended));
         let text = screen(&mut app, "MEDI's settings applied: PDF's suggestion and the complex fit's unwrapper");
         assert!(text.contains("Recommended, each for the reason given") && text.contains("Apply recommended"), "{text}");
@@ -1404,7 +1419,8 @@ mod tests {
         assert_eq!(c.field_mapping.unwrapping_algorithm, qsmxt_engine::enums::UnwrappingAlgorithm::Romeo, "and keeps ROMEO");
         let medi = rec::chosen_methods(&c, &Facts::default()).into_iter().find(|m| m.name == "MEDI").unwrap();
         let left: Vec<String> = rec::reference_differences(&c, &Facts::default(), &medi).into_iter().map(|r| r.rule).collect();
-        assert!(left.is_empty(), "{left:?}");
+        // The orientation was offered, not taken: an authors' setting is applied only when chosen.
+        assert_eq!(left, ["medi.bet-as-stored"]);
         let row = PipelineRow::AlgoSelect { label: "", field: "mask_preset", options: &[], help: &[] };
         assert_eq!(App::row_marker(&app.rule_view(), &row), None, "the mask is BET now");
     }
@@ -1554,7 +1570,7 @@ mod tests {
         assert!(app.refs.modal.is_none() && app.rec_modal.is_none(), "a mask change chooses no method");
         let row = PipelineRow::AlgoSelect { label: "", field: "mask_preset", options: &[], help: &[] };
         let m = App::row_marker(&app.rule_view(), &row).unwrap();
-        assert_eq!((m.actionable, m.text.as_str()), (false, "QSMART: BET, first echo, no erosion"));
+        assert_eq!((m.actionable, m.text.as_str()), (false, "QSMART: BET, first echo, intensity threshold 100, majority filter, closing radius 2, no erosion"));
         assert!(app.goto_field("mask_preset"));
         let text = screen(&mut app, "QSMART with the threshold mask");
         assert!(text.contains("ⓘ QSMART: BET"), "{text}");

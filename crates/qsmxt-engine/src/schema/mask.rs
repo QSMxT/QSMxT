@@ -151,6 +151,8 @@ pub fn step_kind(op: &MaskOp) -> &'static str {
         MaskOp::Erode { .. } => "erode",
         MaskOp::Dilate { .. } => "dilate",
         MaskOp::Close { .. } => "close",
+        MaskOp::MinIntensity { .. } => "min-intensity",
+        MaskOp::Majority => "majority",
         MaskOp::FillHoles { .. } => "fill-holes",
         MaskOp::GaussianSmooth { .. } => "gaussian-smooth",
         MaskOp::SignalErode { .. } => "signal-erode",
@@ -171,6 +173,9 @@ fn default_ops() -> Vec<MaskOp> {
         MaskOp::Erode { iterations: 1 },
         MaskOp::Dilate { iterations: 1 },
         MaskOp::Close { radius: 1 },
+        // QSMART's value (v1.0's `mag_threshold`), on a magnitude in the scanner's units.
+        MaskOp::MinIntensity { value: 100.0 },
+        MaskOp::Majority,
         MaskOp::FillHoles { max_size: 0 },
         MaskOp::GaussianSmooth { sigma_mm: 4.0 },
         MaskOp::signal_erode_default(),
@@ -263,6 +268,14 @@ fn describe(op: &MaskOp) -> (&'static str, &'static str, &'static str, Vec<P>) {
             "Morphological closing, a dilation then an erosion with a sphere: closes gaps and dents in the edge", vec![
                 p("radius", "Radius", "Radius of the sphere", Int).units("voxels").min(1.0),
             ]),
+        MaskOp::MinIntensity { .. } => ("min-intensity", "Minimum intensity",
+            "Remove the mask's voxels whose intensity in the section's image is below a value", vec![
+                // MaskOp::validate refuses a value that is not > 0.
+                p("value", "Lowest intensity", "Voxels below this value, in the section's image's units, are removed", Float)
+                    .above(0.0),
+            ]),
+        MaskOp::Majority => ("majority", "Majority",
+            "Majority filter: a voxel is in the mask when at least 14 of the 27 voxels of its 3×3×3 neighbourhood are              (MATLAB's bwmorph3 'majority')", vec![]),
         MaskOp::FillHoles { .. } => ("fill-holes", "Fill holes", "Fill the holes enclosed by the mask, up to a size", vec![
             p("max_size", "Largest hole", "The largest hole filled; 0 fills holes up to 5% of the volume", Int)
                 .units("voxels").min(0.0),
@@ -366,7 +379,7 @@ pub fn mask_schema() -> MaskSchema {
             needs_magnitude,
             deep_learning,
             settings: if matches!(op, MaskOp::Bet { .. }) {
-                vec!["bet.smoothness", "bet.gradient_threshold", "bet.iterations", "bet.subdivisions"]
+                vec!["bet.smoothness", "bet.gradient_threshold", "bet.iterations", "bet.subdivisions", "bet.orientation"]
             } else {
                 vec![]
             },
@@ -383,8 +396,8 @@ pub fn mask_schema() -> MaskSchema {
 
 /// Every `op` a mask step is written with.
 const OPS: &[&str] = &[
-    "threshold", "bet", "hd-bet", "rs2-net", "mindgrab", "erode", "dilate", "close", "fill-holes", "gaussian-smooth",
-    "signal-erode",
+    "threshold", "bet", "hd-bet", "rs2-net", "mindgrab", "erode", "dilate", "close", "min-intensity", "majority",
+    "fill-holes", "gaussian-smooth", "signal-erode",
 ];
 
 /// The step type `kind`.

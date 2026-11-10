@@ -835,5 +835,5 @@ fn the_mask_recipe_under_qsmart_has_a_reference_marker_not_a_warning() {
     let view = schema::settings_view(&c, &ViewFacts::default());
     let mask = view.iter().find(|v| v.path == "masking.sections").unwrap();
     assert_eq!(mask.warning, None);
-    assert_eq!(mask.marker.as_ref().map(|m| m.text.as_str()), Some("QSMART: BET, first echo, no erosion"));
+    assert_eq!(mask.marker.as_ref().map(|m| m.text.as_str()), Some("QSMART: BET, first echo, intensity threshold 100, majority filter, closing radius 2, no erosion"));
 }
