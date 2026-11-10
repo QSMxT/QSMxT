@@ -1196,7 +1196,7 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
 
     // The k-space Tukey window comes before every other step.
     if config.pipeline.tukey_window > 0.0 {
-        doc.say(&[Stage::ScalePhase], format!(
+        doc.say(&[Stage::TukeyWindow], format!(
             "Before any other processing, each echo's complex image was multiplied in k-space by a Tukey \
              window with a taper ratio of {}.", config.pipeline.tukey_window));
     }
@@ -1719,7 +1719,7 @@ fn describe_reconstruction_grid(config: &PipelineConfig, ran: Ran, doc: &mut Dra
     };
     // Resampled only because an algorithm needs axial data: the switches do not say so.
     if !p.axial_resampling && ran.count(Topic::Grid, Choice::ResampledForAlgorithm) > 0 {
-        doc.say(&[Stage::Load, Stage::OutputSpace], format!(
+        doc.say(&[Stage::Load, Stage::ResampleAxial, Stage::OutputSpace], format!(
             "Acquisitions whose B0 direction was more than {}° from the slice normal were resampled onto an \
              axial grid, with B0 along the slice normal, before reconstruction, as the algorithms used assume \
              it{space}.", crate::scan::AXIAL_ONLY_TOLERANCE_DEG));
@@ -1731,7 +1731,7 @@ fn describe_reconstruction_grid(config: &PipelineConfig, ran: Ran, doc: &mut Dra
         } else {
             "Oblique acquisitions".to_string()
         };
-        doc.say(&[Stage::Load, Stage::OutputSpace], format!(
+        doc.say(&[Stage::Load, Stage::ResampleAxial, Stage::OutputSpace], format!(
             "{which} were resampled onto an axial grid, with B0 along the slice normal, before reconstruction{space}."));
     }
     if p.crop_to_mask {

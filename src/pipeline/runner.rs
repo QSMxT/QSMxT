@@ -395,6 +395,10 @@ impl FileStore<'_> {
             Item::CombinedEchoPhase(n) => o.combined_phase_path(key, n),
             Item::CombinedEchoMagnitude(n) => o.combined_mag_path(key, n),
             Item::CoilCombinationMask => o.combine_mask_path(key),
+            Item::ScaledPhase(n) => o.acquired_grid_phase_path(key, "scale_phase", n),
+            Item::ScaledMagnitude(n) => o.acquired_grid_mag_path(key, "scale_phase", n),
+            Item::WindowedPhase(n) => o.acquired_grid_phase_path(key, "tukey_window", n),
+            Item::WindowedMagnitude(n) => o.acquired_grid_mag_path(key, "tukey_window", n),
             Item::Phase(n) => o.phase_scaled_path(key, n),
             Item::Magnitude(n) => o.mag_path(key, n),
             Item::CorrectedPhase(n) => o.motion_phase_path(key, n),
@@ -2848,8 +2852,10 @@ mod oblique_run_tests {
             let cached: Vec<&str> = plan.steps.iter().map(|s| s.name.as_str())
                 .filter(|s| again.state.completed_steps.contains_key(*s)).collect();
             assert_eq!(cached.contains(&"chi_separation"), kept, "{route}, legacy state {legacy}: {cached:?}");
-            // Nothing else read the map.
-            for step in plan.steps.iter().filter(|s| !matches!(s.stage, Stage::Load | Stage::Motion | Stage::OutputSpace | Stage::ChiSeparation)) {
+            // Nothing else read the map. (R2PRIMEnet needs axial data, so the plan that asks for
+            // its R2′ may resample, which the first did not.)
+            for step in plan.steps.iter().filter(|s| !matches!(s.stage, Stage::Load | Stage::Motion | Stage::OutputSpace
+                                                                       | Stage::ChiSeparation | Stage::ResampleAxial)) {
                 assert!(cached.contains(&step.name.as_str()), "{route}, legacy state {legacy}: {} went stale: {cached:?}", step.name);
             }
         }
@@ -2918,6 +2924,37 @@ mod oblique_run_tests {
         run_pipeline_cached(&run, &fast_config(), &output, false, &|_| {}).unwrap();
         assert!(!resampled(&output));
         assert_eq!(voxels(&output.qsm_path(&run.key)), ACQUIRED);
+    }
+
+    /// A windowed, resampled run in files: phase scaling and the Tukey window leave each echo on
+    /// the acquired grid, in files with that grid's header, the resampling writes the working
+    /// echoes, and a re-run reuses all three.
+    #[test]
+    fn the_phase_steps_leave_the_acquired_grid_echoes_in_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let run = oblique_run(dir.path(), "a", 2);
+        let output = DerivativeOutputs::new(&dir.path().join("out"));
+        let mut config = resampling_config();
+        config.pipeline.tukey_window = 0.2;
+        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
+        let k = &run.key;
+        let acquired = io::read_nifti_file(&run.echoes[0].phase_nifti).unwrap();
+        for (step, item) in [("scale_phase", "phase"), ("tukey_window", "phase"), ("tukey_window", "mag")] {
+            let path = if item == "phase" { output.acquired_grid_phase_path(k, step, 2) } else { output.acquired_grid_mag_path(k, step, 2) };
+            let nii = io::read_nifti_file(&path).unwrap_or_else(|e| panic!("{step} {item}: {e}"));
+            assert_eq!((nii.dims, nii.affine), (acquired.dims, acquired.affine), "{step} {item}");
+        }
+        assert!(!output.acquired_grid_mag_path(k, "scale_phase", 2).exists(), "the magnitude given is read where it is");
+        let working = io::read_nifti_file(&output.phase_scaled_path(k, 2)).unwrap();
+        assert_ne!(working.dims, acquired.dims, "the working echoes are on the axial grid");
+        assert_eq!(voxels(&output.mag_path(k, 2)), working.data.len());
+        let provenance = |step: &str| std::fs::read_to_string(output.provenance_path(k, step)).unwrap_or_else(|e| panic!("{step}: {e}"));
+        let steps = ["scale_phase", "tukey_window", "resample_axial"];
+        let before: Vec<String> = steps.iter().map(|s| provenance(s)).collect();
+        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
+        for (step, was) in steps.iter().zip(before) {
+            assert_eq!(provenance(step), was, "{step} was recomputed");
+        }
     }
 
     /// Returning a resampled run to the acquired grid moves a segmentation by majority vote, so

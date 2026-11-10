@@ -60,10 +60,15 @@ fn assert_consistent(g: &PipelineGraph) {
 fn graphs_of_a_table_of_configurations() {
     // The defaults: one box per step that does something.
     let g = graph(&PipelineConfig::default(), &facts());
+    // The defaults keep the acquired grid whatever the header says: nothing resamples, and nothing
+    // returns to the acquired grid.
     assert_eq!(ids(&g), ["load", "scale_phase", "magnitude", "mask", "unwrap", "bgremove", "invert",
-                         "reference", "output_space"]);
+                         "reference"]);
     assert!(!g.two_pass && g.nodes.iter().all(|n| n.branch.is_none() && n.enabled_by.is_none()));
-    for (from, to) in [("load", "scale_phase"), ("scale_phase", "mask"), ("mask", "unwrap"),
+    // Phase scaling makes the phase; the magnitude is the scan's, as it was given.
+    assert_eq!(g.node("scale_phase").unwrap().writes, (1..=5).map(|e| item_key(&Item::Phase(e))).collect::<Vec<_>>());
+    assert!(g.has_edge("load", "magnitude") && !g.has_edge("scale_phase", "magnitude"));
+    for (from, to) in [("load", "scale_phase"), ("scale_phase", "mask"), ("load", "mask"), ("mask", "unwrap"),
                        ("unwrap", "bgremove"), ("bgremove", "invert"), ("invert", "reference")] {
         assert!(g.has_edge(from, to), "{from} -> {to}: {:?}", g.edges);
     }
@@ -75,8 +80,6 @@ fn graphs_of_a_table_of_configurations() {
     assert_eq!((bg.algorithm.as_deref(), bg.algorithm_label.as_deref()), (Some("vsharp"), Some("V-SHARP")));
     assert_eq!(bg.settings, ["SMV kernel radii from 12 to 2 mm in 1 mm steps"]);
     assert_eq!(g.node("invert").unwrap().algorithm_label.as_deref(), Some("iLSQR"));
-    // Whether the outputs go back to the acquired grid depends on the header.
-    assert_eq!(g.node("output_space").unwrap().only_when.as_deref(), Some("the run is resampled"));
     assert_consistent(&g);
 
     // Two-pass: two branches joining at the combination, the field map shared.
@@ -102,7 +105,7 @@ fn graphs_of_a_table_of_configurations() {
     config.inversion.algorithm = QsmAlgorithm::Tgv;
     let g = graph(&config, &facts());
     assert_eq!(ids(&g)[4..], ["unwrap", "tgv", "mask-reliable", "tgv-reliable", "twopass", "reference-singlepass",
-                              "reference", "output_space"]);
+                              "reference"]);
     assert!(g.has_edge("unwrap", "tgv") && g.has_edge("unwrap", "tgv-reliable"));
     assert_consistent(&g);
 
@@ -150,7 +153,7 @@ fn graphs_of_a_table_of_configurations() {
     config.field_mapping.b0_estimation = crate::enums::B0Estimation::QsmartEchofit;
     let g = graph(&config, &facts());
     assert!(g.node("bgremove").is_none());
-    assert!(g.has_edge("unwrap", "qsmart") && g.has_edge("scale_phase", "qsmart") && g.has_edge("qsmart", "reference"));
+    assert!(g.has_edge("unwrap", "qsmart") && g.has_edge("load", "qsmart") && g.has_edge("qsmart", "reference"));
     assert!(!g.has_edge("magnitude", "qsmart"));
     let u = g.node("unwrap").unwrap();
     assert_eq!(u.algorithm_label.as_deref(), Some("Laplacian"));
@@ -189,11 +192,13 @@ fn graphs_of_a_table_of_configurations() {
     assert_consistent(&g);
     config.inversion.algorithm = QsmAlgorithm::Medi;
     let g = graph(&config, &facts());
-    assert!(g.has_edge("scale_phase", "invert") && !g.has_edge("magnitude", "invert"));
+    assert!(g.has_edge("load", "invert") && !g.has_edge("magnitude", "invert"), "every echo's magnitude, as given");
     assert_consistent(&g);
     config.inversion.algorithm = QsmAlgorithm::Iqsm;
     let g = graph(&config, &facts());
-    assert!(g.node("unwrap").is_none() && g.has_edge("scale_phase", "invert"));
+    // iQSM only understands axial data, so the echoes it reads may be resampled first.
+    assert!(g.node("unwrap").is_none() && g.has_edge("resample_axial", "invert"));
+    assert_eq!(g.node("resample_axial").unwrap().enabled_by, None);
     assert_eq!(g.node("invert").unwrap().models, ["iqsm"]);
     assert_consistent(&g);
 
@@ -211,20 +216,84 @@ fn graphs_of_a_table_of_configurations() {
     let g = graph(&PipelineConfig::default(), &f);
     assert_eq!(g.node("scale_phase").unwrap().algorithm.as_deref(), Some("mcpc3ds"));
     assert_eq!(g.node("load").unwrap().writes.len(), 4 * 5 * 2);
+    assert!(g.has_edge("scale_phase", "magnitude"), "the combination makes the magnitude");
+    assert!(g.node("scale_phase").unwrap().writes.contains(&item_key(&Item::CombinedEchoPhase(1))));
+    assert_consistent(&g);
+    // Resampled, the combined echoes are published as they are on the working grid.
+    let mut config = PipelineConfig::default();
+    config.pipeline.axial_resampling = true;
+    let g = graph(&config, &f);
+    assert!(g.node("resample_axial").unwrap().writes.contains(&item_key(&Item::CombinedEchoPhase(1))));
+    assert!(g.node("scale_phase").unwrap().writes.contains(&item_key(&Item::ScaledMagnitude(1))));
+    assert!(g.has_edge("resample_axial", "output_space"));
     assert_consistent(&g);
 
-    // The grid known: a resampled run returns its published outputs; one that is not has no
-    // such step.
-    let config = PipelineConfig::default();
+    // Axial resampling on: whether the run is resampled, and so whether its outputs go back to
+    // the acquired grid, depends on the header. Unknown, both steps are drawn as conditional, the
+    // echoes resampled after phase scaling and before anything reads them.
+    let mut config = PipelineConfig::default();
+    config.pipeline.axial_resampling = true;
     let plan = crate::plan::plan(&config, &facts());
+    let unknown = pipeline_graph(&plan, &config, &facts(), None);
+    assert_eq!(ids(&unknown), ["load", "scale_phase", "resample_axial", "magnitude", "mask", "unwrap", "bgremove",
+                               "invert", "reference", "output_space"]);
+    for id in ["resample_axial", "output_space"] {
+        assert_eq!(unknown.node(id).unwrap().only_when.as_deref(), Some("the run is resampled"), "{id}");
+    }
+    assert_eq!(unknown.node("resample_axial").unwrap().enabled_by.as_deref(), Some("pipeline.axial_resampling"));
+    assert!(unknown.has_edge("scale_phase", "resample_axial") && unknown.has_edge("load", "resample_axial"));
+    for to in ["magnitude", "mask", "unwrap"] {
+        assert!(unknown.has_edge("resample_axial", to) && !unknown.has_edge("scale_phase", to), "{to}");
+    }
+    assert_consistent(&unknown);
+    // The grid known: a resampled run resamples, and returns its published outputs; one that is
+    // not has neither step, and its phase comes from phase scaling.
     let resampled = pipeline_graph(&plan, &config, &facts(), Some(&grid(true)));
-    assert!(resampled.node("output_space").unwrap().only_when.is_none());
+    for id in ["resample_axial", "output_space"] {
+        assert!(resampled.node(id).unwrap().only_when.is_none(), "{id}");
+    }
     for from in ["mask", "magnitude", "unwrap", "reference"] {
         assert!(resampled.has_edge(from, "output_space"), "{from}");
     }
     assert_consistent(&resampled);
     let acquired = pipeline_graph(&plan, &config, &facts(), Some(&grid(false)));
-    assert!(acquired.node("output_space").is_none());
+    assert!(acquired.node("output_space").is_none() && acquired.node("resample_axial").is_none());
+    assert_eq!(ids(&acquired), ids(&graph(&PipelineConfig::default(), &facts())));
+    assert!(acquired.has_edge("scale_phase", "mask") && acquired.has_edge("load", "mask"));
+    assert_consistent(&acquired);
+    // Kept on its working grid, a resampled run has no return step.
+    config.pipeline.output_space = crate::OutputSpace::Working;
+    let working = pipeline_graph(&plan, &config, &facts(), None);
+    assert!(working.node("resample_axial").is_some() && working.node("output_space").is_none());
+
+    // The MEDI toolbox's pipeline cannot resample: neither step, whatever the header.
+    let mut config = PipelineConfig::default();
+    let view = crate::schema::ViewFacts { num_echoes: Some(5), field_strength: Some(3.0), ..Default::default() };
+    crate::pipelines::choose(&mut config, "medi-toolbox", &view).unwrap();
+    let g = graph(&config, &facts());
+    assert!(g.node("resample_axial").is_none() && g.node("output_space").is_none(), "{:?}", ids(&g));
+    assert_consistent(&g);
+
+    // The Tukey window: on the acquired grid, between phase scaling and the resampling, and the
+    // magnitude it windows is the one the later steps read.
+    let mut config = PipelineConfig::default();
+    config.pipeline.tukey_window = 0.3;
+    let g = graph(&config, &facts());
+    assert_eq!(ids(&g)[..4], ["load", "scale_phase", "tukey_window", "magnitude"]);
+    let tukey = g.node("tukey_window").unwrap();
+    assert_eq!((tukey.enabled_by.as_deref(), tukey.settings.clone()), (Some("pipeline.tukey_window"), vec!["taper ratio 0.3".to_string()]));
+    for (from, to) in [("scale_phase", "tukey_window"), ("load", "tukey_window"), ("tukey_window", "magnitude"),
+                       ("tukey_window", "mask")] {
+        assert!(g.has_edge(from, to), "{from} -> {to}: {:?}", g.edges);
+    }
+    assert!(!g.has_edge("load", "mask"));
+    assert_consistent(&g);
+    config.pipeline.axial_resampling = true;
+    let g = graph(&config, &facts());
+    assert_eq!(ids(&g)[..5], ["load", "scale_phase", "tukey_window", "resample_axial", "magnitude"]);
+    assert!(g.has_edge("tukey_window", "resample_axial") && !g.has_edge("scale_phase", "resample_axial")
+            && !g.has_edge("load", "resample_axial"));
+    assert_consistent(&g);
 
     // Segmentation, a region reference on it and the statistics.
     let mut config = PipelineConfig::default();
@@ -258,22 +327,17 @@ fn the_default_graph_in_mermaid() {
     bgremove["Background-field removal<br/><i>V-SHARP</i><br/><small>SMV kernel radii from 12 to 2 mm in 1 mm steps</small>"]
     invert["Dipole inversion<br/><i>iLSQR</i>"]
     reference["Referencing<br/><i>mean</i>"]
-    output_space["Return to the acquired grid<br/><small>only when the run is resampled</small>"]
-    load -->|"Phase (as acquired), Magnitude (as acquired)"| scale_phase
-    scale_phase -->|"Magnitude"| magnitude
-    scale_phase -->|"Phase, Magnitude"| mask
-    scale_phase -->|"Phase, Magnitude"| unwrap
+    load -->|"Phase (as acquired)"| scale_phase
+    load -->|"Magnitude"| magnitude
+    scale_phase -->|"Phase"| mask
+    load -->|"Magnitude"| mask
+    scale_phase -->|"Phase"| unwrap
+    load -->|"Magnitude"| unwrap
     mask -->|"Brain mask"| unwrap
     unwrap -->|"Total field, Field mask"| bgremove
     bgremove -->|"Local field, Local field mask"| invert
     invert -->|"Unreferenced susceptibility"| reference
     bgremove -->|"Local field mask"| reference
-    reference -->|"Susceptibility, Susceptibility support"| output_space
-    mask -->|"Brain mask"| output_space
-    magnitude -->|"Combined magnitude"| output_space
-    unwrap -->|"Total field, Field map magnitude"| output_space
-    classDef conditional stroke-dasharray: 2 3
-    class output_space conditional
 "#;
     assert_eq!(g.to_mermaid(), expected);
 }
@@ -341,15 +405,21 @@ fn check_against_a_run(config: &PipelineConfig, facts: &ScanFacts, store: Memory
         let planned = plan.steps.iter().find(|s| &s.name == step).unwrap_or_else(|| panic!("{step} is not a plan step"));
         assert_eq!(&planned.algorithm, algorithm, "{step}");
     }
+    // What the plan says each step reads and writes, for a run on this grid.
+    let details = step_details(&plan, &plan.config, facts, Some(meta.source_geometry.is_some()));
     for (step, inputs, outputs) in &store.completed {
-        let planned = plan.steps.iter().find(|s| &s.name == step).unwrap();
-        assert!(outputs.iter().all(|o| planned.outputs.contains(o)), "{step}: {outputs:?} vs {:?}", planned.outputs);
+        let at = plan.steps.iter().position(|s| &s.name == step).unwrap();
+        let planned = &details[at];
+        assert!(outputs.iter().all(|o| planned.writes.contains(o)), "{step}: {outputs:?} vs {:?}", planned.writes);
         assert_eq!(inputs, &planned.reads, "{step}: what the run recorded reading is what the plan says it reads");
         let node = g.node(step).unwrap();
         let inputs: Vec<String> = inputs.iter().map(item_key).collect();
         assert_eq!(inputs, node.reads, "{step}");
         for item in outputs {
-            assert!(node.writes.contains(&item_key(item)), "{step} wrote {item:?}; the graph says {:?}", node.writes);
+            // A magnitude phase scaling keeps as it was given is drawn from the load step.
+            let copied = step == "scale_phase" && matches!(item, Item::Magnitude(_))
+                && g.edges.iter().any(|e| e.from == "load" && e.items.contains(&item_key(item)));
+            assert!(copied || node.writes.contains(&item_key(item)), "{step} wrote {item:?}; the graph says {:?}", node.writes);
         }
     }
     let ran: Vec<&str> = store.completed.iter().map(|(s, ..)| s.as_str()).collect();
@@ -599,12 +669,19 @@ fn box_text_wraps_and_svg_escapes() {
 #[test]
 fn the_graph_as_text() {
     let text = graph(&PipelineConfig::default(), &facts()).to_text();
-    assert!(text.starts_with(" 1 Load\n 2 Phase scaling\n     ← 1 Load: Phase (as acquired), Magnitude (as acquired)\n"), "{text}");
+    assert!(text.starts_with(" 1 Load\n 2 Phase scaling\n     ← 1 Load: Phase (as acquired)\n"), "{text}");
     assert!(text.contains(concat!(
         " 6 Background-field removal · V-SHARP\n",
         "     SMV kernel radii from 12 to 2 mm in 1 mm steps\n",
         "     ← 5 Field map: Total field, Field mask\n")), "{text}");
-    assert!(text.contains("     only when the run is resampled\n"), "{text}");
+    let mut resampling = PipelineConfig::default();
+    resampling.pipeline.axial_resampling = true;
+    let text = graph(&resampling, &facts()).to_text();
+    assert!(text.contains(concat!(
+        " 3 Resample to an axial grid\n",
+        "     only when the run is resampled\n",
+        "     ← 2 Phase scaling: Phase (acquired grid)\n",
+        "     ← 1 Load: Magnitude (as acquired)\n")), "{text}");
     // Every arrow is a line.
     let g = graph(&PipelineConfig::default(), &facts());
     let from_lines = g.text_lines(None).iter().filter(|l| l.parts[0].0 == text::Part::From).count();
@@ -681,14 +758,15 @@ fn a_box_the_runs_set_up_differently_lists_each_way() {
 /// A graph that uses no special style has no key; one that does lists only what it uses.
 #[test]
 fn the_key_lists_only_the_styles_drawn() {
-    let config = PipelineConfig::default();
+    let mut config = PipelineConfig::default();
+    config.pipeline.axial_resampling = true;
     let f = facts();
     let plain = pipeline_graph_on(&crate::plan::plan(&config, &f), &config, &f, Some(false));
     assert!(plain.layout().key.is_empty());
     assert!(!plain.to_svg().contains("class=\"g-key\""));
     let planned = graph(&config, &f);
     let styles: Vec<layout::KeyStyle> = planned.layout().key.iter().map(|k| k.style).collect();
-    assert_eq!(styles, [layout::KeyStyle::Conditional, layout::KeyStyle::Collapsed]);
+    assert_eq!(styles, [layout::KeyStyle::Optional, layout::KeyStyle::Conditional, layout::KeyStyle::Collapsed]);
 }
 
 /// Two arrows from one box to another are drawn as one carrying both, and a label lists one item
@@ -701,7 +779,9 @@ fn arrows_between_the_same_boxes_are_one_and_labels_list_items_in_full() {
     let l = g.layout();
     let drawn: Vec<_> = l.edges.iter().filter(|e| e.from == first.from && e.to == first.to).collect();
     assert_eq!(drawn.len(), 1);
-    assert_eq!(drawn[0].label, ["Phase (as acquired)", "Magnitude (as acquired)", "Mask"]);
+    // An item's name may wrap to the arrow's room, and is never cut.
+    assert_eq!(drawn[0].label.join(" "), "Phase (as acquired) Mask");
+    assert_eq!(drawn[0].label.last().map(String::as_str), Some("Mask"));
 }
 
 /// A two-pass run's HEIDI fills the combined map: the combination reads the main pass's local
@@ -773,4 +853,30 @@ fn the_toolbox_route_is_drawn_reading_only_what_it_uses() {
     f.mese_echo_times = Some(vec![0.01, 0.02, 0.03, 0.04]);
     let g = graph(&config, &f);
     assert!(g.has_edge("r2_r2prime", "chi_separation"), "{:?}", g.edges);
+}
+
+/// A run that windows and may be resampled: phase scaling, the Tukey window and the resampling
+/// in data order, the resampling and the return conditional on the header, and the magnitude
+/// windowed with the phase.
+#[test]
+fn a_windowed_resampled_graph_in_mermaid() {
+    let mut config = PipelineConfig::default();
+    config.pipeline.tukey_window = 0.25;
+    config.pipeline.axial_resampling = true;
+    let text = graph(&config, &facts()).to_mermaid();
+    println!("{text}");
+    for line in [
+        "    tukey_window[\"Tukey window<br/><small>taper ratio 0.25</small>\"]\n",
+        "    resample_axial[\"Resample to an axial grid<br/><small>only when the run is resampled</small>\"]\n",
+        "    load -->|\"Phase (as acquired)\"| scale_phase\n",
+        "    scale_phase -->|\"Phase (acquired grid)\"| tukey_window\n",
+        "    load -->|\"Magnitude (as acquired)\"| tukey_window\n",
+        "    tukey_window -->|\"Windowed phase (acquired grid), Windowed magnitude (acquired grid)\"| resample_axial\n",
+        "    resample_axial -->|\"Magnitude\"| magnitude\n",
+        "    resample_axial -->|\"Phase, Magnitude\"| mask\n",
+        "    class tukey_window,resample_axial optional\n",
+        "    class resample_axial,output_space conditional\n",
+    ] {
+        assert!(text.contains(line), "{line}\n{text}");
+    }
 }

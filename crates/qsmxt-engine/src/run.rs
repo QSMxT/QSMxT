@@ -89,8 +89,8 @@ pub enum ExpectedState {
     /// Computed with the parameters it was computed with before: a step it reads is computed
     /// again (or its outputs are no longer held).
     Stale,
-    /// It would do nothing (motion correction off, an unresampled run's return to the acquired
-    /// grid).
+    /// It would do nothing (motion correction off, an unresampled run's resampling to an axial
+    /// grid and return to the acquired grid).
     Skipped,
 }
 
@@ -402,6 +402,8 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             Stage::ScalePhase if self.facts.n_coils > 1 => self.combine_coils(),
             Stage::ScalePhase if self.facts.real_imaginary => self.scale_real_imaginary(),
             Stage::ScalePhase => self.scale_phase(),
+            Stage::TukeyWindow => self.tukey_window(),
+            Stage::ResampleAxial => self.resample_axial(),
             Stage::Magnitude => self.magnitude(),
             Stage::Mask(Pass::Main) => self.mask(step),
             Stage::Mask(Pass::Reliable) => self.reliable_mask(step),
@@ -472,7 +474,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
     /// In a dry run, record `step` as computed under `key`, with the outputs the plan says it
     /// writes, so the steps after it see what they would.
     fn pretend(&mut self, step: &str, algorithm: Option<&str>, params: &Value, key: &str) {
-        let outputs = self.plan.steps.iter().find(|s| s.name == step).map(|s| s.outputs.clone()).unwrap_or_default();
+        let outputs = self.details(step).map(|d| d.writes).unwrap_or_default();
         // A dry run's store is a shadow ([`crate::store::MemoryStore::shadow`]), which takes these without fail.
         for item in &outputs {
             let _ = self.store.put(*item, Data::Mask(&[]));
@@ -517,10 +519,18 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
     /// could not be used is computed from the echoes, and reads them. The same items the graph
     /// after the run ([`crate::pipeline_graph::pipeline_graph_after`]) draws the step reading.
     fn reads(&self, step: &str) -> Vec<Item> {
+        self.details(step).map(|d| d.reads).unwrap_or_default()
+    }
+
+    /// What `step` reads and writes in this run: the plan's, drawn again from the facts as the
+    /// run's decisions so far left them, and knowing whether the run is resampled (a run that is
+    /// not writes its working echoes before the resampling step, which it skips).
+    fn details(&self, step: &str) -> Option<crate::pipeline_graph::StepDetails> {
         let decided = self.decided.iter().chain(&self.decisions);
         let ran = crate::pipeline_graph::as_decided(self.facts, decided);
-        crate::pipeline_graph::step_details(self.plan, self.config, &ran).into_iter().zip(&self.plan.steps)
-            .find(|(_, s)| s.name == step).map(|(d, _)| d.reads).unwrap_or_default()
+        let resampled = Some(self.meta.source_geometry.is_some());
+        crate::pipeline_graph::step_details(self.plan, self.config, &ran, resampled).into_iter().zip(&self.plan.steps)
+            .find(|(_, s)| s.name == step).map(|(d, _)| d)
     }
 
     fn log(&mut self, level: Level, message: &str) {
@@ -668,72 +678,93 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         if self.store.has(&Item::CombinedMagnitude) { self.store.real(&Item::CombinedMagnitude).map(Some) } else { Ok(None) }
     }
 
-    /// Every echo's phase in radians, on the working grid. Each echo is read, brought onto the
-    /// working grid and kept before the next is read.
-    fn scale_phase(&mut self) -> Result<(), S::Error> {
-        let params = stages::phase::params(&self.meta, None, self.config);
-        let resampled = self.meta.source_geometry.is_some();
-        // The Tukey window changes the magnitude too, so it is kept like a resampled run's.
-        let windowed = self.config.pipeline.tukey_window > 0.0;
-        let doing = if resampled { "Resampling to axial + rescaling phase" } else { "Rescaling phase to radians" };
-        let Some(key) = self.begin("scale_phase", None, &params, "Skipping scale_phase (cached)", doing) else { return Ok(()) };
-        if let Some(line) = stages::phase::tukey_window_line(self.config) {
-            self.log(Level::Info, &line);
+    /// Where the phase steps read and write each echo in this run ([`stages::phase::Chain`]).
+    fn chain(&self) -> stages::phase::Chain {
+        stages::phase::Chain {
+            makes_magnitude: self.facts.n_coils > 1 || self.facts.real_imaginary,
+            has_magnitude: self.meta.has_magnitude || self.facts.n_coils > 1 || self.facts.real_imaginary,
+            windowed: self.plan.has(Stage::TukeyWindow),
+            resampled: self.meta.source_geometry.is_some(),
+            coils: self.facts.n_coils > 1,
         }
+    }
+
+    /// Keep a volume on the acquired grid: on the run's grid when it is not resampled, on a grid
+    /// of its own when it is.
+    fn put_acquired(&mut self, item: Item, data: &[f64]) -> Result<(), S::Error> {
+        match self.meta.source_geometry {
+            Some((dims, affine)) => self.put(item, Data::OnGrid(data, &stages::output_space::acquired(dims, &affine))),
+            None => self.put(item, Data::Real(data)),
+        }
+    }
+
+    /// A phase step's echo `e`, as it writes it: on the acquired grid unless it is the working
+    /// echo (`working`), with a combined echo of uncombined coils also published as it is.
+    fn put_echo(&mut self, e: usize, (phase_item, phase): (Item, &[f64]), magnitude: Option<(Item, &[f64])>,
+                outputs: &mut Vec<Item>) -> Result<(), S::Error> {
+        let working = phase_item == Item::Phase(e);
+        for (item, data) in std::iter::once((phase_item, phase)).chain(magnitude) {
+            if working { self.put(item, Data::Real(data))? } else { self.put_acquired(item, data)? }
+            outputs.push(item);
+        }
+        if working && self.chain().coils {
+            self.put(Item::CombinedEchoPhase(e), Data::Real(phase))?;
+            self.put(Item::CombinedEchoMagnitude(e), Data::Real(magnitude.map(|(_, m)| m).unwrap_or_default()))?;
+            outputs.extend([Item::CombinedEchoPhase(e), Item::CombinedEchoMagnitude(e)]);
+        }
+        Ok(())
+    }
+
+    /// Refuse a run resampled without a step to resample it: what [`crate::scan::can_resample`]
+    /// keeps from happening, for a plan made without it.
+    fn check_resampling_planned(&self) -> Result<(), S::Error> {
+        if self.meta.source_geometry.is_some() && !self.plan.has(Stage::ResampleAxial) {
+            return Err(crate::EngineError::Config(
+                "the run is resampled to an axial grid, but its plan has no step to resample it".into()).into());
+        }
+        Ok(())
+    }
+
+    /// Every echo's phase in radians, on the acquired grid. Each echo is read, rescaled and kept
+    /// before the next is read. The magnitude given is kept as it is, unread, when nothing comes
+    /// after.
+    fn scale_phase(&mut self) -> Result<(), S::Error> {
+        self.check_resampling_planned()?;
+        let chain = self.chain();
+        let params = stages::phase::params(&self.meta, None, &chain);
+        let Some(key) = self.begin("scale_phase", None, &params, "Skipping scale_phase (cached)",
+                                   "Rescaling phase to radians") else { return Ok(()) };
         let n = self.n_echoes();
-        let (mut phases, mut magnitudes) = (Vec::new(), Vec::new());
+        let mut outputs = Vec::new();
         for e in 1..=n {
             let mut phase = self.store.real(&Item::AcquiredPhase(e))?;
-            // Only resampling and the Tukey window read the magnitude: otherwise it is kept as it is.
-            let magnitude = if (resampled || windowed) && self.store.has(&Item::AcquiredMagnitude(e)) {
-                Some(self.store.real(&Item::AcquiredMagnitude(e))?)
-            } else {
-                None
-            };
-            let out = if windowed {
-                // The plan refuses the window without magnitude; this covers a direct caller.
-                let Some(mut mag) = magnitude else {
-                    return Err(crate::EngineError::Config(format!(
-                        "echo {e}: the Tukey window (--tukey-window) needs the echo's magnitude")).into());
-                };
-                qsm_core::pipeline::scale_phase_to_pi(&mut phase);
-                stages::phase::tukey_window(&mut mag, &mut phase, &self.meta, self.config);
-                stages::phase::working_echo(phase, Some(mag), true, &self.meta)
-            } else {
-                stages::phase::working_echo(phase, magnitude, false, &self.meta)
-            };
-            self.put(Item::Phase(e), Data::Real(&out.phase))?;
-            phases.push(Item::Phase(e));
-            // A resampled or windowed run keeps the magnitude it made with the phase.
-            if let (Some(mag), true) = (&out.magnitude, (resampled || windowed) && self.meta.has_magnitude) {
-                self.put(Item::Magnitude(e), Data::Real(mag))?;
-                magnitudes.push(Item::Magnitude(e));
-            }
+            qsm_core::pipeline::scale_phase_to_pi(&mut phase);
+            self.put_echo(e, (chain.scaled_phase(e), &phase), None, &mut outputs)?;
         }
         // Raw (uncorrected) per-echo magnitudes as they are, for MCPC-3D-S, linear fit and ROMEO.
-        if !resampled && !windowed && self.meta.has_magnitude {
+        if chain.copies_magnitude() {
             for e in 1..=n {
                 if self.store.has(&Item::AcquiredMagnitude(e)) {
                     self.put(Item::Magnitude(e), Data::Same(Item::AcquiredMagnitude(e)))?;
-                    magnitudes.push(Item::Magnitude(e));
+                    outputs.push(Item::Magnitude(e));
                 }
             }
         }
-        let outputs: Vec<Item> = phases.into_iter().chain(magnitudes).collect();
         self.complete(Done {
             step: "scale_phase", algorithm: None, params: &params, outcome: None, key: &key, outputs: &outputs,
-        }, if resampled { "Resample + rescale phase" } else { "Rescale phase" })
+        }, "Rescale phase")
     }
 
     /// `scale_phase` for a scan given as real and imaginary parts: they become magnitude and
-    /// phase ([`stages::phase::real_imaginary`]) before anything else sees them, and each converted
-    /// echo (already in radians) is brought onto the working grid as for any other scan. The sign
-    /// convention follows from the scanner's manufacturer, so it is a parameter (and keys the
-    /// cache).
+    /// phase ([`stages::phase::real_imaginary`]) before anything else sees them, kept on the
+    /// acquired grid as any other scan's phase is. The sign convention follows from the scanner's
+    /// manufacturer, so it is a parameter (and keys the cache).
     fn scale_real_imaginary(&mut self) -> Result<(), S::Error> {
+        self.check_resampling_planned()?;
+        let chain = self.chain();
         let manufacturer = self.store.sidecar()?.and_then(|s| s.manufacturer);
         let negate_phase = stages::phase::negates_real_imaginary_phase(manufacturer.as_deref());
-        let params = stages::phase::params(&self.meta, Some(negate_phase), self.config);
+        let params = stages::phase::params(&self.meta, Some(negate_phase), &chain);
         let Some(key) = self.begin("scale_phase", None, &params, "Skipping scale_phase (cached)",
                                    "Converting real/imaginary to magnitude/phase") else { return Ok(()) };
         let n = self.n_echoes();
@@ -772,34 +803,25 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                 "Phase alternating by π between neighbouring slices was corrected.")
                 .with_detail(format!("along {}", chopped.join(", "))));
         }
-        let resampled = self.meta.source_geometry.is_some();
         let outcome = Some(("real_imaginary_conversion", stages::phase::slice_chopping_json(&converted.chopping)));
-        if let Some(line) = stages::phase::tukey_window_line(self.config) {
-            self.log(Level::Info, &line);
+        let mut outputs = Vec::new();
+        for (i, (phase, mag)) in converted.phases.iter().zip(&converted.magnitudes).enumerate() {
+            let e = i + 1;
+            let magnitude = chain.scaled_magnitude(e).map(|item| (item, mag.as_slice()));
+            self.put_echo(e, (chain.scaled_phase(e), phase), magnitude, &mut outputs)?;
         }
-        let (mut phases, mut magnitudes) = (Vec::new(), Vec::new());
-        for (i, (mut phase, mut mag)) in converted.phases.into_iter().zip(converted.magnitudes).enumerate() {
-            // On the acquired grid, as converted (no-op unless --tukey-window).
-            stages::phase::tukey_window(&mut mag, &mut phase, &self.meta, self.config);
-            let out = stages::phase::working_echo(phase, Some(mag), true, &self.meta);
-            self.put(Item::Phase(i + 1), Data::Real(&out.phase))?;
-            phases.push(Item::Phase(i + 1));
-            // The magnitude it converted, resampled with the phase when the run is resampled.
-            if let (Some(mag), true) = (&out.magnitude, !resampled || self.meta.has_magnitude) {
-                self.put(Item::Magnitude(i + 1), Data::Real(mag))?;
-                magnitudes.push(Item::Magnitude(i + 1));
-            }
-        }
-        let outputs: Vec<Item> = phases.into_iter().chain(magnitudes).collect();
         self.complete(Done {
             step: "scale_phase", algorithm: None, params: &params, outcome, key: &key, outputs: &outputs,
-        }, if resampled { "Resample + rescale phase" } else { "Rescale phase" })
+        }, "Rescale phase")
     }
 
     /// `scale_phase` for uncombined coils: every coil's echoes combined by MCPC-3D-S
-    /// ([`stages::phase::combine_coils`]) into the per-echo phase (radians, coil offsets removed)
-    /// and magnitude every later step reads, which are also kept as outputs of their own.
+    /// ([`stages::phase::combine_coils`]) on the acquired grid into the per-echo phase (radians,
+    /// coil offsets removed) and magnitude the later steps read. The combined echoes are also
+    /// published, as they are on the working grid, by the last of the phase steps.
     fn combine_coils(&mut self) -> Result<(), S::Error> {
+        self.check_resampling_planned()?;
+        let chain = self.chain();
         let coils = self.store.coils();
         let n = self.n_echoes();
         // MCPC-3D-S estimates each coil's phase offset from the difference of two echoes.
@@ -810,7 +832,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                  uncombined coils. Combine the coils first (on the scanner, or with another tool).",
                 coils.len())).into());
         }
-        let params = stages::phase::coil_params(self.config, &self.meta, &coils);
+        let params = stages::phase::coil_params(self.config, &self.meta, &coils, &chain);
         let Some(key) = self.begin("scale_phase", Some("mcpc3ds"), &params, "Skipping coil combination (cached)",
                                    "MCPC-3D-S coil combination") else { return Ok(()) };
         self.log(Level::Info, &format!("Coil combination (MCPC-3D-S): {} coils x {n} echoes", coils.len()));
@@ -843,31 +865,84 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             phases.push(cp);
             magnitudes.push(cm);
         }
-        let mut combined = stages::phase::combine_coils(&phases, &magnitudes, &self.meta, self.config)?;
+        let combined = stages::phase::combine_coils(&phases, &magnitudes, &self.meta, self.config)?;
         drop((phases, magnitudes));
-        if let Some(line) = stages::phase::tukey_window_line(self.config) {
-            self.log(Level::Info, &line);
-        }
         let mut outputs = Vec::new();
         for e in 1..=n {
-            // The combined echo on the acquired grid (no-op unless --tukey-window).
-            let (m, p) = (&mut combined.magnitudes[e - 1], &mut combined.phases[e - 1]);
-            stages::phase::tukey_window(m, p, &self.meta, self.config);
-            let echo = stages::phase::combined_echo(&combined.magnitudes[e - 1], &combined.phases[e - 1], &self.meta);
-            let magnitude = echo.magnitude.unwrap_or_default();
-            self.put(Item::Phase(e), Data::Real(&echo.phase))?;
-            self.put(Item::Magnitude(e), Data::Real(&magnitude))?;
-            self.put(Item::CombinedEchoPhase(e), Data::Real(&echo.phase))?;
-            self.put(Item::CombinedEchoMagnitude(e), Data::Real(&magnitude))?;
-            outputs.extend([Item::Phase(e), Item::Magnitude(e), Item::CombinedEchoPhase(e), Item::CombinedEchoMagnitude(e)]);
+            let magnitude = chain.scaled_magnitude(e).map(|item| (item, combined.magnitudes[e - 1].as_slice()));
+            self.put_echo(e, (chain.scaled_phase(e), &combined.phases[e - 1]), magnitude, &mut outputs)?;
         }
-        let mask = stages::phase::combination_mask(&combined.mask, &self.meta);
-        self.put(Item::CoilCombinationMask, Data::Mask(&mask))?;
+        // Where the offsets were estimated: on the acquired grid, which all coils share.
+        if self.meta.source_geometry.is_some() {
+            let mask: Vec<f64> = combined.mask.iter().map(|&m| m as f64).collect();
+            self.put_acquired(Item::CoilCombinationMask, &mask)?;
+        } else {
+            self.put(Item::CoilCombinationMask, Data::Mask(&combined.mask))?;
+        }
         outputs.push(Item::CoilCombinationMask);
         self.complete(Done {
             step: "scale_phase", algorithm: Some("mcpc3ds"), params: &params, outcome: None, key: &key,
             outputs: &outputs,
         }, "Coil combination")
+    }
+
+    /// The k-space Tukey window on every echo, on the acquired grid: phase scaling's phase and the
+    /// magnitude beside it ([`stages::phase::Chain::acquired_magnitude`]), each echo read, windowed
+    /// and kept before the next.
+    fn tukey_window(&mut self) -> Result<(), S::Error> {
+        let chain = self.chain();
+        let params = stages::phase::tukey_params(&self.meta, self.config, &chain);
+        let Some(key) = self.begin("tukey_window", None, &params, "Skipping tukey_window (cached)",
+                                   "Applying the k-space Tukey window") else { return Ok(()) };
+        if let Some(line) = stages::phase::tukey_window_line(self.config) {
+            self.log(Level::Info, &line);
+        }
+        let mut outputs = Vec::new();
+        for e in 1..=self.n_echoes() {
+            // The plan refuses the window without magnitude; this covers a direct caller.
+            let Some(mag_item) = chain.acquired_magnitude(e).filter(|i| self.store.has(i)) else {
+                return Err(crate::EngineError::Config(format!(
+                    "echo {e}: the Tukey window (--tukey-window) needs the echo's magnitude")).into());
+            };
+            let mut phase = self.store.real(&chain.scaled_phase(e))?;
+            let mut mag = self.store.real(&mag_item)?;
+            stages::phase::tukey_window(&mut mag, &mut phase, &self.meta, self.config);
+            let (phase_item, mag_item) = chain.windowed(e);
+            self.put_echo(e, (phase_item, &phase), Some((mag_item, &mag)), &mut outputs)?;
+        }
+        self.complete(Done {
+            step: "tukey_window", algorithm: None, params: &params, outcome: None, key: &key, outputs: &outputs,
+        }, "Tukey window")
+    }
+
+    /// Every echo resampled to the working (axial) grid, magnitude and phase together
+    /// ([`stages::phase::working_echo`]), each echo read, resampled and kept before the next.
+    /// Skipped for a run that is not resampled: the step before it wrote the working echoes.
+    fn resample_axial(&mut self) -> Result<(), S::Error> {
+        if self.meta.source_geometry.is_none() {
+            return Ok(());
+        }
+        let chain = self.chain();
+        let params = stages::phase::resample_params(&self.meta, &chain);
+        let Some(key) = self.begin("resample_axial", None, &params, "Skipping resample_axial (cached)",
+                                   "Resampling to axial") else { return Ok(()) };
+        let mut outputs = Vec::new();
+        for e in 1..=self.n_echoes() {
+            let (phase_item, mag_item) = chain.to_resample(e);
+            let phase = self.store.real(&phase_item)?;
+            let magnitude = match mag_item.filter(|i| self.store.has(i)) {
+                Some(item) => Some(self.store.real(&item)?),
+                None => None,
+            };
+            let had_magnitude = magnitude.is_some();
+            let out = stages::phase::working_echo(phase, magnitude, true, &self.meta);
+            // Without a magnitude the phase was resampled with a uniform one, which is not kept.
+            let magnitude = out.magnitude.as_deref().filter(|_| had_magnitude).map(|m| (Item::Magnitude(e), m));
+            self.put_echo(e, (Item::Phase(e), &out.phase), magnitude, &mut outputs)?;
+        }
+        self.complete(Done {
+            step: "resample_axial", algorithm: None, params: &params, outcome: None, key: &key, outputs: &outputs,
+        }, "Resample to axial")
     }
 
     fn magnitude(&mut self) -> Result<(), S::Error> {
@@ -2626,13 +2701,20 @@ pub(crate) mod tests {
         let check = |config: &PipelineConfig, facts: &ScanFacts, store: &MemoryStore| {
             let (plan, recorded) = dry_recorded(config, facts, store);
             let computed: Vec<&str> = recorded.iter().map(|(s, _)| s.as_str()).collect();
-            for step in plan.steps.iter().filter(|s| !matches!(s.stage, Stage::Load | Stage::Motion | Stage::OutputSpace)) {
+            // The phantom is axial: the run is not resampled, and does not take the steps that
+            // would resample it and return it to the acquired grid.
+            let skipped = |s: &Stage| matches!(s, Stage::Load | Stage::Motion | Stage::ResampleAxial | Stage::OutputSpace);
+            for step in plan.steps.iter().filter(|s| !skipped(&s.stage)) {
                 assert!(computed.contains(&step.name.as_str()), "{}: not computed in the dry run: {computed:?}", step.name);
             }
+            let unresampled = crate::pipeline_graph::step_details(&plan, &plan.config, facts, Some(false));
             for (step, inputs) in &recorded {
-                let planned = plan.steps.iter().find(|s| &s.name == step).unwrap();
-                assert_eq!(inputs, &planned.reads, "{step} ({}, {} echo(es), two-pass {})",
+                let at = plan.steps.iter().position(|s| &s.name == step).unwrap();
+                assert_eq!(inputs, &unresampled[at].reads, "{step} ({}, {} echo(es), two-pass {})",
                            config.inversion.algorithm, facts.n_echoes, plan.two_pass);
+                if !plan.has(Stage::ResampleAxial) {
+                    assert_eq!(inputs, &plan.steps[at].reads, "{step}: what the plan says, where it cannot resample");
+                }
             }
         };
         let one_echo = |facts: &mut ScanFacts| {
@@ -3018,7 +3100,9 @@ pub(crate) mod tests {
         assert_eq!(store.get(&Item::Magnitude(2)), store.get(&Item::AcquiredMagnitude(2)), "off: as acquired");
 
         c.pipeline.tukey_window = 0.4;
-        assert!(run_once(&c, &facts, &mut store).computed.iter().any(|s| s == "scale_phase"), "the window keys the step");
+        let on = run_once(&c, &facts, &mut store).computed;
+        assert!(on.iter().any(|s| s == "tukey_window"), "{on:?}");
+        assert!(on.iter().any(|s| s == "scale_phase"), "phase scaling now leaves the echoes for the window: {on:?}");
         for (e, (mag, phase)) in acquired.into_iter().enumerate() {
             let (mut m, mut p) = (mag, phase);
             qsm_core::pipeline::scale_phase_to_pi(&mut p);
@@ -3031,6 +3115,76 @@ pub(crate) mod tests {
         let no_mag = ScanFacts { has_magnitude: false, ..facts };
         let err = crate::requirements::scan_check(&no_mag, &c).errors.join("\n");
         assert!(err.contains("--tukey-window needs magnitude"), "{err}");
+    }
+
+    /// The phase steps of a windowed, resampled run do what the single step that did all three
+    /// did, in the same order: every echo scaled to radians, windowed on the acquired grid, then
+    /// resampled with its magnitude through the complex domain. Each leaves the echoes on the
+    /// acquired grid for the next; the working echoes are the resampling's.
+    #[test]
+    fn a_windowed_resampled_run_gives_the_echoes_the_single_step_gave() {
+        let (cos, sin) = (20f64.to_radians().cos(), 20f64.to_radians().sin());
+        let affine = [1.0, 0.0, 0.0, 0.0, 0.0, cos, -sin, 0.0, 0.0, sin, cos, 0.0, 0.0, 0.0, 0.0, 1.0];
+        for tukey in [0.0, 0.3] {
+            let (facts, mut store) = phantom_on(affine);
+            let acquired: Vec<(Vec<f64>, Vec<f64>)> = (1..=TES.len()).map(|e| {
+                let get = |i: Item| match store.get(&i) { Some(VolumeData::Real(v)) => v.clone(), _ => panic!() };
+                (get(Item::AcquiredMagnitude(e)), get(Item::AcquiredPhase(e)))
+            }).collect();
+            let mut c = config();
+            c.pipeline.do_qsm = false;
+            c.pipeline.do_r2starmap = true;
+            c.pipeline.axial_resampling = true;
+            c.pipeline.obliquity_threshold = 5.0;
+            c.pipeline.tukey_window = tukey;
+            let events = run_once(&c, &facts, &mut store);
+            let phase_steps: Vec<&str> = events.computed.iter().map(String::as_str)
+                .filter(|s| ["scale_phase", "tukey_window", "resample_axial"].contains(s)).collect();
+            let want: &[&str] = if tukey > 0.0 { &["scale_phase", "tukey_window", "resample_axial"] } else { &["scale_phase", "resample_axial"] };
+            assert_eq!(phase_steps, want);
+            let meta = store.grid().unwrap().clone();
+            assert!(meta.source_geometry.is_some());
+            for (e, (mag, phase)) in acquired.into_iter().enumerate() {
+                let e = e + 1;
+                // The single step's operations, called directly.
+                let (mut m, mut p) = (mag, phase);
+                qsm_core::pipeline::scale_phase_to_pi(&mut p);
+                c.pipeline.tukey_window = tukey;
+                crate::stages::phase::tukey_window(&mut m, &mut p, &meta, &c);
+                let want = crate::stages::phase::working_echo(p, Some(m), true, &meta);
+                assert_eq!(store.get(&Item::Phase(e)), Some(&VolumeData::Real(want.phase)), "echo {e}, Tukey {tukey}");
+                assert_eq!(store.get(&Item::Magnitude(e)), Some(&VolumeData::Real(want.magnitude.unwrap())), "echo {e}");
+                // What the steps before it left, on the acquired grid.
+                let acquired_grid = Some(crate::stages::output_space::acquired((N, N, N), &affine));
+                let between = if tukey > 0.0 { Item::WindowedPhase(e) } else { Item::ScaledPhase(e) };
+                assert_eq!(store.geometry(&between).cloned(), acquired_grid, "{between:?}");
+            }
+            assert!(!store.has(&Item::ScaledMagnitude(1)), "the magnitude given is read where it is");
+        }
+    }
+
+    /// A run that is not resampled skips the resampling step: the step before it writes the
+    /// working echoes, exactly as when the configuration cannot resample, under the same key.
+    #[test]
+    fn a_run_that_is_not_resampled_skips_the_resampling() {
+        let held = |store: &MemoryStore| (1..=TES.len()).map(|e| (store.get(&Item::Phase(e)).cloned(), store.get(&Item::Magnitude(e)).cloned()))
+            .collect::<Vec<_>>();
+        let mut c = config();
+        c.pipeline.do_qsm = false;
+        c.pipeline.do_r2starmap = true;
+        let (facts, mut cannot) = phantom();
+        run_once(&c, &facts, &mut cannot);
+        c.pipeline.axial_resampling = true;
+        let (facts, mut can) = phantom();
+        let plan = crate::plan::plan(&c, &facts);
+        assert!(plan.has(Stage::ResampleAxial));
+        let record = run(&plan, &c, &facts, &mut can, &mut ()).unwrap();
+        assert_eq!(record.step("resample_axial").map(|s| s.state), Some(StepState::Skipped));
+        assert_eq!(record.resampled, Some(false));
+        assert_eq!(held(&can), held(&cannot));
+        assert_eq!(can.get(&Item::Magnitude(2)), can.get(&Item::AcquiredMagnitude(2)), "kept as given");
+        assert!(!can.has(&Item::ScaledPhase(1)));
+        assert_eq!(can.recorded_keys().get("scale_phase"), cannot.recorded_keys().get("scale_phase"));
     }
 
     /// An empty brain mask stops the run at the mask step, computed or supplied (#251); a section
@@ -3141,7 +3295,11 @@ pub(crate) mod tests {
         config.inversion.algorithm = QsmAlgorithm::Xqsm;
         let events = run_until_done_or_failed(&config, &facts, &mut store);
         assert!(events.cached.is_empty(), "{:?}", events.cached);
-        assert_eq!(events.computed[..first.computed.len() - 2], first.computed[..first.computed.len() - 2]);
+        // The same steps, with the echoes resampled after phase scaling.
+        let mut resampled = first.computed.clone();
+        resampled.insert(2, "resample_axial".to_string());
+        assert_eq!(first.computed[1], "scale_phase");
+        assert_eq!(events.computed[..resampled.len() - 2], resampled[..resampled.len() - 2]);
         assert!(store.grid().is_some_and(|m| m.source_geometry.is_some()), "resampled for xQSM");
     }
 
@@ -4429,6 +4587,82 @@ pub(crate) mod tests {
         assert!(parts.get(&Item::Chi).is_some());
     }
 
+    /// Combined coils and converted real/imaginary parts of an oblique scan, windowed and
+    /// resampled: the echoes the single step gave (combined or converted, windowed on the acquired
+    /// grid, then resampled), and the combined echoes published as they are on the working grid.
+    #[test]
+    fn combined_and_converted_echoes_are_windowed_then_resampled_as_before() {
+        let (cos, sin) = (20f64.to_radians().cos(), 20f64.to_radians().sin());
+        let affine = [1.0, 0.0, 0.0, 0.0, 0.0, cos, -sin, 0.0, 0.0, sin, cos, 0.0, 0.0, 0.0, 0.0, 1.0];
+        let (facts, store) = phantom_on(affine);
+        let echo = |item: Item| match store.get(&item) { Some(VolumeData::Real(v)) => v.clone(), _ => panic!() };
+        let (phases, mags): (Vec<_>, Vec<_>) = (1..=TES.len()).map(|e| (echo(Item::AcquiredPhase(e)), echo(Item::AcquiredMagnitude(e)))).unzip();
+        let header = Header { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine, orientation: None, sidecar: None };
+        let mut c = config();
+        (c.pipeline.do_qsm, c.pipeline.do_r2starmap) = (false, true);
+        (c.pipeline.axial_resampling, c.pipeline.obliquity_threshold, c.pipeline.tukey_window) = (true, 5.0, 0.3);
+        // Left on the working grid, so the published combined echoes are compared there.
+        c.pipeline.output_space = crate::OutputSpace::Working;
+        let resampled = |store: &MemoryStore| store.grid().unwrap().clone();
+
+        let mut coils = MemoryStore::new(header.clone(), json!("coils"));
+        let (mut coil_phases, mut coil_mags) = (Vec::new(), Vec::new());
+        for (coil, offset) in [(1, 0.4), (2, -0.9)] {
+            let (mut cp, mut cm) = (Vec::new(), Vec::new());
+            for e in 1..=TES.len() {
+                let phase: Vec<f64> = phases[e - 1].iter()
+                    .map(|&v| (v + offset + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU) - std::f64::consts::PI).collect();
+                let mag: Vec<f64> = mags[e - 1].iter().enumerate().map(|(i, &v)| v * (0.5 + (i % N) as f64 / (2 * N * coil) as f64)).collect();
+                coils.insert(Item::CoilPhase(coil, e), VolumeData::Real(phase.clone()));
+                coils.insert(Item::CoilMagnitude(coil, e), VolumeData::Real(mag.clone()));
+                cp.push(phase);
+                cm.push(mag);
+            }
+            coil_phases.push(cp);
+            coil_mags.push(cm);
+        }
+        let f = ScanFacts { n_coils: 2, ..facts.clone() };
+        run_once(&c, &f, &mut coils);
+        let meta = resampled(&coils);
+        assert!(meta.source_geometry.is_some());
+        for p in coil_phases.iter_mut().flatten() {
+            qsm_core::pipeline::scale_phase_to_pi(p);
+        }
+        let combined = crate::stages::phase::combine_coils(&coil_phases, &coil_mags, &meta, &c).unwrap();
+        for e in 1..=TES.len() {
+            let (mut m, mut p) = (combined.magnitudes[e - 1].clone(), combined.phases[e - 1].clone());
+            crate::stages::phase::tukey_window(&mut m, &mut p, &meta, &c);
+            let want = crate::stages::phase::working_echo(p, Some(m), true, &meta);
+            let (phase, magnitude) = (VolumeData::Real(want.phase), VolumeData::Real(want.magnitude.unwrap()));
+            assert_eq!(coils.get(&Item::Phase(e)), Some(&phase), "echo {e}");
+            assert_eq!(coils.get(&Item::Magnitude(e)), Some(&magnitude), "echo {e}");
+            assert_eq!(coils.get(&Item::CombinedEchoPhase(e)), Some(&phase), "echo {e}");
+            assert_eq!(coils.get(&Item::CombinedEchoMagnitude(e)), Some(&magnitude), "echo {e}");
+        }
+        // The mask the offsets were estimated in stays on the acquired grid.
+        assert_eq!(coils.geometry(&Item::CoilCombinationMask).map(|g| g.dims), Some((N, N, N)));
+
+        let mut parts = MemoryStore::new(header, json!("parts"));
+        let (mut real, mut imaginary) = (Vec::new(), Vec::new());
+        for e in 1..=TES.len() {
+            let (p, m) = (&phases[e - 1], &mags[e - 1]);
+            real.push(p.iter().zip(m).map(|(&p, &m)| m * p.cos()).collect::<Vec<f64>>());
+            imaginary.push(p.iter().zip(m).map(|(&p, &m)| m * p.sin()).collect::<Vec<f64>>());
+            parts.insert(Item::AcquiredReal(e), VolumeData::Real(real[e - 1].clone()));
+            parts.insert(Item::AcquiredImaginary(e), VolumeData::Real(imaginary[e - 1].clone()));
+        }
+        let f = ScanFacts { real_imaginary: true, ..facts };
+        run_once(&c, &f, &mut parts);
+        let meta = resampled(&parts);
+        let (converted, _) = crate::stages::phase::real_imaginary(&real, &imaginary, &meta, false);
+        for e in 1..=TES.len() {
+            let (mut m, mut p) = (converted.magnitudes[e - 1].clone(), converted.phases[e - 1].clone());
+            crate::stages::phase::tukey_window(&mut m, &mut p, &meta, &c);
+            let want = crate::stages::phase::working_echo(p, Some(m), true, &meta);
+            assert_eq!(parts.get(&Item::Phase(e)), Some(&VolumeData::Real(want.phase)), "echo {e}");
+            assert_eq!(parts.get(&Item::Magnitude(e)), Some(&VolumeData::Real(want.magnitude.unwrap())), "echo {e}");
+        }
+    }
 }
 
 #[cfg(test)]

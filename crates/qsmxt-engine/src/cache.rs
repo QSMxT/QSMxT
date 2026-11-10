@@ -51,14 +51,9 @@ pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value
     });
     let masking = || serde_json::to_value(&config.masking).unwrap_or_default();
     match base {
-        "scale_phase" => {
-            let mut c = json!({ "coil_combination_sigma": config.field_mapping.coil_combination_sigma });
-            // Only when on, so a run without it keeps its key.
-            if config.pipeline.tukey_window > 0.0 {
-                c["tukey_window"] = json!(config.pipeline.tukey_window);
-            }
-            c
-        }
+        "scale_phase" => json!({ "coil_combination_sigma": config.field_mapping.coil_combination_sigma }),
+        // Its taper ratio is in its parameters.
+        "tukey_window" => json!({ "tukey_window": config.pipeline.tukey_window }),
         "magnitude" => json!({
             "inhomogeneity_correction": config.masking.inhomogeneity_correction,
             "inhomogeneity_method": config.masking.inhomogeneity_method,

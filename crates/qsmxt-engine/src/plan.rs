@@ -42,9 +42,16 @@ impl Pass {
 pub enum Stage {
     /// The grid the run is processed on, from the first echo's header.
     Load,
-    /// Every echo's phase in radians on the working grid (and, for uncombined coils or
+    /// Every echo's phase in radians on the acquired grid (and, for uncombined coils or
     /// real/imaginary input, their combination or conversion first).
     ScalePhase,
+    /// The k-space Tukey window on every echo's complex image, on the acquired grid
+    /// (`pipeline.tukey_window`, only when it is on).
+    TukeyWindow,
+    /// Every echo, phase and magnitude together, resampled to an axial grid: planned when the
+    /// configuration can resample this scan ([`crate::scan::can_resample`]), and doing anything
+    /// only when its grid ([`crate::scan::resolve_geometry`]) is resampled.
+    ResampleAxial,
     /// The combined magnitude.
     Magnitude,
     /// The brain mask (main pass), or the reliable-phase mask of a two-pass run.
@@ -88,6 +95,8 @@ impl Stage {
         let (base, pass) = match *self {
             Stage::Load => ("load", Pass::Main),
             Stage::ScalePhase => ("scale_phase", Pass::Main),
+            Stage::TukeyWindow => ("tukey_window", Pass::Main),
+            Stage::ResampleAxial => ("resample_axial", Pass::Main),
             Stage::Magnitude => ("magnitude", Pass::Main),
             Stage::Mask(p) => ("mask", p),
             Stage::Motion => ("motion", Pass::Main),
@@ -119,6 +128,8 @@ impl Stage {
         let (base, pass) = match *self {
             Stage::Load => ("Load", Pass::Main),
             Stage::ScalePhase => ("Phase scaling", Pass::Main),
+            Stage::TukeyWindow => ("Tukey window", Pass::Main),
+            Stage::ResampleAxial => ("Resample to an axial grid", Pass::Main),
             Stage::Magnitude => ("Combined magnitude", Pass::Main),
             Stage::Mask(Pass::Main) => ("Brain mask", Pass::Main),
             Stage::Mask(Pass::Reliable) => ("Reliable-phase mask", Pass::Main),
@@ -342,6 +353,13 @@ pub fn plan_for(config: &PipelineConfig, facts: &ScanFacts, profile: &MemoryProf
     let mut add = |stage: Stage, models: Vec<&'static str>| steps.push(Step::new(stage, models));
     if needs_phase {
         add(Stage::ScalePhase, vec![]);
+        // On the acquired grid, after phase scaling and before resampling.
+        if p.tukey_window > 0.0 {
+            add(Stage::TukeyWindow, vec![]);
+        }
+        if crate::scan::can_resample(facts, config) {
+            add(Stage::ResampleAxial, vec![]);
+        }
         if facts.has_magnitude {
             add(Stage::Magnitude, vec![]);
         }
@@ -438,7 +456,7 @@ pub fn plan_for(config: &PipelineConfig, facts: &ScanFacts, profile: &MemoryProf
         two_pass,
         motion_corrected,
     };
-    let details = crate::pipeline_graph::step_details(&plan, config, facts);
+    let details = crate::pipeline_graph::step_details(&plan, config, facts, None);
     for (step, d) in plan.steps.iter_mut().zip(details) {
         (step.algorithm, step.algorithm_label, step.reads, step.outputs) = (d.algorithm, d.algorithm_label, d.reads, d.writes);
     }
@@ -527,6 +545,36 @@ pub(crate) mod tests {
         assert!(plan.check.errors.is_empty() && plan.check.warnings.is_empty());
         assert!(plan.peak_memory_bytes > 0);
         assert!(!plan.two_pass && !plan.motion_corrected);
+    }
+
+    /// The Tukey window is planned only when it is on, and the resampling to an axial grid only
+    /// where the configuration can resample the scan, both after phase scaling and before
+    /// anything reads the echoes.
+    #[test]
+    fn the_phase_steps_are_planned_where_they_apply() {
+        let phase_steps = |c: &PipelineConfig, f: &ScanFacts| names(&plan(c, f))[1..].iter()
+            .take_while(|n| *n != "magnitude").cloned().collect::<Vec<_>>();
+        let mut c = PipelineConfig::default();
+        assert_eq!(phase_steps(&c, &facts()), ["scale_phase"]);
+        c.pipeline.tukey_window = 0.2;
+        assert_eq!(phase_steps(&c, &facts()), ["scale_phase", "tukey_window"]);
+        c.pipeline.axial_resampling = true;
+        assert_eq!(phase_steps(&c, &facts()), ["scale_phase", "tukey_window", "resample_axial"]);
+        c.pipeline.tukey_window = 0.0;
+        assert_eq!(phase_steps(&c, &facts()), ["scale_phase", "resample_axial"]);
+        // A sidecar's B0 direction is used instead of resampling.
+        let mut with_b0 = facts();
+        with_b0.b0_dir = Some((0.0, 0.1, 0.99));
+        assert_eq!(phase_steps(&c, &with_b0), ["scale_phase"]);
+        // An inversion that only understands axial data may need it, whatever the setting.
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = QsmAlgorithm::Xqsm;
+        assert_eq!(phase_steps(&c, &with_b0), ["scale_phase", "resample_axial"]);
+        // Nothing reads the echoes: no phase steps at all.
+        let mut c = PipelineConfig::default();
+        c.pipeline.do_qsm = false;
+        c.pipeline.tukey_window = 0.2;
+        assert!(!plan(&c, &facts()).has(Stage::TukeyWindow));
     }
 
     /// MEDI runs the background removal it is given: the general default unless another is set.

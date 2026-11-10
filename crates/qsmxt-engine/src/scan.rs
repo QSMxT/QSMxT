@@ -188,7 +188,7 @@ pub struct RunMetadata {
     pub has_magnitude: bool,
     /// Set when the run is being resampled to a cardinal-aligned grid: the dims and affine of the
     /// files as they sit on disk. `dims`/`voxel_size`/`affine` above are then the *working* grid
-    /// every stage after `scale_phase` sees, and `b0_direction` is `(0,0,1)`.
+    /// every stage after `resample_axial` sees, and `b0_direction` is `(0,0,1)`.
     #[serde(default)]
     pub source_geometry: Option<((usize, usize, usize), [f64; 16])>,
     /// `(thickness mm, voxel axis)` of the acquisition's slices on the working grid, when the
@@ -211,6 +211,16 @@ pub const AXIAL_ONLY_TOLERANCE_DEG: f64 = 1.0;
 /// axial-only algorithm is given resampled data ([`AXIAL_ONLY_TOLERANCE_DEG`]).
 pub fn tilted_for_axial_only(affine: &[f64; 16]) -> bool {
     qsm_core::geometry::b0_angle_from_affine(affine) > AXIAL_ONLY_TOLERANCE_DEG
+}
+
+/// Whether [`resolve_geometry`] can resample a run of `config` on the scan `facts` describes to an
+/// axial grid, whatever its header says: an algorithm that only understands axial data is
+/// configured, or `pipeline.axial_resampling` is on and no sidecar gives B0's direction. When it
+/// cannot, the run is never resampled, and the plan has no resampling step and its graph no return
+/// to the acquired grid.
+pub fn can_resample(facts: &ScanFacts, config: &PipelineConfig) -> bool {
+    !crate::bridge::axial_only_algorithms(config, orientation_facts(facts, config)).is_empty()
+        || (config.pipeline.axial_resampling && facts.b0_dir.is_none())
 }
 
 /// Work out the grid and B0 direction the pipeline will actually reconstruct on, from the first
@@ -532,6 +542,28 @@ pub fn grid_decision(meta: &RunMetadata, facts: &ScanFacts, config: &PipelineCon
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A configuration that cannot resample is never resampled, however oblique the scan; one
+    /// that can is, on an oblique scan, unless a sidecar gives B0's direction and nothing needs
+    /// axial data.
+    #[test]
+    fn a_run_is_resampled_only_where_the_configuration_can_resample() {
+        let (c, s) = (40f64.to_radians().cos(), 40f64.to_radians().sin());
+        let oblique = [1.0, 0.0, 0.0, 0.0, 0.0, c, -s, 0.0, 0.0, s, c, 0.0, 0.0, 0.0, 0.0, 1.0];
+        let facts = crate::plan::tests::facts();
+        let resampled = |config: &PipelineConfig, facts: &ScanFacts| {
+            resolve_geometry(facts.dims, (1.0, 1.0, 1.0), oblique, facts, config).source_geometry.is_some()
+        };
+        let mut config = PipelineConfig::default();
+        assert!(!can_resample(&facts, &config) && !resampled(&config, &facts), "the defaults keep the grid");
+        config.pipeline.axial_resampling = true;
+        assert!(can_resample(&facts, &config) && resampled(&config, &facts));
+        let with_b0 = ScanFacts { b0_dir: Some((0.0, -s, c)), ..facts.clone() };
+        assert!(!can_resample(&with_b0, &config) && !resampled(&config, &with_b0), "the sidecar's B0 is used");
+        config.pipeline.axial_resampling = false;
+        config.inversion.algorithm = crate::enums::QsmAlgorithm::Xqsm;
+        assert!(can_resample(&with_b0, &config) && resampled(&config, &with_b0), "xQSM needs axial data");
+    }
 
     /// N4 gets the geometry ITK reads from the scan's header: for an oblique, neurologically
     /// stored grid, the same as qsm-core reads back from the NIfTI file of that grid.

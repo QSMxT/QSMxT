@@ -1413,7 +1413,7 @@ pub struct PipelineToggles {
     pub ignore_slice_gap: bool,
     /// Taper ratio of the χ-separation toolbox's k-space Tukey window, applied to every echo's
     /// complex image on the acquired grid before any other stage reads it (qsm-core
-    /// `utils::tukey_window`; the `scale_phase` step). 0 (the default) applies none; the toolbox
+    /// `utils::tukey_window`; the `tukey_window` step, after phase scaling). 0 (the default) applies none; the toolbox
     /// recommends 0.4 for Siemens and GE and 0 for Philips, which χ-sepnet's toolbox route
     /// suggests through the pipeline rules. Needs magnitude.
     #[serde(default)]

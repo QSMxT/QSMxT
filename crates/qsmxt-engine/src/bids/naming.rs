@@ -247,6 +247,11 @@ pub fn scaled_phase_echo(echo: usize, suffix: &str) -> Tail {
 pub fn magnitude_echo(echo: usize, suffix: &str) -> Tail {
     Tail::new(suffix).with("echo", echo.to_string()).with("part", "mag")
 }
+/// One echo's phase (radians) or magnitude (`part`) on the acquired grid, between the phase
+/// steps of a run that windows or resamples it (workflow intermediates).
+pub fn acquired_grid_echo(echo: usize, part: &str, suffix: &str) -> Tail {
+    Tail::new(suffix).with("echo", echo.to_string()).with("part", part).with("desc", "acquiredgrid")
+}
 
 /// Where `qsmxt swi --mip` puts the projection when `--mip-output` is not given: the SWI's name
 /// with its `swi` suffix replaced by `minIP` (`sub-01_swi.nii` → `sub-01_minIP.nii`, as the pipeline
@@ -292,7 +297,7 @@ mod tests {
             smwi("paramagnetic"), smwi_minip("diamagnetic"), dseg(), t2starmap(), r2starmap(),
             r2map(), r2primemap(), total_fieldmap(), total_fieldmap_magnitude(), total_fieldmap_ppm(), unreferenced_chimap(),
             combined_echo(3, "phase", "MEGRE"), mcpc3ds_mask(), scaled_phase_echo(2, "MEGRE"),
-            magnitude_echo(2, "GRE"),
+            magnitude_echo(2, "GRE"), acquired_grid_echo(1, "phase", "MEGRE"),
         ];
         for t in tails {
             let name = compose("sub-01", &t);

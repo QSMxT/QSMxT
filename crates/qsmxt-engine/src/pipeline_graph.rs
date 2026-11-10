@@ -220,9 +220,41 @@ struct Ctx<'a> {
     plan: &'a Plan,
     config: &'a PipelineConfig,
     facts: &'a ScanFacts,
+    /// Whether the run is resampled, when that is known.
+    resampled: Option<bool>,
 }
 
 impl Ctx<'_> {
+    /// Where the phase steps read and write each echo: a run that may be resampled is drawn as
+    /// one that is, the resampling step marked as conditional.
+    fn chain(&self) -> crate::stages::phase::Chain {
+        let f = self.facts;
+        crate::stages::phase::Chain {
+            makes_magnitude: f.n_coils > 1 || f.real_imaginary,
+            has_magnitude: f.has_magnitude || f.n_coils > 1 || f.real_imaginary,
+            windowed: self.plan.has(Stage::TukeyWindow),
+            resampled: self.plan.has(Stage::ResampleAxial) && self.resampled != Some(false),
+            coils: f.n_coils > 1,
+        }
+    }
+
+    /// What a phase step writes for echo `e` beside its phase and magnitude: when it writes the
+    /// working echoes of a run of uncombined coils, the combined echoes it publishes.
+    fn combined_echo(&self, e: usize, working: bool) -> Vec<Item> {
+        if working && self.facts.n_coils > 1 { vec![Item::CombinedEchoPhase(e), Item::CombinedEchoMagnitude(e)] } else { vec![] }
+    }
+
+    /// The items `stage` writes as copies of the scan's (`(source, written)`): the graph draws
+    /// them from where they came, and not as the step's. Phase scaling with nothing after it keeps
+    /// the magnitude given as it is.
+    fn copies(&self, stage: Stage) -> Vec<(Item, Item)> {
+        match stage {
+            Stage::ScalePhase if self.chain().copies_magnitude() =>
+                (1..=self.n()).map(|e| (Item::AcquiredMagnitude(e), Item::Magnitude(e))).collect(),
+            _ => Vec::new(),
+        }
+    }
+
     fn n(&self) -> usize {
         self.facts.n_echoes
     }
@@ -389,27 +421,55 @@ impl Ctx<'_> {
                 writes.extend(self.mese());
             }
             Stage::ScalePhase => {
+                let chain = self.chain();
                 if f.n_coils > 1 {
                     reads.extend(written.iter().copied().filter(|i| matches!(i, Item::CoilPhase(..) | Item::CoilMagnitude(..))));
-                    writes.extend(self.echoes(Item::Phase));
-                    writes.extend(self.echoes(Item::Magnitude));
-                    writes.extend(self.echoes(Item::CombinedEchoPhase));
-                    writes.extend(self.echoes(Item::CombinedEchoMagnitude));
-                    writes.push(Item::CoilCombinationMask);
                 } else if f.real_imaginary {
                     reads.extend(self.echoes(Item::AcquiredReal));
                     reads.extend(self.echoes(Item::AcquiredImaginary));
-                    writes.extend(self.echoes(Item::Phase));
-                    writes.extend(self.echoes(Item::Magnitude));
                 } else {
+                    // A magnitude it keeps as it was given is a copy of the scan's, not read
+                    // ([`Ctx::copies`]).
                     reads.extend(self.echoes(Item::AcquiredPhase));
-                    if f.has_magnitude {
-                        reads.extend(self.echoes(Item::AcquiredMagnitude));
-                    }
-                    writes.extend(self.echoes(Item::Phase));
-                    writes.extend(self.magnitudes());
+                }
+                for e in 1..=self.n() {
+                    writes.push(chain.scaled_phase(e));
+                    writes.extend(chain.scaled_magnitude(e));
+                    writes.extend(self.combined_echo(e, chain.scaling_is_last()));
+                }
+                if f.n_coils > 1 {
+                    writes.push(Item::CoilCombinationMask);
                 }
             }
+            Stage::TukeyWindow => {
+                let chain = self.chain();
+                for e in 1..=self.n() {
+                    reads.push(chain.scaled_phase(e));
+                    reads.extend(chain.acquired_magnitude(e));
+                }
+                for e in 1..=self.n() {
+                    let (p, m) = chain.windowed(e);
+                    writes.extend([p, m]);
+                    writes.extend(self.combined_echo(e, !chain.resampled));
+                }
+            }
+            // Nothing when the run is known not to be resampled: the step is skipped.
+            Stage::ResampleAxial if self.chain().resampled => {
+                let chain = self.chain();
+                for e in 1..=self.n() {
+                    let (p, m) = chain.to_resample(e);
+                    reads.push(p);
+                    reads.extend(m);
+                }
+                for e in 1..=self.n() {
+                    writes.push(Item::Phase(e));
+                    if chain.to_resample(e).1.is_some() {
+                        writes.push(Item::Magnitude(e));
+                    }
+                    writes.extend(self.combined_echo(e, true));
+                }
+            }
+            Stage::ResampleAxial => {}
             Stage::Magnitude => {
                 reads.extend(self.magnitudes());
                 writes.push(Item::CombinedMagnitude);
@@ -786,8 +846,9 @@ impl Ctx<'_> {
                 };
                 ((Some("synthseg".into()), Some(label)), s)
             }
-            Stage::Load | Stage::ScalePhase | Stage::TwoPassCombination | Stage::Analysis | Stage::OutputSpace =>
-                ((None, None), vec![]),
+            Stage::TukeyWindow => ((None, None), vec![format!("taper ratio {}", c.pipeline.tukey_window)]),
+            Stage::Load | Stage::ScalePhase | Stage::ResampleAxial | Stage::TwoPassCombination | Stage::Analysis
+            | Stage::OutputSpace => ((None, None), vec![]),
         };
         (id, label, settings)
     }
@@ -807,6 +868,9 @@ impl Ctx<'_> {
             Stage::ChiSeparation => Some(Output::ChiSeparation.setting().to_string()),
             Stage::Analysis => Some(Output::Analysis.setting().to_string()),
             Stage::Motion => Some("motion_correction.enabled".into()),
+            Stage::TukeyWindow => Some("pipeline.tukey_window".into()),
+            // Asked for by the setting, or needed by an algorithm that only understands axial data.
+            Stage::ResampleAxial if self.config.pipeline.axial_resampling => Some("pipeline.axial_resampling".into()),
             Stage::Mask(Pass::Reliable) | Stage::BackgroundRemoval(Pass::Reliable) | Stage::Inversion(Pass::Reliable)
             | Stage::Tgv(Pass::Reliable) | Stage::Qsmart(Pass::Reliable) | Stage::TwoPassCombination
             | Stage::SinglePassReference => Some("masking.two_pass".into()),
@@ -828,13 +892,16 @@ fn branch(stage: Stage, two_pass: bool) -> Option<Branch> {
 }
 
 /// Whether the graph leaves out `stage`, a step of `plan` that does nothing with the data:
-/// motion correction when it is off (the step only forgets an earlier run's output), and the
-/// return to the acquired grid of a run that keeps its working grid or, when `resampled` is known
-/// (from the run's grid), is not resampled.
+/// motion correction when it is off (the step only forgets an earlier run's output); the
+/// resampling to an axial grid when `resampled` is known (from the run's grid) to be false; and
+/// the return to the acquired grid of a run that keeps its working grid, cannot be resampled (its
+/// plan has no resampling step) or, when `resampled` is known, is not resampled.
 pub(crate) fn left_out(plan: &Plan, config: &PipelineConfig, stage: Stage, resampled: Option<bool>) -> bool {
     match stage {
         Stage::Motion => !plan.motion_corrected,
-        Stage::OutputSpace => config.pipeline.output_space != crate::OutputSpace::Acquired || resampled == Some(false),
+        Stage::ResampleAxial => resampled == Some(false),
+        Stage::OutputSpace => config.pipeline.output_space != crate::OutputSpace::Acquired
+            || !plan.has(Stage::ResampleAxial) || resampled == Some(false),
         _ => false,
     }
 }
@@ -842,12 +909,14 @@ pub(crate) fn left_out(plan: &Plan, config: &PipelineConfig, stage: Stage, resam
 /// The graph of a run of `plan` (made by [`crate::plan::plan`] from `config` and `facts`).
 ///
 /// `grid` is the run's grid, when it is known ([`crate::scan::resolve_geometry`] on the first
-/// echo's header): it decides whether the run is resampled, and so whether its outputs are
-/// returned to the acquired grid. Without it, that step is drawn with [`Node::only_when`] set.
+/// echo's header): it decides whether the run is resampled, and so whether its echoes are
+/// resampled to an axial grid and its outputs returned to the acquired grid. Without it, those
+/// steps are drawn with [`Node::only_when`] set, where the configuration can resample at all.
 ///
-/// A step the plan lists that does nothing with the data is left out: motion correction when it
-/// is off (the step only forgets an earlier run's output), and the return to the acquired grid
-/// of a run that is not resampled or keeps its working grid.
+/// A step the plan lists that does nothing with the data is left out ([`left_out`]): motion
+/// correction when it is off (the step only forgets an earlier run's output), and the resampling
+/// and the return to the acquired grid of a run that is not resampled (the return also of one
+/// that keeps its working grid).
 pub fn pipeline_graph(plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, grid: Option<&RunMetadata>) -> PipelineGraph {
     pipeline_graph_on(plan, config, facts, grid.map(|g| g.source_geometry.is_some()))
 }
@@ -955,7 +1024,7 @@ fn setup_text(settings: &[String], node: &Node) -> String {
 /// with.
 pub fn pipeline_graph_on(plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, resampled: Option<bool>) -> PipelineGraph {
     let config = &config.normalised_as_planned(plan);
-    let ctx = Ctx { plan, config, facts };
+    let ctx = Ctx { plan, config, facts, resampled };
     let mut nodes: Vec<Node> = Vec::new();
     let mut edges: Vec<Edge> = Vec::new();
     let mut items: Vec<Item> = Vec::new();
@@ -966,10 +1035,21 @@ pub fn pipeline_graph_on(plan: &Plan, config: &PipelineConfig, facts: &ScanFacts
         if left_out(plan, config, stage, resampled) {
             continue;
         }
-        let only_when = (stage == Stage::OutputSpace && resampled.is_none()).then(|| "the run is resampled".to_string());
+        let only_when = (matches!(stage, Stage::ResampleAxial | Stage::OutputSpace) && resampled.is_none())
+            .then(|| "the run is resampled".to_string());
         let written: Vec<Item> = writer.iter().map(|(i, _)| *i).collect();
-        let (reads, writes) = ctx.io(stage, &written);
+        let (reads, mut writes) = ctx.io(stage, &written);
         let id = stage.name();
+        // What the step only copies is drawn from where it came, not through the step.
+        for (from, to) in ctx.copies(stage) {
+            writes.retain(|i| *i != to);
+            if let Some(source) = writer.iter().find(|(i, _)| *i == from).map(|(_, s)| s.clone()) {
+                match writer.iter_mut().find(|(i, _)| *i == to) {
+                    Some(slot) => slot.1 = source,
+                    None => writer.push((to, source)),
+                }
+            }
+        }
         let mut incoming: Vec<Edge> = Vec::new();
         for item in &reads {
             let Some((_, from)) = writer.iter().find(|(i, _)| i == item) else { continue };
@@ -1025,10 +1105,12 @@ pub(crate) struct StepDetails {
     pub writes: Vec<Item>,
 }
 
-/// [`StepDetails`] for every step of `plan`, in its order. A step that does nothing with the
-/// data on this scan (motion correction when it is off) reads and writes nothing.
-pub(crate) fn step_details(plan: &Plan, config: &PipelineConfig, facts: &ScanFacts) -> Vec<StepDetails> {
-    let ctx = Ctx { plan, config, facts };
+/// [`StepDetails`] for every step of `plan`, in its order, for a run that is `resampled` (when
+/// that is known; a plan's are drawn as for a run that is, where it can be). A step that does
+/// nothing with the data on this scan (motion correction when it is off, the resampling of a run
+/// that is not resampled) reads and writes nothing.
+pub(crate) fn step_details(plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, resampled: Option<bool>) -> Vec<StepDetails> {
+    let ctx = Ctx { plan, config, facts, resampled };
     let mut written: Vec<Item> = Vec::new();
     plan.steps.iter().map(|step| {
         let (algorithm, algorithm_label, _) = ctx.algorithm(step.stage);
