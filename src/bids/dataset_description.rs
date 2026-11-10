@@ -65,7 +65,7 @@ fn build(source_bids_dir: &Path) -> DatasetDescription {
         generated_by: vec![
             GeneratedBy {
                 name: "qsmxt".to_string(),
-                version: env!("CARGO_PKG_VERSION").to_string(),
+                version: crate::commands::update::describe_version().to_string(),
                 code_url: CODE_URL.to_string(),
             },
             GeneratedBy {
@@ -218,7 +218,7 @@ mod tests {
         let desc = build(Path::new("/nonexistent"));
         assert_eq!(desc.dataset_type, "derivative");
         assert!(!desc.generated_by.is_empty());
-        assert_eq!(desc.generated_by[0].version, env!("CARGO_PKG_VERSION"));
+        assert_eq!(desc.generated_by[0].version, crate::commands::update::describe_version());
     }
 
     #[test]

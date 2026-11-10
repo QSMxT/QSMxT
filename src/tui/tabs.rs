@@ -89,7 +89,7 @@ fn version() -> String {
     // Development builds describe QSMxT and QSM.rs by a full commit hash: keep the line short.
     let short = |s: &str| if s.chars().count() > 16 { format!("{}…", s.chars().take(15).collect::<String>()) } else { s.to_string() };
     let qsmxt = crate::commands::update::describe_version();
-    format!("QSMxT {} · QSM.rs {}", short(&qsmxt), short(env!("QSM_CORE_DESCRIBE")))
+    format!("QSMxT {} · QSM.rs {}", short(qsmxt), short(env!("QSM_CORE_DESCRIBE")))
 }
 
 fn w(s: &str) -> usize {

@@ -166,7 +166,7 @@ fn write_dataset_files(output_dir: &Path, has_extra: bool) -> std::io::Result<()
             "BIDSVersion": "1.10.0",
             "DatasetType": "raw",
             "GeneratedBy": [
-                {"Name": "qsmxt", "Version": env!("CARGO_PKG_VERSION"), "CodeURL": "https://github.com/QSMxT/qsmxt"},
+                {"Name": "qsmxt", "Version": crate::commands::update::describe_version(), "CodeURL": "https://github.com/QSMxT/qsmxt"},
                 {"Name": "dcm2niix", "CodeURL": "https://github.com/rordenlab/dcm2niix"}
             ]
         });
