@@ -339,19 +339,13 @@ fn change_lines(changes: &[Change]) -> Vec<Line<'static>> {
     lines
 }
 
-/// What the comparison says beyond the changes: what is reset, what cannot be reproduced, and
-/// the recommendations that are not part of the pipeline.
-fn summary_lines(p: &Pipeline, c: &Compared) -> Vec<Line<'static>> {
+/// What the comparison says beyond the changes: what is reset, and the recommendations that are
+/// not part of the pipeline.
+fn summary_lines(c: &Compared) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     if !c.stages.is_empty() {
         lines.push(Line::from(Span::styled(
             format!("{} start from QSMxT's defaults; every other setting stays as it is.", c.stages.join(", ")), muted())));
-    }
-    if p.not_reproduced.is_empty() && p.is_toolbox() {
-        lines.push(Line::from(Span::styled("Every step of the toolbox's pipeline is reproduced.", Style::default().fg(Color::Green))));
-    }
-    for s in &p.not_reproduced {
-        lines.push(Line::from(Span::styled(format!("Not reproduced: {s}"), Style::default().fg(Color::Yellow))));
     }
     for a in &c.advice {
         lines.push(Line::from(vec![
@@ -422,7 +416,7 @@ pub fn draw(f: &mut Frame, app: &mut App, area: Rect) {
                 right.extend(change_lines(&c.changes));
             }
             right.push(Line::from(""));
-            right.extend(summary_lines(&p, &c));
+            right.extend(summary_lines(&c));
         }
     }
     let side = Block::default().borders(Borders::LEFT).border_style(muted());
@@ -444,7 +438,7 @@ pub fn draw_preview(f: &mut Frame, m: &mut PreviewModal, area: Rect, hits: &supe
     ];
     lines.extend(change_lines(&m.compared.changes));
     lines.push(Line::from(""));
-    lines.extend(summary_lines(&m.pipeline, &m.compared));
+    lines.extend(summary_lines(&m.compared));
     if let Some(s) = m.pipeline.source {
         lines.push(Line::from(Span::styled(format!("Source: {s}"), muted())));
     }

@@ -667,7 +667,13 @@ fn inversion_changes(config: &PipelineConfig, alg: QsmAlgorithm) -> Changed {
             c.0.push(format!("the field converted to phase at {}", echo_time_prose(i.star.te)));
         }
         QsmAlgorithm::Lsqr => c.add_fields(&i.lsqr, &d.lsqr, &[]),
-        QsmAlgorithm::Ndi => c.add_fields(&i.ndi, &d.ndi, &TE),
+        QsmAlgorithm::Ndi => {
+            c.add_fields(&i.ndi, &d.ndi, &["te", "weight_norm"]);
+            c.add(i.ndi.weight_norm != d.ndi.weight_norm, || match i.ndi.weight_norm {
+                NdiWeightNorm::GlobalMax => "the magnitude weight normalised by the magnitude's maximum".to_string(),
+                NdiWeightNorm::MaskP999 => "the magnitude weight normalised by the magnitude's 99.9th percentile within the brain mask".to_string(),
+            });
+        }
         QsmAlgorithm::Fansi | QsmAlgorithm::FansiTgv => c.add_fields(&i.fansi, &d.fansi, &TE),
         QsmAlgorithm::L1qsm => c.add_fields(&i.l1qsm, &d.l1qsm, &TE),
         QsmAlgorithm::Whqsm => c.add_fields(&i.whqsm, &d.whqsm, &TE),
@@ -809,11 +815,25 @@ fn bg_removal_changes(config: &PipelineConfig) -> Changed {
         }
         BfAlgorithm::Sharp => c.add_fields(&b.sharp, &d.sharp, &[]),
         BfAlgorithm::Resharp => c.add_fields(&b.resharp, &d.resharp, &[]),
-        BfAlgorithm::Harperella => c.add_fields(&b.harperella, &d.harperella, &[]),
-        BfAlgorithm::Iharperella => c.add_fields(&b.iharperella, &d.iharperella, &[]),
+        BfAlgorithm::Harperella => {
+            c.add_fields(&b.harperella, &d.harperella, &["rim"]);
+            c.add(b.harperella.rim != d.harperella.rim, || rim_prose(b.harperella.rim));
+        }
+        BfAlgorithm::Iharperella => {
+            c.add_fields(&b.iharperella, &d.iharperella, &["rim"]);
+            c.add(b.iharperella.rim != d.iharperella.rim, || rim_prose(b.iharperella.rim));
+        }
         BfAlgorithm::Vsharp | BfAlgorithm::Bfrnet | BfAlgorithm::Iqfm => {}
     }
     c
+}
+
+/// Which Laplacian values in HARPERELLA's / iHARPERELLA's boundary rim were set to zero.
+fn rim_prose(rim: HarperellaRim) -> String {
+    match rim {
+        HarperellaRim::Whole => "every Laplacian value in the brain's boundary rim set to zero".to_string(),
+        HarperellaRim::Sti => "the 20 % largest Laplacian values in the brain's boundary rim set to zero, as in STI Suite".to_string(),
+    }
 }
 
 /// The non-default rigid-registration settings, shared by motion correction and
@@ -840,7 +860,7 @@ fn separation_changes(config: &PipelineConfig) -> Changed {
         }
         // Its QSM's iLSQR is worded with that QSM.
         SeparationAlgorithm::ChiSepIlsqr => c.add_fields(&s.chi_sep_ilsqr, &d.chi_sep_ilsqr, &["qsm_ilsqr"]),
-        SeparationAlgorithm::ChiSepMedi => c.add_fields(&s.chi_sep_medi, &d.chi_sep_medi, &[]),
+        SeparationAlgorithm::ChiSepMedi => c.add_fields(&s.chi_sep_medi, &d.chi_sep_medi, &["qsm_ilsqr"]),
         SeparationAlgorithm::WaveSep => c.add_fields(&s.wavesep, &d.wavesep, &[]),
         SeparationAlgorithm::HcChisep => c.add_fields(&s.hc_chisep, &d.hc_chisep, &[]),
         SeparationAlgorithm::ChiSepNet => match s.chi_sepnet.route {
@@ -1601,7 +1621,12 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
         }
         if crate::stages::separation::reconstructs_qsm(config) {
             let mut q = Changed::default();
-            q.add_fields(&config.separation.chi_sep_ilsqr.qsm_ilsqr, &SeparationConfig::default().chi_sep_ilsqr.qsm_ilsqr, &[]);
+            let defaults = SeparationConfig::default();
+            let d = match config.separation.algorithm {
+                SeparationAlgorithm::ChiSepMedi => &defaults.chi_sep_medi.qsm_ilsqr,
+                _ => &defaults.chi_sep_ilsqr.qsm_ilsqr,
+            };
+            q.add_fields(crate::stages::separation::initial_qsm_ilsqr(config), d, &[]);
             doc.cite(&CITE_ILSQR);
             doc.say(&[Stage::ChiSeparation], format!(
                 "The susceptibility map separated was reconstructed from the local field by iLSQR ({}){}.",
@@ -2531,6 +2556,8 @@ fn cite_inline(cite: &Citation) -> &'static str {
     match cite.key {
         "wu2012" => "Wu et al., 2012",
         "schweser2011" => "Schweser et al., 2011",
+        "schweser2010" => "Schweser et al., 2010",
+        "schweser2012" => "Schweser et al., 2012",
         "liu2011pdf" => "Liu et al., 2011",
         "wen2014" => "Wen et al., 2014",
         "zhou2014" => "Zhou et al., 2014",
@@ -2873,7 +2900,8 @@ mod tests {
         assert!(out.contains("with SMV kernel radii from 8 to 2 mm in 1 mm steps, truncated-SVD deconvolution enabled, and a deconvolution threshold of 0.1."), "{out}");
     }
 
-    /// χ-sep iLSQR says it reconstructed the QSM it separated, and any iLSQR setting changed.
+    /// χ-sep iLSQR and χ-sep MEDI say they reconstructed the QSM they separated, and any iLSQR
+    /// setting changed.
     #[test]
     fn chi_sep_ilsqr_methods_state_its_own_qsm() {
         let mut config = PipelineConfig::default();
@@ -2888,6 +2916,10 @@ mod tests {
         assert!(!generate_methods(&config).contains(own));
         config.separation.custom_qsm_tool = None;
         config.separation.algorithm = SeparationAlgorithm::ChiSepMedi;
+        assert!(generate_methods(&config).contains(&format!("{own}.")), "χ-sep MEDI's own settings, at their defaults");
+        config.separation.chi_sep_medi.qsm_ilsqr.max_iter = 40;
+        assert!(generate_methods(&config).contains(&format!("{own} with at most 40 iterations.")), "{}", generate_methods(&config));
+        config.separation.algorithm = SeparationAlgorithm::Decompose;
         assert!(!generate_methods(&config).contains(own));
     }
 
@@ -2934,12 +2966,27 @@ mod tests {
         config.inversion.algorithm = QsmAlgorithm::Ndi;
         config.inversion.ndi.te = EchoTimeChoice::Seconds(0.01);
         assert!(generate_methods(&config).contains("converted to phase at an echo time of 10 ms"));
+        assert!(!generate_methods(&config).contains("normalised by"));
+        config.inversion.ndi.weight_norm = NdiWeightNorm::MaskP999;
+        assert!(generate_methods(&config).contains("the magnitude weight normalised by the magnitude's 99.9th percentile within the brain mask"));
         config.inversion.algorithm = QsmAlgorithm::Rts;
         config.inversion.rts.gamma = 2.0;
         assert!(generate_methods(&config).contains("γ (ρ increase factor) = 2"));
         config.inversion.algorithm = QsmAlgorithm::Whqsm;
         config.inversion.whqsm.weight = WhqsmWeight::InVivo;
         assert!(generate_methods(&config).contains("data weight = in-vivo"));
+        config.inversion.whqsm.weight = WhqsmWeight::FlatInMask;
+        assert!(generate_methods(&config).contains("data weight = flat-in-mask"));
+        for (alg, rim, text) in [(BfAlgorithm::Harperella, HarperellaRim::Sti, "the 20 % largest Laplacian values"),
+                                 (BfAlgorithm::Iharperella, HarperellaRim::Whole, "every Laplacian value")] {
+            let mut config = PipelineConfig::default();
+            config.bg_removal.algorithm = alg;
+            assert!(!generate_methods(&config).contains("boundary rim"), "{alg}: the default is not stated");
+            config.bg_removal.harperella.rim = rim;
+            config.bg_removal.iharperella.rim = rim;
+            let out = generate_methods(&config);
+            assert!(out.contains(&format!("{text} in the brain's boundary rim set to zero")), "{out}");
+        }
         config.bg_removal.algorithm = BfAlgorithm::Pdf;
         config.bg_removal.pdf.n_cg = 300;
         assert!(generate_methods(&config).contains("at most 300 conjugate-gradient iterations"));

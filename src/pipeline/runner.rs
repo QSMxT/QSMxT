@@ -3467,7 +3467,16 @@ mod chisep_support_tests {
             zero_outside(mask, &mut v);
             v
         };
-        let qsm = masked(f.output.qsm_path(k));
+        // χ-sep iLSQR and χ-sep MEDI reconstruct their QSM from the local field inside its mask
+        // (the background-removal mask, here the support), as the step does.
+        let qsm = if qsmxt_engine::stages::separation::reconstructs_qsm(config) {
+            let field = load_volume(&f.output.local_field_path(k)).unwrap();
+            let mut q = qsmxt_engine::stages::separation::initial_qsm(&field, &f.support, &m, config, &mut ()).unwrap();
+            zero_outside(mask, &mut q);
+            q
+        } else {
+            masked(f.output.qsm_path(k))
+        };
         let field = masked(f.output.local_field_path(k));
         let r2prime = masked(f.output.r2prime_path(k));
         let r2star = masked(f.output.r2star_path(k));
@@ -3537,7 +3546,8 @@ mod chisep_support_tests {
     }
 
     /// χ-separation fits the support, not the brain mask. χ-sep MEDI, with the noise map and CSF
-    /// mask the step makes, matches the method run on the support. On this fixture its result is
+    /// mask the step makes and the iLSQR QSM it reconstructs, matches the method run on the
+    /// support. On this fixture its result is
     /// its voxelwise initial guess, so WaveSep, whose wavelet fit is spatial, shows that the
     /// domain matters: run over the brain mask it gives a different answer.
     ///

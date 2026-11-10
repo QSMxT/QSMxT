@@ -396,6 +396,9 @@ fn method_problem(f: &ScanFacts, config: &PipelineConfig, alg: QsmAlgorithm) -> 
     let weighted = match alg {
         QsmAlgorithm::Ndi | QsmAlgorithm::Nltv | QsmAlgorithm::Fansi | QsmAlgorithm::FansiTgv
         | QsmAlgorithm::L1qsm | QsmAlgorithm::Hdqsm => true,
+        // The HEIDI package always weights LSQR by the magnitude, and warns when it has none
+        // (qsm_heidi computesusceptibility_heidi.m:821-822).
+        QsmAlgorithm::Lsqr => true,
         QsmAlgorithm::Whqsm => core.whqsm.weight.needs_magnitude(),
         _ => false,
     };
@@ -1304,9 +1307,24 @@ mod tests {
         let mut c = PipelineConfig::default();
         c.inversion.algorithm = QsmAlgorithm::Whqsm;
         assert!(check(&run(&EVEN, false), &c).errors.is_empty());
+        c.inversion.whqsm.weight = crate::WhqsmWeight::FlatInMask;
+        assert!(check(&run(&EVEN, false), &c).errors.is_empty());
         c.inversion.whqsm.weight = crate::WhqsmWeight::MaxNormalised;
         let out = check(&run(&EVEN, false), &c);
         assert!(out.errors.len() == 1 && out.errors[0].contains("needs magnitude"), "{out:?}");
+    }
+
+    /// LSQR (and so LSQR+HEIDI) is weighted by the magnitude, as the HEIDI package weights it.
+    #[test]
+    fn lsqr_needs_magnitude() {
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = QsmAlgorithm::Lsqr;
+        for heidi in [false, true] {
+            c.inversion.heidi.enabled = heidi;
+            let out = check(&run(&EVEN, false), &c);
+            assert!(out.errors.iter().any(|e| e.contains("needs magnitude")), "{heidi}: {out:?}");
+            assert!(!check(&run(&EVEN, true), &c).errors.iter().any(|e| e.contains("needs magnitude")), "{heidi}");
+        }
     }
 
     /// QSMART's inner inversion gets the same checks as the inversion; inner MEDI, TFI or HD-QSM is

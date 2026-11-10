@@ -196,7 +196,8 @@ Each subcommand runs its method as `qsmxt run` does, through QSM.rs's pipeline: 
 field goes in in ppm, and the methods that work in radians (`ndi`, `nltv`, `fansi`,
 `fansi-tgv`, `l1qsm`, `whqsm`, `medi`, `tfi`, `heidi`, `tgv`, `star`) convert it themselves
 with `--field-strength` and `--echo-times` (every echo's). `ndi`, `nltv`, `fansi`,
-`fansi-tgv` and `l1qsm` need `--magnitude` as their data weight; `medi` and `tfi`
+`fansi-tgv`, `l1qsm`, `lsqr` and `heidi` (without `--seed`) need `--magnitude` as their data
+weight; `medi` and `tfi`
 need the magnitude of every echo (one 4D file or one file per echo). MEDI-mSMV is
 `qsmxt invert medi --msmv`.
 

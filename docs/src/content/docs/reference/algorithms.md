@@ -388,10 +388,10 @@ follows it closely.
 `--tukey-window R` multiplies each echo's complex image (magnitude and phase together) in
 k-space by a Tukey window with taper ratio `R` (0 to 1), on the acquired grid, before every
 other step: the mask, the magnitude, R2* and all phase processing see the windowed echoes. It is
-the χ-separation toolbox's preprocessing, which uses 0.4 for Siemens and GE data and 0 for
-Philips. Off by default (`0`), and it needs magnitude images. With χ-separation MEDI, χ-separation
-iLSQR or χ-sepnet's toolbox route, the vendor's value (read from the sidecar's `Manufacturer`) is
-shown as the original authors' setting. It is not preselected, and the setting changes only if you
+the χ-separation toolbox's preprocessing, which uses 0.4, and 0 for Philips data. Off by default
+(`0`), and it needs magnitude images. With χ-separation MEDI, χ-separation iLSQR or χ-sepnet's
+toolbox route, the value for the scanner's manufacturer (read from the sidecar's `Manufacturer`;
+nothing is shown when it is not known) is shown as the original authors' setting. It is not preselected, and the setting changes only if you
 apply it (or run with `--accept-reference-settings`).
 
 ## Coil combination
@@ -650,7 +650,11 @@ computes in single precision as the original does (default: double). The local f
 defined on the mask minus its boundary layer, which the inversion takes as its mask.
 
 HARPERELLA and iHARPERELLA zero-pad the field by `--harperella-pad` / `--iharperella-pad`
-voxels per side, X Y Z (STI Suite's `padsize`, default `0 0 0`).
+voxels per side, X Y Z (STI Suite's `padsize`, default `0 0 0`). Both set the Laplacian to zero
+in the brain's boundary rim, where it holds the step at the mask edge rather than tissue:
+`--harperella-rim` / `--iharperella-rim` `whole` zeroes every value in the rim, and `sti` the
+20 % largest in magnitude, as STI Suite's `iHARPERELLA` does. HARPERELLA defaults to `whole`
+and iHARPERELLA to `sti`.
 
 iSMV (Wen et al. 2014) follows the authors' paper and code: a spherical mean value kernel of
 radius 6 × the smallest voxel dimension (6 mm at 1 mm), iterated until the relative change
@@ -721,7 +725,7 @@ reconstructions and deep-learning networks.
 | `tfi` | TFI — Total Field Inversion |
 | `ilsqr` | iLSQR — iterative LSQR with streaking-artefact correction (default) |
 | `star` | STAR-QSM — Streaking Artifact Reduction |
-| `lsqr` | Minimally regularised LSQR |
+| `lsqr` | Minimally regularised LSQR, weighted by the magnitude (needs magnitude images) |
 | `heidi` | LSQR+HEIDI — HEIDI as published: `lsqr` with [`--heidi`](#heidi-streaking-reduction) |
 | `qsmart` | QSMART two-stage reconstruction |
 | `ndi` | NDI — Nonlinear Dipole Inversion |
@@ -848,9 +852,13 @@ A run that cannot use the choice is refused before processing.
 
 #### Other method settings
 
-- WH-QSM's data weight, `--whqsm-weight`: `flat` (1 in the mask, the default), `max-normalised`
-  (the magnitude over its maximum) or `in-vivo` (min(2 × magnitude / maximum, 1)). The last two
-  need magnitude images.
+- WH-QSM's data weight, `--whqsm-weight`: `flat` (1 over the whole volume, `WH_nlTV.m`'s
+  default), `flat-in-mask` (1 inside the mask only), `max-normalised` (the magnitude over its
+  maximum) or `in-vivo` (min(2 × magnitude / maximum, 1)). The last two need magnitude images.
+- NDI divides the magnitude by `--ndi-weight-norm` to make its data weight: `global-max` (the
+  magnitude's maximum over the whole image, as FANSI, the default) or `mask-p999` (its 99.9th
+  percentile inside the mask, which is more consistent in vivo, where the maximum is often a
+  bright scalp or vessel voxel outside the brain).
 - RTS raises its ADMM penalty ρ by `--rts-gamma` (default 5) whenever the primal residual falls
   by less than a factor of `--rts-tau` (default 0.7).
 - NLTV's ADMM penalty `--nltv-rho` and TV's `--tv-rho` default to 100 × λ. NLTV's data-term
@@ -1291,7 +1299,10 @@ of those, R2PRIMEnet's prediction from R2\* (3 T only); see
   [`--ilsqr-precision`](#--ilsqr-precision)). With `--use-custom-qsm` it takes the supplied QSM instead.
   It runs on the field zero-padded by `--chi-sep-ilsqr-pad` voxels at both ends of each axis
   (default `16 16 16`).
-- `chi-sep-medi` is initialised from the run's QSM. It weights its data terms by a noise map
+- `chi-sep-medi` is initialised with the same reconstructed iLSQR QSM, unreferenced, as the
+  toolbox's script does, rather than with the run's own QSM (`--chi-sep-medi-qsm-max-iter`,
+  `--chi-sep-medi-qsm-tol`, `--chi-sep-medi-qsm-pad-mm` and `--chi-sep-medi-qsm-precision`, with
+  the same defaults); with `--use-custom-qsm` it takes the supplied QSM instead. It weights its data terms by a noise map
   made from every echo's magnitude (MEDI toolbox `Fit_ppm_complex`), and keeps χ uniform in a
   CSF mask found from ARLO R2\* (MEDI's `extract_CSF`), weighted by `--chi-sep-medi-lambda-csf`.
   It needs the magnitude of every echo and at least three evenly spaced echoes. The standalone
@@ -1337,8 +1348,7 @@ sliding window instead (each a multiple of 16). `--chi-sepnet-route native` runs
 on the acquired grid with the run's QSM, as a sliding window of 192×192×128-voxel patches
 (`--chi-sepnet-patch D H W`, each a multiple of 16). On the toolbox route, and with χ-separation
 MEDI and iLSQR, the toolbox's [Tukey windowing](#tukey-windowing) of the echoes is shown by
-manufacturer as the original authors' setting (`--tukey-window 0.4` for Siemens and GE, none for
-Philips). SUSEP-Net runs
+manufacturer as the original authors' setting (`--tukey-window 0.4`, none for Philips). SUSEP-Net runs
 the whole volume in one pass; `--susep-net-patch D H W` runs it as a sliding
 window of that size instead (each a multiple of 8), so its memory follows the
 patch rather than the volume.

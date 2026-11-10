@@ -263,11 +263,13 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             max_iter: cfg.bg_removal.harperella.max_iter,
             tol: cfg.bg_removal.harperella.tol,
             pad: cfg.bg_removal.harperella.pad,
+            rim: cfg.bg_removal.harperella.rim.into(),
         },
         iharperella: qsm_core::bgremove::IharperellaParams {
             max_iter: cfg.bg_removal.iharperella.max_iter,
             tol: cfg.bg_removal.iharperella.tol,
             pad: cfg.bg_removal.iharperella.pad,
+            rim: cfg.bg_removal.iharperella.rim.into(),
         },
         sdf: qsm_core::bgremove::SdfParams::default(),
         tile: cfg.dl_tile(),
@@ -351,7 +353,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         ndi: qsm_core::inversion::NdiParams {
             tau: cfg.inversion.ndi.tau, alpha: cfg.inversion.ndi.alpha,
             max_iter: cfg.inversion.ndi.max_iter, auto_stop: cfg.inversion.ndi.auto_stop,
-            te: cfg.inversion.ndi.te.into(),
+            te: cfg.inversion.ndi.te.into(), weight_norm: cfg.inversion.ndi.weight_norm.into(),
             // Field strength and echo times are scan parameters; the pipeline fills them in.
             ..Default::default()
         },
@@ -915,6 +917,36 @@ mod tests {
                    (300, 0, [1, 2, 3], [4, 5, 6]));
     }
 
+    /// HARPERELLA's and iHARPERELLA's boundary rim, NDI's weight normaliser and WH-QSM's
+    /// flat-in-mask weight reach qsm-core, defaulting to its own.
+    #[test]
+    fn rim_and_weight_settings_reach_core() {
+        use qsm_core::bgremove::HarperellaRim as R;
+        use qsm_core::inversion::{NdiWeightNorm as N, WhQsmWeight as W};
+        let mut cfg = PipelineConfig::default();
+        let (_, bg, inv, _) = to_pipeline_stages(&cfg);
+        assert_eq!((bg.harperella.rim, bg.iharperella.rim), (R::Whole, R::StiLargest));
+        assert_eq!((bg.harperella.rim, bg.iharperella.rim),
+                   (qsm_core::bgremove::HarperellaParams::default().rim, qsm_core::bgremove::IharperellaParams::default().rim));
+        assert_eq!((inv.ndi.weight_norm, inv.whqsm.weight), (N::GlobalMax, W::Flat));
+        cfg.bg_removal.harperella.rim = crate::HarperellaRim::Sti;
+        cfg.bg_removal.iharperella.rim = crate::HarperellaRim::Whole;
+        cfg.inversion.ndi.weight_norm = crate::NdiWeightNorm::MaskP999;
+        cfg.inversion.whqsm.weight = crate::WhqsmWeight::FlatInMask;
+        let (_, bg, inv, _) = to_pipeline_stages(&cfg);
+        assert_eq!((bg.harperella.rim, bg.iharperella.rim), (R::StiLargest, R::Whole));
+        assert_eq!((inv.ndi.weight_norm, inv.whqsm.weight), (N::MaskP999, W::FlatInMask));
+        // the config's names are qsm-core's ids, and each converts back
+        for r in crate::HarperellaRim::ALL { assert_eq!(crate::HarperellaRim::from(R::from(r)), r); }
+        for n in crate::NdiWeightNorm::ALL { assert_eq!(crate::NdiWeightNorm::from(N::from(n)), n); }
+        for w in crate::WhqsmWeight::ALL { assert_eq!(crate::WhqsmWeight::from(W::from(w)), w); }
+        let toml = "[bg_removal.harperella]\nrim = \"sti\"\n[inversion.ndi]\nweight_norm = \"mask-p999\"\n\
+                    [inversion.whqsm]\nweight = \"flat-in-mask\"\n";
+        let c: PipelineConfig = toml::from_str(toml).unwrap();
+        assert_eq!((c.bg_removal.harperella.rim, c.inversion.ndi.weight_norm, c.inversion.whqsm.weight),
+                   (crate::HarperellaRim::Sti, crate::NdiWeightNorm::MaskP999, crate::WhqsmWeight::FlatInMask));
+    }
+
     #[test]
     fn star_settings_propagate_to_core_params() {
         let mut cfg = PipelineConfig::default();
@@ -1061,6 +1093,14 @@ mod tests {
         cfg.separation.chi_sep_ilsqr.qsm_ilsqr.pad_mm = 3.0;
         let q = to_separation_config(&cfg).chi_sep_ilsqr.qsm_ilsqr;
         assert_eq!((q.max_iter, q.pad_mm), (7, 3.0));
+        // χ-sep MEDI's: the same call by default, its own setting.
+        let q = to_separation_config(&cfg).chi_sep_medi.qsm_ilsqr;
+        assert_eq!((q.max_iter, q.pad_mm, q.tol), (d.max_iter, d.pad_mm, d.tol));
+        cfg.separation.chi_sep_medi.qsm_ilsqr.max_iter = 9;
+        assert_eq!(to_separation_config(&cfg).chi_sep_medi.qsm_ilsqr.max_iter, 9);
+        assert_eq!(crate::stages::separation::initial_qsm_ilsqr(&cfg).max_iter, 7);
+        cfg.separation.algorithm = crate::enums::SeparationAlgorithm::ChiSepMedi;
+        assert_eq!(crate::stages::separation::initial_qsm_ilsqr(&cfg).max_iter, 9);
     }
 
     /// The settings of iSMV, the QSM.jl inversions' padding and the χ-separation and DECOMPOSE

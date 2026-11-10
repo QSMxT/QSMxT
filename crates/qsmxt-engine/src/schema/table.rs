@@ -60,7 +60,7 @@ pub(super) fn table() -> Vec<Def> {
         d("n4.histogram_bins", Geometry, "Histogram bins", "Bins of the log-intensity histogram", Int).min(2.0).flag("--n4-histogram-bins").parent("masking.inhomogeneity_method")
         .when(n4_on).context("N4"),
         d("pipeline.ignore_slice_gap", Geometry, "Ignore slice gap", "Reconstruct even if the sidecar's SliceThickness is thinner than the slice pitch (gapped 2D data gives a wrong map)", Bool).flag("--ignore-slice-gap"),
-        d("pipeline.tukey_window", Geometry, "Tukey window", "Taper ratio of a k-space Tukey window applied to each echo's complex image before every other step: 0 applies none; the χ-separation toolbox uses 0.4 for Siemens and GE data and 0 for Philips. Needs magnitude", Float).min(0.0).max(1.0).flag("--tukey-window").full("Tukey window in k-space"),
+        d("pipeline.tukey_window", Geometry, "Tukey window", "Taper ratio of a k-space Tukey window applied to each echo's complex image before every other step: 0 applies none; the χ-separation toolbox uses 0.4, and 0 for Philips data. Needs magnitude", Float).min(0.0).max(1.0).flag("--tukey-window").full("Tukey window in k-space"),
         d("pipeline.crop_to_mask", Geometry, "Crop to mask", "Run the FFT-bound stages on a box around the mask (faster; outputs stay on the full grid). Off by default", Bool).flag("--crop-to-mask")
         .when(|x| x.qsm)
         .gui("Run the FFT-bound stages on a box around the mask (faster; outputs stay on the full grid)"),
@@ -403,6 +403,12 @@ pub(super) fn table() -> Vec<Def> {
         d("bg_removal.harperella.pad", Background, "Pad (voxels)", "Zero-padding per side, voxels (x y z). Larger costs time and memory (default 0 0 0)", IntVec3).units("voxels").flag("--harperella-pad").parent("bg_removal.algorithm")
         .when(|x| x.bf("harperella")).full("Padding")
         .gui("Zero-padding per side (x y z). Larger costs time and memory"),
+        d("bg_removal.harperella.rim", Background, "Boundary rim", "", Enum(vec![
+            o("whole", "whole", "Whole", "Zero every Laplacian value in the brain's boundary rim (default)"),
+            o("sti", "sti", "Largest 20 % (STI)", "Zero the 20 % largest Laplacian values in the rim, as STI Suite does"),
+        ])).flag("--harperella-rim").parent("bg_removal.algorithm")
+        .when(|x| x.bf("harperella"))
+        .gui("Which Laplacian values in the brain's boundary rim are set to zero"),
         d("bg_removal.iharperella.max_iter", Background, "Max iter", "Maximum iterations", Int).flag("--iharperella-max-iter").parent("bg_removal.algorithm")
         .when(|x| x.bf("iharperella")).full("Maximum iterations"),
         d("bg_removal.iharperella.tol", Background, "Tolerance", "Convergence tolerance", Float).flag("--iharperella-tol").parent("bg_removal.algorithm")
@@ -410,6 +416,12 @@ pub(super) fn table() -> Vec<Def> {
         d("bg_removal.iharperella.pad", Background, "Pad (voxels)", "Zero-padding per side, voxels (x y z). Larger costs time and memory (default 0 0 0)", IntVec3).units("voxels").flag("--iharperella-pad").parent("bg_removal.algorithm")
         .when(|x| x.bf("iharperella")).full("Padding")
         .gui("Zero-padding per side (x y z). Larger costs time and memory"),
+        d("bg_removal.iharperella.rim", Background, "Boundary rim", "", Enum(vec![
+            o("whole", "whole", "Whole", "Zero every Laplacian value in the brain's boundary rim"),
+            o("sti", "sti", "Largest 20 % (STI)", "Zero the 20 % largest Laplacian values in the rim, as STI Suite does (default)"),
+        ])).flag("--iharperella-rim").parent("bg_removal.algorithm")
+        .when(|x| x.bf("iharperella"))
+        .gui("Which Laplacian values in the brain's boundary rim are set to zero"),
         d("pipeline.do_qsm", Inversion, "Compute QSM", "Enable QSM reconstruction (disable to only run the other outputs)", Bool).basic().flag("--no-qsm").also(&[FieldMap, Background, MultiOrientation, Reference]),
         d("inversion.algorithm", Inversion, "QSM inversion", "", Enum(vec![
             o("rts", "rts", "RTS", "RTS (Rapid Two-Step) — fast two-step k-space inversion with streaking removal. https://doi.org/10.1016/j.neuroimage.2017.11.018"),
@@ -780,6 +792,12 @@ pub(super) fn table() -> Vec<Def> {
         .value("Echo time (ms)", "Echo time the field is converted to phase at, ms").flag("--ndi-te").parent("inversion.algorithm")
         .when(|x| x.inv("ndi"))
         .gui("The echo time the field is converted to phase at").gui_value("Echo time", "The echo time the field is converted to phase at, in ms"),
+        d("inversion.ndi.weight_norm", Inversion, "Weight normaliser", "", Enum(vec![
+            o("global-max", "global-max", "Global maximum", "The magnitude's maximum over the whole image, as FANSI (default)"),
+            o("mask-p999", "mask-p999", "Brain 99.9th percentile", "The magnitude's 99.9th percentile inside the mask; more consistent in vivo"),
+        ])).flag("--ndi-weight-norm").parent("inversion.algorithm")
+        .when(|x| x.inv("ndi"))
+        .gui("What the magnitude is divided by to make the data weight"),
         d("inversion.fansi.alpha1", Inversion, "Alpha1", "First-order (TV/TGV) L1 penalty weight", Float).flag("--fansi-alpha1").parent("inversion.algorithm")
         .when(|x| x.inv("fansi") || x.inv("fansi-tgv")).context("FANSI"),
         d("inversion.fansi.mu1", Inversion, "Mu1", "Gradient-consistency ADMM weight. Blank = 100×alpha1", Float).above(0.0).optional().flag("--fansi-mu1").parent("inversion.algorithm")
@@ -840,7 +858,8 @@ pub(super) fn table() -> Vec<Def> {
         d("inversion.whqsm.tol_delta", Inversion, "Tol delta", "Inner Newton stopping tolerance", Float).flag("--whqsm-tol-delta").parent("inversion.algorithm")
         .when(|x| x.inv("whqsm")).full("Newton tolerance"),
         d("inversion.whqsm.weight", Inversion, "Data weight", "", Enum(vec![
-            o("flat", "flat", "Flat", "1 in the mask, no magnitude (default)"),
+            o("flat", "flat", "Flat", "1 over the whole volume, no magnitude, as WH_nlTV.m (default)"),
+            o("flat-in-mask", "flat-in-mask", "Flat in mask", "1 inside the mask only, no magnitude"),
             o("max-normalised", "max-normalised", "Max-normalised", "The magnitude over its maximum in the mask; needs magnitude images"),
             o("in-vivo", "in-vivo", "In vivo", "min(2 × magnitude / maximum, 1) in the mask, as NDI weights; needs magnitude images"),
         ])).flag("--whqsm-weight").parent("inversion.algorithm")
@@ -998,16 +1017,16 @@ pub(super) fn table() -> Vec<Def> {
         // The QSM χ-sep iLSQR is initialised with, reconstructed unless one is supplied. QSM.rs
         // inversion/ilsqr.rs: 0 iterations give an all-zero map; IlsqrParams::validate: pad >= 0.
         d("separation.chi_sep_ilsqr.qsm_ilsqr.max_iter", Separation, "QSM max iter", "Maximum iterations of the iLSQR that reconstructs the QSM separated", Int).min(1.0).flag("--chi-sep-ilsqr-qsm-max-iter").parent("separation.algorithm")
-        .when(|x| x.sep("chi-sep-ilsqr") && x.c.separation.custom_qsm_tool.is_none()).full("QSM maximum iterations"),
+        .when(|x| x.sep("chi-sep-ilsqr") && x.c.separation.custom_qsm_tool.is_none()).context("χ-separation (iLSQR)").full("QSM maximum iterations"),
         d("separation.chi_sep_ilsqr.qsm_ilsqr.tol", Separation, "QSM tolerance", "Tolerance of the iLSQR that reconstructs the QSM separated", Float).flag("--chi-sep-ilsqr-qsm-tol").parent("separation.algorithm")
-        .when(|x| x.sep("chi-sep-ilsqr") && x.c.separation.custom_qsm_tool.is_none()),
+        .when(|x| x.sep("chi-sep-ilsqr") && x.c.separation.custom_qsm_tool.is_none()).context("χ-separation (iLSQR)"),
         d("separation.chi_sep_ilsqr.qsm_ilsqr.pad_mm", Separation, "QSM pad (mm)", "Zero-padding per side of the iLSQR that reconstructs the QSM separated", Float).min(0.0).units("mm").flag("--chi-sep-ilsqr-qsm-pad-mm").parent("separation.algorithm")
-        .when(|x| x.sep("chi-sep-ilsqr") && x.c.separation.custom_qsm_tool.is_none()).full("QSM padding"),
+        .when(|x| x.sep("chi-sep-ilsqr") && x.c.separation.custom_qsm_tool.is_none()).context("χ-separation (iLSQR)").full("QSM padding"),
         d("separation.chi_sep_ilsqr.qsm_ilsqr.precision", Separation, "QSM precision", "", Enum(vec![
             o("double", "double", "Double", "Double precision (default)"),
             o("single", "single", "Single", "Single precision, as the original implementation computes the solves; slower and uses more memory"),
         ])).flag("--chi-sep-ilsqr-qsm-precision").parent("separation.algorithm")
-        .when(|x| x.sep("chi-sep-ilsqr") && x.c.separation.custom_qsm_tool.is_none())
+        .when(|x| x.sep("chi-sep-ilsqr") && x.c.separation.custom_qsm_tool.is_none()).context("χ-separation (iLSQR)")
         .gui("Arithmetic of the two least-squares solves of the iLSQR that reconstructs the QSM separated"),
         // QSM.rs ChiSepMediParams::validate: λ, λ_CSF and the tolerances finite and >= 0; D_r finite
         // and > 0; at least 1 iteration.
@@ -1030,6 +1049,20 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.sep("chi-sep-medi")),
         d("separation.chi_sep_medi.cg_max_iter", Separation, "CG max iter", "Inner CG max iterations", Int).flag("--chi-sep-medi-cg-max-iter").parent("separation.algorithm")
         .when(|x| x.sep("chi-sep-medi")).full("CG maximum iterations"),
+        // The QSM χ-sep MEDI is initialised with, reconstructed unless one is supplied: the same
+        // iLSQR the χ-separation toolbox makes for both of its iterative methods.
+        d("separation.chi_sep_medi.qsm_ilsqr.max_iter", Separation, "QSM max iter", "Maximum iterations of the iLSQR that reconstructs the QSM χ-separation starts from", Int).min(1.0).flag("--chi-sep-medi-qsm-max-iter").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-medi") && x.c.separation.custom_qsm_tool.is_none()).context("χ-separation (MEDI)").full("QSM maximum iterations"),
+        d("separation.chi_sep_medi.qsm_ilsqr.tol", Separation, "QSM tolerance", "Tolerance of the iLSQR that reconstructs the QSM χ-separation starts from", Float).flag("--chi-sep-medi-qsm-tol").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-medi") && x.c.separation.custom_qsm_tool.is_none()).context("χ-separation (MEDI)"),
+        d("separation.chi_sep_medi.qsm_ilsqr.pad_mm", Separation, "QSM pad (mm)", "Zero-padding per side of the iLSQR that reconstructs the QSM χ-separation starts from", Float).min(0.0).units("mm").flag("--chi-sep-medi-qsm-pad-mm").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-medi") && x.c.separation.custom_qsm_tool.is_none()).context("χ-separation (MEDI)").full("QSM padding"),
+        d("separation.chi_sep_medi.qsm_ilsqr.precision", Separation, "QSM precision", "", Enum(vec![
+            o("double", "double", "Double", "Double precision (default)"),
+            o("single", "single", "Single", "Single precision, as the original implementation computes the solves; slower and uses more memory"),
+        ])).flag("--chi-sep-medi-qsm-precision").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-medi") && x.c.separation.custom_qsm_tool.is_none()).context("χ-separation (MEDI)")
+        .gui("Arithmetic of the two least-squares solves of the iLSQR that reconstructs the QSM χ-separation starts from"),
         d("separation.wavesep.dr_pos", Separation, "Dr+ (Hz/ppm)", "Paramagnetic relaxivity", Float).units("Hz/ppm").flag("--wavesep-dr-pos").parent("separation.algorithm")
         .when(|x| x.sep("wavesep")).full("Paramagnetic constant (Dr+)"),
         d("separation.wavesep.dr_neg", Separation, "Dr- (Hz/ppm)", "Diamagnetic relaxivity", Float).units("Hz/ppm").flag("--wavesep-dr-neg").parent("separation.algorithm")

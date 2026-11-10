@@ -338,6 +338,10 @@ pub struct NdiParamArgs {
     /// (of the echo times), or a time in ms (default: first)
     #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
     pub ndi_te: Option<qsmxt_engine::EchoTimeChoice>,
+    /// NDI magnitude-weight normaliser: global-max (the magnitude's maximum, as FANSI; default)
+    /// or mask-p999 (its 99.9th percentile inside the mask; more consistent in vivo)
+    #[arg(long, value_name = "NORM", value_parser = parse_ndi_weight_norm)]
+    pub ndi_weight_norm: Option<qsmxt_engine::NdiWeightNorm>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -432,9 +436,9 @@ pub struct WhqsmParamArgs {
     /// WH-QSM inner Newton convergence tolerance
     #[arg(long)]
     pub whqsm_tol_delta: Option<f64>,
-    /// WH-QSM data weight: flat (1 in the mask), max-normalised (the magnitude over its
-    /// maximum) or in-vivo (min(2 × magnitude / maximum, 1)); the last two need magnitude images
-    /// (default: flat)
+    /// WH-QSM data weight: flat (1 over the whole volume, WH_nlTV.m's default), flat-in-mask (1
+    /// inside the mask only), max-normalised (the magnitude over its maximum) or in-vivo (min(2 ×
+    /// magnitude / maximum, 1)); the last two need magnitude images (default: flat)
     #[arg(long, value_name = "WEIGHT", value_parser = parse_whqsm_weight)]
     pub whqsm_weight: Option<qsmxt_engine::WhqsmWeight>,
     /// WH-QSM: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum
@@ -630,6 +634,20 @@ pub struct SeparationParamArgs {
     /// χ-sep MEDI inner CG max iterations (default: 100)
     #[arg(long)]
     pub chi_sep_medi_cg_max_iter: Option<usize>,
+    /// χ-sep MEDI: max iterations of the iLSQR that reconstructs, from the local field, the QSM
+    /// χ-separation is initialised with (default: 100; not used with --use-custom-qsm)
+    #[arg(long)]
+    pub chi_sep_medi_qsm_max_iter: Option<usize>,
+    /// χ-sep MEDI: tolerance of that QSM's iLSQR
+    #[arg(long)]
+    pub chi_sep_medi_qsm_tol: Option<f64>,
+    /// χ-sep MEDI: zero-padding of that QSM's iLSQR, in mm per side (default: 12)
+    #[arg(long, value_name = "MM")]
+    pub chi_sep_medi_qsm_pad_mm: Option<f64>,
+    /// χ-sep MEDI: arithmetic of that QSM's two LSQR solves: double, or single as the original
+    /// implementation (default: double)
+    #[arg(long, value_name = "PRECISION", value_parser = parse_ilsqr_precision)]
+    pub chi_sep_medi_qsm_precision: Option<qsmxt_engine::IlsqrPrecision>,
     // WaveSep (Fang)
     /// WaveSep paramagnetic relaxivity (Hz/ppm)
     #[arg(long)]
@@ -874,10 +892,22 @@ pub fn parse_lbv_precision(s: &str) -> Result<qsmxt_engine::LbvPrecision, String
         .ok_or_else(|| format!("expected double or single, got '{s}'"))
 }
 
-/// A WH-QSM data weight: `flat`, `max-normalised` or `in-vivo`.
+/// A WH-QSM data weight: `flat`, `flat-in-mask`, `max-normalised` or `in-vivo`.
 pub fn parse_whqsm_weight(s: &str) -> Result<qsmxt_engine::WhqsmWeight, String> {
     qsmxt_engine::WhqsmWeight::ALL.into_iter().find(|w| w.as_str() == s.trim())
-        .ok_or_else(|| format!("expected flat, max-normalised or in-vivo, got '{s}'"))
+        .ok_or_else(|| format!("expected flat, flat-in-mask, max-normalised or in-vivo, got '{s}'"))
+}
+
+/// HARPERELLA's / iHARPERELLA's boundary rim: `whole` or `sti`.
+pub fn parse_harperella_rim(s: &str) -> Result<qsmxt_engine::HarperellaRim, String> {
+    qsmxt_engine::HarperellaRim::ALL.into_iter().find(|r| r.as_str() == s.trim())
+        .ok_or_else(|| format!("expected whole or sti, got '{s}'"))
+}
+
+/// NDI's magnitude-weight normaliser: `global-max` or `mask-p999`.
+pub fn parse_ndi_weight_norm(s: &str) -> Result<qsmxt_engine::NdiWeightNorm, String> {
+    qsmxt_engine::NdiWeightNorm::ALL.into_iter().find(|n| n.as_str() == s.trim())
+        .ok_or_else(|| format!("expected global-max or mask-p999, got '{s}'"))
 }
 
 /// An iSMV implementation: `wen2014` or `qsmjl`.
@@ -1200,6 +1230,10 @@ pub struct HarperellaParamArgs {
     /// HARPERELLA zero-padding in voxels per side, X Y Z (default: 0 0 0)
     #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"])]
     pub harperella_pad: Option<Vec<usize>>,
+    /// HARPERELLA boundary rim: whole (zero every Laplacian value in the rim; default) or sti
+    /// (zero the 20 % largest, as STI Suite does)
+    #[arg(long, value_name = "RIM", value_parser = parse_harperella_rim)]
+    pub harperella_rim: Option<qsmxt_engine::HarperellaRim>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -1213,6 +1247,10 @@ pub struct IharperellaParamArgs {
     /// iHARPERELLA zero-padding in voxels per side, X Y Z (default: 0 0 0)
     #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"])]
     pub iharperella_pad: Option<Vec<usize>>,
+    /// iHARPERELLA boundary rim: whole (zero every Laplacian value in the rim) or sti (zero the
+    /// 20 % largest, as STI Suite does; default)
+    #[arg(long, value_name = "RIM", value_parser = parse_harperella_rim)]
+    pub iharperella_rim: Option<qsmxt_engine::HarperellaRim>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -1923,8 +1961,8 @@ pub struct PipelineArgs {
     pub fft_padding: bool,
 
     /// Apply a k-space Tukey window with this taper ratio (0 to 1) to each echo's complex image
-    /// before every other step, as the χ-separation toolbox does: 0.4 for Siemens and GE data, 0
-    /// for Philips. Default 0 (none). Needs magnitude images.
+    /// before every other step, as the χ-separation toolbox does: 0.4, and 0 for Philips data.
+    /// Default 0 (none). Needs magnitude images.
     #[arg(long)]
     pub tukey_window: Option<f64>,
 
@@ -2962,6 +3000,10 @@ pub struct BgremoveHarperellaArgs {
     /// Zero-padding in voxels per side, X Y Z (default: 0 0 0)
     #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"])]
     pub pad: Option<Vec<usize>>,
+    /// Boundary rim: whole (zero every Laplacian value in the rim; default) or sti (zero the
+    /// 20 % largest, as STI Suite does)
+    #[arg(long, value_name = "RIM", value_parser = parse_harperella_rim)]
+    pub rim: Option<qsmxt_engine::HarperellaRim>,
 }
 
 #[derive(Parser, Debug)]
@@ -2995,6 +3037,10 @@ pub struct BgremoveIharperellaArgs {
     /// Zero-padding in voxels per side, X Y Z (default: 0 0 0)
     #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"])]
     pub pad: Option<Vec<usize>>,
+    /// Boundary rim: whole (zero every Laplacian value in the rim) or sti (zero the 20 %
+    /// largest, as STI Suite does; default)
+    #[arg(long, value_name = "RIM", value_parser = parse_harperella_rim)]
+    pub rim: Option<qsmxt_engine::HarperellaRim>,
 }
 
 // ── Invert ──
@@ -3623,9 +3669,9 @@ pub struct InvertStarArgs {
 pub struct InvertLsqrArgs {
     #[command(flatten)]
     pub common: InvertCommonArgs,
-    /// Magnitude NIfTI (optional row weight; its scale does not change the solution): one 3D
-    /// volume, a 4D one, or one per echo; several echoes are RSS-combined
-    #[arg(long, num_args = 1..)]
+    /// Magnitude NIfTI, LSQR's row weight as the HEIDI package's (its scale does not change the
+    /// solution): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined
+    #[arg(long, num_args = 1.., required = true)]
     pub magnitude: Vec<PathBuf>,
     /// B0 field strength in Tesla — sets the default residual weighting
     #[arg(long, default_value_t = 3.0)]
@@ -3644,9 +3690,9 @@ pub struct InvertHeidiArgs {
     pub common: InvertCommonArgs,
     #[command(flatten)]
     pub scan: ScanParamArgs,
-    /// Magnitude NIfTI (optional row weight of the LSQR seed): one 3D volume, a 4D one, or one
-    /// per echo; several echoes are RSS-combined
-    #[arg(long, num_args = 1..)]
+    /// Magnitude NIfTI, the row weight of the LSQR seed as the HEIDI package's (not needed with
+    /// --seed): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined
+    #[arg(long, num_args = 1.., required_unless_present = "seed")]
     pub magnitude: Vec<PathBuf>,
     /// A χ map (ppm) another inversion made of this field, to fill the cone of instead of
     /// running LSQR (`--lsqr-*` and `--magnitude` then do nothing). HEIDI suits a seed whose
@@ -3681,6 +3727,10 @@ pub struct InvertNdiArgs {
     /// the echo times), or a time in ms (default: first)
     #[arg(long, value_name = "TE", value_parser = parse_echo_time)]
     pub te: Option<qsmxt_engine::EchoTimeChoice>,
+    /// Magnitude-weight normaliser: global-max (the magnitude's maximum, as FANSI; default) or
+    /// mask-p999 (its 99.9th percentile inside the mask; more consistent in vivo)
+    #[arg(long, value_name = "NORM", value_parser = parse_ndi_weight_norm)]
+    pub weight_norm: Option<qsmxt_engine::NdiWeightNorm>,
     #[command(flatten)]
     pub scan: ScanParamArgs,
     /// Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo;
@@ -3840,8 +3890,9 @@ pub struct InvertWhqsmArgs {
     /// Inner Newton convergence tolerance
     #[arg(long)]
     pub tol_delta: Option<f64>,
-    /// Data weight: flat (1 in the mask), max-normalised (the magnitude over its maximum) or
-    /// in-vivo (min(2 × magnitude / maximum, 1)); the last two need --magnitude (default: flat)
+    /// Data weight: flat (1 over the whole volume, WH_nlTV.m's default), flat-in-mask (1 inside
+    /// the mask only), max-normalised (the magnitude over its maximum) or in-vivo (min(2 ×
+    /// magnitude / maximum, 1)); the last two need --magnitude (default: flat)
     #[arg(long, value_name = "WEIGHT", value_parser = parse_whqsm_weight)]
     pub weight: Option<qsmxt_engine::WhqsmWeight>,
     /// Magnitude NIfTI, for a magnitude data weight (--weight): one 3D volume, a 4D one, or one
@@ -4902,6 +4953,31 @@ mod tests {
             let h = help(path, flag);
             assert!(h.contains(&format!("(default: {default})")) || h.contains(&format!("(default: {default};")), "--{flag}: {h}");
         }
+    }
+
+    /// The standalone subcommands take the boundary rim, NDI's weight normaliser and WH-QSM's
+    /// flat-in-mask weight by the run flags' names.
+    #[test]
+    fn standalone_rim_and_weight_options() {
+        for (alg, name) in [("harperella", "sti"), ("iharperella", "whole")] {
+            let cli = parse(&["bgremove", alg, "f.nii", "-m", "m.nii", "-o", "o.nii", "--rim", name]);
+            let got = match cli.command {
+                Command::Bgremove { command: BgremoveCommand::Harperella(a) } => a.rim,
+                Command::Bgremove { command: BgremoveCommand::Iharperella(a) } => a.rim,
+                _ => panic!("expected bgremove {alg}"),
+            };
+            assert_eq!(got.map(|r| r.as_str()), Some(name));
+        }
+        let cli = parse(&["invert", "ndi", "f.nii", "-m", "m.nii", "-o", "o.nii", "--magnitude", "mag.nii",
+            "--field-strength", "3", "--echo-times", "0.02", "--weight-norm", "mask-p999"]);
+        let Command::Invert { command: InvertCommand::Ndi(a) } = cli.command else { panic!("expected invert ndi") };
+        assert_eq!(a.weight_norm, Some(qsmxt_engine::NdiWeightNorm::MaskP999));
+        let cli = parse(&["invert", "whqsm", "f.nii", "-m", "m.nii", "-o", "o.nii", "--field-strength", "3", "--echo-times", "0.02",
+            "--weight", "flat-in-mask"]);
+        let Command::Invert { command: InvertCommand::Whqsm(a) } = cli.command else { panic!("expected invert whqsm") };
+        assert_eq!(a.weight, Some(qsmxt_engine::WhqsmWeight::FlatInMask));
+        assert!(Cli::try_parse_from(["qsmxt", "bgremove", "harperella", "f.nii", "-m", "m.nii", "-o", "o.nii",
+            "--rim", "edge"]).is_err());
     }
 
     /// Oblique slabs give B0 directions with negative components, written as `-0.05`. Clap

@@ -209,6 +209,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--ndi-max-iter <NDI_MAX_ITER>` | NDI max iterations. |
 | `--ndi-auto-stop <NDI_AUTO_STOP>` | NDI: stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto); --ndi-max-iter is then the maximum. |
 | `--ndi-te <TE>` | NDI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
+| `--ndi-weight-norm <NORM>` | NDI magnitude-weight normaliser: global-max (the magnitude's maximum, as FANSI; default) or mask-p999 (its 99.9th percentile inside the mask; more consistent in vivo) |
 | `--fansi-alpha1 <FANSI_ALPHA1>` | FANSI first-order (TV/TGV) L1 penalty weight (alpha1) |
 | `--fansi-mu1 <MU1>` | FANSI gradient-consistency ADMM weight (mu1), or auto for 100 × alpha1 (default: auto) |
 | `--fansi-mu2 <FANSI_MU2>` | FANSI fidelity-consistency ADMM weight (mu2) |
@@ -235,7 +236,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--whqsm-max-iter <WHQSM_MAX_ITER>` | WH-QSM max outer iterations. |
 | `--whqsm-tol-update <WHQSM_TOL_UPDATE>` | WH-QSM percent-update convergence tolerance. |
 | `--whqsm-tol-delta <WHQSM_TOL_DELTA>` | WH-QSM inner Newton convergence tolerance. |
-| `--whqsm-weight <WEIGHT>` | WH-QSM data weight: flat (1 in the mask), max-normalised (the magnitude over its maximum) or in-vivo (min(2 × magnitude / maximum, 1)); the last two need magnitude images (default: flat) |
+| `--whqsm-weight <WEIGHT>` | WH-QSM data weight: flat (1 over the whole volume, WH_nlTV.m's default), flat-in-mask (1 inside the mask only), max-normalised (the magnitude over its maximum) or in-vivo (min(2 × magnitude / maximum, 1)); the last two need magnitude images (default: flat) |
 | `--whqsm-te <TE>` | WH-QSM: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 | `--hdqsm-alpha-l2 <HDQSM_ALPHA_L2>` | HD-QSM L2-stage TV weight (alpha_l2) |
 | `--hdqsm-mu1-l2 <MU1_L2>` | HD-QSM L2-stage gradient-consistency ADMM weight (mu1_l2), or auto for 100 × alpha_l2 (default: auto) |
@@ -290,6 +291,10 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--chi-sep-medi-max-iter <CHI_SEP_MEDI_MAX_ITER>` | χ-sep MEDI maximum Gauss-Newton iterations (default: 30) |
 | `--chi-sep-medi-cg-tol <CHI_SEP_MEDI_CG_TOL>` | χ-sep MEDI inner CG tolerance (default: 0.05) |
 | `--chi-sep-medi-cg-max-iter <CHI_SEP_MEDI_CG_MAX_ITER>` | χ-sep MEDI inner CG max iterations (default: 100) |
+| `--chi-sep-medi-qsm-max-iter <CHI_SEP_MEDI_QSM_MAX_ITER>` | χ-sep MEDI: max iterations of the iLSQR that reconstructs, from the local field, the QSM χ-separation is initialised with (default: 100; not used with --use-custom-qsm) |
+| `--chi-sep-medi-qsm-tol <CHI_SEP_MEDI_QSM_TOL>` | χ-sep MEDI: tolerance of that QSM's iLSQR. |
+| `--chi-sep-medi-qsm-pad-mm <MM>` | χ-sep MEDI: zero-padding of that QSM's iLSQR, in mm per side (default: 12) |
+| `--chi-sep-medi-qsm-precision <PRECISION>` | χ-sep MEDI: arithmetic of that QSM's two LSQR solves: double, or single as the original implementation (default: double) |
 | `--wavesep-dr-pos <WAVESEP_DR_POS>` | WaveSep paramagnetic relaxivity (Hz/ppm) |
 | `--wavesep-dr-neg <WAVESEP_DR_NEG>` | WaveSep diamagnetic relaxivity (Hz/ppm) |
 | `--wavesep-alpha <WAVESEP_ALPHA>` | WaveSep proximal-gradient step size. |
@@ -348,9 +353,11 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--harperella-max-iter <HARPERELLA_MAX_ITER>` | HARPERELLA maximum iterations. |
 | `--harperella-tol <HARPERELLA_TOL>` | HARPERELLA convergence tolerance. |
 | `--harperella-pad <X> <Y> <Z>` | HARPERELLA zero-padding in voxels per side, X Y Z (default: 0 0 0) |
+| `--harperella-rim <RIM>` | HARPERELLA boundary rim: whole (zero every Laplacian value in the rim; default) or sti (zero the 20 % largest, as STI Suite does) |
 | `--iharperella-max-iter <IHARPERELLA_MAX_ITER>` | iHARPERELLA maximum iterations. |
 | `--iharperella-tol <IHARPERELLA_TOL>` | iHARPERELLA convergence tolerance. |
 | `--iharperella-pad <X> <Y> <Z>` | iHARPERELLA zero-padding in voxels per side, X Y Z (default: 0 0 0) |
+| `--iharperella-rim <RIM>` | iHARPERELLA boundary rim: whole (zero every Laplacian value in the rim) or sti (zero the 20 % largest, as STI Suite does; default) |
 | `--no-romeo-phase-coherence` | ROMEO: disable phase coherence weights (default: on) |
 | `--no-romeo-phase-gradient-coherence` | ROMEO: disable phase gradient coherence weights (default: on) |
 | `--no-romeo-phase-linearity` | ROMEO: disable phase linearity weights (default: on) |
@@ -433,7 +440,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--crop-to-mask` | Reconstruct inside a box around the mask instead of the whole field of view. Cuts the FFT-bound stages roughly in proportion to the voxels removed, but those stages are a small share of a full run, so the end-to-end gain is usually modest. Off by default. Outputs are written on the full grid either way; this only changes where the arithmetic happens. Padding to an FFT-friendly size happens regardless. |
 | `--ignore-slice-gap` | Reconstruct even when a 2D acquisition's sidecar `SliceThickness` is thinner than the slice pitch. Without it, QSM refuses such a run: the gap between slices is unsampled tissue, and the FFT kernels assume a contiguous grid, so the map would be wrong. |
 | `--fft-padding` | Pad the grid outward to an FFT-friendly size before the FFT-bound stages. Much faster on an awkward grid, and discards nothing, but it changes where k-space is sampled and so shifts the reconstruction slightly. Off by default. |
-| `--tukey-window <TUKEY_WINDOW>` | Apply a k-space Tukey window with this taper ratio (0 to 1) to each echo's complex image before every other step, as the χ-separation toolbox does: 0.4 for Siemens and GE data, 0 for Philips. Default 0 (none). Needs magnitude images. |
+| `--tukey-window <TUKEY_WINDOW>` | Apply a k-space Tukey window with this taper ratio (0 to 1) to each echo's complex image before every other step, as the χ-separation toolbox does: 0.4, and 0 for Philips data. Default 0 (none). Needs magnitude images. |
 | `--crop-margin-mm <CROP_MARGIN_MM>` | Margin in mm around the mask when --crop-to-mask is set (default 32). Below ~32 mm the reconstruction starts to differ from the uncropped one; it must also clear the largest SMV kernel in use, and V-SHARP defaults to 12 mm. |
 | `--output-space <OUTPUT_SPACE>` | Grid to write derivatives on when the run was resampled to axial. `acquired` (default) puts them back where the data came from, so transforms you already hold still apply; `working` leaves them on the resampled grid and avoids a second interpolation. Values: `acquired`, `working`. |
 | `--mask-preset <MASK_PRESET>` | Mask preset: robust-threshold, bet, hd-bet (HD-BET deep-learning brain extraction + signal-gated erosion; needs a deep-learning build), bet-and-phase (BET on the magnitude AND a thresholded phase-quality map, then hole-filled and eroded), rs2-net (RS2-Net deep-learning rodent brain extraction), or mindgrab (MindGrab deep-learning brain extraction for any contrast; needs a deep-learning build) Values: `robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`, `rs2-net`, `mindgrab`. |
@@ -679,6 +686,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--ndi-max-iter <NDI_MAX_ITER>` | NDI max iterations. |
 | `--ndi-auto-stop <NDI_AUTO_STOP>` | NDI: stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto); --ndi-max-iter is then the maximum. |
 | `--ndi-te <TE>` | NDI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
+| `--ndi-weight-norm <NORM>` | NDI magnitude-weight normaliser: global-max (the magnitude's maximum, as FANSI; default) or mask-p999 (its 99.9th percentile inside the mask; more consistent in vivo) |
 | `--fansi-alpha1 <FANSI_ALPHA1>` | FANSI first-order (TV/TGV) L1 penalty weight (alpha1) |
 | `--fansi-mu1 <MU1>` | FANSI gradient-consistency ADMM weight (mu1), or auto for 100 × alpha1 (default: auto) |
 | `--fansi-mu2 <FANSI_MU2>` | FANSI fidelity-consistency ADMM weight (mu2) |
@@ -705,7 +713,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--whqsm-max-iter <WHQSM_MAX_ITER>` | WH-QSM max outer iterations. |
 | `--whqsm-tol-update <WHQSM_TOL_UPDATE>` | WH-QSM percent-update convergence tolerance. |
 | `--whqsm-tol-delta <WHQSM_TOL_DELTA>` | WH-QSM inner Newton convergence tolerance. |
-| `--whqsm-weight <WEIGHT>` | WH-QSM data weight: flat (1 in the mask), max-normalised (the magnitude over its maximum) or in-vivo (min(2 × magnitude / maximum, 1)); the last two need magnitude images (default: flat) |
+| `--whqsm-weight <WEIGHT>` | WH-QSM data weight: flat (1 over the whole volume, WH_nlTV.m's default), flat-in-mask (1 inside the mask only), max-normalised (the magnitude over its maximum) or in-vivo (min(2 × magnitude / maximum, 1)); the last two need magnitude images (default: flat) |
 | `--whqsm-te <TE>` | WH-QSM: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 | `--hdqsm-alpha-l2 <HDQSM_ALPHA_L2>` | HD-QSM L2-stage TV weight (alpha_l2) |
 | `--hdqsm-mu1-l2 <MU1_L2>` | HD-QSM L2-stage gradient-consistency ADMM weight (mu1_l2), or auto for 100 × alpha_l2 (default: auto) |
@@ -760,6 +768,10 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--chi-sep-medi-max-iter <CHI_SEP_MEDI_MAX_ITER>` | χ-sep MEDI maximum Gauss-Newton iterations (default: 30) |
 | `--chi-sep-medi-cg-tol <CHI_SEP_MEDI_CG_TOL>` | χ-sep MEDI inner CG tolerance (default: 0.05) |
 | `--chi-sep-medi-cg-max-iter <CHI_SEP_MEDI_CG_MAX_ITER>` | χ-sep MEDI inner CG max iterations (default: 100) |
+| `--chi-sep-medi-qsm-max-iter <CHI_SEP_MEDI_QSM_MAX_ITER>` | χ-sep MEDI: max iterations of the iLSQR that reconstructs, from the local field, the QSM χ-separation is initialised with (default: 100; not used with --use-custom-qsm) |
+| `--chi-sep-medi-qsm-tol <CHI_SEP_MEDI_QSM_TOL>` | χ-sep MEDI: tolerance of that QSM's iLSQR. |
+| `--chi-sep-medi-qsm-pad-mm <MM>` | χ-sep MEDI: zero-padding of that QSM's iLSQR, in mm per side (default: 12) |
+| `--chi-sep-medi-qsm-precision <PRECISION>` | χ-sep MEDI: arithmetic of that QSM's two LSQR solves: double, or single as the original implementation (default: double) |
 | `--wavesep-dr-pos <WAVESEP_DR_POS>` | WaveSep paramagnetic relaxivity (Hz/ppm) |
 | `--wavesep-dr-neg <WAVESEP_DR_NEG>` | WaveSep diamagnetic relaxivity (Hz/ppm) |
 | `--wavesep-alpha <WAVESEP_ALPHA>` | WaveSep proximal-gradient step size. |
@@ -818,9 +830,11 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--harperella-max-iter <HARPERELLA_MAX_ITER>` | HARPERELLA maximum iterations. |
 | `--harperella-tol <HARPERELLA_TOL>` | HARPERELLA convergence tolerance. |
 | `--harperella-pad <X> <Y> <Z>` | HARPERELLA zero-padding in voxels per side, X Y Z (default: 0 0 0) |
+| `--harperella-rim <RIM>` | HARPERELLA boundary rim: whole (zero every Laplacian value in the rim; default) or sti (zero the 20 % largest, as STI Suite does) |
 | `--iharperella-max-iter <IHARPERELLA_MAX_ITER>` | iHARPERELLA maximum iterations. |
 | `--iharperella-tol <IHARPERELLA_TOL>` | iHARPERELLA convergence tolerance. |
 | `--iharperella-pad <X> <Y> <Z>` | iHARPERELLA zero-padding in voxels per side, X Y Z (default: 0 0 0) |
+| `--iharperella-rim <RIM>` | iHARPERELLA boundary rim: whole (zero every Laplacian value in the rim) or sti (zero the 20 % largest, as STI Suite does; default) |
 | `--no-romeo-phase-coherence` | ROMEO: disable phase coherence weights (default: on) |
 | `--no-romeo-phase-gradient-coherence` | ROMEO: disable phase gradient coherence weights (default: on) |
 | `--no-romeo-phase-linearity` | ROMEO: disable phase linearity weights (default: on) |
@@ -903,7 +917,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--crop-to-mask` | Reconstruct inside a box around the mask instead of the whole field of view. Cuts the FFT-bound stages roughly in proportion to the voxels removed, but those stages are a small share of a full run, so the end-to-end gain is usually modest. Off by default. Outputs are written on the full grid either way; this only changes where the arithmetic happens. Padding to an FFT-friendly size happens regardless. |
 | `--ignore-slice-gap` | Reconstruct even when a 2D acquisition's sidecar `SliceThickness` is thinner than the slice pitch. Without it, QSM refuses such a run: the gap between slices is unsampled tissue, and the FFT kernels assume a contiguous grid, so the map would be wrong. |
 | `--fft-padding` | Pad the grid outward to an FFT-friendly size before the FFT-bound stages. Much faster on an awkward grid, and discards nothing, but it changes where k-space is sampled and so shifts the reconstruction slightly. Off by default. |
-| `--tukey-window <TUKEY_WINDOW>` | Apply a k-space Tukey window with this taper ratio (0 to 1) to each echo's complex image before every other step, as the χ-separation toolbox does: 0.4 for Siemens and GE data, 0 for Philips. Default 0 (none). Needs magnitude images. |
+| `--tukey-window <TUKEY_WINDOW>` | Apply a k-space Tukey window with this taper ratio (0 to 1) to each echo's complex image before every other step, as the χ-separation toolbox does: 0.4, and 0 for Philips data. Default 0 (none). Needs magnitude images. |
 | `--crop-margin-mm <CROP_MARGIN_MM>` | Margin in mm around the mask when --crop-to-mask is set (default 32). Below ~32 mm the reconstruction starts to differ from the uncropped one; it must also clear the largest SMV kernel in use, and V-SHARP defaults to 12 mm. |
 | `--output-space <OUTPUT_SPACE>` | Grid to write derivatives on when the run was resampled to axial. `acquired` (default) puts them back where the data came from, so transforms you already hold still apply; `working` leaves them on the resampled grid and avoids a second interpolation. Values: `acquired`, `working`. |
 | `--mask-preset <MASK_PRESET>` | Mask preset: robust-threshold, bet, hd-bet (HD-BET deep-learning brain extraction + signal-gated erosion; needs a deep-learning build), bet-and-phase (BET on the magnitude AND a thresholded phase-quality map, then hole-filled and eroded), rs2-net (RS2-Net deep-learning rodent brain extraction), or mindgrab (MindGrab deep-learning brain extraction for any contrast; needs a deep-learning build) Values: `robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`, `rs2-net`, `mindgrab`. |
@@ -1084,6 +1098,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--ndi-max-iter <NDI_MAX_ITER>` | NDI max iterations. |
 | `--ndi-auto-stop <NDI_AUTO_STOP>` | NDI: stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto); --ndi-max-iter is then the maximum. |
 | `--ndi-te <TE>` | NDI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
+| `--ndi-weight-norm <NORM>` | NDI magnitude-weight normaliser: global-max (the magnitude's maximum, as FANSI; default) or mask-p999 (its 99.9th percentile inside the mask; more consistent in vivo) |
 | `--fansi-alpha1 <FANSI_ALPHA1>` | FANSI first-order (TV/TGV) L1 penalty weight (alpha1) |
 | `--fansi-mu1 <MU1>` | FANSI gradient-consistency ADMM weight (mu1), or auto for 100 × alpha1 (default: auto) |
 | `--fansi-mu2 <FANSI_MU2>` | FANSI fidelity-consistency ADMM weight (mu2) |
@@ -1110,7 +1125,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--whqsm-max-iter <WHQSM_MAX_ITER>` | WH-QSM max outer iterations. |
 | `--whqsm-tol-update <WHQSM_TOL_UPDATE>` | WH-QSM percent-update convergence tolerance. |
 | `--whqsm-tol-delta <WHQSM_TOL_DELTA>` | WH-QSM inner Newton convergence tolerance. |
-| `--whqsm-weight <WEIGHT>` | WH-QSM data weight: flat (1 in the mask), max-normalised (the magnitude over its maximum) or in-vivo (min(2 × magnitude / maximum, 1)); the last two need magnitude images (default: flat) |
+| `--whqsm-weight <WEIGHT>` | WH-QSM data weight: flat (1 over the whole volume, WH_nlTV.m's default), flat-in-mask (1 inside the mask only), max-normalised (the magnitude over its maximum) or in-vivo (min(2 × magnitude / maximum, 1)); the last two need magnitude images (default: flat) |
 | `--whqsm-te <TE>` | WH-QSM: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 | `--hdqsm-alpha-l2 <HDQSM_ALPHA_L2>` | HD-QSM L2-stage TV weight (alpha_l2) |
 | `--hdqsm-mu1-l2 <MU1_L2>` | HD-QSM L2-stage gradient-consistency ADMM weight (mu1_l2), or auto for 100 × alpha_l2 (default: auto) |
@@ -1165,6 +1180,10 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--chi-sep-medi-max-iter <CHI_SEP_MEDI_MAX_ITER>` | χ-sep MEDI maximum Gauss-Newton iterations (default: 30) |
 | `--chi-sep-medi-cg-tol <CHI_SEP_MEDI_CG_TOL>` | χ-sep MEDI inner CG tolerance (default: 0.05) |
 | `--chi-sep-medi-cg-max-iter <CHI_SEP_MEDI_CG_MAX_ITER>` | χ-sep MEDI inner CG max iterations (default: 100) |
+| `--chi-sep-medi-qsm-max-iter <CHI_SEP_MEDI_QSM_MAX_ITER>` | χ-sep MEDI: max iterations of the iLSQR that reconstructs, from the local field, the QSM χ-separation is initialised with (default: 100; not used with --use-custom-qsm) |
+| `--chi-sep-medi-qsm-tol <CHI_SEP_MEDI_QSM_TOL>` | χ-sep MEDI: tolerance of that QSM's iLSQR. |
+| `--chi-sep-medi-qsm-pad-mm <MM>` | χ-sep MEDI: zero-padding of that QSM's iLSQR, in mm per side (default: 12) |
+| `--chi-sep-medi-qsm-precision <PRECISION>` | χ-sep MEDI: arithmetic of that QSM's two LSQR solves: double, or single as the original implementation (default: double) |
 | `--wavesep-dr-pos <WAVESEP_DR_POS>` | WaveSep paramagnetic relaxivity (Hz/ppm) |
 | `--wavesep-dr-neg <WAVESEP_DR_NEG>` | WaveSep diamagnetic relaxivity (Hz/ppm) |
 | `--wavesep-alpha <WAVESEP_ALPHA>` | WaveSep proximal-gradient step size. |
@@ -1223,9 +1242,11 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--harperella-max-iter <HARPERELLA_MAX_ITER>` | HARPERELLA maximum iterations. |
 | `--harperella-tol <HARPERELLA_TOL>` | HARPERELLA convergence tolerance. |
 | `--harperella-pad <X> <Y> <Z>` | HARPERELLA zero-padding in voxels per side, X Y Z (default: 0 0 0) |
+| `--harperella-rim <RIM>` | HARPERELLA boundary rim: whole (zero every Laplacian value in the rim; default) or sti (zero the 20 % largest, as STI Suite does) |
 | `--iharperella-max-iter <IHARPERELLA_MAX_ITER>` | iHARPERELLA maximum iterations. |
 | `--iharperella-tol <IHARPERELLA_TOL>` | iHARPERELLA convergence tolerance. |
 | `--iharperella-pad <X> <Y> <Z>` | iHARPERELLA zero-padding in voxels per side, X Y Z (default: 0 0 0) |
+| `--iharperella-rim <RIM>` | iHARPERELLA boundary rim: whole (zero every Laplacian value in the rim) or sti (zero the 20 % largest, as STI Suite does; default) |
 | `--no-romeo-phase-coherence` | ROMEO: disable phase coherence weights (default: on) |
 | `--no-romeo-phase-gradient-coherence` | ROMEO: disable phase gradient coherence weights (default: on) |
 | `--no-romeo-phase-linearity` | ROMEO: disable phase linearity weights (default: on) |
@@ -1308,7 +1329,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--crop-to-mask` | Reconstruct inside a box around the mask instead of the whole field of view. Cuts the FFT-bound stages roughly in proportion to the voxels removed, but those stages are a small share of a full run, so the end-to-end gain is usually modest. Off by default. Outputs are written on the full grid either way; this only changes where the arithmetic happens. Padding to an FFT-friendly size happens regardless. |
 | `--ignore-slice-gap` | Reconstruct even when a 2D acquisition's sidecar `SliceThickness` is thinner than the slice pitch. Without it, QSM refuses such a run: the gap between slices is unsampled tissue, and the FFT kernels assume a contiguous grid, so the map would be wrong. |
 | `--fft-padding` | Pad the grid outward to an FFT-friendly size before the FFT-bound stages. Much faster on an awkward grid, and discards nothing, but it changes where k-space is sampled and so shifts the reconstruction slightly. Off by default. |
-| `--tukey-window <TUKEY_WINDOW>` | Apply a k-space Tukey window with this taper ratio (0 to 1) to each echo's complex image before every other step, as the χ-separation toolbox does: 0.4 for Siemens and GE data, 0 for Philips. Default 0 (none). Needs magnitude images. |
+| `--tukey-window <TUKEY_WINDOW>` | Apply a k-space Tukey window with this taper ratio (0 to 1) to each echo's complex image before every other step, as the χ-separation toolbox does: 0.4, and 0 for Philips data. Default 0 (none). Needs magnitude images. |
 | `--crop-margin-mm <CROP_MARGIN_MM>` | Margin in mm around the mask when --crop-to-mask is set (default 32). Below ~32 mm the reconstruction starts to differ from the uncropped one; it must also clear the largest SMV kernel in use, and V-SHARP defaults to 12 mm. |
 | `--output-space <OUTPUT_SPACE>` | Grid to write derivatives on when the run was resampled to axial. `acquired` (default) puts them back where the data came from, so transforms you already hold still apply; `working` leaves them on the resampled grid and avoids a second interpolation. Values: `acquired`, `working`. |
 | `--mask-preset <MASK_PRESET>` | Mask preset: robust-threshold, bet, hd-bet (HD-BET deep-learning brain extraction + signal-gated erosion; needs a deep-learning build), bet-and-phase (BET on the magnitude AND a thresholded phase-quality map, then hole-filled and eroded), rs2-net (RS2-Net deep-learning rodent brain extraction), or mindgrab (MindGrab deep-learning brain extraction for any contrast; needs a deep-learning build) Values: `robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`, `rs2-net`, `mindgrab`. |
@@ -2064,6 +2085,7 @@ qsmxt bgremove harperella [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--te <TE>` | Echo time (s) of a wrapped-phase input. With --field-strength, the input is one wrapped echo in rad (the published method); without both, it is an unwrapped total field in ppm. The local field is written in ppm either way. |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength (T) of a wrapped-phase input — see --te. |
 | `--pad <X> <Y> <Z>` | Zero-padding in voxels per side, X Y Z (default: 0 0 0) |
+| `--rim <RIM>` | Boundary rim: whole (zero every Laplacian value in the rim; default) or sti (zero the 20 % largest, as STI Suite does) |
 
 ### `qsmxt bgremove iharperella`
 
@@ -2084,6 +2106,7 @@ qsmxt bgremove iharperella [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--te <TE>` | Echo time (s) of a wrapped-phase input. With --field-strength, the input is one wrapped echo in rad, unwrapped by HARPERELLA's Laplacian; without both, it is an unwrapped total field in ppm, which iHARPERELLA takes as it is. The local field is written in ppm either way. |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength (T) of a wrapped-phase input — see --te. |
 | `--pad <X> <Y> <Z>` | Zero-padding in voxels per side, X Y Z (default: 0 0 0) |
+| `--rim <RIM>` | Boundary rim: whole (zero every Laplacian value in the rim) or sti (zero the 20 % largest, as STI Suite does; default) |
 
 ### `qsmxt bgremove bfrnet`
 
@@ -2446,7 +2469,7 @@ qsmxt invert star [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FI
 Minimally regularised LSQR
 
 ```sh
-qsmxt invert lsqr [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+qsmxt invert lsqr [OPTIONS] --mask <MASK> --output <OUTPUT> --magnitude <MAGNITUDE>... <INPUT>
 ```
 
 | Argument | Description |
@@ -2457,7 +2480,7 @@ qsmxt invert lsqr [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
-| `--magnitude <MAGNITUDE>` | Magnitude NIfTI (optional row weight; its scale does not change the solution): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. |
+| `--magnitude <MAGNITUDE>` | Magnitude NIfTI, LSQR's row weight as the HEIDI package's (its scale does not change the solution): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. Required. |
 | `--b0 <B0>` | B0 field strength in Tesla — sets the default residual weighting. Default: `3`. |
 | `--lsqr-residual-weighting <LSQR_RESIDUAL_WEIGHTING>` | LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly. |
 | `--no-lsqr-global-offset` | Do not fit a global field offset alongside χ. |
@@ -2482,7 +2505,7 @@ qsmxt invert heidi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <F
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
-| `--magnitude <MAGNITUDE>` | Magnitude NIfTI (optional row weight of the LSQR seed): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. |
+| `--magnitude <MAGNITUDE>` | Magnitude NIfTI, the row weight of the LSQR seed as the HEIDI package's (not needed with --seed): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. |
 | `--seed <SEED>` | A χ map (ppm) another inversion made of this field, to fill the cone of instead of running LSQR (`--lsqr-*` and `--magnitude` then do nothing). HEIDI suits a seed whose well-conditioned k-space is near data-consistent (TKD and TSVD with a threshold no larger than the cone threshold, small-λ Tikhonov, NDI, RTS); a regularised seed keeps its regularisation outside the cone. |
 | `--lsqr-residual-weighting <LSQR_RESIDUAL_WEIGHTING>` | LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly. |
 | `--no-lsqr-global-offset` | Do not fit a global field offset alongside χ. |
@@ -2525,6 +2548,7 @@ qsmxt invert ndi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIE
 | `--max-iter <MAX_ITER>` | Max iterations (the maximum, with --auto-stop) |
 | `--auto-stop <AUTO_STOP>` | Stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto) |
 | `--te <TE>` | Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
+| `--weight-norm <NORM>` | Magnitude-weight normaliser: global-max (the magnitude's maximum, as FANSI; default) or mask-p999 (its 99.9th percentile inside the mask; more consistent in vivo) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
 | `--magnitude <MAGNITUDE>` | Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. Required. |
@@ -2642,7 +2666,7 @@ qsmxt invert whqsm [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <F
 | `--max-iter <MAX_ITER>` | Max iterations. |
 | `--tol-update <TOL_UPDATE>` | Percent-update convergence tolerance. |
 | `--tol-delta <TOL_DELTA>` | Inner Newton convergence tolerance. |
-| `--weight <WEIGHT>` | Data weight: flat (1 in the mask), max-normalised (the magnitude over its maximum) or in-vivo (min(2 × magnitude / maximum, 1)); the last two need --magnitude (default: flat) |
+| `--weight <WEIGHT>` | Data weight: flat (1 over the whole volume, WH_nlTV.m's default), flat-in-mask (1 inside the mask only), max-normalised (the magnitude over its maximum) or in-vivo (min(2 × magnitude / maximum, 1)); the last two need --magnitude (default: flat) |
 | `--magnitude <MAGNITUDE>` | Magnitude NIfTI, for a magnitude data weight (--weight): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. |
 | `--te <TE>` | Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 
