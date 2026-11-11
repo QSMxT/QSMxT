@@ -1172,6 +1172,8 @@ pub(super) fn table() -> Vec<Def> {
         d("swi.mip_window", SwiSmwi, "mIP window", "Minimum intensity projection window size in slices", Int).min(1.0).units("slices").flag("--swi-mip-window").parent("pipeline.do_swi")
         .when(|x| x.c.pipeline.do_swi)
         .gui("Minimum-intensity-projection window").context("SWI"),
+        d("swi.filtered_phase", SwiSmwi, "Filtered phase", "Also write the high-pass filtered phase the SWI is weighted by (desc-swi_phase): Hz for several echoes, radians for one", Bool).flag("--swi-filtered-phase").parent("pipeline.do_swi")
+        .when(|x| x.c.pipeline.do_swi).full("SWI filtered phase").context("SWI"),
         d("pipeline.do_smwi", SwiSmwi, "Compute SMWI", "Susceptibility map-weighted imaging — weights the magnitude by a mask built from χ, not from filtered phase. Needs QSM", Bool).basic().flag("--do-smwi"),
         d("smwi.threshold_ppm", SwiSmwi, "Threshold", "|χ| in ppm at which the weighting mask reaches zero. The 1 ppm default targets strong sources; brain tissue wants far less", Float).units("ppm").flag("--smwi-threshold").parent("pipeline.do_smwi")
         .when(|x| x.c.pipeline.do_smwi)

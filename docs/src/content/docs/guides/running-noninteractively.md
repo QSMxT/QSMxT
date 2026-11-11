@@ -295,6 +295,7 @@ supplementary maps are exported once you've asked for them:
 | Susceptibility (χ) | the default pipeline | `Chimap` |
 | SWI | `--do-swi` | `swi` |
 | SWI minIP | `--do-swi` | `minIP` |
+| SWI filtered phase | `--swi-filtered-phase` | `desc-swi_phase` |
 | Paramagnetic SMWI | `--do-smwi` | `desc-paramagnetic_smwi` |
 | Diamagnetic SMWI | `--do-smwi` | `desc-diamagnetic_smwi` |
 | Paramagnetic SMWI minIP | `--do-smwi` | `desc-paramagneticsmwi_minIP` |

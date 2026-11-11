@@ -71,6 +71,7 @@ pub fn execute_local(
                         published.magnitude_path(&run.key),
                         published.swi_path(&run.key),
                         published.swi_mip_path(&run.key),
+                        published.swi_phase_path(&run.key),
                         published.t2star_path(&run.key),
                         published.r2star_path(&run.key),
                     ]
@@ -88,6 +89,7 @@ pub fn execute_local(
                         let normalised = &config.normalised_for(&facts).0;
                         let opts = crate::dicom::export::DicomExportOptions {
                             export_swi: normalised.pipeline.do_swi,
+                            export_swi_phase: normalised.pipeline.do_swi && normalised.swi.filtered_phase,
                             export_smwi: normalised.pipeline.do_smwi,
                             export_t2star: normalised.pipeline.do_t2starmap,
                             export_r2star: normalised.pipeline.do_r2starmap,

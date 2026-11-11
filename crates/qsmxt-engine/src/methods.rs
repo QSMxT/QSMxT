@@ -1493,9 +1493,20 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
             "Minimum-intensity projections of these images were also computed.".to_string()
         };
         let using = if changed.is_empty() { String::new() } else { format!(" using {}", join_list(&changed)) };
+        // ROMEO and slice-wise unwrapping filter in-plane whatever the σ; Laplacian does so when
+        // σ has no slice component (the default).
+        let phase = if swi.filtered_phase {
+            let in_plane = swi.unwrap != SwiUnwrap::Laplacian || swi.hp_sigma[2] == 0.0;
+            format!(" The filtered phase that weights these images, CLEAR-SWI's phase after {} Gaussian \
+                     high-pass filter within a head mask from the first echo's magnitude, was also saved, in Hz \
+                     for multi-echo data and in radians for single-echo data.",
+                    if in_plane { "an in-plane" } else { "a" })
+        } else {
+            String::new()
+        };
         doc.cite(&CITE_CLEARSWI);
         doc.say(&[Stage::Swi], format!(
-            "Susceptibility-weighted images were computed with CLEAR-SWI (Eckstein et al., 2021){using}. {mip}"
+            "Susceptibility-weighted images were computed with CLEAR-SWI (Eckstein et al., 2021){using}. {mip}{phase}"
         ));
     }
 
@@ -3590,6 +3601,17 @@ mod tests {
                               and phase-mask strength 6. Minimum-intensity projections were taken over \
                               5-slice slabs."), "{out}");
         assert!(out.contains("Dymerska, B., et al. (2021)"), "{out}");
+        assert!(!out.contains("filtered phase"), "{out}");
+
+        // The filtered phase, when written: what it is and its units.
+        config.swi.filtered_phase = true;
+        let out = generate_methods(&config);
+        assert!(out.contains("The filtered phase that weights these images, CLEAR-SWI's phase after an in-plane \
+                              Gaussian high-pass filter within a head mask from the first echo's magnitude, was also \
+                              saved, in Hz for multi-echo data and in radians for single-echo data."), "{out}");
+        config.swi.unwrap = SwiUnwrap::Laplacian;
+        config.swi.hp_sigma = [4.0, 4.0, 2.0];
+        assert!(generate_methods(&config).contains("phase after a Gaussian high-pass filter"));
     }
 
     #[test]

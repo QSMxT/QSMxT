@@ -14,7 +14,8 @@
 //!
 //! Names that are not (yet) BIDS are kept on purpose and listed in the derivatives' `.bidsignore`
 //! ([`BIDSIGNORED_SUFFIXES`]): `R2primemap` (no BIDS suffix for R2′), `swi`/`minIP`/`smwi` (BEP004's
-//! proposed SWI suffixes) and `evec` (no BIDS suffix for an orientation field).
+//! proposed SWI suffixes), `phase` (SWI's filtered phase; BIDS deprecates `phase` for raw phase)
+//! and `evec` (no BIDS suffix for an orientation field).
 
 /// BIDS entities in the order the specification lists them (BIDS 1.10, "Entity table").
 pub const ENTITY_ORDER: [&str; 29] = [
@@ -25,7 +26,7 @@ pub const ENTITY_ORDER: [&str; 29] = [
 
 /// Suffixes QSMxT publishes that the released BIDS schema does not define, each kept deliberately
 /// and listed in `.bidsignore` so the derivatives validate.
-pub const BIDSIGNORED_SUFFIXES: [&str; 5] = ["R2primemap", "swi", "minIP", "smwi", "evec"];
+pub const BIDSIGNORED_SUFFIXES: [&str; 6] = ["R2primemap", "swi", "minIP", "smwi", "phase", "evec"];
 
 /// The label of the `space-` entity a run's outputs carry when they are left on the axial working
 /// grid it was resampled to (`--output-space working`). Outputs on the acquired grid carry none.
@@ -171,6 +172,9 @@ pub fn magnitude() -> Tail { Tail::new("T2starw").with("part", "mag") }
 /// SWI and its minimum-intensity projection, under BEP004's proposed suffixes (`.bidsignore`d).
 pub fn swi() -> Tail { Tail::new("swi") }
 pub fn swi_minip() -> Tail { Tail::new("minIP") }
+/// CLEAR-SWI's high-pass filtered phase, the phase the SWI is weighted by (`desc-swi_phase`):
+/// Hz for several echoes, radians for one.
+pub fn swi_phase() -> Tail { Tail::new("phase").with("desc", "swi") }
 /// SMWI per contrast (`paramagnetic`/`diamagnetic`, as chi-separation splits), on the SWI scheme:
 /// its own `smwi` suffix, and its projection a `minIP` whose `desc-` names the image projected
 /// (`desc-paramagneticsmwi_minIP`), so it cannot be mistaken for the SWI's.
@@ -257,10 +261,20 @@ pub fn acquired_grid_echo(echo: usize, part: &str, suffix: &str) -> Tail {
 /// with its `swi` suffix replaced by `minIP` (`sub-01_swi.nii` → `sub-01_minIP.nii`, as the pipeline
 /// names them), or `minIP` appended to a name without it (`out.nii` → `out_minIP.nii`).
 pub fn minip_beside_swi(swi_path: &std::path::Path) -> std::path::PathBuf {
+    beside_swi(swi_path, &swi_minip())
+}
+
+/// Where `qsmxt swi --filtered-phase` puts the phase when `--filtered-phase-output` is not given,
+/// as [`minip_beside_swi`] does: `sub-01_swi.nii` → `sub-01_desc-swi_phase.nii`.
+pub fn phase_beside_swi(swi_path: &std::path::Path) -> std::path::PathBuf {
+    beside_swi(swi_path, &swi_phase())
+}
+
+fn beside_swi(swi_path: &std::path::Path, tail: &Tail) -> std::path::PathBuf {
     let name = swi_path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
     let stem = name.strip_suffix(".nii.gz").or_else(|| name.strip_suffix(".nii")).unwrap_or(&name);
     let prefix = stem.strip_suffix(&format!("_{}", swi().suffix())).unwrap_or(stem);
-    swi_path.with_file_name(format!("{}.nii", compose(prefix, &swi_minip())))
+    swi_path.with_file_name(format!("{}.nii", compose(prefix, tail)))
 }
 
 #[cfg(test)]
@@ -294,7 +308,7 @@ mod tests {
         let tails = [
             chimap(), chi_paramagnetic(), chi_diamagnetic(), chi_total(), sti_tensor(), sti_mms(),
             sti_msa(), sti_eigenvector(), mask(), mask_desc("qsm"), magnitude(), swi(), swi_minip(),
-            smwi("paramagnetic"), smwi_minip("diamagnetic"), dseg(), t2starmap(), r2starmap(),
+            swi_phase(), smwi("paramagnetic"), smwi_minip("diamagnetic"), dseg(), t2starmap(), r2starmap(),
             r2map(), r2primemap(), total_fieldmap(), total_fieldmap_magnitude(), total_fieldmap_ppm(), unreferenced_chimap(),
             combined_echo(3, "phase", "MEGRE"), mcpc3ds_mask(), scaled_phase_echo(2, "MEGRE"),
             magnitude_echo(2, "GRE"), acquired_grid_echo(1, "phase", "MEGRE"),
@@ -318,6 +332,8 @@ mod tests {
         assert_eq!(minip_beside_swi(Path::new("/o/sub-01_swi.nii")), PathBuf::from("/o/sub-01_minIP.nii"));
         assert_eq!(minip_beside_swi(Path::new("/o/out.nii")), PathBuf::from("/o/out_minIP.nii"));
         assert_eq!(minip_beside_swi(Path::new("out.nii.gz")), PathBuf::from("out_minIP.nii"));
+        assert_eq!(phase_beside_swi(Path::new("/o/sub-01_swi.nii")), PathBuf::from("/o/sub-01_desc-swi_phase.nii"));
+        assert_eq!(phase_beside_swi(Path::new("out.nii")), PathBuf::from("out_desc-swi_phase.nii"));
     }
 
     #[test]

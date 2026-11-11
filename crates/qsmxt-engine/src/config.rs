@@ -1175,6 +1175,10 @@ pub struct SwiConfig {
     pub scaling: SwiScaling,
     pub strength: f64,
     pub mip_window: usize,
+    /// Also publish CLEAR-SWI's high-pass filtered phase (`desc-swi_phase`): the phase the SWI is
+    /// weighted by, in Hz for several echoes and radians for one. Comes from the same CLEAR-SWI
+    /// computation as the SWI, so it needs SWI on.
+    pub filtered_phase: bool,
 }
 impl SwiConfig {
     /// The CLEAR-SWI parameters this config runs with: qsm-core's defaults for what the config
@@ -1199,6 +1203,7 @@ impl Default for SwiConfig {
             scaling: p.scaling.into(),
             strength: p.strength,
             mip_window: p.mip_window,
+            filtered_phase: false,
         }
     }
 }

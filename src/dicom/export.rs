@@ -46,6 +46,8 @@ const UID_ROOT: &str = "2.25";
 pub struct DicomExportOptions<'a> {
     /// Export the SWI and minIP maps if present.
     pub export_swi: bool,
+    /// Export SWI's filtered phase (`desc-swi_phase`) if present.
+    pub export_swi_phase: bool,
     /// Export the SMWI maps and their minIPs (paramagnetic and diamagnetic) if present.
     pub export_smwi: bool,
     /// Export the T2* map if present.
@@ -61,7 +63,7 @@ pub struct DicomExportOptions<'a> {
     /// Optional source DICOM directory to inherit patient/study identity from.
     pub source_dicom: Option<&'a Path>,
     /// Optional subset of map suffixes to export (case-insensitive tokens like
-    /// `magnitude`, `chimap`, `swi`, `minip`, `desc-paramagnetic_smwi`, `desc-paramagneticsmwi_minip` (and
+    /// `magnitude`, `chimap`, `swi`, `minip`, `desc-swi_phase`, `desc-paramagnetic_smwi`, `desc-paramagneticsmwi_minip` (and
     /// the diamagnetic pair), `t2starmap`, `r2starmap`, `r2map`, `r2primemap`,
     /// `desc-paramagnetic_chimap`, `desc-diamagnetic_chimap`, `desc-total_chimap`, `dseg`).
     /// `None` = all produced.
@@ -146,6 +148,11 @@ pub fn export_run_dicoms(
     if opts.export_swi {
         maps.push(MapExport { suffix: "swi", path: output.swi_path(key), description: "QSMxT SWI".to_string() });
         maps.push(MapExport { suffix: "minIP", path: output.swi_mip_path(key), description: "QSMxT SWI minIP".to_string() });
+    }
+    if opts.export_swi_phase {
+        maps.push(MapExport {
+            suffix: "desc-swi_phase", path: output.swi_phase_path(key), description: "QSMxT SWI filtered phase".to_string(),
+        });
     }
     if opts.export_smwi {
         use qsmxt_engine::store::Contrast;
@@ -804,6 +811,7 @@ fn series_number_for(suffix: &str) -> i32 {
         "desc-diamagneticsmwi_minIP" => 14,
         "dseg" => 15,
         "magnitude" => 16,
+        "desc-swi_phase" => 17,
         _ => 99,
     }
 }
@@ -1074,7 +1082,7 @@ mod tests {
             "Chimap", "swi", "minIP", "T2starmap", "R2starmap", "R2map", "R2primemap",
             "desc-paramagnetic_Chimap", "desc-diamagnetic_Chimap", "desc-total_Chimap",
             "desc-paramagnetic_smwi", "desc-diamagnetic_smwi", "desc-paramagneticsmwi_minIP",
-            "desc-diamagneticsmwi_minIP", "dseg", "magnitude",
+            "desc-diamagneticsmwi_minIP", "dseg", "magnitude", "desc-swi_phase",
         ];
         let mut nums: Vec<i32> = suffixes.iter().map(|s| series_number_for(s)).collect();
         assert!(nums.iter().all(|&n| n != 99), "a known suffix fell through to the fallback");
@@ -1119,6 +1127,8 @@ mod tests {
         write(output.chi_para_path(&key));
         write(output.chi_dia_path(&key));
         write(output.chi_sep_total_path(&key));
+        write(output.swi_phase_path(&key));
+        assert!(output.swi_phase_path(&key).to_string_lossy().ends_with("_desc-swi_phase.nii"));
         use qsmxt_engine::store::Contrast;
         for c in [Contrast::Paramagnetic, Contrast::Diamagnetic] {
             write(output.smwi_path(&key, c));
@@ -1145,6 +1155,7 @@ mod tests {
         let opts = DicomExportOptions {
             export_swi: false,
             export_smwi: true,
+            export_swi_phase: true,
             export_t2star: false,
             export_r2star: true,
             export_r2: true,
@@ -1154,7 +1165,7 @@ mod tests {
             outputs_filter: None,
             segmentation: None,
         };
-        assert_eq!(export_run_dicoms(&run, &output, &opts).unwrap(), 11);
+        assert_eq!(export_run_dicoms(&run, &output, &opts).unwrap(), 12);
         // Nothing to export is no series, which the run's record then does not claim.
         let empty = tempfile::tempdir().unwrap();
         assert_eq!(export_run_dicoms(&run, &DerivativeOutputs::new(empty.path()), &opts).unwrap(), 0);
@@ -1164,7 +1175,7 @@ mod tests {
             "Chimap", "R2starmap", "R2map", "R2primemap",
             "desc-paramagnetic_Chimap", "desc-diamagnetic_Chimap", "desc-total_Chimap",
             "desc-paramagnetic_smwi", "desc-diamagnetic_smwi", "desc-paramagneticsmwi_minIP",
-            "desc-diamagneticsmwi_minIP",
+            "desc-diamagneticsmwi_minIP", "desc-swi_phase",
         ] {
             let dir = output.dicom_dir(&key, suffix);
             assert!(dir.is_dir(), "missing DICOM dir for {suffix}");
@@ -1230,7 +1241,7 @@ mod tests {
 
     fn seg_opts(synthseg: bool, filter: Option<&[String]>) -> DicomExportOptions<'_> {
         DicomExportOptions {
-            export_swi: false, export_smwi: false, export_t2star: false, export_r2star: false, export_r2: false,
+            export_swi: false, export_swi_phase: false, export_smwi: false, export_t2star: false, export_r2star: false, export_r2: false,
             export_r2prime: false, export_chisep: false, source_dicom: None, outputs_filter: filter,
             segmentation: Some(SegmentationExport { synthseg, algorithm: "SynthSeg 1.0".into() }),
         }

@@ -1495,6 +1495,11 @@ minimum-intensity projection over `--swi-mip-window` slices. The phase is filter
 CLEAR-SWI's own head mask, made from the first echo's magnitude, not within the brain mask, so
 the SWI covers the head. A single echo gives single-echo SWI.
 
+`--swi-filtered-phase` also writes the phase the phase mask is made from, `_desc-swi_phase`:
+the high-pass filtered phase, combined across echoes into a frequency map in Hz, or in radians
+for a single echo, and 0 outside CLEAR-SWI's head mask. It comes from the same computation as
+the SWI, so it implies `--do-swi`.
+
 ## Segmentation and per-structure statistics
 
 `--do-segmentation` parcellates the brain straight from the GRE magnitude with

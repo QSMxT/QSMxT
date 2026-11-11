@@ -139,6 +139,7 @@ mod integration_tests {
                 complex_fit_reltol: None, complex_fit_max_iter: None,
                 no_qsm: false,
                 do_swi: false,
+                swi_filtered_phase: false,
                 do_smwi: false,
                 do_segmentation: false,
                 do_analysis: false,
@@ -1404,21 +1405,25 @@ mod integration_tests {
         super::swi::execute(SwiArgs {
             phase: phase.clone(), magnitude: magnitude.clone(), tes: Some(vec![0.004, 0.008]), mask: None,
             output: output.clone(),
-            mip: false, mip_output: None,
+            mip: false, mip_output: None, filtered_phase: true, filtered_phase_output: None,
             swi_params: Default::default(),
         }).unwrap();
         assert!(output.exists());
+        // The filtered phase beside it, by default.
+        assert!(dir.path().join("swi_desc-swi_phase.nii").exists());
 
         // Several echoes need their echo times: none given, no sidecars.
         let err = super::swi::execute(SwiArgs {
             phase: phase.clone(), magnitude: magnitude.clone(), tes: None, mask: None,
-            output: output.clone(), mip: false, mip_output: None, swi_params: Default::default(),
+            output: output.clone(), mip: false, mip_output: None, filtered_phase: false, filtered_phase_output: None,
+            swi_params: Default::default(),
         }).unwrap_err().to_string();
         assert!(err.contains("echo times"), "{err}");
         // One magnitude per phase.
         let err = super::swi::execute(SwiArgs {
             phase, magnitude: magnitude[..1].to_vec(), tes: Some(vec![0.004, 0.008]), mask: None,
-            output, mip: false, mip_output: None, swi_params: Default::default(),
+            output, mip: false, mip_output: None, filtered_phase: false, filtered_phase_output: None,
+            swi_params: Default::default(),
         }).unwrap_err().to_string();
         assert!(err.contains("magnitude"), "{err}");
     }
@@ -2563,10 +2568,12 @@ mod integration_tests {
             phase: vec![phase], magnitude: vec![mag], tes: None, mask: Some(mask),
             output: output.clone(),
             mip: true, mip_output: Some(mip.clone()),
+            filtered_phase: false, filtered_phase_output: Some(dir.path().join("hp.nii")),
             swi_params: Default::default(),
         }).unwrap();
         assert!(output.exists());
         assert!(mip.exists());
+        assert!(dir.path().join("hp.nii").exists(), "--filtered-phase-output implies --filtered-phase");
     }
 
     // --- Quality map with all optional inputs ---
@@ -3146,6 +3153,7 @@ mod integration_tests {
             let p = &mut a.pipeline;
             p.two_pass = true;
             p.do_swi = true;
+            p.swi_filtered_phase = true;
             p.do_smwi = true;
             p.do_t2starmap = true;
             p.do_r2starmap = true;
@@ -3234,15 +3242,20 @@ mod integration_tests {
             a.pipeline.obliquity_threshold = Some(5.0);
             a.pipeline.output_space = Some(OutputSpaceArg::Working);
             a.pipeline.do_swi = true;
+            a.pipeline.swi_filtered_phase = true;
         });
 
         for case in ["full", "coils", "cosmos", "sti", "oblique"] {
             assert!(root.join(case).join("derivatives/qsmxt/dataset_description.json").exists(), "{case}");
         }
         let full = root.join("full/derivatives/qsmxt/sub-1/anat");
-        for name in ["sub-1_acq-GRE_Chimap.nii", "sub-1_acq-MEGRE_desc-paramagneticsmwi_minIP.nii"] {
+        for name in ["sub-1_acq-GRE_Chimap.nii", "sub-1_acq-MEGRE_desc-paramagneticsmwi_minIP.nii",
+                     "sub-1_acq-MEGRE_desc-swi_phase.nii"] {
             assert!(full.join(name).exists(), "{name}");
         }
+        let sidecar: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(full.join("sub-1_acq-MEGRE_desc-swi_phase.json")).unwrap()).unwrap();
+        assert_eq!(sidecar["Units"], "Hz", "{sidecar}");
         for name in ["sub-1_acq-MEGRE_desc-total_fieldmap.nii", "sub-1_acq-MEGRE_desc-total_magnitude.nii"] {
             assert!(full.with_file_name("fmap").join(name).exists(), "{name}");
         }
@@ -3702,10 +3715,12 @@ mod multiorient_tests {
         super::swi::execute(SwiArgs {
             phase: vec![phase.clone()], magnitude: vec![mag.clone()], tes: None, mask: Some(small_mask.clone()),
             output: d.join(name(swi.clone())),
-            mip: true, mip_output: None, swi_params: Default::default(),
+            mip: true, mip_output: None, filtered_phase: true, filtered_phase_output: None,
+            swi_params: Default::default(),
         }).unwrap();
         exists(name(swi));
         exists(name(pipeline.swi_mip_path(&key)));
+        exists(name(pipeline.swi_phase_path(&key)));
 
         // combine mcpc3ds, on a per-coil run (`rec-uncombined`) like the pipeline's
         let unc = AcquisitionKey { reconstruction: Some("uncombined".into()), ..key.clone() };

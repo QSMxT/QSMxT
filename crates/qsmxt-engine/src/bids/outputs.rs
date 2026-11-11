@@ -38,6 +38,7 @@ pub fn published_tail(item: &Item, scan_suffix: &str) -> Option<(Tail, &'static 
         Item::TotalFieldMagnitude => nii(naming::total_fieldmap_magnitude()),
         Item::Swi => nii(naming::swi()),
         Item::SwiMip => nii(naming::swi_minip()),
+        Item::SwiPhase => nii(naming::swi_phase()),
         Item::T2star => nii(naming::t2starmap()),
         Item::R2star => nii(naming::r2starmap()),
         Item::R2 => nii(naming::r2map()),
@@ -139,7 +140,8 @@ pub fn description(item: &Item) -> Option<Description> {
         Item::EchoChi(_) => image(FieldStrength, true),
         Item::BrainMask | Item::ChiSupport | Item::ReliableMask | Item::Segmentation
         | Item::R2primeCoverage | Item::CoverageMask => Some(MASK),
-        Item::CombinedMagnitude | Item::Swi | Item::SwiMip => image(FieldAndEcho, false),
+        // The SWI's filtered phase is confined to CLEAR-SWI's head mask, not the brain mask.
+        Item::CombinedMagnitude | Item::Swi | Item::SwiMip | Item::SwiPhase => image(FieldAndEcho, false),
         Item::Smwi(_) | Item::SmwiMip(_) => image(FieldAndEcho, true),
         // R2 comes from the multi-echo spin echo, so the GRE's echo time says nothing about it.
         Item::T2star | Item::R2star | Item::R2 | Item::R2prime => image(FieldStrength, true),
@@ -171,6 +173,20 @@ pub fn step_fields(item: &Item, first_echo_time: f64) -> Option<Map<String, Valu
         _ => return None,
     };
     Some(fields.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
+}
+
+/// What the SWI step records about its filtered phase: its units, which depend on the number of
+/// echoes (CLEAR-SWI combines several into a frequency in Hz; one echo stays a phase in radians),
+/// and what it is.
+pub fn swi_phase_fields(n_echoes: usize) -> Map<String, Value> {
+    let units = if n_echoes > 1 { "Hz" } else { "rad" };
+    [
+        ("Units", Value::from(units)),
+        ("Description", Value::from(
+            "CLEAR-SWI's high-pass filtered phase, the phase the SWI is weighted by: Gaussian \
+             high-pass filtered within CLEAR-SWI's head mask (from the first echo's magnitude), \
+             0 outside it")),
+    ].into_iter().map(|(k, v)| (k.to_string(), v)).collect()
 }
 
 /// The BIDS-Prov activity of `step` on the run named `basename` (`bids::prov/#reference-sub-01`):
@@ -317,6 +333,14 @@ mod tests {
         let mut again = s.clone();
         describe(&mut again, description(&Item::Chi).unwrap(), Some("bids::prov/#output_space-sub-01"), &facts);
         assert_eq!(again.keys().collect::<Vec<_>>(), s.keys().collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn the_swi_phase_says_its_units() {
+        assert_eq!(swi_phase_fields(4)["Units"], "Hz");
+        assert_eq!(swi_phase_fields(1)["Units"], "rad");
+        assert_eq!(published_path(&Item::SwiPhase, &key(), None).unwrap(),
+                   "sub-01/ses-pre/anat/sub-01_ses-pre_acq-gre_run-1_desc-swi_phase.nii");
     }
 
     #[test]

@@ -388,7 +388,7 @@ mod tests {
         };
         let paths = [
             o.qsm_path(&k), o.mask_path(&k), o.magnitude_path(&k), o.swi_path(&k), o.swi_mip_path(&k),
-            o.dseg_path(&k), o.dseg_lookup_path(&k), o.segmentation_stats_path(&k),
+            o.swi_phase_path(&k), o.dseg_path(&k), o.dseg_lookup_path(&k), o.segmentation_stats_path(&k),
             o.smwi_path(&k, qsmxt_engine::store::Contrast::Paramagnetic), o.smwi_path(&k, qsmxt_engine::store::Contrast::Diamagnetic),
             o.smwi_mip_path(&k, qsmxt_engine::store::Contrast::Paramagnetic), o.smwi_mip_path(&k, qsmxt_engine::store::Contrast::Diamagnetic),
             o.t2star_path(&k), o.r2star_path(&k), o.r2_path(&k), o.r2prime_path(&k),

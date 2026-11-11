@@ -120,11 +120,12 @@ prov
 ";
 
 /// The whole `.bidsignore`: [`BIDSIGNORE`], then one line per suffix QSMxT publishes that the
-/// released BIDS schema does not define (R2′, BEP004's SWI suffixes, the STI eigenvector).
+/// released BIDS schema does not define (R2′, BEP004's SWI suffixes, SWI's filtered phase, the STI
+/// eigenvector).
 pub fn bidsignore() -> String {
     let mut text = BIDSIGNORE.to_string();
     text.push_str("# Suffixes BIDS does not define yet: R2' (R2primemap), BEP004 SWI (swi, minIP, smwi), \
-                   the STI eigenvector (evec)\n");
+                   SWI's filtered phase (phase, deprecated for raw phase), the STI eigenvector (evec)\n");
     for suffix in crate::bids::naming::BIDSIGNORED_SUFFIXES {
         text.push_str(&format!("*_{suffix}.nii\n*_{suffix}.nii.gz\n*_{suffix}.json\n"));
     }

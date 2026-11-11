@@ -444,6 +444,7 @@ impl FileStore<'_> {
             Item::MotionReport => o.motion_report_path(key),
             Item::Swi => o.swi_path(key),
             Item::SwiMip => o.swi_mip_path(key),
+            Item::SwiPhase => o.swi_phase_path(key),
             Item::Smwi(c) => o.smwi_path(key, c),
             Item::SmwiMip(c) => o.smwi_mip_path(key, c),
             Item::R2star => o.r2star_path(key),
@@ -2521,6 +2522,7 @@ mod oblique_run_tests {
         config.pipeline.do_t2starmap = true;
         config.pipeline.do_r2starmap = true;
         config.pipeline.do_swi = true;
+        config.swi.filtered_phase = true;
         config.pipeline.do_smwi = true;
         config.masking.two_pass = true;
         let deriv = dir.path().join("out");
@@ -2550,6 +2552,9 @@ mod oblique_run_tests {
             assert_eq!(meta["QSMrsVersion"], crate::bids::bidsprov::QSM_RS_VERSION);
         }
         assert!(images >= 10, "only {images} published images: the run did not exercise enough");
+        // SWI's filtered phase keeps its units through the return to the acquired grid.
+        let phase = read(&output.swi_phase_path(&run.key).with_extension("json"));
+        assert_eq!(phase["Units"], if run.echo_times.len() > 1 { "Hz" } else { "rad" }, "{phase}");
         // Every GeneratedBy an entity names resolves too.
         for (iri, e) in ent.as_object().unwrap() {
             if let Some(by) = e["GeneratedBy"].as_str() {
