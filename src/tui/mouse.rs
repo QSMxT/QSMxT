@@ -53,6 +53,8 @@ pub enum Hit {
     Button(usize),
     /// A line of the Input page.
     Input(InputTarget),
+    /// The open pop-up, anywhere in it: a click there does nothing, a click outside it closes it.
+    Popup,
 }
 
 /// What a line of the Input page focuses: the input-mode picker and the directory/config fields
@@ -71,7 +73,7 @@ pub enum InputTarget {
 impl Hit {
     /// Whether it belongs to a pop-up (and so answers while one is open).
     fn in_popup(self) -> bool {
-        matches!(self, Hit::Picker { .. } | Hit::Button(_))
+        matches!(self, Hit::Picker { .. } | Hit::Button(_) | Hit::Popup)
     }
 }
 
@@ -156,7 +158,13 @@ impl App {
     }
 
     fn click(&mut self, x: u16, y: u16) {
-        let Some((area, hit)) = self.hits.at(x, y) else { return };
+        let found = self.hits.at(x, y);
+        // A click outside an open pop-up closes it, as Esc does.
+        if self.popup_open() && !found.is_some_and(|(_, h)| h.in_popup()) {
+            self.handle_key(key(KeyCode::Esc));
+            return;
+        }
+        let Some((area, hit)) = found else { return };
         if self.popup_open() != hit.in_popup() {
             return;
         }
@@ -187,11 +195,7 @@ impl App {
             }
             Hit::Rows { scroll } => self.click_row(scroll + line),
             Hit::Pipelines => {
-                // The list's lines: the first entry, a heading, then the others.
-                let i = match line { 0 => 0, 1 => return, n => n - 1 };
-                if i >= qsmxt_engine::pipelines::pipelines().len() {
-                    return;
-                }
+                let Some(i) = super::pipelines_tab::list_entry(line) else { return };
                 let again = self.pipelines.cursor == i && !self.tab_focus;
                 self.tab_focus = false;
                 self.pipelines.cursor = i;
@@ -212,6 +216,7 @@ impl App {
                 }
             }
             Hit::Button(i) => self.press_button(i),
+            Hit::Popup => {}
             Hit::Input(target) => self.click_input(target),
         }
     }
@@ -389,10 +394,26 @@ mod tests {
         click(&mut app, "HEIDI");
         app.check_recommendations();
         assert!(app.rec_modal.is_some(), "ticking HEIDI on TKD recommends LSQR");
-        click(&mut app, "1 Input");
-        assert_eq!(app.active_tab, TAB_RECONSTRUCTION, "the tabs do not answer under a pop-up");
         click(&mut app, " Keep mine ");
         assert!(app.rec_modal.is_none(), "the button closes it");
+    }
+
+    /// A click outside an open pop-up closes it, as Esc does, and does nothing else: the tab
+    /// clicked is not opened. A click inside it, away from its entries, leaves it open.
+    #[test]
+    fn a_click_outside_a_pop_up_closes_it() {
+        let mut app = App::new_for_trial();
+        click(&mut app, "3 Reconstruction");
+        click(&mut app, "   Inversion ");
+        let before = app.field_select("qsm_algorithm");
+        click(&mut app, "QSM inversion");
+        assert!(app.algo_modal.is_some());
+        click(&mut app, "Esc cancel");
+        assert!(app.algo_modal.is_some(), "a click inside it keeps it open");
+        click(&mut app, "1 Input");
+        assert!(app.algo_modal.is_none(), "a click outside closes it");
+        assert_eq!(app.active_tab, TAB_RECONSTRUCTION, "and does nothing else");
+        assert_eq!(app.field_select("qsm_algorithm"), before, "nothing is chosen");
     }
 
     #[test]
@@ -418,7 +439,7 @@ mod tests {
         assert_eq!(app.active_tab, TAB_PIPELINE);
         click(&mut app, "MEDI toolbox");
         assert!(app.pipelines.preview.is_none(), "one click highlights");
-        click(&mut app, "▶ MEDI toolbox");
+        click(&mut app, "▸ MEDI toolbox");
         assert!(app.pipelines.preview.is_some(), "the second opens the preview");
         click(&mut app, "Apply MEDI toolbox");
         assert!(app.pipelines.preview.is_none());

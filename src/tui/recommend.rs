@@ -1760,7 +1760,7 @@ mod tests {
         let pick = |app: &mut App, name: &str| {
             app.algo_modal = Some(AlgoModal {
                 target: AlgoModalTarget::Select("qsm_algorithm".into()), title: String::new(),
-                options: vec![], help: vec![], cursor: at(name),
+                options: vec![], help: vec![], cursor: at(name), offset: Default::default(),
             });
             key(app, KeyCode::Enter);
         };

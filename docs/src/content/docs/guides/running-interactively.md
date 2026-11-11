@@ -166,7 +166,8 @@ terminal the sidebar drops its blank lines, then turns its headings into rules, 
 around the current section (`▲`/`▼`). Narrower than 78 columns, the sections become a strip of
 sub-tabs along the top of the panel instead, chosen with `←`/`→`, with `↓` going into them and
 `←` from a setting coming back to them. The
-Methods tab's two pages are such a strip too.
+Methods tab's two pages, Methods text and Graph, are a sidebar too (a strip when narrow), and the
+Pipeline tab's list of pipelines is drawn the same way.
 
 | Tab | Pages | What is there |
 |---|---|---|
@@ -196,10 +197,10 @@ happen: *Run*, *Dry run*, *Write SLURM scripts* or *Submit SLURM jobs*.
 | `1`–`5`, `Tab`, `Shift-Tab` | anywhere | switch tab |
 | `←` `→` | tab bar | previous / next tab |
 | `↓`, `Enter` | tab bar | go into the tab |
-| `↑` `↓`, `Home` `End` | Reconstruction sidebar | previous / next section, first / last; `↑` from the first goes up to the tab bar |
-| `→`, `Enter` | Reconstruction sidebar | go into the section's settings |
-| `←` `→` | sub-tab strip (Methods; Reconstruction when narrow) | previous / next page |
-| `←` | Reconstruction settings | back to the sidebar (or the strip), on the same section |
+| `↑` `↓`, `Home` `End` | sidebar (Reconstruction, Methods) | previous / next section, first / last (Reconstruction); `↑` from the first goes up to the tab bar |
+| `→`, `Enter` | sidebar | go into the section or page |
+| `←` `→` | sub-tab strip (when narrow) | previous / next page |
+| `←` | a section's settings, a Methods page | back to the sidebar (or the strip), on the same section |
 | `↓`, `Enter` | sub-tab strip | go into the page |
 | `↑` | sub-tab strip | go up to the tab bar |
 | `[` `]` | any tab with sections or sub-tabs | previous / next one |
@@ -237,8 +238,8 @@ Everything can also be done with the mouse:
   button, is focused by the first click and pressed by the second.
 - **In a list** (a method's list, the Pipeline tab's pipelines), the first click highlights an
   entry and the second chooses it.
-- **Click a pop-up's button** to press it. While a pop-up is open, the rest of the screen does
-  not answer clicks, just as it does not answer keys.
+- **Click a pop-up's button** to press it. A click outside an open pop-up closes it, as `Esc`
+  does, and does nothing else.
 - **The wheel** does what `↑`/`↓` do: it moves through the settings and lists, and scrolls the
   methods text, the graph and the pop-ups that scroll. It stays on the page rather than moving up
   to the sidebar, the sub-tabs or the tabs.

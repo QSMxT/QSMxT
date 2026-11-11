@@ -370,60 +370,76 @@ fn change_lines(changes: &[Change]) -> Vec<Line<'static>> {
 /// not part of the pipeline.
 fn summary_lines(c: &Compared) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    if !c.stages.is_empty() {
-        lines.push(Line::from(Span::styled(
-            format!("{} start from QSMxT's defaults; every other setting stays as it is.", c.stages.join(", ")), muted())));
-    }
     for a in &c.advice {
         lines.push(Line::from(vec![
             Span::styled("ⓘ ", Style::default().fg(Color::Cyan)),
-            Span::styled(format!("Recommended, not part of the pipeline: {a} (press ! on the setting for the reason)"), Style::default().fg(Color::Gray)),
+            Span::styled(format!("Recommended, not part of the pipeline: {a}"), Style::default().fg(Color::Gray)),
         ]));
     }
     lines
 }
 
-/// The Pipeline tab: the list on the left, the highlighted pipeline's comparison on the right.
+/// The lines of the list, as [`draw`] draws them: a heading over QSMxT's defaults, a blank line,
+/// then a heading over the toolboxes. The entry each line is, when it is one.
+pub(super) fn list_entry(line: usize) -> Option<usize> {
+    match line {
+        1 => Some(0),
+        n if n >= 4 => Some(n - 3).filter(|&i| i < pipelines::pipelines().len()),
+        _ => None,
+    }
+}
+
+/// The Pipeline tab: the list on the left, styled as the Reconstruction tab's sidebar (headings,
+/// a blank line between the groups, the highlighted entry a filled bar, yellow while the list has
+/// focus), and the highlighted pipeline's comparison on the right.
 pub fn draw(f: &mut Frame, app: &mut App, area: Rect) {
     let block = super::tabs::panel(app);
     let inner = block.inner(area);
     f.render_widget(block, area);
-    let rows = Layout::default().direction(Direction::Vertical)
-        .constraints([Constraint::Length(2), Constraint::Min(1)]).split(inner);
-    f.render_widget(Paragraph::new(Line::from(Span::styled(
-        " Start from a pipeline, then adjust any step on the tabs that follow. Choosing one shows every change first.", muted()))), rows[0]);
+    let width = 40.min(inner.width);
     let cols = Layout::default().direction(Direction::Horizontal)
-        .constraints([Constraint::Length(40), Constraint::Min(20)]).split(rows[1]);
+        .constraints([Constraint::Length(width), Constraint::Min(20)]).split(inner);
 
     let status = app.pipeline_status();
     let current = status.pipeline.as_ref().map(|p| p.id);
     let cursor = app.pipelines.cursor;
-    let mut list = Vec::new();
+    let focused = !app.tab_focus;
+    let room = width.saturating_sub(1) as usize;
+    let heading = |name: &str| Line::from(Span::styled(format!(" {name}"), super::tabs::sidebar_heading_style()));
+    let mut list = vec![heading("DEFAULTS")];
     for (i, p) in pipelines::pipelines().into_iter().enumerate() {
         if i == 1 {
-            list.push(Line::from(Span::styled(" Toolbox pipelines", muted().add_modifier(Modifier::BOLD))));
+            list.push(Line::from(""));
+            list.push(heading("TOOLBOX PIPELINES"));
         }
-        let sel = i == cursor && !app.tab_focus;
-        let style = if sel { Style::default().fg(Color::White).bg(Color::DarkGray).add_modifier(Modifier::BOLD) } else { Style::default() };
-        let mut spans = vec![
-            Span::styled(if sel { " ▶ " } else { "   " }, style.fg(Color::Cyan)),
-            Span::styled(p.name.to_string(), style),
-        ];
-        if current == Some(p.id) {
-            spans.push(Span::styled(" ●", style.fg(Color::Green)));
+        let mark = if current == Some(p.id) { " ●" } else { "" };
+        if i == cursor {
+            let bg = if focused { Color::Yellow } else { Color::Cyan };
+            let st = Style::default().fg(Color::Black).bg(bg).add_modifier(Modifier::BOLD);
+            let text = format!(" ▸ {}", p.name);
+            let pad = room.saturating_sub(text.chars().count() + mark.chars().count());
+            list.push(Line::from(vec![
+                Span::styled(text, st), Span::styled(" ".repeat(pad), st),
+                Span::styled(mark, st),
+            ]));
+        } else {
+            list.push(Line::from(vec![
+                Span::raw("   "), Span::raw(p.name.to_string()),
+                Span::styled(mark, Style::default().fg(Color::Green)),
+            ]));
         }
-        list.push(Line::from(spans));
     }
-    list.push(Line::from(""));
-    list.push(Line::from(vec![
-        Span::raw("   "),
-        Span::styled("Now: ", muted()),
-        Span::styled(status.text(), Style::default().fg(if current.is_some() { Color::Green } else { Color::Gray })),
-    ]));
-    // The entries and the heading between them, for clicks.
-    let entries = pipelines::pipelines().len() as u16 + 1;
-    app.hits.add(Rect { height: entries.min(cols[0].height), ..cols[0] }, super::mouse::Hit::Pipelines);
-    f.render_widget(Paragraph::new(list), cols[0]);
+    let side = Rect { width: width.saturating_sub(1), ..cols[0] };
+    app.hits.add(Rect { height: (list.len() as u16).min(side.height), ..side }, super::mouse::Hit::Pipelines);
+    f.render_widget(Paragraph::new(list), side);
+    // The divider, as the sidebar's, meeting the panel's border.
+    let buf = f.buffer_mut();
+    let x = cols[0].x + width.saturating_sub(1);
+    for y in cols[0].y..cols[0].bottom() {
+        buf[(x, y)].set_symbol("│").set_fg(Color::DarkGray);
+    }
+    if buf[(x, area.y)].symbol() == "─" { buf[(x, area.y)].set_symbol("┬"); }
+    if buf[(x, area.bottom() - 1)].symbol() == "─" { buf[(x, area.bottom() - 1)].set_symbol("┴"); }
 
     let p = app.highlighted_pipeline();
     let mut right = vec![Line::from(Span::styled(p.toolbox.unwrap_or(p.name).to_string(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))];
@@ -446,10 +462,7 @@ pub fn draw(f: &mut Frame, app: &mut App, area: Rect) {
             right.extend(summary_lines(&c));
         }
     }
-    let side = Block::default().borders(Borders::LEFT).border_style(muted());
-    let text = side.inner(cols[1]);
-    f.render_widget(side, cols[1]);
-    let pad = Rect { x: text.x + 1, width: text.width.saturating_sub(1), ..text };
+    let pad = Rect { x: cols[1].x + 1, width: cols[1].width.saturating_sub(1), ..cols[1] };
     f.render_widget(Paragraph::new(right).wrap(Wrap { trim: false }), pad);
 }
 
@@ -475,6 +488,7 @@ pub fn draw_preview(f: &mut Frame, m: &mut PreviewModal, area: Rect, hits: &supe
     let h = (body + 6).min(area.height.saturating_sub(2));
     let popup = Rect { x: area.x + (area.width - w) / 2, y: area.y + (area.height.saturating_sub(h)) / 2, width: w, height: h };
     f.render_widget(Clear, popup);
+    hits.add(popup, super::mouse::Hit::Popup);
     let block = Block::default().borders(Borders::ALL).border_type(BorderType::Plain)
         .border_style(Style::default().fg(Color::Cyan))
         .title(Span::styled(format!(" {} ", m.pipeline.name), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)));
@@ -610,7 +624,7 @@ mod tests {
         key(&mut app, KeyCode::Char('2'));
         assert_eq!(app.active_tab, super::super::app::TAB_PIPELINE);
         let text = screen(&mut app);
-        assert!(text.contains("Toolbox pipelines") && text.contains("Pipeline: QSMxT defaults"), "{text}");
+        assert!(text.contains("TOOLBOX PIPELINES") && text.contains("Pipeline: QSMxT defaults"), "{text}");
         key(&mut app, KeyCode::Down);
         let text = screen(&mut app);
         assert!(text.contains("MEDI toolbox 2024.11.26") && text.contains("Choosing it changes"), "{text}");
