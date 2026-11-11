@@ -6,9 +6,8 @@
 //! - **A click does what its key does**, through the same handlers: it focuses the row or entry
 //!   and then sends the key that acts on it. Nothing happens on a click that a key could not do.
 //!   - A tab or sub-tab: switches to it.
-//!   - A checkbox: ticks it. A picker button (`[ … ▾ ]`) or a value to edit: opens it. A short
-//!     choice (`◀ … ▶`): the first click focuses it, the next takes the next value. Any other row
-//!     (Add section, Run): the first click focuses it, the next presses it.
+//!   - A checkbox: ticks it. A picker button (`[ … ▾ ]`) or a value to edit: opens it. Any other
+//!     row (Add section, Run): the first click focuses it, the next presses it.
 //!   - On the Input page: a field to type in, or the input-mode picker, opens; a run or an example
 //!     acquisition ticks; anything else (a subject, a series, a button) is focused by the first
 //!     click and pressed by the next.
@@ -301,15 +300,24 @@ impl App {
             }
             self.pipeline_state.editing = false;
         }
+        if self.pipeline_state.mask_value_editing {
+            if pos == self.focus() {
+                return;
+            }
+            // A click on another row leaves the number being typed as it was.
+            self.pipeline_state.mask_value_editing = false;
+        }
         let again = pos == self.focus() && !self.tab_focus && !self.subtab_focus;
         self.tab_focus = false;
         self.subtab_focus = false;
         self.set_focus(pos);
+        // A click does what Enter or Space does: a switch flips, a choice opens its list, a
+        // number or text starts editing. Anything else (adding a step or a mask, the run button)
+        // needs a second click, on the row already focused.
         let code = match &r {
             PipelineRow::Toggle { .. } => Some(KeyCode::Char(' ')),
-            PipelineRow::AlgoSelect { .. } if super::recommend::picker_noun(&r).is_some() => Some(KeyCode::Enter),
-            PipelineRow::AlgoSelect { .. } => again.then_some(KeyCode::Right),
             PipelineRow::Param { .. } => Some(KeyCode::Enter),
+            _ if self.selector_modal(&r).is_some() || self.pipeline_state.mask_value_text(&r).is_some() => Some(KeyCode::Enter),
             _ => again.then_some(KeyCode::Enter),
         };
         if let Some(code) = code {

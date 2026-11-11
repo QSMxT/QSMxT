@@ -2493,11 +2493,11 @@ pub struct PipelineFormState {
     pub scroll_offset: usize,
 
     // Mask ops editor state
-    pub mask_ops_adding: bool,      // true when "Add step..." selector is active
-    pub mask_ops_add_idx: usize,    // index into available op types during add
-    pub mask_ops_add_section: usize, // which section we're adding to
-    pub mask_threshold_value_buf: String, // text buffer for editing threshold value
-    pub mask_threshold_editing: bool, // true when editing threshold value
+    /// Text buffer while a mask row's number (a threshold value, BET's fractional intensity, a
+    /// refinement step's value, a signal-erode setting) is edited.
+    pub mask_value_buf: String,
+    /// Whether the focused mask row's number is being edited ([`Self::mask_value_buf`]).
+    pub mask_value_editing: bool,
 }
 
 impl Default for PipelineFormState {
@@ -2948,11 +2948,8 @@ impl Default for PipelineFormState {
             editing: false,
             cursor: 0,
             scroll_offset: 0,
-            mask_ops_adding: false,
-            mask_ops_add_idx: 0,
-            mask_ops_add_section: 0,
-            mask_threshold_value_buf: String::new(),
-            mask_threshold_editing: false,
+            mask_value_buf: String::new(),
+            mask_value_editing: false,
         }
     }
 }
@@ -3206,8 +3203,8 @@ const IHARPERELLA_RIM_HELP: &[&str] = &[
 fn harperella_rim_index(r: qsmxt_engine::HarperellaRim) -> usize {
     qsmxt_engine::HarperellaRim::ALL.iter().position(|&x| x == r).unwrap_or(0)
 }
-/// A minimum intensity one ←/→ step on: by a tenth of its order of magnitude (100 → 110 or 90,
-/// 0.5 → 0.55 or 0.45), so a magnitude in any units can be adjusted. Stays above 0.
+/// A minimum intensity one `+`/`-` nudge on: by a tenth of its order of magnitude (100 → 110 or
+/// 90, 0.5 → 0.55 or 0.45), so a magnitude in any units can be adjusted. Stays above 0.
 fn step_min_intensity(value: f64, delta: isize) -> f64 {
     // Going down from a power of ten steps by the smaller order (100 → 99, not 90 → 0 eventually).
     let base = if delta < 0 { value * (1.0 - 1e-9) } else { value };
@@ -3216,6 +3213,32 @@ fn step_min_intensity(value: f64, delta: isize) -> f64 {
     // Round to the step, so repeated steps do not accumulate floating-point noise.
     let next = (next / step).round() * step;
     if next > 0.0 { next } else { value }
+}
+
+/// What each threshold method does, for the threshold-method pop-up.
+fn threshold_method_help() -> Vec<String> {
+    ["Otsu automatic threshold", "Fixed intensity threshold", "Percentile-based threshold"].map(String::from).to_vec()
+}
+
+/// What each DICOM series type means, for the series-type pop-up.
+fn series_type_help(t: dicom::SeriesType) -> &'static str {
+    use dicom::SeriesType as S;
+    match t {
+        S::Magnitude => "Gradient-echo magnitude (part-mag)",
+        S::Phase => "Gradient-echo phase (part-phase)",
+        S::Real => "Real part of a complex gradient-echo image (part-real)",
+        S::Imaginary => "Imaginary part of a complex gradient-echo image (part-imag)",
+        S::T1w => "T1-weighted structural (T1w)",
+        S::Inversion => "An MP2RAGE inversion image (inv-N_MP2RAGE)",
+        S::T1map => "The scanner's T1 map (T1map)",
+        S::Swi => "The scanner's susceptibility-weighted image (rec-swi_part-mag_T2starw)",
+        S::MinIp => "The scanner's minimum-intensity projection (rec-mip_T2starw)",
+        S::ScannerQsm => "The scanner's own susceptibility map (rec-scanner_Chimap)",
+        S::T2starMap => "The scanner's T2* map (rec-scanner_T2starmap)",
+        S::R2starMap => "The scanner's R2* map (rec-scanner_R2starmap)",
+        S::Extra => "Kept as dcm2niix writes it, in extra_data/",
+        S::Skip => "Not converted",
+    }
 }
 
 /// BET's left-right orientation, in the CLI's names.
@@ -5232,14 +5255,14 @@ impl PipelineFormState {
         use crate::pipeline::config::MaskOp;
         let step = mask_step_of(op);
         match op {
-            MaskOp::Threshold { .. } => format!("{} (←/→ to change the method)", step.help),
+            MaskOp::Threshold { .. } => format!("{} — Enter: choose method", step.help),
             MaskOp::HdBet { .. } | MaskOp::Rs2Net { .. } | MaskOp::MindGrab { .. } =>
                 format!("{} (needs a deep-learning build)", step.help),
             // Nothing to adjust.
             MaskOp::Majority => step.help.to_string(),
             // The row shows the step's first parameter (signal-erode's threshold); the rest have
             // rows of their own.
-            _ => format!("{} (←/→ to adjust)", step.params.first().map_or(step.help, |p| p.help)),
+            _ => format!("{} (Enter to edit, +/- to nudge)", step.params.first().map_or(step.help, |p| p.help)),
         }
     }
 
@@ -5530,76 +5553,102 @@ impl PipelineFormState {
             .unwrap_or(0)
     }
 
-    /// Cycle the generator of a mask section (threshold → BET → HD-BET → MindGrab → RS2-Net) with
-    /// left/right.
-    pub fn adjust_mask_generator(&mut self, section: usize, delta: isize) {
-        if self.mask_section(section).is_none() { return; }
-        let n = MASK_GENERATOR_TYPES.len() as isize;
-        let new = (self.mask_generator_index(section) as isize + delta).rem_euclid(n) as usize;
-        self.set_mask_generator(section, new);
-    }
+    /// HD-BET's sliding-window steps worth offering. qsm-core accepts any stride in `(0, 1]`:
+    /// 0.5 is HD-BET's own default, and larger steps trade patch-seam quality for a shorter run.
+    pub const HD_BET_STEPS: [f64; 4] = [0.5, 0.625, 0.75, 1.0];
 
-    /// Adjust the generator's parameter (threshold method or BET fractional intensity).
-    pub fn adjust_mask_generator_param(&mut self, section: usize, delta: isize) {
-        use crate::pipeline::config::*;
-        let Some(section_ref) = self.mask_section_mut(section) else { return };
-        match &mut section_ref.generator {
-            MaskOp::Threshold { method, .. } => {
-                let methods = [MaskThresholdMethod::Otsu, MaskThresholdMethod::Fixed, MaskThresholdMethod::Percentile];
-                let cur = methods.iter().position(|m| m == method).unwrap_or(0) as isize;
-                let new = (cur + delta).rem_euclid(methods.len() as isize) as usize;
-                *method = methods[new];
-            }
-            MaskOp::Bet { fractional_intensity, .. } => {
-                *fractional_intensity = (*fractional_intensity + delta as f64 * 0.05).clamp(0.05, 1.0);
-            }
-            // Cycle whole volume -> native sliding window -> low-memory sliding window.
-            MaskOp::HdBet { patch, .. } => {
-                let options = [None, Some(MaskOp::hd_bet_default_patch()),
-                               Some(crate::pipeline::config::hd_bet_low_memory_patch())];
-                let cur = options.iter().position(|o| o == patch).unwrap_or(0) as isize;
-                *patch = options[(cur + delta).rem_euclid(options.len() as isize) as usize];
-            }
-            // Off / on: the only setting MindGrab has.
-            MaskOp::MindGrab { tta } => *tta = !*tta,
-            _ => {}
+    /// BET's voxel-size scalings worth offering. Any positive factor is valid, but only two
+    /// matter in practice: 1.0 for clinical data at its own geometry, and 10.0 for rodent brains,
+    /// which BET's millimetre-scale surface model otherwise cannot find. The steps between are
+    /// there for the in-between field strengths.
+    pub const BET_VOXEL_SCALES: [f64; 4] = [1.0, 2.0, 5.0, 10.0];
+
+    /// The values a list of offered `choices` shows for `current`: the offered ones, with
+    /// `current` added in order when it is not one of them (a value from a loaded config), and
+    /// the index of `current`.
+    fn value_choices(choices: &[f64], current: f64) -> (Vec<f64>, usize) {
+        let mut values = choices.to_vec();
+        if !values.iter().any(|v| (v - current).abs() < 1e-9) {
+            values.push(current);
+            values.sort_by(f64::total_cmp);
         }
-        self.mark_mask_custom(section);
+        let at = values.iter().position(|v| (v - current).abs() < 1e-9).unwrap_or(0);
+        (values, at)
     }
 
-    /// HD-BET's sliding-window step, cycled through the useful strides.
-    ///
-    /// qsm-core accepts any stride in `(0, 1]`, but only a few are worth offering: 0.5 is
-    /// HD-BET's own default, and larger steps trade patch-seam quality for a shorter run.
-    pub fn adjust_hd_bet_tile_step(&mut self, section: usize, delta: isize) {
+    /// The HD-BET patch steps offered for a section's generator, and the current one's index.
+    pub fn hd_bet_step_choices(&self, section: usize) -> (Vec<f64>, usize) {
         use crate::pipeline::config::MaskOp;
-        const STEPS: [f64; 4] = [0.5, 0.625, 0.75, 1.0];
+        let current = match self.mask_section(section).map(|s| &s.generator) {
+            Some(MaskOp::HdBet { tile_step, .. }) => *tile_step,
+            _ => crate::pipeline::config::hd_bet_default_tile_step(),
+        };
+        Self::value_choices(&Self::HD_BET_STEPS, current)
+    }
+
+    /// Set a section's HD-BET patch step (no-op unless its generator is HD-BET).
+    pub fn set_hd_bet_tile_step(&mut self, section: usize, step: f64) {
+        use crate::pipeline::config::MaskOp;
         let Some(section_ref) = self.mask_section_mut(section) else { return };
         if let MaskOp::HdBet { tile_step, .. } = &mut section_ref.generator {
-            let cur = STEPS.iter()
-                .position(|s| (s - *tile_step).abs() < 1e-9)
-                .unwrap_or(0) as isize;
-            let new = (cur + delta).rem_euclid(STEPS.len() as isize) as usize;
-            *tile_step = STEPS[new];
+            *tile_step = step;
             self.mark_mask_custom(section);
         }
     }
 
-    /// BET's voxel-size scaling, cycled through the scales worth offering.
-    ///
-    /// Any positive factor is valid, but only two matter in practice: 1.0 for clinical data at
-    /// its own geometry, and 10.0 for rodent brains, which BET's millimetre-scale surface model
-    /// otherwise cannot find. The steps between are there for the in-between field strengths.
-    pub fn adjust_bet_voxel_scale(&mut self, section: usize, delta: isize) {
+    /// The BET voxel scalings offered for a section's generator, and the current one's index.
+    pub fn bet_voxel_scale_choices(&self, section: usize) -> (Vec<f64>, usize) {
         use crate::pipeline::config::MaskOp;
-        const SCALES: [f64; 4] = [1.0, 2.0, 5.0, 10.0];
+        let current = match self.mask_section(section).map(|s| &s.generator) {
+            Some(MaskOp::Bet { voxel_scale, .. }) => *voxel_scale,
+            _ => crate::pipeline::config::bet_default_voxel_scale(),
+        };
+        Self::value_choices(&Self::BET_VOXEL_SCALES, current)
+    }
+
+    /// Set a section's BET voxel scaling (no-op unless its generator is BET).
+    pub fn set_bet_voxel_scale(&mut self, section: usize, scale: f64) {
+        use crate::pipeline::config::MaskOp;
         let Some(section_ref) = self.mask_section_mut(section) else { return };
         if let MaskOp::Bet { voxel_scale, .. } = &mut section_ref.generator {
-            let cur = SCALES.iter()
-                .position(|s| (s - *voxel_scale).abs() < 1e-9)
-                .unwrap_or(0) as isize;
-            let new = (cur + delta).rem_euclid(SCALES.len() as isize) as usize;
-            *voxel_scale = SCALES[new];
+            *voxel_scale = scale;
+            self.mark_mask_custom(section);
+        }
+    }
+
+    /// HD-BET's inference choices (whole volume, native sliding window, low-memory window), in
+    /// the order of the mask schema's `hd_bet_inference`.
+    pub fn hd_bet_inference_patches() -> [Option<[usize; 3]>; 3] {
+        use crate::pipeline::config::MaskOp;
+        [None, Some(MaskOp::hd_bet_default_patch()), Some(crate::pipeline::config::hd_bet_low_memory_patch())]
+    }
+
+    /// The index of a section's HD-BET inference in [`Self::hd_bet_inference_patches`].
+    pub fn hd_bet_inference_index(&self, section: usize) -> usize {
+        use crate::pipeline::config::MaskOp;
+        match self.mask_section(section).map(|s| &s.generator) {
+            Some(MaskOp::HdBet { patch, .. }) => Self::hd_bet_inference_patches().iter().position(|p| p == patch).unwrap_or(0),
+            _ => 0,
+        }
+    }
+
+    /// Set a section's HD-BET inference by index into [`Self::hd_bet_inference_patches`].
+    pub fn set_hd_bet_inference(&mut self, section: usize, idx: usize) {
+        use crate::pipeline::config::MaskOp;
+        let Some(&new) = Self::hd_bet_inference_patches().get(idx) else { return };
+        let Some(section_ref) = self.mask_section_mut(section) else { return };
+        if let MaskOp::HdBet { patch, .. } = &mut section_ref.generator {
+            *patch = new;
+            self.mark_mask_custom(section);
+        }
+    }
+
+    /// Turn a section's MindGrab test-time augmentation on or off (no-op for another generator).
+    pub fn toggle_mindgrab_tta(&mut self, section: usize) {
+        use crate::pipeline::config::MaskOp;
+        let Some(section_ref) = self.mask_section_mut(section) else { return };
+        if let MaskOp::MindGrab { tta } = &mut section_ref.generator {
+            *tta = !*tta;
             self.mark_mask_custom(section);
         }
     }
@@ -5665,56 +5714,181 @@ impl PipelineFormState {
         }
     }
 
-    /// Adjust the input source of a mask section with left/right.
-    pub fn adjust_mask_input(&mut self, section: usize, delta: isize) {
-        use crate::pipeline::config::MaskingInput;
-        let sources = [MaskingInput::MagnitudeFirst, MaskingInput::Magnitude, MaskingInput::MagnitudeLast, MaskingInput::PhaseQuality];
-        let Some(section_ref) = self.mask_section_mut(section) else { return };
-        let cur = sources.iter().position(|s| *s == section_ref.input).unwrap_or(0) as isize;
-        let new = (cur + delta).rem_euclid(sources.len() as isize) as usize;
-        section_ref.input = sources[new];
+    /// Set how the sections of the mask `section` belongs to combine.
+    pub fn set_combine(&mut self, section: usize, mode: crate::pipeline::config::MaskCombine) {
+        if self.combine_mode(section) != mode {
+            self.toggle_combine(section);
+        }
+    }
+
+    /// Set the method of a refinement step that is a threshold (from a loaded config), by index
+    /// into [`Self::MASK_THRESHOLD_METHODS`].
+    pub fn set_refinement_threshold_method(&mut self, section: usize, index: usize, idx: usize) {
+        use crate::pipeline::config::MaskOp;
+        let Some(&new_method) = Self::MASK_THRESHOLD_METHODS.get(idx) else { return };
+        let Some(MaskOp::Threshold { method, .. }) = self.mask_refinements_mut(section).and_then(|r| r.get_mut(index)) else { return };
+        *method = new_method;
         self.mark_mask_custom(section);
     }
 
-    /// Adjust a mask op parameter with left/right.
-    pub fn adjust_mask_op(&mut self, section: usize, index: usize, delta: isize) {
-        use crate::pipeline::config::*;
-        let Some(op) = self.mask_refinements_mut(section).and_then(|r| r.get_mut(index)) else { return };
-        match op {
-            MaskOp::Threshold { method, .. } => {
-                let methods = [MaskThresholdMethod::Otsu, MaskThresholdMethod::Fixed, MaskThresholdMethod::Percentile];
-                let cur = methods.iter().position(|m| m == method).unwrap_or(0) as isize;
-                let new = (cur + delta).rem_euclid(methods.len() as isize) as usize;
-                *method = methods[new];
-            }
-            MaskOp::Bet { fractional_intensity, .. } => {
-                *fractional_intensity = (*fractional_intensity + delta as f64 * 0.1).clamp(0.0, 1.0);
-            }
-            MaskOp::Erode { iterations } => {
-                *iterations = (*iterations as isize + delta).max(1) as usize;
-            }
-            MaskOp::Dilate { iterations } => {
-                *iterations = (*iterations as isize + delta).max(1) as usize;
-            }
-            MaskOp::Close { radius } => {
-                *radius = (*radius as isize + delta).max(1) as usize;
-            }
-            MaskOp::MinIntensity { value } => {
-                *value = step_min_intensity(*value, delta);
-            }
-            MaskOp::Majority => {}
-            MaskOp::FillHoles { max_size } => {
-                *max_size = (*max_size as isize + delta * 100).max(0) as usize;
-            }
-            MaskOp::GaussianSmooth { sigma_mm } => {
-                *sigma_mm = (*sigma_mm + delta as f64 * 0.5).max(0.5);
-            }
-            MaskOp::HdBet { .. } | MaskOp::Rs2Net { .. } | MaskOp::MindGrab { .. } => {}
-            MaskOp::SignalErode { threshold, .. } => {
-                *threshold = ((*threshold + delta as f64 * 0.05).clamp(0.05, 0.95) * 100.0).round() / 100.0;
-            }
+    /// The number a mask row edits, as text to start editing from, when the row edits a number:
+    /// a threshold's value, BET's fractional intensity, a refinement step's value, or one of
+    /// signal-erode's settings. `None` for every other row (selectors and switches).
+    pub fn mask_value_text(&self, row: &PipelineRow) -> Option<String> {
+        use crate::pipeline::config::MaskOp;
+        match *row {
+            PipelineRow::MaskOpThresholdValue { section } => match self.mask_section(section).map(|s| &s.generator) {
+                Some(MaskOp::Threshold { value, .. }) => Some(value.map(|v| format!("{v}")).unwrap_or_default()),
+                _ => None,
+            },
+            PipelineRow::MaskOpGeneratorParam { section } => match self.mask_section(section).map(|s| &s.generator) {
+                Some(MaskOp::Bet { fractional_intensity, .. }) => Some(format!("{fractional_intensity}")),
+                _ => None,
+            },
+            PipelineRow::MaskOpEntry { section, index } => match self.mask_refinements(section)?.get(index)? {
+                MaskOp::Bet { fractional_intensity, .. } => Some(format!("{fractional_intensity}")),
+                MaskOp::Erode { iterations } | MaskOp::Dilate { iterations } => Some(format!("{iterations}")),
+                MaskOp::Close { radius } => Some(format!("{radius}")),
+                MaskOp::MinIntensity { value } => Some(format!("{value}")),
+                MaskOp::FillHoles { max_size } => Some(format!("{max_size}")),
+                MaskOp::GaussianSmooth { sigma_mm } => Some(format!("{sigma_mm}")),
+                MaskOp::SignalErode { threshold, .. } => Some(format!("{threshold}")),
+                _ => None,
+            },
+            PipelineRow::MaskOpSignalErodeParam { section, index, param } => match self.mask_refinements(section)?.get(index)? {
+                MaskOp::SignalErode { depth_cap, global_erosions, bias_sigma, min_component, .. } => Some(match param {
+                    0 => format!("{depth_cap}"),
+                    1 => format!("{global_erosions}"),
+                    2 => format!("{bias_sigma}"),
+                    _ => format!("{min_component}"),
+                }),
+                _ => None,
+            },
+            _ => None,
         }
+    }
+
+    /// Nudge the number a mask row edits by one step up (`delta` 1, `+`) or down (-1, `-`), within
+    /// its range: BET's fractional intensity by 0.05 (0.1 for a refinement step), an iteration
+    /// count or radius by 1, a minimum intensity by a tenth of its order of magnitude, the
+    /// largest hole by 100, a smoothing σ by 0.5 mm, signal-erode's threshold by 0.05 and its
+    /// settings by 1 (the smallest component by 100). Returns whether the row has such a number.
+    pub fn nudge_mask_value(&mut self, row: &PipelineRow, delta: isize) -> bool {
+        use crate::pipeline::config::MaskOp;
+        let d = delta as f64;
+        let step_usize = |v: &mut usize, by: isize, min: usize| *v = (*v as isize + delta * by).max(min as isize) as usize;
+        let section = match *row {
+            PipelineRow::MaskOpGeneratorParam { section } => {
+                let Some(MaskOp::Bet { fractional_intensity, .. }) = self.mask_section_mut(section).map(|s| &mut s.generator) else { return false };
+                *fractional_intensity = ((*fractional_intensity + d * 0.05).clamp(0.05, 1.0) * 100.0).round() / 100.0;
+                section
+            }
+            PipelineRow::MaskOpEntry { section, index } => {
+                let Some(op) = self.mask_refinements_mut(section).and_then(|r| r.get_mut(index)) else { return false };
+                match op {
+                    MaskOp::Bet { fractional_intensity, .. } => *fractional_intensity = ((*fractional_intensity + d * 0.1).clamp(0.1, 1.0) * 10.0).round() / 10.0,
+                    MaskOp::Erode { iterations } | MaskOp::Dilate { iterations } => step_usize(iterations, 1, 1),
+                    MaskOp::Close { radius } => step_usize(radius, 1, 1),
+                    MaskOp::MinIntensity { value } => *value = step_min_intensity(*value, delta),
+                    MaskOp::FillHoles { max_size } => step_usize(max_size, 100, 0),
+                    MaskOp::GaussianSmooth { sigma_mm } => *sigma_mm = (*sigma_mm + d * 0.5).max(0.5),
+                    MaskOp::SignalErode { threshold, .. } => *threshold = ((*threshold + d * 0.05).clamp(0.05, 0.95) * 100.0).round() / 100.0,
+                    _ => return false,
+                }
+                section
+            }
+            PipelineRow::MaskOpSignalErodeParam { section, index, param } => {
+                let Some(MaskOp::SignalErode { depth_cap, global_erosions, bias_sigma, min_component, .. }) =
+                    self.mask_refinements_mut(section).and_then(|r| r.get_mut(index)) else { return false };
+                match param {
+                    0 => step_usize(depth_cap, 1, 0),
+                    1 => step_usize(global_erosions, 1, 0),
+                    // Voxels, like qsm-core's `bias_sigma`; 0 would divide out nothing.
+                    2 => *bias_sigma = (*bias_sigma + d).max(1.0),
+                    _ => step_usize(min_component, 100, 0),
+                }
+                section
+            }
+            _ => return false,
+        };
         self.mark_mask_custom(section);
+        true
+    }
+
+    /// Set the number a mask row edits ([`Self::mask_value_text`]) from typed text. A threshold
+    /// value left empty goes back to its default; any other text that is not a number in the
+    /// setting's range is refused with why, and nothing changes.
+    pub fn set_mask_value(&mut self, row: &PipelineRow, text: &str) -> Result<(), String> {
+        use crate::pipeline::config::MaskOp;
+        let text = text.trim();
+        let real = |what: &str, ok: &dyn Fn(f64) -> bool, range: &str| -> Result<f64, String> {
+            text.parse::<f64>().ok().filter(|v| v.is_finite() && ok(*v))
+                .ok_or_else(|| format!("{what} is a number {range}, not \"{text}\""))
+        };
+        let count = |what: &str, min: usize| -> Result<usize, String> {
+            text.parse::<usize>().ok().filter(|v| *v >= min)
+                .ok_or_else(|| format!("{what} is a whole number of at least {min}, not \"{text}\""))
+        };
+        let fraction = |what: &str| real(what, &|v| v > 0.0 && v <= 1.0, "above 0 and at most 1");
+        let section = match *row {
+            PipelineRow::MaskOpThresholdValue { section } => {
+                let value = if text.is_empty() { None } else { Some(real("The threshold", &|_| true, "")?) };
+                match self.mask_section_mut(section).map(|s| &mut s.generator) {
+                    Some(MaskOp::Threshold { value: v, .. }) => *v = value,
+                    _ => return Ok(()),
+                }
+                section
+            }
+            PipelineRow::MaskOpGeneratorParam { section } => {
+                let v = fraction("BET's fractional intensity")?;
+                match self.mask_section_mut(section).map(|s| &mut s.generator) {
+                    Some(MaskOp::Bet { fractional_intensity, .. }) => *fractional_intensity = v,
+                    _ => return Ok(()),
+                }
+                section
+            }
+            PipelineRow::MaskOpEntry { section, index } => {
+                let Some(op) = self.mask_refinements(section).and_then(|r| r.get(index)).cloned() else { return Ok(()) };
+                let new = match op {
+                    MaskOp::Bet { voxel_scale, .. } => MaskOp::Bet { fractional_intensity: fraction("BET's fractional intensity")?, voxel_scale },
+                    MaskOp::Erode { .. } => MaskOp::Erode { iterations: count("Erode's iterations", 1)? },
+                    MaskOp::Dilate { .. } => MaskOp::Dilate { iterations: count("Dilate's iterations", 1)? },
+                    MaskOp::Close { .. } => MaskOp::Close { radius: count("Close's radius", 1)? },
+                    MaskOp::MinIntensity { .. } => MaskOp::MinIntensity { value: real("The minimum intensity", &|v| v > 0.0, "above 0")? },
+                    MaskOp::FillHoles { .. } => MaskOp::FillHoles { max_size: count("The largest hole (0: any size)", 0)? },
+                    MaskOp::GaussianSmooth { .. } => MaskOp::GaussianSmooth { sigma_mm: real("The smoothing σ", &|v| v > 0.0, "above 0")? },
+                    MaskOp::SignalErode { depth_cap, global_erosions, bias_sigma, min_component, .. } => MaskOp::SignalErode {
+                        threshold: real("Signal-erode's threshold", &|v| v > 0.0 && v < 1.0, "between 0 and 1")?,
+                        depth_cap, global_erosions, bias_sigma, min_component,
+                    },
+                    _ => return Ok(()),
+                };
+                if let Some(op) = self.mask_refinements_mut(section).and_then(|r| r.get_mut(index)) { *op = new; }
+                section
+            }
+            PipelineRow::MaskOpSignalErodeParam { section, index, param } => {
+                let label = signal_erode_params().get(param).map_or("The setting", |p| p.0);
+                let Some(MaskOp::SignalErode { depth_cap, global_erosions, bias_sigma, min_component, .. }) =
+                    self.mask_refinements(section).and_then(|r| r.get(index)).cloned() else { return Ok(()) };
+                let (mut d, mut g, mut b, mut m) = (depth_cap, global_erosions, bias_sigma, min_component);
+                match param {
+                    0 => d = count(label, 0)?,
+                    1 => g = count(label, 0)?,
+                    // Voxels, like qsm-core's `bias_sigma`; 0 would divide out nothing.
+                    2 => b = real(label, &|v| v > 0.0, "above 0")?,
+                    _ => m = count(label, 0)?,
+                }
+                if let Some(MaskOp::SignalErode { depth_cap, global_erosions, bias_sigma, min_component, .. }) =
+                    self.mask_refinements_mut(section).and_then(|r| r.get_mut(index))
+                {
+                    (*depth_cap, *global_erosions, *bias_sigma, *min_component) = (d, g, b, m);
+                }
+                section
+            }
+            _ => return Ok(()),
+        };
+        self.mark_mask_custom(section);
+        Ok(())
     }
 
     /// Label and current value of one extra signal-erode parameter, for its own row.
@@ -5730,22 +5904,6 @@ impl PipelineFormState {
             _ => format!("{min_component}"),
         };
         Some((label, value))
-    }
-
-    /// Adjust one extra signal-erode parameter with ←/→.
-    pub fn adjust_signal_erode_param(&mut self, section: usize, index: usize, param: usize, delta: isize) {
-        use crate::pipeline::config::MaskOp;
-        let Some(MaskOp::SignalErode { depth_cap, global_erosions, bias_sigma, min_component, .. }) =
-            self.mask_refinements_mut(section).and_then(|r| r.get_mut(index)) else { return };
-        let step_usize = |v: &mut usize, by: isize| *v = (*v as isize + delta * by).max(0) as usize;
-        match param {
-            0 => step_usize(depth_cap, 1),
-            1 => step_usize(global_erosions, 1),
-            // Voxels, like qsm-core's `bias_sigma`; 0 would divide out nothing.
-            2 => *bias_sigma = (*bias_sigma + delta as f64).max(1.0),
-            _ => step_usize(min_component, 100),
-        }
-        self.mark_mask_custom(section);
     }
 
     /// Get available op types for adding refinement steps (morphological only).
@@ -6112,6 +6270,20 @@ pub enum AlgoModalTarget {
     MaskThresholdMethod(usize),
     /// The Input-tab mode selector (BIDS / NIfTI / DICOM).
     InputMode,
+    /// How the sections of the mask a section belongs to combine (OR / AND).
+    MaskCombine(usize),
+    /// HD-BET's inference (whole volume / sliding window / low memory) of a section's generator.
+    MaskHdBetInference(usize),
+    /// HD-BET's patch step of a section's generator ([`PipelineFormState::hd_bet_step_choices`]).
+    MaskHdBetStep(usize),
+    /// BET's voxel scaling of a section's generator ([`PipelineFormState::bet_voxel_scale_choices`]).
+    MaskBetVoxelScale(usize),
+    /// The method of a refinement step that is a threshold.
+    MaskRefinementThresholdMethod { section: usize, index: usize },
+    /// The type of a refinement step to add to a section ([`PipelineFormState::available_op_types`]).
+    MaskAddStep(usize),
+    /// The type of the focused DICOM series (Input tab, DICOM mode), in [`dicom::SeriesType::ALL`]'s order.
+    DicomSeriesType,
 }
 
 #[derive(Clone, Debug)]
@@ -6608,7 +6780,6 @@ impl App {
                     }
                 }
                 KeyCode::Enter | KeyCode::Char(' ') => self.interact_io_field(),
-                KeyCode::Left | KeyCode::Right => self.adjust_io_select(),
                 KeyCode::Char('r') => self.reset_current_field(),
                 KeyCode::Char('R') => self.reset_current_tab(),
                 KeyCode::F(5) => self.try_run(),
@@ -6729,13 +6900,6 @@ impl App {
             3 => self.form.config_file.len(),
             _ => 0,
         };
-    }
-
-    fn adjust_io_select(&mut self) {
-        if self.active_field == 0 {
-            // Mode selector: four modes, so Left/Right open its picker as Enter does.
-            self.interact_io_field();
-        }
     }
 
     /// Reset the focused field on a generic form tab to its default.
@@ -6984,15 +7148,11 @@ impl App {
             }
             KeyCode::Down | KeyCode::Char('j') => self.dicom_state.focus_next(),
 
-            // Cycle series type — relabel the focused UNIQUE series, propagating to
-            // every subject instance that shares its identity.
-            KeyCode::Left => self.relabel_focused_unique_series(false),
-            KeyCode::Right => self.relabel_focused_unique_series(true),
-
-            // Interact
+            // Interact: a series opens the list of types to give it (and every subject
+            // instance that shares its identity).
             KeyCode::Enter | KeyCode::Char(' ') => {
                 match self.dicom_state.focus {
-                    DicomFocus::Series(_) => self.relabel_focused_unique_series(true),
+                    DicomFocus::Series(_) => self.open_series_type_modal(),
                     DicomFocus::KeepUids => self.dicom_state.keep_uids = !self.dicom_state.keep_uids,
                     DicomFocus::ConvertButton => {
                         self.run_dicom_conversion();
@@ -7006,20 +7166,33 @@ impl App {
         }
     }
 
-    /// Launch the DICOM → BIDS conversion in a background thread.
-    /// Cycle the classification of the focused unique series and propagate the new
-    /// type to every subject instance sharing its identity.
-    fn relabel_focused_unique_series(&mut self, forward: bool) {
+    /// The focused unique series' type: a pop-up listing every type, the current one highlighted.
+    fn open_series_type_modal(&mut self) {
+        let DicomFocus::Series(i) = self.dicom_state.focus else { return };
+        let Some(session) = self.dicom_state.session.as_ref() else { return };
+        let Some(g) = session.unique_series().into_iter().nth(i) else { return };
+        let cur = session.series_ref(&g.refs[0]).series_type;
+        let all = dicom::SeriesType::ALL;
+        self.algo_modal = Some(AlgoModal {
+            target: AlgoModalTarget::DicomSeriesType,
+            title: "Series type".to_string(),
+            options: all.iter().map(|t| t.label().to_string()).collect(),
+            help: all.iter().map(|&t| series_type_help(t).to_string()).collect(),
+            cursor: all.iter().position(|&t| t == cur).unwrap_or(0),
+        });
+    }
+
+    /// Give the focused unique series a type, and every subject instance sharing its identity.
+    fn set_focused_unique_series_type(&mut self, new_type: dicom::SeriesType) {
         let DicomFocus::Series(i) = self.dicom_state.focus else { return };
         let Some(session) = self.dicom_state.session.as_mut() else { return };
         let groups = session.unique_series();
         if let Some(g) = groups.get(i) {
-            let cur = session.series_ref(&g.refs[0]).series_type;
-            let new_type = if forward { cur.next() } else { cur.prev() };
             session.set_type_for_refs(&g.refs, new_type);
         }
     }
 
+    /// Launch the DICOM → BIDS conversion in a background thread.
     fn run_dicom_conversion(&mut self) {
         if self.dicom_state.session.is_none() {
             self.error_message = Some("No DICOM session loaded".to_string());
@@ -7497,7 +7670,7 @@ impl App {
         let fs = &self.filter_state;
         self.editing
             || self.pipeline_state.editing
-            || self.pipeline_state.mask_threshold_editing
+            || self.pipeline_state.mask_value_editing
             || fs.include_editing
             || fs.exclude_editing
             || fs.num_echoes_editing
@@ -7579,6 +7752,34 @@ impl App {
                 self.pipeline_state.set_mask_threshold_method(section, m.cursor);
             }
             AlgoModalTarget::InputMode => self.set_input_mode(m.cursor),
+            AlgoModalTarget::MaskCombine(section) => {
+                use crate::pipeline::config::MaskCombine;
+                let mode = if m.cursor == 0 { MaskCombine::Or } else { MaskCombine::And };
+                self.pipeline_state.set_combine(section, mode);
+            }
+            AlgoModalTarget::MaskHdBetInference(section) => self.pipeline_state.set_hd_bet_inference(section, m.cursor),
+            AlgoModalTarget::MaskHdBetStep(section) => {
+                let (values, _) = self.pipeline_state.hd_bet_step_choices(section);
+                if let Some(&v) = values.get(m.cursor) { self.pipeline_state.set_hd_bet_tile_step(section, v); }
+            }
+            AlgoModalTarget::MaskBetVoxelScale(section) => {
+                let (values, _) = self.pipeline_state.bet_voxel_scale_choices(section);
+                if let Some(&v) = values.get(m.cursor) { self.pipeline_state.set_bet_voxel_scale(section, v); }
+            }
+            AlgoModalTarget::MaskRefinementThresholdMethod { section, index } => {
+                self.pipeline_state.set_refinement_threshold_method(section, index, m.cursor);
+            }
+            AlgoModalTarget::MaskAddStep(section) => {
+                let ps = &mut self.pipeline_state;
+                let available = ps.available_op_types(section);
+                if let Some(op) = available.get(m.cursor).and_then(|t| PipelineFormState::default_mask_op(t)) {
+                    if let Some(refs) = ps.mask_refinements_mut(section) { refs.push(op); }
+                    ps.mark_mask_custom(section);
+                }
+            }
+            AlgoModalTarget::DicomSeriesType => {
+                if let Some(&t) = dicom::SeriesType::ALL.get(m.cursor) { self.set_focused_unique_series_type(t); }
+            }
         }
     }
 
@@ -7709,45 +7910,49 @@ impl App {
         }
 
         let ps = &mut self.pipeline_state;
-        // Threshold value editing mode
-        if ps.mask_threshold_editing {
+        // Editing a mask row's number (a threshold value, BET's fractional intensity, a
+        // refinement step's value, a signal-erode setting): Enter keeps it when it is valid,
+        // Esc leaves the setting as it was.
+        if ps.mask_value_editing {
             let mut cursor = ps.cursor;
             match key.code {
                 KeyCode::Esc => {
-                    ps.mask_threshold_editing = false;
+                    ps.mask_value_editing = false;
                     return;
                 }
                 KeyCode::Enter => {
-                    // Save the value back to the generator
-                    let val: Option<f64> = ps.mask_threshold_value_buf.trim().parse().ok();
-                    let mut edited_section = 0;
-                    if let Some(PipelineRow::MaskOpThresholdValue { section }) = ps.focused_row() {
-                        edited_section = section;
-                        if let Some(crate::pipeline::config::MaskOp::Threshold { value, .. }) =
-                            ps.mask_section_mut(section).map(|s| &mut s.generator)
-                        {
-                            *value = val;
-                        }
+                    let text = ps.mask_value_buf.clone();
+                    let result = match ps.focused_row() {
+                        Some(row) => ps.set_mask_value(&row, &text),
+                        None => Ok(()),
+                    };
+                    match result {
+                        Ok(()) => ps.mask_value_editing = false,
+                        // Still editing, to correct it.
+                        Err(e) => self.error_message = Some(e),
                     }
-                    ps.mask_threshold_editing = false;
-                    ps.mark_mask_custom(edited_section);
                     return;
                 }
-                KeyCode::Char(c) if c.is_ascii_digit() || c == '.' => {
-                    ps.mask_threshold_value_buf.insert(cursor, c);
+                KeyCode::Char(c) if c.is_ascii_digit() || matches!(c, '.' | '-' | 'e' | 'E') => {
+                    ps.mask_value_buf.insert(cursor, c);
                     cursor += 1;
                 }
                 KeyCode::Backspace if key.modifiers.intersects(KeyModifiers::ALT | KeyModifiers::CONTROL) && cursor > 0 => {
-                    let new_pos = word_boundary_left(&ps.mask_threshold_value_buf, cursor);
-                    ps.mask_threshold_value_buf.drain(new_pos..cursor);
+                    let new_pos = word_boundary_left(&ps.mask_value_buf, cursor);
+                    ps.mask_value_buf.drain(new_pos..cursor);
                     cursor = new_pos;
                 }
                 KeyCode::Backspace if cursor > 0 => {
                     cursor -= 1;
-                    ps.mask_threshold_value_buf.remove(cursor);
+                    ps.mask_value_buf.remove(cursor);
+                }
+                KeyCode::Delete if cursor < ps.mask_value_buf.len() => {
+                    ps.mask_value_buf.remove(cursor);
                 }
                 KeyCode::Left => cursor = cursor.saturating_sub(1),
-                KeyCode::Right if cursor < ps.mask_threshold_value_buf.len() => cursor += 1,
+                KeyCode::Right if cursor < ps.mask_value_buf.len() => cursor += 1,
+                KeyCode::Home => cursor = 0,
+                KeyCode::End => cursor = ps.mask_value_buf.len(),
                 _ => {}
             }
             ps.cursor = cursor;
@@ -7755,7 +7960,7 @@ impl App {
         }
 
         // In the sidebar: ↑/↓ choose the section, → or Enter go into its rows, ↑ from the first
-        // goes up to the tab bar. ← does nothing: in the rows it changes a value.
+        // goes up to the tab bar. ← does nothing: it is how the rows come back here.
         if self.on_subtabs() && self.sidebar() {
             let pages = self.pages(self.active_tab);
             let cur = self.page().and_then(|p| pages.iter().position(|&q| q == p)).unwrap_or(0);
@@ -7802,11 +8007,6 @@ impl App {
         }
 
         match key.code {
-            // Escape from add mode before quit
-            KeyCode::Esc if self.pipeline_state.mask_ops_adding => {
-                self.pipeline_state.mask_ops_adding = false;
-            }
-
             KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
 
             // 1..=N, Tab, Shift-Tab: one rule for every tab (see `switch_tab`).
@@ -7814,6 +8014,15 @@ impl App {
             // `[` and `]`: the sub-tabs.
             KeyCode::Char('[') => self.cycle_page(-1),
             KeyCode::Char(']') => self.cycle_page(1),
+
+            // ← from any row goes back to the sidebar (or the narrow terminal's section strip), on
+            // the same section. No row changes its value with ←/→: a choice opens a list (Enter),
+            // a number is typed (Enter), a switch flips (Space or Enter).
+            KeyCode::Left | KeyCode::Char('h') => {
+                if self.has_subtabs() {
+                    self.subtab_focus = true;
+                }
+            }
 
             // Reorder mask ops with Ctrl+Up/Down (must be before regular Up/Down)
             KeyCode::Up if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
@@ -7843,7 +8052,7 @@ impl App {
             // bar on a tab without sub-tabs.
             KeyCode::Up | KeyCode::Char('k') => {
                 let f = self.focus();
-                if f == 0 && !self.pipeline_state.mask_ops_adding {
+                if f == 0 {
                     if self.has_subtabs() {
                         self.subtab_focus = true;
                     } else {
@@ -7865,62 +8074,17 @@ impl App {
             KeyCode::Enter | KeyCode::Char(' ') if matches!(self.focused_row(), Some(PipelineRow::RunButton)) => self.try_run(),
             KeyCode::Enter | KeyCode::Char(' ') => {
                 let row = self.focused_row();
-                // Single-choice selectors open a modal listing every option (rather than cycling).
-                let modal = {
-                    let ps = &self.pipeline_state;
-                    match &row {
-                        Some(PipelineRow::AlgoSelect { label, field, options, help }) => Some(AlgoModal {
-                            target: AlgoModalTarget::Select(field.to_string()),
-                            title: label.trim().to_string(),
-                            options: options.iter().map(|s| s.to_string()).collect(),
-                            help: help.iter().map(|s| s.to_string()).collect(),
-                            cursor: self.field_select(field),
-                        }),
-                        Some(PipelineRow::MaskOpInput { section }) => Some(AlgoModal {
-                            target: AlgoModalTarget::MaskInput(*section),
-                            title: "Masking input".to_string(),
-                            options: PipelineFormState::MASK_INPUT_SOURCES.iter().map(|s| format!("{}", s)).collect(),
-                            help: mask_schema().inputs.iter().map(|i| format!("{}: {}", i.label, i.help)).collect(),
-                            cursor: ps.mask_input_index(*section),
-                        }),
-                        Some(PipelineRow::MaskOpGenerator { section }) => {
-                            Some(AlgoModal {
-                                target: AlgoModalTarget::MaskGenerator(*section),
-                                title: "Mask algorithm".to_string(),
-                                options: MASK_GENERATOR_TYPES.iter().map(|t| t.to_string()).collect(),
-                                // A threshold's method is chosen on its own row.
-                                help: MASK_GENERATOR_TYPES.iter().map(|t| match *t {
-                                    "threshold" => "Keep the voxels of the section's image above a threshold: Otsu's, a value, or a percentile".to_string(),
-                                    t => mask_step(t).help.to_string(),
-                                }).collect(),
-                                cursor: ps.mask_generator_index(*section),
-                            })
-                        }
-                        // Threshold method is a discrete select → modal. (BET frac. intensity is a
-                        // numeric slider, so it keeps left/right and opens no modal.)
-                        Some(PipelineRow::MaskOpGeneratorParam { section })
-                            if matches!(
-                                ps.mask_sections.get(*section).map(|s| &s.generator),
-                                Some(crate::pipeline::config::MaskOp::Threshold { .. })
-                            ) =>
-                        {
-                            Some(AlgoModal {
-                                target: AlgoModalTarget::MaskThresholdMethod(*section),
-                                title: "Threshold method".to_string(),
-                                options: vec!["otsu".to_string(), "fixed".to_string(), "percentile".to_string()],
-                                help: vec![
-                                    "Otsu automatic threshold".to_string(),
-                                    "Fixed intensity threshold".to_string(),
-                                    "Percentile-based threshold".to_string(),
-                                ],
-                                cursor: ps.mask_threshold_method_index(*section),
-                            })
-                        }
-                        _ => None,
-                    }
-                };
-                if let Some(m) = modal {
+                // A choice opens a pop-up listing every option, the current one highlighted.
+                if let Some(m) = row.as_ref().and_then(|r| self.selector_modal(r)) {
                     self.algo_modal = Some(m);
+                    return;
+                }
+                // A mask row's number is typed.
+                if let Some(text) = row.as_ref().and_then(|r| self.pipeline_state.mask_value_text(r)) {
+                    let ps = &mut self.pipeline_state;
+                    ps.cursor = text.len();
+                    ps.mask_value_buf = text;
+                    ps.mask_value_editing = true;
                     return;
                 }
                 match row {
@@ -7933,23 +8097,8 @@ impl App {
                         self.toggle_field(field);
                         self.restore_focus(&focused_field);
                     }
-                    Some(PipelineRow::MaskOpAddStep { section }) => {
-                        let ps = &mut self.pipeline_state;
-                        if ps.mask_ops_adding {
-                            let available = ps.available_op_types(section);
-                            if let Some(&type_name) = available.get(ps.mask_ops_add_idx) {
-                                if let Some(op) = PipelineFormState::default_mask_op(type_name) {
-                                    if let Some(refs) = ps.mask_refinements_mut(section) { refs.push(op); }
-                                }
-                            }
-                            ps.mask_ops_adding = false;
-                            ps.mark_mask_custom(section);
-                        } else {
-                            ps.mask_ops_adding = true;
-                            ps.mask_ops_add_idx = 0;
-                            ps.mask_ops_add_section = section;
-                        }
-                    }
+                    // MindGrab's one setting, its test-time augmentation, is a switch.
+                    Some(PipelineRow::MaskOpGeneratorParam { section }) => self.pipeline_state.toggle_mindgrab_tta(section),
                     Some(PipelineRow::MaskOpAddSection { two_pass }) => {
                         use crate::pipeline::config::*;
                         let ps = &mut self.pipeline_state;
@@ -7962,22 +8111,6 @@ impl App {
                         if two_pass { ps.two_pass_sections.push(section); } else { ps.mask_sections.push(section); }
                         ps.mark_mask_custom(added);
                     }
-                    Some(PipelineRow::MaskOpThresholdValue { section }) => {
-                        // Start editing threshold value
-                        let ps = &mut self.pipeline_state;
-                        let current = if let Some(crate::pipeline::config::MaskOp::Threshold { value, .. }) =
-                            ps.mask_section(section).map(|s| &s.generator)
-                        {
-                            value.map(|v| format!("{}", v)).unwrap_or_default()
-                        } else { String::new() };
-                        ps.mask_threshold_value_buf = current.clone();
-                        ps.mask_threshold_editing = true;
-                        ps.cursor = current.len();
-                    }
-                    Some(PipelineRow::MaskCombineOp { section }) => {
-                        self.pipeline_state.toggle_combine(section);
-                    }
-                    // The other mask rows are adjusted with Left/Right.
                     _ => {}
                 }
             }
@@ -8004,49 +8137,11 @@ impl App {
                 }
             }
 
-            // Left/Right for selects and mask ops
-            KeyCode::Left | KeyCode::Right => {
-                let delta = if key.code == KeyCode::Left { -1isize } else { 1 };
-
-                // Check if we're in mask ops add mode
-                if self.pipeline_state.mask_ops_adding {
-                    let ps = &mut self.pipeline_state;
-                    let available = ps.available_op_types(ps.mask_ops_add_section);
-                    let n = available.len() as isize;
-                    if n > 0 {
-                        ps.mask_ops_add_idx = (ps.mask_ops_add_idx as isize + delta).rem_euclid(n) as usize;
-                    }
-                    return;
-                }
-                let row = self.focused_row();
-                // A picker row opens its picker: ←/→ are never dead keys.
-                if row.as_ref().is_some_and(|r| super::recommend::picker_noun(r).is_some()) {
-                    self.handle_rows_key(KeyEvent::from(KeyCode::Enter));
-                    return;
-                }
-                if let Some(PipelineRow::AlgoSelect { field, options, .. }) = row {
-                    let focused_field = self.focused_field_name();
-                    // Mask preset: cycle the real presets only; "custom" is auto-set on edits
-                    let n = if field == "mask_preset" { MASK_PRESET_CUSTOM } else { options.len() } as isize;
-                    let cur = self.field_select(field).min((n - 1) as usize) as isize;
-                    let new_val = (cur + delta).rem_euclid(n) as usize;
-                    self.set_field_select(field, new_val);
-                    self.restore_focus(&focused_field);
-                    return;
-                }
-                let ps = &mut self.pipeline_state;
-                match row {
-                    Some(PipelineRow::MaskCombineOp { section }) => ps.toggle_combine(section),
-                    Some(PipelineRow::MaskOpEntry { section, index }) => ps.adjust_mask_op(section, index, delta),
-                    Some(PipelineRow::MaskOpSignalErodeParam { section, index, param }) => {
-                        ps.adjust_signal_erode_param(section, index, param, delta);
-                    }
-                    Some(PipelineRow::MaskOpGenerator { section }) => ps.adjust_mask_generator(section, delta),
-                    Some(PipelineRow::MaskOpGeneratorParam { section }) => ps.adjust_mask_generator_param(section, delta),
-                    Some(PipelineRow::MaskOpHdBetStep { section }) => ps.adjust_hd_bet_tile_step(section, delta),
-                    Some(PipelineRow::MaskOpBetVoxelScale { section }) => ps.adjust_bet_voxel_scale(section, delta),
-                    Some(PipelineRow::MaskOpInput { section }) => ps.adjust_mask_input(section, delta),
-                    _ => {}
+            // `+` / `-` nudge a masking number by its step (typing it, with Enter, is the other way).
+            KeyCode::Char('+' | '=' | '-') => {
+                let delta = if key.code == KeyCode::Char('-') { -1 } else { 1 };
+                if let Some(row) = self.focused_row() {
+                    self.pipeline_state.nudge_mask_value(&row, delta);
                 }
             }
 
@@ -8060,6 +8155,87 @@ impl App {
             KeyCode::F(5) => self.try_run(),
 
             _ => {}
+        }
+    }
+
+    /// The pop-up a row's choice is made in, when the row is a choice: every option listed, the
+    /// current one highlighted. Enter (or Space) opens it; nothing is chosen until it is
+    /// confirmed, and Esc leaves the setting as it was.
+    pub fn selector_modal(&self, row: &PipelineRow) -> Option<AlgoModal> {
+        use crate::pipeline::config::{MaskCombine, MaskOp};
+        let ps = &self.pipeline_state;
+        let strings = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let modal = |target, title: &str, options: Vec<String>, help: Vec<String>, cursor| Some(AlgoModal {
+            target, title: title.to_string(), options, help, cursor,
+        });
+        let generator = |section: usize| ps.mask_section(section).map(|s| &s.generator);
+        match *row {
+            PipelineRow::AlgoSelect { label, field, options, help } => modal(
+                AlgoModalTarget::Select(field.to_string()), label.trim(), strings(options), strings(help), self.field_select(field)),
+            PipelineRow::MaskOpInput { section } => modal(
+                AlgoModalTarget::MaskInput(section), "Masking input",
+                PipelineFormState::MASK_INPUT_SOURCES.iter().map(|s| format!("{}", s)).collect(),
+                mask_schema().inputs.iter().map(|i| format!("{}: {}", i.label, i.help)).collect(),
+                ps.mask_input_index(section)),
+            PipelineRow::MaskOpGenerator { section } => modal(
+                AlgoModalTarget::MaskGenerator(section), "Mask algorithm",
+                strings(MASK_GENERATOR_TYPES),
+                // A threshold's method is chosen on its own row.
+                MASK_GENERATOR_TYPES.iter().map(|t| match *t {
+                    "threshold" => "Keep the voxels of the section's image above a threshold: Otsu's, a value, or a percentile".to_string(),
+                    t => mask_step(t).help.to_string(),
+                }).collect(),
+                ps.mask_generator_index(section)),
+            PipelineRow::MaskOpGeneratorParam { section } => match generator(section)? {
+                MaskOp::Threshold { .. } => modal(
+                    AlgoModalTarget::MaskThresholdMethod(section), "Threshold method",
+                    strings(&["otsu", "fixed", "percentile"]), threshold_method_help(),
+                    ps.mask_threshold_method_index(section)),
+                MaskOp::HdBet { .. } => {
+                    let choices = &mask_schema().hd_bet_inference;
+                    modal(AlgoModalTarget::MaskHdBetInference(section), "HD-BET inference",
+                        choices.iter().map(|c| c.name.to_lowercase()).collect(),
+                        choices.iter().map(|c| c.help.to_string()).collect(),
+                        ps.hd_bet_inference_index(section))
+                }
+                _ => None,
+            },
+            PipelineRow::MaskOpHdBetStep { section } => {
+                let (values, at) = ps.hd_bet_step_choices(section);
+                let help = mask_param("hd-bet", "tile_step").help.to_string();
+                modal(AlgoModalTarget::MaskHdBetStep(section), "HD-BET patch step",
+                    values.iter().map(|v| format!("{v:.3}")).collect(), vec![help; values.len()], at)
+            }
+            PipelineRow::MaskOpBetVoxelScale { section } => {
+                let (values, at) = ps.bet_voxel_scale_choices(section);
+                let help = mask_param("bet", "voxel_scale").help.to_string();
+                modal(AlgoModalTarget::MaskBetVoxelScale(section), "BET voxel scale",
+                    values.iter().map(|v| format!("{v}x")).collect(), vec![help; values.len()], at)
+            }
+            PipelineRow::MaskCombineOp { section } => modal(
+                AlgoModalTarget::MaskCombine(section), "How the sections combine",
+                strings(&["OR", "AND"]),
+                strings(&["Union: a voxel is in the mask when any section has it",
+                          "Intersection: a voxel is in the mask only when every section has it"]),
+                usize::from(ps.combine_mode(section) == MaskCombine::And)),
+            PipelineRow::MaskOpEntry { section, index } => match ps.mask_refinements(section)?.get(index)? {
+                MaskOp::Threshold { .. } => {
+                    let cursor = match ps.mask_refinements(section)?.get(index)? {
+                        MaskOp::Threshold { method, .. } => PipelineFormState::MASK_THRESHOLD_METHODS.iter().position(|m| m == method).unwrap_or(0),
+                        _ => 0,
+                    };
+                    modal(AlgoModalTarget::MaskRefinementThresholdMethod { section, index }, "Threshold method",
+                        strings(&["otsu", "fixed", "percentile"]), threshold_method_help(), cursor)
+                }
+                _ => None,
+            },
+            PipelineRow::MaskOpAddStep { section } => {
+                let available = ps.available_op_types(section);
+                modal(AlgoModalTarget::MaskAddStep(section), "Step to add",
+                    available.iter().map(|t| t.to_string()).collect(),
+                    available.iter().map(|t| mask_schema().steps.iter().find(|s| s.label == *t).map_or("", |s| s.help).to_string()).collect(), 0)
+            }
+            _ => None,
         }
     }
 
@@ -8318,8 +8494,7 @@ impl App {
         ps.focus = 0;
         ps.scroll_offset = 0;
         ps.editing = false;
-        ps.mask_ops_adding = false;
-        ps.mask_threshold_editing = false;
+        ps.mask_value_editing = false;
     }
 
     /// The active page's rows.
@@ -8729,8 +8904,11 @@ impl App {
         if self.form.export_dicom {
             rows.push(Param { label: "  Source DICOM dir", field: "source_dicom", help: "Original DICOM directory: the exported series inherit its patient/study identity (empty = none)" });
             rows.push(PipelineRow::Separator);
-            rows.push(Note { text: "Maps to export (what these settings make):".into() });
-            let (made, not_made): (Vec<_>, Vec<_>) = DICOM_MAPS.iter().partition(|m| self.dicom_map_made(m));
+            rows.push(Note { text: "Maps to export".into() });
+            let made: Vec<_> = DICOM_MAPS.iter().filter(|m| self.dicom_map_made(m)).collect();
+            if made.is_empty() {
+                rows.push(Note { text: "  None: these settings make no exportable map.".into() });
+            }
             for m in made {
                 rows.push(Toggle { label: m.label, field: m.field,
                     help: if m.field == "dicom_out_dseg" {
@@ -8747,21 +8925,6 @@ impl App {
             if self.dicom_map_made(seg) && self.field_toggle(seg.field) && !reference_ticked {
                 rows.push(Note { text: "The segmentation needs a map to be drawn on: tick the".into() });
                 rows.push(Note { text: "magnitude, χ or another map, or the run is refused.".into() });
-            }
-            let mut names: Vec<&str> = not_made.iter().map(|m| m.group).collect();
-            names.dedup();
-            if !names.is_empty() {
-                // A note is one line: wrap the names to fit beside the sidebar on 80 columns.
-                let mut line = String::from("Not made by these settings:");
-                for (i, name) in names.iter().enumerate() {
-                    let item = format!(" {name}{}", if i + 1 == names.len() { "." } else { "," });
-                    if line.chars().count() + item.chars().count() > 48 {
-                        rows.push(Note { text: std::mem::take(&mut line).into() });
-                    }
-                    line.push_str(&item);
-                }
-                rows.push(Note { text: line.into() });
-                rows.push(Note { text: "Turn one on and it is listed here, ticked.".into() });
             }
         }
         rows
@@ -10548,7 +10711,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pipeline_enter_and_left_right_open_the_unwrapping_picker() {
+    fn test_pipeline_enter_opens_the_unwrapping_picker() {
         let mut app = App::new();
         assert!(app.goto_field("unwrapping_algorithm"));
         // Navigate to unwrapping_algorithm AlgoSelect
@@ -10578,10 +10741,11 @@ mod tests {
         assert!(app.algo_modal.is_none());
         assert_eq!(app.pipeline_state.unwrapping_algorithm, 1); // laplacian
 
-        // Focus is restored to the selector after confirming. With four unwrappers the row is a
-        // picker: Left opens it too, rather than cycling.
-        app.handle_key(key(KeyCode::Left));
+        // Focus is restored to the selector after confirming: → changes nothing, Enter reopens it.
+        app.handle_key(key(KeyCode::Right));
         assert_eq!(app.pipeline_state.unwrapping_algorithm, 1);
+        assert!(app.algo_modal.is_none());
+        app.handle_key(key(KeyCode::Enter));
         assert!(matches!(
             app.algo_modal.as_ref().unwrap().target,
             AlgoModalTarget::Select(ref f) if f == "unwrapping_algorithm"
@@ -10891,15 +11055,15 @@ mod tests {
     // ========== Execution tab handler tests ==========
 
     #[test]
-    fn test_execution_mode_switch_with_left_right() {
+    fn test_execution_mode_left_right_change_nothing() {
         let mut app = App::new();
         app.active_tab = TAB_EXECUTION;
         focus_on(&mut app, TAB_EXECUTION, "execution_mode");
         assert_eq!(app.form.execution_mode, 0); // Local
         app.handle_key(key(KeyCode::Right));
-        assert_eq!(app.form.execution_mode, 1); // SLURM
         app.handle_key(key(KeyCode::Left));
-        assert_eq!(app.form.execution_mode, 0); // Local
+        assert_eq!(app.form.execution_mode, 0, "←/→ change no value");
+        assert!(app.algo_modal.is_none() && !app.on_subtabs() && !app.tab_focus, "and Execution has no sections to go back to");
     }
 
     #[test]
@@ -10913,10 +11077,12 @@ mod tests {
         app.handle_key(key(KeyCode::Down));
         app.handle_key(key(KeyCode::Enter));
         assert_eq!(app.form.execution_mode, 1); // SLURM
-        // Left/Right still cycle the select inline without opening the modal.
-        app.handle_key(key(KeyCode::Left));
+        // Esc closes it again with nothing changed.
+        app.handle_key(key(KeyCode::Enter));
+        app.handle_key(key(KeyCode::Up));
+        app.handle_key(key(KeyCode::Esc));
         assert!(app.algo_modal.is_none());
-        assert_eq!(app.form.execution_mode, 0); // Local
+        assert_eq!(app.form.execution_mode, 1); // still SLURM
     }
 
     #[test]
@@ -11667,30 +11833,42 @@ mod tests {
         assert_eq!(app.dicom_state.focus, DicomFocus::ConvertButton);
     }
 
-    /// ←/→ on a picker row: it opens the picker; move its cursor `by` and confirm, as cycling did.
+    /// Enter on a selector row opens its picker; move its cursor `by` and confirm.
     fn step(app: &mut App, by: isize) {
-        app.handle_key(key(if by < 0 { KeyCode::Left } else { KeyCode::Right }));
-        let m = app.algo_modal.as_mut().expect("←/→ open the picker");
+        app.handle_key(key(KeyCode::Enter));
+        let m = app.algo_modal.as_mut().expect("Enter opens the picker");
         let n = m.options.len() as isize;
         m.cursor = (m.cursor as isize + by).rem_euclid(n) as usize;
         app.handle_key(key(KeyCode::Enter));
     }
 
+    /// Enter on a mask row's number, the text replaced by `text`, Enter.
+    fn type_mask_value(app: &mut App, text: &str) {
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.pipeline_state.mask_value_editing, "Enter edits the number");
+        app.handle_key(key(KeyCode::End));
+        while !app.pipeline_state.mask_value_buf.is_empty() {
+            app.handle_key(key(KeyCode::Backspace));
+        }
+        for c in text.chars() {
+            app.handle_key(key(KeyCode::Char(c)));
+        }
+        app.handle_key(key(KeyCode::Enter));
+    }
+
     // ========== IO select (input mode picker) ==========
 
-    /// Four input modes: ←/→ open the picker, as Enter does, rather than cycling.
+    /// The input mode is chosen from its picker (Enter); ←/→ neither cycle it nor open it.
     #[test]
-    fn test_adjust_io_select_opens_the_picker() {
+    fn test_left_right_leave_the_io_mode_alone() {
         let mut app = App::new();
         app.active_tab = TAB_INPUT;
         app.active_field = 0;
         assert_eq!(app.input_mode, InputMode::Bids);
         app.handle_key(key(KeyCode::Right));
-        assert_eq!(app.input_mode, InputMode::Bids, "not cycled");
-        assert!(matches!(app.algo_modal.as_ref().map(|m| &m.target), Some(AlgoModalTarget::InputMode)));
-        app.algo_modal = None;
         app.handle_key(key(KeyCode::Left));
-        assert!(app.algo_modal.is_some());
+        assert_eq!(app.input_mode, InputMode::Bids, "not cycled");
+        assert!(app.algo_modal.is_none());
     }
 
     #[test]
@@ -11705,9 +11883,11 @@ mod tests {
         app.handle_key(key(KeyCode::Down));
         app.handle_key(key(KeyCode::Enter));
         assert_eq!(app.input_mode, InputMode::NIfTI);
-        // Left/Right open the picker too (four modes are not cycled).
-        app.handle_key(key(KeyCode::Left));
-        assert!(app.algo_modal.is_some());
+        // Esc closes it with nothing changed.
+        app.handle_key(key(KeyCode::Enter));
+        app.handle_key(key(KeyCode::Down));
+        app.handle_key(key(KeyCode::Esc));
+        assert!(app.algo_modal.is_none());
         assert_eq!(app.input_mode, InputMode::NIfTI);
     }
 
@@ -11998,7 +12178,7 @@ mod tests {
         assert_eq!(cli_names, names, "--mask-preset values drifted from mask_presets()");
     }
 
-    /// Every signal-erode parameter is reachable and adjustable with ←/→ from the pipeline form,
+    /// Every signal-erode parameter is reachable and typed (Enter) on the pipeline form,
     /// and what the CLI preview says is what the rows show.
     #[test]
     fn test_pipeline_signal_erode_params_are_editable() {
@@ -12021,33 +12201,39 @@ mod tests {
         let rows = app.rows();
         app.pipeline_state.focus = app.focusable_rows().iter()
             .position(|&ri| matches!(rows[ri], PipelineRow::MaskOpEntry { .. })).expect("step row");
-        app.handle_key(key(KeyCode::Right));
-        assert!(matches!(op(&app), MaskOp::SignalErode { threshold: t, .. } if t > threshold));
+        type_mask_value(&mut app, "0.85");
+        assert!(matches!(op(&app), MaskOp::SignalErode { threshold: t, .. } if t == 0.85 && t != threshold));
 
-        for (param, expect) in [
-            (0usize, "depth cap"), (1, "plain erosions"), (2, "bias sigma"), (3, "min component"),
+        for (param, typed, expect) in [
+            (0usize, "7", "depth cap"), (1, "4", "plain erosions"), (2, "9.5", "bias sigma"), (3, "321", "min component"),
         ] {
             focus_param(&mut app, param);
+            let before = op(&app);
             app.handle_key(key(KeyCode::Right));
+            assert_eq!(op(&app), before, "→ changes nothing");
+            type_mask_value(&mut app, typed);
             let MaskOp::SignalErode { depth_cap: d, global_erosions: g, bias_sigma: b, min_component: m, .. } = op(&app)
                 else { panic!("still signal-erode") };
-            let changed = match param {
-                0 => d > depth_cap,
-                1 => g > global_erosions,
-                2 => b > bias_sigma,
-                _ => m > min_component,
-            };
-            assert!(changed, "{expect} did not increase");
-            app.handle_key(key(KeyCode::Left)); // and back down
+            let now = match param { 0 => d.to_string(), 1 => g.to_string(), 2 => b.to_string(), _ => m.to_string() };
+            assert_eq!(now, typed, "{expect}");
+            // And back.
+            let back = match param { 0 => depth_cap.to_string(), 1 => global_erosions.to_string(), 2 => bias_sigma.to_string(), _ => min_component.to_string() };
+            type_mask_value(&mut app, &back);
         }
 
         let MaskOp::SignalErode { depth_cap: d, global_erosions: g, bias_sigma: b, min_component: m, .. } = op(&app)
             else { panic!("still signal-erode") };
-        assert_eq!((d, g, b, m), (depth_cap, global_erosions, bias_sigma, min_component), "←/→ round-trips");
+        assert_eq!((d, g, b, m), (depth_cap, global_erosions, bias_sigma, min_component), "edits round-trip");
 
-        // Counts clamp at zero rather than wrapping around.
+        // A count is a whole number of at least zero: anything else is refused and kept for
+        // correcting, and Esc leaves the setting as it was.
         focus_param(&mut app, 0);
-        for _ in 0..(depth_cap + 3) { app.handle_key(key(KeyCode::Left)); }
+        type_mask_value(&mut app, "-1");
+        assert!(app.pipeline_state.mask_value_editing && app.error_message.is_some(), "refused, still editing");
+        app.handle_key(key(KeyCode::Esc));
+        assert!(!app.pipeline_state.mask_value_editing);
+        assert!(matches!(op(&app), MaskOp::SignalErode { depth_cap: d, .. } if d == depth_cap));
+        type_mask_value(&mut app, "0");
         assert!(matches!(op(&app), MaskOp::SignalErode { depth_cap: 0, .. }));
 
         // The generated command carries the edited values.
@@ -12500,7 +12686,8 @@ mod tests {
                          MaskOp::Threshold { method: MaskThresholdMethod::Percentile, .. }));
     }
 
-    /// The combine row only appears once there is more than one section, and ←/→ toggles it.
+    /// The combine row only appears once there is more than one section, and its OR / AND is
+    /// chosen from a list.
     #[test]
     fn test_pipeline_mask_combine_row_toggles() {
         use crate::pipeline::config::MaskCombine;
@@ -12525,9 +12712,17 @@ mod tests {
             .expect("MaskCombineOp not focusable");
         assert_eq!(app.pipeline_state.mask_combine, MaskCombine::Or);
         app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.pipeline_state.mask_combine, MaskCombine::Or, "→ changes nothing");
+        // Enter opens OR / AND with OR highlighted; Esc keeps it.
+        app.handle_key(key(KeyCode::Enter));
+        let m = app.algo_modal.as_ref().expect("the combine list");
+        assert_eq!((m.options.clone(), m.cursor), (vec!["OR".to_string(), "AND".to_string()], 0));
+        app.handle_key(key(KeyCode::Esc));
+        assert_eq!(app.pipeline_state.mask_combine, MaskCombine::Or);
+        step(&mut app, 1);
         assert_eq!(app.pipeline_state.mask_combine, MaskCombine::And);
         assert_eq!(app.pipeline_state.mask_preset, MASK_PRESET_CUSTOM, "editing the recipe marks it custom");
-        app.handle_key(key(KeyCode::Left));
+        step(&mut app, 1);
         assert_eq!(app.pipeline_state.mask_combine, MaskCombine::Or);
     }
 
@@ -12558,14 +12753,14 @@ mod tests {
         let preset = ps.mask_preset;
         app.pipeline_state.focus = app.focusable_rows().iter()
             .position(|&ri| app.rows()[ri] == PipelineRow::MaskCombineOp { section: reliable }).unwrap();
-        app.handle_key(key(KeyCode::Right));
+        step(&mut app, -1);
         let ps = &app.pipeline_state;
         assert_eq!((ps.mask_combine, ps.two_pass_combine), (MaskCombine::And, Some(MaskCombine::Or)));
         assert_eq!(ps.mask_preset, preset, "the reliable mask is not the main mask's preset");
         let config = crate::tui::command::config_from_app(&app).unwrap();
         assert_eq!((config.masking.combine, config.masking.resolved_two_pass_combine()), (MaskCombine::And, MaskCombine::Or));
         assert!(crate::tui::command::build_command_string(&app).contains("--two-pass-mask-combine or"));
-        app.handle_key(key(KeyCode::Left));
+        step(&mut app, 1);
         assert_eq!(app.pipeline_state.two_pass_combine, Some(MaskCombine::And));
         app.handle_key(key(KeyCode::Char('R')));
         assert_eq!(app.pipeline_state.two_pass_combine, None, "R resets it with the rest of the recipe");
@@ -12699,17 +12894,16 @@ mod tests {
         }
         let fi = add_step_focus.expect("MaskOpAddStep not found");
         app.pipeline_state.focus = fi;
-        // Enter to start adding
+        // Enter opens the list of steps; Enter adds the highlighted one.
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.pipeline_state.mask_ops_adding);
-        // Enter again to confirm the add
+        assert!(matches!(app.algo_modal.as_ref().map(|m| &m.target), Some(AlgoModalTarget::MaskAddStep(0))));
         app.handle_key(key(KeyCode::Enter));
-        assert!(!app.pipeline_state.mask_ops_adding);
+        assert!(app.algo_modal.is_none());
         assert_eq!(app.pipeline_state.mask_sections[0].refinements.len(), initial_refs + 1);
     }
 
     #[test]
-    fn test_pipeline_mask_add_step_cycle_ops() {
+    fn test_pipeline_mask_add_step_chooses_from_a_list() {
         let mut app = App::new();
         goto_page(&mut app, Page::Masking);
         let rows = app.rows();
@@ -12723,16 +12917,23 @@ mod tests {
         }
         let fi = add_step_focus.expect("MaskOpAddStep not found");
         app.pipeline_state.focus = fi;
-        app.handle_key(key(KeyCode::Enter)); // start adding
-        assert!(app.pipeline_state.mask_ops_adding);
-        assert_eq!(app.pipeline_state.mask_ops_add_idx, 0);
-        app.handle_key(key(KeyCode::Right));
-        assert_eq!(app.pipeline_state.mask_ops_add_idx, 1);
-        app.handle_key(key(KeyCode::Left));
-        assert_eq!(app.pipeline_state.mask_ops_add_idx, 0);
-        // Escape cancels
+        let available = app.pipeline_state.available_op_types(0);
+        let before = app.pipeline_state.mask_sections[0].refinements.clone();
+        // Esc closes the list and adds nothing.
+        app.handle_key(key(KeyCode::Enter));
         app.handle_key(key(KeyCode::Esc));
-        assert!(!app.pipeline_state.mask_ops_adding);
+        assert!(app.algo_modal.is_none());
+        assert_eq!(app.pipeline_state.mask_sections[0].refinements, before);
+        // The second type, chosen.
+        app.handle_key(key(KeyCode::Enter));
+        let m = app.algo_modal.as_ref().unwrap();
+        assert_eq!(m.options, available.iter().map(|t| t.to_string()).collect::<Vec<_>>());
+        assert_eq!(m.cursor, 0);
+        app.handle_key(key(KeyCode::Down));
+        app.handle_key(key(KeyCode::Enter));
+        let added = app.pipeline_state.mask_sections[0].refinements.last().unwrap();
+        assert_eq!(PipelineFormState::mask_op_label_value(added).0, available[1]);
+        assert_eq!(app.pipeline_state.mask_preset, MASK_PRESET_CUSTOM);
     }
 
     #[test]
@@ -12758,7 +12959,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pipeline_mask_adjust_op_left_right() {
+    fn test_pipeline_mask_op_left_right_change_nothing() {
         let mut app = App::new();
         goto_page(&mut app, Page::Masking);
         // Find MaskOpEntry focus and adjust with Left/Right
@@ -12773,9 +12974,13 @@ mod tests {
         }
         let fi = entry_focus.expect("MaskOpEntry not found");
         app.pipeline_state.focus = fi;
-        // Just verify no crash from left/right
+        let before = app.pipeline_state.mask_sections[0].refinements.clone();
+        // →: nothing changes; ←: back to the sidebar.
         app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.pipeline_state.mask_sections[0].refinements, before);
         app.handle_key(key(KeyCode::Left));
+        assert!(app.subtab_focus, "← goes back to the sections");
+        assert_eq!(app.pipeline_state.mask_sections[0].refinements, before);
     }
 
     #[test]
@@ -12844,8 +13049,8 @@ mod tests {
         }
         let fi = gp_focus.expect("MaskOpGeneratorParam not found");
         app.pipeline_state.focus = fi;
-        // Adjust threshold method
-        app.handle_key(key(KeyCode::Right));
+        // The threshold method, chosen from its list.
+        step(&mut app, 1);
         // Verify the method changed (Otsu -> Fixed)
         if let crate::pipeline::config::MaskOp::Threshold { method, .. } = &app.pipeline_state.mask_sections[0].generator {
             assert_eq!(*method, crate::pipeline::config::MaskThresholdMethod::Fixed);
@@ -13064,9 +13269,9 @@ mod tests {
         app.pipeline_state.focus = fi;
         // Enter starts editing
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.pipeline_state.mask_threshold_editing);
+        assert!(app.pipeline_state.mask_value_editing);
         // Type a new value -- clear via backspace from end
-        let buf_len = app.pipeline_state.mask_threshold_value_buf.len();
+        let buf_len = app.pipeline_state.mask_value_buf.len();
         for _ in 0..buf_len {
             app.handle_key(key(KeyCode::Backspace));
         }
@@ -13078,7 +13283,7 @@ mod tests {
         app.handle_key(key(KeyCode::Right));
         // Enter saves
         app.handle_key(key(KeyCode::Enter));
-        assert!(!app.pipeline_state.mask_threshold_editing);
+        assert!(!app.pipeline_state.mask_value_editing);
         if let crate::pipeline::config::MaskOp::Threshold { value, .. } = &app.pipeline_state.mask_sections[0].generator {
             assert!((value.unwrap() - 0.7).abs() < 0.001);
         }
@@ -13103,17 +13308,17 @@ mod tests {
             .expect("reliable threshold value row not focusable");
         app.pipeline_state.focus = focus;
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.pipeline_state.mask_threshold_editing);
-        assert_eq!(app.pipeline_state.mask_threshold_value_buf, "0.5");
+        assert!(app.pipeline_state.mask_value_editing);
+        assert_eq!(app.pipeline_state.mask_value_buf, "0.5");
 
-        for _ in 0..app.pipeline_state.mask_threshold_value_buf.len() {
+        for _ in 0..app.pipeline_state.mask_value_buf.len() {
             app.handle_key(key(KeyCode::Backspace));
         }
         for c in "0.7".chars() {
             app.handle_key(key(KeyCode::Char(c)));
         }
         app.handle_key(key(KeyCode::Enter));
-        assert!(!app.pipeline_state.mask_threshold_editing);
+        assert!(!app.pipeline_state.mask_value_editing);
         let MaskOp::Threshold { value, .. } = &app.pipeline_state.two_pass_sections[0].generator else {
             panic!("the reliable mask's generator should still be a threshold");
         };
@@ -13143,15 +13348,19 @@ mod tests {
         };
         assert_eq!(scale_of(&app), crate::pipeline::config::bet_default_voxel_scale());
 
-        // Right scales up (towards the preclinical setting), left comes back.
-        app.handle_key(key(KeyCode::Right));
-        assert!(scale_of(&app) > 1.0, "right should scale up, got {}", scale_of(&app));
-        app.handle_key(key(KeyCode::Left));
-        assert_eq!(scale_of(&app), 1.0);
-
-        // Left from the default wraps to the mouse setting, which is the point of the row.
-        app.handle_key(key(KeyCode::Left));
+        // Enter lists the scales with the current one highlighted; the mouse setting is the last.
+        app.handle_key(key(KeyCode::Enter));
+        let m = app.algo_modal.as_ref().expect("the scale list");
+        assert_eq!((m.options.clone(), m.cursor), (vec!["1x".into(), "2x".into(), "5x".into(), "10x".into()], 0));
+        app.handle_key(key(KeyCode::Esc));
+        assert_eq!(scale_of(&app), 1.0, "Esc changes nothing");
+        step(&mut app, -1);
         assert_eq!(scale_of(&app), 10.0);
+        // A scale from a loaded config is listed too, in order.
+        app.pipeline_state.set_bet_voxel_scale(0, 3.0);
+        app.handle_key(key(KeyCode::Enter));
+        let m = app.algo_modal.take().unwrap();
+        assert_eq!((m.options[2].as_str(), m.cursor), ("3x", 2));
 
         // The row belongs to BET only.
         app.pipeline_state.mask_sections[0].generator = MaskOp::hd_bet_default();
@@ -13225,11 +13434,12 @@ mod tests {
         };
         assert_eq!(step_of(&app), crate::pipeline::config::hd_bet_default_tile_step());
 
-        // Right steps to a coarser stride, left comes back.
+        // Chosen from a list: a coarser stride, then back.
         app.handle_key(key(KeyCode::Right));
-        let stepped = step_of(&app);
-        assert!(stepped > 0.5, "right should coarsen the stride, got {stepped}");
-        app.handle_key(key(KeyCode::Left));
+        assert_eq!(step_of(&app), 0.5, "→ changes nothing");
+        step(&mut app, 1);
+        assert_eq!(step_of(&app), 0.625);
+        step(&mut app, -1);
         assert_eq!(step_of(&app), 0.5);
 
         // The row belongs to HD-BET only.
@@ -13258,9 +13468,9 @@ mod tests {
         let fi = tv_focus.expect("MaskOpThresholdValue not found");
         app.pipeline_state.focus = fi;
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.pipeline_state.mask_threshold_editing);
+        assert!(app.pipeline_state.mask_value_editing);
         app.handle_key(key(KeyCode::Esc));
-        assert!(!app.pipeline_state.mask_threshold_editing);
+        assert!(!app.pipeline_state.mask_value_editing);
         // Value should be unchanged
         if let crate::pipeline::config::MaskOp::Threshold { value, .. } = &app.pipeline_state.mask_sections[0].generator {
             assert!((value.unwrap() - 0.5).abs() < 0.001);
@@ -13301,7 +13511,9 @@ mod tests {
         let fields: Vec<&str> = app.page_rows(Page::Export).iter().filter_map(row_field).collect();
         assert!(["dicom_out_chimap", "dicom_out_swi", "dicom_out_minip"].iter().all(|f| fields.contains(f)), "{fields:?}");
         assert!(!fields.contains(&"dicom_out_t2starmap"), "T2* is not made: {fields:?}");
-        assert!(app.page_rows(Page::Export).iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("Not made") && text.contains("T2*"))));
+        let notes: Vec<String> = app.page_rows(Page::Export).iter()
+            .filter_map(|r| match r { PipelineRow::Note { text } => Some(text.to_string()), _ => None }).collect();
+        assert_eq!(notes, ["Maps to export"], "a heading and the maps made, nothing about the maps not made");
         assert_eq!(app.dicom_outputs(), None, "all ticked: no --dicom-outputs");
 
         app.toggle_field("dicom_out_minip");
@@ -13442,9 +13654,10 @@ mod tests {
         assert_eq!(app.page(), Some(Page::Geometry));
     }
 
-    /// In the sidebar ↑/↓ choose sections; on a row ←/→ still change the row's choice.
+    /// → on a row changes nothing (no row cycles); ← goes back to the sidebar on the same
+    /// section, and → comes back in.
     #[test]
-    fn left_and_right_change_a_choice_on_a_row_not_the_section() {
+    fn right_on_a_row_changes_nothing_and_left_returns_to_the_sidebar() {
         let mut app = App::new();
         app.handle_key(key(KeyCode::Char('3')));
         app.handle_key(key(KeyCode::Char(']'))); // Motion
@@ -13452,25 +13665,307 @@ mod tests {
         assert_eq!(app.page(), Some(Page::FieldMap));
         app.handle_key(key(KeyCode::Right));
         let field = app.focused_field_name();
-        assert!(matches!(app.focused_row(), Some(PipelineRow::Toggle { .. } | PipelineRow::AlgoSelect { .. })));
+        let before = crate::tui::command::build_command_string(&app);
         app.handle_key(key(KeyCode::Right));
         assert_eq!(app.page(), Some(Page::FieldMap), "→ on a row switched the section");
         assert!(!app.on_subtabs());
         assert_eq!(app.focused_field_name(), field);
+        assert_eq!(crate::tui::command::build_command_string(&app), before, "→ changed a value");
+        app.handle_key(key(KeyCode::Left));
+        assert!(app.on_subtabs() && app.sidebar());
+        assert_eq!(app.page(), Some(Page::FieldMap));
+        app.handle_key(key(KeyCode::Left));
+        assert!(app.on_subtabs(), "← on the sidebar stays there");
+        assert_eq!(app.page(), Some(Page::FieldMap));
+        app.handle_key(key(KeyCode::Right));
+        assert!(!app.on_subtabs());
     }
 
-    /// Keys that act on a row do nothing while the sidebar has focus.
-    #[test]
-    fn row_keys_do_nothing_in_the_sidebar() {
+    /// Everything on, so every section has its full rows (and the mask has every kind of row).
+    fn app_with_every_row() -> App {
+        use crate::pipeline::config::{MaskOp, MaskSection, MaskingInput};
         let mut app = App::new();
-        app.handle_key(key(KeyCode::Char('3')));
-        let before = crate::tui::command::build_command_string(&app);
-        for k in [KeyCode::Char(' '), KeyCode::Char('d'), KeyCode::Delete, KeyCode::Char('r')] {
-            app.handle_key(key(k));
-            assert!(app.on_subtabs(), "{k:?} left the sidebar");
+        app.form.do_swi = true;
+        app.form.do_smwi = true;
+        app.form.export_dicom = true;
+        app.form.do_t2starmap = true;
+        app.form.do_r2starmap = true;
+        app.pipeline_state.do_chi_separation = true;
+        app.pipeline_state.apply_mask_preset(2); // hd-bet + signal-erode
+        let ps = &mut app.pipeline_state;
+        ps.mask_sections[0].generator = MaskOp::HdBet { patch: Some(MaskOp::hd_bet_default_patch()), tta: false,
+            tile_step: crate::pipeline::config::hd_bet_default_tile_step() };
+        ps.mask_sections.push(MaskSection { input: MaskingInput::Magnitude, generator: MaskOp::bet(0.5), refinements: vec![
+            MaskOp::Erode { iterations: 1 }, MaskOp::FillHoles { max_size: 0 }, MaskOp::GaussianSmooth { sigma_mm: 1.0 },
+            MaskOp::MinIntensity { value: 100.0 },
+        ] });
+        ps.mask_sections.push(MaskSection { input: MaskingInput::Magnitude, generator: MaskOp::MindGrab { tta: false }, refinements: vec![] });
+        ps.mask_preset = MASK_PRESET_CUSTOM;
+        app
+    }
+
+    /// ← from every row of every section goes back to the sections (the sidebar, or the pill
+    /// strip on a narrow terminal) on that section, and changes nothing.
+    #[test]
+    fn left_from_every_row_of_every_section_returns_to_the_sections() {
+        for wide in [true, false] {
+            let mut app = app_with_every_row();
+            app.sidebar_layout.set(wide);
+            app.handle_key(key(KeyCode::Char('3')));
+            for page in app.pages(TAB_RECONSTRUCTION) {
+                goto_page(&mut app, page);
+                let n = app.focusable_rows().len();
+                assert!(n > 0, "{page:?}");
+                for i in 0..n {
+                    app.subtab_focus = false;
+                    app.set_focus(i);
+                    let before = crate::tui::command::build_command_string(&app);
+                    let row = app.focused_row();
+                    app.handle_key(key(KeyCode::Left));
+                    assert!(app.on_subtabs(), "{page:?} row {i} {row:?}: ← did not go back (wide: {wide})");
+                    assert_eq!(app.sidebar(), wide);
+                    assert_eq!(app.page(), Some(page), "{page:?} row {i}: ← changed the section");
+                    assert!(app.algo_modal.is_none() && !app.pipeline_state.mask_value_editing);
+                    assert_eq!(crate::tui::command::build_command_string(&app), before, "{page:?} row {i} {row:?}: ← changed a value");
+                    // → comes back in (onto the first row), and changes nothing either.
+                    app.handle_key(key(if wide { KeyCode::Right } else { KeyCode::Down }));
+                    assert!(!app.on_subtabs());
+                    app.set_focus(i);
+                    app.handle_key(key(KeyCode::Right));
+                    assert!(!app.on_subtabs() && app.page() == Some(page) && app.algo_modal.is_none(), "{page:?} row {i}: →");
+                    assert_eq!(crate::tui::command::build_command_string(&app), before, "{page:?} row {i} {row:?}: → changed a value");
+                }
+            }
         }
+    }
+
+    /// While a number is typed, ←/→ move the cursor; ← goes back to the sections only after.
+    #[test]
+    fn left_while_typing_moves_the_cursor() {
+        let mut app = App::new();
+        goto_page(&mut app, Page::Inversion);
+        let rows = app.rows();
+        let fi = app.focusable_rows().iter().position(|&ri| matches!(rows[ri], PipelineRow::Param { .. })).expect("a value row");
+        app.set_focus(fi);
+        app.subtab_focus = false;
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.pipeline_state.editing);
+        let at = app.pipeline_state.cursor;
+        app.handle_key(key(KeyCode::Left));
+        assert!(app.pipeline_state.editing && !app.on_subtabs());
+        assert_eq!(app.pipeline_state.cursor, at.saturating_sub(1));
+        app.handle_key(key(KeyCode::Esc));
+        app.handle_key(key(KeyCode::Left));
+        assert!(app.on_subtabs());
+
+        // The same for a mask row's number.
+        let mut app = app_with_every_row();
+        goto_page(&mut app, Page::Masking);
+        let rows = app.rows();
+        let fi = app.focusable_rows().iter().position(|&ri| matches!(rows[ri], PipelineRow::MaskOpEntry { .. })).unwrap();
+        app.set_focus(fi);
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.pipeline_state.mask_value_editing);
+        let at = app.pipeline_state.cursor;
+        app.handle_key(key(KeyCode::Left));
+        assert!(app.pipeline_state.mask_value_editing && !app.on_subtabs());
+        assert_eq!(app.pipeline_state.cursor, at - 1);
+        app.handle_key(key(KeyCode::Esc));
+        app.handle_key(key(KeyCode::Left));
+        assert!(app.on_subtabs());
+    }
+
+    /// Every choice on the tab opens a list (Enter, or Space) with the current option
+    /// highlighted; Esc closes it with nothing changed, and Enter on another option chooses it.
+    #[test]
+    fn every_choice_opens_a_list_that_commits_or_cancels() {
+        let mut app = app_with_every_row();
+        app.handle_key(key(KeyCode::Char('3')));
+        let mut kinds = HashSet::new();
+        for page in app.pages(TAB_RECONSTRUCTION) {
+            goto_page(&mut app, page);
+            let mut i = 0;
+            while i < app.focusable_rows().len() {
+                app.set_focus(i);
+                let row = app.focused_row().unwrap();
+                i += 1;
+                let Some(expected) = app.selector_modal(&row) else { continue };
+                if expected.options.len() < 2 { continue; }
+                kinds.insert(std::mem::discriminant(&expected.target));
+                let before = crate::tui::command::build_command_string(&app);
+                for open in [KeyCode::Enter, KeyCode::Char(' ')] {
+                    app.handle_key(key(open));
+                    let m = app.algo_modal.as_ref().unwrap_or_else(|| panic!("{page:?} {row:?}: {open:?} opened no list"));
+                    assert_eq!((m.options.clone(), m.cursor), (expected.options.clone(), expected.cursor), "{row:?}");
+                    app.handle_key(key(KeyCode::Down));
+                    app.handle_key(key(KeyCode::Esc));
+                    assert!(app.algo_modal.is_none());
+                    assert_eq!(crate::tui::command::build_command_string(&app), before, "{row:?}: Esc changed it");
+                }
+                // A selector the rules or the run treat specially is left to its own tests.
+                if matches!(row, PipelineRow::AlgoSelect { .. } | PipelineRow::MaskOpGenerator { .. } | PipelineRow::MaskOpAddStep { .. }) { continue; }
+                app.handle_key(key(KeyCode::Enter));
+                let other = (expected.cursor + 1) % expected.options.len();
+                app.algo_modal.as_mut().unwrap().cursor = other;
+                app.handle_key(key(KeyCode::Enter));
+                assert!(app.algo_modal.is_none());
+                assert_eq!(app.selector_modal(&row).map(|m| m.cursor), Some(other), "{row:?}: not chosen");
+                // And back.
+                app.handle_key(key(KeyCode::Enter));
+                app.algo_modal.as_mut().unwrap().cursor = expected.cursor;
+                app.handle_key(key(KeyCode::Enter));
+                assert_eq!(crate::tui::command::build_command_string(&app), before, "{row:?}: not restored");
+            }
+        }
+        use AlgoModalTarget as T;
+        for target in [T::Select(String::new()), T::MaskInput(0), T::MaskGenerator(0), T::MaskThresholdMethod(0),
+                       T::MaskCombine(0), T::MaskHdBetInference(0), T::MaskHdBetStep(0), T::MaskBetVoxelScale(0), T::MaskAddStep(0)] {
+            if matches!(target, T::MaskThresholdMethod(_)) { continue; } // no threshold generator here: below
+            assert!(kinds.contains(&std::mem::discriminant(&target)), "no row opened {target:?}");
+        }
+    }
+
+    /// `+` / `-` nudge a masking number by its old step, within its range; they do nothing on
+    /// any other row.
+    #[test]
+    fn plus_and_minus_nudge_mask_numbers() {
+        use crate::pipeline::config::MaskOp;
+        let mut app = app_with_every_row();
+        goto_page(&mut app, Page::Masking);
+        let focus = |app: &mut App, want: PipelineRow| {
+            let rows = app.rows();
+            let fi = app.focusable_rows().iter().position(|&ri| rows[ri] == want).expect("row");
+            app.set_focus(fi);
+        };
+        focus(&mut app, PipelineRow::MaskOpGeneratorParam { section: 1 });
+        app.handle_key(key(KeyCode::Char('+')));
+        assert!(matches!(app.pipeline_state.mask_sections[1].generator, MaskOp::Bet { fractional_intensity: f, .. } if f == 0.55));
+        app.handle_key(key(KeyCode::Char('-')));
+        app.handle_key(key(KeyCode::Char('-')));
+        assert!(matches!(app.pipeline_state.mask_sections[1].generator, MaskOp::Bet { fractional_intensity: f, .. } if f == 0.45));
+        focus(&mut app, PipelineRow::MaskOpEntry { section: 1, index: 0 });
+        app.handle_key(key(KeyCode::Char('-')));
+        assert_eq!(app.pipeline_state.mask_sections[1].refinements[0], MaskOp::Erode { iterations: 1 }, "stays at least 1");
+        app.handle_key(key(KeyCode::Char('=')));
+        assert_eq!(app.pipeline_state.mask_sections[1].refinements[0], MaskOp::Erode { iterations: 2 }, "= is + unshifted");
+        focus(&mut app, PipelineRow::MaskOpEntry { section: 1, index: 3 });
+        app.handle_key(key(KeyCode::Char('+')));
+        assert_eq!(app.pipeline_state.mask_sections[1].refinements[3], MaskOp::MinIntensity { value: 110.0 });
+        let MaskOp::SignalErode { depth_cap, .. } = app.pipeline_state.mask_sections[0].refinements[0].clone() else { panic!() };
+        focus(&mut app, PipelineRow::MaskOpSignalErodeParam { section: 0, index: 0, param: 0 });
+        app.handle_key(key(KeyCode::Char('+')));
+        assert!(matches!(app.pipeline_state.mask_sections[0].refinements[0], MaskOp::SignalErode { depth_cap: d, .. } if d == depth_cap + 1));
+        // Not on a choice.
+        let before = crate::tui::command::build_command_string(&app);
+        focus(&mut app, PipelineRow::MaskOpHdBetStep { section: 0 });
+        app.handle_key(key(KeyCode::Char('+')));
         assert_eq!(crate::tui::command::build_command_string(&app), before);
+    }
+
+    /// A DICOM series' type is chosen from a list (Enter), current type highlighted; ←/→ leave it.
+    #[test]
+    fn a_dicom_series_type_is_chosen_from_a_list() {
+        use crate::dicom::{DicomAcquisition, DicomSeries, DicomSession, DicomStudy, DicomSubject, SeriesType};
+        let mut app = App::new();
+        app.input_mode = InputMode::DicomToBids;
+        app.active_tab = TAB_INPUT;
+        app.active_field = App::INPUT_IO_FIELDS;
+        let series = DicomSeries { series_uid: "1".into(), description: "gre".into(), series_number: 1,
+            series_type: SeriesType::Magnitude, auto_type: SeriesType::Magnitude, ..Default::default() };
+        app.dicom_state.session = Some(DicomSession { subjects: vec![DicomSubject { patient_id: "p".into(), studies: vec![DicomStudy {
+            study_date: "20240101".into(), acquisitions: vec![DicomAcquisition { name: "gre".into(), run_number: 1, series: vec![series] }] }] }],
+            ..Default::default() });
+        app.dicom_state.focus = DicomFocus::Series(0);
+        let type_now = |app: &App| app.dicom_state.session.as_ref().unwrap().subjects[0].studies[0].acquisitions[0].series[0].series_type;
+        app.handle_key(key(KeyCode::Right));
+        app.handle_key(key(KeyCode::Left));
+        assert_eq!(type_now(&app), SeriesType::Magnitude, "←/→ change nothing");
         assert!(app.algo_modal.is_none());
+        app.handle_key(key(KeyCode::Enter));
+        let m = app.algo_modal.as_ref().expect("the series-type list");
+        assert_eq!((m.options.len(), m.cursor), (SeriesType::ALL.len(), 0));
+        app.handle_key(key(KeyCode::Down));
+        app.handle_key(key(KeyCode::Esc));
+        assert_eq!(type_now(&app), SeriesType::Magnitude, "Esc changes nothing");
+        app.handle_key(key(KeyCode::Char(' ')));
+        app.handle_key(key(KeyCode::Down));
+        app.handle_key(key(KeyCode::Enter));
+        assert_eq!(type_now(&app), SeriesType::Phase);
+    }
+
+    /// A threshold's method (the generator's, or a refinement's from a loaded config) is chosen
+    /// from a list.
+    #[test]
+    fn a_threshold_method_is_chosen_from_a_list() {
+        use crate::pipeline::config::{MaskOp, MaskThresholdMethod};
+        let mut app = App::new();
+        goto_page(&mut app, Page::Masking);
+        app.pipeline_state.mask_sections[0].refinements.push(MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None });
+        let rows = app.rows();
+        let gen = app.focusable_rows().iter().position(|&ri| matches!(rows[ri], PipelineRow::MaskOpGeneratorParam { .. })).unwrap();
+        app.set_focus(gen);
+        app.handle_key(key(KeyCode::Enter));
+        assert!(matches!(app.algo_modal.as_ref().map(|m| &m.target), Some(AlgoModalTarget::MaskThresholdMethod(0))));
+        app.handle_key(key(KeyCode::Down));
+        app.handle_key(key(KeyCode::Down));
+        app.handle_key(key(KeyCode::Enter));
+        assert!(matches!(app.pipeline_state.mask_sections[0].generator, MaskOp::Threshold { method: MaskThresholdMethod::Percentile, .. }));
+        // (The rows moved: a percentile has a value row.)
+        let rows = app.rows();
+        let refinement = app.focusable_rows().iter().rposition(|&ri| matches!(rows[ri], PipelineRow::MaskOpEntry { .. })).unwrap();
+        app.set_focus(refinement);
+        app.handle_key(key(KeyCode::Enter));
+        assert!(matches!(app.algo_modal.as_ref().map(|m| &m.target), Some(AlgoModalTarget::MaskRefinementThresholdMethod { section: 0, .. })));
+        app.handle_key(key(KeyCode::Down));
+        app.handle_key(key(KeyCode::Enter));
+        assert!(matches!(app.pipeline_state.mask_sections[0].refinements.last(), Some(MaskOp::Threshold { method: MaskThresholdMethod::Fixed, .. })));
+    }
+
+    /// The masking numbers are typed: BET's fractional intensity and each refinement step's
+    /// value, checked on Enter (refused out of range, still editing), Esc leaving them; MindGrab's
+    /// augmentation is a switch.
+    #[test]
+    fn mask_numbers_are_typed_and_mindgrab_tta_is_a_switch() {
+        use crate::pipeline::config::MaskOp;
+        let mut app = app_with_every_row();
+        goto_page(&mut app, Page::Masking);
+        let focus = |app: &mut App, pred: &dyn Fn(&PipelineRow, &App) -> bool| {
+            let rows = app.rows();
+            let fi = app.focusable_rows().iter().position(|&ri| pred(&rows[ri], app)).expect("row");
+            app.set_focus(fi);
+        };
+        // BET's fractional intensity (section 1).
+        focus(&mut app, &|r, _| *r == PipelineRow::MaskOpGeneratorParam { section: 1 });
+        type_mask_value(&mut app, "0.35");
+        assert!(matches!(app.pipeline_state.mask_sections[1].generator, MaskOp::Bet { fractional_intensity: f, .. } if f == 0.35));
+        type_mask_value(&mut app, "1.5");
+        assert!(app.pipeline_state.mask_value_editing && app.error_message.as_deref().is_some_and(|e| e.contains("at most 1")));
+        app.handle_key(key(KeyCode::Esc));
+        assert!(matches!(app.pipeline_state.mask_sections[1].generator, MaskOp::Bet { fractional_intensity: f, .. } if f == 0.35));
+        // Each refinement of section 1.
+        for (index, typed, check) in [
+            (0usize, "3", (|op: &MaskOp| *op == MaskOp::Erode { iterations: 3 }) as fn(&MaskOp) -> bool),
+            (1, "500", |op| *op == MaskOp::FillHoles { max_size: 500 }),
+            (2, "2.5", |op| *op == MaskOp::GaussianSmooth { sigma_mm: 2.5 }),
+            (3, "0.25", |op| *op == MaskOp::MinIntensity { value: 0.25 }),
+        ] {
+            focus(&mut app, &|r, _| *r == PipelineRow::MaskOpEntry { section: 1, index });
+            type_mask_value(&mut app, typed);
+            assert!(!app.pipeline_state.mask_value_editing, "{typed}");
+            assert!(check(&app.pipeline_state.mask_sections[1].refinements[index]), "{:?}", app.pipeline_state.mask_sections[1].refinements[index]);
+        }
+        focus(&mut app, &|r, _| *r == PipelineRow::MaskOpEntry { section: 1, index: 0 });
+        type_mask_value(&mut app, "0");
+        assert!(app.error_message.as_deref().is_some_and(|e| e.contains("at least 1")), "an erosion of 0 is refused");
+        app.handle_key(key(KeyCode::Esc));
+        // MindGrab (section 2): Space or Enter switch its augmentation.
+        focus(&mut app, &|r, _| *r == PipelineRow::MaskOpGeneratorParam { section: 2 });
+        app.handle_key(key(KeyCode::Char(' ')));
+        assert_eq!(app.pipeline_state.mask_sections[2].generator, MaskOp::MindGrab { tta: true });
+        app.handle_key(key(KeyCode::Enter));
+        assert_eq!(app.pipeline_state.mask_sections[2].generator, MaskOp::MindGrab { tta: false });
+        app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.pipeline_state.mask_sections[2].generator, MaskOp::MindGrab { tta: false }, "→ changes nothing");
     }
 
     /// Too narrow for the sidebar, the sections are a pill strip: ←/→ move along it, wrapping,
