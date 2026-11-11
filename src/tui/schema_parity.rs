@@ -64,13 +64,17 @@ fn section_of(page: Page) -> Option<Section> {
         Page::Geometry => Section::Geometry,
         Page::Masking => Section::Masking,
         Page::Motion => Section::Motion,
+        // The schema puts the QSM switch with the inversion (also shown on QSM's other stages);
+        // the TUI gives it a section of its own.
+        Page::ComputeQsm => Section::Inversion,
         Page::Inversion => Section::Inversion,
         Page::FieldMap => Section::FieldMap,
         Page::Background => Section::Background,
         Page::MultiOrientation => Section::MultiOrientation,
         Page::Reference => Section::Reference,
         Page::Separation => Section::Separation,
-        Page::SwiSmwi => Section::SwiSmwi,
+        // One schema section, two TUI sections: SMWI needs χ, so it is in the QSM group.
+        Page::Swi | Page::Smwi => Section::SwiSmwi,
         Page::Relaxometry => Section::Relaxometry,
         Page::Segmentation => Section::Segmentation,
         Page::Export => Section::Export,

@@ -2611,8 +2611,14 @@ pub(super) mod tests {
         assert!(app.goto_field("do_smwi"));
         let text = screen_text(&render_app_sized(&mut app, 120, 60));
         let smwi = indent_of(&text, "Compute SMWI");
-        for child in ["Threshold", "Power", "Strength", "HP sigma (x y z)"] {
+        for child in ["Threshold", "Power"] {
             assert!(indent_of(&text, child) > smwi, "{child} should be indented:\n{text}");
+        }
+        assert!(app.goto_field("do_swi"));
+        let text = screen_text(&render_app_sized(&mut app, 120, 60));
+        let swi = indent_of(&text, "Compute SWI");
+        for child in ["Strength", "HP sigma (x y z)"] {
+            assert!(indent_of(&text, child) > swi, "{child} should be indented:\n{text}");
         }
         assert!(app.goto_field("synthseg_version"));
         let text = screen_text(&render_app_sized(&mut app, 120, 60));
@@ -2623,7 +2629,7 @@ pub(super) mod tests {
             assert!(indent_of(&text, child) > source, "{child} belongs under the source:\n{text}");
         }
         // The sidebar is drawn beside them.
-        assert!(text.contains("SWI/SMWI") && text.contains("Relaxometry") && text.contains("DICOM"), "{text}");
+        assert!(text.contains("SMWI") && text.contains("Relaxometry") && text.contains("DICOM"), "{text}");
     }
 
     #[test]

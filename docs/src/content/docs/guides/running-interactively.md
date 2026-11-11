@@ -149,9 +149,9 @@ also press `↑` at the top of a tab to put focus on the tab bar (the current ta
 `←`/`→` then move between tabs, and `↓` or `Enter` go into the tab.
 
 The Reconstruction tab holds every setting of the run, in sections listed in a sidebar on its
-left and grouped as the run goes: *Preprocessing* (Geometry, Masking, Motion), *QSM* (Field map,
-Background, Inversion, COSMOS/STI, Reference), *Other outputs* (χ-separation, SWI/SMWI,
-Relaxometry, Segmentation) and *Export* (DICOM). It opens on Masking, with focus in the sidebar
+left and grouped as the run goes: *Preprocessing* (Geometry, Masking, Motion), *QSM* (Compute
+QSM, Field map, Background, Inversion, COSMOS/STI, Reference, and the outputs made from χ:
+χ-separation and SMWI), *Other outputs* (SWI, Relaxometry, Segmentation) and *Export* (DICOM). It opens on Masking, with focus in the sidebar
 (the current section turns yellow): `↑`/`↓` choose a section, and `→` or `Enter` go into its
 settings; `←` from any setting (or `↑` from the first) goes back to the sidebar on the same
 section, and `↑` from the first section to the tab bar. `[` and `]` switch sections from anywhere on the tab. A mouse click on a section
@@ -173,8 +173,8 @@ Methods tab's two pages are such a strip too.
 | 1 Input | — | Input mode, dataset/output/config paths, include/exclude patterns and the run tree, number of echoes, and the orientation groups: a pattern, or groups given to runs with ←/→ in the run tree (one of them the reference), each run marked with its group |
 | 2 Pipeline | — | The pipeline to start from: QSMxT's defaults or an original toolbox's, and what choosing it changes (see [Pipelines](#pipelines)) |
 | 3 Reconstruction | Preprocessing: Geometry · Masking · Motion | Axial resampling and output space, inhomogeneity correction, slice-gap check, crop to mask, FFT padding, coil combination (multi-coil data); the mask recipe, custom masks and the two-pass reliable mask; motion correction and its rigid registration |
-| | QSM: Field map · Background · Inversion · COSMOS/STI · Reference | *Compute QSM* at the top of each, then: unwrapping and B0 estimation; background-field removal (inversions of a local field only); the dipole inversion; how an orientation group is reconstructed (without one, where to choose it); the χ reference |
-| | Other outputs: χ-separation · SWI/SMWI · Relaxometry · Segmentation | χ-separation method and its parameters; SWI and SMWI; T2\*, R2\*, R2 and R2′ maps, the R2′ source and supplied maps; segmentation (SynthSeg or a dseg from derivatives) and per-structure statistics |
+| | QSM: Compute QSM · Field map · Background · Inversion · COSMOS/STI · Reference · χ-separation · SMWI | Whether QSM is reconstructed (SMWI turns it back on and χ-separation needs it, unless a QSM is supplied); unwrapping and B0 estimation; background-field removal (inversions of a local field only); the dipole inversion; how an orientation group is reconstructed (without one, where to choose it); the χ reference; the χ-separation method and its parameters; SMWI |
+| | Other outputs: SWI · Relaxometry · Segmentation | SWI; T2\*, R2\*, R2 and R2′ maps, the R2′ source and supplied maps; segmentation (SynthSeg or a dseg from derivatives) and per-structure statistics |
 | | Export: DICOM | DICOM export: the source DICOM to inherit the study from, and a tick for each map the settings make (all ticked to begin with; a map turned on later is ticked too; `a` ticks them all) |
 | 4 Execution | — | Local or SLURM, each with its own settings; debug logging, force re-run, clean-up; and a button that does what `F5` does |
 | 5 Methods | Methods text · Graph | The methods text for the current settings; `Enter` (or `c`) copies it to the clipboard. Graph: the pipeline the current settings run, step by step: each step's algorithm and settings, and the steps it reads from and what it reads. Above it, the peak memory the run is estimated to need and the deep-learning models it uses, with their download sizes. It is planned on the first selected run's scan (a typical scan until one is chosen). `Enter` (or `s`) saves it as an SVG drawing and opens it |

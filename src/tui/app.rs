@@ -546,7 +546,7 @@ pub fn dicom_map(field: &str) -> Option<&'static DicomMap> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SectionState {
     On,
-    /// Its output is not made (χ-separation, SWI/SMWI, …, DICOM export, or QSM itself).
+    /// Its output is not made (χ-separation, SWI, SMWI, …, DICOM export, or QSM itself).
     Off,
     /// The settings skip its stage: no field mapping, no background removal, no orientation groups.
     NotApplicable,
@@ -565,13 +565,18 @@ pub enum Page {
     Geometry,
     Masking,
     Motion,
+    /// The QSM group's switch: whether QSM is reconstructed at all.
+    ComputeQsm,
     FieldMap,
     Background,
     Inversion,
     MultiOrientation,
     Reference,
     Separation,
-    SwiSmwi,
+    /// SMWI: weighted by χ, so in the QSM group.
+    Smwi,
+    /// SWI: from the phase alone, so an other output.
+    Swi,
     Relaxometry,
     Segmentation,
     Export,
@@ -589,13 +594,15 @@ impl Page {
             Page::Geometry => "Geometry",
             Page::Masking => "Masking",
             Page::Motion => "Motion",
+            Page::ComputeQsm => "Compute QSM",
             Page::FieldMap => "Field map",
             Page::Background => "Background",
             Page::Inversion => "Inversion",
             Page::MultiOrientation => "COSMOS/STI",
             Page::Reference => "Reference",
             Page::Separation => "χ-separation",
-            Page::SwiSmwi => "SWI/SMWI",
+            Page::Smwi => "SMWI",
+            Page::Swi => "SWI",
             Page::Relaxometry => "Relaxometry",
             Page::Segmentation => "Segmentation",
             Page::Export => "DICOM",
@@ -608,23 +615,26 @@ impl Page {
     /// Whether the page's rows are the pipeline form's ([`PipelineFormState::visible_rows`])
     /// rather than built by the App from both forms.
     pub fn is_pipeline(self) -> bool {
-        !matches!(self, Page::SwiSmwi | Page::Relaxometry | Page::Segmentation | Page::Export | Page::Execution
+        !matches!(self, Page::Swi | Page::Smwi | Page::Relaxometry | Page::Segmentation | Page::Export | Page::Execution
             | Page::MethodsText | Page::Pipeline)
     }
 
     /// The Reconstruction tab's sections, in sidebar order.
-    pub const RECONSTRUCTION: [Page; 13] = [
-        Page::Geometry, Page::Masking, Page::Motion, Page::FieldMap, Page::Background, Page::Inversion,
-        Page::MultiOrientation, Page::Reference, Page::Separation, Page::SwiSmwi, Page::Relaxometry,
-        Page::Segmentation, Page::Export,
+    pub const RECONSTRUCTION: [Page; 15] = [
+        Page::Geometry, Page::Masking, Page::Motion, Page::ComputeQsm, Page::FieldMap, Page::Background,
+        Page::Inversion, Page::MultiOrientation, Page::Reference, Page::Separation, Page::Smwi, Page::Swi,
+        Page::Relaxometry, Page::Segmentation, Page::Export,
     ];
 
-    /// The sidebar group a Reconstruction section is in.
+    /// The sidebar group a Reconstruction section is in. The QSM group holds QSM's stages and
+    /// the outputs made from χ (χ-separation needs the QSM and its local field; SMWI weights by
+    /// χ); the other outputs need no QSM.
     pub fn group(self) -> &'static str {
         match self {
             Page::Geometry | Page::Masking | Page::Motion => "Preprocessing",
-            Page::FieldMap | Page::Background | Page::Inversion | Page::MultiOrientation | Page::Reference => "QSM",
-            Page::Separation | Page::SwiSmwi | Page::Relaxometry | Page::Segmentation => "Other outputs",
+            Page::ComputeQsm | Page::FieldMap | Page::Background | Page::Inversion | Page::MultiOrientation
+            | Page::Reference | Page::Separation | Page::Smwi => "QSM",
+            Page::Swi | Page::Relaxometry | Page::Segmentation => "Other outputs",
             Page::Export => "Export",
             Page::Execution => "Execution",
             Page::MethodsText | Page::Pipeline => "Methods",
@@ -633,9 +643,9 @@ impl Page {
 
     /// Every page, in tab order.
     #[cfg(test)]
-    pub const ALL: [Page; 16] = [
-        Page::Geometry, Page::Masking, Page::Motion, Page::FieldMap, Page::Background,
-        Page::Inversion, Page::MultiOrientation, Page::Reference, Page::Separation, Page::SwiSmwi,
+    pub const ALL: [Page; 18] = [
+        Page::Geometry, Page::Masking, Page::Motion, Page::ComputeQsm, Page::FieldMap, Page::Background,
+        Page::Inversion, Page::MultiOrientation, Page::Reference, Page::Separation, Page::Smwi, Page::Swi,
         Page::Relaxometry, Page::Segmentation, Page::Export, Page::Execution, Page::MethodsText,
         Page::Pipeline,
     ];
@@ -3218,6 +3228,9 @@ fn step_min_intensity(value: f64, delta: isize) -> f64 {
     if next > 0.0 { next } else { value }
 }
 
+/// What a QSM section says while QSM is off.
+const QSM_OFF_NOTE: &str = "QSM is off: turn it on in Compute QSM, the first QSM section.";
+
 /// What each threshold method does, for the threshold-method pop-up.
 fn threshold_method_help() -> Vec<String> {
     ["Otsu automatic threshold", "Fixed intensity threshold", "Percentile-based threshold",
@@ -3597,18 +3610,22 @@ impl PipelineFormState {
         }
     }
 
-    /// The QSM tab's master switch, on top of each of its sub-tabs — with why QSM runs anyway.
-    fn push_qsm_toggle(&self, rows: &mut Vec<PipelineRow>) {
+    /// QSM → Compute QSM: the QSM group's switch, with what turning it off does, or why QSM is
+    /// reconstructed anyway.
+    fn compute_qsm_rows(&self, rows: &mut Vec<PipelineRow>) {
         rows.push(PipelineRow::Toggle {
             label: "Compute QSM", field: "do_qsm",
             help: "Enable QSM reconstruction (disable to only run the other outputs)",
         });
         if !self.do_qsm {
-            if let Some(why) = self.ctx.qsm_forced_by {
-                rows.push(PipelineRow::Note { text: format!("  Reconstructed anyway: {why}").into() });
+            match self.ctx.qsm_forced_by {
+                Some(why) => rows.push(PipelineRow::Note { text: format!("  Reconstructed anyway: {why}").into() }),
+                None => {
+                    rows.push(PipelineRow::Note { text: "  Off: no field map, background removal, inversion or reference.".into() });
+                    rows.push(PipelineRow::Note { text: "  χ-separation and SMWI need QSM, or a supplied one.".into() });
+                }
             }
         }
-        rows.push(PipelineRow::Separator);
     }
 
     /// QSM → Field map: unwrapping and the echo combination into one field map.
@@ -4294,7 +4311,7 @@ impl PipelineFormState {
         self.geometry_rows(&mut rows);
         self.masking_rows(&mut rows);
         self.motion_rows(&mut rows);
-        self.push_qsm_toggle(&mut rows);
+        self.compute_qsm_rows(&mut rows);
         if self.qsm_runs() {
             if self.field_mapping_runs().0 { self.field_map_rows(&mut rows); }
             if self.inversion_needs_bg_removal() { self.background_rows(&mut rows); }
@@ -4313,25 +4330,23 @@ impl PipelineFormState {
             Page::Geometry => self.geometry_rows(&mut rows),
             Page::Masking => self.masking_rows(&mut rows),
             Page::Motion => self.motion_rows(&mut rows),
-            // A QSM section shows the switch alone while QSM is off, and says why when the
+            Page::ComputeQsm => self.compute_qsm_rows(&mut rows),
+            // A QSM section says where QSM is turned on while it is off, and why when the
             // settings skip its stage: the sidebar lists every section whatever the settings.
             Page::FieldMap | Page::Background | Page::Inversion | Page::MultiOrientation | Page::Reference
-                if !self.qsm_runs() => self.push_qsm_toggle(&mut rows),
+                if !self.qsm_runs() => rows.push(PipelineRow::Note { text: QSM_OFF_NOTE.into() }),
             Page::FieldMap if !self.field_mapping_runs().0 => {
-                self.push_qsm_toggle(&mut rows);
                 rows.push(PipelineRow::Note { text: "No field mapping with these settings: the inversion takes the wrapped phase".into() });
                 rows.push(PipelineRow::Note { text: "itself (iQSM, iQSM+, single-echo TGV), or iQFM makes the field from it.".into() });
             }
-            Page::FieldMap => { self.push_qsm_toggle(&mut rows); self.field_map_rows(&mut rows) }
+            Page::FieldMap => self.field_map_rows(&mut rows),
             Page::Background if !self.inversion_needs_bg_removal() => {
-                self.push_qsm_toggle(&mut rows);
                 rows.push(PipelineRow::Note { text: "No background removal with these settings: the inversion takes the total field".into() });
                 rows.push(PipelineRow::Note { text: "or the wrapped phase itself (see Inversion).".into() });
             }
-            Page::Background => { self.push_qsm_toggle(&mut rows); self.background_rows(&mut rows) }
-            Page::Inversion => { self.push_qsm_toggle(&mut rows); self.inversion_rows(&mut rows) }
+            Page::Background => self.background_rows(&mut rows),
+            Page::Inversion => self.inversion_rows(&mut rows),
             Page::MultiOrientation => {
-                self.push_qsm_toggle(&mut rows);
                 if self.ctx.orientation_group {
                     self.multi_orientation_rows(&mut rows);
                 } else {
@@ -4339,7 +4354,7 @@ impl PipelineFormState {
                     rows.push(PipelineRow::Note { text: "Choose them on 1 Input → Orientations, and these settings apply.".into() });
                 }
             }
-            Page::Reference => { self.push_qsm_toggle(&mut rows); self.reference_rows(&mut rows) }
+            Page::Reference => self.reference_rows(&mut rows),
             Page::Separation => self.separation_rows(&mut rows),
             _ => {}
         }
@@ -7828,7 +7843,7 @@ impl App {
         RowContext {
             qsm_forced_by: qsm_forced.then_some(
                 if self.form.do_smwi && ps.custom_qsm_tool.trim().is_empty() {
-                    "SMWI weights the magnitude by the χ map (Other outputs → SWI/SMWI)"
+                    "SMWI weights the magnitude by the χ map (QSM → SMWI)"
                 } else {
                     "the per-structure statistics need a map to summarise (Other outputs → Segmentation)"
                 }),
@@ -8394,6 +8409,7 @@ impl App {
         let ps = &self.pipeline_state;
         let on = |b: bool| if b { SectionState::On } else { SectionState::Off };
         match page {
+            Page::ComputeQsm => on(self.qsm_on()),
             Page::FieldMap | Page::Background | Page::Inversion | Page::MultiOrientation | Page::Reference => {
                 let ps = self.synced_pipeline(page, &self.row_context());
                 if !ps.qsm_runs() {
@@ -8408,7 +8424,8 @@ impl App {
                 }
             }
             Page::Separation => on(ps.do_chi_separation),
-            Page::SwiSmwi => on(self.form.do_swi || self.form.do_smwi),
+            Page::Smwi => on(self.form.do_smwi),
+            Page::Swi => on(self.form.do_swi),
             Page::Relaxometry => on(["do_t2starmap", "do_r2starmap", "do_r2map", "do_r2primemap"].iter().any(|f| self.field_toggle(f))),
             Page::Segmentation => on(self.field_toggle("do_segmentation") || self.form.do_analysis),
             Page::Export => on(self.form.export_dicom),
@@ -8531,7 +8548,8 @@ impl App {
     fn page_rows_in(&self, page: Page, ctx: &RowContext) -> Vec<PipelineRow> {
         match page {
             p if p.is_pipeline() => self.synced_pipeline(p, ctx).visible_rows(),
-            Page::SwiSmwi => self.swi_smwi_rows(),
+            Page::Swi => self.swi_rows(),
+            Page::Smwi => self.smwi_rows(),
             Page::Relaxometry => self.relaxometry_rows(),
             Page::Segmentation => self.segmentation_rows(),
             Page::Export => self.export_rows(),
@@ -8817,8 +8835,8 @@ impl App {
         }
     }
 
-    /// Other outputs → SWI/SMWI.
-    fn swi_smwi_rows(&self) -> Vec<PipelineRow> {
+    /// Other outputs → SWI: susceptibility-weighted imaging, from the phase.
+    fn swi_rows(&self) -> Vec<PipelineRow> {
         use PipelineRow::{AlgoSelect, Param, Toggle};
         let f = &self.form;
         let mut rows = vec![Toggle { label: "Compute SWI", field: "do_swi", help: "Also compute susceptibility-weighted images with CLEAR-SWI, from every echo" }];
@@ -8829,7 +8847,14 @@ impl App {
             rows.push(Param { label: "  HP sigma (x y z)", field: "swi_hp_sigma", help: "High-pass filter sigma per axis, in voxels (x y z): background phase removal. Set z to 0 for thin axial slices" });
             rows.push(Param { label: "  mIP window", field: "swi_mip_window", help: "Minimum intensity projection window size in slices" });
         }
-        rows.push(PipelineRow::Separator);
+        rows
+    }
+
+    /// QSM → SMWI: susceptibility map-weighted imaging, made from χ.
+    fn smwi_rows(&self) -> Vec<PipelineRow> {
+        use PipelineRow::{Param, Toggle};
+        let f = &self.form;
+        let mut rows = Vec::new();
         rows.push(Toggle { label: "Compute SMWI", field: "do_smwi", help: "Susceptibility map-weighted imaging — weights the magnitude by a mask built from χ, not from filtered phase. Needs QSM" });
         if f.do_smwi {
             rows.push(Param { label: "  Threshold", field: "smwi_threshold", help: "|χ| in ppm at which the weighting mask reaches zero. The 1 ppm default targets strong sources; brain tissue wants far less" });
@@ -9451,8 +9476,7 @@ mod tests {
     fn test_algo_modal_opens_on_enter_over_algoselect() {
         let mut app = App::new();
         app.active_tab = TAB_RECONSTRUCTION;
-        // The QSM tab's first focusable row is the "Compute QSM" toggle; move to the inversion
-        // AlgoSelect and open it.
+        // Move down the section to a selector and open it.
         let opened = (0..40).any(|_| {
             app.handle_key(key(KeyCode::Enter)); // opens modal iff focused row is an AlgoSelect
             if app.algo_modal.is_some() { return true; }
@@ -9965,15 +9989,42 @@ mod tests {
         app.filter_state.orientation_group = "acq".into();
         assert_eq!(state(&app, Page::MultiOrientation), SectionState::On);
         assert!(rows(&app, Page::MultiOrientation).iter().any(|r| matches!(r, PipelineRow::AlgoSelect { field: "orientation_algorithm", .. })));
-        // QSM off: every QSM section is off and shows only the switch.
+        // QSM's switch is a section of its own, and nowhere else.
+        assert_eq!(state(&app, Page::ComputeQsm), SectionState::On);
+        for p in Page::RECONSTRUCTION {
+            let has = app.page_rows(p).iter().any(|r| row_field(r) == Some("do_qsm"));
+            assert_eq!(has, p == Page::ComputeQsm, "{p:?}");
+        }
+        // QSM off: every QSM stage is off and says where QSM is turned on; its section says
+        // what off means.
         app.pipeline_state.do_qsm = false;
+        assert_eq!(state(&app, Page::ComputeQsm), SectionState::Off);
         for p in [Page::FieldMap, Page::Background, Page::Inversion, Page::MultiOrientation, Page::Reference] {
             assert_eq!(state(&app, p), SectionState::Off, "{p:?}");
-            assert!(rows(&app, p).iter().all(|r| matches!(r, PipelineRow::Toggle { field: "do_qsm", .. } | PipelineRow::Separator)), "{p:?}");
+            assert_eq!(rows(&app, p), vec![PipelineRow::Note { text: QSM_OFF_NOTE.into() }], "{p:?}");
         }
-        // A forced QSM keeps the stages.
+        assert!(rows(&app, Page::ComputeQsm).iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("Off: no field map"))));
+        // A forced QSM keeps the stages, and its section says why.
         app.form.do_smwi = true;
         assert_eq!(state(&app, Page::Inversion), SectionState::On);
+        assert_eq!(state(&app, Page::ComputeQsm), SectionState::On);
+        assert!(rows(&app, Page::ComputeQsm).iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("QSM → SMWI"))));
+    }
+
+    /// The QSM group holds QSM's stages and the outputs made from χ (χ-separation, SMWI); SWI,
+    /// from the phase alone, is an other output.
+    #[test]
+    fn the_qsm_group_holds_what_needs_qsm() {
+        let group = |g: &str| Page::RECONSTRUCTION.iter().copied().filter(|p| p.group() == g).collect::<Vec<_>>();
+        assert_eq!(group("QSM"), [Page::ComputeQsm, Page::FieldMap, Page::Background, Page::Inversion,
+            Page::MultiOrientation, Page::Reference, Page::Separation, Page::Smwi]);
+        assert_eq!(group("Other outputs"), [Page::Swi, Page::Relaxometry, Page::Segmentation]);
+        let app = App::new();
+        let fields = |p| app.page_rows(p).iter().filter_map(row_field).collect::<Vec<_>>();
+        assert!(fields(Page::Swi).contains(&"do_swi") && !fields(Page::Swi).contains(&"do_smwi"));
+        assert!(fields(Page::Smwi).contains(&"do_smwi") && !fields(Page::Smwi).contains(&"do_swi"));
+        assert_eq!(app.section_state(Page::Smwi), SectionState::Off);
+        assert_eq!(app.section_state(Page::Swi), SectionState::Off);
     }
 
     // --- Filter tree tests ---
@@ -10701,7 +10752,6 @@ mod tests {
     fn test_pipeline_left_right_algo_select() {
         let mut app = App::new();
         assert!(app.goto_field("qsm_algorithm"));
-        // Focus 0 is "Compute QSM" toggle, focus 1 is "Phase Combination" select
         // Find the focus index for the QSM Inversion AlgoSelect
         let rows = app.rows();
         let focusable = app.focusable_rows();
@@ -10805,7 +10855,7 @@ mod tests {
     fn test_pipeline_toggle_do_qsm() {
         let mut app = App::new();
         app.active_tab = TAB_RECONSTRUCTION;
-        app.sub_page[TAB_RECONSTRUCTION] = Some(Page::Inversion);
+        app.sub_page[TAB_RECONSTRUCTION] = Some(Page::ComputeQsm);
         app.sync_pipeline_mode();
         // Focus 0 should be the do_qsm toggle
         app.pipeline_state.focus = 0;
@@ -11004,9 +11054,12 @@ mod tests {
         let mut app = App::new();
         app.active_tab = TAB_RECONSTRUCTION;
         focus_on(&mut app, TAB_RECONSTRUCTION, "do_swi");
-        // SWI fields are hidden when do_swi is false, so Down from Compute SWI skips to SMWI
+        // SWI fields are hidden when do_swi is false: Compute SWI is the section's only row.
         app.handle_key(key(KeyCode::Down));
-        assert_eq!(app.focused_field_name().as_deref(), Some("do_smwi"));
+        assert_eq!(app.focused_field_name().as_deref(), Some("do_swi"));
+        app.form.do_swi = true;
+        app.handle_key(key(KeyCode::Down));
+        assert_eq!(app.focused_field_name().as_deref(), Some("swi_unwrap"));
         app.handle_key(key(KeyCode::Up));
         assert_eq!(app.focused_field_name().as_deref(), Some("do_swi"));
     }
@@ -11053,7 +11106,7 @@ mod tests {
         app.form.do_t2starmap = true;
         app.form.do_r2starmap = true;
         app.form.swi_scaling = 3;
-        app.sub_page[TAB_RECONSTRUCTION] = Some(Page::SwiSmwi);
+        app.sub_page[TAB_RECONSTRUCTION] = Some(Page::Swi);
         app.sync_pipeline_mode();
         app.handle_key(key(KeyCode::Char('R')));
         assert!(!app.form.do_swi);
@@ -12466,7 +12519,7 @@ mod tests {
                      "mask_preset", "custom_mask_tool", "two_pass"] {
             assert!(f.contains(&kept.to_string()), "{kept} hidden with QSM off: {f:?}");
         }
-        // The QSM sections stay listed but hold only the switch.
+        // The QSM sections stay listed but hold only a note.
         for gone in ["unwrapping_algorithm", "bf_algorithm", "qsm_algorithm", "qsm_reference", "crop_to_mask", "fft_padding"] {
             assert!(!f.contains(&gone.to_string()), "{gone} shown with QSM off: {f:?}");
         }
@@ -13155,7 +13208,7 @@ mod tests {
     fn test_reset_pipeline_toggle_field() {
         let mut app = App::new();
         app.active_tab = TAB_RECONSTRUCTION;
-        app.sub_page[TAB_RECONSTRUCTION] = Some(Page::Inversion);
+        app.sub_page[TAB_RECONSTRUCTION] = Some(Page::ComputeQsm);
         app.sync_pipeline_mode();
         // Focus 0 is do_qsm toggle
         app.pipeline_state.focus = 0;
@@ -13620,7 +13673,9 @@ mod tests {
         app.handle_key(key(KeyCode::Down));
         assert_eq!(app.page(), Some(Page::Motion));
         app.handle_key(key(KeyCode::Down));
-        assert_eq!(app.page(), Some(Page::FieldMap), "into the next group");
+        assert_eq!(app.page(), Some(Page::ComputeQsm), "into the next group");
+        app.handle_key(key(KeyCode::Down));
+        assert_eq!(app.page(), Some(Page::FieldMap));
         assert!(app.on_subtabs());
         app.handle_key(key(KeyCode::End));
         assert_eq!(app.page(), Some(Page::Export));
@@ -13673,6 +13728,7 @@ mod tests {
         let mut app = App::new();
         app.handle_key(key(KeyCode::Char('3')));
         app.handle_key(key(KeyCode::Char(']'))); // Motion
+        app.handle_key(key(KeyCode::Char(']'))); // Compute QSM
         app.handle_key(key(KeyCode::Char(']'))); // Field map
         assert_eq!(app.page(), Some(Page::FieldMap));
         app.handle_key(key(KeyCode::Right));
@@ -13727,7 +13783,12 @@ mod tests {
             for page in app.pages(TAB_RECONSTRUCTION) {
                 goto_page(&mut app, page);
                 let n = app.focusable_rows().len();
-                assert!(n > 0, "{page:?}");
+                if n == 0 {
+                    // A section with only a note (COSMOS/STI without groups): in and back out.
+                    app.subtab_focus = false;
+                    app.handle_key(key(KeyCode::Left));
+                    assert!(app.on_subtabs() && app.page() == Some(page), "{page:?}");
+                }
                 for i in 0..n {
                     app.subtab_focus = false;
                     app.set_focus(i);
