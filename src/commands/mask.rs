@@ -284,6 +284,7 @@ pub fn execute(cmd: MaskCommand) -> crate::Result<()> {
     match cmd {
         MaskCommand::Otsu(args) => generate(&args.common, MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None }, &bet_config(None)),
         MaskCommand::Value(args) => generate(&args.common, MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(args.threshold) }, &bet_config(None)),
+        MaskCommand::StiGui(args) => generate(&args.common, MaskOp::Threshold { method: MaskThresholdMethod::StiGui, value: None }, &bet_config(None)),
         MaskCommand::Percentile(args) => generate(&args.common, MaskOp::Threshold { method: MaskThresholdMethod::Percentile, value: Some(args.percentile) }, &bet_config(None)),
         MaskCommand::Bet(args) => generate(&args.common, MaskOp::Bet {
             fractional_intensity: args.fractional_intensity,
@@ -301,6 +302,8 @@ pub fn execute(cmd: MaskCommand) -> crate::Result<()> {
         MaskCommand::Dilate(args) => refine_file(&args.common, MaskOp::Dilate { iterations: args.iterations }),
         MaskCommand::Close(args) => refine_file(&args.common, MaskOp::Close { radius: args.radius }),
         MaskCommand::Majority(args) => refine_file(&args.common, MaskOp::Majority),
+        MaskCommand::LargestComponent(args) => refine_file(&args.common, MaskOp::LargestComponent),
+        MaskCommand::Imfill(args) => refine_file(&args.common, MaskOp::Imfill),
         MaskCommand::FillHoles(args) => refine_file(&args.common, MaskOp::FillHoles { max_size: args.max_size }),
         MaskCommand::Smooth(args) => refine_file(&args.common, MaskOp::GaussianSmooth { sigma_mm: args.sigma }),
         MaskCommand::And(args) => combine(args, MaskCombine::And),

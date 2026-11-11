@@ -315,6 +315,10 @@ pub(super) fn table() -> Vec<Def> {
         .min(0.0).units("voxels").flag("--bf-erode-voxels")
         .when(|x| !x.bf("iqfm"))
         .gui("Erode the brain mask before background removal; the field map itself is not masked again"),
+        d("bg_removal.polish_mask", Background, "Polish mask", "After background removal, keep the mask's largest connected component with its holes filled, as STI Suite's QSM_GUI does", Bool)
+        .flag("--bf-polish-mask")
+        .when(|x| !x.bf("iqfm"))
+        .gui("Keep the background-removal mask's largest connected component, holes filled, as STI Suite's PolishMask"),
         d("bg_removal.vsharp.deconvolve", Background, "Deconvolve", "Undo the SMV high-pass with a truncated-SVD deconvolution (default: off)", Bool).flag("--vsharp-deconvolve").parent("bg_removal.algorithm")
         .when(|x| x.bf("vsharp"))
         .gui("Undo the SMV high-pass with a truncated-SVD deconvolution"),

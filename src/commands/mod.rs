@@ -70,6 +70,8 @@ mod integration_tests {
                 unwrapping_algorithm: None,
                 bf_algorithm: None,
                 bf_erode_voxels: None,
+                bf_polish_mask: false,
+                no_bf_polish_mask: false,
                 masking_input: None,
                 phase_offset_removal: None,
                 phase_offset_sigma_mm: None,

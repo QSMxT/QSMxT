@@ -1646,6 +1646,15 @@ pub struct PipelineArgs {
     #[arg(long, value_name = "N")]
     pub bf_erode_voxels: Option<usize>,
 
+    /// After background removal, keep the mask's largest connected component with its holes
+    /// filled and zero the local field outside it, as STI Suite's QSM_GUI does (PolishMask)
+    #[arg(long)]
+    pub bf_polish_mask: bool,
+
+    /// Do not polish the background-removal mask (the default), after a `--pipeline` that does
+    #[arg(long, conflicts_with = "bf_polish_mask")]
+    pub no_bf_polish_mask: bool,
+
     /// Masking input image (overrides the input of the configured mask sections;
     /// combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude)
     #[arg(long, value_enum)]
@@ -2383,7 +2392,7 @@ pub struct MaskCommonArgs {
     pub output: PathBuf,
     /// Further refinement, applied in order after the subcommand's own operation (repeatable).
     /// Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, majority (3x3x3 majority
-    /// filter), min-intensity:100 (remove voxels below 100 in the input image; needs an image
+    /// filter), largest-component, imfill (every hole), min-intensity:100 (remove voxels below 100 in the input image; needs an image
     /// input), signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude
     /// input)
     #[arg(long = "op")]
@@ -2398,6 +2407,9 @@ pub enum MaskCommand {
     Value(MaskValueArgs),
     /// Percentile thresholding
     Percentile(MaskPercentileArgs),
+    /// STI Suite QSM_GUI's thresholding: the level its thresh_tool starts at (Otsu's threshold of
+    /// the middle slice, scaled to that slice's maximum)
+    StiGui(MaskOtsuArgs),
     /// Brain extraction (BET)
     Bet(MaskBetArgs),
     /// Deep-learning brain extraction (HD-BET; downloads weights on first use)
@@ -2419,6 +2431,10 @@ pub enum MaskCommand {
     Close(MaskCloseArgs),
     /// 3x3x3 majority filter on a binary mask (MATLAB's bwmorph3 'majority')
     Majority(MaskMajorityArgs),
+    /// Keep only the largest 26-connected component of a binary mask (MATLAB's bwlabeln)
+    LargestComponent(MaskMajorityArgs),
+    /// Fill every hole of a binary mask, whatever its size (MATLAB's imfill 'holes')
+    Imfill(MaskMajorityArgs),
     /// Fill holes in a binary mask
     FillHoles(MaskFillHolesArgs),
     /// Gaussian smooth a binary mask (re-thresholds at 0.5)

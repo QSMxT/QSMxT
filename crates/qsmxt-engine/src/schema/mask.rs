@@ -144,6 +144,7 @@ pub fn step_kind(op: &MaskOp) -> &'static str {
         MaskOp::Threshold { method: MaskThresholdMethod::Otsu, .. } => "threshold-otsu",
         MaskOp::Threshold { method: MaskThresholdMethod::Fixed, .. } => "threshold-fixed",
         MaskOp::Threshold { method: MaskThresholdMethod::Percentile, .. } => "threshold-percentile",
+        MaskOp::Threshold { method: MaskThresholdMethod::StiGui, .. } => "threshold-sti-gui",
         MaskOp::Bet { .. } => "bet",
         MaskOp::HdBet { .. } => "hd-bet",
         MaskOp::Rs2Net { .. } => "rs2-net",
@@ -153,6 +154,8 @@ pub fn step_kind(op: &MaskOp) -> &'static str {
         MaskOp::Close { .. } => "close",
         MaskOp::MinIntensity { .. } => "min-intensity",
         MaskOp::Majority => "majority",
+        MaskOp::LargestComponent => "largest-component",
+        MaskOp::Imfill => "imfill",
         MaskOp::FillHoles { .. } => "fill-holes",
         MaskOp::GaussianSmooth { .. } => "gaussian-smooth",
         MaskOp::SignalErode { .. } => "signal-erode",
@@ -166,6 +169,7 @@ fn default_ops() -> Vec<MaskOp> {
         MaskOp::Threshold { method: Otsu, value: None },
         MaskOp::Threshold { method: Fixed, value: Some(0.5) },
         MaskOp::Threshold { method: Percentile, value: Some(75.0) },
+        MaskOp::Threshold { method: StiGui, value: None },
         MaskOp::bet(0.5),
         MaskOp::hd_bet_default(),
         MaskOp::mindgrab_default(),
@@ -176,6 +180,8 @@ fn default_ops() -> Vec<MaskOp> {
         // QSMART's value (v1.0's `mag_threshold`), on a magnitude in the scanner's units.
         MaskOp::MinIntensity { value: 100.0 },
         MaskOp::Majority,
+        MaskOp::LargestComponent,
+        MaskOp::Imfill,
         MaskOp::FillHoles { max_size: 0 },
         MaskOp::GaussianSmooth { sigma_mm: 4.0 },
         MaskOp::signal_erode_default(),
@@ -225,6 +231,9 @@ fn describe(op: &MaskOp) -> (&'static str, &'static str, &'static str, Vec<P>) {
                 p("value", "Percentile", "The percentile of the image's positive values above which voxels are kept", Float)
                     .min(0.0).max(100.0).optional(),
             ]),
+        MaskOp::Threshold { method: MaskThresholdMethod::StiGui, .. } => ("threshold", "STI Suite threshold",
+            "Keep the voxels of the section's image above the level STI Suite's QSM_GUI starts at: Otsu's \
+             threshold of the middle slice, scaled to that slice's maximum", vec![]),
         MaskOp::Bet { .. } => ("bet", "BET",
             "BET brain extraction: a surface fitted to the edge of the brain in the magnitude", vec![
                 p("fractional_intensity", "Fractional intensity", "Smaller values give a larger brain", Float)
@@ -276,6 +285,10 @@ fn describe(op: &MaskOp) -> (&'static str, &'static str, &'static str, Vec<P>) {
             ]),
         MaskOp::Majority => ("majority", "Majority",
             "Majority filter: a voxel is in the mask when at least 14 of the 27 voxels of its 3×3×3 neighbourhood are              (MATLAB's bwmorph3 'majority')", vec![]),
+        MaskOp::LargestComponent => ("largest-component", "Largest component",
+            "Keep only the mask's largest connected component (26-connected, as MATLAB's bwlabeln)", vec![]),
+        MaskOp::Imfill => ("imfill", "Fill all holes",
+            "Fill every hole enclosed by the mask, whatever its size (MATLAB's imfill 'holes')", vec![]),
         MaskOp::FillHoles { .. } => ("fill-holes", "Fill holes", "Fill the holes enclosed by the mask, up to a size", vec![
             p("max_size", "Largest hole", "The largest hole filled; 0 fills holes up to 5% of the volume", Int)
                 .units("voxels").min(0.0),
@@ -397,7 +410,7 @@ pub fn mask_schema() -> MaskSchema {
 /// Every `op` a mask step is written with.
 const OPS: &[&str] = &[
     "threshold", "bet", "hd-bet", "rs2-net", "mindgrab", "erode", "dilate", "close", "min-intensity", "majority",
-    "fill-holes", "gaussian-smooth", "signal-erode",
+    "largest-component", "imfill", "fill-holes", "gaussian-smooth", "signal-erode",
 ];
 
 /// The step type `kind`.

@@ -59,6 +59,8 @@ fn candidates(core_path: &str) -> Vec<Value> {
         Mapping::Erosion => vec![json!(0), json!(2)],
         Mapping::MinIntensity => vec![json!(0), json!(100)],
         Mapping::Majority => vec![json!(true), json!(false)],
+        Mapping::ThresholdMethod => ids(&["otsu", "sti-gui", "fixed", "percentile"]),
+        Mapping::LargestComponent | Mapping::Imfill => vec![json!(true), json!(false)],
         Mapping::CloseRadius => vec![json!(0), json!(2)],
         Mapping::QsmartFitThreshold => ids(&["absolute-40", "percentile-99"]),
         Mapping::RomeoWeights => ids(&["romeo3", "romeo4", "romeo2", "romeo6", "bestpath"]),
@@ -115,6 +117,10 @@ fn violating(rule: &Rule) -> PipelineConfig {
     // BET's fraction and orientation are in play only with a BET step.
     if rule.setting.starts_with("masking.bet.") {
         set(&mut c, "masking.generator", &json!("bet")).unwrap();
+    }
+    // A threshold method is in play only with a threshold step.
+    if rule.setting == "masking.threshold_method" {
+        set(&mut c, "masking.generator", &json!("threshold")).unwrap();
     }
     // ROMEO's template echo and uncertain re-unwrapping are in play only in template mode.
     if ["field_mapping.romeo.template", "field_mapping.romeo.temporal_uncertain_unwrapping"].contains(&rule.setting) {

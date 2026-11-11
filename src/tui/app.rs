@@ -1559,7 +1559,7 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("vsharp_threshold", "bg_removal.vsharp.threshold"), ("vsharp_max_radius", "bg_removal.vsharp.max_radius"),
     ("vsharp_min_radius", "bg_removal.vsharp.min_radius"),
     ("vsharp_radius_step", "bg_removal.vsharp.radius_step"), ("vsharp_grid", "bg_removal.vsharp.grid"),
-    ("vsharp_grid_spacing", "bg_removal.vsharp.grid_spacing"), ("pdf_tol", "bg_removal.pdf.tol"), ("pdf_n_cg", "bg_removal.pdf.n_cg"), ("bf_erode_voxels", "bg_removal.erode_voxels"),
+    ("vsharp_grid_spacing", "bg_removal.vsharp.grid_spacing"), ("pdf_tol", "bg_removal.pdf.tol"), ("pdf_n_cg", "bg_removal.pdf.n_cg"), ("bf_polish_mask", "bg_removal.polish_mask"), ("bf_erode_voxels", "bg_removal.erode_voxels"),
     ("pdf_space", "bg_removal.pdf.space"), ("pdf_n_pad", "bg_removal.pdf.n_pad"), ("lbv_tol", "bg_removal.lbv.tol"),
     ("lbv_depth", "bg_removal.lbv.depth"), ("lbv_peel", "bg_removal.lbv.peel"), ("lbv_n1", "bg_removal.lbv.n1"),
     ("lbv_n2", "bg_removal.lbv.n2"), ("lbv_n3", "bg_removal.lbv.n3"), ("lbv_precision", "bg_removal.lbv.precision"),
@@ -1724,8 +1724,8 @@ pub fn field_of_path(path: &str) -> Option<&'static str> {
 }
 
 pub const MASK_OP_TYPES: &[&str] = &[
-    "threshold", "bet", "hd-bet", "erode", "dilate", "close", "min-intensity", "majority", "fill-holes", "gaussian",
-    "signal-erode",
+    "threshold", "bet", "hd-bet", "erode", "dilate", "close", "min-intensity", "majority", "largest-component",
+    "imfill", "fill-holes", "gaussian", "signal-erode",
 ];
 
 /// Ops that create a mask (the section's generator); the rest are refinements.
@@ -2189,6 +2189,8 @@ pub struct PipelineFormState {
     pub pdf_n_cg: String,
     /// Erode the mask by this many voxels before background removal (`bg_removal.erode_voxels`).
     pub bf_erode_voxels: String,
+    /// STI Suite's PolishMask after background removal (`bg_removal.polish_mask`).
+    pub bf_polish_mask: bool,
     /// An index into PDF_SPACE_OPTIONS.
     pub pdf_space: usize,
     pub pdf_n_pad: String,
@@ -2713,6 +2715,7 @@ impl Default for PipelineFormState {
             pdf_tol: format!("{}", qsm_core::bgremove::PdfParams::default().tol),
             pdf_n_cg: format!("{}", qsm_core::bgremove::PdfParams::default().n_cg),
             bf_erode_voxels: "0".to_string(),
+            bf_polish_mask: qsmxt_engine::BgRemovalConfig::default().polish_mask,
             pdf_space: pdf_space_index(qsmxt_engine::PdfConfig::default().space),
             pdf_n_pad: format!("{}", qsm_core::bgremove::PdfParams::default().n_pad),
             lbv_tol: format!("{}", qsm_core::bgremove::LbvParams::default().tol),
@@ -3217,7 +3220,8 @@ fn step_min_intensity(value: f64, delta: isize) -> f64 {
 
 /// What each threshold method does, for the threshold-method pop-up.
 fn threshold_method_help() -> Vec<String> {
-    ["Otsu automatic threshold", "Fixed intensity threshold", "Percentile-based threshold"].map(String::from).to_vec()
+    ["Otsu automatic threshold", "Fixed intensity threshold", "Percentile-based threshold",
+     "STI Suite QSM_GUI's starting level: Otsu's threshold of the middle slice"].map(String::from).to_vec()
 }
 
 /// What each DICOM series type means, for the series-type pop-up.
@@ -3805,6 +3809,8 @@ impl PipelineFormState {
         if BF_OPTIONS.get(self.bf_algorithm).copied() != Some("iqfm") {
             rows.push(PipelineRow::Param { label: "  Erode mask", field: "bf_erode_voxels",
                 help: "Erode the brain mask after field mapping, before background removal (0 = none)" });
+            rows.push(PipelineRow::Toggle { label: "  Polish mask", field: "bf_polish_mask",
+                help: "After background removal, keep the mask's largest connected component with its holes filled, as STI Suite's QSM_GUI does" });
         }
         match self.bf_algorithm {
             0 => { // V-SHARP
@@ -5108,6 +5114,7 @@ impl PipelineFormState {
             "romeo_merge_regions" => self.romeo_merge_regions,
             "romeo_temporal_uncertain" => self.romeo_temporal_uncertain,
             "laplacian_unmasked" => self.laplacian_unmasked,
+            "bf_polish_mask" => self.bf_polish_mask,
             "dl_tiling" => self.dl_tiling,
             "romeo_correct_regions" => self.romeo_correct_regions,
             "linear_fit_estimate_offset" => self.linear_fit_estimate_offset,
@@ -5165,6 +5172,7 @@ impl PipelineFormState {
             "romeo_merge_regions" => self.romeo_merge_regions = !self.romeo_merge_regions,
             "romeo_temporal_uncertain" => self.romeo_temporal_uncertain = !self.romeo_temporal_uncertain,
             "laplacian_unmasked" => self.laplacian_unmasked = !self.laplacian_unmasked,
+            "bf_polish_mask" => self.bf_polish_mask = !self.bf_polish_mask,
             "dl_tiling" => self.dl_tiling = !self.dl_tiling,
             "romeo_correct_regions" => self.romeo_correct_regions = !self.romeo_correct_regions,
             "linear_fit_estimate_offset" => self.linear_fit_estimate_offset = !self.linear_fit_estimate_offset,
@@ -5209,6 +5217,8 @@ impl PipelineFormState {
                 ("threshold", format!("fixed:{}", value.unwrap_or(0.5))),
             MaskOp::Threshold { method: crate::pipeline::config::MaskThresholdMethod::Percentile, value } =>
                 ("threshold", format!("percentile:{}", value.unwrap_or(75.0))),
+            MaskOp::Threshold { method: crate::pipeline::config::MaskThresholdMethod::StiGui, .. } =>
+                ("threshold", "sti-gui".to_string()),
             MaskOp::Bet { fractional_intensity, voxel_scale } => ("bet", format!("{}{}", fractional_intensity,
                 if (*voxel_scale - crate::pipeline::config::bet_default_voxel_scale()).abs() > f64::EPSILON {
                     format!(" scale={voxel_scale}")
@@ -5220,6 +5230,8 @@ impl PipelineFormState {
             MaskOp::Close { radius } => ("close", format!("{}", radius)),
             MaskOp::MinIntensity { value } => ("min-intensity", format!("{}", value)),
             MaskOp::Majority => ("majority", "3×3×3".to_string()),
+            MaskOp::LargestComponent => ("largest-component", "26-connected".to_string()),
+            MaskOp::Imfill => ("imfill", "all holes".to_string()),
             MaskOp::FillHoles { max_size } => ("fill-holes", if *max_size == 0 { "auto".to_string() } else { format!("{}", max_size) }),
             MaskOp::GaussianSmooth { sigma_mm } => ("gaussian", format!("{}", sigma_mm)),
             MaskOp::HdBet { patch, tta, tile_step } => {
@@ -5259,7 +5271,7 @@ impl PipelineFormState {
             MaskOp::HdBet { .. } | MaskOp::Rs2Net { .. } | MaskOp::MindGrab { .. } =>
                 format!("{} (needs a deep-learning build)", step.help),
             // Nothing to adjust.
-            MaskOp::Majority => step.help.to_string(),
+            MaskOp::Majority | MaskOp::LargestComponent | MaskOp::Imfill => step.help.to_string(),
             // The row shows the step's first parameter (signal-erode's threshold); the rest have
             // rows of their own.
             _ => format!("{} (Enter to edit, +/- to nudge)", step.params.first().map_or(step.help, |p| p.help)),
@@ -5686,9 +5698,9 @@ impl PipelineFormState {
     }
 
     /// Ordered threshold methods, matching the modal/cycle option order.
-    pub const MASK_THRESHOLD_METHODS: [crate::pipeline::config::MaskThresholdMethod; 3] = {
+    pub const MASK_THRESHOLD_METHODS: [crate::pipeline::config::MaskThresholdMethod; 4] = {
         use crate::pipeline::config::MaskThresholdMethod::*;
-        [Otsu, Fixed, Percentile]
+        [Otsu, Fixed, Percentile, StiGui]
     };
 
     /// Current threshold-method index for a section (0 if the generator isn't a threshold).
@@ -8182,14 +8194,14 @@ impl App {
                 strings(MASK_GENERATOR_TYPES),
                 // A threshold's method is chosen on its own row.
                 MASK_GENERATOR_TYPES.iter().map(|t| match *t {
-                    "threshold" => "Keep the voxels of the section's image above a threshold: Otsu's, a value, or a percentile".to_string(),
+                    "threshold" => "Keep the voxels of the section's image above a threshold: Otsu's, a value, a percentile, or STI Suite's".to_string(),
                     t => mask_step(t).help.to_string(),
                 }).collect(),
                 ps.mask_generator_index(section)),
             PipelineRow::MaskOpGeneratorParam { section } => match generator(section)? {
                 MaskOp::Threshold { .. } => modal(
                     AlgoModalTarget::MaskThresholdMethod(section), "Threshold method",
-                    strings(&["otsu", "fixed", "percentile"]), threshold_method_help(),
+                    strings(&["otsu", "fixed", "percentile", "sti-gui"]), threshold_method_help(),
                     ps.mask_threshold_method_index(section)),
                 MaskOp::HdBet { .. } => {
                     let choices = &mask_schema().hd_bet_inference;
@@ -8225,7 +8237,7 @@ impl App {
                         _ => 0,
                     };
                     modal(AlgoModalTarget::MaskRefinementThresholdMethod { section, index }, "Threshold method",
-                        strings(&["otsu", "fixed", "percentile"]), threshold_method_help(), cursor)
+                        strings(&["otsu", "fixed", "percentile", "sti-gui"]), threshold_method_help(), cursor)
                 }
                 _ => None,
             },
