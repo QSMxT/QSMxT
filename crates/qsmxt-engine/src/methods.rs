@@ -866,7 +866,7 @@ fn separation_changes(config: &PipelineConfig) -> Changed {
         }
         // Its QSM's iLSQR is worded with that QSM.
         SeparationAlgorithm::ChiSepIlsqr => c.add_fields(&s.chi_sep_ilsqr, &d.chi_sep_ilsqr, &["qsm_ilsqr"]),
-        SeparationAlgorithm::ChiSepMedi => c.add_fields(&s.chi_sep_medi, &d.chi_sep_medi, &["qsm_ilsqr"]),
+        SeparationAlgorithm::ChiSepMedi => c.add_fields(&s.chi_sep_medi, &d.chi_sep_medi, &["qsm_ilsqr", "csf_r2star"]),
         SeparationAlgorithm::WaveSep => c.add_fields(&s.wavesep, &d.wavesep, &[]),
         SeparationAlgorithm::HcChisep => c.add_fields(&s.hc_chisep, &d.hc_chisep, &[]),
         SeparationAlgorithm::ChiSepNet => match s.chi_sepnet.route {
@@ -1615,12 +1615,17 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                 "The two sources were initialised from the susceptibility map and solved by LSQR, \
                  streaking removal and a non-negative refinement.".to_string()),
             SeparationAlgorithm::ChiSepMedi => {
-                doc.cite(&CITE_ARLO);
-                doc.say(&[Stage::ChiSeparation],
+                let r2star = match config.separation.chi_sep_medi.csf_r2star {
+                    ChiSepCsfR2star::Arlo => {
+                        doc.cite(&CITE_ARLO);
+                        "ARLO R2* (Pei et al., 2015)"
+                    }
+                    ChiSepCsfR2star::Nnls => "R2* from a non-negative least-squares mono-exponential fit",
+                };
+                doc.say(&[Stage::ChiSeparation], format!(
                     "The two sources were initialised from the susceptibility map, the data terms were \
                      weighted by a noise map from the echo magnitudes, and the susceptibility within a \
-                     CSF mask from ARLO R2* (Pei et al., 2015) was regularised towards uniformity."
-                        .to_string());
+                     CSF mask from {r2star} was regularised towards uniformity."));
             }
             _ => {}
         }

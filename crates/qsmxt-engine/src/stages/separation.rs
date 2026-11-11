@@ -198,16 +198,19 @@ pub fn repeat_per_echo(map: &[f64], n_echoes: usize) -> Vec<f64> {
 }
 
 /// χ-sep MEDI's noise map and CSF mask, as the χ-separation toolbox's script makes them: `N_std`
-/// from every echo's magnitude (MEDI's `Fit_ppm_complex` noise), and the CSF mask from ARLO R2*
-/// inside `mask` (MEDI's `extract_CSF`, at its defaults). `echo_major` holds the echo magnitudes,
-/// one volume of `dims` voxels after another, at `echo_times` (s).
+/// from every echo's magnitude (MEDI's `Fit_ppm_complex` noise), and the CSF mask from R2* inside
+/// `mask` by `csf_r2star` (ARLO, or the toolbox's `r2star_nnls`; qsm-core
+/// `separation::csf_r2star`), then MEDI's `extract_CSF` at its defaults. `echo_major` holds the
+/// echo magnitudes, one volume of `dims` voxels after another, at `echo_times` (s).
 pub fn chi_sep_medi_inputs(
     echo_major: &[f64], echo_times: &[f64], mask: &[u8], dims: (usize, usize, usize),
-    voxel_size: (f64, f64, f64),
+    voxel_size: (f64, f64, f64), csf_r2star: crate::ChiSepCsfR2star,
 ) -> Result<(Vec<f64>, Vec<u8>), EngineError> {
     let n_std = qsm_core::utils::fit_ppm_complex_noise(echo_major, echo_times.len());
-    let r2star = qsm_core::utils::r2star::arlo(echo_major, echo_times, mask.len())
-        .map_err(|e| EngineError::Config(format!("chi-separation (MEDI): the CSF mask's R2*: {e}")))?;
+    let in_mask: Vec<bool> = mask.iter().map(|&m| m != 0).collect();
+    let r2star = qsm_core::separation::csf_r2star(csf_r2star.into(), echo_major, echo_times, &in_mask)
+        .map_err(|e| EngineError::Config(format!(
+            "chi-separation (MEDI): the CSF mask's R2* ({}): {e}", csf_r2star.label())))?;
     let (nx, ny, nz) = dims;
     let (vx, vy, vz) = voxel_size;
     let grid = qsm_core::Grid::new(nx, ny, nz, vx, vy, vz);

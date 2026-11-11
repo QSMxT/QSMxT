@@ -639,6 +639,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             chi_sep_medi_qsm_tol: parse_optional_f64(&ps.sep_medi_qsm_tol),
             chi_sep_medi_qsm_pad_mm: parse_optional_f64(&ps.sep_medi_qsm_pad_mm),
             chi_sep_medi_qsm_precision: qsmxt_engine::IlsqrPrecision::ALL.get(ps.sep_medi_qsm_precision).copied(),
+            chi_sep_medi_csf_r2star: qsmxt_engine::ChiSepCsfR2star::ALL.get(ps.sep_medi_csf_r2star).copied(),
             wavesep_dr_pos: parse_optional_f64(&ps.sep_wavesep_dr_pos),
             wavesep_dr_neg: parse_optional_f64(&ps.sep_wavesep_dr_neg),
             wavesep_alpha: parse_optional_f64(&ps.sep_wavesep_alpha),

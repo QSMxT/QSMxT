@@ -1693,6 +1693,7 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("sep_medi_qsm_tol", "separation.chi_sep_medi.qsm_ilsqr.tol"),
     ("sep_medi_qsm_pad_mm", "separation.chi_sep_medi.qsm_ilsqr.pad_mm"),
     ("sep_medi_qsm_precision", "separation.chi_sep_medi.qsm_ilsqr.precision"),
+    ("sep_medi_csf_r2star", "separation.chi_sep_medi.csf_r2star"),
     ("sep_wavesep_dr_pos", "separation.wavesep.dr_pos"), ("sep_wavesep_dr_neg", "separation.wavesep.dr_neg"),
     ("sep_wavesep_alpha", "separation.wavesep.alpha"), ("sep_wavesep_lambda", "separation.wavesep.lambda"),
     ("sep_wavesep_wavelet_order", "separation.wavesep.wavelet_order"), ("sep_wavesep_max_iter", "separation.wavesep.max_iter"),
@@ -2465,6 +2466,8 @@ pub struct PipelineFormState {
     pub sep_medi_qsm_pad_mm: String,
     /// An index into ILSQR_PRECISION_OPTIONS.
     pub sep_medi_qsm_precision: usize,
+    /// An index into CHI_SEP_CSF_R2STAR_OPTIONS.
+    pub sep_medi_csf_r2star: usize,
     // WaveSep
     pub sep_wavesep_dr_pos: String,
     pub sep_wavesep_dr_neg: String,
@@ -2924,6 +2927,7 @@ impl Default for PipelineFormState {
             sep_medi_qsm_tol: fmt_default(sep_medi.qsm_ilsqr.tol),
             sep_medi_qsm_pad_mm: fmt_default(sep_medi.qsm_ilsqr.pad_mm),
             sep_medi_qsm_precision: ilsqr_precision_index(sep_medi.qsm_ilsqr.precision.into()),
+            sep_medi_csf_r2star: chi_sep_csf_r2star_index(sep_medi.csf_r2star.into()),
             sep_wavesep_dr_pos: fmt_default(sep_wavesep.dr_pos),
             sep_wavesep_dr_neg: fmt_default(sep_wavesep.dr_neg),
             sep_wavesep_alpha: fmt_default(sep_wavesep.alpha),
@@ -3162,6 +3166,15 @@ const ILSQR_PRECISION_HELP: &[&str] = &[
 fn ilsqr_precision_index(p: qsmxt_engine::IlsqrPrecision) -> usize {
     qsmxt_engine::IlsqrPrecision::ALL.iter().position(|&x| x == p).unwrap_or(0)
 }
+/// The R2* χ-sep MEDI's CSF mask is extracted from, in the CLI's names.
+pub const CHI_SEP_CSF_R2STAR_OPTIONS: &[&str] = &["arlo", "nnls"];
+const CHI_SEP_CSF_R2STAR_HELP: &[&str] = &[
+    "MEDI's ARLO (default)",
+    "The χ-separation toolbox's NNLS fit (r2star_nnls), which its script runs",
+];
+fn chi_sep_csf_r2star_index(m: qsmxt_engine::ChiSepCsfR2star) -> usize {
+    qsmxt_engine::ChiSepCsfR2star::ALL.iter().position(|&x| x == m).unwrap_or(0)
+}
 /// LBV's arithmetic, in the CLI's names.
 pub const LBV_PRECISION_OPTIONS: &[&str] = &["double", "single"];
 const LBV_PRECISION_HELP: &[&str] = &[
@@ -3337,6 +3350,8 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Max iter", field: "sep_medi_max_iter", help: "Maximum Gauss-Newton iterations" });
                 rows.push(PipelineRow::Param { label: "  CG tolerance", field: "sep_medi_cg_tol", help: "Inner CG tolerance" });
                 rows.push(PipelineRow::Param { label: "  CG max iter", field: "sep_medi_cg_max_iter", help: "Inner CG max iterations" });
+                rows.push(PipelineRow::AlgoSelect { label: "  CSF R2*", field: "sep_medi_csf_r2star",
+                    options: CHI_SEP_CSF_R2STAR_OPTIONS, help: CHI_SEP_CSF_R2STAR_HELP });
                 if self.custom_qsm_tool.trim().is_empty() {
                     rows.push(PipelineRow::Param { label: "  QSM max iter", field: "sep_medi_qsm_max_iter",
                         help: "Maximum iterations of the iLSQR that reconstructs the QSM χ-separation starts from" });
@@ -4951,6 +4966,7 @@ impl PipelineFormState {
             "ilsqr_precision" => self.ilsqr_precision,
             "sep_ilsqr_qsm_precision" => self.sep_ilsqr_qsm_precision,
             "sep_medi_qsm_precision" => self.sep_medi_qsm_precision,
+            "sep_medi_csf_r2star" => self.sep_medi_csf_r2star,
             "pdf_space" => self.pdf_space,
             "lbv_precision" => self.lbv_precision,
             "ismv_variant" => self.ismv_variant,
@@ -5020,6 +5036,7 @@ impl PipelineFormState {
             "ilsqr_precision" => self.ilsqr_precision = val.min(ILSQR_PRECISION_OPTIONS.len() - 1),
             "sep_ilsqr_qsm_precision" => self.sep_ilsqr_qsm_precision = val.min(ILSQR_PRECISION_OPTIONS.len() - 1),
             "sep_medi_qsm_precision" => self.sep_medi_qsm_precision = val.min(ILSQR_PRECISION_OPTIONS.len() - 1),
+            "sep_medi_csf_r2star" => self.sep_medi_csf_r2star = val.min(CHI_SEP_CSF_R2STAR_OPTIONS.len() - 1),
             "pdf_space" => self.pdf_space = val.min(PDF_SPACE_OPTIONS.len() - 1),
             "lbv_precision" => self.lbv_precision = val.min(LBV_PRECISION_OPTIONS.len() - 1),
             "ismv_variant" => self.ismv_variant = val.min(ISMV_VARIANT_OPTIONS.len() - 1),

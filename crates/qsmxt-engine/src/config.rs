@@ -371,6 +371,9 @@ pub struct ChiSepMediConfig {
     /// the local field (unless a QSM is supplied): the χ-separation toolbox's call by default,
     /// the same as χ-sep iLSQR's.
     pub qsm_ilsqr: IlsqrConfig,
+    /// The R2* the CSF mask is extracted from: `arlo` (default) or `nnls` (the χ-separation
+    /// toolbox's `r2star_nnls`, as its script runs).
+    pub csf_r2star: ChiSepCsfR2star,
 }
 impl Default for ChiSepMediConfig {
     fn default() -> Self {
@@ -378,7 +381,7 @@ impl Default for ChiSepMediConfig {
         Self {
             lambda: p.lambda, lambda_csf: p.lambda_csf, dr_pos: p.dr_pos, dr_neg: p.dr_neg, pad: p.pad,
             tol: p.tol, max_iter: p.max_iter, cg_tol: p.cg_tol, cg_max_iter: p.cg_max_iter,
-            qsm_ilsqr: IlsqrConfig::from(&p.qsm_ilsqr),
+            qsm_ilsqr: IlsqrConfig::from(&p.qsm_ilsqr), csf_r2star: p.csf_r2star.into(),
         }
     }
 }
@@ -389,6 +392,7 @@ impl ChiSepMediConfig {
             lambda: self.lambda, lambda_csf: self.lambda_csf, dr_pos: self.dr_pos,
             dr_neg: self.dr_neg, pad: self.pad, tol: self.tol, max_iter: self.max_iter,
             cg_tol: self.cg_tol, cg_max_iter: self.cg_max_iter, qsm_ilsqr: self.qsm_ilsqr.params(),
+            csf_r2star: self.csf_r2star.into(),
             ..qsm_core::separation::ChiSepMediParams::default()
         }
     }

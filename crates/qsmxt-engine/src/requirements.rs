@@ -736,10 +736,15 @@ fn chisep_problem_in(f: &ScanFacts, config: &PipelineConfig, w: &Words) -> Optio
         SeparationAlgorithm::Decompose => magnitude(),
         // chi_sep_iLSQR takes the magnitude but never uses it.
         SeparationAlgorithm::ChiSepIlsqr => local_field().or_else(r2prime),
-        // Its noise map is made from every echo's magnitude, and its CSF mask from ARLO R2*.
+        // Its noise map is made from every echo's magnitude, and its CSF mask from R2* (ARLO or
+        // the toolbox's NNLS fit, separation.chi_sep_medi.csf_r2star).
         SeparationAlgorithm::ChiSepMedi => local_field().or_else(r2prime).or_else(magnitude)
             .or_else(|| echo_noise_map_problem(f, "χ-separation (MEDI)"))
-            .or_else(|| arlo_problem(f).map(|why| format!("needs a CSF mask from R2*, which {why}"))),
+            .or_else(|| match s.chi_sep_medi.csf_r2star {
+                crate::ChiSepCsfR2star::Arlo => arlo_problem(f),
+                m @ crate::ChiSepCsfR2star::Nnls => qsm_core::separation::ChiSepCsfR2star::from(m)
+                    .echo_times_problem(&f.echo_times).map(|why| format!("{why} (R2* by NNLS)")),
+            }.map(|why| format!("needs a CSF mask from R2*, which {why}"))),
         SeparationAlgorithm::HcChisep => r2prime().or_else(magnitude),
         SeparationAlgorithm::SusepNet | SeparationAlgorithm::ChiSepNet =>
             local_field().or_else(r2prime),

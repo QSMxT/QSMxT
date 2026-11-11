@@ -942,6 +942,50 @@ impl fmt::Display for ChiSepNetRoute {
         write!(f, "{}", match self { Self::Toolbox => "toolbox", Self::Native => "native" })
     }
 }
+/// The R2* χ-separation MEDI's CSF mask is extracted from (`separation.chi_sep_medi.csf_r2star`;
+/// qsm-core `ChiSepCsfR2star`).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ChiSepCsfR2star {
+    /// MEDI's ARLO.
+    #[default]
+    Arlo,
+    /// The χ-separation toolbox's `r2star_nnls`, which its script runs for echo times written as
+    /// a row (QSM.rs rule chi-sep-medi.csf-r2star-nnls).
+    Nnls,
+}
+impl ChiSepCsfR2star {
+    /// Every variant, in the order the CLI help and the TUI list them.
+    pub const ALL: [ChiSepCsfR2star; 2] = [Self::Arlo, Self::Nnls];
+
+    /// The name the CLI, the config file and the TUI use (qsm-core's `ChiSepCsfR2star::id`).
+    pub fn as_str(self) -> &'static str {
+        qsm_core::separation::ChiSepCsfR2star::from(self).id()
+    }
+
+    /// The method's name in log lines and the methods text.
+    pub fn label(self) -> &'static str {
+        match self { Self::Arlo => "ARLO", Self::Nnls => "NNLS" }
+    }
+}
+impl fmt::Display for ChiSepCsfR2star {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl From<ChiSepCsfR2star> for qsm_core::separation::ChiSepCsfR2star {
+    fn from(m: ChiSepCsfR2star) -> Self {
+        use qsm_core::separation::ChiSepCsfR2star as M;
+        match m { ChiSepCsfR2star::Arlo => M::Arlo, ChiSepCsfR2star::Nnls => M::Nnls }
+    }
+}
+impl From<qsm_core::separation::ChiSepCsfR2star> for ChiSepCsfR2star {
+    fn from(m: qsm_core::separation::ChiSepCsfR2star) -> Self {
+        use qsm_core::separation::ChiSepCsfR2star as M;
+        match m { M::Arlo => Self::Arlo, M::Nnls => Self::Nnls }
+    }
+}
+
 pub fn parse_chi_sepnet_route(s: &str) -> Option<ChiSepNetRoute> {
     match s.trim() {
         "toolbox" => Some(ChiSepNetRoute::Toolbox),

@@ -300,6 +300,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--chi-sep-medi-qsm-tol <CHI_SEP_MEDI_QSM_TOL>` | χ-sep MEDI: tolerance of that QSM's iLSQR. |
 | `--chi-sep-medi-qsm-pad-mm <MM>` | χ-sep MEDI: zero-padding of that QSM's iLSQR, in mm per side (default: 12) |
 | `--chi-sep-medi-qsm-precision <PRECISION>` | χ-sep MEDI: arithmetic of that QSM's two LSQR solves: double, or single as the original implementation (default: double) |
+| `--chi-sep-medi-csf-r2star <METHOD>` | χ-sep MEDI: the R2\* its CSF mask is extracted from: arlo (MEDI's ARLO; the default) or nnls (the χ-separation toolbox's r2star_nnls, which its script runs) |
 | `--wavesep-dr-pos <WAVESEP_DR_POS>` | WaveSep paramagnetic relaxivity (Hz/ppm) |
 | `--wavesep-dr-neg <WAVESEP_DR_NEG>` | WaveSep diamagnetic relaxivity (Hz/ppm) |
 | `--wavesep-alpha <WAVESEP_ALPHA>` | WaveSep proximal-gradient step size. |
@@ -785,6 +786,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--chi-sep-medi-qsm-tol <CHI_SEP_MEDI_QSM_TOL>` | χ-sep MEDI: tolerance of that QSM's iLSQR. |
 | `--chi-sep-medi-qsm-pad-mm <MM>` | χ-sep MEDI: zero-padding of that QSM's iLSQR, in mm per side (default: 12) |
 | `--chi-sep-medi-qsm-precision <PRECISION>` | χ-sep MEDI: arithmetic of that QSM's two LSQR solves: double, or single as the original implementation (default: double) |
+| `--chi-sep-medi-csf-r2star <METHOD>` | χ-sep MEDI: the R2\* its CSF mask is extracted from: arlo (MEDI's ARLO; the default) or nnls (the χ-separation toolbox's r2star_nnls, which its script runs) |
 | `--wavesep-dr-pos <WAVESEP_DR_POS>` | WaveSep paramagnetic relaxivity (Hz/ppm) |
 | `--wavesep-dr-neg <WAVESEP_DR_NEG>` | WaveSep diamagnetic relaxivity (Hz/ppm) |
 | `--wavesep-alpha <WAVESEP_ALPHA>` | WaveSep proximal-gradient step size. |
@@ -1204,6 +1206,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--chi-sep-medi-qsm-tol <CHI_SEP_MEDI_QSM_TOL>` | χ-sep MEDI: tolerance of that QSM's iLSQR. |
 | `--chi-sep-medi-qsm-pad-mm <MM>` | χ-sep MEDI: zero-padding of that QSM's iLSQR, in mm per side (default: 12) |
 | `--chi-sep-medi-qsm-precision <PRECISION>` | χ-sep MEDI: arithmetic of that QSM's two LSQR solves: double, or single as the original implementation (default: double) |
+| `--chi-sep-medi-csf-r2star <METHOD>` | χ-sep MEDI: the R2\* its CSF mask is extracted from: arlo (MEDI's ARLO; the default) or nnls (the χ-separation toolbox's r2star_nnls, which its script runs) |
 | `--wavesep-dr-pos <WAVESEP_DR_POS>` | WaveSep paramagnetic relaxivity (Hz/ppm) |
 | `--wavesep-dr-neg <WAVESEP_DR_NEG>` | WaveSep diamagnetic relaxivity (Hz/ppm) |
 | `--wavesep-alpha <WAVESEP_ALPHA>` | WaveSep proximal-gradient step size. |
@@ -3141,7 +3144,8 @@ qsmxt separate chi-sep-medi [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT
 | `--r2prime <R2PRIME>` | R2' map NIfTI in Hz. Required. |
 | `--magnitude <MAGNITUDE>` | Multi-echo magnitude: one 4D file or one 3D file per echo (space-separated) Required. |
 | `--echo-times <ECHO_TIMES>` | GRE echo times in seconds (space- or comma-separated) Required. |
-| `--csf-mask <FILE\|none>` | CSF mask NIfTI for the CSF-uniformity term, or `none` for no CSF term (the toolbox's GUI without a CSF mask) (default: the CSF found from ARLO R2\* of the echoes, as the toolbox's script does) |
+| `--csf-mask <FILE\|none>` | CSF mask NIfTI for the CSF-uniformity term, or `none` for no CSF term (the toolbox's GUI without a CSF mask) (default: the CSF found from R2\* of the echoes, as the toolbox's script does; see --csf-r2star) |
+| `--csf-r2star <METHOD>` | The R2\* the CSF mask is found from when no --csf-mask is given: arlo (MEDI's ARLO; the default) or nnls (the χ-separation toolbox's r2star_nnls, which its script runs) |
 | `--lambda <LAMBDA>` | Weight of the data terms against the L1 terms (default: 1) |
 | `--lambda-csf <LAMBDA_CSF>` | Weight of the CSF-uniformity term (default: 1) |
 | `--dr-pos <DR_POS>` | Paramagnetic relaxometric constant (Hz/ppm) (default: 137 × B0 / 2.9 T) |

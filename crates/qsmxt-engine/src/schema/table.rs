@@ -1092,6 +1092,12 @@ pub(super) fn table() -> Vec<Def> {
         ])).flag("--chi-sep-medi-qsm-precision").parent("separation.algorithm")
         .when(|x| x.sep("chi-sep-medi") && x.c.separation.custom_qsm_tool.is_none()).context("χ-separation (MEDI)")
         .gui("Arithmetic of the two least-squares solves of the iLSQR that reconstructs the QSM χ-separation starts from"),
+        d("separation.chi_sep_medi.csf_r2star", Separation, "CSF R2*", "", Enum(vec![
+            o("arlo", "arlo", "ARLO", "MEDI's ARLO (default)"),
+            o("nnls", "nnls", "NNLS", "The χ-separation toolbox's NNLS fit (r2star_nnls), which its script runs"),
+        ])).flag("--chi-sep-medi-csf-r2star").parent("separation.algorithm")
+        .when(|x| x.sep("chi-sep-medi")).context("χ-separation (MEDI)").full("CSF mask's R2*")
+        .gui("The R2* fit the CSF mask is extracted from"),
         d("separation.wavesep.dr_pos", Separation, "Dr+ (Hz/ppm)", "Paramagnetic relaxivity", Float).units("Hz/ppm").flag("--wavesep-dr-pos").parent("separation.algorithm")
         .when(|x| x.sep("wavesep")).full("Paramagnetic constant (Dr+)"),
         d("separation.wavesep.dr_neg", Separation, "Dr- (Hz/ppm)", "Diamagnetic relaxivity", Float).units("Hz/ppm").flag("--wavesep-dr-neg").parent("separation.algorithm")

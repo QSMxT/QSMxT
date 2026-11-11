@@ -2129,9 +2129,10 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         };
         let (n_std, mask_csf) = if chi_sep_medi {
             let (n_std, csf) = sep::chi_sep_medi_inputs(
-                &echo_major, &self.meta.echo_times, &support, self.meta.dims, self.meta.voxel_size)?;
-            self.log(Level::Info, &format!("Chi-separation (MEDI): CSF mask of {} voxels from ARLO R2*",
-                stages::r2::count_set(&csf)));
+                &echo_major, &self.meta.echo_times, &support, self.meta.dims, self.meta.voxel_size,
+                self.config.separation.chi_sep_medi.csf_r2star)?;
+            self.log(Level::Info, &format!("Chi-separation (MEDI): CSF mask of {} voxels from {} R2*",
+                stages::r2::count_set(&csf), self.config.separation.chi_sep_medi.csf_r2star.label()));
             (Some(n_std), Some(csf))
         } else {
             (None, None)
