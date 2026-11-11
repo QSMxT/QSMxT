@@ -11026,6 +11026,9 @@ mod tests {
         assert!(!app.form.swi_filtered_phase && !app.dicom_map_made(phase), "off by default");
         app.form.swi_filtered_phase = true;
         assert!(app.dicom_map_made(phase));
+        app.form.export_dicom = true;
+        let export: Vec<&str> = app.page_rows(Page::Export).iter().filter_map(row_field).collect();
+        assert!(export.contains(&"dicom_out_swi_phase"), "listed in Maps to export: {export:?}");
         app.form.dicom_unticked = vec!["desc-swi_phase".into()];
         assert!(!app.dicom_outputs().unwrap().iter().any(|m| m == "desc-swi_phase"));
         // Without SWI there is no phase, and the row is hidden.
