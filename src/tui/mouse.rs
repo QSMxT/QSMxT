@@ -390,12 +390,17 @@ mod tests {
         click(&mut app, "▶ tkd");
         assert!(app.algo_modal.is_none(), "the second chooses");
         assert_eq!(app.field_select("qsm_algorithm"), crate::tui::app::QSM_PICKER_OPTIONS.iter().position(|o| *o == "tkd").unwrap());
-        // HEIDI with TKD opens its recommendation pop-up.
+        // HEIDI with TKD opens the cone threshold it requires, then HEIDI's reference pop-up
+        // (LSQR as the authors' seed).
         click(&mut app, "HEIDI");
         app.check_recommendations();
-        assert!(app.rec_modal.is_some(), "ticking HEIDI on TKD recommends LSQR");
+        assert!(app.rec_modal.is_some(), "ticking HEIDI on TKD requires the cone threshold");
+        click(&mut app, "Apply: 0.1");
+        assert!(app.rec_modal.is_none(), "the button applies it");
+        app.check_recommendations();
+        assert!(app.refs.modal.is_some(), "then LSQR as the authors' seed");
         click(&mut app, " Keep mine ");
-        assert!(app.rec_modal.is_none(), "the button closes it");
+        assert!(app.refs.modal.is_none(), "the button closes it");
     }
 
     /// A click outside an open pop-up closes it, as Esc does, and does nothing else: the tab

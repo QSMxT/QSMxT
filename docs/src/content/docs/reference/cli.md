@@ -2607,7 +2607,7 @@ qsmxt invert heidi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <F
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
 | `--magnitude <MAGNITUDE>` | Magnitude NIfTI, the row weight of the LSQR seed as the HEIDI package's (not needed with --seed): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. |
-| `--seed <SEED>` | A χ map (ppm) another inversion made of this field, to fill the cone of instead of running LSQR (`--lsqr-*` and `--magnitude` then do nothing). HEIDI suits a seed whose well-conditioned k-space is near data-consistent (TKD and TSVD with a threshold no larger than the cone threshold, small-λ Tikhonov, NDI, RTS); a regularised seed keeps its regularisation outside the cone. |
+| `--seed <SEED>` | A χ map (ppm) another inversion made of this field, to fill the cone of instead of running LSQR (`--lsqr-*` and `--magnitude` then do nothing). HEIDI suits a seed with little or no smoothing (TKD and TSVD with a threshold no larger than the cone threshold, small-λ Tikhonov, NDI, RTS); a method that smooths its result also changes the parts of the data HEIDI keeps as they are, and HEIDI cannot undo that. |
 | `--lsqr-residual-weighting <LSQR_RESIDUAL_WEIGHTING>` | LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly. |
 | `--no-lsqr-global-offset` | Do not fit a global field offset alongside χ. |
 | `--lsqr-tol <LSQR_TOL>` | LSQR convergence tolerance. |

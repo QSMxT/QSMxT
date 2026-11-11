@@ -761,13 +761,19 @@ fn reference_triggers_are_the_method_settings() {
 }
 
 /// Ticking HEIDI (`inversion.heidi.enabled`, as qsmbly and the TUI set it) after any other
-/// inversion creates an actionable finding on the inversion that recommends LSQR, in QSMxT's
-/// terms and in the settings view; the config is not changed, and applying it chooses LSQR
-/// with HEIDI still on.
+/// inversion creates a finding on the inversion that offers LSQR, in QSMxT's terms and in the
+/// settings view: for a minimally regularised method as the authors' setting (information, not
+/// actionable), for a regularised one as a suggestion (actionable, not preselected). The config is
+/// not changed, and applying it chooses LSQR with HEIDI still on.
 #[test]
 fn ticking_heidi_offers_lsqr_and_changes_nothing() {
     let facts = known();
-    for alg in ["rts", "tkd", "tikhonov", "ndi", "medi", "tv", "ilsqr", "star"] {
+    for (alg, rule, strength) in [
+        ("rts", "heidi.seed-lsqr", Strength::Reference), ("tkd", "heidi.seed-lsqr", Strength::Reference),
+        ("tikhonov", "heidi.seed-lsqr", Strength::Reference), ("ndi", "heidi.seed-lsqr", Strength::Reference),
+        ("medi", "heidi.seed-regularised", Strength::Suggested), ("tv", "heidi.seed-regularised", Strength::Suggested),
+        ("ilsqr", "heidi.seed-regularised", Strength::Suggested), ("star", "heidi.seed-regularised", Strength::Suggested),
+    ] {
         let mut c = PipelineConfig::default();
         schema::set(&mut c, "inversion.algorithm", json!(alg)).unwrap();
         schema::set(&mut c, "inversion.tkd.threshold", json!(0.1)).unwrap();
@@ -775,13 +781,14 @@ fn ticking_heidi_offers_lsqr_and_changes_nothing() {
         assert!(!before.iter().any(|r| r.rule.starts_with("heidi.")), "{alg}: {before:?}");
         schema::set(&mut c, "inversion.heidi.enabled", json!(true)).unwrap();
         let after = recommendations(&c, &facts);
-        let r = after.iter().find(|r| r.setting == "inversion.algorithm" && r.rule.starts_with("heidi.") && r.actionable())
-            .unwrap_or_else(|| panic!("{alg}: no LSQR offered: {after:?}"));
-        assert_eq!(r.recommended.value, json!("lsqr"), "{alg}");
-        assert!(matches!(r.strength, Strength::Recommended | Strength::Discouraged), "{alg}: {:?}", r.strength);
-        if alg != "medi" && alg != "tv" && alg != "ilsqr" && alg != "star" {
-            assert_eq!(r.strength, Strength::Recommended, "{alg}");
-        }
+        let found: Vec<_> = after.iter().filter(|r| r.setting == "inversion.algorithm" && r.rule.starts_with("heidi.")).collect();
+        assert_eq!(found.iter().map(|r| r.rule.as_str()).collect::<Vec<_>>(), [rule], "{alg}");
+        let r = found[0];
+        assert_eq!((r.recommended.value.clone(), r.strength), (json!("lsqr"), strength), "{alg}");
+        assert!(r.departs, "{alg}");
+        assert_eq!(r.actionable(), strength == Strength::Suggested, "{alg}: actionable");
+        assert_eq!(r.authors_setting(), strength == Strength::Reference, "{alg}: the authors' setting");
+        assert!(!r.strength.preselected(), "{alg}: never preselected");
         assert_eq!(schema::get(&c, "inversion.algorithm"), Some(json!(alg)), "{alg}: changed silently");
         let view = schema::settings_view(&c, &view_facts(&facts));
         assert!(view.iter().any(|v| v.path == "inversion.algorithm" && v.recommendations.iter().any(|x| x.rule == r.rule)), "{alg}");
@@ -858,7 +865,8 @@ fn notes_name_the_rule_they_come_from() {
     c.inversion.heidi.enabled = true;
     let found = recommendations(&c, &Facts::default());
     let r = found.iter().find(|r| r.rule == "heidi.seed-regularised").unwrap();
-    assert_eq!(r.note(), format!("QSM inversion used MEDI, which is discouraged with HEIDI streaking reduction: {}", r.reason));
+    assert_eq!(r.strength, Strength::Suggested);
+    assert_eq!(r.note(), "QSM inversion used MEDI; LSQR is recommended with HEIDI streaking reduction");
 
     let mut c = PipelineConfig::default();
     c.field_mapping.b0_estimation = crate::enums::B0Estimation::ComplexFit;

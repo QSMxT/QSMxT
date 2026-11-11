@@ -1120,12 +1120,15 @@ mod tests {
         assert!(app.rec_modal.is_some());
     }
 
-    /// Ticking HEIDI after any other inversion opens the pop-up recommending LSQR, Apply
-    /// preselected; nothing changes until it is applied. After LSQR nothing opens.
+    /// Ticking HEIDI after a minimally regularised inversion (RTS, TKD, Tikhonov) opens HEIDI's
+    /// reference pipeline pop-up: LSQR as the authors' seed, Keep mine preselected, so Enter
+    /// changes nothing and Apply the authors' settings chooses LSQR. After a regularised one
+    /// (MEDI) it opens the suggestion of LSQR, not preselected (Keep mine), and Apply chooses
+    /// LSQR. HEIDI stays ticked either way. After LSQR no seed is offered.
     #[test]
-    fn ticking_heidi_recommends_lsqr() {
+    fn ticking_heidi_offers_lsqr() {
         let lsqr = QSM_ALGO_OPTIONS.iter().position(|o| *o == "lsqr").unwrap();
-        for (alg, rule) in [("rts", "heidi.seed-rts"), ("tikhonov", "heidi.seed-lsqr"), ("medi", "heidi.seed-regularised")] {
+        let ticked = |alg: &str| {
             let mut app = app();
             select(&mut app, "qsm_algorithm", alg, &QSM_PICKER_OPTIONS);
             // The method's own reference pipeline pop-up, if any: closed, nothing changes.
@@ -1135,17 +1138,58 @@ mod tests {
             let chosen = app.pipeline_state.qsm_algorithm;
             app.toggle_field("heidi_enabled");
             app.check_recommendations();
-            let modal = app.rec_modal.as_ref().unwrap_or_else(|| panic!("{alg}: ticking HEIDI opened no pop-up"));
-            assert_eq!(modal.findings[0].rule, rule, "{alg}");
-            assert_eq!(modal.findings[0].recommended.value, serde_json::json!("lsqr"), "{alg}");
-            assert_eq!(modal.cursor, Some(0), "{alg}: Apply is preselected");
-            assert_eq!(app.pipeline_state.qsm_algorithm, chosen, "{alg}: nothing changes before Apply");
-            assert!(app.pipeline_state.heidi_enabled);
+            if alg == "tkd" {
+                // TKD's threshold at HEIDI's cone first (required), then the seed.
+                let modal = app.rec_modal.as_ref().expect("tkd: the cone threshold");
+                assert_eq!(modal.findings[0].rule, "heidi.tkd-cone");
+                app.handle_rec_modal_key(KeyEvent::from(KeyCode::Enter));
+                app.check_recommendations();
+            }
+            (app, chosen)
+        };
+        for alg in ["rts", "tkd", "tikhonov"] {
+            for apply in [false, true] {
+                let (mut app, chosen) = ticked(alg);
+                assert!(app.rec_modal.is_none(), "{alg}: {:?}", app.rec_modal.as_ref().map(|m| &m.findings[0].rule));
+                let modal = app.refs.modal.as_ref().unwrap_or_else(|| panic!("{alg}: ticking HEIDI opened no pop-up"));
+                let rules: Vec<_> = modal.items.iter().map(|i| (i.finding.rule.as_str(), i.finding.strength)).collect();
+                assert_eq!(rules, [("heidi.seed-lsqr", Strength::Reference)], "{alg}");
+                assert_eq!(modal.items[0].finding.recommended.value, serde_json::json!("lsqr"), "{alg}");
+                assert_eq!(modal.buttons, [RefButton::ApplyAll, RefButton::ChoosePerSetting, RefButton::KeepMine], "{alg}");
+                assert_eq!(modal.cursor.map(|c| modal.buttons[c]), Some(RefButton::KeepMine), "{alg}: Keep mine is preselected");
+                if alg == "tkd" && !apply {
+                    let text = screen(&mut app, "TKD, then HEIDI ticked");
+                    assert!(text.contains("Original authors' settings") && text.contains("LSQR") && text.contains("Keep mine"), "{text}");
+                }
+                if apply {
+                    app.refs.modal.as_mut().unwrap().cursor = Some(0);
+                }
+                app.handle_ref_modal_key(KeyEvent::from(KeyCode::Enter));
+                let want = if apply { lsqr } else { chosen };
+                assert_eq!(app.pipeline_state.qsm_algorithm, want, "{alg}: apply {apply}");
+                assert!(app.pipeline_state.heidi_enabled, "{alg}: HEIDI stays ticked");
+            }
+        }
+        for apply in [false, true] {
+            let (mut app, chosen) = ticked("medi");
+            assert!(app.refs.modal.is_none());
+            let modal = app.rec_modal.as_ref().expect("medi: ticking HEIDI opened no pop-up");
+            let rules: Vec<_> = modal.findings.iter().map(|f| (f.rule.as_str(), f.strength)).collect();
+            assert_eq!(rules, [("heidi.seed-regularised", Strength::Suggested)]);
+            assert_eq!(modal.findings[0].recommended.value, serde_json::json!("lsqr"));
+            assert_eq!(modal.cursor.map(|c| &modal.choices[c]), Some(&RecChoice::Keep), "a suggestion is not preselected");
+            if !apply {
+                let text = screen(&mut app, "MEDI, then HEIDI ticked");
+                assert!(text.contains("LSQR") && text.contains("Keep mine"), "{text}");
+            }
+            if apply {
+                app.rec_modal.as_mut().unwrap().cursor = Some(0);
+            }
             app.handle_rec_modal_key(KeyEvent::from(KeyCode::Enter));
-            assert_eq!(app.pipeline_state.qsm_algorithm, lsqr, "{alg}: Apply chooses LSQR");
-            assert!(app.pipeline_state.heidi_enabled, "{alg}: HEIDI stays ticked");
+            assert_eq!(app.pipeline_state.qsm_algorithm, if apply { lsqr } else { chosen }, "medi: apply {apply}");
+            assert!(app.pipeline_state.heidi_enabled, "medi: HEIDI stays ticked");
             let config = super::super::command::config_from_app(&app).unwrap();
-            assert_eq!((config.inversion.algorithm, config.inversion.heidi.enabled), (crate::pipeline::config::QsmAlgorithm::Lsqr, true));
+            assert!(config.inversion.heidi.enabled);
         }
         // LSQR+HEIDI is the reference: nothing to offer.
         let mut app = app();
@@ -1156,6 +1200,7 @@ mod tests {
         app.toggle_field("heidi_enabled");
         app.check_recommendations();
         assert!(app.rec_modal.is_none(), "{:?}", app.rec_modal.as_ref().map(|m| &m.findings[0].rule));
+        assert!(!app.refs.modal.as_ref().is_some_and(|m| m.items.iter().any(|i| i.finding.rule.starts_with("heidi.seed"))));
     }
 
     /// Choosing DECOMPOSE offers a per-echo QSM (its authors' input); applying it switches the
