@@ -3806,10 +3806,10 @@ pub struct InvertHeidiArgs {
     #[arg(long, num_args = 1.., required_unless_present = "seed")]
     pub magnitude: Vec<PathBuf>,
     /// A χ map (ppm) another inversion made of this field, to fill the cone of instead of
-    /// running LSQR (`--lsqr-*` and `--magnitude` then do nothing). HEIDI suits a seed whose
-    /// well-conditioned k-space is near data-consistent (TKD and TSVD with a threshold no larger
-    /// than the cone threshold, small-λ Tikhonov, NDI, RTS); a regularised seed keeps its
-    /// regularisation outside the cone
+    /// running LSQR (`--lsqr-*` and `--magnitude` then do nothing). HEIDI suits a seed with little
+    /// or no smoothing (TKD and TSVD with a threshold no larger than the cone threshold, small-λ
+    /// Tikhonov, NDI, RTS); a method that smooths its result also changes the parts of the data
+    /// HEIDI keeps as they are, and HEIDI cannot undo that
     #[arg(long)]
     pub seed: Option<PathBuf>,
     #[command(flatten)]

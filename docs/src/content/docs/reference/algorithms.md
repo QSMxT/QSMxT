@@ -797,14 +797,14 @@ under `[inversion]` and `enabled = true` under `[inversion.heidi]` (a file that 
 call PostProcCone, and SEPIA's "Streaking reduction by HEIDI" (`qsmxt invert heidi --seed` runs
 it on a map you already have).
 
-HEIDI keeps what the inversion did outside the cone, so it suits a map whose well-conditioned
-k-space is close to the data:
+HEIDI keeps what the inversion did outside the cone, so it suits a method with little or no
+smoothing:
 
 | Inversion | HEIDI after it |
 | --- | --- |
 | `lsqr` | HEIDI as published |
-| `tkd`, `tsvd`, `tikhonov` (small λ), `ndi`, `rts` | suitable; QSMxT suggests `lsqr` (for RTS only as a note: RTS already fills the cone) |
-| `medi`, `tv`, `nltv`, the FANSI family, `ilsqr`, `star`, `amp-pe`, the deep-learning methods | discouraged: their regularisation outside the cone is kept |
+| `tkd`, `tsvd`, `tikhonov` (small λ), `ndi`, `rts` | suitable; QSMxT shows `lsqr` as the authors' setting, not preselected |
+| `medi`, `tv`, `nltv`, the FANSI family, `ilsqr`, `star`, `amp-pe`, the deep-learning methods | QSMxT suggests `lsqr` (not preselected): these methods smooth their result, which also changes the parts of the data that HEIDI keeps as they are, and HEIDI cannot undo that. HEIDI's author recommends a method with little or no smoothing, such as LSQR or TKD |
 | `tfi`, `tgv`, `qsmart`, `autoqsm`, `nextqsm`, `iqsm`, `iqsm-plus` | not offered: no local field |
 
 The suggestions come up as recommendations (the TUI's pop-up, the log, `--dry`); QSMxT never
