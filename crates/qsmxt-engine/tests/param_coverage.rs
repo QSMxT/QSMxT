@@ -64,8 +64,10 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     cover!(q::inversion::TvParams => c::TvConfig);
     cover!(q::inversion::TkdParams => c::TkdConfig);
     cover!(q::inversion::TikhonovParams => c::TikhonovConfig);
-    // b0/echo_times come from scan metadata (the dispatcher fills them).
-    cover!(q::inversion::NltvParams => c::NltvConfig, ignore: ["b0", "echo_times"]);
+    // b0/echo_times come from scan metadata (the dispatcher fills them). `newton_guard` (NLTV and
+    // the FANSI family, QSM.rs#461): keeps the Newton step in the root's bracket; QSM.rs's
+    // default (on) is used and not offered as a setting.
+    cover!(q::inversion::NltvParams => c::NltvConfig, ignore: ["b0", "echo_times", "newton_guard"]);
     // b0/echo_times come from scan metadata. `msmv` (an Option<MsmvParams>) is flattened into
     // msmv + msmv_* (guarded below).
     cover!(q::inversion::MediParams => c::MediConfig, ignore: ["b0", "echo_times"]);
@@ -80,7 +82,7 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     // b0/echo_times come from scan metadata; is_tgv is set by the dispatcher from the algorithm.
     // `kernel` (FANSI family, HD-QSM): FANSI's discrete dipole kernel, as the originals use; the
     // continuous kernel is a qsm-core option QSMxT does not offer.
-    cover!(q::inversion::FansiParams => c::FansiConfig, ignore: ["b0", "echo_times", "is_tgv", "kernel"]);
+    cover!(q::inversion::FansiParams => c::FansiConfig, ignore: ["b0", "echo_times", "is_tgv", "kernel", "newton_guard"]);
     cover!(q::inversion::L1QsmParams => c::L1qsmConfig, ignore: ["b0", "echo_times", "kernel"]);
     cover!(q::inversion::WhQsmParams => c::WhqsmConfig, ignore: ["b0", "echo_times", "kernel"]);
     cover!(q::inversion::HdQsmParams => c::HdqsmConfig, ignore: ["kernel"]);
