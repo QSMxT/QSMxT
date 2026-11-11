@@ -63,7 +63,14 @@ pub fn parse_mask_combine(s: &str) -> Option<MaskCombine> {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
-pub enum MaskThresholdMethod { Otsu, Fixed, Percentile }
+pub enum MaskThresholdMethod {
+    Otsu,
+    Fixed,
+    Percentile,
+    /// STI Suite QSM_GUI's thresholding: the level its thresh_tool starts at (graythresh on the
+    /// middle slice, scaled to that slice's maximum; qsm-core `utils::sti_gui_threshold`).
+    StiGui,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "op", rename_all = "kebab-case")]
@@ -87,6 +94,12 @@ pub enum MaskOp {
     /// of its 3×3×3 neighbourhood (itself included) are, voxels beyond the volume counting as out.
     Majority,
     FillHoles { max_size: usize },
+    /// Keep only the largest 26-connected component (MATLAB bwlabeln's default; STI Suite
+    /// QSM_GUI's mask).
+    LargestComponent,
+    /// Fill every hole whatever its size, as MATLAB's `imfill(mask, 'holes')` (STI Suite
+    /// QSM_GUI's mask); `fill-holes` caps the size.
+    Imfill,
     GaussianSmooth { sigma_mm: f64 },
     /// Signal-gated erosion (QSM-CI): peel only low-signal boundary voxels (sinus / skull-base
     /// dropout), after dividing out the receive-coil bias, down to a depth cap. Needs magnitude.
@@ -273,6 +286,7 @@ impl fmt::Display for MaskOp {
             Self::Threshold { method: MaskThresholdMethod::Otsu, .. } => write!(f, "threshold:otsu"),
             Self::Threshold { method: MaskThresholdMethod::Fixed, value } => write!(f, "threshold:fixed:{:.4}", value.unwrap_or(0.5)),
             Self::Threshold { method: MaskThresholdMethod::Percentile, value } => write!(f, "threshold:percentile:{:.1}", value.unwrap_or(75.0)),
+            Self::Threshold { method: MaskThresholdMethod::StiGui, .. } => write!(f, "threshold:sti-gui"),
             Self::Bet { fractional_intensity, voxel_scale } =>
                 write!(f, "bet:{:.2}:scale={}", fractional_intensity, voxel_scale),
             Self::Erode { iterations } => write!(f, "erode:{}", iterations),
@@ -280,6 +294,8 @@ impl fmt::Display for MaskOp {
             Self::Close { radius } => write!(f, "close:{}", radius),
             Self::MinIntensity { value } => write!(f, "min-intensity:{}", value),
             Self::Majority => write!(f, "majority"),
+            Self::LargestComponent => write!(f, "largest-component"),
+            Self::Imfill => write!(f, "imfill"),
             Self::FillHoles { max_size } => write!(f, "fill-holes:{}", max_size),
             Self::GaussianSmooth { sigma_mm } => write!(f, "gaussian:{:.1}", sigma_mm),
             Self::SignalErode { threshold, depth_cap, global_erosions, bias_sigma, min_component } =>
@@ -521,6 +537,10 @@ pub fn parse_mask_op(s: &str) -> crate::Result<MaskOp> {
             }
             Some("fixed") => Ok(MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(arg(&parts, 2, 2, 0.5)?) }),
             Some("percentile") => Ok(MaskOp::Threshold { method: MaskThresholdMethod::Percentile, value: Some(arg(&parts, 2, 2, 75.0)?) }),
+            Some("sti-gui") => {
+                arg::<f64>(&parts, 2, 1, 0.0)?;
+                Ok(MaskOp::Threshold { method: MaskThresholdMethod::StiGui, value: None })
+            }
             Some(other) => Err(ConfigError::Parse(format!("Invalid threshold method: '{}'", other))),
         },
         // `bet[:<f>][:scale=<s>]` — the fractional intensity stays positional (every preset and
@@ -565,6 +585,12 @@ pub fn parse_mask_op(s: &str) -> crate::Result<MaskOp> {
                 return Err(ConfigError::Parse(format!("majority: takes no arguments, got '{}'", parts[1..].join(":"))));
             }
             Ok(MaskOp::Majority)
+        }
+        "largest-component" | "imfill" => {
+            if parts.len() > 1 {
+                return Err(ConfigError::Parse(format!("{}: takes no arguments, got '{}'", parts[0], parts[1..].join(":"))));
+            }
+            Ok(if parts[0] == "imfill" { MaskOp::Imfill } else { MaskOp::LargestComponent })
         }
         // Bare `fill-holes` is the automatic cap (5% of the volume) — what every preset spells as
         // `fill-holes:0` and what the TUI adds — rather than a 1000-voxel cap nothing else used.
@@ -790,6 +816,21 @@ mod tests {
             assert_eq!(serde_json::from_value::<MaskOp>(json).unwrap(), op);
         }
         assert_eq!(serde_json::to_value(MaskOp::Majority).unwrap(), serde_json::json!({ "op": "majority" }));
+    }
+
+    /// STI Suite QSM_GUI's recipe: its threshold, the largest component and imfill, parsed,
+    /// written back, refused with arguments, and serialised by name.
+    #[test]
+    fn sti_gui_mask_ops() {
+        let sti = MaskOp::Threshold { method: MaskThresholdMethod::StiGui, value: None };
+        for (text, op) in [("threshold:sti-gui", sti.clone()), ("largest-component", MaskOp::LargestComponent),
+                           ("imfill", MaskOp::Imfill)] {
+            assert_eq!(parse_mask_op(text).unwrap(), op);
+            assert_eq!(format!("{op}"), text);
+        }
+        assert!(parse_mask_op("imfill:3").is_err() && parse_mask_op("largest-component:6").is_err());
+        assert_eq!(serde_json::to_value(&sti).unwrap(), serde_json::json!({ "op": "threshold", "method": "sti-gui", "value": null }));
+        assert_eq!(serde_json::to_value(MaskOp::Imfill).unwrap(), serde_json::json!({ "op": "imfill" }));
         assert_eq!(serde_json::to_value(MaskOp::MinIntensity { value: 100.0 }).unwrap(),
                    serde_json::json!({ "op": "min-intensity", "value": 100.0 }));
         for bad in ["min-intensity", "min-intensity:", "min-intensity:x", "min-intensity:0", "min-intensity:-5",

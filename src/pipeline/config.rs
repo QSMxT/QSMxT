@@ -389,6 +389,8 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
 
         // ── Background removal ──
         if let Some(n) = args.bf_erode_voxels { config.bg_removal.erode_voxels = n; }
+        if args.bf_polish_mask { config.bg_removal.polish_mask = true; }
+        if args.no_bf_polish_mask { config.bg_removal.polish_mask = false; }
         if let Some(a) = args.bf_algorithm {
             config.bg_removal.algorithm = match a {
                 cli::BfAlgorithmArg::Vsharp => BfAlgorithm::Vsharp,
@@ -1252,6 +1254,10 @@ mod tests {
         assert_eq!((c.inversion.tv.rho, c.inversion.nltv.rho, c.inversion.hdqsm.mu1_l2), (None, None, None));
         assert_eq!(config_from_cli(&["qsmxt", "run", "<bids>", "--bf-erode-voxels", "3"]).bg_removal.erode_voxels, 3);
         assert_eq!(config_from_cli(&["qsmxt", "run", "<bids>"]).bg_removal.erode_voxels, 0);
+        assert!(config_from_cli(&["qsmxt", "run", "<bids>", "--bf-polish-mask"]).bg_removal.polish_mask);
+        assert!(!config_from_cli(&["qsmxt", "run", "<bids>"]).bg_removal.polish_mask);
+        let polished = config_from_cli(&["qsmxt", "run", "<bids>", "--bf-polish-mask"]);
+        assert!(qsmxt_engine::generate_command(&polished).contains("--bf-polish-mask"));
         let c = config_from_cli(&["qsmxt", "run", "<bids>", "--harperella-rim", "sti", "--iharperella-rim", "whole",
             "--ndi-weight-norm", "mask-p999", "--whqsm-weight", "flat-in-mask"]);
         assert_eq!((c.bg_removal.harperella.rim, c.bg_removal.iharperella.rim),

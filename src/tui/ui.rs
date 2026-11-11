@@ -2036,6 +2036,7 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                             crate::pipeline::config::MaskThresholdMethod::Otsu => "otsu",
                             crate::pipeline::config::MaskThresholdMethod::Fixed => "fixed",
                             crate::pipeline::config::MaskThresholdMethod::Percentile => "percentile",
+                            crate::pipeline::config::MaskThresholdMethod::StiGui => "sti-gui",
                         };
                         ("Method:", method_name.to_string(), format!("{} — Enter: choose method", super::app::mask_step_of(gen).help), Kind::Choice)
                     }

@@ -274,6 +274,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         sdf: qsm_core::bgremove::SdfParams::default(),
         tile: cfg.dl_tile(),
         erode_voxels: cfg.bg_removal.erode_voxels,
+        polish_mask: cfg.bg_removal.polish_mask,
     };
 
     let inversion = PInversion {
@@ -661,6 +662,7 @@ fn convert_mask_op(op: &crate::masking::MaskOp, bet: &crate::config::BetConfig) 
                 crate::masking::MaskThresholdMethod::Otsu => PMaskThresholdMethod::Otsu,
                 crate::masking::MaskThresholdMethod::Fixed => PMaskThresholdMethod::Fixed,
                 crate::masking::MaskThresholdMethod::Percentile => PMaskThresholdMethod::Percentile,
+                crate::masking::MaskThresholdMethod::StiGui => PMaskThresholdMethod::StiGui,
             },
             value: *value,
         },
@@ -679,6 +681,8 @@ fn convert_mask_op(op: &crate::masking::MaskOp, bet: &crate::config::BetConfig) 
         crate::masking::MaskOp::Close { radius } => PMaskOp::Close { radius: *radius },
         crate::masking::MaskOp::MinIntensity { value } => PMaskOp::MinIntensity { value: *value },
         crate::masking::MaskOp::Majority => PMaskOp::Majority,
+        crate::masking::MaskOp::LargestComponent => PMaskOp::LargestComponent,
+        crate::masking::MaskOp::Imfill => PMaskOp::Imfill,
         crate::masking::MaskOp::FillHoles { max_size } => PMaskOp::FillHoles { max_size: *max_size },
         crate::masking::MaskOp::GaussianSmooth { sigma_mm } => PMaskOp::GaussianSmooth { sigma_mm: *sigma_mm },
         crate::masking::MaskOp::SignalErode { threshold, depth_cap, global_erosions, bias_sigma, min_component } =>

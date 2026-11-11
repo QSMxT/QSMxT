@@ -48,7 +48,9 @@ example, outside its own signal mask). Such a phase looks flat and reliable, so
 every recipe's mask leaves those voxels out, and the log and the methods say so.
 `qsmxt mask preset --phase` does the same for a standalone mask.
 
-- **Generators:** `threshold[:otsu|fixed:<v>|percentile:<p>]`, `bet[:<f>][:scale=<s>]`,
+- **Generators:** `threshold[:otsu|fixed:<v>|percentile:<p>|sti-gui]` (`sti-gui` is
+  STI Suite QSM_GUI's thresholding: the level its `thresh_tool` starts at, Otsu's
+  threshold of the middle slice scaled to that slice's maximum), `bet[:<f>][:scale=<s>]`,
   `hd-bet[:full|window|<X>x<Y>x<Z>|low-memory][:tta][:step=<s>]`, `rs2-net[:tta][:step=<s>]` and `mindgrab[:tta]`. HD-BET runs on the
   whole volume by default (`full`; about 6–8 GB measured). `window` runs 192×192×96
   sliding-window patches instead (about 3.6–4.5 GB measured, about twice as long),
@@ -61,7 +63,9 @@ every recipe's mask leaves those voxels out, and the log and the methods say so.
   `gaussian[:<sigma_mm>]`, `min-intensity:<v>` (remove the mask's voxels whose
   intensity in the section's input image is below `<v>`), `majority` (a 3×3×3
   majority filter, MATLAB's `bwmorph3` `'majority'`: a voxel is kept when at least
-  14 of its 27 neighbours, itself included, are in the mask), and
+  14 of its 27 neighbours, itself included, are in the mask), `largest-component`
+  (only the largest 26-connected component, as MATLAB's `bwlabeln`), `imfill`
+  (every hole filled whatever its size, as MATLAB's `imfill` `'holes'`), and
   `signal-erode[:<threshold>[:<depth_cap>[:<global_erosions>[:<bias_sigma>[:<min_component>]]]]]`.
   `signal-erode` removes only boundary voxels whose bias-corrected magnitude is
   below `threshold` × the in-mask median (default 0.80). It works inward through
@@ -83,7 +87,11 @@ every recipe's mask leaves those voxels out, and the log and the methods say so.
 For example, `--mask magnitude,hd-bet:low-memory,signal-erode` is the `hd-bet`
 preset with the low-memory patch size, and
 `--mask magnitude-first,bet:0.20,min-intensity:100,majority,close:2` is QSMART's
-mask (`brainmask.m`), which `--pipeline qsmart` sets up with N4 correction.
+mask (`brainmask.m`), which `--pipeline qsmart` sets up with N4 correction, and
+`--mask magnitude-last,threshold:sti-gui,largest-component,imfill` is STI Suite
+QSM_GUI's, which `--pipeline sti-suite-ilsqr` sets up with `--bf-polish-mask`
+(after V-SHARP, the mask's largest component with its holes filled, as the GUI's
+`PolishMask`) and an unreferenced χ.
 
 BET's surface settings (`--bet-smoothness`, `--bet-gradient-threshold`,
 `--bet-iterations`, `--bet-subdivisions`, `--bet-voxel-scale`) and its

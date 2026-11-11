@@ -20,6 +20,7 @@ Generate or refine binary masks.
 | `otsu` | Otsu automatic thresholding |
 | `value` | Fixed-value thresholding |
 | `percentile` | Percentile thresholding |
+| `sti-gui` | STI Suite QSM_GUI's thresholding: the level its `thresh_tool` starts at (Otsu's threshold of the middle slice, scaled to that slice's maximum) |
 | `bet` | Brain extraction (BET); `--orientation as-stored` runs it on the voxels as stored, as MEDI's `BET.m` does |
 | `hd-bet` | Deep-learning brain extraction (HD-BET); whole volume by default; `--window`, `--low-memory` or `--patch XxYxZ` for sliding-window patches, `--tta`. Weights are downloaded on first use |
 | `rs2-net` | Deep-learning **rodent** brain extraction (RS2-Net); `--tta`, `--tile-step`. Weights are downloaded on first use |
@@ -29,6 +30,8 @@ Generate or refine binary masks.
 | `erode` / `dilate` | Morphological erosion / dilation |
 | `close` | Morphological closing |
 | `majority` | 3×3×3 majority filter (MATLAB's `bwmorph3` `'majority'`) |
+| `largest-component` | Keep only the largest 26-connected component (MATLAB's `bwlabeln`) |
+| `imfill` | Fill every hole, whatever its size (MATLAB's `imfill` `'holes'`) |
 | `fill-holes` | Fill holes in a binary mask (`--max-size 0`, the default, is automatic: 5% of the volume) |
 | `smooth` | Gaussian smooth (re-thresholded at 0.5) |
 | `and` / `or` | Intersect / union two or more masks on the same grid |

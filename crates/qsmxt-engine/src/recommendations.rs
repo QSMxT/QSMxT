@@ -491,6 +491,17 @@ enum Mapping {
     /// Each mask section's majority filter (a flag): its `majority` refinement, placed after any
     /// `min-intensity`.
     Majority,
+    /// Each threshold section's method (`otsu`, `fixed`, `percentile`, `sti-gui`). STI Suite's
+    /// threshold is the start of the GUI's own recipe, so switching to it drops the section's
+    /// refinements (the robust-threshold preset's dilation, hole-filling and erosion); the
+    /// recipe's other steps are rules of their own.
+    ThresholdMethod,
+    /// Each mask section keeps its largest 26-connected component (a flag): its
+    /// `largest-component` refinement, placed before any `imfill`.
+    LargestComponent,
+    /// Each mask section's holes filled whatever their size (a flag): its `imfill` refinement,
+    /// placed last.
+    Imfill,
     /// Each mask section's closing radius, voxels: its first `close` refinement's radius (0 = no
     /// closing); a new one is placed after any `min-intensity` and `majority`.
     CloseRadius,
@@ -556,6 +567,9 @@ const SETTINGS: &[(&str, &str, Mapping)] = &[
     ("masking.erosion", "masking.sections", Mapping::Erosion),
     ("masking.min_intensity", "masking.sections", Mapping::MinIntensity),
     ("masking.majority", "masking.sections", Mapping::Majority),
+    ("masking.threshold_method", "masking.sections", Mapping::ThresholdMethod),
+    ("masking.largest_component", "masking.sections", Mapping::LargestComponent),
+    ("masking.imfill", "masking.sections", Mapping::Imfill),
     ("masking.close_radius", "masking.sections", Mapping::CloseRadius),
     ("masking.bet.orientation", "bet.orientation", Mapping::Same),
     ("inversion.heidi.denoise_itk", "inversion.heidi.denoise_reference_itk", Mapping::Same),
@@ -713,6 +727,19 @@ fn name_of(path: &str, kind: Mapping, value: &Value) -> String {
         Mapping::Majority => match value.as_bool() {
             Some(true) => "majority filter".into(),
             _ => "no majority filter".into(),
+        },
+        Mapping::ThresholdMethod => match value.as_str().unwrap_or_default() {
+            "sti-gui" => "thresh_tool's starting level".into(),
+            "otsu" => "Otsu's threshold".into(),
+            other => format!("{other} threshold"),
+        },
+        Mapping::LargestComponent => match value.as_bool() {
+            Some(true) => "largest component only".into(),
+            _ => "every component".into(),
+        },
+        Mapping::Imfill => match value.as_bool() {
+            Some(true) => "every hole filled".into(),
+            _ => "holes not filled".into(),
         },
         Mapping::CloseRadius => match value.as_f64() {
             Some(0.0) => "no closing".into(),
@@ -1319,6 +1346,46 @@ pub(crate) fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -
                 if on {
                     let at = s.refinements.iter().take_while(|op| matches!(op, MaskOp::MinIntensity { .. })).count();
                     s.refinements.insert(at, MaskOp::Majority);
+                }
+            }
+        }
+        Mapping::ThresholdMethod => {
+            use crate::masking::MaskThresholdMethod as T;
+            let method = match id {
+                "otsu" => T::Otsu,
+                "fixed" => T::Fixed,
+                "percentile" => T::Percentile,
+                "sti-gui" => T::StiGui,
+                other => return Err(format!("threshold method {other} is not one QSMxT can set")),
+            };
+            for s in &mut config.masking.sections {
+                if let MaskOp::Threshold { method: m, value } = &mut s.generator {
+                    if *m != method {
+                        *m = method;
+                        *value = match method { T::Fixed => Some(0.5), T::Percentile => Some(75.0), _ => None };
+                        if method == T::StiGui {
+                            s.refinements.clear();
+                        }
+                    }
+                }
+            }
+        }
+        Mapping::LargestComponent => {
+            let on = value.as_bool().ok_or_else(|| format!("{value} is not on or off"))?;
+            for s in &mut config.masking.sections {
+                s.refinements.retain(|op| !matches!(op, MaskOp::LargestComponent));
+                if on {
+                    let at = s.refinements.iter().position(|op| matches!(op, MaskOp::Imfill)).unwrap_or(s.refinements.len());
+                    s.refinements.insert(at, MaskOp::LargestComponent);
+                }
+            }
+        }
+        Mapping::Imfill => {
+            let on = value.as_bool().ok_or_else(|| format!("{value} is not on or off"))?;
+            for s in &mut config.masking.sections {
+                s.refinements.retain(|op| !matches!(op, MaskOp::Imfill));
+                if on {
+                    s.refinements.push(MaskOp::Imfill);
                 }
             }
         }

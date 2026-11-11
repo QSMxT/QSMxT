@@ -532,6 +532,44 @@ mod tests {
         assert_eq!(PipelineConfig::default().inversion.star.pad, [8, 8, 20]);
     }
 
+    /// STI Suite's iLSQR pipeline is QSM_GUI's: its threshold of the last echo, the largest
+    /// component with every hole filled, PolishMask after V-SHARP, and χ unreferenced (QSM.rs's
+    /// rules sti.mask-*, sti.vsharp-polish-mask, sti.reference-none). The command line names the
+    /// pipeline, not the settings.
+    #[test]
+    fn the_sti_suite_ilsqr_pipeline_masks_as_qsm_gui() {
+        use crate::masking::{MaskOp, MaskThresholdMethod, MaskingInput};
+        let mut c = PipelineConfig::default();
+        choose(&mut c, "sti-suite-ilsqr", &facts()).unwrap();
+        let m = &c.masking;
+        assert_eq!(m.sections.len(), 1);
+        assert_eq!(m.sections[0].input, MaskingInput::MagnitudeLast);
+        assert_eq!(m.sections[0].generator, MaskOp::Threshold { method: MaskThresholdMethod::StiGui, value: None });
+        assert_eq!(m.sections[0].refinements, [MaskOp::LargestComponent, MaskOp::Imfill]);
+        assert!(m.refinements.is_empty() && !m.inhomogeneity_correction);
+        assert!(c.bg_removal.polish_mask);
+        assert_eq!(c.qsm.reference, crate::enums::QsmReference::None);
+        let cmd = crate::command::generate_command(&c);
+        assert!(!cmd.contains("--bf-polish-mask") && !cmd.contains("sti-gui"), "{cmd}");
+        // Not on another pipeline, nor on QSMxT's defaults.
+        for id in ["qsmxt-defaults", "medi-toolbox", "qsmart"] {
+            let mut c = PipelineConfig::default();
+            choose(&mut c, id, &facts()).unwrap();
+            assert!(!c.bg_removal.polish_mask, "{id}");
+        }
+    }
+
+    /// The χ-separation toolbox's iterative pipelines keep the toolbox's iLSQR QSM unreferenced
+    /// (QSM.rs's rule chi-sep.reference-none).
+    #[test]
+    fn chi_sep_pipelines_leave_the_qsm_unreferenced() {
+        for id in ["chi-sep-ilsqr", "chi-sep-medi"] {
+            let mut c = PipelineConfig::default();
+            choose(&mut c, id, &facts()).unwrap();
+            assert_eq!(c.qsm.reference, crate::enums::QsmReference::None, "{id}");
+        }
+    }
+
     /// MEDI's BET.m runs bet2 on the array as stored, and so does the χ-separation toolbox, which
     /// calls it; every other pipeline's BET reads the image as FSL does (QSM.rs's rules).
     #[test]
@@ -603,15 +641,17 @@ mod tests {
         assert!(c.pipeline.do_swi);
     }
 
-    /// MEDI's, QSMART's and HEIDI's pipelines reference nothing after the inversion, as their
-    /// toolboxes; the others keep QSMxT's mean. MEDI's methods text says so.
+    /// MEDI's, QSMART's, HEIDI's, STI Suite's and the χ-separation toolbox's iterative pipelines
+    /// reference nothing after the inversion, as their toolboxes; the others keep QSMxT's mean.
+    /// MEDI's methods text says so.
     #[test]
     fn toolboxes_that_reference_nothing() {
         use crate::enums::QsmReference;
         for p in pipelines() {
             let mut c = PipelineConfig::default();
             choose(&mut c, p.id, &facts()).unwrap();
-            let none = ["medi-toolbox", "qsmart", "heidi"].contains(&p.id);
+            let none = ["medi-toolbox", "qsmart", "heidi", "sti-suite-ilsqr", "sti-suite-star", "chi-sep-ilsqr",
+                        "chi-sep-medi"].contains(&p.id);
             assert_eq!(c.qsm.reference, if none { QsmReference::None } else { QsmReference::Mean }, "{}", p.id);
         }
         let mut c = PipelineConfig::default();

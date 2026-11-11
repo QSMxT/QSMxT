@@ -1777,6 +1777,10 @@ pub struct BgRemovalConfig {
     /// so the method still sees the field just outside the eroded mask. Eroding in the masking
     /// stage instead would mask the field map too.
     pub erode_voxels: usize,
+    /// After background removal, keep the mask's largest 26-connected component with its holes
+    /// filled, and zero the local field outside it: STI Suite QSM_GUI's PolishMask (qsm-core's
+    /// `BgRemovalConfig::polish_mask`).
+    pub polish_mask: bool,
 }
 impl Default for BgRemovalConfig {
     fn default() -> Self {
@@ -1787,6 +1791,7 @@ impl Default for BgRemovalConfig {
             sharp: SharpConfig::default(), resharp: ResharpConfig::default(),
             harperella: HarperellaConfig::default(), iharperella: IharperellaConfig::default(),
             erode_voxels: 0,
+            polish_mask: false,
         }
     }
 }

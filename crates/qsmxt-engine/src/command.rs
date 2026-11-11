@@ -364,6 +364,9 @@ fn command_for(config: &PipelineConfig, d: &PipelineConfig, pipeline: Option<&st
         parts.push(format!("--bf-algorithm {}", config.bg_removal.algorithm));
     }
     emit_usize(&mut parts, "--bf-erode-voxels", config.bg_removal.erode_voxels, d.bg_removal.erode_voxels);
+    if config.bg_removal.polish_mask != d.bg_removal.polish_mask {
+        parts.push(if config.bg_removal.polish_mask { "--bf-polish-mask" } else { "--no-bf-polish-mask" }.into());
+    }
     match config.bg_removal.algorithm {
         BfAlgorithm::Vsharp => {
             if config.bg_removal.vsharp.deconvolve != d.bg_removal.vsharp.deconvolve {

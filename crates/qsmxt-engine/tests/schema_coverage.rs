@@ -396,7 +396,7 @@ fn full_labels_are_not_abbreviated() {
 /// Whether a label is in sentence case: no word but the first is capitalised, except names
 /// ("QSM", "V-SHARP", "iLSQR", "SUSEP-Net") and units ("Hz").
 fn sentence_case(label: &str) -> bool {
-    const NAMES: &[&str] = &["Hz", "Hz/ppm", "Dr+", "Dr−", "SUSEP-Net", "RS2-Net"];
+    const NAMES: &[&str] = &["Hz", "Hz/ppm", "Dr+", "Dr−", "SUSEP-Net", "RS2-Net", "Suite"];
     label.split(' ').enumerate().all(|(i, w)| {
         NAMES.contains(&w.trim_matches(|c: char| "(),:".contains(c)))
             || w.split('-').enumerate().all(|(j, p)| {
@@ -709,9 +709,10 @@ fn the_mask_schema_covers_every_input_step_and_preset() {
             }
         }
         // Every field but the tag (and a threshold's method, which is the step type) is a
-        // parameter; Otsu's unused value stays null.
+        // parameter; Otsu's and the STI Suite level's unused value stays null.
         for (k, v) in s.default.as_object().unwrap() {
-            if k == "op" || (s.op == "threshold" && k == "method") || v.is_null() && s.kind == "threshold-otsu" {
+            if k == "op" || (s.op == "threshold" && k == "method")
+                || v.is_null() && matches!(s.kind, "threshold-otsu" | "threshold-sti-gui") {
                 continue;
             }
             assert!(s.params.iter().any(|p| p.key == k), "{}: {k} has no parameter", s.kind);

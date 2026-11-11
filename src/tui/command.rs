@@ -312,6 +312,9 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             .then(|| bf_options[ps.bf_algorithm]),
         bf_erode_voxels: (ps.inversion_needs_bg_removal() && bf_options.get(ps.bf_algorithm).copied() != Some(crate::cli::BfAlgorithmArg::Iqfm))
             .then(|| parse_optional_usize(&ps.bf_erode_voxels)).flatten().filter(|&n| n > 0),
+        bf_polish_mask: ps.inversion_needs_bg_removal() && bf_options.get(ps.bf_algorithm).copied() != Some(crate::cli::BfAlgorithmArg::Iqfm)
+            && ps.bf_polish_mask,
+        no_bf_polish_mask: false,
         masking_input: None,
         phase_offset_removal: Some(ps.phase_offset_removal),
         phase_offset_sigma_mm: parse_optional_f64_vec3(&ps.phase_offset_sigma_mm),
@@ -2767,6 +2770,8 @@ mod parity {
             ("--no-laplacian-unmasked", "restates the default"),
             // Likewise against the HEIDI pipeline, which turns ITK's float arithmetic on.
             ("--no-heidi-denoise-reference-itk", "restates the default"),
+            // Likewise against the STI Suite pipeline, which polishes the background-removal mask.
+            ("--no-bf-polish-mask", "restates the default"),
         ];
         for (flag, why) in not_emitted {
             assert!(!covered.contains(*flag), "{flag} is allow-listed ({why}) but the TUI emits it: drop it from the list");

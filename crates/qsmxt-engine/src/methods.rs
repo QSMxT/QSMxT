@@ -1309,6 +1309,12 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                             "Before background field removal, the brain mask was eroded by {erode} voxel{}.",
                             if erode == 1 { "" } else { "s" }));
                     }
+                    if config.bg_removal.polish_mask {
+                        doc.say(&both(Stage::BackgroundRemoval),
+                            "After background field removal, the mask was reduced to its largest connected \
+                             component with its holes filled, and the local field was set to zero outside it."
+                                .to_string());
+                    }
                     if *alg == BfAlgorithm::Vsharp {
                         let (v, d) = (&config.bg_removal.vsharp, VsharpConfig::default());
                         let mut changed = Changed::default();
@@ -2055,6 +2061,8 @@ fn describe_refinements(ops: &[MaskOp], doc: &mut Draft) -> Vec<String> {
         MaskOp::Close { .. } => "morphological closing".to_string(),
         MaskOp::MinIntensity { value } => format!("removal of voxels with an intensity below {value}"),
         MaskOp::Majority => "a 3×3×3 majority filter".to_string(),
+        MaskOp::LargestComponent => "the largest connected component kept".to_string(),
+        MaskOp::Imfill => "every hole filled".to_string(),
         MaskOp::FillHoles { max_size: 0 } => "hole-filling".to_string(),
         MaskOp::FillHoles { max_size } => format!("hole-filling (holes of at most {} voxels)", max_size),
         MaskOp::GaussianSmooth { sigma_mm } if *op != default_of("gaussian") => format!("Gaussian smoothing (σ = {sigma_mm} mm)"),
@@ -2118,6 +2126,10 @@ fn describe_generator(
         }
         MaskOp::Threshold { method: MaskThresholdMethod::Percentile, value } => {
             format!("percentile thresholding ({}th percentile) of {}", value.unwrap_or(75.0), input_desc)
+        }
+        MaskOp::Threshold { method: MaskThresholdMethod::StiGui, .. } => {
+            doc.cite(&CITE_OTSU);
+            format!("thresholding of {} at STI Suite's default level (Otsu's threshold of the middle slice; Otsu, 1979)", input_desc)
         }
         MaskOp::Bet { fractional_intensity, voxel_scale } => {
             doc.cite(&CITE_BET);
@@ -2483,6 +2495,7 @@ pub(crate) mod words {
                 MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value } => format!("threshold {}", value.unwrap_or(0.5)),
                 MaskOp::Threshold { method: MaskThresholdMethod::Percentile, value } =>
                     format!("{}th-percentile threshold", value.unwrap_or(75.0)),
+                MaskOp::Threshold { method: MaskThresholdMethod::StiGui, .. } => "STI Suite threshold".to_string(),
                 MaskOp::Bet { .. } => "BET".to_string(),
                 MaskOp::HdBet { .. } => "HD-BET".to_string(),
                 MaskOp::Rs2Net { .. } => "RS2-Net".to_string(),

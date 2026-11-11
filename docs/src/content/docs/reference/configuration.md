@@ -149,6 +149,7 @@ rim = "whole"             # or "sti" (iHARPERELLA's default)
 
 [bg_removal]
 erode_voxels = 0          # erode the mask by N voxels before background removal; --bf-erode-voxels
+polish_mask = false       # STI Suite's PolishMask after background removal; --bf-polish-mask
 ```
 
 HEIDI after the inversion ([HEIDI streaking reduction](/QSMxT/reference/algorithms/#heidi-streaking-reduction))
