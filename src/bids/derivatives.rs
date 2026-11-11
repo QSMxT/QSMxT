@@ -411,6 +411,19 @@ impl DerivativeOutputs {
     pub fn mag_path(&self, key: &AcquisitionKey, echo: usize) -> PathBuf {
         self.workflow_nifti_path(key, "scale_phase", naming::magnitude_echo(echo, &key.suffix))
     }
+    /// One echo's magnitude corrected for inhomogeneity (the `inhomog` step).
+    pub fn homogeneous_mag_path(&self, key: &AcquisitionKey, echo: usize) -> PathBuf {
+        self.workflow_nifti_path(key, "inhomog", naming::magnitude_echo(echo, &key.suffix))
+    }
+    /// QSMART's vessel magnitude, made by the `inhomog` step.
+    pub fn vessel_magnitude_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.workflow_nifti_path(key, "inhomog", naming::magnitude().with("desc", "vessels"))
+    }
+    /// The combined magnitude of a run that does not publish it (`--no-magnitude`), kept for the
+    /// steps that read it.
+    pub fn intermediate_magnitude_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.workflow_nifti_path(key, "magnitude", naming::magnitude())
+    }
     /// One echo's phase (radians) and magnitude on the acquired grid, as a phase step before the
     /// last (`step`: phase scaling, the Tukey window) leaves them for the next.
     pub fn acquired_grid_phase_path(&self, key: &AcquisitionKey, step: &str, echo: usize) -> PathBuf {

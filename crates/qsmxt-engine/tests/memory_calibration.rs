@@ -20,6 +20,12 @@ use qsmxt_engine::scan::ScanFacts;
 use qsmxt_engine::PipelineConfig;
 use serde_json::Value;
 
+/// The records' `magnitude` figures were measured when that step also corrected the combined
+/// magnitude for inhomogeneity; the correction is now a step of its own (`inhomog`, each echo in
+/// turn), and neither step's figure has been measured since. Their estimates are left out until
+/// they are.
+const STALE_STEP: &str = "magnitude";
+
 const UNDER: f64 = 0.10;
 const OVER: f64 = 0.30;
 
@@ -100,6 +106,10 @@ fn the_estimate_is_within_the_margin_of_every_measurement() {
                 let mut high = 0.0f64;
                 for (i, s) in r["heap"].as_array().unwrap().iter().enumerate() {
                     let (step, heap) = (s[0].as_str().unwrap(), s[1].as_f64().unwrap());
+                    if step == STALE_STEP {
+                        high = high.max(heap);
+                        continue;
+                    }
                     let est = estimate(&p, step) as f64;
                     // The step that grew the heap set it; the first of an isolated run did too.
                     let set_it = heap > high * 1.001 && (i > 0 || !r["isolated"].is_null() || step != "load");
@@ -133,6 +143,9 @@ fn the_estimate_is_within_the_margin_of_every_measurement() {
                 let p = plan_for(&config(&fx, r, browser_profile), &facts(&fx, echoes), &profile);
                 for s in r["need"].as_array().unwrap() {
                     let (step, need) = (s[0].as_str().unwrap(), s[1].as_f64().unwrap());
+                    if step == STALE_STEP {
+                        continue;
+                    }
                     // Too small to matter (a header, a lookup) and allocator noise.
                     if need < 50e6 {
                         continue;

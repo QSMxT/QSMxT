@@ -243,7 +243,7 @@ pub fn check_outputs(filter: Option<&[String]>, config: &crate::pipeline::config
         return Ok(());
     }
     let made = |suffix: &str| match suffix {
-        "magnitude" => true,
+        "magnitude" => p.do_magnitude,
         "Chimap" => p.do_qsm,
         "swi" => p.do_swi,
         "T2starmap" => p.do_t2starmap,

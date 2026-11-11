@@ -143,6 +143,7 @@ pub fn downstream_steps(step_name: &str) -> Option<&'static [&'static str]> {
         "scale_phase" => &[
             "tukey_window",
             "resample_axial",
+            "inhomog",
             "magnitude",
             "t2star_r2star",
             "chi_separation",
@@ -159,6 +160,7 @@ pub fn downstream_steps(step_name: &str) -> Option<&'static [&'static str]> {
         // Echoes the same steps read, on the acquired grid or the working one.
         "tukey_window" => &[
             "resample_axial",
+            "inhomog",
             "magnitude",
             "t2star_r2star",
             "chi_separation",
@@ -173,6 +175,7 @@ pub fn downstream_steps(step_name: &str) -> Option<&'static [&'static str]> {
             "reference",
         ],
         "resample_axial" => &[
+            "inhomog",
             "magnitude",
             "t2star_r2star",
             "chi_separation",
@@ -186,9 +189,12 @@ pub fn downstream_steps(step_name: &str) -> Option<&'static [&'static str]> {
             "qsmart",
             "reference",
         ],
+        // The corrected echoes masking and the combined magnitude read, and QSMART's vessel
+        // magnitude.
         "inhomog" => &[
             "magnitude",
             "mask",
+            "mask-reliable",
             "swi",
             "unwrap",
             "bgremove",

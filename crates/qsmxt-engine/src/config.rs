@@ -1401,6 +1401,11 @@ impl std::fmt::Display for MultiOrientAlgorithm {
 pub struct PipelineToggles {
     pub do_qsm: bool,
     pub do_swi: bool,
+    /// Publish the combined magnitude (`part-mag_T2starw`): the root sum of squares of every
+    /// echo's magnitude, each corrected for inhomogeneity when that is on. On by default. Off, the
+    /// run computes it only for a step that reads it (SMWI, SynthSeg, a magnitude-weighted
+    /// inversion), and keeps it among that run's intermediates.
+    pub do_magnitude: bool,
     /// Susceptibility map-weighted imaging — weights the magnitude by a mask built from χ rather
     /// than from filtered phase. Needs a susceptibility map, so it implies QSM.
     #[serde(default)]
@@ -1468,7 +1473,7 @@ pub struct PipelineToggles {
 }
 impl Default for PipelineToggles {
     fn default() -> Self {
-        Self { do_qsm: true, do_swi: false, do_smwi: false,
+        Self { do_qsm: true, do_swi: false, do_magnitude: true, do_smwi: false,
             do_segmentation: false, do_analysis: false, do_t2starmap: false, do_r2starmap: false, do_r2map: false, do_r2primemap: false, do_chi_separation: false, export_dicom: false, axial_resampling: false, obliquity_threshold: DEFAULT_OBLIQUITY_THRESHOLD,
             crop_to_mask: false, fft_padding: false, crop_margin_mm: default_crop_margin_mm(),
             output_space: OutputSpace::Acquired, ignore_slice_gap: false, tukey_window: 0.0 }

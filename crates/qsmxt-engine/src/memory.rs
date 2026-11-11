@@ -217,7 +217,8 @@ fn model_bytes(id: &str) -> u64 {
 fn step_need(step: &Step, config: &PipelineConfig, s: &Scan) -> u64 {
     let (n, e) = (s.n, s.echoes);
     let n4 = config.masking.inhomogeneity_correction && config.masking.inhomogeneity_method == InhomogeneityMethod::N4;
-    let mask_recipe = |sections: &[MaskSection]| mask_need(sections, s, n4);
+    // The mask reads the echoes the correction made; it corrects none itself.
+    let mask_recipe = |sections: &[MaskSection]| mask_need(sections, s, false);
     match step.stage {
         Stage::Load => 0,
         // One echo at a time; uncombined coils are combined (MCPC-3D-S) first, with every coil's
@@ -230,12 +231,18 @@ fn step_need(step: &Step, config: &PipelineConfig, s: &Scan) -> u64 {
         // One echo's phase and magnitude, their complex image and the resampled pair (counted,
         // not measured; nothing when the run is not resampled).
         Stage::ResampleAxial => s.v(48),
-        // Every echo's magnitude, read and combined, and the correction's working memory: N4's
-        // is less than makehomogeneous's (measured: 8 B a voxel an echo and 33 more).
-        Stage::Magnitude => match n4 {
-            true => s.v(8 * e + 33),
-            false => s.v(8 * e + 49),
-        },
+        // One echo at a time, read, corrected and written, with the correction's working memory:
+        // N4's is less than makehomogeneous's (measured on the combined magnitude: 33 B a voxel
+        // and 49). QSMART's vessel magnitude holds every echo for their mean, then N4.
+        Stage::InhomogeneityCorrection => {
+            let t = (step.outputs.iter().any(|o| matches!(o, Item::HomogeneousMagnitude(_))),
+                     step.outputs.contains(&Item::VesselMagnitude));
+            let echoes = if t.0 { if n4 { s.v(8 + 33) } else { s.v(8 + 49) } } else { 0 };
+            let vessel = if t.1 { s.v(8 * e + 33) } else { 0 };
+            echoes.max(vessel)
+        }
+        // Every echo's magnitude, read and combined.
+        Stage::Magnitude => s.v(8 * e + 8),
         Stage::Mask(crate::plan::Pass::Main) => mask_recipe(&config.masking.sections),
         Stage::Mask(crate::plan::Pass::Reliable) => mask_recipe(&config.masking.resolved_two_pass_sections()),
         // Every echo's phase and magnitude, registered to the reference echo.
@@ -944,7 +951,8 @@ mod tests {
         // Each step adds its outputs: the combined magnitude after `magnitude`, then the mask.
         let after = |name: &str| held[disk.steps.iter().position(|s| s.name == name).unwrap() + 1];
         assert_eq!(after("scale_phase") - after("load"), 10 * 8 * n, "every echo's phase and magnitude on the working grid");
-        assert_eq!(after("magnitude") - after("scale_phase"), 8 * n);
+        assert_eq!(after("inhomog") - after("scale_phase"), 5 * 8 * n, "every echo corrected, in double precision");
+        assert_eq!(after("magnitude") - after("inhomog"), 8 * n);
         assert_eq!(after("mask") - after("magnitude"), n, "a mask is a byte a voxel");
         assert!(held.windows(2).all(|w| w[0] <= w[1]));
     }

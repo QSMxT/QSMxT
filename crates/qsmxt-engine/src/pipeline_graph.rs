@@ -65,12 +65,27 @@ pub struct Node {
     pub reads: Vec<String>,
     /// The items it writes, by [`item_key`].
     pub writes: Vec<String>,
+    /// What of those the run publishes ([`Item::published_in`]), by [`item_key`]: the graph's
+    /// leaves. The return to the acquired grid only moves them, so its box has none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub publishes: Vec<String>,
     /// What the step did in the run, on the graph after a run ([`pipeline_graph_after`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run: Option<NodeRun>,
     /// What a dataset's runs did in the step, on a dataset's graph ([`pipeline_graph_dataset`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dataset: Option<NodeDataset>,
+}
+
+/// A published output as a graph's leaf says it: "→ Combined magnitude (part-mag_T2starw)".
+pub fn output_text(key: &str) -> String {
+    match Item::from_key(key).map(|i| i.meta()) {
+        Some(m) => match m.bids_name {
+            Some(b) => format!("→ {} ({b})", m.label),
+            None => format!("→ {}", m.label),
+        },
+        None => format!("→ {key}"),
+    }
 }
 
 impl Node {
@@ -84,6 +99,7 @@ impl Node {
         if !self.models.is_empty() {
             lines.push(format!("Models: {}", self.models.join(", ")));
         }
+        lines.extend(self.publishes.iter().map(|k| output_text(k)));
         if let Some(run) = &self.run {
             lines.push(layout::run_state_text(run.state).to_string());
             lines.extend(run.decisions.iter().map(Decision::note));
@@ -266,6 +282,27 @@ impl Ctx<'_> {
     /// Every echo's magnitude on the working grid, when the scan has magnitude.
     fn magnitudes(&self) -> Vec<Item> {
         if self.facts.has_magnitude { self.echoes(Item::Magnitude) } else { Vec::new() }
+    }
+
+    /// The magnitudes of `echoes` as the steps after the inhomogeneity correction read them:
+    /// corrected where the correction corrects them, as they are otherwise.
+    fn corrected_magnitudes(&self, echoes: &[usize]) -> Vec<Item> {
+        if !self.facts.has_magnitude {
+            return Vec::new();
+        }
+        let corrected = &self.plan.homogeneity.echoes;
+        echoes.iter().map(|&e| if corrected.contains(&e) { Item::HomogeneousMagnitude(e) } else { Item::Magnitude(e) }).collect()
+    }
+
+    /// The magnitudes a mask of `sections` reads: with the correction on, the echoes it reads
+    /// ([`crate::stages::magnitude::mask_echoes`]), corrected; every echo's otherwise.
+    fn mask_magnitudes(&self, sections: &[crate::masking::MaskSection]) -> Vec<Item> {
+        let m = &self.config.masking;
+        if m.inhomogeneity_correction {
+            self.corrected_magnitudes(&crate::stages::magnitude::mask_echoes(sections, &m.refinements, self.n()))
+        } else {
+            self.magnitudes()
+        }
     }
 
     fn mask_item(&self) -> Item {
@@ -470,8 +507,20 @@ impl Ctx<'_> {
                 }
             }
             Stage::ResampleAxial => {}
+            Stage::InhomogeneityCorrection => {
+                let t = &self.plan.homogeneity;
+                if t.vessel {
+                    reads.extend(self.magnitudes());
+                } else {
+                    reads.extend(t.echoes.iter().map(|&e| Item::Magnitude(e)));
+                }
+                writes.extend(t.echoes.iter().map(|&e| Item::HomogeneousMagnitude(e)));
+                if t.vessel {
+                    writes.push(Item::VesselMagnitude);
+                }
+            }
             Stage::Magnitude => {
-                reads.extend(self.magnitudes());
+                reads.extend(self.corrected_magnitudes(&(1..=self.n()).collect::<Vec<_>>()));
                 writes.push(Item::CombinedMagnitude);
             }
             Stage::Mask(Pass::Main) => {
@@ -479,13 +528,13 @@ impl Ctx<'_> {
                     reads.push(Item::SuppliedMask);
                 } else {
                     reads.extend(self.echoes(Item::Phase));
-                    reads.extend(self.magnitudes());
+                    reads.extend(self.mask_magnitudes(&c.masking.sections));
                 }
                 writes.push(Item::BrainMask);
             }
             Stage::Mask(Pass::Reliable) => {
                 reads.extend(self.echoes(Item::Phase));
-                reads.extend(self.magnitudes());
+                reads.extend(self.mask_magnitudes(&c.masking.resolved_two_pass_sections()));
                 reads.push(self.pass_mask(Pass::Main));
                 writes.push(Item::ReliableMask);
             }
@@ -570,6 +619,9 @@ impl Ctx<'_> {
                 // The magnitude vessels are detected on: QSMART's own, made from every echo's
                 // (and kept), or the combined one.
                 match c.inversion.qsmart.vessel_magnitude {
+                    // Made by the inhomogeneity correction, for both passes.
+                    QsmartVesselMagnitude::MeanN4 if self.plan.homogeneity.vessel => reads.push(Item::VesselMagnitude),
+                    // From the motion-corrected echoes, in the step.
                     QsmartVesselMagnitude::MeanN4 if f.has_magnitude => {
                         reads.extend(self.echo_magnitudes());
                         writes.push(Item::QsmartIntermediate(p, crate::stages::qsmart::VESSEL_MAGNITUDE));
@@ -718,7 +770,7 @@ impl Ctx<'_> {
             }
             Stage::OutputSpace => {
                 let published: Vec<Item> = crate::stages::output_space::published(self.n()).into_iter()
-                    .map(|(i, _)| i).filter(|i| has(i)).collect();
+                    .map(|(i, _)| i).filter(|i| has(i) && i.published_in(c)).collect();
                 reads.extend(published.iter().copied());
                 writes.extend(published);
             }
@@ -733,12 +785,28 @@ impl Ctx<'_> {
         let some = |id: &str, label: &str| (Some(id.to_string()), Some(label.to_string()));
         let ((id, label), settings) = match stage {
             Stage::ScalePhase if self.facts.n_coils > 1 => (some("mcpc3ds", "MCPC-3D-S"), vec![]),
-            Stage::Magnitude => {
-                let s = match (c.masking.inhomogeneity_correction, c.masking.inhomogeneity_method) {
-                    (false, _) => vec![],
-                    (true, InhomogeneityMethod::Makehomogeneous) => vec!["inhomogeneity correction".to_string()],
-                    (true, InhomogeneityMethod::N4) => vec!["inhomogeneity correction (N4)".to_string()],
+            Stage::InhomogeneityCorrection => {
+                let t = &self.plan.homogeneity;
+                let mut s = Vec::new();
+                let method = if t.echoes.is_empty() {
+                    some("n4", "N4")
+                } else {
+                    s.push(words::echoes(&t.echoes, self.n()));
+                    if c.masking.inhomogeneity_method == InhomogeneityMethod::N4 && c.masking.n4_geometry == N4Geometry::MakeNii {
+                        s.push("make_nii geometry".to_string());
+                    }
+                    match c.masking.inhomogeneity_method {
+                        InhomogeneityMethod::Makehomogeneous => some("makehomogeneous", "makehomogeneous"),
+                        InhomogeneityMethod::N4 => some("n4", "N4"),
+                    }
                 };
+                if t.vessel {
+                    s.push("echo mean, N4 as QSMART does (vessel detection)".to_string());
+                }
+                (method, s)
+            }
+            Stage::Magnitude => {
+                let s = if self.plan.homogeneity.echoes.is_empty() { vec![] } else { vec!["of the corrected echoes".to_string()] };
                 (some("rss", "root sum of squares"), s)
             }
             Stage::Mask(pass) => {
@@ -1082,6 +1150,9 @@ pub fn pipeline_graph_on(plan: &Plan, config: &PipelineConfig, facts: &ScanFacts
             only_when,
             models: step.models.iter().map(|m| m.to_string()).collect(),
             reads: reads.iter().map(item_key).collect(),
+            publishes: if stage == Stage::OutputSpace { Vec::new() } else {
+                writes.iter().filter(|i| i.published_in(config)).map(item_key).collect()
+            },
             writes: writes.iter().map(item_key).collect(),
             id,
             run: None,
@@ -1296,6 +1367,15 @@ impl PipelineGraph {
                 }
             }
             out.push_str(&format!("    {} -->|\"{}\"| {}\n", mermaid_id(&e.from), mermaid_text(&labels.join(", ")), mermaid_id(&e.to)));
+        }
+        // The published outputs, as leaves.
+        for n in &self.nodes {
+            for (k, key) in n.publishes.iter().enumerate() {
+                let leaf = format!("{}_out{}", mermaid_id(&n.id), k + 1);
+                let text = output_text(key);
+                out.push_str(&format!("    {leaf}([\"{}\"])\n", mermaid_text(text.trim_start_matches("→ "))));
+                out.push_str(&format!("    {} --> {leaf}\n", mermaid_id(&n.id)));
+            }
         }
         let optional: Vec<String> = self.nodes.iter().filter(|n| n.enabled_by.is_some()).map(|n| mermaid_id(&n.id)).collect();
         let conditional: Vec<String> = self.nodes.iter().filter(|n| n.only_when.is_some()).map(|n| mermaid_id(&n.id)).collect();

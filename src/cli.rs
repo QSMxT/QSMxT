@@ -1925,6 +1925,11 @@ pub struct PipelineArgs {
     /// mask. Implies --do-swi
     #[arg(long)]
     pub swi_filtered_phase: bool,
+    /// Do not publish the combined magnitude (part-mag_T2starw). It is still computed, and kept
+    /// with the run's intermediates, when a step reads it (SMWI, segmentation, a magnitude-weighted
+    /// inversion)
+    #[arg(long)]
+    pub no_magnitude: bool,
 
     /// Also segment the brain from the GRE magnitude with SynthSeg, writing a FreeSurfer-labelled
     /// `_dseg.nii` and its BIDS lookup table. Needs no T1w and no registration. Needs a

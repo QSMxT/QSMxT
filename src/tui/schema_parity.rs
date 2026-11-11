@@ -75,6 +75,7 @@ fn section_of(page: Page) -> Option<Section> {
         Page::Separation => Section::Separation,
         // One schema section, two TUI sections: SMWI needs χ, so it is in the QSM group.
         Page::Swi | Page::Smwi => Section::SwiSmwi,
+        Page::Magnitude => Section::Magnitude,
         Page::Relaxometry => Section::Relaxometry,
         Page::Segmentation => Section::Segmentation,
         Page::Export => Section::Export,

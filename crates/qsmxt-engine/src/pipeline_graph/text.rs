@@ -24,6 +24,8 @@ pub enum Part {
     When,
     /// The deep-learning models it runs.
     Models,
+    /// A published output: the step's leaf.
+    Output,
     /// The step an arrow comes from (its number and label).
     From,
     /// What flows along that arrow.
@@ -110,6 +112,10 @@ impl PipelineGraph {
                     (Part::From, format!("← {num}{}:", src.label)),
                     (Part::Items, format!(" {}", labels.join(", "))),
                 ]);
+            }
+            // Its published outputs, the graph's leaves, after what it reads.
+            for k in &n.publishes {
+                push(DETAIL, vec![(Part::Output, super::output_text(k))]);
             }
         }
         out

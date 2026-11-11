@@ -73,6 +73,9 @@ pub enum Magnitude {
     Echoes(Vec<Vec<f64>>),
     /// The run's combined magnitude, when there is one.
     Combined(Option<Vec<f64>>),
+    /// QSMART's own vessel magnitude, made by the inhomogeneity correction
+    /// ([`crate::stages::magnitude::vessel_magnitude`]); none for a phase-only run.
+    Vessel(Option<Vec<f64>>),
 }
 
 /// What QSMART produced.
@@ -108,12 +111,10 @@ pub fn qsmart(
     let (magnitude, own) = match magnitude {
         Magnitude::Echoes(echoes) if !echoes.is_empty() => {
             let refs: Vec<&[f64]> = echoes.iter().map(|e| e.as_slice()).collect();
-            let m = qsm_core::utils::qsmart_vessel_magnitude(&refs, &metadata.grid())
-                .map_err(|e| EngineError::Config(format!("qsmart: {e}")))?;
-            (Some(m), true)
+            (Some(crate::stages::magnitude::vessel_magnitude(&refs, meta)?), true)
         }
         Magnitude::Echoes(_) => (None, false),
-        Magnitude::Combined(m) => (m, false),
+        Magnitude::Combined(m) | Magnitude::Vessel(m) => (m, false),
     };
     let mut core = Core::new(observer);
     let chi = qsm_core::pipeline::run_qsmart(

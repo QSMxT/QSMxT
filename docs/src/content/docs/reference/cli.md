@@ -427,6 +427,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--no-qsm` | Skip QSM processing (only run supplementary outputs like SWI, T2\*, R2\*) |
 | `--do-swi` | Also compute SWI. |
 | `--swi-filtered-phase` | Also write CLEAR-SWI's high-pass filtered phase, the phase the SWI is weighted by (`_desc-swi_phase.nii`): Hz for several echoes, radians for one, 0 outside CLEAR-SWI's head mask. Implies --do-swi. |
+| `--no-magnitude` | Do not publish the combined magnitude (part-mag_T2starw). It is still computed, and kept with the run's intermediates, when a step reads it (SMWI, segmentation, a magnitude-weighted inversion) |
 | `--do-segmentation` | Also segment the brain from the GRE magnitude with SynthSeg, writing a FreeSurfer-labelled `_dseg.nii` and its BIDS lookup table. Needs no T1w and no registration. Needs a deep-learning build. doi:10.1016/j.media.2023.102789. |
 | `--do-analysis` | Also summarise every quantitative map (χ, χ+/χ−, T2\*, R2\*, R2, R2') per segmented structure into a TSV: mean, SD, median, min, max and the 5th/95th percentiles, one row per map and structure, plus a dataset-level table gathering all runs. Summarises whatever the run made — it implies --do-segmentation, and QSM only if no other map was asked for. |
 | `--do-smwi` | Also compute SMWI (susceptibility map-weighted imaging): weights the magnitude by a mask built from the susceptibility map rather than from high-pass filtered phase, so the contrast stays where the source is. Needs χ, so it implies QSM. doi:10.1002/mrm.24920. |
@@ -916,6 +917,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--no-qsm` | Skip QSM processing (only run supplementary outputs like SWI, T2\*, R2\*) |
 | `--do-swi` | Also compute SWI. |
 | `--swi-filtered-phase` | Also write CLEAR-SWI's high-pass filtered phase, the phase the SWI is weighted by (`_desc-swi_phase.nii`): Hz for several echoes, radians for one, 0 outside CLEAR-SWI's head mask. Implies --do-swi. |
+| `--no-magnitude` | Do not publish the combined magnitude (part-mag_T2starw). It is still computed, and kept with the run's intermediates, when a step reads it (SMWI, segmentation, a magnitude-weighted inversion) |
 | `--do-segmentation` | Also segment the brain from the GRE magnitude with SynthSeg, writing a FreeSurfer-labelled `_dseg.nii` and its BIDS lookup table. Needs no T1w and no registration. Needs a deep-learning build. doi:10.1016/j.media.2023.102789. |
 | `--do-analysis` | Also summarise every quantitative map (χ, χ+/χ−, T2\*, R2\*, R2, R2') per segmented structure into a TSV: mean, SD, median, min, max and the 5th/95th percentiles, one row per map and structure, plus a dataset-level table gathering all runs. Summarises whatever the run made — it implies --do-segmentation, and QSM only if no other map was asked for. |
 | `--do-smwi` | Also compute SMWI (susceptibility map-weighted imaging): weights the magnitude by a mask built from the susceptibility map rather than from high-pass filtered phase, so the contrast stays where the source is. Needs χ, so it implies QSM. doi:10.1002/mrm.24920. |
@@ -1339,6 +1341,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--no-qsm` | Skip QSM processing (only run supplementary outputs like SWI, T2\*, R2\*) |
 | `--do-swi` | Also compute SWI. |
 | `--swi-filtered-phase` | Also write CLEAR-SWI's high-pass filtered phase, the phase the SWI is weighted by (`_desc-swi_phase.nii`): Hz for several echoes, radians for one, 0 outside CLEAR-SWI's head mask. Implies --do-swi. |
+| `--no-magnitude` | Do not publish the combined magnitude (part-mag_T2starw). It is still computed, and kept with the run's intermediates, when a step reads it (SMWI, segmentation, a magnitude-weighted inversion) |
 | `--do-segmentation` | Also segment the brain from the GRE magnitude with SynthSeg, writing a FreeSurfer-labelled `_dseg.nii` and its BIDS lookup table. Needs no T1w and no registration. Needs a deep-learning build. doi:10.1016/j.media.2023.102789. |
 | `--do-analysis` | Also summarise every quantitative map (χ, χ+/χ−, T2\*, R2\*, R2, R2') per segmented structure into a TSV: mean, SD, median, min, max and the 5th/95th percentiles, one row per map and structure, plus a dataset-level table gathering all runs. Summarises whatever the run made — it implies --do-segmentation, and QSM only if no other map was asked for. |
 | `--do-smwi` | Also compute SMWI (susceptibility map-weighted imaging): weights the magnitude by a mask built from the susceptibility map rather than from high-pass filtered phase, so the contrast stays where the source is. Needs χ, so it implies QSM. doi:10.1002/mrm.24920. |

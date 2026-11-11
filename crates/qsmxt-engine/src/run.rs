@@ -194,7 +194,10 @@ pub fn preview_mask<S: StageStore + ?Sized>(
     }
     let key = stages::mask::MaskInputs::key(config, &upstream.join(";"));
     let meta = r.meta.clone();
-    inputs.fill(sections, config, key, &meta, || r.echoes())?;
+    inputs.fill(sections, config, key, &meta, || -> Result<_, S::Error> {
+        let (phases, magnitudes) = r.echoes()?;
+        Ok((phases, stages::magnitude::masking_magnitudes(sections, config, magnitudes, &meta)?))
+    })?;
     r.store.models(&stages::mask::model_ids(sections, config))?;
     let preview = stages::mask::preview(sections, combine, config, inputs, &meta, upto)?;
     r.store.finish()?;
@@ -202,14 +205,16 @@ pub fn preview_mask<S: StageStore + ?Sized>(
 }
 
 /// The steps before the plan's step `at` whose outputs it reads, directly or through another of
-/// them, in plan order.
+/// them, in plan order. The inhomogeneity correction is not among them: a preview corrects the
+/// echoes the recipe it shows reads itself ([`stages::magnitude::masking_magnitudes`]), from
+/// the echoes the correction would read.
 fn mask_reads_from(plan: &Plan, at: usize) -> Vec<&Step> {
     let mut wanted: Vec<Item> = plan.steps[at].reads.clone();
     let mut taken = vec![false; at];
     for i in (0..at).rev() {
         let step = &plan.steps[i];
         if step.stage != Stage::Load && step.outputs.iter().any(|o| wanted.contains(o)) {
-            taken[i] = true;
+            taken[i] = step.stage != Stage::InhomogeneityCorrection;
             wanted.extend(step.reads.iter().copied());
         }
     }
@@ -404,6 +409,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             Stage::ScalePhase => self.scale_phase(),
             Stage::TukeyWindow => self.tukey_window(),
             Stage::ResampleAxial => self.resample_axial(),
+            Stage::InhomogeneityCorrection => self.homogeneity(),
             Stage::Magnitude => self.magnitude(),
             Stage::Mask(Pass::Main) => self.mask(step),
             Stage::Mask(Pass::Reliable) => self.reliable_mask(step),
@@ -960,26 +966,84 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         }, "Resample to axial")
     }
 
+    /// Echo `e`'s magnitude on the working grid, as the steps before the correction left it.
+    fn current_magnitude(&mut self, e: usize) -> Result<Option<Vec<f64>>, S::Error> {
+        for item in [Item::Magnitude(e), Item::AcquiredMagnitude(e)] {
+            if self.store.has(&item) {
+                return self.store.real(&item).map(Some);
+            }
+        }
+        Ok(None)
+    }
+
+    /// Echo `e`'s magnitude as the steps after the inhomogeneity correction read it: corrected
+    /// where the correction corrects it.
+    fn corrected_magnitude(&mut self, e: usize) -> Result<Option<Vec<f64>>, S::Error> {
+        if self.plan.homogeneity.echoes.contains(&e) {
+            return self.store.real(&Item::HomogeneousMagnitude(e)).map(Some);
+        }
+        self.current_magnitude(e)
+    }
+
+    /// The inhomogeneity correction of what its consumers ask for ([`Plan::homogeneity`]): each
+    /// echo's magnitude with the configured method, and QSMART's vessel magnitude.
+    fn homogeneity(&mut self) -> Result<(), S::Error> {
+        let targets = self.plan.homogeneity.clone();
+        let params = stages::magnitude::step_params(self.config, &targets);
+        let Some(key) = self.begin("inhomog", None, &params, "Skipping inhomogeneity correction (cached)",
+                                   "Correcting the magnitude for inhomogeneity") else { return Ok(()) };
+        let mut outputs = Vec::new();
+        // QSMART's vessel magnitude is the mean over every echo: a run with magnitude must have
+        // each echo's.
+        if targets.vessel {
+            let n = self.n_echoes();
+            let mut echoes = Vec::with_capacity(n);
+            let mut missing = Vec::new();
+            for e in 1..=n {
+                match self.current_magnitude(e)? {
+                    Some(m) => echoes.push(m),
+                    None => missing.push(e.to_string()),
+                }
+            }
+            if !missing.is_empty() {
+                return Err(crate::EngineError::Config(format!(
+                    "qsmart: no magnitude for echo {} of {n}: QSMART's vessel magnitude is the mean over every \
+                     echo. Supply every echo's magnitude, or use --qsmart-vessel-magnitude combined",
+                    missing.join(", "))).into());
+            }
+            let refs: Vec<&[f64]> = echoes.iter().map(|v| v.as_slice()).collect();
+            let vessel = stages::magnitude::vessel_magnitude(&refs, &self.meta)?;
+            drop(echoes);
+            self.put(Item::VesselMagnitude, Data::Real(&vessel))?;
+            outputs.push(Item::VesselMagnitude);
+        }
+        for &e in &targets.echoes {
+            let Some(m) = self.current_magnitude(e)? else { continue };
+            let corrected = stages::magnitude::homogeneity_correct(&m, &self.meta, self.config, &format!("echo {e}'s magnitude"))?;
+            self.put(Item::HomogeneousMagnitude(e), Data::Real(&corrected))?;
+            outputs.push(Item::HomogeneousMagnitude(e));
+        }
+        self.complete(Done {
+            step: "inhomog", algorithm: None, params: &params, outcome: None, key: &key, outputs: &outputs,
+        }, "Inhomogeneity correction")
+    }
+
     fn magnitude(&mut self) -> Result<(), S::Error> {
-        let params = stages::magnitude::params(self.config);
-        let doing = if self.config.masking.inhomogeneity_correction {
-            "Computing RSS-combined magnitude with inhomogeneity correction"
-        } else {
-            "Computing RSS-combined magnitude"
-        };
+        let corrected = !self.plan.homogeneity.echoes.is_empty();
+        // The combined magnitude is the RSS of the corrected echoes; where it is kept follows
+        // `pipeline.do_magnitude`.
+        let params = json!({ "echoes": if corrected { "corrected" } else { "as acquired" },
+                             "published": self.config.pipeline.do_magnitude });
+        let doing = if corrected { "Computing the RSS-combined magnitude of the corrected echoes" } else { "Computing RSS-combined magnitude" };
         let Some(key) = self.begin("magnitude", Some("rss"), &params, "Skipping magnitude (cached)", doing) else { return Ok(()) };
         let n = self.n_echoes();
         let mut echoes = Vec::with_capacity(n);
         for e in 1..=n {
-            if self.store.has(&Item::Magnitude(e)) {
-                echoes.push(self.store.real(&Item::Magnitude(e))?);
-            } else if self.store.has(&Item::AcquiredMagnitude(e)) {
-                echoes.push(self.store.real(&Item::AcquiredMagnitude(e))?);
-            }
+            echoes.extend(self.corrected_magnitude(e)?);
         }
         if !echoes.is_empty() {
             let refs: Vec<&[f64]> = echoes.iter().map(|v| v.as_slice()).collect();
-            let combined = stages::magnitude::combined_magnitude(&refs, &self.meta, self.config)?;
+            let combined = stages::magnitude::combined_magnitude(&refs)?;
             drop(echoes);
             self.put(Item::CombinedMagnitude, Data::Real(&combined))?;
             self.record(Done {
@@ -1020,7 +1084,20 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
     /// how many is logged and, for the main mask, recorded.
     fn build_mask(&mut self, sections: &[crate::masking::MaskSection], combine: crate::masking::MaskCombine,
                   models: &[&'static str]) -> Result<Vec<u8>, S::Error> {
-        let (phases, magnitudes) = self.echoes()?;
+        let (phases, mut magnitudes) = self.echoes()?;
+        // The echoes the recipe reads, corrected: the inhomogeneity correction's, or corrected
+        // here for a recipe it was not planned for (a supplied mask that could not be used).
+        if self.config.masking.inhomogeneity_correction && !magnitudes.is_empty() {
+            let n = magnitudes.len();
+            for e in stages::magnitude::mask_echoes(sections, &self.config.masking.refinements, n) {
+                magnitudes[e - 1] = if self.store.has(&Item::HomogeneousMagnitude(e)) {
+                    self.store.real(&Item::HomogeneousMagnitude(e))?
+                } else {
+                    stages::magnitude::homogeneity_correct(&magnitudes[e - 1], &self.meta, self.config,
+                                                           &format!("echo {e}'s magnitude"))?
+                };
+            }
+        }
         self.store.models(models)?;
         let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
         let built = stages::mask::build_mask(sections, combine, self.config, &phase_refs, magnitudes, &self.meta)?;
@@ -1443,6 +1520,11 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         // The magnitude vessels are detected on (and MEDI's edge weighting): every echo's, for
         // QSMART's own, or the combined one.
         let magnitude = match self.config.inversion.qsmart.vessel_magnitude {
+            // The inhomogeneity correction made it, for both passes.
+            crate::enums::QsmartVesselMagnitude::MeanN4 if self.plan.homogeneity.vessel => {
+                let m = if self.store.has(&Item::VesselMagnitude) { Some(self.store.real(&Item::VesselMagnitude)?) } else { None };
+                stages::qsmart::Magnitude::Vessel(m)
+            }
             crate::enums::QsmartVesselMagnitude::MeanN4 => {
                 // The mean is over every echo: a run with magnitude must have each echo's. A run
                 // without any detects vessels on a uniform magnitude.
@@ -2428,7 +2510,8 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         self.log(Level::Info, &format!(
             "Returning outputs to the acquired grid: {}x{}x{} -> {}x{}x{}",
             src_dims.0, src_dims.1, src_dims.2, dst_dims.0, dst_dims.1, dst_dims.2));
-        let published: Vec<(Item, Kind)> = o::published(self.n_echoes()).into_iter().filter(|(i, _)| self.store.has(i)).collect();
+        let published: Vec<(Item, Kind)> = o::published(self.n_echoes()).into_iter()
+            .filter(|(i, _)| i.published_in(self.config) && self.store.has(i)).collect();
         let dst = o::acquired(dst_dims, &dst_affine);
         let src_voxels = src_dims.0 * src_dims.1 * src_dims.2;
         let mut done: Vec<Item> = Vec::new();
@@ -4510,10 +4593,11 @@ pub(crate) mod tests {
         config.inversion.algorithm = QsmAlgorithm::Qsmart;
         let plan = crate::plan::plan(&config, &facts);
         run(&plan, &config, &facts, &mut store, &mut ()).unwrap();
-        // Echo 2's magnitude gone after the field map was made, and QSMART to run again.
+        // Echo 2's magnitude gone after the field map was made, and the vessel magnitude to be
+        // made again.
         store.take(&Item::AcquiredMagnitude(2));
         store.take(&Item::Magnitude(2));
-        config.inversion.qsmart.vasc_sphere_radius += 1;
+        config.masking.inhomogeneity_correction = !config.masking.inhomogeneity_correction;
         let plan = crate::plan::plan(&config, &facts);
         let e = run(&plan, &config, &facts, &mut store, &mut ()).unwrap_err().to_string();
         assert!(e.contains("no magnitude for echo 2 of") && e.contains("--qsmart-vessel-magnitude combined"), "{e}");
