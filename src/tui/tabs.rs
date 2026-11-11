@@ -15,7 +15,7 @@
 //! grouped under headings, the active one a filled bar (cyan, yellow while the sidebar has focus),
 //! each with a badge for the rules' findings on its rows (⚑, ⓘ) or for not being part of the run
 //! (`off`, `–`, dimmed). Short terminals drop the blank lines, then turn the headings into rules,
-//! then scroll a window around the active section; below [`SIDEBAR_MIN_WIDTH`] columns the
+//! then drop the rules, then scroll a window around the active section; below [`SIDEBAR_MIN_WIDTH`] columns the
 //! sections fall back to the pill strip.
 
 use std::sync::OnceLock;
@@ -303,19 +303,19 @@ enum SideLine {
 }
 
 /// The sidebar's lines for `height` rows: headings and blank lines between groups when they
-/// fit, then no blank lines, then rules in place of headings.
+/// fit, then no blank lines, then rules in place of headings, then the sections alone.
 fn sidebar_lines(pages: &[Page], height: usize) -> Vec<SideLine> {
     let groups = {
         let mut g: Vec<&'static str> = pages.iter().map(|p| p.group()).collect();
         g.dedup();
         g.len()
     };
-    let (blanks, headings) = if pages.len() + 2 * groups - 1 <= height {
-        (true, true)
+    let (blanks, headings, rules) = if pages.len() + 2 * groups - 1 <= height {
+        (true, true, false)
     } else if pages.len() + groups <= height {
-        (false, true)
+        (false, true, false)
     } else {
-        (false, false)
+        (false, false, pages.len() + groups - 1 <= height)
     };
     let mut lines = Vec::new();
     let mut last = None;
@@ -326,7 +326,7 @@ fn sidebar_lines(pages: &[Page], height: usize) -> Vec<SideLine> {
             }
             if headings {
                 lines.push(SideLine::Heading(p.group()));
-            } else if last.is_some() {
+            } else if last.is_some() && rules {
                 lines.push(SideLine::Rule);
             }
             last = Some(p.group());
@@ -380,7 +380,9 @@ pub fn draw_sidebar(f: &mut Frame, app: &App, area: Rect) {
                 app.hits.add(row, super::mouse::Hit::SubTab(*i));
                 let state = app.section_state(*page);
                 let (badge, badge_style) = match state {
-                    SectionState::Off if page.group() == "QSM" => ("", Style::default()),
+                    // With QSM off, the heading says so for QSM's own stages; χ-separation and
+                    // SMWI, outputs of their own, keep their badge.
+                    SectionState::Off if qsm_off && !matches!(page, Page::Separation | Page::Smwi) && page.group() == "QSM" => ("", Style::default()),
                     SectionState::Off => ("off", Style::default().fg(pal.faint)),
                     SectionState::NotApplicable => ("–", Style::default().fg(pal.faint)),
                     SectionState::On => match app.section_marker(&view, *page) {
