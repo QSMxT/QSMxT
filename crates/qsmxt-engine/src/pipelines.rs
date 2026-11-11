@@ -641,15 +641,17 @@ mod tests {
         assert!(c.pipeline.do_swi);
     }
 
-    /// MEDI's, QSMART's and HEIDI's pipelines reference nothing after the inversion, as their
-    /// toolboxes; the others keep QSMxT's mean. MEDI's methods text says so.
+    /// MEDI's, QSMART's, HEIDI's, STI Suite's and the χ-separation toolbox's iterative pipelines
+    /// reference nothing after the inversion, as their toolboxes; the others keep QSMxT's mean.
+    /// MEDI's methods text says so.
     #[test]
     fn toolboxes_that_reference_nothing() {
         use crate::enums::QsmReference;
         for p in pipelines() {
             let mut c = PipelineConfig::default();
             choose(&mut c, p.id, &facts()).unwrap();
-            let none = ["medi-toolbox", "qsmart", "heidi"].contains(&p.id);
+            let none = ["medi-toolbox", "qsmart", "heidi", "sti-suite-ilsqr", "sti-suite-star", "chi-sep-ilsqr",
+                        "chi-sep-medi"].contains(&p.id);
             assert_eq!(c.qsm.reference, if none { QsmReference::None } else { QsmReference::Mean }, "{}", p.id);
         }
         let mut c = PipelineConfig::default();

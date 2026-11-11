@@ -729,7 +729,7 @@ fn name_of(path: &str, kind: Mapping, value: &Value) -> String {
             _ => "no majority filter".into(),
         },
         Mapping::ThresholdMethod => match value.as_str().unwrap_or_default() {
-            "sti-gui" => "STI Suite's threshold".into(),
+            "sti-gui" => "thresh_tool's starting level".into(),
             "otsu" => "Otsu's threshold".into(),
             other => format!("{other} threshold"),
         },

@@ -179,9 +179,10 @@ fn the_iqfm_placeholder_is_named_by_no_rule() {
 }
 
 /// QSMxT's defaults depart from no recommendation. Its default inversion, iLSQR, differs from the
-/// STI Suite reference pipeline (its GUI) in the unwrapping, the iteration count, the precision and
-/// (multi-echo) the echo combination: those are `reference` findings, information only, and the
-/// methods Note leaves them out while the config follows QSMxT's defaults.
+/// STI Suite reference pipeline (its GUI) in the mask recipe, the unwrapping, PolishMask, the
+/// iteration count, the precision, the referencing and (multi-echo) the echo combination: those
+/// are `reference` findings, information only, and the methods Note leaves them out while the
+/// config follows QSMxT's defaults.
 #[test]
 fn defaults_depart_only_from_reference_choices() {
     let mut c = PipelineConfig::default();
@@ -190,8 +191,14 @@ fn defaults_depart_only_from_reference_choices() {
         assert_eq!(r.strength, Strength::Reference, "{r:?}");
         r.rule
     }).collect::<Vec<_>>();
-    assert_eq!(ids(&Facts::default()), ["sti.unwrap-laplacian", "sti.ilsqr-iterations", "sti.ilsqr-single"]);
-    assert_eq!(ids(&known()), ["sti.unwrap-laplacian", "sti.echo-weights", "sti.ilsqr-iterations", "sti.ilsqr-single"]);
+    const MASK: [&str; 6] = ["sti.mask-threshold-gui", "sti.mask-input", "sti.mask-no-correction",
+                             "sti.mask-largest-component", "sti.mask-imfill", "sti.mask-no-erosion"];
+    let want = |echoes: &[&'static str]| -> Vec<&'static str> {
+        MASK.iter().copied().chain(["sti.unwrap-laplacian"]).chain(echoes.iter().copied())
+            .chain(["sti.vsharp-polish-mask", "sti.ilsqr-iterations", "sti.ilsqr-single", "sti.reference-none"]).collect()
+    };
+    assert_eq!(ids(&Facts::default()), want(&[]));
+    assert_eq!(ids(&known()), want(&["sti.echo-weights"]));
 }
 
 /// Each rule fires on a config that departs from it, in QSMxT's setting and terms, and applying
