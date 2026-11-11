@@ -559,6 +559,29 @@ mod tests {
         }
     }
 
+    /// The HEIDI package's pipeline (qsm_heidi's makefile and def.sh: inversion_lsqr.m, then
+    /// inversion_heidi.m on the SHARP-corrected field): LSQR with HEIDI as one step, so QSM.rs
+    /// fills the cone of the unmasked LSQR seed on LSQR's grid, as the package does; single pass
+    /// (a two-pass combined map would be filled as a masked result); ITK's float denoising; phase
+    /// units at the last echo; χ unreferenced.
+    #[test]
+    fn the_heidi_pipeline_runs_the_packages_chain() {
+        use crate::enums::{BfAlgorithm, EchoTimeChoice, QsmAlgorithm, QsmReference};
+        let mut c = PipelineConfig::default();
+        c.masking.two_pass = true;
+        c.inversion.heidi.denoise_reference_itk = false;
+        choose(&mut c, "heidi", &facts()).unwrap();
+        assert_eq!(c.inversion.algorithm, QsmAlgorithm::Lsqr);
+        assert!(c.inversion.heidi.enabled);
+        assert!(!c.masking.two_pass);
+        assert!(c.inversion.heidi.denoise_reference_itk);
+        assert_eq!(c.inversion.heidi.te, EchoTimeChoice::Last);
+        assert_eq!(c.bg_removal.algorithm, BfAlgorithm::Sharp);
+        assert_eq!(c.qsm.reference, QsmReference::None);
+        let cmd = crate::command::generate_command(&c);
+        assert!(cmd.contains("--pipeline heidi"), "{cmd}");
+    }
+
     /// The χ-separation toolbox's iterative pipelines keep the toolbox's iLSQR QSM unreferenced
     /// (QSM.rs's rule chi-sep.reference-none).
     #[test]
