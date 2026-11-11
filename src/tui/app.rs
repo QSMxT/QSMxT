@@ -13540,6 +13540,7 @@ mod tests {
         let notes: Vec<String> = app.page_rows(Page::Export).iter()
             .filter_map(|r| match r { PipelineRow::Note { text } => Some(text.to_string()), _ => None }).collect();
         assert_eq!(notes, ["Maps to export"], "a heading and the maps made, nothing about the maps not made");
+        assert!(!fields.contains(&"dicom_out_swi_phase"), "SWI on, its filtered phase off: {fields:?}");
         assert_eq!(app.dicom_outputs(), None, "all ticked: no --dicom-outputs");
 
         app.toggle_field("dicom_out_minip");
