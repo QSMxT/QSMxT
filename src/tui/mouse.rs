@@ -365,7 +365,7 @@ mod tests {
         assert!(app.on_subtabs(), "a click on a section focuses the sidebar");
         // A group's heading opens its first section.
         click(&mut app, " OTHER OUTPUTS");
-        assert_eq!(app.page(), Some(Page::Swi));
+        assert_eq!(app.page(), Some(Page::Magnitude));
         click(&mut app, "4 Execution");
         assert_eq!(app.active_tab, crate::tui::app::TAB_EXECUTION);
     }

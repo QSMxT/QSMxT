@@ -28,43 +28,6 @@ pub(super) fn table() -> Vec<Def> {
         ])).flag("--output-space").parent("pipeline.axial_resampling")
         .when(|x| x.c.pipeline.axial_resampling || x.axial_forced)
         .gui("The grid derivatives are written on, when an oblique run was resampled to axial"),
-        d("masking.inhomogeneity_correction", Geometry, "Inhomog. correction", "Apply B1 field correction to magnitude (improves masking, ROMEO weights, SWI)", Bool).basic().flag("--no-inhomogeneity-correction").full("Inhomogeneity correction"),
-        d("masking.inhomogeneity_method", Geometry, "Method", "", Enum(vec![
-            o("makehomogeneous", "makehomogeneous", "makehomogeneous", "Divide by a smoothed estimate of the receive sensitivity (MriResearchTools' makehomogeneous) (default)"),
-            o("n4", "n4", "N4", "N4 bias field correction, as ANTs' N4BiasFieldCorrection: a B-spline bias field fitted to sharpen the intensity histogram — https://doi.org/10.1109/TMI.2010.2046908"),
-        ])).flag("--inhomogeneity-method").parent("masking.inhomogeneity_correction")
-        .when(|x| x.c.masking.inhomogeneity_correction).full("Inhomogeneity correction method")
-        .gui("How the magnitude is corrected for inhomogeneity"),
-        d("homogeneity.sigma_mm", Geometry, "Sigma (mm)", "Smoothing sigma of the bias-field estimate, in mm", Float).units("mm").flag("--homogeneity-sigma-mm").parent("masking.inhomogeneity_method")
-        .when(|x| x.c.masking.inhomogeneity_correction && x.c.masking.inhomogeneity_method == InhomogeneityMethod::Makehomogeneous).full("Bias field sigma")
-        .gui("Smoothing sigma of the bias-field estimate"),
-        // QSM.rs utils/bias_correction.rs: nx.div_ceil(nbox) divides by zero at 0.
-        d("homogeneity.nbox", Geometry, "Segmentation boxes", "Boxes per dimension for the tissue segmentation the receive sensitivity is estimated from", Int).min(1.0).flag("--homogeneity-nbox").parent("masking.inhomogeneity_method")
-        .when(|x| x.c.masking.inhomogeneity_correction && x.c.masking.inhomogeneity_method == InhomogeneityMethod::Makehomogeneous).full("Box filter passes"),
-        // N4's settings: QSM.rs utils/n4.rs asserts each range below (a shrink factor, mesh and
-        // spline order it can use, at least two histogram bins); FWHM 0 divides by zero.
-        d("n4.shrink_factor", Geometry, "Shrink factor", "Subsample the image by this factor before fitting the bias field", Int).min(1.0).flag("--n4-shrink-factor").parent("masking.inhomogeneity_method")
-        .when(n4_on).context("N4"),
-        d("n4.max_iterations", Geometry, "Iterations", "Maximum iterations at each fitting level, one number a level (e.g. 50 50 50 50); the B-spline mesh doubles from one level to the next", IntList).flag("--n4-max-iterations").parent("masking.inhomogeneity_method")
-        .when(n4_on).full("Iterations per level").context("N4"),
-        d("n4.convergence_threshold", Geometry, "Convergence", "Stop a level once the change in the bias field (its coefficient of variation) falls to this; 0 runs every iteration", Float).min(0.0).flag("--n4-convergence-threshold").parent("masking.inhomogeneity_method")
-        .when(n4_on).full("Convergence threshold").context("N4"),
-        d("n4.mesh", Geometry, "Mesh", "B-spline mesh elements per axis at the first level (x y z)", IntVec3).min(1.0).flag("--n4-mesh").parent("masking.inhomogeneity_method")
-        .when(n4_on).full("B-spline mesh").context("N4"),
-        d("n4.spline_order", Geometry, "Spline order", "Order of the B-spline bias field: 1, 2 or 3", Int).min(1.0).max(3.0).flag("--n4-spline-order").parent("masking.inhomogeneity_method")
-        .when(n4_on).full("B-spline order").context("N4"),
-        d("n4.bias_field_fwhm", Geometry, "Bias FWHM", "FWHM of the Gaussian modelling the bias field's blurring of the log-intensity histogram", Float).above(0.0).flag("--n4-bias-field-fwhm").parent("masking.inhomogeneity_method")
-        .when(n4_on).full("Bias field FWHM").context("N4"),
-        d("n4.wiener_noise", Geometry, "Wiener noise", "Noise term of the Wiener deconvolution of the histogram", Float).min(0.0).flag("--n4-wiener-noise").parent("masking.inhomogeneity_method")
-        .when(n4_on).context("N4"),
-        d("n4.histogram_bins", Geometry, "Histogram bins", "Bins of the log-intensity histogram", Int).min(2.0).flag("--n4-histogram-bins").parent("masking.inhomogeneity_method")
-        .when(n4_on).context("N4"),
-        d("masking.n4_geometry", Geometry, "Geometry", "", Enum(vec![
-            o("scanner", "scanner", "Scanner", "The scan's header, as ANTs reads the acquired NIfTI (default)"),
-            o("make-nii", "make-nii", "make_nii", "The axis-aligned header MATLAB's make_nii writes, as QSMART runs N4"),
-        ])).flag("--n4-geometry").parent("masking.inhomogeneity_method")
-        .when(n4_on).full("Image geometry").context("N4")
-        .gui("The image geometry N4 is given, which decides where its shrunk grid falls"),
         d("pipeline.ignore_slice_gap", Geometry, "Ignore slice gap", "Reconstruct even if the sidecar's SliceThickness is thinner than the slice pitch (gapped 2D data gives a wrong map)", Bool).flag("--ignore-slice-gap"),
         d("pipeline.tukey_window", Geometry, "Tukey window", "Taper ratio of a k-space Tukey window applied to each echo's complex image before every other step: 0 applies none; the χ-separation toolbox uses 0.4, and 0 for Philips data. Needs magnitude", Float).min(0.0).max(1.0).flag("--tukey-window").full("Tukey window in k-space"),
         d("pipeline.crop_to_mask", Geometry, "Crop to mask", "Run the FFT-bound stages on a box around the mask (faster; outputs stay on the full grid). Off by default", Bool).flag("--crop-to-mask")
@@ -114,6 +77,43 @@ pub(super) fn table() -> Vec<Def> {
             o("and", "AND", "AND", "A voxel is in the reliable mask when every section keeps it"),
         ])).optional().flag("--two-pass-mask-combine").parent("masking.two_pass_sections").context("Reliable mask")
         .when(|x| x.c.masking.two_pass && x.c.masking.resolved_two_pass_sections().len() > 1),
+        d("masking.inhomogeneity_correction", Masking, "Magnitude correction", "Correct the magnitude for receive-coil inhomogeneity: the echoes masking reads, and the combined magnitude", Bool).basic().flag("--no-inhomogeneity-correction").full("Inhomogeneity correction"),
+        d("masking.inhomogeneity_method", Masking, "Method", "", Enum(vec![
+            o("makehomogeneous", "makehomogeneous", "makehomogeneous", "Divide by a smoothed estimate of the receive sensitivity (MriResearchTools' makehomogeneous) (default)"),
+            o("n4", "n4", "N4", "N4 bias field correction, as ANTs' N4BiasFieldCorrection: a B-spline bias field fitted to sharpen the intensity histogram — https://doi.org/10.1109/TMI.2010.2046908"),
+        ])).flag("--inhomogeneity-method").parent("masking.inhomogeneity_correction")
+        .when(|x| x.c.masking.inhomogeneity_correction).full("Inhomogeneity correction method")
+        .gui("How the magnitude is corrected for inhomogeneity"),
+        d("homogeneity.sigma_mm", Masking, "Sigma (mm)", "Smoothing sigma of the bias-field estimate, in mm", Float).units("mm").flag("--homogeneity-sigma-mm").parent("masking.inhomogeneity_method")
+        .when(|x| x.c.masking.inhomogeneity_correction && x.c.masking.inhomogeneity_method == InhomogeneityMethod::Makehomogeneous).full("Bias field sigma")
+        .gui("Smoothing sigma of the bias-field estimate"),
+        // QSM.rs utils/bias_correction.rs: nx.div_ceil(nbox) divides by zero at 0.
+        d("homogeneity.nbox", Masking, "Segmentation boxes", "Boxes per dimension for the tissue segmentation the receive sensitivity is estimated from", Int).min(1.0).flag("--homogeneity-nbox").parent("masking.inhomogeneity_method")
+        .when(|x| x.c.masking.inhomogeneity_correction && x.c.masking.inhomogeneity_method == InhomogeneityMethod::Makehomogeneous).full("Box filter passes"),
+        // N4's settings: QSM.rs utils/n4.rs asserts each range below (a shrink factor, mesh and
+        // spline order it can use, at least two histogram bins); FWHM 0 divides by zero.
+        d("n4.shrink_factor", Masking, "Shrink factor", "Subsample the image by this factor before fitting the bias field", Int).min(1.0).flag("--n4-shrink-factor").parent("masking.inhomogeneity_method")
+        .when(n4_on).context("N4"),
+        d("n4.max_iterations", Masking, "Iterations", "Maximum iterations at each fitting level, one number a level (e.g. 50 50 50 50); the B-spline mesh doubles from one level to the next", IntList).flag("--n4-max-iterations").parent("masking.inhomogeneity_method")
+        .when(n4_on).full("Iterations per level").context("N4"),
+        d("n4.convergence_threshold", Masking, "Convergence", "Stop a level once the change in the bias field (its coefficient of variation) falls to this; 0 runs every iteration", Float).min(0.0).flag("--n4-convergence-threshold").parent("masking.inhomogeneity_method")
+        .when(n4_on).full("Convergence threshold").context("N4"),
+        d("n4.mesh", Masking, "Mesh", "B-spline mesh elements per axis at the first level (x y z)", IntVec3).min(1.0).flag("--n4-mesh").parent("masking.inhomogeneity_method")
+        .when(n4_on).full("B-spline mesh").context("N4"),
+        d("n4.spline_order", Masking, "Spline order", "Order of the B-spline bias field: 1, 2 or 3", Int).min(1.0).max(3.0).flag("--n4-spline-order").parent("masking.inhomogeneity_method")
+        .when(n4_on).full("B-spline order").context("N4"),
+        d("n4.bias_field_fwhm", Masking, "Bias FWHM", "FWHM of the Gaussian modelling the bias field's blurring of the log-intensity histogram", Float).above(0.0).flag("--n4-bias-field-fwhm").parent("masking.inhomogeneity_method")
+        .when(n4_on).full("Bias field FWHM").context("N4"),
+        d("n4.wiener_noise", Masking, "Wiener noise", "Noise term of the Wiener deconvolution of the histogram", Float).min(0.0).flag("--n4-wiener-noise").parent("masking.inhomogeneity_method")
+        .when(n4_on).context("N4"),
+        d("n4.histogram_bins", Masking, "Histogram bins", "Bins of the log-intensity histogram", Int).min(2.0).flag("--n4-histogram-bins").parent("masking.inhomogeneity_method")
+        .when(n4_on).context("N4"),
+        d("masking.n4_geometry", Masking, "Geometry", "", Enum(vec![
+            o("scanner", "scanner", "Scanner", "The scan's header, as ANTs reads the acquired NIfTI (default)"),
+            o("make-nii", "make-nii", "make_nii", "The axis-aligned header MATLAB's make_nii writes, as QSMART runs N4"),
+        ])).flag("--n4-geometry").parent("masking.inhomogeneity_method")
+        .when(n4_on).full("Image geometry").context("N4")
+        .gui("The image geometry N4 is given, which decides where its shrunk grid falls"),
         d("motion_correction.enabled", Motion, "Motion correction", "Rigidly co-register every echo onto a reference echo before any other stage (multi-echo, needs magnitude). Off by default", Bool).basic().flag("--motion-correction")
         .gui("Rigidly co-register every echo onto a reference echo before any other stage (multi-echo, needs magnitude)"),
         d("motion_correction.reference", Motion, "Reference", "", EchoReference(vec![
@@ -1146,6 +1146,7 @@ pub(super) fn table() -> Vec<Def> {
         .supplied_file(Item::SuppliedChi, "A susceptibility (χ) map to use instead of computing QSM, for χ-separation, the statistics and SMWI")
         .when(|x| x.reads_qsm).full("Custom QSM")
         .gui("Use a χ map (Chimap) from <bids>/derivatives/<tool>/ instead of computing QSM, for χ-separation, the statistics and SMWI: * for any tool, or a tool name; empty to compute it"),
+        d("pipeline.do_magnitude", Magnitude, "Combined magnitude", "Publish the combined magnitude (part-mag_T2starw): the root sum of squares of the echoes, corrected for inhomogeneity when that is on. Off, it is still made for SMWI, segmentation or a magnitude-weighted inversion, and kept with the run's intermediates", Bool).basic().flag("--no-magnitude"),
         d("pipeline.do_swi", SwiSmwi, "Compute SWI", "Also compute susceptibility-weighted images with CLEAR-SWI, from every echo", Bool).basic().flag("--do-swi"),
         d("swi.unwrap", SwiSmwi, "Unwrapping", "", Enum(vec![
             o("laplacian", "laplacian", "Laplacian", "Each echo unwrapped with the Laplacian method and high-pass filtered, then combined"),

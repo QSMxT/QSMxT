@@ -213,6 +213,8 @@ fn section_applies(section: Section, x: &Ctx, facts: &ViewFacts) -> bool {
         Section::Background => x.qsm && !crate::bridge::skips_bgremove(c),
         Section::Inversion | Section::Reference => x.qsm,
         Section::MultiOrientation => x.qsm && x.grouped,
+        // The combined magnitude is made from the echoes' magnitudes.
+        Section::Magnitude => facts.has_magnitude != Some(false),
         _ => true,
     }
 }

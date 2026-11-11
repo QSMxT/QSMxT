@@ -88,6 +88,9 @@ impl Item {
             Item::Magnitude(_) => ("Magnitude".into(), None, K::Magnitude, None),
             Item::CorrectedPhase(_) => ("Motion-corrected phase".into(), Some("rad"), K::Phase, None),
             Item::CorrectedMagnitude(_) => ("Motion-corrected magnitude".into(), None, K::Magnitude, None),
+            Item::HomogeneousMagnitude(_) => ("Inhomogeneity-corrected magnitude".into(), None, K::Magnitude, None),
+            Item::VesselMagnitude => ("QSMART vessel magnitude".into(), None, K::Magnitude,
+                                      Some("part-mag_desc-vessels_T2starw".into())),
             Item::CombinedMagnitude => ("Combined magnitude".into(), None, K::Magnitude, Some("part-mag_T2starw".into())),
             Item::BrainMask => ("Brain mask".into(), None, K::Mask, Some("mask".into())),
             Item::SuppliedMask => ("Supplied brain mask".into(), None, K::Mask, None),
@@ -105,7 +108,9 @@ impl Item {
             Item::ReliableMask => ("Reliable-phase mask".into(), None, K::Mask, Some("desc-reliable_mask".into())),
             Item::QsmartIntermediate(p, name) => {
                 let (label, units, kind, bids) = match name {
-                    crate::stages::qsmart::VESSEL_MAGNITUDE => ("QSMART vessel magnitude", None, K::Magnitude, "part-mag_desc-vessels_T2starw"),
+                    // Made in the QSMART step only from motion-corrected echoes; otherwise the
+                    // inhomogeneity correction makes it ([`Item::VesselMagnitude`]).
+                    crate::stages::qsmart::VESSEL_MAGNITUDE => ("QSMART vessel magnitude (motion-corrected echoes)", None, K::Magnitude, "part-mag_desc-vessels_T2starw"),
                     qsmart::VESSEL_MASK => ("QSMART vessel mask", None, K::Mask, "desc-vessels_mask"),
                     qsmart::LOCAL_FIELD_STAGE1 => ("QSMART local field, stage 1", Some("ppm"), K::Field, "desc-stage1_localfield"),
                     qsmart::CHI_STAGE1 => ("QSMART susceptibility, stage 1", Some("ppm"), K::Chi, "desc-stage1_Chimap"),
@@ -168,6 +173,16 @@ impl Item {
         ItemMeta { label, units, kind, bids_name, published, echo: self.echo(), coil }
     }
 
+    /// Whether a run of `config` publishes the item: [`ItemMeta::published`], except the combined
+    /// magnitude with `pipeline.do_magnitude` off, which is kept among the run's intermediates
+    /// for the steps that read it.
+    pub fn published_in(&self, config: &crate::config::PipelineConfig) -> bool {
+        match self {
+            Item::CombinedMagnitude => config.pipeline.do_magnitude,
+            _ => self.meta().published,
+        }
+    }
+
     /// One of every item, each variant at least once (both passes and contrasts, and every QSMART
     /// intermediate QSMxT names). `meta` matches on the variant without a wildcard, so a new
     /// variant cannot compile without its metadata; this list is what its tests check it on.
@@ -177,7 +192,8 @@ impl Item {
             Item::CoilPhase(1, 1), Item::CoilMagnitude(1, 1), Item::CombinedEchoPhase(1),
             Item::CombinedEchoMagnitude(1), Item::CoilCombinationMask, Item::ScaledPhase(1), Item::ScaledMagnitude(1),
             Item::WindowedPhase(1), Item::WindowedMagnitude(1), Item::Phase(1), Item::Magnitude(1),
-            Item::CorrectedPhase(1), Item::CorrectedMagnitude(1), Item::CombinedMagnitude, Item::BrainMask,
+            Item::CorrectedPhase(1), Item::CorrectedMagnitude(1), Item::HomogeneousMagnitude(1), Item::VesselMagnitude,
+            Item::CombinedMagnitude, Item::BrainMask,
             Item::SuppliedMask, Item::CoverageMask, Item::FieldPpm, Item::TotalFieldHz,
             Item::TotalFieldMagnitude, Item::RobustFitReport, Item::FieldReliability, Item::FieldMask, Item::ReliableMask,
             Item::CombinedRawChi,
@@ -210,6 +226,7 @@ impl Item {
             | Item::CombinedEchoPhase(e) | Item::CombinedEchoMagnitude(e)
             | Item::ScaledPhase(e) | Item::ScaledMagnitude(e) | Item::WindowedPhase(e) | Item::WindowedMagnitude(e)
             | Item::Phase(e) | Item::Magnitude(e) | Item::CorrectedPhase(e) | Item::CorrectedMagnitude(e)
+            | Item::HomogeneousMagnitude(e)
             | Item::MeseMagnitude(e) | Item::EchoField(e) | Item::EchoLocalField(e) | Item::EchoLocalFieldMask(e)
             | Item::EchoRawChi(e) | Item::EchoChi(e) => Some(e),
             _ => None,

@@ -60,6 +60,7 @@ fn command_for(config: &PipelineConfig, d: &PipelineConfig, pipeline: Option<&st
     // ── Pipeline toggles ──
     if !config.pipeline.do_qsm { parts.push("--no-qsm".into()); }
     if config.pipeline.do_swi { parts.push("--do-swi".into()); }
+    if !config.pipeline.do_magnitude { parts.push("--no-magnitude".into()); }
     if config.pipeline.do_segmentation && !config.pipeline.do_analysis {
         parts.push("--do-segmentation".into());
     }

@@ -52,7 +52,12 @@ pub enum Stage {
     /// configuration can resample this scan ([`crate::scan::can_resample`]), and doing anything
     /// only when its grid ([`crate::scan::resolve_geometry`]) is resampled.
     ResampleAxial,
-    /// The combined magnitude.
+    /// Inhomogeneity correction of the magnitudes its consumers ask for
+    /// ([`crate::stages::homogeneity::targets`]): the echoes masking reads, every echo for the
+    /// combined magnitude, and QSMART's vessel magnitude. Planned only when one asks.
+    InhomogeneityCorrection,
+    /// The combined magnitude: the root sum of squares of every echo's magnitude (corrected, when
+    /// the correction is on). Planned when it is published or a step reads it.
     Magnitude,
     /// The brain mask (main pass), or the reliable-phase mask of a two-pass run.
     Mask(Pass),
@@ -97,6 +102,7 @@ impl Stage {
             Stage::ScalePhase => ("scale_phase", Pass::Main),
             Stage::TukeyWindow => ("tukey_window", Pass::Main),
             Stage::ResampleAxial => ("resample_axial", Pass::Main),
+            Stage::InhomogeneityCorrection => ("inhomog", Pass::Main),
             Stage::Magnitude => ("magnitude", Pass::Main),
             Stage::Mask(p) => ("mask", p),
             Stage::Motion => ("motion", Pass::Main),
@@ -130,6 +136,7 @@ impl Stage {
             Stage::ScalePhase => ("Phase scaling", Pass::Main),
             Stage::TukeyWindow => ("Tukey window", Pass::Main),
             Stage::ResampleAxial => ("Resample to an axial grid", Pass::Main),
+            Stage::InhomogeneityCorrection => ("Inhomogeneity correction", Pass::Main),
             Stage::Magnitude => ("Combined magnitude", Pass::Main),
             Stage::Mask(Pass::Main) => ("Brain mask", Pass::Main),
             Stage::Mask(Pass::Reliable) => ("Reliable-phase mask", Pass::Main),
@@ -231,6 +238,9 @@ pub struct Plan {
     /// The echoes the stages after masking read are motion-corrected, and so is the mask they work
     /// in (the voxels every echo still covers).
     pub motion_corrected: bool,
+    /// What the inhomogeneity correction step corrects ([`Stage::InhomogeneityCorrection`]; empty
+    /// when the plan has none).
+    pub homogeneity: crate::stages::magnitude::Targets,
 }
 
 /// A step estimated to need more memory than the host has ([`Plan::over_budget`]).
@@ -360,7 +370,7 @@ pub fn plan_for(config: &PipelineConfig, facts: &ScanFacts, profile: &MemoryProf
         if crate::scan::can_resample(facts, config) {
             add(Stage::ResampleAxial, vec![]);
         }
-        if facts.has_magnitude {
+        if combined_magnitude_needed(config, facts) {
             add(Stage::Magnitude, vec![]);
         }
         if needs_mask {
@@ -435,15 +445,17 @@ pub fn plan_for(config: &PipelineConfig, facts: &ScanFacts, profile: &MemoryProf
         add(Stage::OutputSpace, vec![]);
     }
 
-    let mut models: Vec<&'static str> = Vec::new();
-    for id in steps.iter().flat_map(|s| s.models.iter()) {
-        if !models.contains(id) {
-            models.push(id);
-        }
+    // The inhomogeneity correction, for what the planned steps ask of it, before the first of them.
+    let has = |stage: Stage| steps.iter().any(|s| s.stage == stage);
+    let homogeneity = crate::stages::magnitude::targets(config, facts, has, motion_corrected, supplied_mask);
+    if !homogeneity.is_empty() {
+        let at = steps.iter().rposition(|s| matches!(s.stage, Stage::ScalePhase | Stage::TukeyWindow | Stage::ResampleAxial))
+            .map_or(1, |i| i + 1);
+        steps.insert(at, Step::new(Stage::InhomogeneityCorrection, vec![]));
     }
     let mut plan = Plan {
         steps,
-        models,
+        models: Vec::new(),
         peak_memory_bytes: 0,
         peak_memory_step: None,
         memory_profile: *profile,
@@ -455,13 +467,67 @@ pub fn plan_for(config: &PipelineConfig, facts: &ScanFacts, profile: &MemoryProf
         config: config.clone(),
         two_pass,
         motion_corrected,
+        homogeneity,
     };
-    let details = crate::pipeline_graph::step_details(&plan, config, facts, None);
-    for (step, d) in plan.steps.iter_mut().zip(details) {
-        (step.algorithm, step.algorithm_label, step.reads, step.outputs) = (d.algorithm, d.algorithm_label, d.reads, d.writes);
+    fill_details(&mut plan, config, facts);
+    prune(&mut plan, config, facts);
+    for id in plan.steps.iter().flat_map(|s| s.models.iter()) {
+        if !plan.models.contains(id) {
+            plan.models.push(id);
+        }
     }
     estimate_memory(&mut plan, facts, profile);
     plan
+}
+
+/// Whether the run needs the combined magnitude: it is published (`pipeline.do_magnitude`), or a
+/// planned step reads it (SMWI; SynthSeg, unless a segmentation is supplied; an inversion that
+/// weights by it; QSMART's vessel detection on it).
+fn combined_magnitude_needed(config: &PipelineConfig, facts: &ScanFacts) -> bool {
+    use crate::stages::inversion::{iqsm_algorithm, magnitude_input, MagnitudeInput};
+    if !facts.has_magnitude {
+        return false;
+    }
+    let p = &config.pipeline;
+    let wanted = |o: Output| requirements::wanted(facts, config, o);
+    let supplied_dseg = config.segmentation.custom_dseg_tool.is_some() && facts.custom_dseg;
+    let inversion = p.do_qsm && match config.inversion.algorithm {
+        QsmAlgorithm::Qsmart => config.inversion.qsmart.vessel_magnitude == QsmartVesselMagnitude::Combined,
+        QsmAlgorithm::Tgv => false,
+        _ => iqsm_algorithm(config).is_none() && !crate::bridge::per_echo(config, facts.n_echoes)
+            && magnitude_input(config) == Some(MagnitudeInput::Combined),
+    };
+    p.do_magnitude || wanted(Output::Smwi) || (wanted(Output::Segmentation) && !supplied_dseg) || inversion
+}
+
+/// Fill in what each step runs, reads and writes ([`crate::pipeline_graph::step_details`]).
+fn fill_details(plan: &mut Plan, config: &PipelineConfig, facts: &ScanFacts) {
+    let details = crate::pipeline_graph::step_details(plan, config, facts, None);
+    for (step, d) in plan.steps.iter_mut().zip(details) {
+        (step.algorithm, step.algorithm_label, step.reads, step.outputs) = (d.algorithm, d.algorithm_label, d.reads, d.writes);
+    }
+}
+
+/// Drop every step whose outputs no later step reads and the run does not publish
+/// ([`Item::published_in`]). Loading, the return to the acquired grid, and a step that writes
+/// nothing (motion correction when it is off, which forgets an earlier run's output) stay.
+fn prune(plan: &mut Plan, config: &PipelineConfig, facts: &ScanFacts) {
+    let mut read: Vec<Item> = Vec::new();
+    let mut keep = vec![true; plan.steps.len()];
+    for (i, step) in plan.steps.iter().enumerate().rev() {
+        let used = matches!(step.stage, Stage::Load | Stage::OutputSpace) || step.outputs.is_empty()
+            || step.outputs.iter().any(|o| read.contains(o) || o.published_in(config));
+        keep[i] = used;
+        if used {
+            read.extend(step.reads.iter().copied());
+        }
+    }
+    if keep.iter().all(|&k| k) {
+        return;
+    }
+    let mut k = keep.into_iter();
+    plan.steps.retain(|_| k.next().unwrap_or(true));
+    fill_details(plan, config, facts);
 }
 
 /// Fill in the plan's memory figures, and warn of the first step that exceeds the host's budget.
@@ -538,10 +604,57 @@ pub(crate) mod tests {
         assert!(!p.steps.iter().any(|s| s.outputs.contains(&Item::EchoChi(1))));
     }
 
+    /// The inhomogeneity correction is one step, run for what reads it: the echoes the mask
+    /// reads, every echo for the combined magnitude, QSMART's vessel magnitude. The combined
+    /// magnitude is made when it is published or read; a step nothing reads or publishes is not
+    /// planned.
+    #[test]
+    fn the_correction_is_planned_for_what_reads_it() {
+        use crate::stages::magnitude::Targets;
+        let f = facts();
+        let qsmart = crate::pipelines::target(&PipelineConfig::default(), "qsmart",
+                                              &crate::schema::ViewFacts::of_example(&f)).unwrap();
+        // QSMART: N4 on echo 1 for its first-echo mask, every echo for the published magnitude,
+        // and the echo mean for vessel detection, all in one step before the mask.
+        let p = plan(&qsmart, &f);
+        assert_eq!(p.homogeneity, Targets { echoes: vec![1, 2, 3, 4, 5], vessel: true });
+        assert_eq!(names(&p)[..5], ["load", "scale_phase", "inhomog", "magnitude", "mask"]);
+        let qsmart_step = p.steps.iter().find(|s| s.stage == Stage::Qsmart(Pass::Main)).unwrap();
+        assert!(qsmart_step.reads.contains(&Item::VesselMagnitude), "{:?}", qsmart_step.reads);
+        let mask = p.steps.iter().find(|s| s.stage == Stage::Mask(Pass::Main)).unwrap();
+        assert!(mask.reads.contains(&Item::HomogeneousMagnitude(1)) && !mask.reads.contains(&Item::HomogeneousMagnitude(2)),
+                "{:?}", mask.reads);
+        // Without the magnitude output, only echo 1 and the vessel magnitude; no combined magnitude.
+        let mut no_mag = qsmart.clone();
+        no_mag.pipeline.do_magnitude = false;
+        let p = plan(&no_mag, &f);
+        assert_eq!(p.homogeneity, Targets { echoes: vec![1], vessel: true });
+        assert!(!p.has(Stage::Magnitude));
+
+        // The defaults: phase quality reads every echo.
+        let mut c = PipelineConfig::default();
+        assert_eq!(plan(&c, &f).homogeneity.echoes, vec![1, 2, 3, 4, 5]);
+        // Nothing corrected and nothing published: neither step.
+        c.masking.inhomogeneity_correction = false;
+        c.pipeline.do_magnitude = false;
+        let p = plan(&c, &f);
+        assert!(!p.has(Stage::InhomogeneityCorrection) && !p.has(Stage::Magnitude), "{:?}", names(&p));
+        // SMWI reads the combined magnitude: made, but not published.
+        c.pipeline.do_smwi = true;
+        let p = plan(&c, &f);
+        assert!(p.has(Stage::Magnitude));
+        assert!(!Item::CombinedMagnitude.published_in(&p.config));
+        // A scan without magnitude: neither.
+        let mut phase_only = facts();
+        phase_only.has_magnitude = false;
+        let p = plan(&PipelineConfig::default(), &phase_only);
+        assert!(!p.has(Stage::InhomogeneityCorrection) && !p.has(Stage::Magnitude));
+    }
+
     #[test]
     fn the_default_run_maps_the_field_removes_the_background_and_inverts() {
         let plan = plan(&PipelineConfig::default(), &facts());
-        assert_eq!(names(&plan), ["load", "scale_phase", "magnitude", "mask", "motion", "unwrap",
+        assert_eq!(names(&plan), ["load", "scale_phase", "inhomog", "magnitude", "mask", "motion", "unwrap",
                                   "bgremove", "invert", "reference", "output_space"]);
         assert!(plan.models.is_empty(), "the defaults are classical: {:?}", plan.models);
         assert!(plan.check.errors.is_empty() && plan.check.warnings.is_empty());
@@ -555,7 +668,7 @@ pub(crate) mod tests {
     #[test]
     fn the_phase_steps_are_planned_where_they_apply() {
         let phase_steps = |c: &PipelineConfig, f: &ScanFacts| names(&plan(c, f))[1..].iter()
-            .take_while(|n| *n != "magnitude").cloned().collect::<Vec<_>>();
+            .take_while(|n| *n != "inhomog" && *n != "magnitude").cloned().collect::<Vec<_>>();
         let mut c = PipelineConfig::default();
         assert_eq!(phase_steps(&c, &facts()), ["scale_phase"]);
         c.pipeline.tukey_window = 0.2;
@@ -604,8 +717,8 @@ pub(crate) mod tests {
         config.masking.two_pass = true;
         config.inversion.algorithm = QsmAlgorithm::Tgv;
         let p = plan(&config, &facts());
-        assert_eq!(p.steps[8].stage.label(), "TGV-QSM (reliable pass)");
-        assert_eq!(names(&p)[5..], ["unwrap", "tgv", "mask-reliable", "tgv-reliable", "twopass",
+        assert_eq!(p.steps[9].stage.label(), "TGV-QSM (reliable pass)");
+        assert_eq!(names(&p)[6..], ["unwrap", "tgv", "mask-reliable", "tgv-reliable", "twopass",
                                     "reference-singlepass", "reference", "output_space"]);
         // Every step name is one the invalidation table knows.
         for step in &p.steps {

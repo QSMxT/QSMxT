@@ -2300,9 +2300,9 @@ fn describe_masking(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
         None => {}
     }
 
-    // Describe inhomogeneity correction if enabled, with context about what it affects.
-    // The RSS-combined magnitude is used for both Magnitude and PhaseQuality masking inputs,
-    // while MagnitudeFirst/MagnitudeLast use their specific echo magnitudes.
+    // The inhomogeneity correction, when on, and which echoes it corrected: those the mask reads
+    // (the RSS for RSS and phase-quality inputs, the first or last echo for those), and every echo
+    // for the combined magnitude.
     if config.masking.inhomogeneity_correction {
         let mut changed = Changed::default();
         let correction = match config.masking.inhomogeneity_method {
@@ -2331,17 +2331,18 @@ fn describe_masking(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
         let uses_first = inputs.iter().any(|i| matches!(i, MaskingInput::MagnitudeFirst));
         let uses_last = inputs.iter().any(|i| matches!(i, MaskingInput::MagnitudeLast));
 
-        if uses_rss && !uses_first && !uses_last {
-            doc.say(&[Stage::Magnitude], format!("{correction}{settings}) was applied to the RSS-combined magnitude image."));
-        } else if !uses_rss && (uses_first || uses_last) {
-            let echo = if uses_first { "first" } else { "last" };
-            doc.say(&[Stage::Magnitude], format!(
-                "{correction}{settings}) was applied to the {}-echo magnitude image.",
-                echo
-            ));
+        // Each echo the mask reads is corrected on its own, and every echo when the combined
+        // magnitude (the RSS of the corrected echoes) is published.
+        let all = uses_rss || config.pipeline.do_magnitude
+            || crate::stages::magnitude::refinements_read_magnitude(&config.masking.refinements);
+        let what = if all || (uses_first && uses_last) {
+            "each echo's magnitude"
+        } else if uses_first {
+            "the first-echo magnitude"
         } else {
-            doc.say(&[Stage::Magnitude], format!("{correction}{settings}) was applied to the magnitude data."));
-        }
+            "the last-echo magnitude"
+        };
+        doc.say(&[Stage::InhomogeneityCorrection], format!("{correction}{settings}) was applied to {what}."));
     }
 
     // No run generated a mask: there is no recipe to describe.
@@ -2425,6 +2426,20 @@ fn bg_removal_name_cite(alg: BfAlgorithm) -> (&'static str, &'static Citation) {
 /// methods text's words: so a box and the sentence describing the same step cannot disagree.
 pub(crate) mod words {
     use super::*;
+
+    /// Which of `n` echoes `echoes` (1-based, ascending) are: "each echo", "the first echo", "the
+    /// last echo", or "echoes 1 and 5".
+    pub(crate) fn echoes(echoes: &[usize], n: usize) -> String {
+        match echoes {
+            e if e.len() == n && n > 1 => "each echo".to_string(),
+            [1] => "the first echo".to_string(),
+            [e] if *e == n => "the last echo".to_string(),
+            [e] => format!("echo {e}"),
+            [rest @ .., last] => format!("echoes {} and {last}",
+                rest.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")),
+            [] => String::new(),
+        }
+    }
 
     /// The name the methods text gives an algorithm, without what follows it in parentheses:
     /// "RTS (Rapid Two-Step)" is "RTS" in a box.
@@ -4027,7 +4042,7 @@ mod tests {
             },
         ];
         let out = generate_methods(&config);
-        assert!(out.contains("applied to the magnitude data"));
+        assert!(out.contains("applied to each echo's magnitude"), "{out}");
     }
 
     // ─── Citation inline tests ───

@@ -61,6 +61,12 @@ pub enum Item {
     CorrectedPhase(usize),
     /// Echo `n`'s magnitude after motion correction.
     CorrectedMagnitude(usize),
+    /// Echo `n`'s magnitude corrected for inhomogeneity (the `inhomog` step), as masking and the
+    /// combined magnitude read it.
+    HomogeneousMagnitude(usize),
+    /// QSMART's vessel magnitude: the mean of every echo's magnitude, corrected with N4 as QSMART
+    /// does (the `inhomog` step).
+    VesselMagnitude,
     /// The RSS-combined magnitude.
     CombinedMagnitude,
     /// The brain mask.
@@ -171,9 +177,13 @@ impl Item {
     /// χ-separation toolbox's BET rounds only the RSS of its windowed echoes to single, and the RSS
     /// of float32-rounded echoes differs from that in the last bit at about half of the head's
     /// voxels, which moves BET's surface (QSMxT/QSM-CI#421). A magnitude kept as it was given
-    /// ([`Data::Same`]) is the input file's, already exact.
+    /// ([`Data::Same`]) is the input file's, already exact. The inhomogeneity correction's
+    /// outputs, which masking and QSMART's vessel detection read, are kept in double for the same
+    /// reason: those steps corrected the echoes themselves, in double, before the correction was a
+    /// step of its own.
     pub fn kept_in_double(&self) -> bool {
-        matches!(self, Item::ScaledMagnitude(_) | Item::WindowedMagnitude(_) | Item::Magnitude(_))
+        matches!(self, Item::ScaledMagnitude(_) | Item::WindowedMagnitude(_) | Item::Magnitude(_)
+            | Item::HomogeneousMagnitude(_) | Item::VesselMagnitude)
     }
 
     /// The name a front end keeps the item under: as Rust writes it (`AcquiredPhase(1)`,
@@ -222,6 +232,7 @@ impl Item {
             ("Magnitude", a) => Item::Magnitude(echo(a)?),
             ("CorrectedPhase", a) => Item::CorrectedPhase(echo(a)?),
             ("CorrectedMagnitude", a) => Item::CorrectedMagnitude(echo(a)?),
+            ("HomogeneousMagnitude", a) => Item::HomogeneousMagnitude(echo(a)?),
             ("MeseMagnitude", a) => Item::MeseMagnitude(echo(a)?),
             ("EchoField", a) => Item::EchoField(echo(a)?),
             ("EchoLocalField", a) => Item::EchoLocalField(echo(a)?),
@@ -243,7 +254,7 @@ impl Item {
             ("SmwiMip", a) => Item::SmwiMip(contrast(a)?),
             ("SeparatedChi", a) => Item::SeparatedChi(contrast(a)?),
             (name, None) => [
-                Item::CoilCombinationMask, Item::CombinedMagnitude, Item::BrainMask, Item::SuppliedMask,
+                Item::CoilCombinationMask, Item::VesselMagnitude, Item::CombinedMagnitude, Item::BrainMask, Item::SuppliedMask,
                 Item::CoverageMask, Item::FieldPpm, Item::TotalFieldHz, Item::TotalFieldMagnitude,
                 Item::RobustFitReport, Item::FieldReliability, Item::FieldMask, Item::ReliableMask, Item::CombinedRawChi,
                 Item::Chi, Item::ChiSupport, Item::SinglePassChi, Item::Segmentation, Item::SuppliedSegmentation, Item::SegmentationLabels,
@@ -1377,7 +1388,7 @@ mod tests {
             Item::CoilMagnitude(1, 4), Item::CombinedEchoPhase(2), Item::CombinedEchoMagnitude(3),
             Item::CoilCombinationMask, Item::ScaledPhase(2), Item::ScaledMagnitude(3), Item::WindowedPhase(4),
             Item::WindowedMagnitude(1), Item::Phase(3), Item::Magnitude(2), Item::CorrectedPhase(4),
-            Item::CorrectedMagnitude(5), Item::CombinedMagnitude, Item::BrainMask, Item::SuppliedMask,
+            Item::CorrectedMagnitude(5), Item::HomogeneousMagnitude(2), Item::VesselMagnitude, Item::CombinedMagnitude, Item::BrainMask, Item::SuppliedMask,
             Item::CoverageMask, Item::FieldPpm, Item::TotalFieldHz, Item::TotalFieldMagnitude,
             Item::RobustFitReport, Item::LocalField(Pass::Main), Item::LocalFieldMask(Pass::Reliable),
             Item::RawChi(Pass::Reliable), Item::ReliableMask, Item::QsmartIntermediate(Pass::Main, q::VESSEL_MASK),

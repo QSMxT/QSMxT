@@ -58,6 +58,10 @@ lambda = 0.0
 See [multi-orientation](/QSMxT/reference/algorithms/#multi-orientation-cosmos-and-sti)
 for what the pattern matches and what will be refused.
 
+The combined magnitude is published unless `pipeline.do_magnitude = false`
+(`--no-magnitude`); it is still made, and kept with the run's intermediates, for
+SMWI, segmentation and the inversions that weight by it.
+
 The inhomogeneity correction's method is `masking.inhomogeneity_method`, and each
 method's settings have their own section: `[homogeneity]` for `makehomogeneous`
 and `[n4]` for N4:

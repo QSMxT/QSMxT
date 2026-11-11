@@ -576,6 +576,8 @@ pub enum Page {
     Separation,
     /// SMWI: weighted by χ, so in the QSM group.
     Smwi,
+    /// The combined magnitude, published or not.
+    Magnitude,
     /// SWI: from the phase alone, so an other output.
     Swi,
     Relaxometry,
@@ -603,6 +605,7 @@ impl Page {
             Page::Reference => "Reference",
             Page::Separation => "χ-separation",
             Page::Smwi => "SMWI",
+            Page::Magnitude => "Magnitude",
             Page::Swi => "SWI",
             Page::Relaxometry => "Relaxometry",
             Page::Segmentation => "Segmentation",
@@ -616,14 +619,14 @@ impl Page {
     /// Whether the page's rows are the pipeline form's ([`PipelineFormState::visible_rows`])
     /// rather than built by the App from both forms.
     pub fn is_pipeline(self) -> bool {
-        !matches!(self, Page::Swi | Page::Smwi | Page::Relaxometry | Page::Segmentation | Page::Export | Page::Execution
+        !matches!(self, Page::Magnitude | Page::Swi | Page::Smwi | Page::Relaxometry | Page::Segmentation | Page::Export | Page::Execution
             | Page::MethodsText | Page::Pipeline)
     }
 
     /// The Reconstruction tab's sections, in sidebar order.
-    pub const RECONSTRUCTION: [Page; 15] = [
+    pub const RECONSTRUCTION: [Page; 16] = [
         Page::Geometry, Page::Masking, Page::Motion, Page::ComputeQsm, Page::FieldMap, Page::Background,
-        Page::Inversion, Page::MultiOrientation, Page::Reference, Page::Separation, Page::Smwi, Page::Swi,
+        Page::Inversion, Page::MultiOrientation, Page::Reference, Page::Separation, Page::Smwi, Page::Magnitude, Page::Swi,
         Page::Relaxometry, Page::Segmentation, Page::Export,
     ];
 
@@ -635,7 +638,7 @@ impl Page {
             Page::Geometry | Page::Masking | Page::Motion => "Preprocessing",
             Page::ComputeQsm | Page::FieldMap | Page::Background | Page::Inversion | Page::MultiOrientation
             | Page::Reference | Page::Separation | Page::Smwi => "QSM",
-            Page::Swi | Page::Relaxometry | Page::Segmentation => "Other outputs",
+            Page::Magnitude | Page::Swi | Page::Relaxometry | Page::Segmentation => "Other outputs",
             Page::Export => "Export",
             Page::Execution => "Execution",
             Page::MethodsText | Page::Pipeline => "Methods",
@@ -644,9 +647,9 @@ impl Page {
 
     /// Every page, in tab order.
     #[cfg(test)]
-    pub const ALL: [Page; 18] = [
+    pub const ALL: [Page; 19] = [
         Page::Geometry, Page::Masking, Page::Motion, Page::ComputeQsm, Page::FieldMap, Page::Background,
-        Page::Inversion, Page::MultiOrientation, Page::Reference, Page::Separation, Page::Smwi, Page::Swi,
+        Page::Inversion, Page::MultiOrientation, Page::Reference, Page::Separation, Page::Smwi, Page::Magnitude, Page::Swi,
         Page::Relaxometry, Page::Segmentation, Page::Export, Page::Execution, Page::MethodsText,
         Page::Pipeline,
     ];
@@ -1710,7 +1713,7 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("sep_wavesep_wavelet_order", "separation.wavesep.wavelet_order"), ("sep_wavesep_max_iter", "separation.wavesep.max_iter"),
     ("sep_wavesep_tol", "separation.wavesep.tol"), ("sep_hcchisep_dr_pos_3t", "separation.hc_chisep.dr_pos_3t"),
     ("sep_hcchisep_bin_hz", "separation.hc_chisep.bin_hz"), ("sep_chisepnet_route", "separation.chi_sepnet.route"), ("sep_chisepnet_patch", "separation.chi_sepnet.patch"), ("sep_chisepnet_frame_patch", "separation.chi_sepnet.frame_patch"), ("sep_susepnet_patch", "separation.susep_net.patch"), ("custom_qsm_tool", "separation.custom_qsm_tool"),
-    ("do_swi", "pipeline.do_swi"), ("swi_unwrap", "swi.unwrap"), ("swi_scaling", "swi.scaling"), ("swi_strength", "swi.strength"),
+    ("do_magnitude", "pipeline.do_magnitude"), ("do_swi", "pipeline.do_swi"), ("swi_unwrap", "swi.unwrap"), ("swi_scaling", "swi.scaling"), ("swi_strength", "swi.strength"),
     ("swi_hp_sigma", "swi.hp_sigma"), ("swi_mip_window", "swi.mip_window"),
     ("swi_filtered_phase", "swi.filtered_phase"), ("do_smwi", "pipeline.do_smwi"),
     ("smwi_threshold", "smwi.threshold_ppm"), ("smwi_power", "smwi.power"), ("smwi_mip_window", "smwi.mip_window"),
@@ -3483,8 +3486,39 @@ impl PipelineFormState {
             });
         }
         rows.push(PipelineRow::Toggle {
-            label: "Inhomog. correction", field: "inhomogeneity_correction",
-            help: "Apply B1 field correction to magnitude (improves masking, ROMEO weights, SWI)",
+            label: "Ignore slice gap", field: "ignore_slice_gap",
+            help: "Reconstruct even if the sidecar's SliceThickness is thinner than the slice pitch (gapped 2D data gives a wrong map)",
+        });
+        rows.push(PipelineRow::Param { label: "Tukey window", field: "tukey_window",
+            help: "Taper ratio of a k-space Tukey window applied to each echo's complex image before every other step: 0 applies none; the χ-separation toolbox uses 0.4, and 0 for Philips data. Needs magnitude" });
+        if qsm {
+            rows.push(PipelineRow::Toggle {
+                label: "Crop to mask", field: "crop_to_mask",
+                help: "Run the FFT-bound stages on a box around the mask (faster; outputs stay on the full grid). Off by default",
+            });
+            if self.crop_to_mask {
+                rows.push(PipelineRow::Param { label: "  Crop margin (mm)", field: "crop_margin_mm",
+                    help: "Margin around the mask; below ~32 mm results start to differ, and it must clear the largest SMV kernel" });
+            }
+            rows.push(PipelineRow::Toggle {
+                label: "FFT padding", field: "fft_padding",
+                help: "Pad the grid to an FFT-friendly size before the FFT-bound stages (faster on awkward grids; shifts results slightly). Off by default",
+            });
+        }
+        // Coil combination prepares the echoes every later stage reads, whatever the inversion;
+        // it only runs for uncombined multi-coil data.
+        if self.ctx.multi_coil {
+            rows.push(PipelineRow::Param { label: "Coil comb. sigma", field: "coil_combination_sigma",
+                help: "MCPC-3D-S smoothing of per-coil phase offsets, voxels (x y z); only for uncombined multi-coil data" });
+        }
+    }
+
+    /// Preprocessing → Masking: the inhomogeneity correction of the magnitude masking reads (and
+    /// the combined magnitude is made from).
+    fn inhomogeneity_rows(&self, rows: &mut Vec<PipelineRow>) {
+        rows.push(PipelineRow::Toggle {
+            label: "Magnitude correction", field: "inhomogeneity_correction",
+            help: "Correct the magnitude for receive-coil inhomogeneity: the echoes masking reads, and the combined magnitude",
         });
         if self.inhomogeneity_correction {
             rows.push(PipelineRow::AlgoSelect {
@@ -3517,35 +3551,10 @@ impl PipelineFormState {
                     options: N4_GEOMETRY_OPTIONS, help: N4_GEOMETRY_HELP });
             }
         }
-        rows.push(PipelineRow::Toggle {
-            label: "Ignore slice gap", field: "ignore_slice_gap",
-            help: "Reconstruct even if the sidecar's SliceThickness is thinner than the slice pitch (gapped 2D data gives a wrong map)",
-        });
-        rows.push(PipelineRow::Param { label: "Tukey window", field: "tukey_window",
-            help: "Taper ratio of a k-space Tukey window applied to each echo's complex image before every other step: 0 applies none; the χ-separation toolbox uses 0.4, and 0 for Philips data. Needs magnitude" });
-        if qsm {
-            rows.push(PipelineRow::Toggle {
-                label: "Crop to mask", field: "crop_to_mask",
-                help: "Run the FFT-bound stages on a box around the mask (faster; outputs stay on the full grid). Off by default",
-            });
-            if self.crop_to_mask {
-                rows.push(PipelineRow::Param { label: "  Crop margin (mm)", field: "crop_margin_mm",
-                    help: "Margin around the mask; below ~32 mm results start to differ, and it must clear the largest SMV kernel" });
-            }
-            rows.push(PipelineRow::Toggle {
-                label: "FFT padding", field: "fft_padding",
-                help: "Pad the grid to an FFT-friendly size before the FFT-bound stages (faster on awkward grids; shifts results slightly). Off by default",
-            });
-        }
-        // Coil combination prepares the echoes every later stage reads, whatever the inversion;
-        // it only runs for uncombined multi-coil data.
-        if self.ctx.multi_coil {
-            rows.push(PipelineRow::Param { label: "Coil comb. sigma", field: "coil_combination_sigma",
-                help: "MCPC-3D-S smoothing of per-coil phase offsets, voxels (x y z); only for uncombined multi-coil data" });
-        }
     }
 
-    /// Preprocessing → Masking: the mask recipe, its custom masks, and the two-pass reliable mask.
+    /// Preprocessing → Masking: the mask recipe, its custom masks, the magnitude correction, and
+    /// the two-pass reliable mask.
     fn masking_rows(&self, rows: &mut Vec<PipelineRow>) {
         rows.push(PipelineRow::AlgoSelect {
             label: "Mask preset", field: "mask_preset",
@@ -3570,6 +3579,8 @@ impl PipelineFormState {
         if self.uses_bet() && self.first_bet_generator_section().is_none() {
             Self::push_bet_surface_rows(rows);
         }
+
+        self.inhomogeneity_rows(rows);
 
         // Two-pass artefact reduction. Configured here because what it needs is a second mask;
         // what it does is repeat background removal and dipole inversion against it.
@@ -6323,6 +6334,8 @@ pub struct RunForm {
     pub config_file: String,
 
     // Other outputs
+    /// Publish the combined magnitude (`--no-magnitude` when off).
+    pub do_magnitude: bool,
     pub do_swi: bool,
     pub swi_unwrap: usize,  // index into qsmxt_engine::SwiUnwrap::ALL (= command::SWI_UNWRAP_ARGS)
     pub swi_scaling: usize,  // index into qsmxt_engine::SwiScaling::ALL (= command::SWI_SCALING_ARGS)
@@ -6396,7 +6409,7 @@ impl RunForm {
         slurm_mem, slurm_cpus,
     ]);
     named_fields!(flag, flag_mut, bool, [
-        do_swi, swi_filtered_phase, do_t2starmap, do_r2starmap, do_r2map, do_r2primemap, export_dicom, do_smwi,
+        do_magnitude, do_swi, swi_filtered_phase, do_t2starmap, do_r2starmap, do_r2map, do_r2primemap, export_dicom, do_smwi,
         do_segmentation, do_analysis, synthseg_flip_averaging, synthseg_topology_cleanup, synthseg_smoothing,
         dry_run, debug, force, clean_intermediates, slurm_submit,
     ]);
@@ -6426,6 +6439,7 @@ impl Default for RunForm {
             bids_dir: String::new(),
             output_dir: String::new(),
             config_file: String::new(),
+            do_magnitude: true,
             do_swi: false,
             swi_unwrap: 0,
             swi_scaling: 0,
@@ -8430,6 +8444,7 @@ impl App {
             }
             Page::Separation => on(ps.do_chi_separation),
             Page::Smwi => on(self.form.do_smwi),
+            Page::Magnitude => on(self.form.do_magnitude),
             Page::Swi => on(self.form.do_swi),
             Page::Relaxometry => on(["do_t2starmap", "do_r2starmap", "do_r2map", "do_r2primemap"].iter().any(|f| self.field_toggle(f))),
             Page::Segmentation => on(self.field_toggle("do_segmentation") || self.form.do_analysis),
@@ -8553,6 +8568,7 @@ impl App {
     fn page_rows_in(&self, page: Page, ctx: &RowContext) -> Vec<PipelineRow> {
         match page {
             p if p.is_pipeline() => self.synced_pipeline(p, ctx).visible_rows(),
+            Page::Magnitude => self.magnitude_rows(),
             Page::Swi => self.swi_rows(),
             Page::Smwi => self.smwi_rows(),
             Page::Relaxometry => self.relaxometry_rows(),
@@ -8840,6 +8856,14 @@ impl App {
         }
     }
 
+    /// Other outputs → Magnitude: whether the combined magnitude is published.
+    fn magnitude_rows(&self) -> Vec<PipelineRow> {
+        vec![
+            PipelineRow::Toggle { label: "Combined magnitude", field: "do_magnitude",
+                help: "Publish the combined magnitude (part-mag_T2starw): the root sum of squares of the echoes, corrected for inhomogeneity when that is on. Off, it is still made for SMWI, segmentation or a magnitude-weighted inversion, and kept with the run's intermediates" },
+        ]
+    }
+
     /// Other outputs → SWI: susceptibility-weighted imaging, from the phase.
     fn swi_rows(&self) -> Vec<PipelineRow> {
         use PipelineRow::{AlgoSelect, Param, Toggle};
@@ -8977,8 +9001,8 @@ impl App {
     /// Whether the current settings make an exportable map.
     fn dicom_map_made(&self, m: &DicomMap) -> bool {
         match m.group {
-            // The combined magnitude is published with every run that has one.
-            "magnitude" => true,
+            // The combined magnitude, when it is published.
+            "magnitude" => self.form.do_magnitude,
             "χ" => self.qsm_on(),
             "SWI" => self.form.do_swi,
             "SWI phase" => self.form.do_swi && self.form.swi_filtered_phase,
@@ -10026,7 +10050,7 @@ mod tests {
         let group = |g: &str| Page::RECONSTRUCTION.iter().copied().filter(|p| p.group() == g).collect::<Vec<_>>();
         assert_eq!(group("QSM"), [Page::ComputeQsm, Page::FieldMap, Page::Background, Page::Inversion,
             Page::MultiOrientation, Page::Reference, Page::Separation, Page::Smwi]);
-        assert_eq!(group("Other outputs"), [Page::Swi, Page::Relaxometry, Page::Segmentation]);
+        assert_eq!(group("Other outputs"), [Page::Magnitude, Page::Swi, Page::Relaxometry, Page::Segmentation]);
         let app = App::new();
         let fields = |p| app.page_rows(p).iter().filter_map(row_field).collect::<Vec<_>>();
         assert!(fields(Page::Swi).contains(&"do_swi") && !fields(Page::Swi).contains(&"do_smwi"));

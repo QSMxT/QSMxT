@@ -62,13 +62,17 @@ fn graphs_of_a_table_of_configurations() {
     let g = graph(&PipelineConfig::default(), &facts());
     // The defaults keep the acquired grid whatever the header says: nothing resamples, and nothing
     // returns to the acquired grid.
-    assert_eq!(ids(&g), ["load", "scale_phase", "magnitude", "mask", "unwrap", "bgremove", "invert",
+    assert_eq!(ids(&g), ["load", "scale_phase", "inhomog", "magnitude", "mask", "unwrap", "bgremove", "invert",
                          "reference"]);
     assert!(!g.two_pass && g.nodes.iter().all(|n| n.branch.is_none() && n.enabled_by.is_none()));
     // Phase scaling makes the phase; the magnitude is the scan's, as it was given.
     assert_eq!(g.node("scale_phase").unwrap().writes, (1..=5).map(|e| item_key(&Item::Phase(e))).collect::<Vec<_>>());
-    assert!(g.has_edge("load", "magnitude") && !g.has_edge("scale_phase", "magnitude"));
-    for (from, to) in [("load", "scale_phase"), ("scale_phase", "mask"), ("load", "mask"), ("mask", "unwrap"),
+    assert!(g.has_edge("load", "inhomog") && !g.has_edge("scale_phase", "inhomog"));
+    // The corrected echoes feed the combined magnitude and the mask; the outputs are leaves.
+    assert!(g.has_edge("inhomog", "magnitude") && g.has_edge("inhomog", "mask"));
+    assert_eq!(g.node("magnitude").unwrap().publishes, ["CombinedMagnitude"]);
+    assert!(g.node("inhomog").unwrap().publishes.is_empty());
+    for (from, to) in [("load", "scale_phase"), ("scale_phase", "mask"), ("mask", "unwrap"),
                        ("unwrap", "bgremove"), ("bgremove", "invert"), ("invert", "reference")] {
         assert!(g.has_edge(from, to), "{from} -> {to}: {:?}", g.edges);
     }
@@ -104,7 +108,7 @@ fn graphs_of_a_table_of_configurations() {
     // Two-pass with TGV: the passes are a mask and a TGV each.
     config.inversion.algorithm = QsmAlgorithm::Tgv;
     let g = graph(&config, &facts());
-    assert_eq!(ids(&g)[4..], ["unwrap", "tgv", "mask-reliable", "tgv-reliable", "twopass", "reference-singlepass",
+    assert_eq!(ids(&g)[5..], ["unwrap", "tgv", "mask-reliable", "tgv-reliable", "twopass", "reference-singlepass",
                               "reference"]);
     assert!(g.has_edge("unwrap", "tgv") && g.has_edge("unwrap", "tgv-reliable"));
     assert_consistent(&g);
@@ -155,8 +159,10 @@ fn graphs_of_a_table_of_configurations() {
     config.field_mapping.b0_estimation = crate::enums::B0Estimation::QsmartEchofit;
     let g = graph(&config, &facts());
     assert!(g.node("bgremove").is_none());
-    assert!(g.has_edge("unwrap", "qsmart") && g.has_edge("load", "qsmart") && g.has_edge("qsmart", "reference"));
-    assert!(!g.has_edge("magnitude", "qsmart"));
+    // Its vessel magnitude (the echo mean, N4-corrected) comes from the inhomogeneity correction.
+    assert!(g.has_edge("unwrap", "qsmart") && g.has_edge("inhomog", "qsmart") && g.has_edge("qsmart", "reference"));
+    assert!(!g.has_edge("magnitude", "qsmart") && !g.has_edge("load", "qsmart"));
+    assert!(g.node("inhomog").unwrap().settings.iter().any(|s| s.contains("echo mean")), "{:?}", g.node("inhomog").unwrap().settings);
     let u = g.node("unwrap").unwrap();
     assert_eq!(u.algorithm_label.as_deref(), Some("Laplacian"));
     assert!(u.writes.contains(&item_key(&Item::FieldReliability)), "{:?}", u.writes);
@@ -168,9 +174,15 @@ fn graphs_of_a_table_of_configurations() {
     let u = g.node("unwrap").unwrap();
     assert!(u.settings.contains(&"raw phase over the whole volume".to_string()), "{:?}", u.settings);
     let q = g.node("qsmart").unwrap();
-    assert_eq!(q.writes.len(), 7);
-    assert!(q.reads.contains(&item_key(&Item::FieldReliability)));
-    assert!(q.writes.contains(&item_key(&Item::QsmartIntermediate(Pass::Main, crate::stages::qsmart::VESSEL_MAGNITUDE))));
+    assert_eq!(q.writes.len(), 6);
+    assert!(q.reads.contains(&item_key(&Item::FieldReliability)) && q.reads.contains(&item_key(&Item::VesselMagnitude)));
+    assert!(!q.writes.contains(&item_key(&Item::QsmartIntermediate(Pass::Main, crate::stages::qsmart::VESSEL_MAGNITUDE))));
+    // With motion correction, QSMART makes it from the motion-corrected echoes itself.
+    let mut moving = config.clone();
+    moving.motion_correction.enabled = true;
+    let gm = graph(&moving, &facts());
+    assert!(gm.node("qsmart").unwrap().writes.contains(&item_key(&Item::QsmartIntermediate(Pass::Main, crate::stages::qsmart::VESSEL_MAGNITUDE))));
+    assert_consistent(&gm);
     assert_eq!(q.settings.first().map(String::as_str), Some("iLSQR inversion"));
     assert_consistent(&g);
     // The combined magnitude, and the general field mapping: as before.
@@ -218,7 +230,7 @@ fn graphs_of_a_table_of_configurations() {
     let g = graph(&PipelineConfig::default(), &f);
     assert_eq!(g.node("scale_phase").unwrap().algorithm.as_deref(), Some("mcpc3ds"));
     assert_eq!(g.node("load").unwrap().writes.len(), 4 * 5 * 2);
-    assert!(g.has_edge("scale_phase", "magnitude"), "the combination makes the magnitude");
+    assert!(g.has_edge("scale_phase", "inhomog"), "the combination makes the magnitude");
     assert!(g.node("scale_phase").unwrap().writes.contains(&item_key(&Item::CombinedEchoPhase(1))));
     assert_consistent(&g);
     // Resampled, the combined echoes are published as they are on the working grid.
@@ -237,14 +249,14 @@ fn graphs_of_a_table_of_configurations() {
     config.pipeline.axial_resampling = true;
     let plan = crate::plan::plan(&config, &facts());
     let unknown = pipeline_graph(&plan, &config, &facts(), None);
-    assert_eq!(ids(&unknown), ["load", "scale_phase", "resample_axial", "magnitude", "mask", "unwrap", "bgremove",
+    assert_eq!(ids(&unknown), ["load", "scale_phase", "resample_axial", "inhomog", "magnitude", "mask", "unwrap", "bgremove",
                                "invert", "reference", "output_space"]);
     for id in ["resample_axial", "output_space"] {
         assert_eq!(unknown.node(id).unwrap().only_when.as_deref(), Some("the run is resampled"), "{id}");
     }
     assert_eq!(unknown.node("resample_axial").unwrap().enabled_by.as_deref(), Some("pipeline.axial_resampling"));
     assert!(unknown.has_edge("scale_phase", "resample_axial") && unknown.has_edge("load", "resample_axial"));
-    for to in ["magnitude", "mask", "unwrap"] {
+    for to in ["inhomog", "mask", "unwrap"] {
         assert!(unknown.has_edge("resample_axial", to) && !unknown.has_edge("scale_phase", to), "{to}");
     }
     assert_consistent(&unknown);
@@ -261,7 +273,7 @@ fn graphs_of_a_table_of_configurations() {
     let acquired = pipeline_graph(&plan, &config, &facts(), Some(&grid(false)));
     assert!(acquired.node("output_space").is_none() && acquired.node("resample_axial").is_none());
     assert_eq!(ids(&acquired), ids(&graph(&PipelineConfig::default(), &facts())));
-    assert!(acquired.has_edge("scale_phase", "mask") && acquired.has_edge("load", "mask"));
+    assert!(acquired.has_edge("scale_phase", "mask") && acquired.has_edge("load", "inhomog"));
     assert_consistent(&acquired);
     // Kept on its working grid, a resampled run has no return step.
     config.pipeline.output_space = crate::OutputSpace::Working;
@@ -281,10 +293,10 @@ fn graphs_of_a_table_of_configurations() {
     let mut config = PipelineConfig::default();
     config.pipeline.tukey_window = 0.3;
     let g = graph(&config, &facts());
-    assert_eq!(ids(&g)[..4], ["load", "scale_phase", "tukey_window", "magnitude"]);
+    assert_eq!(ids(&g)[..5], ["load", "scale_phase", "tukey_window", "inhomog", "magnitude"]);
     let tukey = g.node("tukey_window").unwrap();
     assert_eq!((tukey.enabled_by.as_deref(), tukey.settings.clone()), (Some("pipeline.tukey_window"), vec!["taper ratio 0.3".to_string()]));
-    for (from, to) in [("scale_phase", "tukey_window"), ("load", "tukey_window"), ("tukey_window", "magnitude"),
+    for (from, to) in [("scale_phase", "tukey_window"), ("load", "tukey_window"), ("tukey_window", "inhomog"),
                        ("tukey_window", "mask")] {
         assert!(g.has_edge(from, to), "{from} -> {to}: {:?}", g.edges);
     }
@@ -292,7 +304,7 @@ fn graphs_of_a_table_of_configurations() {
     assert_consistent(&g);
     config.pipeline.axial_resampling = true;
     let g = graph(&config, &facts());
-    assert_eq!(ids(&g)[..5], ["load", "scale_phase", "tukey_window", "resample_axial", "magnitude"]);
+    assert_eq!(ids(&g)[..6], ["load", "scale_phase", "tukey_window", "resample_axial", "inhomog", "magnitude"]);
     assert!(g.has_edge("tukey_window", "resample_axial") && !g.has_edge("scale_phase", "resample_axial")
             && !g.has_edge("load", "resample_axial"));
     assert_consistent(&g);
@@ -323,16 +335,18 @@ fn the_default_graph_in_mermaid() {
     let expected = r#"flowchart TD
     load["Load"]
     scale_phase["Phase scaling"]
-    magnitude["Combined magnitude<br/><i>root sum of squares</i><br/><small>inhomogeneity correction</small>"]
+    inhomog["Inhomogeneity correction<br/><i>makehomogeneous</i><br/><small>each echo</small>"]
+    magnitude["Combined magnitude<br/><i>root sum of squares</i><br/><small>of the corrected echoes</small>"]
     mask["Brain mask<br/><small>phase quality: Otsu threshold, dilation, hole-filling, erosion</small>"]
     unwrap["Field map<br/><i>ROMEO</i><br/><small>phase offsets removed</small><br/><small>B0 by weighted average</small>"]
     bgremove["Background-field removal<br/><i>V-SHARP</i><br/><small>SMV kernel radii from 12 to 2 mm in 1 mm steps</small>"]
     invert["Dipole inversion<br/><i>iLSQR</i>"]
     reference["Referencing<br/><i>mean</i>"]
     load -->|"Phase (as acquired)"| scale_phase
-    load -->|"Magnitude"| magnitude
+    load -->|"Magnitude"| inhomog
+    inhomog -->|"Inhomogeneity-corrected magnitude"| magnitude
     scale_phase -->|"Phase"| mask
-    load -->|"Magnitude"| mask
+    inhomog -->|"Inhomogeneity-corrected magnitude"| mask
     scale_phase -->|"Phase"| unwrap
     load -->|"Magnitude"| unwrap
     mask -->|"Brain mask"| unwrap
@@ -340,6 +354,18 @@ fn the_default_graph_in_mermaid() {
     bgremove -->|"Local field, Local field mask"| invert
     invert -->|"Unreferenced susceptibility"| reference
     bgremove -->|"Local field mask"| reference
+    magnitude_out1(["Combined magnitude (part-mag_T2starw)"])
+    magnitude --> magnitude_out1
+    mask_out1(["Brain mask (mask)"])
+    mask --> mask_out1
+    unwrap_out1(["Total field (desc-total_fieldmap)"])
+    unwrap --> unwrap_out1
+    unwrap_out2(["Field map magnitude (desc-total_magnitude)"])
+    unwrap --> unwrap_out2
+    reference_out1(["Susceptibility (Chimap)"])
+    reference --> reference_out1
+    reference_out2(["Susceptibility support (desc-qsm_mask)"])
+    reference --> reference_out2
 "#;
     assert_eq!(g.to_mermaid(), expected);
 }
@@ -524,7 +550,7 @@ fn plan_steps_carry_their_name_label_algorithm_and_outputs() {
     let motion = plan.steps.iter().find(|s| s.name == "motion").unwrap();
     assert!(motion.reads.is_empty() && motion.outputs.is_empty());
     let v = serde_json::to_value(&plan).unwrap();
-    let step = &v["steps"][5];
+    let step = &v["steps"][6];
     assert_eq!((&step["name"], &step["label"], &step["algorithm"], &step["algorithm_label"]),
                (&serde_json::json!("unwrap"), &serde_json::json!("Field map"), &serde_json::json!("phase_offset_removal"),
                 &serde_json::json!("ROMEO")));
@@ -673,9 +699,18 @@ fn the_graph_as_text() {
     let text = graph(&PipelineConfig::default(), &facts()).to_text();
     assert!(text.starts_with(" 1 Load\n 2 Phase scaling\n     ← 1 Load: Phase (as acquired)\n"), "{text}");
     assert!(text.contains(concat!(
-        " 6 Background-field removal · V-SHARP\n",
+        " 7 Background-field removal · V-SHARP\n",
         "     SMV kernel radii from 12 to 2 mm in 1 mm steps\n",
-        "     ← 5 Field map: Total field, Field mask\n")), "{text}");
+        "     ← 6 Field map: Total field, Field mask\n")), "{text}");
+    // The published outputs are the leaves, after what the step reads.
+    assert!(text.contains(concat!(
+        " 3 Inhomogeneity correction · makehomogeneous\n",
+        "     each echo\n",
+        "     ← 1 Load: Magnitude\n",
+        " 4 Combined magnitude · root sum of squares\n",
+        "     of the corrected echoes\n",
+        "     ← 3 Inhomogeneity correction: Inhomogeneity-corrected magnitude\n",
+        "     → Combined magnitude (part-mag_T2starw)\n")), "{text}");
     let mut resampling = PipelineConfig::default();
     resampling.pipeline.axial_resampling = true;
     let text = graph(&resampling, &facts()).to_text();
@@ -698,7 +733,7 @@ fn the_text_names_passes_and_models() {
     config.masking.two_pass = true;
     config.inversion.algorithm = QsmAlgorithm::Tgv;
     let text = graph(&config, &facts()).to_text();
-    assert!(text.contains(" 4 Brain mask  [main pass]\n"), "{text}");
+    assert!(text.contains(" 5 Brain mask  [main pass]\n"), "{text}");
     assert!(text.contains("Reliable-phase mask  [reliable pass]\n"), "{text}");
     assert!(text.contains("TGV-QSM (reliable pass) · TGV\n"), "{text}");
     assert!(text.contains("Two-pass combination\n"), "{text}");
@@ -719,7 +754,8 @@ fn text_lines_wrap_to_a_width() {
     let mut config = PipelineConfig::default();
     config.masking.two_pass = true;
     let g = graph(&config, &facts());
-    let words = |lines: &[text::Line]| lines.iter().flat_map(|l| l.text().split_whitespace().map(str::to_string).collect::<Vec<_>>()).collect::<Vec<_>>();
+    // Every character but the spaces, in order: a word longer than a line is cut, not lost.
+    let words = |lines: &[text::Line]| lines.iter().flat_map(|l| l.text().chars().filter(|c| !c.is_whitespace()).collect::<Vec<_>>()).collect::<String>();
     let full = g.text_lines(None);
     for width in [30, 44, 60] {
         let narrow = g.text_lines(Some(width));
@@ -900,8 +936,9 @@ fn a_windowed_resampled_graph_in_mermaid() {
         "    scale_phase -->|\"Phase (acquired grid)\"| tukey_window\n",
         "    load -->|\"Magnitude (as acquired)\"| tukey_window\n",
         "    tukey_window -->|\"Windowed phase (acquired grid), Windowed magnitude (acquired grid)\"| resample_axial\n",
-        "    resample_axial -->|\"Magnitude\"| magnitude\n",
-        "    resample_axial -->|\"Phase, Magnitude\"| mask\n",
+        "    resample_axial -->|\"Magnitude\"| inhomog\n",
+        "    inhomog -->|\"Inhomogeneity-corrected magnitude\"| magnitude\n",
+        "    resample_axial -->|\"Phase\"| mask\n",
         "    class tukey_window,resample_axial optional\n",
         "    class resample_axial,output_space conditional\n",
     ] {

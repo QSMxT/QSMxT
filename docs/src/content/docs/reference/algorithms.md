@@ -139,9 +139,19 @@ on masks you already have.
 
 With `--inhomogeneity-correction` (on by default; `--no-inhomogeneity-correction`
 turns it off), the magnitude is corrected for the receive coils' intensity bias
-before it is used: the combined magnitude (for masking, ROMEO's weights and SWI)
-and each echo's magnitude that a mask section reads. `--inhomogeneity-method`
-chooses how:
+before it is used. Each echo is corrected on its own, once, in one step that
+corrects what the rest of the run reads:
+
+- the echoes the mask reads: the first echo for a first-echo recipe, the last for a
+  last-echo one, every echo for the RSS or phase quality (and for refinements after
+  combining that read the magnitude);
+- every echo, when the combined magnitude is made: it is the root sum of squares of
+  the corrected echoes, the image an RSS mask section sees.
+
+When nothing reads a corrected magnitude, nothing is corrected. Field mapping (ROMEO's
+weights, MEDI), SWI and relaxometry read the uncorrected echoes. QSMART's vessel
+magnitude (`--qsmart-vessel-magnitude mean-n4`) is made in the same step, with QSMART's
+own N4. `--inhomogeneity-method` chooses how:
 
 | Value | Method |
 | --- | --- |

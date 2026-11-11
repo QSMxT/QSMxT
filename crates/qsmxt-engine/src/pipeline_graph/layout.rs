@@ -320,6 +320,9 @@ pub fn node_lines(n: &Node) -> Vec<TextLine> {
             LineClass::When.room(),
         );
     }
+    for key in &n.publishes {
+        push_wrapped(&mut lines, &super::output_text(key), LineClass::Setting, LineClass::Setting.room());
+    }
     if let Some(run) = &n.run {
         lines.push(TextLine {
             text: run_state_text(run.state).to_string(),

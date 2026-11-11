@@ -75,6 +75,7 @@ pub enum Section {
     MultiOrientation,
     Reference,
     Separation,
+    Magnitude,
     SwiSmwi,
     Relaxometry,
     Segmentation,
@@ -83,10 +84,10 @@ pub enum Section {
 
 impl Section {
     /// Every section, in order.
-    pub const ALL: [Section; 14] = [
+    pub const ALL: [Section; 15] = [
         Section::Input, Section::Geometry, Section::Masking, Section::Motion, Section::FieldMap,
         Section::Background, Section::Inversion, Section::MultiOrientation, Section::Reference,
-        Section::Separation, Section::SwiSmwi, Section::Relaxometry, Section::Segmentation,
+        Section::Separation, Section::Magnitude, Section::SwiSmwi, Section::Relaxometry, Section::Segmentation,
         Section::Export,
     ];
 
@@ -98,7 +99,7 @@ impl Section {
             Geometry | Masking | Motion => Tab::Preprocessing,
             FieldMap | Background | Inversion | MultiOrientation | Reference => Tab::Qsm,
             Separation => Tab::Separation,
-            SwiSmwi | Relaxometry | Segmentation | Export => Tab::Outputs,
+            Magnitude | SwiSmwi | Relaxometry | Segmentation | Export => Tab::Outputs,
         }
     }
 
@@ -116,6 +117,7 @@ impl Section {
             MultiOrientation => "Multi-orientation",
             Reference => "Reference",
             Separation => "χ-separation",
+            Magnitude => "Magnitude",
             SwiSmwi => "SWI/SMWI",
             Relaxometry => "Relaxometry",
             Segmentation => "Segmentation",

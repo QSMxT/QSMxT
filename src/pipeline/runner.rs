@@ -409,7 +409,12 @@ impl FileStore<'_> {
             Item::Magnitude(n) => o.mag_path(key, n),
             Item::CorrectedPhase(n) => o.motion_phase_path(key, n),
             Item::CorrectedMagnitude(n) => o.motion_mag_path(key, n),
-            Item::CombinedMagnitude => o.magnitude_path(key),
+            // Published unless `--no-magnitude`: then kept among the run's intermediates for the
+            // steps that read it.
+            Item::CombinedMagnitude if self.config.pipeline.do_magnitude => o.magnitude_path(key),
+            Item::CombinedMagnitude => o.intermediate_magnitude_path(key),
+            Item::HomogeneousMagnitude(n) => o.homogeneous_mag_path(key, n),
+            Item::VesselMagnitude => o.vessel_magnitude_path(key),
             Item::BrainMask => o.mask_path(key),
             // Found before the mask step reads it too, for that step's key.
             Item::SuppliedMask => self.supplied_mask.clone()
@@ -616,6 +621,16 @@ impl StageStore for FileStore<'_> {
             self.state.save(&self.state_path)?;
         }
         self.output = self.output.in_space(space);
+        // `--no-magnitude`: a combined magnitude an earlier run published does not stay beside
+        // this run's outputs (nor reach its DICOM export).
+        if !self.config.pipeline.do_magnitude {
+            let published = self.output.magnitude_path(&self.run.key);
+            for path in std::iter::once(published.clone()).chain(crate::bids::entities::sidecar_path(&published)) {
+                if path.exists() {
+                    std::fs::remove_file(&path)?;
+                }
+            }
+        }
         Ok(())
     }
 
@@ -792,10 +807,15 @@ impl StageStore for FileStore<'_> {
 
     /// Each output left on the working grid gets a `SpatialReference`: the BIDS sidecar field a
     /// `space-` label that is not a standard template needs, pointing at the run's combined
-    /// magnitude in that space.
+    /// magnitude in that space, or its brain mask when the magnitude is not published.
     fn keep_working_grid(&mut self) -> crate::Result<()> {
         let Some(space) = self.output.space.as_deref() else { return Ok(()) };
-        let reference = crate::pipeline::multiorient::spatial_reference(&self.output, &self.run.key, space);
+        let reference = if self.config.pipeline.do_magnitude {
+            crate::pipeline::multiorient::spatial_reference(&self.output, &self.run.key, space)
+        } else {
+            let mask = self.output.in_space(Some(space)).mask_path(&self.run.key);
+            mask.strip_prefix(&self.output.output_dir).unwrap_or(&mask).display().to_string()
+        };
         let files: Vec<PathBuf> = self.output.run_published_niftis(&self.run.key).into_iter()
             .filter(|p| p.file_name().and_then(|n| crate::bids::naming::entity_of(&n.to_string_lossy(), "space"))
                 .as_deref() == Some(space))

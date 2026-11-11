@@ -54,7 +54,7 @@ pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value
         "scale_phase" => json!({ "coil_combination_sigma": config.field_mapping.coil_combination_sigma }),
         // Its taper ratio is in its parameters.
         "tukey_window" => json!({ "tukey_window": config.pipeline.tukey_window }),
-        "magnitude" => json!({
+        "inhomog" | "magnitude" => json!({
             "inhomogeneity_correction": config.masking.inhomogeneity_correction,
             "inhomogeneity_method": config.masking.inhomogeneity_method,
             "homogeneity": config.homogeneity,
@@ -70,10 +70,9 @@ pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value
                 o.remove("two_pass_combine");
             }
             let mut c = json!({ "masking": m, "bet": config.bet });
-            // The mask corrects the echoes it is made from for inhomogeneity itself
-            // ([`crate::stages::mask::build_mask`]), so it reads those settings: it does not read
-            // the magnitude step's output, which is what would otherwise make it stale when they
-            // change. Only when on, so a run without it keeps its key.
+            // The mask reads the echoes the inhomogeneity correction corrected, or corrects them
+            // itself when it falls back from a supplied mask the correction was not planned for:
+            // keyed on those settings too. Only when on, so a run without it keeps its key.
             if config.masking.inhomogeneity_correction {
                 c["inhomogeneity"] = crate::stages::magnitude::params(config);
             }

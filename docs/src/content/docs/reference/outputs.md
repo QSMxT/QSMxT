@@ -20,7 +20,7 @@ Below, `<run>` is the run's BIDS basename: its `sub-`, `ses-`, `acq-`, `rec-`,
 | `<run>_mask.nii` | Brain mask | default |
 | `<run>_desc-qsm_mask.nii` | The voxels the `Chimap` is defined on | default |
 | `<run>_desc-echo<n>_Chimap.nii` | Each echo's susceptibility map (ppm), referenced; the `Chimap` is their mean | `--qsm-per-echo true` |
-| `<run>_part-mag_T2starw.nii` | Combined (RSS) magnitude | default, with magnitude input |
+| `<run>_part-mag_T2starw.nii` | Combined magnitude: the root sum of squares of the echoes' magnitudes, each corrected for inhomogeneity when that is on | default, with magnitude input; `--no-magnitude` leaves it out |
 | `<run>_desc-singlepass_Chimap.nii` | The conventional single-pass map of a two-pass run | `--two-pass` |
 | `<run>_desc-reliable_mask.nii` | The reliable-phase mask of a two-pass run | `--two-pass` |
 | `<run>_desc-motioncoverage_mask.nii` | The mask every motion-corrected echo still covers | `--motion-correction` |

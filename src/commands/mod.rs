@@ -140,6 +140,7 @@ mod integration_tests {
                 no_qsm: false,
                 do_swi: false,
                 swi_filtered_phase: false,
+                no_magnitude: false,
                 do_smwi: false,
                 do_segmentation: false,
                 do_analysis: false,

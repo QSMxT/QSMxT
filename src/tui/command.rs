@@ -793,6 +793,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         do_swi: form.do_swi,
         // Its flag implies SWI, so it goes with SWI or not at all.
         swi_filtered_phase: form.do_swi && form.swi_filtered_phase,
+        no_magnitude: !form.do_magnitude,
         do_smwi: form.do_smwi,
         do_segmentation: form.do_segmentation,
         do_analysis: form.do_analysis,

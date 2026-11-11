@@ -5,7 +5,6 @@ use crate::config::PipelineConfig;
 use crate::error::EngineError;
 use crate::masking::{MaskCombine, MaskSection, MaskingInput};
 use crate::scan::{scan_metadata, RunMetadata};
-use crate::stages::magnitude::homogeneity_correct;
 
 /// The `mask` step's parameters.
 pub fn params(config: &PipelineConfig) -> serde_json::Value {
@@ -46,10 +45,11 @@ pub fn model_ids(sections: &[MaskSection], config: &PipelineConfig) -> Vec<&'sta
 /// both built here, so both read the same images and follow the same folding rules.
 ///
 /// `phases` are every echo's phase in radians (for phase-based inputs such as phase quality).
-/// `magnitudes` are every echo's magnitude, or none for a phase-only run. Each echo is corrected
-/// for inhomogeneity on its own when `--inhomogeneity-correction` is on, and each section builds
-/// the magnitude it asks for (echo 1, the RSS, the last echo) from these in qsm-core, so all
-/// sections see the same, consistently corrected echoes (QSM.rs#173).
+/// `magnitudes` are every echo's magnitude as masking reads it, or none for a phase-only run: the
+/// echoes the recipe reads corrected for inhomogeneity when that is on
+/// ([`crate::stages::magnitude::masking_magnitudes`], or the `inhomog` step's). Each section
+/// builds the magnitude it asks for (echo 1, the RSS, the last echo) from these in qsm-core, so
+/// all sections see the same, consistently corrected echoes (QSM.rs#173).
 ///
 /// This is [`preview`] of the whole recipe on freshly built [`MaskInputs`], so a preview and
 /// the run's mask are the same computation.
@@ -83,8 +83,8 @@ pub struct ScannerMasked {
 /// The images mask sections work from, built once and kept for previews: for each input a
 /// section names (phase quality, the RSS magnitude, the first or last echo), the image its method
 /// thresholds and the magnitude its BET, HD-BET, RS2-Net, MindGrab and signal-gated erosion see
-/// (qsm-core's `resolve_masking_input` and `section_magnitude`), from echoes corrected for
-/// inhomogeneity when that is on.
+/// (qsm-core's `resolve_masking_input` and `section_magnitude`), from the echoes as masking reads
+/// them (those it reads corrected for inhomogeneity when that is on).
 ///
 /// They are kept under a key ([`MaskInputs::key`]): the settings they depend on and what the
 /// echoes were computed from. Threshold and morphology changes reuse them; a new scan, or a change
@@ -97,8 +97,8 @@ pub struct MaskInputs {
     key: Option<String>,
     /// The image each input's sections threshold.
     images: std::collections::HashMap<MaskingInput, std::sync::Arc<Vec<f64>>>,
-    /// The magnitude each input's sections (and the refinements after combining, which see the
-    /// RSS) work with; `None` for a phase-only run.
+    /// The magnitude each input's sections (and the refinements after combining that read it,
+    /// which see the RSS) work with; `None` for a phase-only run.
     magnitudes: std::collections::HashMap<MaskingInput, Option<std::sync::Arc<Vec<f64>>>>,
     /// Where the scanner wrote no phase, from every echo's phase.
     scanner_masked: Option<std::sync::Arc<ScannerMasked>>,
@@ -117,8 +117,9 @@ impl MaskInputs {
     }
 
     /// The inputs `sections` and the refinements after combining need, of those not kept under
-    /// the same key: built from the echoes `load` gives, which is called only if one is missing.
-    /// Inputs kept under another key are dropped first.
+    /// the same key: built from the echoes `load` gives, as masking reads them
+    /// ([`crate::stages::magnitude::masking_magnitudes`]), which is called only if one is
+    /// missing. Inputs kept under another key are dropped first.
     pub fn fill<E: From<EngineError>>(
         &mut self,
         sections: &[MaskSection],
@@ -134,9 +135,10 @@ impl MaskInputs {
             self.key = Some(key);
         }
         let wanted_images: Vec<MaskingInput> = sections.iter().map(|s| s.input).collect();
-        // The refinements after combining see the RSS magnitude.
+        // The refinements after combining that read the magnitude see the RSS.
+        let refinements = crate::stages::magnitude::refinements_read_magnitude(&config.masking.refinements);
         let wanted_magnitudes: Vec<MaskingInput> =
-            wanted_images.iter().copied().chain(std::iter::once(MaskingInput::Magnitude)).collect();
+            wanted_images.iter().copied().chain(refinements.then_some(MaskingInput::Magnitude)).collect();
         if wanted_images.iter().all(|i| self.images.contains_key(i))
             && wanted_magnitudes.iter().all(|i| self.magnitudes.contains_key(i))
             && self.scanner_masked.is_some()
@@ -149,13 +151,6 @@ impl MaskInputs {
             let found = qsm_core::mask::scanner_masked_phase(&refs);
             self.scanner_masked = Some(std::sync::Arc::new(ScannerMasked { has_data: found.has_data, voxels: found.n_masked }));
         }
-        let magnitudes = if config.masking.inhomogeneity_correction {
-            magnitudes.into_iter().enumerate()
-                .map(|(i, m)| homogeneity_correct(&m, meta, config, &format!("echo {}'s magnitude", i + 1)))
-                .collect::<Result<Vec<_>, EngineError>>()?
-        } else {
-            magnitudes
-        };
         let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
         let mag_refs: Vec<&[f64]> = magnitudes.iter().map(|m| m.as_slice()).collect();
         let core_meta = scan_metadata(meta);
@@ -554,10 +549,10 @@ mod tests {
         assert!(masked(&[], MaskCombine::Or, vec![], &mag, dims).is_err());
     }
 
-    /// `build_mask` corrects each echo on its own before the sections see it, and words a
-    /// mis-sized echo as the dimension error it is.
+    /// The echoes masking reads are corrected each on its own before the sections see them, and a
+    /// mis-sized echo is worded as the dimension error it is.
     #[test]
-    fn build_mask_corrects_each_echo_and_names_a_missized_one() {
+    fn masking_corrects_each_echo_and_names_a_missized_one() {
         let meta = crate::stages::magnitude::tests::meta_4x4x4();
         let mut config = PipelineConfig::default();
         let sections = vec![MaskSection {
@@ -566,12 +561,55 @@ mod tests {
             refinements: vec![],
         }];
         config.masking.inhomogeneity_correction = true;
-        let err = build_mask(&sections, MaskCombine::Or, &config, &[], vec![vec![1.0; 48]], &meta).unwrap_err();
+        let err = crate::stages::magnitude::masking_magnitudes(&sections, &config, vec![vec![1.0; 48]], &meta).unwrap_err();
         assert!(matches!(err, EngineError::DimensionMismatch(ref m) if m.contains("echo 1's magnitude")), "{err}");
 
         config.masking.inhomogeneity_correction = false;
         let mask = build_mask(&sections, MaskCombine::Or, &config, &[], vec![vec![1.0; 64]], &meta).unwrap();
         assert_eq!(mask.mask.len(), 64);
+    }
+
+    /// The mask of a first-echo recipe is the same, voxel for voxel, whether every echo is
+    /// corrected (as masking did before the correction was a step of its own) or only the first
+    /// (what the correction step now makes for it): the recipe reads echo 1 alone. Both methods.
+    #[test]
+    fn a_first_echo_mask_is_unchanged_by_correcting_only_the_first_echo() {
+        use crate::enums::InhomogeneityMethod;
+        let mut meta = crate::stages::magnitude::tests::meta_4x4x4();
+        meta.dims = (16, 16, 16);
+        meta.n_echoes = 3;
+        let n = 16 * 16 * 16;
+        let echo = |k: f64| -> Vec<f64> { (0..n).map(|i| {
+            let (x, y, z) = ((i % 16) as f64, ((i / 16) % 16) as f64, (i / 256) as f64);
+            let r = ((x - 7.5).powi(2) + (y - 7.5).powi(2) + (z - 7.5).powi(2)).sqrt();
+            if r < 6.0 { (300.0 - 10.0 * r + 3.0 * x) * k } else { 5.0 + (i % 7) as f64 }
+        }).collect() };
+        let magnitudes = vec![echo(1.0), echo(0.7), echo(0.5)];
+        // Phase that varies, so no voxel reads as one the scanner left without phase.
+        let phases: Vec<Vec<f64>> = (1..=3).map(|e| (0..n).map(|i| ((i * e) % 13) as f64 * 0.1 - 0.6).collect()).collect();
+        let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
+        let sections = vec![MaskSection {
+            input: MaskingInput::MagnitudeFirst,
+            generator: MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None },
+            refinements: vec![MaskOp::Majority],
+        }];
+        for method in [InhomogeneityMethod::Makehomogeneous, InhomogeneityMethod::N4] {
+            let mut config = PipelineConfig::default();
+            config.masking.inhomogeneity_method = method;
+            config.n4.max_iterations = vec![3, 3];
+            config.masking.refinements = vec![MaskOp::Close { radius: 1 }];
+            let all: Vec<Vec<f64>> = magnitudes.iter().enumerate()
+                .map(|(i, m)| crate::stages::magnitude::homogeneity_correct(m, &meta, &config, &format!("echo {}", i + 1)).unwrap())
+                .collect();
+            let first = crate::stages::magnitude::masking_magnitudes(&sections, &config, magnitudes.clone(), &meta).unwrap();
+            assert_eq!(first[0], all[0]);
+            assert_eq!(first[1], magnitudes[1], "echo 2 is not corrected");
+            let before = build_mask(&sections, MaskCombine::Or, &config, &phase_refs, all, &meta).unwrap();
+            let after = build_mask(&sections, MaskCombine::Or, &config, &phase_refs, first, &meta).unwrap();
+            let diff = before.mask.iter().zip(&after.mask).filter(|(a, b)| a != b).count();
+            assert_eq!(before.mask, after.mask, "{method:?}: {diff} voxels differ, {} vs {}", before.voxels, after.voxels);
+            assert!(after.voxels > 0, "{method:?}");
+        }
     }
 
     /// Whatever the recipe, the mask leaves out the voxels where the scanner wrote a constant phase

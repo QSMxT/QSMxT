@@ -1,11 +1,140 @@
-//! The combined magnitude, and the inhomogeneity (bias field) correction masking also uses.
+//! Inhomogeneity (bias field) correction, and the combined magnitude.
+//!
+//! The correction is one step (`inhomog`), run for what its consumers ask of it ([`targets`]):
+//! the echoes masking reads (echo 1 for a first-echo recipe, every echo for the RSS or phase
+//! quality), every echo for the combined magnitude, and QSMART's vessel magnitude (the echo mean,
+//! corrected with N4 as QSMART does). Nothing asks, nothing runs. The combined magnitude is the
+//! root sum of squares of the corrected echoes, the same image masking's RSS sections see.
+
+use serde::Serialize;
 
 use crate::config::PipelineConfig;
 use crate::enums::{InhomogeneityMethod, N4Geometry};
 use crate::error::EngineError;
+use crate::masking::{MaskOp, MaskSection, MaskingInput};
 use crate::scan::RunMetadata;
 
-/// The `magnitude` step's parameters: the correction's method and that method's settings.
+/// What the `inhomog` step corrects in a run.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct Targets {
+    /// The echoes (1-based, ascending) whose magnitude is corrected with the configured method
+    /// (`masking.inhomogeneity_method`).
+    pub echoes: Vec<usize>,
+    /// QSMART's vessel magnitude: the mean of every echo's magnitude, corrected with N4 on
+    /// make_nii's geometry with N4's default settings, as QSMART does
+    /// ([`qsm_core::utils::qsmart_vessel_magnitude`]).
+    pub vessel: bool,
+}
+
+impl Targets {
+    /// Whether nothing asks for a correction: the step is not planned.
+    pub fn is_empty(&self) -> bool {
+        self.echoes.is_empty() && !self.vessel
+    }
+
+    /// Add `echoes` to those corrected.
+    pub fn add(&mut self, echoes: impl IntoIterator<Item = usize>) {
+        self.echoes.extend(echoes);
+        self.echoes.sort_unstable();
+        self.echoes.dedup();
+    }
+}
+
+/// What the planned steps (`has`) ask the correction for, on a scan `facts` describes:
+/// - with the correction on, the echoes the brain mask reads, unless it is supplied (and the
+///   reliable-phase mask's), and every echo for the combined magnitude;
+/// - QSMART's vessel magnitude (`mean-n4`), unless the echoes are motion-corrected after masking:
+///   QSMART then makes it from those itself.
+pub fn targets(
+    config: &PipelineConfig, facts: &crate::scan::ScanFacts, has: impl Fn(crate::plan::Stage) -> bool,
+    motion_corrected: bool, supplied_mask: bool,
+) -> Targets {
+    use crate::plan::{Pass, Stage};
+    let mut t = Targets::default();
+    if !facts.has_magnitude {
+        return t;
+    }
+    let (m, n) = (&config.masking, facts.n_echoes);
+    if m.inhomogeneity_correction {
+        if has(Stage::Mask(Pass::Main)) && !supplied_mask {
+            t.add(mask_echoes(&m.sections, &m.refinements, n));
+        }
+        if has(Stage::Mask(Pass::Reliable)) {
+            t.add(mask_echoes(&m.resolved_two_pass_sections(), &m.refinements, n));
+        }
+        if has(Stage::Magnitude) {
+            t.add(1..=n);
+        }
+    }
+    t.vessel = !motion_corrected
+        && config.inversion.qsmart.vessel_magnitude == crate::enums::QsmartVesselMagnitude::MeanN4
+        && (has(Stage::Qsmart(Pass::Main)) || has(Stage::Qsmart(Pass::Reliable)));
+    t
+}
+
+/// Whether the refinements after combining read the RSS magnitude: any but the purely
+/// morphological ones (erosion, dilation, closing, the majority filter, hole filling, smoothing),
+/// which read only the mask.
+pub fn refinements_read_magnitude(refinements: &[MaskOp]) -> bool {
+    refinements.iter().any(|op| !matches!(op,
+        MaskOp::Erode { .. } | MaskOp::Dilate { .. } | MaskOp::Close { .. } | MaskOp::Majority
+        | MaskOp::FillHoles { .. } | MaskOp::GaussianSmooth { .. }))
+}
+
+/// The echoes (1-based, ascending) a mask of `sections`, then `refinements`, reads the magnitude
+/// of, on a scan of `n` echoes: echo 1 for a first-echo section, the last for a last-echo one,
+/// every echo for an RSS or phase-quality section (qsm-core's `section_magnitude`) and for
+/// refinements that read the magnitude ([`refinements_read_magnitude`]).
+pub fn mask_echoes(sections: &[MaskSection], refinements: &[MaskOp], n: usize) -> Vec<usize> {
+    let mut echoes = Vec::new();
+    let all = || (1..=n).collect::<Vec<_>>();
+    for s in sections {
+        match s.input {
+            MaskingInput::MagnitudeFirst => echoes.push(1),
+            MaskingInput::MagnitudeLast => echoes.push(n),
+            MaskingInput::Magnitude | MaskingInput::PhaseQuality => echoes.extend(all()),
+        }
+    }
+    if refinements_read_magnitude(refinements) {
+        echoes.extend(all());
+    }
+    echoes.retain(|&e| e >= 1 && e <= n);
+    echoes.sort_unstable();
+    echoes.dedup();
+    echoes
+}
+
+/// The magnitudes masking reads, for `sections` and the configured refinements: each echo of
+/// `magnitudes` that the mask reads ([`mask_echoes`]) corrected for inhomogeneity when that is on,
+/// the others as they are (no section reads them). What a mask preview builds from the echoes;
+/// the run's mask step reads the same images from the `inhomog` step.
+pub fn masking_magnitudes(
+    sections: &[MaskSection], config: &PipelineConfig, magnitudes: Vec<Vec<f64>>, meta: &RunMetadata,
+) -> Result<Vec<Vec<f64>>, EngineError> {
+    if !config.masking.inhomogeneity_correction || magnitudes.is_empty() {
+        return Ok(magnitudes);
+    }
+    let wanted = mask_echoes(sections, &config.masking.refinements, magnitudes.len());
+    magnitudes.into_iter().enumerate().map(|(i, m)| {
+        if wanted.contains(&(i + 1)) {
+            homogeneity_correct(&m, meta, config, &format!("echo {}'s magnitude", i + 1))
+        } else {
+            Ok(m)
+        }
+    }).collect()
+}
+
+/// The `inhomog` step's parameters: the correction's method and settings, and what it corrects.
+pub fn step_params(config: &PipelineConfig, targets: &Targets) -> serde_json::Value {
+    serde_json::json!({
+        "correction": params(config),
+        "echoes": targets.echoes,
+        // QSMART's own N4 (fixed settings, make_nii geometry); versioned with it.
+        "vessel": targets.vessel.then_some("qsmart-mean-n4"),
+    })
+}
+
+/// The correction's method and that method's settings.
 pub fn params(config: &PipelineConfig) -> serde_json::Value {
     match config.masking.inhomogeneity_method {
         InhomogeneityMethod::Makehomogeneous => serde_json::json!({
@@ -22,16 +151,17 @@ pub fn params(config: &PipelineConfig) -> serde_json::Value {
     }
 }
 
-/// The run's combined magnitude: the root sum of squares of every echo's, corrected for
-/// inhomogeneity when `--inhomogeneity-correction` is on.
-pub fn combined_magnitude(
-    echoes: &[&[f64]], meta: &RunMetadata, config: &PipelineConfig,
-) -> Result<Vec<f64>, EngineError> {
-    let combined = qsm_core::pipeline::rss_combine(echoes)?;
-    if !config.masking.inhomogeneity_correction {
-        return Ok(combined);
-    }
-    homogeneity_correct(&combined, meta, config, "the RSS-combined magnitude")
+/// The run's combined magnitude: the root sum of squares of `echoes`, every echo's magnitude as
+/// the `inhomog` step left it (corrected, when the correction is on).
+pub fn combined_magnitude(echoes: &[&[f64]]) -> Result<Vec<f64>, EngineError> {
+    Ok(qsm_core::pipeline::rss_combine(echoes)?)
+}
+
+/// QSMART's vessel magnitude from every echo's magnitude
+/// ([`qsm_core::utils::qsmart_vessel_magnitude`]: their mean, corrected with N4 as QSMART does).
+pub fn vessel_magnitude(echoes: &[&[f64]], meta: &RunMetadata) -> Result<Vec<f64>, EngineError> {
+    let grid = crate::scan::scan_metadata(meta).grid();
+    qsm_core::utils::qsmart_vessel_magnitude(echoes, &grid).map_err(|e| EngineError::Config(format!("qsmart: {e}")))
 }
 
 /// Apply inhomogeneity (bias field) correction on the run's working grid, with the configured
@@ -126,20 +256,46 @@ pub(crate) mod tests {
         assert!(out.iter().all(|v| v.is_finite()));
     }
 
+    /// The echoes a mask reads: echo 1 or the last for a first- or last-echo section, every echo
+    /// for the RSS, phase quality, or refinements that read the magnitude; morphology alone reads
+    /// none.
     #[test]
-    fn the_combined_magnitude_is_corrected_only_when_asked() {
-        let meta = meta_4x4x4();
+    fn a_mask_reads_the_echoes_its_sections_use() {
+        use crate::masking::MaskThresholdMethod;
+        let section = |input| MaskSection {
+            input, generator: MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None }, refinements: vec![],
+        };
+        let erode = MaskOp::Erode { iterations: 1 };
+        assert_eq!(mask_echoes(&[section(MaskingInput::MagnitudeFirst)], &[erode.clone(), MaskOp::Majority], 5), vec![1]);
+        assert_eq!(mask_echoes(&[section(MaskingInput::MagnitudeLast)], &[], 5), vec![5]);
+        assert_eq!(mask_echoes(&[section(MaskingInput::MagnitudeFirst), section(MaskingInput::MagnitudeLast)], &[], 5), vec![1, 5]);
+        for input in [MaskingInput::Magnitude, MaskingInput::PhaseQuality] {
+            assert_eq!(mask_echoes(&[section(input)], &[], 3), vec![1, 2, 3]);
+        }
+        assert_eq!(mask_echoes(&[section(MaskingInput::MagnitudeFirst)], &[MaskOp::signal_erode_default()], 3), vec![1, 2, 3]);
+        assert!(!refinements_read_magnitude(&[erode, MaskOp::FillHoles { max_size: 0 }]));
+        assert!(refinements_read_magnitude(&[MaskOp::MinIntensity { value: 100.0 }]));
+    }
+
+    /// The echoes masking reads are corrected, the others left as they are; nothing is corrected
+    /// with the correction off.
+    #[test]
+    fn masking_corrects_only_the_echoes_it_reads() {
+        use crate::masking::MaskThresholdMethod;
+        let mut meta = meta_4x4x4();
+        meta.n_echoes = 2;
         let a: Vec<f64> = (0..64).map(|i| 100.0 + i as f64).collect();
         let b: Vec<f64> = (0..64).map(|i| 50.0 + i as f64).collect();
-        let rss = qsm_core::pipeline::rss_combine(&[&a, &b]).unwrap();
-
+        let first = [MaskSection {
+            input: MaskingInput::MagnitudeFirst,
+            generator: MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None }, refinements: vec![],
+        }];
         let mut config = PipelineConfig::default();
+        config.masking.refinements.clear();
+        let got = masking_magnitudes(&first, &config, vec![a.clone(), b.clone()], &meta).unwrap();
+        assert_eq!(got, vec![homogeneity_correct(&a, &meta, &config, "x").unwrap(), b.clone()]);
         config.masking.inhomogeneity_correction = false;
-        assert_eq!(combined_magnitude(&[&a, &b], &meta, &config).unwrap(), rss);
-
-        config.masking.inhomogeneity_correction = true;
-        let corrected = homogeneity_correct(&rss, &meta, &config, "x").unwrap();
-        assert_eq!(combined_magnitude(&[&a, &b], &meta, &config).unwrap(), corrected);
+        assert_eq!(masking_magnitudes(&first, &config, vec![a.clone(), b.clone()], &meta).unwrap(), vec![a, b]);
     }
 
     /// The method decides which correction runs, and N4's own settings reach it.

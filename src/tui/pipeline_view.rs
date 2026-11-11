@@ -335,6 +335,7 @@ fn style(part: Part) -> Style {
         Part::Setting => Style::default(),
         Part::When | Part::Note => Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
         Part::Models => Style::default().fg(Color::Magenta),
+        Part::Output => Style::default().fg(Color::Green),
         Part::From => Style::default().fg(Color::Green),
         Part::Items => Style::default().fg(Color::DarkGray),
         Part::Run => Style::default().fg(Color::Blue),
@@ -440,7 +441,7 @@ mod tests {
             assert!(s.contains(&n.label), "{} missing:\n{s}", n.label);
         }
         assert!(s.contains("Dipole inversion · iLSQR"), "{s}");
-        assert!(s.contains("← 6 Background-field removal: Local field, Local field mask"), "{s}");
+        assert!(s.contains("← 7 Background-field removal: Local field, Local field mask"), "{s}");
         // The defaults keep the acquired grid: nothing resampled, nothing returned to it.
         assert!(!s.contains("only when the run is resampled") && !s.contains("Return to the acquired grid"), "{s}");
         let peak = qsmxt_engine::memory::format_bytes(p.plan.peak_memory_bytes);

@@ -48,7 +48,9 @@ impl PipelineConfig {
     /// - χ-separation needs the relaxometry maps its method reads, and a computed R2′ needs R2*
     ///   (and R2, where R2′ may be measured);
     /// - a region reference is measured on the segmentation, and a region reference that names
-    ///   no region is the mean.
+    ///   no region is the mean;
+    /// - multi-orientation grouping registers the orientations on their published combined
+    ///   magnitude, so it is published.
     ///
     /// Idempotent: normalising the result changes nothing and returns no adjustments.
     pub fn normalised(&self) -> (PipelineConfig, Vec<Adjustment>) {
@@ -84,6 +86,12 @@ impl PipelineConfig {
         if turned_on(&before, &c, |c| c.pipeline.do_segmentation) {
             out.push(note("pipeline.do_segmentation", "qsm.reference",
                 "Segmentation is on: the reference region is measured on it"));
+        }
+
+        if c.multi_orientation.enabled() && !c.pipeline.do_magnitude {
+            c.pipeline.do_magnitude = true;
+            out.push(note("pipeline.do_magnitude", "multi_orientation.group_by",
+                "The combined magnitude is published: the orientations are registered on it"));
         }
 
         (c, out)
