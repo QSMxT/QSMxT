@@ -2306,18 +2306,30 @@ mod parity {
         }
     }
 
-    /// A state's identity, to tell when two paths reach the same one.
-    fn state_key(app: &App) -> String {
-        format!("{:?}{:?}{:?}{}", app.pipeline_state, app.form, app.filter_state, app.active_tab)
+    /// A state's identity, to tell when two paths reach the same one: a hash of everything a
+    /// control changes, so the thousands of states explored are remembered in a few bytes each.
+    fn state_key(app: &App) -> u64 {
+        hash_of(&format!("{:?}{:?}{:?}{}", app.pipeline_state, app.form, app.filter_state, app.active_tab))
+    }
+
+    fn hash_of(text: &str) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        text.hash(&mut h);
+        h.finish()
     }
 
     fn clone_app(app: &App) -> App {
         State::of(app).app()
     }
 
-    /// `f` of each item, in order, worked out on every core (each thread with its own `init()`).
+    /// `f` of each item, in order, worked out on several threads (each with its own `init()`):
+    /// `RUST_TEST_THREADS` of them when it is set, else up to four, so the test's memory stays
+    /// bounded on a machine with many cores.
     fn par_map<T: Send, R: Send, S>(items: Vec<T>, init: impl Fn() -> S + Sync, f: impl Fn(&mut S, T) -> R + Sync) -> Vec<R> {
-        let threads = std::thread::available_parallelism().map_or(1, |n| n.get()).min(items.len()).max(1);
+        let wanted = std::env::var("RUST_TEST_THREADS").ok().and_then(|n| n.parse::<usize>().ok())
+            .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()).min(4));
+        let threads = wanted.min(items.len()).max(1);
         let queue = std::sync::Mutex::new(items.into_iter().enumerate());
         let mut out: Vec<(usize, R)> = std::thread::scope(|scope| {
             let workers: Vec<_> = (0..threads).map(|_| scope.spawn(|| {
@@ -2366,19 +2378,24 @@ mod parity {
         Param(&'static str),
     }
 
-    /// Every state worth looking at, with its rows: start from the defaults in each tab mode, and
-    /// keep any select/toggle change that reveals a row not seen yet, until nothing new turns up.
-    fn explore() -> Vec<(App, Vec<PipelineRow>)> {
+    /// Every state worth looking at, with its rows, handed to `visit` in turn: start from the
+    /// defaults in each tab mode, and keep any select/toggle change that reveals a row not seen
+    /// yet, until nothing new turns up. Nothing is kept of a state once it is visited, but its
+    /// key: the caller keeps what it needs.
+    fn explore(mut visit: impl FnMut(&App, Vec<PipelineRow>)) {
+        type Seen = (&'static str, char, usize);
         // A row counts as seen per inversion algorithm: the same row (an inner inversion's
-        // parameters under QSMART, say) can mean a different flag under another one.
-        let mut seen: std::collections::HashSet<(&'static str, char, usize)> = Default::default();
-        // The states already looked at. Different paths reach the same state (a select set back,
-        // two toggles in either order); a repeat shows only rows its first visit marked seen.
-        let mut visited: std::collections::HashSet<String> = Default::default();
-        let mut states = Vec::new();
-        // Each state with its rows and its key for `visited`, worked out (on every core) as it is
-        // reached.
-        let mut frontier: Vec<(String, App, Vec<PipelineRow>)> = Vec::new();
+        // parameters under QSMART, say) can mean a different flag under another one. A checkbox
+        // counts as seen per value too: a state where a forced output is free (and so can be
+        // checked) is new even when its rows are not.
+        let mut seen: std::collections::HashSet<Seen> = Default::default();
+        let seen_keys = |app: &App, rows: &[PipelineRow]| -> Vec<Seen> {
+            let alg = app.pipeline_state.qsm_algorithm;
+            rows.iter().filter_map(row_key).map(|(field, kind)| {
+                let kind = if kind == 't' && app.field_toggle(field) { 'T' } else { kind };
+                (field, kind, alg)
+            }).collect()
+        };
         // The defaults, plus the starts whose rows only a non-row control reveals: the
         // multi-orientation settings (a grouping pattern on the Input tab, COSMOS or STI) and the
         // inputs of the relaxometry maps and statistics.
@@ -2389,33 +2406,66 @@ mod parity {
             |a| { a.filter_state.orientation_group = "acq".into(); a.filter_state.orientation_algorithm = 1; },
             |a| { a.form.do_r2primemap = true; a.form.do_r2map = true; a.form.do_analysis = true; },
         ];
-        for start in starts {
+        let start_app = |i: usize| {
             let mut app = App::new();
             // What a run needs before it can be built in either mode.
             app.form.bids_dir = "/bids".into();
             app.form.slurm_account = "acct".into();
-            start(&mut app);
-            let rows = rows(&app);
-            frontier.push((state_key(&app), app, rows));
+            starts[i](&mut app);
+            app
+        };
+        // Every state reached, as the change that reached it from its parent (or the start it
+        // is): a few bytes each, where the states themselves are tens of kilobytes. Only the
+        // states whose changes were explored (the parents) are kept whole, and a state is
+        // rebuilt from its parent when it is looked at.
+        let mut nodes: Vec<Result<usize, (u32, Change)>> = Vec::new();
+        let mut parents: std::collections::HashMap<u32, State> = Default::default();
+        let rebuild = |nodes: &[Result<usize, (u32, Change)>], parents: &std::collections::HashMap<u32, State>, i: u32| -> App {
+            match nodes[i as usize] {
+                Ok(start) => start_app(start),
+                Err((parent, change)) => change.apply(&parents[&parent].app()).expect("a change made once"),
+            }
+        };
+        // The states already looked at. Different paths reach the same state (a select set back,
+        // two toggles in either order); a repeat shows only rows its first visit marked seen.
+        let mut visited: std::collections::HashSet<u64> = Default::default();
+        // The states reached and not yet looked at, last first: each by its key, its node and
+        // what it would mark seen (as numbers: the [`Seen`]s interned). A state reached again
+        // replaces its earlier entry (`None` where it was): the later one would be looked at
+        // first and the earlier then skipped, so the order states are looked at in is unchanged.
+        type Entry = Option<(u64, u32, Box<[u16]>)>;
+        let mut frontier: Vec<Entry> = Vec::new();
+        let mut queued: std::collections::HashMap<u64, usize> = Default::default();
+        let mut ids: std::collections::HashMap<Seen, u16> = Default::default();
+        let mut by_id: Vec<Seen> = Vec::new();
+        fn intern(ids: &mut std::collections::HashMap<Seen, u16>, by_id: &mut Vec<Seen>, keys: Vec<Seen>) -> Box<[u16]> {
+            keys.into_iter().map(|k| *ids.entry(k).or_insert_with(|| { by_id.push(k); (by_id.len() - 1) as u16 })).collect()
         }
-        while let Some((key, app, rows)) = frontier.pop() {
+        fn push(frontier: &mut Vec<Entry>, queued: &mut std::collections::HashMap<u64, usize>, key: u64, node: u32, keys: Box<[u16]>) {
+            if let Some(at) = queued.insert(key, frontier.len()) {
+                frontier[at] = None;
+            }
+            frontier.push(Some((key, node, keys)));
+        }
+        for i in 0..starts.len() {
+            nodes.push(Ok(i));
+            let app = start_app(i);
+            let keys = intern(&mut ids, &mut by_id, seen_keys(&app, &rows(&app)));
+            push(&mut frontier, &mut queued, state_key(&app), (nodes.len() - 1) as u32, keys);
+        }
+        while let Some(entry) = frontier.pop() {
+            let Some((key, node, keys)) = entry else { continue };
+            queued.remove(&key);
             if !visited.insert(key) {
                 continue;
             }
-            let alg = app.pipeline_state.qsm_algorithm;
-            // A checkbox counts as seen per value too: a state where a forced output is free
-            // (and so can be checked) is new even when its rows are not. (Its value is only
-            // looked up while one of the two is unseen.)
             let mut fresh = false;
-            for (field, kind) in rows.iter().filter_map(row_key) {
-                let kind = if kind != 't' {
-                    kind
-                } else if seen.contains(&(field, 't', alg)) && seen.contains(&(field, 'T', alg)) {
-                    continue;
-                } else if app.field_toggle(field) { 'T' } else { 't' };
-                fresh |= seen.insert((field, kind, alg));
+            for &k in keys.iter() {
+                fresh |= seen.insert(by_id[k as usize]);
             }
             if !fresh { continue; }
+            let app = rebuild(&nodes, &parents, node);
+            let rows = rows(&app);
             let changes: Vec<Change> = rows.iter().flat_map(|r| match r {
                 PipelineRow::AlgoSelect { field, options, .. } => {
                     let current = app.field_select(field);
@@ -2427,13 +2477,25 @@ mod parity {
             let state = State::of(&app);
             let next = par_map(changes, || state.app(), |base, change| {
                 let a = change.apply(base)?;
-                let (key, rows) = (state_key(&a), self::rows(&a));
-                Some((key, a, rows))
+                let key = state_key(&a);
+                // A state already looked at, or one that would mark nothing new seen (`seen` only
+                // grows, so it would mark nothing new later either), would be skipped: no need to
+                // keep it.
+                if visited.contains(&key) { return None; }
+                let keys = seen_keys(&a, &self::rows(&a));
+                if keys.iter().all(|k| seen.contains(k)) { return None; }
+                Some((key, change, keys))
             });
-            frontier.extend(next.into_iter().flatten());
-            states.push((app, rows));
+            let mut any = false;
+            for (key, change, keys) in next.into_iter().flatten() {
+                any = true;
+                nodes.push(Err((node, change)));
+                let keys = intern(&mut ids, &mut by_id, keys);
+                push(&mut frontier, &mut queued, key, (nodes.len() - 1) as u32, keys);
+            }
+            if any { parents.insert(node, state); }
+            visit(&app, rows);
         }
-        states
     }
 
     /// The run-level arguments of the active mode (the pipeline's part is the config's).
@@ -2478,7 +2540,7 @@ mod parity {
         // decided in order, so each combination is checked where it is first reached.
         type Rows = Vec<(PipelineRow, Option<State>)>;
         let mut jobs: Vec<(State, Rows)> = Vec::new();
-        for (app, rows) in explore() {
+        explore(|app, rows| {
             let ps = &app.pipeline_state;
             let qsmart = crate::tui::app::QSM_ALGO_OPTIONS[ps.qsm_algorithm] == "qsmart";
             let context = (
@@ -2501,7 +2563,7 @@ mod parity {
                 // A checkbox another option forces on refuses to change (and says why): it is
                 // checked where it is free instead.
                 let toggled = match r {
-                    PipelineRow::Toggle { field, .. } => match Change::Toggle(field).apply(&app) {
+                    PipelineRow::Toggle { field, .. } => match Change::Toggle(field).apply(app) {
                         Some(a) => Some(State::of(&a)),
                         None => continue,
                     },
@@ -2511,18 +2573,18 @@ mod parity {
                 todo.push((r, toggled));
             }
             if !todo.is_empty() {
-                jobs.push((State::of(&app), todo));
+                jobs.push((State::of(app), todo));
             }
-        }
+        });
         // The pipeline's command per config (as data), and what each command parses back to:
         // generating and parsing are most of a check's cost, and many changes give a config or a
         // command already seen.
-        let commands: std::sync::Mutex<std::collections::HashMap<String, String>> = Default::default();
-        let round_trips: std::sync::Mutex<std::collections::HashMap<String, String>> = Default::default();
-        let cached = |cache: &std::sync::Mutex<std::collections::HashMap<String, String>>, key: &str, make: &mut dyn FnMut() -> String| {
-            if let Some(v) = cache.lock().unwrap().get(key) { return v.clone(); }
+        let commands: std::sync::Mutex<std::collections::HashMap<u64, String>> = Default::default();
+        let round_trips: std::sync::Mutex<std::collections::HashMap<u64, String>> = Default::default();
+        let cached = |cache: &std::sync::Mutex<std::collections::HashMap<u64, String>>, key: u64, make: &mut dyn FnMut() -> String| {
+            if let Some(v) = cache.lock().unwrap().get(&key) { return v.clone(); }
             let v = make();
-            cache.lock().unwrap().insert(key.to_string(), v.clone());
+            cache.lock().unwrap().insert(key, v.clone());
             v
         };
         // What each state runs and shows, worked out once however many changes are checked
@@ -2577,8 +2639,8 @@ mod parity {
                 let d = diff(&before.config, &after.config);
                 found.push((format!("not in the command: {d:?}"), what.clone()));
             }
-            let cmd = cached(&commands, &after.data.to_string(), &mut || qsmxt_engine::generate_command(&after.config));
-            let back = cached(&round_trips, &cmd, &mut || qsmxt_engine::generate_command(&round_trip(cli, &after.config)));
+            let cmd = cached(&commands, hash_of(&after.data.to_string()), &mut || qsmxt_engine::generate_command(&after.config));
+            let back = cached(&round_trips, hash_of(&cmd), &mut || qsmxt_engine::generate_command(&round_trip(cli, &after.config)));
             if back != cmd {
                 let (a, b) = (flags_of(&cmd), flags_of(&back));
                 found.push((format!("command does not reproduce itself: {:?}", a.symmetric_difference(&b).collect::<Vec<_>>()), what));
