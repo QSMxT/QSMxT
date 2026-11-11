@@ -518,7 +518,8 @@ pub struct DicomMap {
 }
 
 /// Every map DICOM export writes, in series order ([`crate::dicom::export`]).
-pub const DICOM_MAPS: [DicomMap; 15] = [
+pub const DICOM_MAPS: [DicomMap; 16] = [
+    DicomMap { field: "dicom_out_magnitude", suffix: "magnitude", label: "  Magnitude", group: "magnitude" },
     DicomMap { field: "dicom_out_chimap", suffix: "Chimap", label: "  χ (QSM)", group: "χ" },
     DicomMap { field: "dicom_out_swi", suffix: "swi", label: "  SWI", group: "SWI" },
     DicomMap { field: "dicom_out_minip", suffix: "minIP", label: "  SWI minIP", group: "SWI" },
@@ -8716,18 +8717,19 @@ impl App {
             for m in made {
                 rows.push(Toggle { label: m.label, field: m.field,
                     help: if m.field == "dicom_out_dseg" {
-                        "The segmentation as one DICOM Segmentation object, its structures coded and coloured, drawn on the exported χ series: it needs χ exported too"
+                        "The segmentation as one DICOM Segmentation object, its structures coded and coloured, drawn on an exported series on its grid: the magnitude, else χ, else another map"
                     } else {
                         "Space ticks or unticks the map. While every map is ticked all are exported, and a map turned on later is ticked too; a ticks them all"
                     } });
             }
-            // The SEG references the χ series: say so when it would be written without it.
-            let chi = dicom_map("dicom_out_chimap").expect("in the table");
+            // The SEG is drawn on another exported series on its grid (the magnitude, χ, another
+            // map): the run refuses a selection that leaves it none, and the checklist says so.
             let seg = dicom_map("dicom_out_dseg").expect("in the table");
-            if self.dicom_map_made(seg) && self.field_toggle(seg.field)
-                && !(self.dicom_map_made(chi) && self.field_toggle(chi.field))
-            {
-                rows.push(Note { text: "The segmentation is not exported without χ: its SEG is drawn on the χ series.".into() });
+            let reference_ticked = DICOM_MAPS.iter().any(|m| self.dicom_map_made(m) && self.field_toggle(m.field)
+                && crate::dicom::export::SEG_REFERENCES.iter().any(|r| r.eq_ignore_ascii_case(m.suffix)));
+            if self.dicom_map_made(seg) && self.field_toggle(seg.field) && !reference_ticked {
+                rows.push(Note { text: "The segmentation needs a map to be drawn on: tick the".into() });
+                rows.push(Note { text: "magnitude, χ or another map, or the run is refused.".into() });
             }
             let mut names: Vec<&str> = not_made.iter().map(|m| m.group).collect();
             names.dedup();
@@ -8751,6 +8753,8 @@ impl App {
     /// Whether the current settings make an exportable map.
     fn dicom_map_made(&self, m: &DicomMap) -> bool {
         match m.group {
+            // The combined magnitude is published with every run that has one.
+            "magnitude" => true,
             "χ" => self.qsm_on(),
             "SWI" => self.form.do_swi,
             "SMWI" => self.form.do_smwi,
@@ -13285,11 +13289,13 @@ mod tests {
 
         app.toggle_field("dicom_out_minip");
         assert!(!app.field_toggle("dicom_out_minip"));
-        assert_eq!(app.dicom_outputs(), Some(vec!["Chimap".to_string(), "swi".to_string()]));
+        let s = |v: &[&str]| Some(v.iter().map(|x| x.to_string()).collect::<Vec<_>>());
+        assert_eq!(app.dicom_outputs(), s(&["magnitude", "Chimap", "swi"]));
         // A map turned on later is exported too.
         app.form.do_r2starmap = true;
-        assert_eq!(app.dicom_outputs(), Some(vec!["Chimap".to_string(), "swi".to_string(), "R2starmap".to_string()]));
+        assert_eq!(app.dicom_outputs(), s(&["magnitude", "Chimap", "swi", "R2starmap"]));
         // The last ticked map stays ticked.
+        app.toggle_field("dicom_out_magnitude");
         app.toggle_field("dicom_out_swi");
         app.toggle_field("dicom_out_r2starmap");
         app.toggle_field("dicom_out_chimap");
@@ -13312,17 +13318,20 @@ mod tests {
 
     /// The segmentation is listed when one is made, and the checklist says its SEG needs χ.
     #[test]
-    fn the_segmentation_is_exported_on_the_chi_series() {
+    fn the_segmentation_needs_a_map_to_be_drawn_on() {
         let mut app = App::new();
         app.form.export_dicom = true;
         let fields = |app: &App| app.page_rows(Page::Export).iter().filter_map(row_field).collect::<Vec<_>>();
         assert!(!fields(&app).contains(&"dicom_out_dseg"), "no segmentation, no SEG");
         app.form.do_segmentation = true;
-        assert!(fields(&app).contains(&"dicom_out_dseg"));
-        let note = |app: &App| app.page_rows(Page::Export).iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("not exported without χ")));
+        assert!(fields(&app).contains(&"dicom_out_dseg") && fields(&app).contains(&"dicom_out_magnitude"));
+        let note = |app: &App| app.page_rows(Page::Export).iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("needs a map to be drawn on")));
         assert!(!note(&app));
+        // χ alone unticked: the magnitude is still there to draw it on.
         app.toggle_field("dicom_out_chimap");
-        assert!(note(&app), "χ unticked: the SEG would have nothing to be drawn on");
+        assert!(!note(&app), "the magnitude is reference enough");
+        app.toggle_field("dicom_out_magnitude");
+        assert!(note(&app), "no map left for the SEG");
         assert_eq!(app.dicom_outputs(), Some(vec!["dseg".to_string()]));
     }
 

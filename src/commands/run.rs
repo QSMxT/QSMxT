@@ -393,6 +393,8 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
 
     // Every requested output every run can produce, before any run starts (#193, #273).
     crate::pipeline::requirements::check_runs(&runs, &config)?;
+    // A DICOM SEG is drawn on another exported series: refuse a selection that leaves it none.
+    crate::dicom::export::check_outputs(args.dicom_outputs.as_deref(), &config).map_err(crate::error::QsmxtError::Config)?;
     // The orientation groups resolve now, not after hours of per-run pipelines: a reference that
     // matches no member would otherwise only surface at the fan-in. A worker sees only its share
     // of the runs, so its partial groups prove nothing; the aggregation step checks the whole.

@@ -2006,14 +2006,14 @@ mod tests {
         app.form.debug = true;
         app.form.export_dicom = true;
         app.form.source_dicom = "/dicom".to_string();
-        // SWI makes swi and minIP; unticking minIP exports χ and SWI only.
+        // SWI makes swi and minIP; unticking minIP exports the magnitude, χ and SWI only.
         app.form.do_swi = true;
         app.form.dicom_unticked = vec!["minip".to_string()];
 
         let args = build_slurm_args(&app).unwrap();
         assert!(args.debug);
         assert_eq!(args.source_dicom, Some(PathBuf::from("/dicom")));
-        assert_eq!(args.dicom_outputs, Some(vec!["Chimap".to_string(), "swi".to_string()]));
+        assert_eq!(args.dicom_outputs, Some(vec!["magnitude".to_string(), "Chimap".to_string(), "swi".to_string()]));
         assert!(args.pipeline.export_dicom);
 
         let cmd = build_command_string(&app);
