@@ -750,6 +750,13 @@ impl ExampleState {
 
     /// `(downloaded, total)` for the archive currently in flight, or `None` when
     /// nothing is downloading.
+    /// Set the download's progress, as the download thread does.
+    #[cfg(test)]
+    pub fn set_progress(&self, done: u64, total: u64) {
+        self.progress.0.store(done, Ordering::Relaxed);
+        self.progress.1.store(total, Ordering::Relaxed);
+    }
+
     pub fn progress(&self) -> Option<(u64, u64)> {
         let total = self.progress.1.load(Ordering::Relaxed);
         (total > 0).then(|| (self.progress.0.load(Ordering::Relaxed), total))
@@ -6294,6 +6301,8 @@ pub struct AlgoModal {
     pub help: Vec<String>,
     /// Currently highlighted option index.
     pub cursor: usize,
+    /// The first option shown: the list scrolls only when the cursor would leave the window.
+    pub offset: std::cell::Cell<usize>,
 }
 
 /// The selection an [`AlgoModal`] applies when confirmed. Lets a single pop-up list serve every
@@ -6732,6 +6741,19 @@ impl App {
             KeyCode::F(5) => return self.try_run(),
             _ => {}
         }
+        // The sidebar, as the Reconstruction tab's: ↑/↓ choose the page, → or Enter go into it,
+        // ↑ from the first goes up to the tab bar.
+        if self.on_subtabs() && self.sidebar() {
+            let first = self.page() != Some(Page::Pipeline);
+            match key.code {
+                KeyCode::Up | KeyCode::Char('k') if first => self.tab_focus = true,
+                KeyCode::Up | KeyCode::Char('k') => self.cycle_page(-1),
+                KeyCode::Down | KeyCode::Char('j') if first => self.cycle_page(1),
+                KeyCode::Right | KeyCode::Char('l') | KeyCode::Enter => self.subtab_focus = false,
+                _ => {}
+            }
+            return;
+        }
         if self.on_subtabs() {
             match key.code {
                 KeyCode::Left => self.cycle_page(-1),
@@ -6743,8 +6765,11 @@ impl App {
             return;
         }
         let pipeline = self.page() == Some(Page::Pipeline);
+        let sidebar = self.sidebar();
         let scroll = if pipeline { &mut self.pipeline_view.scroll } else { &mut self.methods_scroll_offset };
         match key.code {
+            // ← goes back to the sidebar, and so does ↑ from the top.
+            KeyCode::Left | KeyCode::Char('h') if sidebar => self.subtab_focus = true,
             KeyCode::Up | KeyCode::Char('k') if *scroll == 0 => self.subtab_focus = true,
             KeyCode::Up | KeyCode::Char('k') => *scroll = scroll.saturating_sub(1),
             KeyCode::Down | KeyCode::Char('j') => *scroll += 1,
@@ -6872,7 +6897,9 @@ impl App {
                     self.example_state.cursor -= 1;
                 }
             }
-            KeyCode::Down | KeyCode::Char('j') if self.example_state.cursor < ExampleState::last_row() => {
+            // Once a download has started the list is hidden: the button is all there is.
+            KeyCode::Down | KeyCode::Char('j') if self.example_state.cursor < ExampleState::last_row()
+                && self.example_state.status == ConvertStatus::Idle => {
                 self.example_state.cursor += 1;
             }
             KeyCode::Char(' ') if !on_button => {
@@ -6925,6 +6952,7 @@ impl App {
                     InputMode::DicomToBids => 2,
                     InputMode::Example => 3,
                 },
+                offset: Default::default(),
             });
             return;
         }
@@ -7225,6 +7253,7 @@ impl App {
             options: all.iter().map(|t| t.label().to_string()).collect(),
             help: all.iter().map(|&t| series_type_help(t).to_string()).collect(),
             cursor: all.iter().position(|&t| t == cur).unwrap_or(0),
+            offset: Default::default(),
         });
     }
 
@@ -8213,6 +8242,7 @@ impl App {
         let strings = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         let modal = |target, title: &str, options: Vec<String>, help: Vec<String>, cursor| Some(AlgoModal {
             target, title: title.to_string(), options, help, cursor,
+            offset: Default::default(),
         });
         let generator = |section: usize| ps.mask_section(section).map(|s| &s.generator);
         match *row {
@@ -8493,7 +8523,7 @@ impl App {
 
     /// Whether the active tab's pages are a sidebar (the Reconstruction tab on a wide terminal).
     pub fn sidebar(&self) -> bool {
-        self.active_tab == TAB_RECONSTRUCTION && self.sidebar_layout.get()
+        matches!(self.active_tab, TAB_RECONSTRUCTION | TAB_METHODS) && self.sidebar_layout.get()
     }
 
     /// Open the active tab's page `i` (clamped), keeping focus where it is.
@@ -9528,6 +9558,7 @@ mod tests {
             options: QSM_ALGO_OPTIONS.iter().map(|s| s.to_string()).collect(),
             help: vec![String::new(); QSM_ALGO_OPTIONS.len()],
             cursor: 0,
+            offset: Default::default(),
         });
         app.handle_key(key(KeyCode::Down));
         app.handle_key(key(KeyCode::Down));
@@ -9547,6 +9578,7 @@ mod tests {
             options: vec!["a".to_string(), "b".to_string()],
             help: vec![String::new(), String::new()],
             cursor: 1,
+            offset: Default::default(),
         });
         app.handle_key(key(KeyCode::Esc));
         assert!(app.algo_modal.is_none());
@@ -11350,8 +11382,8 @@ mod tests {
         assert!(app.on_subtabs(), "↑ at the top goes up to the sub-tab strip");
     }
 
-    /// The Methods tab opens on its strip with the methods text chosen; the pipeline graph is the
-    /// second sub-tab, reached with →, `]` or `[`, and ↓ goes into it.
+    /// The Methods tab opens on its sidebar with the methods text chosen; the pipeline graph is
+    /// the second page, reached with ↓, `]` or `[`, and → goes into it.
     #[test]
     fn the_pipeline_is_the_methods_tabs_second_sub_tab() {
         let mut app = App::new();
@@ -11359,11 +11391,11 @@ mod tests {
         assert_eq!(app.active_tab, TAB_METHODS);
         assert_eq!(app.pages(TAB_METHODS), vec![Page::MethodsText, Page::Pipeline]);
         assert_eq!(app.page(), Some(Page::MethodsText));
-        assert!(app.on_subtabs());
-        app.handle_key(key(KeyCode::Right));
+        assert!(app.on_subtabs() && app.sidebar());
+        app.handle_key(key(KeyCode::Down));
         assert_eq!(app.page(), Some(Page::Pipeline));
         assert!(app.on_subtabs());
-        app.handle_key(key(KeyCode::Down));
+        app.handle_key(key(KeyCode::Right));
         assert!(!app.on_subtabs());
         app.handle_key(key(KeyCode::Down));
         assert_eq!((app.pipeline_view.scroll, app.methods_scroll_offset), (1, 0), "↓ scrolls the graph");
@@ -11374,6 +11406,9 @@ mod tests {
         app.handle_key(key(KeyCode::Up));
         app.handle_key(key(KeyCode::Up));
         assert!(app.on_subtabs());
+        // Up the sidebar to the methods text, then to the tab bar.
+        app.handle_key(key(KeyCode::Up));
+        assert_eq!(app.page(), Some(Page::MethodsText));
         app.handle_key(key(KeyCode::Up));
         assert!(app.tab_focus);
         assert!(!TAB_NAMES.contains(&"Graph"), "the graph is a Methods sub-tab");
@@ -14311,13 +14346,16 @@ mod tests {
         for page in [Page::MethodsText, Page::Pipeline] {
             app.handle_key(key(KeyCode::Char(char::from_digit(TAB_METHODS as u32 + 1, 10).unwrap())));
             app.sub_page[TAB_METHODS] = Some(page);
-            app.handle_key(key(KeyCode::Down));
+            app.handle_key(key(KeyCode::Right));
             app.handle_key(key(KeyCode::Down));
             app.handle_key(key(KeyCode::Up));
             assert!(!app.tab_focus && !app.on_subtabs(), "the first ↑ scrolls back up");
             app.handle_key(key(KeyCode::Up));
             assert!(app.on_subtabs());
-            app.handle_key(key(KeyCode::Up));
+            // Up the sidebar, then to the bar.
+            for _ in 0..2 {
+                if !app.tab_focus { app.handle_key(key(KeyCode::Up)); }
+            }
             assert!(app.tab_focus);
             app.handle_key(key(KeyCode::Down));
             assert!(!app.tab_focus);

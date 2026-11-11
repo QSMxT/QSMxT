@@ -294,6 +294,11 @@ pub fn panel(app: &App) -> Block<'static> {
 
 // ─── Sidebar (the Reconstruction tab's sections) ───
 
+/// A sidebar's group heading, as the Reconstruction tab draws it (the Pipeline tab's list too).
+pub fn sidebar_heading_style() -> Style {
+    Style::default().fg(palette().muted).add_modifier(Modifier::BOLD)
+}
+
 /// One line of the sidebar.
 enum SideLine {
     Blank,
@@ -310,7 +315,10 @@ fn sidebar_lines(pages: &[Page], height: usize) -> Vec<SideLine> {
         g.dedup();
         g.len()
     };
-    let (blanks, headings, rules) = if pages.len() + 2 * groups - 1 <= height {
+    // One group (the Methods tab's pages) needs no heading.
+    let (blanks, headings, rules) = if groups == 1 {
+        (false, false, false)
+    } else if pages.len() + 2 * groups - 1 <= height {
         (true, true, false)
     } else if pages.len() + groups <= height {
         (false, true, false)
@@ -553,11 +561,12 @@ pub(super) mod tests {
         }
     }
 
+    /// Too narrow for a sidebar, a tab's pages are pills.
     #[test]
     fn sub_tabs_are_pills_with_a_hint_and_a_counter() {
         let mut app = App::new();
         goto(&mut app, crate::tui::app::TAB_METHODS, Some(Page::Pipeline));
-        let t = render(&mut app, 120, 40);
+        let t = render(&mut app, SIDEBAR_MIN_WIDTH - 1, 40);
         // Row 2 is the panel's top border with its breadcrumb title; row 3 the pills.
         assert!(row(&t, 2).contains("Methods › Graph"), "{}", row(&t, 2));
         let pills = row(&t, 3);

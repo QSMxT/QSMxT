@@ -412,7 +412,8 @@ mod tests {
 
     /// The screen as text, a row a line, drawn `height` rows tall.
     fn screen(app: &mut App, height: u16) -> String {
-        let mut t = Terminal::new(TestBackend::new(110, height)).unwrap();
+        // Wide enough that the sidebar leaves the graph its lines unwrapped.
+        let mut t = Terminal::new(TestBackend::new(140, height)).unwrap();
         t.draw(|f| crate::tui::ui::draw(f, app)).unwrap();
         let buf = t.backend().buffer();
         (0..buf.area.height)

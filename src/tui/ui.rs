@@ -66,7 +66,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     // Drawn last so it sits above the other pop-ups, matching the input routing.
     if let Some(ref modal) = app.update_modal {
-        draw_update_modal(f, modal, f.area());
+        draw_update_modal(f, modal, f.area(), &app.hits);
     }
 }
 
@@ -164,6 +164,7 @@ fn draw_tip_modal(f: &mut Frame, modal: &TipModal, area: Rect, hits: &super::mou
     );
 
     let popup = centered_rect(popup_w, lines.len() as u16 + 2, area);
+    hits.add(popup, super::mouse::Hit::Popup);
     f.render_widget(Clear, popup);
     let block = Block::default()
         .borders(Borders::ALL)
@@ -261,6 +262,7 @@ fn draw_advice_modal(
     let buttons = footer.clone();
     let chrome = footer.len() as u16 + 1 + 2;
     let popup = centered_rect(popup_w, lines.len() as u16 + chrome, area);
+    hits.add(popup, super::mouse::Hit::Popup);
     let body_h = popup.height.saturating_sub(chrome);
     let max_scroll = (lines.len() as u16).saturating_sub(body_h);
     *scroll = (*scroll).min(max_scroll);
@@ -493,7 +495,7 @@ fn draw_news_modal(f: &mut Frame, modal: &mut NewsModal, area: Rect, hits: &supe
 }
 
 /// "A new version is available" pop-up, raised by the launch-time release check.
-fn draw_update_modal(f: &mut Frame, modal: &UpdateModal, area: Rect) {
+fn draw_update_modal(f: &mut Frame, modal: &UpdateModal, area: Rect, hits: &super::mouse::Hits) {
     let running = crate::commands::update::current_version();
     let lines = vec![
         Line::from(vec![
@@ -527,6 +529,7 @@ fn draw_update_modal(f: &mut Frame, modal: &UpdateModal, area: Rect) {
         .max()
         .unwrap_or(40) as u16;
     let popup = centered_rect(content_w + 4, lines.len() as u16 + 2, area);
+    hits.add(popup, super::mouse::Hit::Popup);
 
     f.render_widget(Clear, popup);
     let block = Block::default()
@@ -569,6 +572,7 @@ fn draw_algo_modal(f: &mut Frame, modal: &AlgoModal, area: Rect, hits: &super::m
         .max(1);
     let height = (list_h + chrome).min(area.height.saturating_sub(2));
     let popup = centered_rect(width, height, area);
+    hits.add(popup, super::mouse::Hit::Popup);
 
     f.render_widget(Clear, popup);
     let block = Block::default()
@@ -611,9 +615,12 @@ fn draw_algo_modal(f: &mut Frame, modal: &AlgoModal, area: Rect, hits: &super::m
     let list = List::new(items)
         .highlight_style(Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD))
         .highlight_symbol("▶ ");
-    let mut state = ListState::default();
+    // From where the list was last drawn: ratatui moves the window only as far as keeps the
+    // cursor in it, so the view scrolls only when the cursor would leave it.
+    let mut state = ListState::default().with_offset(modal.offset.get());
     state.select(Some(modal.cursor));
     f.render_stateful_widget(list, list_area, &mut state);
+    modal.offset.set(state.offset());
     hits.add(list_area, super::mouse::Hit::Picker { offset: state.offset() });
 
     if let Some(sb_area) = sb_area {
@@ -726,8 +733,11 @@ fn draw_form(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
 /// The Methods tab: its sub-tab strip, then the methods text or the pipeline graph.
 fn draw_methods_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     let block = super::tabs::panel(app);
-    let inner = block.inner(area);
+    let mut inner = block.inner(area);
     f.render_widget(block, area);
+    if app.sidebar() {
+        inner = draw_sidebar_beside(f, app, area, inner);
+    }
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(super::tabs::subtab_rows(app)), Constraint::Min(1)])
@@ -786,7 +796,10 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
             super::app::FilterFocus::NumEchoes => "Limit number of echoes to process",
         }
     } else if is_example {
-        if app.example_state.cursor == super::app::ExampleState::BUTTON {
+        if app.example_state.status == super::app::ConvertStatus::Converting {
+            // The button and the download log say what is happening.
+            ""
+        } else if app.example_state.cursor == super::app::ExampleState::BUTTON {
             "Enter: download the ticked acquisitions and build the dataset"
         } else {
             "Space/Enter: tick an acquisition (several can share one dataset), r: reset"
@@ -1259,9 +1272,29 @@ fn draw_example_picker(
     /// The list's borders and one row.
     const MIN_LIST: usize = 3;
     let button_line = lines.len();
-    // A long log leaves the list room, but always shows its last lines: they may be the error.
-    let log_room = (area.height as usize).saturating_sub(button_line + 2 + MIN_LIST).clamp(2, 8);
-    draw_example_button(state, in_io, log_room, &mut lines);
+    draw_example_button(state, in_io, &mut lines);
+    // Once the download starts, the list gives way to its log, in a small box of its own; the
+    // last lines show, as they may be the error.
+    if state.status != super::app::ConvertStatus::Idle {
+        let head_h = (lines.len() as u16 + 1).min(area.height);
+        let room = (area.height.saturating_sub(head_h + 2) as usize).clamp(1, 8);
+        let log = example_log_lines(state, room);
+        let [head, rest] = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(head_h), Constraint::Min(0)])
+            .areas(area);
+        f.render_widget(Paragraph::new(lines), head);
+        add_line_hits(hits, head, 0, example_targets(button_line, 0).take(super::app::App::INPUT_IO_FIELDS + 1));
+        // Inset from the panel's border, as the acquisitions' box is (no doubled border).
+        let boxed = Rect { x: rest.x + 1, width: rest.width.saturating_sub(2), height: (log.len().max(1) as u16 + 2).min(rest.height), ..rest };
+        // Styled as the panels are: rounded, a faint border, the title in the text colour.
+        let block = Block::default().borders(Borders::ALL).border_type(ratatui::widgets::BorderType::Rounded)
+            .title(" Download log ").border_style(Style::default().fg(Color::DarkGray));
+        let inner = block.inner(boxed);
+        f.render_widget(block, boxed);
+        f.render_widget(Paragraph::new(log), inner);
+        return 0;
+    }
     let rows = example_rows(state, in_io);
     let focused_row = if in_io { None } else { state.acquisition() };
 
@@ -1273,6 +1306,8 @@ fn draw_example_picker(
             .areas(area);
         f.render_widget(Paragraph::new(lines), head);
         let border = if focused_row.is_some() { Color::Yellow } else { Color::DarkGray };
+        // Inset from the panel's border, so the two borders do not sit side by side.
+        let list = Rect { x: list.x + 1, width: list.width.saturating_sub(2), ..list };
         let block = Block::default().borders(Borders::ALL).title(TITLE).border_style(Style::default().fg(border));
         let inner = block.inner(list);
         f.render_widget(block, list);
@@ -1324,11 +1359,10 @@ fn example_rows(state: &super::app::ExampleState, in_io: bool) -> Vec<Line<'stat
     }).collect()
 }
 
-/// The Download button, carrying the current status, then the last `log_room` lines of the log.
+/// The Download button, carrying the current status.
 fn draw_example_button(
     state: &super::app::ExampleState,
     in_io: bool,
-    log_room: usize,
     lines: &mut Vec<Line<'_>>,
 ) {
     use super::app::ConvertStatus;
@@ -1373,18 +1407,14 @@ fn draw_example_button(
     };
     lines.push(Line::from(Span::styled(label, style)));
 
-    if !state.log.is_empty() {
-        lines.push(Line::from(""));
-        // Only the tail matters while a long multi-acquisition fetch runs.
-        for line in state.log.iter().rev().take(log_room).rev() {
-            let style = if line.starts_with("Error:") {
-                Style::default().fg(Color::Red)
-            } else {
-                Style::default().fg(Color::DarkGray)
-            };
-            lines.push(Line::from(Span::styled(format!("  {line}"), style)));
-        }
-    }
+}
+
+/// The download log's last `room` lines, errors in red.
+fn example_log_lines(state: &super::app::ExampleState, room: usize) -> Vec<Line<'static>> {
+    state.log.iter().rev().take(room).rev().map(|line| {
+        let style = if line.starts_with("Error:") { Style::default().fg(Color::Red) } else { Style::default().fg(Color::DarkGray) };
+        Line::from(Span::styled(format!(" {line}"), style))
+    }).collect()
 }
 
 fn draw_nifti_section(
@@ -1813,22 +1843,27 @@ fn draw_dicom_series_section(
     Some((keep_line, convert_line))
 }
 
+/// The sidebar on the left of a panel (`area`, `inner` inside its border), its divider meeting
+/// the border; returns the room beside it.
+fn draw_sidebar_beside(f: &mut Frame, app: &App, area: Rect, inner: Rect) -> Rect {
+    let sw = super::tabs::SIDEBAR_WIDTH.min(inner.width);
+    super::tabs::draw_sidebar(f, app, Rect { width: sw, ..inner });
+    let x = inner.x + sw - 1;
+    // (Not where the title is written over the top border.)
+    let buf = f.buffer_mut();
+    let faint = buf[(area.x, area.y)].fg;
+    if buf[(x, area.y)].symbol() == "─" { buf[(x, area.y)].set_symbol("┬").set_fg(faint); }
+    if buf[(x, area.bottom() - 1)].symbol() == "─" { buf[(x, area.bottom() - 1)].set_symbol("┴").set_fg(faint); }
+    Rect { x: inner.x + sw + 1, width: inner.width.saturating_sub(sw + 1), ..inner }
+}
+
 /// A row-based tab (all but Input and Methods): its sub-tabs, then one named row per setting.
 fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     let block = super::tabs::panel(app);
     let mut inner = block.inner(area);
     f.render_widget(block, area);
     if app.sidebar() {
-        let sw = super::tabs::SIDEBAR_WIDTH.min(inner.width);
-        super::tabs::draw_sidebar(f, app, Rect { width: sw, ..inner });
-        // The divider meets the panel's border.
-        let x = inner.x + sw - 1;
-        // (Not where the title is written over the top border.)
-        let buf = f.buffer_mut();
-        let faint = buf[(area.x, area.y)].fg;
-        if buf[(x, area.y)].symbol() == "─" { buf[(x, area.y)].set_symbol("┬").set_fg(faint); }
-        if buf[(x, area.bottom() - 1)].symbol() == "─" { buf[(x, area.bottom() - 1)].set_symbol("┴").set_fg(faint); }
-        inner = Rect { x: inner.x + sw + 1, width: inner.width.saturating_sub(sw + 1), ..inner };
+        inner = draw_sidebar_beside(f, app, area, inner);
     }
 
     // Build lines and collect state from pipeline_state before mutable borrow
@@ -2453,12 +2488,14 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         vec![("\u{2190}\u{2192}", "Choose"), ("Enter", "Select"), ("\u{2191}\u{2193}", "Scroll"), ("Esc", "Close (nothing changes)")]
     } else if app.active_tab == TAB_PIPELINE {
         vec![(&tabs, "Tabs"), ("\u{2191}\u{2193}", "Choose a pipeline"), ("Enter", "Preview and apply"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
+    } else if app.active_tab == TAB_METHODS && app.on_subtabs() && app.sidebar() {
+        vec![(&tabs, "Tabs"), ("\u{2191}\u{2193}/[ ]", "Pages"), ("\u{2192}/Enter", "Open"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else if app.active_tab == TAB_METHODS && app.on_subtabs() {
         vec![(&tabs, "Tabs"), ("\u{2190}\u{2192}/[ ]", "Sub-tabs"), ("\u{2193}/Enter", "Open"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
-    } else if app.active_tab == TAB_METHODS && app.page() == Some(super::app::Page::Pipeline) {
-        vec![(&tabs, "Tabs"), ("[ ]", "Sub-tabs"), ("\u{2191}\u{2193}", "Scroll"), ("Enter/s", "Open as SVG"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else if app.active_tab == TAB_METHODS {
-        vec![(&tabs, "Tabs"), ("[ ]", "Sub-tabs"), ("\u{2191}\u{2193}", "Scroll"), ("Enter/c", "Copy to clipboard"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
+        let (back, pages) = if app.sidebar() { ("\u{2190}", "Sidebar") } else { ("[ ]", "Sub-tabs") };
+        let open = if app.page() == Some(super::app::Page::Pipeline) { ("Enter/s", "Open as SVG") } else { ("Enter/c", "Copy to clipboard") };
+        vec![(&tabs, "Tabs"), (back, pages), ("\u{2191}\u{2193}", "Scroll"), open, ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else if app.on_subtabs() && app.sidebar() {
         vec![(&tabs, "Tabs"), ("\u{2191}\u{2193}/[ ]", "Sections"), ("\u{2192}/Enter", "Settings"), ("R", "Reset section"),
              ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
@@ -2496,6 +2533,8 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         }
         match (&choose, &row) {
             (Some(c), _) => keys.push(("Enter", c.as_str())),
+            // While a download runs there is nothing to press or tick.
+            (None, None) if in_picker && app.example_state.status == super::app::ConvertStatus::Converting => {}
             (None, None) if in_picker && app.example_state.cursor == super::app::ExampleState::BUTTON => keys.push(("Enter", "Download")),
             (None, None) if in_picker => keys.push(("Space", "Tick")),
             (None, None) if on_run => keys.extend([("Space", "Tick"), ("\u{2190}\u{2192}", "Orientation group")]),
@@ -2736,16 +2775,90 @@ pub(super) mod tests {
         assert!(text.contains("COSMOS/STI"), "the end of the text is cut off:\n{text}");
     }
 
+    /// Once the download starts, the acquisitions give way to the download log, in a box.
     #[test]
     fn example_mode_renders_download_progress() {
         let mut app = example_app();
         app.active_field = App::INPUT_IO_FIELDS;
+        let text = screen_text(&render_app(&mut app));
+        assert!(text.contains("Example acquisitions") && !text.contains("Download log"), "{text}");
         app.example_state.status = crate::tui::app::ConvertStatus::Converting;
         app.example_state.log.push("Downloading prisma-bridge-run1".to_string());
         let text = screen_text(&render_app(&mut app));
         // No progress counters yet, so the button shows the post-download phase.
         assert!(text.contains("Writing dataset"), "status missing:\n{text}");
-        assert!(text.contains("Downloading prisma-bridge-run1"), "log missing:\n{text}");
+        assert!(text.contains("Download log") && text.contains("Downloading prisma-bridge-run1"), "log missing:\n{text}");
+        assert!(!text.contains("Example acquisitions"), "the list is hidden:\n{text}");
+        // While the archive downloads, the button says how far, and nothing offers a key.
+        app.example_state.set_progress(173_000_000, 412_000_000);
+        let text = screen_text(&render_app(&mut app));
+        assert!(text.contains("Downloading...  41%"), "{text}");
+        assert!(!text.contains("download the ticked") && !text.contains("Enter:Download") && !text.contains("Space:Tick"), "{text}");
+        // The keys stay on the button.
+        app.handle_key(crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Down));
+        assert_eq!(app.example_state.cursor, crate::tui::app::ExampleState::BUTTON);
+    }
+
+    /// A long list scrolls only when the cursor would leave the window: ↑ from the bottom row
+    /// moves the cursor, not the list, until it reaches the top row.
+    #[test]
+    fn a_list_scrolls_only_when_the_cursor_leaves_it() {
+        use crate::tui::app::AlgoModalTarget;
+        use crossterm::event::{KeyCode, KeyEvent};
+        let mut app = App::new();
+        let options: Vec<String> = (0..30).map(|i| format!("option-{i:02}")).collect();
+        app.algo_modal = Some(AlgoModal {
+            target: AlgoModalTarget::Select("qsm_algorithm".into()),
+            title: "QSM inversion".into(),
+            help: options.iter().map(|o| format!("help for {o}")).collect(),
+            options,
+            cursor: 0,
+            offset: Default::default(),
+        });
+        let offset = |app: &App| app.algo_modal.as_ref().unwrap().offset.get();
+        for _ in 0..20 {
+            app.handle_key(KeyEvent::from(KeyCode::Down));
+            render_app_sized(&mut app, 120, 40);
+        }
+        let low = offset(&app);
+        assert!(low > 0, "the list scrolled down with the cursor");
+        app.handle_key(KeyEvent::from(KeyCode::Up));
+        render_app_sized(&mut app, 120, 40);
+        assert_eq!(offset(&app), low, "↑ from the bottom row does not scroll");
+        // Up to the top row, then once more: now it scrolls.
+        while app.algo_modal.as_ref().unwrap().cursor > low {
+            app.handle_key(KeyEvent::from(KeyCode::Up));
+            render_app_sized(&mut app, 120, 40);
+            assert_eq!(offset(&app), low);
+        }
+        app.handle_key(KeyEvent::from(KeyCode::Up));
+        render_app_sized(&mut app, 120, 40);
+        assert_eq!(offset(&app), low - 1);
+    }
+
+    /// The Methods tab's pages are a sidebar, as the Reconstruction tab's sections are; the
+    /// Pipeline tab's list is styled the same, with no explanation above it and no "Now:" line.
+    #[test]
+    fn the_methods_and_pipeline_tabs_have_sidebars() {
+        use crossterm::event::{KeyCode, KeyEvent};
+        let mut app = App::new();
+        app.handle_key(KeyEvent::from(KeyCode::Char('5')));
+        let text = screen_text(&render_app_sized(&mut app, 120, 40));
+        assert!(text.contains("▸ Methods text") && text.contains("   Graph"), "{text}");
+        assert!(!text.contains("sub-tab"), "no pills beside a sidebar:\n{text}");
+        app.handle_key(KeyEvent::from(KeyCode::Down));
+        assert_eq!(app.page(), Some(crate::tui::app::Page::Pipeline));
+        app.handle_key(KeyEvent::from(KeyCode::Right));
+        assert!(!app.on_subtabs());
+        app.handle_key(KeyEvent::from(KeyCode::Left));
+        assert!(app.on_subtabs(), "← returns to the sidebar");
+
+        app.handle_key(KeyEvent::from(KeyCode::Char('2')));
+        let text = screen_text(&render_app_sized(&mut app, 120, 40));
+        assert!(text.contains("TOOLBOX PIPELINES") && text.contains("▸ QSMxT defaults"), "{text}");
+        for gone in ["Now:", "Start from a pipeline", "start from QSMxT's defaults"] {
+            assert!(!text.contains(gone), "{gone}:\n{text}");
+        }
     }
 
     #[test]
@@ -2842,6 +2955,7 @@ pub(super) mod tests {
             options: (0..20).map(|i| format!("algo-{i}")).collect(),
             help: (0..20).map(|i| format!("help {i}")).collect(),
             cursor: 0,
+            offset: Default::default(),
         });
         app.update_modal = Some(UpdateModal {
             tag: "v9.23.0".into(),
@@ -2879,6 +2993,7 @@ pub(super) mod tests {
             options,
             help,
             cursor: 20, // inside the DL group, past the capped viewport → list must scroll
+            offset: Default::default(),
         });
         let term = render_app(&mut app);
         let buf = term.backend().buffer();
