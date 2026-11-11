@@ -33,9 +33,8 @@
 //!   Keep mine is preselected. Nothing changes unless applied. What is applied together follows
 //!   [`rec::settle`], as on every host: a reasoned finding outranks an authors' setting, and two
 //!   authors' settings that disagree leave the setting as it is, marked, to choose with `!`.
-//! - **Pickers** ([`picker_noun`]): a selector whose choice can open that pop-up, or that has
-//!   more than three options, is chosen from a picker (Enter, or ←/→), never cycled, so no
-//!   method is chosen on the way to another.
+//! - **Pickers** ([`picker_noun`]): every selector is chosen from a picker (Enter), never
+//!   cycled, so no method is chosen on the way to another.
 //! - **The marker** ([`rec::marker`]) names whose rule a setting departs from and what it uses:
 //!   ⚑ for a finding offered as a change, ⓘ for information only. `!` on a marked setting opens
 //!   its details: whose rule, what it uses, why, the source, and Apply.
@@ -995,31 +994,22 @@ fn row_path(row: &PipelineRow) -> Option<&'static str> {
     }
 }
 
-/// The most options a selector cycles through with ←/→; one with more is a picker.
-const MAX_CYCLED: usize = 3;
-
-/// For a selector row chosen from a picker (Enter; ←/→ open it too) rather than cycled: what it
-/// chooses, for "Enter: choose method". A selector is a picker when it has more than
-/// [`MAX_CYCLED`] options, or when choosing it can open a reference pipeline pop-up
-/// ([`rec::reference_trigger_settings`]): then no method is chosen on the way to another.
+/// What a selector row chooses, for "Enter: choose method": "method" for a selector whose
+/// choice can open a reference pipeline pop-up ([`rec::reference_trigger_settings`]), else its
+/// label. Every selector is chosen from a picker (Enter), never cycled, so no method is chosen
+/// on the way to another. `None` for a row that is not a selector of a setting.
 pub fn picker_noun(row: &PipelineRow) -> Option<String> {
     static TRIGGERS: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::new(rec::reference_trigger_settings);
-    let (label, options) = match row {
-        PipelineRow::AlgoSelect { label, field, options, .. } => {
-            let n = if *field == "mask_preset" { super::app::MASK_PRESET_CUSTOM } else { options.len() };
-            (label.trim(), n)
-        }
-        PipelineRow::MaskOpInput { .. } => ("Input", super::app::PipelineFormState::MASK_INPUT_SOURCES.len()),
-        PipelineRow::MaskOpGenerator { .. } => ("Algorithm", super::app::MASK_GENERATOR_TYPES.len()),
+    let label = match row {
+        PipelineRow::AlgoSelect { label, .. } => label.trim(),
+        PipelineRow::MaskOpInput { .. } => "Input",
+        PipelineRow::MaskOpGenerator { .. } => "Algorithm",
         _ => return None,
     };
-    let method = row_path(row).is_some_and(|p| TRIGGERS.contains(&p));
-    if method {
+    if row_path(row).is_some_and(|p| TRIGGERS.contains(&p)) {
         Some("method".into())
-    } else if options > MAX_CYCLED {
-        Some(label.to_lowercase())
     } else {
-        None
+        Some(label.to_lowercase())
     }
 }
 
@@ -1612,49 +1602,53 @@ mod tests {
         screen(&mut app, "MEDI chosen with a recommendation");
     }
 
-    /// No row that cycles with ←/→ can open a reference pipeline pop-up: each selector whose
-    /// choice can is a picker, as is each with more than three options.
+    /// Every selector is a picker (nothing is cycled), and a selector whose choice can open a
+    /// reference pipeline pop-up is a method picker.
     #[test]
-    fn method_and_long_selectors_are_pickers() {
+    fn every_selector_is_a_picker() {
         let triggers = rec::reference_trigger_settings();
         let mut app = app();
         app.form.do_swi = true;
         for (_, _, rows) in app.all_pages() {
             for row in &rows {
-                let picker = picker_noun(row).is_some();
-                if let PipelineRow::AlgoSelect { field, options, .. } = row {
+                if let PipelineRow::AlgoSelect { field, .. } = row {
+                    let noun = picker_noun(row);
+                    assert!(noun.is_some(), "{field}");
                     if row_path(row).is_some_and(|p| triggers.contains(&p)) {
-                        assert_eq!(picker_noun(row).as_deref(), Some("method"), "{field}");
-                    } else {
-                        assert_eq!(picker, options.len() > MAX_CYCLED, "{field}");
+                        assert_eq!(noun.as_deref(), Some("method"), "{field}");
                     }
                 }
             }
         }
         let row = |field: &'static str| PipelineRow::AlgoSelect { label: "  Unwrapping", field, options: &["romeo", "laplacian"], help: &[] };
-        assert_eq!(picker_noun(&row("unwrapping_algorithm")), None, "two options: cycled");
+        assert_eq!(picker_noun(&row("unwrapping_algorithm")).as_deref(), Some("unwrapping"), "two options: a picker too");
         assert_eq!(picker_noun(&row("qsm_algorithm")).as_deref(), Some("method"), "a method, however few options");
     }
 
-    /// ←/→ on a picker row open the picker (no cycling), and the row and footer say so.
+    /// ←/→ on a picker row neither cycle it nor open the picker (← goes back to the sections);
+    /// Enter opens it, and the row and footer say so.
     #[test]
-    fn arrows_on_a_method_row_open_its_picker() {
+    fn arrows_on_a_method_row_leave_it_alone() {
         let mut app = app();
         assert!(app.goto_field("qsm_algorithm"));
         let before = app.field_select("qsm_algorithm");
         app.handle_key(KeyEvent::from(KeyCode::Right));
         assert_eq!(app.field_select("qsm_algorithm"), before, "not cycled");
-        assert!(app.algo_modal.is_some(), "the picker opened");
+        assert!(app.algo_modal.is_none(), "→ opens nothing");
+        app.handle_key(KeyEvent::from(KeyCode::Enter));
+        assert!(app.algo_modal.is_some(), "Enter opens the picker");
         app.algo_modal = None;
         select(&mut app, "qsm_algorithm", "medi", &QSM_PICKER_OPTIONS);
         app.refs.modal = None;
         assert!(app.goto_field("qsm_algorithm"));
         let text = screen(&mut app, "A method picker row and its footer");
         assert!(text.contains("[ medi ▾ ]") && text.contains("Enter: choose method") && text.contains("Enter:Choose method"), "{text}");
-        app.pipeline_state.unwrapping_algorithm = 1; // laplacian: its three solvers are cycled
+        app.pipeline_state.unwrapping_algorithm = 1; // laplacian: three solvers, a picker too
         assert!(app.goto_field("laplacian_solver"));
-        let text = screen(&mut app, "A cycled row and its footer");
-        assert!(text.contains("◀ ") && text.contains("←→:Change") && !text.contains("Enter:Choose"), "{text}");
+        let text = screen(&mut app, "A short selector row and its footer");
+        assert!(!text.contains("◀ ") && text.contains("▾ ]") && text.contains("Enter:Choose") && !text.contains("←→:Change"), "{text}");
+        app.handle_key(KeyEvent::from(KeyCode::Left));
+        assert!(app.on_subtabs(), "← goes back to the sections");
     }
 
     /// Every setting a rule covers has a TUI row to carry its badge and reference values.

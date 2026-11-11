@@ -153,8 +153,8 @@ left and grouped as the run goes: *Preprocessing* (Geometry, Masking, Motion), *
 Background, Inversion, COSMOS/STI, Reference), *Other outputs* (χ-separation, SWI/SMWI,
 Relaxometry, Segmentation) and *Export* (DICOM). It opens on Masking, with focus in the sidebar
 (the current section turns yellow): `↑`/`↓` choose a section, and `→` or `Enter` go into its
-settings; `↑` from the first setting goes back to the sidebar, and `↑` from the first section to
-the tab bar. `[` and `]` switch sections from anywhere on the tab. A mouse click on a section
+settings; `←` from any setting (or `↑` from the first) goes back to the sidebar on the same
+section, and `↑` from the first section to the tab bar. `[` and `]` switch sections from anywhere on the tab. A mouse click on a section
 opens it, and on a group's heading opens the group's first section.
 
 The sidebar lists every section whatever the settings, and marks how each stands: `off` (dimmed)
@@ -164,7 +164,8 @@ inversion that takes the total field, which the section then explains; `⚑` whe
 has advice offered as a change, and `ⓘ` for information only (see [Recommendations](#recommendations)). On a short
 terminal the sidebar drops its blank lines, then turns its headings into rules, then scrolls
 around the current section (`▲`/`▼`). Narrower than 78 columns, the sections become a strip of
-sub-tabs along the top of the panel instead, chosen with `←`/`→`, with `↓` going into them. The
+sub-tabs along the top of the panel instead, chosen with `←`/`→`, with `↓` going into them and
+`←` from a setting coming back to them. The
 Methods tab's two pages are such a strip too.
 
 | Tab | Pages | What is there |
@@ -181,12 +182,13 @@ Methods tab's two pages are such a strip too.
 Settings appear only where and when they apply: a sub-setting sits indented under the
 checkbox or choice it belongs to, and a map another output needs reads as ticked (and says why
 when you try to untick it). `↑`/`↓` move, `Space` ticks a checkbox, `Enter` edits a value, `r`
-resets the focused setting, `R` the whole section, and `F5` runs. A short choice of up to three
-values (for example ROMEO or Laplacian unwrapping) shows as `◀ romeo ▶` when focused and changes
-with `←`/`→`. A method (the inversion, background removal, χ-separation), or a choice with more
-than three values, shows as a button, `[ medi ▾ ]`: `Enter` (or `←`/`→`) opens the list to choose
-from, so you never pass through other methods on the way. The help line and the key hints at
-the bottom say which a setting is ("Enter: choose method"). The button at the bottom of the Execution tab runs too, and its label says what will
+resets the focused setting, `R` the whole section, and `F5` runs. No setting changes with
+`←`/`→`: every choice (a method, ROMEO or Laplacian unwrapping, a mask's algorithm, how its
+sections combine) shows as a button, `[ medi ▾ ]`, and `Enter` opens its list, with the current
+value highlighted; `Enter` chooses, `Esc` closes it with nothing changed. A mask's numbers (BET's
+fractional intensity, a refinement step's value) are typed like any other value (`Enter`), and
+`+`/`-` nudge them by a step. The help line and the key hints at the bottom say what `Enter` does
+("Enter: choose method"). The button at the bottom of the Execution tab runs too, and its label says what will
 happen: *Run*, *Dry run*, *Write SLURM scripts* or *Submit SLURM jobs*.
 
 | Key | Where | Does |
@@ -197,13 +199,15 @@ happen: *Run*, *Dry run*, *Write SLURM scripts* or *Submit SLURM jobs*.
 | `↑` `↓`, `Home` `End` | Reconstruction sidebar | previous / next section, first / last; `↑` from the first goes up to the tab bar |
 | `→`, `Enter` | Reconstruction sidebar | go into the section's settings |
 | `←` `→` | sub-tab strip (Methods; Reconstruction when narrow) | previous / next page |
+| `←` | Reconstruction settings | back to the sidebar (or the strip), on the same section |
 | `↓`, `Enter` | sub-tab strip | go into the page |
 | `↑` | sub-tab strip | go up to the tab bar |
 | `[` `]` | any tab with sections or sub-tabs | previous / next one |
 | `↑` `↓` | settings | move; `↑` from the first setting returns to the sidebar or strip, or to the tab bar on a tab without either |
-| `←` `→` | settings | change a short choice (`◀ … ▶`); on a button (`[ … ▾ ]`), open its list |
+| `←` `→` | editing a value | move the cursor |
 | `Space` | settings | tick a checkbox |
-| `Enter` | settings | open a button's list or edit a value; on the Execution tab's button, run |
+| `Enter` | settings | open a button's list (`[ … ▾ ]`) or edit a value; on the Execution tab's button, run |
+| `+` `-` | Reconstruction › Masking | nudge a mask number (fractional intensity, a step's value) |
 | `r` / `R` | settings | reset the setting / the whole section |
 | `a` | Reconstruction › DICOM | tick every map to export |
 | `P` | settings | go to the Pipeline tab |
@@ -229,8 +233,7 @@ Everything can also be done with the mouse:
 - **Click a tab, a section in the sidebar, or a sub-tab** to switch to it. A group's heading
   in the sidebar opens its first section.
 - **Click a setting** to use it: a checkbox ticks, a button (`[ … ▾ ]`) opens its list, and a
-  value opens for editing. A short choice (`◀ … ▶`) is focused by the first click and takes the
-  next value on the next. Any other row, such as *Add section* or the Execution tab's run
+  value opens for editing. Any other row, such as *Add section* or the Execution tab's run
   button, is focused by the first click and pressed by the second.
 - **In a list** (a method's list, the Pipeline tab's pipelines), the first click highlights an
   entry and the second chooses it.

@@ -179,7 +179,18 @@ fn draw_tip_modal(f: &mut Frame, modal: &TipModal, area: Rect, hits: &super::mou
 }
 
 
-/// A picker's value drawn as a button, `[ MEDI ▾ ]`: Enter (or ←/→) opens the list.
+/// A picker's value drawn as a button, `[ MEDI ▾ ]`: Enter opens the list.
+/// A value's style: cyan on the focused row, grey elsewhere.
+fn value_style(focused: bool) -> Style {
+    Style::default().fg(if focused { Color::Cyan } else { Color::Gray })
+}
+
+/// A mask row's number: the text being typed while it is edited, else `value`.
+fn mask_number(app: &App, value: String, focused: bool) -> Span<'static> {
+    let text = if focused && app.pipeline_state.mask_value_editing { app.pipeline_state.mask_value_buf.clone() } else { value };
+    Span::styled(text, value_style(focused))
+}
+
 fn picker_button(value: &str, focused: bool) -> Vec<Span<'static>> {
     let (frame, text) = if focused {
         (Style::default().fg(Color::DarkGray), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
@@ -782,7 +793,7 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         }
     } else {
         match app.dicom_state.focus {
-            super::app::DicomFocus::Series(_) => "Left/Right: change type, Enter: cycle type",
+            super::app::DicomFocus::Series(_) => "Enter: choose the series type",
             super::app::DicomFocus::KeepUids => "Space/Enter: keep the study's DICOM UIDs and dates in the sidecars, so a DICOM export files its series into the original study. Patient identity is still removed, but the UIDs link the dataset to that study: don't share it outside your site",
             super::app::DicomFocus::ConvertButton => "Enter: run dcm2niix conversion",
         }
@@ -1873,23 +1884,9 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 } else {
                     Style::default().fg(Color::White)
                 };
-                if picker.is_some() {
-                    let mut spans = vec![Span::styled(format!("  {:lw$}", format!("{}:", label)), label_style)];
-                    spans.extend(picker_button(val, focused));
-                    Line::from(spans)
-                } else if focused {
-                    Line::from(vec![
-                        Span::styled(format!("  {:lw$}", format!("{}:", label)), label_style),
-                        Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(*val, Style::default().fg(Color::Cyan)),
-                        Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
-                    ])
-                } else {
-                    Line::from(vec![
-                        Span::styled(format!("  {:lw$}", format!("{}:", label)), label_style),
-                        Span::styled(*val, Style::default().fg(Color::Gray)),
-                    ])
-                }
+                let mut spans = vec![Span::styled(format!("  {:lw$}", format!("{}:", label)), label_style)];
+                spans.extend(picker_button(val, focused));
+                Line::from(spans)
             }
             PipelineRow::Param { label, field, help } => {
                 let exact = app.field_text(field).to_string();
@@ -1964,15 +1961,12 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                     if focused_help.is_none() {
                         let which = if crate::tui::app::is_two_pass_section(*section) { "reliable mask's" } else { "mask" };
                         focused_help = Some(format!(
-                            "How the {which} sections combine: OR = union, AND = intersection (←/→ to change, d to remove the next section)"));
+                            "How the {which} sections combine: OR = union, AND = intersection — Enter: choose (d removes the next section)"));
                     }
-                    Line::from(vec![
-                        Span::styled("  ── COMBINED WITH ", sep),
-                        Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(mode, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                        Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
-                        Span::styled(" ──", sep),
-                    ])
+                    let mut spans = vec![Span::styled("  ── COMBINED WITH ", sep)];
+                    spans.extend(picker_button(&mode, true));
+                    spans.push(Span::styled(" ──", sep));
+                    Line::from(spans)
                 } else {
                     Line::from(Span::styled(format!("  ── COMBINED WITH {} ──", mode), sep))
                 }
@@ -2034,18 +2028,20 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 } else {
                     Style::default().fg(Color::White)
                 };
-                let (label, val, help) = match gen {
+                // How the value is set: chosen from a list, typed, switched, or fixed.
+                enum Kind { Choice, Number, Switch, Fixed }
+                let (label, val, help, kind) = match gen {
                     crate::pipeline::config::MaskOp::Threshold { method, .. } => {
                         let method_name = match method {
                             crate::pipeline::config::MaskThresholdMethod::Otsu => "otsu",
                             crate::pipeline::config::MaskThresholdMethod::Fixed => "fixed",
                             crate::pipeline::config::MaskThresholdMethod::Percentile => "percentile",
                         };
-                        ("Method:", method_name.to_string(), format!("{} (←/→ to change the method)", super::app::mask_step_of(gen).help))
+                        ("Method:", method_name.to_string(), format!("{} — Enter: choose method", super::app::mask_step_of(gen).help), Kind::Choice)
                     }
                     crate::pipeline::config::MaskOp::Bet { fractional_intensity, .. } => {
                         let p = super::app::mask_param("bet", "fractional_intensity");
-                        ("Frac. Intensity:", format!("{:.2}", fractional_intensity), format!("{}: {}, from 0 to 1 (←/→ to adjust)", p.label, p.help))
+                        ("Frac. Intensity:", format!("{:.2}", fractional_intensity), format!("{}: {}, from 0 to 1 (Enter to edit, +/- to nudge)", p.label, p.help), Kind::Number)
                     }
                     crate::pipeline::config::MaskOp::HdBet { patch, .. } => {
                         let val = match patch {
@@ -2053,35 +2049,29 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                             Some(p) => format!("{}x{}x{} window{}", p[0], p[1], p[2],
                                 if *p == crate::pipeline::config::hd_bet_low_memory_patch() { " (low memory)" } else { "" }),
                         };
-                        ("Inference:", val, hd_bet_inference_help())
+                        ("Inference:", val, hd_bet_inference_help(), Kind::Choice)
                     }
-                    // RS2-Net's graph is traced at one fixed patch, so there is nothing to cycle.
+                    // RS2-Net's graph is traced at one fixed patch, so there is nothing to choose.
                     crate::pipeline::config::MaskOp::Rs2Net { tta, .. } => {
                         ("Augmentation:", if *tta { "mirroring TTA".to_string() } else { "none".to_string() },
-                         super::app::mask_step("rs2-net").help.to_string())
+                         super::app::mask_step("rs2-net").help.to_string(), Kind::Fixed)
                     }
                     crate::pipeline::config::MaskOp::MindGrab { tta } => {
-                        ("Augmentation:", if *tta { "left-right flip TTA".to_string() } else { "none".to_string() },
-                         format!("{} (←/→ to toggle)", super::app::mask_param("mindgrab", "tta").help))
+                        ("Augmentation:", format!("[{}] left-right flip TTA", if *tta { "x" } else { " " }),
+                         format!("{} (Space or Enter to switch)", super::app::mask_param("mindgrab", "tta").help), Kind::Switch)
                     }
-                    _ => ("?:", "?".to_string(), String::new()),
+                    _ => ("?:", "?".to_string(), String::new(), Kind::Fixed),
                 };
-                if focused {
-                    if focused_help.is_none() {
-                        focused_help = Some(help);
-                    }
-                    Line::from(vec![
-                        Span::styled(format!("  {:lw$}", label), label_style),
-                        Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(val, Style::default().fg(Color::Cyan)),
-                        Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
-                    ])
-                } else {
-                    Line::from(vec![
-                        Span::styled(format!("  {:lw$}", label), label_style),
-                        Span::styled(val, Style::default().fg(Color::Gray)),
-                    ])
+                if focused && focused_help.is_none() {
+                    focused_help = Some(help);
                 }
+                let mut spans = vec![Span::styled(format!("  {:lw$}", label), label_style)];
+                match kind {
+                    Kind::Choice => spans.extend(picker_button(&val, focused)),
+                    Kind::Number => spans.push(mask_number(app, val, focused)),
+                    Kind::Switch | Kind::Fixed => spans.push(Span::styled(val, value_style(focused))),
+                }
+                Line::from(spans)
             }
             PipelineRow::MaskOpThresholdValue { section } => {
                 let Some(gen) = app.pipeline_state.mask_section(*section).map(|s| &s.generator) else { continue };
@@ -2097,20 +2087,14 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                         ("Percentile:", value.map(|v| format!("{}", v)).unwrap_or("75".to_string())),
                     _ => ("Value:", "?".to_string()),
                 };
-                let display_val = if app.pipeline_state.mask_threshold_editing && focused {
-                    app.pipeline_state.mask_threshold_value_buf.clone()
-                } else {
-                    val
-                };
                 if focused && focused_help.is_none() {
                     let kind = super::app::mask_step_of(gen).kind;
                     let help = super::app::mask_step(kind).params.first().map_or("", |p| p.help);
                     focused_help = Some(format!("{help} (Enter to edit, Esc to cancel)"));
                 }
-                let val_style = if focused { Style::default().fg(Color::Cyan) } else { Style::default().fg(Color::Gray) };
                 Line::from(vec![
                     Span::styled(format!("  {:lw$}", label), label_style),
-                    Span::styled(display_val, val_style),
+                    mask_number(app, val, focused),
                 ])
             }
             PipelineRow::MaskOpHdBetStep { section } => {
@@ -2130,21 +2114,11 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 let val = format!("{:.3}{}", step,
                     if (step - crate::pipeline::config::hd_bet_default_tile_step()).abs() < f64::EPSILON { " (default)" } else { "" });
                 if focused && focused_help.is_none() {
-                    focused_help = Some(format!("{} (←/→ to change)", super::app::mask_param("hd-bet", "tile_step").help));
+                    focused_help = Some(format!("{} — Enter: choose", super::app::mask_param("hd-bet", "tile_step").help));
                 }
-                if focused {
-                    Line::from(vec![
-                        Span::styled(format!("  {:lw$}", "Patch step:"), label_style),
-                        Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(val, Style::default().fg(Color::Cyan)),
-                        Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
-                    ])
-                } else {
-                    Line::from(vec![
-                        Span::styled(format!("  {:lw$}", "Patch step:"), label_style),
-                        Span::styled(val, Style::default().fg(Color::Gray)),
-                    ])
-                }
+                let mut spans = vec![Span::styled(format!("  {:lw$}", "Patch step:"), label_style)];
+                spans.extend(picker_button(&val, focused));
+                Line::from(spans)
             }
             PipelineRow::MaskOpBetVoxelScale { section } => {
                 let Some(gen) = app.pipeline_state.mask_section(*section).map(|s| &s.generator) else { continue };
@@ -2160,21 +2134,11 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 let default = (scale - crate::pipeline::config::bet_default_voxel_scale()).abs() < f64::EPSILON;
                 let val = format!("{}x{}", scale, if default { " (acquired geometry)" } else { "" });
                 if focused && focused_help.is_none() {
-                    focused_help = Some(format!("{} (←/→ to change)", super::app::mask_param("bet", "voxel_scale").help));
+                    focused_help = Some(format!("{} — Enter: choose", super::app::mask_param("bet", "voxel_scale").help));
                 }
-                if focused {
-                    Line::from(vec![
-                        Span::styled(format!("  {:lw$}", "Voxel scale:"), label_style),
-                        Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(val, Style::default().fg(Color::Cyan)),
-                        Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
-                    ])
-                } else {
-                    Line::from(vec![
-                        Span::styled(format!("  {:lw$}", "Voxel scale:"), label_style),
-                        Span::styled(val, Style::default().fg(Color::Gray)),
-                    ])
-                }
+                let mut spans = vec![Span::styled(format!("  {:lw$}", "Voxel scale:"), label_style)];
+                spans.extend(picker_button(&val, focused));
+                Line::from(spans)
             }
             PipelineRow::MaskOpEntry { section, index } => {
                 let Some(op) = app.pipeline_state.mask_refinements(*section).and_then(|r| r.get(*index)) else {
@@ -2187,29 +2151,20 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 } else {
                     Style::default().fg(Color::White)
                 };
-                let val_style = if focused {
-                    Style::default().fg(Color::Cyan)
-                } else {
-                    Style::default().fg(Color::Gray)
-                };
-                if focused {
-                    if focused_help.is_none() {
-                        focused_help = Some(super::app::PipelineFormState::mask_op_help(op));
-                    }
-                    Line::from(vec![
-                        Span::styled(format!("  {:3}", format!("{}.", index + 1)), label_style),
-                        Span::styled(format!("{:19}", format!("{}:", op_type)), label_style),
-                        Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(op_val.clone(), val_style),
-                        Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
-                    ])
-                } else {
-                    Line::from(vec![
-                        Span::styled(format!("  {:3}", format!("{}.", index + 1)), Style::default().fg(Color::DarkGray)),
-                        Span::styled(format!("{:19}", format!("{}:", op_type)), label_style),
-                        Span::styled(op_val, val_style),
-                    ])
+                if focused && focused_help.is_none() {
+                    focused_help = Some(super::app::PipelineFormState::mask_op_help(op));
                 }
+                let number_style = if focused { label_style } else { Style::default().fg(Color::DarkGray) };
+                let mut spans = vec![
+                    Span::styled(format!("  {:3}", format!("{}.", index + 1)), number_style),
+                    Span::styled(format!("{:19}", format!("{}:", op_type)), label_style),
+                ];
+                if matches!(op, crate::pipeline::config::MaskOp::Threshold { .. }) {
+                    spans.extend(picker_button(&op_val, focused));
+                } else {
+                    spans.push(mask_number(app, op_val, focused));
+                }
+                Line::from(spans)
             }
             PipelineRow::MaskOpSignalErodeParam { section, index, param } => {
                 let Some((label, value)) = app.pipeline_state.signal_erode_param(*section, *index, *param) else {
@@ -2223,47 +2178,21 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 };
                 // Indented one level past the step row, so it reads as that step's parameter.
                 let label = format!("      {:18}", format!("{label}:"));
-                if focused {
-                    if focused_help.is_none() {
-                        focused_help = Some(format!("{} (←/→ to adjust)", super::app::signal_erode_params()[*param].1));
-                    }
-                    Line::from(vec![
-                        Span::styled(label, label_style),
-                        Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(value, Style::default().fg(Color::Cyan)),
-                        Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
-                    ])
-                } else {
-                    Line::from(vec![
-                        Span::styled(label, label_style),
-                        Span::styled(value, Style::default().fg(Color::Gray)),
-                    ])
+                if focused && focused_help.is_none() {
+                    focused_help = Some(format!("{} (Enter to edit, +/- to nudge)", super::app::signal_erode_params()[*param].1));
                 }
+                Line::from(vec![Span::styled(label, label_style), mask_number(app, value, focused)])
             }
-            PipelineRow::MaskOpAddStep { section } => {
+            PipelineRow::MaskOpAddStep { .. } => {
                 let label_style = if focused {
                     Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::DarkGray)
                 };
-                if app.pipeline_state.mask_ops_adding && focused {
-                    let available = app.pipeline_state.available_op_types(*section);
-                    let type_name = available.get(app.pipeline_state.mask_ops_add_idx).copied().unwrap_or("?");
-                    if focused_help.is_none() {
-                        focused_help = Some("←/→ to select type, Enter to add, Esc to cancel".to_string());
-                    }
-                    Line::from(vec![
-                        Span::styled("  +   ", label_style),
-                        Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(type_name, Style::default().fg(Color::Cyan)),
-                        Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
-                    ])
-                } else {
-                    if focused && focused_help.is_none() {
-                        focused_help = Some("Enter to add step, d to delete, Ctrl+↑/↓ to reorder".to_string());
-                    }
-                    Line::from(Span::styled("  + Add step...", label_style))
+                if focused && focused_help.is_none() {
+                    focused_help = Some("Enter: choose a step to add (on a step: d deletes it, Ctrl+↑/↓ reorder)".to_string());
                 }
+                Line::from(Span::styled("  + Add step...", label_style))
             }
             PipelineRow::MaskOpAddSection { two_pass } => {
                 let label_style = if focused {
@@ -2329,9 +2258,9 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         lines.push(line);
     }
     if on_strip && app.sidebar() {
-        focused_help = Some("↑/↓ choose a section; → or Enter to go to its settings; ↑ from the first to the tabs".to_string());
+        focused_help = Some("↑/↓ choose a section; → or Enter to go to its settings (← comes back here); ↑ from the first to the tabs".to_string());
     } else if on_strip {
-        focused_help = Some("←/→ choose a sub-tab; ↓ or Enter to go to its settings; ↑ to the tabs".to_string());
+        focused_help = Some("←/→ choose a section; ↓ or Enter to go to its settings (← comes back here); ↑ to the tabs".to_string());
     }
 
     // Determine which line is focused for auto-scroll (the top while the sub-tab strip has it)
@@ -2372,7 +2301,7 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     f.render_widget(Paragraph::new(text), help_area);
 
     // Set cursor if editing a param or threshold value
-    if ps_editing || app.pipeline_state.mask_threshold_editing {
+    if ps_editing || app.pipeline_state.mask_value_editing {
         if let Some(&row_idx) = focusable.get(ps_focus) {
             if row_idx >= scroll && row_idx < scroll + form_area.height as usize {
                 let y = form_area.y + (row_idx - scroll) as u16;
@@ -2382,6 +2311,9 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 // the value right. Match that here instead of assuming a fixed 24.
                 let label_cols = match rows.get(row_idx) {
                     Some(PipelineRow::Param { label, .. }) => (label.chars().count() + 1).max(lw),
+                    // A refinement step's number column and its settings' are fixed (`  NN.` + 19,
+                    // or 6 + 18).
+                    Some(PipelineRow::MaskOpEntry { .. } | PipelineRow::MaskOpSignalErodeParam { .. }) => 22,
                     _ => lw,
                 };
                 let x = form_area.x + 2 + label_cols as u16 + ps_cursor as u16;
@@ -2512,7 +2444,7 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     }
 
     let tabs = format!("1-{}", TAB_NAMES.len());
-    let keys: Vec<(&str, &str)> = if app.editing || app.pipeline_state.editing {
+    let keys: Vec<(&str, &str)> = if app.editing || app.pipeline_state.editing || app.pipeline_state.mask_value_editing {
         vec![("Esc", "Cancel"), ("Enter", "Confirm")]
     } else if app.tab_focus {
         vec![("\u{2190}\u{2192}", "Tabs"), ("\u{2193}/Enter", "Open tab"), ("F5", "Run"), ("?", "Tip"), ("n", "News"), ("q", "Quit")]
@@ -2534,14 +2466,22 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         vec![(&tabs, "Tabs"), ("\u{2190}\u{2192}/[ ]", what), ("\u{2193}/Enter", "Settings"), ("R", "Reset page"),
              ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else {
-        // The row's own keys: Enter for a picker, ←/→ for a row that cycles, Enter to edit text.
+        // The row's own keys: Enter for a choice (it opens a list), Enter to edit a number or
+        // text, Space for a switch. ←/→ never change a value; on the Reconstruction tab ← goes
+        // back to the sections.
         let rows_tab = App::is_rows_tab(app.active_tab);
         let row = if rows_tab { app.focused_row() } else { None };
+        let on_series = app.active_tab == TAB_INPUT && app.input_mode == super::app::InputMode::DicomToBids
+            && app.active_field >= App::INPUT_IO_FIELDS && matches!(app.dicom_state.focus, super::app::DicomFocus::Series(_));
         let choose = match &row {
-            Some(r) => super::recommend::picker_noun(r).map(|noun| format!("Choose {noun}")),
+            Some(r) => super::recommend::picker_noun(r)
+                .or_else(|| app.selector_modal(r).map(|m| m.title.to_lowercase()))
+                .map(|noun| format!("Choose {noun}")),
             None if app.active_tab == TAB_INPUT && app.active_field == 0 => Some("Choose input mode".to_string()),
+            None if on_series => Some("Choose series type".to_string()),
             None => None,
         };
+        let number = row.as_ref().is_some_and(|r| app.pipeline_state.mask_value_text(r).is_some());
         let in_picker = app.active_tab == TAB_INPUT && app.input_mode == super::app::InputMode::Example
             && app.active_field >= App::INPUT_IO_FIELDS;
         let on_run = app.active_tab == TAB_INPUT && app.input_mode == super::app::InputMode::Bids
@@ -2550,15 +2490,22 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
                 if matches!(app.filter_state.visible_rows().get(i), Some(super::app::TreeRow::Run { .. })));
         let recon = app.active_tab == super::app::TAB_RECONSTRUCTION;
         let mut keys = vec![(tabs.as_str(), "Tabs"), ("[ ]", if recon { "Sections" } else { "Sub-tabs" }), ("\u{2191}\u{2193}", "Navigate")];
+        if rows_tab && app.has_subtabs() {
+            keys.push(("\u{2190}", if app.sidebar() { "Sidebar" } else { "Sections" }));
+        }
         match (&choose, &row) {
             (Some(c), _) => keys.push(("Enter", c.as_str())),
             (None, None) if in_picker && app.example_state.cursor == super::app::ExampleState::BUTTON => keys.push(("Enter", "Download")),
             (None, None) if in_picker => keys.push(("Space", "Tick")),
             (None, None) if on_run => keys.extend([("Space", "Tick"), ("\u{2190}\u{2192}", "Orientation group")]),
-            (None, None) if !rows_tab => keys.extend([("\u{2190}\u{2192}/Space", "Change"), ("Enter", "Edit")]),
+            (None, None) if !rows_tab => keys.extend([("Space", "Change"), ("Enter", "Edit")]),
             (None, Some(PipelineRow::Param { .. })) => keys.push(("Enter", "Edit")),
+            (None, Some(PipelineRow::MaskOpThresholdValue { .. })) => keys.push(("Enter", "Edit")),
+            (None, Some(_)) if number => keys.extend([("Enter", "Edit"), ("+/-", "Nudge")]),
             (None, Some(PipelineRow::Toggle { .. })) => keys.push(("Space", "Toggle")),
-            _ => keys.push(("\u{2190}\u{2192}", "Change")),
+            (None, Some(PipelineRow::MaskOpGeneratorParam { .. })) => keys.push(("Space", "Switch")),
+            (None, Some(PipelineRow::MaskOpAddSection { .. })) => keys.push(("Enter", "Add")),
+            _ => {}
         }
         if row.as_ref().is_some_and(|r| App::row_marker(&app.rule_view(), r).is_some()) {
             keys.push(("!", "Advice"));
@@ -2615,7 +2562,7 @@ fn hd_bet_inference_help() -> String {
     let choices: Vec<String> = super::app::mask_schema().hd_bet_inference.iter()
         .map(|c| format!("{}: {}", c.name.to_lowercase(), c.help))
         .collect();
-    format!("HD-BET inference (←/→ to change). {}", choices.join("; "))
+    format!("HD-BET inference — Enter: choose. {}", choices.join("; "))
 }
 
 #[cfg(test)]
