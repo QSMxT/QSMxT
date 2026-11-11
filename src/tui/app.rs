@@ -12144,7 +12144,7 @@ mod tests {
         app.handle_key(key(KeyCode::Enter));
         let modal = app.algo_modal.as_ref().expect("modal should open over threshold Method");
         assert!(matches!(modal.target, AlgoModalTarget::MaskThresholdMethod(_)));
-        assert_eq!(modal.options.len(), 3);
+        assert_eq!(modal.options.len(), 4);
         // Pick "percentile" (index 2) and confirm.
         app.handle_key(key(KeyCode::Down));
         app.handle_key(key(KeyCode::Down));
