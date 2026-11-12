@@ -730,7 +730,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             romeo_bestpath: ps.romeo_bestpath,
             romeo_template: if ps.unwrapping_algorithm != 0 || ps.romeo_individual { None } else { parse_optional_usize(&ps.romeo_template) },
             // ROMEO's own setting: not passed under Laplacian unwrapping.
-            romeo_individual: ps.romeo_individual,
+            romeo_individual: ps.unwrapping_algorithm == 0 && ps.romeo_individual,
             no_romeo_individual: ps.unwrapping_algorithm == 0 && !ps.romeo_individual,
             romeo_correct_global: ps.romeo_correct_global,
             no_romeo_correct_global: !ps.romeo_correct_global,
@@ -1554,11 +1554,12 @@ mod tests {
         app.pipeline_state.axial_resampling = false;
         assert!(!build_command_string(&app).contains("--obliquity-threshold"), "no threshold without resampling");
 
-        app.pipeline_state.romeo_temporal_uncertain = false;
+        // Off is ROMEO's default here; turned on, the threshold shown is passed.
+        app.pipeline_state.romeo_temporal_uncertain = true;
         app.form.synthseg_smoothing = false;
         app.form.do_segmentation = true;
         let cmd = build_command_string(&app);
-        for f in ["--romeo-temporal-uncertain-unwrapping 0", "--synthseg-sigma 0"] {
+        for f in ["--romeo-temporal-uncertain-unwrapping 0.5", "--synthseg-sigma 0"] {
             assert!(cmd.contains(f), "{f} missing: {cmd}");
         }
         app.pipeline_state.qsm_algorithm = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|a| *a == "xqsm").unwrap();
@@ -2760,9 +2761,9 @@ mod parity {
             ("--bet-voxel-scale", "per BET step, in --mask"),
             // The direction that restates QSMxT's default, so the command never needs it.
             ("--inhomogeneity-correction", "restates the default"),
-            ("--romeo-individual", "restates the default"),
+            ("--no-romeo-individual", "restates the default"),
             ("--no-axial-resampling", "restates the default"),
-            ("--romeo-correct-global", "restates the default"),
+            ("--no-romeo-correct-global", "restates the default"),
             ("--romeo-phase-linearity", "restates the default (for a pipeline that turns it off)"),
             ("--medi-smv", "restates the default"),
             ("--medi-smv-shrink-mask", "restates the default"),

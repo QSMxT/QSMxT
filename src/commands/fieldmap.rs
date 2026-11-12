@@ -229,8 +229,8 @@ fn apply_medi_region_growing(args: &FieldmapMediRegionGrowingArgs, c: &mut qsm_c
 }
 
 /// The qsm-core field-mapping configuration for these flags. Starts from QSMxT's defaults — the
-/// ones `qsmxt run` starts from — not qsm-core's: they differ (ROMEO's individual unwrapping and
-/// global correction, for one), and the standalone tool has to give the field map the pipeline
+/// ones `qsmxt run` starts from — not qsm-core's: they differ (ROMEO's re-unwrapping of uncertain
+/// voxels, for one), and the standalone tool has to give the field map the pipeline
 /// gives for the same inputs and flags (#279).
 fn field_mapping_config(
     common: &FieldmapCommonArgs,

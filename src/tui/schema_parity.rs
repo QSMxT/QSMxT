@@ -407,7 +407,7 @@ fn the_printed_command_reproduces_the_tuis_run() {
             assert_eq!(fm.b0_weight_type, qsmxt_engine::B0WeightType::PhaseSNR, "after {acts:?}");
         }
         if fm.unwrapping_algorithm != qsmxt_engine::UnwrappingAlgorithm::Romeo {
-            assert!(fm.romeo.individual, "after {acts:?}");
+            assert_eq!(fm.romeo.individual, qsmxt_engine::RomeoConfig::default().individual, "after {acts:?}");
         }
     }
     assert!(failures.is_empty(), "{} forms, e.g.:\n{}", failures.len(), failures[..failures.len().min(4)].join("\n"));

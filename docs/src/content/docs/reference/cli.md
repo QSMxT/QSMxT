@@ -376,11 +376,11 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--romeo-mag-weight2` | ROMEO: enable second magnitude weighting (flow-artifact penalty; default: off) |
 | `--romeo-bestpath` | ROMEO: use Best-path (Abdul-Rahman) weights instead of ROMEO weights (default: off) |
 | `--romeo-template <ROMEO_TEMPLATE>` | ROMEO: template echo index (1-indexed, only for template mode) |
-| `--romeo-individual` | ROMEO: use individual per-echo unwrapping (default) |
-| `--no-romeo-individual` | ROMEO: use template-based temporal unwrapping (disables individual mode) |
-| `--romeo-correct-global` | ROMEO: correct global 2π offsets, of each echo and between echoes (default: on) |
-| `--no-romeo-correct-global` | ROMEO: do not correct global 2π offsets. |
-| `--romeo-temporal-uncertain-unwrapping <ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING>` | ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0.5) |
+| `--romeo-individual` | ROMEO: unwrap each echo on its own (individual mode, for motion or time series) |
+| `--no-romeo-individual` | ROMEO: unwrap the template echo spatially and the others temporally from it (default) |
+| `--romeo-correct-global` | ROMEO: correct global 2π offsets, of each echo and between echoes (default: off) |
+| `--no-romeo-correct-global` | ROMEO: do not correct global 2π offsets (default) |
+| `--romeo-temporal-uncertain-unwrapping <ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING>` | ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0) |
 | `--romeo-max-seeds <ROMEO_MAX_SEEDS>` | ROMEO: maximum number of seed regions (default: 1) |
 | `--romeo-merge-regions` | ROMEO: merge neighboring regions after unwrapping (default: off) |
 | `--romeo-correct-regions` | ROMEO: correct each region's median to nearest 0 (default: off) |
@@ -866,11 +866,11 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--romeo-mag-weight2` | ROMEO: enable second magnitude weighting (flow-artifact penalty; default: off) |
 | `--romeo-bestpath` | ROMEO: use Best-path (Abdul-Rahman) weights instead of ROMEO weights (default: off) |
 | `--romeo-template <ROMEO_TEMPLATE>` | ROMEO: template echo index (1-indexed, only for template mode) |
-| `--romeo-individual` | ROMEO: use individual per-echo unwrapping (default) |
-| `--no-romeo-individual` | ROMEO: use template-based temporal unwrapping (disables individual mode) |
-| `--romeo-correct-global` | ROMEO: correct global 2π offsets, of each echo and between echoes (default: on) |
-| `--no-romeo-correct-global` | ROMEO: do not correct global 2π offsets. |
-| `--romeo-temporal-uncertain-unwrapping <ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING>` | ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0.5) |
+| `--romeo-individual` | ROMEO: unwrap each echo on its own (individual mode, for motion or time series) |
+| `--no-romeo-individual` | ROMEO: unwrap the template echo spatially and the others temporally from it (default) |
+| `--romeo-correct-global` | ROMEO: correct global 2π offsets, of each echo and between echoes (default: off) |
+| `--no-romeo-correct-global` | ROMEO: do not correct global 2π offsets (default) |
+| `--romeo-temporal-uncertain-unwrapping <ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING>` | ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0) |
 | `--romeo-max-seeds <ROMEO_MAX_SEEDS>` | ROMEO: maximum number of seed regions (default: 1) |
 | `--romeo-merge-regions` | ROMEO: merge neighboring regions after unwrapping (default: off) |
 | `--romeo-correct-regions` | ROMEO: correct each region's median to nearest 0 (default: off) |
@@ -1290,11 +1290,11 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--romeo-mag-weight2` | ROMEO: enable second magnitude weighting (flow-artifact penalty; default: off) |
 | `--romeo-bestpath` | ROMEO: use Best-path (Abdul-Rahman) weights instead of ROMEO weights (default: off) |
 | `--romeo-template <ROMEO_TEMPLATE>` | ROMEO: template echo index (1-indexed, only for template mode) |
-| `--romeo-individual` | ROMEO: use individual per-echo unwrapping (default) |
-| `--no-romeo-individual` | ROMEO: use template-based temporal unwrapping (disables individual mode) |
-| `--romeo-correct-global` | ROMEO: correct global 2π offsets, of each echo and between echoes (default: on) |
-| `--no-romeo-correct-global` | ROMEO: do not correct global 2π offsets. |
-| `--romeo-temporal-uncertain-unwrapping <ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING>` | ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0.5) |
+| `--romeo-individual` | ROMEO: unwrap each echo on its own (individual mode, for motion or time series) |
+| `--no-romeo-individual` | ROMEO: unwrap the template echo spatially and the others temporally from it (default) |
+| `--romeo-correct-global` | ROMEO: correct global 2π offsets, of each echo and between echoes (default: off) |
+| `--no-romeo-correct-global` | ROMEO: do not correct global 2π offsets (default) |
+| `--romeo-temporal-uncertain-unwrapping <ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING>` | ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0) |
 | `--romeo-max-seeds <ROMEO_MAX_SEEDS>` | ROMEO: maximum number of seed regions (default: 1) |
 | `--romeo-merge-regions` | ROMEO: merge neighboring regions after unwrapping (default: off) |
 | `--romeo-correct-regions` | ROMEO: correct each region's median to nearest 0 (default: off) |
@@ -1776,11 +1776,11 @@ qsmxt unwrap romeo [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--romeo-mag-weight2` | ROMEO: enable second magnitude weighting (flow-artifact penalty; default: off) |
 | `--romeo-bestpath` | ROMEO: use Best-path (Abdul-Rahman) weights instead of ROMEO weights (default: off) |
 | `--romeo-template <ROMEO_TEMPLATE>` | ROMEO: template echo index (1-indexed, only for template mode) |
-| `--romeo-individual` | ROMEO: use individual per-echo unwrapping (default) |
-| `--no-romeo-individual` | ROMEO: use template-based temporal unwrapping (disables individual mode) |
-| `--romeo-correct-global` | ROMEO: correct global 2π offsets, of each echo and between echoes (default: on) |
-| `--no-romeo-correct-global` | ROMEO: do not correct global 2π offsets. |
-| `--romeo-temporal-uncertain-unwrapping <ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING>` | ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0.5) |
+| `--romeo-individual` | ROMEO: unwrap each echo on its own (individual mode, for motion or time series) |
+| `--no-romeo-individual` | ROMEO: unwrap the template echo spatially and the others temporally from it (default) |
+| `--romeo-correct-global` | ROMEO: correct global 2π offsets, of each echo and between echoes (default: off) |
+| `--no-romeo-correct-global` | ROMEO: do not correct global 2π offsets (default) |
+| `--romeo-temporal-uncertain-unwrapping <ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING>` | ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0) |
 | `--romeo-max-seeds <ROMEO_MAX_SEEDS>` | ROMEO: maximum number of seed regions (default: 1) |
 | `--romeo-merge-regions` | ROMEO: merge neighboring regions after unwrapping (default: off) |
 | `--romeo-correct-regions` | ROMEO: correct each region's median to nearest 0 (default: off) |
@@ -1889,11 +1889,11 @@ qsmxt fieldmap romeo [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--romeo-mag-weight2` | ROMEO: enable second magnitude weighting (flow-artifact penalty; default: off) |
 | `--romeo-bestpath` | ROMEO: use Best-path (Abdul-Rahman) weights instead of ROMEO weights (default: off) |
 | `--romeo-template <ROMEO_TEMPLATE>` | ROMEO: template echo index (1-indexed, only for template mode) |
-| `--romeo-individual` | ROMEO: use individual per-echo unwrapping (default) |
-| `--no-romeo-individual` | ROMEO: use template-based temporal unwrapping (disables individual mode) |
-| `--romeo-correct-global` | ROMEO: correct global 2π offsets, of each echo and between echoes (default: on) |
-| `--no-romeo-correct-global` | ROMEO: do not correct global 2π offsets. |
-| `--romeo-temporal-uncertain-unwrapping <ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING>` | ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0.5) |
+| `--romeo-individual` | ROMEO: unwrap each echo on its own (individual mode, for motion or time series) |
+| `--no-romeo-individual` | ROMEO: unwrap the template echo spatially and the others temporally from it (default) |
+| `--romeo-correct-global` | ROMEO: correct global 2π offsets, of each echo and between echoes (default: off) |
+| `--no-romeo-correct-global` | ROMEO: do not correct global 2π offsets (default) |
+| `--romeo-temporal-uncertain-unwrapping <ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING>` | ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0) |
 | `--romeo-max-seeds <ROMEO_MAX_SEEDS>` | ROMEO: maximum number of seed regions (default: 1) |
 | `--romeo-merge-regions` | ROMEO: merge neighboring regions after unwrapping (default: off) |
 | `--romeo-correct-regions` | ROMEO: correct each region's median to nearest 0 (default: off) |

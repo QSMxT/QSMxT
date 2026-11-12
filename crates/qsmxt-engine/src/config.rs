@@ -1009,8 +1009,13 @@ impl Default for RomeoConfig {
     fn default() -> Self {
         let p = qsm_core::unwrap::RomeoParams::default();
         Self {
-            individual: true,       // qsmxt default (matches Julia qsm_romeo_B0)
-            correct_global: true,   // qsmxt default
+            // ROMEO's own multi-echo default (ROMEO.jl's API and command line): the template echo is
+            // unwrapped spatially and the others temporally from it, with no global correction.
+            // Individual per-echo unwrapping with global correction across echoes stays an option
+            // (motion, time series); with the phase-quality mask it can leave whole lobes a cycle
+            // off in single echoes.
+            individual: p.individual,
+            correct_global: p.correct_global,
             template: p.template,
             phase_coherence: p.phase_coherence,
             phase_gradient_coherence: p.phase_gradient_coherence,
@@ -1019,7 +1024,9 @@ impl Default for RomeoConfig {
             mag_weight: p.mag_weight,
             mag_weight2: p.mag_weight2,
             bestpath: p.bestpath,
-            temporal_uncertain_unwrapping: p.temporal_uncertain_unwrapping,
+            // The command line's 0 (re-unwrapping of uncertain voxels off; experimental there):
+            // QSM.rs does not yet match ROMEO.jl above 0.
+            temporal_uncertain_unwrapping: 0.0,
             max_seeds: p.max_seeds,
             merge_regions: p.merge_regions,
             correct_regions: p.correct_regions,

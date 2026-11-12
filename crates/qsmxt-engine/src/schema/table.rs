@@ -186,13 +186,13 @@ pub(super) fn table() -> Vec<Def> {
         .gui("Gaussian smoothing sigma (x y z)"),
         d("field_mapping.bipolar_correction", FieldMap, "Bipolar correction", "Remove the linear phase artefact of bipolar readout gradients (needs at least 3 echoes; fewer: skipped)", Bool).basic().flag("--bipolar-correction").parent("field_mapping.phase_offset_removal")
         .when(|x| x.combines && !x.laplacian && x.c.field_mapping.phase_offset_removal && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit),
-        d("field_mapping.romeo.individual", FieldMap, "Individual mode", "Unwrap each echo independently (recommended). Off = template-based temporal unwrapping.", Bool).flag("--no-romeo-individual").parent("field_mapping.unwrapping_algorithm")
+        d("field_mapping.romeo.individual", FieldMap, "Individual mode", "Unwrap each echo on its own (for motion or time series). Off = the template echo is unwrapped spatially and the others temporally from it.", Bool).flag("--romeo-individual").parent("field_mapping.unwrapping_algorithm")
         .when(|x| x.romeo).full("Unwrap echoes individually"),
         // The config counts echoes from 0; the TUI and --romeo-template from 1.
         d("field_mapping.romeo.template", FieldMap, "Template echo", "Echo used for spatial unwrapping, counted from 0 (--romeo-template counts from 1)", Int).flag("--romeo-template").parent("field_mapping.romeo.individual")
         .when(|x| x.romeo && !x.c.field_mapping.romeo.individual)
         .gui("Echo used for spatial unwrapping, counted from 0"),
-        d("field_mapping.romeo.correct_global", FieldMap, "Correct global", "Correct inter-echo 2π offsets after unwrapping", Bool).flag("--no-romeo-correct-global").parent("field_mapping.unwrapping_algorithm")
+        d("field_mapping.romeo.correct_global", FieldMap, "Correct global", "Correct inter-echo 2π offsets after unwrapping", Bool).flag("--romeo-correct-global").parent("field_mapping.unwrapping_algorithm")
         .when(|x| x.romeo).full("Correct global offsets"),
         d("field_mapping.romeo.phase_coherence", FieldMap, "Phase coherence", "Weight edges by neighbour phase coherence", Bool).flag("--no-romeo-phase-coherence").parent("field_mapping.unwrapping_algorithm")
         .when(|x| x.romeo),
