@@ -55,7 +55,9 @@ fn row_paths(app: &App, row: &PipelineRow) -> Vec<&'static str> {
         MaskCombineOp { .. } => vec!["masking.combine"],
         MaskCombinedHeader => vec!["masking.refinements"],
         MaskTwoPassHeader => vec!["masking.two_pass_sections"],
-        Separator | Note { .. } | MaskSectionHeader { .. } | RunButton => vec![],
+        // The mask recipe, collapsed to a line in Basic mode.
+        Summary { .. } => vec!["masking.sections"],
+        Separator | Note { .. } | MaskSectionHeader { .. } | RunButton | AdvancedFooter { .. } => vec![],
     }
 }
 
@@ -209,6 +211,31 @@ fn every_form_shows_the_settings_the_engine_says_apply() {
                     failures.push(format!("{p} shows on {sec:?}, the schema puts it on {:?} {:?}", s.section, s.also_in));
                 }
             }
+        }
+    }
+    failures.dedup();
+    assert!(failures.is_empty(), "{} mismatches, first ones:\n{}", failures.len(), failures[..failures.len().min(8)].join("\n"));
+}
+
+/// The mask recipe's parts: Basic mode shows the recipe as one line, or its whole editor once
+/// it is edited by hand, rather than setting by setting.
+const RECIPE: &[&str] = &["masking.sections", "masking.refinements", "masking.combine", "masking.two_pass_sections", "masking.two_pass_combine"];
+
+#[test]
+fn every_form_in_basic_mode_shows_the_settings_the_engine_says_basic_mode_shows() {
+    let mut failures = Vec::new();
+    for (acts, mut app) in explore() {
+        app.advanced = false;
+        let config = config_from_app(&app).expect("the form builds a config");
+        let facts = app.view_facts();
+        let base = schema::baseline(&config, &facts, &qsmxt_engine::PipelineConfig::default());
+        let engine: BTreeSet<&str> = schema::regular_view(&config, &base, &facts).into_iter()
+            .filter(|p| !RECIPE.contains(p)).collect();
+        let tui: BTreeSet<&str> = tui_shown(&app).into_keys().filter(|p| !RECIPE.contains(p)).collect();
+        let only_tui: Vec<_> = tui.difference(&engine).collect();
+        let only_engine: Vec<_> = engine.difference(&tui).collect();
+        if !only_tui.is_empty() || !only_engine.is_empty() {
+            failures.push(format!("after {acts:?}:\n  TUI only: {only_tui:?}\n  engine only: {only_engine:?}"));
         }
     }
     failures.dedup();

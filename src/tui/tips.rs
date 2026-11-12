@@ -23,6 +23,13 @@ const fn tip(text: &'static str, link: Option<&'static str>) -> Tip {
     Tip { text, link }
 }
 
+/// The tip about the two modes of the Reconstruction tab, shown once when they arrive
+/// ([`super::prefs::basic_tip`]) and in turn after that.
+pub const BASIC_ADVANCED: Tip = tip(
+    "The Reconstruction tab shows the settings most people change. Press `A` to see every setting, and again to go back. A setting you have changed always shows.",
+    None,
+);
+
 pub const TIPS: &[Tip] = &[
     tip(
         "QSMxT can run on the MRI scanner. QSMxT Recon reconstructs QSM as part of the scan, so the maps arrive with the images.",
@@ -37,6 +44,7 @@ pub const TIPS: &[Tip] = &[
         "The mouse works too: click a tab, a setting or a pop-up's button, and scroll with the wheel. Hold Shift while dragging to select text.",
         None,
     ),
+    BASIC_ADVANCED,
     tip(
         "The Pipeline tab (2) starts you from an original toolbox's whole pipeline, such as the MEDI toolbox's or QSMART's, and shows every change first. On the command line, use `--pipeline medi-toolbox`.",
         None,
@@ -194,6 +202,7 @@ impl TestSettings {
         let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempfile::tempdir().unwrap();
         std::env::set_var("QSMXT_TIPS_FILE", dir.path().join("tips.json"));
+        std::env::set_var("QSMXT_TUI_FILE", dir.path().join("tui.json"));
         std::env::remove_var(OPT_OUT_ENV);
         std::env::remove_var("CI");
         TestSettings { _dir: dir, _guard: guard }
@@ -204,6 +213,7 @@ impl TestSettings {
 impl Drop for TestSettings {
     fn drop(&mut self) {
         std::env::remove_var("QSMXT_TIPS_FILE");
+        std::env::remove_var("QSMXT_TUI_FILE");
     }
 }
 

@@ -321,7 +321,7 @@ impl App {
         // needs a second click, on the row already focused.
         let code = match &r {
             PipelineRow::Toggle { .. } => Some(KeyCode::Char(' ')),
-            PipelineRow::Param { .. } => Some(KeyCode::Enter),
+            PipelineRow::Param { .. } | PipelineRow::AdvancedFooter { .. } => Some(KeyCode::Enter),
             _ if self.selector_modal(&r).is_some() || self.pipeline_state.mask_value_text(&r).is_some() => Some(KeyCode::Enter),
             _ => again.then_some(KeyCode::Enter),
         };

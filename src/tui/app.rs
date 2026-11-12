@@ -1464,6 +1464,9 @@ impl FilterTreeState {
 
 // ─── Pipeline tab state ───
 
+/// The settings Basic mode shows, by path ([`App::basic_paths`]).
+type BasicPaths = std::rc::Rc<std::collections::BTreeSet<&'static str>>;
+
 /// A visible row on a row-based tab.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PipelineRow {
@@ -1523,6 +1526,11 @@ pub enum PipelineRow {
     MaskOpAddSection { two_pass: bool },
     /// The Execution tab's button: Enter does what F5 does ([`App::try_run`]).
     RunButton,
+    /// A line that reads as a value (not focusable): the mask recipe, collapsed in Basic mode.
+    Summary { text: String },
+    /// The last row of a Reconstruction section in Basic mode: how many settings it hides.
+    /// Enter (or a click) shows every setting, as `A` does.
+    AdvancedFooter { hidden: usize },
 }
 
 /// The config setting a TUI row edits, by the row's field name. Rows that edit no config
@@ -5244,6 +5252,55 @@ impl PipelineFormState {
         }
     }
 
+    /// The main mask's recipe in a few words, as Basic mode shows it in place of its editor:
+    /// each section's input, generator and steps (`phase-quality › otsu threshold › dilate 1 ›
+    /// fill-holes › erode 1`), wrapped to lines that fit beside the sidebar on an 80-column
+    /// terminal.
+    pub fn mask_recipe_summary(&self) -> Vec<String> {
+        use crate::pipeline::config::MaskOp;
+        const WIDTH: usize = 46;
+        let step = |op: &MaskOp| {
+            let (kind, value) = Self::mask_op_label_value(op);
+            match op {
+                MaskOp::Threshold { .. } => format!("{value} threshold"),
+                _ if value.parse::<f64>().is_ok() => format!("{kind} {value}"),
+                _ => kind.to_string(),
+            }
+        };
+        let mut words: Vec<String> = Vec::new();
+        for (i, section) in self.mask_sections.iter().enumerate() {
+            if i > 0 {
+                words.push(format!("{}", self.mask_combine).to_uppercase());
+            }
+            words.push(section.input.to_string());
+            if section.has_generator() {
+                words.push(step(&section.generator));
+            }
+            words.extend(section.refinements.iter().map(step));
+        }
+        if self.mask_sections.len() > 1 {
+            words.extend(self.mask_combined_refinements.iter().map(step));
+        }
+        let mut lines: Vec<String> = Vec::new();
+        let mut line = String::new();
+        for (i, w) in words.iter().enumerate() {
+            let joint = if i == 0 { "" } else if matches!(w.as_str(), "OR" | "AND") || i > 0 && matches!(words[i - 1].as_str(), "OR" | "AND") { " " } else { " › " };
+            if !line.is_empty() && line.chars().count() + joint.chars().count() + w.chars().count() > WIDTH {
+                lines.push(std::mem::take(&mut line));
+                if joint == " › " {
+                    line.push_str("› ");
+                }
+            } else {
+                line.push_str(joint);
+            }
+            line.push_str(w);
+        }
+        if !line.is_empty() {
+            lines.push(line);
+        }
+        lines
+    }
+
     pub fn mask_op_label_value(op: &crate::pipeline::config::MaskOp) -> (&'static str, String) {
         use crate::pipeline::config::MaskOp;
         match op {
@@ -6010,7 +6067,7 @@ pub fn focusable_indices(rows: &[PipelineRow]) -> Vec<usize> {
         .enumerate()
         .filter(|(_, r)| !matches!(r, PipelineRow::Separator | PipelineRow::Note { .. }
             | PipelineRow::MaskSectionHeader { .. } | PipelineRow::MaskCombinedHeader
-            | PipelineRow::MaskTwoPassHeader))
+            | PipelineRow::MaskTwoPassHeader | PipelineRow::Summary { .. }))
         .map(|(i, _)| i)
         .collect()
 }
@@ -6148,6 +6205,13 @@ pub struct App {
     pub pipelines: super::pipelines_tab::PipelinesState,
     /// Where the clickable things of the last frame are ([`super::mouse`]).
     pub hits: super::mouse::Hits,
+    /// Advanced mode: every setting shows. In Basic mode a Reconstruction section shows the
+    /// basic settings and any that are changed or flagged ([`qsmxt_engine::schema::regular_view`]).
+    /// Advanced until the launch reads the user's saved choice ([`super::prefs`]), which is Basic
+    /// unless they chose Advanced.
+    pub advanced: bool,
+    /// The settings Basic mode shows, for the config they were worked out from.
+    basic_cache: std::cell::RefCell<Option<(String, BasicPaths)>>,
 }
 
 /// The "Did you know?" pop-up, with two buttons: OK, and one that turns startup tips off
@@ -6547,6 +6611,8 @@ impl App {
             refs: Default::default(),
             pipelines: Default::default(),
             hits: Default::default(),
+            advanced: true,
+            basic_cache: Default::default(),
         }
     }
 
@@ -6658,6 +6724,11 @@ impl App {
         }
         if key.code == KeyCode::Char('!') && !self.is_typing() && Self::is_rows_tab(self.active_tab) {
             self.review_recommendations();
+            return;
+        }
+        // A: Basic or Advanced mode, on the Reconstruction tab (its sidebar or a section).
+        if key.code == KeyCode::Char('A') && !self.is_typing() && self.active_tab == TAB_RECONSTRUCTION && !self.tab_focus {
+            self.toggle_advanced();
             return;
         }
         // P: the Pipeline tab, from any settings page.
@@ -8147,6 +8218,7 @@ impl App {
 
             // Interact
             KeyCode::Enter | KeyCode::Char(' ') if matches!(self.focused_row(), Some(PipelineRow::RunButton)) => self.try_run(),
+            KeyCode::Enter | KeyCode::Char(' ') if matches!(self.focused_row(), Some(PipelineRow::AdvancedFooter { .. })) => self.toggle_advanced(),
             KeyCode::Enter | KeyCode::Char(' ') => {
                 let row = self.focused_row();
                 // A choice opens a pop-up listing every option, the current one highlighted.
@@ -8581,6 +8653,102 @@ impl App {
         self.page().map(|p| self.page_rows(p)).unwrap_or_default()
     }
 
+    /// The settings Basic mode shows ([`qsmxt_engine::schema::regular_view`]), compared with the
+    /// chosen pipeline's values or QSMxT's defaults; cached until the config changes.
+    fn basic_paths(&self) -> BasicPaths {
+        let Ok(config) = super::command::config_from_app(self) else { return Default::default() };
+        let facts = self.view_facts();
+        let key = format!("{}{facts:?}", serde_json::to_string(&config).unwrap_or_default());
+        if let Some((k, paths)) = &*self.basic_cache.borrow() {
+            if *k == key {
+                return paths.clone();
+            }
+        }
+        let base = qsmxt_engine::schema::baseline(&config, &facts, &qsmxt_engine::PipelineConfig::default());
+        let paths = std::rc::Rc::new(qsmxt_engine::schema::regular_view(&config, &base, &facts));
+        *self.basic_cache.borrow_mut() = Some((key, paths.clone()));
+        paths
+    }
+
+    /// A Reconstruction section's rows in Basic mode: the settings [`Self::basic_paths`] lists
+    /// (and the rows that edit no setting), the mask recipe as one line unless it is edited by
+    /// hand, and a last row saying how many settings are hidden.
+    fn basic_rows(&self, rows: Vec<PipelineRow>) -> Vec<PipelineRow> {
+        use PipelineRow::*;
+        let shown = self.basic_paths();
+        let collapse_recipe = self.pipeline_state.mask_preset != MASK_PRESET_CUSTOM;
+        let main_recipe = |section: usize| !is_two_pass_section(section);
+        let mut hidden = 0;
+        // Each row, and whether it shows.
+        let mut kept: Vec<(PipelineRow, bool)> = Vec::new();
+        for row in rows {
+            let keep = match &row {
+                AlgoSelect { field, .. } | Param { field, .. } | Toggle { field, .. } => {
+                    field_path(field).is_none_or(|p| shown.contains(p))
+                }
+                MaskCombineOp { section } | MaskOpInput { section } | MaskOpGenerator { section }
+                | MaskOpGeneratorParam { section } | MaskOpThresholdValue { section } | MaskOpHdBetStep { section }
+                | MaskOpBetVoxelScale { section } | MaskOpEntry { section, .. } | MaskOpSignalErodeParam { section, .. }
+                | MaskOpAddStep { section } | MaskSectionHeader { section } => !(collapse_recipe && main_recipe(*section)),
+                MaskOpAddSection { two_pass } => !(collapse_recipe && !*two_pass),
+                MaskCombinedHeader => !collapse_recipe,
+                _ => true,
+            };
+            if !keep && row_field(&row).is_some() {
+                hidden += 1;
+            }
+            let preset = matches!(&row, AlgoSelect { field: "mask_preset", .. });
+            kept.push((row, keep));
+            if preset && collapse_recipe {
+                hidden += 1; // the recipe's editor
+                for text in self.pipeline_state.mask_recipe_summary() {
+                    kept.push((Summary { text }, true));
+                }
+            }
+        }
+        // A note that heads a block of rows goes with them when they are all hidden.
+        for i in 0..kept.len() {
+            if matches!(kept[i].0, Note { .. }) {
+                let block: Vec<bool> = kept[i + 1..].iter()
+                    .take_while(|(r, _)| !matches!(r, Note { .. } | Separator))
+                    .map(|(_, k)| *k)
+                    .collect();
+                if !block.is_empty() && block.iter().all(|k| !k) {
+                    kept[i].1 = false;
+                }
+            }
+        }
+        let mut out: Vec<PipelineRow> = Vec::new();
+        for (row, keep) in kept {
+            let blank = matches!(row, Separator);
+            if keep && !(blank && (out.is_empty() || matches!(out.last(), Some(Separator)))) {
+                out.push(row);
+            }
+        }
+        while matches!(out.last(), Some(Separator)) {
+            out.pop();
+        }
+        if hidden > 0 {
+            out.push(Separator);
+            out.push(AdvancedFooter { hidden });
+        }
+        out
+    }
+
+    /// Switch between Basic and Advanced mode (`A`), keeping focus on the same setting where it
+    /// still shows, and remember the choice.
+    pub fn toggle_advanced(&mut self) {
+        let field = self.focused_row().as_ref().and_then(row_field);
+        self.advanced = !self.advanced;
+        super::prefs::set_advanced(self.advanced);
+        if !(field.is_some_and(|f| self.focus_field(f))) {
+            let n = self.focusable_rows().len();
+            if self.focus() >= n {
+                self.set_focus(n.saturating_sub(1));
+            }
+        }
+    }
+
     /// Any page's rows, as they would show now.
     pub fn page_rows(&self, page: Page) -> Vec<PipelineRow> {
         self.page_rows_in(page, &self.row_context())
@@ -8596,6 +8764,15 @@ impl App {
     }
 
     fn page_rows_in(&self, page: Page, ctx: &RowContext) -> Vec<PipelineRow> {
+        let rows = self.all_page_rows_in(page, ctx);
+        if self.advanced || !Page::RECONSTRUCTION.contains(&page) {
+            return rows;
+        }
+        self.basic_rows(rows)
+    }
+
+    /// A page's rows with every setting shown (Advanced mode).
+    fn all_page_rows_in(&self, page: Page, ctx: &RowContext) -> Vec<PipelineRow> {
         match page {
             p if p.is_pipeline() => self.synced_pipeline(p, ctx).visible_rows(),
             Page::Magnitude => self.magnitude_rows(),
@@ -14378,5 +14555,95 @@ mod tests {
         app.handle_key(key(KeyCode::Char('q')));
         assert!(app.should_quit);
     }
-}
 
+    // ========== Basic and Advanced mode ==========
+
+    fn basic_medi() -> App {
+        let mut app = App::new();
+        app.advanced = false;
+        let medi = QSM_PICKER_OPTIONS.iter().position(|o| *o == "medi").unwrap();
+        app.pipeline_state.set_select("qsm_algorithm", medi);
+        goto_page(&mut app, Page::Inversion);
+        app.subtab_focus = false;
+        app
+    }
+
+    fn fields(rows: &[PipelineRow]) -> Vec<&'static str> {
+        rows.iter().filter_map(row_field).collect()
+    }
+
+    #[test]
+    fn basic_mode_shows_the_choices_and_counts_the_rest() {
+        let app = basic_medi();
+        let rows = app.rows();
+        assert_eq!(fields(&rows), ["qsm_algorithm", "medi_smv", "medi_msmv", "medi_csf", "heidi_enabled"]);
+        assert_eq!(rows.last(), Some(&PipelineRow::AdvancedFooter { hidden: 15 }));
+    }
+
+    #[test]
+    fn a_changed_advanced_setting_shows_in_basic_mode() {
+        let mut app = basic_medi();
+        app.pipeline_state.medi_lambda = "2000".into();
+        let rows = app.rows();
+        assert!(fields(&rows).contains(&"medi_lambda"));
+        assert_eq!(rows.last(), Some(&PipelineRow::AdvancedFooter { hidden: 14 }));
+    }
+
+    #[test]
+    fn a_shows_every_setting_and_is_remembered() {
+        let _s = crate::tui::tips::TestSettings::new();
+        let mut app = basic_medi();
+        app.handle_key(key(KeyCode::Char('A')));
+        assert!(app.advanced && crate::tui::prefs::advanced());
+        let rows = app.rows();
+        assert!(fields(&rows).contains(&"medi_lambda"));
+        assert!(!rows.iter().any(|r| matches!(r, PipelineRow::AdvancedFooter { .. })));
+        app.handle_key(key(KeyCode::Char('A')));
+        assert!(!app.advanced && !crate::tui::prefs::advanced());
+    }
+
+    #[test]
+    fn enter_on_the_footer_shows_every_setting_and_keeps_the_section() {
+        let _s = crate::tui::tips::TestSettings::new();
+        let mut app = basic_medi();
+        let last = app.focusable_rows().len() - 1;
+        app.set_focus(last);
+        assert!(matches!(app.focused_row(), Some(PipelineRow::AdvancedFooter { .. })));
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.advanced);
+        assert_eq!(app.page(), Some(Page::Inversion));
+    }
+
+    #[test]
+    fn a_keeps_focus_on_the_same_setting() {
+        let _s = crate::tui::tips::TestSettings::new();
+        let mut app = basic_medi();
+        assert!(app.focus_field("medi_csf"));
+        app.handle_key(key(KeyCode::Char('A')));
+        assert_eq!(app.focused_row().as_ref().and_then(row_field), Some("medi_csf"));
+    }
+
+    #[test]
+    fn basic_mode_shows_the_mask_recipe_as_a_line_until_it_is_edited() {
+        let mut app = App::new();
+        app.advanced = false;
+        goto_page(&mut app, Page::Masking);
+        let rows = app.rows();
+        let summary: Vec<&str> = rows.iter().filter_map(|r| match r { PipelineRow::Summary { text } => Some(text.as_str()), _ => None }).collect();
+        assert_eq!(summary.join(" "), "phase-quality › otsu threshold › dilate 1 › fill-holes › erode 1");
+        assert!(!rows.iter().any(|r| matches!(r, PipelineRow::MaskOpEntry { .. } | PipelineRow::MaskOpAddSection { .. })));
+        app.pipeline_state.mask_preset = MASK_PRESET_CUSTOM;
+        assert!(app.rows().iter().any(|r| matches!(r, PipelineRow::MaskOpEntry { .. })));
+    }
+
+    #[test]
+    fn the_mask_recipe_line_fits_beside_the_sidebar_at_80_columns() {
+        let mut app = App::new();
+        for (preset, name) in MASK_PRESET_OPTIONS.iter().enumerate().take(MASK_PRESET_CUSTOM) {
+            app.pipeline_state.set_select("mask_preset", preset);
+            for line in app.pipeline_state.mask_recipe_summary() {
+                assert!(line.chars().count() <= 46, "{name}: {line}");
+            }
+        }
+    }
+}

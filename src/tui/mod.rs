@@ -7,6 +7,7 @@ mod pipelines_tab;
 mod recommend;
 mod tabs;
 pub(crate) mod tips;
+mod prefs;
 mod ui;
 #[cfg(test)]
 mod schema_parity;
@@ -63,7 +64,10 @@ pub fn run_tui() -> crate::Result<()> {
     let mut terminal = new_terminal(CrosstermBackend::new(stdout))?;
 
     let mut app = App::new();
-    app.tip_modal = tips::startup_tip().map(|tip| app::TipModal::new(tip, true));
+    app.advanced = prefs::advanced();
+    app.tip_modal = prefs::basic_tip()
+        .map(|tip| app::TipModal::new(tip, tips::enabled()))
+        .or_else(|| tips::startup_tip().map(|tip| app::TipModal::new(tip, true)));
 
     // Main loop
     loop {
