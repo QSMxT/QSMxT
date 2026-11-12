@@ -569,7 +569,7 @@ mod tests {
         app.choose_pipeline("medi-toolbox").unwrap();
         let m = app.rec_modal.as_ref().expect("a recommendation pop-up");
         assert!(m.findings.iter().any(|r| r.setting == "bg_removal.pdf.n_cg"), "{:?}", m.findings);
-        assert_eq!(m.cursor, Some(0), "its Apply is preselected");
+        assert!(m.rows[0].checked, "it starts ticked");
         assert!(app.refs.modal.is_none() && app.refs.pending.is_empty(), "no reference pipeline pop-up");
         app.rec_modal = None;
         app.choose_pipeline("decompose").unwrap();
@@ -668,7 +668,7 @@ mod live {
         assert_eq!(app.pipeline_status().text(), "MEDI toolbox");
         let m = app.rec_modal.as_ref().expect("Apply offers PDF's iteration count");
         assert!(m.findings.iter().any(|r| r.setting == "bg_removal.pdf.n_cg"), "{:?}", m.findings);
-        assert_eq!(m.cursor, Some(0), "its Apply is preselected");
+        assert!(m.rows[0].checked, "it starts ticked");
         step(&mut app, KeyCode::Enter);
         assert_eq!(super::super::command::config_from_app(&app).unwrap().bg_removal.pdf.n_cg, 300);
         step(&mut app, KeyCode::Char('3'));

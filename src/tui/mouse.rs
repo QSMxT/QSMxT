@@ -51,6 +51,8 @@ pub enum Hit {
     Picker { offset: usize },
     /// The open pop-up's button, by index.
     Button(usize),
+    /// A row of the open advice pop-up's checklist, by index: a click ticks it.
+    AdviceRow(usize),
     /// A line of the Input page.
     Input(InputTarget),
     /// The open pop-up, anywhere in it: a click there does nothing, a click outside it closes it.
@@ -73,7 +75,7 @@ pub enum InputTarget {
 impl Hit {
     /// Whether it belongs to a pop-up (and so answers while one is open).
     fn in_popup(self) -> bool {
-        matches!(self, Hit::Picker { .. } | Hit::Button(_) | Hit::Popup)
+        matches!(self, Hit::Picker { .. } | Hit::Button(_) | Hit::AdviceRow(_) | Hit::Popup)
     }
 }
 
@@ -216,6 +218,12 @@ impl App {
                 }
             }
             Hit::Button(i) => self.press_button(i),
+            Hit::AdviceRow(i) => {
+                if let Some(m) = self.rec_modal.as_mut().or(self.refs.modal.as_mut()) {
+                    m.cursor = i;
+                    m.toggle(i);
+                }
+            }
             Hit::Popup => {}
             Hit::Input(target) => self.click_input(target),
         }
@@ -282,10 +290,10 @@ impl App {
         }
         if let Some(m) = self.tip_modal.as_mut() {
             m.cursor = i;
-        } else if let Some(m) = self.rec_modal.as_mut() {
-            m.cursor = Some(i);
-        } else if let Some(m) = self.refs.modal.as_mut() {
-            m.cursor = Some(i);
+        } else if self.rec_modal.is_some() || self.refs.modal.is_some() {
+            // Apply, then Keep mine.
+            self.handle_key(key(if i == 0 { KeyCode::Enter } else { KeyCode::Char('K') }));
+            return;
         } else if let Some(m) = self.pipelines.preview.as_mut() {
             m.button = i;
         } else {
@@ -395,7 +403,7 @@ mod tests {
         click(&mut app, "HEIDI");
         app.check_recommendations();
         assert!(app.rec_modal.is_some(), "ticking HEIDI on TKD requires the cone threshold");
-        click(&mut app, "Apply: 0.1");
+        click(&mut app, " Apply (1) ");
         assert!(app.rec_modal.is_none(), "the button applies it");
         app.check_recommendations();
         assert!(app.refs.modal.is_some(), "then LSQR as the authors' seed");

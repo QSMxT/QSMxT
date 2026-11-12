@@ -92,44 +92,38 @@ settings depart from it.
 ## Recommendations
 
 When a change makes a setting depart from what a chosen method recommends (or requires, or
-discourages), a pop-up gives the reason and offers **Apply** (the recommended value, selected),
-the other values the method allows, and **Keep mine**. **Keep mine** keeps
-your choice and saves it in the configuration, so the pop-up does not come back until the
-setting changes. `Esc` closes the pop-up and leaves the setting marked ⚑.
+discourages), a pop-up lists the changes on offer, under the section each setting is on: the
+setting, its value now → the value offered, and what kind of advice it is. Each has a tick box.
+`↑`/`↓` move between them, `Space` (or a click) ticks one, and the panel under the list gives the
+reason for the highlighted one. **Apply** (`Enter`) makes the ticked changes and does nothing
+while none is ticked. **Keep mine** (`K`) keeps your settings and saves that choice in the
+configuration, so the pop-up does not come back until the setting changes. `Esc` closes the
+pop-up and leaves the setting marked ⚑.
 
-Suggestions come in two kinds, labelled differently:
+What starts ticked depends on the kind of advice:
 
-- **Recommended** (also *Required* or *Discouraged*): there is a stated reason another value is
-  better. The pop-up gives the reason, and the recommended value is preselected.
-- **Suggested**: measured to be better on some data but not all (for example in vivo, but not
-  on the simulated head), such as NDI's in-mask weight normaliser. The pop-up gives the reason,
-  but **Keep mine** is preselected.
-- **Original authors' setting**: what the method's authors used, with no reason given that it is
-  better. It is shown so that you can reproduce their pipeline, but it is not a recommendation,
-  so its value is never preselected: **Keep mine** is.
+- **Recommended** (also *required* or *discouraged*): there is a stated reason another value is
+  better, and it starts ticked. A required change that you untick means the run will not start;
+  the panel says so.
+- **Suggested**: better on some data but not all (for example in vivo, but not on the simulated
+  head), such as NDI's in-mask weight normaliser. It starts unticked.
+- **Reference**: what the method's authors used, with no reason given that it is better. It is
+  offered so that you can reproduce their pipeline, but it is not a recommendation, so it starts
+  unticked.
+
+Where advice on one setting disagrees, nothing starts ticked, and ticking one value unticks the
+other. When the setting you just changed goes against a box that is ticked (choosing QSMART
+with HEIDI on), turning that box off starts ticked, so your change stands.
 
 When you choose a method that has a reference pipeline (for example MEDI, QSMART or iLSQR) and
 your settings differ from it, a pop-up titled with that pipeline (*MEDI's reference pipeline*)
-lists each setting that differs: your value, the authors' value, and why they use it. If the same change also creates
-recommendations, they are listed first. Nothing changes unless you apply it:
-
-- **Apply recommended** (preselected when there are recommendations) applies the
-  recommendations and keeps your values where only the authors' setting differs.
-- **Apply all, with the authors' settings** (**Apply the authors' settings** when there are no
-  recommendations) also sets every authors' setting. A recommendation wins over an authors'
-  setting on the same setting, and two authors' settings that disagree leave that setting as it
-  is, marked, for you to choose.
-- **Choose per setting** lists the settings again with a choice on each (`↑`/`↓` to move,
-  `←`/`→` to choose a value or to keep yours); `Enter` applies them. Recommendations start on
-  the recommended value, authors' settings on keeping yours.
-- **Keep mine** keeps your values and closes the pop-up. An authors' setting has nothing to
-  dismiss, so nothing is saved; the pop-up comes back only when you choose the method again
-  after switching away.
-
-When the pop-up holds only authors' settings, **Keep mine** is preselected: press `←`/`→` to pick
-another button. The pop-up opens once per method choice. If your settings already match the
-reference pipeline, there is no pop-up. A pop-up too long for the terminal scrolls above its
-buttons, with a scrollbar: `↑`/`↓` or `PgUp`/`PgDn`.
+lists each setting that differs in the same way, with any recommendations the same change
+created first. Nothing changes unless you tick it and apply it. A recommendation wins over an
+authors' setting on the same setting, and two authors' settings that disagree leave that
+setting as it is, marked, for you to choose. Keep mine records nothing for an authors' setting;
+the pop-up comes back only when you choose the method again after switching away. If your
+settings already match the reference pipeline, there is no pop-up. A list too long for the
+terminal scrolls, with a scrollbar.
 
 A setting that departs from a rule is marked with the method whose rule it is and, when that
 takes only a few words, what the rule uses: for example `ⓘ MEDI: BET`, or `ⓘ MEDI, PDF: BET`
@@ -137,8 +131,8 @@ when several methods' references agree. A longer one shows only the method, such
 beside a mask that differs from QSMART's in several ways. ⚑ marks a recommendation (or something required or discouraged) that is still open; ⓘ
 marks a difference from an original authors' setting, or a recommendation you kept. Press `!` on a
 marked setting (the row and the key bar say so when it is highlighted) to see its advice: whose
-rule it is, what it uses, why, and **Apply** with the other values it allows. A
-recommendation's value is preselected, and for an authors' setting **Keep mine** is. The line under
+rule it is, what it uses and why, in the same checklist, with the other values the rule allows.
+A recommendation starts ticked, and an authors' setting does not. The line under
 the help gives each covered setting's reference value and whose it is, whether or not the setting
 differs.
 

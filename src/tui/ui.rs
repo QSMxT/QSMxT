@@ -45,11 +45,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
 
     if let Some(ref mut modal) = app.rec_modal {
-        draw_rec_modal(f, modal, f.area(), &app.hits);
+        draw_checklist_modal(f, modal, f.area(), &app.hits);
     }
 
     if let Some(ref mut modal) = app.refs.modal {
-        draw_ref_modal(f, modal, f.area(), &app.hits);
+        draw_checklist_modal(f, modal, f.area(), &app.hits);
     }
 
     if let Some(ref mut modal) = app.pipelines.preview {
@@ -201,44 +201,145 @@ fn picker_button(value: &str, focused: bool) -> Vec<Span<'static>> {
     vec![Span::styled("[ ", frame), Span::styled(value.to_string(), text), Span::styled(" \u{25be} ]", frame)]
 }
 
-/// The recommendation pop-up ([`super::recommend`]): what the setting is, what the method
-/// recommends and why, and the choices.
-fn draw_rec_modal(f: &mut Frame, modal: &mut super::recommend::RecModal, area: Rect, hits: &super::mouse::Hits) {
+/// An advice pop-up ([`super::recommend::AdviceModal`]): the changes on offer as a checklist
+/// under the sections they are on, as on the Pipeline tab ("setting  current → new  (kind)"),
+/// then a rule and the highlighted row's reason, then Apply and Keep mine.
+fn draw_checklist_modal(f: &mut Frame, modal: &mut super::recommend::AdviceModal, area: Rect, hits: &super::mouse::Hits) {
+    use super::recommend::{AdviceKind, Strength};
     let popup_w = advice_modal_width(area);
     let text_w = popup_w.saturating_sub(6).max(10) as usize;
-    let mut lines = vec![Line::from("")];
-    for r in &modal.findings {
-        lines.push(kind_tag(r));
-        let head = format!("{} is {}.", r.label, r.current_text());
-        lines.extend(tip_lines(&head, text_w));
-        let wants = match r.strength {
-            super::recommend::Strength::Discouraged => format!("This is discouraged with {}: {}", r.trigger.name, r.reason),
-            super::recommend::Strength::Required if modal.changed => format!("{} cannot run with it: {}", r.trigger.name, r.reason),
-            super::recommend::Strength::Required => format!("{} requires {}: {}", r.trigger.name, r.recommended.name, r.reason),
-            super::recommend::Strength::Reference => format!("{} uses {}: {}", rec_reference_of(r), r.recommended.name, r.reason),
-            super::recommend::Strength::Suggested => format!("{} suggests {}: {}", r.trigger.name, r.recommended.name, r.reason),
-            _ => format!("{} recommends {}: {}", r.trigger.name, r.recommended.name, r.reason),
-        };
-        lines.extend(tip_lines(&wants, text_w));
-        if r.dismissed {
-            lines.push(Line::from(Span::styled(format!("Kept: {}.", r.current_text()), Style::default().fg(Color::DarkGray))));
+    let muted = Style::default().fg(Color::DarkGray);
+    let several = modal.several();
+    modal.cursor = modal.cursor.min(modal.rows.len().saturating_sub(1));
+    let label_w = modal.rows.iter().map(|r| r.setting().1.chars().count()).max().unwrap_or(0).min(text_w * 2 / 5) + 2;
+
+    // The list: a heading for each section, then its rows, one line each (two when narrow).
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    let mut row_lines: Vec<(usize, usize)> = Vec::new();
+    let mut section = None;
+    for (i, row) in modal.rows.iter().enumerate() {
+        let (path, label) = row.setting();
+        let sec = qsmxt_engine::schema::setting(path).map(|s| s.section);
+        if let Some(s) = sec.filter(|_| sec != section) {
+            section = sec;
+            if !lines.is_empty() {
+                lines.push(Line::from(""));
+            }
+            lines.push(Line::from(Span::styled(format!("{} › {}", s.tab().label(), s.label()), muted.add_modifier(Modifier::BOLD))));
         }
-        lines.push(Line::from(""));
-    }
-    let mut footer = Vec::new();
-    for (i, c) in modal.choices.iter().enumerate() {
-        let style = if modal.cursor == Some(i) {
-            Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::Gray)
+        let focused = i == modal.cursor;
+        let (from, to) = row.change();
+        let tag_color = match (row.alternative, row.finding.strength) {
+            (true, _) => Color::DarkGray,
+            (_, Strength::Reference) => Color::Cyan,
+            (_, Strength::Suggested) => Color::LightYellow,
+            _ => Color::Yellow,
         };
-        footer.push(Line::from(Span::styled(format!(" {} ", super::recommend::RecModal::choice_label(c)), style)));
+        let label_style = if focused { Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD) } else { Style::default().add_modifier(Modifier::BOLD) };
+        let label: String = label.chars().take(label_w - 2).collect();
+        let head = vec![
+            Span::styled(if focused { "\u{25b8} " } else { "  " }, label_style),
+            Span::styled(if row.checked { "[x] " } else { "[ ] " }, if row.checked { Style::default().fg(Color::Green).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
+            Span::styled(format!("{label:label_w$}"), label_style),
+        ];
+        let change = vec![
+            Span::styled(from, Style::default().fg(Color::Gray)),
+            Span::styled(" \u{2192} ", muted),
+            Span::styled(to, if row.checked { Style::default().fg(Color::Green).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) }),
+            Span::styled(format!("  ({})", row.tag()), Style::default().fg(tag_color)),
+        ];
+        let first = lines.len();
+        let width: usize = head.iter().chain(&change).map(|s| s.width()).sum();
+        if width <= text_w {
+            lines.push(Line::from([head, change].concat()));
+        } else {
+            lines.push(Line::from(head));
+            let mut indented = vec![Span::raw(" ".repeat(6))];
+            indented.extend(change);
+            lines.push(Line::from(indented));
+        }
+        row_lines.push((first, lines.len()));
     }
-    footer.push(Line::from(""));
-    let hint = format!("\u{2191}\u{2193} choose   Enter select   Esc {}", if modal.details { "close" } else { "later" });
-    let color = if modal.findings.iter().all(|r| r.strength == super::recommend::Strength::Reference) { Color::Cyan } else { Color::Yellow };
-    let title = modal.title();
-    draw_advice_modal(f, area, popup_w, &title, color, lines, footer, &hint, "PgUp/PgDn scroll", &mut modal.scroll, hits);
+
+    // The highlighted row's reason, in a panel of a fixed height: the tallest any row needs.
+    let explain = |row: &super::recommend::AdviceRow| -> Vec<Line<'static>> {
+        tip_lines(&row.explanation(several), text_w).into_iter()
+            .map(|l| Line::from(l.spans.into_iter().map(|s| Span::styled(s.content, s.style.patch(Style::default().fg(Color::Gray)))).collect::<Vec<_>>()))
+            .collect()
+    };
+    let panel_h = modal.rows.iter().map(|r| explain(r).len()).max().unwrap_or(1).clamp(2, 6) as u16;
+    let panel = modal.rows.get(modal.cursor).map(explain).unwrap_or_default();
+
+    // Apply (dimmed while nothing is ticked) and Keep mine, then the keys.
+    let ticked = modal.ticked();
+    let apply_style = if ticked == 0 { Style::default().fg(Color::DarkGray).bg(Color::Black) } else { Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD) };
+    let mut buttons = vec![Span::styled(format!(" Apply ({ticked}) "), apply_style)];
+    if modal.keepable() {
+        buttons.push(Span::raw("   "));
+        buttons.push(Span::styled(" Keep mine ", Style::default().fg(Color::Gray).bg(Color::Black)));
+    }
+    let buttons = Line::from(buttons).alignment(Alignment::Center);
+    let esc = if modal.kind == AdviceKind::Change || modal.kind == AdviceKind::Changed { "later" } else { "close" };
+    let keep = if modal.keepable() { "   K keep mine" } else { "" };
+    let hint = [format!("\u{2191}\u{2193} move   Space tick   Enter apply{keep}   Esc {esc}"), format!("Space tick   Enter apply   Esc {esc}")]
+        .into_iter().find(|h| h.chars().count() <= text_w).unwrap_or_else(|| format!("Space · Enter · Esc {esc}"));
+    let hint = Line::from(Span::styled(hint, muted)).alignment(Alignment::Center);
+
+    // Height: a blank line, the list, a blank line, the rule, the panel, a blank line, the
+    // buttons and the keys, inside the border.
+    let chrome = 1 + 1 + 1 + panel_h + 1 + 2 + 2;
+    let list_len = lines.len() as u16;
+    let popup = centered_rect(popup_w, list_len + chrome, area);
+    hits.add(popup, super::mouse::Hit::Popup);
+    let color = if modal.findings.iter().any(|r| r.strength != Strength::Reference) { Color::Yellow } else { Color::Cyan };
+    f.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(color))
+        .title(Span::styled(modal.title(), Style::default().add_modifier(Modifier::BOLD)));
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+    // On a short terminal the panel gives way first, then the blank lines.
+    let panel_h = panel_h.min(inner.height.saturating_sub(4)).max(1);
+    let gap = u16::from(inner.height >= list_len.min(3) + 1 + panel_h + 2 + 3);
+    let [_, list, _, rule, panel_area, _, foot] = Layout::default().direction(Direction::Vertical)
+        .constraints([Constraint::Length(gap), Constraint::Min(1), Constraint::Length(gap), Constraint::Length(1),
+            Constraint::Length(panel_h), Constraint::Length(gap), Constraint::Length(2)])
+        .areas(inner);
+    let list = Rect { x: list.x + 2, width: list.width.saturating_sub(4), ..list };
+
+    // The list scrolls to keep the highlighted row in view.
+    let max_scroll = (lines.len() as u16).saturating_sub(list.height);
+    if let Some(&(start, end)) = row_lines.get(modal.cursor) {
+        let (start, end) = (start as u16, end as u16);
+        // The section heading above the first row of a section stays with it.
+        let start = if modal.cursor == 0 { 0 } else { start };
+        if start < modal.scroll {
+            modal.scroll = start;
+        } else if end > modal.scroll + list.height {
+            modal.scroll = end.saturating_sub(list.height);
+        }
+    }
+    modal.scroll = modal.scroll.min(max_scroll);
+    f.render_widget(Paragraph::new(lines).scroll((modal.scroll, 0)), list);
+    for (i, &(start, end)) in row_lines.iter().enumerate() {
+        for l in start..end {
+            let Some(y) = (l as u16).checked_sub(modal.scroll).filter(|&y| y < list.height) else { continue };
+            hits.add(Rect { x: list.x, y: list.y + y, width: list.width, height: 1 }, super::mouse::Hit::AdviceRow(i));
+        }
+    }
+    if max_scroll > 0 {
+        let bar = Rect { x: popup.x + popup.width - 1, y: list.y, width: 1, height: list.height };
+        let mut state = ScrollbarState::new(max_scroll as usize).viewport_content_length(list.height as usize).position(modal.scroll as usize);
+        f.render_stateful_widget(Scrollbar::new(ScrollbarOrientation::VerticalRight).begin_symbol(None).end_symbol(None)
+            .thumb_style(Style::default().fg(color)), bar, &mut state);
+    }
+    help_divider(f, rule);
+    let panel_area = Rect { x: panel_area.x + 2, width: panel_area.width.saturating_sub(4), ..panel_area };
+    f.render_widget(Paragraph::new(panel), panel_area);
+    let foot_lines = vec![buttons, hint];
+    f.render_widget(Paragraph::new(foot_lines.clone()), foot);
+    hits.add_buttons(foot, &foot_lines[..1]);
 }
 
 /// How wide the advice pop-ups are: wide enough to keep a long reason short, on any terminal.
@@ -257,7 +358,8 @@ fn draw_advice_modal(
 ) {
     let buttons = footer.clone();
     let chrome = footer.len() as u16 + 1 + 2;
-    let popup = centered_rect(popup_w, lines.len() as u16 + chrome, area);
+    let list_len = lines.len() as u16;
+    let popup = centered_rect(popup_w, list_len + chrome, area);
     hits.add(popup, super::mouse::Hit::Popup);
     let body_h = popup.height.saturating_sub(chrome);
     let max_scroll = (lines.len() as u16).saturating_sub(body_h);
@@ -290,128 +392,6 @@ fn draw_advice_modal(
             .thumb_style(Style::default().fg(color));
         f.render_stateful_widget(scrollbar, bar, &mut state);
     }
-}
-
-/// What kind of finding it is, as its first line: a reasoned one by its strength ("Recommended",
-/// with its reason below) in yellow, an original authors' setting in cyan.
-fn kind_tag(r: &qsmxt_engine::recommendations::Recommendation) -> Line<'static> {
-    use qsmxt_engine::recommendations::{Kind, Strength};
-    let (text, color) = match (r.kind, r.strength) {
-        (Kind::Reference, _) => (format!("{} (not a recommendation)", Kind::Reference.label()), Color::Cyan),
-        (_, Strength::Required) => ("Required".to_string(), Color::Yellow),
-        (_, Strength::Discouraged) => ("Discouraged".to_string(), Color::Yellow),
-        (_, Strength::Suggested) => ("Suggested (not preselected)".to_string(), Color::Yellow),
-        _ => (Kind::Reasoned.label().to_string(), Color::Yellow),
-    };
-    Line::from(Span::styled(text, Style::default().fg(color).add_modifier(Modifier::BOLD)))
-}
-
-/// "MEDI's reference pipeline", for a reference finding's line.
-fn rec_reference_of(r: &qsmxt_engine::recommendations::Recommendation) -> String {
-    qsmxt_engine::recommendations::reference_title(&r.trigger)
-}
-
-/// The reference pipeline pop-up ([`super::recommend::RefModal`]): each setting that differs
-/// from the chosen method's reference pipeline (after any recommendations the same change
-/// created), as current → reference value, with why; then the buttons, or, when
-/// choosing per setting, a choice on each setting.
-fn draw_ref_modal(f: &mut Frame, modal: &mut super::recommend::RefModal, area: Rect, hits: &super::mouse::Hits) {
-    use super::recommend::Strength;
-    let popup_w = advice_modal_width(area);
-    let text_w = popup_w.saturating_sub(6).max(10) as usize;
-    let mut lines = vec![Line::from("")];
-    let offered = modal.items.iter().any(|i| i.finding.strength != Strength::Reference);
-    let mut heading_done = false;
-    let mut item_lines = Vec::new();
-    for (n, item) in modal.items.iter().enumerate() {
-        let r = &item.finding;
-        let heading = |text: String, color: Color| -> Vec<Line<'static>> {
-            tip_lines(&text, text_w).into_iter()
-                .map(|l| Line::from(l.spans.into_iter().map(|s| Span::styled(s.content, Style::default().fg(color).add_modifier(Modifier::BOLD))).collect::<Vec<_>>()))
-                .collect()
-        };
-        if r.strength == Strength::Reference && !heading_done {
-            heading_done = true;
-            if offered {
-                lines.push(Line::from(""));
-            }
-            let uses = if modal.several() { "use" } else { "uses" };
-            lines.extend(heading(format!("Original authors' settings: where yours differ from what {} {uses}. \
-                These are not recommendations, so none is applied unless you choose it:", modal.whose().replacen("The reference", "the reference", 1)), Color::Cyan));
-            lines.push(Line::from(""));
-        } else if n == 0 {
-            lines.extend(heading("Recommended, each for the reason given (preselected):".to_string(), Color::Yellow));
-            lines.push(Line::from(""));
-        }
-        let to = match modal.row {
-            Some(_) => format!("[{}]", item.pick_text()),
-            None => r.recommended.name.clone(),
-        };
-        let focused = modal.row == Some(n);
-        item_lines.push(lines.len());
-        let lead = if focused { "\u{25b8} " } else { "  " };
-        let style = if focused { Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD) } else { Style::default().add_modifier(Modifier::BOLD) };
-        let whose = if modal.several() && r.strength == Strength::Reference { format!(" ({})", item.methods()) } else { String::new() };
-        for (i, l) in tip_lines(&format!("{}: {} \u{2192} {to}{whose}", r.label, r.current_text()), text_w.saturating_sub(2)).into_iter().enumerate() {
-            let mut spans = vec![Span::raw(if i == 0 { lead } else { "  " })];
-            spans.extend(l.spans.into_iter().map(|s| Span::styled(s.content, style)));
-            lines.push(Line::from(spans));
-        }
-        let why = match r.strength {
-            Strength::Reference => r.reason.clone(),
-            Strength::Discouraged => format!("Discouraged with {}: {}", r.trigger.name, r.reason),
-            Strength::Suggested => format!("{} suggests {}: {}", r.trigger.name, r.recommended.name, r.reason),
-            _ => format!("{} recommends {}: {}", r.trigger.name, r.recommended.name, r.reason),
-        };
-        for l in tip_lines(&why, text_w.saturating_sub(4)) {
-            let mut spans = vec![Span::raw("    ")];
-            spans.extend(l.spans);
-            lines.push(Line::from(spans));
-        }
-    }
-    lines.push(Line::from(""));
-    let mut footer = Vec::new();
-    let hint = if modal.row.is_some() {
-        "\u{2191}\u{2193} setting   \u{2190}\u{2192} choose   Enter apply these   Esc back"
-    } else {
-        // The buttons flow onto further rows, so that none is ever cut off.
-        let mut row: Vec<Span<'static>> = Vec::new();
-        let mut row_w = 0;
-        for (i, b) in modal.buttons.iter().enumerate() {
-            let label = modal.button_label(*b);
-            let w = label.chars().count() + 2;
-            if row_w > 0 && row_w + 3 + w > text_w {
-                footer.push(Line::from(std::mem::take(&mut row)).alignment(Alignment::Center));
-                row_w = 0;
-            }
-            if row_w > 0 {
-                row.push(Span::raw("   "));
-                row_w += 3;
-            }
-            let style = if Some(i) == modal.cursor {
-                Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::Gray)
-            };
-            row.push(Span::styled(format!(" {label} "), style));
-            row_w += w;
-        }
-        footer.push(Line::from(row).alignment(Alignment::Center));
-        footer.push(Line::from(""));
-        "\u{2190}\u{2192} choose   Enter select   Esc close (nothing changes)"
-    };
-
-    // Choosing per setting, the list follows the highlighted setting.
-    if let Some(n) = modal.row {
-        let start = item_lines.get(n).copied().unwrap_or(0) as u16;
-        let end = item_lines.get(n + 1).map_or(lines.len(), |&l| l) as u16;
-        let body_h = area.height.saturating_sub(footer.len() as u16 + 3);
-        modal.scroll = modal.scroll.min(start).max(end.saturating_sub(body_h).min(start));
-    }
-    let color = if offered { Color::Yellow } else { Color::Cyan };
-    let title = modal.title();
-    let scroll_hint = if modal.row.is_some() { "PgUp/PgDn scroll" } else { "\u{2191}\u{2193} scroll" };
-    draw_advice_modal(f, area, popup_w, &title, color, lines, footer, hint, scroll_hint, &mut modal.scroll, hits);
 }
 
 /// An announcement pop-up, or the history of them all ([`NewsModal`]): each announcement's date,
