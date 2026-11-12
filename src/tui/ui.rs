@@ -657,6 +657,34 @@ fn is_deep_learning_algo(name: &str) -> bool {
 
 /// Render a scrollable paragraph with a scrollbar when content exceeds visible height.
 /// Updates `scroll_offset` in place so it persists between frames.
+/// The rule between a panel's settings and the help under them: a line across `row`, joined to
+/// the vertical rules on either side (the panel's border, or the sidebar's), in their colour. The
+/// settings' scrollbar ends above it.
+fn help_divider(f: &mut Frame, row: Rect) {
+    if row.height == 0 || row.width == 0 {
+        return;
+    }
+    let buf = f.buffer_mut();
+    let y = row.y;
+    // Beside the sidebar, the form starts a blank column after the sidebar's rule: span it.
+    let row = match row.x.checked_sub(2) {
+        Some(x) if buf[(x + 1, y)].symbol() == " " && buf[(x, y)].symbol() == "│" => Rect { x: x + 1, width: row.width + 1, ..row },
+        _ => row,
+    };
+    let left = row.x.checked_sub(1).filter(|&x| buf.area.contains((x, y).into()));
+    let right = Some(row.right()).filter(|&x| buf.area.contains((x, y).into()));
+    let faint = left.or(right).map_or(Color::DarkGray, |x| buf[(x, y)].fg);
+    for x in row.x..row.right() {
+        buf[(x, y)].set_symbol("─").set_fg(faint);
+    }
+    if let Some(x) = left.filter(|&x| buf[(x, y)].symbol() == "│") {
+        buf[(x, y)].set_symbol("├");
+    }
+    if let Some(x) = right.filter(|&x| buf[(x, y)].symbol() == "│") {
+        buf[(x, y)].set_symbol("┤");
+    }
+}
+
 fn render_scrollable(
     f: &mut Frame,
     area: Rect,
@@ -801,10 +829,11 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     };
     let help = help_lines(help_text, inner.width, Color::DarkGray);
     let help_rows = (help.len() as u16).clamp(2, (inner.height / 2).max(2));
-    let [content_area, help_area] = Layout::default()
+    let [content_area, divider, help_area] = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(4), Constraint::Length(help_rows)])
+        .constraints([Constraint::Min(4), Constraint::Length(1), Constraint::Length(help_rows)])
         .areas(inner);
+    help_divider(f, divider);
 
     // Build lines for IO fields
     let mut lines: Vec<Line> = Vec::new();
@@ -2309,13 +2338,14 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     let help_rows = help_rows.min((inner.height.saturating_sub(bar) / 2).max(2));
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(bar), Constraint::Min(4), Constraint::Length(help_rows)])
+        .constraints([Constraint::Length(bar), Constraint::Min(4), Constraint::Length(1), Constraint::Length(help_rows)])
         .split(inner);
     if bar > 0 {
         super::tabs::draw_subtabs(f, app, chunks[0]);
     }
     let form_area = chunks[1];
-    let help_area = chunks[2];
+    help_divider(f, chunks[2]);
+    let help_area = chunks[3];
 
     let scroll_offset = &mut app.pipeline_state.scroll_offset;
     render_scrollable(f, form_area, lines, scroll_offset, focused_line);
