@@ -364,10 +364,15 @@ impl Recommendation {
         }
     }
 
-    /// One line for a terminal or a log: "Background removal is V-SHARP; MEDI recommends
-    /// PDF: why [source]".
+    /// One line for a terminal: "Background removal is V-SHARP; MEDI recommends PDF: why".
+    /// The rule's source is for the run log only ([`Self::log_line`]; decided 2026-11-12).
     pub fn line(&self) -> String {
-        format!("{} is {}{} [{}]", self.label, self.current_text(), self.departure(true), self.source)
+        format!("{} is {}{}", self.label, self.current_text(), self.departure(true))
+    }
+
+    /// [`Self::line`] for the run log, with where the rule comes from: "... : why [source]".
+    pub fn log_line(&self) -> String {
+        format!("{} [{}]", self.line(), self.source)
     }
 
     /// The methods text's Note line for this departure, without its full stop: what was done, and
@@ -735,6 +740,7 @@ fn name_of(path: &str, kind: Mapping, value: &Value) -> String {
         Mapping::ThresholdMethod => match value.as_str().unwrap_or_default() {
             "sti-gui" => "thresh_tool's starting level".into(),
             "otsu" => "Otsu's threshold".into(),
+            "none" => "no threshold".into(),
             other => format!("{other} threshold"),
         },
         Mapping::LargestComponent => match value.as_bool() {
@@ -1381,15 +1387,31 @@ pub(crate) fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -
                 "sti-gui" => T::StiGui,
                 other => return Err(format!("threshold method {other} is not one QSMxT can set")),
             };
+            let value = match method { T::Fixed => Some(0.5), T::Percentile => Some(75.0), _ => None };
+            // STI Suite's threshold is a whole mask of its own (QSM_GUI thresholds one image), so a
+            // recipe with another generator (BET, which QSM.rs reads as threshold method `none`)
+            // becomes one threshold section; its input and refinements are rules of their own.
+            if method == T::StiGui && config.masking.sections.iter().any(|s| !matches!(s.generator, MaskOp::Threshold { .. })) {
+                let input = config.masking.sections.first().map_or(crate::masking::MaskingInput::Magnitude, |s| s.input);
+                config.masking.sections = vec![crate::masking::MaskSection {
+                    input, generator: MaskOp::Threshold { method, value }, refinements: vec![],
+                }];
+                config.masking.refinements.clear();
+            }
             for s in &mut config.masking.sections {
-                if let MaskOp::Threshold { method: m, value } = &mut s.generator {
-                    if *m != method {
-                        *m = method;
-                        *value = match method { T::Fixed => Some(0.5), T::Percentile => Some(75.0), _ => None };
-                        if method == T::StiGui {
-                            s.refinements.clear();
+                match &mut s.generator {
+                    MaskOp::Threshold { method: m, value: v } => {
+                        if *m != method {
+                            *m = method;
+                            *v = value;
+                            if method == T::StiGui {
+                                s.refinements.clear();
+                            }
                         }
                     }
+                    // Another method on a section that is not a threshold: that section's
+                    // generator becomes the threshold, its refinements kept.
+                    g => *g = MaskOp::Threshold { method, value },
                 }
             }
         }
