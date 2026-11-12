@@ -506,7 +506,9 @@ fn the_note_says_what_was_done() {
     // What was done and what the method recommends; why, and where that is recorded, is for the log.
     let finding = recorded(&c, &facts).into_iter().find(|r| r.finding.rule == rule.id).unwrap().finding;
     assert!(!line.contains(rule.source) && !line.contains(&finding.reason), "{line}");
-    assert!(finding.line().contains(rule.source) && finding.line().contains(&finding.reason));
+    // The terminal line says why; only the run log's says where that is recorded.
+    assert!(!finding.line().contains(rule.source) && finding.line().contains(&finding.reason));
+    assert!(finding.log_line().contains(rule.source) && finding.log_line().starts_with(&finding.line()));
     assert!(n.differences.iter().all(|l| l.contains("differs from the")), "{:?}", n.differences);
     // In some of a dataset's runs.
     assert!(note(&counts(None, 2), 5).departures[0].ends_with("; in 2 of 5 runs."));
@@ -923,4 +925,22 @@ fn qsmarts_mask_refinements_are_placed_in_brainmask_m_order() {
         assert_eq!((q, name_of(q, kind, &v).as_str()), ("masking.sections", name));
     }
     assert_eq!(setting_of("masking.bet.orientation"), Some(("bet.orientation", Mapping::Same)));
+}
+
+/// STI Suite's threshold is one rule (QSM.rs#465): on a BET mask under iLSQR it fires with no
+/// threshold, and applying it gives the GUI's threshold as the whole mask.
+#[test]
+fn sti_suite_threshold_replaces_a_bet_mask() {
+    use crate::masking::{MaskOp, MaskThresholdMethod};
+    let mut c = PipelineConfig::default();
+    c.inversion.algorithm = QsmAlgorithm::Ilsqr;
+    set(&mut c, "masking.generator", &json!("bet")).unwrap();
+    let found = recommendations(&c, &known());
+    let r = found.iter().find(|r| r.rule == "sti.mask-threshold-gui").expect("fires on a BET mask");
+    assert_eq!(r.current_text(), "no threshold");
+    assert!(!found.iter().any(|r| r.rule == "sti.mask-threshold"), "{found:?}");
+    apply(&mut c, "sti.mask-threshold-gui", None).unwrap();
+    assert_eq!(c.masking.sections.len(), 1);
+    assert_eq!(c.masking.sections[0].generator, MaskOp::Threshold { method: MaskThresholdMethod::StiGui, value: None });
+    assert!(!recommendations(&c, &known()).iter().any(|r| r.rule == "sti.mask-threshold-gui"));
 }

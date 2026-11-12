@@ -3291,6 +3291,9 @@ mod integration_tests {
         let logged = super::recommend::found_lines(&config, &runs);
         let line = logged.iter().find(|(_, l)| l.contains("(field-mapping.phase-offsets;")).unwrap_or_else(|| panic!("{logged:?}"));
         assert!(line.0 && line.1.ends_with("; --accept-recommendations applies it)") && !line.1.contains("--dismiss"), "{line:?}");
+        // Where the rule comes from is in the log only, not in --dry.
+        let source = qsm_core::pipeline::rules::RULES.iter().find(|r| r.id == "field-mapping.phase-offsets").unwrap().source;
+        assert!(line.1.contains(source) && !text.contains(source), "{text}");
         let at = text.find("  recommended (--accept-recommendations applies them):").unwrap_or_else(|| panic!("{text}"));
         assert!(text[at..].contains("field-mapping.phase-offsets"), "{text}");
         assert!(text.contains("keep the choice with --dismiss-recommendation field-mapping.phase-offsets=false"), "{text}");

@@ -94,7 +94,7 @@ pub(crate) fn accept(config: &mut PipelineConfig, runs: &[QsmRun], which: Accept
         info!("Applied ({}): {}: {} → {} [{}]", applied_label(r), r.label, r.current_text(), r.recommended.name, r.rule);
     }
     for r in &conflicting {
-        warn!("Not applied: {} ({}), which another as strong suggestion disagrees with: {}", r.rule, applied_label(r), r.line());
+        warn!("Not applied: {} ({}), which another as strong suggestion disagrees with: {}", r.rule, applied_label(r), r.log_line());
     }
     Accepted { applied, per_run }
 }
@@ -138,10 +138,10 @@ pub(crate) fn found_lines(config: &PipelineConfig, runs: &[QsmRun]) -> Vec<(bool
         let at = of_runs(f, runs.len());
         match (r.strength, r.dismissed) {
             (Strength::Required, _) => None,
-            (Strength::Reference, _) => Some((false, format!("Differs from the original authors' setting{at}: {} ({}; --accept-reference-settings applies it)", r.line(), r.rule))),
-            (s, true) => Some((true, format!("{}{at}: {} ({}; dismissed, kept)", capitalised(s.label()), r.line(), r.rule))),
+            (Strength::Reference, _) => Some((false, format!("Differs from the original authors' setting{at}: {} ({}; --accept-reference-settings applies it)", r.log_line(), r.rule))),
+            (s, true) => Some((true, format!("{}{at}: {} ({}; dismissed, kept)", capitalised(s.label()), r.log_line(), r.rule))),
             (s, false) => Some((true, format!("{}{at}: {} ({}; --accept-recommendations applies it)",
-                                             capitalised(s.label()), r.line(), r.rule))),
+                                             capitalised(s.label()), r.log_line(), r.rule))),
         }
     }).collect()
 }
@@ -212,7 +212,7 @@ pub(crate) fn dry_text(config: &PipelineConfig, runs: &[QsmRun], accept: Accept)
     let first = facts(runs, config).into_iter().next().map(|(_, f)| f).unwrap_or_default();
     for r in rec::reference_values(config, &first) {
         let mark = if r.departs { " (differs)" } else { "" };
-        let line = format!("{}: {} — {} uses {}{mark} [{}]", r.label, r.current_text(), r.trigger.name, r.recommended.name, r.source);
+        let line = format!("{}: {} — {} uses {}{mark}", r.label, r.current_text(), r.trigger.name, r.recommended.name);
         let lines = references.entry(r.setting.clone()).or_default();
         if !lines.contains(&line) {
             lines.push(line);
