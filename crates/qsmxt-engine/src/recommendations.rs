@@ -344,9 +344,13 @@ impl Recommendation {
     fn departure(&self, why: bool) -> String {
         let rec = if self.flag() { format!("turning it {}", self.recommended.name) } else { self.recommended.name.clone() };
         let uses = if self.flag() { format!("has it {}", self.recommended.name) } else { format!("uses {}", self.recommended.name) };
-        let verb = if self.strength == Strength::Required { "requires" } else { "recommends" };
+        // A suggestion is said as one, not as a recommendation (decided 2026-11-12).
+        let (verb, needed) = match self.strength {
+            Strength::Required => ("requires", "required"),
+            Strength::Suggested => ("suggests", "suggested"),
+            _ => ("recommends", "recommended"),
+        };
         let reason = if why || self.strength == Strength::Discouraged { format!(": {}", self.reason) } else { String::new() };
-        let needed = if self.strength == Strength::Required { "required" } else { "recommended" };
         match (self.strength, self.method(), self.scope()) {
             (Strength::Discouraged, _, Some(s)) => format!(", which is discouraged with {s}{reason}"),
             (Strength::Discouraged, _, None) => format!(", which is discouraged{reason}"),
@@ -1084,7 +1088,14 @@ pub struct Marker {
     pub actionable: bool,
     /// Whose rule and what it uses: "MEDI: BET", "MEDI, PDF: BET", "MEDI: PDF · TFI: LBV".
     pub text: String,
+    /// What a front end shows beside the setting: [`Self::text`] while it is a few words
+    /// ([`MARKER_SHORT_MAX`] characters), else only whose rules they are ("iLSQR", "MEDI, PDF");
+    /// the details pop-up says the rest.
+    pub short: String,
 }
+
+/// The most characters a marker's [`Marker::short`] text takes beside its setting.
+pub const MARKER_SHORT_MAX: usize = 24;
 
 /// The marker for the setting at `path`, from the rules of `view` ([`reference_values`]) that it
 /// departs from: `None` when it departs from none. Offered findings are named first.
@@ -1117,7 +1128,19 @@ pub fn marker(view: &[Recommendation], path: &str) -> Option<Marker> {
     }
     let text = by_methods.iter().map(|(names, values)| format!("{}: {}", names.join(", "), values.join(", ")))
         .collect::<Vec<_>>().join(" · ");
-    Some(Marker { actionable: here.iter().any(|r| open(r)), text })
+    let short = if text.chars().count() <= MARKER_SHORT_MAX {
+        text.clone()
+    } else {
+        let mut names: Vec<&str> = Vec::new();
+        for n in by_methods.iter().flat_map(|(n, _)| n) {
+            if !names.contains(&n.as_str()) {
+                names.push(n);
+            }
+        }
+        let all = names.join(", ");
+        if all.chars().count() <= MARKER_SHORT_MAX || names.len() == 1 { all } else { format!("{} +{}", names[0], names.len() - 1) }
+    };
+    Some(Marker { actionable: here.iter().any(|r| open(r)), text, short })
 }
 
 /// Keep the setting of each finding at its current value: dismiss each for that value

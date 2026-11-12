@@ -443,9 +443,6 @@ pub fn draw(f: &mut Frame, app: &mut App, area: Rect) {
 
     let p = app.highlighted_pipeline();
     let mut right = vec![Line::from(Span::styled(p.toolbox.unwrap_or(p.name).to_string(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))];
-    if let Some(source) = p.source {
-        right.push(Line::from(Span::styled(source.to_string(), muted())));
-    }
     right.push(Line::from(""));
     match app.highlighted_changes() {
         Err(e) => right.push(Line::from(Span::styled(e, Style::default().fg(Color::Red)))),
@@ -479,9 +476,6 @@ pub fn draw_preview(f: &mut Frame, m: &mut PreviewModal, area: Rect, hits: &supe
     lines.extend(change_lines(&m.compared.changes));
     lines.push(Line::from(""));
     lines.extend(summary_lines(&m.compared));
-    if let Some(s) = m.pipeline.source {
-        lines.push(Line::from(Span::styled(format!("Source: {s}"), muted())));
-    }
     // Lines as they wrap in the text area.
     let text_w = w.saturating_sub(6).max(10) as usize;
     let body = lines.iter().map(|l| l.width().max(1).div_ceil(text_w) as u16).sum::<u16>();

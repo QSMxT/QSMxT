@@ -93,7 +93,7 @@ settings depart from it.
 
 When a change makes a setting depart from what a chosen method recommends (or requires, or
 discourages), a pop-up gives the reason and offers **Apply** (the recommended value, selected),
-the other values the method allows, and **Keep mine**. `w` shows the source. **Keep mine** keeps
+the other values the method allows, and **Keep mine**. **Keep mine** keeps
 your choice and saves it in the configuration, so the pop-up does not come back until the
 setting changes. `Esc` closes the pop-up and leaves the setting marked ⚑.
 
@@ -110,8 +110,7 @@ Suggestions come in two kinds, labelled differently:
 
 When you choose a method that has a reference pipeline (for example MEDI, QSMART or iLSQR) and
 your settings differ from it, a pop-up titled with that pipeline (*MEDI's reference pipeline*)
-lists each setting that differs: your value, the authors' value, why they use it, and the source
-(the paper, or the file and line in the authors' code). If the same change also creates
+lists each setting that differs: your value, the authors' value, and why they use it. If the same change also creates
 recommendations, they are listed first. Nothing changes unless you apply it:
 
 - **Apply recommended** (preselected when there are recommendations) applies the
@@ -132,14 +131,15 @@ another button. The pop-up opens once per method choice. If your settings alread
 reference pipeline, there is no pop-up. A pop-up too long for the terminal scrolls above its
 buttons, with a scrollbar: `↑`/`↓` or `PgUp`/`PgDn`.
 
-A setting that departs from a rule is marked with the method whose rule it is and what that
-rule uses, for example `ⓘ MEDI: BET`, or `ⓘ MEDI, PDF: BET` when several methods' references
-agree. ⚑ marks a recommendation (or something required or discouraged) that is still open; ⓘ
+A setting that departs from a rule is marked with the method whose rule it is and, when that
+takes only a few words, what the rule uses: for example `ⓘ MEDI: BET`, or `ⓘ MEDI, PDF: BET`
+when several methods' references agree. A longer one shows only the method, such as `ⓘ QSMART`
+beside a mask that differs from QSMART's in several ways. ⚑ marks a recommendation (or something required or discouraged) that is still open; ⓘ
 marks a difference from an original authors' setting, or a recommendation you kept. Press `!` on a
 marked setting (the row and the key bar say so when it is highlighted) to see its advice: whose
-rule it is, what it uses, why, the source, and **Apply** with the other values it allows. A
+rule it is, what it uses, why, and **Apply** with the other values it allows. A
 recommendation's value is preselected, and for an authors' setting **Keep mine** is. The line under
-the help gives each covered setting's reference value and its source, whether or not the setting
+the help gives each covered setting's reference value and whose it is, whether or not the setting
 differs.
 
 ## Layout

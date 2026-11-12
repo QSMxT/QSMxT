@@ -216,14 +216,10 @@ fn draw_rec_modal(f: &mut Frame, modal: &mut super::recommend::RecModal, area: R
             super::recommend::Strength::Required if modal.changed => format!("{} cannot run with it: {}", r.trigger.name, r.reason),
             super::recommend::Strength::Required => format!("{} requires {}: {}", r.trigger.name, r.recommended.name, r.reason),
             super::recommend::Strength::Reference => format!("{} uses {}: {}", rec_reference_of(r), r.recommended.name, r.reason),
+            super::recommend::Strength::Suggested => format!("{} suggests {}: {}", r.trigger.name, r.recommended.name, r.reason),
             _ => format!("{} recommends {}: {}", r.trigger.name, r.recommended.name, r.reason),
         };
         lines.extend(tip_lines(&wants, text_w));
-        if modal.why {
-            for l in tip_lines(&format!("Source ({}): {}", r.basis.label(), r.source), text_w) {
-                lines.push(Line::from(l.spans.into_iter().map(|s| Span::styled(s.content, Style::default().fg(Color::Cyan))).collect::<Vec<_>>()));
-            }
-        }
         if r.dismissed {
             lines.push(Line::from(Span::styled(format!("Kept: {}.", r.current_text()), Style::default().fg(Color::DarkGray))));
         }
@@ -239,7 +235,7 @@ fn draw_rec_modal(f: &mut Frame, modal: &mut super::recommend::RecModal, area: R
         footer.push(Line::from(Span::styled(format!(" {} ", super::recommend::RecModal::choice_label(c)), style)));
     }
     footer.push(Line::from(""));
-    let hint = format!("\u{2191}\u{2193} choose   Enter select   w {}   Esc {}", if modal.why { "hide why" } else { "why?" }, if modal.details { "close" } else { "later" });
+    let hint = format!("\u{2191}\u{2193} choose   Enter select   Esc {}", if modal.details { "close" } else { "later" });
     let color = if modal.findings.iter().all(|r| r.strength == super::recommend::Strength::Reference) { Color::Cyan } else { Color::Yellow };
     let title = modal.title();
     draw_advice_modal(f, area, popup_w, &title, color, lines, footer, &hint, "PgUp/PgDn scroll", &mut modal.scroll, hits);
@@ -317,13 +313,12 @@ fn rec_reference_of(r: &qsmxt_engine::recommendations::Recommendation) -> String
 
 /// The reference pipeline pop-up ([`super::recommend::RefModal`]): each setting that differs
 /// from the chosen method's reference pipeline (after any recommendations the same change
-/// created), as current → reference value, with why and the source; then the buttons, or, when
+/// created), as current → reference value, with why; then the buttons, or, when
 /// choosing per setting, a choice on each setting.
 fn draw_ref_modal(f: &mut Frame, modal: &mut super::recommend::RefModal, area: Rect, hits: &super::mouse::Hits) {
     use super::recommend::Strength;
     let popup_w = advice_modal_width(area);
     let text_w = popup_w.saturating_sub(6).max(10) as usize;
-    let src = Style::default().fg(Color::Cyan);
     let mut lines = vec![Line::from("")];
     let offered = modal.items.iter().any(|i| i.finding.strength != Strength::Reference);
     let mut heading_done = false;
@@ -365,20 +360,13 @@ fn draw_ref_modal(f: &mut Frame, modal: &mut super::recommend::RefModal, area: R
         let why = match r.strength {
             Strength::Reference => r.reason.clone(),
             Strength::Discouraged => format!("Discouraged with {}: {}", r.trigger.name, r.reason),
+            Strength::Suggested => format!("{} suggests {}: {}", r.trigger.name, r.recommended.name, r.reason),
             _ => format!("{} recommends {}: {}", r.trigger.name, r.recommended.name, r.reason),
         };
         for l in tip_lines(&why, text_w.saturating_sub(4)) {
             let mut spans = vec![Span::raw("    ")];
             spans.extend(l.spans);
             lines.push(Line::from(spans));
-        }
-        for x in std::iter::once(r).chain(&item.also) {
-            let whose = if item.also.is_empty() { String::new() } else { format!(" ({})", x.trigger.name) };
-            for l in tip_lines(&format!("Source{whose}: {}", x.source), text_w.saturating_sub(4)) {
-                let mut spans = vec![Span::raw("    ")];
-                spans.extend(l.spans.into_iter().map(|s| Span::styled(s.content, src)));
-                lines.push(Line::from(spans));
-            }
         }
     }
     lines.push(Line::from(""));
@@ -669,6 +657,34 @@ fn is_deep_learning_algo(name: &str) -> bool {
 
 /// Render a scrollable paragraph with a scrollbar when content exceeds visible height.
 /// Updates `scroll_offset` in place so it persists between frames.
+/// The rule between a panel's settings and the help under them: a line across `row`, joined to
+/// the vertical rules on either side (the panel's border, or the sidebar's), in their colour. The
+/// settings' scrollbar ends above it.
+fn help_divider(f: &mut Frame, row: Rect) {
+    if row.height == 0 || row.width == 0 {
+        return;
+    }
+    let buf = f.buffer_mut();
+    let y = row.y;
+    // Beside the sidebar, the form starts a blank column after the sidebar's rule: span it.
+    let row = match row.x.checked_sub(2) {
+        Some(x) if buf[(x + 1, y)].symbol() == " " && buf[(x, y)].symbol() == "│" => Rect { x: x + 1, width: row.width + 1, ..row },
+        _ => row,
+    };
+    let left = row.x.checked_sub(1).filter(|&x| buf.area.contains((x, y).into()));
+    let right = Some(row.right()).filter(|&x| buf.area.contains((x, y).into()));
+    let faint = left.or(right).map_or(Color::DarkGray, |x| buf[(x, y)].fg);
+    for x in row.x..row.right() {
+        buf[(x, y)].set_symbol("─").set_fg(faint);
+    }
+    if let Some(x) = left.filter(|&x| buf[(x, y)].symbol() == "│") {
+        buf[(x, y)].set_symbol("├");
+    }
+    if let Some(x) = right.filter(|&x| buf[(x, y)].symbol() == "│") {
+        buf[(x, y)].set_symbol("┤");
+    }
+}
+
 fn render_scrollable(
     f: &mut Frame,
     area: Rect,
@@ -813,10 +829,11 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     };
     let help = help_lines(help_text, inner.width, Color::DarkGray);
     let help_rows = (help.len() as u16).clamp(2, (inner.height / 2).max(2));
-    let [content_area, help_area] = Layout::default()
+    let [content_area, divider, help_area] = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(4), Constraint::Length(help_rows)])
+        .constraints([Constraint::Min(4), Constraint::Length(1), Constraint::Length(help_rows)])
         .areas(inner);
+    help_divider(f, divider);
 
     // Build lines for IO fields
     let mut lines: Vec<Line> = Vec::new();
@@ -2272,19 +2289,25 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
             Some(m) => {
                 let mut line = line;
                 let (mark, color) = if m.actionable { ("⚑", Color::Yellow) } else { ("ⓘ", Color::DarkGray) };
-                // The rule's text gives way (…) so the `!` hint stays on screen: `!` shows it all.
+                // A few words beside the setting (whose rule, and its value while short); `!`
+                // shows the rest. On a narrow form they give way (…), and the `!` hint shows
+                // only where it fits after them (the key bar has `!:Advice` too). One column is
+                // left for the form's scrollbar.
                 let hint = " (! for advice)";
-                let used = line.width() + 3 + if focused { hint.chars().count() } else { 0 };
-                let room = (inner.width as usize).saturating_sub(used);
-                let text = if m.text.chars().count() <= room {
-                    m.text.clone()
+                let room = (inner.width as usize).saturating_sub(line.width() + 3 + 1);
+                let short_len = m.short.chars().count();
+                let text = if short_len <= room {
+                    m.short.clone()
+                } else if room < 2 {
+                    String::new() // the mark alone
                 } else {
-                    let mut t: String = m.text.chars().take(room.saturating_sub(1)).collect();
+                    let mut t: String = m.short.chars().take(room.saturating_sub(1)).collect();
                     t.push('…');
                     t
                 };
-                line.spans.push(Span::styled(format!(" {mark} {text}"), Style::default().fg(color)));
-                if focused {
+                let marked = if text.is_empty() { format!(" {mark}") } else { format!(" {mark} {text}") };
+                line.spans.push(Span::styled(marked, Style::default().fg(color)));
+                if focused && short_len + hint.chars().count() <= room {
                     line.spans.push(Span::styled(hint, Style::default().fg(Color::Yellow)));
                 }
                 line
@@ -2315,13 +2338,14 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     let help_rows = help_rows.min((inner.height.saturating_sub(bar) / 2).max(2));
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(bar), Constraint::Min(4), Constraint::Length(help_rows)])
+        .constraints([Constraint::Length(bar), Constraint::Min(4), Constraint::Length(1), Constraint::Length(help_rows)])
         .split(inner);
     if bar > 0 {
         super::tabs::draw_subtabs(f, app, chunks[0]);
     }
     let form_area = chunks[1];
-    let help_area = chunks[2];
+    help_divider(f, chunks[2]);
+    let help_area = chunks[3];
 
     let scroll_offset = &mut app.pipeline_state.scroll_offset;
     render_scrollable(f, form_area, lines, scroll_offset, focused_line);
@@ -2563,8 +2587,17 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     draw_keys(f, keys, area);
 }
 
-/// The help bar's key hints: each key, then what it does.
-fn draw_keys(f: &mut Frame, keys: Vec<(&str, &str)>, area: ratatui::layout::Rect) {
+/// The help bar's key hints: each key, then what it does. Hints that every screen has (the tip,
+/// moving up and down, resets) give way first on a narrow terminal, so the row's own keys stay.
+fn draw_keys(f: &mut Frame, mut keys: Vec<(&str, &str)>, area: ratatui::layout::Rect) {
+    let width = |keys: &[(&str, &str)]| 1 + keys.iter().map(|(k, w)| k.chars().count() + 1 + w.chars().count()).sum::<usize>()
+        + 2 * keys.len().saturating_sub(1);
+    for key in ["?", "\u{2191}\u{2193}", "r", "R", "P", "[ ]"] {
+        if width(&keys) <= area.width as usize {
+            break;
+        }
+        keys.retain(|(k, _)| *k != key);
+    }
     let mut help = vec![Span::raw(" ")];
     for (i, (key, what)) in keys.into_iter().enumerate() {
         if i > 0 {
