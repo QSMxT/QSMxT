@@ -11,8 +11,8 @@
 //!   did, with no reason given that it is better) is labelled "Original authors' setting", and
 //!   its value is never preselected: Keep mine is.
 //! - **The recommendation pop-up** opens only when a change creates a `required`, `recommended`
-//!   or `discouraged` finding that is not dismissed. It gives the reason (the source behind `w`,
-//!   "why?"), **Apply** (the recommended value, preselected), the other values the rule allows,
+//!   or `discouraged` finding that is not dismissed. It gives the reason in plain words (the
+//!   rule's source is evidence for QSM.rs's maintainers and is not shown), **Apply** (the recommended value, preselected), the other values the rule allows,
 //!   and **Keep mine** (dismiss: kept in the form, and so in the run's config; only a
 //!   `recommended` or `discouraged` finding has one). Two equally
 //!   strong findings that disagree on a setting are shown together, with nothing preselected.
@@ -37,7 +37,7 @@
 //!   cycled, so no method is chosen on the way to another.
 //! - **The marker** ([`rec::marker`]) names whose rule a setting departs from and what it uses:
 //!   ⚑ for a finding offered as a change, ⓘ for information only. `!` on a marked setting opens
-//!   its details: whose rule, what it uses, why, the source, and Apply.
+//!   its details: whose rule, what it uses, why, and Apply.
 //! - **Apply** sets the form so the config it builds takes the value: each value of the setting's
 //!   row is tried until the engine no longer finds the departure.
 
@@ -67,8 +67,6 @@ pub struct RecModal {
     pub choices: Vec<RecChoice>,
     /// The highlighted choice; `None` until one is picked when the findings disagree.
     pub cursor: Option<usize>,
-    /// Show the sources ("why?").
-    pub why: bool,
     /// How far the text above the choices is scrolled (PgUp/PgDn), when it does not all fit.
     pub scroll: u16,
     /// The details of a marked setting, opened with `!`: every rule the setting departs from,
@@ -88,7 +86,7 @@ impl RecModal {
             false if findings.iter().all(|r| r.strength.preselected()) => Some(0),
             false => choices.iter().position(|c| *c == RecChoice::Keep),
         };
-        RecModal { findings, choices, cursor, why: false, scroll: 0, details: false, changed: false }
+        RecModal { findings, choices, cursor, scroll: 0, details: false, changed: false }
     }
 
     /// `findings` are on the setting just changed, and scoped to a flag that is on: turning the
@@ -103,7 +101,7 @@ impl RecModal {
         }
         let off = turn_off_choices(&findings);
         choices.splice(0..0, off);
-        RecModal { findings, choices, cursor: Some(0), why: false, scroll: 0, details: false, changed: true }
+        RecModal { findings, choices, cursor: Some(0), scroll: 0, details: false, changed: true }
     }
 
     /// The details of a setting: `findings` are the rules it departs from, offered ones first.
@@ -121,7 +119,7 @@ impl RecModal {
             (false, true) => Some(0),
             (false, false) => choices.iter().position(|c| *c == RecChoice::Keep),
         };
-        RecModal { findings, choices, cursor, why: true, scroll: 0, details: true, changed: false }
+        RecModal { findings, choices, cursor, scroll: 0, details: true, changed: false }
     }
 
     pub fn title(&self) -> String {
@@ -571,7 +569,6 @@ impl App {
         match key.code {
             KeyCode::PageUp | KeyCode::PageDown | KeyCode::Home | KeyCode::End => modal.scroll = scrolled(modal.scroll, key.code),
             KeyCode::Esc => self.rec_modal = None,
-            KeyCode::Char('w') | KeyCode::Char('?') => modal.why = !modal.why,
             KeyCode::Up | KeyCode::Left | KeyCode::Char('k') => {
                 modal.cursor = Some(modal.cursor.map_or(n - 1, |c| (c + n - 1) % n));
             }
@@ -922,11 +919,13 @@ impl App {
     }
 
     /// The help line's reference values for a row: what each rule that covers the setting has
-    /// as its reference, marked where the current value differs.
+    /// as its reference, and whose rule it is, marked where the current value differs ("Authors'
+    /// setting (RTS): V-SHARP"). Plain words only: the rules' sources are evidence for QSM.rs's
+    /// maintainers, not text for the form.
     pub fn row_reference(view: &[Recommendation], row: &PipelineRow) -> Option<String> {
         let path = row_path(row)?;
         // One entry for what several rules say alike: each HEIDI seed rule recommends LSQR.
-        let mut parts: Vec<(String, Vec<&str>)> = Vec::new();
+        let mut groups: Vec<(&str, Vec<String>, Vec<String>)> = Vec::new();
         for r in view.iter().filter(|r| r.setting == path) {
             let what = match (r.departs, r.strength, r.dismissed) {
                 (false, Strength::Reference, _) => "Authors' setting",
@@ -944,14 +943,22 @@ impl App {
             } else {
                 r.recommended.name.clone()
             };
-            let head = format!("{what}: {value} ({}", r.trigger.name);
-            match parts.iter_mut().find(|(h, _)| *h == head) {
-                Some((_, sources)) if sources.contains(&r.source.as_str()) => {}
-                Some((_, sources)) => sources.push(&r.source),
-                None => parts.push((head, vec![&r.source])),
+            let who = r.trigger.name.to_string();
+            match groups.iter_mut().find(|(w, _, _)| *w == what) {
+                Some((_, values, names)) => {
+                    if !values.contains(&value) { values.push(value) }
+                    if !who.is_empty() && !names.contains(&who) { names.push(who) }
+                }
+                None => groups.push((what, vec![value], if who.is_empty() { vec![] } else { vec![who] })),
             }
         }
-        let parts: Vec<String> = parts.into_iter().map(|(head, sources)| format!("{head}; {})", sources.join("; "))).collect();
+        // A few words each: several values read as a count, which `!` lists.
+        let parts: Vec<String> = groups.into_iter().map(|(what, values, names)| {
+            let whose = if names.is_empty() { String::new() } else { format!(" ({})", names.join(", ")) };
+            let joined = values.join(", ");
+            let said = if values.len() == 1 || joined.chars().count() <= REFERENCE_VALUES_MAX { joined } else { format!("{} values", values.len()) };
+            format!("{what}{whose}: {said}")
+        }).collect();
         if parts.is_empty() {
             return None;
         }
@@ -983,6 +990,10 @@ fn field_text_of(value: &Value) -> String {
         other => plain(other),
     }
 }
+
+/// The most characters of values the help line lists for one kind of reference before it
+/// counts them instead ([`App::row_reference`]).
+const REFERENCE_VALUES_MAX: usize = 40;
 
 /// The config setting a row edits, for the rules (the mask recipe's rows edit `masking.sections`).
 fn row_path(row: &PipelineRow) -> Option<&'static str> {
@@ -1102,7 +1113,7 @@ mod tests {
         app.handle_rec_modal_key(KeyEvent::from(KeyCode::Esc));
         let row = PipelineRow::Toggle { label: "", field: "medi_msmv_prefilter", help: "" };
         assert!(App::row_marker(&app.rule_view(), &row).is_some_and(|m| m.actionable && m.text == "MEDI: not off"));
-        assert!(App::row_reference(&app.rule_view(), &row).is_some_and(|t| t.starts_with("Discouraged: not off") && t.ends_with("! for details")));
+        assert!(App::row_reference(&app.rule_view(), &row).is_some_and(|t| t.starts_with("Discouraged (MEDI): not off") && t.ends_with("! for details")));
         app.check_recommendations();
         assert!(app.rec_modal.is_none(), "not opened again by a change that creates nothing");
         app.rec_modal = Some(RecModal::new(app.rule_view().into_iter().filter(|r| r.rule == "medi-msmv.prefilter").collect()));
@@ -1306,12 +1317,12 @@ mod tests {
         select(&mut app, "qsm_algorithm", "rts", &QSM_PICKER_OPTIONS);
         let row = PipelineRow::AlgoSelect { label: "", field: "bf_algorithm", options: &[], help: &[] };
         let text = App::row_reference(&app.rule_view(), &row).unwrap();
-        assert!(text.starts_with("Authors' setting: V-SHARP (RTS; QSM.jl README.md"), "{text}");
+        assert!(text.starts_with("Authors' setting (RTS): V-SHARP") && !text.contains("README"), "{text}");
         select(&mut app, "bf_algorithm", "pdf", super::super::app::BF_OPTIONS);
         assert!(app.rec_modal.is_none(), "information only");
         assert!(app.refs.modal.as_ref().is_none_or(|m| m.methods[0].name == "PDF"), "only a method just chosen opens its reference");
         assert_eq!(App::row_marker(&app.rule_view(), &row).map(|m| (m.actionable, m.text)), Some((false, "RTS: V-SHARP".into())));
-        assert!(App::row_reference(&app.rule_view(), &row).unwrap().starts_with("Differs from the authors' setting: V-SHARP"));
+        assert!(App::row_reference(&app.rule_view(), &row).unwrap().starts_with("Differs from the authors' setting (RTS): V-SHARP"));
     }
 
     /// The screen with its pop-ups, as text (the PR's renders: `--nocapture` prints them).
@@ -1429,7 +1440,7 @@ mod tests {
         let s = settings(modal);
         assert!(s.contains(&"bg_removal.algorithm") && s.contains(&"masking.sections"), "{s:?}");
         let text = screen(&mut app, "MEDI chosen");
-        assert!(text.contains("V-SHARP → PDF") && text.contains("threshold → BET") && text.contains("README.m:124"), "{text}");
+        assert!(text.contains("V-SHARP → PDF") && text.contains("threshold → BET") && !text.contains("README.m"), "{text}");
         assert!(text.contains("Original authors' settings") && text.contains("none is applied unless you choose it"), "{text}");
         assert!(text.contains("Apply the authors' settings") && text.contains("Choose per setting") && text.contains("Keep mine"));
         // Apply the authors' settings, chosen.
@@ -1579,7 +1590,7 @@ mod tests {
         assert!(modal.choices.iter().any(|c| matches!(c, RecChoice::TurnOff { .. })), "{:?}", modal.choices);
     }
 
-    /// Rules that say the same thing on a setting read as one entry, naming each source once.
+    /// Rules that say the same thing on a setting read as one entry, naming each method once.
     #[test]
     fn a_rows_reference_says_each_thing_once() {
         let mut app = app();
@@ -1590,7 +1601,7 @@ mod tests {
         let row = app.all_pages().into_iter().flat_map(|(_, _, rows)| rows)
             .find(|r| matches!(r, PipelineRow::AlgoSelect { field: "qsm_algorithm", .. })).unwrap();
         let text = App::row_reference(&view, &row).unwrap();
-        assert_eq!(text.matches("Recommended: LSQR").count(), 1, "{text}");
+        assert_eq!(text.matches("Recommended (HEIDI streaking reduction): LSQR").count(), 1, "{text}");
     }
 
     /// `!` opens its details with Apply.
@@ -1619,7 +1630,7 @@ mod tests {
         assert_eq!(modal.cursor.map(|c| &modal.choices[c]), Some(&RecChoice::Keep), "an authors' setting: Keep mine is preselected");
         let text = screen(&mut app, "QSMART mask details (!)");
         assert!(text.contains("Original authors' setting (not a recommendation)")
-            && text.contains("QSMART's reference pipeline uses BET") && text.contains("Source"), "{text}");
+            && text.contains("QSMART's reference pipeline uses BET") && !text.contains("Source"), "{text}");
         key(&mut app, KeyCode::Down);
         key(&mut app, KeyCode::Enter);
         // BET now; the recipe's other parts (QSMART's first echo, f 0.2, no erosion) are their

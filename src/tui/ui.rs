@@ -220,11 +220,6 @@ fn draw_rec_modal(f: &mut Frame, modal: &mut super::recommend::RecModal, area: R
             _ => format!("{} recommends {}: {}", r.trigger.name, r.recommended.name, r.reason),
         };
         lines.extend(tip_lines(&wants, text_w));
-        if modal.why {
-            for l in tip_lines(&format!("Source ({}): {}", r.basis.label(), r.source), text_w) {
-                lines.push(Line::from(l.spans.into_iter().map(|s| Span::styled(s.content, Style::default().fg(Color::Cyan))).collect::<Vec<_>>()));
-            }
-        }
         if r.dismissed {
             lines.push(Line::from(Span::styled(format!("Kept: {}.", r.current_text()), Style::default().fg(Color::DarkGray))));
         }
@@ -240,7 +235,7 @@ fn draw_rec_modal(f: &mut Frame, modal: &mut super::recommend::RecModal, area: R
         footer.push(Line::from(Span::styled(format!(" {} ", super::recommend::RecModal::choice_label(c)), style)));
     }
     footer.push(Line::from(""));
-    let hint = format!("\u{2191}\u{2193} choose   Enter select   w {}   Esc {}", if modal.why { "hide why" } else { "why?" }, if modal.details { "close" } else { "later" });
+    let hint = format!("\u{2191}\u{2193} choose   Enter select   Esc {}", if modal.details { "close" } else { "later" });
     let color = if modal.findings.iter().all(|r| r.strength == super::recommend::Strength::Reference) { Color::Cyan } else { Color::Yellow };
     let title = modal.title();
     draw_advice_modal(f, area, popup_w, &title, color, lines, footer, &hint, "PgUp/PgDn scroll", &mut modal.scroll, hits);
@@ -318,13 +313,12 @@ fn rec_reference_of(r: &qsmxt_engine::recommendations::Recommendation) -> String
 
 /// The reference pipeline pop-up ([`super::recommend::RefModal`]): each setting that differs
 /// from the chosen method's reference pipeline (after any recommendations the same change
-/// created), as current → reference value, with why and the source; then the buttons, or, when
+/// created), as current → reference value, with why; then the buttons, or, when
 /// choosing per setting, a choice on each setting.
 fn draw_ref_modal(f: &mut Frame, modal: &mut super::recommend::RefModal, area: Rect, hits: &super::mouse::Hits) {
     use super::recommend::Strength;
     let popup_w = advice_modal_width(area);
     let text_w = popup_w.saturating_sub(6).max(10) as usize;
-    let src = Style::default().fg(Color::Cyan);
     let mut lines = vec![Line::from("")];
     let offered = modal.items.iter().any(|i| i.finding.strength != Strength::Reference);
     let mut heading_done = false;
@@ -373,14 +367,6 @@ fn draw_ref_modal(f: &mut Frame, modal: &mut super::recommend::RefModal, area: R
             let mut spans = vec![Span::raw("    ")];
             spans.extend(l.spans);
             lines.push(Line::from(spans));
-        }
-        for x in std::iter::once(r).chain(&item.also) {
-            let whose = if item.also.is_empty() { String::new() } else { format!(" ({})", x.trigger.name) };
-            for l in tip_lines(&format!("Source{whose}: {}", x.source), text_w.saturating_sub(4)) {
-                let mut spans = vec![Span::raw("    ")];
-                spans.extend(l.spans.into_iter().map(|s| Span::styled(s.content, src)));
-                lines.push(Line::from(spans));
-            }
         }
     }
     lines.push(Line::from(""));
@@ -2571,8 +2557,17 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     draw_keys(f, keys, area);
 }
 
-/// The help bar's key hints: each key, then what it does.
-fn draw_keys(f: &mut Frame, keys: Vec<(&str, &str)>, area: ratatui::layout::Rect) {
+/// The help bar's key hints: each key, then what it does. Hints that every screen has (the tip,
+/// moving up and down, resets) give way first on a narrow terminal, so the row's own keys stay.
+fn draw_keys(f: &mut Frame, mut keys: Vec<(&str, &str)>, area: ratatui::layout::Rect) {
+    let width = |keys: &[(&str, &str)]| 1 + keys.iter().map(|(k, w)| k.chars().count() + 1 + w.chars().count()).sum::<usize>()
+        + 2 * keys.len().saturating_sub(1);
+    for key in ["?", "\u{2191}\u{2193}", "r", "R", "P", "[ ]"] {
+        if width(&keys) <= area.width as usize {
+            break;
+        }
+        keys.retain(|(k, _)| *k != key);
+    }
     let mut help = vec![Span::raw(" ")];
     for (i, (key, what)) in keys.into_iter().enumerate() {
         if i > 0 {
