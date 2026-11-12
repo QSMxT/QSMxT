@@ -309,6 +309,7 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 tau: args.tau.unwrap_or(d.tau),
                 gamma: args.gamma.unwrap_or(d.gamma),
                 pad: pad3(args.pad.as_deref(), d.pad),
+                ..d
             };
             let config = qsm_core::pipeline::InversionConfig { rts, ..config_for(A::Rts) };
             let out = invert_with(&args.common, f64::NAN, &[], Magnitude::None, config, "RTS")?;
@@ -335,8 +336,8 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             (args.common, out)
         }
         InvertCommand::Tsvd(args) => {
-            let d = inv::TkdParams::default();
-            let tsvd = inv::TkdParams { threshold: args.threshold.unwrap_or(d.threshold), pad: pad3(args.pad.as_deref(), d.pad) };
+            let d = inv::TsvdParams::default();
+            let tsvd = inv::TsvdParams { threshold: args.threshold.unwrap_or(d.threshold), pad: pad3(args.pad.as_deref(), d.pad) };
             let config = qsm_core::pipeline::InversionConfig { tsvd, ..config_for(A::Tsvd) };
             let out = invert_with(&args.common, f64::NAN, &[], Magnitude::None, config, "TSVD")?;
             (args.common, out)

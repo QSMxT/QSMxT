@@ -60,9 +60,11 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     use qsmxt_engine as c;
 
     // Inversion algorithms
-    cover!(q::inversion::RtsParams => c::RtsConfig);
+    // `check_first_iteration`: QSM.jl's iteration-1 convergence check, kept in QSM.rs for parity.
+    cover!(q::inversion::RtsParams => c::RtsConfig, ignore: ["check_first_iteration"]);
     cover!(q::inversion::TvParams => c::TvConfig);
     cover!(q::inversion::TkdParams => c::TkdConfig);
+    cover!(q::inversion::TsvdParams => c::TsvdConfig);
     cover!(q::inversion::TikhonovParams => c::TikhonovConfig);
     // b0/echo_times come from scan metadata (the dispatcher fills them). `newton_guard` (NLTV and
     // the FANSI family, QSM.rs#461): keeps the Newton step in the root's bracket; QSM.rs's

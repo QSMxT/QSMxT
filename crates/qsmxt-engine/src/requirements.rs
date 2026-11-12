@@ -1075,7 +1075,7 @@ mod tests {
 
     /// HEIDI's checks QSM.rs's rules cannot make: a TKD threshold above a cone threshold other
     /// than the default, the echo time, and a multi-orientation run. At the default cone
-    /// threshold the rule `heidi.tkd-cone` refuses TKD's default 0.15.
+    /// threshold the rule `heidi.tkd-cone` refuses TKD's default threshold.
     #[test]
     fn heidi_is_refused_where_it_cannot_follow_the_inversion() {
         let mut c = PipelineConfig::default();

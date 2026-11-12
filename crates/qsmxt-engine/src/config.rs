@@ -36,6 +36,7 @@ param_config!(TvConfig from qsm_core::inversion::TvParams {
     lambda: f64, rho: Option<f64>, tol: f64, max_iter: usize, pad: [i64; 3]
 });
 param_config!(TkdConfig from qsm_core::inversion::TkdParams { threshold: f64, pad: [i64; 3] });
+param_config!(TsvdConfig from qsm_core::inversion::TsvdParams { threshold: f64, pad: [i64; 3] });
 // `te` (here and below): which of the scan's echo times the method converts the field from ppm to
 // radians at; each method's default is its reference code's. The scan's echo times and field
 // strength are not settings: qsm-core's dispatcher fills them in.
@@ -1820,7 +1821,7 @@ pub struct InversionConfig {
     pub rts: RtsConfig,
     pub tv: TvConfig,
     pub tkd: TkdConfig,
-    pub tsvd: TkdConfig,
+    pub tsvd: TsvdConfig,
     pub tikhonov: TikhonovConfig,
     pub nltv: NltvConfig,
     pub medi: MediConfig,
@@ -1861,7 +1862,7 @@ impl Default for InversionConfig {
         Self {
             algorithm: QsmAlgorithm::Ilsqr,
             rts: RtsConfig::default(), tv: TvConfig::default(),
-            tkd: TkdConfig::default(), tsvd: TkdConfig::default(),
+            tkd: TkdConfig::default(), tsvd: TsvdConfig::default(),
             tikhonov: TikhonovConfig::default(), nltv: NltvConfig::default(),
             medi: MediConfig::default(), tfi: TfiConfig::default(), ilsqr: IlsqrConfig::default(),
             star: StarConfig::default(), tgv: TgvConfig::default(), qsmart: QsmartConfig::default(),

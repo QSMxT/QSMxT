@@ -514,7 +514,7 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.inv("tv") || x.qsmart_inner("tv")).full("Padding")
         .gui("Zero-padding before the FFTs (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded"),
         // QSM.rs inversion/tkd.rs: 1/threshold on the DC bin (D = 0) gives inf/NaN at <= 0.
-        d("inversion.tkd.threshold", Inversion, "Threshold", "Truncation threshold for k-space division (0.1-0.2)", Float).above(0.0).below(qsm_core::kernels::MAX_ABS_DIPOLE).flag("--tkd-threshold").parent("inversion.algorithm")
+        d("inversion.tkd.threshold", Inversion, "Threshold", "Truncation threshold for k-space division (0.1-0.3); larger is smoother and underestimates χ more", Float).above(0.0).below(qsm_core::kernels::MAX_ABS_DIPOLE).flag("--tkd-threshold").parent("inversion.algorithm")
         .when(|x| x.inv("tkd") || x.qsmart_inner("tkd")),
         // QSM.rs utils/padding.rs with_qsmjl_padding: < 0 leaves an axis unpadded.
         d("inversion.tkd.pad", Inversion, "Pad (voxels)", "Zero-padding before the FFTs, voxels (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default 0 0 0)", IntVec3).min(-1.0).units("voxels").flag("--tkd-pad").parent("inversion.algorithm")

@@ -211,7 +211,7 @@ pub struct RtsParamArgs {
 
 #[derive(Args, Debug, Default, Clone)]
 pub struct TvParamArgs {
-    /// TV lambda parameter
+    /// TV lambda parameter (default: 0.0003)
     #[arg(long)]
     pub tv_lambda: Option<f64>,
     /// TV rho (ADMM penalty), or auto for 100 × lambda (default: auto)
@@ -231,7 +231,7 @@ pub struct TvParamArgs {
 
 #[derive(Args, Debug, Default, Clone)]
 pub struct TkdParamArgs {
-    /// TKD threshold
+    /// TKD threshold on |D|; larger is smoother and underestimates χ more (default: 0.25)
     #[arg(long)]
     pub tkd_threshold: Option<f64>,
     /// TKD zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an
@@ -242,7 +242,7 @@ pub struct TkdParamArgs {
 
 #[derive(Args, Debug, Default, Clone)]
 pub struct TsvdParamArgs {
-    /// TSVD threshold
+    /// TSVD threshold on |D| (default: 0.15)
     #[arg(long)]
     pub tsvd_threshold: Option<f64>,
     /// TSVD zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an
@@ -3453,7 +3453,7 @@ pub struct InvertRtsArgs {
 pub struct InvertTvArgs {
     #[command(flatten)]
     pub common: InvertCommonArgs,
-    /// Lambda parameter
+    /// Lambda parameter (default: 0.0003)
     #[arg(long)]
     pub lambda: Option<f64>,
     /// Rho (ADMM penalty), or auto for 100 × lambda (default: auto)
@@ -3475,7 +3475,7 @@ pub struct InvertTvArgs {
 pub struct InvertTkdArgs {
     #[command(flatten)]
     pub common: InvertCommonArgs,
-    /// Threshold
+    /// Threshold on |D|; larger is smoother and underestimates χ more (default: 0.25)
     #[arg(long)]
     pub threshold: Option<f64>,
     /// Zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an
@@ -3488,7 +3488,7 @@ pub struct InvertTkdArgs {
 pub struct InvertTsvdArgs {
     #[command(flatten)]
     pub common: InvertCommonArgs,
-    /// Threshold
+    /// Threshold on |D| (default: 0.15)
     #[arg(long)]
     pub threshold: Option<f64>,
     /// Zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an
