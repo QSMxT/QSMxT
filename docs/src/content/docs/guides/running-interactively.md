@@ -184,6 +184,10 @@ sub-tabs along the top of the panel instead, chosen with `←`/`→`, with `↓`
 Methods tab's two pages, Methods text and Graph, are a sidebar too (a strip when narrow), and the
 Pipeline tab's list of pipelines is drawn the same way.
 
+The help for the highlighted setting sits under the settings. From 138 columns wide, it moves to
+a column on the right instead, so the settings use the panel's full height; the settings keep
+76 columns and the help takes up to 64. Notes in a section wrap to the width they are given.
+
 | Tab | Pages | What is there |
 |---|---|---|
 | 1 Input | — | Input mode, dataset/output/config paths, include/exclude patterns and the run tree, number of echoes, and the orientation groups: a pattern, or groups given to runs with ←/→ in the run tree (one of them the reference), each run marked with its group |

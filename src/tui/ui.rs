@@ -1874,6 +1874,23 @@ fn draw_sidebar_beside(f: &mut Frame, app: &App, area: Rect, inner: Rect) -> Rec
     Rect { x: inner.x + sw + 1, width: inner.width.saturating_sub(sw + 1), ..inner }
 }
 
+/// Columns the settings keep before their help moves beside them: the widest label column (34),
+/// a choice's button, and a short rule marker.
+const SETTINGS_COLUMNS: u16 = 76;
+/// The narrowest help column worth having.
+const HELP_COLUMNS_MIN: u16 = 36;
+/// The widest help column; more room goes to the settings.
+const HELP_COLUMNS_MAX: u16 = 64;
+
+/// Where the help goes beside the settings in `inner`, when it is wide enough for both.
+fn side_help(inner: Rect) -> Option<Rect> {
+    let spare = inner.width.checked_sub(SETTINGS_COLUMNS + 1)?;
+    (spare >= HELP_COLUMNS_MIN).then(|| {
+        let w = spare.min(HELP_COLUMNS_MAX);
+        Rect { x: inner.right() - w, width: w, ..inner }
+    })
+}
+
 /// A row-based tab (all but Input and Methods): its sub-tabs, then one named row per setting.
 fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     let block = super::tabs::panel(app);
@@ -1882,7 +1899,23 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     if app.sidebar() {
         inner = draw_sidebar_beside(f, app, area, inner);
     }
+    // Wide enough: the help in a column of its own on the right, beside the settings.
+    let side = side_help(inner);
+    if let Some(help) = side {
+        inner = Rect { width: inner.width - help.width - 1, ..inner };
+        // A rule like the sidebar's, joined to the panel's border.
+        let x = help.x - 1;
+        let buf = f.buffer_mut();
+        let faint = buf[(area.x, area.y)].fg;
+        for y in inner.y..inner.bottom() {
+            buf[(x, y)].set_symbol("│").set_fg(faint);
+        }
+        if buf[(x, area.y)].symbol() == "─" { buf[(x, area.y)].set_symbol("┬").set_fg(faint); }
+        if buf[(x, area.bottom() - 1)].symbol() == "─" { buf[(x, area.bottom() - 1)].set_symbol("┴").set_fg(faint); }
+    }
 
+    // Notes wrap to the settings' width.
+    app.note_width.set(inner.width);
     // Build lines and collect state from pipeline_state before mutable borrow
     let rows = app.rows();
     let focusable = super::app::focusable_indices(&rows);
@@ -2345,18 +2378,19 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
 
     // The help, wrapped, and under it the reference values of the setting: at least two rows of
     // help so the form does not jump between short ones, at most half the panel together.
-    let help = focused_help.as_deref().map_or_else(Vec::new, |h| help_lines(h, inner.width, Color::DarkGray));
-    let mut refs = reference.as_deref().map_or_else(Vec::new, |r| help_lines(r, inner.width, Color::Cyan));
+    let help_width = side.map_or(inner.width, |r| r.width - 1);
+    let help = focused_help.as_deref().map_or_else(Vec::new, |h| help_lines(h, help_width, Color::DarkGray));
+    let mut refs = reference.as_deref().map_or_else(Vec::new, |r| help_lines(r, help_width, Color::Cyan));
     // Sources can run long, and `!` shows them in full.
     if refs.len() > MAX_REFERENCE_ROWS {
         refs.truncate(MAX_REFERENCE_ROWS);
         refs[MAX_REFERENCE_ROWS - 1].spans.push(Span::styled(" …", Style::default().fg(Color::Cyan)));
     }
     let help_rows = (help.len().max(2) + refs.len()) as u16;
-    let help_rows = help_rows.min((inner.height.saturating_sub(bar) / 2).max(2));
+    let help_rows = if side.is_some() { 0 } else { help_rows.min((inner.height.saturating_sub(bar) / 2).max(2)) };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(bar), Constraint::Min(4), Constraint::Length(1), Constraint::Length(help_rows)])
+        .constraints([Constraint::Length(bar), Constraint::Min(4), Constraint::Length(u16::from(side.is_none())), Constraint::Length(help_rows)])
         .split(inner);
     if bar > 0 {
         super::tabs::draw_subtabs(f, app, chunks[0]);
@@ -2376,7 +2410,10 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         text.resize(2, Line::from(""));
     }
     text.extend(refs);
-    f.render_widget(Paragraph::new(text), help_area);
+    match side {
+        Some(r) => f.render_widget(Paragraph::new(text), Rect { x: r.x + 1, width: r.width - 1, ..r }),
+        None => f.render_widget(Paragraph::new(text), help_area),
+    }
 
     // Set cursor if editing a param or threshold value
     if ps_editing || app.pipeline_state.mask_value_editing {
@@ -2669,6 +2706,68 @@ fn hd_bet_inference_help() -> String {
 pub(super) mod tests {
     use super::*;
     use ratatui::{backend::TestBackend, Terminal};
+
+    /// The Inversion section with MEDI, focus on its settings.
+    fn medi_app() -> App {
+        let mut app = App::new();
+        let medi = crate::tui::app::QSM_PICKER_OPTIONS.iter().position(|o| *o == "medi").unwrap();
+        app.pipeline_state.set_select("qsm_algorithm", medi);
+        app.active_tab = crate::tui::app::TAB_RECONSTRUCTION;
+        app.sub_page[crate::tui::app::TAB_RECONSTRUCTION] = Some(crate::tui::app::Page::Inversion);
+        app.sync_pipeline_mode();
+        app.subtab_focus = false;
+        app
+    }
+
+    /// Whether the help is drawn beside the settings: a second rule joins the panel's top border.
+    fn help_beside(width: u16) -> bool {
+        let t = render_app_sized(&mut medi_app(), width, 40);
+        rules(&t).len() == 2
+    }
+
+    /// The columns of the panel's inner rules, where they meet its bottom border.
+    fn rules(t: &Terminal<TestBackend>) -> Vec<u16> {
+        let buf = t.backend().buffer();
+        let bottom = (0..buf.area.height).find(|&y| buf[(0, y)].symbol() == "╰").unwrap();
+        (0..buf.area.width).filter(|&x| buf[(x, bottom)].symbol() == "┴").collect()
+    }
+
+    #[test]
+    fn the_help_moves_beside_the_settings_from_138_columns() {
+        assert!(!help_beside(120));
+        assert!(!help_beside(137));
+        assert!(help_beside(138));
+        assert!(help_beside(200));
+    }
+
+    #[test]
+    fn beside_the_settings_the_help_is_wrapped_to_its_column_and_the_settings_keep_76() {
+        let mut app = medi_app();
+        let t = render_app_sized(&mut app, 160, 40);
+        let text = screen_text(&t);
+        assert!(text.contains("Morphology Enabled Dipole"), "{text}");
+        let buf = t.backend().buffer();
+        let rules = rules(&t);
+        assert!(rules[1] - rules[0] > 76, "{rules:?}");
+        // Nothing of the help reaches into the settings' column.
+        for y in 3..30 {
+            let left: String = (rules[0] + 1..rules[1]).map(|x| buf[(x, y)].symbol()).collect();
+            assert!(!left.contains("Morphology"), "{left}");
+        }
+    }
+
+    #[test]
+    fn notes_wrap_to_the_settings_width() {
+        use crate::tui::app::{wrap_notes, PipelineRow};
+        let note = |t: &str| PipelineRow::Note { text: t.to_string().into() };
+        let rows = vec![note("  No background removal with these settings: the inversion takes the total field"), note("  or the wrapped phase itself (see Inversion).")];
+        let out = wrap_notes(rows.clone(), 40);
+        let texts: Vec<String> = out.iter().map(|r| match r { PipelineRow::Note { text } => text.to_string(), _ => unreachable!() }).collect();
+        assert!(texts.iter().all(|t| t.chars().count() <= 40 && t.starts_with("  ")), "{texts:?}");
+        assert_eq!(texts.iter().map(|t| t.trim()).collect::<Vec<_>>().join(" "),
+            "No background removal with these settings: the inversion takes the total field or the wrapped phase itself (see Inversion).");
+        assert_eq!(wrap_notes(rows.clone(), 0), rows);
+    }
 
     /// The footer (key hints) as drawn on a wide terminal.
     pub(crate) fn footer(app: &mut App) -> String {

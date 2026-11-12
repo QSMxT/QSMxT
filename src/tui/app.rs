@@ -6072,6 +6072,47 @@ pub fn focusable_indices(rows: &[PipelineRow]) -> Vec<usize> {
         .collect()
 }
 
+/// Notes wrapped to `width` columns (0 leaves them as written). A note continued on the next
+/// row (one that does not end a sentence or a heading) is joined to it first, so a note written
+/// over two rows reflows as one; each wrapped row keeps the note's indent.
+pub fn wrap_notes(rows: Vec<PipelineRow>, width: usize) -> Vec<PipelineRow> {
+    if width == 0 {
+        return rows;
+    }
+    let mut joined: Vec<PipelineRow> = Vec::with_capacity(rows.len());
+    for row in rows {
+        if let (PipelineRow::Note { text }, Some(PipelineRow::Note { text: prev })) = (&row, joined.last_mut()) {
+            if !prev.trim_end().ends_with(['.', ':', ')']) {
+                *prev = format!("{} {}", prev.trim_end(), text.trim_start()).into();
+                continue;
+            }
+        }
+        joined.push(row);
+    }
+    let mut out = Vec::with_capacity(joined.len());
+    for row in joined {
+        let PipelineRow::Note { text } = &row else {
+            out.push(row);
+            continue;
+        };
+        let indent = text.len() - text.trim_start().len();
+        let pad = " ".repeat(indent);
+        let mut line = String::new();
+        for word in text.split_whitespace() {
+            if !line.is_empty() && pad.len() + line.chars().count() + 1 + word.chars().count() > width {
+                out.push(PipelineRow::Note { text: format!("{pad}{line}").into() });
+                line.clear();
+            }
+            if !line.is_empty() {
+                line.push(' ');
+            }
+            line.push_str(word);
+        }
+        out.push(PipelineRow::Note { text: format!("{pad}{line}").into() });
+    }
+    out
+}
+
 /// The named field a row edits, if it edits one.
 pub fn row_field(row: &PipelineRow) -> Option<&'static str> {
     match row {
@@ -6138,6 +6179,9 @@ pub struct App {
     /// Whether the last frame drew the Reconstruction tab's sections as a sidebar (wide enough)
     /// rather than as a strip of pills; the keys follow what is on screen.
     pub sidebar_layout: std::cell::Cell<bool>,
+    /// The width the last frame gave a section's settings, which its notes wrap to; 0 (before
+    /// any frame) leaves them as written.
+    pub note_width: std::cell::Cell<u16>,
     /// Focus is on the main tab bar: ←/→ switch tabs, ↓ or Enter go into the tab.
     pub tab_focus: bool,
     pub active_field: usize,
@@ -6574,6 +6618,7 @@ impl App {
             sub_page: [None; TAB_NAMES.len()],
             subtab_focus: false,
             sidebar_layout: std::cell::Cell::new(true),
+            note_width: std::cell::Cell::new(0),
             tab_focus: false,
             active_field: 0,
             editing: false,
@@ -8765,10 +8810,8 @@ impl App {
 
     fn page_rows_in(&self, page: Page, ctx: &RowContext) -> Vec<PipelineRow> {
         let rows = self.all_page_rows_in(page, ctx);
-        if self.advanced || !Page::RECONSTRUCTION.contains(&page) {
-            return rows;
-        }
-        self.basic_rows(rows)
+        let rows = if self.advanced || !Page::RECONSTRUCTION.contains(&page) { rows } else { self.basic_rows(rows) };
+        wrap_notes(rows, self.note_width.get().saturating_sub(2) as usize)
     }
 
     /// A page's rows with every setting shown (Advanced mode).
