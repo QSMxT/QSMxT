@@ -168,8 +168,10 @@ qsmxt run study/bids --phase-offset-removal true
 qsmxt run study/bids --bipolar-correction
 ```
 
-ROMEO unwrapping has several modes — per-echo (default) or template-based,
-with inter-echo 2π correction. See `qsmxt run --help` for the full set of
+ROMEO unwraps the first echo spatially and the others temporally from it
+(`--romeo-template` picks another echo); `--romeo-individual` unwraps each echo on
+its own, for motion between echoes, optionally with inter-echo 2π correction
+(`--romeo-correct-global`). See `qsmxt run --help` for the full set of
 `--romeo-*` flags.
 
 ### Using a configuration file

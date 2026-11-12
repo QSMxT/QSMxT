@@ -280,7 +280,7 @@ fn command_for(config: &PipelineConfig, d: &PipelineConfig, pipeline: Option<&st
         if val != default { parts.push(if val { on } else { off }.to_string()); }
     };
     // `d` is QSMxT's defaults, or a pipeline's: the χ-separation toolbox's turns phase linearity
-    // off (romeo3), individual unwrapping and global correction off, which have flags both ways.
+    // off (romeo3), which has flags both ways.
     let qd = PipelineConfig::default().field_mapping.romeo;
     debug_assert!(qd.phase_coherence && qd.phase_gradient_coherence && qd.phase_linearity && qd.mag_coherence
         && !qd.mag_weight2 && !qd.bestpath && !qd.merge_regions && !qd.correct_regions,
@@ -1148,11 +1148,14 @@ mod tests {
     }
 
     #[test]
-    fn test_romeo_template_mode() {
+    fn test_romeo_individual_mode() {
         let mut config = PipelineConfig::default();
-        config.field_mapping.romeo.individual = false;
+        // Template mode is the default: neither the mode nor the template echo is stated.
+        assert!(!generate_command(&config).contains("romeo-individual"));
+        assert!(!generate_command(&config).contains("--romeo-template"));
+        config.field_mapping.romeo.individual = true;
         let cmd = generate_command(&config);
-        assert!(cmd.contains("--no-romeo-individual"));
+        assert!(cmd.contains("--romeo-individual") && !cmd.contains("--romeo-template"), "{cmd}");
     }
 
     #[test]
@@ -1185,7 +1188,7 @@ mod tests {
         assert_eq!(parsed.inversion.algorithm, QsmAlgorithm::Ilsqr);
         assert_eq!(parsed.field_mapping.unwrapping_algorithm, UnwrappingAlgorithm::Romeo);
         assert!(parsed.field_mapping.phase_offset_removal);
-        assert!(parsed.field_mapping.romeo.individual);
+        assert!(!parsed.field_mapping.romeo.individual);
     }
 
     #[test]
@@ -1798,11 +1801,11 @@ frangi_c = 400.0
     }
 
     #[test]
-    fn test_romeo_correct_global_disabled() {
+    fn test_romeo_correct_global_enabled() {
         let mut c = PipelineConfig::default();
-        c.field_mapping.romeo.correct_global = false;
+        c.field_mapping.romeo.correct_global = true;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--no-romeo-correct-global"));
+        assert!(cmd.contains("--romeo-correct-global"));
     }
 
     #[test]

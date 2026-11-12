@@ -1335,19 +1335,19 @@ pub struct RomeoParamArgs {
     /// ROMEO: template echo index (1-indexed, only for template mode)
     #[arg(long)]
     pub romeo_template: Option<usize>,
-    /// ROMEO: use individual per-echo unwrapping (default)
+    /// ROMEO: unwrap each echo on its own (individual mode, for motion or time series)
     #[arg(long)]
     pub romeo_individual: bool,
-    /// ROMEO: use template-based temporal unwrapping (disables individual mode)
+    /// ROMEO: unwrap the template echo spatially and the others temporally from it (default)
     #[arg(long)]
     pub no_romeo_individual: bool,
-    /// ROMEO: correct global 2π offsets, of each echo and between echoes (default: on)
+    /// ROMEO: correct global 2π offsets, of each echo and between echoes (default: off)
     #[arg(long)]
     pub romeo_correct_global: bool,
-    /// ROMEO: do not correct global 2π offsets
+    /// ROMEO: do not correct global 2π offsets (default)
     #[arg(long)]
     pub no_romeo_correct_global: bool,
-    /// ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0.5)
+    /// ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0)
     #[arg(long)]
     pub romeo_temporal_uncertain_unwrapping: Option<f64>,
     /// ROMEO: maximum number of seed regions (default: 1)
@@ -1394,8 +1394,7 @@ impl RomeoParamArgs {
     }
 
     /// `qsm_core::unwrap::RomeoParams` for these flags, starting from QSMxT's ROMEO defaults —
-    /// the ones `qsmxt run` uses (individual unwrapping and global correction on), not the
-    /// library's.
+    /// the ones `qsmxt run` uses (no re-unwrapping of uncertain voxels), not the library's.
     pub fn to_romeo_params(&self) -> qsm_core::unwrap::RomeoParams {
         let mut r = qsmxt_engine::RomeoConfig::default();
         self.apply_to(&mut r);

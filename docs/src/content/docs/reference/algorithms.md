@@ -463,13 +463,19 @@ methods say how many there were.
 | `prelude` | PRELUDE region-merging unwrapping (Jenkinson, 2003) |
 | `medi-region-growing` | MEDI's magnitude-guided region-growing unwrapping (Liu et al., 2013) |
 
-The χ-separation toolbox and QSMnetME run ROMEO through its command line, whose settings
-differ from QSMxT's: romeo3 weights (`--no-romeo-phase-linearity`), template unwrapping from
-the first echo (`--no-romeo-individual --romeo-template 1`), no global correction
-(`--no-romeo-correct-global`) and no re-unwrapping of uncertain voxels
-(`--romeo-temporal-uncertain-unwrapping 0`). Choosing χ-separation iLSQR, MEDI or χ-sepnet, or
-QSMnetME, shows these as the original authors' settings, and `--pipeline chi-sep-ilsqr`,
-`chi-sep-medi` and `chi-sepnet` use them.
+With several echoes, ROMEO unwraps as it does by default: the first echo is unwrapped
+spatially and the others temporally from it (`--romeo-template` picks another echo), with no
+global 2π correction and no re-unwrapping of uncertain voxels
+(`--romeo-temporal-uncertain-unwrapping 0`). `--romeo-individual` unwraps each echo on its own
+instead, for data with motion between echoes or time series; `--romeo-correct-global` then
+corrects each echo's 2π offset and the offsets between echoes. Individual unwrapping is less
+robust: with the default phase-quality mask, part of the brain can end up a whole 2π cycle
+off in some echoes.
+
+The χ-separation toolbox and QSMnetME run ROMEO through its command line, which also uses
+romeo3 weights (`--no-romeo-phase-linearity`). Choosing χ-separation iLSQR, MEDI or χ-sepnet,
+or QSMnetME, shows this as the original authors' setting, and `--pipeline chi-sep-ilsqr`,
+`chi-sep-medi` and `chi-sepnet` use it.
 
 With `laplacian`, each echo is unwrapped on its own (the phase is set to zero outside
 the brain mask first) and the echoes are then combined by

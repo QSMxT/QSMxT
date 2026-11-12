@@ -3306,8 +3306,8 @@ mod tests {
     }
 
     #[test]
-    fn test_romeo_individual_mode() {
-        // Individual per-echo unwrapping is the default, so the mode is not stated.
+    fn test_romeo_default_mode() {
+        // Template unwrapping is the default, so the mode is not stated.
         let config = PipelineConfig::default();
         let out = generate_methods(&config);
         assert!(out.contains("Phase unwrapping was performed using ROMEO (Dymerska et al., 2021)."), "{out}");
@@ -3315,11 +3315,11 @@ mod tests {
     }
 
     #[test]
-    fn test_romeo_template_mode() {
+    fn test_romeo_individual_mode() {
         let mut config = PipelineConfig::default();
-        config.field_mapping.romeo.individual = false;
+        config.field_mapping.romeo.individual = true;
         let out = generate_methods(&config);
-        assert!(out.contains("using ROMEO (Dymerska et al., 2021) in template-based temporal mode."), "{out}");
+        assert!(out.contains("using ROMEO (Dymerska et al., 2021) in individual per-echo mode."), "{out}");
     }
 
     /// MEDI's region growing is stated plainly and cited, on the per-echo path and after the
@@ -4357,7 +4357,7 @@ mod defaults_only_tests {
                 "(tile size 64 voxels, halo 4 voxels)"),
             (|c| { c.inversion.algorithm = QsmAlgorithm::Qsmart; c.inversion.qsmart.frangi_c = 123.0; },
                 "tissue/vasculature separation, with frangi c = 123."),
-            (|c| c.field_mapping.romeo.correct_global = false, "ROMEO (Dymerska et al., 2021) with correct global disabled."),
+            (|c| c.field_mapping.romeo.correct_global = true, "ROMEO (Dymerska et al., 2021) with correct global enabled."),
             (|c| c.field_mapping.phase_offset_sigma_mm = [3.0, 3.0, 3.0], "(Eckstein et al., 2018; smoothing σ = 3 × 3 × 3 mm)"),
             (|c| { c.field_mapping.b0_estimation = B0Estimation::LinearFit; c.field_mapping.linear_fit.estimate_offset = !LinearFitConfig::default().estimate_offset; },
                 "echo time with phase-offset estimation"),

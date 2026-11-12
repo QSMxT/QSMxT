@@ -2566,8 +2566,8 @@ impl Default for PipelineFormState {
             qsm_per_echo: false,
             phase_offset_removal: true,
             bipolar_correction: false,
-            romeo_individual: true,
-            romeo_correct_global: true,
+            romeo_individual: qsmxt_engine::RomeoConfig::default().individual,
+            romeo_correct_global: qsmxt_engine::RomeoConfig::default().correct_global,
             romeo_template: "1".to_string(),
             b0_estimation: 0,    // weighted_avg
             b0_weight_type: 0,   // phase_snr
@@ -2781,7 +2781,7 @@ impl Default for PipelineFormState {
             romeo_phase_linearity: qsm_core::unwrap::RomeoParams::default().phase_linearity,
             romeo_mag_weight2: qsm_core::unwrap::RomeoParams::default().mag_weight2,
             romeo_bestpath: qsm_core::unwrap::RomeoParams::default().bestpath,
-            romeo_temporal_uncertain: qsm_core::unwrap::RomeoParams::default().temporal_uncertain_unwrapping > 0.0,
+            romeo_temporal_uncertain: qsmxt_engine::RomeoConfig::default().temporal_uncertain_unwrapping > 0.0,
             romeo_temporal_uncertain_unwrapping: format!("{}", qsm_core::unwrap::RomeoParams::default().temporal_uncertain_unwrapping),
             romeo_max_seeds: format!("{}", qsm_core::unwrap::RomeoParams::default().max_seeds),
             romeo_merge_regions: qsm_core::unwrap::RomeoParams::default().merge_regions,
@@ -3724,7 +3724,7 @@ impl PipelineFormState {
         if is_romeo {
             rows.push(PipelineRow::Toggle {
                 label: "  Individual mode", field: "romeo_individual",
-                help: "Unwrap each echo independently (recommended). Off = template-based temporal unwrapping.",
+                help: "Unwrap each echo on its own (for motion or time series). Off = the template echo is unwrapped spatially and the others temporally from it.",
             });
             if !self.romeo_individual {
                 rows.push(PipelineRow::Param {
