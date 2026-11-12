@@ -216,6 +216,7 @@ fn draw_rec_modal(f: &mut Frame, modal: &mut super::recommend::RecModal, area: R
             super::recommend::Strength::Required if modal.changed => format!("{} cannot run with it: {}", r.trigger.name, r.reason),
             super::recommend::Strength::Required => format!("{} requires {}: {}", r.trigger.name, r.recommended.name, r.reason),
             super::recommend::Strength::Reference => format!("{} uses {}: {}", rec_reference_of(r), r.recommended.name, r.reason),
+            super::recommend::Strength::Suggested => format!("{} suggests {}: {}", r.trigger.name, r.recommended.name, r.reason),
             _ => format!("{} recommends {}: {}", r.trigger.name, r.recommended.name, r.reason),
         };
         lines.extend(tip_lines(&wants, text_w));
@@ -365,6 +366,7 @@ fn draw_ref_modal(f: &mut Frame, modal: &mut super::recommend::RefModal, area: R
         let why = match r.strength {
             Strength::Reference => r.reason.clone(),
             Strength::Discouraged => format!("Discouraged with {}: {}", r.trigger.name, r.reason),
+            Strength::Suggested => format!("{} suggests {}: {}", r.trigger.name, r.recommended.name, r.reason),
             _ => format!("{} recommends {}: {}", r.trigger.name, r.recommended.name, r.reason),
         };
         for l in tip_lines(&why, text_w.saturating_sub(4)) {
@@ -2272,19 +2274,25 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
             Some(m) => {
                 let mut line = line;
                 let (mark, color) = if m.actionable { ("⚑", Color::Yellow) } else { ("ⓘ", Color::DarkGray) };
-                // The rule's text gives way (…) so the `!` hint stays on screen: `!` shows it all.
+                // A few words beside the setting (whose rule, and its value while short); `!`
+                // shows the rest. On a narrow form they give way (…), and the `!` hint shows
+                // only where it fits after them (the key bar has `!:Advice` too). One column is
+                // left for the form's scrollbar.
                 let hint = " (! for advice)";
-                let used = line.width() + 3 + if focused { hint.chars().count() } else { 0 };
-                let room = (inner.width as usize).saturating_sub(used);
-                let text = if m.text.chars().count() <= room {
-                    m.text.clone()
+                let room = (inner.width as usize).saturating_sub(line.width() + 3 + 1);
+                let short_len = m.short.chars().count();
+                let text = if short_len <= room {
+                    m.short.clone()
+                } else if room < 2 {
+                    String::new() // the mark alone
                 } else {
-                    let mut t: String = m.text.chars().take(room.saturating_sub(1)).collect();
+                    let mut t: String = m.short.chars().take(room.saturating_sub(1)).collect();
                     t.push('…');
                     t
                 };
-                line.spans.push(Span::styled(format!(" {mark} {text}"), Style::default().fg(color)));
-                if focused {
+                let marked = if text.is_empty() { format!(" {mark}") } else { format!(" {mark} {text}") };
+                line.spans.push(Span::styled(marked, Style::default().fg(color)));
+                if focused && short_len + hint.chars().count() <= room {
                     line.spans.push(Span::styled(hint, Style::default().fg(Color::Yellow)));
                 }
                 line

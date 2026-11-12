@@ -930,6 +930,7 @@ impl App {
         for r in view.iter().filter(|r| r.setting == path) {
             let what = match (r.departs, r.strength, r.dismissed) {
                 (false, Strength::Reference, _) => "Authors' setting",
+                (false, Strength::Suggested, _) => "Suggested",
                 (false, _, _) => "Recommended",
                 (true, Strength::Reference, _) => "Differs from the authors' setting",
                 (true, _, true) => "Dismissed",
@@ -1608,7 +1609,8 @@ mod tests {
         assert_eq!((m.actionable, m.text.as_str()), (false, "QSMART: BET, first echo, intensity threshold 100, majority filter, closing radius 2, no erosion"));
         assert!(app.goto_field("mask_preset"));
         let text = screen(&mut app, "QSMART with the threshold mask");
-        assert!(text.contains("ⓘ QSMART: BET"), "{text}");
+        // Beside the setting, only whose rule it is: the recipe is too long for the row.
+        assert!(text.contains("ⓘ QSMART") && !text.contains("first echo, intensity"), "{text}");
         key(&mut app, KeyCode::Char('!'));
         let modal = app.rec_modal.as_ref().expect("details");
         assert!(modal.details);
@@ -1623,6 +1625,21 @@ mod tests {
         // BET now; the recipe's other parts (QSMART's first echo, f 0.2, no erosion) are their
         // own rules, still marked.
         assert!(App::row_marker(&app.rule_view(), &row).is_none_or(|m| !m.text.contains("BET")));
+    }
+
+    /// The defaults' mask beside iLSQR's reference recipe: a few words on the row, the recipe in
+    /// the details.
+    #[test]
+    fn markers_beside_a_setting_are_a_few_words() {
+        let mut app = app();
+        app.check_recommendations();
+        assert!(app.goto_field("mask_preset"));
+        let text = screen(&mut app, "the defaults' mask");
+        let row = text.lines().find(|l| l.contains("Mask preset:")).unwrap();
+        assert!(row.contains("ⓘ iLSQR (! for advice)") && !row.contains("thresh_tool"), "{row}");
+        key(&mut app, KeyCode::Char('!'));
+        let text = screen(&mut app, "its details");
+        assert!(text.contains("thresh_tool"), "{text}");
     }
 
     /// A change that creates a recommendation and chooses a method opens one pop-up, the

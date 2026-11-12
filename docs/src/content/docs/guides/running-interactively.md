@@ -132,9 +132,10 @@ another button. The pop-up opens once per method choice. If your settings alread
 reference pipeline, there is no pop-up. A pop-up too long for the terminal scrolls above its
 buttons, with a scrollbar: `↑`/`↓` or `PgUp`/`PgDn`.
 
-A setting that departs from a rule is marked with the method whose rule it is and what that
-rule uses, for example `ⓘ MEDI: BET`, or `ⓘ MEDI, PDF: BET` when several methods' references
-agree. ⚑ marks a recommendation (or something required or discouraged) that is still open; ⓘ
+A setting that departs from a rule is marked with the method whose rule it is and, when that
+takes only a few words, what the rule uses: for example `ⓘ MEDI: BET`, or `ⓘ MEDI, PDF: BET`
+when several methods' references agree. A longer one shows only the method, such as `ⓘ QSMART`
+beside a mask that differs from QSMART's in several ways. ⚑ marks a recommendation (or something required or discouraged) that is still open; ⓘ
 marks a difference from an original authors' setting, or a recommendation you kept. Press `!` on a
 marked setting (the row and the key bar say so when it is highlighted) to see its advice: whose
 rule it is, what it uses, why, the source, and **Apply** with the other values it allows. A

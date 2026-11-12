@@ -733,12 +733,26 @@ fn markers_name_the_method() {
     let view = reference_values(&c, &facts);
     let m = marker(&view, "masking.sections").unwrap();
     assert_eq!(m, Marker { actionable: false,
-        text: "QSMART: BET, first echo, intensity threshold 100, majority filter, closing radius 2, no erosion".into() });
+        text: "QSMART: BET, first echo, intensity threshold 100, majority filter, closing radius 2, no erosion".into(),
+        short: "QSMART".into() });
     // Two methods whose references agree share the value.
     let mut c = medi_vsharp_threshold();
     set(&mut c, "bg_removal.algorithm", &json!("pdf")).unwrap();
     let m = marker(&reference_values(&c, &facts), "masking.sections").unwrap();
     assert_eq!(m.text, "MEDI, PDF: BET · MEDI: RSS magnitude, no erosion");
+    assert_eq!(m.short, "MEDI, PDF", "too long beside the setting: whose rules only");
+    // A few words stay whole.
+    let mut c = PipelineConfig::default();
+    c.inversion.algorithm = QsmAlgorithm::Medi;
+    let m = marker(&reference_values(&c, &facts), "masking.sections").unwrap();
+    assert_eq!((m.text.as_str(), m.short.as_str()), ("MEDI: BET, RSS magnitude, no erosion", "MEDI"));
+    set(&mut c, "masking.generator", &json!("bet")).unwrap();
+    set(&mut c, "masking.input", &json!("magnitude")).unwrap();
+    set(&mut c, "masking.erosion", &json!(0)).unwrap();
+    assert!(marker(&reference_values(&c, &facts), "masking.sections").is_none());
+    set(&mut c, "masking.input", &json!("magnitude-first")).unwrap();
+    let m = marker(&reference_values(&c, &facts), "masking.sections").unwrap();
+    assert_eq!(m.short, "MEDI: RSS magnitude");
     // An offered finding is flagged and named first.
     let rule = core::RULES.iter().find(|r| r.id == "medi-msmv.prefilter").unwrap();
     let c = violating(rule);
@@ -866,7 +880,7 @@ fn notes_name_the_rule_they_come_from() {
     let found = recommendations(&c, &Facts::default());
     let r = found.iter().find(|r| r.rule == "heidi.seed-regularised").unwrap();
     assert_eq!(r.strength, Strength::Suggested);
-    assert_eq!(r.note(), "QSM inversion used MEDI; LSQR is recommended with HEIDI streaking reduction");
+    assert_eq!(r.note(), "QSM inversion used MEDI; LSQR is suggested with HEIDI streaking reduction");
 
     let mut c = PipelineConfig::default();
     c.field_mapping.b0_estimation = crate::enums::B0Estimation::ComplexFit;
