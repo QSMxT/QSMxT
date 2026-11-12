@@ -89,6 +89,21 @@ and it reads `Custom`. Press `P` on any settings page to come back to the Pipeli
 command preview starts with `--pipeline medi-toolbox`, followed only by the flags where your
 settings depart from it.
 
+## Basic and Advanced settings
+
+The Reconstruction tab starts in **Basic** mode: each section shows the choices most people make
+(whether a step runs, its method and variant, inputs you supply, outputs) and hides the
+parameters that tune a method, such as iterations, tolerances and weights. The last row of a
+section says how many are hidden (`+ 15 advanced settings · A`). Press `A`, or `Enter` on that
+row, for **Advanced** mode, which shows every setting; `A` again goes back. QSMxT remembers your
+choice.
+
+Basic mode never hides a setting that matters to your run. A setting shows whenever it differs
+from QSMxT's default (or, when you chose a pipeline on the Pipeline tab, from that pipeline's
+value), has a value that is not allowed, or has a recommendation still open. The mask recipe
+shows as one line until you edit it. The command preview and the methods text always cover
+every setting.
+
 ## Recommendations
 
 When a change makes a setting depart from what a chosen method recommends (or requires, or
@@ -211,6 +226,7 @@ happen: *Run*, *Dry run*, *Write SLURM scripts* or *Submit SLURM jobs*.
 | `+` `-` | Reconstruction › Masking | nudge a mask number (fractional intensity, a step's value) |
 | `r` / `R` | settings | reset the setting / the whole section |
 | `a` | Reconstruction › DICOM | tick every map to export |
+| `A` | Reconstruction | show every setting (Advanced) or the basic ones (Basic) |
 | `P` | settings | go to the Pipeline tab |
 | `↑` `↓`, `Enter` | Pipeline | choose a pipeline; preview its changes, then Apply or Cancel |
 | `Enter`, `s` | Methods › Graph | save the pipeline as an SVG drawing and open it |

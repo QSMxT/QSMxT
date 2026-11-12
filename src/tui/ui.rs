@@ -2265,6 +2265,24 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                     label_style,
                 ))
             }
+            PipelineRow::Summary { text } => Line::from(Span::styled(
+                format!("      {text}"),
+                Style::default().fg(Color::DarkGray),
+            )),
+            PipelineRow::AdvancedFooter { hidden } => {
+                if focused {
+                    focused_help = Some("Show every setting (Enter or A); A again shows the basic ones".to_string());
+                }
+                let style = if focused {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::DarkGray)
+                };
+                Line::from(Span::styled(
+                    format!("  + {hidden} advanced setting{} · A", if *hidden == 1 { "" } else { "s" }),
+                    style,
+                ))
+            }
             PipelineRow::RunButton => {
                 let (label, help) = app.run_action();
                 let label = format!(" ▶ {label} ");
@@ -2521,12 +2539,18 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         let open = if app.page() == Some(super::app::Page::Pipeline) { ("Enter/s", "Open as SVG") } else { ("Enter/c", "Copy to clipboard") };
         vec![(&tabs, "Tabs"), (back, pages), ("\u{2191}\u{2193}", "Scroll"), open, ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else if app.on_subtabs() && app.sidebar() {
-        vec![(&tabs, "Tabs"), ("\u{2191}\u{2193}/[ ]", "Sections"), ("\u{2192}/Enter", "Settings"), ("R", "Reset section"),
+        let mode = if app.advanced { "Basic" } else { "Advanced" };
+        vec![(&tabs, "Tabs"), ("\u{2191}\u{2193}/[ ]", "Sections"), ("\u{2192}/Enter", "Settings"), ("A", mode), ("R", "Reset section"),
              ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else if app.on_subtabs() {
-        let what = if app.active_tab == super::app::TAB_RECONSTRUCTION { "Sections" } else { "Sub-tabs" };
-        vec![(&tabs, "Tabs"), ("\u{2190}\u{2192}/[ ]", what), ("\u{2193}/Enter", "Settings"), ("R", "Reset page"),
-             ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
+        let recon = app.active_tab == super::app::TAB_RECONSTRUCTION;
+        let what = if recon { "Sections" } else { "Sub-tabs" };
+        let mut keys = vec![(tabs.as_str(), "Tabs"), ("\u{2190}\u{2192}/[ ]", what), ("\u{2193}/Enter", "Settings")];
+        if recon {
+            keys.push(("A", if app.advanced { "Basic" } else { "Advanced" }));
+        }
+        keys.extend([("R", "Reset page"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]);
+        keys
     } else {
         // The row's own keys: Enter for a choice (it opens a list), Enter to edit a number or
         // text, Space for a switch. ←/→ never change a value; on the Reconstruction tab ← goes
@@ -2576,6 +2600,9 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         }
         if row.as_ref().is_some_and(|r| app.pipeline_state.row_removes_section(r)) {
             keys.push(("d", "Remove section"));
+        }
+        if recon {
+            keys.push(("A", if app.advanced { "Basic" } else { "Advanced" }));
         }
         if rows_tab {
             keys.push(("P", "Pipeline"));

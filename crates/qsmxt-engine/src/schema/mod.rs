@@ -21,6 +21,7 @@
 //! one the TOML config accepts.
 
 pub mod mask;
+mod regular;
 mod table;
 mod view;
 
@@ -31,6 +32,7 @@ use crate::config::PipelineConfig;
 use crate::store::Item;
 
 pub use mask::{mask_schema, MaskSchema};
+pub use regular::{baseline, regular_view};
 pub use view::{prune_hidden, settings_view, SettingView, ViewFacts};
 
 /// A tab of the settings, as the TUI lays them out.
@@ -128,7 +130,11 @@ impl Section {
 
 /// Whether a setting is shown in a basic view, or only with every setting shown.
 ///
-/// Basic settings say what a step does (whether it runs, which method); advanced ones tune how.
+/// Basic settings are the choices a user makes: whether a step runs, which method and which
+/// variant of it (HEIDI, MEDI+0), the inputs supplied instead of computed, and the outputs.
+/// Advanced ones tune how a method runs: iterations, tolerances, weights, radii, padding,
+/// precision. A basic view still shows an advanced setting that is changed or flagged
+/// ([`regular_view`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Level {

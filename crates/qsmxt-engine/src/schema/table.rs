@@ -25,7 +25,7 @@ pub(super) fn table() -> Vec<Def> {
         d("pipeline.output_space", Geometry, "Output space", "", Enum(vec![
             o("acquired", "acquired", "Acquired grid", "Write derivatives back on the acquired grid when the run was resampled to axial (default)"),
             o("working", "working", "Working grid", "Leave derivatives on the resampled (axial) working grid, avoiding a second interpolation"),
-        ])).flag("--output-space").parent("pipeline.axial_resampling")
+        ])).basic().flag("--output-space").parent("pipeline.axial_resampling")
         .when(|x| x.c.pipeline.axial_resampling || x.axial_forced)
         .gui("The grid derivatives are written on, when an oblique run was resampled to axial"),
         d("pipeline.ignore_slice_gap", Geometry, "Ignore slice gap", "Reconstruct even if the sidecar's SliceThickness is thinner than the slice pitch (gapped 2D data gives a wrong map)", Bool).flag("--ignore-slice-gap"),
@@ -50,7 +50,7 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.c.masking.sections.len() > 1),
         d("masking.refinements", Masking, "Combined mask steps", "Refinement steps run on the combined mask, after the sections are combined", MaskOps).parent("masking.sections")
         .when(|x| x.c.masking.sections.len() > 1),
-        d("masking.custom_mask_tool", Masking, "Use custom masks", "BYO mask from BIDS derivatives: empty=off, * =any tool, or a tool name (e.g. bet); falls back if absent", Text).optional().flag("--use-custom-masks")
+        d("masking.custom_mask_tool", Masking, "Use custom masks", "BYO mask from BIDS derivatives: empty=off, * =any tool, or a tool name (e.g. bet); falls back if absent", Text).basic().optional().flag("--use-custom-masks")
         .supplied_file(Item::SuppliedMask, "A brain mask to use instead of computing one from the mask recipe").full("Custom mask")
         .gui("Use a mask from <bids>/derivatives/<tool>/ instead of computing one: * for any tool, or a tool name (e.g. bet); empty to always compute it. Where none is found, the mask is computed"),
         d("masking.two_pass", Masking, "Two-pass artefact reduction", "Reconstruct again on a mask whose holes are left unfilled and keep that result where it is defined — keeps streaking from strong sources out of the rest of the brain, at roughly double the reconstruction time (doi:10.1002/mrm.29048)", Bool).basic().flag("--two-pass"),
@@ -81,7 +81,7 @@ pub(super) fn table() -> Vec<Def> {
         d("masking.inhomogeneity_method", Masking, "Method", "", Enum(vec![
             o("makehomogeneous", "makehomogeneous", "makehomogeneous", "Divide by a smoothed estimate of the receive sensitivity (MriResearchTools' makehomogeneous) (default)"),
             o("n4", "n4", "N4", "N4 bias field correction, as ANTs' N4BiasFieldCorrection: a B-spline bias field fitted to sharpen the intensity histogram — https://doi.org/10.1109/TMI.2010.2046908"),
-        ])).flag("--inhomogeneity-method").parent("masking.inhomogeneity_correction")
+        ])).basic().flag("--inhomogeneity-method").parent("masking.inhomogeneity_correction")
         .when(|x| x.c.masking.inhomogeneity_correction).full("Inhomogeneity correction method")
         .gui("How the magnitude is corrected for inhomogeneity"),
         d("homogeneity.sigma_mm", Masking, "Sigma (mm)", "Smoothing sigma of the bias-field estimate, in mm", Float).units("mm").flag("--homogeneity-sigma-mm").parent("masking.inhomogeneity_method")
@@ -179,12 +179,12 @@ pub(super) fn table() -> Vec<Def> {
         d("field_mapping.laplacian_unmasked", FieldMap, "Unmasked phase", "Unwrap the raw phase over the whole volume, as QSMART does, instead of the phase set to zero outside the brain mask", Bool).flag("--laplacian-unmasked").parent("field_mapping.unwrapping_algorithm")
         .when(|x| x.laplacian).full("Laplacian unwrapping of the raw phase"),
         // MEDI's complex fit fits its own phase offset: QSM.rs does not remove them first.
-        d("field_mapping.phase_offset_removal", FieldMap, "Phase offset removal", "Remove spatially-varying phase offset using HIP (Eckstein et al., 2018); multi-echo only", Bool).flag("--phase-offset-removal").parent("field_mapping.unwrapping_algorithm")
+        d("field_mapping.phase_offset_removal", FieldMap, "Phase offset removal", "Remove spatially-varying phase offset using HIP (Eckstein et al., 2018); multi-echo only", Bool).basic().flag("--phase-offset-removal").parent("field_mapping.unwrapping_algorithm")
         .when(|x| x.combines && !x.laplacian && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit),
         d("field_mapping.phase_offset_sigma_mm", FieldMap, "Sigma (mm)", "Gaussian smoothing sigma in mm (x y z)", FloatVec3).units("mm").flag("--phase-offset-sigma-mm").parent("field_mapping.phase_offset_removal")
         .when(|x| x.combines && !x.laplacian && x.c.field_mapping.phase_offset_removal && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit).full("Phase offset sigma")
         .gui("Gaussian smoothing sigma (x y z)"),
-        d("field_mapping.bipolar_correction", FieldMap, "Bipolar correction", "Remove the linear phase artefact of bipolar readout gradients (needs at least 3 echoes; fewer: skipped)", Bool).flag("--bipolar-correction").parent("field_mapping.phase_offset_removal")
+        d("field_mapping.bipolar_correction", FieldMap, "Bipolar correction", "Remove the linear phase artefact of bipolar readout gradients (needs at least 3 echoes; fewer: skipped)", Bool).basic().flag("--bipolar-correction").parent("field_mapping.phase_offset_removal")
         .when(|x| x.combines && !x.laplacian && x.c.field_mapping.phase_offset_removal && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit),
         d("field_mapping.romeo.individual", FieldMap, "Individual mode", "Unwrap each echo independently (recommended). Off = template-based temporal unwrapping.", Bool).flag("--no-romeo-individual").parent("field_mapping.unwrapping_algorithm")
         .when(|x| x.romeo).full("Unwrap echoes individually"),
@@ -578,14 +578,14 @@ pub(super) fn table() -> Vec<Def> {
         d("inversion.nltv.pad", Inversion, "Pad (voxels)", "Zero-padding before the FFTs, voxels (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default 0 0 0)", IntVec3).min(-1.0).units("voxels").flag("--nltv-pad").parent("inversion.algorithm")
         .when(|x| x.inv("nltv") || x.qsmart_inner("nltv")).full("Padding")
         .gui("Zero-padding before the FFTs (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded"),
-        d("inversion.medi.smv", Inversion, "SMV mode", "High-pass the local field with a spherical mean value (SMV) filter, removing residual background near the brain edge (MEDI-SMV)", Bool).flag("--no-medi-smv").parent("inversion.algorithm")
+        d("inversion.medi.smv", Inversion, "SMV mode", "High-pass the local field with a spherical mean value (SMV) filter, removing residual background near the brain edge (MEDI-SMV)", Bool).basic().flag("--no-medi-smv").parent("inversion.algorithm")
         .when(|x| x.inv("medi")),
         d("inversion.medi.smv_radius", Inversion, "SMV radius", "SMV radius in mm (also mSMV's)", Float).units("mm").flag("--medi-smv-radius").parent("inversion.algorithm")
         .when(|x| x.inv("medi"))
         .gui("SMV radius (also mSMV's)"),
         d("inversion.medi.smv_shrink_mask", Inversion, "Shrink mask", "With SMV, shrink the mask to where the SMV of the mask exceeds 0.999, dropping the edge band whose SMV reaches outside it. Off keeps the full mask", Bool).flag("--no-medi-smv-shrink-mask").parent("inversion.medi.smv")
         .when(|x| x.inv("medi") && x.c.inversion.medi.smv && !x.c.inversion.medi.msmv).full("SMV mask shrinking"),
-        d("inversion.medi.msmv", Inversion, "mSMV", "Filter the local field by maximum spherical mean value (MEDI-mSMV, Roberts 2024) before MEDI; needs at least 3 echoes", Bool).flag("--medi-msmv").parent("inversion.algorithm")
+        d("inversion.medi.msmv", Inversion, "mSMV", "Filter the local field by maximum spherical mean value (MEDI-mSMV, Roberts 2024) before MEDI; needs at least 3 echoes", Bool).basic().flag("--medi-msmv").parent("inversion.algorithm")
         .when(|x| x.inv("medi")).full("MEDI-mSMV")
         .gui("Filter the local field by maximum spherical mean value (mSMV) before MEDI, which removes residual background at the brain edge; needs at least three echoes"),
         // QSM.rs inversion/msmv.rs: the boundary correction makes at most maxk − 1 passes.
@@ -615,7 +615,7 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.inv("medi") || x.qsmart_inner("medi")),
         // QSM.rs inversion/medi.rs: the CSF term needs R2* from at least 3 echoes; with fewer, MEDI
         // runs without it (and the run says so, requirements::medi_csf_note).
-        d("inversion.medi.csf", Inversion, "CSF reference", "Zero-reference χ to the ventricular CSF and keep it uniform there (MEDI+0, Liu 2018); needs at least 3 echoes, with fewer MEDI runs without it", Bool).flag("--medi-csf").parent("inversion.algorithm")
+        d("inversion.medi.csf", Inversion, "CSF reference", "Zero-reference χ to the ventricular CSF and keep it uniform there (MEDI+0, Liu 2018); needs at least 3 echoes, with fewer MEDI runs without it", Bool).basic().flag("--medi-csf").parent("inversion.algorithm")
         .when(|x| x.inv("medi") || x.qsmart_inner("medi")).full("CSF zero reference (MEDI+0)")
         .gui("Zero-reference the susceptibility to the ventricular CSF, found from R2*, and keep it uniform there (MEDI+0); needs at least three echoes, with fewer MEDI runs without it"),
         d("inversion.medi.lambda_csf", Inversion, "Lambda CSF", "Weight of the CSF uniformity term", Float).min(0.0).flag("--medi-lambda-csf").parent("inversion.medi.csf")
@@ -656,7 +656,7 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.inv("tfi")),
         d("inversion.tfi.merit", Inversion, "MERIT", "Iteratively down-weight voxels whose residual stays large", Bool).flag("--tfi-merit").parent("inversion.algorithm")
         .when(|x| x.inv("tfi")),
-        d("inversion.tfi.linear", Inversion, "Linear data term", "Fit the field linearly, as the TFI paper does (default); off uses MEDI's exponential data term", Bool).flag("--tfi-linear").parent("inversion.algorithm")
+        d("inversion.tfi.linear", Inversion, "Linear data term", "Fit the field linearly, as the TFI paper does (default); off uses MEDI's exponential data term", Bool).basic().flag("--tfi-linear").parent("inversion.algorithm")
         .when(|x| x.inv("tfi"))
         .gui("Fit the field linearly, as the TFI paper does; off uses MEDI's exponential data term"),
         d("inversion.tfi.data_weighting", Inversion, "Data weighting", "", Enum(vec![
@@ -703,7 +703,7 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.inv("lsqr")).full("LSQR maximum iterations"),
         // Shown wherever HEIDI can follow the inversion, and wherever it is on (so it can be
         // turned off after a change to a method it cannot follow).
-        d("inversion.heidi.enabled", Inversion, "HEIDI", "Streaking reduction after the inversion: keep the map's well-conditioned k-space and refill the dipole cone under a homogeneity prior (HEIDI). With LSQR this is HEIDI as published", Bool).flag("--heidi").parent("inversion.algorithm")
+        d("inversion.heidi.enabled", Inversion, "HEIDI", "Streaking reduction after the inversion: keep the map's well-conditioned k-space and refill the dipole cone under a homogeneity prior (HEIDI). With LSQR this is HEIDI as published", Bool).basic().flag("--heidi").parent("inversion.algorithm")
         .when(|x| x.heidi_offered() || x.heidi())
         .full("HEIDI streaking reduction")
         .gui("Streaking reduction after the inversion: HEIDI keeps the map's well-conditioned k-space and refills the dipole cone under a homogeneity prior. With LSQR this is HEIDI as published"),
@@ -751,7 +751,7 @@ pub(super) fn table() -> Vec<Def> {
             o("tikhonov", "tikhonov", "Tikhonov", "Tikhonov L2 regularization"),
             o("nltv", "nltv", "NLTV", "Nonlinear Total Variation (NLTV)"),
             o("medi", "medi", "MEDI", "Morphology Enabled Dipole Inversion (MEDI)"),
-        ])).flag("--qsmart-inversion").parent("inversion.algorithm")
+        ])).basic().flag("--qsmart-inversion").parent("inversion.algorithm")
         .when(|x| x.inv("qsmart"))
         .gui("The dipole inversion QSMART runs in each of its two stages"),
         // QSM.rs inversion/ilsqr.rs: 0 iterations give an all-zero map.
@@ -950,7 +950,7 @@ pub(super) fn table() -> Vec<Def> {
         .gui("How the orientations of a group are combined into one map"),
         d("multi_orientation.lambda", MultiOrientation, "Lambda", "Regularization (blank = 0, plain least squares). Raise for 2 orientations or single-axis rotations", Float).flag("--multi-orientation-lambda").unavailable_in_browser().parent("multi_orientation.group_by")
         .gui("Regularisation weight; 0 is plain least squares. Raise it for 2 orientations or single-axis rotations"),
-        d("multi_orientation.reference", MultiOrientation, "Reference orientation", "Orientation the others are registered onto, whose grid and segmentation the group map uses: a glob over the run key (*acq-Neutral*) or a word in it. Blank = first by name. Pick the neutral head position", Text).flag("--orientation-reference").unavailable_in_browser().parent("multi_orientation.group_by"),
+        d("multi_orientation.reference", MultiOrientation, "Reference orientation", "Orientation the others are registered onto, whose grid and segmentation the group map uses: a glob over the run key (*acq-Neutral*) or a word in it. Blank = first by name. Pick the neutral head position", Text).basic().flag("--orientation-reference").unavailable_in_browser().parent("multi_orientation.group_by"),
         d("multi_orientation.magnitude_weighting", MultiOrientation, "COSMOS magnitude weighting", "COSMOS groups: weight each orientation by its combined magnitude (conjugate-gradient solve). Off = closed-form least squares", Bool).flag("--cosmos-magnitude-weighting").unavailable_in_browser().parent("multi_orientation.algorithm")
         .when(|x| x.cosmos),
         // QSMxT MultiOrientationConfig::validate: tolerance must be > 0.
@@ -959,7 +959,7 @@ pub(super) fn table() -> Vec<Def> {
         // QSMxT MultiOrientationConfig::validate: at least one iteration.
         d("multi_orientation.cosmos_max_iter", MultiOrientation, "CG max iterations", "Conjugate-gradient iteration cap of weighted COSMOS", Int).min(1.0).flag("--cosmos-max-iter").unavailable_in_browser().parent("multi_orientation.magnitude_weighting")
         .when(|x| x.cosmos && x.c.multi_orientation.magnitude_weighting).full("CG maximum iterations"),
-        d("multi_orientation.register", MultiOrientation, "Co-register", "Co-register orientations that need it, with the registration settings below. Off = refuse such groups", Bool).flag("--no-orientation-registration").unavailable_in_browser().parent("multi_orientation.group_by"),
+        d("multi_orientation.register", MultiOrientation, "Co-register", "Co-register orientations that need it, with the registration settings below. Off = refuse such groups", Bool).basic().flag("--no-orientation-registration").unavailable_in_browser().parent("multi_orientation.group_by"),
         d("multi_orientation.force", MultiOrientation, "Force", "Reconstruct even when the B0 directions look degenerate (wrong metadata gives a plausible wrong map)", Bool).flag("--multi-orientation-force").unavailable_in_browser().parent("multi_orientation.group_by").full("Force reconstruction"),
         d("qsm.reference", Reference, "QSM reference", "", Enum(vec![
             o("mean", "mean", "Mean", "Subtract the mean susceptibility over the voxels the map is defined on (recommended)"),
@@ -1128,7 +1128,7 @@ pub(super) fn table() -> Vec<Def> {
         d("separation.chi_sepnet.route", Separation, "Route", "", Enum(vec![
             o("toolbox", "toolbox", "Toolbox (default)", "The authors' route: the inputs in the network's training frame (B0 along z, 1 mm), the QSM channel from QSMnetME, R2' measured or predicted from R2* by R2PRIMEnet, the maps resampled back"),
             o("native", "native", "Network only", "The network alone on the acquired grid, given this run's QSM and R2', as a sliding window"),
-        ])).flag("--chi-sepnet-route").parent("separation.algorithm")
+        ])).basic().flag("--chi-sepnet-route").parent("separation.algorithm")
         .when(|x| x.sep("chi-sepnet")).full("χ-sepnet route")
         .gui("How χ-sepnet's inputs are prepared: the authors' route or the network alone"),
         d("separation.chi_sepnet.patch", Separation, "Patch", "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)", IntVec3).min(qsm_core::separation::chisepnet::POOL_MULTIPLE as f64).units("voxels").flag("--chi-sepnet-patch").parent("separation.chi_sepnet.route")
@@ -1142,7 +1142,7 @@ pub(super) fn table() -> Vec<Def> {
         d("separation.susep_net.patch", Separation, "Sliding window", "Run the network on patches D H W in voxels, each a multiple of 8, so its memory follows the patch instead of the volume; empty runs the whole volume at once", IntVec3).min(qsm_core::separation::susep_net::POOL_MULTIPLE as f64).units("voxels").optional().flag("--susep-net-patch").parent("separation.algorithm")
         .when(|x| x.sep("susep-net")).full("SUSEP-Net sliding window")
         .gui("Patch size for running SUSEP-Net piece by piece, which needs less memory; empty runs the whole volume at once"),
-        d("separation.custom_qsm_tool", Separation, "Custom QSM tool", "Use a Chimap from <bids>/derivatives/<tool>/ instead of recomputing QSM (χ-separation, statistics, SMWI); blank = compute, * = any tool", Text).optional().flag("--use-custom-qsm").also(&[SwiSmwi, Segmentation])
+        d("separation.custom_qsm_tool", Separation, "Custom QSM tool", "Use a Chimap from <bids>/derivatives/<tool>/ instead of recomputing QSM (χ-separation, statistics, SMWI); blank = compute, * = any tool", Text).basic().optional().flag("--use-custom-qsm").also(&[SwiSmwi, Segmentation])
         .supplied_file(Item::SuppliedChi, "A susceptibility (χ) map to use instead of computing QSM, for χ-separation, the statistics and SMWI")
         .when(|x| x.reads_qsm).full("Custom QSM")
         .gui("Use a χ map (Chimap) from <bids>/derivatives/<tool>/ instead of computing QSM, for χ-separation, the statistics and SMWI: * for any tool, or a tool name; empty to compute it"),
@@ -1173,7 +1173,7 @@ pub(super) fn table() -> Vec<Def> {
         d("swi.mip_window", SwiSmwi, "mIP window", "Minimum intensity projection window size in slices", Int).min(1.0).units("slices").flag("--swi-mip-window").parent("pipeline.do_swi")
         .when(|x| x.c.pipeline.do_swi)
         .gui("Minimum-intensity-projection window").context("SWI"),
-        d("swi.filtered_phase", SwiSmwi, "Filtered phase", "Also write the high-pass filtered phase the SWI is weighted by (desc-swi_phase): Hz for several echoes, radians for one", Bool).flag("--swi-filtered-phase").parent("pipeline.do_swi")
+        d("swi.filtered_phase", SwiSmwi, "Filtered phase", "Also write the high-pass filtered phase the SWI is weighted by (desc-swi_phase): Hz for several echoes, radians for one", Bool).basic().flag("--swi-filtered-phase").parent("pipeline.do_swi")
         .when(|x| x.c.pipeline.do_swi).full("SWI filtered phase").context("SWI"),
         d("pipeline.do_smwi", SwiSmwi, "Compute SMWI", "Susceptibility map-weighted imaging — weights the magnitude by a mask built from χ, not from filtered phase. Needs QSM", Bool).basic().flag("--do-smwi"),
         d("smwi.threshold_ppm", SwiSmwi, "Threshold", "|χ| in ppm at which the weighting mask reaches zero. The 1 ppm default targets strong sources; brain tissue wants far less", Float).units("ppm").flag("--smwi-threshold").parent("pipeline.do_smwi")
@@ -1190,13 +1190,13 @@ pub(super) fn table() -> Vec<Def> {
         d("pipeline.do_r2starmap", Relaxometry, "Compute R2* map", "Compute R2* decay rate map (requires 3+ echoes with magnitude)", Bool).basic().flag("--do-r2starmap"),
         d("pipeline.do_r2map", Relaxometry, "Compute R2 map", "R2 map (Hz) from a multi-echo spin-echo (MESE) acquisition via EPG. Forced on when chi-separation needs it", Bool).basic().flag("--do-r2map")
         .gui("R2 map from a multi-echo spin-echo (MESE) acquisition via EPG. Forced on when χ-separation needs it"),
-        d("separation.custom_r2_tool", Relaxometry, "Custom R2 tool", "Use an R2 map from <bids>/derivatives/<tool>/ instead of computing it from MESE (blank = compute, * = any tool)", Text).optional().flag("--use-custom-r2").parent("pipeline.do_r2map")
+        d("separation.custom_r2_tool", Relaxometry, "Custom R2 tool", "Use an R2 map from <bids>/derivatives/<tool>/ instead of computing it from MESE (blank = compute, * = any tool)", Text).basic().optional().flag("--use-custom-r2").parent("pipeline.do_r2map")
         .supplied_file(Item::SuppliedR2, "An R2 map to use instead of computing one from a MESE acquisition")
         .when(|x| x.reads_r2).full("Custom R2")
         .gui("Use an R2 map from <bids>/derivatives/<tool>/ instead of computing it from MESE: * for any tool, or a tool name; empty to compute it"),
         d("pipeline.do_r2primemap", Relaxometry, "Compute R2' map", "R2' = R2* − R2 (Hz); needs GRE magnitude + a MESE acquisition, or R2PRIMEnet. Forced on when chi-separation needs it", Bool).basic().flag("--do-r2primemap")
         .gui("R2' = R2* − R2; needs GRE magnitude and a MESE acquisition, or R2PRIMEnet. Forced on when χ-separation needs it"),
-        d("separation.custom_r2prime_tool", Relaxometry, "Custom R2' tool", "Use an R2' map from <bids>/derivatives/<tool>/ instead of computing it (blank = compute, * = any tool)", Text).optional().flag("--use-custom-r2prime").parent("pipeline.do_r2primemap")
+        d("separation.custom_r2prime_tool", Relaxometry, "Custom R2' tool", "Use an R2' map from <bids>/derivatives/<tool>/ instead of computing it (blank = compute, * = any tool)", Text).basic().optional().flag("--use-custom-r2prime").parent("pipeline.do_r2primemap")
         .supplied_file(Item::SuppliedR2prime, "An R2' map to use instead of computing one")
         .when(|x| x.reads_r2prime).full("Custom R2'")
         .gui("Use an R2' map from <bids>/derivatives/<tool>/ instead of computing it: * for any tool, or a tool name; empty to compute it"),
@@ -1204,7 +1204,7 @@ pub(super) fn table() -> Vec<Def> {
             o("auto", "auto", "Automatic", "Measure R2' = R2* - R2 from a MESE acquisition when one is present, else predict it from R2* with R2PRIMEnet"),
             o("mese", "mese", "MESE", "Only ever measure R2' from a MESE acquisition - produces no R2' without spin-echo data"),
             o("r2primenet", "r2primenet", "R2PRIMEnet", "Always predict R2' from R2* with R2PRIMEnet, even when a MESE acquisition is available (an estimate, not a measurement)"),
-        ])).flag("--r2prime-strategy").parent("pipeline.do_r2primemap")
+        ])).basic().flag("--r2prime-strategy").parent("pipeline.do_r2primemap")
         .when(|x| x.computes_r2prime)
         .gui("How R2' is obtained when no R2' map is supplied"),
         d("separation.r2primenet.ignore_field_mismatch", Relaxometry, "R2PRIMEnet off 3 T", "Run R2PRIMEnet on non-3 T data (trained at 3 T only; the R2' is uncalibrated). Off: auto skips R2', r2primenet errors", Bool).flag("--r2primenet-ignore-field-mismatch").parent("separation.r2prime_strategy")
@@ -1217,14 +1217,14 @@ pub(super) fn table() -> Vec<Def> {
             && (x.c.pipeline.do_r2primemap || !crate::config::chisepnet_route_can_estimate_r2prime(x.c)))
         .gui("Sliding-window patch D H W, each a multiple of 16"),
         d("pipeline.do_segmentation", Segmentation, "Segmentation", "Whole-brain parcellation: SynthSeg straight off the GRE magnitude, or one supplied in derivatives. Forced on by the statistics and a region reference", Bool).basic().flag("--do-segmentation"),
-        d("segmentation.custom_dseg_tool", Segmentation, "Derivatives tool", "The dseg from <bids>/derivatives/<tool>/: * = any tool, or a tool name; SynthSeg runs where none is found", Text).optional().flag("--use-custom-dseg").parent("pipeline.do_segmentation")
+        d("segmentation.custom_dseg_tool", Segmentation, "Derivatives tool", "The dseg from <bids>/derivatives/<tool>/: * = any tool, or a tool name; SynthSeg runs where none is found", Text).basic().optional().flag("--use-custom-dseg").parent("pipeline.do_segmentation")
         .supplied_file(Item::SuppliedSegmentation, "A segmentation to use instead of running SynthSeg")
         .when(|x| x.segmentation_on).full("Custom segmentation")
         .gui("Use a segmentation (dseg) from <bids>/derivatives/<tool>/ instead of running SynthSeg: * for any tool, or a tool name. SynthSeg runs where none is found"),
         d("segmentation.version", Segmentation, "SynthSeg version", "", Enum(vec![
             o("v1", "v1", "SynthSeg 1", "v1: 32 labels, weights ship with SynthSeg. v2: 33 labels (adds CSF); its weights are not published yet, so a run with v2 is refused unless synthseg-2.0.onnx is in $QSM_MODEL_DIR"),
             o("v2", "v2", "SynthSeg 2", "v1: 32 labels, weights ship with SynthSeg. v2: 33 labels (adds CSF); its weights are not published yet, so a run with v2 is refused unless synthseg-2.0.onnx is in $QSM_MODEL_DIR"),
-        ])).flag("--synthseg-version").parent("pipeline.do_segmentation")
+        ])).basic().flag("--synthseg-version").parent("pipeline.do_segmentation")
         .when(|x| x.segmentation_on && x.c.segmentation.custom_dseg_tool.is_none())
         .gui("Which SynthSeg model segments the brain"),
         // QSM.rs segment/synthseg.rs: a crop of 0 gives the network an empty input.
