@@ -107,14 +107,14 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--rts-tau <RTS_TAU>` | RTS: rho is raised when the primal residual falls by less than this factor (tau) |
 | `--rts-gamma <RTS_GAMMA>` | RTS: the factor rho is raised by (gamma) |
 | `--rts-pad <X> <Y> <Z>` | RTS zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
-| `--tv-lambda <TV_LAMBDA>` | TV lambda parameter. |
+| `--tv-lambda <TV_LAMBDA>` | TV lambda parameter (default: 0.0003) |
 | `--tv-rho <RHO>` | TV rho (ADMM penalty), or auto for 100 × lambda (default: auto) |
 | `--tv-tol <TV_TOL>` | TV tolerance. |
 | `--tv-max-iter <TV_MAX_ITER>` | TV max iterations. |
 | `--tv-pad <X> <Y> <Z>` | TV zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
-| `--tkd-threshold <TKD_THRESHOLD>` | TKD threshold. |
+| `--tkd-threshold <TKD_THRESHOLD>` | TKD threshold on \|D\|; larger is smoother and underestimates χ more (default: 0.25) |
 | `--tkd-pad <X> <Y> <Z>` | TKD zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
-| `--tsvd-threshold <TSVD_THRESHOLD>` | TSVD threshold. |
+| `--tsvd-threshold <TSVD_THRESHOLD>` | TSVD threshold on \|D\| (default: 0.15) |
 | `--tsvd-pad <X> <Y> <Z>` | TSVD zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--tgv-iterations <TGV_ITERATIONS>` | TGV iterations (default: from the voxel size, as the reference does) |
 | `--tgv-erosions <TGV_EROSIONS>` | TGV erosions. |
@@ -597,14 +597,14 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--rts-tau <RTS_TAU>` | RTS: rho is raised when the primal residual falls by less than this factor (tau) |
 | `--rts-gamma <RTS_GAMMA>` | RTS: the factor rho is raised by (gamma) |
 | `--rts-pad <X> <Y> <Z>` | RTS zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
-| `--tv-lambda <TV_LAMBDA>` | TV lambda parameter. |
+| `--tv-lambda <TV_LAMBDA>` | TV lambda parameter (default: 0.0003) |
 | `--tv-rho <RHO>` | TV rho (ADMM penalty), or auto for 100 × lambda (default: auto) |
 | `--tv-tol <TV_TOL>` | TV tolerance. |
 | `--tv-max-iter <TV_MAX_ITER>` | TV max iterations. |
 | `--tv-pad <X> <Y> <Z>` | TV zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
-| `--tkd-threshold <TKD_THRESHOLD>` | TKD threshold. |
+| `--tkd-threshold <TKD_THRESHOLD>` | TKD threshold on \|D\|; larger is smoother and underestimates χ more (default: 0.25) |
 | `--tkd-pad <X> <Y> <Z>` | TKD zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
-| `--tsvd-threshold <TSVD_THRESHOLD>` | TSVD threshold. |
+| `--tsvd-threshold <TSVD_THRESHOLD>` | TSVD threshold on \|D\| (default: 0.15) |
 | `--tsvd-pad <X> <Y> <Z>` | TSVD zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--tgv-iterations <TGV_ITERATIONS>` | TGV iterations (default: from the voxel size, as the reference does) |
 | `--tgv-erosions <TGV_EROSIONS>` | TGV erosions. |
@@ -1021,14 +1021,14 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--rts-tau <RTS_TAU>` | RTS: rho is raised when the primal residual falls by less than this factor (tau) |
 | `--rts-gamma <RTS_GAMMA>` | RTS: the factor rho is raised by (gamma) |
 | `--rts-pad <X> <Y> <Z>` | RTS zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
-| `--tv-lambda <TV_LAMBDA>` | TV lambda parameter. |
+| `--tv-lambda <TV_LAMBDA>` | TV lambda parameter (default: 0.0003) |
 | `--tv-rho <RHO>` | TV rho (ADMM penalty), or auto for 100 × lambda (default: auto) |
 | `--tv-tol <TV_TOL>` | TV tolerance. |
 | `--tv-max-iter <TV_MAX_ITER>` | TV max iterations. |
 | `--tv-pad <X> <Y> <Z>` | TV zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
-| `--tkd-threshold <TKD_THRESHOLD>` | TKD threshold. |
+| `--tkd-threshold <TKD_THRESHOLD>` | TKD threshold on \|D\|; larger is smoother and underestimates χ more (default: 0.25) |
 | `--tkd-pad <X> <Y> <Z>` | TKD zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
-| `--tsvd-threshold <TSVD_THRESHOLD>` | TSVD threshold. |
+| `--tsvd-threshold <TSVD_THRESHOLD>` | TSVD threshold on \|D\| (default: 0.15) |
 | `--tsvd-pad <X> <Y> <Z>` | TSVD zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--tgv-iterations <TGV_ITERATIONS>` | TGV iterations (default: from the voxel size, as the reference does) |
 | `--tgv-erosions <TGV_EROSIONS>` | TGV erosions. |
@@ -2329,7 +2329,7 @@ qsmxt invert tv [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
-| `--lambda <LAMBDA>` | Lambda parameter. |
+| `--lambda <LAMBDA>` | Lambda parameter (default: 0.0003) |
 | `--rho <RHO>` | Rho (ADMM penalty), or auto for 100 × lambda (default: auto) |
 | `--tol <TOL>` | Tolerance. |
 | `--max-iter <MAX_ITER>` | Max iterations. |
@@ -2351,7 +2351,7 @@ qsmxt invert tkd [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
-| `--threshold <THRESHOLD>` | Threshold. |
+| `--threshold <THRESHOLD>` | Threshold on \|D\|; larger is smoother and underestimates χ more (default: 0.25) |
 | `--pad <X> <Y> <Z>` | Zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 
 ### `qsmxt invert tsvd`
@@ -2370,7 +2370,7 @@ qsmxt invert tsvd [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
-| `--threshold <THRESHOLD>` | Threshold. |
+| `--threshold <THRESHOLD>` | Threshold on \|D\| (default: 0.15) |
 | `--pad <X> <Y> <Z>` | Zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 
 ### `qsmxt invert tgv`

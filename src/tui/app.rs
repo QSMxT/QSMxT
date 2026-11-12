@@ -2657,7 +2657,7 @@ impl Default for PipelineFormState {
             tv_tol: format!("{}", tv.tol),
             tv_max_iter: format!("{}", tv.max_iter),
             tkd_threshold: format!("{}", tkd.threshold),
-            tsvd_threshold: format!("{}", tkd.threshold),
+            tsvd_threshold: format!("{}", qsm_core::inversion::TsvdParams::default().threshold),
             rts_pad: inv_pad(rts.pad),
             tv_pad: inv_pad(tv.pad),
             tkd_pad: inv_pad(tkd.pad),
@@ -4009,7 +4009,7 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "tv_pad", help: "Zero-padding before the FFTs, voxels (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default 0 0 0)" });
             }
             "tkd" => { // TKD
-                rows.push(PipelineRow::Param { label: "  Threshold", field: "tkd_threshold", help: "Truncation threshold for k-space division (0.1-0.2)" });
+                rows.push(PipelineRow::Param { label: "  Threshold", field: "tkd_threshold", help: "Truncation threshold for k-space division (0.1-0.3); larger is smoother and underestimates χ more" });
                 rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "tkd_pad", help: "Zero-padding before the FFTs, voxels (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default 0 0 0)" });
             }
             "tsvd" => { // TSVD
@@ -4136,7 +4136,7 @@ impl PipelineFormState {
                         rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "tv_pad", help: "Zero-padding before the FFTs, voxels (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default 0 0 0)" });
                     }
                     3 => { // TKD
-                        rows.push(PipelineRow::Param { label: "  Threshold", field: "tkd_threshold", help: "Truncation threshold for k-space division (0.1-0.2)" });
+                        rows.push(PipelineRow::Param { label: "  Threshold", field: "tkd_threshold", help: "Truncation threshold for k-space division (0.1-0.3); larger is smoother and underestimates χ more" });
                         rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "tkd_pad", help: "Zero-padding before the FFTs, voxels (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default 0 0 0)" });
                     }
                     4 => { // TSVD

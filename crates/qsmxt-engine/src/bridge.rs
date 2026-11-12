@@ -280,7 +280,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
     let inversion = PInversion {
         algorithm: map_alg(cfg.inversion.algorithm),
         tkd: qsm_core::inversion::TkdParams { threshold: cfg.inversion.tkd.threshold, pad: cfg.inversion.tkd.pad },
-        tsvd: qsm_core::inversion::TkdParams { threshold: cfg.inversion.tsvd.threshold, pad: cfg.inversion.tsvd.pad },
+        tsvd: qsm_core::inversion::TsvdParams { threshold: cfg.inversion.tsvd.threshold, pad: cfg.inversion.tsvd.pad },
         tikhonov: qsm_core::inversion::TikhonovParams {
             lambda: cfg.inversion.tikhonov.lambda,
             pad: cfg.inversion.tikhonov.pad,
@@ -299,6 +299,8 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             rho: cfg.inversion.rts.rho, tol: cfg.inversion.rts.tol,
             max_iter: cfg.inversion.rts.max_iter, lsmr_iter: cfg.inversion.rts.lsmr_iter,
             tau: cfg.inversion.rts.tau, gamma: cfg.inversion.rts.gamma, pad: cfg.inversion.rts.pad,
+            // QSM.jl's iteration-1 convergence check: a QSM.rs parity option, not a setting.
+            ..Default::default()
         },
         nltv: qsm_core::inversion::NltvParams {
             lambda: cfg.inversion.nltv.lambda, rho: cfg.inversion.nltv.rho, mu: cfg.inversion.nltv.mu,
