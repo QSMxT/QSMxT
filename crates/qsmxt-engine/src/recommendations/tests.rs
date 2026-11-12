@@ -322,7 +322,8 @@ fn reference_findings_are_information_only() {
 /// recommendations: preselected and applied by `--accept-recommendations`.
 #[test]
 fn suggestions_are_offered_but_not_applied() {
-    for (alg, rule) in [(QsmAlgorithm::Ndi, "ndi.weight-norm-in-vivo")] {
+    {
+        let (alg, rule) = (QsmAlgorithm::Ndi, "ndi.weight-norm-in-vivo");
         let mut c = PipelineConfig::default();
         c.inversion.algorithm = alg;
         let found = recommendations(&c, &Facts::default());
