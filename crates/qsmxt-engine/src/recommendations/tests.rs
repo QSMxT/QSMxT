@@ -316,12 +316,14 @@ fn reference_findings_are_information_only() {
     assert!(applied.iter().any(|a| a.rule == "rts.bg-vsharp") && c.bg_removal.algorithm == BfAlgorithm::Vsharp, "{applied:?}");
 }
 
-/// A suggestion (QSM.rs's `Strength::Suggested`: NDI's in-mask normaliser, WH-QSM's in-mask flat
-/// weight) is offered with its reason, but `--accept-recommendations` leaves it, it can be kept,
-/// and it is not a departure in the methods Note. iHARPERELLA's whole rim is a plain recommendation.
+/// A suggestion (QSM.rs's `Strength::Suggested`: NDI's in-mask normaliser) is offered with its
+/// reason, but `--accept-recommendations` leaves it, it can be kept, and it is not a departure in
+/// the methods Note. iHARPERELLA's whole rim and WH-QSM's in-mask flat weight are plain
+/// recommendations: preselected and applied by `--accept-recommendations`.
 #[test]
 fn suggestions_are_offered_but_not_applied() {
-    for (alg, rule) in [(QsmAlgorithm::Ndi, "ndi.weight-norm-in-vivo"), (QsmAlgorithm::Whqsm, "whqsm.flat-in-mask-in-vivo")] {
+    {
+        let (alg, rule) = (QsmAlgorithm::Ndi, "ndi.weight-norm-in-vivo");
         let mut c = PipelineConfig::default();
         c.inversion.algorithm = alg;
         let found = recommendations(&c, &Facts::default());
@@ -344,6 +346,14 @@ fn suggestions_are_offered_but_not_applied() {
     assert!(r.strength == Strength::Recommended && r.strength.preselected());
     accept(&mut c, &found, Accept { recommendations: true, reference: false });
     assert_eq!(c.bg_removal.iharperella.rim, HarperellaRim::Whole);
+    let mut c = PipelineConfig::default();
+    c.inversion.algorithm = QsmAlgorithm::Whqsm;
+    assert_eq!(c.inversion.whqsm.weight, WhqsmWeight::Flat, "the authors' flat weight stays the default");
+    let found = recommendations(&c, &Facts::default());
+    let r = found.iter().find(|r| r.rule == "whqsm.flat-in-mask").unwrap_or_else(|| panic!("{found:?}"));
+    assert!(r.strength == Strength::Recommended && r.strength.preselected());
+    accept(&mut c, &found, Accept { recommendations: true, reference: false });
+    assert_eq!(c.inversion.whqsm.weight, WhqsmWeight::FlatInMask);
 }
 
 /// Each finding carries its kind, from QSM.rs: the authors' setting for a `reference` rule,

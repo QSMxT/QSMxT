@@ -1138,6 +1138,24 @@ mod tests {
         assert!(RecModal::new(rim).rows[0].checked);
     }
 
+    /// Choosing WH-QSM offers its in-mask flat weight as a recommendation, ticked; Apply takes it.
+    /// The authors' flat weight stays the default until then.
+    #[test]
+    fn choosing_whqsm_ticks_its_in_mask_weight() {
+        let mut app = app();
+        select(&mut app, "qsm_algorithm", "whqsm", &QSM_PICKER_OPTIONS);
+        let c = super::super::command::config_from_app(&app).unwrap();
+        assert_eq!(c.inversion.whqsm.weight, qsmxt_engine::enums::WhqsmWeight::Flat, "nothing rewritten");
+        let modal = app.rec_modal.as_ref().expect("the recommendation's pop-up");
+        let row = modal.rows.iter().find(|r| r.finding.rule == "whqsm.flat-in-mask").expect("its row");
+        assert!(row.checked && row.finding.strength == Strength::Recommended);
+        let text = screen(&mut app, "WH-QSM chosen");
+        assert!(text.contains("Data weight (WH-QSM)  Flat → Flat in mask") && text.contains("(recommended)"), "{text}");
+        key(&mut app, KeyCode::Enter);
+        let c = super::super::command::config_from_app(&app).unwrap();
+        assert_eq!(c.inversion.whqsm.weight, qsmxt_engine::enums::WhqsmWeight::FlatInMask);
+    }
+
     #[test]
     fn ignore_dismisses_until_the_setting_changes_and_esc_leaves_a_badge() {
         let mut app = medi_msmv_without_prefilter();
