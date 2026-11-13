@@ -275,6 +275,7 @@ mod tests {
             acq: "bridge",
             run: 1,
             osf_id: "000000000000000000000000",
+            osf_version: 1,
             bytes,
             sha256: sha,
         }
