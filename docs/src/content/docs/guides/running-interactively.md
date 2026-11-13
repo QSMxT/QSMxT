@@ -72,7 +72,9 @@ The Pipeline tab lists QSMxT's defaults and the original toolboxes' pipelines: t
 toolbox, STI Suite (iLSQR and STAR-QSM), QSMART, the HEIDI package, the χ-separation toolbox
 (iLSQR, MEDI and χ-sepnet) and DECOMPOSE. Next to the list, the highlighted pipeline is
 compared with your settings: each setting choosing it would change, from your value to the
-pipeline's. *About*, at the top of the list, explains what the toolbox pipelines are, with
+pipeline's. Where a toolbox pipeline is known to differ from the toolbox's own, a note above
+the comparison says how: for bipolar readouts, the MEDI toolbox uses a bipolar echo fit, which
+is not supported yet, so its pipeline here always uses the monopolar fit. *About*, at the top of the list, explains what the toolbox pipelines are, with
 a link to [QSM-CI's parity checks](https://qsmxt.github.io/QSM-CI/parity.html); `Enter` there
 copies the link.
 

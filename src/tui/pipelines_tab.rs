@@ -3,7 +3,8 @@
 //!
 //! - **The list** is the engine's ([`pipelines::pipelines`]): QSMxT's defaults, then the
 //!   toolboxes. Beside it, the step-by-step comparison of the highlighted pipeline with the form's
-//!   settings ([`pipelines::changes`]).
+//!   settings ([`pipelines::changes`]), under a note of the pipeline's known gap with the
+//!   toolbox's own when it has one (MEDI's bipolar echo fit), as in the preview.
 //! - **Choosing** (Enter) opens a preview of every change ([`PreviewModal`]): Apply (preselected:
 //!   choosing the pipeline is the request) or Cancel. Nothing changes before Apply.
 //! - **Applying** resets every reconstruction page, shown settings and hidden ones
@@ -393,6 +394,19 @@ fn change_lines(changes: &[Change]) -> Vec<Line<'static>> {
     lines
 }
 
+/// The pipeline's known gap with the toolbox's own (MEDI's bipolar echo fit), when it has one,
+/// then a blank line: shown first with its details and in its preview, so it is read before
+/// choosing.
+fn note_lines(p: &Pipeline) -> Vec<Line<'static>> {
+    p.note.map_or_else(Vec::new, |n| vec![
+        Line::from(vec![
+            Span::styled("Note: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::raw(n),
+        ]),
+        Line::from(""),
+    ])
+}
+
 /// What the comparison says beyond the changes: what is reset, and the recommendations that are
 /// not part of the pipeline.
 fn summary_lines(c: &Compared) -> Vec<Line<'static>> {
@@ -498,6 +512,7 @@ pub fn draw(f: &mut Frame, app: &mut App, area: Rect) {
     let p = app.highlighted_pipeline();
     let mut right = vec![Line::from(Span::styled(p.toolbox.unwrap_or(p.name).to_string(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))];
     right.push(Line::from(""));
+    right.extend(note_lines(&p));
     match app.highlighted_changes() {
         Err(e) => right.push(Line::from(Span::styled(e, Style::default().fg(Color::Red)))),
         Ok(c) => {
@@ -519,13 +534,14 @@ pub fn draw(f: &mut Frame, app: &mut App, area: Rect) {
 /// The preview: every change, what is reset, then Apply / Cancel.
 pub fn draw_preview(f: &mut Frame, m: &mut PreviewModal, area: Rect, hits: &super::mouse::Hits) {
     let w = area.width.saturating_sub(8).min(110);
-    let mut lines = vec![
-        Line::from(""),
+    let mut lines = vec![Line::from("")];
+    lines.extend(note_lines(&m.pipeline));
+    lines.extend([
         Line::from(Span::styled(
             format!("Choosing {} changes these settings:", p_name(&m.pipeline)),
             Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
         Line::from(""),
-    ];
+    ]);
     lines.extend(change_lines(&m.compared.changes));
     lines.push(Line::from(""));
     lines.extend(summary_lines(&m.compared));
@@ -706,13 +722,15 @@ mod tests {
         key(&mut app, KeyCode::Char('2'));
         assert_eq!(app.active_tab, super::super::app::TAB_PIPELINE);
         let text = screen(&mut app);
-        assert!(text.contains("TOOLBOX PIPELINES") && text.contains("Pipeline: QSMxT defaults"), "{text}");
+        assert!(text.contains("TOOLBOX PIPELINES") && text.contains("Pipeline: QSMxT defaults") && !text.contains("Note:"), "{text}");
         key(&mut app, KeyCode::Down);
         let text = screen(&mut app);
         assert!(text.contains("MEDI toolbox 2024.11.26") && text.contains("Choosing it changes"), "{text}");
+        // MEDI's known gap is noted with its details and in its preview; QSMxT's defaults have none.
+        assert!(text.contains("Note: For bipolar readouts"), "{text}");
         key(&mut app, KeyCode::Enter);
         let text = screen(&mut app);
-        assert!(text.contains("Apply MEDI toolbox"), "{text}");
+        assert!(text.contains("Apply MEDI toolbox") && text.contains("Note: For bipolar readouts"), "{text}");
         assert_eq!(app.pipeline_status().text(), "QSMxT defaults", "nothing changes before Apply");
         key(&mut app, KeyCode::Enter);
         assert!(app.pipelines.preview.is_none());

@@ -57,15 +57,18 @@ pub struct Pipeline {
     pub toolbox: Option<&'static str>,
     /// Where the pipeline is written down.
     pub source: Option<&'static str>,
+    /// A known gap between it and the toolbox's own pipeline, as a front end shows it with the
+    /// pipeline's details (QSM.rs's [`ReferencePipeline::note`]).
+    pub note: Option<&'static str>,
 }
 
 impl Pipeline {
     fn defaults() -> Self {
-        Pipeline { id: QSMXT_DEFAULTS, name: "QSMxT defaults", toolbox: None, source: None }
+        Pipeline { id: QSMXT_DEFAULTS, name: "QSMxT defaults", toolbox: None, source: None, note: None }
     }
 
     fn of(p: &'static ReferencePipeline) -> Self {
-        Pipeline { id: p.id, name: p.name, toolbox: Some(p.toolbox), source: Some(p.source) }
+        Pipeline { id: p.id, name: p.name, toolbox: Some(p.toolbox), source: Some(p.source), note: p.note }
     }
 
     /// Whether this is one of the original toolboxes' pipelines (not QSMxT's defaults).
