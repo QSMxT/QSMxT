@@ -138,10 +138,14 @@ pub enum LaplacianSolver {
     /// each axis (qsm-core's `LaplacianSolver::Mirror`): QSMART's unwrapping, which the rule
     /// `qsmart.laplacian-solver` suggests for a QSMART run.
     Mirror,
+    /// MGPCG (QSM.jl; qsm-core's `LaplacianSolver::Mgpcg`): Laplacian unwrapping with LBV
+    /// background removal in one step (Dirichlet boundary on the brain mask, solved by
+    /// multigrid-preconditioned CG). QSM.jl follows it with V-SHARP.
+    Mgpcg,
 }
 impl fmt::Display for LaplacianSolver {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", match self { Self::Dct => "dct", Self::Fft => "fft", Self::Mirror => "mirror" })
+        write!(f, "{}", match self { Self::Dct => "dct", Self::Fft => "fft", Self::Mirror => "mirror", Self::Mgpcg => "mgpcg" })
     }
 }
 impl fmt::Display for UnwrappingAlgorithm {

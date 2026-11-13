@@ -338,7 +338,12 @@ fn unwrap_need(config: &PipelineConfig, s: &Scan) -> u64 {
         // at a time: a complex volume eight times the size, 128 B a voxel (measured natively by
         // peak RSS on 178×182×148, 5 echoes: 0.46 GB above the DCT solver's).
         let mirror = if fm.laplacian_solver == LaplacianSolver::Mirror { 128 * n } else { 0 };
-        return (24 * e + 25) * n + mirror;
+        // The MGPCG solver (one echo at a time) keeps its right-hand side, solution, search
+        // direction and the multigrid's three work arrays per level (≈ 1.14× the finest), its
+        // masks and the mask's voxel list: about 64 B a voxel above the DCT solver's. Counted
+        // from its arrays, not measured.
+        let mgpcg = if fm.laplacian_solver == LaplacianSolver::Mgpcg { 64 * n } else { 0 };
+        return (24 * e + 25) * n + mirror + mgpcg;
     }
     if !fm.phase_offset_removal {
         // Each echo unwrapped and kept, then the linear fit.
@@ -1133,6 +1138,9 @@ mod tests {
         let mut mirror = laplacian.clone();
         mirror.field_mapping.laplacian_solver = LaplacianSolver::Mirror;
         assert!(unwrap(&f, &mirror, 1) > unwrap(&f, &laplacian, 1));
+        let mut mgpcg = laplacian.clone();
+        mgpcg.field_mapping.laplacian_solver = LaplacianSolver::Mgpcg;
+        assert!(unwrap(&f, &mgpcg, 1) > unwrap(&f, &laplacian, 1));
         // PRELUDE unwraps one echo at a time: no more for more threads; more for more echoes.
         let prelude = with(|c| c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Prelude);
         assert!(unwrap(&f, &prelude, 8) == unwrap(&f, &prelude, 1) && unwrap(&f, &prelude, 1) > unwrap(&three, &prelude, 1));

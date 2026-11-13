@@ -497,6 +497,7 @@ inside the mask either way.
 | `dct` | Unweighted least squares with a Neumann-boundary DCT solve (Ghiglia & Romero, 1994), as QSM.jl `:dct` (default) |
 | `fft` | Schofield & Zhu (2003): sin/cos Laplacian with an FFT Poisson solve on the volume zero-padded by `--laplacian-fft-pad` voxels per side (default 64) |
 | `mirror` | The same, solved on the volume mirrored along each axis, as QSMART unwraps (QSMART's reference) |
+| `mgpcg` | MGPCG (QSM.jl): Laplacian unwrapping with LBV background removal in one step. The Poisson equation is solved inside the brain mask with the phase held at zero outside it, by multigrid-preconditioned conjugate gradients, so the result depends on the mask. QSM.jl follows it with V-SHARP to remove remaining background; QSMxT's background removal step runs afterwards as usual |
 
 `--laplacian-fft-pad` takes one value for every axis or three (x y z); a config
 file's `field_mapping.laplacian_fft_pad` takes a number or a three-element list.

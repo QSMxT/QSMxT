@@ -49,7 +49,7 @@ fn candidates(core_path: &str) -> Vec<Value> {
     match kind {
         Mapping::MaskGenerator => ids(&["threshold", "bet", "hd-bet", "mindgrab"]),
         Mapping::HdBetInference => ids(&["full-volume", "sliding-window", "low-memory"]),
-        Mapping::LaplacianSolver => ids(&["dct", "fft-12", "fft", "mirror"]),
+        Mapping::LaplacianSolver => ids(&["dct", "fft-12", "fft", "mirror", "mgpcg"]),
         Mapping::VsharpGrid => ids(&["native", "isotropic-finest", "isotropic-1mm"]),
         Mapping::SynthSegInference => ids(&["full-volume", "low-memory"]),
         Mapping::SynthSegPatch => vec![json!(96), json!(160)],

@@ -215,6 +215,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
                 pad: cfg.field_mapping.laplacian_fft_pad,
             },
             LaplacianSolver::Mirror => qsm_core::unwrap::LaplacianSolver::Mirror,
+            LaplacianSolver::Mgpcg => qsm_core::unwrap::LaplacianSolver::Mgpcg,
         },
         laplacian_unmasked: cfg.field_mapping.laplacian_unmasked,
         romeo_params: (&cfg.field_mapping.romeo).into(),
@@ -1063,6 +1064,10 @@ mod tests {
             estimate_offset: false,
         }));
         assert_eq!(fm.laplacian_solver, qsm_core::unwrap::LaplacianSolver::Fft { pad: [40; 3] });
+
+        cfg.field_mapping.laplacian_solver = LaplacianSolver::Mgpcg;
+        let (fm, _, _, _) = to_pipeline_stages(&cfg);
+        assert_eq!(fm.laplacian_solver, qsm_core::unwrap::LaplacianSolver::Mgpcg);
     }
 
     /// The unmasked Laplacian unwrapping reaches qsm-core as set, off by default as qsm-core's is.

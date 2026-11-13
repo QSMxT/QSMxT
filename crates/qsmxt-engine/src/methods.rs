@@ -1929,6 +1929,12 @@ fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
                 LaplacianSolver::Dct => " solved as unweighted least squares with a Neumann-boundary DCT (Ghiglia & Romero, 1994)".to_string(),
                 LaplacianSolver::Fft => " with an FFT Poisson solve".to_string(),
                 LaplacianSolver::Mirror => " with an FFT Poisson solve on the volume mirrored along each axis".to_string(),
+                LaplacianSolver::Mgpcg => {
+                    doc.cite(&CITE_LBV);
+                    ", solved inside the brain mask with the phase held at zero outside it by multigrid-preconditioned \
+                     conjugate gradients as in QSM.jl, which removes the background field in the same step, \
+                     equivalent to LBV background removal (Zhou et al., 2014)".to_string()
+                }
             };
             // The phase is set to zero outside the brain mask first unless it is unwrapped raw.
             let whole = if fm.laplacian_unmasked { ", on the raw phase over the whole volume," } else { "" };
@@ -3171,6 +3177,22 @@ mod tests {
         assert!(out.contains("ROMEO"), "QSMART methods should describe unwrapping: {}", out);
         assert!(out.contains("B0 field map"), "QSMART methods should describe B0 estimation: {}", out);
         assert!(out.contains("Phase offset removal"), "QSMART methods should describe phase offset removal: {}", out);
+    }
+
+    /// QSM.jl's MGPCG solver is described with its boundary condition, which also removes the
+    /// background, and cited.
+    #[test]
+    fn mgpcg_laplacian_solver_is_described() {
+        let mut config = PipelineConfig::default();
+        config.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
+        config.field_mapping.laplacian_solver = LaplacianSolver::Mgpcg;
+        let out = generate_methods(&config);
+        for said in ["using the Laplacian method (Schofield & Zhu, 2003), solved inside the brain mask",
+                     "multigrid-preconditioned conjugate gradients as in QSM.jl",
+                     "equivalent to LBV background removal (Zhou et al., 2014)",
+                     "https://doi.org/10.1002/nbm.3064"] {
+            assert!(out.contains(said), "missing {said:?}: {out}");
+        }
     }
 
     /// QSMART's own inputs, set as the authors' implementation prepares them, are said plainly and cited: each echo's
