@@ -3051,7 +3051,7 @@ const ROBUST_FIT_LOSS_HELP: &[&str] = &[
     "Tukey biweight: rejects an echo at a voxel past the tuning radius (default)",
     "Huber: caps an outlying echo's influence but never rejects it",
 ];
-pub const LAPLACIAN_SOLVER_OPTIONS: &[&str] = &["dct", "fft", "mirror"];
+pub const LAPLACIAN_SOLVER_OPTIONS: &[&str] = &["dct", "fft", "mirror", "mgpcg"];
 pub const PRELUDE_LABELLING_OPTIONS: &[&str] = &["auto", "slices", "volume"];
 const PRELUDE_LABELLING_HELP: &[&str] = &[
     "As FSL prelude chooses: slice by slice above 64 voxels in-plane, else over the whole volume (default)",
@@ -3322,6 +3322,7 @@ const LAPLACIAN_SOLVER_HELP: &[&str] = &[
     "Unweighted least squares, Neumann-boundary DCT solve (Ghiglia & Romero 1994; QSM.jl :dct) (default)",
     "Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume",
     "Schofield & Zhu sin/cos Laplacian, FFT solve on the volume mirrored along each axis (QSMART's reference)",
+    "QSM.jl's default: Dirichlet boundary on the brain mask, multigrid-preconditioned CG; also removes the background field inside the mask",
 ];
 pub const B0_WEIGHT_TYPE_OPTIONS: &[&str] = &["phase-snr", "phase-var", "average", "tes", "mag", "assumed-decay"];
 const B0_ESTIMATION_HELP: &[&str] = &[

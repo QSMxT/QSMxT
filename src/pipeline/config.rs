@@ -436,6 +436,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
                 cli::LaplacianSolverArg::Dct => LaplacianSolver::Dct,
                 cli::LaplacianSolverArg::Fft => LaplacianSolver::Fft,
                 cli::LaplacianSolverArg::Mirror => LaplacianSolver::Mirror,
+                cli::LaplacianSolverArg::Mgpcg => LaplacianSolver::Mgpcg,
             };
         }
         if let Some(ref p) = args.laplacian_fft_pad {

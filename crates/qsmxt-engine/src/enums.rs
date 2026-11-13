@@ -138,10 +138,14 @@ pub enum LaplacianSolver {
     /// each axis (qsm-core's `LaplacianSolver::Mirror`): QSMART's unwrapping, which the rule
     /// `qsmart.laplacian-solver` suggests for a QSMART run.
     Mirror,
+    /// QSM.jl's default `:mgpcg` (qsm-core's `LaplacianSolver::Mgpcg`): the Poisson equation
+    /// solved on the brain mask with the phase held at zero outside it, by multigrid-preconditioned
+    /// CG. The boundary condition also removes the background field inside the mask.
+    Mgpcg,
 }
 impl fmt::Display for LaplacianSolver {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", match self { Self::Dct => "dct", Self::Fft => "fft", Self::Mirror => "mirror" })
+        write!(f, "{}", match self { Self::Dct => "dct", Self::Fft => "fft", Self::Mirror => "mirror", Self::Mgpcg => "mgpcg" })
     }
 }
 impl fmt::Display for UnwrappingAlgorithm {

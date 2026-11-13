@@ -225,6 +225,7 @@ mod tests {
         assert!(changed(|c| c.field_mapping.qsmart_fit_threshold_mode = crate::enums::QsmartFitThresholdMode::Percentile, "unwrap"));
         assert!(changed(|c| c.field_mapping.b0_estimation = crate::enums::B0Estimation::QsmartEchofit, "unwrap"));
         assert!(changed(|c| c.field_mapping.laplacian_solver = crate::enums::LaplacianSolver::Mirror, "unwrap"));
+        assert!(changed(|c| c.field_mapping.laplacian_solver = crate::enums::LaplacianSolver::Mgpcg, "unwrap"));
         assert!(changed(|c| c.field_mapping.laplacian_unmasked = true, "unwrap"));
         assert!(changed(|c| c.field_mapping.unwrapping_algorithm = crate::enums::UnwrappingAlgorithm::Prelude, "unwrap"));
         assert!(changed(|c| c.field_mapping.unwrapping_algorithm = crate::enums::UnwrappingAlgorithm::MediRegionGrowing, "unwrap"));

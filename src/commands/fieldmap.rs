@@ -186,6 +186,7 @@ fn laplacian_solver(args: &FieldmapLaplacianArgs) -> crate::Result<qsm_core::unw
         LaplacianSolverArg::Dct => qsm_core::unwrap::LaplacianSolver::Dct,
         LaplacianSolverArg::Fft => qsm_core::unwrap::LaplacianSolver::Fft { pad },
         LaplacianSolverArg::Mirror => qsm_core::unwrap::LaplacianSolver::Mirror,
+        LaplacianSolverArg::Mgpcg => qsm_core::unwrap::LaplacianSolver::Mgpcg,
     })
 }
 
@@ -451,6 +452,7 @@ mod tests {
             &["--laplacian-unmasked"],
             &["--laplacian-solver", "mirror", "--laplacian-unmasked", "--b0-estimation", "qsmart-echofit"],
             &["--laplacian-solver", "fft", "--laplacian-fft-pad", "12", "--b0-estimation", "linear-fit"],
+            &["--laplacian-solver", "mgpcg", "--laplacian-unmasked"],
         ];
         for flags in flag_sets {
             let mut fm = vec!["qsmxt", "fieldmap", "laplacian", "p.nii", "--mask", "m.nii", "--output", "o.nii",

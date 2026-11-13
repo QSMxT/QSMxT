@@ -170,6 +170,7 @@ pub(super) fn table() -> Vec<Def> {
             o("dct", "dct", "DCT", "Unweighted least squares, Neumann-boundary DCT solve (Ghiglia & Romero 1994; QSM.jl :dct) (default)"),
             o("fft", "fft", "FFT", "Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume"),
             o("mirror", "mirror", "Mirror", "Schofield & Zhu sin/cos Laplacian, FFT solve on the volume mirrored along each axis (QSMART's reference)"),
+            o("mgpcg", "mgpcg", "MGPCG", "QSM.jl's default: Dirichlet boundary on the brain mask, multigrid-preconditioned CG; also removes the background field inside the mask"),
         ])).flag("--laplacian-solver").parent("field_mapping.unwrapping_algorithm")
         .when(|x| x.laplacian).full("Laplacian solver")
         .gui("How Laplacian unwrapping's Poisson equation is solved"),

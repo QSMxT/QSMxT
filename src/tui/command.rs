@@ -343,7 +343,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         b0_weight_assumed_t2star: if ps.b0_estimation == 0 && ps.b0_weight_type == 5 { parse_optional_f64(&ps.b0_weight_assumed_t2star_ms) } else { None },
         // Only when Laplacian unwrapping is selected, and only when changed from the default.
         laplacian_solver: if ps.unwrapping_algorithm == 1 && ps.laplacian_solver != 0 {
-            [crate::cli::LaplacianSolverArg::Dct, crate::cli::LaplacianSolverArg::Fft, crate::cli::LaplacianSolverArg::Mirror]
+            [crate::cli::LaplacianSolverArg::Dct, crate::cli::LaplacianSolverArg::Fft, crate::cli::LaplacianSolverArg::Mirror,
+             crate::cli::LaplacianSolverArg::Mgpcg]
                 .get(ps.laplacian_solver).copied()
         } else { None },
         laplacian_fft_pad: if ps.unwrapping_algorithm == 1 && ps.laplacian_solver == 1 {
@@ -1233,6 +1234,13 @@ mod tests {
         app.pipeline_state.laplacian_fft_pad = "12".into();
         assert_eq!(config_from_app(&app).unwrap().field_mapping.laplacian_fft_pad, [12; 3]);
         assert_eq!(pipeline_args_from_app(&app).laplacian_fft_pad, Some(vec![12]));
+        // QSM.jl's MGPCG: no pad, reaches the config and the command.
+        app.pipeline_state.set_select("laplacian_solver", crate::tui::app::LAPLACIAN_SOLVER_OPTIONS.iter().position(|o| *o == "mgpcg").unwrap());
+        assert!(!fields(&app).contains(&"laplacian_fft_pad".to_string()), "mgpcg has no pad");
+        assert_eq!(config_from_app(&app).unwrap().field_mapping.laplacian_solver, qsmxt_engine::LaplacianSolver::Mgpcg);
+        let a = pipeline_args_from_app(&app);
+        assert!(matches!(a.laplacian_solver, Some(crate::cli::LaplacianSolverArg::Mgpcg)));
+        assert_eq!(a.laplacian_fft_pad, None);
     }
 
     /// The unmasked unwrapping is a Laplacian toggle, as the solver is: off by default and

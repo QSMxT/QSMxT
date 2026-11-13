@@ -476,7 +476,7 @@ enum Mapping {
     /// Each HD-BET step's inference (`full-volume`, `sliding-window`, `low-memory`,
     /// `custom-window`), its `patch` in QSMxT.
     HdBetInference,
-    /// `dct`, `fft-12`, `fft` or `mirror`: the solver and, for FFT, its padding.
+    /// `dct`, `fft-12`, `fft`, `mirror` or `mgpcg`: the solver and, for FFT, its padding.
     LaplacianSolver,
     /// `native`, `isotropic-finest`, `isotropic-1mm` or `isotropic`: the grid and its spacing.
     VsharpGrid,
@@ -694,6 +694,7 @@ fn name_of(path: &str, kind: Mapping, value: &Value) -> String {
             "fft-12" => "FFT, 12-voxel padding".into(),
             "fft" => "FFT".into(),
             "mirror" => "mirror".into(),
+            "mgpcg" => "MGPCG".into(),
             other => other.into(),
         },
         Mapping::VsharpGrid => match value.as_str().unwrap_or_default() {
@@ -1293,6 +1294,7 @@ pub(crate) fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -
             fm.laplacian_solver = match id {
                 "dct" => LaplacianSolver::Dct,
                 "mirror" => LaplacianSolver::Mirror,
+                "mgpcg" => LaplacianSolver::Mgpcg,
                 "fft" => LaplacianSolver::Fft,
                 "fft-12" => {
                     let qsm_core::unwrap::LaplacianSolver::Fft { pad } = qsm_core::unwrap::LaplacianSolver::FFT_DEFAULT_PAD

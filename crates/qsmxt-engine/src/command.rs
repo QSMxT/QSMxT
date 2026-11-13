@@ -1692,6 +1692,9 @@ frangi_c = 400.0
         assert!(generate_command(&c).contains("--laplacian-fft-pad 12"));
         c.field_mapping.laplacian_fft_pad = [64, 64, 32];
         assert!(generate_command(&c).contains("--laplacian-fft-pad 64 64 32"));
+        c.field_mapping.laplacian_solver = LaplacianSolver::Mgpcg;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--laplacian-solver mgpcg") && !cmd.contains("--laplacian-fft-pad"), "{cmd}");
     }
 
     /// MEDI's region growing is selected by `--unwrapping-algorithm medi-region-growing`, and a
