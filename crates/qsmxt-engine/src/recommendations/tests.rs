@@ -956,3 +956,105 @@ fn sti_suite_threshold_replaces_a_bet_mask() {
     assert_eq!(c.masking.sections[0].generator, MaskOp::Threshold { method: MaskThresholdMethod::StiGui, value: None });
     assert!(!recommendations(&c, &known()).iter().any(|r| r.rule == "sti.mask-threshold-gui"));
 }
+
+/// A test's values, for a one-of test.
+fn values_of(t: &Test) -> Option<Vec<Value>> {
+    match t {
+        Test::OneOf { values } => Some(values.iter().map(core_json).collect()),
+        _ => None,
+    }
+}
+
+/// The settings conditions of `a` and `b` can hold together: none names one setting with values
+/// they do not share (a mask recipe's sections can each have their own generator).
+fn compatible(a: &Rule, b: &Rule) -> bool {
+    a.when.iter().all(|ca| b.when.iter().all(|cb| match (ca, cb) {
+        (Condition::Setting { setting: sa, is: ia }, Condition::Setting { setting: sb, is: ib })
+            if sa == sb && *sa != "masking.generator" => match (values_of(ia), values_of(ib)) {
+            (Some(va), Some(vb)) => va.iter().any(|v| vb.contains(v)),
+            _ => true,
+        },
+        _ => true,
+    }))
+}
+
+/// Every pair of authors' settings of different choices on one setting that want values the other
+/// does not allow, and that apply together on a config choosing both (with the config and the
+/// facts it was found on): PDF's complex fit and AMP-PE's average of φ/TE, among others.
+fn authors_disagreements() -> Vec<(&'static Rule, &'static Rule, PipelineConfig, Facts)> {
+    let refs: Vec<&'static Rule> = core::RULES.iter().filter(|r| r.strength == core::Strength::Reference).collect();
+    let mut out = Vec::new();
+    for (i, a) in refs.iter().enumerate() {
+        for b in &refs[i + 1..] {
+            if a.setting != b.setting || a.trigger() == b.trigger() || !compatible(a, b) {
+                continue;
+            }
+            if passes(&b.expect, &core_json(&a.default)) && passes(&a.expect, &core_json(&b.default)) {
+                continue;
+            }
+            // Both chosen: the conditions of the two as one rule's.
+            let when: Vec<Condition> = a.when.iter().chain(b.when).copied().collect();
+            let both: &'static Rule = Box::leak(Box::new(Rule { when: Box::leak(when.into_boxed_slice()), ..**a }));
+            let Some(facts) = facts_for(both) else { continue };
+            let c = violating(both);
+            let view = reference_values(&c, &facts);
+            // A rule scoped out of the other's choice (STI Suite's unwrapping under the
+            // χ-separation toolbox) does not apply with it: no disagreement.
+            if view.iter().any(|r| r.rule == a.id) && view.iter().any(|r| r.rule == b.id) {
+                out.push((*a, *b, c, facts));
+            }
+        }
+    }
+    out
+}
+
+/// Every pair of chosen methods whose authors disagree on a setting (enumerated from QSM.rs's
+/// rules, not only PDF's and AMP-PE's echo combination): whichever of the two the setting
+/// follows, the other's finding is a conflict naming the first, `--accept-reference-settings`
+/// (repeated, as a run's rounds and later runs do) and Apply all leave the setting as it is, and
+/// nothing flips between the authors' values.
+#[test]
+fn authors_who_disagree_leave_the_setting_to_the_user() {
+    let pairs = authors_disagreements();
+    let names: Vec<String> = pairs.iter().map(|(a, b, _, _)| format!("{} / {}", a.id, b.id)).collect();
+    assert!(names.contains(&"pdf.field-complex-fit / amp-pe.echo-combination".to_string()), "{names:#?}");
+    assert!(pairs.len() >= 40, "only {} disagreements found: {names:#?}", pairs.len());
+    println!("{} disagreements:\n{}", names.len(), names.join("\n"));
+    let mut checked = 0;
+    for (a, b, c, facts) in &pairs {
+        for (x, y) in [(a, b), (b, a)] {
+            let mut followed = c.clone();
+            set(&mut followed, x.setting, &core_json(&x.default)).unwrap();
+            let view = reference_values(&followed, facts);
+            let (Some(rx), Some(ry)) = (view.iter().find(|r| r.rule == x.id), view.iter().find(|r| r.rule == y.id)) else { continue };
+            // x's value is one y also allows, or y's one x allows: following y's keeps both.
+            if !ry.departs || passes(&x.expect, &core_json(&y.default)) {
+                continue;
+            }
+            assert!(!rx.departs, "{}: applying its value resolves it", x.id);
+            assert!(ry.conflict, "{} departs once {} is followed, and is a conflict", y.id, x.id);
+            assert!(disagreeing(&view, ry).iter().any(|o| o.rule == x.id), "{} names {}", y.id, x.id);
+            assert!(disagreement(&view, ry).contains(&format!("{}'s authors use", rx.trigger.name)), "{}", disagreement(&view, ry));
+            let was = rx.current.clone();
+            let mut accepted = followed.clone();
+            for round in 0..4 {
+                let found = recommendations(&accepted, facts);
+                let (_, left) = accept(&mut accepted, &found, Accept { recommendations: false, reference: true });
+                let now = reference_values(&accepted, facts);
+                // Another authors' setting accepted with them can choose the method that brought
+                // one of the two in away (DECOMPOSE's STAR for STI Suite's iLSQR): then they no
+                // longer disagree.
+                let (Some(now_x), true) = (now.iter().find(|r| r.rule == x.id), now.iter().any(|r| r.rule == y.id)) else { break };
+                assert_eq!(now_x.current, was, "{} / {}, round {round}: the setting was changed", x.id, y.id);
+                if round == 0 {
+                    assert!(left.iter().any(|r| r.rule == y.id), "{} is reported as left: {left:?}", y.id);
+                }
+            }
+            let mut all = followed.clone();
+            let settled = apply_all(&mut all, &recommendations(&followed, facts)).unwrap();
+            assert!(!settled.apply.iter().any(|r| r.rule == y.id), "{}: Apply all leaves it", y.id);
+            checked += 1;
+        }
+    }
+    assert!(checked >= 40, "only {checked} checked");
+}

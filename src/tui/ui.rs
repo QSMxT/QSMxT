@@ -247,12 +247,22 @@ fn draw_checklist_modal(f: &mut Frame, modal: &mut super::recommend::AdviceModal
             }, if row.checked { Style::default().fg(Color::Green).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
             Span::styled(format!("{label:label_w$}"), label_style),
         ];
-        let change = vec![
-            Span::styled(from, Style::default().fg(Color::Gray)),
-            Span::styled(" \u{2192} ", muted),
-            Span::styled(to, if row.checked { Style::default().fg(Color::Green).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) }),
-            Span::styled(format!("  ({})", modal.tag(i)), Style::default().fg(tag_color)),
-        ];
+        let chosen = if row.checked { Style::default().fg(Color::Green).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) };
+        // A row that keeps the value the setting has (another chosen method's authors'): no arrow.
+        let change = if row.keeps {
+            vec![
+                Span::styled(to, chosen),
+                Span::styled(" (as set)", muted),
+                Span::styled(format!("  ({})", modal.tag(i)), Style::default().fg(tag_color)),
+            ]
+        } else {
+            vec![
+                Span::styled(from, Style::default().fg(Color::Gray)),
+                Span::styled(" \u{2192} ", muted),
+                Span::styled(to, chosen),
+                Span::styled(format!("  ({})", modal.tag(i)), Style::default().fg(tag_color)),
+            ]
+        };
         let first = lines.len();
         let width: usize = head.iter().chain(&change).map(|s| s.width()).sum();
         if width <= text_w {

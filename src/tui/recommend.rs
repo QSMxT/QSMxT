@@ -23,6 +23,11 @@
 //!   recommendations the same change created. What is applied together follows [`rec::settle`],
 //!   as on every host: a reasoned finding outranks an authors' setting, and two authors' settings
 //!   that disagree leave the setting as it is, marked, to choose with `!`.
+//! - **Chosen methods' authors who disagree** on a setting ([`rec::disagreeing`]: PDF's complex
+//!   fit, AMP-PE's average of φ/TE) are one choice ([`AdviceModal::with_authors`]): a radio row
+//!   per authors' value, tagged with whose it is ("PDF's authors"), the method the pop-up is about
+//!   first and the value the setting has read "as set". Nothing starts ticked, the panel says the
+//!   two disagree, and what the user picks stands: the other is not offered back.
 //! - **The setting just changed is respected** ([`AdviceModal::changed`]): when a change makes a
 //!   setting depart from a rule scoped to a flag that is on ([`Recommendation::flag_trigger`]),
 //!   such as choosing QSMART with HEIDI ticked, turning that flag off starts ticked, and changing
@@ -63,6 +68,12 @@ pub struct AdviceRow {
     pub checked: bool,
     /// A value the rule allows besides the one it gives.
     pub alternative: bool,
+    /// One of the values chosen methods' authors disagree on ([`rec::disagreeing`]): tagged
+    /// with whose it is, one choice with the other authors' values.
+    pub authors: bool,
+    /// The setting already has this row's value (another chosen method's authors' setting it
+    /// follows): choosing the row keeps it.
+    pub keeps: bool,
     /// Rows of one group exclude each other: the values of one part of a setting, and turning
     /// off the flag that part depends on instead.
     group: String,
@@ -71,7 +82,7 @@ pub struct AdviceRow {
 impl AdviceRow {
     fn apply(finding: Recommendation, value: Option<Value>, name: String, alternative: bool) -> Self {
         let group = rec::rule_setting(&finding).to_string();
-        AdviceRow { finding, also: vec![], action: RowAction::Apply { value, name }, checked: false, alternative, group }
+        AdviceRow { finding, also: vec![], action: RowAction::Apply { value, name }, checked: false, alternative, authors: false, keeps: false, group }
     }
 
     /// The setting the row changes, and its label: the flag's for turning it off.
@@ -90,12 +101,17 @@ impl AdviceRow {
         }
     }
 
-    /// The row's tag: what kind of advice it is.
-    pub fn tag(&self) -> &'static str {
+    /// The row's tag: what kind of advice it is, or, for one of the values chosen methods'
+    /// authors disagree on, whose it is ("PDF's authors").
+    pub fn tag(&self) -> String {
         if self.alternative {
-            return "allowed";
+            return "allowed".into();
         }
-        self.finding.strength.label()
+        if self.authors {
+            let names: Vec<String> = std::iter::once(&self.finding).chain(&self.also).map(|r| format!("{}'s", r.trigger.name)).collect();
+            return format!("{} authors", names.join(" and "));
+        }
+        self.finding.strength.label().into()
     }
 
     /// The methods whose rules the row is: "MEDI, PDF".
@@ -325,17 +341,78 @@ impl AdviceModal {
         self.rows.get(i).is_some_and(|row| !self.rows.iter().any(|r| r.group == row.group && r.checked))
     }
 
-    /// Row `i`'s explanation, for the panel under the list.
+    /// Row `i`'s explanation, for the panel under the list. For one of the values chosen
+    /// methods' authors disagree on: whose it is and why, what the others use, and that the
+    /// choice is the user's.
     pub fn explanation(&self, i: usize) -> String {
-        self.rows.get(i).map_or_else(String::new, |r| r.explanation(self.several(), self.group_unticked(i)))
+        let Some(row) = self.rows.get(i) else { return String::new() };
+        if !row.authors {
+            return row.explanation(self.several(), self.group_unticked(i));
+        }
+        let r = &row.finding;
+        let whose = row.tag();
+        let as_set = if row.keeps { " (as set)" } else { "" };
+        let others: Vec<String> = self.rows.iter().filter(|o| o.authors && o.group == row.group && o.finding.rule != r.rule)
+            .map(|o| format!("{} use {}", o.tag(), o.finding.recommended.name)).collect();
+        format!("{whose} use {}{as_set}: {} {}, so QSMxT does not choose between them: pick one, or Keep mine to leave {} as {}.",
+            r.recommended.name, sentence(&r.reason), others.join(" and "), r.label, r.current_text())
     }
 
-    /// Row `i`'s tag: its kind, or "or" for a second way to meet one requirement.
-    pub fn tag(&self, i: usize) -> &'static str {
+    /// Show the settings chosen methods' authors disagree on ([`rec::disagreeing`] in `view`)
+    /// as one choice between the authors' values, each tagged with whose it is: the other
+    /// authors' values join the group of each such row, after it (so the method the pop-up is
+    /// about comes first), the one the setting already has as "as set". Nothing is preselected:
+    /// they are authors' settings, and two disagree.
+    pub fn with_authors(mut self, view: &[Recommendation]) -> Self {
+        let mut i = 0;
+        while i < self.rows.len() {
+            let row = &self.rows[i];
+            let others: Vec<Recommendation> = if row.alternative || !matches!(row.action, RowAction::Apply { value: None, .. }) {
+                vec![]
+            } else {
+                rec::disagreeing(view, &row.finding).into_iter().cloned().collect()
+            };
+            if others.is_empty() {
+                i += 1;
+                continue;
+            }
+            self.rows[i].authors = true;
+            self.rows[i].checked = false;
+            let group = self.rows[i].group.clone();
+            let mut at = self.rows.iter().rposition(|r| r.group == group).unwrap_or(i) + 1;
+            for o in others {
+                // A value already offered (both departed, both in the pop-up): tag it.
+                if let Some(existing) = self.rows.iter_mut().find(|r| r.group == group && !r.alternative
+                    && matches!(&r.action, RowAction::Apply { value: None, .. }) && r.finding.recommended.value == o.recommended.value)
+                {
+                    existing.authors = true;
+                    existing.checked = false;
+                    if existing.finding.rule != o.rule && !existing.also.iter().any(|a| a.rule == o.rule) {
+                        existing.also.push(o);
+                    }
+                    continue;
+                }
+                let mut row = AdviceRow::apply(o.clone(), None, o.recommended.name.clone(), false);
+                row.authors = true;
+                row.keeps = !o.departs;
+                self.rows.insert(at, row);
+                at += 1;
+            }
+            i += 1;
+        }
+        // The alternatives an authors' row allows are not offered beside the authors' values.
+        let authors: Vec<String> = self.rows.iter().filter(|r| r.authors).map(|r| r.group.clone()).collect();
+        self.rows.retain(|r| !(r.alternative && authors.contains(&r.group)));
+        self
+    }
+
+    /// Row `i`'s tag: its kind, "or" for a second way to meet one requirement, or whose
+    /// authors' value it is.
+    pub fn tag(&self, i: usize) -> String {
         match self.rows.get(i) {
-            Some(_) if self.or_row(i) => "or",
+            Some(_) if self.or_row(i) => "or".into(),
             Some(r) => r.tag(),
-            None => "",
+            None => String::new(),
         }
     }
 
@@ -400,7 +477,7 @@ fn turn_off_rows(findings: &[Recommendation]) -> Vec<AdviceRow> {
         }
         out.push(AdviceRow {
             finding: r.clone(), also: vec![], action: RowAction::TurnOff { setting: setting.to_string() },
-            checked: false, alternative: false, group: rec::rule_setting(r).to_string(),
+            checked: false, alternative: false, authors: false, keeps: false, group: rec::rule_setting(r).to_string(),
         });
     }
     out
@@ -424,6 +501,8 @@ impl RefItem {
             if let Some(v) = value {
                 r.recommended.value = v.clone();
             }
+            // Picked between authors who disagree: the user's choice, which [`rec::settle`] takes.
+            r.conflict = false;
             r
         }).collect()
     }
@@ -573,7 +652,7 @@ impl App {
         }
         let Some(first) = created.first() else {
             if let Some((methods, diffs)) = reference {
-                self.refs.modal = Some(AdviceModal::reference(methods, diffs));
+                self.refs.modal = Some(AdviceModal::reference(methods, diffs).with_authors(&view));
             }
             return;
         };
@@ -599,7 +678,7 @@ impl App {
             Some((methods, diffs)) if created.iter().all(|r| r.strength != Strength::Required && !r.conflict) => {
                 let mut items = created.clone();
                 items.extend(diffs.into_iter().filter(|d| !created.iter().any(|c| c.rule == d.rule)));
-                self.refs.modal = Some(AdviceModal::reference(methods, items));
+                self.refs.modal = Some(AdviceModal::reference(methods, items).with_authors(&view));
             }
             // A required change or a disagreement first; the reference pipeline after it.
             Some((methods, _)) => {
@@ -631,12 +710,13 @@ impl App {
     /// ones first.
     pub fn review_recommendations(&mut self) {
         let Some(path) = self.focused_row().and_then(|r| row_path(&r)) else { return };
-        let mut here: Vec<Recommendation> = self.rule_view().into_iter().filter(|r| r.setting == path && r.departs).collect();
+        let view = self.rule_view();
+        let mut here: Vec<Recommendation> = view.iter().filter(|r| r.setting == path && r.departs).cloned().collect();
         if here.is_empty() {
             return;
         }
         here.sort_by_key(|r| (!open(r), std::cmp::Reverse(r.strength)));
-        self.rec_modal = Some(RecModal::details(here));
+        self.rec_modal = Some(RecModal::details(here).with_authors(&view));
     }
 
     pub fn handle_rec_modal_key(&mut self, key: KeyEvent) {
@@ -735,7 +815,9 @@ impl App {
             }
         }
         let mut items: Vec<RefItem> = Vec::new();
-        for row in modal.rows.iter().filter(|r| !r.alternative && matches!(r.action, RowAction::Apply { .. })) {
+        // A row that keeps the value the setting has (another chosen method's authors') is no
+        // finding: choosing it leaves the others of its group kept.
+        for row in modal.rows.iter().filter(|r| !r.alternative && !r.keeps && matches!(r.action, RowAction::Apply { .. })) {
             let rule = &row.finding.rule;
             let chosen = if keep_all { None } else {
                 modal.rows.iter().find(|x| x.finding.rule == *rule && x.checked && matches!(x.action, RowAction::Apply { .. }))
@@ -1787,7 +1869,7 @@ mod tests {
         let mut modal = RecModal::details(here);
         assert_eq!(modal.rows.len(), 2, "{:?}", modal.rows);
         assert!(modal.radio(0) && modal.radio(1));
-        assert_eq!((modal.tag(0), modal.tag(1)), ("required", "or"));
+        assert_eq!((modal.tag(0).as_str(), modal.tag(1).as_str()), ("required", "or"));
         assert_eq!(modal.ticked(), 1);
         let ticked = modal.rows.iter().position(|r| r.checked).unwrap();
         modal.toggle(ticked);
@@ -1924,6 +2006,9 @@ mod tests {
                 let mut pop_ups = 0;
                 let mut reference_pop_ups = 0;
                 let mut offered: Vec<(String, (String, String))> = Vec::new();
+                // Every config the pop-ups lead to: none comes back (no setting flips between
+                // two authors' values).
+                let mut configs: Vec<Value> = Vec::new();
                 while app.rec_modal.is_some() || app.refs.modal.is_some() {
                     pop_ups += 1;
                     assert!(pop_ups <= 8, "{method}: the pop-ups do not stop");
@@ -1944,21 +2029,24 @@ mod tests {
                     }
                     let k = if m.ticked() > 0 { KeyCode::Char('a') } else { KeyCode::Char('k') };
                     key(&mut app, k);
+                    let now = serde_json::to_value(super::super::command::config_from_app(&app).unwrap()).unwrap();
+                    assert!(k == KeyCode::Char('k') || !configs.contains(&now), "{method}: the pop-ups went back to an earlier config");
+                    configs.push(now);
                 }
                 if partial {
                     continue;
                 }
-                // Nothing of the method's reference pipeline left, but where another chosen
-                // method's authors disagree and the setting follows theirs (AMP-PE's echo
-                // combination, once PDF's complex fit is taken).
+                // Nothing of the method's reference pipeline left, but where chosen methods'
+                // authors disagree: there the pop-up offered the authors' values as one choice,
+                // and the value picked stands (AMP-PE's echo combination, once PDF's complex fit
+                // is picked), which is the user's choice and never flipped back.
                 let c = super::super::command::config_from_app(&app).unwrap();
                 let facts = app.rule_facts();
                 let view = app.rule_view();
-                let other_authors = |r: &Recommendation| view.iter().any(|o| o.trigger != r.trigger
-                    && o.kind == Kind::Reference && !o.departs && rec::rule_setting(o) == rec::rule_setting(r));
                 for m in rec::chosen_methods(&c, &facts).into_iter().filter(|m| m.setting == "inversion.algorithm") {
                     let left: Vec<String> = rec::reference_differences(&c, &facts, &m).into_iter()
-                        .filter(|r| !r.conflict && !other_authors(r)).map(|r| format!("{} ({})", r.rule, r.current_text())).collect();
+                        .filter(|r| rec::disagreeing(&view, r).is_empty() && !r.conflict)
+                        .map(|r| format!("{} ({})", r.rule, r.current_text())).collect();
                     assert!(left.is_empty(), "{method}: {} left: {left:?}", m.name);
                 }
             }
@@ -2004,6 +2092,74 @@ mod tests {
         let c = super::super::command::config_from_app(&app).unwrap();
         assert_eq!(c.masking.sections[0].refinements[0], qsmxt_engine::masking::MaskOp::MinIntensity { value: 100.0 });
         assert_eq!(c.field_mapping.unwrapping_algorithm, qsmxt_engine::enums::UnwrappingAlgorithm::Laplacian);
+    }
+
+    /// AMP-PE chosen and its reference pipeline applied (4 echoes): PDF, which it brings, opens
+    /// PDF's reference pop-up, whose authors use the complex fit where AMP-PE's average φ/TE.
+    fn amp_pe_then_pdf() -> App {
+        let mut app = app();
+        app.filter_state.num_echoes = "4".into();
+        app.check_recommendations();
+        select(&mut app, "qsm_algorithm", "amp-pe", &QSM_PICKER_OPTIONS);
+        let m = app.refs.modal.as_mut().expect("AMP-PE's reference pipeline");
+        for i in 0..m.rows.len() {
+            let group = m.rows[i].group.clone();
+            if !m.rows[i].alternative && !m.rows.iter().any(|r| r.group == group && r.checked) {
+                m.toggle(i);
+            }
+        }
+        key(&mut app, KeyCode::Char('a'));
+        let c = super::super::command::config_from_app(&app).unwrap();
+        assert_eq!(serde_json::to_value(c.bg_removal.algorithm).unwrap(), "pdf");
+        assert_eq!(serde_json::to_value(c.field_mapping.b0_estimation).unwrap(), "weighted-avg");
+        app
+    }
+
+    /// Where two chosen methods' authors disagree, the pop-up shows the setting as one choice
+    /// between their values, each tagged with whose it is, the method the pop-up is about first,
+    /// nothing ticked, and a line saying the two disagree. Picking either stands: nothing offers
+    /// the other back.
+    #[test]
+    fn authors_who_disagree_are_one_choice() {
+        let mut app = amp_pe_then_pdf();
+        let m = app.refs.modal.as_ref().expect("PDF's reference pipeline follows");
+        let rows: Vec<usize> = (0..m.rows.len()).filter(|&i| m.rows[i].finding.setting == "field_mapping.b0_estimation").collect();
+        assert_eq!(rows.len(), 2, "{:?}", m.rows);
+        let (pdf, amp) = (&m.rows[rows[0]], &m.rows[rows[1]]);
+        assert!(m.radio(rows[0]) && m.radio(rows[1]) && !pdf.checked && !amp.checked);
+        assert_eq!((m.tag(rows[0]).as_str(), m.tag(rows[1]).as_str()), ("PDF's authors", "AMP-PE's authors"));
+        assert!(!pdf.keeps && amp.keeps && pdf.change().1 == "Complex fit", "{pdf:?}");
+        let why = m.explanation(rows[0]);
+        assert!(why.starts_with("PDF's authors use Complex fit: ") && why.contains("AMP-PE's authors use Weighted average")
+            && why.contains("pick one"), "{why}");
+        let text = screen(&mut app, "PDF's reference pipeline after AMP-PE's");
+        assert!(text.contains("(PDF's authors)") && text.contains("Weighted average (as set)  (AMP-PE's authors)"), "{text}");
+
+        // Picking AMP-PE's (as set) keeps it; nothing comes back.
+        let mut keep = app.clone_form();
+        keep.refs.modal = app.refs.modal.clone();
+        keep.refs.modal.as_mut().unwrap().toggle(rows[1]);
+        key(&mut keep, KeyCode::Char('a'));
+        let c = super::super::command::config_from_app(&keep).unwrap();
+        assert_eq!(serde_json::to_value(c.field_mapping.b0_estimation).unwrap(), "weighted-avg");
+        assert!(keep.refs.modal.as_ref().is_none_or(|m| !m.rows.iter().any(|r| r.finding.setting == "field_mapping.b0_estimation")));
+
+        // Picking PDF's takes the complex fit; AMP-PE's is not offered back.
+        app.refs.modal.as_mut().unwrap().toggle(rows[0]);
+        key(&mut app, KeyCode::Char('a'));
+        let c = super::super::command::config_from_app(&app).unwrap();
+        assert_eq!(serde_json::to_value(c.field_mapping.b0_estimation).unwrap(), "complex-fit");
+        while let Some(m) = app.refs.modal.as_ref().or(app.rec_modal.as_ref()) {
+            assert!(!m.rows.iter().any(|r| r.finding.rule == "amp-pe.echo-combination"), "{:?}", m.rows);
+            key(&mut app, KeyCode::Char('k'));
+        }
+        // `!` on it shows the same choice, the other way round: AMP-PE's value a change, PDF's as set.
+        let view = app.rule_view();
+        let here: Vec<Recommendation> = view.iter().filter(|r| r.setting == "field_mapping.b0_estimation" && r.departs).cloned().collect();
+        let d = RecModal::details(here).with_authors(&view);
+        let tags: Vec<String> = (0..d.rows.len()).map(|i| d.tag(i)).collect();
+        assert_eq!(tags, ["AMP-PE's authors", "PDF's authors"], "{:?}", d.rows);
+        assert!(!d.rows[0].keeps && d.rows[1].keeps && d.ticked() == 0);
     }
 
     /// With HEIDI's row hidden, `!` on the inversion is the way to turn it off later.

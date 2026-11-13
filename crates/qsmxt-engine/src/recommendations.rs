@@ -30,6 +30,11 @@
 //! - **Findings chosen together** ([`settle`]) get one answer on every host: on each setting the
 //!   strongest takes it, so a reasoned finding outranks an authors' setting, and two as strong
 //!   that disagree leave the setting for the user (#493).
+//! - **Chosen methods' authors who disagree** on a setting ([`disagreeing`]: PDF's complex fit,
+//!   AMP-PE's average of φ/TE) leave it as it is, whichever of them (or neither) it follows: the
+//!   finding is a [`Recommendation::conflict`], which [`settle`], and so
+//!   `--accept-reference-settings`, never applies, so the setting cannot flip between the two
+//!   from one run to the next. A front end shows the authors' values as one choice for the user.
 //! - **Every rule that applies is shown**, departed from or not ([`reference_values`]), so a
 //!   setting covered by a rule always shows its reference value and source next to its own.
 //! - **Dismissals** ([`crate::config::Dismissal`]) are kept in the config, with the value they
@@ -269,7 +274,9 @@ pub struct Recommendation {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub dismissed: bool,
     /// Another finding on the same setting, as strong as this one, recommends something else:
-    /// show them together, with neither preselected, and leave the choice to the user.
+    /// show them together, with neither preselected, and leave the choice to the user. For an
+    /// authors' setting, that includes another chosen method's authors' setting the config
+    /// already follows ([`disagreeing`]): applying this one would only make that one depart.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub conflict: bool,
 }
@@ -988,12 +995,55 @@ fn mark(config: &PipelineConfig, out: &mut [Recommendation]) {
     // By QSM.rs's setting, as [`settle`] groups them.
     let snapshot: Vec<(String, Strength, Value, bool)> =
         out.iter().map(|r| (rule_setting(r).to_string(), r.strength, r.recommended.value.clone(), r.departs)).collect();
+    let all = out.to_vec();
     for (i, r) in out.iter_mut().enumerate() {
         let key = rule_setting(r).to_string();
-        r.conflict = r.departs && snapshot.iter().enumerate().any(|(j, (s, st, v, d))| {
+        r.conflict = r.departs && (snapshot.iter().enumerate().any(|(j, (s, st, v, d))| {
             j != i && *d && *s == key && *st == r.strength && *v != r.recommended.value
-        });
+        }) || !disagreeing(&all, r).is_empty());
     }
+}
+
+/// `other` is another chosen method's authors' setting that `r`'s, on the same setting, disagrees
+/// with: both are `reference` rules of different choices, they want different values, and
+/// `other` already departs or would depart once `r`'s value is applied. PDF's authors use the
+/// complex fit, AMP-PE's average φ/TE over the echoes: with both chosen, following one departs
+/// from the other.
+fn disagrees(other: &Recommendation, r: &Recommendation) -> bool {
+    other.rule != r.rule && other.strength == Strength::Reference && r.strength == Strength::Reference
+        && other.trigger != r.trigger && rule_setting(other) == rule_setting(r)
+        && other.recommended.value != r.recommended.value
+        && (other.departs || !allows(&other.allowed, &r.recommended.value))
+}
+
+/// `value` passes what a rule expects ([`Allowed`]).
+fn allows(allowed: &Allowed, value: &Value) -> bool {
+    match allowed {
+        Allowed::OneOf { values } => values.iter().any(|v| v.value == *value),
+        Allowed::NoneOf { values } => !values.iter().any(|v| v.value == *value),
+        Allowed::Range { min, max } => value.as_f64().is_some_and(|x| {
+            min.as_ref().and_then(Value::as_f64).is_none_or(|m| x >= m) && max.as_ref().and_then(Value::as_f64).is_none_or(|m| x <= m)
+        }),
+    }
+}
+
+/// The other chosen methods' authors' settings in `view` ([`reference_values`]) that disagree
+/// with `r`'s on its setting, followed or not: what a front end offers beside `r`, as one choice
+/// between the authors' values. Empty for a reasoned finding, or when no other chosen method's
+/// authors say otherwise.
+pub fn disagreeing<'a>(view: &'a [Recommendation], r: &Recommendation) -> Vec<&'a Recommendation> {
+    view.iter().filter(|o| disagrees(o, r)).collect()
+}
+
+/// Whose authors' settings disagree with `r`'s, and on what, in a line: "PDF's authors use
+/// Complex fit; AMP-PE's authors use Weighted average". Empty when none does ([`disagreeing`]).
+pub fn disagreement(view: &[Recommendation], r: &Recommendation) -> String {
+    let others = disagreeing(view, r);
+    if others.is_empty() {
+        return String::new();
+    }
+    std::iter::once(r).chain(others).map(|o| format!("{}'s authors use {}", o.trigger.name, o.recommended.name))
+        .collect::<Vec<_>>().join("; ")
 }
 
 /// How a dismissal records the value(s) it was dismissed for: each value as the config writes it
@@ -1533,22 +1583,26 @@ pub struct Settled {
     /// one that wants the same value.
     pub apply: Vec<Recommendation>,
     /// The findings left because they are as strong as each other on one setting and want
-    /// different values. The setting keeps its value for the user to choose.
+    /// different values, or because another chosen method's authors disagree with them
+    /// ([`disagreeing`]). The setting keeps its value for the user to choose.
     pub conflicting: Vec<Recommendation>,
     /// The findings left because a stronger one on the setting wants another value.
     pub outranked: Vec<Recommendation>,
 }
 
-/// The precedence of findings chosen together, in any order and with nothing changed: on each
-/// setting, the strongest finding that is open (departed from and not dismissed) takes it, so a
-/// reasoned finding outranks an authors' setting, unless two as strong disagree, when none is
-/// taken. Findings on other settings are unaffected.
 /// The setting a finding is about, by QSM.rs's path where it has one (QSMxT's own findings by
 /// QSMxT's).
 pub fn rule_setting(r: &Recommendation) -> &str {
     core_setting(&r.rule).unwrap_or(&r.setting)
 }
 
+/// The precedence of findings chosen together, in any order and with nothing changed: on each
+/// setting, the strongest finding that is open (departed from and not dismissed) takes it, so a
+/// reasoned finding outranks an authors' setting, unless two as strong disagree, when none is
+/// taken. An authors' setting another chosen method's authors disagree with (its
+/// [`Recommendation::conflict`], whether or not that other one is among `findings`) is not taken
+/// either: the setting stays as it is for the user to choose. A host passing a value the user
+/// picked between the authors clears its `conflict`. Findings on other settings are unaffected.
 pub fn settle(findings: &[Recommendation]) -> Settled {
     settle_where(findings, |_| true)
 }
@@ -1571,7 +1625,8 @@ fn settle_where(findings: &[Recommendation], takes: impl Fn(&Recommendation) -> 
         let Some(top) = open.iter().map(|r| r.strength).max() else { continue };
         let strongest: Vec<&Recommendation> = open.iter().copied().filter(|r| r.strength == top).collect();
         let value = &strongest[0].recommended.value;
-        if strongest.iter().any(|r| r.recommended.value != *value) {
+        let authors_disagree = strongest.iter().any(|r| r.conflict && r.strength == Strength::Reference);
+        if authors_disagree || strongest.iter().any(|r| r.recommended.value != *value) {
             let (level, weaker): (Vec<_>, Vec<_>) = open.into_iter().partition(|r| r.strength == top);
             settled.conflicting.extend(level.into_iter().cloned());
             settled.outranked.extend(weaker.into_iter().cloned());
