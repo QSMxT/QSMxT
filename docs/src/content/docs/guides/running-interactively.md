@@ -72,7 +72,9 @@ The Pipeline tab lists QSMxT's defaults and the original toolboxes' pipelines: t
 toolbox, STI Suite (iLSQR and STAR-QSM), QSMART, the HEIDI package, the χ-separation toolbox
 (iLSQR, MEDI and χ-sepnet) and DECOMPOSE. Next to the list, the highlighted pipeline is
 compared with your settings: each setting choosing it would change, from your value to the
-pipeline's.
+pipeline's. *About*, at the bottom of the list, explains what the toolbox pipelines are, with
+a link to [QSM-CI's parity checks](https://qsmxt.github.io/QSM-CI/parity.html); `Enter` there
+copies the link.
 
 `Enter` opens a preview of those changes. **Apply** makes them; `Esc` or **Cancel** changes
 nothing. A toolbox pipeline is its method and the original authors' settings that method
@@ -188,13 +190,13 @@ a column on the right instead, so the settings use the panel's full height; the 
 | Tab | Pages | What is there |
 |---|---|---|
 | 1 Input | — | Input mode, dataset/output/config paths, include/exclude patterns and the run tree, number of echoes, and the orientation groups: a pattern, or groups given to runs with ←/→ in the run tree (one of them the reference), each run marked with its group |
-| 2 Pipeline | — | The pipeline to start from: QSMxT's defaults or an original toolbox's, and what choosing it changes (see [Pipelines](#pipelines)) |
+| 2 Pipeline | — | The pipeline to start from: QSMxT's defaults or an original toolbox's, and what choosing it changes (see [Pipelines](#pipelines)). *About*, at the bottom of the list, says what the toolbox pipelines are |
 | 3 Reconstruction | Preprocessing: Geometry · Masking · Motion | Axial resampling and output space, slice-gap check, crop to mask, FFT padding, coil combination (multi-coil data); the mask recipe, custom masks, the magnitude's inhomogeneity correction and the two-pass reliable mask; motion correction and its rigid registration |
 | | QSM: Compute QSM · Field map · Background · Inversion · COSMOS/STI · Reference · χ-separation · SMWI | Whether QSM is reconstructed (SMWI turns it back on and χ-separation needs it, unless a QSM is supplied); unwrapping and B0 estimation; background-field removal (inversions of a local field only); the dipole inversion; how an orientation group is reconstructed (without one, where to choose it); the χ reference; the χ-separation method and its parameters; SMWI |
 | | Other outputs: Magnitude · SWI · Relaxometry · Segmentation | whether the combined magnitude is published; SWI; T2\*, R2\*, R2 and R2′ maps, the R2′ source and supplied maps; segmentation (SynthSeg or a dseg from derivatives) and per-structure statistics |
 | | Export: DICOM | DICOM export: the source DICOM to inherit the study from, and a tick for each map the settings make (all ticked to begin with; a map turned on later is ticked too; `a` ticks them all) |
 | 4 Execution | — | Local or SLURM, each with its own settings; debug logging, force re-run, clean-up; and a button that does what `F5` does |
-| 5 Methods | Methods text · Graph | The methods text for the current settings; `Enter` (or `c`) copies it to the clipboard. Graph: the pipeline the current settings run, step by step: each step's algorithm and settings, and the steps it reads from and what it reads. Above it, the peak memory the run is estimated to need and the deep-learning models it uses, with their download sizes. It is planned on the first selected run's scan (a typical scan until one is chosen). `Enter` (or `s`) saves it as an SVG drawing and opens it |
+| 5 Methods | Methods text · Graph | The methods text for the current settings, under a *Copy methods text* button that copies it to the clipboard (`c`, or `Enter` inside the page). Graph: the pipeline the current settings run, step by step: each step's algorithm and settings, and the steps it reads from and what it reads. Above it, the peak memory the run is estimated to need and the deep-learning models it uses, with their download sizes. It is planned on the first selected run's scan (a typical scan until one is chosen). The *Open graph* button above it (`s`, or `Enter` inside the page) saves it as an SVG drawing and opens it |
 
 Settings appear only where and when they apply: a sub-setting sits indented under the
 checkbox or choice it belongs to, and a map another output needs reads as ticked (and says why
@@ -230,8 +232,8 @@ happen: *Run*, *Dry run*, *Write SLURM scripts* or *Submit SLURM jobs*.
 | `A` | Reconstruction | show every setting (Advanced) or the basic ones (Basic) |
 | `P` | settings | go to the Pipeline tab |
 | `↑` `↓`, `Enter` | Pipeline | choose a pipeline; preview its changes, then Apply or Cancel |
-| `Enter`, `s` | Methods › Graph | save the pipeline as an SVG drawing and open it |
-| `Enter`, `c`, `y` | Methods › Methods text | copy the methods text to the clipboard |
+| `s` (`Enter` inside the page) | Methods › Graph | save the pipeline as an SVG drawing and open it (the *Open graph* button) |
+| `c`, `y` (`Enter` inside the page) | Methods › Methods text | copy the methods text to the clipboard (the *Copy methods text* button) |
 | `F5` | anywhere | run |
 | `?` | anywhere | show a tip (and turn startup tips on or off) |
 | `n` | tab bar | read the announcements |
@@ -255,11 +257,15 @@ Everything can also be done with the mouse:
   button, is focused by the first click and pressed by the second.
 - **In a list** (a method's list, the Pipeline tab's pipelines), the first click highlights an
   entry and the second chooses it.
+- **Click the Methods tab's button** (*Copy methods text*, *Open graph*) to press it. A click
+  anywhere on a Methods page goes into it.
 - **Click a pop-up's button** to press it. A click outside an open pop-up closes it, as `Esc`
   does, and does nothing else.
-- **The wheel** does what `↑`/`↓` do: it moves through the settings and lists, and scrolls the
-  methods text, the graph and the pop-ups that scroll. It stays on the page rather than moving up
-  to the sidebar, the sub-tabs or the tabs.
+- **The wheel** scrolls what is under the mouse. Over the methods text or the graph it scrolls
+  them wherever focus is, even in the sidebar. Over a section's settings while focus is in the
+  sidebar (or the sub-tabs), it scrolls the settings and focus stays where it is. Elsewhere it does
+  what `↑`/`↓` do: it moves through the settings and lists, and scrolls the pop-ups that scroll.
+  It stays on the page rather than moving up to the sidebar, the sub-tabs or the tabs.
 
 With the mouse in use, most terminals select text only while you hold Shift (Option in iTerm2).
 To leave the mouse to the terminal entirely, set `QSMXT_NO_MOUSE=1`.

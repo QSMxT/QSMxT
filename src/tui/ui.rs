@@ -755,11 +755,43 @@ fn draw_methods_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         .constraints([Constraint::Length(super::tabs::subtab_rows(app)), Constraint::Min(1)])
         .split(inner);
     super::tabs::draw_subtabs(f, app, chunks[0]);
+    // The page's button on its first line (a blank under it where there is room), then the page.
+    let page = chunks[1];
+    let gap = u16::from(page.height > 6);
+    let button = Rect { height: 1.min(page.height), ..page };
+    let body = Rect { y: page.y + 1 + gap, height: page.height.saturating_sub(1 + gap), ..page };
+    app.hits.add(page, super::mouse::Hit::Page);
+    let line = methods_button(app);
+    let width = line.spans.iter().take(2).map(|s| s.width() as u16).sum::<u16>();
+    let first = line.spans.first().map_or(0, |s| s.width() as u16);
+    f.render_widget(Paragraph::new(line), button);
+    app.hits.add(Rect { x: button.x + first, width: width.saturating_sub(first), ..button }, super::mouse::Hit::PageButton);
     if app.page() == Some(super::app::Page::Pipeline) {
-        super::pipeline_view::draw(f, app, chunks[1]);
+        super::pipeline_view::draw(f, app, body);
     } else {
-        draw_methods_text(f, app, chunks[1]);
+        draw_methods_text(f, app, body);
     }
+}
+
+/// The Methods tab's button, styled as the Execution tab's Run button: Copy methods text above
+/// the text, Open graph above the graph. It looks pressed-ready (filled) while focus is in the
+/// page, where Enter presses it; its own key works from the sidebar too.
+fn methods_button(app: &App) -> Line<'static> {
+    let graph = app.page() == Some(super::app::Page::Pipeline);
+    let (label, key) = if graph { (" Open graph ", "s") } else { (" Copy methods text ", "c") };
+    let focused = !app.tab_focus && !app.on_subtabs();
+    let (style, hint) = if focused {
+        (Style::default().fg(Color::Black).bg(Color::Green).add_modifier(Modifier::BOLD), format!("  Enter or {key}"))
+    } else {
+        (Style::default().fg(Color::Green).add_modifier(Modifier::BOLD | Modifier::REVERSED), format!("  {key}"))
+    };
+    let mut spans = vec![Span::raw(" "), Span::styled(label, style)];
+    if !graph && app.methods_copied() {
+        spans.push(Span::styled("  ✓ Copied", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)));
+    } else {
+        spans.push(Span::styled(hint, Style::default().fg(Color::DarkGray)));
+    }
+    Line::from(spans)
 }
 
 fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
@@ -2369,8 +2401,9 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         focused_help = Some("←/→ choose a section; ↓ or Enter to go to its settings (← comes back here); ↑ to the tabs".to_string());
     }
 
-    // Determine which line is focused for auto-scroll (the top while the sub-tab strip has it)
-    let focused_line = if on_strip { Some(0) } else { focusable.get(ps_focus).copied() };
+    // Determine which line is focused for auto-scroll. While the sections have focus, none: the
+    // view stays where it is (at the top after a change of section, or where the wheel put it).
+    let focused_line = if on_strip { None } else { focusable.get(ps_focus).copied() };
 
     // The help, wrapped, and under it the reference values of the setting: at least two rows of
     // help so the form does not jump between short ones, at most half the panel together.
@@ -2453,7 +2486,7 @@ fn draw_methods_text(f: &mut Frame, app: &mut App, inner: ratatui::layout::Rect)
             )));
         } else if let Some(content) = raw_line.strip_prefix("- ") {
             let prefix = "  - ";
-            let width = inner.width as usize;
+            let width = inner.width.saturating_sub(1) as usize; // a column for the scrollbar
             let content_width = width.saturating_sub(prefix.len());
             if content_width > 0 && content.len() > content_width {
                 let words: Vec<&str> = content.split_whitespace().collect();
@@ -2498,7 +2531,7 @@ fn draw_methods_text(f: &mut Frame, app: &mut App, inner: ratatui::layout::Rect)
             lines.push(Line::from(""));
         } else {
             // Wrap long paragraph text to inner width
-            let width = inner.width as usize;
+            let width = inner.width.saturating_sub(1) as usize; // a column for the scrollbar
             if width > 0 && raw_line.len() > width {
                 let words: Vec<&str> = raw_line.split_whitespace().collect();
                 let mut current_line = String::new();
@@ -2561,6 +2594,8 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         vec![("\u{2190}\u{2192}", "Tabs"), ("\u{2193}/Enter", "Open tab"), ("F5", "Run"), ("?", "Tip"), ("n", "News"), ("q", "Quit")]
     } else if app.active_tab == TAB_PIPELINE && app.pipelines.preview.is_some() {
         vec![("\u{2190}\u{2192}", "Choose"), ("Enter", "Select"), ("\u{2191}\u{2193}", "Scroll"), ("Esc", "Close (nothing changes)")]
+    } else if app.active_tab == TAB_PIPELINE && app.about_highlighted() {
+        vec![(&tabs, "Tabs"), ("\u{2191}\u{2193}", "Choose a pipeline"), ("Enter", "Copy link"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else if app.active_tab == TAB_PIPELINE {
         vec![(&tabs, "Tabs"), ("\u{2191}\u{2193}", "Choose a pipeline"), ("Enter", "Preview and apply"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else if app.active_tab == TAB_METHODS && app.on_subtabs() && app.sidebar() {
@@ -2569,7 +2604,7 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         vec![(&tabs, "Tabs"), ("\u{2190}\u{2192}/[ ]", "Sub-tabs"), ("\u{2193}/Enter", "Open"), ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else if app.active_tab == TAB_METHODS {
         let (back, pages) = if app.sidebar() { ("\u{2190}", "Sidebar") } else { ("[ ]", "Sub-tabs") };
-        let open = if app.page() == Some(super::app::Page::Pipeline) { ("Enter/s", "Open as SVG") } else { ("Enter/c", "Copy to clipboard") };
+        let open = if app.page() == Some(super::app::Page::Pipeline) { ("Enter/s", "Open graph") } else { ("Enter/c", "Copy methods text") };
         vec![(&tabs, "Tabs"), (back, pages), ("\u{2191}\u{2193}", "Scroll"), open, ("F5", "Run"), ("?", "Tip"), ("q", "Quit")]
     } else if app.on_subtabs() && app.sidebar() {
         let mode = if app.advanced { "Basic" } else { "Advanced" };
