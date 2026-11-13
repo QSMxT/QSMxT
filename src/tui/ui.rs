@@ -209,7 +209,6 @@ fn draw_checklist_modal(f: &mut Frame, modal: &mut super::recommend::AdviceModal
     let popup_w = advice_modal_width(area);
     let text_w = popup_w.saturating_sub(6).max(10) as usize;
     let muted = Style::default().fg(Color::DarkGray);
-    let several = modal.several();
     modal.cursor = modal.cursor.min(modal.rows.len().saturating_sub(1));
     let label_w = modal.rows.iter().map(|r| r.setting().1.chars().count()).max().unwrap_or(0).min(text_w * 2 / 5) + 2;
 
@@ -227,7 +226,7 @@ fn draw_checklist_modal(f: &mut Frame, modal: &mut super::recommend::AdviceModal
             }
             lines.push(Line::from(Span::styled(format!("{} › {}", s.tab().label(), s.label()), muted.add_modifier(Modifier::BOLD))));
         }
-        let focused = i == modal.cursor;
+        let focused = i == modal.cursor && modal.button.is_none();
         let (from, to) = row.change();
         let tag_color = match (row.alternative, row.finding.strength) {
             (true, _) => Color::DarkGray,
@@ -239,14 +238,20 @@ fn draw_checklist_modal(f: &mut Frame, modal: &mut super::recommend::AdviceModal
         let label: String = label.chars().take(label_w - 2).collect();
         let head = vec![
             Span::styled(if focused { "\u{25b8} " } else { "  " }, label_style),
-            Span::styled(if row.checked { "[x] " } else { "[ ] " }, if row.checked { Style::default().fg(Color::Green).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
+            // One choice of several ways to resolve a setting reads as a radio button.
+            Span::styled(match (modal.radio(i), row.checked) {
+                (true, true) => "(\u{2022}) ",
+                (true, false) => "( ) ",
+                (false, true) => "[x] ",
+                (false, false) => "[ ] ",
+            }, if row.checked { Style::default().fg(Color::Green).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) }),
             Span::styled(format!("{label:label_w$}"), label_style),
         ];
         let change = vec![
             Span::styled(from, Style::default().fg(Color::Gray)),
             Span::styled(" \u{2192} ", muted),
             Span::styled(to, if row.checked { Style::default().fg(Color::Green).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) }),
-            Span::styled(format!("  ({})", row.tag()), Style::default().fg(tag_color)),
+            Span::styled(format!("  ({})", modal.tag(i)), Style::default().fg(tag_color)),
         ];
         let first = lines.len();
         let width: usize = head.iter().chain(&change).map(|s| s.width()).sum();
@@ -262,27 +267,38 @@ fn draw_checklist_modal(f: &mut Frame, modal: &mut super::recommend::AdviceModal
     }
 
     // The highlighted row's reason, in a panel of a fixed height: the tallest any row needs.
-    let explain = |row: &super::recommend::AdviceRow| -> Vec<Line<'static>> {
-        tip_lines(&row.explanation(several), text_w).into_iter()
+    let explain = |i: usize| -> Vec<Line<'static>> {
+        tip_lines(&modal.explanation(i), text_w).into_iter()
             .map(|l| Line::from(l.spans.into_iter().map(|s| Span::styled(s.content, s.style.patch(Style::default().fg(Color::Gray)))).collect::<Vec<_>>()))
             .collect()
     };
-    let panel_h = modal.rows.iter().map(|r| explain(r).len()).max().unwrap_or(1).clamp(2, 6) as u16;
-    let panel = modal.rows.get(modal.cursor).map(explain).unwrap_or_default();
+    let panel_h = (0..modal.rows.len()).map(|i| explain(i).len()).max().unwrap_or(1).clamp(2, 6) as u16;
+    let panel = if modal.cursor < modal.rows.len() { explain(modal.cursor) } else { vec![] };
 
     // Apply (dimmed while nothing is ticked) and Keep mine, then the keys.
+    // The focused button (↓ past the last row, or Tab) is drawn reversed in cyan.
     let ticked = modal.ticked();
-    let apply_style = if ticked == 0 { Style::default().fg(Color::DarkGray).bg(Color::Black) } else { Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD) };
+    let focus_style = Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD);
+    let apply_style = match (modal.button, ticked) {
+        (Some(0), _) => focus_style,
+        (_, 0) => Style::default().fg(Color::DarkGray).bg(Color::Black),
+        _ => Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD),
+    };
     let mut buttons = vec![Span::styled(format!(" Apply ({ticked}) "), apply_style)];
     if modal.keepable() {
         buttons.push(Span::raw("   "));
-        buttons.push(Span::styled(" Keep mine ", Style::default().fg(Color::Gray).bg(Color::Black)));
+        let keep_style = if modal.button == Some(1) { focus_style } else { Style::default().fg(Color::Gray).bg(Color::Black) };
+        buttons.push(Span::styled(" Keep mine ", keep_style));
     }
     let buttons = Line::from(buttons).alignment(Alignment::Center);
     let esc = if modal.kind == AdviceKind::Change || modal.kind == AdviceKind::Changed { "later" } else { "close" };
     let keep = if modal.keepable() { "   K keep mine" } else { "" };
-    let hint = [format!("\u{2191}\u{2193} move   Space tick   Enter apply{keep}   Esc {esc}"), format!("Space tick   Enter apply   Esc {esc}")]
-        .into_iter().find(|h| h.chars().count() <= text_w).unwrap_or_else(|| format!("Space · Enter · Esc {esc}"));
+    let short_keep = if modal.keepable() { " · K keep" } else { "" };
+    let hint = [
+        format!("\u{2191}\u{2193} move   Space/Enter tick   A apply{keep}   Esc {esc}"),
+        format!("Space/Enter tick   A apply{keep}   Esc {esc}"),
+        format!("Enter tick · A apply{short_keep} · Esc {esc}"),
+    ].into_iter().find(|h| h.chars().count() <= text_w).unwrap_or_else(|| format!("Enter tick · A apply · Esc {esc}"));
     let hint = Line::from(Span::styled(hint, muted)).alignment(Alignment::Center);
 
     // Height: a blank line, the list, a blank line, the rule, the panel, a blank line, the

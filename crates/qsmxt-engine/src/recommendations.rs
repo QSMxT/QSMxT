@@ -1246,6 +1246,15 @@ pub fn apply(config: &mut PipelineConfig, rule: &str, pick: Option<&Value>) -> R
     Ok(())
 }
 
+/// Set `rule`'s setting back to `value`, one of its current values (QSM.rs's terms, as
+/// [`Recommendation::current`] has them), whatever the rule allows: for a host keeping a setting
+/// that a value applied to another part of it changed (a mask generator brings its preset's
+/// input and erosion).
+pub fn restore(config: &mut PipelineConfig, rule: &str, value: &Value) -> Result<(), String> {
+    let r = core::RULES.iter().find(|r| r.id == rule).ok_or_else(|| format!("no rule {rule}"))?;
+    set(config, r.setting, value)
+}
+
 /// Set the QSM.rs setting `core_path` to `value` (QSM.rs's terms) in `config`.
 pub(crate) fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -> Result<(), String> {
     let (path, kind) = setting_of(core_path).ok_or_else(|| format!("QSMxT has no setting for {core_path}"))?;

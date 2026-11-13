@@ -103,8 +103,9 @@ impl AdviceRow {
         std::iter::once(&self.finding).chain(&self.also).map(|r| r.trigger.name.as_str()).collect::<Vec<_>>().join(", ")
     }
 
-    /// The plain explanation of the row, for the panel under the list.
-    pub fn explanation(&self, several: bool) -> String {
+    /// The plain explanation of the row, for the panel under the list. `group_unticked`: no row
+    /// of its group is ticked, so a required change unticked leaves the run refused.
+    pub fn explanation(&self, several: bool, group_unticked: bool) -> String {
         let r = &self.finding;
         let whose = if several || !self.also.is_empty() { format!(" ({})", self.methods()) } else { String::new() };
         let verb = match r.strength {
@@ -124,7 +125,7 @@ impl AdviceRow {
             (_, Strength::Reference) => format!("{} uses {}{whose}: {}. The authors' setting, not a recommendation.",
                 rec::reference_title(&r.trigger), r.recommended.name, r.reason.trim_end_matches('.')),
         };
-        if r.strength == Strength::Required && !self.checked && matches!(self.action, RowAction::Apply { .. }) && !self.alternative {
+        if r.strength == Strength::Required && group_unticked && matches!(self.action, RowAction::Apply { .. }) && !self.alternative {
             text += &format!(" Unticked, the run will refuse to start: {} cannot run with {}.", r.trigger.name, r.current_text());
         }
         if r.dismissed {
@@ -195,6 +196,8 @@ pub struct AdviceModal {
     pub cursor: usize,
     /// How far the list is scrolled; drawing keeps the highlighted row in view.
     pub scroll: u16,
+    /// The button that has the focus instead of a row: 0 Apply, 1 Keep mine ([`Self::buttons`]).
+    pub button: Option<usize>,
 }
 
 /// The pop-up a change, or `!`, opens ([`AdviceModal::new`], [`AdviceModal::changed`],
@@ -239,7 +242,7 @@ impl AdviceModal {
             let disagree = here.iter().any(|&i| i != best && rows[i].finding.strength == r.strength && rows[i].finding.kind == r.kind);
             rows[best].checked = !disagree && !r.conflict && !r.dismissed && r.kind == Kind::Reasoned && r.strength.preselected();
         }
-        AdviceModal { kind, findings, rows, cursor: 0, scroll: 0 }
+        AdviceModal { kind, findings, rows, cursor: 0, scroll: 0, button: None }
     }
 
     pub fn new(findings: Vec<Recommendation>) -> Self {
@@ -247,16 +250,13 @@ impl AdviceModal {
     }
 
     /// `findings` are on the setting just changed, and scoped to a flag that is on: turning the
-    /// flag off comes first and starts ticked, so the change itself stands.
+    /// flag off is offered, ticked, so the change itself stands. Changing the setting back (or to
+    /// another value the rule allows) is not offered: it would undo the change just made, and
+    /// both resolve the one conflict, so only one of them belongs in the pop-up.
     pub fn changed(findings: Vec<Recommendation>) -> Self {
         let mut m = Self::build(AdviceKind::Changed, findings, true);
-        let off = turn_off_rows(&m.findings);
-        for row in &mut m.rows {
-            if off.iter().any(|o| o.group == row.group) {
-                row.checked = false;
-            }
-        }
-        let mut off = off;
+        let mut off = turn_off_rows(&m.findings);
+        m.rows.retain(|row| !off.iter().any(|o| o.group == row.group));
         for o in &mut off {
             o.checked = true;
         }
@@ -306,10 +306,53 @@ impl AdviceModal {
         self.rows.iter().filter(|r| r.checked).count()
     }
 
-    /// Tick or untick row `i`: ticking it unticks the others of its group.
+    /// Row `i` is one of several ways to resolve one setting (the values of one setting, or
+    /// turning off the flag it depends on instead): drawn as a radio button, as one choice.
+    pub fn radio(&self, i: usize) -> bool {
+        self.rows.get(i).is_some_and(|row| self.rows.iter().filter(|r| r.group == row.group).count() > 1)
+    }
+
+    /// Row `i` is an alternative to a required row before it in its radio group: tagged "or"
+    /// rather than "required" a second time, as the group is one requirement.
+    pub fn or_row(&self, i: usize) -> bool {
+        let Some(row) = self.rows.get(i) else { return false };
+        !row.alternative && row.finding.strength == Strength::Required
+            && self.rows[..i].iter().any(|r| r.group == row.group && r.finding.strength == Strength::Required)
+    }
+
+    /// No row of row `i`'s group is ticked: a required one then leaves the run refused.
+    fn group_unticked(&self, i: usize) -> bool {
+        self.rows.get(i).is_some_and(|row| !self.rows.iter().any(|r| r.group == row.group && r.checked))
+    }
+
+    /// Row `i`'s explanation, for the panel under the list.
+    pub fn explanation(&self, i: usize) -> String {
+        self.rows.get(i).map_or_else(String::new, |r| r.explanation(self.several(), self.group_unticked(i)))
+    }
+
+    /// Row `i`'s tag: its kind, or "or" for a second way to meet one requirement.
+    pub fn tag(&self, i: usize) -> &'static str {
+        match self.rows.get(i) {
+            Some(_) if self.or_row(i) => "or",
+            Some(r) => r.tag(),
+            None => "",
+        }
+    }
+
+    /// The buttons under the list: Apply, and Keep mine when it is offered.
+    pub fn buttons(&self) -> usize {
+        if self.keepable() { 2 } else { 1 }
+    }
+
+    /// Tick or untick row `i`: ticking it unticks the others of its group. A required radio
+    /// group keeps one row ticked: choosing a way to meet the requirement is choosing another
+    /// row of it.
     pub fn toggle(&mut self, i: usize) {
         let Some(row) = self.rows.get(i) else { return };
         let (group, on) = (row.group.clone(), !row.checked);
+        if !on && row.finding.strength == Strength::Required && self.radio(i) {
+            return;
+        }
         if on {
             for r in self.rows.iter_mut().filter(|r| r.group == group) {
                 r.checked = false;
@@ -392,8 +435,8 @@ pub struct RefState {
     pub modal: Option<RefModal>,
     /// The choices with a reference pipeline at the last check ([`rec::chosen_methods`]).
     pub methods: Vec<Trigger>,
-    /// Methods just chosen whose pop-up has not been shown, each with the settings it leaves
-    /// out (those the pop-up that chose it had just decided).
+    /// Methods just chosen whose pop-up has not been shown, each with the settings (config
+    /// paths) or rules (ids) it leaves out: those the pop-up that chose it had just decided.
     pub pending: Vec<(Trigger, Vec<String>)>,
 }
 
@@ -518,7 +561,7 @@ impl App {
             for (method, skip) in std::mem::take(&mut self.refs.pending) {
                 let here: Vec<Recommendation> = groups.iter().find(|m| m.method == method)
                     .map(|m| m.differences()).unwrap_or_default()
-                    .into_iter().filter(|r| !skip.contains(&r.setting)).collect();
+                    .into_iter().filter(|r| !skip.contains(&r.setting) && !skip.contains(&r.rule)).collect();
                 if !here.is_empty() {
                     methods.push(method);
                     diffs.extend(here);
@@ -600,34 +643,81 @@ impl App {
         self.handle_advice_key(key, false);
     }
 
-    /// An advice pop-up's keys: ↑/↓ move between the rows, Space ticks one, Enter applies the
-    /// ticked rows (nothing while none is), `K` keeps every setting as it is, and Esc closes it,
-    /// changing nothing.
+    /// An advice pop-up's keys: ↑/↓ move between the rows and on to the buttons under them (Tab
+    /// goes to the buttons, ←/→ between them), Space or Enter ticks a row, Enter on a button
+    /// presses it, `A` applies the ticked rows (nothing while none is), `K` keeps every setting
+    /// as it is (closes the pop-up, changing nothing, where Keep mine is not offered), and Esc
+    /// closes it, changing nothing. Letters are read either case.
     fn handle_advice_key(&mut self, key: KeyEvent, reference: bool) {
+        enum Act { Apply, Keep, Close }
         let slot = if reference { &mut self.refs.modal } else { &mut self.rec_modal };
         let Some(modal) = slot.as_mut() else { return };
         let n = modal.rows.len().max(1);
-        match key.code {
-            KeyCode::Up | KeyCode::Char('k') | KeyCode::BackTab => modal.cursor = (modal.cursor + n - 1) % n,
-            KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => modal.cursor = (modal.cursor + 1) % n,
-            KeyCode::PageUp => modal.cursor = modal.cursor.saturating_sub(10),
-            KeyCode::PageDown => modal.cursor = (modal.cursor + 10).min(n - 1),
-            KeyCode::Home => modal.cursor = 0,
-            KeyCode::End => modal.cursor = n - 1,
-            KeyCode::Char(' ') | KeyCode::Char('x') => {
+        let buttons = modal.buttons();
+        let code = match key.code {
+            KeyCode::Char(c) => KeyCode::Char(c.to_ascii_lowercase()),
+            other => other,
+        };
+        let mut act = None;
+        match (code, modal.button) {
+            (KeyCode::Up, None) if modal.cursor == 0 => modal.button = Some(buttons - 1),
+            (KeyCode::Up, None) => modal.cursor -= 1,
+            (KeyCode::Up, Some(_)) => {
+                modal.button = None;
+                modal.cursor = n - 1;
+            }
+            (KeyCode::Down, None) if modal.cursor + 1 >= n => modal.button = Some(0),
+            (KeyCode::Down, None) => modal.cursor += 1,
+            (KeyCode::Down, Some(_)) => {
+                modal.button = None;
+                modal.cursor = 0;
+            }
+            (KeyCode::Tab, None) => modal.button = Some(0),
+            (KeyCode::Tab, Some(b)) => modal.button = (b + 1 < buttons).then_some(b + 1),
+            (KeyCode::BackTab, None) => modal.button = Some(buttons - 1),
+            (KeyCode::BackTab, Some(b)) => modal.button = b.checked_sub(1),
+            (KeyCode::Left, Some(b)) => modal.button = Some(b.saturating_sub(1)),
+            (KeyCode::Right, Some(b)) => modal.button = Some((b + 1).min(buttons - 1)),
+            (KeyCode::PageUp, _) => {
+                modal.button = None;
+                modal.cursor = modal.cursor.saturating_sub(10);
+            }
+            (KeyCode::PageDown, _) => {
+                modal.button = None;
+                modal.cursor = (modal.cursor + 10).min(n - 1);
+            }
+            (KeyCode::Home, _) => {
+                modal.button = None;
+                modal.cursor = 0;
+            }
+            (KeyCode::End, _) => {
+                modal.button = None;
+                modal.cursor = n - 1;
+            }
+            (KeyCode::Char(' ') | KeyCode::Char('x') | KeyCode::Enter, None) => {
                 let c = modal.cursor;
                 modal.toggle(c);
             }
-            KeyCode::Esc => *slot = None,
-            KeyCode::Enter | KeyCode::Char('a') if modal.ticked() > 0 => {
+            (KeyCode::Enter, Some(0)) | (KeyCode::Char('a'), _) => act = Some(Act::Apply),
+            (KeyCode::Enter, Some(_)) => act = Some(Act::Keep),
+            (KeyCode::Char('k'), _) => act = Some(if modal.keepable() { Act::Keep } else { Act::Close }),
+            (KeyCode::Esc, _) => act = Some(Act::Close),
+            _ => {}
+        }
+        match act {
+            Some(Act::Apply) if modal.ticked() == 0 => {
+                self.status_message = Some("Nothing ticked: Space or Enter ticks a row".to_string());
+            }
+            Some(Act::Apply) => {
                 let modal = slot.take().expect("open");
                 self.settle_advice(&modal, false);
             }
-            KeyCode::Char('K') if modal.keepable() => {
+            Some(Act::Keep) => {
                 let modal = slot.take().expect("open");
                 self.settle_advice(&modal, true);
             }
-            _ => {}
+            Some(Act::Close) => *slot = None,
+            None => {}
         }
     }
 
@@ -670,6 +760,26 @@ impl App {
         }
     }
 
+    /// Set back each of `kept` (the mask recipe's parts) that the values just applied changed,
+    /// to the value it had when it was kept.
+    fn restore_kept(&mut self, kept: &[Recommendation]) {
+        for k in kept.iter().filter(|k| k.setting == "masking.sections") {
+            let Some(was) = k.current.first().map(|n| n.value.clone()) else { continue };
+            if k.current.iter().any(|n| n.value != was) {
+                continue;
+            }
+            let now = self.rule_view().into_iter().find(|r| r.rule == k.rule);
+            if now.is_none_or(|r| r.current.iter().all(|n| n.value == was)) {
+                continue;
+            }
+            let Ok(mut c) = super::command::config_from_app(self) else { continue };
+            if rec::restore(&mut c, &k.rule, &was).is_ok() {
+                self.pipeline_state.mask_preset = super::app::MASK_PRESET_CUSTOM;
+                self.pipeline_state.mask_sections = c.masking.sections;
+            }
+        }
+    }
+
     /// Keep the settings of `findings` as they are: each `recommended` or `discouraged` one
     /// dismissed for its current value, in the form and so in the run's config ([`rec::keep`]). A
     /// `reference` one records nothing, and a `required` one cannot be kept.
@@ -687,6 +797,10 @@ impl App {
     /// With `offer_new` off (a recommendation's pop-up), a method's differences the applied
     /// values bring into play are not offered after it.
     fn decide(&mut self, items: &[RefItem], offer_new: bool) {
+        // What departed before, each with its value: a follow-up offers only what the applied
+        // values bring into play, never a row already kept (or applied) again.
+        let before: Vec<(String, String)> = self.rule_view().iter().filter(|r| r.departs)
+            .map(|r| (r.rule.clone(), rec::chosen_text(&r.current))).collect();
         let picked: Vec<Recommendation> = items.iter().flat_map(RefItem::picked).collect();
         let settled = rec::settle(&picked);
         let mut errors = Vec::new();
@@ -735,6 +849,9 @@ impl App {
                 let _ = self.apply_recommendation(&finding.rule, value.as_ref());
             }
         }
+        // A value applied to one part of the mask recipe can change a part kept (the generator
+        // brings its preset's input and erosion): set the kept parts back.
+        self.restore_kept(&kept);
         self.keep_mine(&kept);
         let kept_items = items.iter().filter(|i| i.pick.is_none()).count();
         let mut status = match (items.len() - kept_items - outranked - disagreeing, kept_items) {
@@ -758,16 +875,19 @@ impl App {
         let view = self.rule_view();
         self.note_methods(&view, &skip);
         // A method's difference that only comes into play with a value just applied (BET's
-        // orientation, once the mask is BET) is offered next, as the pop-up did not show it.
+        // orientation, once the mask is BET; the Laplacian's solver, once it unwraps) is offered
+        // next, as the pop-up did not show it: only those, by rule, so the rows kept here (or
+        // in an earlier pop-up) are not offered again and applying reaches a fixed point.
         let presented: Vec<&str> = items.iter().map(|i| i.finding.rule.as_str()).collect();
         for m in rec::by_method(&view).into_iter().filter(|_| offer_new) {
             if !items.iter().any(|i| i.finding.trigger == m.method) || self.refs.pending.iter().any(|(p, _)| *p == m.method) {
                 continue;
             }
-            let new: Vec<String> = m.differences().into_iter()
-                .filter(|r| !presented.contains(&r.rule.as_str())).map(|r| r.setting).collect();
-            if !new.is_empty() {
-                let skip = skip.iter().filter(|s| !new.contains(s)).cloned().collect();
+            let differences = m.differences();
+            let new = |r: &Recommendation| !presented.contains(&r.rule.as_str())
+                && !before.contains(&(r.rule.clone(), rec::chosen_text(&r.current)));
+            if differences.iter().any(new) {
+                let skip = differences.iter().filter(|r| !new(r)).map(|r| r.rule.clone()).collect();
                 self.refs.pending.push((m.method, skip));
             }
         }
@@ -1113,7 +1233,7 @@ mod tests {
         assert_eq!(modal.findings[0].rule, "medi-msmv.prefilter");
         assert!(modal.rows[0].checked, "the change starts ticked");
         assert!(modal.keepable());
-        app.handle_rec_modal_key(KeyEvent::from(KeyCode::Enter));
+        app.handle_rec_modal_key(KeyEvent::from(KeyCode::Char('a')));
         assert!(app.rec_modal.is_none());
         assert!(app.field_toggle("medi_msmv_prefilter"), "applied through the form");
         let config = super::super::command::config_from_app(&app).unwrap();
@@ -1151,7 +1271,7 @@ mod tests {
         assert!(row.checked && row.finding.strength == Strength::Recommended);
         let text = screen(&mut app, "WH-QSM chosen");
         assert!(text.contains("Data weight (WH-QSM)  Flat → Flat in mask") && text.contains("(recommended)"), "{text}");
-        key(&mut app, KeyCode::Enter);
+        key(&mut app, KeyCode::Char('a'));
         let c = super::super::command::config_from_app(&app).unwrap();
         assert_eq!(c.inversion.whqsm.weight, qsmxt_engine::enums::WhqsmWeight::FlatInMask);
     }
@@ -1204,7 +1324,7 @@ mod tests {
                 // TKD's threshold at HEIDI's cone first (required), then the seed.
                 let modal = app.rec_modal.as_ref().expect("tkd: the cone threshold");
                 assert_eq!(modal.findings[0].rule, "heidi.tkd-cone");
-                app.handle_rec_modal_key(KeyEvent::from(KeyCode::Enter));
+                app.handle_rec_modal_key(KeyEvent::from(KeyCode::Char('a')));
                 app.check_recommendations();
             }
             (app, chosen)
@@ -1225,7 +1345,7 @@ mod tests {
                 if apply {
                     app.refs.modal.as_mut().unwrap().toggle(0);
                 }
-                app.handle_ref_modal_key(KeyEvent::from(if apply { KeyCode::Enter } else { KeyCode::Char('K') }));
+                app.handle_ref_modal_key(KeyEvent::from(if apply { KeyCode::Char('a') } else { KeyCode::Char('K') }));
                 let want = if apply { lsqr } else { chosen };
                 assert_eq!(app.pipeline_state.qsm_algorithm, want, "{alg}: apply {apply}");
                 assert!(app.pipeline_state.heidi_enabled, "{alg}: HEIDI stays ticked");
@@ -1246,7 +1366,7 @@ mod tests {
             if apply {
                 app.rec_modal.as_mut().unwrap().toggle(0);
             }
-            app.handle_rec_modal_key(KeyEvent::from(if apply { KeyCode::Enter } else { KeyCode::Char('K') }));
+            app.handle_rec_modal_key(KeyEvent::from(if apply { KeyCode::Char('a') } else { KeyCode::Char('K') }));
             assert_eq!(app.pipeline_state.qsm_algorithm, if apply { lsqr } else { chosen }, "medi: apply {apply}");
             assert!(app.pipeline_state.heidi_enabled, "medi: HEIDI stays ticked");
             let config = super::super::command::config_from_app(&app).unwrap();
@@ -1488,8 +1608,8 @@ mod tests {
         assert!(text.contains("V-SHARP → PDF") && text.contains("threshold → BET") && !text.contains("README.m"), "{text}");
         assert!(text.contains("(reference)") && text.contains("Apply (0)") && text.contains("Keep mine"), "{text}");
         assert!(text.contains("Preprocessing › Masking") && text.contains("QSM › Background"), "grouped by section:\n{text}");
-        key(&mut app, KeyCode::Enter);
-        assert!(app.refs.modal.is_some(), "nothing ticked: Enter does nothing");
+        key(&mut app, KeyCode::Char('a'));
+        assert!(app.refs.modal.is_some(), "nothing ticked: Apply does nothing");
         // Every authors' setting ticked, then applied.
         let m = app.refs.modal.as_mut().unwrap();
         for i in 0..m.rows.len() {
@@ -1497,7 +1617,7 @@ mod tests {
                 m.toggle(i);
             }
         }
-        key(&mut app, KeyCode::Enter);
+        key(&mut app, KeyCode::Char('a'));
         // The complex fit is now chosen, and PDF: one pop-up, PDF's measured suggestion of 300 CG
         // iterations first (preselected), then the complex fit's authors' unwrapper (not).
         let modal = app.refs.modal.as_ref().expect("the complex fit's authors' setting, with PDF's suggestion");
@@ -1511,7 +1631,7 @@ mod tests {
         let c = super::super::command::config_from_app(&app).unwrap();
         assert_eq!(c.bg_removal.algorithm, qsmxt_engine::enums::BfAlgorithm::Pdf);
         assert_eq!(c.bg_removal.pdf.n_cg, qsm_core::bgremove::PdfParams::default().n_cg, "nothing rewritten yet");
-        key(&mut app, KeyCode::Enter);
+        key(&mut app, KeyCode::Char('a'));
         assert!(app.refs.modal.is_none() && app.rec_modal.is_none());
         let c = super::super::command::config_from_app(&app).unwrap();
         assert_eq!(c.bg_removal.pdf.n_cg, 300, "Apply takes the ticked recommendation");
@@ -1562,7 +1682,7 @@ mod tests {
         app.handle_ref_modal_key(KeyEvent::from(KeyCode::Char(' ')));
         assert_eq!(app.refs.modal.as_ref().unwrap().ticked(), 1);
         screen(&mut app, "MEDI, the background removal ticked");
-        key(&mut app, KeyCode::Enter);
+        key(&mut app, KeyCode::Char('a'));
         let c = super::super::command::config_from_app(&app).unwrap();
         assert_eq!(c.bg_removal.algorithm, qsmxt_engine::enums::BfAlgorithm::Pdf, "row {bg} applied");
         assert!(!c.masking.sections.iter().any(|s| matches!(s.generator, qsmxt_engine::masking::MaskOp::Bet { .. })), "the mask kept");
@@ -1613,10 +1733,14 @@ mod tests {
             assert_eq!(modal.title(), format!(" {} requires a change ", modal.findings[0].current_text()), "{method}");
             assert!(matches!(modal.rows[0].action, RowAction::TurnOff { .. }) && modal.rows[0].checked, "{method}: turning HEIDI off starts ticked");
             assert_eq!(modal.rows[0].change(), ("on".to_string(), "off".to_string()), "{method}");
-            assert_eq!((modal.rows[1].change().1.as_str(), modal.rows[1].checked), ("LSQR", false), "{method}");
+            // Changing the method back is the other way to resolve the one conflict: it would
+            // undo the change just made, so it is not offered.
+            assert_eq!(modal.rows.len(), 1, "{method}: only turning HEIDI off: {:?}", modal.rows);
             assert!(!modal.keepable(), "{method}: a required finding has no Keep mine");
+            let text = screen(&mut app, &format!("{method} chosen with HEIDI on"));
+            assert!(!text.contains("→ LSQR"), "{method}: {text}");
 
-            key(&mut app, KeyCode::Enter);
+            key(&mut app, KeyCode::Char('a'));
             assert!(!app.pipeline_state.heidi_enabled, "{method}: HEIDI is off");
             assert_eq!(app.pipeline_state.qsm_algorithm, chosen, "{method} stays chosen");
         }
@@ -1630,10 +1754,204 @@ mod tests {
         let medi = app.pipeline_state.qsm_algorithm;
         let modal = app.rec_modal.as_ref().expect("the pop-up opens");
         assert!(matches!(modal.rows[0].action, RowAction::TurnOff { .. }) && modal.rows[0].checked);
+        assert!(!modal.rows.iter().any(|r| r.finding.setting == "inversion.algorithm" && matches!(r.action, RowAction::Apply { .. })),
+            "MEDI is not offered to be changed back: {:?}", modal.rows);
         assert!(modal.keepable());
-        key(&mut app, KeyCode::Enter);
+        key(&mut app, KeyCode::Char('a'));
         assert!(!app.pipeline_state.heidi_enabled);
         assert_eq!(app.pipeline_state.qsm_algorithm, medi);
+    }
+
+    /// `!` on a method HEIDI cannot follow: turning HEIDI off and choosing LSQR are two ways to
+    /// meet one requirement, so they are one choice: radio buttons, one ticked, the second
+    /// tagged "or", and ticking one unticks the other without ever leaving none.
+    #[test]
+    fn ways_to_meet_one_requirement_are_one_choice() {
+        let chosen = |name: &str| QSM_PICKER_OPTIONS.iter().position(|o| *o == name).unwrap();
+        let mut app = app();
+        app.pipeline_state.heidi_enabled = true;
+        app.pipeline_state.set_select("qsm_algorithm", chosen("qsmart"));
+        let here: Vec<_> = app.rule_view().into_iter()
+            .filter(|r| r.setting == "inversion.algorithm" && r.departs && r.strength == Strength::Required).collect();
+        let mut modal = RecModal::details(here);
+        assert_eq!(modal.rows.len(), 2, "{:?}", modal.rows);
+        assert!(modal.radio(0) && modal.radio(1));
+        assert_eq!((modal.tag(0), modal.tag(1)), ("required", "or"));
+        assert_eq!(modal.ticked(), 1);
+        let ticked = modal.rows.iter().position(|r| r.checked).unwrap();
+        modal.toggle(ticked);
+        assert_eq!(modal.ticked(), 1, "a required choice keeps one ticked");
+        modal.toggle(1 - ticked);
+        assert!(modal.rows[1 - ticked].checked && !modal.rows[ticked].checked);
+        // A ticked way out: the panel does not say the run will be refused.
+        for i in 0..2 {
+            assert!(!modal.explanation(i).contains("refuse"), "{}", modal.explanation(i));
+        }
+        app.rec_modal = Some(modal);
+        let text = screen(&mut app, "details: two ways to meet one requirement");
+        assert!(text.contains("(\u{2022})") && text.contains("( )") && text.contains("(or)"), "{text}");
+    }
+
+    /// Changing a value HEIDI requires (TKD's threshold above HEIDI's cone) offers only turning
+    /// HEIDI off, ticked; ticking HEIDI on TKD offers only the threshold, not turning HEIDI back
+    /// off: the change just made stands either way.
+    #[test]
+    fn every_required_conflict_respects_the_change_just_made() {
+        let mut app = app();
+        select(&mut app, "qsm_algorithm", "tkd", &QSM_PICKER_OPTIONS);
+        app.refs.modal = None;
+        app.rec_modal = None;
+        app.toggle_field("heidi_enabled");
+        app.check_recommendations();
+        let m = app.rec_modal.as_ref().expect("HEIDI on TKD needs the cone threshold");
+        assert!(m.rows.iter().all(|r| matches!(r.action, RowAction::Apply { .. })), "{:?}", m.rows);
+        key(&mut app, KeyCode::Char('a'));
+        while app.rec_modal.is_some() || app.refs.modal.is_some() {
+            key(&mut app, KeyCode::Esc);
+        }
+        assert!(app.pipeline_state.heidi_enabled);
+        // Now the threshold, back above the cone.
+        let field = super::super::app::field_of_path("inversion.tkd.threshold").expect("the TKD threshold row");
+        *app.field_text_mut(field).unwrap() = "0.25".into();
+        app.check_recommendations();
+        let m = app.rec_modal.as_ref().expect("the threshold goes against HEIDI");
+        assert_eq!(m.kind, AdviceKind::Changed);
+        assert_eq!(m.rows.len(), 1, "{:?}", m.rows);
+        assert!(matches!(m.rows[0].action, RowAction::TurnOff { .. }) && m.rows[0].checked);
+    }
+
+    /// The keys: Enter ticks the highlighted row like Space; ↓ past the last row (or Tab) moves
+    /// to the buttons, where Enter presses the one focused; `A` applies from anywhere; `K` (or
+    /// `k`) keeps every setting and closes the pop-up, and does not move the highlight.
+    #[test]
+    fn enter_ticks_and_the_buttons_apply_or_keep() {
+        let mut app = medi_chosen();
+        let n = app.refs.modal.as_ref().unwrap().rows.len();
+        assert_eq!(app.refs.modal.as_ref().unwrap().ticked(), 0);
+        key(&mut app, KeyCode::Enter);
+        let m = app.refs.modal.as_ref().expect("Enter on a row does not close the pop-up");
+        assert!(m.rows[0].checked, "Enter ticks the row");
+        key(&mut app, KeyCode::Enter);
+        assert!(!app.refs.modal.as_ref().unwrap().rows[0].checked, "and unticks it");
+        key(&mut app, KeyCode::Char(' '));
+        for _ in 0..n {
+            key(&mut app, KeyCode::Down);
+        }
+        assert_eq!(app.refs.modal.as_ref().unwrap().button, Some(0), "↓ past the last row: Apply");
+        let text = screen(&mut app, "MEDI: Apply focused");
+        assert!(text.contains("Space/Enter tick") && text.contains("A apply") && text.contains("K keep mine"), "{text}");
+        key(&mut app, KeyCode::Up);
+        assert_eq!(app.refs.modal.as_ref().unwrap().button, None);
+        key(&mut app, KeyCode::Tab);
+        let before = super::super::command::config_from_app(&app).unwrap();
+        let rows = app.refs.modal.as_ref().unwrap().rows.clone();
+        key(&mut app, KeyCode::Enter);
+        assert!(app.refs.modal.as_ref().is_none_or(|m| m.rows != rows), "Enter on Apply applies (a follow-up may open)");
+        assert_ne!(super::super::command::config_from_app(&app).unwrap(), before, "the ticked row applied");
+
+        // Keep mine: Tab, →, Enter; and K, either case, from a row.
+        for keys in [&[KeyCode::Tab, KeyCode::Right, KeyCode::Enter][..], &[KeyCode::Char('K')], &[KeyCode::Char('k')]] {
+            let mut app = medi_chosen();
+            let before = super::super::command::config_from_app(&app).unwrap();
+            for k in keys {
+                key(&mut app, *k);
+            }
+            assert!(app.refs.modal.is_none(), "{keys:?} closes the pop-up");
+            assert_eq!(super::super::command::config_from_app(&app).unwrap(), before, "{keys:?} keeps every setting");
+        }
+        // Where Keep mine is not offered (every finding required), K closes it all the same.
+        let mut app = method_chosen_with_heidi("qsmart");
+        assert!(!app.rec_modal.as_ref().unwrap().keepable());
+        key(&mut app, KeyCode::Char('k'));
+        assert!(app.rec_modal.is_none() && app.pipeline_state.heidi_enabled);
+    }
+
+    /// Ticking every row of a method's reference pipeline pop-up and applying reaches a fixed
+    /// point, for every toolbox pipeline's method and every other method: a follow-up offers
+    /// only what the applied values bring into play (BET's fractional intensity once the mask is
+    /// BET; PDF's own authors' settings once HD-QSM's PDF is applied), nothing is offered twice,
+    /// and then none of the method's authors' settings is left. Ticking only some rows also
+    /// converges: the rows kept are not offered again.
+    #[test]
+    fn applying_a_reference_pipeline_reaches_a_fixed_point() {
+        use qsmxt_engine::pipelines;
+        let picker = |c: &qsmxt_engine::config::PipelineConfig| {
+            let name = serde_json::to_value(c.inversion.algorithm).unwrap().as_str().unwrap().to_string();
+            if name == "lsqr" && c.inversion.heidi.enabled { LSQR_HEIDI.to_string() } else { name }
+        };
+        let mut methods: Vec<String> = Vec::new();
+        for p in pipelines::pipelines().into_iter().filter(|p| p.toolbox.is_some()) {
+            let mut app = App::new_for_trial();
+            app.filter_state.num_echoes = "4".into();
+            let c = super::super::command::config_from_app(&app).unwrap();
+            let target = pipelines::target(&c, p.id, &app.view_facts()).unwrap();
+            let m = picker(&target);
+            assert!(QSM_PICKER_OPTIONS.contains(&m.as_str()), "{}: {m}", p.id);
+            if !methods.contains(&m) {
+                methods.push(m);
+            }
+        }
+        for m in QSM_PICKER_OPTIONS.iter() {
+            if !methods.iter().any(|x| x == m) {
+                methods.push(m.to_string());
+            }
+        }
+        for partial in [false, true] {
+            for method in &methods {
+                let mut app = App::new_for_trial();
+                app.filter_state.num_echoes = "4".into();
+                app.check_recommendations();
+                // From another method, so that choosing QSMxT's default (iLSQR) is a change too.
+                let other = if method == "tkd" { "rts" } else { "tkd" };
+                app.set_field_select("qsm_algorithm", QSM_PICKER_OPTIONS.iter().position(|o| *o == other).unwrap());
+                app.check_recommendations();
+                while app.rec_modal.is_some() || app.refs.modal.is_some() {
+                    key(&mut app, KeyCode::Esc);
+                }
+                app.set_field_select("qsm_algorithm", QSM_PICKER_OPTIONS.iter().position(|o| o == method).unwrap());
+                app.check_recommendations();
+                let mut pop_ups = 0;
+                let mut reference_pop_ups = 0;
+                let mut offered: Vec<(String, (String, String))> = Vec::new();
+                while app.rec_modal.is_some() || app.refs.modal.is_some() {
+                    pop_ups += 1;
+                    assert!(pop_ups <= 8, "{method}: the pop-ups do not stop");
+                    let reference = app.rec_modal.is_none();
+                    reference_pop_ups += usize::from(reference);
+                    let m = if reference { app.refs.modal.as_mut() } else { app.rec_modal.as_mut() }.unwrap();
+                    for r in m.rows.iter().filter(|_| reference) {
+                        let offer = (r.finding.rule.clone(), r.change());
+                        assert!(!offered.contains(&offer), "{method}: {offer:?} offered again ({})", m.title());
+                        offered.push(offer);
+                    }
+                    for i in 0..m.rows.len() {
+                        let group = m.rows[i].group.clone();
+                        let skip = partial && reference_pop_ups == 1 && i % 2 == 1;
+                        if !skip && !m.rows[i].alternative && !m.rows.iter().any(|r| r.group == group && r.checked) {
+                            m.toggle(i);
+                        }
+                    }
+                    let k = if m.ticked() > 0 { KeyCode::Char('a') } else { KeyCode::Char('k') };
+                    key(&mut app, k);
+                }
+                if partial {
+                    continue;
+                }
+                // Nothing of the method's reference pipeline left, but where another chosen
+                // method's authors disagree and the setting follows theirs (AMP-PE's echo
+                // combination, once PDF's complex fit is taken).
+                let c = super::super::command::config_from_app(&app).unwrap();
+                let facts = app.rule_facts();
+                let view = app.rule_view();
+                let other_authors = |r: &Recommendation| view.iter().any(|o| o.trigger != r.trigger
+                    && o.kind == Kind::Reference && !o.departs && rec::rule_setting(o) == rec::rule_setting(r));
+                for m in rec::chosen_methods(&c, &facts).into_iter().filter(|m| m.setting == "inversion.algorithm") {
+                    let left: Vec<String> = rec::reference_differences(&c, &facts, &m).into_iter()
+                        .filter(|r| !r.conflict && !other_authors(r)).map(|r| format!("{} ({})", r.rule, r.current_text())).collect();
+                    assert!(left.is_empty(), "{method}: {} left: {left:?}", m.name);
+                }
+            }
+        }
     }
 
     /// With HEIDI's row hidden, `!` on the inversion is the way to turn it off later.
@@ -1692,7 +2010,7 @@ mod tests {
         assert!(text.contains("(reference)") && text.contains("QSMART's reference pipeline uses BET")
             && text.contains("not a recommendation") && !text.contains("Source"), "{text}");
         key(&mut app, KeyCode::Char(' '));
-        key(&mut app, KeyCode::Enter);
+        key(&mut app, KeyCode::Char('a'));
         // BET now; the recipe's other parts (QSMART's first echo, f 0.2, no erosion) are their
         // own rules, still marked.
         assert!(App::row_marker(&app.rule_view(), &row).is_none_or(|m| !m.text.contains("BET")));
@@ -1919,3 +2237,4 @@ mod tests {
         assert_eq!(app.field_select("qsm_algorithm"), at("medi"));
     }
 }
+
