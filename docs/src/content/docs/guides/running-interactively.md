@@ -72,7 +72,7 @@ The Pipeline tab lists QSMxT's defaults and the original toolboxes' pipelines: t
 toolbox, STI Suite (iLSQR and STAR-QSM), QSMART, the HEIDI package, the χ-separation toolbox
 (iLSQR, MEDI and χ-sepnet) and DECOMPOSE. Next to the list, the highlighted pipeline is
 compared with your settings: each setting choosing it would change, from your value to the
-pipeline's. *About*, at the bottom of the list, explains what the toolbox pipelines are, with
+pipeline's. *About*, at the top of the list, explains what the toolbox pipelines are, with
 a link to [QSM-CI's parity checks](https://qsmxt.github.io/QSM-CI/parity.html); `Enter` there
 copies the link.
 
@@ -190,7 +190,7 @@ a column on the right instead, so the settings use the panel's full height; the 
 | Tab | Pages | What is there |
 |---|---|---|
 | 1 Input | — | Input mode, dataset/output/config paths, include/exclude patterns and the run tree, number of echoes, and the orientation groups: a pattern, or groups given to runs with ←/→ in the run tree (one of them the reference), each run marked with its group |
-| 2 Pipeline | — | The pipeline to start from: QSMxT's defaults or an original toolbox's, and what choosing it changes (see [Pipelines](#pipelines)). *About*, at the bottom of the list, says what the toolbox pipelines are |
+| 2 Pipeline | — | The pipeline to start from: QSMxT's defaults or an original toolbox's, and what choosing it changes (see [Pipelines](#pipelines)). *About*, at the top of the list, says what the toolbox pipelines are |
 | 3 Reconstruction | Preprocessing: Geometry · Masking · Motion | Axial resampling and output space, slice-gap check, crop to mask, FFT padding, coil combination (multi-coil data); the mask recipe, custom masks, the magnitude's inhomogeneity correction and the two-pass reliable mask; motion correction and its rigid registration |
 | | QSM: Compute QSM · Field map · Background · Inversion · COSMOS/STI · Reference · χ-separation · SMWI | Whether QSM is reconstructed (SMWI turns it back on and χ-separation needs it, unless a QSM is supplied); unwrapping and B0 estimation; background-field removal (inversions of a local field only); the dipole inversion; how an orientation group is reconstructed (without one, where to choose it); the χ reference; the χ-separation method and its parameters; SMWI |
 | | Other outputs: Magnitude · SWI · Relaxometry · Segmentation | whether the combined magnitude is published; SWI; T2\*, R2\*, R2 and R2′ maps, the R2′ source and supplied maps; segmentation (SynthSeg or a dseg from derivatives) and per-structure statistics |
