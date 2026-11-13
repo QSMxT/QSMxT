@@ -3702,7 +3702,8 @@ impl PipelineFormState {
                 label: "  Unmasked phase", field: "laplacian_unmasked",
                 help: "Unwrap the raw phase over the whole volume, as QSMART does, instead of the phase set to zero outside the brain mask",
             });
-            if !self.laplacian_unmasked {
+            // Only with a weighted average, as the setting itself (schema: field_mapping.laplacian_keep_outside).
+            if !self.laplacian_unmasked && self.b0_estimation_is("weighted-avg") {
                 rows.push(PipelineRow::Toggle {
                     label: "  Keep field outside", field: "laplacian_keep_outside",
                     help: "Keep the field over the whole volume, not only inside the brain mask, as UK Biobank's pipeline hands it to V-SHARP (weighted-average combination)",

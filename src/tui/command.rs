@@ -357,7 +357,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         } else { None },
         laplacian_unmasked: ps.unwrapping_algorithm == 1 && ps.laplacian_unmasked,
         no_laplacian_unmasked: false,
-        laplacian_keep_outside: ps.unwrapping_algorithm == 1 && !ps.laplacian_unmasked && ps.laplacian_keep_outside,
+        laplacian_keep_outside: ps.unwrapping_algorithm == 1 && !ps.laplacian_unmasked && ps.b0_estimation_is("weighted-avg") && ps.laplacian_keep_outside,
         no_laplacian_keep_outside: false,
         // BET is edited per mask step in the TUI, so its settings travel inside the sections.
         bet_fractional_intensity: None,
