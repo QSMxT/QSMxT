@@ -109,7 +109,7 @@ Laplacian unwrapping's settings are in `[field_mapping]`:
 ```toml
 [field_mapping]
 unwrapping_algorithm = "laplacian"
-laplacian_solver = "mirror"   # or "dct" (the default), "fft", "mgpcg"
+laplacian_solver = "mirror"   # or "dct" (the default), "fft", "mgpcg" (QSM.jl's MGPCG: unwrapping with LBV background removal in one step)
 laplacian_unmasked = true     # the raw phase over the whole volume (default false)
 ```
 

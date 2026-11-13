@@ -1717,8 +1717,8 @@ pub struct PipelineArgs {
     /// Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares,
     /// Neumann/DCT solve; default), `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a
     /// zero-padded volume), `mirror` (the same on the volume mirrored along each axis, as
-    /// QSMART unwraps) or `mgpcg` (QSM.jl's `:mgpcg`: zero phase outside the brain mask,
-    /// multigrid-preconditioned CG; also removes the background field inside the mask)
+    /// QSMART unwraps) or `mgpcg` (QSM.jl's MGPCG: Laplacian unwrapping with LBV background
+    /// removal in one step; QSM.jl follows it with V-SHARP to remove remaining background)
     #[arg(long, value_enum, alias = "laplacian-kernel")]
     pub laplacian_solver: Option<LaplacianSolverArg>,
 
@@ -2847,8 +2847,9 @@ pub struct FieldmapLaplacianArgs {
     pub common: FieldmapCommonArgs,
     /// Poisson solver: `dct` (unweighted least squares, Neumann/DCT solve), `fft` (Schofield &
     /// Zhu, FFT solve on a zero-padded volume), `mirror` (the same on the volume mirrored along
-    /// each axis, as QSMART unwraps) or `mgpcg` (QSM.jl's `:mgpcg`: zero phase outside the mask,
-    /// multigrid-preconditioned CG; also removes the background field inside the mask)
+    /// each axis, as QSMART unwraps) or `mgpcg` (QSM.jl's MGPCG: Laplacian unwrapping with LBV
+    /// background removal in one step; QSM.jl follows it with V-SHARP to remove remaining
+    /// background)
     #[arg(long, value_enum, default_value = "dct", alias = "laplacian-kernel")]
     pub laplacian_solver: LaplacianSolverArg,
     /// Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or
@@ -4969,7 +4970,7 @@ pub enum LaplacianSolverArg {
     Fft,
     /// FFT solve on the volume mirrored along each axis, as QSMART unwraps
     Mirror,
-    /// QSM.jl's `:mgpcg`: zero phase outside the mask, multigrid-preconditioned CG
+    /// QSM.jl's MGPCG: Laplacian unwrapping with LBV background removal in one step
     Mgpcg,
 }
 

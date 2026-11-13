@@ -1931,9 +1931,9 @@ fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
                 LaplacianSolver::Mirror => " with an FFT Poisson solve on the volume mirrored along each axis".to_string(),
                 LaplacianSolver::Mgpcg => {
                     doc.cite(&CITE_LBV);
-                    " with the Poisson equation solved inside the brain mask with the phase held at zero outside it \
-                     (a Dirichlet boundary condition, which also removes the background field inside the mask; Zhou et al., 2014) \
-                     by multigrid-preconditioned conjugate gradients, as in QSM.jl".to_string()
+                    ", solved inside the brain mask with the phase held at zero outside it by multigrid-preconditioned \
+                     conjugate gradients as in QSM.jl, which removes the background field in the same step, \
+                     equivalent to LBV background removal (Zhou et al., 2014)".to_string()
                 }
             };
             // The phase is set to zero outside the brain mask first unless it is unwrapped raw.
@@ -3187,9 +3187,9 @@ mod tests {
         config.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
         config.field_mapping.laplacian_solver = LaplacianSolver::Mgpcg;
         let out = generate_methods(&config);
-        for said in ["using the Laplacian method (Schofield & Zhu, 2003) with the Poisson equation solved inside the brain mask",
-                     "which also removes the background field inside the mask; Zhou et al., 2014",
-                     "multigrid-preconditioned conjugate gradients, as in QSM.jl",
+        for said in ["using the Laplacian method (Schofield & Zhu, 2003), solved inside the brain mask",
+                     "multigrid-preconditioned conjugate gradients as in QSM.jl",
+                     "equivalent to LBV background removal (Zhou et al., 2014)",
                      "https://doi.org/10.1002/nbm.3064"] {
             assert!(out.contains(said), "missing {said:?}: {out}");
         }
