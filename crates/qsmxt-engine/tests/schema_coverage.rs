@@ -828,7 +828,8 @@ fn a_morphology_step_of_zero_is_refused_by_the_run_and_the_view() {
 }
 
 /// The mask recipe carries no warning of QSMxT's own under QSMART: QSMART's reference mask is a
-/// pipeline rule's, shown as the setting's marker.
+/// pipeline rule's, shown as the setting's marker. No erosion is recommended with QSMART, so it
+/// leads; the threshold of 100 waits for N4 and a magnitude input (QSM.rs's rules, decision 142).
 #[test]
 fn the_mask_recipe_under_qsmart_has_a_reference_marker_not_a_warning() {
     let mut c = PipelineConfig::default();
@@ -836,5 +837,5 @@ fn the_mask_recipe_under_qsmart_has_a_reference_marker_not_a_warning() {
     let view = schema::settings_view(&c, &ViewFacts::default());
     let mask = view.iter().find(|v| v.path == "masking.sections").unwrap();
     assert_eq!(mask.warning, None);
-    assert_eq!(mask.marker.as_ref().map(|m| m.text.as_str()), Some("QSMART: BET, first echo, intensity threshold 100, majority filter, closing radius 2, no erosion"));
+    assert_eq!(mask.marker.as_ref().map(|m| m.text.as_str()), Some("QSMART: no erosion, BET, first echo, majority filter, closing radius 2"));
 }

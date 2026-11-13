@@ -14,9 +14,10 @@
 //!   apply, whichever stages the pipeline itself sets, so nothing carries over from a pipeline
 //!   chosen before (DECOMPOSE under the MEDI toolbox's name) or from a value changed earlier
 //!   (MEDI's λ). The Input page, the Outputs tab and the execution settings stay as they are.
-//! - **Reasoned recommendations are not part of a pipeline.** A pipeline is what the authors ran;
-//!   a recommendation its choices trigger (PDF's measured iteration count) is still offered by
-//!   [`crate::recommendations`] as usual.
+//! - **Reasoned recommendations are not part of a pipeline**, unless the authors ran them
+//!   (QSM.rs's `ReferencePipeline::reasoned`: QSMART's Laplacian unwrapping, echo fit and
+//!   unreduced mask). A pipeline is what the authors ran; a recommendation its choices trigger
+//!   (PDF's measured iteration count) is still offered by [`crate::recommendations`] as usual.
 //! - **Nothing changes unasked.** [`changes`] lists every change before [`choose`] makes them.
 //! - **The chosen pipeline is remembered** in [`PipelineConfig::reference_pipeline`], a label
 //!   that changes nothing a run computes: the status of a config that departs from it names it
@@ -147,9 +148,10 @@ fn reset(config: &mut PipelineConfig, stages: &[Section]) -> Result<(), String> 
     Ok(())
 }
 
-/// Set a pipeline's choices and follow the reference rules they trigger: each rule whose trigger
-/// the pipeline set, on a setting it has not set yet, until nothing changes. Returns the config
-/// paths it set, in order.
+/// Set a pipeline's choices and follow the reference rules they trigger, and the reasoned rules
+/// the authors also ran ([`ReferencePipeline::reasoned`], QSMART's Laplacian unwrapping, echo fit
+/// and unreduced mask): each rule whose trigger the pipeline set, on a setting it has not set yet,
+/// until nothing changes. Returns the config paths it set, in order.
 fn follow(config: &mut PipelineConfig, p: &ReferencePipeline, facts: &Facts) -> Result<Vec<&'static str>, String> {
     let mut set: Vec<&'static str> = Vec::new();
     for (core_path, value) in p.choose {
@@ -169,7 +171,8 @@ fn follow(config: &mut PipelineConfig, p: &ReferencePipeline, facts: &Facts) -> 
     loop {
         let view = rec::reference_values(config, facts);
         let next: Vec<_> = view.iter()
-            .filter(|r| r.strength == Strength::Reference && set.contains(&r.trigger.setting.as_str()))
+            .filter(|r| (r.strength == Strength::Reference || p.reasoned.contains(&r.rule.as_str()))
+                && set.contains(&r.trigger.setting.as_str()))
             .filter(|r| rec::core_setting(&r.rule).is_some_and(|c| !followed.contains(&c)))
             .collect();
         let Some(first) = next.first() else { break };
@@ -480,6 +483,9 @@ mod tests {
         assert!(m.inhomogeneity_correction);
         assert_eq!(m.inhomogeneity_method, crate::enums::InhomogeneityMethod::N4);
         assert_eq!(c.bet.orientation, crate::enums::BetOrientation::Fsl);
+        // QSMART's recommended group is what its authors ran, so the pipeline follows it too.
+        assert_eq!(c.field_mapping.unwrapping_algorithm, crate::enums::UnwrappingAlgorithm::Laplacian);
+        assert_eq!(c.field_mapping.b0_estimation, crate::enums::B0Estimation::QsmartEchofit);
         let text = crate::methods::generate_methods(&c);
         assert!(text.contains("removal of voxels with an intensity below 100, a 3×3×3 majority filter"), "{text}");
         assert!(text.contains("morphological closing (radius 2 voxels)"), "{text}");
