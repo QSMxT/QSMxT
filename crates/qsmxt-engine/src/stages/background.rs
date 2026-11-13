@@ -53,26 +53,50 @@ pub struct LocalField {
 /// `magnitudes` is every echo's magnitude, stacked with the echo slowest, for the method that
 /// takes them ([`takes_echo_magnitudes`]), and `None` otherwise.
 ///
+/// `reliability` is UK Biobank's phase-reliability maps over this `mask`
+/// ([`ukb_phase_reliability`]), which the configured UK Biobank mask trimming needs
+/// (`bg_removal.ukb_mask_trim`); `None` otherwise.
+///
 /// Runs in the reconstruction box ([`crop_box_for`]) and returns to the full grid: the local
 /// field and the eroded mask are both undefined outside the box, so zero is the right fill for
 /// each.
 pub fn remove_background(
-    field_ppm: &[f64], mask: &[u8], magnitudes: Option<&[f64]>, meta: &RunMetadata,
+    field_ppm: &[f64], mask: &[u8], magnitudes: Option<&[f64]>,
+    reliability: Option<&qsm_core::utils::UkbPhaseReliability>, meta: &RunMetadata,
     config: &PipelineConfig, observer: &mut dyn Observer,
 ) -> Result<LocalField, EngineError> {
     let (_, bg_config, _, _) = crate::bridge::to_pipeline_stages(config);
     let cb = crop_box_for(config, meta, mask, "Background removal");
     let magnitudes = magnitudes.map(|m| crate::stages::inversion::crop_stack(m, mask.len(), &cb));
-    let result = qsm_core::pipeline::run_bg_removal(
+    let reliability = reliability.map(|r| qsm_core::utils::UkbPhaseReliability {
+        first_echo: qsm_core::crop::crop_volume(&r.first_echo, &cb),
+        last_echo: qsm_core::crop::crop_volume(&r.last_echo, &cb),
+    });
+    let result = qsm_core::pipeline::run_bg_removal_trimmed(
         &qsm_core::crop::crop_volume(field_ppm, &cb),
         &qsm_core::crop::crop_volume(mask, &cb),
-        &scan_metadata_in(meta, &cb), &bg_config, magnitudes.as_deref(),
+        &scan_metadata_in(meta, &cb), &bg_config, magnitudes.as_deref(), reliability.as_ref(),
         &mut |done, total| observer.progress(done, total),
     ).map_err(|e| EngineError::Config(format!("bg removal: {}", e)))?;
     Ok(LocalField {
         local_field_ppm: qsm_core::crop::uncrop_volume(&result.local_field_ppm, &cb, 0.0),
         mask: qsm_core::crop::uncrop_volume(&result.eroded_mask, &cb, 0u8),
     })
+}
+
+/// UK Biobank's phase-reliability maps (qsm-core `utils::phase_reliability`), for its mask
+/// trimming (`bg_removal.ukb_mask_trim`): from the wrapped phase of the first and the last echo
+/// (radians) over the untrimmed brain `mask`, on the full grid (the maps are a circular
+/// convolution over the whole array, as UK Biobank computes them). `None` when the trim is off.
+pub fn ukb_phase_reliability(
+    phases: &[&[f64]], mask: &[u8], meta: &RunMetadata, config: &PipelineConfig,
+) -> Result<Option<qsm_core::utils::UkbPhaseReliability>, EngineError> {
+    if !config.bg_removal.ukb_mask_trim {
+        return Ok(None);
+    }
+    qsm_core::utils::UkbPhaseReliability::compute(phases, mask, &scan_metadata(meta).grid())
+        .map(Some)
+        .map_err(|e| EngineError::Config(format!("bg removal: {e}")))
 }
 
 /// iQFM: the local field straight from every echo's wrapped phase (joint unwrapping and

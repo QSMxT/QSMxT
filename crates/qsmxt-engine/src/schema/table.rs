@@ -179,6 +179,9 @@ pub(super) fn table() -> Vec<Def> {
         .gui("Zero-padding per side: one value for every axis, or three (x y z)"),
         d("field_mapping.laplacian_unmasked", FieldMap, "Unmasked phase", "Unwrap the raw phase over the whole volume, as QSMART does, instead of the phase set to zero outside the brain mask", Bool).flag("--laplacian-unmasked").parent("field_mapping.unwrapping_algorithm")
         .when(|x| x.laplacian).full("Laplacian unwrapping of the raw phase"),
+        d("field_mapping.laplacian_keep_outside", FieldMap, "Keep field outside", "Keep the field over the whole volume, not only inside the brain mask, as UK Biobank's pipeline hands it to V-SHARP (weighted-average combination)", Bool).flag("--laplacian-keep-outside").parent("field_mapping.unwrapping_algorithm")
+        .when(|x| x.laplacian && !x.c.field_mapping.laplacian_unmasked && x.c.field_mapping.b0_estimation == B0Estimation::WeightedAvg)
+        .full("Laplacian field kept outside the mask"),
         // MEDI's complex fit fits its own phase offset: QSM.rs does not remove them first.
         d("field_mapping.phase_offset_removal", FieldMap, "Phase offset removal", "Remove spatially-varying phase offset using HIP (Eckstein et al., 2018); multi-echo only", Bool).basic().flag("--phase-offset-removal").parent("field_mapping.unwrapping_algorithm")
         .when(|x| x.combines && !x.laplacian && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit),
@@ -320,6 +323,10 @@ pub(super) fn table() -> Vec<Def> {
         .flag("--bf-polish-mask")
         .when(|x| !x.bf("iqfm"))
         .gui("Keep the background-removal mask's largest connected component, holes filled, as STI Suite's PolishMask"),
+        d("bg_removal.ukb_mask_trim", Background, "UKB mask trim", "Before and after background removal, trim the mask of voxels with unreliable phase, as UK Biobank's pipeline does", Bool)
+        .flag("--bf-ukb-mask-trim")
+        .when(|x| !x.bf("iqfm"))
+        .gui("Trim the mask by the phase reliability of the first and last echo before and after background removal, as UK Biobank's pipeline does"),
         d("bg_removal.vsharp.deconvolve", Background, "Deconvolve", "Undo the SMV high-pass with a truncated-SVD deconvolution (default: off)", Bool).flag("--vsharp-deconvolve").parent("bg_removal.algorithm")
         .when(|x| x.bf("vsharp"))
         .gui("Undo the SMV high-pass with a truncated-SVD deconvolution"),

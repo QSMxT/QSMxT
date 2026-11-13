@@ -1654,6 +1654,15 @@ pub struct PipelineArgs {
     #[arg(long, conflicts_with = "bf_polish_mask")]
     pub no_bf_polish_mask: bool,
 
+    /// Trim the brain mask of voxels with unreliable phase before and after background removal,
+    /// as UK Biobank's pipeline does (its phase-reliability maps of the first and last echo)
+    #[arg(long)]
+    pub bf_ukb_mask_trim: bool,
+
+    /// Do not trim the mask by phase reliability (the default), after a `--pipeline` that does
+    #[arg(long, conflicts_with = "bf_ukb_mask_trim")]
+    pub no_bf_ukb_mask_trim: bool,
+
     /// Masking input image (overrides the input of the configured mask sections;
     /// combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude)
     #[arg(long, value_enum)]
@@ -1737,6 +1746,17 @@ pub struct PipelineArgs {
     /// (the default), after a `--pipeline` that unwraps the whole volume
     #[arg(long, conflicts_with = "laplacian_unmasked")]
     pub no_laplacian_unmasked: bool,
+
+    /// `--unwrapping-algorithm laplacian` with a weighted-average echo combination: keep the
+    /// field over the whole volume, not only inside the brain mask, as UK Biobank's pipeline hands
+    /// it to V-SHARP
+    #[arg(long)]
+    pub laplacian_keep_outside: bool,
+
+    /// Keep the Laplacian field inside the brain mask only (the default), after a `--pipeline`
+    /// that keeps it over the whole volume
+    #[arg(long, conflicts_with = "laplacian_keep_outside")]
+    pub no_laplacian_keep_outside: bool,
 
     /// BET fractional intensity (0.0-1.0; smaller = larger brain). Applies to every BET step in
     /// the masking recipe, overriding a `bet:<f>` in a --mask spec

@@ -315,6 +315,9 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         bf_polish_mask: ps.inversion_needs_bg_removal() && bf_options.get(ps.bf_algorithm).copied() != Some(crate::cli::BfAlgorithmArg::Iqfm)
             && ps.bf_polish_mask,
         no_bf_polish_mask: false,
+        bf_ukb_mask_trim: ps.inversion_needs_bg_removal() && bf_options.get(ps.bf_algorithm).copied() != Some(crate::cli::BfAlgorithmArg::Iqfm)
+            && ps.bf_ukb_mask_trim,
+        no_bf_ukb_mask_trim: false,
         masking_input: None,
         phase_offset_removal: Some(ps.phase_offset_removal),
         phase_offset_sigma_mm: parse_optional_f64_vec3(&ps.phase_offset_sigma_mm),
@@ -354,6 +357,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         } else { None },
         laplacian_unmasked: ps.unwrapping_algorithm == 1 && ps.laplacian_unmasked,
         no_laplacian_unmasked: false,
+        laplacian_keep_outside: ps.unwrapping_algorithm == 1 && !ps.laplacian_unmasked && ps.laplacian_keep_outside,
+        no_laplacian_keep_outside: false,
         // BET is edited per mask step in the TUI, so its settings travel inside the sections.
         bet_fractional_intensity: None,
         // The TUI's voxel scale lives on the mask recipe's BET step, so it travels in
@@ -2786,10 +2791,14 @@ mod parity {
             ("--pipeline", "the Pipeline tab"),
             // Only against a pipeline that turns it on; QSMxT's default is off.
             ("--no-laplacian-unmasked", "restates the default"),
+            // Likewise against the UK Biobank pipeline, which keeps the field outside the mask.
+            ("--no-laplacian-keep-outside", "restates the default"),
             // Likewise against the HEIDI pipeline, which turns ITK's float arithmetic on.
             ("--no-heidi-denoise-reference-itk", "restates the default"),
             // Likewise against the STI Suite pipeline, which polishes the background-removal mask.
             ("--no-bf-polish-mask", "restates the default"),
+            // Likewise against the UK Biobank pipeline, which trims the mask by phase reliability.
+            ("--no-bf-ukb-mask-trim", "restates the default"),
         ];
         for (flag, why) in not_emitted {
             assert!(!covered.contains(*flag), "{flag} is allow-listed ({why}) but the TUI emits it: drop it from the list");

@@ -565,6 +565,43 @@ mod tests {
         }
     }
 
+    /// UK Biobank's pipeline (QSM.rs's `uk-biobank`): its phase-reliability mask trimming, which
+    /// is what selects it, around STI Suite's functions called with UK Biobank's own arguments
+    /// (MRPhaseUnwrap with 64 voxels of padding on the masked phase, TE·exp(−TE/40 ms) echo
+    /// weights, V-SHARP, iLSQR with 100 iterations and 64 mm of padding in single precision), χ
+    /// unreferenced, and none of the STI GUI's own choices. iLSQR chosen alone is STI Suite's
+    /// pipeline, never UK Biobank's. The command line names the pipeline, not the settings.
+    #[test]
+    fn the_uk_biobank_pipeline_runs_its_own_chain_and_ilsqr_alone_does_not_pick_it() {
+        use crate::enums::{B0WeightType, BfAlgorithm, LaplacianSolver, QsmAlgorithm, QsmReference, UnwrappingAlgorithm};
+        let mut c = PipelineConfig::default();
+        choose(&mut c, "uk-biobank", &facts()).unwrap();
+        assert!(c.bg_removal.ukb_mask_trim && !c.bg_removal.polish_mask);
+        assert_eq!(c.inversion.algorithm, QsmAlgorithm::Ilsqr);
+        assert_eq!((c.inversion.ilsqr.max_iter, c.inversion.ilsqr.pad_mm), (100, 64.0));
+        assert_eq!(c.inversion.ilsqr.precision, crate::enums::IlsqrPrecision::Single);
+        let fm = &c.field_mapping;
+        assert_eq!(fm.unwrapping_algorithm, UnwrappingAlgorithm::Laplacian);
+        assert_eq!((fm.laplacian_solver, fm.laplacian_fft_pad, fm.laplacian_unmasked), (LaplacianSolver::Fft, [64; 3], false));
+        assert_eq!((fm.b0_weight_type, fm.b0_weight_assumed_t2star_ms), (B0WeightType::AssumedDecay, 40.0));
+        assert!(fm.laplacian_keep_outside, "UK Biobank hands V-SHARP the whole volume");
+        assert_eq!(c.bg_removal.algorithm, BfAlgorithm::Vsharp);
+        assert_eq!(c.qsm.reference, QsmReference::None);
+        // The mask is QSMxT's own: no masking setting is the pipeline's.
+        assert_eq!(c.masking, PipelineConfig::default().masking);
+        let cmd = crate::command::generate_command(&c);
+        assert!(cmd.contains("--pipeline uk-biobank") && !cmd.contains("--bf-ukb-mask-trim"), "{cmd}");
+        assert_eq!(status(&c, &facts()).pipeline.map(|p| p.id), Some("uk-biobank"));
+        // STI Suite's iLSQR pipeline, and iLSQR chosen alone, stay STI Suite's.
+        let mut sti = PipelineConfig::default();
+        choose(&mut sti, "sti-suite-ilsqr", &facts()).unwrap();
+        assert!(!sti.bg_removal.ukb_mask_trim && sti.bg_removal.polish_mask);
+        let mut ilsqr = PipelineConfig::default();
+        ilsqr.inversion.algorithm = QsmAlgorithm::Ilsqr;
+        assert!(!ilsqr.bg_removal.ukb_mask_trim);
+        assert_ne!(status(&ilsqr, &facts()).pipeline.map(|p| p.id), Some("uk-biobank"));
+    }
+
     /// The HEIDI package's pipeline (qsm_heidi's makefile and def.sh: inversion_lsqr.m, then
     /// inversion_heidi.m on the SHARP-corrected field): LSQR with HEIDI as one step, so QSM.rs
     /// fills the cone of the unmasked LSQR seed on LSQR's grid, as the package does; single pass
@@ -677,7 +714,7 @@ mod tests {
         assert!(c.pipeline.do_swi);
     }
 
-    /// MEDI's, QSMART's, HEIDI's, STI Suite's and the χ-separation toolbox's iterative pipelines
+    /// MEDI's, QSMART's, HEIDI's, STI Suite's, UK Biobank's and the χ-separation toolbox's iterative pipelines
     /// reference nothing after the inversion, as their toolboxes; the others keep QSMxT's mean.
     /// MEDI's methods text says so.
     #[test]
@@ -687,7 +724,7 @@ mod tests {
             let mut c = PipelineConfig::default();
             choose(&mut c, p.id, &facts()).unwrap();
             let none = ["medi-toolbox", "qsmart", "heidi", "sti-suite-ilsqr", "sti-suite-star", "chi-sep-ilsqr",
-                        "chi-sep-medi"].contains(&p.id);
+                        "chi-sep-medi", "uk-biobank"].contains(&p.id);
             assert_eq!(c.qsm.reference, if none { QsmReference::None } else { QsmReference::Mean }, "{}", p.id);
         }
         let mut c = PipelineConfig::default();

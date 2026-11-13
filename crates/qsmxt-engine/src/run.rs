@@ -1308,6 +1308,16 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let Some(key) = self.begin(&name, Some(&algorithm), &params, skipping, &doing) else { return Ok(()) };
         let mask_item = self.pass_mask(pass);
         let outputs = [Item::LocalField(pass), Item::LocalFieldMask(pass)];
+        // UK Biobank's mask trimming reads reliability maps of the first and last echo's phase
+        // over the untrimmed mask (bg_removal.ukb_mask_trim).
+        let reliability = if self.config.bg_removal.ukb_mask_trim && !iqfm {
+            let (phases, _) = self.phase_echoes()?;
+            let mask = self.store.mask(&mask_item)?;
+            let refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
+            stages::background::ukb_phase_reliability(&refs, &mask, &self.meta, self.config)?
+        } else {
+            None
+        };
         if self.per_echo() {
             // Each echo's field on its own (iQFM, from every echo's phase, has no per-echo form).
             let mask = self.store.mask(&mask_item)?;
@@ -1321,7 +1331,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                 let field = self.store.real(&Item::EchoField(e))?;
                 let magnitude = if stages::background::takes_echo_magnitudes(self.config) { self.one_echo_magnitude(e)? } else { None };
                 self.log(Level::Info, &format!("Background removal ({algorithm}), echo {e} of {n}"));
-                let local = stages::background::remove_background(&field, &mask, magnitude.as_deref(), &self.echo_meta(e),
+                let local = stages::background::remove_background(&field, &mask, magnitude.as_deref(), reliability.as_ref(), &self.echo_meta(e),
                                                                   self.config, self.observer)?;
                 self.put(Item::EchoLocalField(e), Data::Real(&local.local_field_ppm))?;
                 self.put(Item::EchoLocalFieldMask(e), Data::Mask(&local.mask))?;
@@ -1352,7 +1362,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                 None
             };
             self.log(Level::Info, &format!("Background removal ({algorithm}){label}"));
-            stages::background::remove_background(&field, &mask, magnitudes.as_deref(), &self.meta, self.config, self.observer)?
+            stages::background::remove_background(&field, &mask, magnitudes.as_deref(), reliability.as_ref(), &self.meta, self.config, self.observer)?
         };
         self.put(Item::LocalField(pass), Data::Real(&local.local_field_ppm))?;
         self.put(Item::LocalFieldMask(pass), Data::Mask(&local.mask))?;

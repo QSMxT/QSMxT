@@ -391,6 +391,8 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(n) = args.bf_erode_voxels { config.bg_removal.erode_voxels = n; }
         if args.bf_polish_mask { config.bg_removal.polish_mask = true; }
         if args.no_bf_polish_mask { config.bg_removal.polish_mask = false; }
+        if args.bf_ukb_mask_trim { config.bg_removal.ukb_mask_trim = true; }
+        if args.no_bf_ukb_mask_trim { config.bg_removal.ukb_mask_trim = false; }
         if let Some(a) = args.bf_algorithm {
             config.bg_removal.algorithm = match a {
                 cli::BfAlgorithmArg::Vsharp => BfAlgorithm::Vsharp,
@@ -446,6 +448,8 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         }
         if args.laplacian_unmasked { config.field_mapping.laplacian_unmasked = true; }
         if args.no_laplacian_unmasked { config.field_mapping.laplacian_unmasked = false; }
+        if args.laplacian_keep_outside { config.field_mapping.laplacian_keep_outside = true; }
+        if args.no_laplacian_keep_outside { config.field_mapping.laplacian_keep_outside = false; }
         if let Some(ref s) = args.coil_combination_sigma {
             if s.len() == 3 { config.field_mapping.coil_combination_sigma = [s[0], s[1], s[2]]; }
         }
@@ -1262,6 +1266,10 @@ mod tests {
         assert!(!config_from_cli(&["qsmxt", "run", "<bids>"]).bg_removal.polish_mask);
         let polished = config_from_cli(&["qsmxt", "run", "<bids>", "--bf-polish-mask"]);
         assert!(qsmxt_engine::generate_command(&polished).contains("--bf-polish-mask"));
+        assert!(config_from_cli(&["qsmxt", "run", "<bids>", "--bf-ukb-mask-trim"]).bg_removal.ukb_mask_trim);
+        assert!(!config_from_cli(&["qsmxt", "run", "<bids>"]).bg_removal.ukb_mask_trim);
+        let trimmed = config_from_cli(&["qsmxt", "run", "<bids>", "--bf-ukb-mask-trim"]);
+        assert!(qsmxt_engine::generate_command(&trimmed).contains("--bf-ukb-mask-trim"));
         let c = config_from_cli(&["qsmxt", "run", "<bids>", "--harperella-rim", "sti", "--iharperella-rim", "whole",
             "--ndi-weight-norm", "mask-p999", "--whqsm-weight", "flat-in-mask"]);
         assert_eq!((c.bg_removal.harperella.rim, c.bg_removal.iharperella.rim),

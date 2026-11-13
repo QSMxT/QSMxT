@@ -48,6 +48,7 @@ pub fn params(config: &PipelineConfig, meta: &RunMetadata) -> serde_json::Value 
         "laplacian_solver": format!("{}", fm.laplacian_solver),
         "laplacian_fft_pad": fm.laplacian_fft_pad,
         "laplacian_unmasked": fm.laplacian_unmasked,
+        "laplacian_keep_outside": fm.laplacian_keep_outside,
         // qsm-core's field-valid mask (MCPC-3D-S's undefined offsets excluded, ROMEO.jl's NaN
         // semantics) and its multi-echo ROMEO fixes: field maps from before them are recomputed.
         "field_mask": 1,

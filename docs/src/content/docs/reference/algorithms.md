@@ -93,6 +93,18 @@ QSM_GUI's, which `--pipeline sti-suite-ilsqr` sets up with `--bf-polish-mask`
 (after V-SHARP, the mask's largest component with its holes filled, as the GUI's
 `PolishMask`) and an unreferenced χ.
 
+`--pipeline uk-biobank` is UK Biobank's QSM pipeline (Wang et al., 2022) on QSMxT's
+brain mask: UK Biobank's own mask comes from its T1-weighted images, which QSMxT does
+not use. It trims that mask by phase reliability before and after background removal
+(`--bf-ukb-mask-trim`: the magnitude of the unit phasor averaged over a 2 mm ball, from
+the first and the last echo, thresholded at 0.6 and 0.5 before V-SHARP and at 0.7 and
+0.6 after it, with small pieces removed and holes filled slice by slice), unwraps each
+echo with the FFT Laplacian solver (64 voxels of padding) on the masked phase, weights
+the echoes by TE·exp(−TE/40 ms), keeps that field over the whole volume for V-SHARP
+(`--laplacian-keep-outside`; STI Suite's V-SHARP reads the field outside the mask), and inverts with iLSQR (100 iterations, 64 mm of
+padding, single precision), unreferenced. Choosing iLSQR on its own starts STI Suite's
+pipeline, not UK Biobank's.
+
 BET's surface settings (`--bet-smoothness`, `--bet-gradient-threshold`,
 `--bet-iterations`, `--bet-subdivisions`, `--bet-voxel-scale`) and its
 orientation apply to every BET step. `--bet-orientation fsl` (the default) runs
