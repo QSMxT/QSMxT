@@ -651,8 +651,8 @@ mod live {
     use crossterm::event::{KeyEvent, KeyModifiers};
 
     /// As the event loop runs it (a check and a draw before each key): after Apply the
-    /// recommendation the pipeline does not include (PDF's iterations) opens its pop-up, with
-    /// Apply preselected, and no reference pipeline pop-up follows it.
+    /// recommendation the pipeline does not include (PDF's iterations) opens its pop-up, ticked
+    /// (`A` applies it), and no reference pipeline pop-up follows it.
     #[test]
     fn keys_after_apply_like_the_event_loop() {
         let mut app = App::new();
@@ -669,7 +669,7 @@ mod live {
         let m = app.rec_modal.as_ref().expect("Apply offers PDF's iteration count");
         assert!(m.findings.iter().any(|r| r.setting == "bg_removal.pdf.n_cg"), "{:?}", m.findings);
         assert!(m.rows[0].checked, "it starts ticked");
-        step(&mut app, KeyCode::Enter);
+        step(&mut app, KeyCode::Char('a'));
         assert_eq!(super::super::command::config_from_app(&app).unwrap().bg_removal.pdf.n_cg, 300);
         step(&mut app, KeyCode::Char('3'));
         assert!(app.rec_modal.is_none() && app.refs.modal.is_none(), "no reference pipeline pop-up: the pipeline is the authors'");

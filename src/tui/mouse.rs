@@ -221,6 +221,7 @@ impl App {
             Hit::AdviceRow(i) => {
                 if let Some(m) = self.rec_modal.as_mut().or(self.refs.modal.as_mut()) {
                     m.cursor = i;
+                    m.button = None;
                     m.toggle(i);
                 }
             }
@@ -292,7 +293,7 @@ impl App {
             m.cursor = i;
         } else if self.rec_modal.is_some() || self.refs.modal.is_some() {
             // Apply, then Keep mine.
-            self.handle_key(key(if i == 0 { KeyCode::Enter } else { KeyCode::Char('K') }));
+            self.handle_key(key(KeyCode::Char(if i == 0 { 'a' } else { 'k' })));
             return;
         } else if let Some(m) = self.pipelines.preview.as_mut() {
             m.button = i;

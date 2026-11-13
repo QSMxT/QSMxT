@@ -109,9 +109,10 @@ every setting.
 When a change makes a setting depart from what a chosen method recommends (or requires, or
 discourages), a pop-up lists the changes on offer, under the section each setting is on: the
 setting, its value now → the value offered, and what kind of advice it is. Each has a tick box.
-`↑`/`↓` move between them, `Space` (or a click) ticks one, and the panel under the list gives the
-reason for the highlighted one. **Apply** (`Enter`) makes the ticked changes and does nothing
-while none is ticked. **Keep mine** (`K`) keeps your settings and saves that choice in the
+`↑`/`↓` move between them, `Space` or `Enter` (or a click) ticks one, and the panel under the
+list gives the reason for the highlighted one. **Apply** (`A`, or `↓` past the last row or `Tab`
+to the buttons, then `Enter`) makes the ticked changes and does nothing while none is ticked.
+**Keep mine** (`K`) keeps your settings, closes the pop-up and saves that choice in the
 configuration, so the pop-up does not come back until the setting changes. `Esc` closes the
 pop-up and leaves the setting marked ⚑.
 
@@ -126,9 +127,11 @@ What starts ticked depends on the kind of advice:
   offered so that you can reproduce their pipeline, but it is not a recommendation, so it starts
   unticked.
 
-Where advice on one setting disagrees, nothing starts ticked, and ticking one value unticks the
-other. When the setting you just changed goes against a box that is ticked (choosing QSMART
-with HEIDI on), turning that box off starts ticked, so your change stands.
+Where there are several ways to resolve one setting (values that disagree, or turning off the
+box the advice depends on instead), they show as one choice, `( )`, and ticking one unticks the
+others; where advice on one setting disagrees, nothing starts ticked. When the setting you just
+changed goes against a box that is ticked (choosing QSMART with HEIDI on), the pop-up offers to
+turn that box off, ticked, so your change stands; it does not offer to change your choice back.
 
 When you choose a method that has a reference pipeline (for example MEDI, QSMART or iLSQR) and
 your settings differ from it, a pop-up titled with that pipeline (*MEDI's reference pipeline*)
