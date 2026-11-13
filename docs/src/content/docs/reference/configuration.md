@@ -111,6 +111,7 @@ Laplacian unwrapping's settings are in `[field_mapping]`:
 unwrapping_algorithm = "laplacian"
 laplacian_solver = "mirror"   # or "dct" (the default), "fft", "mgpcg" (QSM.jl's MGPCG: unwrapping with LBV background removal in one step)
 laplacian_unmasked = true     # the raw phase over the whole volume (default false)
+laplacian_keep_outside = false # keep the masked phase's field over the whole volume (UK Biobank; --laplacian-keep-outside)
 ```
 
 `laplacian_unmasked = true` is `--laplacian-unmasked`. PRELUDE's are in
@@ -154,6 +155,7 @@ rim = "whole"             # or "sti" (iHARPERELLA's default)
 [bg_removal]
 erode_voxels = 0          # erode the mask by N voxels before background removal; --bf-erode-voxels
 polish_mask = false       # STI Suite's PolishMask after background removal; --bf-polish-mask
+ukb_mask_trim = false     # UK Biobank's phase-reliability mask trimming around background removal; --bf-ukb-mask-trim
 ```
 
 HEIDI after the inversion ([HEIDI streaking reduction](/QSMxT/reference/algorithms/#heidi-streaking-reduction))

@@ -215,6 +215,9 @@ fn command_for(config: &PipelineConfig, d: &PipelineConfig, pipeline: Option<&st
     if fm.laplacian_unmasked != d.field_mapping.laplacian_unmasked {
         parts.push(if fm.laplacian_unmasked { "--laplacian-unmasked" } else { "--no-laplacian-unmasked" }.into());
     }
+    if fm.laplacian_keep_outside != d.field_mapping.laplacian_keep_outside {
+        parts.push(if fm.laplacian_keep_outside { "--laplacian-keep-outside" } else { "--no-laplacian-keep-outside" }.into());
+    }
     emit_enum(&mut parts, "--prelude-labelling", &fm.prelude.labelling, &d.field_mapping.prelude.labelling);
     emit_usize(&mut parts, "--prelude-partitions", fm.prelude.num_phase_partitions, d.field_mapping.prelude.num_phase_partitions);
     // Motion correction (off by default).
@@ -367,6 +370,9 @@ fn command_for(config: &PipelineConfig, d: &PipelineConfig, pipeline: Option<&st
     emit_usize(&mut parts, "--bf-erode-voxels", config.bg_removal.erode_voxels, d.bg_removal.erode_voxels);
     if config.bg_removal.polish_mask != d.bg_removal.polish_mask {
         parts.push(if config.bg_removal.polish_mask { "--bf-polish-mask" } else { "--no-bf-polish-mask" }.into());
+    }
+    if config.bg_removal.ukb_mask_trim != d.bg_removal.ukb_mask_trim {
+        parts.push(if config.bg_removal.ukb_mask_trim { "--bf-ukb-mask-trim" } else { "--no-bf-ukb-mask-trim" }.into());
     }
     match config.bg_removal.algorithm {
         BfAlgorithm::Vsharp => {

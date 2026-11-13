@@ -56,6 +56,8 @@ mod integration_tests {
             pipeline: PipelineArgs {
                 pipeline: None,
                 no_laplacian_unmasked: false,
+                laplacian_keep_outside: false,
+                no_laplacian_keep_outside: false,
                 qsm_algorithm: None,
                 heidi: false,
                 orientation_group: None,
@@ -72,6 +74,8 @@ mod integration_tests {
                 bf_erode_voxels: None,
                 bf_polish_mask: false,
                 no_bf_polish_mask: false,
+                bf_ukb_mask_trim: false,
+                no_bf_ukb_mask_trim: false,
                 masking_input: None,
                 phase_offset_removal: None,
                 phase_offset_sigma_mm: None,

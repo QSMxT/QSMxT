@@ -1521,6 +1521,12 @@ pub struct FieldMappingConfig {
     /// as QSMART fits them. Only with Laplacian unwrapping; MEDI's complex fit unwraps its fitted
     /// phase inside the mask either way.
     pub laplacian_unmasked: bool,
+    /// Keep the Laplacian-unwrapped field over the whole volume, not only inside the brain mask
+    /// (qsm-core's `FieldMappingConfig::laplacian_keep_outside`, off by default): UK Biobank's
+    /// pipeline hands V-SHARP its combined phase over the whole volume, and STI Suite's V-SHARP
+    /// reads it outside the mask. Only with Laplacian unwrapping of the masked phase and a
+    /// weighted-average combination.
+    pub laplacian_keep_outside: bool,
     pub romeo: RomeoConfig,
     /// PRELUDE's settings, used with `unwrapping_algorithm = "prelude"`.
     #[serde(default)]
@@ -1674,6 +1680,7 @@ impl Default for FieldMappingConfig {
             laplacian_solver: LaplacianSolver::Dct,
             laplacian_fft_pad: default_laplacian_fft_pad(),
             laplacian_unmasked: qsm_core::pipeline::FieldMappingConfig::default().laplacian_unmasked,
+            laplacian_keep_outside: qsm_core::pipeline::FieldMappingConfig::default().laplacian_keep_outside,
             romeo: RomeoConfig::default(),
             prelude: PreludeConfig::default(),
             complex_fit: ComplexFitConfig::default(),
@@ -1799,6 +1806,14 @@ pub struct BgRemovalConfig {
     /// filled, and zero the local field outside it: STI Suite QSM_GUI's PolishMask (qsm-core's
     /// `BgRemovalConfig::polish_mask`).
     pub polish_mask: bool,
+    /// UK Biobank's phase-reliability mask trimming (qsm-core's `BgRemovalConfig::ukb_mask_trim`,
+    /// `utils::phase_reliability`): before background removal, the brain mask less the voxels whose
+    /// first- or last-echo phase is unreliable (and small pieces per slice), and after it the
+    /// stage's mask trimmed again more tightly (the local field left as background removal made it,
+    /// as UK Biobank hands it to iLSQR). The maps come
+    /// from the wrapped phase over the untrimmed brain mask, as in UK Biobank's pipeline. Set by
+    /// the `uk-biobank` pipeline.
+    pub ukb_mask_trim: bool,
 }
 impl Default for BgRemovalConfig {
     fn default() -> Self {
@@ -1810,6 +1825,7 @@ impl Default for BgRemovalConfig {
             harperella: HarperellaConfig::default(), iharperella: IharperellaConfig::default(),
             erode_voxels: 0,
             polish_mask: false,
+            ukb_mask_trim: false,
         }
     }
 }

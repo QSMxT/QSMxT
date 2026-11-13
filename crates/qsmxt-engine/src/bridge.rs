@@ -218,6 +218,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             LaplacianSolver::Mgpcg => qsm_core::unwrap::LaplacianSolver::Mgpcg,
         },
         laplacian_unmasked: cfg.field_mapping.laplacian_unmasked,
+        laplacian_keep_outside: cfg.field_mapping.laplacian_keep_outside,
         romeo_params: (&cfg.field_mapping.romeo).into(),
         prelude_params: (&cfg.field_mapping.prelude).into(),
     };
@@ -276,6 +277,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         tile: cfg.dl_tile(),
         erode_voxels: cfg.bg_removal.erode_voxels,
         polish_mask: cfg.bg_removal.polish_mask,
+        ukb_mask_trim: cfg.bg_removal.ukb_mask_trim,
     };
 
     let inversion = PInversion {

@@ -1565,7 +1565,7 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("reg_translation_step_mm", "registration.translation_step_mm"), ("reg_min_overlap", "registration.min_overlap"),
     ("do_qsm", "pipeline.do_qsm"),
     ("unwrapping_algorithm", "field_mapping.unwrapping_algorithm"), ("laplacian_solver", "field_mapping.laplacian_solver"),
-    ("laplacian_fft_pad", "field_mapping.laplacian_fft_pad"), ("laplacian_unmasked", "field_mapping.laplacian_unmasked"),
+    ("laplacian_fft_pad", "field_mapping.laplacian_fft_pad"), ("laplacian_unmasked", "field_mapping.laplacian_unmasked"), ("laplacian_keep_outside", "field_mapping.laplacian_keep_outside"),
     ("prelude_labelling", "field_mapping.prelude.labelling"), ("prelude_partitions", "field_mapping.prelude.num_phase_partitions"),
     ("qsm_per_echo", "qsm.per_echo"), ("phase_offset_removal", "field_mapping.phase_offset_removal"),
     ("phase_offset_sigma_mm", "field_mapping.phase_offset_sigma_mm"), ("bipolar_correction", "field_mapping.bipolar_correction"),
@@ -1591,7 +1591,7 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("vsharp_threshold", "bg_removal.vsharp.threshold"), ("vsharp_max_radius", "bg_removal.vsharp.max_radius"),
     ("vsharp_min_radius", "bg_removal.vsharp.min_radius"),
     ("vsharp_radius_step", "bg_removal.vsharp.radius_step"), ("vsharp_grid", "bg_removal.vsharp.grid"),
-    ("vsharp_grid_spacing", "bg_removal.vsharp.grid_spacing"), ("pdf_tol", "bg_removal.pdf.tol"), ("pdf_n_cg", "bg_removal.pdf.n_cg"), ("bf_polish_mask", "bg_removal.polish_mask"), ("bf_erode_voxels", "bg_removal.erode_voxels"),
+    ("vsharp_grid_spacing", "bg_removal.vsharp.grid_spacing"), ("pdf_tol", "bg_removal.pdf.tol"), ("pdf_n_cg", "bg_removal.pdf.n_cg"), ("bf_polish_mask", "bg_removal.polish_mask"), ("bf_ukb_mask_trim", "bg_removal.ukb_mask_trim"), ("bf_erode_voxels", "bg_removal.erode_voxels"),
     ("pdf_space", "bg_removal.pdf.space"), ("pdf_n_pad", "bg_removal.pdf.n_pad"), ("lbv_tol", "bg_removal.lbv.tol"),
     ("lbv_depth", "bg_removal.lbv.depth"), ("lbv_peel", "bg_removal.lbv.peel"), ("lbv_n1", "bg_removal.lbv.n1"),
     ("lbv_n2", "bg_removal.lbv.n2"), ("lbv_n3", "bg_removal.lbv.n3"), ("lbv_precision", "bg_removal.lbv.precision"),
@@ -2012,6 +2012,8 @@ pub struct PipelineFormState {
     /// Laplacian unwrapping of the raw phase over the whole volume
     /// (`field_mapping.laplacian_unmasked`).
     pub laplacian_unmasked: bool,
+    /// The Laplacian field kept over the whole volume (`field_mapping.laplacian_keep_outside`).
+    pub laplacian_keep_outside: bool,
     /// Index into [`PRELUDE_LABELLING_OPTIONS`] (0 = auto, 1 = slices, 2 = volume).
     pub prelude_labelling: usize,
     /// PRELUDE's number of phase partitions.
@@ -2224,6 +2226,9 @@ pub struct PipelineFormState {
     pub bf_erode_voxels: String,
     /// STI Suite's PolishMask after background removal (`bg_removal.polish_mask`).
     pub bf_polish_mask: bool,
+    /// UK Biobank's phase-reliability mask trimming around background removal
+    /// (`bg_removal.ukb_mask_trim`).
+    pub bf_ukb_mask_trim: bool,
     /// An index into PDF_SPACE_OPTIONS.
     pub pdf_space: usize,
     pub pdf_n_pad: String,
@@ -2582,6 +2587,7 @@ impl Default for PipelineFormState {
             laplacian_solver: 0, // dct
             laplacian_fft_pad: qsmxt_engine::default_laplacian_fft_pad()[0].to_string(),
             laplacian_unmasked: qsmxt_engine::FieldMappingConfig::default().laplacian_unmasked,
+            laplacian_keep_outside: qsmxt_engine::FieldMappingConfig::default().laplacian_keep_outside,
             prelude_labelling: PRELUDE_LABELLING_OPTIONS.iter()
                 .position(|o| *o == qsmxt_engine::PreludeConfig::default().labelling.to_string()).unwrap_or(0),
             prelude_partitions: qsmxt_engine::PreludeConfig::default().num_phase_partitions.to_string(),
@@ -2749,6 +2755,7 @@ impl Default for PipelineFormState {
             pdf_n_cg: format!("{}", qsm_core::bgremove::PdfParams::default().n_cg),
             bf_erode_voxels: "0".to_string(),
             bf_polish_mask: qsmxt_engine::BgRemovalConfig::default().polish_mask,
+            bf_ukb_mask_trim: qsmxt_engine::BgRemovalConfig::default().ukb_mask_trim,
             pdf_space: pdf_space_index(qsmxt_engine::PdfConfig::default().space),
             pdf_n_pad: format!("{}", qsm_core::bgremove::PdfParams::default().n_pad),
             lbv_tol: format!("{}", qsm_core::bgremove::LbvParams::default().tol),
@@ -3695,6 +3702,13 @@ impl PipelineFormState {
                 label: "  Unmasked phase", field: "laplacian_unmasked",
                 help: "Unwrap the raw phase over the whole volume, as QSMART does, instead of the phase set to zero outside the brain mask",
             });
+            // Only with a weighted average, as the setting itself (schema: field_mapping.laplacian_keep_outside).
+            if !self.laplacian_unmasked && self.b0_estimation_is("weighted-avg") {
+                rows.push(PipelineRow::Toggle {
+                    label: "  Keep field outside", field: "laplacian_keep_outside",
+                    help: "Keep the field over the whole volume, not only inside the brain mask, as UK Biobank's pipeline hands it to V-SHARP (weighted-average combination)",
+                });
+            }
         }
         if self.unwrapping_algorithm == 2 {
             rows.push(PipelineRow::AlgoSelect {
@@ -3860,6 +3874,8 @@ impl PipelineFormState {
                 help: "Erode the brain mask after field mapping, before background removal (0 = none)" });
             rows.push(PipelineRow::Toggle { label: "  Polish mask", field: "bf_polish_mask",
                 help: "After background removal, keep the mask's largest connected component with its holes filled, as STI Suite's QSM_GUI does" });
+            rows.push(PipelineRow::Toggle { label: "  UKB mask trim", field: "bf_ukb_mask_trim",
+                help: "Before and after background removal, trim the mask of voxels with unreliable phase, as UK Biobank's pipeline does" });
         }
         match self.bf_algorithm {
             0 => { // V-SHARP
@@ -5161,7 +5177,9 @@ impl PipelineFormState {
             "romeo_merge_regions" => self.romeo_merge_regions,
             "romeo_temporal_uncertain" => self.romeo_temporal_uncertain,
             "laplacian_unmasked" => self.laplacian_unmasked,
+            "laplacian_keep_outside" => self.laplacian_keep_outside,
             "bf_polish_mask" => self.bf_polish_mask,
+            "bf_ukb_mask_trim" => self.bf_ukb_mask_trim,
             "dl_tiling" => self.dl_tiling,
             "romeo_correct_regions" => self.romeo_correct_regions,
             "linear_fit_estimate_offset" => self.linear_fit_estimate_offset,
@@ -5219,7 +5237,9 @@ impl PipelineFormState {
             "romeo_merge_regions" => self.romeo_merge_regions = !self.romeo_merge_regions,
             "romeo_temporal_uncertain" => self.romeo_temporal_uncertain = !self.romeo_temporal_uncertain,
             "laplacian_unmasked" => self.laplacian_unmasked = !self.laplacian_unmasked,
+            "laplacian_keep_outside" => self.laplacian_keep_outside = !self.laplacian_keep_outside,
             "bf_polish_mask" => self.bf_polish_mask = !self.bf_polish_mask,
+            "bf_ukb_mask_trim" => self.bf_ukb_mask_trim = !self.bf_ukb_mask_trim,
             "dl_tiling" => self.dl_tiling = !self.dl_tiling,
             "romeo_correct_regions" => self.romeo_correct_regions = !self.romeo_correct_regions,
             "linear_fit_estimate_offset" => self.linear_fit_estimate_offset = !self.linear_fit_estimate_offset,

@@ -176,6 +176,8 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     // Laplacian unwrapping of the raw phase: off by default, as in qsm-core.
     assert_eq!(c::FieldMappingConfig::default().laplacian_unmasked,
                q::pipeline::FieldMappingConfig::default().laplacian_unmasked);
+    assert_eq!(c::FieldMappingConfig::default().laplacian_keep_outside,
+               q::pipeline::FieldMappingConfig::default().laplacian_keep_outside);
 
     // QSMART: ppm/b0_dir are runtime; frangi_scale_range is reshaped into
     // frangi_scale_min/max in the config. adjust_offset_grid is a parity switch offered on the

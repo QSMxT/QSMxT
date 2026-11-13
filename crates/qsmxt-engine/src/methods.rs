@@ -1218,6 +1218,11 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
         .filter(|id| crate::pipelines::chosen(config, id))
         .and_then(qsm_core::pipeline::reference_pipelines::reference_pipeline) {
         doc.say(&[], format!("Processing followed the {} pipeline.", p.toolbox));
+        // UK Biobank's brain mask comes from its T1-weighted images, which QSMxT does not use.
+        if p.id == "uk-biobank" {
+            doc.say(&[], "The brain mask was made from the gradient-echo images as described below, \
+                in place of the UK Biobank pipeline's mask from its T1-weighted images.".to_string());
+        }
     }
 
     // The k-space Tukey window comes before every other step.
@@ -1308,6 +1313,17 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                         doc.say(&both(Stage::BackgroundRemoval), format!(
                             "Before background field removal, the brain mask was eroded by {erode} voxel{}.",
                             if erode == 1 { "" } else { "s" }));
+                    }
+                    if config.bg_removal.ukb_mask_trim {
+                        doc.cite(&CITE_UKB_QSM);
+                        doc.say(&both(Stage::BackgroundRemoval), format!(
+                            "Before and after background field removal, the mask was trimmed of voxels with \
+                             unreliable phase as in the UK Biobank pipeline ({}): phase-reliability maps of the \
+                             first and last echoes (the magnitude of the unit phasor averaged over a 2 mm ball) \
+                             were thresholded at 0.6 and 0.5 before background removal and at 0.7 and 0.6 after \
+                             it, then in each slice components smaller than 300 (after: 200) voxels were removed \
+                             and holes smaller than 50 (after: 30) voxels filled, and enclosed holes were filled.",
+                            cite_inline(&CITE_UKB_QSM)));
                     }
                     if config.bg_removal.polish_mask {
                         doc.say(&both(Stage::BackgroundRemoval),
@@ -2505,6 +2521,7 @@ pub(crate) mod words {
             UnwrappingAlgorithm::Laplacian => {
                 c.add(fm.laplacian_solver != d.laplacian_solver, || format!("{} solver", fm.laplacian_solver));
                 c.add(fm.laplacian_unmasked != d.laplacian_unmasked, || "raw phase over the whole volume".to_string());
+                c.add(fm.laplacian_keep_outside != d.laplacian_keep_outside, || "field kept over the whole volume".to_string());
             }
             UnwrappingAlgorithm::Prelude => c = prelude_changes(fm, &d),
             UnwrappingAlgorithm::MediRegionGrowing => {}
@@ -2641,6 +2658,7 @@ fn separation_name_cite(alg: SeparationAlgorithm) -> (&'static str, &'static Cit
 fn cite_inline(cite: &Citation) -> &'static str {
     match cite.key {
         "wu2012" => "Wu et al., 2012",
+        "wang2022" => "Wang et al., 2022",
         "schweser2011" => "Schweser et al., 2011",
         "schweser2010" => "Schweser et al., 2010",
         "schweser2012" => "Schweser et al., 2012",
