@@ -449,7 +449,7 @@ mod tests {
         assert!(s.contains(&format!("Memory   peak about {peak}")), "{s}");
         assert!(s.contains("Models   none"), "{s}");
         assert!(s.contains("Scan     a typical scan: 5 echoes, 3 T, 256 × 256 × 176 voxels"), "{s}");
-        assert!(s.contains("Enter/s:Open as SVG"), "{s}");
+        assert!(s.contains("Enter/s:Open graph"), "{s}");
     }
 
     /// A two-pass run draws both passes and their combination.

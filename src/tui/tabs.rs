@@ -753,7 +753,7 @@ pub(super) mod tests {
             let mut app = App::new();
             goto(&mut app, crate::tui::app::TAB_METHODS, None);
             let t = render(&mut app, width, height);
-            assert!(row(&t, height - 1).contains("Enter/c:Copy to clipboard"), "{}", row(&t, height - 1));
+            assert!(row(&t, height - 1).contains("Enter/c:Copy methods text"), "{}", row(&t, height - 1));
             key(&mut app, crossterm::event::KeyCode::Enter);
             let t = render(&mut app, width, height);
             assert!(row(&t, height - 1).contains("Methods copied to clipboard"), "{}", row(&t, height - 1));
