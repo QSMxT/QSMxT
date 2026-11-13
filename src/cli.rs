@@ -1717,7 +1717,7 @@ pub struct PipelineArgs {
     /// Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares,
     /// Neumann/DCT solve; default), `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a
     /// zero-padded volume), `mirror` (the same on the volume mirrored along each axis, as
-    /// QSMART unwraps) or `mgpcg` (QSM.jl's default: zero phase outside the brain mask,
+    /// QSMART unwraps) or `mgpcg` (QSM.jl's `:mgpcg`: zero phase outside the brain mask,
     /// multigrid-preconditioned CG; also removes the background field inside the mask)
     #[arg(long, value_enum, alias = "laplacian-kernel")]
     pub laplacian_solver: Option<LaplacianSolverArg>,
@@ -2847,7 +2847,7 @@ pub struct FieldmapLaplacianArgs {
     pub common: FieldmapCommonArgs,
     /// Poisson solver: `dct` (unweighted least squares, Neumann/DCT solve), `fft` (Schofield &
     /// Zhu, FFT solve on a zero-padded volume), `mirror` (the same on the volume mirrored along
-    /// each axis, as QSMART unwraps) or `mgpcg` (QSM.jl's default: zero phase outside the mask,
+    /// each axis, as QSMART unwraps) or `mgpcg` (QSM.jl's `:mgpcg`: zero phase outside the mask,
     /// multigrid-preconditioned CG; also removes the background field inside the mask)
     #[arg(long, value_enum, default_value = "dct", alias = "laplacian-kernel")]
     pub laplacian_solver: LaplacianSolverArg,
@@ -4969,7 +4969,7 @@ pub enum LaplacianSolverArg {
     Fft,
     /// FFT solve on the volume mirrored along each axis, as QSMART unwraps
     Mirror,
-    /// QSM.jl's default: zero phase outside the mask, multigrid-preconditioned CG
+    /// QSM.jl's `:mgpcg`: zero phase outside the mask, multigrid-preconditioned CG
     Mgpcg,
 }
 

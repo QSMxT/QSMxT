@@ -3322,7 +3322,7 @@ const LAPLACIAN_SOLVER_HELP: &[&str] = &[
     "Unweighted least squares, Neumann-boundary DCT solve (Ghiglia & Romero 1994; QSM.jl :dct) (default)",
     "Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume",
     "Schofield & Zhu sin/cos Laplacian, FFT solve on the volume mirrored along each axis (QSMART's reference)",
-    "QSM.jl's default: Dirichlet boundary on the brain mask, multigrid-preconditioned CG; also removes the background field inside the mask",
+    "Multigrid-preconditioned CG with the phase held at zero outside the brain mask (QSM.jl's :mgpcg); also removes the background field inside the mask",
 ];
 pub const B0_WEIGHT_TYPE_OPTIONS: &[&str] = &["phase-snr", "phase-var", "average", "tes", "mag", "assumed-decay"];
 const B0_ESTIMATION_HELP: &[&str] = &[
