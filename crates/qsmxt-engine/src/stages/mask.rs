@@ -368,8 +368,16 @@ pub fn require_voxels(mask: &[u8], source: MaskSource) -> Result<(), EngineError
             for op in &masking.refinements {
                 recipe.push_str(&format!(" → {op}"));
             }
+            // A fixed minimum intensity (QSMART's 100) is the usual cause on a magnitude whose
+            // values are all below it, such as QSM-CI's simulated head (maximum ~60): say so.
+            let floor = masking.sections.iter().flat_map(|s| &s.refinements).chain(&masking.refinements)
+                .find_map(|op| match op { crate::masking::MaskOp::MinIntensity { value } => Some(*value), _ => None });
+            let hint = floor.map(|v| format!(
+                " The mask keeps only voxels whose magnitude is at least {v}, which removes them all \
+                  when the magnitude's values are smaller than that: lower or remove the minimum \
+                  intensity (--mask-refine).")).unwrap_or_default();
             format!(
-                "the brain mask is empty: masking ({recipe}) left no voxels. Check that the \
+                "the brain mask is empty: masking ({recipe}) left no voxels.{hint} Check that the \
                  threshold or BET settings suit the contrast of the image each section is built \
                  from, and that erosions do not remove the whole brain (--mask, --mask-refine).")
         }
@@ -444,6 +452,19 @@ mod tests {
         config.masking.inhomogeneity_correction = false;
         config.masking.refinements = refinements;
         build_mask(sections, combine, &config, &[], vec![magnitude.to_vec()], &meta(dims)).map(|p| p.mask)
+    }
+
+    /// An empty mask under a minimum intensity (QSMART's 100 on a magnitude whose values are all
+    /// smaller, as on QSM-CI's simulated head) says so plainly; one without it does not.
+    #[test]
+    fn an_empty_mask_names_the_minimum_intensity() {
+        let mut masking = PipelineConfig::default().masking;
+        let plain = require_voxels(&[0, 0], MaskSource::Recipe(&masking)).unwrap_err().to_string();
+        assert!(!plain.contains("minimum intensity"), "{plain}");
+        masking.sections[0].refinements.insert(0, MaskOp::MinIntensity { value: 100.0 });
+        let err = require_voxels(&[0, 0], MaskSource::Recipe(&masking)).unwrap_err().to_string();
+        assert!(err.contains("at least 100") && err.contains("lower or remove the minimum intensity"), "{err}");
+        assert!(require_voxels(&[0, 1], MaskSource::Recipe(&masking)).is_ok());
     }
 
     /// A reliable mask with no holes, or no voxels, makes the second reconstruction pointless —

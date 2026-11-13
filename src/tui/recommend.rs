@@ -1954,6 +1954,47 @@ mod tests {
         }
     }
 
+    /// Choosing QSMART offers its recommended group (Laplacian unwrapping, the echo fit, no
+    /// erosion) ticked, with one reason (QSM.rs's rules, decision 142); its magnitude threshold of
+    /// 100 is not offered while the mask is made from the makehomogeneous-corrected phase quality,
+    /// where it would empty the mask, and comes once N4 and the first echo's magnitude are taken.
+    #[test]
+    fn choosing_qsmart_offers_its_recommended_group_ticked() {
+        let group = ["qsmart.unwrap-laplacian", "qsmart.field-echofit", "qsmart.mask-no-erosion"];
+        let mut app = app();
+        app.filter_state.num_echoes = "4".into();
+        app.check_recommendations();
+        select(&mut app, "qsm_algorithm", "qsmart", &QSM_PICKER_OPTIONS);
+        assert!(app.rec_modal.is_none(), "one pop-up");
+        let m = app.refs.modal.as_ref().expect("QSMART's pop-up");
+        let reasons: Vec<&str> = group.iter().map(|id| {
+            let row = m.rows.iter().find(|r| r.finding.rule == *id && !r.alternative).unwrap_or_else(|| panic!("{id} not offered"));
+            assert!(row.checked && row.tag() == "recommended", "{id}: {row:?}");
+            row.finding.reason.as_str()
+        }).collect();
+        assert!(reasons.iter().all(|r| *r == reasons[0] && r.contains("brain's edge")), "{reasons:?}");
+        assert!(!m.rows.iter().any(|r| r.finding.rule == "qsmart.mask-threshold"), "the threshold with phase quality");
+        // Everything ticked and applied: the threshold follows once N4 and the first echo are in.
+        let (mut offered, mut pop_ups) = (vec![], 0);
+        while app.rec_modal.is_some() || app.refs.modal.is_some() {
+            pop_ups += 1;
+            assert!(pop_ups <= 8, "the pop-ups do not stop: {offered:?}");
+            let m = app.refs.modal.as_mut().or(app.rec_modal.as_mut()).unwrap();
+            offered.extend(m.rows.iter().map(|r| r.finding.rule.clone()));
+            for i in 0..m.rows.len() {
+                let g = m.rows[i].group.clone();
+                if !m.rows[i].alternative && !m.rows.iter().any(|r| r.group == g && r.checked) {
+                    m.toggle(i);
+                }
+            }
+            key(&mut app, KeyCode::Char('a'));
+        }
+        assert!(offered.iter().any(|r| r == "qsmart.mask-threshold"), "{offered:?}");
+        let c = super::super::command::config_from_app(&app).unwrap();
+        assert_eq!(c.masking.sections[0].refinements[0], qsmxt_engine::masking::MaskOp::MinIntensity { value: 100.0 });
+        assert_eq!(c.field_mapping.unwrapping_algorithm, qsmxt_engine::enums::UnwrappingAlgorithm::Laplacian);
+    }
+
     /// With HEIDI's row hidden, `!` on the inversion is the way to turn it off later.
     #[test]
     fn details_of_a_setting_against_a_flag_offer_to_turn_it_off() {
@@ -1990,10 +2031,17 @@ mod tests {
         app.refs.modal = None;
         app.set_field_select("mask_preset", 0);
         app.check_recommendations();
-        assert!(app.refs.modal.is_none() && app.rec_modal.is_none(), "a mask change chooses no method");
+        // That mask erodes, and QSMART recommends no erosion (QSM.rs's rules, decision 142): that
+        // pop-up, ticked, and nothing about choosing a method.
+        assert!(app.refs.modal.is_none(), "a mask change chooses no method");
+        let m = app.rec_modal.as_ref().expect("no erosion recommended");
+        assert!(m.rows.iter().any(|r| r.finding.rule == "qsmart.mask-no-erosion" && r.checked), "{:?}", m.rows);
+        key(&mut app, KeyCode::Char('a'));
+        assert!(app.refs.modal.is_none() && app.rec_modal.is_none());
         let row = PipelineRow::AlgoSelect { label: "", field: "mask_preset", options: &[], help: &[] };
         let m = App::row_marker(&app.rule_view(), &row).unwrap();
-        assert_eq!((m.actionable, m.text.as_str()), (false, "QSMART: BET, first echo, intensity threshold 100, majority filter, closing radius 2, no erosion"));
+        // The threshold of 100 waits for N4 and a magnitude input.
+        assert_eq!((m.actionable, m.text.as_str()), (false, "QSMART: BET, first echo, majority filter, closing radius 2"));
         assert!(app.goto_field("mask_preset"));
         let text = screen(&mut app, "QSMART with the threshold mask");
         // Beside the setting, only whose rule it is: the recipe is too long for the row.

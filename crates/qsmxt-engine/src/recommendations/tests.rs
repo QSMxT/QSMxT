@@ -744,8 +744,10 @@ fn markers_name_the_method() {
     set(&mut c, "masking.generator", &json!("threshold")).unwrap();
     let view = reference_values(&c, &facts);
     let m = marker(&view, "masking.sections").unwrap();
-    assert_eq!(m, Marker { actionable: false,
-        text: "QSMART: BET, first echo, intensity threshold 100, majority filter, closing radius 2, no erosion".into(),
+    // No erosion is recommended with QSMART (offered as a change, first); the threshold of 100
+    // waits for N4 and a magnitude input (QSM.rs's rules, decision 142).
+    assert_eq!(m, Marker { actionable: true,
+        text: "QSMART: no erosion, BET, first echo, majority filter, closing radius 2".into(),
         short: "QSMART".into() });
     // Two methods whose references agree share the value.
     let mut c = medi_vsharp_threshold();
