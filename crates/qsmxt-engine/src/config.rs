@@ -1809,7 +1809,8 @@ pub struct BgRemovalConfig {
     /// UK Biobank's phase-reliability mask trimming (qsm-core's `BgRemovalConfig::ukb_mask_trim`,
     /// `utils::phase_reliability`): before background removal, the brain mask less the voxels whose
     /// first- or last-echo phase is unreliable (and small pieces per slice), and after it the
-    /// stage's mask trimmed again more tightly, with the local field zeroed outside. The maps come
+    /// stage's mask trimmed again more tightly (the local field left as background removal made it,
+    /// as UK Biobank hands it to iLSQR). The maps come
     /// from the wrapped phase over the untrimmed brain mask, as in UK Biobank's pipeline. Set by
     /// the `uk-biobank` pipeline.
     pub ukb_mask_trim: bool,
