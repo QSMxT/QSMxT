@@ -12,6 +12,8 @@
 //!   the pipeline. The choice is remembered in the form (and so in the config:
 //!   `reference_pipeline`). The reasoned recommendations its choices trigger (PDF's iteration
 //!   count), which are not part of it, then open their pop-up as after any change.
+//! - **About**, first in the list in a group of its own, says what the toolbox pipelines are
+//!   ([`ABOUT`]): a page to open, not text above the list. Enter there copies its link.
 //! - **The status** ([`pipelines::status`]: "MEDI toolbox", "MEDI toolbox · 1 departure",
 //!   "Custom") sits in the header's rule on every tab, cached by the form's fingerprint. `P` on a
 //!   settings page comes here.
@@ -23,10 +25,21 @@ use serde_json::Value;
 
 use super::app::{App, Page, PipelineRow};
 
+/// The About page: what the toolbox pipelines are, plainly.
+pub const ABOUT: [&str; 3] = [
+    "Each toolbox pipeline is a set of QSMxT options that reproduces a reference toolbox's own \
+     pipeline. They are not QSMxT's recommendations. QSM-CI compares them with the original \
+     toolboxes; the parity page shows which have passed:",
+    "https://qsmxt.github.io/QSM-CI/parity.html",
+    "Results can often be improved by choosing different options. QSMxT's defaults are its own \
+     recommendation.",
+];
+
 /// The Pipeline tab's state.
 #[derive(Debug, Clone, Default)]
 pub struct PipelinesState {
-    /// The highlighted pipeline, an index into [`pipelines::pipelines`].
+    /// The highlighted pipeline, an index into [`pipelines::pipelines`]; one past the last is
+    /// About.
     pub cursor: usize,
     /// The preview of the changes choosing it makes, while open.
     pub preview: Option<PreviewModal>,
@@ -122,7 +135,12 @@ impl App {
         self.pipelines.cached.as_ref().map(|(_, s)| s.text())
     }
 
-    /// The highlighted pipeline.
+    /// Whether About is highlighted rather than a pipeline.
+    pub fn about_highlighted(&self) -> bool {
+        self.pipelines.cursor >= pipelines::pipelines().len()
+    }
+
+    /// The highlighted pipeline (the last while About is highlighted).
     pub fn highlighted_pipeline(&self) -> Pipeline {
         let list = pipelines::pipelines();
         list[self.pipelines.cursor.min(list.len() - 1)].clone()
@@ -161,16 +179,25 @@ impl App {
         if self.pipelines.preview.is_some() {
             return self.handle_pipeline_preview_key(key);
         }
+        // About (cursor n) above the pipelines (0..n).
         let n = pipelines::pipelines().len();
+        let about = self.about_highlighted();
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
             _ if self.switch_tab(key) => {}
             KeyCode::F(5) => self.try_run(),
-            KeyCode::Up | KeyCode::Char('k') if self.pipelines.cursor == 0 => self.tab_focus = true,
+            KeyCode::Up | KeyCode::Char('k') if about => self.tab_focus = true,
+            KeyCode::Up | KeyCode::Char('k') if self.pipelines.cursor == 0 => self.pipelines.cursor = n,
             KeyCode::Up | KeyCode::Char('k') => self.pipelines.cursor -= 1,
+            KeyCode::Down | KeyCode::Char('j') if about => self.pipelines.cursor = 0,
             KeyCode::Down | KeyCode::Char('j') => self.pipelines.cursor = (self.pipelines.cursor + 1).min(n - 1),
-            KeyCode::Home => self.pipelines.cursor = 0,
+            KeyCode::Home => self.pipelines.cursor = n,
             KeyCode::End => self.pipelines.cursor = n - 1,
+            // About: Enter copies its link (it may wrap where the pane is narrow).
+            KeyCode::Enter if self.about_highlighted() => {
+                self.clipboard = Some(ABOUT[1].to_string());
+                self.status_message = Some("Link copied to clipboard".to_string());
+            }
             KeyCode::Enter => self.open_pipeline_preview(),
             _ => {}
         }
@@ -379,12 +406,15 @@ fn summary_lines(c: &Compared) -> Vec<Line<'static>> {
     lines
 }
 
-/// The lines of the list, as [`draw`] draws them: a heading over QSMxT's defaults, a blank line,
-/// then a heading over the toolboxes. The entry each line is, when it is one.
+/// The lines of the list, as [`draw`] draws them: About and a blank line, a heading over QSMxT's
+/// defaults, a blank line, then a heading over the toolboxes. The entry each line is, when it is
+/// one (About is one past the last pipeline).
 pub(super) fn list_entry(line: usize) -> Option<usize> {
+    let n = pipelines::pipelines().len();
     match line {
-        1 => Some(0),
-        n if n >= 4 => Some(n - 3).filter(|&i| i < pipelines::pipelines().len()),
+        0 => Some(n),
+        3 => Some(0),
+        l if l >= 6 => Some(l - 5).filter(|&i| i < n),
         _ => None,
     }
 }
@@ -406,7 +436,18 @@ pub fn draw(f: &mut Frame, app: &mut App, area: Rect) {
     let focused = !app.tab_focus;
     let room = width.saturating_sub(1) as usize;
     let heading = |name: &str| Line::from(Span::styled(format!(" {name}"), super::tabs::sidebar_heading_style()));
-    let mut list = vec![heading("DEFAULTS")];
+    // About first, in a group of its own.
+    let mut list = Vec::new();
+    if app.about_highlighted() {
+        let bg = if focused { Color::Yellow } else { Color::Cyan };
+        let st = Style::default().fg(Color::Black).bg(bg).add_modifier(Modifier::BOLD);
+        let text = " ▸ About";
+        list.push(Line::from(vec![Span::styled(text, st), Span::styled(" ".repeat(room.saturating_sub(text.chars().count())), st)]));
+    } else {
+        list.push(Line::from("   About"));
+    }
+    list.push(Line::from(""));
+    list.push(heading("DEFAULTS"));
     for (i, p) in pipelines::pipelines().into_iter().enumerate() {
         if i == 1 {
             list.push(Line::from(""));
@@ -441,6 +482,19 @@ pub fn draw(f: &mut Frame, app: &mut App, area: Rect) {
     if buf[(x, area.y)].symbol() == "─" { buf[(x, area.y)].set_symbol("┬"); }
     if buf[(x, area.bottom() - 1)].symbol() == "─" { buf[(x, area.bottom() - 1)].set_symbol("┴"); }
 
+    let pad = Rect { x: cols[1].x + 1, width: cols[1].width.saturating_sub(1), ..cols[1] };
+    if app.about_highlighted() {
+        let right = vec![
+            Line::from(Span::styled("About toolbox pipelines", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+            Line::from(""),
+            Line::from(ABOUT[0]),
+            Line::from(Span::styled(ABOUT[1], Style::default().fg(Color::Blue).add_modifier(Modifier::UNDERLINED))),
+            Line::from(""),
+            Line::from(ABOUT[2]),
+        ];
+        f.render_widget(Paragraph::new(right).wrap(Wrap { trim: false }), pad);
+        return;
+    }
     let p = app.highlighted_pipeline();
     let mut right = vec![Line::from(Span::styled(p.toolbox.unwrap_or(p.name).to_string(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))];
     right.push(Line::from(""));
@@ -459,7 +513,6 @@ pub fn draw(f: &mut Frame, app: &mut App, area: Rect) {
             right.extend(summary_lines(&c));
         }
     }
-    let pad = Rect { x: cols[1].x + 1, width: cols[1].width.saturating_sub(1), ..cols[1] };
     f.render_widget(Paragraph::new(right).wrap(Wrap { trim: false }), pad);
 }
 
@@ -609,6 +662,41 @@ mod tests {
         assert!(cmd.contains("--pipeline medi-toolbox --medi-lambda 500"), "{cmd}");
         app.choose_pipeline("medi-toolbox").unwrap();
         assert_eq!(app.pipeline_status().text(), "MEDI toolbox");
+    }
+
+    /// About, at the top of the list above the defaults, says what the toolbox pipelines are;
+    /// Enter there copies the link and changes no setting.
+    #[test]
+    fn about_explains_the_toolbox_pipelines() {
+        let mut app = four_echoes();
+        let n = pipelines::pipelines().len();
+        key(&mut app, KeyCode::Char('2'));
+        let text = screen(&mut app);
+        assert!(!text.contains("About toolbox pipelines"), "a page to open, not text on the tab");
+        let (about, defaults) = (text.find("   About").unwrap(), text.find("DEFAULTS").unwrap());
+        assert!(about < defaults, "About is above the defaults:\n{text}");
+        assert_eq!(app.pipelines.cursor, 0, "the tab opens on QSMxT's defaults");
+        key(&mut app, KeyCode::Up);
+        assert!(app.about_highlighted(), "↑ from the defaults reaches About");
+        let text = screen(&mut app);
+        assert!(text.contains("▸ About") && text.contains("About toolbox pipelines"), "{text}");
+        assert!(text.contains("https://qsmxt.github.io/QSM-CI/parity.html") && text.contains("not QSMxT's recommendations")
+            && text.contains("QSM-CI compares them with the original"), "{text}");
+        key(&mut app, KeyCode::Enter);
+        assert!(app.pipelines.preview.is_none());
+        assert_eq!(app.pipeline_status().text(), "QSMxT defaults");
+        assert_eq!(app.clipboard.as_deref(), Some(ABOUT[1]), "Enter copies the link");
+        key(&mut app, KeyCode::Down);
+        assert_eq!(app.pipelines.cursor, 0, "↓ from About goes to the defaults");
+        key(&mut app, KeyCode::End);
+        assert_eq!(app.pipelines.cursor, n - 1);
+        key(&mut app, KeyCode::Home);
+        assert!(app.about_highlighted(), "Home is About");
+        key(&mut app, KeyCode::Up);
+        assert!(app.tab_focus, "↑ from About goes to the tab bar");
+        // The lines for the mouse: About, a blank, DEFAULTS, the defaults.
+        assert_eq!((list_entry(0), list_entry(1), list_entry(2), list_entry(3)), (Some(n), None, None, Some(0)));
+        assert_eq!((list_entry(4), list_entry(5), list_entry(6)), (None, None, Some(1)));
     }
 
     /// The tab: the list, the comparison, Enter's preview, and Apply.

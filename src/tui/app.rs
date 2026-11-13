@@ -558,6 +558,9 @@ pub const TAB_RECONSTRUCTION: usize = 2;
 pub const TAB_EXECUTION: usize = 3;
 pub const TAB_METHODS: usize = 4;
 
+/// The footer's confirmation after the methods text is copied.
+pub const METHODS_COPIED: &str = "Methods copied to clipboard";
+
 /// A page of a tab: a section of the Reconstruction tab's sidebar, or a sub-tab, switched with
 /// `[` and `]`. A tab with a single page (Execution) shows neither. The Methods tab's two pages
 /// are views, not rows.
@@ -6717,10 +6720,25 @@ impl App {
         match super::command::methods_text(self) {
             Ok(text) => {
                 self.clipboard = Some(text);
-                self.status_message = Some("Methods copied to clipboard".to_string());
+                self.status_message = Some(METHODS_COPIED.to_string());
             }
             Err(e) => self.error_message = Some(format!("Nothing copied: {e}")),
         }
+    }
+
+    /// Whether the methods text was just copied (the button says so until the next key).
+    pub fn methods_copied(&self) -> bool {
+        self.status_message.as_deref() == Some(METHODS_COPIED)
+    }
+
+    /// The Methods tab's scroll position on the page shown (the text or the graph).
+    pub(super) fn methods_page_scroll(&mut self) -> &mut usize {
+        if self.page() == Some(Page::Pipeline) { &mut self.pipeline_view.scroll } else { &mut self.methods_scroll_offset }
+    }
+
+    /// The Methods tab's button: copy the methods text, or open the graph.
+    pub(super) fn press_page_button(&mut self) {
+        if self.page() == Some(Page::Pipeline) { self.open_pipeline_svg() } else { self.copy_methods() }
     }
 
     /// What F5 (and the Execution tab's button) does with the current settings: the button's
@@ -6855,6 +6873,10 @@ impl App {
             KeyCode::Char('[') => return self.cycle_page(-1),
             KeyCode::Char(']') => return self.cycle_page(1),
             KeyCode::F(5) => return self.try_run(),
+            // The page's button works from the sidebar too: `c` copies the text, `s` opens the
+            // graph (Enter as well, inside the page).
+            KeyCode::Char('c') | KeyCode::Char('y') if self.page() != Some(Page::Pipeline) => return self.copy_methods(),
+            KeyCode::Char('s') if self.page() == Some(Page::Pipeline) => return self.open_pipeline_svg(),
             _ => {}
         }
         // The sidebar, as the Reconstruction tab's: ↑/↓ choose the page, → or Enter go into it,
@@ -6892,8 +6914,7 @@ impl App {
             KeyCode::PageUp => *scroll = scroll.saturating_sub(10),
             KeyCode::PageDown => *scroll += 10,
             KeyCode::Home => *scroll = 0,
-            KeyCode::Enter | KeyCode::Char('s') if pipeline => self.open_pipeline_svg(),
-            KeyCode::Enter | KeyCode::Char('c') | KeyCode::Char('y') if !pipeline => self.copy_methods(),
+            KeyCode::Enter => self.press_page_button(),
             _ => {}
         }
     }

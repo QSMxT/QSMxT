@@ -1074,32 +1074,43 @@ impl App {
     /// The help line's reference values for a row: what each rule that covers the setting has
     /// as its reference, and whose rule it is, marked where the current value differs ("Authors'
     /// setting (RTS): V-SHARP"). Plain words only: the rules' sources are evidence for QSM.rs's
-    /// maintainers, not text for the form.
+    /// maintainers, not text for the form. Each value is said once, by the strongest advice that
+    /// gives it ("Required (HEIDI streaking reduction): LSQR", not also its authors' setting and
+    /// a suggestion of the same LSQR); `!` lists every rule.
     pub fn row_reference(view: &[Recommendation], row: &PipelineRow) -> Option<String> {
         let path = row_path(row)?;
         // One entry for what several rules say alike: each HEIDI seed rule recommends LSQR.
-        let mut groups: Vec<(&str, Vec<String>, Vec<String>)> = Vec::new();
-        for r in view.iter().filter(|r| r.setting == path) {
-            let what = match (r.departs, r.strength, r.dismissed) {
-                (false, Strength::Reference, _) => "Authors' setting",
-                (false, Strength::Suggested, _) => "Suggested",
-                (false, _, _) => "Recommended",
-                (true, Strength::Reference, _) => "Differs from the authors' setting",
-                (true, _, true) => "Dismissed",
-                (true, Strength::Required, _) => "Required",
-                (true, Strength::Discouraged, _) => "Discouraged",
-                (true, Strength::Recommended, _) => "Recommended",
-                (true, Strength::Suggested, _) => "Suggested",
+        // Strongest first (the rank orders the groups), so a value goes to the strongest advice.
+        let mut said: Vec<(u8, &str, String, String)> = view.iter().filter(|r| r.setting == path).map(|r| {
+            let (rank, what) = match (r.departs, r.strength, r.dismissed) {
+                (true, _, true) => (5, "Dismissed"),
+                (true, Strength::Required, _) => (0, "Required"),
+                (true, Strength::Discouraged, _) => (1, "Discouraged"),
+                (true, Strength::Recommended, _) => (2, "Recommended"),
+                (true, Strength::Suggested, _) => (3, "Suggested"),
+                (true, Strength::Reference, _) => (4, "Differs from the authors' setting"),
+                (false, Strength::Reference, _) => (7, "Authors' setting"),
+                (false, Strength::Suggested, _) => (8, "Suggested"),
+                (false, _, _) => (6, "Recommended"),
             };
             let value = if r.strength == Strength::Discouraged && r.departs {
                 format!("not {}", r.current_text())
             } else {
                 r.recommended.name.clone()
             };
-            let who = r.trigger.name.to_string();
+            (rank, what, value, r.trigger.name.to_string())
+        }).collect();
+        said.sort_by_key(|(rank, ..)| *rank);
+        let mut groups: Vec<(&str, Vec<String>, Vec<String>)> = Vec::new();
+        let mut values_said: Vec<String> = Vec::new();
+        for (_, what, value, who) in said {
+            if values_said.contains(&value) {
+                continue;
+            }
+            values_said.push(value.clone());
             match groups.iter_mut().find(|(w, _, _)| *w == what) {
                 Some((_, values, names)) => {
-                    if !values.contains(&value) { values.push(value) }
+                    values.push(value);
                     if !who.is_empty() && !names.contains(&who) { names.push(who) }
                 }
                 None => groups.push((what, vec![value], if who.is_empty() { vec![] } else { vec![who] })),
@@ -2019,6 +2030,19 @@ mod tests {
             .find(|r| matches!(r, PipelineRow::AlgoSelect { field: "qsm_algorithm", .. })).unwrap();
         let text = App::row_reference(&view, &row).unwrap();
         assert_eq!(text.matches("Recommended (HEIDI streaking reduction): LSQR").count(), 1, "{text}");
+        assert_eq!(text.matches("LSQR").count(), 1, "the authors' setting and the suggestion agree: {text}");
+    }
+
+    /// Each value is said once, by the strongest advice that gives it: QSMART with HEIDI on
+    /// shows HEIDI's requirement, not also its authors' setting and suggestion of the same LSQR.
+    #[test]
+    fn a_rows_reference_gives_each_value_to_its_strongest_advice() {
+        let mut app = app();
+        app.pipeline_state.heidi_enabled = true;
+        app.pipeline_state.set_select("qsm_algorithm", QSM_PICKER_OPTIONS.iter().position(|o| *o == "qsmart").unwrap());
+        let row = PipelineRow::AlgoSelect { label: "", field: "qsm_algorithm", options: &[], help: &[] };
+        assert_eq!(App::row_reference(&app.rule_view(), &row).as_deref(),
+                   Some("Required (HEIDI streaking reduction): LSQR — ! for details"));
     }
 
     /// `!` opens its details with Apply.

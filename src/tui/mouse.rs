@@ -13,9 +13,13 @@
 //!     click and pressed by the next.
 //!   - A pipeline, or a picker's entry: the first click highlights it, the next chooses it.
 //!   - A pop-up's button: presses it.
+//!   - The Methods tab's button (Copy methods text, Open graph): presses it, and focus goes into
+//!     the page. A click anywhere else on the page goes into it too.
 //! - **While a pop-up is open**, only its own entries and buttons answer, as only its keys do.
-//! - **The wheel** moves as `↑`/`↓` do, but never out of the page onto the sub-tab strip or the
-//!   tab bar.
+//! - **The wheel** scrolls what is under the mouse. Over the Methods tab's text or graph it
+//!   scrolls that, wherever focus is. Over a tab's settings while focus is on its sections or
+//!   sub-tabs it scrolls the settings, leaving focus there. Otherwise it moves as `↑`/`↓` do, but
+//!   never out of the page onto the sub-tab strip or the tab bar.
 //! - **Selecting text**: with the mouse captured, a plain drag no longer selects text in most
 //!   terminals; holding Shift (Option in iTerm2) does. `QSMXT_NO_MOUSE` leaves the mouse to the
 //!   terminal.
@@ -57,6 +61,10 @@ pub enum Hit {
     Input(InputTarget),
     /// The open pop-up, anywhere in it: a click there does nothing, a click outside it closes it.
     Popup,
+    /// The Methods tab's page (its text or graph): the wheel scrolls it, a click goes into it.
+    Page,
+    /// The Methods tab's button (Copy methods text, Open graph): a click presses it.
+    PageButton,
 }
 
 /// What a line of the Input page focuses: the input-mode picker and the directory/config fields
@@ -140,16 +148,35 @@ impl App {
     pub fn handle_mouse(&mut self, ev: MouseEvent) {
         match ev.kind {
             MouseEventKind::Down(MouseButton::Left) => self.click(ev.column, ev.row),
-            MouseEventKind::ScrollUp => self.wheel(KeyCode::Up),
-            MouseEventKind::ScrollDown => self.wheel(KeyCode::Down),
+            MouseEventKind::ScrollUp => self.wheel(KeyCode::Up, ev.column, ev.row),
+            MouseEventKind::ScrollDown => self.wheel(KeyCode::Down, ev.column, ev.row),
             _ => {}
         }
     }
 
-    /// The wheel: `↑`/`↓`, but never off the page onto the strip or the tab bar.
-    fn wheel(&mut self, code: KeyCode) {
+    /// The wheel: it scrolls the Methods page under the mouse, or the settings under it while
+    /// focus is on the sections; otherwise `↑`/`↓`, but never off the page onto the strip or the
+    /// tab bar.
+    fn wheel(&mut self, code: KeyCode, x: u16, y: u16) {
         if self.is_typing() {
             return;
+        }
+        let up = code == KeyCode::Up;
+        let step = |s: &mut usize| *s = if up { s.saturating_sub(1) } else { *s + 1 };
+        if !self.popup_open() {
+            match self.hits.at(x, y).map(|(_, h)| h) {
+                Some(Hit::Page | Hit::PageButton) => {
+                    self.status_message = None;
+                    return step(self.methods_page_scroll());
+                }
+                // Focus stays on the sections; the settings scroll under it (the drawer keeps
+                // the view where it is while no setting has focus).
+                Some(Hit::Rows { .. }) if self.on_subtabs() => {
+                    self.status_message = None;
+                    return step(&mut self.pipeline_state.scroll_offset);
+                }
+                _ => {}
+            }
         }
         let (tab, strip) = (self.tab_focus, self.subtab_focus);
         self.handle_key(key(code));
@@ -227,6 +254,11 @@ impl App {
             }
             Hit::Popup => {}
             Hit::Input(target) => self.click_input(target),
+            Hit::Page => (self.tab_focus, self.subtab_focus) = (false, false),
+            Hit::PageButton => {
+                (self.tab_focus, self.subtab_focus) = (false, false);
+                self.press_page_button();
+            }
         }
     }
 
@@ -349,7 +381,11 @@ mod tests {
 
     /// Draw a frame (recording where things are) and return its text, one string per row.
     fn draw(app: &mut App) -> Vec<String> {
-        let mut t = Terminal::new(TestBackend::new(140, 42)).unwrap();
+        draw_sized(app, 140, 42)
+    }
+
+    fn draw_sized(app: &mut App, width: u16, height: u16) -> Vec<String> {
+        let mut t = Terminal::new(TestBackend::new(width, height)).unwrap();
         t.draw(|f| super::super::ui::draw(f, app)).unwrap();
         let buf = t.backend().buffer();
         (0..buf.area.height).map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect()).collect()
@@ -476,6 +512,76 @@ mod tests {
         }
         assert_eq!(app.focus(), 0);
         assert!(!app.tab_focus && !app.on_subtabs(), "the wheel does not leave the page");
+    }
+
+    /// The wheel over `text` (the first place it is drawn).
+    fn wheel_over(app: &mut App, kind: MouseEventKind, text: &str) {
+        let screen = draw(app);
+        let (x, y) = screen.iter().enumerate().find_map(|(y, row)| {
+            row.find(text).map(|b| (row[..b].chars().count() as u16, y as u16))
+        }).unwrap_or_else(|| panic!("{text:?} is not on the screen:\n{}", screen.join("\n")));
+        app.handle_mouse(MouseEvent { kind, column: x, row: y, modifiers: KeyModifiers::NONE });
+    }
+
+    /// The Methods tab: with focus on its sidebar, the wheel over the text scrolls the text and
+    /// leaves focus on the sidebar; the button above it copies the text and says so; `c` copies
+    /// from the sidebar too. On the Graph page the button opens the graph.
+    #[test]
+    fn the_methods_page_scrolls_under_the_wheel_and_its_buttons_press() {
+        use crate::tui::app::TAB_METHODS;
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = App::new_for_trial();
+        app.pipeline_view.svg_dir = dir.path().to_path_buf();
+        app.pipeline_view.opener = |_| Ok(super::super::pipeline_view::Opened::Viewer);
+        click(&mut app, "5 Methods");
+        assert_eq!(app.active_tab, TAB_METHODS);
+        assert!(app.on_subtabs() && app.sidebar(), "focus on the sidebar");
+        assert!(draw(&mut app).iter().any(|r| r.contains(" Copy methods text   c")), "the button and its key");
+        wheel_over(&mut app, MouseEventKind::ScrollDown, "processing was performed");
+        assert_eq!(app.methods_scroll_offset, 1, "the wheel over the text scrolls it");
+        assert!(app.on_subtabs() && app.page() == Some(Page::MethodsText), "focus stays on the sidebar");
+        wheel_over(&mut app, MouseEventKind::ScrollUp, "Copy methods text");
+        wheel_over(&mut app, MouseEventKind::ScrollUp, "Copy methods text");
+        assert_eq!(app.methods_scroll_offset, 0);
+        assert!(app.on_subtabs(), "the wheel at the top does not move focus");
+
+        click(&mut app, "Copy methods text");
+        assert_eq!(app.clipboard.take(), Some(crate::tui::command::methods_text(&app).unwrap()));
+        assert!(!app.on_subtabs(), "a click on the button goes into the page");
+        let screen = draw(&mut app);
+        assert!(screen.iter().any(|r| r.contains(" Copy methods text   ✓ Copied")), "{}", screen.join("\n"));
+        app.handle_key(KeyEvent::from(KeyCode::Left));
+        assert!(app.on_subtabs());
+        assert!(draw(&mut app).iter().any(|r| r.contains(" Copy methods text   c")), "the next key clears it");
+        app.handle_key(KeyEvent::from(KeyCode::Char('c')));
+        assert!(app.clipboard.take().is_some() && app.on_subtabs(), "c copies from the sidebar");
+
+        click(&mut app, "Graph");
+        assert_eq!(app.page(), Some(Page::Pipeline));
+        assert!(draw(&mut app).iter().any(|r| r.contains(" Open graph   s")));
+        click(&mut app, "Open graph");
+        assert!(app.status_message.as_deref().unwrap().ends_with("and opened"));
+        assert!(dir.path().read_dir().unwrap().next().is_some(), "the SVG is written");
+    }
+
+    /// With focus on the Reconstruction tab's sections, the wheel over the settings scrolls them
+    /// and focus stays on the sections.
+    #[test]
+    fn the_settings_scroll_under_the_wheel_from_the_sections() {
+        let mut app = App::new_for_trial();
+        click(&mut app, "3 Reconstruction");
+        click(&mut app, "   Inversion ");
+        app.handle_key(KeyEvent::from(KeyCode::Left));
+        assert!(app.on_subtabs());
+        let section = app.page();
+        // Short enough that the settings overflow.
+        for _ in 0..3 {
+            draw_sized(&mut app, 80, 16);
+            app.handle_mouse(MouseEvent { kind: MouseEventKind::ScrollDown, column: 40, row: 6, modifiers: KeyModifiers::NONE });
+        }
+        draw_sized(&mut app, 80, 16);
+        assert!(app.on_subtabs() && app.page() == section, "focus and section stay");
+        assert!(app.pipeline_state.scroll_offset > 0, "the settings scrolled:\n{}", draw_sized(&mut app, 80, 16).join("\n"));
     }
 
     /// The Input page: the mode picker and the directories open on a click; a click elsewhere
