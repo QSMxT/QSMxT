@@ -93,10 +93,30 @@ pub(crate) fn accept(config: &mut PipelineConfig, runs: &[QsmRun], which: Accept
     for r in &applied {
         info!("Applied ({}): {}: {} → {} [{}]", applied_label(r), r.label, r.current_text(), r.recommended.name, r.rule);
     }
+    let view = first_view(config, runs);
     for r in &conflicting {
-        warn!("Not applied: {} ({}), which another as strong suggestion disagrees with: {}", r.rule, applied_label(r), r.log_line());
+        warn!("Not applied: {} [{}]", left_line(r, &view), r.rule);
     }
     Accepted { applied, per_run }
+}
+
+/// Every rule that applies to `config` on the first run's scan ([`rec::reference_values`]).
+fn first_view(config: &PipelineConfig, runs: &[QsmRun]) -> Vec<Recommendation> {
+    let first = facts(runs, config).into_iter().next().map(|(_, f)| f).unwrap_or_default();
+    rec::reference_values(config, &first)
+}
+
+/// Why a finding was left by `--accept-recommendations` / `--accept-reference-settings`: chosen
+/// methods' authors who disagree on its setting ("Echo combination stays Weighted average: the
+/// chosen methods' authors disagree (PDF's authors use Complex fit; AMP-PE's authors use Weighted
+/// average)"), or another equally strong suggestion. The setting stays as given either way.
+fn left_line(r: &Recommendation, view: &[Recommendation]) -> String {
+    let disagreement = rec::disagreement(view, r);
+    if disagreement.is_empty() {
+        format!("{}, as another equally strong suggestion disagrees", r.line())
+    } else {
+        format!("{} stays {}: the chosen methods' authors disagree ({disagreement}); set it to the one you want", r.label, r.current_text())
+    }
 }
 
 /// What kind of finding was applied: "recommended", "discouraged", "required" or "original
@@ -239,8 +259,9 @@ pub(crate) fn dry_text(config: &PipelineConfig, runs: &[QsmRun], accept: Accept)
             }
             let _ = writeln!(out, "  i.e. {}", qsmxt_engine::generate_command(&changed));
         }
+        let view = rec::reference_values(&changed, &first);
         for r in &conflicting {
-            let _ = writeln!(out, "  not applied, as another equally strong suggestion disagrees: {} ({})", r.line(), r.rule);
+            let _ = writeln!(out, "  not applied: {} ({})", left_line(r, &view), r.rule);
         }
     }
     out
