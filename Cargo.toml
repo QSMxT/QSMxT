@@ -23,9 +23,10 @@ default = ["dl"]
 dl = ["qsm-core/onnx", "qsm-core/download", "qsmxt-engine/onnx"]
 
 [dependencies]
-# Pinned to a QSM.rs main commit. qsmxt-engine must move in lockstep (same rev), so qsmbly
-# (which pins qsmxt-engine) resolves the same qsm-core.
-qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "1c38ad9a79ed6f1229df8b10b310547974c5e746", features = ["parallel"] }
+# Pinned to a QSM.rs release tag for a release, and to a QSM.rs main commit (rev) between
+# releases. qsmxt-engine must move in lockstep (same tag or rev), so qsmbly (which pins
+# qsmxt-engine) resolves the same qsm-core. tests/qsm_core_pin.rs checks both and Cargo.lock.
+qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", tag = "v0.42.0", features = ["parallel"] }
 qsmxt-engine = { path = "crates/qsmxt-engine" }
 clap = { version = "4", features = ["derive"] }
 const_format = "0.2"
