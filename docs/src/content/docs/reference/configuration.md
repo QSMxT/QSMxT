@@ -96,12 +96,15 @@ tukey_window = 0.4   # as the χ-separation toolbox uses; 0 for Philips
 
 With two-pass artefact reduction, the reliable mask's sections and how they combine are
 `masking.two_pass_sections` and `masking.two_pass_combine` (`"or"` or `"and"`; left out, it is
-the main mask's `masking.combine`):
+the main mask's `masking.combine`). `masking.two_pass_background` is where the reliable pass's
+local field comes from (`"separate"`, the default, or `"shared"`; see
+[Combining sections](/QSMxT/reference/algorithms/#combining-sections)):
 
 ```toml
 [masking]
 two_pass = true
 two_pass_combine = "and"
+two_pass_background = "shared"
 ```
 
 Laplacian unwrapping's settings are in `[field_mapping]`:

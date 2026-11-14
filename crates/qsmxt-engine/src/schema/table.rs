@@ -77,6 +77,12 @@ pub(super) fn table() -> Vec<Def> {
             o("and", "AND", "AND", "A voxel is in the reliable mask when every section keeps it"),
         ])).optional().flag("--two-pass-mask-combine").parent("masking.two_pass_sections").context("Reliable mask")
         .when(|x| x.c.masking.two_pass && x.c.masking.resolved_two_pass_sections().len() > 1),
+        d("masking.two_pass_background", Masking, "Reliable-pass field", "", Enum(vec![
+            o("separate", "separate", "Own background removal", "Background removal is run again on the reliable mask, and its local field inverted (the published algorithm) (default)"),
+            o("shared", "shared", "Main pass's local field", "Background removal runs once, on the main mask; the reliable pass inverts that local field inside the reliable mask, so its holes are applied at inversion only"),
+        ])).flag("--two-pass-background").parent("masking.two_pass")
+        .when(|x| x.c.masking.two_pass && !crate::bridge::skips_bgremove(x.c)).full("Reliable-pass local field")
+        .gui("Where the reliable pass's local field comes from: background removal run again on the reliable mask, or the main pass's local field with the reliable mask's holes applied at inversion only"),
         d("masking.inhomogeneity_correction", Masking, "Magnitude correction", "Correct the magnitude for receive-coil inhomogeneity: the echoes masking reads, and the combined magnitude", Bool).basic().flag("--no-inhomogeneity-correction").full("Inhomogeneity correction"),
         d("masking.inhomogeneity_method", Masking, "Method", "", Enum(vec![
             o("makehomogeneous", "makehomogeneous", "makehomogeneous", "Divide by a smoothed estimate of the receive sensitivity (MriResearchTools' makehomogeneous) (default)"),

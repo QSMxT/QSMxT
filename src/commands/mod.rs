@@ -180,6 +180,7 @@ mod integration_tests {
                 two_pass: false,
                 two_pass_sections_cli: None,
                 two_pass_mask_combine: None,
+                two_pass_background: None,
                 dismiss_recommendation: None,
             },
         }

@@ -885,6 +885,10 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             config.masking.two_pass_combine = Some(combine_of(combine));
             config.masking.two_pass = true;
         }
+        if let Some(background) = args.two_pass_background {
+            config.masking.two_pass_background = background;
+            config.masking.two_pass = true;
+        }
 
         // ── Masking input / erosion overrides ──
         // These rewrite the configured sections (default or --mask-preset). Full
@@ -1876,6 +1880,17 @@ mod tests {
         let c = config_from_cli(&["qsmxt", "run", "<bids>", "--two-pass-mask-combine", "and"]);
         assert!(c.masking.two_pass);
         assert_eq!((c.masking.combine, c.masking.resolved_two_pass_combine()), (MaskCombine::Or, MaskCombine::And));
+    }
+
+    /// `--two-pass-background` sets where the reliable pass's local field comes from, and asks for
+    /// two-pass; the default is the published algorithm.
+    #[test]
+    fn two_pass_background_from_the_command_line() {
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--two-pass"]);
+        assert_eq!(c.masking.two_pass_background, qsmxt_engine::TwoPassBackground::Separate);
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--two-pass-background", "shared"]);
+        assert!(c.masking.two_pass);
+        assert_eq!(c.masking.two_pass_background, qsmxt_engine::TwoPassBackground::Shared);
     }
 
     /// Two-pass leaves the main mask alone — it adds a second one rather than replacing the first.

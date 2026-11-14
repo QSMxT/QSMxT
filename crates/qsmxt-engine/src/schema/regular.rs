@@ -120,7 +120,7 @@ mod tests {
     fn every_choice_has_a_reviewed_level() {
         const ADVANCED_CHOICES: &[&str] = &[
             "pipeline.ignore_slice_gap", "pipeline.crop_to_mask", "pipeline.fft_padding",
-            "masking.combine", "bet.orientation", "masking.two_pass_combine", "masking.n4_geometry",
+            "masking.combine", "bet.orientation", "masking.two_pass_combine", "masking.two_pass_background", "masking.n4_geometry",
             "motion_correction.reference", "motion_correction.chain",
             "field_mapping.prelude.labelling", "field_mapping.laplacian_solver", "field_mapping.laplacian_unmasked", "field_mapping.laplacian_keep_outside",
             "field_mapping.romeo.individual", "field_mapping.romeo.correct_global", "field_mapping.romeo.phase_coherence",

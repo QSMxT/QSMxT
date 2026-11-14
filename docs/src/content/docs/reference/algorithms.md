@@ -142,6 +142,19 @@ The two-pass reliable mask (`--two-pass-mask`, repeatable) has its own combine
 mode, `--two-pass-mask-combine or|and`, which is the main mask's `--mask-combine`
 unless set. Its combined mask then takes the same `--mask-refine` steps as the
 main mask, and is intersected with the main mask.
+`phase-quality,threshold:fixed:15` makes holes only where the phase quality
+(0 to 100) is 15 or lower, in place of the default Otsu threshold.
+
+`--two-pass-background` sets where the reliable pass's local field comes from:
+
+| Value | What the reliable pass does |
+|---|---|
+| `separate` (default) | Background removal is run again on the reliable mask, and that local field is inverted |
+| `shared` | Background removal runs once, on the main mask; the reliable pass inverts that local field inside the reliable mask (restricted to where the field is defined), so its holes are applied at inversion only |
+
+It applies only where background removal is a step of its own: the inversions
+that remove the background themselves (TGV, QSMART, iQSM, TFI and the other
+total-field methods) run the reliable pass on the reliable mask either way.
 
 To try this on files without a pipeline run, use
 [`qsmxt mask preset bet-and-phase`, or `qsmxt mask and` / `or`](/QSMxT/reference/tools/#masking--qsmxt-mask)
