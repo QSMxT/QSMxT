@@ -939,6 +939,12 @@ pub fn parse_n4_geometry(s: &str) -> Result<qsmxt_engine::N4Geometry, String> {
         .ok_or_else(|| format!("expected scanner or make-nii, got '{s}'"))
 }
 
+/// Where the two-pass reliable pass takes its local field from: `separate` or `shared`.
+pub fn parse_two_pass_background(s: &str) -> Result<qsmxt_engine::TwoPassBackground, String> {
+    qsmxt_engine::TwoPassBackground::ALL.into_iter().find(|b| b.as_str() == s.trim())
+        .ok_or_else(|| format!("expected separate or shared, got '{s}'"))
+}
+
 /// HARPERELLA's / iHARPERELLA's boundary rim: `whole` or `sti`.
 pub fn parse_harperella_rim(s: &str) -> Result<qsmxt_engine::HarperellaRim, String> {
     qsmxt_engine::HarperellaRim::ALL.into_iter().find(|r| r.as_str() == s.trim())
@@ -2138,7 +2144,8 @@ pub struct PipelineArgs {
 
     /// Define the reliable-pass mask used by --two-pass (repeatable; same format as --mask).
     /// Defaults to `phase-quality,threshold:otsu` — an unfilled threshold on the phase-quality
-    /// map. Its holes are the point, so refinements that close them (fill-holes, close, gaussian)
+    /// map; `phase-quality,threshold:fixed:15` makes holes only where phase quality (0-100) is
+    /// 15 or lower. Its holes are the point, so refinements that close them (fill-holes, close, gaussian)
     /// defeat the method. Folded with --two-pass-mask-combine, then --mask-refine like the main
     /// mask, and always intersected with it.
     #[arg(long = "two-pass-mask", num_args = 1)]
@@ -2148,6 +2155,15 @@ pub struct PipelineArgs {
     /// Defaults to the main mask's --mask-combine. Turns on --two-pass.
     #[arg(long, value_enum)]
     pub two_pass_mask_combine: Option<MaskCombineArg>,
+
+    /// Where the --two-pass reliable pass takes its local field from: `separate` (default;
+    /// background removal is run again on the reliable mask, as published) or `shared`
+    /// (background removal runs once, on the main mask, and the reliable pass inverts that local
+    /// field inside the reliable mask, so its holes are applied at inversion only). Has no effect
+    /// with inversions that remove the background themselves (TGV, QSMART, iQSM, TFI, ...).
+    /// Turns on --two-pass.
+    #[arg(long, value_name = "FIELD", value_parser = parse_two_pass_background)]
+    pub two_pass_background: Option<qsmxt_engine::TwoPassBackground>,
 
     /// Stop offering a recommendation for the setting's current value: RULE=VALUE, the rule's id
     /// and the value it was dismissed for, as `qsmxt run --dry` lists them (e.g.

@@ -249,7 +249,9 @@ pub fn downstream_steps(step_name: &str) -> Option<&'static [&'static str]> {
         // The field map says where the field is defined, the mask the reconstructions and the
         // reliable-phase mask are restricted to.
         "unwrap" => &["mask-reliable", "bgremove", "invert", "tgv", "qsmart", "reference"],
-        "bgremove" => &["invert", "reference"],
+        // A two-pass run that shares the main pass's local field restricts the reliable-phase
+        // mask to where that field is defined (`masking.two_pass_background`).
+        "bgremove" => &["invert", "reference", "mask-reliable"],
         "invert" | "tgv" | "qsmart" => &["reference"],
         // Both consumers of the referenced χ map: SMWI's weighting, and the per-structure stats.
         // Chi-separation starts from it too.
@@ -278,6 +280,16 @@ mod tests {
                      "bgremove-reliable", "invert-reliable", "tgv-reliable", "qsmart-reliable",
                      "twopass", "reference"] {
             assert!(ds.contains(&step.to_string()), "mask should invalidate {step}: {ds:?}");
+        }
+    }
+
+    /// A reliable pass that shares the main pass's local field reads background removal's output
+    /// for its mask and its inversion: a new main-pass field invalidates both.
+    #[test]
+    fn the_main_background_removal_invalidates_a_shared_reliable_pass() {
+        let ds = downstream_of("bgremove");
+        for step in ["mask-reliable", "invert-reliable", "twopass", "reference"] {
+            assert!(ds.contains(&step.to_string()), "bgremove should invalidate {step}: {ds:?}");
         }
     }
 

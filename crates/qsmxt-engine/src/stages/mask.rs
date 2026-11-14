@@ -22,12 +22,18 @@ pub fn params(config: &PipelineConfig) -> serde_json::Value {
 /// The reliable-phase mask step's parameters (`mask` + [`crate::cache::RELIABLE_SUFFIX`]).
 pub fn reliable_params(config: &PipelineConfig) -> serde_json::Value {
     let sections = config.masking.resolved_two_pass_sections();
-    serde_json::json!({
+    let mut params = serde_json::json!({
         "sections": sections.iter().map(|s| format!("{}", s)).collect::<Vec<_>>(),
         "combine": format!("{}", config.masking.resolved_two_pass_combine()),
         "refinements": config.masking.refinements.iter().map(|o| format!("{}", o)).collect::<Vec<_>>(),
         "scanner_masked_phase": 1,
-    })
+    });
+    // The reliable pass inverts the main pass's local field, so the mask is restricted to where
+    // that field is defined (qsm-core `restrict_reliable_mask`).
+    if crate::bridge::shares_local_field(config) {
+        params["restricted_to"] = serde_json::json!("main pass's local field");
+    }
+    params
 }
 
 /// The deep-learning models (HD-BET, RS2-Net, MindGrab) `sections` run, by model id: the weights

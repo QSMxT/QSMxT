@@ -213,6 +213,42 @@ impl From<qsm_core::pipeline::N4Geometry> for N4Geometry {
     }
 }
 
+/// Where a two-pass run's reliable pass takes its local field from (`masking.two_pass_background`;
+/// qsm-core `ReliableBackground`, which documents both and the evidence behind them).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub enum TwoPassBackground {
+    /// Background removal is run again on the reliable mask: the published algorithm.
+    // The default stays the published algorithm until the in-vivo comparison decides (decision
+    // 159). Making `Shared` the default is moving this attribute.
+    #[default]
+    #[serde(rename = "separate")]
+    Separate,
+    /// The main pass's local field, inverted inside the reliable mask: the holes are applied at
+    /// inversion only.
+    #[serde(rename = "shared")]
+    Shared,
+}
+impl TwoPassBackground {
+    /// Every variant, in the order the CLI help and the TUI list them.
+    pub const ALL: [TwoPassBackground; 2] = [Self::Separate, Self::Shared];
+
+    /// The name the CLI, the config file and the TUI use (qsm-core's `ReliableBackground::id`).
+    pub fn as_str(self) -> &'static str {
+        qsm_core::pipeline::ReliableBackground::from(self).id()
+    }
+}
+impl fmt::Display for TwoPassBackground {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl From<TwoPassBackground> for qsm_core::pipeline::ReliableBackground {
+    fn from(b: TwoPassBackground) -> Self {
+        use qsm_core::pipeline::ReliableBackground as B;
+        match b { TwoPassBackground::Separate => B::Separate, TwoPassBackground::Shared => B::Shared }
+    }
+}
+
 /// Grid V-SHARP estimates the background field on (qsm-core `VsharpGrid`).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]

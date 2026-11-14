@@ -2279,12 +2279,16 @@ fn describe_two_pass(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
     let refined = describe_refinements(&config.masking.refinements, doc);
     let refined = if refined.is_empty() { String::new() } else { format!(" and refined by {}", join_list(&refined)) };
 
+    let repeated = if crate::bridge::shares_local_field(config) {
+        "dipole inversion of the same local field was repeated within"
+    } else {
+        "background field removal and dipole inversion were repeated against"
+    };
     doc.say(&two_pass_steps(), format!(
-        "Two-pass artefact reduction (Stewart et al., 2022) was applied: background field removal \
-         and dipole inversion were repeated against a second mask {generated}{refined}, whose holes \
-         around strong susceptibility sources were left unfilled, and the two susceptibility maps \
-         were combined by taking the second reconstruction wherever it was defined and the first \
-         elsewhere.",
+        "Two-pass artefact reduction (Stewart et al., 2022) was applied: {repeated} a second mask \
+         {generated}{refined}, whose holes around strong susceptibility sources were left unfilled, \
+         and the two susceptibility maps were combined by taking the second reconstruction wherever \
+         it was defined and the first elsewhere.",
     ));
     if not_applied > 0 {
         doc.say(&two_pass_steps(), "It was not applied where the brain mask was sourced from the BIDS derivatives, \
@@ -2903,6 +2907,19 @@ mod tests {
         let two = out.find("Two-pass artefact reduction").expect("two-pass sentence");
         let reference = out.find("referenced to the mean susceptibility").expect("referencing sentence");
         assert!(inv < two && two < reference, "out-of-order methods: {out}");
+    }
+
+    /// Sharing the main pass's local field is said as what was done: the inversion alone was
+    /// repeated, on the same local field.
+    #[test]
+    fn two_pass_methods_say_where_the_reliable_field_came_from() {
+        let mut config = PipelineConfig::default();
+        config.masking.two_pass = true;
+        assert!(generate_methods(&config).contains("background field removal and dipole inversion were repeated against a second mask"));
+        config.masking.two_pass_background = crate::enums::TwoPassBackground::Shared;
+        let out = generate_methods(&config);
+        assert!(out.contains("dipole inversion of the same local field was repeated within a second mask generated using"), "out: {out}");
+        assert!(!out.contains("background field removal and dipole inversion were repeated"), "out: {out}");
     }
 
     /// An edited reliable mask must be described as configured, not as the default.

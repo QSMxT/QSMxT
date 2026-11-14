@@ -1732,6 +1732,12 @@ pub struct MaskingConfig {
     /// How the reliable-pass sections fold into one mask. `None` = the main mask's `combine`.
     #[serde(default)]
     pub two_pass_combine: Option<MaskCombine>,
+    /// Where the reliable pass's local field comes from: background removal run again on the
+    /// reliable mask (`separate`, the published algorithm and the default), or the main pass's
+    /// local field with the reliable mask's holes applied at inversion only (`shared`). Only
+    /// matters when background removal is a step of its own ([`crate::bridge::shares_local_field`]).
+    #[serde(default)]
+    pub two_pass_background: TwoPassBackground,
 }
 impl Default for MaskingConfig {
     fn default() -> Self {
@@ -1746,6 +1752,7 @@ impl Default for MaskingConfig {
             two_pass: false,
             two_pass_sections: None,
             two_pass_combine: None,
+            two_pass_background: TwoPassBackground::default(),
         }
     }
 }

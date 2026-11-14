@@ -607,7 +607,16 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
     /// Where a pass's susceptibility map is defined: the mask background removal left, or the
     /// pass's mask when the inversion did its own background removal.
     fn support(&self, pass: Pass) -> Item {
-        if crate::bridge::skips_bgremove(self.config) { self.pass_mask(pass) } else { Item::LocalFieldMask(pass) }
+        let own_field = !crate::bridge::skips_bgremove(self.config)
+            && !(pass == Pass::Reliable && crate::bridge::shares_local_field(self.config));
+        if own_field { Item::LocalFieldMask(pass) } else { self.pass_mask(pass) }
+    }
+
+    /// What the reliable mask is restricted to (qsm-core `restrict_reliable_mask`): the main
+    /// pass's mask, or, when the reliable pass inverts the main pass's local field, where that
+    /// field is defined.
+    fn reliable_domain(&self) -> Item {
+        if crate::bridge::shares_local_field(self.config) { Item::LocalFieldMask(Pass::Main) } else { self.pass_mask(Pass::Main) }
     }
 
     /// Echo `e`'s phase as the stages after motion correction read it.
@@ -1191,7 +1200,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         self.log(Level::Info, &format!("Creating the reliable-phase mask ({} section(s), combined with {combine})",
                                        sections.len()));
         let reliable = self.build_mask(&sections, combine, &step.models)?;
-        let main_item = self.pass_mask(Pass::Main);
+        let main_item = self.reliable_domain();
         let main = self.store.mask(&main_item)?;
         let restricted = stages::mask::reliable_mask(&reliable, &main)?;
         self.put(Item::ReliableMask, Data::Mask(&restricted))?;
@@ -1405,6 +1414,10 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         } else if let Some(te) = stages::inversion::resolved_te(self.config, &self.meta) {
             params["te_s"] = serde_json::json!(te);
         }
+        let shared_field = pass == Pass::Reliable && crate::bridge::shares_local_field(self.config);
+        if shared_field {
+            params["local_field"] = json!("main pass");
+        }
         if !per_echo {
             if let Some(te) = stages::inversion::resolved_heidi_te(config, &self.meta) {
                 params["heidi_te_s"] = serde_json::json!(te);
@@ -1446,6 +1459,11 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         }
         let (field_item, mask_item) = if skip_bgremove {
             (Item::FieldPpm, self.pass_mask(pass))
+        } else if shared_field {
+            // The main pass's local field, inside the reliable mask (restricted to where that
+            // field is defined): the holes are applied here only.
+            self.log(Level::Info, "Reliable pass: inverting the main pass's local field inside the reliable mask");
+            (Item::LocalField(Pass::Main), Item::ReliableMask)
         } else {
             (Item::LocalField(pass), Item::LocalFieldMask(pass))
         };
@@ -3737,6 +3755,43 @@ pub(crate) mod tests {
         let r = Run::new(&plan, &config, &facts, crate::stages::magnitude::tests::meta_4x4x4(), &mut store, &mut quiet);
         assert_eq!(r.support(Pass::Reliable), Item::LocalFieldMask(Pass::Reliable));
         assert_eq!(r.store.identity(&r.support(Pass::Reliable)), json!("LocalFieldMask(Reliable)"));
+    }
+
+    /// Sharing the main pass's local field: background removal runs once, the reliable pass
+    /// inverts that field inside the reliable mask, which is restricted to where the field is
+    /// defined, and is defined on all of that mask. Switching back reruns the reliable side only.
+    #[test]
+    fn a_shared_two_pass_removes_the_background_once_in_memory() {
+        let (facts, mut store) = phantom();
+        let mut config = config();
+        config.masking.two_pass = true;
+        config.masking.two_pass_background = crate::enums::TwoPassBackground::Shared;
+        config.masking.two_pass_sections = Some(vec![MaskSection {
+            input: MaskingInput::Magnitude,
+            generator: MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(40.0) },
+            refinements: vec![],
+        }]);
+        let events = run_once(&config, &facts, &mut store);
+        assert_eq!(events.computed[4..], ["unwrap", "bgremove", "invert", "mask-reliable",
+                                          "invert-reliable", "twopass", "reference-singlepass", "reference"]);
+        assert!(store.get(&Item::LocalField(Pass::Reliable)).is_none());
+        let main_field = store.mask(&Item::LocalFieldMask(Pass::Main)).unwrap();
+        let reliable = store.mask(&Item::ReliableMask).unwrap();
+        assert!(reliable.iter().any(|&r| r != 0));
+        assert!(reliable.iter().zip(&main_field).all(|(&r, &m)| r == 0 || m != 0), "restricted to the main field");
+        let chi = store.real(&Item::RawChi(Pass::Reliable)).unwrap();
+        assert!(chi.iter().zip(&reliable).all(|(&c, &r)| r != 0 || c == 0.0), "inverted inside the reliable mask");
+        let plan = crate::plan::plan(&config, &facts);
+        let mut quiet = ();
+        let r = Run::new(&plan, &config, &facts, crate::stages::magnitude::tests::meta_4x4x4(), &mut store, &mut quiet);
+        assert_eq!(r.support(Pass::Reliable), Item::ReliableMask);
+        assert_eq!(r.support(Pass::Main), Item::LocalFieldMask(Pass::Main));
+        drop(r);
+        // Back to the published algorithm: the main pass stays cached.
+        config.masking.two_pass_background = crate::enums::TwoPassBackground::Separate;
+        let events = run_once(&config, &facts, &mut store);
+        assert!(!events.computed.iter().any(|s| s == "bgremove" || s == "invert"), "{:?}", events.computed);
+        assert!(events.computed.iter().any(|s| s == "bgremove-reliable"), "{:?}", events.computed);
     }
 
     /// With HEIDI on, a two-pass run inverts each pass without it (their keys are unchanged) and

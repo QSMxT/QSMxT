@@ -289,7 +289,8 @@ fn reconstruction(config: &PipelineConfig, pass: Pass) -> Vec<Step> {
             let mut steps = Vec::new();
             // The total-field methods (TFI, AutoQSM, NeXtQSM) remove or model the
             // background themselves, so there is no separate step for it.
-            if !skips_bgremove(config) {
+            // A two-pass run that shares the main pass's local field removes the background once.
+            if !skips_bgremove(config) && !(pass == Pass::Reliable && crate::bridge::shares_local_field(config)) {
                 let bf = config.bg_removal.algorithm;
                 let id = if bf == BfAlgorithm::Iqfm { model("iqfm") } else { model(&bf.to_string()) };
                 steps.push(Step::new(Stage::BackgroundRemoval(pass), id.into_iter().collect()));
@@ -737,6 +738,31 @@ pub(crate) mod tests {
         // ...unless none was found, when the mask is computed after all.
         f.custom_mask = false;
         assert!(plan(&config, &f).two_pass);
+    }
+
+    /// Sharing the main pass's local field drops the reliable pass's background removal: its
+    /// inversion reads the main pass's field inside the reliable mask, which reads where that
+    /// field is defined. With an inversion that removes the background itself it changes nothing.
+    #[test]
+    fn a_shared_two_pass_removes_the_background_once() {
+        let mut config = PipelineConfig::default();
+        config.masking.two_pass = true;
+        let separate = plan(&config, &facts());
+        assert!(separate.has(Stage::BackgroundRemoval(Pass::Reliable)));
+        config.masking.two_pass_background = crate::enums::TwoPassBackground::Shared;
+        let p = plan(&config, &facts());
+        assert!(!p.has(Stage::BackgroundRemoval(Pass::Reliable)));
+        let step = |stage: Stage| p.steps.iter().find(|s| s.stage == stage).unwrap();
+        let invert = step(Stage::Inversion(Pass::Reliable));
+        assert!(invert.reads.contains(&Item::LocalField(Pass::Main)) && invert.reads.contains(&Item::ReliableMask),
+                "{:?}", invert.reads);
+        assert!(!invert.reads.contains(&Item::LocalField(Pass::Reliable)));
+        assert!(step(Stage::Mask(Pass::Reliable)).reads.contains(&Item::LocalFieldMask(Pass::Main)));
+        assert!(step(Stage::TwoPassCombination).reads.contains(&Item::ReliableMask));
+        config.inversion.algorithm = QsmAlgorithm::Tgv;
+        let mut tgv = config.clone();
+        tgv.masking.two_pass_background = crate::enums::TwoPassBackground::Separate;
+        assert_eq!(names(&plan(&config, &facts())), names(&plan(&tgv, &facts())));
     }
 
     #[test]

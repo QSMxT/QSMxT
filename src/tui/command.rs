@@ -881,6 +881,10 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             crate::pipeline::config::MaskCombine::Or => crate::cli::MaskCombineArg::Or,
             crate::pipeline::config::MaskCombine::And => crate::cli::MaskCombineArg::And,
         }),
+        // Only what changes the run: the reliable pass's field matters only with two-pass, and
+        // where background removal is a step of its own.
+        two_pass_background: qsmxt_engine::TwoPassBackground::ALL.get(ps.two_pass_background).copied()
+            .filter(|b| ps.two_pass && ps.inversion_needs_bg_removal() && *b != qsmxt_engine::TwoPassBackground::default()),
         dismiss_recommendation: (!ps.dismissed.is_empty())
             .then(|| ps.dismissed.iter().map(|d| format!("{}={}", d.rule, d.chosen)).collect()),
     }
@@ -1173,6 +1177,27 @@ mod tests {
         assert!(shows_threshold(&app));
         assert!(config_from_app(&app).unwrap().bg_removal.vsharp.deconvolve);
         assert_eq!(pipeline_args_from_app(&app).vsharp_params.vsharp_deconvolve, Some(true));
+    }
+
+    /// The reliable pass's local field is offered with two-pass where background removal is a
+    /// step of its own, and reaches both the config and the CLI args.
+    #[test]
+    fn two_pass_background_setting() {
+        let mut app = default_app();
+        let shown = |app: &App| app.pipeline_state.all_rows().iter()
+            .any(|r| matches!(r, crate::tui::app::PipelineRow::AlgoSelect { field: "two_pass_background", .. }));
+        assert!(!shown(&app));
+        app.pipeline_state.toggle("two_pass");
+        assert!(shown(&app));
+        assert!(pipeline_args_from_app(&app).two_pass_background.is_none(), "the default stays off the command");
+        app.pipeline_state.set_select("two_pass_background", 1);
+        assert_eq!(config_from_app(&app).unwrap().masking.two_pass_background, qsmxt_engine::TwoPassBackground::Shared);
+        assert_eq!(pipeline_args_from_app(&app).two_pass_background, Some(qsmxt_engine::TwoPassBackground::Shared));
+        // TGV removes the background itself: nothing to share.
+        let tgv = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|&a| a == "tgv").unwrap();
+        app.pipeline_state.set_select("qsm_algorithm", tgv);
+        assert!(!shown(&app));
+        assert!(pipeline_args_from_app(&app).two_pass_background.is_none());
     }
 
     /// The Laplacian solver and its pad are in the TUI (they used to be CLI-only): the rows

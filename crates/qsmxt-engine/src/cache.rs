@@ -49,7 +49,17 @@ pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value
         "fft_padding": config.pipeline.fft_padding,
         "crop_margin_mm": config.pipeline.crop_margin_mm,
     });
-    let masking = || serde_json::to_value(&config.masking).unwrap_or_default();
+    // The reliable pass's background handling at its default (the published algorithm) is left
+    // out, so the keys of runs from before it existed still match.
+    let masking = || {
+        let mut m = serde_json::to_value(&config.masking).unwrap_or_default();
+        if config.masking.two_pass_background == crate::enums::TwoPassBackground::default() {
+            if let Some(o) = m.as_object_mut() {
+                o.remove("two_pass_background");
+            }
+        }
+        m
+    };
     match base {
         "scale_phase" => json!({ "coil_combination_sigma": config.field_mapping.coil_combination_sigma }),
         // Its taper ratio is in its parameters.
@@ -68,6 +78,7 @@ pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value
                 o.remove("two_pass");
                 o.remove("two_pass_sections");
                 o.remove("two_pass_combine");
+                o.remove("two_pass_background");
             }
             let mut c = json!({ "masking": m, "bet": config.bet });
             // The mask reads the echoes the inhomogeneity correction corrected, or corrects them
@@ -262,6 +273,15 @@ mod tests {
         assert_ne!(step_cache_key("mask-reliable", None, &p, &u), step_cache_key("mask-reliable", None, &p, &t));
         let mut old = serde_json::to_value(&t.masking).unwrap();
         old.as_object_mut().unwrap().remove("two_pass_combine");
+        old.as_object_mut().unwrap().remove("two_pass_background");
         assert_eq!(consumed_config("mask-reliable", &t)["masking"], old);
+        // Sharing the main pass's local field restricts the reliable mask differently and
+        // changes what the combination reads; the main mask is untouched.
+        let mut shared = t.clone();
+        shared.masking.two_pass_background = crate::enums::TwoPassBackground::Shared;
+        assert_eq!(step_cache_key("mask", None, &p, &shared), step_cache_key("mask", None, &p, &t));
+        for step in ["mask-reliable", "twopass"] {
+            assert_ne!(step_cache_key(step, None, &p, &shared), step_cache_key(step, None, &p, &t), "{step}");
+        }
     }
 }

@@ -1553,6 +1553,7 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("crop_margin_mm", "pipeline.crop_margin_mm"), ("fft_padding", "pipeline.fft_padding"),
     ("coil_combination_sigma", "field_mapping.coil_combination_sigma"),
     ("custom_mask_tool", "masking.custom_mask_tool"), ("two_pass", "masking.two_pass"),
+    ("two_pass_background", "masking.two_pass_background"),
     ("bet_smoothness", "bet.smoothness"), ("bet_gradient_threshold", "bet.gradient_threshold"),
     ("bet_iterations", "bet.iterations"), ("bet_subdivisions", "bet.subdivisions"),
     ("bet_orientation", "bet.orientation"),
@@ -2436,6 +2437,9 @@ pub struct PipelineFormState {
     /// How the reliable mask's sections combine: `--two-pass-mask-combine`. `None` = as the main
     /// mask's do ([`PipelineFormState::two_pass_combine_mode`]).
     pub two_pass_combine: Option<crate::pipeline::config::MaskCombine>,
+    /// Where the reliable pass's local field comes from: an index into
+    /// [`TWO_PASS_BACKGROUND_OPTIONS`] (`--two-pass-background`).
+    pub two_pass_background: usize,
     /// The recommendations dismissed (Keep mine on a `recommended` or `discouraged` finding), each
     /// for the value its setting had then: `--dismiss-recommendation`, and so the run's config.
     pub dismissed: Vec<qsmxt_engine::Dismissal>,
@@ -2910,6 +2914,7 @@ impl Default for PipelineFormState {
             two_pass: false,
             two_pass_sections: qsmxt_engine::default_two_pass_sections(),
             two_pass_combine: None,
+            two_pass_background: two_pass_background_index(qsmxt_engine::MaskingConfig::default().two_pass_background),
             dismissed: vec![],
             reference_pipeline: None,
             mask_preset: 0, // robust threshold
@@ -3103,6 +3108,15 @@ const N4_GEOMETRY_HELP: &[&str] = &[
 ];
 fn n4_geometry_index(g: qsmxt_engine::N4Geometry) -> usize {
     qsmxt_engine::N4Geometry::ALL.iter().position(|&x| x == g).unwrap_or(0)
+}
+/// Where a two-pass run's reliable pass takes its local field from, in the CLI's names.
+pub const TWO_PASS_BACKGROUND_OPTIONS: &[&str] = &["separate", "shared"];
+const TWO_PASS_BACKGROUND_HELP: &[&str] = &[
+    "Background removal is run again on the reliable mask, and its local field inverted (the published algorithm) (default)",
+    "Background removal runs once, on the main mask; the reliable pass inverts that local field inside the reliable mask, so its holes are applied at inversion only",
+];
+fn two_pass_background_index(b: qsmxt_engine::TwoPassBackground) -> usize {
+    qsmxt_engine::TwoPassBackground::ALL.iter().position(|&x| x == b).unwrap_or(0)
 }
 pub const VSHARP_GRID_OPTIONS: &[&str] = &["native", "finest", "isotropic"];
 const VSHARP_GRID_HELP: &[&str] = &[
@@ -3618,6 +3632,11 @@ impl PipelineFormState {
             rows.push(PipelineRow::MaskTwoPassHeader);
             self.push_mask_section_rows(rows, true);
             rows.push(PipelineRow::MaskOpAddSection { two_pass: true });
+            // Only where background removal is a step of its own.
+            if self.inversion_needs_bg_removal() {
+                rows.push(PipelineRow::AlgoSelect { label: "Reliable-pass field", field: "two_pass_background",
+                    options: TWO_PASS_BACKGROUND_OPTIONS, help: TWO_PASS_BACKGROUND_HELP });
+            }
         }
 
     }
@@ -5050,6 +5069,7 @@ impl PipelineFormState {
             "qsmart_fit_threshold_mode" => self.qsmart_fit_threshold_mode,
             "inhomogeneity_method" => self.inhomogeneity_method,
             "n4_geometry" => self.n4_geometry,
+            "two_pass_background" => self.two_pass_background,
             "vsharp_grid" => self.vsharp_grid,
             "robust_fit_loss" => self.robust_fit_loss,
             "motion_reference" => self.motion_reference,
@@ -5120,6 +5140,7 @@ impl PipelineFormState {
             "qsmart_fit_threshold_mode" => self.qsmart_fit_threshold_mode = val,
             "inhomogeneity_method" => self.inhomogeneity_method = val,
             "n4_geometry" => self.n4_geometry = val.min(N4_GEOMETRY_OPTIONS.len() - 1),
+            "two_pass_background" => self.two_pass_background = val.min(TWO_PASS_BACKGROUND_OPTIONS.len() - 1),
             "vsharp_grid" => self.vsharp_grid = val,
             "robust_fit_loss" => self.robust_fit_loss = val,
             "motion_reference" => self.motion_reference = val,

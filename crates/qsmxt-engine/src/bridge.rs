@@ -129,6 +129,16 @@ pub fn skips_bgremove(config: &PipelineConfig) -> bool {
     !inversion_input(config, 1).needs_bg_removal()
 }
 
+/// Whether a two-pass run's reliable pass inverts the main pass's local field
+/// (`masking.two_pass_background = shared`) instead of removing the background again on the
+/// reliable mask. Only where background removal is a step of its own: the inversions that remove
+/// or model the background themselves ([`skips_bgremove`]) run on the reliable mask either way.
+pub fn shares_local_field(config: &PipelineConfig) -> bool {
+    config.masking.two_pass
+        && !qsm_core::pipeline::ReliableBackground::from(config.masking.two_pass_background).reruns_background_removal()
+        && !skips_bgremove(config)
+}
+
 /// Why a per-echo QSM (`qsm.per_echo`) cannot run with this configuration, or `None` when it can.
 ///
 /// A per-echo reconstruction runs the field map, background removal, inversion and referencing on

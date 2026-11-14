@@ -318,7 +318,14 @@ impl Ctx<'_> {
     }
 
     fn support(&self, pass: Pass) -> Item {
-        if skips_bgremove(self.config) { self.pass_mask(pass) } else { Item::LocalFieldMask(pass) }
+        let own_field = !skips_bgremove(self.config)
+            && !(pass == Pass::Reliable && crate::bridge::shares_local_field(self.config));
+        if own_field { Item::LocalFieldMask(pass) } else { self.pass_mask(pass) }
+    }
+
+    /// What the reliable mask is restricted to: as [`crate::run`]'s.
+    fn reliable_domain(&self) -> Item {
+        if crate::bridge::shares_local_field(self.config) { Item::LocalFieldMask(Pass::Main) } else { self.pass_mask(Pass::Main) }
     }
 
     fn echo_phases(&self) -> Vec<Item> {
@@ -535,7 +542,7 @@ impl Ctx<'_> {
             Stage::Mask(Pass::Reliable) => {
                 reads.extend(self.echoes(Item::Phase));
                 reads.extend(self.mask_magnitudes(&c.masking.resolved_two_pass_sections()));
-                reads.push(self.pass_mask(Pass::Main));
+                reads.push(self.reliable_domain());
                 writes.push(Item::ReliableMask);
             }
             Stage::Motion => {
@@ -586,6 +593,8 @@ impl Ctx<'_> {
                 } else {
                     if skips_bgremove(c) {
                         reads.extend([Item::FieldPpm, self.pass_mask(p)]);
+                    } else if p == Pass::Reliable && crate::bridge::shares_local_field(c) {
+                        reads.extend([Item::LocalField(Pass::Main), Item::ReliableMask]);
                     } else {
                         reads.extend([Item::LocalField(p), Item::LocalFieldMask(p)]);
                     }
@@ -866,11 +875,14 @@ impl Ctx<'_> {
                 let alg = c.bg_removal.algorithm;
                 ((Some(alg.to_string()), Some(words::bg_removal(alg))), words::bg_removal_settings(c))
             }
-            Stage::Inversion(_) => match crate::stages::inversion::iqsm_algorithm(c) {
+            Stage::Inversion(pass) => match crate::stages::inversion::iqsm_algorithm(c) {
                 Some(id) => ((Some(id.to_string()), Some(words::inversion(c.inversion.algorithm))), vec![]),
                 None => {
                     let alg = c.inversion.algorithm;
                     let mut s = words::inversion_settings(c, alg);
+                    if pass == Pass::Reliable && crate::bridge::shares_local_field(c) {
+                        s.push("main pass's local field".into());
+                    }
                     // HEIDI after the inversion; a two-pass run's fills the combined map.
                     if c.inversion.heidi.enabled && !self.plan.two_pass {
                         s.push("then HEIDI".into());
