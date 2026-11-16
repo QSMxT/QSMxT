@@ -534,8 +534,20 @@ impl Ctx<'_> {
             }
             Stage::Mask(Pass::Reliable) => {
                 reads.extend(self.echoes(Item::Phase));
-                reads.extend(self.mask_magnitudes(&c.masking.resolved_two_pass_sections()));
+                let mut sections = c.masking.resolved_two_pass_sections();
+                let local = c.masking.two_pass_mode == crate::enums::TwoPassMode::Local;
+                if local {
+                    // The holes are selected on the phase-quality map, whatever the recipe reads.
+                    sections.extend(crate::masking::default_two_pass_sections());
+                }
+                reads.extend(self.mask_magnitudes(&sections));
                 reads.push(self.pass_mask(Pass::Main));
+                if local {
+                    let support = self.support(Pass::Main);
+                    if !reads.contains(&support) {
+                        reads.push(support);
+                    }
+                }
                 writes.push(Item::ReliableMask);
             }
             Stage::Motion => {
@@ -576,6 +588,12 @@ impl Ctx<'_> {
                     }
                 }
                 reads.push(self.pass_mask(p));
+                // A `local` run fills the reliable pass's eroded rim inside the main pass's support.
+                if p == Pass::Reliable && c.masking.two_pass_mode == crate::enums::TwoPassMode::Local
+                    && c.bg_removal.algorithm != BfAlgorithm::Iqfm
+                {
+                    reads.push(Item::LocalFieldMask(Pass::Main));
+                }
                 writes.extend([Item::LocalField(p), Item::LocalFieldMask(p)]);
             }
             Stage::Inversion(p) => {
@@ -639,6 +657,15 @@ impl Ctx<'_> {
             Stage::TwoPassCombination => {
                 reads.extend([Item::RawChi(Pass::Reliable), Item::RawChi(Pass::Main), self.support(Pass::Reliable),
                               self.pass_mask(Pass::Main)]);
+                // A `local` run weighs the second pass by the distance to the reliable mask's
+                // holes inside the main pass's support.
+                if c.masking.two_pass_mode == crate::enums::TwoPassMode::Local {
+                    for item in [Item::ReliableMask, self.support(Pass::Main)] {
+                        if !reads.contains(&item) {
+                            reads.push(item);
+                        }
+                    }
+                }
                 // HEIDI fills the combined map with the main pass's local field and mask.
                 if c.inversion.heidi.enabled {
                     reads.extend([Item::LocalField(Pass::Main), Item::LocalFieldMask(Pass::Main)]);
@@ -825,6 +852,9 @@ impl Ctx<'_> {
                         };
                         lines.push(format!("sections combined by {combine}"));
                     }
+                    if pass == Pass::Reliable && c.masking.two_pass_mode == crate::enums::TwoPassMode::Local {
+                        lines.push("holes kept only at strong sources".to_string());
+                    }
                     lines
                 };
                 ((None, None), s)
@@ -862,9 +892,13 @@ impl Ctx<'_> {
                 }
                 ((Some(id), Some(label.to_string())), s)
             }
-            Stage::BackgroundRemoval(_) => {
+            Stage::BackgroundRemoval(pass) => {
                 let alg = c.bg_removal.algorithm;
-                ((Some(alg.to_string()), Some(words::bg_removal(alg))), words::bg_removal_settings(c))
+                let mut s = words::bg_removal_settings(c);
+                if pass == Pass::Reliable && c.masking.two_pass_mode == crate::enums::TwoPassMode::Local && alg != BfAlgorithm::Iqfm {
+                    s.push("LBV in the eroded rim around the holes".to_string());
+                }
+                ((Some(alg.to_string()), Some(words::bg_removal(alg))), s)
             }
             Stage::Inversion(_) => match crate::stages::inversion::iqsm_algorithm(c) {
                 Some(id) => ((Some(id.to_string()), Some(words::inversion(c.inversion.algorithm))), vec![]),
@@ -878,7 +912,14 @@ impl Ctx<'_> {
                     ((Some(alg.to_string()), Some(words::inversion(alg))), s)
                 }
             },
-            Stage::TwoPassCombination if c.inversion.heidi.enabled => (some("heidi", "then HEIDI"), vec![]),
+            Stage::TwoPassCombination => {
+                let s = if c.masking.two_pass_mode == crate::enums::TwoPassMode::Local {
+                    vec!["second pass within 6-12 mm of its holes".to_string()]
+                } else {
+                    vec![]
+                };
+                if c.inversion.heidi.enabled { (some("heidi", "then HEIDI"), s) } else { ((None, None), s) }
+            }
             Stage::Tgv(_) => (some("tgv", "TGV"), words::inversion_settings(c, QsmAlgorithm::Tgv)),
             Stage::Qsmart(_) => {
                 let mut s = vec![format!("{} inversion", words::inversion(c.inversion.qsmart.inversion))];
@@ -918,7 +959,7 @@ impl Ctx<'_> {
                 ((Some("synthseg".into()), Some(label)), s)
             }
             Stage::TukeyWindow => ((None, None), vec![format!("taper ratio {}", c.pipeline.tukey_window)]),
-            Stage::Load | Stage::ScalePhase | Stage::ResampleAxial | Stage::TwoPassCombination | Stage::Analysis
+            Stage::Load | Stage::ScalePhase | Stage::ResampleAxial | Stage::Analysis
             | Stage::OutputSpace => ((None, None), vec![]),
         };
         (id, label, settings)

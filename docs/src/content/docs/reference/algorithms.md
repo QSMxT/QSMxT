@@ -143,6 +143,22 @@ mode, `--two-pass-mask-combine or|and`, which is the main mask's `--mask-combine
 unless set. Its combined mask then takes the same `--mask-refine` steps as the
 main mask, and is intersected with the main mask.
 
+### Two-pass modes
+
+`--two-pass-mode` sets how the second pass is made and merged:
+
+| Mode | Holes | Background removal of the second pass | Merge |
+|---|---|---|---|
+| `local` (default) | After holes of up to 27 voxels are filled, only holes with a core of at least 20 voxels of phase quality below 5 (after an opening that cuts thin vessels off) are kept, with their own rim: strong sources such as bleeds and calcifications, not veins or low-quality patches in the pallidum | The configured method on the mask with those holes; voxels next to the holes that it leaves without a value are filled by LBV | The second map within 6 mm of a hole, blended into the first out to 12 mm; the first map in the holes and everywhere else |
+| `original` | Every voxel outside the reliable mask (Stewart et al., 2022) | The configured method on the reliable mask | The second map wherever it is defined, the first elsewhere |
+
+`local` keeps the published method's gain next to strong sources without lowering the
+deep grey matter: with `original`, the many small and vessel-shaped holes shrink
+V-SHARP's kernel throughout the brain, which lowers χ in the pallidum and other
+nuclei. Where a scan has no hole with a deep core, `local` returns the single-pass
+map. QSM.rs (`pipeline::two_pass`) records the measurements behind the default and
+how each inversion treats the holes.
+
 To try this on files without a pipeline run, use
 [`qsmxt mask preset bet-and-phase`, or `qsmxt mask and` / `or`](/QSMxT/reference/tools/#masking--qsmxt-mask)
 on masks you already have.

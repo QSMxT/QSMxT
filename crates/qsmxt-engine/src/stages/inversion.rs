@@ -373,6 +373,32 @@ pub fn combine_two_pass(
         .map_err(|e| EngineError::Config(format!("two-pass combination: {}", e)))
 }
 
+/// A `local` two-pass run's merge (qsm-core `pipeline::two_pass`): the second pass weighted 1
+/// within 6 mm of a hole of the reliable mask (inside the main pass's `main_support`), falling to
+/// 0 at 12 mm, the single-pass map elsewhere. The second pass's support is taken as for
+/// [`combine_two_pass`]. `brain` is only for the log.
+pub fn combine_two_pass_local(
+    chi_reliable: &[f64], chi_main: &[f64], reliable_support: &[u8], reliable_mask: &[u8], brain: &[u8],
+    main_support: &[u8], meta: &crate::scan::RunMetadata,
+) -> Result<Vec<f64>, EngineError> {
+    let failed = |e: qsm_core::pipeline::PipelineError| EngineError::Config(format!("two-pass combination: {e}"));
+    let support: Vec<u8> = reliable_support.iter().zip(chi_reliable)
+        .map(|(&m, &chi)| u8::from(m != 0 && chi != 0.0))
+        .collect();
+    let weights = qsm_core::pipeline::local_weights(reliable_mask, brain, main_support,
+                                                    &crate::scan::scan_metadata(meta).grid(),
+                                                    &qsm_core::pipeline::LocalTwoPassParams::default())
+        .map_err(failed)?;
+    let used = support.iter().zip(&weights).filter(|(&s, &w)| s != 0 && w > 0.0).count();
+    log::info!(
+        "Two-pass combination (local): second pass used near its holes over {} voxels ({:.1}% of the brain mask), \
+         single-pass elsewhere",
+        used,
+        100.0 * used as f64 / brain.iter().filter(|&&v| v != 0).count().max(1) as f64,
+    );
+    qsm_core::pipeline::combine_two_pass_weighted(chi_reliable, chi_main, &support, &weights).map_err(failed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

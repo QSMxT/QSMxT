@@ -22,12 +22,19 @@ pub fn params(config: &PipelineConfig) -> serde_json::Value {
 /// The reliable-phase mask step's parameters (`mask` + [`crate::cache::RELIABLE_SUFFIX`]).
 pub fn reliable_params(config: &PipelineConfig) -> serde_json::Value {
     let sections = config.masking.resolved_two_pass_sections();
-    serde_json::json!({
+    let mut params = serde_json::json!({
         "sections": sections.iter().map(|s| format!("{}", s)).collect::<Vec<_>>(),
         "combine": format!("{}", config.masking.resolved_two_pass_combine()),
         "refinements": config.masking.refinements.iter().map(|o| format!("{}", o)).collect::<Vec<_>>(),
         "scanner_masked_phase": 1,
-    })
+    });
+    // A `local` run keeps only the holes at strong sources, inside the main pass's support
+    // (qsm-core `select_source_holes`). Left out for the published algorithm, so its keys match
+    // those of runs from before the mode existed.
+    if config.masking.two_pass_mode == crate::enums::TwoPassMode::Local {
+        params["holes"] = serde_json::json!("strong sources (local)");
+    }
+    params
 }
 
 /// The deep-learning models (HD-BET, RS2-Net, MindGrab) `sections` run, by model id: the weights
@@ -61,11 +68,32 @@ pub fn build_mask(
     magnitudes: Vec<Vec<f64>>,
     meta: &RunMetadata,
 ) -> Result<MaskPreview, EngineError> {
+    build_mask_with_quality(sections, combine, config, phases, magnitudes, meta, false).map(|(m, _)| m)
+}
+
+/// [`build_mask`], and with `quality` the ROMEO phase-quality map masking computes (the image a
+/// `phase-quality` section thresholds), whatever the sections' inputs: a `local` two-pass run
+/// selects its holes on it (qsm-core `select_source_holes`).
+pub fn build_mask_with_quality(
+    sections: &[MaskSection],
+    combine: MaskCombine,
+    config: &PipelineConfig,
+    phases: &[&[f64]],
+    magnitudes: Vec<Vec<f64>>,
+    meta: &RunMetadata,
+    quality: bool,
+) -> Result<(MaskPreview, Option<std::sync::Arc<Vec<f64>>>), EngineError> {
     let mut inputs = MaskInputs::default();
-    inputs.fill::<EngineError>(sections, config, String::new(), meta, || Ok((
+    let mut wanted = sections.to_vec();
+    if quality {
+        wanted.extend(crate::masking::default_two_pass_sections().into_iter().filter(|s| s.input == MaskingInput::PhaseQuality));
+    }
+    inputs.fill::<EngineError>(&wanted, config, String::new(), meta, || Ok((
         phases.iter().map(|p| p.to_vec()).collect(), magnitudes,
     )))?;
-    preview(sections, combine, config, &inputs, meta, Upto::Recipe)
+    let built = preview(sections, combine, config, &inputs, meta, Upto::Recipe)?;
+    let image = if quality { inputs.image(MaskingInput::PhaseQuality).cloned() } else { None };
+    Ok((built, image))
 }
 
 /// Where the scanner wrote no phase (qsm-core's `mask::scanner_masked_phase`): Philips, for one,
@@ -408,6 +436,18 @@ pub fn reliable_mask(reliable: &[u8], main: &[u8]) -> Result<Vec<u8>, EngineErro
         log::warn!("{advice}");
     }
     Ok(restricted)
+}
+
+/// A `local` two-pass run's reliable mask: only the holes at strong sources kept (qsm-core
+/// `pipeline::select_source_holes`, which documents the rule and its evidence). `reliable` is the
+/// recipe's mask over the field of view, `main` the main pass's mask, `support` where the main
+/// pass's map is defined, `quality` the phase-quality map.
+pub fn source_holes(
+    reliable: &[u8], main: &[u8], support: &[u8], quality: &[f64], meta: &RunMetadata,
+) -> Result<qsm_core::pipeline::SourceHoles, EngineError> {
+    qsm_core::pipeline::select_source_holes(reliable, main, support, quality, &scan_metadata(meta).grid(),
+                                            &qsm_core::pipeline::LocalTwoPassParams::default())
+        .map_err(|e| EngineError::Config(format!("reliable mask: {e}")))
 }
 
 /// Warn when the reliable mask leaves two-pass with nothing useful to do.

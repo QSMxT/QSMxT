@@ -53,7 +53,7 @@ pub(super) fn table() -> Vec<Def> {
         d("masking.custom_mask_tool", Masking, "Use custom masks", "BYO mask from BIDS derivatives: empty=off, * =any tool, or a tool name (e.g. bet); falls back if absent", Text).basic().optional().flag("--use-custom-masks")
         .supplied_file(Item::SuppliedMask, "A brain mask to use instead of computing one from the mask recipe").full("Custom mask")
         .gui("Use a mask from <bids>/derivatives/<tool>/ instead of computing one: * for any tool, or a tool name (e.g. bet); empty to always compute it. Where none is found, the mask is computed"),
-        d("masking.two_pass", Masking, "Two-pass artefact reduction", "Reconstruct again on a mask whose holes are left unfilled and keep that result where it is defined — keeps streaking from strong sources out of the rest of the brain, at roughly double the reconstruction time (doi:10.1002/mrm.29048)", Bool).basic().flag("--two-pass"),
+        d("masking.two_pass", Masking, "Two-pass artefact reduction", "Reconstruct again on a mask with holes at strong susceptibility sources and merge the two — keeps streaking from those sources out of the rest of the brain, at roughly double the reconstruction time (doi:10.1002/mrm.29048)", Bool).basic().flag("--two-pass"),
         // QSM.rs bet/evolution.rs: f = 6/(1/rmin - 1/rmax) is NaN at 0.
         d("bet.smoothness", Masking, "Smoothness", "BET surface smoothness factor (shared by every BET step)", Float).above(0.0).flag("--bet-smoothness").parent("masking.sections")
         .when(|x| x.uses_bet).context("BET"),
@@ -77,6 +77,12 @@ pub(super) fn table() -> Vec<Def> {
             o("and", "AND", "AND", "A voxel is in the reliable mask when every section keeps it"),
         ])).optional().flag("--two-pass-mask-combine").parent("masking.two_pass_sections").context("Reliable mask")
         .when(|x| x.c.masking.two_pass && x.c.masking.resolved_two_pass_sections().len() > 1),
+        d("masking.two_pass_mode", Masking, "Two-pass mode", "", Enum(vec![
+            o("local", "local", "Local", "Holes only where the reliable mask has a core of very low phase quality (strong sources, not veins or the pallidum); the second pass is used within 6 mm of them, blended into the first out to 12 mm (default)"),
+            o("original", "original", "Original", "Every voxel outside the reliable mask is a hole, and the second pass is used wherever it is defined (the published algorithm)"),
+        ])).basic().flag("--two-pass-mode").parent("masking.two_pass")
+        .when(|x| x.c.masking.two_pass)
+        .gui("How the second pass is made and merged: local (holes only at strong sources, second pass used near them) or original (the published algorithm)"),
         d("masking.inhomogeneity_correction", Masking, "Magnitude correction", "Correct the magnitude for receive-coil inhomogeneity: the echoes masking reads, and the combined magnitude", Bool).basic().flag("--no-inhomogeneity-correction").full("Inhomogeneity correction"),
         d("masking.inhomogeneity_method", Masking, "Method", "", Enum(vec![
             o("makehomogeneous", "makehomogeneous", "makehomogeneous", "Divide by a smoothed estimate of the receive sensitivity (MriResearchTools' makehomogeneous) (default)"),

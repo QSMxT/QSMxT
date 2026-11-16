@@ -213,6 +213,39 @@ impl From<qsm_core::pipeline::N4Geometry> for N4Geometry {
     }
 }
 
+/// How a two-pass run makes and merges its second pass (`masking.two_pass_mode`; qsm-core
+/// `pipeline::TwoPassMode`, which documents both and the evidence behind them).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TwoPassMode {
+    /// Holes only at strong sources, and the second pass used only near them (the default).
+    #[default]
+    Local,
+    /// The published algorithm: every voxel below the reliable mask's threshold is a hole, and
+    /// the second pass is taken wherever it has a value.
+    Original,
+}
+impl TwoPassMode {
+    /// Every mode, in the order the CLI help and the TUI list them.
+    pub const ALL: [TwoPassMode; 2] = [Self::Local, Self::Original];
+
+    /// The name the CLI, the config file and the TUI use (qsm-core's `TwoPassMode::id`).
+    pub fn as_str(self) -> &'static str {
+        qsm_core::pipeline::TwoPassMode::from(self).id()
+    }
+}
+impl fmt::Display for TwoPassMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl From<TwoPassMode> for qsm_core::pipeline::TwoPassMode {
+    fn from(m: TwoPassMode) -> Self {
+        use qsm_core::pipeline::TwoPassMode as M;
+        match m { TwoPassMode::Local => M::Local, TwoPassMode::Original => M::Original }
+    }
+}
+
 /// Grid V-SHARP estimates the background field on (qsm-core `VsharpGrid`).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]

@@ -1553,6 +1553,7 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("crop_margin_mm", "pipeline.crop_margin_mm"), ("fft_padding", "pipeline.fft_padding"),
     ("coil_combination_sigma", "field_mapping.coil_combination_sigma"),
     ("custom_mask_tool", "masking.custom_mask_tool"), ("two_pass", "masking.two_pass"),
+    ("two_pass_mode", "masking.two_pass_mode"),
     ("bet_smoothness", "bet.smoothness"), ("bet_gradient_threshold", "bet.gradient_threshold"),
     ("bet_iterations", "bet.iterations"), ("bet_subdivisions", "bet.subdivisions"),
     ("bet_orientation", "bet.orientation"),
@@ -2440,6 +2441,9 @@ pub struct PipelineFormState {
     /// How the reliable mask's sections combine: `--two-pass-mask-combine`. `None` = as the main
     /// mask's do ([`PipelineFormState::two_pass_combine_mode`]).
     pub two_pass_combine: Option<crate::pipeline::config::MaskCombine>,
+    /// How the second pass is made and merged: an index into [`TWO_PASS_MODE_OPTIONS`]
+    /// (`--two-pass-mode`).
+    pub two_pass_mode: usize,
     /// The recommendations dismissed (Keep mine on a `recommended` or `discouraged` finding), each
     /// for the value its setting had then: `--dismiss-recommendation`, and so the run's config.
     pub dismissed: Vec<qsmxt_engine::Dismissal>,
@@ -2916,6 +2920,7 @@ impl Default for PipelineFormState {
             two_pass: false,
             two_pass_sections: qsmxt_engine::default_two_pass_sections(),
             two_pass_combine: None,
+            two_pass_mode: two_pass_mode_index(qsmxt_engine::MaskingConfig::default().two_pass_mode),
             dismissed: vec![],
             reference_pipeline: None,
             mask_preset: 0, // robust threshold
@@ -3114,6 +3119,15 @@ const N4_GEOMETRY_HELP: &[&str] = &[
 ];
 fn n4_geometry_index(g: qsmxt_engine::N4Geometry) -> usize {
     qsmxt_engine::N4Geometry::ALL.iter().position(|&x| x == g).unwrap_or(0)
+}
+/// How a two-pass run makes and merges its second pass, in the CLI's names.
+pub const TWO_PASS_MODE_OPTIONS: &[&str] = &["local", "original"];
+const TWO_PASS_MODE_HELP: &[&str] = &[
+    "Holes only where the reliable mask has a core of very low phase quality (strong sources, not veins or the pallidum); the second pass is used within 6 mm of them, blended into the first out to 12 mm (default)",
+    "Every voxel outside the reliable mask is a hole, and the second pass is used wherever it is defined (the published algorithm)",
+];
+fn two_pass_mode_index(m: qsmxt_engine::TwoPassMode) -> usize {
+    qsmxt_engine::TwoPassMode::ALL.iter().position(|&x| x == m).unwrap_or(0)
 }
 pub const VSHARP_GRID_OPTIONS: &[&str] = &["native", "finest", "isotropic"];
 const VSHARP_GRID_HELP: &[&str] = &[
@@ -3623,12 +3637,14 @@ impl PipelineFormState {
         // what it does is repeat background removal and dipole inversion against it.
         rows.push(PipelineRow::Toggle {
             label: "Two-pass artefact reduction", field: "two_pass",
-            help: "Reconstruct again on a mask whose holes are left unfilled and keep that result where it is defined — keeps streaking from strong sources out of the rest of the brain, at roughly double the reconstruction time (doi:10.1002/mrm.29048)",
+            help: "Reconstruct again on a mask with holes at strong susceptibility sources and merge the two — keeps streaking from those sources out of the rest of the brain, at roughly double the reconstruction time (doi:10.1002/mrm.29048)",
         });
         if self.two_pass {
             rows.push(PipelineRow::MaskTwoPassHeader);
             self.push_mask_section_rows(rows, true);
             rows.push(PipelineRow::MaskOpAddSection { two_pass: true });
+            rows.push(PipelineRow::AlgoSelect { label: "Two-pass mode", field: "two_pass_mode",
+                options: TWO_PASS_MODE_OPTIONS, help: TWO_PASS_MODE_HELP });
         }
 
     }
@@ -5070,6 +5086,7 @@ impl PipelineFormState {
             "qsmart_fit_threshold_mode" => self.qsmart_fit_threshold_mode,
             "inhomogeneity_method" => self.inhomogeneity_method,
             "n4_geometry" => self.n4_geometry,
+            "two_pass_mode" => self.two_pass_mode,
             "vsharp_grid" => self.vsharp_grid,
             "robust_fit_loss" => self.robust_fit_loss,
             "motion_reference" => self.motion_reference,
@@ -5141,6 +5158,7 @@ impl PipelineFormState {
             "qsmart_fit_threshold_mode" => self.qsmart_fit_threshold_mode = val,
             "inhomogeneity_method" => self.inhomogeneity_method = val,
             "n4_geometry" => self.n4_geometry = val.min(N4_GEOMETRY_OPTIONS.len() - 1),
+            "two_pass_mode" => self.two_pass_mode = val.min(TWO_PASS_MODE_OPTIONS.len() - 1),
             "vsharp_grid" => self.vsharp_grid = val,
             "robust_fit_loss" => self.robust_fit_loss = val,
             "motion_reference" => self.motion_reference = val,

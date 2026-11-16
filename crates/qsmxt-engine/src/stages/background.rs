@@ -84,6 +84,18 @@ pub fn remove_background(
     })
 }
 
+/// A `local` two-pass run's reliable pass: background removal's eroded rim around the holes
+/// filled by LBV on the reliable `mask` and total field, inside the main pass's `support`
+/// (qsm-core `pipeline::fill_eroded_rim`, which documents it). Returns the local field and the
+/// mask the inversion runs on. LBV runs on the full grid, as the QSM QC emulation that set the
+/// method ran `qsmxt bgremove lbv`.
+pub fn fill_eroded_rim(
+    field_ppm: &[f64], mask: &[u8], local: &[f64], local_mask: &[u8], support: &[u8], meta: &RunMetadata,
+) -> Result<(Vec<f64>, Vec<u8>), EngineError> {
+    qsm_core::pipeline::fill_eroded_rim(field_ppm, mask, local, local_mask, support, &scan_metadata(meta), |_, _| {})
+        .map_err(|e| EngineError::Config(format!("two-pass rim fill: {e}")))
+}
+
 /// UK Biobank's phase-reliability maps (qsm-core `utils::phase_reliability`), for its mask
 /// trimming (`bg_removal.ukb_mask_trim`): from the wrapped phase of the first and the last echo
 /// (radians) over the untrimmed brain `mask`, on the full grid (the maps are a circular

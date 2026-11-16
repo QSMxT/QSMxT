@@ -829,6 +829,9 @@ fn arrows_between_the_same_boxes_are_one_and_labels_list_items_in_full() {
 fn two_pass_heidi_runs_on_the_combined_map() {
     let mut config = PipelineConfig::default();
     config.masking.two_pass = true;
+    // The published merge reads nothing of the main pass's background removal (`local` reads its
+    // mask for the weights).
+    config.masking.two_pass_mode = crate::enums::TwoPassMode::Original;
     config.inversion.algorithm = QsmAlgorithm::Tkd;
     let off = graph(&config, &facts());
     assert!(!off.has_edge("bgremove", "twopass"));

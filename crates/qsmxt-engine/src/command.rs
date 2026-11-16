@@ -352,6 +352,7 @@ fn command_for(config: &PipelineConfig, d: &PipelineConfig, pipeline: Option<&st
         if let Some(combine) = config.masking.two_pass_combine {
             parts.push(format!("--two-pass-mask-combine {combine}"));
         }
+        emit_enum(&mut parts, "--two-pass-mode", &config.masking.two_pass_mode, &d.masking.two_pass_mode);
     }
 
     // ── BET ──
@@ -1949,6 +1950,15 @@ frangi_c = 400.0
         // Explicitly setting the default recipe means the same thing as leaving it unset.
         c.masking.two_pass_sections = Some(crate::masking::default_two_pass_sections());
         assert!(!generate_command(&c).contains("--two-pass-mask"));
+    }
+
+    #[test]
+    fn two_pass_names_the_original_mode() {
+        let mut c = PipelineConfig::default();
+        c.masking.two_pass = true;
+        assert!(!generate_command(&c).contains("--two-pass-mode"));
+        c.masking.two_pass_mode = crate::enums::TwoPassMode::Original;
+        assert!(generate_command(&c).contains("--two-pass-mode original"), "{}", generate_command(&c));
     }
 
     #[test]
