@@ -220,6 +220,13 @@ pub fn apply_qsmart_overrides(config: &mut PipelineConfig, p: &cli::QsmartParamA
     if let Some(v) = p.qsmart_frangi_scale_max { config.inversion.qsmart.frangi_scale_max = v; }
     if let Some(v) = p.qsmart_frangi_scale_ratio { config.inversion.qsmart.frangi_scale_ratio = v; }
     if let Some(v) = p.qsmart_frangi_c { config.inversion.qsmart.frangi_c = v; }
+    if let Some(m) = p.qsmart_frangi_c_mode {
+        config.inversion.qsmart.frangi_c_mode = match m {
+            cli::QsmartFrangiCModeArg::Absolute => qsmxt_engine::QsmartFrangiCMode::Absolute,
+            cli::QsmartFrangiCModeArg::Relative => qsmxt_engine::QsmartFrangiCMode::Relative,
+        };
+    }
+    if let Some(v) = p.qsmart_frangi_c_factor { config.inversion.qsmart.frangi_c_factor = v; }
     if let Some(u) = p.qsmart_vessel_units {
         config.inversion.qsmart.vessel_size_units = match u {
             cli::VesselSizeUnitsArg::Voxels => VesselSizeUnits::Voxels,
@@ -1505,6 +1512,12 @@ mod tests {
                                   "--qsmart-vessel-magnitude", "combined", "--qsmart-vessel-units", "mm"]);
         assert_eq!(c.inversion.qsmart.vessel_magnitude, QsmartVesselMagnitude::Combined);
         assert_eq!(c.inversion.qsmart.vessel_size_units, VesselSizeUnits::Mm);
+        assert_eq!(c.inversion.qsmart.frangi_c(), qsm_core::utils::FrangiC::Absolute(qsm_core::utils::QSMART_FRANGI_C));
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--qsm-algorithm", "qsmart",
+                                  "--qsmart-frangi-c-mode", "relative", "--qsmart-frangi-c-factor", "0.3"]);
+        assert_eq!(c.inversion.qsmart.frangi_c(), qsm_core::utils::FrangiC::RelativeToMedian(0.3));
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--qsm-algorithm", "qsmart", "--qsmart-frangi-c", "50"]);
+        assert_eq!(c.inversion.qsmart.frangi_c(), qsm_core::utils::FrangiC::Absolute(50.0));
         // The echo fit brings no unwrapping with it: it runs on ROMEO's echoes as given.
         let fm = config_from_cli(&["qsmxt", "run", "<bids>", "--b0-estimation", "qsmart-echofit"]).field_mapping;
         assert_eq!(fm.unwrapping_algorithm, UnwrappingAlgorithm::Romeo);

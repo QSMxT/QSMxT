@@ -35,6 +35,8 @@ pub fn params(config: &PipelineConfig) -> serde_json::Value {
         "frangi_scale_max": q.frangi_scale_max,
         "frangi_scale_ratio": q.frangi_scale_ratio,
         "frangi_c": q.frangi_c,
+        "frangi_c_mode": format!("{}", q.frangi_c_mode),
+        "frangi_c_factor": q.frangi_c_factor,
         "vessel_size_units": format!("{}", q.vessel_size_units),
         "vessel_magnitude": format!("{}", q.vessel_magnitude),
         // Both stages run inside the echo fit's reliability map when the field came from it.

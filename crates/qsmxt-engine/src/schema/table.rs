@@ -811,8 +811,16 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.inv("qsmart")).full("Frangi maximum scale"),
         d("inversion.qsmart.frangi_scale_ratio", Inversion, "Frangi step", "Frangi scale step, in the vessel size units", Float).above(0.0).flag("--qsmart-frangi-scale-ratio").parent("inversion.algorithm")
         .when(|x| x.inv("qsmart")).full("Frangi scale step"),
-        d("inversion.qsmart.frangi_c", Inversion, "Frangi C", "Frangi C noise threshold", Float).flag("--qsmart-frangi-c").parent("inversion.algorithm")
-        .when(|x| x.inv("qsmart")),
+        d("inversion.qsmart.frangi_c_mode", Inversion, "Frangi C mode", "", Enum(vec![
+            o("absolute", "absolute", "Absolute", "Frangi C in the vessel magnitude's intensity units, as QSMART gives it (default)"),
+            o("relative", "relative", "Relative", "Frangi C as a factor of the vessel magnitude's median inside the brain mask, the same on every scanner's intensity scale"),
+        ])).flag("--qsmart-frangi-c-mode").parent("inversion.algorithm")
+        .when(|x| x.inv("qsmart")).full("Frangi C mode")
+        .gui("How Frangi's C is set: in magnitude units, or relative to the magnitude"),
+        d("inversion.qsmart.frangi_c", Inversion, "Frangi C", "Frangi C noise threshold, in the vessel magnitude's intensity units", Float).above(0.0).flag("--qsmart-frangi-c").parent("inversion.algorithm")
+        .when(|x| x.inv("qsmart") && x.c.inversion.qsmart.frangi_c_mode == QsmartFrangiCMode::Absolute),
+        d("inversion.qsmart.frangi_c_factor", Inversion, "Frangi C factor", "Frangi C as this factor × the vessel magnitude's median inside the brain mask", Float).above(0.0).flag("--qsmart-frangi-c-factor").parent("inversion.algorithm")
+        .when(|x| x.inv("qsmart") && x.c.inversion.qsmart.frangi_c_mode == QsmartFrangiCMode::Relative).full("Frangi C factor"),
         d("inversion.ndi.tau", Inversion, "Tau", "Gradient-descent step size", Float).flag("--ndi-tau").parent("inversion.algorithm")
         .when(|x| x.inv("ndi")),
         d("inversion.ndi.alpha", Inversion, "Alpha", "L2 regularization weight", Float).flag("--ndi-alpha").parent("inversion.algorithm")

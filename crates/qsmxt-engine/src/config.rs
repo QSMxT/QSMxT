@@ -942,8 +942,14 @@ pub struct QsmartConfig {
     pub frangi_scale_min: f64,
     pub frangi_scale_max: f64,
     pub frangi_scale_ratio: f64,
-    /// Frangi C noise threshold (unitless)
+    /// Frangi's c in the vessel magnitude's intensity units, used when `frangi_c_mode` is
+    /// `absolute` (default 500, QSMART v1.0's).
     pub frangi_c: f64,
+    /// How Frangi's c is set: `absolute` (`frangi_c`; default) or `relative` (`frangi_c_factor` ×
+    /// the vessel magnitude's median inside the brain mask).
+    pub frangi_c_mode: QsmartFrangiCMode,
+    /// The factor of a relative Frangi c (default 0.25).
+    pub frangi_c_factor: f64,
     /// The magnitude vessels are detected on: the mean over echoes, N4 bias-corrected (default),
     /// or the run's combined magnitude.
     pub vessel_magnitude: QsmartVesselMagnitude,
@@ -957,6 +963,16 @@ pub struct QsmartConfig {
     /// A file without `schema_version` that gives vessel sizes without this field was written
     /// when they were in mm, and reads as mm ([`crate::migrate`]).
     pub vessel_size_units: VesselSizeUnits,
+}
+
+impl QsmartConfig {
+    /// QSM.rs's Frangi c for these settings: `frangi_c` or `frangi_c_factor`, by `frangi_c_mode`.
+    pub fn frangi_c(&self) -> qsm_core::utils::FrangiC {
+        match self.frangi_c_mode {
+            QsmartFrangiCMode::Absolute => qsm_core::utils::FrangiC::Absolute(self.frangi_c),
+            QsmartFrangiCMode::Relative => qsm_core::utils::FrangiC::RelativeToMedian(self.frangi_c_factor),
+        }
+    }
 }
 
 /// The `[inversion.qsmart]` keys measured in `vessel_size_units`.
@@ -978,7 +994,9 @@ impl Default for QsmartConfig {
             frangi_scale_min: p.frangi_scale_range[0],
             frangi_scale_max: p.frangi_scale_range[1],
             frangi_scale_ratio: p.frangi_scale_ratio,
-            frangi_c: p.frangi_c,
+            frangi_c: p.frangi_c.value(),
+            frangi_c_mode: QsmartFrangiCMode::default(),
+            frangi_c_factor: qsm_core::utils::QSMART_RELATIVE_FRANGI_C,
             vessel_magnitude: QsmartVesselMagnitude::default(),
             offset_grid: QsmartOffsetGrid::default(),
             vessel_size_units: VesselSizeUnits::default(),

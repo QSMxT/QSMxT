@@ -516,6 +516,9 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             qsmart_frangi_scale_max: parse_optional_f64(&ps.qsmart_frangi_scale_max),
             qsmart_frangi_scale_ratio: parse_optional_f64(&ps.qsmart_frangi_scale_ratio),
             qsmart_frangi_c: parse_optional_f64(&ps.qsmart_frangi_c),
+            qsmart_frangi_c_mode: [crate::cli::QsmartFrangiCModeArg::Absolute, crate::cli::QsmartFrangiCModeArg::Relative]
+                .get(ps.qsmart_frangi_c_mode).copied(),
+            qsmart_frangi_c_factor: parse_optional_f64(&ps.qsmart_frangi_c_factor),
             qsmart_vessel_units: [crate::cli::VesselSizeUnitsArg::Voxels, crate::cli::VesselSizeUnitsArg::Mm]
                 .get(ps.qsmart_vessel_units).copied(),
             qsmart_vessel_magnitude: [crate::cli::QsmartVesselMagnitudeArg::MeanN4, crate::cli::QsmartVesselMagnitudeArg::Combined]
@@ -2175,6 +2178,13 @@ mod tests {
         app.pipeline_state.qsmart_fit_threshold = "30".into();
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.qsmart_fit_threshold(), qsm_core::utils::QsmartFitThreshold::Absolute(30.0));
+
+        assert_eq!(c.inversion.qsmart.frangi_c(), qsm_core::utils::FrangiC::Absolute(qsm_core::utils::QSMART_FRANGI_C));
+        app.pipeline_state.set_select("qsmart_frangi_c_mode", 1);
+        app.pipeline_state.qsmart_frangi_c_factor = "0.3".into();
+        assert_eq!(config_from_app(&app).unwrap().inversion.qsmart.frangi_c(), qsm_core::utils::FrangiC::RelativeToMedian(0.3));
+        let cmd = build_command_string(&app);
+        assert!(cmd.contains("--qsmart-frangi-c-mode relative") && cmd.contains("--qsmart-frangi-c-factor 0.3"), "{cmd}");
 
         app.pipeline_state.set_select("mask_preset", 1);
         assert!(build_command_string(&app).contains("--mask-preset bet"));

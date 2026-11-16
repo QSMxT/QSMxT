@@ -449,7 +449,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             sdf_curv_constant: cfg.inversion.qsmart.sdf_curv_constant,
             frangi_scale_range: [cfg.inversion.qsmart.frangi_scale_min, cfg.inversion.qsmart.frangi_scale_max],
             frangi_scale_ratio: cfg.inversion.qsmart.frangi_scale_ratio,
-            frangi_c: cfg.inversion.qsmart.frangi_c,
+            frangi_c: cfg.inversion.qsmart.frangi_c(),
             // ppm and b0_dir keep qsm-core defaults
             ..Default::default()
         },

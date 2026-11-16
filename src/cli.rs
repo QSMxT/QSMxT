@@ -1080,9 +1080,19 @@ pub struct QsmartParamArgs {
     /// QSMART Frangi scale step, in --qsmart-vessel-units (default 0.5)
     #[arg(long)]
     pub qsmart_frangi_scale_ratio: Option<f64>,
-    /// QSMART Frangi C noise threshold
+    /// QSMART Frangi C noise threshold, in the vessel magnitude's intensity units (default 500,
+    /// QSMART v1.0's); used with --qsmart-frangi-c-mode absolute
     #[arg(long)]
     pub qsmart_frangi_c: Option<f64>,
+    /// How QSMART's Frangi C is set: `absolute` (--qsmart-frangi-c, in magnitude units; default,
+    /// as QSMART gives it) or `relative` (--qsmart-frangi-c-factor × the vessel magnitude's median
+    /// inside the brain mask, the same on every scanner's intensity scale)
+    #[arg(long, value_enum)]
+    pub qsmart_frangi_c_mode: Option<QsmartFrangiCModeArg>,
+    /// QSMART's relative Frangi C: this factor × the vessel magnitude's median inside the brain
+    /// mask (default 0.25); used with --qsmart-frangi-c-mode relative
+    #[arg(long)]
+    pub qsmart_frangi_c_factor: Option<f64>,
     /// Units of QSMART's vessel sizes (--qsmart-vasc-sphere-radius and the Frangi scales):
     /// `voxels` (default, as QSMART gives them) or `mm` (converted to voxels with the mean voxel
     /// size)
@@ -5017,6 +5027,11 @@ pub enum QsmartFitThresholdModeArg {
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum VesselSizeUnitsArg {
     Voxels, Mm,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum QsmartFrangiCModeArg {
+    Absolute, Relative,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

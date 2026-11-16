@@ -577,6 +577,7 @@ const SETTINGS: &[(&str, &str, Mapping)] = &[
     ("inversion.qsmart.inversion", "inversion.qsmart.inversion", Mapping::Same),
     ("inversion.qsmart.ilsqr_max_iter", "inversion.qsmart.ilsqr_max_iter", Mapping::Same),
     ("inversion.qsmart.ilsqr_pad_mm", "inversion.qsmart.ilsqr_pad_mm", Mapping::Same),
+    ("inversion.qsmart.frangi_c_mode", "inversion.qsmart.frangi_c_mode", Mapping::Same),
     ("masking.input", "masking.sections", Mapping::MaskInput),
     ("masking.inhomogeneity_correction", "masking.inhomogeneity_correction", Mapping::Inhomogeneity),
     ("masking.bet.fractional_intensity", "masking.sections", Mapping::BetFraction),
