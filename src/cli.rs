@@ -260,11 +260,13 @@ pub struct TgvParamArgs {
     #[arg(long)]
     pub tgv_erosions: Option<usize>,
     /// TGV alpha1 (first-order weight), in radians at the echo time (--tgv-te) and field
-    /// strength (the reference's units)
+    /// strength (the reference's units) (default: 0.00212; QuantitativeSusceptibilityMappingTGV.jl's
+    /// regularization 2 is 0.003)
     #[arg(long)]
     pub tgv_alpha1: Option<f64>,
     /// TGV alpha0 (second-order weight), in radians at the echo time (--tgv-te) and field
-    /// strength (the reference's units)
+    /// strength (the reference's units) (default: 0.00636; QuantitativeSusceptibilityMappingTGV.jl's
+    /// regularization 2 is 0.002)
     #[arg(long)]
     pub tgv_alpha0: Option<f64>,
     /// TGV primal step size multiplier
@@ -3545,9 +3547,11 @@ pub struct InvertTgvArgs {
     #[arg(long)]
     pub erosions: Option<usize>,
     /// Alpha1 (first-order weight), in radians at the echo time (--te) and the field strength
+    /// (default: 0.00212; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.003)
     #[arg(long)]
     pub alpha1: Option<f64>,
     /// Alpha0 (second-order weight), in radians at the echo time (--te) and the field strength
+    /// (default: 0.00636; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.002)
     #[arg(long)]
     pub alpha0: Option<f64>,
     /// Primal step size multiplier

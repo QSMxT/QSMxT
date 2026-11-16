@@ -881,7 +881,11 @@ takes that echo's wrapped phase, at its own echo time. With several echoes the f
 stage runs as usual and TGV takes the combined B0 field map, expressed as phase at the echo
 time `--tgv-te` picks (the first by default). Its weights `--tgv-alpha0` / `--tgv-alpha1` are
 in the reference's units, radians at that echo time and the field strength, so the same values
-regularise differently at another echo time or field strength.
+regularise differently at another echo time or field strength. The default weights, α0 = 0.00636
+and α1 = 0.00212, come from our evaluation on the 2016 QSM challenge and QSM Challenge 2.0 data
+(the ratio α0/α1 = 3 at 1.5 times the strength of QuantitativeSusceptibilityMappingTGV.jl's
+`regularization = 2`); `--tgv-alpha0 0.002 --tgv-alpha1 0.003` gives that package's weights.
+Every other TGV setting is the package's default.
 
 MEDI takes the local field from background removal (the authors' pipeline uses PDF), and with `--medi-smv` (the default) high-passes it with a spherical
 mean value filter of radius `--medi-smv-radius` (5 mm). With SMV, the mask is shrunk to
