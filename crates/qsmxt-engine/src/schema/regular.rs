@@ -94,6 +94,25 @@ mod tests {
         assert!(view(&c).contains("inversion.ilsqr.max_iter"));
     }
 
+    /// After the QSMART pipeline, which keeps QSMART's own Frangi c, the relative c is offered
+    /// (decision 173): suggested, so not preselected; applying it switches only the mode.
+    #[test]
+    fn the_qsmart_pipeline_then_suggests_a_relative_frangi_c() {
+        let f = facts();
+        let mut c = PipelineConfig::default();
+        crate::pipelines::choose(&mut c, "qsmart", &f).unwrap();
+        assert_eq!(c.inversion.qsmart.frangi_c_mode, crate::enums::QsmartFrangiCMode::Absolute);
+        let r = settings_view(&c, &f).into_iter()
+            .find(|v| v.path == "inversion.qsmart.frangi_c_mode")
+            .and_then(|v| v.recommendations.into_iter().find(|r| r.rule == "qsmart.frangi-c-relative"))
+            .expect("the relative Frangi c is offered after the QSMART pipeline");
+        assert_eq!(r.strength, Strength::Suggested);
+        assert!(!r.strength.preselected(), "suggested: Keep mine is preselected");
+        crate::recommendations::apply(&mut c, "qsmart.frangi-c-relative", None).unwrap();
+        assert_eq!(c.inversion.qsmart.frangi_c_mode, crate::enums::QsmartFrangiCMode::Relative);
+        assert_eq!(c.inversion.qsmart.frangi_c(), qsm_core::utils::FrangiC::relative());
+    }
+
     #[test]
     fn a_pipelines_own_values_are_not_changes() {
         let f = facts();
