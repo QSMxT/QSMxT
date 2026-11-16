@@ -1,10 +1,15 @@
 # Instructions for coding agents
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before making any change, and follow it. In particular:
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before changing anything and follow it. The rules most
+often broken:
 
-- Algorithms belong in QSM.rs; QSMxT only wires them. Every option change reaches every surface
-  listed under "Change surfaces", and no setting ever changes another one silently.
-- Work on a branch in its own git worktree, with its own `CARGO_TARGET_DIR`. Never push to `main`
-  and never merge; open a draft PR and leave merging to the maintainer.
-- Don't add CHANGELOG or release-notes files; put the summary, the default-settings behaviour
-  changes and the per-surface checklist in the PR body.
+- No algorithms in QSMxT: fix or add them in QSM.rs and move the pin. Algorithm details are
+  documented in QSM.rs, not here.
+- Never change a setting silently. Method-dependent values are QSM.rs rules offered in a pop-up;
+  the CLI runs exactly what it is given.
+- Every option change reaches every surface in "Change surfaces" (CLI, subcommands, TUI, engine,
+  docs, coverage tests, qsmbly) in the same PR.
+- Tests check wiring on tiny data, never algorithm numerics. Locally run only `cargo check`, the
+  tests for your change and clippy; CI runs the full suite.
+- No changelog files and no temporary qsm-core pins in a ready PR. Never push to `main`; the
+  maintainer merges.
