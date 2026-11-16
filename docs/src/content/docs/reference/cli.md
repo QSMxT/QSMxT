@@ -122,8 +122,8 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--tsvd-pad <X> <Y> <Z>` | TSVD zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--tgv-iterations <TGV_ITERATIONS>` | TGV iterations (default: from the voxel size, as the reference does) |
 | `--tgv-erosions <TGV_EROSIONS>` | TGV erosions. |
-| `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) |
-| `--tgv-alpha0 <TGV_ALPHA0>` | TGV alpha0 (second-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) |
+| `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) (default: 0.00212; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.003) |
+| `--tgv-alpha0 <TGV_ALPHA0>` | TGV alpha0 (second-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) (default: 0.00636; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.002) |
 | `--tgv-step-size <TGV_STEP_SIZE>` | TGV primal step size multiplier. |
 | `--tgv-te <TE>` | TGV: the echo time a field from several echoes is converted to phase at, and its weights are in radians at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first). A single echo is at its own. |
 | `--tikhonov-lambda <TIKHONOV_LAMBDA>` | Tikhonov lambda. |
@@ -618,8 +618,8 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--tsvd-pad <X> <Y> <Z>` | TSVD zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--tgv-iterations <TGV_ITERATIONS>` | TGV iterations (default: from the voxel size, as the reference does) |
 | `--tgv-erosions <TGV_EROSIONS>` | TGV erosions. |
-| `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) |
-| `--tgv-alpha0 <TGV_ALPHA0>` | TGV alpha0 (second-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) |
+| `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) (default: 0.00212; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.003) |
+| `--tgv-alpha0 <TGV_ALPHA0>` | TGV alpha0 (second-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) (default: 0.00636; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.002) |
 | `--tgv-step-size <TGV_STEP_SIZE>` | TGV primal step size multiplier. |
 | `--tgv-te <TE>` | TGV: the echo time a field from several echoes is converted to phase at, and its weights are in radians at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first). A single echo is at its own. |
 | `--tikhonov-lambda <TIKHONOV_LAMBDA>` | Tikhonov lambda. |
@@ -1048,8 +1048,8 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--tsvd-pad <X> <Y> <Z>` | TSVD zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--tgv-iterations <TGV_ITERATIONS>` | TGV iterations (default: from the voxel size, as the reference does) |
 | `--tgv-erosions <TGV_EROSIONS>` | TGV erosions. |
-| `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) |
-| `--tgv-alpha0 <TGV_ALPHA0>` | TGV alpha0 (second-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) |
+| `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) (default: 0.00212; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.003) |
+| `--tgv-alpha0 <TGV_ALPHA0>` | TGV alpha0 (second-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) (default: 0.00636; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.002) |
 | `--tgv-step-size <TGV_STEP_SIZE>` | TGV primal step size multiplier. |
 | `--tgv-te <TE>` | TGV: the echo time a field from several echoes is converted to phase at, and its weights are in radians at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first). A single echo is at its own. |
 | `--tikhonov-lambda <TIKHONOV_LAMBDA>` | Tikhonov lambda. |
@@ -2411,8 +2411,8 @@ qsmxt invert tgv [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIE
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
 | `--iterations <ITERATIONS>` | Iterations (default: from the voxel size, as the reference does) |
 | `--erosions <EROSIONS>` | Erosions. |
-| `--alpha1 <ALPHA1>` | Alpha1 (first-order weight), in radians at the echo time (--te) and the field strength. |
-| `--alpha0 <ALPHA0>` | Alpha0 (second-order weight), in radians at the echo time (--te) and the field strength. |
+| `--alpha1 <ALPHA1>` | Alpha1 (first-order weight), in radians at the echo time (--te) and the field strength (default: 0.00212; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.003) |
+| `--alpha0 <ALPHA0>` | Alpha0 (second-order weight), in radians at the echo time (--te) and the field strength (default: 0.00636; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.002) |
 | `--step-size <STEP_SIZE>` | Primal step size multiplier. |
 | `--te <TE>` | Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 | `--reference-divergence` | Use QuantitativeSusceptibilityMappingTGV.jl's divergence in the w update rather than the exact adjoint of the symmetric gradient. Changes the result only on anisotropic voxels; with --reference-edge-erosion and --reference-output-box it reproduces that package, for comparison with it. |
