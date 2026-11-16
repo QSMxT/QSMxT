@@ -233,6 +233,8 @@ mod tests {
         assert!(changed(|c| c.field_mapping.prelude.labelling = crate::enums::PreludeLabelling::Volume, "unwrap"));
         assert!(changed(|c| c.inversion.qsmart.vessel_magnitude = crate::enums::QsmartVesselMagnitude::Combined, "qsmart"));
         assert!(changed(|c| c.inversion.qsmart.vessel_size_units = crate::enums::VesselSizeUnits::Mm, "qsmart"));
+        assert!(changed(|c| c.inversion.qsmart.frangi_c_mode = crate::enums::QsmartFrangiCMode::Relative, "qsmart"));
+        assert!(changed(|c| c.inversion.qsmart.frangi_c_factor = 0.3, "qsmart"));
         // A new field map invalidates QSMART, which reads it and its reliability map.
         assert!(crate::graph::downstream_of("unwrap").iter().any(|s| s == "qsmart"));
     }

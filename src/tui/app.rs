@@ -1661,7 +1661,8 @@ pub const FIELD_PATHS: &[(&str, &str)] = &[
     ("qsmart_sdf_lower_lim", "inversion.qsmart.sdf_lower_lim"), ("qsmart_sdf_curv_constant", "inversion.qsmart.sdf_curv_constant"),
     ("qsmart_vasc_sphere_radius", "inversion.qsmart.vasc_sphere_radius"), ("qsmart_frangi_scale_min", "inversion.qsmart.frangi_scale_min"),
     ("qsmart_frangi_scale_max", "inversion.qsmart.frangi_scale_max"), ("qsmart_frangi_scale_ratio", "inversion.qsmart.frangi_scale_ratio"),
-    ("qsmart_frangi_c", "inversion.qsmart.frangi_c"),
+    ("qsmart_frangi_c", "inversion.qsmart.frangi_c"), ("qsmart_frangi_c_mode", "inversion.qsmart.frangi_c_mode"),
+    ("qsmart_frangi_c_factor", "inversion.qsmart.frangi_c_factor"),
     ("qsmart_vessel_magnitude", "inversion.qsmart.vessel_magnitude"), ("qsmart_offset_grid", "inversion.qsmart.offset_grid"), ("qsmart_vessel_units", "inversion.qsmart.vessel_size_units"),
     ("qsmart_fit_threshold_mode", "field_mapping.qsmart_fit_threshold_mode"),
     ("qsmart_fit_percentile", "field_mapping.qsmart_fit_percentile"), ("qsmart_fit_threshold", "field_mapping.qsmart_fit_threshold"),
@@ -2293,6 +2294,9 @@ pub struct PipelineFormState {
     pub qsmart_frangi_scale_max: String,
     pub qsmart_frangi_scale_ratio: String,
     pub qsmart_frangi_c: String,
+    /// Index into [`QSMART_FRANGI_C_MODE_OPTIONS`].
+    pub qsmart_frangi_c_mode: usize,
+    pub qsmart_frangi_c_factor: String,
     /// Index into [`QSMART_VESSEL_MAGNITUDE_OPTIONS`].
     pub qsmart_vessel_magnitude: usize,
     /// Index into [`QSMART_OFFSET_GRID_OPTIONS`].
@@ -2832,7 +2836,9 @@ impl Default for PipelineFormState {
             qsmart_frangi_scale_min: format!("{}", qsm_core::utils::QsmartParams::default().frangi_scale_range[0]),
             qsmart_frangi_scale_max: format!("{}", qsm_core::utils::QsmartParams::default().frangi_scale_range[1]),
             qsmart_frangi_scale_ratio: format!("{}", qsm_core::utils::QsmartParams::default().frangi_scale_ratio),
-            qsmart_frangi_c: format!("{}", qsm_core::utils::QsmartParams::default().frangi_c),
+            qsmart_frangi_c: format!("{}", qsm_core::utils::QSMART_FRANGI_C),
+            qsmart_frangi_c_mode: 0,    // absolute
+            qsmart_frangi_c_factor: format!("{}", qsm_core::utils::QSMART_RELATIVE_FRANGI_C),
             qsmart_vessel_magnitude: 0, // mean-n4
             qsmart_offset_grid: 0,      // fft
             qsmart_vessel_units: 0,     // voxels
@@ -3064,6 +3070,11 @@ const PRELUDE_LABELLING_HELP: &[&str] = &[
     "As FSL prelude chooses: slice by slice above 64 voxels in-plane, else over the whole volume (default)",
     "Label regions slice by slice (FSL prelude --labelslices)",
     "Label regions over the whole volume (FSL prelude -f)",
+];
+pub const QSMART_FRANGI_C_MODE_OPTIONS: &[&str] = &["absolute", "relative"];
+const QSMART_FRANGI_C_MODE_HELP: &[&str] = &[
+    "Frangi C in the vessel magnitude's intensity units, as QSMART gives it (default)",
+    "Frangi C as a factor of the vessel magnitude's median inside the brain mask, the same on every scanner's intensity scale",
 ];
 pub const QSMART_OFFSET_GRID_OPTIONS: &[&str] = &["fft", "qsmart-reference"];
 const QSMART_OFFSET_GRID_HELP: &[&str] = &[
@@ -4211,7 +4222,13 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Frangi min", field: "qsmart_frangi_scale_min", help: "Frangi minimum vessel radius, in the vessel size units" });
                 rows.push(PipelineRow::Param { label: "  Frangi max", field: "qsmart_frangi_scale_max", help: "Frangi maximum vessel radius, in the vessel size units" });
                 rows.push(PipelineRow::Param { label: "  Frangi step", field: "qsmart_frangi_scale_ratio", help: "Frangi scale step, in the vessel size units" });
-                rows.push(PipelineRow::Param { label: "  Frangi C", field: "qsmart_frangi_c", help: "Frangi C noise threshold" });
+                rows.push(PipelineRow::AlgoSelect { label: "  Frangi C mode", field: "qsmart_frangi_c_mode",
+                    options: QSMART_FRANGI_C_MODE_OPTIONS, help: QSMART_FRANGI_C_MODE_HELP });
+                if self.qsmart_frangi_c_mode == 0 {
+                    rows.push(PipelineRow::Param { label: "  Frangi C", field: "qsmart_frangi_c", help: "Frangi C noise threshold, in the vessel magnitude's intensity units" });
+                } else {
+                    rows.push(PipelineRow::Param { label: "  Frangi C factor", field: "qsmart_frangi_c_factor", help: "Frangi C as this factor × the vessel magnitude's median inside the brain mask" });
+                }
             }
             "ndi" => { // NDI
                 rows.push(PipelineRow::Param { label: "  Tau", field: "ndi_tau", help: "Gradient-descent step size" });
@@ -4441,7 +4458,7 @@ impl PipelineFormState {
         "qsmart_ilsqr_max_iter", "qsmart_ilsqr_pad_mm", "qsmart_vasc_sphere_radius",
         "qsmart_sdf_sigma1_stage1", "qsmart_sdf_sigma2_stage1", "qsmart_sdf_sigma1_stage2", "qsmart_sdf_sigma2_stage2",
         "qsmart_sdf_lower_lim", "qsmart_sdf_curv_constant",
-        "qsmart_frangi_scale_min", "qsmart_frangi_scale_max", "qsmart_frangi_scale_ratio", "qsmart_frangi_c",
+        "qsmart_frangi_scale_min", "qsmart_frangi_scale_max", "qsmart_frangi_scale_ratio", "qsmart_frangi_c", "qsmart_frangi_c_factor",
         "qsmart_fit_percentile", "qsmart_fit_threshold",
         "ndi_tau", "ndi_alpha", "ndi_max_iter",
         "fansi_alpha1", "fansi_mu1", "fansi_mu2", "fansi_alpha0", "fansi_mu0", "fansi_max_iter", "fansi_tol_update", "fansi_tol_delta",
@@ -4646,6 +4663,7 @@ impl PipelineFormState {
             "qsmart_frangi_scale_max" => &self.qsmart_frangi_scale_max,
             "qsmart_frangi_scale_ratio" => &self.qsmart_frangi_scale_ratio,
             "qsmart_frangi_c" => &self.qsmart_frangi_c,
+            "qsmart_frangi_c_factor" => &self.qsmart_frangi_c_factor,
             "qsmart_fit_percentile" => &self.qsmart_fit_percentile,
             "qsmart_fit_threshold" => &self.qsmart_fit_threshold,
             "ndi_tau" => &self.ndi_tau,
@@ -4927,6 +4945,7 @@ impl PipelineFormState {
             "qsmart_frangi_scale_max" => Some(&mut self.qsmart_frangi_scale_max),
             "qsmart_frangi_scale_ratio" => Some(&mut self.qsmart_frangi_scale_ratio),
             "qsmart_frangi_c" => Some(&mut self.qsmart_frangi_c),
+            "qsmart_frangi_c_factor" => Some(&mut self.qsmart_frangi_c_factor),
             "qsmart_fit_percentile" => Some(&mut self.qsmart_fit_percentile),
             "qsmart_fit_threshold" => Some(&mut self.qsmart_fit_threshold),
             "ndi_tau" => Some(&mut self.ndi_tau),
@@ -5045,6 +5064,7 @@ impl PipelineFormState {
             "prelude_labelling" => self.prelude_labelling,
             "qsmart_vessel_magnitude" => self.qsmart_vessel_magnitude,
             "qsmart_offset_grid" => self.qsmart_offset_grid,
+            "qsmart_frangi_c_mode" => self.qsmart_frangi_c_mode,
             "sep_decompose_fit" => self.sep_decompose_fit,
             "qsmart_vessel_units" => self.qsmart_vessel_units,
             "qsmart_fit_threshold_mode" => self.qsmart_fit_threshold_mode,
@@ -5115,6 +5135,7 @@ impl PipelineFormState {
             "prelude_labelling" => self.prelude_labelling = val,
             "qsmart_vessel_magnitude" => self.qsmart_vessel_magnitude = val,
             "qsmart_offset_grid" => self.qsmart_offset_grid = val,
+            "qsmart_frangi_c_mode" => self.qsmart_frangi_c_mode = val.min(QSMART_FRANGI_C_MODE_OPTIONS.len() - 1),
             "sep_decompose_fit" => self.sep_decompose_fit = val,
             "qsmart_vessel_units" => self.qsmart_vessel_units = val,
             "qsmart_fit_threshold_mode" => self.qsmart_fit_threshold_mode = val,

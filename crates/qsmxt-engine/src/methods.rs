@@ -777,9 +777,16 @@ fn medi_msmv(config: &PipelineConfig, doc: &mut Draft) -> String {
 fn qsmart_changes(config: &PipelineConfig) -> Changed {
     let (q, d) = (&config.inversion.qsmart, QsmartConfig::default());
     let mut c = Changed::default();
-    let mut skip = vec!["inversion", "vessel_magnitude", "vessel_size_units", "offset_grid"];
+    let mut skip = vec!["inversion", "vessel_magnitude", "vessel_size_units", "offset_grid", "frangi_c_mode", "frangi_c_factor"];
     skip.extend(QSMART_VESSEL_SIZE_KEYS);
+    // A relative c replaces the absolute one, which then plays no part.
+    let relative_c = q.frangi_c_mode == crate::enums::QsmartFrangiCMode::Relative;
+    if relative_c {
+        skip.push("frangi_c");
+    }
     c.add_fields(q, &d, &skip);
+    c.add(relative_c, || format!(
+        "Frangi's c set to {} × the median of the vessel magnitude inside the brain mask", q.frangi_c_factor));
     c.add(q.offset_grid == crate::enums::QsmartOffsetGrid::QsmartReference,
         || "the stages' offset adjusted on the dipole grid of QSMART's adjust_offset.m".to_string());
     // In other units than the default, the sizes are said whatever they are: the default numbers
@@ -4397,6 +4404,8 @@ mod defaults_only_tests {
                 "(tile size 64 voxels, halo 4 voxels)"),
             (|c| { c.inversion.algorithm = QsmAlgorithm::Qsmart; c.inversion.qsmart.frangi_c = 123.0; },
                 "tissue/vasculature separation, with frangi c = 123."),
+            (|c| { c.inversion.algorithm = QsmAlgorithm::Qsmart; c.inversion.qsmart.frangi_c_mode = crate::enums::QsmartFrangiCMode::Relative; },
+                "tissue/vasculature separation, with Frangi's c set to 0.25 × the median of the vessel magnitude inside the brain mask."),
             (|c| c.field_mapping.romeo.correct_global = true, "ROMEO (Dymerska et al., 2021) with correct global enabled."),
             (|c| c.field_mapping.phase_offset_sigma_mm = [3.0, 3.0, 3.0], "(Eckstein et al., 2018; smoothing σ = 3 × 3 × 3 mm)"),
             (|c| { c.field_mapping.b0_estimation = B0Estimation::LinearFit; c.field_mapping.linear_fit.estimate_offset = !LinearFitConfig::default().estimate_offset; },

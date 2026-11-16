@@ -210,7 +210,9 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--qsmart-frangi-scale-min <QSMART_FRANGI_SCALE_MIN>` | QSMART Frangi min vessel radius, in --qsmart-vessel-units (default 0.5) |
 | `--qsmart-frangi-scale-max <QSMART_FRANGI_SCALE_MAX>` | QSMART Frangi max vessel radius, in --qsmart-vessel-units (default 6) |
 | `--qsmart-frangi-scale-ratio <QSMART_FRANGI_SCALE_RATIO>` | QSMART Frangi scale step, in --qsmart-vessel-units (default 0.5) |
-| `--qsmart-frangi-c <QSMART_FRANGI_C>` | QSMART Frangi C noise threshold. |
+| `--qsmart-frangi-c <QSMART_FRANGI_C>` | QSMART Frangi C noise threshold, in the vessel magnitude's intensity units (default 500, QSMART v1.0's); used with --qsmart-frangi-c-mode absolute. |
+| `--qsmart-frangi-c-mode <QSMART_FRANGI_C_MODE>` | How QSMART's Frangi C is set: `absolute` (--qsmart-frangi-c, in magnitude units; default, as QSMART gives it) or `relative` (--qsmart-frangi-c-factor × the vessel magnitude's median inside the brain mask, the same on every scanner's intensity scale) Values: `absolute`, `relative`. |
+| `--qsmart-frangi-c-factor <QSMART_FRANGI_C_FACTOR>` | QSMART's relative Frangi C: this factor × the vessel magnitude's median inside the brain mask (default 0.25); used with --qsmart-frangi-c-mode relative. |
 | `--qsmart-vessel-units <QSMART_VESSEL_UNITS>` | Units of QSMART's vessel sizes (--qsmart-vasc-sphere-radius and the Frangi scales): `voxels` (default, as QSMART gives them) or `mm` (converted to voxels with the mean voxel size) Values: `voxels`, `mm`. |
 | `--qsmart-vessel-magnitude <QSMART_VESSEL_MAGNITUDE>` | The magnitude QSMART detects vessels on: `mean-n4` (the mean over echoes, N4 bias-corrected, as QSMART prepares it; default) or `combined` (the root sum of squares over echoes, inhomogeneity-corrected unless --no-inhomogeneity-correction) Values: `mean-n4`, `combined`. |
 | `--qsmart-offset-grid <QSMART_OFFSET_GRID>` | The dipole grid of QSMART's offset adjustment: `fft` (default) or `qsmart-reference` (`adjust_offset.m`'s own, half a step off the FFT grid on odd matrix sizes, as the QSMART pipeline runs it) Values: `fft`, `qsmart-reference`. |
@@ -704,7 +706,9 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--qsmart-frangi-scale-min <QSMART_FRANGI_SCALE_MIN>` | QSMART Frangi min vessel radius, in --qsmart-vessel-units (default 0.5) |
 | `--qsmart-frangi-scale-max <QSMART_FRANGI_SCALE_MAX>` | QSMART Frangi max vessel radius, in --qsmart-vessel-units (default 6) |
 | `--qsmart-frangi-scale-ratio <QSMART_FRANGI_SCALE_RATIO>` | QSMART Frangi scale step, in --qsmart-vessel-units (default 0.5) |
-| `--qsmart-frangi-c <QSMART_FRANGI_C>` | QSMART Frangi C noise threshold. |
+| `--qsmart-frangi-c <QSMART_FRANGI_C>` | QSMART Frangi C noise threshold, in the vessel magnitude's intensity units (default 500, QSMART v1.0's); used with --qsmart-frangi-c-mode absolute. |
+| `--qsmart-frangi-c-mode <QSMART_FRANGI_C_MODE>` | How QSMART's Frangi C is set: `absolute` (--qsmart-frangi-c, in magnitude units; default, as QSMART gives it) or `relative` (--qsmart-frangi-c-factor × the vessel magnitude's median inside the brain mask, the same on every scanner's intensity scale) Values: `absolute`, `relative`. |
+| `--qsmart-frangi-c-factor <QSMART_FRANGI_C_FACTOR>` | QSMART's relative Frangi C: this factor × the vessel magnitude's median inside the brain mask (default 0.25); used with --qsmart-frangi-c-mode relative. |
 | `--qsmart-vessel-units <QSMART_VESSEL_UNITS>` | Units of QSMART's vessel sizes (--qsmart-vasc-sphere-radius and the Frangi scales): `voxels` (default, as QSMART gives them) or `mm` (converted to voxels with the mean voxel size) Values: `voxels`, `mm`. |
 | `--qsmart-vessel-magnitude <QSMART_VESSEL_MAGNITUDE>` | The magnitude QSMART detects vessels on: `mean-n4` (the mean over echoes, N4 bias-corrected, as QSMART prepares it; default) or `combined` (the root sum of squares over echoes, inhomogeneity-corrected unless --no-inhomogeneity-correction) Values: `mean-n4`, `combined`. |
 | `--qsmart-offset-grid <QSMART_OFFSET_GRID>` | The dipole grid of QSMART's offset adjustment: `fft` (default) or `qsmart-reference` (`adjust_offset.m`'s own, half a step off the FFT grid on odd matrix sizes, as the QSMART pipeline runs it) Values: `fft`, `qsmart-reference`. |
@@ -1132,7 +1136,9 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--qsmart-frangi-scale-min <QSMART_FRANGI_SCALE_MIN>` | QSMART Frangi min vessel radius, in --qsmart-vessel-units (default 0.5) |
 | `--qsmart-frangi-scale-max <QSMART_FRANGI_SCALE_MAX>` | QSMART Frangi max vessel radius, in --qsmart-vessel-units (default 6) |
 | `--qsmart-frangi-scale-ratio <QSMART_FRANGI_SCALE_RATIO>` | QSMART Frangi scale step, in --qsmart-vessel-units (default 0.5) |
-| `--qsmart-frangi-c <QSMART_FRANGI_C>` | QSMART Frangi C noise threshold. |
+| `--qsmart-frangi-c <QSMART_FRANGI_C>` | QSMART Frangi C noise threshold, in the vessel magnitude's intensity units (default 500, QSMART v1.0's); used with --qsmart-frangi-c-mode absolute. |
+| `--qsmart-frangi-c-mode <QSMART_FRANGI_C_MODE>` | How QSMART's Frangi C is set: `absolute` (--qsmart-frangi-c, in magnitude units; default, as QSMART gives it) or `relative` (--qsmart-frangi-c-factor × the vessel magnitude's median inside the brain mask, the same on every scanner's intensity scale) Values: `absolute`, `relative`. |
+| `--qsmart-frangi-c-factor <QSMART_FRANGI_C_FACTOR>` | QSMART's relative Frangi C: this factor × the vessel magnitude's median inside the brain mask (default 0.25); used with --qsmart-frangi-c-mode relative. |
 | `--qsmart-vessel-units <QSMART_VESSEL_UNITS>` | Units of QSMART's vessel sizes (--qsmart-vasc-sphere-radius and the Frangi scales): `voxels` (default, as QSMART gives them) or `mm` (converted to voxels with the mean voxel size) Values: `voxels`, `mm`. |
 | `--qsmart-vessel-magnitude <QSMART_VESSEL_MAGNITUDE>` | The magnitude QSMART detects vessels on: `mean-n4` (the mean over echoes, N4 bias-corrected, as QSMART prepares it; default) or `combined` (the root sum of squares over echoes, inhomogeneity-corrected unless --no-inhomogeneity-correction) Values: `mean-n4`, `combined`. |
 | `--qsmart-offset-grid <QSMART_OFFSET_GRID>` | The dipole grid of QSMART's offset adjustment: `fft` (default) or `qsmart-reference` (`adjust_offset.m`'s own, half a step off the FFT grid on odd matrix sizes, as the QSMART pipeline runs it) Values: `fft`, `qsmart-reference`. |
@@ -3347,7 +3353,9 @@ qsmxt qsmart [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_S
 | `--qsmart-frangi-scale-min <QSMART_FRANGI_SCALE_MIN>` | QSMART Frangi min vessel radius, in --qsmart-vessel-units (default 0.5) |
 | `--qsmart-frangi-scale-max <QSMART_FRANGI_SCALE_MAX>` | QSMART Frangi max vessel radius, in --qsmart-vessel-units (default 6) |
 | `--qsmart-frangi-scale-ratio <QSMART_FRANGI_SCALE_RATIO>` | QSMART Frangi scale step, in --qsmart-vessel-units (default 0.5) |
-| `--qsmart-frangi-c <QSMART_FRANGI_C>` | QSMART Frangi C noise threshold. |
+| `--qsmart-frangi-c <QSMART_FRANGI_C>` | QSMART Frangi C noise threshold, in the vessel magnitude's intensity units (default 500, QSMART v1.0's); used with --qsmart-frangi-c-mode absolute. |
+| `--qsmart-frangi-c-mode <QSMART_FRANGI_C_MODE>` | How QSMART's Frangi C is set: `absolute` (--qsmart-frangi-c, in magnitude units; default, as QSMART gives it) or `relative` (--qsmart-frangi-c-factor × the vessel magnitude's median inside the brain mask, the same on every scanner's intensity scale) Values: `absolute`, `relative`. |
+| `--qsmart-frangi-c-factor <QSMART_FRANGI_C_FACTOR>` | QSMART's relative Frangi C: this factor × the vessel magnitude's median inside the brain mask (default 0.25); used with --qsmart-frangi-c-mode relative. |
 | `--qsmart-vessel-units <QSMART_VESSEL_UNITS>` | Units of QSMART's vessel sizes (--qsmart-vasc-sphere-radius and the Frangi scales): `voxels` (default, as QSMART gives them) or `mm` (converted to voxels with the mean voxel size) Values: `voxels`, `mm`. |
 | `--qsmart-vessel-magnitude <QSMART_VESSEL_MAGNITUDE>` | The magnitude QSMART detects vessels on: `mean-n4` (the mean over echoes, N4 bias-corrected, as QSMART prepares it; default) or `combined` (the root sum of squares over echoes, inhomogeneity-corrected unless --no-inhomogeneity-correction) Values: `mean-n4`, `combined`. |
 | `--qsmart-offset-grid <QSMART_OFFSET_GRID>` | The dipole grid of QSMART's offset adjustment: `fft` (default) or `qsmart-reference` (`adjust_offset.m`'s own, half a step off the FFT grid on odd matrix sizes, as the QSMART pipeline runs it) Values: `fft`, `qsmart-reference`. |

@@ -689,6 +689,23 @@ impl fmt::Display for QsmartVesselMagnitude {
     }
 }
 
+/// How QSMART's Frangi c is set (`inversion.qsmart.frangi_c_mode`; QSM.rs's `FrangiC`).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum QsmartFrangiCMode {
+    /// `frangi_c`, in the vessel magnitude's intensity units, as QSMART v1.0 (default, 500).
+    #[default]
+    Absolute,
+    /// `frangi_c_factor` × the median of the vessel magnitude inside the brain mask, so the vessel
+    /// mask does not depend on how the scanner scales its magnitude.
+    Relative,
+}
+impl fmt::Display for QsmartFrangiCMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", match self { Self::Absolute => "absolute", Self::Relative => "relative" })
+    }
+}
+
 /// The units QSMART's vessel sizes (bottom-hat sphere radius, Frangi scales) are given in
 /// (`inversion.qsmart.vessel_size_units`).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]

@@ -765,7 +765,9 @@ fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &P
             emit_f64(parts, "--qsmart-frangi-scale-min", q.frangi_scale_min, dq.frangi_scale_min);
             emit_f64(parts, "--qsmart-frangi-scale-max", q.frangi_scale_max, dq.frangi_scale_max);
             emit_f64(parts, "--qsmart-frangi-scale-ratio", q.frangi_scale_ratio, dq.frangi_scale_ratio);
+            emit_enum(parts, "--qsmart-frangi-c-mode", &q.frangi_c_mode, &dq.frangi_c_mode);
             emit_f64(parts, "--qsmart-frangi-c", q.frangi_c, dq.frangi_c);
+            emit_f64(parts, "--qsmart-frangi-c-factor", q.frangi_c_factor, dq.frangi_c_factor);
             emit_enum(parts, "--qsmart-vessel-units", &q.vessel_size_units, &dq.vessel_size_units);
             emit_enum(parts, "--qsmart-vessel-magnitude", &q.vessel_magnitude, &dq.vessel_magnitude);
             emit_enum(parts, "--qsmart-offset-grid", &q.offset_grid, &dq.offset_grid);
@@ -1454,6 +1456,11 @@ mod tests {
         ] {
             assert!(cmd.contains(flag), "missing `{}` in: {}", flag, cmd);
         }
+        assert!(!cmd.contains("--qsmart-frangi-c-"), "{cmd}");
+        c.inversion.qsmart.frangi_c_mode = QsmartFrangiCMode::Relative;
+        c.inversion.qsmart.frangi_c_factor = 0.3;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--qsmart-frangi-c-mode relative") && cmd.contains("--qsmart-frangi-c-factor 0.3"), "{cmd}");
     }
 
     /// Mirrors the WASM command path: the TOML that qsmbly's ConfigBridge emits must

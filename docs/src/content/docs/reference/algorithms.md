@@ -850,6 +850,7 @@ and the methods Note list those that differ:
 | Magnitude for vessel detection | `mean-n4`: the mean over echoes, N4 bias-corrected ([Tustison et al. 2010](https://doi.org/10.1109/TMI.2010.2046908)) | `--qsmart-vessel-magnitude combined` for the combined magnitude (root sum of squares, inhomogeneity-corrected unless `--no-inhomogeneity-correction`) |
 | Vessel sizes (`--qsmart-vasc-sphere-radius`, `--qsmart-frangi-scale-*`) | voxels: 8, and scales 0.5 to 6 in steps of 0.5 | `--qsmart-vessel-units mm` to give them in mm, converted with the mean voxel size |
 | Offset adjustment grid | `adjust_offset.m`'s own grid, half a step off the FFT grid on odd matrix sizes (the QSMART pipeline uses it) | `--qsmart-offset-grid qsmart-reference`; the default is the FFT grid (`fft`) |
+| Frangi C | `absolute`: 500, in the vessel magnitude's intensity units | `--qsmart-frangi-c`; or `--qsmart-frangi-c-mode relative` for C = `--qsmart-frangi-c-factor` (default 0.25) × the vessel magnitude's median inside the brain mask |
 
 QSMART's echo fit combines the echoes as the field mapping leaves them, so it also runs
 after ROMEO unwrapping, with or without phase offset removal and bipolar correction; under
@@ -857,6 +858,11 @@ QSMART, the methods Note then lists the unwrapping as a departure from QSMART's 
 With Laplacian unwrapping and `--laplacian-unmasked`, the fit and its field cover the whole
 volume, as in QSMART. Chosen with another inversion, `qsmart-echofit`'s reliability map is
 not used.
+
+Frangi C is in the vessel magnitude's intensity units, and scanners scale their magnitude
+very differently, so QSMART's C of 500 can label a few percent of one scan's brain as vessel
+and over half of another's. `--qsmart-frangi-c-mode relative` sets C from the magnitude
+itself, so the vessel detection is the same whatever the intensity scale.
 
 A configuration file without `schema_version` that gives the vessel sizes without
 `vessel_size_units` reads them in mm, and says so; add `vessel_size_units = "voxels"`

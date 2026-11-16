@@ -137,6 +137,7 @@ mod tests {
             "inversion.star.te", "inversion.lsqr.fit_global_offset", "inversion.heidi.apply_laplacian_correction",
             "inversion.heidi.te", "inversion.heidi.denoise", "inversion.heidi.denoise_reference_itk",
             "inversion.qsmart.vessel_magnitude", "inversion.qsmart.offset_grid", "inversion.qsmart.vessel_size_units",
+            "inversion.qsmart.frangi_c_mode",
             "inversion.ndi.auto_stop", "inversion.ndi.te", "inversion.ndi.weight_norm", "inversion.fansi.te",
             "inversion.l1qsm.te", "inversion.whqsm.weight", "inversion.whqsm.te",
             "multi_orientation.magnitude_weighting", "multi_orientation.force",

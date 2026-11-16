@@ -228,7 +228,7 @@ A file without it is read as follows, and what changed is logged:
 - Settings an earlier file does not have (each method's echo time `te`, WH-QSM's `weight`,
   NLTV's `rho` and `tol_newton`, RTS's `tau` and `gamma`, PDF's `n_cg`, `space` and `n_pad`,
   LBV's `depth`, `peel`, `n1`, `n2`, `n3` and `precision`, HARPERELLA's and iHARPERELLA's `pad`
-  and `rim`, NDI's `weight_norm`)
+  and `rim`, NDI's `weight_norm`, QSMART's `frangi_c_mode` and `frangi_c_factor`)
   take today's defaults. LBV's `tol` is kept as written: an earlier file's 1e-6 (the old
   solver's relative tolerance) now stops the multigrid's coarsest grid at 1e-6 radians, and the
   recommendations suggest LBV.m's 0.01.
