@@ -71,6 +71,9 @@ pub fn build_mask(
     build_mask_with_quality(sections, combine, config, phases, magnitudes, meta, false).map(|(m, _)| m)
 }
 
+/// The ROMEO phase-quality map masking computed ([`build_mask_with_quality`]).
+pub type Quality = std::sync::Arc<Vec<f64>>;
+
 /// [`build_mask`], and with `quality` the ROMEO phase-quality map masking computes (the image a
 /// `phase-quality` section thresholds), whatever the sections' inputs: a `local` two-pass run
 /// selects its holes on it (qsm-core `select_source_holes`).
@@ -82,7 +85,7 @@ pub fn build_mask_with_quality(
     magnitudes: Vec<Vec<f64>>,
     meta: &RunMetadata,
     quality: bool,
-) -> Result<(MaskPreview, Option<std::sync::Arc<Vec<f64>>>), EngineError> {
+) -> Result<(MaskPreview, Option<Quality>), EngineError> {
     let mut inputs = MaskInputs::default();
     let mut wanted = sections.to_vec();
     if quality {

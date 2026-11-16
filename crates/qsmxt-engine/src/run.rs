@@ -1091,7 +1091,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
     /// ([`stages::mask::build_mask`]).
     fn build_mask_and_quality(&mut self, sections: &[crate::masking::MaskSection], combine: crate::masking::MaskCombine,
                               models: &[&'static str], quality: bool)
-                              -> Result<(Vec<u8>, Option<std::sync::Arc<Vec<f64>>>), S::Error> {
+                              -> Result<(Vec<u8>, Option<stages::mask::Quality>), S::Error> {
         let (phases, mut magnitudes) = self.echoes()?;
         // The echoes the recipe reads, corrected: the inhomogeneity correction's, or corrected
         // here for a recipe it was not planned for (a supplied mask that could not be used).
@@ -1394,7 +1394,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                 self.log(Level::Info, &format!(
                     "Two-pass (local): {} voxels of the rim background removal left around the holes filled by LBV",
                     after.saturating_sub(before)));
-                stages::background::LocalField { local_field_ppm, mask: filled, ..local }
+                stages::background::LocalField { local_field_ppm, mask: filled }
             } else {
                 local
             }
