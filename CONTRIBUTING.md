@@ -95,8 +95,12 @@ Tests check wiring, not algorithms; QSM.rs's CI guarantees algorithm correctness
   rewrite it to check the same thing more cheaply.
 - Coverage stays at or above the 70% gate. CI should stay well under 5 minutes; fix the slow
   tail (over about 1 s), not only the slowest test.
-- Locally, run `cargo check`, the tests covering your change and clippy on the changed crates.
-  The full suite runs in CI.
+- Locally, build, run clippy and run only the new or changed tests (quick ones). Push early and
+  let CI run the full suite and any repeats.
+- A test too slow to wait for locally (over about 2 minutes) gets
+  `#[ignore = "slow: ..."]`: a local `cargo test` skips it and CI runs it with the rest of the
+  suite (`--run-ignored all`, see `.github/scripts/nextest_filter.py`). Other `#[ignore]`d tests
+  (fixtures, tools, tests needing model weights) stay out of the main CI run.
 
 ## Change surfaces
 
