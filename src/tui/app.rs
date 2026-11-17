@@ -6205,7 +6205,7 @@ static SWI_SCALING_OPTIONS: LazyLock<Vec<&'static str>> =
 static SWI_SCALING_HELP: LazyLock<Vec<&'static str>> =
     LazyLock::new(|| vec!["Phase scaling type for SWI"; SWI_SCALING_OPTIONS.len()]);
 const SYNTHSEG_VERSION_OPTIONS: &[&str] = &["v1", "v2"];
-const SYNTHSEG_VERSION_HELP: &[&str] = &["v1: 32 labels, weights ship with SynthSeg. v2: 33 labels (adds CSF); its weights are not published yet, so a run with v2 is refused unless synthseg-2.0.onnx is in $QSM_MODEL_DIR"; 2];
+const SYNTHSEG_VERSION_HELP: &[&str] = &["v1: SynthSeg 1.0, 32 labels (the default). v2: SynthSeg 2.0, 33 labels, adds a general CSF class (Billot et al., PNAS 2023)"; 2];
 const EXECUTION_MODE_OPTIONS: &[&str] = &["Local", "SLURM"];
 const EXECUTION_MODE_HELP: &[&str] = &["Local execution or generate SLURM job scripts"; 2];
 /// Where the segmentation comes from (a TUI-only choice: SynthSeg, or `--use-custom-dseg`).

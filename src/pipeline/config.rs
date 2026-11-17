@@ -1170,31 +1170,29 @@ mod tests {
         }
     }
 
-    /// SynthSeg 2.0's weights are not published, so asking to run it is refused up front rather
-    /// than reading v1's network output through v2's label table (#264). The weight file follows
-    /// the version, and a supplied segmentation needs no weights at all.
+    /// The weight file follows the version, so v2 never runs v1's network output through v2's
+    /// label table (#264). Both versions' weights are published in QSM.rs's registry, so both are
+    /// accepted; a supplied segmentation needs no weights at all.
     #[test]
-    fn synthseg_v2_is_refused_until_its_weights_exist() {
+    fn synthseg_weights_follow_the_version() {
         assert_eq!(SynthSegVersion::V1.weights_id(), "synthseg");
         assert_eq!(SynthSegVersion::V2.weights_id(), "synthseg-2.0");
-        let v2 = qsm_core::models::find_model("synthseg-2.0").expect("QSM.rs lists SynthSeg 2.0");
-        let v2_present = v2.is_available()
-            || v2.files.iter().all(qsm_core::models::weight_file_present);
+        for v in [SynthSegVersion::V1, SynthSegVersion::V2] {
+            let spec = qsm_core::models::find_model(v.weights_id()).expect("QSM.rs lists the version");
+            assert!(spec.is_available(), "{v}: weights not published in QSM.rs's registry");
+        }
 
         let v1 = config_from_cli(&["qsmxt", "run", "<bids>", "--do-segmentation"]);
+        assert_eq!(v1.segmentation.version, SynthSegVersion::V1, "v1 stays the default");
         assert!(validate_segmentation(&v1).is_ok());
 
         let c = config_from_cli(&["qsmxt", "run", "<bids>", "--do-segmentation", "--synthseg-version", "v2"]);
-        if v2_present {
-            assert!(validate_segmentation(&c).is_ok());
-        } else {
-            let e = format!("{}", validate_segmentation(&c).unwrap_err());
-            assert!(e.contains("synthseg-2.0.onnx") && e.contains("v1") && e.contains("QSM_MODEL_DIR"), "{e}");
-        }
-        // A region reference turns segmentation on, so it is refused the same way.
+        assert_eq!(c.segmentation.version, SynthSegVersion::V2);
+        assert!(validate_segmentation(&c).is_ok());
+        // A region reference turns segmentation on; `csf` is a v2 label.
         let c = config_from_cli(&["qsmxt", "run", "<bids>", "--qsm-reference", "csf", "--synthseg-version", "v2"]);
         assert!(c.pipeline.do_segmentation);
-        assert_eq!(validate_segmentation(&c).is_ok(), v2_present);
+        assert!(validate_segmentation(&c).is_ok());
         // A supplied v2 segmentation is read through v2's label table and needs no weights.
         let c = config_from_cli(&["qsmxt", "run", "<bids>", "--do-segmentation", "--synthseg-version", "v2",
                                   "--use-custom-dseg", "*"]);

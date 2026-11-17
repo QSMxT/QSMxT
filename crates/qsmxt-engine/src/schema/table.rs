@@ -1238,8 +1238,8 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.segmentation_on).full("Custom segmentation")
         .gui("Use a segmentation (dseg) from <bids>/derivatives/<tool>/ instead of running SynthSeg: * for any tool, or a tool name. SynthSeg runs where none is found"),
         d("segmentation.version", Segmentation, "SynthSeg version", "", Enum(vec![
-            o("v1", "v1", "SynthSeg 1", "v1: 32 labels, weights ship with SynthSeg. v2: 33 labels (adds CSF); its weights are not published yet, so a run with v2 is refused unless synthseg-2.0.onnx is in $QSM_MODEL_DIR"),
-            o("v2", "v2", "SynthSeg 2", "v1: 32 labels, weights ship with SynthSeg. v2: 33 labels (adds CSF); its weights are not published yet, so a run with v2 is refused unless synthseg-2.0.onnx is in $QSM_MODEL_DIR"),
+            o("v1", "v1", "SynthSeg 1", "v1: SynthSeg 1.0, 32 labels (the default). v2: SynthSeg 2.0, 33 labels, adds a general CSF class (Billot et al., PNAS 2023)"),
+            o("v2", "v2", "SynthSeg 2", "v1: SynthSeg 1.0, 32 labels (the default). v2: SynthSeg 2.0, 33 labels, adds a general CSF class (Billot et al., PNAS 2023)"),
         ])).basic().flag("--synthseg-version").parent("pipeline.do_segmentation")
         .when(|x| x.segmentation_on && x.c.segmentation.custom_dseg_tool.is_none())
         .gui("Which SynthSeg model segments the brain"),
