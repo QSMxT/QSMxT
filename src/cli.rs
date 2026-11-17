@@ -1511,8 +1511,8 @@ impl N4ParamArgs {
 
 #[derive(Args, Debug, Default, Clone)]
 pub struct SegmentationParamArgs {
-    /// SynthSeg weights generation: v1 (32 labels, ships with SynthSeg) or v2 (33 labels, adds CSF;
-    /// weights not published yet, so refused unless synthseg-2.0.onnx is in $QSM_MODEL_DIR)
+    /// SynthSeg weights generation: v1 (SynthSeg 1.0, 32 labels; the default) or v2 (SynthSeg 2.0,
+    /// 33 labels, adds a general CSF class; Billot et al., PNAS 2023)
     #[arg(long, value_name = "VERSION")]
     pub synthseg_version: Option<String>,
     /// Cubic centre-crop in voxels at 1 mm before inference (rounded up to a multiple of 32).

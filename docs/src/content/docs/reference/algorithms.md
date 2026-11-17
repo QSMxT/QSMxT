@@ -1505,8 +1505,7 @@ as hyphens; an unrecognised name lists the valid ones rather than guessing.
 :::caution[`csf` is a label, not the composite]
 SynthSeg 2.0 has a label of its own named `csf` (id 24), which covers
 extraventricular CSF too. `--qsm-reference csf` means *that label* and needs
-`--synthseg-version v2` (see below: v2's weights are not published yet, so this
-needs a v2 segmentation supplied with `--use-custom-dseg`); it is not the same ROI
+`--synthseg-version v2` (see below); it is not the same ROI
 as `ventricles`, and it does not exist on v1. Pick deliberately — the two give
 different numbers.
 :::
@@ -1551,11 +1550,14 @@ FreeSurfer-labelled `_dseg.nii` and the `_dseg.tsv` lookup table that names its
 integers. `--use-custom-dseg <TOOL>` brings your own parcellation from
 `<bids>/derivatives/<TOOL>/` instead.
 
-`--synthseg-version v2` selects SynthSeg 2.0 (33 labels, adding a general CSF
-class). Its ONNX weights are not published in QSM.rs's model registry yet, so a
-run that would segment with v2 is refused at start-up unless `synthseg-2.0.onnx`
-is supplied in `$QSM_MODEL_DIR`. With `--use-custom-dseg`, v2 only selects the
-label table a supplied segmentation is read with, and needs no weights.
+`--synthseg-version` picks the weights: `v1` (SynthSeg 1.0, 32 labels, the
+default) or `v2`, [SynthSeg 2.0](https://doi.org/10.1073/pnas.2216399120)
+(Billot et al., PNAS 2023; 33 labels, adding a general CSF class). Both are the
+authors' non-robust segmentation network; SynthSeg 2.0's robust, cortical
+parcellation and QC networks are not available. The 2.0 weights come
+from the author's own release (they are not in the SynthSeg repository) and are
+downloaded on first use like the other networks. With `--use-custom-dseg`, the
+version only selects the label table a supplied segmentation is read with.
 
 `--do-analysis` then summarises **every quantitative map the run produced**
 inside each structure — `Chimap`, the chi-separation maps, `T2starmap`,
