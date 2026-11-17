@@ -294,21 +294,32 @@ fn draw_checklist_modal(f: &mut Frame, modal: &mut super::recommend::AdviceModal
         (_, 0) => Style::default().fg(Color::DarkGray).bg(Color::Black),
         _ => Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD),
     };
-    let mut buttons = vec![Span::styled(format!(" Apply ({ticked}) "), apply_style)];
-    if modal.keepable() {
+    let labels = modal.button_labels();
+    let mut buttons = vec![Span::styled(format!(" {} ", labels[0]), apply_style)];
+    if let Some(second) = labels.get(1) {
         buttons.push(Span::raw("   "));
         let keep_style = if modal.button == Some(1) { focus_style } else { Style::default().fg(Color::Gray).bg(Color::Black) };
-        buttons.push(Span::styled(" Keep mine ", keep_style));
+        buttons.push(Span::styled(format!(" {second} "), keep_style));
     }
     let buttons = Line::from(buttons).alignment(Alignment::Center);
-    let esc = if modal.kind == AdviceKind::Change || modal.kind == AdviceKind::Changed { "later" } else { "close" };
-    let keep = if modal.keepable() { "   K keep mine" } else { "" };
-    let short_keep = if modal.keepable() { " · K keep" } else { "" };
+    let required = modal.kind == AdviceKind::Required;
+    let esc = if matches!(modal.kind, AdviceKind::Change | AdviceKind::Changed | AdviceKind::Required) { "later" } else { "close" };
+    let keep = match (required, modal.keepable()) {
+        (true, true) => "   U undo my change",
+        (false, true) => "   K keep mine",
+        _ => "",
+    };
+    let short_keep = match (required, modal.keepable()) {
+        (true, true) => " · U undo",
+        (false, true) => " · K keep",
+        _ => "",
+    };
+    let tick = if required { "" } else { "Space/Enter tick   " };
     let hint = [
-        format!("\u{2191}\u{2193} move   Space/Enter tick   A apply{keep}   Esc {esc}"),
-        format!("Space/Enter tick   A apply{keep}   Esc {esc}"),
-        format!("Enter tick · A apply{short_keep} · Esc {esc}"),
-    ].into_iter().find(|h| h.chars().count() <= text_w).unwrap_or_else(|| format!("Enter tick · A apply · Esc {esc}"));
+        format!("\u{2191}\u{2193} move   {tick}A apply{keep}   Esc {esc}"),
+        format!("{tick}A apply{keep}   Esc {esc}"),
+        format!("A apply{short_keep} · Esc {esc}"),
+    ].into_iter().find(|h| h.chars().count() <= text_w).unwrap_or_else(|| format!("A apply · Esc {esc}"));
     let hint = Line::from(Span::styled(hint, muted)).alignment(Alignment::Center);
 
     // Height: a blank line, the list, a blank line, the rule, the panel, a blank line, the

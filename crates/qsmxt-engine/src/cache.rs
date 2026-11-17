@@ -12,8 +12,11 @@ pub const RELIABLE_SUFFIX: &str = "-reliable";
 
 /// Compute a hash of the pipeline config for change detection.
 pub fn config_hash(config: &PipelineConfig) -> String {
-    // Dismissed recommendations and the pipeline label change nothing a run computes.
-    let config = PipelineConfig { dismissed_recommendations: Vec::new(), reference_pipeline: None, ..config.clone() };
+    // Dismissed recommendations, the pipeline label and the record of required changes change
+    // nothing a run computes.
+    let config = PipelineConfig {
+        dismissed_recommendations: Vec::new(), reference_pipeline: None, required_changes: Vec::new(), ..config.clone()
+    };
     let toml = config.to_toml().unwrap_or_default();
     format!("{:x}", md5_simple(&toml))
 }

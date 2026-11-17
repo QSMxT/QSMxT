@@ -546,7 +546,7 @@ fn region_options() -> Vec<EnumOption> {
 /// The help of a reference region, as the TUI's reference picker words it.
 pub fn region_help(label: &str, n_ids: usize, ids: &str, v2_only: bool) -> String {
     format!(
-        "Reference χ to the mean of the {} (FreeSurfer {} {}){}. Enables SynthSeg",
+        "Reference χ to the mean of the {} (FreeSurfer {} {}){}. Requires Segmentation",
         label,
         if n_ids == 1 { "label" } else { "labels" },
         ids,

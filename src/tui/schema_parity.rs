@@ -378,7 +378,9 @@ fn the_printed_command_reproduces_the_tuis_run() {
     let settings = schema::schema();
     let mut failures = Vec::new();
     for (acts, app) in explore() {
-        let config = config_from_app(&app).unwrap();
+        // The config the TUI's run takes: the outputs other settings need turned on, as the run
+        // turns them on.
+        let config = config_from_app(&app).unwrap().normalised().0;
         let cmd = qsmxt_engine::generate_command(&config);
         let argv: Vec<String> = cmd.split_whitespace().map(str::to_string).collect();
         let cli = parser.try_get_matches_from_mut(&argv).and_then(|m| crate::cli::Cli::from_arg_matches(&m))

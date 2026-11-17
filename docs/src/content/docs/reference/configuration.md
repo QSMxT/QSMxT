@@ -195,6 +195,29 @@ chosen = "first"            # the setting's value it was dismissed for
 On the command line this is `--dismiss-recommendation fansi.te-spacing=first`. A file without
 `dismissed_recommendations` has none.
 
+### Required changes
+
+Some outputs need another one: per-structure statistics need a segmentation (and QSM, when
+nothing else makes a map), a region reference needs a segmentation, SMWI needs QSM, χ-separation
+needs the relaxometry maps its method reads (and a computed R2′ needs R2\* and R2), and
+orientation grouping needs the published combined magnitude. In the TUI, choosing one of these
+opens a **Required change** pop-up: *Apply required change* turns the output on, *Undo my change*
+sets back the setting you just changed. Left unresolved (Esc), the output is marked.
+
+A run turns such an output on itself when the configuration leaves it off — from the command
+line or a config file as from the TUI — and says so in its log at info level ("Segmentation
+turned on: Reference = ventricles needs it (...)"). The change is recorded in the
+`pipeline_config.toml` it writes and in the methods text's Note:
+
+```toml
+required_changes = ["Segmentation turned on: Reference = ventricles needs it (the reference region is measured on a SynthSeg segmentation of the magnitude, which is saved with the outputs)"]
+```
+
+These are QSMxT's own requirements (how its steps link together). A method's own `required` rule
+(from QSM.rs's pipeline rules: what the method cannot run with) is never applied unasked: the
+run is refused, and `--accept-recommendations` applies it. A region reference that names no
+region is an error.
+
 :::tip
 Rather than writing flags or TOML by hand, configure interactively in the
 [TUI](/QSMxT/guides/running-interactively/) — it shows the equivalent `qsmxt run`

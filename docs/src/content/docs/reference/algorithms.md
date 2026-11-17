@@ -1511,8 +1511,10 @@ as `ventricles`, and it does not exist on v1. Pick deliberately — the two give
 different numbers.
 :::
 
-A region reference implies `--do-segmentation`, since the region has to be
-measured on a parcellation; `--use-custom-dseg` satisfies that instead. If the
+A region reference requires `--do-segmentation`, since the region has to be
+measured on a parcellation; `--use-custom-dseg` satisfies that instead. Left off,
+the run turns segmentation on itself and logs it; the TUI offers it as a required
+change when the reference is chosen. If the
 region turns out to have no voxels inside the support for a subject, that
 subject's run **fails** rather than falling back to `mean` — a map that was
 quietly referenced to something else looks fine and cannot be compared with the
@@ -1608,6 +1610,6 @@ Two copies of the table are written:
 The table covers whatever the run produced, so it does not force you to compute
 maps you did not ask for: `--no-qsm --do-r2starmap --do-segmentation
 --do-analysis` is a valid request and gives you an R2\*/T2\* table with no
-susceptibility map in sight. `--do-analysis` implies `--do-segmentation` (unless
-you supply a `dseg`), and implies QSM only when nothing else would produce a map
-at all.
+susceptibility map in sight. `--do-analysis` requires `--do-segmentation` (unless
+you supply a `dseg`), and QSM only when nothing else would produce a map at all;
+left off, the run turns them on itself and logs it.

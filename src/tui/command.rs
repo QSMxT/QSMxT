@@ -1029,7 +1029,10 @@ pub fn methods_text(app: &App) -> Result<String, String> {
 
 pub fn config_from_app(app: &App) -> crate::Result<PipelineConfig> {
     let mut config = PipelineConfig::default();
-    crate::pipeline::config::apply_run_overrides(&mut config, &pipeline_args_from_app(app))?;
+    // As the form gives it: an output another setting needs and the form leaves off is a required
+    // change for the TUI to offer ([`qsmxt_engine::normalise::required_findings`]), which the run
+    // would otherwise make itself.
+    crate::pipeline::config::apply_run_overrides_as_given(&mut config, &pipeline_args_from_app(app))?;
     // The pipeline chosen on the Pipeline tab, while the form still makes its choices.
     config.reference_pipeline = app.pipeline_state.reference_pipeline.clone()
         .filter(|id| qsmxt_engine::pipelines::chosen(&config, id));
@@ -2596,9 +2599,11 @@ mod parity {
                 };
                 let key = (field, kind, ctx.0, ctx.1);
                 if checked.contains(&key) { continue; }
-                // A checkbox another option forces on refuses to change (and says why): it is
-                // checked where it is free instead.
+                // A checkbox another option needs refuses to be turned off (and says why), and
+                // ticking it is the required change the run makes anyway, which changes nothing it
+                // does: it is checked where it is free instead.
                 let toggled = match r {
+                    PipelineRow::Toggle { field, .. } if !app.field_toggle(field) && app.output_made(field) => continue,
                     PipelineRow::Toggle { field, .. } => match Change::Toggle(field).apply(app) {
                         Some(a) => Some(State::of(&a)),
                         None => continue,

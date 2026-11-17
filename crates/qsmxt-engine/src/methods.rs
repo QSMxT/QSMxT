@@ -946,11 +946,21 @@ pub struct Note {
     /// needed or better.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub differences: Vec<String>,
+    /// The required changes the run made itself: outputs another setting needs, turned on because
+    /// the configuration left them off ([`crate::config::PipelineConfig::required_changes`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub required: Vec<String>,
 }
 
 impl Note {
     pub fn is_empty(&self) -> bool {
-        self.departures.is_empty() && self.differences.is_empty()
+        self.departures.is_empty() && self.differences.is_empty() && self.required.is_empty()
+    }
+
+    /// [`Self::required`] from `config`'s record of them, each a sentence.
+    fn with_required(mut self, config: &crate::config::PipelineConfig) -> Self {
+        self.required = config.required_changes.iter().map(|m| format!("{m}.")).collect();
+        self
     }
 }
 
@@ -970,6 +980,7 @@ impl Methods {
             for (heading, lines) in [
                 ("Departures from the methods' recommendations:", &n.departures),
                 ("Differences from the methods' reference pipelines:", &n.differences),
+                ("Outputs the run turned on because other settings need them:", &n.required),
             ] {
                 if lines.is_empty() {
                     continue;
@@ -1086,7 +1097,7 @@ fn chi_bound_sentence(ran: Ran) -> String {
 pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
     let config = &config.normalised().0;
     let mut methods = draft(config, tool, Ran::default()).finish(config, None);
-    methods.note = crate::recommendations::config_note(config);
+    methods.note = crate::recommendations::config_note(config).with_required(config);
     methods.to_markdown()
 }
 
@@ -1096,7 +1107,7 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
 pub fn methods_structured(config: &PipelineConfig, plan: &Plan, tool: &str) -> Methods {
     let config = &config.normalised_as_planned(plan);
     let mut methods = draft(config, tool, Ran::default()).finish(config, Some(plan));
-    methods.note = crate::recommendations::config_note(config);
+    methods.note = crate::recommendations::config_note(config).with_required(config);
     methods
 }
 
@@ -1112,7 +1123,7 @@ pub fn methods_for_run(config: &PipelineConfig, plan: &Plan, record: &RunRecord,
     let mut methods = draft(config, tool, Ran(Some(&merged))).finish_drawn(|stage| {
         plan.has(*stage) && !crate::pipeline_graph::left_out(plan, config, *stage, record.resampled)
     });
-    methods.note = crate::recommendations::note(&merged.recommendations, 1);
+    methods.note = crate::recommendations::note(&merged.recommendations, 1).with_required(config);
     methods
 }
 
@@ -1129,7 +1140,7 @@ pub fn methods_for_dataset(config: &PipelineConfig, record: &DatasetRecord, tool
     let config = &config;
     let mut methods = draft(config, tool, Ran(Some(record)))
         .finish_drawn(|stage| record.step(&stage.name()).is_some_and(|s| s.ran() > 0));
-    methods.note = crate::recommendations::note(&record.recommendations, record.runs);
+    methods.note = crate::recommendations::note(&record.recommendations, record.runs).with_required(config);
     methods
 }
 
