@@ -32,6 +32,15 @@
 //!   setting depart from a rule scoped to a flag that is on ([`Recommendation::flag_trigger`]),
 //!   such as choosing QSMART with HEIDI ticked, turning that flag off starts ticked, and changing
 //!   the setting back is offered unticked. It comes before any reference pipeline pop-up.
+//! - **Required changes** ([`AdviceModal::required`]): an output another setting needs and the
+//!   form leaves off (statistics, a region reference, SMWI, χ-separation's maps, orientation
+//!   grouping's magnitude; [`rec::Recommendation::applied_by_run`]) opens " Required change "
+//!   when the change that needs it is made: the outputs as rows ("Segmentation  off → on
+//!   (required)"), the reason in the panel, and two buttons, **Apply required change** (the
+//!   default) and **Undo my change**, which sets back only the change just made. Esc leaves both
+//!   as they are, with the ⚑ marker on the output; a run then turns it on itself, says so in its
+//!   log and records it in the methods Note. (QSM.rs's `required` rules are not applied by a run:
+//!   it refuses them.)
 //! - **Pickers** ([`picker_noun`]): every selector is chosen from a picker (Enter), never
 //!   cycled, so no method is chosen on the way to another.
 //! - **The marker** ([`rec::marker`]) names whose rule a setting departs from and what it uses:
@@ -175,6 +184,17 @@ fn part_label(r: &Recommendation) -> String {
     }.to_string()
 }
 
+/// `s` with its first letter in capitals, if it is a Latin one ("χ-separation" stays as it is).
+fn ascii_capitalised(s: &str) -> String {
+    let mut c = s.chars();
+    c.next().map_or_else(String::new, |f| std::iter::once(f.to_ascii_uppercase()).chain(c).collect())
+}
+
+fn lowercase_first(s: &str) -> String {
+    let mut c = s.chars();
+    c.next().map_or_else(String::new, |f| f.to_lowercase().chain(c).collect())
+}
+
 fn capitalised(s: &str) -> String {
     let mut c = s.chars();
     c.next().map_or_else(String::new, |f| f.to_uppercase().chain(c).collect())
@@ -193,6 +213,52 @@ pub enum AdviceKind {
     /// The differences from the reference pipelines of the methods a change chose
     /// ([`AdviceModal::reference`]).
     Reference(Vec<Trigger>),
+    /// Outputs another setting needs ([`AdviceModal::required`]).
+    Required,
+}
+
+/// The form as it was before a change: what "Undo my change" sets back. Of the run selection,
+/// only the settings that reach the configuration (orientation grouping and the echo limit), so
+/// a scan that finished since is kept.
+#[derive(Clone)]
+pub struct FormSnapshot {
+    form: super::app::RunForm,
+    pipeline_state: super::app::PipelineFormState,
+    orientation: (String, usize, String, String),
+    num_echoes: String,
+}
+
+impl FormSnapshot {
+    fn of(app: &App) -> Self {
+        let f = &app.filter_state;
+        FormSnapshot {
+            form: app.form.clone(), pipeline_state: app.pipeline_state.clone(),
+            orientation: (f.orientation_group.clone(), f.orientation_algorithm, f.orientation_lambda.clone(), f.orientation_reference.clone()),
+            num_echoes: f.num_echoes.clone(),
+        }
+    }
+
+    fn restore(self, app: &mut App) {
+        app.form = self.form;
+        app.pipeline_state = self.pipeline_state;
+        let f = &mut app.filter_state;
+        (f.orientation_group, f.orientation_algorithm, f.orientation_lambda, f.orientation_reference) = self.orientation;
+        f.num_echoes = self.num_echoes;
+    }
+}
+
+/// "Undo my change" in a required-change pop-up: the form before the change, and the change in
+/// words ("QSM reference back to mean").
+#[derive(Clone)]
+pub struct Undo {
+    pub what: String,
+    before: Box<FormSnapshot>,
+}
+
+impl std::fmt::Debug for Undo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Undo").field("what", &self.what).finish_non_exhaustive()
+    }
 }
 
 /// An advice pop-up: the changes on offer as a checklist under the sections they are on, each
@@ -212,8 +278,11 @@ pub struct AdviceModal {
     pub cursor: usize,
     /// How far the list is scrolled; drawing keeps the highlighted row in view.
     pub scroll: u16,
-    /// The button that has the focus instead of a row: 0 Apply, 1 Keep mine ([`Self::buttons`]).
+    /// The button that has the focus instead of a row: 0 Apply, 1 Keep mine ([`Self::buttons`]);
+    /// in a required-change pop-up, 0 Apply required change, 1 Undo my change.
     pub button: Option<usize>,
+    /// What "Undo my change" sets back, in a required-change pop-up opened by a change.
+    pub undo: Option<Undo>,
 }
 
 /// The pop-up a change, or `!`, opens ([`AdviceModal::new`], [`AdviceModal::changed`],
@@ -258,7 +327,19 @@ impl AdviceModal {
             let disagree = here.iter().any(|&i| i != best && rows[i].finding.strength == r.strength && rows[i].finding.kind == r.kind);
             rows[best].checked = !disagree && !r.conflict && !r.dismissed && r.kind == Kind::Reasoned && r.strength.preselected();
         }
-        AdviceModal { kind, findings, rows, cursor: 0, scroll: 0, button: None }
+        AdviceModal { kind, findings, rows, cursor: 0, scroll: 0, button: None, undo: None }
+    }
+
+    /// The outputs other settings need that the form leaves off (`findings`, each
+    /// [`rec::Recommendation::applied_by_run`]): every one ticked, as one change, with "Undo my
+    /// change" when a change just made needs them (`undo`).
+    pub fn required(findings: Vec<Recommendation>, undo: Option<Undo>) -> Self {
+        let rows = findings.iter().map(|r| {
+            let mut row = AdviceRow::apply(r.clone(), None, r.recommended.name.clone(), false);
+            row.checked = true;
+            row
+        }).collect();
+        AdviceModal { kind: AdviceKind::Required, findings, rows, cursor: 0, scroll: 0, button: None, undo }
     }
 
     pub fn new(findings: Vec<Recommendation>) -> Self {
@@ -312,9 +393,25 @@ impl AdviceModal {
         }
     }
 
-    /// Whether Keep mine is offered: not when every finding is required.
+    /// Whether Keep mine is offered: not when every finding is required. In a required-change
+    /// pop-up, its place is Undo my change, when there is a change to undo.
     pub fn keepable(&self) -> bool {
+        if self.kind == AdviceKind::Required {
+            return self.undo.is_some();
+        }
         self.findings.iter().any(|r| r.strength != Strength::Required)
+    }
+
+    /// The buttons' labels, in order ([`Self::buttons`] of them).
+    pub fn button_labels(&self) -> Vec<String> {
+        let mut out = match self.kind {
+            AdviceKind::Required => vec!["Apply required change".to_string()],
+            _ => vec![format!("Apply ({})", self.ticked())],
+        };
+        if self.keepable() {
+            out.push(if self.kind == AdviceKind::Required { "Undo my change" } else { "Keep mine" }.to_string());
+        }
+        out
     }
 
     /// The ticked rows.
@@ -346,6 +443,16 @@ impl AdviceModal {
     /// choice is the user's.
     pub fn explanation(&self, i: usize) -> String {
         let Some(row) = self.rows.get(i) else { return String::new() };
+        if row.finding.applied_by_run() {
+            let r = &row.finding;
+            let mut text = format!("{} requires {}: {}", ascii_capitalised(&r.trigger.name), r.label, sentence(&lowercase_first(&r.reason)));
+            if let Some(undo) = &self.undo {
+                text += &format!(" Undo my change sets {} instead.", undo.what);
+            } else {
+                text += " Left off, the run turns it on itself and says so in its log.";
+            }
+            return text;
+        }
         if !row.authors {
             return row.explanation(self.several(), self.group_unticked(i));
         }
@@ -425,6 +532,10 @@ impl AdviceModal {
     /// group keeps one row ticked: choosing a way to meet the requirement is choosing another
     /// row of it.
     pub fn toggle(&mut self, i: usize) {
+        // A required change is one change: its rows stay ticked.
+        if self.kind == AdviceKind::Required {
+            return;
+        }
         let Some(row) = self.rows.get(i) else { return };
         let (group, on) = (row.group.clone(), !row.checked);
         if !on && row.finding.strength == Strength::Required && self.radio(i) {
@@ -442,6 +553,7 @@ impl AdviceModal {
         let r = &self.findings[0];
         let several = self.several();
         match &self.kind {
+            AdviceKind::Required => " Required change ".to_string(),
             AdviceKind::Reference(_) => format!(" {} ", reference_whose(self.methods())),
             _ if r.strength == Strength::Reference && !several => format!(" {}: {} ", Kind::Reference.label(), rec::reference_title(&r.trigger)),
             _ if r.strength == Strength::Reference => format!(" {}s: {} ", Kind::Reference.label(), r.label),
@@ -456,6 +568,25 @@ impl AdviceModal {
             },
         }
     }
+}
+
+/// The change just made, as "Undo my change" says it sets it back: the first changed setting the
+/// settings schema names, with its value before ("QSM reference back to mean").
+fn undo_words(before: Option<&Value>, changed: &[(String, Value)]) -> Option<String> {
+    let before = before?;
+    changed.iter().find_map(|(path, _)| {
+        let setting = qsmxt_engine::schema::setting(path)?;
+        let was = path.split('.').try_fold(before, |v, k| v.get(k))?;
+        let was = match was {
+            Value::Bool(true) => "on".to_string(),
+            Value::Bool(false) => "off".to_string(),
+            Value::Null => "none".to_string(),
+            Value::String(s) if s.is_empty() => "none".to_string(),
+            Value::String(s) => s.clone(),
+            other => other.to_string(),
+        };
+        Some(format!("{} back to {was}", setting.label))
+    })
 }
 
 /// "MEDI's reference pipeline", or "MEDI's and PDF's reference pipelines".
@@ -596,6 +727,8 @@ impl App {
         let mut created: Vec<Recommendation> = Vec::new();
         let mut view: Option<Vec<Recommendation>> = None;
         let mut just_changed: Vec<String> = Vec::new();
+        let mut previous: Option<Box<FormSnapshot>> = None;
+        let mut undo_what: Option<String> = None;
         if form != self.rec_form {
             // The first check takes the form as it opened: only a change opens a pop-up.
             let opening = self.rec_form.is_empty();
@@ -612,6 +745,8 @@ impl App {
             if let (Some(before), Some(after)) = (&self.rec_config, &config) {
                 changed_settings(before, after, String::new(), &mut changed);
             }
+            previous = self.rec_snapshot.replace(Box::new(FormSnapshot::of(self)));
+            undo_what = undo_words(self.rec_config.as_ref(), &changed);
             self.rec_config = config;
             let v = self.rule_view();
             let now: Vec<(String, String)> =
@@ -656,6 +791,17 @@ impl App {
             }
             return;
         };
+        // Outputs the change needs: one required-change pop-up for them all, before anything else.
+        let required: Vec<Recommendation> = created.iter().filter(|r| r.applied_by_run()).cloned().collect();
+        if !required.is_empty() {
+            let undo = previous.zip(undo_what).map(|(before, what)| Undo { what, before });
+            self.rec_queue = created.iter().filter(|r| !r.applied_by_run()).map(|r| r.rule.clone()).collect();
+            if let Some((methods, _)) = reference {
+                self.refs.pending = methods.into_iter().map(|m| (m, vec![])).collect();
+            }
+            self.rec_modal = Some(AdviceModal::required(required, undo));
+            return;
+        }
         // A setting just changed, against a flag that is on and was not: offer the flag first.
         let touched = |path: &str| just_changed.iter().any(|c| c == path || c.starts_with(&format!("{path}.")));
         let against_flag = created.iter().find(|r| {
@@ -716,6 +862,10 @@ impl App {
             return;
         }
         here.sort_by_key(|r| (!open(r), std::cmp::Reverse(r.strength)));
+        if here.iter().all(|r| r.applied_by_run()) {
+            self.rec_modal = Some(AdviceModal::required(here, None));
+            return;
+        }
         self.rec_modal = Some(RecModal::details(here).with_authors(&view));
     }
 
@@ -729,7 +879,7 @@ impl App {
     /// as it is (closes the pop-up, changing nothing, where Keep mine is not offered), and Esc
     /// closes it, changing nothing. Letters are read either case.
     fn handle_advice_key(&mut self, key: KeyEvent, reference: bool) {
-        enum Act { Apply, Keep, Close }
+        enum Act { Apply, Keep, Close, Undo }
         let slot = if reference { &mut self.refs.modal } else { &mut self.rec_modal };
         let Some(modal) = slot.as_mut() else { return };
         let n = modal.rows.len().max(1);
@@ -779,6 +929,10 @@ impl App {
                 modal.toggle(c);
             }
             (KeyCode::Enter, Some(0)) | (KeyCode::Char('a'), _) => act = Some(Act::Apply),
+            // Undo my change, where Keep mine would be: a required change cannot be kept off.
+            (KeyCode::Enter, Some(_)) | (KeyCode::Char('k' | 'u'), _) if modal.kind == AdviceKind::Required => {
+                act = Some(if modal.undo.is_some() { Act::Undo } else { Act::Close });
+            }
             (KeyCode::Enter, Some(_)) => act = Some(Act::Keep),
             (KeyCode::Char('k'), _) => act = Some(if modal.keepable() { Act::Keep } else { Act::Close }),
             (KeyCode::Esc, _) => act = Some(Act::Close),
@@ -797,6 +951,13 @@ impl App {
                 self.settle_advice(&modal, true);
             }
             Some(Act::Close) => *slot = None,
+            Some(Act::Undo) => {
+                let modal = slot.take().expect("open");
+                if let Some(undo) = modal.undo {
+                    undo.before.restore(self);
+                    self.status_message = Some(format!("Undid your change: {}", undo.what));
+                }
+            }
             None => {}
         }
     }
@@ -1311,6 +1472,112 @@ mod tests {
         app
     }
 
+    /// Reference = ventricles, chosen on the form: the change that needs a segmentation.
+    fn ventricles() -> App {
+        ventricles_after(app())
+    }
+
+    fn ventricles_after(mut app: App) -> App {
+        let options = super::super::app::qsm_ref_options();
+        select(&mut app, "qsm_reference", "ventricles", options);
+        app
+    }
+
+    /// Choosing a region reference with segmentation off opens " Required change ": Segmentation
+    /// off → on, required, with the reason; Apply required change (the default) turns it on.
+    #[test]
+    fn a_region_reference_opens_a_required_change_and_apply_turns_segmentation_on() {
+        let mut app = ventricles();
+        let modal = app.rec_modal.as_ref().expect("the change opened the required-change pop-up");
+        assert_eq!(modal.kind, AdviceKind::Required);
+        assert_eq!(modal.title(), " Required change ");
+        assert_eq!(modal.rows.len(), 1);
+        let row = &modal.rows[0];
+        assert_eq!((row.setting().1, row.change(), modal.tag(0)),
+                   ("Segmentation".to_string(), ("off".to_string(), "on".to_string()), "required".to_string()));
+        assert!(row.checked && modal.ticked() == 1);
+        assert_eq!(modal.button_labels(), ["Apply required change", "Undo my change"]);
+        let panel = modal.explanation(0);
+        assert!(panel.starts_with("Reference = ventricles requires Segmentation: the reference region is measured on a SynthSeg segmentation"), "{panel}");
+        assert!(panel.contains("Undo my change sets QSM reference back to mean"), "{panel}");
+        // Its row stays ticked: a required change is one change.
+        app.handle_rec_modal_key(KeyEvent::from(KeyCode::Char(' ')));
+        assert_eq!(app.rec_modal.as_ref().unwrap().ticked(), 1);
+
+        // Enter on the first button (the default) applies it.
+        app.handle_rec_modal_key(KeyEvent::from(KeyCode::Tab));
+        app.handle_rec_modal_key(KeyEvent::from(KeyCode::Enter));
+        assert!(app.rec_modal.is_none());
+        assert!(app.form.do_segmentation && app.field_toggle("do_segmentation"), "applied through the form");
+        let config = super::super::command::config_from_app(&app).unwrap();
+        assert!(config.pipeline.do_segmentation);
+        assert!(!app.rule_view().iter().any(|r| r.applied_by_run() && r.departs), "nothing left to require");
+        assert_eq!(config.qsm.reference_region.as_deref(), Some("ventricles"), "the change just made stands");
+    }
+
+    /// Undo my change sets back only the change just made: the reference, not segmentation.
+    #[test]
+    fn undo_my_change_sets_the_reference_back() {
+        // A change made before: not undone.
+        let mut app = app();
+        app.form.do_swi = true;
+        app.check_recommendations();
+        let mut app = ventricles_after(app);
+        let before_swi = app.form.do_swi;
+        assert!(before_swi && app.rec_modal.is_some());
+        // The second button is Undo my change (K, as Keep mine's key, or U).
+        app.handle_rec_modal_key(KeyEvent::from(KeyCode::Char('u')));
+        assert!(app.rec_modal.is_none());
+        let config = super::super::command::config_from_app(&app).unwrap();
+        assert_eq!(config.qsm.reference, qsmxt_engine::enums::QsmReference::Mean, "the reference is back");
+        assert!(!config.pipeline.do_segmentation && !app.form.do_segmentation, "segmentation was not turned on");
+        assert_eq!(app.form.do_swi, before_swi);
+        assert!(app.status_message.as_deref().is_some_and(|m| m.contains("QSM reference back to mean")), "{:?}", app.status_message);
+        app.check_recommendations();
+        assert!(app.rec_modal.is_none(), "nothing is required any more");
+    }
+
+    /// Esc leaves both settings as they are and the output marked; `!` on it offers the change
+    /// again, without Undo (no change was just made). The run turns it on itself.
+    #[test]
+    fn esc_leaves_a_required_change_marked() {
+        let mut app = ventricles();
+        app.handle_rec_modal_key(KeyEvent::from(KeyCode::Esc));
+        assert!(app.rec_modal.is_none() && !app.form.do_segmentation);
+        let view = app.rule_view();
+        let marker = rec::marker(&view, "pipeline.do_segmentation").expect("the output is marked");
+        assert!(marker.actionable, "{marker:?}");
+        app.check_recommendations();
+        assert!(app.rec_modal.is_none(), "not offered again until something changes");
+        let config = super::super::command::config_from_app(&app).unwrap();
+        assert!(config.normalised().0.pipeline.do_segmentation, "the run turns it on itself");
+        let required = view.iter().find(|r| r.rule == "qsmxt.reference-segmentation").unwrap();
+        let modal = AdviceModal::required(vec![required.clone()], None);
+        assert_eq!(modal.button_labels(), ["Apply required change"]);
+        assert!(modal.explanation(0).contains("Left off, the run turns it on itself"));
+    }
+
+    /// χ-separation by an R2′ method, with no relaxometry maps on: one pop-up for the three maps
+    /// it needs (R2′, and R2* and R2 for R2′), applied together.
+    #[test]
+    fn chi_separation_requires_its_maps_in_one_pop_up() {
+        let mut app = app();
+        app.pipeline_state.separation_algorithm =
+            super::super::app::SEP_ALGO_OPTIONS.iter().position(|o| *o == "chi-sep-ilsqr").unwrap();
+        app.check_recommendations();
+        app.toggle_field("do_chi_separation");
+        app.check_recommendations();
+        let modal = app.rec_modal.as_ref().expect("the change opened the required-change pop-up");
+        assert_eq!(modal.kind, AdviceKind::Required);
+        let labels: Vec<String> = modal.rows.iter().map(|r| r.setting().1).collect();
+        assert_eq!(labels, ["R2′ map", "R2* map", "R2 map"]);
+        assert!(modal.explanation(0).starts_with("χ-separation (iLSQR) requires R2′ map"), "{}", modal.explanation(0));
+        app.handle_rec_modal_key(KeyEvent::from(KeyCode::Char('a')));
+        assert!(app.form.do_r2primemap && app.form.do_r2starmap && app.form.do_r2map,
+                "{:?} {:?}", app.status_message, app.error_message);
+        assert!(app.pipeline_state.do_chi_separation, "the change just made stands");
+    }
+
     /// The pop-up's rows as decisions for [`App::decide`]: each value taken, or each kept.
     fn items_of(m: &AdviceModal, take: bool) -> Vec<RefItem> {
         m.rows.iter().filter(|r| !r.alternative).map(|r| RefItem {
@@ -1484,6 +1751,10 @@ mod tests {
         let mut app = app();
         app.toggle_field("do_chi_separation");
         app.check_recommendations();
+        // The default method's R2* map: the required change, applied.
+        assert_eq!(app.rec_modal.as_ref().map(|m| m.kind.clone()), Some(AdviceKind::Required));
+        app.handle_rec_modal_key(KeyEvent::from(KeyCode::Char('a')));
+        assert!(app.form.do_r2starmap);
         // The default method's reference pipeline pop-up: closed.
         app.refs.modal = None;
         select(&mut app, "separation_algorithm", "decompose", super::super::app::SEP_ALGO_OPTIONS);

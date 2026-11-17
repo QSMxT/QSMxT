@@ -456,10 +456,17 @@ impl FileStore<'_> {
             Item::T2star => o.t2star_path(key),
             Item::MeseMagnitude(n) => self.run.mese.as_ref()?.magnitude_niftis.get(n.checked_sub(1)?)?.clone(),
             Item::SuppliedR2 => self.custom(self.config.separation.custom_r2_tool.as_deref(), "*_R2map.nii*", &[])?,
+            // χ-sepnet's toolbox route measures R2′ where the scan can, without R2′ or R2 having
+            // been asked for: those maps are kept with the run's intermediates, not published.
+            Item::R2 if self.config.computes_unasked_r2prime().1 => o.intermediate_item_path(key, "r2_r2prime", Item::R2),
             Item::R2 => o.r2_path(key),
             Item::SuppliedR2prime =>
                 self.custom(self.config.separation.custom_r2prime_tool.as_deref(), "*_R2primemap.nii*", &[])?,
+            Item::R2prime if self.config.computes_unasked_r2prime().0 =>
+                o.intermediate_item_path(key, "r2_r2prime", Item::R2prime),
             Item::R2prime => o.r2prime_path(key),
+            Item::R2primeCoverage if self.config.computes_unasked_r2prime().0 =>
+                o.intermediate_item_path(key, "r2_r2prime", Item::R2primeCoverage),
             Item::R2primeCoverage => o.r2prime_coverage_path(key),
             Item::SuppliedChi => self.custom(self.config.separation.custom_qsm_tool.as_deref(), "*_Chimap.nii*", &["desc-"])?,
             Item::SeparatedChi(Contrast::Paramagnetic) => o.chi_para_path(key),

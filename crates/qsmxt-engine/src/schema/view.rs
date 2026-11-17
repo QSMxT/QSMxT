@@ -355,6 +355,13 @@ fn errors(config: &PipelineConfig, checked: impl Fn(&str) -> bool) -> Vec<(&'sta
             out.push((path, sentence(&e)));
         }
     }
+    // A region reference has to name a region (it is not quietly measured against the mean).
+    if config.qsm.reference == crate::enums::QsmReference::Region && checked("qsm.reference_region") {
+        let spec = config.qsm.reference_region.as_deref().unwrap_or_default();
+        if let Err(e) = crate::regions::resolve(spec, config.segmentation.version) {
+            out.push(("qsm.reference_region", sentence(&capitalise(&e))));
+        }
+    }
     // The mask recipes' steps, against the mask schema's parameter ranges.
     let m = &config.masking;
     let recipes: [(&'static str, Vec<String>); 3] = [
@@ -368,6 +375,11 @@ fn errors(config: &PipelineConfig, checked: impl Fn(&str) -> bool) -> Vec<(&'sta
         }
     }
     out
+}
+
+fn capitalise(s: &str) -> String {
+    let mut c = s.chars();
+    c.next().map_or_else(String::new, |f| f.to_uppercase().chain(c).collect())
 }
 
 /// What the parameter checks of the config's own sections and of QSM.rs's parameter types

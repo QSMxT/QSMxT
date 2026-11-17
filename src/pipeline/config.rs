@@ -337,6 +337,27 @@ pub fn validate_reference_region(config: &PipelineConfig) -> crate::Result<()> {
 /// A value that cannot be parsed is an error, never a warning and a default: the flag was asked
 /// for, and a run with some other setting would be worse than no run.
 pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs) -> crate::Result<()> {
+    apply_run_overrides_as_given(config, args)?;
+    normalise_logged(config);
+    Ok(())
+}
+
+/// Turn on the outputs other settings need ([`PipelineConfig::normalised`]), each logged at info
+/// level in plain words ("Segmentation turned on: Reference = ventricles needs it (...)") and
+/// recorded in [`PipelineConfig::required_changes`] for the methods Note. These are QSMxT's own
+/// required changes, which the run makes itself; QSM.rs's `required` rules are refused at plan
+/// time instead ([`qsmxt_engine::requirements`]).
+pub fn normalise_logged(config: &mut PipelineConfig) {
+    let (normalised, adjustments) = config.normalised();
+    for a in &adjustments {
+        log::info!("{}", a.message);
+    }
+    *config = normalised;
+}
+
+/// [`apply_run_overrides`] without turning on the outputs other settings need: the configuration
+/// as the flags give it, which the TUI checks for required changes to offer.
+pub fn apply_run_overrides_as_given(config: &mut PipelineConfig, args: &cli::PipelineArgs) -> crate::Result<()> {
         // ── Pipeline ──
         // First, so that every other flag changes the pipeline's settings.
         if let Some(id) = &args.pipeline {
@@ -911,21 +932,6 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             }
         }
 
-        // The outputs other outputs need (χ-separation's relaxometry maps, the statistics'
-        // segmentation, ...) are switched on, and QSMART's BET mask installed where the recipe
-        // was left alone, as every front end has them. Nothing below sets a setting the rules read
-        // (the BET push only fills in the BET steps the recipe already has).
-        let (normalised, adjustments) = config.normalised();
-        for a in &adjustments {
-            match a.setting {
-                "masking.sections" => log::info!("{} (choose another mask with --mask-preset or --mask)", a.message),
-                "field_mapping.unwrapping_algorithm" => log::info!("{} (choose another with --unwrapping-algorithm)", a.message),
-                "field_mapping.laplacian_solver" => log::info!("{} (choose another with --laplacian-solver)", a.message),
-                "field_mapping.b0_estimation" => log::info!("{} (choose another with --b0-estimation)", a.message),
-                _ => log::debug!("{}", a.message),
-            }
-        }
-        *config = normalised;
         if args.export_dicom { config.pipeline.export_dicom = true; }
         if args.no_inhomogeneity_correction { config.masking.inhomogeneity_correction = false; }
         else if args.inhomogeneity_correction { config.masking.inhomogeneity_correction = true; }
@@ -1858,6 +1864,29 @@ mod tests {
         // a bare --two-pass.
         assert!(c.masking.two_pass_sections.is_none());
         assert_eq!(c.masking.resolved_two_pass_sections(), default_two_pass_sections());
+    }
+
+    /// The command line's required changes (QSMxT's own, an output another setting needs) are
+    /// applied, not refused, and recorded for the methods Note: `--qsm-reference ventricles`
+    /// alone segments, `--do-smwi --no-qsm` reconstructs QSM.
+    #[test]
+    fn required_changes_are_applied_and_recorded() {
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--qsm-reference", "ventricles"]);
+        assert!(c.pipeline.do_segmentation);
+        assert_eq!(c.required_changes, ["Segmentation turned on: Reference = ventricles needs it (the reference region \
+            is measured on a SynthSeg segmentation of the magnitude, which is saved with the outputs)"]);
+        let methods = crate::pipeline::methods::generate_methods(&c);
+        assert!(methods.contains("Outputs the run turned on because other settings need them:")
+            && methods.contains("Segmentation turned on: Reference = ventricles needs it"), "{methods}");
+        // Asked for, nothing is required or recorded.
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--qsm-reference", "ventricles", "--do-segmentation"]);
+        assert!(c.pipeline.do_segmentation && c.required_changes.is_empty());
+
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--do-smwi", "--no-qsm"]);
+        assert!(c.pipeline.do_qsm);
+        assert_eq!(c.required_changes, ["QSM turned on: SMWI needs it (SMWI weights the magnitude by the susceptibility map)"]);
+        // Kept in the config file the run writes.
+        assert!(c.to_toml().unwrap().contains("required_changes = ["));
     }
 
     /// Spelling out a reliable mask is an unambiguous request for the method; making the user

@@ -980,10 +980,10 @@ pub(super) fn table() -> Vec<Def> {
         d("qsm.reference", Reference, "QSM reference", "", Enum(vec![
             o("mean", "mean", "Mean", "Subtract the mean susceptibility over the voxels the map is defined on (recommended)"),
             o("none", "none", "None", "No referencing (raw susceptibility values)"),
-            o("region", "region", "Region", "Reference χ to the mean of a SynthSeg region (Reference region). Enables SynthSeg"),
+            o("region", "region", "Region", "Reference χ to the mean of a SynthSeg region (Reference region). Requires Segmentation"),
         ])).basic().flag("--qsm-reference")
         .gui("What the susceptibility map is referenced to: the value that reads as zero"),
-        d("qsm.reference_region", Reference, "Reference region", "The SynthSeg region whose mean susceptibility is zero. Enables SynthSeg", Regions).basic().optional().flag("--qsm-reference").parent("qsm.reference")
+        d("qsm.reference_region", Reference, "Reference region", "The SynthSeg region whose mean susceptibility is zero. Requires Segmentation", Regions).basic().optional().flag("--qsm-reference").parent("qsm.reference")
         .when(|x| x.c.qsm.reference == QsmReference::Region),
         d("pipeline.do_chi_separation", Separation, "Compute χ-separation", "Split QSM into paramagnetic (χ+, iron) and diamagnetic (χ−, myelin) maps", Bool).basic().flag("--do-chisep"),
         d("separation.algorithm", Separation, "Method", "", Enum(vec![
@@ -1204,14 +1204,14 @@ pub(super) fn table() -> Vec<Def> {
         .gui("Minimum-intensity-projection window").context("SMWI"),
         d("pipeline.do_t2starmap", Relaxometry, "Compute T2* map", "Compute T2* relaxation map (requires 3+ echoes with magnitude)", Bool).basic().flag("--do-t2starmap"),
         d("pipeline.do_r2starmap", Relaxometry, "Compute R2* map", "Compute R2* decay rate map (requires 3+ echoes with magnitude)", Bool).basic().flag("--do-r2starmap"),
-        d("pipeline.do_r2map", Relaxometry, "Compute R2 map", "R2 map (Hz) from a multi-echo spin-echo (MESE) acquisition via EPG. Forced on when chi-separation needs it", Bool).basic().flag("--do-r2map")
-        .gui("R2 map from a multi-echo spin-echo (MESE) acquisition via EPG. Forced on when χ-separation needs it"),
+        d("pipeline.do_r2map", Relaxometry, "Compute R2 map", "R2 map (Hz) from a multi-echo spin-echo (MESE) acquisition via EPG. Required when chi-separation needs it", Bool).basic().flag("--do-r2map")
+        .gui("R2 map from a multi-echo spin-echo (MESE) acquisition via EPG. Required when χ-separation needs it"),
         d("separation.custom_r2_tool", Relaxometry, "Custom R2 tool", "Use an R2 map from <bids>/derivatives/<tool>/ instead of computing it from MESE (blank = compute, * = any tool)", Text).basic().optional().flag("--use-custom-r2").parent("pipeline.do_r2map")
         .supplied_file(Item::SuppliedR2, "An R2 map to use instead of computing one from a MESE acquisition")
         .when(|x| x.reads_r2).full("Custom R2")
         .gui("Use an R2 map from <bids>/derivatives/<tool>/ instead of computing it from MESE: * for any tool, or a tool name; empty to compute it"),
-        d("pipeline.do_r2primemap", Relaxometry, "Compute R2' map", "R2' = R2* − R2 (Hz); needs GRE magnitude + a MESE acquisition, or R2PRIMEnet. Forced on when chi-separation needs it", Bool).basic().flag("--do-r2primemap")
-        .gui("R2' = R2* − R2; needs GRE magnitude and a MESE acquisition, or R2PRIMEnet. Forced on when χ-separation needs it"),
+        d("pipeline.do_r2primemap", Relaxometry, "Compute R2' map", "R2' = R2* − R2 (Hz); needs GRE magnitude + a MESE acquisition, or R2PRIMEnet. Required when chi-separation needs it", Bool).basic().flag("--do-r2primemap")
+        .gui("R2' = R2* − R2; needs GRE magnitude and a MESE acquisition, or R2PRIMEnet. Required when χ-separation needs it"),
         d("separation.custom_r2prime_tool", Relaxometry, "Custom R2' tool", "Use an R2' map from <bids>/derivatives/<tool>/ instead of computing it (blank = compute, * = any tool)", Text).basic().optional().flag("--use-custom-r2prime").parent("pipeline.do_r2primemap")
         .supplied_file(Item::SuppliedR2prime, "An R2' map to use instead of computing one")
         .when(|x| x.reads_r2prime).full("Custom R2'")
@@ -1232,7 +1232,7 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.computes_r2prime && x.c.separation.r2prime_strategy != R2PrimeStrategy::Mese
             && (x.c.pipeline.do_r2primemap || !crate::config::chisepnet_route_can_estimate_r2prime(x.c)))
         .gui("Sliding-window patch D H W, each a multiple of 16"),
-        d("pipeline.do_segmentation", Segmentation, "Segmentation", "Whole-brain parcellation: SynthSeg straight off the GRE magnitude, or one supplied in derivatives. Forced on by the statistics and a region reference", Bool).basic().flag("--do-segmentation"),
+        d("pipeline.do_segmentation", Segmentation, "Segmentation", "Whole-brain parcellation: SynthSeg straight off the GRE magnitude, or one supplied in derivatives. Required by the statistics and a region reference: choosing one offers to turn it on (left off, the run turns it on itself)", Bool).basic().flag("--do-segmentation"),
         d("segmentation.custom_dseg_tool", Segmentation, "Derivatives tool", "The dseg from <bids>/derivatives/<tool>/: * = any tool, or a tool name; SynthSeg runs where none is found", Text).basic().optional().flag("--use-custom-dseg").parent("pipeline.do_segmentation")
         .supplied_file(Item::SuppliedSegmentation, "A segmentation to use instead of running SynthSeg")
         .when(|x| x.segmentation_on).full("Custom segmentation")
@@ -1259,7 +1259,7 @@ pub(super) fn table() -> Vec<Def> {
         d("segmentation.sigma_smoothing", Segmentation, "Posterior smoothing", "Gaussian blur on the posteriors before the labels are taken", Float).min(0.0)
         .value("Sigma (voxels)", "Gaussian sigma of the posterior blur, in voxels").units("voxels").off(json!(0.0)).flag("--synthseg-sigma").parent("pipeline.do_segmentation")
         .when(|x| x.segmentation_on && x.c.segmentation.custom_dseg_tool.is_none()).gui_value("Sigma", "Gaussian sigma of the posterior blur"),
-        d("pipeline.do_analysis", Segmentation, "Per-structure statistics", "Summarise every map the run makes (χ, χ+/χ−, T2*, R2*, R2, R2') per structure into a TSV: mean, SD, median, min, max, 5th/95th percentiles. Implies segmentation; implies QSM only if no other map is enabled", Bool).basic().flag("--do-analysis").full("Per-structure statistics"),
+        d("pipeline.do_analysis", Segmentation, "Per-structure statistics", "Summarise every map the run makes (χ, χ+/χ−, T2*, R2*, R2, R2') per structure into a TSV: mean, SD, median, min, max, 5th/95th percentiles. Requires segmentation, and QSM only if no other map is enabled", Bool).basic().flag("--do-analysis").full("Per-structure statistics"),
         // DICOM export is not in the browser yet (astewartau/qsmbly#164).
         d("pipeline.export_dicom", Export, "Export DICOM", "Also write final maps as DICOM series into each subject's extra_files/ folder", Bool).basic().flag("--export-dicom").unavailable_in_browser(),
     ]

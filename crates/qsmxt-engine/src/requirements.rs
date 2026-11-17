@@ -100,9 +100,40 @@ impl Output {
 /// that produced it. An output that is both asked for and implied counts as implied: whatever
 /// implies it is itself checked, and fails if it was asked for and cannot be made.
 pub fn implied_by(config: &PipelineConfig, out: Output) -> Option<String> {
+    implied(config, out).map(|i| i.flag)
+}
+
+/// [`implied_by`], naming the setting by its label rather than its flag, for a front end that
+/// shows settings: "the per-structure statistics", "Reference = ventricles", "χ-separation
+/// (iLSQR)".
+pub fn implied_by_label(config: &PipelineConfig, out: Output) -> Option<String> {
+    implied(config, out).map(|i| i.label)
+}
+
+/// The setting whose option turned `out` on, when another one did ([`implied_by`], as a config
+/// path).
+pub fn implied_by_setting(config: &PipelineConfig, out: Output) -> Option<&'static str> {
+    implied(config, out).map(|i| i.setting)
+}
+
+/// What turned an output on: the setting, and how the command line and a front end name it.
+struct Implied {
+    setting: &'static str,
+    flag: String,
+    label: String,
+}
+
+fn implied(config: &PipelineConfig, out: Output) -> Option<Implied> {
     let p = &config.pipeline;
     let s = &config.separation;
-    let chisep = || format!("--do-chisep (--chisep {})", s.algorithm);
+    let chisep = || Implied {
+        setting: Output::ChiSeparation.setting(),
+        flag: format!("--do-chisep (--chisep {})", s.algorithm),
+        label: crate::methods::separation_name(s.algorithm).to_string(),
+    };
+    let r2prime = || implied(config, Output::R2prime).unwrap_or_else(|| Implied {
+        setting: Output::R2prime.setting(), flag: "--do-r2primemap".into(), label: "the R2′ map".into(),
+    });
     let r2prime_based = matches!(s.algorithm,
         SeparationAlgorithm::ChiSepIlsqr | SeparationAlgorithm::ChiSepMedi
         | SeparationAlgorithm::WaveSep | SeparationAlgorithm::HcChisep
@@ -111,10 +142,12 @@ pub fn implied_by(config: &PipelineConfig, out: Output) -> Option<String> {
     match out {
         Output::Segmentation if config.segmentation.custom_dseg_tool.is_none() => {
             if p.do_analysis {
-                Some("--do-analysis".into())
+                Some(Implied { setting: Output::Analysis.setting(), flag: "--do-analysis".into(),
+                               label: "the per-structure statistics".into() })
             } else if Output::RegionReference.enabled(config) {
-                Some(format!("--qsm-reference {}",
-                    config.qsm.reference_region.as_deref().unwrap_or("<region>")))
+                let region = config.qsm.reference_region.as_deref().unwrap_or("<region>");
+                Some(Implied { setting: Output::RegionReference.setting(), flag: format!("--qsm-reference {region}"),
+                               label: format!("Reference = {region}") })
             } else {
                 None
             }
@@ -125,7 +158,7 @@ pub fn implied_by(config: &PipelineConfig, out: Output) -> Option<String> {
             {
                 Some(chisep())
             } else if computes_r2prime {
-                Some(implied_by(config, Output::R2prime).unwrap_or_else(|| "--do-r2primemap".into()))
+                Some(r2prime())
             } else {
                 None
             }
@@ -133,7 +166,7 @@ pub fn implied_by(config: &PipelineConfig, out: Output) -> Option<String> {
         Output::R2 if computes_r2prime && s.custom_r2_tool.is_none()
             && s.r2prime_strategy != R2PrimeStrategy::R2primenet =>
         {
-            Some(implied_by(config, Output::R2prime).unwrap_or_else(|| "--do-r2primemap".into()))
+            Some(r2prime())
         }
         Output::R2prime if p.do_chi_separation && r2prime_based && s.custom_r2prime_tool.is_none()
             && !crate::config::chisepnet_route_can_estimate_r2prime(config) =>
@@ -142,19 +175,6 @@ pub fn implied_by(config: &PipelineConfig, out: Output) -> Option<String> {
         }
         _ => None,
     }
-}
-
-/// The setting whose option turned `out` on, when another one did ([`implied_by`], as a config
-/// path).
-pub fn implied_by_setting(config: &PipelineConfig, out: Output) -> Option<&'static str> {
-    let by = implied_by(config, out)?;
-    Some(match by.split_whitespace().next().unwrap_or("") {
-        "--do-analysis" => Output::Analysis.setting(),
-        "--qsm-reference" => Output::RegionReference.setting(),
-        "--do-chisep" => Output::ChiSeparation.setting(),
-        "--do-r2primemap" => Output::R2prime.setting(),
-        _ => return None,
-    })
 }
 
 /// How a problem names the settings it involves: as `qsmxt`'s command line spells them (its
@@ -951,9 +971,11 @@ pub fn scan_check(f: &ScanFacts, config: &PipelineConfig) -> Check {
             });
         }
     }
-    // What a chosen method cannot run without, from QSM.rs's pipeline rules (`required`).
+    // What a chosen method cannot run without, from QSM.rs's pipeline rules (`required`): refused.
+    // QSMxT's own required changes (an output another setting needs) are not: the run applies
+    // them itself and says so ([`crate::recommendations::Recommendation::applied_by_run`]).
     for r in crate::recommendations::recommendations(config, &crate::recommendations::Facts::of_scan(f)) {
-        if r.strength != crate::recommendations::Strength::Required {
+        if r.strength != crate::recommendations::Strength::Required || r.applied_by_run() {
             continue;
         }
         let path = crate::schema::setting(&r.setting).map(|s| s.path);
