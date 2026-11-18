@@ -533,8 +533,9 @@ fn text_of(v: &Value) -> String {
     }
 }
 
-/// The value text typed on a row of `s` stands for, or `None` for a blank or unreadable one,
-/// which leaves the setting at its default (as the command line does without the option).
+/// The value text typed on a row of `s` stands for, or `None` for a blank or unreadable one. A
+/// blank one leaves the setting at its default (as the command line does without the option);
+/// an unreadable one is refused while it applies ([`SettingsStore::changed_or_refused`]).
 fn parse(s: &Setting, text: &str) -> Option<Value> {
     let text = text.trim();
     let numbers = || text.split(|c: char| c == ',' || c.is_whitespace()).filter(|t| !t.is_empty());
@@ -570,6 +571,21 @@ fn parse(s: &Setting, text: &str) -> Option<Value> {
 
 /// A setting whose typed text the run cannot take, and why.
 pub type Refused = (&'static str, String);
+
+/// What a text row of `s` takes, as a message refusing other text words it ("not a number").
+fn what_it_takes(s: &Setting) -> &'static str {
+    match s.value_type {
+        ValueType::Int if COUNTED_FROM_ONE.contains(&s.path) => "an echo number",
+        ValueType::Int => "a whole number",
+        ValueType::Float | ValueType::NumberOrChoice { .. } => "a number",
+        ValueType::FloatVec3 => "three numbers",
+        ValueType::IntVec3 if ONE_VALUE_FOR_EVERY_AXIS.contains(&s.path) => "one whole number, or three",
+        ValueType::IntVec3 => "three whole numbers",
+        ValueType::IntList => "a list of whole numbers",
+        ValueType::EchoTime { .. } => "a time in ms",
+        _ => "a value this setting takes",
+    }
+}
 
 /// The echo number an echo reference's value gives, when it gives one the setting takes.
 fn echo_number(s: &Setting, v: &Value) -> Option<u32> {
@@ -793,10 +809,11 @@ impl SettingsStore {
     }
 
     /// The stored settings that differ from their defaults as the run takes them, typed text
-    /// read as its value (a blank or unreadable text leaves the default; so does a value the
-    /// config refuses, such as a typed number too large for its setting), and the settings whose
-    /// typed text the run cannot take at all, with why: an echo number typed while an echo by
-    /// number is chosen, which the command line would refuse too.
+    /// read as its value (a blank text leaves the default; so does a value the config refuses,
+    /// such as a typed number too large for its setting), and the settings whose typed text the
+    /// run cannot take at all, with why: text that reads as no value of its setting ("abc" for a
+    /// number), or an echo number the setting does not take. The command line refuses both, and
+    /// running with the default instead would change a setting behind the user's back.
     pub fn changed_or_refused(&self) -> (Vec<(&'static str, Value)>, Vec<Refused>) {
         let mut out: BTreeMap<&'static str, Value> = self.values.clone();
         let mut refused = Vec::new();
@@ -828,7 +845,14 @@ impl SettingsStore {
                 };
                 continue;
             }
-            match parse(s, text).filter(|v| *v != s.default && config_with(&[(path, v.clone())]).is_some()) {
+            let value = parse(s, text);
+            if value.is_none() && !text.trim().is_empty() {
+                let flag = s.cli_flag.unwrap_or(path);
+                refused.push((path, format!("{flag} {}: not {}", text.trim(), what_it_takes(s))));
+                out.remove(path);
+                continue;
+            }
+            match value.filter(|v| *v != s.default && config_with(&[(path, v.clone())]).is_some()) {
                 Some(v) => out.insert(path, v),
                 None => out.remove(path),
             };
@@ -1019,7 +1043,8 @@ mod tests {
     use super::super::command::config_from_app;
 
     /// A text row shows what was typed; the run takes it when it reads as the setting's value,
-    /// and the default when it does not (a half-typed number).
+    /// the default when it is blank, and refuses it when it reads as no value (see
+    /// [`unreadable`]).
     #[test]
     fn typed_text_stands_for_its_value() {
         let mut app = App::new_for_trial();
@@ -1029,8 +1054,133 @@ mod tests {
         *app.field_text_mut("swi_strength").unwrap() = "2.".into();
         assert_eq!(app.field_text("swi_strength"), "2.");
         assert_eq!(config_from_app(&app).unwrap().swi.strength, 2.0);
-        *app.field_text_mut("swi_strength").unwrap() = "x".into();
+        *app.field_text_mut("swi_strength").unwrap() = " ".into();
         assert_eq!(config_from_app(&app).unwrap().swi.strength, qsmxt_engine::SwiConfig::default().strength);
+        *app.field_text_mut("swi_strength").unwrap() = "x".into();
+        assert!(config_from_app(&app).is_err(), "unreadable text is refused, not run as the default");
+    }
+
+    /// Type `text` on `field`'s row and check that the config is refused with `message`, as the
+    /// command line refuses such a value, rather than run with the setting's default.
+    fn unreadable(app: &mut App, field: &str, text: &str, message: &str) {
+        *app.field_text_mut(field).unwrap() = text.into();
+        let err = config_from_app(app).expect_err(&format!("{field} = {text:?} is refused")).to_string();
+        assert!(err.contains(message), "{field}: {err}");
+    }
+
+    #[test]
+    fn unreadable_geometry_value_is_refused() {
+        let mut app = App::new_for_trial();
+        unreadable(&mut app, "tukey_window", "abc", "--tukey-window abc: not a number");
+    }
+
+    #[test]
+    fn unreadable_swi_and_smwi_values_are_refused() {
+        let mut app = App::new_for_trial();
+        app.form.settings.set("pipeline.do_swi", true);
+        unreadable(&mut app, "swi_strength", "1.2.3", "--swi-strength 1.2.3: not a number");
+        *app.field_text_mut("swi_strength").unwrap() = String::new();
+        app.form.settings.set("pipeline.do_smwi", true);
+        unreadable(&mut app, "smwi_power", "abc", "--smwi-power abc: not a number");
+    }
+
+    #[test]
+    fn unreadable_motion_value_is_refused() {
+        let mut app = App::new_for_trial();
+        app.toggle_field("motion_correction");
+        unreadable(&mut app, "motion_min_ncc", "abc", "--motion-min-ncc abc: not a number");
+    }
+
+    #[test]
+    fn unreadable_background_value_is_refused() {
+        let mut app = App::new_for_trial();
+        unreadable(&mut app, "vsharp_max_radius", "abc", "--vsharp-max-radius abc: not a number");
+    }
+
+    /// The Reference page has no typed row: a method and a region, both chosen from lists.
+    #[test]
+    fn the_reference_page_has_nothing_typed() {
+        let typed: Vec<_> = schema::settings().iter()
+            .filter(|s| s.section == Section::Reference && s.off.is_none())
+            .filter(|s| matches!(s.value_type, ValueType::Int | ValueType::Float | ValueType::IntVec3
+                | ValueType::FloatVec3 | ValueType::IntList | ValueType::Text))
+            .map(|s| s.path).collect();
+        assert!(typed.is_empty(), "test an unreadable value of {typed:?}");
+    }
+
+    #[test]
+    fn unreadable_relaxometry_value_is_refused() {
+        let mut app = App::new_for_trial();
+        app.form.settings.set("pipeline.do_r2primemap", true);
+        unreadable(&mut app, "r2primenet_patch", "128 128", "--r2primenet-patch 128 128: not three whole numbers");
+    }
+
+    #[test]
+    fn unreadable_segmentation_value_is_refused() {
+        let mut app = App::new_for_trial();
+        app.toggle_field("do_segmentation");
+        unreadable(&mut app, "synthseg_sigma", "abc", "--synthseg-sigma abc: not a number");
+    }
+
+    #[test]
+    fn unreadable_multi_orientation_value_is_refused() {
+        let mut app = App::new_for_trial();
+        app.filter_state.orientation_group = "acq".into();
+        unreadable(&mut app, "orientation_lambda", "abc", "--multi-orientation-lambda abc: not a number");
+        // Blank is no regularisation, as its placeholder says.
+        *app.field_text_mut("orientation_lambda").unwrap() = String::new();
+        assert!(config_from_app(&app).is_ok());
+    }
+
+    #[test]
+    fn unreadable_field_map_values_are_refused() {
+        let mut app = App::new_for_trial();
+        unreadable(&mut app, "romeo_template", "abc", "--romeo-template abc: not an echo number");
+        *app.field_text_mut("romeo_template").unwrap() = "1".into();
+        app.set_field_select("unwrapping_algorithm", 1);
+        app.set_field_select("laplacian_solver", 1);
+        unreadable(&mut app, "laplacian_fft_pad", "32 32", "--laplacian-fft-pad 32 32: not one whole number, or three");
+    }
+
+    #[test]
+    fn unreadable_inversion_values_are_refused() {
+        let mut app = App::new_for_trial();
+        app.pipeline_state.qsm_algorithm = QSM_ALGO_OPTIONS.iter().position(|a| *a == "nltv").unwrap();
+        unreadable(&mut app, "nltv_lambda", "abc", "--nltv-lambda abc: not a number");
+        *app.field_text_mut("nltv_lambda").unwrap() = String::new();
+        let ms = options("inversion.nltv.te").0.iter().position(|o| *o == "ms").unwrap();
+        app.set_field_select("nltv_te", ms);
+        unreadable(&mut app, "nltv_te_ms", "abc", "--nltv-te abc: not a time in ms");
+    }
+
+    #[test]
+    fn unreadable_separation_value_is_refused() {
+        let mut app = App::new_for_trial();
+        app.form.settings.set("pipeline.do_chi_separation", true);
+        app.form.settings.set("separation.algorithm", "decompose");
+        unreadable(&mut app, "sep_decompose_chi_bound", "abc", "--decompose-chi-bound abc: not a number");
+    }
+
+    /// Unreadable text in a row that does not apply does not block the run: its setting is left
+    /// at its default, as for any value of a hidden setting.
+    #[test]
+    fn unreadable_text_of_a_hidden_setting_does_not_block() {
+        let mut app = App::new_for_trial();
+        app.form.settings.set("pipeline.do_swi", true);
+        unreadable(&mut app, "swi_strength", "abc", "--swi-strength abc");
+        app.toggle_field("do_swi");
+        assert!(config_from_app(&app).is_ok(), "SWI off: its strength does not apply");
+        // A time typed under a named echo time, and a method not chosen.
+        app.pipeline_state.qsm_algorithm = QSM_ALGO_OPTIONS.iter().position(|a| *a == "nltv").unwrap();
+        let ms = options("inversion.nltv.te").0.iter().position(|o| *o == "ms").unwrap();
+        app.set_field_select("nltv_te", ms);
+        unreadable(&mut app, "nltv_te_ms", "abc", "--nltv-te abc");
+        app.set_field_select("nltv_te", 1);
+        assert!(config_from_app(&app).is_ok(), "a named echo time: the time typed does not apply");
+        app.set_field_select("nltv_te", ms);
+        assert!(config_from_app(&app).is_err());
+        app.pipeline_state.qsm_algorithm = 0;
+        assert!(config_from_app(&app).is_ok(), "another method: NLTV's echo time does not apply");
     }
 
     /// A stored setting that no longer applies is left at its default, though the form keeps it.

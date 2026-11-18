@@ -326,7 +326,11 @@ mod tests {
                     }
                     let mut changed = build(acts);
                     let Some(text) = changed.field_text_mut(field) else { continue };
-                    *text = bumped(text);
+                    *text = match (field, text.as_str()) {
+                        // Empty is the whole volume; a patch is three numbers.
+                        ("sep_susepnet_patch" | "sep_chisepnet_frame_patch", "") => "64 64 32".to_string(),
+                        (_, t) => bumped(t),
+                    };
                     let config = config_from_app(&changed).expect("the form builds a config");
                     let d = round_trip(&config);
                     if !d.is_empty() {

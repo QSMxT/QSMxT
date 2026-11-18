@@ -138,13 +138,16 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
         config: parse_optional_path(&form.config_file),
         include: app.filter_state.get_include_exclude().0,
         exclude: app.filter_state.get_include_exclude().1,
-        num_echoes: parse_optional_usize(&app.filter_state.num_echoes),
-        n_procs: parse_optional_usize(&form.n_procs),
+        num_echoes: typed("--num-echoes", &app.filter_state.num_echoes, "a whole number", count)?,
+        n_procs: typed("--n-procs", &form.n_procs, "a whole number", count)?,
         source_dicom: if form.export_dicom { parse_optional_path(&form.source_dicom) } else { None },
         dicom_outputs: if form.export_dicom { app.dicom_outputs() } else { None },
         dry: form.dry_run,
         debug: form.debug,
-        mem_limit_gb: form.mem_limit().0,
+        // A number of GB, or `none` for no limit (blank: auto).
+        mem_limit_gb: typed("--mem-limit-gb", &form.mem_limit_gb, "a number of GB above 0, or none", |t| {
+            if t.eq_ignore_ascii_case("none") { Some(None) } else { number(t).filter(|g| *g > 0.0).map(Some) }
+        })?.flatten(),
         no_mem_limit: form.mem_limit().1,
         force: form.force,
         clean_intermediates: form.clean_intermediates,
@@ -288,6 +291,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         // The TUI's voxel scale lives on the mask recipe's BET step, so it travels in
         // `mask_sections_cli` below rather than as a recipe-wide flag.
         bet_voxel_scale: None,
+        // Unreadable text on these hand-built rows is refused first ([`check_typed_masking`]).
         bet_smoothness: if ps.uses_bet() { parse_optional_f64(&ps.bet_smoothness) } else { None },
         bet_gradient_threshold: if ps.uses_bet() { parse_optional_f64(&ps.bet_gradient_threshold) } else { None },
         bet_iterations: if ps.uses_bet() { parse_optional_usize(&ps.bet_iterations) } else { None },
@@ -503,6 +507,53 @@ fn parse_usize_list(s: &str) -> Option<Vec<usize>> {
 
 
 
+/// The value of text typed on a row the TUI builds by hand: `None` when blank, which leaves the
+/// run's default, else what it reads as. Text that reads as nothing is an error naming the flag
+/// and the text, as the command line refuses it: the run never goes ahead with something other
+/// than what was typed.
+fn typed<T>(flag: &str, text: &str, what: &str, read: impl Fn(&str) -> Option<T>) -> crate::Result<Option<T>> {
+    let t = text.trim();
+    if t.is_empty() {
+        return Ok(None);
+    }
+    read(t).map(Some).ok_or_else(|| crate::error::QsmxtError::Config(format!("{flag} {t}: not {what}")))
+}
+
+fn number(t: &str) -> Option<f64> {
+    t.parse().ok().filter(|x: &f64| x.is_finite())
+}
+
+fn count(t: &str) -> Option<usize> {
+    t.parse().ok()
+}
+
+/// Refuse unreadable text on the hand-built BET, homogeneity and N4 rows while they apply (the
+/// conditions [`pipeline_args_from_app`] passes them on), rather than run with their defaults.
+fn check_typed_masking(app: &App) -> crate::Result<()> {
+    let ps = &app.pipeline_state;
+    if ps.uses_bet() {
+        typed("--bet-smoothness", &ps.bet_smoothness, "a number", number)?;
+        typed("--bet-gradient-threshold", &ps.bet_gradient_threshold, "a number", number)?;
+        typed("--bet-iterations", &ps.bet_iterations, "a whole number", count)?;
+        typed("--bet-subdivisions", &ps.bet_subdivisions, "a whole number", count)?;
+    }
+    if ps.inhomogeneity_correction && ps.inhomogeneity_method == 0 {
+        typed("--homogeneity-sigma-mm", &ps.homogeneity_sigma_mm, "a number", number)?;
+        typed("--homogeneity-nbox", &ps.homogeneity_nbox, "a whole number", count)?;
+    }
+    if ps.inhomogeneity_correction && ps.inhomogeneity_method == 1 {
+        typed("--n4-shrink-factor", &ps.n4_shrink_factor, "a whole number", count)?;
+        typed("--n4-max-iterations", &ps.n4_max_iterations, "a list of whole numbers", parse_usize_list)?;
+        typed("--n4-convergence-threshold", &ps.n4_convergence_threshold, "a number", number)?;
+        typed("--n4-mesh", &ps.n4_mesh, "three whole numbers", parse_usize_triple)?;
+        typed("--n4-spline-order", &ps.n4_spline_order, "a whole number", count)?;
+        typed("--n4-bias-field-fwhm", &ps.n4_bias_field_fwhm, "a number", number)?;
+        typed("--n4-wiener-noise", &ps.n4_wiener_noise, "a number", number)?;
+        typed("--n4-histogram-bins", &ps.n4_histogram_bins, "a whole number", count)?;
+    }
+    Ok(())
+}
+
 fn parse_optional_usize(s: &str) -> Option<usize> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
@@ -536,12 +587,13 @@ pub fn build_slurm_args(app: &App) -> crate::Result<SlurmArgs> {
         partition: if form.slurm_partition.trim().is_empty() { None } else { Some(form.slurm_partition.trim().to_string()) },
         config: parse_optional_path(&form.config_file),
         time: if form.slurm_time.trim().is_empty() { defaults.slurm_time.clone() } else { form.slurm_time.trim().to_string() },
-        mem: parse_optional_usize(&form.slurm_mem),
-        cpus_per_task: form.slurm_cpus.trim().parse().unwrap_or(4),
+        mem: typed("--mem", &form.slurm_mem, "a whole number of GB", count)?,
+        // Blank is `qsmxt slurm`'s default.
+        cpus_per_task: typed("--cpus-per-task", &form.slurm_cpus, "a whole number", count)?.unwrap_or(4),
         submit: form.slurm_submit,
         include,
         exclude,
-        num_echoes: parse_optional_usize(&app.filter_state.num_echoes),
+        num_echoes: typed("--num-echoes", &app.filter_state.num_echoes, "a whole number", count)?,
         force: form.force,
         clean_intermediates: form.clean_intermediates,
         debug: form.debug,
@@ -595,6 +647,7 @@ fn stored_values(app: &App, args: &PipelineArgs) -> crate::Result<Vec<(&'static 
 /// The run's settings from the form: its fields as `PipelineArgs`, and the settings it keeps in a
 /// config ([`stored_values`]).
 fn settings_args(app: &App) -> crate::Result<crate::cli_settings::SettingsArgs> {
+    check_typed_masking(app)?;
     let args = pipeline_args_from_app(app);
     let values = stored_values(app, &args)?;
     Ok(crate::cli_settings::SettingsArgs::tui(args, values))
@@ -606,6 +659,7 @@ fn settings_args(app: &App) -> crate::Result<crate::cli_settings::SettingsArgs> 
 /// required change for the TUI to offer ([`qsmxt_engine::normalise::required_findings`]), which
 /// the run would otherwise make itself.
 pub fn config_from_app(app: &App) -> crate::Result<PipelineConfig> {
+    check_typed_masking(app)?;
     let args = pipeline_args_from_app(app);
     let mut config = app.form.settings.config_of(&stored_values(app, &args)?);
     crate::pipeline::config::apply_run_overrides_as_given(&mut config, &args)?;
@@ -1537,6 +1591,84 @@ mod tests {
         let mut app = default_app();
         app.form.bids_dir = "/bids".to_string();
         assert!(build_slurm_args(&app).is_err());
+    }
+
+    /// Type `text` with `edit` and check the config is refused with `message`.
+    fn refused(app: &mut App, edit: impl FnOnce(&mut App), message: &str) {
+        edit(app);
+        let err = config_from_app(app).expect_err(message).to_string();
+        assert!(err.contains(message), "{err}");
+        assert!(build_run_args(app).is_err(), "the run is refused too");
+    }
+
+    /// BET's rows refuse unreadable text while a mask step runs BET; blank is BET's default.
+    #[test]
+    fn unreadable_bet_value_is_refused() {
+        let mut app = default_app();
+        app.form.bids_dir = "/bids".into();
+        app.pipeline_state.bet_smoothness = "abc".into();
+        assert!(!app.pipeline_state.uses_bet() && config_from_app(&app).is_ok(), "no BET step: it does not apply");
+        app.pipeline_state.set_select("mask_preset", 1);
+        assert!(app.pipeline_state.uses_bet());
+        refused(&mut app, |_| {}, "--bet-smoothness abc: not a number");
+        app.pipeline_state.bet_smoothness = String::new();
+        assert!(config_from_app(&app).is_ok(), "blank is the default");
+        refused(&mut app, |a| a.pipeline_state.bet_iterations = "1.5".into(), "--bet-iterations 1.5: not a whole number");
+    }
+
+    /// The homogeneity correction's rows refuse unreadable text while it is the method chosen.
+    #[test]
+    fn unreadable_homogeneity_value_is_refused() {
+        let mut app = default_app();
+        app.form.bids_dir = "/bids".into();
+        app.pipeline_state.inhomogeneity_correction = true;
+        app.pipeline_state.inhomogeneity_method = 0;
+        refused(&mut app, |a| a.pipeline_state.homogeneity_nbox = "x".into(), "--homogeneity-nbox x: not a whole number");
+        app.pipeline_state.inhomogeneity_correction = false;
+        assert!(config_from_app(&app).is_ok(), "correction off: it does not apply");
+    }
+
+    /// N4's rows refuse unreadable text while N4 is the method chosen.
+    #[test]
+    fn unreadable_n4_value_is_refused() {
+        let mut app = default_app();
+        app.form.bids_dir = "/bids".into();
+        app.pipeline_state.inhomogeneity_correction = true;
+        app.pipeline_state.inhomogeneity_method = 1;
+        refused(&mut app, |a| a.pipeline_state.n4_mesh = "1 2".into(), "--n4-mesh 1 2: not three whole numbers");
+        app.pipeline_state.inhomogeneity_method = 0;
+        assert!(config_from_app(&app).is_ok(), "the homogeneity method: N4's mesh does not apply");
+    }
+
+    /// The run options refuse unreadable text rather than run with the default; blank is the
+    /// default.
+    #[test]
+    fn unreadable_run_options_are_refused() {
+        let err = |r: crate::Result<RunArgs>| r.expect_err("refused").to_string();
+        let mut app = default_app();
+        app.form.bids_dir = "/bids".into();
+        app.form.n_procs = "abc".into();
+        assert!(err(build_run_args(&app)).contains("--n-procs abc: not a whole number"));
+        app.form.n_procs = String::new();
+        app.form.mem_limit_gb = "lots".into();
+        assert!(err(build_run_args(&app)).contains("--mem-limit-gb lots: not a number of GB above 0, or none"));
+        app.form.mem_limit_gb = "0".into();
+        assert!(build_run_args(&app).is_err(), "0 GB is no limit anyone means");
+        app.form.mem_limit_gb = "none".into();
+        assert!(build_run_args(&app).unwrap().no_mem_limit);
+        app.filter_state.num_echoes = "two".into();
+        assert!(err(build_run_args(&app)).contains("--num-echoes two: not a whole number"));
+        app.filter_state.num_echoes = String::new();
+
+        app.form.slurm_account = "acct".into();
+        app.form.slurm_cpus = "eight".into();
+        let e = build_slurm_args(&app).expect_err("refused").to_string();
+        assert!(e.contains("--cpus-per-task eight: not a whole number"), "{e}");
+        app.form.slurm_cpus = String::new();
+        assert_eq!(build_slurm_args(&app).unwrap().cpus_per_task, 4, "blank is the default");
+        app.form.slurm_mem = "64G".into();
+        let e = build_slurm_args(&app).expect_err("refused").to_string();
+        assert!(e.contains("--mem 64G: not a whole number of GB"), "{e}");
     }
 
     #[test]
