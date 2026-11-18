@@ -436,7 +436,7 @@ mod tests {
             let cli = crate::cli::Cli::try_parse_from(&run).unwrap();
             let crate::cli::Command::Run(r) = cli.command else { panic!() };
             let mut config = qsmxt_engine::PipelineConfig::default();
-            crate::pipeline::config::apply_run_overrides(&mut config, &r.pipeline).unwrap();
+            crate::cli_settings::apply_normalised(&mut config, &r.pipeline).unwrap();
             let pipeline = qsmxt_engine::to_pipeline_stages(&config).0;
             assert_eq!(format!("{standalone:?}"), format!("{pipeline:?}"), "flags {flags:?}");
         }
@@ -471,7 +471,7 @@ mod tests {
             let cli = crate::cli::Cli::try_parse_from(&run).unwrap();
             let crate::cli::Command::Run(r) = cli.command else { panic!() };
             let mut config = qsmxt_engine::PipelineConfig::default();
-            crate::pipeline::config::apply_run_overrides(&mut config, &r.pipeline).unwrap();
+            crate::cli_settings::apply_normalised(&mut config, &r.pipeline).unwrap();
             let pipeline = qsmxt_engine::to_pipeline_stages(&config).0;
             assert_eq!(format!("{standalone:?}"), format!("{pipeline:?}"), "flags {flags:?}");
         }
@@ -503,7 +503,7 @@ mod tests {
             let cli = crate::cli::Cli::try_parse_from(&run).unwrap();
             let crate::cli::Command::Run(r) = cli.command else { panic!() };
             let mut config = qsmxt_engine::PipelineConfig::default();
-            crate::pipeline::config::apply_run_overrides(&mut config, &r.pipeline).unwrap();
+            crate::cli_settings::apply_normalised(&mut config, &r.pipeline).unwrap();
             let pipeline = qsmxt_engine::to_pipeline_stages(&config).0;
             assert_eq!(format!("{standalone:?}"), format!("{pipeline:?}"), "flags {flags:?}");
         }
@@ -541,7 +541,7 @@ mod tests {
             let cli = crate::cli::Cli::try_parse_from(&run).unwrap();
             let crate::cli::Command::Run(r) = cli.command else { panic!() };
             let mut config = qsmxt_engine::PipelineConfig::default();
-            crate::pipeline::config::apply_run_overrides(&mut config, &r.pipeline).unwrap();
+            crate::cli_settings::apply_normalised(&mut config, &r.pipeline).unwrap();
             let pipeline = qsmxt_engine::to_pipeline_stages(&config).0;
             assert_eq!(format!("{standalone:?}"), format!("{pipeline:?}"), "flags {flags:?}");
         }

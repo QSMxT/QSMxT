@@ -56,7 +56,7 @@ fn every_commands_help() {
 }
 
 /// One argument as a line: what it is called and what it accepts.
-fn describe(arg: &Arg) -> String {
+pub(crate) fn describe(arg: &Arg) -> String {
     let mut s = match (arg.get_long(), arg.get_short()) {
         (Some(l), Some(c)) => format!("--{l} -{c}"),
         (Some(l), None) => format!("--{l}"),
@@ -267,4 +267,29 @@ fn what_each_run_flag_sets() {
         handles.into_iter().map(|h| h.join().unwrap()).collect()
     });
     snapshot::check(DIR, "run_flags.txt", &normalise(&parts.concat()));
+}
+
+/// After `--pipeline`, a command says only the settings that apply: one the configuration
+/// hides is left out even where the pipeline sets it differently (STI Suite's Laplacian
+/// solver once ROMEO unwraps), and the command still runs with the same configuration.
+#[test]
+fn commands_after_a_pipeline_leave_out_settings_that_do_not_apply() {
+    use qsmxt_engine::schema::{prune_hidden, ViewFacts};
+    let mut cmd = cli();
+    let mut run = |tail: &str| -> qsmxt_engine::PipelineConfig {
+        let flags: Vec<String> = tail.split_whitespace().map(String::from).collect();
+        let c: qsmxt_engine::PipelineConfig = serde_json::from_value(config_of(&mut cmd, &flags).unwrap()).unwrap();
+        prune_hidden(&c.normalised().0, &ViewFacts::default())
+    };
+    for (given, said) in [
+        ("--pipeline sti-suite-ilsqr --unwrapping-algorithm romeo", "--pipeline sti-suite-ilsqr --unwrapping-algorithm romeo"),
+        ("--pipeline sti-suite-ilsqr --no-qsm", "--pipeline sti-suite-ilsqr --no-qsm --qsm-reference mean"),
+        ("--pipeline chi-sep-ilsqr --mask-preset robust-threshold", "--pipeline chi-sep-ilsqr --mask-preset robust-threshold"),
+        ("--pipeline qsmart --qsm-per-echo true", "--pipeline qsmart --qsm-per-echo true"),
+    ] {
+        let config = run(given);
+        let command = qsmxt_engine::generate_command(&config);
+        assert_eq!(command, format!("qsmxt run <bids_dir> {said}"), "{given}");
+        assert!(run(said) == config, "{given}: {command} runs with another configuration");
+    }
 }

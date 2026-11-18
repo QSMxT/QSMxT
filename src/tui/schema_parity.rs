@@ -387,7 +387,7 @@ fn the_printed_command_reproduces_the_tuis_run() {
             .unwrap_or_else(|e| panic!("{e}\n{cmd}"));
         let crate::cli::Command::Run(run) = cli.command else { panic!("expected run") };
         let mut rebuilt = crate::pipeline::config::PipelineConfig::default();
-        crate::pipeline::config::apply_run_overrides(&mut rebuilt, &run.pipeline).unwrap();
+        crate::cli_settings::apply_normalised(&mut rebuilt, &run.pipeline).unwrap();
         let f = facts(&app);
         let (mut a, mut b) = (schema::prune_hidden(&config, &f), schema::prune_hidden(&rebuilt, &f));
         // An unset reliable mask means the main mask without its hole filling: compare the masks.

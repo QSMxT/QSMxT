@@ -150,7 +150,7 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
         clean_intermediates: form.clean_intermediates,
         // The worker mode is what `qsmxt slurm` generates; the TUI's local run is a whole run.
         no_dataset_steps: false,
-        pipeline: pipeline_args_from_app(app),
+        pipeline: crate::cli_settings::SettingsArgs::form(pipeline_args_from_app(app)),
     })
 }
 
@@ -1017,7 +1017,7 @@ pub fn build_slurm_args(app: &App) -> crate::Result<SlurmArgs> {
         debug: form.debug,
         source_dicom: if form.export_dicom { parse_optional_path(&form.source_dicom) } else { None },
         dicom_outputs: if form.export_dicom { app.dicom_outputs() } else { None },
-        pipeline: pipeline_args_from_app(app),
+        pipeline: crate::cli_settings::SettingsArgs::form(pipeline_args_from_app(app)),
     })
 }
 
@@ -2043,7 +2043,8 @@ mod tests {
             .unwrap_or_else(|e| panic!("TUI SLURM command did not parse: {}\ncmd: {}", e, cmd));
         match cli.command {
             crate::cli::Command::Slurm(args) => {
-                assert_eq!(args.pipeline.qsm_algorithm, Some(crate::cli::QsmAlgorithmArg::Tgv));
+                let algorithm = args.pipeline.given.iter().find(|g| g.flag.long == "qsm-algorithm").map(|g| g.values.clone());
+                assert_eq!(algorithm, Some(vec!["tgv".to_string()]));
                 assert_eq!(args.account, "acct");
             }
             _ => panic!("expected the slurm subcommand"),
@@ -2124,7 +2125,7 @@ mod tests {
         app.pipeline_state.b0_weight_type = 5; // assumed-decay
         app.pipeline_state.b0_weight_assumed_t2star_ms = "35".to_string();
         let mut cfg = PipelineConfig::default();
-        crate::pipeline::config::apply_run_overrides(&mut cfg, &build_run_args(&app).unwrap().pipeline).unwrap();
+        crate::cli_settings::apply_normalised(&mut cfg, &build_run_args(&app).unwrap().pipeline).unwrap();
         assert_eq!(cfg.field_mapping.b0_weight_type, crate::pipeline::config::B0WeightType::AssumedDecay);
         assert_eq!(cfg.field_mapping.b0_weight_assumed_t2star_ms, 35.0);
         let c = config_from_app(&app).unwrap();
@@ -2229,9 +2230,9 @@ mod tests {
         app.pipeline_state.bipolar_correction = true;
 
         let mut local = PipelineConfig::default();
-        crate::pipeline::config::apply_run_overrides(&mut local, &build_run_args(&app).unwrap().pipeline).unwrap();
+        crate::cli_settings::apply_normalised(&mut local, &build_run_args(&app).unwrap().pipeline).unwrap();
         let mut slurm = PipelineConfig::default();
-        crate::pipeline::config::apply_run_overrides(&mut slurm, &build_slurm_args(&app).unwrap().pipeline).unwrap();
+        crate::cli_settings::apply_normalised(&mut slurm, &build_slurm_args(&app).unwrap().pipeline).unwrap();
 
         assert_eq!(slurm.to_toml().unwrap(), local.to_toml().unwrap());
         // ... and it is not merely the default pipeline.
@@ -2282,7 +2283,7 @@ mod parity {
         let parsed = crate::cli::Cli::from_arg_matches(&m).unwrap_or_else(|e| panic!("{cmd}: {e}"));
         let crate::cli::Command::Run(run) = parsed.command else { panic!("not run: {cmd}") };
         let mut back = PipelineConfig::default();
-        crate::pipeline::config::apply_run_overrides(&mut back, &run.pipeline).unwrap();
+        crate::cli_settings::apply_normalised(&mut back, &run.pipeline).unwrap();
         back
     }
 

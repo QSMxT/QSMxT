@@ -1576,7 +1576,7 @@ pub struct SwiParamArgs {
 
 /// Pipeline configuration overrides shared by `qsmxt run` and `qsmxt slurm`.
 ///
-/// These map onto `PipelineConfig` fields via `apply_run_overrides()`; both
+/// These map onto `PipelineConfig` fields via `apply_run_overrides_as_given()`; both
 /// subcommands flatten this struct so a pipeline configured once (in the TUI or
 /// on the command line) means the same thing whether it runs locally or on SLURM.
 #[derive(Args, Debug, Default)]
@@ -2206,7 +2206,7 @@ pub struct RunArgs {
     pub num_echoes: Option<usize>,
 
     #[command(flatten)]
-    pub pipeline: PipelineArgs,
+    pub pipeline: crate::cli_settings::SettingsArgs,
 
     /// Number of parallel threads
     #[arg(long)]
@@ -2305,7 +2305,7 @@ pub struct AggregateArgs {
     pub num_echoes: Option<usize>,
 
     #[command(flatten)]
-    pub pipeline: PipelineArgs,
+    pub pipeline: crate::cli_settings::SettingsArgs,
 
     /// Enable debug logging
     #[arg(long)]
@@ -2430,7 +2430,7 @@ pub struct SlurmArgs {
     pub accept_reference_settings: bool,
 
     #[command(flatten)]
-    pub pipeline: PipelineArgs,
+    pub pipeline: crate::cli_settings::SettingsArgs,
 }
 
 // ─── Standalone algorithm commands (subcommand-per-algorithm) ───
@@ -5256,11 +5256,11 @@ mod tests {
         let cli = parse(&["run", "bids", "--obliquity-threshold", "-1"]);
         let Command::Run(run) = cli.command else { panic!("expected run") };
         let mut c = crate::pipeline::config::PipelineConfig::default();
-        let err = crate::pipeline::config::apply_run_overrides(&mut c, &run.pipeline).unwrap_err().to_string();
+        let err = crate::cli_settings::apply_normalised(&mut c, &run.pipeline).unwrap_err().to_string();
         assert!(err.contains("--axial-resampling"), "{err}");
         let cli = parse(&["run", "bids", "--axial-resampling", "--obliquity-threshold", "5"]);
         let Command::Run(run) = cli.command else { panic!("expected run") };
-        crate::pipeline::config::apply_run_overrides(&mut c, &run.pipeline).unwrap();
+        crate::cli_settings::apply_normalised(&mut c, &run.pipeline).unwrap();
         assert!(c.pipeline.axial_resampling);
         assert_eq!(c.pipeline.obliquity_threshold, 5.0);
     }

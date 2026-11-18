@@ -94,20 +94,13 @@ pub(crate) fn init_logging(sink: LogSink, debug: bool) {
 /// then every check that can be made before a run starts. Shared by `qsmxt run`, `qsmxt slurm`
 /// and `qsmxt aggregate`, so the three cannot disagree about what a set of flags means.
 pub(crate) fn build_config(
-    config_file: Option<&std::path::Path>, pipeline: &crate::cli::PipelineArgs,
+    config_file: Option<&std::path::Path>, settings: &crate::cli_settings::SettingsArgs,
 ) -> crate::Result<PipelineConfig> {
-    let mut config = match config_file {
+    let config = match config_file {
         Some(path) => crate::pipeline::config::load_config(path)?,
         None => PipelineConfig::default(),
     };
-    crate::pipeline::config::apply_run_overrides(&mut config, pipeline)?;
-    crate::pipeline::config::validate_reference_region(&config)?;
-    crate::pipeline::config::validate_segmentation(&config)?;
-    crate::pipeline::config::validate_multi_orientation(&config)?;
-    crate::pipeline::config::validate_inversion_input(&config)?;
-    qsmxt_engine::schema::check_ranges(&config)
-        .map_err(|e| crate::error::QsmxtError::Config(e.to_string()))?;
-    Ok(config)
+    crate::cli_settings::build_config(config, settings)
 }
 
 /// The log of a `--no-dataset-steps` worker: `logs/<run>.log`, named after the run it processed
@@ -638,7 +631,7 @@ fn print_orientation_groups(
 mod tests {
     use clap::Parser;
 
-    fn pipeline_args(argv: &[&str]) -> crate::cli::PipelineArgs {
+    fn pipeline_args(argv: &[&str]) -> crate::cli_settings::SettingsArgs {
         let mut full = vec!["qsmxt", "run", "<bids>"];
         full.extend_from_slice(argv);
         match crate::cli::Cli::try_parse_from(full).expect("clap accepts it").command {
