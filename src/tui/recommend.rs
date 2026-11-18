@@ -714,8 +714,8 @@ mod tests {
     #[test]
     fn chi_separation_requires_its_maps_in_one_pop_up() {
         let mut app = app();
-        app.pipeline_state.separation_algorithm =
-            super::super::app::SEP_ALGO_OPTIONS.iter().position(|o| *o == "chi-sep-ilsqr").unwrap();
+        app.set_field_select("separation_algorithm",
+            super::super::settings_rows::options("separation.algorithm").0.iter().position(|o| *o == "chi-sep-ilsqr").unwrap());
         app.check_recommendations();
         app.toggle_field("do_chi_separation");
         app.check_recommendations();
@@ -727,7 +727,7 @@ mod tests {
         app.handle_rec_modal_key(KeyEvent::from(KeyCode::Char('a')));
         assert!(app.form.settings.toggle("pipeline.do_r2primemap") && app.form.settings.toggle("pipeline.do_r2starmap") && app.form.settings.toggle("pipeline.do_r2map"),
                 "{:?} {:?}", app.status_message, app.error_message);
-        assert!(app.pipeline_state.do_chi_separation, "the change just made stands");
+        assert!(app.field_toggle("do_chi_separation"), "the change just made stands");
     }
 
     /// The pop-up's rows as decisions for [`App::decide`]: each value taken, or each kept.
@@ -909,7 +909,7 @@ mod tests {
         assert!(app.form.settings.toggle("pipeline.do_r2starmap"));
         // The default method's reference pipeline pop-up: closed.
         app.refs.modal = None;
-        select(&mut app, "separation_algorithm", "decompose", super::super::app::SEP_ALGO_OPTIONS);
+        select(&mut app, "separation_algorithm", "decompose", super::super::settings_rows::options("separation.algorithm").0);
         // One pop-up: the recommendation first, then DECOMPOSE's reference pipeline.
         let modal = app.refs.modal.take().expect("the choice opened the pop-up");
         let finding = &modal.rows.iter().find(|i| i.finding.rule == "decompose.qsm-per-echo").expect("per-echo QSM is offered").finding;
@@ -929,7 +929,7 @@ mod tests {
     fn decompose_at_7t_suggests_unwrapping_the_phase() {
         let mut app = app();
         app.toggle_field("do_chi_separation");
-        app.set_field_select("separation_algorithm", super::super::app::SEP_ALGO_OPTIONS.iter().position(|o| *o == "decompose").unwrap());
+        app.set_field_select("separation_algorithm", super::super::settings_rows::options("separation.algorithm").0.iter().position(|o| *o == "decompose").unwrap());
         let fires = |app: &App| app.rule_view().iter().any(|r| r.rule == "decompose.unwrap-7t" && r.departs);
         assert!(!fires(&app), "the field strength is not known");
         app.input_mode = super::super::app::InputMode::NIfTI;
@@ -948,7 +948,7 @@ mod tests {
     fn decompose_at_7t_offers_unwrapping_and_the_echo_spacing_bound() {
         let mut app = app();
         app.toggle_field("do_chi_separation");
-        app.set_field_select("separation_algorithm", super::super::app::SEP_ALGO_OPTIONS.iter().position(|o| *o == "decompose").unwrap());
+        app.set_field_select("separation_algorithm", super::super::settings_rows::options("separation.algorithm").0.iter().position(|o| *o == "decompose").unwrap());
         app.check_recommendations();
         app.rec_modal = None;
         app.refs.modal = None;
@@ -989,8 +989,7 @@ mod tests {
         assert_eq!((c.separation.decompose.chi_bound, c.separation.decompose.unwrap_phase),
                    (qsmxt_engine::ChiBoundChoice::EchoSpacing, true));
         // The bound's own row is gone: it is computed.
-        let mut rows = Vec::new();
-        app.pipeline_state.separation_rows(&mut rows);
+        let rows = app.page_rows(super::super::app::Page::Separation);
         assert!(!rows.iter().any(|r| matches!(r, PipelineRow::Param { field: "sep_decompose_chi_bound", .. })));
     }
 
@@ -1049,7 +1048,7 @@ mod tests {
         app.refs.modal = None;
         app.toggle_field("do_chi_separation");
         let at = |o: &[&str], v: &str| o.iter().position(|x| *x == v).unwrap();
-        app.set_field_select("separation_algorithm", at(super::super::app::SEP_ALGO_OPTIONS, "chi-sep-ilsqr"));
+        app.set_field_select("separation_algorithm", at(super::super::settings_rows::options("separation.algorithm").0, "chi-sep-ilsqr"));
         app.set_field_select("bf_algorithm", at(super::super::app::BF_OPTIONS, "lbv"));
         let found: Vec<Recommendation> = app.rule_view().into_iter().filter(|r| r.authors_setting()).collect();
         let modal = AdviceModal::reference(vec![found[0].trigger.clone()], found);

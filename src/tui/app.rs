@@ -505,10 +505,6 @@ impl NiftiState {
 // Tab indices. Defined as named constants (usable directly in `match` patterns) so the tab
 // order can be changed in ONE place — reorder `TAB_NAMES` and update these — without hunting
 // down hardcoded `(tab, field)` literals across the file.
-/// An optional setting as a form field: blank when unset (qsm-core then derives it).
-fn fmt_opt<T: std::fmt::Display>(v: Option<T>) -> String {
-    v.map(|v| v.to_string()).unwrap_or_default()
-}
 
 pub const TAB_INPUT: usize = 0;
 /// The pipeline to start from ([`super::pipelines_tab`]).
@@ -1753,12 +1749,6 @@ pub const MASK_OP_TYPES: &[&str] = &[
 /// Ops that create a mask (the section's generator); the rest are refinements.
 pub const MASK_GENERATOR_TYPES: &[&str] = &["threshold", "bet", "hd-bet", "mindgrab", "rs2-net"];
 
-/// χ-sepnet's input routes (`separation.chi_sepnet.route`), in [`CHI_SEPNET_ROUTE_HELP`]'s order.
-pub const CHI_SEPNET_ROUTE_OPTIONS: &[&str] = &["toolbox", "native"];
-pub const CHI_SEPNET_ROUTE_HELP: &[&str] = &[
-    "The authors' route: the inputs in the network's training frame (B0 along z, 1 mm), the QSM channel from QSMnetME, R2' measured or predicted from R2* by R2PRIMEnet, the maps resampled back",
-    "The network alone on the acquired grid, given this run's QSM and R2', as a sliding window",
-];
 
 /// The mask preset picker: the engine's presets, then "custom" ([`MASK_PRESET_CUSTOM`]).
 pub static MASK_PRESET_OPTIONS: LazyLock<Vec<&'static str>> =
@@ -1866,8 +1856,6 @@ pub struct PipelineFormState {
     pub qsm_algorithm: usize,
     pub bf_algorithm: usize,
 
-    // Field mapping
-
     // Parameters (as Strings for text editing)
     pub inhomogeneity_correction: bool,
     // Inhomogeneity correction's own settings.
@@ -1931,80 +1919,6 @@ pub struct PipelineFormState {
     pub mask_preset: usize, // index into MASK_PRESET_OPTIONS (MASK_PRESET_CUSTOM = hand-edited)
     pub custom_mask_tool: String, // empty=off; "*"=any derivatives tool; else a tool name
 
-    // χ-separation tab
-    pub do_chi_separation: bool,
-    pub separation_algorithm: usize, // index into SEP_ALGO_OPTIONS
-    pub custom_qsm_tool: String,     // empty=off; "*"=any; else a derivatives tool name
-    // R2*-QSM
-    pub sep_r2starqsm_r_const_3t: String,
-    // DECOMPOSE
-    pub sep_decompose_n_inner: String,
-    /// [`CHI_BOUND_OPTIONS`]: a bound in ppm (`sep_decompose_chi_bound`) or from the echo spacing.
-    pub sep_decompose_chi_bound_mode: usize,
-    pub sep_decompose_chi_bound: String,
-    pub sep_decompose_unwrap_phase: bool,
-    /// Index into [`DECOMPOSE_FIT_OPTIONS`].
-    pub sep_decompose_fit: usize,
-    pub sep_decompose_max_iterations: String,
-    /// Blank: 100 × the fit's parameters.
-    pub sep_decompose_max_fevals: String,
-    pub sep_decompose_function_tol: String,
-    pub sep_decompose_step_tol: String,
-    pub sep_decompose_optimality_tol: String,
-    pub sep_decompose_fd_step: String,
-    pub sep_decompose_typical_x: String,
-    /// Blank: 137 × B0 / 2.9 T (here and for χ-sep MEDI).
-    pub sep_ilsqr_dr_pos: String,
-    pub sep_ilsqr_dr_neg: String,
-    pub sep_ilsqr_pad: String,
-    pub sep_ilsqr_cg_max_iter_lsqr: String,
-    pub sep_ilsqr_cg_tol_lsqr: String,
-    pub sep_ilsqr_cg_max_iter_sa: String,
-    pub sep_ilsqr_cg_tol_sa: String,
-    pub sep_ilsqr_d2_thr: String,
-    pub sep_ilsqr_prc_w_i_min: String,
-    pub sep_ilsqr_prc_w_i_max: String,
-    pub sep_ilsqr_prc_w_g_min: String,
-    pub sep_ilsqr_prc_w_g_max: String,
-    pub sep_ilsqr_qsm_max_iter: String,
-    pub sep_ilsqr_qsm_tol: String,
-    pub sep_ilsqr_qsm_pad_mm: String,
-    /// An index into ILSQR_PRECISION_OPTIONS.
-    pub sep_ilsqr_qsm_precision: usize,
-    pub sep_medi_lambda: String,
-    pub sep_medi_lambda_csf: String,
-    pub sep_medi_dr_pos: String,
-    pub sep_medi_dr_neg: String,
-    pub sep_medi_pad: String,
-    pub sep_medi_tol: String,
-    pub sep_medi_max_iter: String,
-    pub sep_medi_cg_tol: String,
-    pub sep_medi_cg_max_iter: String,
-    pub sep_medi_qsm_max_iter: String,
-    pub sep_medi_qsm_tol: String,
-    pub sep_medi_qsm_pad_mm: String,
-    /// An index into ILSQR_PRECISION_OPTIONS.
-    pub sep_medi_qsm_precision: usize,
-    /// An index into CHI_SEP_CSF_R2STAR_OPTIONS.
-    pub sep_medi_csf_r2star: usize,
-    // WaveSep
-    pub sep_wavesep_dr_pos: String,
-    pub sep_wavesep_dr_neg: String,
-    pub sep_wavesep_alpha: String,
-    pub sep_wavesep_lambda: String,
-    pub sep_wavesep_wavelet_order: String,
-    pub sep_wavesep_max_iter: String,
-    pub sep_wavesep_tol: String,
-    // HC-ChiSep
-    pub sep_hcchisep_dr_pos_3t: String,
-    pub sep_hcchisep_bin_hz: String,
-    /// χ-sepnet's patch as "D H W"; SUSEP-Net's, or empty for the whole volume.
-    /// Index into [`CHI_SEPNET_ROUTE_OPTIONS`].
-    pub sep_chisepnet_route: usize,
-    pub sep_chisepnet_patch: String,
-    pub sep_chisepnet_frame_patch: String,
-    pub sep_susepnet_patch: String,
-
     // Pipeline tab UI state
     pub focus: usize,
     pub editing: bool,
@@ -2021,12 +1935,6 @@ pub struct PipelineFormState {
 
 impl Default for PipelineFormState {
     fn default() -> Self {
-        let sep_r2starqsm = qsm_core::separation::R2starQsmParams::default();
-        let sep_decompose = qsmxt_engine::DecomposeConfig::default();
-        let sep_ilsqr = qsm_core::separation::ChiSepIlsqrParams::default();
-        let sep_medi = qsm_core::separation::ChiSepMediParams::default();
-        let sep_wavesep = qsm_core::separation::WaveSepParams::default();
-        let sep_hcchisep = qsm_core::separation::HcChisepParams::default();
         let fmt_default = |x: f64| format!("{}", x);
         // From qsmxt-engine, not qsm-core: it owns which of qsm-core's fields are the user's.
         let heidi = crate::pipeline::config::HeidiConfig::default();
@@ -2071,71 +1979,6 @@ impl Default for PipelineFormState {
             reference_pipeline: None,
             mask_preset: 0, // robust threshold
             custom_mask_tool: String::new(),
-            do_chi_separation: false,
-            separation_algorithm: 0,
-            custom_qsm_tool: String::new(),
-            sep_r2starqsm_r_const_3t: fmt_default(sep_r2starqsm.r_const_3t),
-            sep_decompose_n_inner: sep_decompose.n_inner.to_string(),
-            sep_decompose_chi_bound_mode: chi_bound_index(sep_decompose.chi_bound),
-            sep_decompose_chi_bound: match sep_decompose.chi_bound {
-                qsmxt_engine::ChiBoundChoice::Ppm(x) => fmt_default(x),
-                qsmxt_engine::ChiBoundChoice::EchoSpacing => String::new(),
-            },
-            sep_decompose_unwrap_phase: sep_decompose.unwrap_phase,
-            sep_decompose_fit: 0, // reference-code
-            sep_decompose_max_iterations: sep_decompose.lsqcurvefit.max_iterations.to_string(),
-            sep_decompose_max_fevals: fmt_opt(sep_decompose.lsqcurvefit.max_function_evaluations),
-            sep_decompose_function_tol: fmt_default(sep_decompose.lsqcurvefit.function_tolerance),
-            sep_decompose_step_tol: fmt_default(sep_decompose.lsqcurvefit.step_tolerance),
-            sep_decompose_optimality_tol: fmt_default(sep_decompose.lsqcurvefit.optimality_tolerance),
-            sep_decompose_fd_step: fmt_default(sep_decompose.lsqcurvefit.finite_difference_step),
-            sep_decompose_typical_x: fmt_default(sep_decompose.lsqcurvefit.typical_x),
-            sep_ilsqr_dr_pos: fmt_opt(sep_ilsqr.dr_pos),
-            sep_ilsqr_dr_neg: fmt_opt(sep_ilsqr.dr_neg),
-            sep_ilsqr_pad: fmt_triple(sep_ilsqr.pad),
-            sep_ilsqr_cg_max_iter_lsqr: sep_ilsqr.cg_max_iter_lsqr.to_string(),
-            sep_ilsqr_cg_tol_lsqr: fmt_default(sep_ilsqr.cg_tol_lsqr),
-            sep_ilsqr_cg_max_iter_sa: sep_ilsqr.cg_max_iter_sa.to_string(),
-            sep_ilsqr_cg_tol_sa: fmt_default(sep_ilsqr.cg_tol_sa),
-            sep_ilsqr_d2_thr: fmt_default(sep_ilsqr.d2_thr),
-            sep_ilsqr_prc_w_i_min: fmt_default(sep_ilsqr.prc_w_i.0),
-            sep_ilsqr_prc_w_i_max: fmt_default(sep_ilsqr.prc_w_i.1),
-            sep_ilsqr_prc_w_g_min: fmt_default(sep_ilsqr.prc_w_g.0),
-            sep_ilsqr_prc_w_g_max: fmt_default(sep_ilsqr.prc_w_g.1),
-            sep_ilsqr_qsm_max_iter: sep_ilsqr.qsm_ilsqr.max_iter.to_string(),
-            sep_ilsqr_qsm_tol: fmt_default(sep_ilsqr.qsm_ilsqr.tol),
-            sep_ilsqr_qsm_pad_mm: fmt_default(sep_ilsqr.qsm_ilsqr.pad_mm),
-            sep_ilsqr_qsm_precision: ilsqr_precision_index(sep_ilsqr.qsm_ilsqr.precision.into()),
-            sep_medi_lambda: fmt_default(sep_medi.lambda),
-            sep_medi_lambda_csf: fmt_default(sep_medi.lambda_csf),
-            sep_medi_dr_pos: fmt_opt(sep_medi.dr_pos),
-            sep_medi_dr_neg: fmt_opt(sep_medi.dr_neg),
-            sep_medi_pad: sep_medi.pad.to_string(),
-            sep_medi_tol: fmt_default(sep_medi.tol),
-            sep_medi_max_iter: sep_medi.max_iter.to_string(),
-            sep_medi_cg_tol: fmt_default(sep_medi.cg_tol),
-            sep_medi_cg_max_iter: sep_medi.cg_max_iter.to_string(),
-            sep_medi_qsm_max_iter: sep_medi.qsm_ilsqr.max_iter.to_string(),
-            sep_medi_qsm_tol: fmt_default(sep_medi.qsm_ilsqr.tol),
-            sep_medi_qsm_pad_mm: fmt_default(sep_medi.qsm_ilsqr.pad_mm),
-            sep_medi_qsm_precision: ilsqr_precision_index(sep_medi.qsm_ilsqr.precision.into()),
-            sep_medi_csf_r2star: chi_sep_csf_r2star_index(sep_medi.csf_r2star.into()),
-            sep_wavesep_dr_pos: fmt_default(sep_wavesep.dr_pos),
-            sep_wavesep_dr_neg: fmt_default(sep_wavesep.dr_neg),
-            sep_wavesep_alpha: fmt_default(sep_wavesep.alpha),
-            sep_wavesep_lambda: fmt_default(sep_wavesep.lambda),
-            sep_wavesep_wavelet_order: sep_wavesep.wavelet_order.to_string(),
-            sep_wavesep_max_iter: sep_wavesep.max_iter.to_string(),
-            sep_wavesep_tol: fmt_default(sep_wavesep.tol),
-            sep_hcchisep_dr_pos_3t: fmt_default(sep_hcchisep.dr_pos_3t),
-            sep_hcchisep_bin_hz: fmt_default(sep_hcchisep.bin_hz),
-            sep_chisepnet_route: 0,
-            sep_chisepnet_patch: {
-                let p = qsmxt_engine::ChiSepNetConfig::default().patch;
-                format!("{} {} {}", p[0], p[1], p[2])
-            },
-            sep_chisepnet_frame_patch: String::new(),
-            sep_susepnet_patch: String::new(),
             focus: 0,
             editing: false,
             cursor: 0,
@@ -2147,17 +1990,6 @@ impl Default for PipelineFormState {
 }
 
 pub const QSM_ALGO_OPTIONS: &[&str] = &["rts", "tv", "tkd", "tsvd", "tgv", "tikhonov", "nltv", "medi", "tfi", "ilsqr", "star", "lsqr", "qsmart", "ndi", "fansi", "fansi-tgv", "l1qsm", "whqsm", "hdqsm", "amp-pe", "xqsm", "qsmnet", "qsmnet-plus", "qsmnetme", "autoqsm", "qsmgan", "ir2qsm", "lpcnn", "modl-qsm", "nextqsm", "iqsm", "iqsm-plus"];
-pub const SEP_ALGO_OPTIONS: &[&str] = &["r2star-qsm", "decompose", "chi-sep-ilsqr", "chi-sep-medi", "wavesep", "hc-chisep", "susep-net", "chi-sepnet"];
-const SEP_ALGO_HELP: &[&str] = &[
-    "R2*-QSM closed-form (Dimov 2022) — QSM + R2*, GRE-only",
-    "DECOMPOSE-QSM signal-domain fit (Chen 2021) — QSM + multi-echo magnitude, GRE-only",
-    "χ-separation iLSQR (Shin 2021) — local field + R2' + magnitude + QSM",
-    "χ-separation MEDI — local field + R2' + magnitude",
-    "WaveSep wavelet-L1 (Fang 2023) — QSM + R2'",
-    "Hollow-cylinder χ-separation (Stewart 2026) — QSM + R2' + multi-echo magnitude",
-    "SUSEP-Net deep-learning separation — QSM + R2' + local field (weights auto-downloaded)",
-    "χ-sepnet deep-learning separation — QSM + R2' + local field (weights auto-downloaded)",
-];
 // QSMART's inner dipole inversion (excludes the two end-to-end algorithms tgv/qsmart).
 /// The inversion picker's alias for LSQR with the HEIDI box ticked. The form never holds it: it
 /// keeps `qsm_algorithm` on `lsqr`, and `heidi_enabled`.
@@ -2177,11 +2009,6 @@ fn with_lsqr_heidi<T: Copy>(list: &[T], alias: T) -> Vec<T> {
 pub static QSM_PICKER_OPTIONS: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::new(|| with_lsqr_heidi(QSM_ALGO_OPTIONS, LSQR_HEIDI));
 
 pub const BF_OPTIONS: &[&str] = &["vsharp", "pdf", "lbv", "ismv", "sharp", "resharp", "harperella", "iharperella", "bfrnet", "iqfm"];
-pub const DECOMPOSE_FIT_OPTIONS: &[&str] = &["reference-code", "paper"];
-const DECOMPOSE_FIT_HELP: &[&str] = &[
-    "Tim Ho's script: lsqcurvefit for every stage, magnitudes scaled by their global maximum (default)",
-    "Chen et al. 2021: amplitudes summing to one and R2*0 by linear least squares, χ± by lsqnonlin, each voxel scaled to S(0) = 1",
-];
 pub const INHOMOGENEITY_METHOD_OPTIONS: &[&str] = &["makehomogeneous", "n4"];
 const INHOMOGENEITY_METHOD_HELP: &[&str] = &[
     "Divide by a smoothed estimate of the receive sensitivity (MriResearchTools' makehomogeneous) (default)",
@@ -2212,42 +2039,10 @@ pub fn echo_time_index(te: qsmxt_engine::EchoTimeChoice) -> usize {
     use qsmxt_engine::EchoTimeChoice as E;
     match te { E::First => 0, E::Last => 1, E::Spacing => 2, E::Sum => 3, E::Seconds(_) => 4 }
 }
-/// DECOMPOSE's χ bound: a number in ppm (`sep_decompose_chi_bound`), or from the echo spacing.
-pub const CHI_BOUND_OPTIONS: &[&str] = &["ppm", "echo-spacing"];
-const CHI_BOUND_HELP: &[&str] = &[
-    "A fixed bound, in ppm (Chi bound (ppm); default: 0.5)",
-    "The largest |χ| whose phase changes by less than π between echoes, from the field strength and echo spacing",
-];
-/// The [`CHI_BOUND_OPTIONS`] entry of a χ bound.
+/// The position of a χ bound among its select's options: the bound in ppm, then from the echo
+/// spacing.
 pub fn chi_bound_index(b: qsmxt_engine::ChiBoundChoice) -> usize {
     match b { qsmxt_engine::ChiBoundChoice::Ppm(_) => 0, qsmxt_engine::ChiBoundChoice::EchoSpacing => 1 }
-}
-/// The χ bound a χ-bound select and its bound in ppm make, if they make one.
-pub fn chi_bound_choice(index: usize, ppm: &str) -> Option<qsmxt_engine::ChiBoundChoice> {
-    match CHI_BOUND_OPTIONS.get(index).copied() {
-        Some("ppm") if ppm.trim().is_empty() => None,
-        Some("ppm") => qsmxt_engine::ChiBoundChoice::parse(ppm).ok(),
-        Some(name) => qsmxt_engine::ChiBoundChoice::parse(name).ok(),
-        None => None,
-    }
-}
-/// iLSQR's arithmetic, in the CLI's names.
-pub const ILSQR_PRECISION_OPTIONS: &[&str] = &["double", "single"];
-const ILSQR_PRECISION_HELP: &[&str] = &[
-    "Double precision (default)",
-    "Single precision, as the original implementation computes the solves; slower and uses more memory",
-];
-fn ilsqr_precision_index(p: qsmxt_engine::IlsqrPrecision) -> usize {
-    qsmxt_engine::IlsqrPrecision::ALL.iter().position(|&x| x == p).unwrap_or(0)
-}
-/// The R2* χ-sep MEDI's CSF mask is extracted from, in the CLI's names.
-pub const CHI_SEP_CSF_R2STAR_OPTIONS: &[&str] = &["arlo", "nnls"];
-const CHI_SEP_CSF_R2STAR_HELP: &[&str] = &[
-    "MEDI's ARLO (default)",
-    "The χ-separation toolbox's NNLS fit (r2star_nnls), which its script runs",
-];
-fn chi_sep_csf_r2star_index(m: qsmxt_engine::ChiSepCsfR2star) -> usize {
-    qsmxt_engine::ChiSepCsfR2star::ALL.iter().position(|&x| x == m).unwrap_or(0)
 }
 /// A minimum intensity one `+`/`-` nudge on: by a tenth of its order of magnitude (100 → 110 or
 /// 90, 0.5 → 0.55 or 0.45), so a magnitude in any units can be adjusted. Stays above 0.
@@ -2300,137 +2095,11 @@ const BET_ORIENTATION_HELP: &[&str] = &[
 fn bet_orientation_index(o: qsmxt_engine::BetOrientation) -> usize {
     qsmxt_engine::BetOrientation::ALL.iter().position(|&x| x == o).unwrap_or(0)
 }
-/// Three values as a row shows them (`0 0 0`).
-fn fmt_triple(p: [usize; 3]) -> String {
-    format!("{} {} {}", p[0], p[1], p[2])
-}
 /// The reference picker's options: the two methods, then every region
 /// ([`super::settings_rows`]).
 pub fn qsm_ref_options() -> &'static [&'static str] { super::settings_rows::options("qsm.reference").0 }
 
 impl PipelineFormState {
-    /// The χ-separation tab: the method and its parameters, and the χ map it may read instead.
-    pub(crate) fn separation_rows(&self, rows: &mut Vec<PipelineRow>) {
-        rows.push(PipelineRow::Toggle {
-            label: "Compute χ-separation", field: "do_chi_separation",
-            help: "Split QSM into paramagnetic (χ+, iron) and diamagnetic (χ−, myelin) maps",
-        });
-        if self.do_chi_separation {
-        rows.push(PipelineRow::Separator);
-        rows.push(PipelineRow::AlgoSelect {
-            label: "Method", field: "separation_algorithm",
-            options: SEP_ALGO_OPTIONS, help: SEP_ALGO_HELP,
-        });
-        rows.push(PipelineRow::Separator);
-        match self.separation_algorithm {
-            0 => {
-                rows.push(PipelineRow::Param { label: "  Relaxometric const @3T", field: "sep_r2starqsm_r_const_3t", help: "Hz/ppm at 3T (scales with B0)" });
-            }
-            1 => {
-                rows.push(PipelineRow::Param { label: "  Inner passes", field: "sep_decompose_n_inner", help: "Alternating 3-stage fit passes per voxel" });
-                rows.push(PipelineRow::AlgoSelect { label: "  Chi bound", field: "sep_decompose_chi_bound_mode", options: CHI_BOUND_OPTIONS, help: CHI_BOUND_HELP });
-                if CHI_BOUND_OPTIONS.get(self.sep_decompose_chi_bound_mode) == Some(&"ppm") {
-                    rows.push(PipelineRow::Param { label: "    Chi bound (ppm)", field: "sep_decompose_chi_bound", help: "Upper bound on |χ| in the fit, ppm" });
-                }
-                rows.push(PipelineRow::Toggle { label: "  Unwrap phase", field: "sep_decompose_unwrap_phase",
-                    help: "Unwrap the phase along the echoes (default: off, as in the authors' code)" });
-                rows.push(PipelineRow::AlgoSelect { label: "  Fit", field: "sep_decompose_fit",
-                    options: DECOMPOSE_FIT_OPTIONS, help: DECOMPOSE_FIT_HELP });
-                rows.push(PipelineRow::Param { label: "  Max iter", field: "sep_decompose_max_iterations", help: "Maximum solver iterations per fit (lsqcurvefit MaxIterations)" });
-                rows.push(PipelineRow::Param { label: "  Max evaluations", field: "sep_decompose_max_fevals", help: "Maximum function evaluations per fit (lsqcurvefit MaxFunctionEvaluations). Blank = 100 × the fit's parameters" });
-                rows.push(PipelineRow::Param { label: "  Function tol", field: "sep_decompose_function_tol", help: "Stop when the cost changes by less than this, relatively (lsqcurvefit FunctionTolerance)" });
-                rows.push(PipelineRow::Param { label: "  Step tol", field: "sep_decompose_step_tol", help: "Stop when the step is smaller than this, relatively (lsqcurvefit StepTolerance)" });
-                rows.push(PipelineRow::Param { label: "  Optimality tol", field: "sep_decompose_optimality_tol", help: "Stop when the first-order optimality falls below this (lsqcurvefit OptimalityTolerance)" });
-                rows.push(PipelineRow::Param { label: "  FD step", field: "sep_decompose_fd_step", help: "Relative finite-difference step of the Jacobian (lsqcurvefit FiniteDifferenceStepSize)" });
-                rows.push(PipelineRow::Param { label: "  Typical x", field: "sep_decompose_typical_x", help: "Typical magnitude of each fitted value, for the finite differences (lsqcurvefit TypicalX)" });
-            }
-            2 => {
-                rows.push(PipelineRow::Param { label: "  Dr+ (Hz/ppm)", field: "sep_ilsqr_dr_pos", help: "Paramagnetic relaxometric constant. Blank = 137 × B0 / 2.9 T" });
-                rows.push(PipelineRow::Param { label: "  Dr- (Hz/ppm)", field: "sep_ilsqr_dr_neg", help: "Diamagnetic relaxometric constant. Blank = 137 × B0 / 2.9 T" });
-                rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "sep_ilsqr_pad", help: "Zero-padding at both ends of each axis, voxels (x y z) (default 16 16 16)" });
-                rows.push(PipelineRow::Param { label: "  LSQR CG iter", field: "sep_ilsqr_cg_max_iter_lsqr", help: "Maximum CG iterations of the LSQR step" });
-                rows.push(PipelineRow::Param { label: "  LSQR CG tol", field: "sep_ilsqr_cg_tol_lsqr", help: "CG relative tolerance of the LSQR step" });
-                rows.push(PipelineRow::Param { label: "  Streaking CG iter", field: "sep_ilsqr_cg_max_iter_sa", help: "Maximum CG iterations of the streaking-removal step, per source" });
-                rows.push(PipelineRow::Param { label: "  Streaking CG tol", field: "sep_ilsqr_cg_tol_sa", help: "CG relative tolerance of the streaking-removal step" });
-                rows.push(PipelineRow::Param { label: "  Cone threshold", field: "sep_ilsqr_d2_thr", help: "The streaking cone is where the dipole kernel |D| is below this" });
-                rows.push(PipelineRow::Param { label: "  Laplacian weight min %", field: "sep_ilsqr_prc_w_i_min", help: "Percentile of the field's Laplacian at which the LSQR weight is 1" });
-                rows.push(PipelineRow::Param { label: "  Laplacian weight max %", field: "sep_ilsqr_prc_w_i_max", help: "Percentile of the field's Laplacian at which the LSQR weight is 0" });
-                rows.push(PipelineRow::Param { label: "  Gradient weight min %", field: "sep_ilsqr_prc_w_g_min", help: "Percentile of each gradient's magnitude at which the streaking-removal weight is 1" });
-                rows.push(PipelineRow::Param { label: "  Gradient weight max %", field: "sep_ilsqr_prc_w_g_max", help: "Percentile of each gradient's magnitude at which the streaking-removal weight is 0" });
-                if self.custom_qsm_tool.trim().is_empty() {
-                    rows.push(PipelineRow::Param { label: "  QSM max iter", field: "sep_ilsqr_qsm_max_iter",
-                        help: "Maximum iterations of the iLSQR that reconstructs the QSM separated" });
-                    rows.push(PipelineRow::Param { label: "  QSM tolerance", field: "sep_ilsqr_qsm_tol",
-                        help: "Tolerance of the iLSQR that reconstructs the QSM separated" });
-                    rows.push(PipelineRow::Param { label: "  QSM pad (mm)", field: "sep_ilsqr_qsm_pad_mm",
-                        help: "Zero-padding per side of the iLSQR that reconstructs the QSM separated" });
-                    rows.push(PipelineRow::AlgoSelect { label: "  QSM precision", field: "sep_ilsqr_qsm_precision",
-                        options: ILSQR_PRECISION_OPTIONS, help: ILSQR_PRECISION_HELP });
-                }
-            }
-            3 => {
-                rows.push(PipelineRow::Param { label: "  Lambda", field: "sep_medi_lambda", help: "Weight of the data terms against the L1 terms" });
-                rows.push(PipelineRow::Param { label: "  Lambda CSF", field: "sep_medi_lambda_csf", help: "Weight of the CSF-uniformity term" });
-                rows.push(PipelineRow::Param { label: "  Dr+ (Hz/ppm)", field: "sep_medi_dr_pos", help: "Paramagnetic relaxometric constant. Blank = 137 × B0 / 2.9 T" });
-                rows.push(PipelineRow::Param { label: "  Dr- (Hz/ppm)", field: "sep_medi_dr_neg", help: "Diamagnetic relaxometric constant. Blank = 137 × B0 / 2.9 T" });
-                rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "sep_medi_pad", help: "Zero-padding at both ends of the third axis, voxels" });
-                rows.push(PipelineRow::Param { label: "  Tolerance", field: "sep_medi_tol", help: "Stop when the relative change falls below this" });
-                rows.push(PipelineRow::Param { label: "  Max iter", field: "sep_medi_max_iter", help: "Maximum Gauss-Newton iterations" });
-                rows.push(PipelineRow::Param { label: "  CG tolerance", field: "sep_medi_cg_tol", help: "Inner CG tolerance" });
-                rows.push(PipelineRow::Param { label: "  CG max iter", field: "sep_medi_cg_max_iter", help: "Inner CG max iterations" });
-                rows.push(PipelineRow::AlgoSelect { label: "  CSF R2*", field: "sep_medi_csf_r2star",
-                    options: CHI_SEP_CSF_R2STAR_OPTIONS, help: CHI_SEP_CSF_R2STAR_HELP });
-                if self.custom_qsm_tool.trim().is_empty() {
-                    rows.push(PipelineRow::Param { label: "  QSM max iter", field: "sep_medi_qsm_max_iter",
-                        help: "Maximum iterations of the iLSQR that reconstructs the QSM χ-separation starts from" });
-                    rows.push(PipelineRow::Param { label: "  QSM tolerance", field: "sep_medi_qsm_tol",
-                        help: "Tolerance of the iLSQR that reconstructs the QSM χ-separation starts from" });
-                    rows.push(PipelineRow::Param { label: "  QSM pad (mm)", field: "sep_medi_qsm_pad_mm",
-                        help: "Zero-padding per side of the iLSQR that reconstructs the QSM χ-separation starts from" });
-                    rows.push(PipelineRow::AlgoSelect { label: "  QSM precision", field: "sep_medi_qsm_precision",
-                        options: ILSQR_PRECISION_OPTIONS, help: ILSQR_PRECISION_HELP });
-                }
-            }
-            4 => {
-                rows.push(PipelineRow::Param { label: "  Dr+ (Hz/ppm)", field: "sep_wavesep_dr_pos", help: "Paramagnetic relaxivity" });
-                rows.push(PipelineRow::Param { label: "  Dr- (Hz/ppm)", field: "sep_wavesep_dr_neg", help: "Diamagnetic relaxivity" });
-                rows.push(PipelineRow::Param { label: "  Alpha", field: "sep_wavesep_alpha", help: "Proximal-gradient step size" });
-                rows.push(PipelineRow::Param { label: "  Lambda", field: "sep_wavesep_lambda", help: "Wavelet L1 soft-threshold weight" });
-                rows.push(PipelineRow::Param { label: "  Wavelet order", field: "sep_wavesep_wavelet_order", help: "Daubechies order" });
-                rows.push(PipelineRow::Param { label: "  Max iter", field: "sep_wavesep_max_iter", help: "ISTA max iterations" });
-                rows.push(PipelineRow::Param { label: "  Tolerance", field: "sep_wavesep_tol", help: "Relative-change stop tolerance" });
-            }
-            5 => {
-                rows.push(PipelineRow::Param { label: "  Dr+ @3T (Hz/ppm)", field: "sep_hcchisep_dr_pos_3t", help: "Paramagnetic relaxivity at 3T" });
-                rows.push(PipelineRow::Param { label: "  R2' bin (Hz)", field: "sep_hcchisep_bin_hz", help: "R2' bin width for anchored grid search" });
-            }
-            6 => {
-                rows.push(PipelineRow::Param { label: "  Sliding window", field: "sep_susepnet_patch", help: "Run the network on patches D H W in voxels, each a multiple of 8, so its memory follows the patch instead of the volume; empty runs the whole volume at once" });
-            }
-            7 => {
-                rows.push(PipelineRow::AlgoSelect { label: "  Route", field: "sep_chisepnet_route", options: CHI_SEPNET_ROUTE_OPTIONS, help: CHI_SEPNET_ROUTE_HELP });
-                if self.sep_chisepnet_route == 1 {
-                    rows.push(PipelineRow::Param { label: "  Patch", field: "sep_chisepnet_patch", help: "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)" });
-                } else {
-                    rows.push(PipelineRow::Param { label: "  Sliding window", field: "sep_chisepnet_frame_patch", help: "Run the networks on patches D H W of the 1 mm frame, each a multiple of 16, so memory follows the patch; empty runs the whole frame at once" });
-                }
-            }
-            _ => {}
-        }
-        } // end if do_chi_separation
-
-        if self.do_chi_separation && self.ctx.inputs.qsm {
-            rows.push(PipelineRow::Separator);
-            rows.push(Self::custom_qsm_row());
-        }
-    }
-
-    /// The bring-your-own χ map, under each output that reads one (χ-separation, the statistics,
-    /// SMWI): the same setting wherever it shows.
-    pub fn custom_qsm_row() -> PipelineRow {
-        PipelineRow::Param { label: "  Custom QSM tool", field: "custom_qsm_tool", help: "Use a Chimap from <bids>/derivatives/<tool>/ instead of recomputing QSM (χ-separation, statistics, SMWI); blank = compute, * = any tool" }
-    }
-
     /// Preprocessing → Masking: the inhomogeneity correction of the magnitude masking reads (and
     /// the combined magnitude is made from).
     fn inhomogeneity_rows(&self, rows: &mut Vec<PipelineRow>) {
@@ -2541,7 +2210,6 @@ impl PipelineFormState {
         let mut rows = Vec::new();
         self.masking_rows(&mut rows);
         self.compute_qsm_rows(&mut rows);
-        self.separation_rows(&mut rows);
         rows
     }
 
@@ -2554,7 +2222,6 @@ impl PipelineFormState {
         match self.page {
             Page::Masking => self.masking_rows(&mut rows),
             Page::ComputeQsm => self.compute_qsm_rows(&mut rows),
-            Page::Separation => self.separation_rows(&mut rows),
             _ => {}
         }
         rows
@@ -2588,7 +2255,6 @@ impl PipelineFormState {
     #[cfg(test)]
     pub const ALL_PARAM_FIELDS: &[&str] = &[
         "bet_smoothness", "bet_gradient_threshold", "bet_iterations", "bet_subdivisions",
-        "sep_chisepnet_patch", "sep_chisepnet_frame_patch", "sep_susepnet_patch",
         "homogeneity_sigma_mm", "homogeneity_nbox",
         "n4_shrink_factor", "n4_max_iterations", "n4_convergence_threshold", "n4_mesh", "n4_spline_order",
         "n4_bias_field_fwhm", "n4_wiener_noise", "n4_histogram_bins",
@@ -2612,56 +2278,6 @@ impl PipelineFormState {
             "bet_gradient_threshold" => &self.bet_gradient_threshold,
             "bet_iterations" => &self.bet_iterations,
             "bet_subdivisions" => &self.bet_subdivisions,
-            "custom_qsm_tool" => &self.custom_qsm_tool,
-            "sep_r2starqsm_r_const_3t" => &self.sep_r2starqsm_r_const_3t,
-            "sep_decompose_n_inner" => &self.sep_decompose_n_inner,
-            "sep_decompose_chi_bound" => &self.sep_decompose_chi_bound,
-            "sep_decompose_max_iterations" => &self.sep_decompose_max_iterations,
-            "sep_decompose_max_fevals" => &self.sep_decompose_max_fevals,
-            "sep_decompose_function_tol" => &self.sep_decompose_function_tol,
-            "sep_decompose_step_tol" => &self.sep_decompose_step_tol,
-            "sep_decompose_optimality_tol" => &self.sep_decompose_optimality_tol,
-            "sep_decompose_fd_step" => &self.sep_decompose_fd_step,
-            "sep_decompose_typical_x" => &self.sep_decompose_typical_x,
-            "sep_ilsqr_dr_pos" => &self.sep_ilsqr_dr_pos,
-            "sep_ilsqr_dr_neg" => &self.sep_ilsqr_dr_neg,
-            "sep_ilsqr_pad" => &self.sep_ilsqr_pad,
-            "sep_ilsqr_cg_max_iter_lsqr" => &self.sep_ilsqr_cg_max_iter_lsqr,
-            "sep_ilsqr_cg_tol_lsqr" => &self.sep_ilsqr_cg_tol_lsqr,
-            "sep_ilsqr_cg_max_iter_sa" => &self.sep_ilsqr_cg_max_iter_sa,
-            "sep_ilsqr_cg_tol_sa" => &self.sep_ilsqr_cg_tol_sa,
-            "sep_ilsqr_d2_thr" => &self.sep_ilsqr_d2_thr,
-            "sep_ilsqr_prc_w_i_min" => &self.sep_ilsqr_prc_w_i_min,
-            "sep_ilsqr_prc_w_i_max" => &self.sep_ilsqr_prc_w_i_max,
-            "sep_ilsqr_prc_w_g_min" => &self.sep_ilsqr_prc_w_g_min,
-            "sep_ilsqr_prc_w_g_max" => &self.sep_ilsqr_prc_w_g_max,
-            "sep_ilsqr_qsm_max_iter" => &self.sep_ilsqr_qsm_max_iter,
-            "sep_ilsqr_qsm_tol" => &self.sep_ilsqr_qsm_tol,
-            "sep_ilsqr_qsm_pad_mm" => &self.sep_ilsqr_qsm_pad_mm,
-            "sep_medi_lambda" => &self.sep_medi_lambda,
-            "sep_medi_lambda_csf" => &self.sep_medi_lambda_csf,
-            "sep_medi_dr_pos" => &self.sep_medi_dr_pos,
-            "sep_medi_dr_neg" => &self.sep_medi_dr_neg,
-            "sep_medi_pad" => &self.sep_medi_pad,
-            "sep_medi_tol" => &self.sep_medi_tol,
-            "sep_medi_max_iter" => &self.sep_medi_max_iter,
-            "sep_medi_cg_tol" => &self.sep_medi_cg_tol,
-            "sep_medi_cg_max_iter" => &self.sep_medi_cg_max_iter,
-            "sep_medi_qsm_max_iter" => &self.sep_medi_qsm_max_iter,
-            "sep_medi_qsm_tol" => &self.sep_medi_qsm_tol,
-            "sep_medi_qsm_pad_mm" => &self.sep_medi_qsm_pad_mm,
-            "sep_wavesep_dr_pos" => &self.sep_wavesep_dr_pos,
-            "sep_wavesep_dr_neg" => &self.sep_wavesep_dr_neg,
-            "sep_wavesep_alpha" => &self.sep_wavesep_alpha,
-            "sep_wavesep_lambda" => &self.sep_wavesep_lambda,
-            "sep_wavesep_wavelet_order" => &self.sep_wavesep_wavelet_order,
-            "sep_wavesep_max_iter" => &self.sep_wavesep_max_iter,
-            "sep_wavesep_tol" => &self.sep_wavesep_tol,
-            "sep_hcchisep_dr_pos_3t" => &self.sep_hcchisep_dr_pos_3t,
-            "sep_hcchisep_bin_hz" => &self.sep_hcchisep_bin_hz,
-            "sep_chisepnet_patch" => &self.sep_chisepnet_patch,
-            "sep_chisepnet_frame_patch" => &self.sep_chisepnet_frame_patch,
-            "sep_susepnet_patch" => &self.sep_susepnet_patch,
             _ => "",
         }
     }
@@ -2684,56 +2300,6 @@ impl PipelineFormState {
             "bet_gradient_threshold" => Some(&mut self.bet_gradient_threshold),
             "bet_iterations" => Some(&mut self.bet_iterations),
             "bet_subdivisions" => Some(&mut self.bet_subdivisions),
-            "custom_qsm_tool" => Some(&mut self.custom_qsm_tool),
-            "sep_r2starqsm_r_const_3t" => Some(&mut self.sep_r2starqsm_r_const_3t),
-            "sep_decompose_n_inner" => Some(&mut self.sep_decompose_n_inner),
-            "sep_decompose_chi_bound" => Some(&mut self.sep_decompose_chi_bound),
-            "sep_decompose_max_iterations" => Some(&mut self.sep_decompose_max_iterations),
-            "sep_decompose_max_fevals" => Some(&mut self.sep_decompose_max_fevals),
-            "sep_decompose_function_tol" => Some(&mut self.sep_decompose_function_tol),
-            "sep_decompose_step_tol" => Some(&mut self.sep_decompose_step_tol),
-            "sep_decompose_optimality_tol" => Some(&mut self.sep_decompose_optimality_tol),
-            "sep_decompose_fd_step" => Some(&mut self.sep_decompose_fd_step),
-            "sep_decompose_typical_x" => Some(&mut self.sep_decompose_typical_x),
-            "sep_ilsqr_dr_pos" => Some(&mut self.sep_ilsqr_dr_pos),
-            "sep_ilsqr_dr_neg" => Some(&mut self.sep_ilsqr_dr_neg),
-            "sep_ilsqr_pad" => Some(&mut self.sep_ilsqr_pad),
-            "sep_ilsqr_cg_max_iter_lsqr" => Some(&mut self.sep_ilsqr_cg_max_iter_lsqr),
-            "sep_ilsqr_cg_tol_lsqr" => Some(&mut self.sep_ilsqr_cg_tol_lsqr),
-            "sep_ilsqr_cg_max_iter_sa" => Some(&mut self.sep_ilsqr_cg_max_iter_sa),
-            "sep_ilsqr_cg_tol_sa" => Some(&mut self.sep_ilsqr_cg_tol_sa),
-            "sep_ilsqr_d2_thr" => Some(&mut self.sep_ilsqr_d2_thr),
-            "sep_ilsqr_prc_w_i_min" => Some(&mut self.sep_ilsqr_prc_w_i_min),
-            "sep_ilsqr_prc_w_i_max" => Some(&mut self.sep_ilsqr_prc_w_i_max),
-            "sep_ilsqr_prc_w_g_min" => Some(&mut self.sep_ilsqr_prc_w_g_min),
-            "sep_ilsqr_prc_w_g_max" => Some(&mut self.sep_ilsqr_prc_w_g_max),
-            "sep_ilsqr_qsm_max_iter" => Some(&mut self.sep_ilsqr_qsm_max_iter),
-            "sep_ilsqr_qsm_tol" => Some(&mut self.sep_ilsqr_qsm_tol),
-            "sep_ilsqr_qsm_pad_mm" => Some(&mut self.sep_ilsqr_qsm_pad_mm),
-            "sep_medi_lambda" => Some(&mut self.sep_medi_lambda),
-            "sep_medi_lambda_csf" => Some(&mut self.sep_medi_lambda_csf),
-            "sep_medi_dr_pos" => Some(&mut self.sep_medi_dr_pos),
-            "sep_medi_dr_neg" => Some(&mut self.sep_medi_dr_neg),
-            "sep_medi_pad" => Some(&mut self.sep_medi_pad),
-            "sep_medi_tol" => Some(&mut self.sep_medi_tol),
-            "sep_medi_max_iter" => Some(&mut self.sep_medi_max_iter),
-            "sep_medi_cg_tol" => Some(&mut self.sep_medi_cg_tol),
-            "sep_medi_cg_max_iter" => Some(&mut self.sep_medi_cg_max_iter),
-            "sep_medi_qsm_max_iter" => Some(&mut self.sep_medi_qsm_max_iter),
-            "sep_medi_qsm_tol" => Some(&mut self.sep_medi_qsm_tol),
-            "sep_medi_qsm_pad_mm" => Some(&mut self.sep_medi_qsm_pad_mm),
-            "sep_wavesep_dr_pos" => Some(&mut self.sep_wavesep_dr_pos),
-            "sep_wavesep_dr_neg" => Some(&mut self.sep_wavesep_dr_neg),
-            "sep_wavesep_alpha" => Some(&mut self.sep_wavesep_alpha),
-            "sep_wavesep_lambda" => Some(&mut self.sep_wavesep_lambda),
-            "sep_wavesep_wavelet_order" => Some(&mut self.sep_wavesep_wavelet_order),
-            "sep_wavesep_max_iter" => Some(&mut self.sep_wavesep_max_iter),
-            "sep_wavesep_tol" => Some(&mut self.sep_wavesep_tol),
-            "sep_hcchisep_dr_pos_3t" => Some(&mut self.sep_hcchisep_dr_pos_3t),
-            "sep_hcchisep_bin_hz" => Some(&mut self.sep_hcchisep_bin_hz),
-            "sep_chisepnet_patch" => Some(&mut self.sep_chisepnet_patch),
-            "sep_chisepnet_frame_patch" => Some(&mut self.sep_chisepnet_frame_patch),
-            "sep_susepnet_patch" => Some(&mut self.sep_susepnet_patch),
             _ => None,
         }
     }
@@ -2747,18 +2313,11 @@ impl PipelineFormState {
                 QSM_PICKER_OPTIONS.iter().position(|o| *o == name).unwrap_or(0)
             }
             "bf_algorithm" => self.bf_algorithm,
-            "sep_chisepnet_route" => self.sep_chisepnet_route,
-            "sep_decompose_fit" => self.sep_decompose_fit,
             "inhomogeneity_method" => self.inhomogeneity_method,
             "n4_geometry" => self.n4_geometry,
             "two_pass_mode" => self.two_pass_mode,
-            "sep_ilsqr_qsm_precision" => self.sep_ilsqr_qsm_precision,
-            "sep_medi_qsm_precision" => self.sep_medi_qsm_precision,
-            "sep_medi_csf_r2star" => self.sep_medi_csf_r2star,
             "bet_orientation" => self.bet_orientation,
-            "sep_decompose_chi_bound_mode" => self.sep_decompose_chi_bound_mode,
             "mask_preset" => self.mask_preset,
-            "separation_algorithm" => self.separation_algorithm,
             // Stored as the CLI value (0 uniform, 1 magnitude SNR).
             _ => 0,
         }
@@ -2782,21 +2341,14 @@ impl PipelineFormState {
                 self.qsm_algorithm = QSM_ALGO_OPTIONS.iter().position(|o| *o == name).unwrap_or(self.qsm_algorithm);
             }
             "bf_algorithm" => self.bf_algorithm = val,
-            "sep_chisepnet_route" => self.sep_chisepnet_route = val.min(CHI_SEPNET_ROUTE_OPTIONS.len() - 1),
-            "sep_decompose_fit" => self.sep_decompose_fit = val,
             "inhomogeneity_method" => self.inhomogeneity_method = val,
             "n4_geometry" => self.n4_geometry = val.min(N4_GEOMETRY_OPTIONS.len() - 1),
             "two_pass_mode" => self.two_pass_mode = val.min(TWO_PASS_MODE_OPTIONS.len() - 1),
-            "sep_ilsqr_qsm_precision" => self.sep_ilsqr_qsm_precision = val.min(ILSQR_PRECISION_OPTIONS.len() - 1),
-            "sep_medi_qsm_precision" => self.sep_medi_qsm_precision = val.min(ILSQR_PRECISION_OPTIONS.len() - 1),
-            "sep_medi_csf_r2star" => self.sep_medi_csf_r2star = val.min(CHI_SEP_CSF_R2STAR_OPTIONS.len() - 1),
             "bet_orientation" => self.bet_orientation = val.min(BET_ORIENTATION_OPTIONS.len() - 1),
-            "sep_decompose_chi_bound_mode" => self.sep_decompose_chi_bound_mode = val.min(CHI_BOUND_OPTIONS.len() - 1),
             "mask_preset" => {
                 self.mask_preset = val;
                 self.apply_mask_preset(val);
             }
-            "separation_algorithm" => self.separation_algorithm = val,
             _ => {}
         }
     }
@@ -2807,10 +2359,8 @@ impl PipelineFormState {
             "do_qsm" => self.do_qsm,
             "inhomogeneity_correction" => self.inhomogeneity_correction,
             "medi_smv" => self.medi_smv,
-            "do_chi_separation" => self.do_chi_separation,
             "two_pass" => self.two_pass,
             "heidi_enabled" => self.heidi_enabled,
-            "sep_decompose_unwrap_phase" => self.sep_decompose_unwrap_phase,
             _ => false,
         }
     }
@@ -2819,12 +2369,10 @@ impl PipelineFormState {
     pub fn toggle(&mut self, field: &str) {
         match field {
             "do_qsm" => self.do_qsm = !self.do_qsm,
-            "do_chi_separation" => self.do_chi_separation = !self.do_chi_separation,
             "inhomogeneity_correction" => self.inhomogeneity_correction = !self.inhomogeneity_correction,
             "medi_smv" => self.medi_smv = !self.medi_smv,
             "two_pass" => self.two_pass = !self.two_pass,
             "heidi_enabled" => self.heidi_enabled = !self.heidi_enabled,
-            "sep_decompose_unwrap_phase" => self.sep_decompose_unwrap_phase = !self.sep_decompose_unwrap_phase,
             _ => {}
         }
     }
@@ -5556,14 +5104,14 @@ impl App {
     /// Which bring-your-own inputs the run can use, from what the form asks for (see
     /// [`InputRelevance`]). Decides both whether their rows show and whether they are passed on.
     pub fn input_relevance(&self) -> InputRelevance {
-        let ps = &self.pipeline_state;
         let f = &self.form;
         let mut c = qsmxt_engine::PipelineConfig::default();
-        (c.pipeline.do_chi_separation, c.pipeline.do_analysis, c.pipeline.do_smwi) = (ps.do_chi_separation, f.settings.toggle("pipeline.do_analysis"), f.settings.toggle("pipeline.do_smwi"));
         let st = &f.settings;
+        (c.pipeline.do_chi_separation, c.pipeline.do_analysis, c.pipeline.do_smwi) =
+            (st.toggle("pipeline.do_chi_separation"), st.toggle("pipeline.do_analysis"), st.toggle("pipeline.do_smwi"));
         (c.pipeline.do_r2map, c.pipeline.do_r2primemap) = (st.toggle("pipeline.do_r2map"), st.toggle("pipeline.do_r2primemap"));
-        if let Some(sep) = SEP_ALGO_OPTIONS.get(ps.separation_algorithm) {
-            c.separation.algorithm = serde_json::from_value(serde_json::json!(sep)).expect("SEP_ALGO_OPTIONS are the config's names");
+        if let Ok(sep) = serde_json::from_value(st.get("separation.algorithm")) {
+            c.separation.algorithm = sep;
         }
         c.separation.custom_r2prime_tool = Some(st.text("separation.custom_r2prime_tool").trim().to_string()).filter(|t| !t.is_empty());
         // R2' is measured as R2* − R2 unless it is always predicted (R2PRIMEnet).
@@ -6105,7 +5653,6 @@ impl App {
     /// Whether a Reconstruction section's stage or output is part of the run now, for the
     /// sidebar: on, off (its output is not made), or not applicable to the current settings.
     pub fn section_state(&self, page: Page) -> SectionState {
-        let ps = &self.pipeline_state;
         let on = |b: bool| if b { SectionState::On } else { SectionState::Off };
         match page {
             Page::ComputeQsm => on(self.qsm_on()),
@@ -6122,7 +5669,7 @@ impl App {
                     SectionState::On
                 }
             }
-            Page::Separation => on(ps.do_chi_separation),
+            Page::Separation => on(self.form.settings.toggle("pipeline.do_chi_separation")),
             Page::Smwi => on(self.form.settings.toggle("pipeline.do_smwi")),
             Page::Magnitude => on(self.form.settings.toggle("pipeline.do_magnitude")),
             Page::Swi => on(self.form.settings.toggle("pipeline.do_swi")),
@@ -6722,7 +6269,7 @@ impl App {
             "R2*" => self.output_made("do_r2starmap"),
             "R2" => self.output_made("do_r2map"),
             "R2′" => self.output_made("do_r2primemap"),
-            "χ-separation" => self.pipeline_state.do_chi_separation,
+            "χ-separation" => self.form.settings.toggle("pipeline.do_chi_separation"),
             "segmentation" => self.output_made("do_segmentation"),
             _ => false,
         }
@@ -8036,16 +7583,9 @@ mod tests {
 
     #[test]
     fn test_all_param_fields_are_valid() {
-        // Opt-in fields that intentionally default to empty (blank = feature off).
-        // And optional settings whose blank is the value qsm-core derives.
-        const OPT_IN_EMPTY: &[&str] = &["sep_susepnet_patch", "sep_chisepnet_frame_patch"];
         let state = PipelineFormState::default();
         for &field_name in PipelineFormState::ALL_PARAM_FIELDS {
-            let val = state.get_param(field_name);
-            if OPT_IN_EMPTY.contains(&field_name) {
-                continue;
-            }
-            assert_ne!(val, "", "get_param returned empty for field: {}", field_name);
+            assert_ne!(state.get_param(field_name), "", "get_param returned empty for field: {}", field_name);
         }
     }
 
@@ -8066,7 +7606,6 @@ mod tests {
         // modal shows the wrong (or an empty) tooltip. Guards against silent drift.
         use super::*;
         for (label, opts, help) in [
-            ("separation", SEP_ALGO_OPTIONS.len(), SEP_ALGO_HELP.len()),
             ("inhomogeneity-method", INHOMOGENEITY_METHOD_OPTIONS.len(), INHOMOGENEITY_METHOD_HELP.len()),
             ("mask-preset", MASK_PRESET_OPTIONS.len(), mask_preset_help().len()),
         ] {
@@ -11023,11 +10562,12 @@ mod tests {
 
     #[test]
     fn test_pipeline_separation_algorithm_all_params() {
-        let mut ps = PipelineFormState { do_chi_separation: true, ..Default::default() };
+        let mut app = App::new();
+        app.form.settings.set("pipeline.do_chi_separation", true);
         // Every separation method incl. SUSEP-Net / χ-sepnet.
-        for algo in 0..SEP_ALGO_OPTIONS.len() {
-            ps.separation_algorithm = algo;
-            assert!(!ps.all_rows().is_empty());
+        for algo in 0..super::super::settings_rows::options("separation.algorithm").0.len() {
+            app.set_field_select("separation_algorithm", algo);
+            assert!(app.page_rows(Page::Separation).len() > 3);
         }
     }
 
@@ -11515,7 +11055,7 @@ mod tests {
         app.form.export_dicom = true;
         app.form.settings.set("pipeline.do_t2starmap", true);
         app.form.settings.set("pipeline.do_r2starmap", true);
-        app.pipeline_state.do_chi_separation = true;
+        app.form.settings.set("pipeline.do_chi_separation", true);
         app.pipeline_state.apply_mask_preset(2); // hd-bet + signal-erode
         let ps = &mut app.pipeline_state;
         ps.mask_sections[0].generator = MaskOp::HdBet { patch: Some(MaskOp::hd_bet_default_patch()), tta: false,

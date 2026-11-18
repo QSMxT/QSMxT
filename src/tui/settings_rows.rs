@@ -29,7 +29,7 @@ use super::app::{field_of_path, field_path, App, Page, PipelineRow, RowContext, 
 pub const STORED_SECTIONS: &[Section] =
     &[Section::Geometry, Section::Motion, Section::Background, Section::Reference, Section::Magnitude, Section::SwiSmwi,
       Section::Relaxometry, Section::Segmentation, Section::MultiOrientation, Section::FieldMap,
-      Section::Inversion];
+      Section::Inversion, Section::Separation];
 
 /// Choices that one select picks with another: `(path, choice, other)`. The select lists the
 /// setting's options but `choice`, then each of `other`'s, which picks `choice` with that value;
@@ -69,6 +69,8 @@ struct PageLayout {
     repeats: &'static [(&'static str, &'static str)],
     /// Rows before a setting's row, while the setting applies.
     before: &'static [(&'static str, Before)],
+    /// Rows after a setting's rows, while they show.
+    after: &'static [(&'static str, Before)],
     /// A condition of the TUI's on a setting's row besides the setting applying.
     shown_if: &'static [(&'static str, ShownIf)],
     /// Settings shown as a block under a setting of the page they have no parent in.
@@ -121,7 +123,7 @@ impl PageLayout {
 /// A page of a section's settings, in the registry's order and indentation.
 const fn plain(page: Page, section: Section) -> PageLayout {
     PageLayout {
-        page, section, only: None, repeats: &[], before: &[], shown_if: &[], blocks: &[], depths: &[], first: &[],
+        page, section, only: None, repeats: &[], before: &[], after: &[], shown_if: &[], blocks: &[], depths: &[], first: &[],
         arrange: None, reworded: &[],
     }
 }
@@ -226,6 +228,24 @@ const LAYOUTS: &[PageLayout] = &[
         ],
         ..plain(Page::Inversion, Section::Inversion)
     },
+    PageLayout {
+        // The method stands apart from the switch above it and its settings below.
+        before: &[
+            ("separation.algorithm", |_, _| vec![PipelineRow::Separator]),
+            ("separation.custom_qsm_tool", |app, _| if app.field_toggle("do_chi_separation") { vec![PipelineRow::Separator] } else { vec![] }),
+        ],
+        after: &[("separation.algorithm", |_, _| vec![PipelineRow::Separator])],
+        // The supplied χ map shows here for χ-separation; the statistics and SMWI show it on
+        // their own pages.
+        shown_if: &[("separation.custom_qsm_tool", |app| app.field_toggle("do_chi_separation"))],
+        // χ-sepnet's patches read as its settings, beside its route rather than under it.
+        depths: &[
+            ("separation.algorithm", 0), ("separation.custom_qsm_tool", 1),
+            ("separation.chi_sepnet.patch", 1), ("separation.chi_sepnet.frame_patch", 1),
+        ],
+        arrange: Some(arrange_separation),
+        ..plain(Page::Separation, Section::Separation)
+    },
     plain(Page::Magnitude, Section::Magnitude),
     PageLayout { only: Some(is_swi), ..plain(Page::Swi, Section::SwiSmwi) },
     PageLayout {
@@ -267,6 +287,22 @@ fn arrange_inversion(app: &App, order: &mut Vec<&'static Setting>) {
         put_after(order, "inversion.ilsqr.tol", ilsqr);
     }
 }
+
+/// The Separation page's order: χ-separation (MEDI)'s CSF R2* with its own settings, before those
+/// of the iLSQR that reconstructs the QSM it starts from.
+fn arrange_separation(_: &App, order: &mut Vec<&'static Setting>) {
+    if let Some(i) = order.iter().position(|s| s.path == "separation.chi_sep_medi.csf_r2star") {
+        let csf = order.remove(i);
+        let at = order.iter().position(|s| s.path == "separation.chi_sep_medi.cg_max_iter").map_or(order.len(), |i| i + 1);
+        order.insert(at, csf);
+    }
+}
+
+/// The number a number-or-choice setting's select offers first, as its row words it:
+/// `(path, label, help)`. Its value row edits the number.
+const NUMBER_OPTIONS: &[(&str, &str, &str)] = &[
+    ("separation.decompose.chi_bound", "ppm", "A fixed bound, in ppm (Chi bound (ppm); default: 0.5)"),
+];
 
 /// Text rows that read "(empty)" rather than "(default)" while blank, as the run form's rows did
 /// before their settings moved here.
@@ -338,6 +374,12 @@ fn echo_time_ms(path: &str) -> String {
     ECHO_TIME_MS.iter().find(|(p, _)| *p == path).map(|(_, f)| f()).unwrap_or_default()
 }
 
+/// The number of a number-or-choice setting when the number is chosen: its default, when that is
+/// a number, else the number its value row's help names (none).
+fn number_default(s: &Setting) -> Value {
+    if s.default.is_number() { s.default.clone() } else { Value::Null }
+}
+
 /// An echo time in ms, as the config holds it.
 fn echo_time_of_ms(text: &str) -> Option<Value> {
     text.trim().parse::<f64>().ok()?;
@@ -380,6 +422,11 @@ pub fn options(path: &str) -> (&'static [&'static str], &'static [&'static str])
                         Box::leak(format!("{} (default)", tui_option_help(o)).into_boxed_str()),
                     _ => tui_option_help(o),
                 }).collect();
+                // A number, offered before the named choices.
+                if let Some(&(_, label, h)) = NUMBER_OPTIONS.iter().find(|(p, ..)| *p == s.path) {
+                    labels.insert(0, label);
+                    help.insert(0, h);
+                }
                 // A name for a value with a switch turned on, listed after that value.
                 for a in schema::aliases::PICKER_ALIASES.iter().filter(|a| a.setting == s.path) {
                     if let Some(i) = opts.iter().position(|o| o.value == a.value) {
@@ -514,6 +561,7 @@ fn parse(s: &Setting, text: &str) -> Option<Value> {
         ValueType::Text if text.is_empty() => Some(if s.optional { Value::Null } else { Value::from("") }),
         ValueType::Text => Some(Value::from(text)),
         ValueType::EchoTime { .. } => echo_time_of_ms(text),
+        ValueType::NumberOrChoice { .. } => number(text),
         // The echo number of an echo reference, written as the config writes it ("3").
         ValueType::EchoReference { .. } => echo_number(s, &Value::from(text)).map(|n| Value::from(n.to_string())),
         _ => None,
@@ -615,7 +663,8 @@ impl SettingsStore {
             // A given time: `{ "seconds": s }`.
             ValueType::EchoTime { options } if v.is_object() => options.iter().position(|o| o.kind == EchoKind::Time),
             _ => None,
-        }).unwrap_or(0)
+        }).map(|i| i + usize::from(matches!(s.value_type, ValueType::NumberOrChoice { .. })))
+        .unwrap_or(0)
     }
 
     pub fn set_select(&mut self, path: &'static str, index: usize) {
@@ -639,6 +688,19 @@ impl SettingsStore {
                 }
             }
             return;
+        }
+        if let (ValueType::NumberOrChoice { .. }, Some(i)) = (&s.value_type, index.checked_sub(1)) {
+            // A named choice; the number typed waits under it.
+            let opts = s.value_type.options();
+            if let Some(o) = opts.get(i.min(opts.len().saturating_sub(1))) {
+                self.put(path, o.value.clone());
+            }
+            return;
+        }
+        if let ValueType::NumberOrChoice { .. } = s.value_type {
+            // The number: the one typed, else the default's.
+            let v = self.typed.get(path).and_then(|t| parse(s, t)).unwrap_or_else(|| number_default(s));
+            return self.put(path, v);
         }
         let opts = s.value_type.options();
         if let Some(o) = opts.get(index.min(opts.len().saturating_sub(1))) {
@@ -692,6 +754,8 @@ impl SettingsStore {
             ValueType::EchoTime { .. } => serde_json::from_value::<qsmxt_engine::EchoTimeChoice>(v.clone()).ok()
                 .filter(|te| matches!(te, qsmxt_engine::EchoTimeChoice::Seconds(_)))
                 .map_or_else(|| echo_time_ms(path), |te| te.to_string()),
+            // The number; while a named choice is chosen, the default's.
+            ValueType::NumberOrChoice { .. } if !v.is_number() => text_of(&number_default(s)),
             _ if COUNTED_FROM_ONE.contains(&path) => v.as_u64().map_or_else(|| text_of(&v), |n| (n + 1).to_string()),
             ValueType::EchoReference { options } => echo_number(s, &v).map(|n| n.to_string()).unwrap_or_else(|| {
                 options.iter().find_map(|o| match o.kind { EchoKind::EchoNumber { min } => Some(min.to_string()), _ => None })
@@ -702,11 +766,13 @@ impl SettingsStore {
     }
 
     /// Put a setting back to QSMxT's default. `value_row` resets only the value's row: an echo
-    /// reference's number or an echo time's time (the choice leaves the number, as the two rows
-    /// are reset one at a time), or the value of a checkbox with a value.
+    /// reference's number, an echo time's time or a number-or-choice's number (the choice leaves
+    /// the number, as the two rows are reset one at a time), or the value of a checkbox with a
+    /// value.
     pub fn reset(&mut self, path: &'static str, value_row: bool) {
         let s = setting(path);
-        let echo = matches!(s.value_type, ValueType::EchoReference { .. } | ValueType::EchoTime { .. });
+        let echo = matches!(s.value_type,
+            ValueType::EchoReference { .. } | ValueType::EchoTime { .. } | ValueType::NumberOrChoice { .. });
         if value_row || !echo {
             self.typed.remove(path);
         }
@@ -715,6 +781,9 @@ impl SettingsStore {
         } else if s.off.is_some() && self.toggle(path) {
             // The value of a checkbox that is on: back to the default value, still on.
             self.put(path, on_value(s));
+        } else if matches!(s.value_type, ValueType::NumberOrChoice { .. }) && self.get(path).is_number() {
+            // The number: back to the default's, still a number.
+            self.put(path, number_default(s));
         } else if matches!(s.value_type, ValueType::EchoTime { .. }) && self.get(path).is_object() {
             // A given echo time: back to the method's, still given.
             if let Some(v) = echo_time_of_ms(&echo_time_ms(path)) {
@@ -737,8 +806,11 @@ impl SettingsStore {
             if s.off.as_ref().is_some_and(|off| self.get(path) == *off) {
                 continue;
             }
-            // A time typed is taken only while a given time is chosen.
-            if matches!(s.value_type, ValueType::EchoTime { .. }) && !self.get(path).is_object() {
+            // A time typed is taken only while a given time is chosen, a number only while the
+            // number is.
+            if matches!(s.value_type, ValueType::EchoTime { .. }) && !self.get(path).is_object()
+                || matches!(s.value_type, ValueType::NumberOrChoice { .. }) && !self.get(path).is_number()
+            {
                 continue;
             }
             if let ValueType::EchoReference { .. } = s.value_type {
@@ -871,6 +943,9 @@ impl App {
                 Some(&(_, _, label, help)) => self.push_rows_worded(&mut rows, s, depth, label, help.unwrap_or(tui_help(s))),
                 None => self.push_rows(&mut rows, s, depth),
             }
+            for (_, after) in layout.after.iter().filter(|(p, _)| *p == s.path) {
+                rows.extend(after(self, ctx));
+            }
             // A block of another section follows the setting it is under.
             for b in layout.blocks.iter().filter(|b| b.under == s.path && foreign(b) && is_on(b.under)) {
                 for t in schema::settings().iter().filter(|t| t.path.starts_with(b.prefix) && shows(t.path)) {
@@ -902,7 +977,8 @@ impl App {
         rows.push(match s.value_type {
             _ if s.off.is_some() => PipelineRow::Toggle { label, field, help },
             ValueType::Bool => PipelineRow::Toggle { label, field, help },
-            ValueType::Enum { .. } | ValueType::EchoReference { .. } | ValueType::EchoTime { .. } => {
+            ValueType::Enum { .. } | ValueType::EchoReference { .. } | ValueType::EchoTime { .. }
+            | ValueType::NumberOrChoice { .. } => {
                 let (options, help) = options(s.path);
                 PipelineRow::AlgoSelect { label, field, options, help }
             }
@@ -915,6 +991,7 @@ impl App {
             _ if s.off.is_some() => self.field_toggle(field),
             ValueType::EchoReference { options } => matches!(chosen(options), Some(EchoKind::EchoNumber { .. })),
             ValueType::EchoTime { options } => matches!(chosen(options), Some(EchoKind::Time)),
+            ValueType::NumberOrChoice { .. } => self.field_select(field) == 0,
             _ => false,
         };
         if let (true, Some((label, help))) = (value_row, s.tui_value) {
@@ -1037,6 +1114,25 @@ mod tests {
         assert_eq!(te(&app), EchoTimeChoice::Last);
         app.set_field_select("nltv_te", ms);
         assert_eq!((app.field_text("nltv_te_ms").as_ref(), te(&app)), ("7", EchoTimeChoice::Seconds(0.007)));
+    }
+
+    /// DECOMPOSE's χ bound is a number or a named choice: the select offers the number first, its
+    /// row under it while it is chosen, and the number typed waits under the named choice.
+    #[test]
+    fn a_number_or_choice_keeps_its_number_under_a_choice() {
+        use qsmxt_engine::ChiBoundChoice;
+        let mut app = App::new_for_trial();
+        app.form.settings.set("pipeline.do_chi_separation", true);
+        app.form.settings.set("separation.algorithm", "decompose");
+        let bound = |app: &App| config_from_app(app).unwrap().separation.decompose.chi_bound;
+        assert_eq!(options("separation.decompose.chi_bound").0, ["ppm", "echo-spacing"]);
+        assert_eq!(app.field_text("sep_decompose_chi_bound"), "0.5");
+        *app.field_text_mut("sep_decompose_chi_bound").unwrap() = "0.3".into();
+        assert_eq!(bound(&app), ChiBoundChoice::Ppm(0.3));
+        app.set_field_select("sep_decompose_chi_bound_mode", 1);
+        assert_eq!(bound(&app), ChiBoundChoice::EchoSpacing);
+        app.set_field_select("sep_decompose_chi_bound_mode", 0);
+        assert_eq!((app.field_text("sep_decompose_chi_bound").as_ref(), bound(&app)), ("0.3", ChiBoundChoice::Ppm(0.3)));
     }
 
     /// Posterior smoothing is a checkbox with its sigma under it: off is a sigma of 0, and the

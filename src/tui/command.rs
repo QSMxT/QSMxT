@@ -233,22 +233,11 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         BfAlgorithmArg::Bfrnet,
         BfAlgorithmArg::Iqfm,
     ];
-    let sep_options = [
-        SeparationAlgorithmArg::R2starQsm,
-        SeparationAlgorithmArg::Decompose,
-        SeparationAlgorithmArg::ChiSepIlsqr,
-        SeparationAlgorithmArg::ChiSepMedi,
-        SeparationAlgorithmArg::Wavesep,
-        SeparationAlgorithmArg::HcChisep,
-        SeparationAlgorithmArg::SusepNet,
-        SeparationAlgorithmArg::ChiSepNet,
-    ];
 
     // The orientation grouping is set on the Input tab; how a group is reconstructed is set from
     // the form's settings store ([`stored_values`]).
     let orientation_group = app.filter_state.orientation_group_by();
     let grouped = orientation_group.is_some();
-    let inputs = app.input_relevance();
 
     PipelineArgs {
         // The form holds every setting; the chosen pipeline is set on the config afterwards.
@@ -330,67 +319,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         hdqsm_params: Default::default(),
         amp_pe_params: Default::default(),
         motion_params: Default::default(),
-        separation_params: crate::cli::SeparationParamArgs {
-            r2star_qsm_r_const_3t: parse_optional_f64(&ps.sep_r2starqsm_r_const_3t),
-            decompose_n_inner: parse_optional_usize(&ps.sep_decompose_n_inner),
-            decompose_chi_bound: super::app::chi_bound_choice(ps.sep_decompose_chi_bound_mode, &ps.sep_decompose_chi_bound),
-            decompose_unwrap_phase: Some(ps.sep_decompose_unwrap_phase),
-            decompose_fit: [crate::cli::DecomposeFitArg::ReferenceCode, crate::cli::DecomposeFitArg::Paper]
-                .get(ps.sep_decompose_fit).copied(),
-            decompose_max_iterations: parse_optional_usize(&ps.sep_decompose_max_iterations),
-            decompose_max_function_evaluations: parse_optional_usize(&ps.sep_decompose_max_fevals),
-            decompose_function_tolerance: parse_optional_f64(&ps.sep_decompose_function_tol),
-            decompose_step_tolerance: parse_optional_f64(&ps.sep_decompose_step_tol),
-            decompose_optimality_tolerance: parse_optional_f64(&ps.sep_decompose_optimality_tol),
-            decompose_finite_difference_step: parse_optional_f64(&ps.sep_decompose_fd_step),
-            decompose_typical_x: parse_optional_f64(&ps.sep_decompose_typical_x),
-            chi_sep_ilsqr_dr_pos: parse_optional_f64(&ps.sep_ilsqr_dr_pos).map(crate::cli::OrAuto::Value),
-            chi_sep_ilsqr_dr_neg: parse_optional_f64(&ps.sep_ilsqr_dr_neg).map(crate::cli::OrAuto::Value),
-            chi_sep_ilsqr_pad: parse_usize_triple(&ps.sep_ilsqr_pad).map(|p| p.to_vec()),
-            chi_sep_ilsqr_cg_max_iter_lsqr: parse_optional_usize(&ps.sep_ilsqr_cg_max_iter_lsqr),
-            chi_sep_ilsqr_cg_tol_lsqr: parse_optional_f64(&ps.sep_ilsqr_cg_tol_lsqr),
-            chi_sep_ilsqr_cg_max_iter_sa: parse_optional_usize(&ps.sep_ilsqr_cg_max_iter_sa),
-            chi_sep_ilsqr_cg_tol_sa: parse_optional_f64(&ps.sep_ilsqr_cg_tol_sa),
-            chi_sep_ilsqr_d2_thr: parse_optional_f64(&ps.sep_ilsqr_d2_thr),
-            chi_sep_ilsqr_prc_w_i_min: parse_optional_f64(&ps.sep_ilsqr_prc_w_i_min),
-            chi_sep_ilsqr_prc_w_i_max: parse_optional_f64(&ps.sep_ilsqr_prc_w_i_max),
-            chi_sep_ilsqr_prc_w_g_min: parse_optional_f64(&ps.sep_ilsqr_prc_w_g_min),
-            chi_sep_ilsqr_prc_w_g_max: parse_optional_f64(&ps.sep_ilsqr_prc_w_g_max),
-            chi_sep_ilsqr_qsm_max_iter: parse_optional_usize(&ps.sep_ilsqr_qsm_max_iter),
-            chi_sep_ilsqr_qsm_tol: parse_optional_f64(&ps.sep_ilsqr_qsm_tol),
-            chi_sep_ilsqr_qsm_pad_mm: parse_optional_f64(&ps.sep_ilsqr_qsm_pad_mm),
-            chi_sep_ilsqr_qsm_precision: qsmxt_engine::IlsqrPrecision::ALL.get(ps.sep_ilsqr_qsm_precision).copied(),
-            chi_sep_medi_lambda: parse_optional_f64(&ps.sep_medi_lambda),
-            chi_sep_medi_lambda_csf: parse_optional_f64(&ps.sep_medi_lambda_csf),
-            chi_sep_medi_dr_pos: parse_optional_f64(&ps.sep_medi_dr_pos).map(crate::cli::OrAuto::Value),
-            chi_sep_medi_dr_neg: parse_optional_f64(&ps.sep_medi_dr_neg).map(crate::cli::OrAuto::Value),
-            chi_sep_medi_pad: parse_optional_usize(&ps.sep_medi_pad),
-            chi_sep_medi_tol: parse_optional_f64(&ps.sep_medi_tol),
-            chi_sep_medi_max_iter: parse_optional_usize(&ps.sep_medi_max_iter),
-            chi_sep_medi_cg_tol: parse_optional_f64(&ps.sep_medi_cg_tol),
-            chi_sep_medi_cg_max_iter: parse_optional_usize(&ps.sep_medi_cg_max_iter),
-            chi_sep_medi_qsm_max_iter: parse_optional_usize(&ps.sep_medi_qsm_max_iter),
-            chi_sep_medi_qsm_tol: parse_optional_f64(&ps.sep_medi_qsm_tol),
-            chi_sep_medi_qsm_pad_mm: parse_optional_f64(&ps.sep_medi_qsm_pad_mm),
-            chi_sep_medi_qsm_precision: qsmxt_engine::IlsqrPrecision::ALL.get(ps.sep_medi_qsm_precision).copied(),
-            chi_sep_medi_csf_r2star: qsmxt_engine::ChiSepCsfR2star::ALL.get(ps.sep_medi_csf_r2star).copied(),
-            wavesep_dr_pos: parse_optional_f64(&ps.sep_wavesep_dr_pos),
-            wavesep_dr_neg: parse_optional_f64(&ps.sep_wavesep_dr_neg),
-            wavesep_alpha: parse_optional_f64(&ps.sep_wavesep_alpha),
-            wavesep_lambda: parse_optional_f64(&ps.sep_wavesep_lambda),
-            wavesep_wavelet_order: parse_optional_usize(&ps.sep_wavesep_wavelet_order),
-            wavesep_max_iter: parse_optional_usize(&ps.sep_wavesep_max_iter),
-            wavesep_tol: parse_optional_f64(&ps.sep_wavesep_tol),
-            hc_chisep_dr_pos_3t: parse_optional_f64(&ps.sep_hcchisep_dr_pos_3t),
-            hc_chisep_bin_hz: parse_optional_f64(&ps.sep_hcchisep_bin_hz),
-            chi_sepnet_route: Some(match ps.sep_chisepnet_route {
-                1 => crate::cli::ChiSepNetRouteArg::Native,
-                _ => crate::cli::ChiSepNetRouteArg::Toolbox,
-            }),
-            chi_sepnet_patch: parse_usize_triple(&ps.sep_chisepnet_patch).map(|p| p.to_vec()),
-            chi_sepnet_frame_patch: parse_usize_triple(&ps.sep_chisepnet_frame_patch).map(|p| p.to_vec()),
-            susep_net_patch: parse_usize_triple(&ps.sep_susepnet_patch).map(|p| p.to_vec()),
-        },
+        // χ-separation's settings are set from the form's settings store ([`stored_values`]).
+        separation_params: Default::default(),
         // Background removal's settings are set from the form's settings store ([`stored_values`]).
         vsharp_params: Default::default(),
         pdf_params: Default::default(),
@@ -446,9 +376,9 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         do_r2starmap: false,
         do_r2map: false,
         do_r2primemap: false,
-        do_chi_separation: ps.do_chi_separation,
-        chi_separation_algorithm: Some(sep_options[ps.separation_algorithm]),
-        use_custom_qsm: tool(inputs.qsm, &ps.custom_qsm_tool),
+        do_chi_separation: false,
+        chi_separation_algorithm: None,
+        use_custom_qsm: None,
         use_custom_r2: None,
         use_custom_r2prime: None,
         r2prime_strategy: None,
@@ -516,10 +446,6 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
     }
 }
 
-/// A bring-your-own derivatives tool, when the run can use one and the field names it.
-fn tool(relevant: bool, name: &str) -> Option<String> {
-    Some(name.trim()).filter(|t| relevant && !t.is_empty()).map(str::to_string)
-}
 
 pub(super) fn expand_tilde(s: &str) -> PathBuf {
     let home = || std::env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("~"));
@@ -1270,9 +1196,9 @@ mod tests {
     fn test_command_string_reflects_chi_separation_edits() {
         let mut app = default_app();
         // Enabling chi-separation + selecting decompose + editing a param must all show up.
-        app.pipeline_state.do_chi_separation = true;
-        app.pipeline_state.separation_algorithm = 1; // decompose
-        app.pipeline_state.sep_decompose_max_iterations = "77".to_string();
+        app.form.settings.set("pipeline.do_chi_separation", true);
+        app.set_field_select("separation_algorithm", 1); // decompose
+        *app.field_text_mut("sep_decompose_max_iterations").unwrap() = "77".into();
         let cmd = build_command_string(&app);
         assert!(cmd.contains("--do-chisep"));
         assert!(cmd.contains("--chisep decompose"));
@@ -2244,8 +2170,9 @@ mod parity {
             let qsmart = crate::tui::app::QSM_ALGO_OPTIONS[ps.qsm_algorithm] == "qsmart";
             let context = (
                 [ps.qsm_algorithm, if qsmart { app.field_select("qsmart_inversion") } else { 0 },
-                 if ps.do_chi_separation { ps.separation_algorithm } else { 0 }, app.form.execution_mode],
-                [app.field_toggle("motion_correction"), ps.do_chi_separation],
+                 if app.field_toggle("do_chi_separation") { app.field_select("separation_algorithm") } else { 0 },
+                 app.form.execution_mode],
+                [app.field_toggle("motion_correction"), app.field_toggle("do_chi_separation")],
             );
             let mut todo = Vec::new();
             for r in rows {
