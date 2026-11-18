@@ -617,3 +617,6 @@ pub fn undo_words(before: Option<&Value>, changed: &[(String, Value)]) -> Option
         Some(format!("{} back to {was}", setting.label))
     })
 }
+
+#[cfg(test)]
+mod tests;
