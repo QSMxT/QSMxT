@@ -15,6 +15,29 @@ pub enum FlagAction {
     Append,
 }
 
+/// How a flag's value is read, as the command line checks it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FlagParse {
+    /// A switch, or one of [`Flag::values`].
+    Listed,
+    F64,
+    Usize,
+    I64,
+    I32,
+    U8,
+    /// A whole number of 1 or more.
+    PositiveU64,
+    Text,
+    /// A number, or `auto` for the value the method derives.
+    NumberOrAuto,
+    /// An echo time ([`crate::EchoTimeChoice::parse`]).
+    EchoTime,
+    /// DECOMPOSE's χ bound ([`crate::ChiBoundChoice::parse`]).
+    ChiBound,
+    /// One of the registry setting's options, by name.
+    Named,
+}
+
 /// A value a flag accepts from a list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FlagValue {
@@ -39,6 +62,7 @@ pub struct Flag {
     /// How many values it takes: (fewest, most); `usize::MAX` is unbounded.
     pub num_args: (usize, usize),
     pub action: FlagAction,
+    pub parse: FlagParse,
     /// The short help (`-h`), and the long help (`--help`) where it differs.
     pub help: Option<&'static str>,
     pub long_help: Option<&'static str>,

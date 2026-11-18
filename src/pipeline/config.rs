@@ -34,7 +34,7 @@ pub fn mask_preset_recipe(preset: cli::MaskPresetArg) -> crate::Result<MaskRecip
 /// An invalid piece is an error: the flag was asked for, and running with a different mask than
 /// the one spelled out is worse than stopping. `flag` names the option in the error. A section
 /// with no generator op gets an Otsu threshold, which is what its input implies.
-fn parse_mask_sections(specs: &[String], flag: &str) -> crate::Result<Vec<MaskSection>> {
+pub(crate) fn parse_mask_sections(specs: &[String], flag: &str) -> crate::Result<Vec<MaskSection>> {
     let mut sections = Vec::new();
     for spec in specs {
         let parts: Vec<&str> = spec.split(',').collect();
@@ -73,7 +73,7 @@ fn closes_holes(op: &MaskOp) -> bool {
 ///
 /// Returned rather than logged so the rule can be tested: a `--two-pass-mask` that fills its own
 /// holes still runs, and still costs a second reconstruction, but reproduces the first one.
-fn hole_closing_warnings(sections: &[MaskSection]) -> Vec<String> {
+pub(crate) fn hole_closing_warnings(sections: &[MaskSection]) -> Vec<String> {
     sections.iter()
         .filter(|s| s.refinements.iter().any(closes_holes))
         .map(|s| format!(
@@ -1049,7 +1049,7 @@ pub fn validate_multi_orientation(config: &PipelineConfig) -> crate::Result<()> 
 /// BET appears as a generator or a refinement. One value for the whole recipe: a run where one
 /// BET step saw mouse-scale voxels and another saw the acquisition's would be a configuration
 /// mistake, not a feature.
-fn for_each_bet_op(masking: &mut MaskingConfig, f: impl Fn(&mut f64, &mut f64)) {
+pub(crate) fn for_each_bet_op(masking: &mut MaskingConfig, f: impl Fn(&mut f64, &mut f64)) {
     let set = |op: &mut MaskOp| {
         if let MaskOp::Bet { fractional_intensity, voxel_scale } = op { f(fractional_intensity, voxel_scale); }
     };
