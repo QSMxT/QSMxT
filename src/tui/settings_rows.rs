@@ -28,7 +28,7 @@ use super::app::{field_of_path, field_path, App, Page, PipelineRow, RowContext, 
 /// The sections whose settings are kept in [`SettingsStore`] rather than in the form's fields.
 pub const STORED_SECTIONS: &[Section] =
     &[Section::Geometry, Section::Motion, Section::Background, Section::Reference, Section::Magnitude, Section::SwiSmwi,
-      Section::Relaxometry, Section::Segmentation];
+      Section::Relaxometry, Section::Segmentation, Section::MultiOrientation];
 
 /// Choices that one select picks with another: `(path, choice, other)`. The select lists the
 /// setting's options but `choice`, then each of `other`'s, which picks `choice` with that value;
@@ -66,12 +66,33 @@ struct PageLayout {
     before: &'static [(&'static str, Before)],
     /// A condition of the TUI's on a setting's row besides the setting applying.
     shown_if: &'static [(&'static str, ShownIf)],
-    /// Settings shown as a block under a setting of the page they have no parent in:
-    /// `(path prefix, under, heading)`, shown while `under` is on, after a note naming the block.
-    blocks: &'static [(&'static str, &'static str, &'static str)],
+    /// Settings shown as a block under a setting of the page they have no parent in.
+    blocks: &'static [Block],
     /// Settings indented other than by their parents: `(path, depth)`.
     depths: &'static [(&'static str, usize)],
 }
+
+/// Settings shown as a block under a setting of a page they have no parent in: those whose path
+/// starts with `prefix`, shown while `under` is on, after a note naming the block (`heading`).
+/// A block of the page's own section stays where the registry puts it; one of another section
+/// follows `under`'s row.
+#[derive(Clone, Copy)]
+struct Block {
+    prefix: &'static str,
+    under: &'static str,
+    heading: &'static str,
+}
+
+impl Block {
+    const fn with_under(self, under: &'static str) -> Block {
+        Block { under, ..self }
+    }
+}
+
+/// The rigid registration serves motion correction and the co-registration of orientations, so
+/// it is no one setting's.
+const REGISTRATION: Block =
+    Block { prefix: "registration.", under: "motion_correction.enabled", heading: "Rigid registration (advanced):" };
 
 /// A page of a section's settings, in the registry's order and indentation.
 const fn plain(page: Page, section: Section) -> PageLayout {
@@ -105,9 +126,7 @@ const LAYOUTS: &[PageLayout] = &[
         ..plain(Page::Geometry, Section::Geometry)
     },
     PageLayout {
-        // The rigid registration serves motion correction and the co-registration of
-        // orientations (shown there too), so it is no one setting's.
-        blocks: &[("registration.", "motion_correction.enabled", "Rigid registration (advanced):")],
+        blocks: &[REGISTRATION],
         ..plain(Page::Motion, Section::Motion)
     },
     PageLayout {
@@ -118,6 +137,17 @@ const LAYOUTS: &[PageLayout] = &[
             ("bg_removal.vsharp.threshold", 1),
         ],
         ..plain(Page::Background, Section::Background)
+    },
+    PageLayout {
+        // The same rigid registration as motion correction's ([`REGISTRATION`]), under the
+        // co-registration it serves here.
+        blocks: &[REGISTRATION.with_under("multi_orientation.register")],
+        // COSMOS's weighting reads as a setting of the page, its solver's settings under it.
+        depths: &[
+            ("multi_orientation.magnitude_weighting", 0), ("multi_orientation.cosmos_tol", 1),
+            ("multi_orientation.cosmos_max_iter", 1),
+        ],
+        ..plain(Page::MultiOrientation, Section::MultiOrientation)
     },
     plain(Page::Reference, Section::Reference),
     plain(Page::Relaxometry, Section::Relaxometry),
@@ -156,6 +186,9 @@ const READS_EMPTY: &[&str] = &[
     "swi.strength", "swi.hp_sigma", "swi.mip_window", "smwi.threshold_ppm", "smwi.power", "smwi.mip_window",
     "segmentation.crop", "segmentation.patch", "segmentation.sigma_smoothing",
 ];
+
+/// Text rows that read blank at their default, which their placeholder names ("0 (none)").
+const BLANK_AT_DEFAULT: &[&str] = &["multi_orientation.lambda"];
 
 /// Every setting, by path.
 fn by_path() -> &'static HashMap<&'static str, &'static Setting> {
@@ -240,6 +273,21 @@ fn put(config: &mut Value, path: &str, value: Value) {
 /// as little as there are values.
 fn config_with(values: &[(&'static str, Value)]) -> Option<PipelineConfig> {
     config_try(values).ok()
+}
+
+/// `config` with these values written onto it; a value it refuses is left as `config` has it.
+pub fn with_values(config: &PipelineConfig, values: &[(&'static str, Value)]) -> PipelineConfig {
+    let Ok(mut json) = serde_json::to_value(config) else { return config.clone() };
+    for (p, v) in values {
+        put(&mut json, p, v.clone());
+    }
+    serde_json::from_value(json).unwrap_or_else(|_| {
+        let mut out = config.clone();
+        for (p, v) in values {
+            let _ = schema::set(&mut out, p, v.clone());
+        }
+        out
+    })
 }
 
 /// [`config_with`], or why the config refuses the values.
@@ -441,6 +489,7 @@ impl SettingsStore {
         let s = setting(path);
         let v = self.get(path);
         match &s.value_type {
+            _ if BLANK_AT_DEFAULT.contains(&path) && v == s.default => String::new(),
             ValueType::EchoReference { options } => echo_number(s, &v).map(|n| n.to_string()).unwrap_or_else(|| {
                 options.iter().find_map(|o| match o.kind { EchoKind::EchoNumber { min } => Some(min.to_string()), _ => None })
                     .unwrap_or_default()
@@ -573,26 +622,28 @@ impl App {
         let is_on = |path: &str| field_of_path(path).is_some_and(|f| self.field_toggle(f));
         let mut rows = Vec::new();
         let mut headed = HashSet::new();
+        // A block's heading, once, then its settings under it.
+        let mut block_row = |rows: &mut Vec<PipelineRow>, b: &Block, s: &'static Setting| {
+            let depth = depth_of(setting(b.under)) + 1;
+            if headed.insert(b.prefix) {
+                rows.push(PipelineRow::Note { text: format!("{}{}", "  ".repeat(depth), b.heading).into() });
+            }
+            self.push_rows(rows, s, depth + 1);
+        };
+        let foreign = |b: &Block| schema::settings().iter().any(|t| t.path.starts_with(b.prefix) && t.section != layout.section);
         for s in schema::settings() {
             if s.section != layout.section || !layout.only.is_none_or(|f| f(s.path)) || !shows(s.path)
                 || PICKERS.iter().any(|(.., other)| *other == s.path)
             {
                 continue;
             }
-            let block = layout.blocks.iter().find(|(prefix, ..)| s.path.starts_with(prefix));
-            let depth = match block {
-                Some(&(prefix, under, heading)) => {
-                    if !is_on(under) {
-                        continue;
-                    }
-                    let depth = depth_of(setting(under)) + 1;
-                    if headed.insert(prefix) {
-                        rows.push(PipelineRow::Note { text: format!("{}{heading}", "  ".repeat(depth)).into() });
-                    }
-                    depth + 1
+            if let Some(b) = layout.blocks.iter().find(|b| s.path.starts_with(b.prefix)) {
+                if is_on(b.under) {
+                    block_row(&mut rows, b, s);
                 }
-                None => layout.depths.iter().find(|(p, _)| *p == s.path).map_or_else(|| depth_of(s), |(_, d)| *d),
-            };
+                continue;
+            }
+            let depth = layout.depths.iter().find(|(p, _)| *p == s.path).map_or_else(|| depth_of(s), |(_, d)| *d);
             for (_, before) in layout.before.iter().filter(|(p, _)| *p == s.path) {
                 rows.extend(before(self, ctx));
             }
@@ -600,6 +651,12 @@ impl App {
                 continue;
             }
             self.push_rows(&mut rows, s, depth);
+            // A block of another section follows the setting it is under.
+            for b in layout.blocks.iter().filter(|b| b.under == s.path && foreign(b) && is_on(b.under)) {
+                for t in schema::settings().iter().filter(|t| t.path.starts_with(b.prefix) && shows(t.path)) {
+                    block_row(&mut rows, b, t);
+                }
+            }
         }
         for (path, under) in layout.repeats {
             if is_on(under) && shows(path) {

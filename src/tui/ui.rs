@@ -1054,9 +1054,10 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 lines.push(Line::from(""));
 
                 let visible = app.filter_state.visible_rows();
-                let preview = app.filter_state.orientation_preview();
-                let groups = app.filter_state.orientation_groups();
-                let need = orientations_needed(app.filter_state.orientation_algorithm);
+                let reference = app.field_text("orientation_reference");
+                let preview = app.filter_state.orientation_preview(&reference);
+                let groups = app.filter_state.orientation_groups(&reference);
+                let need = orientations_needed(app.field_select("orientation_algorithm"));
                 for (i, row) in visible.iter().enumerate() {
                     let focused = !in_io && app.filter_state.focus == super::app::FilterFocus::TreeNode(i);
                     let line = match row {
@@ -3448,7 +3449,7 @@ fn orientations_needed(algorithm: usize) -> usize {
 }
 
 fn orientation_block(app: &App, in_io: bool) -> Vec<Line<'static>> {
-    use super::app::{FilterFocus, ORIENTATION_ALGORITHMS};
+    use super::app::FilterFocus;
 
     let fs = &app.filter_state;
     let focused = |f: FilterFocus| !in_io && fs.focus == f;
@@ -3479,9 +3480,10 @@ fn orientation_block(app: &App, in_io: bool) -> Vec<Line<'static>> {
         return lines;
     }
 
-    let algo = ORIENTATION_ALGORITHMS[fs.orientation_algorithm.min(ORIENTATION_ALGORITHMS.len() - 1)].to_uppercase();
+    let algorithm = app.field_select("orientation_algorithm");
+    let algo = app.form.settings.get("multi_orientation.algorithm").as_str().unwrap_or_default().to_uppercase();
 
-    let preview = fs.orientation_preview();
+    let preview = fs.orientation_preview(&app.field_text("orientation_reference"));
     if let Some(err) = preview.error {
         lines.push(Line::from(Span::styled(
             format!("    ✗ {err}"),
@@ -3505,7 +3507,7 @@ fn orientation_block(app: &App, in_io: bool) -> Vec<Line<'static>> {
     // One line for all the groups: each run's group is marked against it in the tree. STI needs
     // six orientations and COSMOS two; flagging a short group here saves a run that would only
     // fail once the field maps had been computed.
-    let need = orientations_needed(fs.orientation_algorithm);
+    let need = orientations_needed(algorithm);
     let sizes: Vec<usize> = preview.groups.iter().map(|(_, m)| m.len()).collect();
     let (least, most) = (sizes.iter().min().copied().unwrap_or(0), sizes.iter().max().copied().unwrap_or(0));
     let n = sizes.len();
@@ -3593,7 +3595,7 @@ mod orientation_block_tests {
     fn a_group_too_small_for_sti_is_flagged() {
         let (mut app, _d) = app_with_orientations();
         app.filter_state.orientation_group = "*acq-dir*".into();
-        app.filter_state.orientation_algorithm = 1; // sti
+        app.set_field_select("orientation_algorithm", 1); // sti
         let text = screen_text(&render_app_sized(&mut app, 140, 60));
         assert!(text.contains("fewer than the 6 STI needs"), "{text}");
         assert!(text.contains("3 of the 6 needed"), "{text}");
@@ -3605,12 +3607,12 @@ mod orientation_block_tests {
     fn the_reference_orientation_is_marked_and_checked() {
         let (mut app, _d) = app_with_orientations();
         app.filter_state.orientation_group = "*acq-dir*".into();
-        app.filter_state.orientation_reference = "dir3".into();
+        *app.field_text_mut("orientation_reference").unwrap() = "dir3".into();
         let text = screen_text(&render_app_sized(&mut app, 200, 60));
         let line = text.lines().find(|l| l.contains("(group 1; reference)")).unwrap_or_else(|| panic!("{text}"));
         assert!(line.contains("acq-dir3_MEGRE"), "{line}");
         assert_eq!(text.matches("reference)").count(), 1, "{text}");
-        app.filter_state.orientation_reference = "dir9".into();
+        *app.field_text_mut("orientation_reference").unwrap() = "dir9".into();
         let text = screen_text(&render_app_sized(&mut app, 200, 60));
         assert!(text.contains("matches none"), "{text}");
     }

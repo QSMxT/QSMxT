@@ -66,7 +66,7 @@ use super::app::{App, PipelineRow};
 pub struct FormSnapshot {
     form: super::app::RunForm,
     pipeline_state: super::app::PipelineFormState,
-    orientation: (String, usize, String, String),
+    orientation_group: String,
     num_echoes: String,
 }
 
@@ -75,7 +75,7 @@ impl FormSnapshot {
         let f = &app.filter_state;
         FormSnapshot {
             form: app.form.clone(), pipeline_state: app.pipeline_state.clone(),
-            orientation: (f.orientation_group.clone(), f.orientation_algorithm, f.orientation_lambda.clone(), f.orientation_reference.clone()),
+            orientation_group: f.orientation_group.clone(),
             num_echoes: f.num_echoes.clone(),
         }
     }
@@ -84,7 +84,7 @@ impl FormSnapshot {
         app.form = self.form;
         app.pipeline_state = self.pipeline_state;
         let f = &mut app.filter_state;
-        (f.orientation_group, f.orientation_algorithm, f.orientation_lambda, f.orientation_reference) = self.orientation;
+        f.orientation_group = self.orientation_group;
         f.num_echoes = self.num_echoes;
     }
 }

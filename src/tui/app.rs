@@ -932,12 +932,6 @@ fn word_boundary_left(text: &str, cursor: usize) -> usize {
     pos
 }
 
-/// COSMOS or STI, in the order the TUI cycles them.
-pub const ORIENTATION_ALGORITHMS: [&str; 2] = ["cosmos", "sti"];
-pub const ORIENTATION_ALGORITHM_HELP: [&str; 2] = [
-    "COSMOS — scalar susceptibility from 2+ orientations, co-registered if needed, closed form in k-space",
-    "STI — rank-2 susceptibility tensor; needs 6+ orientations that are not coplanar",
-];
 
 /// Where ←/→ can put a run of the tree ([`FilterTreeState::orientation_slots`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1007,11 +1001,6 @@ pub struct FilterTreeState {
     pub orientation_group: String,
     pub orientation_editing: bool,
     pub orientation_cursor: usize,
-    /// Index into [`ORIENTATION_ALGORITHMS`].
-    pub orientation_algorithm: usize,
-    pub orientation_lambda: String,
-    /// `--orientation-reference`; empty = the first member by name.
-    pub orientation_reference: String,
     pub scanned_bids_dir: Option<String>,
     pub scroll_offset: usize,
     /// Set when the user manually toggles tree checkboxes (pattern may not match)
@@ -1038,9 +1027,6 @@ impl Default for FilterTreeState {
             orientation_group: String::new(),
             orientation_editing: false,
             orientation_cursor: 0,
-            orientation_algorithm: 0,
-            orientation_lambda: String::new(),
-            orientation_reference: String::new(),
             scanned_bids_dir: None,
             scroll_offset: 0,
             manual_override: false,
@@ -1143,7 +1129,10 @@ impl FilterTreeState {
     /// Only structure is previewed here, not physics: B0 directions live in sidecars and
     /// affines that would have to be read from disk on every keystroke. `qsmxt run --dry`
     /// prints the direction table and the degeneracy verdict for each group.
-    pub fn orientation_preview(&self) -> OrientationPreview {
+    ///
+    /// `reference` is the orientation the others are registered onto (a setting of the config,
+    /// `multi_orientation.reference`).
+    pub fn orientation_preview(&self, reference: &str) -> OrientationPreview {
         if !self.multi_orientation_on() {
             return OrientationPreview::default();
         }
@@ -1171,7 +1160,7 @@ impl FilterTreeState {
         // shown as the error the run would refuse with.
         let strings: Vec<String> = keys.iter().map(|(_, s)| s.clone()).collect();
         let error = crate::bids::orientation::apply_reference(
-            &mut groups, &strings, &self.orientation_reference).err();
+            &mut groups, &strings, reference).err();
         let resolved = error.is_none();
         let member_of = groups.iter().enumerate()
             .flat_map(|(g, group)| group.members.iter().enumerate()
@@ -1200,16 +1189,9 @@ impl FilterTreeState {
         }
     }
 
-    /// The multi-orientation settings, in the form the command builder wants.
-    pub fn orientation_args(&self) -> (Option<String>, usize, Option<f64>) {
-        if !self.multi_orientation_on() {
-            return (None, 0, None);
-        }
-        (
-            Some(self.orientation_group.trim().to_string()),
-            self.orientation_algorithm,
-            self.orientation_lambda.trim().parse::<f64>().ok(),
-        )
+    /// The orientation grouping, trimmed, while one is set.
+    pub fn orientation_group_by(&self) -> Option<String> {
+        self.multi_orientation_on().then(|| self.orientation_group.trim().to_string())
     }
 
     /// Scan BIDS directory if it changed since last scan.
@@ -1313,11 +1295,11 @@ impl FilterTreeState {
 
     /// The orientation groups as run keys, each with its reference first: as listed (`runs:`),
     /// or as a typed pattern groups the selected runs now.
-    pub fn orientation_groups(&self) -> Vec<Vec<String>> {
+    pub fn orientation_groups(&self, reference: &str) -> Vec<Vec<String>> {
         if let Some(groups) = crate::bids::orientation::listed_groups(&self.orientation_group) {
             return groups;
         }
-        let preview = self.orientation_preview();
+        let preview = self.orientation_preview(reference);
         let mut groups: Vec<Vec<String>> = vec![Vec::new(); preview.groups.len()];
         let mut members: Vec<(&String, &(usize, bool))> = preview.member_of.iter().collect();
         members.sort_by_key(|(k, (g, reference))| (*g, !*reference, preview.order.iter().position(|o| o == *k)));
@@ -1329,8 +1311,8 @@ impl FilterTreeState {
 
     /// Where ←/→ can put the focused run, in order, and where it is now: no group, then each
     /// group of its session as a member and as the reference, then a new group.
-    pub fn orientation_slots(&mut self) -> Option<(Vec<OrientationSlot>, usize)> {
-        let groups = self.orientation_groups();
+    pub fn orientation_slots(&mut self, reference: &str) -> Option<(Vec<OrientationSlot>, usize)> {
+        let groups = self.orientation_groups(reference);
         let run = self.focused_run()?;
         let (key, session) = (run.key_string.clone(), session_of(&run.key));
         let keys = self.run_keys();
@@ -1364,13 +1346,15 @@ impl FilterTreeState {
     /// The groups are kept as the pattern itself, listed (`runs:`), each with its reference
     /// first, so the config and the command line need nothing new. A typed pattern's groups
     /// are where this starts from.
-    pub fn move_orientation(&mut self, forward: bool) {
-        let Some((slots, now)) = self.orientation_slots() else { return };
+    ///
+    /// Each group's reference is then its first run: the caller clears the reference setting.
+    pub fn move_orientation(&mut self, forward: bool, reference: &str) {
+        let Some((slots, now)) = self.orientation_slots(reference) else { return };
         let next = if forward { (now + 1).min(slots.len() - 1) } else { now.saturating_sub(1) };
         if next == now {
             return;
         }
-        let mut groups = self.orientation_groups();
+        let mut groups = self.orientation_groups(reference);
         let Some(run) = self.focused_run() else { return };
         let key = run.key_string.clone();
         if slots[next] != OrientationSlot::None {
@@ -1388,8 +1372,6 @@ impl FilterTreeState {
         }
         self.orientation_group = crate::bids::orientation::runs_pattern(&groups);
         self.orientation_cursor = self.orientation_group.len();
-        // Each group's reference is now its first run.
-        self.orientation_reference.clear();
     }
 
     /// Every run's key, with its subject and session.
@@ -1956,13 +1938,6 @@ pub struct PipelineFormState {
     pub prelude_labelling: usize,
     /// PRELUDE's number of phase partitions.
     pub prelude_partitions: String,
-    /// Multi-orientation (grouping is on the Input tab): co-register a group's orientations when
-    /// they need it, and reconstruct past the direction-degeneracy check.
-    pub orientation_registration: bool,
-    pub multi_orientation_force: bool,
-    pub cosmos_magnitude_weighting: bool,
-    pub cosmos_tol: String,
-    pub cosmos_max_iter: String,
 
     // Parameters (as Strings for text editing)
     pub inhomogeneity_correction: bool,
@@ -2441,11 +2416,6 @@ impl Default for PipelineFormState {
             prelude_labelling: PRELUDE_LABELLING_OPTIONS.iter()
                 .position(|o| *o == qsmxt_engine::PreludeConfig::default().labelling.to_string()).unwrap_or(0),
             prelude_partitions: qsmxt_engine::PreludeConfig::default().num_phase_partitions.to_string(),
-            orientation_registration: true,
-            multi_orientation_force: false,
-            cosmos_magnitude_weighting: false,
-            cosmos_tol: format!("{}", qsmxt_engine::MultiOrientationConfig::default().cosmos_tol),
-            cosmos_max_iter: format!("{}", qsmxt_engine::MultiOrientationConfig::default().cosmos_max_iter),
             inhomogeneity_correction: true,
             inhomogeneity_method: 0, // makehomogeneous
             homogeneity_sigma_mm: fmt_default(qsmxt_engine::HomogeneityConfig::default().sigma_mm),
@@ -3206,21 +3176,6 @@ impl PipelineFormState {
         PipelineRow::Param { label: "  Custom QSM tool", field: "custom_qsm_tool", help: "Use a Chimap from <bids>/derivatives/<tool>/ instead of recomputing QSM (χ-separation, statistics, SMWI); blank = compute, * = any tool" }
     }
 
-    /// The rigid registration's settings: one block, under each of the two things that register
-    /// (motion correction and orientation co-registration), editing the same values.
-    fn push_registration_rows(rows: &mut Vec<PipelineRow>) {
-        rows.push(PipelineRow::Note { text: "  Rigid registration (advanced):".into() });
-        rows.push(PipelineRow::Param { label: "    Levels", field: "reg_levels", help: "Pyramid levels: the capture range; do not lower (default 5)" });
-        rows.push(PipelineRow::Param { label: "    Max samples", field: "reg_max_samples", help: "Voxels sampled per metric evaluation, per level" });
-        rows.push(PipelineRow::Param { label: "    Max iterations", field: "reg_max_iterations", help: "Powell cycles per level" });
-        rows.push(PipelineRow::Param { label: "    Max evaluations", field: "reg_max_evaluations", help: "Metric evaluations across all levels (hard stop)" });
-        rows.push(PipelineRow::Param { label: "    Tolerance", field: "reg_tolerance", help: "Relative cost improvement per cycle that counts as converged" });
-        rows.push(PipelineRow::Param { label: "    Rotation step (deg)", field: "reg_rotation_step_deg", help: "Initial rotation step at the finest level" });
-        rows.push(PipelineRow::Param { label: "    Translation step (mm)", field: "reg_translation_step_mm", help: "Initial translation step at the finest level" });
-        rows.push(PipelineRow::Param { label: "    Min overlap", field: "reg_min_overlap", help: "Smallest fraction of sampled voxels that must overlap" });
-    }
-
-
     /// Preprocessing → Masking: the inhomogeneity correction of the magnitude masking reads (and
     /// the combined magnitude is made from).
     fn inhomogeneity_rows(&self, rows: &mut Vec<PipelineRow>) {
@@ -3888,40 +3843,6 @@ impl PipelineFormState {
 
     }
 
-    /// QSM → COSMOS/STI: how an orientation group (Input tab) is reconstructed.
-    fn multi_orientation_rows(&self, rows: &mut Vec<PipelineRow>) {
-        rows.push(PipelineRow::AlgoSelect {
-            label: "Combine as", field: "orientation_algorithm",
-            options: &ORIENTATION_ALGORITHMS, help: &ORIENTATION_ALGORITHM_HELP,
-        });
-        rows.push(PipelineRow::Param { label: "Lambda", field: "orientation_lambda",
-            help: "Regularization (blank = 0, plain least squares). Raise for 2 orientations or single-axis rotations" });
-        rows.push(PipelineRow::Param { label: "Reference orientation", field: "orientation_reference",
-            help: "Orientation the others are registered onto, whose grid and segmentation the group map uses: a glob over the run key (*acq-Neutral*) or a word in it. Blank = first by name. Pick the neutral head position" });
-        if self.ctx.orientation_cosmos {
-            rows.push(PipelineRow::Toggle {
-                label: "COSMOS magnitude weighting", field: "cosmos_magnitude_weighting",
-                help: "COSMOS groups: weight each orientation by its combined magnitude (conjugate-gradient solve). Off = closed-form least squares",
-            });
-            if self.cosmos_magnitude_weighting {
-                rows.push(PipelineRow::Param { label: "  CG tolerance", field: "cosmos_tol", help: "Conjugate-gradient tolerance of weighted COSMOS" });
-                rows.push(PipelineRow::Param { label: "  CG max iterations", field: "cosmos_max_iter", help: "Conjugate-gradient iteration cap of weighted COSMOS" });
-            }
-        }
-        rows.push(PipelineRow::Toggle {
-            label: "Co-register", field: "orientation_registration",
-            help: "Co-register orientations that need it, with the registration settings below. Off = refuse such groups",
-        });
-        if self.orientation_registration {
-            Self::push_registration_rows(rows);
-        }
-        rows.push(PipelineRow::Toggle {
-            label: "Force", field: "multi_orientation_force",
-            help: "Reconstruct even when the B0 directions look degenerate (wrong metadata gives a plausible wrong map)",
-        });
-    }
-
-
     /// Every pipeline row that shows now, page after page (the QSM switch once): for tests that
     /// ask whether a setting is reachable, not where.
     #[cfg(test)]
@@ -3932,7 +3853,6 @@ impl PipelineFormState {
         if self.qsm_runs() {
             if self.field_mapping_runs().0 { self.field_map_rows(&mut rows); }
             self.inversion_rows(&mut rows);
-            if self.ctx.orientation_group { self.multi_orientation_rows(&mut rows); }
         }
         self.separation_rows(&mut rows);
         rows
@@ -3949,7 +3869,6 @@ impl PipelineFormState {
             Page::ComputeQsm => self.compute_qsm_rows(&mut rows),
             Page::FieldMap => self.field_map_rows(&mut rows),
             Page::Inversion => self.inversion_rows(&mut rows),
-            Page::MultiOrientation => self.multi_orientation_rows(&mut rows),
             Page::Separation => self.separation_rows(&mut rows),
             _ => {}
         }
@@ -4022,7 +3941,6 @@ impl PipelineFormState {
         "robust_fit_tuning", "robust_fit_iterations",
         "robust_fit_downweight_level", "robust_fit_flag_ratio",
         "complex_fit_reltol", "complex_fit_max_iter", "medi_lambda_csf", "medi_csf_r2s_threshold", "medi_zeropad",
-        "cosmos_tol", "cosmos_max_iter",
     ];
 
     /// Get a string parameter value by field name.
@@ -4092,8 +4010,6 @@ impl PipelineFormState {
             "medi_lambda_csf" => &self.medi_lambda_csf,
             "medi_csf_r2s_threshold" => &self.medi_csf_r2s_threshold,
             "medi_zeropad" => &self.medi_zeropad,
-            "cosmos_tol" => &self.cosmos_tol,
-            "cosmos_max_iter" => &self.cosmos_max_iter,
             "heidi_gradient_mask_floor" => &self.heidi_gradient_mask_floor,
             "heidi_continuation_steps" => &self.heidi_continuation_steps,
             "heidi_inner_iterations" => &self.heidi_inner_iterations,
@@ -4324,8 +4240,6 @@ impl PipelineFormState {
             "medi_lambda_csf" => Some(&mut self.medi_lambda_csf),
             "medi_csf_r2s_threshold" => Some(&mut self.medi_csf_r2s_threshold),
             "medi_zeropad" => Some(&mut self.medi_zeropad),
-            "cosmos_tol" => Some(&mut self.cosmos_tol),
-            "cosmos_max_iter" => Some(&mut self.cosmos_max_iter),
             "heidi_gradient_mask_floor" => Some(&mut self.heidi_gradient_mask_floor),
             "heidi_continuation_steps" => Some(&mut self.heidi_continuation_steps),
             "heidi_inner_iterations" => Some(&mut self.heidi_inner_iterations),
@@ -4647,9 +4561,6 @@ impl PipelineFormState {
             "romeo_phase_coherence" => self.romeo_phase_coherence,
             "medi_merit" => self.medi_merit,
             "ndi_auto_stop" => self.ndi_auto_stop,
-            "orientation_registration" => self.orientation_registration,
-            "multi_orientation_force" => self.multi_orientation_force,
-            "cosmos_magnitude_weighting" => self.cosmos_magnitude_weighting,
             "sep_decompose_unwrap_phase" => self.sep_decompose_unwrap_phase,
             _ => false,
         }
@@ -4696,9 +4607,6 @@ impl PipelineFormState {
             "romeo_phase_coherence" => self.romeo_phase_coherence = !self.romeo_phase_coherence,
             "medi_merit" => self.medi_merit = !self.medi_merit,
             "ndi_auto_stop" => self.ndi_auto_stop = !self.ndi_auto_stop,
-            "orientation_registration" => self.orientation_registration = !self.orientation_registration,
-            "multi_orientation_force" => self.multi_orientation_force = !self.multi_orientation_force,
-            "cosmos_magnitude_weighting" => self.cosmos_magnitude_weighting = !self.cosmos_magnitude_weighting,
             "sep_decompose_unwrap_phase" => self.sep_decompose_unwrap_phase = !self.sep_decompose_unwrap_phase,
             _ => {}
         }
@@ -6556,7 +6464,10 @@ impl App {
 
             // A run: its orientation group. A subject or session: collapse/expand.
             KeyCode::Left | KeyCode::Right if self.filter_state.focused_run().is_some() => {
-                self.filter_state.move_orientation(key.code == KeyCode::Right);
+                let reference = self.field_text("orientation_reference").into_owned();
+                self.filter_state.move_orientation(key.code == KeyCode::Right, &reference);
+                // Each group's reference is now its first run.
+                self.form.settings.reset("multi_orientation.reference", false);
             }
             KeyCode::Left | KeyCode::Right => self.filter_state.toggle_collapse(),
 
@@ -7415,7 +7326,8 @@ impl App {
     /// [`Self::row_context`], for the config the form builds now.
     fn row_context_with(&self, config: Option<&crate::pipeline::config::PipelineConfig>) -> RowContext {
         let ps = &self.pipeline_state;
-        let (group, algorithm, _) = self.filter_state.orientation_args();
+        let group = self.filter_state.orientation_group_by();
+        let algorithm = self.field_select("orientation_algorithm");
         // Whether QSM runs is the resolved config's answer — the same enforcement the run applies.
         // The config as the form gives it, and as the run takes it: QSM another output needs is
         // a required change the run makes itself when it is left off.
@@ -8343,11 +8255,9 @@ impl App {
         if let Some(path) = stored_path(field) {
             return self.form.settings.text(path);
         }
-        std::borrow::Cow::Borrowed(match (self.form.text(field), field) {
-            (Some(s), _) => s,
-            (None, "orientation_lambda") => &self.filter_state.orientation_lambda,
-            (None, "orientation_reference") => &self.filter_state.orientation_reference,
-            (None, _) => self.pipeline_state.get_param(field),
+        std::borrow::Cow::Borrowed(match self.form.text(field) {
+            Some(s) => s,
+            None => self.pipeline_state.get_param(field),
         })
     }
 
@@ -8356,10 +8266,6 @@ impl App {
             Some(self.form.settings.text_mut(path))
         } else if self.form.text(field).is_some() {
             self.form.text_mut(field)
-        } else if field == "orientation_lambda" {
-            Some(&mut self.filter_state.orientation_lambda)
-        } else if field == "orientation_reference" {
-            Some(&mut self.filter_state.orientation_reference)
         } else {
             self.pipeline_state.get_param_mut(field)
         }
@@ -8377,10 +8283,7 @@ impl App {
         if let Some(&c) = self.form.choice(field) {
             return c;
         }
-        match field {
-            "orientation_algorithm" => self.filter_state.orientation_algorithm,
-            _ => self.pipeline_state.get_select(field),
-        }
+        self.pipeline_state.get_select(field)
     }
 
     pub fn set_field_select(&mut self, field: &str, val: usize) {
@@ -8406,10 +8309,7 @@ impl App {
             *c = val;
             return;
         }
-        match field {
-            "orientation_algorithm" => self.filter_state.orientation_algorithm = val.min(ORIENTATION_ALGORITHMS.len() - 1),
-            _ => self.pipeline_state.set_select(field, val),
-        }
+        self.pipeline_state.set_select(field, val)
     }
 
     /// Whether the run makes an output: its checkbox is ticked, or another setting needs it (a
@@ -8528,9 +8428,6 @@ impl App {
             return self.form.dicom_unticked.retain(|u| !u.eq_ignore_ascii_case(m.suffix));
         }
         match field {
-            "orientation_lambda" => return self.filter_state.orientation_lambda.clear(),
-            "orientation_reference" => return self.filter_state.orientation_reference.clear(),
-            "orientation_algorithm" => return self.filter_state.orientation_algorithm = 0,
             "segmentation_source" | "do_segmentation" => {
                 self.form.settings.reset(DSEG, false);
                 self.form.settings.reset("pipeline.do_segmentation", false);
@@ -9633,7 +9530,7 @@ mod tests {
         assert_eq!(app.pages(TAB_RECONSTRUCTION), Page::RECONSTRUCTION.to_vec(), "the list keeps its shape");
         assert_eq!(state(&app, Page::FieldMap), SectionState::NotApplicable);
         assert_eq!(state(&app, Page::Background), SectionState::NotApplicable);
-        let rows = |app: &App, p| app.synced_pipeline(p, &app.row_context()).visible_rows();
+        let rows = |app: &App, p| app.page_rows(p);
         assert!(rows(&app, Page::Background).iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("No background removal"))));
         assert!(!rows(&app, Page::Background).iter().any(|r| matches!(r, PipelineRow::AlgoSelect { field: "bf_algorithm", .. })));
         assert!(rows(&app, Page::FieldMap).iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("No field mapping"))));
@@ -9792,7 +9689,7 @@ mod tests {
         };
         let slot = |app: &mut App, i: usize| {
             app.filter_state.focus = FilterFocus::TreeNode(i);
-            let (slots, now) = app.filter_state.orientation_slots().unwrap();
+            let (slots, now) = app.filter_state.orientation_slots("").unwrap();
             slots[now]
         };
         // → puts the first run in a new group; the next run's → joins it, then is its reference.
@@ -9800,11 +9697,11 @@ mod tests {
         assert_eq!(slot(&mut app, runs[0]), OrientationSlot::New);
         press(&mut app, runs[1], KeyCode::Right);
         assert_eq!(slot(&mut app, runs[1]), OrientationSlot::Member(0));
-        let preview = app.filter_state.orientation_preview();
+        let preview = app.filter_state.orientation_preview("");
         assert_eq!(preview.groups.len(), 1);
         press(&mut app, runs[1], KeyCode::Right);
         assert_eq!(slot(&mut app, runs[1]), OrientationSlot::Reference(0));
-        assert_eq!(app.filter_state.orientation_groups()[0][0], app.filter_state.orientation_preview().order[runs_order(&app, runs[1])]);
+        assert_eq!(app.filter_state.orientation_groups("")[0][0], app.filter_state.orientation_preview("").order[runs_order(&app, runs[1])]);
         // → again: a second group of its own; ← back.
         press(&mut app, runs[1], KeyCode::Right);
         assert_eq!(slot(&mut app, runs[1]), OrientationSlot::New);
@@ -9821,11 +9718,11 @@ mod tests {
 
         // From a typed pattern, the arrows start with what it grouped.
         app.filter_state.orientation_group = "*acq-dir*".into();
-        let grouped = app.filter_state.orientation_preview().member_of.len();
+        let grouped = app.filter_state.orientation_preview("").member_of.len();
         let member = runs.iter().copied().find(|&i| slot(&mut app, i) != OrientationSlot::None).unwrap();
         press(&mut app, member, KeyCode::Left);
         assert!(app.filter_state.orientation_group.starts_with("runs:"));
-        let listed: usize = app.filter_state.orientation_groups().iter().map(Vec::len).sum();
+        let listed: usize = app.filter_state.orientation_groups("").iter().map(Vec::len).sum();
         assert_eq!(listed, grouped);
         assert!(crate::bids::orientation::parse_pattern(&app.filter_state.orientation_group).unwrap().is_some());
 
@@ -9845,7 +9742,7 @@ mod tests {
             Some(sei) => &tree.subjects[sub].sessions[sei].runs[run].key_string,
             None => &tree.subjects[sub].runs[run].key_string,
         };
-        app.filter_state.orientation_preview().order.iter().position(|k| k == key).unwrap()
+        app.filter_state.orientation_preview("").order.iter().position(|k| k == key).unwrap()
     }
 
     /// The Input tab keeps only the pattern: its settings are on QSM → COSMOS/STI, so
@@ -9874,32 +9771,27 @@ mod tests {
             orientation_group: "chunk".into(),
             ..Default::default()
         };
-        let preview = fs.orientation_preview();
+        let preview = fs.orientation_preview("");
         assert!(preview.error.unwrap().contains("chunk"));
 
         fs.orientation_group = "re:(a)(b)".into();
-        assert!(fs.orientation_preview().error.is_some());
+        assert!(fs.orientation_preview("").error.is_some());
     }
 
     #[test]
     fn orientation_preview_is_empty_when_off() {
         let fs = super::FilterTreeState::default();
-        let preview = fs.orientation_preview();
+        let preview = fs.orientation_preview("");
         assert!(preview.error.is_none());
         assert!(preview.groups.is_empty());
     }
 
     #[test]
-    fn orientation_args_are_none_until_a_pattern_is_set() {
+    fn the_orientation_grouping_is_none_until_a_pattern_is_set() {
         let mut fs = super::FilterTreeState::default();
-        assert_eq!(fs.orientation_args().0, None);
+        assert_eq!(fs.orientation_group_by(), None);
         fs.orientation_group = "  acq  ".into();
-        fs.orientation_algorithm = 1;
-        fs.orientation_lambda = "1e-3".into();
-        let (pattern, algo, lambda) = fs.orientation_args();
-        assert_eq!(pattern.as_deref(), Some("acq"), "the pattern is trimmed");
-        assert_eq!(algo, 1);
-        assert_eq!(lambda, Some(1e-3));
+        assert_eq!(fs.orientation_group_by().as_deref(), Some("acq"), "the pattern is trimmed");
     }
 
     #[test]
