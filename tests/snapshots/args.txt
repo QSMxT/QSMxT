@@ -422,6 +422,7 @@
 --two-pass value=TWO_PASS num_args=0 action=SetTrue default=false
 --two-pass-mask value=TWO_PASS_SECTIONS_CLI num_args=1 action=Append
 --two-pass-mask-combine value=TWO_PASS_MASK_COMBINE num_args=1 action=Set values=or,and
+--two-pass-mode value=TWO_PASS_MODE num_args=1 action=Set values=local,original
 --dismiss-recommendation value=RULE=VALUE num_args=1 action=Append
 --n-procs value=N_PROCS num_args=1 action=Set
 --source-dicom value=SOURCE_DICOM num_args=1 action=Set
@@ -886,6 +887,7 @@
 --two-pass value=TWO_PASS num_args=0 action=SetTrue default=false
 --two-pass-mask value=TWO_PASS_SECTIONS_CLI num_args=1 action=Append
 --two-pass-mask-combine value=TWO_PASS_MASK_COMBINE num_args=1 action=Set values=or,and
+--two-pass-mode value=TWO_PASS_MODE num_args=1 action=Set values=local,original
 --dismiss-recommendation value=RULE=VALUE num_args=1 action=Append
 --help -h num_args=0 action=Help
 
@@ -1308,6 +1310,7 @@
 --two-pass value=TWO_PASS num_args=0 action=SetTrue default=false
 --two-pass-mask value=TWO_PASS_SECTIONS_CLI num_args=1 action=Append
 --two-pass-mask-combine value=TWO_PASS_MASK_COMBINE num_args=1 action=Set values=or,and
+--two-pass-mode value=TWO_PASS_MODE num_args=1 action=Set values=local,original
 --dismiss-recommendation value=RULE=VALUE num_args=1 action=Append
 --debug value=DEBUG num_args=0 action=SetTrue default=false
 --force value=FORCE num_args=0 action=SetTrue default=false

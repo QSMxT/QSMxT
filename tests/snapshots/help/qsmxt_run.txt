@@ -1438,7 +1438,7 @@ Options:
           Refinement applied to the combined mask, after --mask-combine (repeatable). Takes the same refinement ops as --mask, e.g. `erode:2` or `fill-holes:0`; generators (threshold/bet/hd-bet) belong in a --mask section instead. Example: --mask-combine and --mask-refine fill-holes:0 --mask-refine erode:1
 
       --two-pass
-          Two-pass artefact reduction: reconstruct a second time against a mask whose holes are left unfilled, and keep that reconstruction wherever it is defined. Strong susceptibility sources (air-tissue interfaces, haemorrhage, implants) make the phase around them unrecoverable; leaving those voxels out keeps their streaking from spreading, while the ordinary mask still supplies values inside the holes. Roughly doubles background removal and inversion time, and is not free of downsides — where the holes were not artefactual it can be worse than a single pass. Based on doi:10.1002/mrm.29048 (Stewart et al.). Off by default. The conventional single-pass map is kept alongside as `_desc-singlepass_Chimap.nii`
+          Two-pass artefact reduction: reconstruct a second time against a mask with holes at strong susceptibility sources, and merge the two reconstructions (how: --two-pass-mode). Strong sources (haemorrhage, calcification, implants) make the phase around them unrecoverable; leaving those voxels out keeps their streaking from spreading, while the ordinary mask still supplies values inside the holes. Roughly doubles background removal and inversion time, and is not free of downsides — where the holes were not artefactual it can be worse than a single pass. Based on doi:10.1002/mrm.29048 (Stewart et al.). Off by default. The conventional single-pass map is kept alongside as `_desc-singlepass_Chimap.nii`
 
       --two-pass-mask <TWO_PASS_SECTIONS_CLI>
           Define the reliable-pass mask used by --two-pass (repeatable; same format as --mask). Defaults to `phase-quality,threshold:otsu` — an unfilled threshold on the phase-quality map. Its holes are the point, so refinements that close them (fill-holes, close, gaussian) defeat the method. Folded with --two-pass-mask-combine, then --mask-refine like the main mask, and always intersected with it
@@ -1449,6 +1449,13 @@ Options:
           Possible values:
           - or:  Union — keep a voxel any section keeps (default)
           - and: Intersection — keep only voxels every section keeps
+
+      --two-pass-mode <TWO_PASS_MODE>
+          How --two-pass makes and merges its second pass. `local` (default): only holes with a core of very low phase quality are kept (strong sources, not veins or the pallidum), background removal leaves no eroded rim around them, and the second pass is used within 6 mm of them, blended into the first out to 12 mm. `original`: the published algorithm (doi:10.1002/mrm.29048), every voxel outside the reliable mask is a hole and the second pass is used wherever it is defined. Turns on --two-pass
+
+          Possible values:
+          - local:    Holes only at strong sources; second pass used near them (default)
+          - original: The published algorithm
 
       --dismiss-recommendation <RULE=VALUE>
           Stop offering a recommendation for the setting's current value: RULE=VALUE, the rule's id and the value it was dismissed for, as `qsmxt run --dry` lists them (e.g. field-mapping.phase-offsets=false). Repeatable. A change to the setting brings the recommendation back. A required one cannot be dismissed, and a reference-pipeline difference has nothing to dismiss

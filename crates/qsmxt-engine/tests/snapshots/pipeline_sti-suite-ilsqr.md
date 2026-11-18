@@ -4,7 +4,7 @@ qsmxt run <bids_dir> --pipeline sti-suite-ilsqr
 
 ## Config hash
 
-18101c9491431e6a
+7950360caf1a4c62
 
 ## Steps (dry run on a 3-echo 3 T scan: step, state, cache key)
 

@@ -4,7 +4,7 @@ qsmxt run <bids_dir> --pipeline sti-suite-star
 
 ## Config hash
 
-4f519c1d6e39386
+3693688ffcb40cfa
 
 ## Steps (dry run on a 3-echo 3 T scan: step, state, cache key)
 

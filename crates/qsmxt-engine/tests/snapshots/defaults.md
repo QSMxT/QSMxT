@@ -4,7 +4,7 @@ qsmxt run <bids_dir>
 
 ## Config hash
 
-bf3430d046024d47
+ce6532685da3c5c3
 
 ## Steps (dry run on a 3-echo 3 T scan: step, state, cache key)
 

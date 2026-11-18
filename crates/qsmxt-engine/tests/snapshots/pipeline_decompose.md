@@ -4,7 +4,7 @@ qsmxt run <bids_dir> --pipeline decompose
 
 ## Config hash
 
-848754b505db4d7a
+c8beb962f8310ff6
 
 ## Steps (dry run on a 3-echo 3 T scan: step, state, cache key)
 

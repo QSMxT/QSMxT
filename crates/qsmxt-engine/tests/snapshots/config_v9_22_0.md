@@ -4,7 +4,7 @@ qsmxt run <bids_dir> --qsm-algorithm rts
 
 ## Config hash
 
-aacdccead940e596
+99bb382ad5029402
 
 ## Steps (dry run on a 3-echo 3 T scan: step, state, cache key)
 

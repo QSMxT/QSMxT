@@ -4,7 +4,7 @@ qsmxt run <bids_dir> --pipeline chi-sep-medi
 
 ## Config hash
 
-7c49ed5e96c93dda
+3ac15a6b77146f0a
 
 ## Steps (dry run on a 3-echo 3 T scan: step, state, cache key)
 

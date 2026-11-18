@@ -4,7 +4,7 @@ qsmxt run <bids_dir> --pipeline qsmart
 
 ## Config hash
 
-a60ed82198823bf8
+492b5bcabcc1f708
 
 ## Steps (dry run on a 3-echo 3 T scan: step, state, cache key)
 

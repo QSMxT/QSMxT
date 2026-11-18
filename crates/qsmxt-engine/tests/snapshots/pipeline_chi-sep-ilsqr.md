@@ -4,7 +4,7 @@ qsmxt run <bids_dir> --pipeline chi-sep-ilsqr
 
 ## Config hash
 
-3f6f926edcbb6e4b
+8cd964d12a56f83b
 
 ## Steps (dry run on a 3-echo 3 T scan: step, state, cache key)
 

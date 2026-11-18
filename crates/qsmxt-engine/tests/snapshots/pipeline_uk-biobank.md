@@ -4,7 +4,7 @@ qsmxt run <bids_dir> --pipeline uk-biobank
 
 ## Config hash
 
-3bc32691826c35a4
+4563d9b5c2307ff4
 
 ## Steps (dry run on a 3-echo 3 T scan: step, state, cache key)
 

@@ -4,7 +4,7 @@ qsmxt run <bids_dir> --pipeline medi-toolbox
 
 ## Config hash
 
-d311fc2905a2daf7
+c60ab831e5e482f
 
 ## Steps (dry run on a 3-echo 3 T scan: step, state, cache key)
 

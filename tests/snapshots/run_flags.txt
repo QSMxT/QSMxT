@@ -1277,6 +1277,11 @@
 --two-pass-mask-combine and
     /masking/two_pass: false -> true
     /masking/two_pass_combine: null -> "and"
+--two-pass-mode local
+    /masking/two_pass: false -> true
+--two-pass-mode original
+    /masking/two_pass: false -> true
+    /masking/two_pass_mode: "local" -> "original"
 --dismiss-recommendation 2
     refused: Pipeline configuration error: --dismiss-recommendation 2: give the rule and the value it is dismissed for, as RULE=VALUE (`qsmxt run --dry` lists them)
 --n-procs 2

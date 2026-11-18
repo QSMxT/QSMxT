@@ -4,7 +4,7 @@ qsmxt run <bids_dir> --pipeline heidi
 
 ## Config hash
 
-7eb75733d21a13bf
+f33a3401a2e8101b
 
 ## Steps (dry run on a 3-echo 3 T scan: step, state, cache key)
 

@@ -4,7 +4,7 @@ qsmxt run <bids_dir> --pipeline chi-sepnet
 
 ## Config hash
 
-452d8b44027ecaae
+de41cee0170b86de
 
 ## Steps (dry run on a 3-echo 3 T scan: step, state, cache key)
 
