@@ -354,6 +354,11 @@ const CITE_SYNTHSEG: Citation = Citation {
     text: "Billot, B., Greve, D.N., Puonti, O., et al. (2023). \"SynthSeg: Segmentation of brain MRI scans of any contrast and resolution without retraining.\" *Medical Image Analysis*, 86:102789. https://doi.org/10.1016/j.media.2023.102789",
 };
 
+const CITE_SYNTHSEG2: Citation = Citation {
+    key: "billot2023pnas",
+    text: "Billot, B., Magdamo, C., Cheng, Y., et al. (2023). \"Robust machine learning segmentation for large-scale analysis of heterogeneous clinical brain MRI datasets.\" *Proceedings of the National Academy of Sciences*, 120(9):e2216399120. https://doi.org/10.1073/pnas.2216399120",
+};
+
 const CITE_SMWI: Citation = Citation {
     key: "gho2014",
     text: "Gho, S.-M., Liu, C., Li, W., et al. (2014). \"Susceptibility map-weighted imaging (SMWI) for neuroimaging.\" *Magnetic Resonance in Medicine*, 72(2):337-346. https://doi.org/10.1002/mrm.24920",
@@ -946,11 +951,21 @@ pub struct Note {
     /// needed or better.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub differences: Vec<String>,
+    /// The required changes the run made itself: outputs another setting needs, turned on because
+    /// the configuration left them off ([`crate::config::PipelineConfig::required_changes`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub required: Vec<String>,
 }
 
 impl Note {
     pub fn is_empty(&self) -> bool {
-        self.departures.is_empty() && self.differences.is_empty()
+        self.departures.is_empty() && self.differences.is_empty() && self.required.is_empty()
+    }
+
+    /// [`Self::required`] from `config`'s record of them, each a sentence.
+    fn with_required(mut self, config: &crate::config::PipelineConfig) -> Self {
+        self.required = config.required_changes.iter().map(|m| format!("{m}.")).collect();
+        self
     }
 }
 
@@ -970,6 +985,7 @@ impl Methods {
             for (heading, lines) in [
                 ("Departures from the methods' recommendations:", &n.departures),
                 ("Differences from the methods' reference pipelines:", &n.differences),
+                ("Outputs the run turned on because other settings need them:", &n.required),
             ] {
                 if lines.is_empty() {
                     continue;
@@ -1086,7 +1102,7 @@ fn chi_bound_sentence(ran: Ran) -> String {
 pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
     let config = &config.normalised().0;
     let mut methods = draft(config, tool, Ran::default()).finish(config, None);
-    methods.note = crate::recommendations::config_note(config);
+    methods.note = crate::recommendations::config_note(config).with_required(config);
     methods.to_markdown()
 }
 
@@ -1096,7 +1112,7 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
 pub fn methods_structured(config: &PipelineConfig, plan: &Plan, tool: &str) -> Methods {
     let config = &config.normalised_as_planned(plan);
     let mut methods = draft(config, tool, Ran::default()).finish(config, Some(plan));
-    methods.note = crate::recommendations::config_note(config);
+    methods.note = crate::recommendations::config_note(config).with_required(config);
     methods
 }
 
@@ -1112,7 +1128,7 @@ pub fn methods_for_run(config: &PipelineConfig, plan: &Plan, record: &RunRecord,
     let mut methods = draft(config, tool, Ran(Some(&merged))).finish_drawn(|stage| {
         plan.has(*stage) && !crate::pipeline_graph::left_out(plan, config, *stage, record.resampled)
     });
-    methods.note = crate::recommendations::note(&merged.recommendations, 1);
+    methods.note = crate::recommendations::note(&merged.recommendations, 1).with_required(config);
     methods
 }
 
@@ -1129,7 +1145,7 @@ pub fn methods_for_dataset(config: &PipelineConfig, record: &DatasetRecord, tool
     let config = &config;
     let mut methods = draft(config, tool, Ran(Some(record)))
         .finish_drawn(|stage| record.step(&stage.name()).is_some_and(|s| s.ran() > 0));
-    methods.note = crate::recommendations::note(&record.recommendations, record.runs);
+    methods.note = crate::recommendations::note(&record.recommendations, record.runs).with_required(config);
     methods
 }
 
@@ -1442,7 +1458,12 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
     }
     if config.pipeline.do_segmentation && !dseg_all_supplied && !ran.none_ran(Stage::Segmentation) {
         doc.cite(&CITE_SYNTHSEG);
-        let labels = if config.segmentation.version == SynthSegVersion::V2 { 33 } else { 32 };
+        let v2 = config.segmentation.version == SynthSegVersion::V2;
+        if v2 {
+            doc.cite(&CITE_SYNTHSEG2);
+        }
+        // The label table counts the background.
+        let structures = config.segmentation.version.to_core().n_labels() - 1;
         let (s, d) = (&config.segmentation, SegmentationConfig::default());
         let mut changed = Changed::default();
         changed.add(s.flip_averaging != d.flip_averaging, || format!(
@@ -1457,9 +1478,11 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
         }
         changed.add_fields(s, &d, &["version", "flip_averaging", "custom_dseg_tool", "patch"]);
         doc.say(&[Stage::Segmentation], format!(
-            "The brain was parcellated from the GRE magnitude using SynthSeg {} (Billot et al., \
-             2023), yielding {} FreeSurfer-labelled structures{}.",
-            config.segmentation.version, labels, changed.comma_with(),
+            "The brain was parcellated from the GRE magnitude using SynthSeg {} ({}), yielding {} \
+             FreeSurfer-labelled structures{}.",
+            config.segmentation.version,
+            if v2 { "Billot, Greve, et al., 2023; Billot, Magdamo, et al., 2023" } else { "Billot et al., 2023" },
+            structures, changed.comma_with(),
         ));
     }
     if config.pipeline.do_analysis && !ran.none_ran(Stage::Analysis) {
@@ -2852,9 +2875,10 @@ mod tests {
         config.pipeline.do_segmentation = true;
         let out = generate_methods(&config);
         assert!(out.contains("SynthSeg v1"), "out: {out}");
-        assert!(out.contains("32 FreeSurfer-labelled structures"), "out: {out}");
+        assert!(out.contains("31 FreeSurfer-labelled structures"), "out: {out}");
         assert!(out.contains("parcellated from the GRE magnitude"), "out: {out}");
         assert!(out.contains("10.1016/j.media.2023.102789"), "SynthSeg citation missing: {out}");
+        assert!(!out.contains("10.1073/pnas.2216399120"), "v1 does not cite the 2.0 paper: {out}");
         assert!(!out.contains("summarised within every segmented structure"),
                 "no statistics were asked for: {out}");
 
@@ -2862,7 +2886,9 @@ mod tests {
         config.segmentation.version = crate::enums::SynthSegVersion::V2;
         let out = generate_methods(&config);
         assert!(out.contains("SynthSeg v2"), "out: {out}");
-        assert!(out.contains("33 FreeSurfer-labelled structures"), "out: {out}");
+        assert!(out.contains("32 FreeSurfer-labelled structures"), "out: {out}");
+        assert!(out.contains("10.1016/j.media.2023.102789") && out.contains("10.1073/pnas.2216399120"),
+                "SynthSeg 2.0 cites both papers: {out}");
         assert!(out.contains("Each quantitative map was then summarised within every segmented structure"),
                 "out: {out}");
         assert!(out.contains("5th/95th percentiles"), "out: {out}");

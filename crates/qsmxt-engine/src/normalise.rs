@@ -1,13 +1,23 @@
-//! The configuration a run takes: the one it is given, with every output another output needs
-//! switched on ([`PipelineConfig::normalised`]).
+//! The configuration a run takes: the one it is given, with every output another setting needs
+//! switched on ([`PipelineConfig::normalised`]), and those same needs as `required` findings for a
+//! front end to offer ([`required_findings`]).
 //!
 //! Every entry point a front end calls with a configuration ([`crate::plan::plan`],
 //! [`crate::run::run`] and [`crate::run::dry_run`], [`crate::generate_command`], the methods text,
 //! the pipeline graph and [`crate::schema::settings_view`]) normalises it first, so a front end
 //! passes the configuration as the user left it and gets `qsmxt run`'s behaviour. `qsmxt`
 //! normalises the configuration it builds from its file and flags with the same function, once,
-//! before any scan is read: it is what `pipeline_config.toml` holds and what the steps' cache keys
-//! are made from. Normalising a normalised configuration changes nothing.
+//! before any scan is read, and logs each change at info level: it is what `pipeline_config.toml`
+//! holds and what the steps' cache keys are made from. Normalising a normalised configuration
+//! changes nothing.
+//!
+//! **Two kinds of `required`.** These needs are QSMxT's wiring (an output another setting reads),
+//! offered by a front end as [`Strength::Required`] findings of [`Basis::Wiring`] the moment the
+//! setting that needs one is chosen ("Required change": apply it, or undo the change just made).
+//! Left unresolved, the run applies them itself, says so in its log and records them in
+//! [`PipelineConfig::required_changes`] and the methods text's Note. QSM.rs's `required` rules are
+//! different: what a method cannot run with is refused before the run, never applied unasked
+//! ([`crate::requirements`]).
 //!
 //! Normalisation reads only the configuration. What a scan's data rules out is the plan's to say
 //! ([`crate::plan::Plan::notes`], [`crate::plan::Plan::check`]).
@@ -18,15 +28,24 @@
 //! front ends' pop-ups. What a method cannot run with is refused before the run.
 
 use serde::Serialize;
+use serde_json::Value;
 
 use crate::config::{
     enforce_analysis_dependencies, enforce_reference_dependencies, enforce_separation_dependencies,
     enforce_smwi_dependencies, PipelineConfig,
 };
-use crate::enums::{QsmReference, SeparationAlgorithm};
+use crate::enums::SeparationAlgorithm;
+use crate::recommendations::{Allowed, Basis, Kind, Named, Recommendation, Strength, Trigger};
+
+/// The ids of the required changes [`PipelineConfig::normalised`] makes ([`Adjustment::rule`]).
+pub const REQUIRED_RULES: &[&str] = &[
+    "qsmxt.analysis-segmentation", "qsmxt.analysis-qsm", "qsmxt.smwi-qsm", "qsmxt.chisep-r2prime",
+    "qsmxt.chisep-r2star", "qsmxt.r2prime-r2star", "qsmxt.r2prime-r2", "qsmxt.reference-segmentation",
+    "qsmxt.grouping-magnitude",
+];
 
 /// One change [`PipelineConfig::normalised`] made to a configuration, and why: what a front end
-/// lists beside the plan.
+/// lists beside the plan, and offers beforehand as a required change ([`required_findings`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Adjustment {
     /// The setting that was changed, by its path in the configuration
@@ -34,12 +53,71 @@ pub struct Adjustment {
     pub setting: &'static str,
     /// The setting that needs the change.
     pub because: &'static str,
-    /// The change and its reason, in a sentence that names settings rather than flags.
+    /// The finding's id ([`required_findings`]): `qsmxt.reference-segmentation`.
+    pub rule: &'static str,
+    /// The output turned on, by name ("Segmentation", "The R2* map").
+    pub output: &'static str,
+    /// What needs it, by the setting's name and value ("Reference = ventricles").
+    pub needed_by: String,
+    /// Why, in a phrase ("the reference region is measured on ...").
+    pub reason: String,
+    /// The change and its reason, in a sentence that names settings rather than flags, as the
+    /// log says it: "Segmentation turned on: Reference = ventricles needs it (...)".
     pub message: String,
 }
 
+impl Adjustment {
+    fn new(rule: &'static str, setting: &'static str, because: &'static str, output: &'static str,
+           needed_by: impl Into<String>, reason: impl Into<String>) -> Self {
+        let (needed_by, reason) = (needed_by.into(), reason.into());
+        let message = format!("{output} turned on: {needed_by} needs it ({reason})");
+        Adjustment { setting, because, rule, output, needed_by, reason, message }
+    }
+
+    /// The finding a front end offers for this change before the run ([`required_findings`]).
+    fn finding(&self, config: &Value) -> Recommendation {
+        let named = |on: bool| Named { value: Value::Bool(on), name: if on { "on" } else { "off" }.into() };
+        let trigger_value = self.because.split('.').try_fold(config, |v, k| v.get(k)).cloned().unwrap_or(Value::Null);
+        Recommendation {
+            rule: self.rule.into(),
+            kind: Kind::Reasoned,
+            strength: Strength::Required,
+            basis: Basis::Wiring,
+            setting: self.setting.into(),
+            label: self.output.trim_start_matches("The ").to_string(),
+            trigger: Trigger { setting: self.because.into(), value: trigger_value, name: self.needed_by.clone() },
+            current: vec![named(false)],
+            recommended: named(true),
+            allowed: Allowed::OneOf { values: vec![named(true)] },
+            reason: capitalised(&self.reason),
+            source: "QSMxT (how its steps link together)".into(),
+            needs_scan: false,
+            departs: true,
+            dismissed: false,
+            conflict: false,
+        }
+    }
+}
+
+/// `s` with its first letter in capitals, if it is a Latin one ("χ-separation" stays as it is).
+fn capitalised(s: &str) -> String {
+    let mut c = s.chars();
+    c.next().map_or_else(String::new, |f| std::iter::once(f.to_ascii_uppercase()).chain(c).collect())
+}
+
+/// The outputs `config` leaves off that another of its settings needs, as `required` findings
+/// ([`Basis::Wiring`]): what a front end offers as a "Required change" when that setting is
+/// chosen, and marks while it is left unresolved. A run applies them itself
+/// ([`PipelineConfig::normalised`]).
+pub fn required_findings(config: &PipelineConfig) -> Vec<Recommendation> {
+    let json = serde_json::to_value(config).unwrap_or(Value::Null);
+    let (_, adjustments) = config.normalised();
+    adjustments.iter().map(|a| a.finding(&json)).collect()
+}
+
 impl PipelineConfig {
-    /// This configuration as a run takes it, and every change that made to it.
+    /// This configuration as a run takes it, and every change that made to it. Each change is
+    /// also added to [`PipelineConfig::required_changes`], for the run's provenance.
     ///
     /// The rules, applied in this order:
     /// - per-structure statistics need a segmentation (unless one is supplied) and some map to
@@ -47,8 +125,7 @@ impl PipelineConfig {
     /// - SMWI needs a susceptibility map (QSM, unless one is supplied);
     /// - χ-separation needs the relaxometry maps its method reads, and a computed R2′ needs R2*
     ///   (and R2, where R2′ may be measured);
-    /// - a region reference is measured on the segmentation, and a region reference that names
-    ///   no region is the mean;
+    /// - a region reference is measured on the segmentation;
     /// - multi-orientation grouping registers the orientations on their published combined
     ///   magnitude, so it is published.
     ///
@@ -60,61 +137,79 @@ impl PipelineConfig {
         let before = c.clone();
         enforce_analysis_dependencies(&mut c);
         if turned_on(&before, &c, |c| c.pipeline.do_segmentation) {
-            out.push(note("pipeline.do_segmentation", "pipeline.do_analysis",
-                "Segmentation is on: the per-structure statistics are measured over it"));
+            out.push(Adjustment::new("qsmxt.analysis-segmentation", "pipeline.do_segmentation", "pipeline.do_analysis",
+                "Segmentation", "the per-structure statistics", "they are measured over the segmentation"));
         }
         if turned_on(&before, &c, |c| c.pipeline.do_qsm) {
-            out.push(note("pipeline.do_qsm", "pipeline.do_analysis",
-                "QSM is computed: the per-structure statistics need a map, and no other is computed"));
+            out.push(Adjustment::new("qsmxt.analysis-qsm", "pipeline.do_qsm", "pipeline.do_analysis",
+                "QSM", "the per-structure statistics", "they need a map to summarise, and no other is computed"));
         }
 
         let before = c.clone();
         enforce_smwi_dependencies(&mut c);
         if turned_on(&before, &c, |c| c.pipeline.do_qsm) {
-            out.push(note("pipeline.do_qsm", "pipeline.do_smwi",
-                "QSM is computed: SMWI weights the magnitude by the susceptibility map"));
+            out.push(Adjustment::new("qsmxt.smwi-qsm", "pipeline.do_qsm", "pipeline.do_smwi",
+                "QSM", "SMWI", "SMWI weights the magnitude by the susceptibility map"));
         }
 
         separation_dependencies(&mut c, &mut out);
 
         let before = c.clone();
         enforce_reference_dependencies(&mut c);
-        if before.qsm.reference == QsmReference::Region && c.qsm.reference != QsmReference::Region {
-            out.push(note("qsm.reference", "qsm.reference_region",
-                "QSM is referenced to its mean: the region reference names no region"));
-        }
         if turned_on(&before, &c, |c| c.pipeline.do_segmentation) {
-            out.push(note("pipeline.do_segmentation", "qsm.reference",
-                "Segmentation is on: the reference region is measured on it"));
+            let region = c.qsm.reference_region.as_deref().unwrap_or_default().trim().to_string();
+            out.push(Adjustment::new("qsmxt.reference-segmentation", "pipeline.do_segmentation", "qsm.reference",
+                "Segmentation", format!("Reference = {region}"),
+                "the reference region is measured on a SynthSeg segmentation of the magnitude, which is \
+                 saved with the outputs"));
         }
 
         if c.multi_orientation.enabled() && !c.pipeline.do_magnitude {
             c.pipeline.do_magnitude = true;
-            out.push(note("pipeline.do_magnitude", "multi_orientation.group_by",
-                "The combined magnitude is published: the orientations are registered on it"));
+            out.push(Adjustment::new("qsmxt.grouping-magnitude", "pipeline.do_magnitude", "multi_orientation.group_by",
+                "The combined magnitude", "orientation grouping",
+                "the orientations are registered on their published combined magnitude"));
         }
 
+        for a in &out {
+            if !c.required_changes.contains(&a.message) {
+                c.required_changes.push(a.message.clone());
+            }
+        }
         (c, out)
     }
 
     /// [`Self::normalised`], for a run on the scan `facts` describes: what [`crate::plan::plan`]
     /// plans and the run takes. χ-sepnet's toolbox route estimates its own R2′ unless this scan
-    /// can measure one, so only here is it known that the R2′ map is needed.
+    /// can measure one; where it can, the R2′ and R2 maps are computed for it, and kept with the
+    /// run's intermediates unless they were asked for ([`Self::computes_unasked_r2prime`]). Those
+    /// are not required changes: no setting is changed for them.
     pub fn normalised_for(&self, facts: &crate::scan::ScanFacts) -> (PipelineConfig, Vec<Adjustment>) {
-        let (mut c, mut out) = self.normalised();
+        let (mut c, out) = self.normalised();
         if crate::requirements::measures_r2prime_for_chisepnet(facts, &c) {
-            measure_r2prime_for_chisepnet(&mut c, &mut out);
+            measure_r2prime_for_chisepnet(&mut c);
         }
         (c, out)
     }
 
     /// [`Self::normalised_for`] the scan `plan` was made for ([`crate::plan::Plan::config`]).
     pub fn normalised_as_planned(&self, plan: &crate::plan::Plan) -> PipelineConfig {
-        let (mut c, mut out) = self.normalised();
+        let (mut c, _) = self.normalised();
         if plan.config.pipeline.do_r2primemap && crate::config::chisepnet_route_can_estimate_r2prime(&c) {
-            measure_r2prime_for_chisepnet(&mut c, &mut out);
+            measure_r2prime_for_chisepnet(&mut c);
         }
         c
+    }
+
+    /// The R2′ (and R2) maps a run of this configuration computes on a scan that can measure R2′
+    /// only for χ-sepnet's toolbox route, not because they were asked for: kept with the run's
+    /// intermediates, not published. `self` is the configuration as normalised before any scan
+    /// ([`Self::normalised`]); returns (R2′, R2).
+    pub fn computes_unasked_r2prime(&self) -> (bool, bool) {
+        if !crate::config::chisepnet_route_can_estimate_r2prime(self) {
+            return (false, false);
+        }
+        (!self.pipeline.do_r2primemap, !self.pipeline.do_r2map)
     }
 }
 
@@ -122,53 +217,46 @@ fn turned_on(before: &PipelineConfig, after: &PipelineConfig, get: impl Fn(&Pipe
     !get(before) && get(after)
 }
 
-fn note(setting: &'static str, because: &'static str, message: impl Into<String>) -> Adjustment {
-    Adjustment { setting, because, message: message.into() }
-}
-
 /// [`enforce_separation_dependencies`], saying what it turned on.
 fn separation_dependencies(c: &mut PipelineConfig, out: &mut Vec<Adjustment>) {
     let before = c.clone();
     enforce_separation_dependencies(c);
     let method = crate::methods::separation_name(c.separation.algorithm);
+    let chisep = method.to_string();
     if turned_on(&before, c, |c| c.pipeline.do_r2primemap) {
-        out.push(note("pipeline.do_r2primemap", "pipeline.do_chi_separation",
-            format!("The R2′ map is computed: χ-separation by {method} needs it")));
+        out.push(Adjustment::new("qsmxt.chisep-r2prime", "pipeline.do_r2primemap", "pipeline.do_chi_separation",
+            "The R2′ map", chisep.clone(), "it separates χ with R2′"));
     }
     if turned_on(&before, c, |c| c.pipeline.do_r2starmap) {
         let separation_reads_it = c.pipeline.do_chi_separation
             && (c.separation.algorithm == SeparationAlgorithm::R2starQsm
                 || crate::config::chisepnet_route_can_estimate_r2prime(c));
         out.push(if separation_reads_it {
-            note("pipeline.do_r2starmap", "pipeline.do_chi_separation",
-                format!("The R2* map is computed: χ-separation by {method} needs it"))
+            Adjustment::new("qsmxt.chisep-r2star", "pipeline.do_r2starmap", "pipeline.do_chi_separation",
+                "The R2* map", chisep.clone(), "it reads R2*")
         } else {
-            note("pipeline.do_r2starmap", "pipeline.do_r2primemap",
-                "The R2* map is computed: R2′ is computed from it")
+            Adjustment::new("qsmxt.r2prime-r2star", "pipeline.do_r2starmap", "pipeline.do_r2primemap",
+                "The R2* map", "the R2′ map", "R2′ is computed from R2*")
         });
     }
     if turned_on(&before, c, |c| c.pipeline.do_r2map) {
-        out.push(note("pipeline.do_r2map", "pipeline.do_r2primemap",
-            "The R2 map is computed: R2′ is measured as R2* − R2 where it can be"));
+        out.push(Adjustment::new("qsmxt.r2prime-r2", "pipeline.do_r2map", "pipeline.do_r2primemap",
+            "The R2 map", "the R2′ map", "R2′ is measured as R2* − R2 where it can be"));
     }
 }
 
-/// The scan can measure R2′, and χ-sepnet's toolbox route takes a measured R2′ when it has one.
-fn measure_r2prime_for_chisepnet(c: &mut PipelineConfig, out: &mut Vec<Adjustment>) {
-    if !c.pipeline.do_r2primemap {
-        c.pipeline.do_r2primemap = true;
-        out.push(note("pipeline.do_r2primemap", "pipeline.do_chi_separation", format!(
-            "The R2′ map is computed: χ-separation by {} uses R2′ measured as R2* − R2 where it can be",
-            crate::methods::separation_name(c.separation.algorithm))));
-    }
-    separation_dependencies(c, out);
+/// The scan can measure R2′, and χ-sepnet's toolbox route takes a measured R2′ when it has one:
+/// the maps it is measured from are computed ([`PipelineConfig::computes_unasked_r2prime`]).
+fn measure_r2prime_for_chisepnet(c: &mut PipelineConfig) {
+    c.pipeline.do_r2primemap = true;
+    enforce_separation_dependencies(c);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::enums::R2PrimeStrategy;
-    use crate::enums::QsmAlgorithm;
+    use crate::enums::{QsmAlgorithm, QsmReference};
 
     /// Every combination of the settings the rules read, each normalised twice.
     fn configs() -> Vec<PipelineConfig> {
@@ -224,14 +312,17 @@ mod tests {
                 ("pipeline.do_r2starmap", c.pipeline.do_r2starmap != n.pipeline.do_r2starmap),
                 ("pipeline.do_r2map", c.pipeline.do_r2map != n.pipeline.do_r2map),
                 ("pipeline.do_r2primemap", c.pipeline.do_r2primemap != n.pipeline.do_r2primemap),
-                ("qsm.reference", c.qsm.reference != n.qsm.reference),
             ].into_iter().filter(|(_, d)| *d).map(|(s, _)| s).collect();
             let mut said: Vec<&str> = adjustments.iter().map(|a| a.setting).collect();
             said.sort();
             let mut changed = changed;
             changed.sort();
             assert_eq!(said, changed, "{:?}", c.pipeline);
+            assert_eq!(n.qsm.reference, c.qsm.reference, "the reference is never rewritten");
+            assert_eq!(n.required_changes, adjustments.iter().map(|a| a.message.clone()).collect::<Vec<_>>(),
+                       "each change is recorded once");
             for a in &adjustments {
+                assert!(REQUIRED_RULES.contains(&a.rule), "{} is listed", a.rule);
                 assert!(!a.message.contains("--"), "{}", a.message);
                 assert!(paths.contains(&a.setting) && paths.contains(&a.because), "{a:?} names settings the schema has");
             }
@@ -297,9 +388,15 @@ mod tests {
         c.qsm.reference = QsmReference::Region;
         c.qsm.reference_region = Some("thalamus".into());
         assert_eq!(because(&c), [("pipeline.do_segmentation", "qsm.reference")]);
+        // A region reference that names no region is a configuration error, not rewritten.
         c.qsm.reference_region = Some(" ".into());
-        assert_eq!(because(&c), [("qsm.reference", "qsm.reference_region")]);
-        assert_eq!(c.normalised().0.qsm.reference, QsmReference::Mean);
+        assert!(because(&c).is_empty());
+        assert_eq!(c.normalised().0.qsm.reference, QsmReference::Region);
+
+        let mut c = PipelineConfig::default();
+        c.pipeline.do_magnitude = false;
+        c.multi_orientation.group_by = "acq".into();
+        assert_eq!(because(&c), [("pipeline.do_magnitude", "multi_orientation.group_by")]);
 
         assert!(PipelineConfig::default().normalised().1.is_empty());
     }
@@ -331,7 +428,7 @@ mod tests {
         assert!(!n.pipeline.do_r2primemap && !n.pipeline.do_r2map && n.pipeline.do_r2starmap);
         let notes: Vec<_> = notes.iter().map(|a| (a.setting, a.because, a.message.as_str())).collect();
         assert_eq!(notes, [("pipeline.do_r2starmap", "pipeline.do_chi_separation",
-            "The R2* map is computed: χ-separation by χ-sepnet (deep-learning source separation) needs it")]);
+            "The R2* map turned on: χ-sepnet (deep-learning source separation) needs it (it reads R2*)")]);
 
         let mut facts = crate::scan::ScanFacts {
             dims: (8, 8, 8), voxel_size: None, n_echoes: 3, echo_times: vec![0.01, 0.02, 0.03], has_magnitude: true,
@@ -343,8 +440,10 @@ mod tests {
         facts.mese_echo_times = Some(vec![0.01, 0.02, 0.03, 0.04]);
         let (measured, notes) = c.normalised_for(&facts);
         assert!(measured.pipeline.do_r2primemap && measured.pipeline.do_r2map);
-        assert!(notes.iter().any(|a| a.setting == "pipeline.do_r2primemap"
-            && a.message.contains("measured as R2* − R2")), "{notes:?}");
+        // Computed for the route, not asked for: no required change, and kept as intermediates.
+        assert!(!notes.iter().any(|a| a.setting == "pipeline.do_r2primemap"), "{notes:?}");
+        assert!(!measured.required_changes.iter().any(|m| m.contains("R2′ map")), "{:?}", measured.required_changes);
+        assert_eq!(n.computes_unasked_r2prime(), (true, true));
         assert_eq!(measured.normalised_for(&facts).0, measured);
         assert!(measured.normalised_for(&facts).1.is_empty());
 

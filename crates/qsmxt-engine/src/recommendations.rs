@@ -170,6 +170,11 @@ pub enum Basis {
     /// QSMxT's own recommendation, outside the reference pipeline: something the original
     /// toolbox does not offer, which QSMxT can do instead ([`qsmxt_findings`]).
     Qsmxt,
+    /// QSMxT's wiring: an output another setting reads, left off
+    /// ([`crate::normalise::required_findings`]). Always `required`, and unlike QSM.rs's
+    /// `required` rules, never a refusal: a run applies it itself, says so in its log and records
+    /// it ([`Recommendation::applied_by_run`]).
+    Wiring,
 }
 
 impl Basis {
@@ -180,6 +185,7 @@ impl Basis {
             Basis::ReferenceChoice => "the reference pipeline's choice",
             Basis::Implementation => "QSM.rs's implementation",
             Basis::Qsmxt => "QSMxT's recommendation, not offered by the reference toolbox",
+            Basis::Wiring => "an output another setting needs",
         }
     }
 }
@@ -293,6 +299,15 @@ impl Recommendation {
         names.join(", ")
     }
 
+    /// A required change the run makes itself when it is left unresolved: an output another
+    /// setting needs ([`Basis::Wiring`]). A front end offers it ("Required change") when that
+    /// setting is chosen; a run turns the output on, logs it and records it
+    /// ([`PipelineConfig::required_changes`]). QSM.rs's `required` rules are not: a run refuses
+    /// them ([`crate::requirements`]).
+    pub fn applied_by_run(&self) -> bool {
+        self.basis == Basis::Wiring
+    }
+
     /// Offered as a change, preselected: a departure from a reasoned rule.
     pub fn actionable(&self) -> bool {
         self.departs && self.strength.actionable()
@@ -316,7 +331,8 @@ impl Recommendation {
     /// resolves by turning that flag off. Returns its config path. A method has no such way out:
     /// nothing says which other method to choose.
     pub fn flag_trigger(&self) -> Option<&str> {
-        (self.kind == Kind::Reasoned && self.trigger.value == Value::Bool(true) && self.trigger.setting != self.setting)
+        (self.kind == Kind::Reasoned && !self.applied_by_run() && self.trigger.value == Value::Bool(true)
+            && self.trigger.setting != self.setting)
             .then_some(self.trigger.setting.as_str())
     }
 
@@ -874,6 +890,9 @@ pub fn reference_values(config: &PipelineConfig, facts: &Facts) -> Vec<Recommend
         Some(recommendation(&json, rule, &input, &scan, &applies.current, departs))
     }).collect();
     out.extend(qsmxt_findings(c, facts));
+    // The outputs the config as given leaves off that another setting needs: on the config as
+    // given, since normalising it turns them on.
+    out.extend(crate::normalise::required_findings(config));
     mark(config, &mut out);
     out
 }
@@ -1275,6 +1294,13 @@ pub fn prune_dismissals(config: &mut PipelineConfig, facts: &Facts) {
 /// `pick`, to another value it allows (one of [`Allowed::OneOf`]'s, or a number in its
 /// [`Allowed::Range`]). Any dismissal of the rule is dropped.
 pub fn apply(config: &mut PipelineConfig, rule: &str, pick: Option<&Value>) -> Result<(), String> {
+    // A required change (an output another setting needs): turn the output on.
+    if crate::normalise::REQUIRED_RULES.contains(&rule) {
+        if let Some(a) = config.normalised().1.into_iter().find(|a| a.rule == rule) {
+            crate::schema::set(config, a.setting, Value::Bool(true))?;
+        }
+        return Ok(());
+    }
     let r = core::RULES.iter().find(|r| r.id == rule).ok_or_else(|| format!("no rule {rule}"))?;
     let value = match (pick, r.expect) {
         (None, _) => core_json(&r.default),
@@ -1758,6 +1784,7 @@ pub fn note(findings: &[crate::record::RecommendationCount], runs: usize) -> cra
     crate::methods::Note {
         departures: lines(&[Strength::Recommended, Strength::Discouraged]),
         differences: lines(&[Strength::Reference]),
+        required: vec![],
     }
 }
 

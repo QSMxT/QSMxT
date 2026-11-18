@@ -897,7 +897,11 @@ takes that echo's wrapped phase, at its own echo time. With several echoes the f
 stage runs as usual and TGV takes the combined B0 field map, expressed as phase at the echo
 time `--tgv-te` picks (the first by default). Its weights `--tgv-alpha0` / `--tgv-alpha1` are
 in the reference's units, radians at that echo time and the field strength, so the same values
-regularise differently at another echo time or field strength.
+regularise differently at another echo time or field strength. The default weights, α0 = 0.00636
+and α1 = 0.00212, come from our evaluation on the 2016 QSM challenge and QSM Challenge 2.0 data
+(the ratio α0/α1 = 3 at 1.5 times the strength of QuantitativeSusceptibilityMappingTGV.jl's
+`regularization = 2`); `--tgv-alpha0 0.002 --tgv-alpha1 0.003` gives that package's weights.
+Every other TGV setting is the package's default.
 
 MEDI takes the local field from background removal (the authors' pipeline uses PDF), and with `--medi-smv` (the default) high-passes it with a spherical
 mean value filter of radius `--medi-smv-radius` (5 mm). With SMV, the mask is shrunk to
@@ -1517,14 +1521,15 @@ as hyphens; an unrecognised name lists the valid ones rather than guessing.
 :::caution[`csf` is a label, not the composite]
 SynthSeg 2.0 has a label of its own named `csf` (id 24), which covers
 extraventricular CSF too. `--qsm-reference csf` means *that label* and needs
-`--synthseg-version v2` (see below: v2's weights are not published yet, so this
-needs a v2 segmentation supplied with `--use-custom-dseg`); it is not the same ROI
+`--synthseg-version v2` (see below); it is not the same ROI
 as `ventricles`, and it does not exist on v1. Pick deliberately — the two give
 different numbers.
 :::
 
-A region reference implies `--do-segmentation`, since the region has to be
-measured on a parcellation; `--use-custom-dseg` satisfies that instead. If the
+A region reference requires `--do-segmentation`, since the region has to be
+measured on a parcellation; `--use-custom-dseg` satisfies that instead. Left off,
+the run turns segmentation on itself and logs it; the TUI offers it as a required
+change when the reference is chosen. If the
 region turns out to have no voxels inside the support for a subject, that
 subject's run **fails** rather than falling back to `mean` — a map that was
 quietly referenced to something else looks fine and cannot be compared with the
@@ -1561,11 +1566,14 @@ FreeSurfer-labelled `_dseg.nii` and the `_dseg.tsv` lookup table that names its
 integers. `--use-custom-dseg <TOOL>` brings your own parcellation from
 `<bids>/derivatives/<TOOL>/` instead.
 
-`--synthseg-version v2` selects SynthSeg 2.0 (33 labels, adding a general CSF
-class). Its ONNX weights are not published in QSM.rs's model registry yet, so a
-run that would segment with v2 is refused at start-up unless `synthseg-2.0.onnx`
-is supplied in `$QSM_MODEL_DIR`. With `--use-custom-dseg`, v2 only selects the
-label table a supplied segmentation is read with, and needs no weights.
+`--synthseg-version` picks the weights: `v1` (SynthSeg 1.0, 32 labels, the
+default) or `v2`, [SynthSeg 2.0](https://doi.org/10.1073/pnas.2216399120)
+(Billot et al., PNAS 2023; 33 labels, adding a general CSF class). Both are the
+authors' non-robust segmentation network; SynthSeg 2.0's robust, cortical
+parcellation and QC networks are not available. The 2.0 weights come
+from the author's own release (they are not in the SynthSeg repository) and are
+downloaded on first use like the other networks. With `--use-custom-dseg`, the
+version only selects the label table a supplied segmentation is read with.
 
 `--do-analysis` then summarises **every quantitative map the run produced**
 inside each structure — `Chimap`, the chi-separation maps, `T2starmap`,
@@ -1620,6 +1628,6 @@ Two copies of the table are written:
 The table covers whatever the run produced, so it does not force you to compute
 maps you did not ask for: `--no-qsm --do-r2starmap --do-segmentation
 --do-analysis` is a valid request and gives you an R2\*/T2\* table with no
-susceptibility map in sight. `--do-analysis` implies `--do-segmentation` (unless
-you supply a `dseg`), and implies QSM only when nothing else would produce a map
-at all.
+susceptibility map in sight. `--do-analysis` requires `--do-segmentation` (unless
+you supply a `dseg`), and QSM only when nothing else would produce a map at all;
+left off, the run turns them on itself and logs it.

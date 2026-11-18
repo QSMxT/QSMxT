@@ -1911,7 +1911,7 @@ static QSM_REF_ENTRIES: LazyLock<Vec<(&'static str, &'static str)>> = LazyLock::
     for r in qsmxt_engine::regions::REGIONS.iter() {
         let ids = r.ids.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", ");
         let help = format!(
-            "Reference χ to the mean of the {} (FreeSurfer {} {}){}. Enables SynthSeg",
+            "Reference χ to the mean of the {} (FreeSurfer {} {}){}. Requires Segmentation",
             r.label,
             if r.ids.len() == 1 { "label" } else { "labels" },
             ids,
@@ -3685,7 +3685,7 @@ impl PipelineFormState {
         });
         if !self.do_qsm {
             match self.ctx.qsm_forced_by {
-                Some(why) => rows.push(PipelineRow::Note { text: format!("  Reconstructed anyway: {why}").into() }),
+                Some(why) => rows.push(PipelineRow::Note { text: format!("  Required: {why}. Left off, the run turns it on").into() }),
                 None => {
                     rows.push(PipelineRow::Note { text: "  Off: no field map, background removal, inversion or reference.".into() });
                     rows.push(PipelineRow::Note { text: "  χ-separation and SMWI need QSM, or a supplied one.".into() });
@@ -6223,7 +6223,7 @@ static SWI_SCALING_OPTIONS: LazyLock<Vec<&'static str>> =
 static SWI_SCALING_HELP: LazyLock<Vec<&'static str>> =
     LazyLock::new(|| vec!["Phase scaling type for SWI"; SWI_SCALING_OPTIONS.len()]);
 const SYNTHSEG_VERSION_OPTIONS: &[&str] = &["v1", "v2"];
-const SYNTHSEG_VERSION_HELP: &[&str] = &["v1: 32 labels, weights ship with SynthSeg. v2: 33 labels (adds CSF); its weights are not published yet, so a run with v2 is refused unless synthseg-2.0.onnx is in $QSM_MODEL_DIR"; 2];
+const SYNTHSEG_VERSION_HELP: &[&str] = &["v1: SynthSeg 1.0, 32 labels (the default). v2: SynthSeg 2.0, 33 labels, adds a general CSF class (Billot et al., PNAS 2023)"; 2];
 const EXECUTION_MODE_OPTIONS: &[&str] = &["Local", "SLURM"];
 const EXECUTION_MODE_HELP: &[&str] = &["Local execution or generate SLURM job scripts"; 2];
 /// Where the segmentation comes from (a TUI-only choice: SynthSeg, or `--use-custom-dseg`).
@@ -6305,6 +6305,9 @@ pub struct App {
     pub rec_form: String,
     /// The config as it was at the same point, to tell which settings a change changed.
     pub rec_config: Option<serde_json::Value>,
+    /// The form as it was at the same point: what "Undo my change" in a required-change pop-up
+    /// sets back ([`super::recommend::Undo`]).
+    pub rec_snapshot: Option<Box<super::recommend::FormSnapshot>>,
     /// The reference pipeline pop-up opened when a method is chosen, and what it is worked out
     /// from ([`super::recommend::RefState`]).
     pub refs: super::recommend::RefState,
@@ -6716,6 +6719,7 @@ impl App {
             rec_queue: Vec::new(),
             rec_form: String::new(),
             rec_config: None,
+            rec_snapshot: None,
             refs: Default::default(),
             pipelines: Default::default(),
             hits: Default::default(),
@@ -8084,7 +8088,9 @@ impl App {
         let (group, algorithm, _) = self.filter_state.orientation_args();
         // Whether QSM runs is the resolved config's answer — the same enforcement the run applies.
         let config = super::command::config_from_app(self).ok();
-        let qsm_forced = !ps.do_qsm && config.as_ref().is_some_and(|c| c.pipeline.do_qsm);
+        // The config as the form gives it, and as the run takes it: QSM another output needs is
+        // a required change the run makes itself when it is left off.
+        let qsm_forced = !ps.do_qsm && config.as_ref().is_some_and(|c| c.normalised().0.pipeline.do_qsm);
         RowContext {
             qsm_forced_by: qsm_forced.then_some(
                 if self.form.do_smwi && ps.custom_qsm_tool.trim().is_empty() {
@@ -8098,7 +8104,7 @@ impl App {
             inputs: self.input_relevance(),
             axial_forced_by: config.as_ref().and_then(|c| {
                 let names = qsmxt_engine::bridge::axial_only_algorithms(
-                    c, qsmxt_engine::bridge::RunOrientationFacts { has_measured_r2: false });
+                    &c.normalised().0, qsmxt_engine::bridge::RunOrientationFacts { has_measured_r2: false });
                 (!names.is_empty()).then(|| names.join(", "))
             }),
             multi_coil: self.filter_state.tree.as_ref().is_none_or(|t| {
@@ -8601,12 +8607,21 @@ impl App {
 
     /// The option that turns an output on although its own checkbox is off, if one does.
     ///
-    /// The run's own rule (`requirements::implied_by` on the resolved config), so the ticked
-    /// checkbox, the refusal to untick it and what the run does cannot disagree: a supplied map
+    /// The run's own rule (`requirements::implied_by` on the resolved config), so what the run
+    /// makes, the refusal to untick it and the required-change pop-up cannot disagree: a supplied map
     /// (custom dseg, R2 or R2') satisfies the need and forces nothing.
     fn forced_by(&self, out: crate::pipeline::requirements::Output) -> Option<String> {
-        let config = super::command::config_from_app(self).ok()?;
+        // On the config as the run takes it: an output needed by one that is itself needed (R2
+        // for an R2′ that χ-separation needs) counts.
+        let config = super::command::config_from_app(self).ok()?.normalised().0;
         crate::pipeline::requirements::implied_by(&config, out)
+    }
+
+    /// [`Self::forced_by`], naming the setting by its label rather than its flag ("Reference =
+    /// ventricles").
+    fn forced_by_label(&self, out: crate::pipeline::requirements::Output) -> Option<String> {
+        let config = super::command::config_from_app(self).ok()?.normalised().0;
+        crate::pipeline::requirements::implied_by_label(&config, out)
     }
 
     // ─── Row-based tabs: pages, rows, focus and named field access ───
@@ -8674,8 +8689,8 @@ impl App {
             Page::Smwi => on(self.form.do_smwi),
             Page::Magnitude => on(self.form.do_magnitude),
             Page::Swi => on(self.form.do_swi),
-            Page::Relaxometry => on(["do_t2starmap", "do_r2starmap", "do_r2map", "do_r2primemap"].iter().any(|f| self.field_toggle(f))),
-            Page::Segmentation => on(self.field_toggle("do_segmentation") || self.form.do_analysis),
+            Page::Relaxometry => on(["do_t2starmap", "do_r2starmap", "do_r2map", "do_r2primemap"].iter().any(|f| self.output_made(f))),
+            Page::Segmentation => on(self.output_made("do_segmentation") || self.form.do_analysis),
             Page::Export => on(self.form.export_dicom),
             _ => SectionState::On,
         }
@@ -9031,28 +9046,37 @@ impl App {
         }
     }
 
-    /// Whether a segmentation is made or read: asked for, supplied, or forced by what needs one.
+    /// Whether a segmentation is made or read: asked for, supplied, or needed by another setting
+    /// (which the run turns on itself when it is left off).
     fn segmentation_on(&self) -> bool {
-        self.form.do_segmentation
-            || !self.pipeline_state.custom_dseg_tool.trim().is_empty()
-            || self.forced_by(crate::pipeline::requirements::Output::Segmentation).is_some()
+        self.output_made("do_segmentation")
     }
 
-    /// A checkbox as it reads: an output another option forces on reads as checked.
+    /// Whether the run makes an output: its checkbox is ticked, or another setting needs it (a
+    /// required change the run makes itself when it is left off, [`App::forced_by`]).
+    pub fn output_made(&self, field: &str) -> bool {
+        if field == "do_segmentation" {
+            return self.field_toggle(field)
+                || self.forced_by(crate::pipeline::requirements::Output::Segmentation).is_some();
+        }
+        if field == "do_qsm" && !self.pipeline_state.do_qsm {
+            return self.row_context().qsm_forced_by.is_some();
+        }
+        if forced_output(field).is_some_and(|out| self.forced_by(out).is_some()) {
+            return true;
+        }
+        self.field_toggle(field)
+    }
+
+    /// A checkbox as the user set it. An output another setting needs is not shown as ticked: the
+    /// change that needs it offers to tick it ("Required change"), and the setting is marked
+    /// while it is left off.
     pub fn field_toggle(&self, field: &str) -> bool {
         if let Some(m) = dicom_map(field) {
             return !self.form.dicom_unticked.iter().any(|u| u.eq_ignore_ascii_case(m.suffix));
         }
         if field == "do_segmentation" {
-            return self.segmentation_on();
-        }
-        if field == "do_qsm" && !self.pipeline_state.do_qsm {
-            return self.row_context().qsm_forced_by.is_some();
-        }
-        if let Some(out) = forced_output(field) {
-            if self.forced_by(out).is_some() {
-                return true;
-            }
+            return self.form.do_segmentation || !self.pipeline_state.custom_dseg_tool.trim().is_empty();
         }
         match self.form.flag(field) {
             Some(&b) => b,
@@ -9060,29 +9084,29 @@ impl App {
         }
     }
 
-    /// Flip a checkbox — refused, with the reason, while another option forces it on.
+    /// Flip a checkbox. Turning off an output another setting needs is refused, with the reason.
     pub fn toggle_field(&mut self, field: &str) {
         if let Some(m) = dicom_map(field) {
             return self.toggle_dicom_map(m);
         }
-        if field == "do_qsm" {
-            // QSM another output needs runs whatever this says: refuse, as for the other maps.
-            let was = std::mem::replace(&mut self.pipeline_state.do_qsm, false);
+        if field == "do_qsm" && self.pipeline_state.do_qsm {
+            // QSM another output needs: refuse turning it off, as for the other maps.
+            self.pipeline_state.do_qsm = false;
             let why = self.row_context().qsm_forced_by;
-            self.pipeline_state.do_qsm = was;
+            self.pipeline_state.do_qsm = true;
             if let Some(why) = why {
                 self.error_message = Some(format!("QSM is required: {why} — change or turn that off first."));
                 return;
             }
         }
         if field == "do_segmentation" {
-            if !self.segmentation_on() {
+            if !self.field_toggle(field) {
                 self.form.do_segmentation = true;
                 return;
             }
             // What needs a segmentation whichever its source: asked with no dseg supplied.
             let dseg = std::mem::take(&mut self.pipeline_state.custom_dseg_tool);
-            let why = self.forced_by(crate::pipeline::requirements::Output::Segmentation);
+            let why = self.forced_by_label(crate::pipeline::requirements::Output::Segmentation);
             self.pipeline_state.custom_dseg_tool = dseg;
             if let Some(why) = why {
                 self.error_message = Some(format!(
@@ -9094,11 +9118,13 @@ impl App {
             return;
         }
         if let Some(out) = forced_output(field) {
-            if let Some(why) = self.forced_by(out) {
-                self.error_message = Some(format!(
-                    "{} is required by {why} — change or turn that off first (or supply the map).",
-                    forced_output_name(out)));
-                return;
+            if self.field_toggle(field) {
+                if let Some(why) = self.forced_by_label(out) {
+                    self.error_message = Some(format!(
+                        "{} is required by {why} — change or turn that off first (or supply the map).",
+                        forced_output_name(out)));
+                    return;
+                }
             }
         }
         match self.form.flag_mut(field) {
@@ -9236,12 +9262,12 @@ impl App {
         let mut rows = vec![
             Toggle { label: "Compute T2* map", field: "do_t2starmap", help: "Compute T2* relaxation map (requires 3+ echoes with magnitude)" },
             Toggle { label: "Compute R2* map", field: "do_r2starmap", help: "Compute R2* decay rate map (requires 3+ echoes with magnitude)" },
-            Toggle { label: "Compute R2 map", field: "do_r2map", help: "R2 map (Hz) from a multi-echo spin-echo (MESE) acquisition via EPG. Forced on when chi-separation needs it" },
+            Toggle { label: "Compute R2 map", field: "do_r2map", help: "R2 map (Hz) from a multi-echo spin-echo (MESE) acquisition via EPG. Required when chi-separation needs it" },
         ];
         if inputs.r2 {
             rows.push(Param { label: "  Custom R2 tool", field: "custom_r2_tool", help: "Use an R2 map from <bids>/derivatives/<tool>/ instead of computing it from MESE (blank = compute, * = any tool)" });
         }
-        rows.push(Toggle { label: "Compute R2' map", field: "do_r2primemap", help: "R2' = R2* − R2 (Hz); needs GRE magnitude + a MESE acquisition, or R2PRIMEnet. Forced on when chi-separation needs it" });
+        rows.push(Toggle { label: "Compute R2' map", field: "do_r2primemap", help: "R2' = R2* − R2 (Hz); needs GRE magnitude + a MESE acquisition, or R2PRIMEnet. Required when chi-separation needs it" });
         if inputs.r2prime {
             rows.push(Param { label: "  Custom R2' tool", field: "custom_r2prime_tool", help: "Use an R2' map from <bids>/derivatives/<tool>/ instead of computing it (blank = compute, * = any tool)" });
         }
@@ -9269,10 +9295,10 @@ impl App {
     fn segmentation_rows(&self) -> Vec<PipelineRow> {
         use PipelineRow::{AlgoSelect, Param, Toggle};
         let f = &self.form;
-        let mut rows = vec![Toggle { label: "Segmentation", field: "do_segmentation", help: "Whole-brain parcellation: SynthSeg straight off the GRE magnitude, or one supplied in derivatives. Forced on by the statistics and a region reference" }];
-        // Whatever forces segmentation reveals its settings too: the checkbox then reads as
-        // checked, and hiding the settings that shape the segmentation it promises would be a lie.
-        if self.field_toggle("do_segmentation") {
+        let mut rows = vec![Toggle { label: "Segmentation", field: "do_segmentation", help: "Whole-brain parcellation: SynthSeg straight off the GRE magnitude, or one supplied in derivatives. Required by the statistics and a region reference: choosing one offers to turn it on (left off, the run turns it on itself)" }];
+        // Whatever needs a segmentation reveals its settings too, ticked or not: the run makes
+        // one, and hiding the settings that shape it would be a lie.
+        if self.segmentation_on() {
             rows.push(AlgoSelect { label: "  Source", field: "segmentation_source", options: SEGMENTATION_SOURCE_OPTIONS, help: SEGMENTATION_SOURCE_HELP });
             if self.field_select("segmentation_source") == 1 {
                 rows.push(Param { label: "    Derivatives tool", field: "custom_dseg_tool", help: "The dseg from <bids>/derivatives/<tool>/: * = any tool, or a tool name; SynthSeg runs where none is found" });
@@ -9289,7 +9315,7 @@ impl App {
             }
         }
         rows.push(PipelineRow::Separator);
-        rows.push(Toggle { label: "Per-structure statistics", field: "do_analysis", help: "Summarise every map the run makes (χ, χ+/χ−, T2*, R2*, R2, R2') per structure into a TSV: mean, SD, median, min, max, 5th/95th percentiles. Implies segmentation; implies QSM only if no other map is enabled" });
+        rows.push(Toggle { label: "Per-structure statistics", field: "do_analysis", help: "Summarise every map the run makes (χ, χ+/χ−, T2*, R2*, R2, R2') per structure into a TSV: mean, SD, median, min, max, 5th/95th percentiles. Requires segmentation, and QSM only if no other map is enabled" });
         if f.do_analysis && self.input_relevance().qsm {
             rows.push(PipelineFormState::custom_qsm_row());
         }
@@ -9338,12 +9364,12 @@ impl App {
             "SWI" => self.form.do_swi,
             "SWI phase" => self.form.do_swi && self.form.swi_filtered_phase,
             "SMWI" => self.form.do_smwi,
-            "T2*" => self.field_toggle("do_t2starmap"),
-            "R2*" => self.field_toggle("do_r2starmap"),
-            "R2" => self.field_toggle("do_r2map"),
-            "R2′" => self.field_toggle("do_r2primemap"),
+            "T2*" => self.output_made("do_t2starmap"),
+            "R2*" => self.output_made("do_r2starmap"),
+            "R2" => self.output_made("do_r2map"),
+            "R2′" => self.output_made("do_r2primemap"),
             "χ-separation" => self.pipeline_state.do_chi_separation,
-            "segmentation" => self.field_toggle("do_segmentation"),
+            "segmentation" => self.output_made("do_segmentation"),
             _ => false,
         }
     }
@@ -12709,36 +12735,41 @@ mod tests {
         assert_eq!(copies, 1, "one copy only");
         focus_on(&mut app, TAB_RECONSTRUCTION, "qsm_reference");
         app.set_field_select("qsm_reference", thalamus);
-        // A region forces segmentation, which reads as on where it is set up.
-        assert!(app.field_toggle("do_segmentation"));
+        // A region needs segmentation: the run makes one, so its settings show, but the checkbox
+        // reads as the user left it until the required change is applied.
+        assert!(!app.field_toggle("do_segmentation") && app.output_made("do_segmentation"));
         assert!(shows(&mut app, TAB_RECONSTRUCTION, "synthseg_version"));
     }
 
     #[test]
-    fn a_region_reference_forces_segmentation_visibly() {
+    fn a_region_reference_needs_segmentation_visibly() {
         let mut app = App::new();
         app.active_tab = TAB_RECONSTRUCTION;
         assert!(!app.field_toggle("do_segmentation"), "off by default");
 
         let region = qsm_ref_options().iter().position(|o| *o == "ventricles").unwrap();
         app.pipeline_state.set_select("qsm_reference", region);
-        assert!(app.field_toggle("do_segmentation"),
-                "a region reference needs SynthSeg, so it must read as checked");
+        assert!(!app.field_toggle("do_segmentation"), "the checkbox reads as the user left it");
+        assert!(app.output_made("do_segmentation"), "a region reference needs SynthSeg, which the run makes");
         for f in SYNTHSEG_ROWS {
             assert!(shows(&mut app, TAB_RECONSTRUCTION, f),
                     "{f} shapes the parcellation the reference is measured on");
         }
 
+        // Ticking it is the required change; unticking it again is refused, and says why.
         focus_on(&mut app, TAB_RECONSTRUCTION, "do_segmentation");
         app.handle_key(key(KeyCode::Enter));
-        assert!(!app.form.do_segmentation, "the underlying flag is untouched");
+        assert!(app.form.do_segmentation, "{:?}", app.error_message);
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.form.do_segmentation, "turning it off is refused");
         let msg = app.error_message.clone().expect("a refusal should explain itself");
-        assert!(msg.contains("ventricles"), "the refusal should name the reference: {msg}");
+        assert!(msg.contains("Reference = ventricles") && !msg.contains("--"), "the refusal names the setting: {msg}");
 
-        // `mean` and `none` force nothing.
+        // `mean` and `none` need nothing.
+        app.form.do_segmentation = false;
         for idx in [0, 1] {
             app.pipeline_state.set_select("qsm_reference", idx);
-            assert!(!app.field_toggle("do_segmentation"), "option {idx} forces nothing");
+            assert!(!app.output_made("do_segmentation"), "option {idx} needs nothing");
         }
     }
 
@@ -12774,26 +12805,27 @@ mod tests {
         // A config or CLI run can arrive with the statistics already on; segmentation is then in
         // force, so the block must be visible rather than hiding a setting that is taking effect.
         app.form.do_analysis = true;
-        assert!(app.field_toggle("do_segmentation"),
-                "segmentation is forced, so it must read as checked");
+        assert!(!app.field_toggle("do_segmentation") && app.output_made("do_segmentation"),
+                "segmentation is needed: made by the run, but not shown as ticked");
         for f in SYNTHSEG_ROWS {
             assert!(shows(&mut app, TAB_RECONSTRUCTION, f),
-                    "{f} shapes the forced segmentation and must be reachable");
+                    "{f} shapes the segmentation the run makes and must be reachable");
         }
 
-        // And it cannot be turned off from under them; the refusal says why.
+        // Ticking it is the required change; it then cannot be turned off from under them.
         focus_on(&mut app, TAB_RECONSTRUCTION, "do_segmentation");
         app.handle_key(key(KeyCode::Enter));
-        assert!(!app.form.do_segmentation, "the underlying flag is untouched");
-        assert!(app.field_toggle("do_segmentation"), "still forced, so still checked");
+        assert!(app.form.do_segmentation);
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.form.do_segmentation, "turning it off is refused");
         let msg = app.error_message.clone().expect("a refusal should explain itself");
-        assert!(msg.contains("--do-analysis"), "unhelpful message: {msg}");
+        assert!(msg.contains("per-structure statistics"), "unhelpful message: {msg}");
 
         // With the statistics off again it is an ordinary toggle.
         app.form.do_analysis = false;
         app.error_message = None;
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.form.do_segmentation, "{:?}", app.error_message);
+        assert!(!app.form.do_segmentation, "{:?}", app.error_message);
     }
 
     /// Selecting HEIDI shows both parameter groups (its seed is an LSQR solve); selecting plain
@@ -12982,7 +13014,7 @@ mod tests {
     fn a_custom_dseg_is_the_segmentation_source() {
         let mut app = App::new();
         app.form.do_analysis = true;
-        assert!(app.field_toggle("do_segmentation"), "forced without a supplied dseg");
+        assert!(app.output_made("do_segmentation"), "needed without a supplied dseg");
         assert_eq!(app.field_select("segmentation_source"), 0, "SynthSeg");
         app.pipeline_state.custom_dseg_tool = "freesurfer".into();
         assert!(app.field_toggle("do_segmentation"), "a supplied segmentation is a segmentation");
@@ -13006,17 +13038,21 @@ mod tests {
         assert!(!app.field_toggle("do_segmentation") && app.pipeline_state.custom_dseg_tool.is_empty());
     }
 
-    /// R2* is forced by what reads it (R2*-QSM, a computed R2'), and reads as checked.
+    /// R2* is needed by what reads it (R2*-QSM, a computed R2'): made by the run, shown as the
+    /// user left it, and once ticked it cannot be turned off from under them.
     #[test]
-    fn r2star_reads_as_forced_when_needed() {
+    fn r2star_is_made_when_needed_and_reads_as_set() {
         let mut app = App::new();
         assert!(!app.field_toggle("do_r2starmap"));
         app.form.do_r2primemap = true;
-        assert!(app.field_toggle("do_r2starmap"), "R2' = R2* - R2");
+        assert!(!app.field_toggle("do_r2starmap") && app.output_made("do_r2starmap"), "R2' = R2* - R2");
         app.active_tab = TAB_RECONSTRUCTION;
         focus_on(&mut app, TAB_RECONSTRUCTION, "do_r2starmap");
         app.handle_key(key(KeyCode::Enter));
-        assert!(!app.form.do_r2starmap && app.error_message.as_deref().is_some_and(|m| m.contains("--do-r2primemap")));
+        assert!(app.form.do_r2starmap, "{:?}", app.error_message);
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.form.do_r2starmap && app.error_message.as_deref().is_some_and(|m| m.contains("R2′ map")),
+                "{:?}", app.error_message);
     }
 
     /// The help bar's tab hint and the digit keys both follow TAB_NAMES.

@@ -640,20 +640,18 @@ fn produces_a_quantitative_map(config: &PipelineConfig) -> bool {
 
 /// A region reference is measured on the parcellation, so asking for one asks for a segmentation.
 ///
-/// Enabling it here rather than erroring keeps `--qsm-reference thalamus` a complete instruction:
-/// the thing the user asked for is the reference, and SynthSeg is how it gets measured. A
-/// bring-your-own dseg satisfies it the same way it satisfies the statistics.
+/// A required change, not an error: a front end offers it as one when the reference is chosen
+/// ([`crate::normalise::required_findings`]), and a run turns it on itself and says so, which
+/// keeps `--qsm-reference thalamus` a complete instruction. A bring-your-own dseg satisfies it the
+/// same way it satisfies the statistics.
 ///
-/// A `Region` with nothing to resolve is not a reference at all, so it falls back to the
-/// brain-mask mean rather than referencing to an empty set. The CLI and TUI both set the two
-/// fields together, so this only fires on a hand-edited config.
+/// A `Region` with nothing to resolve is a configuration error ([`crate::requirements`]), not
+/// rewritten here.
 pub fn enforce_reference_dependencies(config: &mut PipelineConfig) {
     if config.qsm.reference != QsmReference::Region {
         return;
     }
     if config.qsm.reference_region.as_ref().is_none_or(|r| r.trim().is_empty()) {
-        config.qsm.reference = QsmReference::Mean;
-        config.qsm.reference_region = None;
         return;
     }
     if config.pipeline.do_qsm && config.segmentation.custom_dseg_tool.is_none() {
@@ -1279,6 +1277,13 @@ pub struct PipelineConfig {
     /// follow that pipeline, with its departures.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reference_pipeline: Option<String>,
+    /// The required changes the run made itself ([`PipelineConfig::normalised`]): outputs turned on
+    /// because another setting needs them and the configuration left them off, each said in plain
+    /// words ("Segmentation turned on: Reference = ventricles needs it ..."). Provenance only: what
+    /// the log said, kept in `pipeline_config.toml` and the methods text's Note. It changes nothing
+    /// a run computes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub required_changes: Vec<String>,
 }
 
 /// `dismissed_recommendations` as read, less any of a reference-pipeline rule.
@@ -2393,7 +2398,7 @@ mod reference_dependency_tests {
     /// `mean` and `none` force nothing, and a hand-edited config naming no region is not a
     /// reference at all — it falls back rather than referencing to an empty set.
     #[test]
-    fn the_other_methods_force_nothing_and_an_empty_region_falls_back() {
+    fn the_other_methods_force_nothing_and_an_empty_region_is_left_for_the_error() {
         for method in [QsmReference::Mean, QsmReference::None] {
             let mut c = PipelineConfig::default();
             c.qsm.reference = method;
@@ -2407,9 +2412,13 @@ mod reference_dependency_tests {
             c.qsm.reference = QsmReference::Region;
             c.qsm.reference_region = empty.clone();
             enforce_reference_dependencies(&mut c);
-            assert_eq!(c.qsm.reference, QsmReference::Mean, "{empty:?} is not a reference");
-            assert_eq!(c.qsm.reference_region, None);
+            // Not rewritten to the mean: the settings view and the command line refuse it.
+            assert_eq!(c.qsm.reference, QsmReference::Region, "{empty:?} is left as it is");
+            assert_eq!(c.qsm.reference_region, empty);
             assert!(!c.pipeline.do_segmentation);
+            let view = crate::schema::settings_view(&c, &crate::schema::ViewFacts::default());
+            let error = view.iter().find(|v| v.path == "qsm.reference_region").and_then(|v| v.error.clone());
+            assert!(error.is_some(), "{empty:?} is refused");
         }
     }
 

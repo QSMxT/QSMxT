@@ -100,7 +100,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--bet-subdivisions <BET_SUBDIVISIONS>` | BET icosphere subdivision level. Applies to every BET step in the masking recipe. |
 | `--bet-voxel-scale <FACTOR>` | Factor applied to the voxel sizes before BET runs. BET's surface model is tuned to a human brain in millimetres, so preclinical data has to be presented at human scale: 10 is the usual setting for mouse. 1 (the default) is the acquisition's own geometry. Applies to every BET step in the masking recipe. |
 | `--bet-orientation <ORIENTATION>` | Which way round BET sees the left-right axis: `fsl` (the default; reversed for a neurologically stored image, as FSL's bet reads a NIfTI file) or `as-stored` (the voxels in the order they are stored, as MEDI's BET.m runs bet2). Applies to every BET step in the masking recipe. |
-| `--qsm-reference <SPEC>` | What the susceptibility map's zero is pinned to: `mean` (the mean over the voxels the map is defined on — the brain mask less the rim background-field removal eroded; the default), `none`, or a SynthSeg region — a structure with both sides merged (`thalamus`), one side (`left-thalamus`), the `ventricles` composite, a raw FreeSurfer id (`4`), or a comma-separated list of any of those. A region implies --do-segmentation. An unrecognised name lists the valid ones. |
+| `--qsm-reference <SPEC>` | What the susceptibility map's zero is pinned to: `mean` (the mean over the voxels the map is defined on — the brain mask less the rim background-field removal eroded; the default), `none`, or a SynthSeg region — a structure with both sides merged (`thalamus`), one side (`left-thalamus`), the `ventricles` composite, a raw FreeSurfer id (`4`), or a comma-separated list of any of those. A region requires --do-segmentation (turned on automatically, and logged). An unrecognised name lists the valid ones. |
 | `--qsm-per-echo <BOOL>` | Reconstruct a QSM from each echo on its own (each echo's phase unwrapped and divided by its echo time, then background removal, dipole inversion and referencing per echo) and publish each echo's map (`desc-echo<n>_Chimap`) and their mean as the QSM (`Chimap`), instead of one QSM from the echo-combined field map. The echo combination (--b0-estimation), phase-offset removal and bipolar correction do not run. DECOMPOSE takes the echoes' maps. Multi-echo only; not with TGV, QSMART, iQSM, iQFM, two-pass, or χ-separation methods that fit the local field. |
 | `--rts-delta <RTS_DELTA>` | RTS delta parameter. |
 | `--rts-mu <RTS_MU>` | RTS mu parameter. |
@@ -122,8 +122,8 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--tsvd-pad <X> <Y> <Z>` | TSVD zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--tgv-iterations <TGV_ITERATIONS>` | TGV iterations (default: from the voxel size, as the reference does) |
 | `--tgv-erosions <TGV_EROSIONS>` | TGV erosions. |
-| `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) |
-| `--tgv-alpha0 <TGV_ALPHA0>` | TGV alpha0 (second-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) |
+| `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) (default: 0.00212; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.003) |
+| `--tgv-alpha0 <TGV_ALPHA0>` | TGV alpha0 (second-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) (default: 0.00636; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.002) |
 | `--tgv-step-size <TGV_STEP_SIZE>` | TGV primal step size multiplier. |
 | `--tgv-te <TE>` | TGV: the echo time a field from several echoes is converted to phase at, and its weights are in radians at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first). A single echo is at its own. |
 | `--tikhonov-lambda <TIKHONOV_LAMBDA>` | Tikhonov lambda. |
@@ -401,7 +401,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--smwi-threshold <SMWI_THRESHOLD>` | SMWI susceptibility threshold in ppm — the \|χ\| at which the weighting mask reaches zero. The 1 ppm default follows SEPIA and targets strong sources; brain tissue wants far less. |
 | `--smwi-power <SMWI_POWER>` | SMWI mask power (contrast strength) |
 | `--smwi-mip-window <SMWI_MIP_WINDOW>` | SMWI mIP window size in slices. |
-| `--synthseg-version <VERSION>` | SynthSeg weights generation: v1 (32 labels, ships with SynthSeg) or v2 (33 labels, adds CSF; weights not published yet, so refused unless synthseg-2.0.onnx is in $QSM_MODEL_DIR) |
+| `--synthseg-version <VERSION>` | SynthSeg weights generation: v1 (SynthSeg 1.0, 32 labels; the default) or v2 (SynthSeg 2.0, 33 labels, adds a general CSF class; Billot et al., PNAS 2023) |
 | `--synthseg-crop <SYNTHSEG_CROP>` | Cubic centre-crop in voxels at 1 mm before inference (rounded up to a multiple of 32). Omit to process the whole volume, as the SynthSeg CLI does. |
 | `--synthseg-patch <VOXELS>` | Run SynthSeg as a sliding window of half-overlapping cubes this many voxels on a side at 1 mm (at least 64, rounded up to a multiple of 32), so its memory follows the patch, not the volume. Omit to run the whole volume at once, as the SynthSeg CLI does. |
 | `--no-synthseg-flip-averaging` | Skip the left-right flipped second pass. Halves inference time, as SynthSeg's --fast does. |
@@ -435,8 +435,8 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--swi-filtered-phase` | Also write CLEAR-SWI's high-pass filtered phase, the phase the SWI is weighted by (`_desc-swi_phase.nii`): Hz for several echoes, radians for one, 0 outside CLEAR-SWI's head mask. Implies --do-swi. |
 | `--no-magnitude` | Do not publish the combined magnitude (part-mag_T2starw). It is still computed, and kept with the run's intermediates, when a step reads it (SMWI, segmentation, a magnitude-weighted inversion) |
 | `--do-segmentation` | Also segment the brain from the GRE magnitude with SynthSeg, writing a FreeSurfer-labelled `_dseg.nii` and its BIDS lookup table. Needs no T1w and no registration. Needs a deep-learning build. doi:10.1016/j.media.2023.102789. |
-| `--do-analysis` | Also summarise every quantitative map (χ, χ+/χ−, T2\*, R2\*, R2, R2') per segmented structure into a TSV: mean, SD, median, min, max and the 5th/95th percentiles, one row per map and structure, plus a dataset-level table gathering all runs. Summarises whatever the run made — it implies --do-segmentation, and QSM only if no other map was asked for. |
-| `--do-smwi` | Also compute SMWI (susceptibility map-weighted imaging): weights the magnitude by a mask built from the susceptibility map rather than from high-pass filtered phase, so the contrast stays where the source is. Needs χ, so it implies QSM. doi:10.1002/mrm.24920. |
+| `--do-analysis` | Also summarise every quantitative map (χ, χ+/χ−, T2\*, R2\*, R2, R2') per segmented structure into a TSV: mean, SD, median, min, max and the 5th/95th percentiles, one row per map and structure, plus a dataset-level table gathering all runs. Summarises whatever the run made — it requires --do-segmentation, and QSM only if no other map was asked for (each turned on automatically, and logged) |
+| `--do-smwi` | Also compute SMWI (susceptibility map-weighted imaging): weights the magnitude by a mask built from the susceptibility map rather than from high-pass filtered phase, so the contrast stays where the source is. Needs χ, so it requires QSM (turned on automatically, and logged). doi:10.1002/mrm.24920. |
 | `--do-t2starmap` | Compute T2\* relaxation map from multi-echo magnitude data. |
 | `--do-r2starmap` | Compute R2\* decay rate map from multi-echo magnitude data. |
 | `--do-r2map` | Compute R2 map from a multi-echo spin-echo (MESE) acquisition (EPG) |
@@ -597,7 +597,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--bet-subdivisions <BET_SUBDIVISIONS>` | BET icosphere subdivision level. Applies to every BET step in the masking recipe. |
 | `--bet-voxel-scale <FACTOR>` | Factor applied to the voxel sizes before BET runs. BET's surface model is tuned to a human brain in millimetres, so preclinical data has to be presented at human scale: 10 is the usual setting for mouse. 1 (the default) is the acquisition's own geometry. Applies to every BET step in the masking recipe. |
 | `--bet-orientation <ORIENTATION>` | Which way round BET sees the left-right axis: `fsl` (the default; reversed for a neurologically stored image, as FSL's bet reads a NIfTI file) or `as-stored` (the voxels in the order they are stored, as MEDI's BET.m runs bet2). Applies to every BET step in the masking recipe. |
-| `--qsm-reference <SPEC>` | What the susceptibility map's zero is pinned to: `mean` (the mean over the voxels the map is defined on — the brain mask less the rim background-field removal eroded; the default), `none`, or a SynthSeg region — a structure with both sides merged (`thalamus`), one side (`left-thalamus`), the `ventricles` composite, a raw FreeSurfer id (`4`), or a comma-separated list of any of those. A region implies --do-segmentation. An unrecognised name lists the valid ones. |
+| `--qsm-reference <SPEC>` | What the susceptibility map's zero is pinned to: `mean` (the mean over the voxels the map is defined on — the brain mask less the rim background-field removal eroded; the default), `none`, or a SynthSeg region — a structure with both sides merged (`thalamus`), one side (`left-thalamus`), the `ventricles` composite, a raw FreeSurfer id (`4`), or a comma-separated list of any of those. A region requires --do-segmentation (turned on automatically, and logged). An unrecognised name lists the valid ones. |
 | `--qsm-per-echo <BOOL>` | Reconstruct a QSM from each echo on its own (each echo's phase unwrapped and divided by its echo time, then background removal, dipole inversion and referencing per echo) and publish each echo's map (`desc-echo<n>_Chimap`) and their mean as the QSM (`Chimap`), instead of one QSM from the echo-combined field map. The echo combination (--b0-estimation), phase-offset removal and bipolar correction do not run. DECOMPOSE takes the echoes' maps. Multi-echo only; not with TGV, QSMART, iQSM, iQFM, two-pass, or χ-separation methods that fit the local field. |
 | `--rts-delta <RTS_DELTA>` | RTS delta parameter. |
 | `--rts-mu <RTS_MU>` | RTS mu parameter. |
@@ -619,8 +619,8 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--tsvd-pad <X> <Y> <Z>` | TSVD zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--tgv-iterations <TGV_ITERATIONS>` | TGV iterations (default: from the voxel size, as the reference does) |
 | `--tgv-erosions <TGV_EROSIONS>` | TGV erosions. |
-| `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) |
-| `--tgv-alpha0 <TGV_ALPHA0>` | TGV alpha0 (second-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) |
+| `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) (default: 0.00212; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.003) |
+| `--tgv-alpha0 <TGV_ALPHA0>` | TGV alpha0 (second-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) (default: 0.00636; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.002) |
 | `--tgv-step-size <TGV_STEP_SIZE>` | TGV primal step size multiplier. |
 | `--tgv-te <TE>` | TGV: the echo time a field from several echoes is converted to phase at, and its weights are in radians at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first). A single echo is at its own. |
 | `--tikhonov-lambda <TIKHONOV_LAMBDA>` | Tikhonov lambda. |
@@ -898,7 +898,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--smwi-threshold <SMWI_THRESHOLD>` | SMWI susceptibility threshold in ppm — the \|χ\| at which the weighting mask reaches zero. The 1 ppm default follows SEPIA and targets strong sources; brain tissue wants far less. |
 | `--smwi-power <SMWI_POWER>` | SMWI mask power (contrast strength) |
 | `--smwi-mip-window <SMWI_MIP_WINDOW>` | SMWI mIP window size in slices. |
-| `--synthseg-version <VERSION>` | SynthSeg weights generation: v1 (32 labels, ships with SynthSeg) or v2 (33 labels, adds CSF; weights not published yet, so refused unless synthseg-2.0.onnx is in $QSM_MODEL_DIR) |
+| `--synthseg-version <VERSION>` | SynthSeg weights generation: v1 (SynthSeg 1.0, 32 labels; the default) or v2 (SynthSeg 2.0, 33 labels, adds a general CSF class; Billot et al., PNAS 2023) |
 | `--synthseg-crop <SYNTHSEG_CROP>` | Cubic centre-crop in voxels at 1 mm before inference (rounded up to a multiple of 32). Omit to process the whole volume, as the SynthSeg CLI does. |
 | `--synthseg-patch <VOXELS>` | Run SynthSeg as a sliding window of half-overlapping cubes this many voxels on a side at 1 mm (at least 64, rounded up to a multiple of 32), so its memory follows the patch, not the volume. Omit to run the whole volume at once, as the SynthSeg CLI does. |
 | `--no-synthseg-flip-averaging` | Skip the left-right flipped second pass. Halves inference time, as SynthSeg's --fast does. |
@@ -932,8 +932,8 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--swi-filtered-phase` | Also write CLEAR-SWI's high-pass filtered phase, the phase the SWI is weighted by (`_desc-swi_phase.nii`): Hz for several echoes, radians for one, 0 outside CLEAR-SWI's head mask. Implies --do-swi. |
 | `--no-magnitude` | Do not publish the combined magnitude (part-mag_T2starw). It is still computed, and kept with the run's intermediates, when a step reads it (SMWI, segmentation, a magnitude-weighted inversion) |
 | `--do-segmentation` | Also segment the brain from the GRE magnitude with SynthSeg, writing a FreeSurfer-labelled `_dseg.nii` and its BIDS lookup table. Needs no T1w and no registration. Needs a deep-learning build. doi:10.1016/j.media.2023.102789. |
-| `--do-analysis` | Also summarise every quantitative map (χ, χ+/χ−, T2\*, R2\*, R2, R2') per segmented structure into a TSV: mean, SD, median, min, max and the 5th/95th percentiles, one row per map and structure, plus a dataset-level table gathering all runs. Summarises whatever the run made — it implies --do-segmentation, and QSM only if no other map was asked for. |
-| `--do-smwi` | Also compute SMWI (susceptibility map-weighted imaging): weights the magnitude by a mask built from the susceptibility map rather than from high-pass filtered phase, so the contrast stays where the source is. Needs χ, so it implies QSM. doi:10.1002/mrm.24920. |
+| `--do-analysis` | Also summarise every quantitative map (χ, χ+/χ−, T2\*, R2\*, R2, R2') per segmented structure into a TSV: mean, SD, median, min, max and the 5th/95th percentiles, one row per map and structure, plus a dataset-level table gathering all runs. Summarises whatever the run made — it requires --do-segmentation, and QSM only if no other map was asked for (each turned on automatically, and logged) |
+| `--do-smwi` | Also compute SMWI (susceptibility map-weighted imaging): weights the magnitude by a mask built from the susceptibility map rather than from high-pass filtered phase, so the contrast stays where the source is. Needs χ, so it requires QSM (turned on automatically, and logged). doi:10.1002/mrm.24920. |
 | `--do-t2starmap` | Compute T2\* relaxation map from multi-echo magnitude data. |
 | `--do-r2starmap` | Compute R2\* decay rate map from multi-echo magnitude data. |
 | `--do-r2map` | Compute R2 map from a multi-echo spin-echo (MESE) acquisition (EPG) |
@@ -1028,7 +1028,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--bet-subdivisions <BET_SUBDIVISIONS>` | BET icosphere subdivision level. Applies to every BET step in the masking recipe. |
 | `--bet-voxel-scale <FACTOR>` | Factor applied to the voxel sizes before BET runs. BET's surface model is tuned to a human brain in millimetres, so preclinical data has to be presented at human scale: 10 is the usual setting for mouse. 1 (the default) is the acquisition's own geometry. Applies to every BET step in the masking recipe. |
 | `--bet-orientation <ORIENTATION>` | Which way round BET sees the left-right axis: `fsl` (the default; reversed for a neurologically stored image, as FSL's bet reads a NIfTI file) or `as-stored` (the voxels in the order they are stored, as MEDI's BET.m runs bet2). Applies to every BET step in the masking recipe. |
-| `--qsm-reference <SPEC>` | What the susceptibility map's zero is pinned to: `mean` (the mean over the voxels the map is defined on — the brain mask less the rim background-field removal eroded; the default), `none`, or a SynthSeg region — a structure with both sides merged (`thalamus`), one side (`left-thalamus`), the `ventricles` composite, a raw FreeSurfer id (`4`), or a comma-separated list of any of those. A region implies --do-segmentation. An unrecognised name lists the valid ones. |
+| `--qsm-reference <SPEC>` | What the susceptibility map's zero is pinned to: `mean` (the mean over the voxels the map is defined on — the brain mask less the rim background-field removal eroded; the default), `none`, or a SynthSeg region — a structure with both sides merged (`thalamus`), one side (`left-thalamus`), the `ventricles` composite, a raw FreeSurfer id (`4`), or a comma-separated list of any of those. A region requires --do-segmentation (turned on automatically, and logged). An unrecognised name lists the valid ones. |
 | `--qsm-per-echo <BOOL>` | Reconstruct a QSM from each echo on its own (each echo's phase unwrapped and divided by its echo time, then background removal, dipole inversion and referencing per echo) and publish each echo's map (`desc-echo<n>_Chimap`) and their mean as the QSM (`Chimap`), instead of one QSM from the echo-combined field map. The echo combination (--b0-estimation), phase-offset removal and bipolar correction do not run. DECOMPOSE takes the echoes' maps. Multi-echo only; not with TGV, QSMART, iQSM, iQFM, two-pass, or χ-separation methods that fit the local field. |
 | `--rts-delta <RTS_DELTA>` | RTS delta parameter. |
 | `--rts-mu <RTS_MU>` | RTS mu parameter. |
@@ -1050,8 +1050,8 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--tsvd-pad <X> <Y> <Z>` | TSVD zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0) |
 | `--tgv-iterations <TGV_ITERATIONS>` | TGV iterations (default: from the voxel size, as the reference does) |
 | `--tgv-erosions <TGV_EROSIONS>` | TGV erosions. |
-| `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) |
-| `--tgv-alpha0 <TGV_ALPHA0>` | TGV alpha0 (second-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) |
+| `--tgv-alpha1 <TGV_ALPHA1>` | TGV alpha1 (first-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) (default: 0.00212; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.003) |
+| `--tgv-alpha0 <TGV_ALPHA0>` | TGV alpha0 (second-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) (default: 0.00636; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.002) |
 | `--tgv-step-size <TGV_STEP_SIZE>` | TGV primal step size multiplier. |
 | `--tgv-te <TE>` | TGV: the echo time a field from several echoes is converted to phase at, and its weights are in radians at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first). A single echo is at its own. |
 | `--tikhonov-lambda <TIKHONOV_LAMBDA>` | Tikhonov lambda. |
@@ -1329,7 +1329,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--smwi-threshold <SMWI_THRESHOLD>` | SMWI susceptibility threshold in ppm — the \|χ\| at which the weighting mask reaches zero. The 1 ppm default follows SEPIA and targets strong sources; brain tissue wants far less. |
 | `--smwi-power <SMWI_POWER>` | SMWI mask power (contrast strength) |
 | `--smwi-mip-window <SMWI_MIP_WINDOW>` | SMWI mIP window size in slices. |
-| `--synthseg-version <VERSION>` | SynthSeg weights generation: v1 (32 labels, ships with SynthSeg) or v2 (33 labels, adds CSF; weights not published yet, so refused unless synthseg-2.0.onnx is in $QSM_MODEL_DIR) |
+| `--synthseg-version <VERSION>` | SynthSeg weights generation: v1 (SynthSeg 1.0, 32 labels; the default) or v2 (SynthSeg 2.0, 33 labels, adds a general CSF class; Billot et al., PNAS 2023) |
 | `--synthseg-crop <SYNTHSEG_CROP>` | Cubic centre-crop in voxels at 1 mm before inference (rounded up to a multiple of 32). Omit to process the whole volume, as the SynthSeg CLI does. |
 | `--synthseg-patch <VOXELS>` | Run SynthSeg as a sliding window of half-overlapping cubes this many voxels on a side at 1 mm (at least 64, rounded up to a multiple of 32), so its memory follows the patch, not the volume. Omit to run the whole volume at once, as the SynthSeg CLI does. |
 | `--no-synthseg-flip-averaging` | Skip the left-right flipped second pass. Halves inference time, as SynthSeg's --fast does. |
@@ -1363,8 +1363,8 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--swi-filtered-phase` | Also write CLEAR-SWI's high-pass filtered phase, the phase the SWI is weighted by (`_desc-swi_phase.nii`): Hz for several echoes, radians for one, 0 outside CLEAR-SWI's head mask. Implies --do-swi. |
 | `--no-magnitude` | Do not publish the combined magnitude (part-mag_T2starw). It is still computed, and kept with the run's intermediates, when a step reads it (SMWI, segmentation, a magnitude-weighted inversion) |
 | `--do-segmentation` | Also segment the brain from the GRE magnitude with SynthSeg, writing a FreeSurfer-labelled `_dseg.nii` and its BIDS lookup table. Needs no T1w and no registration. Needs a deep-learning build. doi:10.1016/j.media.2023.102789. |
-| `--do-analysis` | Also summarise every quantitative map (χ, χ+/χ−, T2\*, R2\*, R2, R2') per segmented structure into a TSV: mean, SD, median, min, max and the 5th/95th percentiles, one row per map and structure, plus a dataset-level table gathering all runs. Summarises whatever the run made — it implies --do-segmentation, and QSM only if no other map was asked for. |
-| `--do-smwi` | Also compute SMWI (susceptibility map-weighted imaging): weights the magnitude by a mask built from the susceptibility map rather than from high-pass filtered phase, so the contrast stays where the source is. Needs χ, so it implies QSM. doi:10.1002/mrm.24920. |
+| `--do-analysis` | Also summarise every quantitative map (χ, χ+/χ−, T2\*, R2\*, R2, R2') per segmented structure into a TSV: mean, SD, median, min, max and the 5th/95th percentiles, one row per map and structure, plus a dataset-level table gathering all runs. Summarises whatever the run made — it requires --do-segmentation, and QSM only if no other map was asked for (each turned on automatically, and logged) |
+| `--do-smwi` | Also compute SMWI (susceptibility map-weighted imaging): weights the magnitude by a mask built from the susceptibility map rather than from high-pass filtered phase, so the contrast stays where the source is. Needs χ, so it requires QSM (turned on automatically, and logged). doi:10.1002/mrm.24920. |
 | `--do-t2starmap` | Compute T2\* relaxation map from multi-echo magnitude data. |
 | `--do-r2starmap` | Compute R2\* decay rate map from multi-echo magnitude data. |
 | `--do-r2map` | Compute R2 map from a multi-echo spin-echo (MESE) acquisition (EPG) |
@@ -2414,8 +2414,8 @@ qsmxt invert tgv [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIE
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
 | `--iterations <ITERATIONS>` | Iterations (default: from the voxel size, as the reference does) |
 | `--erosions <EROSIONS>` | Erosions. |
-| `--alpha1 <ALPHA1>` | Alpha1 (first-order weight), in radians at the echo time (--te) and the field strength. |
-| `--alpha0 <ALPHA0>` | Alpha0 (second-order weight), in radians at the echo time (--te) and the field strength. |
+| `--alpha1 <ALPHA1>` | Alpha1 (first-order weight), in radians at the echo time (--te) and the field strength (default: 0.00212; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.003) |
+| `--alpha0 <ALPHA0>` | Alpha0 (second-order weight), in radians at the echo time (--te) and the field strength (default: 0.00636; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.002) |
 | `--step-size <STEP_SIZE>` | Primal step size multiplier. |
 | `--te <TE>` | Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first) |
 | `--reference-divergence` | Use QuantitativeSusceptibilityMappingTGV.jl's divergence in the w update rather than the exact adjoint of the symmetric gradient. Changes the result only on anisotropic voxels; with --reference-edge-erosion and --reference-output-box it reproduces that package, for comparison with it. |
@@ -3401,7 +3401,7 @@ qsmxt segment [OPTIONS] --output <OUTPUT> <MAGNITUDE>
 | `<MAGNITUDE>` | Input magnitude NIfTI file. Not a susceptibility map: SynthSeg reads anatomy, and χ has none of the tissue contrast it was trained to recognise. Required. |
 | `-o, --output <OUTPUT>` | Output label NIfTI file (FreeSurfer label ids) Required. |
 | `--lookup <LOOKUP>` | Also write the BIDS label lookup table (index/name) to this path. |
-| `--synthseg-version <VERSION>` | SynthSeg weights generation: v1 (32 labels, ships with SynthSeg) or v2 (33 labels, adds CSF; weights not published yet, so refused unless synthseg-2.0.onnx is in $QSM_MODEL_DIR) |
+| `--synthseg-version <VERSION>` | SynthSeg weights generation: v1 (SynthSeg 1.0, 32 labels; the default) or v2 (SynthSeg 2.0, 33 labels, adds a general CSF class; Billot et al., PNAS 2023) |
 | `--synthseg-crop <SYNTHSEG_CROP>` | Cubic centre-crop in voxels at 1 mm before inference (rounded up to a multiple of 32). Omit to process the whole volume, as the SynthSeg CLI does. |
 | `--synthseg-patch <VOXELS>` | Run SynthSeg as a sliding window of half-overlapping cubes this many voxels on a side at 1 mm (at least 64, rounded up to a multiple of 32), so its memory follows the patch, not the volume. Omit to run the whole volume at once, as the SynthSeg CLI does. |
 | `--no-synthseg-flip-averaging` | Skip the left-right flipped second pass. Halves inference time, as SynthSeg's --fast does. |

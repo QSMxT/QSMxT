@@ -421,6 +421,13 @@ impl DerivativeOutputs {
     }
     /// The combined magnitude of a run that does not publish it (`--no-magnitude`), kept for the
     /// steps that read it.
+    /// A map that is published when asked for, kept instead with step `step`'s intermediates when
+    /// a run computes it only for another step (χ-sepnet's measured R2′ and R2).
+    pub fn intermediate_item_path(&self, key: &AcquisitionKey, step: &str, item: Item) -> PathBuf {
+        let published = self.published_item(key, item);
+        let name = published.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        self.workflow_step_dir(key, step).join(name)
+    }
     pub fn intermediate_magnitude_path(&self, key: &AcquisitionKey) -> PathBuf {
         self.workflow_nifti_path(key, "magnitude", naming::magnitude())
     }
@@ -712,6 +719,11 @@ mod tests {
         assert_eq!(o.total_field_path(&k), PathBuf::from("/out/sub-01/fmap/sub-01_desc-total_fieldmap.nii"));
         assert_eq!(o.total_field_magnitude_path(&k), PathBuf::from("/out/sub-01/fmap/sub-01_desc-total_magnitude.nii"));
         assert_eq!(name(o.r2prime_path(&k)), "sub-01_R2primemap.nii");
+        // Computed only for another step (χ-sepnet's measured R2′): the same name, kept with the
+        // step's intermediates rather than published.
+        let kept = o.intermediate_item_path(&k, "r2_r2prime", Item::R2prime);
+        assert_eq!(name(kept.clone()), "sub-01_R2primemap.nii");
+        assert!(kept.parent() != o.r2prime_path(&k).parent() && kept.parent().unwrap().ends_with("r2_r2prime"), "{kept:?}");
     }
 
     /// One run's basename is a prefix of another's (`acq-a` / `acq-a_run-2`); `run-` before `inv-`.

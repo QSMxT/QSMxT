@@ -829,7 +829,7 @@ impl SynthSegVersion {
     /// The QSM.rs model-registry id of this version's weights: the version picks the weight file
     /// as well as the label table it is read through.
     pub fn weights_id(self) -> &'static str {
-        match self { Self::V1 => "synthseg", Self::V2 => "synthseg-2.0" }
+        self.to_core().model_id()
     }
 
     pub fn to_core(self) -> qsm_core::segment::SynthSegVersion {

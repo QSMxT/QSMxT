@@ -260,11 +260,13 @@ pub struct TgvParamArgs {
     #[arg(long)]
     pub tgv_erosions: Option<usize>,
     /// TGV alpha1 (first-order weight), in radians at the echo time (--tgv-te) and field
-    /// strength (the reference's units)
+    /// strength (the reference's units) (default: 0.00212; QuantitativeSusceptibilityMappingTGV.jl's
+    /// regularization 2 is 0.003)
     #[arg(long)]
     pub tgv_alpha1: Option<f64>,
     /// TGV alpha0 (second-order weight), in radians at the echo time (--tgv-te) and field
-    /// strength (the reference's units)
+    /// strength (the reference's units) (default: 0.00636; QuantitativeSusceptibilityMappingTGV.jl's
+    /// regularization 2 is 0.002)
     #[arg(long)]
     pub tgv_alpha0: Option<f64>,
     /// TGV primal step size multiplier
@@ -1509,8 +1511,8 @@ impl N4ParamArgs {
 
 #[derive(Args, Debug, Default, Clone)]
 pub struct SegmentationParamArgs {
-    /// SynthSeg weights generation: v1 (32 labels, ships with SynthSeg) or v2 (33 labels, adds CSF;
-    /// weights not published yet, so refused unless synthseg-2.0.onnx is in $QSM_MODEL_DIR)
+    /// SynthSeg weights generation: v1 (SynthSeg 1.0, 32 labels; the default) or v2 (SynthSeg 2.0,
+    /// 33 labels, adds a general CSF class; Billot et al., PNAS 2023)
     #[arg(long, value_name = "VERSION")]
     pub synthseg_version: Option<String>,
     /// Cubic centre-crop in voxels at 1 mm before inference (rounded up to a multiple of 32).
@@ -1807,7 +1809,7 @@ pub struct PipelineArgs {
     /// is defined on — the brain mask less the rim background-field removal eroded; the default),
     /// `none`, or a SynthSeg region — a structure with both sides merged (`thalamus`), one side
     /// (`left-thalamus`), the `ventricles` composite, a raw FreeSurfer id (`4`), or a
-    /// comma-separated list of any of those. A region implies --do-segmentation. An unrecognised
+    /// comma-separated list of any of those. A region requires --do-segmentation (turned on automatically, and logged). An unrecognised
     /// name lists the valid ones
     #[arg(long, value_name = "SPEC")]
     pub qsm_reference: Option<String>,
@@ -1970,13 +1972,15 @@ pub struct PipelineArgs {
     /// Also summarise every quantitative map (χ, χ+/χ−, T2*, R2*, R2, R2') per segmented
     /// structure into a TSV: mean, SD, median, min, max and the 5th/95th percentiles, one row per
     /// map and structure, plus a dataset-level table gathering all runs. Summarises whatever the
-    /// run made — it implies --do-segmentation, and QSM only if no other map was asked for
+    /// run made — it requires --do-segmentation, and QSM only if no other map was asked for (each turned
+    /// on automatically, and logged)
     #[arg(long)]
     pub do_analysis: bool,
 
     /// Also compute SMWI (susceptibility map-weighted imaging): weights the magnitude by a mask
     /// built from the susceptibility map rather than from high-pass filtered phase, so the contrast
-    /// stays where the source is. Needs χ, so it implies QSM. doi:10.1002/mrm.24920
+    /// stays where the source is. Needs χ, so it requires QSM (turned on automatically, and logged).
+    /// doi:10.1002/mrm.24920
     #[arg(long)]
     pub do_smwi: bool,
 
@@ -3554,9 +3558,11 @@ pub struct InvertTgvArgs {
     #[arg(long)]
     pub erosions: Option<usize>,
     /// Alpha1 (first-order weight), in radians at the echo time (--te) and the field strength
+    /// (default: 0.00212; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.003)
     #[arg(long)]
     pub alpha1: Option<f64>,
     /// Alpha0 (second-order weight), in radians at the echo time (--te) and the field strength
+    /// (default: 0.00636; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.002)
     #[arg(long)]
     pub alpha0: Option<f64>,
     /// Primal step size multiplier
