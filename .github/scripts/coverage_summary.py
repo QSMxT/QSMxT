@@ -20,7 +20,9 @@ import os
 import re
 import sys
 
-CFG_TEST = re.compile(r"^\s*#\[cfg\(test\)\]\s*$")
+# `#[cfg(test)]`, and qsmxt-io's test helpers, which the binary's tests reach through its
+# `testutils` feature.
+CFG_TEST = re.compile(r'^\s*#\[cfg\((?:test|any\(test, feature = "testutils"\))\)\]\s*$')
 OUT_OF_LINE_MOD = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*;")
 
 
@@ -87,7 +89,9 @@ def test_lines(path):
     code = _strip_code(text).split("\n")
     lines, extra_files = set(), []
     for idx, line in enumerate(raw_lines):
-        if not CFG_TEST.match(code[idx] if idx < len(code) else ""):
+        # Matched on the line as written (the stripped copy blanks the feature's name), when the
+        # stripped line shows it is an attribute and not inside a comment or string.
+        if not (idx < len(code) and code[idx].strip().startswith("#[cfg(") and CFG_TEST.match(line)):
             continue
         # The item starts after any further attributes or doc comments.
         start = idx + 1
