@@ -1,0 +1,100 @@
+  QSMxT   1 Input   2 Pipeline   3 Reconstruction   4 Execution   5 Methods
+─────────━━━━━━━━━── Pipeline: QSMxT defaults ─ QSMxT <version> · QSM.rs <version> ──
+╭ Input ───────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│  Input mode:           [ NIfTI -> BIDS ▾ ] (experimental)                                                            │
+│  Input directory:      (optional, for auto-scan)                                                                     │
+│  Output BIDS dir:      (empty)                                                                                       │
+│  Config file:          (empty)                                                                                       │
+│                                                                                                                      │
+│  -- Magnitude files (0) --                                                                                           │
+│  [+] Add files...                                                                                                    │
+│                                                                                                                      │
+│  -- Phase files (0) --                                                                                               │
+│  [+] Add files...                                                                                                    │
+│                                                                                                                      │
+│  -- Parameters --                                                                                                    │
+│  Echo times (ms):      (required)                                                                                    │
+│  Field strength (T):   (required)                                                                                    │
+│  B0 Direction:         0, 0, 1                                                                                       │
+│                                                                                                                      │
+│  [ Convert to BIDS ]                                                                                                 │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+├──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│  Enter: choose input mode (BIDS / NIfTI / DICOM / Example)                                                           │
+│                                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+┌ Command preview ─────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│qsmxt run <bids_dir>                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ 1-5:Tabs  [ ]:Sub-tabs  ↑↓:Navigate  Enter:Choose input mode  r:Reset  R:Reset page  F5:Run  ?:Tip  q:Quit

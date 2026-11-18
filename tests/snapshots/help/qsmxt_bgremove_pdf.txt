@@ -1,0 +1,46 @@
+Projection onto Dipole Fields
+
+Usage: qsmxt bgremove pdf [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... --magnitude <MAGNITUDE>... <INPUT>
+
+Arguments:
+  <INPUT>
+          Input total field NIfTI file
+
+Options:
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output local field NIfTI file
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction (3 values)
+
+          [default: 0 0 1]
+
+      --output-mask <OUTPUT_MASK>
+          Output eroded mask (for algorithms that erode)
+
+      --field-strength <FIELD_STRENGTH>
+          B0 field strength in Tesla
+
+      --echo-times <ECHO_TIMES>...
+          Echo times in seconds, every echo's, in order
+
+      --magnitude <MAGNITUDE>...
+          Magnitude of every echo: one 4D NIfTI, or one 3D NIfTI per echo in echo order
+
+      --tol <TOL>
+          Tolerance, relative to the noise level
+
+      --n-cg <N_CG>
+          Maximum conjugate-gradient iterations (default: 30)
+
+      --space <SPACE>
+          Dipole kernel: image (the FFT of the dipole sampled on the voxel grid) or kspace (the analytic k-space kernel) (default: image)
+
+      --n-pad <VOXELS>
+          Zero-padding around the mask's bounding box, in voxels; 0 runs on the full volume (default: 40)
+
+  -h, --help
+          Print help

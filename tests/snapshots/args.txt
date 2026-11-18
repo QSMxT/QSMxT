@@ -1,0 +1,2633 @@
+
+## qsmxt
+--help -h num_args=0 action=Help
+--version -V num_args=0 action=Version
+
+## qsmxt run
+<bids_dir> value=BIDS_DIR num_args=1 action=Set required
+<output_dir> value=OUTPUT_DIR num_args=1 action=Set
+--config value=CONFIG num_args=1 action=Set
+--include value=INCLUDE num_args=1.. action=Append
+--exclude value=EXCLUDE num_args=1.. action=Append
+--num-echoes value=NUM_ECHOES num_args=1 action=Set
+--pipeline value=PIPELINE num_args=1 action=Set values=qsmxt-defaults,medi-toolbox,sti-suite-ilsqr,sti-suite-star,qsmart,heidi,chi-sep-ilsqr,chi-sep-medi,chi-sepnet,decompose,uk-biobank
+--qsm-algorithm value=QSM_ALGORITHM num_args=1 action=Set values=rts,tv,tkd,tsvd,tgv,tikhonov,nltv,medi,tfi,ilsqr,star,lsqr,heidi,qsmart,ndi,fansi,fansi-tgv,l1qsm,whqsm,hdqsm,amp-pe,xqsm,qsmnet,qsmnet-plus,qsmnetme,autoqsm,qsmgan,ir2qsm,lpcnn,modl-qsm,nextqsm,iqsm,iqsm-plus
+--heidi value=HEIDI num_args=0 action=SetTrue default=false
+--orientation-group value=PATTERN num_args=1 action=Set
+--orientation-reference value=PATTERN num_args=1 action=Set
+--no-orientation-registration value=NO_ORIENTATION_REGISTRATION num_args=0 action=SetTrue default=false
+--multi-orientation-algorithm value=MULTI_ORIENTATION_ALGORITHM num_args=1 action=Set values=cosmos,sti
+--multi-orientation-lambda value=MULTI_ORIENTATION_LAMBDA num_args=1 action=Set
+--multi-orientation-force value=MULTI_ORIENTATION_FORCE num_args=0 action=SetTrue default=false
+--cosmos-magnitude-weighting value=COSMOS_MAGNITUDE_WEIGHTING num_args=0 action=SetTrue default=false
+--cosmos-tol value=COSMOS_TOL num_args=1 action=Set
+--cosmos-max-iter value=COSMOS_MAX_ITER num_args=1 action=Set
+--unwrapping-algorithm value=UNWRAPPING_ALGORITHM num_args=1 action=Set values=romeo,laplacian,prelude,medi-region-growing
+--bf-algorithm value=BF_ALGORITHM num_args=1 action=Set values=vsharp,pdf,lbv,ismv,sharp,resharp,harperella,iharperella,bfrnet,iqfm
+--bf-erode-voxels value=N num_args=1 action=Set
+--bf-polish-mask value=BF_POLISH_MASK num_args=0 action=SetTrue default=false
+--no-bf-polish-mask value=NO_BF_POLISH_MASK num_args=0 action=SetTrue default=false
+--bf-ukb-mask-trim value=BF_UKB_MASK_TRIM num_args=0 action=SetTrue default=false
+--no-bf-ukb-mask-trim value=NO_BF_UKB_MASK_TRIM num_args=0 action=SetTrue default=false
+--masking-input value=MASKING_INPUT num_args=1 action=Set values=magnitude-first,magnitude,magnitude-last,phase-quality
+--phase-offset-removal value=PHASE_OFFSET_REMOVAL num_args=1 action=Set values=true,false
+--phase-offset-sigma-mm value=PHASE_OFFSET_SIGMA_MM num_args=3 action=Append
+--coil-combination-sigma value=COIL_COMBINATION_SIGMA num_args=3 action=Append
+--bipolar-correction value=BIPOLAR_CORRECTION num_args=0 action=SetTrue default=false
+--b0-estimation value=B0_ESTIMATION num_args=1 action=Set values=weighted-avg,linear-fit,robust-fit,qsmart-echofit,complex-fit
+--qsmart-fit-threshold-mode value=QSMART_FIT_THRESHOLD_MODE num_args=1 action=Set values=percentile,absolute
+--qsmart-fit-percentile value=QSMART_FIT_PERCENTILE num_args=1 action=Set
+--qsmart-fit-threshold value=QSMART_FIT_THRESHOLD num_args=1 action=Set
+--b0-weight-type value=B0_WEIGHT_TYPE num_args=1 action=Set values=phase-snr,phase-var,average,tes,mag,assumed-decay
+--b0-weight-assumed-t2star value=MS num_args=1 action=Set
+--laplacian-solver aliases=laplacian-kernel value=LAPLACIAN_SOLVER num_args=1 action=Set values=dct,fft|sti,mirror,mgpcg
+--laplacian-fft-pad value=VOXELS num_args=1..=3 action=Append
+--laplacian-unmasked value=LAPLACIAN_UNMASKED num_args=0 action=SetTrue default=false
+--no-laplacian-unmasked value=NO_LAPLACIAN_UNMASKED num_args=0 action=SetTrue default=false
+--laplacian-keep-outside value=LAPLACIAN_KEEP_OUTSIDE num_args=0 action=SetTrue default=false
+--no-laplacian-keep-outside value=NO_LAPLACIAN_KEEP_OUTSIDE num_args=0 action=SetTrue default=false
+--bet-fractional-intensity value=BET_FRACTIONAL_INTENSITY num_args=1 action=Set
+--bet-smoothness value=BET_SMOOTHNESS num_args=1 action=Set
+--bet-gradient-threshold value=BET_GRADIENT_THRESHOLD num_args=1 action=Set allow_hyphen_values
+--bet-iterations value=BET_ITERATIONS num_args=1 action=Set
+--bet-subdivisions value=BET_SUBDIVISIONS num_args=1 action=Set
+--bet-voxel-scale value=FACTOR num_args=1 action=Set
+--bet-orientation value=ORIENTATION num_args=1 action=Set
+--qsm-reference value=SPEC num_args=1 action=Set
+--qsm-per-echo value=BOOL num_args=1 action=Set values=true,false
+--rts-delta value=RTS_DELTA num_args=1 action=Set
+--rts-mu value=RTS_MU num_args=1 action=Set
+--rts-tol value=RTS_TOL num_args=1 action=Set
+--rts-rho value=RTS_RHO num_args=1 action=Set
+--rts-max-iter value=RTS_MAX_ITER num_args=1 action=Set
+--rts-lsmr-iter value=RTS_LSMR_ITER num_args=1 action=Set
+--rts-tau value=RTS_TAU num_args=1 action=Set
+--rts-gamma value=RTS_GAMMA num_args=1 action=Set
+--rts-pad value=X,Y,Z num_args=3 action=Append
+--tv-lambda value=TV_LAMBDA num_args=1 action=Set
+--tv-rho value=RHO num_args=1 action=Set
+--tv-tol value=TV_TOL num_args=1 action=Set
+--tv-max-iter value=TV_MAX_ITER num_args=1 action=Set
+--tv-pad value=X,Y,Z num_args=3 action=Append
+--tkd-threshold value=TKD_THRESHOLD num_args=1 action=Set
+--tkd-pad value=X,Y,Z num_args=3 action=Append
+--tsvd-threshold value=TSVD_THRESHOLD num_args=1 action=Set
+--tsvd-pad value=X,Y,Z num_args=3 action=Append
+--tgv-iterations value=TGV_ITERATIONS num_args=1 action=Set
+--tgv-erosions value=TGV_EROSIONS num_args=1 action=Set
+--tgv-alpha1 value=TGV_ALPHA1 num_args=1 action=Set
+--tgv-alpha0 value=TGV_ALPHA0 num_args=1 action=Set
+--tgv-step-size value=TGV_STEP_SIZE num_args=1 action=Set
+--tgv-te value=TE num_args=1 action=Set
+--tikhonov-lambda value=TIKHONOV_LAMBDA num_args=1 action=Set
+--tikhonov-pad value=X,Y,Z num_args=3 action=Append
+--nltv-lambda value=NLTV_LAMBDA num_args=1 action=Set
+--nltv-rho value=RHO num_args=1 action=Set
+--nltv-mu value=NLTV_MU num_args=1 action=Set
+--nltv-tol value=NLTV_TOL num_args=1 action=Set
+--nltv-max-iter value=NLTV_MAX_ITER num_args=1 action=Set
+--nltv-tol-newton value=NLTV_TOL_NEWTON num_args=1 action=Set
+--nltv-newton-iter value=NLTV_NEWTON_ITER num_args=1 action=Set
+--nltv-te value=TE num_args=1 action=Set
+--nltv-pad value=X,Y,Z num_args=3 action=Append
+--medi-lambda value=MEDI_LAMBDA num_args=1 action=Set
+--medi-merit value=MEDI_MERIT num_args=1 action=Set values=true,false
+--medi-csf value=MEDI_CSF num_args=1 action=Set values=true,false
+--medi-lambda-csf value=MEDI_LAMBDA_CSF num_args=1 action=Set
+--medi-csf-r2s-threshold value=MEDI_CSF_R2S_THRESHOLD num_args=1 action=Set
+--medi-csf-erode value=MEDI_CSF_ERODE num_args=1 action=Set values=true,false
+--medi-zeropad value=X,Y,Z num_args=3 action=Append
+--medi-smv value=MEDI_SMV num_args=0 action=SetTrue default=false
+--no-medi-smv value=NO_MEDI_SMV num_args=0 action=SetTrue default=false
+--medi-smv-radius value=MEDI_SMV_RADIUS num_args=1 action=Set
+--medi-smv-shrink-mask value=MEDI_SMV_SHRINK_MASK num_args=0 action=SetTrue default=false
+--no-medi-smv-shrink-mask value=NO_MEDI_SMV_SHRINK_MASK num_args=0 action=SetTrue default=false
+--medi-msmv value=MEDI_MSMV num_args=0 action=SetTrue default=false
+--medi-msmv-maxk value=MEDI_MSMV_MAXK num_args=1 action=Set
+--medi-msmv-vessel-radius value=MEDI_MSMV_VESSEL_RADIUS num_args=1 action=Set
+--no-medi-msmv-prefilter value=NO_MEDI_MSMV_PREFILTER num_args=0 action=SetTrue default=false
+--medi-data-weighting value=MEDI_DATA_WEIGHTING num_args=1 action=Set
+--medi-percentage value=MEDI_PERCENTAGE num_args=1 action=Set
+--medi-cg-tol value=MEDI_CG_TOL num_args=1 action=Set
+--medi-cg-max-iter value=MEDI_CG_MAX_ITER num_args=1 action=Set
+--medi-max-iter value=MEDI_MAX_ITER num_args=1 action=Set
+--medi-tol value=MEDI_TOL num_args=1 action=Set
+--medi-te value=TE num_args=1 action=Set
+--tfi-lambda value=TFI_LAMBDA num_args=1 action=Set
+--tfi-precond value=TFI_PRECOND num_args=1 action=Set
+--tfi-merit value=TFI_MERIT num_args=1 action=Set values=true,false
+--tfi-linear value=TFI_LINEAR num_args=1 action=Set values=true,false
+--tfi-data-weighting value=TFI_DATA_WEIGHTING num_args=1 action=Set
+--tfi-percentage value=TFI_PERCENTAGE num_args=1 action=Set
+--tfi-cg-tol value=TFI_CG_TOL num_args=1 action=Set
+--tfi-cg-max-iter value=TFI_CG_MAX_ITER num_args=1 action=Set
+--tfi-max-iter value=TFI_MAX_ITER num_args=1 action=Set
+--tfi-tol value=TFI_TOL num_args=1 action=Set
+--tfi-te value=TE num_args=1 action=Set
+--ilsqr-tol value=ILSQR_TOL num_args=1 action=Set
+--ilsqr-max-iter value=ILSQR_MAX_ITER num_args=1 action=Set
+--ilsqr-pad-mm value=MM num_args=1 action=Set
+--ilsqr-precision value=PRECISION num_args=1 action=Set
+--star-pad value=X,Y,Z num_args=3 action=Append
+--star-te value=TE num_args=1 action=Set
+--lsqr-residual-weighting value=LSQR_RESIDUAL_WEIGHTING num_args=1 action=Set
+--no-lsqr-global-offset value=NO_LSQR_GLOBAL_OFFSET num_args=0 action=SetTrue default=false
+--lsqr-tol value=LSQR_TOL num_args=1 action=Set
+--lsqr-max-iter value=LSQR_MAX_ITER num_args=1 action=Set
+--heidi-cone-threshold value=HEIDI_CONE_THRESHOLD num_args=1 action=Set
+--heidi-gradient-threshold value=HEIDI_GRADIENT_THRESHOLD num_args=1 action=Set
+--no-heidi-laplacian-correction value=NO_HEIDI_LAPLACIAN_CORRECTION num_args=0 action=SetTrue default=false
+--heidi-laplacian-threshold value=HEIDI_LAPLACIAN_THRESHOLD num_args=1 action=Set
+--heidi-gradient-mask-floor value=HEIDI_GRADIENT_MASK_FLOOR num_args=1 action=Set
+--heidi-continuation-steps value=HEIDI_CONTINUATION_STEPS num_args=1 action=Set
+--heidi-inner-iterations value=HEIDI_INNER_ITERATIONS num_args=1 action=Set
+--heidi-mu-min value=HEIDI_MU_MIN num_args=1 action=Set
+--heidi-tol value=HEIDI_TOL num_args=1 action=Set
+--no-heidi-denoise value=NO_HEIDI_DENOISE num_args=0 action=SetTrue default=false
+--heidi-denoise-iterations value=HEIDI_DENOISE_ITERATIONS num_args=1 action=Set
+--heidi-denoise-time-step value=HEIDI_DENOISE_TIME_STEP num_args=1 action=Set
+--heidi-denoise-conductance value=HEIDI_DENOISE_CONDUCTANCE num_args=1 action=Set
+--heidi-denoise-reference-itk value=HEIDI_DENOISE_REFERENCE_ITK num_args=0 action=SetTrue default=false
+--no-heidi-denoise-reference-itk value=NO_HEIDI_DENOISE_REFERENCE_ITK num_args=0 action=SetTrue default=false
+--heidi-te value=TE num_args=1 action=Set
+--qsmart-ilsqr-max-iter value=QSMART_ILSQR_MAX_ITER num_args=1 action=Set
+--qsmart-ilsqr-pad-mm value=MM num_args=1 action=Set
+--qsmart-vasc-sphere-radius value=QSMART_VASC_SPHERE_RADIUS num_args=1 action=Set
+--qsmart-inversion value=QSMART_INVERSION num_args=1 action=Set values=rts,tv,tkd,tsvd,tgv,tikhonov,nltv,medi,tfi,ilsqr,star,lsqr,heidi,qsmart,ndi,fansi,fansi-tgv,l1qsm,whqsm,hdqsm,amp-pe,xqsm,qsmnet,qsmnet-plus,qsmnetme,autoqsm,qsmgan,ir2qsm,lpcnn,modl-qsm,nextqsm,iqsm,iqsm-plus
+--qsmart-sdf-sigma1-stage1 value=QSMART_SDF_SIGMA1_STAGE1 num_args=1 action=Set
+--qsmart-sdf-sigma2-stage1 value=QSMART_SDF_SIGMA2_STAGE1 num_args=1 action=Set
+--qsmart-sdf-sigma1-stage2 value=QSMART_SDF_SIGMA1_STAGE2 num_args=1 action=Set
+--qsmart-sdf-sigma2-stage2 value=QSMART_SDF_SIGMA2_STAGE2 num_args=1 action=Set
+--qsmart-sdf-lower-lim value=QSMART_SDF_LOWER_LIM num_args=1 action=Set
+--qsmart-sdf-curv-constant value=QSMART_SDF_CURV_CONSTANT num_args=1 action=Set
+--qsmart-frangi-scale-min value=QSMART_FRANGI_SCALE_MIN num_args=1 action=Set
+--qsmart-frangi-scale-max value=QSMART_FRANGI_SCALE_MAX num_args=1 action=Set
+--qsmart-frangi-scale-ratio value=QSMART_FRANGI_SCALE_RATIO num_args=1 action=Set
+--qsmart-frangi-c value=QSMART_FRANGI_C num_args=1 action=Set
+--qsmart-frangi-c-mode value=QSMART_FRANGI_C_MODE num_args=1 action=Set values=absolute,relative
+--qsmart-frangi-c-factor value=QSMART_FRANGI_C_FACTOR num_args=1 action=Set
+--qsmart-vessel-units value=QSMART_VESSEL_UNITS num_args=1 action=Set values=voxels,mm
+--qsmart-vessel-magnitude value=QSMART_VESSEL_MAGNITUDE num_args=1 action=Set values=mean-n4,combined
+--qsmart-offset-grid value=QSMART_OFFSET_GRID num_args=1 action=Set values=fft,qsmart-reference
+--ndi-tau value=NDI_TAU num_args=1 action=Set
+--ndi-alpha value=NDI_ALPHA num_args=1 action=Set
+--ndi-max-iter value=NDI_MAX_ITER num_args=1 action=Set
+--ndi-auto-stop value=NDI_AUTO_STOP num_args=1 action=Set values=true,false
+--ndi-te value=TE num_args=1 action=Set
+--ndi-weight-norm value=NORM num_args=1 action=Set
+--fansi-alpha1 value=FANSI_ALPHA1 num_args=1 action=Set
+--fansi-mu1 value=MU1 num_args=1 action=Set
+--fansi-mu2 value=FANSI_MU2 num_args=1 action=Set
+--fansi-alpha0 value=ALPHA0 num_args=1 action=Set
+--fansi-mu0 value=MU0 num_args=1 action=Set
+--fansi-max-iter value=FANSI_MAX_ITER num_args=1 action=Set
+--fansi-tol-update value=FANSI_TOL_UPDATE num_args=1 action=Set
+--fansi-tol-delta value=FANSI_TOL_DELTA num_args=1 action=Set
+--fansi-te value=TE num_args=1 action=Set
+--l1qsm-alpha1 value=L1QSM_ALPHA1 num_args=1 action=Set
+--l1qsm-mu1 value=MU1 num_args=1 action=Set
+--l1qsm-mu2 value=L1QSM_MU2 num_args=1 action=Set
+--l1qsm-mu3 value=L1QSM_MU3 num_args=1 action=Set
+--l1qsm-lambda value=L1QSM_LAMBDA num_args=1 action=Set
+--l1qsm-max-iter value=L1QSM_MAX_ITER num_args=1 action=Set
+--l1qsm-tol-update value=L1QSM_TOL_UPDATE num_args=1 action=Set
+--l1qsm-tol-delta value=L1QSM_TOL_DELTA num_args=1 action=Set
+--l1qsm-te value=TE num_args=1 action=Set
+--whqsm-alpha1 value=WHQSM_ALPHA1 num_args=1 action=Set
+--whqsm-mu1 value=WHQSM_MU1 num_args=1 action=Set
+--whqsm-mu2 value=WHQSM_MU2 num_args=1 action=Set
+--whqsm-beta value=WHQSM_BETA num_args=1 action=Set
+--whqsm-muh value=WHQSM_MUH num_args=1 action=Set
+--whqsm-max-iter value=WHQSM_MAX_ITER num_args=1 action=Set
+--whqsm-tol-update value=WHQSM_TOL_UPDATE num_args=1 action=Set
+--whqsm-tol-delta value=WHQSM_TOL_DELTA num_args=1 action=Set
+--whqsm-weight value=WEIGHT num_args=1 action=Set
+--whqsm-te value=TE num_args=1 action=Set
+--hdqsm-alpha-l2 value=HDQSM_ALPHA_L2 num_args=1 action=Set
+--hdqsm-mu1-l2 value=MU1_L2 num_args=1 action=Set
+--hdqsm-mu2 value=HDQSM_MU2 num_args=1 action=Set
+--hdqsm-max-iter-l1 value=HDQSM_MAX_ITER_L1 num_args=1 action=Set
+--hdqsm-max-iter-l2 value=HDQSM_MAX_ITER_L2 num_args=1 action=Set
+--hdqsm-tol-update value=HDQSM_TOL_UPDATE num_args=1 action=Set
+--amp-pe-wave-order value=AMP_PE_WAVE_ORDER num_args=1 action=Set
+--amp-pe-nlevel value=AMP_PE_NLEVEL num_args=1 action=Set
+--amp-pe-wave-pec value=AMP_PE_WAVE_PEC num_args=1 action=Set
+--amp-pe-simulated-te value=AMP_PE_SIMULATED_TE num_args=1 action=Set
+--amp-pe-max-linearization-ite value=AMP_PE_MAX_LINEARIZATION_ITE num_args=1 action=Set
+--amp-pe-damp-rate-sig value=AMP_PE_DAMP_RATE_SIG num_args=1 action=Set
+--amp-pe-damp-rate-par value=AMP_PE_DAMP_RATE_PAR num_args=1 action=Set
+--amp-pe-max-pe-spar-ite value=AMP_PE_MAX_PE_SPAR_ITE num_args=1 action=Set
+--amp-pe-max-pe-est-ite value=AMP_PE_MAX_PE_EST_ITE num_args=1 action=Set
+--amp-pe-cvg-thd value=AMP_PE_CVG_THD num_args=1 action=Set
+--amp-pe-tikhonov-beta value=AMP_PE_TIKHONOV_BETA num_args=1 action=Set
+--r2star-qsm-r-const-3t value=R2STAR_QSM_R_CONST_3T num_args=1 action=Set
+--decompose-n-inner value=DECOMPOSE_N_INNER num_args=1 action=Set
+--decompose-chi-bound value=BOUND num_args=1 action=Set
+--decompose-unwrap-phase value=BOOL num_args=1 action=Set values=true,false
+--decompose-fit value=DECOMPOSE_FIT num_args=1 action=Set values=reference-code,paper
+--decompose-max-iterations value=DECOMPOSE_MAX_ITERATIONS num_args=1 action=Set
+--decompose-max-function-evaluations value=DECOMPOSE_MAX_FUNCTION_EVALUATIONS num_args=1 action=Set
+--decompose-function-tolerance value=DECOMPOSE_FUNCTION_TOLERANCE num_args=1 action=Set
+--decompose-step-tolerance value=DECOMPOSE_STEP_TOLERANCE num_args=1 action=Set
+--decompose-optimality-tolerance value=DECOMPOSE_OPTIMALITY_TOLERANCE num_args=1 action=Set
+--decompose-finite-difference-step value=DECOMPOSE_FINITE_DIFFERENCE_STEP num_args=1 action=Set
+--decompose-typical-x value=DECOMPOSE_TYPICAL_X num_args=1 action=Set
+--chi-sep-ilsqr-dr-pos value=HZ_PER_PPM num_args=1 action=Set
+--chi-sep-ilsqr-dr-neg value=HZ_PER_PPM num_args=1 action=Set
+--chi-sep-ilsqr-pad value=X,Y,Z num_args=3 action=Append
+--chi-sep-ilsqr-cg-max-iter-lsqr value=CHI_SEP_ILSQR_CG_MAX_ITER_LSQR num_args=1 action=Set
+--chi-sep-ilsqr-cg-tol-lsqr value=CHI_SEP_ILSQR_CG_TOL_LSQR num_args=1 action=Set
+--chi-sep-ilsqr-cg-max-iter-sa value=CHI_SEP_ILSQR_CG_MAX_ITER_SA num_args=1 action=Set
+--chi-sep-ilsqr-cg-tol-sa value=CHI_SEP_ILSQR_CG_TOL_SA num_args=1 action=Set
+--chi-sep-ilsqr-d2-thr value=CHI_SEP_ILSQR_D2_THR num_args=1 action=Set
+--chi-sep-ilsqr-prc-w-i-min value=CHI_SEP_ILSQR_PRC_W_I_MIN num_args=1 action=Set
+--chi-sep-ilsqr-prc-w-i-max value=CHI_SEP_ILSQR_PRC_W_I_MAX num_args=1 action=Set
+--chi-sep-ilsqr-prc-w-g-min value=CHI_SEP_ILSQR_PRC_W_G_MIN num_args=1 action=Set
+--chi-sep-ilsqr-prc-w-g-max value=CHI_SEP_ILSQR_PRC_W_G_MAX num_args=1 action=Set
+--chi-sep-ilsqr-qsm-max-iter value=CHI_SEP_ILSQR_QSM_MAX_ITER num_args=1 action=Set
+--chi-sep-ilsqr-qsm-tol value=CHI_SEP_ILSQR_QSM_TOL num_args=1 action=Set
+--chi-sep-ilsqr-qsm-pad-mm value=MM num_args=1 action=Set
+--chi-sep-ilsqr-qsm-precision value=PRECISION num_args=1 action=Set
+--chi-sep-medi-lambda value=CHI_SEP_MEDI_LAMBDA num_args=1 action=Set
+--chi-sep-medi-lambda-csf value=CHI_SEP_MEDI_LAMBDA_CSF num_args=1 action=Set
+--chi-sep-medi-dr-pos value=HZ_PER_PPM num_args=1 action=Set
+--chi-sep-medi-dr-neg value=HZ_PER_PPM num_args=1 action=Set
+--chi-sep-medi-pad value=CHI_SEP_MEDI_PAD num_args=1 action=Set
+--chi-sep-medi-tol value=CHI_SEP_MEDI_TOL num_args=1 action=Set
+--chi-sep-medi-max-iter value=CHI_SEP_MEDI_MAX_ITER num_args=1 action=Set
+--chi-sep-medi-cg-tol value=CHI_SEP_MEDI_CG_TOL num_args=1 action=Set
+--chi-sep-medi-cg-max-iter value=CHI_SEP_MEDI_CG_MAX_ITER num_args=1 action=Set
+--chi-sep-medi-qsm-max-iter value=CHI_SEP_MEDI_QSM_MAX_ITER num_args=1 action=Set
+--chi-sep-medi-qsm-tol value=CHI_SEP_MEDI_QSM_TOL num_args=1 action=Set
+--chi-sep-medi-qsm-pad-mm value=MM num_args=1 action=Set
+--chi-sep-medi-qsm-precision value=PRECISION num_args=1 action=Set
+--chi-sep-medi-csf-r2star value=METHOD num_args=1 action=Set
+--wavesep-dr-pos value=WAVESEP_DR_POS num_args=1 action=Set
+--wavesep-dr-neg value=WAVESEP_DR_NEG num_args=1 action=Set
+--wavesep-alpha value=WAVESEP_ALPHA num_args=1 action=Set
+--wavesep-lambda value=WAVESEP_LAMBDA num_args=1 action=Set
+--wavesep-wavelet-order value=WAVESEP_WAVELET_ORDER num_args=1 action=Set
+--wavesep-max-iter value=WAVESEP_MAX_ITER num_args=1 action=Set
+--wavesep-tol value=WAVESEP_TOL num_args=1 action=Set
+--hc-chisep-dr-pos-3t value=HC_CHISEP_DR_POS_3T num_args=1 action=Set
+--hc-chisep-bin-hz value=HC_CHISEP_BIN_HZ num_args=1 action=Set
+--chi-sepnet-route value=CHI_SEPNET_ROUTE num_args=1 action=Set values=toolbox,native
+--chi-sepnet-patch value=D,H,W num_args=3 action=Append
+--chi-sepnet-frame-patch value=D,H,W num_args=3 action=Append
+--susep-net-patch value=D,H,W num_args=3 action=Append
+--motion-correction value=MOTION_CORRECTION num_args=0 action=SetTrue default=false
+--motion-reference value=first|last|N num_args=1 action=Set
+--no-motion-chain value=NO_MOTION_CHAIN num_args=0 action=SetTrue default=false
+--motion-chain-levels value=MOTION_CHAIN_LEVELS num_args=1 action=Set
+--motion-min-ncc value=MOTION_MIN_NCC num_args=1 action=Set
+--registration-levels value=REGISTRATION_LEVELS num_args=1 action=Set
+--registration-max-samples value=REGISTRATION_MAX_SAMPLES num_args=1 action=Set
+--registration-max-iterations value=REGISTRATION_MAX_ITERATIONS num_args=1 action=Set
+--registration-max-evaluations value=REGISTRATION_MAX_EVALUATIONS num_args=1 action=Set
+--registration-tolerance value=REGISTRATION_TOLERANCE num_args=1 action=Set
+--registration-rotation-step-deg value=REGISTRATION_ROTATION_STEP_DEG num_args=1 action=Set
+--registration-translation-step-mm value=REGISTRATION_TRANSLATION_STEP_MM num_args=1 action=Set
+--registration-min-overlap value=REGISTRATION_MIN_OVERLAP num_args=1 action=Set
+--vsharp-deconvolve value=BOOL num_args=1 action=Set values=true,false
+--vsharp-threshold value=VSHARP_THRESHOLD num_args=1 action=Set
+--vsharp-max-radius value=VSHARP_MAX_RADIUS num_args=1 action=Set
+--vsharp-min-radius value=VSHARP_MIN_RADIUS num_args=1 action=Set
+--vsharp-radius-step value=MM num_args=1 action=Set
+--vsharp-grid value=VSHARP_GRID num_args=1 action=Set values=native,finest,isotropic
+--vsharp-grid-spacing value=MM num_args=1 action=Set
+--pdf-tol value=PDF_TOL num_args=1 action=Set
+--pdf-n-cg value=PDF_N_CG num_args=1 action=Set
+--pdf-space value=SPACE num_args=1 action=Set
+--pdf-n-pad value=VOXELS num_args=1 action=Set
+--lbv-tol value=LBV_TOL num_args=1 action=Set
+--lbv-depth value=LEVEL num_args=1 action=Set
+--lbv-peel value=LAYERS num_args=1 action=Set
+--lbv-n1 value=LBV_N1 num_args=1 action=Set
+--lbv-n2 value=LBV_N2 num_args=1 action=Set
+--lbv-n3 value=LBV_N3 num_args=1 action=Set
+--lbv-precision value=PRECISION num_args=1 action=Set
+--ismv-variant value=VARIANT num_args=1 action=Set
+--ismv-tol value=ISMV_TOL num_args=1 action=Set
+--ismv-max-iter value=ISMV_MAX_ITER num_args=1 action=Set
+--ismv-radius value=MM num_args=1 action=Set
+--sharp-threshold value=SHARP_THRESHOLD num_args=1 action=Set
+--sharp-radius value=SHARP_RADIUS num_args=1 action=Set
+--resharp-radius value=RESHARP_RADIUS num_args=1 action=Set
+--resharp-tik-reg value=RESHARP_TIK_REG num_args=1 action=Set
+--resharp-tol value=RESHARP_TOL num_args=1 action=Set
+--resharp-max-iter value=RESHARP_MAX_ITER num_args=1 action=Set
+--harperella-radius value=HARPERELLA_RADIUS num_args=1 action=Set
+--harperella-max-iter value=HARPERELLA_MAX_ITER num_args=1 action=Set
+--harperella-tol value=HARPERELLA_TOL num_args=1 action=Set
+--harperella-pad value=X,Y,Z num_args=3 action=Append
+--harperella-rim value=RIM num_args=1 action=Set
+--iharperella-max-iter value=IHARPERELLA_MAX_ITER num_args=1 action=Set
+--iharperella-tol value=IHARPERELLA_TOL num_args=1 action=Set
+--iharperella-pad value=X,Y,Z num_args=3 action=Append
+--iharperella-rim value=RIM num_args=1 action=Set
+--no-romeo-phase-coherence value=NO_ROMEO_PHASE_COHERENCE num_args=0 action=SetTrue default=false
+--no-romeo-phase-gradient-coherence value=NO_ROMEO_PHASE_GRADIENT_COHERENCE num_args=0 action=SetTrue default=false
+--no-romeo-phase-linearity value=NO_ROMEO_PHASE_LINEARITY num_args=0 action=SetTrue default=false
+--romeo-phase-linearity value=ROMEO_PHASE_LINEARITY num_args=0 action=SetTrue default=false
+--no-romeo-mag-coherence value=NO_ROMEO_MAG_COHERENCE num_args=0 action=SetTrue default=false
+--romeo-mag-weight value=ROMEO_MAG_WEIGHT num_args=0 action=SetTrue default=false
+--no-romeo-mag-weight value=NO_ROMEO_MAG_WEIGHT num_args=0 action=SetTrue default=false
+--romeo-mag-weight2 value=ROMEO_MAG_WEIGHT2 num_args=0 action=SetTrue default=false
+--romeo-bestpath value=ROMEO_BESTPATH num_args=0 action=SetTrue default=false
+--romeo-template value=ROMEO_TEMPLATE num_args=1 action=Set
+--romeo-individual value=ROMEO_INDIVIDUAL num_args=0 action=SetTrue default=false
+--no-romeo-individual value=NO_ROMEO_INDIVIDUAL num_args=0 action=SetTrue default=false
+--romeo-correct-global value=ROMEO_CORRECT_GLOBAL num_args=0 action=SetTrue default=false
+--no-romeo-correct-global value=NO_ROMEO_CORRECT_GLOBAL num_args=0 action=SetTrue default=false
+--romeo-temporal-uncertain-unwrapping value=ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING num_args=1 action=Set
+--romeo-max-seeds value=ROMEO_MAX_SEEDS num_args=1 action=Set
+--romeo-merge-regions value=ROMEO_MERGE_REGIONS num_args=0 action=SetTrue default=false
+--romeo-correct-regions value=ROMEO_CORRECT_REGIONS num_args=0 action=SetTrue default=false
+--romeo-wrap-addition value=ROMEO_WRAP_ADDITION num_args=1 action=Set
+--prelude-labelling value=PRELUDE_LABELLING num_args=1 action=Set values=auto,slices,volume
+--prelude-partitions value=N num_args=1 action=Set
+--swi-unwrapping value=SWI_UNWRAPPING num_args=1 action=Set values=laplacian,laplacian-slice,romeo
+--swi-hp-sigma value=SWI_HP_SIGMA num_args=3 action=Append
+--swi-scaling value=SWI_SCALING num_args=1 action=Set values=tanh,negative-tanh|negative_tanh,positive,negative,triangular
+--swi-strength value=SWI_STRENGTH num_args=1 action=Set
+--swi-mip-window value=SWI_MIP_WINDOW num_args=1 action=Set
+--smwi-threshold value=SMWI_THRESHOLD num_args=1 action=Set
+--smwi-power value=SMWI_POWER num_args=1 action=Set
+--smwi-mip-window value=SMWI_MIP_WINDOW num_args=1 action=Set
+--synthseg-version value=VERSION num_args=1 action=Set
+--synthseg-crop value=SYNTHSEG_CROP num_args=1 action=Set
+--synthseg-patch value=VOXELS num_args=1 action=Set
+--no-synthseg-flip-averaging value=NO_SYNTHSEG_FLIP_AVERAGING num_args=0 action=SetTrue default=false
+--no-synthseg-topology-cleanup value=NO_SYNTHSEG_TOPOLOGY_CLEANUP num_args=0 action=SetTrue default=false
+--synthseg-sigma value=SYNTHSEG_SIGMA num_args=1 action=Set
+--use-custom-dseg value=TOOL num_args=0..=1 action=Set
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--inhomogeneity-method value=INHOMOGENEITY_METHOD num_args=1 action=Set values=makehomogeneous,n4
+--homogeneity-sigma-mm value=HOMOGENEITY_SIGMA_MM num_args=1 action=Set
+--homogeneity-nbox value=HOMOGENEITY_NBOX num_args=1 action=Set
+--n4-shrink-factor value=N4_SHRINK_FACTOR num_args=1 action=Set
+--n4-max-iterations value=ITERATIONS num_args=1.. action=Append
+--n4-convergence-threshold value=N4_CONVERGENCE_THRESHOLD num_args=1 action=Set
+--n4-mesh value=X,Y,Z num_args=3 action=Append
+--n4-spline-order value=N4_SPLINE_ORDER num_args=1 action=Set
+--n4-bias-field-fwhm value=N4_BIAS_FIELD_FWHM num_args=1 action=Set
+--n4-wiener-noise value=N4_WIENER_NOISE num_args=1 action=Set
+--n4-histogram-bins value=N4_HISTOGRAM_BINS num_args=1 action=Set
+--n4-geometry value=GEOMETRY num_args=1 action=Set
+--linear-fit-estimate-offset value=LINEAR_FIT_ESTIMATE_OFFSET num_args=1 action=Set values=true,false
+--robust-fit-loss value=ROBUST_FIT_LOSS num_args=1 action=Set values=tukey,huber
+--robust-fit-tuning value=ROBUST_FIT_TUNING num_args=1 action=Set
+--robust-fit-iterations value=ROBUST_FIT_ITERATIONS num_args=1 action=Set
+--robust-fit-downweight-level value=ROBUST_FIT_DOWNWEIGHT_LEVEL num_args=1 action=Set
+--robust-fit-flag-ratio value=ROBUST_FIT_FLAG_RATIO num_args=1 action=Set
+--complex-fit-reltol value=COMPLEX_FIT_RELTOL num_args=1 action=Set
+--complex-fit-max-iter value=COMPLEX_FIT_MAX_ITER num_args=1 action=Set
+--no-qsm value=NO_QSM num_args=0 action=SetTrue default=false
+--do-swi value=DO_SWI num_args=0 action=SetTrue default=false
+--swi-filtered-phase value=SWI_FILTERED_PHASE num_args=0 action=SetTrue default=false
+--no-magnitude value=NO_MAGNITUDE num_args=0 action=SetTrue default=false
+--do-segmentation value=DO_SEGMENTATION num_args=0 action=SetTrue default=false
+--do-analysis value=DO_ANALYSIS num_args=0 action=SetTrue default=false
+--do-smwi value=DO_SMWI num_args=0 action=SetTrue default=false
+--do-t2starmap value=DO_T2STARMAP num_args=0 action=SetTrue default=false
+--do-r2starmap value=DO_R2STARMAP num_args=0 action=SetTrue default=false
+--do-r2map value=DO_R2MAP num_args=0 action=SetTrue default=false
+--do-r2primemap value=DO_R2PRIMEMAP num_args=0 action=SetTrue default=false
+--do-chisep value=DO_CHI_SEPARATION num_args=0 action=SetTrue default=false
+--chisep value=CHI_SEPARATION_ALGORITHM num_args=1 action=Set values=r2star-qsm,decompose,chi-sep-ilsqr,chi-sep-medi,wavesep,hc-chisep,susep-net,chi-sepnet
+--use-custom-qsm value=TOOL num_args=1 action=Set
+--use-custom-r2 value=TOOL num_args=1 action=Set
+--use-custom-r2prime value=TOOL num_args=1 action=Set
+--r2prime-strategy value=R2PRIME_STRATEGY num_args=1 action=Set values=auto,mese,r2primenet
+--r2primenet-ignore-field-mismatch value=R2PRIMENET_IGNORE_FIELD_MISMATCH num_args=0 action=SetTrue default=false
+--r2primenet-patch value=D,H,W num_args=3 action=Append
+--export-dicom value=EXPORT_DICOM num_args=0 action=SetTrue default=false
+--inhomogeneity-correction value=INHOMOGENEITY_CORRECTION num_args=0 action=SetTrue default=false
+--no-inhomogeneity-correction value=NO_INHOMOGENEITY_CORRECTION num_args=0 action=SetTrue default=false
+--axial-resampling value=AXIAL_RESAMPLING num_args=0 action=SetTrue default=false
+--no-axial-resampling value=NO_AXIAL_RESAMPLING num_args=0 action=SetTrue default=false
+--obliquity-threshold value=OBLIQUITY_THRESHOLD num_args=1 action=Set
+--crop-to-mask value=CROP_TO_MASK num_args=0 action=SetTrue default=false
+--ignore-slice-gap value=IGNORE_SLICE_GAP num_args=0 action=SetTrue default=false
+--fft-padding value=FFT_PADDING num_args=0 action=SetTrue default=false
+--tukey-window value=TUKEY_WINDOW num_args=1 action=Set
+--crop-margin-mm value=CROP_MARGIN_MM num_args=1 action=Set
+--output-space value=OUTPUT_SPACE num_args=1 action=Set values=acquired,working
+--mask-preset value=MASK_PRESET num_args=1 action=Set values=robust-threshold,bet,hd-bet,bet-and-phase,rs2-net,mindgrab,(mouse-bet)
+--use-custom-masks value=USE_CUSTOM_MASKS num_args=0..=1 action=Set
+--mask value=MASK_SECTIONS_CLI num_args=1 action=Append
+--mask-combine value=MASK_COMBINE num_args=1 action=Set values=or,and
+--mask-refine value=MASK_REFINEMENTS_CLI num_args=1 action=Append
+--two-pass value=TWO_PASS num_args=0 action=SetTrue default=false
+--two-pass-mask value=TWO_PASS_SECTIONS_CLI num_args=1 action=Append
+--two-pass-mask-combine value=TWO_PASS_MASK_COMBINE num_args=1 action=Set values=or,and
+--dismiss-recommendation value=RULE=VALUE num_args=1 action=Append
+--n-procs value=N_PROCS num_args=1 action=Set
+--source-dicom value=SOURCE_DICOM num_args=1 action=Set
+--dicom-outputs value=DICOM_OUTPUTS num_args=1 action=Append delimiter=',' values=magnitude,chimap,swi,minip,desc-swi_phase,desc-paramagnetic_smwi,desc-diamagnetic_smwi,desc-paramagneticsmwi_minip,desc-diamagneticsmwi_minip,t2starmap,r2starmap,r2map,r2primemap,desc-paramagnetic_chimap,desc-diamagnetic_chimap,desc-total_chimap,dseg ignore_case
+--dry value=DRY num_args=0 action=SetTrue default=false
+--accept-recommendations value=ACCEPT_RECOMMENDATIONS num_args=0 action=SetTrue default=false
+--accept-reference-settings value=ACCEPT_REFERENCE_SETTINGS num_args=0 action=SetTrue default=false
+--debug value=DEBUG num_args=0 action=SetTrue default=false
+--mem-limit-gb value=MEM_LIMIT_GB num_args=1 action=Set
+--no-mem-limit value=NO_MEM_LIMIT num_args=0 action=SetTrue default=false
+--force value=FORCE num_args=0 action=SetTrue default=false
+--clean-intermediates value=CLEAN_INTERMEDIATES num_args=0 action=SetTrue default=false
+--no-dataset-steps value=NO_DATASET_STEPS num_args=0 action=SetTrue default=false
+--help -h num_args=0 action=Help
+
+## qsmxt init
+--output -o value=OUTPUT num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt validate
+<bids_dir> value=BIDS_DIR num_args=1 action=Set required
+--include value=INCLUDE num_args=1.. action=Append
+--exclude value=EXCLUDE num_args=1.. action=Append
+--help -h num_args=0 action=Help
+
+## qsmxt dicom-convert
+<dicom_dir> value=DICOM_DIR num_args=1 action=Set required
+<output_dir> value=OUTPUT_DIR num_args=1 action=Set required
+--dry-run value=DRY_RUN num_args=0 action=SetTrue default=false
+--keep-dicom-uids value=KEEP_DICOM_UIDS num_args=0 action=SetTrue default=false
+--help -h num_args=0 action=Help
+
+## qsmxt slurm
+<bids_dir> value=BIDS_DIR num_args=1 action=Set required
+<output_dir> value=OUTPUT_DIR num_args=1 action=Set
+--account value=ACCOUNT num_args=1 action=Set required
+--partition value=PARTITION num_args=1 action=Set
+--config value=CONFIG num_args=1 action=Set
+--time value=TIME num_args=1 action=Set default=02:00:00
+--mem value=MEM num_args=1 action=Set
+--cpus-per-task value=CPUS_PER_TASK num_args=1 action=Set default=4
+--submit value=SUBMIT num_args=0 action=SetTrue default=false
+--include value=INCLUDE num_args=1.. action=Append
+--exclude value=EXCLUDE num_args=1.. action=Append
+--num-echoes value=NUM_ECHOES num_args=1 action=Set
+--force value=FORCE num_args=0 action=SetTrue default=false
+--clean-intermediates value=CLEAN_INTERMEDIATES num_args=0 action=SetTrue default=false
+--debug value=DEBUG num_args=0 action=SetTrue default=false
+--source-dicom value=SOURCE_DICOM num_args=1 action=Set
+--dicom-outputs value=DICOM_OUTPUTS num_args=1 action=Append delimiter=',' values=magnitude,chimap,swi,minip,desc-swi_phase,desc-paramagnetic_smwi,desc-diamagnetic_smwi,desc-paramagneticsmwi_minip,desc-diamagneticsmwi_minip,t2starmap,r2starmap,r2map,r2primemap,desc-paramagnetic_chimap,desc-diamagnetic_chimap,desc-total_chimap,dseg ignore_case
+--accept-recommendations value=ACCEPT_RECOMMENDATIONS num_args=0 action=SetTrue default=false
+--accept-reference-settings value=ACCEPT_REFERENCE_SETTINGS num_args=0 action=SetTrue default=false
+--pipeline value=PIPELINE num_args=1 action=Set values=qsmxt-defaults,medi-toolbox,sti-suite-ilsqr,sti-suite-star,qsmart,heidi,chi-sep-ilsqr,chi-sep-medi,chi-sepnet,decompose,uk-biobank
+--qsm-algorithm value=QSM_ALGORITHM num_args=1 action=Set values=rts,tv,tkd,tsvd,tgv,tikhonov,nltv,medi,tfi,ilsqr,star,lsqr,heidi,qsmart,ndi,fansi,fansi-tgv,l1qsm,whqsm,hdqsm,amp-pe,xqsm,qsmnet,qsmnet-plus,qsmnetme,autoqsm,qsmgan,ir2qsm,lpcnn,modl-qsm,nextqsm,iqsm,iqsm-plus
+--heidi value=HEIDI num_args=0 action=SetTrue default=false
+--orientation-group value=PATTERN num_args=1 action=Set
+--orientation-reference value=PATTERN num_args=1 action=Set
+--no-orientation-registration value=NO_ORIENTATION_REGISTRATION num_args=0 action=SetTrue default=false
+--multi-orientation-algorithm value=MULTI_ORIENTATION_ALGORITHM num_args=1 action=Set values=cosmos,sti
+--multi-orientation-lambda value=MULTI_ORIENTATION_LAMBDA num_args=1 action=Set
+--multi-orientation-force value=MULTI_ORIENTATION_FORCE num_args=0 action=SetTrue default=false
+--cosmos-magnitude-weighting value=COSMOS_MAGNITUDE_WEIGHTING num_args=0 action=SetTrue default=false
+--cosmos-tol value=COSMOS_TOL num_args=1 action=Set
+--cosmos-max-iter value=COSMOS_MAX_ITER num_args=1 action=Set
+--unwrapping-algorithm value=UNWRAPPING_ALGORITHM num_args=1 action=Set values=romeo,laplacian,prelude,medi-region-growing
+--bf-algorithm value=BF_ALGORITHM num_args=1 action=Set values=vsharp,pdf,lbv,ismv,sharp,resharp,harperella,iharperella,bfrnet,iqfm
+--bf-erode-voxels value=N num_args=1 action=Set
+--bf-polish-mask value=BF_POLISH_MASK num_args=0 action=SetTrue default=false
+--no-bf-polish-mask value=NO_BF_POLISH_MASK num_args=0 action=SetTrue default=false
+--bf-ukb-mask-trim value=BF_UKB_MASK_TRIM num_args=0 action=SetTrue default=false
+--no-bf-ukb-mask-trim value=NO_BF_UKB_MASK_TRIM num_args=0 action=SetTrue default=false
+--masking-input value=MASKING_INPUT num_args=1 action=Set values=magnitude-first,magnitude,magnitude-last,phase-quality
+--phase-offset-removal value=PHASE_OFFSET_REMOVAL num_args=1 action=Set values=true,false
+--phase-offset-sigma-mm value=PHASE_OFFSET_SIGMA_MM num_args=3 action=Append
+--coil-combination-sigma value=COIL_COMBINATION_SIGMA num_args=3 action=Append
+--bipolar-correction value=BIPOLAR_CORRECTION num_args=0 action=SetTrue default=false
+--b0-estimation value=B0_ESTIMATION num_args=1 action=Set values=weighted-avg,linear-fit,robust-fit,qsmart-echofit,complex-fit
+--qsmart-fit-threshold-mode value=QSMART_FIT_THRESHOLD_MODE num_args=1 action=Set values=percentile,absolute
+--qsmart-fit-percentile value=QSMART_FIT_PERCENTILE num_args=1 action=Set
+--qsmart-fit-threshold value=QSMART_FIT_THRESHOLD num_args=1 action=Set
+--b0-weight-type value=B0_WEIGHT_TYPE num_args=1 action=Set values=phase-snr,phase-var,average,tes,mag,assumed-decay
+--b0-weight-assumed-t2star value=MS num_args=1 action=Set
+--laplacian-solver aliases=laplacian-kernel value=LAPLACIAN_SOLVER num_args=1 action=Set values=dct,fft|sti,mirror,mgpcg
+--laplacian-fft-pad value=VOXELS num_args=1..=3 action=Append
+--laplacian-unmasked value=LAPLACIAN_UNMASKED num_args=0 action=SetTrue default=false
+--no-laplacian-unmasked value=NO_LAPLACIAN_UNMASKED num_args=0 action=SetTrue default=false
+--laplacian-keep-outside value=LAPLACIAN_KEEP_OUTSIDE num_args=0 action=SetTrue default=false
+--no-laplacian-keep-outside value=NO_LAPLACIAN_KEEP_OUTSIDE num_args=0 action=SetTrue default=false
+--bet-fractional-intensity value=BET_FRACTIONAL_INTENSITY num_args=1 action=Set
+--bet-smoothness value=BET_SMOOTHNESS num_args=1 action=Set
+--bet-gradient-threshold value=BET_GRADIENT_THRESHOLD num_args=1 action=Set allow_hyphen_values
+--bet-iterations value=BET_ITERATIONS num_args=1 action=Set
+--bet-subdivisions value=BET_SUBDIVISIONS num_args=1 action=Set
+--bet-voxel-scale value=FACTOR num_args=1 action=Set
+--bet-orientation value=ORIENTATION num_args=1 action=Set
+--qsm-reference value=SPEC num_args=1 action=Set
+--qsm-per-echo value=BOOL num_args=1 action=Set values=true,false
+--rts-delta value=RTS_DELTA num_args=1 action=Set
+--rts-mu value=RTS_MU num_args=1 action=Set
+--rts-tol value=RTS_TOL num_args=1 action=Set
+--rts-rho value=RTS_RHO num_args=1 action=Set
+--rts-max-iter value=RTS_MAX_ITER num_args=1 action=Set
+--rts-lsmr-iter value=RTS_LSMR_ITER num_args=1 action=Set
+--rts-tau value=RTS_TAU num_args=1 action=Set
+--rts-gamma value=RTS_GAMMA num_args=1 action=Set
+--rts-pad value=X,Y,Z num_args=3 action=Append
+--tv-lambda value=TV_LAMBDA num_args=1 action=Set
+--tv-rho value=RHO num_args=1 action=Set
+--tv-tol value=TV_TOL num_args=1 action=Set
+--tv-max-iter value=TV_MAX_ITER num_args=1 action=Set
+--tv-pad value=X,Y,Z num_args=3 action=Append
+--tkd-threshold value=TKD_THRESHOLD num_args=1 action=Set
+--tkd-pad value=X,Y,Z num_args=3 action=Append
+--tsvd-threshold value=TSVD_THRESHOLD num_args=1 action=Set
+--tsvd-pad value=X,Y,Z num_args=3 action=Append
+--tgv-iterations value=TGV_ITERATIONS num_args=1 action=Set
+--tgv-erosions value=TGV_EROSIONS num_args=1 action=Set
+--tgv-alpha1 value=TGV_ALPHA1 num_args=1 action=Set
+--tgv-alpha0 value=TGV_ALPHA0 num_args=1 action=Set
+--tgv-step-size value=TGV_STEP_SIZE num_args=1 action=Set
+--tgv-te value=TE num_args=1 action=Set
+--tikhonov-lambda value=TIKHONOV_LAMBDA num_args=1 action=Set
+--tikhonov-pad value=X,Y,Z num_args=3 action=Append
+--nltv-lambda value=NLTV_LAMBDA num_args=1 action=Set
+--nltv-rho value=RHO num_args=1 action=Set
+--nltv-mu value=NLTV_MU num_args=1 action=Set
+--nltv-tol value=NLTV_TOL num_args=1 action=Set
+--nltv-max-iter value=NLTV_MAX_ITER num_args=1 action=Set
+--nltv-tol-newton value=NLTV_TOL_NEWTON num_args=1 action=Set
+--nltv-newton-iter value=NLTV_NEWTON_ITER num_args=1 action=Set
+--nltv-te value=TE num_args=1 action=Set
+--nltv-pad value=X,Y,Z num_args=3 action=Append
+--medi-lambda value=MEDI_LAMBDA num_args=1 action=Set
+--medi-merit value=MEDI_MERIT num_args=1 action=Set values=true,false
+--medi-csf value=MEDI_CSF num_args=1 action=Set values=true,false
+--medi-lambda-csf value=MEDI_LAMBDA_CSF num_args=1 action=Set
+--medi-csf-r2s-threshold value=MEDI_CSF_R2S_THRESHOLD num_args=1 action=Set
+--medi-csf-erode value=MEDI_CSF_ERODE num_args=1 action=Set values=true,false
+--medi-zeropad value=X,Y,Z num_args=3 action=Append
+--medi-smv value=MEDI_SMV num_args=0 action=SetTrue default=false
+--no-medi-smv value=NO_MEDI_SMV num_args=0 action=SetTrue default=false
+--medi-smv-radius value=MEDI_SMV_RADIUS num_args=1 action=Set
+--medi-smv-shrink-mask value=MEDI_SMV_SHRINK_MASK num_args=0 action=SetTrue default=false
+--no-medi-smv-shrink-mask value=NO_MEDI_SMV_SHRINK_MASK num_args=0 action=SetTrue default=false
+--medi-msmv value=MEDI_MSMV num_args=0 action=SetTrue default=false
+--medi-msmv-maxk value=MEDI_MSMV_MAXK num_args=1 action=Set
+--medi-msmv-vessel-radius value=MEDI_MSMV_VESSEL_RADIUS num_args=1 action=Set
+--no-medi-msmv-prefilter value=NO_MEDI_MSMV_PREFILTER num_args=0 action=SetTrue default=false
+--medi-data-weighting value=MEDI_DATA_WEIGHTING num_args=1 action=Set
+--medi-percentage value=MEDI_PERCENTAGE num_args=1 action=Set
+--medi-cg-tol value=MEDI_CG_TOL num_args=1 action=Set
+--medi-cg-max-iter value=MEDI_CG_MAX_ITER num_args=1 action=Set
+--medi-max-iter value=MEDI_MAX_ITER num_args=1 action=Set
+--medi-tol value=MEDI_TOL num_args=1 action=Set
+--medi-te value=TE num_args=1 action=Set
+--tfi-lambda value=TFI_LAMBDA num_args=1 action=Set
+--tfi-precond value=TFI_PRECOND num_args=1 action=Set
+--tfi-merit value=TFI_MERIT num_args=1 action=Set values=true,false
+--tfi-linear value=TFI_LINEAR num_args=1 action=Set values=true,false
+--tfi-data-weighting value=TFI_DATA_WEIGHTING num_args=1 action=Set
+--tfi-percentage value=TFI_PERCENTAGE num_args=1 action=Set
+--tfi-cg-tol value=TFI_CG_TOL num_args=1 action=Set
+--tfi-cg-max-iter value=TFI_CG_MAX_ITER num_args=1 action=Set
+--tfi-max-iter value=TFI_MAX_ITER num_args=1 action=Set
+--tfi-tol value=TFI_TOL num_args=1 action=Set
+--tfi-te value=TE num_args=1 action=Set
+--ilsqr-tol value=ILSQR_TOL num_args=1 action=Set
+--ilsqr-max-iter value=ILSQR_MAX_ITER num_args=1 action=Set
+--ilsqr-pad-mm value=MM num_args=1 action=Set
+--ilsqr-precision value=PRECISION num_args=1 action=Set
+--star-pad value=X,Y,Z num_args=3 action=Append
+--star-te value=TE num_args=1 action=Set
+--lsqr-residual-weighting value=LSQR_RESIDUAL_WEIGHTING num_args=1 action=Set
+--no-lsqr-global-offset value=NO_LSQR_GLOBAL_OFFSET num_args=0 action=SetTrue default=false
+--lsqr-tol value=LSQR_TOL num_args=1 action=Set
+--lsqr-max-iter value=LSQR_MAX_ITER num_args=1 action=Set
+--heidi-cone-threshold value=HEIDI_CONE_THRESHOLD num_args=1 action=Set
+--heidi-gradient-threshold value=HEIDI_GRADIENT_THRESHOLD num_args=1 action=Set
+--no-heidi-laplacian-correction value=NO_HEIDI_LAPLACIAN_CORRECTION num_args=0 action=SetTrue default=false
+--heidi-laplacian-threshold value=HEIDI_LAPLACIAN_THRESHOLD num_args=1 action=Set
+--heidi-gradient-mask-floor value=HEIDI_GRADIENT_MASK_FLOOR num_args=1 action=Set
+--heidi-continuation-steps value=HEIDI_CONTINUATION_STEPS num_args=1 action=Set
+--heidi-inner-iterations value=HEIDI_INNER_ITERATIONS num_args=1 action=Set
+--heidi-mu-min value=HEIDI_MU_MIN num_args=1 action=Set
+--heidi-tol value=HEIDI_TOL num_args=1 action=Set
+--no-heidi-denoise value=NO_HEIDI_DENOISE num_args=0 action=SetTrue default=false
+--heidi-denoise-iterations value=HEIDI_DENOISE_ITERATIONS num_args=1 action=Set
+--heidi-denoise-time-step value=HEIDI_DENOISE_TIME_STEP num_args=1 action=Set
+--heidi-denoise-conductance value=HEIDI_DENOISE_CONDUCTANCE num_args=1 action=Set
+--heidi-denoise-reference-itk value=HEIDI_DENOISE_REFERENCE_ITK num_args=0 action=SetTrue default=false
+--no-heidi-denoise-reference-itk value=NO_HEIDI_DENOISE_REFERENCE_ITK num_args=0 action=SetTrue default=false
+--heidi-te value=TE num_args=1 action=Set
+--qsmart-ilsqr-max-iter value=QSMART_ILSQR_MAX_ITER num_args=1 action=Set
+--qsmart-ilsqr-pad-mm value=MM num_args=1 action=Set
+--qsmart-vasc-sphere-radius value=QSMART_VASC_SPHERE_RADIUS num_args=1 action=Set
+--qsmart-inversion value=QSMART_INVERSION num_args=1 action=Set values=rts,tv,tkd,tsvd,tgv,tikhonov,nltv,medi,tfi,ilsqr,star,lsqr,heidi,qsmart,ndi,fansi,fansi-tgv,l1qsm,whqsm,hdqsm,amp-pe,xqsm,qsmnet,qsmnet-plus,qsmnetme,autoqsm,qsmgan,ir2qsm,lpcnn,modl-qsm,nextqsm,iqsm,iqsm-plus
+--qsmart-sdf-sigma1-stage1 value=QSMART_SDF_SIGMA1_STAGE1 num_args=1 action=Set
+--qsmart-sdf-sigma2-stage1 value=QSMART_SDF_SIGMA2_STAGE1 num_args=1 action=Set
+--qsmart-sdf-sigma1-stage2 value=QSMART_SDF_SIGMA1_STAGE2 num_args=1 action=Set
+--qsmart-sdf-sigma2-stage2 value=QSMART_SDF_SIGMA2_STAGE2 num_args=1 action=Set
+--qsmart-sdf-lower-lim value=QSMART_SDF_LOWER_LIM num_args=1 action=Set
+--qsmart-sdf-curv-constant value=QSMART_SDF_CURV_CONSTANT num_args=1 action=Set
+--qsmart-frangi-scale-min value=QSMART_FRANGI_SCALE_MIN num_args=1 action=Set
+--qsmart-frangi-scale-max value=QSMART_FRANGI_SCALE_MAX num_args=1 action=Set
+--qsmart-frangi-scale-ratio value=QSMART_FRANGI_SCALE_RATIO num_args=1 action=Set
+--qsmart-frangi-c value=QSMART_FRANGI_C num_args=1 action=Set
+--qsmart-frangi-c-mode value=QSMART_FRANGI_C_MODE num_args=1 action=Set values=absolute,relative
+--qsmart-frangi-c-factor value=QSMART_FRANGI_C_FACTOR num_args=1 action=Set
+--qsmart-vessel-units value=QSMART_VESSEL_UNITS num_args=1 action=Set values=voxels,mm
+--qsmart-vessel-magnitude value=QSMART_VESSEL_MAGNITUDE num_args=1 action=Set values=mean-n4,combined
+--qsmart-offset-grid value=QSMART_OFFSET_GRID num_args=1 action=Set values=fft,qsmart-reference
+--ndi-tau value=NDI_TAU num_args=1 action=Set
+--ndi-alpha value=NDI_ALPHA num_args=1 action=Set
+--ndi-max-iter value=NDI_MAX_ITER num_args=1 action=Set
+--ndi-auto-stop value=NDI_AUTO_STOP num_args=1 action=Set values=true,false
+--ndi-te value=TE num_args=1 action=Set
+--ndi-weight-norm value=NORM num_args=1 action=Set
+--fansi-alpha1 value=FANSI_ALPHA1 num_args=1 action=Set
+--fansi-mu1 value=MU1 num_args=1 action=Set
+--fansi-mu2 value=FANSI_MU2 num_args=1 action=Set
+--fansi-alpha0 value=ALPHA0 num_args=1 action=Set
+--fansi-mu0 value=MU0 num_args=1 action=Set
+--fansi-max-iter value=FANSI_MAX_ITER num_args=1 action=Set
+--fansi-tol-update value=FANSI_TOL_UPDATE num_args=1 action=Set
+--fansi-tol-delta value=FANSI_TOL_DELTA num_args=1 action=Set
+--fansi-te value=TE num_args=1 action=Set
+--l1qsm-alpha1 value=L1QSM_ALPHA1 num_args=1 action=Set
+--l1qsm-mu1 value=MU1 num_args=1 action=Set
+--l1qsm-mu2 value=L1QSM_MU2 num_args=1 action=Set
+--l1qsm-mu3 value=L1QSM_MU3 num_args=1 action=Set
+--l1qsm-lambda value=L1QSM_LAMBDA num_args=1 action=Set
+--l1qsm-max-iter value=L1QSM_MAX_ITER num_args=1 action=Set
+--l1qsm-tol-update value=L1QSM_TOL_UPDATE num_args=1 action=Set
+--l1qsm-tol-delta value=L1QSM_TOL_DELTA num_args=1 action=Set
+--l1qsm-te value=TE num_args=1 action=Set
+--whqsm-alpha1 value=WHQSM_ALPHA1 num_args=1 action=Set
+--whqsm-mu1 value=WHQSM_MU1 num_args=1 action=Set
+--whqsm-mu2 value=WHQSM_MU2 num_args=1 action=Set
+--whqsm-beta value=WHQSM_BETA num_args=1 action=Set
+--whqsm-muh value=WHQSM_MUH num_args=1 action=Set
+--whqsm-max-iter value=WHQSM_MAX_ITER num_args=1 action=Set
+--whqsm-tol-update value=WHQSM_TOL_UPDATE num_args=1 action=Set
+--whqsm-tol-delta value=WHQSM_TOL_DELTA num_args=1 action=Set
+--whqsm-weight value=WEIGHT num_args=1 action=Set
+--whqsm-te value=TE num_args=1 action=Set
+--hdqsm-alpha-l2 value=HDQSM_ALPHA_L2 num_args=1 action=Set
+--hdqsm-mu1-l2 value=MU1_L2 num_args=1 action=Set
+--hdqsm-mu2 value=HDQSM_MU2 num_args=1 action=Set
+--hdqsm-max-iter-l1 value=HDQSM_MAX_ITER_L1 num_args=1 action=Set
+--hdqsm-max-iter-l2 value=HDQSM_MAX_ITER_L2 num_args=1 action=Set
+--hdqsm-tol-update value=HDQSM_TOL_UPDATE num_args=1 action=Set
+--amp-pe-wave-order value=AMP_PE_WAVE_ORDER num_args=1 action=Set
+--amp-pe-nlevel value=AMP_PE_NLEVEL num_args=1 action=Set
+--amp-pe-wave-pec value=AMP_PE_WAVE_PEC num_args=1 action=Set
+--amp-pe-simulated-te value=AMP_PE_SIMULATED_TE num_args=1 action=Set
+--amp-pe-max-linearization-ite value=AMP_PE_MAX_LINEARIZATION_ITE num_args=1 action=Set
+--amp-pe-damp-rate-sig value=AMP_PE_DAMP_RATE_SIG num_args=1 action=Set
+--amp-pe-damp-rate-par value=AMP_PE_DAMP_RATE_PAR num_args=1 action=Set
+--amp-pe-max-pe-spar-ite value=AMP_PE_MAX_PE_SPAR_ITE num_args=1 action=Set
+--amp-pe-max-pe-est-ite value=AMP_PE_MAX_PE_EST_ITE num_args=1 action=Set
+--amp-pe-cvg-thd value=AMP_PE_CVG_THD num_args=1 action=Set
+--amp-pe-tikhonov-beta value=AMP_PE_TIKHONOV_BETA num_args=1 action=Set
+--r2star-qsm-r-const-3t value=R2STAR_QSM_R_CONST_3T num_args=1 action=Set
+--decompose-n-inner value=DECOMPOSE_N_INNER num_args=1 action=Set
+--decompose-chi-bound value=BOUND num_args=1 action=Set
+--decompose-unwrap-phase value=BOOL num_args=1 action=Set values=true,false
+--decompose-fit value=DECOMPOSE_FIT num_args=1 action=Set values=reference-code,paper
+--decompose-max-iterations value=DECOMPOSE_MAX_ITERATIONS num_args=1 action=Set
+--decompose-max-function-evaluations value=DECOMPOSE_MAX_FUNCTION_EVALUATIONS num_args=1 action=Set
+--decompose-function-tolerance value=DECOMPOSE_FUNCTION_TOLERANCE num_args=1 action=Set
+--decompose-step-tolerance value=DECOMPOSE_STEP_TOLERANCE num_args=1 action=Set
+--decompose-optimality-tolerance value=DECOMPOSE_OPTIMALITY_TOLERANCE num_args=1 action=Set
+--decompose-finite-difference-step value=DECOMPOSE_FINITE_DIFFERENCE_STEP num_args=1 action=Set
+--decompose-typical-x value=DECOMPOSE_TYPICAL_X num_args=1 action=Set
+--chi-sep-ilsqr-dr-pos value=HZ_PER_PPM num_args=1 action=Set
+--chi-sep-ilsqr-dr-neg value=HZ_PER_PPM num_args=1 action=Set
+--chi-sep-ilsqr-pad value=X,Y,Z num_args=3 action=Append
+--chi-sep-ilsqr-cg-max-iter-lsqr value=CHI_SEP_ILSQR_CG_MAX_ITER_LSQR num_args=1 action=Set
+--chi-sep-ilsqr-cg-tol-lsqr value=CHI_SEP_ILSQR_CG_TOL_LSQR num_args=1 action=Set
+--chi-sep-ilsqr-cg-max-iter-sa value=CHI_SEP_ILSQR_CG_MAX_ITER_SA num_args=1 action=Set
+--chi-sep-ilsqr-cg-tol-sa value=CHI_SEP_ILSQR_CG_TOL_SA num_args=1 action=Set
+--chi-sep-ilsqr-d2-thr value=CHI_SEP_ILSQR_D2_THR num_args=1 action=Set
+--chi-sep-ilsqr-prc-w-i-min value=CHI_SEP_ILSQR_PRC_W_I_MIN num_args=1 action=Set
+--chi-sep-ilsqr-prc-w-i-max value=CHI_SEP_ILSQR_PRC_W_I_MAX num_args=1 action=Set
+--chi-sep-ilsqr-prc-w-g-min value=CHI_SEP_ILSQR_PRC_W_G_MIN num_args=1 action=Set
+--chi-sep-ilsqr-prc-w-g-max value=CHI_SEP_ILSQR_PRC_W_G_MAX num_args=1 action=Set
+--chi-sep-ilsqr-qsm-max-iter value=CHI_SEP_ILSQR_QSM_MAX_ITER num_args=1 action=Set
+--chi-sep-ilsqr-qsm-tol value=CHI_SEP_ILSQR_QSM_TOL num_args=1 action=Set
+--chi-sep-ilsqr-qsm-pad-mm value=MM num_args=1 action=Set
+--chi-sep-ilsqr-qsm-precision value=PRECISION num_args=1 action=Set
+--chi-sep-medi-lambda value=CHI_SEP_MEDI_LAMBDA num_args=1 action=Set
+--chi-sep-medi-lambda-csf value=CHI_SEP_MEDI_LAMBDA_CSF num_args=1 action=Set
+--chi-sep-medi-dr-pos value=HZ_PER_PPM num_args=1 action=Set
+--chi-sep-medi-dr-neg value=HZ_PER_PPM num_args=1 action=Set
+--chi-sep-medi-pad value=CHI_SEP_MEDI_PAD num_args=1 action=Set
+--chi-sep-medi-tol value=CHI_SEP_MEDI_TOL num_args=1 action=Set
+--chi-sep-medi-max-iter value=CHI_SEP_MEDI_MAX_ITER num_args=1 action=Set
+--chi-sep-medi-cg-tol value=CHI_SEP_MEDI_CG_TOL num_args=1 action=Set
+--chi-sep-medi-cg-max-iter value=CHI_SEP_MEDI_CG_MAX_ITER num_args=1 action=Set
+--chi-sep-medi-qsm-max-iter value=CHI_SEP_MEDI_QSM_MAX_ITER num_args=1 action=Set
+--chi-sep-medi-qsm-tol value=CHI_SEP_MEDI_QSM_TOL num_args=1 action=Set
+--chi-sep-medi-qsm-pad-mm value=MM num_args=1 action=Set
+--chi-sep-medi-qsm-precision value=PRECISION num_args=1 action=Set
+--chi-sep-medi-csf-r2star value=METHOD num_args=1 action=Set
+--wavesep-dr-pos value=WAVESEP_DR_POS num_args=1 action=Set
+--wavesep-dr-neg value=WAVESEP_DR_NEG num_args=1 action=Set
+--wavesep-alpha value=WAVESEP_ALPHA num_args=1 action=Set
+--wavesep-lambda value=WAVESEP_LAMBDA num_args=1 action=Set
+--wavesep-wavelet-order value=WAVESEP_WAVELET_ORDER num_args=1 action=Set
+--wavesep-max-iter value=WAVESEP_MAX_ITER num_args=1 action=Set
+--wavesep-tol value=WAVESEP_TOL num_args=1 action=Set
+--hc-chisep-dr-pos-3t value=HC_CHISEP_DR_POS_3T num_args=1 action=Set
+--hc-chisep-bin-hz value=HC_CHISEP_BIN_HZ num_args=1 action=Set
+--chi-sepnet-route value=CHI_SEPNET_ROUTE num_args=1 action=Set values=toolbox,native
+--chi-sepnet-patch value=D,H,W num_args=3 action=Append
+--chi-sepnet-frame-patch value=D,H,W num_args=3 action=Append
+--susep-net-patch value=D,H,W num_args=3 action=Append
+--motion-correction value=MOTION_CORRECTION num_args=0 action=SetTrue default=false
+--motion-reference value=first|last|N num_args=1 action=Set
+--no-motion-chain value=NO_MOTION_CHAIN num_args=0 action=SetTrue default=false
+--motion-chain-levels value=MOTION_CHAIN_LEVELS num_args=1 action=Set
+--motion-min-ncc value=MOTION_MIN_NCC num_args=1 action=Set
+--registration-levels value=REGISTRATION_LEVELS num_args=1 action=Set
+--registration-max-samples value=REGISTRATION_MAX_SAMPLES num_args=1 action=Set
+--registration-max-iterations value=REGISTRATION_MAX_ITERATIONS num_args=1 action=Set
+--registration-max-evaluations value=REGISTRATION_MAX_EVALUATIONS num_args=1 action=Set
+--registration-tolerance value=REGISTRATION_TOLERANCE num_args=1 action=Set
+--registration-rotation-step-deg value=REGISTRATION_ROTATION_STEP_DEG num_args=1 action=Set
+--registration-translation-step-mm value=REGISTRATION_TRANSLATION_STEP_MM num_args=1 action=Set
+--registration-min-overlap value=REGISTRATION_MIN_OVERLAP num_args=1 action=Set
+--vsharp-deconvolve value=BOOL num_args=1 action=Set values=true,false
+--vsharp-threshold value=VSHARP_THRESHOLD num_args=1 action=Set
+--vsharp-max-radius value=VSHARP_MAX_RADIUS num_args=1 action=Set
+--vsharp-min-radius value=VSHARP_MIN_RADIUS num_args=1 action=Set
+--vsharp-radius-step value=MM num_args=1 action=Set
+--vsharp-grid value=VSHARP_GRID num_args=1 action=Set values=native,finest,isotropic
+--vsharp-grid-spacing value=MM num_args=1 action=Set
+--pdf-tol value=PDF_TOL num_args=1 action=Set
+--pdf-n-cg value=PDF_N_CG num_args=1 action=Set
+--pdf-space value=SPACE num_args=1 action=Set
+--pdf-n-pad value=VOXELS num_args=1 action=Set
+--lbv-tol value=LBV_TOL num_args=1 action=Set
+--lbv-depth value=LEVEL num_args=1 action=Set
+--lbv-peel value=LAYERS num_args=1 action=Set
+--lbv-n1 value=LBV_N1 num_args=1 action=Set
+--lbv-n2 value=LBV_N2 num_args=1 action=Set
+--lbv-n3 value=LBV_N3 num_args=1 action=Set
+--lbv-precision value=PRECISION num_args=1 action=Set
+--ismv-variant value=VARIANT num_args=1 action=Set
+--ismv-tol value=ISMV_TOL num_args=1 action=Set
+--ismv-max-iter value=ISMV_MAX_ITER num_args=1 action=Set
+--ismv-radius value=MM num_args=1 action=Set
+--sharp-threshold value=SHARP_THRESHOLD num_args=1 action=Set
+--sharp-radius value=SHARP_RADIUS num_args=1 action=Set
+--resharp-radius value=RESHARP_RADIUS num_args=1 action=Set
+--resharp-tik-reg value=RESHARP_TIK_REG num_args=1 action=Set
+--resharp-tol value=RESHARP_TOL num_args=1 action=Set
+--resharp-max-iter value=RESHARP_MAX_ITER num_args=1 action=Set
+--harperella-radius value=HARPERELLA_RADIUS num_args=1 action=Set
+--harperella-max-iter value=HARPERELLA_MAX_ITER num_args=1 action=Set
+--harperella-tol value=HARPERELLA_TOL num_args=1 action=Set
+--harperella-pad value=X,Y,Z num_args=3 action=Append
+--harperella-rim value=RIM num_args=1 action=Set
+--iharperella-max-iter value=IHARPERELLA_MAX_ITER num_args=1 action=Set
+--iharperella-tol value=IHARPERELLA_TOL num_args=1 action=Set
+--iharperella-pad value=X,Y,Z num_args=3 action=Append
+--iharperella-rim value=RIM num_args=1 action=Set
+--no-romeo-phase-coherence value=NO_ROMEO_PHASE_COHERENCE num_args=0 action=SetTrue default=false
+--no-romeo-phase-gradient-coherence value=NO_ROMEO_PHASE_GRADIENT_COHERENCE num_args=0 action=SetTrue default=false
+--no-romeo-phase-linearity value=NO_ROMEO_PHASE_LINEARITY num_args=0 action=SetTrue default=false
+--romeo-phase-linearity value=ROMEO_PHASE_LINEARITY num_args=0 action=SetTrue default=false
+--no-romeo-mag-coherence value=NO_ROMEO_MAG_COHERENCE num_args=0 action=SetTrue default=false
+--romeo-mag-weight value=ROMEO_MAG_WEIGHT num_args=0 action=SetTrue default=false
+--no-romeo-mag-weight value=NO_ROMEO_MAG_WEIGHT num_args=0 action=SetTrue default=false
+--romeo-mag-weight2 value=ROMEO_MAG_WEIGHT2 num_args=0 action=SetTrue default=false
+--romeo-bestpath value=ROMEO_BESTPATH num_args=0 action=SetTrue default=false
+--romeo-template value=ROMEO_TEMPLATE num_args=1 action=Set
+--romeo-individual value=ROMEO_INDIVIDUAL num_args=0 action=SetTrue default=false
+--no-romeo-individual value=NO_ROMEO_INDIVIDUAL num_args=0 action=SetTrue default=false
+--romeo-correct-global value=ROMEO_CORRECT_GLOBAL num_args=0 action=SetTrue default=false
+--no-romeo-correct-global value=NO_ROMEO_CORRECT_GLOBAL num_args=0 action=SetTrue default=false
+--romeo-temporal-uncertain-unwrapping value=ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING num_args=1 action=Set
+--romeo-max-seeds value=ROMEO_MAX_SEEDS num_args=1 action=Set
+--romeo-merge-regions value=ROMEO_MERGE_REGIONS num_args=0 action=SetTrue default=false
+--romeo-correct-regions value=ROMEO_CORRECT_REGIONS num_args=0 action=SetTrue default=false
+--romeo-wrap-addition value=ROMEO_WRAP_ADDITION num_args=1 action=Set
+--prelude-labelling value=PRELUDE_LABELLING num_args=1 action=Set values=auto,slices,volume
+--prelude-partitions value=N num_args=1 action=Set
+--swi-unwrapping value=SWI_UNWRAPPING num_args=1 action=Set values=laplacian,laplacian-slice,romeo
+--swi-hp-sigma value=SWI_HP_SIGMA num_args=3 action=Append
+--swi-scaling value=SWI_SCALING num_args=1 action=Set values=tanh,negative-tanh|negative_tanh,positive,negative,triangular
+--swi-strength value=SWI_STRENGTH num_args=1 action=Set
+--swi-mip-window value=SWI_MIP_WINDOW num_args=1 action=Set
+--smwi-threshold value=SMWI_THRESHOLD num_args=1 action=Set
+--smwi-power value=SMWI_POWER num_args=1 action=Set
+--smwi-mip-window value=SMWI_MIP_WINDOW num_args=1 action=Set
+--synthseg-version value=VERSION num_args=1 action=Set
+--synthseg-crop value=SYNTHSEG_CROP num_args=1 action=Set
+--synthseg-patch value=VOXELS num_args=1 action=Set
+--no-synthseg-flip-averaging value=NO_SYNTHSEG_FLIP_AVERAGING num_args=0 action=SetTrue default=false
+--no-synthseg-topology-cleanup value=NO_SYNTHSEG_TOPOLOGY_CLEANUP num_args=0 action=SetTrue default=false
+--synthseg-sigma value=SYNTHSEG_SIGMA num_args=1 action=Set
+--use-custom-dseg value=TOOL num_args=0..=1 action=Set
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--inhomogeneity-method value=INHOMOGENEITY_METHOD num_args=1 action=Set values=makehomogeneous,n4
+--homogeneity-sigma-mm value=HOMOGENEITY_SIGMA_MM num_args=1 action=Set
+--homogeneity-nbox value=HOMOGENEITY_NBOX num_args=1 action=Set
+--n4-shrink-factor value=N4_SHRINK_FACTOR num_args=1 action=Set
+--n4-max-iterations value=ITERATIONS num_args=1.. action=Append
+--n4-convergence-threshold value=N4_CONVERGENCE_THRESHOLD num_args=1 action=Set
+--n4-mesh value=X,Y,Z num_args=3 action=Append
+--n4-spline-order value=N4_SPLINE_ORDER num_args=1 action=Set
+--n4-bias-field-fwhm value=N4_BIAS_FIELD_FWHM num_args=1 action=Set
+--n4-wiener-noise value=N4_WIENER_NOISE num_args=1 action=Set
+--n4-histogram-bins value=N4_HISTOGRAM_BINS num_args=1 action=Set
+--n4-geometry value=GEOMETRY num_args=1 action=Set
+--linear-fit-estimate-offset value=LINEAR_FIT_ESTIMATE_OFFSET num_args=1 action=Set values=true,false
+--robust-fit-loss value=ROBUST_FIT_LOSS num_args=1 action=Set values=tukey,huber
+--robust-fit-tuning value=ROBUST_FIT_TUNING num_args=1 action=Set
+--robust-fit-iterations value=ROBUST_FIT_ITERATIONS num_args=1 action=Set
+--robust-fit-downweight-level value=ROBUST_FIT_DOWNWEIGHT_LEVEL num_args=1 action=Set
+--robust-fit-flag-ratio value=ROBUST_FIT_FLAG_RATIO num_args=1 action=Set
+--complex-fit-reltol value=COMPLEX_FIT_RELTOL num_args=1 action=Set
+--complex-fit-max-iter value=COMPLEX_FIT_MAX_ITER num_args=1 action=Set
+--no-qsm value=NO_QSM num_args=0 action=SetTrue default=false
+--do-swi value=DO_SWI num_args=0 action=SetTrue default=false
+--swi-filtered-phase value=SWI_FILTERED_PHASE num_args=0 action=SetTrue default=false
+--no-magnitude value=NO_MAGNITUDE num_args=0 action=SetTrue default=false
+--do-segmentation value=DO_SEGMENTATION num_args=0 action=SetTrue default=false
+--do-analysis value=DO_ANALYSIS num_args=0 action=SetTrue default=false
+--do-smwi value=DO_SMWI num_args=0 action=SetTrue default=false
+--do-t2starmap value=DO_T2STARMAP num_args=0 action=SetTrue default=false
+--do-r2starmap value=DO_R2STARMAP num_args=0 action=SetTrue default=false
+--do-r2map value=DO_R2MAP num_args=0 action=SetTrue default=false
+--do-r2primemap value=DO_R2PRIMEMAP num_args=0 action=SetTrue default=false
+--do-chisep value=DO_CHI_SEPARATION num_args=0 action=SetTrue default=false
+--chisep value=CHI_SEPARATION_ALGORITHM num_args=1 action=Set values=r2star-qsm,decompose,chi-sep-ilsqr,chi-sep-medi,wavesep,hc-chisep,susep-net,chi-sepnet
+--use-custom-qsm value=TOOL num_args=1 action=Set
+--use-custom-r2 value=TOOL num_args=1 action=Set
+--use-custom-r2prime value=TOOL num_args=1 action=Set
+--r2prime-strategy value=R2PRIME_STRATEGY num_args=1 action=Set values=auto,mese,r2primenet
+--r2primenet-ignore-field-mismatch value=R2PRIMENET_IGNORE_FIELD_MISMATCH num_args=0 action=SetTrue default=false
+--r2primenet-patch value=D,H,W num_args=3 action=Append
+--export-dicom value=EXPORT_DICOM num_args=0 action=SetTrue default=false
+--inhomogeneity-correction value=INHOMOGENEITY_CORRECTION num_args=0 action=SetTrue default=false
+--no-inhomogeneity-correction value=NO_INHOMOGENEITY_CORRECTION num_args=0 action=SetTrue default=false
+--axial-resampling value=AXIAL_RESAMPLING num_args=0 action=SetTrue default=false
+--no-axial-resampling value=NO_AXIAL_RESAMPLING num_args=0 action=SetTrue default=false
+--obliquity-threshold value=OBLIQUITY_THRESHOLD num_args=1 action=Set
+--crop-to-mask value=CROP_TO_MASK num_args=0 action=SetTrue default=false
+--ignore-slice-gap value=IGNORE_SLICE_GAP num_args=0 action=SetTrue default=false
+--fft-padding value=FFT_PADDING num_args=0 action=SetTrue default=false
+--tukey-window value=TUKEY_WINDOW num_args=1 action=Set
+--crop-margin-mm value=CROP_MARGIN_MM num_args=1 action=Set
+--output-space value=OUTPUT_SPACE num_args=1 action=Set values=acquired,working
+--mask-preset value=MASK_PRESET num_args=1 action=Set values=robust-threshold,bet,hd-bet,bet-and-phase,rs2-net,mindgrab,(mouse-bet)
+--use-custom-masks value=USE_CUSTOM_MASKS num_args=0..=1 action=Set
+--mask value=MASK_SECTIONS_CLI num_args=1 action=Append
+--mask-combine value=MASK_COMBINE num_args=1 action=Set values=or,and
+--mask-refine value=MASK_REFINEMENTS_CLI num_args=1 action=Append
+--two-pass value=TWO_PASS num_args=0 action=SetTrue default=false
+--two-pass-mask value=TWO_PASS_SECTIONS_CLI num_args=1 action=Append
+--two-pass-mask-combine value=TWO_PASS_MASK_COMBINE num_args=1 action=Set values=or,and
+--dismiss-recommendation value=RULE=VALUE num_args=1 action=Append
+--help -h num_args=0 action=Help
+
+## qsmxt aggregate
+<bids_dir> value=BIDS_DIR num_args=1 action=Set required
+<output_dir> value=OUTPUT_DIR num_args=1 action=Set
+--config value=CONFIG num_args=1 action=Set
+--include value=INCLUDE num_args=1.. action=Append
+--exclude value=EXCLUDE num_args=1.. action=Append
+--num-echoes value=NUM_ECHOES num_args=1 action=Set
+--pipeline value=PIPELINE num_args=1 action=Set values=qsmxt-defaults,medi-toolbox,sti-suite-ilsqr,sti-suite-star,qsmart,heidi,chi-sep-ilsqr,chi-sep-medi,chi-sepnet,decompose,uk-biobank
+--qsm-algorithm value=QSM_ALGORITHM num_args=1 action=Set values=rts,tv,tkd,tsvd,tgv,tikhonov,nltv,medi,tfi,ilsqr,star,lsqr,heidi,qsmart,ndi,fansi,fansi-tgv,l1qsm,whqsm,hdqsm,amp-pe,xqsm,qsmnet,qsmnet-plus,qsmnetme,autoqsm,qsmgan,ir2qsm,lpcnn,modl-qsm,nextqsm,iqsm,iqsm-plus
+--heidi value=HEIDI num_args=0 action=SetTrue default=false
+--orientation-group value=PATTERN num_args=1 action=Set
+--orientation-reference value=PATTERN num_args=1 action=Set
+--no-orientation-registration value=NO_ORIENTATION_REGISTRATION num_args=0 action=SetTrue default=false
+--multi-orientation-algorithm value=MULTI_ORIENTATION_ALGORITHM num_args=1 action=Set values=cosmos,sti
+--multi-orientation-lambda value=MULTI_ORIENTATION_LAMBDA num_args=1 action=Set
+--multi-orientation-force value=MULTI_ORIENTATION_FORCE num_args=0 action=SetTrue default=false
+--cosmos-magnitude-weighting value=COSMOS_MAGNITUDE_WEIGHTING num_args=0 action=SetTrue default=false
+--cosmos-tol value=COSMOS_TOL num_args=1 action=Set
+--cosmos-max-iter value=COSMOS_MAX_ITER num_args=1 action=Set
+--unwrapping-algorithm value=UNWRAPPING_ALGORITHM num_args=1 action=Set values=romeo,laplacian,prelude,medi-region-growing
+--bf-algorithm value=BF_ALGORITHM num_args=1 action=Set values=vsharp,pdf,lbv,ismv,sharp,resharp,harperella,iharperella,bfrnet,iqfm
+--bf-erode-voxels value=N num_args=1 action=Set
+--bf-polish-mask value=BF_POLISH_MASK num_args=0 action=SetTrue default=false
+--no-bf-polish-mask value=NO_BF_POLISH_MASK num_args=0 action=SetTrue default=false
+--bf-ukb-mask-trim value=BF_UKB_MASK_TRIM num_args=0 action=SetTrue default=false
+--no-bf-ukb-mask-trim value=NO_BF_UKB_MASK_TRIM num_args=0 action=SetTrue default=false
+--masking-input value=MASKING_INPUT num_args=1 action=Set values=magnitude-first,magnitude,magnitude-last,phase-quality
+--phase-offset-removal value=PHASE_OFFSET_REMOVAL num_args=1 action=Set values=true,false
+--phase-offset-sigma-mm value=PHASE_OFFSET_SIGMA_MM num_args=3 action=Append
+--coil-combination-sigma value=COIL_COMBINATION_SIGMA num_args=3 action=Append
+--bipolar-correction value=BIPOLAR_CORRECTION num_args=0 action=SetTrue default=false
+--b0-estimation value=B0_ESTIMATION num_args=1 action=Set values=weighted-avg,linear-fit,robust-fit,qsmart-echofit,complex-fit
+--qsmart-fit-threshold-mode value=QSMART_FIT_THRESHOLD_MODE num_args=1 action=Set values=percentile,absolute
+--qsmart-fit-percentile value=QSMART_FIT_PERCENTILE num_args=1 action=Set
+--qsmart-fit-threshold value=QSMART_FIT_THRESHOLD num_args=1 action=Set
+--b0-weight-type value=B0_WEIGHT_TYPE num_args=1 action=Set values=phase-snr,phase-var,average,tes,mag,assumed-decay
+--b0-weight-assumed-t2star value=MS num_args=1 action=Set
+--laplacian-solver aliases=laplacian-kernel value=LAPLACIAN_SOLVER num_args=1 action=Set values=dct,fft|sti,mirror,mgpcg
+--laplacian-fft-pad value=VOXELS num_args=1..=3 action=Append
+--laplacian-unmasked value=LAPLACIAN_UNMASKED num_args=0 action=SetTrue default=false
+--no-laplacian-unmasked value=NO_LAPLACIAN_UNMASKED num_args=0 action=SetTrue default=false
+--laplacian-keep-outside value=LAPLACIAN_KEEP_OUTSIDE num_args=0 action=SetTrue default=false
+--no-laplacian-keep-outside value=NO_LAPLACIAN_KEEP_OUTSIDE num_args=0 action=SetTrue default=false
+--bet-fractional-intensity value=BET_FRACTIONAL_INTENSITY num_args=1 action=Set
+--bet-smoothness value=BET_SMOOTHNESS num_args=1 action=Set
+--bet-gradient-threshold value=BET_GRADIENT_THRESHOLD num_args=1 action=Set allow_hyphen_values
+--bet-iterations value=BET_ITERATIONS num_args=1 action=Set
+--bet-subdivisions value=BET_SUBDIVISIONS num_args=1 action=Set
+--bet-voxel-scale value=FACTOR num_args=1 action=Set
+--bet-orientation value=ORIENTATION num_args=1 action=Set
+--qsm-reference value=SPEC num_args=1 action=Set
+--qsm-per-echo value=BOOL num_args=1 action=Set values=true,false
+--rts-delta value=RTS_DELTA num_args=1 action=Set
+--rts-mu value=RTS_MU num_args=1 action=Set
+--rts-tol value=RTS_TOL num_args=1 action=Set
+--rts-rho value=RTS_RHO num_args=1 action=Set
+--rts-max-iter value=RTS_MAX_ITER num_args=1 action=Set
+--rts-lsmr-iter value=RTS_LSMR_ITER num_args=1 action=Set
+--rts-tau value=RTS_TAU num_args=1 action=Set
+--rts-gamma value=RTS_GAMMA num_args=1 action=Set
+--rts-pad value=X,Y,Z num_args=3 action=Append
+--tv-lambda value=TV_LAMBDA num_args=1 action=Set
+--tv-rho value=RHO num_args=1 action=Set
+--tv-tol value=TV_TOL num_args=1 action=Set
+--tv-max-iter value=TV_MAX_ITER num_args=1 action=Set
+--tv-pad value=X,Y,Z num_args=3 action=Append
+--tkd-threshold value=TKD_THRESHOLD num_args=1 action=Set
+--tkd-pad value=X,Y,Z num_args=3 action=Append
+--tsvd-threshold value=TSVD_THRESHOLD num_args=1 action=Set
+--tsvd-pad value=X,Y,Z num_args=3 action=Append
+--tgv-iterations value=TGV_ITERATIONS num_args=1 action=Set
+--tgv-erosions value=TGV_EROSIONS num_args=1 action=Set
+--tgv-alpha1 value=TGV_ALPHA1 num_args=1 action=Set
+--tgv-alpha0 value=TGV_ALPHA0 num_args=1 action=Set
+--tgv-step-size value=TGV_STEP_SIZE num_args=1 action=Set
+--tgv-te value=TE num_args=1 action=Set
+--tikhonov-lambda value=TIKHONOV_LAMBDA num_args=1 action=Set
+--tikhonov-pad value=X,Y,Z num_args=3 action=Append
+--nltv-lambda value=NLTV_LAMBDA num_args=1 action=Set
+--nltv-rho value=RHO num_args=1 action=Set
+--nltv-mu value=NLTV_MU num_args=1 action=Set
+--nltv-tol value=NLTV_TOL num_args=1 action=Set
+--nltv-max-iter value=NLTV_MAX_ITER num_args=1 action=Set
+--nltv-tol-newton value=NLTV_TOL_NEWTON num_args=1 action=Set
+--nltv-newton-iter value=NLTV_NEWTON_ITER num_args=1 action=Set
+--nltv-te value=TE num_args=1 action=Set
+--nltv-pad value=X,Y,Z num_args=3 action=Append
+--medi-lambda value=MEDI_LAMBDA num_args=1 action=Set
+--medi-merit value=MEDI_MERIT num_args=1 action=Set values=true,false
+--medi-csf value=MEDI_CSF num_args=1 action=Set values=true,false
+--medi-lambda-csf value=MEDI_LAMBDA_CSF num_args=1 action=Set
+--medi-csf-r2s-threshold value=MEDI_CSF_R2S_THRESHOLD num_args=1 action=Set
+--medi-csf-erode value=MEDI_CSF_ERODE num_args=1 action=Set values=true,false
+--medi-zeropad value=X,Y,Z num_args=3 action=Append
+--medi-smv value=MEDI_SMV num_args=0 action=SetTrue default=false
+--no-medi-smv value=NO_MEDI_SMV num_args=0 action=SetTrue default=false
+--medi-smv-radius value=MEDI_SMV_RADIUS num_args=1 action=Set
+--medi-smv-shrink-mask value=MEDI_SMV_SHRINK_MASK num_args=0 action=SetTrue default=false
+--no-medi-smv-shrink-mask value=NO_MEDI_SMV_SHRINK_MASK num_args=0 action=SetTrue default=false
+--medi-msmv value=MEDI_MSMV num_args=0 action=SetTrue default=false
+--medi-msmv-maxk value=MEDI_MSMV_MAXK num_args=1 action=Set
+--medi-msmv-vessel-radius value=MEDI_MSMV_VESSEL_RADIUS num_args=1 action=Set
+--no-medi-msmv-prefilter value=NO_MEDI_MSMV_PREFILTER num_args=0 action=SetTrue default=false
+--medi-data-weighting value=MEDI_DATA_WEIGHTING num_args=1 action=Set
+--medi-percentage value=MEDI_PERCENTAGE num_args=1 action=Set
+--medi-cg-tol value=MEDI_CG_TOL num_args=1 action=Set
+--medi-cg-max-iter value=MEDI_CG_MAX_ITER num_args=1 action=Set
+--medi-max-iter value=MEDI_MAX_ITER num_args=1 action=Set
+--medi-tol value=MEDI_TOL num_args=1 action=Set
+--medi-te value=TE num_args=1 action=Set
+--tfi-lambda value=TFI_LAMBDA num_args=1 action=Set
+--tfi-precond value=TFI_PRECOND num_args=1 action=Set
+--tfi-merit value=TFI_MERIT num_args=1 action=Set values=true,false
+--tfi-linear value=TFI_LINEAR num_args=1 action=Set values=true,false
+--tfi-data-weighting value=TFI_DATA_WEIGHTING num_args=1 action=Set
+--tfi-percentage value=TFI_PERCENTAGE num_args=1 action=Set
+--tfi-cg-tol value=TFI_CG_TOL num_args=1 action=Set
+--tfi-cg-max-iter value=TFI_CG_MAX_ITER num_args=1 action=Set
+--tfi-max-iter value=TFI_MAX_ITER num_args=1 action=Set
+--tfi-tol value=TFI_TOL num_args=1 action=Set
+--tfi-te value=TE num_args=1 action=Set
+--ilsqr-tol value=ILSQR_TOL num_args=1 action=Set
+--ilsqr-max-iter value=ILSQR_MAX_ITER num_args=1 action=Set
+--ilsqr-pad-mm value=MM num_args=1 action=Set
+--ilsqr-precision value=PRECISION num_args=1 action=Set
+--star-pad value=X,Y,Z num_args=3 action=Append
+--star-te value=TE num_args=1 action=Set
+--lsqr-residual-weighting value=LSQR_RESIDUAL_WEIGHTING num_args=1 action=Set
+--no-lsqr-global-offset value=NO_LSQR_GLOBAL_OFFSET num_args=0 action=SetTrue default=false
+--lsqr-tol value=LSQR_TOL num_args=1 action=Set
+--lsqr-max-iter value=LSQR_MAX_ITER num_args=1 action=Set
+--heidi-cone-threshold value=HEIDI_CONE_THRESHOLD num_args=1 action=Set
+--heidi-gradient-threshold value=HEIDI_GRADIENT_THRESHOLD num_args=1 action=Set
+--no-heidi-laplacian-correction value=NO_HEIDI_LAPLACIAN_CORRECTION num_args=0 action=SetTrue default=false
+--heidi-laplacian-threshold value=HEIDI_LAPLACIAN_THRESHOLD num_args=1 action=Set
+--heidi-gradient-mask-floor value=HEIDI_GRADIENT_MASK_FLOOR num_args=1 action=Set
+--heidi-continuation-steps value=HEIDI_CONTINUATION_STEPS num_args=1 action=Set
+--heidi-inner-iterations value=HEIDI_INNER_ITERATIONS num_args=1 action=Set
+--heidi-mu-min value=HEIDI_MU_MIN num_args=1 action=Set
+--heidi-tol value=HEIDI_TOL num_args=1 action=Set
+--no-heidi-denoise value=NO_HEIDI_DENOISE num_args=0 action=SetTrue default=false
+--heidi-denoise-iterations value=HEIDI_DENOISE_ITERATIONS num_args=1 action=Set
+--heidi-denoise-time-step value=HEIDI_DENOISE_TIME_STEP num_args=1 action=Set
+--heidi-denoise-conductance value=HEIDI_DENOISE_CONDUCTANCE num_args=1 action=Set
+--heidi-denoise-reference-itk value=HEIDI_DENOISE_REFERENCE_ITK num_args=0 action=SetTrue default=false
+--no-heidi-denoise-reference-itk value=NO_HEIDI_DENOISE_REFERENCE_ITK num_args=0 action=SetTrue default=false
+--heidi-te value=TE num_args=1 action=Set
+--qsmart-ilsqr-max-iter value=QSMART_ILSQR_MAX_ITER num_args=1 action=Set
+--qsmart-ilsqr-pad-mm value=MM num_args=1 action=Set
+--qsmart-vasc-sphere-radius value=QSMART_VASC_SPHERE_RADIUS num_args=1 action=Set
+--qsmart-inversion value=QSMART_INVERSION num_args=1 action=Set values=rts,tv,tkd,tsvd,tgv,tikhonov,nltv,medi,tfi,ilsqr,star,lsqr,heidi,qsmart,ndi,fansi,fansi-tgv,l1qsm,whqsm,hdqsm,amp-pe,xqsm,qsmnet,qsmnet-plus,qsmnetme,autoqsm,qsmgan,ir2qsm,lpcnn,modl-qsm,nextqsm,iqsm,iqsm-plus
+--qsmart-sdf-sigma1-stage1 value=QSMART_SDF_SIGMA1_STAGE1 num_args=1 action=Set
+--qsmart-sdf-sigma2-stage1 value=QSMART_SDF_SIGMA2_STAGE1 num_args=1 action=Set
+--qsmart-sdf-sigma1-stage2 value=QSMART_SDF_SIGMA1_STAGE2 num_args=1 action=Set
+--qsmart-sdf-sigma2-stage2 value=QSMART_SDF_SIGMA2_STAGE2 num_args=1 action=Set
+--qsmart-sdf-lower-lim value=QSMART_SDF_LOWER_LIM num_args=1 action=Set
+--qsmart-sdf-curv-constant value=QSMART_SDF_CURV_CONSTANT num_args=1 action=Set
+--qsmart-frangi-scale-min value=QSMART_FRANGI_SCALE_MIN num_args=1 action=Set
+--qsmart-frangi-scale-max value=QSMART_FRANGI_SCALE_MAX num_args=1 action=Set
+--qsmart-frangi-scale-ratio value=QSMART_FRANGI_SCALE_RATIO num_args=1 action=Set
+--qsmart-frangi-c value=QSMART_FRANGI_C num_args=1 action=Set
+--qsmart-frangi-c-mode value=QSMART_FRANGI_C_MODE num_args=1 action=Set values=absolute,relative
+--qsmart-frangi-c-factor value=QSMART_FRANGI_C_FACTOR num_args=1 action=Set
+--qsmart-vessel-units value=QSMART_VESSEL_UNITS num_args=1 action=Set values=voxels,mm
+--qsmart-vessel-magnitude value=QSMART_VESSEL_MAGNITUDE num_args=1 action=Set values=mean-n4,combined
+--qsmart-offset-grid value=QSMART_OFFSET_GRID num_args=1 action=Set values=fft,qsmart-reference
+--ndi-tau value=NDI_TAU num_args=1 action=Set
+--ndi-alpha value=NDI_ALPHA num_args=1 action=Set
+--ndi-max-iter value=NDI_MAX_ITER num_args=1 action=Set
+--ndi-auto-stop value=NDI_AUTO_STOP num_args=1 action=Set values=true,false
+--ndi-te value=TE num_args=1 action=Set
+--ndi-weight-norm value=NORM num_args=1 action=Set
+--fansi-alpha1 value=FANSI_ALPHA1 num_args=1 action=Set
+--fansi-mu1 value=MU1 num_args=1 action=Set
+--fansi-mu2 value=FANSI_MU2 num_args=1 action=Set
+--fansi-alpha0 value=ALPHA0 num_args=1 action=Set
+--fansi-mu0 value=MU0 num_args=1 action=Set
+--fansi-max-iter value=FANSI_MAX_ITER num_args=1 action=Set
+--fansi-tol-update value=FANSI_TOL_UPDATE num_args=1 action=Set
+--fansi-tol-delta value=FANSI_TOL_DELTA num_args=1 action=Set
+--fansi-te value=TE num_args=1 action=Set
+--l1qsm-alpha1 value=L1QSM_ALPHA1 num_args=1 action=Set
+--l1qsm-mu1 value=MU1 num_args=1 action=Set
+--l1qsm-mu2 value=L1QSM_MU2 num_args=1 action=Set
+--l1qsm-mu3 value=L1QSM_MU3 num_args=1 action=Set
+--l1qsm-lambda value=L1QSM_LAMBDA num_args=1 action=Set
+--l1qsm-max-iter value=L1QSM_MAX_ITER num_args=1 action=Set
+--l1qsm-tol-update value=L1QSM_TOL_UPDATE num_args=1 action=Set
+--l1qsm-tol-delta value=L1QSM_TOL_DELTA num_args=1 action=Set
+--l1qsm-te value=TE num_args=1 action=Set
+--whqsm-alpha1 value=WHQSM_ALPHA1 num_args=1 action=Set
+--whqsm-mu1 value=WHQSM_MU1 num_args=1 action=Set
+--whqsm-mu2 value=WHQSM_MU2 num_args=1 action=Set
+--whqsm-beta value=WHQSM_BETA num_args=1 action=Set
+--whqsm-muh value=WHQSM_MUH num_args=1 action=Set
+--whqsm-max-iter value=WHQSM_MAX_ITER num_args=1 action=Set
+--whqsm-tol-update value=WHQSM_TOL_UPDATE num_args=1 action=Set
+--whqsm-tol-delta value=WHQSM_TOL_DELTA num_args=1 action=Set
+--whqsm-weight value=WEIGHT num_args=1 action=Set
+--whqsm-te value=TE num_args=1 action=Set
+--hdqsm-alpha-l2 value=HDQSM_ALPHA_L2 num_args=1 action=Set
+--hdqsm-mu1-l2 value=MU1_L2 num_args=1 action=Set
+--hdqsm-mu2 value=HDQSM_MU2 num_args=1 action=Set
+--hdqsm-max-iter-l1 value=HDQSM_MAX_ITER_L1 num_args=1 action=Set
+--hdqsm-max-iter-l2 value=HDQSM_MAX_ITER_L2 num_args=1 action=Set
+--hdqsm-tol-update value=HDQSM_TOL_UPDATE num_args=1 action=Set
+--amp-pe-wave-order value=AMP_PE_WAVE_ORDER num_args=1 action=Set
+--amp-pe-nlevel value=AMP_PE_NLEVEL num_args=1 action=Set
+--amp-pe-wave-pec value=AMP_PE_WAVE_PEC num_args=1 action=Set
+--amp-pe-simulated-te value=AMP_PE_SIMULATED_TE num_args=1 action=Set
+--amp-pe-max-linearization-ite value=AMP_PE_MAX_LINEARIZATION_ITE num_args=1 action=Set
+--amp-pe-damp-rate-sig value=AMP_PE_DAMP_RATE_SIG num_args=1 action=Set
+--amp-pe-damp-rate-par value=AMP_PE_DAMP_RATE_PAR num_args=1 action=Set
+--amp-pe-max-pe-spar-ite value=AMP_PE_MAX_PE_SPAR_ITE num_args=1 action=Set
+--amp-pe-max-pe-est-ite value=AMP_PE_MAX_PE_EST_ITE num_args=1 action=Set
+--amp-pe-cvg-thd value=AMP_PE_CVG_THD num_args=1 action=Set
+--amp-pe-tikhonov-beta value=AMP_PE_TIKHONOV_BETA num_args=1 action=Set
+--r2star-qsm-r-const-3t value=R2STAR_QSM_R_CONST_3T num_args=1 action=Set
+--decompose-n-inner value=DECOMPOSE_N_INNER num_args=1 action=Set
+--decompose-chi-bound value=BOUND num_args=1 action=Set
+--decompose-unwrap-phase value=BOOL num_args=1 action=Set values=true,false
+--decompose-fit value=DECOMPOSE_FIT num_args=1 action=Set values=reference-code,paper
+--decompose-max-iterations value=DECOMPOSE_MAX_ITERATIONS num_args=1 action=Set
+--decompose-max-function-evaluations value=DECOMPOSE_MAX_FUNCTION_EVALUATIONS num_args=1 action=Set
+--decompose-function-tolerance value=DECOMPOSE_FUNCTION_TOLERANCE num_args=1 action=Set
+--decompose-step-tolerance value=DECOMPOSE_STEP_TOLERANCE num_args=1 action=Set
+--decompose-optimality-tolerance value=DECOMPOSE_OPTIMALITY_TOLERANCE num_args=1 action=Set
+--decompose-finite-difference-step value=DECOMPOSE_FINITE_DIFFERENCE_STEP num_args=1 action=Set
+--decompose-typical-x value=DECOMPOSE_TYPICAL_X num_args=1 action=Set
+--chi-sep-ilsqr-dr-pos value=HZ_PER_PPM num_args=1 action=Set
+--chi-sep-ilsqr-dr-neg value=HZ_PER_PPM num_args=1 action=Set
+--chi-sep-ilsqr-pad value=X,Y,Z num_args=3 action=Append
+--chi-sep-ilsqr-cg-max-iter-lsqr value=CHI_SEP_ILSQR_CG_MAX_ITER_LSQR num_args=1 action=Set
+--chi-sep-ilsqr-cg-tol-lsqr value=CHI_SEP_ILSQR_CG_TOL_LSQR num_args=1 action=Set
+--chi-sep-ilsqr-cg-max-iter-sa value=CHI_SEP_ILSQR_CG_MAX_ITER_SA num_args=1 action=Set
+--chi-sep-ilsqr-cg-tol-sa value=CHI_SEP_ILSQR_CG_TOL_SA num_args=1 action=Set
+--chi-sep-ilsqr-d2-thr value=CHI_SEP_ILSQR_D2_THR num_args=1 action=Set
+--chi-sep-ilsqr-prc-w-i-min value=CHI_SEP_ILSQR_PRC_W_I_MIN num_args=1 action=Set
+--chi-sep-ilsqr-prc-w-i-max value=CHI_SEP_ILSQR_PRC_W_I_MAX num_args=1 action=Set
+--chi-sep-ilsqr-prc-w-g-min value=CHI_SEP_ILSQR_PRC_W_G_MIN num_args=1 action=Set
+--chi-sep-ilsqr-prc-w-g-max value=CHI_SEP_ILSQR_PRC_W_G_MAX num_args=1 action=Set
+--chi-sep-ilsqr-qsm-max-iter value=CHI_SEP_ILSQR_QSM_MAX_ITER num_args=1 action=Set
+--chi-sep-ilsqr-qsm-tol value=CHI_SEP_ILSQR_QSM_TOL num_args=1 action=Set
+--chi-sep-ilsqr-qsm-pad-mm value=MM num_args=1 action=Set
+--chi-sep-ilsqr-qsm-precision value=PRECISION num_args=1 action=Set
+--chi-sep-medi-lambda value=CHI_SEP_MEDI_LAMBDA num_args=1 action=Set
+--chi-sep-medi-lambda-csf value=CHI_SEP_MEDI_LAMBDA_CSF num_args=1 action=Set
+--chi-sep-medi-dr-pos value=HZ_PER_PPM num_args=1 action=Set
+--chi-sep-medi-dr-neg value=HZ_PER_PPM num_args=1 action=Set
+--chi-sep-medi-pad value=CHI_SEP_MEDI_PAD num_args=1 action=Set
+--chi-sep-medi-tol value=CHI_SEP_MEDI_TOL num_args=1 action=Set
+--chi-sep-medi-max-iter value=CHI_SEP_MEDI_MAX_ITER num_args=1 action=Set
+--chi-sep-medi-cg-tol value=CHI_SEP_MEDI_CG_TOL num_args=1 action=Set
+--chi-sep-medi-cg-max-iter value=CHI_SEP_MEDI_CG_MAX_ITER num_args=1 action=Set
+--chi-sep-medi-qsm-max-iter value=CHI_SEP_MEDI_QSM_MAX_ITER num_args=1 action=Set
+--chi-sep-medi-qsm-tol value=CHI_SEP_MEDI_QSM_TOL num_args=1 action=Set
+--chi-sep-medi-qsm-pad-mm value=MM num_args=1 action=Set
+--chi-sep-medi-qsm-precision value=PRECISION num_args=1 action=Set
+--chi-sep-medi-csf-r2star value=METHOD num_args=1 action=Set
+--wavesep-dr-pos value=WAVESEP_DR_POS num_args=1 action=Set
+--wavesep-dr-neg value=WAVESEP_DR_NEG num_args=1 action=Set
+--wavesep-alpha value=WAVESEP_ALPHA num_args=1 action=Set
+--wavesep-lambda value=WAVESEP_LAMBDA num_args=1 action=Set
+--wavesep-wavelet-order value=WAVESEP_WAVELET_ORDER num_args=1 action=Set
+--wavesep-max-iter value=WAVESEP_MAX_ITER num_args=1 action=Set
+--wavesep-tol value=WAVESEP_TOL num_args=1 action=Set
+--hc-chisep-dr-pos-3t value=HC_CHISEP_DR_POS_3T num_args=1 action=Set
+--hc-chisep-bin-hz value=HC_CHISEP_BIN_HZ num_args=1 action=Set
+--chi-sepnet-route value=CHI_SEPNET_ROUTE num_args=1 action=Set values=toolbox,native
+--chi-sepnet-patch value=D,H,W num_args=3 action=Append
+--chi-sepnet-frame-patch value=D,H,W num_args=3 action=Append
+--susep-net-patch value=D,H,W num_args=3 action=Append
+--motion-correction value=MOTION_CORRECTION num_args=0 action=SetTrue default=false
+--motion-reference value=first|last|N num_args=1 action=Set
+--no-motion-chain value=NO_MOTION_CHAIN num_args=0 action=SetTrue default=false
+--motion-chain-levels value=MOTION_CHAIN_LEVELS num_args=1 action=Set
+--motion-min-ncc value=MOTION_MIN_NCC num_args=1 action=Set
+--registration-levels value=REGISTRATION_LEVELS num_args=1 action=Set
+--registration-max-samples value=REGISTRATION_MAX_SAMPLES num_args=1 action=Set
+--registration-max-iterations value=REGISTRATION_MAX_ITERATIONS num_args=1 action=Set
+--registration-max-evaluations value=REGISTRATION_MAX_EVALUATIONS num_args=1 action=Set
+--registration-tolerance value=REGISTRATION_TOLERANCE num_args=1 action=Set
+--registration-rotation-step-deg value=REGISTRATION_ROTATION_STEP_DEG num_args=1 action=Set
+--registration-translation-step-mm value=REGISTRATION_TRANSLATION_STEP_MM num_args=1 action=Set
+--registration-min-overlap value=REGISTRATION_MIN_OVERLAP num_args=1 action=Set
+--vsharp-deconvolve value=BOOL num_args=1 action=Set values=true,false
+--vsharp-threshold value=VSHARP_THRESHOLD num_args=1 action=Set
+--vsharp-max-radius value=VSHARP_MAX_RADIUS num_args=1 action=Set
+--vsharp-min-radius value=VSHARP_MIN_RADIUS num_args=1 action=Set
+--vsharp-radius-step value=MM num_args=1 action=Set
+--vsharp-grid value=VSHARP_GRID num_args=1 action=Set values=native,finest,isotropic
+--vsharp-grid-spacing value=MM num_args=1 action=Set
+--pdf-tol value=PDF_TOL num_args=1 action=Set
+--pdf-n-cg value=PDF_N_CG num_args=1 action=Set
+--pdf-space value=SPACE num_args=1 action=Set
+--pdf-n-pad value=VOXELS num_args=1 action=Set
+--lbv-tol value=LBV_TOL num_args=1 action=Set
+--lbv-depth value=LEVEL num_args=1 action=Set
+--lbv-peel value=LAYERS num_args=1 action=Set
+--lbv-n1 value=LBV_N1 num_args=1 action=Set
+--lbv-n2 value=LBV_N2 num_args=1 action=Set
+--lbv-n3 value=LBV_N3 num_args=1 action=Set
+--lbv-precision value=PRECISION num_args=1 action=Set
+--ismv-variant value=VARIANT num_args=1 action=Set
+--ismv-tol value=ISMV_TOL num_args=1 action=Set
+--ismv-max-iter value=ISMV_MAX_ITER num_args=1 action=Set
+--ismv-radius value=MM num_args=1 action=Set
+--sharp-threshold value=SHARP_THRESHOLD num_args=1 action=Set
+--sharp-radius value=SHARP_RADIUS num_args=1 action=Set
+--resharp-radius value=RESHARP_RADIUS num_args=1 action=Set
+--resharp-tik-reg value=RESHARP_TIK_REG num_args=1 action=Set
+--resharp-tol value=RESHARP_TOL num_args=1 action=Set
+--resharp-max-iter value=RESHARP_MAX_ITER num_args=1 action=Set
+--harperella-radius value=HARPERELLA_RADIUS num_args=1 action=Set
+--harperella-max-iter value=HARPERELLA_MAX_ITER num_args=1 action=Set
+--harperella-tol value=HARPERELLA_TOL num_args=1 action=Set
+--harperella-pad value=X,Y,Z num_args=3 action=Append
+--harperella-rim value=RIM num_args=1 action=Set
+--iharperella-max-iter value=IHARPERELLA_MAX_ITER num_args=1 action=Set
+--iharperella-tol value=IHARPERELLA_TOL num_args=1 action=Set
+--iharperella-pad value=X,Y,Z num_args=3 action=Append
+--iharperella-rim value=RIM num_args=1 action=Set
+--no-romeo-phase-coherence value=NO_ROMEO_PHASE_COHERENCE num_args=0 action=SetTrue default=false
+--no-romeo-phase-gradient-coherence value=NO_ROMEO_PHASE_GRADIENT_COHERENCE num_args=0 action=SetTrue default=false
+--no-romeo-phase-linearity value=NO_ROMEO_PHASE_LINEARITY num_args=0 action=SetTrue default=false
+--romeo-phase-linearity value=ROMEO_PHASE_LINEARITY num_args=0 action=SetTrue default=false
+--no-romeo-mag-coherence value=NO_ROMEO_MAG_COHERENCE num_args=0 action=SetTrue default=false
+--romeo-mag-weight value=ROMEO_MAG_WEIGHT num_args=0 action=SetTrue default=false
+--no-romeo-mag-weight value=NO_ROMEO_MAG_WEIGHT num_args=0 action=SetTrue default=false
+--romeo-mag-weight2 value=ROMEO_MAG_WEIGHT2 num_args=0 action=SetTrue default=false
+--romeo-bestpath value=ROMEO_BESTPATH num_args=0 action=SetTrue default=false
+--romeo-template value=ROMEO_TEMPLATE num_args=1 action=Set
+--romeo-individual value=ROMEO_INDIVIDUAL num_args=0 action=SetTrue default=false
+--no-romeo-individual value=NO_ROMEO_INDIVIDUAL num_args=0 action=SetTrue default=false
+--romeo-correct-global value=ROMEO_CORRECT_GLOBAL num_args=0 action=SetTrue default=false
+--no-romeo-correct-global value=NO_ROMEO_CORRECT_GLOBAL num_args=0 action=SetTrue default=false
+--romeo-temporal-uncertain-unwrapping value=ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING num_args=1 action=Set
+--romeo-max-seeds value=ROMEO_MAX_SEEDS num_args=1 action=Set
+--romeo-merge-regions value=ROMEO_MERGE_REGIONS num_args=0 action=SetTrue default=false
+--romeo-correct-regions value=ROMEO_CORRECT_REGIONS num_args=0 action=SetTrue default=false
+--romeo-wrap-addition value=ROMEO_WRAP_ADDITION num_args=1 action=Set
+--prelude-labelling value=PRELUDE_LABELLING num_args=1 action=Set values=auto,slices,volume
+--prelude-partitions value=N num_args=1 action=Set
+--swi-unwrapping value=SWI_UNWRAPPING num_args=1 action=Set values=laplacian,laplacian-slice,romeo
+--swi-hp-sigma value=SWI_HP_SIGMA num_args=3 action=Append
+--swi-scaling value=SWI_SCALING num_args=1 action=Set values=tanh,negative-tanh|negative_tanh,positive,negative,triangular
+--swi-strength value=SWI_STRENGTH num_args=1 action=Set
+--swi-mip-window value=SWI_MIP_WINDOW num_args=1 action=Set
+--smwi-threshold value=SMWI_THRESHOLD num_args=1 action=Set
+--smwi-power value=SMWI_POWER num_args=1 action=Set
+--smwi-mip-window value=SMWI_MIP_WINDOW num_args=1 action=Set
+--synthseg-version value=VERSION num_args=1 action=Set
+--synthseg-crop value=SYNTHSEG_CROP num_args=1 action=Set
+--synthseg-patch value=VOXELS num_args=1 action=Set
+--no-synthseg-flip-averaging value=NO_SYNTHSEG_FLIP_AVERAGING num_args=0 action=SetTrue default=false
+--no-synthseg-topology-cleanup value=NO_SYNTHSEG_TOPOLOGY_CLEANUP num_args=0 action=SetTrue default=false
+--synthseg-sigma value=SYNTHSEG_SIGMA num_args=1 action=Set
+--use-custom-dseg value=TOOL num_args=0..=1 action=Set
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--inhomogeneity-method value=INHOMOGENEITY_METHOD num_args=1 action=Set values=makehomogeneous,n4
+--homogeneity-sigma-mm value=HOMOGENEITY_SIGMA_MM num_args=1 action=Set
+--homogeneity-nbox value=HOMOGENEITY_NBOX num_args=1 action=Set
+--n4-shrink-factor value=N4_SHRINK_FACTOR num_args=1 action=Set
+--n4-max-iterations value=ITERATIONS num_args=1.. action=Append
+--n4-convergence-threshold value=N4_CONVERGENCE_THRESHOLD num_args=1 action=Set
+--n4-mesh value=X,Y,Z num_args=3 action=Append
+--n4-spline-order value=N4_SPLINE_ORDER num_args=1 action=Set
+--n4-bias-field-fwhm value=N4_BIAS_FIELD_FWHM num_args=1 action=Set
+--n4-wiener-noise value=N4_WIENER_NOISE num_args=1 action=Set
+--n4-histogram-bins value=N4_HISTOGRAM_BINS num_args=1 action=Set
+--n4-geometry value=GEOMETRY num_args=1 action=Set
+--linear-fit-estimate-offset value=LINEAR_FIT_ESTIMATE_OFFSET num_args=1 action=Set values=true,false
+--robust-fit-loss value=ROBUST_FIT_LOSS num_args=1 action=Set values=tukey,huber
+--robust-fit-tuning value=ROBUST_FIT_TUNING num_args=1 action=Set
+--robust-fit-iterations value=ROBUST_FIT_ITERATIONS num_args=1 action=Set
+--robust-fit-downweight-level value=ROBUST_FIT_DOWNWEIGHT_LEVEL num_args=1 action=Set
+--robust-fit-flag-ratio value=ROBUST_FIT_FLAG_RATIO num_args=1 action=Set
+--complex-fit-reltol value=COMPLEX_FIT_RELTOL num_args=1 action=Set
+--complex-fit-max-iter value=COMPLEX_FIT_MAX_ITER num_args=1 action=Set
+--no-qsm value=NO_QSM num_args=0 action=SetTrue default=false
+--do-swi value=DO_SWI num_args=0 action=SetTrue default=false
+--swi-filtered-phase value=SWI_FILTERED_PHASE num_args=0 action=SetTrue default=false
+--no-magnitude value=NO_MAGNITUDE num_args=0 action=SetTrue default=false
+--do-segmentation value=DO_SEGMENTATION num_args=0 action=SetTrue default=false
+--do-analysis value=DO_ANALYSIS num_args=0 action=SetTrue default=false
+--do-smwi value=DO_SMWI num_args=0 action=SetTrue default=false
+--do-t2starmap value=DO_T2STARMAP num_args=0 action=SetTrue default=false
+--do-r2starmap value=DO_R2STARMAP num_args=0 action=SetTrue default=false
+--do-r2map value=DO_R2MAP num_args=0 action=SetTrue default=false
+--do-r2primemap value=DO_R2PRIMEMAP num_args=0 action=SetTrue default=false
+--do-chisep value=DO_CHI_SEPARATION num_args=0 action=SetTrue default=false
+--chisep value=CHI_SEPARATION_ALGORITHM num_args=1 action=Set values=r2star-qsm,decompose,chi-sep-ilsqr,chi-sep-medi,wavesep,hc-chisep,susep-net,chi-sepnet
+--use-custom-qsm value=TOOL num_args=1 action=Set
+--use-custom-r2 value=TOOL num_args=1 action=Set
+--use-custom-r2prime value=TOOL num_args=1 action=Set
+--r2prime-strategy value=R2PRIME_STRATEGY num_args=1 action=Set values=auto,mese,r2primenet
+--r2primenet-ignore-field-mismatch value=R2PRIMENET_IGNORE_FIELD_MISMATCH num_args=0 action=SetTrue default=false
+--r2primenet-patch value=D,H,W num_args=3 action=Append
+--export-dicom value=EXPORT_DICOM num_args=0 action=SetTrue default=false
+--inhomogeneity-correction value=INHOMOGENEITY_CORRECTION num_args=0 action=SetTrue default=false
+--no-inhomogeneity-correction value=NO_INHOMOGENEITY_CORRECTION num_args=0 action=SetTrue default=false
+--axial-resampling value=AXIAL_RESAMPLING num_args=0 action=SetTrue default=false
+--no-axial-resampling value=NO_AXIAL_RESAMPLING num_args=0 action=SetTrue default=false
+--obliquity-threshold value=OBLIQUITY_THRESHOLD num_args=1 action=Set
+--crop-to-mask value=CROP_TO_MASK num_args=0 action=SetTrue default=false
+--ignore-slice-gap value=IGNORE_SLICE_GAP num_args=0 action=SetTrue default=false
+--fft-padding value=FFT_PADDING num_args=0 action=SetTrue default=false
+--tukey-window value=TUKEY_WINDOW num_args=1 action=Set
+--crop-margin-mm value=CROP_MARGIN_MM num_args=1 action=Set
+--output-space value=OUTPUT_SPACE num_args=1 action=Set values=acquired,working
+--mask-preset value=MASK_PRESET num_args=1 action=Set values=robust-threshold,bet,hd-bet,bet-and-phase,rs2-net,mindgrab,(mouse-bet)
+--use-custom-masks value=USE_CUSTOM_MASKS num_args=0..=1 action=Set
+--mask value=MASK_SECTIONS_CLI num_args=1 action=Append
+--mask-combine value=MASK_COMBINE num_args=1 action=Set values=or,and
+--mask-refine value=MASK_REFINEMENTS_CLI num_args=1 action=Append
+--two-pass value=TWO_PASS num_args=0 action=SetTrue default=false
+--two-pass-mask value=TWO_PASS_SECTIONS_CLI num_args=1 action=Append
+--two-pass-mask-combine value=TWO_PASS_MASK_COMBINE num_args=1 action=Set values=or,and
+--dismiss-recommendation value=RULE=VALUE num_args=1 action=Append
+--debug value=DEBUG num_args=0 action=SetTrue default=false
+--force value=FORCE num_args=0 action=SetTrue default=false
+--clean-intermediates value=CLEAN_INTERMEDIATES num_args=0 action=SetTrue default=false
+--command-line value=COMMAND_LINE num_args=1 action=Set hidden
+--help -h num_args=0 action=Help
+
+## qsmxt mask
+--help -h num_args=0 action=Help
+
+## qsmxt mask otsu
+<input> value=INPUT num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--op value=OPS num_args=1 action=Append
+--help -h num_args=0 action=Help
+
+## qsmxt mask value
+<input> value=INPUT num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--op value=OPS num_args=1 action=Append
+--threshold value=THRESHOLD num_args=1 action=Set required
+--help -h num_args=0 action=Help
+
+## qsmxt mask percentile
+<input> value=INPUT num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--op value=OPS num_args=1 action=Append
+--percentile value=PERCENTILE num_args=1 action=Set required
+--help -h num_args=0 action=Help
+
+## qsmxt mask sti-gui
+<input> value=INPUT num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--op value=OPS num_args=1 action=Append
+--help -h num_args=0 action=Help
+
+## qsmxt mask bet
+<input> value=INPUT num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--op value=OPS num_args=1 action=Append
+--fractional-intensity value=FRACTIONAL_INTENSITY num_args=1 action=Set default=0.5
+--voxel-scale value=FACTOR num_args=1 action=Set
+--orientation value=ORIENTATION num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt mask hd-bet
+<input> value=INPUT num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--op value=OPS num_args=1 action=Append
+--window value=WINDOW num_args=0 action=SetTrue default=false
+--low-memory value=LOW_MEMORY num_args=0 action=SetTrue default=false
+--patch value=PATCH num_args=1 action=Set
+--tta value=TTA num_args=0 action=SetTrue default=false
+--tile-step value=TILE_STEP num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt mask rs2-net
+<input> value=INPUT num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--op value=OPS num_args=1 action=Append
+--tta value=TTA num_args=0 action=SetTrue default=false
+--tile-step value=TILE_STEP num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt mask mindgrab
+<input> value=INPUT num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--op value=OPS num_args=1 action=Append
+--tta value=TTA num_args=0 action=SetTrue default=false
+--help -h num_args=0 action=Help
+
+## qsmxt mask preset
+<preset> value=PRESET num_args=1 action=Set values=robust-threshold,bet,hd-bet,bet-and-phase,rs2-net,mindgrab,(mouse-bet) required
+<input> value=INPUT num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--op value=OPS num_args=1 action=Append
+--quality value=QUALITY num_args=1 action=Set
+--phase value=PHASE num_args=1 action=Set
+--bet-orientation value=ORIENTATION num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt mask robust
+<input> value=INPUT num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--op value=OPS num_args=1 action=Append
+--help -h num_args=0 action=Help
+
+## qsmxt mask erode
+<input> value=INPUT num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--op value=OPS num_args=1 action=Append
+--iterations value=ITERATIONS num_args=1 action=Set default=1
+--help -h num_args=0 action=Help
+
+## qsmxt mask dilate
+<input> value=INPUT num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--op value=OPS num_args=1 action=Append
+--iterations value=ITERATIONS num_args=1 action=Set default=1
+--help -h num_args=0 action=Help
+
+## qsmxt mask close
+<input> value=INPUT num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--op value=OPS num_args=1 action=Append
+--radius value=RADIUS num_args=1 action=Set default=1
+--help -h num_args=0 action=Help
+
+## qsmxt mask majority
+<input> value=INPUT num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--op value=OPS num_args=1 action=Append
+--help -h num_args=0 action=Help
+
+## qsmxt mask largest-component
+<input> value=INPUT num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--op value=OPS num_args=1 action=Append
+--help -h num_args=0 action=Help
+
+## qsmxt mask imfill
+<input> value=INPUT num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--op value=OPS num_args=1 action=Append
+--help -h num_args=0 action=Help
+
+## qsmxt mask fill-holes
+<input> value=INPUT num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--op value=OPS num_args=1 action=Append
+--max-size value=MAX_SIZE num_args=1 action=Set default=0
+--help -h num_args=0 action=Help
+
+## qsmxt mask smooth
+<input> value=INPUT num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--op value=OPS num_args=1 action=Append
+--sigma value=SIGMA num_args=1 action=Set default=4
+--help -h num_args=0 action=Help
+
+## qsmxt mask and
+<inputs> value=INPUTS num_args=2.. action=Append
+--output -o value=OUTPUT num_args=1 action=Set required
+--op value=OPS num_args=1 action=Append
+--magnitude value=MAGNITUDE num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt mask or
+<inputs> value=INPUTS num_args=2.. action=Append
+--output -o value=OUTPUT num_args=1 action=Set required
+--op value=OPS num_args=1 action=Append
+--magnitude value=MAGNITUDE num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt combine
+--help -h num_args=0 action=Help
+
+## qsmxt combine mcpc3ds
+--phase value=PHASE num_args=1.. action=Append required
+--magnitude value=MAGNITUDE num_args=1.. action=Append required
+--output -o value=OUTPUT num_args=1 action=Set required
+--tes value=TES num_args=1.. action=Append
+--num-echoes value=NUM_ECHOES num_args=1 action=Set
+--sigma value=X,Y,Z num_args=3 action=Append
+--hip-unwrapping value=HIP_UNWRAPPING num_args=1 action=Set default=romeo values=romeo,laplacian,prelude,medi-region-growing
+--prelude-labelling value=PRELUDE_LABELLING num_args=1 action=Set values=auto,slices,volume
+--prelude-partitions value=N num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt unwrap
+--help -h num_args=0 action=Help
+
+## qsmxt unwrap romeo
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--magnitude value=MAGNITUDE num_args=1 action=Set
+--no-romeo-phase-coherence value=NO_ROMEO_PHASE_COHERENCE num_args=0 action=SetTrue default=false
+--no-romeo-phase-gradient-coherence value=NO_ROMEO_PHASE_GRADIENT_COHERENCE num_args=0 action=SetTrue default=false
+--no-romeo-phase-linearity value=NO_ROMEO_PHASE_LINEARITY num_args=0 action=SetTrue default=false
+--romeo-phase-linearity value=ROMEO_PHASE_LINEARITY num_args=0 action=SetTrue default=false
+--no-romeo-mag-coherence value=NO_ROMEO_MAG_COHERENCE num_args=0 action=SetTrue default=false
+--romeo-mag-weight value=ROMEO_MAG_WEIGHT num_args=0 action=SetTrue default=false
+--no-romeo-mag-weight value=NO_ROMEO_MAG_WEIGHT num_args=0 action=SetTrue default=false
+--romeo-mag-weight2 value=ROMEO_MAG_WEIGHT2 num_args=0 action=SetTrue default=false
+--romeo-bestpath value=ROMEO_BESTPATH num_args=0 action=SetTrue default=false
+--romeo-template value=ROMEO_TEMPLATE num_args=1 action=Set
+--romeo-individual value=ROMEO_INDIVIDUAL num_args=0 action=SetTrue default=false
+--no-romeo-individual value=NO_ROMEO_INDIVIDUAL num_args=0 action=SetTrue default=false
+--romeo-correct-global value=ROMEO_CORRECT_GLOBAL num_args=0 action=SetTrue default=false
+--no-romeo-correct-global value=NO_ROMEO_CORRECT_GLOBAL num_args=0 action=SetTrue default=false
+--romeo-temporal-uncertain-unwrapping value=ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING num_args=1 action=Set
+--romeo-max-seeds value=ROMEO_MAX_SEEDS num_args=1 action=Set
+--romeo-merge-regions value=ROMEO_MERGE_REGIONS num_args=0 action=SetTrue default=false
+--romeo-correct-regions value=ROMEO_CORRECT_REGIONS num_args=0 action=SetTrue default=false
+--romeo-wrap-addition value=ROMEO_WRAP_ADDITION num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt unwrap laplacian
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--help -h num_args=0 action=Help
+
+## qsmxt unwrap prelude
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--prelude-labelling value=PRELUDE_LABELLING num_args=1 action=Set values=auto,slices,volume
+--prelude-partitions value=N num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt unwrap medi-region-growing
+<input> value=INPUT num_args=1 action=Set required
+--magnitude value=MAGNITUDE num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--help -h num_args=0 action=Help
+
+## qsmxt fieldmap
+--help -h num_args=0 action=Help
+
+## qsmxt fieldmap romeo
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--magnitude value=MAGNITUDE num_args=1 action=Set
+--tes value=TES num_args=1.. action=Append
+--b0 aliases=field-strength value=B0 num_args=1 action=Set
+--params value=PARAMS num_args=1 action=Set
+--b0-estimation value=B0_ESTIMATION num_args=1 action=Set default=weighted-avg values=weighted-avg,linear-fit,robust-fit,qsmart-echofit,complex-fit
+--qsmart-fit-threshold-mode value=QSMART_FIT_THRESHOLD_MODE num_args=1 action=Set values=percentile,absolute
+--qsmart-fit-percentile value=QSMART_FIT_PERCENTILE num_args=1 action=Set
+--qsmart-fit-threshold value=QSMART_FIT_THRESHOLD num_args=1 action=Set
+--reliability-output value=RELIABILITY_OUTPUT num_args=1 action=Set
+--field-mask-output value=FIELD_MASK_OUTPUT num_args=1 action=Set
+--b0-weight-type value=B0_WEIGHT_TYPE num_args=1 action=Set default=phase-snr values=phase-snr,phase-var,average,tes,mag,assumed-decay
+--b0-weight-assumed-t2star value=MS num_args=1 action=Set default=40
+--linear-fit-estimate-offset value=LINEAR_FIT_ESTIMATE_OFFSET num_args=1 action=Set values=true,false
+--robust-fit-loss value=ROBUST_FIT_LOSS num_args=1 action=Set values=tukey,huber
+--robust-fit-tuning value=ROBUST_FIT_TUNING num_args=1 action=Set
+--robust-fit-iterations value=ROBUST_FIT_ITERATIONS num_args=1 action=Set
+--robust-fit-downweight-level value=ROBUST_FIT_DOWNWEIGHT_LEVEL num_args=1 action=Set
+--robust-fit-flag-ratio value=ROBUST_FIT_FLAG_RATIO num_args=1 action=Set
+--complex-fit-reltol value=COMPLEX_FIT_RELTOL num_args=1 action=Set
+--complex-fit-max-iter value=COMPLEX_FIT_MAX_ITER num_args=1 action=Set
+--complex-fit-output value=FILE num_args=1 action=Set
+--complex-fit-noise-output value=FILE num_args=1 action=Set
+--phase-offset-removal value=PHASE_OFFSET_REMOVAL num_args=1 action=Set values=true,false
+--phase-offset-sigma-mm value=PHASE_OFFSET_SIGMA_MM num_args=3 action=Append
+--bipolar-correction value=BIPOLAR_CORRECTION num_args=0 action=SetTrue default=false
+--no-romeo-phase-coherence value=NO_ROMEO_PHASE_COHERENCE num_args=0 action=SetTrue default=false
+--no-romeo-phase-gradient-coherence value=NO_ROMEO_PHASE_GRADIENT_COHERENCE num_args=0 action=SetTrue default=false
+--no-romeo-phase-linearity value=NO_ROMEO_PHASE_LINEARITY num_args=0 action=SetTrue default=false
+--romeo-phase-linearity value=ROMEO_PHASE_LINEARITY num_args=0 action=SetTrue default=false
+--no-romeo-mag-coherence value=NO_ROMEO_MAG_COHERENCE num_args=0 action=SetTrue default=false
+--romeo-mag-weight value=ROMEO_MAG_WEIGHT num_args=0 action=SetTrue default=false
+--no-romeo-mag-weight value=NO_ROMEO_MAG_WEIGHT num_args=0 action=SetTrue default=false
+--romeo-mag-weight2 value=ROMEO_MAG_WEIGHT2 num_args=0 action=SetTrue default=false
+--romeo-bestpath value=ROMEO_BESTPATH num_args=0 action=SetTrue default=false
+--romeo-template value=ROMEO_TEMPLATE num_args=1 action=Set
+--romeo-individual value=ROMEO_INDIVIDUAL num_args=0 action=SetTrue default=false
+--no-romeo-individual value=NO_ROMEO_INDIVIDUAL num_args=0 action=SetTrue default=false
+--romeo-correct-global value=ROMEO_CORRECT_GLOBAL num_args=0 action=SetTrue default=false
+--no-romeo-correct-global value=NO_ROMEO_CORRECT_GLOBAL num_args=0 action=SetTrue default=false
+--romeo-temporal-uncertain-unwrapping value=ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING num_args=1 action=Set
+--romeo-max-seeds value=ROMEO_MAX_SEEDS num_args=1 action=Set
+--romeo-merge-regions value=ROMEO_MERGE_REGIONS num_args=0 action=SetTrue default=false
+--romeo-correct-regions value=ROMEO_CORRECT_REGIONS num_args=0 action=SetTrue default=false
+--romeo-wrap-addition value=ROMEO_WRAP_ADDITION num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt fieldmap laplacian
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--magnitude value=MAGNITUDE num_args=1 action=Set
+--tes value=TES num_args=1.. action=Append
+--b0 aliases=field-strength value=B0 num_args=1 action=Set
+--params value=PARAMS num_args=1 action=Set
+--b0-estimation value=B0_ESTIMATION num_args=1 action=Set default=weighted-avg values=weighted-avg,linear-fit,robust-fit,qsmart-echofit,complex-fit
+--qsmart-fit-threshold-mode value=QSMART_FIT_THRESHOLD_MODE num_args=1 action=Set values=percentile,absolute
+--qsmart-fit-percentile value=QSMART_FIT_PERCENTILE num_args=1 action=Set
+--qsmart-fit-threshold value=QSMART_FIT_THRESHOLD num_args=1 action=Set
+--reliability-output value=RELIABILITY_OUTPUT num_args=1 action=Set
+--field-mask-output value=FIELD_MASK_OUTPUT num_args=1 action=Set
+--b0-weight-type value=B0_WEIGHT_TYPE num_args=1 action=Set default=phase-snr values=phase-snr,phase-var,average,tes,mag,assumed-decay
+--b0-weight-assumed-t2star value=MS num_args=1 action=Set default=40
+--linear-fit-estimate-offset value=LINEAR_FIT_ESTIMATE_OFFSET num_args=1 action=Set values=true,false
+--robust-fit-loss value=ROBUST_FIT_LOSS num_args=1 action=Set values=tukey,huber
+--robust-fit-tuning value=ROBUST_FIT_TUNING num_args=1 action=Set
+--robust-fit-iterations value=ROBUST_FIT_ITERATIONS num_args=1 action=Set
+--robust-fit-downweight-level value=ROBUST_FIT_DOWNWEIGHT_LEVEL num_args=1 action=Set
+--robust-fit-flag-ratio value=ROBUST_FIT_FLAG_RATIO num_args=1 action=Set
+--complex-fit-reltol value=COMPLEX_FIT_RELTOL num_args=1 action=Set
+--complex-fit-max-iter value=COMPLEX_FIT_MAX_ITER num_args=1 action=Set
+--complex-fit-output value=FILE num_args=1 action=Set
+--complex-fit-noise-output value=FILE num_args=1 action=Set
+--laplacian-solver aliases=laplacian-kernel value=LAPLACIAN_SOLVER num_args=1 action=Set default=dct values=dct,fft|sti,mirror,mgpcg
+--laplacian-fft-pad value=VOXELS num_args=1..=3 action=Append default=64
+--laplacian-unmasked value=LAPLACIAN_UNMASKED num_args=0 action=SetTrue default=false
+--help -h num_args=0 action=Help
+
+## qsmxt fieldmap prelude
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--magnitude value=MAGNITUDE num_args=1 action=Set
+--tes value=TES num_args=1.. action=Append
+--b0 aliases=field-strength value=B0 num_args=1 action=Set
+--params value=PARAMS num_args=1 action=Set
+--b0-estimation value=B0_ESTIMATION num_args=1 action=Set default=weighted-avg values=weighted-avg,linear-fit,robust-fit,qsmart-echofit,complex-fit
+--qsmart-fit-threshold-mode value=QSMART_FIT_THRESHOLD_MODE num_args=1 action=Set values=percentile,absolute
+--qsmart-fit-percentile value=QSMART_FIT_PERCENTILE num_args=1 action=Set
+--qsmart-fit-threshold value=QSMART_FIT_THRESHOLD num_args=1 action=Set
+--reliability-output value=RELIABILITY_OUTPUT num_args=1 action=Set
+--field-mask-output value=FIELD_MASK_OUTPUT num_args=1 action=Set
+--b0-weight-type value=B0_WEIGHT_TYPE num_args=1 action=Set default=phase-snr values=phase-snr,phase-var,average,tes,mag,assumed-decay
+--b0-weight-assumed-t2star value=MS num_args=1 action=Set default=40
+--linear-fit-estimate-offset value=LINEAR_FIT_ESTIMATE_OFFSET num_args=1 action=Set values=true,false
+--robust-fit-loss value=ROBUST_FIT_LOSS num_args=1 action=Set values=tukey,huber
+--robust-fit-tuning value=ROBUST_FIT_TUNING num_args=1 action=Set
+--robust-fit-iterations value=ROBUST_FIT_ITERATIONS num_args=1 action=Set
+--robust-fit-downweight-level value=ROBUST_FIT_DOWNWEIGHT_LEVEL num_args=1 action=Set
+--robust-fit-flag-ratio value=ROBUST_FIT_FLAG_RATIO num_args=1 action=Set
+--complex-fit-reltol value=COMPLEX_FIT_RELTOL num_args=1 action=Set
+--complex-fit-max-iter value=COMPLEX_FIT_MAX_ITER num_args=1 action=Set
+--complex-fit-output value=FILE num_args=1 action=Set
+--complex-fit-noise-output value=FILE num_args=1 action=Set
+--phase-offset-removal value=PHASE_OFFSET_REMOVAL num_args=1 action=Set values=true,false
+--phase-offset-sigma-mm value=PHASE_OFFSET_SIGMA_MM num_args=3 action=Append
+--bipolar-correction value=BIPOLAR_CORRECTION num_args=0 action=SetTrue default=false
+--prelude-labelling value=PRELUDE_LABELLING num_args=1 action=Set values=auto,slices,volume
+--prelude-partitions value=N num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt fieldmap medi-region-growing
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--magnitude value=MAGNITUDE num_args=1 action=Set
+--tes value=TES num_args=1.. action=Append
+--b0 aliases=field-strength value=B0 num_args=1 action=Set
+--params value=PARAMS num_args=1 action=Set
+--b0-estimation value=B0_ESTIMATION num_args=1 action=Set default=weighted-avg values=weighted-avg,linear-fit,robust-fit,qsmart-echofit,complex-fit
+--qsmart-fit-threshold-mode value=QSMART_FIT_THRESHOLD_MODE num_args=1 action=Set values=percentile,absolute
+--qsmart-fit-percentile value=QSMART_FIT_PERCENTILE num_args=1 action=Set
+--qsmart-fit-threshold value=QSMART_FIT_THRESHOLD num_args=1 action=Set
+--reliability-output value=RELIABILITY_OUTPUT num_args=1 action=Set
+--field-mask-output value=FIELD_MASK_OUTPUT num_args=1 action=Set
+--b0-weight-type value=B0_WEIGHT_TYPE num_args=1 action=Set default=phase-snr values=phase-snr,phase-var,average,tes,mag,assumed-decay
+--b0-weight-assumed-t2star value=MS num_args=1 action=Set default=40
+--linear-fit-estimate-offset value=LINEAR_FIT_ESTIMATE_OFFSET num_args=1 action=Set values=true,false
+--robust-fit-loss value=ROBUST_FIT_LOSS num_args=1 action=Set values=tukey,huber
+--robust-fit-tuning value=ROBUST_FIT_TUNING num_args=1 action=Set
+--robust-fit-iterations value=ROBUST_FIT_ITERATIONS num_args=1 action=Set
+--robust-fit-downweight-level value=ROBUST_FIT_DOWNWEIGHT_LEVEL num_args=1 action=Set
+--robust-fit-flag-ratio value=ROBUST_FIT_FLAG_RATIO num_args=1 action=Set
+--complex-fit-reltol value=COMPLEX_FIT_RELTOL num_args=1 action=Set
+--complex-fit-max-iter value=COMPLEX_FIT_MAX_ITER num_args=1 action=Set
+--complex-fit-output value=FILE num_args=1 action=Set
+--complex-fit-noise-output value=FILE num_args=1 action=Set
+--phase-offset-removal value=PHASE_OFFSET_REMOVAL num_args=1 action=Set values=true,false
+--phase-offset-sigma-mm value=PHASE_OFFSET_SIGMA_MM num_args=3 action=Append
+--bipolar-correction value=BIPOLAR_CORRECTION num_args=0 action=SetTrue default=false
+--help -h num_args=0 action=Help
+
+## qsmxt bgremove
+--help -h num_args=0 action=Help
+
+## qsmxt bgremove vsharp
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--output-mask value=OUTPUT_MASK num_args=1 action=Set
+--deconvolve value=BOOL num_args=1 action=Set values=true,false
+--threshold value=THRESHOLD num_args=1 action=Set
+--max-radius value=MAX_RADIUS num_args=1 action=Set
+--min-radius value=MIN_RADIUS num_args=1 action=Set
+--radius-step value=MM num_args=1 action=Set
+--grid value=GRID num_args=1 action=Set values=native,finest,isotropic
+--grid-spacing value=MM num_args=1 action=Set
+--ball value=BALL num_args=1 action=Set values=default,qsmjl
+--help -h num_args=0 action=Help
+
+## qsmxt bgremove pdf
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--output-mask value=OUTPUT_MASK num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set required
+--echo-times aliases=echo-time value=ECHO_TIMES num_args=1.. action=Append required
+--magnitude value=MAGNITUDE num_args=1.. action=Append required
+--tol value=TOL num_args=1 action=Set
+--n-cg value=N_CG num_args=1 action=Set
+--space value=SPACE num_args=1 action=Set
+--n-pad value=VOXELS num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt bgremove lbv
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--output-mask value=OUTPUT_MASK num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set required
+--echo-times aliases=echo-time value=ECHO_TIMES num_args=1.. action=Append required
+--tol value=TOL num_args=1 action=Set
+--depth value=LEVEL num_args=1 action=Set
+--peel value=LAYERS num_args=1 action=Set
+--n1 value=N1 num_args=1 action=Set
+--n2 value=N2 num_args=1 action=Set
+--n3 value=N3 num_args=1 action=Set
+--precision value=PRECISION num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt bgremove ismv
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--output-mask value=OUTPUT_MASK num_args=1 action=Set
+--variant value=VARIANT num_args=1 action=Set
+--tol value=TOL num_args=1 action=Set
+--max-iter value=MAX_ITER num_args=1 action=Set
+--radius value=RADIUS num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt bgremove sharp
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--output-mask value=OUTPUT_MASK num_args=1 action=Set
+--threshold value=THRESHOLD num_args=1 action=Set
+--radius value=RADIUS num_args=1 action=Set
+--variant value=VARIANT num_args=1 action=Set values=sepia,qsmjl
+--help -h num_args=0 action=Help
+
+## qsmxt bgremove resharp
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--output-mask value=OUTPUT_MASK num_args=1 action=Set
+--radius value=RADIUS num_args=1 action=Set
+--tik-reg value=TIK_REG num_args=1 action=Set
+--tol value=TOL num_args=1 action=Set
+--max-iter value=MAX_ITER num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt bgremove harperella
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--output-mask value=OUTPUT_MASK num_args=1 action=Set
+--radius value=RADIUS num_args=1 action=Set
+--max-iter value=MAX_ITER num_args=1 action=Set
+--tol value=TOL num_args=1 action=Set
+--te value=TE num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set
+--pad value=X,Y,Z num_args=3 action=Append
+--rim value=RIM num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt bgremove iharperella
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--output-mask value=OUTPUT_MASK num_args=1 action=Set
+--max-iter value=MAX_ITER num_args=1 action=Set
+--tol value=TOL num_args=1 action=Set
+--te value=TE num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set
+--pad value=X,Y,Z num_args=3 action=Append
+--rim value=RIM num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt bgremove bfrnet
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--output-mask value=OUTPUT_MASK num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt bgremove iqfm
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--magnitude value=MAGNITUDE num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set required
+--echo-times aliases=echo-time value=ECHO_TIMES num_args=1.. action=Append required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--echo-weighting value=ECHO_WEIGHTING num_args=1 action=Set default=mag2-te2 values=mag-te2,mag2-te2
+--help -h num_args=0 action=Help
+
+## qsmxt invert
+--help -h num_args=0 action=Help
+
+## qsmxt invert rts
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--delta value=DELTA num_args=1 action=Set
+--mu value=MU num_args=1 action=Set
+--tol value=TOL num_args=1 action=Set
+--rho value=RHO num_args=1 action=Set
+--max-iter value=MAX_ITER num_args=1 action=Set
+--lsmr-iter value=LSMR_ITER num_args=1 action=Set
+--tau value=TAU num_args=1 action=Set
+--gamma value=GAMMA num_args=1 action=Set
+--pad value=X,Y,Z num_args=3 action=Append
+--help -h num_args=0 action=Help
+
+## qsmxt invert tv
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--lambda value=LAMBDA num_args=1 action=Set
+--rho value=RHO num_args=1 action=Set
+--tol value=TOL num_args=1 action=Set
+--max-iter value=MAX_ITER num_args=1 action=Set
+--pad value=X,Y,Z num_args=3 action=Append
+--help -h num_args=0 action=Help
+
+## qsmxt invert tkd
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--threshold value=THRESHOLD num_args=1 action=Set
+--pad value=X,Y,Z num_args=3 action=Append
+--help -h num_args=0 action=Help
+
+## qsmxt invert tsvd
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--threshold value=THRESHOLD num_args=1 action=Set
+--pad value=X,Y,Z num_args=3 action=Append
+--help -h num_args=0 action=Help
+
+## qsmxt invert tgv
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set required
+--echo-times aliases=echo-time value=ECHO_TIMES num_args=1.. action=Append required
+--iterations value=ITERATIONS num_args=1 action=Set
+--erosions value=EROSIONS num_args=1 action=Set
+--alpha1 value=ALPHA1 num_args=1 action=Set
+--alpha0 value=ALPHA0 num_args=1 action=Set
+--step-size value=STEP_SIZE num_args=1 action=Set
+--te value=TE num_args=1 action=Set
+--reference-divergence value=REFERENCE_DIVERGENCE num_args=0 action=SetTrue default=false
+--reference-edge-erosion value=REFERENCE_EDGE_EROSION num_args=0 action=SetTrue default=false
+--reference-output-box value=REFERENCE_OUTPUT_BOX num_args=0 action=SetTrue default=false
+--help -h num_args=0 action=Help
+
+## qsmxt invert tikhonov
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--lambda value=LAMBDA num_args=1 action=Set
+--pad value=X,Y,Z num_args=3 action=Append
+--help -h num_args=0 action=Help
+
+## qsmxt invert nltv
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set required
+--echo-times aliases=echo-time value=ECHO_TIMES num_args=1.. action=Append required
+--magnitude value=MAGNITUDE num_args=1.. action=Append required
+--lambda value=LAMBDA num_args=1 action=Set
+--rho value=RHO num_args=1 action=Set
+--mu value=MU num_args=1 action=Set
+--tol value=TOL num_args=1 action=Set
+--max-iter value=MAX_ITER num_args=1 action=Set
+--tol-newton value=TOL_NEWTON num_args=1 action=Set
+--newton-iter value=NEWTON_ITER num_args=1 action=Set
+--te value=TE num_args=1 action=Set
+--pad value=X,Y,Z num_args=3 action=Append
+--help -h num_args=0 action=Help
+
+## qsmxt invert medi
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set required
+--echo-times aliases=echo-time value=ECHO_TIMES num_args=1.. action=Append required
+--magnitude value=MAGNITUDE num_args=1.. action=Append required
+--lambda value=LAMBDA num_args=1 action=Set
+--merit value=MERIT num_args=1 action=Set values=true,false
+--csf value=CSF num_args=1 action=Set values=true,false
+--lambda-csf value=LAMBDA_CSF num_args=1 action=Set
+--csf-r2s-threshold value=CSF_R2S_THRESHOLD num_args=1 action=Set
+--csf-erode value=CSF_ERODE num_args=1 action=Set values=true,false
+--zeropad value=X,Y,Z num_args=3 action=Append
+--smv value=SMV num_args=1 action=Set values=true,false
+--smv-radius value=SMV_RADIUS num_args=1 action=Set
+--smv-shrink-mask value=SMV_SHRINK_MASK num_args=1 action=Set values=true,false
+--msmv value=MSMV num_args=0 action=SetTrue default=false
+--msmv-maxk value=MSMV_MAXK num_args=1 action=Set
+--msmv-vessel-radius value=MSMV_VESSEL_RADIUS num_args=1 action=Set
+--no-msmv-prefilter value=NO_MSMV_PREFILTER num_args=0 action=SetTrue default=false
+--data-weighting value=DATA_WEIGHTING num_args=1 action=Set
+--percentage value=PERCENTAGE num_args=1 action=Set
+--cg-tol value=CG_TOL num_args=1 action=Set
+--cg-max-iter value=CG_MAX_ITER num_args=1 action=Set
+--max-iter value=MAX_ITER num_args=1 action=Set
+--tol value=TOL num_args=1 action=Set
+--te value=TE num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt invert tfi
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set required
+--echo-times aliases=echo-time value=ECHO_TIMES num_args=1.. action=Append required
+--magnitude value=MAGNITUDE num_args=1.. action=Append required
+--lambda value=LAMBDA num_args=1 action=Set
+--precond value=PRECOND num_args=1 action=Set
+--merit value=MERIT num_args=1 action=Set values=true,false
+--linear value=LINEAR num_args=1 action=Set values=true,false
+--data-weighting value=DATA_WEIGHTING num_args=1 action=Set
+--percentage value=PERCENTAGE num_args=1 action=Set
+--cg-tol value=CG_TOL num_args=1 action=Set
+--cg-max-iter value=CG_MAX_ITER num_args=1 action=Set
+--max-iter value=MAX_ITER num_args=1 action=Set
+--tol value=TOL num_args=1 action=Set
+--te value=TE num_args=1 action=Set
+--kernel value=KERNEL num_args=1 action=Set values=default,original
+--precision value=PRECISION num_args=1 action=Set values=double,single
+--help -h num_args=0 action=Help
+
+## qsmxt invert ilsqr
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--tol value=TOL num_args=1 action=Set
+--max-iter value=MAX_ITER num_args=1 action=Set
+--pad-mm value=MM num_args=1 action=Set
+--precision value=PRECISION num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt invert star
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set required
+--echo-times aliases=echo-time value=ECHO_TIMES num_args=1.. action=Append required
+--pad value=X,Y,Z num_args=3 action=Append
+--te value=TE num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt invert lsqr
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--magnitude value=MAGNITUDE num_args=1.. action=Append required
+--b0 value=B0 num_args=1 action=Set default=3
+--lsqr-residual-weighting value=LSQR_RESIDUAL_WEIGHTING num_args=1 action=Set
+--no-lsqr-global-offset value=NO_LSQR_GLOBAL_OFFSET num_args=0 action=SetTrue default=false
+--lsqr-tol value=LSQR_TOL num_args=1 action=Set
+--lsqr-max-iter value=LSQR_MAX_ITER num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt invert heidi
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set required
+--echo-times aliases=echo-time value=ECHO_TIMES num_args=1.. action=Append required
+--magnitude value=MAGNITUDE num_args=1.. action=Append
+--seed value=SEED num_args=1 action=Set
+--lsqr-residual-weighting value=LSQR_RESIDUAL_WEIGHTING num_args=1 action=Set
+--no-lsqr-global-offset value=NO_LSQR_GLOBAL_OFFSET num_args=0 action=SetTrue default=false
+--lsqr-tol value=LSQR_TOL num_args=1 action=Set
+--lsqr-max-iter value=LSQR_MAX_ITER num_args=1 action=Set
+--heidi-cone-threshold value=HEIDI_CONE_THRESHOLD num_args=1 action=Set
+--heidi-gradient-threshold value=HEIDI_GRADIENT_THRESHOLD num_args=1 action=Set
+--no-heidi-laplacian-correction value=NO_HEIDI_LAPLACIAN_CORRECTION num_args=0 action=SetTrue default=false
+--heidi-laplacian-threshold value=HEIDI_LAPLACIAN_THRESHOLD num_args=1 action=Set
+--heidi-gradient-mask-floor value=HEIDI_GRADIENT_MASK_FLOOR num_args=1 action=Set
+--heidi-continuation-steps value=HEIDI_CONTINUATION_STEPS num_args=1 action=Set
+--heidi-inner-iterations value=HEIDI_INNER_ITERATIONS num_args=1 action=Set
+--heidi-mu-min value=HEIDI_MU_MIN num_args=1 action=Set
+--heidi-tol value=HEIDI_TOL num_args=1 action=Set
+--no-heidi-denoise value=NO_HEIDI_DENOISE num_args=0 action=SetTrue default=false
+--heidi-denoise-iterations value=HEIDI_DENOISE_ITERATIONS num_args=1 action=Set
+--heidi-denoise-time-step value=HEIDI_DENOISE_TIME_STEP num_args=1 action=Set
+--heidi-denoise-conductance value=HEIDI_DENOISE_CONDUCTANCE num_args=1 action=Set
+--heidi-denoise-reference-itk value=HEIDI_DENOISE_REFERENCE_ITK num_args=0 action=SetTrue default=false
+--no-heidi-denoise-reference-itk value=NO_HEIDI_DENOISE_REFERENCE_ITK num_args=0 action=SetTrue default=false
+--heidi-te value=TE num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt invert ndi
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--tau value=TAU num_args=1 action=Set
+--alpha value=ALPHA num_args=1 action=Set
+--max-iter value=MAX_ITER num_args=1 action=Set
+--auto-stop value=AUTO_STOP num_args=1 action=Set values=true,false
+--te value=TE num_args=1 action=Set
+--weight-norm value=NORM num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set required
+--echo-times aliases=echo-time value=ECHO_TIMES num_args=1.. action=Append required
+--magnitude value=MAGNITUDE num_args=1.. action=Append required
+--help -h num_args=0 action=Help
+
+## qsmxt invert fansi
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set required
+--echo-times aliases=echo-time value=ECHO_TIMES num_args=1.. action=Append required
+--magnitude value=MAGNITUDE num_args=1.. action=Append required
+--alpha1 value=ALPHA1 num_args=1 action=Set
+--mu1 value=MU1 num_args=1 action=Set
+--mu2 value=MU2 num_args=1 action=Set
+--alpha0 value=ALPHA0 num_args=1 action=Set
+--mu0 value=MU0 num_args=1 action=Set
+--max-iter value=MAX_ITER num_args=1 action=Set
+--tol-update value=TOL_UPDATE num_args=1 action=Set
+--tol-delta value=TOL_DELTA num_args=1 action=Set
+--te value=TE num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt invert fansi-tgv
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set required
+--echo-times aliases=echo-time value=ECHO_TIMES num_args=1.. action=Append required
+--magnitude value=MAGNITUDE num_args=1.. action=Append required
+--alpha1 value=ALPHA1 num_args=1 action=Set
+--mu1 value=MU1 num_args=1 action=Set
+--mu2 value=MU2 num_args=1 action=Set
+--alpha0 value=ALPHA0 num_args=1 action=Set
+--mu0 value=MU0 num_args=1 action=Set
+--max-iter value=MAX_ITER num_args=1 action=Set
+--tol-update value=TOL_UPDATE num_args=1 action=Set
+--tol-delta value=TOL_DELTA num_args=1 action=Set
+--te value=TE num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt invert l1qsm
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set required
+--echo-times aliases=echo-time value=ECHO_TIMES num_args=1.. action=Append required
+--magnitude value=MAGNITUDE num_args=1.. action=Append required
+--alpha1 value=ALPHA1 num_args=1 action=Set
+--mu1 value=MU1 num_args=1 action=Set
+--mu2 value=MU2 num_args=1 action=Set
+--mu3 value=MU3 num_args=1 action=Set
+--lambda value=LAMBDA num_args=1 action=Set
+--max-iter value=MAX_ITER num_args=1 action=Set
+--tol-update value=TOL_UPDATE num_args=1 action=Set
+--tol-delta value=TOL_DELTA num_args=1 action=Set
+--te value=TE num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt invert whqsm
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set required
+--echo-times aliases=echo-time value=ECHO_TIMES num_args=1.. action=Append required
+--alpha1 value=ALPHA1 num_args=1 action=Set
+--mu1 value=MU1 num_args=1 action=Set
+--mu2 value=MU2 num_args=1 action=Set
+--beta value=BETA num_args=1 action=Set
+--muh value=MUH num_args=1 action=Set
+--max-iter value=MAX_ITER num_args=1 action=Set
+--tol-update value=TOL_UPDATE num_args=1 action=Set
+--tol-delta value=TOL_DELTA num_args=1 action=Set
+--weight value=WEIGHT num_args=1 action=Set
+--magnitude value=MAGNITUDE num_args=1.. action=Append
+--te value=TE num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt invert hdqsm
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--echo-times aliases=echo-time value=ECHO_TIMES num_args=1.. action=Append required
+--magnitude value=MAGNITUDE num_args=1.. action=Append required
+--alpha-l2 value=ALPHA_L2 num_args=1 action=Set
+--mu1-l2 value=MU1_L2 num_args=1 action=Set
+--mu2 value=MU2 num_args=1 action=Set
+--max-iter-l1 value=MAX_ITER_L1 num_args=1 action=Set
+--max-iter-l2 value=MAX_ITER_L2 num_args=1 action=Set
+--tol-update value=TOL_UPDATE num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt invert amp-pe
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--magnitude value=MAGNITUDE num_args=1.. action=Append
+--b0 value=B0 num_args=1 action=Set default=3
+--wave-order value=WAVE_ORDER num_args=1 action=Set
+--nlevel value=NLEVEL num_args=1 action=Set
+--wave-pec value=WAVE_PEC num_args=1 action=Set
+--simulated-te value=SIMULATED_TE num_args=1 action=Set
+--max-linearization-ite value=MAX_LINEARIZATION_ITE num_args=1 action=Set
+--damp-rate-sig value=DAMP_RATE_SIG num_args=1 action=Set
+--damp-rate-par value=DAMP_RATE_PAR num_args=1 action=Set
+--max-pe-spar-ite value=MAX_PE_SPAR_ITE num_args=1 action=Set
+--max-pe-est-ite value=MAX_PE_EST_ITE num_args=1 action=Set
+--cvg-thd value=CVG_THD num_args=1 action=Set
+--tikhonov-beta value=TIKHONOV_BETA num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt invert xqsm
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
+--help -h num_args=0 action=Help
+
+## qsmxt invert qsmnet
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
+--help -h num_args=0 action=Help
+
+## qsmxt invert qsmnet-plus
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
+--help -h num_args=0 action=Help
+
+## qsmxt invert qsmnetme
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
+--help -h num_args=0 action=Help
+
+## qsmxt invert autoqsm
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
+--help -h num_args=0 action=Help
+
+## qsmxt invert qsmgan
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
+--help -h num_args=0 action=Help
+
+## qsmxt invert ir2qsm
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
+--help -h num_args=0 action=Help
+
+## qsmxt invert lpcnn
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
+--help -h num_args=0 action=Help
+
+## qsmxt invert modl-qsm
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
+--help -h num_args=0 action=Help
+
+## qsmxt invert nextqsm
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
+--help -h num_args=0 action=Help
+
+## qsmxt invert iqsm
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--magnitude value=MAGNITUDE num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set required
+--echo-times aliases=echo-time value=ECHO_TIMES num_args=1.. action=Append required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--echo-weighting value=ECHO_WEIGHTING num_args=1 action=Set default=mag2-te2 values=mag-te2,mag2-te2
+--help -h num_args=0 action=Help
+
+## qsmxt invert iqsm-plus
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--magnitude value=MAGNITUDE num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set required
+--echo-times aliases=echo-time value=ECHO_TIMES num_args=1.. action=Append required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--tile-size value=TILE_SIZE num_args=1 action=Set
+--tile-halo value=TILE_HALO num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt invert cosmos
+--input -i value=INPUTS num_args=1 action=Append required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append
+--b0-dirs value=B0_DIRS num_args=1 action=Set
+--mask -m value=MASK num_args=1 action=Set required
+--force value=FORCE num_args=0 action=SetTrue default=false
+--output -o value=OUTPUT num_args=1 action=Set required
+--lambda value=LAMBDA num_args=1 action=Set
+--magnitude value=MAGNITUDES num_args=1 action=Append
+--tol value=TOL num_args=1 action=Set
+--max-iter value=MAX_ITER num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt invert sti
+--input -i value=INPUTS num_args=1 action=Append required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append
+--b0-dirs value=B0_DIRS num_args=1 action=Set
+--mask -m value=MASK num_args=1 action=Set required
+--force value=FORCE num_args=0 action=SetTrue default=false
+--output -o value=OUTPUT num_args=1 action=Set required
+--lambda value=LAMBDA num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt separate
+--help -h num_args=0 action=Help
+
+## qsmxt separate r2star-qsm
+--qsm value=QSM num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--r2star value=R2STAR num_args=1 action=Set
+--magnitude value=MAGNITUDE num_args=1.. action=Append
+--echo-times value=ECHO_TIMES num_args=1.. action=Append delimiter=','
+--r-const-3t value=R_CONST_3T num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt separate decompose
+--qsm value=QSM num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--magnitude value=MAGNITUDE num_args=1.. action=Append required
+--qsm-per-echo value=QSM_PER_ECHO num_args=1.. action=Append required
+--echo-times value=ECHO_TIMES num_args=1.. action=Append delimiter=',' required
+--n-inner value=N_INNER num_args=1 action=Set
+--chi-bound value=BOUND num_args=1 action=Set
+--unwrap-phase value=BOOL num_args=1 action=Set values=true,false
+--fit value=FIT num_args=1 action=Set values=reference-code,paper
+--max-iterations value=MAX_ITERATIONS num_args=1 action=Set
+--max-function-evaluations value=MAX_FUNCTION_EVALUATIONS num_args=1 action=Set
+--function-tolerance value=FUNCTION_TOLERANCE num_args=1 action=Set
+--step-tolerance value=STEP_TOLERANCE num_args=1 action=Set
+--optimality-tolerance value=OPTIMALITY_TOLERANCE num_args=1 action=Set
+--finite-difference-step value=FINITE_DIFFERENCE_STEP num_args=1 action=Set
+--typical-x value=TYPICAL_X num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt separate chi-sep-ilsqr
+--qsm value=QSM num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--local-field value=LOCAL_FIELD num_args=1 action=Set required
+--r2prime value=R2PRIME num_args=1 action=Set required
+--dr-pos value=DR_POS num_args=1 action=Set
+--dr-neg value=DR_NEG num_args=1 action=Set
+--pad value=X,Y,Z num_args=3 action=Append
+--cg-max-iter-lsqr value=CG_MAX_ITER_LSQR num_args=1 action=Set
+--cg-tol-lsqr value=CG_TOL_LSQR num_args=1 action=Set
+--cg-max-iter-sa value=CG_MAX_ITER_SA num_args=1 action=Set
+--cg-tol-sa value=CG_TOL_SA num_args=1 action=Set
+--d2-thr value=D2_THR num_args=1 action=Set
+--prc-w-i-min value=PRC_W_I_MIN num_args=1 action=Set
+--prc-w-i-max value=PRC_W_I_MAX num_args=1 action=Set
+--prc-w-g-min value=PRC_W_G_MIN num_args=1 action=Set
+--prc-w-g-max value=PRC_W_G_MAX num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt separate chi-sep-medi
+--qsm value=QSM num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--local-field value=LOCAL_FIELD num_args=1 action=Set required
+--r2prime value=R2PRIME num_args=1 action=Set required
+--magnitude value=MAGNITUDE num_args=1.. action=Append required
+--echo-times value=ECHO_TIMES num_args=1.. action=Append delimiter=',' required
+--csf-mask value=FILE|none num_args=1 action=Set
+--csf-r2star value=METHOD num_args=1 action=Set
+--lambda value=LAMBDA num_args=1 action=Set
+--lambda-csf value=LAMBDA_CSF num_args=1 action=Set
+--dr-pos value=DR_POS num_args=1 action=Set
+--dr-neg value=DR_NEG num_args=1 action=Set
+--pad value=PAD num_args=1 action=Set
+--tol value=TOL num_args=1 action=Set
+--max-iter value=MAX_ITER num_args=1 action=Set
+--cg-tol value=CG_TOL num_args=1 action=Set
+--cg-max-iter value=CG_MAX_ITER num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt separate wavesep
+--qsm value=QSM num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--r2prime value=R2PRIME num_args=1 action=Set required
+--dr-pos value=DR_POS num_args=1 action=Set
+--dr-neg value=DR_NEG num_args=1 action=Set
+--alpha value=ALPHA num_args=1 action=Set
+--lambda value=LAMBDA num_args=1 action=Set
+--wavelet-order value=WAVELET_ORDER num_args=1 action=Set
+--max-iter value=MAX_ITER num_args=1 action=Set
+--tol value=TOL num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt separate hc-chisep
+--qsm value=QSM num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--r2prime value=R2PRIME num_args=1 action=Set required
+--magnitude value=MAGNITUDE num_args=1.. action=Append required
+--echo-times value=ECHO_TIMES num_args=1.. action=Append delimiter=',' required
+--se-magnitude value=SE_MAGNITUDE num_args=1.. action=Append
+--se-echo-times value=SE_ECHO_TIMES num_args=1.. action=Append delimiter=','
+--dr-pos-3t value=DR_POS_3T num_args=1 action=Set
+--bin-hz value=BIN_HZ num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt separate susep-net
+--qsm value=QSM num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--local-field value=LOCAL_FIELD num_args=1 action=Set required
+--r2prime value=R2PRIME num_args=1 action=Set required
+--patch value=D,H,W num_args=3 action=Append
+--help -h num_args=0 action=Help
+
+## qsmxt separate chi-sepnet
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--local-field value=LOCAL_FIELD num_args=1 action=Set required
+--r2prime value=R2PRIME num_args=1 action=Set
+--r2star value=R2STAR num_args=1 action=Set
+--qsm value=QSM num_args=1 action=Set
+--route value=ROUTE num_args=1 action=Set default=toolbox values=toolbox,native
+--patch value=D,H,W num_args=3 action=Append
+--frame-patch value=D,H,W num_args=3 action=Append
+--ignore-field-mismatch value=IGNORE_FIELD_MISMATCH num_args=0 action=SetTrue default=false
+--help -h num_args=0 action=Help
+
+## qsmxt qsmart
+<input> value=INPUT num_args=1 action=Set required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set required
+--echo-time value=ECHO_TIME num_args=1 action=Set required
+--magnitude value=MAGNITUDE num_args=1 action=Set
+--reliability value=RELIABILITY num_args=1 action=Set
+--intermediates value=DIR num_args=1 action=Set
+--ilsqr-precision value=PRECISION num_args=1 action=Set
+--qsmart-ilsqr-max-iter value=QSMART_ILSQR_MAX_ITER num_args=1 action=Set
+--qsmart-ilsqr-pad-mm value=MM num_args=1 action=Set
+--qsmart-vasc-sphere-radius value=QSMART_VASC_SPHERE_RADIUS num_args=1 action=Set
+--qsmart-inversion value=QSMART_INVERSION num_args=1 action=Set values=rts,tv,tkd,tsvd,tgv,tikhonov,nltv,medi,tfi,ilsqr,star,lsqr,heidi,qsmart,ndi,fansi,fansi-tgv,l1qsm,whqsm,hdqsm,amp-pe,xqsm,qsmnet,qsmnet-plus,qsmnetme,autoqsm,qsmgan,ir2qsm,lpcnn,modl-qsm,nextqsm,iqsm,iqsm-plus
+--qsmart-sdf-sigma1-stage1 value=QSMART_SDF_SIGMA1_STAGE1 num_args=1 action=Set
+--qsmart-sdf-sigma2-stage1 value=QSMART_SDF_SIGMA2_STAGE1 num_args=1 action=Set
+--qsmart-sdf-sigma1-stage2 value=QSMART_SDF_SIGMA1_STAGE2 num_args=1 action=Set
+--qsmart-sdf-sigma2-stage2 value=QSMART_SDF_SIGMA2_STAGE2 num_args=1 action=Set
+--qsmart-sdf-lower-lim value=QSMART_SDF_LOWER_LIM num_args=1 action=Set
+--qsmart-sdf-curv-constant value=QSMART_SDF_CURV_CONSTANT num_args=1 action=Set
+--qsmart-frangi-scale-min value=QSMART_FRANGI_SCALE_MIN num_args=1 action=Set
+--qsmart-frangi-scale-max value=QSMART_FRANGI_SCALE_MAX num_args=1 action=Set
+--qsmart-frangi-scale-ratio value=QSMART_FRANGI_SCALE_RATIO num_args=1 action=Set
+--qsmart-frangi-c value=QSMART_FRANGI_C num_args=1 action=Set
+--qsmart-frangi-c-mode value=QSMART_FRANGI_C_MODE num_args=1 action=Set values=absolute,relative
+--qsmart-frangi-c-factor value=QSMART_FRANGI_C_FACTOR num_args=1 action=Set
+--qsmart-vessel-units value=QSMART_VESSEL_UNITS num_args=1 action=Set values=voxels,mm
+--qsmart-vessel-magnitude value=QSMART_VESSEL_MAGNITUDE num_args=1 action=Set values=mean-n4,combined
+--qsmart-offset-grid value=QSMART_OFFSET_GRID num_args=1 action=Set values=fft,qsmart-reference
+--help -h num_args=0 action=Help
+
+## qsmxt swi
+--phase value=PHASE num_args=1.. action=Append required
+--magnitude value=MAGNITUDE num_args=1.. action=Append required
+--tes value=TES num_args=1.. action=Append
+--mask -m value=MASK num_args=1 action=Set
+--output -o value=OUTPUT num_args=1 action=Set required
+--mip value=MIP num_args=0 action=SetTrue default=false
+--mip-output value=MIP_OUTPUT num_args=1 action=Set
+--filtered-phase value=FILTERED_PHASE num_args=0 action=SetTrue default=false
+--filtered-phase-output value=FILTERED_PHASE_OUTPUT num_args=1 action=Set
+--swi-unwrapping value=SWI_UNWRAPPING num_args=1 action=Set values=laplacian,laplacian-slice,romeo
+--swi-hp-sigma value=SWI_HP_SIGMA num_args=3 action=Append
+--swi-scaling value=SWI_SCALING num_args=1 action=Set values=tanh,negative-tanh|negative_tanh,positive,negative,triangular
+--swi-strength value=SWI_STRENGTH num_args=1 action=Set
+--swi-mip-window value=SWI_MIP_WINDOW num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt segment
+<magnitude> value=MAGNITUDE num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--lookup value=LOOKUP num_args=1 action=Set
+--synthseg-version value=VERSION num_args=1 action=Set
+--synthseg-crop value=SYNTHSEG_CROP num_args=1 action=Set
+--synthseg-patch value=VOXELS num_args=1 action=Set
+--no-synthseg-flip-averaging value=NO_SYNTHSEG_FLIP_AVERAGING num_args=0 action=SetTrue default=false
+--no-synthseg-topology-cleanup value=NO_SYNTHSEG_TOPOLOGY_CLEANUP num_args=0 action=SetTrue default=false
+--synthseg-sigma value=SYNTHSEG_SIGMA num_args=1 action=Set
+--use-custom-dseg value=TOOL num_args=0..=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt r2star
+<inputs> value=INPUTS num_args=1.. action=Append required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--echo-times value=ECHO_TIMES num_args=3.. action=Append required
+--help -h num_args=0 action=Help
+
+## qsmxt t2star
+<inputs> value=INPUTS num_args=1.. action=Append required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--echo-times value=ECHO_TIMES num_args=3.. action=Append required
+--help -h num_args=0 action=Help
+
+## qsmxt r2
+<inputs> value=INPUTS num_args=1.. action=Append required
+--mask -m value=MASK num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--echo-times value=ECHO_TIMES num_args=1.. action=Append delimiter=',' required
+--t1 value=T1 num_args=1 action=Set
+--b1-map value=B1_MAP num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt r2prime
+--r2star value=R2STAR num_args=1 action=Set required
+--r2 value=R2 num_args=1 action=Set
+--r2primenet value=R2PRIMENET num_args=0 action=SetTrue default=false
+--mask -m value=MASK num_args=1 action=Set required
+--r2-coverage value=R2_COVERAGE num_args=1 action=Set
+--output -o value=OUTPUT num_args=1 action=Set required
+--output-coverage value=OUTPUT_COVERAGE num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set
+--r2primenet-ignore-field-mismatch value=R2PRIMENET_IGNORE_FIELD_MISMATCH num_args=0 action=SetTrue default=false
+--r2primenet-patch value=D,H,W num_args=3 action=Append
+--help -h num_args=0 action=Help
+
+## qsmxt homogeneity
+<input> value=INPUT num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--method value=METHOD num_args=1 action=Set default=makehomogeneous values=makehomogeneous,n4
+--sigma value=SIGMA num_args=1 action=Set default=7
+--nbox value=NBOX num_args=1 action=Set default=15
+--n4-shrink-factor value=N4_SHRINK_FACTOR num_args=1 action=Set
+--n4-max-iterations value=ITERATIONS num_args=1.. action=Append
+--n4-convergence-threshold value=N4_CONVERGENCE_THRESHOLD num_args=1 action=Set
+--n4-mesh value=X,Y,Z num_args=3 action=Append
+--n4-spline-order value=N4_SPLINE_ORDER num_args=1 action=Set
+--n4-bias-field-fwhm value=N4_BIAS_FIELD_FWHM num_args=1 action=Set
+--n4-wiener-noise value=N4_WIENER_NOISE num_args=1 action=Set
+--n4-histogram-bins value=N4_HISTOGRAM_BINS num_args=1 action=Set
+--n4-geometry value=GEOMETRY num_args=1 action=Set
+--help -h num_args=0 action=Help
+
+## qsmxt resample
+<input> value=INPUT num_args=1 action=Set
+--output -o value=OUTPUT num_args=1 action=Set
+--phase value=PHASE num_args=1 action=Set
+--magnitude value=MAGNITUDE num_args=1 action=Set
+--phase-out value=PHASE_OUT num_args=1 action=Set
+--magnitude-out value=MAGNITUDE_OUT num_args=1 action=Set
+--noise-fill value=NOISE_FILL num_args=0 action=SetTrue default=false
+--no-noise-fill value=NO_NOISE_FILL num_args=0 action=SetTrue default=false hidden
+--help -h num_args=0 action=Help
+
+## qsmxt quality-map
+<phase> value=PHASE num_args=1 action=Set required
+--output -o value=OUTPUT num_args=1 action=Set required
+--magnitude value=MAGNITUDE num_args=1 action=Set
+--phase2 value=PHASE2 num_args=1 action=Set
+--te1 value=TE1 num_args=1 action=Set default=0.02
+--te2 value=TE2 num_args=1 action=Set default=0.04
+--help -h num_args=0 action=Help
+
+## qsmxt example
+<output_dir> value=OUTPUT_DIR num_args=1 action=Set
+--name -n value=NAME num_args=1 action=Append delimiter=','
+--list value=LIST num_args=0 action=SetTrue default=false
+--force value=FORCE num_args=0 action=SetTrue default=false
+--help -h num_args=0 action=Help
+
+## qsmxt tui
+--help -h num_args=0 action=Help
+
+## qsmxt update
+--yes -y value=YES num_args=0 action=SetTrue default=false
+--force value=FORCE num_args=0 action=SetTrue default=false
+--main value=MAIN num_args=0 action=SetTrue default=false
+--help -h num_args=0 action=Help
+
+## qsmxt news
+--help -h num_args=0 action=Help

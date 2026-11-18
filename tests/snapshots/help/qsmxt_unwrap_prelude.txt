@@ -1,0 +1,28 @@
+PRELUDE region-merging unwrapping
+
+Usage: qsmxt unwrap prelude [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+
+Arguments:
+  <INPUT>
+          Input wrapped phase NIfTI file
+
+Options:
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output unwrapped phase NIfTI file
+
+      --prelude-labelling <PRELUDE_LABELLING>
+          PRELUDE: how the initial regions are labelled (default: auto)
+
+          Possible values:
+          - auto:   FSL prelude's default: slice by slice above 64 voxels in-plane, else over the whole volume
+          - slices: Label regions slice by slice (FSL prelude --labelslices)
+          - volume: Label regions over the whole volume (FSL prelude -f)
+
+      --prelude-partitions <N>
+          PRELUDE: number of phase partitions the initial regions are formed from (default: 8)
+
+  -h, --help
+          Print help (see a summary with '-h')

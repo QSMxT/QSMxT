@@ -1,0 +1,50 @@
+WaveSep wavelet-L1 (Fang 2023) — QSM + R2'
+
+Usage: qsmxt separate wavesep [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --r2prime <R2PRIME>
+
+Options:
+      --qsm <QSM>
+          Conventional QSM (χ_total) NIfTI in ppm
+
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names
+
+      --field-strength <FIELD_STRENGTH>
+          B0 field strength in Tesla
+
+          [default: 3]
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction (3 values)
+
+          [default: 0 0 1]
+
+      --r2prime <R2PRIME>
+          R2' map NIfTI in Hz
+
+      --dr-pos <DR_POS>
+          Paramagnetic relaxivity (Hz/ppm)
+
+      --dr-neg <DR_NEG>
+          Diamagnetic relaxivity (Hz/ppm)
+
+      --alpha <ALPHA>
+          Proximal-gradient step size
+
+      --lambda <LAMBDA>
+          Wavelet L1 soft-threshold weight
+
+      --wavelet-order <WAVELET_ORDER>
+          Daubechies wavelet order
+
+      --max-iter <MAX_ITER>
+          ISTA max iterations
+
+      --tol <TOL>
+          Relative-change stop tolerance
+
+  -h, --help
+          Print help

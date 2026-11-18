@@ -1,0 +1,71 @@
+χ-separation MEDI — local field + R2' + multi-echo magnitude + QSM
+
+Usage: qsmxt separate chi-sep-medi [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --local-field <LOCAL_FIELD> --r2prime <R2PRIME> --magnitude <MAGNITUDE>... --echo-times <ECHO_TIMES>...
+
+Options:
+      --qsm <QSM>
+          Conventional QSM (χ_total) NIfTI in ppm
+
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names
+
+      --field-strength <FIELD_STRENGTH>
+          B0 field strength in Tesla
+
+          [default: 3]
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction (3 values)
+
+          [default: 0 0 1]
+
+      --local-field <LOCAL_FIELD>
+          Local (tissue) field NIfTI in ppm
+
+      --r2prime <R2PRIME>
+          R2' map NIfTI in Hz
+
+      --magnitude <MAGNITUDE>...
+          Multi-echo magnitude: one 4D file or one 3D file per echo (space-separated)
+
+      --echo-times <ECHO_TIMES>...
+          GRE echo times in seconds (space- or comma-separated)
+
+      --csf-mask <FILE|none>
+          CSF mask NIfTI for the CSF-uniformity term, or `none` for no CSF term (the toolbox's GUI without a CSF mask) (default: the CSF found from R2* of the echoes, as the toolbox's script does; see --csf-r2star)
+
+      --csf-r2star <METHOD>
+          The R2* the CSF mask is found from when no --csf-mask is given: arlo (MEDI's ARLO; the default) or nnls (the χ-separation toolbox's r2star_nnls, which its script runs)
+
+      --lambda <LAMBDA>
+          Weight of the data terms against the L1 terms (default: 1)
+
+      --lambda-csf <LAMBDA_CSF>
+          Weight of the CSF-uniformity term (default: 1)
+
+      --dr-pos <DR_POS>
+          Paramagnetic relaxometric constant (Hz/ppm) (default: 137 × B0 / 2.9 T)
+
+      --dr-neg <DR_NEG>
+          Diamagnetic relaxometric constant (Hz/ppm) (default: 137 × B0 / 2.9 T)
+
+      --pad <PAD>
+          Zero-padding at both ends of the third axis, in voxels (default: 5)
+
+      --tol <TOL>
+          Stop when the relative change falls below this (default: 0.03)
+
+      --max-iter <MAX_ITER>
+          Maximum Gauss-Newton iterations (default: 30)
+
+      --cg-tol <CG_TOL>
+          Inner CG tolerance (default: 0.05)
+
+      --cg-max-iter <CG_MAX_ITER>
+          Inner CG max iterations (default: 100)
+
+  -h, --help
+          Print help

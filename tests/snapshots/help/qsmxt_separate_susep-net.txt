@@ -1,0 +1,35 @@
+SUSEP-Net deep-learning separation — QSM + R2' + local field (weights downloaded on first use)
+
+Usage: qsmxt separate susep-net [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --local-field <LOCAL_FIELD> --r2prime <R2PRIME>
+
+Options:
+      --qsm <QSM>
+          Conventional QSM (χ_total) NIfTI in ppm
+
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names
+
+      --field-strength <FIELD_STRENGTH>
+          B0 field strength in Tesla
+
+          [default: 3]
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction (3 values)
+
+          [default: 0 0 1]
+
+      --local-field <LOCAL_FIELD>
+          Local (tissue) field NIfTI in ppm
+
+      --r2prime <R2PRIME>
+          R2' map NIfTI in Hz
+
+      --patch <D> <H> <W>
+          Sliding-window patch in voxels, D H W, each a multiple of 8 (default: the whole volume at once)
+
+  -h, --help
+          Print help

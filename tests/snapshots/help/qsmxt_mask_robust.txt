@@ -1,0 +1,17 @@
+Alias for `preset robust-threshold`
+
+Usage: qsmxt mask robust [OPTIONS] --output <OUTPUT> <INPUT>
+
+Arguments:
+  <INPUT>
+          Input NIfTI file (an image for the generating subcommands, a mask for the rest)
+
+Options:
+  -o, --output <OUTPUT>
+          Output mask NIfTI file
+
+      --op <OPS>
+          Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, majority (3x3x3 majority filter), largest-component, imfill (every hole), min-intensity:100 (remove voxels below 100 in the input image; needs an image input), signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input)
+
+  -h, --help
+          Print help

@@ -1,0 +1,40 @@
+Iterative Least Squares QR
+
+Usage: qsmxt invert ilsqr [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+
+Arguments:
+  <INPUT>
+          Input local field NIfTI file
+
+Options:
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output susceptibility map NIfTI file
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction (3 values)
+
+          [default: 0 0 1]
+
+      --tile-size <TILE_SIZE>
+          DL tiling: output core size per patch, in voxels (enables tiling)
+
+      --tile-halo <TILE_HALO>
+          DL tiling: context margin per side, in voxels (default 8)
+
+      --tol <TOL>
+          Tolerance
+
+      --max-iter <MAX_ITER>
+          Max iterations of each LSQR solve (default: 100)
+
+      --pad-mm <MM>
+          Zero-padding in mm per side
+
+      --precision <PRECISION>
+          Arithmetic of the two LSQR solves: double, or single as the original implementation (default: double)
+
+  -h, --help
+          Print help

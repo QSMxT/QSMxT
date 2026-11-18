@@ -1,0 +1,61 @@
+Total Generalized Variation
+
+Usage: qsmxt invert tgv [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... <INPUT>
+
+Arguments:
+  <INPUT>
+          Input local field NIfTI file
+
+Options:
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output susceptibility map NIfTI file
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction (3 values)
+
+          [default: 0 0 1]
+
+      --tile-size <TILE_SIZE>
+          DL tiling: output core size per patch, in voxels (enables tiling)
+
+      --tile-halo <TILE_HALO>
+          DL tiling: context margin per side, in voxels (default 8)
+
+      --field-strength <FIELD_STRENGTH>
+          B0 field strength in Tesla
+
+      --echo-times <ECHO_TIMES>...
+          Echo times in seconds, every echo's, in order
+
+      --iterations <ITERATIONS>
+          Iterations (default: from the voxel size, as the reference does)
+
+      --erosions <EROSIONS>
+          Erosions
+
+      --alpha1 <ALPHA1>
+          Alpha1 (first-order weight), in radians at the echo time (--te) and the field strength (default: 0.00212; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.003)
+
+      --alpha0 <ALPHA0>
+          Alpha0 (second-order weight), in radians at the echo time (--te) and the field strength (default: 0.00636; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.002)
+
+      --step-size <STEP_SIZE>
+          Primal step size multiplier
+
+      --te <TE>
+          Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first)
+
+      --reference-divergence
+          Use QuantitativeSusceptibilityMappingTGV.jl's divergence in the w update rather than the exact adjoint of the symmetric gradient. Changes the result only on anisotropic voxels; with --reference-edge-erosion and --reference-output-box it reproduces that package, for comparison with it
+
+      --reference-edge-erosion
+          Erode the mask as QuantitativeSusceptibilityMappingTGV.jl does, not from the array's edge. Changes the result only where the mask reaches an array face
+
+      --reference-output-box
+          Return χ over QuantitativeSusceptibilityMappingTGV.jl's whole output box, not only inside the eroded mask: adds the rim of up to two voxels just outside it, where no data constrain χ
+
+  -h, --help
+          Print help

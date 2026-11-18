@@ -1,0 +1,38 @@
+Whole-brain segmentation of a magnitude image with SynthSeg
+
+Usage: qsmxt segment [OPTIONS] --output <OUTPUT> <MAGNITUDE>
+
+Arguments:
+  <MAGNITUDE>
+          Input magnitude NIfTI file. Not a susceptibility map: SynthSeg reads anatomy, and χ has none of the tissue contrast it was trained to recognise
+
+Options:
+  -o, --output <OUTPUT>
+          Output label NIfTI file (FreeSurfer label ids)
+
+      --lookup <LOOKUP>
+          Also write the BIDS label lookup table (index/name) to this path
+
+      --synthseg-version <VERSION>
+          SynthSeg weights generation: v1 (SynthSeg 1.0, 32 labels; the default) or v2 (SynthSeg 2.0, 33 labels, adds a general CSF class; Billot et al., PNAS 2023)
+
+      --synthseg-crop <SYNTHSEG_CROP>
+          Cubic centre-crop in voxels at 1 mm before inference (rounded up to a multiple of 32). Omit to process the whole volume, as the SynthSeg CLI does
+
+      --synthseg-patch <VOXELS>
+          Run SynthSeg as a sliding window of half-overlapping cubes this many voxels on a side at 1 mm (at least 64, rounded up to a multiple of 32), so its memory follows the patch, not the volume. Omit to run the whole volume at once, as the SynthSeg CLI does
+
+      --no-synthseg-flip-averaging
+          Skip the left-right flipped second pass. Halves inference time, as SynthSeg's --fast does
+
+      --no-synthseg-topology-cleanup
+          Skip resetting each topological class to its largest connected component
+
+      --synthseg-sigma <SYNTHSEG_SIGMA>
+          Gaussian blur on the posteriors, in voxels (0 disables it)
+
+      --use-custom-dseg [<TOOL>]
+          Prefer a bring-your-own segmentation from <bids>/derivatives/<TOOL>/ when present. Bare flag = first matching tool alphabetically. Always falls back to running SynthSeg
+
+  -h, --help
+          Print help

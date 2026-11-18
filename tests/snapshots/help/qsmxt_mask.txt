@@ -1,0 +1,30 @@
+Masking operations
+
+Usage: qsmxt mask <COMMAND>
+
+Commands:
+  otsu               Otsu automatic thresholding
+  value              Fixed value thresholding
+  percentile         Percentile thresholding
+  sti-gui            STI Suite QSM_GUI's thresholding: the level its thresh_tool starts at (Otsu's threshold of the middle slice, scaled to that slice's maximum)
+  bet                Brain extraction (BET)
+  hd-bet             Deep-learning brain extraction (HD-BET; downloads weights on first use)
+  rs2-net            Deep-learning rodent brain extraction (RS2-Net; downloads weights on first use)
+  mindgrab           Deep-learning brain extraction for any contrast (MindGrab; downloads weights on first use)
+  preset             Run a `--mask-preset` recipe on an image (robust-threshold, bet, hd-bet, bet-and-phase, rs2-net, mindgrab)
+  robust             Alias for `preset robust-threshold`
+  erode              Erode a binary mask
+  dilate             Dilate a binary mask
+  close              Morphological closing on a binary mask
+  majority           3x3x3 majority filter on a binary mask (MATLAB's bwmorph3 'majority')
+  largest-component  Keep only the largest 26-connected component of a binary mask (MATLAB's bwlabeln)
+  imfill             Fill every hole of a binary mask, whatever its size (MATLAB's imfill 'holes')
+  fill-holes         Fill holes in a binary mask
+  smooth             Gaussian smooth a binary mask (re-thresholds at 0.5)
+  and                Intersect binary masks: keep voxels every input keeps (the `run --mask-combine and`)
+  or                 Union binary masks: keep voxels any input keeps (the `run --mask-combine or`)
+  help               Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help
+          Print help

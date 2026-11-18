@@ -1,0 +1,20 @@
+R2* mapping from multi-echo magnitude data
+
+Usage: qsmxt r2star --mask <MASK> --output <OUTPUT> --echo-times <ECHO_TIMES> <ECHO_TIMES> <ECHO_TIMES>... <INPUTS>...
+
+Arguments:
+  <INPUTS>...
+          Multi-echo magnitude: one 4D file or several 3D files (3+ echoes; space-separated)
+
+Options:
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output R2* map NIfTI file
+
+      --echo-times <ECHO_TIMES> <ECHO_TIMES> <ECHO_TIMES>...
+          Echo times in seconds (must match number of inputs)
+
+  -h, --help
+          Print help

@@ -1,0 +1,46 @@
+iQFM deep-learning joint unwrapping and background removal — input is every echo's WRAPPED phase (weights downloaded on first use)
+
+Usage: qsmxt bgremove iqfm [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... <INPUT>
+
+Arguments:
+  <INPUT>
+          Wrapped phase NIfTI file in radians: 4D (x,y,z,echo), or 3D for one echo
+
+Options:
+  -m, --mask <MASK>
+          Binary brain mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output NIfTI file in ppm (susceptibility for iqsm/iqsm-plus, the local field for iqfm)
+
+      --magnitude <MAGNITUDE>
+          Magnitude NIfTI file with the same echoes as the phase (4D), to weight the echo combination by magnitude; without it the echoes are weighted by TE² alone
+
+      --field-strength <FIELD_STRENGTH>
+          B0 field strength in Tesla
+
+      --echo-times <ECHO_TIMES>...
+          Echo times in seconds, every echo's, in order
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction (3 values)
+
+          [default: 0 0 1]
+
+      --tile-size <TILE_SIZE>
+          DL tiling: output core size per patch, in voxels (enables tiling)
+
+      --tile-halo <TILE_HALO>
+          DL tiling: context margin per side, in voxels (default 8)
+
+      --echo-weighting <ECHO_WEIGHTING>
+          Echo weighting of the multi-echo combination: `mag2-te2` weights each echo by (magnitude × TE)², the inverse of its noise variance, as in the authors' Python code; `mag-te2` by magnitude × TE², as in the authors' MATLAB code
+
+          Possible values:
+          - mag-te2:  magnitude × TE²
+          - mag2-te2: (magnitude × TE)²
+
+          [default: mag2-te2]
+
+  -h, --help
+          Print help (see a summary with '-h')

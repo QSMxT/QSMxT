@@ -1,0 +1,37 @@
+Regularized SHARP (RESHARP) with Tikhonov regularization
+
+Usage: qsmxt bgremove resharp [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+
+Arguments:
+  <INPUT>
+          Input total field NIfTI file
+
+Options:
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output local field NIfTI file
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction (3 values)
+
+          [default: 0 0 1]
+
+      --output-mask <OUTPUT_MASK>
+          Output eroded mask (for algorithms that erode)
+
+      --radius <RADIUS>
+          SMV kernel radius in mm
+
+      --tik-reg <TIK_REG>
+          Tikhonov regularization parameter
+
+      --tol <TOL>
+          Conjugate gradients squared (CGS) relative tolerance
+
+      --max-iter <MAX_ITER>
+          Maximum CGS iterations
+
+  -h, --help
+          Print help

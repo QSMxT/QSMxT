@@ -1,0 +1,14 @@
+B0 field mapping from multi-echo phase (NIfTI in, ppm out)
+
+Usage: qsmxt fieldmap <COMMAND>
+
+Commands:
+  romeo                ROMEO-based multi-echo field mapping (phase offset removal + unwrap + B0 fit)
+  laplacian            Laplacian-based multi-echo field mapping (per-echo unwrap + echo combination)
+  prelude              PRELUDE-based multi-echo field mapping (phase offset removal + per-echo unwrap + B0 fit)
+  medi-region-growing  MEDI region-growing field mapping (phase offset removal + per-echo unwrap + B0 fit; with `--b0-estimation complex-fit`, MEDI's field map). Needs `--magnitude`
+  help                 Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help
+          Print help

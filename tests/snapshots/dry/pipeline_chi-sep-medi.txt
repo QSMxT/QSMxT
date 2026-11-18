@@ -1,0 +1,10 @@
+
+exit Some(1)
+[INFO  qsmxt::pipeline::config] The R2′ map turned on: χ-separation (MEDI) needs it (it separates χ with R2′)
+[INFO  qsmxt::pipeline::config] The R2* map turned on: the R2′ map needs it (R2′ is computed from R2*)
+[INFO  qsmxt::pipeline::config] The R2 map turned on: the R2′ map needs it (R2′ is measured as R2* − R2 where it can be)
+[WARN  qsmxt_engine::requirements] sub-1_MEGRE: --do-r2map (turned on by --do-chisep (--chisep chi-sep-medi)) is skipped: it needs a multi-echo spin-echo (MESE) acquisition, and this run has none
+[WARN  qsmxt_engine::requirements] sub-1_MEGRE: --do-r2primemap (turned on by --do-chisep (--chisep chi-sep-medi)) is skipped: it --r2prime-strategy mese measures R2' as R2* − R2, and R2 needs a multi-echo spin-echo (MESE) acquisition, and this run has none; --r2prime-strategy auto predicts it with R2PRIMEnet instead (QSMxT's recommendation; the χ-separation toolbox takes a measured R2'), or supply one with --use-custom-r2prime
+[ERROR qsmxt] Pipeline configuration error: 1 requested output(s) cannot be produced from the data, so nothing was processed:
+  sub-1_MEGRE: --do-chisep needs R2', which --r2prime-strategy mese measures R2' as R2* − R2, and R2 needs a multi-echo spin-echo (MESE) acquisition, and this run has none; --r2prime-strategy auto predicts it with R2PRIMEnet instead (QSMxT's recommendation; the χ-separation toolbox takes a measured R2'), or supply one with --use-custom-r2prime
+Drop the option, or narrow the runs with --include/--exclude.

@@ -1,0 +1,57 @@
+Nonlinear Dipole Inversion
+
+Usage: qsmxt invert ndi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... --magnitude <MAGNITUDE>... <INPUT>
+
+Arguments:
+  <INPUT>
+          Input local field NIfTI file
+
+Options:
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output susceptibility map NIfTI file
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction (3 values)
+
+          [default: 0 0 1]
+
+      --tile-size <TILE_SIZE>
+          DL tiling: output core size per patch, in voxels (enables tiling)
+
+      --tile-halo <TILE_HALO>
+          DL tiling: context margin per side, in voxels (default 8)
+
+      --tau <TAU>
+          Gradient-descent step size (tau)
+
+      --alpha <ALPHA>
+          L2 regularization weight (alpha)
+
+      --max-iter <MAX_ITER>
+          Max iterations (the maximum, with --auto-stop)
+
+      --auto-stop <AUTO_STOP>
+          Stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto)
+
+          [possible values: true, false]
+
+      --te <TE>
+          Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first)
+
+      --weight-norm <NORM>
+          Magnitude-weight normaliser: global-max (the magnitude's maximum, as FANSI; default) or mask-p999 (its 99.9th percentile inside the mask; more consistent in vivo)
+
+      --field-strength <FIELD_STRENGTH>
+          B0 field strength in Tesla
+
+      --echo-times <ECHO_TIMES>...
+          Echo times in seconds, every echo's, in order
+
+      --magnitude <MAGNITUDE>...
+          Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined
+
+  -h, --help
+          Print help

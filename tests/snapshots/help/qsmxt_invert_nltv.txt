@@ -1,0 +1,64 @@
+Nonlinear Total Variation
+
+Usage: qsmxt invert nltv [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... --magnitude <MAGNITUDE>... <INPUT>
+
+Arguments:
+  <INPUT>
+          Input local field NIfTI file
+
+Options:
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output susceptibility map NIfTI file
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction (3 values)
+
+          [default: 0 0 1]
+
+      --tile-size <TILE_SIZE>
+          DL tiling: output core size per patch, in voxels (enables tiling)
+
+      --tile-halo <TILE_HALO>
+          DL tiling: context margin per side, in voxels (default 8)
+
+      --field-strength <FIELD_STRENGTH>
+          B0 field strength in Tesla
+
+      --echo-times <ECHO_TIMES>...
+          Echo times in seconds, every echo's, in order
+
+      --magnitude <MAGNITUDE>...
+          Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined
+
+      --lambda <LAMBDA>
+          Lambda
+
+      --rho <RHO>
+          Rho (ADMM penalty), or auto for 100 × lambda (default: auto)
+
+      --mu <MU>
+          Mu (penalty parameter)
+
+      --tol <TOL>
+          Tolerance
+
+      --max-iter <MAX_ITER>
+          Max iterations
+
+      --tol-newton <TOL_NEWTON>
+          Convergence tolerance of the Newton iterations of the data-term subproblem
+
+      --newton-iter <NEWTON_ITER>
+          Maximum Newton iterations of the data-term subproblem
+
+      --te <TE>
+          Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first)
+
+      --pad <X> <Y> <Z>
+          Zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0)
+
+  -h, --help
+          Print help

@@ -1,0 +1,20 @@
+Intersect binary masks: keep voxels every input keeps (the `run --mask-combine and`)
+
+Usage: qsmxt mask and [OPTIONS] --output <OUTPUT> [INPUTS] [INPUTS]...
+
+Arguments:
+  [INPUTS] [INPUTS]...
+          Input mask NIfTI files (two or more, on the same grid)
+
+Options:
+  -o, --output <OUTPUT>
+          Output mask NIfTI file
+
+      --op <OPS>
+          Refinement operation applied to the combined mask (repeatable, applied in order) — the `run --mask-refine` of this command. Examples: fill-holes:0, erode:1, close:1
+
+      --magnitude <MAGNITUDE>
+          Magnitude image, needed only by `--op signal-erode`
+
+  -h, --help
+          Print help

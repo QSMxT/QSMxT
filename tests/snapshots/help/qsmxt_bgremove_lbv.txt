@@ -1,0 +1,52 @@
+Laplacian Boundary Value
+
+Usage: qsmxt bgremove lbv [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... <INPUT>
+
+Arguments:
+  <INPUT>
+          Input total field NIfTI file
+
+Options:
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output local field NIfTI file
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction (3 values)
+
+          [default: 0 0 1]
+
+      --output-mask <OUTPUT_MASK>
+          Output eroded mask (for algorithms that erode)
+
+      --field-strength <FIELD_STRENGTH>
+          B0 field strength in Tesla
+
+      --echo-times <ECHO_TIMES>...
+          Echo times in seconds, every echo's, in order
+
+      --tol <TOL>
+          Tolerance: stop the coarsest grid's relaxation when its summed absolute update falls below this, in radians over the echo spacing (default: 0.01)
+
+      --depth <LEVEL>
+          Coarsest multigrid level, at most 8 (default: log2 of the smallest dimension minus 3)
+
+      --peel <LAYERS>
+          Boundary layers removed from the mask beyond the first (default: 0)
+
+      --n1 <N1>
+          Relaxations on each grid before the coarser grid (default: 30)
+
+      --n2 <N2>
+          Relaxations on each grid after the coarser grid (default: 100)
+
+      --n3 <N3>
+          Relaxations on the finest grid at the end (default: 100)
+
+      --precision <PRECISION>
+          Arithmetic: double, or single as the original implementation (default: double)
+
+  -h, --help
+          Print help

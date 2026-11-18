@@ -1,0 +1,37 @@
+COSMOS — multi-orientation least squares over 2+ co-registered orientations
+
+Usage: qsmxt invert cosmos [OPTIONS] --input <INPUTS> --mask <MASK> --output <OUTPUT>
+
+Options:
+  -i, --input <INPUTS>
+          Local field NIfTI in ppm — repeat once per orientation, all on one common grid
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction for one orientation in the common grid's voxel frame (3 values) — repeat once per --input, in the same order. Omitted, each volume's own affine is used instead, which is only valid when the orientations were separately prescribed
+
+      --b0-dirs <B0_DIRS>
+          Text file of B0 directions, one "x y z" per line, in --input order
+
+  -m, --mask <MASK>
+          Binary mask NIfTI file, on the common grid
+
+      --force
+          Reconstruct even when the B0 directions look degenerate. A degenerate set yields a plausible-looking map that is not the method you asked for; prefer fixing the metadata
+
+  -o, --output <OUTPUT>
+          Output susceptibility map NIfTI file
+
+      --lambda <LAMBDA>
+          L2 regularization on the k-space denominator. 0 (default) is plain least squares and is right for 3+ covering orientations; 1e-3..1e-2 helps with 2, or single-axis rotations
+
+      --magnitude <MAGNITUDES>
+          Magnitude NIfTI for one orientation — repeat once per --input to use the magnitude-weighted formulation (conjugate gradient) instead of the closed form
+
+      --tol <TOL>
+          Conjugate-gradient tolerance (weighted formulation only)
+
+      --max-iter <MAX_ITER>
+          Maximum conjugate-gradient iterations (weighted formulation only)
+
+  -h, --help
+          Print help

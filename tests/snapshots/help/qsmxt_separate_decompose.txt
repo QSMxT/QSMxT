@@ -1,0 +1,72 @@
+DECOMPOSE-QSM signal-domain fit (Chen 2021) — a QSM per echo + multi-echo magnitude (GRE-only)
+
+Usage: qsmxt separate decompose [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --magnitude <MAGNITUDE>... --qsm-per-echo <QSM_PER_ECHO>... --echo-times <ECHO_TIMES>...
+
+Options:
+      --qsm <QSM>
+          Conventional QSM (χ_total) NIfTI in ppm
+
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names
+
+      --field-strength <FIELD_STRENGTH>
+          B0 field strength in Tesla
+
+          [default: 3]
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction (3 values)
+
+          [default: 0 0 1]
+
+      --magnitude <MAGNITUDE>...
+          Multi-echo magnitude: one 4D file or several 3D files (space-separated)
+
+      --qsm-per-echo <QSM_PER_ECHO>...
+          QSM of each echo (ppm), which sets each echo's phase: one 4D file or one 3D file per echo (space-separated; the same file may be given for every echo)
+
+      --echo-times <ECHO_TIMES>...
+          GRE echo times in seconds (space- or comma-separated)
+
+      --n-inner <N_INNER>
+          Inner alternating passes per voxel
+
+      --chi-bound <BOUND>
+          Bound on |χ| in the fit: a number in ppm (default: 0.5), or echo-spacing to compute it from the field strength and echo spacing
+
+      --unwrap-phase <BOOL>
+          Unwrap the phase along the echoes (default: false, as in the authors' code)
+
+          [possible values: true, false]
+
+      --fit <FIT>
+          The fit: `reference-code` (Tim Ho's script; default) or `paper` (Chen et al. 2021: amplitudes summing to one, per-voxel S(0) = 1 scale)
+
+          [possible values: reference-code, paper]
+
+      --max-iterations <MAX_ITERATIONS>
+          Maximum solver iterations of each fit (lsqcurvefit MaxIterations; default: 400)
+
+      --max-function-evaluations <MAX_FUNCTION_EVALUATIONS>
+          Maximum function evaluations of each fit (lsqcurvefit MaxFunctionEvaluations; default: 100 × the fit's parameters)
+
+      --function-tolerance <FUNCTION_TOLERANCE>
+          Relative cost change each fit stops at (lsqcurvefit FunctionTolerance; default: 1e-6)
+
+      --step-tolerance <STEP_TOLERANCE>
+          Relative step each fit stops at (lsqcurvefit StepTolerance; default: 1e-6)
+
+      --optimality-tolerance <OPTIMALITY_TOLERANCE>
+          First-order optimality each fit stops at (lsqcurvefit OptimalityTolerance; default: 1e-6)
+
+      --finite-difference-step <FINITE_DIFFERENCE_STEP>
+          Relative finite-difference step of the Jacobian (lsqcurvefit FiniteDifferenceStepSize; default: √eps)
+
+      --typical-x <TYPICAL_X>
+          Typical magnitude of each fitted value (lsqcurvefit TypicalX; default: 1)
+
+  -h, --help
+          Print help

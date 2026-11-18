@@ -1,0 +1,53 @@
+χ-sepnet deep-learning separation — local field + R2' or R2* (weights downloaded on first use)
+
+Usage: qsmxt separate chi-sepnet [OPTIONS] --mask <MASK> --output <OUTPUT> --local-field <LOCAL_FIELD> <--r2prime <R2PRIME>|--r2star <R2STAR>>
+
+Options:
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names
+
+      --field-strength <FIELD_STRENGTH>
+          B0 field strength in Tesla
+
+          [default: 3]
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction (3 values)
+
+          [default: 0 0 1]
+
+      --local-field <LOCAL_FIELD>
+          Local (tissue) field NIfTI in ppm
+
+      --r2prime <R2PRIME>
+          R2' map NIfTI in Hz (χ-sepnet-R2')
+
+      --r2star <R2STAR>
+          R2* map NIfTI in Hz (χ-sepnet-R2*: R2' predicted by R2PRIMEnet; `--route toolbox` only)
+
+      --qsm <QSM>
+          Conventional QSM (χ_total) NIfTI in ppm; `--route native` only (the toolbox route makes its own with QSMnetME)
+
+      --route <ROUTE>
+          Input route: `toolbox` (default; the authors': training frame, QSMnetME susceptibility channel) or `native` (the network alone on the acquired grid, given --qsm)
+
+          Possible values:
+          - toolbox: The authors' route (training frame, QSMnetME susceptibility channel)
+          - native:  The network alone on the acquired grid, given the QSM
+
+          [default: toolbox]
+
+      --patch <D> <H> <W>
+          `--route native`: sliding-window patch in voxels, D H W, each a multiple of 16 (default: 192 192 128, the authors')
+
+      --frame-patch <D> <H> <W>
+          `--route toolbox`: run the networks as a sliding window of this patch over the 1 mm frame, D H W, each a multiple of 16 (default: the whole frame at once, as the authors do)
+
+      --ignore-field-mismatch
+          With --r2star: run R2PRIMEnet even when the field strength is not 3 T (uncalibrated)
+
+  -h, --help
+          Print help (see a summary with '-h')

@@ -1,0 +1,17 @@
+MEDI's magnitude-guided region-growing unwrapping (takes no mask)
+
+Usage: qsmxt unwrap medi-region-growing --magnitude <MAGNITUDE> --output <OUTPUT> <INPUT>
+
+Arguments:
+  <INPUT>
+          Input wrapped phase NIfTI file
+
+Options:
+      --magnitude <MAGNITUDE>
+          Magnitude NIfTI file (3D): the order in which the volume is unwrapped. Required
+
+  -o, --output <OUTPUT>
+          Output unwrapped phase NIfTI file
+
+  -h, --help
+          Print help

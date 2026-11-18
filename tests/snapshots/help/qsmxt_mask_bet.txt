@@ -1,0 +1,28 @@
+Brain extraction (BET)
+
+Usage: qsmxt mask bet [OPTIONS] --output <OUTPUT> <INPUT>
+
+Arguments:
+  <INPUT>
+          Input NIfTI file (an image for the generating subcommands, a mask for the rest)
+
+Options:
+  -o, --output <OUTPUT>
+          Output mask NIfTI file
+
+      --op <OPS>
+          Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, majority (3x3x3 majority filter), largest-component, imfill (every hole), min-intensity:100 (remove voxels below 100 in the input image; needs an image input), signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input)
+
+      --fractional-intensity <FRACTIONAL_INTENSITY>
+          Fractional intensity (0.0-1.0, smaller = larger brain)
+
+          [default: 0.5]
+
+      --voxel-scale <FACTOR>
+          Factor applied to the voxel sizes before BET runs — 10 for mouse data, 1 for the acquisition's own geometry (see --bet-voxel-scale). Prefer `mask rs2-net`, which masks rodent brains without the trick
+
+      --orientation <ORIENTATION>
+          Which way round BET sees the left-right axis: fsl (default) or as-stored (see --bet-orientation)
+
+  -h, --help
+          Print help

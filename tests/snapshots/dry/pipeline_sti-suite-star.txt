@@ -1,0 +1,87 @@
+Pipeline:
+  Phase offset removal: enabled
+  Inhomogeneity:     makehomogeneous
+  Masking:           phase-quality,threshold:otsu,dilate:1,fill-holes:0,erode:1
+  Unwrapping:        laplacian
+  BG removal:        vsharp
+  QSM algorithm:     Star
+  QSM reference:     None
+
+  sub-1_MEGRE (3 echo(es), 8x8x8, B0=3.0T, no ImagingFrequency: ppm from the nominal field, est. 2 MB)
+    Weight type: Phase SNR → Echo time (the pipeline's on this scan)
+
+Memory: 4.0 GB available (--mem-limit-gb), max 1 concurrent run(s)
+
+Pipeline graph (a run writes it to <tmp>/out/derivatives/qsmxt/pipeline.mmd and .svg):
+ 1 Load
+ 2 Phase scaling
+     ← 1 Load: Phase (as acquired)
+ 3 Inhomogeneity correction · makehomogeneous
+     each echo
+     ← 1 Load: Magnitude
+ 4 Combined magnitude · root sum of squares
+     of the corrected echoes
+     ← 3 Inhomogeneity correction: Inhomogeneity-corrected magnitude
+     → Combined magnitude (part-mag_T2starw)
+ 5 Brain mask
+     phase quality: Otsu threshold, dilation, hole-filling, erosion
+     ← 2 Phase scaling: Phase
+     ← 3 Inhomogeneity correction: Inhomogeneity-corrected magnitude
+     → Brain mask (mask)
+ 6 Field map · Laplacian
+     fft solver
+     raw phase over the whole volume
+     B0 by weighted average
+     ← 2 Phase scaling: Phase
+     ← 1 Load: Magnitude
+     ← 5 Brain mask: Brain mask
+     → Total field (desc-total_fieldmap)
+     → Field map magnitude (desc-total_magnitude)
+ 7 Background-field removal · V-SHARP
+     SMV kernel radii from 12 to 2 mm in 1 mm steps
+     ← 6 Field map: Total field, Field mask
+ 8 Dipole inversion · STAR-QSM
+     zero-padding of 8 × 8 × 20 voxels per side
+     the field converted to phase at the sum of the echo times
+     ← 7 Background-field removal: Local field, Local field mask
+ 9 Referencing · none
+     ← 8 Dipole inversion: Unreferenced susceptibility
+     ← 7 Background-field removal: Local field mask
+     → Susceptibility (Chimap)
+     → Susceptibility support (desc-qsm_mask)
+
+Methods (a run writes them to <tmp>/out/derivatives/qsmxt/methods.md):
+
+# Methods
+
+QSM processing was performed using qsmxt (Stewart, 2026). Processing followed the STI Suite 3.0 pipeline. Inhomogeneity correction (Eckstein et al., 2019) was applied to each echo's magnitude. A brain mask was generated using Otsu thresholding (Otsu, 1979) of the ROMEO phase quality map (computed from phase data and the inhomogeneity-corrected RSS-combined magnitude), followed by dilation, hole-filling, and erosion. Phase was converted to ppm with the scanner's centre frequency (ImagingFrequency). Phase unwrapping was performed separately for each echo, on the raw phase over the whole volume, using the Laplacian method (Schofield & Zhu, 2003) with an FFT Poisson solve on the volume zero-padded by 12 voxels. The B0 field map was estimated as a weighted average of the unwrapped echo phases with tes weighting. After background field removal, the mask was reduced to its largest connected component with its holes filled, and the local field was set to zero outside it. Background field removal was performed using V-SHARP (Wu et al., 2012). The V-SHARP background was estimated on an isotropic grid: the field and mask were cropped to the brain mask's bounding box and resampled trilinearly, and the background field estimated there was interpolated back to the acquired grid, so the local field kept the acquired resolution. Dipole inversion was performed using STAR-QSM (Streaking Artifact Reduction) (Wei et al., 2015) with zero-padding of 8 × 8 × 20 voxels per side and the field converted to phase at the sum of the echo times. No susceptibility referencing was applied.
+
+## References
+
+- Stewart, A. (2026). QSMxT. https://github.com/QSMxT/QSMxT
+- Eckstein, K., Trattnig, S., Robinson, S.D. (2019). "A Simple Homogeneity Correction for Neuroimaging at 7T." *Proc. ISMRM 27th Annual Meeting*.
+- Dymerska, B., et al. (2021). "Phase unwrapping with a rapid opensource minimum spanning tree algorithm (ROMEO)." *Magnetic Resonance in Medicine*, 85(4):2294-2308. https://doi.org/10.1002/mrm.28563
+- Otsu, N. (1979). "A Threshold Selection Method from Gray-Level Histograms." *IEEE Transactions on Systems, Man, and Cybernetics*, 9(1):62-66. https://doi.org/10.1109/TSMC.1979.4310076
+- Schofield, M.A., Zhu, Y. (2003). "Fast phase unwrapping algorithm for interferometric applications." *Optics Letters*, 28(14):1194-1196. https://doi.org/10.1364/OL.28.001194
+- Wu, B., et al. (2012). "Whole brain susceptibility mapping using compressed sensing." *Magnetic Resonance in Medicine*, 67(1):137-147. https://doi.org/10.1002/mrm.23000
+- Wei, H., Dibb, R., Zhou, Y., Sun, Y., Xu, J., Wang, N., Liu, C. (2015). "Streaking artifact reduction for quantitative susceptibility mapping of sources with large dynamic range." *NMR in Biomedicine*, 28(10):1294-1303. https://doi.org/10.1002/nbm.3383
+
+Recommendations: none (the configuration departs from nothing the chosen methods' rules cover)
+
+Reference values of the chosen methods (for the first run's scan):
+  Background removal: V-SHARP — STAR-QSM uses V-SHARP
+  Polish mask: on — STAR-QSM uses on
+  Deconvolve (V-SHARP): off — STAR-QSM uses off
+  Working grid (V-SHARP): 1 mm isotropic grid — STAR-QSM uses 1 mm isotropic grid
+  Maximum radius (V-SHARP): 12 mm — STAR-QSM uses 12 mm
+  Minimum radius (V-SHARP): 2 mm — STAR-QSM uses 2 mm
+  Radius step (V-SHARP): 1 mm — STAR-QSM uses 1 mm
+  B0 estimation: Weighted average — STAR-QSM uses Weighted average
+  Echo weighting: Echo time — STAR-QSM uses Echo time
+  Laplacian solver: FFT, 12-voxel padding — STAR-QSM uses FFT, 12-voxel padding
+  Laplacian unwrapping of the raw phase: on — STAR-QSM uses on
+  Phase offset sigma: 7 × 7 × 7 mm — phase offset removal on uses 7 × 7 × 7 mm
+  Phase unwrapping: Laplacian — STAR-QSM uses Laplacian
+  Padding (STAR-QSM): 8 × 8 × 20 voxels — STAR-QSM uses 8 × 8 × 20 voxels
+  Echo time (STAR-QSM): Sum of echo times — STAR-QSM uses Sum of echo times
+  QSM reference: None — STAR-QSM uses None

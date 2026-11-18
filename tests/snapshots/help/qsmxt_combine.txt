@@ -1,0 +1,11 @@
+Multi-coil phase combination (uncombined receive-coil channels -> combined echoes)
+
+Usage: qsmxt combine <COMMAND>
+
+Commands:
+  mcpc3ds  MCPC-3D-S (ASPIRE) coil combination from per-coil multi-echo phase + magnitude
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help
+          Print help

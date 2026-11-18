@@ -1,0 +1,64 @@
+L1 Data-Fidelity QSM
+
+Usage: qsmxt invert l1qsm [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... --magnitude <MAGNITUDE>... <INPUT>
+
+Arguments:
+  <INPUT>
+          Input local field NIfTI file
+
+Options:
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output susceptibility map NIfTI file
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction (3 values)
+
+          [default: 0 0 1]
+
+      --tile-size <TILE_SIZE>
+          DL tiling: output core size per patch, in voxels (enables tiling)
+
+      --tile-halo <TILE_HALO>
+          DL tiling: context margin per side, in voxels (default 8)
+
+      --field-strength <FIELD_STRENGTH>
+          B0 field strength in Tesla
+
+      --echo-times <ECHO_TIMES>...
+          Echo times in seconds, every echo's, in order
+
+      --magnitude <MAGNITUDE>...
+          Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined
+
+      --alpha1 <ALPHA1>
+          Gradient (TV) L1 penalty weight (alpha1)
+
+      --mu1 <MU1>
+          Gradient-consistency ADMM weight (mu1), or auto for 100 × alpha1 (default: auto)
+
+      --mu2 <MU2>
+          Fidelity-consistency ADMM weight (mu2)
+
+      --mu3 <MU3>
+          L1 proximal ADMM weight (mu3)
+
+      --lambda <LAMBDA>
+          L1 fidelity strength (lambda)
+
+      --max-iter <MAX_ITER>
+          Max iterations
+
+      --tol-update <TOL_UPDATE>
+          Percent-update convergence tolerance
+
+      --tol-delta <TOL_DELTA>
+          Inner Newton convergence tolerance
+
+      --te <TE>
+          Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first)
+
+  -h, --help
+          Print help

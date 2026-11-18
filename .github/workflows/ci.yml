@@ -64,13 +64,28 @@ jobs:
       # of the suite, and run here. `--run-ignored all` includes them, and the filter (from
       # .github/scripts/nextest_filter.py) leaves out the other ignored tests: fixtures and tools
       # other jobs run, and tests that need downloaded model weights.
+      #
+      # `--timings` writes cargo's report of each unit's compile time, which the timing step
+      # below summarises with the per-binary test times.
       - name: Run tests with coverage
         run: |
           FILTER=$(python3 .github/scripts/nextest_filter.py .)
           echo "Filter: $FILTER"
           cargo llvm-cov nextest --workspace --no-fail-fast --lcov --output-path target/lcov.info \
-            --run-ignored all -E "$FILTER" \
+            --run-ignored all -E "$FILTER" --timings \
             --ignore-filename-regex '(^|/)src/(main|tui/mod|tui/ui|commands/update)\.rs$'
+
+      # Compile time per workspace crate and run time per test binary, in the log and the job
+      # summary, so a change that slows the edit-test cycle shows up. Report only.
+      - name: Compile and test times
+        if: always()
+        run: python3 .github/scripts/test_timings.py target
+
+      # Files and functions over the size budgets, against the ceilings in
+      # .github/size-budget.json. Report only, for now.
+      - name: Size budgets
+        if: always()
+        run: python3 .github/scripts/size_budget.py
 
       # Fails if a qsm-core *Params field isn't represented in its qsmxt-engine
       # *Config wrapper (drift guard). See crates/qsmxt-engine/tests/param_coverage.rs.

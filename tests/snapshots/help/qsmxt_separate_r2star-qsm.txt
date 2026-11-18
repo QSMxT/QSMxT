@@ -1,0 +1,38 @@
+R2*-QSM closed-form (Dimov 2022) — QSM + R2* (GRE-only)
+
+Usage: qsmxt separate r2star-qsm [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> <--r2star <R2STAR>|--magnitude <MAGNITUDE>...>
+
+Options:
+      --qsm <QSM>
+          Conventional QSM (χ_total) NIfTI in ppm
+
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names
+
+      --field-strength <FIELD_STRENGTH>
+          B0 field strength in Tesla
+
+          [default: 3]
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction (3 values)
+
+          [default: 0 0 1]
+
+      --r2star <R2STAR>
+          R2* map NIfTI in Hz (else fit from --magnitude + --echo-times)
+
+      --magnitude <MAGNITUDE>...
+          Multi-echo magnitude: one 4D file or several 3D files (space-separated). Fits R2* if --r2star absent
+
+      --echo-times <ECHO_TIMES>...
+          GRE echo times in seconds (space- or comma-separated), required with --magnitude
+
+      --r-const-3t <R_CONST_3T>
+          Relaxometric constant at 3T (Hz/ppm)
+
+  -h, --help
+          Print help

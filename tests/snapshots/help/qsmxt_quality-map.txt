@@ -1,0 +1,30 @@
+Compute ROMEO phase quality map
+
+Usage: qsmxt quality-map [OPTIONS] --output <OUTPUT> <PHASE>
+
+Arguments:
+  <PHASE>
+          Input phase NIfTI file (first echo)
+
+Options:
+  -o, --output <OUTPUT>
+          Output quality map NIfTI file
+
+      --magnitude <MAGNITUDE>
+          Magnitude image (improves quality estimation)
+
+      --phase2 <PHASE2>
+          Second echo phase image (improves quality estimation)
+
+      --te1 <TE1>
+          Echo time of first phase in seconds
+
+          [default: 0.02]
+
+      --te2 <TE2>
+          Echo time of second phase in seconds (if --phase2 provided)
+
+          [default: 0.04]
+
+  -h, --help
+          Print help

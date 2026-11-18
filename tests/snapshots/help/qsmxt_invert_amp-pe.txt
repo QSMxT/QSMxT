@@ -1,0 +1,69 @@
+AMP-PE (Approximate Message Passing with Parameter Estimation)
+
+Usage: qsmxt invert amp-pe [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+
+Arguments:
+  <INPUT>
+          Input local field NIfTI file
+
+Options:
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output susceptibility map NIfTI file
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction (3 values)
+
+          [default: 0 0 1]
+
+      --tile-size <TILE_SIZE>
+          DL tiling: output core size per patch, in voxels (enables tiling)
+
+      --tile-halo <TILE_HALO>
+          DL tiling: context margin per side, in voxels (default 8)
+
+      --magnitude <MAGNITUDE>...
+          Magnitude NIfTI (data weight and morphology image): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined
+
+      --b0 <B0>
+          B0 field strength in Tesla (scales the simulated phase)
+
+          [default: 3]
+
+      --wave-order <WAVE_ORDER>
+          Daubechies wavelet order (1=db1, 2=db2)
+
+      --nlevel <NLEVEL>
+          Wavelet decomposition levels
+
+      --wave-pec <WAVE_PEC>
+          Morphology-mask energy retention fraction (0.0-1.0)
+
+      --simulated-te <SIMULATED_TE>
+          Simulated echo time (s) used to turn the field into phase
+
+      --max-linearization-ite <MAX_LINEARIZATION_ITE>
+          Linearization iterations per stage
+
+      --damp-rate-sig <DAMP_RATE_SIG>
+          GAMP signal-update damping rate
+
+      --damp-rate-par <DAMP_RATE_PAR>
+          Parameter-estimation learning rate (kappa)
+
+      --max-pe-spar-ite <MAX_PE_SPAR_ITE>
+          Inner sparse-reconstruction iterations
+
+      --max-pe-est-ite <MAX_PE_EST_ITE>
+          Inner parameter-estimation iterations
+
+      --cvg-thd <CVG_THD>
+          GAMP inner convergence threshold
+
+      --tikhonov-beta <TIKHONOV_BETA>
+          L2-seed Tikhonov weight
+
+  -h, --help
+          Print help
