@@ -1,0 +1,4 @@
+# Each test's time, by test binary, for CI's timing summary (.github/scripts/test_timings.py).
+# Written to <target dir>/nextest/default/junit.xml.
+[profile.default.junit]
+path = "junit.xml"

@@ -1,0 +1,37 @@
+Iterative Spherical Mean Value
+
+Usage: qsmxt bgremove ismv [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+
+Arguments:
+  <INPUT>
+          Input total field NIfTI file
+
+Options:
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output local field NIfTI file
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction (3 values)
+
+          [default: 0 0 1]
+
+      --output-mask <OUTPUT_MASK>
+          Output eroded mask (for algorithms that erode)
+
+      --variant <VARIANT>
+          Implementation: wen2014 (the authors' paper and code) or qsmjl (QSM.jl's) (default: wen2014)
+
+      --tol <TOL>
+          Tolerance: the relative change between iterates it stops at (qsmjl: the residual relative to the first) (default: 5e-5)
+
+      --max-iter <MAX_ITER>
+          Max iterations (default: no limit)
+
+      --radius <RADIUS>
+          Kernel radius in mm (default: 6 × the smallest voxel dimension; qsmjl: 2 × the largest)
+
+  -h, --help
+          Print help

@@ -11,6 +11,8 @@ mod prefs;
 mod ui;
 #[cfg(test)]
 mod schema_parity;
+#[cfg(test)]
+mod snapshot_tests;
 
 use std::io;
 

@@ -1,0 +1,100 @@
+  QSMxT   1 Input   2 Pipeline   3 Reconstruction   4 Execution   5 Methods
+── QSMxT <version> · QSM.rs <version> ─────────────━━━━━━━━━━━── Pipeline: QSMxT defaults ──
+╭ Methods › Graph ────┬────────────────────────────────────────────────────────────────────────────────────────────────╮
+│   Methods text      │   Open graph   Enter or s                                                                      │
+│ ▸ Graph             │                                                                                                │
+│                     │  Scan     a typical scan: 5 echoes, 3 T, 256 × 256 × 176 voxels (choose a run on the Input tab │
+│                     │           to plan for it)                                                                      │
+│                     │  Memory   peak about 5.4 GB (<memory> available here) │
+│                     │  Models   none                                                                                 │
+│                     │                                                                                                │
+│                     │  Steps, in run order                                                                           │
+│                     │  1 Load                                                                                        │
+│                     │  2 Phase scaling                                                                               │
+│                     │      ← 1 Load: Phase (as acquired)                                                             │
+│                     │  3 Inhomogeneity correction · makehomogeneous                                                  │
+│                     │      each echo                                                                                 │
+│                     │      ← 1 Load: Magnitude                                                                       │
+│                     │  4 Combined magnitude · root sum of squares                                                    │
+│                     │      of the corrected echoes                                                                   │
+│                     │      ← 3 Inhomogeneity correction: Inhomogeneity-corrected magnitude                           │
+│                     │      → Combined magnitude (part-mag_T2starw)                                                   │
+│                     │  5 Brain mask                                                                                  │
+│                     │      phase quality: Otsu threshold, dilation, hole-filling, erosion                            │
+│                     │      ← 2 Phase scaling: Phase                                                                  │
+│                     │      ← 3 Inhomogeneity correction: Inhomogeneity-corrected magnitude                           │
+│                     │      → Brain mask (mask)                                                                       │
+│                     │  6 Field map · ROMEO                                                                           │
+│                     │      phase offsets removed                                                                     │
+│                     │      B0 by weighted average                                                                    │
+│                     │      ← 2 Phase scaling: Phase                                                                  │
+│                     │      ← 1 Load: Magnitude                                                                       │
+│                     │      ← 5 Brain mask: Brain mask                                                                │
+│                     │      → Total field (desc-total_fieldmap)                                                       │
+│                     │      → Field map magnitude (desc-total_magnitude)                                              │
+│                     │  7 Background-field removal · V-SHARP                                                          │
+│                     │      SMV kernel radii from 12 to 2 mm in 1 mm steps                                            │
+│                     │      ← 6 Field map: Total field, Field mask                                                    │
+│                     │  8 Dipole inversion · iLSQR                                                                    │
+│                     │      ← 7 Background-field removal: Local field, Local field mask                               │
+│                     │  9 Referencing · mean                                                                          │
+│                     │      ← 8 Dipole inversion: Unreferenced susceptibility                                         │
+│                     │      ← 7 Background-field removal: Local field mask                                            │
+│                     │      → Susceptibility (Chimap)                                                                 │
+│                     │      → Susceptibility support (desc-qsm_mask)                                                  │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+╰─────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────╯
+┌ Command preview ─────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│qsmxt run <bids_dir>                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ 1-5:Tabs  ←:Sidebar  ↑↓:Scroll  Enter/s:Open graph  F5:Run  ?:Tip  q:Quit

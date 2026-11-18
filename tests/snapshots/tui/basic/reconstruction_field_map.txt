@@ -1,0 +1,100 @@
+  QSMxT   1 Input   2 Pipeline   3 Reconstruction   4 Execution   5 Methods
+────────────────────────────────━━━━━━━━━━━━━━━━━━── Pipeline: QSMxT defaults ──
+╭ Reconstruction › QSM › Field map ────────────────────────────────────────────────────────────────────────────────────╮
+│ PREPROCESSING       │   Per-echo QSM:           [ ]                                                                  │
+│   Geometry          │   Unwrapping:             [ romeo ▾ ] ⓘ iLSQR: Laplacian                                       │
+│   Masking          ⓘ│     Phase offset removal: [x]                                                                  │
+│   Motion            │       Bipolar correction: [ ]                                                                  │
+│                     │   B0 estimation:          [ weighted-avg ▾ ]                                                   │
+│ QSM                 │                                                                                                │
+│   Compute QSM       │   + 17 advanced settings · A                                                                   │
+│ ▸ Field map        ⓘ│                                                                                                │
+│   Background        │                                                                                                │
+│   Inversion         │                                                                                                │
+│   COSMOS/STI       –│                                                                                                │
+│   Reference        ⓘ│                                                                                                │
+│   χ-separation   off│                                                                                                │
+│   SMWI           off│                                                                                                │
+│                     │                                                                                                │
+│ OTHER OUTPUTS       │                                                                                                │
+│   Magnitude         │                                                                                                │
+│   SWI            off│                                                                                                │
+│   Relaxometry    off│                                                                                                │
+│   Segmentation   off│                                                                                                │
+│                     │                                                                                                │
+│ EXPORT              │                                                                                                │
+│   DICOM          off│                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     ├────────────────────────────────────────────────────────────────────────────────────────────────┤
+│                     │   Reconstruct a QSM from each echo on its own (each echo's field map, background removal,      │
+│                     │   inversion and referencing) and report their mean as the QSM, with each echo's map, instead   │
+│                     │   of one QSM from the echo-combined field map. Multi-echo only                                 │
+╰─────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────╯
+┌ Command preview ─────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│qsmxt run <bids_dir>                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ 1-5:Tabs  [ ]:Sections  ←:Sidebar  Space:Toggle  A:Advanced  P:Pipeline  r:Reset  R:Reset section  F5:Run  q:Quit

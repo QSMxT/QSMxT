@@ -1,0 +1,100 @@
+  QSMxT   1 Input   2 Pipeline   3 Reconstruction   4 Execution   5 Methods
+────────────────────────────────━━━━━━━━━━━━━━━━━━── Pipeline: QSMxT defaults ──
+╭ Reconstruction › Preprocessing › Masking ────────────────────────────────────────────────────────────────────────────╮
+│ PREPROCESSING       │   Mask preset:                 [ robust-threshold ▾ ] ⓘ iLSQR (! for advice)                   │
+│   Geometry          │   Use custom masks:            (default)                                                       │
+│ ▸ Masking          ⓘ│   Input:                       [ phase-quality ▾ ]                                             │
+│   Motion            │   Algorithm:                   [ threshold ▾ ] ⓘ iLSQR                                         │
+│                     │   Method:                      [ otsu ▾ ]                                                      │
+│ QSM                 │   1. dilate:            1                                                                      │
+│   Compute QSM       │   2. fill-holes:        auto                                                                   │
+│   Field map        ⓘ│   3. erode:             1                                                                      │
+│   Background       ⓘ│   + Add step...                                                                                │
+│   Inversion        ⓘ│   + Add mask...                                                                                │
+│   COSMOS/STI       –│   Magnitude correction:        [x] ⓘ iLSQR: none                                               │
+│   Reference        ⓘ│     Method:                    [ makehomogeneous ▾ ]                                           │
+│   χ-separation   off│       Sigma (mm):              7                                                               │
+│   SMWI           off│       Segmentation boxes:      15                                                              │
+│                     │   Two-pass artefact reduction: [ ]                                                             │
+│ OTHER OUTPUTS       │                                                                                                │
+│   Magnitude         │                                                                                                │
+│   SWI            off│                                                                                                │
+│   Relaxometry    off│                                                                                                │
+│   Segmentation   off│                                                                                                │
+│                     │                                                                                                │
+│ EXPORT              │                                                                                                │
+│   DICOM          off│                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     │                                                                                                │
+│                     ├────────────────────────────────────────────────────────────────────────────────────────────────┤
+│                     │   Otsu threshold on the phase quality, then dilate, fill holes and erode. Recommended for      │
+│                     │   brain — Enter: choose mask preset                                                            │
+│                     │   Differs from the authors' setting (iLSQR): 5 values — ! for details                          │
+╰─────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────╯
+┌ Command preview ─────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│qsmxt run <bids_dir>                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ 1-5:Tabs  [ ]:Sections  ←:Sidebar  Enter:Choose mask preset  !:Advice  A:Basic  P:Pipeline  F5:Run  q:Quit

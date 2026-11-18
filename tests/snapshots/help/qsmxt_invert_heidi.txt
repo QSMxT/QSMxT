@@ -1,0 +1,100 @@
+LSQR+HEIDI (Homogeneity Enabled Incremental Dipole Inversion), or HEIDI on another inversion's map (`--seed`)
+
+Usage: qsmxt invert heidi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... <INPUT>
+
+Arguments:
+  <INPUT>
+          Input local field NIfTI file
+
+Options:
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output susceptibility map NIfTI file
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction (3 values)
+
+          [default: 0 0 1]
+
+      --tile-size <TILE_SIZE>
+          DL tiling: output core size per patch, in voxels (enables tiling)
+
+      --tile-halo <TILE_HALO>
+          DL tiling: context margin per side, in voxels (default 8)
+
+      --field-strength <FIELD_STRENGTH>
+          B0 field strength in Tesla
+
+      --echo-times <ECHO_TIMES>...
+          Echo times in seconds, every echo's, in order
+
+      --magnitude <MAGNITUDE>...
+          Magnitude NIfTI, the row weight of the LSQR seed as the HEIDI package's (not needed with --seed): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined
+
+      --seed <SEED>
+          A χ map (ppm) another inversion made of this field, to fill the cone of instead of running LSQR (`--lsqr-*` and `--magnitude` then do nothing). HEIDI suits a seed with little or no smoothing (TKD and TSVD with a threshold no larger than the cone threshold, small-λ Tikhonov, NDI, RTS); a method that smooths its result also changes the parts of the data HEIDI keeps as they are, and HEIDI cannot undo that
+
+      --lsqr-residual-weighting <LSQR_RESIDUAL_WEIGHTING>
+          LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly
+
+      --no-lsqr-global-offset
+          Do not fit a global field offset alongside χ
+
+      --lsqr-tol <LSQR_TOL>
+          LSQR convergence tolerance
+
+      --lsqr-max-iter <LSQR_MAX_ITER>
+          LSQR max iterations
+
+      --heidi-cone-threshold <HEIDI_CONE_THRESHOLD>
+          |D(k)| above which a coefficient is well-conditioned and kept from the seed map
+
+      --heidi-gradient-threshold <HEIDI_GRADIENT_THRESHOLD>
+          Field-gradient threshold (ppm/mm); below it a direction reads as homogeneous
+
+      --no-heidi-laplacian-correction
+          Do not open the homogeneity masks where the field's Laplacian is large
+
+      --heidi-laplacian-threshold <HEIDI_LAPLACIAN_THRESHOLD>
+          Field-Laplacian threshold (ppm per voxel²)
+
+      --heidi-gradient-mask-floor <HEIDI_GRADIENT_MASK_FLOOR>
+          TV weight kept where every direction reads as an edge (0 reproduces upstream's shipped binarised masks)
+
+      --heidi-continuation-steps <HEIDI_CONTINUATION_STEPS>
+          NESTA continuation steps on μ
+
+      --heidi-inner-iterations <HEIDI_INNER_ITERATIONS>
+          Accelerated-gradient iterations per continuation step
+
+      --heidi-mu-min <HEIDI_MU_MIN>
+          Final (smallest) smoothing parameter μ
+
+      --heidi-tol <HEIDI_TOL>
+          Relative objective change that ends an inner loop early (the default runs every iteration)
+
+      --no-heidi-denoise
+          Skip the anisotropic-diffusion smoothing of the field before its gradients are taken
+
+      --heidi-denoise-iterations <HEIDI_DENOISE_ITERATIONS>
+          Anisotropic-diffusion iterations
+
+      --heidi-denoise-time-step <HEIDI_DENOISE_TIME_STEP>
+          Anisotropic-diffusion time step
+
+      --heidi-denoise-conductance <HEIDI_DENOISE_CONDUCTANCE>
+          Anisotropic-diffusion conductance
+
+      --heidi-denoise-reference-itk
+          ITK 3.20's float arithmetic for the denoising, as the authors' code runs it (for comparison with it; the default computes its conductance scale in double precision)
+
+      --no-heidi-denoise-reference-itk
+          The denoising in double precision, after a pipeline that turns ITK's float arithmetic on (the HEIDI pipeline)
+
+      --heidi-te <TE>
+          HEIDI: the echo time the field stands for the phase of, in the conversion to HEIDI's units: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: last)
+
+  -h, --help
+          Print help

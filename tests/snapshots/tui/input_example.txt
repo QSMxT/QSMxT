@@ -1,0 +1,100 @@
+  QSMxT   1 Input   2 Pipeline   3 Reconstruction   4 Execution   5 Methods
+─────────━━━━━━━━━── Pipeline: QSMxT defaults ─ QSMxT <version> · QSM.rs <version> ──
+╭ Input ───────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│  Input mode:           [ Example dataset ▾ ]                                                                         │
+│  Dataset directory:    (default: qsmxt-example/)                                                                     │
+│  Output directory:     (defaults to the dataset directory)                                                           │
+│  Config file:          (empty)                                                                                       │
+│                                                                                                                      │
+│  [ Download ]  1 selected, 103 MB                                                                                    │
+│ ┌ Example acquisitions (one in-vivo subject, Siemens 3T) ──────────────────────────────────────────────────────────┐ │
+│ │ [x] prisma-bridge-run1          MAGNETOM Prisma Fit - bridge (product GRE), run 1 (103 MB)                       │ │
+│ │ [ ] prisma-bridge-run2          MAGNETOM Prisma Fit - bridge (product GRE), run 2 (103 MB)                       │ │
+│ │ [ ] prisma-bridge-run3          MAGNETOM Prisma Fit - bridge (product GRE), run 3 (103 MB)                       │ │
+│ │ [ ] prisma-local-run1           MAGNETOM Prisma Fit - local (site protocol), run 1 (96 MB)                       │ │
+│ │ [ ] prisma-local-run2           MAGNETOM Prisma Fit - local (site protocol), run 2 (96 MB)                       │ │
+│ │ [ ] prisma-local-run3           MAGNETOM Prisma Fit - local (site protocol), run 3 (96 MB)                       │ │
+│ │ [ ] prisma-pulseq-offline-run1  MAGNETOM Prisma Fit - Pulseq, offline recon, run 1 (224 MB)                      │ │
+│ │ [ ] prisma-pulseq-offline-run3  MAGNETOM Prisma Fit - Pulseq, offline recon, run 3 (221 MB)                      │ │
+│ │ [ ] prisma-pulseq-online-run1   MAGNETOM Prisma Fit - Pulseq, online recon, run 1 (103 MB)                       │ │
+│ │ [ ] prisma-pulseq-online-run2   MAGNETOM Prisma Fit - Pulseq, online recon, run 2 (104 MB)                       │ │
+│ │ [ ] prisma-pulseq-online-run3   MAGNETOM Prisma Fit - Pulseq, online recon, run 3 (104 MB)                       │ │
+│ │ [ ] cima-bridge-run1            MAGNETOM Cima.X - bridge (product GRE), run 1 (102 MB)                           │ │
+│ │ [ ] cima-bridge-run2            MAGNETOM Cima.X - bridge (product GRE), run 2 (102 MB)                           │ │
+│ │ [ ] cima-bridge-run3            MAGNETOM Cima.X - bridge (product GRE), run 3 (102 MB)                           │ │
+│ │ [ ] cima-local-run1             MAGNETOM Cima.X - local (site protocol), run 1 (117 MB)                          │ │
+│ │ [ ] cima-local-run2             MAGNETOM Cima.X - local (site protocol), run 2 (117 MB)                          │ │
+│ │ [ ] cima-local-run3             MAGNETOM Cima.X - local (site protocol), run 3 (116 MB)                          │ │
+│ │ [ ] cima-pulseq-offline-run1    MAGNETOM Cima.X - Pulseq, offline recon, run 1 (225 MB)                          │ │
+│ │ [ ] cima-pulseq-offline-run2    MAGNETOM Cima.X - Pulseq, offline recon, run 2 (226 MB)                          │ │
+│ │ [ ] cima-pulseq-offline-run3    MAGNETOM Cima.X - Pulseq, offline recon, run 3 (224 MB)                          │ │
+│ │ [ ] cima-pulseq-online-run1     MAGNETOM Cima.X - Pulseq, online recon, run 1 (101 MB)                           │ │
+│ │ [ ] cima-pulseq-online-run2     MAGNETOM Cima.X - Pulseq, online recon, run 2 (101 MB)                           │ │
+│ │ [ ] cima-pulseq-online-run3     MAGNETOM Cima.X - Pulseq, online recon, run 3 (101 MB)                           │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘ │
+├──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│  Enter: choose input mode (BIDS / NIfTI / DICOM / Example)                                                           │
+│                                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+┌ Command preview ─────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│qsmxt run <bids_dir>                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ 1-5:Tabs  [ ]:Sub-tabs  ↑↓:Navigate  Enter:Choose input mode  r:Reset  R:Reset page  F5:Run  ?:Tip  q:Quit

@@ -1,0 +1,68 @@
+χ-separation iLSQR (Shin 2021) — local field + R2' + QSM
+
+Usage: qsmxt separate chi-sep-ilsqr [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --local-field <LOCAL_FIELD> --r2prime <R2PRIME>
+
+Options:
+      --qsm <QSM>
+          Conventional QSM (χ_total) NIfTI in ppm
+
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names
+
+      --field-strength <FIELD_STRENGTH>
+          B0 field strength in Tesla
+
+          [default: 3]
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction (3 values)
+
+          [default: 0 0 1]
+
+      --local-field <LOCAL_FIELD>
+          Local (tissue) field NIfTI in ppm
+
+      --r2prime <R2PRIME>
+          R2' map NIfTI in Hz
+
+      --dr-pos <DR_POS>
+          Paramagnetic relaxometric constant (Hz/ppm) (default: 137 × B0 / 2.9 T)
+
+      --dr-neg <DR_NEG>
+          Diamagnetic relaxometric constant (Hz/ppm) (default: 137 × B0 / 2.9 T)
+
+      --pad <X> <Y> <Z>
+          Zero-padding at both ends of each axis in voxels, X Y Z (default: 16 16 16)
+
+      --cg-max-iter-lsqr <CG_MAX_ITER_LSQR>
+          Maximum CG iterations of the LSQR step (default: 50)
+
+      --cg-tol-lsqr <CG_TOL_LSQR>
+          CG relative tolerance of the LSQR step (default: 0.02)
+
+      --cg-max-iter-sa <CG_MAX_ITER_SA>
+          Maximum CG iterations of the streaking-removal step (default: 50)
+
+      --cg-tol-sa <CG_TOL_SA>
+          CG relative tolerance of the streaking-removal step (default: 0.02)
+
+      --d2-thr <D2_THR>
+          The streaking cone is where |D| is below this (default: 0.11)
+
+      --prc-w-i-min <PRC_W_I_MIN>
+          Percentile of the field's Laplacian at which the LSQR weight is 1 (default: 60)
+
+      --prc-w-i-max <PRC_W_I_MAX>
+          Percentile of the field's Laplacian at which the LSQR weight is 0 (default: 99.8)
+
+      --prc-w-g-min <PRC_W_G_MIN>
+          Percentile of each gradient's magnitude at which the streaking-removal weight is 1 (default: 50)
+
+      --prc-w-g-max <PRC_W_G_MAX>
+          Percentile of each gradient's magnitude at which the streaking-removal weight is 0 (default: 70)
+
+  -h, --help
+          Print help

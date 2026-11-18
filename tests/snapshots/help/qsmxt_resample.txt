@@ -1,0 +1,29 @@
+Resample oblique volume to axial orientation
+
+Usage: qsmxt resample [OPTIONS] [INPUT]
+
+Arguments:
+  [INPUT]
+          Input NIfTI file. Treated as continuous data (magnitude, an unwrapped field map, chi). For wrapped phase pass --phase instead, with its magnitude, so the interpolation can go through the complex domain and survive the wraps
+
+Options:
+  -o, --output <OUTPUT>
+          Output resampled NIfTI file (for the positional input)
+
+      --phase <PHASE>
+          Wrapped phase to resample together with --magnitude (complex-domain interpolation)
+
+      --magnitude <MAGNITUDE>
+          Magnitude paired with --phase
+
+      --phase-out <PHASE_OUT>
+          Where to write the resampled phase (default: <phase stem>_axial.nii)
+
+      --magnitude-out <MAGNITUDE_OUT>
+          Where to write the resampled magnitude (default: <magnitude stem>_axial.nii)
+
+      --noise-fill
+          Fill the empty corners of the new grid with seeded noise, as QSMxT 8.x did. Only the --phase / --magnitude pair can be noise-filled; by default the corners are zero
+
+  -h, --help
+          Print help

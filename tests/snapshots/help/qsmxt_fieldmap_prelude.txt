@@ -1,0 +1,125 @@
+PRELUDE-based multi-echo field mapping (phase offset removal + per-echo unwrap + B0 fit)
+
+Usage: qsmxt fieldmap prelude [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+
+Arguments:
+  <INPUT>
+          Input multi-echo wrapped phase NIfTI file (4D: x,y,z,echo)
+
+Options:
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output B0 field map NIfTI file (in ppm)
+
+      --magnitude <MAGNITUDE>
+          Multi-echo magnitude NIfTI file (4D; improves weighting)
+
+      --tes <TES>...
+          Echo times in seconds (space-separated, one per echo)
+
+      --b0 <B0>
+          Field strength in Tesla (alias: --field-strength)
+
+      --params <PARAMS>
+          JSON params file: {"TE":[..seconds], "B0":<tesla>, "voxel_size":[..], "B0_dir":[..]}. --tes / --b0 override values from this file when both are present
+
+      --b0-estimation <B0_ESTIMATION>
+          B0 field estimation method
+
+          Possible values:
+          - weighted-avg
+          - linear-fit
+          - robust-fit:     Motion-robust (IRLS) linear fit: down-weights echoes that depart from a straight line in TE, voxel by voxel. Needs 4 echoes (3 with --linear-fit-estimate-offset false)
+          - qsmart-echofit: QSMART's echo fit: a magnitude-weighted fit of the unwrapped phase vs TE through the origin, which also marks the voxels QSMART leaves out
+          - complex-fit:    MEDI's field map (Fit_ppm_complex): a magnitude-weighted fit of the complex echoes, then unwrapping of the fitted phase per echo spacing. Needs the magnitude and evenly spaced echoes; no phase offset removal is run first, and bipolar correction is refused
+
+          [default: weighted-avg]
+
+      --qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>
+          `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is marked unreliable is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`), or a fixed residual (`--qsmart-fit-threshold`; default, QSMART v1.0's 40). Without it, giving one of those two selects its mode
+
+          [possible values: percentile, absolute]
+
+      --qsmart-fit-percentile <QSMART_FIT_PERCENTILE>
+          `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is marked unreliable (default 99)
+
+      --qsmart-fit-threshold <QSMART_FIT_THRESHOLD>
+          `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is marked unreliable, instead of a percentile (40 when the mode is `absolute` and none is given)
+
+      --reliability-output <RELIABILITY_OUTPUT>
+          `--b0-estimation qsmart-echofit`: also save its reliability map (1 = reliable) here, for `qsmxt qsmart --reliability`
+
+      --field-mask-output <FIELD_MASK_OUTPUT>
+          Also save the mask the field map is defined in here: the mask, less the voxels where phase offset removal could not estimate the phase offset (the field is 0 there). Pass it to `qsmxt bgremove` and the inversions in place of the mask
+
+      --b0-weight-type <B0_WEIGHT_TYPE>
+          B0 weighted-averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2*) from the echo times and an assumed T2* (no T2* map, no magnitude; Wang et al. 2022). `phase-snr` is generally preferable with magnitude
+
+          [default: phase-snr]
+          [possible values: phase-snr, phase-var, average, tes, mag, assumed-decay]
+
+      --b0-weight-assumed-t2star <MS>
+          T2* in ms assumed by `--b0-weight-type assumed-decay` (no T2* map is used)
+
+          [default: 40]
+
+      --linear-fit-estimate-offset <LINEAR_FIT_ESTIMATE_OFFSET>
+          Linear and robust fit: estimate a phase offset term (default: true). The robust fit needs 4 echoes with it, 3 without
+
+          [possible values: true, false]
+
+      --robust-fit-loss <ROBUST_FIT_LOSS>
+          Motion-robust fit (`--b0-estimation robust-fit`): loss turning residuals into weights. `tukey` (default) rejects echoes past the tuning radius; `huber` caps but never rejects
+
+          [possible values: tukey, huber]
+
+      --robust-fit-tuning <ROBUST_FIT_TUNING>
+          Motion-robust fit: tuning radius in robust-scale units (default: the loss's conventional value, Tukey 4.685 / Huber 1.345). Smaller is more aggressive
+
+      --robust-fit-iterations <ROBUST_FIT_ITERATIONS>
+          Motion-robust fit: IRLS passes (default 3; 0 = report only, the field is the linear fit's)
+
+      --robust-fit-downweight-level <ROBUST_FIT_DOWNWEIGHT_LEVEL>
+          Motion-robust fit (reporting only): a robust weight below this counts as down-weighted (default 0.75; in (0, 1])
+
+      --robust-fit-flag-ratio <ROBUST_FIT_FLAG_RATIO>
+          Motion-robust fit (reporting only): flag an echo whose outlier score exceeds this many times the best echo's (default 3; at least 1)
+
+      --complex-fit-reltol <COMPLEX_FIT_RELTOL>
+          Complex fit (`--b0-estimation complex-fit`): stop once the update is this fraction of the first estimate, over the whole volume (default 1e-4)
+
+      --complex-fit-max-iter <COMPLEX_FIT_MAX_ITER>
+          Complex fit: Gauss-Newton iterations at most (default 30)
+
+      --complex-fit-output <FILE>
+          `--b0-estimation complex-fit`: also save the fit itself here, before spatial unwrapping: the phase accrued per echo spacing (radians, wrapped to [-π, π]; MEDI's `iFreq_raw`)
+
+      --complex-fit-noise-output <FILE>
+          `--b0-estimation complex-fit`: also save the fit's noise map here: the standard deviation of the phase per echo spacing, in radians (MEDI's `N_std`)
+
+      --phase-offset-removal <PHASE_OFFSET_REMOVAL>
+          Enable phase offset removal for multi-echo data (default: true)
+
+          [possible values: true, false]
+
+      --phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM> <PHASE_OFFSET_SIGMA_MM> <PHASE_OFFSET_SIGMA_MM>
+          Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's)
+
+      --bipolar-correction
+          Enable bipolar gradient correction (requires >= 3 echoes)
+
+      --prelude-labelling <PRELUDE_LABELLING>
+          PRELUDE: how the initial regions are labelled (default: auto)
+
+          Possible values:
+          - auto:   FSL prelude's default: slice by slice above 64 voxels in-plane, else over the whole volume
+          - slices: Label regions slice by slice (FSL prelude --labelslices)
+          - volume: Label regions over the whole volume (FSL prelude -f)
+
+      --prelude-partitions <N>
+          PRELUDE: number of phase partitions the initial regions are formed from (default: 8)
+
+  -h, --help
+          Print help (see a summary with '-h')

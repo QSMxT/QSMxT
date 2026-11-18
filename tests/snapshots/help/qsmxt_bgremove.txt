@@ -1,0 +1,20 @@
+Background field removal
+
+Usage: qsmxt bgremove <COMMAND>
+
+Commands:
+  vsharp       Variable radius SHARP (V-SHARP)
+  pdf          Projection onto Dipole Fields
+  lbv          Laplacian Boundary Value
+  ismv         Iterative Spherical Mean Value
+  sharp        Spherical Harmonic Array Reconstruction Procedure
+  resharp      Regularized SHARP (RESHARP) with Tikhonov regularization
+  harperella   HARPERELLA integrated phase unwrapping + background removal
+  iharperella  Improved HARPERELLA (iHARPERELLA)
+  bfrnet       BFRnet deep-learning background removal (weights downloaded on first use)
+  iqfm         iQFM deep-learning joint unwrapping and background removal — input is every echo's WRAPPED phase (weights downloaded on first use)
+  help         Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help
+          Print help

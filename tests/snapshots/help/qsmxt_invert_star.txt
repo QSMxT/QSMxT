@@ -1,0 +1,40 @@
+STAR-QSM (Streaking Artifact Reduction): sparse inversion from a k-space initial guess
+
+Usage: qsmxt invert star [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... <INPUT>
+
+Arguments:
+  <INPUT>
+          Input local field NIfTI file
+
+Options:
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output susceptibility map NIfTI file
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction (3 values)
+
+          [default: 0 0 1]
+
+      --tile-size <TILE_SIZE>
+          DL tiling: output core size per patch, in voxels (enables tiling)
+
+      --tile-halo <TILE_HALO>
+          DL tiling: context margin per side, in voxels (default 8)
+
+      --field-strength <FIELD_STRENGTH>
+          B0 field strength in Tesla
+
+      --echo-times <ECHO_TIMES>...
+          Echo times in seconds, every echo's, in order
+
+      --pad <X> <Y> <Z>
+          Zero-padding in voxels per side, X Y Z (default: 8 8 20)
+
+      --te <TE>
+          Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: sum)
+
+  -h, --help
+          Print help

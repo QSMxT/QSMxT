@@ -2,6 +2,11 @@ mod bids;
 mod cli;
 #[cfg(test)]
 mod cli_reference;
+#[cfg(test)]
+mod cli_snapshots;
+#[cfg(test)]
+#[path = "../tests/support/snapshot.rs"]
+mod snapshot;
 mod commands;
 mod dicom;
 mod error;

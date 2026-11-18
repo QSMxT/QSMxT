@@ -1,0 +1,25 @@
+BFRnet deep-learning background removal (weights downloaded on first use)
+
+Usage: qsmxt bgremove bfrnet [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+
+Arguments:
+  <INPUT>
+          Input total field NIfTI file
+
+Options:
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output local field NIfTI file
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction (3 values)
+
+          [default: 0 0 1]
+
+      --output-mask <OUTPUT_MASK>
+          Output eroded mask (for algorithms that erode)
+
+  -h, --help
+          Print help

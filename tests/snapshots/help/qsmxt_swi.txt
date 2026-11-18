@@ -1,0 +1,56 @@
+Susceptibility-weighted imaging
+
+Usage: qsmxt swi [OPTIONS] --phase <PHASE>... --magnitude <MAGNITUDE>... --output <OUTPUT>
+
+Options:
+      --phase <PHASE>...
+          Wrapped phase NIfTI files, one per echo, in echo order
+
+      --magnitude <MAGNITUDE>...
+          Magnitude NIfTI files, one per echo, in the same order as --phase
+
+      --tes <TES>...
+          Echo times in seconds, one per echo (read from the phase JSON sidecars when omitted; not needed for a single echo)
+
+  -m, --mask <MASK>
+          Mask the phase is filtered within (default: CLEAR-SWI's own, from the first echo's magnitude)
+
+  -o, --output <OUTPUT>
+          Output SWI NIfTI file
+
+      --mip
+          Also compute minimum intensity projection
+
+      --mip-output <MIP_OUTPUT>
+          Output path for MIP (default: the --output name with its `swi` suffix replaced by `minIP`, or `_minIP` appended — `sub-01_swi.nii` → `sub-01_minIP.nii`, as the pipeline names them)
+
+      --filtered-phase
+          Also write CLEAR-SWI's high-pass filtered phase, the phase the SWI is weighted by: Hz for several echoes, radians for one, 0 outside the mask (`qsmxt run --swi-filtered-phase`)
+
+      --filtered-phase-output <FILTERED_PHASE_OUTPUT>
+          Output path for the filtered phase (default: the --output name with its `swi` suffix replaced by `desc-swi_phase`, or `_desc-swi_phase` appended — `sub-01_swi.nii` → `sub-01_desc-swi_phase.nii`, as the pipeline names it). Implies --filtered-phase
+
+      --swi-unwrapping <SWI_UNWRAPPING>
+          SWI phase unwrapping before the echoes are combined [default: laplacian]
+
+          Possible values:
+          - laplacian:       Each echo with the Laplacian method, then combined
+          - laplacian-slice: Laplacian, slice by slice (2D multi-slice acquisitions)
+          - romeo:           All echoes together with ROMEO
+
+      --swi-hp-sigma <SWI_HP_SIGMA> <SWI_HP_SIGMA> <SWI_HP_SIGMA>
+          SWI high-pass filter sigma (3 values, in voxels)
+
+      --swi-scaling <SWI_SCALING>
+          SWI phase-mask scaling
+
+          [possible values: tanh, negative-tanh, positive, negative, triangular]
+
+      --swi-strength <SWI_STRENGTH>
+          SWI phase scaling strength
+
+      --swi-mip-window <SWI_MIP_WINDOW>
+          SWI MIP window size in slices
+
+  -h, --help
+          Print help (see a summary with '-h')

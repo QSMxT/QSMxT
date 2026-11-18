@@ -1,0 +1,47 @@
+Hollow-cylinder χ-separation (Stewart 2026) — QSM + R2' + multi-echo magnitude
+
+Usage: qsmxt separate hc-chisep [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --r2prime <R2PRIME> --magnitude <MAGNITUDE>... --echo-times <ECHO_TIMES>...
+
+Options:
+      --qsm <QSM>
+          Conventional QSM (χ_total) NIfTI in ppm
+
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names
+
+      --field-strength <FIELD_STRENGTH>
+          B0 field strength in Tesla
+
+          [default: 3]
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction (3 values)
+
+          [default: 0 0 1]
+
+      --r2prime <R2PRIME>
+          R2' map NIfTI in Hz
+
+      --magnitude <MAGNITUDE>...
+          Multi-echo magnitude: one 4D file or several 3D files (space-separated)
+
+      --echo-times <ECHO_TIMES>...
+          GRE echo times in seconds (space- or comma-separated)
+
+      --se-magnitude <SE_MAGNITUDE>...
+          Multi-echo spin-echo magnitude: one 4D file or several 3D files (optional)
+
+      --se-echo-times <SE_ECHO_TIMES>...
+          Spin-echo times in seconds (comma-separated) for --se-magnitude
+
+      --dr-pos-3t <DR_POS_3T>
+          Paramagnetic relaxivity at 3T (Hz/ppm)
+
+      --bin-hz <BIN_HZ>
+          R2' bin width for the anchored grid search (Hz)
+
+  -h, --help
+          Print help

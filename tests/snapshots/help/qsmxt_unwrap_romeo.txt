@@ -1,0 +1,77 @@
+ROMEO region-growing unwrapping
+
+Usage: qsmxt unwrap romeo [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+
+Arguments:
+  <INPUT>
+          Input wrapped phase NIfTI file
+
+Options:
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output unwrapped phase NIfTI file
+
+      --magnitude <MAGNITUDE>
+          Magnitude image (improves quality)
+
+      --no-romeo-phase-coherence
+          ROMEO: disable phase coherence weights (default: on)
+
+      --no-romeo-phase-gradient-coherence
+          ROMEO: disable phase gradient coherence weights (default: on)
+
+      --no-romeo-phase-linearity
+          ROMEO: disable phase linearity weights (default: on; the romeo command line's romeo3 weights)
+
+      --romeo-phase-linearity
+          ROMEO: enable phase linearity weights (default: on; for a --pipeline that turns them off)
+
+      --no-romeo-mag-coherence
+          ROMEO: disable magnitude coherence weights (default: on)
+
+      --romeo-mag-weight
+          ROMEO: enable magnitude weighting (default: off)
+
+      --no-romeo-mag-weight
+          ROMEO: disable magnitude weighting (overrides --romeo-mag-weight; kept for compatibility)
+
+      --romeo-mag-weight2
+          ROMEO: enable second magnitude weighting (flow-artifact penalty; default: off)
+
+      --romeo-bestpath
+          ROMEO: use Best-path (Abdul-Rahman) weights instead of ROMEO weights (default: off)
+
+      --romeo-template <ROMEO_TEMPLATE>
+          ROMEO: template echo index (1-indexed, only for template mode)
+
+      --romeo-individual
+          ROMEO: unwrap each echo on its own (individual mode, for motion or time series)
+
+      --no-romeo-individual
+          ROMEO: unwrap the template echo spatially and the others temporally from it (default)
+
+      --romeo-correct-global
+          ROMEO: correct global 2π offsets, of each echo and between echoes (default: off)
+
+      --no-romeo-correct-global
+          ROMEO: do not correct global 2π offsets (default)
+
+      --romeo-temporal-uncertain-unwrapping <ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING>
+          ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0)
+
+      --romeo-max-seeds <ROMEO_MAX_SEEDS>
+          ROMEO: maximum number of seed regions (default: 1)
+
+      --romeo-merge-regions
+          ROMEO: merge neighboring regions after unwrapping (default: off)
+
+      --romeo-correct-regions
+          ROMEO: correct each region's median to nearest 0 (default: off)
+
+      --romeo-wrap-addition <ROMEO_WRAP_ADDITION>
+          ROMEO: additional phase tolerance beyond π for neighbor differences [0,π] (default: 0.0)
+
+  -h, --help
+          Print help

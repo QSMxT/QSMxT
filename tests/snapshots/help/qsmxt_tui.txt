@@ -1,0 +1,7 @@
+Launch interactive TUI for pipeline configuration
+
+Usage: qsmxt tui
+
+Options:
+  -h, --help
+          Print help

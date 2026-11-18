@@ -1,0 +1,94 @@
+Pipeline:
+  Phase offset removal: enabled
+  Inhomogeneity:     n4
+  Masking:           magnitude-first,bet:0.20:scale=1,min-intensity:100,majority,close:2
+  Unwrapping:        laplacian
+  BG removal:        vsharp
+  QSM algorithm:     Qsmart
+  QSM reference:     None
+
+  sub-1_MEGRE (3 echo(es), 8x8x8, B0=3.0T, no ImagingFrequency: ppm from the nominal field, est. 0 MB)
+
+Memory: 4.0 GB available (--mem-limit-gb), max 1 concurrent run(s)
+
+Pipeline graph (a run writes it to <tmp>/out/derivatives/qsmxt/pipeline.mmd and .svg):
+ 1 Load
+ 2 Phase scaling
+     ← 1 Load: Phase (as acquired)
+ 3 Inhomogeneity correction · N4
+     each echo
+     make_nii geometry
+     echo mean, N4 as QSMART does (vessel detection)
+     ← 1 Load: Magnitude
+ 4 Combined magnitude · root sum of squares
+     of the corrected echoes
+     ← 3 Inhomogeneity correction: Inhomogeneity-corrected magnitude
+     → Combined magnitude (part-mag_T2starw)
+ 5 Brain mask
+     first-echo magnitude: BET, removal of voxels with an intensity below 100, a 3×3×3 majority filter, morphological closing (radius 2 voxels)
+     ← 2 Phase scaling: Phase
+     ← 3 Inhomogeneity correction: Inhomogeneity-corrected magnitude
+     → Brain mask (mask)
+ 6 Field map · Laplacian
+     mirror solver
+     raw phase over the whole volume
+     B0 by QSMART's echo fit
+     ← 2 Phase scaling: Phase
+     ← 1 Load: Magnitude
+     ← 5 Brain mask: Brain mask
+     → Total field (desc-total_fieldmap)
+     → Field map magnitude (desc-total_magnitude)
+ 7 QSMART · QSMART
+     iLSQR inversion
+     the stages' offset adjusted on the dipole grid of QSMART's adjust_offset.m
+     ← 6 Field map: Total field, Field mask, Echo-fit reliability mask
+     ← 3 Inhomogeneity correction: QSMART vessel magnitude
+ 8 Referencing · none
+     ← 7 QSMART: Unreferenced susceptibility
+     ← 6 Field map: Field mask
+     → Susceptibility (Chimap)
+     → Susceptibility support (desc-qsm_mask)
+
+Methods (a run writes them to <tmp>/out/derivatives/qsmxt/methods.md):
+
+# Methods
+
+QSM processing was performed using qsmxt (Stewart, 2026). Processing followed the QSMART pipeline. N4 inhomogeneity correction (Tustison et al., 2010) was applied to each echo's magnitude. A brain mask was generated using BET brain extraction (Smith, 2002; f=0.20) of the inhomogeneity-corrected first-echo magnitude image, followed by removal of voxels with an intensity below 100, a 3×3×3 majority filter, and morphological closing (radius 2 voxels). Phase was converted to ppm with the scanner's centre frequency (ImagingFrequency). Phase unwrapping was performed separately for each echo, on the raw phase over the whole volume, using the Laplacian method (Schofield & Zhu, 2003) with an FFT Poisson solve on the volume mirrored along each axis. The B0 field map was estimated by a magnitude-weighted fit of phase vs echo time through the origin, as in QSMART (Yaghmaie et al., 2021), and voxels whose blurred fit residual exceeded 40 were excluded from the QSMART reconstruction. QSM was computed using QSMART (Yaghmaie et al., 2021), with spatially dependent filtering for background field removal, iLSQR dipole inversion (Li et al., 2015), and Frangi vesselness-based tissue/vasculature separation, with the stages' offset adjusted on the dipole grid of QSMART's adjust_offset.m. Vessels were detected on the mean magnitude over echoes, bias-corrected with N4 (Tustison et al., 2010). No susceptibility referencing was applied.
+
+## References
+
+- Stewart, A. (2026). QSMxT. https://github.com/QSMxT/QSMxT
+- Tustison, N.J., Avants, B.B., Cook, P.A., Zheng, Y., Egan, A., Yushkevich, P.A., Gee, J.C. (2010). "N4ITK: Improved N3 Bias Correction." *IEEE Transactions on Medical Imaging*, 29(6):1310-1320. https://doi.org/10.1109/TMI.2010.2046908
+- Smith, S.M. (2002). "Fast robust automated brain extraction." *Human Brain Mapping*, 17(3):143-155. https://doi.org/10.1002/hbm.10062
+- Schofield, M.A., Zhu, Y. (2003). "Fast phase unwrapping algorithm for interferometric applications." *Optics Letters*, 28(14):1194-1196. https://doi.org/10.1364/OL.28.001194
+- Yaghmaie, N., Syeda, W., et al. (2021). "QSMART: Quantitative Susceptibility Mapping Artifact Reduction Technique." *NeuroImage*, 231:117701. https://doi.org/10.1016/j.neuroimage.2020.117701
+- Li, W., et al. (2015). "A method for estimating and removing streaking artifacts in quantitative susceptibility mapping." *NeuroImage*, 108:111-122. https://doi.org/10.1016/j.neuroimage.2014.12.043
+
+Recommendations (QSM.rs's pipeline rules for the chosen methods):
+  suggested (better on some data, e.g. in vivo; --accept-recommendations leaves them):
+    - Frangi C mode (QSMART) is Absolute; QSMART suggests Relative: QSMART's Frangi c (500) is in magnitude units, and scanners scale magnitude very differently: with it, 27-63 % of the brain was labelled vessel on Siemens, Philips, 7 T and simulated data (3-5 % on GE). A c relative to the magnitude's brain median gave 2-9 % on all of them, and on QSM-CI's simulated head raised XSIM from 0.15 to 0.21-0.22 (NRMSE 92 -> 88 %), though deep-GM NRMSE rose from 99 to 113 %. Across scanners, deep-GM χ agreed better on GE, the same on Siemens Skyra and slightly worse on Siemens Prisma (qsmart.frangi-c-relative, measured in QSM.rs)
+      keep the choice with --dismiss-recommendation qsmart.frangi-c-relative=absolute
+
+Reference values of the chosen methods (for the first run's scan):
+  B0 estimation: QSMART echo fit — QSMART uses QSMART echo fit
+  Laplacian solver: mirror — QSMART uses mirror
+  Laplacian unwrapping of the raw phase: on — QSMART uses on
+  Phase offset sigma: 7 × 7 × 7 mm — phase offset removal on uses 7 × 7 × 7 mm
+  QSMART fit threshold: fixed residual 40 (QSMART v1.0) — QSMART uses fixed residual 40 (QSMART v1.0)
+  Phase unwrapping: Laplacian — QSMART uses Laplacian
+  Precision (iLSQR): Single — QSMART uses Single
+  Frangi C mode (QSMART): Absolute — QSMART uses Relative (differs)
+  iLSQR maximum iterations (QSMART): 50 — QSMART uses 50
+  iLSQR padding (QSMART): 6 mm — QSMART uses 6 mm
+  Inner inversion (QSMART): iLSQR — QSMART uses iLSQR
+  Offset adjustment grid (QSMART): QSMART's — QSMART uses QSMART's
+  Inhomogeneity correction: N4 — QSMART uses N4
+  Image geometry (N4): make_nii — QSMART uses make_nii
+  Brain mask: BET — QSMART uses BET
+  Mask: first echo — QSMART uses first echo
+  Mask: f = 0.2 — QSMART uses f = 0.2
+  Mask: intensity threshold 100 — QSMART uses intensity threshold 100
+  Mask: majority filter — QSMART uses majority filter
+  Mask: closing radius 2 — QSMART uses closing radius 2
+  Mask: no erosion — QSMART uses no erosion
+  QSM reference: None — QSMART uses None

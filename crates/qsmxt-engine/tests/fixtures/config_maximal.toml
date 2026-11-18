@@ -1,0 +1,24 @@
+# Every output on, with two-pass masking, inhomogeneity correction and motion correction: the
+# snapshot tests' maximal configuration. Settings not named here are QSMxT's defaults.
+description = "maximal"
+
+[pipeline]
+do_qsm = true
+do_swi = true
+do_magnitude = true
+do_smwi = true
+do_segmentation = true
+do_analysis = true
+do_t2starmap = true
+do_r2starmap = true
+do_r2map = true
+do_r2primemap = true
+do_chi_separation = true
+export_dicom = true
+
+[masking]
+two_pass = true
+inhomogeneity_correction = true
+
+[motion_correction]
+enabled = true

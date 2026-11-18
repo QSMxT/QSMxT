@@ -1,0 +1,113 @@
+Pipeline:
+  Phase offset removal: enabled
+  Masking:           magnitude,bet:0.50:scale=1
+  Unwrapping:        romeo
+  BG removal:        vsharp
+  QSM algorithm:     Ilsqr
+  QSM reference:     Mean
+
+  sub-1_MEGRE (3 echo(es), 8x8x8, B0=3.0T, no ImagingFrequency: ppm from the nominal field, est. 774 MB)
+    Weight type: Phase SNR → Assumed decay (the pipeline's on this scan)
+
+Memory: 4.0 GB available (--mem-limit-gb), max 1 concurrent run(s)
+
+Pipeline graph (a run writes it to <tmp>/out/derivatives/qsmxt/pipeline.mmd and .svg):
+  1 Load
+  2 Phase scaling
+     ← 1 Load: Phase (as acquired)
+  3 Combined magnitude · root sum of squares
+     ← 1 Load: Magnitude
+     → Combined magnitude (part-mag_T2starw)
+  4 Brain mask
+     magnitude: BET
+     ← 2 Phase scaling: Phase
+     ← 1 Load: Magnitude
+     → Brain mask (mask)
+  5 T2* and R2* · ARLO
+     ← 4 Brain mask: Brain mask
+     ← 1 Load: Magnitude
+     → R2* (R2starmap)
+     → T2* (T2starmap)
+  6 Field map · ROMEO
+     phase offsets removed
+     phase linearity disabled
+     B0 by weighted average
+     ← 2 Phase scaling: Phase
+     ← 1 Load: Magnitude
+     ← 4 Brain mask: Brain mask
+     → Total field (desc-total_fieldmap)
+     → Field map magnitude (desc-total_magnitude)
+  7 Background-field removal · V-SHARP
+     SMV kernel radii from 12 to 2 mm in 1 mm steps
+     ← 6 Field map: Total field, Field mask
+  8 Dipole inversion · iLSQR
+     ← 7 Background-field removal: Local field, Local field mask
+  9 Referencing · mean
+     ← 8 Dipole inversion: Unreferenced susceptibility
+     ← 7 Background-field removal: Local field mask
+     → Susceptibility (Chimap)
+     → Susceptibility support (desc-qsm_mask)
+ 10 χ-separation · χ-sepnet
+     the inputs resampled to 1 mm with B0 along z and the susceptibility channel computed by QSMnetME, as in the χ-separation toolbox, and the maps resampled back
+     models: χ-sepnet, QSMnetME, R2PRIMEnet
+     ← 4 Brain mask: Brain mask
+     ← 9 Referencing: Susceptibility, Susceptibility support
+     ← 1 Load: Magnitude
+     ← 5 T2* and R2*: R2*
+     ← 7 Background-field removal: Local field
+     → Paramagnetic susceptibility (desc-paramagnetic_Chimap)
+     → Diamagnetic susceptibility (desc-diamagnetic_Chimap)
+     → χ-separation total susceptibility (desc-total_Chimap)
+
+Methods (a run writes them to <tmp>/out/derivatives/qsmxt/methods.md):
+
+# Methods
+
+QSM processing was performed using qsmxt (Stewart, 2026). Processing followed the χ-separation toolbox 1.1.3 pipeline. A brain mask was generated using BET brain extraction (Smith, 2002) of the RSS-combined magnitude image, in its stored voxel order as MEDI's BET.m runs it. Phase was converted to ppm with the scanner's centre frequency (ImagingFrequency). Phase offset removal was performed using MCPC-3D-S (Eckstein et al., 2018). Phase unwrapping was performed using ROMEO (Dymerska et al., 2021) with phase linearity disabled. The B0 field map was estimated as a weighted average of the unwrapped echo phases with per-echo weights TE·exp(−TE/T2*), computed from the echo times and an assumed T2* and identical in every voxel (Wang et al., 2022). Background field removal was performed using V-SHARP (Wu et al., 2012). The V-SHARP background was estimated on an isotropic grid: the field and mask were cropped to the brain mask's bounding box and resampled trilinearly, and the background field estimated there was interpolated back to the acquired grid, so the local field kept the acquired resolution. Dipole inversion was performed using iLSQR (Li et al., 2015). Susceptibility values were referenced to the mean susceptibility within the reconstruction mask (the brain mask less any rim eroded by background field removal). R2* maps were computed from multi-echo magnitude data using the ARLO method (Pei et al., 2015). Paramagnetic and diamagnetic susceptibility maps were computed using χ-sepnet (deep-learning source separation) (Kim et al., 2025) within the reconstruction mask, with the inputs resampled to 1 mm with B0 along z and the susceptibility channel computed by QSMnetME, as in the χ-separation toolbox, and the maps resampled back. Negative χ+ and |χ−| values were set to zero. χ-separation used R2' measured as R2* - R2 where a multi-echo spin-echo acquisition was available, and otherwise its own R2', estimated from R2* with R2PRIMEnet (Kim et al., 2025) in the network's training frame.
+
+## Note
+
+Outputs the run turned on because other settings need them:
+
+- The R2* map turned on: χ-sepnet (deep-learning source separation) needs it (it reads R2*).
+
+## References
+
+- Stewart, A. (2026). QSMxT. https://github.com/QSMxT/QSMxT
+- Smith, S.M. (2002). "Fast robust automated brain extraction." *Human Brain Mapping*, 17(3):143-155. https://doi.org/10.1002/hbm.10062
+- Eckstein, K., et al. (2018). "Computationally Efficient Combination of Multi-channel Phase Data From Multi-echo Acquisitions (ASPIRE)." *Magnetic Resonance in Medicine*, 79:2996-3006. https://doi.org/10.1002/mrm.26963
+- Dymerska, B., et al. (2021). "Phase unwrapping with a rapid opensource minimum spanning tree algorithm (ROMEO)." *Magnetic Resonance in Medicine*, 85(4):2294-2308. https://doi.org/10.1002/mrm.28563
+- Wang, C., et al. (2022). "Phenotypic and genetic associations of quantitative magnetic susceptibility in UK Biobank brain imaging." *Nature Neuroscience*, 25(6):818-831. https://doi.org/10.1038/s41593-022-01074-w
+- Wu, B., et al. (2012). "Whole brain susceptibility mapping using compressed sensing." *Magnetic Resonance in Medicine*, 67(1):137-147. https://doi.org/10.1002/mrm.23000
+- Li, W., et al. (2015). "A method for estimating and removing streaking artifacts in quantitative susceptibility mapping." *NeuroImage*, 108:111-122. https://doi.org/10.1016/j.neuroimage.2014.12.043
+- Pei, M., et al. (2015). "Algorithm for fast monoexponential fitting based on Auto-Regression on Linear Operations (ARLO) of data." *Magnetic Resonance in Medicine*, 73(2):843-850. https://doi.org/10.1002/mrm.25137
+- Kim, M., et al. (2025). "χ-sepnet: Deep neural network for magnetic susceptibility source separation." *Human Brain Mapping*, 46(4):e70136. https://doi.org/10.1002/hbm.70136
+- Kim, M., Ji, S., Lee, J., et al. (2025). "chi-sepnet: Deep neural network for magnetic susceptibility source separation." *Human Brain Mapping*, 46(4):e70136. https://doi.org/10.1002/hbm.70136
+
+Recommendations: none (the configuration departs from nothing the chosen methods' rules cover)
+
+Reference values of the chosen methods (for the first run's scan):
+  Orientation (BET): As stored — χ-sepnet uses As stored
+  Background removal: V-SHARP — χ-sepnet uses V-SHARP
+  Background removal: V-SHARP — iLSQR uses V-SHARP
+  Deconvolve (V-SHARP): off — iLSQR uses off
+  Working grid (V-SHARP): 1 mm isotropic grid — iLSQR uses 1 mm isotropic grid
+  Maximum radius (V-SHARP): 12 mm — iLSQR uses 12 mm
+  Minimum radius (V-SHARP): 2 mm — iLSQR uses 2 mm
+  Radius step (V-SHARP): 1 mm — iLSQR uses 1 mm
+  B0 estimation: Weighted average — iLSQR uses Weighted average
+  B0 estimation: Weighted average — χ-sepnet uses Weighted average
+  Echo weighting: Assumed decay — χ-sepnet uses Assumed decay
+  Phase offset removal: on — Weighted average uses on
+  Phase offset sigma: 7 × 7 × 7 mm — phase offset removal on uses 7 × 7 × 7 mm
+  Correct global offsets (ROMEO): off — χ-sepnet uses off
+  Unwrap echoes individually (ROMEO): off — χ-sepnet uses off
+  ROMEO weights: romeo3 (without phase linearity) — χ-sepnet uses romeo3 (without phase linearity)
+  Template echo (ROMEO): 1 — χ-sepnet uses 1
+  Temporal uncertain unwrapping (ROMEO): 0 — χ-sepnet uses 0
+  Phase unwrapping: ROMEO — χ-sepnet uses ROMEO
+  Padding (iLSQR): 12 mm — iLSQR uses 12 mm
+  Inhomogeneity correction: none — χ-sepnet uses none
+  Brain mask: BET — χ-sepnet uses BET
+  Mask: RSS magnitude — χ-sepnet uses RSS magnitude
+  Mask: no erosion — χ-sepnet uses no erosion

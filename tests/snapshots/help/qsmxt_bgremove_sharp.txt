@@ -1,0 +1,36 @@
+Spherical Harmonic Array Reconstruction Procedure
+
+Usage: qsmxt bgremove sharp [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+
+Arguments:
+  <INPUT>
+          Input total field NIfTI file
+
+Options:
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output local field NIfTI file
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction (3 values)
+
+          [default: 0 0 1]
+
+      --output-mask <OUTPUT_MASK>
+          Output eroded mask (for algorithms that erode)
+
+      --threshold <THRESHOLD>
+          Deconvolution (TSVD) threshold (default: 0.03; qsmjl: 0.05)
+
+      --radius <RADIUS>
+          Sphere radius in mm (default: 4; qsmjl: 18 × the smallest voxel dimension)
+
+      --variant <VARIANT>
+          Implementation: sepia (SEPIA's SHARP.m, the default) or qsmjl (QSM.jl's `sharp`, with its own defaults)
+
+          [possible values: sepia, qsmjl]
+
+  -h, --help
+          Print help

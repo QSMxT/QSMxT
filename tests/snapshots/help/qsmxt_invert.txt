@@ -1,0 +1,44 @@
+Dipole inversion
+
+Usage: qsmxt invert <COMMAND>
+
+Commands:
+  rts          Rapid Two-Step (RTS)
+  tv           Total Variation (ADMM)
+  tkd          Truncated K-space Division
+  tsvd         Truncated Singular Value Decomposition
+  tgv          Total Generalized Variation
+  tikhonov     Tikhonov regularization
+  nltv         Nonlinear Total Variation
+  medi         Morphology Enabled Dipole Inversion
+  tfi          Total Field Inversion (preconditioned). Input is the TOTAL field (not a local field)
+  ilsqr        Iterative Least Squares QR
+  star         STAR-QSM (Streaking Artifact Reduction): sparse inversion from a k-space initial guess
+  lsqr         Minimally regularised LSQR
+  heidi        LSQR+HEIDI (Homogeneity Enabled Incremental Dipole Inversion), or HEIDI on another inversion's map (`--seed`)
+  ndi          Nonlinear Dipole Inversion
+  fansi        FANSI Nonlinear Total Variation
+  fansi-tgv    FANSI Nonlinear Total Generalized Variation
+  l1qsm        L1 Data-Fidelity QSM
+  whqsm        Weak-Harmonic QSM
+  hdqsm        Hybrid Data-Fidelity QSM
+  amp-pe       AMP-PE (Approximate Message Passing with Parameter Estimation)
+  xqsm         xQSM deep-learning dipole inversion (weights downloaded on first use)
+  qsmnet       QSMnet deep-learning dipole inversion (weights downloaded on first use)
+  qsmnet-plus  QSMnet+ deep-learning dipole inversion (weights downloaded on first use)
+  qsmnetme     QSMnetME deep-learning dipole inversion, the χ-separation toolbox's QSM network (weights downloaded on first use)
+  autoqsm      AutoQSM single-step reconstruction — input is the TOTAL field (weights downloaded on first use)
+  qsmgan       QSMGAN deep-learning dipole inversion (weights downloaded on first use)
+  ir2qsm       IR2QSM deep-learning dipole inversion (weights downloaded on first use)
+  lpcnn        LPCNN deep-learning dipole inversion (weights downloaded on first use)
+  modl-qsm     MoDL-QSM deep-learning dipole inversion → χ33/STI component (weights downloaded on first use)
+  nextqsm      NeXtQSM single-step reconstruction — input is the TOTAL field (weights downloaded on first use)
+  iqsm         iQSM single-step reconstruction — input is every echo's WRAPPED phase (weights downloaded on first use)
+  iqsm-plus    iQSM+ orientation-adaptive single-step reconstruction — input is every echo's WRAPPED phase; echoes are combined with (magnitude × TE)² weights (weights downloaded on first use)
+  cosmos       COSMOS — multi-orientation least squares over 2+ co-registered orientations
+  sti          STI (susceptibility tensor imaging) — 6+ co-registered orientations to a rank-2 tensor
+  help         Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help
+          Print help

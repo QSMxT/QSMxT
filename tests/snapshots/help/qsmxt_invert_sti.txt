@@ -1,0 +1,28 @@
+STI (susceptibility tensor imaging) — 6+ co-registered orientations to a rank-2 tensor
+
+Usage: qsmxt invert sti [OPTIONS] --input <INPUTS> --mask <MASK> --output <OUTPUT>
+
+Options:
+  -i, --input <INPUTS>
+          Local field NIfTI in ppm — repeat once per orientation, all on one common grid
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction for one orientation in the common grid's voxel frame (3 values) — repeat once per --input, in the same order. Omitted, each volume's own affine is used instead, which is only valid when the orientations were separately prescribed
+
+      --b0-dirs <B0_DIRS>
+          Text file of B0 directions, one "x y z" per line, in --input order
+
+  -m, --mask <MASK>
+          Binary mask NIfTI file, on the common grid
+
+      --force
+          Reconstruct even when the B0 directions look degenerate. A degenerate set yields a plausible-looking map that is not the method you asked for; prefer fixing the metadata
+
+  -o, --output <OUTPUT>
+          Output prefix; writes {prefix}_desc-sti_Chimap.nii (the 4D tensor, components 11 12 13 22 23 33), {prefix}_desc-mms_Chimap.nii, {prefix}_desc-msa_Chimap.nii and {prefix}_desc-sti_evec.nii (the 4D principal eigenvector) — the pipeline's names
+
+      --lambda <LAMBDA>
+          Ridge term on the 6x6 normal equations at each k-point. Raise when orientations are few, clustered or near-coplanar
+
+  -h, --help
+          Print help

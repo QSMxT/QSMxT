@@ -1,0 +1,26 @@
+R2 mapping from multi-echo spin-echo (MESE) magnitude data (EPG)
+
+Usage: qsmxt r2 [OPTIONS] --mask <MASK> --output <OUTPUT> --echo-times <ECHO_TIMES>... <INPUTS>...
+
+Arguments:
+  <INPUTS>...
+          Multi-echo spin-echo (MESE) magnitude: one 4D file or several 3D files (space-separated)
+
+Options:
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output R2 map NIfTI file
+
+      --echo-times <ECHO_TIMES>...
+          Spin-echo times in seconds (space- or comma-separated)
+
+      --t1 <T1>
+          Assumed T1 in seconds (EPG dictionary)
+
+      --b1-map <B1_MAP>
+          Optional B1 map NIfTI (refocusing efficiency); fitted from the dictionary if absent
+
+  -h, --help
+          Print help

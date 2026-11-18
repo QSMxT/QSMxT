@@ -1,0 +1,31 @@
+Run a `--mask-preset` recipe on an image (robust-threshold, bet, hd-bet, bet-and-phase, rs2-net, mindgrab)
+
+Usage: qsmxt mask preset [OPTIONS] --output <OUTPUT> <PRESET> <INPUT>
+
+Arguments:
+  <PRESET>
+          Which recipe — the same names as `run --mask-preset`
+
+          [possible values: robust-threshold, bet, hd-bet, bet-and-phase, rs2-net, mindgrab]
+
+  <INPUT>
+          Input NIfTI file (an image for the generating subcommands, a mask for the rest)
+
+Options:
+  -o, --output <OUTPUT>
+          Output mask NIfTI file
+
+      --op <OPS>
+          Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, majority (3x3x3 majority filter), largest-component, imfill (every hole), min-intensity:100 (remove voxels below 100 in the input image; needs an image input), signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input)
+
+      --quality <QUALITY>
+          Phase-quality map (from `qsmxt quality-map`) for the sections that read phase quality. Without it those sections read the input image instead, as `run --masking-input` would
+
+      --phase <PHASE>
+          Phase image (3-D, or 4-D multi-echo): the mask leaves out voxels where the scanner recorded no phase (a constant value in every echo), as `qsmxt run` does for every recipe. A phase-quality map rates that flat phase as reliable, so give this with `--quality`
+
+      --bet-orientation <ORIENTATION>
+          Which way round the recipe's BET steps see the left-right axis: fsl (default) or as-stored (see `run --bet-orientation`)
+
+  -h, --help
+          Print help

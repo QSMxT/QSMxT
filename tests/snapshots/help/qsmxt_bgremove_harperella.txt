@@ -1,0 +1,41 @@
+HARPERELLA integrated phase unwrapping + background removal
+
+Usage: qsmxt bgremove harperella [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+
+Arguments:
+  <INPUT>
+          Input NIfTI: a wrapped echo in rad (with --te and --field-strength) or a total field in ppm
+
+Options:
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output local field NIfTI file
+
+      --output-mask <OUTPUT_MASK>
+          Output eroded mask (for algorithms that erode)
+
+      --radius <RADIUS>
+          SMV kernel radius in mm
+
+      --max-iter <MAX_ITER>
+          Maximum iterations
+
+      --tol <TOL>
+          Convergence tolerance
+
+      --te <TE>
+          Echo time (s) of a wrapped-phase input. With --field-strength, the input is one wrapped echo in rad (the published method); without both, it is an unwrapped total field in ppm. The local field is written in ppm either way
+
+      --field-strength <FIELD_STRENGTH>
+          B0 field strength (T) of a wrapped-phase input — see --te
+
+      --pad <X> <Y> <Z>
+          Zero-padding in voxels per side, X Y Z (default: 0 0 0)
+
+      --rim <RIM>
+          Boundary rim: whole (zero every Laplacian value in the rim; default) or sti (zero the 20 % largest, as STI Suite does)
+
+  -h, --help
+          Print help

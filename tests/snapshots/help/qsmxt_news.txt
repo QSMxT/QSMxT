@@ -1,0 +1,7 @@
+Show the announcements from the QSMxT team, newest first
+
+Usage: qsmxt news
+
+Options:
+  -h, --help
+          Print help

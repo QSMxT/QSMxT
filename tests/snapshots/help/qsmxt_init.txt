@@ -1,0 +1,10 @@
+Generate a pipeline configuration file
+
+Usage: qsmxt init [OPTIONS]
+
+Options:
+  -o, --output <OUTPUT>
+          Output file path (prints to stdout if not specified)
+
+  -h, --help
+          Print help

@@ -1,0 +1,100 @@
+  QSMxT   1 Input   2 Pipeline   3 Reconstruction   4 Execution   5 Methods
+───────────────────━━━━━━━━━━━━── Pipeline: QSMxT defaults ─ QSMxT <version> · QSM.rs <version> ──
+╭ Pipeline ─────────────────────────────┬──────────────────────────────────────────────────────────────────────────────╮
+│   About                               │ QSMxT defaults                                                               │
+│                                       │                                                                              │
+│ DEFAULTS                              │ Your settings already follow it.                                             │
+│ ▸ QSMxT defaults                     ●│                                                                              │
+│                                       │                                                                              │
+│ TOOLBOX PIPELINES                     │                                                                              │
+│   MEDI toolbox                        │                                                                              │
+│   STI Suite · iLSQR                   │                                                                              │
+│   STI Suite · STAR-QSM                │                                                                              │
+│   QSMART                              │                                                                              │
+│   HEIDI package                       │                                                                              │
+│   χ-separation toolbox · iLSQR        │                                                                              │
+│   χ-separation toolbox · MEDI         │                                                                              │
+│   χ-separation toolbox · χ-sepnet     │                                                                              │
+│   DECOMPOSE                           │                                                                              │
+│   UK Biobank                          │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+│                                       │                                                                              │
+╰───────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────╯
+┌ Command preview ─────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│qsmxt run <bids_dir>                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ 1-5:Tabs  ↑↓:Choose a pipeline  Enter:Preview and apply  F5:Run  ?:Tip  q:Quit

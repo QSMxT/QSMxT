@@ -1,0 +1,84 @@
+Total Field Inversion (preconditioned). Input is the TOTAL field (not a local field)
+
+Usage: qsmxt invert tfi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> --echo-times <ECHO_TIMES>... --magnitude <MAGNITUDE>... <INPUT>
+
+Arguments:
+  <INPUT>
+          Input local field NIfTI file
+
+Options:
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+  -o, --output <OUTPUT>
+          Output susceptibility map NIfTI file
+
+      --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
+          B0 direction (3 values)
+
+          [default: 0 0 1]
+
+      --tile-size <TILE_SIZE>
+          DL tiling: output core size per patch, in voxels (enables tiling)
+
+      --tile-halo <TILE_HALO>
+          DL tiling: context margin per side, in voxels (default 8)
+
+      --field-strength <FIELD_STRENGTH>
+          B0 field strength in Tesla
+
+      --echo-times <ECHO_TIMES>...
+          Echo times in seconds, every echo's, in order
+
+      --magnitude <MAGNITUDE>...
+          Magnitude of every echo: one 4D NIfTI, or one 3D NIfTI per echo in echo order
+
+      --lambda <LAMBDA>
+          Lambda: the data-fidelity weight (larger fits the field more closely)
+
+      --precond <PRECOND>
+          Preconditioner value (susceptibility scaling outside the mask)
+
+      --merit <MERIT>
+          Enable MERIT weighting (default: true)
+
+          [possible values: true, false]
+
+      --linear <LINEAR>
+          Fit the field linearly, as the TFI paper does (default: true); false uses MEDI's exponential data term
+
+          [possible values: true, false]
+
+      --data-weighting <DATA_WEIGHTING>
+          Data weighting mode (0=uniform, 1=SNR)
+
+      --percentage <PERCENTAGE>
+          Edge percentage (0.0-1.0)
+
+      --cg-tol <CG_TOL>
+          CG tolerance
+
+      --cg-max-iter <CG_MAX_ITER>
+          CG max iterations
+
+      --max-iter <MAX_ITER>
+          Max outer iterations
+
+      --tol <TOL>
+          Outer tolerance
+
+      --te <TE>
+          Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing)
+
+      --kernel <KERNEL>
+          Dipole kernel on a grid with an odd number of voxels along an axis: default samples the dipole on the Fourier grid; original samples it half a frequency step off, as the original implementation does, for comparison with it. Identical on even grids (default: default)
+
+          [possible values: default, original]
+
+      --precision <PRECISION>
+          Arithmetic: double, or single as the original implementation runs, for comparison with it (default: double)
+
+          [possible values: double, single]
+
+  -h, --help
+          Print help

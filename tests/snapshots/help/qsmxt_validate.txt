@@ -1,0 +1,17 @@
+Validate BIDS dataset structure for QSM processing
+
+Usage: qsmxt validate [OPTIONS] <BIDS_DIR>
+
+Arguments:
+  <BIDS_DIR>
+          Input BIDS directory
+
+Options:
+      --include <INCLUDE>...
+          Include only runs matching these glob patterns
+
+      --exclude <EXCLUDE>...
+          Exclude runs matching these glob patterns
+
+  -h, --help
+          Print help

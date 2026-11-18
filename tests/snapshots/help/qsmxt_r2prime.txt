@@ -1,0 +1,37 @@
+R2' mapping: measured as R2* - R2, or estimated from R2* by R2PRIMEnet
+
+Usage: qsmxt r2prime [OPTIONS] --r2star <R2STAR> --mask <MASK> --output <OUTPUT>
+
+Options:
+      --r2star <R2STAR>
+          R2* map NIfTI in Hz
+
+      --r2 <R2>
+          R2 map NIfTI in Hz: R2' is measured, as R2* - R2
+
+      --r2primenet
+          Estimate R2' from the R2* map with R2PRIMEnet (deep learning, trained at 3 T; weights downloaded on first use) instead of measuring it from an R2 map. Needs --field-strength
+
+  -m, --mask <MASK>
+          Binary mask NIfTI file
+
+      --r2-coverage <R2_COVERAGE>
+          Binary mask of where the R2 acquisition reached, if it does not cover the whole mask (a MESE slab). Without it, coverage is inferred from R2 > 0
+
+  -o, --output <OUTPUT>
+          Output R2' map NIfTI file
+
+      --output-coverage <OUTPUT_COVERAGE>
+          Also write the mask of voxels where R2' is a measurement
+
+      --field-strength <FIELD_STRENGTH>
+          B0 field strength in Tesla (--r2primenet: R2PRIMEnet refuses a field strength other than 3 T unless --r2primenet-ignore-field-mismatch is given)
+
+      --r2primenet-ignore-field-mismatch
+          Run R2PRIMEnet even when the acquisition is not at 3 T, the only field strength its weights were trained at. The R2' is then uncalibrated
+
+      --r2primenet-patch <D> <H> <W>
+          R2PRIMEnet sliding-window patch in voxels, D H W, each a multiple of 16 (default: 192 192 128)
+
+  -h, --help
+          Print help

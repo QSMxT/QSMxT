@@ -1,0 +1,18 @@
+Susceptibility source separation
+
+Usage: qsmxt separate <COMMAND>
+
+Commands:
+  r2star-qsm     R2*-QSM closed-form (Dimov 2022) — QSM + R2* (GRE-only)
+  decompose      DECOMPOSE-QSM signal-domain fit (Chen 2021) — a QSM per echo + multi-echo magnitude (GRE-only)
+  chi-sep-ilsqr  χ-separation iLSQR (Shin 2021) — local field + R2' + QSM
+  chi-sep-medi   χ-separation MEDI — local field + R2' + multi-echo magnitude + QSM
+  wavesep        WaveSep wavelet-L1 (Fang 2023) — QSM + R2'
+  hc-chisep      Hollow-cylinder χ-separation (Stewart 2026) — QSM + R2' + multi-echo magnitude
+  susep-net      SUSEP-Net deep-learning separation — QSM + R2' + local field (weights downloaded on first use)
+  chi-sepnet     χ-sepnet deep-learning separation — local field + R2' or R2* (weights downloaded on first use)
+  help           Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help
+          Print help
