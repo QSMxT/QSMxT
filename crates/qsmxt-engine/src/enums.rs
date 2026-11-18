@@ -72,6 +72,15 @@ pub enum SeparationAlgorithm {
     #[serde(rename = "susep-net")] SusepNet,
     #[serde(rename = "chi-sepnet")] ChiSepNet,
 }
+
+impl SeparationAlgorithm {
+    /// Whether the method reads an R2′ map (χ = f(QSM, R2′)): every one but R2*-QSM, which uses
+    /// R2* directly, and DECOMPOSE-QSM, which fits the multi-echo magnitude itself. SUSEP-Net
+    /// consumes [QSM, R2′, local field] → [χ+, χ−], so it reads R2′ too.
+    pub fn reads_r2prime(self) -> bool {
+        !matches!(self, SeparationAlgorithm::R2starQsm | SeparationAlgorithm::Decompose)
+    }
+}
 impl fmt::Display for SeparationAlgorithm {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", match self {

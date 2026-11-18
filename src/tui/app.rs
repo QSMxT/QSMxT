@@ -1958,22 +1958,9 @@ pub struct RowContext {
     pub multi_coil: bool,
 }
 
-/// Which bring-your-own inputs (and the R2' source) the run can use.
-///
-/// Mirrors `qsmxt_engine::enforce_separation_dependencies` and `requirements::implied_by`, but
-/// from the form's *requests* rather than the resolved config: a supplied map switches its own
-/// computation off, and the row that supplies it must not vanish because it was filled in.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct InputRelevance {
-    /// A χ map is read: χ-separation, the statistics or SMWI.
-    pub qsm: bool,
-    /// An R2 map is read: asked for, or the measured route to a computed R2'.
-    pub r2: bool,
-    /// An R2' map is read: asked for, or the selected χ-separation method needs it.
-    pub r2prime: bool,
-    /// R2' is computed (wanted and not supplied), so its source and R2PRIMEnet settings apply.
-    pub r2prime_source: bool,
-}
+/// Which bring-your-own inputs (and the R2' source) the run can use: the engine's
+/// [`qsmxt_engine::requirements::InputsRead`], from the form's requests.
+pub type InputRelevance = qsmxt_engine::requirements::InputsRead;
 
 /// All pipeline form values (algorithms + parameters).
 #[derive(Debug, Clone)]
@@ -6188,25 +6175,7 @@ pub fn row_field(row: &PipelineRow) -> Option<&'static str> {
 
 /// The output a checkbox asks for, when another option can force that output on.
 fn forced_output(field: &str) -> Option<crate::pipeline::requirements::Output> {
-    use crate::pipeline::requirements::Output;
-    match field {
-        "do_r2starmap" => Some(Output::R2star),
-        "do_r2map" => Some(Output::R2),
-        "do_r2primemap" => Some(Output::R2prime),
-        "do_segmentation" => Some(Output::Segmentation),
-        _ => None,
-    }
-}
-
-fn forced_output_name(out: crate::pipeline::requirements::Output) -> &'static str {
-    use crate::pipeline::requirements::Output;
-    match out {
-        Output::R2star => "The R2* map",
-        Output::R2 => "The R2 map",
-        Output::R2prime => "The R2' map",
-        Output::Segmentation => "Segmentation",
-        _ => "This output",
-    }
+    crate::pipeline::requirements::Output::of_setting(&format!("pipeline.{field}"))
 }
 
 /// The SWI unwrapping select: qsmxt_engine's unwrappers, in [`super::command::SWI_UNWRAP_ARGS`]'s order.
@@ -8083,14 +8052,13 @@ impl App {
         let config = super::command::config_from_app(self).ok();
         // The config as the form gives it, and as the run takes it: QSM another output needs is
         // a required change the run makes itself when it is left off.
-        let qsm_forced = !ps.do_qsm && config.as_ref().is_some_and(|c| c.normalised().0.pipeline.do_qsm);
+        let qsm_forced = config.as_ref().filter(|_| !ps.do_qsm)
+            .and_then(|c| c.normalised().1.into_iter().find(|a| a.setting == "pipeline.do_qsm"));
         RowContext {
-            qsm_forced_by: qsm_forced.then_some(
-                if self.form.do_smwi && ps.custom_qsm_tool.trim().is_empty() {
-                    "SMWI weights the magnitude by the χ map (QSM → SMWI)"
-                } else {
-                    "the per-structure statistics need a map to summarise (Other outputs → Segmentation)"
-                }),
+            qsm_forced_by: qsm_forced.map(|a| match a.because {
+                "pipeline.do_smwi" => "SMWI weights the magnitude by the χ map (QSM → SMWI)",
+                _ => "the per-structure statistics need a map to summarise (Other outputs → Segmentation)",
+            }),
             orientation_group: group.is_some(),
             orientation_cosmos: algorithm == 0,
             num_echoes: self.filter_state.num_echoes.trim().parse().ok(),
@@ -8113,20 +8081,18 @@ impl App {
     pub fn input_relevance(&self) -> InputRelevance {
         let ps = &self.pipeline_state;
         let f = &self.form;
-        let sep = SEP_ALGO_OPTIONS.get(ps.separation_algorithm).copied().unwrap_or("");
-        // The R2'-based methods (qsmxt_engine::enforce_separation_dependencies).
-        let sep_needs_r2prime = ps.do_chi_separation
-            && !matches!(sep, "r2star-qsm" | "decompose");
-        let r2prime = f.do_r2primemap || sep_needs_r2prime;
-        let r2prime_source = r2prime && ps.custom_r2prime_tool.trim().is_empty();
-        // R2' is measured as R2* − R2 unless it is always predicted (R2PRIMEnet, index 2).
-        let r2 = f.do_r2map || (r2prime_source && ps.r2prime_strategy != 2);
-        InputRelevance {
-            qsm: ps.do_chi_separation || f.do_analysis || f.do_smwi,
-            r2,
-            r2prime,
-            r2prime_source,
+        let mut c = qsmxt_engine::PipelineConfig::default();
+        (c.pipeline.do_chi_separation, c.pipeline.do_analysis, c.pipeline.do_smwi) = (ps.do_chi_separation, f.do_analysis, f.do_smwi);
+        (c.pipeline.do_r2map, c.pipeline.do_r2primemap) = (f.do_r2map, f.do_r2primemap);
+        if let Some(sep) = SEP_ALGO_OPTIONS.get(ps.separation_algorithm) {
+            c.separation.algorithm = serde_json::from_value(serde_json::json!(sep)).expect("SEP_ALGO_OPTIONS are the config's names");
         }
+        c.separation.custom_r2prime_tool = Some(ps.custom_r2prime_tool.trim()).filter(|t| !t.is_empty()).map(str::to_string);
+        // R2' is measured as R2* − R2 unless it is always predicted (R2PRIMEnet, index 2).
+        if ps.r2prime_strategy == 2 {
+            c.separation.r2prime_strategy = qsmxt_engine::R2PrimeStrategy::R2primenet;
+        }
+        InputRelevance::of(&c)
     }
 
     /// Keys on a row-based tab (all but Input and Methods): every row is a named
@@ -9115,7 +9081,7 @@ impl App {
                 if let Some(why) = self.forced_by_label(out) {
                     self.error_message = Some(format!(
                         "{} is required by {why} — change or turn that off first (or supply the map).",
-                        forced_output_name(out)));
+                        out.noun()));
                     return;
                 }
             }

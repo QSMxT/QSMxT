@@ -69,6 +69,27 @@ impl Output {
         }
     }
 
+    /// The output a setting asks for ([`Self::setting`]'s inverse).
+    pub fn of_setting(path: &str) -> Option<Output> {
+        Output::ALL.into_iter().find(|o| o.setting() == path)
+    }
+
+    /// What a message calls it: "The R2* map", "Segmentation".
+    pub fn noun(self) -> &'static str {
+        match self {
+            Output::Swi => "SWI",
+            Output::Smwi => "SMWI",
+            Output::Segmentation => "Segmentation",
+            Output::T2star => "The T2* map",
+            Output::R2star => "The R2* map",
+            Output::R2 => "The R2 map",
+            Output::R2prime => "The R2' map",
+            Output::ChiSeparation => "χ-separation",
+            Output::Analysis => "The per-structure statistics",
+            Output::RegionReference => "The region reference",
+        }
+    }
+
     fn enabled(self, config: &PipelineConfig) -> bool {
         let p = &config.pipeline;
         match self {
@@ -134,10 +155,7 @@ fn implied(config: &PipelineConfig, out: Output) -> Option<Implied> {
     let r2prime = || implied(config, Output::R2prime).unwrap_or_else(|| Implied {
         setting: Output::R2prime.setting(), flag: "--do-r2primemap".into(), label: "the R2′ map".into(),
     });
-    let r2prime_based = matches!(s.algorithm,
-        SeparationAlgorithm::ChiSepIlsqr | SeparationAlgorithm::ChiSepMedi
-        | SeparationAlgorithm::WaveSep | SeparationAlgorithm::HcChisep
-        | SeparationAlgorithm::SusepNet | SeparationAlgorithm::ChiSepNet);
+    let r2prime_based = s.algorithm.reads_r2prime();
     let computes_r2prime = p.do_r2primemap && s.custom_r2prime_tool.is_none();
     match out {
         Output::Segmentation if config.segmentation.custom_dseg_tool.is_none() => {
@@ -174,6 +192,36 @@ fn implied(config: &PipelineConfig, out: Output) -> Option<Implied> {
             Some(chisep())
         }
         _ => None,
+    }
+}
+
+/// Which supplied maps (and the R2′ source) a configuration can use, from what it *asks for*
+/// rather than from the configuration a run takes: a supplied map switches its own computation
+/// off, so a front end's row that supplies it must not vanish because it was filled in. The same
+/// needs as [`crate::config::enforce_separation_dependencies`] and [`implied_by`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct InputsRead {
+    /// A χ map is read: χ-separation, the statistics or SMWI.
+    pub qsm: bool,
+    /// An R2 map is read: asked for, or the measured route to a computed R2′.
+    pub r2: bool,
+    /// An R2′ map is read: asked for, or the selected χ-separation method needs it.
+    pub r2prime: bool,
+    /// R2′ is computed (wanted and not supplied), so its source and R2PRIMEnet settings apply.
+    pub r2prime_source: bool,
+}
+
+impl InputsRead {
+    pub fn of(config: &PipelineConfig) -> Self {
+        let (p, s) = (&config.pipeline, &config.separation);
+        let r2prime = p.do_r2primemap || (p.do_chi_separation && s.algorithm.reads_r2prime());
+        let r2prime_source = r2prime && s.custom_r2prime_tool.is_none();
+        InputsRead {
+            qsm: p.do_chi_separation || p.do_analysis || p.do_smwi,
+            r2: p.do_r2map || (r2prime_source && s.r2prime_strategy != R2PrimeStrategy::R2primenet),
+            r2prime,
+            r2prime_source,
+        }
     }
 }
 
@@ -1765,4 +1813,28 @@ mod tests {
         assert!(ok.problems.iter().all(|p| !p.message.contains("R2PRIMEnet instead")), "{:?}", ok.problems);
     }
 
+    #[test]
+    fn every_output_is_found_by_its_setting() {
+        for out in Output::ALL {
+            assert_eq!(Output::of_setting(out.setting()), Some(out));
+        }
+        assert_eq!(Output::of_setting("pipeline.do_qsm"), None);
+    }
+
+    /// The maps a configuration reads, from what it asks for: a supplied R2′ is still read (its
+    /// row stays) but is not computed, so its source settings and R2 do not apply.
+    #[test]
+    fn inputs_read_follow_the_requests() {
+        let mut c = PipelineConfig::default();
+        c.pipeline.do_chi_separation = true;
+        c.separation.algorithm = SeparationAlgorithm::ChiSepIlsqr;
+        assert_eq!(InputsRead::of(&c), InputsRead { qsm: true, r2: true, r2prime: true, r2prime_source: true });
+        c.separation.r2prime_strategy = R2PrimeStrategy::R2primenet;
+        assert!(!InputsRead::of(&c).r2, "a predicted R2′ reads no R2");
+        c.separation.custom_r2prime_tool = Some("mine".into());
+        assert_eq!(InputsRead::of(&c), InputsRead { qsm: true, r2: false, r2prime: true, r2prime_source: false });
+        c.separation.algorithm = SeparationAlgorithm::Decompose;
+        c.separation.custom_r2prime_tool = None;
+        assert_eq!(InputsRead::of(&c), InputsRead { qsm: true, ..Default::default() });
+    }
 }
