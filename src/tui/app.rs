@@ -1887,44 +1887,6 @@ const UNWRAP_HELP: &[&str] = &[
     "PRELUDE region-merging unwrapping, each echo on its own — https://doi.org/10.1002/mrm.10354",
     "MEDI's magnitude-guided region-growing unwrapping; needs magnitude images — https://doi.org/10.1002/mrm.24272",
 ];
-/// The two reference methods that need no parcellation, ahead of every region.
-const QSM_REF_METHODS: [(&str, &str); 2] = [
-    ("mean", "Subtract the mean susceptibility over the voxels the map is defined on (recommended)"),
-    ("none", "No referencing (raw susceptibility values)"),
-];
-
-/// The reference picker's options: the two methods, then every SynthSeg region.
-///
-/// Built from the label table rather than listed, so a table that gains a label gains a reference
-/// option. Leaked to `&'static` once at first use — the set is fixed and bounded, and the row
-/// types hold `&'static [&'static str]`.
-static QSM_REF_ENTRIES: LazyLock<Vec<(&'static str, &'static str)>> = LazyLock::new(|| {
-    let mut out: Vec<(&'static str, &'static str)> = QSM_REF_METHODS.to_vec();
-    for r in qsmxt_engine::regions::REGIONS.iter() {
-        let ids = r.ids.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", ");
-        let help = format!(
-            "Reference χ to the mean of the {} (FreeSurfer {} {}){}. Requires Segmentation",
-            r.label,
-            if r.ids.len() == 1 { "label" } else { "labels" },
-            ids,
-            if r.v2_only { " — needs --synthseg-version v2" } else { "" },
-        );
-        out.push((r.slug, Box::leak(help.into_boxed_str())));
-    }
-    out
-});
-
-static QSM_REF_OPTIONS_V: LazyLock<Vec<&'static str>> =
-    LazyLock::new(|| QSM_REF_ENTRIES.iter().map(|(o, _)| *o).collect());
-static QSM_REF_HELP_V: LazyLock<Vec<&'static str>> =
-    LazyLock::new(|| QSM_REF_ENTRIES.iter().map(|(_, h)| *h).collect());
-
-/// The `--qsm-reference` value for a picker index (`mean`, `none`, or a region slug).
-pub fn qsm_reference_spec(index: usize) -> String {
-    QSM_REF_OPTIONS_V.get(index).copied().unwrap_or("mean").to_string()
-}
-
-
 /// Facts from outside the pipeline form that decide which of its rows apply: the other tabs'
 /// settings (an output that forces QSM, the orientation grouping, the echo limit) and the maps
 /// whose supplied inputs apply. Set by [`App::sync_pipeline_mode`] before every key
@@ -1966,7 +1928,6 @@ pub struct PipelineFormState {
     pub qsm_algorithm: usize,
     pub unwrapping_algorithm: usize,
     pub bf_algorithm: usize,
-    pub qsm_reference: usize,
 
     // Field mapping
     /// A QSM per echo, and their mean (`qsm.per_echo`).
@@ -2473,7 +2434,6 @@ impl Default for PipelineFormState {
             qsm_algorithm: super::command::default_qsm_algorithm_index(), // ilsqr
             unwrapping_algorithm: 0, // romeo
             bf_algorithm: 0, // vsharp
-            qsm_reference: 0, // mean
             qsm_per_echo: false,
             phase_offset_removal: true,
             bipolar_correction: false,
@@ -3141,9 +3101,9 @@ const B0_WEIGHT_TYPE_HELP: &[&str] = &[
     "Magnitude only",
     "Fixed TE·exp(−TE/T2*) per echo from an assumed T2* (no T2* map, no magnitude); phase-snr is generally better",
 ];
-/// Borrowed from the statics above so the row types keep their `&'static` slices.
-pub fn qsm_ref_options() -> &'static [&'static str] { &QSM_REF_OPTIONS_V }
-pub fn qsm_ref_help() -> &'static [&'static str] { &QSM_REF_HELP_V }
+/// The reference picker's options: the two methods, then every region
+/// ([`super::settings_rows`]).
+pub fn qsm_ref_options() -> &'static [&'static str] { super::settings_rows::options("qsm.reference").0 }
 
 impl PipelineFormState {
     /// The χ-separation tab: the method and its parameters, and the χ map it may read instead.
@@ -3983,13 +3943,6 @@ impl PipelineFormState {
         });
     }
 
-    /// QSM → Reference: what χ's zero is pinned to.
-    fn reference_rows(&self, rows: &mut Vec<PipelineRow>) {
-        rows.push(PipelineRow::AlgoSelect {
-            label: "QSM reference", field: "qsm_reference",
-            options: qsm_ref_options(), help: qsm_ref_help(),
-        });
-    }
 
     /// Every pipeline row that shows now, page after page (the QSM switch once): for tests that
     /// ask whether a setting is reachable, not where.
@@ -4002,7 +3955,6 @@ impl PipelineFormState {
             if self.field_mapping_runs().0 { self.field_map_rows(&mut rows); }
             self.inversion_rows(&mut rows);
             if self.ctx.orientation_group { self.multi_orientation_rows(&mut rows); }
-            self.reference_rows(&mut rows);
         }
         self.separation_rows(&mut rows);
         rows
@@ -4020,7 +3972,6 @@ impl PipelineFormState {
             Page::FieldMap => self.field_map_rows(&mut rows),
             Page::Inversion => self.inversion_rows(&mut rows),
             Page::MultiOrientation => self.multi_orientation_rows(&mut rows),
-            Page::Reference => self.reference_rows(&mut rows),
             Page::Separation => self.separation_rows(&mut rows),
             _ => {}
         }
@@ -4579,7 +4530,6 @@ impl PipelineFormState {
             "qsmart_inversion" => self.qsmart_inversion,
             "unwrapping_algorithm" => self.unwrapping_algorithm,
             "bf_algorithm" => self.bf_algorithm,
-            "qsm_reference" => self.qsm_reference,
             "r2prime_strategy" => self.r2prime_strategy,
             "sep_chisepnet_route" => self.sep_chisepnet_route,
             "b0_estimation" => self.b0_estimation,
@@ -4643,7 +4593,6 @@ impl PipelineFormState {
             "qsmart_inversion" => self.qsmart_inversion = val,
             "unwrapping_algorithm" => self.unwrapping_algorithm = val,
             "bf_algorithm" => self.bf_algorithm = val,
-            "qsm_reference" => self.qsm_reference = val,
             "r2prime_strategy" => self.r2prime_strategy = val,
             "sep_chisepnet_route" => self.sep_chisepnet_route = val.min(CHI_SEPNET_ROUTE_OPTIONS.len() - 1),
             "b0_estimation" => self.b0_estimation = val,
@@ -10184,7 +10133,6 @@ mod tests {
             ("inhomogeneity-method", INHOMOGENEITY_METHOD_OPTIONS.len(), INHOMOGENEITY_METHOD_HELP.len()),
             ("b0-estimation", B0_ESTIMATION_OPTIONS.len(), B0_ESTIMATION_HELP.len()),
             ("robust-fit-loss", ROBUST_FIT_LOSS_OPTIONS.len(), ROBUST_FIT_LOSS_HELP.len()),
-            ("qsm-reference", qsm_ref_options().len(), qsm_ref_help().len()),
             ("mask-preset", MASK_PRESET_OPTIONS.len(), mask_preset_help().len()),
         ] {
             assert_eq!(opts, help, "{label}: {opts} options but {help} help entries");
@@ -12199,7 +12147,7 @@ mod tests {
         assert!(!app.field_toggle("do_segmentation"), "off by default");
 
         let region = qsm_ref_options().iter().position(|o| *o == "ventricles").unwrap();
-        app.pipeline_state.set_select("qsm_reference", region);
+        app.set_field_select("qsm_reference", region);
         assert!(!app.field_toggle("do_segmentation"), "the checkbox reads as the user left it");
         assert!(app.output_made("do_segmentation"), "a region reference needs SynthSeg, which the run makes");
         for f in SYNTHSEG_ROWS {
@@ -12219,7 +12167,7 @@ mod tests {
         // `mean` and `none` need nothing.
         app.form.do_segmentation = false;
         for idx in [0, 1] {
-            app.pipeline_state.set_select("qsm_reference", idx);
+            app.set_field_select("qsm_reference", idx);
             assert!(!app.output_made("do_segmentation"), "option {idx} needs nothing");
         }
     }
@@ -12229,12 +12177,12 @@ mod tests {
     fn a_region_reference_reaches_the_command() {
         let mut app = App::new();
         let idx = qsm_ref_options().iter().position(|o| *o == "left-thalamus").unwrap();
-        app.pipeline_state.set_select("qsm_reference", idx);
+        app.set_field_select("qsm_reference", idx);
         let cmd = crate::tui::command::build_command_string(&app);
         assert!(cmd.contains("--qsm-reference left-thalamus"), "cmd: {cmd}");
 
         // The default stays off the command line.
-        app.pipeline_state.set_select("qsm_reference", 0);
+        app.set_field_select("qsm_reference", 0);
         assert!(!crate::tui::command::build_command_string(&app).contains("--qsm-reference"));
     }
 

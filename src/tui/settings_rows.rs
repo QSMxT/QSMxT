@@ -27,7 +27,16 @@ use super::app::{field_of_path, field_path, App, Page, PipelineRow, RowContext, 
 
 /// The sections whose settings are kept in [`SettingsStore`] rather than in the form's fields.
 pub const STORED_SECTIONS: &[Section] =
-    &[Section::Geometry, Section::Motion, Section::Background, Section::Magnitude, Section::SwiSmwi];
+    &[Section::Geometry, Section::Motion, Section::Background, Section::Reference, Section::Magnitude, Section::SwiSmwi];
+
+/// Choices that one select picks with another: `(path, choice, other)`. The select lists the
+/// setting's options but `choice`, then each of `other`'s, which picks `choice` with that value;
+/// `other` has no row of its own. The QSM reference picker lists the regions with the methods.
+const PICKERS: &[(&str, &str, &str)] = &[("qsm.reference", "region", "qsm.reference_region")];
+
+fn picker(path: &str) -> Option<&'static (&'static str, &'static str, &'static str)> {
+    PICKERS.iter().find(|(p, ..)| *p == path)
+}
 
 /// Settings of [`STORED_SECTIONS`] still kept in the form's fields, with why: their rows come
 /// from the registry all the same.
@@ -84,6 +93,7 @@ const LAYOUTS: &[PageLayout] = &[
             ("bg_removal.vsharp.threshold", 1),
         ],
     },
+    PageLayout { page: Page::Reference, section: Section::Reference, only: None, repeats: &[], notes: &[], blocks: &[], depths: &[] },
     PageLayout { page: Page::Magnitude, section: Section::Magnitude, only: None, repeats: &[], notes: &[], blocks: &[], depths: &[] },
     PageLayout { page: Page::Swi, section: Section::SwiSmwi, only: Some(is_swi), repeats: &[], notes: &[], blocks: &[], depths: &[] },
     PageLayout {
@@ -119,12 +129,16 @@ pub fn stored_path(field: &str) -> Option<&'static str> {
 }
 
 /// A select's options and their help, as the TUI words them, for the setting at `path`.
-fn options(path: &str) -> (&'static [&'static str], &'static [&'static str]) {
+pub fn options(path: &str) -> (&'static [&'static str], &'static [&'static str]) {
     type Options = (Vec<&'static str>, Vec<&'static str>);
     static MAP: LazyLock<HashMap<&'static str, Options>> = LazyLock::new(|| {
         schema::settings().iter()
             .map(|s| {
-                let opts = s.value_type.options();
+                let mut opts = s.value_type.options();
+                if let Some(&(_, choice, other)) = picker(s.path) {
+                    opts.retain(|o| o.value != choice);
+                    opts.extend(setting(other).value_type.options());
+                }
                 (s.path, (opts.iter().map(|o| o.label).collect(), opts.iter().map(|o| tui_option_help(o)).collect()))
             })
             .collect()
@@ -284,6 +298,14 @@ impl SettingsStore {
     pub fn select(&self, path: &str) -> usize {
         let v = self.get(path);
         let s = setting(path);
+        if let Some(&(_, choice, other)) = picker(path) {
+            let own = s.value_type.options().into_iter().filter(|o| o.value != choice).collect::<Vec<_>>();
+            if v == choice {
+                let w = self.get(other);
+                return setting(other).value_type.options().iter().position(|o| o.value == w).map_or(0, |i| own.len() + i);
+            }
+            return own.iter().position(|o| o.value == v).unwrap_or(0);
+        }
         let number = echo_number(s, &v).is_some();
         s.value_type.options().iter().position(|o| o.value == v).or_else(|| {
             let ValueType::EchoReference { options } = &s.value_type else { return None };
@@ -296,6 +318,23 @@ impl SettingsStore {
             return; // an echo number chosen again keeps its number
         }
         let s = setting(path);
+        if let Some(&(_, choice, other)) = picker(path) {
+            let own = s.value_type.options().into_iter().filter(|o| o.value != choice).collect::<Vec<_>>();
+            match own.get(index) {
+                Some(o) => {
+                    self.set(path, o.value.clone());
+                    self.set(other, setting(other).default.clone());
+                }
+                None => {
+                    let others = setting(other).value_type.options();
+                    if let Some(o) = others.get((index - own.len()).min(others.len().saturating_sub(1))) {
+                        self.set(path, choice);
+                        self.set(other, o.value.clone());
+                    }
+                }
+            }
+            return;
+        }
         let opts = s.value_type.options();
         if let Some(o) = opts.get(index.min(opts.len().saturating_sub(1))) {
             match s.value_type {
@@ -454,7 +493,9 @@ impl App {
         let mut rows = Vec::new();
         let mut headed = HashSet::new();
         for s in schema::settings() {
-            if s.section != layout.section || !layout.only.is_none_or(|f| f(s.path)) || !shows(s.path) {
+            if s.section != layout.section || !layout.only.is_none_or(|f| f(s.path)) || !shows(s.path)
+                || PICKERS.iter().any(|(.., other)| *other == s.path)
+            {
                 continue;
             }
             let block = layout.blocks.iter().find(|(prefix, ..)| s.path.starts_with(prefix));
