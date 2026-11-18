@@ -8,6 +8,7 @@ Pipeline:
   QSM reference:     None
 
   sub-1_MEGRE (3 echo(es), 8x8x8, B0=3.0T, no ImagingFrequency: ppm from the nominal field, est. 0 MB)
+    Phase offset removal: on → off (the pipeline's on this scan)
 
 Memory: 4.0 GB available (--mem-limit-gb), max 1 concurrent run(s)
 
@@ -73,7 +74,7 @@ Reference values of the chosen methods (for the first run's scan):
   B0 estimation: QSMART echo fit — QSMART uses QSMART echo fit
   Laplacian solver: mirror — QSMART uses mirror
   Laplacian unwrapping of the raw phase: on — QSMART uses on
-  Phase offset sigma: 7 × 7 × 7 mm — phase offset removal on uses 7 × 7 × 7 mm
+  Phase offset removal: off — QSMART uses off
   QSMART fit threshold: fixed residual 40 (QSMART v1.0) — QSMART uses fixed residual 40 (QSMART v1.0)
   Phase unwrapping: Laplacian — QSMART uses Laplacian
   Precision (iLSQR): Single — QSMART uses Single

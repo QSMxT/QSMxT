@@ -118,5 +118,16 @@ Options:
       --laplacian-unmasked
           Unwrap the raw phase over the whole volume, instead of the phase set to zero outside the mask, as QSMART does. With `--b0-estimation qsmart-echofit` the fit then covers the whole volume (the saved field map is still set to zero outside the mask)
 
+      --phase-offset-removal <PHASE_OFFSET_REMOVAL>
+          Enable phase offset removal for multi-echo data (default: true)
+
+          [possible values: true, false]
+
+      --phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM> <PHASE_OFFSET_SIGMA_MM> <PHASE_OFFSET_SIGMA_MM>
+          Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's)
+
+      --bipolar-correction
+          Enable bipolar gradient correction (requires >= 3 echoes)
+
   -h, --help
           Print help (see a summary with '-h')

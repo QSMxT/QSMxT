@@ -8,6 +8,7 @@ Pipeline:
   QSM reference:     None
 
   sub-1_MEGRE (3 echo(es), 8x8x8, B0=3.0T, no ImagingFrequency: ppm from the nominal field, est. 2 MB)
+    Phase offset removal: on → off (the pipeline's on this scan)
     Weight type: Phase SNR → Echo time (the pipeline's on this scan)
 
 Memory: 4.0 GB available (--mem-limit-gb), max 1 concurrent run(s)
@@ -66,7 +67,10 @@ QSM processing was performed using qsmxt (Stewart, 2026). Processing followed th
 - Wu, B., et al. (2012). "Whole brain susceptibility mapping using compressed sensing." *Magnetic Resonance in Medicine*, 67(1):137-147. https://doi.org/10.1002/mrm.23000
 - Wei, H., Dibb, R., Zhou, Y., Sun, Y., Xu, J., Wang, N., Liu, C. (2015). "Streaking artifact reduction for quantitative susceptibility mapping of sources with large dynamic range." *NMR in Biomedicine*, 28(10):1294-1303. https://doi.org/10.1002/nbm.3383
 
-Recommendations: none (the configuration departs from nothing the chosen methods' rules cover)
+Recommendations (QSM.rs's pipeline rules for the chosen methods):
+  recommended (--accept-recommendations applies them):
+    - Phase offset removal is off; Weighted average recommends turning it on: The B0 calculation's authors state that phase offsets have to be removed before it; ROMEO removes them (MCPC-3D-S) whenever it computes B0 from multi-echo data. Laplacian unwrapping does not remove them: it takes out only their harmonic part, and the rest stays in the field map (field-mapping.phase-offsets, stated by the authors)
+      keep the choice with --dismiss-recommendation field-mapping.phase-offsets=false
 
 Reference values of the chosen methods (for the first run's scan):
   Background removal: V-SHARP — STAR-QSM uses V-SHARP
@@ -80,7 +84,8 @@ Reference values of the chosen methods (for the first run's scan):
   Echo weighting: Echo time — STAR-QSM uses Echo time
   Laplacian solver: FFT, 12-voxel padding — STAR-QSM uses FFT, 12-voxel padding
   Laplacian unwrapping of the raw phase: on — STAR-QSM uses on
-  Phase offset sigma: 7 × 7 × 7 mm — phase offset removal on uses 7 × 7 × 7 mm
+  Phase offset removal: off — STAR-QSM uses off
+  Phase offset removal: off — Weighted average uses on (differs)
   Phase unwrapping: Laplacian — STAR-QSM uses Laplacian
   Padding (STAR-QSM): 8 × 8 × 20 voxels — STAR-QSM uses 8 × 8 × 20 voxels
   Echo time (STAR-QSM): Sum of echo times — STAR-QSM uses Sum of echo times
