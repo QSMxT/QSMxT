@@ -352,7 +352,7 @@ pub(super) fn table() -> Vec<Def> {
         d("bg_removal.vsharp.grid", Background, "Working grid", "", Enum(vec![
             o("native", "native", "Native", "The acquired voxel grid"),
             o("finest", "finest", "Finest", "An isotropic grid at the smallest voxel dimension, so no axis is coarsened; isotropic data stays on the acquired grid"),
-            o("isotropic", "isotropic", "Isotropic", "An isotropic grid of Grid spacing mm; the background is interpolated back, the local field keeps native resolution"),
+            o("isotropic", "isotropic", "Isotropic", "An isotropic grid of Grid spacing mm; the background is interpolated back, the local field keeps native resolution (default)"),
         ])).flag("--vsharp-grid").parent("bg_removal.algorithm")
         .when(|x| x.bf("vsharp"))
         .gui("The voxel grid V-SHARP runs on"),
