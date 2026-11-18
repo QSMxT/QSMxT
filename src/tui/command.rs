@@ -322,9 +322,9 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         phase_offset_removal: Some(ps.phase_offset_removal),
         phase_offset_sigma_mm: parse_optional_f64_vec3(&ps.phase_offset_sigma_mm),
         coil_combination_sigma: parse_optional_f64_vec3(&ps.coil_combination_sigma),
-        // Part of HIP phase offset removal, which ROMEO, PRELUDE and MEDI's region growing run.
-        // MEDI's complex fit removes no offsets, and refuses bipolar correction.
-        bipolar_correction: ps.unwrapping_algorithm != 1 && ps.phase_offset_removal && ps.bipolar_correction
+        // Part of HIP phase offset removal, which runs before any unwrapper. MEDI's complex fit
+        // removes no offsets, and refuses bipolar correction.
+        bipolar_correction: ps.phase_offset_removal && ps.bipolar_correction
             && !ps.b0_estimation_is("complex-fit"),
         // Only when changed from the default, so a default form still yields a bare command.
         b0_estimation: match ps.b0_estimation {

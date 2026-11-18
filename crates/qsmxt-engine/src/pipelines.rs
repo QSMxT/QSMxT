@@ -789,6 +789,26 @@ mod tests {
         assert_eq!(serde_json::to_value(&same).unwrap(), serde_json::to_value(PipelineConfig::default()).unwrap());
     }
 
+    /// STI Suite, QSMART and UK Biobank unwrap with Laplacian and remove no phase offsets first
+    /// (QSM.rs#484): chosen with a multi-echo scan, or chosen before it and completed on it, as
+    /// the command line does, the offsets are left in.
+    #[test]
+    fn laplacian_toolboxes_remove_no_phase_offsets() {
+        for id in ["sti-suite-ilsqr", "sti-suite-star", "qsmart", "uk-biobank"] {
+            let mut seen = PipelineConfig::default();
+            choose(&mut seen, id, &facts()).unwrap();
+            assert!(!seen.field_mapping.phase_offset_removal, "{id}");
+            let mut blind = PipelineConfig::default();
+            choose(&mut blind, id, &ViewFacts::default()).unwrap();
+            let (done, _) = on_scan(&blind, &facts()).unwrap();
+            assert!(!done.field_mapping.phase_offset_removal, "{id}, chosen before the scan");
+        }
+        // Laplacian unwrapping on its own removes them.
+        let mut c = PipelineConfig::default();
+        c.field_mapping.unwrapping_algorithm = crate::enums::UnwrappingAlgorithm::Laplacian;
+        assert!(c.field_mapping.phase_offset_removal);
+    }
+
     /// The χ-separation toolbox's iterative pipelines measure R2′ and never predict it. On a scan
     /// known to have none, QSMxT offers prediction as its own recommendation (preselected, labelled
     /// not the toolbox's); with a measured or supplied R2′, or before the scan is known, nothing.

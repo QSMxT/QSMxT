@@ -176,10 +176,8 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         },
         phase_offset_removal: cfg.field_mapping.phase_offset_removal,
         phase_offset_sigma_mm: cfg.field_mapping.phase_offset_sigma_mm,
-        // Bipolar correction follows the phase offset removal of ROMEO, PRELUDE and MEDI's region
-        // growing; Laplacian unwrapping has none.
-        bipolar_correction: cfg.field_mapping.bipolar_correction
-            && cfg.field_mapping.unwrapping_algorithm != UnwrappingAlgorithm::Laplacian,
+        // Bipolar correction is part of the phase offset removal, before any unwrapper.
+        bipolar_correction: cfg.field_mapping.bipolar_correction && cfg.field_mapping.phase_offset_removal,
         b0_estimation: match cfg.field_mapping.b0_estimation {
             B0Estimation::WeightedAvg => PB0Method::WeightedAvg {
                 weighting: map_b0_weight_type(&cfg.field_mapping),
@@ -510,9 +508,9 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
 /// method it does not expect, and none is triggered by it. `map_bf_alg`'s V-SHARP placeholder
 /// would pass the rules that expect V-SHARP.
 ///
-/// Bipolar correction goes as the stages pass it: off under Laplacian unwrapping, where QSMxT
+/// Bipolar correction goes as the stages pass it: off without phase-offset removal, where QSMxT
 /// does not offer it (the settings view hides it), so QSM.rs's
-/// `field-mapping.bipolar-not-with-laplacian` has nothing to find.
+/// `field-mapping.bipolar-needs-offset-removal` has nothing to find.
 pub fn to_qsm_pipeline_config(cfg: &PipelineConfig) -> qsm_core::pipeline::QsmPipelineConfig {
     let (field_mapping, mut bg_removal, inversion, reference) = to_pipeline_stages(cfg);
     if cfg.bg_removal.algorithm == BfAlgorithm::Iqfm {

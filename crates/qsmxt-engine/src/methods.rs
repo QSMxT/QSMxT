@@ -1910,8 +1910,6 @@ fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
             "Before field mapping{scope}, every echo was rigidly co-registered to {reference} by maximising the normalised cross-correlation of the magnitude images over a multi-resolution pyramid{}, and the phase was resampled with it through the complex signal; the brain mask was restricted to voxels covered by every echo.",
             changed.paren()));
     }
-    // Phase offset removal and/or bipolar correction (ROMEO and PRELUDE: the Laplacian path skips both)
-    let offsets_apply = fm.unwrapping_algorithm != UnwrappingAlgorithm::Laplacian;
     let sigma = if fm.phase_offset_sigma_mm.iter().zip(d.phase_offset_sigma_mm).any(|(a, b)| differs(*a, b)) {
         format!("; smoothing σ = {} mm",
             fm.phase_offset_sigma_mm.iter().map(|v| format!("{v}")).collect::<Vec<_>>().join(" × "))
@@ -1931,7 +1929,7 @@ fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
         describe_complex_fit(config, doc);
         return;
     }
-    match (fm.phase_offset_removal && offsets_apply && !per_echo, fm.bipolar_correction && offsets_apply && !per_echo) {
+    match (fm.phase_offset_removal && !per_echo, fm.bipolar_correction && fm.phase_offset_removal && !per_echo) {
         (true, true) => {
             doc.cite(&CITE_MCPC3DS);
             doc.cite(&CITE_BIPOLAR);
@@ -3293,6 +3291,8 @@ mod tests {
         config.field_mapping.laplacian_solver = LaplacianSolver::Mirror;
         config.field_mapping.laplacian_unmasked = true;
         config.field_mapping.b0_estimation = B0Estimation::QsmartEchofit;
+        // QSMART unwraps each echo's raw phase, with no phase-offset removal first.
+        config.field_mapping.phase_offset_removal = false;
         config.masking.sections = crate::masking::mask_presets().into_iter().find(|(n, _)| *n == "bet").unwrap().1.sections;
         let out = generate_methods(&config);
         for said in ["separately for each echo, on the raw phase over the whole volume, using the Laplacian method",
@@ -3525,12 +3525,13 @@ mod tests {
     }
 
     #[test]
-    fn test_laplacian_methods_skip_offset_removal() {
+    fn test_laplacian_methods_say_offset_removal() {
         let mut config = PipelineConfig::default();
         config.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
         let out = generate_methods(&config);
-        assert!(!out.contains("Phase offset removal"), "{out}");
         assert!(out.contains("separately for each echo"), "{out}");
+        let without = { config.field_mapping.phase_offset_removal = false; generate_methods(&config) };
+        assert_ne!(out, without, "offset removal before Laplacian unwrapping is said: {out}");
     }
 
     #[test]

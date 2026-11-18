@@ -1,7 +1,18 @@
 //! The run record ([`crate::record`]) of runs in memory: what each step did, what was decided
 //! and why, kept for a run that reuses the steps; the graph after the run, and the methods text.
 
-use super::tests::{config, phantom, with_mese};
+use super::tests::{phantom, with_mese};
+
+/// The run tests' quick configuration, deciding nothing on the phantom: no phase offsets removed
+/// (on the phantom some voxels' offsets cannot be estimated, which a run records), so a linear
+/// echo fit and iSMV, which no rule asks to remove them for (the methods Note stays empty).
+fn config() -> PipelineConfig {
+    let mut c = super::tests::config();
+    c.field_mapping.phase_offset_removal = false;
+    c.field_mapping.b0_estimation = crate::enums::B0Estimation::LinearFit;
+    c.bg_removal.algorithm = crate::enums::BfAlgorithm::Ismv;
+    c
+}
 use super::*;
 use crate::masking::{MaskOp, MaskSection, MaskThresholdMethod, MaskingInput};
 use crate::methods::{generate_methods_for, methods_for_run, methods_structured};
@@ -190,7 +201,9 @@ fn a_supplied_mask_not_found_is_recorded_computed() {
 #[test]
 fn the_reconstruction_box_is_recorded_from_the_mask() {
     let (facts, mut store) = phantom();
+    // A background removal that keeps the small brain's rim, so the box crops.
     let mut config = config();
+    config.bg_removal.algorithm = crate::enums::BfAlgorithm::Harperella;
     config.pipeline.crop_to_mask = true;
     config.pipeline.crop_margin_mm = 1.0;
     let (plan, record) = run_recorded(&config, &facts, &mut store);

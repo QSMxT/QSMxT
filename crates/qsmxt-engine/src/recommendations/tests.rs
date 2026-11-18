@@ -139,7 +139,7 @@ fn violating(rule: &Rule) -> PipelineConfig {
 /// The rules QSMxT can check here: those that do not need a browser, less those about a setting
 /// QSMxT does not offer in the rule's combination (it hides the setting, and the run ignores it).
 fn native_rules() -> impl Iterator<Item = (&'static Rule, Facts)> {
-    const NOT_OFFERED: &[&str] = &["field-mapping.bipolar-not-with-laplacian"];
+    const NOT_OFFERED: &[&str] = &["field-mapping.bipolar-needs-offset-removal"];
     core::RULES.iter().filter(|r| !NOT_OFFERED.contains(&r.id)).filter_map(|r| facts_for(r).map(|f| (r, f)))
 }
 

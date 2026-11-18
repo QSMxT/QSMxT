@@ -343,7 +343,10 @@ fn unwrap_need(config: &PipelineConfig, s: &Scan) -> u64 {
         // masks and the mask's voxel list: about 64 B a voxel above the DCT solver's. Counted
         // from its arrays, not measured.
         let mgpcg = if fm.laplacian_solver == LaplacianSolver::Mgpcg { 64 * n } else { 0 };
-        return (24 * e + 25) * n + mirror + mgpcg;
+        // Phase-offset removal first (QSM.rs#484): the echoes, the offsets and their smoothing,
+        // allowed for as on the ROMEO path below. Not measured for Laplacian.
+        let base = if fm.phase_offset_removal && e > 1 { 34 * e + 62 } else { 24 * e + 25 };
+        return base * n + mirror + mgpcg;
     }
     if !fm.phase_offset_removal {
         // Each echo unwrapped and kept, then the linear fit.
@@ -1133,7 +1136,13 @@ mod tests {
         let unwrap = |f: &ScanFacts, c: &PipelineConfig, t| step_bytes(&plan_for(c, f, &MemoryProfile { threads: t, ..MemoryProfile::NATIVE }), "unwrap");
         assert!(unwrap(&f, &d, 1) > unwrap(&three, &d, 1));
         assert!(unwrap(&f, &d, 8) > unwrap(&f, &d, 1));
-        assert!(unwrap(&f, &with(|c| c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian), 1) < unwrap(&f, &d, 1));
+        let bare_laplacian = with(|c| {
+            c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
+            c.field_mapping.phase_offset_removal = false;
+        });
+        assert!(unwrap(&f, &bare_laplacian, 1) < unwrap(&f, &d, 1));
+        // Removing the offsets first (the default) adds their arrays.
+        assert!(unwrap(&f, &with(|c| c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian), 1) > unwrap(&f, &bare_laplacian, 1));
         let laplacian = with(|c| c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian);
         let mut mirror = laplacian.clone();
         mirror.field_mapping.laplacian_solver = LaplacianSolver::Mirror;

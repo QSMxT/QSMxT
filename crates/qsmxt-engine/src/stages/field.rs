@@ -4,12 +4,12 @@ use crate::config::PipelineConfig;
 use crate::error::EngineError;
 use crate::scan::{scan_metadata, RunMetadata};
 
-/// Whether the echoes' phase offsets are removed before unwrapping (multi-echo, asked for, and
-/// not Laplacian unwrapping, which removes them by construction, nor MEDI's complex fit, which
-/// fits its own phase offset).
+/// Whether the echoes' phase offsets are removed before unwrapping: multi-echo, asked for, with
+/// any unwrapper (Laplacian unwrapping takes out only their harmonic part: QSM.rs
+/// `pipeline::field_mapping`, *Phase offsets and Laplacian unwrapping*), and not MEDI's complex
+/// fit, which fits its own phase offset.
 fn removes_phase_offsets(config: &PipelineConfig, meta: &RunMetadata) -> bool {
     meta.n_echoes > 1 && !crate::bridge::per_echo(config, meta.n_echoes) && config.field_mapping.phase_offset_removal
-        && config.field_mapping.unwrapping_algorithm != crate::enums::UnwrappingAlgorithm::Laplacian
         && config.field_mapping.b0_estimation != crate::enums::B0Estimation::ComplexFit
 }
 
@@ -44,7 +44,8 @@ pub fn params(config: &PipelineConfig, meta: &RunMetadata) -> serde_json::Value 
         "complex_fit": fm.complex_fit,
         // Per-echo masked Laplacian + echo combination (crate::fieldmap); bump on a change to
         // that path so field maps from the old one are recomputed.
-        "laplacian_echo_combination": if laplacian { 2 } else { 0 },
+        // 3: phase offsets removed first by default (QSM.rs#484).
+        "laplacian_echo_combination": if laplacian { 3 } else { 0 },
         "laplacian_solver": format!("{}", fm.laplacian_solver),
         "laplacian_fft_pad": fm.laplacian_fft_pad,
         "laplacian_unmasked": fm.laplacian_unmasked,
@@ -195,8 +196,10 @@ mod tests {
         assert_eq!(algorithm(&config, &meta(3)), "phase_offset_removal");
         assert_eq!(algorithm(&config, &meta(1)), "romeo", "a single echo has no offsets to remove");
         config.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
+        assert_eq!(algorithm(&config, &meta(3)), "phase_offset_removal", "before Laplacian unwrapping too");
+        assert_eq!(params(&config, &meta(3))["laplacian_echo_combination"], 3);
+        config.field_mapping.phase_offset_removal = false;
         assert_eq!(algorithm(&config, &meta(3)), "laplacian");
-        assert_eq!(params(&config, &meta(3))["laplacian_echo_combination"], 2);
     }
 
     /// MEDI's region growing is named for the unwrap step as ROMEO is, and recorded in the step's
