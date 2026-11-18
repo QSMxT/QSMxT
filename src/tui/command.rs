@@ -2567,6 +2567,7 @@ mod parity {
     }
 
     #[test]
+    #[ignore = "slow: runs in CI; locally `cargo test -- --ignored every_run_flag_is_reachable_from_the_tui`"]
     fn every_run_flag_is_reachable_from_the_tui() {
         let mut covered: BTreeSet<String> = BTreeSet::new();
         // Problem -> the first change that showed it.
