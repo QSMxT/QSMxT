@@ -40,10 +40,10 @@ pub fn build_command_string(app: &App) -> String {
     }
 
     // Pipeline flags — delegate to qsmxt-engine library
-    match config_from_app(app) {
+    match app.current_config().as_ref() {
         Err(e) => parts.push(format!("<invalid setting: {e}>")),
         Ok(config) => {
-        let lib_cmd = qsmxt_engine::generate_command(&config);
+        let lib_cmd = qsmxt_engine::generate_command(config);
         // The library generates "qsmxt run <bids_dir> [flags]"
         // Strip the prefix and append only the flags
         let flags = lib_cmd.strip_prefix("qsmxt run <bids_dir>").unwrap_or(&lib_cmd).trim();
@@ -1032,7 +1032,7 @@ pub fn build_slurm_args(app: &App) -> crate::Result<SlurmArgs> {
 /// it in place of the command and the methods rather than previewing some other configuration.
 /// The methods text (Markdown) for the current settings, or why the settings are invalid.
 pub fn methods_text(app: &App) -> Result<String, String> {
-    config_from_app(app).map(|c| crate::pipeline::methods::generate_methods(&c)).map_err(|e| e.to_string())
+    app.current_config().as_ref().as_ref().map(crate::pipeline::methods::generate_methods).map_err(|e| e.clone())
 }
 
 pub fn config_from_app(app: &App) -> crate::Result<PipelineConfig> {

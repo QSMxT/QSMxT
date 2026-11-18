@@ -6289,6 +6289,14 @@ pub struct App {
     pub advanced: bool,
     /// The settings Basic mode shows, for the config they were worked out from.
     basic_cache: std::cell::RefCell<Option<(String, BasicPaths)>>,
+    /// The config the form builds ([`super::command::config_from_app`]), or why it builds none,
+    /// as of the last [`App::prepare_frame`]: what the frame shows. Read through
+    /// [`App::current_config`], which uses it only while the form cannot have changed since.
+    pub config: Option<Result<crate::pipeline::config::PipelineConfig, String>>,
+    /// Set while a frame is prepared and drawn, when [`Self::config`] is the form's: nothing
+    /// changes the form then. At any other time the form may have changed since, so the config
+    /// is built afresh.
+    pub in_frame: bool,
 }
 
 /// The "Did you know?" pop-up, with two buttons: OK, and one that turns startup tips off
@@ -6690,6 +6698,8 @@ impl App {
             hits: Default::default(),
             advanced: true,
             basic_cache: Default::default(),
+            config: None,
+            in_frame: false,
         }
     }
 
@@ -8040,10 +8050,25 @@ impl App {
     /// then only reads the form, so the next key and the config see the state this left, whether
     /// or not a frame was drawn in between.
     pub fn prepare_frame(&mut self) {
+        // Built once for the frame: the header, the command, the methods, the rows' context and
+        // Basic mode's choice of rows all read it, many times a frame.
+        self.config = Some(super::command::config_from_app(self).map_err(|e| e.to_string()));
+        self.in_frame = true;
         // In the order drawing used to do these, so each frame shows what it did.
         self.pipeline_status();
         if Self::is_rows_tab(self.active_tab) {
             self.sync_pipeline_mode();
+        }
+        self.in_frame = false;
+    }
+
+    /// The config the form builds, or why it builds none: the frame's ([`Self::config`]) while a
+    /// frame is prepared or drawn, else built now, as a key handler that has just changed the
+    /// form needs it.
+    pub fn current_config(&self) -> std::borrow::Cow<'_, Result<crate::pipeline::config::PipelineConfig, String>> {
+        match &self.config {
+            Some(c) if self.in_frame => std::borrow::Cow::Borrowed(c),
+            _ => std::borrow::Cow::Owned(super::command::config_from_app(self).map_err(|e| e.to_string())),
         }
     }
 
@@ -8066,7 +8091,8 @@ impl App {
         let ps = &self.pipeline_state;
         let (group, algorithm, _) = self.filter_state.orientation_args();
         // Whether QSM runs is the resolved config's answer — the same enforcement the run applies.
-        let config = super::command::config_from_app(self).ok();
+        let config = self.current_config();
+        let config = config.as_ref().as_ref().ok();
         // The config as the form gives it, and as the run takes it: QSM another output needs is
         // a required change the run makes itself when it is left off.
         let qsm_forced = config.as_ref().filter(|_| !ps.do_qsm)
@@ -8773,7 +8799,8 @@ impl App {
     /// The settings Basic mode shows ([`qsmxt_engine::schema::regular_view`]), compared with the
     /// chosen pipeline's values or QSMxT's defaults; cached until the config changes.
     fn basic_paths(&self) -> BasicPaths {
-        let Ok(config) = super::command::config_from_app(self) else { return Default::default() };
+        let config = self.current_config();
+        let Ok(config) = config.as_ref() else { return Default::default() };
         let facts = self.view_facts();
         let key = format!("{}{facts:?}", serde_json::to_string(&config).unwrap_or_default());
         if let Some((k, paths)) = &*self.basic_cache.borrow() {
@@ -8781,8 +8808,8 @@ impl App {
                 return paths.clone();
             }
         }
-        let base = qsmxt_engine::schema::baseline(&config, &facts, &qsmxt_engine::PipelineConfig::default());
-        let paths = std::rc::Rc::new(qsmxt_engine::schema::regular_view(&config, &base, &facts));
+        let base = qsmxt_engine::schema::baseline(config, &facts, &qsmxt_engine::PipelineConfig::default());
+        let paths = std::rc::Rc::new(qsmxt_engine::schema::regular_view(config, &base, &facts));
         *self.basic_cache.borrow_mut() = Some((key, paths.clone()));
         paths
     }

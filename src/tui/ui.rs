@@ -17,7 +17,19 @@ use super::command;
 /// (`sidebar_layout`) and how wide the notes are (`note_width`), both from the terminal's size,
 /// and the scroll offsets that keep the focused row on screen (and a pop-up's list offset). The
 /// keys follow what is on screen, so these are worked out where the screen is.
+///
+/// The config it shows is the one [`App::prepare_frame`] built ([`App::config`]).
 pub fn draw(f: &mut Frame, app: &mut App) {
+    // A frame drawn from a config the form no longer builds would show settings that are not the
+    // form's: the form must not change between preparing a frame and drawing it.
+    debug_assert_eq!(app.config, Some(command::config_from_app(app).map_err(|e| e.to_string())),
+                     "the frame was not prepared for this form (App::prepare_frame)");
+    app.in_frame = true;
+    draw_frame(f, app);
+    app.in_frame = false;
+}
+
+fn draw_frame(f: &mut Frame, app: &mut App) {
     // Each drawer records where its clickable things are.
     app.hits.clear();
     // The Reconstruction tab's sections are a sidebar when there is room beside the rows.

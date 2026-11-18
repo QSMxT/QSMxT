@@ -160,7 +160,7 @@ impl App {
     /// The plan and graph of the current settings, on the first selected run's scan (or a
     /// typical one), or why the settings are invalid.
     pub fn planned(&mut self) -> Result<Planned, String> {
-        let config = super::command::config_from_app(self).map_err(|e| e.to_string())?;
+        let config = self.current_config().into_owned()?;
         let (source, facts) = match first_selected(self) {
             Some((key, selected)) => {
                 let id = (self.form.bids_dir.clone(), key.clone(), self.filter_state.num_echoes.clone());
