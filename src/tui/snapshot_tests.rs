@@ -110,3 +110,18 @@ fn drawing_changes_nothing_the_form_depends_on() {
         }
     }
 }
+
+/// A frame shows the config the form builds: [`App::prepare_frame`] builds it, and outside a
+/// frame a change to the form is seen at once.
+#[test]
+fn the_frames_config_is_the_forms() {
+    let fresh = |app: &App| Some(super::command::config_from_app(app).map_err(|e| e.to_string()));
+    let mut app = App::new_for_trial();
+    app.prepare_frame();
+    assert_eq!(app.config, fresh(&app));
+    app.set_field_select("qsm_algorithm", 7);
+    assert_eq!(app.current_config().as_ref().as_ref().unwrap().inversion.algorithm, qsmxt_engine::QsmAlgorithm::Medi,
+               "a key handler sees its own change");
+    app.prepare_frame();
+    assert_eq!(app.config, fresh(&app));
+}

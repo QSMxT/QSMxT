@@ -124,8 +124,8 @@ impl App {
                 return s.clone();
             }
         }
-        let s = super::command::config_from_app(self)
-            .map(|c| pipelines::status(&c, &self.view_facts()))
+        let s = self.current_config().as_ref().as_ref()
+            .map(|c| pipelines::status(c, &self.view_facts()))
             .unwrap_or(Status { pipeline: None, departures: vec![] });
         self.pipelines.cached = Some((print, s.clone()));
         s
