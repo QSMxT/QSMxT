@@ -458,7 +458,7 @@ mod tests {
     fn a_two_pass_pipeline_shows_both_passes() {
         let dir = tempfile::tempdir().unwrap();
         let mut app = app(dir.path());
-        app.pipeline_state.two_pass = true;
+        app.form.settings.set("masking.two_pass", true);
         let s = screen(&mut app, 90);
         assert!(s.contains("Steps, in run order (two passes)"), "{s}");
         assert!(s.contains("Brain mask  [main pass]"), "{s}");
@@ -548,7 +548,7 @@ mod tests {
     fn the_svg_key_writes_the_graph_and_says_where() {
         let dir = tempfile::tempdir().unwrap();
         let mut app = app(dir.path());
-        app.pipeline_state.two_pass = true;
+        app.form.settings.set("masking.two_pass", true);
         press(&mut app, KeyCode::Char('s'));
         let path = dir.path().join(format!("qsmxt-pipeline-{}.svg", std::process::id()));
         let svg = std::fs::read_to_string(&path).unwrap();

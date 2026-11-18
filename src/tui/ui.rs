@@ -1988,6 +1988,8 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     let focusable = super::app::focusable_indices(&rows);
     let ps_focus = app.focus();
     let ps_editing = app.pipeline_state.editing;
+    // The mask recipes the mask builder's rows show, read once for the frame.
+    let mask = app.mask();
     let ps_cursor = app.pipeline_state.cursor;
     // With focus on the sub-tab strip no row is focused; the help line says how to get in.
     let on_strip = app.on_subtabs();
@@ -2100,14 +2102,14 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 Style::default().fg(Color::Yellow),
             )),
             PipelineRow::MaskSectionHeader { section } => {
-                let (two_pass, i) = crate::tui::app::PipelineFormState::mask_section_slot(*section);
+                let (two_pass, i) = super::mask_builder::MaskRecipe::mask_section_slot(*section);
                 Line::from(Span::styled(
                     format!("  ── {} {} ──", if two_pass { "Reliable mask" } else { "Mask" }, i + 1),
                     Style::default().fg(Color::DarkGray),
                 ))
             }
             PipelineRow::MaskCombineOp { section } => {
-                let mode = format!("{}", app.pipeline_state.combine_mode(*section)).to_uppercase();
+                let mode = format!("{}", mask.combine_mode(*section)).to_uppercase();
                 let sep = Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD);
                 if focused {
                     if focused_help.is_none() {
@@ -2136,7 +2138,7 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 ))
             }
             PipelineRow::MaskOpInput { section } => {
-                let Some(input) = app.pipeline_state.mask_section(*section).map(|s| &s.input) else { continue };
+                let Some(input) = mask.mask_section(*section).map(|s| &s.input) else { continue };
                 let label_style = if focused {
                     Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
                 } else {
@@ -2151,7 +2153,7 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 Line::from(spans)
             }
             PipelineRow::MaskOpGenerator { section } => {
-                let Some(gen) = app.pipeline_state.mask_section(*section).map(|s| &s.generator) else { continue };
+                let Some(gen) = mask.mask_section(*section).map(|s| &s.generator) else { continue };
                 let algo_name = match gen {
                     crate::pipeline::config::MaskOp::Threshold { .. } => "threshold",
                     crate::pipeline::config::MaskOp::Bet { .. } => "bet",
@@ -2174,7 +2176,7 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 Line::from(spans)
             }
             PipelineRow::MaskOpGeneratorParam { section } => {
-                let Some(gen) = app.pipeline_state.mask_section(*section).map(|s| &s.generator) else { continue };
+                let Some(gen) = mask.mask_section(*section).map(|s| &s.generator) else { continue };
                 let label_style = if focused {
                     Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
                 } else {
@@ -2227,7 +2229,7 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 Line::from(spans)
             }
             PipelineRow::MaskOpThresholdValue { section } => {
-                let Some(gen) = app.pipeline_state.mask_section(*section).map(|s| &s.generator) else { continue };
+                let Some(gen) = mask.mask_section(*section).map(|s| &s.generator) else { continue };
                 let label_style = if focused {
                     Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
                 } else {
@@ -2251,7 +2253,7 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 ])
             }
             PipelineRow::MaskOpHdBetStep { section } => {
-                let Some(gen) = app.pipeline_state.mask_section(*section).map(|s| &s.generator) else { continue };
+                let Some(gen) = mask.mask_section(*section).map(|s| &s.generator) else { continue };
                 let label_style = if focused {
                     Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
                 } else {
@@ -2274,7 +2276,7 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 Line::from(spans)
             }
             PipelineRow::MaskOpBetVoxelScale { section } => {
-                let Some(gen) = app.pipeline_state.mask_section(*section).map(|s| &s.generator) else { continue };
+                let Some(gen) = mask.mask_section(*section).map(|s| &s.generator) else { continue };
                 let label_style = if focused {
                     Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
                 } else {
@@ -2294,18 +2296,18 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 Line::from(spans)
             }
             PipelineRow::MaskOpEntry { section, index } => {
-                let Some(op) = app.pipeline_state.mask_refinements(*section).and_then(|r| r.get(*index)) else {
+                let Some(op) = mask.mask_refinements(*section).and_then(|r| r.get(*index)) else {
                     lines.push(Line::from(""));
                     continue;
                 };
-                let (op_type, op_val) = super::app::PipelineFormState::mask_op_label_value(op);
+                let (op_type, op_val) = super::mask_builder::MaskRecipe::mask_op_label_value(op);
                 let label_style = if focused {
                     Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::White)
                 };
                 if focused && focused_help.is_none() {
-                    focused_help = Some(super::app::PipelineFormState::mask_op_help(op));
+                    focused_help = Some(super::mask_builder::MaskRecipe::mask_op_help(op));
                 }
                 let number_style = if focused { label_style } else { Style::default().fg(Color::DarkGray) };
                 let mut spans = vec![
@@ -2320,7 +2322,7 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 Line::from(spans)
             }
             PipelineRow::MaskOpSignalErodeParam { section, index, param } => {
-                let Some((label, value)) = app.pipeline_state.signal_erode_param(*section, *index, *param) else {
+                let Some((label, value)) = mask.signal_erode_param(*section, *index, *param) else {
                     lines.push(Line::from(""));
                     continue;
                 };
@@ -2674,7 +2676,7 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
             None if on_series => Some("Choose series type".to_string()),
             None => None,
         };
-        let number = row.as_ref().is_some_and(|r| app.pipeline_state.mask_value_text(r).is_some());
+        let number = row.as_ref().is_some_and(|r| app.mask().mask_value_text(r).is_some());
         let in_picker = app.active_tab == TAB_INPUT && app.input_mode == super::app::InputMode::Example
             && app.active_field >= App::INPUT_IO_FIELDS;
         let on_run = app.active_tab == TAB_INPUT && app.input_mode == super::app::InputMode::Bids
@@ -2705,7 +2707,7 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         if row.as_ref().is_some_and(|r| App::row_marker(&app.rule_view(), r).is_some()) {
             keys.push(("!", "Advice"));
         }
-        if row.as_ref().is_some_and(|r| app.pipeline_state.row_removes_section(r)) {
+        if row.as_ref().is_some_and(|r| app.mask().row_removes_section(r)) {
             keys.push(("d", "Remove section"));
         }
         if recon {
@@ -3299,7 +3301,7 @@ pub(super) mod tests {
     fn test_draw_signal_erode_param_rows() {
         use crate::tui::app::{signal_erode_params, PipelineRow};
         let mut app = App::new();
-        app.pipeline_state.apply_mask_preset(2); // hd-bet + signal-erode
+        app.apply_mask_preset(2); // hd-bet + signal-erode
         assert!(app.goto_field("mask_preset"));
 
         let rows = app.rows();
@@ -3326,7 +3328,7 @@ pub(super) mod tests {
     fn test_draw_mask_combine_rows() {
         use crate::tui::app::{PipelineRow, MASK_COMBINED_SECTION};
         let mut app = App::new();
-        app.pipeline_state.apply_mask_preset(3); // bet-and-phase: two sections, AND
+        app.apply_mask_preset(3); // bet-and-phase: two sections, AND
         assert!(app.goto_field("mask_preset"));
 
         // Focus the combine row so the focused branch renders too.

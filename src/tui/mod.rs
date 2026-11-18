@@ -2,6 +2,7 @@ mod app;
 mod clipboard;
 mod command;
 mod form_from_config;
+mod mask_builder;
 mod mouse;
 mod pipeline_view;
 mod pipelines_tab;

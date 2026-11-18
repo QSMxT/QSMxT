@@ -219,9 +219,6 @@ fn default_qsm_algorithm_arg() -> QsmAlgorithmArg {
 pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
     let form = &app.form;
     let ps = &app.pipeline_state;
-    // The inhomogeneity correction's settings go with the method that reads them.
-    let makehomogeneous = ps.inhomogeneity_correction && ps.inhomogeneity_method == 0;
-    let n4 = ps.inhomogeneity_correction && ps.inhomogeneity_method == 1;
 
     let qsm_options = QSM_ALGO_ARGS;
     let bf_options = [
@@ -286,17 +283,15 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         no_laplacian_unmasked: false,
         laplacian_keep_outside: false,
         no_laplacian_keep_outside: false,
-        // BET is edited per mask step in the TUI, so its settings travel inside the sections.
+        // BET is edited per mask step in the TUI, so its settings travel inside the sections; the
+        // rest of the masking is set from the form's settings store ([`stored_values`]).
         bet_fractional_intensity: None,
-        // The TUI's voxel scale lives on the mask recipe's BET step, so it travels in
-        // `mask_sections_cli` below rather than as a recipe-wide flag.
         bet_voxel_scale: None,
-        // Unreadable text on these hand-built rows is refused first ([`check_typed_masking`]).
-        bet_smoothness: if ps.uses_bet() { parse_optional_f64(&ps.bet_smoothness) } else { None },
-        bet_gradient_threshold: if ps.uses_bet() { parse_optional_f64(&ps.bet_gradient_threshold) } else { None },
-        bet_iterations: if ps.uses_bet() { parse_optional_usize(&ps.bet_iterations) } else { None },
-        bet_subdivisions: if ps.uses_bet() { parse_optional_usize(&ps.bet_subdivisions) } else { None },
-        bet_orientation: if ps.uses_bet() { qsmxt_engine::BetOrientation::ALL.get(ps.bet_orientation).copied() } else { None },
+        bet_smoothness: None,
+        bet_gradient_threshold: None,
+        bet_iterations: None,
+        bet_subdivisions: None,
+        bet_orientation: None,
         // Set from the form's settings store ([`stored_values`]).
         qsm_reference: None,
         qsm_per_echo: None,
@@ -340,23 +335,11 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         // Set from the form's settings store ([`config_from_app`]).
         swi_params: Default::default(),
         tiling_params: Default::default(),
-        inhomogeneity_method: (ps.inhomogeneity_correction && ps.inhomogeneity_method == 1)
-            .then_some(crate::cli::InhomogeneityMethodArg::N4),
-        homogeneity_sigma_mm: if makehomogeneous { parse_optional_f64(&ps.homogeneity_sigma_mm) } else { None },
-        homogeneity_nbox: if makehomogeneous { parse_optional_usize(&ps.homogeneity_nbox) } else { None },
-        n4_params: if n4 {
-            crate::cli::N4ParamArgs {
-                n4_shrink_factor: parse_optional_usize(&ps.n4_shrink_factor),
-                n4_max_iterations: parse_usize_list(&ps.n4_max_iterations),
-                n4_convergence_threshold: parse_optional_f64(&ps.n4_convergence_threshold),
-                n4_mesh: parse_usize_triple(&ps.n4_mesh).map(|m| m.to_vec()),
-                n4_spline_order: parse_optional_usize(&ps.n4_spline_order),
-                n4_bias_field_fwhm: parse_optional_f64(&ps.n4_bias_field_fwhm),
-                n4_wiener_noise: parse_optional_f64(&ps.n4_wiener_noise),
-                n4_histogram_bins: parse_optional_usize(&ps.n4_histogram_bins),
-                n4_geometry: qsmxt_engine::N4Geometry::ALL.get(ps.n4_geometry).copied(),
-            }
-        } else { Default::default() },
+        // The magnitude correction is set from the form's settings store ([`stored_values`]).
+        inhomogeneity_method: None,
+        homogeneity_sigma_mm: None,
+        homogeneity_nbox: None,
+        n4_params: Default::default(),
         linear_fit_estimate_offset: None,
         robust_fit_loss: None,
         robust_fit_tuning: None,
@@ -389,8 +372,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         r2primenet_ignore_field_mismatch: false,
         r2primenet_patch: None,
         export_dicom: form.export_dicom,
-        inhomogeneity_correction: ps.inhomogeneity_correction,
-        no_inhomogeneity_correction: !ps.inhomogeneity_correction,
+        inhomogeneity_correction: false,
+        no_inhomogeneity_correction: false,
         // Geometry is set from the form's settings store ([`stored_values`]).
         axial_resampling: false,
         no_axial_resampling: false,
@@ -401,50 +384,17 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         tukey_window: None,
         crop_margin_mm: None,
         output_space: None,
+        // The mask recipes, custom masks and two-pass are set from the form's settings store
+        // ([`stored_values`]).
         mask_preset: None,
-        use_custom_masks: if ps.custom_mask_tool.trim().is_empty() { None } else { Some(ps.custom_mask_tool.trim().to_string()) },
-        mask_sections_cli: {
-            let secs: Vec<String> = ps.mask_sections.iter().map(|section| {
-                let mut parts = vec![format!("{}", section.input)];
-                for op in &section.all_ops() {
-                    parts.push(format!("{}", op));
-                }
-                parts.join(",")
-            }).collect();
-            if secs.is_empty() { None } else { Some(secs) }
-        },
-        // Only the non-default mode is worth spelling out on the command line.
-        mask_combine: match ps.mask_combine_recipe().0 {
-            crate::pipeline::config::MaskCombine::Or => None,
-            crate::pipeline::config::MaskCombine::And => Some(crate::cli::MaskCombineArg::And),
-        },
-        mask_refinements_cli: match ps.mask_combine_recipe().1 {
-            ops if ops.is_empty() => None,
-            ops => Some(ops.iter().map(|op| format!("{op}")).collect()),
-        },
-        two_pass: ps.two_pass,
-        // Spelled out whenever two-pass is on: this is the run's own argument list, not the command
-        // shown to the user, so there is nothing to be gained by leaning on the default.
-        two_pass_sections_cli: ps.two_pass.then(|| {
-            ps.two_pass_sections.iter().map(|section| {
-                std::iter::once(format!("{}", section.input))
-                    .chain(section.all_ops().iter().map(|op| format!("{op}")))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            }).collect()
-        }),
-        two_pass_mask_combine: ps.two_pass_combine.filter(|_| ps.two_pass).map(|c| match c {
-            crate::pipeline::config::MaskCombine::Or => crate::cli::MaskCombineArg::Or,
-            crate::pipeline::config::MaskCombine::And => crate::cli::MaskCombineArg::And,
-        }),
-        // Only what changes the run: the mode matters only with two-pass, and the default stays off
-        // the command.
-        two_pass_mode: qsmxt_engine::TwoPassMode::ALL.get(ps.two_pass_mode).copied()
-            .filter(|m| ps.two_pass && *m != qsmxt_engine::TwoPassMode::default())
-            .map(|m| match m {
-                qsmxt_engine::TwoPassMode::Local => crate::cli::TwoPassModeArg::Local,
-                qsmxt_engine::TwoPassMode::Original => crate::cli::TwoPassModeArg::Original,
-            }),
+        use_custom_masks: None,
+        mask_sections_cli: None,
+        mask_combine: None,
+        mask_refinements_cli: None,
+        two_pass: false,
+        two_pass_sections_cli: None,
+        two_pass_mask_combine: None,
+        two_pass_mode: None,
         dismiss_recommendation: (!ps.dismissed.is_empty())
             .then(|| ps.dismissed.iter().map(|d| format!("{}={}", d.rule, d.chosen)).collect()),
     }
@@ -481,32 +431,6 @@ fn parse_optional_string_vec(s: &str) -> Option<Vec<String>> {
     }
 }
 
-fn parse_optional_f64(s: &str) -> Option<f64> {
-    let trimmed = s.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        trimmed.parse().ok()
-    }
-}
-
-/// Three whitespace-separated counts ("192 192 128"), or `None` if the field is not exactly that.
-fn parse_usize_triple(s: &str) -> Option<[usize; 3]> {
-    let v: Vec<usize> = s.split_whitespace().map(|t| t.parse().ok()).collect::<Option<_>>()?;
-    <[usize; 3]>::try_from(v).ok()
-}
-
-
-/// One count or more, separated by spaces or commas ("50 50 50 50"); `None` if empty or not counts.
-fn parse_usize_list(s: &str) -> Option<Vec<usize>> {
-    let v: Vec<usize> = s.split(|c: char| c == ',' || c.is_whitespace())
-        .filter(|t| !t.is_empty()).map(|t| t.parse().ok()).collect::<Option<_>>()?;
-    (!v.is_empty()).then_some(v)
-}
-
-
-
-
 /// The value of text typed on a row the TUI builds by hand: `None` when blank, which leaves the
 /// run's default, else what it reads as. Text that reads as nothing is an error naming the flag
 /// and the text, as the command line refuses it: the run never goes ahead with something other
@@ -525,42 +449,6 @@ fn number(t: &str) -> Option<f64> {
 
 fn count(t: &str) -> Option<usize> {
     t.parse().ok()
-}
-
-/// Refuse unreadable text on the hand-built BET, homogeneity and N4 rows while they apply (the
-/// conditions [`pipeline_args_from_app`] passes them on), rather than run with their defaults.
-fn check_typed_masking(app: &App) -> crate::Result<()> {
-    let ps = &app.pipeline_state;
-    if ps.uses_bet() {
-        typed("--bet-smoothness", &ps.bet_smoothness, "a number", number)?;
-        typed("--bet-gradient-threshold", &ps.bet_gradient_threshold, "a number", number)?;
-        typed("--bet-iterations", &ps.bet_iterations, "a whole number", count)?;
-        typed("--bet-subdivisions", &ps.bet_subdivisions, "a whole number", count)?;
-    }
-    if ps.inhomogeneity_correction && ps.inhomogeneity_method == 0 {
-        typed("--homogeneity-sigma-mm", &ps.homogeneity_sigma_mm, "a number", number)?;
-        typed("--homogeneity-nbox", &ps.homogeneity_nbox, "a whole number", count)?;
-    }
-    if ps.inhomogeneity_correction && ps.inhomogeneity_method == 1 {
-        typed("--n4-shrink-factor", &ps.n4_shrink_factor, "a whole number", count)?;
-        typed("--n4-max-iterations", &ps.n4_max_iterations, "a list of whole numbers", parse_usize_list)?;
-        typed("--n4-convergence-threshold", &ps.n4_convergence_threshold, "a number", number)?;
-        typed("--n4-mesh", &ps.n4_mesh, "three whole numbers", parse_usize_triple)?;
-        typed("--n4-spline-order", &ps.n4_spline_order, "a whole number", count)?;
-        typed("--n4-bias-field-fwhm", &ps.n4_bias_field_fwhm, "a number", number)?;
-        typed("--n4-wiener-noise", &ps.n4_wiener_noise, "a number", number)?;
-        typed("--n4-histogram-bins", &ps.n4_histogram_bins, "a whole number", count)?;
-    }
-    Ok(())
-}
-
-fn parse_optional_usize(s: &str) -> Option<usize> {
-    let trimmed = s.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        trimmed.parse().ok()
-    }
 }
 
 pub fn build_slurm_args(app: &App) -> crate::Result<SlurmArgs> {
@@ -641,13 +529,66 @@ fn stored_values(app: &App, args: &PipelineArgs) -> crate::Result<Vec<(&'static 
     if let Some((_, why)) = refused.iter().find(|(p, _)| visible.contains(p)) {
         return Err(crate::error::QsmxtError::Config(why.clone()));
     }
-    Ok(changed.into_iter().filter(|(p, _)| visible.contains(p)).collect())
+    changed.into_iter().filter(|(p, _)| visible.contains(p))
+        .map(|(p, v)| Ok((p, as_spelled(p, v)?)))
+        .collect()
+}
+
+/// A mask recipe as the run has always taken it from the form: spelled as the command line
+/// spells it (`--mask`, `--mask-refine`, `--two-pass-mask`) and read back. The spelling rounds
+/// some numbers (a fixed threshold to 4 places, BET's fractional intensity to 2) and gives a fixed
+/// or percentile threshold without a value its default; a step the command line cannot take is
+/// refused as it would be there. Any other setting is as it is. Kept until the form's settings
+/// are all the config's.
+fn as_spelled(path: &str, value: serde_json::Value) -> crate::Result<serde_json::Value> {
+    use crate::pipeline::config::{hole_closing_warnings, parse_mask_sections, MaskOp, MaskSection};
+    let unreadable = |e: serde_json::Error| crate::error::QsmxtError::Config(format!("{path}: {e}"));
+    let spell = |sections: &[MaskSection]| -> Vec<String> {
+        sections.iter().map(|section| {
+            std::iter::once(format!("{}", section.input))
+                .chain(section.all_ops().iter().map(|op| format!("{op}")))
+                .collect::<Vec<_>>()
+                .join(",")
+        }).collect()
+    };
+    match path {
+        "masking.sections" => {
+            let sections: Vec<MaskSection> = serde_json::from_value(value).map_err(unreadable)?;
+            serde_json::to_value(parse_mask_sections(&spell(&sections), "--mask")?).map_err(unreadable)
+        }
+        "masking.two_pass_sections" => {
+            let Some(sections) = serde_json::from_value::<Option<Vec<MaskSection>>>(value).map_err(unreadable)? else {
+                return Ok(serde_json::Value::Null);
+            };
+            let sections = parse_mask_sections(&spell(&sections), "--two-pass-mask")?;
+            for warning in hole_closing_warnings(&sections) {
+                log::warn!("{warning}");
+            }
+            serde_json::to_value(Some(sections)).map_err(unreadable)
+        }
+        "masking.refinements" => {
+            let ops: Vec<MaskOp> = serde_json::from_value(value).map_err(unreadable)?;
+            let mut read = Vec::new();
+            for op in ops {
+                let s = format!("{op}");
+                let op = qsmxt_engine::masking::parse_mask_op(&s)
+                    .map_err(|e| crate::error::QsmxtError::Config(format!("--mask-refine {s}: {e}")))?;
+                if op.is_generator() {
+                    return Err(crate::error::QsmxtError::Config(format!(
+                        "--mask-refine {op}: it creates a mask rather than refining one; put it \
+                         in a --mask section instead")));
+                }
+                read.push(op);
+            }
+            serde_json::to_value(read).map_err(unreadable)
+        }
+        _ => Ok(value),
+    }
 }
 
 /// The run's settings from the form: its fields as `PipelineArgs`, and the settings it keeps in a
 /// config ([`stored_values`]).
 fn settings_args(app: &App) -> crate::Result<crate::cli_settings::SettingsArgs> {
-    check_typed_masking(app)?;
     let args = pipeline_args_from_app(app);
     let values = stored_values(app, &args)?;
     Ok(crate::cli_settings::SettingsArgs::tui(args, values))
@@ -659,7 +600,6 @@ fn settings_args(app: &App) -> crate::Result<crate::cli_settings::SettingsArgs> 
 /// required change for the TUI to offer ([`qsmxt_engine::normalise::required_findings`]), which
 /// the run would otherwise make itself.
 pub fn config_from_app(app: &App) -> crate::Result<PipelineConfig> {
-    check_typed_masking(app)?;
     let args = pipeline_args_from_app(app);
     let mut config = app.form.settings.config_of(&stored_values(app, &args)?);
     crate::pipeline::config::apply_run_overrides_as_given(&mut config, &args)?;
@@ -808,20 +748,21 @@ mod tests {
         assert!(qsmxt_engine::generate_command(&config_from_app(&app).unwrap()).contains("--vsharp-deconvolve"));
     }
 
-    /// The two-pass mode is offered with two-pass, and reaches both the config and the CLI args.
+    /// The two-pass mode is offered with two-pass, and reaches both the config and the command.
     #[test]
     fn two_pass_mode_setting() {
         let mut app = default_app();
         let shown = |app: &App| app.pipeline_rows().iter()
             .any(|r| matches!(r, crate::tui::app::PipelineRow::AlgoSelect { field: "two_pass_mode", .. }));
         assert!(!shown(&app));
-        app.pipeline_state.toggle("two_pass");
+        app.toggle_field("two_pass");
         assert!(shown(&app));
-        assert!(pipeline_args_from_app(&app).two_pass_mode.is_none(), "the default stays off the command");
+        let command = |app: &App| qsmxt_engine::generate_command(&config_from_app(app).unwrap());
+        assert!(!command(&app).contains("--two-pass-mode"), "the default stays off the command");
         assert_eq!(config_from_app(&app).unwrap().masking.two_pass_mode, qsmxt_engine::TwoPassMode::Local);
-        app.pipeline_state.set_select("two_pass_mode", 1);
+        app.set_field_select("two_pass_mode", 1);
         assert_eq!(config_from_app(&app).unwrap().masking.two_pass_mode, qsmxt_engine::TwoPassMode::Original);
-        assert_eq!(pipeline_args_from_app(&app).two_pass_mode, Some(crate::cli::TwoPassModeArg::Original));
+        assert!(command(&app).contains("--two-pass-mode original"));
     }
 
     /// The Laplacian solver and its pad are in the TUI (they used to be CLI-only): the rows
@@ -837,28 +778,27 @@ mod tests {
         assert!(fields(&app).contains(&"inhomogeneity_method".to_string()));
         assert!(fields(&app).contains(&"homogeneity_sigma_mm".to_string()));
         assert!(!fields(&app).contains(&"n4_shrink_factor".to_string()), "makehomogeneous has no N4 rows");
-        let a = pipeline_args_from_app(&app);
-        assert!(a.inhomogeneity_method.is_none() && a.n4_params.n4_shrink_factor.is_none(), "default stays off the command");
-        app.pipeline_state.set_select("inhomogeneity_method", 1);
+        let command = |app: &App| qsmxt_engine::generate_command(&config_from_app(app).unwrap());
+        assert!(!command(&app).contains("--inhomogeneity-method"), "default stays off the command");
+        app.set_field_select("inhomogeneity_method", 1);
         assert!(fields(&app).contains(&"n4_max_iterations".to_string()));
         assert!(!fields(&app).contains(&"homogeneity_sigma_mm".to_string()));
-        app.pipeline_state.n4_max_iterations = "20 10".into();
-        app.pipeline_state.n4_mesh = "2 2 1".into();
-        app.pipeline_state.n4_shrink_factor = "2".into();
+        *app.field_text_mut("n4_max_iterations").unwrap() = "20 10".into();
+        *app.field_text_mut("n4_mesh").unwrap() = "2 2 1".into();
+        *app.field_text_mut("n4_shrink_factor").unwrap() = "2".into();
+        *app.field_text_mut("homogeneity_sigma_mm").unwrap() = "3".into();
         assert!(fields(&app).contains(&"n4_geometry".to_string()));
         assert_eq!(config_from_app(&app).unwrap().masking.n4_geometry, qsmxt_engine::N4Geometry::Scanner);
-        app.pipeline_state.set_select("n4_geometry", 1);
+        app.set_field_select("n4_geometry", 1);
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.masking.n4_geometry, qsmxt_engine::N4Geometry::MakeNii);
         assert_eq!(c.masking.inhomogeneity_method, qsmxt_engine::InhomogeneityMethod::N4);
         assert_eq!((c.n4.max_iterations.clone(), c.n4.mesh, c.n4.shrink_factor), (vec![20, 10], [2, 2, 1], 2));
-        let a = pipeline_args_from_app(&app);
-        assert_eq!(a.inhomogeneity_method, Some(crate::cli::InhomogeneityMethodArg::N4));
-        assert_eq!(a.n4_params.n4_geometry, Some(qsmxt_engine::N4Geometry::MakeNii));
-        assert!(a.homogeneity_sigma_mm.is_none(), "makehomogeneous's settings stay off with N4");
-        app.pipeline_state.inhomogeneity_correction = false;
+        assert!(command(&app).contains("--inhomogeneity-method n4"));
+        assert_eq!(c.homogeneity, qsmxt_engine::HomogeneityConfig::default(), "makehomogeneous's settings stay off with N4");
+        app.toggle_field("inhomogeneity_correction");
         assert!(!fields(&app).contains(&"inhomogeneity_method".to_string()));
-        assert!(pipeline_args_from_app(&app).n4_params.n4_max_iterations.is_none());
+        assert_eq!(config_from_app(&app).unwrap().n4, qsmxt_engine::N4Config::default(), "off: N4's settings do not apply");
     }
 
     #[test]
@@ -1389,7 +1329,7 @@ mod tests {
         app.form.settings.set("pipeline.do_swi", true);
         app.form.settings.set("pipeline.do_t2starmap", true);
         app.form.settings.set("pipeline.do_r2starmap", true);
-        app.pipeline_state.inhomogeneity_correction = true;
+        app.form.settings.set("masking.inhomogeneity_correction", true);
         app.form.dry_run = true;
         app.form.debug = true;
         let args = build_run_args(&app).unwrap();
@@ -1398,7 +1338,7 @@ mod tests {
         assert!(!config(&args).swi.filtered_phase);
         assert!(config(&args).pipeline.do_t2starmap);
         assert!(config(&args).pipeline.do_r2starmap);
-        assert!(args.pipeline.inhomogeneity_correction);
+        assert!(config(&args).masking.inhomogeneity_correction);
         assert!(args.dry);
         app.form.settings.set("swi.filtered_phase", true);
         assert!(config(&build_run_args(&app).unwrap()).swi.filtered_phase);
@@ -1457,38 +1397,6 @@ mod tests {
     fn test_parse_optional_path_value() {
         assert_eq!(parse_optional_path("/foo"), Some(PathBuf::from("/foo")));
         assert_eq!(parse_optional_path("  /bar  "), Some(PathBuf::from("/bar")));
-    }
-
-    #[test]
-    fn test_parse_optional_f64_empty() {
-        assert_eq!(parse_optional_f64(""), None);
-        assert_eq!(parse_optional_f64("  "), None);
-    }
-
-    #[test]
-    fn test_parse_optional_f64_valid() {
-        assert_eq!(parse_optional_f64("2.72"), Some(2.72));
-        assert_eq!(parse_optional_f64("  1e-4  "), Some(1e-4));
-    }
-
-    #[test]
-    fn test_parse_optional_f64_invalid() {
-        assert_eq!(parse_optional_f64("abc"), None);
-    }
-
-    #[test]
-    fn test_parse_optional_usize_empty() {
-        assert_eq!(parse_optional_usize(""), None);
-    }
-
-    #[test]
-    fn test_parse_optional_usize_valid() {
-        assert_eq!(parse_optional_usize("42"), Some(42));
-    }
-
-    #[test]
-    fn test_parse_optional_usize_invalid() {
-        assert_eq!(parse_optional_usize("abc"), None);
     }
 
     #[test]
@@ -1606,14 +1514,14 @@ mod tests {
     fn unreadable_bet_value_is_refused() {
         let mut app = default_app();
         app.form.bids_dir = "/bids".into();
-        app.pipeline_state.bet_smoothness = "abc".into();
-        assert!(!app.pipeline_state.uses_bet() && config_from_app(&app).is_ok(), "no BET step: it does not apply");
-        app.pipeline_state.set_select("mask_preset", 1);
-        assert!(app.pipeline_state.uses_bet());
+        *app.field_text_mut("bet_smoothness").unwrap() = "abc".into();
+        assert!(config_from_app(&app).is_ok(), "no BET step: it does not apply");
+        app.set_field_select("mask_preset", 1);
+        assert!(app.mask().sections.iter().any(|s| matches!(s.generator, crate::pipeline::config::MaskOp::Bet { .. })));
         refused(&mut app, |_| {}, "--bet-smoothness abc: not a number");
-        app.pipeline_state.bet_smoothness = String::new();
+        *app.field_text_mut("bet_smoothness").unwrap() = String::new();
         assert!(config_from_app(&app).is_ok(), "blank is the default");
-        refused(&mut app, |a| a.pipeline_state.bet_iterations = "1.5".into(), "--bet-iterations 1.5: not a whole number");
+        refused(&mut app, |a| *a.field_text_mut("bet_iterations").unwrap() = "1.5".into(), "--bet-iterations 1.5: not a whole number");
     }
 
     /// The homogeneity correction's rows refuse unreadable text while it is the method chosen.
@@ -1621,10 +1529,10 @@ mod tests {
     fn unreadable_homogeneity_value_is_refused() {
         let mut app = default_app();
         app.form.bids_dir = "/bids".into();
-        app.pipeline_state.inhomogeneity_correction = true;
-        app.pipeline_state.inhomogeneity_method = 0;
-        refused(&mut app, |a| a.pipeline_state.homogeneity_nbox = "x".into(), "--homogeneity-nbox x: not a whole number");
-        app.pipeline_state.inhomogeneity_correction = false;
+        assert!(app.field_toggle("inhomogeneity_correction"));
+        assert_eq!(app.field_select("inhomogeneity_method"), 0);
+        refused(&mut app, |a| *a.field_text_mut("homogeneity_nbox").unwrap() = "x".into(), "--homogeneity-nbox x: not a whole number");
+        app.toggle_field("inhomogeneity_correction");
         assert!(config_from_app(&app).is_ok(), "correction off: it does not apply");
     }
 
@@ -1633,10 +1541,9 @@ mod tests {
     fn unreadable_n4_value_is_refused() {
         let mut app = default_app();
         app.form.bids_dir = "/bids".into();
-        app.pipeline_state.inhomogeneity_correction = true;
-        app.pipeline_state.inhomogeneity_method = 1;
-        refused(&mut app, |a| a.pipeline_state.n4_mesh = "1 2".into(), "--n4-mesh 1 2: not three whole numbers");
-        app.pipeline_state.inhomogeneity_method = 0;
+        app.set_field_select("inhomogeneity_method", 1);
+        refused(&mut app, |a| *a.field_text_mut("n4_mesh").unwrap() = "1 2".into(), "--n4-mesh 1 2: not three whole numbers");
+        app.set_field_select("inhomogeneity_method", 0);
         assert!(config_from_app(&app).is_ok(), "the homogeneity method: N4's mesh does not apply");
     }
 
@@ -1872,7 +1779,7 @@ mod tests {
         app.pipeline_state.set_select("qsm_algorithm", qsmart);
         let selects = ["unwrapping_algorithm", "laplacian_solver", "b0_estimation"].map(|f| app.field_select(f));
         assert_eq!(selects, [0, 0, 0]);
-        assert_eq!(app.pipeline_state.mask_sections, default_mask_sections());
+        assert_eq!(app.mask().sections, default_mask_sections());
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping, qsmxt_engine::FieldMappingConfig::default());
         assert_eq!(c.masking.sections, default_mask_sections());
@@ -1906,7 +1813,7 @@ mod tests {
         let cmd = build_command_string(&app);
         assert!(cmd.contains("--qsmart-frangi-c-mode relative") && cmd.contains("--qsmart-frangi-c-factor 0.3"), "{cmd}");
 
-        app.pipeline_state.set_select("mask_preset", 1);
+        app.set_field_select("mask_preset", 1);
         assert!(build_command_string(&app).contains("--mask-preset bet"));
     }
 
@@ -2430,38 +2337,42 @@ mod parity {
             ("orientation_algorithm", |a| a.filter_state.orientation_group = "acq".into(), |a| a.set_field_select("orientation_algorithm", 1)),
             ("orientation_lambda", |a| a.filter_state.orientation_group = "acq".into(), |a| *a.field_text_mut("orientation_lambda").unwrap() = "0.5".into()),
             ("orientation_reference", |a| a.filter_state.orientation_group = "acq".into(), |a| *a.field_text_mut("orientation_reference").unwrap() = "Neutral".into()),
-            ("bet_smoothness", |a| a.pipeline_state.set_select("mask_preset", 1), |a| a.pipeline_state.bet_smoothness = "2".into()),
-            ("bet_gradient_threshold", |a| a.pipeline_state.set_select("mask_preset", 1), |a| a.pipeline_state.bet_gradient_threshold = "0.3".into()),
-            ("bet_iterations", |a| a.pipeline_state.set_select("mask_preset", 1), |a| a.pipeline_state.bet_iterations = "500".into()),
-            ("bet_subdivisions", |a| a.pipeline_state.set_select("mask_preset", 1), |a| a.pipeline_state.bet_subdivisions = "3".into()),
-            ("bet_orientation", |a| a.pipeline_state.set_select("mask_preset", 1), |a| a.pipeline_state.bet_orientation = 1),
+            ("bet_smoothness", |a| a.set_field_select("mask_preset", 1), |a| *a.field_text_mut("bet_smoothness").unwrap() = "2".into()),
+            ("bet_gradient_threshold", |a| a.set_field_select("mask_preset", 1), |a| *a.field_text_mut("bet_gradient_threshold").unwrap() = "0.3".into()),
+            ("bet_iterations", |a| a.set_field_select("mask_preset", 1), |a| *a.field_text_mut("bet_iterations").unwrap() = "500".into()),
+            ("bet_subdivisions", |a| a.set_field_select("mask_preset", 1), |a| *a.field_text_mut("bet_subdivisions").unwrap() = "3".into()),
+            ("bet_orientation", |a| a.set_field_select("mask_preset", 1), |a| a.set_field_select("bet_orientation", 1)),
             ("cosmos_magnitude_weighting", |a| a.filter_state.orientation_group = "acq".into(), |a| a.form.settings.set("multi_orientation.magnitude_weighting", true)),
             ("cosmos_tol", |a| { a.filter_state.orientation_group = "acq".into(); a.form.settings.set("multi_orientation.magnitude_weighting", true); }, |a| *a.field_text_mut("cosmos_tol").unwrap() = "1e-4".into()),
             ("cosmos_max_iter", |a| { a.filter_state.orientation_group = "acq".into(); a.form.settings.set("multi_orientation.magnitude_weighting", true); }, |a| *a.field_text_mut("cosmos_max_iter").unwrap() = "250".into()),
             ("mask sections", |_| {}, |a| {
-                let mut extra = a.pipeline_state.mask_sections[0].clone();
+                let mut m = a.mask_mut();
+                let mut extra = m.sections[0].clone();
                 extra.input = crate::pipeline::config::MaskingInput::Magnitude;
-                a.pipeline_state.mask_sections.push(extra);
+                m.sections.push(extra);
             }),
             ("mask combine", |a| {
-                let extra = a.pipeline_state.mask_sections[0].clone();
-                a.pipeline_state.mask_sections.push(extra);
-            }, |a| a.pipeline_state.toggle_mask_combine()),
+                let mut m = a.mask_mut();
+                let extra = m.sections[0].clone();
+                m.sections.push(extra);
+            }, |a| a.mask_mut().toggle_combine(0)),
             ("mask refinements", |a| {
-                let extra = a.pipeline_state.mask_sections[0].clone();
-                a.pipeline_state.mask_sections.push(extra);
-            }, |a| a.pipeline_state.mask_combined_refinements.push(crate::pipeline::config::MaskOp::Erode { iterations: 1 })),
-            ("masking input", |a| a.pipeline_state.set_select("mask_preset", 1), |a| {
-                for s in &mut a.pipeline_state.mask_sections { s.input = crate::pipeline::config::MaskingInput::MagnitudeLast; }
+                let mut m = a.mask_mut();
+                let extra = m.sections[0].clone();
+                m.sections.push(extra);
+            }, |a| a.mask_mut().refinements.push(crate::pipeline::config::MaskOp::Erode { iterations: 1 })),
+            ("masking input", |a| a.set_field_select("mask_preset", 1), |a| {
+                for s in &mut a.mask_mut().sections { s.input = crate::pipeline::config::MaskingInput::MagnitudeLast; }
             }),
-            ("two-pass sections", |a| a.pipeline_state.two_pass = true, |a| {
-                a.pipeline_state.two_pass_sections[0].refinements.push(crate::pipeline::config::MaskOp::Erode { iterations: 2 });
+            ("two-pass sections", |a| a.form.settings.set("masking.two_pass", true), |a| {
+                a.mask_mut().two_pass_sections[0].refinements.push(crate::pipeline::config::MaskOp::Erode { iterations: 2 });
             }),
             ("two-pass combine", |a| {
-                a.pipeline_state.two_pass = true;
-                let extra = a.pipeline_state.two_pass_sections[0].clone();
-                a.pipeline_state.two_pass_sections.push(extra);
-            }, |a| a.pipeline_state.toggle_combine(crate::tui::app::MASK_TWO_PASS_BASE + 1)),
+                a.form.settings.set("masking.two_pass", true);
+                let mut m = a.mask_mut();
+                let extra = m.two_pass_sections[0].clone();
+                m.two_pass_sections.push(extra);
+            }, |a| a.mask_mut().toggle_combine(crate::tui::app::MASK_TWO_PASS_BASE + 1)),
             // Run-level settings: not in the pipeline config, so compared on the run's arguments.
             ("config", |_| {}, |a| a.form.config_file = "c.toml".into()),
             ("include", |_| {}, |a| a.filter_state.include_pattern = "sub-1*".into()),

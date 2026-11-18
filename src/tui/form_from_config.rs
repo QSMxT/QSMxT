@@ -28,6 +28,11 @@ const SPECIAL: &[&str] = &[
     "segmentation_source",
 ];
 
+/// A part of a config as the settings store holds it.
+fn json<T: serde::Serialize>(v: &T) -> Value {
+    serde_json::to_value(v).unwrap_or_default()
+}
+
 /// The value at `path` in a config already serialised (`null` for an unset optional value).
 fn value_at<'a>(config: &'a Value, path: &str) -> Option<&'a Value> {
     const NULL: &Value = &Value::Null;
@@ -183,22 +188,24 @@ impl App {
         }
         let m = &config.masking;
         if differs("masking.sections") || differs("masking.combine") || differs("masking.refinements") {
-            ps.mask_sections = m.sections.clone();
-            ps.mask_combine = m.combine;
-            ps.mask_combined_refinements = m.refinements.clone();
-            // The preset whose recipe this is, else a recipe edited by hand.
+            // The recipe's parts are set together, as a preset sets them, and the preset is the
+            // one whose recipe this is, else a recipe edited by hand.
             ps.mask_preset = qsmxt_engine::mask_presets().iter()
                 .position(|(_, r)| r.sections == m.sections && r.combine == m.combine && r.refinements == m.refinements)
                 .unwrap_or(*MASK_PRESET_CUSTOM);
+            let st = &mut self.form.settings;
+            st.set("masking.sections", json(&m.sections));
+            st.set("masking.combine", json(&m.combine));
+            st.set("masking.refinements", json(&m.refinements));
         }
-        if differs("masking.two_pass_sections") {
-            if let Some(s) = &m.two_pass_sections {
-                ps.two_pass_sections = s.clone();
-            }
+        // An unset reliable mask is the one the form holds by default: the form's own is kept.
+        if differs("masking.two_pass_sections") && m.two_pass_sections.is_some() {
+            self.form.settings.set("masking.two_pass_sections", json(&m.two_pass_sections));
         }
         if differs("masking.two_pass_combine") {
-            ps.two_pass_combine = m.two_pass_combine;
+            self.form.settings.set("masking.two_pass_combine", json(&m.two_pass_combine));
         }
+        let ps = &mut self.pipeline_state;
         if differs("dismissed_recommendations") {
             ps.dismissed = config.dismissed_recommendations.clone();
         }
