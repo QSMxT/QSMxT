@@ -1127,6 +1127,45 @@ mod tests {
         App::new()
     }
 
+    /// With a config file named on the form, the run takes the file's settings and the form's on
+    /// top: those the form changed and that apply, the inversion and MEDI's SMV mode always,
+    /// background removal and QSM's switch only when not the default. Any other setting the file
+    /// gives stays the file's.
+    #[test]
+    fn the_forms_settings_apply_on_top_of_a_config_file() {
+        use crate::pipeline::config::{BfAlgorithm, QsmAlgorithm};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("c.toml");
+        let smv = !qsm_core::inversion::MediParams::default().smv;
+        std::fs::write(&path, format!(
+            "[pipeline]\ndo_swi = true\n\n[swi]\nstrength = 3.0\n\n[inversion]\nalgorithm = \"tkd\"\n\n\
+             [inversion.medi]\nsmv = {smv}\n\n[bg_removal]\nalgorithm = \"pdf\"\n\n[bg_removal.vsharp]\nmax_radius = 9.0\n")).unwrap();
+        let mut app = default_app();
+        app.form.bids_dir = "/bids".into();
+        app.form.config_file = path.display().to_string();
+        let run = |app: &App| {
+            let args = build_run_args(app).unwrap();
+            assert_eq!(args.config.as_deref(), Some(path.as_path()));
+            crate::commands::run::build_config(Some(&path), &args.pipeline).unwrap()
+        };
+        let c = run(&app);
+        assert_eq!(c.inversion.algorithm, QsmAlgorithm::Ilsqr, "the form's inversion, always");
+        assert_eq!(c.inversion.medi.smv, !smv, "the form's SMV mode, always");
+        assert_eq!(c.bg_removal.algorithm, BfAlgorithm::Pdf, "the form's default background removal is not passed");
+        assert!(c.pipeline.do_swi && c.swi.strength == 3.0, "settings the form left are the file's");
+        assert_eq!(c.bg_removal.vsharp.max_radius, 9.0);
+        assert!(c.pipeline.do_qsm);
+
+        app.form.settings.set("pipeline.do_r2starmap", true);
+        app.set_field_select("bf_algorithm", crate::tui::app::BF_OPTIONS.iter().position(|o| *o == "lbv").unwrap());
+        app.toggle_field("do_qsm");
+        let c = run(&app);
+        assert!(c.pipeline.do_r2starmap, "a setting the form changed is the form's");
+        assert_eq!(c.bg_removal.algorithm, BfAlgorithm::Lbv);
+        assert!(!c.pipeline.do_qsm);
+        assert!(c.pipeline.do_swi && c.swi.strength == 3.0);
+    }
+
     /// The "off" of a setting is a checkbox now, not a magic value typed into it: each one
     /// emits what the CLI means by off, and nothing until it is changed.
     #[test]
