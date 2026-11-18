@@ -135,3 +135,22 @@ pub fn report_lines(r: &dicom::ScanReport) -> Vec<String> {
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::Arc;
+
+    use crate::dicom::synth::write_fixture;
+    use crate::dicom::{plan_session, scan_dicom_directory};
+
+    #[test]
+    fn convert_command_dry_run_lists_names() {
+        let dir = tempfile::tempdir().unwrap();
+        write_fixture("swi_qsm_and_magnitude", dir.path());
+        let s = scan_dicom_directory(dir.path(), Arc::new(AtomicUsize::new(0))).unwrap();
+        let plans = plan_session(&s);
+        let lines = crate::commands::dicom::classification_lines(&s, &s.unique_series(), &plans);
+        assert!(lines.iter().any(|l| l.contains("[Scanner QSM]") && l.contains("rec-scanner_Chimap")), "{lines:#?}");
+    }
+}

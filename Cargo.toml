@@ -1,5 +1,16 @@
 [workspace]
-members = [".", "crates/qsmxt-engine"]
+members = [".", "crates/qsmxt-engine", "crates/qsmxt-io"]
+
+# The release workflow sets every `version = ` line here from the tag: the binary's and this one,
+# which qsmxt-io takes (its provenance and state files record it).
+[workspace.package]
+version = "0.0.0"  # set automatically by release CI from git tag
+
+[workspace.dependencies]
+# The one QSM.rs pin every crate uses: a QSM.rs release tag for a release, a QSM.rs main commit
+# (rev) between releases. qsmbly pins qsmxt-engine, so it resolves the same qsm-core.
+# tests/qsm_core_pin.rs checks it against Cargo.lock.
+qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "df6e736c1a4c6ac9bc6b2f050073abc2afa8fe3e" }
 
 [package]
 name = "qsmxt"
@@ -20,14 +31,13 @@ path = "src/main.rs"
 # such a build keeps all classical algorithms and reports a clear error if a DL algorithm
 # is selected.
 default = ["dl"]
-dl = ["qsm-core/onnx", "qsm-core/download", "qsmxt-engine/onnx"]
+dl = ["qsm-core/onnx", "qsm-core/download", "qsmxt-engine/onnx", "qsmxt-io/dl"]
 
 [dependencies]
-# Pinned to a QSM.rs release tag for a release, and to a QSM.rs main commit (rev) between
-# releases. qsmxt-engine must move in lockstep (same tag or rev), so qsmbly (which pins
-# qsmxt-engine) resolves the same qsm-core. tests/qsm_core_pin.rs checks both and Cargo.lock.
-qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "df6e736c1a4c6ac9bc6b2f050073abc2afa8fe3e", features = ["parallel"] }
+# Pinned once, in [workspace.dependencies].
+qsm-core = { workspace = true, features = ["parallel"] }
 qsmxt-engine = { path = "crates/qsmxt-engine" }
+qsmxt-io = { path = "crates/qsmxt-io" }
 clap = { version = "4", features = ["derive"] }
 const_format = "0.2"
 serde = { version = "1", features = ["derive"] }
@@ -58,6 +68,7 @@ fontdue = "0.9"
 png = "0.17"
 
 [dev-dependencies]
+qsmxt-io = { path = "crates/qsmxt-io", features = ["testutils"] }
 tempfile = "3"
 
 # Tests that pass data through qsm-core run its numerical code, which is about ten times slower

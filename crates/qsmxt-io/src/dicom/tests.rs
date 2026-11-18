@@ -403,16 +403,6 @@ fn a_name_two_series_would_share_is_an_error_and_neither_is_written() {
     assert!(c.images.iter().any(|f| f.contains("_rec-s11_part-mag_T2starw")), "{:?}", c.images);
 }
 
-#[test]
-fn convert_command_dry_run_lists_names() {
-    let dir = tempfile::tempdir().unwrap();
-    write_fixture("swi_qsm_and_magnitude", dir.path());
-    let s = scan_dicom_directory(dir.path(), Arc::new(AtomicUsize::new(0))).unwrap();
-    let plans = plan_session(&s);
-    let lines = crate::commands::dicom::classification_lines(&s, &s.unique_series(), &plans);
-    assert!(lines.iter().any(|l| l.contains("[Scanner QSM]") && l.contains("rec-scanner_Chimap")), "{lines:#?}");
-}
-
 /// Writes the BIDS `qsmxt dicom-convert` makes from every fixture into
 /// `$QSMXT_DICOM_FIXTURE_OUT/<fixture>/`, for CI's BIDS validator job.
 #[test]

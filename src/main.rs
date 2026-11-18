@@ -1,4 +1,3 @@
-mod bids;
 mod cli;
 #[cfg(test)]
 mod cli_reference;
@@ -8,16 +7,13 @@ mod cli_snapshots;
 #[path = "../tests/support/snapshot.rs"]
 mod snapshot;
 mod commands;
-mod dicom;
-mod error;
-mod example;
-mod multiorient;
-mod nifti;
-mod executor;
 mod pipeline;
-#[cfg(test)]
-mod testutils;
 mod tui;
+
+// The file side lives in qsmxt-io; under the same paths here.
+use qsmxt_io::{bids, dicom, error, example, executor, multiorient, nifti};
+#[cfg(test)]
+use qsmxt_io::testutils;
 
 pub use error::Result;
 

@@ -2324,6 +2324,7 @@ dependencies = [
  "png",
  "qsm-core",
  "qsmxt-engine",
+ "qsmxt-io",
  "ratatui",
  "rayon",
  "regex",
@@ -2350,6 +2351,32 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "toml",
+]
+
+[[package]]
+name = "qsmxt-io"
+version = "0.0.0"
+dependencies = [
+ "chrono",
+ "dicom",
+ "flate2",
+ "fontdue",
+ "glob",
+ "indicatif",
+ "log",
+ "nifti",
+ "png",
+ "qsm-core",
+ "qsmxt-engine",
+ "rayon",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.18",
+ "ureq",
+ "zip",
 ]
 
 [[package]]

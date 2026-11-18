@@ -17,11 +17,11 @@ use crate::error::QsmxtError;
 /// Serializes tests that mutate the download-related environment variables
 /// (`$QSMXT_EXAMPLE_CACHE`, `$QSMXT_EXAMPLE_BASE_URL`). Shared with the registry's
 /// URL tests, which set the same variables.
-#[cfg(test)]
+#[cfg(any(test, feature = "testutils"))]
 static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Take the environment lock used by tests that set those variables.
-#[cfg(test)]
+#[cfg(any(test, feature = "testutils"))]
 pub fn env_lock() -> std::sync::MutexGuard<'static, ()> {
     ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
@@ -59,7 +59,7 @@ pub fn cache_path(example: &Example) -> PathBuf {
 }
 
 /// Lowercase hex SHA-256 of a file, read incrementally.
-pub(crate) fn sha256_file(path: &Path) -> std::io::Result<String> {
+pub fn sha256_file(path: &Path) -> std::io::Result<String> {
     let mut f = fs::File::open(path)?;
     let mut hasher = Sha256::new();
     let mut buf = vec![0u8; CHUNK];

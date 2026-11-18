@@ -1,16 +1,20 @@
-//! qsm-core pin guard: QSMxT and qsmxt-engine pin the same QSM.rs commit or tag, and Cargo.lock
-//! builds it.
+//! qsm-core pin guard: QSMxT pins QSM.rs once, in the root Cargo.toml's `[workspace.dependencies]`,
+//! every crate takes that pin, and Cargo.lock builds it.
 //!
-//! During development both manifests pin QSM.rs by `rev = "<commit>"`; a release pins it by
-//! `tag = "vX.Y.Z"`. A git dependency's line in Cargo.lock reads `git+<url>?rev=<rev>#<commit>`
-//! (or `?tag=<tag>#<commit>`), and cargo builds `<commit>`, not what the query names. Editing only
-//! the query part of the line (as a repin by hand can) leaves the build on the old commit with
-//! nothing to show for it. This test is textual: it reads both manifests and the lockfile and
-//! fails unless they name the same pin, and, for a rev pin, the lock builds that commit. A tag's
-//! commit cannot be checked offline; build.rs records it in every output's provenance.
+//! During development the pin is `rev = "<commit>"`; a release pins it by `tag = "vX.Y.Z"`. A git
+//! dependency's line in Cargo.lock reads `git+<url>?rev=<rev>#<commit>` (or `?tag=<tag>#<commit>`),
+//! and cargo builds `<commit>`, not what the query names. Editing only the query part of the line
+//! (as a repin by hand can) leaves the build on the old commit with nothing to show for it. This
+//! test is textual: it reads the manifests and the lockfile and fails unless every crate takes the
+//! one pin and, for a rev pin, the lock builds that commit. A tag's commit cannot be checked
+//! offline; build.rs records it in every output's provenance.
 
 const ROOT_TOML: &str = include_str!("../Cargo.toml");
-const ENGINE_TOML: &str = include_str!("../crates/qsmxt-engine/Cargo.toml");
+const MEMBER_TOMLS: [(&str, &str); 3] = [
+    ("Cargo.toml", include_str!("../Cargo.toml")),
+    ("crates/qsmxt-engine/Cargo.toml", include_str!("../crates/qsmxt-engine/Cargo.toml")),
+    ("crates/qsmxt-io/Cargo.toml", include_str!("../crates/qsmxt-io/Cargo.toml")),
+];
 const LOCK: &str = include_str!("../Cargo.lock");
 
 #[derive(Debug, PartialEq)]
@@ -38,8 +42,17 @@ fn manifest_pin(toml: &str, which: &str) -> Pin {
 #[test]
 fn qsm_core_pin_is_the_same_in_both_manifests_and_the_lockfile() {
     let root = manifest_pin(ROOT_TOML, "Cargo.toml");
-    let engine = manifest_pin(ENGINE_TOML, "crates/qsmxt-engine/Cargo.toml");
-    assert_eq!(root, engine, "Cargo.toml and crates/qsmxt-engine/Cargo.toml pin different qsm-core versions");
+    // Every crate takes the workspace's pin rather than one of its own.
+    let pins: usize = MEMBER_TOMLS.iter()
+        .map(|(_, toml)| toml.lines().filter(|l| l.trim_start().starts_with("qsm-core = {") && l.contains("QSM.rs")).count())
+        .sum();
+    assert_eq!(pins, 1, "QSM.rs should be pinned once, in the root Cargo.toml's [workspace.dependencies]");
+    for (which, toml) in MEMBER_TOMLS {
+        let line = toml.lines().filter(|l| l.trim_start().starts_with("qsm-core = {"))
+            .find(|l| !l.contains("QSM.rs"))
+            .unwrap_or_else(|| panic!("{which}: no qsm-core dependency taking the workspace pin"));
+        assert!(line.contains("workspace = true"), "{which}: qsm-core should be `{{ workspace = true, … }}`: {line}");
+    }
 
     let sources: Vec<&str> = LOCK.lines()
         .filter_map(|l| l.strip_prefix("source = \"git+https://github.com/astewartau/QSM.rs.git?"))

@@ -41,7 +41,11 @@ fn qsm_core_from_lock(lock: &str) -> Option<QsmCore> {
 }
 
 fn main() {
-    let lock = fs::read_to_string("Cargo.lock").expect("build.rs: cannot read Cargo.lock");
+    // The workspace's lockfile: this script builds both the binary and crates/qsmxt-io.
+    let manifest_dir = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("build.rs: CARGO_MANIFEST_DIR"));
+    let lock_path = manifest_dir.ancestors().map(|d| d.join("Cargo.lock")).find(|p| p.is_file())
+        .expect("build.rs: no Cargo.lock in the package directory or above");
+    let lock = fs::read_to_string(&lock_path).expect("build.rs: cannot read Cargo.lock");
     let core = qsm_core_from_lock(&lock).expect("build.rs: no qsm-core package in Cargo.lock");
 
     // The exact QSM.rs commit behind every map has to be recoverable from the outputs, so a git
@@ -103,7 +107,7 @@ fn main() {
         }
     }
 
-    println!("cargo:rerun-if-changed=Cargo.lock");
+    println!("cargo:rerun-if-changed={}", lock_path.display());
     println!("cargo:rerun-if-changed=Cargo.toml");
 }
 

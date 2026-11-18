@@ -2113,4 +2113,23 @@ mod tests {
         let (x, y, z) = qsm_core::relaxometry::WASM_PATCH;
         assert_eq!(qsmxt_engine::profile::BROWSER_R2PRIMENET_PATCH, [x, y, z]);
     }
+
+    /// Members whose inversion skips background removal have no local field to combine; that is
+    /// refused before processing rather than after every member has run (#270).
+    #[test]
+    fn an_inversion_without_background_removal_is_refused_for_a_group() {
+        use crate::pipeline::config::{validate_multi_orientation, QsmAlgorithm};
+        let mut config = PipelineConfig::default();
+        config.multi_orientation.group_by = "acq".into();
+        assert!(validate_multi_orientation(&config).is_ok());
+        // MEDI takes the local field with every SMV option.
+        config.inversion.algorithm = QsmAlgorithm::Medi;
+        config.inversion.medi.smv = true;
+        assert!(validate_multi_orientation(&config).is_ok());
+        config.inversion.algorithm = QsmAlgorithm::Tgv;
+        assert!(validate_multi_orientation(&config).unwrap_err().to_string().contains("tgv"));
+        config.inversion.algorithm = QsmAlgorithm::Rts;
+        config.pipeline.do_qsm = false;
+        assert!(validate_multi_orientation(&config).unwrap_err().to_string().contains("--no-qsm"));
+    }
 }
