@@ -149,11 +149,16 @@ fn put(config: &mut Value, path: &str, value: Value) {
 /// from the values alone (every section of the config fills in its own defaults), so it costs
 /// as little as there are values.
 fn config_with(values: &[(&'static str, Value)]) -> Option<PipelineConfig> {
+    config_try(values).ok()
+}
+
+/// [`config_with`], or why the config refuses the values.
+fn config_try(values: &[(&'static str, Value)]) -> Result<PipelineConfig, String> {
     let mut json = Value::Object(Default::default());
     for (p, v) in values {
         put(&mut json, p, v.clone());
     }
-    serde_json::from_value(json).ok()
+    serde_json::from_value(json).map_err(|e| e.to_string())
 }
 
 /// A value as its text row shows it: a number as Rust writes it (4, 0.5), a triple or list with
@@ -195,6 +200,9 @@ fn parse(s: &Setting, text: &str) -> Option<Value> {
     }
 }
 
+/// A setting whose typed text the run cannot take, and why.
+pub type Refused = (&'static str, String);
+
 /// The echo number an echo reference's value gives, when it gives one the setting takes.
 fn echo_number(s: &Setting, v: &Value) -> Option<u32> {
     let ValueType::EchoReference { options } = &s.value_type else { return None };
@@ -219,8 +227,12 @@ impl SettingsStore {
 
     /// Set a value, dropping any text typed for it. A value the config refuses is left out.
     pub fn set(&mut self, path: &'static str, value: impl Into<Value>) {
-        let value = value.into();
         self.typed.remove(path);
+        self.put(path, value.into());
+    }
+
+    /// Set a value, leaving any text typed for it.
+    fn put(&mut self, path: &'static str, value: Value) {
         if value == setting(path).default {
             self.values.remove(path);
         } else if config_with(&[(path, value.clone())]).is_some() {
@@ -253,9 +265,14 @@ impl SettingsStore {
         if index == self.select(path) {
             return; // an echo number chosen again keeps its number
         }
-        let opts = setting(path).value_type.options();
+        let s = setting(path);
+        let opts = s.value_type.options();
         if let Some(o) = opts.get(index.min(opts.len().saturating_sub(1))) {
-            self.set(path, o.value.clone());
+            match s.value_type {
+                // The echo number typed waits under a named echo, for the number to be chosen again.
+                ValueType::EchoReference { .. } => self.put(path, o.value.clone()),
+                _ => self.set(path, o.value.clone()),
+            }
         }
     }
 
@@ -290,25 +307,55 @@ impl SettingsStore {
         }
     }
 
-    /// Put a setting back to QSMxT's default.
-    pub fn reset(&mut self, path: &'static str) {
-        self.typed.remove(path);
-        self.values.remove(path);
+    /// Put a setting back to QSMxT's default. For an echo reference, `value_row` resets the
+    /// echo number's row and not the choice, and the choice leaves the number, as the two rows
+    /// are reset one at a time.
+    pub fn reset(&mut self, path: &'static str, value_row: bool) {
+        let echo = matches!(setting(path).value_type, ValueType::EchoReference { .. });
+        if value_row || !echo {
+            self.typed.remove(path);
+        }
+        if !value_row {
+            self.values.remove(path);
+        }
     }
 
     /// The stored settings that differ from their defaults as the run takes them, typed text
     /// read as its value (a blank or unreadable text leaves the default; so does a value the
-    /// config refuses, such as a typed number too large for its setting).
-    pub fn changed(&self) -> Vec<(&'static str, Value)> {
+    /// config refuses, such as a typed number too large for its setting), and the settings whose
+    /// typed text the run cannot take at all, with why: an echo number typed while an echo by
+    /// number is chosen, which the command line would refuse too.
+    pub fn changed_or_refused(&self) -> (Vec<(&'static str, Value)>, Vec<Refused>) {
         let mut out: BTreeMap<&'static str, Value> = self.values.clone();
+        let mut refused = Vec::new();
         for (&path, text) in &self.typed {
             let s = setting(path);
+            if let ValueType::EchoReference { .. } = s.value_type {
+                // Taken only while an echo by number is chosen, and as it is typed.
+                if echo_number(s, &self.get(path)).is_none() {
+                    continue;
+                }
+                let v = Value::from(text.trim());
+                match config_try(&[(path, v.clone())]) {
+                    Ok(_) => out.insert(path, v),
+                    Err(e) => {
+                        refused.push((path, format!("{} {}: {e}", s.cli_flag.unwrap_or(path), text.trim())));
+                        out.remove(path)
+                    }
+                };
+                continue;
+            }
             match parse(s, text).filter(|v| *v != s.default && config_with(&[(path, v.clone())]).is_some()) {
                 Some(v) => out.insert(path, v),
                 None => out.remove(path),
             };
         }
-        out.into_iter().collect()
+        (out.into_iter().collect(), refused)
+    }
+
+    /// [`Self::changed_or_refused`]'s values.
+    pub fn changed(&self) -> Vec<(&'static str, Value)> {
+        self.changed_or_refused().0
     }
 
     /// The config with these of the stored settings ([`Self::changed`]) and QSMxT's defaults
@@ -471,5 +518,39 @@ mod tests {
         assert_eq!(config_from_app(&app).unwrap().swi.scaling, qsmxt_engine::SwiScaling::Tanh);
         app.toggle_field("do_swi");
         assert_eq!(config_from_app(&app).unwrap().swi.scaling, qsmxt_engine::SwiScaling::Negative);
+    }
+
+    /// An echo number the run cannot take is refused, as the command line refuses it, rather
+    /// than run with another reference; with motion correction off it does not apply.
+    #[test]
+    fn an_unreadable_echo_number_is_an_error() {
+        let mut app = App::new_for_trial();
+        app.toggle_field("motion_correction");
+        app.set_field_select("motion_reference", 2);
+        *app.field_text_mut("motion_reference_echo").unwrap() = "x".into();
+        let err = config_from_app(&app).expect_err("an unreadable echo number");
+        assert!(err.to_string().contains("--motion-reference x"), "{err}");
+        *app.field_text_mut("motion_reference_echo").unwrap() = "0".into();
+        assert!(config_from_app(&app).is_err(), "echoes count from 1");
+        app.toggle_field("motion_correction");
+        assert!(config_from_app(&app).is_ok(), "motion correction off: the number does not apply");
+    }
+
+    /// The echo number typed stays while a named echo is chosen, and is the reference again once
+    /// the echo number is.
+    #[test]
+    fn the_echo_number_survives_a_named_choice() {
+        use qsmxt_engine::MotionReference;
+        let mut app = App::new_for_trial();
+        app.toggle_field("motion_correction");
+        app.set_field_select("motion_reference", 2);
+        *app.field_text_mut("motion_reference_echo").unwrap() = "3".into();
+        let reference = |app: &App| config_from_app(app).unwrap().motion_correction.reference;
+        assert_eq!(reference(&app), MotionReference::Echo(3));
+        app.set_field_select("motion_reference", 1);
+        assert_eq!(reference(&app), MotionReference::Last);
+        app.set_field_select("motion_reference", 2);
+        assert_eq!(app.field_text("motion_reference_echo"), "3");
+        assert_eq!(reference(&app), MotionReference::Echo(3));
     }
 }

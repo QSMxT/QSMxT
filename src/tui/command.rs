@@ -998,13 +998,18 @@ pub fn methods_text(app: &App) -> Result<String, String> {
 /// it does not change the run.
 fn stored_values(app: &App, args: &PipelineArgs) -> crate::Result<Vec<(&'static str, serde_json::Value)>> {
     let settings = &app.form.settings;
-    let changed = settings.changed();
-    if changed.is_empty() {
+    let (changed, refused) = settings.changed_or_refused();
+    if changed.is_empty() && refused.is_empty() {
         return Ok(changed);
     }
     let mut config = settings.config_of(&changed);
     crate::pipeline::config::apply_run_overrides_as_given(&mut config, args)?;
     let visible = app.visible_settings(&config);
+    // Typed text the run cannot take is an error while its setting applies, as on the command
+    // line: the run is refused rather than run with something else.
+    if let Some((_, why)) = refused.iter().find(|(p, _)| visible.contains(p)) {
+        return Err(crate::error::QsmxtError::Config(why.clone()));
+    }
     Ok(changed.into_iter().filter(|(p, _)| visible.contains(p)).collect())
 }
 

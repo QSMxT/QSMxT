@@ -8973,7 +8973,8 @@ impl App {
             _ => {}
         }
         if let Some(path) = stored_path(field) {
-            return self.form.settings.reset(path);
+            let value_row = field_of_path(path) != Some(field);
+            return self.form.settings.reset(path, value_row);
         }
         if let (Some(d), Some(v)) = (form.text(field), self.form.text_mut(field)) {
             *v = d.clone();
