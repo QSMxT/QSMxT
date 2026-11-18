@@ -37,7 +37,7 @@ use crate::store::Item;
 
 pub use mask::{mask_schema, MaskSchema};
 pub use regular::{baseline, regular_view};
-pub use view::{prune_hidden, settings_view, SettingView, ViewFacts};
+pub use view::{prune_hidden, settings_view, visible_settings, SettingView, ViewFacts};
 
 /// A tab of the settings, as the TUI lays them out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]

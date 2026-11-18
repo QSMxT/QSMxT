@@ -495,7 +495,7 @@ mod tests {
         assert!(!after.contains("Background-field removal") && after.contains("TGV-QSM"), "{after}");
         // A setting on another tab (SWI, an output) adds its step.
         assert!(!after.contains("SWI"), "{after}");
-        app.form.do_swi = true;
+        app.form.settings.set("pipeline.do_swi", true);
         let swi = screen(&mut app, 80);
         assert!(swi.contains("SWI"), "{swi}");
     }
@@ -536,7 +536,7 @@ mod tests {
         app.form.bids_dir = bids.path().to_string_lossy().to_string();
         app.filter_state.maybe_rescan(&app.form.bids_dir.clone());
         assert!(app.planned().unwrap().motion.is_none(), "off: nothing to count");
-        app.pipeline_state.motion_correction = true;
+        app.form.settings.set("motion_correction.enabled", true);
         let s = screen(&mut app, 60);
         assert!(s.contains("Motion   Motion correction will run for 1 of 2 run(s); skipped for sub-1_T2starw (one echo)"), "{s}");
         app.filter_state.num_echoes = "1".into();

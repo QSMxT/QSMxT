@@ -2874,8 +2874,8 @@ pub(super) mod tests {
             line[..line.find(label).expect("just matched")].chars().count()
         };
         let mut app = App::new();
-        app.form.do_swi = true;
-        app.form.do_smwi = true;
+        app.form.settings.set("pipeline.do_swi", true);
+        app.form.settings.set("pipeline.do_smwi", true);
         app.form.do_segmentation = true;
         assert!(app.goto_field("do_smwi"));
         let text = screen_text(&render_app_sized(&mut app, 120, 60));
@@ -3245,13 +3245,13 @@ pub(super) mod tests {
         let mut app = App::new();
         for setup in [|_: &mut App| {}, |a: &mut App| {
             a.pipeline_state.do_qsm = false;
-            a.form.do_smwi = true;
-            a.form.do_swi = true;
+            a.form.settings.set("pipeline.do_smwi", true);
+            a.form.settings.set("pipeline.do_swi", true);
             a.form.do_analysis = true;
             a.form.do_r2primemap = true;
             a.form.export_dicom = true;
             a.filter_state.orientation_group = "acq".into();
-            a.pipeline_state.motion_correction = true;
+            a.form.settings.set("motion_correction.enabled", true);
             a.pipeline_state.do_chi_separation = true;
         }] {
             setup(&mut app);
@@ -3356,7 +3356,7 @@ pub(super) mod tests {
     fn test_draw_execution_tab_with_flags() {
         let mut app = App::new();
         app.active_tab = super::super::app::TAB_RECONSTRUCTION;
-        app.form.do_swi = true;
+        app.form.settings.set("pipeline.do_swi", true);
         app.form.do_t2starmap = true;
         app.form.dry_run = true;
         app.form.debug = true;

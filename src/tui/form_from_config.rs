@@ -240,7 +240,9 @@ impl App {
     /// Tick or untick a checkbox as the setting has it. Not through [`App::toggle_field`], which
     /// refuses to turn off an output another setting needs: the config says what is on.
     fn set_toggle(&mut self, field: &str, on: bool) {
-        if let Some(b) = self.form.flag_mut(field) {
+        if let Some(path) = super::settings_rows::stored_path(field) {
+            self.form.settings.set(path, Value::Bool(on));
+        } else if let Some(b) = self.form.flag_mut(field) {
             *b = on;
         } else if self.pipeline_state.get_toggle(field) != on {
             self.pipeline_state.toggle(field);

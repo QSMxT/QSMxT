@@ -11,6 +11,8 @@ use crate::bids::discovery::{self, BidsTree};
 use crate::dicom;
 use crate::nifti;
 
+use super::settings_rows::{stored_path, stored_placeholder};
+
 // ─── Input mode ───
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2009,9 +2011,6 @@ pub struct PipelineFormState {
     pub prelude_labelling: usize,
     /// PRELUDE's number of phase partitions.
     pub prelude_partitions: String,
-    /// Motion correction (off by default): reference index into [`MOTION_REFERENCE_OPTIONS`]
-    /// (0 first, 1 last, 2 a given echo), and the rigid registration's settings.
-    pub motion_correction: bool,
     /// Multi-orientation (grouping is on the Input tab): co-register a group's orientations when
     /// they need it, and reconstruct past the direction-degeneracy check.
     pub orientation_registration: bool,
@@ -2019,32 +2018,9 @@ pub struct PipelineFormState {
     pub cosmos_magnitude_weighting: bool,
     pub cosmos_tol: String,
     pub cosmos_max_iter: String,
-    pub motion_reference: usize,
-    pub motion_reference_echo: String,
-    pub motion_chain: bool,
-    pub motion_chain_levels: String,
-    pub motion_min_ncc: String,
-    pub reg_levels: String,
-    pub reg_max_samples: String,
-    pub reg_max_iterations: String,
-    pub reg_max_evaluations: String,
-    pub reg_tolerance: String,
-    pub reg_rotation_step_deg: String,
-    pub reg_translation_step_mm: String,
-    pub reg_min_overlap: String,
 
     // Parameters (as Strings for text editing)
     pub inhomogeneity_correction: bool,
-    /// Reconstruct a 2D acquisition whose sidecar says its slices leave a gap.
-    pub ignore_slice_gap: bool,
-    /// Taper ratio of the k-space Tukey window on each echo (`--tukey-window`; 0 = none).
-    pub tukey_window: String,
-    // Performance and output grid (Preprocessing → Geometry).
-    pub crop_to_mask: bool,
-    pub crop_margin_mm: String,
-    pub fft_padding: bool,
-    /// Index into [`OUTPUT_SPACE_OPTIONS`].
-    pub output_space: usize,
     // Inhomogeneity correction's own settings.
     /// Index into [`INHOMOGENEITY_METHOD_OPTIONS`] (0 = makehomogeneous, 1 = n4).
     pub inhomogeneity_method: usize,
@@ -2061,8 +2037,6 @@ pub struct PipelineFormState {
     pub n4_histogram_bins: String,
     /// An index into N4_GEOMETRY_OPTIONS.
     pub n4_geometry: usize,
-    /// MCPC-3D-S coil combination smoothing (x y z voxels), for uncombined multi-coil runs.
-    pub coil_combination_sigma: String,
     pub romeo_phase_coherence: bool,
     pub tgv_step_size: String,
     pub medi_merit: bool,
@@ -2075,9 +2049,6 @@ pub struct PipelineFormState {
     pub amp_pe_cvg_thd: String,
     /// Bring-your-own segmentation from derivatives (empty = off, * = any tool).
     pub custom_dseg_tool: String,
-    /// Resample oblique data to axial above `obliquity_threshold` (`--axial-resampling`).
-    pub axial_resampling: bool,
-    pub obliquity_threshold: String,
 
     // Deep-learning overlap-tiling (empty = off / whole-volume). Shown for tileable DL inversions.
     /// Run the deep-learning inversion tiled (`--tile-size`); off = whole volume.
@@ -2588,32 +2559,12 @@ impl Default for PipelineFormState {
             prelude_labelling: PRELUDE_LABELLING_OPTIONS.iter()
                 .position(|o| *o == qsmxt_engine::PreludeConfig::default().labelling.to_string()).unwrap_or(0),
             prelude_partitions: qsmxt_engine::PreludeConfig::default().num_phase_partitions.to_string(),
-            motion_correction: false,
             orientation_registration: true,
             multi_orientation_force: false,
             cosmos_magnitude_weighting: false,
             cosmos_tol: format!("{}", qsmxt_engine::MultiOrientationConfig::default().cosmos_tol),
             cosmos_max_iter: format!("{}", qsmxt_engine::MultiOrientationConfig::default().cosmos_max_iter),
-            motion_reference: 0,
-            motion_reference_echo: "1".to_string(),
-            motion_chain: qsmxt_engine::MotionCorrectionConfig::default().chain,
-            motion_chain_levels: qsmxt_engine::MotionCorrectionConfig::default().chain_levels.to_string(),
-            motion_min_ncc: format!("{}", qsmxt_engine::MotionCorrectionConfig::default().min_ncc),
-            reg_levels: format!("{}", qsmxt_engine::RegistrationConfig::default().levels),
-            reg_max_samples: format!("{}", qsmxt_engine::RegistrationConfig::default().max_samples),
-            reg_max_iterations: format!("{}", qsmxt_engine::RegistrationConfig::default().max_iterations),
-            reg_max_evaluations: format!("{}", qsmxt_engine::RegistrationConfig::default().max_evaluations),
-            reg_tolerance: format!("{}", qsmxt_engine::RegistrationConfig::default().tolerance),
-            reg_rotation_step_deg: format!("{}", qsmxt_engine::RegistrationConfig::default().rotation_step_deg),
-            reg_translation_step_mm: format!("{}", qsmxt_engine::RegistrationConfig::default().translation_step_mm),
-            reg_min_overlap: format!("{}", qsmxt_engine::RegistrationConfig::default().min_overlap),
             inhomogeneity_correction: true,
-            ignore_slice_gap: false,
-            tukey_window: fmt_default(qsmxt_engine::PipelineToggles::default().tukey_window),
-            crop_to_mask: false,
-            crop_margin_mm: fmt_default(qsmxt_engine::PipelineToggles::default().crop_margin_mm),
-            fft_padding: false,
-            output_space: 0,
             inhomogeneity_method: 0, // makehomogeneous
             homogeneity_sigma_mm: fmt_default(qsmxt_engine::HomogeneityConfig::default().sigma_mm),
             homogeneity_nbox: qsmxt_engine::HomogeneityConfig::default().nbox.to_string(),
@@ -2630,10 +2581,6 @@ impl Default for PipelineFormState {
             n4_wiener_noise: fmt_default(qsmxt_engine::N4Config::default().wiener_noise),
             n4_histogram_bins: qsmxt_engine::N4Config::default().histogram_bins.to_string(),
             n4_geometry: n4_geometry_index(qsmxt_engine::MaskingConfig::default().n4_geometry),
-            coil_combination_sigma: {
-                let s = qsmxt_engine::FieldMappingConfig::default().coil_combination_sigma;
-                format!("{} {} {}", s[0], s[1], s[2])
-            },
             romeo_phase_coherence: qsmxt_engine::RomeoConfig::default().phase_coherence,
             tgv_step_size: fmt_default(qsmxt_engine::TgvConfig::default().step_size),
             medi_merit: qsm_core::inversion::MediParams::default().merit,
@@ -2645,8 +2592,6 @@ impl Default for PipelineFormState {
             amp_pe_max_pe_est_ite: qsm_core::inversion::AmpPeParams::default().max_pe_est_ite.to_string(),
             amp_pe_cvg_thd: fmt_default(qsm_core::inversion::AmpPeParams::default().cvg_thd),
             custom_dseg_tool: String::new(),
-            axial_resampling: false,
-            obliquity_threshold: format!("{}", qsmxt_engine::DEFAULT_OBLIQUITY_THRESHOLD),
             dl_tiling: false,
             dl_tile_size: "128".to_string(),
             dl_tile_halo: String::new(),
@@ -3004,11 +2949,6 @@ const DATA_WEIGHTING_HELP: &[&str] = &[
     "Every voxel of the field weighs the same in the data term",
     "Weight the data term by the magnitude SNR, so noisy voxels count for less",
 ];
-pub const OUTPUT_SPACE_OPTIONS: &[&str] = &["acquired", "working"];
-const OUTPUT_SPACE_HELP: &[&str] = &[
-    "Write derivatives back on the acquired grid when the run was resampled to axial (default)",
-    "Leave derivatives on the resampled (axial) working grid, avoiding a second interpolation",
-];
 pub const SEP_ALGO_OPTIONS: &[&str] = &["r2star-qsm", "decompose", "chi-sep-ilsqr", "chi-sep-medi", "wavesep", "hc-chisep", "susep-net", "chi-sepnet"];
 const SEP_ALGO_HELP: &[&str] = &[
     "R2*-QSM closed-form (Dimov 2022) — QSM + R2*, GRE-only",
@@ -3334,12 +3274,6 @@ fn ismv_variant_index(v: qsmxt_engine::IsmvVariant) -> usize {
 fn fmt_triple(p: [usize; 3]) -> String {
     format!("{} {} {}", p[0], p[1], p[2])
 }
-pub const MOTION_REFERENCE_OPTIONS: &[&str] = &["first", "last", "echo"];
-const MOTION_REFERENCE_HELP: &[&str] = &[
-    "Align every echo onto the first (best SNR; the published procedure) (default)",
-    "Align every echo onto the last",
-    "Align every echo onto a given echo (Reference echo)",
-];
 const LAPLACIAN_SOLVER_HELP: &[&str] = &[
     "Unweighted least squares, Neumann-boundary DCT solve (Ghiglia & Romero 1994; QSM.jl :dct) (default)",
     "Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume",
@@ -3504,56 +3438,6 @@ impl PipelineFormState {
     }
 
 
-    /// Preprocessing → Geometry: the grid the data is reconstructed on.
-    fn geometry_rows(&self, rows: &mut Vec<PipelineRow>) {
-        let qsm = self.qsm_runs();
-        rows.push(PipelineRow::Toggle {
-            label: "Axial resampling", field: "axial_resampling",
-            help: "Resample oblique acquisitions onto an axial grid when they are tilted more than the threshold. Off: reconstruct on the acquired grid with the true B0 direction",
-        });
-        if self.axial_resampling {
-            rows.push(PipelineRow::Param { label: "  Obliquity threshold (°)", field: "obliquity_threshold",
-                help: "Resample only data more oblique than this, in degrees" });
-        }
-        // Where the outputs land only matters when something resamples: on request, or because
-        // a selected method only works on axial data (and resamples whatever this says).
-        if self.axial_resampling || self.ctx.axial_forced_by.is_some() {
-            if let Some(why) = &self.ctx.axial_forced_by {
-                rows.push(PipelineRow::Note { text: format!("  Oblique data is resampled to axial for {why}").into() });
-            }
-            rows.push(PipelineRow::AlgoSelect {
-                label: "  Output space", field: "output_space",
-                options: OUTPUT_SPACE_OPTIONS, help: OUTPUT_SPACE_HELP,
-            });
-        }
-        rows.push(PipelineRow::Toggle {
-            label: "Ignore slice gap", field: "ignore_slice_gap",
-            help: "Reconstruct even if the sidecar's SliceThickness is thinner than the slice pitch (gapped 2D data gives a wrong map)",
-        });
-        rows.push(PipelineRow::Param { label: "Tukey window", field: "tukey_window",
-            help: "Taper ratio of a k-space Tukey window applied to each echo's complex image before every other step: 0 applies none; the χ-separation toolbox uses 0.4, and 0 for Philips data. Needs magnitude" });
-        if qsm {
-            rows.push(PipelineRow::Toggle {
-                label: "Crop to mask", field: "crop_to_mask",
-                help: "Run the FFT-bound stages on a box around the mask (faster; outputs stay on the full grid). Off by default",
-            });
-            if self.crop_to_mask {
-                rows.push(PipelineRow::Param { label: "  Crop margin (mm)", field: "crop_margin_mm",
-                    help: "Margin around the mask; below ~32 mm results start to differ, and it must clear the largest SMV kernel" });
-            }
-            rows.push(PipelineRow::Toggle {
-                label: "FFT padding", field: "fft_padding",
-                help: "Pad the grid to an FFT-friendly size before the FFT-bound stages (faster on awkward grids; shifts results slightly). Off by default",
-            });
-        }
-        // Coil combination prepares the echoes every later stage reads, whatever the inversion;
-        // it only runs for uncombined multi-coil data.
-        if self.ctx.multi_coil {
-            rows.push(PipelineRow::Param { label: "Coil comb. sigma", field: "coil_combination_sigma",
-                help: "MCPC-3D-S smoothing of per-coil phase offsets, voxels (x y z); only for uncombined multi-coil data" });
-        }
-    }
-
     /// Preprocessing → Masking: the inhomogeneity correction of the magnitude masking reads (and
     /// the combined magnitude is made from).
     fn inhomogeneity_rows(&self, rows: &mut Vec<PipelineRow>) {
@@ -3637,33 +3521,6 @@ impl PipelineFormState {
                 options: TWO_PASS_MODE_OPTIONS, help: TWO_PASS_MODE_HELP });
         }
 
-    }
-
-    /// Preprocessing → Motion: echo co-registration, and the registration it runs.
-    fn motion_rows(&self, rows: &mut Vec<PipelineRow>) {
-        rows.push(PipelineRow::Toggle {
-            label: "Motion correction", field: "motion_correction",
-            help: "Rigidly co-register every echo onto a reference echo before any other stage (multi-echo, needs magnitude). Off by default",
-        });
-        if self.motion_correction {
-            rows.push(PipelineRow::AlgoSelect {
-                label: "  Reference", field: "motion_reference",
-                options: MOTION_REFERENCE_OPTIONS, help: MOTION_REFERENCE_HELP,
-            });
-            if self.motion_reference == 2 {
-            rows.push(PipelineRow::Param { label: "    Reference echo", field: "motion_reference_echo",
-                    help: "1-based echo number the others are aligned onto" });
-            }
-            rows.push(PipelineRow::Toggle { label: "  Chain", field: "motion_chain",
-                help: "Seed each echo's registration from its neighbour's solution" });
-            if self.motion_chain {
-            rows.push(PipelineRow::Param { label: "    Chain levels", field: "motion_chain_levels",
-                    help: "Pyramid levels for a seeded registration (default 3)" });
-            }
-            rows.push(PipelineRow::Param { label: "  Min NCC", field: "motion_min_ncc",
-                help: "NCC below which a registration is reported as suspect (0.3 for echoes; ~0.9 for repeats)" });
-            Self::push_registration_rows(rows);
-        }
     }
 
     /// QSM → Compute QSM: the QSM group's switch, with what turning it off does, or why QSM is
@@ -4377,9 +4234,7 @@ impl PipelineFormState {
     #[cfg(test)]
     pub fn all_rows(&self) -> Vec<PipelineRow> {
         let mut rows = Vec::new();
-        self.geometry_rows(&mut rows);
         self.masking_rows(&mut rows);
-        self.motion_rows(&mut rows);
         self.compute_qsm_rows(&mut rows);
         if self.qsm_runs() {
             if self.field_mapping_runs().0 { self.field_map_rows(&mut rows); }
@@ -4396,9 +4251,7 @@ impl PipelineFormState {
     pub fn visible_rows(&self) -> Vec<PipelineRow> {
         let mut rows = Vec::new();
         match self.page {
-            Page::Geometry => self.geometry_rows(&mut rows),
             Page::Masking => self.masking_rows(&mut rows),
-            Page::Motion => self.motion_rows(&mut rows),
             Page::ComputeQsm => self.compute_qsm_rows(&mut rows),
             // A QSM section says where QSM is turned on while it is off, and why when the
             // settings skip its stage: the sidebar lists every section whatever the settings.
@@ -4433,7 +4286,6 @@ impl PipelineFormState {
     /// All valid parameter field names, for testing that string dispatch is complete.
     #[cfg(test)]
     pub const ALL_PARAM_FIELDS: &[&str] = &[
-        "obliquity_threshold",
         "dl_tile_size", "dl_tile_halo",
         "rts_delta", "rts_mu", "rts_tol", "rts_rho", "rts_max_iter", "rts_lsmr_iter", "rts_tau", "rts_gamma",
         "tv_lambda", "tv_rho", "tv_tol", "tv_max_iter",
@@ -4471,7 +4323,7 @@ impl PipelineFormState {
         "hdqsm_alpha_l2", "hdqsm_mu1_l2", "hdqsm_mu2", "hdqsm_max_iter_l1", "hdqsm_max_iter_l2", "hdqsm_tol_update",
         "r2primenet_patch", "sep_chisepnet_patch", "sep_chisepnet_frame_patch", "sep_susepnet_patch",
         "laplacian_fft_pad", "prelude_partitions",
-        "crop_margin_mm", "tukey_window", "homogeneity_sigma_mm", "homogeneity_nbox", "coil_combination_sigma",
+        "homogeneity_sigma_mm", "homogeneity_nbox",
         "n4_shrink_factor", "n4_max_iterations", "n4_convergence_threshold", "n4_mesh", "n4_spline_order",
         "n4_bias_field_fwhm", "n4_wiener_noise", "n4_histogram_bins",
         "tgv_step_size",
@@ -4479,17 +4331,12 @@ impl PipelineFormState {
         "robust_fit_tuning", "robust_fit_iterations",
         "robust_fit_downweight_level", "robust_fit_flag_ratio",
         "complex_fit_reltol", "complex_fit_max_iter", "medi_lambda_csf", "medi_csf_r2s_threshold", "medi_zeropad",
-        "motion_reference_echo", "motion_chain_levels", "motion_min_ncc",
-        "reg_levels", "reg_max_samples", "reg_max_iterations", "reg_max_evaluations", "reg_tolerance", "reg_rotation_step_deg", "reg_translation_step_mm", "reg_min_overlap",
         "cosmos_tol", "cosmos_max_iter",
     ];
 
     /// Get a string parameter value by field name.
     pub fn get_param(&self, field: &str) -> &str {
         match field {
-            "obliquity_threshold" => &self.obliquity_threshold,
-            "crop_margin_mm" => &self.crop_margin_mm,
-            "tukey_window" => &self.tukey_window,
             "homogeneity_sigma_mm" => &self.homogeneity_sigma_mm,
             "homogeneity_nbox" => &self.homogeneity_nbox,
             "n4_shrink_factor" => &self.n4_shrink_factor,
@@ -4500,7 +4347,6 @@ impl PipelineFormState {
             "n4_bias_field_fwhm" => &self.n4_bias_field_fwhm,
             "n4_wiener_noise" => &self.n4_wiener_noise,
             "n4_histogram_bins" => &self.n4_histogram_bins,
-            "coil_combination_sigma" => &self.coil_combination_sigma,
             "tgv_step_size" => &self.tgv_step_size,
             "medi_data_weighting" => &self.medi_data_weighting,
             "tfi_data_weighting" => &self.tfi_data_weighting,
@@ -4561,17 +4407,6 @@ impl PipelineFormState {
             "medi_lambda_csf" => &self.medi_lambda_csf,
             "medi_csf_r2s_threshold" => &self.medi_csf_r2s_threshold,
             "medi_zeropad" => &self.medi_zeropad,
-            "motion_reference_echo" => &self.motion_reference_echo,
-            "motion_chain_levels" => &self.motion_chain_levels,
-            "motion_min_ncc" => &self.motion_min_ncc,
-            "reg_levels" => &self.reg_levels,
-            "reg_max_samples" => &self.reg_max_samples,
-            "reg_max_iterations" => &self.reg_max_iterations,
-            "reg_max_evaluations" => &self.reg_max_evaluations,
-            "reg_tolerance" => &self.reg_tolerance,
-            "reg_rotation_step_deg" => &self.reg_rotation_step_deg,
-            "reg_translation_step_mm" => &self.reg_translation_step_mm,
-            "reg_min_overlap" => &self.reg_min_overlap,
             "cosmos_tol" => &self.cosmos_tol,
             "cosmos_max_iter" => &self.cosmos_max_iter,
             "heidi_gradient_mask_floor" => &self.heidi_gradient_mask_floor,
@@ -4769,9 +4604,6 @@ impl PipelineFormState {
     /// Get a mutable reference to a string parameter.
     pub fn get_param_mut(&mut self, field: &str) -> Option<&mut String> {
         match field {
-            "obliquity_threshold" => Some(&mut self.obliquity_threshold),
-            "crop_margin_mm" => Some(&mut self.crop_margin_mm),
-            "tukey_window" => Some(&mut self.tukey_window),
             "homogeneity_sigma_mm" => Some(&mut self.homogeneity_sigma_mm),
             "homogeneity_nbox" => Some(&mut self.homogeneity_nbox),
             "n4_shrink_factor" => Some(&mut self.n4_shrink_factor),
@@ -4782,7 +4614,6 @@ impl PipelineFormState {
             "n4_bias_field_fwhm" => Some(&mut self.n4_bias_field_fwhm),
             "n4_wiener_noise" => Some(&mut self.n4_wiener_noise),
             "n4_histogram_bins" => Some(&mut self.n4_histogram_bins),
-            "coil_combination_sigma" => Some(&mut self.coil_combination_sigma),
             "tgv_step_size" => Some(&mut self.tgv_step_size),
             "medi_data_weighting" => Some(&mut self.medi_data_weighting),
             "tfi_data_weighting" => Some(&mut self.tfi_data_weighting),
@@ -4843,17 +4674,6 @@ impl PipelineFormState {
             "medi_lambda_csf" => Some(&mut self.medi_lambda_csf),
             "medi_csf_r2s_threshold" => Some(&mut self.medi_csf_r2s_threshold),
             "medi_zeropad" => Some(&mut self.medi_zeropad),
-            "motion_reference_echo" => Some(&mut self.motion_reference_echo),
-            "motion_chain_levels" => Some(&mut self.motion_chain_levels),
-            "motion_min_ncc" => Some(&mut self.motion_min_ncc),
-            "reg_levels" => Some(&mut self.reg_levels),
-            "reg_max_samples" => Some(&mut self.reg_max_samples),
-            "reg_max_iterations" => Some(&mut self.reg_max_iterations),
-            "reg_max_evaluations" => Some(&mut self.reg_max_evaluations),
-            "reg_tolerance" => Some(&mut self.reg_tolerance),
-            "reg_rotation_step_deg" => Some(&mut self.reg_rotation_step_deg),
-            "reg_translation_step_mm" => Some(&mut self.reg_translation_step_mm),
-            "reg_min_overlap" => Some(&mut self.reg_min_overlap),
             "cosmos_tol" => Some(&mut self.cosmos_tol),
             "cosmos_max_iter" => Some(&mut self.cosmos_max_iter),
             "heidi_gradient_mask_floor" => Some(&mut self.heidi_gradient_mask_floor),
@@ -5077,7 +4897,6 @@ impl PipelineFormState {
             "two_pass_mode" => self.two_pass_mode,
             "vsharp_grid" => self.vsharp_grid,
             "robust_fit_loss" => self.robust_fit_loss,
-            "motion_reference" => self.motion_reference,
             "star_te" => self.star_te,
             "whqsm_weight" => self.whqsm_weight,
             "ilsqr_precision" => self.ilsqr_precision,
@@ -5101,7 +4920,6 @@ impl PipelineFormState {
             "heidi_te" => self.heidi_te,
             "tgv_te" => self.tgv_te,
             "sep_decompose_chi_bound_mode" => self.sep_decompose_chi_bound_mode,
-            "output_space" => self.output_space,
             "mask_preset" => self.mask_preset,
             "separation_algorithm" => self.separation_algorithm,
             // Stored as the CLI value (0 uniform, 1 magnitude SNR).
@@ -5149,7 +4967,6 @@ impl PipelineFormState {
             "two_pass_mode" => self.two_pass_mode = val.min(TWO_PASS_MODE_OPTIONS.len() - 1),
             "vsharp_grid" => self.vsharp_grid = val,
             "robust_fit_loss" => self.robust_fit_loss = val,
-            "motion_reference" => self.motion_reference = val,
             "star_te" => self.star_te = val.min(ECHO_TIME_OPTIONS.len() - 1),
             "whqsm_weight" => self.whqsm_weight = val.min(WHQSM_WEIGHT_OPTIONS.len() - 1),
             "ilsqr_precision" => self.ilsqr_precision = val.min(ILSQR_PRECISION_OPTIONS.len() - 1),
@@ -5173,7 +4990,6 @@ impl PipelineFormState {
             "heidi_te" => self.heidi_te = val.min(ECHO_TIME_OPTIONS.len() - 1),
             "tgv_te" => self.tgv_te = val.min(ECHO_TIME_OPTIONS.len() - 1),
             "sep_decompose_chi_bound_mode" => self.sep_decompose_chi_bound_mode = val.min(CHI_BOUND_OPTIONS.len() - 1),
-            "output_space" => self.output_space = val,
             "mask_preset" => {
                 self.mask_preset = val;
                 self.apply_mask_preset(val);
@@ -5225,18 +5041,12 @@ impl PipelineFormState {
             "heidi_denoise" => self.heidi_denoise,
             "heidi_enabled" => self.heidi_enabled,
             "heidi_denoise_reference_itk" => self.heidi_denoise_reference_itk,
-            "ignore_slice_gap" => self.ignore_slice_gap,
-            "axial_resampling" => self.axial_resampling,
-            "crop_to_mask" => self.crop_to_mask,
-            "fft_padding" => self.fft_padding,
             "romeo_phase_coherence" => self.romeo_phase_coherence,
             "medi_merit" => self.medi_merit,
             "ndi_auto_stop" => self.ndi_auto_stop,
-            "motion_correction" => self.motion_correction,
             "orientation_registration" => self.orientation_registration,
             "multi_orientation_force" => self.multi_orientation_force,
             "cosmos_magnitude_weighting" => self.cosmos_magnitude_weighting,
-            "motion_chain" => self.motion_chain,
             "r2primenet_ignore_field_mismatch" => self.r2primenet_ignore_field_mismatch,
             "vsharp_deconvolve" => self.vsharp_deconvolve,
             "sep_decompose_unwrap_phase" => self.sep_decompose_unwrap_phase,
@@ -5284,18 +5094,12 @@ impl PipelineFormState {
             "heidi_denoise" => self.heidi_denoise = !self.heidi_denoise,
             "heidi_enabled" => self.heidi_enabled = !self.heidi_enabled,
             "heidi_denoise_reference_itk" => self.heidi_denoise_reference_itk = !self.heidi_denoise_reference_itk,
-            "ignore_slice_gap" => self.ignore_slice_gap = !self.ignore_slice_gap,
-            "axial_resampling" => self.axial_resampling = !self.axial_resampling,
-            "crop_to_mask" => self.crop_to_mask = !self.crop_to_mask,
-            "fft_padding" => self.fft_padding = !self.fft_padding,
             "romeo_phase_coherence" => self.romeo_phase_coherence = !self.romeo_phase_coherence,
             "medi_merit" => self.medi_merit = !self.medi_merit,
             "ndi_auto_stop" => self.ndi_auto_stop = !self.ndi_auto_stop,
-            "motion_correction" => self.motion_correction = !self.motion_correction,
             "orientation_registration" => self.orientation_registration = !self.orientation_registration,
             "multi_orientation_force" => self.multi_orientation_force = !self.multi_orientation_force,
             "cosmos_magnitude_weighting" => self.cosmos_magnitude_weighting = !self.cosmos_magnitude_weighting,
-            "motion_chain" => self.motion_chain = !self.motion_chain,
             "r2primenet_ignore_field_mismatch" => self.r2primenet_ignore_field_mismatch = !self.r2primenet_ignore_field_mismatch,
             "vsharp_deconvolve" => self.vsharp_deconvolve = !self.vsharp_deconvolve,
             "sep_decompose_unwrap_phase" => self.sep_decompose_unwrap_phase = !self.sep_decompose_unwrap_phase,
@@ -6179,19 +5983,6 @@ fn forced_output(field: &str) -> Option<crate::pipeline::requirements::Output> {
     crate::pipeline::requirements::Output::of_setting(&format!("pipeline.{field}"))
 }
 
-/// The SWI unwrapping select: qsmxt_engine's unwrappers, in [`super::command::SWI_UNWRAP_ARGS`]'s order.
-static SWI_UNWRAP_OPTIONS: LazyLock<Vec<&'static str>> =
-    LazyLock::new(|| qsmxt_engine::SwiUnwrap::ALL.iter().map(|s| s.as_str()).collect());
-static SWI_UNWRAP_HELP: LazyLock<Vec<&'static str>> = LazyLock::new(|| vec![
-    "Each echo unwrapped with the Laplacian method and high-pass filtered, then combined",
-    "Laplacian unwrapping slice by slice, for 2D multi-slice acquisitions",
-    "All echoes unwrapped together with ROMEO, combined, then high-pass filtered",
-]);
-/// The SWI scaling select: qsmxt_engine's scalings, in [`super::command::SWI_SCALING_ARGS`]'s order.
-static SWI_SCALING_OPTIONS: LazyLock<Vec<&'static str>> =
-    LazyLock::new(|| qsmxt_engine::SwiScaling::ALL.iter().map(|s| s.as_str()).collect());
-static SWI_SCALING_HELP: LazyLock<Vec<&'static str>> =
-    LazyLock::new(|| vec!["Phase scaling type for SWI"; SWI_SCALING_OPTIONS.len()]);
 const SYNTHSEG_VERSION_OPTIONS: &[&str] = &["v1", "v2"];
 const SYNTHSEG_VERSION_HELP: &[&str] = &["v1: SynthSeg 1.0, 32 labels (the default). v2: SynthSeg 2.0, 33 labels, adds a general CSF class (Billot et al., PNAS 2023)"; 2];
 const EXECUTION_MODE_OPTIONS: &[&str] = &["Local", "SLURM"];
@@ -6287,6 +6078,9 @@ pub struct App {
     pub advanced: bool,
     /// The settings Basic mode shows, for the config they were worked out from.
     basic_cache: std::cell::RefCell<Option<(String, BasicPaths)>>,
+    /// Which settings apply, for the config and facts they were worked out for
+    /// ([`super::settings_rows`]).
+    pub(super) visible_cache: super::settings_rows::VisibleCache,
     /// The config the form builds ([`super::command::config_from_app`]), or why it builds none,
     /// as of the last [`App::prepare_frame`]: what the frame shows. Read through
     /// [`App::current_config`], which uses it only while the form cannot have changed since.
@@ -6489,18 +6283,11 @@ pub struct RunForm {
     pub output_dir: String,
     pub config_file: String,
 
+    /// The settings of the sections whose rows come from the registry, in a config
+    /// ([`super::settings_rows`]).
+    pub settings: super::settings_rows::SettingsStore,
+
     // Other outputs
-    /// Publish the combined magnitude (`--no-magnitude` when off).
-    pub do_magnitude: bool,
-    pub do_swi: bool,
-    pub swi_unwrap: usize,  // index into qsmxt_engine::SwiUnwrap::ALL (= command::SWI_UNWRAP_ARGS)
-    pub swi_scaling: usize,  // index into qsmxt_engine::SwiScaling::ALL (= command::SWI_SCALING_ARGS)
-    pub swi_strength: String,
-    /// High-pass sigma per axis, "x y z" in voxels.
-    pub swi_hp_sigma: String,
-    pub swi_mip_window: String,
-    /// Also write the filtered phase the SWI is weighted by (`desc-swi_phase`).
-    pub swi_filtered_phase: bool,
     pub do_t2starmap: bool,
     pub do_r2starmap: bool,
     pub do_r2map: bool,
@@ -6511,7 +6298,6 @@ pub struct RunForm {
     /// the ticked, so a map turned on later is exported unless it is unticked too.
     pub source_dicom: String,
     pub dicom_unticked: Vec<String>,
-    pub do_smwi: bool,
     pub do_segmentation: bool,
     pub do_analysis: bool,
     pub synthseg_version: usize,
@@ -6522,9 +6308,6 @@ pub struct RunForm {
     /// Smooth SynthSeg's posteriors (off = a sigma of 0).
     pub synthseg_smoothing: bool,
     pub synthseg_sigma: String,
-    pub smwi_threshold: String,
-    pub smwi_power: String,
-    pub smwi_mip_window: String,
 
     // Tab 4: Execution
     pub execution_mode: usize, // 0=Local, 1=SLURM
@@ -6559,17 +6342,15 @@ macro_rules! named_fields {
 /// The run form's fields, by the names their rows carry.
 impl RunForm {
     named_fields!(text, text_mut, String, [
-        swi_strength, swi_hp_sigma, swi_mip_window,
-        source_dicom, synthseg_crop, synthseg_patch, synthseg_sigma, smwi_threshold, smwi_power,
-        smwi_mip_window, n_procs, mem_limit_gb, slurm_account, slurm_partition, slurm_time,
-        slurm_mem, slurm_cpus,
+        source_dicom, synthseg_crop, synthseg_patch, synthseg_sigma, n_procs, mem_limit_gb, slurm_account,
+        slurm_partition, slurm_time, slurm_mem, slurm_cpus,
     ]);
     named_fields!(flag, flag_mut, bool, [
-        do_magnitude, do_swi, swi_filtered_phase, do_t2starmap, do_r2starmap, do_r2map, do_r2primemap, export_dicom, do_smwi,
+        do_t2starmap, do_r2starmap, do_r2map, do_r2primemap, export_dicom,
         do_segmentation, do_analysis, synthseg_flip_averaging, synthseg_topology_cleanup, synthseg_smoothing,
         dry_run, debug, force, clean_intermediates, slurm_submit,
     ]);
-    named_fields!(choice, choice_mut, usize, [swi_unwrap, swi_scaling, synthseg_version, execution_mode]);
+    named_fields!(choice, choice_mut, usize, [synthseg_version, execution_mode]);
 
     /// The memory limit row, read: `(limit in GB, no limit)` — empty or `auto` detects it.
     pub fn mem_limit(&self) -> (Option<f64>, bool) {
@@ -6578,31 +6359,16 @@ impl RunForm {
         (v.parse().ok().filter(|g: &f64| *g > 0.0), false)
     }
 
-    /// The SWI high-pass sigma row, read: three numbers (spaces or commas), else none.
-    pub fn swi_hp_sigma_values(&self) -> Option<Vec<f64>> {
-        let v: Vec<f64> = self.swi_hp_sigma.split(|c: char| c == ',' || c.is_whitespace())
-            .filter(|t| !t.is_empty()).map(|t| t.parse().ok()).collect::<Option<_>>()?;
-        (v.len() == 3).then_some(v)
-    }
 }
 
 impl Default for RunForm {
     fn default() -> Self {
-        let swi = qsm_core::swi::SwiParams::default();
-        let smwi = qsm_core::swi::SmwiParams::default();
         let seg = crate::pipeline::config::SegmentationConfig::default();
         Self {
             bids_dir: String::new(),
             output_dir: String::new(),
             config_file: String::new(),
-            do_magnitude: true,
-            do_swi: false,
-            swi_unwrap: 0,
-            swi_scaling: 0,
-            swi_strength: format!("{}", swi.strength),
-            swi_hp_sigma: format!("{} {} {}", swi.hp_sigma[0], swi.hp_sigma[1], swi.hp_sigma[2]),
-            swi_mip_window: format!("{}", swi.mip_window),
-            swi_filtered_phase: false,
+            settings: Default::default(),
             do_t2starmap: false,
             do_r2starmap: false,
             do_r2map: false,
@@ -6610,7 +6376,6 @@ impl Default for RunForm {
             export_dicom: false,
             source_dicom: String::new(),
             dicom_unticked: Vec::new(),
-            do_smwi: false,
             do_segmentation: false,
             do_analysis: false,
             synthseg_version: 0,
@@ -6620,9 +6385,6 @@ impl Default for RunForm {
             synthseg_topology_cleanup: seg.topology_cleanup,
             synthseg_smoothing: seg.sigma_smoothing > 0.0,
             synthseg_sigma: format!("{}", seg.sigma_smoothing),
-            smwi_threshold: format!("{}", smwi.threshold_ppm),
-            smwi_power: format!("{}", smwi.power),
-            smwi_mip_window: format!("{}", smwi.mip_window),
             execution_mode: 0,
             dry_run: false,
             debug: false,
@@ -6696,6 +6458,7 @@ impl App {
             hits: Default::default(),
             advanced: true,
             basic_cache: Default::default(),
+            visible_cache: Default::default(),
             config: None,
             in_frame: false,
         }
@@ -8086,11 +7849,15 @@ impl App {
 
     /// What the rest of the form decides about the pipeline tabs' rows (see [`RowContext`]).
     pub fn row_context(&self) -> RowContext {
+        let config = self.current_config();
+        self.row_context_with(config.as_ref().as_ref().ok())
+    }
+
+    /// [`Self::row_context`], for the config the form builds now.
+    fn row_context_with(&self, config: Option<&crate::pipeline::config::PipelineConfig>) -> RowContext {
         let ps = &self.pipeline_state;
         let (group, algorithm, _) = self.filter_state.orientation_args();
         // Whether QSM runs is the resolved config's answer — the same enforcement the run applies.
-        let config = self.current_config();
-        let config = config.as_ref().as_ref().ok();
         // The config as the form gives it, and as the run takes it: QSM another output needs is
         // a required change the run makes itself when it is left off.
         let qsm_forced = config.as_ref().filter(|_| !ps.do_qsm)
@@ -8109,12 +7876,17 @@ impl App {
                     &c.normalised().0, qsmxt_engine::bridge::RunOrientationFacts { has_measured_r2: false });
                 (!names.is_empty()).then(|| names.join(", "))
             }),
-            multi_coil: self.filter_state.tree.as_ref().is_none_or(|t| {
-                let mut any = false;
-                t.for_each_run(|leaf| any |= leaf.selected && leaf.multi_coil);
-                any
-            }),
+            multi_coil: self.multi_coil(),
         }
+    }
+
+    /// Whether a selected run is uncombined multi-coil data (true until runs are listed).
+    pub fn multi_coil(&self) -> bool {
+        self.filter_state.tree.as_ref().is_none_or(|t| {
+            let mut any = false;
+            t.for_each_run(|leaf| any |= leaf.selected && leaf.multi_coil);
+            any
+        })
     }
 
     /// Which bring-your-own inputs the run can use, from what the form asks for (see
@@ -8123,7 +7895,7 @@ impl App {
         let ps = &self.pipeline_state;
         let f = &self.form;
         let mut c = qsmxt_engine::PipelineConfig::default();
-        (c.pipeline.do_chi_separation, c.pipeline.do_analysis, c.pipeline.do_smwi) = (ps.do_chi_separation, f.do_analysis, f.do_smwi);
+        (c.pipeline.do_chi_separation, c.pipeline.do_analysis, c.pipeline.do_smwi) = (ps.do_chi_separation, f.do_analysis, f.settings.toggle("pipeline.do_smwi"));
         (c.pipeline.do_r2map, c.pipeline.do_r2primemap) = (f.do_r2map, f.do_r2primemap);
         if let Some(sep) = SEP_ALGO_OPTIONS.get(ps.separation_algorithm) {
             c.separation.algorithm = serde_json::from_value(serde_json::json!(sep)).expect("SEP_ALGO_OPTIONS are the config's names");
@@ -8686,9 +8458,9 @@ impl App {
                 }
             }
             Page::Separation => on(ps.do_chi_separation),
-            Page::Smwi => on(self.form.do_smwi),
-            Page::Magnitude => on(self.form.do_magnitude),
-            Page::Swi => on(self.form.do_swi),
+            Page::Smwi => on(self.form.settings.toggle("pipeline.do_smwi")),
+            Page::Magnitude => on(self.form.settings.toggle("pipeline.do_magnitude")),
+            Page::Swi => on(self.form.settings.toggle("pipeline.do_swi")),
             Page::Relaxometry => on(["do_t2starmap", "do_r2starmap", "do_r2map", "do_r2primemap"].iter().any(|f| self.output_made(f))),
             Page::Segmentation => on(self.output_made("do_segmentation") || self.form.do_analysis),
             Page::Export => on(self.form.export_dicom),
@@ -8893,31 +8665,43 @@ impl App {
 
     /// Any page's rows, as they would show now.
     pub fn page_rows(&self, page: Page) -> Vec<PipelineRow> {
-        self.page_rows_in(page, &self.row_context())
+        let config = self.current_config();
+        let config = config.as_ref().as_ref().ok();
+        self.page_rows_in(page, &self.row_context_with(config), config)
     }
 
-    /// Every page of every tab with its rows, as they apply now (the context worked out once).
+    /// Every row of the pipeline form's pages that shows now, page after page: for tests that ask
+    /// whether a setting is reachable, not where.
+    #[cfg(test)]
+    pub fn pipeline_rows(&self) -> Vec<PipelineRow> {
+        Page::RECONSTRUCTION.iter().filter(|p| p.is_pipeline()).flat_map(|&p| self.page_rows(p)).collect()
+    }
+
+    /// Every page of every tab with its rows, as they apply now (the config and context worked
+    /// out once).
     pub fn all_pages(&self) -> Vec<(usize, Page, Vec<PipelineRow>)> {
-        let ctx = self.row_context();
+        let config = self.current_config();
+        let config = config.as_ref().as_ref().ok();
+        let ctx = self.row_context_with(config);
         (0..TAB_NAMES.len())
             .flat_map(|t| self.pages(t).into_iter().map(move |p| (t, p)))
-            .map(|(t, p)| (t, p, self.page_rows_in(p, &ctx)))
+            .map(|(t, p)| (t, p, self.page_rows_in(p, &ctx, config)))
             .collect()
     }
 
-    fn page_rows_in(&self, page: Page, ctx: &RowContext) -> Vec<PipelineRow> {
-        let rows = self.all_page_rows_in(page, ctx);
+    fn page_rows_in(&self, page: Page, ctx: &RowContext, config: Option<&crate::pipeline::config::PipelineConfig>) -> Vec<PipelineRow> {
+        let rows = self.all_page_rows_in(page, ctx, config);
         let rows = if self.advanced || !Page::RECONSTRUCTION.contains(&page) { rows } else { self.basic_rows(rows) };
         wrap_notes(rows, self.note_width.get().saturating_sub(2) as usize)
     }
 
     /// A page's rows with every setting shown (Advanced mode).
-    fn all_page_rows_in(&self, page: Page, ctx: &RowContext) -> Vec<PipelineRow> {
+    fn all_page_rows_in(&self, page: Page, ctx: &RowContext, config: Option<&crate::pipeline::config::PipelineConfig>) -> Vec<PipelineRow> {
+        if let Some(rows) = self.registry_rows(page, ctx, config) {
+            return rows;
+        }
         match page {
             p if p.is_pipeline() => self.synced_pipeline(p, ctx).visible_rows(),
-            Page::Magnitude => self.magnitude_rows(),
-            Page::Swi => self.swi_rows(),
-            Page::Smwi => self.smwi_rows(),
             Page::Relaxometry => self.relaxometry_rows(),
             Page::Segmentation => self.segmentation_rows(),
             Page::Export => self.export_rows(),
@@ -8990,17 +8774,22 @@ impl App {
     }
 
     /// A text field's value, by name: the run form's, the Input tab's, else the pipeline form's.
-    pub fn field_text(&self, field: &str) -> &str {
-        match (self.form.text(field), field) {
+    pub fn field_text(&self, field: &str) -> std::borrow::Cow<'_, str> {
+        if let Some(path) = stored_path(field) {
+            return self.form.settings.text(path);
+        }
+        std::borrow::Cow::Borrowed(match (self.form.text(field), field) {
             (Some(s), _) => s,
             (None, "orientation_lambda") => &self.filter_state.orientation_lambda,
             (None, "orientation_reference") => &self.filter_state.orientation_reference,
             (None, _) => self.pipeline_state.get_param(field),
-        }
+        })
     }
 
     pub fn field_text_mut(&mut self, field: &str) -> Option<&mut String> {
-        if self.form.text(field).is_some() {
+        if let Some(path) = stored_path(field) {
+            Some(self.form.settings.text_mut(path))
+        } else if self.form.text(field).is_some() {
             self.form.text_mut(field)
         } else if field == "orientation_lambda" {
             Some(&mut self.filter_state.orientation_lambda)
@@ -9013,6 +8802,9 @@ impl App {
 
     /// A select's option index, by name.
     pub fn field_select(&self, field: &str) -> usize {
+        if let Some(path) = stored_path(field) {
+            return self.form.settings.select(path);
+        }
         if let Some(&c) = self.form.choice(field) {
             return c;
         }
@@ -9025,6 +8817,9 @@ impl App {
     }
 
     pub fn set_field_select(&mut self, field: &str, val: usize) {
+        if let Some(path) = stored_path(field) {
+            return self.form.settings.set_select(path, val);
+        }
         if let Some(c) = self.form.choice_mut(field) {
             *c = val;
             return;
@@ -9079,6 +8874,9 @@ impl App {
         if field == "do_segmentation" {
             return self.form.do_segmentation || !self.pipeline_state.custom_dseg_tool.trim().is_empty();
         }
+        if let Some(path) = stored_path(field) {
+            return self.form.settings.toggle(path);
+        }
         match self.form.flag(field) {
             Some(&b) => b,
             None => self.pipeline_state.get_toggle(field),
@@ -9128,6 +8926,9 @@ impl App {
                 }
             }
         }
+        if let Some(path) = stored_path(field) {
+            return self.form.settings.flip(path);
+        }
         match self.form.flag_mut(field) {
             Some(b) => *b = !*b,
             None => self.pipeline_state.toggle(field),
@@ -9141,6 +8942,7 @@ impl App {
             "mem_limit_gb" | "n_procs" => "auto",
             "orientation_lambda" => "0 (none)",
             "orientation_reference" => "first by name",
+            _ if stored_path(field).is_some() => stored_placeholder(stored_path(field).unwrap_or_default()),
             _ if self.form.text(field).is_some() => "(empty)",
             _ => "(default)",
         }
@@ -9169,6 +8971,10 @@ impl App {
                 return;
             }
             _ => {}
+        }
+        if let Some(path) = stored_path(field) {
+            let value_row = field_of_path(path) != Some(field);
+            return self.form.settings.reset(path, value_row);
         }
         if let (Some(d), Some(v)) = (form.text(field), self.form.text_mut(field)) {
             *v = d.clone();
@@ -9212,48 +9018,6 @@ impl App {
             if fields.is_empty() { break; }
             fields.iter().for_each(|f| self.reset_field(f));
         }
-    }
-
-    /// Other outputs → Magnitude: whether the combined magnitude is published.
-    fn magnitude_rows(&self) -> Vec<PipelineRow> {
-        vec![
-            PipelineRow::Toggle { label: "Combined magnitude", field: "do_magnitude",
-                help: "Publish the combined magnitude (part-mag_T2starw): the root sum of squares of the echoes, corrected for inhomogeneity when that is on. Off, it is still made for SMWI, segmentation or a magnitude-weighted inversion, and kept with the run's intermediates" },
-        ]
-    }
-
-    /// Other outputs → SWI: susceptibility-weighted imaging, from the phase.
-    fn swi_rows(&self) -> Vec<PipelineRow> {
-        use PipelineRow::{AlgoSelect, Param, Toggle};
-        let f = &self.form;
-        let mut rows = vec![Toggle { label: "Compute SWI", field: "do_swi", help: "Also compute susceptibility-weighted images with CLEAR-SWI, from every echo" }];
-        if f.do_swi {
-            rows.push(AlgoSelect { label: "  Unwrapping", field: "swi_unwrap", options: &SWI_UNWRAP_OPTIONS, help: &SWI_UNWRAP_HELP });
-            rows.push(AlgoSelect { label: "  Scaling", field: "swi_scaling", options: &SWI_SCALING_OPTIONS, help: &SWI_SCALING_HELP });
-            rows.push(Param { label: "  Strength", field: "swi_strength", help: "Phase scaling strength (higher = stronger phase contrast)" });
-            rows.push(Param { label: "  HP sigma (x y z)", field: "swi_hp_sigma", help: "High-pass filter sigma per axis, in voxels (x y z): background phase removal. Set z to 0 for thin axial slices" });
-            rows.push(Param { label: "  mIP window", field: "swi_mip_window", help: "Minimum intensity projection window size in slices" });
-            rows.push(Toggle { label: "  Filtered phase", field: "swi_filtered_phase",
-                help: "Also write the high-pass filtered phase the SWI is weighted by (desc-swi_phase): Hz for several echoes, radians for one" });
-        }
-        rows
-    }
-
-    /// QSM → SMWI: susceptibility map-weighted imaging, made from χ.
-    fn smwi_rows(&self) -> Vec<PipelineRow> {
-        use PipelineRow::{Param, Toggle};
-        let f = &self.form;
-        let mut rows = Vec::new();
-        rows.push(Toggle { label: "Compute SMWI", field: "do_smwi", help: "Susceptibility map-weighted imaging — weights the magnitude by a mask built from χ, not from filtered phase. Needs QSM" });
-        if f.do_smwi {
-            rows.push(Param { label: "  Threshold", field: "smwi_threshold", help: "|χ| in ppm at which the weighting mask reaches zero. The 1 ppm default targets strong sources; brain tissue wants far less" });
-            rows.push(Param { label: "  Power", field: "smwi_power", help: "Power the mask is raised to (contrast strength)" });
-            rows.push(Param { label: "  mIP window", field: "smwi_mip_window", help: "Minimum-intensity-projection window in slices" });
-            if self.input_relevance().qsm {
-                rows.push(PipelineFormState::custom_qsm_row());
-            }
-        }
-        rows
     }
 
     /// Other outputs → Relaxometry: the maps, the R2' source, and the maps that may be supplied.
@@ -9360,11 +9124,11 @@ impl App {
     fn dicom_map_made(&self, m: &DicomMap) -> bool {
         match m.group {
             // The combined magnitude, when it is published.
-            "magnitude" => self.form.do_magnitude,
+            "magnitude" => self.form.settings.toggle("pipeline.do_magnitude"),
             "χ" => self.qsm_on(),
-            "SWI" => self.form.do_swi,
-            "SWI phase" => self.form.do_swi && self.form.swi_filtered_phase,
-            "SMWI" => self.form.do_smwi,
+            "SWI" => self.form.settings.toggle("pipeline.do_swi"),
+            "SWI phase" => self.form.settings.toggle("pipeline.do_swi") && self.form.settings.toggle("swi.filtered_phase"),
+            "SMWI" => self.form.settings.toggle("pipeline.do_smwi"),
             "T2*" => self.output_made("do_t2starmap"),
             "R2*" => self.output_made("do_r2starmap"),
             "R2" => self.output_made("do_r2map"),
@@ -10232,13 +9996,13 @@ mod tests {
     #[test]
     fn rows_name_real_fields() {
         let mut app = App::new();
-        app.form.do_swi = true;
-        app.form.do_smwi = true;
+        app.form.settings.set("pipeline.do_swi", true);
+        app.form.settings.set("pipeline.do_smwi", true);
         app.form.do_segmentation = true;
         app.form.export_dicom = true;
         app.form.do_analysis = true;
         app.form.do_r2primemap = true;
-        app.pipeline_state.motion_correction = true;
+        app.form.settings.set("motion_correction.enabled", true);
         app.filter_state.orientation_group = "acq".into();
         for mode in [0, 1] {
             app.form.execution_mode = mode;
@@ -10266,7 +10030,7 @@ mod tests {
         let form = RunForm::default();
         assert!(form.bids_dir.is_empty());
         assert!(form.output_dir.is_empty());
-        assert!(!form.do_swi);
+        assert!(!form.settings.toggle("pipeline.do_swi"));
     }
 
 
@@ -10397,7 +10161,7 @@ mod tests {
         }
         assert!(rows(&app, Page::ComputeQsm).iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("Off: no field map"))));
         // A forced QSM keeps the stages, and its section says why.
-        app.form.do_smwi = true;
+        app.form.settings.set("pipeline.do_smwi", true);
         assert_eq!(state(&app, Page::Inversion), SectionState::On);
         assert_eq!(state(&app, Page::ComputeQsm), SectionState::On);
         assert!(rows(&app, Page::ComputeQsm).iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("QSM → SMWI"))));
@@ -10732,7 +10496,6 @@ mod tests {
             ("vsharp-grid", VSHARP_GRID_OPTIONS.len(), VSHARP_GRID_HELP.len()),
             ("b0-estimation", B0_ESTIMATION_OPTIONS.len(), B0_ESTIMATION_HELP.len()),
             ("robust-fit-loss", ROBUST_FIT_LOSS_OPTIONS.len(), ROBUST_FIT_LOSS_HELP.len()),
-            ("motion-reference", MOTION_REFERENCE_OPTIONS.len(), MOTION_REFERENCE_HELP.len()),
             ("bg-removal", BF_OPTIONS.len(), BF_HELP.len()),
             ("qsm-reference", qsm_ref_options().len(), qsm_ref_help().len()),
             ("mask-preset", MASK_PRESET_OPTIONS.len(), mask_preset_help().len()),
@@ -11212,7 +10975,7 @@ mod tests {
     #[test]
     fn test_pipeline_edit_text_param() {
         let mut app = App::new();
-        app.pipeline_state.axial_resampling = true;
+        app.form.settings.set("pipeline.axial_resampling", true);
         assert!(app.goto_field("obliquity_threshold"));
         // Find the obliquity_threshold Param row
         let rows = app.rows();
@@ -11233,11 +10996,11 @@ mod tests {
         app.handle_key(key(KeyCode::Home));
         app.handle_key(key(KeyCode::End));
         // Backspace to clear
-        for _ in 0..app.pipeline_state.get_param("obliquity_threshold").len() {
+        for _ in 0..app.field_text("obliquity_threshold").len() {
             app.handle_key(key(KeyCode::Backspace));
         }
         app.handle_key(key(KeyCode::Char('5')));
-        assert_eq!(app.pipeline_state.get_param("obliquity_threshold"), "5");
+        assert_eq!(app.field_text("obliquity_threshold"), "5");
         // Escape exits editing
         app.handle_key(key(KeyCode::Esc));
         assert!(!app.pipeline_state.editing);
@@ -11343,16 +11106,16 @@ mod tests {
     #[test]
     fn test_pipeline_visible_rows_change_on_toggle() {
         let mut app = App::new();
-        let rows_with_qsm = app.pipeline_state.all_rows().len();
+        let rows_with_qsm = app.pipeline_rows().len();
         app.pipeline_state.do_qsm = false;
-        let rows_without_qsm = app.pipeline_state.all_rows().len();
+        let rows_without_qsm = app.pipeline_rows().len();
         assert!(rows_without_qsm < rows_with_qsm);
     }
 
     #[test]
     fn test_pipeline_editing_left_right_cursor() {
         let mut app = App::new();
-        app.pipeline_state.axial_resampling = true;
+        app.form.settings.set("pipeline.axial_resampling", true);
         assert!(app.goto_field("obliquity_threshold"));
         // Find obliquity_threshold param and edit it
         let rows = app.rows();
@@ -11368,7 +11131,7 @@ mod tests {
         app.handle_key(key(KeyCode::Enter));
         assert!(app.pipeline_state.editing);
         // Move cursor left and right
-        let len = app.pipeline_state.get_param("obliquity_threshold").len();
+        let len = app.field_text("obliquity_threshold").len();
         assert_eq!(app.pipeline_state.cursor, len);
         app.handle_key(key(KeyCode::Left));
         assert_eq!(app.pipeline_state.cursor, len - 1);
@@ -11386,11 +11149,11 @@ mod tests {
         let mut app = App::new();
         app.active_tab = TAB_RECONSTRUCTION;
         focus_on(&mut app, TAB_RECONSTRUCTION, "do_swi");
-        assert!(!app.form.do_swi);
+        assert!(!app.form.settings.toggle("pipeline.do_swi"));
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.form.do_swi);
+        assert!(app.form.settings.toggle("pipeline.do_swi"));
         app.handle_key(key(KeyCode::Char(' ')));
-        assert!(!app.form.do_swi);
+        assert!(!app.form.settings.toggle("pipeline.do_swi"));
     }
 
     #[test]
@@ -11417,20 +11180,21 @@ mod tests {
     fn test_supplementary_swi_scaling_select() {
         let mut app = App::new();
         app.active_tab = TAB_RECONSTRUCTION;
-        app.form.do_swi = true; // make SWI fields visible
+        app.form.settings.set("pipeline.do_swi", true); // make SWI fields visible
         focus_on(&mut app, TAB_RECONSTRUCTION, "swi_scaling");
-        assert_eq!(app.form.swi_scaling, 0); // tanh
+        let scaling = |app: &App| app.form.settings.get("swi.scaling");
+        assert_eq!(scaling(&app), "tanh");
         step(&mut app, 1);
-        assert_eq!(app.form.swi_scaling, 1); // negative-tanh
+        assert_eq!(scaling(&app), "negative-tanh");
         step(&mut app, -1);
-        assert_eq!(app.form.swi_scaling, 0);
+        assert_eq!(scaling(&app), "tanh");
     }
 
     #[test]
     fn test_supplementary_edit_swi_strength() {
         let mut app = App::new();
         app.active_tab = TAB_RECONSTRUCTION;
-        app.form.do_swi = true;
+        app.form.settings.set("pipeline.do_swi", true);
         focus_on(&mut app, TAB_RECONSTRUCTION, "swi_strength");
         app.handle_key(key(KeyCode::Enter));
         assert!(app.pipeline_state.editing);
@@ -11449,7 +11213,7 @@ mod tests {
         // SWI fields are hidden when do_swi is false: Compute SWI is the section's only row.
         app.handle_key(key(KeyCode::Down));
         assert_eq!(app.focused_field_name().as_deref(), Some("do_swi"));
-        app.form.do_swi = true;
+        app.form.settings.set("pipeline.do_swi", true);
         app.handle_key(key(KeyCode::Down));
         assert_eq!(app.focused_field_name().as_deref(), Some("swi_unwrap"));
         app.handle_key(key(KeyCode::Up));
@@ -11459,7 +11223,7 @@ mod tests {
     #[test]
     fn test_supplementary_swi_visible_when_enabled() {
         let mut app = App::new();
-        app.form.do_swi = true;
+        app.form.settings.set("pipeline.do_swi", true);
         assert!(shows(&mut app, TAB_RECONSTRUCTION, "swi_scaling")); // SWI Scaling
         assert!(shows(&mut app, TAB_RECONSTRUCTION, "swi_strength")); // SWI Strength
         assert!(shows(&mut app, TAB_RECONSTRUCTION, "swi_mip_window")); // SWI MIP Window
@@ -11471,9 +11235,9 @@ mod tests {
     fn swi_filtered_phase_is_an_swi_output_and_exportable() {
         let mut app = App::new();
         let phase = dicom_map("dicom_out_swi_phase").unwrap();
-        app.form.do_swi = true;
-        assert!(!app.form.swi_filtered_phase && !app.dicom_map_made(phase), "off by default");
-        app.form.swi_filtered_phase = true;
+        app.form.settings.set("pipeline.do_swi", true);
+        assert!(!app.form.settings.toggle("swi.filtered_phase") && !app.dicom_map_made(phase), "off by default");
+        app.form.settings.set("swi.filtered_phase", true);
         assert!(app.dicom_map_made(phase));
         app.form.export_dicom = true;
         let export: Vec<&str> = app.page_rows(Page::Export).iter().filter_map(row_field).collect();
@@ -11481,7 +11245,7 @@ mod tests {
         app.form.dicom_unticked = vec!["desc-swi_phase".into()];
         assert!(!app.dicom_outputs().unwrap().iter().any(|m| m == "desc-swi_phase"));
         // Without SWI there is no phase, and the row is hidden.
-        app.form.do_swi = false;
+        app.form.settings.set("pipeline.do_swi", false);
         assert!(!app.dicom_map_made(phase));
         assert!(!shows(&mut app, TAB_RECONSTRUCTION, "swi_filtered_phase"));
     }
@@ -11506,24 +11270,24 @@ mod tests {
         let mut app = App::new();
         app.active_tab = TAB_RECONSTRUCTION;
         focus_on(&mut app, TAB_RECONSTRUCTION, "do_swi");
-        app.form.do_swi = true;
+        app.form.settings.set("pipeline.do_swi", true);
         app.handle_key(key(KeyCode::Char('r')));
-        assert!(!app.form.do_swi); // reset to default
+        assert!(!app.form.settings.toggle("pipeline.do_swi")); // reset to default
     }
 
     #[test]
     fn test_supplementary_reset_tab() {
         let mut app = App::new();
         app.active_tab = TAB_RECONSTRUCTION;
-        app.form.do_swi = true;
+        app.form.settings.set("pipeline.do_swi", true);
         app.form.do_t2starmap = true;
         app.form.do_r2starmap = true;
-        app.form.swi_scaling = 3;
+        app.form.settings.set("swi.scaling", "negative");
         app.sub_page[TAB_RECONSTRUCTION] = Some(Page::Swi);
         app.sync_pipeline_mode();
         app.handle_key(key(KeyCode::Char('R')));
-        assert!(!app.form.do_swi);
-        assert_eq!(app.form.swi_scaling, 0);
+        assert!(!app.form.settings.toggle("pipeline.do_swi"));
+        assert_eq!(app.form.settings.get("swi.scaling"), "tanh");
         assert!(app.form.do_t2starmap && app.form.do_r2starmap, "Relaxometry is another page");
         focus_on(&mut app, TAB_RECONSTRUCTION, "do_t2starmap");
         app.handle_key(key(KeyCode::Char('R')));
@@ -12532,12 +12296,11 @@ mod tests {
     fn test_reset_supplementary_fields() {
         let mut app = App::new();
         app.active_tab = TAB_RECONSTRUCTION;
-        app.form.do_swi = true;
+        app.form.settings.set("pipeline.do_swi", true);
         focus_on(&mut app, TAB_RECONSTRUCTION, "swi_strength");
-        app.form.swi_strength = "999".to_string();
+        *app.field_text_mut("swi_strength").unwrap() = "999".to_string();
         app.handle_key(key(KeyCode::Char('r')));
-        let defaults = RunForm::default();
-        assert_eq!(app.form.swi_strength, defaults.swi_strength);
+        assert_eq!(app.field_text("swi_strength"), RunForm::default().settings.text("swi.strength"));
     }
 
     #[test]
@@ -12946,15 +12709,15 @@ mod tests {
             assert!(!f.contains(&gone.to_string()), "{gone} shown with QSM off: {f:?}");
         }
         // Motion correction's own settings follow it, not QSM.
-        app.pipeline_state.toggle("motion_correction");
+        app.toggle_field("motion_correction");
         let f = fields(&mut app);
         assert!(f.contains(&"motion_reference".to_string()) && f.contains(&"reg_levels".to_string()), "{f:?}");
 
         // SMWI needs a χ map: QSM runs regardless, and its settings are on show, with the reason.
-        app.form.do_smwi = true;
+        app.form.settings.set("pipeline.do_smwi", true);
         let f = fields(&mut app);
         assert!(f.contains(&"qsm_algorithm".to_string()) && f.contains(&"unwrapping_algorithm".to_string()), "{f:?}");
-        assert!(app.pipeline_state.all_rows().iter().any(|r|
+        assert!(app.pipeline_rows().iter().any(|r|
             matches!(r, PipelineRow::Note { text } if text.contains("SMWI"))), "the forced QSM says why");
     }
 
@@ -12962,7 +12725,7 @@ mod tests {
     #[test]
     fn bipolar_correction_needs_offset_removal() {
         let mut app = App::new();
-        let shows = |app: &App| app.pipeline_state.all_rows().iter().any(|r|
+        let shows = |app: &App| app.pipeline_rows().iter().any(|r|
             matches!(r, PipelineRow::Toggle { field: "bipolar_correction", .. }));
         app.pipeline_state.bipolar_correction = true;
         let passed = |app: &App| super::super::command::pipeline_args_from_app(app).bipolar_correction;
@@ -13150,7 +12913,7 @@ mod tests {
         let before = app.pipeline_state.mask_sections.clone();
         app.pipeline_state.set_select("qsm_algorithm", qsmart);
         assert_eq!(app.pipeline_state.mask_sections, before, "choosing QSMART changes no mask");
-        assert!(!app.pipeline_state.all_rows().iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("brain mask"))));
+        assert!(!app.pipeline_rows().iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("brain mask"))));
         app.pipeline_state.set_select("mask_preset", 1);
         app.reset_field("mask_preset");
         assert_eq!(app.pipeline_state.mask_sections, before);
@@ -13604,7 +13367,7 @@ mod tests {
     #[test]
     fn test_reset_pipeline_param_field() {
         let mut app = App::new();
-        app.pipeline_state.axial_resampling = true;
+        app.form.settings.set("pipeline.axial_resampling", true);
         assert!(app.goto_field("obliquity_threshold"));
         // Find obliquity_threshold param
         let rows = app.rows();
@@ -13618,16 +13381,10 @@ mod tests {
         }
         app.pipeline_state.focus = fi;
         // Modify the value
-        if let Some(s) = app.pipeline_state.get_param_mut("obliquity_threshold") {
-            *s = "999".to_string();
-        }
+        *app.field_text_mut("obliquity_threshold").unwrap() = "999".to_string();
         // Reset
         app.handle_key(key(KeyCode::Char('r')));
-        let defaults = PipelineFormState::default();
-        assert_eq!(
-            app.pipeline_state.get_param("obliquity_threshold"),
-            defaults.get_param("obliquity_threshold")
-        );
+        assert_eq!(app.field_text("obliquity_threshold"), App::new().field_text("obliquity_threshold"));
     }
 
     #[test]
@@ -13648,19 +13405,20 @@ mod tests {
     #[test]
     fn test_supplementary_edit_swi_hp_sigma() {
         let mut app = App::new();
-        app.form.do_swi = true;
+        app.form.settings.set("pipeline.do_swi", true);
         // One row for the three axes.
         focus_on(&mut app, TAB_RECONSTRUCTION, "swi_hp_sigma");
-        assert_eq!(app.form.swi_hp_sigma_values().map(|v| v.len()), Some(3), "the default parses");
+        let sigma = |app: &App| super::super::command::config_from_app(app).unwrap().swi.hp_sigma;
+        assert_eq!(sigma(&app), qsmxt_engine::SwiConfig::default().hp_sigma, "the default parses");
         app.handle_key(key(KeyCode::Enter));
         assert!(app.pipeline_state.editing);
         for _ in 0..20 { app.handle_key(key(KeyCode::Backspace)); }
         for c in "4, 4 0".chars() { app.handle_key(key(KeyCode::Char(c))); }
         app.handle_key(key(KeyCode::Enter));
         assert!(!app.pipeline_state.editing);
-        assert_eq!(app.form.swi_hp_sigma_values(), Some(vec![4.0, 4.0, 0.0]));
-        app.form.swi_hp_sigma = "4 4".into();
-        assert_eq!(app.form.swi_hp_sigma_values(), None, "three values or none");
+        assert_eq!(sigma(&app), [4.0, 4.0, 0.0]);
+        *app.field_text_mut("swi_hp_sigma").unwrap() = "3 3".into();
+        assert_eq!(sigma(&app), qsmxt_engine::SwiConfig::default().hp_sigma, "three values or none");
     }
 
     // ========== Pipeline: switch algorithms and verify row changes ==========
@@ -13678,7 +13436,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_qsm_algorithm_all_params() {
-        let mut ps = PipelineFormState::default();
+        let mut ps = PipelineFormState { page: Page::Inversion, ..Default::default() };
         // Switch through EVERY QSM algorithm (incl. the deep-learning ones: single-step
         // NeXtQSM/AutoQSM hide BG removal; end-to-end iQSM/iQSM+ hide field mapping too).
         for algo in 0..QSM_ALGO_OPTIONS.len() {
@@ -13998,7 +13756,7 @@ mod tests {
     fn the_dicom_checklist_follows_what_the_settings_make() {
         let mut app = App::new();
         app.form.export_dicom = true;
-        app.form.do_swi = true;
+        app.form.settings.set("pipeline.do_swi", true);
         let fields: Vec<&str> = app.page_rows(Page::Export).iter().filter_map(row_field).collect();
         assert!(["dicom_out_chimap", "dicom_out_swi", "dicom_out_minip"].iter().all(|f| fields.contains(f)), "{fields:?}");
         assert!(!fields.contains(&"dicom_out_t2starmap"), "T2* is not made: {fields:?}");
@@ -14180,8 +13938,8 @@ mod tests {
     fn app_with_every_row() -> App {
         use crate::pipeline::config::{MaskOp, MaskSection, MaskingInput};
         let mut app = App::new();
-        app.form.do_swi = true;
-        app.form.do_smwi = true;
+        app.form.settings.set("pipeline.do_swi", true);
+        app.form.settings.set("pipeline.do_smwi", true);
         app.form.export_dicom = true;
         app.form.do_t2starmap = true;
         app.form.do_r2starmap = true;

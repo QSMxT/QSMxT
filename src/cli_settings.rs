@@ -81,18 +81,26 @@ pub fn arg(f: &Flag) -> Arg {
         .hide_default_value(f.has("hide_default_value"))
 }
 
-/// `qsmxt run`'s settings: the flags given and, from the TUI, its form as `PipelineArgs` (until it
-/// holds a configuration, refactor P4), applied first.
+/// `qsmxt run`'s settings: the flags given and, from the TUI, its form: the settings it still
+/// keeps in fields as `PipelineArgs` (until it holds a configuration, refactor P4), applied first,
+/// then those it keeps in a configuration, by path.
 #[derive(Debug, Default)]
 pub struct SettingsArgs {
     pub given: Vec<Given>,
     pub form: Option<Box<crate::cli::PipelineArgs>>,
+    pub values: Vec<(&'static str, serde_json::Value)>,
 }
 
 impl SettingsArgs {
-    /// The TUI's form.
+    /// The TUI's form, as `PipelineArgs` alone (the integration tests' runs).
+    #[cfg(test)]
     pub fn form(args: crate::cli::PipelineArgs) -> Self {
-        SettingsArgs { given: Vec::new(), form: Some(Box::new(args)) }
+        Self::tui(args, Vec::new())
+    }
+
+    /// The TUI's form: its fields as `PipelineArgs`, and the settings it keeps by path.
+    pub fn tui(args: crate::cli::PipelineArgs, values: Vec<(&'static str, serde_json::Value)>) -> Self {
+        SettingsArgs { given: Vec::new(), form: Some(Box::new(args)), values }
     }
 }
 
@@ -123,7 +131,7 @@ impl clap::Args for SettingsArgs {
 
 impl clap::FromArgMatches for SettingsArgs {
     fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
-        Ok(SettingsArgs { given: given(matches), form: None })
+        Ok(SettingsArgs { given: given(matches), form: None, values: Vec::new() })
     }
     fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
         self.given = given(matches);
@@ -161,6 +169,9 @@ pub fn build_config(mut config: PipelineConfig, settings: &SettingsArgs) -> crat
 pub fn apply_normalised(config: &mut PipelineConfig, settings: &SettingsArgs) -> crate::Result<()> {
     if let Some(form) = &settings.form {
         crate::pipeline::config::apply_run_overrides_as_given(config, form)?;
+    }
+    for (path, value) in &settings.values {
+        qsmxt_engine::schema::set(config, path, value.clone()).map_err(QsmxtError::Config)?;
     }
     apply(config, &settings.given)?;
     crate::pipeline::config::normalise_logged(config);

@@ -224,23 +224,17 @@ fn forcing_setting(c: &PipelineConfig, out: Output) -> Option<&'static str> {
     crate::requirements::implied_by_setting(c, out)
 }
 
-/// How each setting of [`schema`](super::schema) applies to `config`, in schema order: whether
-/// it is shown, and which setting forces it on. The TUI's rules, from the config rather than
-/// from its form.
-pub fn settings_view(config: &PipelineConfig, facts: &ViewFacts) -> Vec<SettingView> {
-    let c = resolved(config);
-    let grouped = c.multi_orientation.enabled();
+/// The context the settings' visibility rules read, for `c` (a config already resolved).
+fn ctx<'a>(c: &'a PipelineConfig, facts: &ViewFacts) -> Ctx<'a> {
     let p = &c.pipeline;
     let s = &c.separation;
-    let inv = name(&c.inversion.algorithm);
-    let sep = name(&s.algorithm);
     let r2prime_based = !matches!(s.algorithm, SeparationAlgorithm::R2starQsm | SeparationAlgorithm::Decompose);
     let reads_r2prime = p.do_r2primemap || (p.do_chi_separation && r2prime_based);
     let computes_r2prime = reads_r2prime && s.custom_r2prime_tool.is_none();
-    let x = Ctx {
-        c: &c,
+    Ctx {
+        c,
         qsm: p.do_qsm,
-        grouped,
+        grouped: c.multi_orientation.enabled(),
         cosmos: c.multi_orientation.algorithm == crate::config::MultiOrientAlgorithm::Cosmos,
         laplacian: c.field_mapping.unwrapping_algorithm == UnwrappingAlgorithm::Laplacian,
         romeo: c.field_mapping.unwrapping_algorithm == UnwrappingAlgorithm::Romeo,
@@ -248,25 +242,45 @@ pub fn settings_view(config: &PipelineConfig, facts: &ViewFacts) -> Vec<SettingV
         combines: !c.qsm.per_echo,
         multi_coil: facts.multi_coil.unwrap_or(true),
         axial_forced: !crate::bridge::axial_only_algorithms(
-            &c, crate::bridge::RunOrientationFacts { has_measured_r2: false }).is_empty(),
-        uses_bet: uses_bet(&c),
+            c, crate::bridge::RunOrientationFacts { has_measured_r2: false }).is_empty(),
+        uses_bet: uses_bet(c),
         tileable: c.runs_a_tileable_network(),
         reads_qsm: p.do_chi_separation || p.do_analysis || p.do_smwi,
         reads_r2: p.do_r2map || (computes_r2prime && s.r2prime_strategy != R2PrimeStrategy::R2primenet),
         reads_r2prime,
         computes_r2prime,
         segmentation_on: p.do_segmentation || c.segmentation.custom_dseg_tool.is_some(),
-        inv,
+        inv: name(&c.inversion.algorithm),
         bf: name(&c.bg_removal.algorithm),
-        sep,
+        sep: name(&s.algorithm),
         qsmart_inner: name(&c.inversion.qsmart.inversion),
-    };
+    }
+}
+
+/// Whether the setting `d` applies.
+fn applies(d: &super::Def, x: &Ctx, facts: &ViewFacts) -> bool {
+    // Compute QSM is the switch that turns its sections on, so it is shown either way.
+    d.path == "pipeline.do_qsm" || section_applies(d.section, x, facts) && d.when.is_none_or(|f| f(x))
+}
+
+/// Which settings apply to `config`, and so are shown: [`settings_view`]'s `visible`, in schema
+/// order, without the findings it also works out, for a front end that only needs the rows.
+pub fn visible_settings(config: &PipelineConfig, facts: &ViewFacts) -> Vec<(&'static str, bool)> {
+    let c = resolved(config);
+    let x = ctx(&c, facts);
+    super::defs().iter().map(|d| (d.path, applies(d, &x, facts))).collect()
+}
+
+/// How each setting of [`schema`](super::schema) applies to `config`, in schema order: whether
+/// it is shown, and which setting forces it on. The TUI's rules, from the config rather than
+/// from its form.
+pub fn settings_view(config: &PipelineConfig, facts: &ViewFacts) -> Vec<SettingView> {
+    let c = resolved(config);
+    let x = ctx(&c, facts);
     let mut views: Vec<SettingView> = super::defs()
         .iter()
         .map(|d| {
-            // Compute QSM is the switch that turns its sections on, so it is shown either way.
-            let visible = d.path == "pipeline.do_qsm"
-                || section_applies(d.section, &x, facts) && d.when.is_none_or(|f| f(&x));
+            let visible = applies(d, &x, facts);
             let forced_by = match d.path {
                 // QSM another output needs runs whatever Compute QSM says.
                 "pipeline.do_qsm" if !config.pipeline.do_qsm && c.pipeline.do_qsm => Some(
@@ -455,8 +469,8 @@ fn sentence(message: &str) -> String {
 /// QSMxT's default, so a value left behind by an earlier choice cannot change the run or show
 /// up in its command.
 pub fn prune_hidden(config: &PipelineConfig, facts: &ViewFacts) -> PipelineConfig {
-    let hidden: Vec<&str> = settings_view(config, facts).into_iter()
-        .filter(|v| !v.visible).map(|v| v.path).collect();
+    let hidden: Vec<&str> = visible_settings(config, facts).into_iter()
+        .filter(|(_, visible)| !visible).map(|(path, _)| path).collect();
     if hidden.is_empty() {
         return config.clone();
     }

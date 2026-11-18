@@ -672,10 +672,10 @@ mod tests {
     fn undo_my_change_sets_the_reference_back() {
         // A change made before: not undone.
         let mut app = app();
-        app.form.do_swi = true;
+        app.form.settings.set("pipeline.do_swi", true);
         app.check_recommendations();
         let mut app = ventricles_after(app);
-        let before_swi = app.form.do_swi;
+        let before_swi = app.form.settings.toggle("pipeline.do_swi");
         assert!(before_swi && app.rec_modal.is_some());
         // The second button is Undo my change (K, as Keep mine's key, or U).
         app.handle_rec_modal_key(KeyEvent::from(KeyCode::Char('u')));
@@ -683,7 +683,7 @@ mod tests {
         let config = super::super::command::config_from_app(&app).unwrap();
         assert_eq!(config.qsm.reference, qsmxt_engine::enums::QsmReference::Mean, "the reference is back");
         assert!(!config.pipeline.do_segmentation && !app.form.do_segmentation, "segmentation was not turned on");
-        assert_eq!(app.form.do_swi, before_swi);
+        assert_eq!(app.form.settings.toggle("pipeline.do_swi"), before_swi);
         assert!(app.status_message.as_deref().is_some_and(|m| m.contains("QSM reference back to mean")), "{:?}", app.status_message);
         app.check_recommendations();
         assert!(app.rec_modal.is_none(), "nothing is required any more");
@@ -1716,7 +1716,7 @@ mod tests {
     fn every_selector_is_a_picker() {
         let triggers = rec::reference_trigger_settings();
         let mut app = app();
-        app.form.do_swi = true;
+        app.form.settings.set("pipeline.do_swi", true);
         for (_, _, rows) in app.all_pages() {
             for row in &rows {
                 if let PipelineRow::AlgoSelect { field, .. } = row {
