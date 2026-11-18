@@ -13,6 +13,9 @@ use crate::nifti;
 
 use super::settings_rows::{stored_path, stored_placeholder};
 
+/// The supplied segmentation's tool: whether one is named is the segmentation's source.
+const DSEG: &str = "segmentation.custom_dseg_tool";
+
 // ─── Input mode ───
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1989,8 +1992,6 @@ pub struct PipelineFormState {
     pub amp_pe_max_pe_spar_ite: String,
     pub amp_pe_max_pe_est_ite: String,
     pub amp_pe_cvg_thd: String,
-    /// Bring-your-own segmentation from derivatives (empty = off, * = any tool).
-    pub custom_dseg_tool: String,
 
     // Deep-learning overlap-tiling (empty = off / whole-volume). Shown for tileable DL inversions.
     /// Run the deep-learning inversion tiled (`--tile-size`); off = whole volume.
@@ -2472,7 +2473,6 @@ impl Default for PipelineFormState {
             amp_pe_max_pe_spar_ite: qsm_core::inversion::AmpPeParams::default().max_pe_spar_ite.to_string(),
             amp_pe_max_pe_est_ite: qsm_core::inversion::AmpPeParams::default().max_pe_est_ite.to_string(),
             amp_pe_cvg_thd: fmt_default(qsm_core::inversion::AmpPeParams::default().cvg_thd),
-            custom_dseg_tool: String::new(),
             dl_tiling: false,
             dl_tile_size: "128".to_string(),
             dl_tile_halo: String::new(),
@@ -4046,7 +4046,6 @@ impl PipelineFormState {
             "amp_pe_max_pe_spar_ite" => &self.amp_pe_max_pe_spar_ite,
             "amp_pe_max_pe_est_ite" => &self.amp_pe_max_pe_est_ite,
             "amp_pe_cvg_thd" => &self.amp_pe_cvg_thd,
-            "custom_dseg_tool" => &self.custom_dseg_tool,
             "dl_tile_size" => &self.dl_tile_size,
             "dl_tile_halo" => &self.dl_tile_halo,
             "rts_delta" => &self.rts_delta,
@@ -4279,7 +4278,6 @@ impl PipelineFormState {
             "amp_pe_max_pe_spar_ite" => Some(&mut self.amp_pe_max_pe_spar_ite),
             "amp_pe_max_pe_est_ite" => Some(&mut self.amp_pe_max_pe_est_ite),
             "amp_pe_cvg_thd" => Some(&mut self.amp_pe_cvg_thd),
-            "custom_dseg_tool" => Some(&mut self.custom_dseg_tool),
             "dl_tile_size" => Some(&mut self.dl_tile_size),
             "dl_tile_halo" => Some(&mut self.dl_tile_halo),
             "rts_delta" => Some(&mut self.rts_delta),
@@ -5582,17 +5580,8 @@ fn forced_output(field: &str) -> Option<crate::pipeline::requirements::Output> {
     crate::pipeline::requirements::Output::of_setting(&format!("pipeline.{field}"))
 }
 
-const SYNTHSEG_VERSION_OPTIONS: &[&str] = &["v1", "v2"];
-const SYNTHSEG_VERSION_HELP: &[&str] = &["v1: SynthSeg 1.0, 32 labels (the default). v2: SynthSeg 2.0, 33 labels, adds a general CSF class (Billot et al., PNAS 2023)"; 2];
 const EXECUTION_MODE_OPTIONS: &[&str] = &["Local", "SLURM"];
 const EXECUTION_MODE_HELP: &[&str] = &["Local execution or generate SLURM job scripts"; 2];
-/// Where the segmentation comes from (a TUI-only choice: SynthSeg, or `--use-custom-dseg`).
-const SEGMENTATION_SOURCE_OPTIONS: &[&str] = &["synthseg", "custom dseg"];
-const SEGMENTATION_SOURCE_HELP: &[&str] = &[
-    "SynthSeg: whole-brain parcellation straight off the GRE magnitude — no T1w, no registration. Needs a deep-learning build",
-    "A dseg from BIDS derivatives (e.g. FreeSurfer's, made elsewhere); SynthSeg runs where none is found",
-];
-
 pub struct App {
     pub active_tab: usize,
     /// The sub-tab last chosen on each tab (see [`App::page`]).
@@ -5893,16 +5882,6 @@ pub struct RunForm {
     /// the ticked, so a map turned on later is exported unless it is unticked too.
     pub source_dicom: String,
     pub dicom_unticked: Vec<String>,
-    pub do_segmentation: bool,
-    pub do_analysis: bool,
-    pub synthseg_version: usize,
-    pub synthseg_crop: String,
-    pub synthseg_patch: String,
-    pub synthseg_flip_averaging: bool,
-    pub synthseg_topology_cleanup: bool,
-    /// Smooth SynthSeg's posteriors (off = a sigma of 0).
-    pub synthseg_smoothing: bool,
-    pub synthseg_sigma: String,
 
     // Tab 4: Execution
     pub execution_mode: usize, // 0=Local, 1=SLURM
@@ -5937,15 +5916,14 @@ macro_rules! named_fields {
 /// The run form's fields, by the names their rows carry.
 impl RunForm {
     named_fields!(text, text_mut, String, [
-        source_dicom, synthseg_crop, synthseg_patch, synthseg_sigma, n_procs, mem_limit_gb, slurm_account,
+        source_dicom, n_procs, mem_limit_gb, slurm_account,
         slurm_partition, slurm_time, slurm_mem, slurm_cpus,
     ]);
     named_fields!(flag, flag_mut, bool, [
         export_dicom,
-        do_segmentation, do_analysis, synthseg_flip_averaging, synthseg_topology_cleanup, synthseg_smoothing,
         dry_run, debug, force, clean_intermediates, slurm_submit,
     ]);
-    named_fields!(choice, choice_mut, usize, [synthseg_version, execution_mode]);
+    named_fields!(choice, choice_mut, usize, [execution_mode]);
 
     /// The memory limit row, read: `(limit in GB, no limit)` — empty or `auto` detects it.
     pub fn mem_limit(&self) -> (Option<f64>, bool) {
@@ -5958,7 +5936,6 @@ impl RunForm {
 
 impl Default for RunForm {
     fn default() -> Self {
-        let seg = crate::pipeline::config::SegmentationConfig::default();
         Self {
             bids_dir: String::new(),
             output_dir: String::new(),
@@ -5967,15 +5944,6 @@ impl Default for RunForm {
             export_dicom: false,
             source_dicom: String::new(),
             dicom_unticked: Vec::new(),
-            do_segmentation: false,
-            do_analysis: false,
-            synthseg_version: 0,
-            synthseg_crop: seg.crop.map(|c| format!("{c}")).unwrap_or_default(),
-            synthseg_patch: seg.patch.map(|p| format!("{p}")).unwrap_or_default(),
-            synthseg_flip_averaging: seg.flip_averaging,
-            synthseg_topology_cleanup: seg.topology_cleanup,
-            synthseg_smoothing: seg.sigma_smoothing > 0.0,
-            synthseg_sigma: format!("{}", seg.sigma_smoothing),
             execution_mode: 0,
             dry_run: false,
             debug: false,
@@ -7486,7 +7454,7 @@ impl App {
         let ps = &self.pipeline_state;
         let f = &self.form;
         let mut c = qsmxt_engine::PipelineConfig::default();
-        (c.pipeline.do_chi_separation, c.pipeline.do_analysis, c.pipeline.do_smwi) = (ps.do_chi_separation, f.do_analysis, f.settings.toggle("pipeline.do_smwi"));
+        (c.pipeline.do_chi_separation, c.pipeline.do_analysis, c.pipeline.do_smwi) = (ps.do_chi_separation, f.settings.toggle("pipeline.do_analysis"), f.settings.toggle("pipeline.do_smwi"));
         let st = &f.settings;
         (c.pipeline.do_r2map, c.pipeline.do_r2primemap) = (st.toggle("pipeline.do_r2map"), st.toggle("pipeline.do_r2primemap"));
         if let Some(sep) = SEP_ALGO_OPTIONS.get(ps.separation_algorithm) {
@@ -8054,7 +8022,7 @@ impl App {
             Page::Magnitude => on(self.form.settings.toggle("pipeline.do_magnitude")),
             Page::Swi => on(self.form.settings.toggle("pipeline.do_swi")),
             Page::Relaxometry => on(["do_t2starmap", "do_r2starmap", "do_r2map", "do_r2primemap"].iter().any(|f| self.output_made(f))),
-            Page::Segmentation => on(self.output_made("do_segmentation") || self.form.do_analysis),
+            Page::Segmentation => on(self.output_made("do_segmentation") || self.form.settings.toggle("pipeline.do_analysis")),
             Page::Export => on(self.form.export_dicom),
             _ => SectionState::On,
         }
@@ -8301,7 +8269,6 @@ impl App {
             return rows;
         }
         match page {
-            Page::Segmentation => self.segmentation_rows(),
             Page::Export => self.export_rows(),
             Page::Execution => self.execution_rows(),
             _ => Vec::new(),
@@ -8400,6 +8367,10 @@ impl App {
 
     /// A select's option index, by name.
     pub fn field_select(&self, field: &str) -> usize {
+        // A segmentation from derivatives, or SynthSeg's.
+        if field == "segmentation_source" {
+            return usize::from(!self.form.settings.text(DSEG).trim().is_empty());
+        }
         if let Some(path) = stored_path(field) {
             return self.form.settings.select(path);
         }
@@ -8408,13 +8379,26 @@ impl App {
         }
         match field {
             "orientation_algorithm" => self.filter_state.orientation_algorithm,
-            // A segmentation from derivatives, or SynthSeg's.
-            "segmentation_source" => usize::from(!self.pipeline_state.custom_dseg_tool.trim().is_empty()),
             _ => self.pipeline_state.get_select(field),
         }
     }
 
     pub fn set_field_select(&mut self, field: &str, val: usize) {
+        // One representation per choice: a supplied segmentation (any tool, until named) is not
+        // also a SynthSeg request, and SynthSeg reads no derivatives.
+        if field == "segmentation_source" {
+            let st = &mut self.form.settings;
+            if val == 1 {
+                if st.text(DSEG).trim().is_empty() {
+                    st.set(DSEG, "*");
+                }
+                st.set("pipeline.do_segmentation", false);
+            } else {
+                st.reset(DSEG, false);
+                st.set("pipeline.do_segmentation", true);
+            }
+            return;
+        }
         if let Some(path) = stored_path(field) {
             return self.form.settings.set_select(path, val);
         }
@@ -8424,26 +8408,8 @@ impl App {
         }
         match field {
             "orientation_algorithm" => self.filter_state.orientation_algorithm = val.min(ORIENTATION_ALGORITHMS.len() - 1),
-            // One representation per choice: a supplied segmentation (any tool, until named) is
-            // not also a SynthSeg request, and SynthSeg reads no derivatives.
-            "segmentation_source" => {
-                let ps = &mut self.pipeline_state;
-                if val == 1 {
-                    if ps.custom_dseg_tool.trim().is_empty() { ps.custom_dseg_tool = "*".into(); }
-                    self.form.do_segmentation = false;
-                } else {
-                    ps.custom_dseg_tool.clear();
-                    self.form.do_segmentation = true;
-                }
-            }
             _ => self.pipeline_state.set_select(field, val),
         }
-    }
-
-    /// Whether a segmentation is made or read: asked for, supplied, or needed by another setting
-    /// (which the run turns on itself when it is left off).
-    fn segmentation_on(&self) -> bool {
-        self.output_made("do_segmentation")
     }
 
     /// Whether the run makes an output: its checkbox is ticked, or another setting needs it (a
@@ -8470,7 +8436,8 @@ impl App {
             return !self.form.dicom_unticked.iter().any(|u| u.eq_ignore_ascii_case(m.suffix));
         }
         if field == "do_segmentation" {
-            return self.form.do_segmentation || !self.pipeline_state.custom_dseg_tool.trim().is_empty();
+            let st = &self.form.settings;
+            return st.toggle("pipeline.do_segmentation") || !st.text(DSEG).trim().is_empty();
         }
         if let Some(path) = stored_path(field) {
             return self.form.settings.toggle(path);
@@ -8498,20 +8465,21 @@ impl App {
         }
         if field == "do_segmentation" {
             if !self.field_toggle(field) {
-                self.form.do_segmentation = true;
+                self.form.settings.set("pipeline.do_segmentation", true);
                 return;
             }
             // What needs a segmentation whichever its source: asked with no dseg supplied.
-            let dseg = std::mem::take(&mut self.pipeline_state.custom_dseg_tool);
+            let kept = self.form.settings.clone();
+            self.form.settings.reset(DSEG, false);
             let why = self.forced_by_label(crate::pipeline::requirements::Output::Segmentation);
-            self.pipeline_state.custom_dseg_tool = dseg;
+            self.form.settings = kept;
             if let Some(why) = why {
                 self.error_message = Some(format!(
                     "Segmentation is required by {why} — change or turn that off first."));
                 return;
             }
-            self.form.do_segmentation = false;
-            self.pipeline_state.custom_dseg_tool.clear();
+            self.form.settings.set("pipeline.do_segmentation", false);
+            self.form.settings.reset(DSEG, false);
             return;
         }
         if let Some(out) = forced_output(field) {
@@ -8564,14 +8532,14 @@ impl App {
             "orientation_reference" => return self.filter_state.orientation_reference.clear(),
             "orientation_algorithm" => return self.filter_state.orientation_algorithm = 0,
             "segmentation_source" | "do_segmentation" => {
-                self.pipeline_state.custom_dseg_tool.clear();
-                self.form.do_segmentation = form.do_segmentation;
+                self.form.settings.reset(DSEG, false);
+                self.form.settings.reset("pipeline.do_segmentation", false);
                 return;
             }
             _ => {}
         }
         if let Some(path) = stored_path(field) {
-            let value_row = field_of_path(path) != Some(field);
+            let value_row = super::settings_rows::is_value_row(field, path);
             return self.form.settings.reset(path, value_row);
         }
         if let (Some(d), Some(v)) = (form.text(field), self.form.text_mut(field)) {
@@ -8616,37 +8584,6 @@ impl App {
             if fields.is_empty() { break; }
             fields.iter().for_each(|f| self.reset_field(f));
         }
-    }
-
-    /// Other outputs → Segmentation: where the segmentation comes from, and the statistics on it.
-    fn segmentation_rows(&self) -> Vec<PipelineRow> {
-        use PipelineRow::{AlgoSelect, Param, Toggle};
-        let f = &self.form;
-        let mut rows = vec![Toggle { label: "Segmentation", field: "do_segmentation", help: "Whole-brain parcellation: SynthSeg straight off the GRE magnitude, or one supplied in derivatives. Required by the statistics and a region reference: choosing one offers to turn it on (left off, the run turns it on itself)" }];
-        // Whatever needs a segmentation reveals its settings too, ticked or not: the run makes
-        // one, and hiding the settings that shape it would be a lie.
-        if self.segmentation_on() {
-            rows.push(AlgoSelect { label: "  Source", field: "segmentation_source", options: SEGMENTATION_SOURCE_OPTIONS, help: SEGMENTATION_SOURCE_HELP });
-            if self.field_select("segmentation_source") == 1 {
-                rows.push(Param { label: "    Derivatives tool", field: "custom_dseg_tool", help: "The dseg from <bids>/derivatives/<tool>/: * = any tool, or a tool name; SynthSeg runs where none is found" });
-            } else {
-                rows.push(AlgoSelect { label: "    SynthSeg version", field: "synthseg_version", options: SYNTHSEG_VERSION_OPTIONS, help: SYNTHSEG_VERSION_HELP });
-                rows.push(Param { label: "    Crop", field: "synthseg_crop", help: "Cubic centre-crop in voxels at 1 mm before inference; empty processes the whole volume" });
-                rows.push(Param { label: "    Sliding window", field: "synthseg_patch", help: "Run the network on half-overlapping cubes of this many voxels at 1 mm (rounded up to a multiple of 32), so its memory follows the patch instead of the volume; empty runs the whole volume at once" });
-                rows.push(Toggle { label: "    Flip averaging", field: "synthseg_flip_averaging", help: "Average with a left-right flipped second pass (SynthSeg's default). Doubles inference time" });
-                rows.push(Toggle { label: "    Topology cleanup", field: "synthseg_topology_cleanup", help: "Reset each topological class to its largest connected component" });
-                rows.push(Toggle { label: "    Posterior smoothing", field: "synthseg_smoothing", help: "Gaussian blur on the posteriors before the labels are taken" });
-                if f.synthseg_smoothing {
-                    rows.push(Param { label: "      Sigma (voxels)", field: "synthseg_sigma", help: "Gaussian sigma of the posterior blur, in voxels" });
-                }
-            }
-        }
-        rows.push(PipelineRow::Separator);
-        rows.push(Toggle { label: "Per-structure statistics", field: "do_analysis", help: "Summarise every map the run makes (χ, χ+/χ−, T2*, R2*, R2, R2') per structure into a TSV: mean, SD, median, min, max, 5th/95th percentiles. Requires segmentation, and QSM only if no other map is enabled" });
-        if f.do_analysis && self.input_relevance().qsm {
-            rows.push(PipelineFormState::custom_qsm_row());
-        }
-        rows
     }
 
     /// Export → DICOM: the switch, the source DICOM, and a tick per map the settings make.
@@ -9560,9 +9497,9 @@ mod tests {
         let mut app = App::new();
         app.form.settings.set("pipeline.do_swi", true);
         app.form.settings.set("pipeline.do_smwi", true);
-        app.form.do_segmentation = true;
+        app.form.settings.set("pipeline.do_segmentation", true);
         app.form.export_dicom = true;
-        app.form.do_analysis = true;
+        app.form.settings.set("pipeline.do_analysis", true);
         app.form.settings.set("pipeline.do_r2primemap", true);
         app.form.settings.set("motion_correction.enabled", true);
         app.filter_state.orientation_group = "acq".into();
@@ -12082,14 +12019,14 @@ mod tests {
         // Ticking it is the required change; unticking it again is refused, and says why.
         focus_on(&mut app, TAB_RECONSTRUCTION, "do_segmentation");
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.form.do_segmentation, "{:?}", app.error_message);
+        assert!(app.form.settings.toggle("pipeline.do_segmentation"), "{:?}", app.error_message);
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.form.do_segmentation, "turning it off is refused");
+        assert!(app.form.settings.toggle("pipeline.do_segmentation"), "turning it off is refused");
         let msg = app.error_message.clone().expect("a refusal should explain itself");
         assert!(msg.contains("Reference = ventricles") && !msg.contains("--"), "the refusal names the setting: {msg}");
 
         // `mean` and `none` need nothing.
-        app.form.do_segmentation = false;
+        app.form.settings.set("pipeline.do_segmentation", false);
         for idx in [0, 1] {
             app.set_field_select("qsm_reference", idx);
             assert!(!app.output_made("do_segmentation"), "option {idx} needs nothing");
@@ -12127,7 +12064,7 @@ mod tests {
 
         // A config or CLI run can arrive with the statistics already on; segmentation is then in
         // force, so the block must be visible rather than hiding a setting that is taking effect.
-        app.form.do_analysis = true;
+        app.form.settings.set("pipeline.do_analysis", true);
         assert!(!app.field_toggle("do_segmentation") && app.output_made("do_segmentation"),
                 "segmentation is needed: made by the run, but not shown as ticked");
         for f in SYNTHSEG_ROWS {
@@ -12138,17 +12075,17 @@ mod tests {
         // Ticking it is the required change; it then cannot be turned off from under them.
         focus_on(&mut app, TAB_RECONSTRUCTION, "do_segmentation");
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.form.do_segmentation);
+        assert!(app.form.settings.toggle("pipeline.do_segmentation"));
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.form.do_segmentation, "turning it off is refused");
+        assert!(app.form.settings.toggle("pipeline.do_segmentation"), "turning it off is refused");
         let msg = app.error_message.clone().expect("a refusal should explain itself");
         assert!(msg.contains("per-structure statistics"), "unhelpful message: {msg}");
 
         // With the statistics off again it is an ordinary toggle.
-        app.form.do_analysis = false;
+        app.form.settings.set("pipeline.do_analysis", false);
         app.error_message = None;
         app.handle_key(key(KeyCode::Enter));
-        assert!(!app.form.do_segmentation, "{:?}", app.error_message);
+        assert!(!app.form.settings.toggle("pipeline.do_segmentation"), "{:?}", app.error_message);
     }
 
     /// Selecting HEIDI shows both parameter groups (its seed is an LSQR solve); selecting plain
@@ -12327,7 +12264,7 @@ mod tests {
         assert!(has(&f, "custom_r2prime_tool") && !has(&f, "r2prime_strategy") && !has(&f, "custom_r2_tool"), "{f:?}");
 
         let mut app = App::new();
-        app.form.do_analysis = true;
+        app.form.settings.set("pipeline.do_analysis", true);
         assert!(has(&fields(&mut app), "custom_qsm_tool"), "the statistics can read a supplied χ map");
         let mut app = App::new();
         app.form.settings.set("pipeline.do_r2map", true);
@@ -12340,10 +12277,10 @@ mod tests {
     #[test]
     fn a_custom_dseg_is_the_segmentation_source() {
         let mut app = App::new();
-        app.form.do_analysis = true;
+        app.form.settings.set("pipeline.do_analysis", true);
         assert!(app.output_made("do_segmentation"), "needed without a supplied dseg");
         assert_eq!(app.field_select("segmentation_source"), 0, "SynthSeg");
-        app.pipeline_state.custom_dseg_tool = "freesurfer".into();
+        *app.field_text_mut("custom_dseg_tool").unwrap() = "freesurfer".into();
         assert!(app.field_toggle("do_segmentation"), "a supplied segmentation is a segmentation");
         assert_eq!(app.field_select("segmentation_source"), 1);
         assert!(!shows(&mut app, TAB_RECONSTRUCTION, "synthseg_version"), "no SynthSeg settings to show");
@@ -12352,17 +12289,17 @@ mod tests {
         // The statistics need one, whichever the source: turning it off is refused.
         focus_on(&mut app, TAB_RECONSTRUCTION, "do_segmentation");
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.error_message.is_some() && app.pipeline_state.custom_dseg_tool == "freesurfer");
+        assert!(app.error_message.is_some() && app.field_text("custom_dseg_tool") == "freesurfer");
         // Back to SynthSeg: the supplied one is dropped, SynthSeg asked for.
         app.set_field_select("segmentation_source", 0);
-        assert!(app.pipeline_state.custom_dseg_tool.is_empty() && app.form.do_segmentation);
+        assert!(app.field_text("custom_dseg_tool").is_empty() && app.form.settings.toggle("pipeline.do_segmentation"));
         app.set_field_select("segmentation_source", 1);
-        assert_eq!(app.pipeline_state.custom_dseg_tool, "*");
-        assert!(!app.form.do_segmentation, "one representation per choice");
+        assert_eq!(app.field_text("custom_dseg_tool"), "*");
+        assert!(!app.form.settings.toggle("pipeline.do_segmentation"), "one representation per choice");
         // Unforced: off clears whichever source.
-        app.form.do_analysis = false;
+        app.form.settings.set("pipeline.do_analysis", false);
         app.toggle_field("do_segmentation");
-        assert!(!app.field_toggle("do_segmentation") && app.pipeline_state.custom_dseg_tool.is_empty());
+        assert!(!app.field_toggle("do_segmentation") && app.field_text("custom_dseg_tool").is_empty());
     }
 
     /// R2* is needed by what reads it (R2*-QSM, a computed R2'): made by the run, shown as the
@@ -13364,7 +13301,7 @@ mod tests {
         app.form.export_dicom = true;
         let fields = |app: &App| app.page_rows(Page::Export).iter().filter_map(row_field).collect::<Vec<_>>();
         assert!(!fields(&app).contains(&"dicom_out_dseg"), "no segmentation, no SEG");
-        app.form.do_segmentation = true;
+        app.form.settings.set("pipeline.do_segmentation", true);
         assert!(fields(&app).contains(&"dicom_out_dseg") && fields(&app).contains(&"dicom_out_magnitude"));
         let note = |app: &App| app.page_rows(Page::Export).iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("needs a map to be drawn on")));
         assert!(!note(&app));

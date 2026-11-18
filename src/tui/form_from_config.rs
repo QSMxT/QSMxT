@@ -230,9 +230,10 @@ impl App {
         let sigma = config.segmentation.sigma_smoothing;
         if differs("segmentation.sigma_smoothing") {
             // Off is a sigma of 0; the sigma row keeps its number while off.
-            self.form.synthseg_smoothing = sigma > 0.0;
             if sigma > 0.0 {
-                self.form.synthseg_sigma = format!("{sigma}");
+                self.form.settings.set("segmentation.sigma_smoothing", sigma);
+            } else {
+                self.form.settings.switch("segmentation.sigma_smoothing", false);
             }
         }
     }

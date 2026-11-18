@@ -2876,7 +2876,7 @@ pub(super) mod tests {
         let mut app = App::new();
         app.form.settings.set("pipeline.do_swi", true);
         app.form.settings.set("pipeline.do_smwi", true);
-        app.form.do_segmentation = true;
+        app.form.settings.set("pipeline.do_segmentation", true);
         assert!(app.goto_field("do_smwi"));
         let text = screen_text(&render_app_sized(&mut app, 120, 60));
         let smwi = indent_of(&text, "Compute SMWI");
@@ -3247,7 +3247,7 @@ pub(super) mod tests {
             a.pipeline_state.do_qsm = false;
             a.form.settings.set("pipeline.do_smwi", true);
             a.form.settings.set("pipeline.do_swi", true);
-            a.form.do_analysis = true;
+            a.form.settings.set("pipeline.do_analysis", true);
             a.form.settings.set("pipeline.do_r2primemap", true);
             a.form.export_dicom = true;
             a.filter_state.orientation_group = "acq".into();

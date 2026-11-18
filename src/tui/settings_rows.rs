@@ -28,7 +28,7 @@ use super::app::{field_of_path, field_path, App, Page, PipelineRow, RowContext, 
 /// The sections whose settings are kept in [`SettingsStore`] rather than in the form's fields.
 pub const STORED_SECTIONS: &[Section] =
     &[Section::Geometry, Section::Motion, Section::Background, Section::Reference, Section::Magnitude, Section::SwiSmwi,
-      Section::Relaxometry];
+      Section::Relaxometry, Section::Segmentation];
 
 /// Choices that one select picks with another: `(path, choice, other)`. The select lists the
 /// setting's options but `choice`, then each of `other`'s, which picks `choice` with that value;
@@ -45,9 +45,12 @@ const KEPT_IN_FORM: &[(&str, &str)] = &[
     ("bg_removal.algorithm", "the pipeline form's rule for which stages run (stage_config) reads it"),
 ];
 
-/// A note a page makes before a setting's row, from the rows' context (none when there is nothing
-/// to say).
-type Note = fn(&RowContext) -> Option<String>;
+/// Rows a page puts before a setting's row, from the form and the rows' context: a note, a
+/// separator, or a choice the TUI offers that is no setting of its own.
+type Before = fn(&App, &RowContext) -> Vec<PipelineRow>;
+
+/// A condition of the TUI's on a setting's row, from the form.
+type ShownIf = fn(&App) -> bool;
 
 /// A page whose rows come from the registry.
 struct PageLayout {
@@ -59,8 +62,10 @@ struct PageLayout {
     /// Settings of another section repeated at the end of the page, each under a setting of the
     /// page: `(path, under)`, shown while `under` is on and the setting applies.
     repeats: &'static [(&'static str, &'static str)],
-    /// A note before a setting's row, when there is one to make.
-    notes: &'static [(&'static str, Note)],
+    /// Rows before a setting's row, while the setting applies.
+    before: &'static [(&'static str, Before)],
+    /// A condition of the TUI's on a setting's row besides the setting applying.
+    shown_if: &'static [(&'static str, ShownIf)],
     /// Settings shown as a block under a setting of the page they have no parent in:
     /// `(path prefix, under, heading)`, shown while `under` is on, after a note naming the block.
     blocks: &'static [(&'static str, &'static str, &'static str)],
@@ -68,43 +73,80 @@ struct PageLayout {
     depths: &'static [(&'static str, usize)],
 }
 
+/// A page of a section's settings, in the registry's order and indentation.
+const fn plain(page: Page, section: Section) -> PageLayout {
+    PageLayout { page, section, only: None, repeats: &[], before: &[], shown_if: &[], blocks: &[], depths: &[] }
+}
+
 fn is_swi(path: &str) -> bool {
     path == "pipeline.do_swi" || path.starts_with("swi.")
 }
 
+/// Where the segmentation comes from: a choice of the TUI's, which is whether a dseg tool is
+/// named (`segmentation.custom_dseg_tool`).
+const SEGMENTATION_SOURCE_OPTIONS: &[&str] = &["synthseg", "custom dseg"];
+const SEGMENTATION_SOURCE_HELP: &[&str] = &[
+    "SynthSeg: whole-brain parcellation straight off the GRE magnitude — no T1w, no registration. Needs a deep-learning build",
+    "A dseg from BIDS derivatives (e.g. FreeSurfer's, made elsewhere); SynthSeg runs where none is found",
+];
+
+/// Fields of rows that edit no setting of their own but say something of one (the segmentation's
+/// source): a setting's own rows are the others that edit its path.
+const TUI_CHOICES: &[&str] = &["segmentation_source"];
+
 const LAYOUTS: &[PageLayout] = &[
-    PageLayout { page: Page::Geometry, section: Section::Geometry, only: None, repeats: &[], notes: &[
-        // A selected method that only works on axial data resamples whatever the switch says.
-        ("pipeline.output_space", |ctx| ctx.axial_forced_by.as_ref()
-            .map(|why| format!("  Oblique data is resampled to axial for {why}"))),
-    ], blocks: &[], depths: &[] },
     PageLayout {
-        page: Page::Motion, section: Section::Motion, only: None, repeats: &[], notes: &[],
+        before: &[
+            // A selected method that only works on axial data resamples whatever the switch says.
+            ("pipeline.output_space", |_, ctx| ctx.axial_forced_by.iter()
+                .map(|why| PipelineRow::Note { text: format!("  Oblique data is resampled to axial for {why}").into() })
+                .collect()),
+        ],
+        ..plain(Page::Geometry, Section::Geometry)
+    },
+    PageLayout {
         // The rigid registration serves motion correction and the co-registration of
         // orientations (shown there too), so it is no one setting's.
         blocks: &[("registration.", "motion_correction.enabled", "Rigid registration (advanced):")],
-        depths: &[],
+        ..plain(Page::Motion, Section::Motion)
     },
     PageLayout {
-        page: Page::Background, section: Section::Background, only: None, repeats: &[], notes: &[], blocks: &[],
         // The mask's erosion and clean-up go with the method chosen; the deconvolution threshold
         // reads as one of V-SHARP's settings.
         depths: &[
             ("bg_removal.erode_voxels", 1), ("bg_removal.polish_mask", 1), ("bg_removal.ukb_mask_trim", 1),
             ("bg_removal.vsharp.threshold", 1),
         ],
+        ..plain(Page::Background, Section::Background)
     },
-    PageLayout { page: Page::Reference, section: Section::Reference, only: None, repeats: &[], notes: &[], blocks: &[], depths: &[] },
-    PageLayout { page: Page::Relaxometry, section: Section::Relaxometry, only: None, repeats: &[], notes: &[], blocks: &[], depths: &[] },
-    PageLayout { page: Page::Magnitude, section: Section::Magnitude, only: None, repeats: &[], notes: &[], blocks: &[], depths: &[] },
-    PageLayout { page: Page::Swi, section: Section::SwiSmwi, only: Some(is_swi), repeats: &[], notes: &[], blocks: &[], depths: &[] },
+    plain(Page::Reference, Section::Reference),
+    plain(Page::Relaxometry, Section::Relaxometry),
     PageLayout {
-        page: Page::Smwi, section: Section::SwiSmwi, only: Some(|p| !is_swi(p)),
+        // The source is chosen first; the dseg tool is SynthSeg's alternative, and both sit under it.
+        before: &[
+            ("segmentation.custom_dseg_tool", |_, _| vec![PipelineRow::AlgoSelect {
+                label: "  Source", field: "segmentation_source",
+                options: SEGMENTATION_SOURCE_OPTIONS, help: SEGMENTATION_SOURCE_HELP,
+            }]),
+            ("pipeline.do_analysis", |_, _| vec![PipelineRow::Separator]),
+        ],
+        shown_if: &[("segmentation.custom_dseg_tool", |app| app.field_select("segmentation_source") == 1)],
+        depths: &[
+            ("segmentation.custom_dseg_tool", 2), ("segmentation.version", 2), ("segmentation.crop", 2),
+            ("segmentation.patch", 2), ("segmentation.flip_averaging", 2), ("segmentation.topology_cleanup", 2),
+            ("segmentation.sigma_smoothing", 2),
+        ],
+        // The statistics read a χ map, which may be supplied rather than computed.
+        repeats: &[("separation.custom_qsm_tool", "pipeline.do_analysis")],
+        ..plain(Page::Segmentation, Section::Segmentation)
+    },
+    plain(Page::Magnitude, Section::Magnitude),
+    PageLayout { only: Some(is_swi), ..plain(Page::Swi, Section::SwiSmwi) },
+    PageLayout {
+        only: Some(|p| !is_swi(p)),
         // SMWI reads a χ map, which may be supplied rather than computed.
         repeats: &[("separation.custom_qsm_tool", "pipeline.do_smwi")],
-        notes: &[],
-        blocks: &[],
-        depths: &[],
+        ..plain(Page::Smwi, Section::SwiSmwi)
     },
 ];
 
@@ -112,6 +154,7 @@ const LAYOUTS: &[PageLayout] = &[
 /// before their settings moved here.
 const READS_EMPTY: &[&str] = &[
     "swi.strength", "swi.hp_sigma", "swi.mip_window", "smwi.threshold_ppm", "smwi.power", "smwi.mip_window",
+    "segmentation.crop", "segmentation.patch", "segmentation.sigma_smoothing",
 ];
 
 /// Every setting, by path.
@@ -127,7 +170,9 @@ fn setting(path: &str) -> &'static Setting {
 
 /// The config path of a row's field, when its setting is kept in [`SettingsStore`].
 pub fn stored_path(field: &str) -> Option<&'static str> {
-    field_path(field).filter(|p| STORED_SECTIONS.contains(&setting(p).section) && !KEPT_IN_FORM.iter().any(|(k, _)| k == p))
+    field_path(field).filter(|p| {
+        STORED_SECTIONS.contains(&setting(p).section) && !KEPT_IN_FORM.iter().any(|(k, _)| k == p)
+    }).filter(|_| !TUI_CHOICES.contains(&field))
 }
 
 /// A select's options and their help, as the TUI words them, for the setting at `path`.
@@ -286,13 +331,39 @@ impl SettingsStore {
         }
     }
 
+    /// A checkbox: a bool, or whether a setting with a value that turns it off is on.
     pub fn toggle(&self, path: &str) -> bool {
-        self.get(path).as_bool().unwrap_or(false)
+        match &setting(path).off {
+            Some(off) => self.get(path) != *off,
+            None => self.get(path).as_bool().unwrap_or(false),
+        }
     }
 
     pub fn flip(&mut self, path: &'static str) {
         let on = self.toggle(path);
-        self.set(path, !on);
+        self.switch(path, !on);
+    }
+
+    /// Tick or untick a checkbox. A setting with a value that turns it off keeps its value's text
+    /// while it is off, and takes it again when it is turned back on (its default, when that
+    /// text is no value).
+    pub fn switch(&mut self, path: &'static str, on: bool) {
+        let s = setting(path);
+        let Some(off) = &s.off else { return self.set(path, on) };
+        if on == self.toggle(path) {
+            return;
+        }
+        if on {
+            let v = self.typed.get(path).and_then(|t| parse(s, t)).filter(|v| v != off)
+                .unwrap_or_else(|| s.default.clone());
+            self.put(path, v);
+        } else {
+            if !self.typed.contains_key(path) {
+                let text = self.value_text(path);
+                self.typed.insert(path, text);
+            }
+            self.put(path, off.clone());
+        }
     }
 
     /// A choice's position in the setting's options. An echo reference given as an echo number
@@ -378,16 +449,20 @@ impl SettingsStore {
         }
     }
 
-    /// Put a setting back to QSMxT's default. For an echo reference, `value_row` resets the
-    /// echo number's row and not the choice, and the choice leaves the number, as the two rows
-    /// are reset one at a time.
+    /// Put a setting back to QSMxT's default. `value_row` resets only the value's row: an echo
+    /// reference's number (the choice leaves the number, as the two rows are reset one at a time),
+    /// or the value of a checkbox with a value.
     pub fn reset(&mut self, path: &'static str, value_row: bool) {
-        let echo = matches!(setting(path).value_type, ValueType::EchoReference { .. });
+        let s = setting(path);
+        let echo = matches!(s.value_type, ValueType::EchoReference { .. });
         if value_row || !echo {
             self.typed.remove(path);
         }
         if !value_row {
             self.values.remove(path);
+        } else if s.off.is_some() && self.toggle(path) {
+            // The value of a checkbox that is on: back to the default value, still on.
+            self.put(path, s.default.clone());
         }
     }
 
@@ -401,6 +476,10 @@ impl SettingsStore {
         let mut refused = Vec::new();
         for (&path, text) in &self.typed {
             let s = setting(path);
+            // A value kept while its checkbox is off is not taken.
+            if s.off.as_ref().is_some_and(|off| self.get(path) == *off) {
+                continue;
+            }
             if let ValueType::EchoReference { .. } = s.value_type {
                 // Taken only while an echo by number is chosen, and as it is typed.
                 if echo_number(s, &self.get(path)).is_none() {
@@ -514,8 +593,11 @@ impl App {
                 }
                 None => layout.depths.iter().find(|(p, _)| *p == s.path).map_or_else(|| depth_of(s), |(_, d)| *d),
             };
-            for (_, note) in layout.notes.iter().filter(|(p, _)| *p == s.path) {
-                rows.extend(note(ctx).map(|text| PipelineRow::Note { text: text.into() }));
+            for (_, before) in layout.before.iter().filter(|(p, _)| *p == s.path) {
+                rows.extend(before(self, ctx));
+            }
+            if !layout.shown_if.iter().filter(|(p, _)| *p == s.path).all(|(_, f)| f(self)) {
+                continue;
             }
             self.push_rows(&mut rows, s, depth);
         }
@@ -529,12 +611,14 @@ impl App {
 }
 
 impl App {
-    /// The rows of a setting, by its value type: one, or for an echo reference given as an echo
-    /// number, the select and the number's row under it.
+    /// The rows of a setting, by its value type: one; for an echo reference given as an echo
+    /// number, the select and the number's row under it; for a setting with a value that turns it
+    /// off, a checkbox and, while it is on, the value's row under it.
     fn push_rows(&self, rows: &mut Vec<PipelineRow>, s: &'static Setting, depth: usize) {
-        let field = field_of_path(s.path).unwrap_or_else(|| panic!("{} has no row field", s.path));
+        let field = row_field(s.path, 0).unwrap_or_else(|| panic!("{} has no row field", s.path));
         let label = indented(depth, s.label);
         rows.push(match s.value_type {
+            _ if s.off.is_some() => PipelineRow::Toggle { label, field, help: s.tui_help },
             ValueType::Bool => PipelineRow::Toggle { label, field, help: s.tui_help },
             ValueType::Enum { .. } | ValueType::EchoReference { .. } => {
                 let (options, help) = options(s.path);
@@ -544,20 +628,30 @@ impl App {
             | ValueType::Text => PipelineRow::Param { label, field, help: s.tui_help },
             _ => unreachable!("{}: no widget for its value type yet", s.path),
         });
-        if let ValueType::EchoReference { options } = &s.value_type {
-            let chosen = options.get(self.field_select(field)).map(|o| o.kind);
-            if let (Some(EchoKind::EchoNumber { .. }), Some((label, help))) = (chosen, s.tui_value) {
-                rows.push(PipelineRow::Param { label: indented(depth + 1, label), field: value_field(s.path), help });
+        let value_row = match &s.value_type {
+            _ if s.off.is_some() => self.field_toggle(field),
+            ValueType::EchoReference { options } => {
+                matches!(options.get(self.field_select(field)).map(|o| o.kind), Some(EchoKind::EchoNumber { .. }))
             }
+            _ => false,
+        };
+        if let (true, Some((label, help))) = (value_row, s.tui_value) {
+            let field = row_field(s.path, 1).unwrap_or_else(|| panic!("{} has no value row field", s.path));
+            rows.push(PipelineRow::Param { label: indented(depth + 1, label), field, help });
         }
     }
 }
 
-/// The field of a setting's value row: the second row editing its path (an echo reference's
-/// number).
-fn value_field(path: &str) -> &'static str {
-    FIELD_PATHS.iter().filter(|(_, p)| *p == path).nth(1).map(|(f, _)| *f)
-        .unwrap_or_else(|| panic!("{path} has no value row field"))
+/// The field of the `nth` row editing a setting: its own row (0), or its value's row (1). A row of
+/// a choice the TUI makes about the setting ([`TUI_CHOICES`]) is neither.
+fn row_field(path: &str, nth: usize) -> Option<&'static str> {
+    FIELD_PATHS.iter().filter(|(f, p)| *p == path && !TUI_CHOICES.contains(f)).nth(nth).map(|(f, _)| *f)
+}
+
+/// Whether `field` is the value row of the setting at `path` (an echo reference's number, the
+/// sigma of a checkbox with a value).
+pub fn is_value_row(field: &str, path: &str) -> bool {
+    row_field(path, 1) == Some(field)
 }
 
 #[cfg(test)]
@@ -625,5 +719,22 @@ mod tests {
         app.set_field_select("motion_reference", 2);
         assert_eq!(app.field_text("motion_reference_echo"), "3");
         assert_eq!(reference(&app), MotionReference::Echo(3));
+    }
+
+    /// Posterior smoothing is a checkbox with its sigma under it: off is a sigma of 0, and the
+    /// sigma typed is kept while it is off and taken again when it is back on.
+    #[test]
+    fn a_checkbox_with_a_value_keeps_its_value_while_off() {
+        let mut app = App::new_for_trial();
+        app.toggle_field("do_segmentation");
+        let sigma = |app: &App| config_from_app(app).unwrap().segmentation.sigma_smoothing;
+        assert!(app.field_toggle("synthseg_smoothing"));
+        *app.field_text_mut("synthseg_sigma").unwrap() = "1.5".into();
+        assert_eq!(sigma(&app), 1.5);
+        app.toggle_field("synthseg_smoothing");
+        assert!(!app.field_toggle("synthseg_smoothing"));
+        assert_eq!(sigma(&app), 0.0);
+        app.toggle_field("synthseg_smoothing");
+        assert_eq!((app.field_text("synthseg_sigma").as_ref(), sigma(&app)), ("1.5", 1.5));
     }
 }

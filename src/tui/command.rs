@@ -714,17 +714,10 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         swi_filtered_phase: false,
         no_magnitude: false,
         do_smwi: false,
-        do_segmentation: form.do_segmentation,
-        do_analysis: form.do_analysis,
-        segmentation_params: crate::cli::SegmentationParamArgs {
-            synthseg_version: Some(if form.synthseg_version == 1 { "v2".into() } else { "v1".into() }),
-            synthseg_crop: parse_optional_usize(&form.synthseg_crop),
-            synthseg_patch: parse_optional_usize(&form.synthseg_patch),
-            no_synthseg_flip_averaging: !form.synthseg_flip_averaging,
-            no_synthseg_topology_cleanup: !form.synthseg_topology_cleanup,
-            synthseg_sigma: if form.synthseg_smoothing { parse_optional_f64(&form.synthseg_sigma) } else { Some(0.0) },
-            use_custom_dseg: Some(ps.custom_dseg_tool.trim()).filter(|t| !t.is_empty()).map(str::to_string),
-        },
+        // The segmentation's settings are set from the form's settings store ([`stored_values`]).
+        do_segmentation: false,
+        do_analysis: false,
+        segmentation_params: Default::default(),
         smwi_params: Default::default(),
         // The relaxometry maps and R2' settings are set from the form's settings store ([`stored_values`]).
         do_t2starmap: false,
@@ -1526,8 +1519,8 @@ mod tests {
 
         // Off is ROMEO's default here; turned on, the threshold shown is passed.
         app.pipeline_state.romeo_temporal_uncertain = true;
-        app.form.synthseg_smoothing = false;
-        app.form.do_segmentation = true;
+        app.form.settings.switch("segmentation.sigma_smoothing", false);
+        app.form.settings.set("pipeline.do_segmentation", true);
         let cmd = build_command_string(&app);
         for f in ["--romeo-temporal-uncertain-unwrapping 0.5", "--synthseg-sigma 0"] {
             assert!(cmd.contains(f), "{f} missing: {cmd}");
@@ -2399,7 +2392,7 @@ mod parity {
             |_| {},
             |a| a.filter_state.orientation_group = "acq".into(),
             |a| { a.filter_state.orientation_group = "acq".into(); a.filter_state.orientation_algorithm = 1; },
-            |a| { a.form.settings.set("pipeline.do_r2primemap", true); a.form.settings.set("pipeline.do_r2map", true); a.form.do_analysis = true; },
+            |a| { a.form.settings.set("pipeline.do_r2primemap", true); a.form.settings.set("pipeline.do_r2map", true); a.form.settings.set("pipeline.do_analysis", true); },
         ];
         let start_app = |i: usize| {
             let mut app = App::new();
