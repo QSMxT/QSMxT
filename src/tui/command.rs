@@ -231,8 +231,6 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
     let n4 = ps.inhomogeneity_correction && ps.inhomogeneity_method == 1;
 
     let qsm_options = QSM_ALGO_ARGS;
-    let unwrap_options = [UnwrapAlgorithmArg::Romeo, UnwrapAlgorithmArg::Laplacian, UnwrapAlgorithmArg::Prelude,
-                          UnwrapAlgorithmArg::MediRegionGrowing];
     let bf_options = [
         BfAlgorithmArg::Vsharp,
         BfAlgorithmArg::Pdf,
@@ -278,8 +276,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         cosmos_magnitude_weighting: false,
         cosmos_tol: None,
         cosmos_max_iter: None,
-        // Said when not the general default.
-        unwrapping_algorithm: (ps.unwrapping_algorithm != 0).then(|| unwrap_options[ps.unwrapping_algorithm]),
+        // Field mapping is set from the form's settings store ([`stored_values`]).
+        unwrapping_algorithm: None,
         // Only when the inversion has a background-removal stage: otherwise the choice has no
         // effect, and iQFM there is refused (#276). Said when not the general default.
         bf_algorithm: (ps.inversion_needs_bg_removal() && ps.bf_algorithm != 0)
@@ -290,45 +288,21 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         bf_ukb_mask_trim: false,
         no_bf_ukb_mask_trim: false,
         masking_input: None,
-        phase_offset_removal: Some(ps.phase_offset_removal),
-        phase_offset_sigma_mm: parse_optional_f64_vec3(&ps.phase_offset_sigma_mm),
+        phase_offset_removal: None,
+        phase_offset_sigma_mm: None,
         coil_combination_sigma: None,
-        // Part of HIP phase offset removal, which runs before any unwrapper. MEDI's complex fit
-        // removes no offsets, and refuses bipolar correction.
-        bipolar_correction: ps.phase_offset_removal && ps.bipolar_correction
-            && !ps.b0_estimation_is("complex-fit"),
-        // Only when changed from the default, so a default form still yields a bare command.
-        b0_estimation: match ps.b0_estimation {
-            _ if ps.b0_estimation_is("complex-fit") => Some(B0EstimationArg::ComplexFit),
-            1 => Some(B0EstimationArg::LinearFit),
-            2 => Some(B0EstimationArg::RobustFit),
-            3 => Some(B0EstimationArg::QsmartEchofit),
-            _ => None,
-        },
-        // QSMART's echo-fit threshold: the mode, and the value of that mode.
-        qsmart_fit_threshold_mode: [crate::cli::QsmartFitThresholdModeArg::Percentile, crate::cli::QsmartFitThresholdModeArg::Absolute]
-            .get(ps.qsmart_fit_threshold_mode).copied().filter(|_| ps.b0_estimation == 3),
-        qsmart_fit_percentile: if ps.b0_estimation == 3 && ps.qsmart_fit_threshold_mode == 0 { parse_optional_f64(&ps.qsmart_fit_percentile) } else { None },
-        qsmart_fit_threshold: if ps.b0_estimation == 3 && ps.qsmart_fit_threshold_mode == 1 { parse_optional_f64(&ps.qsmart_fit_threshold) } else { None },
-        // The echo weights belong to the weighted average; the fits do not use them.
-        b0_weight_type: [B0WeightTypeArg::PhaseSNR, B0WeightTypeArg::PhaseVar, B0WeightTypeArg::Average,
-                         B0WeightTypeArg::TEs, B0WeightTypeArg::Mag, B0WeightTypeArg::AssumedDecay]
-            .get(ps.b0_weight_type).copied().filter(|&w| ps.b0_estimation == 0 && w != B0WeightTypeArg::PhaseSNR),
-        b0_weight_assumed_t2star: if ps.b0_estimation == 0 && ps.b0_weight_type == 5 { parse_optional_f64(&ps.b0_weight_assumed_t2star_ms) } else { None },
-        // Only when Laplacian unwrapping is selected, and only when changed from the default.
-        laplacian_solver: if ps.unwrapping_algorithm == 1 && ps.laplacian_solver != 0 {
-            [crate::cli::LaplacianSolverArg::Dct, crate::cli::LaplacianSolverArg::Fft, crate::cli::LaplacianSolverArg::Mirror,
-             crate::cli::LaplacianSolverArg::Mgpcg]
-                .get(ps.laplacian_solver).copied()
-        } else { None },
-        laplacian_fft_pad: if ps.unwrapping_algorithm == 1 && ps.laplacian_solver == 1 {
-            parse_pad3(&ps.laplacian_fft_pad)
-                .filter(|&p| p != qsmxt_engine::default_laplacian_fft_pad())
-                .map(|p| if p[0] == p[1] && p[1] == p[2] { vec![p[0]] } else { p.to_vec() })
-        } else { None },
-        laplacian_unmasked: ps.unwrapping_algorithm == 1 && ps.laplacian_unmasked,
+        bipolar_correction: false,
+        b0_estimation: None,
+        qsmart_fit_threshold_mode: None,
+        qsmart_fit_percentile: None,
+        qsmart_fit_threshold: None,
+        b0_weight_type: None,
+        b0_weight_assumed_t2star: None,
+        laplacian_solver: None,
+        laplacian_fft_pad: None,
+        laplacian_unmasked: false,
         no_laplacian_unmasked: false,
-        laplacian_keep_outside: ps.unwrapping_algorithm == 1 && !ps.laplacian_unmasked && ps.b0_estimation_is("weighted-avg") && ps.laplacian_keep_outside,
+        laplacian_keep_outside: false,
         no_laplacian_keep_outside: false,
         // BET is edited per mask step in the TUI, so its settings travel inside the sections.
         bet_fractional_intensity: None,
@@ -342,7 +316,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         bet_orientation: if ps.uses_bet() { qsmxt_engine::BetOrientation::ALL.get(ps.bet_orientation).copied() } else { None },
         // Set from the form's settings store ([`stored_values`]).
         qsm_reference: None,
-        qsm_per_echo: Some(ps.qsm_per_echo),
+        qsm_per_echo: None,
         rts_params: crate::cli::RtsParamArgs {
             rts_delta: parse_optional_f64(&ps.rts_delta),
             rts_mu: parse_optional_f64(&ps.rts_mu),
@@ -633,41 +607,9 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         resharp_params: Default::default(),
         harperella_params: Default::default(),
         iharperella_params: Default::default(),
-        romeo_params: crate::cli::RomeoParamArgs {
-            no_romeo_phase_coherence: !ps.romeo_phase_coherence,
-            no_romeo_phase_gradient_coherence: !ps.romeo_phase_gradient_coherence,
-            no_romeo_phase_linearity: !ps.romeo_phase_linearity,
-            romeo_phase_linearity: ps.romeo_phase_linearity,
-            no_romeo_mag_coherence: !ps.romeo_mag_coherence,
-            romeo_mag_weight: ps.romeo_mag_weight,
-            no_romeo_mag_weight: false,
-            romeo_mag_weight2: ps.romeo_mag_weight2,
-            romeo_bestpath: ps.romeo_bestpath,
-            romeo_template: if ps.unwrapping_algorithm != 0 || ps.romeo_individual { None } else { parse_optional_usize(&ps.romeo_template) },
-            // ROMEO's own setting: not passed under Laplacian unwrapping.
-            romeo_individual: ps.unwrapping_algorithm == 0 && ps.romeo_individual,
-            no_romeo_individual: ps.unwrapping_algorithm == 0 && !ps.romeo_individual,
-            romeo_correct_global: ps.romeo_correct_global,
-            no_romeo_correct_global: !ps.romeo_correct_global,
-            romeo_temporal_uncertain_unwrapping: if ps.romeo_temporal_uncertain { parse_optional_f64(&ps.romeo_temporal_uncertain_unwrapping) } else { Some(0.0) },
-            romeo_max_seeds: ps.romeo_max_seeds.trim().parse::<u8>().ok(),
-            romeo_merge_regions: ps.romeo_merge_regions,
-            romeo_correct_regions: ps.romeo_correct_regions,
-            romeo_wrap_addition: parse_optional_f64(&ps.romeo_wrap_addition),
-        },
-        // Only when PRELUDE unwrapping is selected, and only when changed from the default.
-        prelude_params: {
-            let prelude = ps.unwrapping_algorithm == 2;
-            let d = qsmxt_engine::PreludeConfig::default();
-            crate::cli::PreludeParamArgs {
-                prelude_labelling: [crate::cli::PreludeLabellingArg::Auto, crate::cli::PreludeLabellingArg::Slices,
-                                    crate::cli::PreludeLabellingArg::Volume]
-                    .get(ps.prelude_labelling).copied()
-                    .filter(|&l| prelude && qsmxt_engine::PreludeLabelling::from(l) != d.labelling),
-                prelude_partitions: ps.prelude_partitions.trim().parse::<u64>().ok()
-                    .filter(|&n| prelude && n as usize != d.num_phase_partitions),
-            }
-        },
+        // Field mapping is set from the form's settings store ([`stored_values`]).
+        romeo_params: Default::default(),
+        prelude_params: Default::default(),
         // Set from the form's settings store ([`config_from_app`]).
         swi_params: Default::default(),
         tiling_params: crate::cli::TilingParamArgs {
@@ -691,14 +633,14 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
                 n4_geometry: qsmxt_engine::N4Geometry::ALL.get(ps.n4_geometry).copied(),
             }
         } else { Default::default() },
-        linear_fit_estimate_offset: Some(ps.linear_fit_estimate_offset),
-        robust_fit_loss: (ps.b0_estimation == 2 && ps.robust_fit_loss == 1).then_some(crate::cli::RobustLossArg::Huber),
-        robust_fit_tuning: if ps.b0_estimation == 2 { parse_optional_f64(&ps.robust_fit_tuning) } else { None },
-        robust_fit_iterations: if ps.b0_estimation == 2 { parse_optional_usize(&ps.robust_fit_iterations) } else { None },
-        robust_fit_downweight_level: if ps.b0_estimation == 2 { parse_optional_f64(&ps.robust_fit_downweight_level) } else { None },
-        robust_fit_flag_ratio: if ps.b0_estimation == 2 { parse_optional_f64(&ps.robust_fit_flag_ratio) } else { None },
-        complex_fit_reltol: if ps.b0_estimation_is("complex-fit") { parse_optional_f64(&ps.complex_fit_reltol) } else { None },
-        complex_fit_max_iter: if ps.b0_estimation_is("complex-fit") { parse_optional_usize(&ps.complex_fit_max_iter) } else { None },
+        linear_fit_estimate_offset: None,
+        robust_fit_loss: None,
+        robust_fit_tuning: None,
+        robust_fit_iterations: None,
+        robust_fit_downweight_level: None,
+        robust_fit_flag_ratio: None,
+        complex_fit_reltol: None,
+        complex_fit_max_iter: None,
         no_qsm: !ps.do_qsm,
         do_swi: false,
         swi_filtered_phase: false,
@@ -847,17 +789,12 @@ fn parse_usize_list(s: &str) -> Option<Vec<usize>> {
     (!v.is_empty()).then_some(v)
 }
 
+
+
 /// "64" (every axis) or "64 64 32".
 fn parse_pad3(s: &str) -> Option<[usize; 3]> {
     let v: Vec<usize> = s.split_whitespace().map(|t| t.parse().ok()).collect::<Option<_>>()?;
     qsmxt_engine::pad3_from(&v)
-}
-
-/// Three numbers, separated by spaces or commas; anything else is None.
-fn parse_optional_f64_vec3(s: &str) -> Option<Vec<f64>> {
-    let v: Vec<f64> = s.split(|c: char| c == ',' || c.is_whitespace())
-        .filter(|t| !t.is_empty()).map(|t| t.parse().ok()).collect::<Option<_>>()?;
-    (v.len() == 3).then_some(v)
 }
 
 fn parse_optional_usize(s: &str) -> Option<usize> {
@@ -976,6 +913,11 @@ pub fn config_from_app(app: &App) -> crate::Result<PipelineConfig> {
 mod tests {
     use super::*;
     use super::super::app::App;
+
+    /// The config a run gets from its arguments.
+    fn config(args: &RunArgs) -> PipelineConfig {
+        crate::cli_settings::build_config(Default::default(), &args.pipeline).unwrap()
+    }
 
     /// The TUI holds the chosen algorithm as an index into `QSM_ALGO_OPTIONS`, and
     /// [`QSM_ALGO_ARGS`] is what turns it back into an algorithm. If the two lists drift — insert
@@ -1167,32 +1109,27 @@ mod tests {
             | crate::tui::app::PipelineRow::Param { field, .. } => Some(field.to_string()),
             _ => None,
         }).collect::<Vec<_>>();
+        let command = |app: &App| qsmxt_engine::generate_command(&config_from_app(app).unwrap());
         assert!(!fields(&app).contains(&"laplacian_solver".to_string()), "ROMEO has no solver");
-        app.pipeline_state.unwrapping_algorithm = 1; // laplacian
+        app.set_field_select("unwrapping_algorithm", 1); // laplacian
         assert!(fields(&app).contains(&"laplacian_solver".to_string()));
         assert!(!fields(&app).contains(&"laplacian_fft_pad".to_string()), "dct has no pad");
-        assert_eq!(pipeline_args_from_app(&app).laplacian_solver, None, "default stays off the command");
-        app.pipeline_state.laplacian_solver = 1; // fft
+        assert!(!command(&app).contains("--laplacian-solver"), "default stays off the command");
+        app.set_field_select("laplacian_solver", 1); // fft
         assert!(fields(&app).contains(&"laplacian_fft_pad".to_string()));
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.laplacian_solver, qsmxt_engine::LaplacianSolver::Fft);
         assert_eq!(c.field_mapping.laplacian_fft_pad, [64; 3]);
-        assert_eq!(pipeline_args_from_app(&app).laplacian_fft_pad, None, "default pad not emitted");
-        app.pipeline_state.laplacian_fft_pad = "64 64 32".into();
+        assert!(!command(&app).contains("--laplacian-fft-pad"), "default pad not emitted");
+        *app.field_text_mut("laplacian_fft_pad").unwrap() = "64 64 32".into();
         assert_eq!(config_from_app(&app).unwrap().field_mapping.laplacian_fft_pad, [64, 64, 32]);
-        let a = pipeline_args_from_app(&app);
-        assert!(matches!(a.laplacian_solver, Some(crate::cli::LaplacianSolverArg::Fft)));
-        assert_eq!(a.laplacian_fft_pad, Some(vec![64, 64, 32]));
-        app.pipeline_state.laplacian_fft_pad = "12".into();
-        assert_eq!(config_from_app(&app).unwrap().field_mapping.laplacian_fft_pad, [12; 3]);
-        assert_eq!(pipeline_args_from_app(&app).laplacian_fft_pad, Some(vec![12]));
+        assert!(command(&app).contains("--laplacian-solver fft") && command(&app).contains("--laplacian-fft-pad 64 64 32"), "{}", command(&app));
         // QSM.jl's MGPCG: no pad, reaches the config and the command.
-        app.pipeline_state.set_select("laplacian_solver", crate::tui::app::LAPLACIAN_SOLVER_OPTIONS.iter().position(|o| *o == "mgpcg").unwrap());
+        let mgpcg = super::super::settings_rows::options("field_mapping.laplacian_solver").0.iter().position(|o| *o == "mgpcg").unwrap();
+        app.set_field_select("laplacian_solver", mgpcg);
         assert!(!fields(&app).contains(&"laplacian_fft_pad".to_string()), "mgpcg has no pad");
         assert_eq!(config_from_app(&app).unwrap().field_mapping.laplacian_solver, qsmxt_engine::LaplacianSolver::Mgpcg);
-        let a = pipeline_args_from_app(&app);
-        assert!(matches!(a.laplacian_solver, Some(crate::cli::LaplacianSolverArg::Mgpcg)));
-        assert_eq!(a.laplacian_fft_pad, None);
+        assert!(command(&app).contains("--laplacian-solver mgpcg") && !command(&app).contains("--laplacian-fft-pad"));
     }
 
     /// The unmasked unwrapping is a Laplacian toggle, as the solver is: off by default and
@@ -1207,28 +1144,26 @@ mod tests {
             _ => None,
         }).collect::<Vec<_>>();
         assert!(!fields(&app).contains(&"prelude_labelling".to_string()), "ROMEO has no PRELUDE settings");
-        app.pipeline_state.unwrapping_algorithm = 2; // prelude
+        let command = |app: &App| qsmxt_engine::generate_command(&config_from_app(app).unwrap());
+        app.set_field_select("unwrapping_algorithm", 2); // prelude
         let f = fields(&app);
         for shown in ["prelude_labelling", "prelude_partitions", "phase_offset_removal"] {
             assert!(f.contains(&shown.to_string()), "{shown}: {f:?}");
         }
         assert!(!f.iter().any(|f| f.starts_with("romeo_") || f.starts_with("laplacian_solver")), "{f:?}");
-        let a = pipeline_args_from_app(&app);
-        assert_eq!(a.unwrapping_algorithm, Some(crate::cli::UnwrapAlgorithmArg::Prelude));
-        assert_eq!((a.prelude_params.prelude_labelling, a.prelude_params.prelude_partitions), (None, None),
-                   "defaults stay off the command");
-        app.pipeline_state.set_select("prelude_labelling", 2);
-        app.pipeline_state.prelude_partitions = "6".into();
-        app.pipeline_state.bipolar_correction = true;
+        assert!(command(&app).contains("--unwrapping-algorithm prelude"));
+        assert!(!command(&app).contains("--prelude-"), "defaults stay off the command");
+        app.set_field_select("prelude_labelling", 2);
+        *app.field_text_mut("prelude_partitions").unwrap() = "6".into();
+        app.toggle_field("bipolar_correction");
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.unwrapping_algorithm, qsmxt_engine::UnwrappingAlgorithm::Prelude);
         assert_eq!(c.field_mapping.prelude.labelling, qsmxt_engine::PreludeLabelling::Volume);
         assert_eq!(c.field_mapping.prelude.num_phase_partitions, 6);
         assert!(c.field_mapping.bipolar_correction, "bipolar correction applies with PRELUDE");
         // Back to ROMEO: PRELUDE's settings are not passed.
-        app.pipeline_state.unwrapping_algorithm = 0;
-        let a = pipeline_args_from_app(&app);
-        assert_eq!((a.prelude_params.prelude_labelling, a.prelude_params.prelude_partitions), (None, None));
+        app.set_field_select("unwrapping_algorithm", 0);
+        assert!(!command(&app).contains("--prelude-"));
     }
 
     /// MEDI's region growing is the fourth unwrapper: it has no settings of its own, keeps phase
@@ -1236,7 +1171,7 @@ mod tests {
     #[test]
     fn medi_region_growing_choice() {
         let mut app = default_app();
-        app.pipeline_state.unwrapping_algorithm = 3; // medi-region-growing
+        app.set_field_select("unwrapping_algorithm", 3); // medi-region-growing
         let f: Vec<String> = app.pipeline_rows().iter().filter_map(|r| match r {
             crate::tui::app::PipelineRow::AlgoSelect { field, .. }
             | crate::tui::app::PipelineRow::Param { field, .. }
@@ -1245,9 +1180,7 @@ mod tests {
         }).collect();
         assert!(f.contains(&"phase_offset_removal".to_string()), "{f:?}");
         assert!(!f.iter().any(|f| f.starts_with("romeo_") || f.starts_with("prelude_") || f.starts_with("laplacian_")), "{f:?}");
-        app.pipeline_state.bipolar_correction = true;
-        let a = pipeline_args_from_app(&app);
-        assert_eq!(a.unwrapping_algorithm, Some(crate::cli::UnwrapAlgorithmArg::MediRegionGrowing));
+        app.toggle_field("bipolar_correction");
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.unwrapping_algorithm, qsmxt_engine::UnwrappingAlgorithm::MediRegionGrowing);
         assert!(c.field_mapping.bipolar_correction);
@@ -1262,16 +1195,15 @@ mod tests {
             _ => None,
         }).collect::<Vec<_>>();
         assert!(!toggles(&app).contains(&"laplacian_unmasked".to_string()), "ROMEO has no Laplacian unwrapping");
-        app.pipeline_state.laplacian_unmasked = true;
-        assert!(!pipeline_args_from_app(&app).laplacian_unmasked, "not passed under ROMEO");
-        app.pipeline_state.laplacian_unmasked = false;
-        app.pipeline_state.unwrapping_algorithm = 1; // laplacian
+        app.form.settings.set("field_mapping.laplacian_unmasked", true);
+        assert!(!config_from_app(&app).unwrap().field_mapping.laplacian_unmasked, "not passed under ROMEO");
+        app.form.settings.set("field_mapping.laplacian_unmasked", false);
+        app.set_field_select("unwrapping_algorithm", 1); // laplacian
         assert!(toggles(&app).contains(&"laplacian_unmasked".to_string()));
         assert!(!config_from_app(&app).unwrap().field_mapping.laplacian_unmasked);
         assert!(!build_command_string(&app).contains("--laplacian-unmasked"));
-        app.pipeline_state.toggle("laplacian_unmasked");
+        app.toggle_field("laplacian_unmasked");
         assert!(config_from_app(&app).unwrap().field_mapping.laplacian_unmasked);
-        assert!(pipeline_args_from_app(&app).laplacian_unmasked);
         assert!(build_command_string(&app).contains("--laplacian-unmasked"));
     }
 
@@ -1283,14 +1215,14 @@ mod tests {
         let fields = |app: &App| app.pipeline_rows().iter().filter_map(crate::tui::app::row_field)
             .map(str::to_string).collect::<Vec<_>>();
         assert!(fields(&app).contains(&"phase_offset_removal".to_string()));
-        app.pipeline_state.b0_estimation = crate::tui::app::B0_ESTIMATION_OPTIONS.iter().position(|o| *o == "complex-fit").unwrap();
+        app.form.settings.set("field_mapping.b0_estimation", "complex-fit");
         let f = fields(&app);
         assert!(f.contains(&"complex_fit_reltol".to_string()) && !f.contains(&"phase_offset_removal".to_string())
             && !f.contains(&"linear_fit_estimate_offset".to_string()), "{f:?}");
         let c = config_from_app(&app).unwrap();
         assert_eq!((c.field_mapping.b0_estimation, c.field_mapping.complex_fit.clone()),
                    (qsmxt_engine::B0Estimation::ComplexFit, qsmxt_engine::ComplexFitConfig::default()));
-        app.pipeline_state.complex_fit_max_iter = "5".into();
+        *app.field_text_mut("complex_fit_max_iter").unwrap() = "5".into();
         assert_eq!(config_from_app(&app).unwrap().field_mapping.complex_fit.max_iter, 5);
 
         let ps = &mut app.pipeline_state;
@@ -1314,7 +1246,7 @@ mod tests {
     }
 
     /// The robust fit, its parameters and the shared fit settings are in the TUI and reach both
-    /// the config and the CLI args.
+    /// the config and the command.
     #[test]
     fn robust_fit_settings_reach_config_and_args() {
         let mut app = default_app();
@@ -1324,20 +1256,19 @@ mod tests {
             _ => None,
         }).collect::<Vec<_>>();
         assert!(!fields(&app).contains(&"robust_fit_loss".to_string()));
-        app.pipeline_state.b0_estimation = 2;
+        app.set_field_select("b0_estimation", 2);
         let f = fields(&app);
         for name in ["robust_fit_loss", "robust_fit_tuning", "robust_fit_iterations",
                      "robust_fit_downweight_level", "robust_fit_flag_ratio"] {
             assert!(f.contains(&name.to_string()), "{name} missing: {f:?}");
         }
         assert_eq!(config_from_app(&app).unwrap().field_mapping.robust_fit, qsmxt_engine::RobustFitConfig::default());
-        let ps = &mut app.pipeline_state;
-        ps.robust_fit_loss = 1;
-        ps.robust_fit_tuning = "2".into();
-        ps.robust_fit_iterations = "0".into();
-        ps.robust_fit_downweight_level = "0.5".into();
-        ps.robust_fit_flag_ratio = "4".into();
-        ps.toggle("linear_fit_estimate_offset");
+        app.set_field_select("robust_fit_loss", 1);
+        for (field, text) in [("robust_fit_tuning", "2"), ("robust_fit_iterations", "0"),
+                              ("robust_fit_downweight_level", "0.5"), ("robust_fit_flag_ratio", "4")] {
+            *app.field_text_mut(field).unwrap() = text.into();
+        }
+        app.toggle_field("linear_fit_estimate_offset");
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.b0_estimation, qsmxt_engine::B0Estimation::RobustFit);
         assert_eq!(c.field_mapping.robust_fit, qsmxt_engine::RobustFitConfig {
@@ -1345,12 +1276,11 @@ mod tests {
             downweight_level: 0.5, flag_ratio: 4.0,
         });
         assert!(!c.field_mapping.linear_fit.estimate_offset);
-        let a = pipeline_args_from_app(&app);
-        assert_eq!(a.b0_estimation, Some(B0EstimationArg::RobustFit));
-        assert_eq!(a.robust_fit_loss, Some(crate::cli::RobustLossArg::Huber));
-        assert_eq!(a.robust_fit_tuning, Some(2.0));
-        assert_eq!(a.robust_fit_iterations, Some(0));
-        assert_eq!(a.linear_fit_estimate_offset, Some(false));
+        let command = qsmxt_engine::generate_command(&c);
+        for flag in ["--b0-estimation robust-fit", "--robust-fit-loss huber", "--robust-fit-tuning 2",
+                     "--robust-fit-iterations 0", "--linear-fit-estimate-offset false"] {
+            assert!(command.contains(flag), "{flag}: {command}");
+        }
     }
 
     #[test]
@@ -1516,7 +1446,7 @@ mod tests {
         assert!(!build_command_string(&app).contains("--obliquity-threshold"), "no threshold without resampling");
 
         // Off is ROMEO's default here; turned on, the threshold shown is passed.
-        app.pipeline_state.romeo_temporal_uncertain = true;
+        app.toggle_field("romeo_temporal_uncertain");
         app.form.settings.switch("segmentation.sigma_smoothing", false);
         app.form.settings.set("pipeline.do_segmentation", true);
         let cmd = build_command_string(&app);
@@ -1614,7 +1544,7 @@ mod tests {
     #[test]
     fn test_command_string_phase_offset_removal() {
         let mut app = default_app();
-        app.pipeline_state.phase_offset_removal = false;
+        app.toggle_field("phase_offset_removal");
         let cmd = build_command_string(&app);
         assert!(cmd.contains("--phase-offset-removal false"));
     }
@@ -1715,7 +1645,7 @@ mod tests {
         let off = config(&build_run_args(&app).unwrap());
         assert!(!off.swi.filtered_phase && !off.pipeline.do_swi);
         assert!(args.debug);
-        assert_eq!(args.pipeline.phase_offset_removal, Some(true)); // default mcpc3ds
+        assert!(config(&args).field_mapping.phase_offset_removal); // default mcpc3ds
     }
 
     #[test]
@@ -1723,9 +1653,9 @@ mod tests {
         let mut app = default_app();
         app.form.bids_dir = "/b".to_string();
         app.form.output_dir = "/o".to_string();
-        app.pipeline_state.phase_offset_removal = false;
+        app.toggle_field("phase_offset_removal");
         let args = build_run_args(&app).unwrap();
-        assert_eq!(args.pipeline.phase_offset_removal, Some(false));
+        assert!(!config(&args).field_mapping.phase_offset_removal);
     }
 
 
@@ -2019,7 +1949,7 @@ mod tests {
         app.form.slurm_account = "acct".to_string();
         // TKD rather than TGV: TGV has no background-removal stage, so the TUI sends none (#276).
         app.pipeline_state.qsm_algorithm = 2; // tkd
-        app.pipeline_state.unwrapping_algorithm = 1; // laplacian
+        app.set_field_select("unwrapping_algorithm", 1); // laplacian
         app.pipeline_state.bf_algorithm = 1; // pdf
         app.form.settings.set("pipeline.axial_resampling", true);
         *app.field_text_mut("obliquity_threshold").unwrap() = "5".into();
@@ -2027,9 +1957,9 @@ mod tests {
 
         let slurm = build_slurm_args(&app).unwrap();
         assert_eq!(slurm.pipeline.qsm_algorithm, Some(crate::cli::QsmAlgorithmArg::Tkd));
-        assert_eq!(slurm.pipeline.unwrapping_algorithm, Some(crate::cli::UnwrapAlgorithmArg::Laplacian));
         assert_eq!(slurm.pipeline.bf_algorithm, Some(crate::cli::BfAlgorithmArg::Pdf));
         let config = crate::cli_settings::build_config(Default::default(), &slurm.pipeline).unwrap();
+        assert_eq!(config.field_mapping.unwrapping_algorithm, qsmxt_engine::UnwrappingAlgorithm::Laplacian);
         assert_eq!(config.pipeline.obliquity_threshold, 5.0);
         assert!(config.pipeline.do_swi);
     }
@@ -2040,12 +1970,12 @@ mod tests {
     fn test_run_args_carry_b0_combination() {
         let mut app = default_app();
         app.form.bids_dir = "/bids".to_string();
-        let run = build_run_args(&app).unwrap();
-        assert_eq!(run.pipeline.b0_weight_type, None);
-        assert_eq!(run.pipeline.b0_estimation, None);
-        app.pipeline_state.unwrapping_algorithm = 1; // laplacian
-        app.pipeline_state.b0_weight_type = 5; // assumed-decay
-        app.pipeline_state.b0_weight_assumed_t2star_ms = "35".to_string();
+        let run = config(&build_run_args(&app).unwrap()).field_mapping;
+        let d = qsmxt_engine::FieldMappingConfig::default();
+        assert_eq!((run.b0_weight_type, run.b0_estimation), (d.b0_weight_type, d.b0_estimation));
+        app.set_field_select("unwrapping_algorithm", 1); // laplacian
+        app.set_field_select("b0_weight_type", 5); // assumed-decay
+        *app.field_text_mut("b0_weight_assumed_t2star_ms").unwrap() = "35".to_string();
         let mut cfg = PipelineConfig::default();
         crate::cli_settings::apply_normalised(&mut cfg, &build_run_args(&app).unwrap().pipeline).unwrap();
         assert_eq!(cfg.field_mapping.b0_weight_type, crate::pipeline::config::B0WeightType::AssumedDecay);
@@ -2053,8 +1983,8 @@ mod tests {
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.b0_weight_type, crate::pipeline::config::B0WeightType::AssumedDecay);
         assert_eq!(c.field_mapping.b0_weight_assumed_t2star_ms, 35.0);
-        app.pipeline_state.b0_estimation = 1;
-        assert_eq!(build_run_args(&app).unwrap().pipeline.b0_estimation, Some(B0EstimationArg::LinearFit));
+        app.set_field_select("b0_estimation", 1);
+        assert_eq!(config(&build_run_args(&app).unwrap()).field_mapping.b0_estimation, qsmxt_engine::B0Estimation::LinearFit);
     }
 
     /// Choosing MEDI changes no other row: the background removal stays as it is, and the run
@@ -2100,16 +2030,16 @@ mod tests {
         let mut app = default_app();
         app.form.bids_dir = "/bids".to_string();
         app.pipeline_state.set_select("qsm_algorithm", qsmart);
-        let ps = &app.pipeline_state;
-        assert_eq!((ps.unwrapping_algorithm, ps.laplacian_solver, ps.b0_estimation), (0, 0, 0));
-        assert_eq!(ps.mask_sections, default_mask_sections());
+        let selects = ["unwrapping_algorithm", "laplacian_solver", "b0_estimation"].map(|f| app.field_select(f));
+        assert_eq!(selects, [0, 0, 0]);
+        assert_eq!(app.pipeline_state.mask_sections, default_mask_sections());
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping, qsmxt_engine::FieldMappingConfig::default());
         assert_eq!(c.masking.sections, default_mask_sections());
 
-        app.pipeline_state.set_select("unwrapping_algorithm", 1);
-        app.pipeline_state.set_select("laplacian_solver", 2);
-        app.pipeline_state.set_select("b0_estimation", 3);
+        app.set_field_select("unwrapping_algorithm", 1);
+        app.set_field_select("laplacian_solver", 2);
+        app.set_field_select("b0_estimation", 3);
         let fm = config_from_app(&app).unwrap().field_mapping;
         assert_eq!((fm.unwrapping_algorithm, fm.laplacian_solver, fm.b0_estimation),
                    (UnwrappingAlgorithm::Laplacian, LaplacianSolver::Mirror, B0Estimation::QsmartEchofit));
@@ -2118,14 +2048,14 @@ mod tests {
 
         app.pipeline_state.set_select("qsmart_vessel_magnitude", 1);
         app.pipeline_state.set_select("qsmart_vessel_units", 1);
-        app.pipeline_state.set_select("qsmart_fit_threshold_mode", 0);
-        app.pipeline_state.qsmart_fit_percentile = "95".into();
+        app.set_field_select("qsmart_fit_threshold_mode", 0);
+        *app.field_text_mut("qsmart_fit_percentile").unwrap() = "95".into();
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.inversion.qsmart.vessel_magnitude, qsmxt_engine::QsmartVesselMagnitude::Combined);
         assert_eq!(c.inversion.qsmart.vessel_size_units, qsmxt_engine::VesselSizeUnits::Mm);
         assert_eq!(c.field_mapping.qsmart_fit_threshold(), qsm_core::utils::QsmartFitThreshold::Percentile(95.0));
-        app.pipeline_state.set_select("qsmart_fit_threshold_mode", 1);
-        app.pipeline_state.qsmart_fit_threshold = "30".into();
+        app.set_field_select("qsmart_fit_threshold_mode", 1);
+        *app.field_text_mut("qsmart_fit_threshold").unwrap() = "30".into();
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.qsmart_fit_threshold(), qsm_core::utils::QsmartFitThreshold::Absolute(30.0));
 
@@ -2147,9 +2077,9 @@ mod tests {
         app.form.bids_dir = "/bids".to_string();
         app.form.slurm_account = "acct".to_string();
         app.pipeline_state.qsm_algorithm = 4; // tgv
-        app.pipeline_state.unwrapping_algorithm = 1; // laplacian
+        app.set_field_select("unwrapping_algorithm", 1); // laplacian
         app.pipeline_state.bf_algorithm = 1; // pdf
-        app.pipeline_state.bipolar_correction = true;
+        app.toggle_field("bipolar_correction");
 
         let mut local = PipelineConfig::default();
         crate::cli_settings::apply_normalised(&mut local, &build_run_args(&app).unwrap().pipeline).unwrap();

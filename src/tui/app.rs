@@ -1859,12 +1859,6 @@ const QSM_ALGO_HELP: &[&str] = &[
     "iQSM (deep learning; weights auto-downloaded) — end-to-end reconstruction from wrapped phase. https://doi.org/10.1016/j.neuroimage.2022.119410",
     "iQSM+ (deep learning; weights auto-downloaded) — orientation-adaptive end-to-end reconstruction. https://doi.org/10.1016/j.media.2024.103160",
 ];
-const UNWRAP_HELP: &[&str] = &[
-    "ROMEO region-growing unwrapping — https://doi.org/10.1002/mrm.28563",
-    "Laplacian phase unwrapping (FFT-based) — https://doi.org/10.1364/OL.28.001194",
-    "PRELUDE region-merging unwrapping, each echo on its own — https://doi.org/10.1002/mrm.10354",
-    "MEDI's magnitude-guided region-growing unwrapping; needs magnitude images — https://doi.org/10.1002/mrm.24272",
-];
 /// Facts from outside the pipeline form that decide which of its rows apply: the other tabs'
 /// settings (an output that forces QSM, the orientation grouping, the echo limit) and the maps
 /// whose supplied inputs apply. Set by [`App::sync_pipeline_mode`] before every key
@@ -1904,40 +1898,9 @@ pub struct PipelineFormState {
     pub ctx: RowContext,
     // Algorithm selections (as indices)
     pub qsm_algorithm: usize,
-    pub unwrapping_algorithm: usize,
     pub bf_algorithm: usize,
 
     // Field mapping
-    /// A QSM per echo, and their mean (`qsm.per_echo`).
-    pub qsm_per_echo: bool,
-    pub phase_offset_removal: bool,
-    pub bipolar_correction: bool,
-    pub romeo_individual: bool,
-    pub romeo_correct_global: bool,
-    pub romeo_template: String,
-    pub b0_estimation: usize,    // 0=weighted_avg, 1=linear_fit, 2=robust_fit, 3=qsmart_echofit
-    pub b0_weight_type: usize,   // 0=phase_snr, 1=phase_var, 2=average, 3=tes, 4=mag, 5=assumed-decay
-    pub b0_weight_assumed_t2star_ms: String,
-    /// Index into [`QSMART_FIT_THRESHOLD_MODE_OPTIONS`]: how QSMART's echo fit sets its residual
-    /// threshold (0 = percentile, 1 = fixed).
-    pub qsmart_fit_threshold_mode: usize,
-    /// QSMART's echo fit's residual percentile, with the percentile mode.
-    pub qsmart_fit_percentile: String,
-    /// QSMART's echo fit's fixed residual threshold, with the fixed mode.
-    pub qsmart_fit_threshold: String,
-    /// Index into [`LAPLACIAN_SOLVER_OPTIONS`] (0 = dct, 1 = fft, 2 = mirror).
-    pub laplacian_solver: usize,
-    /// FFT solver pad in voxels per side: "64" for every axis, or "64 64 32".
-    pub laplacian_fft_pad: String,
-    /// Laplacian unwrapping of the raw phase over the whole volume
-    /// (`field_mapping.laplacian_unmasked`).
-    pub laplacian_unmasked: bool,
-    /// The Laplacian field kept over the whole volume (`field_mapping.laplacian_keep_outside`).
-    pub laplacian_keep_outside: bool,
-    /// Index into [`PRELUDE_LABELLING_OPTIONS`] (0 = auto, 1 = slices, 2 = volume).
-    pub prelude_labelling: usize,
-    /// PRELUDE's number of phase partitions.
-    pub prelude_partitions: String,
 
     // Parameters (as Strings for text editing)
     pub inhomogeneity_correction: bool,
@@ -1957,7 +1920,6 @@ pub struct PipelineFormState {
     pub n4_histogram_bins: String,
     /// An index into N4_GEOMETRY_OPTIONS.
     pub n4_geometry: usize,
-    pub romeo_phase_coherence: bool,
     pub tgv_step_size: String,
     pub medi_merit: bool,
     pub medi_data_weighting: String,
@@ -2207,30 +2169,6 @@ pub struct PipelineFormState {
     pub do_qsm: bool,
 
     // ROMEO
-    pub romeo_phase_gradient_coherence: bool,
-    pub romeo_mag_coherence: bool,
-    pub romeo_mag_weight: bool,
-    pub romeo_phase_linearity: bool,
-    pub romeo_mag_weight2: bool,
-    pub romeo_bestpath: bool,
-    /// Re-unwrap temporally uncertain voxels (off = a threshold of 0).
-    pub romeo_temporal_uncertain: bool,
-    pub romeo_temporal_uncertain_unwrapping: String,
-    pub romeo_max_seeds: String,
-    pub romeo_merge_regions: bool,
-    pub romeo_correct_regions: bool,
-    pub romeo_wrap_addition: String,
-    pub linear_fit_estimate_offset: bool,
-    /// Motion-robust echo fit: index into [`ROBUST_FIT_LOSS_OPTIONS`], and its parameters
-    /// (`robust_fit_tuning` blank = the loss's conventional value).
-    pub robust_fit_loss: usize,
-    pub robust_fit_tuning: String,
-    pub robust_fit_iterations: String,
-    pub robust_fit_downweight_level: String,
-    pub robust_fit_flag_ratio: String,
-    /// MEDI's complex fit (`b0_estimation` complex-fit).
-    pub complex_fit_reltol: String,
-    pub complex_fit_max_iter: String,
     /// MEDI+0's CSF term and MEDI's zero padding (x y z voxels); TFI's MERIT and data term.
     pub medi_csf: bool,
     pub medi_lambda_csf: String,
@@ -2241,7 +2179,6 @@ pub struct PipelineFormState {
     pub tfi_linear: bool,
 
     // Phase offset sigma (mm)
-    pub phase_offset_sigma_mm: String,
 
     // Mask sections (combined with `mask_combine` at runtime)
     pub mask_sections: Vec<crate::pipeline::config::MaskSection>,
@@ -2394,28 +2331,7 @@ impl Default for PipelineFormState {
             page: Page::Geometry,
             ctx: RowContext::default(),
             qsm_algorithm: super::command::default_qsm_algorithm_index(), // ilsqr
-            unwrapping_algorithm: 0, // romeo
             bf_algorithm: 0, // vsharp
-            qsm_per_echo: false,
-            phase_offset_removal: true,
-            bipolar_correction: false,
-            romeo_individual: qsmxt_engine::RomeoConfig::default().individual,
-            romeo_correct_global: qsmxt_engine::RomeoConfig::default().correct_global,
-            romeo_template: "1".to_string(),
-            b0_estimation: 0,    // weighted_avg
-            b0_weight_type: 0,   // phase_snr
-            b0_weight_assumed_t2star_ms: format!("{}", qsmxt_engine::default_b0_weight_assumed_t2star_ms()),
-            qsmart_fit_threshold_mode: QSMART_FIT_THRESHOLD_MODE_OPTIONS.iter()
-                .position(|o| *o == qsmxt_engine::QsmartFitThresholdMode::default().to_string()).unwrap_or(0),
-            qsmart_fit_percentile: format!("{}", qsmxt_engine::default_qsmart_fit_percentile()),
-            qsmart_fit_threshold: format!("{}", qsmxt_engine::default_qsmart_fit_threshold()),
-            laplacian_solver: 0, // dct
-            laplacian_fft_pad: qsmxt_engine::default_laplacian_fft_pad()[0].to_string(),
-            laplacian_unmasked: qsmxt_engine::FieldMappingConfig::default().laplacian_unmasked,
-            laplacian_keep_outside: qsmxt_engine::FieldMappingConfig::default().laplacian_keep_outside,
-            prelude_labelling: PRELUDE_LABELLING_OPTIONS.iter()
-                .position(|o| *o == qsmxt_engine::PreludeConfig::default().labelling.to_string()).unwrap_or(0),
-            prelude_partitions: qsmxt_engine::PreludeConfig::default().num_phase_partitions.to_string(),
             inhomogeneity_correction: true,
             inhomogeneity_method: 0, // makehomogeneous
             homogeneity_sigma_mm: fmt_default(qsmxt_engine::HomogeneityConfig::default().sigma_mm),
@@ -2433,7 +2349,6 @@ impl Default for PipelineFormState {
             n4_wiener_noise: fmt_default(qsmxt_engine::N4Config::default().wiener_noise),
             n4_histogram_bins: qsmxt_engine::N4Config::default().histogram_bins.to_string(),
             n4_geometry: n4_geometry_index(qsmxt_engine::MaskingConfig::default().n4_geometry),
-            romeo_phase_coherence: qsmxt_engine::RomeoConfig::default().phase_coherence,
             tgv_step_size: fmt_default(qsmxt_engine::TgvConfig::default().step_size),
             medi_merit: qsm_core::inversion::MediParams::default().merit,
             medi_data_weighting: qsm_core::inversion::MediParams::default().data_weighting.to_string(),
@@ -2538,26 +2453,6 @@ impl Default for PipelineFormState {
             amp_pe_max_linearization_ite: format!("{}", qsm_core::inversion::AmpPeParams::default().max_linearization_ite),
             amp_pe_tikhonov_beta: format!("{}", qsm_core::inversion::AmpPeParams::default().tikhonov_beta),
             do_qsm: true,
-            romeo_phase_gradient_coherence: qsm_core::unwrap::RomeoParams::default().phase_gradient_coherence,
-            romeo_mag_coherence: qsm_core::unwrap::RomeoParams::default().mag_coherence,
-            romeo_mag_weight: qsm_core::unwrap::RomeoParams::default().mag_weight,
-            romeo_phase_linearity: qsm_core::unwrap::RomeoParams::default().phase_linearity,
-            romeo_mag_weight2: qsm_core::unwrap::RomeoParams::default().mag_weight2,
-            romeo_bestpath: qsm_core::unwrap::RomeoParams::default().bestpath,
-            romeo_temporal_uncertain: qsmxt_engine::RomeoConfig::default().temporal_uncertain_unwrapping > 0.0,
-            romeo_temporal_uncertain_unwrapping: format!("{}", qsm_core::unwrap::RomeoParams::default().temporal_uncertain_unwrapping),
-            romeo_max_seeds: format!("{}", qsm_core::unwrap::RomeoParams::default().max_seeds),
-            romeo_merge_regions: qsm_core::unwrap::RomeoParams::default().merge_regions,
-            romeo_correct_regions: qsm_core::unwrap::RomeoParams::default().correct_regions,
-            romeo_wrap_addition: format!("{}", qsm_core::unwrap::RomeoParams::default().wrap_addition),
-            linear_fit_estimate_offset: true,
-            robust_fit_loss: 0,
-            robust_fit_tuning: String::new(),
-            robust_fit_iterations: qsmxt_engine::RobustFitConfig::default().iterations.to_string(),
-            robust_fit_downweight_level: fmt_default(qsmxt_engine::RobustFitConfig::default().downweight_level),
-            robust_fit_flag_ratio: fmt_default(qsmxt_engine::RobustFitConfig::default().flag_ratio),
-            complex_fit_reltol: fmt_default(qsmxt_engine::ComplexFitConfig::default().reltol),
-            complex_fit_max_iter: qsmxt_engine::ComplexFitConfig::default().max_iter.to_string(),
             medi_csf: qsmxt_engine::MediConfig::default().csf,
             medi_lambda_csf: fmt_default(qsmxt_engine::MediConfig::default().lambda_csf),
             medi_csf_r2s_threshold: fmt_default(qsmxt_engine::MediConfig::default().csf_r2s_threshold),
@@ -2568,10 +2463,6 @@ impl Default for PipelineFormState {
             },
             tfi_merit: qsmxt_engine::TfiConfig::default().merit,
             tfi_linear: qsmxt_engine::TfiConfig::default().linear,
-            phase_offset_sigma_mm: {
-                let s = qsmxt_engine::FieldMappingConfig::default().phase_offset_sigma_mm;
-                format!("{} {} {}", s[0], s[1], s[2])
-            },
             qsmart_ilsqr_max_iter: format!("{}", qsm_core::utils::QsmartParams::default().ilsqr_max_iter),
             qsmart_ilsqr_pad_mm: format!("{}", qsm_core::utils::QsmartParams::default().ilsqr_pad_mm),
             qsmart_vasc_sphere_radius: format!("{}", qsm_core::utils::QsmartParams::default().vasc_sphere_radius),
@@ -2794,21 +2685,7 @@ fn with_lsqr_heidi<T: Copy>(list: &[T], alias: T) -> Vec<T> {
 pub static QSM_PICKER_OPTIONS: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::new(|| with_lsqr_heidi(QSM_ALGO_OPTIONS, LSQR_HEIDI));
 static QSM_PICKER_HELP: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::new(|| with_lsqr_heidi(QSM_ALGO_HELP, LSQR_HEIDI_HELP));
 
-pub const UNWRAP_OPTIONS: &[&str] = &["romeo", "laplacian", "prelude", "medi-region-growing"];
 pub const BF_OPTIONS: &[&str] = &["vsharp", "pdf", "lbv", "ismv", "sharp", "resharp", "harperella", "iharperella", "bfrnet", "iqfm"];
-pub const B0_ESTIMATION_OPTIONS: &[&str] = &["weighted-avg", "linear-fit", "robust-fit", "qsmart-echofit", "complex-fit"];
-pub const ROBUST_FIT_LOSS_OPTIONS: &[&str] = &["tukey", "huber"];
-const ROBUST_FIT_LOSS_HELP: &[&str] = &[
-    "Tukey biweight: rejects an echo at a voxel past the tuning radius (default)",
-    "Huber: caps an outlying echo's influence but never rejects it",
-];
-pub const LAPLACIAN_SOLVER_OPTIONS: &[&str] = &["dct", "fft", "mirror", "mgpcg"];
-pub const PRELUDE_LABELLING_OPTIONS: &[&str] = &["auto", "slices", "volume"];
-const PRELUDE_LABELLING_HELP: &[&str] = &[
-    "As FSL prelude chooses: slice by slice above 64 voxels in-plane, else over the whole volume (default)",
-    "Label regions slice by slice (FSL prelude --labelslices)",
-    "Label regions over the whole volume (FSL prelude -f)",
-];
 pub const QSMART_FRANGI_C_MODE_OPTIONS: &[&str] = &["absolute", "relative"];
 const QSMART_FRANGI_C_MODE_HELP: &[&str] = &[
     "Frangi C in the vessel magnitude's intensity units, as QSMART gives it (default)",
@@ -2828,11 +2705,6 @@ pub const QSMART_VESSEL_MAGNITUDE_OPTIONS: &[&str] = &["mean-n4", "combined"];
 const QSMART_VESSEL_MAGNITUDE_HELP: &[&str] = &[
     "Mean over echoes, N4 bias-corrected, as QSMART prepares it (default)",
     "The combined magnitude: root sum of squares over echoes, inhomogeneity-corrected when that is on",
-];
-pub const QSMART_FIT_THRESHOLD_MODE_OPTIONS: &[&str] = &["percentile", "absolute"];
-const QSMART_FIT_THRESHOLD_MODE_HELP: &[&str] = &[
-    "A percentile of the blurred fit residual over the volume, as the authors' October 2020 demo runs it",
-    "A fixed fit residual, as QSMART v1.0 runs it (default)",
 ];
 pub const QSMART_VESSEL_UNITS_OPTIONS: &[&str] = &["voxels", "mm"];
 const QSMART_VESSEL_UNITS_HELP: &[&str] = &[
@@ -3027,28 +2899,6 @@ fn ndi_weight_norm_index(n: qsmxt_engine::NdiWeightNorm) -> usize {
 fn fmt_triple(p: [usize; 3]) -> String {
     format!("{} {} {}", p[0], p[1], p[2])
 }
-const LAPLACIAN_SOLVER_HELP: &[&str] = &[
-    "Unweighted least squares, Neumann-boundary DCT solve (Ghiglia & Romero 1994; QSM.jl :dct) (default)",
-    "Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume",
-    "Schofield & Zhu sin/cos Laplacian, FFT solve on the volume mirrored along each axis (QSMART's reference)",
-    "MGPCG (QSM.jl): Laplacian unwrapping with LBV background removal in one step; QSM.jl follows it with V-SHARP to remove remaining background",
-];
-pub const B0_WEIGHT_TYPE_OPTIONS: &[&str] = &["phase-snr", "phase-var", "average", "tes", "mag", "assumed-decay"];
-const B0_ESTIMATION_HELP: &[&str] = &[
-    "Weighted average of phase/TE across echoes (default)",
-    "Magnitude-weighted linear fit of phase vs TE",
-    "Motion-robust linear fit (IRLS): down-weights echoes departing from a straight line, per voxel. Needs 4 echoes (3 without offset)",
-    "QSMART's: magnitude-weighted fit of phase vs TE through the origin; marks the voxels QSMART leaves out",
-    "MEDI's field map (Fit_ppm_complex): a magnitude-weighted fit of the complex echoes, then unwrapping of the fitted phase. Needs the magnitude and evenly spaced echoes; no phase offset removal or bipolar correction",
-];
-const B0_WEIGHT_TYPE_HELP: &[&str] = &[
-    "mag × TE — optimal for phase SNR (default)",
-    "mag² × TE² — based on phase variance",
-    "Uniform weights (unweighted average)",
-    "TE only",
-    "Magnitude only",
-    "Fixed TE·exp(−TE/T2*) per echo from an assumed T2* (no T2* map, no magnitude); phase-snr is generally better",
-];
 /// The reference picker's options: the two methods, then every region
 /// ([`super::settings_rows`]).
 pub fn qsm_ref_options() -> &'static [&'static str] { super::settings_rows::options("qsm.reference").0 }
@@ -3279,198 +3129,6 @@ impl PipelineFormState {
         }
     }
 
-    /// QSM → Field map: unwrapping and the echo combination into one field map.
-    pub(crate) fn field_map_rows(&self, rows: &mut Vec<PipelineRow>) {
-        let (_, field_mapping_all) = self.field_mapping_runs();
-        let is_laplacian = self.unwrapping_algorithm == 1;
-        let is_romeo = self.unwrapping_algorithm == 0;
-        if !field_mapping_all {
-            rows.push(PipelineRow::Note { text: "Applies to multi-echo data only: TGV reconstructs a single echo from its wrapped phase".into() });
-        }
-
-        // A QSM per echo: each echo unwrapped and reconstructed on its own, so nothing below that
-        // combines or compares echoes applies.
-        rows.push(PipelineRow::Toggle {
-            label: "Per-echo QSM", field: "qsm_per_echo",
-            help: "Reconstruct a QSM from each echo on its own (each echo's field map, background removal, inversion and referencing) and report their mean as the QSM, with each echo's map, instead of one QSM from the echo-combined field map. Multi-echo only",
-        });
-        let combines = !self.qsm_per_echo;
-
-        // Unwrapping
-        rows.push(PipelineRow::AlgoSelect {
-            label: "Unwrapping", field: "unwrapping_algorithm",
-            options: UNWRAP_OPTIONS, help: UNWRAP_HELP,
-        });
-        if is_laplacian {
-            rows.push(PipelineRow::AlgoSelect {
-                label: "  Solver", field: "laplacian_solver",
-                options: LAPLACIAN_SOLVER_OPTIONS, help: LAPLACIAN_SOLVER_HELP,
-            });
-            if self.laplacian_solver == 1 {
-            rows.push(PipelineRow::Param { label: "    FFT pad (voxels)", field: "laplacian_fft_pad",
-                    help: "Zero-padding per side: one value for every axis or three (x y z). Default: 64" });
-            }
-            rows.push(PipelineRow::Toggle {
-                label: "  Unmasked phase", field: "laplacian_unmasked",
-                help: "Unwrap the raw phase over the whole volume, as QSMART does, instead of the phase set to zero outside the brain mask",
-            });
-            // Only with a weighted average, as the setting itself (schema: field_mapping.laplacian_keep_outside).
-            if !self.laplacian_unmasked && self.b0_estimation_is("weighted-avg") {
-                rows.push(PipelineRow::Toggle {
-                    label: "  Keep field outside", field: "laplacian_keep_outside",
-                    help: "Keep the field over the whole volume, not only inside the brain mask, as UK Biobank's pipeline hands it to V-SHARP (weighted-average combination)",
-                });
-            }
-        }
-        if self.unwrapping_algorithm == 2 {
-            rows.push(PipelineRow::AlgoSelect {
-                label: "  Labelling", field: "prelude_labelling",
-                options: PRELUDE_LABELLING_OPTIONS, help: PRELUDE_LABELLING_HELP,
-            });
-            rows.push(PipelineRow::Param { label: "  Phase partitions", field: "prelude_partitions",
-                help: "Number of phase bins the initial regions are formed from (default 8)" });
-        }
-
-        // Phase offset removal (HIP), before any unwrapper; then ROMEO's own settings. MEDI's
-        // complex fit fits its own phase offset, so none are removed first.
-        let removes_offsets = combines && !self.b0_estimation_is("complex-fit");
-        if removes_offsets {
-            rows.push(PipelineRow::Toggle {
-                label: "  Phase offset removal", field: "phase_offset_removal",
-                help: "Remove spatially-varying phase offset using HIP (Eckstein et al., 2018); multi-echo only",
-            });
-        }
-        if removes_offsets && self.phase_offset_removal {
-            rows.push(PipelineRow::Param { label: "    Sigma (mm)", field: "phase_offset_sigma_mm",
-                help: "Gaussian smoothing sigma in mm (x y z)" });
-            // Part of the offset-removal path: without it the correction never runs.
-            rows.push(PipelineRow::Toggle {
-                label: "    Bipolar correction", field: "bipolar_correction",
-                help: "Remove the linear phase artefact of bipolar readout gradients (needs at least 3 echoes; fewer: skipped)",
-            });
-        }
-        if is_romeo {
-            rows.push(PipelineRow::Toggle {
-                label: "  Individual mode", field: "romeo_individual",
-                help: "Unwrap each echo on its own (for motion or time series). Off = the template echo is unwrapped spatially and the others temporally from it.",
-            });
-            if !self.romeo_individual {
-                rows.push(PipelineRow::Param {
-                    label: "  Template echo", field: "romeo_template",
-                    help: "Echo index for spatial unwrapping (1-indexed)",
-                });
-            }
-            rows.push(PipelineRow::Toggle {
-                label: "  Correct global", field: "romeo_correct_global",
-                help: "Correct inter-echo 2π offsets after unwrapping",
-            });
-            rows.push(PipelineRow::Toggle {
-                label: "  Phase coherence", field: "romeo_phase_coherence",
-                help: "Weight edges by neighbour phase coherence",
-            });
-            rows.push(PipelineRow::Toggle {
-                label: "  Phase gradient coherence", field: "romeo_phase_gradient_coherence",
-                help: "Weight edges by inter-echo phase-gradient consistency (multi-echo)",
-            });
-            rows.push(PipelineRow::Toggle {
-                label: "  Phase linearity", field: "romeo_phase_linearity",
-                help: "Weight edges by second-derivative smoothness",
-            });
-            rows.push(PipelineRow::Toggle {
-                label: "  Mag coherence", field: "romeo_mag_coherence",
-                help: "Weight edges by neighbor magnitude coherence",
-            });
-            rows.push(PipelineRow::Toggle {
-                label: "  Mag weight", field: "romeo_mag_weight",
-                help: "Penalise low-signal voxels (off by default)",
-            });
-            rows.push(PipelineRow::Toggle {
-                label: "  Mag weight 2", field: "romeo_mag_weight2",
-                help: "Penalise abnormally high signal / flow artefacts (off by default)",
-            });
-            rows.push(PipelineRow::Toggle {
-                label: "  Best-path weights", field: "romeo_bestpath",
-                help: "Use Abdul-Rahman best-path weights instead of ROMEO weights",
-            });
-            rows.push(PipelineRow::Toggle {
-                label: "  Temporal uncertain", field: "romeo_temporal_uncertain",
-                help: "Re-unwrap voxels whose temporal unwrapping is uncertain",
-            });
-            if self.romeo_temporal_uncertain {
-                rows.push(PipelineRow::Param {
-                    label: "    Quality threshold", field: "romeo_temporal_uncertain_unwrapping",
-                    help: "Quality threshold (0, 1] below which a voxel is re-unwrapped",
-                });
-            }
-            rows.push(PipelineRow::Param {
-                label: "  Max seeds", field: "romeo_max_seeds",
-                help: "Maximum number of seed regions (default 1)",
-            });
-            rows.push(PipelineRow::Toggle {
-                label: "  Merge regions", field: "romeo_merge_regions",
-                help: "Merge neighboring regions after unwrapping",
-            });
-            rows.push(PipelineRow::Toggle {
-                label: "  Correct regions", field: "romeo_correct_regions",
-                help: "Shift each region's median to nearest 0 by n·2π",
-            });
-            rows.push(PipelineRow::Param {
-                label: "  Wrap addition", field: "romeo_wrap_addition",
-                help: "Extra phase tolerance beyond π for neighbor differences [0,π]",
-            });
-        }
-
-        // B0 estimation
-        if !combines {
-            return;
-        }
-        rows.push(PipelineRow::AlgoSelect {
-            label: "B0 estimation", field: "b0_estimation",
-            options: B0_ESTIMATION_OPTIONS, help: B0_ESTIMATION_HELP,
-        });
-        if self.b0_estimation == 0 { // weighted_avg
-            rows.push(PipelineRow::AlgoSelect {
-                label: "  Weight type", field: "b0_weight_type",
-                options: B0_WEIGHT_TYPE_OPTIONS, help: B0_WEIGHT_TYPE_HELP,
-            });
-            if self.b0_weight_type == 5 { // assumed-decay
-            rows.push(PipelineRow::Param { label: "    Assumed T2* (ms)", field: "b0_weight_assumed_t2star_ms",
-                    help: "T2* assumed to compute the fixed echo weights; no T2* map is used (default: 40 ms)" });
-            }
-        } else if self.b0_estimation == 3 { // QSMART's echo fit
-            rows.push(PipelineRow::AlgoSelect { label: "  Fit threshold", field: "qsmart_fit_threshold_mode",
-                options: QSMART_FIT_THRESHOLD_MODE_OPTIONS, help: QSMART_FIT_THRESHOLD_MODE_HELP });
-            if self.qsmart_fit_threshold_mode == 0 {
-                rows.push(PipelineRow::Param { label: "    Fit percentile", field: "qsmart_fit_percentile",
-                    help: "Percentile of the blurred fit residual above which a voxel is left out of QSMART's reconstruction (default: 99)" });
-            } else {
-                rows.push(PipelineRow::Param { label: "    Fit residual", field: "qsmart_fit_threshold",
-                    help: "Blurred fit residual above which a voxel is left out of QSMART's reconstruction (default: 40)" });
-            }
-        } else if self.b0_estimation_is("complex-fit") {
-            self.push_complex_fit_rows(rows);
-        } else { // linear-fit / robust-fit
-            rows.push(PipelineRow::Toggle {
-                label: "  Estimate offset", field: "linear_fit_estimate_offset",
-                help: "Fit a phase-offset term in the echo-time fit (robust fit: needs 4 echoes with it, 3 without)",
-            });
-            if self.b0_estimation == 2 { // robust-fit
-                rows.push(PipelineRow::AlgoSelect {
-                    label: "  Loss", field: "robust_fit_loss",
-                    options: ROBUST_FIT_LOSS_OPTIONS, help: ROBUST_FIT_LOSS_HELP,
-                });
-                rows.push(PipelineRow::Param { label: "  Tuning", field: "robust_fit_tuning",
-                    help: "Tuning radius in robust-scale units; blank = conventional (Tukey 4.685, Huber 1.345)" });
-                rows.push(PipelineRow::Param { label: "  Iterations", field: "robust_fit_iterations",
-                    help: "IRLS passes (0 = report only: the field map is the linear fit's)" });
-                rows.push(PipelineRow::Param { label: "  Downweight level", field: "robust_fit_downweight_level",
-                    help: "Reporting only: a weight below this counts as down-weighted (0, 1]" });
-                rows.push(PipelineRow::Param { label: "  Flag ratio", field: "robust_fit_flag_ratio",
-                    help: "Reporting only: flag an echo whose outlier score exceeds this x the best echo's (>= 1)" });
-            }
-        }
-
-    }
     /// The echo time `method` converts the field to phase at: its choice, and a time in ms when
     /// that is chosen.
     fn push_echo_time(&self, rows: &mut Vec<PipelineRow>, method: &'static str) {
@@ -3851,7 +3509,6 @@ impl PipelineFormState {
         self.masking_rows(&mut rows);
         self.compute_qsm_rows(&mut rows);
         if self.qsm_runs() {
-            if self.field_mapping_runs().0 { self.field_map_rows(&mut rows); }
             self.inversion_rows(&mut rows);
         }
         self.separation_rows(&mut rows);
@@ -3867,7 +3524,6 @@ impl PipelineFormState {
         match self.page {
             Page::Masking => self.masking_rows(&mut rows),
             Page::ComputeQsm => self.compute_qsm_rows(&mut rows),
-            Page::FieldMap => self.field_map_rows(&mut rows),
             Page::Inversion => self.inversion_rows(&mut rows),
             Page::Separation => self.separation_rows(&mut rows),
             _ => {}
@@ -3917,30 +3573,24 @@ impl PipelineFormState {
         "medi_lambda", "medi_max_iter", "medi_cg_max_iter", "medi_cg_tol", "medi_tol", "medi_percentage", "medi_smv_radius",
         "tfi_lambda", "tfi_precond", "tfi_max_iter", "tfi_cg_max_iter", "tfi_cg_tol", "tfi_tol", "tfi_percentage",
         "amp_pe_wave_order", "amp_pe_nlevel", "amp_pe_wave_pec", "amp_pe_simulated_te", "amp_pe_max_linearization_ite", "amp_pe_tikhonov_beta",
-        "phase_offset_sigma_mm", "romeo_template",
-        "romeo_temporal_uncertain_unwrapping", "romeo_max_seeds", "romeo_wrap_addition",
         "bet_smoothness", "bet_gradient_threshold", "bet_iterations", "bet_subdivisions",
         "medi_msmv_maxk", "medi_msmv_vessel_radius",
         "qsmart_ilsqr_max_iter", "qsmart_ilsqr_pad_mm", "qsmart_vasc_sphere_radius",
         "qsmart_sdf_sigma1_stage1", "qsmart_sdf_sigma2_stage1", "qsmart_sdf_sigma1_stage2", "qsmart_sdf_sigma2_stage2",
         "qsmart_sdf_lower_lim", "qsmart_sdf_curv_constant",
         "qsmart_frangi_scale_min", "qsmart_frangi_scale_max", "qsmart_frangi_scale_ratio", "qsmart_frangi_c", "qsmart_frangi_c_factor",
-        "qsmart_fit_percentile", "qsmart_fit_threshold",
         "ndi_tau", "ndi_alpha", "ndi_max_iter",
         "fansi_alpha1", "fansi_mu1", "fansi_mu2", "fansi_alpha0", "fansi_mu0", "fansi_max_iter", "fansi_tol_update", "fansi_tol_delta",
         "l1qsm_alpha1", "l1qsm_mu1", "l1qsm_mu2", "l1qsm_mu3", "l1qsm_lambda", "l1qsm_max_iter", "l1qsm_tol_update", "l1qsm_tol_delta",
         "whqsm_alpha1", "whqsm_mu1", "whqsm_mu2", "whqsm_beta", "whqsm_muh", "whqsm_max_iter", "whqsm_tol_update", "whqsm_tol_delta",
         "hdqsm_alpha_l2", "hdqsm_mu1_l2", "hdqsm_mu2", "hdqsm_max_iter_l1", "hdqsm_max_iter_l2", "hdqsm_tol_update",
         "sep_chisepnet_patch", "sep_chisepnet_frame_patch", "sep_susepnet_patch",
-        "laplacian_fft_pad", "prelude_partitions",
         "homogeneity_sigma_mm", "homogeneity_nbox",
         "n4_shrink_factor", "n4_max_iterations", "n4_convergence_threshold", "n4_mesh", "n4_spline_order",
         "n4_bias_field_fwhm", "n4_wiener_noise", "n4_histogram_bins",
         "tgv_step_size",
         "amp_pe_damp_rate_sig", "amp_pe_damp_rate_par", "amp_pe_max_pe_spar_ite", "amp_pe_max_pe_est_ite", "amp_pe_cvg_thd",
-        "robust_fit_tuning", "robust_fit_iterations",
-        "robust_fit_downweight_level", "robust_fit_flag_ratio",
-        "complex_fit_reltol", "complex_fit_max_iter", "medi_lambda_csf", "medi_csf_r2s_threshold", "medi_zeropad",
+        "medi_lambda_csf", "medi_csf_r2s_threshold", "medi_zeropad",
     ];
 
     /// Get a string parameter value by field name.
@@ -3998,15 +3648,6 @@ impl PipelineFormState {
             "heidi_cone_threshold" => &self.heidi_cone_threshold,
             "heidi_gradient_threshold" => &self.heidi_gradient_threshold,
             "heidi_laplacian_threshold" => &self.heidi_laplacian_threshold,
-            "b0_weight_assumed_t2star_ms" => &self.b0_weight_assumed_t2star_ms,
-            "laplacian_fft_pad" => &self.laplacian_fft_pad,
-            "prelude_partitions" => &self.prelude_partitions,
-            "robust_fit_tuning" => &self.robust_fit_tuning,
-            "robust_fit_iterations" => &self.robust_fit_iterations,
-            "robust_fit_downweight_level" => &self.robust_fit_downweight_level,
-            "robust_fit_flag_ratio" => &self.robust_fit_flag_ratio,
-            "complex_fit_reltol" => &self.complex_fit_reltol,
-            "complex_fit_max_iter" => &self.complex_fit_max_iter,
             "medi_lambda_csf" => &self.medi_lambda_csf,
             "medi_csf_r2s_threshold" => &self.medi_csf_r2s_threshold,
             "medi_zeropad" => &self.medi_zeropad,
@@ -4052,11 +3693,6 @@ impl PipelineFormState {
             "amp_pe_simulated_te" => &self.amp_pe_simulated_te,
             "amp_pe_max_linearization_ite" => &self.amp_pe_max_linearization_ite,
             "amp_pe_tikhonov_beta" => &self.amp_pe_tikhonov_beta,
-            "phase_offset_sigma_mm" => &self.phase_offset_sigma_mm,
-            "romeo_template" => &self.romeo_template,
-            "romeo_temporal_uncertain_unwrapping" => &self.romeo_temporal_uncertain_unwrapping,
-            "romeo_max_seeds" => &self.romeo_max_seeds,
-            "romeo_wrap_addition" => &self.romeo_wrap_addition,
             "custom_mask_tool" => &self.custom_mask_tool,
             "bet_smoothness" => &self.bet_smoothness,
             "bet_gradient_threshold" => &self.bet_gradient_threshold,
@@ -4078,8 +3714,6 @@ impl PipelineFormState {
             "qsmart_frangi_scale_ratio" => &self.qsmart_frangi_scale_ratio,
             "qsmart_frangi_c" => &self.qsmart_frangi_c,
             "qsmart_frangi_c_factor" => &self.qsmart_frangi_c_factor,
-            "qsmart_fit_percentile" => &self.qsmart_fit_percentile,
-            "qsmart_fit_threshold" => &self.qsmart_fit_threshold,
             "ndi_tau" => &self.ndi_tau,
             "ndi_alpha" => &self.ndi_alpha,
             "ndi_max_iter" => &self.ndi_max_iter,
@@ -4228,15 +3862,6 @@ impl PipelineFormState {
             "heidi_cone_threshold" => Some(&mut self.heidi_cone_threshold),
             "heidi_gradient_threshold" => Some(&mut self.heidi_gradient_threshold),
             "heidi_laplacian_threshold" => Some(&mut self.heidi_laplacian_threshold),
-            "b0_weight_assumed_t2star_ms" => Some(&mut self.b0_weight_assumed_t2star_ms),
-            "laplacian_fft_pad" => Some(&mut self.laplacian_fft_pad),
-            "prelude_partitions" => Some(&mut self.prelude_partitions),
-            "robust_fit_tuning" => Some(&mut self.robust_fit_tuning),
-            "robust_fit_iterations" => Some(&mut self.robust_fit_iterations),
-            "robust_fit_downweight_level" => Some(&mut self.robust_fit_downweight_level),
-            "robust_fit_flag_ratio" => Some(&mut self.robust_fit_flag_ratio),
-            "complex_fit_reltol" => Some(&mut self.complex_fit_reltol),
-            "complex_fit_max_iter" => Some(&mut self.complex_fit_max_iter),
             "medi_lambda_csf" => Some(&mut self.medi_lambda_csf),
             "medi_csf_r2s_threshold" => Some(&mut self.medi_csf_r2s_threshold),
             "medi_zeropad" => Some(&mut self.medi_zeropad),
@@ -4282,11 +3907,6 @@ impl PipelineFormState {
             "amp_pe_simulated_te" => Some(&mut self.amp_pe_simulated_te),
             "amp_pe_max_linearization_ite" => Some(&mut self.amp_pe_max_linearization_ite),
             "amp_pe_tikhonov_beta" => Some(&mut self.amp_pe_tikhonov_beta),
-            "phase_offset_sigma_mm" => Some(&mut self.phase_offset_sigma_mm),
-            "romeo_template" => Some(&mut self.romeo_template),
-            "romeo_temporal_uncertain_unwrapping" => Some(&mut self.romeo_temporal_uncertain_unwrapping),
-            "romeo_max_seeds" => Some(&mut self.romeo_max_seeds),
-            "romeo_wrap_addition" => Some(&mut self.romeo_wrap_addition),
             "custom_mask_tool" => Some(&mut self.custom_mask_tool),
             "bet_smoothness" => Some(&mut self.bet_smoothness),
             "bet_gradient_threshold" => Some(&mut self.bet_gradient_threshold),
@@ -4308,8 +3928,6 @@ impl PipelineFormState {
             "qsmart_frangi_scale_ratio" => Some(&mut self.qsmart_frangi_scale_ratio),
             "qsmart_frangi_c" => Some(&mut self.qsmart_frangi_c),
             "qsmart_frangi_c_factor" => Some(&mut self.qsmart_frangi_c_factor),
-            "qsmart_fit_percentile" => Some(&mut self.qsmart_fit_percentile),
-            "qsmart_fit_threshold" => Some(&mut self.qsmart_fit_threshold),
             "ndi_tau" => Some(&mut self.ndi_tau),
             "ndi_alpha" => Some(&mut self.ndi_alpha),
             "ndi_max_iter" => Some(&mut self.ndi_max_iter),
@@ -4412,23 +4030,16 @@ impl PipelineFormState {
                 QSM_PICKER_OPTIONS.iter().position(|o| *o == name).unwrap_or(0)
             }
             "qsmart_inversion" => self.qsmart_inversion,
-            "unwrapping_algorithm" => self.unwrapping_algorithm,
             "bf_algorithm" => self.bf_algorithm,
             "sep_chisepnet_route" => self.sep_chisepnet_route,
-            "b0_estimation" => self.b0_estimation,
-            "b0_weight_type" => self.b0_weight_type,
-            "laplacian_solver" => self.laplacian_solver,
-            "prelude_labelling" => self.prelude_labelling,
             "qsmart_vessel_magnitude" => self.qsmart_vessel_magnitude,
             "qsmart_offset_grid" => self.qsmart_offset_grid,
             "qsmart_frangi_c_mode" => self.qsmart_frangi_c_mode,
             "sep_decompose_fit" => self.sep_decompose_fit,
             "qsmart_vessel_units" => self.qsmart_vessel_units,
-            "qsmart_fit_threshold_mode" => self.qsmart_fit_threshold_mode,
             "inhomogeneity_method" => self.inhomogeneity_method,
             "n4_geometry" => self.n4_geometry,
             "two_pass_mode" => self.two_pass_mode,
-            "robust_fit_loss" => self.robust_fit_loss,
             "star_te" => self.star_te,
             "whqsm_weight" => self.whqsm_weight,
             "ilsqr_precision" => self.ilsqr_precision,
@@ -4474,23 +4085,16 @@ impl PipelineFormState {
                 self.qsm_algorithm = QSM_ALGO_OPTIONS.iter().position(|o| *o == name).unwrap_or(self.qsm_algorithm);
             }
             "qsmart_inversion" => self.qsmart_inversion = val,
-            "unwrapping_algorithm" => self.unwrapping_algorithm = val,
             "bf_algorithm" => self.bf_algorithm = val,
             "sep_chisepnet_route" => self.sep_chisepnet_route = val.min(CHI_SEPNET_ROUTE_OPTIONS.len() - 1),
-            "b0_estimation" => self.b0_estimation = val,
-            "b0_weight_type" => self.b0_weight_type = val,
-            "laplacian_solver" => self.laplacian_solver = val,
-            "prelude_labelling" => self.prelude_labelling = val,
             "qsmart_vessel_magnitude" => self.qsmart_vessel_magnitude = val,
             "qsmart_offset_grid" => self.qsmart_offset_grid = val,
             "qsmart_frangi_c_mode" => self.qsmart_frangi_c_mode = val.min(QSMART_FRANGI_C_MODE_OPTIONS.len() - 1),
             "sep_decompose_fit" => self.sep_decompose_fit = val,
             "qsmart_vessel_units" => self.qsmart_vessel_units = val,
-            "qsmart_fit_threshold_mode" => self.qsmart_fit_threshold_mode = val,
             "inhomogeneity_method" => self.inhomogeneity_method = val,
             "n4_geometry" => self.n4_geometry = val.min(N4_GEOMETRY_OPTIONS.len() - 1),
             "two_pass_mode" => self.two_pass_mode = val.min(TWO_PASS_MODE_OPTIONS.len() - 1),
-            "robust_fit_loss" => self.robust_fit_loss = val,
             "star_te" => self.star_te = val.min(ECHO_TIME_OPTIONS.len() - 1),
             "whqsm_weight" => self.whqsm_weight = val.min(WHQSM_WEIGHT_OPTIONS.len() - 1),
             "ilsqr_precision" => self.ilsqr_precision = val.min(ILSQR_PRECISION_OPTIONS.len() - 1),
@@ -4525,24 +4129,7 @@ impl PipelineFormState {
         match field {
             "do_qsm" => self.do_qsm,
             "inhomogeneity_correction" => self.inhomogeneity_correction,
-            "qsm_per_echo" => self.qsm_per_echo,
-            "phase_offset_removal" => self.phase_offset_removal,
-            "bipolar_correction" => self.bipolar_correction,
-            "romeo_individual" => self.romeo_individual,
-            "romeo_correct_global" => self.romeo_correct_global,
-            "romeo_phase_gradient_coherence" => self.romeo_phase_gradient_coherence,
-            "romeo_phase_linearity" => self.romeo_phase_linearity,
-            "romeo_mag_coherence" => self.romeo_mag_coherence,
-            "romeo_mag_weight" => self.romeo_mag_weight,
-            "romeo_mag_weight2" => self.romeo_mag_weight2,
-            "romeo_bestpath" => self.romeo_bestpath,
-            "romeo_merge_regions" => self.romeo_merge_regions,
-            "romeo_temporal_uncertain" => self.romeo_temporal_uncertain,
-            "laplacian_unmasked" => self.laplacian_unmasked,
-            "laplacian_keep_outside" => self.laplacian_keep_outside,
             "dl_tiling" => self.dl_tiling,
-            "romeo_correct_regions" => self.romeo_correct_regions,
-            "linear_fit_estimate_offset" => self.linear_fit_estimate_offset,
             "medi_smv" => self.medi_smv,
             "medi_smv_shrink_mask" => self.medi_smv_shrink_mask,
             "do_chi_separation" => self.do_chi_separation,
@@ -4558,7 +4145,6 @@ impl PipelineFormState {
             "heidi_denoise" => self.heidi_denoise,
             "heidi_enabled" => self.heidi_enabled,
             "heidi_denoise_reference_itk" => self.heidi_denoise_reference_itk,
-            "romeo_phase_coherence" => self.romeo_phase_coherence,
             "medi_merit" => self.medi_merit,
             "ndi_auto_stop" => self.ndi_auto_stop,
             "sep_decompose_unwrap_phase" => self.sep_decompose_unwrap_phase,
@@ -4572,24 +4158,7 @@ impl PipelineFormState {
             "do_qsm" => self.do_qsm = !self.do_qsm,
             "do_chi_separation" => self.do_chi_separation = !self.do_chi_separation,
             "inhomogeneity_correction" => self.inhomogeneity_correction = !self.inhomogeneity_correction,
-            "qsm_per_echo" => self.qsm_per_echo = !self.qsm_per_echo,
-            "phase_offset_removal" => self.phase_offset_removal = !self.phase_offset_removal,
-            "bipolar_correction" => self.bipolar_correction = !self.bipolar_correction,
-            "romeo_individual" => self.romeo_individual = !self.romeo_individual,
-            "romeo_correct_global" => self.romeo_correct_global = !self.romeo_correct_global,
-            "romeo_phase_gradient_coherence" => self.romeo_phase_gradient_coherence = !self.romeo_phase_gradient_coherence,
-            "romeo_phase_linearity" => self.romeo_phase_linearity = !self.romeo_phase_linearity,
-            "romeo_mag_coherence" => self.romeo_mag_coherence = !self.romeo_mag_coherence,
-            "romeo_mag_weight" => self.romeo_mag_weight = !self.romeo_mag_weight,
-            "romeo_mag_weight2" => self.romeo_mag_weight2 = !self.romeo_mag_weight2,
-            "romeo_bestpath" => self.romeo_bestpath = !self.romeo_bestpath,
-            "romeo_merge_regions" => self.romeo_merge_regions = !self.romeo_merge_regions,
-            "romeo_temporal_uncertain" => self.romeo_temporal_uncertain = !self.romeo_temporal_uncertain,
-            "laplacian_unmasked" => self.laplacian_unmasked = !self.laplacian_unmasked,
-            "laplacian_keep_outside" => self.laplacian_keep_outside = !self.laplacian_keep_outside,
             "dl_tiling" => self.dl_tiling = !self.dl_tiling,
-            "romeo_correct_regions" => self.romeo_correct_regions = !self.romeo_correct_regions,
-            "linear_fit_estimate_offset" => self.linear_fit_estimate_offset = !self.linear_fit_estimate_offset,
             "medi_smv" => self.medi_smv = !self.medi_smv,
             "medi_smv_shrink_mask" => self.medi_smv_shrink_mask = !self.medi_smv_shrink_mask,
             "medi_msmv" => self.medi_msmv = !self.medi_msmv,
@@ -4604,7 +4173,6 @@ impl PipelineFormState {
             "heidi_denoise" => self.heidi_denoise = !self.heidi_denoise,
             "heidi_enabled" => self.heidi_enabled = !self.heidi_enabled,
             "heidi_denoise_reference_itk" => self.heidi_denoise_reference_itk = !self.heidi_denoise_reference_itk,
-            "romeo_phase_coherence" => self.romeo_phase_coherence = !self.romeo_phase_coherence,
             "medi_merit" => self.medi_merit = !self.medi_merit,
             "ndi_auto_stop" => self.ndi_auto_stop = !self.ndi_auto_stop,
             "sep_decompose_unwrap_phase" => self.sep_decompose_unwrap_phase = !self.sep_decompose_unwrap_phase,
@@ -4763,8 +4331,13 @@ impl PipelineFormState {
     /// echo count the run is limited to, or for one and for several echoes when that is unknown —
     /// TGV maps the field of multi-echo data but reconstructs a single echo from its wrapped phase.
     pub fn field_mapping_runs(&self) -> (bool, bool) {
+        self.field_mapping_runs_for(self.ctx.num_echoes)
+    }
+
+    /// [`Self::field_mapping_runs`], for a run limited to `num_echoes` echoes (`None`: unknown).
+    pub fn field_mapping_runs_for(&self, num_echoes: Option<usize>) -> (bool, bool) {
         let Some(config) = self.stage_config() else { return (true, true) };
-        let counts = match self.ctx.num_echoes {
+        let counts = match num_echoes {
             Some(n) => vec![n],
             None => vec![1, 2],
         };
@@ -5394,19 +4967,6 @@ impl PipelineFormState {
 
 /// Indices of the rows focus can land on: every row but separators, notes and mask headers.
 impl PipelineFormState {
-    /// Whether the B0 estimation chosen is `name` (one of [`B0_ESTIMATION_OPTIONS`]).
-    pub fn b0_estimation_is(&self, name: &str) -> bool {
-        B0_ESTIMATION_OPTIONS.get(self.b0_estimation) == Some(&name)
-    }
-
-    /// MEDI's complex fit's own settings, under B0 Estimation.
-    fn push_complex_fit_rows(&self, rows: &mut Vec<PipelineRow>) {
-        rows.push(PipelineRow::Param { label: "  Rel tolerance", field: "complex_fit_reltol",
-            help: "Stop once the update is this fraction of the first estimate, over the whole volume (default 1e-4)" });
-        rows.push(PipelineRow::Param { label: "  Max iter", field: "complex_fit_max_iter",
-            help: "Gauss-Newton iterations at most (default 30)" });
-    }
-
     /// MEDI+0's CSF term (needs at least 3 echoes; with fewer MEDI runs without it, which the
     /// run says) and MEDI's zero padding.
     fn push_medi_csf_rows(&self, rows: &mut Vec<PipelineRow>) {
@@ -9309,9 +8869,9 @@ mod tests {
     #[test]
     fn test_pipeline_phase_offset_removal() {
         let mut app = App::new();
-        assert!(app.pipeline_state.phase_offset_removal);
-        app.pipeline_state.toggle("phase_offset_removal");
-        assert!(!app.pipeline_state.phase_offset_removal);
+        assert!(app.field_toggle("phase_offset_removal"));
+        app.toggle_field("phase_offset_removal");
+        assert!(!app.field_toggle("phase_offset_removal"));
     }
 
     // --- F5 triggers run ---
@@ -9844,7 +9404,7 @@ mod tests {
     fn test_all_param_fields_are_valid() {
         // Opt-in fields that intentionally default to empty (blank = feature off).
         // And optional settings whose blank is the value qsm-core derives.
-        const OPT_IN_EMPTY: &[&str] = &["dl_tile_size", "dl_tile_halo", "robust_fit_tuning", "sep_susepnet_patch", "sep_chisepnet_frame_patch",
+        const OPT_IN_EMPTY: &[&str] = &["dl_tile_size", "dl_tile_halo", "sep_susepnet_patch", "sep_chisepnet_frame_patch",
             "tv_rho", "tgv_iterations", "fansi_mu1", "fansi_alpha0", "fansi_mu0", "l1qsm_mu1", "hdqsm_mu1_l2",
             "medi_msmv_vessel_radius", "nltv_rho", "ismv_max_iter", "ismv_radius", "lbv_depth"];
         let state = PipelineFormState::default();
@@ -9877,15 +9437,9 @@ mod tests {
             ("qsm", QSM_ALGO_OPTIONS.len(), QSM_ALGO_HELP.len()),
             ("separation", SEP_ALGO_OPTIONS.len(), SEP_ALGO_HELP.len()),
             ("qsmart-inner", QSMART_INV_OPTIONS.len(), QSMART_INV_HELP.len()),
-            ("unwrap", UNWRAP_OPTIONS.len(), UNWRAP_HELP.len()),
-            ("laplacian-solver", LAPLACIAN_SOLVER_OPTIONS.len(), LAPLACIAN_SOLVER_HELP.len()),
-            ("prelude-labelling", PRELUDE_LABELLING_OPTIONS.len(), PRELUDE_LABELLING_HELP.len()),
             ("qsmart-vessel-magnitude", QSMART_VESSEL_MAGNITUDE_OPTIONS.len(), QSMART_VESSEL_MAGNITUDE_HELP.len()),
             ("qsmart-vessel-units", QSMART_VESSEL_UNITS_OPTIONS.len(), QSMART_VESSEL_UNITS_HELP.len()),
-            ("qsmart-fit-threshold-mode", QSMART_FIT_THRESHOLD_MODE_OPTIONS.len(), QSMART_FIT_THRESHOLD_MODE_HELP.len()),
             ("inhomogeneity-method", INHOMOGENEITY_METHOD_OPTIONS.len(), INHOMOGENEITY_METHOD_HELP.len()),
-            ("b0-estimation", B0_ESTIMATION_OPTIONS.len(), B0_ESTIMATION_HELP.len()),
-            ("robust-fit-loss", ROBUST_FIT_LOSS_OPTIONS.len(), ROBUST_FIT_LOSS_HELP.len()),
             ("mask-preset", MASK_PRESET_OPTIONS.len(), mask_preset_help().len()),
         ] {
             assert_eq!(opts, help, "{label}: {opts} options but {help} help entries");
@@ -10331,7 +9885,7 @@ mod tests {
         }
         let fi = uw_focus.expect("unwrapping_algorithm row not found");
         app.pipeline_state.focus = fi;
-        assert_eq!(app.pipeline_state.unwrapping_algorithm, 0); // romeo
+        assert_eq!(app.field_select("unwrapping_algorithm"), 0); // romeo
 
         // Enter opens the selection modal for this field (does not cycle).
         app.handle_key(key(KeyCode::Enter));
@@ -10339,16 +9893,16 @@ mod tests {
             app.algo_modal.as_ref().unwrap().target,
             AlgoModalTarget::Select(ref f) if f == "unwrapping_algorithm"
         ));
-        assert_eq!(app.pipeline_state.unwrapping_algorithm, 0); // still unchanged
+        assert_eq!(app.field_select("unwrapping_algorithm"), 0); // still unchanged
         // Pick the next option (laplacian) and confirm.
         app.handle_key(key(KeyCode::Down));
         app.handle_key(key(KeyCode::Enter));
         assert!(app.algo_modal.is_none());
-        assert_eq!(app.pipeline_state.unwrapping_algorithm, 1); // laplacian
+        assert_eq!(app.field_select("unwrapping_algorithm"), 1); // laplacian
 
         // Focus is restored to the selector after confirming: → changes nothing, Enter reopens it.
         app.handle_key(key(KeyCode::Right));
-        assert_eq!(app.pipeline_state.unwrapping_algorithm, 1);
+        assert_eq!(app.field_select("unwrapping_algorithm"), 1);
         assert!(app.algo_modal.is_none());
         app.handle_key(key(KeyCode::Enter));
         assert!(matches!(
@@ -10357,7 +9911,7 @@ mod tests {
         ));
         app.handle_key(key(KeyCode::Up));
         app.handle_key(key(KeyCode::Enter));
-        assert_eq!(app.pipeline_state.unwrapping_algorithm, 0);
+        assert_eq!(app.field_select("unwrapping_algorithm"), 0);
     }
 
     #[test]
@@ -12031,12 +11585,10 @@ mod tests {
     fn stage_visibility_follows_the_algorithm_not_its_index() {
         let idx = |name: &str| QSM_ALGO_OPTIONS.iter().position(|o| *o == name).expect(name);
         let has_section = |ps: &PipelineFormState, id: &str| {
-            if id == "bgremoval" {
-                // Background removal's rows come from the registry; its page says when it does not run.
-                return PipelineFormState { page: Page::Background, ..ps.clone() }.page_notes().is_none();
-            }
-            let field = match id { "fieldmap" => "unwrapping_algorithm", _ => id };
-            ps.all_rows().iter().any(|r| row_field(r) == Some(field))
+            // Background removal's and field mapping's rows come from the registry; their pages
+            // say when they do not run.
+            let page = match id { "bgremoval" => Page::Background, "fieldmap" => Page::FieldMap, _ => unreachable!("{id}") };
+            PipelineFormState { page, ..ps.clone() }.page_notes().is_none()
         };
 
         let mut ps = PipelineFormState { qsm_algorithm: idx("rts"), ..Default::default() };
@@ -12119,14 +11671,14 @@ mod tests {
         let mut app = App::new();
         let shows = |app: &App| app.pipeline_rows().iter().any(|r|
             matches!(r, PipelineRow::Toggle { field: "bipolar_correction", .. }));
-        app.pipeline_state.bipolar_correction = true;
-        let passed = |app: &App| super::super::command::pipeline_args_from_app(app).bipolar_correction;
-        assert!(app.pipeline_state.phase_offset_removal && app.pipeline_state.unwrapping_algorithm == 0);
+        app.toggle_field("bipolar_correction");
+        let passed = |app: &App| super::super::command::config_from_app(app).unwrap().field_mapping.bipolar_correction;
+        assert!(app.field_toggle("phase_offset_removal") && app.field_select("unwrapping_algorithm") == 0);
         assert!(shows(&app) && passed(&app));
-        app.pipeline_state.phase_offset_removal = false;
+        app.toggle_field("phase_offset_removal");
         assert!(!shows(&app) && !passed(&app), "no offset removal, no bipolar correction");
-        app.pipeline_state.phase_offset_removal = true;
-        app.pipeline_state.unwrapping_algorithm = 1;
+        app.toggle_field("phase_offset_removal");
+        app.set_field_select("unwrapping_algorithm", 1);
         assert!(shows(&app) && passed(&app), "Laplacian unwrapping removes offsets first too");
     }
 

@@ -914,12 +914,11 @@ mod tests {
         let modal = app.refs.modal.take().expect("the choice opened the pop-up");
         let finding = &modal.rows.iter().find(|i| i.finding.rule == "decompose.qsm-per-echo").expect("per-echo QSM is offered").finding;
         assert_eq!((finding.setting.as_str(), finding.strength), ("qsm.per_echo", Strength::Recommended));
-        assert!(!app.pipeline_state.qsm_per_echo, "offered, not applied");
+        assert!(!app.field_toggle("qsm_per_echo"), "offered, not applied");
         app.apply_recommendation("decompose.qsm-per-echo", None).unwrap();
-        assert!(app.pipeline_state.qsm_per_echo);
+        assert!(app.field_toggle("qsm_per_echo"));
         assert!(super::super::command::config_from_app(&app).unwrap().qsm.per_echo);
-        let mut rows = Vec::new();
-        app.pipeline_state.field_map_rows(&mut rows);
+        let rows = app.page_rows(super::super::app::Page::FieldMap);
         assert!(!rows.iter().any(|r| matches!(r, PipelineRow::AlgoSelect { field: "b0_estimation", .. })));
         assert!(rows.iter().any(|r| matches!(r, PipelineRow::Toggle { field: "qsm_per_echo", .. })));
     }
@@ -1097,8 +1096,8 @@ mod tests {
         let mut app = app();
         select(&mut app, "qsm_algorithm", "fansi", QSM_ALGO_OPTIONS);
         let at = |o: &[&str], v: &str| o.iter().position(|x| *x == v).unwrap();
-        app.set_field_select("b0_estimation", at(super::super::app::B0_ESTIMATION_OPTIONS, "complex-fit"));
-        app.set_field_select("unwrapping_algorithm", at(super::super::app::UNWRAP_OPTIONS, "laplacian"));
+        app.set_field_select("b0_estimation", at(super::super::settings_rows::options("field_mapping.b0_estimation").0, "complex-fit"));
+        app.set_field_select("unwrapping_algorithm", at(super::super::settings_rows::options("field_mapping.unwrapping_algorithm").0, "laplacian"));
         app.filter_state.num_echoes = "4".into();
         let found: Vec<Recommendation> = app.rule_view().into_iter()
             .filter(|r| r.departs && r.setting == "field_mapping.unwrapping_algorithm").collect();
@@ -1751,7 +1750,7 @@ mod tests {
         assert!(app.goto_field("qsm_algorithm"));
         let text = screen(&mut app, "A method picker row and its footer");
         assert!(text.contains("[ medi ▾ ]") && text.contains("Enter: choose method") && text.contains("Enter:Choose method"), "{text}");
-        app.pipeline_state.unwrapping_algorithm = 1; // laplacian: three solvers, a picker too
+        app.set_field_select("unwrapping_algorithm", 1); // laplacian: three solvers, a picker too
         assert!(app.goto_field("laplacian_solver"));
         let text = screen(&mut app, "A short selector row and its footer");
         assert!(!text.contains("◀ ") && text.contains("▾ ]") && text.contains("Enter:Choose") && !text.contains("←→:Change"), "{text}");
@@ -1773,16 +1772,16 @@ mod tests {
     #[test]
     fn apply_sets_every_field_a_rules_value_needs() {
         let mut app = app();
-        select(&mut app, "unwrapping_algorithm", "laplacian", super::super::app::UNWRAP_OPTIONS);
+        select(&mut app, "unwrapping_algorithm", "laplacian", super::super::settings_rows::options("field_mapping.unwrapping_algorithm").0);
         app.refs.modal = None;
         for solver in ["dct", "fft", "mirror"] {
-            app.set_field_select("laplacian_solver", super::super::app::LAPLACIAN_SOLVER_OPTIONS.iter().position(|o| *o == solver).unwrap());
+            app.set_field_select("laplacian_solver", super::super::settings_rows::options("field_mapping.laplacian_solver").0.iter().position(|o| *o == solver).unwrap());
             let row = PipelineRow::AlgoSelect { label: "", field: "laplacian_solver", options: &[], help: &[] };
             assert_eq!(App::row_marker(&app.rule_view(), &row).map(|m| m.text), Some("iLSQR: FFT, 12-voxel padding".into()), "{solver}");
         }
         app.apply_recommendation("sti.laplacian-solver", None).unwrap();
-        assert_eq!(app.pipeline_state.laplacian_solver, 1, "FFT");
-        assert_eq!(app.pipeline_state.laplacian_fft_pad, "12");
+        assert_eq!(app.field_select("laplacian_solver"), 1, "FFT");
+        assert_eq!(app.field_text("laplacian_fft_pad"), "12");
         let c = super::super::command::config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.laplacian_fft_pad, [12; 3]);
         let row = PipelineRow::AlgoSelect { label: "", field: "laplacian_solver", options: &[], help: &[] };

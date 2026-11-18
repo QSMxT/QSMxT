@@ -28,7 +28,7 @@ use super::app::{field_of_path, field_path, App, Page, PipelineRow, RowContext, 
 /// The sections whose settings are kept in [`SettingsStore`] rather than in the form's fields.
 pub const STORED_SECTIONS: &[Section] =
     &[Section::Geometry, Section::Motion, Section::Background, Section::Reference, Section::Magnitude, Section::SwiSmwi,
-      Section::Relaxometry, Section::Segmentation, Section::MultiOrientation];
+      Section::Relaxometry, Section::Segmentation, Section::MultiOrientation, Section::FieldMap];
 
 /// Choices that one select picks with another: `(path, choice, other)`. The select lists the
 /// setting's options but `choice`, then each of `other`'s, which picks `choice` with that value;
@@ -70,6 +70,8 @@ struct PageLayout {
     blocks: &'static [Block],
     /// Settings indented other than by their parents: `(path, depth)`.
     depths: &'static [(&'static str, usize)],
+    /// Settings listed first, in this order, ahead of the registry's.
+    first: &'static [&'static str],
 }
 
 /// Settings shown as a block under a setting of a page they have no parent in: those whose path
@@ -96,7 +98,7 @@ const REGISTRATION: Block =
 
 /// A page of a section's settings, in the registry's order and indentation.
 const fn plain(page: Page, section: Section) -> PageLayout {
-    PageLayout { page, section, only: None, repeats: &[], before: &[], shown_if: &[], blocks: &[], depths: &[] }
+    PageLayout { page, section, only: None, repeats: &[], before: &[], shown_if: &[], blocks: &[], depths: &[], first: &[] }
 }
 
 fn is_swi(path: &str) -> bool {
@@ -170,6 +172,18 @@ const LAYOUTS: &[PageLayout] = &[
         repeats: &[("separation.custom_qsm_tool", "pipeline.do_analysis")],
         ..plain(Page::Segmentation, Section::Segmentation)
     },
+    PageLayout {
+        // A QSM per echo comes first: it decides whether anything that combines echoes applies.
+        first: &["qsm.per_echo"],
+        before: &[
+            ("qsm.per_echo", |app, ctx| (!app.pipeline_state.field_mapping_runs_for(ctx.num_echoes).1)
+                .then(|| PipelineRow::Note { text: "Applies to multi-echo data only: TGV reconstructs a single echo from its wrapped phase".into() })
+                .into_iter().collect()),
+        ],
+        // The template echo reads as one of ROMEO's settings, not as one under Individual mode.
+        depths: &[("field_mapping.romeo.template", 1)],
+        ..plain(Page::FieldMap, Section::FieldMap)
+    },
     plain(Page::Magnitude, Section::Magnitude),
     PageLayout { only: Some(is_swi), ..plain(Page::Swi, Section::SwiSmwi) },
     PageLayout {
@@ -189,6 +203,35 @@ const READS_EMPTY: &[&str] = &[
 
 /// Text rows that read blank at their default, which their placeholder names ("0 (none)").
 const BLANK_AT_DEFAULT: &[&str] = &["multi_orientation.lambda"];
+
+/// Triples typed as one value for every axis, or three, and shown as one while all three agree.
+const ONE_VALUE_FOR_EVERY_AXIS: &[&str] = &["field_mapping.laplacian_fft_pad"];
+
+/// Echo numbers the config counts from 0 and their rows from 1, as the command line does.
+const COUNTED_FROM_ONE: &[&str] = &["field_mapping.romeo.template"];
+
+/// Help the TUI words otherwise than the registry: a row counting from 1 says so.
+const TUI_HELP: &[(&str, &str)] = &[("field_mapping.romeo.template", "Echo index for spatial unwrapping (1-indexed)")];
+
+fn tui_help(s: &Setting) -> &'static str {
+    TUI_HELP.iter().find(|(p, _)| *p == s.path).map_or(s.tui_help, |(_, h)| h)
+}
+
+/// Makes the value a checkbox takes when it is ticked ([`ON_VALUES`]).
+type OnValue = fn() -> Value;
+
+/// The value a checkbox with a value takes when it is ticked, for one off by default: ROMEO's
+/// own threshold for re-unwrapping, which QSMxT leaves off.
+const ON_VALUES: &[(&str, OnValue)] = &[
+    ("field_mapping.romeo.temporal_uncertain_unwrapping",
+     || Value::from(qsm_core::unwrap::RomeoParams::default().temporal_uncertain_unwrapping)),
+];
+
+/// The value of a checkbox with a value when it is on and nothing else is chosen: its default,
+/// or for one off by default, [`ON_VALUES`].
+fn on_value(s: &Setting) -> Value {
+    ON_VALUES.iter().find(|(p, _)| *p == s.path).map_or_else(|| s.default.clone(), |(_, v)| v())
+}
 
 /// Every setting, by path.
 fn by_path() -> &'static HashMap<&'static str, &'static Setting> {
@@ -325,9 +368,19 @@ fn parse(s: &Setting, text: &str) -> Option<Value> {
     let int = |t: &str| t.parse::<u64>().ok().map(Value::from).or_else(|| t.parse::<i64>().ok().map(Value::from));
     match s.value_type {
         _ if text.is_empty() && !matches!(s.value_type, ValueType::Text) => None,
+        // Typed from 1; 0 is the first echo too, as the command line takes it.
+        ValueType::Int if COUNTED_FROM_ONE.contains(&s.path) => text.parse::<u64>().ok().map(|n| Value::from(n.saturating_sub(1))),
         ValueType::Int => int(text),
         ValueType::Float => number(text),
         ValueType::FloatVec3 => numbers().map(number).collect::<Option<Vec<_>>>().filter(|v| v.len() == 3).map(Value::from),
+        ValueType::IntVec3 if ONE_VALUE_FOR_EVERY_AXIS.contains(&s.path) => {
+            let v = text.split_whitespace().map(int).collect::<Option<Vec<_>>>()?;
+            match v.len() {
+                1 => Some(Value::from(vec![v[0].clone(); 3])),
+                3 => Some(Value::from(v)),
+                _ => None,
+            }
+        }
         // Whole-number triples are typed with spaces, as their rows always took them.
         ValueType::IntVec3 => text.split_whitespace().map(int).collect::<Option<Vec<_>>>().filter(|v| v.len() == 3).map(Value::from),
         ValueType::IntList => numbers().map(int).collect::<Option<Vec<_>>>().filter(|v| !v.is_empty()).map(Value::from),
@@ -403,7 +456,7 @@ impl SettingsStore {
         }
         if on {
             let v = self.typed.get(path).and_then(|t| parse(s, t)).filter(|v| v != off)
-                .unwrap_or_else(|| s.default.clone());
+                .unwrap_or_else(|| on_value(s));
             self.put(path, v);
         } else {
             if !self.typed.contains_key(path) {
@@ -490,6 +543,11 @@ impl SettingsStore {
         let v = self.get(path);
         match &s.value_type {
             _ if BLANK_AT_DEFAULT.contains(&path) && v == s.default => String::new(),
+            _ if ONE_VALUE_FOR_EVERY_AXIS.contains(&path) => match v.as_array() {
+                Some(xs) if !xs.is_empty() && xs.iter().all(|x| *x == xs[0]) => text_of(&xs[0]),
+                _ => text_of(&v),
+            },
+            _ if COUNTED_FROM_ONE.contains(&path) => v.as_u64().map_or_else(|| text_of(&v), |n| (n + 1).to_string()),
             ValueType::EchoReference { options } => echo_number(s, &v).map(|n| n.to_string()).unwrap_or_else(|| {
                 options.iter().find_map(|o| match o.kind { EchoKind::EchoNumber { min } => Some(min.to_string()), _ => None })
                     .unwrap_or_default()
@@ -511,7 +569,7 @@ impl SettingsStore {
             self.values.remove(path);
         } else if s.off.is_some() && self.toggle(path) {
             // The value of a checkbox that is on: back to the default value, still on.
-            self.put(path, s.default.clone());
+            self.put(path, on_value(s));
         }
     }
 
@@ -631,7 +689,8 @@ impl App {
             self.push_rows(rows, s, depth + 1);
         };
         let foreign = |b: &Block| schema::settings().iter().any(|t| t.path.starts_with(b.prefix) && t.section != layout.section);
-        for s in schema::settings() {
+        let first = layout.first.iter().map(|p| setting(p));
+        for s in first.chain(schema::settings().iter().filter(|s| !layout.first.contains(&s.path))) {
             if s.section != layout.section || !layout.only.is_none_or(|f| f(s.path)) || !shows(s.path)
                 || PICKERS.iter().any(|(.., other)| *other == s.path)
             {
@@ -675,14 +734,14 @@ impl App {
         let field = row_field(s.path, 0).unwrap_or_else(|| panic!("{} has no row field", s.path));
         let label = indented(depth, s.label);
         rows.push(match s.value_type {
-            _ if s.off.is_some() => PipelineRow::Toggle { label, field, help: s.tui_help },
-            ValueType::Bool => PipelineRow::Toggle { label, field, help: s.tui_help },
+            _ if s.off.is_some() => PipelineRow::Toggle { label, field, help: tui_help(s) },
+            ValueType::Bool => PipelineRow::Toggle { label, field, help: tui_help(s) },
             ValueType::Enum { .. } | ValueType::EchoReference { .. } => {
                 let (options, help) = options(s.path);
                 PipelineRow::AlgoSelect { label, field, options, help }
             }
             ValueType::Int | ValueType::Float | ValueType::IntVec3 | ValueType::FloatVec3 | ValueType::IntList
-            | ValueType::Text => PipelineRow::Param { label, field, help: s.tui_help },
+            | ValueType::Text => PipelineRow::Param { label, field, help: tui_help(s) },
             _ => unreachable!("{}: no widget for its value type yet", s.path),
         });
         let value_row = match &s.value_type {
@@ -776,6 +835,21 @@ mod tests {
         app.set_field_select("motion_reference", 2);
         assert_eq!(app.field_text("motion_reference_echo"), "3");
         assert_eq!(reference(&app), MotionReference::Echo(3));
+    }
+
+    /// ROMEO's template echo is typed from 1, as the command line takes it, and the config counts
+    /// from 0; the FFT pad is one value for every axis, or three.
+    #[test]
+    fn rows_type_values_as_the_command_line_does() {
+        let mut app = App::new_for_trial();
+        assert_eq!(app.field_text("romeo_template"), "1");
+        *app.field_text_mut("romeo_template").unwrap() = "3".into();
+        assert_eq!(config_from_app(&app).unwrap().field_mapping.romeo.template, 2);
+        app.set_field_select("unwrapping_algorithm", 1);
+        app.set_field_select("laplacian_solver", 1);
+        assert_eq!(app.field_text("laplacian_fft_pad"), "64");
+        *app.field_text_mut("laplacian_fft_pad").unwrap() = "32".into();
+        assert_eq!(config_from_app(&app).unwrap().field_mapping.laplacian_fft_pad, [32; 3]);
     }
 
     /// Posterior smoothing is a checkbox with its sigma under it: off is a sigma of 0, and the
