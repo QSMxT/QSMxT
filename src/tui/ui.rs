@@ -3253,7 +3253,7 @@ pub(super) mod tests {
             a.form.export_dicom = true;
             a.filter_state.orientation_group = "acq".into();
             a.form.settings.set("motion_correction.enabled", true);
-            a.pipeline_state.do_chi_separation = true;
+            a.form.settings.set("pipeline.do_chi_separation", true);
         }] {
             setup(&mut app);
             for (tab, name) in TAB_NAMES.iter().enumerate() {

@@ -181,24 +181,6 @@ impl App {
                 ps.qsm_algorithm = i;
             }
         }
-        let romeo = &config.field_mapping.romeo;
-        if differs("field_mapping.romeo.template") {
-            ps.romeo_template = (romeo.template + 1).to_string();
-        }
-        if differs("field_mapping.romeo.temporal_uncertain_unwrapping") {
-            // Off is a threshold of 0; the value row keeps its number while off.
-            ps.romeo_temporal_uncertain = romeo.temporal_uncertain_unwrapping > 0.0;
-            if ps.romeo_temporal_uncertain {
-                ps.romeo_temporal_uncertain_unwrapping = format!("{}", romeo.temporal_uncertain_unwrapping);
-            }
-        }
-        if differs("inversion.tile_size") {
-            // Off is no tile size; the size row keeps its number while off.
-            ps.dl_tiling = config.inversion.tile_size.is_some();
-            if let Some(n) = config.inversion.tile_size {
-                ps.dl_tile_size = n.to_string();
-            }
-        }
         let m = &config.masking;
         if differs("masking.sections") || differs("masking.combine") || differs("masking.refinements") {
             ps.mask_sections = m.sections.clone();
@@ -225,6 +207,26 @@ impl App {
         }
         if differs("multi_orientation.group_by") {
             self.filter_state.orientation_group = config.multi_orientation.group_by.clone();
+        }
+        let romeo = &config.field_mapping.romeo;
+        if differs("field_mapping.romeo.template") {
+            self.form.settings.set("field_mapping.romeo.template", romeo.template);
+        }
+        if differs("field_mapping.romeo.temporal_uncertain_unwrapping") {
+            // Off is a threshold of 0; the value row keeps its number while off.
+            let st = &mut self.form.settings;
+            match romeo.temporal_uncertain_unwrapping {
+                t if t > 0.0 => st.set("field_mapping.romeo.temporal_uncertain_unwrapping", t),
+                _ => st.switch("field_mapping.romeo.temporal_uncertain_unwrapping", false),
+            }
+        }
+        if differs("inversion.tile_size") {
+            // Off is no tile size; the size row keeps its number while off.
+            let st = &mut self.form.settings;
+            match config.inversion.tile_size {
+                Some(n) => st.set("inversion.tile_size", n),
+                None => st.switch("inversion.tile_size", false),
+            }
         }
         let sigma = config.segmentation.sigma_smoothing;
         if differs("segmentation.sigma_smoothing") {

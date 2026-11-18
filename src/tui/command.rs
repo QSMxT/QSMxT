@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::cli::*;
-use crate::pipeline::config::{PipelineConfig, QsmAlgorithm};
+use crate::pipeline::config::PipelineConfig;
 use super::app::App;
 
 pub fn build_command_string(app: &App) -> String {
@@ -212,16 +212,6 @@ fn default_qsm_algorithm_arg() -> QsmAlgorithmArg {
     QSM_ALGO_ARGS[default_qsm_algorithm_index()]
 }
 
-/// The algorithm the inversion row is currently showing.
-///
-/// Reads it out of [`QSM_ALGO_ARGS`] rather than a second list of its own: the row's index means
-/// whatever that list says it means, and a parallel copy here would silently disagree the moment
-/// an algorithm is inserted. Out-of-range indices fall back to the first entry instead of
-/// panicking, so a stale index from a saved form can never take the TUI down.
-pub fn selected_qsm_algorithm(ps: &super::app::PipelineFormState) -> QsmAlgorithm {
-    let arg = QSM_ALGO_ARGS.get(ps.qsm_algorithm).copied().unwrap_or_else(default_qsm_algorithm_arg);
-    crate::pipeline::config::qsm_algorithm_arg_to_config(arg)
-}
 
 pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
     let form = &app.form;
@@ -231,8 +221,6 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
     let n4 = ps.inhomogeneity_correction && ps.inhomogeneity_method == 1;
 
     let qsm_options = QSM_ALGO_ARGS;
-    let unwrap_options = [UnwrapAlgorithmArg::Romeo, UnwrapAlgorithmArg::Laplacian, UnwrapAlgorithmArg::Prelude,
-                          UnwrapAlgorithmArg::MediRegionGrowing];
     let bf_options = [
         BfAlgorithmArg::Vsharp,
         BfAlgorithmArg::Pdf,
@@ -245,22 +233,11 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         BfAlgorithmArg::Bfrnet,
         BfAlgorithmArg::Iqfm,
     ];
-    let sep_options = [
-        SeparationAlgorithmArg::R2starQsm,
-        SeparationAlgorithmArg::Decompose,
-        SeparationAlgorithmArg::ChiSepIlsqr,
-        SeparationAlgorithmArg::ChiSepMedi,
-        SeparationAlgorithmArg::Wavesep,
-        SeparationAlgorithmArg::HcChisep,
-        SeparationAlgorithmArg::SusepNet,
-        SeparationAlgorithmArg::ChiSepNet,
-    ];
 
     // The orientation grouping is set on the Input tab; how a group is reconstructed is set from
     // the form's settings store ([`stored_values`]).
     let orientation_group = app.filter_state.orientation_group_by();
     let grouped = orientation_group.is_some();
-    let inputs = app.input_relevance();
 
     PipelineArgs {
         // The form holds every setting; the chosen pipeline is set on the config afterwards.
@@ -278,8 +255,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         cosmos_magnitude_weighting: false,
         cosmos_tol: None,
         cosmos_max_iter: None,
-        // Said when not the general default.
-        unwrapping_algorithm: (ps.unwrapping_algorithm != 0).then(|| unwrap_options[ps.unwrapping_algorithm]),
+        // Field mapping is set from the form's settings store ([`stored_values`]).
+        unwrapping_algorithm: None,
         // Only when the inversion has a background-removal stage: otherwise the choice has no
         // effect, and iQFM there is refused (#276). Said when not the general default.
         bf_algorithm: (ps.inversion_needs_bg_removal() && ps.bf_algorithm != 0)
@@ -290,45 +267,21 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         bf_ukb_mask_trim: false,
         no_bf_ukb_mask_trim: false,
         masking_input: None,
-        phase_offset_removal: Some(ps.phase_offset_removal),
-        phase_offset_sigma_mm: parse_optional_f64_vec3(&ps.phase_offset_sigma_mm),
+        phase_offset_removal: None,
+        phase_offset_sigma_mm: None,
         coil_combination_sigma: None,
-        // Part of HIP phase offset removal, which runs before any unwrapper. MEDI's complex fit
-        // removes no offsets, and refuses bipolar correction.
-        bipolar_correction: ps.phase_offset_removal && ps.bipolar_correction
-            && !ps.b0_estimation_is("complex-fit"),
-        // Only when changed from the default, so a default form still yields a bare command.
-        b0_estimation: match ps.b0_estimation {
-            _ if ps.b0_estimation_is("complex-fit") => Some(B0EstimationArg::ComplexFit),
-            1 => Some(B0EstimationArg::LinearFit),
-            2 => Some(B0EstimationArg::RobustFit),
-            3 => Some(B0EstimationArg::QsmartEchofit),
-            _ => None,
-        },
-        // QSMART's echo-fit threshold: the mode, and the value of that mode.
-        qsmart_fit_threshold_mode: [crate::cli::QsmartFitThresholdModeArg::Percentile, crate::cli::QsmartFitThresholdModeArg::Absolute]
-            .get(ps.qsmart_fit_threshold_mode).copied().filter(|_| ps.b0_estimation == 3),
-        qsmart_fit_percentile: if ps.b0_estimation == 3 && ps.qsmart_fit_threshold_mode == 0 { parse_optional_f64(&ps.qsmart_fit_percentile) } else { None },
-        qsmart_fit_threshold: if ps.b0_estimation == 3 && ps.qsmart_fit_threshold_mode == 1 { parse_optional_f64(&ps.qsmart_fit_threshold) } else { None },
-        // The echo weights belong to the weighted average; the fits do not use them.
-        b0_weight_type: [B0WeightTypeArg::PhaseSNR, B0WeightTypeArg::PhaseVar, B0WeightTypeArg::Average,
-                         B0WeightTypeArg::TEs, B0WeightTypeArg::Mag, B0WeightTypeArg::AssumedDecay]
-            .get(ps.b0_weight_type).copied().filter(|&w| ps.b0_estimation == 0 && w != B0WeightTypeArg::PhaseSNR),
-        b0_weight_assumed_t2star: if ps.b0_estimation == 0 && ps.b0_weight_type == 5 { parse_optional_f64(&ps.b0_weight_assumed_t2star_ms) } else { None },
-        // Only when Laplacian unwrapping is selected, and only when changed from the default.
-        laplacian_solver: if ps.unwrapping_algorithm == 1 && ps.laplacian_solver != 0 {
-            [crate::cli::LaplacianSolverArg::Dct, crate::cli::LaplacianSolverArg::Fft, crate::cli::LaplacianSolverArg::Mirror,
-             crate::cli::LaplacianSolverArg::Mgpcg]
-                .get(ps.laplacian_solver).copied()
-        } else { None },
-        laplacian_fft_pad: if ps.unwrapping_algorithm == 1 && ps.laplacian_solver == 1 {
-            parse_pad3(&ps.laplacian_fft_pad)
-                .filter(|&p| p != qsmxt_engine::default_laplacian_fft_pad())
-                .map(|p| if p[0] == p[1] && p[1] == p[2] { vec![p[0]] } else { p.to_vec() })
-        } else { None },
-        laplacian_unmasked: ps.unwrapping_algorithm == 1 && ps.laplacian_unmasked,
+        bipolar_correction: false,
+        b0_estimation: None,
+        qsmart_fit_threshold_mode: None,
+        qsmart_fit_percentile: None,
+        qsmart_fit_threshold: None,
+        b0_weight_type: None,
+        b0_weight_assumed_t2star: None,
+        laplacian_solver: None,
+        laplacian_fft_pad: None,
+        laplacian_unmasked: false,
         no_laplacian_unmasked: false,
-        laplacian_keep_outside: ps.unwrapping_algorithm == 1 && !ps.laplacian_unmasked && ps.b0_estimation_is("weighted-avg") && ps.laplacian_keep_outside,
+        laplacian_keep_outside: false,
         no_laplacian_keep_outside: false,
         // BET is edited per mask step in the TUI, so its settings travel inside the sections.
         bet_fractional_intensity: None,
@@ -342,288 +295,32 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         bet_orientation: if ps.uses_bet() { qsmxt_engine::BetOrientation::ALL.get(ps.bet_orientation).copied() } else { None },
         // Set from the form's settings store ([`stored_values`]).
         qsm_reference: None,
-        qsm_per_echo: Some(ps.qsm_per_echo),
-        rts_params: crate::cli::RtsParamArgs {
-            rts_delta: parse_optional_f64(&ps.rts_delta),
-            rts_mu: parse_optional_f64(&ps.rts_mu),
-            rts_tol: parse_optional_f64(&ps.rts_tol),
-            rts_rho: parse_optional_f64(&ps.rts_rho),
-            rts_max_iter: parse_optional_usize(&ps.rts_max_iter),
-            rts_lsmr_iter: parse_optional_usize(&ps.rts_lsmr_iter),
-            rts_tau: parse_optional_f64(&ps.rts_tau),
-            rts_gamma: parse_optional_f64(&ps.rts_gamma),
-            rts_pad: parse_i64_triple(&ps.rts_pad).map(|p| p.to_vec()),
-        },
-        tv_params: crate::cli::TvParamArgs {
-            tv_lambda: parse_optional_f64(&ps.tv_lambda),
-            tv_rho: parse_optional_f64(&ps.tv_rho).map(crate::cli::OrAuto::Value),
-            tv_tol: parse_optional_f64(&ps.tv_tol),
-            tv_max_iter: parse_optional_usize(&ps.tv_max_iter),
-            tv_pad: parse_i64_triple(&ps.tv_pad).map(|p| p.to_vec()),
-        },
-        tkd_params: crate::cli::TkdParamArgs {
-            tkd_threshold: parse_optional_f64(&ps.tkd_threshold),
-            tkd_pad: parse_i64_triple(&ps.tkd_pad).map(|p| p.to_vec()),
-        },
-        tsvd_params: crate::cli::TsvdParamArgs {
-            tsvd_threshold: parse_optional_f64(&ps.tsvd_threshold),
-            tsvd_pad: parse_i64_triple(&ps.tsvd_pad).map(|p| p.to_vec()),
-        },
-        tgv_params: crate::cli::TgvParamArgs {
-            tgv_iterations: parse_optional_usize(&ps.tgv_iterations),
-            tgv_erosions: parse_optional_usize(&ps.tgv_erosions),
-            tgv_alpha1: parse_optional_f64(&ps.tgv_alpha1),
-            tgv_alpha0: parse_optional_f64(&ps.tgv_alpha0),
-            tgv_step_size: parse_optional_f64(&ps.tgv_step_size),
-            tgv_te: super::app::echo_time_choice(ps.tgv_te, &ps.tgv_te_ms),
-        },
-        tikhonov_params: crate::cli::TikhonovParamArgs {
-            tikhonov_lambda: parse_optional_f64(&ps.tikhonov_lambda),
-            tikhonov_pad: parse_i64_triple(&ps.tikhonov_pad).map(|p| p.to_vec()),
-        },
-        nltv_params: crate::cli::NltvParamArgs {
-            nltv_lambda: parse_optional_f64(&ps.nltv_lambda),
-            nltv_rho: parse_optional_f64(&ps.nltv_rho).map(crate::cli::OrAuto::Value),
-            nltv_mu: parse_optional_f64(&ps.nltv_mu),
-            nltv_tol: parse_optional_f64(&ps.nltv_tol),
-            nltv_max_iter: parse_optional_usize(&ps.nltv_max_iter),
-            nltv_newton_iter: parse_optional_usize(&ps.nltv_newton_iter),
-            nltv_tol_newton: parse_optional_f64(&ps.nltv_tol_newton),
-            nltv_te: super::app::echo_time_choice(ps.nltv_te, &ps.nltv_te_ms),
-            nltv_pad: parse_i64_triple(&ps.nltv_pad).map(|p| p.to_vec()),
-        },
-        medi_params: crate::cli::MediParamArgs {
-            medi_lambda: parse_optional_f64(&ps.medi_lambda),
-            medi_merit: Some(ps.medi_merit),
-            medi_smv: ps.medi_smv,
-            no_medi_smv: !ps.medi_smv,
-            medi_smv_radius: parse_optional_f64(&ps.medi_smv_radius),
-            medi_smv_shrink_mask: ps.medi_smv_shrink_mask,
-            no_medi_smv_shrink_mask: !ps.medi_smv_shrink_mask,
-            medi_msmv: ps.medi_msmv,
-            medi_msmv_maxk: if ps.medi_msmv { parse_optional_usize(&ps.medi_msmv_maxk) } else { None },
-            medi_msmv_vessel_radius: if ps.medi_msmv { parse_optional_f64(&ps.medi_msmv_vessel_radius) } else { None },
-            no_medi_msmv_prefilter: ps.medi_msmv && !ps.medi_msmv_prefilter,
-            medi_data_weighting: ps.medi_data_weighting.trim().parse().ok(),
-            medi_csf: Some(ps.medi_csf),
-            medi_lambda_csf: if ps.medi_csf { parse_optional_f64(&ps.medi_lambda_csf) } else { None },
-            medi_csf_r2s_threshold: if ps.medi_csf { parse_optional_f64(&ps.medi_csf_r2s_threshold) } else { None },
-            medi_csf_erode: ps.medi_csf.then_some(ps.medi_csf_erode),
-            medi_zeropad: parse_pad3(&ps.medi_zeropad).map(|p| p.to_vec()),
-            medi_percentage: parse_optional_f64(&ps.medi_percentage),
-            medi_cg_tol: parse_optional_f64(&ps.medi_cg_tol),
-            medi_cg_max_iter: parse_optional_usize(&ps.medi_cg_max_iter),
-            medi_max_iter: parse_optional_usize(&ps.medi_max_iter),
-            medi_tol: parse_optional_f64(&ps.medi_tol),
-            medi_te: super::app::echo_time_choice(ps.medi_te, &ps.medi_te_ms),
-        },
-        tfi_params: crate::cli::TfiParamArgs {
-            tfi_lambda: parse_optional_f64(&ps.tfi_lambda),
-            tfi_precond: parse_optional_f64(&ps.tfi_precond),
-            tfi_merit: Some(ps.tfi_merit),
-            tfi_linear: Some(ps.tfi_linear),
-            tfi_data_weighting: ps.tfi_data_weighting.trim().parse().ok(),
-            tfi_percentage: parse_optional_f64(&ps.tfi_percentage),
-            tfi_cg_tol: parse_optional_f64(&ps.tfi_cg_tol),
-            tfi_cg_max_iter: parse_optional_usize(&ps.tfi_cg_max_iter),
-            tfi_max_iter: parse_optional_usize(&ps.tfi_max_iter),
-            tfi_tol: parse_optional_f64(&ps.tfi_tol),
-            tfi_te: super::app::echo_time_choice(ps.tfi_te, &ps.tfi_te_ms),
-        },
-        lsqr_params: crate::cli::LsqrParamArgs {
-            lsqr_residual_weighting: parse_optional_f64(&ps.lsqr_residual_weighting),
-            no_lsqr_global_offset: !ps.lsqr_fit_global_offset,
-            lsqr_tol: parse_optional_f64(&ps.lsqr_tol),
-            lsqr_max_iter: parse_optional_usize(&ps.lsqr_max_iter),
-        },
-        heidi_params: crate::cli::HeidiParamArgs {
-            heidi_cone_threshold: parse_optional_f64(&ps.heidi_cone_threshold),
-            heidi_gradient_threshold: parse_optional_f64(&ps.heidi_gradient_threshold),
-            no_heidi_laplacian_correction: !ps.heidi_apply_laplacian_correction,
-            heidi_laplacian_threshold: parse_optional_f64(&ps.heidi_laplacian_threshold),
-            heidi_gradient_mask_floor: parse_optional_f64(&ps.heidi_gradient_mask_floor),
-            heidi_continuation_steps: parse_optional_usize(&ps.heidi_continuation_steps),
-            heidi_inner_iterations: parse_optional_usize(&ps.heidi_inner_iterations),
-            heidi_mu_min: parse_optional_f64(&ps.heidi_mu_min),
-            heidi_tol: parse_optional_f64(&ps.heidi_tol),
-            no_heidi_denoise: !ps.heidi_denoise,
-            heidi_denoise_iterations: parse_optional_usize(&ps.heidi_denoise_iterations),
-            heidi_denoise_time_step: parse_optional_f64(&ps.heidi_denoise_time_step),
-            heidi_denoise_conductance: parse_optional_f64(&ps.heidi_denoise_conductance),
-            heidi_denoise_reference_itk: ps.heidi_denoise_reference_itk,
-            no_heidi_denoise_reference_itk: !ps.heidi_denoise_reference_itk,
-            heidi_te: super::app::echo_time_choice(ps.heidi_te, &ps.heidi_te_ms),
-        },
-        ilsqr_params: crate::cli::IlsqrParamArgs {
-            ilsqr_tol: parse_optional_f64(&ps.ilsqr_tol),
-            ilsqr_max_iter: parse_optional_usize(&ps.ilsqr_max_iter),
-            ilsqr_pad_mm: parse_optional_f64(&ps.ilsqr_pad_mm),
-            ilsqr_precision: qsmxt_engine::IlsqrPrecision::ALL.get(ps.ilsqr_precision).copied(),
-        },
-        star_params: crate::cli::StarParamArgs {
-            star_pad: parse_usize_triple(&ps.star_pad).map(|p| p.to_vec()),
-            star_te: super::app::echo_time_choice(ps.star_te, &ps.star_te_ms),
-        },
-        qsmart_params: crate::cli::QsmartParamArgs {
-            qsmart_ilsqr_max_iter: parse_optional_usize(&ps.qsmart_ilsqr_max_iter),
-            qsmart_ilsqr_pad_mm: parse_optional_f64(&ps.qsmart_ilsqr_pad_mm),
-            qsmart_vasc_sphere_radius: ps.qsmart_vasc_sphere_radius.trim().parse::<i32>().ok(),
-            qsmart_inversion: if selected_qsm_algorithm(ps) == QsmAlgorithm::Qsmart {
-                [
-                    crate::cli::QsmAlgorithmArg::Ilsqr, crate::cli::QsmAlgorithmArg::Rts,
-                    crate::cli::QsmAlgorithmArg::Tv, crate::cli::QsmAlgorithmArg::Tkd,
-                    crate::cli::QsmAlgorithmArg::Tsvd, crate::cli::QsmAlgorithmArg::Tikhonov,
-                    crate::cli::QsmAlgorithmArg::Nltv, crate::cli::QsmAlgorithmArg::Medi,
-                ].get(ps.qsmart_inversion).copied()
-            } else {
-                None
-            },
-            qsmart_sdf_sigma1_stage1: parse_optional_f64(&ps.qsmart_sdf_sigma1_stage1),
-            qsmart_sdf_sigma2_stage1: parse_optional_f64(&ps.qsmart_sdf_sigma2_stage1),
-            qsmart_sdf_sigma1_stage2: parse_optional_f64(&ps.qsmart_sdf_sigma1_stage2),
-            qsmart_sdf_sigma2_stage2: parse_optional_f64(&ps.qsmart_sdf_sigma2_stage2),
-            qsmart_sdf_lower_lim: parse_optional_f64(&ps.qsmart_sdf_lower_lim),
-            qsmart_sdf_curv_constant: parse_optional_f64(&ps.qsmart_sdf_curv_constant),
-            qsmart_frangi_scale_min: parse_optional_f64(&ps.qsmart_frangi_scale_min),
-            qsmart_frangi_scale_max: parse_optional_f64(&ps.qsmart_frangi_scale_max),
-            qsmart_frangi_scale_ratio: parse_optional_f64(&ps.qsmart_frangi_scale_ratio),
-            qsmart_frangi_c: parse_optional_f64(&ps.qsmart_frangi_c),
-            qsmart_frangi_c_mode: [crate::cli::QsmartFrangiCModeArg::Absolute, crate::cli::QsmartFrangiCModeArg::Relative]
-                .get(ps.qsmart_frangi_c_mode).copied(),
-            qsmart_frangi_c_factor: parse_optional_f64(&ps.qsmart_frangi_c_factor),
-            qsmart_vessel_units: [crate::cli::VesselSizeUnitsArg::Voxels, crate::cli::VesselSizeUnitsArg::Mm]
-                .get(ps.qsmart_vessel_units).copied(),
-            qsmart_vessel_magnitude: [crate::cli::QsmartVesselMagnitudeArg::MeanN4, crate::cli::QsmartVesselMagnitudeArg::Combined]
-                .get(ps.qsmart_vessel_magnitude).copied(),
-            qsmart_offset_grid: [crate::cli::QsmartOffsetGridArg::Fft, crate::cli::QsmartOffsetGridArg::QsmartReference]
-                .get(ps.qsmart_offset_grid).copied(),
-        },
-        ndi_params: crate::cli::NdiParamArgs {
-            ndi_tau: parse_optional_f64(&ps.ndi_tau),
-            ndi_alpha: parse_optional_f64(&ps.ndi_alpha),
-            ndi_max_iter: parse_optional_usize(&ps.ndi_max_iter),
-            ndi_auto_stop: Some(ps.ndi_auto_stop),
-            ndi_te: super::app::echo_time_choice(ps.ndi_te, &ps.ndi_te_ms),
-            ndi_weight_norm: qsmxt_engine::NdiWeightNorm::ALL.get(ps.ndi_weight_norm).copied(),
-        },
-        fansi_params: crate::cli::FansiParamArgs {
-            fansi_alpha1: parse_optional_f64(&ps.fansi_alpha1),
-            fansi_mu1: parse_optional_f64(&ps.fansi_mu1).map(crate::cli::OrAuto::Value),
-            fansi_mu2: parse_optional_f64(&ps.fansi_mu2),
-            fansi_alpha0: parse_optional_f64(&ps.fansi_alpha0).map(crate::cli::OrAuto::Value),
-            fansi_mu0: parse_optional_f64(&ps.fansi_mu0).map(crate::cli::OrAuto::Value),
-            fansi_max_iter: parse_optional_usize(&ps.fansi_max_iter),
-            fansi_tol_update: parse_optional_f64(&ps.fansi_tol_update),
-            fansi_tol_delta: parse_optional_f64(&ps.fansi_tol_delta),
-            fansi_te: super::app::echo_time_choice(ps.fansi_te, &ps.fansi_te_ms),
-        },
-        l1qsm_params: crate::cli::L1qsmParamArgs {
-            l1qsm_alpha1: parse_optional_f64(&ps.l1qsm_alpha1),
-            l1qsm_mu1: parse_optional_f64(&ps.l1qsm_mu1).map(crate::cli::OrAuto::Value),
-            l1qsm_mu2: parse_optional_f64(&ps.l1qsm_mu2),
-            l1qsm_mu3: parse_optional_f64(&ps.l1qsm_mu3),
-            l1qsm_lambda: parse_optional_f64(&ps.l1qsm_lambda),
-            l1qsm_max_iter: parse_optional_usize(&ps.l1qsm_max_iter),
-            l1qsm_tol_update: parse_optional_f64(&ps.l1qsm_tol_update),
-            l1qsm_tol_delta: parse_optional_f64(&ps.l1qsm_tol_delta),
-            l1qsm_te: super::app::echo_time_choice(ps.l1qsm_te, &ps.l1qsm_te_ms),
-        },
-        whqsm_params: crate::cli::WhqsmParamArgs {
-            whqsm_alpha1: parse_optional_f64(&ps.whqsm_alpha1),
-            whqsm_mu1: parse_optional_f64(&ps.whqsm_mu1),
-            whqsm_mu2: parse_optional_f64(&ps.whqsm_mu2),
-            whqsm_beta: parse_optional_f64(&ps.whqsm_beta),
-            whqsm_muh: parse_optional_f64(&ps.whqsm_muh),
-            whqsm_max_iter: parse_optional_usize(&ps.whqsm_max_iter),
-            whqsm_tol_update: parse_optional_f64(&ps.whqsm_tol_update),
-            whqsm_tol_delta: parse_optional_f64(&ps.whqsm_tol_delta),
-            whqsm_weight: qsmxt_engine::WhqsmWeight::ALL.get(ps.whqsm_weight).copied(),
-            whqsm_te: super::app::echo_time_choice(ps.whqsm_te, &ps.whqsm_te_ms),
-        },
-        hdqsm_params: crate::cli::HdqsmParamArgs {
-            hdqsm_alpha_l2: parse_optional_f64(&ps.hdqsm_alpha_l2),
-            hdqsm_mu1_l2: parse_optional_f64(&ps.hdqsm_mu1_l2).map(crate::cli::OrAuto::Value),
-            hdqsm_mu2: parse_optional_f64(&ps.hdqsm_mu2),
-            hdqsm_max_iter_l1: parse_optional_usize(&ps.hdqsm_max_iter_l1),
-            hdqsm_max_iter_l2: parse_optional_usize(&ps.hdqsm_max_iter_l2),
-            hdqsm_tol_update: parse_optional_f64(&ps.hdqsm_tol_update),
-        },
-        amp_pe_params: crate::cli::AmpPeParamArgs {
-            amp_pe_wave_order: parse_optional_usize(&ps.amp_pe_wave_order),
-            amp_pe_nlevel: parse_optional_usize(&ps.amp_pe_nlevel),
-            amp_pe_wave_pec: parse_optional_f64(&ps.amp_pe_wave_pec),
-            amp_pe_simulated_te: parse_optional_f64(&ps.amp_pe_simulated_te),
-            amp_pe_max_linearization_ite: parse_optional_usize(&ps.amp_pe_max_linearization_ite),
-            amp_pe_tikhonov_beta: parse_optional_f64(&ps.amp_pe_tikhonov_beta),
-            amp_pe_damp_rate_sig: parse_optional_f64(&ps.amp_pe_damp_rate_sig),
-            amp_pe_damp_rate_par: parse_optional_f64(&ps.amp_pe_damp_rate_par),
-            amp_pe_max_pe_spar_ite: parse_optional_usize(&ps.amp_pe_max_pe_spar_ite),
-            amp_pe_max_pe_est_ite: parse_optional_usize(&ps.amp_pe_max_pe_est_ite),
-            amp_pe_cvg_thd: parse_optional_f64(&ps.amp_pe_cvg_thd),
-        },
-        // Set from the form's settings store ([`stored_values`]).
+        qsm_per_echo: None,
+        // The inversion's settings are set from the form's settings store ([`stored_values`]),
+        // but MEDI's SMV mode, which the form's rule for which stages run reads.
+        rts_params: Default::default(),
+        tv_params: Default::default(),
+        tkd_params: Default::default(),
+        tsvd_params: Default::default(),
+        tgv_params: Default::default(),
+        tikhonov_params: Default::default(),
+        nltv_params: Default::default(),
+        medi_params: crate::cli::MediParamArgs { medi_smv: ps.medi_smv, no_medi_smv: !ps.medi_smv, ..Default::default() },
+        tfi_params: Default::default(),
+        lsqr_params: Default::default(),
+        heidi_params: Default::default(),
+        ilsqr_params: Default::default(),
+        star_params: Default::default(),
+        qsmart_params: Default::default(),
+        ndi_params: Default::default(),
+        fansi_params: Default::default(),
+        l1qsm_params: Default::default(),
+        whqsm_params: Default::default(),
+        hdqsm_params: Default::default(),
+        amp_pe_params: Default::default(),
         motion_params: Default::default(),
-        separation_params: crate::cli::SeparationParamArgs {
-            r2star_qsm_r_const_3t: parse_optional_f64(&ps.sep_r2starqsm_r_const_3t),
-            decompose_n_inner: parse_optional_usize(&ps.sep_decompose_n_inner),
-            decompose_chi_bound: super::app::chi_bound_choice(ps.sep_decompose_chi_bound_mode, &ps.sep_decompose_chi_bound),
-            decompose_unwrap_phase: Some(ps.sep_decompose_unwrap_phase),
-            decompose_fit: [crate::cli::DecomposeFitArg::ReferenceCode, crate::cli::DecomposeFitArg::Paper]
-                .get(ps.sep_decompose_fit).copied(),
-            decompose_max_iterations: parse_optional_usize(&ps.sep_decompose_max_iterations),
-            decompose_max_function_evaluations: parse_optional_usize(&ps.sep_decompose_max_fevals),
-            decompose_function_tolerance: parse_optional_f64(&ps.sep_decompose_function_tol),
-            decompose_step_tolerance: parse_optional_f64(&ps.sep_decompose_step_tol),
-            decompose_optimality_tolerance: parse_optional_f64(&ps.sep_decompose_optimality_tol),
-            decompose_finite_difference_step: parse_optional_f64(&ps.sep_decompose_fd_step),
-            decompose_typical_x: parse_optional_f64(&ps.sep_decompose_typical_x),
-            chi_sep_ilsqr_dr_pos: parse_optional_f64(&ps.sep_ilsqr_dr_pos).map(crate::cli::OrAuto::Value),
-            chi_sep_ilsqr_dr_neg: parse_optional_f64(&ps.sep_ilsqr_dr_neg).map(crate::cli::OrAuto::Value),
-            chi_sep_ilsqr_pad: parse_usize_triple(&ps.sep_ilsqr_pad).map(|p| p.to_vec()),
-            chi_sep_ilsqr_cg_max_iter_lsqr: parse_optional_usize(&ps.sep_ilsqr_cg_max_iter_lsqr),
-            chi_sep_ilsqr_cg_tol_lsqr: parse_optional_f64(&ps.sep_ilsqr_cg_tol_lsqr),
-            chi_sep_ilsqr_cg_max_iter_sa: parse_optional_usize(&ps.sep_ilsqr_cg_max_iter_sa),
-            chi_sep_ilsqr_cg_tol_sa: parse_optional_f64(&ps.sep_ilsqr_cg_tol_sa),
-            chi_sep_ilsqr_d2_thr: parse_optional_f64(&ps.sep_ilsqr_d2_thr),
-            chi_sep_ilsqr_prc_w_i_min: parse_optional_f64(&ps.sep_ilsqr_prc_w_i_min),
-            chi_sep_ilsqr_prc_w_i_max: parse_optional_f64(&ps.sep_ilsqr_prc_w_i_max),
-            chi_sep_ilsqr_prc_w_g_min: parse_optional_f64(&ps.sep_ilsqr_prc_w_g_min),
-            chi_sep_ilsqr_prc_w_g_max: parse_optional_f64(&ps.sep_ilsqr_prc_w_g_max),
-            chi_sep_ilsqr_qsm_max_iter: parse_optional_usize(&ps.sep_ilsqr_qsm_max_iter),
-            chi_sep_ilsqr_qsm_tol: parse_optional_f64(&ps.sep_ilsqr_qsm_tol),
-            chi_sep_ilsqr_qsm_pad_mm: parse_optional_f64(&ps.sep_ilsqr_qsm_pad_mm),
-            chi_sep_ilsqr_qsm_precision: qsmxt_engine::IlsqrPrecision::ALL.get(ps.sep_ilsqr_qsm_precision).copied(),
-            chi_sep_medi_lambda: parse_optional_f64(&ps.sep_medi_lambda),
-            chi_sep_medi_lambda_csf: parse_optional_f64(&ps.sep_medi_lambda_csf),
-            chi_sep_medi_dr_pos: parse_optional_f64(&ps.sep_medi_dr_pos).map(crate::cli::OrAuto::Value),
-            chi_sep_medi_dr_neg: parse_optional_f64(&ps.sep_medi_dr_neg).map(crate::cli::OrAuto::Value),
-            chi_sep_medi_pad: parse_optional_usize(&ps.sep_medi_pad),
-            chi_sep_medi_tol: parse_optional_f64(&ps.sep_medi_tol),
-            chi_sep_medi_max_iter: parse_optional_usize(&ps.sep_medi_max_iter),
-            chi_sep_medi_cg_tol: parse_optional_f64(&ps.sep_medi_cg_tol),
-            chi_sep_medi_cg_max_iter: parse_optional_usize(&ps.sep_medi_cg_max_iter),
-            chi_sep_medi_qsm_max_iter: parse_optional_usize(&ps.sep_medi_qsm_max_iter),
-            chi_sep_medi_qsm_tol: parse_optional_f64(&ps.sep_medi_qsm_tol),
-            chi_sep_medi_qsm_pad_mm: parse_optional_f64(&ps.sep_medi_qsm_pad_mm),
-            chi_sep_medi_qsm_precision: qsmxt_engine::IlsqrPrecision::ALL.get(ps.sep_medi_qsm_precision).copied(),
-            chi_sep_medi_csf_r2star: qsmxt_engine::ChiSepCsfR2star::ALL.get(ps.sep_medi_csf_r2star).copied(),
-            wavesep_dr_pos: parse_optional_f64(&ps.sep_wavesep_dr_pos),
-            wavesep_dr_neg: parse_optional_f64(&ps.sep_wavesep_dr_neg),
-            wavesep_alpha: parse_optional_f64(&ps.sep_wavesep_alpha),
-            wavesep_lambda: parse_optional_f64(&ps.sep_wavesep_lambda),
-            wavesep_wavelet_order: parse_optional_usize(&ps.sep_wavesep_wavelet_order),
-            wavesep_max_iter: parse_optional_usize(&ps.sep_wavesep_max_iter),
-            wavesep_tol: parse_optional_f64(&ps.sep_wavesep_tol),
-            hc_chisep_dr_pos_3t: parse_optional_f64(&ps.sep_hcchisep_dr_pos_3t),
-            hc_chisep_bin_hz: parse_optional_f64(&ps.sep_hcchisep_bin_hz),
-            chi_sepnet_route: Some(match ps.sep_chisepnet_route {
-                1 => crate::cli::ChiSepNetRouteArg::Native,
-                _ => crate::cli::ChiSepNetRouteArg::Toolbox,
-            }),
-            chi_sepnet_patch: parse_usize_triple(&ps.sep_chisepnet_patch).map(|p| p.to_vec()),
-            chi_sepnet_frame_patch: parse_usize_triple(&ps.sep_chisepnet_frame_patch).map(|p| p.to_vec()),
-            susep_net_patch: parse_usize_triple(&ps.sep_susepnet_patch).map(|p| p.to_vec()),
-        },
+        // χ-separation's settings are set from the form's settings store ([`stored_values`]).
+        separation_params: Default::default(),
         // Background removal's settings are set from the form's settings store ([`stored_values`]).
         vsharp_params: Default::default(),
         pdf_params: Default::default(),
@@ -633,47 +330,12 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         resharp_params: Default::default(),
         harperella_params: Default::default(),
         iharperella_params: Default::default(),
-        romeo_params: crate::cli::RomeoParamArgs {
-            no_romeo_phase_coherence: !ps.romeo_phase_coherence,
-            no_romeo_phase_gradient_coherence: !ps.romeo_phase_gradient_coherence,
-            no_romeo_phase_linearity: !ps.romeo_phase_linearity,
-            romeo_phase_linearity: ps.romeo_phase_linearity,
-            no_romeo_mag_coherence: !ps.romeo_mag_coherence,
-            romeo_mag_weight: ps.romeo_mag_weight,
-            no_romeo_mag_weight: false,
-            romeo_mag_weight2: ps.romeo_mag_weight2,
-            romeo_bestpath: ps.romeo_bestpath,
-            romeo_template: if ps.unwrapping_algorithm != 0 || ps.romeo_individual { None } else { parse_optional_usize(&ps.romeo_template) },
-            // ROMEO's own setting: not passed under Laplacian unwrapping.
-            romeo_individual: ps.unwrapping_algorithm == 0 && ps.romeo_individual,
-            no_romeo_individual: ps.unwrapping_algorithm == 0 && !ps.romeo_individual,
-            romeo_correct_global: ps.romeo_correct_global,
-            no_romeo_correct_global: !ps.romeo_correct_global,
-            romeo_temporal_uncertain_unwrapping: if ps.romeo_temporal_uncertain { parse_optional_f64(&ps.romeo_temporal_uncertain_unwrapping) } else { Some(0.0) },
-            romeo_max_seeds: ps.romeo_max_seeds.trim().parse::<u8>().ok(),
-            romeo_merge_regions: ps.romeo_merge_regions,
-            romeo_correct_regions: ps.romeo_correct_regions,
-            romeo_wrap_addition: parse_optional_f64(&ps.romeo_wrap_addition),
-        },
-        // Only when PRELUDE unwrapping is selected, and only when changed from the default.
-        prelude_params: {
-            let prelude = ps.unwrapping_algorithm == 2;
-            let d = qsmxt_engine::PreludeConfig::default();
-            crate::cli::PreludeParamArgs {
-                prelude_labelling: [crate::cli::PreludeLabellingArg::Auto, crate::cli::PreludeLabellingArg::Slices,
-                                    crate::cli::PreludeLabellingArg::Volume]
-                    .get(ps.prelude_labelling).copied()
-                    .filter(|&l| prelude && qsmxt_engine::PreludeLabelling::from(l) != d.labelling),
-                prelude_partitions: ps.prelude_partitions.trim().parse::<u64>().ok()
-                    .filter(|&n| prelude && n as usize != d.num_phase_partitions),
-            }
-        },
+        // Field mapping is set from the form's settings store ([`stored_values`]).
+        romeo_params: Default::default(),
+        prelude_params: Default::default(),
         // Set from the form's settings store ([`config_from_app`]).
         swi_params: Default::default(),
-        tiling_params: crate::cli::TilingParamArgs {
-            tile_size: if ps.dl_tiling { parse_optional_usize(&ps.dl_tile_size) } else { None },
-            tile_halo: if ps.dl_tiling { parse_optional_usize(&ps.dl_tile_halo) } else { None },
-        },
+        tiling_params: Default::default(),
         inhomogeneity_method: (ps.inhomogeneity_correction && ps.inhomogeneity_method == 1)
             .then_some(crate::cli::InhomogeneityMethodArg::N4),
         homogeneity_sigma_mm: if makehomogeneous { parse_optional_f64(&ps.homogeneity_sigma_mm) } else { None },
@@ -691,14 +353,14 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
                 n4_geometry: qsmxt_engine::N4Geometry::ALL.get(ps.n4_geometry).copied(),
             }
         } else { Default::default() },
-        linear_fit_estimate_offset: Some(ps.linear_fit_estimate_offset),
-        robust_fit_loss: (ps.b0_estimation == 2 && ps.robust_fit_loss == 1).then_some(crate::cli::RobustLossArg::Huber),
-        robust_fit_tuning: if ps.b0_estimation == 2 { parse_optional_f64(&ps.robust_fit_tuning) } else { None },
-        robust_fit_iterations: if ps.b0_estimation == 2 { parse_optional_usize(&ps.robust_fit_iterations) } else { None },
-        robust_fit_downweight_level: if ps.b0_estimation == 2 { parse_optional_f64(&ps.robust_fit_downweight_level) } else { None },
-        robust_fit_flag_ratio: if ps.b0_estimation == 2 { parse_optional_f64(&ps.robust_fit_flag_ratio) } else { None },
-        complex_fit_reltol: if ps.b0_estimation_is("complex-fit") { parse_optional_f64(&ps.complex_fit_reltol) } else { None },
-        complex_fit_max_iter: if ps.b0_estimation_is("complex-fit") { parse_optional_usize(&ps.complex_fit_max_iter) } else { None },
+        linear_fit_estimate_offset: None,
+        robust_fit_loss: None,
+        robust_fit_tuning: None,
+        robust_fit_iterations: None,
+        robust_fit_downweight_level: None,
+        robust_fit_flag_ratio: None,
+        complex_fit_reltol: None,
+        complex_fit_max_iter: None,
         no_qsm: !ps.do_qsm,
         do_swi: false,
         swi_filtered_phase: false,
@@ -714,9 +376,9 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         do_r2starmap: false,
         do_r2map: false,
         do_r2primemap: false,
-        do_chi_separation: ps.do_chi_separation,
-        chi_separation_algorithm: Some(sep_options[ps.separation_algorithm]),
-        use_custom_qsm: tool(inputs.qsm, &ps.custom_qsm_tool),
+        do_chi_separation: false,
+        chi_separation_algorithm: None,
+        use_custom_qsm: None,
         use_custom_r2: None,
         use_custom_r2prime: None,
         r2prime_strategy: None,
@@ -784,10 +446,6 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
     }
 }
 
-/// A bring-your-own derivatives tool, when the run can use one and the field names it.
-fn tool(relevant: bool, name: &str) -> Option<String> {
-    Some(name.trim()).filter(|t| relevant && !t.is_empty()).map(str::to_string)
-}
 
 pub(super) fn expand_tilde(s: &str) -> PathBuf {
     let home = || std::env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("~"));
@@ -834,11 +492,6 @@ fn parse_usize_triple(s: &str) -> Option<[usize; 3]> {
     <[usize; 3]>::try_from(v).ok()
 }
 
-/// Three whole numbers, negatives allowed ("-1 0 0"); `None` if not exactly three.
-fn parse_i64_triple(s: &str) -> Option<[i64; 3]> {
-    let v: Vec<i64> = s.split_whitespace().map(|t| t.parse().ok()).collect::<Option<_>>()?;
-    <[i64; 3]>::try_from(v).ok()
-}
 
 /// One count or more, separated by spaces or commas ("50 50 50 50"); `None` if empty or not counts.
 fn parse_usize_list(s: &str) -> Option<Vec<usize>> {
@@ -847,18 +500,8 @@ fn parse_usize_list(s: &str) -> Option<Vec<usize>> {
     (!v.is_empty()).then_some(v)
 }
 
-/// "64" (every axis) or "64 64 32".
-fn parse_pad3(s: &str) -> Option<[usize; 3]> {
-    let v: Vec<usize> = s.split_whitespace().map(|t| t.parse().ok()).collect::<Option<_>>()?;
-    qsmxt_engine::pad3_from(&v)
-}
 
-/// Three numbers, separated by spaces or commas; anything else is None.
-fn parse_optional_f64_vec3(s: &str) -> Option<Vec<f64>> {
-    let v: Vec<f64> = s.split(|c: char| c == ',' || c.is_whitespace())
-        .filter(|t| !t.is_empty()).map(|t| t.parse().ok()).collect::<Option<_>>()?;
-    (v.len() == 3).then_some(v)
-}
+
 
 fn parse_optional_usize(s: &str) -> Option<usize> {
     let trimmed = s.trim();
@@ -976,6 +619,11 @@ pub fn config_from_app(app: &App) -> crate::Result<PipelineConfig> {
 mod tests {
     use super::*;
     use super::super::app::App;
+
+    /// The config a run gets from its arguments.
+    fn config(args: &RunArgs) -> PipelineConfig {
+        crate::cli_settings::build_config(Default::default(), &args.pipeline).unwrap()
+    }
 
     /// The TUI holds the chosen algorithm as an index into `QSM_ALGO_OPTIONS`, and
     /// [`QSM_ALGO_ARGS`] is what turns it back into an algorithm. If the two lists drift — insert
@@ -1167,32 +815,27 @@ mod tests {
             | crate::tui::app::PipelineRow::Param { field, .. } => Some(field.to_string()),
             _ => None,
         }).collect::<Vec<_>>();
+        let command = |app: &App| qsmxt_engine::generate_command(&config_from_app(app).unwrap());
         assert!(!fields(&app).contains(&"laplacian_solver".to_string()), "ROMEO has no solver");
-        app.pipeline_state.unwrapping_algorithm = 1; // laplacian
+        app.set_field_select("unwrapping_algorithm", 1); // laplacian
         assert!(fields(&app).contains(&"laplacian_solver".to_string()));
         assert!(!fields(&app).contains(&"laplacian_fft_pad".to_string()), "dct has no pad");
-        assert_eq!(pipeline_args_from_app(&app).laplacian_solver, None, "default stays off the command");
-        app.pipeline_state.laplacian_solver = 1; // fft
+        assert!(!command(&app).contains("--laplacian-solver"), "default stays off the command");
+        app.set_field_select("laplacian_solver", 1); // fft
         assert!(fields(&app).contains(&"laplacian_fft_pad".to_string()));
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.laplacian_solver, qsmxt_engine::LaplacianSolver::Fft);
         assert_eq!(c.field_mapping.laplacian_fft_pad, [64; 3]);
-        assert_eq!(pipeline_args_from_app(&app).laplacian_fft_pad, None, "default pad not emitted");
-        app.pipeline_state.laplacian_fft_pad = "64 64 32".into();
+        assert!(!command(&app).contains("--laplacian-fft-pad"), "default pad not emitted");
+        *app.field_text_mut("laplacian_fft_pad").unwrap() = "64 64 32".into();
         assert_eq!(config_from_app(&app).unwrap().field_mapping.laplacian_fft_pad, [64, 64, 32]);
-        let a = pipeline_args_from_app(&app);
-        assert!(matches!(a.laplacian_solver, Some(crate::cli::LaplacianSolverArg::Fft)));
-        assert_eq!(a.laplacian_fft_pad, Some(vec![64, 64, 32]));
-        app.pipeline_state.laplacian_fft_pad = "12".into();
-        assert_eq!(config_from_app(&app).unwrap().field_mapping.laplacian_fft_pad, [12; 3]);
-        assert_eq!(pipeline_args_from_app(&app).laplacian_fft_pad, Some(vec![12]));
+        assert!(command(&app).contains("--laplacian-solver fft") && command(&app).contains("--laplacian-fft-pad 64 64 32"), "{}", command(&app));
         // QSM.jl's MGPCG: no pad, reaches the config and the command.
-        app.pipeline_state.set_select("laplacian_solver", crate::tui::app::LAPLACIAN_SOLVER_OPTIONS.iter().position(|o| *o == "mgpcg").unwrap());
+        let mgpcg = super::super::settings_rows::options("field_mapping.laplacian_solver").0.iter().position(|o| *o == "mgpcg").unwrap();
+        app.set_field_select("laplacian_solver", mgpcg);
         assert!(!fields(&app).contains(&"laplacian_fft_pad".to_string()), "mgpcg has no pad");
         assert_eq!(config_from_app(&app).unwrap().field_mapping.laplacian_solver, qsmxt_engine::LaplacianSolver::Mgpcg);
-        let a = pipeline_args_from_app(&app);
-        assert!(matches!(a.laplacian_solver, Some(crate::cli::LaplacianSolverArg::Mgpcg)));
-        assert_eq!(a.laplacian_fft_pad, None);
+        assert!(command(&app).contains("--laplacian-solver mgpcg") && !command(&app).contains("--laplacian-fft-pad"));
     }
 
     /// The unmasked unwrapping is a Laplacian toggle, as the solver is: off by default and
@@ -1207,28 +850,26 @@ mod tests {
             _ => None,
         }).collect::<Vec<_>>();
         assert!(!fields(&app).contains(&"prelude_labelling".to_string()), "ROMEO has no PRELUDE settings");
-        app.pipeline_state.unwrapping_algorithm = 2; // prelude
+        let command = |app: &App| qsmxt_engine::generate_command(&config_from_app(app).unwrap());
+        app.set_field_select("unwrapping_algorithm", 2); // prelude
         let f = fields(&app);
         for shown in ["prelude_labelling", "prelude_partitions", "phase_offset_removal"] {
             assert!(f.contains(&shown.to_string()), "{shown}: {f:?}");
         }
         assert!(!f.iter().any(|f| f.starts_with("romeo_") || f.starts_with("laplacian_solver")), "{f:?}");
-        let a = pipeline_args_from_app(&app);
-        assert_eq!(a.unwrapping_algorithm, Some(crate::cli::UnwrapAlgorithmArg::Prelude));
-        assert_eq!((a.prelude_params.prelude_labelling, a.prelude_params.prelude_partitions), (None, None),
-                   "defaults stay off the command");
-        app.pipeline_state.set_select("prelude_labelling", 2);
-        app.pipeline_state.prelude_partitions = "6".into();
-        app.pipeline_state.bipolar_correction = true;
+        assert!(command(&app).contains("--unwrapping-algorithm prelude"));
+        assert!(!command(&app).contains("--prelude-"), "defaults stay off the command");
+        app.set_field_select("prelude_labelling", 2);
+        *app.field_text_mut("prelude_partitions").unwrap() = "6".into();
+        app.toggle_field("bipolar_correction");
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.unwrapping_algorithm, qsmxt_engine::UnwrappingAlgorithm::Prelude);
         assert_eq!(c.field_mapping.prelude.labelling, qsmxt_engine::PreludeLabelling::Volume);
         assert_eq!(c.field_mapping.prelude.num_phase_partitions, 6);
         assert!(c.field_mapping.bipolar_correction, "bipolar correction applies with PRELUDE");
         // Back to ROMEO: PRELUDE's settings are not passed.
-        app.pipeline_state.unwrapping_algorithm = 0;
-        let a = pipeline_args_from_app(&app);
-        assert_eq!((a.prelude_params.prelude_labelling, a.prelude_params.prelude_partitions), (None, None));
+        app.set_field_select("unwrapping_algorithm", 0);
+        assert!(!command(&app).contains("--prelude-"));
     }
 
     /// MEDI's region growing is the fourth unwrapper: it has no settings of its own, keeps phase
@@ -1236,7 +877,7 @@ mod tests {
     #[test]
     fn medi_region_growing_choice() {
         let mut app = default_app();
-        app.pipeline_state.unwrapping_algorithm = 3; // medi-region-growing
+        app.set_field_select("unwrapping_algorithm", 3); // medi-region-growing
         let f: Vec<String> = app.pipeline_rows().iter().filter_map(|r| match r {
             crate::tui::app::PipelineRow::AlgoSelect { field, .. }
             | crate::tui::app::PipelineRow::Param { field, .. }
@@ -1245,9 +886,7 @@ mod tests {
         }).collect();
         assert!(f.contains(&"phase_offset_removal".to_string()), "{f:?}");
         assert!(!f.iter().any(|f| f.starts_with("romeo_") || f.starts_with("prelude_") || f.starts_with("laplacian_")), "{f:?}");
-        app.pipeline_state.bipolar_correction = true;
-        let a = pipeline_args_from_app(&app);
-        assert_eq!(a.unwrapping_algorithm, Some(crate::cli::UnwrapAlgorithmArg::MediRegionGrowing));
+        app.toggle_field("bipolar_correction");
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.unwrapping_algorithm, qsmxt_engine::UnwrappingAlgorithm::MediRegionGrowing);
         assert!(c.field_mapping.bipolar_correction);
@@ -1262,16 +901,15 @@ mod tests {
             _ => None,
         }).collect::<Vec<_>>();
         assert!(!toggles(&app).contains(&"laplacian_unmasked".to_string()), "ROMEO has no Laplacian unwrapping");
-        app.pipeline_state.laplacian_unmasked = true;
-        assert!(!pipeline_args_from_app(&app).laplacian_unmasked, "not passed under ROMEO");
-        app.pipeline_state.laplacian_unmasked = false;
-        app.pipeline_state.unwrapping_algorithm = 1; // laplacian
+        app.form.settings.set("field_mapping.laplacian_unmasked", true);
+        assert!(!config_from_app(&app).unwrap().field_mapping.laplacian_unmasked, "not passed under ROMEO");
+        app.form.settings.set("field_mapping.laplacian_unmasked", false);
+        app.set_field_select("unwrapping_algorithm", 1); // laplacian
         assert!(toggles(&app).contains(&"laplacian_unmasked".to_string()));
         assert!(!config_from_app(&app).unwrap().field_mapping.laplacian_unmasked);
         assert!(!build_command_string(&app).contains("--laplacian-unmasked"));
-        app.pipeline_state.toggle("laplacian_unmasked");
+        app.toggle_field("laplacian_unmasked");
         assert!(config_from_app(&app).unwrap().field_mapping.laplacian_unmasked);
-        assert!(pipeline_args_from_app(&app).laplacian_unmasked);
         assert!(build_command_string(&app).contains("--laplacian-unmasked"));
     }
 
@@ -1283,38 +921,37 @@ mod tests {
         let fields = |app: &App| app.pipeline_rows().iter().filter_map(crate::tui::app::row_field)
             .map(str::to_string).collect::<Vec<_>>();
         assert!(fields(&app).contains(&"phase_offset_removal".to_string()));
-        app.pipeline_state.b0_estimation = crate::tui::app::B0_ESTIMATION_OPTIONS.iter().position(|o| *o == "complex-fit").unwrap();
+        app.form.settings.set("field_mapping.b0_estimation", "complex-fit");
         let f = fields(&app);
         assert!(f.contains(&"complex_fit_reltol".to_string()) && !f.contains(&"phase_offset_removal".to_string())
             && !f.contains(&"linear_fit_estimate_offset".to_string()), "{f:?}");
         let c = config_from_app(&app).unwrap();
         assert_eq!((c.field_mapping.b0_estimation, c.field_mapping.complex_fit.clone()),
                    (qsmxt_engine::B0Estimation::ComplexFit, qsmxt_engine::ComplexFitConfig::default()));
-        app.pipeline_state.complex_fit_max_iter = "5".into();
+        *app.field_text_mut("complex_fit_max_iter").unwrap() = "5".into();
         assert_eq!(config_from_app(&app).unwrap().field_mapping.complex_fit.max_iter, 5);
 
         let ps = &mut app.pipeline_state;
         ps.qsm_algorithm = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|o| *o == "medi").unwrap();
         assert!(fields(&app).contains(&"medi_lambda_csf".to_string()));
-        let ps = &mut app.pipeline_state;
-        (ps.medi_lambda_csf, ps.medi_zeropad) = ("50".into(), "2 0 2".into());
-        ps.toggle("medi_csf_erode");
+        *app.field_text_mut("medi_lambda_csf").unwrap() = "50".into();
+        *app.field_text_mut("medi_zeropad").unwrap() = "2 0 2".into();
+        app.toggle_field("medi_csf_erode");
         let m = config_from_app(&app).unwrap().inversion.medi;
         assert_eq!((m.csf, m.lambda_csf, m.csf_erode, m.zeropad), (true, 50.0, false, [2, 0, 2]));
-        app.pipeline_state.toggle("medi_csf");
+        app.toggle_field("medi_csf");
         assert!(!fields(&app).contains(&"medi_lambda_csf".to_string()));
         assert!(!config_from_app(&app).unwrap().inversion.medi.csf);
 
-        let ps = &mut app.pipeline_state;
-        ps.qsm_algorithm = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|o| *o == "tfi").unwrap();
-        ps.toggle("tfi_merit");
-        ps.toggle("tfi_linear");
+        app.pipeline_state.qsm_algorithm = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|o| *o == "tfi").unwrap();
+        app.toggle_field("tfi_merit");
+        app.toggle_field("tfi_linear");
         let t = config_from_app(&app).unwrap().inversion.tfi;
         assert_eq!((t.merit, t.linear), (false, false));
     }
 
     /// The robust fit, its parameters and the shared fit settings are in the TUI and reach both
-    /// the config and the CLI args.
+    /// the config and the command.
     #[test]
     fn robust_fit_settings_reach_config_and_args() {
         let mut app = default_app();
@@ -1324,20 +961,19 @@ mod tests {
             _ => None,
         }).collect::<Vec<_>>();
         assert!(!fields(&app).contains(&"robust_fit_loss".to_string()));
-        app.pipeline_state.b0_estimation = 2;
+        app.set_field_select("b0_estimation", 2);
         let f = fields(&app);
         for name in ["robust_fit_loss", "robust_fit_tuning", "robust_fit_iterations",
                      "robust_fit_downweight_level", "robust_fit_flag_ratio"] {
             assert!(f.contains(&name.to_string()), "{name} missing: {f:?}");
         }
         assert_eq!(config_from_app(&app).unwrap().field_mapping.robust_fit, qsmxt_engine::RobustFitConfig::default());
-        let ps = &mut app.pipeline_state;
-        ps.robust_fit_loss = 1;
-        ps.robust_fit_tuning = "2".into();
-        ps.robust_fit_iterations = "0".into();
-        ps.robust_fit_downweight_level = "0.5".into();
-        ps.robust_fit_flag_ratio = "4".into();
-        ps.toggle("linear_fit_estimate_offset");
+        app.set_field_select("robust_fit_loss", 1);
+        for (field, text) in [("robust_fit_tuning", "2"), ("robust_fit_iterations", "0"),
+                              ("robust_fit_downweight_level", "0.5"), ("robust_fit_flag_ratio", "4")] {
+            *app.field_text_mut(field).unwrap() = text.into();
+        }
+        app.toggle_field("linear_fit_estimate_offset");
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.b0_estimation, qsmxt_engine::B0Estimation::RobustFit);
         assert_eq!(c.field_mapping.robust_fit, qsmxt_engine::RobustFitConfig {
@@ -1345,12 +981,11 @@ mod tests {
             downweight_level: 0.5, flag_ratio: 4.0,
         });
         assert!(!c.field_mapping.linear_fit.estimate_offset);
-        let a = pipeline_args_from_app(&app);
-        assert_eq!(a.b0_estimation, Some(B0EstimationArg::RobustFit));
-        assert_eq!(a.robust_fit_loss, Some(crate::cli::RobustLossArg::Huber));
-        assert_eq!(a.robust_fit_tuning, Some(2.0));
-        assert_eq!(a.robust_fit_iterations, Some(0));
-        assert_eq!(a.linear_fit_estimate_offset, Some(false));
+        let command = qsmxt_engine::generate_command(&c);
+        for flag in ["--b0-estimation robust-fit", "--robust-fit-loss huber", "--robust-fit-tuning 2",
+                     "--robust-fit-iterations 0", "--linear-fit-estimate-offset false"] {
+            assert!(command.contains(flag), "{flag}: {command}");
+        }
     }
 
     #[test]
@@ -1478,7 +1113,8 @@ mod tests {
         for (i, name) in QSM_ALGO_OPTIONS.iter().enumerate() {
             let mut app = default_app();
             app.pipeline_state.qsm_algorithm = i;
-            let set = pipeline_args_from_app(&app).qsmart_params.qsmart_inversion.is_some();
+            app.form.settings.set("inversion.qsmart.inversion", "rts");
+            let set = build_command_string(&app).contains("--qsmart-inversion rts");
             assert_eq!(set, i == qsmart, "qsmart_inversion set for {name} (row {i})");
         }
     }
@@ -1516,7 +1152,7 @@ mod tests {
         assert!(!build_command_string(&app).contains("--obliquity-threshold"), "no threshold without resampling");
 
         // Off is ROMEO's default here; turned on, the threshold shown is passed.
-        app.pipeline_state.romeo_temporal_uncertain = true;
+        app.toggle_field("romeo_temporal_uncertain");
         app.form.settings.switch("segmentation.sigma_smoothing", false);
         app.form.settings.set("pipeline.do_segmentation", true);
         let cmd = build_command_string(&app);
@@ -1525,12 +1161,12 @@ mod tests {
         }
         app.pipeline_state.qsm_algorithm = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|a| *a == "xqsm").unwrap();
         assert!(!build_command_string(&app).contains("--tile-size"));
-        app.pipeline_state.dl_tiling = true;
+        app.toggle_field("dl_tiling");
         assert!(build_command_string(&app).contains("--tile-size 128"));
 
         app.pipeline_state.qsm_algorithm = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|a| *a == "medi").unwrap();
-        assert_eq!(app.pipeline_state.get_select("medi_data_weighting"), 1, "magnitude SNR by default");
-        app.pipeline_state.set_select("medi_data_weighting", 0);
+        assert_eq!(app.field_select("medi_data_weighting"), 1, "magnitude SNR by default");
+        app.set_field_select("medi_data_weighting", 0);
         assert!(build_command_string(&app).contains("--medi-data-weighting 0"));
     }
 
@@ -1560,9 +1196,9 @@ mod tests {
     fn test_command_string_reflects_chi_separation_edits() {
         let mut app = default_app();
         // Enabling chi-separation + selecting decompose + editing a param must all show up.
-        app.pipeline_state.do_chi_separation = true;
-        app.pipeline_state.separation_algorithm = 1; // decompose
-        app.pipeline_state.sep_decompose_max_iterations = "77".to_string();
+        app.form.settings.set("pipeline.do_chi_separation", true);
+        app.set_field_select("separation_algorithm", 1); // decompose
+        *app.field_text_mut("sep_decompose_max_iterations").unwrap() = "77".into();
         let cmd = build_command_string(&app);
         assert!(cmd.contains("--do-chisep"));
         assert!(cmd.contains("--chisep decompose"));
@@ -1589,8 +1225,8 @@ mod tests {
     #[test]
     fn test_command_string_parameters() {
         let mut app = default_app();
-        app.pipeline_state.ilsqr_tol = "0.01".to_string();
-        app.pipeline_state.ilsqr_pad_mm = "32".to_string();
+        *app.field_text_mut("ilsqr_tol").unwrap() = "0.01".into();
+        *app.field_text_mut("ilsqr_pad_mm").unwrap() = "32".into();
         app.form.settings.set("pipeline.axial_resampling", true);
         *app.field_text_mut("obliquity_threshold").unwrap() = "5".into();
         let cmd = build_command_string(&app);
@@ -1614,7 +1250,7 @@ mod tests {
     #[test]
     fn test_command_string_phase_offset_removal() {
         let mut app = default_app();
-        app.pipeline_state.phase_offset_removal = false;
+        app.toggle_field("phase_offset_removal");
         let cmd = build_command_string(&app);
         assert!(cmd.contains("--phase-offset-removal false"));
     }
@@ -1675,18 +1311,20 @@ mod tests {
         let mut app = default_app();
         app.form.bids_dir = "/b".to_string();
         app.form.output_dir = "/o".to_string();
-        app.pipeline_state.rts_delta = "0.2".to_string();
-        app.pipeline_state.rts_mu = "1e5".to_string();
-        app.pipeline_state.rts_tol = "1e-4".to_string();
-        app.pipeline_state.tgv_iterations = "500".to_string();
-        app.pipeline_state.tgv_erosions = "2".to_string();
-        app.pipeline_state.tv_lambda = "0.001".to_string();
-        app.pipeline_state.tkd_threshold = "0.15".to_string();
+        app.pipeline_state.qsm_algorithm = 0; // rts
+        *app.field_text_mut("rts_delta").unwrap() = "0.2".into();
+        *app.field_text_mut("rts_mu").unwrap() = "1e5".into();
+        *app.field_text_mut("rts_tol").unwrap() = "1e-4".into();
         app.form.n_procs = "8".to_string();
         let args = build_run_args(&app).unwrap();
-        assert_eq!(args.pipeline.rts_params.rts_delta, Some(0.2));
-        assert_eq!(args.pipeline.tgv_params.tgv_iterations, Some(500));
+        let rts = config(&args).inversion.rts;
+        assert_eq!((rts.delta, rts.mu, rts.tol), (0.2, 1e5, 1e-4));
         assert_eq!(args.n_procs, Some(8));
+        app.pipeline_state.qsm_algorithm = 4; // tgv
+        *app.field_text_mut("tgv_iterations").unwrap() = "500".into();
+        *app.field_text_mut("tgv_erosions").unwrap() = "2".into();
+        let tgv = config(&build_run_args(&app).unwrap()).inversion.tgv;
+        assert_eq!((tgv.iterations, tgv.erosions), (Some(500), 2));
     }
 
     #[test]
@@ -1715,7 +1353,7 @@ mod tests {
         let off = config(&build_run_args(&app).unwrap());
         assert!(!off.swi.filtered_phase && !off.pipeline.do_swi);
         assert!(args.debug);
-        assert_eq!(args.pipeline.phase_offset_removal, Some(true)); // default mcpc3ds
+        assert!(config(&args).field_mapping.phase_offset_removal); // default mcpc3ds
     }
 
     #[test]
@@ -1723,9 +1361,9 @@ mod tests {
         let mut app = default_app();
         app.form.bids_dir = "/b".to_string();
         app.form.output_dir = "/o".to_string();
-        app.pipeline_state.phase_offset_removal = false;
+        app.toggle_field("phase_offset_removal");
         let args = build_run_args(&app).unwrap();
-        assert_eq!(args.pipeline.phase_offset_removal, Some(false));
+        assert!(!config(&args).field_mapping.phase_offset_removal);
     }
 
 
@@ -1956,7 +1594,7 @@ mod tests {
         app.form.execution_mode = 1;
         app.form.slurm_account = "acct".to_string();
         app.pipeline_state.qsm_algorithm = 4; // tgv
-        app.pipeline_state.rts_delta = "0.2".to_string();
+        *app.field_text_mut("tgv_erosions").unwrap() = "2".into();
 
         let cmd = build_command_string(&app);
         let argv: Vec<String> = cmd.split_whitespace().map(|s| s.to_string()).collect();
@@ -2019,7 +1657,7 @@ mod tests {
         app.form.slurm_account = "acct".to_string();
         // TKD rather than TGV: TGV has no background-removal stage, so the TUI sends none (#276).
         app.pipeline_state.qsm_algorithm = 2; // tkd
-        app.pipeline_state.unwrapping_algorithm = 1; // laplacian
+        app.set_field_select("unwrapping_algorithm", 1); // laplacian
         app.pipeline_state.bf_algorithm = 1; // pdf
         app.form.settings.set("pipeline.axial_resampling", true);
         *app.field_text_mut("obliquity_threshold").unwrap() = "5".into();
@@ -2027,9 +1665,9 @@ mod tests {
 
         let slurm = build_slurm_args(&app).unwrap();
         assert_eq!(slurm.pipeline.qsm_algorithm, Some(crate::cli::QsmAlgorithmArg::Tkd));
-        assert_eq!(slurm.pipeline.unwrapping_algorithm, Some(crate::cli::UnwrapAlgorithmArg::Laplacian));
         assert_eq!(slurm.pipeline.bf_algorithm, Some(crate::cli::BfAlgorithmArg::Pdf));
         let config = crate::cli_settings::build_config(Default::default(), &slurm.pipeline).unwrap();
+        assert_eq!(config.field_mapping.unwrapping_algorithm, qsmxt_engine::UnwrappingAlgorithm::Laplacian);
         assert_eq!(config.pipeline.obliquity_threshold, 5.0);
         assert!(config.pipeline.do_swi);
     }
@@ -2040,12 +1678,12 @@ mod tests {
     fn test_run_args_carry_b0_combination() {
         let mut app = default_app();
         app.form.bids_dir = "/bids".to_string();
-        let run = build_run_args(&app).unwrap();
-        assert_eq!(run.pipeline.b0_weight_type, None);
-        assert_eq!(run.pipeline.b0_estimation, None);
-        app.pipeline_state.unwrapping_algorithm = 1; // laplacian
-        app.pipeline_state.b0_weight_type = 5; // assumed-decay
-        app.pipeline_state.b0_weight_assumed_t2star_ms = "35".to_string();
+        let run = config(&build_run_args(&app).unwrap()).field_mapping;
+        let d = qsmxt_engine::FieldMappingConfig::default();
+        assert_eq!((run.b0_weight_type, run.b0_estimation), (d.b0_weight_type, d.b0_estimation));
+        app.set_field_select("unwrapping_algorithm", 1); // laplacian
+        app.set_field_select("b0_weight_type", 5); // assumed-decay
+        *app.field_text_mut("b0_weight_assumed_t2star_ms").unwrap() = "35".to_string();
         let mut cfg = PipelineConfig::default();
         crate::cli_settings::apply_normalised(&mut cfg, &build_run_args(&app).unwrap().pipeline).unwrap();
         assert_eq!(cfg.field_mapping.b0_weight_type, crate::pipeline::config::B0WeightType::AssumedDecay);
@@ -2053,8 +1691,8 @@ mod tests {
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.b0_weight_type, crate::pipeline::config::B0WeightType::AssumedDecay);
         assert_eq!(c.field_mapping.b0_weight_assumed_t2star_ms, 35.0);
-        app.pipeline_state.b0_estimation = 1;
-        assert_eq!(build_run_args(&app).unwrap().pipeline.b0_estimation, Some(B0EstimationArg::LinearFit));
+        app.set_field_select("b0_estimation", 1);
+        assert_eq!(config(&build_run_args(&app).unwrap()).field_mapping.b0_estimation, qsmxt_engine::B0Estimation::LinearFit);
     }
 
     /// Choosing MEDI changes no other row: the background removal stays as it is, and the run
@@ -2086,7 +1724,7 @@ mod tests {
         app.form.bids_dir = "/bids".to_string();
         app.pipeline_state.set_select("qsm_algorithm", medi);
         assert!(config_from_app(&app).unwrap().inversion.medi.smv_shrink_mask);
-        app.pipeline_state.toggle("medi_smv_shrink_mask");
+        app.toggle_field("medi_smv_shrink_mask");
         assert!(!config_from_app(&app).unwrap().inversion.medi.smv_shrink_mask);
         assert!(build_command_string(&app).contains("--no-medi-smv-shrink-mask"));
     }
@@ -2100,38 +1738,38 @@ mod tests {
         let mut app = default_app();
         app.form.bids_dir = "/bids".to_string();
         app.pipeline_state.set_select("qsm_algorithm", qsmart);
-        let ps = &app.pipeline_state;
-        assert_eq!((ps.unwrapping_algorithm, ps.laplacian_solver, ps.b0_estimation), (0, 0, 0));
-        assert_eq!(ps.mask_sections, default_mask_sections());
+        let selects = ["unwrapping_algorithm", "laplacian_solver", "b0_estimation"].map(|f| app.field_select(f));
+        assert_eq!(selects, [0, 0, 0]);
+        assert_eq!(app.pipeline_state.mask_sections, default_mask_sections());
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping, qsmxt_engine::FieldMappingConfig::default());
         assert_eq!(c.masking.sections, default_mask_sections());
 
-        app.pipeline_state.set_select("unwrapping_algorithm", 1);
-        app.pipeline_state.set_select("laplacian_solver", 2);
-        app.pipeline_state.set_select("b0_estimation", 3);
+        app.set_field_select("unwrapping_algorithm", 1);
+        app.set_field_select("laplacian_solver", 2);
+        app.set_field_select("b0_estimation", 3);
         let fm = config_from_app(&app).unwrap().field_mapping;
         assert_eq!((fm.unwrapping_algorithm, fm.laplacian_solver, fm.b0_estimation),
                    (UnwrappingAlgorithm::Laplacian, LaplacianSolver::Mirror, B0Estimation::QsmartEchofit));
         let cmd = build_command_string(&app);
         assert!(cmd.contains("--laplacian-solver mirror") && cmd.contains("--b0-estimation qsmart-echofit"), "{cmd}");
 
-        app.pipeline_state.set_select("qsmart_vessel_magnitude", 1);
-        app.pipeline_state.set_select("qsmart_vessel_units", 1);
-        app.pipeline_state.set_select("qsmart_fit_threshold_mode", 0);
-        app.pipeline_state.qsmart_fit_percentile = "95".into();
+        app.set_field_select("qsmart_vessel_magnitude", 1);
+        app.set_field_select("qsmart_vessel_units", 1);
+        app.set_field_select("qsmart_fit_threshold_mode", 0);
+        *app.field_text_mut("qsmart_fit_percentile").unwrap() = "95".into();
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.inversion.qsmart.vessel_magnitude, qsmxt_engine::QsmartVesselMagnitude::Combined);
         assert_eq!(c.inversion.qsmart.vessel_size_units, qsmxt_engine::VesselSizeUnits::Mm);
         assert_eq!(c.field_mapping.qsmart_fit_threshold(), qsm_core::utils::QsmartFitThreshold::Percentile(95.0));
-        app.pipeline_state.set_select("qsmart_fit_threshold_mode", 1);
-        app.pipeline_state.qsmart_fit_threshold = "30".into();
+        app.set_field_select("qsmart_fit_threshold_mode", 1);
+        *app.field_text_mut("qsmart_fit_threshold").unwrap() = "30".into();
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.qsmart_fit_threshold(), qsm_core::utils::QsmartFitThreshold::Absolute(30.0));
 
         assert_eq!(c.inversion.qsmart.frangi_c(), qsm_core::utils::FrangiC::Absolute(qsm_core::utils::QSMART_FRANGI_C));
-        app.pipeline_state.set_select("qsmart_frangi_c_mode", 1);
-        app.pipeline_state.qsmart_frangi_c_factor = "0.3".into();
+        app.set_field_select("qsmart_frangi_c_mode", 1);
+        *app.field_text_mut("qsmart_frangi_c_factor").unwrap() = "0.3".into();
         assert_eq!(config_from_app(&app).unwrap().inversion.qsmart.frangi_c(), qsm_core::utils::FrangiC::RelativeToMedian(0.3));
         let cmd = build_command_string(&app);
         assert!(cmd.contains("--qsmart-frangi-c-mode relative") && cmd.contains("--qsmart-frangi-c-factor 0.3"), "{cmd}");
@@ -2147,9 +1785,9 @@ mod tests {
         app.form.bids_dir = "/bids".to_string();
         app.form.slurm_account = "acct".to_string();
         app.pipeline_state.qsm_algorithm = 4; // tgv
-        app.pipeline_state.unwrapping_algorithm = 1; // laplacian
+        app.set_field_select("unwrapping_algorithm", 1); // laplacian
         app.pipeline_state.bf_algorithm = 1; // pdf
-        app.pipeline_state.bipolar_correction = true;
+        app.toggle_field("bipolar_correction");
 
         let mut local = PipelineConfig::default();
         crate::cli_settings::apply_normalised(&mut local, &build_run_args(&app).unwrap().pipeline).unwrap();
@@ -2531,9 +2169,10 @@ mod parity {
             let ps = &app.pipeline_state;
             let qsmart = crate::tui::app::QSM_ALGO_OPTIONS[ps.qsm_algorithm] == "qsmart";
             let context = (
-                [ps.qsm_algorithm, if qsmart { ps.qsmart_inversion } else { 0 },
-                 if ps.do_chi_separation { ps.separation_algorithm } else { 0 }, app.form.execution_mode],
-                [app.field_toggle("motion_correction"), ps.do_chi_separation],
+                [ps.qsm_algorithm, if qsmart { app.field_select("qsmart_inversion") } else { 0 },
+                 if app.field_toggle("do_chi_separation") { app.field_select("separation_algorithm") } else { 0 },
+                 app.form.execution_mode],
+                [app.field_toggle("motion_correction"), app.field_toggle("do_chi_separation")],
             );
             let mut todo = Vec::new();
             for r in rows {
@@ -2703,8 +2342,8 @@ mod parity {
             ("dismiss_recommendation", |a| {
                 let at = |list: &[&str], v: &str| list.iter().position(|o| *o == v).unwrap();
                 a.set_field_select("qsm_algorithm", at(&crate::tui::app::QSM_PICKER_OPTIONS, "medi"));
-                a.pipeline_state.medi_msmv = true;
-                a.pipeline_state.medi_msmv_prefilter = false;
+                a.form.settings.set("inversion.medi.msmv", true);
+                a.form.settings.set("inversion.medi.msmv_prefilter", false);
             }, |a| a.pipeline_state.dismissed.push(qsmxt_engine::Dismissal { rule: "medi-msmv.prefilter".into(), chosen: "false".into() })),
         ];
         for (what, setup, change) in surfaces {
