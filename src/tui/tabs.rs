@@ -624,7 +624,7 @@ pub(super) mod tests {
     #[test]
     fn sidebar_badges_say_what_is_off_and_what_has_advice() {
         let mut app = App::new();
-        app.pipeline_state.do_qsm = false;
+        app.form.settings.set("pipeline.do_qsm", false);
         goto(&mut app, crate::tui::app::TAB_RECONSTRUCTION, Some(Page::Masking));
         let t = render(&mut app, 120, 40);
         let heading = (0..40).map(|y| row(&t, y)).find(|r| r.contains(" QSM ") && r.contains("│")).unwrap_or_default();

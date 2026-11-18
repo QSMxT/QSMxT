@@ -472,9 +472,9 @@ mod tests {
         let mut app = App::new_for_trial();
         click(&mut app, "3 Reconstruction");
         click(&mut app, "   Inversion ");
-        let before = app.pipeline_state.heidi_enabled;
+        let before = app.form.settings.toggle("inversion.heidi.enabled");
         click(&mut app, "HEIDI");
-        assert_ne!(app.pipeline_state.heidi_enabled, before);
+        assert_ne!(app.form.settings.toggle("inversion.heidi.enabled"), before);
         click(&mut app, "Max iter");
         assert!(app.pipeline_state.editing, "a value opens for editing");
         click(&mut app, "Tolerance");

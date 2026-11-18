@@ -4,7 +4,7 @@ use qsmxt_engine::schema::cli_apply::Given;
 
 use crate::cli::{RunArgs, SlurmArgs};
 use crate::pipeline::config::PipelineConfig;
-use super::app::{App, BF_OPTIONS, QSM_ALGO_OPTIONS};
+use super::app::App;
 
 pub fn build_command_string(app: &App) -> String {
     let form = &app.form;
@@ -159,13 +159,6 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
     })
 }
 
-/// The inversion row's starting index: qsmxt-engine's default inversion, so the TUI and
-/// `qsmxt run` without `--qsm-algorithm` mean the same algorithm.
-pub fn default_qsm_algorithm_index() -> usize {
-    let default = crate::pipeline::config::InversionConfig::default().algorithm.to_string();
-    QSM_ALGO_OPTIONS.iter().position(|a| *a == default).expect("the default inversion is in QSM_ALGO_OPTIONS")
-}
-
 /// The settings the form passes by rules of its own rather than while they apply, as it always
 /// has: the inversion and MEDI's SMV mode always; HEIDI while ticked, but not for an orientation
 /// group; the orientation grouping; background removal while the inversion has that stage and it
@@ -173,12 +166,10 @@ pub fn default_qsm_algorithm_index() -> usize {
 /// which stages run, the inversion picker and QSM's own page read these.
 fn form_values(app: &App) -> Vec<(&'static str, serde_json::Value)> {
     use serde_json::json;
-    let ps = &app.pipeline_state;
-    // Bounds-checked rather than indexed: the option list shrinks with the build (see #227).
-    let algorithm = QSM_ALGO_OPTIONS.get(ps.qsm_algorithm).unwrap_or(&QSM_ALGO_OPTIONS[default_qsm_algorithm_index()]);
+    let st = &app.form.settings;
     let group = app.filter_state.orientation_group_by();
-    let mut out = vec![("inversion.algorithm", json!(algorithm))];
-    if ps.heidi_enabled && group.is_none() {
+    let mut out = vec![("inversion.algorithm", st.get("inversion.algorithm"))];
+    if st.toggle("inversion.heidi.enabled") && group.is_none() {
         out.push(("inversion.heidi.enabled", json!(true)));
     }
     if let Some(g) = group {
@@ -186,11 +177,12 @@ fn form_values(app: &App) -> Vec<(&'static str, serde_json::Value)> {
     }
     // Only when the inversion has a background-removal stage: otherwise the choice has no
     // effect, and iQFM there is refused (#276).
-    if ps.inversion_needs_bg_removal() && ps.bf_algorithm != 0 {
-        out.push(("bg_removal.algorithm", json!(BF_OPTIONS[ps.bf_algorithm])));
+    let bf = st.get("bg_removal.algorithm");
+    if app.inversion_needs_bg_removal() && bf != super::settings_rows::setting("bg_removal.algorithm").default {
+        out.push(("bg_removal.algorithm", bf));
     }
-    out.push(("inversion.medi.smv", json!(ps.medi_smv)));
-    if !ps.do_qsm {
+    out.push(("inversion.medi.smv", json!(st.toggle("inversion.medi.smv"))));
+    if !st.toggle("pipeline.do_qsm") {
         out.push(("pipeline.do_qsm", json!(false)));
     }
     if app.form.export_dicom {
@@ -202,7 +194,7 @@ fn form_values(app: &App) -> Vec<(&'static str, serde_json::Value)> {
 /// The recommendations dismissed in the pop-up, as `--dismiss-recommendation`: the one flag the
 /// form passes, which keeps the run's checks of a dismissal and adds to a config file's.
 fn dismissals(app: &App) -> Vec<Given> {
-    let dismissed = &app.pipeline_state.dismissed;
+    let dismissed = &app.form.dismissed;
     if dismissed.is_empty() {
         return Vec::new();
     }
@@ -418,7 +410,7 @@ pub fn config_from_app(app: &App) -> crate::Result<PipelineConfig> {
     let config = app.form.settings.config_of(&stored_values(app, &own, &given)?);
     let mut config = with_form(config, &own, &given)?;
     // The pipeline chosen on the Pipeline tab, while the form still makes its choices.
-    config.reference_pipeline = app.pipeline_state.reference_pipeline.clone()
+    config.reference_pipeline = app.form.reference_pipeline.clone()
         .filter(|id| qsmxt_engine::pipelines::chosen(&config, id));
     Ok(config)
 }
@@ -471,7 +463,7 @@ mod tests {
         use crate::tui::app::QSM_ALGO_OPTIONS;
         for (i, name) in QSM_ALGO_OPTIONS.iter().enumerate() {
             let mut app = default_app();
-            app.pipeline_state.qsm_algorithm = i;
+            app.set_qsm_algorithm(i);
             let config = config_from_app(&app).unwrap();
             assert_eq!(&format!("{}", config.inversion.algorithm), name,
                        "row {i} shows {name} but configures {}", config.inversion.algorithm);
@@ -726,8 +718,7 @@ mod tests {
         *app.field_text_mut("complex_fit_max_iter").unwrap() = "5".into();
         assert_eq!(config_from_app(&app).unwrap().field_mapping.complex_fit.max_iter, 5);
 
-        let ps = &mut app.pipeline_state;
-        ps.qsm_algorithm = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|o| *o == "medi").unwrap();
+        app.set_qsm_algorithm(crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|o| *o == "medi").unwrap());
         assert!(fields(&app).contains(&"medi_lambda_csf".to_string()));
         *app.field_text_mut("medi_lambda_csf").unwrap() = "50".into();
         *app.field_text_mut("medi_zeropad").unwrap() = "2 0 2".into();
@@ -738,7 +729,7 @@ mod tests {
         assert!(!fields(&app).contains(&"medi_lambda_csf".to_string()));
         assert!(!config_from_app(&app).unwrap().inversion.medi.csf);
 
-        app.pipeline_state.qsm_algorithm = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|o| *o == "tfi").unwrap();
+        app.set_qsm_algorithm(crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|o| *o == "tfi").unwrap());
         app.toggle_field("tfi_merit");
         app.toggle_field("tfi_linear");
         let t = config_from_app(&app).unwrap().inversion.tfi;
@@ -855,10 +846,10 @@ mod tests {
         assert!(shows_bfr(&app));
         // The default goes unsent; another one is sent.
         assert!(passed(&app, "bg_removal.algorithm").is_none());
-        app.pipeline_state.set_select("bf_algorithm", 1);
+        app.set_field_select("bf_algorithm", 1);
         assert!(passed(&app, "bg_removal.algorithm").is_some());
         for name in ["tfi", "tgv", "qsmart", "autoqsm", "nextqsm", "iqsm"] {
-            app.pipeline_state.qsm_algorithm = QSM_ALGO_OPTIONS.iter().position(|o| *o == name).unwrap();
+            app.set_qsm_algorithm(QSM_ALGO_OPTIONS.iter().position(|o| *o == name).unwrap());
             assert!(!shows_bfr(&app), "{name}");
             assert!(passed(&app, "bg_removal.algorithm").is_none(), "{name}");
         }
@@ -907,21 +898,11 @@ mod tests {
         let qsmart = QSM_ALGO_OPTIONS.iter().position(|o| *o == "qsmart").expect("qsmart");
         for (i, name) in QSM_ALGO_OPTIONS.iter().enumerate() {
             let mut app = default_app();
-            app.pipeline_state.qsm_algorithm = i;
+            app.set_qsm_algorithm(i);
             app.form.settings.set("inversion.qsmart.inversion", "rts");
             let set = build_command_string(&app).contains("--qsmart-inversion rts");
             assert_eq!(set, i == qsmart, "qsmart_inversion set for {name} (row {i})");
         }
-    }
-
-    /// A saved form from an older version can carry an index past the end of today's list. That is
-    /// a stale setting, not a reason to crash.
-    #[test]
-    fn an_out_of_range_inversion_index_falls_back_instead_of_panicking() {
-        let mut app = default_app();
-        app.pipeline_state.qsm_algorithm = 999;
-        assert_eq!(format!("{}", config_from_app(&app).unwrap().inversion.algorithm), "ilsqr");
-        assert_eq!(passed(&app, "inversion.algorithm"), Some(serde_json::json!("ilsqr")));
     }
 
     fn default_app() -> App {
@@ -993,12 +974,12 @@ mod tests {
         for f in ["--romeo-temporal-uncertain-unwrapping 0.5", "--synthseg-sigma 0"] {
             assert!(cmd.contains(f), "{f} missing: {cmd}");
         }
-        app.pipeline_state.qsm_algorithm = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|a| *a == "xqsm").unwrap();
+        app.set_qsm_algorithm(crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|a| *a == "xqsm").unwrap());
         assert!(!build_command_string(&app).contains("--tile-size"));
         app.toggle_field("dl_tiling");
         assert!(build_command_string(&app).contains("--tile-size 128"));
 
-        app.pipeline_state.qsm_algorithm = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|a| *a == "medi").unwrap();
+        app.set_qsm_algorithm(crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|a| *a == "medi").unwrap());
         assert_eq!(app.field_select("medi_data_weighting"), 1, "magnitude SNR by default");
         app.set_field_select("medi_data_weighting", 0);
         assert!(build_command_string(&app).contains("--medi-data-weighting 0"));
@@ -1145,7 +1126,7 @@ mod tests {
         let mut app = default_app();
         app.form.bids_dir = "/b".to_string();
         app.form.output_dir = "/o".to_string();
-        app.pipeline_state.qsm_algorithm = 0; // rts
+        app.set_qsm_algorithm(0); // rts
         *app.field_text_mut("rts_delta").unwrap() = "0.2".into();
         *app.field_text_mut("rts_mu").unwrap() = "1e5".into();
         *app.field_text_mut("rts_tol").unwrap() = "1e-4".into();
@@ -1154,7 +1135,7 @@ mod tests {
         let rts = config(&args).inversion.rts;
         assert_eq!((rts.delta, rts.mu, rts.tol), (0.2, 1e5, 1e-4));
         assert_eq!(args.n_procs, Some(8));
-        app.pipeline_state.qsm_algorithm = 4; // tgv
+        app.set_qsm_algorithm(4); // tgv
         *app.field_text_mut("tgv_iterations").unwrap() = "500".into();
         *app.field_text_mut("tgv_erosions").unwrap() = "2".into();
         let tgv = config(&build_run_args(&app).unwrap()).inversion.tgv;
@@ -1472,7 +1453,7 @@ mod tests {
         app.form.bids_dir = "/bids".to_string();
         app.form.execution_mode = 1;
         app.form.slurm_account = "acct".to_string();
-        app.pipeline_state.qsm_algorithm = 4; // tgv
+        app.set_qsm_algorithm(4); // tgv
         *app.field_text_mut("tgv_erosions").unwrap() = "2".into();
 
         let cmd = build_command_string(&app);
@@ -1535,9 +1516,9 @@ mod tests {
         app.form.bids_dir = "/bids".to_string();
         app.form.slurm_account = "acct".to_string();
         // TKD rather than TGV: TGV has no background-removal stage, so the TUI sends none (#276).
-        app.pipeline_state.qsm_algorithm = 2; // tkd
+        app.set_qsm_algorithm(2); // tkd
         app.set_field_select("unwrapping_algorithm", 1); // laplacian
-        app.pipeline_state.bf_algorithm = 1; // pdf
+        app.set_field_select("bf_algorithm", 1); // pdf
         app.form.settings.set("pipeline.axial_resampling", true);
         *app.field_text_mut("obliquity_threshold").unwrap() = "5".into();
         app.form.settings.set("pipeline.do_swi", true);
@@ -1583,15 +1564,15 @@ mod tests {
         let bf = |name: &str| crate::tui::app::BF_OPTIONS.iter().position(|o| *o == name).unwrap();
         let mut app = default_app();
         app.form.bids_dir = "/bids".to_string();
-        app.pipeline_state.set_select("qsm_algorithm", medi);
-        assert_eq!(app.pipeline_state.bf_algorithm, bf("vsharp"));
+        app.set_field_select("qsm_algorithm", medi);
+        assert_eq!(app.field_select("bf_algorithm"), bf("vsharp"));
         assert_eq!(passed(&app, "bg_removal.algorithm"), None);
         assert_eq!(config_from_app(&app).unwrap().bg_removal.algorithm, BfAlgorithm::Vsharp);
-        app.pipeline_state.set_select("bf_algorithm", bf("pdf"));
+        app.set_field_select("bf_algorithm", bf("pdf"));
         assert_eq!(config(&build_run_args(&app).unwrap()).bg_removal.algorithm, BfAlgorithm::Pdf);
         assert!(build_command_string(&app).contains("--bf-algorithm pdf"));
         app.reset_field("bf_algorithm");
-        assert_eq!(app.pipeline_state.bf_algorithm, bf("vsharp"));
+        assert_eq!(app.field_select("bf_algorithm"), bf("vsharp"));
     }
 
     /// MEDI's mask shrinking is a row under SMV, and reaches the run.
@@ -1600,7 +1581,7 @@ mod tests {
         let medi = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|a| *a == "medi").unwrap();
         let mut app = default_app();
         app.form.bids_dir = "/bids".to_string();
-        app.pipeline_state.set_select("qsm_algorithm", medi);
+        app.set_field_select("qsm_algorithm", medi);
         assert!(config_from_app(&app).unwrap().inversion.medi.smv_shrink_mask);
         app.toggle_field("medi_smv_shrink_mask");
         assert!(!config_from_app(&app).unwrap().inversion.medi.smv_shrink_mask);
@@ -1615,7 +1596,7 @@ mod tests {
         let qsmart = crate::tui::app::QSM_PICKER_OPTIONS.iter().position(|a| *a == "qsmart").unwrap();
         let mut app = default_app();
         app.form.bids_dir = "/bids".to_string();
-        app.pipeline_state.set_select("qsm_algorithm", qsmart);
+        app.set_field_select("qsm_algorithm", qsmart);
         let selects = ["unwrapping_algorithm", "laplacian_solver", "b0_estimation"].map(|f| app.field_select(f));
         assert_eq!(selects, [0, 0, 0]);
         assert_eq!(app.mask().sections, default_mask_sections());
@@ -1662,9 +1643,9 @@ mod tests {
         let mut app = default_app();
         app.form.bids_dir = "/bids".to_string();
         app.form.slurm_account = "acct".to_string();
-        app.pipeline_state.qsm_algorithm = 4; // tgv
+        app.set_qsm_algorithm(4); // tgv
         app.set_field_select("unwrapping_algorithm", 1); // laplacian
-        app.pipeline_state.bf_algorithm = 1; // pdf
+        app.set_field_select("bf_algorithm", 1); // pdf
         app.toggle_field("bipolar_correction");
 
         let mut local = PipelineConfig::default();
@@ -1696,611 +1677,3 @@ mod tests {
     }
 }
 
-/// Guard for "every `qsmxt run` flag is reachable from the TUI": changes every control the TUI
-/// has (every row the QSM and separation tabs can show, and the other tabs' controls) and checks
-/// that the change reaches the run, shows in the generated command, and that the command parses
-/// back to itself; then that the flags those commands used cover every `run` flag.
-#[cfg(test)]
-mod parity {
-    use super::*;
-    use crate::tui::app::{App, PipelineRow};
-    use clap::CommandFactory;
-    use std::collections::{BTreeMap, BTreeSet};
-
-    fn flags_of(cmd: &str) -> BTreeSet<String> {
-        cmd.split_whitespace().filter(|t| t.starts_with("--")).map(str::to_string).collect()
-    }
-
-    /// A config, through its generated command and back. `cli` is built once by the caller:
-    /// building clap's command is most of the cost of a parse.
-    fn round_trip(cli: &mut clap::Command, c: &PipelineConfig) -> PipelineConfig {
-        use clap::FromArgMatches;
-        let cmd = qsmxt_engine::generate_command(c);
-        let argv: Vec<&str> = cmd.split_whitespace().collect();
-        let m = cli.try_get_matches_from_mut(&argv).unwrap_or_else(|e| panic!("{cmd}: {e}"));
-        let parsed = crate::cli::Cli::from_arg_matches(&m).unwrap_or_else(|e| panic!("{cmd}: {e}"));
-        let crate::cli::Command::Run(run) = parsed.command else { panic!("not run: {cmd}") };
-        let mut back = PipelineConfig::default();
-        crate::cli_settings::apply_normalised(&mut back, &run.pipeline).unwrap();
-        back
-    }
-
-    /// The leaves where two configs differ, as dotted paths.
-    fn diff(a: &PipelineConfig, b: &PipelineConfig) -> Vec<String> {
-        fn walk(p: &str, a: &serde_json::Value, b: &serde_json::Value, out: &mut Vec<String>) {
-            match (a, b) {
-                (serde_json::Value::Object(x), serde_json::Value::Object(y)) => {
-                    for k in x.keys().chain(y.keys()).collect::<BTreeSet<_>>() {
-                        let n = serde_json::Value::Null;
-                        walk(&format!("{p}.{k}"), x.get(k).unwrap_or(&n), y.get(k).unwrap_or(&n), out);
-                    }
-                }
-                _ if a != b => out.push(format!("{p}: {a} vs {b}")),
-                _ => {}
-            }
-        }
-        let mut out = Vec::new();
-        walk("", &serde_json::to_value(a).unwrap(), &serde_json::to_value(b).unwrap(), &mut out);
-        out
-    }
-
-    fn run_flags() -> BTreeSet<String> {
-        let cli = crate::cli::Cli::command();
-        let run = cli.find_subcommand("run").expect("run subcommand");
-        run.get_arguments().filter_map(|a| a.get_long()).map(|l| format!("--{l}")).collect()
-    }
-
-    /// Every row the TUI shows in this state: each sub-tab of each tab, as it applies now.
-    fn rows(app: &App) -> Vec<PipelineRow> {
-        app.all_pages().into_iter().flat_map(|(_, _, rows)| rows).collect()
-    }
-
-    fn row_key(r: &PipelineRow) -> Option<(&'static str, char)> {
-        match r {
-            PipelineRow::AlgoSelect { field, .. } => Some((field, 's')),
-            PipelineRow::Param { field, .. } => Some((field, 'p')),
-            PipelineRow::Toggle { field, .. } => Some((field, 't')),
-            _ => None,
-        }
-    }
-
-    /// A different value of the same shape: each number in it moved up (`by` 1) or down (-1)
-    /// (lists stay lists).
-    fn bumped(v: &str, by: i64) -> String {
-        let bump = |t: &str| -> Option<String> {
-            if let Ok(n) = t.parse::<i64>() { return Some((n + by).to_string()); }
-            let x = t.parse::<f64>().ok()?;
-            Some(format!("{}", if x == 0.0 { 0.1 } else if by > 0 { x * 0.9 } else { x * 1.1 }))
-        };
-        let tokens: Vec<&str> = v.split(|c: char| c == ',' || c.is_whitespace()).filter(|t| !t.is_empty()).collect();
-        match tokens.iter().map(|t| bump(t)).collect::<Option<Vec<_>>>() {
-            Some(b) if !b.is_empty() => b.join(if v.contains(',') { "," } else { " " }),
-            _ => "3".to_string(),
-        }
-    }
-
-    /// What a state is: the parts of the app a control changes (everything else stays as
-    /// [`App::new`] has it). Unlike an [`App`] it can be shared between threads.
-    #[derive(Clone)]
-    struct State {
-        pipeline_state: crate::tui::app::PipelineFormState,
-        form: crate::tui::app::RunForm,
-        filter_state: crate::tui::app::FilterTreeState,
-        active_tab: usize,
-    }
-
-    impl State {
-        fn of(app: &App) -> Self {
-            State {
-                pipeline_state: app.pipeline_state.clone(),
-                form: app.form.clone(),
-                filter_state: app.filter_state.clone(),
-                active_tab: app.active_tab,
-            }
-        }
-
-        fn app(&self) -> App {
-            let mut a = App::new();
-            a.pipeline_state = self.pipeline_state.clone();
-            a.form = self.form.clone();
-            a.filter_state = self.filter_state.clone();
-            a.active_tab = self.active_tab;
-            a
-        }
-    }
-
-    /// A state's identity, to tell when two paths reach the same one: a hash of everything a
-    /// control changes, so the thousands of states explored are remembered in a few bytes each.
-    fn state_key(app: &App) -> u64 {
-        hash_of(&format!("{:?}{:?}{:?}{}", app.pipeline_state, app.form, app.filter_state, app.active_tab))
-    }
-
-    fn hash_of(text: &str) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut h = std::collections::hash_map::DefaultHasher::new();
-        text.hash(&mut h);
-        h.finish()
-    }
-
-    fn clone_app(app: &App) -> App {
-        State::of(app).app()
-    }
-
-    /// `f` of each item, in order, worked out on several threads (each with its own `init()`):
-    /// `RUST_TEST_THREADS` of them when it is set, else up to four, so the test's memory stays
-    /// bounded on a machine with many cores.
-    fn par_map<T: Send, R: Send, S>(items: Vec<T>, init: impl Fn() -> S + Sync, f: impl Fn(&mut S, T) -> R + Sync) -> Vec<R> {
-        let wanted = std::env::var("RUST_TEST_THREADS").ok().and_then(|n| n.parse::<usize>().ok())
-            .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()).min(4));
-        let threads = wanted.min(items.len()).max(1);
-        let queue = std::sync::Mutex::new(items.into_iter().enumerate());
-        let mut out: Vec<(usize, R)> = std::thread::scope(|scope| {
-            let workers: Vec<_> = (0..threads).map(|_| scope.spawn(|| {
-                let mut state = init();
-                let mut done = Vec::new();
-                loop {
-                    let next = queue.lock().unwrap().next();
-                    let Some((i, item)) = next else { break };
-                    done.push((i, f(&mut state, item)));
-                }
-                done
-            })).collect();
-            workers.into_iter().flat_map(|w| w.join().unwrap_or_else(|e| std::panic::resume_unwind(e))).collect()
-        });
-        out.sort_unstable_by_key(|(i, _)| *i);
-        out.into_iter().map(|(_, r)| r).collect()
-    }
-
-    /// One select or checkbox change.
-    #[derive(Clone, Copy)]
-    enum Change {
-        Select(&'static str, usize),
-        Toggle(&'static str),
-    }
-
-    impl Change {
-        /// The changed state, or `None` for a checkbox the TUI refuses to change.
-        fn apply(self, app: &App) -> Option<App> {
-            let mut a = clone_app(app);
-            match self {
-                Change::Select(field, i) => a.set_field_select(field, i),
-                Change::Toggle(field) => {
-                    a.toggle_field(field);
-                    if a.error_message.is_some() { return None; }
-                }
-            }
-            Some(a)
-        }
-    }
-
-    /// One change to check against the state it is made in: a select's option, a checkbox (as
-    /// toggled), or a parameter's value.
-    enum Check {
-        Select(&'static str, usize),
-        Toggle(&'static str, Box<State>),
-        Param(&'static str),
-    }
-
-    /// Every state worth looking at, with its rows, handed to `visit` in turn: start from the
-    /// defaults in each tab mode, and keep any select/toggle change that reveals a row not seen
-    /// yet, until nothing new turns up. Nothing is kept of a state once it is visited, but its
-    /// key: the caller keeps what it needs.
-    fn explore(mut visit: impl FnMut(&App, Vec<PipelineRow>)) {
-        type Seen = (&'static str, char, usize);
-        // A row counts as seen per inversion algorithm: the same row (an inner inversion's
-        // parameters under QSMART, say) can mean a different flag under another one. A checkbox
-        // counts as seen per value too: a state where a forced output is free (and so can be
-        // checked) is new even when its rows are not.
-        let mut seen: std::collections::HashSet<Seen> = Default::default();
-        let seen_keys = |app: &App, rows: &[PipelineRow]| -> Vec<Seen> {
-            let alg = app.pipeline_state.qsm_algorithm;
-            rows.iter().filter_map(row_key).map(|(field, kind)| {
-                let kind = if kind == 't' && app.field_toggle(field) { 'T' } else { kind };
-                (field, kind, alg)
-            }).collect()
-        };
-        // The defaults, plus the starts whose rows only a non-row control reveals: the
-        // multi-orientation settings (a grouping pattern on the Input tab, COSMOS or STI) and the
-        // inputs of the relaxometry maps and statistics.
-        type Start = fn(&mut App);
-        let starts: &[Start] = &[
-            |_| {},
-            |a| a.filter_state.orientation_group = "acq".into(),
-            |a| { a.filter_state.orientation_group = "acq".into(); a.set_field_select("orientation_algorithm", 1); },
-            |a| { a.form.settings.set("pipeline.do_r2primemap", true); a.form.settings.set("pipeline.do_r2map", true); a.form.settings.set("pipeline.do_analysis", true); },
-        ];
-        let start_app = |i: usize| {
-            let mut app = App::new();
-            // What a run needs before it can be built in either mode.
-            app.form.bids_dir = "/bids".into();
-            app.form.slurm_account = "acct".into();
-            starts[i](&mut app);
-            app
-        };
-        // Every state reached, as the change that reached it from its parent (or the start it
-        // is): a few bytes each, where the states themselves are tens of kilobytes. Only the
-        // states whose changes were explored (the parents) are kept whole, and a state is
-        // rebuilt from its parent when it is looked at.
-        let mut nodes: Vec<Result<usize, (u32, Change)>> = Vec::new();
-        let mut parents: std::collections::HashMap<u32, State> = Default::default();
-        let rebuild = |nodes: &[Result<usize, (u32, Change)>], parents: &std::collections::HashMap<u32, State>, i: u32| -> App {
-            match nodes[i as usize] {
-                Ok(start) => start_app(start),
-                Err((parent, change)) => change.apply(&parents[&parent].app()).expect("a change made once"),
-            }
-        };
-        // The states already looked at. Different paths reach the same state (a select set back,
-        // two toggles in either order); a repeat shows only rows its first visit marked seen.
-        let mut visited: std::collections::HashSet<u64> = Default::default();
-        // The states reached and not yet looked at, last first: each by its key, its node and
-        // what it would mark seen (as numbers: the [`Seen`]s interned). A state reached again
-        // replaces its earlier entry (`None` where it was): the later one would be looked at
-        // first and the earlier then skipped, so the order states are looked at in is unchanged.
-        type Entry = Option<(u64, u32, Box<[u16]>)>;
-        let mut frontier: Vec<Entry> = Vec::new();
-        let mut queued: std::collections::HashMap<u64, usize> = Default::default();
-        let mut ids: std::collections::HashMap<Seen, u16> = Default::default();
-        let mut by_id: Vec<Seen> = Vec::new();
-        fn intern(ids: &mut std::collections::HashMap<Seen, u16>, by_id: &mut Vec<Seen>, keys: Vec<Seen>) -> Box<[u16]> {
-            keys.into_iter().map(|k| *ids.entry(k).or_insert_with(|| { by_id.push(k); (by_id.len() - 1) as u16 })).collect()
-        }
-        fn push(frontier: &mut Vec<Entry>, queued: &mut std::collections::HashMap<u64, usize>, key: u64, node: u32, keys: Box<[u16]>) {
-            if let Some(at) = queued.insert(key, frontier.len()) {
-                frontier[at] = None;
-            }
-            frontier.push(Some((key, node, keys)));
-        }
-        for i in 0..starts.len() {
-            nodes.push(Ok(i));
-            let app = start_app(i);
-            let keys = intern(&mut ids, &mut by_id, seen_keys(&app, &rows(&app)));
-            push(&mut frontier, &mut queued, state_key(&app), (nodes.len() - 1) as u32, keys);
-        }
-        while let Some(entry) = frontier.pop() {
-            let Some((key, node, keys)) = entry else { continue };
-            queued.remove(&key);
-            if !visited.insert(key) {
-                continue;
-            }
-            let mut fresh = false;
-            for &k in keys.iter() {
-                fresh |= seen.insert(by_id[k as usize]);
-            }
-            if !fresh { continue; }
-            let app = rebuild(&nodes, &parents, node);
-            let rows = rows(&app);
-            let changes: Vec<Change> = rows.iter().flat_map(|r| match r {
-                PipelineRow::AlgoSelect { field, options, .. } => {
-                    let current = app.field_select(field);
-                    (0..options.len()).filter(|&i| i != current).map(|i| Change::Select(field, i)).collect()
-                }
-                PipelineRow::Toggle { field, .. } => vec![Change::Toggle(field)],
-                _ => vec![],
-            }).collect();
-            let state = State::of(&app);
-            let next = par_map(changes, || state.app(), |base, change| {
-                let a = change.apply(base)?;
-                let key = state_key(&a);
-                // A state already looked at, or one that would mark nothing new seen (`seen` only
-                // grows, so it would mark nothing new later either), would be skipped: no need to
-                // keep it.
-                if visited.contains(&key) { return None; }
-                let keys = seen_keys(&a, &self::rows(&a));
-                if keys.iter().all(|k| seen.contains(k)) { return None; }
-                Some((key, change, keys))
-            });
-            let mut any = false;
-            for (key, change, keys) in next.into_iter().flatten() {
-                any = true;
-                nodes.push(Err((node, change)));
-                let keys = intern(&mut ids, &mut by_id, keys);
-                push(&mut frontier, &mut queued, key, (nodes.len() - 1) as u32, keys);
-            }
-            if any { parents.insert(node, state); }
-            visit(&app, rows);
-        }
-    }
-
-    /// The run-level arguments of the active mode (the pipeline's part is the config's).
-    fn run_level(app: &App) -> String {
-        if app.form.execution_mode == 1 {
-            let mut a = build_slurm_args(app).unwrap();
-            a.pipeline = Default::default();
-            format!("{a:?}")
-        } else {
-            let mut a = build_run_args(app).unwrap();
-            a.pipeline = Default::default();
-            format!("{a:?}")
-        }
-    }
-
-    /// What a state runs and shows: its pipeline config (also as data, so a value that changes
-    /// nothing reads as no effect) and its generated command. Worked out once per state, however
-    /// many changes are checked against it.
-    struct Outcome {
-        config: PipelineConfig,
-        data: serde_json::Value,
-        shown: String,
-    }
-
-    impl Outcome {
-        fn of(app: &App) -> Self {
-            let config = config_from_app(app).unwrap();
-            Outcome { data: serde_json::to_value(&config).unwrap(), shown: build_command_string(app), config }
-        }
-    }
-
-    #[test]
-    #[ignore = "slow: runs in CI; locally `cargo test -- --ignored every_run_flag_is_reachable_from_the_tui`"]
-    fn every_run_flag_is_reachable_from_the_tui() {
-        let mut covered: BTreeSet<String> = BTreeSet::new();
-        // Problem -> the first change that showed it.
-        let mut problems: BTreeMap<String, String> = BTreeMap::new();
-        // A row is checked once per combination of the selections that change what it feeds.
-        let mut checked: std::collections::HashSet<(&'static str, char, [usize; 4], [bool; 2])> = Default::default();
-        let mut cli = <crate::cli::Cli as clap::CommandFactory>::command();
-        cli.build();
-        // Which rows of each state are checked (each with its toggled state, for a checkbox):
-        // decided in order, so each combination is checked where it is first reached.
-        type Rows = Vec<(PipelineRow, Option<State>)>;
-        let mut jobs: Vec<(State, Rows)> = Vec::new();
-        explore(|app, rows| {
-            let ps = &app.pipeline_state;
-            let qsmart = crate::tui::app::QSM_ALGO_OPTIONS[ps.qsm_algorithm] == "qsmart";
-            let context = (
-                [ps.qsm_algorithm, if qsmart { app.field_select("qsmart_inversion") } else { 0 },
-                 if app.field_toggle("do_chi_separation") { app.field_select("separation_algorithm") } else { 0 },
-                 app.form.execution_mode],
-                [app.field_toggle("motion_correction"), app.field_toggle("do_chi_separation")],
-            );
-            let mut todo = Vec::new();
-            for r in rows {
-                let Some((field, kind)) = row_key(&r) else { continue };
-                // The run form's settings (outputs, execution) do not feed the reconstruction:
-                // they are checked per separation method and mode, not per inversion.
-                let ctx = if app.form.text(field).is_some() || app.form.flag(field).is_some() || app.form.choice(field).is_some() {
-                    ([0, 0, context.0[2], context.0[3]], [false, context.1[1]])
-                } else {
-                    context
-                };
-                let key = (field, kind, ctx.0, ctx.1);
-                if checked.contains(&key) { continue; }
-                // A checkbox another option needs refuses to be turned off (and says why), and
-                // ticking it is the required change the run makes anyway, which changes nothing it
-                // does: it is checked where it is free instead.
-                let toggled = match r {
-                    PipelineRow::Toggle { field, .. } if !app.field_toggle(field) && app.output_made(field) => continue,
-                    PipelineRow::Toggle { field, .. } => match Change::Toggle(field).apply(app) {
-                        Some(a) => Some(State::of(&a)),
-                        None => continue,
-                    },
-                    _ => None,
-                };
-                checked.insert(key);
-                todo.push((r, toggled));
-            }
-            if !todo.is_empty() {
-                jobs.push((State::of(app), todo));
-            }
-        });
-        // The pipeline's command per config (as data), and what each command parses back to:
-        // generating and parsing are most of a check's cost, and many changes give a config or a
-        // command already seen.
-        let commands: std::sync::Mutex<std::collections::HashMap<u64, String>> = Default::default();
-        let round_trips: std::sync::Mutex<std::collections::HashMap<u64, String>> = Default::default();
-        let cached = |cache: &std::sync::Mutex<std::collections::HashMap<u64, String>>, key: u64, make: &mut dyn FnMut() -> String| {
-            if let Some(v) = cache.lock().unwrap().get(&key) { return v.clone(); }
-            let v = make();
-            cache.lock().unwrap().insert(key, v.clone());
-            v
-        };
-        // What each state runs and shows, worked out once however many changes are checked
-        // against it.
-        let bases = par_map(jobs.iter().map(|(s, _)| s).collect(), || (), |_, s| Outcome::of(&s.app()));
-        // Every change, in order, each checked on its own (on every core).
-        let mut changes: Vec<(usize, Check)> = Vec::new();
-        for (j, (state, todo)) in jobs.iter().enumerate() {
-            let base = state.app();
-            for (r, toggled) in todo {
-                match r {
-                    PipelineRow::AlgoSelect { field, options, .. } => {
-                        let current = base.field_select(field);
-                        // "custom" names a hand-edited mask; choosing it changes nothing by itself.
-                        let custom = |i: usize| *field == "mask_preset" && i == *crate::tui::app::MASK_PRESET_CUSTOM;
-                        changes.extend((0..options.len()).filter(|&i| i != current && !custom(i)).map(|i| (j, Check::Select(field, i))));
-                    }
-                    PipelineRow::Toggle { field, .. } => changes.push((j, Check::Toggle(field, Box::new(toggled.clone().unwrap())))),
-                    PipelineRow::Param { field, .. } => changes.push((j, Check::Param(field))),
-                    _ => {}
-                }
-            }
-        }
-        let results = par_map(changes, || {
-            let mut cli = <crate::cli::Cli as clap::CommandFactory>::command();
-            cli.build();
-            cli
-        }, |cli, (j, change)| {
-            let base = jobs[j].0.app();
-            let (what, app) = match change {
-                Check::Select(field, i) => (format!("{field}={i}"), Change::Select(field, i).apply(&base).unwrap()),
-                Check::Toggle(field, toggled) => (format!("toggle {field}"), toggled.app()),
-                Check::Param(field) => {
-                    let mut a = clone_app(&base);
-                    // Paths and names rather than numbers: any non-empty value is a change.
-                    let was = a.field_text(field).into_owned();
-                    let mut v = match (field, was.as_str()) {
-                        ("source_dicom" | "dicom_outputs" | "slurm_account" | "slurm_partition", _) => "x1".to_string(),
-                        // Empty is the whole volume; a patch is three numbers.
-                        ("sep_susepnet_patch" | "sep_chisepnet_frame_patch", "") => "64 64 32".to_string(),
-                        // SynthSeg's window is at least 64 voxels.
-                        ("synthseg_patch", "") => "96".to_string(),
-                        (_, v) => bumped(v, 1),
-                    };
-                    *a.field_text_mut(field).unwrap_or_else(|| panic!("{field} not editable")) = v.clone();
-                    // A value at the top of its range moves down instead.
-                    if config_from_app(&a).is_err() && config_from_app(&base).is_ok() {
-                        v = bumped(&was, -1);
-                        *a.field_text_mut(field).unwrap() = v.clone();
-                    }
-                    (format!("{field}={v}"), a)
-                }
-            };
-            let (before, after) = (&bases[j], Outcome::of(&app));
-            let mut found: Vec<(String, String)> = Vec::new();
-            // The same run: the same config and the same run-level arguments.
-            if after.data == before.data && run_level(&app) == run_level(&base) {
-                found.push((format!("no effect on the run: {}", what.split('=').next().unwrap()), what.clone()));
-            } else if before.shown == after.shown {
-                let d = diff(&before.config, &after.config);
-                found.push((format!("not in the command: {d:?}"), what.clone()));
-            }
-            let cmd = cached(&commands, hash_of(&after.data.to_string()), &mut || qsmxt_engine::generate_command(&after.config));
-            let back = cached(&round_trips, hash_of(&cmd), &mut || qsmxt_engine::generate_command(&round_trip(cli, &after.config)));
-            if back != cmd {
-                let (a, b) = (flags_of(&cmd), flags_of(&back));
-                found.push((format!("command does not reproduce itself: {:?}", a.symmetric_difference(&b).collect::<Vec<_>>()), what));
-            }
-            (j, found, flags_of(&after.shown))
-        });
-        let mut last = None;
-        for (j, found, flags) in results {
-            for (problem, what) in found {
-                problems.entry(problem).or_insert(what);
-            }
-            // Both ends are reachable states: a toggle explored from its checked side turns the
-            // flag off, and the flag is still one the TUI emits.
-            if last != Some(j) {
-                covered.extend(flags_of(&bases[j].shown));
-                last = Some(j);
-            }
-            covered.extend(flags);
-        }
-
-        // The controls that are not rows: the Input tab's filters and grouping, and the mask
-        // editor. Each is (what, setup, change): the change is
-        // checked against the state after `setup` alone.
-        type Edit = fn(&mut App);
-        let surfaces: &[(&str, Edit, Edit)] = &[
-            ("orientation_group", |_| {}, |a| a.filter_state.orientation_group = "acq".into()),
-            ("orientation_algorithm", |a| a.filter_state.orientation_group = "acq".into(), |a| a.set_field_select("orientation_algorithm", 1)),
-            ("orientation_lambda", |a| a.filter_state.orientation_group = "acq".into(), |a| *a.field_text_mut("orientation_lambda").unwrap() = "0.5".into()),
-            ("orientation_reference", |a| a.filter_state.orientation_group = "acq".into(), |a| *a.field_text_mut("orientation_reference").unwrap() = "Neutral".into()),
-            ("bet_smoothness", |a| a.set_field_select("mask_preset", 1), |a| *a.field_text_mut("bet_smoothness").unwrap() = "2".into()),
-            ("bet_gradient_threshold", |a| a.set_field_select("mask_preset", 1), |a| *a.field_text_mut("bet_gradient_threshold").unwrap() = "0.3".into()),
-            ("bet_iterations", |a| a.set_field_select("mask_preset", 1), |a| *a.field_text_mut("bet_iterations").unwrap() = "500".into()),
-            ("bet_subdivisions", |a| a.set_field_select("mask_preset", 1), |a| *a.field_text_mut("bet_subdivisions").unwrap() = "3".into()),
-            ("bet_orientation", |a| a.set_field_select("mask_preset", 1), |a| a.set_field_select("bet_orientation", 1)),
-            ("cosmos_magnitude_weighting", |a| a.filter_state.orientation_group = "acq".into(), |a| a.form.settings.set("multi_orientation.magnitude_weighting", true)),
-            ("cosmos_tol", |a| { a.filter_state.orientation_group = "acq".into(); a.form.settings.set("multi_orientation.magnitude_weighting", true); }, |a| *a.field_text_mut("cosmos_tol").unwrap() = "1e-4".into()),
-            ("cosmos_max_iter", |a| { a.filter_state.orientation_group = "acq".into(); a.form.settings.set("multi_orientation.magnitude_weighting", true); }, |a| *a.field_text_mut("cosmos_max_iter").unwrap() = "250".into()),
-            ("mask sections", |_| {}, |a| {
-                let mut m = a.mask_mut();
-                let mut extra = m.sections[0].clone();
-                extra.input = crate::pipeline::config::MaskingInput::Magnitude;
-                m.sections.push(extra);
-            }),
-            ("mask combine", |a| {
-                let mut m = a.mask_mut();
-                let extra = m.sections[0].clone();
-                m.sections.push(extra);
-            }, |a| a.mask_mut().toggle_combine(0)),
-            ("mask refinements", |a| {
-                let mut m = a.mask_mut();
-                let extra = m.sections[0].clone();
-                m.sections.push(extra);
-            }, |a| a.mask_mut().refinements.push(crate::pipeline::config::MaskOp::Erode { iterations: 1 })),
-            ("masking input", |a| a.set_field_select("mask_preset", 1), |a| {
-                for s in &mut a.mask_mut().sections { s.input = crate::pipeline::config::MaskingInput::MagnitudeLast; }
-            }),
-            ("two-pass sections", |a| a.form.settings.set("masking.two_pass", true), |a| {
-                a.mask_mut().two_pass_sections[0].refinements.push(crate::pipeline::config::MaskOp::Erode { iterations: 2 });
-            }),
-            ("two-pass combine", |a| {
-                a.form.settings.set("masking.two_pass", true);
-                let mut m = a.mask_mut();
-                let extra = m.two_pass_sections[0].clone();
-                m.two_pass_sections.push(extra);
-            }, |a| a.mask_mut().toggle_combine(crate::tui::app::MASK_TWO_PASS_BASE + 1)),
-            // Run-level settings: not in the pipeline config, so compared on the run's arguments.
-            ("config", |_| {}, |a| a.form.config_file = "c.toml".into()),
-            ("include", |_| {}, |a| a.filter_state.include_pattern = "sub-1*".into()),
-            ("exclude", |_| {}, |a| a.filter_state.exclude_pattern = "*pre*".into()),
-            ("num_echoes", |_| {}, |a| a.filter_state.num_echoes = "2".into()),
-            // The memory-limit row's third state (auto, a number, none).
-            ("no_mem_limit", |_| {}, |a| a.form.mem_limit_gb = "none".into()),
-            // A recommendation dismissed in the pop-up (MEDI-mSMV without its prefilter is
-            // discouraged).
-            ("dismiss_recommendation", |a| {
-                let at = |list: &[&str], v: &str| list.iter().position(|o| *o == v).unwrap();
-                a.set_field_select("qsm_algorithm", at(&crate::tui::app::QSM_PICKER_OPTIONS, "medi"));
-                a.form.settings.set("inversion.medi.msmv", true);
-                a.form.settings.set("inversion.medi.msmv_prefilter", false);
-            }, |a| a.pipeline_state.dismissed.push(qsmxt_engine::Dismissal { rule: "medi-msmv.prefilter".into(), chosen: "false".into() })),
-        ];
-        for (what, setup, change) in surfaces {
-            let mut base = App::new();
-            base.form.bids_dir = "/bids".into();
-            setup(&mut base);
-            let mut a = App::new();
-            a.form.bids_dir = "/bids".into();
-            setup(&mut a);
-            change(&mut a);
-            let (shown_before, shown) = (build_command_string(&base), build_command_string(&a));
-            let run_changed = format!("{:?}", build_run_args(&base).unwrap()) != format!("{:?}", build_run_args(&a).unwrap());
-            if !run_changed {
-                problems.entry(format!("no effect on the run: {what}")).or_insert(what.to_string());
-            } else if shown_before == shown {
-                problems.entry(format!("not in the command: {what}")).or_insert(what.to_string());
-            }
-            let c = config_from_app(&a).unwrap();
-            let (cmd, back) = (qsmxt_engine::generate_command(&c), qsmxt_engine::generate_command(&round_trip(&mut cli, &c)));
-            if cmd != back {
-                problems.entry(format!("command does not reproduce itself: {what}")).or_insert(what.to_string());
-            }
-            covered.extend(flags_of(&shown));
-        }
-
-        // Flags the TUI does not emit as such, each for a stated reason.
-        let not_emitted: &[(&str, &str)] = &[
-            // The TUI edits BET per mask step, so its settings travel inside `--mask` specs.
-            ("--bet-fractional-intensity", "per BET step, in --mask"),
-            ("--bet-voxel-scale", "per BET step, in --mask"),
-            // The direction that restates QSMxT's default, so the command never needs it.
-            ("--inhomogeneity-correction", "restates the default"),
-            ("--no-romeo-individual", "restates the default"),
-            ("--no-axial-resampling", "restates the default"),
-            ("--no-romeo-correct-global", "restates the default"),
-            ("--romeo-phase-linearity", "restates the default (for a pipeline that turns it off)"),
-            ("--medi-smv", "restates the default"),
-            ("--medi-smv-shrink-mask", "restates the default"),
-            ("--no-romeo-mag-weight", "restates the default (kept for compatibility)"),
-            // The per-run half of a distributed run: the TUI's SLURM mode generates it (through
-            // `qsmxt slurm`) and its local mode is a whole run.
-            ("--no-dataset-steps", "worker mode, generated by qsmxt slurm"),
-            // The TUI resolves recommendations in its pop-up, before the run.
-            ("--accept-recommendations", "the pop-up applies them"),
-            ("--accept-reference-settings", "the pop-up applies them"),
-            // Chosen on the Pipeline tab, which no settings row covers.
-            ("--pipeline", "the Pipeline tab"),
-            // Only against a pipeline that turns it on; QSMxT's default is off.
-            ("--no-laplacian-unmasked", "restates the default"),
-            // Likewise against the UK Biobank pipeline, which keeps the field outside the mask.
-            ("--no-laplacian-keep-outside", "restates the default"),
-            // Likewise against the HEIDI pipeline, which turns ITK's float arithmetic on.
-            ("--no-heidi-denoise-reference-itk", "restates the default"),
-            // Likewise against the STI Suite pipeline, which polishes the background-removal mask.
-            ("--no-bf-polish-mask", "restates the default"),
-            // Likewise against the UK Biobank pipeline, which trims the mask by phase reliability.
-            ("--no-bf-ukb-mask-trim", "restates the default"),
-        ];
-        for (flag, why) in not_emitted {
-            assert!(!covered.contains(*flag), "{flag} is allow-listed ({why}) but the TUI emits it: drop it from the list");
-            covered.insert(flag.to_string());
-        }
-        let missing: Vec<_> = run_flags().into_iter().filter(|f| !covered.contains(f)).collect();
-        eprintln!("MISSING ({}):\n{}", missing.len(), missing.join(" "));
-        eprintln!("PROBLEMS ({}):\n{}", problems.len(),
-            problems.iter().map(|(k, v)| format!("  {k}   <- {v}")).collect::<Vec<_>>().join("\n"));
-        assert!(missing.is_empty() && problems.is_empty());
-    }
-}

@@ -177,19 +177,18 @@ impl App {
                 self.set_field_select("qsm_reference", i);
             }
         }
-        let ps = &mut self.pipeline_state;
         if differs("inversion.algorithm") {
             // The algorithm itself: whether HEIDI is on is its own setting (`heidi_enabled`).
             let name = config.inversion.algorithm.to_string();
-            if let Some(i) = QSM_ALGO_OPTIONS.iter().position(|a| *a == name) {
-                ps.qsm_algorithm = i;
+            if QSM_ALGO_OPTIONS.contains(&name.as_str()) {
+                self.form.settings.set("inversion.algorithm", name);
             }
         }
         let m = &config.masking;
         if differs("masking.sections") || differs("masking.combine") || differs("masking.refinements") {
             // The recipe's parts are set together, as a preset sets them, and the preset is the
             // one whose recipe this is, else a recipe edited by hand.
-            ps.mask_preset = qsmxt_engine::mask_presets().iter()
+            self.pipeline_state.mask_preset = qsmxt_engine::mask_presets().iter()
                 .position(|(_, r)| r.sections == m.sections && r.combine == m.combine && r.refinements == m.refinements)
                 .unwrap_or(*MASK_PRESET_CUSTOM);
             let st = &mut self.form.settings;
@@ -204,12 +203,11 @@ impl App {
         if differs("masking.two_pass_combine") {
             self.form.settings.set("masking.two_pass_combine", json(&m.two_pass_combine));
         }
-        let ps = &mut self.pipeline_state;
         if differs("dismissed_recommendations") {
-            ps.dismissed = config.dismissed_recommendations.clone();
+            self.form.dismissed = config.dismissed_recommendations.clone();
         }
         if differs("reference_pipeline") {
-            ps.reference_pipeline = config.reference_pipeline.clone();
+            self.form.reference_pipeline = config.reference_pipeline.clone();
         }
         if differs("multi_orientation.group_by") {
             self.filter_state.orientation_group = config.multi_orientation.group_by.clone();
@@ -252,8 +250,6 @@ impl App {
             self.form.settings.set(path, Value::Bool(on));
         } else if let Some(b) = self.form.flag_mut(field) {
             *b = on;
-        } else if self.pipeline_state.get_toggle(field) != on {
-            self.pipeline_state.toggle(field);
         }
     }
 
