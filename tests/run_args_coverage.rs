@@ -1,10 +1,11 @@
-//! RunArgs/PipelineArgs-coverage guard.
+//! RunArgs-coverage guard.
 //!
 //! Sibling of qsmxt-engine's tests/param_coverage.rs, one layer up: every
 //! `qsmxt run` CLI flag must actually be consumed by the run pipeline. v9
 //! shipped --masking-algorithm and --masking-input parsed but silently
-//! ignored; this test goes red if a RunArgs or PipelineArgs field exists that
-//! neither apply_run_overrides() nor run::execute() reads.
+//! ignored; this test goes red if a RunArgs field exists that run::execute()
+//! does not read. The settings flags come from the engine's flag table, and
+//! `cli_settings`' own tests hold every one of them to being applied.
 //!
 //! The check is textual (the binary crate has no lib target to introspect):
 //! a field `foo` counts as consumed if `args.foo` appears in the consumer
@@ -27,22 +28,15 @@ fn struct_fields(cli_src: &str, name: &str) -> Vec<String> {
 #[test]
 fn every_run_arg_is_consumed() {
     let cli_src = include_str!("../src/cli.rs");
-    let consumers = concat!(
-        include_str!("../src/pipeline/config.rs"),
-        include_str!("../src/commands/run.rs"),
-    );
-
-    let mut fields = struct_fields(cli_src, "RunArgs");
-    fields.extend(struct_fields(cli_src, "PipelineArgs"));
-
-    let missing: Vec<_> = fields
+    let consumer = include_str!("../src/commands/run.rs");
+    let missing: Vec<_> = struct_fields(cli_src, "RunArgs")
         .into_iter()
-        .filter(|name| !consumers.contains(&format!("args.{}", name)))
+        .filter(|name| !consumer.contains(&format!("args.{}", name)))
         .collect();
     assert!(
         missing.is_empty(),
-        "RunArgs/PipelineArgs field(s) {missing:?} are parsed but never applied — wire them \
-         into apply_run_overrides() or run::execute(), or remove the flag(s)"
+        "RunArgs field(s) {missing:?} are parsed but never applied — wire them into \
+         run::execute(), or remove the flag(s)"
     );
 }
 
@@ -88,7 +82,7 @@ fn every_aggregate_arg_is_consumed() {
 }
 
 /// The logger must be up before the config is built, because building it is what validates the
-/// CLI. Every "ignoring invalid ..." warning `apply_run_overrides` emits went to a logger that did
+/// CLI. Every "ignoring invalid ..." warning applying the flags emits went to a logger that did
 /// not exist yet and was silently dropped — including the two-pass hole-filling warning, and the
 /// `Discovered N run(s)` line. The check is positional because that is exactly the bug: both calls
 /// were present, just in the wrong order.
@@ -105,7 +99,7 @@ fn logging_is_initialised_before_the_config_is_validated() {
 
     assert!(
         init < overrides,
-        "init_logging() must come before apply_run_overrides(), or the warnings it emits are \
+        "init_logging() must come before build_config(), or the warnings it emits are \
          written to a logger that does not exist yet and are silently dropped"
     );
 }

@@ -129,7 +129,7 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
     let derivatives_dir = base_dir.join("derivatives").join("qsmxt");
 
     // The logger goes up before the config is built, because building it is the step that
-    // validates the CLI: every "ignoring invalid ..." warning apply_run_overrides emits was
+    // validates the CLI: every "ignoring invalid ..." warning applying the flags emits was
     // being written to a logger that did not exist yet, and silently dropped. A dry run gets
     // stderr only — it must not create directories in the dataset, and its whole purpose is to
     // show what a real run would do, warnings included. A worker (`--no-dataset-steps`) holds its

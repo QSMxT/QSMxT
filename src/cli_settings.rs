@@ -81,42 +81,31 @@ pub fn arg(f: &Flag) -> Arg {
         .hide_default_value(f.has("hide_default_value"))
 }
 
-/// `qsmxt run`'s settings: the flags given and, from the TUI, its form: the settings it still
-/// keeps in fields as `PipelineArgs` (until it holds a configuration, refactor P4), applied first,
-/// then those it keeps in a configuration, by path.
+/// `qsmxt run`'s settings: the flags given and, from the TUI, its form's settings by path, set
+/// before the flags (the TUI passes no flag but its dismissed recommendations).
 #[derive(Debug, Default)]
 pub struct SettingsArgs {
     pub given: Vec<Given>,
-    pub form: Option<Box<crate::cli::PipelineArgs>>,
     pub values: Vec<(&'static str, serde_json::Value)>,
 }
 
 impl SettingsArgs {
-    /// The TUI's form, as `PipelineArgs` alone (the integration tests' runs).
+    /// Settings from flags as they are typed after `qsmxt run` (the tests' runs).
     #[cfg(test)]
-    pub fn form(args: crate::cli::PipelineArgs) -> Self {
-        Self::tui(args, Vec::new())
+    pub fn from_flags(argv: &[&str]) -> Self {
+        let m = augment(Command::new("qsmxt")).try_get_matches_from(std::iter::once("qsmxt").chain(argv.iter().copied()))
+            .unwrap_or_else(|e| panic!("{argv:?}: {e}"));
+        SettingsArgs { given: given(&m), values: Vec::new() }
     }
 
-    /// The TUI's form: its fields as `PipelineArgs`, and the settings it keeps by path.
-    pub fn tui(args: crate::cli::PipelineArgs, values: Vec<(&'static str, serde_json::Value)>) -> Self {
-        SettingsArgs { given: Vec::new(), form: Some(Box::new(args)), values }
-    }
-}
-
-/// Tests that set the TUI's form field by field (until it holds a configuration, refactor P4).
-#[cfg(test)]
-impl std::ops::Deref for SettingsArgs {
-    type Target = crate::cli::PipelineArgs;
-    fn deref(&self) -> &Self::Target {
-        self.form.as_deref().expect("settings from a form")
-    }
-}
-
-#[cfg(test)]
-impl std::ops::DerefMut for SettingsArgs {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.form.as_deref_mut().expect("settings from a form")
+    /// These flags added, each in place of the same flag given before (the tests' runs).
+    #[cfg(test)]
+    pub fn add(&mut self, argv: &[&str]) -> &mut Self {
+        let new = Self::from_flags(argv).given;
+        self.given.retain(|g| !new.iter().any(|n| n.flag.long == g.flag.long));
+        self.given.extend(new);
+        self.given.sort_by_key(|g| PIPELINE_FLAGS.iter().position(|f| f.long == g.flag.long));
+        self
     }
 }
 
@@ -131,7 +120,7 @@ impl clap::Args for SettingsArgs {
 
 impl clap::FromArgMatches for SettingsArgs {
     fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
-        Ok(SettingsArgs { given: given(matches), form: None, values: Vec::new() })
+        Ok(SettingsArgs { given: given(matches), values: Vec::new() })
     }
     fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
         self.given = given(matches);
@@ -167,9 +156,6 @@ pub fn build_config(mut config: PipelineConfig, settings: &SettingsArgs) -> crat
 
 /// `settings` applied to `config`, with the outputs other settings need turned on.
 pub fn apply_normalised(config: &mut PipelineConfig, settings: &SettingsArgs) -> crate::Result<()> {
-    if let Some(form) = &settings.form {
-        crate::pipeline::config::apply_run_overrides_as_given(config, form)?;
-    }
     for (path, value) in &settings.values {
         qsmxt_engine::schema::set(config, path, value.clone()).map_err(QsmxtError::Config)?;
     }
@@ -356,53 +342,48 @@ pub fn augment(cmd: Command) -> Command {
 
 #[cfg(test)]
 mod tests {
-    use clap::{Args, Command};
+    use clap::Command;
 
-    /// The flags built from the table are today's `PipelineArgs`: the same arguments, and the same
-    /// help.
-    #[test]
-    fn the_table_builds_pipeline_args() {
-        let build = |mut c: Command| { c = c.term_width(100).max_term_width(100); c.build(); c };
-        let mut derived = build(crate::cli::PipelineArgs::augment_args(Command::new("t")));
-        let mut table = build(super::augment(Command::new("t")));
-        let lines = |c: &Command| c.get_arguments().map(crate::cli_snapshots::describe).collect::<Vec<_>>();
-        let (d, t) = (lines(&derived), lines(&table));
-        for (a, b) in d.iter().zip(&t) {
-            assert_eq!(a, b);
-        }
-        assert_eq!(d.len(), t.len());
-        // From the usage on: derive adds the struct's doc as the command's about.
-        let from_usage = |h: String| h[h.find("Usage:").unwrap()..].to_string();
-        assert_eq!(from_usage(derived.render_long_help().to_string()), from_usage(table.render_long_help().to_string()));
-        assert_eq!(from_usage(derived.render_help().to_string()), from_usage(table.render_help().to_string()));
-    }
-
-    /// Values the flags refuse are refused with the same words as `PipelineArgs` and its apply
-    /// (which the TUI's form still uses).
+    /// Values the flags refuse are refused with the words `qsmxt run` has always used.
     #[test]
     fn refusals_read_as_before() {
-        use clap::FromArgMatches;
-        let parse = |c: Command, argv: &[&str]| c.try_get_matches_from(std::iter::once("t").chain(argv.iter().copied()))
-            .map_err(|e| e.to_string().lines().next().unwrap_or("").to_string());
-        let old = |argv: &[&str]| -> Result<(), String> {
-            let m = parse(crate::cli::PipelineArgs::augment_args(Command::new("t")), argv)?;
-            let args = crate::cli::PipelineArgs::from_arg_matches(&m).map_err(|e| e.to_string())?;
-            crate::pipeline::config::apply_run_overrides_as_given(&mut Default::default(), &args).map_err(|e| e.to_string())
-        };
-        let new = |argv: &[&str]| -> Result<(), String> {
-            let m = parse(super::augment(Command::new("t")), argv)?;
-            super::apply(&mut Default::default(), &super::given(&m)).map_err(|e| e.to_string())
-        };
-        for argv in [
-            "--obliquity-threshold -1", "--laplacian-fft-pad 2 3", "--ilsqr-pad-mm -5", "--motion-reference x",
-            "--mask magnitude,frobnicate:1", "--mask-refine bet", "--two-pass-mask nonsense", "--dismiss-recommendation x",
-            "--dismiss-recommendation nope=1", "--qsmart-inversion heidi", "--synthseg-version v3", "--medi-te 0",
-            "--tv-rho x", "--lbv-precision quad", "--mask-preset mouse-bet", "--cosmos-tol 1",
-        ] {
+        let refusal = |argv: &str| -> String {
             let argv: Vec<&str> = argv.split(' ').collect();
-            let (o, n) = (old(&argv), new(&argv));
-            assert!(o.is_err(), "{argv:?} is refused");
-            assert_eq!(o, n, "{argv:?}");
+            let m = super::augment(Command::new("t")).try_get_matches_from(std::iter::once("t").chain(argv.iter().copied()));
+            let e = match m {
+                Ok(m) => super::apply(&mut Default::default(), &super::given(&m)).expect_err("refused").to_string(),
+                Err(e) => e.to_string(),
+            };
+            e.lines().next().unwrap_or("").to_string()
+        };
+        let config = "Pipeline configuration error: ";
+        for (argv, said) in [
+            ("--obliquity-threshold -1", format!("{config}--obliquity-threshold -1: the threshold is in degrees and cannot be negative. \
+                Resampling is off unless --axial-resampling is given (a negative threshold no longer turns it off)")),
+            ("--laplacian-fft-pad 2 3", format!("{config}--laplacian-fft-pad [2, 3]: give one value or three (x y z)")),
+            ("--ilsqr-pad-mm -5", "error: unexpected argument '-5' found".into()),
+            ("--motion-reference x", format!("{config}--motion-reference x: motion reference must be first, last or an echo number from 1, got \"x\"")),
+            ("--mask magnitude,frobnicate:1", format!("{config}--mask magnitude,frobnicate:1: invalid mask op 'frobnicate:1': Config parse error: \
+                Unknown mask-op: 'frobnicate'")),
+            ("--mask-refine bet", format!("{config}--mask-refine bet:0.50:scale=1: it creates a mask rather than refining one; put it in a \
+                --mask section instead")),
+            ("--two-pass-mask nonsense", format!("{config}--two-pass-mask nonsense: 'nonsense' is not a mask input")),
+            ("--dismiss-recommendation x", format!("{config}--dismiss-recommendation x: give the rule and the value it is dismissed for, as \
+                RULE=VALUE (`qsmxt run --dry` lists them)")),
+            ("--dismiss-recommendation nope=1", format!("{config}--dismiss-recommendation nope=1: there is no rule nope")),
+            ("--qsmart-inversion heidi", format!("{config}--qsmart-inversion heidi: HEIDI is not one of QSMART's inner inversions (its two \
+                stages are its own recipe)")),
+            ("--synthseg-version v3", format!("{config}--synthseg-version v3: expected v1 or v2")),
+            ("--medi-te 0", "error: invalid value '0' for '--medi-te <TE>': expected first, last, spacing, sum or an echo time in ms (> 0), \
+                got '0'".into()),
+            ("--tv-rho x", "error: invalid value 'x' for '--tv-rho <RHO>': expected a number or auto, got 'x'".into()),
+            ("--lbv-precision quad", "error: invalid value 'quad' for '--lbv-precision <PRECISION>': expected double or single, got 'quad'".into()),
+            ("--mask-preset mouse-bet", format!("{config}the `mouse-bet` mask preset has been removed. For rodent data use `--mask-preset \
+                rs2-net`; BET on scaled voxel sizes is still available as a mask step, e.g. `--mask magnitude,bet:0.5:scale=10,erode:1`")),
+            ("--cosmos-tol 1", format!("{config}--cosmos-tol and --cosmos-max-iter set the conjugate gradient of magnitude-weighted COSMOS; \
+                without --cosmos-magnitude-weighting COSMOS is solved in closed form and they would be ignored")),
+        ] {
+            assert_eq!(refusal(argv), said, "{argv}");
         }
     }
 

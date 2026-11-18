@@ -180,9 +180,8 @@ impl App {
         let ps = &mut self.pipeline_state;
         if differs("inversion.algorithm") {
             // The algorithm itself: whether HEIDI is on is its own setting (`heidi_enabled`).
-            if let Some(i) = super::command::QSM_ALGO_ARGS.iter()
-                .position(|a| crate::pipeline::config::qsm_algorithm_arg_to_config(*a) == config.inversion.algorithm)
-            {
+            let name = config.inversion.algorithm.to_string();
+            if let Some(i) = QSM_ALGO_OPTIONS.iter().position(|a| *a == name) {
                 ps.qsm_algorithm = i;
             }
         }

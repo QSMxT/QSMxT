@@ -1,8 +1,10 @@
 use std::path::PathBuf;
 
-use crate::cli::*;
+use qsmxt_engine::schema::cli_apply::Given;
+
+use crate::cli::{RunArgs, SlurmArgs};
 use crate::pipeline::config::PipelineConfig;
-use super::app::App;
+use super::app::{App, BF_OPTIONS, QSM_ALGO_OPTIONS};
 
 pub fn build_command_string(app: &App) -> String {
     let form = &app.form;
@@ -157,249 +159,57 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
     })
 }
 
-/// Pipeline settings as they stand in the TUI form.
-///
-/// Shared by the local (`RunArgs`) and SLURM (`SlurmArgs`) paths so both
-/// execute the pipeline the user configured, not the defaults.
-/// The CLI algorithm argument for each entry of [`QSM_ALGO_OPTIONS`], in that order.
-///
-/// The TUI carries the user's choice as an index into `QSM_ALGO_OPTIONS`, and this is what turns it
-/// back into an algorithm. The two lists must stay in step: insert an algorithm into one and not
-/// the other and the TUI silently runs a *different* algorithm than the one on screen, with no
-/// error anywhere. `qsm_algo_args_match_the_option_list` holds them together.
-pub const QSM_ALGO_ARGS: [QsmAlgorithmArg; 32] = [
-        QsmAlgorithmArg::Rts,
-        QsmAlgorithmArg::Tv,
-        QsmAlgorithmArg::Tkd,
-        QsmAlgorithmArg::Tsvd,
-        QsmAlgorithmArg::Tgv,
-        QsmAlgorithmArg::Tikhonov,
-        QsmAlgorithmArg::Nltv,
-        QsmAlgorithmArg::Medi,
-        QsmAlgorithmArg::Tfi,
-        QsmAlgorithmArg::Ilsqr,
-        QsmAlgorithmArg::Star,
-        QsmAlgorithmArg::Lsqr,
-        QsmAlgorithmArg::Qsmart,
-        QsmAlgorithmArg::Ndi,
-        QsmAlgorithmArg::Fansi,
-        QsmAlgorithmArg::FansiTgv,
-        QsmAlgorithmArg::L1qsm,
-        QsmAlgorithmArg::Whqsm,
-        QsmAlgorithmArg::Hdqsm,
-        QsmAlgorithmArg::AmpPe,
-        QsmAlgorithmArg::Xqsm,
-        QsmAlgorithmArg::Qsmnet,
-        QsmAlgorithmArg::QsmnetPlus,
-        QsmAlgorithmArg::Qsmnetme,
-        QsmAlgorithmArg::Autoqsm,
-        QsmAlgorithmArg::Qsmgan,
-        QsmAlgorithmArg::Ir2qsm,
-        QsmAlgorithmArg::Lpcnn,
-        QsmAlgorithmArg::ModlQsm,
-        QsmAlgorithmArg::Nextqsm,
-        QsmAlgorithmArg::Iqsm,
-        QsmAlgorithmArg::IqsmPlus,
-];
-
 /// The inversion row's starting index: qsmxt-engine's default inversion, so the TUI and
 /// `qsmxt run` without `--qsm-algorithm` mean the same algorithm.
 pub fn default_qsm_algorithm_index() -> usize {
-    let default = crate::pipeline::config::InversionConfig::default().algorithm;
-    QSM_ALGO_ARGS.iter()
-        .position(|a| crate::pipeline::config::qsm_algorithm_arg_to_config(*a) == default)
-        .expect("the default inversion has a row in QSM_ALGO_ARGS")
+    let default = crate::pipeline::config::InversionConfig::default().algorithm.to_string();
+    QSM_ALGO_OPTIONS.iter().position(|a| *a == default).expect("the default inversion is in QSM_ALGO_OPTIONS")
 }
 
-fn default_qsm_algorithm_arg() -> QsmAlgorithmArg {
-    QSM_ALGO_ARGS[default_qsm_algorithm_index()]
-}
-
-
-pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
-    let form = &app.form;
+/// The settings the form passes by rules of its own rather than while they apply, as it always
+/// has: the inversion and MEDI's SMV mode always; HEIDI while ticked, but not for an orientation
+/// group; the orientation grouping; background removal while the inversion has that stage and it
+/// is not the default; QSM's switch and DICOM export while not the default. The form's rule for
+/// which stages run, the inversion picker and QSM's own page read these.
+fn form_values(app: &App) -> Vec<(&'static str, serde_json::Value)> {
+    use serde_json::json;
     let ps = &app.pipeline_state;
-
-    let qsm_options = QSM_ALGO_ARGS;
-    let bf_options = [
-        BfAlgorithmArg::Vsharp,
-        BfAlgorithmArg::Pdf,
-        BfAlgorithmArg::Lbv,
-        BfAlgorithmArg::Ismv,
-        BfAlgorithmArg::Sharp,
-        BfAlgorithmArg::Resharp,
-        BfAlgorithmArg::Harperella,
-        BfAlgorithmArg::Iharperella,
-        BfAlgorithmArg::Bfrnet,
-        BfAlgorithmArg::Iqfm,
-    ];
-
-    // The orientation grouping is set on the Input tab; how a group is reconstructed is set from
-    // the form's settings store ([`stored_values`]).
-    let orientation_group = app.filter_state.orientation_group_by();
-    let grouped = orientation_group.is_some();
-
-    PipelineArgs {
-        // The form holds every setting; the chosen pipeline is set on the config afterwards.
-        pipeline: None,
-        // Bounds-checked rather than indexed: the option list shrinks with the build (see #227).
-        qsm_algorithm: Some(qsm_options.get(ps.qsm_algorithm).copied().unwrap_or_else(default_qsm_algorithm_arg)),
-        // The HEIDI checkbox (with LSQR, LSQR+HEIDI); not offered for multi-orientation runs.
-        heidi: ps.heidi_enabled && !grouped,
-        multi_orientation_algorithm: None,
-        multi_orientation_lambda: None,
-        orientation_reference: None,
-        orientation_group,
-        multi_orientation_force: false,
-        no_orientation_registration: false,
-        cosmos_magnitude_weighting: false,
-        cosmos_tol: None,
-        cosmos_max_iter: None,
-        // Field mapping is set from the form's settings store ([`stored_values`]).
-        unwrapping_algorithm: None,
-        // Only when the inversion has a background-removal stage: otherwise the choice has no
-        // effect, and iQFM there is refused (#276). Said when not the general default.
-        bf_algorithm: (ps.inversion_needs_bg_removal() && ps.bf_algorithm != 0)
-            .then(|| bf_options[ps.bf_algorithm]),
-        bf_erode_voxels: None,
-        bf_polish_mask: false,
-        no_bf_polish_mask: false,
-        bf_ukb_mask_trim: false,
-        no_bf_ukb_mask_trim: false,
-        masking_input: None,
-        phase_offset_removal: None,
-        phase_offset_sigma_mm: None,
-        coil_combination_sigma: None,
-        bipolar_correction: false,
-        b0_estimation: None,
-        qsmart_fit_threshold_mode: None,
-        qsmart_fit_percentile: None,
-        qsmart_fit_threshold: None,
-        b0_weight_type: None,
-        b0_weight_assumed_t2star: None,
-        laplacian_solver: None,
-        laplacian_fft_pad: None,
-        laplacian_unmasked: false,
-        no_laplacian_unmasked: false,
-        laplacian_keep_outside: false,
-        no_laplacian_keep_outside: false,
-        // BET is edited per mask step in the TUI, so its settings travel inside the sections; the
-        // rest of the masking is set from the form's settings store ([`stored_values`]).
-        bet_fractional_intensity: None,
-        bet_voxel_scale: None,
-        bet_smoothness: None,
-        bet_gradient_threshold: None,
-        bet_iterations: None,
-        bet_subdivisions: None,
-        bet_orientation: None,
-        // Set from the form's settings store ([`stored_values`]).
-        qsm_reference: None,
-        qsm_per_echo: None,
-        // The inversion's settings are set from the form's settings store ([`stored_values`]),
-        // but MEDI's SMV mode, which the form's rule for which stages run reads.
-        rts_params: Default::default(),
-        tv_params: Default::default(),
-        tkd_params: Default::default(),
-        tsvd_params: Default::default(),
-        tgv_params: Default::default(),
-        tikhonov_params: Default::default(),
-        nltv_params: Default::default(),
-        medi_params: crate::cli::MediParamArgs { medi_smv: ps.medi_smv, no_medi_smv: !ps.medi_smv, ..Default::default() },
-        tfi_params: Default::default(),
-        lsqr_params: Default::default(),
-        heidi_params: Default::default(),
-        ilsqr_params: Default::default(),
-        star_params: Default::default(),
-        qsmart_params: Default::default(),
-        ndi_params: Default::default(),
-        fansi_params: Default::default(),
-        l1qsm_params: Default::default(),
-        whqsm_params: Default::default(),
-        hdqsm_params: Default::default(),
-        amp_pe_params: Default::default(),
-        motion_params: Default::default(),
-        // χ-separation's settings are set from the form's settings store ([`stored_values`]).
-        separation_params: Default::default(),
-        // Background removal's settings are set from the form's settings store ([`stored_values`]).
-        vsharp_params: Default::default(),
-        pdf_params: Default::default(),
-        lbv_params: Default::default(),
-        ismv_params: Default::default(),
-        sharp_params: Default::default(),
-        resharp_params: Default::default(),
-        harperella_params: Default::default(),
-        iharperella_params: Default::default(),
-        // Field mapping is set from the form's settings store ([`stored_values`]).
-        romeo_params: Default::default(),
-        prelude_params: Default::default(),
-        // Set from the form's settings store ([`config_from_app`]).
-        swi_params: Default::default(),
-        tiling_params: Default::default(),
-        // The magnitude correction is set from the form's settings store ([`stored_values`]).
-        inhomogeneity_method: None,
-        homogeneity_sigma_mm: None,
-        homogeneity_nbox: None,
-        n4_params: Default::default(),
-        linear_fit_estimate_offset: None,
-        robust_fit_loss: None,
-        robust_fit_tuning: None,
-        robust_fit_iterations: None,
-        robust_fit_downweight_level: None,
-        robust_fit_flag_ratio: None,
-        complex_fit_reltol: None,
-        complex_fit_max_iter: None,
-        no_qsm: !ps.do_qsm,
-        do_swi: false,
-        swi_filtered_phase: false,
-        no_magnitude: false,
-        do_smwi: false,
-        // The segmentation's settings are set from the form's settings store ([`stored_values`]).
-        do_segmentation: false,
-        do_analysis: false,
-        segmentation_params: Default::default(),
-        smwi_params: Default::default(),
-        // The relaxometry maps and R2' settings are set from the form's settings store ([`stored_values`]).
-        do_t2starmap: false,
-        do_r2starmap: false,
-        do_r2map: false,
-        do_r2primemap: false,
-        do_chi_separation: false,
-        chi_separation_algorithm: None,
-        use_custom_qsm: None,
-        use_custom_r2: None,
-        use_custom_r2prime: None,
-        r2prime_strategy: None,
-        r2primenet_ignore_field_mismatch: false,
-        r2primenet_patch: None,
-        export_dicom: form.export_dicom,
-        inhomogeneity_correction: false,
-        no_inhomogeneity_correction: false,
-        // Geometry is set from the form's settings store ([`stored_values`]).
-        axial_resampling: false,
-        no_axial_resampling: false,
-        obliquity_threshold: None,
-        crop_to_mask: false,
-        ignore_slice_gap: false,
-        fft_padding: false,
-        tukey_window: None,
-        crop_margin_mm: None,
-        output_space: None,
-        // The mask recipes, custom masks and two-pass are set from the form's settings store
-        // ([`stored_values`]).
-        mask_preset: None,
-        use_custom_masks: None,
-        mask_sections_cli: None,
-        mask_combine: None,
-        mask_refinements_cli: None,
-        two_pass: false,
-        two_pass_sections_cli: None,
-        two_pass_mask_combine: None,
-        two_pass_mode: None,
-        dismiss_recommendation: (!ps.dismissed.is_empty())
-            .then(|| ps.dismissed.iter().map(|d| format!("{}={}", d.rule, d.chosen)).collect()),
+    // Bounds-checked rather than indexed: the option list shrinks with the build (see #227).
+    let algorithm = QSM_ALGO_OPTIONS.get(ps.qsm_algorithm).unwrap_or(&QSM_ALGO_OPTIONS[default_qsm_algorithm_index()]);
+    let group = app.filter_state.orientation_group_by();
+    let mut out = vec![("inversion.algorithm", json!(algorithm))];
+    if ps.heidi_enabled && group.is_none() {
+        out.push(("inversion.heidi.enabled", json!(true)));
     }
+    if let Some(g) = group {
+        out.push(("multi_orientation.group_by", json!(g)));
+    }
+    // Only when the inversion has a background-removal stage: otherwise the choice has no
+    // effect, and iQFM there is refused (#276).
+    if ps.inversion_needs_bg_removal() && ps.bf_algorithm != 0 {
+        out.push(("bg_removal.algorithm", json!(BF_OPTIONS[ps.bf_algorithm])));
+    }
+    out.push(("inversion.medi.smv", json!(ps.medi_smv)));
+    if !ps.do_qsm {
+        out.push(("pipeline.do_qsm", json!(false)));
+    }
+    if app.form.export_dicom {
+        out.push(("pipeline.export_dicom", json!(true)));
+    }
+    out
 }
 
+/// The recommendations dismissed in the pop-up, as `--dismiss-recommendation`: the one flag the
+/// form passes, which keeps the run's checks of a dismissal and adds to a config file's.
+fn dismissals(app: &App) -> Vec<Given> {
+    let dismissed = &app.pipeline_state.dismissed;
+    if dismissed.is_empty() {
+        return Vec::new();
+    }
+    let flag = qsmxt_engine::schema::cli::PIPELINE_FLAGS.iter().find(|f| f.long == "dismiss-recommendation")
+        .expect("qsmxt run has --dismiss-recommendation");
+    vec![Given { flag, values: dismissed.iter().map(|d| format!("{}={}", d.rule, d.chosen)).collect() }]
+}
 
 pub(super) fn expand_tilde(s: &str) -> PathBuf {
     let home = || std::env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("~"));
@@ -491,15 +301,6 @@ pub fn build_slurm_args(app: &App) -> crate::Result<SlurmArgs> {
     })
 }
 
-/// The PipelineConfig the TUI's current state runs with (methods preview, generated command).
-///
-/// Built from the same argument list the run gets ([`pipeline_args_from_app`]) through the same
-/// override path as `qsmxt run`, so the preview, the shown command and the run cannot drift apart:
-/// a setting the TUI has but the CLI cannot express simply has no effect here, which the parity
-/// test (`parity::every_run_flag_is_reachable_from_the_tui`) catches.
-///
-/// An error is a setting the run would refuse (an unparseable mask section, say); the TUI shows
-/// it in place of the command and the methods rather than previewing some other configuration.
 /// The methods text (Markdown) for the current settings, or why the settings are invalid.
 pub fn methods_text(app: &App) -> Result<String, String> {
     app.current_config().as_ref().as_ref().map(crate::pipeline::methods::generate_methods).map_err(|e| e.clone())
@@ -508,21 +309,20 @@ pub fn methods_text(app: &App) -> Result<String, String> {
 /// The settings of the form's settings store the run takes: those changed from their defaults
 /// that apply. One left behind by an earlier choice (hidden now) is left at its default, so that
 /// it does not change the run.
-fn stored_values(app: &App, args: &PipelineArgs) -> crate::Result<Vec<(&'static str, serde_json::Value)>> {
+fn stored_values(app: &App, own: &[(&'static str, serde_json::Value)], given: &[Given]) -> crate::Result<Vec<(&'static str, serde_json::Value)>> {
     let settings = &app.form.settings;
     let (changed, refused) = settings.changed_or_refused();
     if changed.is_empty() && refused.is_empty() {
         return Ok(changed);
     }
-    // Which apply is decided on the form's whole config. Should the fields' checks refuse a
-    // stored setting (multi-orientation's, say, of a hidden COSMOS tolerance), the fields are
-    // written first, so that the checks see only the stored settings that apply, as the run does.
-    let mut config = settings.config_of(&changed);
-    if crate::pipeline::config::apply_run_overrides_as_given(&mut config, args).is_err() {
-        config = PipelineConfig::default();
-        crate::pipeline::config::apply_run_overrides_as_given(&mut config, args)?;
-        config = super::settings_rows::with_values(&config, &changed);
-    }
+    // Which apply is decided on the form's whole config. Should the checks refuse a stored
+    // setting (multi-orientation's, say, of a hidden COSMOS tolerance), the form's own settings
+    // are written first, so that the checks see only the stored settings that apply, as the run
+    // does.
+    let config = match with_form(settings.config_of(&changed), own, given) {
+        Ok(config) => config,
+        Err(_) => super::settings_rows::with_values(&with_form(PipelineConfig::default(), own, given)?, &changed),
+    };
     let visible = app.visible_settings(&config);
     // Typed text the run cannot take is an error while its setting applies, as on the command
     // line: the run is refused rather than run with something else.
@@ -532,6 +332,16 @@ fn stored_values(app: &App, args: &PipelineArgs) -> crate::Result<Vec<(&'static 
     changed.into_iter().filter(|(p, _)| visible.contains(p))
         .map(|(p, v)| Ok((p, as_spelled(p, v)?)))
         .collect()
+}
+
+/// `config` with the form's own settings ([`form_values`]) and its flags, as given (no outputs
+/// turned on for other settings).
+fn with_form(mut config: PipelineConfig, own: &[(&'static str, serde_json::Value)], given: &[Given]) -> crate::Result<PipelineConfig> {
+    for (path, value) in own {
+        qsmxt_engine::schema::set(&mut config, path, value.clone()).map_err(crate::error::QsmxtError::Config)?;
+    }
+    crate::cli_settings::apply(&mut config, given)?;
+    Ok(config)
 }
 
 /// A mask recipe as the run has always taken it from the form: spelled as the command line
@@ -586,23 +396,27 @@ fn as_spelled(path: &str, value: serde_json::Value) -> crate::Result<serde_json:
     }
 }
 
-/// The run's settings from the form: its fields as `PipelineArgs`, and the settings it keeps in a
-/// config ([`stored_values`]).
+/// The run's settings from the form: its own settings ([`form_values`]) and those it keeps in a
+/// config ([`stored_values`]), by path, and its dismissals as the flag.
 fn settings_args(app: &App) -> crate::Result<crate::cli_settings::SettingsArgs> {
-    let args = pipeline_args_from_app(app);
-    let values = stored_values(app, &args)?;
-    Ok(crate::cli_settings::SettingsArgs::tui(args, values))
+    let (own, given) = (form_values(app), dismissals(app));
+    let values = stored_values(app, &own, &given)?;
+    Ok(crate::cli_settings::SettingsArgs { values: own.into_iter().chain(values).collect(), given })
 }
 
-/// The config the form builds: the settings it keeps in a config ([`stored_values`]), then those
-/// of its fields, which the form passes as the command line would and so leave the others as they
-/// are. As the form gives them: an output another setting needs and the form leaves off is a
-/// required change for the TUI to offer ([`qsmxt_engine::normalise::required_findings`]), which
-/// the run would otherwise make itself.
+/// The config the form builds (methods preview, generated command): the settings it keeps in a
+/// config ([`stored_values`]), then its own ([`form_values`]) and its dismissals, which are what
+/// the run takes ([`settings_args`]), so the preview, the shown command and the run cannot drift
+/// apart. An error is a setting the run would refuse (an unparseable mask section, say); the TUI
+/// shows it in place of the command and the methods rather than previewing some other
+/// configuration. As the form gives them: an
+/// output another setting needs and the form leaves off is a required change for the TUI to
+/// offer ([`qsmxt_engine::normalise::required_findings`]), which the run would otherwise make
+/// itself.
 pub fn config_from_app(app: &App) -> crate::Result<PipelineConfig> {
-    let args = pipeline_args_from_app(app);
-    let mut config = app.form.settings.config_of(&stored_values(app, &args)?);
-    crate::pipeline::config::apply_run_overrides_as_given(&mut config, &args)?;
+    let (own, given) = (form_values(app), dismissals(app));
+    let config = app.form.settings.config_of(&stored_values(app, &own, &given)?);
+    let mut config = with_form(config, &own, &given)?;
     // The pipeline chosen on the Pipeline tab, while the form still makes its choices.
     config.reference_pipeline = app.pipeline_state.reference_pipeline.clone()
         .filter(|id| qsmxt_engine::pipelines::chosen(&config, id));
@@ -619,20 +433,9 @@ mod tests {
         crate::cli_settings::build_config(Default::default(), &args.pipeline).unwrap()
     }
 
-    /// The TUI holds the chosen algorithm as an index into `QSM_ALGO_OPTIONS`, and
-    /// [`QSM_ALGO_ARGS`] is what turns it back into an algorithm. If the two lists drift — insert
-    /// an algorithm into one and not the other — the TUI runs a different algorithm than the one
-    /// it displays, silently. Nothing else would catch that.
-    #[test]
-    fn qsm_algo_args_match_the_option_list() {
-        use crate::tui::app::QSM_ALGO_OPTIONS;
-        assert_eq!(QSM_ALGO_ARGS.len(), QSM_ALGO_OPTIONS.len(),
-                   "QSM_ALGO_ARGS and QSM_ALGO_OPTIONS have different lengths");
-        for (i, arg) in QSM_ALGO_ARGS.iter().enumerate() {
-            let name = format!("{}", crate::pipeline::config::qsm_algorithm_arg_to_config(*arg));
-            assert_eq!(name, QSM_ALGO_OPTIONS[i],
-                       "row {i} shows {:?} but would run {name}", QSM_ALGO_OPTIONS[i]);
-        }
+    /// The value the form passes the run for the setting at `path`, if it passes one.
+    fn passed(app: &App, path: &str) -> Option<serde_json::Value> {
+        settings_args(app).unwrap().values.into_iter().find(|(p, _)| *p == path).map(|(_, v)| v)
     }
 
     /// Each entry of the SWI selects runs the unwrapping or scaling it shows (#266:
@@ -672,10 +475,8 @@ mod tests {
             let config = config_from_app(&app).unwrap();
             assert_eq!(&format!("{}", config.inversion.algorithm), name,
                        "row {i} shows {name} but configures {}", config.inversion.algorithm);
-            let args = pipeline_args_from_app(&app);
-            let arg = args.qsm_algorithm.expect("row sets an algorithm");
-            assert_eq!(&format!("{}", crate::pipeline::config::qsm_algorithm_arg_to_config(arg)), name,
-                       "row {i} shows {name} but passes a different --qsm-algorithm");
+            assert_eq!(passed(&app, "inversion.algorithm"), Some(serde_json::json!(name)),
+                       "row {i} shows {name} but passes a different algorithm");
         }
     }
 
@@ -1053,13 +854,13 @@ mod tests {
             matches!(r, PipelineRow::AlgoSelect { field: "bf_algorithm", .. }));
         assert!(shows_bfr(&app));
         // The default goes unsent; another one is sent.
-        assert!(pipeline_args_from_app(&app).bf_algorithm.is_none());
+        assert!(passed(&app, "bg_removal.algorithm").is_none());
         app.pipeline_state.set_select("bf_algorithm", 1);
-        assert!(pipeline_args_from_app(&app).bf_algorithm.is_some());
+        assert!(passed(&app, "bg_removal.algorithm").is_some());
         for name in ["tfi", "tgv", "qsmart", "autoqsm", "nextqsm", "iqsm"] {
             app.pipeline_state.qsm_algorithm = QSM_ALGO_OPTIONS.iter().position(|o| *o == name).unwrap();
             assert!(!shows_bfr(&app), "{name}");
-            assert!(pipeline_args_from_app(&app).bf_algorithm.is_none(), "{name}");
+            assert!(passed(&app, "bg_removal.algorithm").is_none(), "{name}");
         }
     }
 
@@ -1120,7 +921,7 @@ mod tests {
         let mut app = default_app();
         app.pipeline_state.qsm_algorithm = 999;
         assert_eq!(format!("{}", config_from_app(&app).unwrap().inversion.algorithm), "ilsqr");
-        assert_eq!(pipeline_args_from_app(&app).qsm_algorithm, Some(QsmAlgorithmArg::Ilsqr));
+        assert_eq!(passed(&app, "inversion.algorithm"), Some(serde_json::json!("ilsqr")));
     }
 
     fn default_app() -> App {
@@ -1326,7 +1127,7 @@ mod tests {
         let args = build_run_args(&app).unwrap();
         assert_eq!(args.bids_dir, PathBuf::from("/bids"));
         assert_eq!(args.output_dir, Some(PathBuf::from("/out")));
-        assert_eq!(args.pipeline.qsm_algorithm, Some(crate::cli::QsmAlgorithmArg::Ilsqr));
+        assert_eq!(config(&args).inversion.algorithm, crate::pipeline::config::QsmAlgorithm::Ilsqr);
     }
 
     #[test]
@@ -1709,7 +1510,7 @@ mod tests {
         assert!(args.debug);
         assert_eq!(args.source_dicom, Some(PathBuf::from("/dicom")));
         assert_eq!(args.dicom_outputs, Some(vec!["magnitude".to_string(), "Chimap".to_string(), "swi".to_string()]));
-        assert!(args.pipeline.export_dicom);
+        assert!(crate::cli_settings::build_config(Default::default(), &args.pipeline).unwrap().pipeline.export_dicom);
 
         let cmd = build_command_string(&app);
         let cli = crate::cli::Cli::try_parse_from(cmd.split_whitespace())
@@ -1742,9 +1543,9 @@ mod tests {
         app.form.settings.set("pipeline.do_swi", true);
 
         let slurm = build_slurm_args(&app).unwrap();
-        assert_eq!(slurm.pipeline.qsm_algorithm, Some(crate::cli::QsmAlgorithmArg::Tkd));
-        assert_eq!(slurm.pipeline.bf_algorithm, Some(crate::cli::BfAlgorithmArg::Pdf));
         let config = crate::cli_settings::build_config(Default::default(), &slurm.pipeline).unwrap();
+        assert_eq!(config.inversion.algorithm, crate::pipeline::config::QsmAlgorithm::Tkd);
+        assert_eq!(config.bg_removal.algorithm, crate::pipeline::config::BfAlgorithm::Pdf);
         assert_eq!(config.field_mapping.unwrapping_algorithm, qsmxt_engine::UnwrappingAlgorithm::Laplacian);
         assert_eq!(config.pipeline.obliquity_threshold, 5.0);
         assert!(config.pipeline.do_swi);
@@ -1777,7 +1578,6 @@ mod tests {
     /// takes what the page shows.
     #[test]
     fn choosing_medi_leaves_the_background_removal_alone() {
-        use crate::cli::BfAlgorithmArg;
         use qsmxt_engine::BfAlgorithm;
         let medi = crate::tui::app::QSM_PICKER_OPTIONS.iter().position(|a| *a == "medi").unwrap();
         let bf = |name: &str| crate::tui::app::BF_OPTIONS.iter().position(|o| *o == name).unwrap();
@@ -1785,10 +1585,10 @@ mod tests {
         app.form.bids_dir = "/bids".to_string();
         app.pipeline_state.set_select("qsm_algorithm", medi);
         assert_eq!(app.pipeline_state.bf_algorithm, bf("vsharp"));
-        assert_eq!(build_run_args(&app).unwrap().pipeline.bf_algorithm, None);
+        assert_eq!(passed(&app, "bg_removal.algorithm"), None);
         assert_eq!(config_from_app(&app).unwrap().bg_removal.algorithm, BfAlgorithm::Vsharp);
         app.pipeline_state.set_select("bf_algorithm", bf("pdf"));
-        assert_eq!(build_run_args(&app).unwrap().pipeline.bf_algorithm, Some(BfAlgorithmArg::Pdf));
+        assert_eq!(config(&build_run_args(&app).unwrap()).bg_removal.algorithm, BfAlgorithm::Pdf);
         assert!(build_command_string(&app).contains("--bf-algorithm pdf"));
         app.reset_field("bf_algorithm");
         assert_eq!(app.pipeline_state.bf_algorithm, bf("vsharp"));

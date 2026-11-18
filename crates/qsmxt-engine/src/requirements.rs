@@ -1223,7 +1223,7 @@ mod tests {
         out
     }
 
-    /// The final config, as `apply_run_overrides` leaves it.
+    /// The final config, as applying the run's flags leaves it.
     fn enforced(mut c: PipelineConfig) -> PipelineConfig {
         crate::config::enforce_analysis_dependencies(&mut c);
         crate::config::enforce_smwi_dependencies(&mut c);
