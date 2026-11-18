@@ -61,21 +61,7 @@ pub(crate) struct Accepted {
 /// unwrapper the authors pair with it). Returns the findings applied, each once, and those left
 /// because they conflict.
 fn accept_all(config: &mut PipelineConfig, runs: &[QsmRun], which: Accept) -> (Vec<Recommendation>, Vec<Recommendation>) {
-    let mut applied: Vec<Recommendation> = Vec::new();
-    let mut conflicting = Vec::new();
-    // A few rounds at most: each round only applies values that rules ask for, and a rule once
-    // followed no longer fires.
-    for _ in 0..4 {
-        let all: Vec<Recommendation> = found(config, runs).into_iter().map(|f| f.finding).collect();
-        let (now, left) = rec::accept(config, &all, which);
-        conflicting = left;
-        let new: Vec<Recommendation> = now.into_iter().filter(|r| !applied.iter().any(|a| a.rule == r.rule)).collect();
-        if new.is_empty() {
-            break;
-        }
-        applied.extend(new);
-    }
-    (applied, conflicting)
+    qsmxt_engine::advice::accept_all(config, which, |c| found(c, runs).into_iter().map(|f| f.finding).collect())
 }
 
 /// Apply every finding `--accept-recommendations` and `--accept-reference-settings` take

@@ -572,6 +572,30 @@ fn turn_off_rows(findings: &[Recommendation]) -> Vec<AdviceRow> {
     out
 }
 
+/// `--accept-recommendations` / `--accept-reference-settings` ([`rec::accept`], `which`) until
+/// nothing more is applied: following one rule can make another fire (a method chosen by one brings
+/// its own). `find` gives the findings on a configuration (a front end's, over every scan it has).
+/// Returns the findings applied, as they were before, each once, and those the last round left
+/// because they conflict.
+pub fn accept_all(config: &mut crate::config::PipelineConfig, which: rec::Accept,
+                  mut find: impl FnMut(&crate::config::PipelineConfig) -> Vec<Recommendation>)
+                  -> (Vec<Recommendation>, Vec<Recommendation>) {
+    let mut applied: Vec<Recommendation> = Vec::new();
+    let mut conflicting = Vec::new();
+    // A few rounds at most: each round only applies values that rules ask for, and a rule once
+    // followed no longer fires.
+    for _ in 0..4 {
+        let (now, left) = rec::accept(config, &find(config), which);
+        conflicting = left;
+        let new: Vec<Recommendation> = now.into_iter().filter(|r| !applied.iter().any(|a| a.rule == r.rule)).collect();
+        if new.is_empty() {
+            break;
+        }
+        applied.extend(new);
+    }
+    (applied, conflicting)
+}
+
 /// A finding offered as a change and not dismissed: what can open an offer or show a badge.
 pub fn open(r: &Recommendation) -> bool {
     r.actionable() && !r.dismissed

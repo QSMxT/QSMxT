@@ -100,3 +100,24 @@ fn a_required_output_is_ticked_with_undo() {
     assert_eq!(offer.preselection(GROUP), Some(Preselect::Change));
     assert_eq!(offer.undo.as_deref(), Some("QSM reference back to mean"));
 }
+
+/// `--accept-*` runs to a fixed point: a second pass over its result applies nothing, and each
+/// finding applied is listed once.
+#[test]
+fn accept_all_settles() {
+    use crate::config::PipelineConfig;
+    use crate::enums::QsmAlgorithm;
+    use crate::recommendations::{recommendations, Accept, Facts};
+    let find = |c: &PipelineConfig| recommendations(c, &Facts::default());
+    let which = Accept { recommendations: true, reference: true };
+    let mut c = PipelineConfig::default();
+    c.inversion.algorithm = QsmAlgorithm::Medi;
+    let (applied, _) = accept_all(&mut c, which, find);
+    assert!(!applied.is_empty(), "MEDI's authors' settings differ from the defaults");
+    let mut rules: Vec<&str> = applied.iter().map(|r| r.rule.as_str()).collect();
+    rules.dedup();
+    assert_eq!(rules.len(), applied.len(), "{rules:?}");
+    let settled = c.clone();
+    let (again, _) = accept_all(&mut c, which, find);
+    assert!(again.is_empty() && c == settled, "{again:?}");
+}
