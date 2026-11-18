@@ -11,6 +11,8 @@ use crate::bids::discovery::{self, BidsTree};
 use crate::dicom;
 use crate::nifti;
 
+use super::settings_rows::{stored_path, stored_placeholder};
+
 // ─── Input mode ───
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -6179,19 +6181,6 @@ fn forced_output(field: &str) -> Option<crate::pipeline::requirements::Output> {
     crate::pipeline::requirements::Output::of_setting(&format!("pipeline.{field}"))
 }
 
-/// The SWI unwrapping select: qsmxt_engine's unwrappers, in [`super::command::SWI_UNWRAP_ARGS`]'s order.
-static SWI_UNWRAP_OPTIONS: LazyLock<Vec<&'static str>> =
-    LazyLock::new(|| qsmxt_engine::SwiUnwrap::ALL.iter().map(|s| s.as_str()).collect());
-static SWI_UNWRAP_HELP: LazyLock<Vec<&'static str>> = LazyLock::new(|| vec![
-    "Each echo unwrapped with the Laplacian method and high-pass filtered, then combined",
-    "Laplacian unwrapping slice by slice, for 2D multi-slice acquisitions",
-    "All echoes unwrapped together with ROMEO, combined, then high-pass filtered",
-]);
-/// The SWI scaling select: qsmxt_engine's scalings, in [`super::command::SWI_SCALING_ARGS`]'s order.
-static SWI_SCALING_OPTIONS: LazyLock<Vec<&'static str>> =
-    LazyLock::new(|| qsmxt_engine::SwiScaling::ALL.iter().map(|s| s.as_str()).collect());
-static SWI_SCALING_HELP: LazyLock<Vec<&'static str>> =
-    LazyLock::new(|| vec!["Phase scaling type for SWI"; SWI_SCALING_OPTIONS.len()]);
 const SYNTHSEG_VERSION_OPTIONS: &[&str] = &["v1", "v2"];
 const SYNTHSEG_VERSION_HELP: &[&str] = &["v1: SynthSeg 1.0, 32 labels (the default). v2: SynthSeg 2.0, 33 labels, adds a general CSF class (Billot et al., PNAS 2023)"; 2];
 const EXECUTION_MODE_OPTIONS: &[&str] = &["Local", "SLURM"];
@@ -6287,6 +6276,9 @@ pub struct App {
     pub advanced: bool,
     /// The settings Basic mode shows, for the config they were worked out from.
     basic_cache: std::cell::RefCell<Option<(String, BasicPaths)>>,
+    /// Which settings apply, for the config and facts they were worked out for
+    /// ([`super::settings_rows`]).
+    pub(super) visible_cache: super::settings_rows::VisibleCache,
     /// The config the form builds ([`super::command::config_from_app`]), or why it builds none,
     /// as of the last [`App::prepare_frame`]: what the frame shows. Read through
     /// [`App::current_config`], which uses it only while the form cannot have changed since.
@@ -6489,18 +6481,11 @@ pub struct RunForm {
     pub output_dir: String,
     pub config_file: String,
 
+    /// The settings of the sections whose rows come from the registry, in a config
+    /// ([`super::settings_rows`]).
+    pub settings: super::settings_rows::SettingsStore,
+
     // Other outputs
-    /// Publish the combined magnitude (`--no-magnitude` when off).
-    pub do_magnitude: bool,
-    pub do_swi: bool,
-    pub swi_unwrap: usize,  // index into qsmxt_engine::SwiUnwrap::ALL (= command::SWI_UNWRAP_ARGS)
-    pub swi_scaling: usize,  // index into qsmxt_engine::SwiScaling::ALL (= command::SWI_SCALING_ARGS)
-    pub swi_strength: String,
-    /// High-pass sigma per axis, "x y z" in voxels.
-    pub swi_hp_sigma: String,
-    pub swi_mip_window: String,
-    /// Also write the filtered phase the SWI is weighted by (`desc-swi_phase`).
-    pub swi_filtered_phase: bool,
     pub do_t2starmap: bool,
     pub do_r2starmap: bool,
     pub do_r2map: bool,
@@ -6511,7 +6496,6 @@ pub struct RunForm {
     /// the ticked, so a map turned on later is exported unless it is unticked too.
     pub source_dicom: String,
     pub dicom_unticked: Vec<String>,
-    pub do_smwi: bool,
     pub do_segmentation: bool,
     pub do_analysis: bool,
     pub synthseg_version: usize,
@@ -6522,9 +6506,6 @@ pub struct RunForm {
     /// Smooth SynthSeg's posteriors (off = a sigma of 0).
     pub synthseg_smoothing: bool,
     pub synthseg_sigma: String,
-    pub smwi_threshold: String,
-    pub smwi_power: String,
-    pub smwi_mip_window: String,
 
     // Tab 4: Execution
     pub execution_mode: usize, // 0=Local, 1=SLURM
@@ -6559,17 +6540,15 @@ macro_rules! named_fields {
 /// The run form's fields, by the names their rows carry.
 impl RunForm {
     named_fields!(text, text_mut, String, [
-        swi_strength, swi_hp_sigma, swi_mip_window,
-        source_dicom, synthseg_crop, synthseg_patch, synthseg_sigma, smwi_threshold, smwi_power,
-        smwi_mip_window, n_procs, mem_limit_gb, slurm_account, slurm_partition, slurm_time,
-        slurm_mem, slurm_cpus,
+        source_dicom, synthseg_crop, synthseg_patch, synthseg_sigma, n_procs, mem_limit_gb, slurm_account,
+        slurm_partition, slurm_time, slurm_mem, slurm_cpus,
     ]);
     named_fields!(flag, flag_mut, bool, [
-        do_magnitude, do_swi, swi_filtered_phase, do_t2starmap, do_r2starmap, do_r2map, do_r2primemap, export_dicom, do_smwi,
+        do_t2starmap, do_r2starmap, do_r2map, do_r2primemap, export_dicom,
         do_segmentation, do_analysis, synthseg_flip_averaging, synthseg_topology_cleanup, synthseg_smoothing,
         dry_run, debug, force, clean_intermediates, slurm_submit,
     ]);
-    named_fields!(choice, choice_mut, usize, [swi_unwrap, swi_scaling, synthseg_version, execution_mode]);
+    named_fields!(choice, choice_mut, usize, [synthseg_version, execution_mode]);
 
     /// The memory limit row, read: `(limit in GB, no limit)` — empty or `auto` detects it.
     pub fn mem_limit(&self) -> (Option<f64>, bool) {
@@ -6578,31 +6557,16 @@ impl RunForm {
         (v.parse().ok().filter(|g: &f64| *g > 0.0), false)
     }
 
-    /// The SWI high-pass sigma row, read: three numbers (spaces or commas), else none.
-    pub fn swi_hp_sigma_values(&self) -> Option<Vec<f64>> {
-        let v: Vec<f64> = self.swi_hp_sigma.split(|c: char| c == ',' || c.is_whitespace())
-            .filter(|t| !t.is_empty()).map(|t| t.parse().ok()).collect::<Option<_>>()?;
-        (v.len() == 3).then_some(v)
-    }
 }
 
 impl Default for RunForm {
     fn default() -> Self {
-        let swi = qsm_core::swi::SwiParams::default();
-        let smwi = qsm_core::swi::SmwiParams::default();
         let seg = crate::pipeline::config::SegmentationConfig::default();
         Self {
             bids_dir: String::new(),
             output_dir: String::new(),
             config_file: String::new(),
-            do_magnitude: true,
-            do_swi: false,
-            swi_unwrap: 0,
-            swi_scaling: 0,
-            swi_strength: format!("{}", swi.strength),
-            swi_hp_sigma: format!("{} {} {}", swi.hp_sigma[0], swi.hp_sigma[1], swi.hp_sigma[2]),
-            swi_mip_window: format!("{}", swi.mip_window),
-            swi_filtered_phase: false,
+            settings: Default::default(),
             do_t2starmap: false,
             do_r2starmap: false,
             do_r2map: false,
@@ -6610,7 +6574,6 @@ impl Default for RunForm {
             export_dicom: false,
             source_dicom: String::new(),
             dicom_unticked: Vec::new(),
-            do_smwi: false,
             do_segmentation: false,
             do_analysis: false,
             synthseg_version: 0,
@@ -6620,9 +6583,6 @@ impl Default for RunForm {
             synthseg_topology_cleanup: seg.topology_cleanup,
             synthseg_smoothing: seg.sigma_smoothing > 0.0,
             synthseg_sigma: format!("{}", seg.sigma_smoothing),
-            smwi_threshold: format!("{}", smwi.threshold_ppm),
-            smwi_power: format!("{}", smwi.power),
-            smwi_mip_window: format!("{}", smwi.mip_window),
             execution_mode: 0,
             dry_run: false,
             debug: false,
@@ -6696,6 +6656,7 @@ impl App {
             hits: Default::default(),
             advanced: true,
             basic_cache: Default::default(),
+            visible_cache: Default::default(),
             config: None,
             in_frame: false,
         }
@@ -8086,11 +8047,15 @@ impl App {
 
     /// What the rest of the form decides about the pipeline tabs' rows (see [`RowContext`]).
     pub fn row_context(&self) -> RowContext {
+        let config = self.current_config();
+        self.row_context_with(config.as_ref().as_ref().ok())
+    }
+
+    /// [`Self::row_context`], for the config the form builds now.
+    fn row_context_with(&self, config: Option<&crate::pipeline::config::PipelineConfig>) -> RowContext {
         let ps = &self.pipeline_state;
         let (group, algorithm, _) = self.filter_state.orientation_args();
         // Whether QSM runs is the resolved config's answer — the same enforcement the run applies.
-        let config = self.current_config();
-        let config = config.as_ref().as_ref().ok();
         // The config as the form gives it, and as the run takes it: QSM another output needs is
         // a required change the run makes itself when it is left off.
         let qsm_forced = config.as_ref().filter(|_| !ps.do_qsm)
@@ -8109,12 +8074,17 @@ impl App {
                     &c.normalised().0, qsmxt_engine::bridge::RunOrientationFacts { has_measured_r2: false });
                 (!names.is_empty()).then(|| names.join(", "))
             }),
-            multi_coil: self.filter_state.tree.as_ref().is_none_or(|t| {
-                let mut any = false;
-                t.for_each_run(|leaf| any |= leaf.selected && leaf.multi_coil);
-                any
-            }),
+            multi_coil: self.multi_coil(),
         }
+    }
+
+    /// Whether a selected run is uncombined multi-coil data (true until runs are listed).
+    pub fn multi_coil(&self) -> bool {
+        self.filter_state.tree.as_ref().is_none_or(|t| {
+            let mut any = false;
+            t.for_each_run(|leaf| any |= leaf.selected && leaf.multi_coil);
+            any
+        })
     }
 
     /// Which bring-your-own inputs the run can use, from what the form asks for (see
@@ -8123,7 +8093,7 @@ impl App {
         let ps = &self.pipeline_state;
         let f = &self.form;
         let mut c = qsmxt_engine::PipelineConfig::default();
-        (c.pipeline.do_chi_separation, c.pipeline.do_analysis, c.pipeline.do_smwi) = (ps.do_chi_separation, f.do_analysis, f.do_smwi);
+        (c.pipeline.do_chi_separation, c.pipeline.do_analysis, c.pipeline.do_smwi) = (ps.do_chi_separation, f.do_analysis, f.settings.toggle("pipeline.do_smwi"));
         (c.pipeline.do_r2map, c.pipeline.do_r2primemap) = (f.do_r2map, f.do_r2primemap);
         if let Some(sep) = SEP_ALGO_OPTIONS.get(ps.separation_algorithm) {
             c.separation.algorithm = serde_json::from_value(serde_json::json!(sep)).expect("SEP_ALGO_OPTIONS are the config's names");
@@ -8686,9 +8656,9 @@ impl App {
                 }
             }
             Page::Separation => on(ps.do_chi_separation),
-            Page::Smwi => on(self.form.do_smwi),
-            Page::Magnitude => on(self.form.do_magnitude),
-            Page::Swi => on(self.form.do_swi),
+            Page::Smwi => on(self.form.settings.toggle("pipeline.do_smwi")),
+            Page::Magnitude => on(self.form.settings.toggle("pipeline.do_magnitude")),
+            Page::Swi => on(self.form.settings.toggle("pipeline.do_swi")),
             Page::Relaxometry => on(["do_t2starmap", "do_r2starmap", "do_r2map", "do_r2primemap"].iter().any(|f| self.output_made(f))),
             Page::Segmentation => on(self.output_made("do_segmentation") || self.form.do_analysis),
             Page::Export => on(self.form.export_dicom),
@@ -8893,31 +8863,36 @@ impl App {
 
     /// Any page's rows, as they would show now.
     pub fn page_rows(&self, page: Page) -> Vec<PipelineRow> {
-        self.page_rows_in(page, &self.row_context())
+        let config = self.current_config();
+        let config = config.as_ref().as_ref().ok();
+        self.page_rows_in(page, &self.row_context_with(config), config)
     }
 
-    /// Every page of every tab with its rows, as they apply now (the context worked out once).
+    /// Every page of every tab with its rows, as they apply now (the config and context worked
+    /// out once).
     pub fn all_pages(&self) -> Vec<(usize, Page, Vec<PipelineRow>)> {
-        let ctx = self.row_context();
+        let config = self.current_config();
+        let config = config.as_ref().as_ref().ok();
+        let ctx = self.row_context_with(config);
         (0..TAB_NAMES.len())
             .flat_map(|t| self.pages(t).into_iter().map(move |p| (t, p)))
-            .map(|(t, p)| (t, p, self.page_rows_in(p, &ctx)))
+            .map(|(t, p)| (t, p, self.page_rows_in(p, &ctx, config)))
             .collect()
     }
 
-    fn page_rows_in(&self, page: Page, ctx: &RowContext) -> Vec<PipelineRow> {
-        let rows = self.all_page_rows_in(page, ctx);
+    fn page_rows_in(&self, page: Page, ctx: &RowContext, config: Option<&crate::pipeline::config::PipelineConfig>) -> Vec<PipelineRow> {
+        let rows = self.all_page_rows_in(page, ctx, config);
         let rows = if self.advanced || !Page::RECONSTRUCTION.contains(&page) { rows } else { self.basic_rows(rows) };
         wrap_notes(rows, self.note_width.get().saturating_sub(2) as usize)
     }
 
     /// A page's rows with every setting shown (Advanced mode).
-    fn all_page_rows_in(&self, page: Page, ctx: &RowContext) -> Vec<PipelineRow> {
+    fn all_page_rows_in(&self, page: Page, ctx: &RowContext, config: Option<&crate::pipeline::config::PipelineConfig>) -> Vec<PipelineRow> {
+        if let Some(rows) = self.registry_rows(page, config) {
+            return rows;
+        }
         match page {
             p if p.is_pipeline() => self.synced_pipeline(p, ctx).visible_rows(),
-            Page::Magnitude => self.magnitude_rows(),
-            Page::Swi => self.swi_rows(),
-            Page::Smwi => self.smwi_rows(),
             Page::Relaxometry => self.relaxometry_rows(),
             Page::Segmentation => self.segmentation_rows(),
             Page::Export => self.export_rows(),
@@ -8990,17 +8965,22 @@ impl App {
     }
 
     /// A text field's value, by name: the run form's, the Input tab's, else the pipeline form's.
-    pub fn field_text(&self, field: &str) -> &str {
-        match (self.form.text(field), field) {
+    pub fn field_text(&self, field: &str) -> std::borrow::Cow<'_, str> {
+        if let Some(path) = stored_path(field) {
+            return self.form.settings.text(path);
+        }
+        std::borrow::Cow::Borrowed(match (self.form.text(field), field) {
             (Some(s), _) => s,
             (None, "orientation_lambda") => &self.filter_state.orientation_lambda,
             (None, "orientation_reference") => &self.filter_state.orientation_reference,
             (None, _) => self.pipeline_state.get_param(field),
-        }
+        })
     }
 
     pub fn field_text_mut(&mut self, field: &str) -> Option<&mut String> {
-        if self.form.text(field).is_some() {
+        if let Some(path) = stored_path(field) {
+            Some(self.form.settings.text_mut(path))
+        } else if self.form.text(field).is_some() {
             self.form.text_mut(field)
         } else if field == "orientation_lambda" {
             Some(&mut self.filter_state.orientation_lambda)
@@ -9013,6 +8993,9 @@ impl App {
 
     /// A select's option index, by name.
     pub fn field_select(&self, field: &str) -> usize {
+        if let Some(path) = stored_path(field) {
+            return self.form.settings.select(path);
+        }
         if let Some(&c) = self.form.choice(field) {
             return c;
         }
@@ -9025,6 +9008,9 @@ impl App {
     }
 
     pub fn set_field_select(&mut self, field: &str, val: usize) {
+        if let Some(path) = stored_path(field) {
+            return self.form.settings.set_select(path, val);
+        }
         if let Some(c) = self.form.choice_mut(field) {
             *c = val;
             return;
@@ -9079,6 +9065,9 @@ impl App {
         if field == "do_segmentation" {
             return self.form.do_segmentation || !self.pipeline_state.custom_dseg_tool.trim().is_empty();
         }
+        if let Some(path) = stored_path(field) {
+            return self.form.settings.toggle(path);
+        }
         match self.form.flag(field) {
             Some(&b) => b,
             None => self.pipeline_state.get_toggle(field),
@@ -9128,6 +9117,9 @@ impl App {
                 }
             }
         }
+        if let Some(path) = stored_path(field) {
+            return self.form.settings.flip(path);
+        }
         match self.form.flag_mut(field) {
             Some(b) => *b = !*b,
             None => self.pipeline_state.toggle(field),
@@ -9141,6 +9133,7 @@ impl App {
             "mem_limit_gb" | "n_procs" => "auto",
             "orientation_lambda" => "0 (none)",
             "orientation_reference" => "first by name",
+            _ if stored_path(field).is_some() => stored_placeholder(stored_path(field).unwrap_or_default()),
             _ if self.form.text(field).is_some() => "(empty)",
             _ => "(default)",
         }
@@ -9169,6 +9162,9 @@ impl App {
                 return;
             }
             _ => {}
+        }
+        if let Some(path) = stored_path(field) {
+            return self.form.settings.reset(path);
         }
         if let (Some(d), Some(v)) = (form.text(field), self.form.text_mut(field)) {
             *v = d.clone();
@@ -9212,48 +9208,6 @@ impl App {
             if fields.is_empty() { break; }
             fields.iter().for_each(|f| self.reset_field(f));
         }
-    }
-
-    /// Other outputs → Magnitude: whether the combined magnitude is published.
-    fn magnitude_rows(&self) -> Vec<PipelineRow> {
-        vec![
-            PipelineRow::Toggle { label: "Combined magnitude", field: "do_magnitude",
-                help: "Publish the combined magnitude (part-mag_T2starw): the root sum of squares of the echoes, corrected for inhomogeneity when that is on. Off, it is still made for SMWI, segmentation or a magnitude-weighted inversion, and kept with the run's intermediates" },
-        ]
-    }
-
-    /// Other outputs → SWI: susceptibility-weighted imaging, from the phase.
-    fn swi_rows(&self) -> Vec<PipelineRow> {
-        use PipelineRow::{AlgoSelect, Param, Toggle};
-        let f = &self.form;
-        let mut rows = vec![Toggle { label: "Compute SWI", field: "do_swi", help: "Also compute susceptibility-weighted images with CLEAR-SWI, from every echo" }];
-        if f.do_swi {
-            rows.push(AlgoSelect { label: "  Unwrapping", field: "swi_unwrap", options: &SWI_UNWRAP_OPTIONS, help: &SWI_UNWRAP_HELP });
-            rows.push(AlgoSelect { label: "  Scaling", field: "swi_scaling", options: &SWI_SCALING_OPTIONS, help: &SWI_SCALING_HELP });
-            rows.push(Param { label: "  Strength", field: "swi_strength", help: "Phase scaling strength (higher = stronger phase contrast)" });
-            rows.push(Param { label: "  HP sigma (x y z)", field: "swi_hp_sigma", help: "High-pass filter sigma per axis, in voxels (x y z): background phase removal. Set z to 0 for thin axial slices" });
-            rows.push(Param { label: "  mIP window", field: "swi_mip_window", help: "Minimum intensity projection window size in slices" });
-            rows.push(Toggle { label: "  Filtered phase", field: "swi_filtered_phase",
-                help: "Also write the high-pass filtered phase the SWI is weighted by (desc-swi_phase): Hz for several echoes, radians for one" });
-        }
-        rows
-    }
-
-    /// QSM → SMWI: susceptibility map-weighted imaging, made from χ.
-    fn smwi_rows(&self) -> Vec<PipelineRow> {
-        use PipelineRow::{Param, Toggle};
-        let f = &self.form;
-        let mut rows = Vec::new();
-        rows.push(Toggle { label: "Compute SMWI", field: "do_smwi", help: "Susceptibility map-weighted imaging — weights the magnitude by a mask built from χ, not from filtered phase. Needs QSM" });
-        if f.do_smwi {
-            rows.push(Param { label: "  Threshold", field: "smwi_threshold", help: "|χ| in ppm at which the weighting mask reaches zero. The 1 ppm default targets strong sources; brain tissue wants far less" });
-            rows.push(Param { label: "  Power", field: "smwi_power", help: "Power the mask is raised to (contrast strength)" });
-            rows.push(Param { label: "  mIP window", field: "smwi_mip_window", help: "Minimum-intensity-projection window in slices" });
-            if self.input_relevance().qsm {
-                rows.push(PipelineFormState::custom_qsm_row());
-            }
-        }
-        rows
     }
 
     /// Other outputs → Relaxometry: the maps, the R2' source, and the maps that may be supplied.
@@ -9360,11 +9314,11 @@ impl App {
     fn dicom_map_made(&self, m: &DicomMap) -> bool {
         match m.group {
             // The combined magnitude, when it is published.
-            "magnitude" => self.form.do_magnitude,
+            "magnitude" => self.form.settings.toggle("pipeline.do_magnitude"),
             "χ" => self.qsm_on(),
-            "SWI" => self.form.do_swi,
-            "SWI phase" => self.form.do_swi && self.form.swi_filtered_phase,
-            "SMWI" => self.form.do_smwi,
+            "SWI" => self.form.settings.toggle("pipeline.do_swi"),
+            "SWI phase" => self.form.settings.toggle("pipeline.do_swi") && self.form.settings.toggle("swi.filtered_phase"),
+            "SMWI" => self.form.settings.toggle("pipeline.do_smwi"),
             "T2*" => self.output_made("do_t2starmap"),
             "R2*" => self.output_made("do_r2starmap"),
             "R2" => self.output_made("do_r2map"),
@@ -10232,8 +10186,8 @@ mod tests {
     #[test]
     fn rows_name_real_fields() {
         let mut app = App::new();
-        app.form.do_swi = true;
-        app.form.do_smwi = true;
+        app.form.settings.set("pipeline.do_swi", true);
+        app.form.settings.set("pipeline.do_smwi", true);
         app.form.do_segmentation = true;
         app.form.export_dicom = true;
         app.form.do_analysis = true;
@@ -10266,7 +10220,7 @@ mod tests {
         let form = RunForm::default();
         assert!(form.bids_dir.is_empty());
         assert!(form.output_dir.is_empty());
-        assert!(!form.do_swi);
+        assert!(!form.settings.toggle("pipeline.do_swi"));
     }
 
 
@@ -10397,7 +10351,7 @@ mod tests {
         }
         assert!(rows(&app, Page::ComputeQsm).iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("Off: no field map"))));
         // A forced QSM keeps the stages, and its section says why.
-        app.form.do_smwi = true;
+        app.form.settings.set("pipeline.do_smwi", true);
         assert_eq!(state(&app, Page::Inversion), SectionState::On);
         assert_eq!(state(&app, Page::ComputeQsm), SectionState::On);
         assert!(rows(&app, Page::ComputeQsm).iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("QSM → SMWI"))));
@@ -11386,11 +11340,11 @@ mod tests {
         let mut app = App::new();
         app.active_tab = TAB_RECONSTRUCTION;
         focus_on(&mut app, TAB_RECONSTRUCTION, "do_swi");
-        assert!(!app.form.do_swi);
+        assert!(!app.form.settings.toggle("pipeline.do_swi"));
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.form.do_swi);
+        assert!(app.form.settings.toggle("pipeline.do_swi"));
         app.handle_key(key(KeyCode::Char(' ')));
-        assert!(!app.form.do_swi);
+        assert!(!app.form.settings.toggle("pipeline.do_swi"));
     }
 
     #[test]
@@ -11417,20 +11371,21 @@ mod tests {
     fn test_supplementary_swi_scaling_select() {
         let mut app = App::new();
         app.active_tab = TAB_RECONSTRUCTION;
-        app.form.do_swi = true; // make SWI fields visible
+        app.form.settings.set("pipeline.do_swi", true); // make SWI fields visible
         focus_on(&mut app, TAB_RECONSTRUCTION, "swi_scaling");
-        assert_eq!(app.form.swi_scaling, 0); // tanh
+        let scaling = |app: &App| app.form.settings.get("swi.scaling");
+        assert_eq!(scaling(&app), "tanh");
         step(&mut app, 1);
-        assert_eq!(app.form.swi_scaling, 1); // negative-tanh
+        assert_eq!(scaling(&app), "negative-tanh");
         step(&mut app, -1);
-        assert_eq!(app.form.swi_scaling, 0);
+        assert_eq!(scaling(&app), "tanh");
     }
 
     #[test]
     fn test_supplementary_edit_swi_strength() {
         let mut app = App::new();
         app.active_tab = TAB_RECONSTRUCTION;
-        app.form.do_swi = true;
+        app.form.settings.set("pipeline.do_swi", true);
         focus_on(&mut app, TAB_RECONSTRUCTION, "swi_strength");
         app.handle_key(key(KeyCode::Enter));
         assert!(app.pipeline_state.editing);
@@ -11449,7 +11404,7 @@ mod tests {
         // SWI fields are hidden when do_swi is false: Compute SWI is the section's only row.
         app.handle_key(key(KeyCode::Down));
         assert_eq!(app.focused_field_name().as_deref(), Some("do_swi"));
-        app.form.do_swi = true;
+        app.form.settings.set("pipeline.do_swi", true);
         app.handle_key(key(KeyCode::Down));
         assert_eq!(app.focused_field_name().as_deref(), Some("swi_unwrap"));
         app.handle_key(key(KeyCode::Up));
@@ -11459,7 +11414,7 @@ mod tests {
     #[test]
     fn test_supplementary_swi_visible_when_enabled() {
         let mut app = App::new();
-        app.form.do_swi = true;
+        app.form.settings.set("pipeline.do_swi", true);
         assert!(shows(&mut app, TAB_RECONSTRUCTION, "swi_scaling")); // SWI Scaling
         assert!(shows(&mut app, TAB_RECONSTRUCTION, "swi_strength")); // SWI Strength
         assert!(shows(&mut app, TAB_RECONSTRUCTION, "swi_mip_window")); // SWI MIP Window
@@ -11471,9 +11426,9 @@ mod tests {
     fn swi_filtered_phase_is_an_swi_output_and_exportable() {
         let mut app = App::new();
         let phase = dicom_map("dicom_out_swi_phase").unwrap();
-        app.form.do_swi = true;
-        assert!(!app.form.swi_filtered_phase && !app.dicom_map_made(phase), "off by default");
-        app.form.swi_filtered_phase = true;
+        app.form.settings.set("pipeline.do_swi", true);
+        assert!(!app.form.settings.toggle("swi.filtered_phase") && !app.dicom_map_made(phase), "off by default");
+        app.form.settings.set("swi.filtered_phase", true);
         assert!(app.dicom_map_made(phase));
         app.form.export_dicom = true;
         let export: Vec<&str> = app.page_rows(Page::Export).iter().filter_map(row_field).collect();
@@ -11481,7 +11436,7 @@ mod tests {
         app.form.dicom_unticked = vec!["desc-swi_phase".into()];
         assert!(!app.dicom_outputs().unwrap().iter().any(|m| m == "desc-swi_phase"));
         // Without SWI there is no phase, and the row is hidden.
-        app.form.do_swi = false;
+        app.form.settings.set("pipeline.do_swi", false);
         assert!(!app.dicom_map_made(phase));
         assert!(!shows(&mut app, TAB_RECONSTRUCTION, "swi_filtered_phase"));
     }
@@ -11506,24 +11461,24 @@ mod tests {
         let mut app = App::new();
         app.active_tab = TAB_RECONSTRUCTION;
         focus_on(&mut app, TAB_RECONSTRUCTION, "do_swi");
-        app.form.do_swi = true;
+        app.form.settings.set("pipeline.do_swi", true);
         app.handle_key(key(KeyCode::Char('r')));
-        assert!(!app.form.do_swi); // reset to default
+        assert!(!app.form.settings.toggle("pipeline.do_swi")); // reset to default
     }
 
     #[test]
     fn test_supplementary_reset_tab() {
         let mut app = App::new();
         app.active_tab = TAB_RECONSTRUCTION;
-        app.form.do_swi = true;
+        app.form.settings.set("pipeline.do_swi", true);
         app.form.do_t2starmap = true;
         app.form.do_r2starmap = true;
-        app.form.swi_scaling = 3;
+        app.form.settings.set("swi.scaling", "negative");
         app.sub_page[TAB_RECONSTRUCTION] = Some(Page::Swi);
         app.sync_pipeline_mode();
         app.handle_key(key(KeyCode::Char('R')));
-        assert!(!app.form.do_swi);
-        assert_eq!(app.form.swi_scaling, 0);
+        assert!(!app.form.settings.toggle("pipeline.do_swi"));
+        assert_eq!(app.form.settings.get("swi.scaling"), "tanh");
         assert!(app.form.do_t2starmap && app.form.do_r2starmap, "Relaxometry is another page");
         focus_on(&mut app, TAB_RECONSTRUCTION, "do_t2starmap");
         app.handle_key(key(KeyCode::Char('R')));
@@ -12532,12 +12487,11 @@ mod tests {
     fn test_reset_supplementary_fields() {
         let mut app = App::new();
         app.active_tab = TAB_RECONSTRUCTION;
-        app.form.do_swi = true;
+        app.form.settings.set("pipeline.do_swi", true);
         focus_on(&mut app, TAB_RECONSTRUCTION, "swi_strength");
-        app.form.swi_strength = "999".to_string();
+        *app.field_text_mut("swi_strength").unwrap() = "999".to_string();
         app.handle_key(key(KeyCode::Char('r')));
-        let defaults = RunForm::default();
-        assert_eq!(app.form.swi_strength, defaults.swi_strength);
+        assert_eq!(app.field_text("swi_strength"), RunForm::default().settings.text("swi.strength"));
     }
 
     #[test]
@@ -12951,7 +12905,7 @@ mod tests {
         assert!(f.contains(&"motion_reference".to_string()) && f.contains(&"reg_levels".to_string()), "{f:?}");
 
         // SMWI needs a χ map: QSM runs regardless, and its settings are on show, with the reason.
-        app.form.do_smwi = true;
+        app.form.settings.set("pipeline.do_smwi", true);
         let f = fields(&mut app);
         assert!(f.contains(&"qsm_algorithm".to_string()) && f.contains(&"unwrapping_algorithm".to_string()), "{f:?}");
         assert!(app.pipeline_state.all_rows().iter().any(|r|
@@ -13648,19 +13602,20 @@ mod tests {
     #[test]
     fn test_supplementary_edit_swi_hp_sigma() {
         let mut app = App::new();
-        app.form.do_swi = true;
+        app.form.settings.set("pipeline.do_swi", true);
         // One row for the three axes.
         focus_on(&mut app, TAB_RECONSTRUCTION, "swi_hp_sigma");
-        assert_eq!(app.form.swi_hp_sigma_values().map(|v| v.len()), Some(3), "the default parses");
+        let sigma = |app: &App| super::super::command::config_from_app(app).unwrap().swi.hp_sigma;
+        assert_eq!(sigma(&app), qsmxt_engine::SwiConfig::default().hp_sigma, "the default parses");
         app.handle_key(key(KeyCode::Enter));
         assert!(app.pipeline_state.editing);
         for _ in 0..20 { app.handle_key(key(KeyCode::Backspace)); }
         for c in "4, 4 0".chars() { app.handle_key(key(KeyCode::Char(c))); }
         app.handle_key(key(KeyCode::Enter));
         assert!(!app.pipeline_state.editing);
-        assert_eq!(app.form.swi_hp_sigma_values(), Some(vec![4.0, 4.0, 0.0]));
-        app.form.swi_hp_sigma = "4 4".into();
-        assert_eq!(app.form.swi_hp_sigma_values(), None, "three values or none");
+        assert_eq!(sigma(&app), [4.0, 4.0, 0.0]);
+        *app.field_text_mut("swi_hp_sigma").unwrap() = "3 3".into();
+        assert_eq!(sigma(&app), qsmxt_engine::SwiConfig::default().hp_sigma, "three values or none");
     }
 
     // ========== Pipeline: switch algorithms and verify row changes ==========
@@ -13998,7 +13953,7 @@ mod tests {
     fn the_dicom_checklist_follows_what_the_settings_make() {
         let mut app = App::new();
         app.form.export_dicom = true;
-        app.form.do_swi = true;
+        app.form.settings.set("pipeline.do_swi", true);
         let fields: Vec<&str> = app.page_rows(Page::Export).iter().filter_map(row_field).collect();
         assert!(["dicom_out_chimap", "dicom_out_swi", "dicom_out_minip"].iter().all(|f| fields.contains(f)), "{fields:?}");
         assert!(!fields.contains(&"dicom_out_t2starmap"), "T2* is not made: {fields:?}");
@@ -14180,8 +14135,8 @@ mod tests {
     fn app_with_every_row() -> App {
         use crate::pipeline::config::{MaskOp, MaskSection, MaskingInput};
         let mut app = App::new();
-        app.form.do_swi = true;
-        app.form.do_smwi = true;
+        app.form.settings.set("pipeline.do_swi", true);
+        app.form.settings.set("pipeline.do_smwi", true);
         app.form.export_dicom = true;
         app.form.do_t2starmap = true;
         app.form.do_r2starmap = true;

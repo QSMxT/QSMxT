@@ -6,6 +6,7 @@ mod mouse;
 mod pipeline_view;
 mod pipelines_tab;
 mod recommend;
+mod settings_rows;
 mod tabs;
 pub(crate) mod tips;
 mod prefs;

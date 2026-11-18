@@ -495,7 +495,7 @@ mod tests {
         assert!(!after.contains("Background-field removal") && after.contains("TGV-QSM"), "{after}");
         // A setting on another tab (SWI, an output) adds its step.
         assert!(!after.contains("SWI"), "{after}");
-        app.form.do_swi = true;
+        app.form.settings.set("pipeline.do_swi", true);
         let swi = screen(&mut app, 80);
         assert!(swi.contains("SWI"), "{swi}");
     }

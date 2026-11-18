@@ -150,7 +150,7 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
         clean_intermediates: form.clean_intermediates,
         // The worker mode is what `qsmxt slurm` generates; the TUI's local run is a whole run.
         no_dataset_steps: false,
-        pipeline: crate::cli_settings::SettingsArgs::form(pipeline_args_from_app(app)),
+        pipeline: settings_args(app)?,
     })
 }
 
@@ -164,20 +164,6 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
 /// back into an algorithm. The two lists must stay in step: insert an algorithm into one and not
 /// the other and the TUI silently runs a *different* algorithm than the one on screen, with no
 /// error anywhere. `qsm_algo_args_match_the_option_list` holds them together.
-/// The SWI unwrapping each entry of the TUI's SWI "Unwrapping" select runs, by index. A test
-/// holds the select's labels to these.
-pub const SWI_UNWRAP_ARGS: [crate::cli::SwiUnwrapArg; 3] = {
-    use crate::cli::SwiUnwrapArg as U;
-    [U::Laplacian, U::LaplacianSlice, U::Romeo]
-};
-
-/// The SWI scaling each entry of the TUI's SWI "Scaling" select runs, by index. A test holds
-/// the select's labels to these.
-pub const SWI_SCALING_ARGS: [crate::cli::SwiScalingArg; 5] = {
-    use crate::cli::SwiScalingArg as S;
-    [S::Tanh, S::NegativeTanh, S::Positive, S::Negative, S::Triangular]
-};
-
 pub const QSM_ALGO_ARGS: [QsmAlgorithmArg; 32] = [
         QsmAlgorithmArg::Rts,
         QsmAlgorithmArg::Tv,
@@ -762,13 +748,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
                     .filter(|&n| prelude && n as usize != d.num_phase_partitions),
             }
         },
-        swi_params: crate::cli::SwiParamArgs {
-            swi_hp_sigma: form.swi_hp_sigma_values(),
-            swi_unwrapping: Some(SWI_UNWRAP_ARGS[form.swi_unwrap]),
-            swi_scaling: Some(SWI_SCALING_ARGS[form.swi_scaling]),
-            swi_strength: parse_optional_f64(&form.swi_strength),
-            swi_mip_window: parse_optional_usize(&form.swi_mip_window),
-        },
+        // Set from the form's settings store ([`config_from_app`]).
+        swi_params: Default::default(),
         tiling_params: crate::cli::TilingParamArgs {
             tile_size: if ps.dl_tiling { parse_optional_usize(&ps.dl_tile_size) } else { None },
             tile_halo: if ps.dl_tiling { parse_optional_usize(&ps.dl_tile_halo) } else { None },
@@ -799,11 +780,10 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         complex_fit_reltol: if ps.b0_estimation_is("complex-fit") { parse_optional_f64(&ps.complex_fit_reltol) } else { None },
         complex_fit_max_iter: if ps.b0_estimation_is("complex-fit") { parse_optional_usize(&ps.complex_fit_max_iter) } else { None },
         no_qsm: !ps.do_qsm,
-        do_swi: form.do_swi,
-        // Its flag implies SWI, so it goes with SWI or not at all.
-        swi_filtered_phase: form.do_swi && form.swi_filtered_phase,
-        no_magnitude: !form.do_magnitude,
-        do_smwi: form.do_smwi,
+        do_swi: false,
+        swi_filtered_phase: false,
+        no_magnitude: false,
+        do_smwi: false,
         do_segmentation: form.do_segmentation,
         do_analysis: form.do_analysis,
         segmentation_params: crate::cli::SegmentationParamArgs {
@@ -815,11 +795,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             synthseg_sigma: if form.synthseg_smoothing { parse_optional_f64(&form.synthseg_sigma) } else { Some(0.0) },
             use_custom_dseg: Some(ps.custom_dseg_tool.trim()).filter(|t| !t.is_empty()).map(str::to_string),
         },
-        smwi_params: crate::cli::SmwiParamArgs {
-            smwi_threshold: parse_optional_f64(&form.smwi_threshold),
-            smwi_power: parse_optional_f64(&form.smwi_power),
-            smwi_mip_window: parse_optional_usize(&form.smwi_mip_window),
-        },
+        smwi_params: Default::default(),
         do_t2starmap: form.do_t2starmap,
         do_r2starmap: form.do_r2starmap,
         do_r2map: form.do_r2map,
@@ -1017,7 +993,7 @@ pub fn build_slurm_args(app: &App) -> crate::Result<SlurmArgs> {
         debug: form.debug,
         source_dicom: if form.export_dicom { parse_optional_path(&form.source_dicom) } else { None },
         dicom_outputs: if form.export_dicom { app.dicom_outputs() } else { None },
-        pipeline: crate::cli_settings::SettingsArgs::form(pipeline_args_from_app(app)),
+        pipeline: settings_args(app)?,
     })
 }
 
@@ -1035,12 +1011,38 @@ pub fn methods_text(app: &App) -> Result<String, String> {
     app.current_config().as_ref().as_ref().map(crate::pipeline::methods::generate_methods).map_err(|e| e.clone())
 }
 
+/// The settings of the form's settings store the run takes: those changed from their defaults
+/// that apply. One left behind by an earlier choice (hidden now) is left at its default, so that
+/// it does not change the run.
+fn stored_values(app: &App, args: &PipelineArgs) -> crate::Result<Vec<(&'static str, serde_json::Value)>> {
+    let settings = &app.form.settings;
+    let changed = settings.changed();
+    if changed.is_empty() {
+        return Ok(changed);
+    }
+    let mut config = settings.config_of(&changed);
+    crate::pipeline::config::apply_run_overrides_as_given(&mut config, args)?;
+    let visible = app.visible_settings(&config);
+    Ok(changed.into_iter().filter(|(p, _)| visible.contains(p)).collect())
+}
+
+/// The run's settings from the form: its fields as `PipelineArgs`, and the settings it keeps in a
+/// config ([`stored_values`]).
+fn settings_args(app: &App) -> crate::Result<crate::cli_settings::SettingsArgs> {
+    let args = pipeline_args_from_app(app);
+    let values = stored_values(app, &args)?;
+    Ok(crate::cli_settings::SettingsArgs::tui(args, values))
+}
+
+/// The config the form builds: the settings it keeps in a config ([`stored_values`]), then those
+/// of its fields, which the form passes as the command line would and so leave the others as they
+/// are. As the form gives them: an output another setting needs and the form leaves off is a
+/// required change for the TUI to offer ([`qsmxt_engine::normalise::required_findings`]), which
+/// the run would otherwise make itself.
 pub fn config_from_app(app: &App) -> crate::Result<PipelineConfig> {
-    let mut config = PipelineConfig::default();
-    // As the form gives it: an output another setting needs and the form leaves off is a required
-    // change for the TUI to offer ([`qsmxt_engine::normalise::required_findings`]), which the run
-    // would otherwise make itself.
-    crate::pipeline::config::apply_run_overrides_as_given(&mut config, &pipeline_args_from_app(app))?;
+    let args = pipeline_args_from_app(app);
+    let mut config = app.form.settings.config_of(&stored_values(app, &args)?);
+    crate::pipeline::config::apply_run_overrides_as_given(&mut config, &args)?;
     // The pipeline chosen on the Pipeline tab, while the form still makes its choices.
     config.reference_pipeline = app.pipeline_state.reference_pipeline.clone()
         .filter(|id| qsmxt_engine::pipelines::chosen(&config, id));
@@ -1068,33 +1070,25 @@ mod tests {
         }
     }
 
-    /// Each entry of the SWI unwrapping select runs the unwrapping it shows.
+    /// Each entry of the SWI selects runs the unwrapping or scaling it shows (#266:
+    /// `negative-tanh` used to run `tanh`).
     #[test]
-    fn swi_unwrap_select_runs_what_it_shows() {
-        use qsmxt_engine::SwiUnwrap;
-        assert_eq!(SWI_UNWRAP_ARGS.len(), SwiUnwrap::ALL.len());
+    fn swi_selects_run_what_they_show() {
+        use qsmxt_engine::{SwiScaling, SwiUnwrap};
         for (i, &expected) in SwiUnwrap::ALL.iter().enumerate() {
             let mut app = App::new();
-            app.form.do_swi = true;
-            app.form.swi_unwrap = i;
+            app.form.settings.set("pipeline.do_swi", true);
+            app.set_field_select("swi_unwrap", i);
             assert_eq!(config_from_app(&app).unwrap().swi.unwrap, expected, "row {i}");
+        }
+        for (i, &expected) in SwiScaling::ALL.iter().enumerate() {
+            let mut app = App::new();
+            app.form.settings.set("pipeline.do_swi", true);
+            app.set_field_select("swi_scaling", i);
+            assert_eq!(config_from_app(&app).unwrap().swi.scaling, expected, "row {i}");
         }
         // The first entry is the default.
         assert_eq!(SwiUnwrap::ALL[0], qsmxt_engine::SwiConfig::default().unwrap);
-    }
-
-    /// Each entry of the SWI scaling select runs the scaling it shows, and every scaling reaches
-    /// qsm-core's `PhaseScaling` unchanged (#266: `negative-tanh` used to run `tanh`).
-    #[test]
-    fn swi_scaling_select_runs_what_it_shows() {
-        use qsmxt_engine::SwiScaling;
-        assert_eq!(SWI_SCALING_ARGS.len(), SwiScaling::ALL.len());
-        for (i, &expected) in SwiScaling::ALL.iter().enumerate() {
-            let mut app = App::new();
-            app.form.do_swi = true;
-            app.form.swi_scaling = i;
-            assert_eq!(config_from_app(&app).unwrap().swi.scaling, expected, "row {i}");
-        }
     }
 
     /// Every row of the inversion list must survive being selected.
@@ -1704,7 +1698,7 @@ mod tests {
     #[test]
     fn test_command_string_execution_flags() {
         let mut app = default_app();
-        app.form.do_swi = true;
+        app.form.settings.set("pipeline.do_swi", true);
         app.form.do_t2starmap = true;
         app.form.do_r2starmap = true;
         app.form.dry_run = true;
@@ -1776,24 +1770,26 @@ mod tests {
         let mut app = default_app();
         app.form.bids_dir = "/b".to_string();
         app.form.output_dir = "/o".to_string();
-        app.form.do_swi = true;
+        app.form.settings.set("pipeline.do_swi", true);
         app.form.do_t2starmap = true;
         app.form.do_r2starmap = true;
         app.pipeline_state.inhomogeneity_correction = true;
         app.form.dry_run = true;
         app.form.debug = true;
         let args = build_run_args(&app).unwrap();
-        assert!(args.pipeline.do_swi);
-        assert!(!args.pipeline.swi_filtered_phase);
+        let config = |args: &RunArgs| crate::cli_settings::build_config(Default::default(), &args.pipeline).unwrap();
+        assert!(config(&args).pipeline.do_swi);
+        assert!(!config(&args).swi.filtered_phase);
         assert!(args.pipeline.do_t2starmap);
         assert!(args.pipeline.do_r2starmap);
         assert!(args.pipeline.inhomogeneity_correction);
         assert!(args.dry);
-        app.form.swi_filtered_phase = true;
-        assert!(build_run_args(&app).unwrap().pipeline.swi_filtered_phase);
-        // Ticked under SWI and SWI then turned off: the flag (which implies SWI) is not passed.
-        app.form.do_swi = false;
-        assert!(!build_run_args(&app).unwrap().pipeline.swi_filtered_phase);
+        app.form.settings.set("swi.filtered_phase", true);
+        assert!(config(&build_run_args(&app).unwrap()).swi.filtered_phase);
+        // Ticked under SWI and SWI then turned off: the setting no longer applies, so is not passed.
+        app.form.settings.set("pipeline.do_swi", false);
+        let off = config(&build_run_args(&app).unwrap());
+        assert!(!off.swi.filtered_phase && !off.pipeline.do_swi);
         assert!(args.debug);
         assert_eq!(args.pipeline.phase_offset_removal, Some(true)); // default mcpc3ds
     }
@@ -2065,7 +2061,7 @@ mod tests {
         app.form.export_dicom = true;
         app.form.source_dicom = "/dicom".to_string();
         // SWI makes swi and minIP; unticking minIP exports the magnitude, χ and SWI only.
-        app.form.do_swi = true;
+        app.form.settings.set("pipeline.do_swi", true);
         app.form.dicom_unticked = vec!["minip".to_string()];
 
         let args = build_slurm_args(&app).unwrap();
@@ -2102,14 +2098,14 @@ mod tests {
         app.pipeline_state.bf_algorithm = 1; // pdf
         app.pipeline_state.axial_resampling = true;
         app.pipeline_state.obliquity_threshold = "5".to_string();
-        app.form.do_swi = true;
+        app.form.settings.set("pipeline.do_swi", true);
 
         let slurm = build_slurm_args(&app).unwrap();
         assert_eq!(slurm.pipeline.qsm_algorithm, Some(crate::cli::QsmAlgorithmArg::Tkd));
         assert_eq!(slurm.pipeline.unwrapping_algorithm, Some(crate::cli::UnwrapAlgorithmArg::Laplacian));
         assert_eq!(slurm.pipeline.bf_algorithm, Some(crate::cli::BfAlgorithmArg::Pdf));
         assert_eq!(slurm.pipeline.obliquity_threshold, Some(5.0));
-        assert!(slurm.pipeline.do_swi);
+        assert!(crate::cli_settings::build_config(Default::default(), &slurm.pipeline).unwrap().pipeline.do_swi);
     }
 
     /// The B0 echo-combination rows reach the run (they used to be dropped, so the TUI's weight
@@ -2687,7 +2683,7 @@ mod parity {
                 Check::Param(field) => {
                     let mut a = clone_app(&base);
                     // Paths and names rather than numbers: any non-empty value is a change.
-                    let v = match (field, a.field_text(field)) {
+                    let v = match (field, a.field_text(field).as_ref()) {
                         ("source_dicom" | "dicom_outputs" | "slurm_account" | "slurm_partition", _) => "x1".to_string(),
                         // Empty is the whole volume; a patch is three numbers.
                         ("sep_susepnet_patch" | "sep_chisepnet_frame_patch", "") => "64 64 32".to_string(),
