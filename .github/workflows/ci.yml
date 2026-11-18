@@ -190,7 +190,7 @@ jobs:
       - name: Convert the synthetic DICOM fixtures
         run: >
           QSMXT_DICOM_FIXTURE_OUT="$RUNNER_TEMP/dicom-bids"
-          cargo test --bin qsmxt -- --ignored --exact dicom::tests::dicom_bids_validator_fixture
+          cargo test -p qsmxt-io --lib -- --ignored --exact dicom::tests::dicom_bids_validator_fixture
 
       - name: Validate the converted fixtures
         run: |

@@ -7,7 +7,7 @@
 
 pub mod convert;
 pub mod export;
-#[cfg(test)]
+#[cfg(any(test, feature = "testutils"))]
 pub mod synth;
 #[cfg(test)]
 mod tests;

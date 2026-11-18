@@ -316,7 +316,7 @@ fn build_seg(
     put(el(tags::POSITION_REFERENCE_INDICATOR, VR::LO, ""));
 
     // General and Enhanced General Equipment: QSMxT made this object.
-    let version = crate::commands::update::describe_version().to_string();
+    let version = crate::version::describe_version().to_string();
     put(el(tags::MANUFACTURER, VR::LO, "QSMxT"));
     put(el(tags::MANUFACTURER_MODEL_NAME, VR::LO, "QSMxT"));
     put(el(tags::DEVICE_SERIAL_NUMBER, VR::LO, "0"));

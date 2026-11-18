@@ -264,7 +264,7 @@ pub fn run_pipeline_applied(
 }
 
 /// [`run_pipeline_applied`] with nothing applied.
-#[cfg(test)]
+#[cfg(any(test, feature = "testutils"))]
 pub fn run_pipeline_cached(
     qsm_run: &QsmRun,
     config: &PipelineConfig,
@@ -279,7 +279,7 @@ pub fn run_pipeline_cached(
 /// the top level) and the scan facts it was planned from (`scan`), so the dataset's methods can
 /// be made from the file alone, whichever invocation processed the run.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub(crate) struct RunRecordFile {
+pub struct RunRecordFile {
     #[serde(flatten)]
     pub record: qsmxt_engine::record::RunRecord,
     pub scan: qsmxt_engine::scan::ScanFacts,
@@ -321,7 +321,7 @@ fn write_run_files(
 /// Say in `run`'s record, and the files made from it, whether the fan-in combined it into
 /// `group` ([`qsmxt_engine::record::RunRecord::set_orientation_group`]). A run with no record did
 /// not finish, so there is nothing to say.
-pub(crate) fn record_orientation_group(
+pub fn record_orientation_group(
     run: &QsmRun, config: &PipelineConfig, output: &DerivativeOutputs, group: Option<&str>,
 ) -> crate::Result<()> {
     let Ok(text) = std::fs::read_to_string(output.run_record_path(&run.key)) else { return Ok(()) };
@@ -2411,7 +2411,7 @@ mod oblique_run_tests {
         let derivatives = dir.path().join("out");
         let output = DerivativeOutputs::new(&derivatives);
         std::fs::create_dir_all(&derivatives).unwrap();
-        crate::commands::run::write_dataset_files(&derivatives, dir.path(), &config, &runs[..3]).unwrap();
+        crate::dataset::write_dataset_files(&derivatives, dir.path(), &config, &runs[..3]).unwrap();
         assert!(output.dataset_graph_path().with_extension("svg").exists());
         for run in &runs[..3] {
             run_pipeline_cached(run, &config, &output, true, &|_| {}).unwrap();
@@ -2421,7 +2421,7 @@ mod oblique_run_tests {
                 assert!(path.exists() && path.starts_with(derivatives.join("workflow")), "{}", path.display());
             }
         }
-        let summarise = || crate::commands::run::write_dataset_summary(&derivatives, &config).unwrap();
+        let summarise = || crate::dataset::write_dataset_summary(&derivatives, &config).unwrap();
         let read = |p: std::path::PathBuf| std::fs::read_to_string(p).unwrap();
         summarise();
         let methods = read(derivatives.join("methods.md"));
@@ -2698,7 +2698,7 @@ mod oblique_run_tests {
         let run = oblique_run(dir.path(), "a", 1);
         let output = DerivativeOutputs::new(&dir.path().join("out"));
         run_pipeline_cached(&run, &resampling_config(), &output, false, &|_| {}).unwrap();
-        crate::commands::run::clean_run(&output, &run);
+        crate::dataset::clean_run(&output, &run);
         assert_eq!(voxels(&output.qsm_path(&run.key)), ACQUIRED);
         assert!(!output.working_grid_dir(&run.key).exists());
         // Re-run with the same configuration: nothing is recomputed, and nothing is lost for want
@@ -2752,7 +2752,7 @@ mod oblique_run_tests {
                 written.push(path);
             }
         }
-        crate::commands::run::clean_run(&output, &run);
+        crate::dataset::clean_run(&output, &run);
         assert!(written.iter().all(|p| !p.exists()), "cleaning keeps QSMART's intermediates");
     }
 

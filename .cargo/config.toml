@@ -1,0 +1,6 @@
+# One crate's tests, for the edit-test cycle: run the affected crate's tests locally and let CI
+# run the rest. Needs cargo-nextest; `cargo test -p <crate>` does the same without it.
+[alias]
+nt-engine = "nextest run -p qsmxt-engine"
+nt-io = "nextest run -p qsmxt-io"
+nt-bin = "nextest run -p qsmxt"

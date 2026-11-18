@@ -3,8 +3,6 @@
 //! Creates tiny (8×8×8) volumes with deterministic data — just enough for
 //! algorithms to run without crashing. We test orchestration, not accuracy.
 
-#![cfg(test)]
-
 use std::path::{Path, PathBuf};
 
 const NX: usize = 8;
@@ -521,6 +519,61 @@ pub mod http {
             if let Some(h) = self.handle.take() {
                 let _ = h.join();
             }
+        }
+    }
+}
+
+/// A run and the options for the SLURM job-script tests.
+pub mod slurm {
+    use std::path::PathBuf;
+
+    use crate::bids::discovery::{EchoFiles, QsmRun};
+    use crate::bids::entities::AcquisitionKey;
+    use crate::executor::slurm::SlurmOptions;
+
+    pub fn dummy_run_with_key(subject: &str, session: Option<&str>) -> QsmRun {
+        QsmRun {
+            key: AcquisitionKey {
+                subject: subject.to_string(),
+                session: session.map(|s| s.to_string()),
+                acquisition: None,
+                reconstruction: None,
+                inversion: None,
+                run: None,
+                suffix: "MEGRE".to_string(),
+            },
+            echoes: vec![EchoFiles {
+                echo_number: 1,
+                phase_nifti: PathBuf::from("fake.nii"),
+                phase_json: PathBuf::from("fake.json"),
+                magnitude_nifti: None,
+                magnitude_json: None,
+                imaginary_nifti: None,
+            }],
+            coils: None,
+            magnetic_field_strength: 3.0,
+            echo_times: vec![0.02],
+            b0_dir: None,
+            dims: (64, 64, 64),
+            has_magnitude: false,
+            mese: None,
+        }
+    }
+
+    pub fn opts(account: &str, partition: Option<&'static str>, mem_gb: Option<usize>) -> SlurmOptions<'static> {
+        SlurmOptions {
+            account: Box::leak(account.to_string().into_boxed_str()),
+            partition,
+            time: "02:00:00",
+            mem_gb,
+            cpus: 4,
+            num_echoes: None,
+            force: false,
+            clean_intermediates: false,
+            debug: false,
+            source_dicom: None,
+            dicom_outputs: None,
+            command_line: "qsmxt slurm /bids --account acct".to_string(),
         }
     }
 }
