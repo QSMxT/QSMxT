@@ -10532,7 +10532,7 @@ mod tests {
         assert!(!app.pipeline_state.editing);
         assert_eq!(sigma(&app), [4.0, 4.0, 0.0]);
         *app.field_text_mut("swi_hp_sigma").unwrap() = "3 3".into();
-        assert_eq!(sigma(&app), qsmxt_engine::SwiConfig::default().hp_sigma, "three values or none");
+        assert!(super::super::command::config_from_app(&app).is_err(), "three values or none: two are refused");
     }
 
     // ========== Pipeline: switch algorithms and verify row changes ==========
