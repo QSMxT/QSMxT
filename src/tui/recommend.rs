@@ -16,10 +16,10 @@
 //!   what the method's authors did, with no reason given that it is better) is not; and nothing
 //!   is when equally strong advice on a setting disagrees. The values of one setting exclude each
 //!   other. An unticked required change says the run will refuse to start.
-//! - **The pop-ups**: a change that creates a reasoned finding opens [`AdviceModal::new`]; `!` on
-//!   a marked setting opens [`AdviceModal::details`] (every rule it departs from); choosing a
+//! - **The pop-ups**: a change that creates a reasoned finding opens [`Offer::new`]; `!` on
+//!   a marked setting opens [`Offer::details`] (every rule it departs from); choosing a
 //!   method with a reference pipeline ([`rec::chosen_methods`]) whose settings differ
-//!   ([`rec::reference_differences`]) opens [`AdviceModal::reference`], led by the
+//!   ([`rec::reference_differences`]) opens [`Offer::reference`], led by the
 //!   recommendations the same change created. What is applied together follows [`rec::settle`],
 //!   as on every host: a reasoned finding outranks an authors' setting, and two authors' settings
 //!   that disagree leave the setting as it is, marked, to choose with `!`.
@@ -28,11 +28,11 @@
 //!   per authors' value, tagged with whose it is ("PDF's authors"), the method the pop-up is about
 //!   first and the value the setting has read "as set". Nothing starts ticked, the panel says the
 //!   two disagree, and what the user picks stands: the other is not offered back.
-//! - **The setting just changed is respected** ([`AdviceModal::changed`]): when a change makes a
+//! - **The setting just changed is respected** ([`Offer::changed`]): when a change makes a
 //!   setting depart from a rule scoped to a flag that is on ([`Recommendation::flag_trigger`]),
 //!   such as choosing QSMART with HEIDI ticked, turning that flag off starts ticked, and changing
 //!   the setting back is offered unticked. It comes before any reference pipeline pop-up.
-//! - **Required changes** ([`AdviceModal::required`]): an output another setting needs and the
+//! - **Required changes** ([`Offer::required`]): an output another setting needs and the
 //!   form leaves off (statistics, a region reference, SMWI, χ-separation's maps, orientation
 //!   grouping's magnitude; [`rec::Recommendation::applied_by_run`]) opens " Required change "
 //!   when the change that needs it is made: the outputs as rows ("Segmentation  off → on
@@ -50,10 +50,10 @@
 //!   row is tried until the engine no longer finds the departure.
 
 use crossterm::event::{KeyCode, KeyEvent};
-pub use qsmxt_engine::advice::{AdviceKind, AdviceRow, Offer, Preselect, RowAction};
+pub use qsmxt_engine::advice::{AdviceKind, Offer};
 use qsmxt_engine::advice::{self, decide, edit};
-pub use qsmxt_engine::recommendations::{Kind, Strength};
-use qsmxt_engine::recommendations::{self as rec, Facts, Marker, Recommendation, Trigger};
+pub use qsmxt_engine::recommendations::Strength;
+use qsmxt_engine::recommendations::{self as rec, Facts, Marker, Recommendation};
 use serde_json::Value;
 
 use super::app::{App, PipelineRow};
@@ -142,6 +142,7 @@ pub type RecModal = AdviceModal;
 /// The reference pipeline pop-up.
 pub type RefModal = AdviceModal;
 
+#[cfg(test)]
 impl AdviceModal {
     /// [`Offer::required`], with the form to set back for "Undo my change".
     pub fn required(findings: Vec<Recommendation>, undo: Option<Undo>) -> Self {
@@ -153,15 +154,11 @@ impl AdviceModal {
         Offer::new(findings).into()
     }
 
-    pub fn changed(findings: Vec<Recommendation>) -> Self {
-        Offer::changed(findings).into()
-    }
-
     pub fn details(findings: Vec<Recommendation>) -> Self {
         Offer::details(findings).into()
     }
 
-    pub fn reference(methods: Vec<Trigger>, findings: Vec<Recommendation>) -> Self {
+    pub fn reference(methods: Vec<rec::Trigger>, findings: Vec<Recommendation>) -> Self {
         Offer::reference(methods, findings).into()
     }
 
@@ -178,11 +175,6 @@ type RefItem = decide::Item;
 #[derive(Debug, Clone, Default)]
 pub struct RefState {
     pub modal: Option<RefModal>,
-}
-
-/// A finding offered as a change and not dismissed: what can open the pop-up or show a badge.
-fn open(r: &Recommendation) -> bool {
-    advice::open(r)
 }
 
 impl App {
@@ -714,6 +706,8 @@ pub fn picker_noun(row: &PipelineRow) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use qsmxt_engine::advice::RowAction;
+    use qsmxt_engine::recommendations::Kind;
     use super::super::app::{QSM_ALGO_OPTIONS, QSM_PICKER_OPTIONS, LSQR_HEIDI};
 
     fn app() -> App {
