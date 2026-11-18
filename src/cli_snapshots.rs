@@ -268,3 +268,104 @@ fn what_each_run_flag_sets() {
     });
     snapshot::check(DIR, "run_flags.txt", &normalise(&parts.concat()));
 }
+
+/// The command `generate_command` renders for `qsmxt run <bids> <flags>`'s configuration, and
+/// the one the hand-written renderer gave, when they differ other than by the old one also
+/// saying settings the configuration hides (which it did after a pipeline that sets them
+/// differently: `--pipeline sti-suite-ilsqr --unwrapping-algorithm romeo` said
+/// `--laplacian-solver dct`).
+fn rendered_differently(cmd: &mut Command, flags: &[String]) -> Option<String> {
+    use qsmxt_engine::schema::{cli::PIPELINE_FLAGS, cli_apply::{opposite_of, setting_of}, prune_hidden, settings_view, ViewFacts};
+    let config: qsmxt_engine::PipelineConfig = serde_json::from_value(config_of(cmd, flags).ok()?).unwrap();
+    let (new, old) = (qsmxt_engine::generate_command(&config), qsmxt_engine::command::generate_command_legacy(&config));
+    if new == old {
+        return None;
+    }
+    let facts = ViewFacts::default();
+    let hidden: Vec<&str> = settings_view(&prune_hidden(&config.normalised().0, &facts), &facts).into_iter()
+        .filter(|v| !v.visible).map(|v| v.path).collect();
+    let is_hidden = |part: &str| {
+        let long = part.split(' ').next().unwrap_or("");
+        PIPELINE_FLAGS.iter().find(|f| f.long == long)
+            .and_then(|f| setting_of(f).or_else(|| opposite_of(f).map(|(_, s)| s)))
+            .is_some_and(|s| hidden.contains(&s.path))
+    };
+    // The new command is the old one with hidden settings left out.
+    let mut new_parts = new.split(" --").peekable();
+    let only_hidden_dropped = old.split(" --").all(|part| {
+        if new_parts.peek() == Some(&part) {
+            new_parts.next();
+            true
+        } else {
+            is_hidden(part)
+        }
+    }) && new_parts.next().is_none();
+    (!only_hidden_dropped).then(|| format!("{}\n  new: {new}\n  old: {old}", flags.join(" ")))
+}
+
+/// Every flag's samples after each of `contexts`, compared over a few threads.
+fn compare_renderers(contexts: &[Vec<String>], first_sample_only: bool) {
+    const THREADS: usize = 4;
+    let args: Vec<Arg> = cli().find_subcommand("run").unwrap().get_arguments()
+        .filter(|a| a.get_long().is_some() && !a.is_positional()
+            && !matches!(a.get_action(), ArgAction::Help | ArgAction::HelpShort | ArgAction::HelpLong | ArgAction::Version))
+        .cloned().collect();
+    let mut runs: Vec<Vec<String>> = Vec::new();
+    for context in contexts {
+        runs.push(context.clone());
+        for arg in &args {
+            let samples = samples(arg);
+            let samples = if first_sample_only { &samples[..1] } else { &samples[..] };
+            for values in samples {
+                runs.push(context.iter().cloned().chain(std::iter::once(format!("--{}", arg.get_long().unwrap())))
+                    .chain(values.iter().cloned()).collect());
+            }
+        }
+    }
+    let chunk = runs.len().div_ceil(THREADS);
+    let diffs: Vec<String> = std::thread::scope(|scope| {
+        let handles: Vec<_> = runs.chunks(chunk).map(|part| scope.spawn(move || {
+            let mut cmd = cli();
+            part.iter().filter_map(|flags| rendered_differently(&mut cmd, flags)).collect::<Vec<_>>()
+        })).collect();
+        handles.into_iter().flat_map(|h| h.join().unwrap()).collect()
+    });
+    assert!(diffs.is_empty(), "{} of {} commands differ:\n{}", diffs.len(), runs.len(),
+        diffs.iter().take(40).cloned().collect::<Vec<_>>().join("\n"));
+}
+
+/// The command rendered from the flag table is the hand-written renderer's, for every flag's
+/// samples on QSMxT's defaults.
+#[test]
+fn the_renderer_matches_the_legacy_one() {
+    compare_renderers(&[Vec::new()], false);
+}
+
+/// ... and after every pipeline, method and switch that shows settings of its own.
+#[test]
+#[ignore = "slow: every flag after each of ~100 contexts"]
+fn the_renderer_matches_the_legacy_one_in_every_context() {
+    let split = |s: &str| s.split(' ').map(String::from).collect::<Vec<_>>();
+    let mut contexts: Vec<Vec<String>> = qsmxt_engine::pipelines::ids().iter().map(|id| split(&format!("--pipeline {id}"))).collect();
+    let values = |long: &str| qsmxt_engine::schema::cli::PIPELINE_FLAGS.iter().find(|f| f.long == long).unwrap()
+        .values.iter().filter(|v| !v.hide).map(|v| v.name).collect::<Vec<_>>();
+    for (long, before) in [("qsm-algorithm", ""), ("qsmart-inversion", "--qsm-algorithm qsmart "), ("bf-algorithm", ""),
+                           ("chisep", "--do-chisep "), ("b0-estimation", ""), ("unwrapping-algorithm", ""),
+                           ("laplacian-solver", "--unwrapping-algorithm laplacian "), ("b0-weight-type", ""),
+                           ("qsmart-fit-threshold-mode", "--b0-estimation qsmart-echofit "), ("vsharp-grid", ""),
+                           ("chi-sepnet-route", "--do-chisep --chisep chi-sepnet "), ("r2prime-strategy", "--do-chisep --chisep chi-sep-ilsqr "),
+                           ("inhomogeneity-method", ""), ("two-pass-mode", "--two-pass "), ("multi-orientation-algorithm", "--orientation-group acq ")] {
+        for v in values(long) {
+            contexts.push(split(&format!("{before}--{long} {v}")));
+        }
+    }
+    for c in ["--do-swi", "--do-smwi", "--do-segmentation", "--do-analysis", "--motion-correction", "--heidi", "--two-pass",
+              "--orientation-group acq", "--orientation-group acq --cosmos-magnitude-weighting", "--qsm-algorithm medi --medi-msmv",
+              "--qsm-algorithm medi --medi-csf false", "--axial-resampling", "--romeo-individual", "--heidi --no-heidi-denoise",
+              "--vsharp-deconvolve true", "--do-chisep --chisep decompose --decompose-fit lsqcurvefit", "--do-t2starmap",
+              "--qsm-algorithm lsqr", "--pipeline heidi --heidi-denoise-reference-itk", "--pipeline sti-suite-ilsqr --laplacian-unmasked",
+              "--qsm-algorithm iqsm", "--bf-algorithm bfrnet", "--mask-preset robust-threshold", "--two-pass --two-pass-mask magnitude,threshold:otsu"] {
+        contexts.push(split(c));
+    }
+    compare_renderers(&contexts, true);
+}

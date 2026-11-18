@@ -1,7 +1,12 @@
 //! CLI command generation from PipelineConfig.
 
+use serde_json::Value;
+
 use crate::config::*;
 use crate::enums::*;
+use crate::schema::cli::{Flag, FlagAction, PIPELINE_FLAGS};
+use crate::schema::cli_apply::{opposite_of, setting_of};
+use crate::schema::{Setting, ValueType};
 
 /// Generate a `qsmxt run` CLI command from a pipeline configuration.
 /// Compares against defaults and only emits flags that differ.
@@ -25,9 +30,321 @@ pub fn generate_command(config: &PipelineConfig) -> String {
     }
 }
 
+
+
+/// Every flag a command can say, in the order it says them: roughly the order the run does
+/// things in, with each method's settings after the flag that chooses it. (QSMART's inner
+/// inversion's settings come between QSMART's own, after the three that choose and cap it.)
+/// The opposites of switches (`--no-x` of `--x`) are said at their switch's place.
+const EMIT_ORDER: &[&str] = &[
+    "pipeline", "orientation-group", "orientation-reference", "multi-orientation-algorithm",
+    "multi-orientation-lambda", "cosmos-magnitude-weighting", "cosmos-tol", "cosmos-max-iter",
+    "multi-orientation-force", "no-orientation-registration", "no-qsm", "do-swi", "no-magnitude",
+    "do-segmentation", "do-analysis", "synthseg-version", "synthseg-crop", "synthseg-patch",
+    "no-synthseg-flip-averaging", "no-synthseg-topology-cleanup", "synthseg-sigma", "use-custom-dseg",
+    "do-smwi", "smwi-threshold", "smwi-power", "smwi-mip-window", "do-t2starmap", "do-r2primemap", "do-r2map",
+    "do-r2starmap", "do-chisep", "use-custom-qsm", "use-custom-r2", "use-custom-r2prime", "r2prime-strategy",
+    "r2primenet-patch", "r2primenet-ignore-field-mismatch", "export-dicom", "axial-resampling",
+    "obliquity-threshold", "crop-to-mask", "ignore-slice-gap", "fft-padding", "tukey-window",
+    "crop-margin-mm", "output-space", "no-inhomogeneity-correction", "homogeneity-sigma-mm",
+    "homogeneity-nbox", "inhomogeneity-method", "n4-shrink-factor", "n4-max-iterations",
+    "n4-convergence-threshold", "n4-mesh", "n4-spline-order", "n4-bias-field-fwhm", "n4-wiener-noise",
+    "n4-histogram-bins", "n4-geometry", "use-custom-masks", "phase-offset-removal", "phase-offset-sigma-mm",
+    "coil-combination-sigma", "bipolar-correction", "unwrapping-algorithm", "laplacian-solver",
+    "laplacian-fft-pad", "laplacian-unmasked", "laplacian-keep-outside", "prelude-labelling",
+    "prelude-partitions", "motion-correction", "motion-reference", "no-motion-chain", "motion-chain-levels",
+    "motion-min-ncc", "registration-levels", "registration-max-samples", "registration-max-iterations",
+    "registration-max-evaluations", "registration-tolerance", "registration-rotation-step-deg",
+    "registration-translation-step-mm", "registration-min-overlap", "b0-estimation",
+    "qsmart-fit-threshold-mode", "qsmart-fit-percentile", "qsmart-fit-threshold", "b0-weight-type",
+    "b0-weight-assumed-t2star", "linear-fit-estimate-offset", "robust-fit-loss", "robust-fit-tuning",
+    "robust-fit-iterations", "robust-fit-downweight-level", "robust-fit-flag-ratio", "complex-fit-reltol",
+    "complex-fit-max-iter", "romeo-individual", "romeo-correct-global", "no-romeo-phase-coherence",
+    "no-romeo-phase-gradient-coherence", "no-romeo-phase-linearity", "no-romeo-mag-coherence",
+    "romeo-mag-weight", "romeo-mag-weight2", "romeo-bestpath", "romeo-merge-regions", "romeo-correct-regions",
+    "romeo-template", "romeo-temporal-uncertain-unwrapping", "romeo-max-seeds", "romeo-wrap-addition",
+    "mask-preset", "masking-input", "mask", "mask-combine", "mask-refine", "two-pass", "two-pass-mask",
+    "two-pass-mask-combine", "two-pass-mode", "bet-fractional-intensity", "bet-smoothness",
+    "bet-gradient-threshold", "bet-iterations", "bet-subdivisions", "bet-voxel-scale", "bet-orientation",
+    "bf-algorithm", "bf-erode-voxels", "bf-polish-mask", "bf-ukb-mask-trim", "vsharp-deconvolve",
+    "vsharp-threshold", "vsharp-max-radius", "vsharp-min-radius", "vsharp-radius-step", "vsharp-grid",
+    "vsharp-grid-spacing", "pdf-tol", "pdf-n-cg", "pdf-space", "pdf-n-pad", "lbv-tol", "lbv-depth",
+    "lbv-peel", "lbv-n1", "lbv-n2", "lbv-n3", "lbv-precision", "ismv-variant", "ismv-tol", "ismv-max-iter",
+    "ismv-radius", "sharp-threshold", "sharp-radius", "resharp-radius", "resharp-tik-reg", "resharp-tol",
+    "resharp-max-iter", "harperella-radius", "harperella-max-iter", "harperella-tol", "harperella-pad",
+    "harperella-rim", "iharperella-max-iter", "iharperella-tol", "iharperella-pad", "iharperella-rim",
+    "qsm-algorithm", "qsmart-inversion", "qsmart-ilsqr-max-iter", "qsmart-ilsqr-pad-mm", "rts-delta",
+    "rts-mu", "rts-rho", "rts-tol", "rts-max-iter", "rts-lsmr-iter", "rts-tau", "rts-gamma", "rts-pad",
+    "tv-lambda", "tv-rho", "tv-tol", "tv-max-iter", "tv-pad", "tkd-threshold", "tkd-pad", "tsvd-threshold",
+    "tsvd-pad", "tikhonov-lambda", "tikhonov-pad", "nltv-lambda", "nltv-rho", "nltv-mu", "nltv-tol",
+    "nltv-max-iter", "nltv-tol-newton", "nltv-newton-iter", "nltv-te", "nltv-pad", "medi-lambda",
+    "medi-percentage", "medi-max-iter", "medi-cg-max-iter", "medi-cg-tol", "medi-tol", "medi-smv-radius",
+    "no-medi-smv-shrink-mask", "medi-merit", "medi-data-weighting", "medi-csf", "medi-lambda-csf",
+    "medi-csf-r2s-threshold", "medi-csf-erode", "medi-zeropad", "no-medi-smv", "medi-msmv", "medi-msmv-maxk",
+    "medi-msmv-vessel-radius", "no-medi-msmv-prefilter", "medi-te", "tfi-lambda", "tfi-precond",
+    "tfi-data-weighting", "tfi-merit", "tfi-linear", "tfi-percentage", "tfi-max-iter", "tfi-cg-max-iter",
+    "tfi-cg-tol", "tfi-tol", "tfi-te", "ilsqr-tol", "ilsqr-max-iter", "ilsqr-pad-mm", "ilsqr-precision",
+    "star-pad", "star-te", "lsqr-residual-weighting", "no-lsqr-global-offset", "lsqr-tol", "lsqr-max-iter",
+    "tgv-iterations", "tgv-erosions", "tgv-alpha0", "tgv-alpha1", "tgv-step-size", "tgv-te", "ndi-tau",
+    "ndi-alpha", "ndi-max-iter", "ndi-auto-stop", "ndi-te", "ndi-weight-norm", "fansi-alpha1", "fansi-mu1",
+    "fansi-mu2", "fansi-alpha0", "fansi-mu0", "fansi-max-iter", "fansi-tol-update", "fansi-tol-delta",
+    "fansi-te", "l1qsm-alpha1", "l1qsm-mu1", "l1qsm-mu2", "l1qsm-mu3", "l1qsm-lambda", "l1qsm-max-iter",
+    "l1qsm-tol-update", "l1qsm-tol-delta", "l1qsm-te", "whqsm-alpha1", "whqsm-mu1", "whqsm-mu2", "whqsm-beta",
+    "whqsm-muh", "whqsm-max-iter", "whqsm-tol-update", "whqsm-tol-delta", "whqsm-weight", "whqsm-te",
+    "hdqsm-alpha-l2", "hdqsm-mu1-l2", "hdqsm-mu2", "hdqsm-max-iter-l1", "hdqsm-max-iter-l2",
+    "hdqsm-tol-update", "amp-pe-wave-order", "amp-pe-nlevel", "amp-pe-wave-pec", "amp-pe-simulated-te",
+    "amp-pe-max-linearization-ite", "amp-pe-damp-rate-sig", "amp-pe-damp-rate-par", "amp-pe-max-pe-spar-ite",
+    "amp-pe-max-pe-est-ite", "amp-pe-cvg-thd", "amp-pe-tikhonov-beta", "qsmart-vasc-sphere-radius",
+    "qsmart-sdf-sigma1-stage1", "qsmart-sdf-sigma2-stage1", "qsmart-sdf-sigma1-stage2",
+    "qsmart-sdf-sigma2-stage2", "qsmart-sdf-lower-lim", "qsmart-sdf-curv-constant", "qsmart-frangi-scale-min",
+    "qsmart-frangi-scale-max", "qsmart-frangi-scale-ratio", "qsmart-frangi-c-mode", "qsmart-frangi-c",
+    "qsmart-frangi-c-factor", "qsmart-vessel-units", "qsmart-vessel-magnitude", "qsmart-offset-grid", "heidi",
+    "heidi-cone-threshold", "heidi-gradient-threshold", "no-heidi-laplacian-correction",
+    "heidi-laplacian-threshold", "heidi-gradient-mask-floor", "heidi-continuation-steps",
+    "heidi-inner-iterations", "heidi-mu-min", "heidi-tol", "no-heidi-denoise", "heidi-denoise-iterations",
+    "heidi-denoise-time-step", "heidi-denoise-conductance", "heidi-denoise-reference-itk", "heidi-te",
+    "tile-size", "tile-halo", "chisep", "r2star-qsm-r-const-3t", "decompose-n-inner", "decompose-chi-bound",
+    "decompose-unwrap-phase", "decompose-fit", "decompose-max-iterations",
+    "decompose-max-function-evaluations", "decompose-function-tolerance", "decompose-step-tolerance",
+    "decompose-optimality-tolerance", "decompose-finite-difference-step", "decompose-typical-x",
+    "chi-sep-ilsqr-dr-pos", "chi-sep-ilsqr-dr-neg", "chi-sep-ilsqr-pad", "chi-sep-ilsqr-cg-max-iter-lsqr",
+    "chi-sep-ilsqr-cg-tol-lsqr", "chi-sep-ilsqr-cg-max-iter-sa", "chi-sep-ilsqr-cg-tol-sa",
+    "chi-sep-ilsqr-d2-thr", "chi-sep-ilsqr-prc-w-i-min", "chi-sep-ilsqr-prc-w-i-max",
+    "chi-sep-ilsqr-prc-w-g-min", "chi-sep-ilsqr-prc-w-g-max", "chi-sep-ilsqr-qsm-max-iter",
+    "chi-sep-ilsqr-qsm-tol", "chi-sep-ilsqr-qsm-pad-mm", "chi-sep-ilsqr-qsm-precision", "chi-sep-medi-lambda",
+    "chi-sep-medi-lambda-csf", "chi-sep-medi-dr-pos", "chi-sep-medi-dr-neg", "chi-sep-medi-pad",
+    "chi-sep-medi-tol", "chi-sep-medi-max-iter", "chi-sep-medi-cg-tol", "chi-sep-medi-cg-max-iter",
+    "chi-sep-medi-qsm-max-iter", "chi-sep-medi-qsm-tol", "chi-sep-medi-qsm-pad-mm",
+    "chi-sep-medi-qsm-precision", "chi-sep-medi-csf-r2star", "wavesep-dr-pos", "wavesep-dr-neg",
+    "wavesep-alpha", "wavesep-lambda", "wavesep-wavelet-order", "wavesep-max-iter", "wavesep-tol",
+    "hc-chisep-dr-pos-3t", "hc-chisep-bin-hz", "chi-sepnet-route", "chi-sepnet-patch",
+    "chi-sepnet-frame-patch", "susep-net-patch", "qsm-reference", "qsm-per-echo", "swi-unwrapping",
+    "swi-hp-sigma", "swi-scaling", "swi-strength", "swi-mip-window", "swi-filtered-phase",
+    "dismiss-recommendation",
+];
+
+/// The command for `config`, with flags where it differs from `base`: QSMxT's defaults, or
+/// `pipeline`'s settings. Most flags set one registry setting ([`setting_of`]) and are said
+/// when that setting is shown and differs from `base`; the rest are spelled out below.
+fn command_for(config: &PipelineConfig, base: &PipelineConfig, pipeline: Option<&str>) -> String {
+    let mut parts: Vec<String> = vec!["qsmxt".into(), "run".into(), "<bids_dir>".into()];
+    if let Some(id) = pipeline {
+        parts.push(format!("--pipeline {id}"));
+    }
+    let visible: Vec<&str> = crate::schema::settings_view(config, &crate::schema::ViewFacts::default())
+        .into_iter().filter(|v| v.visible).map(|v| v.path).collect();
+    let (values, base_values) = (serde_json::to_value(config).unwrap_or_default(), serde_json::to_value(base).unwrap_or_default());
+    let m = &config.multi_orientation;
+    for long in EMIT_ORDER {
+        let flag = PIPELINE_FLAGS.iter().find(|f| f.long == *long).expect("every flag said is in the table");
+        match *long {
+            // Said first, above.
+            "pipeline" => {}
+            // The pattern is what switches grouping on, so it and the reconstruction are said
+            // whenever it is on; the patterns are quoted so that a shell leaves their globs alone.
+            "orientation-group" if m.enabled() => parts.push(format!("--orientation-group {}", shell_quote(&m.group_by))),
+            "orientation-reference" if m.enabled() && !m.reference.trim().is_empty() => {
+                parts.push(format!("--orientation-reference {}", shell_quote(m.reference.trim())));
+            }
+            "multi-orientation-algorithm" if m.enabled() => parts.push(format!("--multi-orientation-algorithm {}", m.algorithm)),
+            "orientation-group" | "orientation-reference" | "multi-orientation-algorithm" => {}
+            // --do-analysis implies segmentation, so saying both adds noise.
+            "do-segmentation" => {
+                if config.pipeline.do_segmentation && !config.pipeline.do_analysis {
+                    parts.push("--do-segmentation".into());
+                }
+            }
+            // R2*, R2 and R2' are chained: chi-separation may imply R2', and computing R2'
+            // implies R2* (and R2, where it can be measured). Each flag is said unless the rest
+            // of the config implies it, asked of the same enforcement a run applies, so a flag
+            // the chosen method does not imply (R2 under r2star-qsm, say) is never dropped.
+            "do-r2primemap" | "do-r2map" | "do-r2starmap" => {
+                let field: fn(&mut PipelineConfig) -> &mut bool = match *long {
+                    "do-r2primemap" => |c| &mut c.pipeline.do_r2primemap,
+                    "do-r2map" => |c| &mut c.pipeline.do_r2map,
+                    _ => |c| &mut c.pipeline.do_r2starmap,
+                };
+                let mut cleared = config.clone();
+                *field(&mut cleared) = false;
+                crate::config::enforce_separation_dependencies(&mut cleared);
+                if *field(&mut config.clone()) && !*field(&mut cleared) {
+                    parts.push(format!("--{long}"));
+                }
+            }
+            // Counted from 1 on the command line, from 0 in the config.
+            "romeo-template" => {
+                let (t, bt) = (config.field_mapping.romeo.template, base.field_mapping.romeo.template);
+                if !config.field_mapping.romeo.individual && t != bt {
+                    parts.push(format!("--romeo-template {}", t + 1));
+                }
+            }
+            // One value when the three are the same.
+            "laplacian-fft-pad" => {
+                let pad = config.field_mapping.laplacian_fft_pad;
+                if config.field_mapping.laplacian_solver == LaplacianSolver::Fft && pad != base.field_mapping.laplacian_fft_pad {
+                    parts.push(if pad[0] == pad[1] && pad[1] == pad[2] {
+                        format!("--laplacian-fft-pad {}", pad[0])
+                    } else {
+                        format!("--laplacian-fft-pad {} {} {}", pad[0], pad[1], pad[2])
+                    });
+                }
+            }
+            "mask-preset" => masking_flags(&mut parts, config, base),
+            // Said with the preset, by `masking_flags`.
+            "masking-input" | "mask" | "mask-combine" | "mask-refine" => {}
+            // The reliable mask only needs spelling out once it differs from the default recipe.
+            "two-pass-mask" => {
+                if let Some(sections) = config.masking.two_pass_sections.as_ref().filter(|_| config.masking.two_pass) {
+                    if *sections != crate::masking::default_two_pass_sections() {
+                        for section in sections {
+                            parts.push(format!("--two-pass-mask {}", section.compact_spec()));
+                        }
+                    }
+                }
+            }
+            // `qsmxt` pushes these out to every BET step of the recipe; the config keeps them here.
+            "bet-fractional-intensity" => emit_value(&mut parts, flag, &config.bet.fractional_intensity, &base.bet.fractional_intensity),
+            "bet-voxel-scale" => emit_value(&mut parts, flag, &config.bet.voxel_scale, &base.bet.voxel_scale),
+            // One flag carries both fields: the method, or the region spec that replaces it.
+            "qsm-reference" => {
+                let spec = config.qsm.reference_spec();
+                if spec != base.qsm.reference_spec() {
+                    parts.push(format!("--qsm-reference {spec}"));
+                }
+            }
+            "dismiss-recommendation" => dismissal_flags(&mut parts, config),
+            _ => {
+                let Some(setting) = setting_of(flag) else { continue };
+                let (v, b) = (lookup(&values, setting.path), lookup(&base_values, setting.path));
+                if v != b && visible.contains(&setting.path) {
+                    if let Some(arg) = render(flag, setting, &v) {
+                        parts.push(arg);
+                    }
+                }
+            }
+        }
+    }
+    parts.join(" ")
+}
+
+/// The value at `path`, `null` for an unset optional value (left out of the serialised config).
+fn lookup(config: &Value, path: &str) -> Value {
+    path.split('.').try_fold(config, |v, k| v.get(k)).cloned().unwrap_or(Value::Null)
+}
+
+/// `--flag value` for a setting `qsmxt` keeps outside the registry's flags.
+fn emit_value(parts: &mut Vec<String>, flag: &Flag, value: &f64, base: &f64) {
+    if value != base {
+        parts.push(format!("--{} {value}", flag.long));
+    }
+}
+
+/// How `flag` says `value` of `setting`, or `None` where it cannot: an unset optional value is
+/// the one qsm-core derives, said by leaving the flag out, and a switch is said only by a flag
+/// for its direction.
+fn render(flag: &Flag, setting: &Setting, value: &Value) -> Option<String> {
+    let long = flag.long;
+    let text = match (value, &setting.value_type) {
+        (Value::Null, _) => return None,
+        (Value::Bool(on), ValueType::Bool) if flag.action == FlagAction::SetTrue => {
+            // `--x` turns it on and `--no-x` off; the other direction is its opposite's.
+            if *on != long.starts_with("no-") {
+                return Some(format!("--{long}"));
+            }
+            return PIPELINE_FLAGS.iter().find(|f| opposite_of(f).is_some_and(|(o, _)| o.long == long))
+                .map(|f| format!("--{}", f.long));
+        }
+        (v, ValueType::EchoTime { .. }) => serde_json::from_value::<EchoTimeChoice>(v.clone()).ok()?.to_string(),
+        (v, ValueType::NumberOrChoice { .. }) => serde_json::from_value::<ChiBoundChoice>(v.clone()).ok()?.to_string(),
+        (v, ValueType::EchoReference { .. }) => serde_json::from_value::<crate::MotionReference>(v.clone()).ok()?.to_string(),
+        // A bare flag stands for the value it takes when given without one (`*`, any tool).
+        (Value::String(s), _) if flag.default_missing.contains(&s.as_str()) => return Some(format!("--{long}")),
+        (Value::Array(xs), _) => xs.iter().map(scalar).collect::<Vec<_>>().join(" "),
+        (v, _) => scalar(v),
+    };
+    Some(format!("--{long} {text}"))
+}
+
+/// A number as Rust writes it (`100`, not `100.0`), and other values as they are.
+fn scalar(v: &Value) -> String {
+    match v {
+        Value::Number(n) => match (n.as_u64(), n.as_i64(), n.as_f64()) {
+            (Some(u), _, _) => u.to_string(),
+            (_, Some(i), _) => i.to_string(),
+            (_, _, Some(x)) => x.to_string(),
+            _ => n.to_string(),
+        },
+        Value::String(s) => s.clone(),
+        other => other.to_string(),
+    }
+}
+
+/// The mask recipe: a preset says in three words what spelling the sections out takes a line
+/// and a half to say, so the preset is said whenever the configuration is one (and the input
+/// it is read from, which only ever qualifies a preset).
+fn masking_flags(parts: &mut Vec<String>, config: &PipelineConfig, base: &PipelineConfig) {
+    let (c, b) = (&config.masking, &base.masking);
+    // The default recipe is a preset too; saying so adds noise rather than removing it.
+    if c.sections == b.sections && c.combine == b.combine && c.refinements == b.refinements {
+        return;
+    }
+    match crate::masking::masking_preset_command(c) {
+        Some((preset, input)) => {
+            parts.push(format!("--mask-preset {preset}"));
+            if let Some(input) = input {
+                parts.push(format!("--masking-input {input}"));
+            }
+        }
+        None => {
+            for section in &c.sections {
+                parts.push(format!("--mask {}", section.compact_spec()));
+            }
+            if c.combine != b.combine {
+                parts.push(format!("--mask-combine {}", c.combine));
+            }
+            for op in &c.refinements {
+                parts.push(format!("--mask-refine {}", op.compact_spec()));
+            }
+        }
+    }
+}
+
+/// The dismissed recommendations that still hold: a dismissal whose setting has since changed
+/// is gone.
+fn dismissal_flags(parts: &mut Vec<String>, config: &PipelineConfig) {
+    let mut held = config.dismissed_recommendations.clone();
+    if !held.is_empty() {
+        let mut c = config.clone();
+        crate::recommendations::prune_dismissals(&mut c, &crate::recommendations::Facts::default());
+        held = c.dismissed_recommendations;
+    }
+    for x in &held {
+        let arg = format!("{}={}", x.rule, x.chosen);
+        // Rule ids and dismissed values are written in characters a shell leaves alone.
+        let plain = arg.chars().all(|c| c.is_ascii_alphanumeric() || "-_.=,/".contains(c));
+        parts.push(format!("--dismiss-recommendation {}", if plain { arg } else { shell_quote(&arg) }));
+    }
+}
+
+/// The renderer this module had before it read the flag table: the oracle the new one is
+/// compared against, until the two are shown to agree.
+#[doc(hidden)]
+pub fn generate_command_legacy(config: &PipelineConfig) -> String {
+    let facts = crate::schema::ViewFacts::default();
+    let pruned = crate::schema::prune_hidden(&config.normalised().0, &facts);
+    let pipeline = crate::pipelines::followed(config, &facts).and_then(|id| {
+        let base = crate::pipelines::target(&PipelineConfig::default(), id, &facts).ok()?;
+        Some((id, crate::schema::prune_hidden(&base.normalised().0, &facts)))
+    });
+    match pipeline {
+        Some((id, base)) => legacy_command_for(&pruned, &base, Some(id)),
+        None => legacy_command_for(&pruned, &PipelineConfig::default(), None),
+    }
+}
+
 /// The command for `config`, with flags where it differs from `d`: QSMxT's defaults, or
 /// `pipeline`'s settings.
-fn command_for(config: &PipelineConfig, d: &PipelineConfig, pipeline: Option<&str>) -> String {
+fn legacy_command_for(config: &PipelineConfig, d: &PipelineConfig, pipeline: Option<&str>) -> String {
     let d = d.clone();
     let mut parts: Vec<String> = vec!["qsmxt".into(), "run".into(), "<bids_dir>".into()];
     if let Some(id) = pipeline {
