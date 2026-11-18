@@ -3736,25 +3736,23 @@ impl PipelineFormState {
                 help: "Number of phase bins the initial regions are formed from (default 8)" });
         }
 
-        // Phase offset removal (HIP), with ROMEO and PRELUDE; then ROMEO's own settings. MEDI's
+        // Phase offset removal (HIP), before any unwrapper; then ROMEO's own settings. MEDI's
         // complex fit fits its own phase offset, so none are removed first.
         let removes_offsets = combines && !self.b0_estimation_is("complex-fit");
-        if !is_laplacian {
-            if removes_offsets {
+        if removes_offsets {
             rows.push(PipelineRow::Toggle {
                 label: "  Phase offset removal", field: "phase_offset_removal",
                 help: "Remove spatially-varying phase offset using HIP (Eckstein et al., 2018); multi-echo only",
             });
-            }
-            if removes_offsets && self.phase_offset_removal {
+        }
+        if removes_offsets && self.phase_offset_removal {
             rows.push(PipelineRow::Param { label: "    Sigma (mm)", field: "phase_offset_sigma_mm",
-                    help: "Gaussian smoothing sigma in mm (x y z)" });
-                // Part of the offset-removal path: without it the correction never runs.
-                rows.push(PipelineRow::Toggle {
-                    label: "    Bipolar correction", field: "bipolar_correction",
-                    help: "Remove the linear phase artefact of bipolar readout gradients (needs at least 3 echoes; fewer: skipped)",
-                });
-            }
+                help: "Gaussian smoothing sigma in mm (x y z)" });
+            // Part of the offset-removal path: without it the correction never runs.
+            rows.push(PipelineRow::Toggle {
+                label: "    Bipolar correction", field: "bipolar_correction",
+                help: "Remove the linear phase artefact of bipolar readout gradients (needs at least 3 echoes; fewer: skipped)",
+            });
         }
         if is_romeo {
             rows.push(PipelineRow::Toggle {
@@ -12960,9 +12958,9 @@ mod tests {
             matches!(r, PipelineRow::Note { text } if text.contains("SMWI"))), "the forced QSM says why");
     }
 
-    /// Bipolar correction is part of HIP phase offset removal, which only ROMEO runs.
+    /// Bipolar correction is part of HIP phase offset removal, which runs before any unwrapper.
     #[test]
-    fn bipolar_correction_needs_romeo_and_offset_removal() {
+    fn bipolar_correction_needs_offset_removal() {
         let mut app = App::new();
         let shows = |app: &App| app.pipeline_state.all_rows().iter().any(|r|
             matches!(r, PipelineRow::Toggle { field: "bipolar_correction", .. }));
@@ -12974,7 +12972,7 @@ mod tests {
         assert!(!shows(&app) && !passed(&app), "no offset removal, no bipolar correction");
         app.pipeline_state.phase_offset_removal = true;
         app.pipeline_state.unwrapping_algorithm = 1;
-        assert!(!shows(&app) && !passed(&app), "Laplacian unwrapping runs no offset removal");
+        assert!(shows(&app) && passed(&app), "Laplacian unwrapping removes offsets first too");
     }
 
     /// The bring-your-own inputs and the R2' source are reachable wherever a map they feed is

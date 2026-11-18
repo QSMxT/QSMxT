@@ -74,7 +74,6 @@ Reference values of the chosen methods (for the first run's scan):
   B0 estimation: Complex fit — MEDI uses Complex fit
   B0 estimation: Complex fit — PDF uses Complex fit
   Phase offset sigma: 7 × 7 × 7 mm — phase offset removal on uses 7 × 7 × 7 mm
-  Phase unwrapping: MEDI region growing — PDF uses ROMEO
   Phase unwrapping: MEDI region growing — Complex fit uses MEDI region growing
   Echo time (MEDI): Echo spacing — MEDI uses Echo spacing
   Inhomogeneity correction: none — MEDI uses none

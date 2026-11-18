@@ -197,6 +197,11 @@ fn apply_laplacian(
 ) {
     c.laplacian_solver = solver;
     c.laplacian_unmasked = args.laplacian_unmasked;
+    if let Some(v) = args.phase_offset_removal { c.phase_offset_removal = v; }
+    if let Some(ref s) = args.phase_offset_sigma_mm {
+        if s.len() == 3 { c.phase_offset_sigma_mm = [s[0], s[1], s[2]]; }
+    }
+    c.bipolar_correction = args.bipolar_correction;
 }
 
 /// `fieldmap romeo`'s own flags.
@@ -453,6 +458,9 @@ mod tests {
             &["--laplacian-solver", "mirror", "--laplacian-unmasked", "--b0-estimation", "qsmart-echofit"],
             &["--laplacian-solver", "fft", "--laplacian-fft-pad", "12", "--b0-estimation", "linear-fit"],
             &["--laplacian-solver", "mgpcg", "--laplacian-unmasked"],
+            // Phase offsets are removed before Laplacian unwrapping too (QSM.rs#484).
+            &["--phase-offset-removal", "false"],
+            &["--phase-offset-sigma-mm", "3", "3", "3", "--bipolar-correction"],
         ];
         for flags in flag_sets {
             let mut fm = vec!["qsmxt", "fieldmap", "laplacian", "p.nii", "--mask", "m.nii", "--output", "o.nii",

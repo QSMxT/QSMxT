@@ -865,7 +865,6 @@ impl Ctx<'_> {
                 // MEDI's complex fit fits its own phase offset (crate::stages::field).
                 let per_echo = self.per_echo();
                 let removes_offsets = self.n() > 1 && !per_echo && fm.phase_offset_removal
-                    && fm.unwrapping_algorithm != UnwrappingAlgorithm::Laplacian
                     && fm.b0_estimation != B0Estimation::ComplexFit;
                 let id = if removes_offsets { "phase_offset_removal".to_string() } else { fm.unwrapping_algorithm.to_string() };
                 let label = match fm.unwrapping_algorithm {

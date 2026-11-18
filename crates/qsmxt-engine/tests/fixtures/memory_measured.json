@@ -394,6 +394,10 @@
     [
      "field_mapping.unwrapping_algorithm",
      "laplacian"
+    ],
+    [
+     "field_mapping.phase_offset_removal",
+     false
     ]
    ],
    "isolated": "unwrap",
@@ -3175,6 +3179,10 @@
     [
      "inversion.algorithm",
      "tkd"
+    ],
+    [
+     "field_mapping.phase_offset_removal",
+     false
     ]
    ],
    "need": [
@@ -3223,6 +3231,10 @@
     [
      "inversion.algorithm",
      "tkd"
+    ],
+    [
+     "field_mapping.phase_offset_removal",
+     false
     ]
    ],
    "need": [
@@ -3271,6 +3283,10 @@
     [
      "inversion.algorithm",
      "tkd"
+    ],
+    [
+     "field_mapping.phase_offset_removal",
+     false
     ]
    ],
    "need": [
@@ -4033,6 +4049,10 @@
        ]
       }
      ]
+    ],
+    [
+     "field_mapping.phase_offset_removal",
+     false
     ]
    ],
    "need": [

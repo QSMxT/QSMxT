@@ -1958,6 +1958,9 @@ qsmxt fieldmap laplacian [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver: `dct` (unweighted least squares, Neumann/DCT solve), `fft` (Schofield & Zhu, FFT solve on a zero-padded volume), `mirror` (the same on the volume mirrored along each axis, as QSMART unwraps) or `mgpcg` (QSM.jl's MGPCG: Laplacian unwrapping with LBV background removal in one step; QSM.jl follows it with V-SHARP to remove remaining background) Values: `dct`, `fft`, `mirror`, `mgpcg`. Default: `dct`. |
 | `--laplacian-fft-pad <VOXELS>` | Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or three (x y z) Default: `64`. |
 | `--laplacian-unmasked` | Unwrap the raw phase over the whole volume, instead of the phase set to zero outside the mask, as QSMART does. With `--b0-estimation qsmart-echofit` the fit then covers the whole volume (the saved field map is still set to zero outside the mask) |
+| `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
+| `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
+| `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
 
 ### `qsmxt fieldmap prelude`
 

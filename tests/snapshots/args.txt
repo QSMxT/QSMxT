@@ -1611,6 +1611,9 @@
 --laplacian-solver aliases=laplacian-kernel value=LAPLACIAN_SOLVER num_args=1 action=Set default=dct values=dct,fft|sti,mirror,mgpcg
 --laplacian-fft-pad value=VOXELS num_args=1..=3 action=Append default=64
 --laplacian-unmasked value=LAPLACIAN_UNMASKED num_args=0 action=SetTrue default=false
+--phase-offset-removal value=PHASE_OFFSET_REMOVAL num_args=1 action=Set values=true,false
+--phase-offset-sigma-mm value=PHASE_OFFSET_SIGMA_MM num_args=3 action=Append
+--bipolar-correction value=BIPOLAR_CORRECTION num_args=0 action=SetTrue default=false
 --help -h num_args=0 action=Help
 
 ## qsmxt fieldmap prelude

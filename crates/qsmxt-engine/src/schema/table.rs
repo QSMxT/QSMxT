@@ -190,12 +190,12 @@ pub(super) fn table() -> Vec<Def> {
         .full("Laplacian field kept outside the mask"),
         // MEDI's complex fit fits its own phase offset: QSM.rs does not remove them first.
         d("field_mapping.phase_offset_removal", FieldMap, "Phase offset removal", "Remove spatially-varying phase offset using HIP (Eckstein et al., 2018); multi-echo only", Bool).basic().flag("--phase-offset-removal").parent("field_mapping.unwrapping_algorithm")
-        .when(|x| x.combines && !x.laplacian && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit),
+        .when(|x| x.combines && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit),
         d("field_mapping.phase_offset_sigma_mm", FieldMap, "Sigma (mm)", "Gaussian smoothing sigma in mm (x y z)", FloatVec3).units("mm").flag("--phase-offset-sigma-mm").parent("field_mapping.phase_offset_removal")
-        .when(|x| x.combines && !x.laplacian && x.c.field_mapping.phase_offset_removal && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit).full("Phase offset sigma")
+        .when(|x| x.combines && x.c.field_mapping.phase_offset_removal && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit).full("Phase offset sigma")
         .gui("Gaussian smoothing sigma (x y z)"),
         d("field_mapping.bipolar_correction", FieldMap, "Bipolar correction", "Remove the linear phase artefact of bipolar readout gradients (needs at least 3 echoes; fewer: skipped)", Bool).basic().flag("--bipolar-correction").parent("field_mapping.phase_offset_removal")
-        .when(|x| x.combines && !x.laplacian && x.c.field_mapping.phase_offset_removal && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit),
+        .when(|x| x.combines && x.c.field_mapping.phase_offset_removal && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit),
         d("field_mapping.romeo.individual", FieldMap, "Individual mode", "Unwrap each echo on its own (for motion or time series). Off = the template echo is unwrapped spatially and the others temporally from it.", Bool).flag("--romeo-individual").parent("field_mapping.unwrapping_algorithm")
         .when(|x| x.romeo).full("Unwrap echoes individually"),
         // The config counts echoes from 0; the TUI and --romeo-template from 1.

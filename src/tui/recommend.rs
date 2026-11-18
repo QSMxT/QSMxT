@@ -1580,9 +1580,14 @@ mod tests {
                 let c = super::super::command::config_from_app(&app).unwrap();
                 let facts = app.rule_facts();
                 let view = app.rule_view();
+                // Nor where a reasoned rule on the same setting wants another value: the pop-up
+                // preselects it over the authors' setting (QSM.rs's `field-mapping.phase-offsets`
+                // against STI Suite's no offset removal).
+                let outranked = |r: &Recommendation| view.iter().any(|v| v.kind == Kind::Reasoned
+                    && v.setting == r.setting && v.recommended.value != r.recommended.value);
                 for m in rec::chosen_methods(&c, &facts).into_iter().filter(|m| m.setting == "inversion.algorithm") {
                     let left: Vec<String> = rec::reference_differences(&c, &facts, &m).into_iter()
-                        .filter(|r| rec::disagreeing(&view, r).is_empty() && !r.conflict)
+                        .filter(|r| rec::disagreeing(&view, r).is_empty() && !r.conflict && !outranked(r))
                         .map(|r| format!("{} ({})", r.rule, r.current_text())).collect();
                     assert!(left.is_empty(), "{method}: {} left: {left:?}", m.name);
                 }

@@ -8,6 +8,7 @@ Pipeline:
   QSM reference:     None
 
   sub-1_MEGRE (3 echo(es), 8x8x8, B0=3.0T, no ImagingFrequency: ppm from the nominal field, est. 0 MB)
+    Phase offset removal: on → off (the pipeline's on this scan)
     Weight type: Phase SNR → Assumed decay (the pipeline's on this scan)
 
 Memory: 4.0 GB available (--mem-limit-gb), max 1 concurrent run(s)
@@ -67,7 +68,10 @@ QSM processing was performed using qsmxt (Stewart, 2026). Processing followed th
 - Wu, B., et al. (2012). "Whole brain susceptibility mapping using compressed sensing." *Magnetic Resonance in Medicine*, 67(1):137-147. https://doi.org/10.1002/mrm.23000
 - Li, W., et al. (2015). "A method for estimating and removing streaking artifacts in quantitative susceptibility mapping." *NeuroImage*, 108:111-122. https://doi.org/10.1016/j.neuroimage.2014.12.043
 
-Recommendations: none (the configuration departs from nothing the chosen methods' rules cover)
+Recommendations (QSM.rs's pipeline rules for the chosen methods):
+  recommended (--accept-recommendations applies them):
+    - Phase offset removal is off; Weighted average recommends turning it on: The B0 calculation's authors state that phase offsets have to be removed before it; ROMEO removes them (MCPC-3D-S) whenever it computes B0 from multi-echo data. Laplacian unwrapping does not remove them: it takes out only their harmonic part, and the rest stays in the field map (field-mapping.phase-offsets, stated by the authors)
+      keep the choice with --dismiss-recommendation field-mapping.phase-offsets=false
 
 Reference values of the chosen methods (for the first run's scan):
   Background removal: V-SHARP — ukb mask trim on uses V-SHARP
@@ -81,7 +85,8 @@ Reference values of the chosen methods (for the first run's scan):
   Laplacian field kept outside the mask: on — ukb mask trim on uses on
   Laplacian solver: FFT, 64-voxel padding — ukb mask trim on uses FFT, 64-voxel padding
   Laplacian unwrapping of the raw phase: off — ukb mask trim on uses off
-  Phase offset sigma: 7 × 7 × 7 mm — phase offset removal on uses 7 × 7 × 7 mm
+  Phase offset removal: off — Weighted average uses on (differs)
+  Phase offset removal: off — ukb mask trim on uses off
   Phase unwrapping: Laplacian — ukb mask trim on uses Laplacian
   QSM inversion: iLSQR — ukb mask trim on uses iLSQR
   Maximum iterations (iLSQR): 100 — ukb mask trim on uses 100

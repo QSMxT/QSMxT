@@ -2904,10 +2904,16 @@ pub struct FieldmapLaplacianArgs {
     /// volume (the saved field map is still set to zero outside the mask)
     #[arg(long)]
     pub laplacian_unmasked: bool,
-    // Note: phase offset removal and bipolar correction are not applied with Laplacian
-    // unwrapping, so they are intentionally not exposed here. Each echo is unwrapped on its
-    // own and the echoes are then combined by b0-estimation / b0-weight-type / linear-fit-*
-    // on `common` (see `qsmxt_engine::fieldmap`).
+    /// Enable phase offset removal for multi-echo data (default: true)
+    #[arg(long)]
+    pub phase_offset_removal: Option<bool>,
+    /// Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command
+    /// line's)
+    #[arg(long, num_args = 3)]
+    pub phase_offset_sigma_mm: Option<Vec<f64>>,
+    /// Enable bipolar gradient correction (requires >= 3 echoes)
+    #[arg(long)]
+    pub bipolar_correction: bool,
 }
 
 #[derive(Parser, Debug)]
