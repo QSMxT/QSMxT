@@ -739,6 +739,27 @@ pub(crate) mod tests {
         assert!(plan(&config, &f).two_pass);
     }
 
+    /// A `local` two-pass run (the default) selects its holes inside the main pass's local-field
+    /// mask, fills its reliable pass's rim inside it and weighs the merge by the reliable mask:
+    /// each step reads those, so a new main-pass field recomputes them. `original` reads as before.
+    #[test]
+    fn a_local_two_pass_reads_the_main_pass_support() {
+        let mut config = PipelineConfig::default();
+        config.masking.two_pass = true;
+        let reads = |config: &PipelineConfig, stage: Stage| {
+            plan(config, &facts()).steps.iter().find(|s| s.stage == stage).unwrap().reads.clone()
+        };
+        let main_support = Item::LocalFieldMask(Pass::Main);
+        assert!(reads(&config, Stage::Mask(Pass::Reliable)).contains(&main_support));
+        assert!(reads(&config, Stage::BackgroundRemoval(Pass::Reliable)).contains(&main_support));
+        let merge = reads(&config, Stage::TwoPassCombination);
+        assert!(merge.contains(&main_support) && merge.contains(&Item::ReliableMask), "{merge:?}");
+        config.masking.two_pass_mode = crate::enums::TwoPassMode::Original;
+        assert!(!reads(&config, Stage::Mask(Pass::Reliable)).contains(&main_support));
+        assert!(!reads(&config, Stage::BackgroundRemoval(Pass::Reliable)).contains(&main_support));
+        assert!(!reads(&config, Stage::TwoPassCombination).contains(&main_support));
+    }
+
     #[test]
     fn deep_learning_steps_name_their_models() {
         let mut config = PipelineConfig::default();

@@ -1755,6 +1755,11 @@ pub struct MaskingConfig {
     /// How the reliable-pass sections fold into one mask. `None` = the main mask's `combine`.
     #[serde(default)]
     pub two_pass_combine: Option<MaskCombine>,
+    /// How the second pass is made and merged: `local` (the default: holes only at strong
+    /// sources, second pass used within 6-12 mm of them) or `original` (the published algorithm).
+    /// qsm-core `pipeline::two_pass` documents both.
+    #[serde(default)]
+    pub two_pass_mode: TwoPassMode,
 }
 impl Default for MaskingConfig {
     fn default() -> Self {
@@ -1769,6 +1774,7 @@ impl Default for MaskingConfig {
             two_pass: false,
             two_pass_sections: None,
             two_pass_combine: None,
+            two_pass_mode: TwoPassMode::default(),
         }
     }
 }

@@ -884,6 +884,14 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             crate::pipeline::config::MaskCombine::Or => crate::cli::MaskCombineArg::Or,
             crate::pipeline::config::MaskCombine::And => crate::cli::MaskCombineArg::And,
         }),
+        // Only what changes the run: the mode matters only with two-pass, and the default stays off
+        // the command.
+        two_pass_mode: qsmxt_engine::TwoPassMode::ALL.get(ps.two_pass_mode).copied()
+            .filter(|m| ps.two_pass && *m != qsmxt_engine::TwoPassMode::default())
+            .map(|m| match m {
+                qsmxt_engine::TwoPassMode::Local => crate::cli::TwoPassModeArg::Local,
+                qsmxt_engine::TwoPassMode::Original => crate::cli::TwoPassModeArg::Original,
+            }),
         dismiss_recommendation: (!ps.dismissed.is_empty())
             .then(|| ps.dismissed.iter().map(|d| format!("{}={}", d.rule, d.chosen)).collect()),
     }
@@ -1179,6 +1187,22 @@ mod tests {
         assert!(shows_threshold(&app));
         assert!(config_from_app(&app).unwrap().bg_removal.vsharp.deconvolve);
         assert_eq!(pipeline_args_from_app(&app).vsharp_params.vsharp_deconvolve, Some(true));
+    }
+
+    /// The two-pass mode is offered with two-pass, and reaches both the config and the CLI args.
+    #[test]
+    fn two_pass_mode_setting() {
+        let mut app = default_app();
+        let shown = |app: &App| app.pipeline_state.all_rows().iter()
+            .any(|r| matches!(r, crate::tui::app::PipelineRow::AlgoSelect { field: "two_pass_mode", .. }));
+        assert!(!shown(&app));
+        app.pipeline_state.toggle("two_pass");
+        assert!(shown(&app));
+        assert!(pipeline_args_from_app(&app).two_pass_mode.is_none(), "the default stays off the command");
+        assert_eq!(config_from_app(&app).unwrap().masking.two_pass_mode, qsmxt_engine::TwoPassMode::Local);
+        app.pipeline_state.set_select("two_pass_mode", 1);
+        assert_eq!(config_from_app(&app).unwrap().masking.two_pass_mode, qsmxt_engine::TwoPassMode::Original);
+        assert_eq!(pipeline_args_from_app(&app).two_pass_mode, Some(crate::cli::TwoPassModeArg::Original));
     }
 
     /// The Laplacian solver and its pad are in the TUI (they used to be CLI-only): the rows

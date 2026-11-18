@@ -52,7 +52,17 @@ pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value
         "fft_padding": config.pipeline.fft_padding,
         "crop_margin_mm": config.pipeline.crop_margin_mm,
     });
-    let masking = || serde_json::to_value(&config.masking).unwrap_or_default();
+    // The published two-pass algorithm (`two_pass_mode = original`) is left out, so the keys of
+    // its runs from before the mode existed still match; the default, `local`, is keyed.
+    let masking = || {
+        let mut m = serde_json::to_value(&config.masking).unwrap_or_default();
+        if config.masking.two_pass_mode == crate::enums::TwoPassMode::Original {
+            if let Some(o) = m.as_object_mut() {
+                o.remove("two_pass_mode");
+            }
+        }
+        m
+    };
     match base {
         "scale_phase" => json!({ "coil_combination_sigma": config.field_mapping.coil_combination_sigma }),
         // Its taper ratio is in its parameters.
@@ -71,6 +81,7 @@ pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value
                 o.remove("two_pass");
                 o.remove("two_pass_sections");
                 o.remove("two_pass_combine");
+                o.remove("two_pass_mode");
             }
             let mut c = json!({ "masking": m, "bet": config.bet });
             // The mask reads the echoes the inhomogeneity correction corrected, or corrects them
@@ -95,6 +106,10 @@ pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value
         "motion" => json!({ "motion_correction": config.motion_correction, "registration": config.registration }),
         "swi" => json!({ "swi": config.swi }),
         "unwrap" => json!({ "field_mapping": config.field_mapping }),
+        // The reliable pass of a `local` two-pass run fills background removal's eroded rim
+        // around the holes (qsm-core `fill_eroded_rim`).
+        "bgremove" if step != base && config.masking.two_pass_mode == crate::enums::TwoPassMode::Local =>
+            json!({ "bg_removal": config.bg_removal, "crop": crop, "two_pass_mode": config.masking.two_pass_mode }),
         "bgremove" => json!({ "bg_removal": config.bg_removal, "crop": crop }),
         // A two-pass run inverts each pass without HEIDI and fills the combined map ("twopass"),
         // so HEIDI's settings leave its passes as they are. (Where the plan drops two-pass, the
@@ -268,5 +283,25 @@ mod tests {
         let mut old = serde_json::to_value(&t.masking).unwrap();
         old.as_object_mut().unwrap().remove("two_pass_combine");
         assert_eq!(consumed_config("mask-reliable", &t)["masking"], old);
+    }
+
+    /// The two-pass mode keys the reliable side (its mask, its background removal's rim fill and
+    /// the merge), not the main pass. `original` leaves it out, so runs from before it existed keep
+    /// their keys.
+    #[test]
+    fn the_two_pass_mode_keys_the_reliable_side_only() {
+        let p = serde_json::json!({});
+        let mut local = PipelineConfig::default();
+        local.masking.two_pass = true;
+        let mut original = local.clone();
+        original.masking.two_pass_mode = crate::enums::TwoPassMode::Original;
+        for step in ["mask-reliable", "bgremove-reliable", "twopass"] {
+            assert_ne!(step_cache_key(step, None, &p, &local), step_cache_key(step, None, &p, &original), "{step}");
+        }
+        for step in ["mask", "bgremove", "invert", "invert-reliable"] {
+            assert_eq!(step_cache_key(step, None, &p, &local), step_cache_key(step, None, &p, &original), "{step}");
+        }
+        assert!(consumed_config("mask-reliable", &original)["masking"].get("two_pass_mode").is_none());
+        assert!(consumed_config("bgremove-reliable", &original).get("two_pass_mode").is_none());
     }
 }

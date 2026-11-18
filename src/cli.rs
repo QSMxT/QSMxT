@@ -2139,9 +2139,9 @@ pub struct PipelineArgs {
     #[arg(long = "mask-refine", num_args = 1)]
     pub mask_refinements_cli: Option<Vec<String>>,
 
-    /// Two-pass artefact reduction: reconstruct a second time against a mask whose holes are left
-    /// unfilled, and keep that reconstruction wherever it is defined. Strong susceptibility sources
-    /// (air-tissue interfaces, haemorrhage, implants) make the phase around them unrecoverable;
+    /// Two-pass artefact reduction: reconstruct a second time against a mask with holes at strong
+    /// susceptibility sources, and merge the two reconstructions (how: --two-pass-mode). Strong
+    /// sources (haemorrhage, calcification, implants) make the phase around them unrecoverable;
     /// leaving those voxels out keeps their streaking from spreading, while the ordinary mask still
     /// supplies values inside the holes. Roughly doubles background removal and inversion time, and
     /// is not free of downsides — where the holes were not artefactual it can be worse than a single
@@ -2162,6 +2162,15 @@ pub struct PipelineArgs {
     /// Defaults to the main mask's --mask-combine. Turns on --two-pass.
     #[arg(long, value_enum)]
     pub two_pass_mask_combine: Option<MaskCombineArg>,
+
+    /// How --two-pass makes and merges its second pass. `local` (default): only holes with a core
+    /// of very low phase quality are kept (strong sources, not veins or the pallidum), background
+    /// removal leaves no eroded rim around them, and the second pass is used within 6 mm of them,
+    /// blended into the first out to 12 mm. `original`: the published algorithm (doi:10.1002/mrm.29048),
+    /// every voxel outside the reliable mask is a hole and the second pass is used wherever it is
+    /// defined. Turns on --two-pass.
+    #[arg(long, value_enum)]
+    pub two_pass_mode: Option<TwoPassModeArg>,
 
     /// Stop offering a recommendation for the setting's current value: RULE=VALUE, the rule's id
     /// and the value it was dismissed for, as `qsmxt run --dry` lists them (e.g.
@@ -5082,6 +5091,15 @@ pub enum MaskPresetArg {
     /// what to use instead rather than clap's bare "invalid value".
     #[value(hide = true)]
     MouseBet,
+}
+
+/// How `--two-pass` makes and merges its second pass.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum TwoPassModeArg {
+    /// Holes only at strong sources; second pass used near them (default).
+    Local,
+    /// The published algorithm.
+    Original,
 }
 
 /// How multiple `--mask` sections fold into the final mask.

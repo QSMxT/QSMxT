@@ -2309,13 +2309,33 @@ fn describe_two_pass(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
     let refined = describe_refinements(&config.masking.refinements, doc);
     let refined = if refined.is_empty() { String::new() } else { format!(" and refined by {}", join_list(&refined)) };
 
-    doc.say(&two_pass_steps(), format!(
-        "Two-pass artefact reduction (Stewart et al., 2022) was applied: background field removal \
-         and dipole inversion were repeated against a second mask {generated}{refined}, whose holes \
-         around strong susceptibility sources were left unfilled, and the two susceptibility maps \
-         were combined by taking the second reconstruction wherever it was defined and the first \
-         elsewhere.",
-    ));
+    if config.masking.two_pass_mode == crate::enums::TwoPassMode::Local {
+        let separate_bgremove = !crate::bridge::skips_bgremove(config) && config.bg_removal.algorithm != BfAlgorithm::Iqfm;
+        let repeated = if crate::bridge::skips_bgremove(config) { "The reconstruction was" } else { "Background field removal and dipole inversion were" };
+        doc.say(&two_pass_steps(), format!(
+            "Two-pass artefact reduction (Stewart et al., 2022) was applied with holes only at strong \
+             susceptibility sources, taken from a second mask {generated}{refined}: small holes were filled, \
+             thin vessel-like holes were separated off by a morphological opening, and only holes with a core \
+             of very low phase quality inside the first reconstruction's mask were kept, each with its own \
+             rim. {repeated} repeated against this mask.",
+        ));
+        if separate_bgremove {
+            doc.cite(&CITE_LBV);
+            doc.say(&two_pass_steps(), "Voxels next to the holes that background field removal left without a value \
+                                        were filled by LBV background field removal (Zhou et al., 2014) on the same mask.".to_string());
+        }
+        doc.say(&two_pass_steps(), "The second susceptibility map was used near the holes and blended linearly \
+                                    into the first with distance from them; the first map was used in the holes \
+                                    and everywhere else.".to_string());
+    } else {
+        doc.say(&two_pass_steps(), format!(
+            "Two-pass artefact reduction (Stewart et al., 2022) was applied: background field removal \
+             and dipole inversion were repeated against a second mask {generated}{refined}, whose holes \
+             around strong susceptibility sources were left unfilled, and the two susceptibility maps \
+             were combined by taking the second reconstruction wherever it was defined and the first \
+             elsewhere.",
+        ));
+    }
     if not_applied > 0 {
         doc.say(&two_pass_steps(), "It was not applied where the brain mask was sourced from the BIDS derivatives, \
                                     which leaves no recipe for the second mask.".to_string());
@@ -2928,7 +2948,7 @@ mod tests {
         let out = generate_methods(&config);
         assert!(out.contains("Two-pass artefact reduction (Stewart et al., 2022)"), "out: {out}");
         assert!(out.contains("Otsu thresholding (Otsu, 1979) of the ROMEO phase quality map"), "out: {out}");
-        assert!(out.contains("left unfilled"), "out: {out}");
+        assert!(out.contains("holes only at strong susceptibility sources"), "out: {out}");
         assert!(out.contains("10.1002/mrm.29048"), "two-pass citation missing: {out}");
 
         // It describes the reconstruction, so it belongs after inversion and before referencing.
@@ -2936,6 +2956,22 @@ mod tests {
         let two = out.find("Two-pass artefact reduction").expect("two-pass sentence");
         let reference = out.find("referenced to the mean susceptibility").expect("referencing sentence");
         assert!(inv < two && two < reference, "out-of-order methods: {out}");
+    }
+
+    /// The default (local) two-pass says what was done: holes only at strong sources, LBV in the
+    /// rim, the second map used near the holes; the published algorithm keeps its own text.
+    #[test]
+    fn two_pass_methods_say_how_the_passes_were_made_and_merged() {
+        let mut config = PipelineConfig::default();
+        config.masking.two_pass = true;
+        let out = generate_methods(&config);
+        assert!(out.contains("holes only at strong susceptibility sources"), "out: {out}");
+        assert!(out.contains("filled by LBV background field removal (Zhou et al., 2014)"), "out: {out}");
+        assert!(out.contains("used near the holes and blended linearly into the first"), "out: {out}");
+        config.masking.two_pass_mode = crate::enums::TwoPassMode::Original;
+        let out = generate_methods(&config);
+        assert!(out.contains("taking the second reconstruction wherever it was defined"), "out: {out}");
+        assert!(!out.contains("filled by LBV"), "out: {out}");
     }
 
     /// An edited reliable mask must be described as configured, not as the default.

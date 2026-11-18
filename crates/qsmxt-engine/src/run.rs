@@ -1084,6 +1084,14 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
     /// how many is logged and, for the main mask, recorded.
     fn build_mask(&mut self, sections: &[crate::masking::MaskSection], combine: crate::masking::MaskCombine,
                   models: &[&'static str]) -> Result<Vec<u8>, S::Error> {
+        self.build_mask_and_quality(sections, combine, models, false).map(|(mask, _)| mask)
+    }
+
+    /// [`Self::build_mask`], and with `quality` the phase-quality map masking computed
+    /// ([`stages::mask::build_mask`]).
+    fn build_mask_and_quality(&mut self, sections: &[crate::masking::MaskSection], combine: crate::masking::MaskCombine,
+                              models: &[&'static str], quality: bool)
+                              -> Result<(Vec<u8>, Option<stages::mask::Quality>), S::Error> {
         let (phases, mut magnitudes) = self.echoes()?;
         // The echoes the recipe reads, corrected: the inhomogeneity correction's, or corrected
         // here for a recipe it was not planned for (a supplied mask that could not be used).
@@ -1100,7 +1108,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         }
         self.store.models(models)?;
         let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
-        let built = stages::mask::build_mask(sections, combine, self.config, &phase_refs, magnitudes, &self.meta)?;
+        let (built, quality) = stages::mask::build_mask_with_quality(sections, combine, self.config, &phase_refs, magnitudes, &self.meta, quality)?;
         let removed = built.scanner_masked_removed;
         if removed > 0 {
             let fov = built.mask.len().max(1);
@@ -1118,7 +1126,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                                          100.0 * without as f64 / fov as f64)));
             }
         }
-        Ok(built.mask)
+        Ok((built.mask, quality))
     }
 
     fn mask(&mut self, step: &Step) -> Result<(), S::Error> {
@@ -1190,10 +1198,23 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let combine = self.config.masking.resolved_two_pass_combine();
         self.log(Level::Info, &format!("Creating the reliable-phase mask ({} section(s), combined with {combine})",
                                        sections.len()));
-        let reliable = self.build_mask(&sections, combine, &step.models)?;
+        let local = self.config.masking.two_pass_mode == crate::enums::TwoPassMode::Local;
+        let (reliable, quality) = self.build_mask_and_quality(&sections, combine, &step.models, local)?;
         let main_item = self.pass_mask(Pass::Main);
         let main = self.store.mask(&main_item)?;
-        let restricted = stages::mask::reliable_mask(&reliable, &main)?;
+        let restricted = match quality {
+            Some(quality) => {
+                // Only the holes at strong sources, inside where the main pass's map is defined.
+                let support_item = self.support(Pass::Main);
+                let support = self.store.mask(&support_item)?;
+                let selected = stages::mask::source_holes(&reliable, &main, &support, &quality, &self.meta)?;
+                self.log(Level::Info, &format!(
+                    "Two-pass (local): {} of {} hole voxels inside the main pass's support kept, around {} strong source(s)",
+                    selected.hole_voxels, selected.candidate_voxels, selected.sources));
+                stages::mask::reliable_mask(&selected.reliable, &main)?
+            }
+            None => stages::mask::reliable_mask(&reliable, &main)?,
+        };
         self.put(Item::ReliableMask, Data::Mask(&restricted))?;
         self.complete(Done {
             step: &name, algorithm: None, params: &params, outcome: None, key: &key, outputs: &[Item::ReliableMask],
@@ -1362,7 +1383,21 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
                 None
             };
             self.log(Level::Info, &format!("Background removal ({algorithm}){label}"));
-            stages::background::remove_background(&field, &mask, magnitudes.as_deref(), reliability.as_ref(), &self.meta, self.config, self.observer)?
+            let local = stages::background::remove_background(&field, &mask, magnitudes.as_deref(), reliability.as_ref(), &self.meta, self.config, self.observer)?;
+            if pass == Pass::Reliable && self.config.masking.two_pass_mode == crate::enums::TwoPassMode::Local {
+                // No eroded rim around the holes: LBV fills it (qsm-core `fill_eroded_rim`).
+                let support = self.store.mask(&Item::LocalFieldMask(Pass::Main))?;
+                let before = local.mask.iter().filter(|&&m| m != 0).count();
+                let (local_field_ppm, filled) = stages::background::fill_eroded_rim(
+                    &field, &mask, &local.local_field_ppm, &local.mask, &support, &self.meta)?;
+                let after = filled.iter().filter(|&&m| m != 0).count();
+                self.log(Level::Info, &format!(
+                    "Two-pass (local): {} voxels of the rim background removal left around the holes filled by LBV",
+                    after.saturating_sub(before)));
+                stages::background::LocalField { local_field_ppm, mask: filled }
+            } else {
+                local
+            }
         };
         self.put(Item::LocalField(pass), Data::Real(&local.local_field_ppm))?;
         self.put(Item::LocalFieldMask(pass), Data::Mask(&local.mask))?;
@@ -1580,6 +1615,9 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
     fn two_pass_combination(&mut self) -> Result<(), S::Error> {
         let support = self.support(Pass::Reliable);
         let mut params = json!({ "support": self.store.identity(&support) });
+        if self.config.masking.two_pass_mode == crate::enums::TwoPassMode::Local {
+            params["merge"] = json!("second pass within 6 mm of its holes, feathered to 12 mm");
+        }
         let heidi = stages::inversion::heidi_params(self.config);
         if let Some(h) = &heidi {
             params["heidi"] = h.clone();
@@ -1594,7 +1632,16 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         let declared = self.store.mask(&support)?;
         let brain_item = self.pass_mask(Pass::Main);
         let brain = self.store.mask(&brain_item)?;
-        let mut combined = stages::inversion::combine_two_pass(&chi_reliable, &chi_main, &declared, &brain)?;
+        let mut combined = if self.config.masking.two_pass_mode == crate::enums::TwoPassMode::Local {
+            // The second pass only near its holes, feathered into the first.
+            let reliable_mask = self.store.mask(&Item::ReliableMask)?;
+            let main_support_item = self.support(Pass::Main);
+            let main_support = self.store.mask(&main_support_item)?;
+            stages::inversion::combine_two_pass_local(&chi_reliable, &chi_main, &declared, &reliable_mask, &brain,
+                                                      &main_support, &self.meta)?
+        } else {
+            stages::inversion::combine_two_pass(&chi_reliable, &chi_main, &declared, &brain)?
+        };
         drop((chi_reliable, chi_main, declared, brain));
         if heidi.is_some() {
             let (field, mask) = (self.store.real(&Item::LocalField(Pass::Main))?, self.store.mask(&Item::LocalFieldMask(Pass::Main))?);
@@ -3737,6 +3784,36 @@ pub(crate) mod tests {
         let r = Run::new(&plan, &config, &facts, crate::stages::magnitude::tests::meta_4x4x4(), &mut store, &mut quiet);
         assert_eq!(r.support(Pass::Reliable), Item::LocalFieldMask(Pass::Reliable));
         assert_eq!(r.store.identity(&r.support(Pass::Reliable)), json!("LocalFieldMask(Reliable)"));
+    }
+
+    /// `local` (the default) keeps only holes with a deep phase-quality core, which this tiny
+    /// phantom has none of: the merge then returns the single-pass map. Switching to `original`
+    /// recomputes only the reliable side and the merge.
+    #[test]
+    fn a_local_two_pass_without_source_holes_is_the_single_pass_map_in_memory() {
+        let (facts, mut store) = phantom();
+        let mut config = config();
+        config.masking.two_pass = true;
+        config.masking.two_pass_sections = Some(vec![MaskSection {
+            input: MaskingInput::Magnitude,
+            generator: MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(40.0) },
+            refinements: vec![],
+        }]);
+        assert_eq!(config.masking.two_pass_mode, crate::enums::TwoPassMode::Local);
+        let events = run_once(&config, &facts, &mut store);
+        assert!(events.computed.iter().any(|s| s == "bgremove-reliable"), "{:?}", events.computed);
+        let main = store.real(&Item::RawChi(Pass::Main)).unwrap();
+        assert_eq!(store.real(&Item::CombinedRawChi).unwrap(), main);
+        let brain = store.mask(&Item::BrainMask).unwrap();
+        let reliable = store.mask(&Item::ReliableMask).unwrap();
+        assert!(reliable.iter().zip(&brain).all(|(&r, &b)| r == 0 || b != 0), "the reliable mask is in the brain mask");
+
+        config.masking.two_pass_mode = crate::enums::TwoPassMode::Original;
+        let events = run_once(&config, &facts, &mut store);
+        assert!(!events.computed.iter().any(|s| s == "bgremove" || s == "invert" || s == "mask"), "{:?}", events.computed);
+        for step in ["mask-reliable", "bgremove-reliable", "twopass"] {
+            assert!(events.computed.iter().any(|s| s == step), "{step}: {:?}", events.computed);
+        }
     }
 
     /// With HEIDI on, a two-pass run inverts each pass without it (their keys are unchanged) and
