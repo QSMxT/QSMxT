@@ -9,8 +9,8 @@
 //!   choosing the pipeline is the request) or Cancel. Nothing changes before Apply.
 //! - **Applying** resets every reconstruction page, shown settings and hidden ones
 //!   ([`pipelines::covers`]; not the Input page or the Outputs and Execution tabs), then sets each
-//!   change on its row, as the recommendation pop-up's Apply does, until the form's config follows
-//!   the pipeline. The choice is remembered in the form (and so in the config:
+//!   change on the config the form builds and the form to that config, until it follows the
+//!   pipeline. The choice is remembered in the form (and so in the config:
 //!   `reference_pipeline`). The reasoned recommendations its choices trigger (PDF's iteration
 //!   count), which are not part of it, then open their pop-up as after any change.
 //! - **About**, first in the list in a group of its own, says what the toolbox pipelines are
@@ -21,10 +21,10 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 use qsmxt_engine::pipelines::{self, Change, Pipeline, Status};
-use qsmxt_engine::schema::{Section, ViewFacts};
-use serde_json::Value;
+use qsmxt_engine::schema::{self, Section, ViewFacts};
+use qsmxt_engine::PipelineConfig;
 
-use super::app::{App, Page, PipelineRow};
+use super::app::{App, Page};
 
 /// The About page: what the toolbox pipelines are, plainly.
 pub const ABOUT: [&str; 3] = [
@@ -85,23 +85,6 @@ fn page_of(section: Section) -> Option<Page> {
         Section::Separation => Page::Separation,
         _ => return None,
     })
-}
-
-/// The texts a parameter row may take for `value`, the shortest first: a list of equal values as
-/// one, then written out.
-fn field_texts_of(value: &Value) -> Vec<String> {
-    let plain = |v: &Value| v.as_str().map_or_else(|| v.to_string(), str::to_string);
-    match value {
-        Value::Array(xs) => {
-            let all = xs.iter().map(plain).collect::<Vec<_>>().join(" ");
-            if xs.len() > 1 && xs.iter().all(|x| Some(x) == xs.first()) {
-                vec![plain(&xs[0]), all]
-            } else {
-                vec![all]
-            }
-        }
-        other => vec![plain(other)],
-    }
 }
 
 impl App {
@@ -239,8 +222,9 @@ impl App {
         }
     }
 
-    /// Choose pipeline `id`: reset the pages it covers, then set each of its settings on its row,
-    /// until the form's config follows it. The form is left as it was if that cannot be done.
+    /// Choose pipeline `id`: reset the pages it covers, then set each change it makes
+    /// ([`pipelines::changes`]) on the form's config and the form to that config, until the form
+    /// follows it. The form is left as it was if it cannot.
     pub fn choose_pipeline(&mut self, id: &str) -> Result<(), String> {
         let facts = self.view_facts();
         let config = super::command::config_from_app(self).map_err(|e| e.to_string())?;
@@ -250,26 +234,37 @@ impl App {
             trial.reset_page(page);
         }
         // And the settings out of view (under an option that is off), which would otherwise come
-        // back with their old values when it is turned on.
+        // back with their old values when it is turned on: the config does not carry them.
         for s in qsmxt_engine::schema::settings().iter().filter(|s| stages.contains(&s.section)) {
             if let Some(field) = super::app::field_of_path(s.path) {
                 trial.reset_field(field);
             }
         }
         trial.pipeline_state.reference_pipeline = (id != pipelines::QSMXT_DEFAULTS).then(|| id.to_string());
-        // A change can bring rows into view (PDF's settings once PDF is chosen): set what can be
-        // set, then look again.
-        let remaining = |app: &App| -> Result<Vec<Change>, String> {
+        // The changes the pipeline makes to settings in view, set on the config and the form set
+        // to it. A change can bring settings into view (PDF's once PDF is chosen): set what is in
+        // view, then look again. A setting out of view is left as the reset made it.
+        let remaining = |app: &App| -> Result<(PipelineConfig, Vec<Change>), String> {
             let c = super::command::config_from_app(app).map_err(|e| e.to_string())?;
-            pipelines::changes(&c, id, &facts)
+            let left = pipelines::changes(&c, id, &facts)?;
+            Ok((c, left))
         };
-        let mut left = remaining(&trial)?;
+        let (mut c, mut left) = remaining(&trial)?;
         while !left.is_empty() {
             let before = left.len();
             for ch in &left {
-                trial.set_setting(ch.path, &ch.to);
+                // A value the config refuses is left out, and named below if it stays a change.
+                let _ = schema::set(&mut c, ch.path, ch.to.clone());
             }
-            left = remaining(&trial)?;
+            // Remembered as chosen, though the form does not follow it yet.
+            c.reference_pipeline = (id != pipelines::QSMXT_DEFAULTS).then(|| id.to_string());
+            trial.set_form_from_config(&c);
+            if left.iter().any(|ch| ch.path == "masking.sections") {
+                // A recipe set by a pipeline reads as the hand-edited one, even where a preset
+                // gives it: the pipeline chose its parts, not a preset.
+                trial.pipeline_state.mask_preset = *super::app::MASK_PRESET_CUSTOM;
+            }
+            (c, left) = remaining(&trial)?;
             if left.len() >= before {
                 break;
             }
@@ -285,81 +280,6 @@ impl App {
         // The recommendations its choices trigger, which are not part of it, are offered now.
         self.check_recommendations_after_pipeline();
         Ok(())
-    }
-
-    /// Set the setting at config `path` to `value` on the row that edits it: each value of a
-    /// selector is tried until the config takes it. Returns whether it did.
-    fn set_setting(&mut self, path: &str, value: &Value) -> bool {
-        let takes = |app: &App| super::command::config_from_app(app).ok()
-            .and_then(|c| qsmxt_engine::schema::get(&c, path)).as_ref() == Some(value);
-        if takes(self) {
-            return true;
-        }
-        // A mask recipe that no preset gives (the toolboxes' BET without erosion, QSMART's first
-        // echo): set as the hand-edited recipe.
-        if path == "masking.sections" {
-            if let Ok(sections) = serde_json::from_value::<Vec<crate::pipeline::config::MaskSection>>(value.clone()) {
-                let mut app = self.clone_form();
-                app.pipeline_state.mask_preset = *super::app::MASK_PRESET_CUSTOM;
-                app.pipeline_state.mask_sections = sections;
-                if takes(&app) {
-                    self.form = app.form;
-                    self.pipeline_state = app.pipeline_state;
-                    self.filter_state = app.filter_state;
-                    return true;
-                }
-            }
-        }
-        for (_, _, rows) in self.all_pages() {
-            for row in rows {
-                let field = match &row {
-                    PipelineRow::AlgoSelect { field, .. } | PipelineRow::Toggle { field, .. } | PipelineRow::Param { field, .. } => *field,
-                    _ => continue,
-                };
-                let row_path = if field == "mask_preset" { Some("masking.sections") } else { super::app::field_path(field) };
-                if row_path != Some(path) {
-                    continue;
-                }
-                let mut candidates: Vec<App> = Vec::new();
-                match &row {
-                    PipelineRow::AlgoSelect { options, .. } => {
-                        for i in 0..options.len() {
-                            let mut app = self.clone_form();
-                            // A value of this setting only: the inversion's LSQR entries also say
-                            // whether HEIDI is on.
-                            let heidi = app.pipeline_state.heidi_enabled;
-                            app.set_field_select(field, i);
-                            app.pipeline_state.heidi_enabled = heidi;
-                            candidates.push(app);
-                        }
-                    }
-                    PipelineRow::Toggle { .. } => {
-                        let mut app = self.clone_form();
-                        app.toggle_field(field);
-                        candidates.push(app);
-                    }
-                    _ => {
-                        // A list of equal values reads as one where the row takes one for every
-                        // axis, but a row that wants all three (STAR-QSM's pad, `0 0 0` for
-                        // DECOMPOSE) takes them written out.
-                        for text in field_texts_of(value) {
-                            let mut app = self.clone_form();
-                            if let Some(s) = app.field_text_mut(field) {
-                                *s = text;
-                            }
-                            candidates.push(app);
-                        }
-                    }
-                }
-                if let Some(app) = candidates.into_iter().find(|a| takes(a)) {
-                    self.form = app.form;
-                    self.pipeline_state = app.pipeline_state;
-                    self.filter_state = app.filter_state;
-                    return true;
-                }
-            }
-        }
-        false
     }
 }
 
