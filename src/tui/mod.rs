@@ -1,8 +1,6 @@
 mod app;
 mod clipboard;
 mod command;
-// Only the tests use it so far: the writers (recommendations, the Pipeline tab) move onto it next.
-#[cfg_attr(not(test), allow(dead_code))]
 mod form_from_config;
 mod mouse;
 mod pipeline_view;

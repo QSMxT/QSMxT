@@ -46,12 +46,13 @@
 //! - **The marker** ([`rec::marker`]) names whose rule a setting departs from and what it uses:
 //!   ⚑ for a finding offered as a change, ⓘ for information only. `!` on a marked setting opens
 //!   its details.
-//! - **Apply** sets the form so the config it builds takes the value: each value of the setting's
-//!   row is tried until the engine no longer finds the departure.
+//! - **Apply** is the engine's change ([`rec::apply`]) on the config the form builds, and the
+//!   form is then set to that config ([`App::set_form_from_config`]); a flag ticked off is set off
+//!   the same way.
 
 use crossterm::event::{KeyCode, KeyEvent};
 pub use qsmxt_engine::advice::{AdviceKind, Offer};
-use qsmxt_engine::advice::{self, decide, edit};
+use qsmxt_engine::advice::{decide, edit};
 pub use qsmxt_engine::recommendations::Strength;
 use qsmxt_engine::recommendations::{self as rec, Facts, Marker, Recommendation};
 use serde_json::Value;
@@ -368,9 +369,13 @@ impl App {
     /// every other finding kept as it is ([`Self::decide`]); with `keep_all`, every one kept.
     fn settle_advice(&mut self, modal: &AdviceModal, keep_all: bool) {
         let (off, items) = decide::items(&modal.offer, keep_all);
-        for (setting, _) in &off {
-            if let Some(field) = super::app::field_of_path(setting) {
-                self.set_companion(field, &Value::Bool(false));
+        if !off.is_empty() {
+            // Each flag off on the config, and the form set to it.
+            if let Ok(mut c) = super::command::config_from_app(self) {
+                for (setting, _) in &off {
+                    let _ = qsmxt_engine::schema::set(&mut c, setting, Value::Bool(false));
+                }
+                self.set_form_from_config(&c);
             }
         }
         self.decide(&items, matches!(modal.kind, AdviceKind::Reference(_)));
@@ -423,167 +428,59 @@ impl App {
     }
 
     /// Set the form so its config resolves `rule`: to `value` (the rule's recommended one when
-    /// `None`). Each value of the setting's row is tried until the engine no longer finds the
-    /// departure and, for a chosen value, the setting has it.
+    /// `None`). The engine makes the change on the form's config ([`rec::apply`], which also
+    /// changes what must change with it: "FFT, 12-voxel padding" is a solver and its padding), and
+    /// the form is set to that config. The form is left as it was if it cannot hold the result.
     pub fn apply_recommendation(&mut self, rule: &str, value: Option<&Value>) -> Result<(), String> {
         let Some(r) = self.rule_view().into_iter().find(|r| r.rule == rule) else { return Ok(()) };
-        // Each value is tried on this scan: a trial form has no scan of its own, and a rule on the
-        // field strength (DECOMPOSE's at 7 T) would not apply to it at all.
+        let refused = || format!("{} cannot be set to {} here: change it on its row", r.label, r.recommended.name);
+        // A setting with no row in view is changed on its row once it shows, not from here.
+        let masking = matches!(r.setting.as_str(), "masking.sections" | "masking.inhomogeneity_correction");
+        if !masking && !self.all_pages().iter().flat_map(|(_, _, rows)| rows).any(|row| row_path(row) == Some(r.setting.as_str())) {
+            return Err(refused());
+        }
+        let mut c = super::command::config_from_app(self).map_err(|_| refused())?;
+        rec::apply(&mut c, rule, value).map_err(|_| refused())?;
+        let before = FormSnapshot::of(self);
+        let kept_combine = (self.pipeline_state.mask_combine, self.pipeline_state.mask_combined_refinements.clone());
+        self.set_form_from_config(&c);
+        if r.setting == "masking.sections" {
+            // A recipe set by a rule reads as the hand-edited one, even where a preset gives it:
+            // the rule chose a part of the recipe, not a preset. How several parts are combined is
+            // kept as the form had it where the recipe does not use it.
+            self.pipeline_state.mask_preset = *super::app::MASK_PRESET_CUSTOM;
+            let built = super::command::config_from_app(self).ok();
+            let ps = &mut self.pipeline_state;
+            let set = (ps.mask_combine, std::mem::take(&mut ps.mask_combined_refinements));
+            (ps.mask_combine, ps.mask_combined_refinements) = kept_combine;
+            if super::command::config_from_app(self).ok() != built {
+                let ps = &mut self.pipeline_state;
+                (ps.mask_combine, ps.mask_combined_refinements) = set;
+            }
+        }
+        // Checked on this scan: a rule on the field strength (DECOMPOSE's at 7 T) applies only to it.
         let facts = self.rule_facts();
-        let resolved = |app: &App| {
-            let view = super::command::config_from_app(app).map(|c| rec::reference_values(&c, &facts)).unwrap_or_default();
-            view.iter().find(|x| x.rule == rule).is_none_or(|x| match value {
-                None => !x.departs,
-                Some(v) => x.current.iter().all(|n| n.value == *v),
-            })
-        };
-        // A rule's value can fix more than its setting: "FFT, 12-voxel padding" is a solver and its
-        // padding, which has a row of its own. Each candidate takes those too.
-        let companions = self.rule_companions(rule, value, &r.setting);
-        let clone_form = || {
-            let mut app = self.clone_form();
-            for (field, v) in &companions {
-                app.set_companion(field, v);
-            }
-            app
-        };
-        let mut candidates: Vec<App> = Vec::new();
-        for (_, _, rows) in self.all_pages() {
-            for row in rows {
-                let (field, path) = match &row {
-                    PipelineRow::AlgoSelect { field, .. } | PipelineRow::Toggle { field, .. } | PipelineRow::Param { field, .. }
-                        if *field == "mask_preset" => (*field, "masking.sections"),
-                    PipelineRow::AlgoSelect { field, .. } | PipelineRow::Toggle { field, .. } | PipelineRow::Param { field, .. } => {
-                        match super::app::field_path(field) { Some(p) => (*field, p), None => continue }
-                    }
-                    _ => continue,
-                };
-                if path != r.setting {
-                    continue;
-                }
-                match &row {
-                    PipelineRow::AlgoSelect { options, .. } => {
-                        for i in 0..options.len() {
-                            let mut app = clone_form();
-                            // A value of this setting only: the inversion's LSQR entries also say
-                            // whether HEIDI is on, and a rule on HEIDI's seed must leave it on.
-                            let heidi = app.pipeline_state.heidi_enabled;
-                            app.set_field_select(field, i);
-                            app.pipeline_state.heidi_enabled = heidi;
-                            candidates.push(app);
-                        }
-                    }
-                    PipelineRow::Toggle { .. } => {
-                        let mut app = clone_form();
-                        app.toggle_field(field);
-                        candidates.push(app);
-                    }
-                    _ => {
-                        let target = value.unwrap_or(&r.recommended.value);
-                        let texts = match target {
-                            Value::Array(xs) => {
-                                let parts: Vec<String> = xs.iter().map(|x| x.to_string()).collect();
-                                vec![parts.join(" "), parts.join(",")]
-                            }
-                            Value::String(s) => vec![s.clone()],
-                            other => vec![other.to_string()],
-                        };
-                        for t in texts {
-                            let mut app = clone_form();
-                            if let Some(s) = app.field_text_mut(field) {
-                                *s = t;
-                            }
-                            candidates.push(app);
-                        }
-                    }
-                }
-            }
-        }
-        // Settings the rows cannot set value by value: a mask recipe no preset gives (the
-        // toolboxes' BET without erosion, QSMART's first echo), set as the hand-edited recipe; and
-        // the inhomogeneity correction's three ways (none, makehomogeneous, N4), a toggle and its
-        // method. Each is the form the engine's own apply gives.
-        if let Ok(mut after) = super::command::config_from_app(self) {
-            if rec::apply(&mut after, rule, value).is_ok() {
-                match r.setting.as_str() {
-                    "masking.sections" => {
-                        let mut app = clone_form();
-                        app.pipeline_state.mask_preset = *super::app::MASK_PRESET_CUSTOM;
-                        app.pipeline_state.mask_sections = after.masking.sections.clone();
-                        // First: the engine's own result, before any preset that also resolves the rule
-                        // (HD-BET's recipe has no erosion step either).
-                        candidates.insert(0, app);
-                    }
-                    "masking.inhomogeneity_correction" => {
-                        let mut app = clone_form();
-                        if app.field_toggle("inhomogeneity_correction") != after.masking.inhomogeneity_correction {
-                            app.toggle_field("inhomogeneity_correction");
-                        }
-                        app.set_field_select("inhomogeneity_method",
-                            usize::from(after.masking.inhomogeneity_method == qsmxt_engine::enums::InhomogeneityMethod::N4));
-                        // First: the engine's own result, before any preset that also resolves the rule
-                        // (HD-BET's recipe has no erosion step either).
-                        candidates.insert(0, app);
-                    }
-                    _ => {}
-                }
-            }
-        }
-        // Apply means the recommended value: a rule that names values to avoid (heidi.seed-*,
-        // `discouraged` ones) is also resolved by others, so prefer the form that takes the
-        // recommended value, and only then any other that resolves it.
-        let takes_recommended = |app: &App| value.is_some() || super::command::config_from_app(app)
+        let resolved = super::command::config_from_app(self)
             .map(|c| rec::reference_values(&c, &facts))
             .unwrap_or_default()
             .iter()
             .find(|x| x.rule == rule)
-            .is_none_or(|x| x.current.iter().all(|n| n.value == r.recommended.value));
-        let pick = candidates.iter().position(|a| resolved(a) && takes_recommended(a))
-            .or_else(|| candidates.iter().position(resolved));
-        match pick.map(|i| candidates.swap_remove(i)) {
-            Some(app) => {
-                self.form = app.form;
-                self.pipeline_state = app.pipeline_state;
-                self.filter_state = app.filter_state;
-                self.pipeline_state.dismissed.retain(|d| d.rule != rule);
-                self.status_message = Some(format!("{}: {}", r.label, value.and_then(|v| {
-                    r.alternatives().into_iter().find(|a| a.value == *v).map(|a| a.name.clone())
-                }).unwrap_or(r.recommended.name.clone())));
-                Ok(())
-            }
-            None => Err(format!("{} cannot be set to {} here: change it on its row", r.label, r.recommended.name)),
+            .is_none_or(|x| match value {
+                None => !x.departs,
+                Some(v) => x.current.iter().all(|n| n.value == *v),
+            });
+        if !resolved {
+            before.restore(self);
+            return Err(refused());
         }
+        self.pipeline_state.dismissed.retain(|d| d.rule != rule);
+        self.status_message = Some(format!("{}: {}", r.label, value.and_then(|v| {
+            r.alternatives().into_iter().find(|a| a.value == *v).map(|a| a.name.clone())
+        }).unwrap_or(r.recommended.name.clone())));
+        Ok(())
     }
 
-    /// The other form fields applying `rule` sets, and their values: the engine's [`rec::apply`]
-    /// on the form's config, read back from what it changed beyond `setting`.
-    fn rule_companions(&self, rule: &str, value: Option<&Value>, setting: &str) -> Vec<(&'static str, Value)> {
-        let Ok(before) = super::command::config_from_app(self) else { return vec![] };
-        let mut after = before.clone();
-        if rec::apply(&mut after, rule, value).is_err() {
-            return vec![];
-        }
-        let (Ok(before), Ok(after)) = (serde_json::to_value(&before), serde_json::to_value(&after)) else { return vec![] };
-        let mut changed = Vec::new();
-        advice::changed_settings(&before, &after, String::new(), &mut changed);
-        changed.into_iter()
-            .filter(|(path, _)| path != setting)
-            .filter_map(|(path, v)| super::app::field_of_path(&path).map(|field| (field, v)))
-            .collect()
-    }
-
-    /// Set a form field to a value of its setting, as a companion of an applied value.
-    fn set_companion(&mut self, field: &str, value: &Value) {
-        if let Value::Bool(on) = value {
-            if self.field_toggle(field) != *on {
-                self.toggle_field(field);
-            }
-        } else if let Some(text) = self.field_text_mut(field) {
-            *text = field_text_of(value);
-        }
-    }
-
-    /// A copy of the form, for trying a value on.
+    /// A copy of the form, to change and keep only if the change can be made.
     pub(super) fn clone_form(&self) -> App {
         let mut app = App::new_for_trial();
         app.form = self.form.clone();
@@ -656,16 +553,6 @@ impl App {
         }
         let marked = view.iter().any(|r| r.setting == path && r.departs);
         Some(format!("{}{}", parts.join(" · "), if marked { " — ! for details" } else { "" }))
-    }
-}
-
-/// A value as a text row holds it: one number for a vector with the same value on every axis.
-fn field_text_of(value: &Value) -> String {
-    let plain = |v: &Value| v.as_str().map_or_else(|| v.to_string(), str::to_string);
-    match value {
-        Value::Array(xs) if xs.iter().all(|x| Some(x) == xs.first()) && !xs.is_empty() => plain(&xs[0]),
-        Value::Array(xs) => xs.iter().map(plain).collect::<Vec<_>>().join(" "),
-        other => plain(other),
     }
 }
 
@@ -2008,4 +1895,3 @@ mod tests {
         assert_eq!(app.field_select("qsm_algorithm"), at("medi"));
     }
 }
-
