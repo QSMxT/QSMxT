@@ -9,13 +9,19 @@ use ratatui::{
 use super::app::{AlgoModal, App, NewsModal, PipelineRow, TipModal, UpdateModal, TAB_NAMES, TAB_INPUT, TAB_METHODS, TAB_PIPELINE};
 use super::command;
 
+/// Draw a frame of `app`, brought up to date first by [`App::prepare_frame`].
+///
+/// Drawing changes nothing the config or the form's settings depend on. What it does write is
+/// what the frame turned out to be, which the input that follows it is matched against: where
+/// each clickable thing is (`hits`, for the mouse), whether the sections went in a sidebar
+/// (`sidebar_layout`) and how wide the notes are (`note_width`), both from the terminal's size,
+/// and the scroll offsets that keep the focused row on screen (and a pop-up's list offset). The
+/// keys follow what is on screen, so these are worked out where the screen is.
 pub fn draw(f: &mut Frame, app: &mut App) {
     // Each drawer records where its clickable things are.
     app.hits.clear();
     // The Reconstruction tab's sections are a sidebar when there is room beside the rows.
     app.sidebar_layout.set(f.area().width >= super::tabs::SIDEBAR_MIN_WIDTH);
-    // The header's pipeline status, worked out once per change of the form.
-    app.pipeline_status();
     // Compute command preview height dynamically
     let cmd = command::build_command_string(app);
     let available_width = f.area().width.saturating_sub(4) as usize; // borders + padding
@@ -754,7 +760,6 @@ fn draw_form(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         return;
     }
     if App::is_rows_tab(app.active_tab) {
-        app.sync_pipeline_mode();
         draw_rows_tab(f, app, area);
         return;
     }
@@ -2833,6 +2838,7 @@ pub(super) mod tests {
     pub(super) fn render_app_sized(app: &mut App, width: u16, height: u16) -> Terminal<TestBackend> {
         let backend = TestBackend::new(width, height);
         let mut terminal = Terminal::new(backend).unwrap();
+        app.prepare_frame();
         terminal.draw(|f| draw(f, app)).unwrap();
         terminal
     }
@@ -2840,6 +2846,7 @@ pub(super) mod tests {
     pub(super) fn render_app(app: &mut App) -> Terminal<TestBackend> {
         let backend = TestBackend::new(120, 30);
         let mut terminal = Terminal::new(backend).unwrap();
+        app.prepare_frame();
         terminal.draw(|f| draw(f, app)).unwrap();
         terminal
     }
@@ -3658,6 +3665,7 @@ mod orientation_block_tests {
         app.pipeline_state.set_select("qsm_algorithm", crate::tui::app::QSM_PICKER_OPTIONS.iter().position(|o| *o == crate::tui::app::LSQR_HEIDI).unwrap());
         assert!(app.goto_field("heidi_gradient_threshold"));
         let mut t = Terminal::new(TestBackend::new(200, 60)).unwrap();
+        app.prepare_frame();
         t.draw(|f| super::draw(f, &mut app)).unwrap();
         let buf = t.backend().buffer();
         let text = (0..buf.area.height).map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect::<String>()).collect::<Vec<_>>().join("\n");

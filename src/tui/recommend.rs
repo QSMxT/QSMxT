@@ -1127,6 +1127,7 @@ mod tests {
     fn screen(app: &mut App, name: &str) -> String {
         use ratatui::{backend::TestBackend, Terminal};
         let mut t = Terminal::new(TestBackend::new(110, 40)).unwrap();
+        app.prepare_frame();
         t.draw(|f| super::super::ui::draw(f, app)).unwrap();
         let buf = t.backend().buffer();
         let text = (0..buf.area.height)
@@ -1931,6 +1932,7 @@ mod tests {
         use ratatui::{backend::TestBackend, Terminal};
         let draw = |app: &mut App, w, h| {
             let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
+            app.prepare_frame();
             t.draw(|f| super::super::ui::draw(f, app)).unwrap();
             let buf = t.backend().buffer();
             (0..buf.area.height).map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect::<String>()).collect::<Vec<_>>().join("\n")

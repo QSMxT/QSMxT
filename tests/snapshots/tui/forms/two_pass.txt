@@ -1,0 +1,8 @@
+## toggle two_pass
+config:
+  /masking/two_pass: false -> true
+  /masking/two_pass_sections: null -> [{"input":"phase-quality","generator":{"op":"threshold","method":"otsu","value":null},"refinements":[]}]
+command:
+  + --two-pass
+methods: 7a1e90797a50750e (31 lines)
+

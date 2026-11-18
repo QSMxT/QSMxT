@@ -1,0 +1,7 @@
+## toggle do_analysis
+config:
+  /pipeline/do_analysis: false -> true
+command:
+  + --do-analysis
+methods: 16f4e7edc7efc362 (20 lines)
+

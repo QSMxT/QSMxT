@@ -1,0 +1,221 @@
+## bf_algorithm = pdf
+config:
+  /bg_removal/algorithm: "vsharp" -> "pdf"
+command:
+  + --bf-algorithm pdf
+methods: fe1331cec6a6d596 (35 lines)
+
+## bf_algorithm = lbv
+config:
+  /bg_removal/algorithm: "vsharp" -> "lbv"
+command:
+  + --bf-algorithm lbv
+methods: 993834d25cd1818b (29 lines)
+
+## bf_algorithm = ismv
+config:
+  /bg_removal/algorithm: "vsharp" -> "ismv"
+command:
+  + --bf-algorithm ismv
+methods: 86a9b1ff4e6f244d (29 lines)
+
+## bf_algorithm = sharp
+config:
+  /bg_removal/algorithm: "vsharp" -> "sharp"
+command:
+  + --bf-algorithm sharp
+methods: 6f36874a398d913f (29 lines)
+
+## bf_algorithm = resharp
+config:
+  /bg_removal/algorithm: "vsharp" -> "resharp"
+command:
+  + --bf-algorithm resharp
+methods: 01897246314f3d88 (29 lines)
+
+## bf_algorithm = harperella
+config:
+  /bg_removal/algorithm: "vsharp" -> "harperella"
+command:
+  + --bf-algorithm harperella
+methods: 9830634cb95589e0 (29 lines)
+
+## bf_algorithm = iharperella
+config:
+  /bg_removal/algorithm: "vsharp" -> "iharperella"
+command:
+  + --bf-algorithm iharperella
+methods: e72492ffad95bb0a (33 lines)
+
+## bf_algorithm = bfrnet
+config:
+  /bg_removal/algorithm: "vsharp" -> "bfrnet"
+command:
+  + --bf-algorithm bfrnet
+methods: 49225b8c24b56898 (30 lines)
+
+## bf_algorithm = iqfm
+config:
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+command:
+  + --bf-algorithm iqfm
+methods: 4c0d149a130115b3 (29 lines)
+
+## bf_algorithm = bfrnet, toggle dl_tiling
+config:
+  /bg_removal/algorithm: "vsharp" -> "bfrnet"
+  /inversion/tile_size: null -> 128
+command:
+  + --bf-algorithm bfrnet
+  + --tile-size 128
+methods: 0463b219f6e3262e (30 lines)
+
+## bf_algorithm = iqfm, qsm_algorithm = xqsm
+config:
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "xqsm"
+command:
+  + --bf-algorithm iqfm
+  + --qsm-algorithm xqsm
+methods: 62ab4c59135e6775 (19 lines)
+
+## bf_algorithm = iqfm, qsm_algorithm = qsmnet
+config:
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "qsmnet"
+command:
+  + --bf-algorithm iqfm
+  + --qsm-algorithm qsmnet
+methods: f62b36a3e0db4260 (21 lines)
+
+## bf_algorithm = iqfm, qsm_algorithm = qsmnet-plus
+config:
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "qsmnet-plus"
+command:
+  + --bf-algorithm iqfm
+  + --qsm-algorithm qsmnet-plus
+methods: 939d1f418e19f807 (21 lines)
+
+## bf_algorithm = iqfm, qsm_algorithm = qsmgan
+config:
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "qsmgan"
+command:
+  + --bf-algorithm iqfm
+  + --qsm-algorithm qsmgan
+methods: 71c464ce3d5d0f2c (21 lines)
+
+## bf_algorithm = iqfm, qsm_algorithm = ir2qsm
+config:
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "ir2qsm"
+command:
+  + --bf-algorithm iqfm
+  + --qsm-algorithm ir2qsm
+methods: b921ac2874659af1 (13 lines)
+
+## bf_algorithm = iqfm, qsm_algorithm = lpcnn
+config:
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "lpcnn"
+command:
+  + --bf-algorithm iqfm
+  + --qsm-algorithm lpcnn
+methods: 3075ae662218a7f5 (20 lines)
+
+## bf_algorithm = iqfm, qsm_algorithm = modl-qsm
+config:
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "modl-qsm"
+command:
+  + --bf-algorithm iqfm
+  + --qsm-algorithm modl-qsm
+methods: 92ae715a9eaeda15 (13 lines)
+
+## bf_algorithm = iqfm, toggle do_r2primemap
+config:
+  /pipeline/do_r2primemap: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+command:
+  + --do-r2primemap
+  + --bf-algorithm iqfm
+methods: 4b72e1aa5f36abcf (37 lines)
+
+## bf_algorithm = iqfm, qsm_algorithm = xqsm, toggle do_r2primemap
+config:
+  /pipeline/do_r2primemap: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "xqsm"
+command:
+  + --do-r2primemap
+  + --bf-algorithm iqfm
+  + --qsm-algorithm xqsm
+methods: aa986ebb347ba545 (27 lines)
+
+## bf_algorithm = iqfm, qsm_algorithm = qsmnet, toggle do_r2primemap
+config:
+  /pipeline/do_r2primemap: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "qsmnet"
+command:
+  + --do-r2primemap
+  + --bf-algorithm iqfm
+  + --qsm-algorithm qsmnet
+methods: 23317a8dc9e58d50 (29 lines)
+
+## bf_algorithm = iqfm, qsm_algorithm = qsmnet-plus, toggle do_r2primemap
+config:
+  /pipeline/do_r2primemap: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "qsmnet-plus"
+command:
+  + --do-r2primemap
+  + --bf-algorithm iqfm
+  + --qsm-algorithm qsmnet-plus
+methods: b6d912c34dd4c0df (29 lines)
+
+## bf_algorithm = iqfm, qsm_algorithm = qsmgan, toggle do_r2primemap
+config:
+  /pipeline/do_r2primemap: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "qsmgan"
+command:
+  + --do-r2primemap
+  + --bf-algorithm iqfm
+  + --qsm-algorithm qsmgan
+methods: 1a4ab2e89d50b2dc (29 lines)
+
+## bf_algorithm = iqfm, qsm_algorithm = ir2qsm, toggle do_r2primemap
+config:
+  /pipeline/do_r2primemap: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "ir2qsm"
+command:
+  + --do-r2primemap
+  + --bf-algorithm iqfm
+  + --qsm-algorithm ir2qsm
+methods: fe5533c8b8141205 (23 lines)
+
+## bf_algorithm = iqfm, qsm_algorithm = lpcnn, toggle do_r2primemap
+config:
+  /pipeline/do_r2primemap: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "lpcnn"
+command:
+  + --do-r2primemap
+  + --bf-algorithm iqfm
+  + --qsm-algorithm lpcnn
+methods: b345ecc2e65ddf7d (28 lines)
+
+## bf_algorithm = iqfm, qsm_algorithm = modl-qsm, toggle do_r2primemap
+config:
+  /pipeline/do_r2primemap: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "modl-qsm"
+command:
+  + --do-r2primemap
+  + --bf-algorithm iqfm
+  + --qsm-algorithm modl-qsm
+methods: a80194dd5a191b4f (23 lines)
+

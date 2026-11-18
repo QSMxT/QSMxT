@@ -1,0 +1,7 @@
+## b0_weight_type = assumed-decay
+config:
+  /field_mapping/b0_weight_type: "phase-snr" -> "assumed-decay"
+command:
+  + --b0-weight-type assumed-decay
+methods: 6ae6e6b0a3143080 (30 lines)
+

@@ -87,7 +87,7 @@ fn section_of(page: Page) -> Option<Section> {
 
 /// One change to a form.
 #[derive(Clone, Debug)]
-enum Act {
+pub(super) enum Act {
     Toggle(&'static str),
     Select(&'static str, usize),
     /// An orientation grouping on the Input tab.
@@ -96,7 +96,7 @@ enum Act {
     Echoes(usize),
 }
 
-fn build(acts: &[Act]) -> App {
+pub(super) fn build(acts: &[Act]) -> App {
     let mut app = App::new();
     for a in acts {
         match a {
@@ -112,52 +112,63 @@ fn build(acts: &[Act]) -> App {
 
 /// Every form reached from a fresh one by changing one thing at a time, as long as each change
 /// shows a row not seen before: the changes that make each (shortest first). Worked out once.
-fn explored() -> &'static [Vec<Act>] {
+pub(super) fn explored() -> &'static [Vec<Act>] {
     static FORMS: std::sync::OnceLock<Vec<Vec<Act>>> = std::sync::OnceLock::new();
-    FORMS.get_or_init(|| {
-        let mut seen: BTreeSet<String> = BTreeSet::new();
-        let mut tried: BTreeSet<String> = BTreeSet::new();
-        let mut queue: std::collections::VecDeque<Vec<Act>> =
-            [vec![], vec![Act::Group], vec![Act::Echoes(1)], vec![Act::Group, Act::Echoes(1)]].into();
-        let mut out = Vec::new();
-        while let Some(acts) = queue.pop_front() {
-            let app = build(&acts);
-            let pages = app.all_pages();
-            let mut new = acts.is_empty();
-            for (_, page, rows) in &pages {
-                for r in rows {
-                    let key = match r {
-                        PipelineRow::AlgoSelect { field, .. } | PipelineRow::Param { field, .. }
-                        | PipelineRow::Toggle { field, .. } => format!("{page:?}|{field}"),
-                        other => format!("{page:?}|{other:?}"),
-                    };
-                    new |= seen.insert(key);
-                }
+    FORMS.get_or_init(explore_forms)
+}
+
+/// The exploration behind [`explored`], from scratch each call.
+fn explore_forms() -> Vec<Vec<Act>> {
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    let mut tried: BTreeSet<String> = BTreeSet::new();
+    let mut queue: std::collections::VecDeque<Vec<Act>> =
+        [vec![], vec![Act::Group], vec![Act::Echoes(1)], vec![Act::Group, Act::Echoes(1)]].into();
+    let mut out = Vec::new();
+    while let Some(acts) = queue.pop_front() {
+        let app = build(&acts);
+        let pages = app.all_pages();
+        let mut new = acts.is_empty();
+        for (_, page, rows) in &pages {
+            for r in rows {
+                let key = match r {
+                    PipelineRow::AlgoSelect { field, .. } | PipelineRow::Param { field, .. }
+                    | PipelineRow::Toggle { field, .. } => format!("{page:?}|{field}"),
+                    other => format!("{page:?}|{other:?}"),
+                };
+                new |= seen.insert(key);
             }
-            if !new {
-                continue;
-            }
-            for (_, _, rows) in &pages {
-                for r in rows {
-                    let next: Vec<Act> = match *r {
-                        PipelineRow::AlgoSelect { field, options, .. } if !NOT_CONFIG.contains(&field) || field == "mask_preset" =>
-                            (0..options.len()).map(|i| Act::Select(field, i)).collect(),
-                        PipelineRow::Toggle { field, .. } if !NOT_CONFIG.contains(&field) => vec![Act::Toggle(field)],
-                        _ => vec![],
-                    };
-                    for a in next {
-                        let mut n = acts.clone();
-                        n.push(a);
-                        if tried.insert(format!("{n:?}")) {
-                            queue.push_back(n);
-                        }
+        }
+        if !new {
+            continue;
+        }
+        for (_, _, rows) in &pages {
+            for r in rows {
+                let next: Vec<Act> = match *r {
+                    PipelineRow::AlgoSelect { field, options, .. } if !NOT_CONFIG.contains(&field) || field == "mask_preset" =>
+                        (0..options.len()).map(|i| Act::Select(field, i)).collect(),
+                    PipelineRow::Toggle { field, .. } if !NOT_CONFIG.contains(&field) => vec![Act::Toggle(field)],
+                    _ => vec![],
+                };
+                for a in next {
+                    let mut n = acts.clone();
+                    n.push(a);
+                    if tried.insert(format!("{n:?}")) {
+                        queue.push_back(n);
                     }
                 }
             }
-            out.push(acts);
         }
-        out
-    })
+        out.push(acts);
+    }
+    out
+}
+
+/// The golden files of what each form builds (`form_snapshots`) list the forms in the order
+/// [`explored`] finds them, so the exploration must find the same forms in the same order every
+/// time: nothing in it may follow a hash map's order or the clock.
+#[test]
+fn exploring_finds_the_same_forms_in_the_same_order() {
+    assert_eq!(format!("{:?}", explore_forms()), format!("{:?}", explored()));
 }
 
 fn explore() -> impl Iterator<Item = (&'static Vec<Act>, App)> {

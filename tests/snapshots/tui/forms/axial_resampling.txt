@@ -1,0 +1,7 @@
+## toggle axial_resampling
+config:
+  /pipeline/axial_resampling: false -> true
+command:
+  + --axial-resampling
+methods: 99d5530a22a3ca52 (29 lines)
+

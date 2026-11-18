@@ -1,0 +1,23 @@
+## mask_preset = bet
+config:
+  /masking/sections: [{"input":"phase-quality","generator":{"op":"threshold","method":"otsu","value":null},"refinements":[{"op":"dilate","iterations":1},{"op":"fill-holes","max_size":0},{"op":"erode","iterations":1}]}] -> [{"input":"magnitude","generator":{"op":"bet","fractional_intensity":0.5,"voxel_scale":1.0},"refinements":[{"op":"erode","iterations":2}]}]
+command:
+  + --mask-preset bet
+methods: 094e30e76a17a09c (29 lines)
+
+## mask_preset = hd-bet
+config:
+  /masking/sections: [{"input":"phase-quality","generator":{"op":"threshold","method":"otsu","value":null},"refinements":[{"op":"dilate","iterations":1},{"op":"fill-holes","max_size":0},{"op":"erode","iterations":1}]}] -> [{"input":"magnitude","generator":{"op":"hd-bet","patch":null,"tta":false,"tile_step":0.5},"refinements":[{"op":"signal-erode","threshold":0.8,"depth_cap":5,"global_erosions":1,"bias_sigma":12.0,"min_component":1000}]}]
+command:
+  + --mask-preset hd-bet
+methods: cce58909da8895c0 (29 lines)
+
+## mask_preset = bet-and-phase
+config:
+  /masking/sections: [{"input":"phase-quality","generator":{"op":"threshold","method":"otsu","value":null},"refinements":[{"op":"dilate","iterations":1},{"op":"fill-holes","max_size":0},{"op":"erode","iterations":1}]}] -> [{"input":"magnitude-first","generator":{"op":"bet","fractional_intensity":0.5,"voxel_scale":1.0},"refinements":[]},{"input":"phase-quality","generator":{"op":"threshold","method":"otsu","value":null},"refinements":[{"op":"dilate","iterations":1},{"op":"fill-holes","max_size":0},{"op":"erode","iterations":1}]}]
+  /masking/combine: "or" -> "and"
+  /masking/refinements: [] -> [{"op":"fill-holes","max_size":0},{"op":"erode","iterations":1}]
+command:
+  + --mask-preset bet-and-phase
+methods: 8b18c7db14d3bce3 (31 lines)
+

@@ -1,0 +1,23 @@
+## unwrapping_algorithm = laplacian
+config:
+  /field_mapping/unwrapping_algorithm: "romeo" -> "laplacian"
+command:
+  + --unwrapping-algorithm laplacian
+methods: 14ffca1d0d0b7fd7 (30 lines)
+
+## unwrapping_algorithm = prelude
+config:
+  /field_mapping/unwrapping_algorithm: "romeo" -> "prelude"
+command:
+  + --unwrapping-algorithm prelude
+methods: c44b0f0e360a6993 (30 lines)
+
+## unwrapping_algorithm = laplacian, laplacian_solver = fft
+config:
+  /field_mapping/unwrapping_algorithm: "romeo" -> "laplacian"
+  /field_mapping/laplacian_solver: "dct" -> "fft"
+command:
+  + --unwrapping-algorithm laplacian
+  + --laplacian-solver fft
+methods: bbe915c88298e153 (30 lines)
+

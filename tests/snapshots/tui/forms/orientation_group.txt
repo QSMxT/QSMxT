@@ -1,0 +1,18 @@
+## group orientations by acq
+config:
+  /multi_orientation/group_by: "" -> "acq"
+command:
+  + --orientation-group acq
+  + --multi-orientation-algorithm cosmos
+methods: 7bc8b50d3b14e4f2 (14 lines)
+
+## group orientations by acq, toggle cosmos_magnitude_weighting
+config:
+  /multi_orientation/group_by: "" -> "acq"
+  /multi_orientation/magnitude_weighting: false -> true
+command:
+  + --orientation-group acq
+  + --multi-orientation-algorithm cosmos
+  + --cosmos-magnitude-weighting
+methods: d4b9c98adeeb1ad4 (14 lines)
+

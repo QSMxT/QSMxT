@@ -1,0 +1,16 @@
+## toggle motion_correction
+config:
+  /motion_correction/enabled: false -> true
+command:
+  + --motion-correction
+methods: 6186ebbc57daedb9 (29 lines)
+
+## toggle motion_correction, motion_reference = echo
+config:
+  /motion_correction/enabled: false -> true
+  /motion_correction/reference: "first" -> "1"
+command:
+  + --motion-correction
+  + --motion-reference 1
+methods: 2f4b6c5f10289a3d (29 lines)
+

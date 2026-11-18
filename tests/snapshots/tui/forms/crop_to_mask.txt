@@ -1,0 +1,7 @@
+## toggle crop_to_mask
+config:
+  /pipeline/crop_to_mask: false -> true
+command:
+  + --crop-to-mask
+methods: 65ac2e73de1cbe91 (29 lines)
+
