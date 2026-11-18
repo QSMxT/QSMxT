@@ -1,0 +1,37 @@
+## b0_estimation = linear-fit
+config:
+  /field_mapping/b0_estimation: "weighted-avg" -> "linear-fit"
+command:
+  + --b0-estimation linear-fit
+methods: ffe03abcb11e4f26 (29 lines)
+
+## b0_estimation = robust-fit
+config:
+  /field_mapping/b0_estimation: "weighted-avg" -> "robust-fit"
+command:
+  + --b0-estimation robust-fit
+methods: a96ab7d3d86b629f (29 lines)
+
+## b0_estimation = qsmart-echofit
+config:
+  /field_mapping/b0_estimation: "weighted-avg" -> "qsmart-echofit"
+command:
+  + --b0-estimation qsmart-echofit
+methods: bc6231f1bab5551d (30 lines)
+
+## b0_estimation = complex-fit
+config:
+  /field_mapping/b0_estimation: "weighted-avg" -> "complex-fit"
+command:
+  + --b0-estimation complex-fit
+methods: 217239aa43055e13 (30 lines)
+
+## b0_estimation = qsmart-echofit, qsmart_fit_threshold_mode = percentile
+config:
+  /field_mapping/b0_estimation: "weighted-avg" -> "qsmart-echofit"
+  /field_mapping/qsmart_fit_threshold_mode: "absolute" -> "percentile"
+command:
+  + --b0-estimation qsmart-echofit
+  + --qsmart-fit-threshold-mode percentile
+methods: bc6231f1bab5551d (30 lines)
+

@@ -1,0 +1,1158 @@
+## toggle do_chi_separation
+config:
+  /pipeline/do_chi_separation: false -> true
+command:
+  + --do-chisep
+methods: 9b5df1e112555d2b (38 lines)
+
+## toggle do_chi_separation, separation_algorithm = decompose
+config:
+  /pipeline/do_chi_separation: false -> true
+  /separation/algorithm: "r2star-qsm" -> "decompose"
+command:
+  + --do-chisep
+  + --chisep decompose
+methods: b1bb9769d7ff82f1 (40 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sep-ilsqr
+config:
+  /pipeline/do_chi_separation: false -> true
+  /separation/algorithm: "r2star-qsm" -> "chi-sep-ilsqr"
+command:
+  + --do-chisep
+  + --chisep chi-sep-ilsqr
+methods: d3e6444ccb2cabd7 (34 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sep-medi
+config:
+  /pipeline/do_chi_separation: false -> true
+  /separation/algorithm: "r2star-qsm" -> "chi-sep-medi"
+command:
+  + --do-chisep
+  + --chisep chi-sep-medi
+methods: 690bf71429d8ce22 (35 lines)
+
+## toggle do_chi_separation, separation_algorithm = wavesep
+config:
+  /pipeline/do_chi_separation: false -> true
+  /separation/algorithm: "r2star-qsm" -> "wavesep"
+command:
+  + --do-chisep
+  + --chisep wavesep
+methods: f6b21717761887b2 (39 lines)
+
+## toggle do_chi_separation, separation_algorithm = hc-chisep
+config:
+  /pipeline/do_chi_separation: false -> true
+  /separation/algorithm: "r2star-qsm" -> "hc-chisep"
+command:
+  + --do-chisep
+  + --chisep hc-chisep
+methods: 2adc40b6f3b556e6 (39 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net
+config:
+  /pipeline/do_chi_separation: false -> true
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+command:
+  + --do-chisep
+  + --chisep susep-net
+methods: 68874612dc964c37 (40 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet
+config:
+  /pipeline/do_chi_separation: false -> true
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+command:
+  + --do-chisep
+  + --chisep chi-sepnet
+methods: 0c93d14c4bdd00d3 (30 lines)
+
+## toggle do_chi_separation, toggle export_dicom
+config:
+  /pipeline/do_chi_separation: false -> true
+  /pipeline/export_dicom: false -> true
+command:
+  + --do-chisep
+  + --export-dicom
+methods: f874f6cc724e191f (38 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+command:
+  + --do-chisep
+  + --bf-algorithm iqfm
+  + --chisep susep-net
+methods: b69f8c9df5e81539 (40 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = xqsm
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "xqsm"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+command:
+  + --do-chisep
+  + --qsm-algorithm xqsm
+  + --chisep susep-net
+methods: 22acb1874c73c75b (30 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = qsmnet
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "qsmnet"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+command:
+  + --do-chisep
+  + --qsm-algorithm qsmnet
+  + --chisep susep-net
+methods: 2c4577e1fc360dce (31 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = qsmnet-plus
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "qsmnet-plus"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+command:
+  + --do-chisep
+  + --qsm-algorithm qsmnet-plus
+  + --chisep susep-net
+methods: 2567ca8237f8a2a7 (31 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = autoqsm
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "autoqsm"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+command:
+  + --do-chisep
+  + --qsm-algorithm autoqsm
+  + --chisep susep-net
+methods: 520fb04873a0b9e4 (29 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = qsmgan
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "qsmgan"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+command:
+  + --do-chisep
+  + --qsm-algorithm qsmgan
+  + --chisep susep-net
+methods: d18c05613c3e7456 (31 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = ir2qsm
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "ir2qsm"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+command:
+  + --do-chisep
+  + --qsm-algorithm ir2qsm
+  + --chisep susep-net
+methods: 99e0702b4570ce62 (29 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = lpcnn
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "lpcnn"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+command:
+  + --do-chisep
+  + --qsm-algorithm lpcnn
+  + --chisep susep-net
+methods: fbb84623ab82c54f (30 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = modl-qsm
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "modl-qsm"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+command:
+  + --do-chisep
+  + --qsm-algorithm modl-qsm
+  + --chisep susep-net
+methods: 1a41a1ba91ed1252 (29 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = nextqsm
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "nextqsm"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+command:
+  + --do-chisep
+  + --qsm-algorithm nextqsm
+  + --chisep susep-net
+methods: 102e3aa894f3de56 (29 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = iqsm
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "iqsm"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+command:
+  + --do-chisep
+  + --qsm-algorithm iqsm
+  + --chisep susep-net
+methods: a6f2d64ee5e63c22 (28 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = iqsm-plus
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "iqsm-plus"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+command:
+  + --do-chisep
+  + --qsm-algorithm iqsm-plus
+  + --chisep susep-net
+methods: e5277fa1bd1d23be (27 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+  /separation/r2prime_strategy: "auto" -> "mese"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --chisep susep-net
+methods: 1d75dc77d54c7493 (39 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native
+config:
+  /pipeline/do_chi_separation: false -> true
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: 523dabd00db816a2 (33 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = xqsm
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "xqsm"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+command:
+  + --do-chisep
+  + --bf-algorithm iqfm
+  + --qsm-algorithm xqsm
+  + --chisep susep-net
+methods: 21a0b3accee72391 (30 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = qsmnet
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "qsmnet"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+command:
+  + --do-chisep
+  + --bf-algorithm iqfm
+  + --qsm-algorithm qsmnet
+  + --chisep susep-net
+methods: b9a9349df3868161 (32 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = qsmnet-plus
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "qsmnet-plus"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+command:
+  + --do-chisep
+  + --bf-algorithm iqfm
+  + --qsm-algorithm qsmnet-plus
+  + --chisep susep-net
+methods: 54b40f50ed542d93 (32 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = qsmgan
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "qsmgan"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+command:
+  + --do-chisep
+  + --bf-algorithm iqfm
+  + --qsm-algorithm qsmgan
+  + --chisep susep-net
+methods: 66ab13e6199bbb26 (32 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = ir2qsm
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "ir2qsm"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+command:
+  + --do-chisep
+  + --bf-algorithm iqfm
+  + --qsm-algorithm ir2qsm
+  + --chisep susep-net
+methods: 068bb54d6b320fd2 (29 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = lpcnn
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "lpcnn"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+command:
+  + --do-chisep
+  + --bf-algorithm iqfm
+  + --qsm-algorithm lpcnn
+  + --chisep susep-net
+methods: 3e522d59ab211d41 (31 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = modl-qsm
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "modl-qsm"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+command:
+  + --do-chisep
+  + --bf-algorithm iqfm
+  + --qsm-algorithm modl-qsm
+  + --chisep susep-net
+methods: 69d50e00cc3c6b52 (29 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+  /separation/r2prime_strategy: "auto" -> "mese"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --bf-algorithm iqfm
+  + --chisep susep-net
+methods: 7897eddc2dfe5725 (39 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = xqsm, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "xqsm"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+  /separation/r2prime_strategy: "auto" -> "mese"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --qsm-algorithm xqsm
+  + --chisep susep-net
+methods: 2d16e35cf95b5ecb (29 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = qsmnet, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "qsmnet"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+  /separation/r2prime_strategy: "auto" -> "mese"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --qsm-algorithm qsmnet
+  + --chisep susep-net
+methods: 5cd49bf5c0119c9c (30 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = qsmnet-plus, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "qsmnet-plus"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+  /separation/r2prime_strategy: "auto" -> "mese"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --qsm-algorithm qsmnet-plus
+  + --chisep susep-net
+methods: 7d01190f643d2b67 (30 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = autoqsm, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "autoqsm"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+  /separation/r2prime_strategy: "auto" -> "mese"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --qsm-algorithm autoqsm
+  + --chisep susep-net
+methods: 070e3f32513a709a (28 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = qsmgan, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "qsmgan"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+  /separation/r2prime_strategy: "auto" -> "mese"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --qsm-algorithm qsmgan
+  + --chisep susep-net
+methods: e54f5cbc36ba9aa0 (30 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = ir2qsm, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "ir2qsm"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+  /separation/r2prime_strategy: "auto" -> "mese"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --qsm-algorithm ir2qsm
+  + --chisep susep-net
+methods: 3b2076fad307de54 (28 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = lpcnn, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "lpcnn"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+  /separation/r2prime_strategy: "auto" -> "mese"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --qsm-algorithm lpcnn
+  + --chisep susep-net
+methods: a8c85b823db0eb47 (29 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = modl-qsm, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "modl-qsm"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+  /separation/r2prime_strategy: "auto" -> "mese"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --qsm-algorithm modl-qsm
+  + --chisep susep-net
+methods: 00537a1926800bd8 (28 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = nextqsm, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "nextqsm"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+  /separation/r2prime_strategy: "auto" -> "mese"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --qsm-algorithm nextqsm
+  + --chisep susep-net
+methods: 7af3a1e3c5e45c30 (28 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = iqsm, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "iqsm"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+  /separation/r2prime_strategy: "auto" -> "mese"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --qsm-algorithm iqsm
+  + --chisep susep-net
+methods: ff594377010cd5fc (27 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = iqsm-plus, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "iqsm-plus"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+  /separation/r2prime_strategy: "auto" -> "mese"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --qsm-algorithm iqsm-plus
+  + --chisep susep-net
+methods: b022695596d4525c (26 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --bf-algorithm iqfm
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: 3aecd421e5d64deb (35 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = xqsm
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "xqsm"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --qsm-algorithm xqsm
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: e89637364fb1de01 (34 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = qsmnet
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "qsmnet"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --qsm-algorithm qsmnet
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: 7d418c0222e2e4f5 (35 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = qsmnet-plus
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "qsmnet-plus"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --qsm-algorithm qsmnet-plus
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: a5fcec4feceffb1f (35 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = autoqsm
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "autoqsm"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --qsm-algorithm autoqsm
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: 421d900cb028c8c7 (33 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = qsmgan
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "qsmgan"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --qsm-algorithm qsmgan
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: 477dd104d1e674b0 (35 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = ir2qsm
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "ir2qsm"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --qsm-algorithm ir2qsm
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: b3641f42f3989939 (33 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = lpcnn
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "lpcnn"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --qsm-algorithm lpcnn
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: d2f80984daf869ef (34 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = modl-qsm
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "modl-qsm"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --qsm-algorithm modl-qsm
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: 0e84831d406e813b (33 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = nextqsm
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "nextqsm"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --qsm-algorithm nextqsm
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: 9ff5528280cbbb51 (33 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = iqsm
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "iqsm"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --qsm-algorithm iqsm
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: a6785453d365d8d0 (31 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = iqsm-plus
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "iqsm-plus"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --qsm-algorithm iqsm-plus
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: 00a5b967a0887578 (31 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/r2prime_strategy: "auto" -> "mese"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: 915239480864d90e (32 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = xqsm, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "xqsm"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+  /separation/r2prime_strategy: "auto" -> "mese"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --bf-algorithm iqfm
+  + --qsm-algorithm xqsm
+  + --chisep susep-net
+methods: 42f2e61d15021fe1 (29 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = qsmnet, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "qsmnet"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+  /separation/r2prime_strategy: "auto" -> "mese"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --bf-algorithm iqfm
+  + --qsm-algorithm qsmnet
+  + --chisep susep-net
+methods: 345da5bb3f667fcd (31 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = qsmnet-plus, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "qsmnet-plus"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+  /separation/r2prime_strategy: "auto" -> "mese"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --bf-algorithm iqfm
+  + --qsm-algorithm qsmnet-plus
+  + --chisep susep-net
+methods: ee0d8b2bd04410ef (31 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = qsmgan, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "qsmgan"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+  /separation/r2prime_strategy: "auto" -> "mese"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --bf-algorithm iqfm
+  + --qsm-algorithm qsmgan
+  + --chisep susep-net
+methods: c2cee5bdcf97b87c (31 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = ir2qsm, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "ir2qsm"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+  /separation/r2prime_strategy: "auto" -> "mese"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --bf-algorithm iqfm
+  + --qsm-algorithm ir2qsm
+  + --chisep susep-net
+methods: 92b4fedb82160e70 (28 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = lpcnn, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "lpcnn"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+  /separation/r2prime_strategy: "auto" -> "mese"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --bf-algorithm iqfm
+  + --qsm-algorithm lpcnn
+  + --chisep susep-net
+methods: c95079bdb03ff1a1 (30 lines)
+
+## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = modl-qsm, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "modl-qsm"
+  /separation/algorithm: "r2star-qsm" -> "susep-net"
+  /separation/r2prime_strategy: "auto" -> "mese"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --bf-algorithm iqfm
+  + --qsm-algorithm modl-qsm
+  + --chisep susep-net
+methods: 2d63845bdf7810a4 (28 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = xqsm
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "xqsm"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --bf-algorithm iqfm
+  + --qsm-algorithm xqsm
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: dfa97e7369843076 (35 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = qsmnet
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "qsmnet"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --bf-algorithm iqfm
+  + --qsm-algorithm qsmnet
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: 015d3bc7fe0e5747 (37 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = qsmnet-plus
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "qsmnet-plus"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --bf-algorithm iqfm
+  + --qsm-algorithm qsmnet-plus
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: e527a86044013118 (37 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = qsmgan
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "qsmgan"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --bf-algorithm iqfm
+  + --qsm-algorithm qsmgan
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: 8f86816536e9f6a7 (37 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = ir2qsm
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "ir2qsm"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --bf-algorithm iqfm
+  + --qsm-algorithm ir2qsm
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: c2ff0497bd9e9342 (34 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = lpcnn
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "lpcnn"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --bf-algorithm iqfm
+  + --qsm-algorithm lpcnn
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: 9a85395cb3b27acc (36 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = modl-qsm
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "modl-qsm"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --bf-algorithm iqfm
+  + --qsm-algorithm modl-qsm
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: df22926a983afeac (34 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/r2prime_strategy: "auto" -> "mese"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --bf-algorithm iqfm
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: 7128e784434ba925 (34 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = xqsm, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "xqsm"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/r2prime_strategy: "auto" -> "mese"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --qsm-algorithm xqsm
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: 11ed00de8417062f (33 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = qsmnet, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "qsmnet"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/r2prime_strategy: "auto" -> "mese"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --qsm-algorithm qsmnet
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: 33d1217cd1f631ef (34 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = qsmnet-plus, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "qsmnet-plus"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/r2prime_strategy: "auto" -> "mese"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --qsm-algorithm qsmnet-plus
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: 7a713c8a341c1719 (34 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = autoqsm, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "autoqsm"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/r2prime_strategy: "auto" -> "mese"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --qsm-algorithm autoqsm
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: d4d20d688200f169 (32 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = qsmgan, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "qsmgan"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/r2prime_strategy: "auto" -> "mese"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --qsm-algorithm qsmgan
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: 688f6257a91f7304 (34 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = ir2qsm, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "ir2qsm"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/r2prime_strategy: "auto" -> "mese"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --qsm-algorithm ir2qsm
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: 80c207a600aefb8f (32 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = lpcnn, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "lpcnn"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/r2prime_strategy: "auto" -> "mese"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --qsm-algorithm lpcnn
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: 205dee6520f6e959 (33 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = modl-qsm, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "modl-qsm"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/r2prime_strategy: "auto" -> "mese"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --qsm-algorithm modl-qsm
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: e929b7440ae5a999 (32 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = nextqsm, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "nextqsm"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/r2prime_strategy: "auto" -> "mese"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --qsm-algorithm nextqsm
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: ea8aef586161972f (32 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = iqsm, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "iqsm"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/r2prime_strategy: "auto" -> "mese"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --qsm-algorithm iqsm
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: 66bdf5581b82387c (30 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = iqsm-plus, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /inversion/algorithm: "ilsqr" -> "iqsm-plus"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/r2prime_strategy: "auto" -> "mese"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --qsm-algorithm iqsm-plus
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: 3290a8c106f84fb8 (30 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = xqsm, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "xqsm"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/r2prime_strategy: "auto" -> "mese"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --bf-algorithm iqfm
+  + --qsm-algorithm xqsm
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: 92b85c046c416bba (34 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = qsmnet, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "qsmnet"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/r2prime_strategy: "auto" -> "mese"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --bf-algorithm iqfm
+  + --qsm-algorithm qsmnet
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: e4593cf9a6df5ae9 (36 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = qsmnet-plus, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "qsmnet-plus"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/r2prime_strategy: "auto" -> "mese"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --bf-algorithm iqfm
+  + --qsm-algorithm qsmnet-plus
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: 0bb4fb8005bab880 (36 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = qsmgan, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "qsmgan"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/r2prime_strategy: "auto" -> "mese"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --bf-algorithm iqfm
+  + --qsm-algorithm qsmgan
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: 855cf2a25fe36005 (36 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = ir2qsm, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "ir2qsm"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/r2prime_strategy: "auto" -> "mese"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --bf-algorithm iqfm
+  + --qsm-algorithm ir2qsm
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: b4494687741633d6 (33 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = lpcnn, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "lpcnn"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/r2prime_strategy: "auto" -> "mese"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --bf-algorithm iqfm
+  + --qsm-algorithm lpcnn
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: b52dd985656823ec (35 lines)
+
+## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = modl-qsm, r2prime_strategy = mese
+config:
+  /pipeline/do_chi_separation: false -> true
+  /bg_removal/algorithm: "vsharp" -> "iqfm"
+  /inversion/algorithm: "ilsqr" -> "modl-qsm"
+  /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
+  /separation/r2prime_strategy: "auto" -> "mese"
+  /separation/chi_sepnet/route: "toolbox" -> "native"
+command:
+  + --do-chisep
+  + --r2prime-strategy mese
+  + --bf-algorithm iqfm
+  + --qsm-algorithm modl-qsm
+  + --chisep chi-sepnet
+  + --chi-sepnet-route native
+methods: 73a58d0762cf6ab0 (33 lines)
+

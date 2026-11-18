@@ -1,0 +1,629 @@
+# A fresh form; every other file lists changes from this.
+
+command: qsmxt run <bids_dir>
+methods: dbd976bb6ada754e (13 lines)
+config:
+{
+  "description": "",
+  "schema_version": 2,
+  "pipeline": {
+    "do_qsm": true,
+    "do_swi": false,
+    "do_magnitude": true,
+    "do_smwi": false,
+    "do_segmentation": false,
+    "do_analysis": false,
+    "do_t2starmap": false,
+    "do_r2starmap": false,
+    "do_r2map": false,
+    "do_r2primemap": false,
+    "do_chi_separation": false,
+    "export_dicom": false,
+    "axial_resampling": false,
+    "obliquity_threshold": 10.0,
+    "crop_to_mask": false,
+    "fft_padding": false,
+    "crop_margin_mm": 32.0,
+    "output_space": "acquired",
+    "ignore_slice_gap": false,
+    "tukey_window": 0.0
+  },
+  "field_mapping": {
+    "phase_offset_removal": true,
+    "phase_offset_sigma_mm": [
+      7.0,
+      7.0,
+      7.0
+    ],
+    "coil_combination_sigma": [
+      10.0,
+      10.0,
+      5.0
+    ],
+    "bipolar_correction": false,
+    "unwrapping_algorithm": "romeo",
+    "b0_estimation": "weighted-avg",
+    "b0_weight_type": "phase-snr",
+    "b0_weight_assumed_t2star_ms": 40.0,
+    "laplacian_solver": "dct",
+    "laplacian_fft_pad": [
+      64,
+      64,
+      64
+    ],
+    "laplacian_unmasked": false,
+    "laplacian_keep_outside": false,
+    "romeo": {
+      "individual": false,
+      "correct_global": false,
+      "template": 0,
+      "phase_coherence": true,
+      "phase_gradient_coherence": true,
+      "phase_linearity": true,
+      "mag_coherence": true,
+      "mag_weight": false,
+      "mag_weight2": false,
+      "bestpath": false,
+      "temporal_uncertain_unwrapping": 0.0,
+      "max_seeds": 1,
+      "merge_regions": false,
+      "correct_regions": false,
+      "wrap_addition": 0.0
+    },
+    "prelude": {
+      "num_phase_partitions": 8,
+      "labelling": "auto"
+    },
+    "complex_fit": {
+      "reltol": 0.0001,
+      "max_iter": 30
+    },
+    "linear_fit": {
+      "estimate_offset": true
+    },
+    "robust_fit": {
+      "loss": "tukey",
+      "tuning": null,
+      "iterations": 3,
+      "downweight_level": 0.75,
+      "flag_ratio": 3.0
+    },
+    "qsmart_fit_threshold_mode": "absolute",
+    "qsmart_fit_percentile": 99.0,
+    "qsmart_fit_threshold": 40.0
+  },
+  "masking": {
+    "inhomogeneity_correction": true,
+    "inhomogeneity_method": "makehomogeneous",
+    "n4_geometry": "scanner",
+    "sections": [
+      {
+        "input": "phase-quality",
+        "generator": {
+          "op": "threshold",
+          "method": "otsu",
+          "value": null
+        },
+        "refinements": [
+          {
+            "op": "dilate",
+            "iterations": 1
+          },
+          {
+            "op": "fill-holes",
+            "max_size": 0
+          },
+          {
+            "op": "erode",
+            "iterations": 1
+          }
+        ]
+      }
+    ],
+    "combine": "or",
+    "refinements": [],
+    "custom_mask_tool": null,
+    "two_pass": false,
+    "two_pass_sections": null,
+    "two_pass_combine": null,
+    "two_pass_mode": "local"
+  },
+  "bg_removal": {
+    "algorithm": "vsharp",
+    "vsharp": {
+      "deconvolve": false,
+      "threshold": 0.05,
+      "max_radius": 12.0,
+      "min_radius": 2.0,
+      "radius_step": 1.0,
+      "grid": "isotropic",
+      "grid_spacing": 1.0
+    },
+    "pdf": {
+      "tol": 0.1,
+      "n_cg": 30,
+      "space": "image",
+      "n_pad": 40
+    },
+    "lbv": {
+      "tol": 0.01,
+      "depth": null,
+      "peel": 0,
+      "n1": 30,
+      "n2": 100,
+      "n3": 100,
+      "precision": "double"
+    },
+    "ismv": {
+      "variant": "wen2014",
+      "tol": 0.00005,
+      "max_iter": null,
+      "radius": null
+    },
+    "sharp": {
+      "threshold": 0.03,
+      "radius": 4.0
+    },
+    "resharp": {
+      "radius": 3.0,
+      "tik_reg": 0.0001,
+      "tol": 1e-6,
+      "max_iter": 200
+    },
+    "harperella": {
+      "radius": 10.0,
+      "max_iter": 40,
+      "tol": 0.001,
+      "pad": [
+        0,
+        0,
+        0
+      ],
+      "rim": "whole"
+    },
+    "iharperella": {
+      "max_iter": 40,
+      "tol": 0.001,
+      "pad": [
+        0,
+        0,
+        0
+      ],
+      "rim": "sti"
+    },
+    "erode_voxels": 0,
+    "polish_mask": false,
+    "ukb_mask_trim": false
+  },
+  "inversion": {
+    "algorithm": "ilsqr",
+    "rts": {
+      "delta": 0.15,
+      "mu": 100000.0,
+      "rho": 10.0,
+      "tol": 0.01,
+      "max_iter": 20,
+      "lsmr_iter": 4,
+      "tau": 0.7,
+      "gamma": 5.0,
+      "pad": [
+        0,
+        0,
+        0
+      ]
+    },
+    "tv": {
+      "lambda": 0.0003,
+      "rho": null,
+      "tol": 0.001,
+      "max_iter": 250,
+      "pad": [
+        0,
+        0,
+        0
+      ]
+    },
+    "tkd": {
+      "threshold": 0.25,
+      "pad": [
+        0,
+        0,
+        0
+      ]
+    },
+    "tsvd": {
+      "threshold": 0.15,
+      "pad": [
+        0,
+        0,
+        0
+      ]
+    },
+    "tikhonov": {
+      "lambda": 0.01,
+      "reg": "identity",
+      "pad": [
+        0,
+        0,
+        0
+      ]
+    },
+    "nltv": {
+      "lambda": 0.001,
+      "rho": null,
+      "mu": 1.0,
+      "tol": 0.001,
+      "max_iter": 250,
+      "tol_newton": 1e-6,
+      "max_iter_newton": 10,
+      "te": "first",
+      "pad": [
+        0,
+        0,
+        0
+      ]
+    },
+    "medi": {
+      "lambda": 1000.0,
+      "merit": true,
+      "smv": true,
+      "smv_radius": 5.0,
+      "smv_shrink_mask": true,
+      "data_weighting": 1,
+      "percentage": 0.9,
+      "cg_tol": 0.01,
+      "cg_max_iter": 100,
+      "max_iter": 10,
+      "tol": 0.1,
+      "csf": true,
+      "lambda_csf": 100.0,
+      "csf_r2s_threshold": 5.0,
+      "csf_erode": true,
+      "zeropad": [
+        0,
+        0,
+        0
+      ],
+      "msmv": false,
+      "msmv_maxk": 5,
+      "msmv_vessel_radius": null,
+      "msmv_prefilter": true,
+      "te": "spacing"
+    },
+    "tfi": {
+      "merit": true,
+      "linear": true,
+      "lambda": 1000.0,
+      "precond": 30.0,
+      "data_weighting": 1,
+      "percentage": 0.9,
+      "cg_tol": 0.01,
+      "cg_max_iter": 100,
+      "max_iter": 10,
+      "tol": 0.1,
+      "te": "spacing"
+    },
+    "ilsqr": {
+      "tol": 0.001,
+      "max_iter": 100,
+      "pad_mm": 12.0,
+      "precision": "double"
+    },
+    "star": {
+      "pad": [
+        8,
+        8,
+        20
+      ],
+      "te": "sum"
+    },
+    "tgv": {
+      "iterations": null,
+      "erosions": 3,
+      "alpha0": 0.00636,
+      "alpha1": 0.00212,
+      "step_size": 3.0,
+      "te": "first"
+    },
+    "qsmart": {
+      "ilsqr_max_iter": 50,
+      "ilsqr_pad_mm": 6.0,
+      "vasc_sphere_radius": 8,
+      "inversion": "ilsqr",
+      "sdf_sigma1_stage1": 10.0,
+      "sdf_sigma2_stage1": 10.0,
+      "sdf_sigma1_stage2": 8.0,
+      "sdf_sigma2_stage2": 2.0,
+      "sdf_lower_lim": 0.6,
+      "sdf_curv_constant": 500.0,
+      "frangi_scale_min": 0.5,
+      "frangi_scale_max": 6.0,
+      "frangi_scale_ratio": 0.5,
+      "frangi_c": 500.0,
+      "frangi_c_mode": "absolute",
+      "frangi_c_factor": 0.25,
+      "vessel_magnitude": "mean-n4",
+      "offset_grid": "fft",
+      "vessel_size_units": "voxels"
+    },
+    "ndi": {
+      "tau": 2.0,
+      "alpha": 0.00001,
+      "max_iter": 100,
+      "auto_stop": false,
+      "te": "first",
+      "weight_norm": "global-max"
+    },
+    "fansi": {
+      "alpha1": 0.0002,
+      "mu1": null,
+      "mu2": 1.0,
+      "alpha0": null,
+      "mu0": null,
+      "max_iter": 150,
+      "tol_update": 0.1,
+      "tol_delta": 1e-6,
+      "te": "spacing"
+    },
+    "l1qsm": {
+      "alpha1": 0.005,
+      "mu1": null,
+      "mu2": 1.0,
+      "mu3": 1.0,
+      "lambda": 0.8,
+      "max_iter": 50,
+      "tol_update": 1.0,
+      "tol_delta": 1e-6,
+      "te": "first"
+    },
+    "whqsm": {
+      "alpha1": 0.0002,
+      "mu1": 0.02,
+      "mu2": 1.0,
+      "beta": 150.0,
+      "muh": 5.0,
+      "max_iter": 150,
+      "tol_update": 0.1,
+      "tol_delta": 1e-6,
+      "weight": "flat",
+      "te": "first"
+    },
+    "hdqsm": {
+      "alpha_l2": 0.00003,
+      "mu1_l2": null,
+      "mu2": 1.0,
+      "max_iter_l1": 20,
+      "max_iter_l2": 80,
+      "tol_update": 0.01
+    },
+    "amp_pe": {
+      "wave_order": 1,
+      "nlevel": 3,
+      "wave_pec": 0.85,
+      "simulated_te": 0.008,
+      "max_linearization_ite": 25,
+      "b0": 3.0,
+      "gyro_ratio": 42.58,
+      "damp_rate_sig": 0.01,
+      "damp_rate_par": 0.1,
+      "max_pe_spar_ite": 5,
+      "max_pe_est_ite": 5,
+      "cvg_thd": 1e-6,
+      "tikhonov_beta": 0.02
+    },
+    "lsqr": {
+      "residual_weighting": null,
+      "fit_global_offset": true,
+      "tol": 0.00001,
+      "max_iter": 400
+    },
+    "heidi": {
+      "enabled": false,
+      "cone_threshold": 0.1,
+      "gradient_threshold": 0.003924908970520748,
+      "apply_laplacian_correction": true,
+      "laplacian_threshold": 0.05943433583931419,
+      "gradient_mask_floor": 0.0,
+      "continuation_steps": 8,
+      "inner_iterations": 500,
+      "mu_min": 2.220446049250313e-16,
+      "tol": 2.220446049250313e-16,
+      "denoise": true,
+      "denoise_iterations": 5,
+      "denoise_time_step": 0.05,
+      "denoise_conductance": 1.0,
+      "denoise_reference_itk": false,
+      "te": "last"
+    }
+  },
+  "separation": {
+    "algorithm": "r2star-qsm",
+    "chi_sep_ilsqr": {
+      "dr_pos": null,
+      "dr_neg": null,
+      "pad": [
+        16,
+        16,
+        16
+      ],
+      "cg_max_iter_lsqr": 50,
+      "cg_tol_lsqr": 0.02,
+      "cg_max_iter_sa": 50,
+      "cg_tol_sa": 0.02,
+      "d2_thr": 0.11,
+      "prc_w_i_min": 60.0,
+      "prc_w_i_max": 99.8,
+      "prc_w_g_min": 50.0,
+      "prc_w_g_max": 70.0,
+      "qsm_ilsqr": {
+        "tol": 0.001,
+        "max_iter": 100,
+        "pad_mm": 12.0,
+        "precision": "double"
+      }
+    },
+    "chi_sep_medi": {
+      "lambda": 1.0,
+      "lambda_csf": 1.0,
+      "dr_pos": null,
+      "dr_neg": null,
+      "pad": 5,
+      "tol": 0.03,
+      "max_iter": 30,
+      "cg_tol": 0.05,
+      "cg_max_iter": 100,
+      "qsm_ilsqr": {
+        "tol": 0.001,
+        "max_iter": 100,
+        "pad_mm": 12.0,
+        "precision": "double"
+      },
+      "csf_r2star": "arlo"
+    },
+    "r2star_qsm": {
+      "r_const_3t": 274.0
+    },
+    "wavesep": {
+      "dr_pos": 137.0,
+      "dr_neg": 137.0,
+      "alpha": 0.2,
+      "lambda": 0.02,
+      "wavelet_order": 4,
+      "max_iter": 100,
+      "tol": 0.001
+    },
+    "decompose": {
+      "n_inner": 10,
+      "chi_bound": 0.5,
+      "unwrap_phase": false,
+      "lsqcurvefit": {
+        "max_iterations": 400,
+        "max_function_evaluations": null,
+        "function_tolerance": 1e-6,
+        "step_tolerance": 1e-6,
+        "optimality_tolerance": 1e-6,
+        "finite_difference_step": 1.4901161193847656e-8,
+        "typical_x": 1.0
+      },
+      "fit": "reference-code"
+    },
+    "hc_chisep": {
+      "dr_pos_3t": 137.0,
+      "bin_hz": 0.25
+    },
+    "custom_qsm_tool": null,
+    "custom_r2_tool": null,
+    "custom_r2prime_tool": null,
+    "r2prime_strategy": "auto",
+    "r2primenet": {
+      "patch": [
+        192,
+        192,
+        128
+      ],
+      "ignore_field_mismatch": false
+    },
+    "chi_sepnet": {
+      "route": "toolbox",
+      "patch": [
+        192,
+        192,
+        128
+      ],
+      "frame_patch": null
+    },
+    "susep_net": {
+      "patch": null
+    }
+  },
+  "qsm": {
+    "reference": "mean",
+    "per_echo": false
+  },
+  "swi": {
+    "unwrap": "laplacian",
+    "hp_sigma": [
+      4.0,
+      4.0,
+      0.0
+    ],
+    "scaling": "tanh",
+    "strength": 4.0,
+    "mip_window": 7,
+    "filtered_phase": false
+  },
+  "smwi": {
+    "threshold_ppm": 1.0,
+    "power": 4.0,
+    "mip_window": 4
+  },
+  "segmentation": {
+    "version": "v1",
+    "crop": null,
+    "flip_averaging": true,
+    "topology_cleanup": true,
+    "sigma_smoothing": 0.5,
+    "patch": null,
+    "custom_dseg_tool": null
+  },
+  "bet": {
+    "fractional_intensity": 0.5,
+    "smoothness": 1.0,
+    "gradient_threshold": 0.0,
+    "iterations": 1000,
+    "subdivisions": 4,
+    "voxel_scale": 1.0,
+    "orientation": "fsl"
+  },
+  "homogeneity": {
+    "sigma_mm": 7.0,
+    "nbox": 15
+  },
+  "n4": {
+    "shrink_factor": 4,
+    "max_iterations": [
+      50,
+      50,
+      50,
+      50
+    ],
+    "convergence_threshold": 0.0,
+    "mesh": [
+      1,
+      1,
+      1
+    ],
+    "spline_order": 3,
+    "bias_field_fwhm": 0.15,
+    "wiener_noise": 0.01,
+    "histogram_bins": 200
+  },
+  "multi_orientation": {
+    "group_by": "",
+    "algorithm": "cosmos",
+    "lambda": 0.0,
+    "force": false,
+    "reference": "",
+    "register": true,
+    "magnitude_weighting": false,
+    "cosmos_tol": 1e-6,
+    "cosmos_max_iter": 100
+  },
+  "motion_correction": {
+    "enabled": false,
+    "reference": "first",
+    "chain": true,
+    "chain_levels": 3,
+    "min_ncc": 0.3
+  },
+  "registration": {
+    "levels": 5,
+    "max_samples": 200000,
+    "max_iterations": 20,
+    "max_evaluations": 5000,
+    "tolerance": 0.00001,
+    "rotation_step_deg": 3.0,
+    "translation_step_mm": 3.0,
+    "min_overlap": 0.25
+  }
+}

@@ -1,0 +1,16 @@
+## toggle export_dicom
+config:
+  /pipeline/export_dicom: false -> true
+command:
+  + --export-dicom
+methods: 21eb9f236a9edfc2 (13 lines)
+
+## toggle export_dicom, toggle do_t2starmap
+config:
+  /pipeline/do_t2starmap: false -> true
+  /pipeline/export_dicom: false -> true
+command:
+  + --do-t2starmap
+  + --export-dicom
+methods: c6ff3f6702729162 (14 lines)
+

@@ -164,7 +164,7 @@ fn try_flag(cmd: &mut Command, flag: &str, values: &[String]) -> (String, Result
 }
 
 /// Every leaf of `value` that differs from `base`, as `/json/pointer: before -> after`.
-fn changes(base: &serde_json::Value, value: &serde_json::Value, path: &str, out: &mut Vec<String>) {
+pub(crate) fn changes(base: &serde_json::Value, value: &serde_json::Value, path: &str, out: &mut Vec<String>) {
     use serde_json::Value::Object;
     match (base, value) {
         (Object(b), Object(v)) => {

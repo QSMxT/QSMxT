@@ -10,6 +10,8 @@ pub(crate) mod tips;
 mod prefs;
 mod ui;
 #[cfg(test)]
+mod form_snapshots;
+#[cfg(test)]
 mod schema_parity;
 #[cfg(test)]
 mod snapshot_tests;
