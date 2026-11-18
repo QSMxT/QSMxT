@@ -20,6 +20,7 @@
 //! [`get`] and [`set`], through the config's own serde form, so a path that round-trips here is
 //! one the TOML config accepts.
 
+pub mod aliases;
 pub mod mask;
 mod regular;
 mod table;

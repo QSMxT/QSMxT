@@ -24,21 +24,9 @@ pub fn load_config(path: &Path) -> crate::Result<PipelineConfig> {
 
 /// The recipe behind a `--mask-preset` value — shared by `run` and `qsmxt mask preset`.
 pub fn mask_preset_recipe(preset: cli::MaskPresetArg) -> crate::Result<MaskRecipe> {
-    let name = match preset {
-        cli::MaskPresetArg::RobustThreshold => "robust-threshold",
-        cli::MaskPresetArg::Bet => "bet",
-        cli::MaskPresetArg::HdBet => "hd-bet",
-        cli::MaskPresetArg::BetAndPhase => "bet-and-phase",
-        cli::MaskPresetArg::Rs2Net => "rs2-net",
-        cli::MaskPresetArg::MindGrab => "mindgrab",
-        cli::MaskPresetArg::MouseBet => return Err(QsmxtError::Config(
-            "the `mouse-bet` mask preset has been removed. For rodent data use `--mask-preset \
-             rs2-net`; BET on scaled voxel sizes is still available as a mask step, e.g. \
-             `--mask magnitude,bet:0.5:scale=10,erode:1`".to_string())),
-    };
-    Ok(mask_presets().into_iter().find(|(n, _)| *n == name)
-        .map(|(_, r)| r)
-        .expect("every MaskPresetArg is in mask_presets()"))
+    use clap::ValueEnum;
+    let name = preset.to_possible_value().expect("no MaskPresetArg is skipped");
+    qsmxt_engine::masking::mask_preset(name.get_name()).map_err(QsmxtError::Config)
 }
 
 /// Parse `<input>,<op>,<op>,...` mask-section specs — the `--mask` and `--two-pass-mask` grammar.
@@ -1453,6 +1441,16 @@ mod tests {
         let err = apply_run_overrides(&mut PipelineConfig::default(), &run_args.pipeline)
             .expect_err("mouse-bet was removed").to_string();
         assert!(err.contains("removed") && err.contains("rs2-net") && err.contains("scale="), "{err}");
+    }
+
+    /// `--mask-preset`'s values are the engine's presets, each once.
+    #[test]
+    fn every_mask_preset_value_is_an_engine_preset() {
+        use clap::ValueEnum;
+        let shown: Vec<String> = cli::MaskPresetArg::value_variants().iter()
+            .filter_map(|v| v.to_possible_value()).filter(|v| !v.is_hide_set()).map(|v| v.get_name().to_string()).collect();
+        let engine: Vec<&str> = qsmxt_engine::mask_presets().into_iter().map(|(n, _)| n).collect();
+        assert_eq!(shown, engine);
     }
 
     /// `qsmxt run --qsm-algorithm medi` runs the general default background removal; MEDI's

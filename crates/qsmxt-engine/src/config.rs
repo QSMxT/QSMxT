@@ -688,23 +688,11 @@ pub fn enforce_separation_dependencies(config: &mut PipelineConfig) {
     if chisepnet_route_can_estimate_r2prime(config) {
         config.pipeline.do_r2starmap = true;
     } else if config.pipeline.do_chi_separation {
-        match config.separation.algorithm {
-            // Uses R2* directly (fit from the GRE magnitude); no R2/R2' needed.
-            SeparationAlgorithm::R2starQsm => config.pipeline.do_r2starmap = true,
-            // Fits the multi-echo magnitude signal directly; no relaxometry maps needed.
-            SeparationAlgorithm::Decompose => {}
-            // R2'-based methods: need R2' (unless a custom R2' map is supplied).
-            // SUSEP-Net consumes [QSM, R2', local field] → [χ+, χ−], so it needs R2' too.
-            SeparationAlgorithm::ChiSepIlsqr
-            | SeparationAlgorithm::ChiSepMedi
-            | SeparationAlgorithm::WaveSep
-            | SeparationAlgorithm::HcChisep
-            | SeparationAlgorithm::SusepNet
-            | SeparationAlgorithm::ChiSepNet => {
-                if config.separation.custom_r2prime_tool.is_none() {
-                    config.pipeline.do_r2primemap = true;
-                }
-            }
+        let algorithm = config.separation.algorithm;
+        if algorithm == SeparationAlgorithm::R2starQsm {
+            config.pipeline.do_r2starmap = true;
+        } else if algorithm.reads_r2prime() && config.separation.custom_r2prime_tool.is_none() {
+            config.pipeline.do_r2primemap = true;
         }
     }
     // Computing R2' (no custom map) always needs R2*: it is the minuend of R2* − R2, and it is

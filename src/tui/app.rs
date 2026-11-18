@@ -1780,7 +1780,9 @@ pub const R2PRIME_STRATEGY_HELP: &[&str] = &[
     "Always predict R2' from R2* with R2PRIMEnet, even when a MESE acquisition is available (an estimate, not a measurement)",
 ];
 
-pub const MASK_PRESET_OPTIONS: &[&str] = &["robust-threshold", "bet", "hd-bet", "bet-and-phase", "rs2-net", "mindgrab", "custom"];
+/// The mask preset picker: the engine's presets, then "custom" ([`MASK_PRESET_CUSTOM`]).
+pub static MASK_PRESET_OPTIONS: LazyLock<Vec<&'static str>> =
+    LazyLock::new(|| mask_schema().presets.iter().map(|p| p.value).chain(["custom"]).collect());
 /// The presets' help, from the engine's mask schema, then the "custom" entry's.
 static MASK_PRESET_HELP_V: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
     mask_schema().presets.iter().map(|p| p.help).chain(["Fully custom mask pipeline (edit steps below)"]).collect()
@@ -1810,7 +1812,7 @@ pub fn mask_step_of(op: &crate::pipeline::config::MaskOp) -> &'static qsmxt_engi
 /// Index of the "custom" preset — set automatically when the steps are edited by hand, and
 /// skipped when cycling presets with ←/→. Derived, because it is always the trailing entry:
 /// a hardcoded index silently goes stale the moment a preset is added.
-pub const MASK_PRESET_CUSTOM: usize = MASK_PRESET_OPTIONS.len() - 1;
+pub static MASK_PRESET_CUSTOM: LazyLock<usize> = LazyLock::new(|| MASK_PRESET_OPTIONS.len() - 1);
 
 /// The signal-erode parameters that get a row of their own, past the threshold shown on the step
 /// row itself: label and help. Order matches the row order.
@@ -1958,22 +1960,9 @@ pub struct RowContext {
     pub multi_coil: bool,
 }
 
-/// Which bring-your-own inputs (and the R2' source) the run can use.
-///
-/// Mirrors `qsmxt_engine::enforce_separation_dependencies` and `requirements::implied_by`, but
-/// from the form's *requests* rather than the resolved config: a supplied map switches its own
-/// computation off, and the row that supplies it must not vanish because it was filled in.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct InputRelevance {
-    /// A χ map is read: χ-separation, the statistics or SMWI.
-    pub qsm: bool,
-    /// An R2 map is read: asked for, or the measured route to a computed R2'.
-    pub r2: bool,
-    /// An R2' map is read: asked for, or the selected χ-separation method needs it.
-    pub r2prime: bool,
-    /// R2' is computed (wanted and not supplied), so its source and R2PRIMEnet settings apply.
-    pub r2prime_source: bool,
-}
+/// Which bring-your-own inputs (and the R2' source) the run can use: the engine's
+/// [`qsmxt_engine::requirements::InputsRead`], from the form's requests.
+pub type InputRelevance = qsmxt_engine::requirements::InputsRead;
 
 /// All pipeline form values (algorithms + parameters).
 #[derive(Debug, Clone)]
@@ -3045,12 +3034,13 @@ const QSMART_INV_HELP: &[&str] = &[
 ];
 /// The inversion picker's alias for LSQR with the HEIDI box ticked. The form never holds it: it
 /// keeps `qsm_algorithm` on `lsqr`, and `heidi_enabled`.
-pub const LSQR_HEIDI: &str = "lsqr+heidi";
-const LSQR_HEIDI_HELP: &str = "LSQR+HEIDI (HEIDI as published) — LSQR with the HEIDI box ticked: LSQR, then the dipole cone refilled under a homogeneity prior. https://doi.org/10.1016/j.neuroimage.2012.05.067";
+pub const LSQR_HEIDI: &str = qsmxt_engine::schema::aliases::LSQR_HEIDI.name;
+const LSQR_HEIDI_HELP: &str = qsmxt_engine::schema::aliases::LSQR_HEIDI.help;
 
 /// `list`, with `alias` after the entry for LSQR.
 fn with_lsqr_heidi<T: Copy>(list: &[T], alias: T) -> Vec<T> {
-    let at = QSM_ALGO_OPTIONS.iter().position(|o| *o == "lsqr").expect("LSQR is an inversion") + 1;
+    let lsqr = qsmxt_engine::schema::aliases::LSQR_HEIDI.value;
+    let at = QSM_ALGO_OPTIONS.iter().position(|o| *o == lsqr).expect("LSQR is an inversion") + 1;
     let mut out = list.to_vec();
     out.insert(at, alias);
     out
@@ -3609,7 +3599,7 @@ impl PipelineFormState {
     fn masking_rows(&self, rows: &mut Vec<PipelineRow>) {
         rows.push(PipelineRow::AlgoSelect {
             label: "Mask preset", field: "mask_preset",
-            options: MASK_PRESET_OPTIONS, help: mask_preset_help(),
+            options: &MASK_PRESET_OPTIONS, help: mask_preset_help(),
         });
         rows.push(PipelineRow::Param {
             label: "Use custom masks", field: "custom_mask_tool",
@@ -5707,7 +5697,7 @@ impl PipelineFormState {
     /// the `robust-threshold` preset the main mask still follows.
     fn mark_mask_custom(&mut self, section: usize) {
         if !is_two_pass_section(section) {
-            self.mask_preset = MASK_PRESET_CUSTOM;
+            self.mask_preset = *MASK_PRESET_CUSTOM;
         }
     }
 
@@ -6188,25 +6178,7 @@ pub fn row_field(row: &PipelineRow) -> Option<&'static str> {
 
 /// The output a checkbox asks for, when another option can force that output on.
 fn forced_output(field: &str) -> Option<crate::pipeline::requirements::Output> {
-    use crate::pipeline::requirements::Output;
-    match field {
-        "do_r2starmap" => Some(Output::R2star),
-        "do_r2map" => Some(Output::R2),
-        "do_r2primemap" => Some(Output::R2prime),
-        "do_segmentation" => Some(Output::Segmentation),
-        _ => None,
-    }
-}
-
-fn forced_output_name(out: crate::pipeline::requirements::Output) -> &'static str {
-    use crate::pipeline::requirements::Output;
-    match out {
-        Output::R2star => "The R2* map",
-        Output::R2 => "The R2 map",
-        Output::R2prime => "The R2' map",
-        Output::Segmentation => "Segmentation",
-        _ => "This output",
-    }
+    crate::pipeline::requirements::Output::of_setting(&format!("pipeline.{field}"))
 }
 
 /// The SWI unwrapping select: qsmxt_engine's unwrappers, in [`super::command::SWI_UNWRAP_ARGS`]'s order.
@@ -6294,17 +6266,12 @@ pub struct App {
     /// The recommendation pop-up, opened when a change creates a recommendation
     /// ([`super::recommend`]).
     pub rec_modal: Option<super::recommend::RecModal>,
-    /// The recommendations open after the last change (rule and value), so that only a change
-    /// that creates one opens the pop-up.
-    pub rec_seen: Vec<(String, String)>,
-    /// Rules a change created findings for, on other settings than the pop-up shown: each is
-    /// offered in a pop-up of its own once the one before it is closed.
-    pub rec_queue: Vec<String>,
-    /// The form as it was when `rec_seen` was taken (empty before the first check): a key that
-    /// changed nothing is not checked.
+    /// What the engine works the pop-ups after a change out from: the findings open after the
+    /// last change, the ones waiting for a pop-up, the methods chosen ([`qsmxt_engine::advice::edit`]).
+    pub advice: qsmxt_engine::advice::edit::State,
+    /// The form at the last check (empty before the first): a key that changed nothing is not
+    /// checked.
     pub rec_form: String,
-    /// The config as it was at the same point, to tell which settings a change changed.
-    pub rec_config: Option<serde_json::Value>,
     /// The form as it was at the same point: what "Undo my change" in a required-change pop-up
     /// sets back ([`super::recommend::Undo`]).
     pub rec_snapshot: Option<Box<super::recommend::FormSnapshot>>,
@@ -6715,10 +6682,8 @@ impl App {
             dicom_state: DicomConvertState::default(),
             nifti_state: NiftiState::default(),
             rec_modal: None,
-            rec_seen: Vec::new(),
-            rec_queue: Vec::new(),
+            advice: Default::default(),
             rec_form: String::new(),
-            rec_config: None,
             rec_snapshot: None,
             refs: Default::default(),
             pipelines: Default::default(),
@@ -8090,14 +8055,13 @@ impl App {
         let config = super::command::config_from_app(self).ok();
         // The config as the form gives it, and as the run takes it: QSM another output needs is
         // a required change the run makes itself when it is left off.
-        let qsm_forced = !ps.do_qsm && config.as_ref().is_some_and(|c| c.normalised().0.pipeline.do_qsm);
+        let qsm_forced = config.as_ref().filter(|_| !ps.do_qsm)
+            .and_then(|c| c.normalised().1.into_iter().find(|a| a.setting == "pipeline.do_qsm"));
         RowContext {
-            qsm_forced_by: qsm_forced.then_some(
-                if self.form.do_smwi && ps.custom_qsm_tool.trim().is_empty() {
-                    "SMWI weights the magnitude by the χ map (QSM → SMWI)"
-                } else {
-                    "the per-structure statistics need a map to summarise (Other outputs → Segmentation)"
-                }),
+            qsm_forced_by: qsm_forced.map(|a| match a.because {
+                "pipeline.do_smwi" => "SMWI weights the magnitude by the χ map (QSM → SMWI)",
+                _ => "the per-structure statistics need a map to summarise (Other outputs → Segmentation)",
+            }),
             orientation_group: group.is_some(),
             orientation_cosmos: algorithm == 0,
             num_echoes: self.filter_state.num_echoes.trim().parse().ok(),
@@ -8120,20 +8084,18 @@ impl App {
     pub fn input_relevance(&self) -> InputRelevance {
         let ps = &self.pipeline_state;
         let f = &self.form;
-        let sep = SEP_ALGO_OPTIONS.get(ps.separation_algorithm).copied().unwrap_or("");
-        // The R2'-based methods (qsmxt_engine::enforce_separation_dependencies).
-        let sep_needs_r2prime = ps.do_chi_separation
-            && !matches!(sep, "r2star-qsm" | "decompose");
-        let r2prime = f.do_r2primemap || sep_needs_r2prime;
-        let r2prime_source = r2prime && ps.custom_r2prime_tool.trim().is_empty();
-        // R2' is measured as R2* − R2 unless it is always predicted (R2PRIMEnet, index 2).
-        let r2 = f.do_r2map || (r2prime_source && ps.r2prime_strategy != 2);
-        InputRelevance {
-            qsm: ps.do_chi_separation || f.do_analysis || f.do_smwi,
-            r2,
-            r2prime,
-            r2prime_source,
+        let mut c = qsmxt_engine::PipelineConfig::default();
+        (c.pipeline.do_chi_separation, c.pipeline.do_analysis, c.pipeline.do_smwi) = (ps.do_chi_separation, f.do_analysis, f.do_smwi);
+        (c.pipeline.do_r2map, c.pipeline.do_r2primemap) = (f.do_r2map, f.do_r2primemap);
+        if let Some(sep) = SEP_ALGO_OPTIONS.get(ps.separation_algorithm) {
+            c.separation.algorithm = serde_json::from_value(serde_json::json!(sep)).expect("SEP_ALGO_OPTIONS are the config's names");
         }
+        c.separation.custom_r2prime_tool = Some(ps.custom_r2prime_tool.trim()).filter(|t| !t.is_empty()).map(str::to_string);
+        // R2' is measured as R2* − R2 unless it is always predicted (R2PRIMEnet, index 2).
+        if ps.r2prime_strategy == 2 {
+            c.separation.r2prime_strategy = qsmxt_engine::R2PrimeStrategy::R2primenet;
+        }
+        InputRelevance::of(&c)
     }
 
     /// Keys on a row-based tab (all but Input and Methods): every row is a named
@@ -8817,7 +8779,7 @@ impl App {
     fn basic_rows(&self, rows: Vec<PipelineRow>) -> Vec<PipelineRow> {
         use PipelineRow::*;
         let shown = self.basic_paths();
-        let collapse_recipe = self.pipeline_state.mask_preset != MASK_PRESET_CUSTOM;
+        let collapse_recipe = self.pipeline_state.mask_preset != *MASK_PRESET_CUSTOM;
         let main_recipe = |section: usize| !is_two_pass_section(section);
         let mut hidden = 0;
         // Each row, and whether it shows.
@@ -9122,7 +9084,7 @@ impl App {
                 if let Some(why) = self.forced_by_label(out) {
                     self.error_message = Some(format!(
                         "{} is required by {why} — change or turn that off first (or supply the map).",
-                        forced_output_name(out)));
+                        out.noun()));
                     return;
                 }
             }
@@ -12590,7 +12552,7 @@ mod tests {
         assert_eq!(app.pipeline_state.mask_preset, 5); // MindGrab
         assert_eq!(app.pipeline_state.mask_sections, crate::pipeline::config::mindgrab_mask_sections());
         step(&mut app, 1);
-        assert_eq!(app.pipeline_state.mask_preset, MASK_PRESET_CUSTOM, "the picker lists 'custom' last");
+        assert_eq!(app.pipeline_state.mask_preset, *MASK_PRESET_CUSTOM, "the picker lists 'custom' last");
     }
 
     #[test]
@@ -12648,8 +12610,8 @@ mod tests {
     fn test_mask_preset_options_match_the_preset_list() {
         use clap::ValueEnum;
         let names: Vec<&str> = crate::pipeline::config::mask_presets().iter().map(|(n, _)| *n).collect();
-        assert_eq!(&MASK_PRESET_OPTIONS[..MASK_PRESET_CUSTOM], &names[..]);
-        assert_eq!(MASK_PRESET_OPTIONS[MASK_PRESET_CUSTOM], "custom");
+        assert_eq!(&MASK_PRESET_OPTIONS[..*MASK_PRESET_CUSTOM], &names[..]);
+        assert_eq!(MASK_PRESET_OPTIONS[*MASK_PRESET_CUSTOM], "custom");
         assert_eq!(MASK_PRESET_OPTIONS.len(), mask_preset_help().len());
 
         let cli_names: Vec<String> = crate::cli::MaskPresetArg::value_variants().iter()
@@ -13211,7 +13173,7 @@ mod tests {
         assert_eq!(app.pipeline_state.mask_combine, MaskCombine::Or);
         step(&mut app, 1);
         assert_eq!(app.pipeline_state.mask_combine, MaskCombine::And);
-        assert_eq!(app.pipeline_state.mask_preset, MASK_PRESET_CUSTOM, "editing the recipe marks it custom");
+        assert_eq!(app.pipeline_state.mask_preset, *MASK_PRESET_CUSTOM, "editing the recipe marks it custom");
         step(&mut app, 1);
         assert_eq!(app.pipeline_state.mask_combine, MaskCombine::Or);
     }
@@ -13423,7 +13385,7 @@ mod tests {
         app.handle_key(key(KeyCode::Enter));
         let added = app.pipeline_state.mask_sections[0].refinements.last().unwrap();
         assert_eq!(PipelineFormState::mask_op_label_value(added).0, available[1]);
-        assert_eq!(app.pipeline_state.mask_preset, MASK_PRESET_CUSTOM);
+        assert_eq!(app.pipeline_state.mask_preset, *MASK_PRESET_CUSTOM);
     }
 
     #[test]
@@ -14194,7 +14156,7 @@ mod tests {
             MaskOp::MinIntensity { value: 100.0 },
         ] });
         ps.mask_sections.push(MaskSection { input: MaskingInput::Magnitude, generator: MaskOp::MindGrab { tta: false }, refinements: vec![] });
-        ps.mask_preset = MASK_PRESET_CUSTOM;
+        ps.mask_preset = *MASK_PRESET_CUSTOM;
         app
     }
 
@@ -14792,14 +14754,14 @@ mod tests {
         let summary: Vec<&str> = rows.iter().filter_map(|r| match r { PipelineRow::Summary { text } => Some(text.as_str()), _ => None }).collect();
         assert_eq!(summary.join(" "), "phase-quality › otsu threshold › dilate 1 › fill-holes › erode 1");
         assert!(!rows.iter().any(|r| matches!(r, PipelineRow::MaskOpEntry { .. } | PipelineRow::MaskOpAddSection { .. })));
-        app.pipeline_state.mask_preset = MASK_PRESET_CUSTOM;
+        app.pipeline_state.mask_preset = *MASK_PRESET_CUSTOM;
         assert!(app.rows().iter().any(|r| matches!(r, PipelineRow::MaskOpEntry { .. })));
     }
 
     #[test]
     fn the_mask_recipe_line_fits_beside_the_sidebar_at_80_columns() {
         let mut app = App::new();
-        for (preset, name) in MASK_PRESET_OPTIONS.iter().enumerate().take(MASK_PRESET_CUSTOM) {
+        for (preset, name) in MASK_PRESET_OPTIONS.iter().enumerate().take(*MASK_PRESET_CUSTOM) {
             app.pipeline_state.set_select("mask_preset", preset);
             for line in app.pipeline_state.mask_recipe_summary() {
                 assert!(line.chars().count() <= 46, "{name}: {line}");

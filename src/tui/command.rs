@@ -2665,7 +2665,7 @@ mod parity {
                     PipelineRow::AlgoSelect { field, options, .. } => {
                         let current = base.field_select(field);
                         // "custom" names a hand-edited mask; choosing it changes nothing by itself.
-                        let custom = |i: usize| *field == "mask_preset" && i == crate::tui::app::MASK_PRESET_CUSTOM;
+                        let custom = |i: usize| *field == "mask_preset" && i == *crate::tui::app::MASK_PRESET_CUSTOM;
                         changes.extend((0..options.len()).filter(|&i| i != current && !custom(i)).map(|i| (j, Check::Select(field, i))));
                     }
                     PipelineRow::Toggle { field, .. } => changes.push((j, Check::Toggle(field, Box::new(toggled.clone().unwrap())))),

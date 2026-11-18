@@ -487,6 +487,24 @@ pub fn mask_presets() -> Vec<(&'static str, MaskRecipe)> {
     ]
 }
 
+/// Mask presets that were removed, and what to use instead: still recognised, so a script that
+/// asks for one gets an error that says so.
+pub const REMOVED_MASK_PRESETS: &[(&str, &str)] = &[(
+    "mouse-bet",
+    "For rodent data use `--mask-preset rs2-net`; BET on scaled voxel sizes is still available as \
+     a mask step, e.g. `--mask magnitude,bet:0.5:scale=10,erode:1`",
+)];
+
+/// The recipe of the mask preset `name` ([`mask_presets`]); for a removed one, why not and what to
+/// use instead ([`REMOVED_MASK_PRESETS`]).
+pub fn mask_preset(name: &str) -> Result<MaskRecipe, String> {
+    if let Some((_, instead)) = REMOVED_MASK_PRESETS.iter().find(|(n, _)| *n == name) {
+        return Err(format!("the `{name}` mask preset has been removed. {instead}"));
+    }
+    mask_presets().into_iter().find(|(n, _)| *n == name).map(|(_, r)| r)
+        .ok_or_else(|| format!("there is no mask preset `{name}`"))
+}
+
 /// The preset a masking config reproduces, for writing `--mask-preset <name>` instead of spelling
 /// every section out. Returns the preset name and, when the only difference is that every section
 /// reads a different image, the `--masking-input` that goes with it.
