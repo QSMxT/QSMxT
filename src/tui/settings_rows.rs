@@ -27,7 +27,7 @@ use super::app::{field_of_path, field_path, App, Page, PipelineRow, RowContext, 
 
 /// The sections whose settings are kept in [`SettingsStore`] rather than in the form's fields.
 pub const STORED_SECTIONS: &[Section] =
-    &[Section::Geometry, Section::Motion, Section::Background, Section::Reference, Section::Magnitude, Section::SwiSmwi,
+    &[Section::Geometry, Section::Masking, Section::Motion, Section::Background, Section::Reference, Section::Magnitude, Section::SwiSmwi,
       Section::Relaxometry, Section::Segmentation, Section::MultiOrientation, Section::FieldMap,
       Section::Inversion, Section::Separation];
 
@@ -327,6 +327,22 @@ fn tui_help(s: &Setting) -> &'static str {
     TUI_HELP.iter().find(|(p, _)| *p == s.path).map_or(s.tui_help, |(_, h)| h)
 }
 
+/// Makes a setting's value on a fresh form ([`FORM_DEFAULTS`]).
+type FormDefault = fn() -> Value;
+
+/// Settings a fresh form holds otherwise than QSMxT's default, and so always passes on while they
+/// apply. Unset, the reliable mask is the one the run resolves it to
+/// (`default_two_pass_sections`); the form holds that mask, so that the mask builder shows and
+/// edits it, and passes it on whenever two-pass is on, as it always has.
+const FORM_DEFAULTS: &[(&str, FormDefault)] = &[
+    ("masking.two_pass_sections", || serde_json::to_value(qsmxt_engine::default_two_pass_sections()).unwrap_or_default()),
+];
+
+/// A setting's value on a fresh form: [`FORM_DEFAULTS`]'s, else QSMxT's default.
+fn form_default(path: &str) -> Value {
+    FORM_DEFAULTS.iter().find(|(p, _)| *p == path).map_or_else(|| setting(path).default.clone(), |(_, v)| v())
+}
+
 /// Makes the value a checkbox takes when it is ticked ([`ON_VALUES`]).
 type OnValue = fn() -> Value;
 
@@ -393,7 +409,7 @@ fn by_path() -> &'static HashMap<&'static str, &'static Setting> {
     &MAP
 }
 
-fn setting(path: &str) -> &'static Setting {
+pub(super) fn setting(path: &str) -> &'static Setting {
     by_path().get(path).unwrap_or_else(|| panic!("no setting {path}"))
 }
 
@@ -466,7 +482,7 @@ fn indented(depth: usize, label: &'static str) -> &'static str {
 }
 
 /// How many settings `s` is listed under on its own section's page.
-fn depth_of(s: &Setting) -> usize {
+pub(super) fn depth_of(s: &Setting) -> usize {
     match s.parent.map(setting) {
         Some(p) if p.section == s.section => 1 + depth_of(p),
         _ => 0,
@@ -606,7 +622,7 @@ pub struct SettingsStore {
 impl SettingsStore {
     /// A setting's value (not counting typed text).
     pub fn get(&self, path: &str) -> Value {
-        self.values.get(path).cloned().unwrap_or_else(|| setting(path).default.clone())
+        self.values.get(path).cloned().unwrap_or_else(|| form_default(path))
     }
 
     /// Set a value, dropping any text typed for it. A value the config refuses is left out.
@@ -617,7 +633,7 @@ impl SettingsStore {
 
     /// Set a value, leaving any text typed for it.
     fn put(&mut self, path: &'static str, value: Value) {
-        if value == setting(path).default {
+        if value == form_default(path) {
             self.values.remove(path);
         } else if config_with(&[(path, value.clone())]).is_some() {
             self.values.insert(path, value);
@@ -808,14 +824,18 @@ impl SettingsStore {
         }
     }
 
-    /// The stored settings that differ from their defaults as the run takes them, typed text
-    /// read as its value (a blank text leaves the default; so does a value the config refuses,
-    /// such as a typed number too large for its setting), and the settings whose typed text the
-    /// run cannot take at all, with why: text that reads as no value of its setting ("abc" for a
-    /// number), or an echo number the setting does not take. The command line refuses both, and
-    /// running with the default instead would change a setting behind the user's back.
+    /// The stored settings that differ from QSMxT's defaults as the run takes them (those a fresh
+    /// form holds otherwise, [`FORM_DEFAULTS`], included), typed text
+    /// read as its value (a blank text leaves the default), and the settings whose typed text the
+    /// run cannot take, with why: text that reads as no value of its setting ("abc" for a
+    /// number), a number outside the setting's range or one the config cannot hold, or an echo
+    /// number the setting does not take. The command line refuses all of them, and running with
+    /// the default instead would change a setting behind the user's back.
     pub fn changed_or_refused(&self) -> (Vec<(&'static str, Value)>, Vec<Refused>) {
         let mut out: BTreeMap<&'static str, Value> = self.values.clone();
+        for (path, value) in FORM_DEFAULTS {
+            out.entry(path).or_insert_with(value);
+        }
         let mut refused = Vec::new();
         for (&path, text) in &self.typed {
             let s = setting(path);
@@ -852,10 +872,32 @@ impl SettingsStore {
                 out.remove(path);
                 continue;
             }
-            match value.filter(|v| *v != s.default && config_with(&[(path, v.clone())]).is_some()) {
-                Some(v) => out.insert(path, v),
-                None => out.remove(path),
+            let Some(v) = value else {
+                out.remove(path);
+                continue;
             };
+            // A number outside the setting's range, or one the config cannot hold (a negative
+            // count), is refused as the run refuses it, rather than run as the default.
+            let flag = s.cli_flag.unwrap_or(path);
+            let numbers: Vec<f64> = match &v {
+                Value::Array(xs) => xs.iter().filter_map(Value::as_f64).collect(),
+                other => other.as_f64().into_iter().collect(),
+            };
+            let why = if numbers.iter().any(|&x| !s.in_range(x)) {
+                Some(format!("must be {}", s.range_text()))
+            } else {
+                config_try(&[(path, v.clone())]).err().map(|e| match s.value_type {
+                    ValueType::Int | ValueType::IntVec3 | ValueType::IntList if numbers.iter().any(|&x| x < 0.0) =>
+                        "must be at least 0".to_string(),
+                    _ => e,
+                })
+            };
+            if let Some(why) = why {
+                refused.push((path, format!("{flag} {}: {why}", text.trim())));
+                out.remove(path);
+                continue;
+            }
+            if v == s.default { out.remove(path) } else { out.insert(path, v) };
         }
         (out.into_iter().collect(), refused)
     }
@@ -914,7 +956,10 @@ impl App {
     /// The rows of `page` when they come from the registry; `None` for a page still built by
     /// hand.
     pub(super) fn registry_rows(&self, page: Page, ctx: &RowContext, config: Option<&PipelineConfig>) -> Option<Vec<PipelineRow>> {
-        let layout = LAYOUTS.iter().find(|l| l.page == page)?;
+        let layout = LAYOUTS.iter().find(|l| l.page == page);
+        if layout.is_none() && page != Page::Masking {
+            return None;
+        }
         // A form that builds no config (a value the run refuses) still shows its rows, as its
         // stored settings have them.
         let stored;
@@ -925,6 +970,8 @@ impl App {
                 &stored
             }
         };
+        // The Masking page is the mask builder's ([`super::mask_builder`]).
+        let Some(layout) = layout else { return Some(self.masking_rows(config)) };
         let visible = self.visible_settings(config);
         let shows = |path: &str| visible.contains(path);
         let is_on = |path: &str| field_of_path(path).is_some_and(|f| self.field_toggle(f));
@@ -990,7 +1037,7 @@ impl App {
     /// The rows of a setting, by its value type: one; for an echo reference given as an echo
     /// number, the select and the number's row under it; for a setting with a value that turns it
     /// off, a checkbox and, while it is on, the value's row under it.
-    fn push_rows(&self, rows: &mut Vec<PipelineRow>, s: &'static Setting, depth: usize) {
+    pub(super) fn push_rows(&self, rows: &mut Vec<PipelineRow>, s: &'static Setting, depth: usize) {
         self.push_rows_worded(rows, s, depth, s.label, tui_help(s));
     }
 
@@ -1159,6 +1206,33 @@ mod tests {
         app.form.settings.set("pipeline.do_chi_separation", true);
         app.form.settings.set("separation.algorithm", "decompose");
         unreadable(&mut app, "sep_decompose_chi_bound", "abc", "--decompose-chi-bound abc: not a number");
+    }
+
+    /// A typed number outside its setting's range, or one the config cannot hold, is refused as
+    /// the run refuses it, rather than run as the setting's default: a number, a count, a triple.
+    #[test]
+    fn out_of_range_values_are_refused() {
+        let mut app = App::new_for_trial();
+        app.set_field_select("mask_preset", 1); // BET
+        unreadable(&mut app, "bet_smoothness", "-1", "--bet-smoothness -1: must be greater than 0");
+        *app.field_text_mut("bet_smoothness").unwrap() = String::new();
+        unreadable(&mut app, "bet_iterations", "-1", "--bet-iterations -1: must be at least 0");
+        *app.field_text_mut("bet_iterations").unwrap() = String::new();
+        unreadable(&mut app, "homogeneity_nbox", "0", "--homogeneity-nbox 0: must be at least 1");
+        *app.field_text_mut("homogeneity_nbox").unwrap() = String::new();
+        app.set_field_select("inhomogeneity_method", 1);
+        unreadable(&mut app, "n4_mesh", "1 0 1", "--n4-mesh 1 0 1: must be at least 1");
+        *app.field_text_mut("n4_mesh").unwrap() = "2 2 2".into();
+        assert_eq!(config_from_app(&app).unwrap().n4.mesh, [2, 2, 2]);
+    }
+
+    /// An out-of-range number in a row that does not apply does not block the run.
+    #[test]
+    fn an_out_of_range_hidden_value_does_not_block() {
+        let mut app = App::new_for_trial();
+        unreadable(&mut app, "homogeneity_nbox", "0", "--homogeneity-nbox 0");
+        app.toggle_field("inhomogeneity_correction");
+        assert!(config_from_app(&app).is_ok(), "the correction off: its boxes do not apply");
     }
 
     /// Unreadable text in a row that does not apply does not block the run: its setting is left

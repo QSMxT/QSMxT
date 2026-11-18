@@ -414,7 +414,7 @@ impl App {
         if let Ok(mut c) = super::command::config_from_app(self) {
             if decide::restore_kept(&mut c, &plan.kept, &facts) {
                 self.pipeline_state.mask_preset = *super::app::MASK_PRESET_CUSTOM;
-                self.pipeline_state.mask_sections = c.masking.sections;
+                self.form.settings.set("masking.sections", serde_json::to_value(&c.masking.sections).unwrap_or_default());
             }
         }
         rec::keep(&mut self.pipeline_state.dismissed, &plan.kept);
@@ -442,7 +442,8 @@ impl App {
         let mut c = super::command::config_from_app(self).map_err(|_| refused())?;
         rec::apply(&mut c, rule, value).map_err(|_| refused())?;
         let before = FormSnapshot::of(self);
-        let kept_combine = (self.pipeline_state.mask_combine, self.pipeline_state.mask_combined_refinements.clone());
+        let combine_of = |app: &App| ["masking.combine", "masking.refinements"].map(|p| app.form.settings.get(p));
+        let kept_combine = combine_of(self);
         self.set_form_from_config(&c);
         if r.setting == "masking.sections" {
             // A recipe set by a rule reads as the hand-edited one, even where a preset gives it:
@@ -450,12 +451,14 @@ impl App {
             // kept as the form had it where the recipe does not use it.
             self.pipeline_state.mask_preset = *super::app::MASK_PRESET_CUSTOM;
             let built = super::command::config_from_app(self).ok();
-            let ps = &mut self.pipeline_state;
-            let set = (ps.mask_combine, std::mem::take(&mut ps.mask_combined_refinements));
-            (ps.mask_combine, ps.mask_combined_refinements) = kept_combine;
+            let set = combine_of(self);
+            let put = |app: &mut App, [combine, refinements]: [Value; 2]| {
+                app.form.settings.set("masking.combine", combine);
+                app.form.settings.set("masking.refinements", refinements);
+            };
+            put(self, kept_combine);
             if super::command::config_from_app(self).ok() != built {
-                let ps = &mut self.pipeline_state;
-                (ps.mask_combine, ps.mask_combined_refinements) = set;
+                put(self, set);
             }
         }
         // Checked on this scan: a rule on the field strength (DECOMPOSE's at 7 T) applies only to it.
