@@ -3248,7 +3248,7 @@ pub(super) mod tests {
             a.form.settings.set("pipeline.do_smwi", true);
             a.form.settings.set("pipeline.do_swi", true);
             a.form.do_analysis = true;
-            a.form.do_r2primemap = true;
+            a.form.settings.set("pipeline.do_r2primemap", true);
             a.form.export_dicom = true;
             a.filter_state.orientation_group = "acq".into();
             a.form.settings.set("motion_correction.enabled", true);
@@ -3357,7 +3357,7 @@ pub(super) mod tests {
         let mut app = App::new();
         app.active_tab = super::super::app::TAB_RECONSTRUCTION;
         app.form.settings.set("pipeline.do_swi", true);
-        app.form.do_t2starmap = true;
+        app.form.settings.set("pipeline.do_t2starmap", true);
         app.form.dry_run = true;
         app.form.debug = true;
         let _ = render_app(&mut app);

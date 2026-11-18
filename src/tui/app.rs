@@ -1768,18 +1768,11 @@ pub const MASK_OP_TYPES: &[&str] = &[
 /// Ops that create a mask (the section's generator); the rest are refinements.
 pub const MASK_GENERATOR_TYPES: &[&str] = &["threshold", "bet", "hd-bet", "mindgrab", "rs2-net"];
 
-/// How R2' is obtained when no custom map is supplied.
-pub const R2PRIME_STRATEGY_OPTIONS: &[&str] = &["auto", "mese", "r2primenet"];
 /// χ-sepnet's input routes (`separation.chi_sepnet.route`), in [`CHI_SEPNET_ROUTE_HELP`]'s order.
 pub const CHI_SEPNET_ROUTE_OPTIONS: &[&str] = &["toolbox", "native"];
 pub const CHI_SEPNET_ROUTE_HELP: &[&str] = &[
     "The authors' route: the inputs in the network's training frame (B0 along z, 1 mm), the QSM channel from QSMnetME, R2' measured or predicted from R2* by R2PRIMEnet, the maps resampled back",
     "The network alone on the acquired grid, given this run's QSM and R2', as a sliding window",
-];
-pub const R2PRIME_STRATEGY_HELP: &[&str] = &[
-    "Measure R2' = R2* - R2 from a MESE acquisition when one is present, else predict it from R2* with R2PRIMEnet",
-    "Only ever measure R2' from a MESE acquisition - produces no R2' without spin-echo data",
-    "Always predict R2' from R2* with R2PRIMEnet, even when a MESE acquisition is available (an estimate, not a measurement)",
 ];
 
 /// The mask preset picker: the engine's presets, then "custom" ([`MASK_PRESET_CUSTOM`]).
@@ -1887,56 +1880,6 @@ const UNWRAP_HELP: &[&str] = &[
     "PRELUDE region-merging unwrapping, each echo on its own — https://doi.org/10.1002/mrm.10354",
     "MEDI's magnitude-guided region-growing unwrapping; needs magnitude images — https://doi.org/10.1002/mrm.24272",
 ];
-const BF_HELP: &[&str] = &[
-    "Variable-kernel SHARP (V-SHARP) — https://doi.org/10.1002/mrm.23000",
-    "Projection onto Dipole Fields (PDF) — https://doi.org/10.1002/nbm.1670",
-    "Laplacian Boundary Value (LBV) — https://doi.org/10.1002/nbm.3064",
-    "Iterative Spherical Mean Value (iSMV) — https://doi.org/10.1002/mrm.24998",
-    "SHARP (Sophisticated Harmonic Artifact Reduction) — https://doi.org/10.1016/j.neuroimage.2010.10.070",
-    "Regularized SHARP (RESHARP) with Tikhonov — https://doi.org/10.1002/mrm.25032",
-    "HARPERELLA integrated unwrap+BFR — https://doi.org/10.1002/nbm.3056",
-    "Improved HARPERELLA (iHARPERELLA) — Li et al., Proc. ISMRM 2015, p.3313",
-    "BFRnet deep-learning background removal (weights auto-downloaded) — https://github.com/sunhongfu/BFRnet",
-    "iQFM deep-learning joint unwrapping + background removal from phase (weights auto-downloaded) — https://doi.org/10.1016/j.neuroimage.2022.119410",
-];
-/// The two reference methods that need no parcellation, ahead of every region.
-const QSM_REF_METHODS: [(&str, &str); 2] = [
-    ("mean", "Subtract the mean susceptibility over the voxels the map is defined on (recommended)"),
-    ("none", "No referencing (raw susceptibility values)"),
-];
-
-/// The reference picker's options: the two methods, then every SynthSeg region.
-///
-/// Built from the label table rather than listed, so a table that gains a label gains a reference
-/// option. Leaked to `&'static` once at first use — the set is fixed and bounded, and the row
-/// types hold `&'static [&'static str]`.
-static QSM_REF_ENTRIES: LazyLock<Vec<(&'static str, &'static str)>> = LazyLock::new(|| {
-    let mut out: Vec<(&'static str, &'static str)> = QSM_REF_METHODS.to_vec();
-    for r in qsmxt_engine::regions::REGIONS.iter() {
-        let ids = r.ids.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", ");
-        let help = format!(
-            "Reference χ to the mean of the {} (FreeSurfer {} {}){}. Requires Segmentation",
-            r.label,
-            if r.ids.len() == 1 { "label" } else { "labels" },
-            ids,
-            if r.v2_only { " — needs --synthseg-version v2" } else { "" },
-        );
-        out.push((r.slug, Box::leak(help.into_boxed_str())));
-    }
-    out
-});
-
-static QSM_REF_OPTIONS_V: LazyLock<Vec<&'static str>> =
-    LazyLock::new(|| QSM_REF_ENTRIES.iter().map(|(o, _)| *o).collect());
-static QSM_REF_HELP_V: LazyLock<Vec<&'static str>> =
-    LazyLock::new(|| QSM_REF_ENTRIES.iter().map(|(_, h)| *h).collect());
-
-/// The `--qsm-reference` value for a picker index (`mean`, `none`, or a region slug).
-pub fn qsm_reference_spec(index: usize) -> String {
-    QSM_REF_OPTIONS_V.get(index).copied().unwrap_or("mean").to_string()
-}
-
-
 /// Facts from outside the pipeline form that decide which of its rows apply: the other tabs'
 /// settings (an output that forces QSM, the orientation grouping, the echo limit) and the maps
 /// whose supplied inputs apply. Set by [`App::sync_pipeline_mode`] before every key
@@ -1978,7 +1921,6 @@ pub struct PipelineFormState {
     pub qsm_algorithm: usize,
     pub unwrapping_algorithm: usize,
     pub bf_algorithm: usize,
-    pub qsm_reference: usize,
 
     // Field mapping
     /// A QSM per echo, and their mean (`qsm.per_echo`).
@@ -2172,73 +2114,20 @@ pub struct PipelineFormState {
     pub amp_pe_tikhonov_beta: String,
 
     // V-SHARP
-    pub vsharp_deconvolve: bool,
-    pub vsharp_threshold: String,
-    pub vsharp_max_radius: String,
-    pub vsharp_min_radius: String,
-    pub vsharp_radius_step: String,
-    /// Index into [`VSHARP_GRID_OPTIONS`] (0 = native, 1 = finest, 2 = isotropic).
-    pub vsharp_grid: usize,
-    pub vsharp_grid_spacing: String,
 
     // PDF
-    pub pdf_tol: String,
-    pub pdf_n_cg: String,
-    /// Erode the mask by this many voxels before background removal (`bg_removal.erode_voxels`).
-    pub bf_erode_voxels: String,
-    /// STI Suite's PolishMask after background removal (`bg_removal.polish_mask`).
-    pub bf_polish_mask: bool,
-    /// UK Biobank's phase-reliability mask trimming around background removal
-    /// (`bg_removal.ukb_mask_trim`).
-    pub bf_ukb_mask_trim: bool,
-    /// An index into PDF_SPACE_OPTIONS.
-    pub pdf_space: usize,
-    pub pdf_n_pad: String,
 
     // LBV
-    pub lbv_tol: String,
-    /// Blank = automatic
-    pub lbv_depth: String,
-    pub lbv_peel: String,
-    pub lbv_n1: String,
-    pub lbv_n2: String,
-    pub lbv_n3: String,
-    /// An index into LBV_PRECISION_OPTIONS.
-    pub lbv_precision: usize,
 
     // iSMV
-    /// An index into ISMV_VARIANT_OPTIONS.
-    pub ismv_variant: usize,
-    pub ismv_tol: String,
-    /// Blank: no limit.
-    pub ismv_max_iter: String,
-    /// Blank: the variant's own radius.
-    pub ismv_radius: String,
 
     // SHARP
-    pub sharp_threshold: String,
-    pub sharp_radius: String,
 
     // RESHARP
-    pub resharp_radius: String,
-    pub resharp_tik_reg: String,
-    pub resharp_tol: String,
-    pub resharp_max_iter: String,
 
     // HARPERELLA
-    pub harperella_radius: String,
-    pub harperella_max_iter: String,
-    pub harperella_tol: String,
-    pub harperella_pad: String,
-    /// An index into HARPERELLA_RIM_OPTIONS.
-    pub harperella_rim: usize,
 
     // iHARPERELLA
-    pub iharperella_max_iter: String,
-    pub iharperella_tol: String,
-    pub iharperella_pad: String,
-    /// An index into HARPERELLA_RIM_OPTIONS.
-    pub iharperella_rim: usize,
 
     // QSMART
     pub qsmart_ilsqr_max_iter: String,
@@ -2417,13 +2306,6 @@ pub struct PipelineFormState {
     pub do_chi_separation: bool,
     pub separation_algorithm: usize, // index into SEP_ALGO_OPTIONS
     pub custom_qsm_tool: String,     // empty=off; "*"=any; else a derivatives tool name
-    pub custom_r2_tool: String,
-    pub custom_r2prime_tool: String,
-    /// Index into [`R2PRIME_STRATEGY_OPTIONS`].
-    pub r2prime_strategy: usize,
-    /// R2PRIMEnet: run away from 3 T (uncalibrated), and its patch as "D H W".
-    pub r2primenet_ignore_field_mismatch: bool,
-    pub r2primenet_patch: String,
     // R2*-QSM
     pub sep_r2starqsm_r_const_3t: String,
     // DECOMPOSE
@@ -2538,7 +2420,6 @@ impl Default for PipelineFormState {
             qsm_algorithm: super::command::default_qsm_algorithm_index(), // ilsqr
             unwrapping_algorithm: 0, // romeo
             bf_algorithm: 0, // vsharp
-            qsm_reference: 0, // mean
             qsm_per_echo: false,
             phase_offset_removal: true,
             bipolar_correction: false,
@@ -2686,46 +2567,6 @@ impl Default for PipelineFormState {
             amp_pe_simulated_te: format!("{}", qsm_core::inversion::AmpPeParams::default().simulated_te),
             amp_pe_max_linearization_ite: format!("{}", qsm_core::inversion::AmpPeParams::default().max_linearization_ite),
             amp_pe_tikhonov_beta: format!("{}", qsm_core::inversion::AmpPeParams::default().tikhonov_beta),
-            vsharp_deconvolve: qsmxt_engine::VsharpConfig::default().deconvolve,
-            vsharp_threshold: format!("{}", qsm_core::bgremove::VsharpParams::default().threshold),
-            vsharp_max_radius: format!("{}", qsm_core::bgremove::VsharpParams::default().max_radius),
-            vsharp_min_radius: format!("{}", qsm_core::bgremove::VsharpParams::default().min_radius),
-            vsharp_radius_step: format!("{}", qsm_core::bgremove::VsharpParams::default().radius_step),
-            vsharp_grid: vsharp_grid_index(qsmxt_engine::VsharpConfig::default().grid),
-            vsharp_grid_spacing: format!("{}", qsmxt_engine::VsharpConfig::default().grid_spacing),
-            pdf_tol: format!("{}", qsm_core::bgremove::PdfParams::default().tol),
-            pdf_n_cg: format!("{}", qsm_core::bgremove::PdfParams::default().n_cg),
-            bf_erode_voxels: "0".to_string(),
-            bf_polish_mask: qsmxt_engine::BgRemovalConfig::default().polish_mask,
-            bf_ukb_mask_trim: qsmxt_engine::BgRemovalConfig::default().ukb_mask_trim,
-            pdf_space: pdf_space_index(qsmxt_engine::PdfConfig::default().space),
-            pdf_n_pad: format!("{}", qsm_core::bgremove::PdfParams::default().n_pad),
-            lbv_tol: format!("{}", qsm_core::bgremove::LbvParams::default().tol),
-            lbv_depth: fmt_opt(qsm_core::bgremove::LbvParams::default().depth),
-            lbv_peel: qsm_core::bgremove::LbvParams::default().peel.to_string(),
-            lbv_n1: qsm_core::bgremove::LbvParams::default().n1.to_string(),
-            lbv_n2: qsm_core::bgremove::LbvParams::default().n2.to_string(),
-            lbv_n3: qsm_core::bgremove::LbvParams::default().n3.to_string(),
-            lbv_precision: lbv_precision_index(qsmxt_engine::LbvConfig::default().precision),
-            ismv_variant: ismv_variant_index(qsmxt_engine::IsmvConfig::default().variant),
-            ismv_tol: format!("{}", qsm_core::bgremove::IsmvParams::default().tol),
-            ismv_max_iter: fmt_opt(qsm_core::bgremove::IsmvParams::default().max_iter),
-            ismv_radius: fmt_opt(qsm_core::bgremove::IsmvParams::default().radius),
-            sharp_threshold: format!("{}", qsm_core::bgremove::SharpParams::default().threshold),
-            sharp_radius: format!("{}", qsm_core::bgremove::SharpParams::default().radius),
-            resharp_radius: format!("{}", qsm_core::bgremove::ResharpParams::default().radius),
-            resharp_tik_reg: format!("{}", qsm_core::bgremove::ResharpParams::default().tik_reg),
-            resharp_tol: format!("{}", qsm_core::bgremove::ResharpParams::default().tol),
-            resharp_max_iter: format!("{}", qsm_core::bgremove::ResharpParams::default().max_iter),
-            harperella_radius: format!("{}", qsm_core::bgremove::HarperellaParams::default().radius),
-            harperella_max_iter: format!("{}", qsm_core::bgremove::HarperellaParams::default().max_iter),
-            harperella_tol: format!("{}", qsm_core::bgremove::HarperellaParams::default().tol),
-            harperella_pad: fmt_triple(qsm_core::bgremove::HarperellaParams::default().pad),
-            harperella_rim: harperella_rim_index(qsmxt_engine::HarperellaConfig::default().rim),
-            iharperella_max_iter: format!("{}", qsm_core::bgremove::IharperellaParams::default().max_iter),
-            iharperella_tol: format!("{}", qsm_core::bgremove::IharperellaParams::default().tol),
-            iharperella_pad: fmt_triple(qsm_core::bgremove::IharperellaParams::default().pad),
-            iharperella_rim: harperella_rim_index(qsmxt_engine::IharperellaConfig::default().rim),
             do_qsm: true,
             romeo_phase_gradient_coherence: qsm_core::unwrap::RomeoParams::default().phase_gradient_coherence,
             romeo_mag_coherence: qsm_core::unwrap::RomeoParams::default().mag_coherence,
@@ -2862,14 +2703,6 @@ impl Default for PipelineFormState {
             do_chi_separation: false,
             separation_algorithm: 0,
             custom_qsm_tool: String::new(),
-            custom_r2_tool: String::new(),
-            custom_r2prime_tool: String::new(),
-            r2prime_strategy: 0,
-            r2primenet_ignore_field_mismatch: false,
-            r2primenet_patch: {
-                let p = qsmxt_engine::R2primenetConfig::default().patch;
-                format!("{} {} {}", p[0], p[1], p[2])
-            },
             sep_r2starqsm_r_const_3t: fmt_default(sep_r2starqsm.r_const_3t),
             sep_decompose_n_inner: sep_decompose.n_inner.to_string(),
             sep_decompose_chi_bound_mode: chi_bound_index(sep_decompose.chi_bound),
@@ -3059,16 +2892,6 @@ const TWO_PASS_MODE_HELP: &[&str] = &[
 fn two_pass_mode_index(m: qsmxt_engine::TwoPassMode) -> usize {
     qsmxt_engine::TwoPassMode::ALL.iter().position(|&x| x == m).unwrap_or(0)
 }
-pub const VSHARP_GRID_OPTIONS: &[&str] = &["native", "finest", "isotropic"];
-const VSHARP_GRID_HELP: &[&str] = &[
-    "The acquired voxel grid",
-    "An isotropic grid at the smallest voxel dimension, so no axis is coarsened; isotropic data stays on the acquired grid",
-    "An isotropic grid of Grid spacing mm; the background is interpolated back, the local field keeps native resolution (default)",
-];
-/// The [`VSHARP_GRID_OPTIONS`] index of `grid`.
-pub fn vsharp_grid_index(grid: qsmxt_engine::VsharpGrid) -> usize {
-    VSHARP_GRID_OPTIONS.iter().position(|o| *o == grid.to_string()).unwrap_or(0)
-}
 
 /// A method's echo time: the named echo times, then a time in ms (`<method>_te_ms`).
 pub const ECHO_TIME_OPTIONS: &[&str] = &["first", "last", "spacing", "sum", "ms"];
@@ -3170,37 +2993,6 @@ const CHI_SEP_CSF_R2STAR_HELP: &[&str] = &[
 fn chi_sep_csf_r2star_index(m: qsmxt_engine::ChiSepCsfR2star) -> usize {
     qsmxt_engine::ChiSepCsfR2star::ALL.iter().position(|&x| x == m).unwrap_or(0)
 }
-/// LBV's arithmetic, in the CLI's names.
-pub const LBV_PRECISION_OPTIONS: &[&str] = &["double", "single"];
-const LBV_PRECISION_HELP: &[&str] = &[
-    "Double precision (default)",
-    "Single precision, as the original implementation computes",
-];
-fn lbv_precision_index(p: qsmxt_engine::LbvPrecision) -> usize {
-    qsmxt_engine::LbvPrecision::ALL.iter().position(|&x| x == p).unwrap_or(0)
-}
-/// PDF's dipole kernel, in the CLI's names.
-pub const PDF_SPACE_OPTIONS: &[&str] = &["image", "kspace"];
-const PDF_SPACE_HELP: &[&str] = &[
-    "The FFT of the dipole field sampled on the voxel grid (default)",
-    "The analytic k-space dipole kernel",
-];
-fn pdf_space_index(k: qsmxt_engine::PdfSpace) -> usize {
-    qsmxt_engine::PdfSpace::ALL.iter().position(|&x| x == k).unwrap_or(0)
-}
-/// HARPERELLA's / iHARPERELLA's boundary rim, in the CLI's names.
-pub const HARPERELLA_RIM_OPTIONS: &[&str] = &["whole", "sti"];
-const HARPERELLA_RIM_HELP: &[&str] = &[
-    "Zero every Laplacian value in the brain's boundary rim (default)",
-    "Zero the 20 % largest Laplacian values in the rim, as STI Suite does",
-];
-const IHARPERELLA_RIM_HELP: &[&str] = &[
-    "Zero every Laplacian value in the brain's boundary rim",
-    "Zero the 20 % largest Laplacian values in the rim, as STI Suite does (default)",
-];
-fn harperella_rim_index(r: qsmxt_engine::HarperellaRim) -> usize {
-    qsmxt_engine::HarperellaRim::ALL.iter().position(|&x| x == r).unwrap_or(0)
-}
 /// A minimum intensity one `+`/`-` nudge on: by a tenth of its order of magnitude (100 → 110 or
 /// 90, 0.5 → 0.55 or 0.45), so a magnitude in any units can be adjusted. Stays above 0.
 fn step_min_intensity(value: f64, delta: isize) -> f64 {
@@ -3261,15 +3053,6 @@ const NDI_WEIGHT_NORM_HELP: &[&str] = &[
 fn ndi_weight_norm_index(n: qsmxt_engine::NdiWeightNorm) -> usize {
     qsmxt_engine::NdiWeightNorm::ALL.iter().position(|&x| x == n).unwrap_or(0)
 }
-/// iSMV's implementations, in the CLI's names.
-pub const ISMV_VARIANT_OPTIONS: &[&str] = &["wen2014", "qsmjl"];
-const ISMV_VARIANT_HELP: &[&str] = &[
-    "The authors' paper and code (default)",
-    "QSM.jl's implementation",
-];
-fn ismv_variant_index(v: qsmxt_engine::IsmvVariant) -> usize {
-    qsmxt_engine::IsmvVariant::ALL.iter().position(|&x| x == v).unwrap_or(0)
-}
 /// Three values as a row shows them (`0 0 0`).
 fn fmt_triple(p: [usize; 3]) -> String {
     format!("{} {} {}", p[0], p[1], p[2])
@@ -3296,9 +3079,9 @@ const B0_WEIGHT_TYPE_HELP: &[&str] = &[
     "Magnitude only",
     "Fixed TE·exp(−TE/T2*) per echo from an assumed T2* (no T2* map, no magnitude); phase-snr is generally better",
 ];
-/// Borrowed from the statics above so the row types keep their `&'static` slices.
-pub fn qsm_ref_options() -> &'static [&'static str] { &QSM_REF_OPTIONS_V }
-pub fn qsm_ref_help() -> &'static [&'static str] { &QSM_REF_HELP_V }
+/// The reference picker's options: the two methods, then every region
+/// ([`super::settings_rows`]).
+pub fn qsm_ref_options() -> &'static [&'static str] { super::settings_rows::options("qsm.reference").0 }
 
 impl PipelineFormState {
     /// The χ-separation tab: the method and its parameters, and the χ map it may read instead.
@@ -3733,89 +3516,6 @@ impl PipelineFormState {
         }
 
     }
-
-    /// QSM → Background: background-field removal (only for inversions that take a local field).
-    fn background_rows(&self, rows: &mut Vec<PipelineRow>) {
-        rows.push(PipelineRow::AlgoSelect {
-            label: "BG removal", field: "bf_algorithm",
-            options: BF_OPTIONS, help: BF_HELP,
-        });
-        // iQFM has no separate background-removal stage to erode the mask for.
-        if BF_OPTIONS.get(self.bf_algorithm).copied() != Some("iqfm") {
-            rows.push(PipelineRow::Param { label: "  Erode mask", field: "bf_erode_voxels",
-                help: "Erode the brain mask after field mapping, before background removal (0 = none)" });
-            rows.push(PipelineRow::Toggle { label: "  Polish mask", field: "bf_polish_mask",
-                help: "After background removal, keep the mask's largest connected component with its holes filled, as STI Suite's QSM_GUI does" });
-            rows.push(PipelineRow::Toggle { label: "  UKB mask trim", field: "bf_ukb_mask_trim",
-                help: "Before and after background removal, trim the mask of voxels with unreliable phase, as UK Biobank's pipeline does" });
-        }
-        match self.bf_algorithm {
-            0 => { // V-SHARP
-                rows.push(PipelineRow::Toggle { label: "  Deconvolve", field: "vsharp_deconvolve",
-                    help: "Undo the SMV high-pass with a truncated-SVD deconvolution (default: off)" });
-                if self.vsharp_deconvolve {
-                    rows.push(PipelineRow::Param { label: "  Threshold", field: "vsharp_threshold", help: "Deconvolution (TSVD) threshold" });
-                }
-                rows.push(PipelineRow::Param { label: "  Max radius", field: "vsharp_max_radius", help: "Largest SMV kernel radius (mm)" });
-                rows.push(PipelineRow::Param { label: "  Min radius", field: "vsharp_min_radius", help: "Smallest SMV kernel radius (mm)" });
-                rows.push(PipelineRow::Param { label: "  Radius step", field: "vsharp_radius_step", help: "Step between SMV kernel radii (mm)" });
-                rows.push(PipelineRow::AlgoSelect { label: "  Working grid", field: "vsharp_grid",
-                    options: VSHARP_GRID_OPTIONS, help: VSHARP_GRID_HELP });
-                if self.vsharp_grid == 2 {
-                    rows.push(PipelineRow::Param { label: "    Grid spacing", field: "vsharp_grid_spacing",
-                        help: "Isotropic working-grid spacing (mm)" });
-                }
-            }
-            1 => { // PDF
-                rows.push(PipelineRow::Param { label: "  Tolerance", field: "pdf_tol", help: "Convergence tolerance, relative to the noise level" });
-                rows.push(PipelineRow::Param { label: "  CG iter", field: "pdf_n_cg", help: "Maximum conjugate-gradient iterations" });
-                rows.push(PipelineRow::AlgoSelect { label: "  Kernel", field: "pdf_space", options: PDF_SPACE_OPTIONS, help: PDF_SPACE_HELP });
-                rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "pdf_n_pad", help: "Zero-padding around the mask's bounding box, voxels; 0 = the full volume" });
-            }
-            2 => { // LBV
-                rows.push(PipelineRow::Param { label: "  Tolerance", field: "lbv_tol",
-                    help: "Stop the coarsest grid's relaxation when its summed absolute update falls below this (radians over the echo spacing)" });
-                rows.push(PipelineRow::Param { label: "  Depth", field: "lbv_depth",
-                    help: "Coarsest multigrid level. Blank = automatic (log2 of the smallest dimension minus 3)" });
-                rows.push(PipelineRow::Param { label: "  Peel", field: "lbv_peel", help: "Boundary layers removed from the mask beyond the first" });
-                rows.push(PipelineRow::Param { label: "  Relaxations before", field: "lbv_n1", help: "Relaxations on each grid before the coarser grid" });
-                rows.push(PipelineRow::Param { label: "  Relaxations after", field: "lbv_n2", help: "Relaxations on each grid after the coarser grid" });
-                rows.push(PipelineRow::Param { label: "  Final relaxations", field: "lbv_n3", help: "Relaxations on the finest grid at the end" });
-                rows.push(PipelineRow::AlgoSelect { label: "  Precision", field: "lbv_precision", options: LBV_PRECISION_OPTIONS, help: LBV_PRECISION_HELP });
-            }
-            3 => { // iSMV
-                rows.push(PipelineRow::AlgoSelect { label: "  Variant", field: "ismv_variant", options: ISMV_VARIANT_OPTIONS, help: ISMV_VARIANT_HELP });
-                rows.push(PipelineRow::Param { label: "  Tolerance", field: "ismv_tol", help: "Stop when the relative change between iterates falls below this (QSM.jl: the residual relative to the first)" });
-                rows.push(PipelineRow::Param { label: "  Max iter", field: "ismv_max_iter", help: "Maximum iterations. Blank = no limit" });
-                rows.push(PipelineRow::Param { label: "  Radius", field: "ismv_radius", help: "SMV kernel radius (mm). Blank = 6 × the smallest voxel dimension (QSM.jl: 2 × the largest)" });
-            }
-            4 => { // SHARP
-                rows.push(PipelineRow::Param { label: "  Threshold", field: "sharp_threshold", help: "Deconvolution threshold" });
-                rows.push(PipelineRow::Param { label: "  Radius", field: "sharp_radius", help: "SMV kernel radius (mm)" });
-            }
-            5 => { // RESHARP
-                rows.push(PipelineRow::Param { label: "  Radius", field: "resharp_radius", help: "SMV kernel radius in mm" });
-                rows.push(PipelineRow::Param { label: "  Tik reg", field: "resharp_tik_reg", help: "Tikhonov regularization parameter" });
-                rows.push(PipelineRow::Param { label: "  Tolerance", field: "resharp_tol", help: "CGS relative tolerance" });
-                rows.push(PipelineRow::Param { label: "  Max iter", field: "resharp_max_iter", help: "Maximum CGS iterations" });
-            }
-            6 => { // HARPERELLA
-                rows.push(PipelineRow::Param { label: "  Radius", field: "harperella_radius", help: "SMV kernel radius in mm" });
-                rows.push(PipelineRow::Param { label: "  Max iter", field: "harperella_max_iter", help: "Maximum iterations" });
-                rows.push(PipelineRow::Param { label: "  Tolerance", field: "harperella_tol", help: "Convergence tolerance" });
-                rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "harperella_pad", help: "Zero-padding per side, voxels (x y z). Larger costs time and memory (default 0 0 0)" });
-                rows.push(PipelineRow::AlgoSelect { label: "  Boundary rim", field: "harperella_rim", options: HARPERELLA_RIM_OPTIONS, help: HARPERELLA_RIM_HELP });
-            }
-            7 => { // iHARPERELLA
-                rows.push(PipelineRow::Param { label: "  Max iter", field: "iharperella_max_iter", help: "Maximum iterations" });
-                rows.push(PipelineRow::Param { label: "  Tolerance", field: "iharperella_tol", help: "Convergence tolerance" });
-                rows.push(PipelineRow::Param { label: "  Pad (voxels)", field: "iharperella_pad", help: "Zero-padding per side, voxels (x y z). Larger costs time and memory (default 0 0 0)" });
-                rows.push(PipelineRow::AlgoSelect { label: "  Boundary rim", field: "iharperella_rim", options: HARPERELLA_RIM_OPTIONS, help: IHARPERELLA_RIM_HELP });
-            }
-            _ => {}
-        }
-    }
-
     /// The echo time `method` converts the field to phase at: its choice, and a time in ms when
     /// that is chosen.
     fn push_echo_time(&self, rows: &mut Vec<PipelineRow>, method: &'static str) {
@@ -4221,13 +3921,6 @@ impl PipelineFormState {
         });
     }
 
-    /// QSM → Reference: what χ's zero is pinned to.
-    fn reference_rows(&self, rows: &mut Vec<PipelineRow>) {
-        rows.push(PipelineRow::AlgoSelect {
-            label: "QSM reference", field: "qsm_reference",
-            options: qsm_ref_options(), help: qsm_ref_help(),
-        });
-    }
 
     /// Every pipeline row that shows now, page after page (the QSM switch once): for tests that
     /// ask whether a setting is reachable, not where.
@@ -4238,10 +3931,8 @@ impl PipelineFormState {
         self.compute_qsm_rows(&mut rows);
         if self.qsm_runs() {
             if self.field_mapping_runs().0 { self.field_map_rows(&mut rows); }
-            if self.inversion_needs_bg_removal() { self.background_rows(&mut rows); }
             self.inversion_rows(&mut rows);
             if self.ctx.orientation_group { self.multi_orientation_rows(&mut rows); }
-            self.reference_rows(&mut rows);
         }
         self.separation_rows(&mut rows);
         rows
@@ -4249,38 +3940,44 @@ impl PipelineFormState {
 
     /// The rows of the pipeline form's page [`Self::page`]; empty for the App's own pages.
     pub fn visible_rows(&self) -> Vec<PipelineRow> {
+        if let Some(notes) = self.page_notes() {
+            return notes;
+        }
         let mut rows = Vec::new();
         match self.page {
             Page::Masking => self.masking_rows(&mut rows),
             Page::ComputeQsm => self.compute_qsm_rows(&mut rows),
-            // A QSM section says where QSM is turned on while it is off, and why when the
-            // settings skip its stage: the sidebar lists every section whatever the settings.
-            Page::FieldMap | Page::Background | Page::Inversion | Page::MultiOrientation | Page::Reference
-                if !self.qsm_runs() => rows.push(PipelineRow::Note { text: QSM_OFF_NOTE.into() }),
-            Page::FieldMap if !self.field_mapping_runs().0 => {
-                rows.push(PipelineRow::Note { text: "No field mapping with these settings: the inversion takes the wrapped phase".into() });
-                rows.push(PipelineRow::Note { text: "itself (iQSM, iQSM+, single-echo TGV), or iQFM makes the field from it.".into() });
-            }
             Page::FieldMap => self.field_map_rows(&mut rows),
-            Page::Background if !self.inversion_needs_bg_removal() => {
-                rows.push(PipelineRow::Note { text: "No background removal with these settings: the inversion takes the total field".into() });
-                rows.push(PipelineRow::Note { text: "or the wrapped phase itself (see Inversion).".into() });
-            }
-            Page::Background => self.background_rows(&mut rows),
             Page::Inversion => self.inversion_rows(&mut rows),
-            Page::MultiOrientation => {
-                if self.ctx.orientation_group {
-                    self.multi_orientation_rows(&mut rows);
-                } else {
-                    rows.push(PipelineRow::Note { text: "No orientation groups: runs of one head at different angles, reconstructed together.".into() });
-                    rows.push(PipelineRow::Note { text: "Choose them on 1 Input → Orientations, and these settings apply.".into() });
-                }
-            }
-            Page::Reference => self.reference_rows(&mut rows),
+            Page::MultiOrientation => self.multi_orientation_rows(&mut rows),
             Page::Separation => self.separation_rows(&mut rows),
             _ => {}
         }
         rows
+    }
+
+    /// The notes a page of a stage that does not run shows instead of its settings: a QSM section
+    /// says where QSM is turned on while it is off, and why when the settings skip its stage (the
+    /// sidebar lists every section whatever the settings). `None` while the stage runs.
+    pub fn page_notes(&self) -> Option<Vec<PipelineRow>> {
+        let notes = |lines: &[&'static str]| Some(lines.iter().map(|&l| PipelineRow::Note { text: l.into() }).collect());
+        match self.page {
+            Page::FieldMap | Page::Background | Page::Inversion | Page::MultiOrientation | Page::Reference
+                if !self.qsm_runs() => notes(&[QSM_OFF_NOTE]),
+            Page::FieldMap if !self.field_mapping_runs().0 => notes(&[
+                "No field mapping with these settings: the inversion takes the wrapped phase",
+                "itself (iQSM, iQSM+, single-echo TGV), or iQFM makes the field from it.",
+            ]),
+            Page::Background if !self.inversion_needs_bg_removal() => notes(&[
+                "No background removal with these settings: the inversion takes the total field",
+                "or the wrapped phase itself (see Inversion).",
+            ]),
+            Page::MultiOrientation if !self.ctx.orientation_group => notes(&[
+                "No orientation groups: runs of one head at different angles, reconstructed together.",
+                "Choose them on 1 Input → Orientations, and these settings apply.",
+            ]),
+            _ => None,
+        }
     }
 
     /// All valid parameter field names, for testing that string dispatch is complete.
@@ -4303,12 +4000,6 @@ impl PipelineFormState {
         "amp_pe_wave_order", "amp_pe_nlevel", "amp_pe_wave_pec", "amp_pe_simulated_te", "amp_pe_max_linearization_ite", "amp_pe_tikhonov_beta",
         "phase_offset_sigma_mm", "romeo_template",
         "romeo_temporal_uncertain_unwrapping", "romeo_max_seeds", "romeo_wrap_addition",
-        "vsharp_threshold", "vsharp_max_radius", "vsharp_min_radius", "vsharp_radius_step", "vsharp_grid_spacing", "pdf_tol", "lbv_tol",
-        "lbv_depth", "lbv_peel", "lbv_n1", "lbv_n2", "lbv_n3",
-        "ismv_tol", "ismv_max_iter", "ismv_radius", "sharp_threshold", "sharp_radius",
-        "resharp_radius", "resharp_tik_reg", "resharp_tol", "resharp_max_iter",
-        "harperella_radius", "harperella_max_iter", "harperella_tol", "harperella_pad",
-        "iharperella_max_iter", "iharperella_tol", "iharperella_pad", "pdf_n_cg", "pdf_n_pad", "bf_erode_voxels",
         "bet_smoothness", "bet_gradient_threshold", "bet_iterations", "bet_subdivisions",
         "medi_msmv_maxk", "medi_msmv_vessel_radius",
         "qsmart_ilsqr_max_iter", "qsmart_ilsqr_pad_mm", "qsmart_vasc_sphere_radius",
@@ -4321,7 +4012,7 @@ impl PipelineFormState {
         "l1qsm_alpha1", "l1qsm_mu1", "l1qsm_mu2", "l1qsm_mu3", "l1qsm_lambda", "l1qsm_max_iter", "l1qsm_tol_update", "l1qsm_tol_delta",
         "whqsm_alpha1", "whqsm_mu1", "whqsm_mu2", "whqsm_beta", "whqsm_muh", "whqsm_max_iter", "whqsm_tol_update", "whqsm_tol_delta",
         "hdqsm_alpha_l2", "hdqsm_mu1_l2", "hdqsm_mu2", "hdqsm_max_iter_l1", "hdqsm_max_iter_l2", "hdqsm_tol_update",
-        "r2primenet_patch", "sep_chisepnet_patch", "sep_chisepnet_frame_patch", "sep_susepnet_patch",
+        "sep_chisepnet_patch", "sep_chisepnet_frame_patch", "sep_susepnet_patch",
         "laplacian_fft_pad", "prelude_partitions",
         "homogeneity_sigma_mm", "homogeneity_nbox",
         "n4_shrink_factor", "n4_max_iterations", "n4_convergence_threshold", "n4_mesh", "n4_spline_order",
@@ -4368,11 +4059,6 @@ impl PipelineFormState {
             "rts_gamma" => &self.rts_gamma,
             "nltv_rho" => &self.nltv_rho,
             "nltv_tol_newton" => &self.nltv_tol_newton,
-            "harperella_pad" => &self.harperella_pad,
-            "iharperella_pad" => &self.iharperella_pad,
-            "pdf_n_cg" => &self.pdf_n_cg,
-            "bf_erode_voxels" => &self.bf_erode_voxels,
-            "pdf_n_pad" => &self.pdf_n_pad,
             "nltv_te_ms" => &self.nltv_te_ms,
             "medi_te_ms" => &self.medi_te_ms,
             "tfi_te_ms" => &self.tfi_te_ms,
@@ -4457,36 +4143,10 @@ impl PipelineFormState {
             "romeo_max_seeds" => &self.romeo_max_seeds,
             "romeo_wrap_addition" => &self.romeo_wrap_addition,
             "custom_mask_tool" => &self.custom_mask_tool,
-            "vsharp_threshold" => &self.vsharp_threshold,
-            "vsharp_max_radius" => &self.vsharp_max_radius,
-            "vsharp_min_radius" => &self.vsharp_min_radius,
-            "vsharp_radius_step" => &self.vsharp_radius_step,
-            "vsharp_grid_spacing" => &self.vsharp_grid_spacing,
-            "pdf_tol" => &self.pdf_tol,
-            "lbv_tol" => &self.lbv_tol,
-            "lbv_depth" => &self.lbv_depth,
-            "lbv_peel" => &self.lbv_peel,
-            "lbv_n1" => &self.lbv_n1,
-            "lbv_n2" => &self.lbv_n2,
-            "lbv_n3" => &self.lbv_n3,
-            "ismv_tol" => &self.ismv_tol,
-            "ismv_max_iter" => &self.ismv_max_iter,
-            "ismv_radius" => &self.ismv_radius,
-            "sharp_threshold" => &self.sharp_threshold,
-            "sharp_radius" => &self.sharp_radius,
-            "resharp_radius" => &self.resharp_radius,
-            "resharp_tik_reg" => &self.resharp_tik_reg,
-            "resharp_tol" => &self.resharp_tol,
-            "resharp_max_iter" => &self.resharp_max_iter,
-            "harperella_radius" => &self.harperella_radius,
-            "harperella_max_iter" => &self.harperella_max_iter,
-            "harperella_tol" => &self.harperella_tol,
             "bet_smoothness" => &self.bet_smoothness,
             "bet_gradient_threshold" => &self.bet_gradient_threshold,
             "bet_iterations" => &self.bet_iterations,
             "bet_subdivisions" => &self.bet_subdivisions,
-            "iharperella_max_iter" => &self.iharperella_max_iter,
-            "iharperella_tol" => &self.iharperella_tol,
             "medi_msmv_maxk" => &self.medi_msmv_maxk,
             "medi_msmv_vessel_radius" => &self.medi_msmv_vessel_radius,
             "qsmart_ilsqr_max_iter" => &self.qsmart_ilsqr_max_iter,
@@ -4539,9 +4199,6 @@ impl PipelineFormState {
             "hdqsm_max_iter_l2" => &self.hdqsm_max_iter_l2,
             "hdqsm_tol_update" => &self.hdqsm_tol_update,
             "custom_qsm_tool" => &self.custom_qsm_tool,
-            "custom_r2_tool" => &self.custom_r2_tool,
-            "custom_r2prime_tool" => &self.custom_r2prime_tool,
-            "r2primenet_patch" => &self.r2primenet_patch,
             "sep_r2starqsm_r_const_3t" => &self.sep_r2starqsm_r_const_3t,
             "sep_decompose_n_inner" => &self.sep_decompose_n_inner,
             "sep_decompose_chi_bound" => &self.sep_decompose_chi_bound,
@@ -4635,11 +4292,6 @@ impl PipelineFormState {
             "rts_gamma" => Some(&mut self.rts_gamma),
             "nltv_rho" => Some(&mut self.nltv_rho),
             "nltv_tol_newton" => Some(&mut self.nltv_tol_newton),
-            "harperella_pad" => Some(&mut self.harperella_pad),
-            "iharperella_pad" => Some(&mut self.iharperella_pad),
-            "pdf_n_cg" => Some(&mut self.pdf_n_cg),
-            "bf_erode_voxels" => Some(&mut self.bf_erode_voxels),
-            "pdf_n_pad" => Some(&mut self.pdf_n_pad),
             "nltv_te_ms" => Some(&mut self.nltv_te_ms),
             "medi_te_ms" => Some(&mut self.medi_te_ms),
             "tfi_te_ms" => Some(&mut self.tfi_te_ms),
@@ -4724,36 +4376,10 @@ impl PipelineFormState {
             "romeo_max_seeds" => Some(&mut self.romeo_max_seeds),
             "romeo_wrap_addition" => Some(&mut self.romeo_wrap_addition),
             "custom_mask_tool" => Some(&mut self.custom_mask_tool),
-            "vsharp_threshold" => Some(&mut self.vsharp_threshold),
-            "vsharp_max_radius" => Some(&mut self.vsharp_max_radius),
-            "vsharp_min_radius" => Some(&mut self.vsharp_min_radius),
-            "vsharp_radius_step" => Some(&mut self.vsharp_radius_step),
-            "vsharp_grid_spacing" => Some(&mut self.vsharp_grid_spacing),
-            "pdf_tol" => Some(&mut self.pdf_tol),
-            "lbv_tol" => Some(&mut self.lbv_tol),
-            "lbv_depth" => Some(&mut self.lbv_depth),
-            "lbv_peel" => Some(&mut self.lbv_peel),
-            "lbv_n1" => Some(&mut self.lbv_n1),
-            "lbv_n2" => Some(&mut self.lbv_n2),
-            "lbv_n3" => Some(&mut self.lbv_n3),
-            "ismv_tol" => Some(&mut self.ismv_tol),
-            "ismv_max_iter" => Some(&mut self.ismv_max_iter),
-            "ismv_radius" => Some(&mut self.ismv_radius),
-            "sharp_threshold" => Some(&mut self.sharp_threshold),
-            "sharp_radius" => Some(&mut self.sharp_radius),
-            "resharp_radius" => Some(&mut self.resharp_radius),
-            "resharp_tik_reg" => Some(&mut self.resharp_tik_reg),
-            "resharp_tol" => Some(&mut self.resharp_tol),
-            "resharp_max_iter" => Some(&mut self.resharp_max_iter),
-            "harperella_radius" => Some(&mut self.harperella_radius),
-            "harperella_max_iter" => Some(&mut self.harperella_max_iter),
-            "harperella_tol" => Some(&mut self.harperella_tol),
             "bet_smoothness" => Some(&mut self.bet_smoothness),
             "bet_gradient_threshold" => Some(&mut self.bet_gradient_threshold),
             "bet_iterations" => Some(&mut self.bet_iterations),
             "bet_subdivisions" => Some(&mut self.bet_subdivisions),
-            "iharperella_max_iter" => Some(&mut self.iharperella_max_iter),
-            "iharperella_tol" => Some(&mut self.iharperella_tol),
             "medi_msmv_maxk" => Some(&mut self.medi_msmv_maxk),
             "medi_msmv_vessel_radius" => Some(&mut self.medi_msmv_vessel_radius),
             "qsmart_ilsqr_max_iter" => Some(&mut self.qsmart_ilsqr_max_iter),
@@ -4806,9 +4432,6 @@ impl PipelineFormState {
             "hdqsm_max_iter_l2" => Some(&mut self.hdqsm_max_iter_l2),
             "hdqsm_tol_update" => Some(&mut self.hdqsm_tol_update),
             "custom_qsm_tool" => Some(&mut self.custom_qsm_tool),
-            "custom_r2_tool" => Some(&mut self.custom_r2_tool),
-            "custom_r2prime_tool" => Some(&mut self.custom_r2prime_tool),
-            "r2primenet_patch" => Some(&mut self.r2primenet_patch),
             "sep_r2starqsm_r_const_3t" => Some(&mut self.sep_r2starqsm_r_const_3t),
             "sep_decompose_n_inner" => Some(&mut self.sep_decompose_n_inner),
             "sep_decompose_chi_bound" => Some(&mut self.sep_decompose_chi_bound),
@@ -4879,8 +4502,6 @@ impl PipelineFormState {
             "qsmart_inversion" => self.qsmart_inversion,
             "unwrapping_algorithm" => self.unwrapping_algorithm,
             "bf_algorithm" => self.bf_algorithm,
-            "qsm_reference" => self.qsm_reference,
-            "r2prime_strategy" => self.r2prime_strategy,
             "sep_chisepnet_route" => self.sep_chisepnet_route,
             "b0_estimation" => self.b0_estimation,
             "b0_weight_type" => self.b0_weight_type,
@@ -4895,7 +4516,6 @@ impl PipelineFormState {
             "inhomogeneity_method" => self.inhomogeneity_method,
             "n4_geometry" => self.n4_geometry,
             "two_pass_mode" => self.two_pass_mode,
-            "vsharp_grid" => self.vsharp_grid,
             "robust_fit_loss" => self.robust_fit_loss,
             "star_te" => self.star_te,
             "whqsm_weight" => self.whqsm_weight,
@@ -4903,11 +4523,6 @@ impl PipelineFormState {
             "sep_ilsqr_qsm_precision" => self.sep_ilsqr_qsm_precision,
             "sep_medi_qsm_precision" => self.sep_medi_qsm_precision,
             "sep_medi_csf_r2star" => self.sep_medi_csf_r2star,
-            "pdf_space" => self.pdf_space,
-            "lbv_precision" => self.lbv_precision,
-            "ismv_variant" => self.ismv_variant,
-            "harperella_rim" => self.harperella_rim,
-            "iharperella_rim" => self.iharperella_rim,
             "bet_orientation" => self.bet_orientation,
             "ndi_weight_norm" => self.ndi_weight_norm,
             "nltv_te" => self.nltv_te,
@@ -4949,8 +4564,6 @@ impl PipelineFormState {
             "qsmart_inversion" => self.qsmart_inversion = val,
             "unwrapping_algorithm" => self.unwrapping_algorithm = val,
             "bf_algorithm" => self.bf_algorithm = val,
-            "qsm_reference" => self.qsm_reference = val,
-            "r2prime_strategy" => self.r2prime_strategy = val,
             "sep_chisepnet_route" => self.sep_chisepnet_route = val.min(CHI_SEPNET_ROUTE_OPTIONS.len() - 1),
             "b0_estimation" => self.b0_estimation = val,
             "b0_weight_type" => self.b0_weight_type = val,
@@ -4965,7 +4578,6 @@ impl PipelineFormState {
             "inhomogeneity_method" => self.inhomogeneity_method = val,
             "n4_geometry" => self.n4_geometry = val.min(N4_GEOMETRY_OPTIONS.len() - 1),
             "two_pass_mode" => self.two_pass_mode = val.min(TWO_PASS_MODE_OPTIONS.len() - 1),
-            "vsharp_grid" => self.vsharp_grid = val,
             "robust_fit_loss" => self.robust_fit_loss = val,
             "star_te" => self.star_te = val.min(ECHO_TIME_OPTIONS.len() - 1),
             "whqsm_weight" => self.whqsm_weight = val.min(WHQSM_WEIGHT_OPTIONS.len() - 1),
@@ -4973,11 +4585,6 @@ impl PipelineFormState {
             "sep_ilsqr_qsm_precision" => self.sep_ilsqr_qsm_precision = val.min(ILSQR_PRECISION_OPTIONS.len() - 1),
             "sep_medi_qsm_precision" => self.sep_medi_qsm_precision = val.min(ILSQR_PRECISION_OPTIONS.len() - 1),
             "sep_medi_csf_r2star" => self.sep_medi_csf_r2star = val.min(CHI_SEP_CSF_R2STAR_OPTIONS.len() - 1),
-            "pdf_space" => self.pdf_space = val.min(PDF_SPACE_OPTIONS.len() - 1),
-            "lbv_precision" => self.lbv_precision = val.min(LBV_PRECISION_OPTIONS.len() - 1),
-            "ismv_variant" => self.ismv_variant = val.min(ISMV_VARIANT_OPTIONS.len() - 1),
-            "harperella_rim" => self.harperella_rim = val.min(HARPERELLA_RIM_OPTIONS.len() - 1),
-            "iharperella_rim" => self.iharperella_rim = val.min(HARPERELLA_RIM_OPTIONS.len() - 1),
             "bet_orientation" => self.bet_orientation = val.min(BET_ORIENTATION_OPTIONS.len() - 1),
             "ndi_weight_norm" => self.ndi_weight_norm = val.min(NDI_WEIGHT_NORM_OPTIONS.len() - 1),
             "nltv_te" => self.nltv_te = val.min(ECHO_TIME_OPTIONS.len() - 1),
@@ -5021,8 +4628,6 @@ impl PipelineFormState {
             "romeo_temporal_uncertain" => self.romeo_temporal_uncertain,
             "laplacian_unmasked" => self.laplacian_unmasked,
             "laplacian_keep_outside" => self.laplacian_keep_outside,
-            "bf_polish_mask" => self.bf_polish_mask,
-            "bf_ukb_mask_trim" => self.bf_ukb_mask_trim,
             "dl_tiling" => self.dl_tiling,
             "romeo_correct_regions" => self.romeo_correct_regions,
             "linear_fit_estimate_offset" => self.linear_fit_estimate_offset,
@@ -5047,8 +4652,6 @@ impl PipelineFormState {
             "orientation_registration" => self.orientation_registration,
             "multi_orientation_force" => self.multi_orientation_force,
             "cosmos_magnitude_weighting" => self.cosmos_magnitude_weighting,
-            "r2primenet_ignore_field_mismatch" => self.r2primenet_ignore_field_mismatch,
-            "vsharp_deconvolve" => self.vsharp_deconvolve,
             "sep_decompose_unwrap_phase" => self.sep_decompose_unwrap_phase,
             _ => false,
         }
@@ -5075,8 +4678,6 @@ impl PipelineFormState {
             "romeo_temporal_uncertain" => self.romeo_temporal_uncertain = !self.romeo_temporal_uncertain,
             "laplacian_unmasked" => self.laplacian_unmasked = !self.laplacian_unmasked,
             "laplacian_keep_outside" => self.laplacian_keep_outside = !self.laplacian_keep_outside,
-            "bf_polish_mask" => self.bf_polish_mask = !self.bf_polish_mask,
-            "bf_ukb_mask_trim" => self.bf_ukb_mask_trim = !self.bf_ukb_mask_trim,
             "dl_tiling" => self.dl_tiling = !self.dl_tiling,
             "romeo_correct_regions" => self.romeo_correct_regions = !self.romeo_correct_regions,
             "linear_fit_estimate_offset" => self.linear_fit_estimate_offset = !self.linear_fit_estimate_offset,
@@ -5100,8 +4701,6 @@ impl PipelineFormState {
             "orientation_registration" => self.orientation_registration = !self.orientation_registration,
             "multi_orientation_force" => self.multi_orientation_force = !self.multi_orientation_force,
             "cosmos_magnitude_weighting" => self.cosmos_magnitude_weighting = !self.cosmos_magnitude_weighting,
-            "r2primenet_ignore_field_mismatch" => self.r2primenet_ignore_field_mismatch = !self.r2primenet_ignore_field_mismatch,
-            "vsharp_deconvolve" => self.vsharp_deconvolve = !self.vsharp_deconvolve,
             "sep_decompose_unwrap_phase" => self.sep_decompose_unwrap_phase = !self.sep_decompose_unwrap_phase,
             _ => {}
         }
@@ -6288,10 +5887,6 @@ pub struct RunForm {
     pub settings: super::settings_rows::SettingsStore,
 
     // Other outputs
-    pub do_t2starmap: bool,
-    pub do_r2starmap: bool,
-    pub do_r2map: bool,
-    pub do_r2primemap: bool,
     pub export_dicom: bool,
     /// DICOM export: source DICOM directory to inherit identity from, and the maps unticked on
     /// the Export section (by series suffix, lower case). The unticked ones are kept rather than
@@ -6346,7 +5941,7 @@ impl RunForm {
         slurm_partition, slurm_time, slurm_mem, slurm_cpus,
     ]);
     named_fields!(flag, flag_mut, bool, [
-        do_t2starmap, do_r2starmap, do_r2map, do_r2primemap, export_dicom,
+        export_dicom,
         do_segmentation, do_analysis, synthseg_flip_averaging, synthseg_topology_cleanup, synthseg_smoothing,
         dry_run, debug, force, clean_intermediates, slurm_submit,
     ]);
@@ -6369,10 +5964,6 @@ impl Default for RunForm {
             output_dir: String::new(),
             config_file: String::new(),
             settings: Default::default(),
-            do_t2starmap: false,
-            do_r2starmap: false,
-            do_r2map: false,
-            do_r2primemap: false,
             export_dicom: false,
             source_dicom: String::new(),
             dicom_unticked: Vec::new(),
@@ -7896,13 +7487,14 @@ impl App {
         let f = &self.form;
         let mut c = qsmxt_engine::PipelineConfig::default();
         (c.pipeline.do_chi_separation, c.pipeline.do_analysis, c.pipeline.do_smwi) = (ps.do_chi_separation, f.do_analysis, f.settings.toggle("pipeline.do_smwi"));
-        (c.pipeline.do_r2map, c.pipeline.do_r2primemap) = (f.do_r2map, f.do_r2primemap);
+        let st = &f.settings;
+        (c.pipeline.do_r2map, c.pipeline.do_r2primemap) = (st.toggle("pipeline.do_r2map"), st.toggle("pipeline.do_r2primemap"));
         if let Some(sep) = SEP_ALGO_OPTIONS.get(ps.separation_algorithm) {
             c.separation.algorithm = serde_json::from_value(serde_json::json!(sep)).expect("SEP_ALGO_OPTIONS are the config's names");
         }
-        c.separation.custom_r2prime_tool = Some(ps.custom_r2prime_tool.trim()).filter(|t| !t.is_empty()).map(str::to_string);
-        // R2' is measured as R2* − R2 unless it is always predicted (R2PRIMEnet, index 2).
-        if ps.r2prime_strategy == 2 {
+        c.separation.custom_r2prime_tool = Some(st.text("separation.custom_r2prime_tool").trim().to_string()).filter(|t| !t.is_empty());
+        // R2' is measured as R2* − R2 unless it is always predicted (R2PRIMEnet).
+        if st.get("separation.r2prime_strategy") == "r2primenet" {
             c.separation.r2prime_strategy = qsmxt_engine::R2PrimeStrategy::R2primenet;
         }
         InputRelevance::of(&c)
@@ -8697,12 +8289,18 @@ impl App {
 
     /// A page's rows with every setting shown (Advanced mode).
     fn all_page_rows_in(&self, page: Page, ctx: &RowContext, config: Option<&crate::pipeline::config::PipelineConfig>) -> Vec<PipelineRow> {
+        if page.is_pipeline() {
+            // A stage that does not run says why, whoever builds its rows.
+            let ps = self.synced_pipeline(page, ctx);
+            if let Some(notes) = ps.page_notes() {
+                return notes;
+            }
+            return self.registry_rows(page, ctx, config).unwrap_or_else(|| ps.visible_rows());
+        }
         if let Some(rows) = self.registry_rows(page, ctx, config) {
             return rows;
         }
         match page {
-            p if p.is_pipeline() => self.synced_pipeline(p, ctx).visible_rows(),
-            Page::Relaxometry => self.relaxometry_rows(),
             Page::Segmentation => self.segmentation_rows(),
             Page::Export => self.export_rows(),
             Page::Execution => self.execution_rows(),
@@ -9018,42 +8616,6 @@ impl App {
             if fields.is_empty() { break; }
             fields.iter().for_each(|f| self.reset_field(f));
         }
-    }
-
-    /// Other outputs → Relaxometry: the maps, the R2' source, and the maps that may be supplied.
-    fn relaxometry_rows(&self) -> Vec<PipelineRow> {
-        use PipelineRow::{AlgoSelect, Param, Toggle};
-        let inputs = self.input_relevance();
-        let mut rows = vec![
-            Toggle { label: "Compute T2* map", field: "do_t2starmap", help: "Compute T2* relaxation map (requires 3+ echoes with magnitude)" },
-            Toggle { label: "Compute R2* map", field: "do_r2starmap", help: "Compute R2* decay rate map (requires 3+ echoes with magnitude)" },
-            Toggle { label: "Compute R2 map", field: "do_r2map", help: "R2 map (Hz) from a multi-echo spin-echo (MESE) acquisition via EPG. Required when chi-separation needs it" },
-        ];
-        if inputs.r2 {
-            rows.push(Param { label: "  Custom R2 tool", field: "custom_r2_tool", help: "Use an R2 map from <bids>/derivatives/<tool>/ instead of computing it from MESE (blank = compute, * = any tool)" });
-        }
-        rows.push(Toggle { label: "Compute R2' map", field: "do_r2primemap", help: "R2' = R2* − R2 (Hz); needs GRE magnitude + a MESE acquisition, or R2PRIMEnet. Required when chi-separation needs it" });
-        if inputs.r2prime {
-            rows.push(Param { label: "  Custom R2' tool", field: "custom_r2prime_tool", help: "Use an R2' map from <bids>/derivatives/<tool>/ instead of computing it (blank = compute, * = any tool)" });
-        }
-        // Only consulted when R2' is computed — a supplied map always wins.
-        if inputs.r2prime_source {
-            rows.push(AlgoSelect { label: "  R2' source", field: "r2prime_strategy", options: R2PRIME_STRATEGY_OPTIONS, help: R2PRIME_STRATEGY_HELP });
-            // R2PRIMEnet's own settings, unless R2' is only ever measured (index 1 = mese).
-            if self.pipeline_state.r2prime_strategy != 1 {
-                rows.push(Toggle { label: "    R2PRIMEnet off 3 T", field: "r2primenet_ignore_field_mismatch",
-                    help: "Run R2PRIMEnet on non-3 T data (trained at 3 T only; the R2' is uncalibrated). Off: auto skips R2', r2primenet errors" });
-                // χ-sepnet's toolbox route runs R2PRIMEnet on its own frame, not at this patch.
-                let route_estimates = self.pipeline_state.do_chi_separation
-                    && SEP_ALGO_OPTIONS.get(self.pipeline_state.separation_algorithm).copied() == Some("chi-sepnet")
-                    && self.pipeline_state.sep_chisepnet_route == 0;
-                if self.form.do_r2primemap || !route_estimates {
-                    rows.push(Param { label: "    R2PRIMEnet patch", field: "r2primenet_patch",
-                        help: "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)" });
-                }
-            }
-        }
-        rows
     }
 
     /// Other outputs → Segmentation: where the segmentation comes from, and the statistics on it.
@@ -10001,7 +9563,7 @@ mod tests {
         app.form.do_segmentation = true;
         app.form.export_dicom = true;
         app.form.do_analysis = true;
-        app.form.do_r2primemap = true;
+        app.form.settings.set("pipeline.do_r2primemap", true);
         app.form.settings.set("motion_correction.enabled", true);
         app.filter_state.orientation_group = "acq".into();
         for mode in [0, 1] {
@@ -10493,11 +10055,8 @@ mod tests {
             ("qsmart-vessel-units", QSMART_VESSEL_UNITS_OPTIONS.len(), QSMART_VESSEL_UNITS_HELP.len()),
             ("qsmart-fit-threshold-mode", QSMART_FIT_THRESHOLD_MODE_OPTIONS.len(), QSMART_FIT_THRESHOLD_MODE_HELP.len()),
             ("inhomogeneity-method", INHOMOGENEITY_METHOD_OPTIONS.len(), INHOMOGENEITY_METHOD_HELP.len()),
-            ("vsharp-grid", VSHARP_GRID_OPTIONS.len(), VSHARP_GRID_HELP.len()),
             ("b0-estimation", B0_ESTIMATION_OPTIONS.len(), B0_ESTIMATION_HELP.len()),
             ("robust-fit-loss", ROBUST_FIT_LOSS_OPTIONS.len(), ROBUST_FIT_LOSS_HELP.len()),
-            ("bg-removal", BF_OPTIONS.len(), BF_HELP.len()),
-            ("qsm-reference", qsm_ref_options().len(), qsm_ref_help().len()),
             ("mask-preset", MASK_PRESET_OPTIONS.len(), mask_preset_help().len()),
         ] {
             assert_eq!(opts, help, "{label}: {opts} options but {help} help entries");
@@ -11161,9 +10720,9 @@ mod tests {
         let mut app = App::new();
         app.active_tab = TAB_RECONSTRUCTION;
         focus_on(&mut app, TAB_RECONSTRUCTION, "do_t2starmap");
-        assert!(!app.form.do_t2starmap);
+        assert!(!app.form.settings.toggle("pipeline.do_t2starmap"));
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.form.do_t2starmap);
+        assert!(app.form.settings.toggle("pipeline.do_t2starmap"));
     }
 
     #[test]
@@ -11171,9 +10730,9 @@ mod tests {
         let mut app = App::new();
         app.active_tab = TAB_RECONSTRUCTION;
         focus_on(&mut app, TAB_RECONSTRUCTION, "do_r2starmap");
-        assert!(!app.form.do_r2starmap);
+        assert!(!app.form.settings.toggle("pipeline.do_r2starmap"));
         app.handle_key(key(KeyCode::Char(' ')));
-        assert!(app.form.do_r2starmap);
+        assert!(app.form.settings.toggle("pipeline.do_r2starmap"));
     }
 
     #[test]
@@ -11280,18 +10839,18 @@ mod tests {
         let mut app = App::new();
         app.active_tab = TAB_RECONSTRUCTION;
         app.form.settings.set("pipeline.do_swi", true);
-        app.form.do_t2starmap = true;
-        app.form.do_r2starmap = true;
+        app.form.settings.set("pipeline.do_t2starmap", true);
+        app.form.settings.set("pipeline.do_r2starmap", true);
         app.form.settings.set("swi.scaling", "negative");
         app.sub_page[TAB_RECONSTRUCTION] = Some(Page::Swi);
         app.sync_pipeline_mode();
         app.handle_key(key(KeyCode::Char('R')));
         assert!(!app.form.settings.toggle("pipeline.do_swi"));
         assert_eq!(app.form.settings.get("swi.scaling"), "tanh");
-        assert!(app.form.do_t2starmap && app.form.do_r2starmap, "Relaxometry is another page");
+        assert!(app.form.settings.toggle("pipeline.do_t2starmap") && app.form.settings.toggle("pipeline.do_r2starmap"), "Relaxometry is another page");
         focus_on(&mut app, TAB_RECONSTRUCTION, "do_t2starmap");
         app.handle_key(key(KeyCode::Char('R')));
-        assert!(!app.form.do_t2starmap && !app.form.do_r2starmap);
+        assert!(!app.form.settings.toggle("pipeline.do_t2starmap") && !app.form.settings.toggle("pipeline.do_r2starmap"));
     }
 
     // ========== Execution tab handler tests ==========
@@ -12512,7 +12071,7 @@ mod tests {
         assert!(!app.field_toggle("do_segmentation"), "off by default");
 
         let region = qsm_ref_options().iter().position(|o| *o == "ventricles").unwrap();
-        app.pipeline_state.set_select("qsm_reference", region);
+        app.set_field_select("qsm_reference", region);
         assert!(!app.field_toggle("do_segmentation"), "the checkbox reads as the user left it");
         assert!(app.output_made("do_segmentation"), "a region reference needs SynthSeg, which the run makes");
         for f in SYNTHSEG_ROWS {
@@ -12532,7 +12091,7 @@ mod tests {
         // `mean` and `none` need nothing.
         app.form.do_segmentation = false;
         for idx in [0, 1] {
-            app.pipeline_state.set_select("qsm_reference", idx);
+            app.set_field_select("qsm_reference", idx);
             assert!(!app.output_made("do_segmentation"), "option {idx} needs nothing");
         }
     }
@@ -12542,12 +12101,12 @@ mod tests {
     fn a_region_reference_reaches_the_command() {
         let mut app = App::new();
         let idx = qsm_ref_options().iter().position(|o| *o == "left-thalamus").unwrap();
-        app.pipeline_state.set_select("qsm_reference", idx);
+        app.set_field_select("qsm_reference", idx);
         let cmd = crate::tui::command::build_command_string(&app);
         assert!(cmd.contains("--qsm-reference left-thalamus"), "cmd: {cmd}");
 
         // The default stays off the command line.
-        app.pipeline_state.set_select("qsm_reference", 0);
+        app.set_field_select("qsm_reference", 0);
         assert!(!crate::tui::command::build_command_string(&app).contains("--qsm-reference"));
     }
 
@@ -12643,7 +12202,11 @@ mod tests {
     fn stage_visibility_follows_the_algorithm_not_its_index() {
         let idx = |name: &str| QSM_ALGO_OPTIONS.iter().position(|o| *o == name).expect(name);
         let has_section = |ps: &PipelineFormState, id: &str| {
-            let field = match id { "bgremoval" => "bf_algorithm", "fieldmap" => "unwrapping_algorithm", _ => id };
+            if id == "bgremoval" {
+                // Background removal's rows come from the registry; its page says when it does not run.
+                return PipelineFormState { page: Page::Background, ..ps.clone() }.page_notes().is_none();
+            }
+            let field = match id { "fieldmap" => "unwrapping_algorithm", _ => id };
             ps.all_rows().iter().any(|r| row_field(r) == Some(field))
         };
 
@@ -12750,16 +12313,16 @@ mod tests {
             assert!(!has(&f, x), "nothing reads a supplied map: {x}");
         }
 
-        app.form.do_r2primemap = true;
+        app.form.settings.set("pipeline.do_r2primemap", true);
         let f = fields(&mut app);
         assert!(has(&f, "custom_r2prime_tool") && has(&f, "custom_r2_tool") && has(&f, "r2prime_strategy"), "{f:?}");
         assert!(!has(&f, "custom_qsm_tool"), "{f:?}");
         // R2PRIMEnet predicts R2' from R2*: no R2 is read.
-        app.pipeline_state.r2prime_strategy = 2;
+        app.set_field_select("r2prime_strategy", 2);
         assert!(!has(&fields(&mut app), "custom_r2_tool"));
         // A supplied R2' replaces the computation: its source no longer applies, its row stays.
-        app.pipeline_state.r2prime_strategy = 0;
-        app.pipeline_state.custom_r2prime_tool = "*".into();
+        app.set_field_select("r2prime_strategy", 0);
+        *app.field_text_mut("custom_r2prime_tool").unwrap() = "*".into();
         let f = fields(&mut app);
         assert!(has(&f, "custom_r2prime_tool") && !has(&f, "r2prime_strategy") && !has(&f, "custom_r2_tool"), "{f:?}");
 
@@ -12767,7 +12330,7 @@ mod tests {
         app.form.do_analysis = true;
         assert!(has(&fields(&mut app), "custom_qsm_tool"), "the statistics can read a supplied χ map");
         let mut app = App::new();
-        app.form.do_r2map = true;
+        app.form.settings.set("pipeline.do_r2map", true);
         let f = fields(&mut app);
         assert!(has(&f, "custom_r2_tool") && !has(&f, "custom_r2prime_tool"), "{f:?}");
     }
@@ -12808,14 +12371,14 @@ mod tests {
     fn r2star_is_made_when_needed_and_reads_as_set() {
         let mut app = App::new();
         assert!(!app.field_toggle("do_r2starmap"));
-        app.form.do_r2primemap = true;
+        app.form.settings.set("pipeline.do_r2primemap", true);
         assert!(!app.field_toggle("do_r2starmap") && app.output_made("do_r2starmap"), "R2' = R2* - R2");
         app.active_tab = TAB_RECONSTRUCTION;
         focus_on(&mut app, TAB_RECONSTRUCTION, "do_r2starmap");
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.form.do_r2starmap, "{:?}", app.error_message);
+        assert!(app.form.settings.toggle("pipeline.do_r2starmap"), "{:?}", app.error_message);
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.form.do_r2starmap && app.error_message.as_deref().is_some_and(|m| m.contains("R2′ map")),
+        assert!(app.form.settings.toggle("pipeline.do_r2starmap") && app.error_message.as_deref().is_some_and(|m| m.contains("R2′ map")),
                 "{:?}", app.error_message);
     }
 
@@ -13465,10 +13028,9 @@ mod tests {
             medi_smv: true,
             ..Default::default()
         };
-        let rows = ps.all_rows();
         // MEDI takes the local field with every SMV option, so background removal runs.
-        let has_bg = rows.iter().any(|r| matches!(r, PipelineRow::AlgoSelect { field: "bf_algorithm", .. }));
-        assert!(has_bg, "MEDI+SMV takes the local field from background removal");
+        assert!(PipelineFormState { page: Page::Background, ..ps }.page_notes().is_none(),
+                "MEDI+SMV takes the local field from background removal");
     }
 
     // ========== NIfTI: focusable_items with files ==========
@@ -13771,7 +13333,7 @@ mod tests {
         let s = |v: &[&str]| Some(v.iter().map(|x| x.to_string()).collect::<Vec<_>>());
         assert_eq!(app.dicom_outputs(), s(&["magnitude", "Chimap", "swi"]));
         // A map turned on later is exported too.
-        app.form.do_r2starmap = true;
+        app.form.settings.set("pipeline.do_r2starmap", true);
         assert_eq!(app.dicom_outputs(), s(&["magnitude", "Chimap", "swi", "R2starmap"]));
         // The last ticked map stays ticked.
         app.toggle_field("dicom_out_magnitude");
@@ -13941,8 +13503,8 @@ mod tests {
         app.form.settings.set("pipeline.do_swi", true);
         app.form.settings.set("pipeline.do_smwi", true);
         app.form.export_dicom = true;
-        app.form.do_t2starmap = true;
-        app.form.do_r2starmap = true;
+        app.form.settings.set("pipeline.do_t2starmap", true);
+        app.form.settings.set("pipeline.do_r2starmap", true);
         app.pipeline_state.do_chi_separation = true;
         app.pipeline_state.apply_mask_preset(2); // hd-bet + signal-erode
         let ps = &mut app.pipeline_state;

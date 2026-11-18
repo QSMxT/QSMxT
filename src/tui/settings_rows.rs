@@ -26,7 +26,24 @@ use qsmxt_engine::PipelineConfig;
 use super::app::{field_of_path, field_path, App, Page, PipelineRow, RowContext, FIELD_PATHS};
 
 /// The sections whose settings are kept in [`SettingsStore`] rather than in the form's fields.
-pub const STORED_SECTIONS: &[Section] = &[Section::Geometry, Section::Motion, Section::Magnitude, Section::SwiSmwi];
+pub const STORED_SECTIONS: &[Section] =
+    &[Section::Geometry, Section::Motion, Section::Background, Section::Reference, Section::Magnitude, Section::SwiSmwi,
+      Section::Relaxometry];
+
+/// Choices that one select picks with another: `(path, choice, other)`. The select lists the
+/// setting's options but `choice`, then each of `other`'s, which picks `choice` with that value;
+/// `other` has no row of its own. The QSM reference picker lists the regions with the methods.
+const PICKERS: &[(&str, &str, &str)] = &[("qsm.reference", "region", "qsm.reference_region")];
+
+fn picker(path: &str) -> Option<&'static (&'static str, &'static str, &'static str)> {
+    PICKERS.iter().find(|(p, ..)| *p == path)
+}
+
+/// Settings of [`STORED_SECTIONS`] still kept in the form's fields, with why: their rows come
+/// from the registry all the same.
+const KEPT_IN_FORM: &[(&str, &str)] = &[
+    ("bg_removal.algorithm", "the pipeline form's rule for which stages run (stage_config) reads it"),
+];
 
 /// A note a page makes before a setting's row, from the rows' context (none when there is nothing
 /// to say).
@@ -47,6 +64,8 @@ struct PageLayout {
     /// Settings shown as a block under a setting of the page they have no parent in:
     /// `(path prefix, under, heading)`, shown while `under` is on, after a note naming the block.
     blocks: &'static [(&'static str, &'static str, &'static str)],
+    /// Settings indented other than by their parents: `(path, depth)`.
+    depths: &'static [(&'static str, usize)],
 }
 
 fn is_swi(path: &str) -> bool {
@@ -58,21 +77,34 @@ const LAYOUTS: &[PageLayout] = &[
         // A selected method that only works on axial data resamples whatever the switch says.
         ("pipeline.output_space", |ctx| ctx.axial_forced_by.as_ref()
             .map(|why| format!("  Oblique data is resampled to axial for {why}"))),
-    ], blocks: &[] },
+    ], blocks: &[], depths: &[] },
     PageLayout {
         page: Page::Motion, section: Section::Motion, only: None, repeats: &[], notes: &[],
         // The rigid registration serves motion correction and the co-registration of
         // orientations (shown there too), so it is no one setting's.
         blocks: &[("registration.", "motion_correction.enabled", "Rigid registration (advanced):")],
+        depths: &[],
     },
-    PageLayout { page: Page::Magnitude, section: Section::Magnitude, only: None, repeats: &[], notes: &[], blocks: &[] },
-    PageLayout { page: Page::Swi, section: Section::SwiSmwi, only: Some(is_swi), repeats: &[], notes: &[], blocks: &[] },
+    PageLayout {
+        page: Page::Background, section: Section::Background, only: None, repeats: &[], notes: &[], blocks: &[],
+        // The mask's erosion and clean-up go with the method chosen; the deconvolution threshold
+        // reads as one of V-SHARP's settings.
+        depths: &[
+            ("bg_removal.erode_voxels", 1), ("bg_removal.polish_mask", 1), ("bg_removal.ukb_mask_trim", 1),
+            ("bg_removal.vsharp.threshold", 1),
+        ],
+    },
+    PageLayout { page: Page::Reference, section: Section::Reference, only: None, repeats: &[], notes: &[], blocks: &[], depths: &[] },
+    PageLayout { page: Page::Relaxometry, section: Section::Relaxometry, only: None, repeats: &[], notes: &[], blocks: &[], depths: &[] },
+    PageLayout { page: Page::Magnitude, section: Section::Magnitude, only: None, repeats: &[], notes: &[], blocks: &[], depths: &[] },
+    PageLayout { page: Page::Swi, section: Section::SwiSmwi, only: Some(is_swi), repeats: &[], notes: &[], blocks: &[], depths: &[] },
     PageLayout {
         page: Page::Smwi, section: Section::SwiSmwi, only: Some(|p| !is_swi(p)),
         // SMWI reads a χ map, which may be supplied rather than computed.
         repeats: &[("separation.custom_qsm_tool", "pipeline.do_smwi")],
         notes: &[],
         blocks: &[],
+        depths: &[],
     },
 ];
 
@@ -95,22 +127,35 @@ fn setting(path: &str) -> &'static Setting {
 
 /// The config path of a row's field, when its setting is kept in [`SettingsStore`].
 pub fn stored_path(field: &str) -> Option<&'static str> {
-    field_path(field).filter(|p| STORED_SECTIONS.contains(&setting(p).section))
+    field_path(field).filter(|p| STORED_SECTIONS.contains(&setting(p).section) && !KEPT_IN_FORM.iter().any(|(k, _)| k == p))
 }
 
 /// A select's options and their help, as the TUI words them, for the setting at `path`.
-fn options(path: &str) -> (&'static [&'static str], &'static [&'static str]) {
+pub fn options(path: &str) -> (&'static [&'static str], &'static [&'static str]) {
     type Options = (Vec<&'static str>, Vec<&'static str>);
     static MAP: LazyLock<HashMap<&'static str, Options>> = LazyLock::new(|| {
         schema::settings().iter()
             .map(|s| {
-                let opts = s.value_type.options();
-                (s.path, (opts.iter().map(|o| o.label).collect(), opts.iter().map(|o| o.tui_help.as_str()).collect()))
+                let mut opts = s.value_type.options();
+                if let Some(&(_, choice, other)) = picker(s.path) {
+                    opts.retain(|o| o.value != choice);
+                    opts.extend(setting(other).value_type.options());
+                }
+                (s.path, (opts.iter().map(|o| o.label).collect(), opts.iter().map(|o| tui_option_help(o)).collect()))
             })
             .collect()
     });
     let (labels, help) = &MAP[path];
     (labels, help)
+}
+
+/// An option's help as the TUI shows it: with its link, which the registry keeps apart. Made once
+/// per option, so kept for good.
+fn tui_option_help(o: &'static schema::EnumOption) -> &'static str {
+    match &o.url {
+        Some(url) => Box::leak(format!("{} — {url}", o.tui_help).into_boxed_str()),
+        None => o.tui_help.as_str(),
+    }
 }
 
 /// `label` indented `depth` levels. Rows carry `&'static str` labels, so each indented label is
@@ -190,7 +235,8 @@ fn parse(s: &Setting, text: &str) -> Option<Value> {
         ValueType::Int => int(text),
         ValueType::Float => number(text),
         ValueType::FloatVec3 => numbers().map(number).collect::<Option<Vec<_>>>().filter(|v| v.len() == 3).map(Value::from),
-        ValueType::IntVec3 => numbers().map(int).collect::<Option<Vec<_>>>().filter(|v| v.len() == 3).map(Value::from),
+        // Whole-number triples are typed with spaces, as their rows always took them.
+        ValueType::IntVec3 => text.split_whitespace().map(int).collect::<Option<Vec<_>>>().filter(|v| v.len() == 3).map(Value::from),
         ValueType::IntList => numbers().map(int).collect::<Option<Vec<_>>>().filter(|v| !v.is_empty()).map(Value::from),
         ValueType::Text if text.is_empty() => Some(if s.optional { Value::Null } else { Value::from("") }),
         ValueType::Text => Some(Value::from(text)),
@@ -254,6 +300,14 @@ impl SettingsStore {
     pub fn select(&self, path: &str) -> usize {
         let v = self.get(path);
         let s = setting(path);
+        if let Some(&(_, choice, other)) = picker(path) {
+            let own = s.value_type.options().into_iter().filter(|o| o.value != choice).collect::<Vec<_>>();
+            if v == choice {
+                let w = self.get(other);
+                return setting(other).value_type.options().iter().position(|o| o.value == w).map_or(0, |i| own.len() + i);
+            }
+            return own.iter().position(|o| o.value == v).unwrap_or(0);
+        }
         let number = echo_number(s, &v).is_some();
         s.value_type.options().iter().position(|o| o.value == v).or_else(|| {
             let ValueType::EchoReference { options } = &s.value_type else { return None };
@@ -266,6 +320,23 @@ impl SettingsStore {
             return; // an echo number chosen again keeps its number
         }
         let s = setting(path);
+        if let Some(&(_, choice, other)) = picker(path) {
+            let own = s.value_type.options().into_iter().filter(|o| o.value != choice).collect::<Vec<_>>();
+            match own.get(index) {
+                Some(o) => {
+                    self.set(path, o.value.clone());
+                    self.set(other, setting(other).default.clone());
+                }
+                None => {
+                    let others = setting(other).value_type.options();
+                    if let Some(o) = others.get((index - own.len()).min(others.len().saturating_sub(1))) {
+                        self.set(path, choice);
+                        self.set(other, o.value.clone());
+                    }
+                }
+            }
+            return;
+        }
         let opts = s.value_type.options();
         if let Some(o) = opts.get(index.min(opts.len().saturating_sub(1))) {
             match s.value_type {
@@ -424,7 +495,9 @@ impl App {
         let mut rows = Vec::new();
         let mut headed = HashSet::new();
         for s in schema::settings() {
-            if s.section != layout.section || !layout.only.is_none_or(|f| f(s.path)) || !shows(s.path) {
+            if s.section != layout.section || !layout.only.is_none_or(|f| f(s.path)) || !shows(s.path)
+                || PICKERS.iter().any(|(.., other)| *other == s.path)
+            {
                 continue;
             }
             let block = layout.blocks.iter().find(|(prefix, ..)| s.path.starts_with(prefix));
@@ -439,7 +512,7 @@ impl App {
                     }
                     depth + 1
                 }
-                None => depth_of(s),
+                None => layout.depths.iter().find(|(p, _)| *p == s.path).map_or_else(|| depth_of(s), |(_, d)| *d),
             };
             for (_, note) in layout.notes.iter().filter(|(p, _)| *p == s.path) {
                 rows.extend(note(ctx).map(|text| PipelineRow::Note { text: text.into() }));

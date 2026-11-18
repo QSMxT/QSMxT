@@ -161,15 +161,6 @@ impl App {
 
     /// The rows that are not one setting of one kind each.
     fn set_special(&mut self, config: &PipelineConfig, differs: &dyn Fn(&str) -> bool) {
-        let ps = &mut self.pipeline_state;
-        if differs("inversion.algorithm") {
-            // The algorithm itself: whether HEIDI is on is its own setting (`heidi_enabled`).
-            if let Some(i) = super::command::QSM_ALGO_ARGS.iter()
-                .position(|a| crate::pipeline::config::qsm_algorithm_arg_to_config(*a) == config.inversion.algorithm)
-            {
-                ps.qsm_algorithm = i;
-            }
-        }
         if differs("qsm.reference") || differs("qsm.reference_region") {
             let index = match config.qsm.reference {
                 qsmxt_engine::QsmReference::Mean => Some(0),
@@ -179,7 +170,16 @@ impl App {
                     .and_then(|r| qsm_ref_options().iter().skip(2).position(|o| *o == r)).map(|i| i + 2),
             };
             if let Some(i) = index {
-                ps.qsm_reference = i;
+                self.set_field_select("qsm_reference", i);
+            }
+        }
+        let ps = &mut self.pipeline_state;
+        if differs("inversion.algorithm") {
+            // The algorithm itself: whether HEIDI is on is its own setting (`heidi_enabled`).
+            if let Some(i) = super::command::QSM_ALGO_ARGS.iter()
+                .position(|a| crate::pipeline::config::qsm_algorithm_arg_to_config(*a) == config.inversion.algorithm)
+            {
+                ps.qsm_algorithm = i;
             }
         }
         let romeo = &config.field_mapping.romeo;

@@ -294,13 +294,10 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         // effect, and iQFM there is refused (#276). Said when not the general default.
         bf_algorithm: (ps.inversion_needs_bg_removal() && ps.bf_algorithm != 0)
             .then(|| bf_options[ps.bf_algorithm]),
-        bf_erode_voxels: (ps.inversion_needs_bg_removal() && bf_options.get(ps.bf_algorithm).copied() != Some(crate::cli::BfAlgorithmArg::Iqfm))
-            .then(|| parse_optional_usize(&ps.bf_erode_voxels)).flatten().filter(|&n| n > 0),
-        bf_polish_mask: ps.inversion_needs_bg_removal() && bf_options.get(ps.bf_algorithm).copied() != Some(crate::cli::BfAlgorithmArg::Iqfm)
-            && ps.bf_polish_mask,
+        bf_erode_voxels: None,
+        bf_polish_mask: false,
         no_bf_polish_mask: false,
-        bf_ukb_mask_trim: ps.inversion_needs_bg_removal() && bf_options.get(ps.bf_algorithm).copied() != Some(crate::cli::BfAlgorithmArg::Iqfm)
-            && ps.bf_ukb_mask_trim,
+        bf_ukb_mask_trim: false,
         no_bf_ukb_mask_trim: false,
         masking_input: None,
         phase_offset_removal: Some(ps.phase_offset_removal),
@@ -353,7 +350,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         bet_iterations: if ps.uses_bet() { parse_optional_usize(&ps.bet_iterations) } else { None },
         bet_subdivisions: if ps.uses_bet() { parse_optional_usize(&ps.bet_subdivisions) } else { None },
         bet_orientation: if ps.uses_bet() { qsmxt_engine::BetOrientation::ALL.get(ps.bet_orientation).copied() } else { None },
-        qsm_reference: Some(crate::tui::app::qsm_reference_spec(ps.qsm_reference)),
+        // Set from the form's settings store ([`stored_values`]).
+        qsm_reference: None,
         qsm_per_echo: Some(ps.qsm_per_echo),
         rts_params: crate::cli::RtsParamArgs {
             rts_delta: parse_optional_f64(&ps.rts_delta),
@@ -636,64 +634,15 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             chi_sepnet_frame_patch: parse_usize_triple(&ps.sep_chisepnet_frame_patch).map(|p| p.to_vec()),
             susep_net_patch: parse_usize_triple(&ps.sep_susepnet_patch).map(|p| p.to_vec()),
         },
-        vsharp_params: crate::cli::VsharpParamArgs {
-            vsharp_deconvolve: Some(ps.vsharp_deconvolve),
-            vsharp_threshold: parse_optional_f64(&ps.vsharp_threshold),
-            vsharp_max_radius: parse_optional_f64(&ps.vsharp_max_radius),
-            vsharp_min_radius: parse_optional_f64(&ps.vsharp_min_radius),
-            vsharp_radius_step: parse_optional_f64(&ps.vsharp_radius_step),
-            vsharp_grid: (ps.vsharp_grid != crate::tui::app::vsharp_grid_index(qsmxt_engine::VsharpConfig::default().grid))
-                .then_some(match ps.vsharp_grid {
-                    1 => crate::cli::VsharpGridArg::Finest,
-                    2 => crate::cli::VsharpGridArg::Isotropic,
-                    _ => crate::cli::VsharpGridArg::Native,
-                }),
-            vsharp_grid_spacing: if ps.vsharp_grid == 2 { parse_optional_f64(&ps.vsharp_grid_spacing) } else { None },
-        },
-        pdf_params: crate::cli::PdfParamArgs {
-            pdf_tol: parse_optional_f64(&ps.pdf_tol),
-            pdf_n_cg: parse_optional_usize(&ps.pdf_n_cg),
-            pdf_space: qsmxt_engine::PdfSpace::ALL.get(ps.pdf_space).copied(),
-            pdf_n_pad: parse_optional_usize(&ps.pdf_n_pad),
-        },
-        lbv_params: crate::cli::LbvParamArgs {
-            lbv_tol: parse_optional_f64(&ps.lbv_tol),
-            lbv_depth: parse_optional_usize(&ps.lbv_depth),
-            lbv_peel: parse_optional_usize(&ps.lbv_peel),
-            lbv_n1: parse_optional_usize(&ps.lbv_n1),
-            lbv_n2: parse_optional_usize(&ps.lbv_n2),
-            lbv_n3: parse_optional_usize(&ps.lbv_n3),
-            lbv_precision: qsmxt_engine::LbvPrecision::ALL.get(ps.lbv_precision).copied(),
-        },
-        ismv_params: crate::cli::IsmvParamArgs {
-            ismv_variant: qsmxt_engine::IsmvVariant::ALL.get(ps.ismv_variant).copied(),
-            ismv_tol: parse_optional_f64(&ps.ismv_tol),
-            ismv_max_iter: parse_optional_usize(&ps.ismv_max_iter),
-            ismv_radius: parse_optional_f64(&ps.ismv_radius).map(crate::cli::OrAuto::Value),
-        },
-        sharp_params: crate::cli::SharpParamArgs {
-            sharp_threshold: parse_optional_f64(&ps.sharp_threshold),
-            sharp_radius: parse_optional_f64(&ps.sharp_radius),
-        },
-        resharp_params: crate::cli::ResharpParamArgs {
-            resharp_radius: parse_optional_f64(&ps.resharp_radius),
-            resharp_tik_reg: parse_optional_f64(&ps.resharp_tik_reg),
-            resharp_tol: parse_optional_f64(&ps.resharp_tol),
-            resharp_max_iter: parse_optional_usize(&ps.resharp_max_iter),
-        },
-        harperella_params: crate::cli::HarperellaParamArgs {
-            harperella_radius: parse_optional_f64(&ps.harperella_radius),
-            harperella_max_iter: parse_optional_usize(&ps.harperella_max_iter),
-            harperella_tol: parse_optional_f64(&ps.harperella_tol),
-            harperella_pad: parse_usize_triple(&ps.harperella_pad).map(|p| p.to_vec()),
-            harperella_rim: qsmxt_engine::HarperellaRim::ALL.get(ps.harperella_rim).copied(),
-        },
-        iharperella_params: crate::cli::IharperellaParamArgs {
-            iharperella_max_iter: parse_optional_usize(&ps.iharperella_max_iter),
-            iharperella_tol: parse_optional_f64(&ps.iharperella_tol),
-            iharperella_pad: parse_usize_triple(&ps.iharperella_pad).map(|p| p.to_vec()),
-            iharperella_rim: qsmxt_engine::HarperellaRim::ALL.get(ps.iharperella_rim).copied(),
-        },
+        // Background removal's settings are set from the form's settings store ([`stored_values`]).
+        vsharp_params: Default::default(),
+        pdf_params: Default::default(),
+        lbv_params: Default::default(),
+        ismv_params: Default::default(),
+        sharp_params: Default::default(),
+        resharp_params: Default::default(),
+        harperella_params: Default::default(),
+        iharperella_params: Default::default(),
         romeo_params: crate::cli::RomeoParamArgs {
             no_romeo_phase_coherence: !ps.romeo_phase_coherence,
             no_romeo_phase_gradient_coherence: !ps.romeo_phase_gradient_coherence,
@@ -777,22 +726,19 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             use_custom_dseg: Some(ps.custom_dseg_tool.trim()).filter(|t| !t.is_empty()).map(str::to_string),
         },
         smwi_params: Default::default(),
-        do_t2starmap: form.do_t2starmap,
-        do_r2starmap: form.do_r2starmap,
-        do_r2map: form.do_r2map,
-        do_r2primemap: form.do_r2primemap,
+        // The relaxometry maps and R2' settings are set from the form's settings store ([`stored_values`]).
+        do_t2starmap: false,
+        do_r2starmap: false,
+        do_r2map: false,
+        do_r2primemap: false,
         do_chi_separation: ps.do_chi_separation,
         chi_separation_algorithm: Some(sep_options[ps.separation_algorithm]),
         use_custom_qsm: tool(inputs.qsm, &ps.custom_qsm_tool),
-        use_custom_r2: tool(inputs.r2, &ps.custom_r2_tool),
-        use_custom_r2prime: tool(inputs.r2prime, &ps.custom_r2prime_tool),
-        r2prime_strategy: inputs.r2prime_source.then_some(match ps.r2prime_strategy {
-            1 => crate::cli::R2PrimeStrategyArg::Mese,
-            2 => crate::cli::R2PrimeStrategyArg::R2primenet,
-            _ => crate::cli::R2PrimeStrategyArg::Auto,
-        }),
-        r2primenet_ignore_field_mismatch: inputs.r2prime_source && ps.r2primenet_ignore_field_mismatch,
-        r2primenet_patch: if inputs.r2prime_source { parse_usize_triple(&ps.r2primenet_patch).map(|p| p.to_vec()) } else { None },
+        use_custom_r2: None,
+        use_custom_r2prime: None,
+        r2prime_strategy: None,
+        r2primenet_ignore_field_mismatch: false,
+        r2primenet_patch: None,
         export_dicom: form.export_dicom,
         inhomogeneity_correction: ps.inhomogeneity_correction,
         no_inhomogeneity_correction: !ps.inhomogeneity_correction,
@@ -1101,28 +1047,28 @@ mod tests {
         }
     }
 
-    /// R2PRIMEnet's field-strength override and patch reach both the config and the CLI args —
-    /// when R2' is computed; otherwise they have nothing to act on and are not passed.
+    /// R2PRIMEnet's field-strength override and patch reach both the config and the run — when
+    /// R2' is computed; otherwise they have nothing to act on and are not passed.
     #[test]
     fn r2primenet_settings_reach_config_and_args() {
         let mut app = default_app();
-        app.pipeline_state.toggle("r2primenet_ignore_field_mismatch");
-        app.pipeline_state.r2primenet_patch = "128 128 64".into();
-        let a = pipeline_args_from_app(&app);
-        assert!(!a.r2primenet_ignore_field_mismatch && a.r2primenet_patch.is_none(), "no R2', nothing passed");
+        app.toggle_field("r2primenet_ignore_field_mismatch");
+        *app.field_text_mut("r2primenet_patch").unwrap() = "128 128 64".into();
+        assert_eq!(config_from_app(&app).unwrap().separation.r2primenet, qsmxt_engine::R2primenetConfig::default(),
+                   "no R2', nothing passed");
 
         let mut app = default_app();
-        app.form.do_r2primemap = true;
+        app.form.settings.set("pipeline.do_r2primemap", true);
         let d = qsmxt_engine::R2primenetConfig::default();
         assert_eq!(config_from_app(&app).unwrap().separation.r2primenet, d);
-        app.pipeline_state.toggle("r2primenet_ignore_field_mismatch");
-        app.pipeline_state.r2primenet_patch = "128 128 64".into();
+        app.toggle_field("r2primenet_ignore_field_mismatch");
+        *app.field_text_mut("r2primenet_patch").unwrap() = "128 128 64".into();
         let c = config_from_app(&app).unwrap();
         assert!(c.separation.r2primenet.ignore_field_mismatch);
         assert_eq!(c.separation.r2primenet.patch, [128, 128, 64]);
-        let a = pipeline_args_from_app(&app);
-        assert!(a.r2primenet_ignore_field_mismatch);
-        assert_eq!(a.r2primenet_patch, Some(vec![128, 128, 64]));
+        app.form.bids_dir = "/b".into();
+        let run = crate::cli_settings::build_config(Default::default(), &build_run_args(&app).unwrap().pipeline).unwrap();
+        assert_eq!(run.separation.r2primenet, c.separation.r2primenet);
     }
 
     /// V-SHARP's working grid: the engine's by default (off the command), spacing row only for
@@ -1137,26 +1083,26 @@ mod tests {
         assert!(fields(&app).contains(&"vsharp_grid".to_string()));
         let d = qsmxt_engine::VsharpConfig::default();
         assert_eq!(config_from_app(&app).unwrap().bg_removal.vsharp.grid, d.grid);
-        assert_eq!(pipeline_args_from_app(&app).vsharp_params.vsharp_grid, None);
-        app.pipeline_state.set_select("vsharp_grid", 0);
+        let command = |app: &App| qsmxt_engine::generate_command(&config_from_app(app).unwrap());
+        assert!(!command(&app).contains("--vsharp-grid "));
+        app.set_field_select("vsharp_grid", 0);
         assert!(!fields(&app).contains(&"vsharp_grid_spacing".to_string()));
         assert_eq!(config_from_app(&app).unwrap().bg_removal.vsharp.grid, qsmxt_engine::VsharpGrid::Native);
-        assert_eq!(pipeline_args_from_app(&app).vsharp_params.vsharp_grid, Some(crate::cli::VsharpGridArg::Native));
-        app.pipeline_state.set_select("vsharp_grid", 1);
+        assert!(command(&app).contains("--vsharp-grid native"));
+        app.set_field_select("vsharp_grid", 1);
         assert_eq!(config_from_app(&app).unwrap().bg_removal.vsharp.grid, qsmxt_engine::VsharpGrid::Finest);
         assert!(!fields(&app).contains(&"vsharp_grid_spacing".to_string()));
-        app.pipeline_state.set_select("vsharp_grid", 2);
+        app.set_field_select("vsharp_grid", 2);
         assert!(fields(&app).contains(&"vsharp_grid_spacing".to_string()));
-        app.pipeline_state.vsharp_grid_spacing = "0.8".into();
+        *app.field_text_mut("vsharp_grid_spacing").unwrap() = "0.8".into();
         let c = config_from_app(&app).unwrap();
         assert_eq!((c.bg_removal.vsharp.grid, c.bg_removal.vsharp.grid_spacing), (qsmxt_engine::VsharpGrid::Isotropic, 0.8));
-        let a = pipeline_args_from_app(&app);
-        assert_eq!(a.vsharp_params.vsharp_grid, None, "isotropic is the default");
-        assert_eq!(a.vsharp_params.vsharp_grid_spacing, Some(0.8));
+        assert!(!command(&app).contains("--vsharp-grid "), "isotropic is the default");
+        assert!(command(&app).contains("--vsharp-grid-spacing 0.8"));
     }
 
     /// V-SHARP's deconvolution is off by default, its threshold row only shows when it is on,
-    /// and the toggle reaches both the config and the CLI args.
+    /// and the toggle reaches both the config and the command.
     #[test]
     fn vsharp_deconvolve_toggle() {
         let mut app = default_app();
@@ -1164,10 +1110,10 @@ mod tests {
             matches!(r, crate::tui::app::PipelineRow::Param { field: "vsharp_threshold", .. }));
         assert!(!config_from_app(&app).unwrap().bg_removal.vsharp.deconvolve);
         assert!(!shows_threshold(&app));
-        app.pipeline_state.toggle("vsharp_deconvolve");
+        app.toggle_field("vsharp_deconvolve");
         assert!(shows_threshold(&app));
         assert!(config_from_app(&app).unwrap().bg_removal.vsharp.deconvolve);
-        assert_eq!(pipeline_args_from_app(&app).vsharp_params.vsharp_deconvolve, Some(true));
+        assert!(qsmxt_engine::generate_command(&config_from_app(&app).unwrap()).contains("--vsharp-deconvolve"));
     }
 
     /// The two-pass mode is offered with two-pass, and reaches both the config and the CLI args.
@@ -1686,8 +1632,8 @@ mod tests {
     fn test_command_string_execution_flags() {
         let mut app = default_app();
         app.form.settings.set("pipeline.do_swi", true);
-        app.form.do_t2starmap = true;
-        app.form.do_r2starmap = true;
+        app.form.settings.set("pipeline.do_t2starmap", true);
+        app.form.settings.set("pipeline.do_r2starmap", true);
         app.form.dry_run = true;
         app.form.debug = true;
         app.form.n_procs = "4".to_string();
@@ -1758,8 +1704,8 @@ mod tests {
         app.form.bids_dir = "/b".to_string();
         app.form.output_dir = "/o".to_string();
         app.form.settings.set("pipeline.do_swi", true);
-        app.form.do_t2starmap = true;
-        app.form.do_r2starmap = true;
+        app.form.settings.set("pipeline.do_t2starmap", true);
+        app.form.settings.set("pipeline.do_r2starmap", true);
         app.pipeline_state.inhomogeneity_correction = true;
         app.form.dry_run = true;
         app.form.debug = true;
@@ -1767,8 +1713,8 @@ mod tests {
         let config = |args: &RunArgs| crate::cli_settings::build_config(Default::default(), &args.pipeline).unwrap();
         assert!(config(&args).pipeline.do_swi);
         assert!(!config(&args).swi.filtered_phase);
-        assert!(args.pipeline.do_t2starmap);
-        assert!(args.pipeline.do_r2starmap);
+        assert!(config(&args).pipeline.do_t2starmap);
+        assert!(config(&args).pipeline.do_r2starmap);
         assert!(args.pipeline.inhomogeneity_correction);
         assert!(args.dry);
         app.form.settings.set("swi.filtered_phase", true);
@@ -2453,7 +2399,7 @@ mod parity {
             |_| {},
             |a| a.filter_state.orientation_group = "acq".into(),
             |a| { a.filter_state.orientation_group = "acq".into(); a.filter_state.orientation_algorithm = 1; },
-            |a| { a.form.do_r2primemap = true; a.form.do_r2map = true; a.form.do_analysis = true; },
+            |a| { a.form.settings.set("pipeline.do_r2primemap", true); a.form.settings.set("pipeline.do_r2map", true); a.form.do_analysis = true; },
         ];
         let start_app = |i: usize| {
             let mut app = App::new();
