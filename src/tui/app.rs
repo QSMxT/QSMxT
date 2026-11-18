@@ -1768,18 +1768,11 @@ pub const MASK_OP_TYPES: &[&str] = &[
 /// Ops that create a mask (the section's generator); the rest are refinements.
 pub const MASK_GENERATOR_TYPES: &[&str] = &["threshold", "bet", "hd-bet", "mindgrab", "rs2-net"];
 
-/// How R2' is obtained when no custom map is supplied.
-pub const R2PRIME_STRATEGY_OPTIONS: &[&str] = &["auto", "mese", "r2primenet"];
 /// χ-sepnet's input routes (`separation.chi_sepnet.route`), in [`CHI_SEPNET_ROUTE_HELP`]'s order.
 pub const CHI_SEPNET_ROUTE_OPTIONS: &[&str] = &["toolbox", "native"];
 pub const CHI_SEPNET_ROUTE_HELP: &[&str] = &[
     "The authors' route: the inputs in the network's training frame (B0 along z, 1 mm), the QSM channel from QSMnetME, R2' measured or predicted from R2* by R2PRIMEnet, the maps resampled back",
     "The network alone on the acquired grid, given this run's QSM and R2', as a sliding window",
-];
-pub const R2PRIME_STRATEGY_HELP: &[&str] = &[
-    "Measure R2' = R2* - R2 from a MESE acquisition when one is present, else predict it from R2* with R2PRIMEnet",
-    "Only ever measure R2' from a MESE acquisition - produces no R2' without spin-echo data",
-    "Always predict R2' from R2* with R2PRIMEnet, even when a MESE acquisition is available (an estimate, not a measurement)",
 ];
 
 /// The mask preset picker: the engine's presets, then "custom" ([`MASK_PRESET_CUSTOM`]).
@@ -2313,13 +2306,6 @@ pub struct PipelineFormState {
     pub do_chi_separation: bool,
     pub separation_algorithm: usize, // index into SEP_ALGO_OPTIONS
     pub custom_qsm_tool: String,     // empty=off; "*"=any; else a derivatives tool name
-    pub custom_r2_tool: String,
-    pub custom_r2prime_tool: String,
-    /// Index into [`R2PRIME_STRATEGY_OPTIONS`].
-    pub r2prime_strategy: usize,
-    /// R2PRIMEnet: run away from 3 T (uncalibrated), and its patch as "D H W".
-    pub r2primenet_ignore_field_mismatch: bool,
-    pub r2primenet_patch: String,
     // R2*-QSM
     pub sep_r2starqsm_r_const_3t: String,
     // DECOMPOSE
@@ -2717,14 +2703,6 @@ impl Default for PipelineFormState {
             do_chi_separation: false,
             separation_algorithm: 0,
             custom_qsm_tool: String::new(),
-            custom_r2_tool: String::new(),
-            custom_r2prime_tool: String::new(),
-            r2prime_strategy: 0,
-            r2primenet_ignore_field_mismatch: false,
-            r2primenet_patch: {
-                let p = qsmxt_engine::R2primenetConfig::default().patch;
-                format!("{} {} {}", p[0], p[1], p[2])
-            },
             sep_r2starqsm_r_const_3t: fmt_default(sep_r2starqsm.r_const_3t),
             sep_decompose_n_inner: sep_decompose.n_inner.to_string(),
             sep_decompose_chi_bound_mode: chi_bound_index(sep_decompose.chi_bound),
@@ -4034,7 +4012,7 @@ impl PipelineFormState {
         "l1qsm_alpha1", "l1qsm_mu1", "l1qsm_mu2", "l1qsm_mu3", "l1qsm_lambda", "l1qsm_max_iter", "l1qsm_tol_update", "l1qsm_tol_delta",
         "whqsm_alpha1", "whqsm_mu1", "whqsm_mu2", "whqsm_beta", "whqsm_muh", "whqsm_max_iter", "whqsm_tol_update", "whqsm_tol_delta",
         "hdqsm_alpha_l2", "hdqsm_mu1_l2", "hdqsm_mu2", "hdqsm_max_iter_l1", "hdqsm_max_iter_l2", "hdqsm_tol_update",
-        "r2primenet_patch", "sep_chisepnet_patch", "sep_chisepnet_frame_patch", "sep_susepnet_patch",
+        "sep_chisepnet_patch", "sep_chisepnet_frame_patch", "sep_susepnet_patch",
         "laplacian_fft_pad", "prelude_partitions",
         "homogeneity_sigma_mm", "homogeneity_nbox",
         "n4_shrink_factor", "n4_max_iterations", "n4_convergence_threshold", "n4_mesh", "n4_spline_order",
@@ -4221,9 +4199,6 @@ impl PipelineFormState {
             "hdqsm_max_iter_l2" => &self.hdqsm_max_iter_l2,
             "hdqsm_tol_update" => &self.hdqsm_tol_update,
             "custom_qsm_tool" => &self.custom_qsm_tool,
-            "custom_r2_tool" => &self.custom_r2_tool,
-            "custom_r2prime_tool" => &self.custom_r2prime_tool,
-            "r2primenet_patch" => &self.r2primenet_patch,
             "sep_r2starqsm_r_const_3t" => &self.sep_r2starqsm_r_const_3t,
             "sep_decompose_n_inner" => &self.sep_decompose_n_inner,
             "sep_decompose_chi_bound" => &self.sep_decompose_chi_bound,
@@ -4457,9 +4432,6 @@ impl PipelineFormState {
             "hdqsm_max_iter_l2" => Some(&mut self.hdqsm_max_iter_l2),
             "hdqsm_tol_update" => Some(&mut self.hdqsm_tol_update),
             "custom_qsm_tool" => Some(&mut self.custom_qsm_tool),
-            "custom_r2_tool" => Some(&mut self.custom_r2_tool),
-            "custom_r2prime_tool" => Some(&mut self.custom_r2prime_tool),
-            "r2primenet_patch" => Some(&mut self.r2primenet_patch),
             "sep_r2starqsm_r_const_3t" => Some(&mut self.sep_r2starqsm_r_const_3t),
             "sep_decompose_n_inner" => Some(&mut self.sep_decompose_n_inner),
             "sep_decompose_chi_bound" => Some(&mut self.sep_decompose_chi_bound),
@@ -4530,7 +4502,6 @@ impl PipelineFormState {
             "qsmart_inversion" => self.qsmart_inversion,
             "unwrapping_algorithm" => self.unwrapping_algorithm,
             "bf_algorithm" => self.bf_algorithm,
-            "r2prime_strategy" => self.r2prime_strategy,
             "sep_chisepnet_route" => self.sep_chisepnet_route,
             "b0_estimation" => self.b0_estimation,
             "b0_weight_type" => self.b0_weight_type,
@@ -4593,7 +4564,6 @@ impl PipelineFormState {
             "qsmart_inversion" => self.qsmart_inversion = val,
             "unwrapping_algorithm" => self.unwrapping_algorithm = val,
             "bf_algorithm" => self.bf_algorithm = val,
-            "r2prime_strategy" => self.r2prime_strategy = val,
             "sep_chisepnet_route" => self.sep_chisepnet_route = val.min(CHI_SEPNET_ROUTE_OPTIONS.len() - 1),
             "b0_estimation" => self.b0_estimation = val,
             "b0_weight_type" => self.b0_weight_type = val,
@@ -4682,7 +4652,6 @@ impl PipelineFormState {
             "orientation_registration" => self.orientation_registration,
             "multi_orientation_force" => self.multi_orientation_force,
             "cosmos_magnitude_weighting" => self.cosmos_magnitude_weighting,
-            "r2primenet_ignore_field_mismatch" => self.r2primenet_ignore_field_mismatch,
             "sep_decompose_unwrap_phase" => self.sep_decompose_unwrap_phase,
             _ => false,
         }
@@ -4732,7 +4701,6 @@ impl PipelineFormState {
             "orientation_registration" => self.orientation_registration = !self.orientation_registration,
             "multi_orientation_force" => self.multi_orientation_force = !self.multi_orientation_force,
             "cosmos_magnitude_weighting" => self.cosmos_magnitude_weighting = !self.cosmos_magnitude_weighting,
-            "r2primenet_ignore_field_mismatch" => self.r2primenet_ignore_field_mismatch = !self.r2primenet_ignore_field_mismatch,
             "sep_decompose_unwrap_phase" => self.sep_decompose_unwrap_phase = !self.sep_decompose_unwrap_phase,
             _ => {}
         }
@@ -5919,10 +5887,6 @@ pub struct RunForm {
     pub settings: super::settings_rows::SettingsStore,
 
     // Other outputs
-    pub do_t2starmap: bool,
-    pub do_r2starmap: bool,
-    pub do_r2map: bool,
-    pub do_r2primemap: bool,
     pub export_dicom: bool,
     /// DICOM export: source DICOM directory to inherit identity from, and the maps unticked on
     /// the Export section (by series suffix, lower case). The unticked ones are kept rather than
@@ -5977,7 +5941,7 @@ impl RunForm {
         slurm_partition, slurm_time, slurm_mem, slurm_cpus,
     ]);
     named_fields!(flag, flag_mut, bool, [
-        do_t2starmap, do_r2starmap, do_r2map, do_r2primemap, export_dicom,
+        export_dicom,
         do_segmentation, do_analysis, synthseg_flip_averaging, synthseg_topology_cleanup, synthseg_smoothing,
         dry_run, debug, force, clean_intermediates, slurm_submit,
     ]);
@@ -6000,10 +5964,6 @@ impl Default for RunForm {
             output_dir: String::new(),
             config_file: String::new(),
             settings: Default::default(),
-            do_t2starmap: false,
-            do_r2starmap: false,
-            do_r2map: false,
-            do_r2primemap: false,
             export_dicom: false,
             source_dicom: String::new(),
             dicom_unticked: Vec::new(),
@@ -7527,13 +7487,14 @@ impl App {
         let f = &self.form;
         let mut c = qsmxt_engine::PipelineConfig::default();
         (c.pipeline.do_chi_separation, c.pipeline.do_analysis, c.pipeline.do_smwi) = (ps.do_chi_separation, f.do_analysis, f.settings.toggle("pipeline.do_smwi"));
-        (c.pipeline.do_r2map, c.pipeline.do_r2primemap) = (f.do_r2map, f.do_r2primemap);
+        let st = &f.settings;
+        (c.pipeline.do_r2map, c.pipeline.do_r2primemap) = (st.toggle("pipeline.do_r2map"), st.toggle("pipeline.do_r2primemap"));
         if let Some(sep) = SEP_ALGO_OPTIONS.get(ps.separation_algorithm) {
             c.separation.algorithm = serde_json::from_value(serde_json::json!(sep)).expect("SEP_ALGO_OPTIONS are the config's names");
         }
-        c.separation.custom_r2prime_tool = Some(ps.custom_r2prime_tool.trim()).filter(|t| !t.is_empty()).map(str::to_string);
-        // R2' is measured as R2* − R2 unless it is always predicted (R2PRIMEnet, index 2).
-        if ps.r2prime_strategy == 2 {
+        c.separation.custom_r2prime_tool = Some(st.text("separation.custom_r2prime_tool").trim().to_string()).filter(|t| !t.is_empty());
+        // R2' is measured as R2* − R2 unless it is always predicted (R2PRIMEnet).
+        if st.get("separation.r2prime_strategy") == "r2primenet" {
             c.separation.r2prime_strategy = qsmxt_engine::R2PrimeStrategy::R2primenet;
         }
         InputRelevance::of(&c)
@@ -8340,7 +8301,6 @@ impl App {
             return rows;
         }
         match page {
-            Page::Relaxometry => self.relaxometry_rows(),
             Page::Segmentation => self.segmentation_rows(),
             Page::Export => self.export_rows(),
             Page::Execution => self.execution_rows(),
@@ -8656,42 +8616,6 @@ impl App {
             if fields.is_empty() { break; }
             fields.iter().for_each(|f| self.reset_field(f));
         }
-    }
-
-    /// Other outputs → Relaxometry: the maps, the R2' source, and the maps that may be supplied.
-    fn relaxometry_rows(&self) -> Vec<PipelineRow> {
-        use PipelineRow::{AlgoSelect, Param, Toggle};
-        let inputs = self.input_relevance();
-        let mut rows = vec![
-            Toggle { label: "Compute T2* map", field: "do_t2starmap", help: "Compute T2* relaxation map (requires 3+ echoes with magnitude)" },
-            Toggle { label: "Compute R2* map", field: "do_r2starmap", help: "Compute R2* decay rate map (requires 3+ echoes with magnitude)" },
-            Toggle { label: "Compute R2 map", field: "do_r2map", help: "R2 map (Hz) from a multi-echo spin-echo (MESE) acquisition via EPG. Required when chi-separation needs it" },
-        ];
-        if inputs.r2 {
-            rows.push(Param { label: "  Custom R2 tool", field: "custom_r2_tool", help: "Use an R2 map from <bids>/derivatives/<tool>/ instead of computing it from MESE (blank = compute, * = any tool)" });
-        }
-        rows.push(Toggle { label: "Compute R2' map", field: "do_r2primemap", help: "R2' = R2* − R2 (Hz); needs GRE magnitude + a MESE acquisition, or R2PRIMEnet. Required when chi-separation needs it" });
-        if inputs.r2prime {
-            rows.push(Param { label: "  Custom R2' tool", field: "custom_r2prime_tool", help: "Use an R2' map from <bids>/derivatives/<tool>/ instead of computing it (blank = compute, * = any tool)" });
-        }
-        // Only consulted when R2' is computed — a supplied map always wins.
-        if inputs.r2prime_source {
-            rows.push(AlgoSelect { label: "  R2' source", field: "r2prime_strategy", options: R2PRIME_STRATEGY_OPTIONS, help: R2PRIME_STRATEGY_HELP });
-            // R2PRIMEnet's own settings, unless R2' is only ever measured (index 1 = mese).
-            if self.pipeline_state.r2prime_strategy != 1 {
-                rows.push(Toggle { label: "    R2PRIMEnet off 3 T", field: "r2primenet_ignore_field_mismatch",
-                    help: "Run R2PRIMEnet on non-3 T data (trained at 3 T only; the R2' is uncalibrated). Off: auto skips R2', r2primenet errors" });
-                // χ-sepnet's toolbox route runs R2PRIMEnet on its own frame, not at this patch.
-                let route_estimates = self.pipeline_state.do_chi_separation
-                    && SEP_ALGO_OPTIONS.get(self.pipeline_state.separation_algorithm).copied() == Some("chi-sepnet")
-                    && self.pipeline_state.sep_chisepnet_route == 0;
-                if self.form.do_r2primemap || !route_estimates {
-                    rows.push(Param { label: "    R2PRIMEnet patch", field: "r2primenet_patch",
-                        help: "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)" });
-                }
-            }
-        }
-        rows
     }
 
     /// Other outputs → Segmentation: where the segmentation comes from, and the statistics on it.
@@ -9639,7 +9563,7 @@ mod tests {
         app.form.do_segmentation = true;
         app.form.export_dicom = true;
         app.form.do_analysis = true;
-        app.form.do_r2primemap = true;
+        app.form.settings.set("pipeline.do_r2primemap", true);
         app.form.settings.set("motion_correction.enabled", true);
         app.filter_state.orientation_group = "acq".into();
         for mode in [0, 1] {
@@ -10796,9 +10720,9 @@ mod tests {
         let mut app = App::new();
         app.active_tab = TAB_RECONSTRUCTION;
         focus_on(&mut app, TAB_RECONSTRUCTION, "do_t2starmap");
-        assert!(!app.form.do_t2starmap);
+        assert!(!app.form.settings.toggle("pipeline.do_t2starmap"));
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.form.do_t2starmap);
+        assert!(app.form.settings.toggle("pipeline.do_t2starmap"));
     }
 
     #[test]
@@ -10806,9 +10730,9 @@ mod tests {
         let mut app = App::new();
         app.active_tab = TAB_RECONSTRUCTION;
         focus_on(&mut app, TAB_RECONSTRUCTION, "do_r2starmap");
-        assert!(!app.form.do_r2starmap);
+        assert!(!app.form.settings.toggle("pipeline.do_r2starmap"));
         app.handle_key(key(KeyCode::Char(' ')));
-        assert!(app.form.do_r2starmap);
+        assert!(app.form.settings.toggle("pipeline.do_r2starmap"));
     }
 
     #[test]
@@ -10915,18 +10839,18 @@ mod tests {
         let mut app = App::new();
         app.active_tab = TAB_RECONSTRUCTION;
         app.form.settings.set("pipeline.do_swi", true);
-        app.form.do_t2starmap = true;
-        app.form.do_r2starmap = true;
+        app.form.settings.set("pipeline.do_t2starmap", true);
+        app.form.settings.set("pipeline.do_r2starmap", true);
         app.form.settings.set("swi.scaling", "negative");
         app.sub_page[TAB_RECONSTRUCTION] = Some(Page::Swi);
         app.sync_pipeline_mode();
         app.handle_key(key(KeyCode::Char('R')));
         assert!(!app.form.settings.toggle("pipeline.do_swi"));
         assert_eq!(app.form.settings.get("swi.scaling"), "tanh");
-        assert!(app.form.do_t2starmap && app.form.do_r2starmap, "Relaxometry is another page");
+        assert!(app.form.settings.toggle("pipeline.do_t2starmap") && app.form.settings.toggle("pipeline.do_r2starmap"), "Relaxometry is another page");
         focus_on(&mut app, TAB_RECONSTRUCTION, "do_t2starmap");
         app.handle_key(key(KeyCode::Char('R')));
-        assert!(!app.form.do_t2starmap && !app.form.do_r2starmap);
+        assert!(!app.form.settings.toggle("pipeline.do_t2starmap") && !app.form.settings.toggle("pipeline.do_r2starmap"));
     }
 
     // ========== Execution tab handler tests ==========
@@ -12389,16 +12313,16 @@ mod tests {
             assert!(!has(&f, x), "nothing reads a supplied map: {x}");
         }
 
-        app.form.do_r2primemap = true;
+        app.form.settings.set("pipeline.do_r2primemap", true);
         let f = fields(&mut app);
         assert!(has(&f, "custom_r2prime_tool") && has(&f, "custom_r2_tool") && has(&f, "r2prime_strategy"), "{f:?}");
         assert!(!has(&f, "custom_qsm_tool"), "{f:?}");
         // R2PRIMEnet predicts R2' from R2*: no R2 is read.
-        app.pipeline_state.r2prime_strategy = 2;
+        app.set_field_select("r2prime_strategy", 2);
         assert!(!has(&fields(&mut app), "custom_r2_tool"));
         // A supplied R2' replaces the computation: its source no longer applies, its row stays.
-        app.pipeline_state.r2prime_strategy = 0;
-        app.pipeline_state.custom_r2prime_tool = "*".into();
+        app.set_field_select("r2prime_strategy", 0);
+        *app.field_text_mut("custom_r2prime_tool").unwrap() = "*".into();
         let f = fields(&mut app);
         assert!(has(&f, "custom_r2prime_tool") && !has(&f, "r2prime_strategy") && !has(&f, "custom_r2_tool"), "{f:?}");
 
@@ -12406,7 +12330,7 @@ mod tests {
         app.form.do_analysis = true;
         assert!(has(&fields(&mut app), "custom_qsm_tool"), "the statistics can read a supplied χ map");
         let mut app = App::new();
-        app.form.do_r2map = true;
+        app.form.settings.set("pipeline.do_r2map", true);
         let f = fields(&mut app);
         assert!(has(&f, "custom_r2_tool") && !has(&f, "custom_r2prime_tool"), "{f:?}");
     }
@@ -12447,14 +12371,14 @@ mod tests {
     fn r2star_is_made_when_needed_and_reads_as_set() {
         let mut app = App::new();
         assert!(!app.field_toggle("do_r2starmap"));
-        app.form.do_r2primemap = true;
+        app.form.settings.set("pipeline.do_r2primemap", true);
         assert!(!app.field_toggle("do_r2starmap") && app.output_made("do_r2starmap"), "R2' = R2* - R2");
         app.active_tab = TAB_RECONSTRUCTION;
         focus_on(&mut app, TAB_RECONSTRUCTION, "do_r2starmap");
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.form.do_r2starmap, "{:?}", app.error_message);
+        assert!(app.form.settings.toggle("pipeline.do_r2starmap"), "{:?}", app.error_message);
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.form.do_r2starmap && app.error_message.as_deref().is_some_and(|m| m.contains("R2′ map")),
+        assert!(app.form.settings.toggle("pipeline.do_r2starmap") && app.error_message.as_deref().is_some_and(|m| m.contains("R2′ map")),
                 "{:?}", app.error_message);
     }
 
@@ -13409,7 +13333,7 @@ mod tests {
         let s = |v: &[&str]| Some(v.iter().map(|x| x.to_string()).collect::<Vec<_>>());
         assert_eq!(app.dicom_outputs(), s(&["magnitude", "Chimap", "swi"]));
         // A map turned on later is exported too.
-        app.form.do_r2starmap = true;
+        app.form.settings.set("pipeline.do_r2starmap", true);
         assert_eq!(app.dicom_outputs(), s(&["magnitude", "Chimap", "swi", "R2starmap"]));
         // The last ticked map stays ticked.
         app.toggle_field("dicom_out_magnitude");
@@ -13579,8 +13503,8 @@ mod tests {
         app.form.settings.set("pipeline.do_swi", true);
         app.form.settings.set("pipeline.do_smwi", true);
         app.form.export_dicom = true;
-        app.form.do_t2starmap = true;
-        app.form.do_r2starmap = true;
+        app.form.settings.set("pipeline.do_t2starmap", true);
+        app.form.settings.set("pipeline.do_r2starmap", true);
         app.pipeline_state.do_chi_separation = true;
         app.pipeline_state.apply_mask_preset(2); // hd-bet + signal-erode
         let ps = &mut app.pipeline_state;

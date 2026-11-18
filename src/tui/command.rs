@@ -726,22 +726,19 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             use_custom_dseg: Some(ps.custom_dseg_tool.trim()).filter(|t| !t.is_empty()).map(str::to_string),
         },
         smwi_params: Default::default(),
-        do_t2starmap: form.do_t2starmap,
-        do_r2starmap: form.do_r2starmap,
-        do_r2map: form.do_r2map,
-        do_r2primemap: form.do_r2primemap,
+        // The relaxometry maps and R2' settings are set from the form's settings store ([`stored_values`]).
+        do_t2starmap: false,
+        do_r2starmap: false,
+        do_r2map: false,
+        do_r2primemap: false,
         do_chi_separation: ps.do_chi_separation,
         chi_separation_algorithm: Some(sep_options[ps.separation_algorithm]),
         use_custom_qsm: tool(inputs.qsm, &ps.custom_qsm_tool),
-        use_custom_r2: tool(inputs.r2, &ps.custom_r2_tool),
-        use_custom_r2prime: tool(inputs.r2prime, &ps.custom_r2prime_tool),
-        r2prime_strategy: inputs.r2prime_source.then_some(match ps.r2prime_strategy {
-            1 => crate::cli::R2PrimeStrategyArg::Mese,
-            2 => crate::cli::R2PrimeStrategyArg::R2primenet,
-            _ => crate::cli::R2PrimeStrategyArg::Auto,
-        }),
-        r2primenet_ignore_field_mismatch: inputs.r2prime_source && ps.r2primenet_ignore_field_mismatch,
-        r2primenet_patch: if inputs.r2prime_source { parse_usize_triple(&ps.r2primenet_patch).map(|p| p.to_vec()) } else { None },
+        use_custom_r2: None,
+        use_custom_r2prime: None,
+        r2prime_strategy: None,
+        r2primenet_ignore_field_mismatch: false,
+        r2primenet_patch: None,
         export_dicom: form.export_dicom,
         inhomogeneity_correction: ps.inhomogeneity_correction,
         no_inhomogeneity_correction: !ps.inhomogeneity_correction,
@@ -1050,28 +1047,28 @@ mod tests {
         }
     }
 
-    /// R2PRIMEnet's field-strength override and patch reach both the config and the CLI args —
-    /// when R2' is computed; otherwise they have nothing to act on and are not passed.
+    /// R2PRIMEnet's field-strength override and patch reach both the config and the run — when
+    /// R2' is computed; otherwise they have nothing to act on and are not passed.
     #[test]
     fn r2primenet_settings_reach_config_and_args() {
         let mut app = default_app();
-        app.pipeline_state.toggle("r2primenet_ignore_field_mismatch");
-        app.pipeline_state.r2primenet_patch = "128 128 64".into();
-        let a = pipeline_args_from_app(&app);
-        assert!(!a.r2primenet_ignore_field_mismatch && a.r2primenet_patch.is_none(), "no R2', nothing passed");
+        app.toggle_field("r2primenet_ignore_field_mismatch");
+        *app.field_text_mut("r2primenet_patch").unwrap() = "128 128 64".into();
+        assert_eq!(config_from_app(&app).unwrap().separation.r2primenet, qsmxt_engine::R2primenetConfig::default(),
+                   "no R2', nothing passed");
 
         let mut app = default_app();
-        app.form.do_r2primemap = true;
+        app.form.settings.set("pipeline.do_r2primemap", true);
         let d = qsmxt_engine::R2primenetConfig::default();
         assert_eq!(config_from_app(&app).unwrap().separation.r2primenet, d);
-        app.pipeline_state.toggle("r2primenet_ignore_field_mismatch");
-        app.pipeline_state.r2primenet_patch = "128 128 64".into();
+        app.toggle_field("r2primenet_ignore_field_mismatch");
+        *app.field_text_mut("r2primenet_patch").unwrap() = "128 128 64".into();
         let c = config_from_app(&app).unwrap();
         assert!(c.separation.r2primenet.ignore_field_mismatch);
         assert_eq!(c.separation.r2primenet.patch, [128, 128, 64]);
-        let a = pipeline_args_from_app(&app);
-        assert!(a.r2primenet_ignore_field_mismatch);
-        assert_eq!(a.r2primenet_patch, Some(vec![128, 128, 64]));
+        app.form.bids_dir = "/b".into();
+        let run = crate::cli_settings::build_config(Default::default(), &build_run_args(&app).unwrap().pipeline).unwrap();
+        assert_eq!(run.separation.r2primenet, c.separation.r2primenet);
     }
 
     /// V-SHARP's working grid: the engine's by default (off the command), spacing row only for
@@ -1635,8 +1632,8 @@ mod tests {
     fn test_command_string_execution_flags() {
         let mut app = default_app();
         app.form.settings.set("pipeline.do_swi", true);
-        app.form.do_t2starmap = true;
-        app.form.do_r2starmap = true;
+        app.form.settings.set("pipeline.do_t2starmap", true);
+        app.form.settings.set("pipeline.do_r2starmap", true);
         app.form.dry_run = true;
         app.form.debug = true;
         app.form.n_procs = "4".to_string();
@@ -1707,8 +1704,8 @@ mod tests {
         app.form.bids_dir = "/b".to_string();
         app.form.output_dir = "/o".to_string();
         app.form.settings.set("pipeline.do_swi", true);
-        app.form.do_t2starmap = true;
-        app.form.do_r2starmap = true;
+        app.form.settings.set("pipeline.do_t2starmap", true);
+        app.form.settings.set("pipeline.do_r2starmap", true);
         app.pipeline_state.inhomogeneity_correction = true;
         app.form.dry_run = true;
         app.form.debug = true;
@@ -1716,8 +1713,8 @@ mod tests {
         let config = |args: &RunArgs| crate::cli_settings::build_config(Default::default(), &args.pipeline).unwrap();
         assert!(config(&args).pipeline.do_swi);
         assert!(!config(&args).swi.filtered_phase);
-        assert!(args.pipeline.do_t2starmap);
-        assert!(args.pipeline.do_r2starmap);
+        assert!(config(&args).pipeline.do_t2starmap);
+        assert!(config(&args).pipeline.do_r2starmap);
         assert!(args.pipeline.inhomogeneity_correction);
         assert!(args.dry);
         app.form.settings.set("swi.filtered_phase", true);
@@ -2402,7 +2399,7 @@ mod parity {
             |_| {},
             |a| a.filter_state.orientation_group = "acq".into(),
             |a| { a.filter_state.orientation_group = "acq".into(); a.filter_state.orientation_algorithm = 1; },
-            |a| { a.form.do_r2primemap = true; a.form.do_r2map = true; a.form.do_analysis = true; },
+            |a| { a.form.settings.set("pipeline.do_r2primemap", true); a.form.settings.set("pipeline.do_r2map", true); a.form.do_analysis = true; },
         ];
         let start_app = |i: usize| {
             let mut app = App::new();

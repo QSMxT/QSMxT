@@ -725,7 +725,7 @@ mod tests {
         assert_eq!(labels, ["R2′ map", "R2* map", "R2 map"]);
         assert!(modal.explanation(0).starts_with("χ-separation (iLSQR) requires R2′ map"), "{}", modal.explanation(0));
         app.handle_rec_modal_key(KeyEvent::from(KeyCode::Char('a')));
-        assert!(app.form.do_r2primemap && app.form.do_r2starmap && app.form.do_r2map,
+        assert!(app.form.settings.toggle("pipeline.do_r2primemap") && app.form.settings.toggle("pipeline.do_r2starmap") && app.form.settings.toggle("pipeline.do_r2map"),
                 "{:?} {:?}", app.status_message, app.error_message);
         assert!(app.pipeline_state.do_chi_separation, "the change just made stands");
     }
@@ -906,7 +906,7 @@ mod tests {
         // The default method's R2* map: the required change, applied.
         assert_eq!(app.rec_modal.as_ref().map(|m| m.kind.clone()), Some(AdviceKind::Required));
         app.handle_rec_modal_key(KeyEvent::from(KeyCode::Char('a')));
-        assert!(app.form.do_r2starmap);
+        assert!(app.form.settings.toggle("pipeline.do_r2starmap"));
         // The default method's reference pipeline pop-up: closed.
         app.refs.modal = None;
         select(&mut app, "separation_algorithm", "decompose", super::super::app::SEP_ALGO_OPTIONS);

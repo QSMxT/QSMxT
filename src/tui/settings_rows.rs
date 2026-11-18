@@ -27,7 +27,8 @@ use super::app::{field_of_path, field_path, App, Page, PipelineRow, RowContext, 
 
 /// The sections whose settings are kept in [`SettingsStore`] rather than in the form's fields.
 pub const STORED_SECTIONS: &[Section] =
-    &[Section::Geometry, Section::Motion, Section::Background, Section::Reference, Section::Magnitude, Section::SwiSmwi];
+    &[Section::Geometry, Section::Motion, Section::Background, Section::Reference, Section::Magnitude, Section::SwiSmwi,
+      Section::Relaxometry];
 
 /// Choices that one select picks with another: `(path, choice, other)`. The select lists the
 /// setting's options but `choice`, then each of `other`'s, which picks `choice` with that value;
@@ -94,6 +95,7 @@ const LAYOUTS: &[PageLayout] = &[
         ],
     },
     PageLayout { page: Page::Reference, section: Section::Reference, only: None, repeats: &[], notes: &[], blocks: &[], depths: &[] },
+    PageLayout { page: Page::Relaxometry, section: Section::Relaxometry, only: None, repeats: &[], notes: &[], blocks: &[], depths: &[] },
     PageLayout { page: Page::Magnitude, section: Section::Magnitude, only: None, repeats: &[], notes: &[], blocks: &[], depths: &[] },
     PageLayout { page: Page::Swi, section: Section::SwiSmwi, only: Some(is_swi), repeats: &[], notes: &[], blocks: &[], depths: &[] },
     PageLayout {
