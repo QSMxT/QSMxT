@@ -299,7 +299,7 @@ impl App {
         if path == "masking.sections" {
             if let Ok(sections) = serde_json::from_value::<Vec<crate::pipeline::config::MaskSection>>(value.clone()) {
                 let mut app = self.clone_form();
-                app.pipeline_state.mask_preset = super::app::MASK_PRESET_CUSTOM;
+                app.pipeline_state.mask_preset = *super::app::MASK_PRESET_CUSTOM;
                 app.pipeline_state.mask_sections = sections;
                 if takes(&app) {
                     self.form = app.form;

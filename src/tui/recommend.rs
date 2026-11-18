@@ -408,7 +408,7 @@ impl App {
         }
         if let Ok(mut c) = super::command::config_from_app(self) {
             if decide::restore_kept(&mut c, &plan.kept, &facts) {
-                self.pipeline_state.mask_preset = super::app::MASK_PRESET_CUSTOM;
+                self.pipeline_state.mask_preset = *super::app::MASK_PRESET_CUSTOM;
                 self.pipeline_state.mask_sections = c.masking.sections;
             }
         }
@@ -508,7 +508,7 @@ impl App {
                 match r.setting.as_str() {
                     "masking.sections" => {
                         let mut app = clone_form();
-                        app.pipeline_state.mask_preset = super::app::MASK_PRESET_CUSTOM;
+                        app.pipeline_state.mask_preset = *super::app::MASK_PRESET_CUSTOM;
                         app.pipeline_state.mask_sections = after.masking.sections.clone();
                         // First: the engine's own result, before any preset that also resolves the rule
                         // (HD-BET's recipe has no erosion step either).

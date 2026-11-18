@@ -1780,7 +1780,9 @@ pub const R2PRIME_STRATEGY_HELP: &[&str] = &[
     "Always predict R2' from R2* with R2PRIMEnet, even when a MESE acquisition is available (an estimate, not a measurement)",
 ];
 
-pub const MASK_PRESET_OPTIONS: &[&str] = &["robust-threshold", "bet", "hd-bet", "bet-and-phase", "rs2-net", "mindgrab", "custom"];
+/// The mask preset picker: the engine's presets, then "custom" ([`MASK_PRESET_CUSTOM`]).
+pub static MASK_PRESET_OPTIONS: LazyLock<Vec<&'static str>> =
+    LazyLock::new(|| mask_schema().presets.iter().map(|p| p.value).chain(["custom"]).collect());
 /// The presets' help, from the engine's mask schema, then the "custom" entry's.
 static MASK_PRESET_HELP_V: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
     mask_schema().presets.iter().map(|p| p.help).chain(["Fully custom mask pipeline (edit steps below)"]).collect()
@@ -1810,7 +1812,7 @@ pub fn mask_step_of(op: &crate::pipeline::config::MaskOp) -> &'static qsmxt_engi
 /// Index of the "custom" preset — set automatically when the steps are edited by hand, and
 /// skipped when cycling presets with ←/→. Derived, because it is always the trailing entry:
 /// a hardcoded index silently goes stale the moment a preset is added.
-pub const MASK_PRESET_CUSTOM: usize = MASK_PRESET_OPTIONS.len() - 1;
+pub static MASK_PRESET_CUSTOM: LazyLock<usize> = LazyLock::new(|| MASK_PRESET_OPTIONS.len() - 1);
 
 /// The signal-erode parameters that get a row of their own, past the threshold shown on the step
 /// row itself: label and help. Order matches the row order.
@@ -3032,12 +3034,13 @@ const QSMART_INV_HELP: &[&str] = &[
 ];
 /// The inversion picker's alias for LSQR with the HEIDI box ticked. The form never holds it: it
 /// keeps `qsm_algorithm` on `lsqr`, and `heidi_enabled`.
-pub const LSQR_HEIDI: &str = "lsqr+heidi";
-const LSQR_HEIDI_HELP: &str = "LSQR+HEIDI (HEIDI as published) — LSQR with the HEIDI box ticked: LSQR, then the dipole cone refilled under a homogeneity prior. https://doi.org/10.1016/j.neuroimage.2012.05.067";
+pub const LSQR_HEIDI: &str = qsmxt_engine::schema::aliases::LSQR_HEIDI.name;
+const LSQR_HEIDI_HELP: &str = qsmxt_engine::schema::aliases::LSQR_HEIDI.help;
 
 /// `list`, with `alias` after the entry for LSQR.
 fn with_lsqr_heidi<T: Copy>(list: &[T], alias: T) -> Vec<T> {
-    let at = QSM_ALGO_OPTIONS.iter().position(|o| *o == "lsqr").expect("LSQR is an inversion") + 1;
+    let lsqr = qsmxt_engine::schema::aliases::LSQR_HEIDI.value;
+    let at = QSM_ALGO_OPTIONS.iter().position(|o| *o == lsqr).expect("LSQR is an inversion") + 1;
     let mut out = list.to_vec();
     out.insert(at, alias);
     out
@@ -3596,7 +3599,7 @@ impl PipelineFormState {
     fn masking_rows(&self, rows: &mut Vec<PipelineRow>) {
         rows.push(PipelineRow::AlgoSelect {
             label: "Mask preset", field: "mask_preset",
-            options: MASK_PRESET_OPTIONS, help: mask_preset_help(),
+            options: &MASK_PRESET_OPTIONS, help: mask_preset_help(),
         });
         rows.push(PipelineRow::Param {
             label: "Use custom masks", field: "custom_mask_tool",
@@ -5694,7 +5697,7 @@ impl PipelineFormState {
     /// the `robust-threshold` preset the main mask still follows.
     fn mark_mask_custom(&mut self, section: usize) {
         if !is_two_pass_section(section) {
-            self.mask_preset = MASK_PRESET_CUSTOM;
+            self.mask_preset = *MASK_PRESET_CUSTOM;
         }
     }
 
@@ -8776,7 +8779,7 @@ impl App {
     fn basic_rows(&self, rows: Vec<PipelineRow>) -> Vec<PipelineRow> {
         use PipelineRow::*;
         let shown = self.basic_paths();
-        let collapse_recipe = self.pipeline_state.mask_preset != MASK_PRESET_CUSTOM;
+        let collapse_recipe = self.pipeline_state.mask_preset != *MASK_PRESET_CUSTOM;
         let main_recipe = |section: usize| !is_two_pass_section(section);
         let mut hidden = 0;
         // Each row, and whether it shows.
@@ -12549,7 +12552,7 @@ mod tests {
         assert_eq!(app.pipeline_state.mask_preset, 5); // MindGrab
         assert_eq!(app.pipeline_state.mask_sections, crate::pipeline::config::mindgrab_mask_sections());
         step(&mut app, 1);
-        assert_eq!(app.pipeline_state.mask_preset, MASK_PRESET_CUSTOM, "the picker lists 'custom' last");
+        assert_eq!(app.pipeline_state.mask_preset, *MASK_PRESET_CUSTOM, "the picker lists 'custom' last");
     }
 
     #[test]
@@ -12607,8 +12610,8 @@ mod tests {
     fn test_mask_preset_options_match_the_preset_list() {
         use clap::ValueEnum;
         let names: Vec<&str> = crate::pipeline::config::mask_presets().iter().map(|(n, _)| *n).collect();
-        assert_eq!(&MASK_PRESET_OPTIONS[..MASK_PRESET_CUSTOM], &names[..]);
-        assert_eq!(MASK_PRESET_OPTIONS[MASK_PRESET_CUSTOM], "custom");
+        assert_eq!(&MASK_PRESET_OPTIONS[..*MASK_PRESET_CUSTOM], &names[..]);
+        assert_eq!(MASK_PRESET_OPTIONS[*MASK_PRESET_CUSTOM], "custom");
         assert_eq!(MASK_PRESET_OPTIONS.len(), mask_preset_help().len());
 
         let cli_names: Vec<String> = crate::cli::MaskPresetArg::value_variants().iter()
@@ -13170,7 +13173,7 @@ mod tests {
         assert_eq!(app.pipeline_state.mask_combine, MaskCombine::Or);
         step(&mut app, 1);
         assert_eq!(app.pipeline_state.mask_combine, MaskCombine::And);
-        assert_eq!(app.pipeline_state.mask_preset, MASK_PRESET_CUSTOM, "editing the recipe marks it custom");
+        assert_eq!(app.pipeline_state.mask_preset, *MASK_PRESET_CUSTOM, "editing the recipe marks it custom");
         step(&mut app, 1);
         assert_eq!(app.pipeline_state.mask_combine, MaskCombine::Or);
     }
@@ -13382,7 +13385,7 @@ mod tests {
         app.handle_key(key(KeyCode::Enter));
         let added = app.pipeline_state.mask_sections[0].refinements.last().unwrap();
         assert_eq!(PipelineFormState::mask_op_label_value(added).0, available[1]);
-        assert_eq!(app.pipeline_state.mask_preset, MASK_PRESET_CUSTOM);
+        assert_eq!(app.pipeline_state.mask_preset, *MASK_PRESET_CUSTOM);
     }
 
     #[test]
@@ -14153,7 +14156,7 @@ mod tests {
             MaskOp::MinIntensity { value: 100.0 },
         ] });
         ps.mask_sections.push(MaskSection { input: MaskingInput::Magnitude, generator: MaskOp::MindGrab { tta: false }, refinements: vec![] });
-        ps.mask_preset = MASK_PRESET_CUSTOM;
+        ps.mask_preset = *MASK_PRESET_CUSTOM;
         app
     }
 
@@ -14751,14 +14754,14 @@ mod tests {
         let summary: Vec<&str> = rows.iter().filter_map(|r| match r { PipelineRow::Summary { text } => Some(text.as_str()), _ => None }).collect();
         assert_eq!(summary.join(" "), "phase-quality › otsu threshold › dilate 1 › fill-holes › erode 1");
         assert!(!rows.iter().any(|r| matches!(r, PipelineRow::MaskOpEntry { .. } | PipelineRow::MaskOpAddSection { .. })));
-        app.pipeline_state.mask_preset = MASK_PRESET_CUSTOM;
+        app.pipeline_state.mask_preset = *MASK_PRESET_CUSTOM;
         assert!(app.rows().iter().any(|r| matches!(r, PipelineRow::MaskOpEntry { .. })));
     }
 
     #[test]
     fn the_mask_recipe_line_fits_beside_the_sidebar_at_80_columns() {
         let mut app = App::new();
-        for (preset, name) in MASK_PRESET_OPTIONS.iter().enumerate().take(MASK_PRESET_CUSTOM) {
+        for (preset, name) in MASK_PRESET_OPTIONS.iter().enumerate().take(*MASK_PRESET_CUSTOM) {
             app.pipeline_state.set_select("mask_preset", preset);
             for line in app.pipeline_state.mask_recipe_summary() {
                 assert!(line.chars().count() <= 46, "{name}: {line}");
