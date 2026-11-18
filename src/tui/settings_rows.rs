@@ -826,11 +826,11 @@ impl SettingsStore {
 
     /// The stored settings that differ from QSMxT's defaults as the run takes them (those a fresh
     /// form holds otherwise, [`FORM_DEFAULTS`], included), typed text
-    /// read as its value (a blank text leaves the default; so does a value the config refuses,
-    /// such as a typed number too large for its setting), and the settings whose typed text the
-    /// run cannot take at all, with why: text that reads as no value of its setting ("abc" for a
-    /// number), or an echo number the setting does not take. The command line refuses both, and
-    /// running with the default instead would change a setting behind the user's back.
+    /// read as its value (a blank text leaves the default), and the settings whose typed text the
+    /// run cannot take, with why: text that reads as no value of its setting ("abc" for a
+    /// number), a number outside the setting's range or one the config cannot hold, or an echo
+    /// number the setting does not take. The command line refuses all of them, and running with
+    /// the default instead would change a setting behind the user's back.
     pub fn changed_or_refused(&self) -> (Vec<(&'static str, Value)>, Vec<Refused>) {
         let mut out: BTreeMap<&'static str, Value> = self.values.clone();
         for (path, value) in FORM_DEFAULTS {
@@ -872,10 +872,32 @@ impl SettingsStore {
                 out.remove(path);
                 continue;
             }
-            match value.filter(|v| *v != s.default && config_with(&[(path, v.clone())]).is_some()) {
-                Some(v) => out.insert(path, v),
-                None => out.remove(path),
+            let Some(v) = value else {
+                out.remove(path);
+                continue;
             };
+            // A number outside the setting's range, or one the config cannot hold (a negative
+            // count), is refused as the run refuses it, rather than run as the default.
+            let flag = s.cli_flag.unwrap_or(path);
+            let numbers: Vec<f64> = match &v {
+                Value::Array(xs) => xs.iter().filter_map(Value::as_f64).collect(),
+                other => other.as_f64().into_iter().collect(),
+            };
+            let why = if numbers.iter().any(|&x| !s.in_range(x)) {
+                Some(format!("must be {}", s.range_text()))
+            } else {
+                config_try(&[(path, v.clone())]).err().map(|e| match s.value_type {
+                    ValueType::Int | ValueType::IntVec3 | ValueType::IntList if numbers.iter().any(|&x| x < 0.0) =>
+                        "must be at least 0".to_string(),
+                    _ => e,
+                })
+            };
+            if let Some(why) = why {
+                refused.push((path, format!("{flag} {}: {why}", text.trim())));
+                out.remove(path);
+                continue;
+            }
+            if v == s.default { out.remove(path) } else { out.insert(path, v) };
         }
         (out.into_iter().collect(), refused)
     }
@@ -1184,6 +1206,33 @@ mod tests {
         app.form.settings.set("pipeline.do_chi_separation", true);
         app.form.settings.set("separation.algorithm", "decompose");
         unreadable(&mut app, "sep_decompose_chi_bound", "abc", "--decompose-chi-bound abc: not a number");
+    }
+
+    /// A typed number outside its setting's range, or one the config cannot hold, is refused as
+    /// the run refuses it, rather than run as the setting's default: a number, a count, a triple.
+    #[test]
+    fn out_of_range_values_are_refused() {
+        let mut app = App::new_for_trial();
+        app.set_field_select("mask_preset", 1); // BET
+        unreadable(&mut app, "bet_smoothness", "-1", "--bet-smoothness -1: must be greater than 0");
+        *app.field_text_mut("bet_smoothness").unwrap() = String::new();
+        unreadable(&mut app, "bet_iterations", "-1", "--bet-iterations -1: must be at least 0");
+        *app.field_text_mut("bet_iterations").unwrap() = String::new();
+        unreadable(&mut app, "homogeneity_nbox", "0", "--homogeneity-nbox 0: must be at least 1");
+        *app.field_text_mut("homogeneity_nbox").unwrap() = String::new();
+        app.set_field_select("inhomogeneity_method", 1);
+        unreadable(&mut app, "n4_mesh", "1 0 1", "--n4-mesh 1 0 1: must be at least 1");
+        *app.field_text_mut("n4_mesh").unwrap() = "2 2 2".into();
+        assert_eq!(config_from_app(&app).unwrap().n4.mesh, [2, 2, 2]);
+    }
+
+    /// An out-of-range number in a row that does not apply does not block the run.
+    #[test]
+    fn an_out_of_range_hidden_value_does_not_block() {
+        let mut app = App::new_for_trial();
+        unreadable(&mut app, "homogeneity_nbox", "0", "--homogeneity-nbox 0");
+        app.toggle_field("inhomogeneity_correction");
+        assert!(config_from_app(&app).is_ok(), "the correction off: its boxes do not apply");
     }
 
     /// Unreadable text in a row that does not apply does not block the run: its setting is left

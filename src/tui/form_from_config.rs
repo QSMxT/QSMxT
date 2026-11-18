@@ -333,11 +333,18 @@ mod tests {
                     }
                     let mut changed = build(acts);
                     let Some(text) = changed.field_text_mut(field) else { continue };
+                    let was = text.clone();
                     *text = match (field, text.as_str()) {
                         // Empty is the whole volume; a patch is three numbers.
                         ("sep_susepnet_patch" | "sep_chisepnet_frame_patch", "") => "64 64 32".to_string(),
-                        (_, t) => bumped(t),
+                        // SynthSeg's window is at least 64 voxels.
+                        ("synthseg_patch", "") => "96".to_string(),
+                        (_, t) => bumped(t, 1),
                     };
+                    // A value at the top of its range moves down instead.
+                    if config_from_app(&changed).is_err() {
+                        *changed.field_text_mut(field).unwrap() = bumped(&was, -1);
+                    }
                     let config = config_from_app(&changed).expect("the form builds a config");
                     let d = round_trip(&config);
                     if !d.is_empty() {
@@ -350,12 +357,13 @@ mod tests {
         assert!(failures.is_empty(), "{} rows:\n{}", failures.len(), failures.join("\n"));
     }
 
-    /// A row's text with each number moved off its value (an empty row becomes 3).
-    fn bumped(v: &str) -> String {
+    /// A row's text with each number moved off its value, up (`by` 1) or down (-1); an empty row
+    /// becomes 3.
+    fn bumped(v: &str, by: i64) -> String {
         let bump = |t: &str| -> Option<String> {
-            if let Ok(n) = t.parse::<i64>() { return Some((n + 1).to_string()); }
+            if let Ok(n) = t.parse::<i64>() { return Some((n + by).to_string()); }
             let x = t.parse::<f64>().ok()?;
-            Some(format!("{}", if x == 0.0 { 0.1 } else { x * 0.9 }))
+            Some(format!("{}", if x == 0.0 { 0.1 } else if by > 0 { x * 0.9 } else { x * 1.1 }))
         };
         let tokens: Vec<&str> = v.split(|c: char| c == ',' || c.is_whitespace()).filter(|t| !t.is_empty()).collect();
         match tokens.iter().map(|t| bump(t)).collect::<Option<Vec<_>>>() {

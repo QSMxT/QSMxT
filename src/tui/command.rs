@@ -1925,12 +1925,13 @@ mod parity {
         }
     }
 
-    /// A different value of the same shape: each number in it moved (lists stay lists).
-    fn bumped(v: &str) -> String {
+    /// A different value of the same shape: each number in it moved up (`by` 1) or down (-1)
+    /// (lists stay lists).
+    fn bumped(v: &str, by: i64) -> String {
         let bump = |t: &str| -> Option<String> {
-            if let Ok(n) = t.parse::<i64>() { return Some((n + 1).to_string()); }
+            if let Ok(n) = t.parse::<i64>() { return Some((n + by).to_string()); }
             let x = t.parse::<f64>().ok()?;
-            Some(format!("{}", if x == 0.0 { 0.1 } else { x * 0.9 }))
+            Some(format!("{}", if x == 0.0 { 0.1 } else if by > 0 { x * 0.9 } else { x * 1.1 }))
         };
         let tokens: Vec<&str> = v.split(|c: char| c == ',' || c.is_whitespace()).filter(|t| !t.is_empty()).collect();
         match tokens.iter().map(|t| bump(t)).collect::<Option<Vec<_>>>() {
@@ -2287,13 +2288,21 @@ mod parity {
                 Check::Param(field) => {
                     let mut a = clone_app(&base);
                     // Paths and names rather than numbers: any non-empty value is a change.
-                    let v = match (field, a.field_text(field).as_ref()) {
+                    let was = a.field_text(field).into_owned();
+                    let mut v = match (field, was.as_str()) {
                         ("source_dicom" | "dicom_outputs" | "slurm_account" | "slurm_partition", _) => "x1".to_string(),
                         // Empty is the whole volume; a patch is three numbers.
                         ("sep_susepnet_patch" | "sep_chisepnet_frame_patch", "") => "64 64 32".to_string(),
-                        (_, v) => bumped(v),
+                        // SynthSeg's window is at least 64 voxels.
+                        ("synthseg_patch", "") => "96".to_string(),
+                        (_, v) => bumped(v, 1),
                     };
                     *a.field_text_mut(field).unwrap_or_else(|| panic!("{field} not editable")) = v.clone();
+                    // A value at the top of its range moves down instead.
+                    if config_from_app(&a).is_err() && config_from_app(&base).is_ok() {
+                        v = bumped(&was, -1);
+                        *a.field_text_mut(field).unwrap() = v.clone();
+                    }
                     (format!("{field}={v}"), a)
                 }
             };
