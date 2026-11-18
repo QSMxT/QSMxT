@@ -307,7 +307,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         masking_input: None,
         phase_offset_removal: Some(ps.phase_offset_removal),
         phase_offset_sigma_mm: parse_optional_f64_vec3(&ps.phase_offset_sigma_mm),
-        coil_combination_sigma: parse_optional_f64_vec3(&ps.coil_combination_sigma),
+        coil_combination_sigma: None,
         // Part of HIP phase offset removal, which runs before any unwrapper. MEDI's complex fit
         // removes no offsets, and refuses bipolar correction.
         bipolar_correction: ps.phase_offset_removal && ps.bipolar_correction
@@ -815,15 +815,16 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         export_dicom: form.export_dicom,
         inhomogeneity_correction: ps.inhomogeneity_correction,
         no_inhomogeneity_correction: !ps.inhomogeneity_correction,
-        axial_resampling: ps.axial_resampling,
+        // Geometry is set from the form's settings store ([`stored_values`]).
+        axial_resampling: false,
         no_axial_resampling: false,
-        obliquity_threshold: if ps.axial_resampling { parse_optional_f64(&ps.obliquity_threshold) } else { None },
-        crop_to_mask: ps.crop_to_mask,
-        ignore_slice_gap: ps.ignore_slice_gap,
-        fft_padding: ps.fft_padding,
-        tukey_window: parse_optional_f64(&ps.tukey_window),
-        crop_margin_mm: if ps.crop_to_mask { parse_optional_f64(&ps.crop_margin_mm) } else { None },
-        output_space: Some(if ps.output_space == 1 { crate::cli::OutputSpaceArg::Working } else { crate::cli::OutputSpaceArg::Acquired }),
+        obliquity_threshold: None,
+        crop_to_mask: false,
+        ignore_slice_gap: false,
+        fft_padding: false,
+        tukey_window: None,
+        crop_margin_mm: None,
+        output_space: None,
         mask_preset: None,
         use_custom_masks: if ps.custom_mask_tool.trim().is_empty() { None } else { Some(ps.custom_mask_tool.trim().to_string()) },
         mask_sections_cli: {
@@ -1434,9 +1435,11 @@ mod tests {
     fn ignore_slice_gap_reaches_config_and_args() {
         let mut app = default_app();
         assert!(!config_from_app(&app).unwrap().pipeline.ignore_slice_gap);
-        app.pipeline_state.toggle("ignore_slice_gap");
+        app.toggle_field("ignore_slice_gap");
         assert!(config_from_app(&app).unwrap().pipeline.ignore_slice_gap);
-        assert!(pipeline_args_from_app(&app).ignore_slice_gap);
+        assert!(crate::cli_settings::build_config(Default::default(), &build_run_args(&{
+            let mut a = App::new(); a.form.bids_dir = "/b".into(); a.toggle_field("ignore_slice_gap"); a
+        }).unwrap().pipeline).unwrap().pipeline.ignore_slice_gap);
         let mut c = config_from_app(&app).unwrap();
         assert!(qsmxt_engine::generate_command(&c).contains("--ignore-slice-gap"));
         c.pipeline.ignore_slice_gap = false;
@@ -1584,11 +1587,11 @@ mod tests {
                   "--tile-size", "--synthseg-sigma"] {
             assert!(!base.contains(f), "{f} in a default command: {base}");
         }
-        app.pipeline_state.axial_resampling = true;
+        app.form.settings.set("pipeline.axial_resampling", true);
         assert!(build_command_string(&app).contains("--axial-resampling"));
-        app.pipeline_state.obliquity_threshold = "20".into();
+        *app.field_text_mut("obliquity_threshold").unwrap() = "20".into();
         assert!(build_command_string(&app).contains("--obliquity-threshold 20"));
-        app.pipeline_state.axial_resampling = false;
+        app.form.settings.set("pipeline.axial_resampling", false);
         assert!(!build_command_string(&app).contains("--obliquity-threshold"), "no threshold without resampling");
 
         // Off is ROMEO's default here; turned on, the threshold shown is passed.
@@ -1667,8 +1670,8 @@ mod tests {
         let mut app = default_app();
         app.pipeline_state.ilsqr_tol = "0.01".to_string();
         app.pipeline_state.ilsqr_pad_mm = "32".to_string();
-        app.pipeline_state.axial_resampling = true;
-        app.pipeline_state.obliquity_threshold = "5".to_string();
+        app.form.settings.set("pipeline.axial_resampling", true);
+        *app.field_text_mut("obliquity_threshold").unwrap() = "5".into();
         let cmd = build_command_string(&app);
         assert!(cmd.contains("--ilsqr-tol 0.01"));
         assert!(cmd.contains("--ilsqr-pad-mm 32"));
@@ -1822,10 +1825,11 @@ mod tests {
         let mut app = default_app();
         app.form.bids_dir = "/b".to_string();
         app.form.output_dir = "/o".to_string();
-        app.pipeline_state.axial_resampling = true;
-        app.pipeline_state.obliquity_threshold = "5.0".to_string();
+        app.form.settings.set("pipeline.axial_resampling", true);
+        *app.field_text_mut("obliquity_threshold").unwrap() = "5.0".into();
         let args = build_run_args(&app).unwrap();
-        assert_eq!(args.pipeline.obliquity_threshold, Some(5.0));
+        let config = crate::cli_settings::build_config(Default::default(), &args.pipeline).unwrap();
+        assert_eq!(config.pipeline.obliquity_threshold, 5.0);
     }
 
     // --- parse helpers ---
@@ -2096,16 +2100,17 @@ mod tests {
         app.pipeline_state.qsm_algorithm = 2; // tkd
         app.pipeline_state.unwrapping_algorithm = 1; // laplacian
         app.pipeline_state.bf_algorithm = 1; // pdf
-        app.pipeline_state.axial_resampling = true;
-        app.pipeline_state.obliquity_threshold = "5".to_string();
+        app.form.settings.set("pipeline.axial_resampling", true);
+        *app.field_text_mut("obliquity_threshold").unwrap() = "5".into();
         app.form.settings.set("pipeline.do_swi", true);
 
         let slurm = build_slurm_args(&app).unwrap();
         assert_eq!(slurm.pipeline.qsm_algorithm, Some(crate::cli::QsmAlgorithmArg::Tkd));
         assert_eq!(slurm.pipeline.unwrapping_algorithm, Some(crate::cli::UnwrapAlgorithmArg::Laplacian));
         assert_eq!(slurm.pipeline.bf_algorithm, Some(crate::cli::BfAlgorithmArg::Pdf));
-        assert_eq!(slurm.pipeline.obliquity_threshold, Some(5.0));
-        assert!(crate::cli_settings::build_config(Default::default(), &slurm.pipeline).unwrap().pipeline.do_swi);
+        let config = crate::cli_settings::build_config(Default::default(), &slurm.pipeline).unwrap();
+        assert_eq!(config.pipeline.obliquity_threshold, 5.0);
+        assert!(config.pipeline.do_swi);
     }
 
     /// The B0 echo-combination rows reach the run (they used to be dropped, so the TUI's weight

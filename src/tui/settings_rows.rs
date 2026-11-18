@@ -23,10 +23,14 @@ use serde_json::Value;
 use qsmxt_engine::schema::{self, Section, Setting, ValueType, ViewFacts};
 use qsmxt_engine::PipelineConfig;
 
-use super::app::{field_of_path, field_path, App, Page, PipelineRow};
+use super::app::{field_of_path, field_path, App, Page, PipelineRow, RowContext};
 
 /// The sections whose settings are kept in [`SettingsStore`] rather than in the form's fields.
-pub const STORED_SECTIONS: &[Section] = &[Section::Magnitude, Section::SwiSmwi];
+pub const STORED_SECTIONS: &[Section] = &[Section::Geometry, Section::Magnitude, Section::SwiSmwi];
+
+/// A note a page makes before a setting's row, from the rows' context (none when there is nothing
+/// to say).
+type Note = fn(&RowContext) -> Option<String>;
 
 /// A page whose rows come from the registry.
 struct PageLayout {
@@ -38,6 +42,8 @@ struct PageLayout {
     /// Settings of another section repeated at the end of the page, each under a setting of the
     /// page: `(path, under)`, shown while `under` is on and the setting applies.
     repeats: &'static [(&'static str, &'static str)],
+    /// A note before a setting's row, when there is one to make.
+    notes: &'static [(&'static str, Note)],
 }
 
 fn is_swi(path: &str) -> bool {
@@ -45,12 +51,18 @@ fn is_swi(path: &str) -> bool {
 }
 
 const LAYOUTS: &[PageLayout] = &[
-    PageLayout { page: Page::Magnitude, section: Section::Magnitude, only: None, repeats: &[] },
-    PageLayout { page: Page::Swi, section: Section::SwiSmwi, only: Some(is_swi), repeats: &[] },
+    PageLayout { page: Page::Geometry, section: Section::Geometry, only: None, repeats: &[], notes: &[
+        // A selected method that only works on axial data resamples whatever the switch says.
+        ("pipeline.output_space", |ctx| ctx.axial_forced_by.as_ref()
+            .map(|why| format!("  Oblique data is resampled to axial for {why}"))),
+    ] },
+    PageLayout { page: Page::Magnitude, section: Section::Magnitude, only: None, repeats: &[], notes: &[] },
+    PageLayout { page: Page::Swi, section: Section::SwiSmwi, only: Some(is_swi), repeats: &[], notes: &[] },
     PageLayout {
         page: Page::Smwi, section: Section::SwiSmwi, only: Some(|p| !is_swi(p)),
         // SMWI reads a χ map, which may be supplied rather than computed.
         repeats: &[("separation.custom_qsm_tool", "pipeline.do_smwi")],
+        notes: &[],
     },
 ];
 
@@ -305,7 +317,7 @@ impl App {
 
     /// The rows of `page` when they come from the registry; `None` for a page still built by
     /// hand.
-    pub(super) fn registry_rows(&self, page: Page, config: Option<&PipelineConfig>) -> Option<Vec<PipelineRow>> {
+    pub(super) fn registry_rows(&self, page: Page, ctx: &RowContext, config: Option<&PipelineConfig>) -> Option<Vec<PipelineRow>> {
         let layout = LAYOUTS.iter().find(|l| l.page == page)?;
         // A form that builds no config (a value the run refuses) still shows its rows, as its
         // stored settings have them.
@@ -322,6 +334,9 @@ impl App {
         let mut rows = Vec::new();
         for s in schema::settings() {
             if s.section == layout.section && layout.only.is_none_or(|f| f(s.path)) && shows(s.path) {
+                for (_, note) in layout.notes.iter().filter(|(p, _)| *p == s.path) {
+                    rows.extend(note(ctx).map(|text| PipelineRow::Note { text: text.into() }));
+                }
                 push_rows(&mut rows, s, depth(s));
             }
         }
