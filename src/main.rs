@@ -1,8 +1,11 @@
 mod cli;
+mod cli_settings;
 #[cfg(test)]
 mod cli_reference;
 #[cfg(test)]
 mod cli_snapshots;
+#[cfg(test)]
+mod cli_flags_gen;
 #[cfg(test)]
 #[path = "../tests/support/snapshot.rs"]
 mod snapshot;

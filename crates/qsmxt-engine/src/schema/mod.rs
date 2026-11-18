@@ -21,6 +21,8 @@
 //! one the TOML config accepts.
 
 pub mod aliases;
+pub mod cli;
+mod cli_flags;
 pub mod mask;
 mod regular;
 mod table;

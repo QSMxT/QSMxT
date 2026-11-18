@@ -56,7 +56,7 @@ fn every_commands_help() {
 }
 
 /// One argument as a line: what it is called and what it accepts.
-fn describe(arg: &Arg) -> String {
+pub(crate) fn describe(arg: &Arg) -> String {
     let mut s = match (arg.get_long(), arg.get_short()) {
         (Some(l), Some(c)) => format!("--{l} -{c}"),
         (Some(l), None) => format!("--{l}"),
