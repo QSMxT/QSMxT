@@ -22,7 +22,7 @@ fn default_run_args(bids_dir: PathBuf, output_dir: PathBuf) -> RunArgs {
         no_dataset_steps: false,
         accept_recommendations: false,
         accept_reference_settings: false,
-        pipeline: PipelineArgs {
+        pipeline: crate::cli_settings::SettingsArgs::form(PipelineArgs {
             pipeline: None,
             no_laplacian_unmasked: false,
             laplacian_keep_outside: false,
@@ -151,7 +151,7 @@ fn default_run_args(bids_dir: PathBuf, output_dir: PathBuf) -> RunArgs {
             two_pass_mask_combine: None,
             two_pass_mode: None,
             dismiss_recommendation: None,
-        },
+        }),
     }
 }
 
@@ -2671,12 +2671,12 @@ fn test_slurm_writes_requested_pipeline_config() {
         mem: Some(16), cpus_per_task: 2, submit: false,
         include: None, exclude: None, num_echoes: None, force: false, clean_intermediates: false,
         debug: false, source_dicom: None, dicom_outputs: None,
-        pipeline: PipelineArgs {
+        pipeline: crate::cli_settings::SettingsArgs::form(PipelineArgs {
             qsm_algorithm: Some(QsmAlgorithmArg::Tkd),
             unwrapping_algorithm: Some(UnwrapAlgorithmArg::Laplacian),
             bf_algorithm: Some(BfAlgorithmArg::Pdf),
             ..Default::default()
-        },
+        }),
     }).unwrap();
 
     let written = std::fs::read_to_string(out.join("derivatives/qsmxt/pipeline_config.toml")).unwrap();
@@ -2807,7 +2807,7 @@ fn slurm_jobs_produce_what_a_local_run_does() {
     args.no_mem_limit = true;
     args.include = include.clone();
     args.num_echoes = Some(1);
-    args.pipeline = pipeline();
+    args.pipeline = crate::cli_settings::SettingsArgs::form(pipeline());
     super::run::execute(args).unwrap();
 
     let dist = dir.path().join("dist");
@@ -2819,7 +2819,7 @@ fn slurm_jobs_produce_what_a_local_run_does() {
         mem: None, cpus_per_task: 1, submit: false,
         include, exclude: None, num_echoes: Some(1), force: false, clean_intermediates: false,
         debug: false, source_dicom: None, dicom_outputs: None,
-        pipeline: pipeline(),
+        pipeline: crate::cli_settings::SettingsArgs::form(pipeline()),
     }).unwrap();
     let slurm_dir = dist.join("derivatives/qsmxt/slurm");
     let mut run_scripts: Vec<PathBuf> = std::fs::read_dir(&slurm_dir).unwrap().flatten().map(|e| e.path())
@@ -2907,7 +2907,7 @@ fn cheap_pipeline() -> PipelineArgs {
 fn aggregate_args(bids: PathBuf, out: PathBuf, include: Vec<String>) -> AggregateArgs {
     AggregateArgs {
         bids_dir: bids, output_dir: Some(out), config: None, include: Some(include), exclude: None,
-        num_echoes: None, pipeline: cheap_pipeline(), debug: false, force: false,
+        num_echoes: None, pipeline: crate::cli_settings::SettingsArgs::form(cheap_pipeline()), debug: false, force: false,
         clean_intermediates: false, command_line: None,
     }
 }
@@ -2925,7 +2925,7 @@ fn aggregate_names_runs_that_were_not_processed_under_its_configuration() {
     worker.no_mem_limit = true;
     worker.no_dataset_steps = true;
     worker.include = Some(vec!["*acq-dir1*".to_string()]);
-    worker.pipeline = cheap_pipeline();
+    worker.pipeline = crate::cli_settings::SettingsArgs::form(cheap_pipeline());
     super::run::execute(worker).unwrap();
 
     let keys = vec!["*acq-dir1*".to_string(), "*acq-dir2*".to_string()];

@@ -95,7 +95,7 @@ mod tests {
         let crate::cli::Command::Run(run) = cli.command else { panic!("expected run") };
         let mut config = crate::pipeline::config::PipelineConfig::default();
         assert!(!config.swi.filtered_phase, "off by default");
-        crate::pipeline::config::apply_run_overrides(&mut config, &run.pipeline).unwrap();
+        crate::cli_settings::apply_normalised(&mut config, &run.pipeline).unwrap();
         assert!(config.pipeline.do_swi && config.swi.filtered_phase);
         let back = crate::pipeline::config::PipelineConfig::from_toml(&config.to_toml().unwrap()).unwrap();
         assert!(back.swi.filtered_phase);
@@ -118,7 +118,7 @@ mod tests {
                 .unwrap();
             let crate::cli::Command::Run(run) = cli.command else { panic!("expected run") };
             let mut config = crate::pipeline::config::PipelineConfig::default();
-            crate::pipeline::config::apply_run_overrides(&mut config, &run.pipeline).unwrap();
+            crate::cli_settings::apply_normalised(&mut config, &run.pipeline).unwrap();
             assert_eq!(P::from(config.swi.scaling), expected, "run --swi-scaling {name}");
             // ...and it survives the config file round trip.
             let back = crate::pipeline::config::PipelineConfig::from_toml(&config.to_toml().unwrap()).unwrap();

@@ -56,8 +56,8 @@ fn slurm_flattens_and_applies_pipeline_args() {
     let slurm_body = &cli_src[slurm_start..];
     let slurm_body = &slurm_body[..slurm_body.find("\n}").expect("SlurmArgs end not found")];
     assert!(
-        slurm_body.contains("pub pipeline: PipelineArgs"),
-        "SlurmArgs must flatten PipelineArgs so `qsmxt slurm` takes the same pipeline flags as `qsmxt run`"
+        slurm_body.contains("pub pipeline: crate::cli_settings::SettingsArgs"),
+        "SlurmArgs must flatten SettingsArgs so `qsmxt slurm` takes the same pipeline flags as `qsmxt run`"
     );
 
     // Both build their configuration through run::build_config, which applies the overrides.
@@ -69,7 +69,7 @@ fn slurm_flattens_and_applies_pipeline_args() {
     let run_src = include_str!("../src/commands/run.rs");
     let build = &run_src[run_src.find("fn build_config(").expect("run::build_config not found")..];
     assert!(
-        build[..build.find("\n}").unwrap()].contains("apply_run_overrides(&mut config, pipeline)"),
+        build[..build.find("\n}").unwrap()].contains("crate::cli_settings::build_config(config, settings)"),
         "run::build_config() must apply the pipeline overrides"
     );
 }

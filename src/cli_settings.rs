@@ -1,9 +1,6 @@
 //! `qsmxt run`'s settings flags, built from the engine's flag table
 //! ([`qsmxt_engine::schema::cli::PIPELINE_FLAGS`]).
 
-// Not wired up yet: `run`, `slurm` and `aggregate` switch to it next (refactor P3).
-#![cfg_attr(not(test), allow(dead_code))]
-
 use clap::builder::{PossibleValue, PossibleValuesParser};
 use clap::{Arg, ArgAction, Command};
 use qsmxt_engine::schema::cli::{Flag, FlagAction, FlagParse, PIPELINE_FLAGS};
@@ -84,6 +81,56 @@ pub fn arg(f: &Flag) -> Arg {
         .hide_default_value(f.has("hide_default_value"))
 }
 
+/// `qsmxt run`'s settings: the flags given and, from the TUI, its form as `PipelineArgs` (until it
+/// holds a configuration, refactor P4), applied first.
+#[derive(Debug, Default)]
+pub struct SettingsArgs {
+    pub given: Vec<Given>,
+    pub form: Option<Box<crate::cli::PipelineArgs>>,
+}
+
+impl SettingsArgs {
+    /// The TUI's form.
+    pub fn form(args: crate::cli::PipelineArgs) -> Self {
+        SettingsArgs { given: Vec::new(), form: Some(Box::new(args)) }
+    }
+}
+
+/// Tests that set the TUI's form field by field (until it holds a configuration, refactor P4).
+#[cfg(test)]
+impl std::ops::Deref for SettingsArgs {
+    type Target = crate::cli::PipelineArgs;
+    fn deref(&self) -> &Self::Target {
+        self.form.as_deref().expect("settings from a form")
+    }
+}
+
+#[cfg(test)]
+impl std::ops::DerefMut for SettingsArgs {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.form.as_deref_mut().expect("settings from a form")
+    }
+}
+
+impl clap::Args for SettingsArgs {
+    fn augment_args(cmd: Command) -> Command {
+        augment(cmd)
+    }
+    fn augment_args_for_update(cmd: Command) -> Command {
+        augment(cmd)
+    }
+}
+
+impl clap::FromArgMatches for SettingsArgs {
+    fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
+        Ok(SettingsArgs { given: given(matches), form: None })
+    }
+    fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
+        self.given = given(matches);
+        Ok(())
+    }
+}
+
 /// The settings flags given on the command line, in the table's order, with their values as
 /// typed.
 pub fn given(matches: &clap::ArgMatches) -> Vec<Given> {
@@ -96,19 +143,51 @@ pub fn given(matches: &clap::ArgMatches) -> Vec<Given> {
 /// The registry flags applied here rather than as one value of one setting.
 const APPLIED_HERE: &[&str] = &[
     "pipeline", "qsm-algorithm", "qsm-reference", "romeo-template", "synthseg-version",
-    "qsmart-fit-threshold-mode", "qsmart-fit-percentile", "qsmart-fit-threshold",
+    "qsmart-fit-threshold-mode", "qsmart-fit-percentile", "qsmart-fit-threshold", "laplacian-fft-pad",
 ];
 
-/// The configuration `given` makes of `config`, as `qsmxt run` takes it.
-pub fn build_config(mut config: PipelineConfig, given: &[Given]) -> crate::Result<PipelineConfig> {
-    apply(&mut config, given)?;
-    crate::pipeline::config::normalise_logged(&mut config);
+/// The configuration `settings` make of `config`, as `qsmxt run` takes it.
+pub fn build_config(mut config: PipelineConfig, settings: &SettingsArgs) -> crate::Result<PipelineConfig> {
+    apply_normalised(&mut config, settings)?;
     crate::pipeline::config::validate_reference_region(&config)?;
     crate::pipeline::config::validate_segmentation(&config)?;
     crate::pipeline::config::validate_multi_orientation(&config)?;
     crate::pipeline::config::validate_inversion_input(&config)?;
     qsmxt_engine::schema::check_ranges(&config).map_err(|e| QsmxtError::Config(e.to_string()))?;
     Ok(config)
+}
+
+/// `settings` applied to `config`, with the outputs other settings need turned on.
+pub fn apply_normalised(config: &mut PipelineConfig, settings: &SettingsArgs) -> crate::Result<()> {
+    if let Some(form) = &settings.form {
+        crate::pipeline::config::apply_run_overrides_as_given(config, form)?;
+    }
+    apply(config, &settings.given)?;
+    crate::pipeline::config::normalise_logged(config);
+    Ok(())
+}
+
+/// The values the registry's types and ranges do not check, refused with what to give instead.
+fn check(given: &[Given]) -> crate::Result<()> {
+    let err = QsmxtError::Config;
+    for g in given {
+        let v = g.values.first().map(String::as_str).unwrap_or_default();
+        match g.flag.long {
+            "obliquity-threshold" if v.parse::<f64>().is_ok_and(|x| x < 0.0) => return Err(err(format!(
+                "--obliquity-threshold {v}: the threshold is in degrees and cannot be negative. Resampling \
+                 is off unless --axial-resampling is given (a negative threshold no longer turns it off)"))),
+            "ilsqr-pad-mm" => {
+                let pad_mm = v.parse::<f64>().map_err(|e| err(e.to_string()))?;
+                qsm_core::inversion::IlsqrParams { pad_mm, ..Default::default() }.validate()
+                    .map_err(|e| err(format!("--ilsqr-pad-mm: {e}")))?;
+            }
+            "motion-reference" => {
+                v.parse::<qsmxt_engine::MotionReference>().map_err(|e| err(format!("--motion-reference {v}: {e}")))?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 /// `given` applied to `config`, as the flags give it (no outputs turned on for other settings).
@@ -135,10 +214,16 @@ pub fn apply(config: &mut PipelineConfig, given: &[Given]) -> crate::Result<()> 
     if one("qsmart-inversion") == Some("heidi") {
         return Err(err("--qsmart-inversion heidi: HEIDI is not one of QSMART's inner inversions (its two stages are its own recipe)".into()));
     }
+    check(given)?;
     let settings: Vec<Given> = given.iter().filter(|g| !APPLIED_HERE.contains(&g.flag.long)).cloned().collect();
     let rest = qsmxt_engine::schema::cli_apply::apply_settings(config, &settings).map_err(err)?;
     config.multi_orientation.validate().map_err(err)?;
 
+    if let Some(p) = all("laplacian-fft-pad") {
+        let pad: Vec<usize> = p.iter().map(|v| v.parse()).collect::<Result<_, _>>().map_err(|e: std::num::ParseIntError| err(e.to_string()))?;
+        config.field_mapping.laplacian_fft_pad = qsmxt_engine::pad3_from(&pad)
+            .ok_or_else(|| err(format!("--laplacian-fft-pad {pad:?}: give one value or three (x y z)")))?;
+    }
     if let Some(t) = one("romeo-template") {
         config.field_mapping.romeo.template = t.parse::<usize>().map_err(|e| err(e.to_string()))?.saturating_sub(1);
     }
@@ -279,5 +364,49 @@ mod tests {
         let from_usage = |h: String| h[h.find("Usage:").unwrap()..].to_string();
         assert_eq!(from_usage(derived.render_long_help().to_string()), from_usage(table.render_long_help().to_string()));
         assert_eq!(from_usage(derived.render_help().to_string()), from_usage(table.render_help().to_string()));
+    }
+
+    /// Values the flags refuse are refused with the same words as `PipelineArgs` and its apply
+    /// (which the TUI's form still uses).
+    #[test]
+    fn refusals_read_as_before() {
+        use clap::FromArgMatches;
+        let parse = |c: Command, argv: &[&str]| c.try_get_matches_from(std::iter::once("t").chain(argv.iter().copied()))
+            .map_err(|e| e.to_string().lines().next().unwrap_or("").to_string());
+        let old = |argv: &[&str]| -> Result<(), String> {
+            let m = parse(crate::cli::PipelineArgs::augment_args(Command::new("t")), argv)?;
+            let args = crate::cli::PipelineArgs::from_arg_matches(&m).map_err(|e| e.to_string())?;
+            crate::pipeline::config::apply_run_overrides_as_given(&mut Default::default(), &args).map_err(|e| e.to_string())
+        };
+        let new = |argv: &[&str]| -> Result<(), String> {
+            let m = parse(super::augment(Command::new("t")), argv)?;
+            super::apply(&mut Default::default(), &super::given(&m)).map_err(|e| e.to_string())
+        };
+        for argv in [
+            "--obliquity-threshold -1", "--laplacian-fft-pad 2 3", "--ilsqr-pad-mm -5", "--motion-reference x",
+            "--mask magnitude,frobnicate:1", "--mask-refine bet", "--two-pass-mask nonsense", "--dismiss-recommendation x",
+            "--dismiss-recommendation nope=1", "--qsmart-inversion heidi", "--synthseg-version v3", "--medi-te 0",
+            "--tv-rho x", "--lbv-precision quad", "--mask-preset mouse-bet", "--cosmos-tol 1",
+        ] {
+            let argv: Vec<&str> = argv.split(' ').collect();
+            let (o, n) = (old(&argv), new(&argv));
+            assert!(o.is_err(), "{argv:?} is refused");
+            assert_eq!(o, n, "{argv:?}");
+        }
+    }
+
+    /// Every flag that sets no registry setting, and is not the opposite of a registry switch, is
+    /// applied here by name: none is parsed and ignored.
+    #[test]
+    fn every_flag_is_applied() {
+        use qsmxt_engine::schema::cli_apply::{opposite_of, setting_of};
+        let src = include_str!("cli_settings.rs");
+        let apply = &src[src.find("pub fn apply(").unwrap()..src.find("#[cfg(test)]\nmod tests").unwrap()];
+        for f in super::PIPELINE_FLAGS.iter().filter(|f| setting_of(f).is_none() && opposite_of(f).is_none()) {
+            assert!(apply.contains(&format!("\"{}\"", f.long)), "--{} is not applied", f.long);
+        }
+        for long in super::APPLIED_HERE {
+            assert!(apply.contains(&format!("\"{long}\"")), "--{long} is listed as applied here but is not");
+        }
     }
 }

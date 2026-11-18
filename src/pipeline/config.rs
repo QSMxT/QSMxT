@@ -321,15 +321,6 @@ pub fn validate_reference_region(config: &PipelineConfig) -> crate::Result<()> {
     Ok(())
 }
 
-///
-/// A value that cannot be parsed is an error, never a warning and a default: the flag was asked
-/// for, and a run with some other setting would be worse than no run.
-pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs) -> crate::Result<()> {
-    apply_run_overrides_as_given(config, args)?;
-    normalise_logged(config);
-    Ok(())
-}
-
 /// Turn on the outputs other settings need ([`PipelineConfig::normalised`]), each logged at info
 /// level in plain words ("Segmentation turned on: Reference = ventricles needs it (...)") and
 /// recorded in [`PipelineConfig::required_changes`] for the methods Note. These are QSMxT's own
@@ -1110,7 +1101,7 @@ mod tests {
             _ => panic!("expected Run subcommand"),
         };
         let mut rebuilt = PipelineConfig::default();
-        apply_run_overrides(&mut rebuilt, &run_args.pipeline).unwrap();
+        crate::cli_settings::apply_normalised(&mut rebuilt, &run_args.pipeline).unwrap();
 
         assert_eq!(rebuilt.inversion.algorithm, QsmAlgorithm::Qsmart);
         assert_eq!(rebuilt.inversion.qsmart.inversion, QsmAlgorithm::Tv);
@@ -1129,7 +1120,7 @@ mod tests {
             _ => panic!("expected Run subcommand"),
         };
         let mut config = PipelineConfig::default();
-        apply_run_overrides(&mut config, &run_args.pipeline).unwrap();
+        crate::cli_settings::apply_normalised(&mut config, &run_args.pipeline).unwrap();
         config
     }
 
@@ -1157,7 +1148,7 @@ mod tests {
             let cli = cli::Cli::try_parse_from(&argv).expect("clap accepts it; the override must not");
             let cli::Command::Run(run_args) = cli.command else { panic!("expected run") };
             let mut config = PipelineConfig::default();
-            let err = apply_run_overrides(&mut config, &run_args.pipeline);
+            let err = crate::cli_settings::apply_normalised(&mut config, &run_args.pipeline);
             assert!(err.is_err(), "{extra:?} was accepted");
             let msg = format!("{}", err.unwrap_err());
             assert!(msg.contains(extra[extra.len() - 2]) || msg.contains(extra[extra.len() - 1]),
@@ -1206,7 +1197,7 @@ mod tests {
         assert!(!c.inversion.heidi.enabled);
         let cli = cli::Cli::try_parse_from(["qsmxt", "run", "<bids>", "--qsm-algorithm", "qsmart", "--qsmart-inversion", "heidi"]).unwrap();
         let cli::Command::Run(a) = cli.command else { panic!("expected run") };
-        assert!(apply_run_overrides(&mut PipelineConfig::default(), &a.pipeline).is_err());
+        assert!(crate::cli_settings::apply_normalised(&mut PipelineConfig::default(), &a.pipeline).is_err());
     }
 
     #[test]
@@ -1263,7 +1254,7 @@ mod tests {
         };
         let mut c = PipelineConfig::default();
         (c.inversion.tv.rho, c.inversion.nltv.rho, c.inversion.hdqsm.mu1_l2) = (Some(1.0), Some(1.0), Some(1.0));
-        apply_run_overrides(&mut c, &args(&["qsmxt", "run", "<bids>", "--tv-rho", "auto", "--nltv-rho", "auto",
+        crate::cli_settings::apply_normalised(&mut c, &args(&["qsmxt", "run", "<bids>", "--tv-rho", "auto", "--nltv-rho", "auto",
             "--hdqsm-mu1-l2", "auto"])).unwrap();
         assert_eq!((c.inversion.tv.rho, c.inversion.nltv.rho, c.inversion.hdqsm.mu1_l2), (None, None, None));
         assert_eq!(config_from_cli(&["qsmxt", "run", "<bids>", "--bf-erode-voxels", "3"]).bg_removal.erode_voxels, 3);
@@ -1438,7 +1429,7 @@ mod tests {
         let cli = cli::Cli::try_parse_from(["qsmxt", "run", "<bids>", "--mask-preset", "mouse-bet"])
             .expect("still parsed, so it can be explained");
         let cli::Command::Run(run_args) = cli.command else { panic!("expected Run") };
-        let err = apply_run_overrides(&mut PipelineConfig::default(), &run_args.pipeline)
+        let err = crate::cli_settings::apply_normalised(&mut PipelineConfig::default(), &run_args.pipeline)
             .expect_err("mouse-bet was removed").to_string();
         assert!(err.contains("removed") && err.contains("rs2-net") && err.contains("scale="), "{err}");
     }
@@ -1558,7 +1549,7 @@ mod tests {
         let no_flags = |mut c: PipelineConfig| {
             let cli = cli::Cli::try_parse_from(["qsmxt", "run", "<bids>"]).unwrap();
             let cli::Command::Run(r) = cli.command else { panic!() };
-            apply_run_overrides(&mut c, &r.pipeline).unwrap();
+            crate::cli_settings::apply_normalised(&mut c, &r.pipeline).unwrap();
             c
         };
         for extra in [&[][..], &["--mask-preset", "robust-threshold"], &["--mask-preset", "bet"],
@@ -1631,7 +1622,7 @@ mod tests {
         file.masking.sections = vec![MaskSection { input: MaskingInput::MagnitudeFirst, generator: MaskOp::bet(0.5), refinements: vec![] }];
         let cli = cli::Cli::try_parse_from(["qsmxt", "run", "<bids>"]).unwrap();
         let cli::Command::Run(r) = cli.command else { panic!() };
-        apply_run_overrides(&mut file, &r.pipeline).unwrap();
+        crate::cli_settings::apply_normalised(&mut file, &r.pipeline).unwrap();
         assert_eq!(fi(&file), vec![0.35]);
         // BET's surface settings reach the run's config (and from there every BET step;
         // QSM.rs#180), from the command line and from a config file alike.
@@ -1734,7 +1725,7 @@ mod tests {
             .unwrap_or_else(|e| panic!("generated command did not parse: {e}\ncmd: {cmd}"));
         let run_args = match cli.command { cli::Command::Run(a) => a, _ => panic!("expected Run") };
         let mut rebuilt = PipelineConfig::default();
-        apply_run_overrides(&mut rebuilt, &run_args.pipeline).unwrap();
+        crate::cli_settings::apply_normalised(&mut rebuilt, &run_args.pipeline).unwrap();
         (cmd, rebuilt.masking)
     }
 
@@ -1850,7 +1841,7 @@ mod tests {
                              ("--two-pass-mask", "phase-quality,threshold:otsu,close:0")] {
             let cli = cli::Cli::try_parse_from(["qsmxt", "run", "<bids>", flag, spec]).expect("parse");
             let cli::Command::Run(run) = cli.command else { panic!("expected run") };
-            let e = apply_run_overrides(&mut PipelineConfig::default(), &run.pipeline).unwrap_err().to_string();
+            let e = crate::cli_settings::apply_normalised(&mut PipelineConfig::default(), &run.pipeline).unwrap_err().to_string();
             assert!(e.contains("must be at least 1, got 0"), "{flag} {spec}: {e}");
         }
     }
@@ -2008,7 +1999,7 @@ mod tests {
                                      refinements: recipe.refinements, ..MaskingConfig::default() },
             ..PipelineConfig::default()
         };
-        apply_run_overrides(&mut config, &run_args.pipeline).unwrap();
+        crate::cli_settings::apply_normalised(&mut config, &run_args.pipeline).unwrap();
         assert_eq!(config.masking.combine, MaskCombine::Or);
         assert!(config.masking.refinements.is_empty());
     }
@@ -2050,7 +2041,7 @@ mod tests {
             .unwrap_or_else(|e| panic!("generated command did not parse: {e}\ncmd: {cmd}"));
         let cli::Command::Run(run_args) = cli.command else { panic!("expected Run") };
         let mut rebuilt = PipelineConfig::default();
-        apply_run_overrides(&mut rebuilt, &run_args.pipeline).unwrap();
+        crate::cli_settings::apply_normalised(&mut rebuilt, &run_args.pipeline).unwrap();
 
         assert_eq!(rebuilt.inversion.tile_size, Some(BROWSER_TILE_SIZE), "{cmd}");
         assert_eq!(rebuilt.inversion.tile_halo, Some(BROWSER_TILE_HALO), "{cmd}");
@@ -2070,7 +2061,7 @@ mod tests {
             let cli = cli::Cli::try_parse_from(&argv).unwrap_or_else(|e| panic!("{e}\ncmd: {cmd}"));
             let cli::Command::Run(run_args) = cli.command else { panic!("expected Run") };
             let mut rebuilt = PipelineConfig::default();
-            apply_run_overrides(&mut rebuilt, &run_args.pipeline).unwrap();
+            crate::cli_settings::apply_normalised(&mut rebuilt, &run_args.pipeline).unwrap();
             rebuilt
         };
         for p in pipelines::pipelines().into_iter().filter(|p| p.is_toolbox()) {

@@ -72,15 +72,3 @@ fn cli_flags_gen() {
     std::fs::write(concat!(env!("CARGO_MANIFEST_DIR"), "/crates/qsmxt-engine/src/schema/cli_flags.rs"), out).unwrap();
 }
 
-#[test]
-#[ignore = "one-off report"]
-fn cli_value_types() {
-    let mut cmd = crate::cli::PipelineArgs::augment_args(Command::new("t"));
-    cmd.build();
-    for arg in cmd.get_arguments().filter(|a| a.get_id() != "help" && a.get_possible_values().is_empty()
-        && !matches!(a.get_action(), clap::ArgAction::SetTrue)) {
-        let f = qsmxt_engine::schema::cli::PIPELINE_FLAGS.iter().find(|f| f.id == arg.get_id()).unwrap();
-        let ty = qsmxt_engine::schema::cli_apply::setting_of(f).map(|s| format!("{} {:?}", s.path, s.value_type).chars().take(70).collect::<String>());
-        println!("{:<40} {:<60} {:?}", f.long, format!("{:?}", arg.get_value_parser().type_id()), ty);
-    }
-}

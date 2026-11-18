@@ -116,30 +116,14 @@ fn every_argument() {
     snapshot::check(DIR, "args.txt", &normalise(&out));
 }
 
-/// How a configuration is built from parsed command-line arguments.
-type Build = fn(&clap::ArgMatches) -> Result<serde_json::Value, String>;
-
-/// `qsmxt run`'s configuration from its flags, as `qsmxt` builds it.
-fn build(matches: &clap::ArgMatches) -> Result<serde_json::Value, String> {
-    let cli = Cli::from_arg_matches(matches).map_err(|e| format!("clap: {e}"))?;
+/// The configuration `qsmxt run <bids> <flags>` runs with, as JSON, or why it is refused.
+fn config_of(cmd: &mut Command, flags: &[String]) -> Result<serde_json::Value, String> {
+    let argv = ["qsmxt", "run", "/bids"].into_iter().map(String::from).chain(flags.iter().cloned());
+    let matches = cmd.try_get_matches_from_mut(argv).map_err(|e| format!("clap: {}", e.to_string().trim_end()))?;
+    let cli = Cli::from_arg_matches(&matches).map_err(|e| format!("clap: {e}"))?;
     let crate::cli::Command::Run(run) = cli.command else { unreachable!() };
     let config = crate::commands::run::build_config(None, &run.pipeline).map_err(|e| format!("refused: {e}"))?;
     Ok(serde_json::to_value(&config).unwrap())
-}
-
-/// [`build`] from the flag table ([`crate::cli_settings`]).
-fn build_from_table(matches: &clap::ArgMatches) -> Result<serde_json::Value, String> {
-    let run = matches.subcommand_matches("run").unwrap();
-    let config = crate::cli_settings::build_config(Default::default(), &crate::cli_settings::given(run))
-        .map_err(|e| format!("refused: {e}"))?;
-    Ok(serde_json::to_value(&config).unwrap())
-}
-
-/// The configuration `qsmxt run <bids> <flags>` runs with, as JSON, or why it is refused.
-fn config_of(cmd: &mut Command, build: Build, flags: &[String]) -> Result<serde_json::Value, String> {
-    let argv = ["qsmxt", "run", "/bids"].into_iter().map(String::from).chain(flags.iter().cloned());
-    let matches = cmd.try_get_matches_from_mut(argv).map_err(|e| format!("clap: {}", e.to_string().trim_end()))?;
-    build(&matches)
 }
 
 /// The flags clap says are missing ("the following required arguments were not provided").
@@ -163,16 +147,16 @@ fn expected_values(error: &str) -> Vec<String> {
 
 /// [`config_of`] for one flag and its values, with the flags clap says it needs added first.
 /// Returns the command-line tail shown and the result.
-fn try_flag(cmd: &mut Command, build: Build, flag: &str, values: &[String]) -> (String, Result<serde_json::Value, String>) {
+fn try_flag(cmd: &mut Command, flag: &str, values: &[String]) -> (String, Result<serde_json::Value, String>) {
     let mut flags: Vec<String> = std::iter::once(flag.to_string()).chain(values.iter().cloned()).collect();
     let mut shown = flags.join(" ");
-    let mut config = config_of(cmd, build, &flags);
+    let mut config = config_of(cmd, &flags);
     if let Err(e) = &config {
         let missing = missing_flags(e);
         if !missing.is_empty() {
             shown = format!("{shown} (with {})", missing.join(" "));
             flags.extend(missing);
-            config = config_of(cmd, build, &flags);
+            config = config_of(cmd, &flags);
         }
     }
     let first_line = |e: String| e.lines().next().unwrap_or("").to_string();
@@ -217,7 +201,7 @@ fn samples(arg: &Arg) -> Vec<Vec<String>> {
 }
 
 /// The snapshot's lines for one flag of `qsmxt run`.
-fn flag_lines(cmd: &mut Command, build: Build, base: &serde_json::Value, arg: &Arg) -> String {
+fn flag_lines(cmd: &mut Command, base: &serde_json::Value, arg: &Arg) -> String {
     let mut out = String::new();
     let Some(long) = arg.get_long() else { return out };
     if arg.is_positional()
@@ -227,7 +211,7 @@ fn flag_lines(cmd: &mut Command, build: Build, base: &serde_json::Value, arg: &A
     let flag = format!("--{long}");
     let free = arg.get_possible_values().is_empty() && arg.get_default_values().is_empty()
         && !matches!(arg.get_action(), ArgAction::SetTrue | ArgAction::SetFalse | ArgAction::Count);
-    let mut tries: Vec<_> = samples(arg).iter().map(|values| try_flag(cmd, build, &flag, values)).collect();
+    let mut tries: Vec<_> = samples(arg).iter().map(|values| try_flag(cmd, &flag, values)).collect();
     if free {
         // A flag that takes any value shows the first sample the run accepts; else every value
         // its parser lists when it refuses one; else the first sample clap accepts, else the
@@ -237,7 +221,7 @@ fn flag_lines(cmd: &mut Command, build: Build, base: &serde_json::Value, arg: &A
         tries = if let Some(i) = tries.iter().position(|(_, c)| c.is_ok()) {
             vec![tries.swap_remove(i)]
         } else if let Some(listed) = listed {
-            listed.iter().map(|v| try_flag(cmd, build, &flag, &vec![v.clone(); n])).collect()
+            listed.iter().map(|v| try_flag(cmd, &flag, &vec![v.clone(); n])).collect()
         } else if let Some(i) = tries.iter().position(|(_, c)| !matches!(c, Err(e) if e.starts_with("clap:"))) {
             vec![tries.swap_remove(i)]
         } else {
@@ -269,7 +253,7 @@ fn flag_lines(cmd: &mut Command, build: Build, base: &serde_json::Value, arg: &A
 #[test]
 fn what_each_run_flag_sets() {
     const THREADS: usize = 4;
-    let base = config_of(&mut cli(), build, &[]).expect("qsmxt run <bids> runs with the defaults");
+    let base = config_of(&mut cli(), &[]).expect("qsmxt run <bids> runs with the defaults");
     let args: Vec<Arg> = cli().find_subcommand("run").unwrap().get_arguments().cloned().collect();
     let chunk = args.len().div_ceil(THREADS);
     let parts: Vec<String> = std::thread::scope(|scope| {
@@ -277,70 +261,10 @@ fn what_each_run_flag_sets() {
             let base = &base;
             scope.spawn(move || {
                 let mut cmd = cli();
-                part.iter().map(|arg| flag_lines(&mut cmd, build, base, arg)).collect::<String>()
+                part.iter().map(|arg| flag_lines(&mut cmd, base, arg)).collect::<String>()
             })
         }).collect();
         handles.into_iter().map(|h| h.join().unwrap()).collect()
     });
     snapshot::check(DIR, "run_flags.txt", &normalise(&parts.concat()));
-}
-
-/// The flag table's configuration ([`crate::cli_settings::build_config`]) is today's, flag by
-/// flag: every `run` flag's lines in `run_flags.txt` come out the same.
-#[test]
-fn the_flag_table_sets_what_each_run_flag_sets() {
-    let mut cmd = cli();
-    let base = config_of(&mut cmd, build, &[]).unwrap();
-    let args: Vec<Arg> = cmd.find_subcommand("run").unwrap().get_arguments().cloned().collect();
-    let table: Vec<&str> = qsmxt_engine::schema::cli::PIPELINE_FLAGS.iter().map(|f| f.long).collect();
-    let mut differ = Vec::new();
-    for arg in args.iter().filter(|a| a.get_long().is_some_and(|l| table.contains(&l))) {
-        let (old, new) = (flag_lines(&mut cmd, build, &base, arg), flag_lines(&mut cmd, build_from_table, &base, arg));
-        if old != new {
-            differ.push(format!("--- old\n{old}+++ new\n{new}"));
-        }
-    }
-    assert!(differ.is_empty(), "{} flags differ:\n{}", differ.len(), differ.join("\n"));
-}
-
-/// [`the_flag_table_sets_what_each_run_flag_sets`] for flags together: each pipeline with each
-/// flag's first sample, and combinations whose order matters.
-#[test]
-#[ignore = "slow: about 5 min unoptimised; until the old apply goes (refactor P3)"]
-fn the_flag_table_sets_what_flags_set_together() {
-    let mut cmd = cli();
-    let args: Vec<Arg> = cmd.find_subcommand("run").unwrap().get_arguments().cloned().collect();
-    let table: Vec<&str> = qsmxt_engine::schema::cli::PIPELINE_FLAGS.iter().map(|f| f.long).collect();
-    let mut lines: Vec<Vec<String>> = Vec::new();
-    for p in qsmxt_engine::pipelines::ids() {
-        for arg in args.iter().filter(|a| a.get_long().is_some_and(|l| table.contains(&l) && l != "pipeline")) {
-            let first = samples(arg).into_iter().next().unwrap_or_default();
-            lines.push(["--pipeline", p].iter().map(|s| s.to_string())
-                .chain(std::iter::once(format!("--{}", arg.get_long().unwrap()))).chain(first).collect());
-        }
-    }
-    for l in [
-        "--mask-preset bet --masking-input magnitude-last --bet-fractional-intensity 0.3",
-        "--mask magnitude,bet:0.4 --masking-input magnitude --bet-voxel-scale 2",
-        "--pipeline medi-toolbox --medi-smv --inhomogeneity-correction",
-        "--no-inhomogeneity-correction --inhomogeneity-correction",
-        "--qsmart-fit-percentile 90 --qsmart-fit-threshold-mode absolute",
-        "--qsmart-fit-threshold 0.1",
-        "--two-pass-mask magnitude,threshold:otsu --two-pass-mode original --mask-preset hd-bet",
-        "--qsm-algorithm heidi --no-heidi-denoise",
-        "--pipeline heidi --qsm-algorithm lsqr",
-        "--qsm-reference thalamus --synthseg-version v2",
-        "--romeo-template 3 --no-romeo-mag-weight --romeo-phase-linearity",
-        "--dismiss-recommendation medi.bg-pdf=vsharp --dismiss-recommendation medi.bg-pdf=lbv",
-    ] {
-        lines.push(l.split(' ').map(String::from).collect());
-    }
-    let mut differ = Vec::new();
-    for flags in &lines {
-        let (old, new) = (config_of(&mut cmd, build, flags), config_of(&mut cmd, build_from_table, flags));
-        if old != new {
-            differ.push(format!("{}\n  old {:?}\n  new {:?}", flags.join(" "), old.map(|_| "…"), new.map(|_| "…")));
-        }
-    }
-    assert!(differ.is_empty(), "{} of {} differ:\n{}", differ.len(), lines.len(), differ.join("\n"));
 }
