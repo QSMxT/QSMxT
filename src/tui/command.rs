@@ -256,13 +256,10 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         SeparationAlgorithmArg::ChiSepNet,
     ];
 
-    // Multi-orientation settings live on the Input tab, next to the grouping they depend on.
-    let (orientation_group, orientation_algorithm, orientation_lambda) =
-        app.filter_state.orientation_args();
-    // Settings that only apply in some configurations are passed only then, matching the rows
-    // the TUI shows: a hidden value must not change the run.
+    // The orientation grouping is set on the Input tab; how a group is reconstructed is set from
+    // the form's settings store ([`stored_values`]).
+    let orientation_group = app.filter_state.orientation_group_by();
     let grouped = orientation_group.is_some();
-    let weighted_cosmos = grouped && orientation_algorithm == 0 && ps.cosmos_magnitude_weighting;
     let inputs = app.input_relevance();
 
     PipelineArgs {
@@ -272,22 +269,15 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         qsm_algorithm: Some(qsm_options.get(ps.qsm_algorithm).copied().unwrap_or_else(default_qsm_algorithm_arg)),
         // The HEIDI checkbox (with LSQR, LSQR+HEIDI); not offered for multi-orientation runs.
         heidi: ps.heidi_enabled && !grouped,
-        multi_orientation_algorithm: orientation_group.as_ref().map(|_| {
-            if orientation_algorithm == 1 {
-                crate::cli::MultiOrientAlgorithmArg::Sti
-            } else {
-                crate::cli::MultiOrientAlgorithmArg::Cosmos
-            }
-        }),
-        multi_orientation_lambda: orientation_lambda,
-        orientation_reference: Some(app.filter_state.orientation_reference.trim().to_string())
-            .filter(|r| grouped && !r.is_empty()),
+        multi_orientation_algorithm: None,
+        multi_orientation_lambda: None,
+        orientation_reference: None,
         orientation_group,
-        multi_orientation_force: grouped && ps.multi_orientation_force,
-        no_orientation_registration: grouped && !ps.orientation_registration,
-        cosmos_magnitude_weighting: weighted_cosmos,
-        cosmos_tol: if weighted_cosmos { parse_optional_f64(&ps.cosmos_tol) } else { None },
-        cosmos_max_iter: if weighted_cosmos { parse_optional_usize(&ps.cosmos_max_iter) } else { None },
+        multi_orientation_force: false,
+        no_orientation_registration: false,
+        cosmos_magnitude_weighting: false,
+        cosmos_tol: None,
+        cosmos_max_iter: None,
         // Said when not the general default.
         unwrapping_algorithm: (ps.unwrapping_algorithm != 0).then(|| unwrap_options[ps.unwrapping_algorithm]),
         // Only when the inversion has a background-removal stage: otherwise the choice has no
@@ -714,17 +704,10 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         swi_filtered_phase: false,
         no_magnitude: false,
         do_smwi: false,
-        do_segmentation: form.do_segmentation,
-        do_analysis: form.do_analysis,
-        segmentation_params: crate::cli::SegmentationParamArgs {
-            synthseg_version: Some(if form.synthseg_version == 1 { "v2".into() } else { "v1".into() }),
-            synthseg_crop: parse_optional_usize(&form.synthseg_crop),
-            synthseg_patch: parse_optional_usize(&form.synthseg_patch),
-            no_synthseg_flip_averaging: !form.synthseg_flip_averaging,
-            no_synthseg_topology_cleanup: !form.synthseg_topology_cleanup,
-            synthseg_sigma: if form.synthseg_smoothing { parse_optional_f64(&form.synthseg_sigma) } else { Some(0.0) },
-            use_custom_dseg: Some(ps.custom_dseg_tool.trim()).filter(|t| !t.is_empty()).map(str::to_string),
-        },
+        // The segmentation's settings are set from the form's settings store ([`stored_values`]).
+        do_segmentation: false,
+        do_analysis: false,
+        segmentation_params: Default::default(),
         smwi_params: Default::default(),
         // The relaxometry maps and R2' settings are set from the form's settings store ([`stored_values`]).
         do_t2starmap: false,
@@ -948,8 +931,15 @@ fn stored_values(app: &App, args: &PipelineArgs) -> crate::Result<Vec<(&'static 
     if changed.is_empty() && refused.is_empty() {
         return Ok(changed);
     }
+    // Which apply is decided on the form's whole config. Should the fields' checks refuse a
+    // stored setting (multi-orientation's, say, of a hidden COSMOS tolerance), the fields are
+    // written first, so that the checks see only the stored settings that apply, as the run does.
     let mut config = settings.config_of(&changed);
-    crate::pipeline::config::apply_run_overrides_as_given(&mut config, args)?;
+    if crate::pipeline::config::apply_run_overrides_as_given(&mut config, args).is_err() {
+        config = PipelineConfig::default();
+        crate::pipeline::config::apply_run_overrides_as_given(&mut config, args)?;
+        config = super::settings_rows::with_values(&config, &changed);
+    }
     let visible = app.visible_settings(&config);
     // Typed text the run cannot take is an error while its setting applies, as on the command
     // line: the run is refused rather than run with something else.
@@ -1448,22 +1438,23 @@ mod tests {
     fn orientation_registration_and_force_reach_config_and_args() {
         let mut app = default_app();
         // Without a grouping they act on nothing: not passed on.
-        app.pipeline_state.toggle("orientation_registration");
-        app.pipeline_state.toggle("multi_orientation_force");
-        let a = pipeline_args_from_app(&app);
-        assert!(!a.no_orientation_registration && !a.multi_orientation_force);
+        app.toggle_field("orientation_registration");
+        app.toggle_field("multi_orientation_force");
+        let c = config_from_app(&app).unwrap();
+        assert!(c.multi_orientation.register && !c.multi_orientation.force);
 
         let mut app = default_app();
         app.filter_state.orientation_group = "acq".into();
         app.sync_pipeline_mode();
         let c = config_from_app(&app).unwrap();
         assert!(c.multi_orientation.register && !c.multi_orientation.force);
-        app.pipeline_state.toggle("orientation_registration");
-        app.pipeline_state.toggle("multi_orientation_force");
+        app.toggle_field("orientation_registration");
+        app.toggle_field("multi_orientation_force");
         let c = config_from_app(&app).unwrap();
         assert!(!c.multi_orientation.register && c.multi_orientation.force);
-        let a = pipeline_args_from_app(&app);
-        assert!(a.no_orientation_registration && a.multi_orientation_force);
+        app.form.bids_dir = "/b".into();
+        let run = crate::cli_settings::build_config(Default::default(), &build_run_args(&app).unwrap().pipeline).unwrap();
+        assert!(!run.multi_orientation.register && run.multi_orientation.force);
         let shows_reg = |app: &App| app.pipeline_rows().iter().any(|r|
             matches!(r, crate::tui::app::PipelineRow::Param { field: "reg_levels", .. }));
         assert!(!shows_reg(&app), "neither registration can run");
@@ -1471,7 +1462,7 @@ mod tests {
         assert!(shows_reg(&app));
         // Co-registering a group's orientations runs it too.
         app.toggle_field("motion_correction");
-        app.pipeline_state.toggle("orientation_registration");
+        app.toggle_field("orientation_registration");
         assert!(shows_reg(&app));
         app.filter_state.orientation_group.clear();
         assert!(!shows_reg(&app), "no group, nothing to co-register");
@@ -1526,8 +1517,8 @@ mod tests {
 
         // Off is ROMEO's default here; turned on, the threshold shown is passed.
         app.pipeline_state.romeo_temporal_uncertain = true;
-        app.form.synthseg_smoothing = false;
-        app.form.do_segmentation = true;
+        app.form.settings.switch("segmentation.sigma_smoothing", false);
+        app.form.settings.set("pipeline.do_segmentation", true);
         let cmd = build_command_string(&app);
         for f in ["--romeo-temporal-uncertain-unwrapping 0.5", "--synthseg-sigma 0"] {
             assert!(cmd.contains(f), "{f} missing: {cmd}");
@@ -2398,8 +2389,8 @@ mod parity {
         let starts: &[Start] = &[
             |_| {},
             |a| a.filter_state.orientation_group = "acq".into(),
-            |a| { a.filter_state.orientation_group = "acq".into(); a.filter_state.orientation_algorithm = 1; },
-            |a| { a.form.settings.set("pipeline.do_r2primemap", true); a.form.settings.set("pipeline.do_r2map", true); a.form.do_analysis = true; },
+            |a| { a.filter_state.orientation_group = "acq".into(); a.set_field_select("orientation_algorithm", 1); },
+            |a| { a.form.settings.set("pipeline.do_r2primemap", true); a.form.settings.set("pipeline.do_r2map", true); a.form.settings.set("pipeline.do_analysis", true); },
         ];
         let start_app = |i: usize| {
             let mut app = App::new();
@@ -2665,17 +2656,17 @@ mod parity {
         type Edit = fn(&mut App);
         let surfaces: &[(&str, Edit, Edit)] = &[
             ("orientation_group", |_| {}, |a| a.filter_state.orientation_group = "acq".into()),
-            ("orientation_algorithm", |a| a.filter_state.orientation_group = "acq".into(), |a| a.filter_state.orientation_algorithm = 1),
-            ("orientation_lambda", |a| a.filter_state.orientation_group = "acq".into(), |a| a.filter_state.orientation_lambda = "0.5".into()),
-            ("orientation_reference", |a| a.filter_state.orientation_group = "acq".into(), |a| a.filter_state.orientation_reference = "Neutral".into()),
+            ("orientation_algorithm", |a| a.filter_state.orientation_group = "acq".into(), |a| a.set_field_select("orientation_algorithm", 1)),
+            ("orientation_lambda", |a| a.filter_state.orientation_group = "acq".into(), |a| *a.field_text_mut("orientation_lambda").unwrap() = "0.5".into()),
+            ("orientation_reference", |a| a.filter_state.orientation_group = "acq".into(), |a| *a.field_text_mut("orientation_reference").unwrap() = "Neutral".into()),
             ("bet_smoothness", |a| a.pipeline_state.set_select("mask_preset", 1), |a| a.pipeline_state.bet_smoothness = "2".into()),
             ("bet_gradient_threshold", |a| a.pipeline_state.set_select("mask_preset", 1), |a| a.pipeline_state.bet_gradient_threshold = "0.3".into()),
             ("bet_iterations", |a| a.pipeline_state.set_select("mask_preset", 1), |a| a.pipeline_state.bet_iterations = "500".into()),
             ("bet_subdivisions", |a| a.pipeline_state.set_select("mask_preset", 1), |a| a.pipeline_state.bet_subdivisions = "3".into()),
             ("bet_orientation", |a| a.pipeline_state.set_select("mask_preset", 1), |a| a.pipeline_state.bet_orientation = 1),
-            ("cosmos_magnitude_weighting", |a| a.filter_state.orientation_group = "acq".into(), |a| a.pipeline_state.cosmos_magnitude_weighting = true),
-            ("cosmos_tol", |a| { a.filter_state.orientation_group = "acq".into(); a.pipeline_state.cosmos_magnitude_weighting = true; }, |a| a.pipeline_state.cosmos_tol = "1e-4".into()),
-            ("cosmos_max_iter", |a| { a.filter_state.orientation_group = "acq".into(); a.pipeline_state.cosmos_magnitude_weighting = true; }, |a| a.pipeline_state.cosmos_max_iter = "250".into()),
+            ("cosmos_magnitude_weighting", |a| a.filter_state.orientation_group = "acq".into(), |a| a.form.settings.set("multi_orientation.magnitude_weighting", true)),
+            ("cosmos_tol", |a| { a.filter_state.orientation_group = "acq".into(); a.form.settings.set("multi_orientation.magnitude_weighting", true); }, |a| *a.field_text_mut("cosmos_tol").unwrap() = "1e-4".into()),
+            ("cosmos_max_iter", |a| { a.filter_state.orientation_group = "acq".into(); a.form.settings.set("multi_orientation.magnitude_weighting", true); }, |a| *a.field_text_mut("cosmos_max_iter").unwrap() = "250".into()),
             ("mask sections", |_| {}, |a| {
                 let mut extra = a.pipeline_state.mask_sections[0].clone();
                 extra.input = crate::pipeline::config::MaskingInput::Magnitude;

@@ -93,8 +93,7 @@ impl App {
 
     /// The settings of the form, to tell whether a round changed any.
     fn form_print(&self) -> String {
-        format!("{:?}{:?}{:?}{:?}", self.form, self.pipeline_state, self.filter_state.orientation_group,
-                self.filter_state.orientation_algorithm)
+        format!("{:?}{:?}{:?}", self.form, self.pipeline_state, self.filter_state.orientation_group)
     }
 
     /// Set the row `field` to the value `v` of its setting at `path`, by the setting's kind.
@@ -230,9 +229,10 @@ impl App {
         let sigma = config.segmentation.sigma_smoothing;
         if differs("segmentation.sigma_smoothing") {
             // Off is a sigma of 0; the sigma row keeps its number while off.
-            self.form.synthseg_smoothing = sigma > 0.0;
             if sigma > 0.0 {
-                self.form.synthseg_sigma = format!("{sigma}");
+                self.form.settings.set("segmentation.sigma_smoothing", sigma);
+            } else {
+                self.form.settings.switch("segmentation.sigma_smoothing", false);
             }
         }
     }
@@ -380,7 +380,7 @@ mod tests {
         for acts in forms {
             let mut app = build(acts);
             // Hidden unless COSMOS is weighted: not passed on, so the config cannot say it.
-            app.pipeline_state.cosmos_tol = "5".into();
+            *app.field_text_mut("cosmos_tol").unwrap() = "5".into();
             let before = app.form_print();
             let config = config_from_app(&app).unwrap();
             app.set_form_from_config(&config);

@@ -13,6 +13,9 @@ use crate::nifti;
 
 use super::settings_rows::{stored_path, stored_placeholder};
 
+/// The supplied segmentation's tool: whether one is named is the segmentation's source.
+const DSEG: &str = "segmentation.custom_dseg_tool";
+
 // ─── Input mode ───
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -929,12 +932,6 @@ fn word_boundary_left(text: &str, cursor: usize) -> usize {
     pos
 }
 
-/// COSMOS or STI, in the order the TUI cycles them.
-pub const ORIENTATION_ALGORITHMS: [&str; 2] = ["cosmos", "sti"];
-pub const ORIENTATION_ALGORITHM_HELP: [&str; 2] = [
-    "COSMOS — scalar susceptibility from 2+ orientations, co-registered if needed, closed form in k-space",
-    "STI — rank-2 susceptibility tensor; needs 6+ orientations that are not coplanar",
-];
 
 /// Where ←/→ can put a run of the tree ([`FilterTreeState::orientation_slots`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1004,11 +1001,6 @@ pub struct FilterTreeState {
     pub orientation_group: String,
     pub orientation_editing: bool,
     pub orientation_cursor: usize,
-    /// Index into [`ORIENTATION_ALGORITHMS`].
-    pub orientation_algorithm: usize,
-    pub orientation_lambda: String,
-    /// `--orientation-reference`; empty = the first member by name.
-    pub orientation_reference: String,
     pub scanned_bids_dir: Option<String>,
     pub scroll_offset: usize,
     /// Set when the user manually toggles tree checkboxes (pattern may not match)
@@ -1035,9 +1027,6 @@ impl Default for FilterTreeState {
             orientation_group: String::new(),
             orientation_editing: false,
             orientation_cursor: 0,
-            orientation_algorithm: 0,
-            orientation_lambda: String::new(),
-            orientation_reference: String::new(),
             scanned_bids_dir: None,
             scroll_offset: 0,
             manual_override: false,
@@ -1140,7 +1129,10 @@ impl FilterTreeState {
     /// Only structure is previewed here, not physics: B0 directions live in sidecars and
     /// affines that would have to be read from disk on every keystroke. `qsmxt run --dry`
     /// prints the direction table and the degeneracy verdict for each group.
-    pub fn orientation_preview(&self) -> OrientationPreview {
+    ///
+    /// `reference` is the orientation the others are registered onto (a setting of the config,
+    /// `multi_orientation.reference`).
+    pub fn orientation_preview(&self, reference: &str) -> OrientationPreview {
         if !self.multi_orientation_on() {
             return OrientationPreview::default();
         }
@@ -1168,7 +1160,7 @@ impl FilterTreeState {
         // shown as the error the run would refuse with.
         let strings: Vec<String> = keys.iter().map(|(_, s)| s.clone()).collect();
         let error = crate::bids::orientation::apply_reference(
-            &mut groups, &strings, &self.orientation_reference).err();
+            &mut groups, &strings, reference).err();
         let resolved = error.is_none();
         let member_of = groups.iter().enumerate()
             .flat_map(|(g, group)| group.members.iter().enumerate()
@@ -1197,16 +1189,9 @@ impl FilterTreeState {
         }
     }
 
-    /// The multi-orientation settings, in the form the command builder wants.
-    pub fn orientation_args(&self) -> (Option<String>, usize, Option<f64>) {
-        if !self.multi_orientation_on() {
-            return (None, 0, None);
-        }
-        (
-            Some(self.orientation_group.trim().to_string()),
-            self.orientation_algorithm,
-            self.orientation_lambda.trim().parse::<f64>().ok(),
-        )
+    /// The orientation grouping, trimmed, while one is set.
+    pub fn orientation_group_by(&self) -> Option<String> {
+        self.multi_orientation_on().then(|| self.orientation_group.trim().to_string())
     }
 
     /// Scan BIDS directory if it changed since last scan.
@@ -1310,11 +1295,11 @@ impl FilterTreeState {
 
     /// The orientation groups as run keys, each with its reference first: as listed (`runs:`),
     /// or as a typed pattern groups the selected runs now.
-    pub fn orientation_groups(&self) -> Vec<Vec<String>> {
+    pub fn orientation_groups(&self, reference: &str) -> Vec<Vec<String>> {
         if let Some(groups) = crate::bids::orientation::listed_groups(&self.orientation_group) {
             return groups;
         }
-        let preview = self.orientation_preview();
+        let preview = self.orientation_preview(reference);
         let mut groups: Vec<Vec<String>> = vec![Vec::new(); preview.groups.len()];
         let mut members: Vec<(&String, &(usize, bool))> = preview.member_of.iter().collect();
         members.sort_by_key(|(k, (g, reference))| (*g, !*reference, preview.order.iter().position(|o| o == *k)));
@@ -1326,8 +1311,8 @@ impl FilterTreeState {
 
     /// Where ←/→ can put the focused run, in order, and where it is now: no group, then each
     /// group of its session as a member and as the reference, then a new group.
-    pub fn orientation_slots(&mut self) -> Option<(Vec<OrientationSlot>, usize)> {
-        let groups = self.orientation_groups();
+    pub fn orientation_slots(&mut self, reference: &str) -> Option<(Vec<OrientationSlot>, usize)> {
+        let groups = self.orientation_groups(reference);
         let run = self.focused_run()?;
         let (key, session) = (run.key_string.clone(), session_of(&run.key));
         let keys = self.run_keys();
@@ -1361,13 +1346,15 @@ impl FilterTreeState {
     /// The groups are kept as the pattern itself, listed (`runs:`), each with its reference
     /// first, so the config and the command line need nothing new. A typed pattern's groups
     /// are where this starts from.
-    pub fn move_orientation(&mut self, forward: bool) {
-        let Some((slots, now)) = self.orientation_slots() else { return };
+    ///
+    /// Each group's reference is then its first run: the caller clears the reference setting.
+    pub fn move_orientation(&mut self, forward: bool, reference: &str) {
+        let Some((slots, now)) = self.orientation_slots(reference) else { return };
         let next = if forward { (now + 1).min(slots.len() - 1) } else { now.saturating_sub(1) };
         if next == now {
             return;
         }
-        let mut groups = self.orientation_groups();
+        let mut groups = self.orientation_groups(reference);
         let Some(run) = self.focused_run() else { return };
         let key = run.key_string.clone();
         if slots[next] != OrientationSlot::None {
@@ -1385,8 +1372,6 @@ impl FilterTreeState {
         }
         self.orientation_group = crate::bids::orientation::runs_pattern(&groups);
         self.orientation_cursor = self.orientation_group.len();
-        // Each group's reference is now its first run.
-        self.orientation_reference.clear();
     }
 
     /// Every run's key, with its subject and session.
@@ -1953,13 +1938,6 @@ pub struct PipelineFormState {
     pub prelude_labelling: usize,
     /// PRELUDE's number of phase partitions.
     pub prelude_partitions: String,
-    /// Multi-orientation (grouping is on the Input tab): co-register a group's orientations when
-    /// they need it, and reconstruct past the direction-degeneracy check.
-    pub orientation_registration: bool,
-    pub multi_orientation_force: bool,
-    pub cosmos_magnitude_weighting: bool,
-    pub cosmos_tol: String,
-    pub cosmos_max_iter: String,
 
     // Parameters (as Strings for text editing)
     pub inhomogeneity_correction: bool,
@@ -1989,8 +1967,6 @@ pub struct PipelineFormState {
     pub amp_pe_max_pe_spar_ite: String,
     pub amp_pe_max_pe_est_ite: String,
     pub amp_pe_cvg_thd: String,
-    /// Bring-your-own segmentation from derivatives (empty = off, * = any tool).
-    pub custom_dseg_tool: String,
 
     // Deep-learning overlap-tiling (empty = off / whole-volume). Shown for tileable DL inversions.
     /// Run the deep-learning inversion tiled (`--tile-size`); off = whole volume.
@@ -2440,11 +2416,6 @@ impl Default for PipelineFormState {
             prelude_labelling: PRELUDE_LABELLING_OPTIONS.iter()
                 .position(|o| *o == qsmxt_engine::PreludeConfig::default().labelling.to_string()).unwrap_or(0),
             prelude_partitions: qsmxt_engine::PreludeConfig::default().num_phase_partitions.to_string(),
-            orientation_registration: true,
-            multi_orientation_force: false,
-            cosmos_magnitude_weighting: false,
-            cosmos_tol: format!("{}", qsmxt_engine::MultiOrientationConfig::default().cosmos_tol),
-            cosmos_max_iter: format!("{}", qsmxt_engine::MultiOrientationConfig::default().cosmos_max_iter),
             inhomogeneity_correction: true,
             inhomogeneity_method: 0, // makehomogeneous
             homogeneity_sigma_mm: fmt_default(qsmxt_engine::HomogeneityConfig::default().sigma_mm),
@@ -2472,7 +2443,6 @@ impl Default for PipelineFormState {
             amp_pe_max_pe_spar_ite: qsm_core::inversion::AmpPeParams::default().max_pe_spar_ite.to_string(),
             amp_pe_max_pe_est_ite: qsm_core::inversion::AmpPeParams::default().max_pe_est_ite.to_string(),
             amp_pe_cvg_thd: fmt_default(qsm_core::inversion::AmpPeParams::default().cvg_thd),
-            custom_dseg_tool: String::new(),
             dl_tiling: false,
             dl_tile_size: "128".to_string(),
             dl_tile_halo: String::new(),
@@ -3206,21 +3176,6 @@ impl PipelineFormState {
         PipelineRow::Param { label: "  Custom QSM tool", field: "custom_qsm_tool", help: "Use a Chimap from <bids>/derivatives/<tool>/ instead of recomputing QSM (χ-separation, statistics, SMWI); blank = compute, * = any tool" }
     }
 
-    /// The rigid registration's settings: one block, under each of the two things that register
-    /// (motion correction and orientation co-registration), editing the same values.
-    fn push_registration_rows(rows: &mut Vec<PipelineRow>) {
-        rows.push(PipelineRow::Note { text: "  Rigid registration (advanced):".into() });
-        rows.push(PipelineRow::Param { label: "    Levels", field: "reg_levels", help: "Pyramid levels: the capture range; do not lower (default 5)" });
-        rows.push(PipelineRow::Param { label: "    Max samples", field: "reg_max_samples", help: "Voxels sampled per metric evaluation, per level" });
-        rows.push(PipelineRow::Param { label: "    Max iterations", field: "reg_max_iterations", help: "Powell cycles per level" });
-        rows.push(PipelineRow::Param { label: "    Max evaluations", field: "reg_max_evaluations", help: "Metric evaluations across all levels (hard stop)" });
-        rows.push(PipelineRow::Param { label: "    Tolerance", field: "reg_tolerance", help: "Relative cost improvement per cycle that counts as converged" });
-        rows.push(PipelineRow::Param { label: "    Rotation step (deg)", field: "reg_rotation_step_deg", help: "Initial rotation step at the finest level" });
-        rows.push(PipelineRow::Param { label: "    Translation step (mm)", field: "reg_translation_step_mm", help: "Initial translation step at the finest level" });
-        rows.push(PipelineRow::Param { label: "    Min overlap", field: "reg_min_overlap", help: "Smallest fraction of sampled voxels that must overlap" });
-    }
-
-
     /// Preprocessing → Masking: the inhomogeneity correction of the magnitude masking reads (and
     /// the combined magnitude is made from).
     fn inhomogeneity_rows(&self, rows: &mut Vec<PipelineRow>) {
@@ -3888,40 +3843,6 @@ impl PipelineFormState {
 
     }
 
-    /// QSM → COSMOS/STI: how an orientation group (Input tab) is reconstructed.
-    fn multi_orientation_rows(&self, rows: &mut Vec<PipelineRow>) {
-        rows.push(PipelineRow::AlgoSelect {
-            label: "Combine as", field: "orientation_algorithm",
-            options: &ORIENTATION_ALGORITHMS, help: &ORIENTATION_ALGORITHM_HELP,
-        });
-        rows.push(PipelineRow::Param { label: "Lambda", field: "orientation_lambda",
-            help: "Regularization (blank = 0, plain least squares). Raise for 2 orientations or single-axis rotations" });
-        rows.push(PipelineRow::Param { label: "Reference orientation", field: "orientation_reference",
-            help: "Orientation the others are registered onto, whose grid and segmentation the group map uses: a glob over the run key (*acq-Neutral*) or a word in it. Blank = first by name. Pick the neutral head position" });
-        if self.ctx.orientation_cosmos {
-            rows.push(PipelineRow::Toggle {
-                label: "COSMOS magnitude weighting", field: "cosmos_magnitude_weighting",
-                help: "COSMOS groups: weight each orientation by its combined magnitude (conjugate-gradient solve). Off = closed-form least squares",
-            });
-            if self.cosmos_magnitude_weighting {
-                rows.push(PipelineRow::Param { label: "  CG tolerance", field: "cosmos_tol", help: "Conjugate-gradient tolerance of weighted COSMOS" });
-                rows.push(PipelineRow::Param { label: "  CG max iterations", field: "cosmos_max_iter", help: "Conjugate-gradient iteration cap of weighted COSMOS" });
-            }
-        }
-        rows.push(PipelineRow::Toggle {
-            label: "Co-register", field: "orientation_registration",
-            help: "Co-register orientations that need it, with the registration settings below. Off = refuse such groups",
-        });
-        if self.orientation_registration {
-            Self::push_registration_rows(rows);
-        }
-        rows.push(PipelineRow::Toggle {
-            label: "Force", field: "multi_orientation_force",
-            help: "Reconstruct even when the B0 directions look degenerate (wrong metadata gives a plausible wrong map)",
-        });
-    }
-
-
     /// Every pipeline row that shows now, page after page (the QSM switch once): for tests that
     /// ask whether a setting is reachable, not where.
     #[cfg(test)]
@@ -3932,7 +3853,6 @@ impl PipelineFormState {
         if self.qsm_runs() {
             if self.field_mapping_runs().0 { self.field_map_rows(&mut rows); }
             self.inversion_rows(&mut rows);
-            if self.ctx.orientation_group { self.multi_orientation_rows(&mut rows); }
         }
         self.separation_rows(&mut rows);
         rows
@@ -3949,7 +3869,6 @@ impl PipelineFormState {
             Page::ComputeQsm => self.compute_qsm_rows(&mut rows),
             Page::FieldMap => self.field_map_rows(&mut rows),
             Page::Inversion => self.inversion_rows(&mut rows),
-            Page::MultiOrientation => self.multi_orientation_rows(&mut rows),
             Page::Separation => self.separation_rows(&mut rows),
             _ => {}
         }
@@ -4022,7 +3941,6 @@ impl PipelineFormState {
         "robust_fit_tuning", "robust_fit_iterations",
         "robust_fit_downweight_level", "robust_fit_flag_ratio",
         "complex_fit_reltol", "complex_fit_max_iter", "medi_lambda_csf", "medi_csf_r2s_threshold", "medi_zeropad",
-        "cosmos_tol", "cosmos_max_iter",
     ];
 
     /// Get a string parameter value by field name.
@@ -4046,7 +3964,6 @@ impl PipelineFormState {
             "amp_pe_max_pe_spar_ite" => &self.amp_pe_max_pe_spar_ite,
             "amp_pe_max_pe_est_ite" => &self.amp_pe_max_pe_est_ite,
             "amp_pe_cvg_thd" => &self.amp_pe_cvg_thd,
-            "custom_dseg_tool" => &self.custom_dseg_tool,
             "dl_tile_size" => &self.dl_tile_size,
             "dl_tile_halo" => &self.dl_tile_halo,
             "rts_delta" => &self.rts_delta,
@@ -4093,8 +4010,6 @@ impl PipelineFormState {
             "medi_lambda_csf" => &self.medi_lambda_csf,
             "medi_csf_r2s_threshold" => &self.medi_csf_r2s_threshold,
             "medi_zeropad" => &self.medi_zeropad,
-            "cosmos_tol" => &self.cosmos_tol,
-            "cosmos_max_iter" => &self.cosmos_max_iter,
             "heidi_gradient_mask_floor" => &self.heidi_gradient_mask_floor,
             "heidi_continuation_steps" => &self.heidi_continuation_steps,
             "heidi_inner_iterations" => &self.heidi_inner_iterations,
@@ -4279,7 +4194,6 @@ impl PipelineFormState {
             "amp_pe_max_pe_spar_ite" => Some(&mut self.amp_pe_max_pe_spar_ite),
             "amp_pe_max_pe_est_ite" => Some(&mut self.amp_pe_max_pe_est_ite),
             "amp_pe_cvg_thd" => Some(&mut self.amp_pe_cvg_thd),
-            "custom_dseg_tool" => Some(&mut self.custom_dseg_tool),
             "dl_tile_size" => Some(&mut self.dl_tile_size),
             "dl_tile_halo" => Some(&mut self.dl_tile_halo),
             "rts_delta" => Some(&mut self.rts_delta),
@@ -4326,8 +4240,6 @@ impl PipelineFormState {
             "medi_lambda_csf" => Some(&mut self.medi_lambda_csf),
             "medi_csf_r2s_threshold" => Some(&mut self.medi_csf_r2s_threshold),
             "medi_zeropad" => Some(&mut self.medi_zeropad),
-            "cosmos_tol" => Some(&mut self.cosmos_tol),
-            "cosmos_max_iter" => Some(&mut self.cosmos_max_iter),
             "heidi_gradient_mask_floor" => Some(&mut self.heidi_gradient_mask_floor),
             "heidi_continuation_steps" => Some(&mut self.heidi_continuation_steps),
             "heidi_inner_iterations" => Some(&mut self.heidi_inner_iterations),
@@ -4649,9 +4561,6 @@ impl PipelineFormState {
             "romeo_phase_coherence" => self.romeo_phase_coherence,
             "medi_merit" => self.medi_merit,
             "ndi_auto_stop" => self.ndi_auto_stop,
-            "orientation_registration" => self.orientation_registration,
-            "multi_orientation_force" => self.multi_orientation_force,
-            "cosmos_magnitude_weighting" => self.cosmos_magnitude_weighting,
             "sep_decompose_unwrap_phase" => self.sep_decompose_unwrap_phase,
             _ => false,
         }
@@ -4698,9 +4607,6 @@ impl PipelineFormState {
             "romeo_phase_coherence" => self.romeo_phase_coherence = !self.romeo_phase_coherence,
             "medi_merit" => self.medi_merit = !self.medi_merit,
             "ndi_auto_stop" => self.ndi_auto_stop = !self.ndi_auto_stop,
-            "orientation_registration" => self.orientation_registration = !self.orientation_registration,
-            "multi_orientation_force" => self.multi_orientation_force = !self.multi_orientation_force,
-            "cosmos_magnitude_weighting" => self.cosmos_magnitude_weighting = !self.cosmos_magnitude_weighting,
             "sep_decompose_unwrap_phase" => self.sep_decompose_unwrap_phase = !self.sep_decompose_unwrap_phase,
             _ => {}
         }
@@ -5582,17 +5488,8 @@ fn forced_output(field: &str) -> Option<crate::pipeline::requirements::Output> {
     crate::pipeline::requirements::Output::of_setting(&format!("pipeline.{field}"))
 }
 
-const SYNTHSEG_VERSION_OPTIONS: &[&str] = &["v1", "v2"];
-const SYNTHSEG_VERSION_HELP: &[&str] = &["v1: SynthSeg 1.0, 32 labels (the default). v2: SynthSeg 2.0, 33 labels, adds a general CSF class (Billot et al., PNAS 2023)"; 2];
 const EXECUTION_MODE_OPTIONS: &[&str] = &["Local", "SLURM"];
 const EXECUTION_MODE_HELP: &[&str] = &["Local execution or generate SLURM job scripts"; 2];
-/// Where the segmentation comes from (a TUI-only choice: SynthSeg, or `--use-custom-dseg`).
-const SEGMENTATION_SOURCE_OPTIONS: &[&str] = &["synthseg", "custom dseg"];
-const SEGMENTATION_SOURCE_HELP: &[&str] = &[
-    "SynthSeg: whole-brain parcellation straight off the GRE magnitude — no T1w, no registration. Needs a deep-learning build",
-    "A dseg from BIDS derivatives (e.g. FreeSurfer's, made elsewhere); SynthSeg runs where none is found",
-];
-
 pub struct App {
     pub active_tab: usize,
     /// The sub-tab last chosen on each tab (see [`App::page`]).
@@ -5893,16 +5790,6 @@ pub struct RunForm {
     /// the ticked, so a map turned on later is exported unless it is unticked too.
     pub source_dicom: String,
     pub dicom_unticked: Vec<String>,
-    pub do_segmentation: bool,
-    pub do_analysis: bool,
-    pub synthseg_version: usize,
-    pub synthseg_crop: String,
-    pub synthseg_patch: String,
-    pub synthseg_flip_averaging: bool,
-    pub synthseg_topology_cleanup: bool,
-    /// Smooth SynthSeg's posteriors (off = a sigma of 0).
-    pub synthseg_smoothing: bool,
-    pub synthseg_sigma: String,
 
     // Tab 4: Execution
     pub execution_mode: usize, // 0=Local, 1=SLURM
@@ -5937,15 +5824,14 @@ macro_rules! named_fields {
 /// The run form's fields, by the names their rows carry.
 impl RunForm {
     named_fields!(text, text_mut, String, [
-        source_dicom, synthseg_crop, synthseg_patch, synthseg_sigma, n_procs, mem_limit_gb, slurm_account,
+        source_dicom, n_procs, mem_limit_gb, slurm_account,
         slurm_partition, slurm_time, slurm_mem, slurm_cpus,
     ]);
     named_fields!(flag, flag_mut, bool, [
         export_dicom,
-        do_segmentation, do_analysis, synthseg_flip_averaging, synthseg_topology_cleanup, synthseg_smoothing,
         dry_run, debug, force, clean_intermediates, slurm_submit,
     ]);
-    named_fields!(choice, choice_mut, usize, [synthseg_version, execution_mode]);
+    named_fields!(choice, choice_mut, usize, [execution_mode]);
 
     /// The memory limit row, read: `(limit in GB, no limit)` — empty or `auto` detects it.
     pub fn mem_limit(&self) -> (Option<f64>, bool) {
@@ -5958,7 +5844,6 @@ impl RunForm {
 
 impl Default for RunForm {
     fn default() -> Self {
-        let seg = crate::pipeline::config::SegmentationConfig::default();
         Self {
             bids_dir: String::new(),
             output_dir: String::new(),
@@ -5967,15 +5852,6 @@ impl Default for RunForm {
             export_dicom: false,
             source_dicom: String::new(),
             dicom_unticked: Vec::new(),
-            do_segmentation: false,
-            do_analysis: false,
-            synthseg_version: 0,
-            synthseg_crop: seg.crop.map(|c| format!("{c}")).unwrap_or_default(),
-            synthseg_patch: seg.patch.map(|p| format!("{p}")).unwrap_or_default(),
-            synthseg_flip_averaging: seg.flip_averaging,
-            synthseg_topology_cleanup: seg.topology_cleanup,
-            synthseg_smoothing: seg.sigma_smoothing > 0.0,
-            synthseg_sigma: format!("{}", seg.sigma_smoothing),
             execution_mode: 0,
             dry_run: false,
             debug: false,
@@ -6588,7 +6464,10 @@ impl App {
 
             // A run: its orientation group. A subject or session: collapse/expand.
             KeyCode::Left | KeyCode::Right if self.filter_state.focused_run().is_some() => {
-                self.filter_state.move_orientation(key.code == KeyCode::Right);
+                let reference = self.field_text("orientation_reference").into_owned();
+                self.filter_state.move_orientation(key.code == KeyCode::Right, &reference);
+                // Each group's reference is now its first run.
+                self.form.settings.reset("multi_orientation.reference", false);
             }
             KeyCode::Left | KeyCode::Right => self.filter_state.toggle_collapse(),
 
@@ -7447,7 +7326,8 @@ impl App {
     /// [`Self::row_context`], for the config the form builds now.
     fn row_context_with(&self, config: Option<&crate::pipeline::config::PipelineConfig>) -> RowContext {
         let ps = &self.pipeline_state;
-        let (group, algorithm, _) = self.filter_state.orientation_args();
+        let group = self.filter_state.orientation_group_by();
+        let algorithm = self.field_select("orientation_algorithm");
         // Whether QSM runs is the resolved config's answer — the same enforcement the run applies.
         // The config as the form gives it, and as the run takes it: QSM another output needs is
         // a required change the run makes itself when it is left off.
@@ -7486,7 +7366,7 @@ impl App {
         let ps = &self.pipeline_state;
         let f = &self.form;
         let mut c = qsmxt_engine::PipelineConfig::default();
-        (c.pipeline.do_chi_separation, c.pipeline.do_analysis, c.pipeline.do_smwi) = (ps.do_chi_separation, f.do_analysis, f.settings.toggle("pipeline.do_smwi"));
+        (c.pipeline.do_chi_separation, c.pipeline.do_analysis, c.pipeline.do_smwi) = (ps.do_chi_separation, f.settings.toggle("pipeline.do_analysis"), f.settings.toggle("pipeline.do_smwi"));
         let st = &f.settings;
         (c.pipeline.do_r2map, c.pipeline.do_r2primemap) = (st.toggle("pipeline.do_r2map"), st.toggle("pipeline.do_r2primemap"));
         if let Some(sep) = SEP_ALGO_OPTIONS.get(ps.separation_algorithm) {
@@ -8054,7 +7934,7 @@ impl App {
             Page::Magnitude => on(self.form.settings.toggle("pipeline.do_magnitude")),
             Page::Swi => on(self.form.settings.toggle("pipeline.do_swi")),
             Page::Relaxometry => on(["do_t2starmap", "do_r2starmap", "do_r2map", "do_r2primemap"].iter().any(|f| self.output_made(f))),
-            Page::Segmentation => on(self.output_made("do_segmentation") || self.form.do_analysis),
+            Page::Segmentation => on(self.output_made("do_segmentation") || self.form.settings.toggle("pipeline.do_analysis")),
             Page::Export => on(self.form.export_dicom),
             _ => SectionState::On,
         }
@@ -8301,7 +8181,6 @@ impl App {
             return rows;
         }
         match page {
-            Page::Segmentation => self.segmentation_rows(),
             Page::Export => self.export_rows(),
             Page::Execution => self.execution_rows(),
             _ => Vec::new(),
@@ -8376,11 +8255,9 @@ impl App {
         if let Some(path) = stored_path(field) {
             return self.form.settings.text(path);
         }
-        std::borrow::Cow::Borrowed(match (self.form.text(field), field) {
-            (Some(s), _) => s,
-            (None, "orientation_lambda") => &self.filter_state.orientation_lambda,
-            (None, "orientation_reference") => &self.filter_state.orientation_reference,
-            (None, _) => self.pipeline_state.get_param(field),
+        std::borrow::Cow::Borrowed(match self.form.text(field) {
+            Some(s) => s,
+            None => self.pipeline_state.get_param(field),
         })
     }
 
@@ -8389,10 +8266,6 @@ impl App {
             Some(self.form.settings.text_mut(path))
         } else if self.form.text(field).is_some() {
             self.form.text_mut(field)
-        } else if field == "orientation_lambda" {
-            Some(&mut self.filter_state.orientation_lambda)
-        } else if field == "orientation_reference" {
-            Some(&mut self.filter_state.orientation_reference)
         } else {
             self.pipeline_state.get_param_mut(field)
         }
@@ -8400,21 +8273,35 @@ impl App {
 
     /// A select's option index, by name.
     pub fn field_select(&self, field: &str) -> usize {
+        // A segmentation from derivatives, or SynthSeg's.
+        if field == "segmentation_source" {
+            return usize::from(!self.form.settings.text(DSEG).trim().is_empty());
+        }
         if let Some(path) = stored_path(field) {
             return self.form.settings.select(path);
         }
         if let Some(&c) = self.form.choice(field) {
             return c;
         }
-        match field {
-            "orientation_algorithm" => self.filter_state.orientation_algorithm,
-            // A segmentation from derivatives, or SynthSeg's.
-            "segmentation_source" => usize::from(!self.pipeline_state.custom_dseg_tool.trim().is_empty()),
-            _ => self.pipeline_state.get_select(field),
-        }
+        self.pipeline_state.get_select(field)
     }
 
     pub fn set_field_select(&mut self, field: &str, val: usize) {
+        // One representation per choice: a supplied segmentation (any tool, until named) is not
+        // also a SynthSeg request, and SynthSeg reads no derivatives.
+        if field == "segmentation_source" {
+            let st = &mut self.form.settings;
+            if val == 1 {
+                if st.text(DSEG).trim().is_empty() {
+                    st.set(DSEG, "*");
+                }
+                st.set("pipeline.do_segmentation", false);
+            } else {
+                st.reset(DSEG, false);
+                st.set("pipeline.do_segmentation", true);
+            }
+            return;
+        }
         if let Some(path) = stored_path(field) {
             return self.form.settings.set_select(path, val);
         }
@@ -8422,28 +8309,7 @@ impl App {
             *c = val;
             return;
         }
-        match field {
-            "orientation_algorithm" => self.filter_state.orientation_algorithm = val.min(ORIENTATION_ALGORITHMS.len() - 1),
-            // One representation per choice: a supplied segmentation (any tool, until named) is
-            // not also a SynthSeg request, and SynthSeg reads no derivatives.
-            "segmentation_source" => {
-                let ps = &mut self.pipeline_state;
-                if val == 1 {
-                    if ps.custom_dseg_tool.trim().is_empty() { ps.custom_dseg_tool = "*".into(); }
-                    self.form.do_segmentation = false;
-                } else {
-                    ps.custom_dseg_tool.clear();
-                    self.form.do_segmentation = true;
-                }
-            }
-            _ => self.pipeline_state.set_select(field, val),
-        }
-    }
-
-    /// Whether a segmentation is made or read: asked for, supplied, or needed by another setting
-    /// (which the run turns on itself when it is left off).
-    fn segmentation_on(&self) -> bool {
-        self.output_made("do_segmentation")
+        self.pipeline_state.set_select(field, val)
     }
 
     /// Whether the run makes an output: its checkbox is ticked, or another setting needs it (a
@@ -8470,7 +8336,8 @@ impl App {
             return !self.form.dicom_unticked.iter().any(|u| u.eq_ignore_ascii_case(m.suffix));
         }
         if field == "do_segmentation" {
-            return self.form.do_segmentation || !self.pipeline_state.custom_dseg_tool.trim().is_empty();
+            let st = &self.form.settings;
+            return st.toggle("pipeline.do_segmentation") || !st.text(DSEG).trim().is_empty();
         }
         if let Some(path) = stored_path(field) {
             return self.form.settings.toggle(path);
@@ -8498,20 +8365,21 @@ impl App {
         }
         if field == "do_segmentation" {
             if !self.field_toggle(field) {
-                self.form.do_segmentation = true;
+                self.form.settings.set("pipeline.do_segmentation", true);
                 return;
             }
             // What needs a segmentation whichever its source: asked with no dseg supplied.
-            let dseg = std::mem::take(&mut self.pipeline_state.custom_dseg_tool);
+            let kept = self.form.settings.clone();
+            self.form.settings.reset(DSEG, false);
             let why = self.forced_by_label(crate::pipeline::requirements::Output::Segmentation);
-            self.pipeline_state.custom_dseg_tool = dseg;
+            self.form.settings = kept;
             if let Some(why) = why {
                 self.error_message = Some(format!(
                     "Segmentation is required by {why} — change or turn that off first."));
                 return;
             }
-            self.form.do_segmentation = false;
-            self.pipeline_state.custom_dseg_tool.clear();
+            self.form.settings.set("pipeline.do_segmentation", false);
+            self.form.settings.reset(DSEG, false);
             return;
         }
         if let Some(out) = forced_output(field) {
@@ -8560,18 +8428,15 @@ impl App {
             return self.form.dicom_unticked.retain(|u| !u.eq_ignore_ascii_case(m.suffix));
         }
         match field {
-            "orientation_lambda" => return self.filter_state.orientation_lambda.clear(),
-            "orientation_reference" => return self.filter_state.orientation_reference.clear(),
-            "orientation_algorithm" => return self.filter_state.orientation_algorithm = 0,
             "segmentation_source" | "do_segmentation" => {
-                self.pipeline_state.custom_dseg_tool.clear();
-                self.form.do_segmentation = form.do_segmentation;
+                self.form.settings.reset(DSEG, false);
+                self.form.settings.reset("pipeline.do_segmentation", false);
                 return;
             }
             _ => {}
         }
         if let Some(path) = stored_path(field) {
-            let value_row = field_of_path(path) != Some(field);
+            let value_row = super::settings_rows::is_value_row(field, path);
             return self.form.settings.reset(path, value_row);
         }
         if let (Some(d), Some(v)) = (form.text(field), self.form.text_mut(field)) {
@@ -8616,37 +8481,6 @@ impl App {
             if fields.is_empty() { break; }
             fields.iter().for_each(|f| self.reset_field(f));
         }
-    }
-
-    /// Other outputs → Segmentation: where the segmentation comes from, and the statistics on it.
-    fn segmentation_rows(&self) -> Vec<PipelineRow> {
-        use PipelineRow::{AlgoSelect, Param, Toggle};
-        let f = &self.form;
-        let mut rows = vec![Toggle { label: "Segmentation", field: "do_segmentation", help: "Whole-brain parcellation: SynthSeg straight off the GRE magnitude, or one supplied in derivatives. Required by the statistics and a region reference: choosing one offers to turn it on (left off, the run turns it on itself)" }];
-        // Whatever needs a segmentation reveals its settings too, ticked or not: the run makes
-        // one, and hiding the settings that shape it would be a lie.
-        if self.segmentation_on() {
-            rows.push(AlgoSelect { label: "  Source", field: "segmentation_source", options: SEGMENTATION_SOURCE_OPTIONS, help: SEGMENTATION_SOURCE_HELP });
-            if self.field_select("segmentation_source") == 1 {
-                rows.push(Param { label: "    Derivatives tool", field: "custom_dseg_tool", help: "The dseg from <bids>/derivatives/<tool>/: * = any tool, or a tool name; SynthSeg runs where none is found" });
-            } else {
-                rows.push(AlgoSelect { label: "    SynthSeg version", field: "synthseg_version", options: SYNTHSEG_VERSION_OPTIONS, help: SYNTHSEG_VERSION_HELP });
-                rows.push(Param { label: "    Crop", field: "synthseg_crop", help: "Cubic centre-crop in voxels at 1 mm before inference; empty processes the whole volume" });
-                rows.push(Param { label: "    Sliding window", field: "synthseg_patch", help: "Run the network on half-overlapping cubes of this many voxels at 1 mm (rounded up to a multiple of 32), so its memory follows the patch instead of the volume; empty runs the whole volume at once" });
-                rows.push(Toggle { label: "    Flip averaging", field: "synthseg_flip_averaging", help: "Average with a left-right flipped second pass (SynthSeg's default). Doubles inference time" });
-                rows.push(Toggle { label: "    Topology cleanup", field: "synthseg_topology_cleanup", help: "Reset each topological class to its largest connected component" });
-                rows.push(Toggle { label: "    Posterior smoothing", field: "synthseg_smoothing", help: "Gaussian blur on the posteriors before the labels are taken" });
-                if f.synthseg_smoothing {
-                    rows.push(Param { label: "      Sigma (voxels)", field: "synthseg_sigma", help: "Gaussian sigma of the posterior blur, in voxels" });
-                }
-            }
-        }
-        rows.push(PipelineRow::Separator);
-        rows.push(Toggle { label: "Per-structure statistics", field: "do_analysis", help: "Summarise every map the run makes (χ, χ+/χ−, T2*, R2*, R2, R2') per structure into a TSV: mean, SD, median, min, max, 5th/95th percentiles. Requires segmentation, and QSM only if no other map is enabled" });
-        if f.do_analysis && self.input_relevance().qsm {
-            rows.push(PipelineFormState::custom_qsm_row());
-        }
-        rows
     }
 
     /// Export → DICOM: the switch, the source DICOM, and a tick per map the settings make.
@@ -9560,9 +9394,9 @@ mod tests {
         let mut app = App::new();
         app.form.settings.set("pipeline.do_swi", true);
         app.form.settings.set("pipeline.do_smwi", true);
-        app.form.do_segmentation = true;
+        app.form.settings.set("pipeline.do_segmentation", true);
         app.form.export_dicom = true;
-        app.form.do_analysis = true;
+        app.form.settings.set("pipeline.do_analysis", true);
         app.form.settings.set("pipeline.do_r2primemap", true);
         app.form.settings.set("motion_correction.enabled", true);
         app.filter_state.orientation_group = "acq".into();
@@ -9696,7 +9530,7 @@ mod tests {
         assert_eq!(app.pages(TAB_RECONSTRUCTION), Page::RECONSTRUCTION.to_vec(), "the list keeps its shape");
         assert_eq!(state(&app, Page::FieldMap), SectionState::NotApplicable);
         assert_eq!(state(&app, Page::Background), SectionState::NotApplicable);
-        let rows = |app: &App, p| app.synced_pipeline(p, &app.row_context()).visible_rows();
+        let rows = |app: &App, p| app.page_rows(p);
         assert!(rows(&app, Page::Background).iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("No background removal"))));
         assert!(!rows(&app, Page::Background).iter().any(|r| matches!(r, PipelineRow::AlgoSelect { field: "bf_algorithm", .. })));
         assert!(rows(&app, Page::FieldMap).iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("No field mapping"))));
@@ -9855,7 +9689,7 @@ mod tests {
         };
         let slot = |app: &mut App, i: usize| {
             app.filter_state.focus = FilterFocus::TreeNode(i);
-            let (slots, now) = app.filter_state.orientation_slots().unwrap();
+            let (slots, now) = app.filter_state.orientation_slots("").unwrap();
             slots[now]
         };
         // → puts the first run in a new group; the next run's → joins it, then is its reference.
@@ -9863,11 +9697,11 @@ mod tests {
         assert_eq!(slot(&mut app, runs[0]), OrientationSlot::New);
         press(&mut app, runs[1], KeyCode::Right);
         assert_eq!(slot(&mut app, runs[1]), OrientationSlot::Member(0));
-        let preview = app.filter_state.orientation_preview();
+        let preview = app.filter_state.orientation_preview("");
         assert_eq!(preview.groups.len(), 1);
         press(&mut app, runs[1], KeyCode::Right);
         assert_eq!(slot(&mut app, runs[1]), OrientationSlot::Reference(0));
-        assert_eq!(app.filter_state.orientation_groups()[0][0], app.filter_state.orientation_preview().order[runs_order(&app, runs[1])]);
+        assert_eq!(app.filter_state.orientation_groups("")[0][0], app.filter_state.orientation_preview("").order[runs_order(&app, runs[1])]);
         // → again: a second group of its own; ← back.
         press(&mut app, runs[1], KeyCode::Right);
         assert_eq!(slot(&mut app, runs[1]), OrientationSlot::New);
@@ -9884,11 +9718,11 @@ mod tests {
 
         // From a typed pattern, the arrows start with what it grouped.
         app.filter_state.orientation_group = "*acq-dir*".into();
-        let grouped = app.filter_state.orientation_preview().member_of.len();
+        let grouped = app.filter_state.orientation_preview("").member_of.len();
         let member = runs.iter().copied().find(|&i| slot(&mut app, i) != OrientationSlot::None).unwrap();
         press(&mut app, member, KeyCode::Left);
         assert!(app.filter_state.orientation_group.starts_with("runs:"));
-        let listed: usize = app.filter_state.orientation_groups().iter().map(Vec::len).sum();
+        let listed: usize = app.filter_state.orientation_groups("").iter().map(Vec::len).sum();
         assert_eq!(listed, grouped);
         assert!(crate::bids::orientation::parse_pattern(&app.filter_state.orientation_group).unwrap().is_some());
 
@@ -9908,7 +9742,7 @@ mod tests {
             Some(sei) => &tree.subjects[sub].sessions[sei].runs[run].key_string,
             None => &tree.subjects[sub].runs[run].key_string,
         };
-        app.filter_state.orientation_preview().order.iter().position(|k| k == key).unwrap()
+        app.filter_state.orientation_preview("").order.iter().position(|k| k == key).unwrap()
     }
 
     /// The Input tab keeps only the pattern: its settings are on QSM → COSMOS/STI, so
@@ -9937,32 +9771,27 @@ mod tests {
             orientation_group: "chunk".into(),
             ..Default::default()
         };
-        let preview = fs.orientation_preview();
+        let preview = fs.orientation_preview("");
         assert!(preview.error.unwrap().contains("chunk"));
 
         fs.orientation_group = "re:(a)(b)".into();
-        assert!(fs.orientation_preview().error.is_some());
+        assert!(fs.orientation_preview("").error.is_some());
     }
 
     #[test]
     fn orientation_preview_is_empty_when_off() {
         let fs = super::FilterTreeState::default();
-        let preview = fs.orientation_preview();
+        let preview = fs.orientation_preview("");
         assert!(preview.error.is_none());
         assert!(preview.groups.is_empty());
     }
 
     #[test]
-    fn orientation_args_are_none_until_a_pattern_is_set() {
+    fn the_orientation_grouping_is_none_until_a_pattern_is_set() {
         let mut fs = super::FilterTreeState::default();
-        assert_eq!(fs.orientation_args().0, None);
+        assert_eq!(fs.orientation_group_by(), None);
         fs.orientation_group = "  acq  ".into();
-        fs.orientation_algorithm = 1;
-        fs.orientation_lambda = "1e-3".into();
-        let (pattern, algo, lambda) = fs.orientation_args();
-        assert_eq!(pattern.as_deref(), Some("acq"), "the pattern is trimmed");
-        assert_eq!(algo, 1);
-        assert_eq!(lambda, Some(1e-3));
+        assert_eq!(fs.orientation_group_by().as_deref(), Some("acq"), "the pattern is trimmed");
     }
 
     #[test]
@@ -12082,14 +11911,14 @@ mod tests {
         // Ticking it is the required change; unticking it again is refused, and says why.
         focus_on(&mut app, TAB_RECONSTRUCTION, "do_segmentation");
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.form.do_segmentation, "{:?}", app.error_message);
+        assert!(app.form.settings.toggle("pipeline.do_segmentation"), "{:?}", app.error_message);
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.form.do_segmentation, "turning it off is refused");
+        assert!(app.form.settings.toggle("pipeline.do_segmentation"), "turning it off is refused");
         let msg = app.error_message.clone().expect("a refusal should explain itself");
         assert!(msg.contains("Reference = ventricles") && !msg.contains("--"), "the refusal names the setting: {msg}");
 
         // `mean` and `none` need nothing.
-        app.form.do_segmentation = false;
+        app.form.settings.set("pipeline.do_segmentation", false);
         for idx in [0, 1] {
             app.set_field_select("qsm_reference", idx);
             assert!(!app.output_made("do_segmentation"), "option {idx} needs nothing");
@@ -12127,7 +11956,7 @@ mod tests {
 
         // A config or CLI run can arrive with the statistics already on; segmentation is then in
         // force, so the block must be visible rather than hiding a setting that is taking effect.
-        app.form.do_analysis = true;
+        app.form.settings.set("pipeline.do_analysis", true);
         assert!(!app.field_toggle("do_segmentation") && app.output_made("do_segmentation"),
                 "segmentation is needed: made by the run, but not shown as ticked");
         for f in SYNTHSEG_ROWS {
@@ -12138,17 +11967,17 @@ mod tests {
         // Ticking it is the required change; it then cannot be turned off from under them.
         focus_on(&mut app, TAB_RECONSTRUCTION, "do_segmentation");
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.form.do_segmentation);
+        assert!(app.form.settings.toggle("pipeline.do_segmentation"));
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.form.do_segmentation, "turning it off is refused");
+        assert!(app.form.settings.toggle("pipeline.do_segmentation"), "turning it off is refused");
         let msg = app.error_message.clone().expect("a refusal should explain itself");
         assert!(msg.contains("per-structure statistics"), "unhelpful message: {msg}");
 
         // With the statistics off again it is an ordinary toggle.
-        app.form.do_analysis = false;
+        app.form.settings.set("pipeline.do_analysis", false);
         app.error_message = None;
         app.handle_key(key(KeyCode::Enter));
-        assert!(!app.form.do_segmentation, "{:?}", app.error_message);
+        assert!(!app.form.settings.toggle("pipeline.do_segmentation"), "{:?}", app.error_message);
     }
 
     /// Selecting HEIDI shows both parameter groups (its seed is an LSQR solve); selecting plain
@@ -12327,7 +12156,7 @@ mod tests {
         assert!(has(&f, "custom_r2prime_tool") && !has(&f, "r2prime_strategy") && !has(&f, "custom_r2_tool"), "{f:?}");
 
         let mut app = App::new();
-        app.form.do_analysis = true;
+        app.form.settings.set("pipeline.do_analysis", true);
         assert!(has(&fields(&mut app), "custom_qsm_tool"), "the statistics can read a supplied χ map");
         let mut app = App::new();
         app.form.settings.set("pipeline.do_r2map", true);
@@ -12340,10 +12169,10 @@ mod tests {
     #[test]
     fn a_custom_dseg_is_the_segmentation_source() {
         let mut app = App::new();
-        app.form.do_analysis = true;
+        app.form.settings.set("pipeline.do_analysis", true);
         assert!(app.output_made("do_segmentation"), "needed without a supplied dseg");
         assert_eq!(app.field_select("segmentation_source"), 0, "SynthSeg");
-        app.pipeline_state.custom_dseg_tool = "freesurfer".into();
+        *app.field_text_mut("custom_dseg_tool").unwrap() = "freesurfer".into();
         assert!(app.field_toggle("do_segmentation"), "a supplied segmentation is a segmentation");
         assert_eq!(app.field_select("segmentation_source"), 1);
         assert!(!shows(&mut app, TAB_RECONSTRUCTION, "synthseg_version"), "no SynthSeg settings to show");
@@ -12352,17 +12181,17 @@ mod tests {
         // The statistics need one, whichever the source: turning it off is refused.
         focus_on(&mut app, TAB_RECONSTRUCTION, "do_segmentation");
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.error_message.is_some() && app.pipeline_state.custom_dseg_tool == "freesurfer");
+        assert!(app.error_message.is_some() && app.field_text("custom_dseg_tool") == "freesurfer");
         // Back to SynthSeg: the supplied one is dropped, SynthSeg asked for.
         app.set_field_select("segmentation_source", 0);
-        assert!(app.pipeline_state.custom_dseg_tool.is_empty() && app.form.do_segmentation);
+        assert!(app.field_text("custom_dseg_tool").is_empty() && app.form.settings.toggle("pipeline.do_segmentation"));
         app.set_field_select("segmentation_source", 1);
-        assert_eq!(app.pipeline_state.custom_dseg_tool, "*");
-        assert!(!app.form.do_segmentation, "one representation per choice");
+        assert_eq!(app.field_text("custom_dseg_tool"), "*");
+        assert!(!app.form.settings.toggle("pipeline.do_segmentation"), "one representation per choice");
         // Unforced: off clears whichever source.
-        app.form.do_analysis = false;
+        app.form.settings.set("pipeline.do_analysis", false);
         app.toggle_field("do_segmentation");
-        assert!(!app.field_toggle("do_segmentation") && app.pipeline_state.custom_dseg_tool.is_empty());
+        assert!(!app.field_toggle("do_segmentation") && app.field_text("custom_dseg_tool").is_empty());
     }
 
     /// R2* is needed by what reads it (R2*-QSM, a computed R2'): made by the run, shown as the
@@ -13364,7 +13193,7 @@ mod tests {
         app.form.export_dicom = true;
         let fields = |app: &App| app.page_rows(Page::Export).iter().filter_map(row_field).collect::<Vec<_>>();
         assert!(!fields(&app).contains(&"dicom_out_dseg"), "no segmentation, no SEG");
-        app.form.do_segmentation = true;
+        app.form.settings.set("pipeline.do_segmentation", true);
         assert!(fields(&app).contains(&"dicom_out_dseg") && fields(&app).contains(&"dicom_out_magnitude"));
         let note = |app: &App| app.page_rows(Page::Export).iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("needs a map to be drawn on")));
         assert!(!note(&app));

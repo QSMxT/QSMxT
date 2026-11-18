@@ -66,7 +66,7 @@ use super::app::{App, PipelineRow};
 pub struct FormSnapshot {
     form: super::app::RunForm,
     pipeline_state: super::app::PipelineFormState,
-    orientation: (String, usize, String, String),
+    orientation_group: String,
     num_echoes: String,
 }
 
@@ -75,7 +75,7 @@ impl FormSnapshot {
         let f = &app.filter_state;
         FormSnapshot {
             form: app.form.clone(), pipeline_state: app.pipeline_state.clone(),
-            orientation: (f.orientation_group.clone(), f.orientation_algorithm, f.orientation_lambda.clone(), f.orientation_reference.clone()),
+            orientation_group: f.orientation_group.clone(),
             num_echoes: f.num_echoes.clone(),
         }
     }
@@ -84,7 +84,7 @@ impl FormSnapshot {
         app.form = self.form;
         app.pipeline_state = self.pipeline_state;
         let f = &mut app.filter_state;
-        (f.orientation_group, f.orientation_algorithm, f.orientation_lambda, f.orientation_reference) = self.orientation;
+        f.orientation_group = self.orientation_group;
         f.num_echoes = self.num_echoes;
     }
 }
@@ -660,7 +660,7 @@ mod tests {
         app.handle_rec_modal_key(KeyEvent::from(KeyCode::Tab));
         app.handle_rec_modal_key(KeyEvent::from(KeyCode::Enter));
         assert!(app.rec_modal.is_none());
-        assert!(app.form.do_segmentation && app.field_toggle("do_segmentation"), "applied through the form");
+        assert!(app.form.settings.toggle("pipeline.do_segmentation") && app.field_toggle("do_segmentation"), "applied through the form");
         let config = super::super::command::config_from_app(&app).unwrap();
         assert!(config.pipeline.do_segmentation);
         assert!(!app.rule_view().iter().any(|r| r.applied_by_run() && r.departs), "nothing left to require");
@@ -682,7 +682,7 @@ mod tests {
         assert!(app.rec_modal.is_none());
         let config = super::super::command::config_from_app(&app).unwrap();
         assert_eq!(config.qsm.reference, qsmxt_engine::enums::QsmReference::Mean, "the reference is back");
-        assert!(!config.pipeline.do_segmentation && !app.form.do_segmentation, "segmentation was not turned on");
+        assert!(!config.pipeline.do_segmentation && !app.form.settings.toggle("pipeline.do_segmentation"), "segmentation was not turned on");
         assert_eq!(app.form.settings.toggle("pipeline.do_swi"), before_swi);
         assert!(app.status_message.as_deref().is_some_and(|m| m.contains("QSM reference back to mean")), "{:?}", app.status_message);
         app.check_recommendations();
@@ -695,7 +695,7 @@ mod tests {
     fn esc_leaves_a_required_change_marked() {
         let mut app = ventricles();
         app.handle_rec_modal_key(KeyEvent::from(KeyCode::Esc));
-        assert!(app.rec_modal.is_none() && !app.form.do_segmentation);
+        assert!(app.rec_modal.is_none() && !app.form.settings.toggle("pipeline.do_segmentation"));
         let view = app.rule_view();
         let marker = rec::marker(&view, "pipeline.do_segmentation").expect("the output is marked");
         assert!(marker.actionable, "{marker:?}");
