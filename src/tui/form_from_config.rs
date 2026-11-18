@@ -181,13 +181,6 @@ impl App {
                 ps.qsm_algorithm = i;
             }
         }
-        if differs("inversion.tile_size") {
-            // Off is no tile size; the size row keeps its number while off.
-            ps.dl_tiling = config.inversion.tile_size.is_some();
-            if let Some(n) = config.inversion.tile_size {
-                ps.dl_tile_size = n.to_string();
-            }
-        }
         let m = &config.masking;
         if differs("masking.sections") || differs("masking.combine") || differs("masking.refinements") {
             ps.mask_sections = m.sections.clone();
@@ -225,6 +218,14 @@ impl App {
             match romeo.temporal_uncertain_unwrapping {
                 t if t > 0.0 => st.set("field_mapping.romeo.temporal_uncertain_unwrapping", t),
                 _ => st.switch("field_mapping.romeo.temporal_uncertain_unwrapping", false),
+            }
+        }
+        if differs("inversion.tile_size") {
+            // Off is no tile size; the size row keeps its number while off.
+            let st = &mut self.form.settings;
+            match config.inversion.tile_size {
+                Some(n) => st.set("inversion.tile_size", n),
+                None => st.switch("inversion.tile_size", false),
             }
         }
         let sigma = config.segmentation.sigma_smoothing;

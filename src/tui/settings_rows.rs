@@ -23,12 +23,13 @@ use serde_json::Value;
 use qsmxt_engine::schema::{self, EchoKind, Section, Setting, ValueType, ViewFacts};
 use qsmxt_engine::PipelineConfig;
 
-use super::app::{field_of_path, field_path, App, Page, PipelineRow, RowContext, FIELD_PATHS};
+use super::app::{field_of_path, field_path, App, Page, PipelineRow, RowContext, FIELD_PATHS, QSM_ALGO_OPTIONS};
 
 /// The sections whose settings are kept in [`SettingsStore`] rather than in the form's fields.
 pub const STORED_SECTIONS: &[Section] =
     &[Section::Geometry, Section::Motion, Section::Background, Section::Reference, Section::Magnitude, Section::SwiSmwi,
-      Section::Relaxometry, Section::Segmentation, Section::MultiOrientation, Section::FieldMap];
+      Section::Relaxometry, Section::Segmentation, Section::MultiOrientation, Section::FieldMap,
+      Section::Inversion];
 
 /// Choices that one select picks with another: `(path, choice, other)`. The select lists the
 /// setting's options but `choice`, then each of `other`'s, which picks `choice` with that value;
@@ -43,6 +44,10 @@ fn picker(path: &str) -> Option<&'static (&'static str, &'static str, &'static s
 /// from the registry all the same.
 const KEPT_IN_FORM: &[(&str, &str)] = &[
     ("bg_removal.algorithm", "the pipeline form's rule for which stages run (stage_config) reads it"),
+    ("inversion.algorithm", "the pipeline form's rule for which stages run (stage_config) reads it"),
+    ("inversion.medi.smv", "the pipeline form's rule for which stages run (stage_config) reads it"),
+    ("inversion.heidi.enabled", "the inversion picker's LSQR+HEIDI reads and sets it with the algorithm"),
+    ("pipeline.do_qsm", "whether QSM runs (qsm_runs) reads it; its own page is built by hand"),
 ];
 
 /// Rows a page puts before a setting's row, from the form and the rows' context: a note, a
@@ -72,6 +77,11 @@ struct PageLayout {
     depths: &'static [(&'static str, usize)],
     /// Settings listed first, in this order, ahead of the registry's.
     first: &'static [&'static str],
+    /// The page's own order where it is not the registry's, given the form.
+    arrange: Option<fn(&App, &mut Vec<&'static Setting>)>,
+    /// Settings worded otherwise while a condition of the TUI's holds: `(path, when, label, help)`
+    /// (the registry's help when `help` is `None`).
+    reworded: &'static [(&'static str, ShownIf, &'static str, Option<&'static str>)],
 }
 
 /// Settings shown as a block under a setting of a page they have no parent in: those whose path
@@ -96,9 +106,24 @@ impl Block {
 const REGISTRATION: Block =
     Block { prefix: "registration.", under: "motion_correction.enabled", heading: "Rigid registration (advanced):" };
 
+impl PageLayout {
+    /// How deep `s` is indented on the page: as [`PageLayout::depths`] says, else one deeper
+    /// than its parent on the same page.
+    fn depth(&self, s: &Setting) -> usize {
+        match (self.depths.iter().find(|(p, _)| *p == s.path), s.parent.map(setting)) {
+            (Some(&(_, d)), _) => d,
+            (None, Some(p)) if p.section == s.section => 1 + self.depth(p),
+            _ => 0,
+        }
+    }
+}
+
 /// A page of a section's settings, in the registry's order and indentation.
 const fn plain(page: Page, section: Section) -> PageLayout {
-    PageLayout { page, section, only: None, repeats: &[], before: &[], shown_if: &[], blocks: &[], depths: &[], first: &[] }
+    PageLayout {
+        page, section, only: None, repeats: &[], before: &[], shown_if: &[], blocks: &[], depths: &[], first: &[],
+        arrange: None, reworded: &[],
+    }
 }
 
 fn is_swi(path: &str) -> bool {
@@ -184,6 +209,23 @@ const LAYOUTS: &[PageLayout] = &[
         depths: &[("field_mapping.romeo.template", 1)],
         ..plain(Page::FieldMap, Section::FieldMap)
     },
+    PageLayout {
+        // Compute QSM has a page of its own.
+        only: Some(|p| p != "pipeline.do_qsm"),
+        arrange: Some(arrange_inversion),
+        // Under QSMART, iLSQR's settings are its inner inversion's.
+        reworded: &[
+            ("inversion.ilsqr.tol", qsmart_chosen, "iLSQR tolerance", Some("Streaking-stage LSQR tolerance (shared with iLSQR)")),
+            ("inversion.ilsqr.precision", qsmart_chosen, "iLSQR precision", None),
+        ],
+        // HEIDI reads as a step of its own after the inversion, its settings under it; MEDI's
+        // mask shrinking and QSMART's iLSQR settings read as the method's own.
+        depths: &[
+            ("inversion.heidi.enabled", 0), ("inversion.medi.smv_shrink_mask", 1),
+            ("inversion.qsmart.ilsqr_max_iter", 1), ("inversion.qsmart.ilsqr_pad_mm", 1),
+        ],
+        ..plain(Page::Inversion, Section::Inversion)
+    },
     plain(Page::Magnitude, Section::Magnitude),
     PageLayout { only: Some(is_swi), ..plain(Page::Swi, Section::SwiSmwi) },
     PageLayout {
@@ -193,6 +235,38 @@ const LAYOUTS: &[PageLayout] = &[
         ..plain(Page::Smwi, Section::SwiSmwi)
     },
 ];
+
+fn qsmart_chosen(app: &App) -> bool {
+    QSM_ALGO_OPTIONS.get(app.pipeline_state.qsm_algorithm) == Some(&"qsmart")
+}
+
+/// The Inversion page's order: each method's settings, NLTV's echo time last; under QSMART, its
+/// inner inversion's settings after the choice of it (iLSQR's tolerance, QSMART's own iLSQR
+/// settings, then iLSQR's precision); then HEIDI's and the tiling's.
+fn arrange_inversion(app: &App, order: &mut Vec<&'static Setting>) {
+    fn take(order: &mut Vec<&'static Setting>, f: impl Fn(&str) -> bool) -> Vec<&'static Setting> {
+        let (taken, kept) = order.iter().partition(|s| f(s.path));
+        *order = kept;
+        taken
+    }
+    fn put_after(order: &mut Vec<&'static Setting>, after: &str, items: Vec<&'static Setting>) {
+        let at = order.iter().position(|s| s.path == after).map_or(order.len(), |i| i + 1);
+        order.splice(at..at, items);
+    }
+    let te = take(order, |p| p == "inversion.nltv.te");
+    put_after(order, "inversion.nltv.pad", te);
+    let heidi = take(order, |p| p.starts_with("inversion.heidi."));
+    let at = order.iter().position(|s| s.path == "inversion.tile_size").unwrap_or(order.len());
+    order.splice(at..at, heidi);
+    if qsmart_chosen(app) {
+        let own = |p: &str| p.starts_with("inversion.qsmart.") || p.starts_with("inversion.heidi.")
+            || p.starts_with("inversion.tile_") || p == "inversion.algorithm";
+        let inner = take(order, |p| p.starts_with("inversion.") && !own(p));
+        put_after(order, "inversion.qsmart.inversion", inner);
+        let ilsqr = take(order, |p| p.starts_with("inversion.qsmart.ilsqr_"));
+        put_after(order, "inversion.ilsqr.tol", ilsqr);
+    }
+}
 
 /// Text rows that read "(empty)" rather than "(default)" while blank, as the run form's rows did
 /// before their settings moved here.
@@ -220,17 +294,54 @@ fn tui_help(s: &Setting) -> &'static str {
 /// Makes the value a checkbox takes when it is ticked ([`ON_VALUES`]).
 type OnValue = fn() -> Value;
 
-/// The value a checkbox with a value takes when it is ticked, for one off by default: ROMEO's
-/// own threshold for re-unwrapping, which QSMxT leaves off.
+/// The value a checkbox with a value takes when it is ticked, for one off by default.
 const ON_VALUES: &[(&str, OnValue)] = &[
+    // ROMEO's own threshold for re-unwrapping, which QSMxT leaves off.
     ("field_mapping.romeo.temporal_uncertain_unwrapping",
      || Value::from(qsm_core::unwrap::RomeoParams::default().temporal_uncertain_unwrapping)),
+    // Tiles of 128 voxels.
+    ("inversion.tile_size", || Value::from(128)),
 ];
 
 /// The value of a checkbox with a value when it is on and nothing else is chosen: its default,
 /// or for one off by default, [`ON_VALUES`].
 fn on_value(s: &Setting) -> Value {
     ON_VALUES.iter().find(|(p, _)| *p == s.path).map_or_else(|| s.default.clone(), |(_, v)| v())
+}
+
+/// Makes the time an echo-time row starts at ([`ECHO_TIME_MS`]).
+type MsDefault = fn() -> String;
+
+/// What a method's echo-time row starts at when a time is chosen: its default choice on
+/// qsm-core's default echo times (blank if those give none).
+const ECHO_TIME_MS: &[(&str, MsDefault)] = &[
+    ("inversion.nltv.te", || { let p = qsm_core::inversion::NltvParams::default(); ms_default(p.te, &p.echo_times) }),
+    ("inversion.medi.te", || { let p = qsm_core::inversion::MediParams::default(); ms_default(p.te, &p.echo_times) }),
+    ("inversion.tfi.te", || { let p = qsm_core::inversion::TfiParams::default(); ms_default(p.te, &p.echo_times) }),
+    ("inversion.ndi.te", || { let p = qsm_core::inversion::NdiParams::default(); ms_default(p.te, &p.echo_times) }),
+    ("inversion.fansi.te", || { let p = qsm_core::inversion::FansiParams::default(); ms_default(p.te, &p.echo_times) }),
+    ("inversion.l1qsm.te", || { let p = qsm_core::inversion::L1QsmParams::default(); ms_default(p.te, &p.echo_times) }),
+    ("inversion.whqsm.te", || { let p = qsm_core::inversion::WhQsmParams::default(); ms_default(p.te, &p.echo_times) }),
+    ("inversion.heidi.te", || { let p = qsm_core::inversion::HeidiParams::default(); ms_default(p.te, &p.echo_times) }),
+    ("inversion.star.te", || { let p = qsm_core::inversion::StarParams::default(); ms_default(p.te, &p.echo_times) }),
+    // TGV's parameters carry no echo times: the ones qsm-core's NDI (also at the first echo by
+    // default) starts from.
+    ("inversion.tgv.te", || ms_default(qsm_core::inversion::TgvParams::default().te, &qsm_core::inversion::NdiParams::default().echo_times)),
+];
+
+fn ms_default(te: qsm_core::EchoTime, echo_times: &[f64]) -> String {
+    te.resolve(echo_times).map(|s| qsmxt_engine::EchoTimeChoice::Seconds(s).to_string()).unwrap_or_default()
+}
+
+/// The time an echo-time row starts at ([`ECHO_TIME_MS`]).
+fn echo_time_ms(path: &str) -> String {
+    ECHO_TIME_MS.iter().find(|(p, _)| *p == path).map(|(_, f)| f()).unwrap_or_default()
+}
+
+/// An echo time in ms, as the config holds it.
+fn echo_time_of_ms(text: &str) -> Option<Value> {
+    text.trim().parse::<f64>().ok()?;
+    serde_json::to_value(qsmxt_engine::EchoTimeChoice::parse(text).ok()?).ok()
 }
 
 /// Every setting, by path.
@@ -262,7 +373,21 @@ pub fn options(path: &str) -> (&'static [&'static str], &'static [&'static str])
                     opts.retain(|o| o.value != choice);
                     opts.extend(setting(other).value_type.options());
                 }
-                (s.path, (opts.iter().map(|o| o.label).collect(), opts.iter().map(|o| tui_option_help(o)).collect()))
+                let mut labels: Vec<&'static str> = opts.iter().map(|o| o.label).collect();
+                let mut help: Vec<&'static str> = opts.iter().map(|o| match s.value_type {
+                    // The echo times are every method's; the row says which is this one's default.
+                    ValueType::EchoTime { .. } if o.value == s.default =>
+                        Box::leak(format!("{} (default)", tui_option_help(o)).into_boxed_str()),
+                    _ => tui_option_help(o),
+                }).collect();
+                // A name for a value with a switch turned on, listed after that value.
+                for a in schema::aliases::PICKER_ALIASES.iter().filter(|a| a.setting == s.path) {
+                    if let Some(i) = opts.iter().position(|o| o.value == a.value) {
+                        labels.insert(i + 1, a.name);
+                        help.insert(i + 1, a.help);
+                    }
+                }
+                (s.path, (labels, help))
             })
             .collect()
     });
@@ -274,6 +399,8 @@ pub fn options(path: &str) -> (&'static [&'static str], &'static [&'static str])
 /// per option, so kept for good.
 fn tui_option_help(o: &'static schema::EnumOption) -> &'static str {
     match &o.url {
+        // After a sentence, the link follows it; after a name, a dash leads to it.
+        Some(url) if o.tui_help.ends_with('.') => Box::leak(format!("{} {url}", o.tui_help).into_boxed_str()),
         Some(url) => Box::leak(format!("{} — {url}", o.tui_help).into_boxed_str()),
         None => o.tui_help.as_str(),
     }
@@ -386,6 +513,7 @@ fn parse(s: &Setting, text: &str) -> Option<Value> {
         ValueType::IntList => numbers().map(int).collect::<Option<Vec<_>>>().filter(|v| !v.is_empty()).map(Value::from),
         ValueType::Text if text.is_empty() => Some(if s.optional { Value::Null } else { Value::from("") }),
         ValueType::Text => Some(Value::from(text)),
+        ValueType::EchoTime { .. } => echo_time_of_ms(text),
         // The echo number of an echo reference, written as the config writes it ("3").
         ValueType::EchoReference { .. } => echo_number(s, &Value::from(text)).map(|n| Value::from(n.to_string())),
         _ => None,
@@ -481,9 +609,12 @@ impl SettingsStore {
             return own.iter().position(|o| o.value == v).unwrap_or(0);
         }
         let number = echo_number(s, &v).is_some();
-        s.value_type.options().iter().position(|o| o.value == v).or_else(|| {
-            let ValueType::EchoReference { options } = &s.value_type else { return None };
-            options.iter().position(|o| number && matches!(o.kind, EchoKind::EchoNumber { .. }))
+        s.value_type.options().iter().position(|o| o.value == v).or_else(|| match &s.value_type {
+            ValueType::EchoReference { options } =>
+                options.iter().position(|o| number && matches!(o.kind, EchoKind::EchoNumber { .. })),
+            // A given time: `{ "seconds": s }`.
+            ValueType::EchoTime { options } if v.is_object() => options.iter().position(|o| o.kind == EchoKind::Time),
+            _ => None,
         }).unwrap_or(0)
     }
 
@@ -511,9 +642,18 @@ impl SettingsStore {
         }
         let opts = s.value_type.options();
         if let Some(o) = opts.get(index.min(opts.len().saturating_sub(1))) {
-            match s.value_type {
+            match &s.value_type {
                 // The echo number typed waits under a named echo, for the number to be chosen again.
                 ValueType::EchoReference { .. } => self.put(path, o.value.clone()),
+                // A given time: the one typed, else the method's on the default echo times. The
+                // time typed waits under a named echo time, as an echo number does.
+                ValueType::EchoTime { options } if options[index.min(options.len() - 1)].kind == EchoKind::Time => {
+                    let text = self.typed.get(path).cloned().unwrap_or_else(|| echo_time_ms(path));
+                    if let Some(v) = echo_time_of_ms(&text).or_else(|| echo_time_of_ms(&echo_time_ms(path))) {
+                        self.put(path, v);
+                    }
+                }
+                ValueType::EchoTime { .. } => self.put(path, o.value.clone()),
                 _ => self.set(path, o.value.clone()),
             }
         }
@@ -547,6 +687,11 @@ impl SettingsStore {
                 Some(xs) if !xs.is_empty() && xs.iter().all(|x| *x == xs[0]) => text_of(&xs[0]),
                 _ => text_of(&v),
             },
+            // A given echo time, in ms; while a named one is chosen, the method's on the default
+            // echo times.
+            ValueType::EchoTime { .. } => serde_json::from_value::<qsmxt_engine::EchoTimeChoice>(v.clone()).ok()
+                .filter(|te| matches!(te, qsmxt_engine::EchoTimeChoice::Seconds(_)))
+                .map_or_else(|| echo_time_ms(path), |te| te.to_string()),
             _ if COUNTED_FROM_ONE.contains(&path) => v.as_u64().map_or_else(|| text_of(&v), |n| (n + 1).to_string()),
             ValueType::EchoReference { options } => echo_number(s, &v).map(|n| n.to_string()).unwrap_or_else(|| {
                 options.iter().find_map(|o| match o.kind { EchoKind::EchoNumber { min } => Some(min.to_string()), _ => None })
@@ -557,11 +702,11 @@ impl SettingsStore {
     }
 
     /// Put a setting back to QSMxT's default. `value_row` resets only the value's row: an echo
-    /// reference's number (the choice leaves the number, as the two rows are reset one at a time),
-    /// or the value of a checkbox with a value.
+    /// reference's number or an echo time's time (the choice leaves the number, as the two rows
+    /// are reset one at a time), or the value of a checkbox with a value.
     pub fn reset(&mut self, path: &'static str, value_row: bool) {
         let s = setting(path);
-        let echo = matches!(s.value_type, ValueType::EchoReference { .. });
+        let echo = matches!(s.value_type, ValueType::EchoReference { .. } | ValueType::EchoTime { .. });
         if value_row || !echo {
             self.typed.remove(path);
         }
@@ -570,6 +715,11 @@ impl SettingsStore {
         } else if s.off.is_some() && self.toggle(path) {
             // The value of a checkbox that is on: back to the default value, still on.
             self.put(path, on_value(s));
+        } else if matches!(s.value_type, ValueType::EchoTime { .. }) && self.get(path).is_object() {
+            // A given echo time: back to the method's, still given.
+            if let Some(v) = echo_time_of_ms(&echo_time_ms(path)) {
+                self.put(path, v);
+            }
         }
     }
 
@@ -585,6 +735,10 @@ impl SettingsStore {
             let s = setting(path);
             // A value kept while its checkbox is off is not taken.
             if s.off.as_ref().is_some_and(|off| self.get(path) == *off) {
+                continue;
+            }
+            // A time typed is taken only while a given time is chosen.
+            if matches!(s.value_type, ValueType::EchoTime { .. }) && !self.get(path).is_object() {
                 continue;
             }
             if let ValueType::EchoReference { .. } = s.value_type {
@@ -689,8 +843,12 @@ impl App {
             self.push_rows(rows, s, depth + 1);
         };
         let foreign = |b: &Block| schema::settings().iter().any(|t| t.path.starts_with(b.prefix) && t.section != layout.section);
-        let first = layout.first.iter().map(|p| setting(p));
-        for s in first.chain(schema::settings().iter().filter(|s| !layout.first.contains(&s.path))) {
+        let mut order: Vec<&'static Setting> = layout.first.iter().map(|p| setting(p))
+            .chain(schema::settings().iter().filter(|s| !layout.first.contains(&s.path))).collect();
+        if let Some(arrange) = layout.arrange {
+            arrange(self, &mut order);
+        }
+        for s in order {
             if s.section != layout.section || !layout.only.is_none_or(|f| f(s.path)) || !shows(s.path)
                 || PICKERS.iter().any(|(.., other)| *other == s.path)
             {
@@ -702,14 +860,17 @@ impl App {
                 }
                 continue;
             }
-            let depth = layout.depths.iter().find(|(p, _)| *p == s.path).map_or_else(|| depth_of(s), |(_, d)| *d);
+            let depth = layout.depth(s);
             for (_, before) in layout.before.iter().filter(|(p, _)| *p == s.path) {
                 rows.extend(before(self, ctx));
             }
             if !layout.shown_if.iter().filter(|(p, _)| *p == s.path).all(|(_, f)| f(self)) {
                 continue;
             }
-            self.push_rows(&mut rows, s, depth);
+            match layout.reworded.iter().find(|(p, when, ..)| *p == s.path && when(self)) {
+                Some(&(_, _, label, help)) => self.push_rows_worded(&mut rows, s, depth, label, help.unwrap_or(tui_help(s))),
+                None => self.push_rows(&mut rows, s, depth),
+            }
             // A block of another section follows the setting it is under.
             for b in layout.blocks.iter().filter(|b| b.under == s.path && foreign(b) && is_on(b.under)) {
                 for t in schema::settings().iter().filter(|t| t.path.starts_with(b.prefix) && shows(t.path)) {
@@ -731,24 +892,29 @@ impl App {
     /// number, the select and the number's row under it; for a setting with a value that turns it
     /// off, a checkbox and, while it is on, the value's row under it.
     fn push_rows(&self, rows: &mut Vec<PipelineRow>, s: &'static Setting, depth: usize) {
+        self.push_rows_worded(rows, s, depth, s.label, tui_help(s));
+    }
+
+    /// [`Self::push_rows`], the setting's own row labelled `label` with `help`.
+    fn push_rows_worded(&self, rows: &mut Vec<PipelineRow>, s: &'static Setting, depth: usize, label: &'static str, help: &'static str) {
         let field = row_field(s.path, 0).unwrap_or_else(|| panic!("{} has no row field", s.path));
-        let label = indented(depth, s.label);
+        let label = indented(depth, label);
         rows.push(match s.value_type {
-            _ if s.off.is_some() => PipelineRow::Toggle { label, field, help: tui_help(s) },
-            ValueType::Bool => PipelineRow::Toggle { label, field, help: tui_help(s) },
-            ValueType::Enum { .. } | ValueType::EchoReference { .. } => {
+            _ if s.off.is_some() => PipelineRow::Toggle { label, field, help },
+            ValueType::Bool => PipelineRow::Toggle { label, field, help },
+            ValueType::Enum { .. } | ValueType::EchoReference { .. } | ValueType::EchoTime { .. } => {
                 let (options, help) = options(s.path);
                 PipelineRow::AlgoSelect { label, field, options, help }
             }
             ValueType::Int | ValueType::Float | ValueType::IntVec3 | ValueType::FloatVec3 | ValueType::IntList
-            | ValueType::Text => PipelineRow::Param { label, field, help: tui_help(s) },
+            | ValueType::Text => PipelineRow::Param { label, field, help },
             _ => unreachable!("{}: no widget for its value type yet", s.path),
         });
+        let chosen = |options: &[schema::EchoOption]| options.get(self.field_select(field)).map(|o| o.kind);
         let value_row = match &s.value_type {
             _ if s.off.is_some() => self.field_toggle(field),
-            ValueType::EchoReference { options } => {
-                matches!(options.get(self.field_select(field)).map(|o| o.kind), Some(EchoKind::EchoNumber { .. }))
-            }
+            ValueType::EchoReference { options } => matches!(chosen(options), Some(EchoKind::EchoNumber { .. })),
+            ValueType::EchoTime { options } => matches!(chosen(options), Some(EchoKind::Time)),
             _ => false,
         };
         if let (true, Some((label, help))) = (value_row, s.tui_value) {
@@ -850,6 +1016,27 @@ mod tests {
         assert_eq!(app.field_text("laplacian_fft_pad"), "64");
         *app.field_text_mut("laplacian_fft_pad").unwrap() = "32".into();
         assert_eq!(config_from_app(&app).unwrap().field_mapping.laplacian_fft_pad, [32; 3]);
+    }
+
+    /// An echo time is a select with a time in ms under it while a given time is chosen: the row
+    /// starts at the method's default time, and the time typed waits under a named echo time.
+    #[test]
+    fn an_echo_time_keeps_its_time_under_a_named_one() {
+        use qsmxt_engine::EchoTimeChoice;
+        let mut app = App::new_for_trial();
+        app.pipeline_state.qsm_algorithm = QSM_ALGO_OPTIONS.iter().position(|a| *a == "nltv").unwrap();
+        let te = |app: &App| config_from_app(app).unwrap().inversion.nltv.te;
+        let ms = options("inversion.nltv.te").0.iter().position(|o| *o == "ms").unwrap();
+        assert!(options("inversion.nltv.te").1[0].ends_with("(default)"), "NLTV's default is the first echo time");
+        app.set_field_select("nltv_te", ms);
+        assert_eq!(app.field_text("nltv_te_ms"), "20");
+        assert_eq!(te(&app), EchoTimeChoice::Seconds(0.02));
+        *app.field_text_mut("nltv_te_ms").unwrap() = "7".into();
+        assert_eq!(te(&app), EchoTimeChoice::Seconds(0.007));
+        app.set_field_select("nltv_te", 1);
+        assert_eq!(te(&app), EchoTimeChoice::Last);
+        app.set_field_select("nltv_te", ms);
+        assert_eq!((app.field_text("nltv_te_ms").as_ref(), te(&app)), ("7", EchoTimeChoice::Seconds(0.007)));
     }
 
     /// Posterior smoothing is a checkbox with its sigma under it: off is a sigma of 0, and the
