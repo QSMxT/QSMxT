@@ -263,8 +263,6 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
     // the TUI shows: a hidden value must not change the run.
     let grouped = orientation_group.is_some();
     let weighted_cosmos = grouped && orientation_algorithm == 0 && ps.cosmos_magnitude_weighting;
-    // Rigid registration serves motion correction and the co-registration of orientations.
-    let registration = ps.motion_correction || (grouped && ps.orientation_registration);
     let inputs = app.input_relevance();
 
     PipelineArgs {
@@ -575,25 +573,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             amp_pe_max_pe_est_ite: parse_optional_usize(&ps.amp_pe_max_pe_est_ite),
             amp_pe_cvg_thd: parse_optional_f64(&ps.amp_pe_cvg_thd),
         },
-        motion_params: crate::cli::MotionParamArgs {
-            motion_correction: ps.motion_correction,
-            motion_reference: if !ps.motion_correction { None } else { match ps.motion_reference {
-                1 => Some("last".to_string()),
-                2 => Some(ps.motion_reference_echo.trim().to_string()),
-                _ => None,
-            } },
-            no_motion_chain: ps.motion_correction && !ps.motion_chain,
-            motion_chain_levels: if ps.motion_correction { parse_optional_usize(&ps.motion_chain_levels) } else { None },
-            motion_min_ncc: if ps.motion_correction { parse_optional_f64(&ps.motion_min_ncc) } else { None },
-            registration_levels: if registration { parse_optional_usize(&ps.reg_levels) } else { None },
-            registration_max_samples: if registration { parse_optional_usize(&ps.reg_max_samples) } else { None },
-            registration_max_iterations: if registration { parse_optional_usize(&ps.reg_max_iterations) } else { None },
-            registration_max_evaluations: if registration { parse_optional_usize(&ps.reg_max_evaluations) } else { None },
-            registration_tolerance: if registration { parse_optional_f64(&ps.reg_tolerance) } else { None },
-            registration_rotation_step_deg: if registration { parse_optional_f64(&ps.reg_rotation_step_deg) } else { None },
-            registration_translation_step_mm: if registration { parse_optional_f64(&ps.reg_translation_step_mm) } else { None },
-            registration_min_overlap: if registration { parse_optional_f64(&ps.reg_min_overlap) } else { None },
-        },
+        // Set from the form's settings store ([`stored_values`]).
+        motion_params: Default::default(),
         separation_params: crate::cli::SeparationParamArgs {
             r2star_qsm_r_const_3t: parse_optional_f64(&ps.sep_r2starqsm_r_const_3t),
             decompose_n_inner: parse_optional_usize(&ps.sep_decompose_n_inner),
@@ -1144,7 +1125,7 @@ mod tests {
     #[test]
     fn vsharp_working_grid() {
         let mut app = default_app();
-        let fields = |app: &App| app.pipeline_state.all_rows().iter().filter_map(|r| match r {
+        let fields = |app: &App| app.pipeline_rows().iter().filter_map(|r| match r {
             crate::tui::app::PipelineRow::Param { field, .. } | crate::tui::app::PipelineRow::AlgoSelect { field, .. } => Some(field.to_string()),
             _ => None,
         }).collect::<Vec<_>>();
@@ -1174,7 +1155,7 @@ mod tests {
     #[test]
     fn vsharp_deconvolve_toggle() {
         let mut app = default_app();
-        let shows_threshold = |app: &App| app.pipeline_state.all_rows().iter().any(|r|
+        let shows_threshold = |app: &App| app.pipeline_rows().iter().any(|r|
             matches!(r, crate::tui::app::PipelineRow::Param { field: "vsharp_threshold", .. }));
         assert!(!config_from_app(&app).unwrap().bg_removal.vsharp.deconvolve);
         assert!(!shows_threshold(&app));
@@ -1188,7 +1169,7 @@ mod tests {
     #[test]
     fn two_pass_mode_setting() {
         let mut app = default_app();
-        let shown = |app: &App| app.pipeline_state.all_rows().iter()
+        let shown = |app: &App| app.pipeline_rows().iter()
             .any(|r| matches!(r, crate::tui::app::PipelineRow::AlgoSelect { field: "two_pass_mode", .. }));
         assert!(!shown(&app));
         app.pipeline_state.toggle("two_pass");
@@ -1205,7 +1186,7 @@ mod tests {
     #[test]
     fn inhomogeneity_method_and_n4_settings() {
         let mut app = default_app();
-        let fields = |app: &App| app.pipeline_state.all_rows().iter().filter_map(|r| match r {
+        let fields = |app: &App| app.pipeline_rows().iter().filter_map(|r| match r {
             crate::tui::app::PipelineRow::AlgoSelect { field, .. }
             | crate::tui::app::PipelineRow::Param { field, .. } => Some(field.to_string()),
             _ => None,
@@ -1240,7 +1221,7 @@ mod tests {
     #[test]
     fn laplacian_solver_and_pad() {
         let mut app = default_app();
-        let fields = |app: &App| app.pipeline_state.all_rows().iter().filter_map(|r| match r {
+        let fields = |app: &App| app.pipeline_rows().iter().filter_map(|r| match r {
             crate::tui::app::PipelineRow::AlgoSelect { field, .. }
             | crate::tui::app::PipelineRow::Param { field, .. } => Some(field.to_string()),
             _ => None,
@@ -1278,7 +1259,7 @@ mod tests {
     #[test]
     fn prelude_settings() {
         let mut app = default_app();
-        let fields = |app: &App| app.pipeline_state.all_rows().iter().filter_map(|r| match r {
+        let fields = |app: &App| app.pipeline_rows().iter().filter_map(|r| match r {
             crate::tui::app::PipelineRow::AlgoSelect { field, .. }
             | crate::tui::app::PipelineRow::Param { field, .. }
             | crate::tui::app::PipelineRow::Toggle { field, .. } => Some(field.to_string()),
@@ -1315,7 +1296,7 @@ mod tests {
     fn medi_region_growing_choice() {
         let mut app = default_app();
         app.pipeline_state.unwrapping_algorithm = 3; // medi-region-growing
-        let f: Vec<String> = app.pipeline_state.all_rows().iter().filter_map(|r| match r {
+        let f: Vec<String> = app.pipeline_rows().iter().filter_map(|r| match r {
             crate::tui::app::PipelineRow::AlgoSelect { field, .. }
             | crate::tui::app::PipelineRow::Param { field, .. }
             | crate::tui::app::PipelineRow::Toggle { field, .. } => Some(field.to_string()),
@@ -1335,7 +1316,7 @@ mod tests {
     fn laplacian_unmasked_toggle() {
         let mut app = default_app();
         app.form.bids_dir = "/bids".into();
-        let toggles = |app: &App| app.pipeline_state.all_rows().iter().filter_map(|r| match r {
+        let toggles = |app: &App| app.pipeline_rows().iter().filter_map(|r| match r {
             crate::tui::app::PipelineRow::Toggle { field, .. } => Some(field.to_string()),
             _ => None,
         }).collect::<Vec<_>>();
@@ -1358,7 +1339,7 @@ mod tests {
     #[test]
     fn complex_fit_medi_csf_and_tfi_reach_the_config() {
         let mut app = default_app();
-        let fields = |app: &App| app.pipeline_state.all_rows().iter().filter_map(crate::tui::app::row_field)
+        let fields = |app: &App| app.pipeline_rows().iter().filter_map(crate::tui::app::row_field)
             .map(str::to_string).collect::<Vec<_>>();
         assert!(fields(&app).contains(&"phase_offset_removal".to_string()));
         app.pipeline_state.b0_estimation = crate::tui::app::B0_ESTIMATION_OPTIONS.iter().position(|o| *o == "complex-fit").unwrap();
@@ -1396,7 +1377,7 @@ mod tests {
     #[test]
     fn robust_fit_settings_reach_config_and_args() {
         let mut app = default_app();
-        let fields = |app: &App| app.pipeline_state.all_rows().iter().filter_map(|r| match r {
+        let fields = |app: &App| app.pipeline_rows().iter().filter_map(|r| match r {
             crate::tui::app::PipelineRow::AlgoSelect { field, .. }
             | crate::tui::app::PipelineRow::Param { field, .. } => Some(field.to_string()),
             _ => None,
@@ -1451,7 +1432,7 @@ mod tests {
     #[test]
     fn motion_correction_settings_reach_config_and_args() {
         let mut app = default_app();
-        let fields = |app: &App| app.pipeline_state.all_rows().iter().filter_map(|r| match r {
+        let fields = |app: &App| app.pipeline_rows().iter().filter_map(|r| match r {
             crate::tui::app::PipelineRow::AlgoSelect { field, .. }
             | crate::tui::app::PipelineRow::Param { field, .. }
             | crate::tui::app::PipelineRow::Toggle { field, .. } => Some(field.to_string()),
@@ -1461,14 +1442,13 @@ mod tests {
         assert!(!fields(&app).contains(&"reg_levels".to_string()),
                 "registration serves motion correction and orientation groups, and neither is on");
         assert_eq!(config_from_app(&app).unwrap().motion_correction, qsmxt_engine::MotionCorrectionConfig::default());
-        let ps = &mut app.pipeline_state;
-        ps.toggle("motion_correction");
-        ps.motion_reference = 2;
-        ps.motion_reference_echo = "2".into();
-        ps.toggle("motion_chain");
-        ps.motion_min_ncc = "0.9".into();
-        ps.reg_levels = "4".into();
-        ps.reg_min_overlap = "0.5".into();
+        app.toggle_field("motion_correction");
+        app.set_field_select("motion_reference", 2);
+        *app.field_text_mut("motion_reference_echo").unwrap() = "2".into();
+        app.toggle_field("motion_chain");
+        *app.field_text_mut("motion_min_ncc").unwrap() = "0.9".into();
+        *app.field_text_mut("reg_levels").unwrap() = "4".into();
+        *app.field_text_mut("reg_min_overlap").unwrap() = "0.5".into();
         let f = fields(&app);
         for name in ["motion_reference", "motion_reference_echo", "motion_chain", "motion_min_ncc",
                      "reg_levels", "reg_max_samples", "reg_max_iterations", "reg_max_evaluations",
@@ -1481,10 +1461,9 @@ mod tests {
         assert_eq!(m.reference, qsmxt_engine::MotionReference::Echo(2));
         let reg = config_from_app(&app).unwrap().registration;
         assert_eq!((m.min_ncc, reg.levels, reg.min_overlap), (0.9, 4, 0.5));
-        let a = pipeline_args_from_app(&app).motion_params;
-        assert!(a.motion_correction && a.no_motion_chain);
-        assert_eq!(a.motion_reference.as_deref(), Some("2"));
-        assert_eq!((a.motion_min_ncc, a.registration_levels, a.registration_min_overlap), (Some(0.9), Some(4), Some(0.5)));
+        app.form.bids_dir = "/b".into();
+        let run = crate::cli_settings::build_config(Default::default(), &build_run_args(&app).unwrap().pipeline).unwrap();
+        assert_eq!((run.motion_correction, run.registration), (m, reg));
     }
 
     /// Multi-orientation co-registration and force are in the TUI; the registration settings
@@ -1500,7 +1479,7 @@ mod tests {
             assert!(serde_json::from_value::<crate::pipeline::config::QsmAlgorithm>(serde_json::json!(name)).is_ok(), "{name}");
         }
         let mut app = default_app();
-        let shows_bfr = |app: &App| app.pipeline_state.all_rows().iter().any(|r|
+        let shows_bfr = |app: &App| app.pipeline_rows().iter().any(|r|
             matches!(r, PipelineRow::AlgoSelect { field: "bf_algorithm", .. }));
         assert!(shows_bfr(&app));
         // The default goes unsent; another one is sent.
@@ -1534,16 +1513,16 @@ mod tests {
         assert!(!c.multi_orientation.register && c.multi_orientation.force);
         let a = pipeline_args_from_app(&app);
         assert!(a.no_orientation_registration && a.multi_orientation_force);
-        let shows_reg = |app: &App| app.pipeline_state.all_rows().iter().any(|r|
+        let shows_reg = |app: &App| app.pipeline_rows().iter().any(|r|
             matches!(r, crate::tui::app::PipelineRow::Param { field: "reg_levels", .. }));
         assert!(!shows_reg(&app), "neither registration can run");
-        app.pipeline_state.toggle("motion_correction");
+        app.toggle_field("motion_correction");
         assert!(shows_reg(&app));
         // Co-registering a group's orientations runs it too.
-        app.pipeline_state.toggle("motion_correction");
+        app.toggle_field("motion_correction");
         app.pipeline_state.toggle("orientation_registration");
         assert!(shows_reg(&app));
-        app.pipeline_state.ctx.orientation_group = false;
+        app.filter_state.orientation_group.clear();
         assert!(!shows_reg(&app), "no group, nothing to co-register");
     }
 
@@ -2612,7 +2591,7 @@ mod parity {
             let context = (
                 [ps.qsm_algorithm, if qsmart { ps.qsmart_inversion } else { 0 },
                  if ps.do_chi_separation { ps.separation_algorithm } else { 0 }, app.form.execution_mode],
-                [ps.motion_correction, ps.do_chi_separation],
+                [app.field_toggle("motion_correction"), ps.do_chi_separation],
             );
             let mut todo = Vec::new();
             for r in rows {

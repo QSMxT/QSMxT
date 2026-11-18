@@ -3251,7 +3251,7 @@ pub(super) mod tests {
             a.form.do_r2primemap = true;
             a.form.export_dicom = true;
             a.filter_state.orientation_group = "acq".into();
-            a.pipeline_state.motion_correction = true;
+            a.form.settings.set("motion_correction.enabled", true);
             a.pipeline_state.do_chi_separation = true;
         }] {
             setup(&mut app);

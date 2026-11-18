@@ -536,7 +536,7 @@ mod tests {
         app.form.bids_dir = bids.path().to_string_lossy().to_string();
         app.filter_state.maybe_rescan(&app.form.bids_dir.clone());
         assert!(app.planned().unwrap().motion.is_none(), "off: nothing to count");
-        app.pipeline_state.motion_correction = true;
+        app.form.settings.set("motion_correction.enabled", true);
         let s = screen(&mut app, 60);
         assert!(s.contains("Motion   Motion correction will run for 1 of 2 run(s); skipped for sub-1_T2starw (one echo)"), "{s}");
         app.filter_state.num_echoes = "1".into();

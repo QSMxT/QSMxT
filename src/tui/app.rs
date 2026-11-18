@@ -2011,9 +2011,6 @@ pub struct PipelineFormState {
     pub prelude_labelling: usize,
     /// PRELUDE's number of phase partitions.
     pub prelude_partitions: String,
-    /// Motion correction (off by default): reference index into [`MOTION_REFERENCE_OPTIONS`]
-    /// (0 first, 1 last, 2 a given echo), and the rigid registration's settings.
-    pub motion_correction: bool,
     /// Multi-orientation (grouping is on the Input tab): co-register a group's orientations when
     /// they need it, and reconstruct past the direction-degeneracy check.
     pub orientation_registration: bool,
@@ -2021,19 +2018,6 @@ pub struct PipelineFormState {
     pub cosmos_magnitude_weighting: bool,
     pub cosmos_tol: String,
     pub cosmos_max_iter: String,
-    pub motion_reference: usize,
-    pub motion_reference_echo: String,
-    pub motion_chain: bool,
-    pub motion_chain_levels: String,
-    pub motion_min_ncc: String,
-    pub reg_levels: String,
-    pub reg_max_samples: String,
-    pub reg_max_iterations: String,
-    pub reg_max_evaluations: String,
-    pub reg_tolerance: String,
-    pub reg_rotation_step_deg: String,
-    pub reg_translation_step_mm: String,
-    pub reg_min_overlap: String,
 
     // Parameters (as Strings for text editing)
     pub inhomogeneity_correction: bool,
@@ -2575,25 +2559,11 @@ impl Default for PipelineFormState {
             prelude_labelling: PRELUDE_LABELLING_OPTIONS.iter()
                 .position(|o| *o == qsmxt_engine::PreludeConfig::default().labelling.to_string()).unwrap_or(0),
             prelude_partitions: qsmxt_engine::PreludeConfig::default().num_phase_partitions.to_string(),
-            motion_correction: false,
             orientation_registration: true,
             multi_orientation_force: false,
             cosmos_magnitude_weighting: false,
             cosmos_tol: format!("{}", qsmxt_engine::MultiOrientationConfig::default().cosmos_tol),
             cosmos_max_iter: format!("{}", qsmxt_engine::MultiOrientationConfig::default().cosmos_max_iter),
-            motion_reference: 0,
-            motion_reference_echo: "1".to_string(),
-            motion_chain: qsmxt_engine::MotionCorrectionConfig::default().chain,
-            motion_chain_levels: qsmxt_engine::MotionCorrectionConfig::default().chain_levels.to_string(),
-            motion_min_ncc: format!("{}", qsmxt_engine::MotionCorrectionConfig::default().min_ncc),
-            reg_levels: format!("{}", qsmxt_engine::RegistrationConfig::default().levels),
-            reg_max_samples: format!("{}", qsmxt_engine::RegistrationConfig::default().max_samples),
-            reg_max_iterations: format!("{}", qsmxt_engine::RegistrationConfig::default().max_iterations),
-            reg_max_evaluations: format!("{}", qsmxt_engine::RegistrationConfig::default().max_evaluations),
-            reg_tolerance: format!("{}", qsmxt_engine::RegistrationConfig::default().tolerance),
-            reg_rotation_step_deg: format!("{}", qsmxt_engine::RegistrationConfig::default().rotation_step_deg),
-            reg_translation_step_mm: format!("{}", qsmxt_engine::RegistrationConfig::default().translation_step_mm),
-            reg_min_overlap: format!("{}", qsmxt_engine::RegistrationConfig::default().min_overlap),
             inhomogeneity_correction: true,
             inhomogeneity_method: 0, // makehomogeneous
             homogeneity_sigma_mm: fmt_default(qsmxt_engine::HomogeneityConfig::default().sigma_mm),
@@ -3304,12 +3274,6 @@ fn ismv_variant_index(v: qsmxt_engine::IsmvVariant) -> usize {
 fn fmt_triple(p: [usize; 3]) -> String {
     format!("{} {} {}", p[0], p[1], p[2])
 }
-pub const MOTION_REFERENCE_OPTIONS: &[&str] = &["first", "last", "echo"];
-const MOTION_REFERENCE_HELP: &[&str] = &[
-    "Align every echo onto the first (best SNR; the published procedure) (default)",
-    "Align every echo onto the last",
-    "Align every echo onto a given echo (Reference echo)",
-];
 const LAPLACIAN_SOLVER_HELP: &[&str] = &[
     "Unweighted least squares, Neumann-boundary DCT solve (Ghiglia & Romero 1994; QSM.jl :dct) (default)",
     "Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume",
@@ -3557,33 +3521,6 @@ impl PipelineFormState {
                 options: TWO_PASS_MODE_OPTIONS, help: TWO_PASS_MODE_HELP });
         }
 
-    }
-
-    /// Preprocessing → Motion: echo co-registration, and the registration it runs.
-    fn motion_rows(&self, rows: &mut Vec<PipelineRow>) {
-        rows.push(PipelineRow::Toggle {
-            label: "Motion correction", field: "motion_correction",
-            help: "Rigidly co-register every echo onto a reference echo before any other stage (multi-echo, needs magnitude). Off by default",
-        });
-        if self.motion_correction {
-            rows.push(PipelineRow::AlgoSelect {
-                label: "  Reference", field: "motion_reference",
-                options: MOTION_REFERENCE_OPTIONS, help: MOTION_REFERENCE_HELP,
-            });
-            if self.motion_reference == 2 {
-            rows.push(PipelineRow::Param { label: "    Reference echo", field: "motion_reference_echo",
-                    help: "1-based echo number the others are aligned onto" });
-            }
-            rows.push(PipelineRow::Toggle { label: "  Chain", field: "motion_chain",
-                help: "Seed each echo's registration from its neighbour's solution" });
-            if self.motion_chain {
-            rows.push(PipelineRow::Param { label: "    Chain levels", field: "motion_chain_levels",
-                    help: "Pyramid levels for a seeded registration (default 3)" });
-            }
-            rows.push(PipelineRow::Param { label: "  Min NCC", field: "motion_min_ncc",
-                help: "NCC below which a registration is reported as suspect (0.3 for echoes; ~0.9 for repeats)" });
-            Self::push_registration_rows(rows);
-        }
     }
 
     /// QSM → Compute QSM: the QSM group's switch, with what turning it off does, or why QSM is
@@ -4298,7 +4235,6 @@ impl PipelineFormState {
     pub fn all_rows(&self) -> Vec<PipelineRow> {
         let mut rows = Vec::new();
         self.masking_rows(&mut rows);
-        self.motion_rows(&mut rows);
         self.compute_qsm_rows(&mut rows);
         if self.qsm_runs() {
             if self.field_mapping_runs().0 { self.field_map_rows(&mut rows); }
@@ -4316,7 +4252,6 @@ impl PipelineFormState {
         let mut rows = Vec::new();
         match self.page {
             Page::Masking => self.masking_rows(&mut rows),
-            Page::Motion => self.motion_rows(&mut rows),
             Page::ComputeQsm => self.compute_qsm_rows(&mut rows),
             // A QSM section says where QSM is turned on while it is off, and why when the
             // settings skip its stage: the sidebar lists every section whatever the settings.
@@ -4396,8 +4331,6 @@ impl PipelineFormState {
         "robust_fit_tuning", "robust_fit_iterations",
         "robust_fit_downweight_level", "robust_fit_flag_ratio",
         "complex_fit_reltol", "complex_fit_max_iter", "medi_lambda_csf", "medi_csf_r2s_threshold", "medi_zeropad",
-        "motion_reference_echo", "motion_chain_levels", "motion_min_ncc",
-        "reg_levels", "reg_max_samples", "reg_max_iterations", "reg_max_evaluations", "reg_tolerance", "reg_rotation_step_deg", "reg_translation_step_mm", "reg_min_overlap",
         "cosmos_tol", "cosmos_max_iter",
     ];
 
@@ -4474,17 +4407,6 @@ impl PipelineFormState {
             "medi_lambda_csf" => &self.medi_lambda_csf,
             "medi_csf_r2s_threshold" => &self.medi_csf_r2s_threshold,
             "medi_zeropad" => &self.medi_zeropad,
-            "motion_reference_echo" => &self.motion_reference_echo,
-            "motion_chain_levels" => &self.motion_chain_levels,
-            "motion_min_ncc" => &self.motion_min_ncc,
-            "reg_levels" => &self.reg_levels,
-            "reg_max_samples" => &self.reg_max_samples,
-            "reg_max_iterations" => &self.reg_max_iterations,
-            "reg_max_evaluations" => &self.reg_max_evaluations,
-            "reg_tolerance" => &self.reg_tolerance,
-            "reg_rotation_step_deg" => &self.reg_rotation_step_deg,
-            "reg_translation_step_mm" => &self.reg_translation_step_mm,
-            "reg_min_overlap" => &self.reg_min_overlap,
             "cosmos_tol" => &self.cosmos_tol,
             "cosmos_max_iter" => &self.cosmos_max_iter,
             "heidi_gradient_mask_floor" => &self.heidi_gradient_mask_floor,
@@ -4752,17 +4674,6 @@ impl PipelineFormState {
             "medi_lambda_csf" => Some(&mut self.medi_lambda_csf),
             "medi_csf_r2s_threshold" => Some(&mut self.medi_csf_r2s_threshold),
             "medi_zeropad" => Some(&mut self.medi_zeropad),
-            "motion_reference_echo" => Some(&mut self.motion_reference_echo),
-            "motion_chain_levels" => Some(&mut self.motion_chain_levels),
-            "motion_min_ncc" => Some(&mut self.motion_min_ncc),
-            "reg_levels" => Some(&mut self.reg_levels),
-            "reg_max_samples" => Some(&mut self.reg_max_samples),
-            "reg_max_iterations" => Some(&mut self.reg_max_iterations),
-            "reg_max_evaluations" => Some(&mut self.reg_max_evaluations),
-            "reg_tolerance" => Some(&mut self.reg_tolerance),
-            "reg_rotation_step_deg" => Some(&mut self.reg_rotation_step_deg),
-            "reg_translation_step_mm" => Some(&mut self.reg_translation_step_mm),
-            "reg_min_overlap" => Some(&mut self.reg_min_overlap),
             "cosmos_tol" => Some(&mut self.cosmos_tol),
             "cosmos_max_iter" => Some(&mut self.cosmos_max_iter),
             "heidi_gradient_mask_floor" => Some(&mut self.heidi_gradient_mask_floor),
@@ -4986,7 +4897,6 @@ impl PipelineFormState {
             "two_pass_mode" => self.two_pass_mode,
             "vsharp_grid" => self.vsharp_grid,
             "robust_fit_loss" => self.robust_fit_loss,
-            "motion_reference" => self.motion_reference,
             "star_te" => self.star_te,
             "whqsm_weight" => self.whqsm_weight,
             "ilsqr_precision" => self.ilsqr_precision,
@@ -5057,7 +4967,6 @@ impl PipelineFormState {
             "two_pass_mode" => self.two_pass_mode = val.min(TWO_PASS_MODE_OPTIONS.len() - 1),
             "vsharp_grid" => self.vsharp_grid = val,
             "robust_fit_loss" => self.robust_fit_loss = val,
-            "motion_reference" => self.motion_reference = val,
             "star_te" => self.star_te = val.min(ECHO_TIME_OPTIONS.len() - 1),
             "whqsm_weight" => self.whqsm_weight = val.min(WHQSM_WEIGHT_OPTIONS.len() - 1),
             "ilsqr_precision" => self.ilsqr_precision = val.min(ILSQR_PRECISION_OPTIONS.len() - 1),
@@ -5135,11 +5044,9 @@ impl PipelineFormState {
             "romeo_phase_coherence" => self.romeo_phase_coherence,
             "medi_merit" => self.medi_merit,
             "ndi_auto_stop" => self.ndi_auto_stop,
-            "motion_correction" => self.motion_correction,
             "orientation_registration" => self.orientation_registration,
             "multi_orientation_force" => self.multi_orientation_force,
             "cosmos_magnitude_weighting" => self.cosmos_magnitude_weighting,
-            "motion_chain" => self.motion_chain,
             "r2primenet_ignore_field_mismatch" => self.r2primenet_ignore_field_mismatch,
             "vsharp_deconvolve" => self.vsharp_deconvolve,
             "sep_decompose_unwrap_phase" => self.sep_decompose_unwrap_phase,
@@ -5190,11 +5097,9 @@ impl PipelineFormState {
             "romeo_phase_coherence" => self.romeo_phase_coherence = !self.romeo_phase_coherence,
             "medi_merit" => self.medi_merit = !self.medi_merit,
             "ndi_auto_stop" => self.ndi_auto_stop = !self.ndi_auto_stop,
-            "motion_correction" => self.motion_correction = !self.motion_correction,
             "orientation_registration" => self.orientation_registration = !self.orientation_registration,
             "multi_orientation_force" => self.multi_orientation_force = !self.multi_orientation_force,
             "cosmos_magnitude_weighting" => self.cosmos_magnitude_weighting = !self.cosmos_magnitude_weighting,
-            "motion_chain" => self.motion_chain = !self.motion_chain,
             "r2primenet_ignore_field_mismatch" => self.r2primenet_ignore_field_mismatch = !self.r2primenet_ignore_field_mismatch,
             "vsharp_deconvolve" => self.vsharp_deconvolve = !self.vsharp_deconvolve,
             "sep_decompose_unwrap_phase" => self.sep_decompose_unwrap_phase = !self.sep_decompose_unwrap_phase,
@@ -8765,6 +8670,13 @@ impl App {
         self.page_rows_in(page, &self.row_context_with(config), config)
     }
 
+    /// Every row of the pipeline form's pages that shows now, page after page: for tests that ask
+    /// whether a setting is reachable, not where.
+    #[cfg(test)]
+    pub fn pipeline_rows(&self) -> Vec<PipelineRow> {
+        Page::RECONSTRUCTION.iter().filter(|p| p.is_pipeline()).flat_map(|&p| self.page_rows(p)).collect()
+    }
+
     /// Every page of every tab with its rows, as they apply now (the config and context worked
     /// out once).
     pub fn all_pages(&self) -> Vec<(usize, Page, Vec<PipelineRow>)> {
@@ -10089,7 +10001,7 @@ mod tests {
         app.form.export_dicom = true;
         app.form.do_analysis = true;
         app.form.do_r2primemap = true;
-        app.pipeline_state.motion_correction = true;
+        app.form.settings.set("motion_correction.enabled", true);
         app.filter_state.orientation_group = "acq".into();
         for mode in [0, 1] {
             app.form.execution_mode = mode;
@@ -10583,7 +10495,6 @@ mod tests {
             ("vsharp-grid", VSHARP_GRID_OPTIONS.len(), VSHARP_GRID_HELP.len()),
             ("b0-estimation", B0_ESTIMATION_OPTIONS.len(), B0_ESTIMATION_HELP.len()),
             ("robust-fit-loss", ROBUST_FIT_LOSS_OPTIONS.len(), ROBUST_FIT_LOSS_HELP.len()),
-            ("motion-reference", MOTION_REFERENCE_OPTIONS.len(), MOTION_REFERENCE_HELP.len()),
             ("bg-removal", BF_OPTIONS.len(), BF_HELP.len()),
             ("qsm-reference", qsm_ref_options().len(), qsm_ref_help().len()),
             ("mask-preset", MASK_PRESET_OPTIONS.len(), mask_preset_help().len()),
@@ -11194,9 +11105,9 @@ mod tests {
     #[test]
     fn test_pipeline_visible_rows_change_on_toggle() {
         let mut app = App::new();
-        let rows_with_qsm = app.pipeline_state.all_rows().len();
+        let rows_with_qsm = app.pipeline_rows().len();
         app.pipeline_state.do_qsm = false;
-        let rows_without_qsm = app.pipeline_state.all_rows().len();
+        let rows_without_qsm = app.pipeline_rows().len();
         assert!(rows_without_qsm < rows_with_qsm);
     }
 
@@ -12797,7 +12708,7 @@ mod tests {
             assert!(!f.contains(&gone.to_string()), "{gone} shown with QSM off: {f:?}");
         }
         // Motion correction's own settings follow it, not QSM.
-        app.pipeline_state.toggle("motion_correction");
+        app.toggle_field("motion_correction");
         let f = fields(&mut app);
         assert!(f.contains(&"motion_reference".to_string()) && f.contains(&"reg_levels".to_string()), "{f:?}");
 
@@ -12805,7 +12716,7 @@ mod tests {
         app.form.settings.set("pipeline.do_smwi", true);
         let f = fields(&mut app);
         assert!(f.contains(&"qsm_algorithm".to_string()) && f.contains(&"unwrapping_algorithm".to_string()), "{f:?}");
-        assert!(app.pipeline_state.all_rows().iter().any(|r|
+        assert!(app.pipeline_rows().iter().any(|r|
             matches!(r, PipelineRow::Note { text } if text.contains("SMWI"))), "the forced QSM says why");
     }
 
@@ -12813,7 +12724,7 @@ mod tests {
     #[test]
     fn bipolar_correction_needs_offset_removal() {
         let mut app = App::new();
-        let shows = |app: &App| app.pipeline_state.all_rows().iter().any(|r|
+        let shows = |app: &App| app.pipeline_rows().iter().any(|r|
             matches!(r, PipelineRow::Toggle { field: "bipolar_correction", .. }));
         app.pipeline_state.bipolar_correction = true;
         let passed = |app: &App| super::super::command::pipeline_args_from_app(app).bipolar_correction;
@@ -13001,7 +12912,7 @@ mod tests {
         let before = app.pipeline_state.mask_sections.clone();
         app.pipeline_state.set_select("qsm_algorithm", qsmart);
         assert_eq!(app.pipeline_state.mask_sections, before, "choosing QSMART changes no mask");
-        assert!(!app.pipeline_state.all_rows().iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("brain mask"))));
+        assert!(!app.pipeline_rows().iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("brain mask"))));
         app.pipeline_state.set_select("mask_preset", 1);
         app.reset_field("mask_preset");
         assert_eq!(app.pipeline_state.mask_sections, before);

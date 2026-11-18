@@ -20,13 +20,13 @@ use std::sync::{LazyLock, Mutex};
 
 use serde_json::Value;
 
-use qsmxt_engine::schema::{self, Section, Setting, ValueType, ViewFacts};
+use qsmxt_engine::schema::{self, EchoKind, Section, Setting, ValueType, ViewFacts};
 use qsmxt_engine::PipelineConfig;
 
-use super::app::{field_of_path, field_path, App, Page, PipelineRow, RowContext};
+use super::app::{field_of_path, field_path, App, Page, PipelineRow, RowContext, FIELD_PATHS};
 
 /// The sections whose settings are kept in [`SettingsStore`] rather than in the form's fields.
-pub const STORED_SECTIONS: &[Section] = &[Section::Geometry, Section::Magnitude, Section::SwiSmwi];
+pub const STORED_SECTIONS: &[Section] = &[Section::Geometry, Section::Motion, Section::Magnitude, Section::SwiSmwi];
 
 /// A note a page makes before a setting's row, from the rows' context (none when there is nothing
 /// to say).
@@ -44,6 +44,9 @@ struct PageLayout {
     repeats: &'static [(&'static str, &'static str)],
     /// A note before a setting's row, when there is one to make.
     notes: &'static [(&'static str, Note)],
+    /// Settings shown as a block under a setting of the page they have no parent in:
+    /// `(path prefix, under, heading)`, shown while `under` is on, after a note naming the block.
+    blocks: &'static [(&'static str, &'static str, &'static str)],
 }
 
 fn is_swi(path: &str) -> bool {
@@ -55,14 +58,21 @@ const LAYOUTS: &[PageLayout] = &[
         // A selected method that only works on axial data resamples whatever the switch says.
         ("pipeline.output_space", |ctx| ctx.axial_forced_by.as_ref()
             .map(|why| format!("  Oblique data is resampled to axial for {why}"))),
-    ] },
-    PageLayout { page: Page::Magnitude, section: Section::Magnitude, only: None, repeats: &[], notes: &[] },
-    PageLayout { page: Page::Swi, section: Section::SwiSmwi, only: Some(is_swi), repeats: &[], notes: &[] },
+    ], blocks: &[] },
+    PageLayout {
+        page: Page::Motion, section: Section::Motion, only: None, repeats: &[], notes: &[],
+        // The rigid registration serves motion correction and the co-registration of
+        // orientations (shown there too), so it is no one setting's.
+        blocks: &[("registration.", "motion_correction.enabled", "Rigid registration (advanced):")],
+    },
+    PageLayout { page: Page::Magnitude, section: Section::Magnitude, only: None, repeats: &[], notes: &[], blocks: &[] },
+    PageLayout { page: Page::Swi, section: Section::SwiSmwi, only: Some(is_swi), repeats: &[], notes: &[], blocks: &[] },
     PageLayout {
         page: Page::Smwi, section: Section::SwiSmwi, only: Some(|p| !is_swi(p)),
         // SMWI reads a χ map, which may be supplied rather than computed.
         repeats: &[("separation.custom_qsm_tool", "pipeline.do_smwi")],
         notes: &[],
+        blocks: &[],
     },
 ];
 
@@ -116,9 +126,9 @@ fn indented(depth: usize, label: &'static str) -> &'static str {
 }
 
 /// How many settings `s` is listed under on its own section's page.
-fn depth(s: &Setting) -> usize {
+fn depth_of(s: &Setting) -> usize {
     match s.parent.map(setting) {
-        Some(p) if p.section == s.section => 1 + depth(p),
+        Some(p) if p.section == s.section => 1 + depth_of(p),
         _ => 0,
     }
 }
@@ -179,8 +189,17 @@ fn parse(s: &Setting, text: &str) -> Option<Value> {
         ValueType::IntList => numbers().map(int).collect::<Option<Vec<_>>>().filter(|v| !v.is_empty()).map(Value::from),
         ValueType::Text if text.is_empty() => Some(if s.optional { Value::Null } else { Value::from("") }),
         ValueType::Text => Some(Value::from(text)),
+        // The echo number of an echo reference, written as the config writes it ("3").
+        ValueType::EchoReference { .. } => echo_number(s, &Value::from(text)).map(|n| Value::from(n.to_string())),
         _ => None,
     }
+}
+
+/// The echo number an echo reference's value gives, when it gives one the setting takes.
+fn echo_number(s: &Setting, v: &Value) -> Option<u32> {
+    let ValueType::EchoReference { options } = &s.value_type else { return None };
+    let n: u32 = v.as_str()?.trim().parse().ok()?;
+    options.iter().any(|o| matches!(o.kind, EchoKind::EchoNumber { min } if n >= min)).then_some(n)
 }
 
 /// The settings of [`STORED_SECTIONS`]: the values that differ from QSMxT's defaults, and the
@@ -218,13 +237,22 @@ impl SettingsStore {
         self.set(path, !on);
     }
 
-    /// A choice's position in the setting's options.
+    /// A choice's position in the setting's options. An echo reference given as an echo number
+    /// is its echo-number option.
     pub fn select(&self, path: &str) -> usize {
         let v = self.get(path);
-        setting(path).value_type.options().iter().position(|o| o.value == v).unwrap_or(0)
+        let s = setting(path);
+        let number = echo_number(s, &v).is_some();
+        s.value_type.options().iter().position(|o| o.value == v).or_else(|| {
+            let ValueType::EchoReference { options } = &s.value_type else { return None };
+            options.iter().position(|o| number && matches!(o.kind, EchoKind::EchoNumber { .. }))
+        }).unwrap_or(0)
     }
 
     pub fn set_select(&mut self, path: &'static str, index: usize) {
+        if index == self.select(path) {
+            return; // an echo number chosen again keeps its number
+        }
         let opts = setting(path).value_type.options();
         if let Some(o) = opts.get(index.min(opts.len().saturating_sub(1))) {
             self.set(path, o.value.clone());
@@ -235,17 +263,31 @@ impl SettingsStore {
     pub fn text(&self, path: &str) -> Cow<'_, str> {
         match self.typed.get(path) {
             Some(t) => Cow::Borrowed(t),
-            None => Cow::Owned(text_of(&self.get(path))),
+            None => Cow::Owned(self.value_text(path)),
         }
     }
 
     /// The text of a row, to type into.
     pub fn text_mut(&mut self, path: &'static str) -> &mut String {
         if !self.typed.contains_key(path) {
-            let text = text_of(&self.get(path));
+            let text = self.value_text(path);
             self.typed.insert(path, text);
         }
         self.typed.get_mut(path).expect("just inserted")
+    }
+
+    /// A value as its text row shows it. An echo reference's row shows its echo number: the
+    /// value's, or the first the setting takes while a named echo is chosen.
+    fn value_text(&self, path: &str) -> String {
+        let s = setting(path);
+        let v = self.get(path);
+        match &s.value_type {
+            ValueType::EchoReference { options } => echo_number(s, &v).map(|n| n.to_string()).unwrap_or_else(|| {
+                options.iter().find_map(|o| match o.kind { EchoKind::EchoNumber { min } => Some(min.to_string()), _ => None })
+                    .unwrap_or_default()
+            }),
+            _ => text_of(&v),
+        }
     }
 
     /// Put a setting back to QSMxT's default.
@@ -331,40 +373,71 @@ impl App {
         };
         let visible = self.visible_settings(config);
         let shows = |path: &str| visible.contains(path);
+        let is_on = |path: &str| field_of_path(path).is_some_and(|f| self.field_toggle(f));
         let mut rows = Vec::new();
+        let mut headed = HashSet::new();
         for s in schema::settings() {
-            if s.section == layout.section && layout.only.is_none_or(|f| f(s.path)) && shows(s.path) {
-                for (_, note) in layout.notes.iter().filter(|(p, _)| *p == s.path) {
-                    rows.extend(note(ctx).map(|text| PipelineRow::Note { text: text.into() }));
-                }
-                push_rows(&mut rows, s, depth(s));
+            if s.section != layout.section || !layout.only.is_none_or(|f| f(s.path)) || !shows(s.path) {
+                continue;
             }
+            let block = layout.blocks.iter().find(|(prefix, ..)| s.path.starts_with(prefix));
+            let depth = match block {
+                Some(&(prefix, under, heading)) => {
+                    if !is_on(under) {
+                        continue;
+                    }
+                    let depth = depth_of(setting(under)) + 1;
+                    if headed.insert(prefix) {
+                        rows.push(PipelineRow::Note { text: format!("{}{heading}", "  ".repeat(depth)).into() });
+                    }
+                    depth + 1
+                }
+                None => depth_of(s),
+            };
+            for (_, note) in layout.notes.iter().filter(|(p, _)| *p == s.path) {
+                rows.extend(note(ctx).map(|text| PipelineRow::Note { text: text.into() }));
+            }
+            self.push_rows(&mut rows, s, depth);
         }
         for (path, under) in layout.repeats {
-            let on = field_of_path(under).is_some_and(|f| self.field_toggle(f));
-            if on && shows(path) {
-                let under = setting(under);
-                push_rows(&mut rows, setting(path), depth(under) + 1);
+            if is_on(under) && shows(path) {
+                self.push_rows(&mut rows, setting(path), depth_of(setting(under)) + 1);
             }
         }
         Some(rows)
     }
 }
 
-/// The row of a setting, by its value type.
-fn push_rows(rows: &mut Vec<PipelineRow>, s: &'static Setting, depth: usize) {
-    let field = field_of_path(s.path).unwrap_or_else(|| panic!("{} has no row field", s.path));
-    let label = indented(depth, s.label);
-    rows.push(match s.value_type {
-        ValueType::Bool => PipelineRow::Toggle { label, field, help: s.tui_help },
-        ValueType::Enum { .. } => {
-            let (options, help) = options(s.path);
-            PipelineRow::AlgoSelect { label, field, options, help }
+impl App {
+    /// The rows of a setting, by its value type: one, or for an echo reference given as an echo
+    /// number, the select and the number's row under it.
+    fn push_rows(&self, rows: &mut Vec<PipelineRow>, s: &'static Setting, depth: usize) {
+        let field = field_of_path(s.path).unwrap_or_else(|| panic!("{} has no row field", s.path));
+        let label = indented(depth, s.label);
+        rows.push(match s.value_type {
+            ValueType::Bool => PipelineRow::Toggle { label, field, help: s.tui_help },
+            ValueType::Enum { .. } | ValueType::EchoReference { .. } => {
+                let (options, help) = options(s.path);
+                PipelineRow::AlgoSelect { label, field, options, help }
+            }
+            ValueType::Int | ValueType::Float | ValueType::IntVec3 | ValueType::FloatVec3 | ValueType::IntList
+            | ValueType::Text => PipelineRow::Param { label, field, help: s.tui_help },
+            _ => unreachable!("{}: no widget for its value type yet", s.path),
+        });
+        if let ValueType::EchoReference { options } = &s.value_type {
+            let chosen = options.get(self.field_select(field)).map(|o| o.kind);
+            if let (Some(EchoKind::EchoNumber { .. }), Some((label, help))) = (chosen, s.tui_value) {
+                rows.push(PipelineRow::Param { label: indented(depth + 1, label), field: value_field(s.path), help });
+            }
         }
-        ValueType::Int | ValueType::Float | ValueType::IntVec3 | ValueType::FloatVec3 | ValueType::IntList
-        | ValueType::Text => PipelineRow::Param { label, field, help: s.tui_help },
-        _ => unreachable!("{}: no widget for its value type yet", s.path),
-    });
+    }
+}
+
+/// The field of a setting's value row: the second row editing its path (an echo reference's
+/// number).
+fn value_field(path: &str) -> &'static str {
+    FIELD_PATHS.iter().filter(|(_, p)| *p == path).nth(1).map(|(f, _)| *f)
+        .unwrap_or_else(|| panic!("{path} has no value row field"))
 }
 
 #[cfg(test)]
