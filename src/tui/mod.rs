@@ -109,6 +109,9 @@ pub fn run_tui() -> crate::Result<()> {
 
         // A change that creates a recommendation opens its pop-up (`recommend`).
         app.check_recommendations();
+        // The state is brought up to date here, after the event and the background polls; the
+        // frame only draws it.
+        app.prepare_frame();
         terminal.draw(|f| ui::draw(f, &mut app))?;
 
         // Use poll with timeout so the UI refreshes during background scans

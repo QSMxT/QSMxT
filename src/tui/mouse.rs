@@ -386,6 +386,7 @@ mod tests {
 
     fn draw_sized(app: &mut App, width: u16, height: u16) -> Vec<String> {
         let mut t = Terminal::new(TestBackend::new(width, height)).unwrap();
+        app.prepare_frame();
         t.draw(|f| super::super::ui::draw(f, app)).unwrap();
         let buf = t.backend().buffer();
         (0..buf.area.height).map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect()).collect()

@@ -8034,9 +8034,23 @@ impl App {
         }
     }
 
+    /// Bring the state a frame shows up to date, before drawing it: the header's pipeline status,
+    /// and on a row-based tab the pipeline form's page and context ([`Self::sync_pipeline_mode`];
+    /// a page that stopped applying sends focus back to the top). Drawing ([`super::ui::draw`])
+    /// then only reads the form, so the next key and the config see the state this left, whether
+    /// or not a frame was drawn in between.
+    pub fn prepare_frame(&mut self) {
+        // In the order drawing used to do these, so each frame shows what it did.
+        self.pipeline_status();
+        if Self::is_rows_tab(self.active_tab) {
+            self.sync_pipeline_mode();
+        }
+    }
+
     /// Point the pipeline form at the active page, with its context fresh. When the page
     /// changes under it (a tab or sub-tab switch, or a sub-tab that stopped applying), focus goes
-    /// back to the top. Called from both key handling and rendering so the display is consistent.
+    /// back to the top. Called by key handling and before each frame ([`Self::prepare_frame`]) so
+    /// the display is consistent.
     pub fn sync_pipeline_mode(&mut self) {
         self.pipeline_state.ctx = self.row_context();
         if let Some(page) = self.page() {

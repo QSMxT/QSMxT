@@ -498,6 +498,7 @@ pub(super) mod tests {
 
     fn render(app: &mut App, width: u16, height: u16) -> Terminal<TestBackend> {
         let mut t = Terminal::new(TestBackend::new(width, height)).unwrap();
+        app.prepare_frame();
         t.draw(|f| crate::tui::ui::draw(f, app)).unwrap();
         t
     }

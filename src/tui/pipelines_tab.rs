@@ -131,7 +131,8 @@ impl App {
         s
     }
 
-    /// The status the header shows, from the cache ([`Self::pipeline_status`] fills it each frame).
+    /// The status the header shows, from the cache ([`Self::pipeline_status`] fills it before each
+    /// frame, in [`App::prepare_frame`]).
     pub fn pipeline_status_text(&self) -> Option<String> {
         self.pipelines.cached.as_ref().map(|(_, s)| s.text())
     }
@@ -600,6 +601,7 @@ mod tests {
     fn screen(app: &mut App) -> String {
         use ratatui::{backend::TestBackend, Terminal};
         let mut t = Terminal::new(TestBackend::new(140, 42)).unwrap();
+        app.prepare_frame();
         t.draw(|f| super::super::ui::draw(f, app)).unwrap();
         let buf = t.backend().buffer();
         (0..buf.area.height)
@@ -765,6 +767,7 @@ mod live {
         let step = |app: &mut App, code: KeyCode| {
             app.check_recommendations();
             let mut t = ratatui::Terminal::new(ratatui::backend::TestBackend::new(140, 42)).unwrap();
+            app.prepare_frame();
             t.draw(|f| super::super::ui::draw(f, app)).unwrap();
             app.handle_key(KeyEvent::new(code, KeyModifiers::NONE));
         };

@@ -22,6 +22,7 @@ const HEIGHT: u16 = 100;
 /// the label shortened, as its length follows theirs).
 fn screen(app: &mut App) -> String {
     let mut t = Terminal::new(TestBackend::new(WIDTH, HEIGHT)).unwrap();
+    app.prepare_frame();
     t.draw(|f| super::ui::draw(f, app)).unwrap();
     let buf = t.backend().buffer();
     let mut out = String::new();
@@ -79,5 +80,33 @@ fn every_input_mode() {
         let mut app = app_on(0, None, false);
         app.input_mode = mode;
         snapshot::check(DIR, &format!("input_{label}.txt"), &screen(&mut app));
+    }
+}
+
+/// What the next key and the config depend on: the settings, the context and page of the pipeline
+/// form, where focus is, and the config built.
+fn form_state(app: &App) -> String {
+    let config = super::command::config_from_app(app).map(|c| serde_json::to_string(&c).unwrap());
+    format!("{} {:?} {:?} {} {} {} {} {config:?}", app.rec_fingerprint(), app.active_tab, app.sub_page,
+            app.active_field, app.subtab_focus, app.tab_focus, app.editing)
+}
+
+/// Drawing only shows the state ([`App::prepare_frame`] brings it up to date first): a frame
+/// leaves the form, its focus and its config as they were, on every tab and section.
+#[test]
+fn drawing_changes_nothing_the_form_depends_on() {
+    for advanced in [false, true] {
+        for tab in 0..TAB_NAMES.len() {
+            let pages = app_on(tab, None, advanced).pages(tab);
+            let pages: Vec<Option<Page>> = if pages.is_empty() { vec![None] } else { pages.into_iter().map(Some).collect() };
+            for page in pages {
+                let mut app = app_on(tab, page, advanced);
+                app.prepare_frame();
+                let before = form_state(&app);
+                let mut t = Terminal::new(TestBackend::new(WIDTH, HEIGHT)).unwrap();
+                t.draw(|f| super::ui::draw(f, &mut app)).unwrap();
+                assert_eq!(before, form_state(&app), "drawing tab {tab} {page:?} changed the form");
+            }
+        }
     }
 }
