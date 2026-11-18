@@ -65,5 +65,12 @@ tempfile = "3"
 # dependencies are optimised in dev and test builds. The workspace crates stay unoptimised, so they
 # still build quickly and their coverage maps one-to-one onto the source (cargo-llvm-cov
 # instruments only them). Release builds are unaffected.
+#
+# Debug info is most of a debug build's size and much of its link time. The workspace crates keep
+# line tables, so backtraces and panics still name file and line; dependencies keep none.
+[profile.dev]
+debug = "line-tables-only"
+
 [profile.dev.package."*"]
 opt-level = 3
+debug = false
