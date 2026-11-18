@@ -639,7 +639,7 @@ mod tests {
         let m = app.rec_modal.as_ref().expect("a recommendation pop-up");
         assert!(m.findings.iter().any(|r| r.setting == "bg_removal.pdf.n_cg"), "{:?}", m.findings);
         assert!(m.rows[0].checked, "it starts ticked");
-        assert!(app.refs.modal.is_none() && app.refs.pending.is_empty(), "no reference pipeline pop-up");
+        assert!(app.refs.modal.is_none() && app.advice.pending.is_empty(), "no reference pipeline pop-up");
         app.rec_modal = None;
         app.choose_pipeline("decompose").unwrap();
         assert!(super::super::command::config_from_app(&app).unwrap().qsm.per_echo, "DECOMPOSE's QSM is per echo");

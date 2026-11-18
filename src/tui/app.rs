@@ -6294,17 +6294,12 @@ pub struct App {
     /// The recommendation pop-up, opened when a change creates a recommendation
     /// ([`super::recommend`]).
     pub rec_modal: Option<super::recommend::RecModal>,
-    /// The recommendations open after the last change (rule and value), so that only a change
-    /// that creates one opens the pop-up.
-    pub rec_seen: Vec<(String, String)>,
-    /// Rules a change created findings for, on other settings than the pop-up shown: each is
-    /// offered in a pop-up of its own once the one before it is closed.
-    pub rec_queue: Vec<String>,
-    /// The form as it was when `rec_seen` was taken (empty before the first check): a key that
-    /// changed nothing is not checked.
+    /// What the engine works the pop-ups after a change out from: the findings open after the
+    /// last change, the ones waiting for a pop-up, the methods chosen ([`qsmxt_engine::advice::edit`]).
+    pub advice: qsmxt_engine::advice::edit::State,
+    /// The form at the last check (empty before the first): a key that changed nothing is not
+    /// checked.
     pub rec_form: String,
-    /// The config as it was at the same point, to tell which settings a change changed.
-    pub rec_config: Option<serde_json::Value>,
     /// The form as it was at the same point: what "Undo my change" in a required-change pop-up
     /// sets back ([`super::recommend::Undo`]).
     pub rec_snapshot: Option<Box<super::recommend::FormSnapshot>>,
@@ -6715,10 +6710,8 @@ impl App {
             dicom_state: DicomConvertState::default(),
             nifti_state: NiftiState::default(),
             rec_modal: None,
-            rec_seen: Vec::new(),
-            rec_queue: Vec::new(),
+            advice: Default::default(),
             rec_form: String::new(),
-            rec_config: None,
             rec_snapshot: None,
             refs: Default::default(),
             pipelines: Default::default(),

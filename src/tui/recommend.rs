@@ -50,172 +50,13 @@
 //!   row is tried until the engine no longer finds the departure.
 
 use crossterm::event::{KeyCode, KeyEvent};
+pub use qsmxt_engine::advice::{AdviceKind, AdviceRow, Offer, Preselect, RowAction};
+use qsmxt_engine::advice::{self, decide, edit};
 pub use qsmxt_engine::recommendations::{Kind, Strength};
 use qsmxt_engine::recommendations::{self as rec, Facts, Marker, Recommendation, Trigger};
 use serde_json::Value;
 
 use super::app::{App, PipelineRow};
-
-/// What ticking a row of an advice pop-up does.
-#[derive(Debug, Clone, PartialEq)]
-pub enum RowAction {
-    /// Set the finding's setting to `value` (the rule's recommended one when `None`), which reads
-    /// as `name`.
-    Apply { value: Option<Value>, name: String },
-    /// Turn off the flag the finding is scoped to (`setting`, its config path) instead, keeping
-    /// the setting as it is.
-    TurnOff { setting: String },
-}
-
-/// One row of an advice pop-up: a setting as it is and what ticking the row changes it to.
-#[derive(Debug, Clone, PartialEq)]
-pub struct AdviceRow {
-    pub finding: Recommendation,
-    /// The other methods' rules that want the same value of the same setting: decided with it.
-    pub also: Vec<Recommendation>,
-    pub action: RowAction,
-    pub checked: bool,
-    /// A value the rule allows besides the one it gives.
-    pub alternative: bool,
-    /// One of the values chosen methods' authors disagree on ([`rec::disagreeing`]): tagged
-    /// with whose it is, one choice with the other authors' values.
-    pub authors: bool,
-    /// The setting already has this row's value (another chosen method's authors' setting it
-    /// follows): choosing the row keeps it.
-    pub keeps: bool,
-    /// Rows of one group exclude each other: the values of one part of a setting, and turning
-    /// off the flag that part depends on instead.
-    group: String,
-}
-
-impl AdviceRow {
-    fn apply(finding: Recommendation, value: Option<Value>, name: String, alternative: bool) -> Self {
-        let group = rec::rule_setting(&finding).to_string();
-        AdviceRow { finding, also: vec![], action: RowAction::Apply { value, name }, checked: false, alternative, authors: false, keeps: false, group }
-    }
-
-    /// The setting the row changes, and its label: the flag's for turning it off.
-    pub fn setting(&self) -> (&str, String) {
-        match &self.action {
-            RowAction::TurnOff { setting } => (setting, capitalised(self.finding.flag_name())),
-            RowAction::Apply { .. } => (&self.finding.setting, part_label(&self.finding)),
-        }
-    }
-
-    /// The value as it is, and as ticking the row makes it.
-    pub fn change(&self) -> (String, String) {
-        match &self.action {
-            RowAction::TurnOff { .. } => ("on".into(), "off".into()),
-            RowAction::Apply { name, .. } => (self.finding.current_text(), name.clone()),
-        }
-    }
-
-    /// The row's tag: what kind of advice it is, or, for one of the values chosen methods'
-    /// authors disagree on, whose it is ("PDF's authors").
-    pub fn tag(&self) -> String {
-        if self.alternative {
-            return "allowed".into();
-        }
-        if self.authors {
-            let names: Vec<String> = std::iter::once(&self.finding).chain(&self.also).map(|r| format!("{}'s", r.trigger.name)).collect();
-            return format!("{} authors", names.join(" and "));
-        }
-        self.finding.strength.label().into()
-    }
-
-    /// The methods whose rules the row is: "MEDI, PDF".
-    pub fn methods(&self) -> String {
-        std::iter::once(&self.finding).chain(&self.also).map(|r| r.trigger.name.as_str()).collect::<Vec<_>>().join(", ")
-    }
-
-    /// The plain explanation of the row, for the panel under the list. `group_unticked`: no row
-    /// of its group is ticked, so a required change unticked leaves the run refused.
-    pub fn explanation(&self, several: bool, group_unticked: bool) -> String {
-        let r = &self.finding;
-        let whose = if several || !self.also.is_empty() { format!(" ({})", self.methods()) } else { String::new() };
-        let verb = match r.strength {
-            Strength::Required => "requires",
-            Strength::Discouraged | Strength::Recommended => "recommends",
-            Strength::Suggested => "suggests",
-            Strength::Reference => "uses",
-        };
-        let mut text = match (&self.action, r.strength) {
-            (RowAction::TurnOff { .. }, _) => format!("Turn off {} and keep {} as {}. With it on, {} {verb} {}: {}",
-                r.flag_name(), r.label, r.current_text(), r.trigger.name, r.recommended.name, sentence(&r.reason)),
-            (RowAction::Apply { name, .. }, _) if self.alternative => format!("{} also allows {name}{whose}.", r.trigger.name),
-            (_, Strength::Required) => format!("{} requires {}{whose}: {}", r.trigger.name, r.recommended.name, sentence(&r.reason)),
-            (_, Strength::Discouraged) => format!("{} is discouraged with {}{whose}: {}", r.current_text(), r.trigger.name, sentence(&r.reason)),
-            (_, Strength::Suggested) => format!("{} suggests {}{whose}: {}", r.trigger.name, r.recommended.name, sentence(&r.reason)),
-            (_, Strength::Recommended) => format!("{} recommends {}{whose}: {}", r.trigger.name, r.recommended.name, sentence(&r.reason)),
-            (_, Strength::Reference) => format!("{} uses {}{whose}: {}. The authors' setting, not a recommendation.",
-                rec::reference_title(&r.trigger), r.recommended.name, r.reason.trim_end_matches('.')),
-        };
-        if r.strength == Strength::Required && group_unticked && matches!(self.action, RowAction::Apply { .. }) && !self.alternative {
-            text += &format!(" Unticked, the run will refuse to start: {} cannot run with {}.", r.trigger.name, r.current_text());
-        }
-        if r.dismissed {
-            text += &format!(" You kept {} before.", r.current_text());
-        }
-        text
-    }
-}
-
-/// A reason as a sentence: with its full stop.
-fn sentence(s: &str) -> String {
-    let s = s.trim();
-    if s.ends_with(['.', '!', '?']) { s.to_string() } else { format!("{s}.") }
-}
-
-/// A row's setting as the checklist names it: the parts of the mask recipe (one QSMxT setting,
-/// "Mask") by the part.
-fn part_label(r: &Recommendation) -> String {
-    match rec::rule_setting(r) {
-        "masking.input" => "Mask input",
-        "masking.threshold_method" => "Mask threshold",
-        "masking.largest_component" => "Mask components",
-        "masking.imfill" => "Mask holes",
-        "masking.erosion" => "Mask erosion",
-        "masking.min_intensity" => "Mask intensity threshold",
-        "masking.majority" => "Mask majority filter",
-        "masking.close_radius" => "Mask closing",
-        "masking.bet.fractional_intensity" => "BET fractional intensity",
-        "masking.bet.orientation" => "BET orientation",
-        _ => return r.label.clone(),
-    }.to_string()
-}
-
-/// `s` with its first letter in capitals, if it is a Latin one ("χ-separation" stays as it is).
-fn ascii_capitalised(s: &str) -> String {
-    let mut c = s.chars();
-    c.next().map_or_else(String::new, |f| std::iter::once(f.to_ascii_uppercase()).chain(c).collect())
-}
-
-fn lowercase_first(s: &str) -> String {
-    let mut c = s.chars();
-    c.next().map_or_else(String::new, |f| f.to_lowercase().chain(c).collect())
-}
-
-fn capitalised(s: &str) -> String {
-    let mut c = s.chars();
-    c.next().map_or_else(String::new, |f| f.to_uppercase().chain(c).collect())
-}
-
-/// Which pop-up an advice pop-up is.
-#[derive(Debug, Clone, PartialEq)]
-pub enum AdviceKind {
-    /// A change created a reasoned finding ([`AdviceModal::new`]).
-    Change,
-    /// The finding is on the setting just changed, against a flag that is on
-    /// ([`AdviceModal::changed`]).
-    Changed,
-    /// The details of a marked setting, opened with `!` ([`AdviceModal::details`]).
-    Details,
-    /// The differences from the reference pipelines of the methods a change chose
-    /// ([`AdviceModal::reference`]).
-    Reference(Vec<Trigger>),
-    /// Outputs another setting needs ([`AdviceModal::required`]).
-    Required,
-}
 
 /// The form as it was before a change: what "Undo my change" sets back. Of the run selection,
 /// only the settings that reach the configuration (orientation grouping and the echo limit), so
@@ -261,398 +102,87 @@ impl std::fmt::Debug for Undo {
     }
 }
 
-/// An advice pop-up: the changes on offer as a checklist under the sections they are on, each
-/// "setting: current → new" with its kind, and the highlighted one's reason in a panel under it.
-/// One Apply applies the ticked rows; Keep mine keeps every setting as it is. What starts ticked
-/// follows the kind of advice: a recommendation (or anything required or discouraged) is
-/// ticked, an authors' setting or a suggestion is not, and nothing is when equal advice
-/// disagrees. Turning off the flag a change went against starts ticked when that change was
-/// just made, so the change itself is kept.
+/// An advice pop-up: the engine's [`Offer`] (its rows, what starts ticked, its wording), and
+/// where the user is in it.
 #[derive(Debug, Clone)]
 pub struct AdviceModal {
-    pub kind: AdviceKind,
-    /// The findings it is about, in order.
-    pub findings: Vec<Recommendation>,
-    pub rows: Vec<AdviceRow>,
+    pub offer: Offer,
     /// The highlighted row.
     pub cursor: usize,
     /// How far the list is scrolled; drawing keeps the highlighted row in view.
     pub scroll: u16,
-    /// The button that has the focus instead of a row: 0 Apply, 1 Keep mine ([`Self::buttons`]);
+    /// The button that has the focus instead of a row: 0 Apply, 1 Keep mine ([`Offer::buttons`]);
     /// in a required-change pop-up, 0 Apply required change, 1 Undo my change.
     pub button: Option<usize>,
     /// What "Undo my change" sets back, in a required-change pop-up opened by a change.
     pub undo: Option<Undo>,
 }
 
-/// The pop-up a change, or `!`, opens ([`AdviceModal::new`], [`AdviceModal::changed`],
-/// [`AdviceModal::details`]).
+impl std::ops::Deref for AdviceModal {
+    type Target = Offer;
+    fn deref(&self) -> &Offer {
+        &self.offer
+    }
+}
+
+impl std::ops::DerefMut for AdviceModal {
+    fn deref_mut(&mut self) -> &mut Offer {
+        &mut self.offer
+    }
+}
+
+impl From<Offer> for AdviceModal {
+    fn from(offer: Offer) -> Self {
+        AdviceModal { offer, cursor: 0, scroll: 0, button: None, undo: None }
+    }
+}
+
+/// The pop-up a change, or `!`, opens.
 pub type RecModal = AdviceModal;
-/// The reference pipeline pop-up ([`AdviceModal::reference`]).
+/// The reference pipeline pop-up.
 pub type RefModal = AdviceModal;
 
 impl AdviceModal {
-    /// Rows for `findings`: each value once (the methods that agree on it together), with the
-    /// values each rule also allows when `alternatives`.
-    fn build(kind: AdviceKind, findings: Vec<Recommendation>, alternatives: bool) -> Self {
-        let mut rows: Vec<AdviceRow> = Vec::new();
-        for r in &findings {
-            let same = |row: &&mut AdviceRow| !row.alternative && row.group == rec::rule_setting(r)
-                && matches!(&row.action, RowAction::Apply { value: None, .. }) && row.finding.recommended.value == r.recommended.value;
-            match rows.iter_mut().find(|row| same(row)) {
-                Some(row) => row.also.push(r.clone()),
-                None => rows.push(AdviceRow::apply(r.clone(), None, r.recommended.name.clone(), false)),
-            }
-        }
-        if alternatives {
-            let primaries: Vec<Recommendation> = rows.iter().map(|r| r.finding.clone()).collect();
-            for r in &primaries {
-                for a in r.alternatives() {
-                    let taken = rows.iter().any(|row| row.group == rec::rule_setting(r)
-                        && matches!(&row.action, RowAction::Apply { value, .. } if value.as_ref().unwrap_or(&row.finding.recommended.value) == &a.value));
-                    if !taken {
-                        rows.push(AdviceRow::apply(r.clone(), Some(a.value.clone()), a.name.clone(), true));
-                    }
-                }
-            }
-        }
-        // In each group, the strongest row starts ticked when its kind is preselected and no
-        // other row as strong disagrees with it (a recommendation outranks an authors' setting).
-        let mut groups: Vec<String> = rows.iter().map(|r| r.group.clone()).collect();
-        groups.dedup();
-        for g in &groups {
-            let here: Vec<usize> = rows.iter().enumerate().filter(|(_, r)| r.group == *g && !r.alternative).map(|(i, _)| i).collect();
-            let Some(&best) = here.iter().max_by_key(|&&i| (rows[i].finding.kind == Kind::Reasoned, rows[i].finding.strength)) else { continue };
-            let r = &rows[best].finding;
-            let disagree = here.iter().any(|&i| i != best && rows[i].finding.strength == r.strength && rows[i].finding.kind == r.kind);
-            rows[best].checked = !disagree && !r.conflict && !r.dismissed && r.kind == Kind::Reasoned && r.strength.preselected();
-        }
-        AdviceModal { kind, findings, rows, cursor: 0, scroll: 0, button: None, undo: None }
-    }
-
-    /// The outputs other settings need that the form leaves off (`findings`, each
-    /// [`rec::Recommendation::applied_by_run`]): every one ticked, as one change, with "Undo my
-    /// change" when a change just made needs them (`undo`).
+    /// [`Offer::required`], with the form to set back for "Undo my change".
     pub fn required(findings: Vec<Recommendation>, undo: Option<Undo>) -> Self {
-        let rows = findings.iter().map(|r| {
-            let mut row = AdviceRow::apply(r.clone(), None, r.recommended.name.clone(), false);
-            row.checked = true;
-            row
-        }).collect();
-        AdviceModal { kind: AdviceKind::Required, findings, rows, cursor: 0, scroll: 0, button: None, undo }
+        let what = undo.as_ref().map(|u| u.what.clone());
+        AdviceModal { undo, ..Offer::required(findings, what).into() }
     }
 
     pub fn new(findings: Vec<Recommendation>) -> Self {
-        Self::build(AdviceKind::Change, findings, true)
+        Offer::new(findings).into()
     }
 
-    /// `findings` are on the setting just changed, and scoped to a flag that is on: turning the
-    /// flag off is offered, ticked, so the change itself stands. Changing the setting back (or to
-    /// another value the rule allows) is not offered: it would undo the change just made, and
-    /// both resolve the one conflict, so only one of them belongs in the pop-up.
     pub fn changed(findings: Vec<Recommendation>) -> Self {
-        let mut m = Self::build(AdviceKind::Changed, findings, true);
-        let mut off = turn_off_rows(&m.findings);
-        m.rows.retain(|row| !off.iter().any(|o| o.group == row.group));
-        for o in &mut off {
-            o.checked = true;
-        }
-        m.rows.splice(0..0, off);
-        m
+        Offer::changed(findings).into()
     }
 
-    /// The details of a setting: `findings` are the rules it departs from, offered ones first.
     pub fn details(findings: Vec<Recommendation>) -> Self {
-        let mut m = Self::build(AdviceKind::Details, findings, true);
-        m.rows.extend(turn_off_rows(&m.findings));
-        m
+        Offer::details(findings).into()
     }
 
-    /// Where the config differs from the reference pipelines of the methods a change chose,
-    /// led by the recommendations the same change created.
     pub fn reference(methods: Vec<Trigger>, findings: Vec<Recommendation>) -> Self {
-        Self::build(AdviceKind::Reference(methods), findings, false)
+        Offer::reference(methods, findings).into()
     }
 
-    /// Several methods' advice: each row says whose it is.
-    pub fn several(&self) -> bool {
-        let mut methods: Vec<&str> = Vec::new();
-        for f in &self.findings {
-            if !methods.contains(&f.trigger.name.as_str()) {
-                methods.push(&f.trigger.name);
-            }
-        }
-        methods.len() > 1
-    }
-
-    /// The methods whose reference pipelines a reference pop-up is about.
-    pub fn methods(&self) -> &[Trigger] {
-        match &self.kind {
-            AdviceKind::Reference(methods) => methods,
-            _ => &[],
-        }
-    }
-
-    /// Whether Keep mine is offered: not when every finding is required. In a required-change
-    /// pop-up, its place is Undo my change, when there is a change to undo.
-    pub fn keepable(&self) -> bool {
-        if self.kind == AdviceKind::Required {
-            return self.undo.is_some();
-        }
-        self.findings.iter().any(|r| r.strength != Strength::Required)
-    }
-
-    /// The buttons' labels, in order ([`Self::buttons`] of them).
-    pub fn button_labels(&self) -> Vec<String> {
-        let mut out = match self.kind {
-            AdviceKind::Required => vec!["Apply required change".to_string()],
-            _ => vec![format!("Apply ({})", self.ticked())],
-        };
-        if self.keepable() {
-            out.push(if self.kind == AdviceKind::Required { "Undo my change" } else { "Keep mine" }.to_string());
-        }
-        out
-    }
-
-    /// The ticked rows.
-    pub fn ticked(&self) -> usize {
-        self.rows.iter().filter(|r| r.checked).count()
-    }
-
-    /// Row `i` is one of several ways to resolve one setting (the values of one setting, or
-    /// turning off the flag it depends on instead): drawn as a radio button, as one choice.
-    pub fn radio(&self, i: usize) -> bool {
-        self.rows.get(i).is_some_and(|row| self.rows.iter().filter(|r| r.group == row.group).count() > 1)
-    }
-
-    /// Row `i` is an alternative to a required row before it in its radio group: tagged "or"
-    /// rather than "required" a second time, as the group is one requirement.
-    pub fn or_row(&self, i: usize) -> bool {
-        let Some(row) = self.rows.get(i) else { return false };
-        !row.alternative && row.finding.strength == Strength::Required
-            && self.rows[..i].iter().any(|r| r.group == row.group && r.finding.strength == Strength::Required)
-    }
-
-    /// No row of row `i`'s group is ticked: a required one then leaves the run refused.
-    fn group_unticked(&self, i: usize) -> bool {
-        self.rows.get(i).is_some_and(|row| !self.rows.iter().any(|r| r.group == row.group && r.checked))
-    }
-
-    /// Row `i`'s explanation, for the panel under the list. For one of the values chosen
-    /// methods' authors disagree on: whose it is and why, what the others use, and that the
-    /// choice is the user's.
-    pub fn explanation(&self, i: usize) -> String {
-        let Some(row) = self.rows.get(i) else { return String::new() };
-        if row.finding.applied_by_run() {
-            let r = &row.finding;
-            let mut text = format!("{} requires {}: {}", ascii_capitalised(&r.trigger.name), r.label, sentence(&lowercase_first(&r.reason)));
-            if let Some(undo) = &self.undo {
-                text += &format!(" Undo my change sets {} instead.", undo.what);
-            } else {
-                text += " Left off, the run turns it on itself and says so in its log.";
-            }
-            return text;
-        }
-        if !row.authors {
-            return row.explanation(self.several(), self.group_unticked(i));
-        }
-        let r = &row.finding;
-        let whose = row.tag();
-        let as_set = if row.keeps { " (as set)" } else { "" };
-        let others: Vec<String> = self.rows.iter().filter(|o| o.authors && o.group == row.group && o.finding.rule != r.rule)
-            .map(|o| format!("{} use {}", o.tag(), o.finding.recommended.name)).collect();
-        format!("{whose} use {}{as_set}: {} {}, so QSMxT does not choose between them: pick one, or Keep mine to leave {} as {}.",
-            r.recommended.name, sentence(&r.reason), others.join(" and "), r.label, r.current_text())
-    }
-
-    /// Show the settings chosen methods' authors disagree on ([`rec::disagreeing`] in `view`)
-    /// as one choice between the authors' values, each tagged with whose it is: the other
-    /// authors' values join the group of each such row, after it (so the method the pop-up is
-    /// about comes first), the one the setting already has as "as set". Nothing is preselected:
-    /// they are authors' settings, and two disagree.
     pub fn with_authors(mut self, view: &[Recommendation]) -> Self {
-        let mut i = 0;
-        while i < self.rows.len() {
-            let row = &self.rows[i];
-            let others: Vec<Recommendation> = if row.alternative || !matches!(row.action, RowAction::Apply { value: None, .. }) {
-                vec![]
-            } else {
-                rec::disagreeing(view, &row.finding).into_iter().cloned().collect()
-            };
-            if others.is_empty() {
-                i += 1;
-                continue;
-            }
-            self.rows[i].authors = true;
-            self.rows[i].checked = false;
-            let group = self.rows[i].group.clone();
-            let mut at = self.rows.iter().rposition(|r| r.group == group).unwrap_or(i) + 1;
-            for o in others {
-                // A value already offered (both departed, both in the pop-up): tag it.
-                if let Some(existing) = self.rows.iter_mut().find(|r| r.group == group && !r.alternative
-                    && matches!(&r.action, RowAction::Apply { value: None, .. }) && r.finding.recommended.value == o.recommended.value)
-                {
-                    existing.authors = true;
-                    existing.checked = false;
-                    if existing.finding.rule != o.rule && !existing.also.iter().any(|a| a.rule == o.rule) {
-                        existing.also.push(o);
-                    }
-                    continue;
-                }
-                let mut row = AdviceRow::apply(o.clone(), None, o.recommended.name.clone(), false);
-                row.authors = true;
-                row.keeps = !o.departs;
-                self.rows.insert(at, row);
-                at += 1;
-            }
-            i += 1;
-        }
-        // The alternatives an authors' row allows are not offered beside the authors' values.
-        let authors: Vec<String> = self.rows.iter().filter(|r| r.authors).map(|r| r.group.clone()).collect();
-        self.rows.retain(|r| !(r.alternative && authors.contains(&r.group)));
+        self.offer = self.offer.with_authors(view);
         self
     }
-
-    /// Row `i`'s tag: its kind, "or" for a second way to meet one requirement, or whose
-    /// authors' value it is.
-    pub fn tag(&self, i: usize) -> String {
-        match self.rows.get(i) {
-            Some(_) if self.or_row(i) => "or".into(),
-            Some(r) => r.tag(),
-            None => String::new(),
-        }
-    }
-
-    /// The buttons under the list: Apply, and Keep mine when it is offered.
-    pub fn buttons(&self) -> usize {
-        if self.keepable() { 2 } else { 1 }
-    }
-
-    /// Tick or untick row `i`: ticking it unticks the others of its group. A required radio
-    /// group keeps one row ticked: choosing a way to meet the requirement is choosing another
-    /// row of it.
-    pub fn toggle(&mut self, i: usize) {
-        // A required change is one change: its rows stay ticked.
-        if self.kind == AdviceKind::Required {
-            return;
-        }
-        let Some(row) = self.rows.get(i) else { return };
-        let (group, on) = (row.group.clone(), !row.checked);
-        if !on && row.finding.strength == Strength::Required && self.radio(i) {
-            return;
-        }
-        if on {
-            for r in self.rows.iter_mut().filter(|r| r.group == group) {
-                r.checked = false;
-            }
-        }
-        self.rows[i].checked = on;
-    }
-
-    pub fn title(&self) -> String {
-        let r = &self.findings[0];
-        let several = self.several();
-        match &self.kind {
-            AdviceKind::Required => " Required change ".to_string(),
-            AdviceKind::Reference(_) => format!(" {} ", reference_whose(self.methods())),
-            _ if r.strength == Strength::Reference && !several => format!(" {}: {} ", Kind::Reference.label(), rec::reference_title(&r.trigger)),
-            _ if r.strength == Strength::Reference => format!(" {}s: {} ", Kind::Reference.label(), r.label),
-            AdviceKind::Details if self.findings.len() > 1 => format!(" {} ", r.label),
-            AdviceKind::Changed if r.strength == Strength::Required => format!(" {} requires a change ", r.current_text()),
-            _ => match r.strength {
-                Strength::Required => format!(" {} requires a change ", r.trigger.name),
-                Strength::Discouraged => format!(" Discouraged with {} ", r.trigger.name),
-                Strength::Suggested if self.findings.len() == 1 => format!(" {} suggests a change ", r.trigger.name),
-                _ if self.findings.len() > 1 => " Recommendations disagree ".to_string(),
-                _ => format!(" {} recommends a change ", r.trigger.name),
-            },
-        }
-    }
 }
 
-/// The change just made, as "Undo my change" says it sets it back: the first changed setting the
-/// settings schema names, with its value before ("QSM reference back to mean").
-fn undo_words(before: Option<&Value>, changed: &[(String, Value)]) -> Option<String> {
-    let before = before?;
-    changed.iter().find_map(|(path, _)| {
-        let setting = qsmxt_engine::schema::setting(path)?;
-        let was = path.split('.').try_fold(before, |v, k| v.get(k))?;
-        let was = match was {
-            Value::Bool(true) => "on".to_string(),
-            Value::Bool(false) => "off".to_string(),
-            Value::Null => "none".to_string(),
-            Value::String(s) if s.is_empty() => "none".to_string(),
-            Value::String(s) => s.clone(),
-            other => other.to_string(),
-        };
-        Some(format!("{} back to {was}", setting.label))
-    })
-}
+/// One setting as a pop-up decides it ([`decide::Item`]).
+type RefItem = decide::Item;
 
-/// "MEDI's reference pipeline", or "MEDI's and PDF's reference pipelines".
-fn reference_whose(methods: &[Trigger]) -> String {
-    match methods {
-        [one] => rec::reference_title(one),
-        many => format!("{}'s reference pipelines", many.iter().map(|m| m.name.as_str()).collect::<Vec<_>>().join("'s and ")),
-    }
-}
-
-/// "Turn off HEIDI streaking reduction" rows, once for each flag `findings` are scoped to that
-/// has a row in the form, each in the group of the setting its finding is on.
-fn turn_off_rows(findings: &[Recommendation]) -> Vec<AdviceRow> {
-    let mut out: Vec<AdviceRow> = Vec::new();
-    for r in findings {
-        let Some(setting) = r.flag_trigger() else { continue };
-        if super::app::field_of_path(setting).is_none() || out.iter().any(|o| o.action == RowAction::TurnOff { setting: setting.to_string() }) {
-            continue;
-        }
-        out.push(AdviceRow {
-            finding: r.clone(), also: vec![], action: RowAction::TurnOff { setting: setting.to_string() },
-            checked: false, alternative: false, authors: false, keeps: false, group: rec::rule_setting(r).to_string(),
-        });
-    }
-    out
-}
-
-/// One setting as the reference pipeline pop-up decides it, for [`App::decide`].
-#[derive(Debug, Clone, PartialEq)]
-struct RefItem {
-    finding: Recommendation,
-    also: Vec<Recommendation>,
-    /// The value to apply and its name, or `None` to keep the current one.
-    pick: Option<(Option<Value>, String)>,
-}
-
-impl RefItem {
-    /// The item's findings as picked, each wanting the picked value: none when keeping the
-    /// current one.
-    fn picked(&self) -> Vec<Recommendation> {
-        let Some((value, _)) = &self.pick else { return vec![] };
-        std::iter::once(&self.finding).chain(&self.also).cloned().map(|mut r| {
-            if let Some(v) = value {
-                r.recommended.value = v.clone();
-            }
-            // Picked between authors who disagree: the user's choice, which [`rec::settle`] takes.
-            r.conflict = false;
-            r
-        }).collect()
-    }
-}
-
-/// What the reference pipeline pop-ups are worked out from.
+/// What the reference pipeline pop-up is shown in.
 #[derive(Debug, Clone, Default)]
 pub struct RefState {
     pub modal: Option<RefModal>,
-    /// The choices with a reference pipeline at the last check ([`rec::chosen_methods`]).
-    pub methods: Vec<Trigger>,
-    /// Methods just chosen whose pop-up has not been shown, each with the settings (config
-    /// paths) or rules (ids) it leaves out: those the pop-up that chose it had just decided.
-    pub pending: Vec<(Trigger, Vec<String>)>,
 }
 
 /// A finding offered as a change and not dismissed: what can open the pop-up or show a badge.
 fn open(r: &Recommendation) -> bool {
-    r.actionable() && !r.dismissed
+    advice::open(r)
 }
 
 impl App {
@@ -704,34 +234,20 @@ impl App {
     /// iteration count) open their pop-up as after any change, but no reference pipeline pop-up
     /// does: the pipeline is the authors' settings.
     pub(super) fn check_recommendations_after_pipeline(&mut self) {
-        self.rec_queue.clear();
+        self.advice.queue.clear();
         self.check_recommendations_with(false);
     }
 
+    /// The engine decides which pop-up opens ([`edit::State::check`]); the form keeps what
+    /// "Undo my change" sets back and prunes its dismissals.
     fn check_recommendations_with(&mut self, offer_reference: bool) {
         if self.is_typing() || self.rec_modal.is_some() || self.refs.modal.is_some() {
             return;
         }
         let form = self.rec_fingerprint();
-        // The next finding the last change created, once the pop-up before it is closed.
-        if form == self.rec_form && self.refs.pending.is_empty() && !self.rec_queue.is_empty() {
-            let view = self.rule_view();
-            while !self.rec_queue.is_empty() {
-                let rule = self.rec_queue.remove(0);
-                if let Some(r) = view.iter().find(|r| r.rule == rule && open(r)) {
-                    self.rec_modal = Some(RecModal::new(group(&view, r)));
-                    return;
-                }
-            }
-        }
-        let mut created: Vec<Recommendation> = Vec::new();
-        let mut view: Option<Vec<Recommendation>> = None;
-        let mut just_changed: Vec<String> = Vec::new();
+        let changed = form != self.rec_form;
         let mut previous: Option<Box<FormSnapshot>> = None;
-        let mut undo_what: Option<String> = None;
-        if form != self.rec_form {
-            // The first check takes the form as it opened: only a change opens a pop-up.
-            let opening = self.rec_form.is_empty();
+        if changed {
             self.rec_form = form;
             if let Ok(mut c) = super::command::config_from_app(self) {
                 let before = c.dismissed_recommendations.len();
@@ -740,133 +256,27 @@ impl App {
                     self.pipeline_state.dismissed = c.dismissed_recommendations;
                 }
             }
-            let config = super::command::config_from_app(self).ok().and_then(|c| serde_json::to_value(c).ok());
-            let mut changed = Vec::new();
-            if let (Some(before), Some(after)) = (&self.rec_config, &config) {
-                changed_settings(before, after, String::new(), &mut changed);
-            }
             previous = self.rec_snapshot.replace(Box::new(FormSnapshot::of(self)));
-            undo_what = undo_words(self.rec_config.as_ref(), &changed);
-            self.rec_config = config;
-            let v = self.rule_view();
-            let now: Vec<(String, String)> =
-                v.iter().filter(|r| open(r)).map(|r| (r.rule.clone(), rec::chosen_text(&r.current))).collect();
-            created = v.iter().filter(|r| {
-                open(r) && !self.rec_seen.contains(&(r.rule.clone(), rec::chosen_text(&r.current)))
-            }).cloned().collect();
-            self.rec_seen = now;
-            just_changed = changed.into_iter().map(|(path, _)| path).collect();
-            let chosen = self.note_methods(&v, &[]);
-            if opening {
-                self.refs.pending.clear();
-                return;
-            }
-            // A method no longer chosen is not offered.
-            self.refs.pending.retain(|(m, _)| chosen.contains(m) && offer_reference);
-            view = Some(v);
         }
-        let view = view.unwrap_or_else(|| if self.refs.pending.is_empty() { vec![] } else { self.rule_view() });
-        // Every pending method's differences from its reference: one pop-up for one change.
-        let mut reference: Option<(Vec<Trigger>, Vec<Recommendation>)> = None;
-        if !self.refs.pending.is_empty() {
-            let groups = rec::by_method(&view);
-            let mut methods = Vec::new();
-            let mut diffs: Vec<Recommendation> = Vec::new();
-            for (method, skip) in std::mem::take(&mut self.refs.pending) {
-                let here: Vec<Recommendation> = groups.iter().find(|m| m.method == method)
-                    .map(|m| m.differences()).unwrap_or_default()
-                    .into_iter().filter(|r| !skip.contains(&r.setting) && !skip.contains(&r.rule)).collect();
-                if !here.is_empty() {
-                    methods.push(method);
-                    diffs.extend(here);
-                }
-            }
-            if !diffs.is_empty() {
-                reference = Some((methods, diffs));
-            }
+        let config = super::command::config_from_app(self).ok();
+        let Some(opened) = self.advice.check(config.as_ref(), &self.rule_facts(), changed, offer_reference) else { return };
+        let mut modal = AdviceModal::from(opened.offer);
+        if modal.kind == AdviceKind::Required {
+            modal.undo = previous.zip(modal.offer.undo.clone()).map(|(before, what)| Undo { what, before });
         }
-        let Some(first) = created.first() else {
-            if let Some((methods, diffs)) = reference {
-                self.refs.modal = Some(AdviceModal::reference(methods, diffs).with_authors(&view));
-            }
-            return;
-        };
-        // Outputs the change needs: one required-change pop-up for them all, before anything else.
-        let required: Vec<Recommendation> = created.iter().filter(|r| r.applied_by_run()).cloned().collect();
-        if !required.is_empty() {
-            let undo = previous.zip(undo_what).map(|(before, what)| Undo { what, before });
-            self.rec_queue = created.iter().filter(|r| !r.applied_by_run()).map(|r| r.rule.clone()).collect();
-            if let Some((methods, _)) = reference {
-                self.refs.pending = methods.into_iter().map(|m| (m, vec![])).collect();
-            }
-            self.rec_modal = Some(AdviceModal::required(required, undo));
-            return;
+        match opened.slot {
+            edit::Slot::Change => self.rec_modal = Some(modal),
+            edit::Slot::Reference => self.refs.modal = Some(modal),
         }
-        // A setting just changed, against a flag that is on and was not: offer the flag first.
-        let touched = |path: &str| just_changed.iter().any(|c| c == path || c.starts_with(&format!("{path}.")));
-        let against_flag = created.iter().find(|r| {
-            r.flag_trigger().is_some_and(|flag| !touched(flag) && super::app::field_of_path(flag).is_some()) && touched(&r.setting)
-        });
-        if let Some(r) = against_flag {
-            let group = group(&view, r);
-            self.rec_queue = created.iter().filter(|c| !group.iter().any(|g| g.setting == c.setting))
-                .map(|c| c.rule.clone()).collect();
-            if let Some((methods, _)) = reference {
-                self.refs.pending = methods.into_iter().map(|m| (m, vec![])).collect();
-            }
-            self.rec_modal = Some(RecModal::changed(group));
-            return;
-        }
-        let group = group(&view, first);
-        self.rec_queue.clear();
-        match reference {
-            // One pop-up: the recommendations first, then the reference differences.
-            Some((methods, diffs)) if created.iter().all(|r| r.strength != Strength::Required && !r.conflict) => {
-                let mut items = created.clone();
-                items.extend(diffs.into_iter().filter(|d| !created.iter().any(|c| c.rule == d.rule)));
-                self.refs.modal = Some(AdviceModal::reference(methods, items).with_authors(&view));
-            }
-            // A required change or a disagreement first; the reference pipeline after it.
-            Some((methods, _)) => {
-                self.refs.pending = methods.into_iter().map(|m| (m, vec![])).collect();
-                self.rec_modal = Some(RecModal::new(group));
-            }
-            None => {
-                self.rec_queue = created.iter().filter(|r| !group.iter().any(|g| g.setting == r.setting))
-                    .map(|r| r.rule.clone()).collect();
-                self.rec_modal = Some(RecModal::new(group));
-            }
-        }
-    }
-
-    /// Note the methods `view` chooses: those not chosen before are queued for their reference
-    /// pipeline pop-up, leaving out the settings in `skip`. Returns the methods chosen.
-    fn note_methods(&mut self, view: &[Recommendation], skip: &[String]) -> Vec<Trigger> {
-        let chosen: Vec<Trigger> = rec::by_method(view).into_iter().map(|m| m.method).collect();
-        for m in chosen.iter().filter(|m| !self.refs.methods.contains(m)) {
-            if !self.refs.pending.iter().any(|(p, _)| p == m) {
-                self.refs.pending.push((m.clone(), skip.to_vec()));
-            }
-        }
-        self.refs.methods = chosen.clone();
-        chosen
     }
 
     /// Open the details of the focused row's setting (`!`): every rule it departs from, offered
     /// ones first.
     pub fn review_recommendations(&mut self) {
         let Some(path) = self.focused_row().and_then(|r| row_path(&r)) else { return };
-        let view = self.rule_view();
-        let mut here: Vec<Recommendation> = view.iter().filter(|r| r.setting == path && r.departs).cloned().collect();
-        if here.is_empty() {
-            return;
+        if let Some(offer) = edit::details(&self.rule_view(), path) {
+            self.rec_modal = Some(offer.into());
         }
-        here.sort_by_key(|r| (!open(r), std::cmp::Reverse(r.strength)));
-        if here.iter().all(|r| r.applied_by_run()) {
-            self.rec_modal = Some(AdviceModal::required(here, None));
-            return;
-        }
-        self.rec_modal = Some(RecModal::details(here).with_authors(&view));
     }
 
     pub fn handle_rec_modal_key(&mut self, key: KeyEvent) {
@@ -965,36 +375,15 @@ impl App {
     /// Carry out an advice pop-up: the ticked rows applied, flags ticked off turned off, and
     /// every other finding kept as it is ([`Self::decide`]); with `keep_all`, every one kept.
     fn settle_advice(&mut self, modal: &AdviceModal, keep_all: bool) {
-        let off: Vec<&AdviceRow> = if keep_all { vec![] } else {
-            modal.rows.iter().filter(|r| r.checked && matches!(r.action, RowAction::TurnOff { .. })).collect()
-        };
-        for row in &off {
-            if let RowAction::TurnOff { setting } = &row.action {
-                if let Some(field) = super::app::field_of_path(setting) {
-                    self.set_companion(field, &Value::Bool(false));
-                }
+        let (off, items) = decide::items(&modal.offer, keep_all);
+        for (setting, _) in &off {
+            if let Some(field) = super::app::field_of_path(setting) {
+                self.set_companion(field, &Value::Bool(false));
             }
-        }
-        let mut items: Vec<RefItem> = Vec::new();
-        // A row that keeps the value the setting has (another chosen method's authors') is no
-        // finding: choosing it leaves the others of its group kept.
-        for row in modal.rows.iter().filter(|r| !r.alternative && !r.keeps && matches!(r.action, RowAction::Apply { .. })) {
-            let rule = &row.finding.rule;
-            let chosen = if keep_all { None } else {
-                modal.rows.iter().find(|x| x.finding.rule == *rule && x.checked && matches!(x.action, RowAction::Apply { .. }))
-            };
-            if chosen.is_none() && off.iter().any(|o| o.finding.rule == *rule) {
-                continue;
-            }
-            let pick = chosen.and_then(|c| match &c.action {
-                RowAction::Apply { value, name } => Some((value.clone(), name.clone())),
-                RowAction::TurnOff { .. } => None,
-            });
-            items.push(RefItem { finding: row.finding.clone(), also: row.also.clone(), pick });
         }
         self.decide(&items, matches!(modal.kind, AdviceKind::Reference(_)));
         if !off.is_empty() {
-            let names: Vec<&str> = off.iter().map(|r| r.finding.flag_name()).collect();
+            let names: Vec<&str> = off.iter().map(|(_, r)| r.flag_name()).collect();
             let rest = self.status_message.take().filter(|s| s != "Kept your settings" && !items.is_empty());
             self.status_message = Some(match rest {
                 Some(rest) => format!("Turned off {}; {rest}", names.join(", ")),
@@ -1003,137 +392,41 @@ impl App {
         }
     }
 
-    /// Set back each of `kept` (the mask recipe's parts) that the values just applied changed,
-    /// to the value it had when it was kept.
-    fn restore_kept(&mut self, kept: &[Recommendation]) {
-        for k in kept.iter().filter(|k| k.setting == "masking.sections") {
-            let Some(was) = k.current.first().map(|n| n.value.clone()) else { continue };
-            if k.current.iter().any(|n| n.value != was) {
-                continue;
-            }
-            let now = self.rule_view().into_iter().find(|r| r.rule == k.rule);
-            if now.is_none_or(|r| r.current.iter().all(|n| n.value == was)) {
-                continue;
-            }
-            let Ok(mut c) = super::command::config_from_app(self) else { continue };
-            if rec::restore(&mut c, &k.rule, &was).is_ok() {
-                self.pipeline_state.mask_preset = super::app::MASK_PRESET_CUSTOM;
-                self.pipeline_state.mask_sections = c.masking.sections;
-            }
-        }
-    }
-
-    /// Keep the settings of `findings` as they are: each `recommended` or `discouraged` one
-    /// dismissed for its current value, in the form and so in the run's config ([`rec::keep`]). A
-    /// `reference` one records nothing, and a `required` one cannot be kept.
-    fn keep_mine(&mut self, findings: &[Recommendation]) {
-        rec::keep(&mut self.pipeline_state.dismissed, findings);
-    }
-
     pub fn handle_ref_modal_key(&mut self, key: KeyEvent) {
         self.handle_advice_key(key, true);
     }
 
-    /// Carry out the reference pipeline pop-up's choices: the picks [`rec::settle`] takes are
-    /// applied, the items kept are kept, and a pick it leaves changes nothing and stays marked. A
-    /// method an applied value chooses is offered without the settings just decided.
-    /// With `offer_new` off (a recommendation's pop-up), a method's differences the applied
-    /// values bring into play are not offered after it.
+    /// Carry out an offer's choices ([`decide::plan`]): each value applied through the form, what
+    /// still departs applied once more, the kept mask parts set back and the kept findings
+    /// dismissed; then the next offers ([`decide::follow_ups`]).
     fn decide(&mut self, items: &[RefItem], offer_new: bool) {
-        // What departed before, each with its value: a follow-up offers only what the applied
-        // values bring into play, never a row already kept (or applied) again.
-        let before: Vec<(String, String)> = self.rule_view().iter().filter(|r| r.departs)
-            .map(|r| (r.rule.clone(), rec::chosen_text(&r.current))).collect();
-        let picked: Vec<Recommendation> = items.iter().flat_map(RefItem::picked).collect();
-        let settled = rec::settle(&picked);
+        let before = decide::departing(&self.rule_view());
+        let plan = decide::plan(items);
         let mut errors = Vec::new();
-        let mut kept = Vec::new();
-        let mut applied: Vec<&str> = Vec::new();
-        let mut outranked = 0;
-        let mut disagreeing = 0;
-        let mut disagree_on: Vec<&str> = Vec::new();
-        for item in items {
-            let finding = &item.finding;
-            match &item.pick {
-                Some(_) if settled.conflicting.iter().any(|r| r.rule == finding.rule) => {
-                    disagreeing += 1;
-                    if !disagree_on.contains(&finding.label.as_str()) {
-                        disagree_on.push(&finding.label);
-                    }
-                }
-                Some(_) if !settled.apply.iter().any(|r| r.rule == finding.rule) => outranked += 1,
-                // Agrees with one already applied on the same setting (by QSM.rs's path: the mask
-                // recipe's generator, input and erosion are parts of one QSMxT setting).
-                Some(_) if applied.contains(&rec::rule_setting(finding)) => {}
-                Some((value, _)) => {
-                    applied.push(rec::rule_setting(finding));
-                    if let Err(e) = self.apply_recommendation(&finding.rule, value.as_ref()) {
-                        errors.push(e);
-                    }
-                }
-                None => {
-                    kept.push(finding.clone());
-                    kept.extend(item.also.iter().cloned());
-                }
+        for (rule, value) in &plan.apply {
+            if let Err(e) = self.apply_recommendation(rule, value.as_ref()) {
+                errors.push(e);
             }
         }
-        // A value applied later can undo an earlier one on another part of the same setting (a
-        // mask preset brings its erosion back): apply what still departs once more.
         let facts = self.rule_facts();
-        for item in items {
-            let (finding, Some((value, _))) = (&item.finding, &item.pick) else { continue };
-            if !settled.apply.iter().any(|r| r.rule == finding.rule) {
-                continue;
-            }
-            let still = super::command::config_from_app(self).ok()
-                .map(|c| rec::reference_values(&c, &facts))
-                .is_some_and(|v| v.iter().any(|x| x.rule == finding.rule && x.departs));
-            if still {
-                let _ = self.apply_recommendation(&finding.rule, value.as_ref());
+        if let Ok(c) = super::command::config_from_app(self) {
+            for (rule, value) in decide::still_departing(&plan, &c, &facts) {
+                let _ = self.apply_recommendation(&rule, value.as_ref());
             }
         }
-        // A value applied to one part of the mask recipe can change a part kept (the generator
-        // brings its preset's input and erosion): set the kept parts back.
-        self.restore_kept(&kept);
-        self.keep_mine(&kept);
-        let kept_items = items.iter().filter(|i| i.pick.is_none()).count();
-        let mut status = match (items.len() - kept_items - outranked - disagreeing, kept_items) {
-            (0, _) if outranked + disagreeing == 0 => "Kept your settings".to_string(),
-            (0, 0) => "Applied nothing".to_string(),
-            (0, k) => format!("Kept {k}"),
-            (n, 0) => format!("Applied {n} setting{}", if n == 1 { "" } else { "s" }),
-            (n, k) => format!("Applied {n}, kept {k}"),
-        };
-        if outranked > 0 {
-            status += &format!("; {outranked} not applied: a stronger suggestion wants another value");
+        if let Ok(mut c) = super::command::config_from_app(self) {
+            if decide::restore_kept(&mut c, &plan.kept, &facts) {
+                self.pipeline_state.mask_preset = super::app::MASK_PRESET_CUSTOM;
+                self.pipeline_state.mask_sections = c.masking.sections;
+            }
         }
-        if !disagree_on.is_empty() {
-            status += &format!("; left {} as set: the suggestions disagree (! to choose)", disagree_on.join(", "));
-        }
-        self.status_message = Some(status);
+        rec::keep(&mut self.pipeline_state.dismissed, &plan.kept);
+        self.status_message = Some(plan.status());
         if !errors.is_empty() {
             self.error_message = Some(errors.join("; "));
         }
-        let skip: Vec<String> = items.iter().map(|i| i.finding.setting.clone()).collect();
         let view = self.rule_view();
-        self.note_methods(&view, &skip);
-        // A method's difference that only comes into play with a value just applied (BET's
-        // orientation, once the mask is BET; the Laplacian's solver, once it unwraps) is offered
-        // next, as the pop-up did not show it: only those, by rule, so the rows kept here (or
-        // in an earlier pop-up) are not offered again and applying reaches a fixed point.
-        let presented: Vec<&str> = items.iter().map(|i| i.finding.rule.as_str()).collect();
-        for m in rec::by_method(&view).into_iter().filter(|_| offer_new) {
-            if !items.iter().any(|i| i.finding.trigger == m.method) || self.refs.pending.iter().any(|(p, _)| *p == m.method) {
-                continue;
-            }
-            let differences = m.differences();
-            let new = |r: &Recommendation| !presented.contains(&r.rule.as_str())
-                && !before.contains(&(r.rule.clone(), rec::chosen_text(&r.current)));
-            if differences.iter().any(new) {
-                let skip = differences.iter().filter(|r| !new(r)).map(|r| r.rule.clone()).collect();
-                self.refs.pending.push((m.method, skip));
-            }
-        }
+        decide::follow_ups(&mut self.advice, items, &before, &view, offer_new);
         self.check_recommendations();
     }
 
@@ -1280,7 +573,7 @@ impl App {
         }
         let (Ok(before), Ok(after)) = (serde_json::to_value(&before), serde_json::to_value(&after)) else { return vec![] };
         let mut changed = Vec::new();
-        changed_settings(&before, &after, String::new(), &mut changed);
+        advice::changed_settings(&before, &after, String::new(), &mut changed);
         changed.into_iter()
             .filter(|(path, _)| path != setting)
             .filter_map(|(path, v)| super::app::field_of_path(&path).map(|field| (field, v)))
@@ -1374,20 +667,6 @@ impl App {
     }
 }
 
-/// The settings that differ between two configs (as JSON), by path, with their new values.
-fn changed_settings(before: &Value, after: &Value, path: String, out: &mut Vec<(String, Value)>) {
-    match (before, after) {
-        (Value::Object(b), Value::Object(a)) => {
-            for (k, v) in a {
-                let path = if path.is_empty() { k.clone() } else { format!("{path}.{k}") };
-                changed_settings(b.get(k).unwrap_or(&Value::Null), v, path, out);
-            }
-        }
-        _ if before != after => out.push((path, after.clone())),
-        _ => {}
-    }
-}
-
 /// A value as a text row holds it: one number for a vector with the same value on every axis.
 fn field_text_of(value: &Value) -> String {
     let plain = |v: &Value| v.as_str().map_or_else(|| v.to_string(), str::to_string);
@@ -1430,14 +709,6 @@ pub fn picker_noun(row: &PipelineRow) -> Option<String> {
     } else {
         Some(label.to_lowercase())
     }
-}
-
-/// `first`, with the findings as strong on its setting that disagree with it.
-fn group(view: &[Recommendation], first: &Recommendation) -> Vec<Recommendation> {
-    if !first.conflict {
-        return vec![first.clone()];
-    }
-    view.iter().filter(|r| r.setting == first.setting && r.strength == first.strength && open(r)).cloned().collect()
 }
 
 #[cfg(test)]
@@ -1805,13 +1076,13 @@ mod tests {
         app.nifti_state.field_strength = "7".into();
         // Knowing the field strength opens the pop-up.
         app.check_recommendations();
-        let shown: Vec<String> = app.rec_modal.take().map(|m| m.findings)
-            .or_else(|| app.refs.modal.take().map(|m| m.rows.into_iter().map(|i| i.finding).collect()))
+        let shown: Vec<String> = app.rec_modal.take().map(|m| m.offer.findings)
+            .or_else(|| app.refs.modal.take().map(|m| m.offer.rows.into_iter().map(|i| i.finding).collect()))
             .expect("7 T opened the pop-up").into_iter().map(|r| r.rule).collect();
         assert!(shown.iter().any(|r| r.ends_with("-7t")), "{shown:?}");
         // Closed, the other 7 T suggestion opens next: both are offered.
         app.check_recommendations();
-        let next: Vec<String> = app.rec_modal.take().expect("the second 7 T suggestion opened").findings
+        let next: Vec<String> = app.rec_modal.take().expect("the second 7 T suggestion opened").offer.findings
             .into_iter().map(|r| r.rule).collect();
         let mut both: Vec<String> = shown.into_iter().chain(next).collect();
         both.sort();
