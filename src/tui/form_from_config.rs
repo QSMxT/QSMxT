@@ -36,16 +36,23 @@ fn value_at<'a>(config: &'a Value, path: &str) -> Option<&'a Value> {
     obj.as_object().map(|o| o.get(key).unwrap_or(NULL))
 }
 
-/// A value as a text row holds it: numbers as the form writes them, a triple or list with spaces
-/// between, and nothing for an unset value (the row's blank means its default).
+/// A value as a text row holds it: a number as the config writes it (64.0), a triple or list with
+/// spaces between, and nothing for an unset value (the row's blank means its default).
 fn text_of(v: &Value) -> String {
     match v {
         Value::Null => String::new(),
         Value::String(s) => s.clone(),
         Value::Array(xs) => xs.iter().map(text_of).collect::<Vec<_>>().join(" "),
-        // As the form's own defaults are written (`format!("{}", x)`): 0.0001 rather than 1e-4.
-        Value::Number(n) if n.is_f64() => n.as_f64().map(|x| format!("{x}")).unwrap_or_default(),
         other => other.to_string(),
+    }
+}
+
+/// The one value of a list whose values are all the same (`[12, 12, 12]`), which a row for a
+/// value on each axis takes as one.
+fn one_value(v: &Value) -> Option<&Value> {
+    match v {
+        Value::Array(xs) if xs.len() > 1 && xs.iter().all(|x| x == &xs[0]) => Some(&xs[0]),
+        _ => None,
     }
 }
 
@@ -137,7 +144,18 @@ impl App {
                     self.set_text(field, format!("{x}"));
                 }
             }
-            _ => self.set_text(field, text_of(v)),
+            _ => {
+                // The same value on every axis as one number, where the row takes it so ("12" for
+                // the FFT's padding); a row that wants all three (STAR-QSM's pad) has them written out.
+                if let Some(x) = one_value(v) {
+                    self.set_text(field, text_of(x));
+                    let built = super::command::config_from_app(self).ok().and_then(|c| schema::get(&c, path));
+                    if built.as_ref() == Some(v) {
+                        return;
+                    }
+                }
+                self.set_text(field, text_of(v));
+            }
         }
     }
 
