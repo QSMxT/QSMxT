@@ -533,20 +533,6 @@ pub fn masking_preset_command(masking: &crate::config::MaskingConfig) -> Option<
 
 pub fn parse_mask_op(s: &str) -> crate::Result<MaskOp> {
     let parts: Vec<&str> = s.split(':').collect();
-    // The positional argument `i` of a simple op: its default when absent, an error when it is
-    // there but not a number (`erode:x` used to erode once), or when more were given than the op
-    // takes.
-    fn arg<T: std::str::FromStr>(parts: &[&str], i: usize, max_args: usize, default: T) -> crate::Result<T> {
-        if parts.len() > max_args + 1 {
-            return Err(ConfigError::Parse(format!(
-                "{}: takes at most {max_args} argument(s), got '{}'", parts[0], parts[1..].join(":"))));
-        }
-        match parts.get(i).filter(|s| !s.is_empty()) {
-            None => Ok(default),
-            Some(v) => v.parse().map_err(|_| ConfigError::Parse(format!(
-                "{}: '{v}' is not a valid number", parts[0]))),
-        }
-    }
     match parts[0] {
         "threshold" => match parts.get(1).copied() {
             Some("otsu") | None => {
@@ -629,51 +615,72 @@ pub fn parse_mask_op(s: &str) -> crate::Result<MaskOp> {
                 min_component: num(5, "min component")?.map(|v| v as usize).unwrap_or(d.min_component),
             })
         }
-        "hd-bet" => {
-            let mut patch = None;
-            let mut tta = false;
-            let mut tile_step = None;
-            for part in parts.iter().skip(1).filter(|p| !p.is_empty()) {
-                match *part {
-                    "tta" => tta = true,
-                    "full" => patch = None,
-                    "window" | "native" => patch = Some(hd_bet_patch()),
-                    "low-memory" => patch = Some(hd_bet_low_memory_patch()),
-                    s if s.starts_with("step=") => tile_step = Some(parse_window_step("hd-bet", &s[5..])?),
-                    dims => patch = Some(parse_hd_bet_patch(dims)?),
-                }
-            }
-            if patch.is_none() && tile_step.is_some() {
-                return Err(ConfigError::Parse(
-                    "hd-bet: step= applies to a sliding window; add 'window', 'low-memory' or a patch size".into()));
-            }
-            Ok(MaskOp::HdBet { patch, tta, tile_step: tile_step.unwrap_or_else(hd_bet_tile_step) })
-        }
-        "rs2-net" => {
-            let mut tta = false;
-            let mut tile_step = rs2_net_tile_step();
-            for part in parts.iter().skip(1).filter(|p| !p.is_empty()) {
-                match *part {
-                    "tta" => tta = true,
-                    s if s.starts_with("step=") => tile_step = parse_window_step("rs2-net", &s[5..])?,
-                    s => return Err(ConfigError::Parse(
-                        format!("rs2-net: expected 'tta' or 'step=<f>', got '{s}'"))),
-                }
-            }
-            Ok(MaskOp::Rs2Net { tta, tile_step })
-        }
-        "mindgrab" => {
-            let mut tta = false;
-            for part in parts.iter().skip(1).filter(|p| !p.is_empty()) {
-                match *part {
-                    "tta" => tta = true,
-                    s => return Err(ConfigError::Parse(format!("mindgrab: expected 'tta', got '{s}'"))),
-                }
-            }
-            Ok(MaskOp::MindGrab { tta })
-        }
+        "hd-bet" => parse_hd_bet(&parts),
+        "rs2-net" => parse_rs2_net(&parts),
+        "mindgrab" => parse_mindgrab(&parts),
         _ => Err(ConfigError::Parse(format!("Unknown mask-op: '{}'", parts[0]))),
     }
+}
+
+/// The positional argument `i` of a simple op: its default when absent, an error when it is
+/// there but not a number (`erode:x` used to erode once), or when more were given than the op
+/// takes.
+fn arg<T: std::str::FromStr>(parts: &[&str], i: usize, max_args: usize, default: T) -> crate::Result<T> {
+    if parts.len() > max_args + 1 {
+        return Err(ConfigError::Parse(format!(
+            "{}: takes at most {max_args} argument(s), got '{}'", parts[0], parts[1..].join(":"))));
+    }
+    match parts.get(i).filter(|s| !s.is_empty()) {
+        None => Ok(default),
+        Some(v) => v.parse().map_err(|_| ConfigError::Parse(format!(
+            "{}: '{v}' is not a valid number", parts[0]))),
+    }
+}
+
+fn parse_hd_bet(parts: &[&str]) -> crate::Result<MaskOp> {
+    let mut patch = None;
+    let mut tta = false;
+    let mut tile_step = None;
+    for part in parts.iter().skip(1).filter(|p| !p.is_empty()) {
+        match *part {
+            "tta" => tta = true,
+            "full" => patch = None,
+            "window" | "native" => patch = Some(hd_bet_patch()),
+            "low-memory" => patch = Some(hd_bet_low_memory_patch()),
+            s if s.starts_with("step=") => tile_step = Some(parse_window_step("hd-bet", &s[5..])?),
+            dims => patch = Some(parse_hd_bet_patch(dims)?),
+        }
+    }
+    if patch.is_none() && tile_step.is_some() {
+        return Err(ConfigError::Parse(
+            "hd-bet: step= applies to a sliding window; add 'window', 'low-memory' or a patch size".into()));
+    }
+    Ok(MaskOp::HdBet { patch, tta, tile_step: tile_step.unwrap_or_else(hd_bet_tile_step) })
+}
+
+fn parse_rs2_net(parts: &[&str]) -> crate::Result<MaskOp> {
+    let mut tta = false;
+    let mut tile_step = rs2_net_tile_step();
+    for part in parts.iter().skip(1).filter(|p| !p.is_empty()) {
+        match *part {
+            "tta" => tta = true,
+            s if s.starts_with("step=") => tile_step = parse_window_step("rs2-net", &s[5..])?,
+            s => return Err(ConfigError::Parse(
+                format!("rs2-net: expected 'tta' or 'step=<f>', got '{s}'"))),
+        }
+    }
+    Ok(MaskOp::Rs2Net { tta, tile_step })
+}
+
+fn parse_mindgrab(parts: &[&str]) -> crate::Result<MaskOp> {
+    let mut tta = false;
+    for part in parts.iter().skip(1).filter(|p| !p.is_empty()) {
+        match *part {
+            "tta" => tta = true,
+            s => return Err(ConfigError::Parse(format!("mindgrab: expected 'tta', got '{s}'"))),
+        }
+    }
+    Ok(MaskOp::MindGrab { tta })
 }
 
 /// `scale=<s>` BET voxel-size multiplier. qsm-core treats a non-positive scale as 1.0 rather

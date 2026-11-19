@@ -13,7 +13,6 @@
  },
  "functions": {
   "crates/qsmxt-engine/src/graph.rs::downstream_steps": 165,
-  "crates/qsmxt-engine/src/masking.rs::parse_mask_op": 144,
   "crates/qsmxt-engine/src/pipeline_graph.rs::algorithm": 156,
   "crates/qsmxt-engine/src/pipeline_graph.rs::io": 388,
   "crates/qsmxt-engine/src/pipeline_graph/layout.rs::layout": 663,
