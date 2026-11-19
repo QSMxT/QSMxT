@@ -272,7 +272,7 @@ pub(super) fn hdqsm(args: InvertHdqsmArgs) -> crate::Result<Inverted> {
 
 pub(super) fn amp_pe(args: InvertAmpPeArgs) -> crate::Result<Inverted> {
     if args.magnitude.is_empty() {
-        warn!("No --magnitude provided for AMP-PE; using uniform weights with no morphology mask");
+        warn!(target: super::LOG_TARGET, "No --magnitude provided for AMP-PE; using uniform weights with no morphology mask");
     }
     let d = inv::AmpPeParams::default();
     let amp_pe = inv::AmpPeParams {
@@ -323,7 +323,7 @@ pub(super) fn medi(args: InvertMediArgs) -> crate::Result<Inverted> {
         ..d
     };
     if medi.csf && args.scan.echo_times.len() < 3 {
-        warn!("MEDI's CSF zero reference (MEDI+0) needs at least 3 echoes (it finds the CSF from R2*); \
+        warn!(target: super::LOG_TARGET, "MEDI's CSF zero reference (MEDI+0) needs at least 3 echoes (it finds the CSF from R2*); \
                with {} MEDI runs without it", args.scan.echo_times.len());
     }
     let config = qsm_core::pipeline::InversionConfig { medi, ..config_for(A::Medi) };
@@ -362,7 +362,7 @@ pub(super) fn tgv(args: InvertTgvArgs) -> crate::Result<Inverted> {
     let (mask, _) = load_mask(&c.mask)?;
     let grid = super::common::nifti_grid(&field_nifti);
     let bdir = (c.b0_direction[0], c.b0_direction[1], c.b0_direction[2]);
-    info!("Dipole inversion (TGV, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
+    info!(target: super::LOG_TARGET, "Dipole inversion (TGV, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
     let d = qsmxt_engine::TgvConfig::default();
     let params = qsmxt_engine::stages::inversion::tgv_params_from_config(&qsmxt_engine::TgvConfig {
         iterations: args.iterations.or(d.iterations),

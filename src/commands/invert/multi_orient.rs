@@ -142,16 +142,16 @@ fn load_multiorient(
     let orientations =
         resolve_directions(&labels, &declared, &affines, DirectionSource::Explicit);
 
-    info!("{} over {} orientation(s):", kind, n);
+    info!(target: super::LOG_TARGET, "{} over {} orientation(s):", kind, n);
     for row in direction_table(&orientations) {
-        info!("  {row}");
+        info!(target: super::LOG_TARGET, "  {row}");
     }
 
     let check = check_directions(&orientations, kind);
     match (&check.verdict, c.force) {
-        (Ok(()), _) => info!("  {}", check.summary()),
+        (Ok(()), _) => info!(target: super::LOG_TARGET, "  {}", check.summary()),
         (Err(why), false) => return Err(QsmxtError::Config(why.to_string())),
-        (Err(why), true) => warn!("--force: reconstructing anyway, but {why}"),
+        (Err(why), true) => warn!(target: super::LOG_TARGET, "--force: reconstructing anyway, but {why}"),
     }
 
     let grid = super::common::nifti_grid(&reference);
@@ -193,14 +193,14 @@ pub(super) fn run_cosmos(args: crate::cli::InvertCosmosArgs) -> crate::Result<()
             }
             weights.push(m.data);
         }
-        info!("Magnitude-weighted COSMOS (conjugate gradient, up to {} iterations)", params.max_iter);
+        info!(target: super::LOG_TARGET, "Magnitude-weighted COSMOS (conjugate gradient, up to {} iterations)", params.max_iter);
         qsm_core::inversion::cosmos_weighted(
             &inputs.fields, &weights, &bdirs, &inputs.mask, &inputs.grid, &params,
         )
     };
 
     save_nifti(&out, &chi, &inputs.reference)?;
-    info!("Susceptibility map saved to {}", out.display());
+    info!(target: super::LOG_TARGET, "Susceptibility map saved to {}", out.display());
     Ok(())
 }
 
@@ -237,10 +237,10 @@ pub(super) fn run_sti(args: crate::cli::InvertStiArgs) -> crate::Result<()> {
     save_nifti(&naming::nifti_beside(&prefix, &naming::sti_mms()), &maps.mms, r)?;
     save_nifti(&naming::nifti_beside(&prefix, &naming::sti_msa()), &maps.msa, r)?;
     write_4d(&naming::sti_eigenvector(), &maps.pev, crate::pipeline::multiorient::eigenvector_sidecar())?;
-    info!(
+    info!(target: super::LOG_TARGET,
         "Tensor, MMS, MSA and principal eigenvector saved with prefix {}",
         prefix.display()
     );
-    info!("MMS is the orientation-independent counterpart of a scalar QSM map; the eigenvector is in voxel coordinates of the common grid");
+    info!(target: super::LOG_TARGET, "MMS is the orientation-independent counterpart of a scalar QSM map; the eigenvector is in voxel coordinates of the common grid");
     Ok(())
 }

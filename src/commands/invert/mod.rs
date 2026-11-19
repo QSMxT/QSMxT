@@ -7,6 +7,10 @@ use super::common;
 mod methods;
 mod multi_orient;
 
+/// The log target of everything `qsmxt invert` prints, kept as it was before the command was split
+/// into submodules (a target is part of each log line).
+const LOG_TARGET: &str = "qsmxt::commands::invert";
+
 use multi_orient::{run_cosmos, run_sti};
 
 /// The magnitude an inversion is given, as qsm-core's dispatcher asks for it.
