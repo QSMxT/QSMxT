@@ -333,6 +333,14 @@ pub fn write_fixture(name: &str, dir: &Path) {
             write_series(dir, &mk("90003", 90003, "", original).protocol("T2star_map_MGE").tes(&[3.3, 6.6]));
             write_series(dir, &mk("90004", 90004, fit, derived).protocol("").tes(&[3.3]));
         }
+        other => write_quirk_fixture(other, dir),
+    }
+}
+
+/// Write fixture `name`, one of the export quirks and vendor or sequence layouts, into `dir`.
+fn write_quirk_fixture(name: &str, dir: &Path) {
+    let gre = "gre_qsm";
+    match name {
         "headerless" => {
             write_series(dir, &Series::new("9", 9, gre, M));
             write_series(dir, &Series::new("10", 10, gre, P).headerless());

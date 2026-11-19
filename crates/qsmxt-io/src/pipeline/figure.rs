@@ -158,15 +158,7 @@ fn volume_rows(rows: &[Row]) -> Vec<Row> {
 fn draw(
     fonts: &Fonts, panel: &[&Row], map: &str, title: &str, subtitle: &str, style: Style,
 ) -> Canvas {
-    // A χ figure without its reference is a picture of numbers whose zero is undocumented, so it
-    // says so on the figure itself rather than only in the table beside it.
-    let reference: Option<String> = crate::pipeline::stats::is_susceptibility(map)
-        .then(|| panel.iter().find_map(|r| r.reference.as_ref().map(|spec| {
-            crate::pipeline::stats::ReferenceInfo {
-                spec: spec.clone(), offset_ppm: r.reference_offset_ppm,
-            }.caption()
-        })))
-        .flatten();
+    let reference = reference_caption(panel, map);
     let head_h = HEAD_H + if reference.is_some() { REF_LINE_H } else { 0.0 };
     // Ranked by value: each map is its own figure, so there is no cross-panel order to preserve
     // and the readable arrangement wins.
@@ -181,23 +173,7 @@ fn draw(
     let height = head_h + rows.len() as f64 * ROW_H + AXIS_H + PAD;
     let mut c = Canvas::new(WIDTH, height, SURFACE);
 
-    c.text(fonts, title, PAD, PAD + 11.0, 13.0, Weight::Bold, Anchor::Start, INK);
-    let unit = pretty_unit(rows.first().map(|r| r.unit.as_str()).unwrap_or(""));
-    let head = if unit.is_empty() { map.to_string() } else { format!("{map}  ({unit})") };
-    c.text(fonts, &head, PAD, PAD + 27.0, 11.5, Weight::Bold, Anchor::Start, INK2);
-    c.text(fonts, subtitle, PAD, PAD + 41.0, 10.0, Weight::Regular, Anchor::Start, MUTED);
-    if let Some(ref r) = reference {
-        c.text(fonts, r, PAD, PAD + 41.0 + REF_LINE_H, 10.0, Weight::Regular, Anchor::Start, INK2);
-    }
-
-    if diverging {
-        // Two colours in play, so identity never rests on colour alone.
-        let x = LABEL_W + plot_w - 150.0;
-        c.rect(x, PAD + 34.0, x + 9.0, PAD + 41.0, POS);
-        c.text(fonts, "positive", x + 13.0, PAD + 41.0, 10.0, Weight::Regular, Anchor::Start, MUTED);
-        c.rect(x + 66.0, PAD + 34.0, x + 75.0, PAD + 41.0, NEG);
-        c.text(fonts, "negative", x + 79.0, PAD + 41.0, 10.0, Weight::Regular, Anchor::Start, MUTED);
-    }
+    draw_head(&mut c, fonts, &rows, map, title, subtitle, reference.as_deref(), diverging);
 
     // The scale spans the whiskers so no mark leaves the plot, and always includes zero: the bars
     // grow from it, and a baseline off-screen would make them meaningless.
@@ -288,6 +264,46 @@ fn draw(
         }
     }
     c
+}
+
+/// The caption naming a χ figure's reference, if the map is a susceptibility map and a row has one.
+fn reference_caption(panel: &[&Row], map: &str) -> Option<String> {
+    // A χ figure without its reference is a picture of numbers whose zero is undocumented, so it
+    // says so on the figure itself rather than only in the table beside it.
+    crate::pipeline::stats::is_susceptibility(map)
+        .then(|| panel.iter().find_map(|r| r.reference.as_ref().map(|spec| {
+            crate::pipeline::stats::ReferenceInfo {
+                spec: spec.clone(), offset_ppm: r.reference_offset_ppm,
+            }.caption()
+        })))
+        .flatten()
+}
+
+/// The figure's title, map and unit, subtitle, reference caption and, for a diverging map, the
+/// sign legend.
+#[allow(clippy::too_many_arguments)]
+fn draw_head(
+    c: &mut Canvas, fonts: &Fonts, rows: &[&&Row], map: &str, title: &str, subtitle: &str,
+    reference: Option<&str>, diverging: bool,
+) {
+    let plot_w = WIDTH - LABEL_W - RIGHT_W;
+    c.text(fonts, title, PAD, PAD + 11.0, 13.0, Weight::Bold, Anchor::Start, INK);
+    let unit = pretty_unit(rows.first().map(|r| r.unit.as_str()).unwrap_or(""));
+    let head = if unit.is_empty() { map.to_string() } else { format!("{map}  ({unit})") };
+    c.text(fonts, &head, PAD, PAD + 27.0, 11.5, Weight::Bold, Anchor::Start, INK2);
+    c.text(fonts, subtitle, PAD, PAD + 41.0, 10.0, Weight::Regular, Anchor::Start, MUTED);
+    if let Some(r) = reference {
+        c.text(fonts, r, PAD, PAD + 41.0 + REF_LINE_H, 10.0, Weight::Regular, Anchor::Start, INK2);
+    }
+
+    if diverging {
+        // Two colours in play, so identity never rests on colour alone.
+        let x = LABEL_W + plot_w - 150.0;
+        c.rect(x, PAD + 34.0, x + 9.0, PAD + 41.0, POS);
+        c.text(fonts, "positive", x + 13.0, PAD + 41.0, 10.0, Weight::Regular, Anchor::Start, MUTED);
+        c.rect(x + 66.0, PAD + 34.0, x + 75.0, PAD + 41.0, NEG);
+        c.text(fonts, "negative", x + 79.0, PAD + 41.0, 10.0, Weight::Regular, Anchor::Start, MUTED);
+    }
 }
 
 /// Tick positions spanning `lo..hi` on 1/2/5 × 10^k steps, always including zero.

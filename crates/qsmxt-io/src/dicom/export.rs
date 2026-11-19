@@ -20,6 +20,8 @@
 //! The run's segmentation goes out as a DICOM Segmentation object referencing the χ series
 //! ([`seg`]).
 
+mod geometry;
+mod identity;
 mod seg;
 
 use std::hash::{Hash, Hasher};
@@ -29,9 +31,11 @@ use dicom::core::value::PrimitiveValue;
 use dicom::core::{DataElement, VR};
 use dicom::dictionary_std::{tags, uids};
 use dicom::object::meta::FileMetaTableBuilder;
-use dicom::object::{open_file, InMemDicomObject};
+use dicom::object::InMemDicomObject;
 use log::{info, warn};
 
+use self::geometry::SliceGeometry;
+use self::identity::{build_identity, DicomIdentity};
 use crate::bids::derivatives::DerivativeOutputs;
 use crate::bids::discovery::QsmRun;
 use crate::error::QsmxtError;
@@ -96,32 +100,6 @@ struct MapExport {
     path: std::path::PathBuf,
     /// Human-readable series description.
     description: String,
-}
-
-/// Identity/provenance fields shared by every instance of an exported run.
-///
-/// Either inherited from `--source-dicom` or synthesized. Series/SOP UIDs are
-/// *not* here — those are generated per map/slice.
-#[derive(Default, Clone)]
-struct DicomIdentity {
-    study_uid: String,
-    frame_of_reference_uid: String,
-    patient_name: String,
-    patient_id: String,
-    patient_birth_date: String,
-    patient_sex: String,
-    study_date: String,
-    study_time: String,
-    study_id: String,
-    accession_number: String,
-    referring_physician: String,
-    manufacturer: String,
-    // MR attributes a viewer may read the series by (Type 2/2C): the source's, else empty.
-    patient_position: String,
-    laterality: String,
-    body_part: String,
-    repetition_time: String,
-    echo_train_length: String,
 }
 
 /// Export all enabled final maps for a completed run as DICOM series.
@@ -317,150 +295,6 @@ fn export_segmentation(
             false
         }
     }
-}
-
-/// Build the run's shared DICOM identity, inheriting from `source_dicom` when set.
-fn build_identity(run: &QsmRun, source_dicom: Option<&Path>) -> DicomIdentity {
-    let key = &run.key;
-    // Synthesized defaults.
-    let mut id = DicomIdentity {
-        study_uid: make_uid(&[&key.subject, key.session.as_deref().unwrap_or("")]),
-        frame_of_reference_uid: make_uid(&[&key.subject, key.session.as_deref().unwrap_or(""), "frame"]),
-        manufacturer: "QSMxT".to_string(),
-        ..Default::default()
-    };
-
-    // The acquisition fields a converter keeps in the BIDS sidecar (dcm2niix does by default),
-    // for when there is no source DICOM; a source DICOM's own values win over them.
-    // A dataset converted with `qsmxt dicom-convert --keep-dicom-uids` (or dcm2niix `-ba o`/`n`)
-    // also keeps the study's UIDs there, so the series file into the original study.
-    if let Some(sc) = run.echoes.first().and_then(|e| read_sidecar_acquisition(&e.phase_json)) {
-        if !sc.study_uid.is_empty() { id.study_uid = sc.study_uid.clone(); }
-        if !sc.frame_of_reference_uid.is_empty() { id.frame_of_reference_uid = sc.frame_of_reference_uid.clone(); }
-        if !sc.study_id.is_empty() { id.study_id = sc.study_id.clone(); }
-        id.apply_acquisition(sc);
-    }
-
-    if let Some(dir) = source_dicom {
-        match read_source_template(dir) {
-            Some(src) => {
-                info!("DICOM export: inheriting patient/study identity from {}", dir.display());
-                id.apply_acquisition(src.clone());
-                if !src.study_uid.is_empty() { id.study_uid = src.study_uid; }
-                if !src.frame_of_reference_uid.is_empty() { id.frame_of_reference_uid = src.frame_of_reference_uid; }
-                id.patient_name = src.patient_name;
-                id.patient_id = src.patient_id;
-                id.patient_birth_date = src.patient_birth_date;
-                id.patient_sex = src.patient_sex;
-                id.study_date = src.study_date;
-                id.study_time = src.study_time;
-                if !src.study_id.is_empty() { id.study_id = src.study_id; }
-                id.accession_number = src.accession_number;
-                id.referring_physician = src.referring_physician;
-            }
-            None => warn!(
-                "DICOM export: no readable DICOM found under --source-dicom {}; synthesizing identity",
-                dir.display()
-            ),
-        }
-    }
-
-    id
-}
-
-impl DicomIdentity {
-    /// Take `other`'s manufacturer and acquisition fields where it has them, keeping ours where
-    /// it does not.
-    fn apply_acquisition(&mut self, other: DicomIdentity) {
-        let take = |mine: &mut String, theirs: String| if !theirs.is_empty() { *mine = theirs };
-        take(&mut self.manufacturer, other.manufacturer);
-        take(&mut self.patient_position, other.patient_position);
-        take(&mut self.laterality, other.laterality);
-        take(&mut self.body_part, other.body_part);
-        take(&mut self.repetition_time, other.repetition_time);
-        take(&mut self.echo_train_length, other.echo_train_length);
-    }
-}
-
-/// The acquisition fields of a BIDS sidecar, under the names BIDS and dcm2niix give them:
-/// `RepetitionTime` (BIDS, seconds; DICOM wants ms), `EchoTrainLength`, `PatientPosition` (the
-/// DICOM keywords, as dcm2niix writes them), `BodyPart` (BIDS; DICOM's Body Part Examined) and
-/// `Manufacturer`; and the study's `StudyInstanceUID`, `FrameOfReferenceUID` and `StudyID` when
-/// the conversion kept them. Never patient identity. `None` when the file cannot be read.
-fn read_sidecar_acquisition(path: &Path) -> Option<DicomIdentity> {
-    let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
-    let text = |k: &str| json.get(k).and_then(|v| v.as_str()).map(|s| s.trim().to_string()).unwrap_or_default();
-    let number = |k: &str| json.get(k).and_then(|v| v.as_f64());
-    Some(DicomIdentity {
-        manufacturer: text("Manufacturer"),
-        patient_position: text("PatientPosition"),
-        body_part: text("BodyPart"),
-        repetition_time: number("RepetitionTime").map(|s| fmt_ds(s * 1000.0)).unwrap_or_default(),
-        echo_train_length: number("EchoTrainLength").map(|n| format!("{}", n.round() as i64)).unwrap_or_default(),
-        study_uid: text("StudyInstanceUID"),
-        frame_of_reference_uid: text("FrameOfReferenceUID"),
-        study_id: text("StudyID"),
-        ..Default::default()
-    })
-}
-
-/// Read identity tags from the first readable DICOM under `dir` (recursive).
-fn read_source_template(dir: &Path) -> Option<DicomIdentity> {
-    let path = find_first_dicom(dir)?;
-    let obj = open_file(&path).ok()?;
-    let get = |tag| str_tag(&obj, tag);
-    Some(DicomIdentity {
-        study_uid: get(tags::STUDY_INSTANCE_UID),
-        frame_of_reference_uid: get(tags::FRAME_OF_REFERENCE_UID),
-        patient_name: get(tags::PATIENT_NAME),
-        patient_id: get(tags::PATIENT_ID),
-        patient_birth_date: get(tags::PATIENT_BIRTH_DATE),
-        patient_sex: get(tags::PATIENT_SEX),
-        study_date: get(tags::STUDY_DATE),
-        study_time: get(tags::STUDY_TIME),
-        study_id: get(tags::STUDY_ID),
-        accession_number: get(tags::ACCESSION_NUMBER),
-        referring_physician: get(tags::REFERRING_PHYSICIAN_NAME),
-        manufacturer: get(tags::MANUFACTURER),
-        patient_position: get(tags::PATIENT_POSITION),
-        laterality: get(tags::LATERALITY),
-        body_part: get(tags::BODY_PART_EXAMINED),
-        repetition_time: get(tags::REPETITION_TIME),
-        echo_train_length: get(tags::ECHO_TRAIN_LENGTH),
-    })
-}
-
-/// Read a string element, returning "" if absent or unreadable.
-fn str_tag(obj: &dicom::object::FileDicomObject<InMemDicomObject>, tag: dicom::core::Tag) -> String {
-    obj.element(tag)
-        .ok()
-        .and_then(|e| e.to_str().ok())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_default()
-}
-
-/// Recursively find the first file that parses as a DICOM object.
-fn find_first_dicom(dir: &Path) -> Option<std::path::PathBuf> {
-    let mut stack = vec![dir.to_path_buf()];
-    while let Some(d) = stack.pop() {
-        let entries = std::fs::read_dir(&d).ok()?;
-        let mut files: Vec<std::path::PathBuf> = Vec::new();
-        for e in entries.flatten() {
-            let p = e.path();
-            if p.is_dir() {
-                stack.push(p);
-            } else {
-                files.push(p);
-            }
-        }
-        files.sort();
-        for f in files {
-            if open_file(&f).is_ok() {
-                return Some(f);
-            }
-        }
-    }
-    None
 }
 
 struct ExportMap<'a> {
@@ -669,86 +503,6 @@ fn build_slice(s: BuildSlice) -> InMemDicomObject {
     obj
 }
 
-/// Direction cosines, spacings, and per-slice position derived from the affine.
-struct SliceGeometry {
-    /// ImageOrientationPatient: [row(x) cosines (i-dir), col(y) cosines (j-dir)], LPS.
-    orientation: [f64; 6],
-    /// Position of voxel (0,0,0) in LPS mm.
-    origin: [f64; 3],
-    /// Per-slice step vector (k-direction) in LPS mm.
-    slice_dir: [f64; 3],
-    row_spacing: f64,
-    col_spacing: f64,
-    slice_thickness: f64,
-}
-
-impl SliceGeometry {
-    /// Derive geometry from a NIfTI (RAS) row-major 4x4 affine.
-    ///
-    /// NIfTI world coordinates are RAS; DICOM patient coordinates are LPS, so the
-    /// x and y components are negated.
-    fn from_affine(affine: &[f64; 16], voxel: (f64, f64, f64)) -> Self {
-        // Columns of the 3x3 direction/scale matrix (voxel-step vectors), RAS.
-        let i_col = [affine[0], affine[4], affine[8]];
-        let j_col = [affine[1], affine[5], affine[9]];
-        let k_col = [affine[2], affine[6], affine[10]];
-        let origin_ras = [affine[3], affine[7], affine[11]];
-
-        let col_spacing = norm(&i_col).max(voxel.0);
-        let row_spacing = norm(&j_col).max(voxel.1);
-        let slice_thickness = norm(&k_col).max(voxel.2);
-
-        let i_unit = to_lps(&unit(&i_col));
-        let j_unit = to_lps(&unit(&j_col));
-        let slice_dir = to_lps(&k_col);
-        let origin = to_lps(&origin_ras);
-
-        Self {
-            orientation: [i_unit[0], i_unit[1], i_unit[2], j_unit[0], j_unit[1], j_unit[2]],
-            origin,
-            slice_dir,
-            row_spacing,
-            col_spacing,
-            slice_thickness,
-        }
-    }
-
-    fn position(&self, k: usize) -> [f64; 3] {
-        [
-            self.origin[0] + self.slice_dir[0] * k as f64,
-            self.origin[1] + self.slice_dir[1] * k as f64,
-            self.origin[2] + self.slice_dir[2] * k as f64,
-        ]
-    }
-
-    fn slice_location(&self, k: usize) -> f64 {
-        // Projection of the slice position onto the slice normal.
-        let pos = self.position(k);
-        dot(&pos, &unit(&self.slice_dir))
-    }
-}
-
-fn to_lps(v: &[f64; 3]) -> [f64; 3] {
-    [-v[0], -v[1], v[2]]
-}
-
-fn norm(v: &[f64; 3]) -> f64 {
-    (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
-}
-
-fn unit(v: &[f64; 3]) -> [f64; 3] {
-    let n = norm(v);
-    if n <= f64::EPSILON {
-        [0.0, 0.0, 0.0]
-    } else {
-        [v[0] / n, v[1] / n, v[2] / n]
-    }
-}
-
-fn dot(a: &[f64; 3], b: &[f64; 3]) -> f64 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
 /// Compute a linear map value -> integer: `pixel = (value - intercept) / slope`,
 /// spanning the data range across [0, 65535].
 fn rescale_params(data: &[f64]) -> (f64, f64) {
@@ -830,6 +584,7 @@ fn make_uid(parts: &[&str]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dicom::object::open_file;
 
     #[test]
     fn test_fmt_ds_trims_zeros() {

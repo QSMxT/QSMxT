@@ -170,6 +170,12 @@ fn file_meta(obj: &InMemDicomObject, path: &Path) -> Option<FileMeta> {
         .into_iter()
         .find_map(|t| parse_time_to_seconds(&element_str(obj, t)));
 
+    enhanced_meta(obj, &mut m);
+    Some(m)
+}
+
+/// What an enhanced (multi-frame) MR's frames add to `m`; nothing for a single-frame file.
+fn enhanced_meta(obj: &InMemDicomObject, m: &mut FileMeta) {
     // Enhanced (multi-frame) MR: what the frames say.
     let per_frame = obj.element_opt(tags::PER_FRAME_FUNCTIONAL_GROUPS_SEQUENCE).ok().flatten().and_then(|e| e.items());
     let shared = first_item(obj, tags::SHARED_FUNCTIONAL_GROUPS_SEQUENCE);
@@ -233,7 +239,6 @@ fn file_meta(obj: &InMemDicomObject, path: &Path) -> Option<FileMeta> {
             }
         }
     }
-    Some(m)
 }
 
 /// The first bytes of a DICOM data set written without the Part-10 preamble and file meta group

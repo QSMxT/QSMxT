@@ -332,22 +332,7 @@ fn build_seg(
     put(el(tags::CONTENT_CREATOR_NAME, VR::PN, ""));
     put(el(tags::SEGMENTATION_TYPE, VR::CS, "BINARY"));
     put(el(tags::SEGMENTS_OVERLAP, VR::CS, "NO"));
-    put(seq(tags::SEGMENT_SEQUENCE, segments.iter().enumerate().map(|(i, seg)| {
-        let mut ty = code_item(seg.ty);
-        if let Some(side) = seg.side {
-            ty.put(seq(tags::SEGMENTED_PROPERTY_TYPE_MODIFIER_CODE_SEQUENCE, vec![code_item(side)]));
-        }
-        item([
-            us(tags::SEGMENT_NUMBER, (i + 1) as u16),
-            el(tags::SEGMENT_LABEL, VR::LO, seg.name.as_str()),
-            el(tags::SEGMENT_ALGORITHM_TYPE, VR::CS, "AUTOMATIC"),
-            el(tags::SEGMENT_ALGORITHM_NAME, VR::LO, s.source.algorithm),
-            seq(tags::SEGMENTED_PROPERTY_CATEGORY_CODE_SEQUENCE, vec![code_item(ANATOMICAL_STRUCTURE)]),
-            seq(tags::SEGMENTED_PROPERTY_TYPE_CODE_SEQUENCE, vec![ty]),
-            DataElement::new(tags::RECOMMENDED_DISPLAY_CIE_LAB_VALUE, VR::US,
-                PrimitiveValue::U16(dicom_lab(seg.rgb).as_ref().into())),
-        ])
-    }).collect()));
+    put(segment_sequence(s, segments));
 
     // Image Pixel: 1-bit frames, packed with no padding between them.
     put(us(tags::SAMPLES_PER_PIXEL, 1));
@@ -387,9 +372,46 @@ fn build_seg(
         ])]),
         seq(tags::PLANE_ORIENTATION_SEQUENCE, vec![item([ds3(tags::IMAGE_ORIENTATION_PATIENT, &g.orientation)])]),
     ])]));
+    put(per_frame_groups(s, frames, g));
+
+    // Common Instance Reference: the reference series, every slice.
+    let (_, _, rz) = s.reference.dims;
+    put(seq(tags::REFERENCED_SERIES_SEQUENCE, vec![item([
+        el(tags::SERIES_INSTANCE_UID, VR::UI, s.reference.series_uid),
+        seq(tags::REFERENCED_INSTANCE_SEQUENCE, (0..rz).map(|k| item([
+            el(tags::REFERENCED_SOP_CLASS_UID, VR::UI, uids::MR_IMAGE_STORAGE),
+            el(tags::REFERENCED_SOP_INSTANCE_UID, VR::UI, slice_uid(s.reference.series_uid, k).as_str()),
+        ])).collect()),
+    ])]));
+    obj
+}
+
+/// The Segment Sequence: each segment's number, name, algorithm, codes and display colour.
+fn segment_sequence(s: &SegExport, segments: &[Segment]) -> DataElement<InMemDicomObject> {
+    seq(tags::SEGMENT_SEQUENCE, segments.iter().enumerate().map(|(i, seg)| {
+        let mut ty = code_item(seg.ty);
+        if let Some(side) = seg.side {
+            ty.put(seq(tags::SEGMENTED_PROPERTY_TYPE_MODIFIER_CODE_SEQUENCE, vec![code_item(side)]));
+        }
+        item([
+            us(tags::SEGMENT_NUMBER, (i + 1) as u16),
+            el(tags::SEGMENT_LABEL, VR::LO, seg.name.as_str()),
+            el(tags::SEGMENT_ALGORITHM_TYPE, VR::CS, "AUTOMATIC"),
+            el(tags::SEGMENT_ALGORITHM_NAME, VR::LO, s.source.algorithm),
+            seq(tags::SEGMENTED_PROPERTY_CATEGORY_CODE_SEQUENCE, vec![code_item(ANATOMICAL_STRUCTURE)]),
+            seq(tags::SEGMENTED_PROPERTY_TYPE_CODE_SEQUENCE, vec![ty]),
+            DataElement::new(tags::RECOMMENDED_DISPLAY_CIE_LAB_VALUE, VR::US,
+                PrimitiveValue::U16(dicom_lab(seg.rgb).as_ref().into())),
+        ])
+    }).collect())
+}
+
+/// The Per-frame Functional Groups: each frame's position, segment and the reference series'
+/// slice it was derived from.
+fn per_frame_groups(s: &SegExport, frames: &[(usize, usize)], g: &SliceGeometry) -> DataElement<InMemDicomObject> {
     let source_purpose = code_item(("121322", "DCM", "Source image for image processing operation"));
     let derivation = code_item(("113076", "DCM", "Segmentation"));
-    put(seq(tags::PER_FRAME_FUNCTIONAL_GROUPS_SEQUENCE, frames.iter().map(|&(si, k)| {
+    seq(tags::PER_FRAME_FUNCTIONAL_GROUPS_SEQUENCE, frames.iter().map(|&(si, k)| {
         let source = item([
             el(tags::REFERENCED_SOP_CLASS_UID, VR::UI, uids::MR_IMAGE_STORAGE),
             el(tags::REFERENCED_SOP_INSTANCE_UID, VR::UI, slice_uid(s.reference.series_uid, k).as_str()),
@@ -407,16 +429,5 @@ fn build_seg(
                 seq(tags::SOURCE_IMAGE_SEQUENCE, vec![source]),
             ])]),
         ])
-    }).collect()));
-
-    // Common Instance Reference: the reference series, every slice.
-    let (_, _, rz) = s.reference.dims;
-    put(seq(tags::REFERENCED_SERIES_SEQUENCE, vec![item([
-        el(tags::SERIES_INSTANCE_UID, VR::UI, s.reference.series_uid),
-        seq(tags::REFERENCED_INSTANCE_SEQUENCE, (0..rz).map(|k| item([
-            el(tags::REFERENCED_SOP_CLASS_UID, VR::UI, uids::MR_IMAGE_STORAGE),
-            el(tags::REFERENCED_SOP_INSTANCE_UID, VR::UI, slice_uid(s.reference.series_uid, k).as_str()),
-        ])).collect()),
-    ])]));
-    obj
+    }).collect())
 }

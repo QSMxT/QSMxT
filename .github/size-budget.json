@@ -3,11 +3,7 @@
   "crates/qsmxt-engine/src/memory.rs": 819,
   "crates/qsmxt-engine/src/pipeline_graph.rs": 1446,
   "crates/qsmxt-engine/src/pipeline_graph/layout.rs": 1210,
-  "crates/qsmxt-engine/src/store.rs": 1201,
-  "crates/qsmxt-io/src/bids/discovery.rs": 811,
-  "crates/qsmxt-io/src/dicom/export.rs": 830,
-  "crates/qsmxt-io/src/pipeline/multiorient.rs": 950,
-  "crates/qsmxt-io/src/pipeline/runner.rs": 1171
+  "crates/qsmxt-engine/src/store.rs": 1201
  },
  "functions": {
   "crates/qsmxt-engine/src/graph.rs::downstream_steps": 165,
@@ -20,15 +16,6 @@
   "crates/qsmxt-engine/src/stages/r2/step.rs::r2": 241,
   "crates/qsmxt-engine/src/stages/separation/step.rs::chi_separation": 219,
   "crates/qsmxt-engine/tests/param_coverage.rs::qsmxt_engine_covers_all_qsm_core_params": 135,
-  "crates/qsmxt-io/src/bids/bidsprov.rs::write_provenance": 210,
-  "crates/qsmxt-io/src/bids/discovery.rs::discover_runs": 172,
-  "crates/qsmxt-io/src/dicom/convert.rs::convert_session_streaming": 192,
-  "crates/qsmxt-io/src/dicom/export/seg.rs::build_seg": 140,
-  "crates/qsmxt-io/src/dicom/mod.rs::file_meta": 131,
-  "crates/qsmxt-io/src/dicom/synth.rs::write_fixture": 131,
-  "crates/qsmxt-io/src/pipeline/figure.rs::draw": 134,
-  "crates/qsmxt-io/src/pipeline/multiorient.rs::reconstruct_group": 366,
-  "crates/qsmxt-io/src/settings.rs::apply": 153,
   "crates/qsmxt-tui/src/app/input/nifti_to_bids.rs::handle_nifti_tab_key": 121,
   "crates/qsmxt-tui/src/app/tabs/rows.rs::handle_rows_key": 279,
   "crates/qsmxt-tui/src/lib.rs::run_tui": 124,
@@ -38,7 +25,5 @@
   "crates/qsmxt-tui/src/ui/modals.rs::draw_checklist_modal": 174,
   "crates/qsmxt-tui/src/ui/rows.rs::draw_rows_tab": 548
  },
- "test_files": {
-  "crates/qsmxt-io/src/pipeline/runner.rs": 2505
- }
+ "test_files": {}
 }
