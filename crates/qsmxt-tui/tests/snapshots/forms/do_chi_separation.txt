@@ -3,7 +3,7 @@ config:
   /pipeline/do_chi_separation: false -> true
 command:
   + --do-chisep
-methods: 9b5df1e112555d2b (38 lines)
+methods: 7ce270a4d623edae (38 lines)
 
 ## toggle do_chi_separation, separation_algorithm = decompose
 config:
@@ -21,7 +21,7 @@ config:
 command:
   + --do-chisep
   + --chisep chi-sep-ilsqr
-methods: d3e6444ccb2cabd7 (34 lines)
+methods: 22ef235c55cbb72d (34 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sep-medi
 config:
@@ -30,7 +30,7 @@ config:
 command:
   + --do-chisep
   + --chisep chi-sep-medi
-methods: 690bf71429d8ce22 (35 lines)
+methods: 0880c258d2f78e38 (35 lines)
 
 ## toggle do_chi_separation, separation_algorithm = wavesep
 config:
@@ -39,7 +39,7 @@ config:
 command:
   + --do-chisep
   + --chisep wavesep
-methods: f6b21717761887b2 (39 lines)
+methods: 75d85c70b2bf34fb (39 lines)
 
 ## toggle do_chi_separation, separation_algorithm = hc-chisep
 config:
@@ -48,7 +48,7 @@ config:
 command:
   + --do-chisep
   + --chisep hc-chisep
-methods: 2adc40b6f3b556e6 (39 lines)
+methods: fd2aee1ed10aed40 (39 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net
 config:
@@ -57,7 +57,7 @@ config:
 command:
   + --do-chisep
   + --chisep susep-net
-methods: 68874612dc964c37 (40 lines)
+methods: 83c08e160a269dd5 (40 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet
 config:
@@ -66,7 +66,7 @@ config:
 command:
   + --do-chisep
   + --chisep chi-sepnet
-methods: 0c93d14c4bdd00d3 (30 lines)
+methods: 1c681c3543887933 (30 lines)
 
 ## toggle do_chi_separation, toggle export_dicom
 config:
@@ -75,7 +75,7 @@ config:
 command:
   + --do-chisep
   + --export-dicom
-methods: f874f6cc724e191f (38 lines)
+methods: 7c74b8e3aac9fc42 (38 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm
 config:
@@ -86,7 +86,7 @@ command:
   + --do-chisep
   + --bf-algorithm iqfm
   + --chisep susep-net
-methods: b69f8c9df5e81539 (40 lines)
+methods: bacf187e2b829e05 (40 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = xqsm
 config:
@@ -97,7 +97,7 @@ command:
   + --do-chisep
   + --qsm-algorithm xqsm
   + --chisep susep-net
-methods: 22acb1874c73c75b (30 lines)
+methods: 2396ccbb4645ac31 (30 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = qsmnet
 config:
@@ -108,7 +108,7 @@ command:
   + --do-chisep
   + --qsm-algorithm qsmnet
   + --chisep susep-net
-methods: 2c4577e1fc360dce (31 lines)
+methods: 4ba053a766036034 (31 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = qsmnet-plus
 config:
@@ -119,7 +119,7 @@ command:
   + --do-chisep
   + --qsm-algorithm qsmnet-plus
   + --chisep susep-net
-methods: 2567ca8237f8a2a7 (31 lines)
+methods: be91bdaccf5c048d (31 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = autoqsm
 config:
@@ -130,7 +130,7 @@ command:
   + --do-chisep
   + --qsm-algorithm autoqsm
   + --chisep susep-net
-methods: 520fb04873a0b9e4 (29 lines)
+methods: 9d33f0aa102e238f (29 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = qsmgan
 config:
@@ -141,7 +141,7 @@ command:
   + --do-chisep
   + --qsm-algorithm qsmgan
   + --chisep susep-net
-methods: d18c05613c3e7456 (31 lines)
+methods: 989fc6cd0b9c788c (31 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = ir2qsm
 config:
@@ -152,7 +152,7 @@ command:
   + --do-chisep
   + --qsm-algorithm ir2qsm
   + --chisep susep-net
-methods: 99e0702b4570ce62 (29 lines)
+methods: 7cd294e5f484a4d5 (29 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = lpcnn
 config:
@@ -163,7 +163,7 @@ command:
   + --do-chisep
   + --qsm-algorithm lpcnn
   + --chisep susep-net
-methods: fbb84623ab82c54f (30 lines)
+methods: 8af7528365ad9291 (30 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = modl-qsm
 config:
@@ -174,7 +174,7 @@ command:
   + --do-chisep
   + --qsm-algorithm modl-qsm
   + --chisep susep-net
-methods: 1a41a1ba91ed1252 (29 lines)
+methods: c7ddad267ff58430 (29 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = nextqsm
 config:
@@ -185,7 +185,7 @@ command:
   + --do-chisep
   + --qsm-algorithm nextqsm
   + --chisep susep-net
-methods: 102e3aa894f3de56 (29 lines)
+methods: 265215cfa13a246e (29 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = iqsm
 config:
@@ -196,7 +196,7 @@ command:
   + --do-chisep
   + --qsm-algorithm iqsm
   + --chisep susep-net
-methods: a6f2d64ee5e63c22 (28 lines)
+methods: 93a0b314c704dd92 (28 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = iqsm-plus
 config:
@@ -207,7 +207,7 @@ command:
   + --do-chisep
   + --qsm-algorithm iqsm-plus
   + --chisep susep-net
-methods: e5277fa1bd1d23be (27 lines)
+methods: a621ef4fc09aca30 (27 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, r2prime_strategy = mese
 config:
@@ -218,7 +218,7 @@ command:
   + --do-chisep
   + --r2prime-strategy mese
   + --chisep susep-net
-methods: 1d75dc77d54c7493 (39 lines)
+methods: 427af48f799caa6b (39 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native
 config:
@@ -229,7 +229,7 @@ command:
   + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: 523dabd00db816a2 (33 lines)
+methods: 89cdcd6a05ae6efa (33 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = xqsm
 config:
@@ -242,7 +242,7 @@ command:
   + --bf-algorithm iqfm
   + --qsm-algorithm xqsm
   + --chisep susep-net
-methods: 21a0b3accee72391 (30 lines)
+methods: 0e5496009a414571 (30 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = qsmnet
 config:
@@ -255,7 +255,7 @@ command:
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmnet
   + --chisep susep-net
-methods: b9a9349df3868161 (32 lines)
+methods: 5bfec78ccc0dd2c1 (32 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = qsmnet-plus
 config:
@@ -268,7 +268,7 @@ command:
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmnet-plus
   + --chisep susep-net
-methods: 54b40f50ed542d93 (32 lines)
+methods: a8a0d4e92f5509d3 (32 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = qsmgan
 config:
@@ -281,7 +281,7 @@ command:
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmgan
   + --chisep susep-net
-methods: 66ab13e6199bbb26 (32 lines)
+methods: f95a609ae6745556 (32 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = ir2qsm
 config:
@@ -294,7 +294,7 @@ command:
   + --bf-algorithm iqfm
   + --qsm-algorithm ir2qsm
   + --chisep susep-net
-methods: 068bb54d6b320fd2 (29 lines)
+methods: 74377a350d37d04b (29 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = lpcnn
 config:
@@ -307,7 +307,7 @@ command:
   + --bf-algorithm iqfm
   + --qsm-algorithm lpcnn
   + --chisep susep-net
-methods: 3e522d59ab211d41 (31 lines)
+methods: 1836f300e7ffc18d (31 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = modl-qsm
 config:
@@ -320,7 +320,7 @@ command:
   + --bf-algorithm iqfm
   + --qsm-algorithm modl-qsm
   + --chisep susep-net
-methods: 69d50e00cc3c6b52 (29 lines)
+methods: bf058568da04d026 (29 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, r2prime_strategy = mese
 config:
@@ -333,7 +333,7 @@ command:
   + --r2prime-strategy mese
   + --bf-algorithm iqfm
   + --chisep susep-net
-methods: 7897eddc2dfe5725 (39 lines)
+methods: 9007f86c11fcaa57 (39 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = xqsm, r2prime_strategy = mese
 config:
@@ -346,7 +346,7 @@ command:
   + --r2prime-strategy mese
   + --qsm-algorithm xqsm
   + --chisep susep-net
-methods: 2d16e35cf95b5ecb (29 lines)
+methods: a47504b15a6be5f3 (29 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = qsmnet, r2prime_strategy = mese
 config:
@@ -359,7 +359,7 @@ command:
   + --r2prime-strategy mese
   + --qsm-algorithm qsmnet
   + --chisep susep-net
-methods: 5cd49bf5c0119c9c (30 lines)
+methods: 79b1dd733dbfc0fc (30 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = qsmnet-plus, r2prime_strategy = mese
 config:
@@ -372,7 +372,7 @@ command:
   + --r2prime-strategy mese
   + --qsm-algorithm qsmnet-plus
   + --chisep susep-net
-methods: 7d01190f643d2b67 (30 lines)
+methods: 74289e821de87c87 (30 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = autoqsm, r2prime_strategy = mese
 config:
@@ -385,7 +385,7 @@ command:
   + --r2prime-strategy mese
   + --qsm-algorithm autoqsm
   + --chisep susep-net
-methods: 070e3f32513a709a (28 lines)
+methods: e977c0c7b5cdc829 (28 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = qsmgan, r2prime_strategy = mese
 config:
@@ -398,7 +398,7 @@ command:
   + --r2prime-strategy mese
   + --qsm-algorithm qsmgan
   + --chisep susep-net
-methods: e54f5cbc36ba9aa0 (30 lines)
+methods: 7bbbefb3168c6c20 (30 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = ir2qsm, r2prime_strategy = mese
 config:
@@ -411,7 +411,7 @@ command:
   + --r2prime-strategy mese
   + --qsm-algorithm ir2qsm
   + --chisep susep-net
-methods: 3b2076fad307de54 (28 lines)
+methods: 657f8d2acf2bfe7f (28 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = lpcnn, r2prime_strategy = mese
 config:
@@ -424,7 +424,7 @@ command:
   + --r2prime-strategy mese
   + --qsm-algorithm lpcnn
   + --chisep susep-net
-methods: a8c85b823db0eb47 (29 lines)
+methods: f30505d829232033 (29 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = modl-qsm, r2prime_strategy = mese
 config:
@@ -437,7 +437,7 @@ command:
   + --r2prime-strategy mese
   + --qsm-algorithm modl-qsm
   + --chisep susep-net
-methods: 00537a1926800bd8 (28 lines)
+methods: c3efcac4f611d0c8 (28 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = nextqsm, r2prime_strategy = mese
 config:
@@ -450,7 +450,7 @@ command:
   + --r2prime-strategy mese
   + --qsm-algorithm nextqsm
   + --chisep susep-net
-methods: 7af3a1e3c5e45c30 (28 lines)
+methods: 791402ff829be62a (28 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = iqsm, r2prime_strategy = mese
 config:
@@ -463,7 +463,7 @@ command:
   + --r2prime-strategy mese
   + --qsm-algorithm iqsm
   + --chisep susep-net
-methods: ff594377010cd5fc (27 lines)
+methods: e726f24641814d0e (27 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = iqsm-plus, r2prime_strategy = mese
 config:
@@ -476,7 +476,7 @@ command:
   + --r2prime-strategy mese
   + --qsm-algorithm iqsm-plus
   + --chisep susep-net
-methods: b022695596d4525c (26 lines)
+methods: ffbdb9f08cf3bff0 (26 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm
 config:
@@ -489,7 +489,7 @@ command:
   + --bf-algorithm iqfm
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: 3aecd421e5d64deb (35 lines)
+methods: 8b4641a723421545 (35 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = xqsm
 config:
@@ -502,7 +502,7 @@ command:
   + --qsm-algorithm xqsm
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: e89637364fb1de01 (34 lines)
+methods: 40b77bec85b7454d (34 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = qsmnet
 config:
@@ -515,7 +515,7 @@ command:
   + --qsm-algorithm qsmnet
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: 7d418c0222e2e4f5 (35 lines)
+methods: fd77796a8f859b91 (35 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = qsmnet-plus
 config:
@@ -528,7 +528,7 @@ command:
   + --qsm-algorithm qsmnet-plus
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: a5fcec4feceffb1f (35 lines)
+methods: 7daa5b49642260db (35 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = autoqsm
 config:
@@ -541,7 +541,7 @@ command:
   + --qsm-algorithm autoqsm
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: 421d900cb028c8c7 (33 lines)
+methods: 225ad6009c5e3a98 (33 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = qsmgan
 config:
@@ -554,7 +554,7 @@ command:
   + --qsm-algorithm qsmgan
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: 477dd104d1e674b0 (35 lines)
+methods: 31bdaa4e31c9d1d8 (35 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = ir2qsm
 config:
@@ -567,7 +567,7 @@ command:
   + --qsm-algorithm ir2qsm
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: b3641f42f3989939 (33 lines)
+methods: c13cb6531fce1252 (33 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = lpcnn
 config:
@@ -580,7 +580,7 @@ command:
   + --qsm-algorithm lpcnn
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: d2f80984daf869ef (34 lines)
+methods: f5e0420187120fbf (34 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = modl-qsm
 config:
@@ -593,7 +593,7 @@ command:
   + --qsm-algorithm modl-qsm
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: 0e84831d406e813b (33 lines)
+methods: ec754c9ba3efeaf7 (33 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = nextqsm
 config:
@@ -606,7 +606,7 @@ command:
   + --qsm-algorithm nextqsm
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: 9ff5528280cbbb51 (33 lines)
+methods: 99e25ac39ee9886b (33 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = iqsm
 config:
@@ -619,7 +619,7 @@ command:
   + --qsm-algorithm iqsm
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: a6785453d365d8d0 (31 lines)
+methods: ca8bd78fbe66cede (31 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = iqsm-plus
 config:
@@ -632,7 +632,7 @@ command:
   + --qsm-algorithm iqsm-plus
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: 00a5b967a0887578 (31 lines)
+methods: 2ea2e3459a5d0cfc (31 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, r2prime_strategy = mese
 config:
@@ -645,7 +645,7 @@ command:
   + --r2prime-strategy mese
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: 915239480864d90e (32 lines)
+methods: 0ac7885260fe2e64 (32 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = xqsm, r2prime_strategy = mese
 config:
@@ -660,7 +660,7 @@ command:
   + --bf-algorithm iqfm
   + --qsm-algorithm xqsm
   + --chisep susep-net
-methods: 42f2e61d15021fe1 (29 lines)
+methods: 5e9b4f59afd9cad7 (29 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = qsmnet, r2prime_strategy = mese
 config:
@@ -675,7 +675,7 @@ command:
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmnet
   + --chisep susep-net
-methods: 345da5bb3f667fcd (31 lines)
+methods: b53fe5b0ebef405b (31 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = qsmnet-plus, r2prime_strategy = mese
 config:
@@ -690,7 +690,7 @@ command:
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmnet-plus
   + --chisep susep-net
-methods: ee0d8b2bd04410ef (31 lines)
+methods: f7ff7419d4153349 (31 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = qsmgan, r2prime_strategy = mese
 config:
@@ -705,7 +705,7 @@ command:
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmgan
   + --chisep susep-net
-methods: c2cee5bdcf97b87c (31 lines)
+methods: 42e8d59979d5567e (31 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = ir2qsm, r2prime_strategy = mese
 config:
@@ -720,7 +720,7 @@ command:
   + --bf-algorithm iqfm
   + --qsm-algorithm ir2qsm
   + --chisep susep-net
-methods: 92b4fedb82160e70 (28 lines)
+methods: 0cac6754aa76c439 (28 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = lpcnn, r2prime_strategy = mese
 config:
@@ -735,7 +735,7 @@ command:
   + --bf-algorithm iqfm
   + --qsm-algorithm lpcnn
   + --chisep susep-net
-methods: c95079bdb03ff1a1 (30 lines)
+methods: ff1dced22b81872b (30 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = modl-qsm, r2prime_strategy = mese
 config:
@@ -750,7 +750,7 @@ command:
   + --bf-algorithm iqfm
   + --qsm-algorithm modl-qsm
   + --chisep susep-net
-methods: 2d63845bdf7810a4 (28 lines)
+methods: cbb7024564598832 (28 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = xqsm
 config:
@@ -765,7 +765,7 @@ command:
   + --qsm-algorithm xqsm
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: dfa97e7369843076 (35 lines)
+methods: 3ec72c52d3787708 (35 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = qsmnet
 config:
@@ -780,7 +780,7 @@ command:
   + --qsm-algorithm qsmnet
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: 015d3bc7fe0e5747 (37 lines)
+methods: 08dc489db4fb738d (37 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = qsmnet-plus
 config:
@@ -795,7 +795,7 @@ command:
   + --qsm-algorithm qsmnet-plus
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: e527a86044013118 (37 lines)
+methods: 021a679f49693a2a (37 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = qsmgan
 config:
@@ -810,7 +810,7 @@ command:
   + --qsm-algorithm qsmgan
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: 8f86816536e9f6a7 (37 lines)
+methods: f59831847c277825 (37 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = ir2qsm
 config:
@@ -825,7 +825,7 @@ command:
   + --qsm-algorithm ir2qsm
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: c2ff0497bd9e9342 (34 lines)
+methods: 745e19ab166bac55 (34 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = lpcnn
 config:
@@ -840,7 +840,7 @@ command:
   + --qsm-algorithm lpcnn
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: 9a85395cb3b27acc (36 lines)
+methods: 7cbf6c1ae8b471be (36 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = modl-qsm
 config:
@@ -855,7 +855,7 @@ command:
   + --qsm-algorithm modl-qsm
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: df22926a983afeac (34 lines)
+methods: 0094f4f85606a27a (34 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, r2prime_strategy = mese
 config:
@@ -870,7 +870,7 @@ command:
   + --bf-algorithm iqfm
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: 7128e784434ba925 (34 lines)
+methods: 1e7441e0dc66a5f1 (34 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = xqsm, r2prime_strategy = mese
 config:
@@ -885,7 +885,7 @@ command:
   + --qsm-algorithm xqsm
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: 11ed00de8417062f (33 lines)
+methods: 69cac36e7f7c0401 (33 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = qsmnet, r2prime_strategy = mese
 config:
@@ -900,7 +900,7 @@ command:
   + --qsm-algorithm qsmnet
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: 33d1217cd1f631ef (34 lines)
+methods: dde9b3b8371ee2c1 (34 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = qsmnet-plus, r2prime_strategy = mese
 config:
@@ -915,7 +915,7 @@ command:
   + --qsm-algorithm qsmnet-plus
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: 7a713c8a341c1719 (34 lines)
+methods: 7ba6b735ba3e8577 (34 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = autoqsm, r2prime_strategy = mese
 config:
@@ -930,7 +930,7 @@ command:
   + --qsm-algorithm autoqsm
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: d4d20d688200f169 (32 lines)
+methods: 57712759d16ebb26 (32 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = qsmgan, r2prime_strategy = mese
 config:
@@ -945,7 +945,7 @@ command:
   + --qsm-algorithm qsmgan
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: 688f6257a91f7304 (34 lines)
+methods: 96ad3541c51286ae (34 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = ir2qsm, r2prime_strategy = mese
 config:
@@ -960,7 +960,7 @@ command:
   + --qsm-algorithm ir2qsm
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: 80c207a600aefb8f (32 lines)
+methods: ce6e3622a2fa3cb0 (32 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = lpcnn, r2prime_strategy = mese
 config:
@@ -975,7 +975,7 @@ command:
   + --qsm-algorithm lpcnn
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: 205dee6520f6e959 (33 lines)
+methods: d609193c4c24fc4b (33 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = modl-qsm, r2prime_strategy = mese
 config:
@@ -990,7 +990,7 @@ command:
   + --qsm-algorithm modl-qsm
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: e929b7440ae5a999 (32 lines)
+methods: 306b067d6bea7547 (32 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = nextqsm, r2prime_strategy = mese
 config:
@@ -1005,7 +1005,7 @@ command:
   + --qsm-algorithm nextqsm
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: ea8aef586161972f (32 lines)
+methods: c081d88953cda357 (32 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = iqsm, r2prime_strategy = mese
 config:
@@ -1020,7 +1020,7 @@ command:
   + --qsm-algorithm iqsm
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: 66bdf5581b82387c (30 lines)
+methods: 40fd075f41d09284 (30 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = iqsm-plus, r2prime_strategy = mese
 config:
@@ -1035,7 +1035,7 @@ command:
   + --qsm-algorithm iqsm-plus
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: 3290a8c106f84fb8 (30 lines)
+methods: 56b6417842968a2e (30 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = xqsm, r2prime_strategy = mese
 config:
@@ -1052,7 +1052,7 @@ command:
   + --qsm-algorithm xqsm
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: 92b85c046c416bba (34 lines)
+methods: 1fe358994ed0d052 (34 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = qsmnet, r2prime_strategy = mese
 config:
@@ -1069,7 +1069,7 @@ command:
   + --qsm-algorithm qsmnet
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: e4593cf9a6df5ae9 (36 lines)
+methods: 2e7d9d4898c4feb1 (36 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = qsmnet-plus, r2prime_strategy = mese
 config:
@@ -1086,7 +1086,7 @@ command:
   + --qsm-algorithm qsmnet-plus
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: 0bb4fb8005bab880 (36 lines)
+methods: 6bd5fee10b330364 (36 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = qsmgan, r2prime_strategy = mese
 config:
@@ -1103,7 +1103,7 @@ command:
   + --qsm-algorithm qsmgan
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: 855cf2a25fe36005 (36 lines)
+methods: 5e3ca6104ef79de5 (36 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = ir2qsm, r2prime_strategy = mese
 config:
@@ -1120,7 +1120,7 @@ command:
   + --qsm-algorithm ir2qsm
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: b4494687741633d6 (33 lines)
+methods: eda611ca3932ce0d (33 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = lpcnn, r2prime_strategy = mese
 config:
@@ -1137,7 +1137,7 @@ command:
   + --qsm-algorithm lpcnn
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: b52dd985656823ec (35 lines)
+methods: 6f0f395bc13b1428 (35 lines)
 
 ## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = modl-qsm, r2prime_strategy = mese
 config:
@@ -1154,5 +1154,5 @@ command:
   + --qsm-algorithm modl-qsm
   + --chisep chi-sepnet
   + --chi-sepnet-route native
-methods: 73a58d0762cf6ab0 (33 lines)
+methods: 79e2df3e740ad210 (33 lines)
 

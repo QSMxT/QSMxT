@@ -3,7 +3,7 @@ config:
   /pipeline/do_r2primemap: false -> true
 command:
   + --do-r2primemap
-methods: 1fbdb6cc289a9ade (23 lines)
+methods: da9c821f043808b4 (23 lines)
 
 ## toggle do_r2primemap, toggle export_dicom
 config:
@@ -12,5 +12,5 @@ config:
 command:
   + --do-r2primemap
   + --export-dicom
-methods: 6e6b328964af92b8 (23 lines)
+methods: 850fb86bb661498a (23 lines)
 

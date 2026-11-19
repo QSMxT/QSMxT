@@ -42,5 +42,5 @@ Outputs the run turned on because other settings need them:
 - Wu, B., et al. (2012). "Whole brain susceptibility mapping using compressed sensing." *Magnetic Resonance in Medicine*, 67(1):137-147. https://doi.org/10.1002/mrm.23000
 - Li, W., et al. (2015). "A method for estimating and removing streaking artifacts in quantitative susceptibility mapping." *NeuroImage*, 108:111-122. https://doi.org/10.1016/j.neuroimage.2014.12.043
 - Pei, M., et al. (2015). "Algorithm for fast monoexponential fitting based on Auto-Regression on Linear Operations (ARLO) of data." *Magnetic Resonance in Medicine*, 73(2):843-850. https://doi.org/10.1002/mrm.25137
-- Kim, M., et al. (2025). "χ-sepnet: Deep neural network for magnetic susceptibility source separation." *Human Brain Mapping*, 46(4):e70136. https://doi.org/10.1002/hbm.70136
-- Kim, M., Ji, S., Lee, J., et al. (2025). "chi-sepnet: Deep neural network for magnetic susceptibility source separation." *Human Brain Mapping*, 46(4):e70136. https://doi.org/10.1002/hbm.70136
+- Kim, M., et al. (2025). "χ-sepnet: Deep neural network for magnetic susceptibility source separation." *Human Brain Mapping*, 46(2):e70136. https://doi.org/10.1002/hbm.70136
+- Kim, M., Ji, S., Lee, J., et al. (2025). "chi-sepnet: Deep neural network for magnetic susceptibility source separation." *Human Brain Mapping*, 46(2):e70136. https://doi.org/10.1002/hbm.70136
