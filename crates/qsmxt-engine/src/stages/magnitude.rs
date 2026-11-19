@@ -14,6 +14,8 @@ use crate::error::EngineError;
 use crate::masking::{MaskOp, MaskSection, MaskingInput};
 use crate::scan::RunMetadata;
 
+mod step;
+
 /// What the `inhomog` step corrects in a run.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct Targets {

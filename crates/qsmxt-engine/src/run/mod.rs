@@ -324,41 +324,41 @@ fn check_supplied_grids<S: StageStore + ?Sized>(plan: &Plan, meta: &RunMetadata,
 const SUPPLIED_MAPS: [Item; 4] = [Item::SuppliedChi, Item::SuppliedR2, Item::SuppliedR2prime, Item::SuppliedSegmentation];
 
 /// Every echo's phase, and every echo's magnitude (or none).
-type Echoes = (Vec<Vec<f64>>, Vec<Vec<f64>>);
+pub(crate) type Echoes = (Vec<Vec<f64>>, Vec<Vec<f64>>);
 
 /// One run of a plan, between its steps.
-struct Run<'r, S: StageStore + ?Sized> {
-    plan: &'r Plan,
-    config: &'r PipelineConfig,
-    facts: &'r ScanFacts,
-    meta: RunMetadata,
-    store: &'r mut S,
-    observer: &'r mut dyn Observer,
+pub(crate) struct Run<'r, S: StageStore + ?Sized> {
+    pub(crate) plan: &'r Plan,
+    pub(crate) config: &'r PipelineConfig,
+    pub(crate) facts: &'r ScanFacts,
+    pub(crate) meta: RunMetadata,
+    pub(crate) store: &'r mut S,
+    pub(crate) observer: &'r mut dyn Observer,
     /// What became of the step being taken: `None` until it is computed or found cached, and
     /// skipped if neither.
-    state: Option<StepState>,
+    pub(crate) state: Option<StepState>,
     /// What it decided so far.
-    decisions: Vec<Decision>,
+    pub(crate) decisions: Vec<Decision>,
     /// Where the decisions made while computing it start: those are kept with it in the store,
     /// for a run that reuses it. The ones before are made every run.
-    computing_from: usize,
+    pub(crate) computing_from: usize,
     /// A dry run ([`dry_run`]): a step that would be computed is recorded under its key, its
     /// outputs held, instead.
-    dry: bool,
+    pub(crate) dry: bool,
     /// What the steps taken so far decided.
-    decided: Vec<Decision>,
+    pub(crate) decided: Vec<Decision>,
 }
 
 /// A computed step, as a step of the run hands it to [`Run::record`]: [`Completed`] without what
 /// it read, which the run takes from the plan ([`Run::reads`]), and without its decisions, which
 /// the run kept as it made them.
-struct Done<'a> {
-    step: &'a str,
-    algorithm: Option<&'a str>,
-    params: &'a Value,
-    outcome: Option<(&'static str, Value)>,
-    key: &'a str,
-    outputs: &'a [Item],
+pub(crate) struct Done<'a> {
+    pub(crate) step: &'a str,
+    pub(crate) algorithm: Option<&'a str>,
+    pub(crate) params: &'a Value,
+    pub(crate) outcome: Option<(&'static str, Value)>,
+    pub(crate) key: &'a str,
+    pub(crate) outputs: &'a [Item],
 }
 
 impl<'r, S: StageStore + ?Sized> Run<'r, S> {
@@ -385,17 +385,17 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
     }
 
     /// Note a decision of the step being taken.
-    fn decide(&mut self, decision: Decision) {
+    pub(crate) fn decide(&mut self, decision: Decision) {
         self.decisions.push(decision);
     }
 
     /// Note that the step did nothing, and why.
-    fn skip(&mut self, reason: &str) {
+    pub(crate) fn skip(&mut self, reason: &str) {
         self.decide(Decision::new(Topic::Step, Choice::Skipped, reason));
     }
 
     /// The step's earlier output is reused: what it decided when it was computed holds.
-    fn reuse(&mut self, step: &str) {
+    pub(crate) fn reuse(&mut self, step: &str) {
         self.state = Some(StepState::Cached);
         let earlier = self.store.decisions(step);
         self.decisions.extend(earlier);
@@ -437,7 +437,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
     /// `params` with the identity ([`StageStore::identity`]) of each file supplied with the scan
     /// that the step reads, under `supplied`: replacing one of those files recomputes the steps
     /// that read it and nothing else (#383). `params` is returned as it is when the step reads none.
-    fn with_supplied(&mut self, mut params: Value, items: &[Item]) -> Value {
+    pub(crate) fn with_supplied(&mut self, mut params: Value, items: &[Item]) -> Value {
         if !items.is_empty() {
             let identities: serde_json::Map<String, Value> =
                 items.iter().map(|item| (item.key(), self.store.identity(item))).collect();
@@ -448,7 +448,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
 
     /// `item` as a step reads it: a map supplied with the scan on the working grid
     /// ([`stages::supplied::conform`]), anything else as the store holds it.
-    fn map(&mut self, item: &Item) -> Result<Vec<f64>, S::Error> {
+    pub(crate) fn map(&mut self, item: &Item) -> Result<Vec<f64>, S::Error> {
         if SUPPLIED_MAPS.contains(item) {
             if let Supplied::Found { origin, data, dims, affine } = self.store.supplied(item) {
                 return Ok(stages::supplied::conform(item, &origin, data, dims, &affine, &self.meta)?);
@@ -459,7 +459,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
 
     /// The key `step` is cached under, unless its earlier output is still valid (then `None`, with
     /// `skipping` logged). Otherwise the step starts, `doing` being what it does.
-    fn begin(&mut self, step: &str, algorithm: Option<&str>, params: &Value, skipping: &str, doing: &str) -> Option<String> {
+    pub(crate) fn begin(&mut self, step: &str, algorithm: Option<&str>, params: &Value, skipping: &str, doing: &str) -> Option<String> {
         let key = step_cache_key(step, algorithm, params, self.config);
         if self.store.cached(step, &key) {
             self.observer.log(Level::Info, skipping);
@@ -490,7 +490,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
 
     /// Keep an output, and show it. A volume on a grid of its own (a projection) is kept but not
     /// shown: the observer's volumes are on the run's grid.
-    fn put(&mut self, item: Item, data: Data<'_>) -> Result<(), S::Error> {
+    pub(crate) fn put(&mut self, item: Item, data: Data<'_>) -> Result<(), S::Error> {
         self.store.put(item, data)?;
         match data {
             Data::Real(v) => self.observer.output(&item, qsm_core::pipeline::VolumeRef::Real(v)),
@@ -501,7 +501,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
     }
 
     /// Record a computed step, with what it decided while computed; `label` names it in the log.
-    fn complete(&mut self, c: Done<'_>, label: &str) -> Result<(), S::Error> {
+    pub(crate) fn complete(&mut self, c: Done<'_>, label: &str) -> Result<(), S::Error> {
         let (step, algorithm) = (c.step, c.algorithm);
         self.record(c)?;
         self.observer.stage(step, algorithm, StageEvent::Finished(label));
@@ -511,7 +511,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
     /// Keep a computed step in the store, with what it decided while computed and what it read:
     /// the plan's [`Step::reads`] for it, as this run's decisions so far left them
     /// ([`Self::reads`]), never a list of its own.
-    fn record(&mut self, c: Done<'_>) -> Result<(), S::Error> {
+    pub(crate) fn record(&mut self, c: Done<'_>) -> Result<(), S::Error> {
         let decisions = self.decisions[self.computing_from.min(self.decisions.len())..].to_vec();
         let inputs = self.reads(c.step);
         let Done { step, algorithm, params, outcome, key, outputs } = c;
@@ -539,107 +539,8 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             .find(|(_, s)| s.name == step).map(|(d, _)| d)
     }
 
-    fn log(&mut self, level: Level, message: &str) {
+    pub(crate) fn log(&mut self, level: Level, message: &str) {
         self.observer.log(level, message);
-    }
-
-    /// The box the FFT-based stages reconstruct in around `mask` ([`stages::crop::reconstruction_box`]),
-    /// when the run crops or pads.
-    fn reconstruction_box(&self, mask: &[u8]) -> Option<Decision> {
-        let p = &self.config.pipeline;
-        if !p.crop_to_mask && !p.fft_padding {
-            return None;
-        }
-        let b = stages::crop::reconstruction_box(p.crop_to_mask, p.fft_padding, mask, self.meta.dims,
-                                                 self.meta.voxel_size, p.crop_margin_mm);
-        let (d, f) = (b.dims, b.full_dims);
-        let size = format!("{}x{}x{} voxels, of {}x{}x{}", d.0, d.1, d.2, f.0, f.1, f.2);
-        Some(if d == f {
-            Decision::new(Topic::ReconstructionBox, Choice::Full,
-                          "Reconstructed on the whole grid, which the box would not have changed.")
-        } else if p.crop_to_mask {
-            Decision::new(Topic::ReconstructionBox, Choice::Cropped, "Reconstructed in a box around the mask.")
-        } else {
-            Decision::new(Topic::ReconstructionBox, Choice::Padded,
-                          "Reconstructed on the grid zero-padded to an FFT-efficient size.")
-        }.with_detail(size))
-    }
-
-    fn n_echoes(&self) -> usize {
-        self.meta.n_echoes
-    }
-
-    /// Whether the run reconstructs a QSM per echo ([`crate::bridge::per_echo`]).
-    fn per_echo(&self) -> bool {
-        crate::bridge::per_echo(self.config, self.n_echoes())
-    }
-
-    /// The run's metadata for echo `e` (1-based) alone: each step of a per-echo QSM sees the echo
-    /// as a single-echo scan's (qsm-core `ScanMetadata::echo`).
-    fn echo_meta(&self, e: usize) -> RunMetadata {
-        RunMetadata { n_echoes: 1, echo_times: vec![self.meta.echo_times[e - 1]], ..self.meta.clone() }
-    }
-
-    /// Echo `e`'s magnitude, when the run has one: every magnitude a per-echo QSM's steps take
-    /// (a single echo's combined magnitude, and its echoes' stack, are that echo's).
-    fn one_echo_magnitude(&mut self, e: usize) -> Result<Option<Vec<f64>>, S::Error> {
-        let item = self.echo_magnitude(e);
-        if self.store.has(&item) { self.store.real(&item).map(Some) } else { Ok(None) }
-    }
-
-    /// The mask the stages after motion correction work in: the brain mask, or with motion
-    /// correction the part of it every echo still covers.
-    fn mask_item(&self) -> Item {
-        if self.plan.motion_corrected { Item::CoverageMask } else { Item::BrainMask }
-    }
-
-    /// The mask a reconstruction pass runs on: the main pass's is where the total field is
-    /// defined ([`Item::FieldMask`]) when the run maps one field from every echo, the run's mask
-    /// otherwise; the reliable pass's is made inside that.
-    fn pass_mask(&self, pass: Pass) -> Item {
-        match pass {
-            Pass::Main if field_mask_written(self.plan, self.config, self.n_echoes()) => Item::FieldMask,
-            Pass::Main => self.mask_item(),
-            Pass::Reliable => Item::ReliableMask,
-        }
-    }
-
-    /// Where a pass's susceptibility map is defined: the mask background removal left, or the
-    /// pass's mask when the inversion did its own background removal.
-    fn support(&self, pass: Pass) -> Item {
-        if crate::bridge::skips_bgremove(self.config) { self.pass_mask(pass) } else { Item::LocalFieldMask(pass) }
-    }
-
-    /// Echo `e`'s phase as the stages after motion correction read it.
-    fn echo_phase(&self, e: usize) -> Item {
-        if self.plan.motion_corrected { Item::CorrectedPhase(e) } else { Item::Phase(e) }
-    }
-
-    fn echo_magnitude(&self, e: usize) -> Item {
-        if self.plan.motion_corrected { Item::CorrectedMagnitude(e) } else { Item::Magnitude(e) }
-    }
-
-    /// Every echo's phase and, when there are any, magnitude, as the stages after motion
-    /// correction read them: what the phase-domain networks (iQSM, iQFM) take.
-    fn phase_echoes(&mut self) -> Result<Echoes, S::Error> {
-        let n = self.n_echoes();
-        let phases = (1..=n).map(|e| { let i = self.echo_phase(e); self.store.real(&i) }).collect::<Result<Vec<_>, _>>()?;
-        let mut magnitudes = Vec::new();
-        for e in 1..=n {
-            let item = self.echo_magnitude(e);
-            if self.store.has(&item) {
-                magnitudes.push(self.store.real(&item)?);
-            }
-        }
-        Ok((phases, magnitudes))
-    }
-
-    /// Echo `e`'s magnitude as the stages after motion correction read it, falling back to the
-    /// acquired echo when there is no working-grid copy (only for a run that was not resampled,
-    /// where the two are the same grid).
-    fn working_magnitude(&mut self, e: usize) -> Item {
-        let item = self.echo_magnitude(e);
-        if !self.store.has(&item) && self.store.has(&Item::AcquiredMagnitude(e)) { Item::AcquiredMagnitude(e) } else { item }
     }
 
     /// The MESE's echoes, voxel-major on the working grid, and where its FOV reaches
@@ -647,27 +548,6 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
     fn mese_on_grid(&mut self, mese: &crate::store::Mese) -> Result<Result<stages::r2::MeseOnGrid, String>, S::Error> {
         let store = &mut *self.store;
         Ok(stages::r2::mese_on_grid(mese, |n| store.supplied(&Item::MeseMagnitude(n)), self.meta.dims, &self.meta.affine)?)
-    }
-
-    /// The segmentation regions are measured on: the run's own, or the one supplied with the scan
-    /// (`--use-custom-dseg` without segmenting).
-    fn segmentation_item(&mut self) -> Option<Item> {
-        [Item::Segmentation, Item::SuppliedSegmentation].into_iter().find(|i| self.store.has(i))
-    }
-
-    /// Every echo's magnitude as the stages after motion correction read it, stacked with the
-    /// echo slowest: what MEDI, TFI and PDF take. `None` for a run without magnitude.
-    fn echo_magnitude_stack(&mut self) -> Result<Option<Vec<f64>>, S::Error> {
-        let n = self.n_echoes();
-        let mut stack = Vec::new();
-        for e in 1..=n {
-            let item = self.echo_magnitude(e);
-            if !self.store.has(&item) {
-                return Ok(None);
-            }
-            stack.extend(self.store.real(&item)?);
-        }
-        Ok(Some(stack))
     }
 
     /// The magnitude the configured inversion takes
@@ -686,628 +566,6 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             Some(stages::inversion::MagnitudeInput::Echoes) => self.echo_magnitude_stack(),
             None => Ok(None),
         }
-    }
-
-    fn combined_magnitude(&mut self) -> Result<Option<Vec<f64>>, S::Error> {
-        if self.store.has(&Item::CombinedMagnitude) { self.store.real(&Item::CombinedMagnitude).map(Some) } else { Ok(None) }
-    }
-
-    /// Where the phase steps read and write each echo in this run ([`stages::phase::Chain`]).
-    fn chain(&self) -> stages::phase::Chain {
-        stages::phase::Chain {
-            makes_magnitude: self.facts.n_coils > 1 || self.facts.real_imaginary,
-            has_magnitude: self.meta.has_magnitude || self.facts.n_coils > 1 || self.facts.real_imaginary,
-            windowed: self.plan.has(Stage::TukeyWindow),
-            resampled: self.meta.source_geometry.is_some(),
-            coils: self.facts.n_coils > 1,
-        }
-    }
-
-    /// Keep a volume on the acquired grid: on the run's grid when it is not resampled, on a grid
-    /// of its own when it is.
-    fn put_acquired(&mut self, item: Item, data: &[f64]) -> Result<(), S::Error> {
-        match self.meta.source_geometry {
-            Some((dims, affine)) => self.put(item, Data::OnGrid(data, &stages::output_space::acquired(dims, &affine))),
-            None => self.put(item, Data::Real(data)),
-        }
-    }
-
-    /// A phase step's echo `e`, as it writes it: on the acquired grid unless it is the working
-    /// echo (`working`), with a combined echo of uncombined coils also published as it is.
-    fn put_echo(&mut self, e: usize, (phase_item, phase): (Item, &[f64]), magnitude: Option<(Item, &[f64])>,
-                outputs: &mut Vec<Item>) -> Result<(), S::Error> {
-        let working = phase_item == Item::Phase(e);
-        for (item, data) in std::iter::once((phase_item, phase)).chain(magnitude) {
-            if working { self.put(item, Data::Real(data))? } else { self.put_acquired(item, data)? }
-            outputs.push(item);
-        }
-        if working && self.chain().coils {
-            self.put(Item::CombinedEchoPhase(e), Data::Real(phase))?;
-            self.put(Item::CombinedEchoMagnitude(e), Data::Real(magnitude.map(|(_, m)| m).unwrap_or_default()))?;
-            outputs.extend([Item::CombinedEchoPhase(e), Item::CombinedEchoMagnitude(e)]);
-        }
-        Ok(())
-    }
-
-    /// Refuse a run resampled without a step to resample it: what [`crate::scan::can_resample`]
-    /// keeps from happening, for a plan made without it.
-    fn check_resampling_planned(&self) -> Result<(), S::Error> {
-        if self.meta.source_geometry.is_some() && !self.plan.has(Stage::ResampleAxial) {
-            return Err(crate::EngineError::Config(
-                "the run is resampled to an axial grid, but its plan has no step to resample it".into()).into());
-        }
-        Ok(())
-    }
-
-    /// Every echo's phase in radians, on the acquired grid. Each echo is read, rescaled and kept
-    /// before the next is read. The magnitude given is kept as it is, unread, when nothing comes
-    /// after.
-    fn scale_phase(&mut self) -> Result<(), S::Error> {
-        self.check_resampling_planned()?;
-        let chain = self.chain();
-        let params = stages::phase::params(&self.meta, None, &chain);
-        let Some(key) = self.begin("scale_phase", None, &params, "Skipping scale_phase (cached)",
-                                   "Rescaling phase to radians") else { return Ok(()) };
-        let n = self.n_echoes();
-        let mut outputs = Vec::new();
-        // One conversion for every echo (qsm_core::pipeline::scale_phases_to_pi): echoes scaled
-        // separately would not keep the phase differences between them.
-        let mut phases = (1..=n).map(|e| self.store.real(&Item::AcquiredPhase(e))).collect::<Result<Vec<_>, _>>()?;
-        qsm_core::pipeline::scale_phases_to_pi(&mut phases);
-        for (e, phase) in (1..=n).zip(&phases) {
-            self.put_echo(e, (chain.scaled_phase(e), phase), None, &mut outputs)?;
-        }
-        drop(phases);
-        // Raw (uncorrected) per-echo magnitudes as they are, for MCPC-3D-S, linear fit and ROMEO.
-        if chain.copies_magnitude() {
-            for e in 1..=n {
-                if self.store.has(&Item::AcquiredMagnitude(e)) {
-                    self.put(Item::Magnitude(e), Data::Same(Item::AcquiredMagnitude(e)))?;
-                    outputs.push(Item::Magnitude(e));
-                }
-            }
-        }
-        self.complete(Done {
-            step: "scale_phase", algorithm: None, params: &params, outcome: None, key: &key, outputs: &outputs,
-        }, "Rescale phase")
-    }
-
-    /// `scale_phase` for a scan given as real and imaginary parts: they become magnitude and
-    /// phase ([`stages::phase::real_imaginary`]) before anything else sees them, kept on the
-    /// acquired grid as any other scan's phase is. The sign convention follows from the scanner's
-    /// manufacturer, so it is a parameter (and keys the cache).
-    fn scale_real_imaginary(&mut self) -> Result<(), S::Error> {
-        self.check_resampling_planned()?;
-        let chain = self.chain();
-        let manufacturer = self.store.sidecar()?.and_then(|s| s.manufacturer);
-        let negate_phase = stages::phase::negates_real_imaginary_phase(manufacturer.as_deref());
-        let params = stages::phase::params(&self.meta, Some(negate_phase), &chain);
-        let Some(key) = self.begin("scale_phase", None, &params, "Skipping scale_phase (cached)",
-                                   "Converting real/imaginary to magnitude/phase") else { return Ok(()) };
-        let n = self.n_echoes();
-        let acquired = stages::phase::acquired_grid(&self.meta).n_total();
-        let (mut real, mut imaginary) = (Vec::with_capacity(n), Vec::with_capacity(n));
-        for e in 1..=n {
-            for (item, out) in [(Item::AcquiredReal(e), &mut real), (Item::AcquiredImaginary(e), &mut imaginary)] {
-                if !self.store.has(&item) {
-                    let part = if matches!(item, Item::AcquiredReal(_)) { "real" } else { "imaginary" };
-                    return Err(crate::EngineError::Config(format!(
-                        "echo {e}: a real/imaginary run without the echo's {part} part")).into());
-                }
-                let v = self.store.real(&item)?;
-                if v.len() != acquired {
-                    let what = self.store.identity(&item);
-                    return Err(crate::EngineError::DimensionMismatch(format!(
-                        "{} has {} voxels, expected {acquired}", what.as_str().unwrap_or_default(), v.len())).into());
-                }
-                out.push(v);
-            }
-        }
-        let (converted, lines) = stages::phase::real_imaginary(&real, &imaginary, &self.meta, negate_phase);
-        drop((real, imaginary));
-        for (level, line) in lines {
-            self.log(level, &line);
-        }
-        if negate_phase {
-            self.decide(Decision::new(Topic::PhaseSign, Choice::Negated,
-                "The phase from the real and imaginary parts was negated, as the scanner's manufacturer \
-                 records it with the opposite sign.").with_detail(manufacturer.clone().unwrap_or_default()));
-        }
-        let chopped: Vec<&str> = ["x", "y", "z"].into_iter().zip(converted.chopping.corrected)
-            .filter(|(_, on)| *on).map(|(a, _)| a).collect();
-        if !chopped.is_empty() {
-            self.decide(Decision::new(Topic::SliceChopping, Choice::Corrected,
-                "Phase alternating by π between neighbouring slices was corrected.")
-                .with_detail(format!("along {}", chopped.join(", "))));
-        }
-        let outcome = Some(("real_imaginary_conversion", stages::phase::slice_chopping_json(&converted.chopping)));
-        let mut outputs = Vec::new();
-        for (i, (phase, mag)) in converted.phases.iter().zip(&converted.magnitudes).enumerate() {
-            let e = i + 1;
-            let magnitude = chain.scaled_magnitude(e).map(|item| (item, mag.as_slice()));
-            self.put_echo(e, (chain.scaled_phase(e), phase), magnitude, &mut outputs)?;
-        }
-        self.complete(Done {
-            step: "scale_phase", algorithm: None, params: &params, outcome, key: &key, outputs: &outputs,
-        }, "Rescale phase")
-    }
-
-    /// `scale_phase` for uncombined coils: every coil's echoes combined by MCPC-3D-S
-    /// ([`stages::phase::combine_coils`]) on the acquired grid into the per-echo phase (radians,
-    /// coil offsets removed) and magnitude the later steps read. The combined echoes are also
-    /// published, as they are on the working grid, by the last of the phase steps.
-    fn combine_coils(&mut self) -> Result<(), S::Error> {
-        self.check_resampling_planned()?;
-        let chain = self.chain();
-        let coils = self.store.coils();
-        let n = self.n_echoes();
-        // MCPC-3D-S estimates each coil's phase offset from the difference of two echoes.
-        // `qsmxt run` refuses such a run up front; this keeps a direct caller from QSM.rs's assertion.
-        if n < 2 {
-            return Err(crate::EngineError::Config(format!(
-                "MCPC-3D-S coil combination needs at least 2 echoes, and this run has {n} echo with {} \
-                 uncombined coils. Combine the coils first (on the scanner, or with another tool).",
-                coils.len())).into());
-        }
-        let params = stages::phase::coil_params(self.config, &self.meta, &coils, &chain);
-        let Some(key) = self.begin("scale_phase", Some("mcpc3ds"), &params, "Skipping coil combination (cached)",
-                                   "MCPC-3D-S coil combination") else { return Ok(()) };
-        self.log(Level::Info, &format!("Coil combination (MCPC-3D-S): {} coils x {n} echoes", coils.len()));
-        let acquired = stages::phase::acquired_grid(&self.meta).n_total();
-        let (mut phases, mut magnitudes) = (Vec::new(), Vec::new());
-        for (c, number) in coils.iter().enumerate().map(|(i, &number)| (i + 1, number)) {
-            let (mut cp, mut cm) = (Vec::with_capacity(n), Vec::with_capacity(n));
-            for e in 1..=n {
-                let (phase_item, mag_item) = (Item::CoilPhase(c, e), Item::CoilMagnitude(c, e));
-                let p = self.store.real(&phase_item)?;
-                if p.len() != acquired {
-                    let what = self.store.identity(&phase_item);
-                    return Err(crate::EngineError::DimensionMismatch(format!(
-                        "{} has {} voxels, expected {acquired}", what.as_str().unwrap_or_default(), p.len())).into());
-                }
-                if !self.store.has(&mag_item) {
-                    return Err(crate::EngineError::Config(format!(
-                        "coil {number} echo {e}: magnitude required for MCPC-3D-S")).into());
-                }
-                let m = self.store.real(&mag_item)?;
-                if m.len() != acquired {
-                    let what = self.store.identity(&mag_item);
-                    return Err(crate::EngineError::DimensionMismatch(format!(
-                        "{} has {} voxels, expected {acquired}", what.as_str().unwrap_or_default(), m.len())).into());
-                }
-                cp.push(p);
-                cm.push(m);
-            }
-            phases.push(cp);
-            magnitudes.push(cm);
-        }
-        // One conversion for every coil and echo (qsm_core::pipeline::scale_phases_to_pi).
-        {
-            let mut all: Vec<&mut Vec<f64>> = phases.iter_mut().flatten().collect();
-            qsm_core::pipeline::scale_phases_to_pi(&mut all);
-        }
-        let combined = stages::phase::combine_coils(&phases, &magnitudes, &self.meta, self.config)?;
-        drop((phases, magnitudes));
-        let mut outputs = Vec::new();
-        for e in 1..=n {
-            let magnitude = chain.scaled_magnitude(e).map(|item| (item, combined.magnitudes[e - 1].as_slice()));
-            self.put_echo(e, (chain.scaled_phase(e), &combined.phases[e - 1]), magnitude, &mut outputs)?;
-        }
-        // Where the offsets were estimated: on the acquired grid, which all coils share.
-        if self.meta.source_geometry.is_some() {
-            let mask: Vec<f64> = combined.mask.iter().map(|&m| m as f64).collect();
-            self.put_acquired(Item::CoilCombinationMask, &mask)?;
-        } else {
-            self.put(Item::CoilCombinationMask, Data::Mask(&combined.mask))?;
-        }
-        outputs.push(Item::CoilCombinationMask);
-        self.complete(Done {
-            step: "scale_phase", algorithm: Some("mcpc3ds"), params: &params, outcome: None, key: &key,
-            outputs: &outputs,
-        }, "Coil combination")
-    }
-
-    /// The k-space Tukey window on every echo, on the acquired grid: phase scaling's phase and the
-    /// magnitude beside it ([`stages::phase::Chain::acquired_magnitude`]), each echo read, windowed
-    /// and kept before the next.
-    fn tukey_window(&mut self) -> Result<(), S::Error> {
-        let chain = self.chain();
-        let params = stages::phase::tukey_params(&self.meta, self.config, &chain);
-        let Some(key) = self.begin("tukey_window", None, &params, "Skipping tukey_window (cached)",
-                                   "Applying the k-space Tukey window") else { return Ok(()) };
-        if let Some(line) = stages::phase::tukey_window_line(self.config) {
-            self.log(Level::Info, &line);
-        }
-        let mut outputs = Vec::new();
-        for e in 1..=self.n_echoes() {
-            // The plan refuses the window without magnitude; this covers a direct caller.
-            let Some(mag_item) = chain.acquired_magnitude(e).filter(|i| self.store.has(i)) else {
-                return Err(crate::EngineError::Config(format!(
-                    "echo {e}: the Tukey window (--tukey-window) needs the echo's magnitude")).into());
-            };
-            let mut phase = self.store.real(&chain.scaled_phase(e))?;
-            let mut mag = self.store.real(&mag_item)?;
-            stages::phase::tukey_window(&mut mag, &mut phase, &self.meta, self.config);
-            let (phase_item, mag_item) = chain.windowed(e);
-            self.put_echo(e, (phase_item, &phase), Some((mag_item, &mag)), &mut outputs)?;
-        }
-        self.complete(Done {
-            step: "tukey_window", algorithm: None, params: &params, outcome: None, key: &key, outputs: &outputs,
-        }, "Tukey window")
-    }
-
-    /// Every echo resampled to the working (axial) grid, magnitude and phase together
-    /// ([`stages::phase::working_echo`]), each echo read, resampled and kept before the next.
-    /// Skipped for a run that is not resampled: the step before it wrote the working echoes.
-    fn resample_axial(&mut self) -> Result<(), S::Error> {
-        if self.meta.source_geometry.is_none() {
-            return Ok(());
-        }
-        let chain = self.chain();
-        let params = stages::phase::resample_params(&self.meta, &chain);
-        let Some(key) = self.begin("resample_axial", None, &params, "Skipping resample_axial (cached)",
-                                   "Resampling to axial") else { return Ok(()) };
-        let mut outputs = Vec::new();
-        for e in 1..=self.n_echoes() {
-            let (phase_item, mag_item) = chain.to_resample(e);
-            let phase = self.store.real(&phase_item)?;
-            let magnitude = match mag_item.filter(|i| self.store.has(i)) {
-                Some(item) => Some(self.store.real(&item)?),
-                None => None,
-            };
-            let had_magnitude = magnitude.is_some();
-            let out = stages::phase::working_echo(phase, magnitude, true, &self.meta);
-            // Without a magnitude the phase was resampled with a uniform one, which is not kept.
-            let magnitude = out.magnitude.as_deref().filter(|_| had_magnitude).map(|m| (Item::Magnitude(e), m));
-            self.put_echo(e, (Item::Phase(e), &out.phase), magnitude, &mut outputs)?;
-        }
-        self.complete(Done {
-            step: "resample_axial", algorithm: None, params: &params, outcome: None, key: &key, outputs: &outputs,
-        }, "Resample to axial")
-    }
-
-    /// Echo `e`'s magnitude on the working grid, as the steps before the correction left it.
-    fn current_magnitude(&mut self, e: usize) -> Result<Option<Vec<f64>>, S::Error> {
-        for item in [Item::Magnitude(e), Item::AcquiredMagnitude(e)] {
-            if self.store.has(&item) {
-                return self.store.real(&item).map(Some);
-            }
-        }
-        Ok(None)
-    }
-
-    /// Echo `e`'s magnitude as the steps after the inhomogeneity correction read it: corrected
-    /// where the correction corrects it.
-    fn corrected_magnitude(&mut self, e: usize) -> Result<Option<Vec<f64>>, S::Error> {
-        if self.plan.homogeneity.echoes.contains(&e) {
-            return self.store.real(&Item::HomogeneousMagnitude(e)).map(Some);
-        }
-        self.current_magnitude(e)
-    }
-
-    /// The inhomogeneity correction of what its consumers ask for ([`Plan::homogeneity`]): each
-    /// echo's magnitude with the configured method, and QSMART's vessel magnitude.
-    fn homogeneity(&mut self) -> Result<(), S::Error> {
-        let targets = self.plan.homogeneity.clone();
-        let params = stages::magnitude::step_params(self.config, &targets);
-        let Some(key) = self.begin("inhomog", None, &params, "Skipping inhomogeneity correction (cached)",
-                                   "Correcting the magnitude for inhomogeneity") else { return Ok(()) };
-        let mut outputs = Vec::new();
-        // QSMART's vessel magnitude is the mean over every echo: a run with magnitude must have
-        // each echo's.
-        if targets.vessel {
-            let n = self.n_echoes();
-            let mut echoes = Vec::with_capacity(n);
-            let mut missing = Vec::new();
-            for e in 1..=n {
-                match self.current_magnitude(e)? {
-                    Some(m) => echoes.push(m),
-                    None => missing.push(e.to_string()),
-                }
-            }
-            if !missing.is_empty() {
-                return Err(crate::EngineError::Config(format!(
-                    "qsmart: no magnitude for echo {} of {n}: QSMART's vessel magnitude is the mean over every \
-                     echo. Supply every echo's magnitude, or use --qsmart-vessel-magnitude combined",
-                    missing.join(", "))).into());
-            }
-            let refs: Vec<&[f64]> = echoes.iter().map(|v| v.as_slice()).collect();
-            let vessel = stages::magnitude::vessel_magnitude(&refs, &self.meta)?;
-            drop(echoes);
-            self.put(Item::VesselMagnitude, Data::Real(&vessel))?;
-            outputs.push(Item::VesselMagnitude);
-        }
-        for &e in &targets.echoes {
-            let Some(m) = self.current_magnitude(e)? else { continue };
-            let corrected = stages::magnitude::homogeneity_correct(&m, &self.meta, self.config, &format!("echo {e}'s magnitude"))?;
-            self.put(Item::HomogeneousMagnitude(e), Data::Real(&corrected))?;
-            outputs.push(Item::HomogeneousMagnitude(e));
-        }
-        self.complete(Done {
-            step: "inhomog", algorithm: None, params: &params, outcome: None, key: &key, outputs: &outputs,
-        }, "Inhomogeneity correction")
-    }
-
-    fn magnitude(&mut self) -> Result<(), S::Error> {
-        let corrected = !self.plan.homogeneity.echoes.is_empty();
-        // The combined magnitude is the RSS of the corrected echoes; where it is kept follows
-        // `pipeline.do_magnitude`.
-        let params = json!({ "echoes": if corrected { "corrected" } else { "as acquired" },
-                             "published": self.config.pipeline.do_magnitude });
-        let doing = if corrected { "Computing the RSS-combined magnitude of the corrected echoes" } else { "Computing RSS-combined magnitude" };
-        let Some(key) = self.begin("magnitude", Some("rss"), &params, "Skipping magnitude (cached)", doing) else { return Ok(()) };
-        let n = self.n_echoes();
-        let mut echoes = Vec::with_capacity(n);
-        for e in 1..=n {
-            echoes.extend(self.corrected_magnitude(e)?);
-        }
-        if !echoes.is_empty() {
-            let refs: Vec<&[f64]> = echoes.iter().map(|v| v.as_slice()).collect();
-            let combined = stages::magnitude::combined_magnitude(&refs)?;
-            drop(echoes);
-            self.put(Item::CombinedMagnitude, Data::Real(&combined))?;
-            self.record(Done {
-                step: "magnitude", algorithm: Some("rss"), params: &params, outcome: None, key: &key,
-                outputs: &[Item::CombinedMagnitude],
-            })?;
-        } else {
-            self.skip("There was no magnitude to combine.");
-        }
-        self.observer.stage("magnitude", Some("rss"), StageEvent::Finished("RSS magnitude"));
-        Ok(())
-    }
-
-    /// Every echo's phase, and every echo's magnitude (none for a phase-only run): what masking
-    /// reads.
-    fn echoes(&mut self) -> Result<stages::mask::Echoes, S::Error> {
-        let n = self.n_echoes();
-        let mut phases = Vec::with_capacity(n);
-        for e in 1..=n {
-            if self.store.has(&Item::Phase(e)) {
-                phases.push(self.store.real(&Item::Phase(e))?);
-            }
-        }
-        let mut magnitudes = Vec::with_capacity(n);
-        for e in 1..=n {
-            if !self.store.has(&Item::Magnitude(e)) {
-                magnitudes.clear();
-                break;
-            }
-            magnitudes.push(self.store.real(&Item::Magnitude(e))?);
-        }
-        Ok((phases, magnitudes))
-    }
-
-    /// Build a mask from `sections`, with the weights of the deep-learning `models` it runs ready
-    /// first: every echo's phase, and every echo's magnitude (none for a phase-only run).
-    /// Voxels where the scanner wrote no phase are left out ([`stages::mask::ScannerMasked`]), and
-    /// how many is logged and, for the main mask, recorded.
-    fn build_mask(&mut self, sections: &[crate::masking::MaskSection], combine: crate::masking::MaskCombine,
-                  models: &[&'static str]) -> Result<Vec<u8>, S::Error> {
-        self.build_mask_and_quality(sections, combine, models, false).map(|(mask, _)| mask)
-    }
-
-    /// [`Self::build_mask`], and with `quality` the phase-quality map masking computed
-    /// ([`stages::mask::build_mask`]).
-    fn build_mask_and_quality(&mut self, sections: &[crate::masking::MaskSection], combine: crate::masking::MaskCombine,
-                              models: &[&'static str], quality: bool)
-                              -> Result<(Vec<u8>, Option<stages::mask::Quality>), S::Error> {
-        let (phases, mut magnitudes) = self.echoes()?;
-        // The echoes the recipe reads, corrected: the inhomogeneity correction's, or corrected
-        // here for a recipe it was not planned for (a supplied mask that could not be used).
-        if self.config.masking.inhomogeneity_correction && !magnitudes.is_empty() {
-            let n = magnitudes.len();
-            for e in stages::magnitude::mask_echoes(sections, &self.config.masking.refinements, n) {
-                magnitudes[e - 1] = if self.store.has(&Item::HomogeneousMagnitude(e)) {
-                    self.store.real(&Item::HomogeneousMagnitude(e))?
-                } else {
-                    stages::magnitude::homogeneity_correct(&magnitudes[e - 1], &self.meta, self.config,
-                                                           &format!("echo {e}'s magnitude"))?
-                };
-            }
-        }
-        self.store.models(models)?;
-        let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
-        let (built, quality) = stages::mask::build_mask_with_quality(sections, combine, self.config, &phase_refs, magnitudes, &self.meta, quality)?;
-        let removed = built.scanner_masked_removed;
-        if removed > 0 {
-            let fov = built.mask.len().max(1);
-            let without = built.scanner_masked_voxels;
-            let kept = built.voxels;
-            self.log(Level::Info, &format!(
-                "{:.1} % of the field of view has no phase (written by the scanner as a constant): {removed} voxels \
-                 ({:.1} % of the recipe's mask) left out of the mask",
-                100.0 * without as f64 / fov as f64, 100.0 * removed as f64 / (kept + removed).max(1) as f64));
-            if !self.decisions.iter().any(|d| d.topic == Topic::ScannerMaskedPhase) {
-                self.decide(Decision::new(Topic::ScannerMaskedPhase, Choice::Partial,
-                    "Voxels where the scanner recorded no phase were left out of the mask.")
-                    .with_detail(format!("{removed} voxels ({:.1} % of the recipe's mask; {:.1} % of the field of view has no phase)",
-                                         100.0 * removed as f64 / (kept + removed).max(1) as f64,
-                                         100.0 * without as f64 / fov as f64)));
-            }
-        }
-        Ok((built.mask, quality))
-    }
-
-    fn mask(&mut self, step: &Step) -> Result<(), S::Error> {
-        // The plan leaves two-pass out when a mask is supplied ([`crate::plan::plan`]).
-        if self.config.pipeline.do_qsm && self.config.masking.two_pass && !self.plan.two_pass {
-            self.decide(Decision::new(Topic::TwoPass, Choice::NotApplied,
-                "Two-pass artefact reduction was not applied: the mask was supplied, so there was no recipe to \
-                 derive a reliable-phase mask from."));
-        }
-        let supplied: &[Item] = if self.config.masking.custom_mask_tool.is_some() { &[Item::SuppliedMask] } else { &[] };
-        let params = self.with_supplied(stages::mask::params(self.config), supplied);
-        let Some(key) = self.begin("mask", None, &params, "Skipping mask (cached)", "Creating mask") else { return Ok(()) };
-        // A supplied mask, when one is asked for and found. One that cannot be used falls back to
-        // the recipe, whose models the plan did not list.
-        let mut models = step.models.clone();
-        if let Some(tool) = self.config.masking.custom_mask_tool.clone() {
-            match self.store.supplied_mask() {
-                Supplied::Found { origin, data, dims, affine } => {
-                    if let Some(mask) = stages::mask::conform_custom_mask(&data, dims, &affine, &self.meta) {
-                        stages::mask::require_voxels(&mask, stages::mask::MaskSource::Supplied(&origin))?;
-                        self.log(Level::Info, &format!("Using custom mask from {origin}"));
-                        self.decide(Decision::new(Topic::MaskSource, Choice::Supplied,
-                            "The brain mask was the one supplied with the scan.").with_detail(origin));
-                        self.put(Item::BrainMask, Data::Mask(&mask))?;
-                        return self.complete(Done {
-                            step: "mask", algorithm: None, params: &params, outcome: None, key: &key,
-                            outputs: &[Item::BrainMask],
-                        }, "Mask (custom)");
-                    }
-                    self.log(Level::Warn, &format!(
-                        "custom mask {origin} could not be conformed to the working grid — computing instead"));
-                    self.decide(Decision::new(Topic::MaskSource, Choice::Computed,
-                        "The supplied mask could not be brought onto the working grid, so the mask was computed.")
-                        .with_detail(origin));
-                    models = stages::mask::model_ids(&self.config.masking.sections, self.config);
-                }
-                Supplied::Unreadable { origin, error } => {
-                    self.log(Level::Warn, &format!("could not read custom mask {origin} ({error}) — computing instead"));
-                    self.decide(Decision::new(Topic::MaskSource, Choice::Computed,
-                        "The supplied mask could not be read, so the mask was computed.")
-                        .with_detail(format!("{origin}: {error}")));
-                    models = stages::mask::model_ids(&self.config.masking.sections, self.config);
-                }
-                Supplied::Missing { searched } => {
-                    self.log(Level::Info, &format!(
-                        "no custom mask under derivatives (tool: {tool}) for {searched} — computing"));
-                    self.decide(Decision::new(Topic::MaskSource, Choice::Computed,
-                        "No supplied mask was found, so the mask was computed.").with_detail(searched));
-                }
-            }
-        }
-        self.log(Level::Info, &format!("Creating mask ({} section(s), combined with {})",
-            self.config.masking.sections.len(), self.config.masking.combine));
-        let mask = self.build_mask(&self.config.masking.sections.clone(), self.config.masking.combine, &models)?;
-        stages::mask::require_voxels(&mask, stages::mask::MaskSource::Recipe(&self.config.masking))?;
-        self.put(Item::BrainMask, Data::Mask(&mask))?;
-        self.complete(Done {
-            step: "mask", algorithm: None, params: &params, outcome: None, key: &key, outputs: &[Item::BrainMask],
-        }, "Mask creation")
-    }
-
-    /// The reliable-phase mask of a two-pass run, restricted to the main mask.
-    fn reliable_mask(&mut self, step: &Step) -> Result<(), S::Error> {
-        let sections = self.config.masking.resolved_two_pass_sections();
-        let params = stages::mask::reliable_params(self.config);
-        let name = Stage::Mask(Pass::Reliable).name();
-        let Some(key) = self.begin(&name, None, &params, "Skipping reliable-phase mask (cached)",
-                                   "Creating the reliable-phase mask") else { return Ok(()) };
-        let combine = self.config.masking.resolved_two_pass_combine();
-        self.log(Level::Info, &format!("Creating the reliable-phase mask ({} section(s), combined with {combine})",
-                                       sections.len()));
-        let local = self.config.masking.two_pass_mode == crate::enums::TwoPassMode::Local;
-        let (reliable, quality) = self.build_mask_and_quality(&sections, combine, &step.models, local)?;
-        let main_item = self.pass_mask(Pass::Main);
-        let main = self.store.mask(&main_item)?;
-        let restricted = match quality {
-            Some(quality) => {
-                // Only the holes at strong sources, inside where the main pass's map is defined.
-                let support_item = self.support(Pass::Main);
-                let support = self.store.mask(&support_item)?;
-                let selected = stages::mask::source_holes(&reliable, &main, &support, &quality, &self.meta)?;
-                self.log(Level::Info, &format!(
-                    "Two-pass (local): {} of {} hole voxels inside the main pass's support kept, around {} strong source(s)",
-                    selected.hole_voxels, selected.candidate_voxels, selected.sources));
-                stages::mask::reliable_mask(&selected.reliable, &main)?
-            }
-            None => stages::mask::reliable_mask(&reliable, &main)?,
-        };
-        self.put(Item::ReliableMask, Data::Mask(&restricted))?;
-        self.complete(Done {
-            step: &name, algorithm: None, params: &params, outcome: None, key: &key, outputs: &[Item::ReliableMask],
-        }, "Reliable-phase mask")
-    }
-
-    /// The total field, computed once on the run's mask and shared by both passes of a two-pass
-    /// run: the reliable mask is a subset of it.
-    fn field_map(&mut self) -> Result<(), S::Error> {
-        let algorithm = stages::field::algorithm(self.config, &self.meta);
-        let params = stages::field::params(self.config, &self.meta);
-        let Some(key) = self.begin("unwrap", Some(&algorithm), &params, "Skipping unwrap (cached)",
-                                   "Phase unwrapping / echo combination") else { return Ok(()) };
-        match centre_frequency_decision(self.facts) {
-            Some(d) => {
-                self.log(Level::Warn, &format!("{} ({})", d.reason, d.detail.as_deref().unwrap_or_default()));
-                self.decide(d);
-            }
-            None => self.log(Level::Info, &format!(
-                "Phase converted to ppm with the scanner's centre frequency, {:.4} MHz ({:.4} T)",
-                self.facts.imaging_frequency.unwrap_or_default(), self.facts.field_strength)),
-        }
-        let n = self.n_echoes();
-        if self.per_echo() {
-            // Each echo's field on its own, one echo at a time.
-            let mask_item = self.mask_item();
-            let mask = self.store.mask(&mask_item)?;
-            let mut outputs = Vec::with_capacity(n);
-            for e in 1..=n {
-                self.observer.progress(e - 1, n);
-                let phase_item = self.echo_phase(e);
-                let phase = self.store.real(&phase_item)?;
-                let magnitude = self.one_echo_magnitude(e)?;
-                let field = stages::field::map_echo_field(&phase, magnitude.as_deref(), &mask, &self.echo_meta(e), self.config)?;
-                self.put(Item::EchoField(e), Data::Real(&field))?;
-                outputs.push(Item::EchoField(e));
-            }
-            self.observer.progress(n, n);
-            return self.complete(Done {
-                step: "unwrap", algorithm: Some(&algorithm), params: &params, outcome: None, key: &key, outputs: &outputs,
-            }, "Phase unwrapping");
-        }
-        let phase_items: Vec<Item> = (1..=n).map(|e| self.echo_phase(e)).collect();
-        let phases = phase_items.iter().map(|i| self.store.real(i)).collect::<Result<Vec<_>, _>>()?;
-        let mask_item = self.mask_item();
-        let mask = self.store.mask(&mask_item)?;
-        let mut magnitudes = Vec::with_capacity(n);
-        for e in 1..=n {
-            let item = self.echo_magnitude(e);
-            if self.store.has(&item) {
-                magnitudes.push(self.store.real(&item)?);
-            }
-        }
-        let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
-        let mag_refs: Vec<&[f64]> = magnitudes.iter().map(|m| m.as_slice()).collect();
-        let field = stages::field::map_field(&phase_refs, &mag_refs, &mask, &self.meta, self.config)?;
-        drop(phases);
-        if field.excluded > 0 {
-            let in_mask = mask.iter().filter(|&&m| m != 0).count();
-            self.decide(Decision::new(Topic::FieldMask, Choice::Partial,
-                "Voxels where the phase offset could not be estimated were excluded from the field map and every step after it.")
-                .with_detail(format!("{} voxels ({:.2} % of the mask)", field.excluded,
-                                     100.0 * field.excluded as f64 / in_mask.max(1) as f64)));
-        }
-
-        self.put(Item::FieldPpm, Data::Real(&field.b0_field_ppm))?;
-        self.put(Item::TotalFieldHz, Data::Real(&field.total_field_hz))?;
-        self.put(Item::FieldMask, Data::Mask(&field.field_mask))?;
-        let first_echo_time = self.meta.echo_times[0];
-        let fields = |item: &Item| crate::bids::outputs::step_fields(item, first_echo_time).unwrap_or_default();
-        self.store.annotate(&Item::TotalFieldHz, fields(&Item::TotalFieldHz))?;
-        let mut outputs = vec![Item::FieldPpm, Item::TotalFieldHz, Item::FieldMask];
-        // A published field map is paired with a magnitude for anatomical reference: the first
-        // echo's, the one with the most signal.
-        if let Some(first) = magnitudes.first() {
-            self.put(Item::TotalFieldMagnitude, Data::Real(first))?;
-            self.store.annotate(&Item::TotalFieldMagnitude, fields(&Item::TotalFieldMagnitude))?;
-            outputs.push(Item::TotalFieldMagnitude);
-        }
-        if let Some(report) = &field.robust_fit_report {
-            self.put(Item::RobustFitReport, Data::Json(report))?;
-            outputs.push(Item::RobustFitReport);
-        }
-        // QSMART's echo fit's reliability map, which QSMART reconstructs inside.
-        if let Some(reliability) = &field.reliability {
-            self.put(Item::FieldReliability, Data::Mask(reliability))?;
-            outputs.push(Item::FieldReliability);
-        }
-        // The threshold QSMART's echo fit resolved, recorded beside the parameters.
-        let outcome = field.qsmart_fit_threshold.map(|t| ("qsmart_fit_threshold", serde_json::json!(t)));
-        self.complete(Done {
-            step: "unwrap", algorithm: Some(&algorithm), params: &params, outcome, key: &key, outputs: &outputs,
-        }, "Phase unwrapping")
     }
 
     /// Background-field removal for one pass, from the total field — or, for iQFM, straight from
@@ -2645,7 +1903,7 @@ pub(crate) fn field_mask_written(plan: &Plan, config: &PipelineConfig, n_echoes:
 
 /// How a pass is named in progress messages and the log: nothing for a single-pass run's (only)
 /// pass, so its log reads as it always has.
-fn pass_label(pass: Pass) -> &'static str {
+pub(crate) fn pass_label(pass: Pass) -> &'static str {
     match pass {
         Pass::Main => "",
         Pass::Reliable => " (reliable pass)",
@@ -2655,7 +1913,7 @@ fn pass_label(pass: Pass) -> &'static str {
 /// Whether motion correction, switched on, was applied to the run ([`Topic::MotionCorrection`]):
 /// the plan decides it per run ([`crate::plan::Plan::motion_corrected`]), so the methods text can
 /// say which runs it was applied to.
-fn motion_decision(applied: bool) -> Decision {
+pub(crate) fn motion_decision(applied: bool) -> Decision {
     if applied {
         Decision::new(Topic::MotionCorrection, Choice::Applied, "Motion correction was applied.")
     } else {
@@ -2705,6 +1963,8 @@ pub(crate) fn medi_csf_decision(config: &PipelineConfig, n_echoes: usize) -> Opt
         }
     })
 }
+
+mod volumes;
 
 #[cfg(test)]
 pub(crate) mod tests;

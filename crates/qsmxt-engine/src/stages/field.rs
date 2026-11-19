@@ -4,6 +4,8 @@ use crate::config::PipelineConfig;
 use crate::error::EngineError;
 use crate::scan::{scan_metadata, RunMetadata};
 
+mod step;
+
 /// Whether the echoes' phase offsets are removed before unwrapping: multi-echo, asked for, with
 /// any unwrapper (Laplacian unwrapping takes out only their harmonic part: QSM.rs
 /// `pipeline::field_mapping`, *Phase offsets and Laplacian unwrapping*), and not MEDI's complex

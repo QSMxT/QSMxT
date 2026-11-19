@@ -6,6 +6,8 @@ use crate::error::EngineError;
 use crate::masking::{MaskCombine, MaskSection, MaskingInput};
 use crate::scan::{scan_metadata, RunMetadata};
 
+mod step;
+
 /// The `mask` step's parameters.
 pub fn params(config: &PipelineConfig) -> serde_json::Value {
     serde_json::json!({
