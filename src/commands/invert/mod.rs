@@ -242,13 +242,6 @@ fn lsqr_params(args: &crate::cli::LsqrParamArgs) -> qsm_core::inversion::LsqrQsm
     }
 }
 
-/// Build `HeidiParams` from the `--heidi-*` group.
-///
-/// [`HeidiConfig`] is the pipeline's flattening of qsm-core's optional denoise struct into a
-/// switch plus three values; taking the defaults from it keeps `invert heidi` and
-/// `run --qsm-algorithm heidi` on one set of numbers.
-/// STAR-QSM's settings from `qsmxt invert star`'s flags. The field strength and echo times are
-/// the scan's; qsm-core's dispatcher fills them in.
 /// QSM.jl's padding from `--pad X Y Z` (clap takes exactly three), or the default.
 fn pad3(given: Option<&[i64]>, default: [i64; 3]) -> [i64; 3] {
     match given {
@@ -257,6 +250,8 @@ fn pad3(given: Option<&[i64]>, default: [i64; 3]) -> [i64; 3] {
     }
 }
 
+/// STAR-QSM's settings from `qsmxt invert star`'s flags. The field strength and echo times are
+/// the scan's; qsm-core's dispatcher fills them in.
 fn star_params(args: &crate::cli::InvertStarArgs) -> qsm_core::inversion::StarParams {
     let d = qsm_core::inversion::StarParams::default();
     qsm_core::inversion::StarParams {
@@ -266,6 +261,11 @@ fn star_params(args: &crate::cli::InvertStarArgs) -> qsm_core::inversion::StarPa
     }
 }
 
+/// Build `HeidiParams` from the `--heidi-*` group.
+///
+/// [`HeidiConfig`] is the pipeline's flattening of qsm-core's optional denoise struct into a
+/// switch plus three values; taking the defaults from it keeps `invert heidi` and
+/// `run --qsm-algorithm heidi` on one set of numbers.
 fn heidi_params(args: &crate::cli::HeidiParamArgs) -> qsm_core::inversion::HeidiParams {
     let d = crate::pipeline::config::HeidiConfig::default();
     qsm_core::inversion::HeidiParams {
