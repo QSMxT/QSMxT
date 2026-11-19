@@ -28,7 +28,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         self.current_magnitude(e)
     }
 
-    /// The inhomogeneity correction of what its consumers ask for ([`Plan::homogeneity`]): each
+    /// The inhomogeneity correction of what its consumers ask for ([`Plan::homogeneity`](crate::plan::Plan::homogeneity)): each
     /// echo's magnitude with the configured method, and QSMART's vessel magnitude.
     pub(crate) fn homogeneity(&mut self) -> Result<(), S::Error> {
         let targets = self.plan.homogeneity.clone();
