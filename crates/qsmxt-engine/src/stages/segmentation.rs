@@ -9,6 +9,8 @@ use crate::enums::SynthSegVersion;
 use crate::error::EngineError;
 use crate::scan::RunMetadata;
 
+mod step;
+
 /// The `segmentation` step's parameters. A sliding window's `patch` is there only when one is
 /// set, so a whole-volume run keeps the cache key it had before the setting existed.
 pub fn params(config: &PipelineConfig) -> serde_json::Value {

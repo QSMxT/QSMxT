@@ -13,6 +13,8 @@ use std::collections::HashMap;
 
 use crate::store::{Contrast, Item};
 
+mod step;
+
 /// Columns of the per-run table, in order.
 ///
 /// `n_voxels` counts the structure's voxels in the segmentation; `n_valid` counts those that

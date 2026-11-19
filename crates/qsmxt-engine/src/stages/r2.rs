@@ -6,6 +6,8 @@ use crate::error::EngineError;
 use crate::scan::RunMetadata;
 use crate::store::{Mese, Supplied};
 
+mod step;
+
 /// The `r2_r2prime` step's parameters.
 pub fn params(config: &PipelineConfig, meta: &RunMetadata, mese: Option<&Mese>) -> serde_json::Value {
     let s = &config.separation;

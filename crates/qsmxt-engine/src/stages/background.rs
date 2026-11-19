@@ -7,6 +7,8 @@ use crate::observe::Observer;
 use crate::scan::{scan_metadata, scan_metadata_in, RunMetadata};
 use crate::stages::crop::crop_box_for;
 
+mod step;
+
 /// The background-removal step's parameters (the algorithm is recorded beside them): the method's
 /// settings serialised whole, so that a setting added to its config is recorded (and keyed)
 /// without anyone listing it here.

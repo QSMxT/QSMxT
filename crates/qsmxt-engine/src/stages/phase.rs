@@ -23,6 +23,8 @@ use crate::error::EngineError;
 use crate::scan::RunMetadata;
 use crate::store::Item;
 
+mod step;
+
 /// Where each of the phase steps reads and writes an echo, from which of them run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Chain {

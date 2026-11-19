@@ -6,6 +6,8 @@ use crate::error::EngineError;
 use crate::observe::{Core, Observer, VolumeData};
 use crate::scan::{scan_metadata, RunMetadata};
 
+mod step;
+
 /// The intermediates [`qsmart`] returns, by name, in the order they are produced: the vessel
 /// mask, then the stage-1 and stage-2 local fields and susceptibility maps. See
 /// [`qsm_core::pipeline::qsmart::outputs`] for what each holds.
