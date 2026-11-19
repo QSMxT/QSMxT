@@ -12,7 +12,6 @@
   "src/commands/invert.rs": 917
  },
  "functions": {
-  "crates/qsmxt-engine/src/bridge.rs::to_pipeline_stages": 337,
   "crates/qsmxt-engine/src/graph.rs::downstream_steps": 165,
   "crates/qsmxt-engine/src/masking.rs::parse_mask_op": 144,
   "crates/qsmxt-engine/src/methods/draft.rs::draft": 590,

@@ -17,7 +17,23 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
     PInversion,
     PRef,
 ) {
-    let field_mapping = PFieldMapping {
+    let field_mapping = field_mapping_stage(cfg);
+    let bg_removal = bg_removal_stage(cfg);
+    let inversion = inversion_stage(cfg);
+
+    let reference = match cfg.qsm.reference {
+        QsmReference::Mean => PRef::Mean,
+        // A region reference is subtracted by QSMxT, which has the parcellation; the core stage
+        // only masks, or it would mean-reference the map a second time.
+        QsmReference::None | QsmReference::Region => PRef::None,
+    };
+
+    (field_mapping, bg_removal, inversion, reference)
+}
+
+/// The field-mapping stage's config.
+fn field_mapping_stage(cfg: &PipelineConfig) -> PFieldMapping {
+    PFieldMapping {
         unwrapping_algorithm: match cfg.field_mapping.unwrapping_algorithm {
             UnwrappingAlgorithm::Romeo => PUnwrap::Romeo,
             UnwrappingAlgorithm::Laplacian => PUnwrap::Laplacian,
@@ -69,9 +85,12 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         laplacian_keep_outside: cfg.field_mapping.laplacian_keep_outside,
         romeo_params: (&cfg.field_mapping.romeo).into(),
         prelude_params: (&cfg.field_mapping.prelude).into(),
-    };
+    }
+}
 
-    let bg_removal = PBgRemoval {
+/// The background-removal stage's config.
+fn bg_removal_stage(cfg: &PipelineConfig) -> PBgRemoval {
+    PBgRemoval {
         algorithm: map_bf_alg(cfg.bg_removal.algorithm),
         vsharp: qsm_core::bgremove::VsharpParams {
             threshold: cfg.bg_removal.vsharp.threshold,
@@ -126,9 +145,12 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         erode_voxels: cfg.bg_removal.erode_voxels,
         polish_mask: cfg.bg_removal.polish_mask,
         ukb_mask_trim: cfg.bg_removal.ukb_mask_trim,
-    };
+    }
+}
 
-    let inversion = PInversion {
+/// The dipole-inversion stage's config.
+fn inversion_stage(cfg: &PipelineConfig) -> PInversion {
+    PInversion {
         algorithm: map_alg(cfg.inversion.algorithm),
         tkd: qsm_core::inversion::TkdParams { threshold: cfg.inversion.tkd.threshold, pad: cfg.inversion.tkd.pad },
         tsvd: qsm_core::inversion::TsvdParams { threshold: cfg.inversion.tsvd.threshold, pad: cfg.inversion.tsvd.pad },
@@ -162,40 +184,8 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             // Field strength and echo times are scan parameters; the pipeline fills them in.
             ..Default::default()
         },
-        medi: qsm_core::inversion::MediParams {
-            lambda: cfg.inversion.medi.lambda,
-            merit: cfg.inversion.medi.merit,
-            smv: cfg.inversion.medi.smv,
-            smv_radius: cfg.inversion.medi.smv_radius,
-            smv_shrink_mask: cfg.inversion.medi.smv_shrink_mask,
-            data_weighting: cfg.inversion.medi.data_weighting,
-            percentage: cfg.inversion.medi.percentage,
-            cg_tol: cfg.inversion.medi.cg_tol,
-            csf: cfg.inversion.medi.csf, lambda_csf: cfg.inversion.medi.lambda_csf,
-            csf_r2s_threshold: cfg.inversion.medi.csf_r2s_threshold, csf_erode: cfg.inversion.medi.csf_erode,
-            zeropad: (cfg.inversion.medi.zeropad[0], cfg.inversion.medi.zeropad[1], cfg.inversion.medi.zeropad[2]),
-            cg_max_iter: cfg.inversion.medi.cg_max_iter,
-            max_iter: cfg.inversion.medi.max_iter,
-            tol: cfg.inversion.medi.tol,
-            msmv: cfg.inversion.medi.msmv_params(),
-            te: cfg.inversion.medi.te.into(),
-            // Field strength and echo times are scan parameters the pipeline fills in.
-            ..Default::default()
-        },
-        tfi: qsm_core::inversion::TfiParams {
-            lambda: cfg.inversion.tfi.lambda,
-            precond: cfg.inversion.tfi.precond,
-            merit: cfg.inversion.tfi.merit, linear: cfg.inversion.tfi.linear,
-            data_weighting: cfg.inversion.tfi.data_weighting,
-            percentage: cfg.inversion.tfi.percentage,
-            cg_tol: cfg.inversion.tfi.cg_tol,
-            cg_max_iter: cfg.inversion.tfi.cg_max_iter,
-            max_iter: cfg.inversion.tfi.max_iter,
-            tol: cfg.inversion.tfi.tol,
-            te: cfg.inversion.tfi.te.into(),
-            // Field strength and echo times are scan parameters the pipeline fills in.
-            ..Default::default()
-        },
+        medi: medi_params(cfg),
+        tfi: tfi_params(cfg),
         ilsqr: qsm_core::inversion::IlsqrParams {
             tol: cfg.inversion.ilsqr.tol, max_iter: cfg.inversion.ilsqr.max_iter,
             pad_mm: cfg.inversion.ilsqr.pad_mm, precision: cfg.inversion.ilsqr.precision.into(),
@@ -247,60 +237,9 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             ..Default::default()
         },
         // AMP-PE: `b0` is overridden from scan metadata by the qsm-core dispatcher.
-        amp_pe: qsm_core::inversion::AmpPeParams {
-            wave_order: cfg.inversion.amp_pe.wave_order,
-            nlevel: cfg.inversion.amp_pe.nlevel,
-            wave_pec: cfg.inversion.amp_pe.wave_pec,
-            simulated_te: cfg.inversion.amp_pe.simulated_te,
-            max_linearization_ite: cfg.inversion.amp_pe.max_linearization_ite,
-            b0: cfg.inversion.amp_pe.b0,
-            gyro_ratio: cfg.inversion.amp_pe.gyro_ratio,
-            damp_rate_sig: cfg.inversion.amp_pe.damp_rate_sig,
-            damp_rate_par: cfg.inversion.amp_pe.damp_rate_par,
-            max_pe_spar_ite: cfg.inversion.amp_pe.max_pe_spar_ite,
-            max_pe_est_ite: cfg.inversion.amp_pe.max_pe_est_ite,
-            cvg_thd: cfg.inversion.amp_pe.cvg_thd,
-            tikhonov_beta: cfg.inversion.amp_pe.tikhonov_beta,
-            // AMP-PE's solution does not depend on the weight's scale, so this stays off.
-            normalize_weight: false,
-        },
-        tgv: qsm_core::inversion::TgvParams {
-            iterations: cfg.inversion.tgv.iterations,
-            erosions: cfg.inversion.tgv.erosions,
-            alpha0: cfg.inversion.tgv.alpha0 as f32,
-            alpha1: cfg.inversion.tgv.alpha1 as f32,
-            step_size: cfg.inversion.tgv.step_size as f32,
-            te: cfg.inversion.tgv.te.into(),
-            // qsm-core's defaults (exact adjoint, erosion from the array's edge too); not
-            // settings: they only reproduce the reference package's quirks for parity
-            // (`qsmxt invert tgv --reference-divergence --reference-edge-erosion
-            // --reference-output-box`).
-            ..Default::default()
-        },
-        qsmart: qsm_core::utils::QsmartParams {
-            adjust_offset_grid: match cfg.inversion.qsmart.offset_grid {
-                crate::enums::QsmartOffsetGrid::Fft => qsm_core::utils::QsmartOffsetGrid::Fft,
-                crate::enums::QsmartOffsetGrid::QsmartReference => qsm_core::utils::QsmartOffsetGrid::QsmartReference,
-            },
-            ilsqr_max_iter: cfg.inversion.qsmart.ilsqr_max_iter,
-            ilsqr_pad_mm: cfg.inversion.qsmart.ilsqr_pad_mm,
-            // NOTE: vasc_sphere_radius and frangi scales are in `vessel_size_units` here; the
-            // QSMART stage converts mm to voxels with the dataset voxel size
-            // (crate::stages::qsmart::inversion_config).
-            vasc_sphere_radius: cfg.inversion.qsmart.vasc_sphere_radius,
-            inversion: map_alg(cfg.inversion.qsmart.inversion),
-            sdf_sigma1_stage1: cfg.inversion.qsmart.sdf_sigma1_stage1,
-            sdf_sigma2_stage1: cfg.inversion.qsmart.sdf_sigma2_stage1,
-            sdf_sigma1_stage2: cfg.inversion.qsmart.sdf_sigma1_stage2,
-            sdf_sigma2_stage2: cfg.inversion.qsmart.sdf_sigma2_stage2,
-            sdf_lower_lim: cfg.inversion.qsmart.sdf_lower_lim,
-            sdf_curv_constant: cfg.inversion.qsmart.sdf_curv_constant,
-            frangi_scale_range: [cfg.inversion.qsmart.frangi_scale_min, cfg.inversion.qsmart.frangi_scale_max],
-            frangi_scale_ratio: cfg.inversion.qsmart.frangi_scale_ratio,
-            frangi_c: cfg.inversion.qsmart.frangi_c(),
-            // ppm and b0_dir keep qsm-core defaults
-            ..Default::default()
-        },
+        amp_pe: amp_pe_params(cfg),
+        tgv: tgv_params(cfg),
+        qsmart: qsmart_params(cfg),
         // Overlap-tiling for the DL inversions: presence of `tile_size` enables it (core size);
         // `tile_halo` defaults to 8 (qsm-core's TileConfig default) when omitted. `None` =
         // whole-volume. Stored as `(core, halo)` so this crate needn't pull qsm-core's onnx feature.
@@ -315,36 +254,140 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             ..Default::default()
         },
         apply_heidi: cfg.inversion.heidi.enabled,
-        heidi: qsm_core::inversion::HeidiParams {
-            cone_threshold: cfg.inversion.heidi.cone_threshold,
-            gradient_threshold: cfg.inversion.heidi.gradient_threshold,
-            apply_laplacian_correction: cfg.inversion.heidi.apply_laplacian_correction,
-            laplacian_threshold: cfg.inversion.heidi.laplacian_threshold,
-            gradient_mask_floor: cfg.inversion.heidi.gradient_mask_floor,
-            continuation_steps: cfg.inversion.heidi.continuation_steps,
-            inner_iterations: cfg.inversion.heidi.inner_iterations,
-            mu_min: cfg.inversion.heidi.mu_min,
-            tol: cfg.inversion.heidi.tol,
-            // Flattened in the config (a switch plus three numbers) so it can be a checkbox and
-            // three rows rather than a nested table.
-            denoise: cfg.inversion.heidi.denoise.then_some(qsm_core::utils::AnisotropicDiffusionParams {
-                iterations: cfg.inversion.heidi.denoise_iterations,
-                time_step: cfg.inversion.heidi.denoise_time_step,
-                conductance: cfg.inversion.heidi.denoise_conductance,
-                reference_itk: cfg.inversion.heidi.denoise_reference_itk,
-            }),
-            te: cfg.inversion.heidi.te.into(),
-            // Field strength and echo times are scan parameters the pipeline fills in.
-            ..Default::default()
+        heidi: heidi_params(cfg),
+    }
+}
+
+/// MEDI's parameters, as QSM.rs takes them.
+fn medi_params(cfg: &PipelineConfig) -> qsm_core::inversion::MediParams {
+    qsm_core::inversion::MediParams {
+        lambda: cfg.inversion.medi.lambda,
+        merit: cfg.inversion.medi.merit,
+        smv: cfg.inversion.medi.smv,
+        smv_radius: cfg.inversion.medi.smv_radius,
+        smv_shrink_mask: cfg.inversion.medi.smv_shrink_mask,
+        data_weighting: cfg.inversion.medi.data_weighting,
+        percentage: cfg.inversion.medi.percentage,
+        cg_tol: cfg.inversion.medi.cg_tol,
+        csf: cfg.inversion.medi.csf, lambda_csf: cfg.inversion.medi.lambda_csf,
+        csf_r2s_threshold: cfg.inversion.medi.csf_r2s_threshold, csf_erode: cfg.inversion.medi.csf_erode,
+        zeropad: (cfg.inversion.medi.zeropad[0], cfg.inversion.medi.zeropad[1], cfg.inversion.medi.zeropad[2]),
+        cg_max_iter: cfg.inversion.medi.cg_max_iter,
+        max_iter: cfg.inversion.medi.max_iter,
+        tol: cfg.inversion.medi.tol,
+        msmv: cfg.inversion.medi.msmv_params(),
+        te: cfg.inversion.medi.te.into(),
+        // Field strength and echo times are scan parameters the pipeline fills in.
+        ..Default::default()
+    }
+}
+
+/// TFI's parameters, as QSM.rs takes them.
+fn tfi_params(cfg: &PipelineConfig) -> qsm_core::inversion::TfiParams {
+    qsm_core::inversion::TfiParams {
+        lambda: cfg.inversion.tfi.lambda,
+        precond: cfg.inversion.tfi.precond,
+        merit: cfg.inversion.tfi.merit, linear: cfg.inversion.tfi.linear,
+        data_weighting: cfg.inversion.tfi.data_weighting,
+        percentage: cfg.inversion.tfi.percentage,
+        cg_tol: cfg.inversion.tfi.cg_tol,
+        cg_max_iter: cfg.inversion.tfi.cg_max_iter,
+        max_iter: cfg.inversion.tfi.max_iter,
+        tol: cfg.inversion.tfi.tol,
+        te: cfg.inversion.tfi.te.into(),
+        // Field strength and echo times are scan parameters the pipeline fills in.
+        ..Default::default()
+    }
+}
+
+/// AMP-PE's parameters, as QSM.rs takes them.
+fn amp_pe_params(cfg: &PipelineConfig) -> qsm_core::inversion::AmpPeParams {
+    qsm_core::inversion::AmpPeParams {
+        wave_order: cfg.inversion.amp_pe.wave_order,
+        nlevel: cfg.inversion.amp_pe.nlevel,
+        wave_pec: cfg.inversion.amp_pe.wave_pec,
+        simulated_te: cfg.inversion.amp_pe.simulated_te,
+        max_linearization_ite: cfg.inversion.amp_pe.max_linearization_ite,
+        b0: cfg.inversion.amp_pe.b0,
+        gyro_ratio: cfg.inversion.amp_pe.gyro_ratio,
+        damp_rate_sig: cfg.inversion.amp_pe.damp_rate_sig,
+        damp_rate_par: cfg.inversion.amp_pe.damp_rate_par,
+        max_pe_spar_ite: cfg.inversion.amp_pe.max_pe_spar_ite,
+        max_pe_est_ite: cfg.inversion.amp_pe.max_pe_est_ite,
+        cvg_thd: cfg.inversion.amp_pe.cvg_thd,
+        tikhonov_beta: cfg.inversion.amp_pe.tikhonov_beta,
+        // AMP-PE's solution does not depend on the weight's scale, so this stays off.
+        normalize_weight: false,
+    }
+}
+
+/// TGV's parameters, as QSM.rs takes them.
+fn tgv_params(cfg: &PipelineConfig) -> qsm_core::inversion::TgvParams {
+    qsm_core::inversion::TgvParams {
+        iterations: cfg.inversion.tgv.iterations,
+        erosions: cfg.inversion.tgv.erosions,
+        alpha0: cfg.inversion.tgv.alpha0 as f32,
+        alpha1: cfg.inversion.tgv.alpha1 as f32,
+        step_size: cfg.inversion.tgv.step_size as f32,
+        te: cfg.inversion.tgv.te.into(),
+        // qsm-core's defaults (exact adjoint, erosion from the array's edge too); not
+        // settings: they only reproduce the reference package's quirks for parity
+        // (`qsmxt invert tgv --reference-divergence --reference-edge-erosion
+        // --reference-output-box`).
+        ..Default::default()
+    }
+}
+
+/// QSMART's parameters, as QSM.rs takes them.
+fn qsmart_params(cfg: &PipelineConfig) -> qsm_core::utils::QsmartParams {
+    qsm_core::utils::QsmartParams {
+        adjust_offset_grid: match cfg.inversion.qsmart.offset_grid {
+            crate::enums::QsmartOffsetGrid::Fft => qsm_core::utils::QsmartOffsetGrid::Fft,
+            crate::enums::QsmartOffsetGrid::QsmartReference => qsm_core::utils::QsmartOffsetGrid::QsmartReference,
         },
-    };
+        ilsqr_max_iter: cfg.inversion.qsmart.ilsqr_max_iter,
+        ilsqr_pad_mm: cfg.inversion.qsmart.ilsqr_pad_mm,
+        // NOTE: vasc_sphere_radius and frangi scales are in `vessel_size_units` here; the
+        // QSMART stage converts mm to voxels with the dataset voxel size
+        // (crate::stages::qsmart::inversion_config).
+        vasc_sphere_radius: cfg.inversion.qsmart.vasc_sphere_radius,
+        inversion: map_alg(cfg.inversion.qsmart.inversion),
+        sdf_sigma1_stage1: cfg.inversion.qsmart.sdf_sigma1_stage1,
+        sdf_sigma2_stage1: cfg.inversion.qsmart.sdf_sigma2_stage1,
+        sdf_sigma1_stage2: cfg.inversion.qsmart.sdf_sigma1_stage2,
+        sdf_sigma2_stage2: cfg.inversion.qsmart.sdf_sigma2_stage2,
+        sdf_lower_lim: cfg.inversion.qsmart.sdf_lower_lim,
+        sdf_curv_constant: cfg.inversion.qsmart.sdf_curv_constant,
+        frangi_scale_range: [cfg.inversion.qsmart.frangi_scale_min, cfg.inversion.qsmart.frangi_scale_max],
+        frangi_scale_ratio: cfg.inversion.qsmart.frangi_scale_ratio,
+        frangi_c: cfg.inversion.qsmart.frangi_c(),
+        // ppm and b0_dir keep qsm-core defaults
+        ..Default::default()
+    }
+}
 
-    let reference = match cfg.qsm.reference {
-        QsmReference::Mean => PRef::Mean,
-        // A region reference is subtracted by QSMxT, which has the parcellation; the core stage
-        // only masks, or it would mean-reference the map a second time.
-        QsmReference::None | QsmReference::Region => PRef::None,
-    };
-
-    (field_mapping, bg_removal, inversion, reference)
+/// HEIDI's parameters, as QSM.rs takes them.
+fn heidi_params(cfg: &PipelineConfig) -> qsm_core::inversion::HeidiParams {
+    qsm_core::inversion::HeidiParams {
+        cone_threshold: cfg.inversion.heidi.cone_threshold,
+        gradient_threshold: cfg.inversion.heidi.gradient_threshold,
+        apply_laplacian_correction: cfg.inversion.heidi.apply_laplacian_correction,
+        laplacian_threshold: cfg.inversion.heidi.laplacian_threshold,
+        gradient_mask_floor: cfg.inversion.heidi.gradient_mask_floor,
+        continuation_steps: cfg.inversion.heidi.continuation_steps,
+        inner_iterations: cfg.inversion.heidi.inner_iterations,
+        mu_min: cfg.inversion.heidi.mu_min,
+        tol: cfg.inversion.heidi.tol,
+        // Flattened in the config (a switch plus three numbers) so it can be a checkbox and
+        // three rows rather than a nested table.
+        denoise: cfg.inversion.heidi.denoise.then_some(qsm_core::utils::AnisotropicDiffusionParams {
+            iterations: cfg.inversion.heidi.denoise_iterations,
+            time_step: cfg.inversion.heidi.denoise_time_step,
+            conductance: cfg.inversion.heidi.denoise_conductance,
+            reference_itk: cfg.inversion.heidi.denoise_reference_itk,
+        }),
+        te: cfg.inversion.heidi.te.into(),
+        // Field strength and echo times are scan parameters the pipeline fills in.
+        ..Default::default()
+    }
 }
