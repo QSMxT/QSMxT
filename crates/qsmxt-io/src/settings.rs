@@ -81,7 +81,6 @@ fn check(given: &[Given]) -> crate::Result<()> {
 pub fn apply(config: &mut PipelineConfig, given: &[Given]) -> crate::Result<()> {
     let err = QsmxtError::Config;
     let one = |long: &str| given.iter().find(|g| g.flag.long == long).and_then(|g| g.values.first()).map(String::as_str);
-    let all = |long: &str| given.iter().find(|g| g.flag.long == long).map(|g| g.values.clone());
     let set = |c: &mut PipelineConfig, path: &str, v: serde_json::Value| qsmxt_engine::schema::set(c, path, v).map_err(err);
     let json = |s: &str| serde_json::Value::String(s.to_string());
 
@@ -114,6 +113,18 @@ pub fn apply(config: &mut PipelineConfig, given: &[Given]) -> crate::Result<()> 
         }
     }
 
+    apply_parsed_flags(config, given)?;
+    apply_masking_flags(config, given, &rest)?;
+    apply_dismissals(config, given)
+}
+
+/// The flags whose values are parsed here: the field-mapping values, the reference, SWI's filtered
+/// phase and the SynthSeg version.
+fn apply_parsed_flags(config: &mut PipelineConfig, given: &[Given]) -> crate::Result<()> {
+    let err = QsmxtError::Config;
+    let one = |long: &str| given.iter().find(|g| g.flag.long == long).and_then(|g| g.values.first()).map(String::as_str);
+    let all = |long: &str| given.iter().find(|g| g.flag.long == long).map(|g| g.values.clone());
+
     if let Some(p) = all("laplacian-fft-pad") {
         let pad: Vec<usize> = p.iter().map(|v| v.parse()).collect::<Result<_, _>>().map_err(|e: std::num::ParseIntError| err(e.to_string()))?;
         config.field_mapping.laplacian_fft_pad = qsmxt_engine::pad3_from(&pad)
@@ -142,6 +153,17 @@ pub fn apply(config: &mut PipelineConfig, given: &[Given]) -> crate::Result<()> 
         config.segmentation.version = qsmxt_engine::parse_synthseg_version(v)
             .ok_or_else(|| err(format!("--synthseg-version {v}: expected v1 or v2")))?;
     }
+    Ok(())
+}
+
+/// The masking flags: a preset, sections, combine mode, refinements, two-pass, the masking input
+/// and BET's values. `rest` is the flags the registry did not apply.
+fn apply_masking_flags(config: &mut PipelineConfig, given: &[Given], rest: &[Given]) -> crate::Result<()> {
+    let err = QsmxtError::Config;
+    let one = |long: &str| given.iter().find(|g| g.flag.long == long).and_then(|g| g.values.first()).map(String::as_str);
+    let all = |long: &str| given.iter().find(|g| g.flag.long == long).map(|g| g.values.clone());
+    let set = |c: &mut PipelineConfig, path: &str, v: serde_json::Value| qsmxt_engine::schema::set(c, path, v).map_err(err);
+    let json = |s: &str| serde_json::Value::String(s.to_string());
 
     let has = |long: &str| rest.iter().any(|g| g.flag.long == long);
     // A preset is a whole recipe: it replaces the combine mode and the refinements too.
@@ -215,6 +237,13 @@ pub fn apply(config: &mut PipelineConfig, given: &[Given]) -> crate::Result<()> 
         let scale = config.bet.voxel_scale;
         crate::pipeline::config::for_each_bet_op(&mut config.masking, |_, s| *s = scale);
     }
+    Ok(())
+}
+
+/// `--dismiss-recommendation`'s rules, each refused if it names no rule or a reference rule.
+fn apply_dismissals(config: &mut PipelineConfig, given: &[Given]) -> crate::Result<()> {
+    let err = QsmxtError::Config;
+    let all = |long: &str| given.iter().find(|g| g.flag.long == long).map(|g| g.values.clone());
     for d in all("dismiss-recommendation").unwrap_or_default() {
         let (rule, chosen) = d.split_once('=').ok_or_else(|| err(format!(
             "--dismiss-recommendation {d}: give the rule and the value it is dismissed for, as RULE=VALUE \

@@ -28,7 +28,6 @@
   "crates/qsmxt-io/src/dicom/synth.rs::write_fixture": 131,
   "crates/qsmxt-io/src/pipeline/figure.rs::draw": 134,
   "crates/qsmxt-io/src/pipeline/multiorient.rs::reconstruct_group": 366,
-  "crates/qsmxt-io/src/settings.rs::apply": 153,
   "crates/qsmxt-tui/src/app/input/nifti_to_bids.rs::handle_nifti_tab_key": 121,
   "crates/qsmxt-tui/src/app/tabs/rows.rs::handle_rows_key": 279,
   "crates/qsmxt-tui/src/lib.rs::run_tui": 124,
