@@ -175,7 +175,7 @@ impl PipelineState {
         if let Some(record) = self.completed_steps.get(step_name) {
             // Cleaned intermediates are trusted only while nothing can need them again; once the
             // configuration has changed the step is recomputed — with the same parameters, which
-            // leaves what is downstream of it cached (see the runner's `complete_step`).
+            // leaves what is downstream of it cached (see the run store's `record`, in `runner/store.rs`).
             if record.outputs_removed {
                 if !self.config_unchanged {
                     return false;
