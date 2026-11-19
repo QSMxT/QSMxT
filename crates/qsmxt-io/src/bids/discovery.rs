@@ -180,27 +180,7 @@ pub fn no_runs(bids_dir: &Path, filter: &DiscoveryFilter) -> QsmxtError {
 /// Discover all QSM runs in a BIDS directory, which must exist ([`require_bids_dir`]).
 pub fn discover_runs(bids_dir: &Path, filter: &DiscoveryFilter) -> crate::Result<Vec<QsmRun>> {
     require_bids_dir(bids_dir)?;
-    // Collect all phase (and real-part) files
-    let mut phase_files: Vec<(PathBuf, BidsEntities)> = Vec::new();
-
-    for pattern in &signal_patterns(bids_dir) {
-        for entry in glob(pattern).map_err(|e| QsmxtError::BidsDiscovery(e.to_string()))? {
-            let path = entry.map_err(|e| QsmxtError::BidsDiscovery(e.to_string()))?;
-            let filename = path
-                .file_name()
-                .and_then(|f| f.to_str())
-                .ok_or_else(|| QsmxtError::BidsDiscovery("Invalid filename".to_string()))?;
-
-            if let Some(ent) = entities::parse_entities(filename) {
-                if !matches!(ent.part, Some(Part::Phase | Part::Real)) {
-                    continue;
-                }
-
-                debug!("Found phase file: {}", path.display());
-                phase_files.push((path, ent));
-            }
-        }
-    }
+    let phase_files = find_signal_files(bids_dir)?;
 
     // Group by AcquisitionKey
     let mut groups: HashMap<AcquisitionKey, Vec<(PathBuf, BidsEntities)>> = HashMap::new();
@@ -231,52 +211,10 @@ pub fn discover_runs(bids_dir: &Path, filter: &DiscoveryFilter) -> crate::Result
         let combined = by_coil.remove(&None);
 
         let (echoes, echo_times, b0_tesla, b0_dir, coils) = if by_coil.len() >= 2 {
-            if combined.is_some() {
-                warn!(
-                    "{}: both per-coil and combined files present in one run; using the {} per-coil channels",
-                    key, by_coil.len()
-                );
+            match per_coil_echoes(&key, by_coil, combined.is_some(), filter.num_echoes)? {
+                Some(((e, t, b, d), coils)) => (e, t, b, d, Some(coils)),
+                None => continue,
             }
-            let mut coils: Vec<CoilFiles> = Vec::with_capacity(by_coil.len());
-            let mut tes: Option<Vec<f64>> = None;
-            let mut b0 = 0.0;
-            let mut dir: Option<(f64, f64, f64)> = None;
-            for (coil_number, cfiles) in by_coil {
-                let (e, t, b, d) = build_echoes(cfiles, filter.num_echoes)?;
-                if e.is_empty() {
-                    continue;
-                }
-                if e.iter().any(|x| x.imaginary_nifti.is_some()) {
-                    return Err(QsmxtError::BidsDiscovery(format!(
-                        "{}: per-coil real/imaginary input is not supported — export the coils as \
-                         magnitude and phase",
-                        key
-                    )));
-                }
-                if e.iter().any(|x| x.magnitude_nifti.is_none()) {
-                    return Err(QsmxtError::BidsDiscovery(format!(
-                        "{}: coil {} is missing a magnitude file — MCPC-3D-S coil combination needs \
-                         magnitude and phase for every coil and echo",
-                        key, coil_number.unwrap_or(0)
-                    )));
-                }
-                match &tes {
-                    None => { tes = Some(t); b0 = b; dir = d; }
-                    Some(t0) => {
-                        if t0.len() != t.len() || t0.iter().zip(&t).any(|(a, b)| (a - b).abs() > 1e-9) {
-                            return Err(QsmxtError::BidsDiscovery(format!(
-                                "{}: coil {} has echo times {:?} but coil {} has {:?} — all coils of a run must share the same echoes",
-                                key, coil_number.unwrap_or(0), t, coils[0].coil_number, t0
-                            )));
-                        }
-                    }
-                }
-                coils.push(CoilFiles { coil_number: coil_number.unwrap_or(0), echoes: e });
-            }
-            if coils.is_empty() {
-                continue;
-            }
-            (coils[0].echoes.clone(), tes.unwrap_or_default(), b0, dir, Some(coils))
         } else {
             // Combined data, or a single coil (treated as combined).
             let files = match combined {
@@ -312,6 +250,102 @@ pub fn discover_runs(bids_dir: &Path, filter: &DiscoveryFilter) -> crate::Result
         });
     }
 
+    drop_shadowed_combined(&mut runs);
+
+    // Attach matching MESE (multi-echo spin-echo) acquisitions for R2/R2' computation.
+    attach_mese(&mut runs, bids_dir);
+
+    disambiguate_suffixes(&mut runs);
+
+    // Sort by key for deterministic ordering
+    runs.sort_by_key(|a| a.key.to_string());
+
+    Ok(runs)
+}
+
+/// Every phase (and real-part) file under `bids_dir`'s `anat/` folders.
+fn find_signal_files(bids_dir: &Path) -> crate::Result<Vec<(PathBuf, BidsEntities)>> {
+    // Collect all phase (and real-part) files
+    let mut phase_files: Vec<(PathBuf, BidsEntities)> = Vec::new();
+
+    for pattern in &signal_patterns(bids_dir) {
+        for entry in glob(pattern).map_err(|e| QsmxtError::BidsDiscovery(e.to_string()))? {
+            let path = entry.map_err(|e| QsmxtError::BidsDiscovery(e.to_string()))?;
+            let filename = path
+                .file_name()
+                .and_then(|f| f.to_str())
+                .ok_or_else(|| QsmxtError::BidsDiscovery("Invalid filename".to_string()))?;
+
+            if let Some(ent) = entities::parse_entities(filename) {
+                if !matches!(ent.part, Some(Part::Phase | Part::Real)) {
+                    continue;
+                }
+
+                debug!("Found phase file: {}", path.display());
+                phase_files.push((path, ent));
+            }
+        }
+    }
+
+    Ok(phase_files)
+}
+
+/// The echoes of a run's per-coil (uncombined) channels, `by_coil`, and the coils; `None` when no
+/// coil has an echo. `combined_present`: the run also has combined files, which are not used.
+fn per_coil_echoes(
+    key: &AcquisitionKey, by_coil: BTreeMap<Option<u32>, Vec<(PathBuf, BidsEntities)>>, combined_present: bool,
+    num_echoes: Option<usize>,
+) -> crate::Result<Option<(EchoSet, Vec<CoilFiles>)>> {
+    if combined_present {
+        warn!(
+            "{}: both per-coil and combined files present in one run; using the {} per-coil channels",
+            key, by_coil.len()
+        );
+    }
+    let mut coils: Vec<CoilFiles> = Vec::with_capacity(by_coil.len());
+    let mut tes: Option<Vec<f64>> = None;
+    let mut b0 = 0.0;
+    let mut dir: Option<(f64, f64, f64)> = None;
+    for (coil_number, cfiles) in by_coil {
+        let (e, t, b, d) = build_echoes(cfiles, num_echoes)?;
+        if e.is_empty() {
+            continue;
+        }
+        if e.iter().any(|x| x.imaginary_nifti.is_some()) {
+            return Err(QsmxtError::BidsDiscovery(format!(
+                "{}: per-coil real/imaginary input is not supported — export the coils as \
+                 magnitude and phase",
+                key
+            )));
+        }
+        if e.iter().any(|x| x.magnitude_nifti.is_none()) {
+            return Err(QsmxtError::BidsDiscovery(format!(
+                "{}: coil {} is missing a magnitude file — MCPC-3D-S coil combination needs \
+                 magnitude and phase for every coil and echo",
+                key, coil_number.unwrap_or(0)
+            )));
+        }
+        match &tes {
+            None => { tes = Some(t); b0 = b; dir = d; }
+            Some(t0) => {
+                if t0.len() != t.len() || t0.iter().zip(&t).any(|(a, b)| (a - b).abs() > 1e-9) {
+                    return Err(QsmxtError::BidsDiscovery(format!(
+                        "{}: coil {} has echo times {:?} but coil {} has {:?} — all coils of a run must share the same echoes",
+                        key, coil_number.unwrap_or(0), t, coils[0].coil_number, t0
+                    )));
+                }
+            }
+        }
+        coils.push(CoilFiles { coil_number: coil_number.unwrap_or(0), echoes: e });
+    }
+    if coils.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(((coils[0].echoes.clone(), tes.unwrap_or_default(), b0, dir), coils)))
+}
+
+/// Drop each scanner-combined run whose acquisition was also exported per coil.
+fn drop_shadowed_combined(runs: &mut Vec<QsmRun>) {
     // When an acquisition was exported both scanner-combined and per coil (Siemens SWI with
     // "save uncombined"), prefer the per-coil channels: the scanner's phase combination is not
     // suitable for QSM, and MCPC-3D-S on the raw coils is. `--exclude "*rec-uncombined*"` keeps
@@ -339,16 +373,6 @@ pub fn discover_runs(bids_dir: &Path, filter: &DiscoveryFilter) -> crate::Result
         }
         !shadowed
     });
-
-    // Attach matching MESE (multi-echo spin-echo) acquisitions for R2/R2' computation.
-    attach_mese(&mut runs, bids_dir);
-
-    disambiguate_suffixes(&mut runs);
-
-    // Sort by key for deterministic ordering
-    runs.sort_by_key(|a| a.key.to_string());
-
-    Ok(runs)
 }
 
 /// Give runs that differ only by their suffix (a `MEGRE` and a `GRE` in one session) distinct
