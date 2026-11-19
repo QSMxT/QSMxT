@@ -56,7 +56,6 @@
   "crates/qsmxt-tui/src/ui/input/nifti_to_bids.rs::draw_nifti_section": 181,
   "crates/qsmxt-tui/src/ui/modals.rs::draw_checklist_modal": 174,
   "crates/qsmxt-tui/src/ui/rows.rs::draw_rows_tab": 548,
-  "src/commands/bgremove.rs::execute": 153,
   "src/commands/fieldmap.rs::run_field_mapping": 125,
   "src/commands/integration_tests.rs::bids_validator_fixture": 152,
   "src/commands/run.rs::execute": 237,
