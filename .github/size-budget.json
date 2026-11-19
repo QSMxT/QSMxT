@@ -12,8 +12,7 @@
   "crates/qsmxt-io/src/bids/discovery.rs": 811,
   "crates/qsmxt-io/src/dicom/export.rs": 830,
   "crates/qsmxt-io/src/pipeline/multiorient.rs": 950,
-  "crates/qsmxt-io/src/pipeline/runner.rs": 1171,
-  "src/commands/invert.rs": 917
+  "crates/qsmxt-io/src/pipeline/runner.rs": 1171
  },
  "functions": {
   "crates/qsmxt-engine/src/bridge.rs::to_pipeline_stages": 337,
@@ -60,7 +59,6 @@
   "src/commands/bgremove.rs::execute": 153,
   "src/commands/fieldmap.rs::run_field_mapping": 125,
   "src/commands/integration_tests.rs::bids_validator_fixture": 152,
-  "src/commands/invert.rs::execute": 388,
   "src/commands/run.rs::execute": 237,
   "src/commands/separate.rs::execute": 330,
   "src/commands/update.rs::install_binary": 123,
