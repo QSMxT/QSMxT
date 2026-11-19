@@ -17,8 +17,8 @@ algorithm details. This README is just a quick pointer.
 - **Interactive TUI** — convert, configure, and run from the terminal; it also
   shows the equivalent CLI command as you go.
 - **DICOM → BIDS** — built-in conversion with automatic series classification.
-- **50+ algorithms** — <!-- generated:algorithm-counts start -->six masking presets, 10 background-field removers, 20 classical and 12 deep-learning dipole inversions, 8 χ-separation methods<!-- generated:algorithm-counts end -->, and
-  multi-orientation COSMOS / STI.
+- **Algorithms** — masking presets, background-field removal, classical and deep-learning
+  dipole inversions, χ-separation, and multi-orientation COSMOS / STI.
 - **More than χ** — CLEAR-SWI, SMWI, T2\* / R2\* and R2 / R2′ maps, plus
   SynthSeg segmentation with per-structure statistics.
 - **Methods text** — every run writes a methods paragraph with the citations

@@ -264,7 +264,7 @@ see [Output space](#output-space).
 
 | | behaviour on oblique data |
 |---|---|
-| all 20 classical dipole inversions, HEIDI, PDF, χ-sep iLSQR and MEDI | correct as acquired — B0 is an explicit parameter |
+| all classical dipole inversions, HEIDI, PDF, χ-sep iLSQR and MEDI | correct as acquired — B0 is an explicit parameter |
 | QSMnetME, χ-sepnet (its default route) | correct as acquired — rotate their inputs to B0 along z themselves, as their authors' toolbox does |
 | SHARP, V-SHARP, RESHARP, iSMV, LBV, HARPERELLA, iHARPERELLA, BFRnet | unaffected — never uses B0 |
 | the other deep-learning inversions, SUSEP-Net, R2PRIMEnet, iQFM, χ-sepnet with `--chi-sepnet-route native` | **resampled first** — assumes B0 is +z |
