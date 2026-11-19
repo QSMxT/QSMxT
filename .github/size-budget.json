@@ -4,8 +4,6 @@
   "crates/qsmxt-engine/src/pipeline_graph/layout.rs": 1210
  },
  "functions": {
-  "crates/qsmxt-engine/src/pipeline_graph.rs::algorithm": 156,
-  "crates/qsmxt-engine/src/pipeline_graph.rs::io": 388,
   "crates/qsmxt-engine/src/pipeline_graph/layout.rs::layout": 663,
   "crates/qsmxt-tui/src/app/input/nifti_to_bids.rs::handle_nifti_tab_key": 121,
   "crates/qsmxt-tui/src/app/tabs/rows.rs::handle_rows_key": 279,
