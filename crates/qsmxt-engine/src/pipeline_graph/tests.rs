@@ -1,4 +1,5 @@
 use super::*;
+use crate::enums::{QsmAlgorithm, QsmReference, QsmartVesselMagnitude, SeparationAlgorithm};
 use crate::observe::{Observer, StageEvent, VolumeData};
 use crate::plan::tests::facts;
 use crate::run::tests::Recorder;
@@ -55,9 +56,10 @@ fn assert_consistent(g: &PipelineGraph) {
     }
 }
 
-/// A table of configurations: the steps, their branches and their arrows.
+// A table of configurations: the steps, their branches and their arrows, one test per group.
+
 #[test]
-fn graphs_of_a_table_of_configurations() {
+fn the_default_graph() {
     // The defaults: one box per step that does something.
     let g = graph(&PipelineConfig::default(), &facts());
     // The defaults keep the acquired grid whatever the header says: nothing resamples, and nothing
@@ -85,7 +87,10 @@ fn graphs_of_a_table_of_configurations() {
     assert_eq!(bg.settings, ["SMV kernel radii from 12 to 2 mm in 1 mm steps"]);
     assert_eq!(g.node("invert").unwrap().algorithm_label.as_deref(), Some("iLSQR"));
     assert_consistent(&g);
+}
 
+#[test]
+fn two_pass_graphs() {
     // Two-pass: two branches joining at the combination, the field map shared.
     let mut config = PipelineConfig::default();
     config.masking.two_pass = true;
@@ -112,7 +117,10 @@ fn graphs_of_a_table_of_configurations() {
                               "reference"]);
     assert!(g.has_edge("unwrap", "tgv") && g.has_edge("unwrap", "tgv-reliable"));
     assert_consistent(&g);
+}
 
+#[test]
+fn optional_steps_are_named_by_their_setting() {
     // SWI and R2* on: optional steps, named by the setting that asked for them.
     let mut config = PipelineConfig::default();
     config.pipeline.do_swi = true;
@@ -123,7 +131,10 @@ fn graphs_of_a_table_of_configurations() {
     assert!(g.has_edge("scale_phase", "swi") && g.has_edge("mask", "t2star_r2star"));
     assert!(g.node("mask").unwrap().enabled_by.is_none(), "the mask is core");
     assert_consistent(&g);
+}
 
+#[test]
+fn the_chi_separation_graph() {
     // χ-separation with a MESE: R2 and R2′, separation reading the map, R2* and R2′.
     let mut config = PipelineConfig::default();
     config.pipeline.do_r2starmap = true;
@@ -148,7 +159,10 @@ fn graphs_of_a_table_of_configurations() {
     assert_eq!(g.node("chi_separation").unwrap().algorithm_label.as_deref(), Some("χ-separation"));
     assert!(g.node("r2_r2prime").unwrap().writes.contains(&item_key(&Item::R2primeCoverage)));
     assert_consistent(&g);
+}
 
+#[test]
+fn qsmart_graphs() {
     // QSMART, its inputs prepared as its own (set here; nothing sets them for it): the total field and the echo fit's reliability map
     // from QSMART's Laplacian unwrapping and echo fit, every echo's magnitude for its own vessel
     // magnitude (kept), and five intermediates of its own out.
@@ -196,10 +210,13 @@ fn graphs_of_a_table_of_configurations() {
     assert!(q.settings.contains(&"vessels on the combined magnitude".to_string()), "{:?}", q.settings);
     assert!(!g.node("unwrap").unwrap().writes.contains(&item_key(&Item::FieldReliability)));
     assert_consistent(&g);
-    let mut config = PipelineConfig::default();
+}
 
+#[test]
+fn magnitude_weighted_and_iqsm_graphs() {
     // A magnitude-weighted inversion, one weighted by every echo's magnitude, and iQSM straight
     // from the echoes.
+    let mut config = PipelineConfig::default();
     config.inversion.algorithm = QsmAlgorithm::Ndi;
     let g = graph(&config, &facts());
     assert!(g.has_edge("magnitude", "invert"));
@@ -215,7 +232,10 @@ fn graphs_of_a_table_of_configurations() {
     assert_eq!(g.node("resample_axial").unwrap().enabled_by, None);
     assert_eq!(g.node("invert").unwrap().models, ["iqsm"]);
     assert_consistent(&g);
+}
 
+#[test]
+fn the_motion_correction_graph() {
     // Motion correction: the steps after it read its echoes and its coverage mask.
     let mut config = PipelineConfig::default();
     config.motion_correction.enabled = true;
@@ -223,7 +243,10 @@ fn graphs_of_a_table_of_configurations() {
     assert_eq!(g.node("motion").unwrap().enabled_by.as_deref(), Some("motion_correction.enabled"));
     assert!(g.has_edge("motion", "unwrap") && g.has_edge("unwrap", "bgremove") && !g.has_edge("mask", "unwrap"));
     assert_consistent(&g);
+}
 
+#[test]
+fn uncombined_coil_graphs() {
     // Uncombined coils: the combination's algorithm on the phase-scaling box.
     let mut f = facts();
     f.n_coils = 4;
@@ -241,7 +264,10 @@ fn graphs_of_a_table_of_configurations() {
     assert!(g.node("scale_phase").unwrap().writes.contains(&item_key(&Item::ScaledMagnitude(1))));
     assert!(g.has_edge("resample_axial", "output_space"));
     assert_consistent(&g);
+}
 
+#[test]
+fn axial_resampling_graphs() {
     // Axial resampling on: whether the run is resampled, and so whether its outputs go back to
     // the acquired grid, depends on the header. Unknown, both steps are drawn as conditional, the
     // echoes resampled after phase scaling and before anything reads them.
@@ -279,7 +305,10 @@ fn graphs_of_a_table_of_configurations() {
     config.pipeline.output_space = crate::OutputSpace::Working;
     let working = pipeline_graph(&plan, &config, &facts(), None);
     assert!(working.node("resample_axial").is_some() && working.node("output_space").is_none());
+}
 
+#[test]
+fn the_medi_toolbox_graph() {
     // The MEDI toolbox's pipeline cannot resample: neither step, whatever the header.
     let mut config = PipelineConfig::default();
     let view = crate::schema::ViewFacts { num_echoes: Some(5), field_strength: Some(3.0), ..Default::default() };
@@ -287,7 +316,10 @@ fn graphs_of_a_table_of_configurations() {
     let g = graph(&config, &facts());
     assert!(g.node("resample_axial").is_none() && g.node("output_space").is_none(), "{:?}", ids(&g));
     assert_consistent(&g);
+}
 
+#[test]
+fn tukey_window_graphs() {
     // The Tukey window: on the acquired grid, between phase scaling and the resampling, and the
     // magnitude it windows is the one the later steps read.
     let mut config = PipelineConfig::default();
@@ -308,7 +340,10 @@ fn graphs_of_a_table_of_configurations() {
     assert!(g.has_edge("tukey_window", "resample_axial") && !g.has_edge("scale_phase", "resample_axial")
             && !g.has_edge("load", "resample_axial"));
     assert_consistent(&g);
+}
 
+#[test]
+fn the_segmentation_graph() {
     // Segmentation, a region reference on it and the statistics.
     let mut config = PipelineConfig::default();
     config.pipeline.do_segmentation = true;

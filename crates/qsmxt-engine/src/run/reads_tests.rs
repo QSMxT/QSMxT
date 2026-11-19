@@ -122,33 +122,57 @@ fn every_step_records_reading_what_the_plan_says_it_reads() {
 /// a resampled run's return to the acquired grid.
 #[test]
 fn every_step_records_reading_everything_it_reads() {
-    fn check(config: &PipelineConfig, facts: &ScanFacts, store: MemoryStore) -> usize {
-        let plan = crate::plan::plan(config, facts);
-        if !plan.models.is_empty() {
-            return 0;
-        }
-        // What some step other than loading writes: what a store can see change.
-        let written: Vec<Item> = plan.steps.iter()
-            .filter(|s| !matches!(s.stage, Stage::Load | Stage::OutputSpace))
-            .flat_map(|s| s.outputs.iter().copied()).collect();
-        let mut recorder = Recorder::new(store);
-        // A step that cannot run (χ-separation of one echo has no R2*) stops the run; what
-        // was computed before it is checked.
-        let _ = run(&plan, config, facts, &mut recorder, &mut ());
-        for (step, inputs, outputs) in &recorder.completed {
-            let unrecorded: Vec<&Item> = recorder.asked.get(step).into_iter().flatten()
-                .filter(|i| written.contains(i) && !inputs.contains(i) && !outputs.contains(i)).collect();
-            assert!(unrecorded.is_empty(), "{step} read {unrecorded:?} without recording it ({}, {} echo(es), two-pass {}): it recorded {inputs:?}",
-                    config.inversion.algorithm, facts.n_echoes, plan.two_pass);
-        }
-        let outside: Vec<&Item> = recorder.asked.get("").into_iter().flatten().filter(|i| written.contains(i)).collect();
-        assert!(outside.is_empty(), "read outside any step: {outside:?}");
-        recorder.completed.len()
+    let mut runs = inversion_runs();
+    runs.extend(output_runs());
+    runs.extend(other_runs());
+    // Each run on a thread of its own: they share nothing.
+    let computed: usize = std::thread::scope(|scope| {
+        let handles: Vec<_> = runs.iter_mut()
+            .map(|(c, facts, store)| {
+                let store = std::mem::take(store);
+                scope.spawn(move || check_recorded_reads(c, facts, store))
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).sum()
+    });
+    assert!(computed > 100, "too few steps computed to say anything: {computed}");
+}
+
+/// Runs `config` on the scan in `store`, and checks that every step recorded reading what it asked
+/// its store for of what another step writes; the number of steps computed (none for a plan
+/// that needs a network).
+fn check_recorded_reads(config: &PipelineConfig, facts: &ScanFacts, store: MemoryStore) -> usize {
+    let plan = crate::plan::plan(config, facts);
+    if !plan.models.is_empty() {
+        return 0;
     }
-    let one_echo = |facts: &mut ScanFacts| {
-        facts.n_echoes = 1;
-        facts.echo_times.truncate(1);
-    };
+    // What some step other than loading writes: what a store can see change.
+    let written: Vec<Item> = plan.steps.iter()
+        .filter(|s| !matches!(s.stage, Stage::Load | Stage::OutputSpace))
+        .flat_map(|s| s.outputs.iter().copied()).collect();
+    let mut recorder = Recorder::new(store);
+    // A step that cannot run (χ-separation of one echo has no R2*) stops the run; what
+    // was computed before it is checked.
+    let _ = run(&plan, config, facts, &mut recorder, &mut ());
+    for (step, inputs, outputs) in &recorder.completed {
+        let unrecorded: Vec<&Item> = recorder.asked.get(step).into_iter().flatten()
+            .filter(|i| written.contains(i) && !inputs.contains(i) && !outputs.contains(i)).collect();
+        assert!(unrecorded.is_empty(), "{step} read {unrecorded:?} without recording it ({}, {} echo(es), two-pass {}): it recorded {inputs:?}",
+                config.inversion.algorithm, facts.n_echoes, plan.two_pass);
+    }
+    let outside: Vec<&Item> = recorder.asked.get("").into_iter().flatten().filter(|i| written.contains(i)).collect();
+    assert!(outside.is_empty(), "read outside any step: {outside:?}");
+    recorder.completed.len()
+}
+
+/// The scan cut to its first echo.
+fn one_echo(facts: &mut ScanFacts) {
+    facts.n_echoes = 1;
+    facts.echo_times.truncate(1);
+}
+
+/// One run of each kind of inversion, single- and multi-echo, one pass and two.
+fn inversion_runs() -> Vec<(PipelineConfig, ScanFacts, MemoryStore)> {
     let reliable = vec![MaskSection {
         input: MaskingInput::Magnitude,
         generator: MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(40.0) },
@@ -179,19 +203,26 @@ fn every_step_records_reading_everything_it_reads() {
             }
         }
     }
+    runs
+}
 
+/// `item` supplied on the phantom's grid: `inside` in one half of the head, 49 in the other, 0 outside.
+fn supplied(store: &mut MemoryStore, item: Item, inside: f64) {
+    let mut affine = [0.0; 16];
+    for i in 0..4 { affine[5 * i] = 1.0; }
+    let Some(VolumeData::Real(m)) = store.get(&Item::AcquiredMagnitude(1)).cloned() else { panic!() };
+    let data: Vec<f64> = m.iter().enumerate()
+        .map(|(i, &v)| if v > 50.0 { if i % N < N / 2 { inside } else { 49.0 } } else { 0.0 }).collect();
+    store.insert(item, VolumeData::Real(data));
+    let grid = crate::store::Geometry { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine, orientation: None };
+    store.supply(item, grid, format!("{item:?}"));
+}
+
+/// Every other output, with and without a MESE.
+fn output_runs() -> Vec<(PipelineConfig, ScanFacts, MemoryStore)> {
+    let mut runs = Vec::new();
     // Every other output, the statistics over a supplied segmentation: R2′ measured from a
     // MESE, or supplied; multi- and single-echo; with motion correction and without.
-    let supplied = |store: &mut MemoryStore, item: Item, inside: f64| {
-        let mut affine = [0.0; 16];
-        for i in 0..4 { affine[5 * i] = 1.0; }
-        let Some(VolumeData::Real(m)) = store.get(&Item::AcquiredMagnitude(1)).cloned() else { panic!() };
-        let data: Vec<f64> = m.iter().enumerate()
-            .map(|(i, &v)| if v > 50.0 { if i % N < N / 2 { inside } else { 49.0 } } else { 0.0 }).collect();
-        store.insert(item, VolumeData::Real(data));
-        let grid = crate::store::Geometry { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine, orientation: None };
-        store.supply(item, grid, format!("{item:?}"));
-    };
     for (single, mese, separation) in [(false, true, SeparationAlgorithm::ChiSepIlsqr), (true, true, SeparationAlgorithm::ChiSepIlsqr),
                                         (false, false, SeparationAlgorithm::ChiSepIlsqr), (false, true, SeparationAlgorithm::Decompose)] {
         let (mut facts, mut store) = phantom();
@@ -221,7 +252,12 @@ fn every_step_records_reading_everything_it_reads() {
         c.motion_correction.enabled = !single;
         runs.push((c, facts, store));
     }
+    runs
+}
 
+/// A supplied mask and segmentation with a region reference, a per-echo QSM, and a resampled run.
+fn other_runs() -> Vec<(PipelineConfig, ScanFacts, MemoryStore)> {
+    let mut runs = Vec::new();
     // A supplied mask, with the reference measured on a region of the supplied segmentation.
     let (mut facts, mut store) = phantom();
     (facts.custom_mask, facts.custom_dseg) = (true, true);
@@ -254,17 +290,7 @@ fn every_step_records_reading_everything_it_reads() {
     c.pipeline.do_swi = true;
     c.swi.mip_window = 4;
     runs.push((c, facts, store));
-    // Each run on a thread of its own: they share nothing.
-    let computed: usize = std::thread::scope(|scope| {
-        let handles: Vec<_> = runs.iter_mut()
-            .map(|(c, facts, store)| {
-                let store = std::mem::take(store);
-                scope.spawn(move || check(c, facts, store))
-            })
-            .collect();
-        handles.into_iter().map(|h| h.join().unwrap()).sum()
-    });
-    assert!(computed > 100, "too few steps computed to say anything: {computed}");
+    runs
 }
 
 /// A step's key covers everything that changes what it computes besides what it reads. A

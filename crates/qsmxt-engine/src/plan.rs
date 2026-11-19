@@ -333,12 +333,6 @@ pub fn plan_for(config: &PipelineConfig, facts: &ScanFacts, profile: &MemoryProf
     let (normalised, adjustments) = config.normalised_for(facts);
     let config = &normalised;
     let p = &config.pipeline;
-    let wanted = |o: Output| requirements::wanted(facts, config, o);
-    let relaxometry = wanted(Output::T2star) || wanted(Output::R2star);
-    let needs_mask = p.do_qsm || p.do_swi || p.do_smwi || relaxometry
-        || p.do_r2map || p.do_r2primemap || p.do_chi_separation;
-    let needs_phase = needs_mask || p.do_qsm || p.do_segmentation || p.do_analysis;
-
     let mut notes = Vec::new();
     // Two-pass derives its reliable mask from a mask recipe, so a supplied mask rules it out: a
     // mask read off disk has no recipe to leave unfilled, and two-pass would reconstruct twice
@@ -358,6 +352,53 @@ pub fn plan_for(config: &PipelineConfig, facts: &ScanFacts, profile: &MemoryProf
     // Switched on for a scan it cannot correct, it is left out with a warning in the check.
     let motion_corrected = config.motion_correction.enabled
         && requirements::motion_correction_note(facts, config).is_none();
+
+    let mut steps = planned_steps(config, facts, supplied_mask, two_pass);
+
+    // The inhomogeneity correction, for what the planned steps ask of it, before the first of them.
+    let has = |stage: Stage| steps.iter().any(|s| s.stage == stage);
+    let homogeneity = crate::stages::magnitude::targets(config, facts, has, motion_corrected, supplied_mask);
+    if !homogeneity.is_empty() {
+        let at = steps.iter().rposition(|s| matches!(s.stage, Stage::ScalePhase | Stage::TukeyWindow | Stage::ResampleAxial))
+            .map_or(1, |i| i + 1);
+        steps.insert(at, Step::new(Stage::InhomogeneityCorrection, vec![]));
+    }
+    let mut plan = Plan {
+        steps,
+        models: Vec::new(),
+        peak_memory_bytes: 0,
+        peak_memory_step: None,
+        memory_profile: *profile,
+        memory_budget_bytes: profile.budget_bytes(),
+        over_budget: None,
+        check: requirements::scan_check(facts, config),
+        notes,
+        adjustments,
+        config: config.clone(),
+        two_pass,
+        motion_corrected,
+        homogeneity,
+    };
+    fill_details(&mut plan, config, facts);
+    prune(&mut plan, config, facts);
+    for id in plan.steps.iter().flat_map(|s| s.models.iter()) {
+        if !plan.models.contains(id) {
+            plan.models.push(id);
+        }
+    }
+    estimate_memory(&mut plan, facts, profile);
+    plan
+}
+
+/// The steps `config` runs on the scan `facts` describes, in run order, before the
+/// inhomogeneity correction is placed among them.
+fn planned_steps(config: &PipelineConfig, facts: &ScanFacts, supplied_mask: bool, two_pass: bool) -> Vec<Step> {
+    let p = &config.pipeline;
+    let wanted = |o: Output| requirements::wanted(facts, config, o);
+    let relaxometry = wanted(Output::T2star) || wanted(Output::R2star);
+    let needs_mask = p.do_qsm || p.do_swi || p.do_smwi || relaxometry
+        || p.do_r2map || p.do_r2primemap || p.do_chi_separation;
+    let needs_phase = needs_mask || p.do_qsm || p.do_segmentation || p.do_analysis;
 
     let mut steps = vec![Step::new(Stage::Load, vec![])];
     let mut add = |stage: Stage, models: Vec<&'static str>| steps.push(Step::new(stage, models));
@@ -444,40 +485,7 @@ pub fn plan_for(config: &PipelineConfig, facts: &ScanFacts, profile: &MemoryProf
         }
         add(Stage::OutputSpace, vec![]);
     }
-
-    // The inhomogeneity correction, for what the planned steps ask of it, before the first of them.
-    let has = |stage: Stage| steps.iter().any(|s| s.stage == stage);
-    let homogeneity = crate::stages::magnitude::targets(config, facts, has, motion_corrected, supplied_mask);
-    if !homogeneity.is_empty() {
-        let at = steps.iter().rposition(|s| matches!(s.stage, Stage::ScalePhase | Stage::TukeyWindow | Stage::ResampleAxial))
-            .map_or(1, |i| i + 1);
-        steps.insert(at, Step::new(Stage::InhomogeneityCorrection, vec![]));
-    }
-    let mut plan = Plan {
-        steps,
-        models: Vec::new(),
-        peak_memory_bytes: 0,
-        peak_memory_step: None,
-        memory_profile: *profile,
-        memory_budget_bytes: profile.budget_bytes(),
-        over_budget: None,
-        check: requirements::scan_check(facts, config),
-        notes,
-        adjustments,
-        config: config.clone(),
-        two_pass,
-        motion_corrected,
-        homogeneity,
-    };
-    fill_details(&mut plan, config, facts);
-    prune(&mut plan, config, facts);
-    for id in plan.steps.iter().flat_map(|s| s.models.iter()) {
-        if !plan.models.contains(id) {
-            plan.models.push(id);
-        }
-    }
-    estimate_memory(&mut plan, facts, profile);
-    plan
+    steps
 }
 
 /// Whether the run needs the combined magnitude: it is published (`pipeline.do_magnitude`), or a

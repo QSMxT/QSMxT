@@ -55,7 +55,7 @@ macro_rules! cover {
 }
 
 #[test]
-fn qsmxt_engine_covers_all_qsm_core_params() {
+fn qsmxt_engine_covers_qsm_core_inversion_params() {
     use qsm_core as q;
     use qsmxt_engine as c;
 
@@ -103,6 +103,12 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     // flattens it into `denoise` + three `denoise_*` values, which is what the TUI and CLI show.
     // b0/echo_times come from scan metadata.
     cover!(q::inversion::HeidiParams => c::HeidiConfig, ignore: ["denoise", "b0", "echo_times"]);
+}
+
+#[test]
+fn qsmxt_engine_covers_qsm_core_separation_params() {
+    use qsm_core as q;
+    use qsmxt_engine as c;
 
     // Chi-separation methods. cf/b0 come from scan metadata; se_echo_times is set by the
     // runner from spin-echo data — none are user knobs.
@@ -131,6 +137,12 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
            ignore: ["reference_divergence", "reference_edge_erosion", "reference_output_box"]);
     // b0/echo_times come from scan metadata (the dispatcher fills them).
     cover!(q::inversion::StarParams => c::StarConfig, ignore: ["b0", "echo_times"]);
+}
+
+#[test]
+fn qsmxt_engine_covers_qsm_core_background_removal_params() {
+    use qsm_core as q;
+    use qsmxt_engine as c;
 
     // Background-field removal
     // `ball` picks which implementation's SMV ball to reproduce (STI Suite's, the default, or
@@ -147,6 +159,12 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     cover!(q::bgremove::ResharpParams => c::ResharpConfig);
     cover!(q::bgremove::HarperellaParams => c::HarperellaConfig);
     cover!(q::bgremove::IharperellaParams => c::IharperellaConfig);
+}
+
+#[test]
+fn qsmxt_engine_covers_qsm_core_masking_field_mapping_and_other_params() {
+    use qsm_core as q;
+    use qsmxt_engine as c;
 
     // Masking / field mapping / misc
     // HdBetParams / Rs2NetParams / MindGrabParams have no *Config pair by design: a DL brain extractor's
