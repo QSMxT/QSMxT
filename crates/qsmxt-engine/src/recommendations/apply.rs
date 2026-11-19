@@ -141,6 +141,21 @@ pub(crate) fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -
         Mapping::Same => {
             crate::schema::set(config, path, value.clone())?;
         }
+        Mapping::MaskGenerator | Mapping::HdBetInference | Mapping::MaskInput
+        | Mapping::Inhomogeneity | Mapping::BetFraction | Mapping::ThresholdMethod => set_mask_recipe(config, kind, id, value)?,
+        Mapping::LaplacianSolver | Mapping::QsmartFitThreshold | Mapping::RomeoWeights
+        | Mapping::RomeoTemplate => set_field_mapping(config, kind, id, value)?,
+        Mapping::VsharpGrid | Mapping::SynthSegInference | Mapping::SynthSegPatch => set_other(config, kind, id, value)?,
+        Mapping::Erosion | Mapping::MinIntensity | Mapping::Majority | Mapping::LargestComponent
+        | Mapping::Imfill | Mapping::CloseRadius => set_mask_refinement(config, kind, value)?,
+    }
+    Ok(())
+}
+
+/// A setting of the mask recipe's sections: the generator, HD-BET's inference, the input, the
+/// inhomogeneity correction, BET's fraction and the threshold method.
+fn set_mask_recipe(config: &mut PipelineConfig, kind: Mapping, id: &str, value: &Value) -> Result<(), String> {
+    match kind {
         Mapping::MaskGenerator => {
             // The preset whose sections all start with that generator (`bet` → BET on the
             // magnitude, then erode).
@@ -165,51 +180,6 @@ pub(crate) fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -
                     }
                 }
             }
-        }
-        Mapping::LaplacianSolver => {
-            let fm = &mut config.field_mapping;
-            fm.laplacian_solver = match id {
-                "dct" => LaplacianSolver::Dct,
-                "mirror" => LaplacianSolver::Mirror,
-                "mgpcg" => LaplacianSolver::Mgpcg,
-                "fft" => LaplacianSolver::Fft,
-                "fft-12" => {
-                    let qsm_core::unwrap::LaplacianSolver::Fft { pad } = qsm_core::unwrap::LaplacianSolver::FFT_DEFAULT_PAD
-                    else { unreachable!("FFT_DEFAULT_PAD is an FFT solver") };
-                    fm.laplacian_fft_pad = pad;
-                    LaplacianSolver::Fft
-                }
-                "fft-64" => {
-                    let qsm_core::unwrap::LaplacianSolver::Fft { pad } = qsm_core::unwrap::LaplacianSolver::FFT_UKB_PAD
-                    else { unreachable!("FFT_UKB_PAD is an FFT solver") };
-                    fm.laplacian_fft_pad = pad;
-                    LaplacianSolver::Fft
-                }
-                other => return Err(format!("unknown Laplacian solver {other}")),
-            };
-        }
-        Mapping::VsharpGrid => {
-            let v = &mut config.bg_removal.vsharp;
-            v.grid = match id {
-                "native" => VsharpGrid::Native,
-                "isotropic-finest" => VsharpGrid::Finest,
-                "isotropic-1mm" => {
-                    v.grid_spacing = 1.0;
-                    VsharpGrid::Isotropic
-                }
-                "isotropic" => VsharpGrid::Isotropic,
-                other => return Err(format!("unknown V-SHARP grid {other}")),
-            };
-        }
-        Mapping::SynthSegInference => {
-            config.segmentation.patch = crate::config::synthseg_patch(match id {
-                "full-volume" => qsm_core::segment::SynthSegInference::FullVolume,
-                "low-memory" => qsm_core::segment::SynthSegInference::LOW_MEMORY,
-                other => return Err(format!("SynthSeg inference {other} needs a window size")),
-            });
-        }
-        Mapping::SynthSegPatch => {
-            config.segmentation.patch = Some(value.as_u64().ok_or_else(|| format!("{value} is not a window size"))? as usize);
         }
         Mapping::MaskInput => {
             let input = crate::masking::parse_masking_input(id).ok_or_else(|| format!("unknown mask input {id}"))?;
@@ -239,36 +209,6 @@ pub(crate) fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -
                     if let MaskOp::Bet { fractional_intensity, .. } = op {
                         *fractional_intensity = f;
                     }
-                }
-            }
-        }
-        Mapping::Erosion => {
-            let n = value.as_u64().or_else(|| value.as_f64().map(|v| v as u64))
-                .ok_or_else(|| format!("{value} is not a number of voxels"))? as usize;
-            for s in &mut config.masking.sections {
-                s.refinements.retain(|op| !matches!(op, MaskOp::Erode { .. }));
-                if n > 0 {
-                    s.refinements.push(MaskOp::Erode { iterations: n });
-                }
-            }
-        }
-        Mapping::MinIntensity => {
-            let v = value.as_f64().filter(|v| v.is_finite() && *v >= 0.0)
-                .ok_or_else(|| format!("{value} is not an intensity"))?;
-            for s in &mut config.masking.sections {
-                s.refinements.retain(|op| !matches!(op, MaskOp::MinIntensity { .. }));
-                if v > 0.0 {
-                    s.refinements.insert(0, MaskOp::MinIntensity { value: v });
-                }
-            }
-        }
-        Mapping::Majority => {
-            let on = value.as_bool().ok_or_else(|| format!("{value} is not on or off"))?;
-            for s in &mut config.masking.sections {
-                s.refinements.retain(|op| !matches!(op, MaskOp::Majority));
-                if on {
-                    let at = s.refinements.iter().take_while(|op| matches!(op, MaskOp::MinIntensity { .. })).count();
-                    s.refinements.insert(at, MaskOp::Majority);
                 }
             }
         }
@@ -309,39 +249,36 @@ pub(crate) fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -
                 }
             }
         }
-        Mapping::LargestComponent => {
-            let on = value.as_bool().ok_or_else(|| format!("{value} is not on or off"))?;
-            for s in &mut config.masking.sections {
-                s.refinements.retain(|op| !matches!(op, MaskOp::LargestComponent));
-                if on {
-                    let at = s.refinements.iter().position(|op| matches!(op, MaskOp::Imfill)).unwrap_or(s.refinements.len());
-                    s.refinements.insert(at, MaskOp::LargestComponent);
+        _ => unreachable!("set_mask_recipe is called for these mappings only"),
+    }
+    Ok(())
+}
+
+/// A field-mapping setting: the Laplacian solver, QSMART's fit threshold, and ROMEO's weights and
+/// template echo.
+fn set_field_mapping(config: &mut PipelineConfig, kind: Mapping, id: &str, value: &Value) -> Result<(), String> {
+    match kind {
+        Mapping::LaplacianSolver => {
+            let fm = &mut config.field_mapping;
+            fm.laplacian_solver = match id {
+                "dct" => LaplacianSolver::Dct,
+                "mirror" => LaplacianSolver::Mirror,
+                "mgpcg" => LaplacianSolver::Mgpcg,
+                "fft" => LaplacianSolver::Fft,
+                "fft-12" => {
+                    let qsm_core::unwrap::LaplacianSolver::Fft { pad } = qsm_core::unwrap::LaplacianSolver::FFT_DEFAULT_PAD
+                    else { unreachable!("FFT_DEFAULT_PAD is an FFT solver") };
+                    fm.laplacian_fft_pad = pad;
+                    LaplacianSolver::Fft
                 }
-            }
-        }
-        Mapping::Imfill => {
-            let on = value.as_bool().ok_or_else(|| format!("{value} is not on or off"))?;
-            for s in &mut config.masking.sections {
-                s.refinements.retain(|op| !matches!(op, MaskOp::Imfill));
-                if on {
-                    s.refinements.push(MaskOp::Imfill);
+                "fft-64" => {
+                    let qsm_core::unwrap::LaplacianSolver::Fft { pad } = qsm_core::unwrap::LaplacianSolver::FFT_UKB_PAD
+                    else { unreachable!("FFT_UKB_PAD is an FFT solver") };
+                    fm.laplacian_fft_pad = pad;
+                    LaplacianSolver::Fft
                 }
-            }
-        }
-        Mapping::CloseRadius => {
-            let r = value.as_u64().or_else(|| value.as_f64().filter(|v| *v >= 0.0).map(|v| v as u64))
-                .ok_or_else(|| format!("{value} is not a radius in voxels"))? as usize;
-            for s in &mut config.masking.sections {
-                if r == 0 {
-                    s.refinements.retain(|op| !matches!(op, MaskOp::Close { .. }));
-                } else if let Some(MaskOp::Close { radius }) = s.refinements.iter_mut().find(|op| matches!(op, MaskOp::Close { .. })) {
-                    *radius = r;
-                } else {
-                    let at = s.refinements.iter()
-                        .take_while(|op| matches!(op, MaskOp::MinIntensity { .. } | MaskOp::Majority)).count();
-                    s.refinements.insert(at, MaskOp::Close { radius: r });
-                }
-            }
+                other => return Err(format!("unknown Laplacian solver {other}")),
+            };
         }
         Mapping::QsmartFitThreshold => {
             use crate::enums::QsmartFitThresholdMode as M;
@@ -384,6 +321,111 @@ pub(crate) fn set(config: &mut PipelineConfig, core_path: &str, value: &Value) -
                 .ok_or_else(|| format!("{value} is not an echo, counted from 1"))?;
             config.field_mapping.romeo.template = echo as usize - 1;
         }
+        _ => unreachable!("set_field_mapping is called for these mappings only"),
+    }
+    Ok(())
+}
+
+/// V-SHARP's grid and SynthSeg's inference.
+fn set_other(config: &mut PipelineConfig, kind: Mapping, id: &str, value: &Value) -> Result<(), String> {
+    match kind {
+        Mapping::VsharpGrid => {
+            let v = &mut config.bg_removal.vsharp;
+            v.grid = match id {
+                "native" => VsharpGrid::Native,
+                "isotropic-finest" => VsharpGrid::Finest,
+                "isotropic-1mm" => {
+                    v.grid_spacing = 1.0;
+                    VsharpGrid::Isotropic
+                }
+                "isotropic" => VsharpGrid::Isotropic,
+                other => return Err(format!("unknown V-SHARP grid {other}")),
+            };
+        }
+        Mapping::SynthSegInference => {
+            config.segmentation.patch = crate::config::synthseg_patch(match id {
+                "full-volume" => qsm_core::segment::SynthSegInference::FullVolume,
+                "low-memory" => qsm_core::segment::SynthSegInference::LOW_MEMORY,
+                other => return Err(format!("SynthSeg inference {other} needs a window size")),
+            });
+        }
+        Mapping::SynthSegPatch => {
+            config.segmentation.patch = Some(value.as_u64().ok_or_else(|| format!("{value} is not a window size"))? as usize);
+        }
+        _ => unreachable!("set_other is called for these mappings only"),
+    }
+    Ok(())
+}
+
+/// A mask refinement: erosion, minimum intensity, majority, largest component, hole filling and
+/// closing.
+fn set_mask_refinement(config: &mut PipelineConfig, kind: Mapping, value: &Value) -> Result<(), String> {
+    match kind {
+        Mapping::Erosion => {
+            let n = value.as_u64().or_else(|| value.as_f64().map(|v| v as u64))
+                .ok_or_else(|| format!("{value} is not a number of voxels"))? as usize;
+            for s in &mut config.masking.sections {
+                s.refinements.retain(|op| !matches!(op, MaskOp::Erode { .. }));
+                if n > 0 {
+                    s.refinements.push(MaskOp::Erode { iterations: n });
+                }
+            }
+        }
+        Mapping::MinIntensity => {
+            let v = value.as_f64().filter(|v| v.is_finite() && *v >= 0.0)
+                .ok_or_else(|| format!("{value} is not an intensity"))?;
+            for s in &mut config.masking.sections {
+                s.refinements.retain(|op| !matches!(op, MaskOp::MinIntensity { .. }));
+                if v > 0.0 {
+                    s.refinements.insert(0, MaskOp::MinIntensity { value: v });
+                }
+            }
+        }
+        Mapping::Majority => {
+            let on = value.as_bool().ok_or_else(|| format!("{value} is not on or off"))?;
+            for s in &mut config.masking.sections {
+                s.refinements.retain(|op| !matches!(op, MaskOp::Majority));
+                if on {
+                    let at = s.refinements.iter().take_while(|op| matches!(op, MaskOp::MinIntensity { .. })).count();
+                    s.refinements.insert(at, MaskOp::Majority);
+                }
+            }
+        }
+        Mapping::LargestComponent => {
+            let on = value.as_bool().ok_or_else(|| format!("{value} is not on or off"))?;
+            for s in &mut config.masking.sections {
+                s.refinements.retain(|op| !matches!(op, MaskOp::LargestComponent));
+                if on {
+                    let at = s.refinements.iter().position(|op| matches!(op, MaskOp::Imfill)).unwrap_or(s.refinements.len());
+                    s.refinements.insert(at, MaskOp::LargestComponent);
+                }
+            }
+        }
+        Mapping::Imfill => {
+            let on = value.as_bool().ok_or_else(|| format!("{value} is not on or off"))?;
+            for s in &mut config.masking.sections {
+                s.refinements.retain(|op| !matches!(op, MaskOp::Imfill));
+                if on {
+                    s.refinements.push(MaskOp::Imfill);
+                }
+            }
+        }
+        Mapping::CloseRadius => {
+            let r = value.as_u64().or_else(|| value.as_f64().filter(|v| *v >= 0.0).map(|v| v as u64))
+                .ok_or_else(|| format!("{value} is not a radius in voxels"))? as usize;
+            for s in &mut config.masking.sections {
+                if r == 0 {
+                    s.refinements.retain(|op| !matches!(op, MaskOp::Close { .. }));
+                } else if let Some(MaskOp::Close { radius }) = s.refinements.iter_mut().find(|op| matches!(op, MaskOp::Close { .. })) {
+                    *radius = r;
+                } else {
+                    let at = s.refinements.iter()
+                        .take_while(|op| matches!(op, MaskOp::MinIntensity { .. } | MaskOp::Majority)).count();
+                    s.refinements.insert(at, MaskOp::Close { radius: r });
+                }
+            }
+        }
+        _ => unreachable!("set_mask_refinement is called for these mappings only"),
     }
     Ok(())
 }
