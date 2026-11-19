@@ -190,6 +190,9 @@ own N4. `--inhomogeneity-method` chooses how:
 
 <!-- generated:inhomogeneity-methods end -->
 
+N4 fits a smooth B-spline bias field in the log domain, over several levels of increasing
+resolution, so that the corrected image's intensity histogram is as sharp as possible.
+
 `makehomogeneous` takes `--homogeneity-sigma-mm` and `--homogeneity-nbox`. N4
 takes:
 
@@ -499,6 +502,9 @@ methods say how many there were.
 
 <!-- generated:unwrapping-methods end -->
 
+ROMEO is Rapid Opensource Minimum-spanning-tree Echo Optimisation. QSMART's reference
+pipeline unwraps with `laplacian` (see [QSMART](#qsmart)).
+
 With several echoes, ROMEO unwraps as it does by default: the first echo is unwrapped
 spatially and the others temporally from it (`--romeo-template` picks another echo), with no
 global 2π correction and no re-unwrapping of uncertain voxels
@@ -713,6 +719,11 @@ Set with `--bf-algorithm`.
 
 <!-- generated:background-methods end -->
 
+BFRnet removes the background from the total field. iQFM is the local-field head of iQSM:
+it unwraps and removes the background in one step, straight from the wrapped phase, so it
+replaces field mapping as well, and is refused with inversions that do not take a local
+field. Both need a deep-learning build; their weights are downloaded on first use.
+
 Choosing an inversion changes no background removal: `--qsm-algorithm medi` alone runs the
 general default (`vsharp`). MEDI's reference pipeline uses PDF, which the log, `--dry` and
 the methods Note point out, and which the TUI offers when you choose MEDI.
@@ -833,6 +844,9 @@ reconstructions and deep-learning networks.
 | `amp-pe` | AMP-PE | AMP-PE (Approximate Message Passing with Parameter Estimation) — self-tuning Bayesian inversion. | [Huang et al., 2023](https://doi.org/10.1002/mrm.29722) |
 
 <!-- generated:inversion-methods end -->
+
+`lsqr` is weighted by the magnitude, so it needs magnitude images. `--qsm-algorithm heidi`
+is LSQR+HEIDI, HEIDI as published: `lsqr` with [`--heidi`](#heidi-streaking-reduction).
 
 ### HEIDI streaking reduction
 
