@@ -4,6 +4,7 @@ use super::tests::*;
 use super::*;
 use crate::enums::QsmAlgorithm;
 use crate::masking::MaskOp;
+use crate::observe::VolumeData;
 use crate::store::MemoryStore;
 
 /// The states of the steps named, in the dry run's answer.

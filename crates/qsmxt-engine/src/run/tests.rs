@@ -4,6 +4,7 @@
 use super::*;
 use crate::enums::{BfAlgorithm, QsmAlgorithm};
 use crate::masking::{MaskOp, MaskSection, MaskThresholdMethod, MaskingInput};
+use crate::observe::VolumeData;
 use crate::store::{Header, MemoryStore};
 use std::collections::HashMap;
 

@@ -9,6 +9,8 @@ use crate::observe::Observer;
 use crate::scan::{scan_metadata, scan_metadata_in, RunMetadata};
 use crate::stages::crop::crop_box_for;
 
+mod step;
+
 /// The inversion step's parameters: the algorithm's user-facing parameters (the algorithm is
 /// recorded beside them).
 ///

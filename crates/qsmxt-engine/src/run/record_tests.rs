@@ -15,6 +15,7 @@ fn config() -> PipelineConfig {
 }
 use super::*;
 use crate::masking::{MaskOp, MaskSection, MaskThresholdMethod, MaskingInput};
+use crate::observe::VolumeData;
 use crate::methods::{generate_methods_for, methods_for_run, methods_structured};
 use crate::pipeline_graph::{pipeline_graph, pipeline_graph_after};
 use crate::record::{Choice, StepState, Topic};

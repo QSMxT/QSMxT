@@ -5,6 +5,7 @@ use super::tests::*;
 use super::*;
 use crate::enums::{QsmAlgorithm, SeparationAlgorithm};
 use crate::masking::{MaskOp, MaskSection, MaskThresholdMethod, MaskingInput};
+use crate::observe::VolumeData;
 use crate::store::{Header, MemoryStore};
 
 /// The whole plan, run on the phantom in memory: every engine step computed once, a final

@@ -4,6 +4,7 @@ use super::tests::*;
 use super::*;
 use crate::enums::{QsmAlgorithm, SeparationAlgorithm};
 use crate::masking::{MaskOp, MaskSection, MaskThresholdMethod, MaskingInput};
+use crate::observe::VolumeData;
 use crate::store::{Header, MemoryStore};
 
 /// `--tukey-window` windows every echo's magnitude and phase before any other step reads

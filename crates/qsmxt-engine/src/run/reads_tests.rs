@@ -4,6 +4,7 @@ use super::tests::*;
 use super::*;
 use crate::enums::{BfAlgorithm, QsmAlgorithm, SeparationAlgorithm};
 use crate::masking::{MaskOp, MaskSection, MaskThresholdMethod, MaskingInput};
+use crate::observe::VolumeData;
 use crate::store::MemoryStore;
 
 /// Every step a dry run of `config` on the scan in `store` would compute, with what it would
