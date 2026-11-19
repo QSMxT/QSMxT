@@ -512,8 +512,10 @@ mod tests {
     /// literal step names, each two-pass step in both passes, and the few built at run time.
     #[test]
     fn steps_cover_every_recorded_step() {
-        let src = include_str!("../pipeline/runner.rs");
-        let src = &src[..src.find("#[cfg(test)]").unwrap()];
+        let src = [include_str!("../pipeline/runner/mod.rs"), include_str!("../pipeline/runner/store.rs")]
+            .map(|s| &s[..s.find("#[cfg(test)]").unwrap_or(s.len())])
+            .concat();
+        let src = src.as_str();
         let literal_after = |pat: &str| -> Vec<String> {
             src.match_indices(pat)
                 .filter_map(|(i, _)| {
