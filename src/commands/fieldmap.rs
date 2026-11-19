@@ -111,7 +111,7 @@ fn apply_common_config(
         }
         B0EstimationArg::QsmartEchofit => {
             let mut fm = qsmxt_engine::FieldMappingConfig::default();
-            crate::pipeline::config::apply_qsmart_fit_threshold(&mut fm, common.qsmart_fit_threshold_mode,
+            crate::pipeline::config::apply_qsmart_fit_threshold(&mut fm, common.qsmart_fit_threshold_mode.map(Into::into),
                 common.qsmart_fit_percentile, common.qsmart_fit_threshold);
             qsm_core::pipeline::config::B0EstimationMethod::QsmartEchofit { fit_threshold: fm.qsmart_fit_threshold() }
         }

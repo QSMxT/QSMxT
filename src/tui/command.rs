@@ -393,7 +393,7 @@ fn as_spelled(path: &str, value: serde_json::Value) -> crate::Result<serde_json:
 fn settings_args(app: &App) -> crate::Result<crate::cli_settings::SettingsArgs> {
     let (own, given) = (form_values(app), dismissals(app));
     let values = stored_values(app, &own, &given)?;
-    Ok(crate::cli_settings::SettingsArgs { values: own.into_iter().chain(values).collect(), given })
+    Ok(crate::cli_settings::SettingsArgs(crate::cli_settings::RunSettings { values: own.into_iter().chain(values).collect(), given }))
 }
 
 /// The config the form builds (methods preview, generated command): the settings it keeps in a
@@ -427,7 +427,7 @@ mod tests {
 
     /// The value the form passes the run for the setting at `path`, if it passes one.
     fn passed(app: &App, path: &str) -> Option<serde_json::Value> {
-        settings_args(app).unwrap().values.into_iter().find(|(p, _)| *p == path).map(|(_, v)| v)
+        settings_args(app).unwrap().0.values.into_iter().find(|(p, _)| *p == path).map(|(_, v)| v)
     }
 
     /// Each entry of the SWI selects runs the unwrapping or scaling it shows (#266:
