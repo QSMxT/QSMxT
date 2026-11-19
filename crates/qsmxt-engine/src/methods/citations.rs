@@ -37,12 +37,12 @@ pub(super) const CITE_VSHARP: Citation = Citation {
 
 pub(super) const CITE_SHARP: Citation = Citation {
     key: "schweser2011",
-    text: "Schweser, F., et al. (2011). \"Quantitative imaging of intrinsic magnetic tissue properties using MRI signal phase.\" *NeuroImage*, 54(4):2789-2807. https://doi.org/10.1016/j.neuroimage.2010.10.070",
+    text: "Schweser, F., et al. (2011). \"Quantitative imaging of intrinsic magnetic tissue properties using MRI signal phase: An approach to in vivo brain iron metabolism?\" *NeuroImage*, 54(4):2789-2807. https://doi.org/10.1016/j.neuroimage.2010.10.070",
 };
 
 pub(super) const CITE_PDF: Citation = Citation {
     key: "liu2011pdf",
-    text: "Liu, T., et al. (2011). \"A novel background field removal method for MRI using projection onto dipole fields.\" *NMR in Biomedicine*, 24(9):1129-1136. https://doi.org/10.1002/nbm.1670",
+    text: "Liu, T., et al. (2011). \"A novel background field removal method for MRI using projection onto dipole fields (PDF).\" *NMR in Biomedicine*, 24(9):1129-1136. https://doi.org/10.1002/nbm.1670",
 };
 
 pub(super) const CITE_ISMV: Citation = Citation {
@@ -92,27 +92,27 @@ pub(super) const CITE_NLTV: Citation = Citation {
 
 pub(super) const CITE_NDI: Citation = Citation {
     key: "polak2020",
-    text: "Polak, D., et al. (2020). \"Nonlinear dipole inversion (NDI) enables robust quantitative susceptibility mapping (QSM).\" NMR in Biomedicine, 33(12):e4271.",
+    text: "Polak, D., et al. (2020). \"Nonlinear dipole inversion (NDI) enables robust quantitative susceptibility mapping (QSM).\" *NMR in Biomedicine*, 33(12):e4271. https://doi.org/10.1002/nbm.4271",
 };
 
 pub(super) const CITE_L1QSM: Citation = Citation {
     key: "milovic2022",
-    text: "Milovic, C., et al. (2022). \"Comparison of parameter optimization methods for quantitative susceptibility mapping.\" Magnetic Resonance in Medicine, 87(3):1517-1531.",
+    text: "Milovic, C., et al. (2022). \"Streaking artifact suppression of quantitative susceptibility mapping reconstructions via L1-norm data fidelity optimization (L1-QSM).\" *Magnetic Resonance in Medicine*, 87(1):457-473. https://doi.org/10.1002/mrm.28957",
 };
 
 pub(super) const CITE_WHQSM: Citation = Citation {
     key: "milovic2019",
-    text: "Milovic, C., et al. (2019). \"Weak-harmonic regularization for quantitative susceptibility mapping.\" Magnetic Resonance in Medicine, 81(2):1399-1411.",
+    text: "Milovic, C., et al. (2019). \"Weak-harmonic regularization for quantitative susceptibility mapping.\" *Magnetic Resonance in Medicine*, 81(2):1399-1411. https://doi.org/10.1002/mrm.27483",
 };
 
 pub(super) const CITE_HDQSM: Citation = Citation {
     key: "lambert2022",
-    text: "Lambert, M., et al. (2022). \"Hybrid data fidelity term approach for quantitative susceptibility mapping.\" Magnetic Resonance in Medicine, 88(4):1567-1583.",
+    text: "Lambert, M., et al. (2022). \"Hybrid data fidelity term approach for quantitative susceptibility mapping.\" *Magnetic Resonance in Medicine*, 88(2):962-972. https://doi.org/10.1002/mrm.29218",
 };
 
 pub(super) const CITE_AMPPE: Citation = Citation {
     key: "huang2023amppe",
-    text: "Huang, S., et al. (2023). \"Quantitative susceptibility mapping using approximate message passing with parameter estimation.\" *Magnetic Resonance in Medicine*, 90(4):1414-1430. https://doi.org/10.1002/mrm.29725",
+    text: "Huang, S., et al. (2023). \"Robust quantitative susceptibility mapping via approximate message passing with parameter estimation.\" *Magnetic Resonance in Medicine*, 90(4):1414-1430. https://doi.org/10.1002/mrm.29722",
 };
 
 pub(super) const CITE_CHISEP: Citation = Citation {
@@ -122,12 +122,12 @@ pub(super) const CITE_CHISEP: Citation = Citation {
 
 pub(super) const CITE_R2STARQSM: Citation = Citation {
     key: "dimov2022",
-    text: "Dimov, A. V., et al. (2022). \"Susceptibility source separation from gradient echo data using magnitude decay modeling.\" *Journal of Neuroimaging*, 32(4):852-859. https://doi.org/10.1111/jon.13014",
+    text: "Dimov, A. V., et al. (2022). \"Susceptibility source separation from gradient echo data using magnitude decay modeling.\" *Journal of Neuroimaging*, 32(5):852-859. https://doi.org/10.1111/jon.13014",
 };
 
 pub(super) const CITE_WAVESEP: Citation = Citation {
     key: "fang2023wavesep",
-    text: "Fang, J., et al. (2023). \"Wavelet-based single-step susceptibility source separation (WaveSep).\" *Magnetic Resonance in Medicine* (χ-separation family).",
+    text: "Fang, Z., Shin, H.-G., van Zijl, P., Li, X., Sulam, J. (2023). \"WaveSep: A Flexible Wavelet-Based Approach for Source Separation in Susceptibility Imaging.\" *Machine Learning in Clinical Neuroimaging (MLCN 2023)*, 56-66. https://doi.org/10.1007/978-3-031-44858-4_6",
 };
 
 pub(super) const CITE_DECOMPOSE: Citation = Citation {
@@ -142,7 +142,7 @@ pub(super) const CITE_HCCHISEP: Citation = Citation {
 
 pub(super) const CITE_MEDI: Citation = Citation {
     key: "liu2011medi",
-    text: "Liu, T., et al. (2011). \"Morphology enabled dipole inversion (MEDI) from a single-angle acquisition.\" *Magnetic Resonance in Medicine*, 66(3):777-783. https://doi.org/10.1002/mrm.22816",
+    text: "Liu, T., et al. (2011). \"Morphology enabled dipole inversion (MEDI) from a single-angle acquisition: Comparison with COSMOS in human brain imaging.\" *Magnetic Resonance in Medicine*, 66(3):777-783. https://doi.org/10.1002/mrm.22816",
 };
 
 pub(super) const CITE_MEDI0: Citation = Citation {
@@ -187,7 +187,7 @@ pub(super) const CITE_N4: Citation = Citation {
 
 pub(super) const CITE_RESHARP: Citation = Citation {
     key: "sun2014",
-    text: "Sun, H., Wilman, A.H. (2014). \"Background field removal using spherical mean value filtering and Tikhonov regularization.\" *Magnetic Resonance in Medicine*, 71(3):1151-1157. https://doi.org/10.1002/mrm.25032",
+    text: "Sun, H., Wilman, A.H. (2014). \"Background field removal using spherical mean value filtering and Tikhonov regularization.\" *Magnetic Resonance in Medicine*, 71(3):1151-1157. https://doi.org/10.1002/mrm.24765",
 };
 
 pub(super) const CITE_HARPERELLA: Citation = Citation {
@@ -212,27 +212,27 @@ pub(super) const CITE_QSMNET: Citation = Citation {
 
 pub(super) const CITE_QSMNET_PLUS: Citation = Citation {
     key: "jung2020qsmnetplus",
-    text: "Jung, W., et al. (2020). \"Exploring linearity of deep neural network trained QSM: QSMnet+.\" *NeuroImage*, 211:116579. https://doi.org/10.1016/j.neuroimage.2020.116579",
+    text: "Jung, W., et al. (2020). \"Exploring linearity of deep neural network trained QSM: QSMnet+.\" *NeuroImage*, 211:116619. https://doi.org/10.1016/j.neuroimage.2020.116619",
 };
 
 pub(super) const CITE_AUTOQSM: Citation = Citation {
     key: "wei2019autoqsm",
-    text: "Wei, H., et al. (2019). \"Learning-based single-step quantitative susceptibility mapping reconstruction without brain extraction (AutoQSM).\" *NeuroImage*, 202:116064. https://doi.org/10.1016/j.neuroimage.2019.116064",
+    text: "Wei, H., et al. (2019). \"Learning-based single-step quantitative susceptibility mapping reconstruction without brain extraction.\" *NeuroImage*, 202:116064. https://doi.org/10.1016/j.neuroimage.2019.116064",
 };
 
 pub(super) const CITE_BFRNET: Citation = Citation {
-    key: "zhang2023bfrnet",
-    text: "Zhang, J., et al. (2023). \"BFRnet: A deep learning-based MR background field removal method for QSM.\" *Magnetic Resonance Imaging*, 100:15-24. https://github.com/sunhongfu/BFRnet",
+    key: "zhu2023bfrnet",
+    text: "Zhu, X., et al. (2023). \"BFRnet: A deep learning-based MR background field removal method for QSM of the brain containing significant pathological susceptibility sources.\" *Zeitschrift für Medizinische Physik*, 33(4):578-590. https://doi.org/10.1016/j.zemedi.2022.08.001",
 };
 
 pub(super) const CITE_SUSEPNET: Citation = Citation {
     key: "li2025susepnet",
-    text: "Li, Z., Gao, Y., Sun, H., et al. (2025). \"SUSEP-Net: deep learning susceptibility source separation.\" arXiv:2506.13293.",
+    text: "Li, M., Chen, C., Li, Z., et al. (2025). \"SUSEP-Net: Simulation-Supervised and Contrastive Learning-based Deep Neural Networks for Susceptibility Source Separation.\" *arXiv*:2506.13293. https://doi.org/10.48550/arXiv.2506.13293",
 };
 
 pub(super) const CITE_CHISEPNET: Citation = Citation {
     key: "kim2025chisepnet",
-    text: "Kim, M., et al. (2025). \"χ-sepnet: Deep neural network for magnetic susceptibility source separation.\" *Human Brain Mapping*, 46(4):e70136. https://doi.org/10.1002/hbm.70136",
+    text: "Kim, M., et al. (2025). \"χ-sepnet: Deep neural network for magnetic susceptibility source separation.\" *Human Brain Mapping*, 46(2):e70136. https://doi.org/10.1002/hbm.70136",
 };
 
 pub(super) const CITE_QSMGAN: Citation = Citation {
@@ -242,12 +242,12 @@ pub(super) const CITE_QSMGAN: Citation = Citation {
 
 pub(super) const CITE_LPCNN: Citation = Citation {
     key: "lai2020lpcnn",
-    text: "Lai, K.-W., et al. (2020). \"Learned proximal networks for quantitative susceptibility mapping (LPCNN).\" *MICCAI 2020*, LNCS 12262:125-135. https://doi.org/10.1007/978-3-030-59713-9_13",
+    text: "Lai, K.-W., et al. (2020). \"Learned proximal networks for quantitative susceptibility mapping.\" *MICCAI 2020*, LNCS 12262:125-135. https://doi.org/10.1007/978-3-030-59713-9_13",
 };
 
 pub(super) const CITE_IR2QSM: Citation = Citation {
     key: "li2025ir2qsm",
-    text: "Li, M., et al. (2025). \"IR2QSM: quantitative susceptibility mapping via deep neural networks with iterative reverse concatenations and recurrent modules.\" *Medical Physics*. https://doi.org/10.1002/mp.17747",
+    text: "Li, M., et al. (2025). \"Quantitative susceptibility mapping via deep neural networks with iterative reverse concatenations and recurrent modules.\" *Medical Physics*, 52(6):4341-4354. https://doi.org/10.1002/mp.17747",
 };
 
 pub(super) const CITE_MODLQSM: Citation = Citation {
@@ -257,22 +257,22 @@ pub(super) const CITE_MODLQSM: Citation = Citation {
 
 pub(super) const CITE_NEXTQSM: Citation = Citation {
     key: "cognolato2023nextqsm",
-    text: "Cognolato, F., et al. (2023). \"NeXtQSM — a complete deep learning pipeline for data-consistent quantitative susceptibility mapping trained with hybrid data.\" *NeuroImage*, 271:119729. https://doi.org/10.1016/j.neuroimage.2022.119729",
+    text: "Cognolato, F., et al. (2023). \"NeXtQSM — a complete deep learning pipeline for data-consistent quantitative susceptibility mapping trained with hybrid data.\" *Medical Image Analysis*, 84:102700. https://doi.org/10.1016/j.media.2022.102700",
 };
 
 pub(super) const CITE_IQSM: Citation = Citation {
     key: "gao2022iqsm",
-    text: "Gao, Y., et al. (2022). \"Instant tissue field and magnetic susceptibility mapping from MRI raw phase using Laplacian-enhanced deep neural networks (iQSM/iQFM).\" *NeuroImage*, 259:119410. https://doi.org/10.1016/j.neuroimage.2022.119410",
+    text: "Gao, Y., et al. (2022). \"Instant tissue field and magnetic susceptibility mapping from MRI raw phase using Laplacian enhanced deep neural networks.\" *NeuroImage*, 259:119410. https://doi.org/10.1016/j.neuroimage.2022.119410",
 };
 
 pub(super) const CITE_IQSM_PLUS: Citation = Citation {
     key: "gao2024iqsmplus",
-    text: "Gao, Y., et al. (2024). \"Plug-and-play latent feature editing for orientation-adaptive quantitative susceptibility mapping (iQSM+).\" *Medical Image Analysis*, 94:103160. https://doi.org/10.1016/j.media.2024.103160",
+    text: "Gao, Y., et al. (2024). \"Plug-and-play latent feature editing for orientation-adaptive quantitative susceptibility mapping neural networks.\" *Medical Image Analysis*, 94:103160. https://doi.org/10.1016/j.media.2024.103160",
 };
 
 pub(super) const CITE_MSMV: Citation = Citation {
     key: "roberts2024",
-    text: "Roberts, A.G., et al. (2024). \"Maximum spherical mean value (mSMV) filtering for whole-brain quantitative susceptibility mapping.\" *Magnetic Resonance in Medicine*, 91(4):1586-1597. https://doi.org/10.1002/mrm.29963",
+    text: "Roberts, A.G., et al. (2024). \"Maximum spherical mean value filtering for whole-brain QSM.\" *Magnetic Resonance in Medicine*, 91(4):1586-1597. https://doi.org/10.1002/mrm.29963",
 };
 
 pub(super) const CITE_CLEARSWI: Citation = Citation {
@@ -307,7 +307,7 @@ pub(super) const CITE_RS2NET: Citation = Citation {
 
 pub(super) const CITE_MINDGRAB: Citation = Citation {
     key: "fani2025",
-    text: "Fani, A., Masoud, M., Rorden, C., Plis, S. (2025). \"MindGrab for BrainChop: Fast and Accurate Skull Stripping for Command Line and Browser.\" *arXiv*:2506.11860. https://doi.org/10.48550/arXiv.2506.11860",
+    text: "Fani, A., Doan, M., Le, I., et al. (2025). \"MindGrab for BrainChop: Fast and Accurate Skull Stripping for Command Line and Browser.\" *arXiv*:2506.11860. https://doi.org/10.48550/arXiv.2506.11860",
 };
 
 pub(super) const CITE_QSM_CONSENSUS: Citation = Citation {
@@ -327,7 +327,7 @@ pub(super) const CITE_EPG: Citation = Citation {
 
 pub(super) const CITE_R2PRIMENET: Citation = Citation {
     key: "kim2025",
-    text: "Kim, M., Ji, S., Lee, J., et al. (2025). \"chi-sepnet: Deep neural network for magnetic susceptibility source separation.\" *Human Brain Mapping*, 46(4):e70136. https://doi.org/10.1002/hbm.70136",
+    text: "Kim, M., Ji, S., Lee, J., et al. (2025). \"chi-sepnet: Deep neural network for magnetic susceptibility source separation.\" *Human Brain Mapping*, 46(2):e70136. https://doi.org/10.1002/hbm.70136",
 };
 
 pub(super) const CITE_SYNTHSEG: Citation = Citation {
@@ -362,7 +362,7 @@ pub(super) const CITE_TWOPASS: Citation = Citation {
 
 pub(super) const CITE_BIPOLAR: Citation = Citation {
     key: "eckstein2021phd",
-    text: "Eckstein, K. (2021). \"Advanced Methods for Quantitative Susceptibility Mapping and Susceptibility Weighted Imaging.\" PhD thesis, Medical University of Vienna. https://doi.org/10.34726/hss.2021.43447",
+    text: "Eckstein, K. (2021). \"Improved Methods for Ultra-High Field Magnetic Susceptibility Imaging.\" PhD thesis, TU Wien. https://doi.org/10.34726/hss.2021.43447",
 };
 
 pub(super) const CITE_BIAS: Citation = Citation {
@@ -420,7 +420,7 @@ pub(super) fn cite_inline(cite: &Citation) -> &'static str {
         "yoon2018qsmnet" => "Yoon et al., 2018",
         "jung2020qsmnetplus" => "Jung et al., 2020",
         "wei2019autoqsm" => "Wei et al., 2019",
-        "zhang2023bfrnet" => "Zhang et al., 2023",
+        "zhu2023bfrnet" => "Zhu et al., 2023",
         "li2025susepnet" => "Li et al., 2025",
         "kim2025chisepnet" => "Kim et al., 2025",
         "chen2020qsmgan" => "Chen et al., 2020",

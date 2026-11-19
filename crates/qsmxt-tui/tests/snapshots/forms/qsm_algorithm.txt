@@ -52,7 +52,7 @@ config:
   /inversion/algorithm: "ilsqr" -> "medi"
 command:
   + --qsm-algorithm medi
-methods: e138b944500b62cc (26 lines)
+methods: 4bddd554c227156b (26 lines)
 
 ## qsm_algorithm = tfi
 config:
@@ -96,7 +96,7 @@ config:
   /inversion/algorithm: "ilsqr" -> "ndi"
 command:
   + --qsm-algorithm ndi
-methods: 9dd0b2bcbad6bfb7 (13 lines)
+methods: c48913c0fe39fe6d (13 lines)
 
 ## qsm_algorithm = fansi
 config:
@@ -110,28 +110,28 @@ config:
   /inversion/algorithm: "ilsqr" -> "l1qsm"
 command:
   + --qsm-algorithm l1qsm
-methods: 54d6a670ef1089d1 (13 lines)
+methods: 4482b875ccc35abe (13 lines)
 
 ## qsm_algorithm = whqsm
 config:
   /inversion/algorithm: "ilsqr" -> "whqsm"
 command:
   + --qsm-algorithm whqsm
-methods: d1b2be9f8c76a6af (19 lines)
+methods: bad7be19dc63dfc8 (19 lines)
 
 ## qsm_algorithm = hdqsm
 config:
   /inversion/algorithm: "ilsqr" -> "hdqsm"
 command:
   + --qsm-algorithm hdqsm
-methods: d813578ada094cd5 (19 lines)
+methods: 579dd1aad5bb3033 (19 lines)
 
 ## qsm_algorithm = amp-pe
 config:
   /inversion/algorithm: "ilsqr" -> "amp-pe"
 command:
   + --qsm-algorithm amp-pe
-methods: ac3b097b541b61d5 (20 lines)
+methods: 14d323f083862849 (20 lines)
 
 ## qsm_algorithm = xqsm
 config:
@@ -152,14 +152,14 @@ config:
   /inversion/algorithm: "ilsqr" -> "qsmnet-plus"
 command:
   + --qsm-algorithm qsmnet-plus
-methods: 7952b506a3c818d1 (20 lines)
+methods: 3ed66aeb4c4da759 (20 lines)
 
 ## qsm_algorithm = autoqsm
 config:
   /inversion/algorithm: "ilsqr" -> "autoqsm"
 command:
   + --qsm-algorithm autoqsm
-methods: e565b7b5d3468e15 (18 lines)
+methods: 5ed0688431c0ed50 (18 lines)
 
 ## qsm_algorithm = qsmgan
 config:
@@ -173,14 +173,14 @@ config:
   /inversion/algorithm: "ilsqr" -> "ir2qsm"
 command:
   + --qsm-algorithm ir2qsm
-methods: 4ee9a8539949e29b (13 lines)
+methods: bb85cd0bbc60f640 (13 lines)
 
 ## qsm_algorithm = lpcnn
 config:
   /inversion/algorithm: "ilsqr" -> "lpcnn"
 command:
   + --qsm-algorithm lpcnn
-methods: bdb5834d165f85a1 (19 lines)
+methods: fd60fbd01f6289e9 (19 lines)
 
 ## qsm_algorithm = modl-qsm
 config:
@@ -194,21 +194,21 @@ config:
   /inversion/algorithm: "ilsqr" -> "nextqsm"
 command:
   + --qsm-algorithm nextqsm
-methods: e7c01ff39e55e033 (18 lines)
+methods: 5b620e94548ba9d5 (18 lines)
 
 ## qsm_algorithm = iqsm
 config:
   /inversion/algorithm: "ilsqr" -> "iqsm"
 command:
   + --qsm-algorithm iqsm
-methods: ff7888f1058c1eaf (17 lines)
+methods: 490b2966413982fd (17 lines)
 
 ## qsm_algorithm = iqsm-plus
 config:
   /inversion/algorithm: "ilsqr" -> "iqsm-plus"
 command:
   + --qsm-algorithm iqsm-plus
-methods: ed9939d497782971 (17 lines)
+methods: 78757ed82a46de85 (17 lines)
 
 ## qsm_algorithm = tgv, tgv_te = ms
 config:
@@ -235,7 +235,7 @@ config:
 command:
   + --qsm-algorithm medi
   + --medi-msmv
-methods: 2d4563d116335198 (26 lines)
+methods: 0fdea6ec910b4dde (26 lines)
 
 ## qsm_algorithm = medi, medi_te = ms
 config:
@@ -244,7 +244,7 @@ config:
 command:
   + --qsm-algorithm medi
   + --medi-te 5
-methods: 79a9a49eed08e3ab (26 lines)
+methods: 3209524d9c153efe (26 lines)
 
 ## qsm_algorithm = tfi, tfi_te = ms
 config:
@@ -291,7 +291,7 @@ config:
 command:
   + --qsm-algorithm ndi
   + --ndi-te 20
-methods: 7d3c7bfd6c72b239 (13 lines)
+methods: bc99a256d606fb3b (13 lines)
 
 ## qsm_algorithm = fansi, fansi_te = ms
 config:
@@ -309,7 +309,7 @@ config:
 command:
   + --qsm-algorithm l1qsm
   + --l1qsm-te 20
-methods: d5cf2e00540fbb7d (13 lines)
+methods: baec7a6c4df9c31a (13 lines)
 
 ## qsm_algorithm = whqsm, whqsm_te = ms
 config:
@@ -318,7 +318,7 @@ config:
 command:
   + --qsm-algorithm whqsm
   + --whqsm-te 20
-methods: 2e4fc2de3ea672a1 (19 lines)
+methods: c24e144615bcfe6a (19 lines)
 
 ## qsm_algorithm = xqsm, toggle do_r2primemap
 config:
@@ -327,7 +327,7 @@ config:
 command:
   + --do-r2primemap
   + --qsm-algorithm xqsm
-methods: 8ffe74ec12f72da1 (27 lines)
+methods: 1d6c5eead654f34f (27 lines)
 
 ## qsm_algorithm = qsmnet, toggle do_r2primemap
 config:
@@ -336,7 +336,7 @@ config:
 command:
   + --do-r2primemap
   + --qsm-algorithm qsmnet
-methods: 9597b6dd03279ea5 (28 lines)
+methods: bdede95aa887fe0b (28 lines)
 
 ## qsm_algorithm = qsmnet-plus, toggle do_r2primemap
 config:
@@ -345,7 +345,7 @@ config:
 command:
   + --do-r2primemap
   + --qsm-algorithm qsmnet-plus
-methods: b3172b709e95261f (28 lines)
+methods: 0a78d0dfe974ee61 (28 lines)
 
 ## qsm_algorithm = autoqsm, toggle do_r2primemap
 config:
@@ -354,7 +354,7 @@ config:
 command:
   + --do-r2primemap
   + --qsm-algorithm autoqsm
-methods: 6b26d919dd1bd861 (26 lines)
+methods: 0d2f32f57064176e (26 lines)
 
 ## qsm_algorithm = qsmgan, toggle do_r2primemap
 config:
@@ -363,7 +363,7 @@ config:
 command:
   + --do-r2primemap
   + --qsm-algorithm qsmgan
-methods: cc15504d68681dca (28 lines)
+methods: dab68758d0b3b8f8 (28 lines)
 
 ## qsm_algorithm = ir2qsm, toggle do_r2primemap
 config:
@@ -372,7 +372,7 @@ config:
 command:
   + --do-r2primemap
   + --qsm-algorithm ir2qsm
-methods: c2cf8ea2717643a3 (23 lines)
+methods: 6e99fd255dbdbdfc (23 lines)
 
 ## qsm_algorithm = lpcnn, toggle do_r2primemap
 config:
@@ -381,7 +381,7 @@ config:
 command:
   + --do-r2primemap
   + --qsm-algorithm lpcnn
-methods: 91676197719a6e9b (27 lines)
+methods: afc9fdb948f91589 (27 lines)
 
 ## qsm_algorithm = modl-qsm, toggle do_r2primemap
 config:
@@ -390,7 +390,7 @@ config:
 command:
   + --do-r2primemap
   + --qsm-algorithm modl-qsm
-methods: 9d886aaeb27fe341 (23 lines)
+methods: f36fd8734d57326f (23 lines)
 
 ## qsm_algorithm = nextqsm, toggle do_r2primemap
 config:
@@ -399,7 +399,7 @@ config:
 command:
   + --do-r2primemap
   + --qsm-algorithm nextqsm
-methods: 7163552b4fa8c5ed (26 lines)
+methods: ef1d34a5db91a7f1 (26 lines)
 
 ## qsm_algorithm = iqsm, toggle do_r2primemap
 config:
@@ -408,7 +408,7 @@ config:
 command:
   + --do-r2primemap
   + --qsm-algorithm iqsm
-methods: 3a40b364057c409d (25 lines)
+methods: d6a5a8b43e13c4c1 (25 lines)
 
 ## qsm_algorithm = iqsm-plus, toggle do_r2primemap
 config:
@@ -417,5 +417,5 @@ config:
 command:
   + --do-r2primemap
   + --qsm-algorithm iqsm-plus
-methods: 5da7014613c365c9 (25 lines)
+methods: 8204ba5818c4253b (25 lines)
 

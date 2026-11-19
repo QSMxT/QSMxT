@@ -3,7 +3,7 @@ config:
   /bg_removal/algorithm: "vsharp" -> "pdf"
 command:
   + --bf-algorithm pdf
-methods: fe1331cec6a6d596 (35 lines)
+methods: d6c0d10132db6e21 (35 lines)
 
 ## bf_algorithm = lbv
 config:
@@ -24,14 +24,14 @@ config:
   /bg_removal/algorithm: "vsharp" -> "sharp"
 command:
   + --bf-algorithm sharp
-methods: 6f36874a398d913f (29 lines)
+methods: e3209bb80c935994 (29 lines)
 
 ## bf_algorithm = resharp
 config:
   /bg_removal/algorithm: "vsharp" -> "resharp"
 command:
   + --bf-algorithm resharp
-methods: 01897246314f3d88 (29 lines)
+methods: e86c49660ca25b58 (29 lines)
 
 ## bf_algorithm = harperella
 config:
@@ -52,14 +52,14 @@ config:
   /bg_removal/algorithm: "vsharp" -> "bfrnet"
 command:
   + --bf-algorithm bfrnet
-methods: 49225b8c24b56898 (30 lines)
+methods: bff298417e01fd3d (30 lines)
 
 ## bf_algorithm = iqfm
 config:
   /bg_removal/algorithm: "vsharp" -> "iqfm"
 command:
   + --bf-algorithm iqfm
-methods: 4c0d149a130115b3 (29 lines)
+methods: 834c0fdf78536c05 (29 lines)
 
 ## bf_algorithm = bfrnet, toggle dl_tiling
 config:
@@ -68,7 +68,7 @@ config:
 command:
   + --bf-algorithm bfrnet
   + --tile-size 128
-methods: 0463b219f6e3262e (30 lines)
+methods: 18feae7cb8f6197d (30 lines)
 
 ## bf_algorithm = iqfm, qsm_algorithm = xqsm
 config:
@@ -77,7 +77,7 @@ config:
 command:
   + --bf-algorithm iqfm
   + --qsm-algorithm xqsm
-methods: 62ab4c59135e6775 (19 lines)
+methods: d836662339f0042f (19 lines)
 
 ## bf_algorithm = iqfm, qsm_algorithm = qsmnet
 config:
@@ -86,7 +86,7 @@ config:
 command:
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmnet
-methods: f62b36a3e0db4260 (21 lines)
+methods: af3d274a812312e6 (21 lines)
 
 ## bf_algorithm = iqfm, qsm_algorithm = qsmnet-plus
 config:
@@ -95,7 +95,7 @@ config:
 command:
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmnet-plus
-methods: 939d1f418e19f807 (21 lines)
+methods: bc5609fc102b1c39 (21 lines)
 
 ## bf_algorithm = iqfm, qsm_algorithm = qsmgan
 config:
@@ -104,7 +104,7 @@ config:
 command:
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmgan
-methods: 71c464ce3d5d0f2c (21 lines)
+methods: 77aa65e97f527352 (21 lines)
 
 ## bf_algorithm = iqfm, qsm_algorithm = ir2qsm
 config:
@@ -113,7 +113,7 @@ config:
 command:
   + --bf-algorithm iqfm
   + --qsm-algorithm ir2qsm
-methods: b921ac2874659af1 (13 lines)
+methods: 46acd2f41ff4e778 (13 lines)
 
 ## bf_algorithm = iqfm, qsm_algorithm = lpcnn
 config:
@@ -122,7 +122,7 @@ config:
 command:
   + --bf-algorithm iqfm
   + --qsm-algorithm lpcnn
-methods: 3075ae662218a7f5 (20 lines)
+methods: fa33f54e8b7895e3 (20 lines)
 
 ## bf_algorithm = iqfm, qsm_algorithm = modl-qsm
 config:
@@ -131,7 +131,7 @@ config:
 command:
   + --bf-algorithm iqfm
   + --qsm-algorithm modl-qsm
-methods: 92ae715a9eaeda15 (13 lines)
+methods: 708755246105d6af (13 lines)
 
 ## bf_algorithm = iqfm, toggle do_r2primemap
 config:
@@ -140,7 +140,7 @@ config:
 command:
   + --do-r2primemap
   + --bf-algorithm iqfm
-methods: 4b72e1aa5f36abcf (37 lines)
+methods: 23d926d2deb3e00f (37 lines)
 
 ## bf_algorithm = iqfm, qsm_algorithm = xqsm, toggle do_r2primemap
 config:
@@ -151,7 +151,7 @@ command:
   + --do-r2primemap
   + --bf-algorithm iqfm
   + --qsm-algorithm xqsm
-methods: aa986ebb347ba545 (27 lines)
+methods: 4a75d3f75360accd (27 lines)
 
 ## bf_algorithm = iqfm, qsm_algorithm = qsmnet, toggle do_r2primemap
 config:
@@ -162,7 +162,7 @@ command:
   + --do-r2primemap
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmnet
-methods: 23317a8dc9e58d50 (29 lines)
+methods: d0abee430b801c14 (29 lines)
 
 ## bf_algorithm = iqfm, qsm_algorithm = qsmnet-plus, toggle do_r2primemap
 config:
@@ -173,7 +173,7 @@ command:
   + --do-r2primemap
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmnet-plus
-methods: b6d912c34dd4c0df (29 lines)
+methods: 1b6c0350559d292b (29 lines)
 
 ## bf_algorithm = iqfm, qsm_algorithm = qsmgan, toggle do_r2primemap
 config:
@@ -184,7 +184,7 @@ command:
   + --do-r2primemap
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmgan
-methods: 1a4ab2e89d50b2dc (29 lines)
+methods: fd6c3836297f0830 (29 lines)
 
 ## bf_algorithm = iqfm, qsm_algorithm = ir2qsm, toggle do_r2primemap
 config:
@@ -195,7 +195,7 @@ command:
   + --do-r2primemap
   + --bf-algorithm iqfm
   + --qsm-algorithm ir2qsm
-methods: fe5533c8b8141205 (23 lines)
+methods: ea0de1f08d4dc804 (23 lines)
 
 ## bf_algorithm = iqfm, qsm_algorithm = lpcnn, toggle do_r2primemap
 config:
@@ -206,7 +206,7 @@ command:
   + --do-r2primemap
   + --bf-algorithm iqfm
   + --qsm-algorithm lpcnn
-methods: b345ecc2e65ddf7d (28 lines)
+methods: ebe608701d293db5 (28 lines)
 
 ## bf_algorithm = iqfm, qsm_algorithm = modl-qsm, toggle do_r2primemap
 config:
@@ -217,5 +217,5 @@ command:
   + --do-r2primemap
   + --bf-algorithm iqfm
   + --qsm-algorithm modl-qsm
-methods: a80194dd5a191b4f (23 lines)
+methods: ce78d6ee5a4737d7 (23 lines)
 
