@@ -208,7 +208,33 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
         subjects.len()
     );
 
-    // Compute execution parameters
+    let (n_procs, mem_limit_bytes, mem_limit_source) = execution_parameters(&args);
+
+    if args.dry {
+        print_dry_run(&config, &runs, n_procs, mem_limit_bytes, &mem_limit_source);
+        print_planned(&derivatives_dir, &config, &runs);
+        super::recommend::print_dry(&as_configured, &runs, which);
+        return Ok(());
+    }
+    super::recommend::log_found(&config, &runs);
+
+    // Execute
+    let exec_config = executor::local::ExecutionConfig {
+        n_procs,
+        mem_limit_bytes,
+        mem_limit_source,
+        force: args.force,
+        source_dicom: args.source_dicom.clone(),
+        dicom_outputs: args.dicom_outputs.clone(),
+        applied: accepted.per_run.clone(),
+    };
+
+    run_pipelines(&args, &derivatives_dir, &config, &runs, subjects.len(), exec_config, &accepted)
+}
+
+/// The execution parameters: how many runs at once, and the memory they share (with what
+/// limited it, for the "Memory: … available" line).
+fn execution_parameters(args: &RunArgs) -> (usize, Option<u64>, String) {
     let n_procs = args.n_procs.unwrap_or_else(|| {
         std::thread::available_parallelism()
             .map(|n| n.get())
@@ -228,82 +254,92 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
         (Some(available.bytes.saturating_sub(reserved)), available.describe())
     };
 
-    if args.dry {
-        println!("Pipeline:");
-        println!("  Phase offset removal: {}", if config.field_mapping.phase_offset_removal { "enabled" } else { "disabled" });
-        if config.masking.inhomogeneity_correction {
-            println!("  Inhomogeneity:     {}", config.masking.inhomogeneity_method);
-        }
-        let joiner = format!(" {} ", config.masking.combine.to_string().to_uppercase());
-        let mut masking = config.masking.sections.iter()
-            .map(|s| format!("{}", s))
-            .collect::<Vec<_>>()
-            .join(&joiner);
-        for op in &config.masking.refinements {
-            masking.push_str(&format!(" → {op}"));
-        }
-        println!("  Masking:           {masking}");
-        println!("  Unwrapping:        {}", config.field_mapping.unwrapping_algorithm);
-        println!("  BG removal:        {}", config.bg_removal.algorithm);
-        println!("  QSM algorithm:     {:?}", config.inversion.algorithm);
-        println!("  QSM reference:     {:?}", config.qsm.reference);
-        println!();
-        for run in &runs {
-            let (nx, ny, nz) = run.dims;
-            let n_coils = run.coils.as_ref().map_or(1, |c| c.len());
-            let est = memory::estimate_peak_memory_bytes(
-                nx, ny, nz, run.echoes.len(), n_coils, run.has_magnitude, &config,
-            );
-            println!(
-                "  {} ({} echo(es){}, {}x{}x{}, B0={:.1}T{}, est. {})",
-                run.key,
-                run.echoes.len(),
-                if n_coils > 1 { format!(" x {} uncombined coils (MCPC-3D-S)", n_coils) } else { String::new() },
-                nx, ny, nz,
-                run.magnetic_field_strength,
-                crate::pipeline::requirements::centre_frequency_note(run),
-                memory::format_bytes(est),
-            );
-            if let Ok((_, changes)) = crate::pipeline::requirements::run_config(run, &config) {
-                for c in changes {
-                    println!("    {}: {} → {} (the pipeline's on this scan)", c.label, c.from_text, c.to_text);
-                }
+    (n_procs, mem_limit_bytes, mem_limit_source)
+}
+
+/// What a dry run prints: the pipeline, each run with its memory estimate, the orientation
+/// groups, and how many runs fit in memory at once.
+fn print_dry_run(
+    config: &PipelineConfig, runs: &[discovery::QsmRun], n_procs: usize,
+    mem_limit_bytes: Option<u64>, mem_limit_source: &str,
+) {
+    println!("Pipeline:");
+    println!("  Phase offset removal: {}", if config.field_mapping.phase_offset_removal { "enabled" } else { "disabled" });
+    if config.masking.inhomogeneity_correction {
+        println!("  Inhomogeneity:     {}", config.masking.inhomogeneity_method);
+    }
+    let joiner = format!(" {} ", config.masking.combine.to_string().to_uppercase());
+    let mut masking = config.masking.sections.iter()
+        .map(|s| format!("{}", s))
+        .collect::<Vec<_>>()
+        .join(&joiner);
+    for op in &config.masking.refinements {
+        masking.push_str(&format!(" → {op}"));
+    }
+    println!("  Masking:           {masking}");
+    println!("  Unwrapping:        {}", config.field_mapping.unwrapping_algorithm);
+    println!("  BG removal:        {}", config.bg_removal.algorithm);
+    println!("  QSM algorithm:     {:?}", config.inversion.algorithm);
+    println!("  QSM reference:     {:?}", config.qsm.reference);
+    println!();
+    for run in runs {
+        let (nx, ny, nz) = run.dims;
+        let n_coils = run.coils.as_ref().map_or(1, |c| c.len());
+        let est = memory::estimate_peak_memory_bytes(
+            nx, ny, nz, run.echoes.len(), n_coils, run.has_magnitude, config,
+        );
+        println!(
+            "  {} ({} echo(es){}, {}x{}x{}, B0={:.1}T{}, est. {})",
+            run.key,
+            run.echoes.len(),
+            if n_coils > 1 { format!(" x {} uncombined coils (MCPC-3D-S)", n_coils) } else { String::new() },
+            nx, ny, nz,
+            run.magnetic_field_strength,
+            crate::pipeline::requirements::centre_frequency_note(run),
+            memory::format_bytes(est),
+        );
+        if let Ok((_, changes)) = crate::pipeline::requirements::run_config(run, config) {
+            for c in changes {
+                println!("    {}: {} → {} (the pipeline's on this scan)", c.label, c.from_text, c.to_text);
             }
         }
-        if let Err(e) = print_orientation_groups(&runs, &config) {
-            eprintln!("  orientation grouping: {e}");
-        }
-
-        if let Some(mem) = mem_limit_bytes {
-            let per_run_max = runs
-                .iter()
-                .map(|r| {
-                    memory::estimate_peak_memory_bytes(
-                        r.dims.0, r.dims.1, r.dims.2,
-                        r.echoes.len(), r.coils.as_ref().map_or(1, |c| c.len()), r.has_magnitude, &config,
-                    )
-                })
-                .max()
-                .unwrap_or(0);
-            let max_concurrent = (mem.checked_div(per_run_max))
-                .map(|v| (v.max(1) as usize).min(n_procs))
-                .unwrap_or(n_procs);
-            println!();
-            println!(
-                "Memory: {} available{}, max {} concurrent run(s)",
-                memory::format_bytes(mem),
-                mem_limit_source,
-                max_concurrent,
-            );
-        }
-        print_planned(&derivatives_dir, &config, &runs);
-        super::recommend::print_dry(&as_configured, &runs, which);
-        return Ok(());
     }
-    super::recommend::log_found(&config, &runs);
+    if let Err(e) = print_orientation_groups(runs, config) {
+        eprintln!("  orientation grouping: {e}");
+    }
 
+    if let Some(mem) = mem_limit_bytes {
+        let per_run_max = runs
+            .iter()
+            .map(|r| {
+                memory::estimate_peak_memory_bytes(
+                    r.dims.0, r.dims.1, r.dims.2,
+                    r.echoes.len(), r.coils.as_ref().map_or(1, |c| c.len()), r.has_magnitude, config,
+                )
+            })
+            .max()
+            .unwrap_or(0);
+        let max_concurrent = (mem.checked_div(per_run_max))
+            .map(|v| (v.max(1) as usize).min(n_procs))
+            .unwrap_or(n_procs);
+        println!();
+        println!(
+            "Memory: {} available{}, max {} concurrent run(s)",
+            memory::format_bytes(mem),
+            mem_limit_source,
+            max_concurrent,
+        );
+    }
+}
+
+/// Process every run, then the dataset-level steps (unless this is a worker), and report.
+fn run_pipelines(
+    args: &RunArgs, derivatives_dir: &std::path::Path, config: &PipelineConfig,
+    runs: &[discovery::QsmRun], n_subjects: usize, exec_config: executor::local::ExecutionConfig,
+    accepted: &super::recommend::Accepted,
+) -> crate::Result<()> {
     if args.no_dataset_steps {
-        let path = worker_log_path(&derivatives_dir, &runs);
+        let path = worker_log_path(derivatives_dir, runs);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -316,48 +352,37 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
     info!(
         "Processing {} run(s) across {} subject(s)",
         runs.len(),
-        subjects.len()
+        n_subjects
     );
 
-    let output = DerivativeOutputs::new(&derivatives_dir);
+    let output = DerivativeOutputs::new(derivatives_dir);
 
     if !args.no_dataset_steps {
-        write_dataset_files(&derivatives_dir, &args.bids_dir, &config, &runs)?;
+        write_dataset_files(derivatives_dir, &args.bids_dir, config, runs)?;
     }
 
-    // Execute
-    let exec_config = executor::local::ExecutionConfig {
-        n_procs,
-        mem_limit_bytes,
-        mem_limit_source,
-        force: args.force,
-        source_dicom: args.source_dicom.clone(),
-        dicom_outputs: args.dicom_outputs.clone(),
-        applied: accepted.per_run.clone(),
-    };
-
-    let results = executor::local::execute_local(&runs, &config, &output, &exec_config);
+    let results = executor::local::execute_local(runs, config, &output, &exec_config);
     let run_failures: Vec<String> = runs.iter().zip(&results)
         .filter_map(|(run, r)| r.as_ref().err().map(|e| format!("{}: {e}", run.key))).collect();
 
     if args.no_dataset_steps {
         info!("Dataset-level steps skipped (--no-dataset-steps): run `qsmxt aggregate` once every run is done");
-        super::recommend::log_summary(&config, &runs, &accepted);
-        return finish(&run_failures, &[], &derivatives_dir);
+        super::recommend::log_summary(config, runs, accepted);
+        return finish(&run_failures, &[], derivatives_dir);
     }
 
     let completed: Vec<bool> = results.iter().map(|r| r.is_ok()).collect();
     let group_failures = run_dataset_steps(&DatasetSteps {
-        derivatives_dir: &derivatives_dir,
-        runs: &runs,
+        derivatives_dir,
+        runs,
         completed: &completed,
-        config: &config,
+        config,
         force: args.force,
         clean_intermediates: args.clean_intermediates,
         command_line: &std::env::args().collect::<Vec<_>>().join(" "),
     });
-    super::recommend::log_summary(&config, &runs, &accepted);
-    finish(&run_failures, &group_failures, &derivatives_dir)
+    super::recommend::log_summary(config, runs, accepted);
+    finish(&run_failures, &group_failures, derivatives_dir)
 }
 
 /// What the dataset-level steps work from.
