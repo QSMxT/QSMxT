@@ -32,10 +32,11 @@ pub fn generate_command(config: &PipelineConfig) -> String {
 
 
 
-/// Every flag a command can say, in the order it says them: roughly the order the run does
-/// things in, with each method's settings after the flag that chooses it. (QSMART's inner
-/// inversion's settings come between QSMART's own, after the three that choose and cap it.)
-/// The opposites of switches (`--no-x` of `--x`) are said at their switch's place.
+/// The flags a command says, in the order it says them: roughly the order the run does things
+/// in, with each method's settings after the flag that chooses it. (QSMART's inner inversion's
+/// settings come between QSMART's own, after the three that choose and cap it.) The opposites of
+/// switches (`--no-x` of `--x`) are said at their switch's place. A registry flag not listed here
+/// is said after the flag of the registry entry before it ([`emit_order`]).
 const EMIT_ORDER: &[&str] = &[
     "pipeline", "orientation-group", "orientation-reference", "multi-orientation-algorithm",
     "multi-orientation-lambda", "cosmos-magnitude-weighting", "cosmos-tol", "cosmos-max-iter",
@@ -123,6 +124,17 @@ const EMIT_ORDER: &[&str] = &[
     "dismiss-recommendation",
 ];
 
+/// Every flag a command can say, in order: [`EMIT_ORDER`], and each registry flag it does not list
+/// after the flag of the entry before it.
+fn emit_order() -> &'static [&'static str] {
+    static ORDER: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::new(|| {
+        let registry: Vec<&'static str> =
+            crate::schema::settings().iter().filter_map(|s| s.cli_flag).map(|f| f.trim_start_matches("--")).collect();
+        crate::schema::cli::in_registry_place(EMIT_ORDER, &registry)
+    });
+    &ORDER
+}
+
 /// The command for `config`, with flags where it differs from `base`: QSMxT's defaults, or
 /// `pipeline`'s settings. Most flags set one registry setting ([`setting_of`]) and are said
 /// when that setting is shown and differs from `base`; the rest are spelled out below.
@@ -135,7 +147,7 @@ fn command_for(config: &PipelineConfig, base: &PipelineConfig, pipeline: Option<
         .into_iter().filter(|v| v.visible).map(|v| v.path).collect();
     let (values, base_values) = (serde_json::to_value(config).unwrap_or_default(), serde_json::to_value(base).unwrap_or_default());
     let m = &config.multi_orientation;
-    for long in EMIT_ORDER {
+    for long in emit_order() {
         let flag = PIPELINE_FLAGS.iter().find(|f| f.long == *long).expect("every flag said is in the table");
         match *long {
             // Said first, above.
@@ -325,6 +337,9 @@ fn dismissal_flags(parts: &mut Vec<String>, config: &PipelineConfig) {
         parts.push(format!("--dismiss-recommendation {}", if plain { arg } else { shell_quote(&arg) }));
     }
 }
+
+#[cfg(test)]
+mod every_flag_tests;
 
 #[cfg(test)]
 mod tests {

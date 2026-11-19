@@ -276,19 +276,27 @@ fn build() -> Vec<Flag> {
             registry.push(opposite(&f, long, help, d.cli.negated_conflicts));
         }
     }
-    let mut every: Vec<Flag> = OTHER_FLAGS.iter().copied().chain(registry.iter().copied()).collect();
-    let mut ordered: Vec<Flag> = CLI_ORDER.iter().map(|long| {
-        let i = every.iter().position(|f| f.long == *long).unwrap_or_else(|| panic!("CLI_ORDER lists --{long}, which is no flag or is listed twice"));
-        every.remove(i)
+    let every: Vec<Flag> = OTHER_FLAGS.iter().copied().chain(registry.iter().copied()).collect();
+    let longs: Vec<&'static str> = registry.iter().map(|f| f.long).collect();
+    let ordered: Vec<Flag> = in_registry_place(CLI_ORDER, &longs).into_iter().map(|long| {
+        *every.iter().find(|f| f.long == long).unwrap_or_else(|| panic!("CLI_ORDER lists --{long}, which is no flag"))
     }).collect();
-    for (i, f) in registry.iter().enumerate() {
-        if !every.iter().any(|x| x.long == f.long) {
+    assert_eq!(ordered.len(), every.len(), "CLI_ORDER lists every flag the registry does not give once");
+    ordered
+}
+
+/// `listed`, with each name of `registry` it does not list placed after the name before it in
+/// `registry` (last, when none before it is placed): a flag's place in an ordered list of flags
+/// when nobody gave it one, so that a new setting's flag needs no line in the list.
+pub(crate) fn in_registry_place(listed: &[&'static str], registry: &[&'static str]) -> Vec<&'static str> {
+    let mut ordered = listed.to_vec();
+    for (i, name) in registry.iter().enumerate() {
+        if ordered.contains(name) {
             continue;
         }
-        let at = registry[..i].iter().rev().find_map(|p| ordered.iter().position(|o| o.long == p.long)).map_or(ordered.len(), |p| p + 1);
-        ordered.insert(at, *f);
+        let at = registry[..i].iter().rev().find_map(|p| ordered.iter().position(|o| o == p)).map_or(ordered.len(), |p| p + 1);
+        ordered.insert(at, name);
     }
-    assert!(every.iter().all(|f| ordered.iter().any(|o| o.long == f.long)), "every flag is in --help");
     ordered
 }
 
@@ -454,5 +462,12 @@ mod tests {
             let kinds = [registry.contains(&f.long), opposites.contains(&f.long), others.contains(&f.long)];
             assert_eq!(kinds.iter().filter(|k| **k).count(), 1, "--{}", f.long);
         }
+    }
+
+    /// A name the list leaves out follows its registry neighbour, or comes last.
+    #[test]
+    fn an_unlisted_name_follows_its_registry_neighbour() {
+        assert_eq!(in_registry_place(&["c", "a"], &["a", "b", "c", "d"]), ["c", "d", "a", "b"]);
+        assert_eq!(in_registry_place(&["c"], &["x", "c"]), ["c", "x"]);
     }
 }
