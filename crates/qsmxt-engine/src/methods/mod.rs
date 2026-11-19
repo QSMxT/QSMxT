@@ -293,7 +293,8 @@ pub struct Sentence {
 /// A work the methods text cites.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Reference {
-    /// A short name for it (`dymerska2021`).
+    /// A short name for it (`dymerska2021`). It does not take the year letter the text may give
+    /// the work ("2022a"): the letter depends on what else the text cites.
     pub key: String,
     /// The reference as the list gives it, in Markdown.
     pub text: String,
@@ -432,8 +433,14 @@ impl Draft {
     }
 
     /// The steps each sentence names: those `drawn` says the graph draws.
+    /// Different works that share an in-text citation get year letters ([`collisions`]).
     fn finish_drawn(self, drawn: impl Fn(&Stage) -> bool) -> Methods {
-        let sentences = self.sentences.into_iter().map(|(text, stages, cites)| {
+        let collisions = collisions(&self.references);
+        let (mut texts, rest): (Vec<_>, Vec<_>) = self.sentences.into_iter()
+            .map(|(text, stages, cites)| ((text, cites.clone()), (stages, cites)))
+            .unzip();
+        letter_sentences(&mut texts, &collisions);
+        let sentences = texts.into_iter().zip(rest).map(|((text, _), (stages, cites))| {
             let mut steps: Vec<String> = Vec::new();
             for name in stages.iter().filter(|s| drawn(s)).map(Stage::name) {
                 if !steps.contains(&name) {
@@ -443,7 +450,7 @@ impl Draft {
             Sentence { text, steps, citations: cites.into_iter().map(str::to_string).collect() }
         }).collect();
         let references = self.references.iter()
-            .map(|c| Reference { key: c.key.to_string(), text: c.text.to_string() })
+            .map(|c| Reference { key: c.key.to_string(), text: lettered_reference(c, &collisions) })
             .collect();
         Methods { sentences, references, note: Note::default() }
     }

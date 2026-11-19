@@ -278,6 +278,43 @@ fn hc_chisep_methods_cite_both_works() {
         *Proceedings of the National Academy of Sciences*, 109(45):18559-18564. https://doi.org/10.1073/pnas.1211075109"), "{refs}");
 }
 
+/// R2*-QSM's two Dimov 2022 papers are told apart as 2022a and 2022b, in the order the reference
+/// list gives them, in the text, the reference list and the structured methods, whose keys stay
+/// the works' own.
+#[test]
+fn r2star_qsms_two_dimov_papers_get_year_letters() {
+    let mut config = PipelineConfig::default();
+    config.pipeline.do_chi_separation = true;
+    config.separation.algorithm = SeparationAlgorithm::R2starQsm;
+    let out = generate_methods(&config);
+    assert!(out.contains("R2*-QSM susceptibility source separation (Dimov et al., 2022a; Dimov et al., 2022b)"), "{out}");
+    assert!(!out.contains("Dimov et al., 2022)") && !out.contains("(2022)."), "{out}");
+    let refs = out.split("## References").nth(1).expect("a reference list");
+    let a = refs.find("- Dimov, A. V., et al. (2022a). \"Susceptibility source separation from gradient echo data").expect(refs);
+    let b = refs.find("- Dimov, A. V., et al. (2022b). \"Magnetic Susceptibility Source Separation Solely").expect(refs);
+    assert!(a < b, "{refs}");
+
+    let f = crate::plan::tests::facts();
+    let m = methods_structured(&config, &crate::plan::plan(&config, &f), "qsmxt");
+    assert_eq!(m.to_markdown(), out);
+    let keys: Vec<&str> = m.references.iter().map(|r| r.key.as_str()).filter(|k| k.starts_with("dimov")).collect();
+    let cited = m.sentences.iter().find(|s| s.text.contains("Dimov et al., 2022a")).expect("the separation sentence");
+    assert_eq!(keys.len(), 2);
+    for k in keys {
+        assert!(!k.ends_with('a') && !k.ends_with('b') && cited.citations.iter().any(|c| c == k), "{k}");
+    }
+}
+
+/// A work cited in two sentences is one work: its in-text citation gets no letter.
+#[test]
+fn a_work_cited_twice_gets_no_year_letter() {
+    let mut config = PipelineConfig::default();
+    config.masking.two_pass = true;
+    let out = generate_methods(&config);
+    assert_eq!(out.matches("(Otsu, 1979)").count(), 2, "{out}");
+    assert!(!out.contains("1979a") && out.contains("Otsu, N. (1979)."), "{out}");
+}
+
 #[test]
 fn vsharp_methods_describe_the_working_grid() {
     let mut config = PipelineConfig::default();
@@ -837,8 +874,10 @@ fn medi_methods_say_pdf_and_the_smv_step() {
     config.inversion.algorithm = QsmAlgorithm::Medi;
     config.bg_removal.algorithm = BfAlgorithm::Pdf;
     let out = generate_methods(&config);
-    assert!(out.contains("Background field removal was performed using PDF"), "{out}");
-    assert!(out.contains("(Liu et al., 2011), with the local field high-passed by a 5 mm spherical mean value (SMV) filter within the mask shrunk by that radius."), "{out}");
+    // PDF's and MEDI's papers are both "Liu et al., 2011": lettered in the order they are listed.
+    assert!(out.contains("Background field removal was performed using PDF (Liu et al., 2011a)"), "{out}");
+    assert!(out.contains("Liu, T., et al. (2011a). \"A novel background field removal method") && out.contains("Liu, T., et al. (2011b). \"Morphology enabled"), "{out}");
+    assert!(out.contains("(Liu et al., 2011b), with the local field high-passed by a 5 mm spherical mean value (SMV) filter within the mask shrunk by that radius."), "{out}");
     config.inversion.medi.smv_shrink_mask = false;
     config.inversion.medi.lambda = 500.0;
     let out = generate_methods(&config);

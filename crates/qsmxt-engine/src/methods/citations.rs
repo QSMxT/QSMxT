@@ -111,7 +111,8 @@ pub(super) fn paper(key: &str) -> Citation {
 }
 
 /// The in-text citation of `cites`: each one's, joined by "; ", once each (R2*-QSM's two papers
-/// are both "Dimov et al., 2022").
+/// are both "Dimov et al., 2022"; [`letter_sentences`] tells them apart once the whole text is
+/// written).
 pub(super) fn cite_inline(cites: &[Citation]) -> String {
     let mut inline: Vec<&str> = Vec::new();
     for c in cites {
@@ -147,3 +148,190 @@ pub(super) const CITE_QSMBLY: Citation = Citation {
     text: Cow::Borrowed("Stewart, A. (2026). QSMbly: Browser-based Quantitative Susceptibility Mapping. https://github.com/astewartau/qsmbly"),
     inline: Cow::Borrowed("Stewart, 2026"),
 };
+
+// ─── Telling apart works with the same in-text citation ───
+
+/// Different works one methods text cites under the same in-text citation (R2*-QSM's two
+/// "Dimov et al., 2022" papers), told apart in the usual author-year way: each gets a letter after
+/// its year, in the text and in the reference list ("Dimov et al., 2022a", "(2022a)").
+#[derive(Debug, PartialEq)]
+pub(super) struct Collision {
+    /// The in-text citation they share.
+    pub(super) label: String,
+    /// Each work's key and its in-text citation with its letter. Works that are the same work
+    /// (one DOI under two keys) share a letter.
+    pub(super) works: Vec<(&'static str, String)>,
+}
+
+/// A reference's DOI, from its entry's `https://doi.org/` link.
+fn doi(c: &Citation) -> Option<&str> {
+    c.text.split("https://doi.org/").nth(1).and_then(|s| s.split_whitespace().next())
+}
+
+/// The in-text citations `references` (the reference list, each work once by key) share between
+/// different works. The letters follow the reference list, which lists works in the order the text
+/// first cites them, so a reader finds "2022a" above "2022b".
+pub(super) fn collisions(references: &[Citation]) -> Vec<Collision> {
+    let mut labels: Vec<&str> = Vec::new();
+    for c in references {
+        if !labels.contains(&c.inline.as_ref()) {
+            labels.push(&c.inline);
+        }
+    }
+    labels.into_iter().filter_map(|label| {
+        // Each distinct work under `label` in list order: by DOI where it has one, else by key.
+        let mut works: Vec<(&str, &'static str)> = Vec::new(); // (identity, key)
+        for c in references.iter().filter(|c| c.inline == label) {
+            works.push((doi(c).unwrap_or(c.key), c.key));
+        }
+        let mut distinct: Vec<&str> = Vec::new();
+        for (id, _) in &works {
+            if !distinct.contains(id) {
+                distinct.push(id);
+            }
+        }
+        (distinct.len() > 1).then(|| Collision {
+            label: label.to_string(),
+            works: works.iter().map(|(id, key)| {
+                let n = distinct.iter().position(|d| d == id).unwrap();
+                (*key, format!("{label}{}", letter(n)))
+            }).collect(),
+        })
+    }).collect()
+}
+
+/// The `n`th year suffix: a, b, …, z, aa, ab, ….
+fn letter(n: usize) -> String {
+    let mut s = String::new();
+    let mut n = n + 1;
+    while n > 0 {
+        n -= 1;
+        s.insert(0, (b'a' + (n % 26) as u8) as char);
+        n /= 26;
+    }
+    s
+}
+
+/// `reference`'s list entry with its year lettered as `collisions` letter it: "(2022)" becomes
+/// "(2022a)".
+pub(super) fn lettered_reference(reference: &Citation, collisions: &[Collision]) -> String {
+    let lettered = collisions.iter().flat_map(|c| &c.works).find(|(key, _)| *key == reference.key);
+    let Some((_, label)) = lettered else { return reference.text.to_string() };
+    let year = reference.inline.rsplit(", ").next().unwrap_or_default();
+    let suffix = &label[reference.inline.len()..];
+    reference.text.replacen(&format!("({year})"), &format!("({year}{suffix})"), 1)
+}
+
+/// The methods sentences' texts with each shared in-text citation in `collisions` replaced by the
+/// lettered citations of the works it stands for: those the sentence cites, or, for a sentence
+/// that names a work cited in an earlier one, the works of that group the last such sentence
+/// cited. `sentences` are each sentence's text and the keys of the works it cites.
+pub(super) fn letter_sentences(sentences: &mut [(String, Vec<&'static str>)], collisions: &[Collision]) {
+    for collision in collisions {
+        let mut last: Vec<&str> = Vec::new();
+        for (text, cited) in sentences.iter_mut() {
+            let here: Vec<&str> = collision.works.iter()
+                .filter(|(key, _)| cited.contains(key))
+                .map(|(_, label)| label.as_str())
+                .collect();
+            if !here.is_empty() {
+                last = dedup(here);
+            }
+            if last.is_empty() {
+                continue;
+            }
+            *text = replace_label(text, &collision.label, &last.join("; "));
+        }
+    }
+}
+
+fn dedup(labels: Vec<&str>) -> Vec<&str> {
+    let mut out: Vec<&str> = Vec::new();
+    for l in labels {
+        if !out.contains(&l) {
+            out.push(l);
+        }
+    }
+    out
+}
+
+/// `text` with every whole occurrence of `label` (not part of a longer word or year) replaced.
+fn replace_label(text: &str, label: &str, with: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(i) = rest.find(label) {
+        let (before, after) = (&rest[..i], &rest[i + label.len()..]);
+        let joined = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
+        let whole = !joined(before.chars().last().or(out.chars().last()))
+            && !joined(after.chars().next());
+        out.push_str(before);
+        out.push_str(if whole { with } else { label });
+        rest = after;
+    }
+    out.push_str(rest);
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn work(key: &'static str, inline: &'static str, text: &'static str) -> Citation {
+        Citation { key, text: Cow::Borrowed(text), inline: Cow::Borrowed(inline) }
+    }
+
+    const SMITH_X: &str = "Smith, A., et al. (2020). \"X.\" *J*, 1:1. https://doi.org/10.1/x";
+    const SMITH_Y: &str = "Smith, A., et al. (2020). \"Y.\" *K*, 2:2. https://doi.org/10.1/y";
+
+    /// Two works of one first author and year get a and b, in reference-list order, in the text
+    /// and the list; another author's work is untouched.
+    #[test]
+    fn same_author_year_works_get_letters_in_list_order() {
+        let (x, y) = (work("smith2020x", "Smith et al., 2020", SMITH_X), work("smith2020y", "Smith et al., 2020", SMITH_Y));
+        let other = work("jones2020", "Jones, 2020", "Jones, B. (2020). \"Z.\"");
+        for (refs, first, second) in [([x.clone(), other.clone(), y.clone()], "smith2020x", "smith2020y"),
+                                      ([y.clone(), other.clone(), x.clone()], "smith2020y", "smith2020x")] {
+            let c = collisions(&refs);
+            assert_eq!(c, vec![Collision { label: "Smith et al., 2020".into(), works: vec![
+                (first, "Smith et al., 2020a".into()), (second, "Smith et al., 2020b".into())] }]);
+            let listed: Vec<String> = refs.iter().map(|r| lettered_reference(r, &c)).collect();
+            assert!(listed[0].starts_with("Smith, A., et al. (2020a). "), "{listed:?}");
+            assert_eq!(listed[1], other.text);
+            assert!(listed[2].starts_with("Smith, A., et al. (2020b). "), "{listed:?}");
+
+            let mut sentences = vec![
+                ("Both (Smith et al., 2020).".to_string(), vec![first, second]),
+                ("Not Smith et al., 2020a twice; Jones, 2020.".to_string(), vec!["jones2020"]),
+                ("Again (Smith et al., 2020).".to_string(), vec![]),
+                ("One (Smith et al., 2020; Jones, 2020).".to_string(), vec![second, "jones2020"]),
+            ];
+            letter_sentences(&mut sentences, &c);
+            let texts: Vec<&str> = sentences.iter().map(|(t, _)| t.as_str()).collect();
+            assert_eq!(texts, [
+                "Both (Smith et al., 2020a; Smith et al., 2020b).",
+                "Not Smith et al., 2020a twice; Jones, 2020.",
+                "Again (Smith et al., 2020a; Smith et al., 2020b).",
+                "One (Smith et al., 2020b; Jones, 2020).",
+            ]);
+        }
+    }
+
+    /// One work, under one key or two keys with one DOI, is one work: no letter.
+    #[test]
+    fn the_same_work_gets_no_letter() {
+        let x = work("smith2020x", "Smith et al., 2020", SMITH_X);
+        assert!(collisions(std::slice::from_ref(&x)).is_empty());
+        assert!(collisions(&[x.clone(), work("smith2020x-again", "Smith et al., 2020", SMITH_X)]).is_empty());
+    }
+
+    #[test]
+    fn letters_run_past_z() {
+        assert_eq!([0, 1, 25, 26, 27].map(letter), ["a", "b", "z", "aa", "ab"]);
+    }
+
+    #[test]
+    fn a_label_is_replaced_only_whole() {
+        assert_eq!(replace_label("(Li et al., 2015; Bali et al., 2015; Li et al., 20151)", "Li et al., 2015", "L"),
+                   "(L; Bali et al., 2015; Li et al., 20151)");
+    }
+}
