@@ -34,7 +34,6 @@
   "crates/qsmxt-engine/src/requirements.rs::scan_check": 138,
   "crates/qsmxt-engine/src/run/reads_tests.rs::every_step_records_reading_everything_it_reads": 145,
   "crates/qsmxt-engine/src/schema/table/background.rs::defs": 209,
-  "crates/qsmxt-engine/src/schema/table/field_map.rs::defs": 214,
   "crates/qsmxt-engine/src/stages/r2/step.rs::r2": 241,
   "crates/qsmxt-engine/src/stages/separation/step.rs::chi_separation": 219,
   "crates/qsmxt-engine/tests/param_coverage.rs::qsmxt_engine_covers_all_qsm_core_params": 135,

@@ -3,6 +3,19 @@
 use super::*;
 
 pub(super) fn defs() -> Vec<Def> {
+    [
+        unwrapping(),
+        phase_offsets(),
+        romeo(),
+        echo_combination(),
+        echo_fits(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+fn unwrapping() -> Vec<Def> {
     vec![
         d("field_mapping.unwrapping_algorithm", FieldMap, "Unwrapping", "", Enum(vec![
             o("romeo", "romeo", "ROMEO", "ROMEO region-growing unwrapping — https://doi.org/10.1002/mrm.28563"),
@@ -51,6 +64,11 @@ pub(super) fn defs() -> Vec<Def> {
         .full("Laplacian field kept outside the mask")
         .cli("`--unwrapping-algorithm laplacian` with a weighted-average echo combination: keep the field over the whole volume, not only inside the brain mask, as UK Biobank's pipeline hands it to V-SHARP")
         .negated("--no-laplacian-keep-outside", "Keep the Laplacian field inside the brain mask only (the default), after a `--pipeline` that keeps it over the whole volume").negated_conflicts(),
+    ]
+}
+
+fn phase_offsets() -> Vec<Def> {
+    vec![
         // MEDI's complex fit fits its own phase offset: QSM.rs does not remove them first.
         d("field_mapping.phase_offset_removal", FieldMap, "Phase offset removal", "Remove spatially-varying phase offset using HIP (Eckstein et al., 2018); multi-echo only", Bool).basic().flag("--phase-offset-removal").parent("field_mapping.unwrapping_algorithm")
         .when(|x| x.combines && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit)
@@ -63,6 +81,11 @@ pub(super) fn defs() -> Vec<Def> {
         d("field_mapping.bipolar_correction", FieldMap, "Bipolar correction", "Remove the linear phase artefact of bipolar readout gradients (needs at least 3 echoes; fewer: skipped)", Bool).basic().flag("--bipolar-correction").parent("field_mapping.phase_offset_removal")
         .when(|x| x.combines && x.c.field_mapping.phase_offset_removal && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit)
         .cli("Enable bipolar gradient correction (requires >= 3 echoes)"),
+    ]
+}
+
+fn romeo() -> Vec<Def> {
+    vec![
         d("field_mapping.romeo.individual", FieldMap, "Individual mode", "Unwrap each echo on its own (for motion or time series). Off = the template echo is unwrapped spatially and the others temporally from it.", Bool).flag("--romeo-individual").parent("field_mapping.unwrapping_algorithm")
         .when(|x| x.romeo).full("Unwrap echoes individually")
         .cli("ROMEO: unwrap each echo on its own (individual mode, for motion or time series)")
@@ -123,6 +146,11 @@ pub(super) fn defs() -> Vec<Def> {
         .when(|x| x.romeo)
         .gui("Extra phase tolerance beyond π for neighbour differences, from 0 to π")
         .cli("ROMEO: additional phase tolerance beyond π for neighbor differences [0,π] (default: 0.0)"),
+    ]
+}
+
+fn echo_combination() -> Vec<Def> {
+    vec![
         // A per-echo QSM runs the field map, background removal, inversion and referencing on
         // each echo on its own: the settings that combine or compare echoes are out of play.
         d("qsm.per_echo", FieldMap, "Per-echo QSM", "Reconstruct a QSM from each echo on its own (each echo's field map, background removal, inversion and referencing) and report their mean as the QSM, with each echo's map, instead of one QSM from the echo-combined field map. Multi-echo only", Bool).basic().flag("--qsm-per-echo")
@@ -174,6 +202,11 @@ pub(super) fn defs() -> Vec<Def> {
         .gui("T2* assumed to compute the fixed echo weights; no T2* map is used")
         .cli("T2* in ms assumed by `--b0-weight-type assumed-decay` to compute its fixed echo weights (default 40; no T2* map is used)")
         .value_name("MS"),
+    ]
+}
+
+fn echo_fits() -> Vec<Def> {
+    vec![
         d("field_mapping.linear_fit.estimate_offset", FieldMap, "Estimate offset", "Fit a phase-offset term in the echo-time fit (robust fit: needs 4 echoes with it, 3 without)", Bool).flag("--linear-fit-estimate-offset").parent("field_mapping.b0_estimation")
         .when(|x| x.combines && matches!(x.c.field_mapping.b0_estimation, B0Estimation::LinearFit | B0Estimation::RobustFit)).context("Echo-time fit")
         .cli("Linear and robust fit: estimate a phase offset term (default: true). The robust fit needs 4 echoes with it, 3 without")
