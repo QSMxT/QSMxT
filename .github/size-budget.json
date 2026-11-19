@@ -7,7 +7,6 @@
   "crates/qsmxt-engine/src/pipeline_graph.rs::algorithm": 156,
   "crates/qsmxt-engine/src/pipeline_graph.rs::io": 388,
   "crates/qsmxt-engine/src/pipeline_graph/layout.rs::layout": 663,
-  "crates/qsmxt-engine/src/pipeline_graph/tests.rs::graphs_of_a_table_of_configurations": 271,
   "crates/qsmxt-engine/src/run/reads_tests.rs::every_step_records_reading_everything_it_reads": 145,
   "crates/qsmxt-engine/tests/param_coverage.rs::qsmxt_engine_covers_all_qsm_core_params": 135,
   "crates/qsmxt-tui/src/app/input/nifti_to_bids.rs::handle_nifti_tab_key": 121,
