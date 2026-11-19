@@ -14,7 +14,6 @@
 
 use std::sync::LazyLock;
 
-pub use super::cli_flags::PIPELINE_FLAGS;
 use super::{defs, Def, Ty};
 
 /// What giving a flag does.
@@ -97,19 +96,6 @@ impl Flag {
         self.attrs.contains(&attr)
     }
 }
-
-/// The flags that set something other than one registry setting to the value given: the
-/// opposite direction of a registry switch, and the flags `qsmxt` applies itself (a pipeline to
-/// start from, the mask grammar and presets, the BET overrides, dismissals).
-pub const NOT_ONE_SETTING: &[&str] = &[
-    // The opposite of a registry switch.
-    "no-bf-polish-mask", "no-bf-ukb-mask-trim", "no-laplacian-unmasked", "no-laplacian-keep-outside",
-    "no-heidi-denoise-reference-itk", "no-romeo-mag-weight", "no-romeo-individual", "no-romeo-correct-global",
-    "no-axial-resampling", "medi-smv", "medi-smv-shrink-mask", "romeo-phase-linearity", "inhomogeneity-correction",
-    // Applied by qsmxt itself.
-    "pipeline", "masking-input", "bet-fractional-intensity", "bet-voxel-scale", "mask-preset", "mask", "mask-combine",
-    "mask-refine", "two-pass-mask", "dismiss-recommendation",
-];
 
 // ─── A registry entry's flag ───
 
@@ -306,8 +292,9 @@ fn build() -> Vec<Flag> {
     ordered
 }
 
-/// The table [`build`] derives from the registry.
-pub static DERIVED: LazyLock<Vec<Flag>> = LazyLock::new(build);
+/// `qsmxt run`'s settings flags, in the order `--help` lists them: built once from the registry
+/// and [`OTHER_FLAGS`] ([`build`]).
+pub static PIPELINE_FLAGS: LazyLock<Vec<Flag>> = LazyLock::new(build);
 
 /// `qsmxt run`'s settings flags in the order `--help` lists them, by name: registry flags and
 /// [`OTHER_FLAGS`]. A registry flag not listed here follows its registry neighbour ([`build`]).
@@ -453,27 +440,19 @@ pub const OTHER_FLAGS: &[Flag] = {
 mod tests {
     use super::*;
 
-    /// Every registry setting's flag is in the table, and every flag in the table sets one
-    /// registry setting unless it is listed in [`NOT_ONE_SETTING`].
+    /// Every registry setting's flag is in the table once, and every other flag is the opposite
+    /// of a registry switch or one of [`OTHER_FLAGS`].
     #[test]
     fn the_table_and_the_registry_agree() {
         let registry: Vec<&str> = super::super::settings().iter().filter_map(|s| s.cli_flag).map(|f| f.trim_start_matches("--")).collect();
-        let longs: Vec<&str> = PIPELINE_FLAGS.iter().map(|f| f.long).collect();
+        let opposites: Vec<&str> = defs().iter().filter_map(|d| d.cli.negated).map(|(l, _)| l.trim_start_matches("--")).collect();
+        let others: Vec<&str> = OTHER_FLAGS.iter().map(|f| f.long).collect();
         for r in &registry {
-            assert!(longs.contains(r), "--{r} is a registry flag but not in PIPELINE_FLAGS");
+            assert_eq!(PIPELINE_FLAGS.iter().filter(|f| f.long == *r).count(), 1, "--{r}");
         }
-        for l in &longs {
-            assert_eq!(registry.contains(l), !NOT_ONE_SETTING.contains(l), "--{l}");
-        }
-    }
-
-    /// The table derived from the registry is the one written out by hand, field by field.
-    #[test]
-    fn the_derived_table_is_the_written_one() {
-        let longs = |t: &[Flag]| t.iter().map(|f| f.long).collect::<Vec<_>>();
-        assert_eq!(longs(&DERIVED), longs(PIPELINE_FLAGS));
-        for (derived, written) in DERIVED.iter().zip(PIPELINE_FLAGS) {
-            assert_eq!(derived, written, "--{}", written.long);
+        for f in PIPELINE_FLAGS.iter() {
+            let kinds = [registry.contains(&f.long), opposites.contains(&f.long), others.contains(&f.long)];
+            assert_eq!(kinds.iter().filter(|k| **k).count(), 1, "--{}", f.long);
         }
     }
 }

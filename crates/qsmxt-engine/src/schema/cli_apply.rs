@@ -1,10 +1,11 @@
 //! A command line's settings flags applied to a configuration: each flag sets its registry
 //! setting ([`super::Setting::cli_flag`]) to the value given, read by the setting's
-//! [`ValueType`]; the flags that do something else are [`super::cli::NOT_ONE_SETTING`]'s.
+//! [`ValueType`]; the others are the opposites of registry switches and
+//! [`super::cli::OTHER_FLAGS`].
 
 use serde_json::Value;
 
-use super::cli::{Flag, FlagAction, FlagParse, NOT_ONE_SETTING, PIPELINE_FLAGS};
+use super::cli::{Flag, FlagAction, FlagParse, PIPELINE_FLAGS};
 use super::{settings, Setting, ValueType};
 use crate::config::PipelineConfig;
 
@@ -22,11 +23,9 @@ impl Given {
     }
 }
 
-/// The registry setting a flag sets, unless it is one of [`NOT_ONE_SETTING`].
+/// The registry setting a flag sets: the one whose flag it is (an opposite switch and the
+/// [`super::cli::OTHER_FLAGS`] set none).
 pub fn setting_of(flag: &Flag) -> Option<&'static Setting> {
-    if NOT_ONE_SETTING.contains(&flag.long) {
-        return None;
-    }
     settings().iter().find(|s| s.cli_flag.is_some_and(|f| f.trim_start_matches("--") == flag.long))
 }
 
