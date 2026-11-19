@@ -2,13 +2,12 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// An engine enum whose every variant has one name, written once: `Variant => "name"`. That name
-/// is the variant's serde name (`#[serde(rename)]`), what `as_str` returns and what `Display`
-/// writes, so the config file, the CLI and the TUI cannot disagree. `ALL` lists the variants in
-/// declaration order, the order the CLI help and the TUI list them. Doc comments and other
-/// attributes (`#[default]`, `#[serde(alias)]`) pass through.
-///
-/// Enums whose name comes from elsewhere (qsm-core's `id()`), or that parse more than a name
-/// (`EchoTimeChoice`, `ChiBoundChoice`), are written out by hand.
+/// is the variant's serde name, and `as_str` and `Display` give it, so the config file, the CLI
+/// and the TUI cannot disagree. `ALL` lists the variants in declaration order, the order the CLI
+/// help and the TUI list them. Doc comments and attributes (`#[default]`, `#[serde(alias)]`) pass
+/// through. `enum Name: qsm_core::Type { Variant => "name" = CoreVariant, … }` also maps it to and
+/// from its qsm-core counterpart; with `, id` after the type, `as_str` is qsm-core's `id()`.
+/// Enums that parse more than a name (`EchoTimeChoice`, `ChiBoundChoice`) are written by hand.
 macro_rules! mirror_enum {
     (
         $(#[$meta:meta])*
@@ -16,22 +15,67 @@ macro_rules! mirror_enum {
             $( $(#[$vmeta:meta])* $variant:ident => $text:literal ),+ $(,)?
         }
     ) => {
-        $(#[$meta])*
+        mirror_enum!(@enum [$(#[$meta])*] $vis $name { $( [$(#[$vmeta])*] $variant => $text ),+ });
+        mirror_enum!(@as_str $name { $($variant => $text),+ });
+    };
+    (
+        $(#[$meta:meta])*
+        $vis:vis enum $name:ident: $core:path {
+            $( $(#[$vmeta:meta])* $variant:ident => $text:literal = $cv:ident ),+ $(,)?
+        }
+    ) => {
+        mirror_enum!(@enum [$(#[$meta])*] $vis $name { $( [$(#[$vmeta])*] $variant => $text ),+ });
+        mirror_enum!(@as_str $name { $($variant => $text),+ });
+        mirror_enum!(@core $name $core { $($variant = $cv),+ });
+    };
+    (
+        $(#[$meta:meta])*
+        $vis:vis enum $name:ident: $core:path, id {
+            $( $(#[$vmeta:meta])* $variant:ident => $text:literal = $cv:ident ),+ $(,)?
+        }
+    ) => {
+        mirror_enum!(@enum [$(#[$meta])*] $vis $name { $( [$(#[$vmeta])*] $variant => $text ),+ });
+        impl $name {
+            /// The name the CLI, the config file and the TUI use: qsm-core's `id()`.
+            pub fn as_str(self) -> &'static str {
+                <$core>::from(self).id()
+            }
+        }
+        mirror_enum!(@core $name $core { $($variant = $cv),+ });
+    };
+    (@enum [$($meta:tt)*] $vis:vis $name:ident { $( [$($vmeta:tt)*] $variant:ident => $text:literal ),+ }) => {
+        $($meta)*
         $vis enum $name {
-            $( $(#[$vmeta])* #[serde(rename = $text)] $variant ),+
+            $( $($vmeta)* #[serde(rename = $text)] $variant ),+
         }
         impl $name {
             /// Every variant, in the order the CLI help and the TUI list them.
-            pub const ALL: [$name; [$(stringify!($variant)),+].len()] = [$(Self::$variant),+];
-
+            pub const ALL: [Self; [$(stringify!($variant)),+].len()] = [$(Self::$variant),+];
+        }
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(self.as_str())
+            }
+        }
+    };
+    (@as_str $name:ident { $($variant:ident => $text:literal),+ }) => {
+        impl $name {
             /// The name the CLI, the config file and the TUI use: the serde name.
             pub fn as_str(self) -> &'static str {
                 match self { $(Self::$variant => $text),+ }
             }
         }
-        impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(self.as_str())
+    };
+    (@core $name:ident $core:path { $($variant:ident = $cv:ident),+ }) => {
+        impl From<$name> for $core {
+            fn from(v: $name) -> Self {
+                match v { $($name::$variant => Self::$cv),+ }
+            }
+        }
+        impl From<$core> for $name {
+            fn from(v: $core) -> Self {
+                type Core = $core;
+                match v { $(Core::$cv => Self::$variant),+ }
             }
         }
     };
@@ -45,20 +89,14 @@ mirror_enum! {
         Rts => "rts", Tv => "tv", Tkd => "tkd", Tsvd => "tsvd", Tgv => "tgv", Tikhonov => "tikhonov",
         Nltv => "nltv", Medi => "medi", Tfi => "tfi", Ilsqr => "ilsqr", Star => "star", Lsqr => "lsqr",
         Qsmart => "qsmart",
-        Ndi => "ndi", Fansi => "fansi",
-        FansiTgv => "fansi-tgv",
-        L1qsm => "l1qsm", Whqsm => "whqsm", Hdqsm => "hdqsm",
-        AmpPe => "amp-pe",
+        Ndi => "ndi", Fansi => "fansi", FansiTgv => "fansi-tgv",
+        L1qsm => "l1qsm", Whqsm => "whqsm", Hdqsm => "hdqsm", AmpPe => "amp-pe",
         // Deep-learning dipole inversions (require qsm-core's `onnx` feature + downloadable weights).
-        Xqsm => "xqsm", Qsmnet => "qsmnet",
-        QsmnetPlus => "qsmnet-plus",
-        Qsmnetme => "qsmnetme",
+        Xqsm => "xqsm", Qsmnet => "qsmnet", QsmnetPlus => "qsmnet-plus", Qsmnetme => "qsmnetme",
         Autoqsm => "autoqsm", Qsmgan => "qsmgan", Ir2qsm => "ir2qsm", Lpcnn => "lpcnn",
-        ModlQsm => "modl-qsm",
-        Nextqsm => "nextqsm",
+        ModlQsm => "modl-qsm", Nextqsm => "nextqsm",
         // End-to-end DL reconstructions from wrapped phase (like TGV: no separate BFR/unwrap).
-        Iqsm => "iqsm",
-        IqsmPlus => "iqsm-plus",
+        Iqsm => "iqsm", IqsmPlus => "iqsm-plus",
     }
 }
 impl QsmAlgorithm {
@@ -76,15 +114,10 @@ impl QsmAlgorithm {
 mirror_enum! {
     #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
     pub enum SeparationAlgorithm {
-        R2starQsm => "r2star-qsm",
-        Decompose => "decompose",
-        ChiSepIlsqr => "chi-sep-ilsqr",
-        ChiSepMedi => "chi-sep-medi",
-        WaveSep => "wavesep",
-        HcChisep => "hc-chisep",
+        R2starQsm => "r2star-qsm", Decompose => "decompose", ChiSepIlsqr => "chi-sep-ilsqr",
+        ChiSepMedi => "chi-sep-medi", WaveSep => "wavesep", HcChisep => "hc-chisep",
         // Deep-learning source separation (qsm-core `onnx` feature + downloadable weights).
-        SusepNet => "susep-net",
-        ChiSepNet => "chi-sepnet",
+        SusepNet => "susep-net", ChiSepNet => "chi-sepnet",
     }
 }
 
@@ -111,24 +144,15 @@ mirror_enum! {
 mirror_enum! {
     /// How PRELUDE labels its initial regions (qsm-core's `PreludeLabelling`).
     #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
-    pub enum PreludeLabelling {
+    pub enum PreludeLabelling: qsm_core::unwrap::PreludeLabelling {
         /// FSL prelude's default: slice by slice when the volume is over 64 voxels along x or y,
         /// otherwise over the whole volume.
         #[default]
-        Auto => "auto",
+        Auto => "auto" = Auto,
         /// Slice by slice (FSL `--labelslices`).
-        Slices => "slices",
+        Slices => "slices" = Slices,
         /// Over the whole volume (FSL `-f`).
-        Volume => "volume",
-    }
-}
-impl From<PreludeLabelling> for qsm_core::unwrap::PreludeLabelling {
-    fn from(l: PreludeLabelling) -> Self {
-        match l {
-            PreludeLabelling::Auto => Self::Auto,
-            PreludeLabelling::Slices => Self::Slices,
-            PreludeLabelling::Volume => Self::Volume,
-        }
+        Volume => "volume" = Volume,
     }
 }
 
@@ -169,77 +193,32 @@ mirror_enum! {
     }
 }
 
-/// The image geometry N4 is given when it corrects the magnitude (`masking.n4_geometry`;
-/// qsm-core `N4Geometry`). N4 fits on a shrunk image whose voxel offsets ITK derives from the
-/// header, so the geometry changes the correction.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub enum N4Geometry {
-    /// The scan's header, as ANTs reads the acquired NIfTI.
-    #[default]
-    #[serde(rename = "scanner")]
-    Scanner,
-    /// The axis-aligned header MATLAB's `make_nii(img, vox)` writes, as QSMART hands N4 the
-    /// magnitude.
-    #[serde(rename = "make-nii")]
-    MakeNii,
-}
-impl N4Geometry {
-    /// Every variant, in the order the CLI help and the TUI list them.
-    pub const ALL: [N4Geometry; 2] = [Self::Scanner, Self::MakeNii];
-
-    /// The name the CLI, the config file and the TUI use (qsm-core's `N4Geometry::id`).
-    pub fn as_str(self) -> &'static str {
-        qsm_core::pipeline::N4Geometry::from(self).id()
-    }
-}
-impl fmt::Display for N4Geometry {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-impl From<N4Geometry> for qsm_core::pipeline::N4Geometry {
-    fn from(g: N4Geometry) -> Self {
-        use qsm_core::pipeline::N4Geometry as G;
-        match g { N4Geometry::Scanner => G::Scanner, N4Geometry::MakeNii => G::MakeNii }
-    }
-}
-impl From<qsm_core::pipeline::N4Geometry> for N4Geometry {
-    fn from(g: qsm_core::pipeline::N4Geometry) -> Self {
-        use qsm_core::pipeline::N4Geometry as G;
-        match g { G::Scanner => Self::Scanner, G::MakeNii => Self::MakeNii }
+mirror_enum! {
+    /// The image geometry N4 is given when it corrects the magnitude (`masking.n4_geometry`;
+    /// qsm-core `N4Geometry`). N4 fits on a shrunk image whose voxel offsets ITK derives from the
+    /// header, so the geometry changes the correction.
+    #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+    pub enum N4Geometry: qsm_core::pipeline::N4Geometry, id {
+        /// The scan's header, as ANTs reads the acquired NIfTI.
+        #[default]
+        Scanner => "scanner" = Scanner,
+        /// The axis-aligned header MATLAB's `make_nii(img, vox)` writes, as QSMART hands N4 the
+        /// magnitude.
+        MakeNii => "make-nii" = MakeNii,
     }
 }
 
-/// How a two-pass run makes and merges its second pass (`masking.two_pass_mode`; qsm-core
-/// `pipeline::TwoPassMode`, which documents both and the evidence behind them).
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum TwoPassMode {
-    /// Holes only at strong sources, and the second pass used only near them (the default).
-    #[default]
-    Local,
-    /// The published algorithm: every voxel below the reliable mask's threshold is a hole, and
-    /// the second pass is taken wherever it has a value.
-    Original,
-}
-impl TwoPassMode {
-    /// Every mode, in the order the CLI help and the TUI list them.
-    pub const ALL: [TwoPassMode; 2] = [Self::Local, Self::Original];
-
-    /// The name the CLI, the config file and the TUI use (qsm-core's `TwoPassMode::id`).
-    pub fn as_str(self) -> &'static str {
-        qsm_core::pipeline::TwoPassMode::from(self).id()
-    }
-}
-impl fmt::Display for TwoPassMode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-impl From<TwoPassMode> for qsm_core::pipeline::TwoPassMode {
-    fn from(m: TwoPassMode) -> Self {
-        use qsm_core::pipeline::TwoPassMode as M;
-        match m { TwoPassMode::Local => M::Local, TwoPassMode::Original => M::Original }
+mirror_enum! {
+    /// How a two-pass run makes and merges its second pass (`masking.two_pass_mode`; qsm-core
+    /// `pipeline::TwoPassMode`, which documents both and the evidence behind them).
+    #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+    pub enum TwoPassMode: qsm_core::pipeline::TwoPassMode, id {
+        /// Holes only at strong sources, and the second pass used only near them (the default).
+        #[default]
+        Local => "local" = Local,
+        /// The published algorithm: every voxel below the reliable mask's threshold is a hole, and
+        /// the second pass is taken wherever it has a value.
+        Original => "original" = Original,
     }
 }
 
@@ -283,244 +262,100 @@ impl BfAlgorithm {
 mirror_enum! {
     /// The kernel PDF fits the background with (qsm-core `DipoleKernelSpace`; `PDF.m`'s `space`).
     #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-    pub enum PdfSpace {
+    pub enum PdfSpace: qsm_core::bgremove::DipoleKernelSpace {
         /// The FFT of the dipole field sampled on the voxel grid (`'imagespace'`).
         #[default]
-        Image => "image",
+        Image => "image" = ImageSpace,
         /// The analytic k-space kernel (`'kspace'`).
-        Kspace => "kspace",
-    }
-}
-impl From<PdfSpace> for qsm_core::bgremove::DipoleKernelSpace {
-    fn from(s: PdfSpace) -> Self {
-        use qsm_core::bgremove::DipoleKernelSpace as K;
-        match s { PdfSpace::Image => K::ImageSpace, PdfSpace::Kspace => K::KSpace }
-    }
-}
-impl From<qsm_core::bgremove::DipoleKernelSpace> for PdfSpace {
-    fn from(k: qsm_core::bgremove::DipoleKernelSpace) -> Self {
-        use qsm_core::bgremove::DipoleKernelSpace as K;
-        match k { K::ImageSpace => Self::Image, K::KSpace => Self::Kspace }
+        Kspace => "kspace" = KSpace,
     }
 }
 
 mirror_enum! {
     /// Which implementation of iSMV runs (qsm-core `IsmvVariant`).
     #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-    pub enum IsmvVariant {
+    pub enum IsmvVariant: qsm_core::bgremove::IsmvVariant {
         /// The authors' paper and code (Wen et al. 2014; the lab's `iSMV.m`).
         #[default]
-        Wen2014 => "wen2014",
+        Wen2014 => "wen2014" = Wen2014,
         /// QSM.jl's `ismv`.
-        Qsmjl => "qsmjl",
-    }
-}
-impl From<IsmvVariant> for qsm_core::bgremove::IsmvVariant {
-    fn from(v: IsmvVariant) -> Self {
-        use qsm_core::bgremove::IsmvVariant as V;
-        match v { IsmvVariant::Wen2014 => V::Wen2014, IsmvVariant::Qsmjl => V::QsmJl }
-    }
-}
-impl From<qsm_core::bgremove::IsmvVariant> for IsmvVariant {
-    fn from(v: qsm_core::bgremove::IsmvVariant) -> Self {
-        use qsm_core::bgremove::IsmvVariant as V;
-        match v { V::Wen2014 => Self::Wen2014, V::QsmJl => Self::Qsmjl }
+        Qsmjl => "qsmjl" = QsmJl,
     }
 }
 
-/// Which Laplacian values in HARPERELLA's / iHARPERELLA's boundary rim are set to zero (qsm-core
-/// `HarperellaRim`). HARPERELLA defaults to the whole rim, iHARPERELLA to STI's rule.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum HarperellaRim {
-    /// Every rim value.
-    #[serde(rename = "whole")]
-    Whole,
-    /// The 20 % of rim values largest in magnitude (STI Suite's `iHARPERELLA`).
-    #[serde(rename = "sti")]
-    Sti,
-}
-impl HarperellaRim {
-    /// Every variant, in the order the CLI help and the TUI list them.
-    pub const ALL: [HarperellaRim; 2] = [Self::Whole, Self::Sti];
-
-    /// The name the CLI, the config file and the TUI use (qsm-core's `HarperellaRim::id`).
-    pub fn as_str(self) -> &'static str {
-        qsm_core::bgremove::HarperellaRim::from(self).id()
-    }
-}
-impl fmt::Display for HarperellaRim {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-impl From<HarperellaRim> for qsm_core::bgremove::HarperellaRim {
-    fn from(r: HarperellaRim) -> Self {
-        use qsm_core::bgremove::HarperellaRim as R;
-        match r { HarperellaRim::Whole => R::Whole, HarperellaRim::Sti => R::StiLargest }
-    }
-}
-impl From<qsm_core::bgremove::HarperellaRim> for HarperellaRim {
-    fn from(r: qsm_core::bgremove::HarperellaRim) -> Self {
-        use qsm_core::bgremove::HarperellaRim as R;
-        match r { R::Whole => Self::Whole, R::StiLargest => Self::Sti }
+mirror_enum! {
+    /// Which Laplacian values in HARPERELLA's / iHARPERELLA's boundary rim are set to zero (qsm-core
+    /// `HarperellaRim`). HARPERELLA defaults to the whole rim, iHARPERELLA to STI's rule.
+    #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+    pub enum HarperellaRim: qsm_core::bgremove::HarperellaRim, id {
+        /// Every rim value.
+        Whole => "whole" = Whole,
+        /// The 20 % of rim values largest in magnitude (STI Suite's `iHARPERELLA`).
+        Sti => "sti" = StiLargest,
     }
 }
 
-/// What NDI divides the magnitude by to make its data weight (qsm-core `NdiWeightNorm`).
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub enum NdiWeightNorm {
-    /// The magnitude's maximum over the whole image (FANSI `script_invivo.m`).
-    #[default]
-    #[serde(rename = "global-max")]
-    GlobalMax,
-    /// The 99.9th percentile of the magnitude inside the mask.
-    #[serde(rename = "mask-p999")]
-    MaskP999,
-}
-impl NdiWeightNorm {
-    /// Every variant, in the order the CLI help and the TUI list them.
-    pub const ALL: [NdiWeightNorm; 2] = [Self::GlobalMax, Self::MaskP999];
-
-    /// The name the CLI, the config file and the TUI use (qsm-core's `NdiWeightNorm::id`).
-    pub fn as_str(self) -> &'static str {
-        qsm_core::inversion::NdiWeightNorm::from(self).id()
-    }
-}
-impl fmt::Display for NdiWeightNorm {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-impl From<NdiWeightNorm> for qsm_core::inversion::NdiWeightNorm {
-    fn from(n: NdiWeightNorm) -> Self {
-        use qsm_core::inversion::NdiWeightNorm as N;
-        match n { NdiWeightNorm::GlobalMax => N::GlobalMax, NdiWeightNorm::MaskP999 => N::MaskP999 }
-    }
-}
-impl From<qsm_core::inversion::NdiWeightNorm> for NdiWeightNorm {
-    fn from(n: qsm_core::inversion::NdiWeightNorm) -> Self {
-        use qsm_core::inversion::NdiWeightNorm as N;
-        match n { N::GlobalMax => Self::GlobalMax, N::MaskP999 => Self::MaskP999 }
+mirror_enum! {
+    /// What NDI divides the magnitude by to make its data weight (qsm-core `NdiWeightNorm`).
+    #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+    pub enum NdiWeightNorm: qsm_core::inversion::NdiWeightNorm, id {
+        /// The magnitude's maximum over the whole image (FANSI `script_invivo.m`).
+        #[default]
+        GlobalMax => "global-max" = GlobalMax,
+        /// The 99.9th percentile of the magnitude inside the mask.
+        MaskP999 => "mask-p999" = MaskP999,
     }
 }
 
-/// Which way round BET sees the image's left-right axis (qsm-core `BetOrientation`).
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub enum BetOrientation {
-    /// As FSL's `bet` reads a NIfTI file: x reversed when the header is neurological.
-    #[default]
-    #[serde(rename = "fsl")]
-    Fsl,
-    /// The voxels in the order they are stored, as MEDI's `BET.m` hands its bet2 mex the array.
-    #[serde(rename = "as-stored")]
-    AsStored,
-}
-impl BetOrientation {
-    /// Every variant, in the order the CLI help and the TUI list them.
-    pub const ALL: [BetOrientation; 2] = [Self::Fsl, Self::AsStored];
-
-    /// The name the CLI, the config file and the TUI use (qsm-core's `BetOrientation::id`).
-    pub fn as_str(self) -> &'static str {
-        qsm_core::bet::BetOrientation::from(self).id()
-    }
-}
-impl fmt::Display for BetOrientation {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-impl From<BetOrientation> for qsm_core::bet::BetOrientation {
-    fn from(o: BetOrientation) -> Self {
-        use qsm_core::bet::BetOrientation as O;
-        match o { BetOrientation::Fsl => O::Fsl, BetOrientation::AsStored => O::AsStored }
-    }
-}
-impl From<qsm_core::bet::BetOrientation> for BetOrientation {
-    fn from(o: qsm_core::bet::BetOrientation) -> Self {
-        use qsm_core::bet::BetOrientation as O;
-        match o { O::Fsl => Self::Fsl, O::AsStored => Self::AsStored }
+mirror_enum! {
+    /// Which way round BET sees the image's left-right axis (qsm-core `BetOrientation`).
+    #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+    pub enum BetOrientation: qsm_core::bet::BetOrientation, id {
+        /// As FSL's `bet` reads a NIfTI file: x reversed when the header is neurological.
+        #[default]
+        Fsl => "fsl" = Fsl,
+        /// The voxels in the order they are stored, as MEDI's `BET.m` hands its bet2 mex the array.
+        AsStored => "as-stored" = AsStored,
     }
 }
 
 mirror_enum! {
     /// WH-QSM's data weight (qsm-core `WhQsmWeight`).
     #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-    pub enum WhqsmWeight {
+    pub enum WhqsmWeight: qsm_core::inversion::WhQsmWeight {
         /// 1 over the whole volume, no magnitude (`WH_nlTV.m`'s own default).
         #[default]
-        Flat => "flat",
+        Flat => "flat" = Flat,
         /// 1 inside the mask only, no magnitude.
-        FlatInMask => "flat-in-mask",
+        FlatInMask => "flat-in-mask" = FlatInMask,
         /// The magnitude in the mask over its maximum. Needs the magnitude.
-        MaxNormalised => "max-normalised",
+        MaxNormalised => "max-normalised" = MaxNormalised,
         /// `min(2·magnitude/max, 1)` in the mask, as NDI weights. Needs the magnitude.
-        InVivo => "in-vivo",
-    }
-}
-impl From<WhqsmWeight> for qsm_core::inversion::WhQsmWeight {
-    fn from(w: WhqsmWeight) -> Self {
-        use qsm_core::inversion::WhQsmWeight as W;
-        match w {
-            WhqsmWeight::Flat => W::Flat, WhqsmWeight::FlatInMask => W::FlatInMask,
-            WhqsmWeight::MaxNormalised => W::MaxNormalised, WhqsmWeight::InVivo => W::InVivo,
-        }
-    }
-}
-impl From<qsm_core::inversion::WhQsmWeight> for WhqsmWeight {
-    fn from(w: qsm_core::inversion::WhQsmWeight) -> Self {
-        use qsm_core::inversion::WhQsmWeight as W;
-        match w {
-            W::Flat => Self::Flat, W::FlatInMask => Self::FlatInMask,
-            W::MaxNormalised => Self::MaxNormalised, W::InVivo => Self::InVivo,
-        }
+        InVivo => "in-vivo" = InVivo,
     }
 }
 
 mirror_enum! {
     /// Arithmetic of iLSQR's two LSQR solves (qsm-core `IlsqrPrecision`).
     #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-    pub enum IlsqrPrecision {
+    pub enum IlsqrPrecision: qsm_core::inversion::IlsqrPrecision {
         /// Double precision throughout (the default).
         #[default]
-        Double => "double",
+        Double => "double" = Double,
         /// Single precision, as STI Suite computes its solves.
-        Single => "single",
-    }
-}
-impl From<IlsqrPrecision> for qsm_core::inversion::IlsqrPrecision {
-    fn from(p: IlsqrPrecision) -> Self {
-        use qsm_core::inversion::IlsqrPrecision as P;
-        match p { IlsqrPrecision::Double => P::Double, IlsqrPrecision::Single => P::Single }
-    }
-}
-impl From<qsm_core::inversion::IlsqrPrecision> for IlsqrPrecision {
-    fn from(p: qsm_core::inversion::IlsqrPrecision) -> Self {
-        use qsm_core::inversion::IlsqrPrecision as P;
-        match p { P::Double => Self::Double, P::Single => Self::Single }
+        Single => "single" = Single,
     }
 }
 
 mirror_enum! {
     /// Arithmetic of LBV's multigrid solver (qsm-core `LbvPrecision`).
     #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-    pub enum LbvPrecision {
+    pub enum LbvPrecision: qsm_core::bgremove::LbvPrecision {
         /// Double precision throughout (the default).
         #[default]
-        Double => "double",
+        Double => "double" = Double,
         /// Single precision, as the original implementation computes.
-        Single => "single",
-    }
-}
-impl From<LbvPrecision> for qsm_core::bgremove::LbvPrecision {
-    fn from(p: LbvPrecision) -> Self {
-        use qsm_core::bgremove::LbvPrecision as P;
-        match p { LbvPrecision::Double => P::Double, LbvPrecision::Single => P::Single }
-    }
-}
-impl From<qsm_core::bgremove::LbvPrecision> for LbvPrecision {
-    fn from(p: qsm_core::bgremove::LbvPrecision) -> Self {
-        use qsm_core::bgremove::LbvPrecision as P;
-        match p { P::Double => Self::Double, P::Single => Self::Single }
+        Single => "single" = Single,
     }
 }
 
@@ -656,10 +491,7 @@ mirror_enum! {
 mirror_enum! {
     #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
     pub enum B0WeightType {
-        PhaseSNR => "phase-snr",
-        PhaseVar => "phase-var", Average => "average",
-        TEs => "tes",
-        Mag => "mag",
+        PhaseSNR => "phase-snr", PhaseVar => "phase-var", Average => "average", TEs => "tes", Mag => "mag",
         /// Fixed per-echo weights `TE·exp(−TE/T2*)` on the phase, from the echo times and an
         /// *assumed* T2* (`field_mapping.b0_weight_assumed_t2star_ms`): the same weights in every
         /// voxel, with no T2* map and no magnitude. UK Biobank's echo combination (Wang et al. 2022,
@@ -703,11 +535,7 @@ impl SynthSegVersion {
     }
 }
 pub fn parse_synthseg_version(s: &str) -> Option<SynthSegVersion> {
-    match s.trim() {
-        "v1" => Some(SynthSegVersion::V1),
-        "v2" => Some(SynthSegVersion::V2),
-        _ => None,
-    }
+    SynthSegVersion::ALL.into_iter().find(|v| v.as_str() == s.trim())
 }
 
 mirror_enum! {
@@ -716,73 +544,29 @@ mirror_enum! {
     /// Typed end to end — CLI, config file, TUI — and mapped to qsm-core in one place, so a value
     /// QSMxT does not recognise cannot parse rather than quietly running `tanh` (#266).
     #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-    pub enum SwiScaling {
+    pub enum SwiScaling: qsm_core::swi::PhaseScaling {
         #[default]
-        Tanh => "tanh",
+        Tanh => "tanh" = Tanh,
         /// Older config files wrote it with an underscore.
         #[serde(alias = "negative_tanh")]
-        NegativeTanh => "negative-tanh",
-        Positive => "positive",
-        Negative => "negative",
-        Triangular => "triangular",
-    }
-}
-impl From<SwiScaling> for qsm_core::swi::PhaseScaling {
-    fn from(s: SwiScaling) -> Self {
-        use qsm_core::swi::PhaseScaling as P;
-        match s {
-            SwiScaling::Tanh => P::Tanh,
-            SwiScaling::NegativeTanh => P::NegativeTanh,
-            SwiScaling::Positive => P::Positive,
-            SwiScaling::Negative => P::Negative,
-            SwiScaling::Triangular => P::Triangular,
-        }
-    }
-}
-impl From<qsm_core::swi::PhaseScaling> for SwiScaling {
-    fn from(p: qsm_core::swi::PhaseScaling) -> Self {
-        use qsm_core::swi::PhaseScaling as P;
-        match p {
-            P::Tanh => Self::Tanh,
-            P::NegativeTanh => Self::NegativeTanh,
-            P::Positive => Self::Positive,
-            P::Negative => Self::Negative,
-            P::Triangular => Self::Triangular,
-        }
+        NegativeTanh => "negative-tanh" = NegativeTanh,
+        Positive => "positive" = Positive,
+        Negative => "negative" = Negative,
+        Triangular => "triangular" = Triangular,
     }
 }
 
 mirror_enum! {
     /// How CLEAR-SWI unwraps the phase before combining the echoes.
     #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-    pub enum SwiUnwrap {
+    pub enum SwiUnwrap: qsm_core::swi::SwiUnwrap {
         /// Each echo with the Laplacian method, high-pass filtered, then combined.
         #[default]
-        Laplacian => "laplacian",
+        Laplacian => "laplacian" = Laplacian,
         /// As `Laplacian`, slice by slice (2D multi-slice acquisitions).
-        LaplacianSlice => "laplacian-slice",
+        LaplacianSlice => "laplacian-slice" = LaplacianSlice,
         /// All echoes together with ROMEO, combined, then high-pass filtered.
-        Romeo => "romeo",
-    }
-}
-impl From<SwiUnwrap> for qsm_core::swi::SwiUnwrap {
-    fn from(s: SwiUnwrap) -> Self {
-        use qsm_core::swi::SwiUnwrap as U;
-        match s {
-            SwiUnwrap::Laplacian => U::Laplacian,
-            SwiUnwrap::LaplacianSlice => U::LaplacianSlice,
-            SwiUnwrap::Romeo => U::Romeo,
-        }
-    }
-}
-impl From<qsm_core::swi::SwiUnwrap> for SwiUnwrap {
-    fn from(u: qsm_core::swi::SwiUnwrap) -> Self {
-        use qsm_core::swi::SwiUnwrap as U;
-        match u {
-            U::Laplacian => Self::Laplacian,
-            U::LaplacianSlice => Self::LaplacianSlice,
-            U::Romeo => Self::Romeo,
-        }
+        Romeo => "romeo" = Romeo,
     }
 }
 
@@ -817,65 +601,32 @@ mirror_enum! {
         Native => "native",
     }
 }
-/// The R2* χ-separation MEDI's CSF mask is extracted from (`separation.chi_sep_medi.csf_r2star`;
-/// qsm-core `ChiSepCsfR2star`).
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum ChiSepCsfR2star {
-    /// MEDI's ARLO.
-    #[default]
-    Arlo,
-    /// The χ-separation toolbox's `r2star_nnls`, which its script runs for echo times written as
-    /// a row (QSM.rs rule chi-sep-medi.csf-r2star-nnls).
-    Nnls,
+mirror_enum! {
+    /// The R2* χ-separation MEDI's CSF mask is extracted from (`separation.chi_sep_medi.csf_r2star`;
+    /// qsm-core `ChiSepCsfR2star`).
+    #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+    pub enum ChiSepCsfR2star: qsm_core::separation::ChiSepCsfR2star, id {
+        /// MEDI's ARLO.
+        #[default]
+        Arlo => "arlo" = Arlo,
+        /// The χ-separation toolbox's `r2star_nnls`, which its script runs for echo times written as
+        /// a row (QSM.rs rule chi-sep-medi.csf-r2star-nnls).
+        Nnls => "nnls" = Nnls,
+    }
 }
 impl ChiSepCsfR2star {
-    /// Every variant, in the order the CLI help and the TUI list them.
-    pub const ALL: [ChiSepCsfR2star; 2] = [Self::Arlo, Self::Nnls];
-
-    /// The name the CLI, the config file and the TUI use (qsm-core's `ChiSepCsfR2star::id`).
-    pub fn as_str(self) -> &'static str {
-        qsm_core::separation::ChiSepCsfR2star::from(self).id()
-    }
-
     /// The method's name in log lines and the methods text.
     pub fn label(self) -> &'static str {
         match self { Self::Arlo => "ARLO", Self::Nnls => "NNLS" }
     }
 }
-impl fmt::Display for ChiSepCsfR2star {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-impl From<ChiSepCsfR2star> for qsm_core::separation::ChiSepCsfR2star {
-    fn from(m: ChiSepCsfR2star) -> Self {
-        use qsm_core::separation::ChiSepCsfR2star as M;
-        match m { ChiSepCsfR2star::Arlo => M::Arlo, ChiSepCsfR2star::Nnls => M::Nnls }
-    }
-}
-impl From<qsm_core::separation::ChiSepCsfR2star> for ChiSepCsfR2star {
-    fn from(m: qsm_core::separation::ChiSepCsfR2star) -> Self {
-        use qsm_core::separation::ChiSepCsfR2star as M;
-        match m { M::Arlo => Self::Arlo, M::Nnls => Self::Nnls }
-    }
-}
 
 pub fn parse_chi_sepnet_route(s: &str) -> Option<ChiSepNetRoute> {
-    match s.trim() {
-        "toolbox" => Some(ChiSepNetRoute::Toolbox),
-        "native" => Some(ChiSepNetRoute::Native),
-        _ => None,
-    }
+    ChiSepNetRoute::ALL.into_iter().find(|r| r.as_str() == s.trim())
 }
 
 pub fn parse_r2prime_strategy(s: &str) -> Option<R2PrimeStrategy> {
-    match s.trim() {
-        "auto" => Some(R2PrimeStrategy::Auto),
-        "mese" => Some(R2PrimeStrategy::Mese),
-        "r2primenet" => Some(R2PrimeStrategy::R2primenet),
-        _ => None,
-    }
+    R2PrimeStrategy::ALL.into_iter().find(|r| r.as_str() == s.trim())
 }
 
 /// Which echo time a method converts the field from ppm to radians at (qsm-core `EchoTime`).
