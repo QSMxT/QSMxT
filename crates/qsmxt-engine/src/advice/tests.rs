@@ -112,12 +112,12 @@ fn accept_all_settles() {
     let which = Accept { recommendations: true, reference: true };
     let mut c = PipelineConfig::default();
     c.inversion.algorithm = QsmAlgorithm::Medi;
-    let (applied, _) = accept_all(&mut c, which, find);
+    let (applied, _) = accept_all(&mut c, which, &Facts::default(), find);
     assert!(!applied.is_empty(), "MEDI's authors' settings differ from the defaults");
     let mut rules: Vec<&str> = applied.iter().map(|r| r.rule.as_str()).collect();
     rules.dedup();
     assert_eq!(rules.len(), applied.len(), "{rules:?}");
     let settled = c.clone();
-    let (again, _) = accept_all(&mut c, which, find);
+    let (again, _) = accept_all(&mut c, which, &Facts::default(), find);
     assert!(again.is_empty() && c == settled, "{again:?}");
 }

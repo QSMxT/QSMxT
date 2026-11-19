@@ -434,13 +434,10 @@ impl App {
     pub fn apply_recommendation(&mut self, rule: &str, value: Option<&Value>) -> Result<(), String> {
         let Some(r) = self.rule_view().into_iter().find(|r| r.rule == rule) else { return Ok(()) };
         let refused = || format!("{} cannot be set to {} here: change it on its row", r.label, r.recommended.name);
-        // A setting with no row in view is changed on its row once it shows, not from here.
-        let masking = matches!(r.setting.as_str(), "masking.sections" | "masking.inhomogeneity_correction");
-        if !masking && !self.all_pages().iter().flat_map(|(_, _, rows)| rows).any(|row| row_path(row) == Some(r.setting.as_str())) {
-            return Err(refused());
-        }
+        // The engine leaves a setting that does not apply alone ([`rec::rule_may_change`]): it is
+        // changed on its row once it shows, not from here.
         let mut c = super::command::config_from_app(self).map_err(|_| refused())?;
-        rec::apply(&mut c, rule, value).map_err(|_| refused())?;
+        rec::apply(&mut c, rule, value, &self.rule_facts()).map_err(|_| refused())?;
         let before = FormSnapshot::of(self);
         let combine_of = |app: &App| ["masking.combine", "masking.refinements"].map(|p| app.form.settings.get(p));
         let kept_combine = combine_of(self);
@@ -636,6 +633,27 @@ mod tests {
         let options = super::super::app::qsm_ref_options();
         select(&mut app, "qsm_reference", "ventricles", options);
         app
+    }
+
+    /// Decision 194: a rule never changes a hidden setting, now the engine's rule. Under iQFM no
+    /// field is mapped, so STI Suite's Laplacian unwrapping is refused and the form is left as it
+    /// was; with V-SHARP the same rule applies.
+    #[test]
+    fn a_rule_leaves_a_hidden_setting_alone() {
+        use super::super::app::BF_OPTIONS;
+        use super::super::command::config_from_app;
+        let mut app = app();
+        select(&mut app, "qsm_algorithm", "ilsqr", &QSM_PICKER_OPTIONS);
+        select(&mut app, "bf_algorithm", "iqfm", BF_OPTIONS);
+        assert!(app.rule_view().iter().any(|r| r.rule == "sti.unwrap-laplacian" && r.departs), "still a finding");
+        let before = config_from_app(&app).unwrap();
+        let e = app.apply_recommendation("sti.unwrap-laplacian", None).unwrap_err();
+        assert!(e.ends_with("cannot be set to Laplacian here: change it on its row"), "{e}");
+        assert_eq!(config_from_app(&app).unwrap(), before, "nothing changes");
+        select(&mut app, "bf_algorithm", "vsharp", BF_OPTIONS);
+        app.apply_recommendation("sti.unwrap-laplacian", None).unwrap();
+        assert_eq!(config_from_app(&app).unwrap().field_mapping.unwrapping_algorithm,
+                   qsmxt_engine::enums::UnwrappingAlgorithm::Laplacian);
     }
 
     /// Choosing a region reference with segmentation off opens " Required change ": Segmentation

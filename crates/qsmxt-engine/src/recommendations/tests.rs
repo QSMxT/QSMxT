@@ -217,7 +217,7 @@ fn each_rule_fires_on_a_violation_and_applying_resolves_it() {
         assert_eq!(r.setting, qsmxt_path(rule.setting).unwrap(), "{}", rule.id);
         assert!(!r.current.is_empty() && !r.trigger.name.is_empty() && !r.recommended.name.is_empty(), "{r:?}");
         assert!(schema::get(&c, &r.trigger.setting).is_some(), "{}: trigger {} is not a setting", rule.id, r.trigger.setting);
-        if let Err(e) = apply(&mut c, rule.id, None) {
+        if let Err(e) = apply(&mut c, rule.id, None, &facts) {
             failures.push(format!("{}: {e}", rule.id));
             continue;
         }
@@ -307,12 +307,12 @@ fn reference_findings_are_information_only() {
     let r = found.iter().find(|r| r.rule == "rts.bg-vsharp").unwrap();
     assert!(r.strength == Strength::Reference && !r.actionable());
     let before = c.clone();
-    let (applied, _) = accept(&mut c, &found, Accept { recommendations: true, reference: false });
+    let (applied, _) = accept(&mut c, &found, Accept { recommendations: true, reference: false }, &Facts::default());
     assert!(applied.is_empty() && c == before, "--accept-recommendations leaves a reference departure");
     assert_eq!(r.note(), "Background removal used PDF; this differs from the RTS reference pipeline, which uses V-SHARP");
     // --accept-reference-settings applies it.
     assert_eq!((r.kind, r.kind.label()), (Kind::Reference, "Original authors' setting"));
-    let (applied, _) = accept(&mut c, &found, Accept { recommendations: false, reference: true });
+    let (applied, _) = accept(&mut c, &found, Accept { recommendations: false, reference: true }, &Facts::default());
     assert!(applied.iter().any(|a| a.rule == "rts.bg-vsharp") && c.bg_removal.algorithm == BfAlgorithm::Vsharp, "{applied:?}");
 }
 
@@ -331,12 +331,12 @@ fn suggestions_are_offered_but_not_applied() {
         assert!(r.strength == Strength::Suggested && r.kind == Kind::Reasoned && r.actionable(), "{rule}");
         assert!(!r.strength.preselected() && r.strength.dismissable(), "{rule}");
         let before = c.clone();
-        let (applied, _) = accept(&mut c, &found, Accept { recommendations: true, reference: true });
+        let (applied, _) = accept(&mut c, &found, Accept { recommendations: true, reference: true }, &Facts::default());
         assert!(!applied.iter().any(|a| a.rule == rule) && c.inversion.ndi == before.inversion.ndi
             && c.inversion.whqsm == before.inversion.whqsm, "{rule}: {applied:?}");
         assert!(crate::recommendations::config_note(&c).departures.iter().all(|l| !l.contains("normalis") && !l.contains("weight")),
             "{rule}: {:?}", crate::recommendations::config_note(&c));
-        apply(&mut c, rule, None).unwrap();
+        apply(&mut c, rule, None, &Facts::default()).unwrap();
         assert!(!recommendations(&c, &Facts::default()).iter().any(|r| r.rule == rule && r.departs), "{rule}");
     }
     let mut c = PipelineConfig::default();
@@ -344,7 +344,7 @@ fn suggestions_are_offered_but_not_applied() {
     let found = recommendations(&c, &Facts::default());
     let r = found.iter().find(|r| r.rule == "iharperella.whole-rim").unwrap();
     assert!(r.strength == Strength::Recommended && r.strength.preselected());
-    accept(&mut c, &found, Accept { recommendations: true, reference: false });
+    accept(&mut c, &found, Accept { recommendations: true, reference: false }, &Facts::default());
     assert_eq!(c.bg_removal.iharperella.rim, HarperellaRim::Whole);
     let mut c = PipelineConfig::default();
     c.inversion.algorithm = QsmAlgorithm::Whqsm;
@@ -352,7 +352,7 @@ fn suggestions_are_offered_but_not_applied() {
     let found = recommendations(&c, &Facts::default());
     let r = found.iter().find(|r| r.rule == "whqsm.flat-in-mask").unwrap_or_else(|| panic!("{found:?}"));
     assert!(r.strength == Strength::Recommended && r.strength.preselected());
-    accept(&mut c, &found, Accept { recommendations: true, reference: false });
+    accept(&mut c, &found, Accept { recommendations: true, reference: false }, &Facts::default());
     assert_eq!(c.inversion.whqsm.weight, WhqsmWeight::FlatInMask);
 }
 
@@ -385,9 +385,9 @@ fn accepting_the_authors_settings_keeps_romeo_unless_asked() {
     let r = found.iter().find(|r| r.rule == "complex-fit.unwrap-region-growing").expect("the authors' unwrapper is shown");
     assert!(r.kind == Kind::Reference && !r.actionable());
     let mut kept = c.clone();
-    accept(&mut kept, &found, Accept { recommendations: true, reference: false });
+    accept(&mut kept, &found, Accept { recommendations: true, reference: false }, &Facts::default());
     assert_eq!(kept.field_mapping.unwrapping_algorithm, UnwrappingAlgorithm::Romeo, "ROMEO stays");
-    accept(&mut c, &found, Accept { recommendations: true, reference: true });
+    accept(&mut c, &found, Accept { recommendations: true, reference: true }, &Facts::default());
     assert_eq!(c.field_mapping.unwrapping_algorithm, UnwrappingAlgorithm::MediRegionGrowing);
 }
 
@@ -398,7 +398,7 @@ fn accepting_applies_the_strongest_actionable_finding() {
     let facts = Facts::default();
     let found = recommendations(&c, &facts);
     assert!(found.iter().any(|r| r.rule == rule.id && r.strength == Strength::Discouraged));
-    let (applied, conflicting) = accept(&mut c, &found, Accept { recommendations: true, reference: false });
+    let (applied, conflicting) = accept(&mut c, &found, Accept { recommendations: true, reference: false }, &Facts::default());
     assert!(applied.iter().any(|r| r.rule == rule.id) && conflicting.is_empty(), "{applied:?}");
     assert!(c.inversion.medi.msmv_prefilter);
     // Dismissed, it is left as it is.
@@ -406,7 +406,7 @@ fn accepting_applies_the_strongest_actionable_finding() {
     dismiss(&mut c, rule.id, &facts).unwrap();
     let found = recommendations(&c, &facts);
     assert!(found.iter().any(|r| r.rule == rule.id && r.dismissed));
-    let (applied, _) = accept(&mut c, &found, Accept { recommendations: true, reference: false });
+    let (applied, _) = accept(&mut c, &found, Accept { recommendations: true, reference: false }, &Facts::default());
     assert!(!applied.iter().any(|r| r.rule == rule.id) && !c.inversion.medi.msmv_prefilter);
 }
 
@@ -557,12 +557,12 @@ fn reference_differences_of_a_chosen_method() {
     assert!(groups.iter().all(|m| m.rules.iter().all(|r| r.trigger == m.method)));
 
     let mut applied = c.clone();
-    apply_all(&mut applied, &diffs).unwrap();
+    apply_all(&mut applied, &diffs, &Facts::default()).unwrap();
     // BET's orientation is in play only once there is a BET step, which applying `medi.mask-bet`
     // put in: it is the one difference left, and applying it leaves none.
     let left = reference_differences(&applied, &facts, &medi);
     assert_eq!(left.iter().map(|r| r.rule.as_str()).collect::<Vec<_>>(), ["medi.bet-as-stored"]);
-    apply_all(&mut applied, &left).unwrap();
+    apply_all(&mut applied, &left, &Facts::default()).unwrap();
     assert!(reference_differences(&applied, &facts, &medi).is_empty());
     assert_eq!(applied.bet.orientation, crate::enums::BetOrientation::AsStored);
     assert_eq!(applied.bg_removal.algorithm, BfAlgorithm::Pdf);
@@ -613,7 +613,7 @@ fn apply_all_lets_a_reasoned_finding_beat_an_authors_setting() {
     backwards.reverse();
     for findings in [found, backwards] {
         let mut applied = c.clone();
-        let settled = apply_all(&mut applied, &findings).unwrap();
+        let settled = apply_all(&mut applied, &findings, &Facts::default()).unwrap();
         assert_eq!(applied.field_mapping.unwrapping_algorithm, UnwrappingAlgorithm::Romeo);
         assert!(settled.outranked.iter().any(|r| r.rule == "complex-fit.unwrap-region-growing"), "{settled:?}");
         assert!(settled.apply.iter().any(|r| r.rule == "fansi.no-laplacian-multi-echo") && settled.conflicting.is_empty(), "{settled:?}");
@@ -629,7 +629,7 @@ fn apply_all_leaves_two_authors_settings_that_disagree_to_the_user() {
     backwards.reverse();
     for findings in [found, backwards] {
         let mut applied = c.clone();
-        let settled = apply_all(&mut applied, &findings).unwrap();
+        let settled = apply_all(&mut applied, &findings, &Facts::default()).unwrap();
         assert_eq!(applied.bg_removal.algorithm, BfAlgorithm::Lbv);
         let left: Vec<&str> = settled.conflicting.iter().map(|r| r.rule.as_str()).collect();
         assert!(left.contains(&"medi.bg-pdf") && left.contains(&"chi-sep.bg-vsharp"), "{left:?}");
@@ -646,8 +646,8 @@ fn apply_all_leaves_two_authors_settings_that_disagree_to_the_user() {
 fn accept_and_apply_all_give_one_answer() {
     for (c, found) in [two_authors_disagree(), reasoned_and_authors_disagree()] {
         let (mut accepted, mut all) = (c.clone(), c.clone());
-        let (applied, conflicting) = accept(&mut accepted, &found, Accept { recommendations: true, reference: true });
-        let settled = apply_all(&mut all, &found).unwrap();
+        let (applied, conflicting) = accept(&mut accepted, &found, Accept { recommendations: true, reference: true }, &Facts::default());
+        let settled = apply_all(&mut all, &found, &Facts::default()).unwrap();
         assert_eq!(accepted, all);
         assert_eq!((applied, conflicting), (settled.apply, settled.conflicting));
     }
@@ -668,14 +668,14 @@ fn apply_all_changes_only_open_findings() {
     followed.departs = false;
     for finding in [dismissed, followed] {
         let mut same = c.clone();
-        let settled = apply_all(&mut same, &[finding]).unwrap();
+        let settled = apply_all(&mut same, &[finding], &Facts::default()).unwrap();
         assert_eq!(same, c);
         assert_eq!(settled, Settled::default());
     }
-    assert_eq!(apply_all(&mut c.clone(), &[]).unwrap(), Settled::default());
+    assert_eq!(apply_all(&mut c.clone(), &[], &Facts::default()).unwrap(), Settled::default());
 
     let mut changed = c.clone();
-    apply_all(&mut changed, &[open]).unwrap();
+    apply_all(&mut changed, &[open], &Facts::default()).unwrap();
     assert!(changed.inversion.medi.msmv_prefilter);
     changed.inversion.medi.msmv_prefilter = c.inversion.medi.msmv_prefilter;
     assert_eq!(changed, c, "nothing else changes");
@@ -705,7 +705,7 @@ fn apply_all_tries_every_finding_and_lists_what_failed() {
     let mut bad = good.clone();
     bad.rule = "no.such.rule".into();
     bad.setting = "no.such.setting".into();
-    let e = apply_all(&mut c, &[bad, good]).unwrap_err();
+    let e = apply_all(&mut c, &[bad, good], &Facts::default()).unwrap_err();
     assert!(e.contains("no rule no.such.rule"), "{e}");
     assert!(c.inversion.medi.msmv_prefilter, "the other finding was still applied");
 }
@@ -726,7 +726,7 @@ fn the_reference_pipelines_offer_the_unmasked_unwrapping() {
         let r = diffs.iter().find(|r| r.rule == rule).unwrap_or_else(|| panic!("{rule} not offered: {diffs:?}"));
         assert_eq!((r.setting.as_str(), &r.recommended.value), ("field_mapping.laplacian_unmasked", &json!(true)));
         let mut applied = c.clone();
-        apply(&mut applied, rule, None).unwrap();
+        apply(&mut applied, rule, None, &Facts::default()).unwrap();
         assert!(applied.field_mapping.laplacian_unmasked);
         let mut back = applied.clone();
         back.field_mapping.laplacian_unmasked = false;
@@ -821,7 +821,7 @@ fn ticking_heidi_offers_lsqr_and_changes_nothing() {
         let view = schema::settings_view(&c, &view_facts(&facts));
         assert!(view.iter().any(|v| v.path == "inversion.algorithm" && v.recommendations.iter().any(|x| x.rule == r.rule)), "{alg}");
         let rule = r.rule.clone();
-        apply(&mut c, &rule, None).unwrap();
+        apply(&mut c, &rule, None, &Facts::default()).unwrap();
         assert_eq!((schema::get(&c, "inversion.algorithm"), c.inversion.heidi.enabled), (Some(json!("lsqr")), true), "{alg}");
         assert!(!recommendations(&c, &facts).iter().any(|r| r.rule.starts_with("heidi.seed")), "{alg}");
     }
@@ -867,7 +867,7 @@ fn chi_sepnet_offers_the_vendor_tukey_window() {
     assert_eq!(c.pipeline.tukey_window, 0.0, "changed silently");
     let view = schema::settings_view(&c, &ViewFacts { manufacturer: Some("Siemens".into()), ..view_facts(&known()) });
     assert!(view.iter().any(|v| v.path == "pipeline.tukey_window" && v.recommendations.iter().any(|x| x.rule == r.rule)));
-    apply(&mut c, &r.rule, None).unwrap();
+    apply(&mut c, &r.rule, None, &Facts::default()).unwrap();
     assert_eq!(c.pipeline.tukey_window, 0.4);
     assert!(tukey(&c, Some("Siemens")).is_empty());
     assert_eq!(tukey(&c, Some("Philips")).pop().map(|r| r.recommended.value), Some(json!(0)));
@@ -951,7 +951,7 @@ fn sti_suite_threshold_replaces_a_bet_mask() {
     let r = found.iter().find(|r| r.rule == "sti.mask-threshold-gui").expect("fires on a BET mask");
     assert_eq!(r.current_text(), "no threshold");
     assert!(!found.iter().any(|r| r.rule == "sti.mask-threshold"), "{found:?}");
-    apply(&mut c, "sti.mask-threshold-gui", None).unwrap();
+    apply(&mut c, "sti.mask-threshold-gui", None, &Facts::default()).unwrap();
     assert_eq!(c.masking.sections.len(), 1);
     assert_eq!(c.masking.sections[0].generator, MaskOp::Threshold { method: MaskThresholdMethod::StiGui, value: None });
     assert!(!recommendations(&c, &known()).iter().any(|r| r.rule == "sti.mask-threshold-gui"));
@@ -1039,7 +1039,7 @@ fn authors_who_disagree_leave_the_setting_to_the_user() {
             let mut accepted = followed.clone();
             for round in 0..4 {
                 let found = recommendations(&accepted, facts);
-                let (_, left) = accept(&mut accepted, &found, Accept { recommendations: false, reference: true });
+                let (_, left) = accept(&mut accepted, &found, Accept { recommendations: false, reference: true }, &Facts::default());
                 let now = reference_values(&accepted, facts);
                 // Another authors' setting accepted with them can choose the method that brought
                 // one of the two in away (DECOMPOSE's STAR for STI Suite's iLSQR): then they no
@@ -1051,10 +1051,45 @@ fn authors_who_disagree_leave_the_setting_to_the_user() {
                 }
             }
             let mut all = followed.clone();
-            let settled = apply_all(&mut all, &recommendations(&followed, facts)).unwrap();
+            let settled = apply_all(&mut all, &recommendations(&followed, facts), facts).unwrap();
             assert!(!settled.apply.iter().any(|r| r.rule == y.id), "{}: Apply all leaves it", y.id);
             checked += 1;
         }
     }
     assert!(checked >= 40, "only {checked} checked");
+}
+
+/// Decision 194: a rule never changes a hidden setting. Under iQFM no field is mapped, so STI
+/// Suite's Laplacian unwrapping (iLSQR's authors' setting) is still a finding, but `apply`,
+/// `apply_all` and `accept` leave the unwrapping as it is, and `accept` neither applies it nor
+/// lists it as left. With field mapping, the same rule applies.
+#[test]
+fn a_rule_never_changes_a_hidden_setting() {
+    let facts = known();
+    let mut c = PipelineConfig::default();
+    c.inversion.algorithm = QsmAlgorithm::Ilsqr;
+    c.bg_removal.algorithm = BfAlgorithm::Iqfm;
+    let found = recommendations(&c, &facts);
+    let unwrap: Vec<Recommendation> = found.iter().filter(|r| r.rule == "sti.unwrap-laplacian").cloned().collect();
+    assert_eq!(unwrap.len(), 1, "still a finding: {found:?}");
+    assert!(!rule_may_change(&c, "field_mapping.unwrapping_algorithm", &facts));
+    let before = c.clone();
+    let e = apply(&mut c, "sti.unwrap-laplacian", None, &facts).unwrap_err();
+    assert_eq!(e, "Phase unwrapping does not apply in this configuration, so sti.unwrap-laplacian leaves it as it is");
+    assert_eq!(c, before);
+    let settled = apply_all(&mut c, &unwrap, &facts).unwrap();
+    assert!(settled.apply.is_empty() && settled.conflicting.is_empty() && settled.outranked.is_empty(), "{settled:?}");
+    assert_eq!(c, before);
+    let (applied, left) = accept(&mut c, &found, Accept { recommendations: true, reference: true }, &facts);
+    let on_unwrapping = |rs: &[Recommendation]| rs.iter().any(|r| r.setting == "field_mapping.unwrapping_algorithm");
+    assert!(!on_unwrapping(&applied) && !on_unwrapping(&left), "{applied:?} {left:?}");
+    assert_eq!(c.field_mapping.unwrapping_algorithm, before.field_mapping.unwrapping_algorithm);
+    // With a field map (V-SHARP), the unwrapping applies and the rule changes it.
+    let mut mapped = PipelineConfig::default();
+    mapped.inversion.algorithm = QsmAlgorithm::Ilsqr;
+    assert!(rule_may_change(&mapped, "field_mapping.unwrapping_algorithm", &facts));
+    apply(&mut mapped, "sti.unwrap-laplacian", None, &facts).unwrap();
+    assert_eq!(mapped.field_mapping.unwrapping_algorithm, UnwrappingAlgorithm::Laplacian);
+    // The mask recipe is always a rule's to change.
+    assert!(rule_may_change(&c, "masking.sections", &facts));
 }

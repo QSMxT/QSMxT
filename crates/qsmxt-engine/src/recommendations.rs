@@ -10,6 +10,11 @@
 //! - **Nothing is changed silently.** A finding is shown; [`apply`] (the TUI's or qsmbly's
 //!   Apply, `qsmxt run --accept-recommendations` or `--accept-reference-settings`) changes a
 //!   setting only when asked.
+//! - **A rule never changes a hidden setting** ([`rule_may_change`], decision 194): one that does
+//!   not apply in the config (`sti.unwrap-laplacian` under iQFM, which maps no field) is left as it
+//!   is by [`apply`], [`apply_all`] and [`accept`]. It would do nothing for the run, and would come
+//!   back changed when the setting applies again. The finding is still shown. A pipeline's own
+//!   choices are not rules, and apply whole ([`crate::pipelines::choose`]).
 //! - **Two kinds** ([`Kind`], QSM.rs's): a rule is either **the original authors' setting**
 //!   (`reference`: their code, paper or README does it, with no reason given why it is better)
 //!   or **a reasoned recommendation** (`reasoned`: required, recommended or discouraged, for the
@@ -1236,11 +1241,13 @@ pub fn keep(dismissals: &mut Vec<Dismissal>, findings: &[Recommendation]) {
 /// [`settle`] gives (the same as [`accept`]'s), so the order of `findings` does not matter. A
 /// finding left by that precedence changes nothing and is not an error: the returned [`Settled`]
 /// says which findings were applied and which were left, and the setting keeps its value and goes
-/// on showing them. Every finding `settle` takes is tried; `Err` lists those that could not be
-/// applied.
-pub fn apply_all(config: &mut PipelineConfig, findings: &[Recommendation]) -> Result<Settled, String> {
-    let settled = settle(findings);
-    let errors: Vec<String> = settled.apply.iter().filter_map(|r| apply(config, &r.rule, None).err()).collect();
+/// on showing them. A finding on a setting that does not apply on a scan with `facts`
+/// ([`rule_may_change`]) is not taken, nor listed as left. Every finding `settle` takes is tried;
+/// `Err` lists those that could not be applied.
+pub fn apply_all(config: &mut PipelineConfig, findings: &[Recommendation], facts: &Facts) -> Result<Settled, String> {
+    let shown = |r: &Recommendation| rule_may_change(config, &r.setting, facts);
+    let settled = settle_where(findings, shown);
+    let errors: Vec<String> = settled.apply.iter().filter_map(|r| apply_rule(config, &r.rule, None).err()).collect();
     if errors.is_empty() { Ok(settled) } else { Err(errors.join("; ")) }
 }
 
@@ -1290,10 +1297,51 @@ pub fn prune_dismissals(config: &mut PipelineConfig, facts: &Facts) {
 
 // ─── Applying ───
 
+/// Whether a rule may change the setting at `path` (QSMxT's) in `config`, on a scan with `facts`:
+/// only while the setting applies there ([`crate::schema::visible_settings`]). A hidden setting
+/// does nothing for the run, and a value changed there would come back unasked when the setting
+/// applies again (decision 194).
+///
+/// The mask recipe and the magnitude correction are excepted, as the TUI has always excepted them.
+/// Every run that makes a mask makes it from them, so they always apply; and a mask rule changes
+/// one part of the recipe (its generator, input, BET f or erosion) that no single row shows, so
+/// whether a row is in view says nothing about whether the rule may change it.
+pub fn rule_may_change(config: &PipelineConfig, path: &str, facts: &Facts) -> bool {
+    if matches!(path, "masking.sections" | "masking.inhomogeneity_correction") {
+        return true;
+    }
+    // What the scan facts say about which settings apply; the rest (coils, magnitude) unknown,
+    // which shows every setting the data could need.
+    let view = crate::schema::ViewFacts {
+        num_echoes: facts.echo_count,
+        field_strength: facts.field_strength,
+        voxel_size: facts.voxel_size.map(|(x, y, z)| [x, y, z]),
+        dims: facts.dims.map(|(x, y, z)| [x, y, z]),
+        manufacturer: facts.manufacturer.clone(),
+        measured_r2prime: facts.measured_r2prime,
+        ..Default::default()
+    };
+    crate::schema::visible_settings(config, &view).into_iter().find(|(p, _)| *p == path).is_none_or(|(_, shown)| shown)
+}
+
 /// Change `config` so the finding of `rule` is resolved: to the rule's recommended value, or, with
 /// `pick`, to another value it allows (one of [`Allowed::OneOf`]'s, or a number in its
-/// [`Allowed::Range`]). Any dismissal of the rule is dropped.
-pub fn apply(config: &mut PipelineConfig, rule: &str, pick: Option<&Value>) -> Result<(), String> {
+/// [`Allowed::Range`]). Any dismissal of the rule is dropped. A setting that does not apply on a
+/// scan with `facts` is refused and left as it is ([`rule_may_change`]); a required change (an
+/// output another setting needs) is always made.
+pub fn apply(config: &mut PipelineConfig, rule: &str, pick: Option<&Value>, facts: &Facts) -> Result<(), String> {
+    if let Some(r) = core::RULES.iter().find(|r| r.id == rule) {
+        let path = qsmxt_path(r.setting).unwrap_or(r.setting);
+        if !rule_may_change(config, path, facts) {
+            return Err(format!("{} does not apply in this configuration, so {rule} leaves it as it is", label_of(r.setting)));
+        }
+    }
+    apply_rule(config, rule, pick)
+}
+
+/// [`apply`] whether or not the setting applies: for a pipeline, whose choices and the authors'
+/// settings they bring apply whole ([`crate::pipelines`]), and for findings already checked.
+pub(crate) fn apply_rule(config: &mut PipelineConfig, rule: &str, pick: Option<&Value>) -> Result<(), String> {
     // A required change (an output another setting needs): turn the output on.
     if crate::normalise::REQUIRED_RULES.contains(&rule) {
         if let Some(a) = config.normalised().1.into_iter().find(|a| a.rule == rule) {
@@ -1676,16 +1724,19 @@ fn settle_where(findings: &[Recommendation], takes: impl Fn(&Recommendation) -> 
 }
 
 /// What `--accept-recommendations` and `--accept-reference-settings` change: the findings of the
-/// kinds `which` takes, as [`settle`] decides among them. Returns the findings applied (as they
-/// were before the change) and those left because they conflict.
-pub fn accept(config: &mut PipelineConfig, findings: &[Recommendation], which: Accept) -> (Vec<Recommendation>, Vec<Recommendation>) {
-    let settled = settle_where(findings, |r| match r.kind {
+/// kinds `which` takes, as [`settle`] decides among them, on settings that apply on a scan with
+/// `facts` ([`rule_may_change`]: a finding on a hidden setting is neither applied nor left).
+/// Returns the findings applied (as they were before the change) and those left because they
+/// conflict.
+pub fn accept(config: &mut PipelineConfig, findings: &[Recommendation], which: Accept, facts: &Facts)
+              -> (Vec<Recommendation>, Vec<Recommendation>) {
+    let settled = settle_where(findings, |r| rule_may_change(config, &r.setting, facts) && match r.kind {
         Kind::Reasoned => which.recommendations && r.actionable() && r.strength.preselected(),
         Kind::Reference => which.reference,
     });
     let mut applied = Vec::new();
     for r in settled.apply {
-        match apply(config, &r.rule, None) {
+        match apply_rule(config, &r.rule, None) {
             Ok(()) => applied.push(r),
             Err(e) => log::warn!("could not apply {}: {e}", r.rule),
         }

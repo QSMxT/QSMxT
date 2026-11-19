@@ -202,8 +202,9 @@ fn follow(config: &mut PipelineConfig, p: &ReferencePipeline, facts: &Facts) -> 
         // One setting at a time, the first rule on it in QSM.rs's order: what it sets can change
         // which rules apply next.
         let path = section_of(&first.setting).map(|(p, _)| p).ok_or_else(|| format!("no setting {}", first.setting))?;
+        // A pipeline's own settings apply whole, shown or not: not a rule offered on a config.
         if first.departs {
-            rec::apply(config, &first.rule, None)?;
+            rec::apply_rule(config, &first.rule, None)?;
         }
         followed.extend(rec::core_setting(&first.rule));
         if !set.contains(&path) {
@@ -716,7 +717,7 @@ mod tests {
             .filter(|r| r.rule.starts_with("qsmnetme.romeo-") && r.departs).collect();
         assert_eq!(diffs.iter().map(|r| r.rule.as_str()).collect::<Vec<_>>(), ["qsmnetme.romeo-weights"]);
         for r in &diffs {
-            rec::apply(&mut c, &r.rule, None).unwrap();
+            rec::apply(&mut c, &r.rule, None, &f).unwrap();
         }
         assert_eq!(c.field_mapping.romeo, cli);
         // From individual mode, the template, the global correction and the re-unwrapping follow.
@@ -726,7 +727,7 @@ mod tests {
         c.field_mapping.romeo.correct_global = true;
         for _ in 0..2 {
             for r in rec::reference_values(&c, &f).into_iter().filter(|r| r.rule.starts_with("qsmnetme.romeo-") && r.departs) {
-                rec::apply(&mut c, &r.rule, None).unwrap();
+                rec::apply(&mut c, &r.rule, None, &f).unwrap();
             }
         }
         assert_eq!(c.field_mapping.romeo, cli);
