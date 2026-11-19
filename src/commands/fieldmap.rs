@@ -283,19 +283,7 @@ fn run_field_mapping(
     let phase_slices: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
 
     // ── Optional 4D magnitude ──
-    let magnitudes: Option<Vec<Vec<f64>>> = if let Some(ref mag_path) = common.magnitude {
-        let mag_me = load_nifti_4d(mag_path)?;
-        if mag_me.echoes.len() != n_echoes {
-            return Err(QsmxtError::Config(format!(
-                "magnitude echo count ({}) does not match phase echo count ({})",
-                mag_me.echoes.len(),
-                n_echoes
-            )));
-        }
-        Some(mag_me.echoes)
-    } else {
-        None
-    };
+    let magnitudes = load_magnitudes(common, n_echoes)?;
     let mag_slices: Option<Vec<&[f64]>> =
         magnitudes.as_ref().map(|m| m.iter().map(|v| v.as_slice()).collect());
     let mag_option: Option<&[&[f64]]> = mag_slices.as_deref();
@@ -311,19 +299,7 @@ fn run_field_mapping(
     }
 
     // ── Scan metadata ──
-    let voxel_size = params.voxel_size.unwrap_or(phase_me.voxel_size);
-    let b0_direction = params
-        .b0_direction
-        .unwrap_or_else(|| phase::b0_direction_from_affine(&phase_me.affine));
-    let scan_meta = qsm_core::pipeline::config::ScanMetadata {
-        dims: (nx, ny, nz),
-        voxel_size,
-        echo_times: params.echo_times.clone(),
-        field_strength: params.field_strength,
-        b0_direction,
-        slice_geometry: None,
-        affine: Some(phase_me.affine),
-    };
+    let scan_meta = scan_metadata(&params, &phase_me);
 
     let config = field_mapping_config(common, algorithm, apply_algo);
 
@@ -374,6 +350,42 @@ fn run_field_mapping(
         info!("Field mask saved to {}", path.display());
     }
     Ok(())
+}
+
+/// The optional 4D magnitude, one volume per phase echo.
+fn load_magnitudes(common: &FieldmapCommonArgs, n_echoes: usize) -> crate::Result<Option<Vec<Vec<f64>>>> {
+    let magnitudes: Option<Vec<Vec<f64>>> = if let Some(ref mag_path) = common.magnitude {
+        let mag_me = load_nifti_4d(mag_path)?;
+        if mag_me.echoes.len() != n_echoes {
+            return Err(QsmxtError::Config(format!(
+                "magnitude echo count ({}) does not match phase echo count ({})",
+                mag_me.echoes.len(),
+                n_echoes
+            )));
+        }
+        Some(mag_me.echoes)
+    } else {
+        None
+    };
+    Ok(magnitudes)
+}
+
+/// The scan metadata from the resolved scan parameters, with the phase's header for what they
+/// leave out.
+fn scan_metadata(params: &ScanParams, phase_me: &MultiEcho) -> qsm_core::pipeline::config::ScanMetadata {
+    let voxel_size = params.voxel_size.unwrap_or(phase_me.voxel_size);
+    let b0_direction = params
+        .b0_direction
+        .unwrap_or_else(|| phase::b0_direction_from_affine(&phase_me.affine));
+    qsm_core::pipeline::config::ScanMetadata {
+        dims: phase_me.dims,
+        voxel_size,
+        echo_times: params.echo_times.clone(),
+        field_strength: params.field_strength,
+        b0_direction,
+        slice_geometry: None,
+        affine: Some(phase_me.affine),
+    }
 }
 
 /// `--complex-fit-output` / `--complex-fit-noise-output`: MEDI's complex fit itself, as QSM.rs's
