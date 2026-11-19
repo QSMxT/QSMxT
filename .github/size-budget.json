@@ -13,8 +13,6 @@
   "crates/qsmxt-io/src/dicom/export.rs": 830,
   "crates/qsmxt-io/src/pipeline/multiorient.rs": 950,
   "crates/qsmxt-io/src/pipeline/runner.rs": 1171,
-  "crates/qsmxt-tui/src/mask_builder.rs": 976,
-  "crates/qsmxt-tui/src/settings_rows.rs": 1083,
   "src/cli.rs": 3535,
   "src/commands/invert.rs": 917
  },
