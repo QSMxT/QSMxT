@@ -46,18 +46,13 @@ pub(super) fn rim_prose(rim: HarperellaRim) -> String {
     }
 }
 
-/// Display name + citation for a background-field removal algorithm.
-pub(super) fn bg_removal_name_cite(alg: BfAlgorithm) -> (&'static str, &'static Citation) {
-    match alg {
-        BfAlgorithm::Vsharp => ("V-SHARP", &CITE_VSHARP),
-        BfAlgorithm::Pdf => ("PDF", &CITE_PDF),
-        BfAlgorithm::Lbv => ("LBV", &CITE_LBV),
-        BfAlgorithm::Ismv => ("iSMV", &CITE_ISMV),
-        BfAlgorithm::Sharp => ("SHARP", &CITE_SHARP),
-        BfAlgorithm::Resharp => ("RESHARP", &CITE_RESHARP),
-        BfAlgorithm::Harperella => ("HARPERELLA", &CITE_HARPERELLA),
-        BfAlgorithm::Iharperella => ("iHARPERELLA", &CITE_IHARPERELLA),
-        BfAlgorithm::Bfrnet => ("BFRnet (deep-learning background removal)", &CITE_BFRNET),
-        BfAlgorithm::Iqfm => ("iQFM (deep-learning joint unwrapping + background removal)", &CITE_IQSM),
-    }
+/// Display name + citations for a background-field removal algorithm: the catalogue's name, or
+/// for the networks QSMxT's, which says what the network does.
+pub(super) fn bg_removal_name_cite(alg: BfAlgorithm) -> (&'static str, Vec<Citation>) {
+    let name = match alg {
+        BfAlgorithm::Bfrnet => "BFRnet (deep-learning background removal)",
+        BfAlgorithm::Iqfm => "iQFM (deep-learning joint unwrapping + background removal)",
+        _ => catalogue_method(MethodStage::BackgroundRemoval, alg.as_str()).name,
+    };
+    (name, method(MethodStage::BackgroundRemoval, alg.as_str()))
 }

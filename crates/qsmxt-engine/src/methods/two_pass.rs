@@ -11,7 +11,7 @@ pub(super) fn describe_two_pass(config: &PipelineConfig, ran: Ran, doc: &mut Dra
     if !config.masking.two_pass || (not_applied > 0 && ran.ran(Stage::Mask(Pass::Reliable)) == 0) {
         return;
     }
-    doc.cite(&CITE_TWOPASS);
+    doc.cite_method(MethodStage::InversionAddition, "two-pass");
 
     let sections = config.masking.resolved_two_pass_sections();
     let mut descs = Vec::new();
@@ -47,7 +47,7 @@ pub(super) fn describe_two_pass(config: &PipelineConfig, ran: Ran, doc: &mut Dra
              rim. {repeated} repeated against this mask.",
         ));
         if separate_bgremove {
-            doc.cite(&CITE_LBV);
+            doc.cite_method(MethodStage::BackgroundRemoval, "lbv");
             doc.say(&two_pass_steps(), "Voxels next to the holes that background field removal left without a value \
                                         were filled by LBV background field removal (Zhou et al., 2014) on the same mask.".to_string());
         }

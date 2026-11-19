@@ -90,16 +90,16 @@ pub(super) fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mu
     }
     match (fm.phase_offset_removal && !per_echo, fm.bipolar_correction && fm.phase_offset_removal && !per_echo) {
         (true, true) => {
-            doc.cite(&CITE_MCPC3DS);
-            doc.cite(&CITE_BIPOLAR);
+            doc.cite_method(MethodStage::PhaseCorrection, "mcpc-3d-s");
+            doc.cite_method(MethodStage::PhaseCorrection, "bipolar-correction");
             doc.say(&[Stage::FieldMap], format!("Phase offset removal (Eckstein et al., 2018{sigma}) and bipolar gradient correction (Eckstein, 2021) were applied."));
         }
         (true, false) => {
-            doc.cite(&CITE_MCPC3DS);
+            doc.cite_method(MethodStage::PhaseCorrection, "mcpc-3d-s");
             doc.say(&[Stage::FieldMap], format!("Phase offset removal was performed using MCPC-3D-S (Eckstein et al., 2018{sigma})."));
         }
         (false, true) => {
-            doc.cite(&CITE_BIPOLAR);
+            doc.cite_method(MethodStage::PhaseCorrection, "bipolar-correction");
             doc.say(&[Stage::FieldMap], "Bipolar gradient correction (Eckstein, 2021) was applied.".to_string());
         }
         (false, false) => {}
@@ -123,7 +123,7 @@ pub(super) fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mu
             };
             let mut changed = Changed::default();
             changed.add_fields(&fm.romeo, &d.romeo, &["individual"]);
-            doc.cite(&CITE_ROMEO);
+            doc.cite_method(MethodStage::Unwrapping, "romeo");
             doc.say(&[Stage::FieldMap], format!("Phase unwrapping was performed using ROMEO (Dymerska et al., 2021){mode}{}.", changed.with()));
         }
         UnwrappingAlgorithm::Laplacian => {
@@ -133,7 +133,7 @@ pub(super) fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mu
                 LaplacianSolver::Fft => " with an FFT Poisson solve".to_string(),
                 LaplacianSolver::Mirror => " with an FFT Poisson solve on the volume mirrored along each axis".to_string(),
                 LaplacianSolver::Mgpcg => {
-                    doc.cite(&CITE_LBV);
+                    doc.cite_method(MethodStage::BackgroundRemoval, "lbv");
                     ", solved inside the brain mask with the phase held at zero outside it by multigrid-preconditioned \
                      conjugate gradients as in QSM.jl, which removes the background field in the same step, \
                      equivalent to LBV background removal (Zhou et al., 2014)".to_string()
@@ -147,18 +147,18 @@ pub(super) fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mu
             } else {
                 String::new()
             };
-            doc.cite(&CITE_LAPLACIAN_UNWRAP);
+            doc.cite_method(MethodStage::Unwrapping, "laplacian");
             doc.say(&[Stage::FieldMap], format!(
                 "Phase unwrapping was performed separately for each echo{whole} using the Laplacian method (Schofield & Zhu, 2003){solver}{pad}."));
         }
         UnwrappingAlgorithm::Prelude => {
-            doc.cite(&CITE_PRELUDE);
+            doc.cite_method(MethodStage::Unwrapping, "prelude");
             doc.say(&[Stage::FieldMap], format!(
                 "Phase unwrapping was performed separately for each echo using PRELUDE (Jenkinson, 2003){}.",
                 prelude_changes(fm, &d).with()));
         }
         UnwrappingAlgorithm::MediRegionGrowing => {
-            doc.cite(&CITE_FIT_PPM_COMPLEX);
+            doc.cite_method(MethodStage::Unwrapping, "medi-region-growing");
             doc.say(&[Stage::FieldMap],
                 "Phase unwrapping was performed separately for each echo using MEDI's magnitude-guided region growing (Liu et al., 2013).".to_string());
         }
@@ -179,7 +179,7 @@ pub(super) fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mu
                 } else {
                     String::new()
                 };
-                doc.cite(&CITE_UKB_QSM);
+                doc.cite(&paper("wang2022"));
                 doc.say(&[Stage::FieldMap], format!(
                     "The B0 field map was estimated as a weighted average of the unwrapped echo phases with per-echo weights TE·exp(−TE/T2*), computed from the echo times and an assumed T2*{t2star} and identical in every voxel (Wang et al., 2022)."));
             } else {
@@ -207,7 +207,7 @@ pub(super) fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mu
             });
         }
         B0Estimation::QsmartEchofit => {
-            doc.cite(&CITE_QSMART);
+            doc.cite_method(MethodStage::EchoCombination, "qsmart-echofit");
             let threshold = match fm.qsmart_fit_threshold() {
                 qsm_core::utils::QsmartFitThreshold::Percentile(p) => format!("its {p}th percentile"),
                 qsm_core::utils::QsmartFitThreshold::Absolute(t) => format!("{t}"),
@@ -233,12 +233,12 @@ pub(super) fn describe_complex_fit(config: &PipelineConfig, doc: &mut Draft) {
     let (fm, d) = (&config.field_mapping, FieldMappingConfig::default());
     let mut fit = Changed::default();
     fit.add_fields(&fm.complex_fit, &d.complex_fit, &[]);
-    doc.cite(&CITE_FIT_PPM_COMPLEX);
+    doc.cite_method(MethodStage::EchoCombination, "complex-fit");
     let unwrapping = match fm.unwrapping_algorithm {
         UnwrappingAlgorithm::Romeo => {
             let mut changed = Changed::default();
             changed.add_fields(&fm.romeo, &d.romeo, &["individual", "template"]);
-            doc.cite(&CITE_ROMEO);
+            doc.cite_method(MethodStage::Unwrapping, "romeo");
             format!("ROMEO (Dymerska et al., 2021){}", changed.with())
         }
         UnwrappingAlgorithm::Laplacian => {
@@ -247,11 +247,11 @@ pub(super) fn describe_complex_fit(config: &PipelineConfig, doc: &mut Draft) {
             } else {
                 format!(" with the {} solver", fm.laplacian_solver)
             };
-            doc.cite(&CITE_LAPLACIAN_UNWRAP);
+            doc.cite_method(MethodStage::Unwrapping, "laplacian");
             format!("the Laplacian method (Schofield & Zhu, 2003){solver}")
         }
         UnwrappingAlgorithm::Prelude => {
-            doc.cite(&CITE_PRELUDE);
+            doc.cite_method(MethodStage::Unwrapping, "prelude");
             format!("PRELUDE (Jenkinson, 2003){}", prelude_changes(fm, &d).with())
         }
         UnwrappingAlgorithm::MediRegionGrowing => {

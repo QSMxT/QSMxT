@@ -113,14 +113,14 @@ pub(super) fn describe_medi_csf(config: &PipelineConfig, ran: Ran, doc: &mut Dra
         return;
     }
     let scope = if ran.only(Topic::MediCsf, &[Choice::Applied]) { "" } else { " to runs of at least three echoes" };
-    doc.cite(&CITE_MEDI0);
+    let medi0 = doc.cite_method(MethodStage::InversionAddition, "medi-zero-reference");
     let mut changed = Changed::default();
     changed.add(differs(m.lambda_csf, d.lambda_csf), || format!("λ_CSF = {}", m.lambda_csf));
     changed.add(differs(m.csf_r2s_threshold, d.csf_r2s_threshold), || format!("CSF below R2* = {} Hz", m.csf_r2s_threshold));
     changed.add(m.csf_erode != d.csf_erode, || "without eroding the mask first".to_string());
     doc.say(&both(Stage::Inversion), format!(
         "MEDI's zero reference to the ventricular CSF (MEDI+0; {}{}) was applied{scope}.",
-        cite_inline(&CITE_MEDI0), changed.semi()));
+        cite_inline(&medi0), changed.semi()));
 }
 
 /// MEDI-mSMV, after MEDI's name and citation in the inversion's sentence: ", with maximum
@@ -131,7 +131,7 @@ pub(super) fn medi_msmv(config: &PipelineConfig, doc: &mut Draft) -> String {
     if config.inversion.algorithm != QsmAlgorithm::Medi || !m.msmv {
         return String::new();
     }
-    doc.cite(&CITE_MSMV);
+    let msmv = doc.cite_method(MethodStage::InversionAddition, "msmv");
     let mut changed = Changed::default();
     changed.add(m.msmv_maxk != d.msmv_maxk, || format!("at most {} boundary-correction passes", m.msmv_maxk.saturating_sub(1)));
     changed.add(m.msmv_vessel_radius != d.msmv_vessel_radius, || match m.msmv_vessel_radius {
@@ -141,7 +141,7 @@ pub(super) fn medi_msmv(config: &PipelineConfig, doc: &mut Draft) -> String {
     changed.add(m.msmv_prefilter != d.msmv_prefilter, || format!(
         "the SMV prefilter {}", if m.msmv_prefilter { "enabled" } else { "disabled" }));
     format!(", with maximum spherical mean value (mSMV) filtering of the local field ({}{})",
-        cite_inline(&CITE_MSMV), changed.semi())
+        cite_inline(&msmv), changed.semi())
 }
 
 /// HEIDI's sentence, when it ran: after the inversion (each echo's, for a per-echo QSM), or on a
@@ -151,7 +151,7 @@ pub(super) fn describe_heidi(config: &PipelineConfig, ran: Ran, doc: &mut Draft)
     if !config.pipeline.do_qsm || !i.heidi.enabled {
         return;
     }
-    doc.cite(&CITE_HEIDI);
+    let heidi = doc.cite_method(MethodStage::InversionAddition, "heidi");
     // As [`describe_two_pass`] decides whether two-pass ran.
     let two_pass = config.masking.two_pass
         && !(ran.count(Topic::TwoPass, Choice::NotApplied) > 0 && ran.ran(Stage::Mask(Pass::Reliable)) == 0);
@@ -170,7 +170,7 @@ pub(super) fn describe_heidi(config: &PipelineConfig, ran: Ran, doc: &mut Draft)
         "Streaking was reduced with HEIDI (Homogeneity Enabled Incremental Dipole Inversion) ({}) on {what}: its well-conditioned k-space coefficients \
          were kept, and the dipole cone was filled by total variation weighted by the field's \
          homogeneity{}.",
-        cite_inline(&CITE_HEIDI), changed.comma_with()));
+        cite_inline(&heidi), changed.comma_with()));
 }
 
 /// The network that reconstructs from the wrapped phase (iQFM, iQSM or iQSM+) a run uses, by
@@ -203,42 +203,51 @@ pub(super) fn say_tiling(config: &PipelineConfig, stage: fn(Pass) -> Stage, doc:
     });
 }
 
-/// Display name + citation for a dipole inversion algorithm. Shared by the
-/// standard pipeline's inversion sentence and QSMART's inner inversion.
-/// Tgv/Qsmart are not valid dipole inversions; they fall back to iLSQR
-/// defensively (not reached in practice).
-pub(super) fn inversion_name_cite(alg: QsmAlgorithm) -> (&'static str, &'static Citation) {
+/// Display name + citations for a dipole inversion algorithm. Shared by the standard pipeline's
+/// inversion sentence and QSMART's inner inversion. Tgv/Qsmart are not valid dipole inversions;
+/// they fall back to iLSQR defensively (not reached in practice).
+pub(super) fn inversion_name_cite(alg: QsmAlgorithm) -> (&'static str, Vec<Citation>) {
+    let id = match alg {
+        QsmAlgorithm::Tgv | QsmAlgorithm::Qsmart => QsmAlgorithm::Ilsqr.as_str(),
+        _ => alg.as_str(),
+    };
+    (inversion_label(alg), method(MethodStage::Inversion, id))
+}
+
+/// An inversion's name in the methods text: the catalogue's, or QSMxT's where it spells out the
+/// acronym or says what a network does.
+fn inversion_label(alg: QsmAlgorithm) -> &'static str {
     match alg {
-        QsmAlgorithm::Rts => ("RTS (Rapid Two-Step)", &CITE_RTS),
-        QsmAlgorithm::Tv => ("Total Variation (TV-ADMM)", &CITE_TV),
-        QsmAlgorithm::Tkd => ("TKD (Thresholded K-space Division)", &CITE_TKD),
-        QsmAlgorithm::Tsvd => ("TSVD (Truncated Singular Value Decomposition)", &CITE_TKD),
-        QsmAlgorithm::Tikhonov => ("Tikhonov regularization", &CITE_TIKHONOV),
-        QsmAlgorithm::Nltv => ("NLTV (Nonlinear Total Variation)", &CITE_NLTV),
-        QsmAlgorithm::Medi => ("MEDI (Morphology Enabled Dipole Inversion)", &CITE_MEDI),
-        QsmAlgorithm::Tfi => ("TFI (Total Field Inversion)", &CITE_TFI),
-        QsmAlgorithm::Ilsqr => ("iLSQR", &CITE_ILSQR),
-        QsmAlgorithm::Star => ("STAR-QSM (Streaking Artifact Reduction)", &CITE_STAR),
-        QsmAlgorithm::Lsqr => ("minimally regularised LSQR", &CITE_LSQR),
-        QsmAlgorithm::Ndi => ("NDI (Nonlinear Dipole Inversion)", &CITE_NDI),
-        QsmAlgorithm::Fansi => ("FANSI (Nonlinear TV)", &CITE_NLTV),
-        QsmAlgorithm::FansiTgv => ("FANSI (Nonlinear TGV)", &CITE_NLTV),
-        QsmAlgorithm::L1qsm => ("L1-QSM (L1 Data Fidelity)", &CITE_L1QSM),
-        QsmAlgorithm::Whqsm => ("WH-QSM (Weak-Harmonic)", &CITE_WHQSM),
-        QsmAlgorithm::Hdqsm => ("HD-QSM (Hybrid Data Fidelity)", &CITE_HDQSM),
-        QsmAlgorithm::AmpPe => ("AMP-PE (Approximate Message Passing with Parameter Estimation)", &CITE_AMPPE),
-        QsmAlgorithm::Xqsm => ("xQSM (deep-learning dipole inversion)", &CITE_XQSM),
-        QsmAlgorithm::Qsmnet => ("QSMnet (deep-learning dipole inversion)", &CITE_QSMNET),
-        QsmAlgorithm::QsmnetPlus => ("QSMnet+ (deep-learning dipole inversion)", &CITE_QSMNET_PLUS),
-        QsmAlgorithm::Qsmnetme => ("QSMnetME (deep-learning dipole inversion)", &CITE_CHISEPNET),
-        QsmAlgorithm::Autoqsm => ("AutoQSM (single-step deep-learning reconstruction)", &CITE_AUTOQSM),
-        QsmAlgorithm::Qsmgan => ("QSMGAN (GAN-refined deep-learning dipole inversion)", &CITE_QSMGAN),
-        QsmAlgorithm::Ir2qsm => ("IR2QSM (unrolled deep-learning dipole inversion)", &CITE_IR2QSM),
-        QsmAlgorithm::Lpcnn => ("LPCNN (learned-proximal deep-learning dipole inversion)", &CITE_LPCNN),
-        QsmAlgorithm::ModlQsm => ("MoDL-QSM (model-based deep-learning dipole inversion)", &CITE_MODLQSM),
-        QsmAlgorithm::Nextqsm => ("NeXtQSM (single-step deep-learning reconstruction)", &CITE_NEXTQSM),
-        QsmAlgorithm::Iqsm => ("iQSM (end-to-end deep-learning reconstruction from phase)", &CITE_IQSM),
-        QsmAlgorithm::IqsmPlus => ("iQSM+ (orientation-adaptive end-to-end deep-learning reconstruction)", &CITE_IQSM_PLUS),
-        QsmAlgorithm::Tgv | QsmAlgorithm::Qsmart => ("iLSQR", &CITE_ILSQR),
+        QsmAlgorithm::Rts => "RTS (Rapid Two-Step)",
+        QsmAlgorithm::Tv => "Total Variation (TV-ADMM)",
+        QsmAlgorithm::Tkd => "TKD (Thresholded K-space Division)",
+        QsmAlgorithm::Tsvd => "TSVD (Truncated Singular Value Decomposition)",
+        QsmAlgorithm::Tikhonov => "Tikhonov regularization",
+        QsmAlgorithm::Nltv => "NLTV (Nonlinear Total Variation)",
+        QsmAlgorithm::Medi => "MEDI (Morphology Enabled Dipole Inversion)",
+        QsmAlgorithm::Tfi => "TFI (Total Field Inversion)",
+        QsmAlgorithm::Star => "STAR-QSM (Streaking Artifact Reduction)",
+        QsmAlgorithm::Lsqr => "minimally regularised LSQR",
+        QsmAlgorithm::Ndi => "NDI (Nonlinear Dipole Inversion)",
+        QsmAlgorithm::Fansi => "FANSI (Nonlinear TV)",
+        QsmAlgorithm::FansiTgv => "FANSI (Nonlinear TGV)",
+        QsmAlgorithm::L1qsm => "L1-QSM (L1 Data Fidelity)",
+        QsmAlgorithm::Whqsm => "WH-QSM (Weak-Harmonic)",
+        QsmAlgorithm::Hdqsm => "HD-QSM (Hybrid Data Fidelity)",
+        QsmAlgorithm::AmpPe => "AMP-PE (Approximate Message Passing with Parameter Estimation)",
+        QsmAlgorithm::Xqsm => "xQSM (deep-learning dipole inversion)",
+        QsmAlgorithm::Qsmnet => "QSMnet (deep-learning dipole inversion)",
+        QsmAlgorithm::QsmnetPlus => "QSMnet+ (deep-learning dipole inversion)",
+        QsmAlgorithm::Qsmnetme => "QSMnetME (deep-learning dipole inversion)",
+        QsmAlgorithm::Autoqsm => "AutoQSM (single-step deep-learning reconstruction)",
+        QsmAlgorithm::Qsmgan => "QSMGAN (GAN-refined deep-learning dipole inversion)",
+        QsmAlgorithm::Ir2qsm => "IR2QSM (unrolled deep-learning dipole inversion)",
+        QsmAlgorithm::Lpcnn => "LPCNN (learned-proximal deep-learning dipole inversion)",
+        QsmAlgorithm::ModlQsm => "MoDL-QSM (model-based deep-learning dipole inversion)",
+        QsmAlgorithm::Nextqsm => "NeXtQSM (single-step deep-learning reconstruction)",
+        QsmAlgorithm::Iqsm => "iQSM (end-to-end deep-learning reconstruction from phase)",
+        QsmAlgorithm::IqsmPlus => "iQSM+ (orientation-adaptive end-to-end deep-learning reconstruction)",
+        QsmAlgorithm::Ilsqr | QsmAlgorithm::Tgv | QsmAlgorithm::Qsmart =>
+            catalogue_method(MethodStage::Inversion, QsmAlgorithm::Ilsqr.as_str()).name,
     }
 }

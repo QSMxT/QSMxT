@@ -388,19 +388,34 @@ impl Methods {
 #[derive(Default)]
 struct Draft {
     sentences: Vec<(String, Vec<Stage>, Vec<&'static str>)>,
-    references: Vec<&'static Citation>,
+    references: Vec<Citation>,
     cited: Vec<&'static str>,
 }
 
 impl Draft {
     /// Cite `cite` in the next sentence, and list it if it is not listed yet.
-    fn cite(&mut self, cite: &'static Citation) {
+    fn cite(&mut self, cite: &Citation) {
         if !self.references.iter().any(|c| c.key == cite.key) {
-            self.references.push(cite);
+            self.references.push(cite.clone());
         }
         if !self.cited.contains(&cite.key) {
             self.cited.push(cite.key);
         }
+    }
+
+    /// Cite each of `cites` in the next sentence, in order.
+    fn cite_all(&mut self, cites: &[Citation]) {
+        for c in cites {
+            self.cite(c);
+        }
+    }
+
+    /// Cite the works of method `id` in `stage` ([`method`]) in the next sentence, and return
+    /// them, for the sentence's in-text citation.
+    fn cite_method(&mut self, stage: MethodStage, id: &str) -> Vec<Citation> {
+        let cites = method(stage, id);
+        self.cite_all(&cites);
+        cites
     }
 
     /// A sentence about `steps`, citing what was cited since the last one.

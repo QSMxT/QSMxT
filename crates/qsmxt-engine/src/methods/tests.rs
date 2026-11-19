@@ -263,6 +263,21 @@ fn chi_sep_ilsqr_methods_state_its_own_qsm() {
     assert!(!generate_methods(&config).contains(own));
 }
 
+/// HC-ChiSep cites its own work and the hollow-cylinder model's paper, in the text and the
+/// reference list.
+#[test]
+fn hc_chisep_methods_cite_both_works() {
+    let mut config = PipelineConfig::default();
+    config.pipeline.do_chi_separation = true;
+    config.separation.algorithm = SeparationAlgorithm::HcChisep;
+    let out = generate_methods(&config);
+    assert!(out.contains("hollow-cylinder χ-separation (HC-ChiSep) (Stewart et al., 2026; Wharton & Bowtell, 2012)"), "{out}");
+    let refs = out.split("## References").nth(1).expect("a reference list");
+    assert!(refs.contains("- Stewart, A., et al. (2026). \"Hollow-cylinder susceptibility source separation (HC-ChiSep).\"\n"), "{refs}");
+    assert!(refs.contains("- Wharton, S., Bowtell, R. (2012). \"Fiber orientation-dependent white matter contrast in gradient echo MRI.\" \
+        *Proceedings of the National Academy of Sciences*, 109(45):18559-18564. https://doi.org/10.1073/pnas.1211075109"), "{refs}");
+}
+
 #[test]
 fn vsharp_methods_describe_the_working_grid() {
     let mut config = PipelineConfig::default();
@@ -982,22 +997,27 @@ fn test_join_list() {
 
 #[test]
 fn test_cite_inline_known_keys() {
-    assert_eq!(cite_inline(&CITE_VSHARP), "Wu et al., 2012");
-    assert_eq!(cite_inline(&CITE_SHARP), "Schweser et al., 2011");
-    assert_eq!(cite_inline(&CITE_PDF), "Liu et al., 2011");
-    assert_eq!(cite_inline(&CITE_ISMV), "Wen et al., 2014");
-    assert_eq!(cite_inline(&CITE_LBV), "Zhou et al., 2014");
-    assert_eq!(cite_inline(&CITE_RTS), "Kames et al., 2018");
-    assert_eq!(cite_inline(&CITE_RESHARP), "Sun & Wilman, 2014");
-    assert_eq!(cite_inline(&CITE_HARPERELLA), "Li et al., 2014");
-    assert_eq!(cite_inline(&CITE_IHARPERELLA), "Li et al., 2015");
-    assert_eq!(cite_inline(&CITE_BIPOLAR), "Eckstein, 2021");
+    let inline = |stage, id| cite_inline(&method(stage, id));
+    assert_eq!(inline(MethodStage::BackgroundRemoval, "vsharp"), "Wu et al., 2012");
+    assert_eq!(inline(MethodStage::BackgroundRemoval, "sharp"), "Schweser et al., 2011");
+    assert_eq!(inline(MethodStage::BackgroundRemoval, "pdf"), "Liu et al., 2011");
+    assert_eq!(inline(MethodStage::BackgroundRemoval, "ismv"), "Wen et al., 2014");
+    assert_eq!(inline(MethodStage::BackgroundRemoval, "lbv"), "Zhou et al., 2014");
+    assert_eq!(inline(MethodStage::Inversion, "rts"), "Kames et al., 2018");
+    assert_eq!(inline(MethodStage::BackgroundRemoval, "resharp"), "Sun & Wilman, 2014");
+    assert_eq!(inline(MethodStage::BackgroundRemoval, "harperella"), "Li et al., 2014");
+    assert_eq!(inline(MethodStage::BackgroundRemoval, "iharperella"), "Li et al., 2015");
+    assert_eq!(inline(MethodStage::PhaseCorrection, "bipolar-correction"), "Eckstein, 2021");
 }
 
 #[test]
-fn test_cite_inline_unknown_key() {
-    let unknown = Citation { key: "unknown2099", text: "Some text" };
-    assert_eq!(cite_inline(&unknown), "unknown2099");
+fn test_cite_inline_joins_several_works() {
+    let a = Citation { key: "a2001", text: "A".into(), inline: "A et al., 2001".into() };
+    let b = Citation { key: "b2002", text: "B".into(), inline: "B & C, 2002".into() };
+    assert_eq!(cite_inline(std::slice::from_ref(&a)), "A et al., 2001");
+    assert_eq!(cite_inline(&[a.clone(), b.clone()]), "A et al., 2001; B & C, 2002");
+    let a2 = Citation { key: "a2001b", text: "A2".into(), inline: "A et al., 2001".into() };
+    assert_eq!(cite_inline(&[a, a2, b]), "A et al., 2001; B & C, 2002");
 }
 
 // ─── All inversion algorithms in methods ───
