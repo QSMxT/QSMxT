@@ -20,8 +20,8 @@ import os
 import re
 import sys
 
-# `#[cfg(test)]`, and qsmxt-io's test helpers, which the binary's tests reach through its
-# `testutils` feature.
+# `#[cfg(test)]`, and qsmxt-io's and qsmxt-tui's test helpers, which other crates' tests reach through their
+# `testutils` features.
 CFG_TEST = re.compile(r'^\s*#\[cfg\((?:test|any\(test, feature = "testutils"\))\)\]\s*$')
 OUT_OF_LINE_MOD = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*;")
 

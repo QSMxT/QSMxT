@@ -19,7 +19,7 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 
-WORKSPACE = {"qsmxt", "qsmxt-engine", "qsmxt-io"}
+WORKSPACE = {"qsmxt", "qsmxt-engine", "qsmxt-io", "qsmxt-tui"}
 SLOW_S = 10.0
 
 

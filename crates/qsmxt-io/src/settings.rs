@@ -45,6 +45,15 @@ pub fn apply_normalised(config: &mut PipelineConfig, settings: &RunSettings) -> 
     Ok(())
 }
 
+/// A `--qsmart-fit-threshold-mode` value, refused as the command line refuses it.
+fn fit_threshold_mode(m: &str) -> crate::Result<qsmxt_engine::QsmartFitThresholdMode> {
+    match m {
+        "percentile" => Ok(qsmxt_engine::QsmartFitThresholdMode::Percentile),
+        "absolute" => Ok(qsmxt_engine::QsmartFitThresholdMode::Absolute),
+        _ => Err(QsmxtError::Config(format!("invalid variant: {m}"))),
+    }
+}
+
 /// The values the registry's types and ranges do not check, refused with what to give instead.
 fn check(given: &[Given]) -> crate::Result<()> {
     let err = QsmxtError::Config;
@@ -114,11 +123,7 @@ pub fn apply(config: &mut PipelineConfig, given: &[Given]) -> crate::Result<()> 
         config.field_mapping.romeo.template = t.parse::<usize>().map_err(|e| err(e.to_string()))?.saturating_sub(1);
     }
     {
-        let mode = one("qsmart-fit-threshold-mode").map(|m| match m {
-            "percentile" => Ok(qsmxt_engine::QsmartFitThresholdMode::Percentile),
-            "absolute" => Ok(qsmxt_engine::QsmartFitThresholdMode::Absolute),
-            _ => Err(err(format!("invalid variant: {m}"))),
-        }).transpose()?;
+        let mode = one("qsmart-fit-threshold-mode").map(fit_threshold_mode).transpose()?;
         let number = |long: &str| one(long).map(|v| v.parse::<f64>().map_err(|e| err(e.to_string()))).transpose();
         crate::pipeline::config::apply_qsmart_fit_threshold(&mut config.field_mapping, mode,
             number("qsmart-fit-percentile")?, number("qsmart-fit-threshold")?);

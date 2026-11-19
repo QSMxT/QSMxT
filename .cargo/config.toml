@@ -3,4 +3,5 @@
 [alias]
 nt-engine = "nextest run -p qsmxt-engine"
 nt-io = "nextest run -p qsmxt-io"
+nt-tui = "nextest run -p qsmxt-tui"
 nt-bin = "nextest run -p qsmxt"

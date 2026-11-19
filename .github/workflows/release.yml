@@ -57,7 +57,7 @@ jobs:
       - name: Run coverage
         run: >
           cargo llvm-cov --workspace --lcov --output-path target/lcov.info
-          --ignore-filename-regex '(^|/)src/(main|tui/mod|tui/ui|commands/update)\.rs$'
+          --ignore-filename-regex '(^|/)(src/(main|commands/update)|crates/qsmxt-tui/src/lib)\.rs$'
 
       - name: Enforce 70% coverage
         run: |
