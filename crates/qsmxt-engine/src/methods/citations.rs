@@ -123,6 +123,34 @@ pub(super) fn cite_inline(cites: &[Citation]) -> String {
     inline.join("; ")
 }
 
+/// In-text citations for a reference page that cites catalogue works (the docs' algorithm tables,
+/// the README's): each work as the methods text cites it, and, as the methods text does, with a
+/// letter after the year where different works on the page share a citation ("Liu et al.,
+/// 2011a"). The letters follow the order the page first cites the works.
+pub(crate) struct PageCitations {
+    collisions: Vec<Collision>,
+}
+
+impl PageCitations {
+    /// The citations of a page that cites `works`, in the order it cites them.
+    pub(crate) fn new(works: impl IntoIterator<Item = &'static catalogue::Citation>) -> Self {
+        let mut references: Vec<Citation> = Vec::new();
+        for w in works {
+            if !references.iter().any(|r| r.key == w.key) {
+                references.push(from_record(w));
+            }
+        }
+        Self { collisions: collisions(&references) }
+    }
+
+    /// `work`'s in-text citation on the page.
+    pub(crate) fn inline(&self, work: &catalogue::Citation) -> String {
+        self.collisions.iter().flat_map(|c| &c.works).find(|(key, _)| *key == work.key)
+            .map(|(_, label)| label.clone())
+            .unwrap_or_else(|| inline_text(work))
+    }
+}
+
 // ─── Works that are not a catalogue method's ───
 
 pub(super) const CITE_QSM_CONSENSUS: Citation = Citation {

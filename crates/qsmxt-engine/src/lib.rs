@@ -50,6 +50,7 @@ pub mod observe;
 pub mod stages;
 pub mod schema;
 pub mod profile;
+pub mod reference_docs;
 pub mod supplied;
 
 pub use config::*;
