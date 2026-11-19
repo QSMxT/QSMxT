@@ -60,7 +60,6 @@
   "src/commands/fieldmap.rs::run_field_mapping": 125,
   "src/commands/integration_tests.rs::bids_validator_fixture": 152,
   "src/commands/run.rs::execute": 237,
-  "src/commands/separate.rs::execute": 330,
   "src/commands/update.rs::install_binary": 123,
   "src/commands/validate.rs::execute": 121
  },
