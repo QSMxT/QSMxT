@@ -6,6 +6,8 @@ use crate::config::PipelineConfig;
 use crate::error::EngineError;
 use crate::scan::RunMetadata;
 
+mod step;
+
 /// The `motion` step's parameters.
 pub fn params(config: &PipelineConfig, meta: &RunMetadata) -> serde_json::Value {
     serde_json::json!({

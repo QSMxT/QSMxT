@@ -10,6 +10,9 @@
 //! Each stage module also builds that stage's parameters, the JSON its step is cached under
 //! ([`crate::cache::step_cache_key`]): what changes the result is decided next to the code that
 //! computes it.
+//!
+//! Each stage's `step` module runs it as a step of a run ([`crate::run`]): its inputs read from the
+//! store, the functions here called, and what they return kept.
 
 pub mod phase;
 pub mod magnitude;

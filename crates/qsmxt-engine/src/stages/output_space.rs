@@ -14,6 +14,8 @@
 use crate::error::EngineError;
 use crate::store::{Contrast, Geometry, Item};
 
+mod step;
+
 /// What a published volume is, for resampling it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
