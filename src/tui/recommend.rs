@@ -246,7 +246,7 @@ impl App {
                 let before = c.dismissed_recommendations.len();
                 rec::prune_dismissals(&mut c, &self.rule_facts());
                 if c.dismissed_recommendations.len() != before {
-                    self.pipeline_state.dismissed = c.dismissed_recommendations;
+                    self.form.dismissed = c.dismissed_recommendations;
                 }
             }
             previous = self.rec_snapshot.replace(Box::new(FormSnapshot::of(self)));
@@ -417,7 +417,7 @@ impl App {
                 self.form.settings.set("masking.sections", serde_json::to_value(&c.masking.sections).unwrap_or_default());
             }
         }
-        rec::keep(&mut self.pipeline_state.dismissed, &plan.kept);
+        rec::keep(&mut self.form.dismissed, &plan.kept);
         self.status_message = Some(plan.status());
         if !errors.is_empty() {
             self.error_message = Some(errors.join("; "));
@@ -476,7 +476,7 @@ impl App {
             before.restore(self);
             return Err(refused());
         }
-        self.pipeline_state.dismissed.retain(|d| d.rule != rule);
+        self.form.dismissed.retain(|d| d.rule != rule);
         self.status_message = Some(format!("{}: {}", r.label, value.and_then(|v| {
             r.alternatives().into_iter().find(|a| a.value == *v).map(|a| a.name.clone())
         }).unwrap_or(r.recommended.name.clone())));
@@ -767,7 +767,7 @@ mod tests {
         assert_eq!(RecModal::new(ndi.clone()).ticked(), 0);
         assert_eq!(AdviceModal::reference(vec![ndi[0].trigger.clone()], ndi.clone()).ticked(), 0);
         let mut b = app();
-        b.pipeline_state.set_select("bf_algorithm", super::super::app::BF_OPTIONS.iter().position(|o| *o == "iharperella").unwrap());
+        b.set_field_select("bf_algorithm", super::super::app::BF_OPTIONS.iter().position(|o| *o == "iharperella").unwrap());
         let rim: Vec<_> = b.rule_view().into_iter().filter(|r| r.rule == "iharperella.whole-rim" && r.departs).collect();
         assert_eq!(rim.len(), 1);
         assert!(RecModal::new(rim).rows[0].checked);
@@ -803,7 +803,7 @@ mod tests {
         assert!(app.rec_modal.is_none(), "not opened again by a change that creates nothing");
         app.rec_modal = Some(RecModal::new(app.rule_view().into_iter().filter(|r| r.rule == "medi-msmv.prefilter").collect()));
         app.handle_rec_modal_key(KeyEvent::from(KeyCode::Char('K')));
-        assert_eq!(app.pipeline_state.dismissed.len(), 1);
+        assert_eq!(app.form.dismissed.len(), 1);
         let config = super::super::command::config_from_app(&app).unwrap();
         assert_eq!(config.dismissed_recommendations[0].rule, "medi-msmv.prefilter", "the dismissal reaches the config");
         assert!(super::super::command::build_command_string(&app).contains("--dismiss-recommendation medi-msmv.prefilter=false"));
@@ -811,7 +811,7 @@ mod tests {
         // A change to the setting drops the dismissal; going back offers it again.
         app.toggle_field("medi_msmv_prefilter");
         app.check_recommendations();
-        assert!(app.pipeline_state.dismissed.is_empty());
+        assert!(app.form.dismissed.is_empty());
         app.toggle_field("medi_msmv_prefilter");
         app.check_recommendations();
         assert!(app.rec_modal.is_some());
@@ -832,7 +832,7 @@ mod tests {
             app.handle_ref_modal_key(KeyEvent::from(KeyCode::Esc));
             app.rec_modal = None;
             app.check_recommendations();
-            let chosen = app.pipeline_state.qsm_algorithm;
+            let chosen = app.qsm_algorithm();
             app.toggle_field("heidi_enabled");
             app.check_recommendations();
             if alg == "tkd" {
@@ -862,8 +862,8 @@ mod tests {
                 }
                 app.handle_ref_modal_key(KeyEvent::from(if apply { KeyCode::Char('a') } else { KeyCode::Char('K') }));
                 let want = if apply { lsqr } else { chosen };
-                assert_eq!(app.pipeline_state.qsm_algorithm, want, "{alg}: apply {apply}");
-                assert!(app.pipeline_state.heidi_enabled, "{alg}: HEIDI stays ticked");
+                assert_eq!(app.qsm_algorithm(), want, "{alg}: apply {apply}");
+                assert!(app.form.settings.toggle("inversion.heidi.enabled"), "{alg}: HEIDI stays ticked");
             }
         }
         for apply in [false, true] {
@@ -882,8 +882,8 @@ mod tests {
                 app.rec_modal.as_mut().unwrap().toggle(0);
             }
             app.handle_rec_modal_key(KeyEvent::from(if apply { KeyCode::Char('a') } else { KeyCode::Char('K') }));
-            assert_eq!(app.pipeline_state.qsm_algorithm, if apply { lsqr } else { chosen }, "medi: apply {apply}");
-            assert!(app.pipeline_state.heidi_enabled, "medi: HEIDI stays ticked");
+            assert_eq!(app.qsm_algorithm(), if apply { lsqr } else { chosen }, "medi: apply {apply}");
+            assert!(app.form.settings.toggle("inversion.heidi.enabled"), "medi: HEIDI stays ticked");
             let config = super::super::command::config_from_app(&app).unwrap();
             assert!(config.inversion.heidi.enabled);
         }
@@ -1234,7 +1234,7 @@ mod tests {
             key(&mut app, KeyCode::Esc);
             app.check_recommendations();
         }
-        app.pipeline_state.set_select("qsm_algorithm", chosen);
+        app.set_field_select("qsm_algorithm", chosen);
         app.check_recommendations();
         app
     }
@@ -1246,7 +1246,7 @@ mod tests {
     fn choosing_a_method_against_heidi_offers_to_turn_heidi_off() {
         for method in ["tfi", "tgv", "qsmart", "autoqsm", "nextqsm", "iqsm", "iqsm-plus"] {
             let mut app = method_chosen_with_heidi(method);
-            let chosen = app.pipeline_state.qsm_algorithm;
+            let chosen = app.qsm_algorithm();
             let modal = app.rec_modal.as_ref().expect("the pop-up opens");
             assert_eq!(modal.title(), format!(" {} requires a change ", modal.findings[0].current_text()), "{method}");
             assert!(matches!(modal.rows[0].action, RowAction::TurnOff { .. }) && modal.rows[0].checked, "{method}: turning HEIDI off starts ticked");
@@ -1259,8 +1259,8 @@ mod tests {
             assert!(!text.contains("→ LSQR"), "{method}: {text}");
 
             key(&mut app, KeyCode::Char('a'));
-            assert!(!app.pipeline_state.heidi_enabled, "{method}: HEIDI is off");
-            assert_eq!(app.pipeline_state.qsm_algorithm, chosen, "{method} stays chosen");
+            assert!(!app.form.settings.toggle("inversion.heidi.enabled"), "{method}: HEIDI is off");
+            assert_eq!(app.qsm_algorithm(), chosen, "{method} stays chosen");
         }
     }
 
@@ -1269,15 +1269,15 @@ mod tests {
     #[test]
     fn a_discouraged_method_just_chosen_is_not_changed_back_by_default() {
         let mut app = method_chosen_with_heidi("medi");
-        let medi = app.pipeline_state.qsm_algorithm;
+        let medi = app.qsm_algorithm();
         let modal = app.rec_modal.as_ref().expect("the pop-up opens");
         assert!(matches!(modal.rows[0].action, RowAction::TurnOff { .. }) && modal.rows[0].checked);
         assert!(!modal.rows.iter().any(|r| r.finding.setting == "inversion.algorithm" && matches!(r.action, RowAction::Apply { .. })),
             "MEDI is not offered to be changed back: {:?}", modal.rows);
         assert!(modal.keepable());
         key(&mut app, KeyCode::Char('a'));
-        assert!(!app.pipeline_state.heidi_enabled);
-        assert_eq!(app.pipeline_state.qsm_algorithm, medi);
+        assert!(!app.form.settings.toggle("inversion.heidi.enabled"));
+        assert_eq!(app.qsm_algorithm(), medi);
     }
 
     /// `!` on a method HEIDI cannot follow: turning HEIDI off and choosing LSQR are two ways to
@@ -1287,8 +1287,8 @@ mod tests {
     fn ways_to_meet_one_requirement_are_one_choice() {
         let chosen = |name: &str| QSM_PICKER_OPTIONS.iter().position(|o| *o == name).unwrap();
         let mut app = app();
-        app.pipeline_state.heidi_enabled = true;
-        app.pipeline_state.set_select("qsm_algorithm", chosen("qsmart"));
+        app.form.settings.set("inversion.heidi.enabled", true);
+        app.set_field_select("qsm_algorithm", chosen("qsmart"));
         let here: Vec<_> = app.rule_view().into_iter()
             .filter(|r| r.setting == "inversion.algorithm" && r.departs && r.strength == Strength::Required).collect();
         let mut modal = RecModal::details(here);
@@ -1327,7 +1327,7 @@ mod tests {
         while app.rec_modal.is_some() || app.refs.modal.is_some() {
             key(&mut app, KeyCode::Esc);
         }
-        assert!(app.pipeline_state.heidi_enabled);
+        assert!(app.form.settings.toggle("inversion.heidi.enabled"));
         // Now the threshold, back above the cone.
         let field = super::super::app::field_of_path("inversion.tkd.threshold").expect("the TKD threshold row");
         *app.field_text_mut(field).unwrap() = "0.25".into();
@@ -1381,7 +1381,7 @@ mod tests {
         let mut app = method_chosen_with_heidi("qsmart");
         assert!(!app.rec_modal.as_ref().unwrap().keepable());
         key(&mut app, KeyCode::Char('k'));
-        assert!(app.rec_modal.is_none() && app.pipeline_state.heidi_enabled);
+        assert!(app.rec_modal.is_none() && app.form.settings.toggle("inversion.heidi.enabled"));
     }
 
     /// Ticking every row of a method's reference pipeline pop-up and applying reaches a fixed
@@ -1597,8 +1597,8 @@ mod tests {
     fn details_of_a_setting_against_a_flag_offer_to_turn_it_off() {
         let chosen = |name: &str| QSM_PICKER_OPTIONS.iter().position(|o| *o == name).unwrap();
         let mut app = app();
-        app.pipeline_state.heidi_enabled = true;
-        app.pipeline_state.set_select("qsm_algorithm", chosen("qsmart"));
+        app.form.settings.set("inversion.heidi.enabled", true);
+        app.set_field_select("qsm_algorithm", chosen("qsmart"));
         let here: Vec<_> = app.rule_view().into_iter().filter(|r| r.setting == "inversion.algorithm" && r.departs).collect();
         let modal = RecModal::details(here);
         assert!(modal.rows.iter().any(|r| matches!(r.action, RowAction::TurnOff { .. })), "{:?}", modal.rows);
@@ -1608,9 +1608,9 @@ mod tests {
     #[test]
     fn a_rows_reference_says_each_thing_once() {
         let mut app = app();
-        app.pipeline_state.heidi_enabled = true;
-        app.pipeline_state.set_select("qsm_algorithm", QSM_PICKER_OPTIONS.iter().position(|o| *o == "lsqr").unwrap());
-        app.pipeline_state.heidi_enabled = true;
+        app.form.settings.set("inversion.heidi.enabled", true);
+        app.set_field_select("qsm_algorithm", QSM_PICKER_OPTIONS.iter().position(|o| *o == "lsqr").unwrap());
+        app.form.settings.set("inversion.heidi.enabled", true);
         let view = app.rule_view();
         let row = app.all_pages().into_iter().flat_map(|(_, _, rows)| rows)
             .find(|r| matches!(r, PipelineRow::AlgoSelect { field: "qsm_algorithm", .. })).unwrap();
@@ -1624,8 +1624,8 @@ mod tests {
     #[test]
     fn a_rows_reference_gives_each_value_to_its_strongest_advice() {
         let mut app = app();
-        app.pipeline_state.heidi_enabled = true;
-        app.pipeline_state.set_select("qsm_algorithm", QSM_PICKER_OPTIONS.iter().position(|o| *o == "qsmart").unwrap());
+        app.form.settings.set("inversion.heidi.enabled", true);
+        app.set_field_select("qsm_algorithm", QSM_PICKER_OPTIONS.iter().position(|o| *o == "qsmart").unwrap());
         let row = PipelineRow::AlgoSelect { label: "", field: "qsm_algorithm", options: &[], help: &[] };
         assert_eq!(App::row_reference(&app.rule_view(), &row).as_deref(),
                    Some("Required (HEIDI streaking reduction): LSQR — ! for details"));
@@ -1876,7 +1876,7 @@ mod tests {
         let lsqr = QSM_ALGO_OPTIONS.iter().position(|o| *o == "lsqr").unwrap();
         let mut app = app();
         pick(&mut app, LSQR_HEIDI);
-        assert_eq!((app.pipeline_state.qsm_algorithm, app.pipeline_state.heidi_enabled), (lsqr, true));
+        assert_eq!((app.qsm_algorithm(), app.form.settings.toggle("inversion.heidi.enabled")), (lsqr, true));
         assert_eq!(app.field_select("qsm_algorithm"), at(LSQR_HEIDI), "shown as the alias");
         let c = super::super::command::config_from_app(&app).unwrap();
         assert_eq!(c.inversion.algorithm, qsmxt_engine::QsmAlgorithm::Lsqr);
@@ -1885,14 +1885,14 @@ mod tests {
         app.refs.modal = None; // LSQR's own reference pipeline, as for plain LSQR.
 
         pick(&mut app, "lsqr");
-        assert_eq!((app.pipeline_state.qsm_algorithm, app.pipeline_state.heidi_enabled), (lsqr, false), "plain LSQR means no HEIDI");
+        assert_eq!((app.qsm_algorithm(), app.form.settings.toggle("inversion.heidi.enabled")), (lsqr, false), "plain LSQR means no HEIDI");
         assert_eq!(app.field_select("qsm_algorithm"), at("lsqr"));
         app.toggle_field("heidi_enabled");
         assert_eq!(app.field_select("qsm_algorithm"), at(LSQR_HEIDI), "ticking the box on LSQR is the same choice");
 
         // A method after it keeps the box, as the box does for any method, and says so.
         pick(&mut app, "medi");
-        assert!(app.pipeline_state.heidi_enabled);
+        assert!(app.form.settings.toggle("inversion.heidi.enabled"));
         assert_eq!(app.field_select("qsm_algorithm"), at("medi"));
     }
 }

@@ -17,6 +17,8 @@ mod form_snapshots;
 #[cfg(test)]
 mod schema_parity;
 #[cfg(test)]
+mod explore;
+#[cfg(test)]
 mod snapshot_tests;
 
 use std::io;

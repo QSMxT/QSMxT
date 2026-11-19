@@ -240,7 +240,7 @@ impl App {
                 trial.reset_field(field);
             }
         }
-        trial.pipeline_state.reference_pipeline = (id != pipelines::QSMXT_DEFAULTS).then(|| id.to_string());
+        trial.form.reference_pipeline = (id != pipelines::QSMXT_DEFAULTS).then(|| id.to_string());
         // The changes the pipeline makes to settings in view, set on the config and the form set
         // to it. A change can bring settings into view (PDF's once PDF is chosen): set what is in
         // view, then look again. A setting out of view is left as the reset made it.

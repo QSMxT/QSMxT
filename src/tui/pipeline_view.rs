@@ -424,7 +424,7 @@ mod tests {
     }
 
     fn algorithm(app: &mut App, name: &str) {
-        app.pipeline_state.qsm_algorithm = QSM_ALGO_OPTIONS.iter().position(|a| *a == name).unwrap();
+        app.set_qsm_algorithm(QSM_ALGO_OPTIONS.iter().position(|a| *a == name).unwrap());
     }
 
     fn press(app: &mut App, code: KeyCode) {

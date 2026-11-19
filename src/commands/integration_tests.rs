@@ -22,136 +22,7 @@ fn default_run_args(bids_dir: PathBuf, output_dir: PathBuf) -> RunArgs {
         no_dataset_steps: false,
         accept_recommendations: false,
         accept_reference_settings: false,
-        pipeline: crate::cli_settings::SettingsArgs::form(PipelineArgs {
-            pipeline: None,
-            no_laplacian_unmasked: false,
-            laplacian_keep_outside: false,
-            no_laplacian_keep_outside: false,
-            qsm_algorithm: None,
-            heidi: false,
-            orientation_group: None,
-            multi_orientation_algorithm: None,
-            multi_orientation_lambda: None,
-            orientation_reference: None,
-            multi_orientation_force: false,
-            no_orientation_registration: false,
-            cosmos_magnitude_weighting: false,
-            cosmos_tol: None,
-            cosmos_max_iter: None,
-            unwrapping_algorithm: None,
-            bf_algorithm: None,
-            bf_erode_voxels: None,
-            bf_polish_mask: false,
-            no_bf_polish_mask: false,
-            bf_ukb_mask_trim: false,
-            no_bf_ukb_mask_trim: false,
-            masking_input: None,
-            phase_offset_removal: None,
-            phase_offset_sigma_mm: None,
-            coil_combination_sigma: None,
-            bipolar_correction: false,
-            b0_estimation: None,
-            b0_weight_type: None,
-            b0_weight_assumed_t2star: None,
-            laplacian_solver: None,
-            laplacian_fft_pad: None,
-            laplacian_unmasked: false,
-            bet_fractional_intensity: None,
-            bet_voxel_scale: None,
-            bet_smoothness: None,
-            bet_gradient_threshold: None,
-            bet_iterations: None,
-            bet_subdivisions: None,
-            bet_orientation: None,
-            qsm_reference: None,
-            qsm_per_echo: None,
-            rts_params: Default::default(),
-            tv_params: Default::default(),
-            tkd_params: Default::default(),
-            tsvd_params: Default::default(),
-            tgv_params: Default::default(),
-            tikhonov_params: Default::default(),
-            nltv_params: Default::default(),
-            medi_params: Default::default(),
-            tfi_params: Default::default(),
-            ilsqr_params: Default::default(),
-            star_params: Default::default(),
-            lsqr_params: Default::default(),
-            heidi_params: Default::default(),
-            qsmart_params: Default::default(),
-            ndi_params: Default::default(),
-            fansi_params: Default::default(),
-            l1qsm_params: Default::default(),
-            whqsm_params: Default::default(),
-            hdqsm_params: Default::default(),
-            amp_pe_params: Default::default(),
-            separation_params: Default::default(),
-            motion_params: Default::default(),
-            vsharp_params: Default::default(),
-            pdf_params: Default::default(),
-            lbv_params: Default::default(),
-            ismv_params: Default::default(),
-            sharp_params: Default::default(),
-            resharp_params: Default::default(),
-            harperella_params: Default::default(),
-            iharperella_params: Default::default(),
-            romeo_params: Default::default(),
-            prelude_params: Default::default(),
-            swi_params: Default::default(),
-            smwi_params: Default::default(),
-            segmentation_params: Default::default(),
-            tiling_params: Default::default(),
-            inhomogeneity_method: None,
-            homogeneity_sigma_mm: None,
-            homogeneity_nbox: None,
-            n4_params: Default::default(),
-            linear_fit_estimate_offset: None,
-            robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
-            robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
-            qsmart_fit_threshold_mode: None, qsmart_fit_percentile: None, qsmart_fit_threshold: None,
-            complex_fit_reltol: None, complex_fit_max_iter: None,
-            no_qsm: false,
-            do_swi: false,
-            swi_filtered_phase: false,
-            no_magnitude: false,
-            do_smwi: false,
-            do_segmentation: false,
-            do_analysis: false,
-            do_t2starmap: false,
-            do_r2starmap: false,
-            do_r2map: false,
-            do_r2primemap: false,
-            do_chi_separation: false,
-            chi_separation_algorithm: None,
-            use_custom_qsm: None,
-            use_custom_r2: None,
-            use_custom_r2prime: None,
-            r2prime_strategy: None,
-            r2primenet_ignore_field_mismatch: false,
-            r2primenet_patch: None,
-            export_dicom: false,
-            inhomogeneity_correction: false,
-            no_inhomogeneity_correction: false,
-            axial_resampling: false,
-            no_axial_resampling: false,
-            obliquity_threshold: None,
-            crop_to_mask: false,
-            ignore_slice_gap: false,
-            fft_padding: false,
-            tukey_window: None,
-            crop_margin_mm: None,
-            output_space: None,
-            mask_preset: None,
-            use_custom_masks: None,
-            mask_sections_cli: None,
-            mask_combine: None,
-            mask_refinements_cli: None,
-            two_pass: false,
-            two_pass_sections_cli: None,
-            two_pass_mask_combine: None,
-            two_pass_mode: None,
-            dismiss_recommendation: None,
-        }),
+        pipeline: Default::default(),
     }
 }
 
@@ -1529,7 +1400,7 @@ fn test_run_dry_multi_echo() {
     testutils::create_multi_echo_bids(&bids);
 
     let mut args = default_run_args(bids, out);
-    args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
+    args.pipeline.add(&["--qsm-algorithm", "tkd"]);
     args.no_mem_limit = true;
     super::run::execute(args).unwrap();
 }
@@ -1601,10 +1472,10 @@ fn test_run_single_echo_tkd() {
     testutils::create_single_echo_bids(&bids);
 
     let mut args = default_run_args(bids, out.clone());
-    args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
-    args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
-    args.pipeline.bf_algorithm = Some(BfAlgorithmArg::Vsharp);
-    args.pipeline.masking_input = Some(MaskInputArg::MagnitudeFirst);
+    args.pipeline.add(&["--qsm-algorithm", "tkd"]);
+    args.pipeline.add(&["--unwrapping-algorithm", "laplacian"]);
+    args.pipeline.add(&["--bf-algorithm", "vsharp"]);
+    args.pipeline.add(&["--masking-input", "magnitude-first"]);
     args.dry = false;
     args.no_mem_limit = true;
     super::run::execute(args).unwrap();
@@ -1659,10 +1530,10 @@ fn test_run_caching() {
 
     let make_args = || {
         let mut args = default_run_args(bids.clone(), out.clone());
-        args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
-        args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
-        args.pipeline.bf_algorithm = Some(BfAlgorithmArg::Vsharp);
-        args.pipeline.masking_input = Some(MaskInputArg::MagnitudeFirst);
+        args.pipeline.add(&["--qsm-algorithm", "tkd"]);
+        args.pipeline.add(&["--unwrapping-algorithm", "laplacian"]);
+        args.pipeline.add(&["--bf-algorithm", "vsharp"]);
+        args.pipeline.add(&["--masking-input", "magnitude-first"]);
         args.dry = false;
         args.no_mem_limit = true;
         args
@@ -1708,13 +1579,15 @@ fn test_run_caching_survives_unrelated_config_change() {
 
     let make_args = |do_t2star: bool| {
         let mut args = default_run_args(bids.clone(), out.clone());
-        args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
-        args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
-        args.pipeline.bf_algorithm = Some(BfAlgorithmArg::Vsharp);
-        args.pipeline.masking_input = Some(MaskInputArg::Magnitude);
+        args.pipeline.add(&["--qsm-algorithm", "tkd"]);
+        args.pipeline.add(&["--unwrapping-algorithm", "laplacian"]);
+        args.pipeline.add(&["--bf-algorithm", "vsharp"]);
+        args.pipeline.add(&["--masking-input", "magnitude"]);
         args.dry = false;
         args.no_mem_limit = true;
-        args.pipeline.do_t2starmap = do_t2star;
+        if do_t2star {
+            args.pipeline.add(&["--do-t2starmap"]);
+        }
         args
     };
 
@@ -1769,21 +1642,21 @@ fn test_run_computes_r2_from_a_mese_on_its_own_grid() {
     }
 
     let mut args = default_run_args(bids, out.clone());
-    args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
-    args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
-    args.pipeline.bf_algorithm = Some(BfAlgorithmArg::Vsharp);
-    args.pipeline.masking_input = Some(MaskInputArg::Magnitude);
+    args.pipeline.add(&["--qsm-algorithm", "tkd"]);
+    args.pipeline.add(&["--unwrapping-algorithm", "laplacian"]);
+    args.pipeline.add(&["--bf-algorithm", "vsharp"]);
+    args.pipeline.add(&["--masking-input", "magnitude"]);
     args.dry = false;
     args.no_mem_limit = true;
-    args.pipeline.do_r2starmap = true;
-    args.pipeline.do_r2map = true;
-    args.pipeline.do_r2primemap = true;
+    args.pipeline.add(&["--do-r2starmap"]);
+    args.pipeline.add(&["--do-r2map"]);
+    args.pipeline.add(&["--do-r2primemap"]);
     // `mese` rather than `auto` deliberately: it removes the R2PRIMEnet fallback, so this can
     // only pass by actually measuring R2' from the spin-echo data, and the test never reaches
     // for network weights. Under the old voxel-count behaviour `auto` quietly went and
     // downloaded R2PRIMEnet instead — which is the "falls back to whatever remains" in #242,
     // and took eight minutes to do it.
-    args.pipeline.r2prime_strategy = Some(R2PrimeStrategyArg::Mese);
+    args.pipeline.add(&["--r2prime-strategy", "mese"]);
     super::run::execute(args).unwrap();
 
     let deriv = out.join("derivatives/qsmxt");
@@ -1812,9 +1685,9 @@ fn tfi_inverts_the_total_field_with_no_background_removal() {
     let out = dir.path().join("out");
     testutils::create_multi_echo_bids(&bids);
     let mut args = default_run_args(bids, out.clone());
-    args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tfi);
-    args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
-    args.pipeline.masking_input = Some(MaskInputArg::Magnitude);
+    args.pipeline.add(&["--qsm-algorithm", "tfi"]);
+    args.pipeline.add(&["--unwrapping-algorithm", "laplacian"]);
+    args.pipeline.add(&["--masking-input", "magnitude"]);
     args.dry = false;
     args.no_mem_limit = true;
     super::run::execute(args).unwrap();
@@ -1831,14 +1704,13 @@ fn tfi_inverts_the_total_field_with_no_background_removal() {
 /// it would do nothing, and used to leave the field map unwritten (#276).
 #[test]
 fn iqfm_with_a_total_field_inversion_is_refused_before_processing() {
-    for alg in [QsmAlgorithmArg::Tgv, QsmAlgorithmArg::Qsmart, QsmAlgorithmArg::Autoqsm,
-                QsmAlgorithmArg::Nextqsm, QsmAlgorithmArg::Tfi] {
+    for alg in ["tgv", "qsmart", "autoqsm", "nextqsm", "tfi"] {
         let dir = tempfile::tempdir().unwrap();
         let bids = dir.path().join("bids");
         testutils::create_multi_echo_bids(&bids);
         let mut args = default_run_args(bids, dir.path().join("out"));
-        args.pipeline.qsm_algorithm = Some(alg);
-        args.pipeline.bf_algorithm = Some(BfAlgorithmArg::Iqfm);
+        args.pipeline.add(&["--qsm-algorithm", alg]);
+        args.pipeline.add(&["--bf-algorithm", "iqfm"]);
         let err = super::run::execute(args).unwrap_err().to_string();
         assert!(err.contains("iqfm") && err.contains("no effect"), "{alg:?}: {err}");
     }
@@ -1852,16 +1724,16 @@ fn test_run_multi_echo_with_extras() {
     testutils::create_multi_echo_bids(&bids);
 
     let mut args = default_run_args(bids, out.clone());
-    args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
-    args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
-    args.pipeline.bf_algorithm = Some(BfAlgorithmArg::Vsharp);
-    args.pipeline.masking_input = Some(MaskInputArg::Magnitude);
-    args.pipeline.phase_offset_removal = Some(true);
+    args.pipeline.add(&["--qsm-algorithm", "tkd"]);
+    args.pipeline.add(&["--unwrapping-algorithm", "laplacian"]);
+    args.pipeline.add(&["--bf-algorithm", "vsharp"]);
+    args.pipeline.add(&["--masking-input", "magnitude"]);
+    args.pipeline.add(&["--phase-offset-removal", "true"]);
     args.dry = false;
     args.no_mem_limit = true;
-    args.pipeline.do_swi = true;
-    args.pipeline.do_t2starmap = true;
-    args.pipeline.do_r2starmap = true;
+    args.pipeline.add(&["--do-swi"]);
+    args.pipeline.add(&["--do-t2starmap"]);
+    args.pipeline.add(&["--do-r2starmap"]);
     super::run::execute(args).unwrap();
 
     let deriv = out.join("derivatives/qsmxt");
@@ -1884,16 +1756,16 @@ fn analysis_tabulates_every_map_per_structure() {
     testutils::write_dseg_on(&bids.join("derivatives/mydseg/sub-1/anat/sub-1_dseg.nii"), testutils::STRUCTURES_N);
 
     let mut args = default_run_args(bids, out.clone());
-    args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
-    args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
-    args.pipeline.bf_algorithm = Some(BfAlgorithmArg::Vsharp);
-    args.pipeline.masking_input = Some(MaskInputArg::Magnitude);
+    args.pipeline.add(&["--qsm-algorithm", "tkd"]);
+    args.pipeline.add(&["--unwrapping-algorithm", "laplacian"]);
+    args.pipeline.add(&["--bf-algorithm", "vsharp"]);
+    args.pipeline.add(&["--masking-input", "magnitude"]);
     args.dry = false;
     args.no_mem_limit = true;
-    args.pipeline.do_t2starmap = true;
-    args.pipeline.do_r2starmap = true;
-    args.pipeline.do_analysis = true;
-    args.pipeline.segmentation_params.use_custom_dseg = Some("mydseg".to_string());
+    args.pipeline.add(&["--do-t2starmap"]);
+    args.pipeline.add(&["--do-r2starmap"]);
+    args.pipeline.add(&["--do-analysis"]);
+    args.pipeline.add(&["--use-custom-dseg", "mydseg"]);
     super::run::execute(args).unwrap();
 
     let deriv = out.join("derivatives/qsmxt");
@@ -1978,11 +1850,11 @@ fn cleaning_intermediates_keeps_published_outputs_and_the_cache() {
     args.no_mem_limit = true;
     args.clean_intermediates = true;
     // What is cleaned does not depend on the algorithms; TKD and Laplacian are the cheapest.
-    args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
-    args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
+    args.pipeline.add(&["--qsm-algorithm", "tkd"]);
+    args.pipeline.add(&["--unwrapping-algorithm", "laplacian"]);
     let mut rerun = default_run_args(args.bids_dir.clone(), out.clone());
-    rerun.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
-    rerun.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
+    rerun.pipeline.add(&["--qsm-algorithm", "tkd"]);
+    rerun.pipeline.add(&["--unwrapping-algorithm", "laplacian"]);
     super::run::execute(args).unwrap();
 
     let deriv = out.join("derivatives/qsmxt");
@@ -2017,9 +1889,9 @@ fn cleaning_intermediates_waits_for_the_multi_orientation_fan_in() {
     args.no_mem_limit = true;
     args.clean_intermediates = true;
     args.include = Some(vec!["*acq-dir*".to_string()]);
-    args.pipeline.orientation_group = Some("acq".to_string());
-    args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
-    args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
+    args.pipeline.add(&["--orientation-group", "acq"]);
+    args.pipeline.add(&["--qsm-algorithm", "tkd"]);
+    args.pipeline.add(&["--unwrapping-algorithm", "laplacian"]);
     super::run::execute(args).unwrap();
     let deriv = out.join("derivatives/qsmxt");
     assert!(deriv.join("sub-1/ses-1/anat/sub-1_ses-1_desc-cosmos_Chimap.nii").exists());
@@ -2038,10 +1910,10 @@ fn the_orientation_reference_is_the_groups_frame() {
     args.dry = false;
     args.no_mem_limit = true;
     args.include = Some(vec!["*acq-dir*".to_string()]);
-    args.pipeline.orientation_group = Some("acq".to_string());
-    args.pipeline.orientation_reference = Some("dir3".to_string());
-    args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
-    args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
+    args.pipeline.add(&["--orientation-group", "acq"]);
+    args.pipeline.add(&["--orientation-reference", "dir3"]);
+    args.pipeline.add(&["--qsm-algorithm", "tkd"]);
+    args.pipeline.add(&["--unwrapping-algorithm", "laplacian"]);
     super::run::execute(args).unwrap();
     let sidecar = out.join("derivatives/qsmxt/sub-1/ses-1/anat/sub-1_ses-1_desc-cosmos_Chimap.json");
     let sidecar: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(sidecar).unwrap()).unwrap();
@@ -2074,9 +1946,9 @@ fn a_group_that_never_formed_is_not_in_the_methods() {
     args.dry = false;
     args.no_mem_limit = true;
     args.include = Some(vec!["*acq-highres*".to_string()]);
-    args.pipeline.orientation_group = Some("acq".to_string());
-    args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
-    args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
+    args.pipeline.add(&["--orientation-group", "acq"]);
+    args.pipeline.add(&["--qsm-algorithm", "tkd"]);
+    args.pipeline.add(&["--unwrapping-algorithm", "laplacian"]);
     super::run::execute(args).unwrap();
     let deriv = out.join("derivatives/qsmxt");
     let mut files: Vec<_> = glob::glob(&deriv.join("workflow/**/*_methods.md").to_string_lossy())
@@ -2102,9 +1974,9 @@ fn methods_say_dicom_export_only_when_series_were_written() {
         let mut args = default_run_args(bids.clone(), out.clone());
         args.dry = false;
         args.no_mem_limit = true;
-        args.pipeline.export_dicom = true;
-        args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
-        args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
+        args.pipeline.add(&["--export-dicom"]);
+        args.pipeline.add(&["--qsm-algorithm", "tkd"]);
+        args.pipeline.add(&["--unwrapping-algorithm", "laplacian"]);
         args.dicom_outputs = outputs;
         args
     };
@@ -2139,9 +2011,9 @@ fn an_unmatched_orientation_reference_refuses_the_run_up_front() {
     args.dry = false;
     args.no_mem_limit = true;
     args.include = Some(vec!["*acq-dir*".to_string()]);
-    args.pipeline.orientation_group = Some("acq".to_string());
-    args.pipeline.orientation_reference = Some("Neutral".to_string());
-    args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
+    args.pipeline.add(&["--orientation-group", "acq"]);
+    args.pipeline.add(&["--orientation-reference", "Neutral"]);
+    args.pipeline.add(&["--qsm-algorithm", "tkd"]);
     let err = super::run::execute(args).unwrap_err().to_string();
     assert!(err.contains("orientation reference 'Neutral' matches none"), "{err}");
     assert!(!out.join("derivatives/qsmxt/workflow").exists(), "a pipeline ran before the refusal");
@@ -2161,10 +2033,10 @@ fn analysis_works_without_qsm() {
     let mut args = default_run_args(bids, out.clone());
     args.dry = false;
     args.no_mem_limit = true;
-    args.pipeline.no_qsm = true;
-    args.pipeline.do_r2starmap = true;
-    args.pipeline.do_analysis = true;
-    args.pipeline.segmentation_params.use_custom_dseg = Some("mydseg".to_string());
+    args.pipeline.add(&["--no-qsm"]);
+    args.pipeline.add(&["--do-r2starmap"]);
+    args.pipeline.add(&["--do-analysis"]);
+    args.pipeline.add(&["--use-custom-dseg", "mydseg"]);
     super::run::execute(args).unwrap();
 
     let deriv = out.join("derivatives/qsmxt");
@@ -2195,16 +2067,16 @@ fn qsm_can_be_referenced_to_a_parcellation_region() {
     testutils::write_dseg_on(&dseg_path, testutils::STRUCTURES_N);
 
     let mut args = default_run_args(bids, out.clone());
-    args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
-    args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
-    args.pipeline.bf_algorithm = Some(BfAlgorithmArg::Vsharp);
-    args.pipeline.masking_input = Some(MaskInputArg::Magnitude);
+    args.pipeline.add(&["--qsm-algorithm", "tkd"]);
+    args.pipeline.add(&["--unwrapping-algorithm", "laplacian"]);
+    args.pipeline.add(&["--bf-algorithm", "vsharp"]);
+    args.pipeline.add(&["--masking-input", "magnitude"]);
     args.dry = false;
     args.no_mem_limit = true;
     // Both thalami, supplied rather than segmented so the test needs no network weights.
-    args.pipeline.qsm_reference = Some("thalamus".to_string());
-    args.pipeline.do_analysis = true;
-    args.pipeline.segmentation_params.use_custom_dseg = Some("mydseg".to_string());
+    args.pipeline.add(&["--qsm-reference", "thalamus"]);
+    args.pipeline.add(&["--do-analysis"]);
+    args.pipeline.add(&["--use-custom-dseg", "mydseg"]);
     super::run::execute(args).unwrap();
 
     let deriv = out.join("derivatives/qsmxt");
@@ -2280,7 +2152,7 @@ fn an_unknown_reference_region_fails_before_the_run() {
     let mut args = default_run_args(bids, out.clone());
     args.dry = false;
     args.no_mem_limit = true;
-    args.pipeline.qsm_reference = Some("thalmus".to_string()); // typo
+    args.pipeline.add(&["--qsm-reference", "thalmus"]); // typo
     let err = format!("{}", super::run::execute(args).unwrap_err());
     assert!(err.contains("unknown reference region"), "{err}");
     assert!(err.contains("thalamus"), "the error should list the valid names: {err}");
@@ -2299,14 +2171,14 @@ fn test_run_single_echo_tgv() {
     testutils::create_single_echo_bids(&bids);
 
     let mut args = default_run_args(bids, out.clone());
-    args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tgv);
-    args.pipeline.masking_input = Some(MaskInputArg::MagnitudeFirst);
-    args.pipeline.tgv_params.tgv_iterations = Some(1);
-    args.pipeline.tgv_params.tgv_erosions = Some(0);
+    args.pipeline.add(&["--qsm-algorithm", "tgv"]);
+    args.pipeline.add(&["--masking-input", "magnitude-first"]);
+    args.pipeline.add(&["--tgv-iterations", "1"]);
+    args.pipeline.add(&["--tgv-erosions", "0"]);
     args.dry = false;
     args.no_mem_limit = true;
-    args.pipeline.inhomogeneity_correction = true;
-    args.pipeline.mask_sections_cli = Some(vec!["phase-quality,threshold:otsu".to_string()]);
+    args.pipeline.add(&["--inhomogeneity-correction"]);
+    args.pipeline.add(&["--mask", "phase-quality,threshold:otsu"]);
     super::run::execute(args).unwrap();
 
     assert!(out.join("derivatives/qsmxt/sub-1/anat/sub-1_Chimap.nii").exists());
@@ -2320,13 +2192,13 @@ fn test_run_with_mask_ops() {
     testutils::create_single_echo_bids(&bids);
 
     let mut args = default_run_args(bids, out.clone());
-    args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
-    args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
-    args.pipeline.bf_algorithm = Some(BfAlgorithmArg::Vsharp);
+    args.pipeline.add(&["--qsm-algorithm", "tkd"]);
+    args.pipeline.add(&["--unwrapping-algorithm", "laplacian"]);
+    args.pipeline.add(&["--bf-algorithm", "vsharp"]);
     args.dry = false;
     args.no_mem_limit = true;
     args.clean_intermediates = true;
-    args.pipeline.mask_sections_cli = Some(vec!["phase-quality,threshold:otsu,dilate:1,erode:1".to_string()]);
+    args.pipeline.add(&["--mask", "phase-quality,threshold:otsu,dilate:1,erode:1"]);
     super::run::execute(args).unwrap();
 
     assert!(out.join("derivatives/qsmxt/sub-1/anat/sub-1_Chimap.nii").exists());
@@ -2671,12 +2543,9 @@ fn test_slurm_writes_requested_pipeline_config() {
         mem: Some(16), cpus_per_task: 2, submit: false,
         include: None, exclude: None, num_echoes: None, force: false, clean_intermediates: false,
         debug: false, source_dicom: None, dicom_outputs: None,
-        pipeline: crate::cli_settings::SettingsArgs::form(PipelineArgs {
-            qsm_algorithm: Some(QsmAlgorithmArg::Tkd),
-            unwrapping_algorithm: Some(UnwrapAlgorithmArg::Laplacian),
-            bf_algorithm: Some(BfAlgorithmArg::Pdf),
-            ..Default::default()
-        }),
+        pipeline: crate::cli_settings::SettingsArgs::from_flags(&[
+            "--qsm-algorithm", "tkd", "--unwrapping-algorithm", "laplacian", "--bf-algorithm", "pdf",
+        ]),
     }).unwrap();
 
     let written = std::fs::read_to_string(out.join("derivatives/qsmxt/pipeline_config.toml")).unwrap();
@@ -2789,16 +2658,11 @@ fn slurm_jobs_produce_what_a_local_run_does() {
     // Large enough that χ is defined inside the structures after background removal's erosion.
     testutils::create_multi_orientation_bids_on(&bids, testutils::STRUCTURES_N);
     testutils::write_dseg_on(&bids.join("derivatives/mydseg/sub-1/ses-1/anat/sub-1_ses-1_dseg.nii"), testutils::STRUCTURES_N);
-    let pipeline = || PipelineArgs {
+    let pipeline = || crate::cli_settings::SettingsArgs::from_flags(&[
         // What is under test is SLURM/local parity, not the algorithms: the cheapest ones.
-        qsm_algorithm: Some(crate::cli::QsmAlgorithmArg::Tkd),
-        unwrapping_algorithm: Some(UnwrapAlgorithmArg::Laplacian),
-        orientation_group: Some("acq".to_string()),
-        masking_input: Some(MaskInputArg::Magnitude),
-        do_analysis: true,
-        segmentation_params: SegmentationParamArgs { use_custom_dseg: Some("mydseg".to_string()), ..Default::default() },
-        ..Default::default()
-    };
+        "--qsm-algorithm", "tkd", "--unwrapping-algorithm", "laplacian", "--orientation-group", "acq",
+        "--masking-input", "magnitude", "--do-analysis", "--use-custom-dseg", "mydseg",
+    ]);
     let include = Some(vec!["*acq-dir1*".to_string(), "*acq-dir2*".to_string()]);
 
     let local = dir.path().join("local");
@@ -2807,7 +2671,7 @@ fn slurm_jobs_produce_what_a_local_run_does() {
     args.no_mem_limit = true;
     args.include = include.clone();
     args.num_echoes = Some(1);
-    args.pipeline = crate::cli_settings::SettingsArgs::form(pipeline());
+    args.pipeline = pipeline();
     super::run::execute(args).unwrap();
 
     let dist = dir.path().join("dist");
@@ -2819,7 +2683,7 @@ fn slurm_jobs_produce_what_a_local_run_does() {
         mem: None, cpus_per_task: 1, submit: false,
         include, exclude: None, num_echoes: Some(1), force: false, clean_intermediates: false,
         debug: false, source_dicom: None, dicom_outputs: None,
-        pipeline: crate::cli_settings::SettingsArgs::form(pipeline()),
+        pipeline: pipeline(),
     }).unwrap();
     let slurm_dir = dist.join("derivatives/qsmxt/slurm");
     let mut run_scripts: Vec<PathBuf> = std::fs::read_dir(&slurm_dir).unwrap().flatten().map(|e| e.path())
@@ -2896,18 +2760,14 @@ fn slurm_jobs_produce_what_a_local_run_does() {
 }
 
 /// The cheapest pipeline: what is under test is which runs were processed, not how.
-fn cheap_pipeline() -> PipelineArgs {
-    PipelineArgs {
-        qsm_algorithm: Some(QsmAlgorithmArg::Tkd),
-        unwrapping_algorithm: Some(UnwrapAlgorithmArg::Laplacian),
-        ..Default::default()
-    }
+fn cheap_pipeline() -> crate::cli_settings::SettingsArgs {
+    crate::cli_settings::SettingsArgs::from_flags(&["--qsm-algorithm", "tkd", "--unwrapping-algorithm", "laplacian"])
 }
 
 fn aggregate_args(bids: PathBuf, out: PathBuf, include: Vec<String>) -> AggregateArgs {
     AggregateArgs {
         bids_dir: bids, output_dir: Some(out), config: None, include: Some(include), exclude: None,
-        num_echoes: None, pipeline: crate::cli_settings::SettingsArgs::form(cheap_pipeline()), debug: false, force: false,
+        num_echoes: None, pipeline: cheap_pipeline(), debug: false, force: false,
         clean_intermediates: false, command_line: None,
     }
 }
@@ -2925,7 +2785,7 @@ fn aggregate_names_runs_that_were_not_processed_under_its_configuration() {
     worker.no_mem_limit = true;
     worker.no_dataset_steps = true;
     worker.include = Some(vec!["*acq-dir1*".to_string()]);
-    worker.pipeline = crate::cli_settings::SettingsArgs::form(cheap_pipeline());
+    worker.pipeline = cheap_pipeline();
     super::run::execute(worker).unwrap();
 
     let keys = vec!["*acq-dir1*".to_string(), "*acq-dir2*".to_string()];
@@ -2936,7 +2796,7 @@ fn aggregate_names_runs_that_were_not_processed_under_its_configuration() {
     assert!(deriv.join("desc-reference_summary.tsv").exists(), "the processed run is still summarised");
 
     let mut other = aggregate_args(bids, out.clone(), vec!["*acq-dir1*".to_string()]);
-    other.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Rts);
+    other.pipeline.add(&["--qsm-algorithm", "rts"]);
     let err = super::aggregate::execute(other).unwrap_err().to_string();
     assert!(err.contains("was processed with a different configuration"), "{err}");
 }
@@ -2986,9 +2846,9 @@ fn tgv_wiring(echo_times: &[f64], b0_t: f64)
         }
     }
     let mut args = default_run_args(dir.path().to_path_buf(), dir.path().join("out"));
-    args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tgv);
-    args.pipeline.tgv_params.tgv_alpha1 = Some(0.0021);
-    args.pipeline.tgv_params.tgv_alpha0 = Some(0.0037);
+    args.pipeline.add(&["--qsm-algorithm", "tgv"]);
+    args.pipeline.add(&["--tgv-alpha1", "0.0021"]);
+    args.pipeline.add(&["--tgv-alpha0", "0.0037"]);
     let config = super::run::build_config(None, &args.pipeline).unwrap();
     let runs = crate::bids::discovery::discover_runs(dir.path(), &Default::default()).unwrap();
     let facts = crate::pipeline::requirements::scan_facts(&runs[0], &config);
@@ -3049,7 +2909,7 @@ fn swi_on_a_phase_only_dataset_fails_before_processing() {
         }
     }
     let mut args = default_run_args(bids, out.clone());
-    args.pipeline.do_swi = true;
+    args.pipeline.add(&["--do-swi"]);
     let err = super::run::execute(args).unwrap_err().to_string();
     assert!(err.contains("sub-1") && err.contains("--do-swi") && err.contains("magnitude"), "{err}");
     assert!(!out.join("derivatives/qsmxt/sub-1").exists(), "a run was processed anyway");
@@ -3093,11 +2953,11 @@ fn bids_validator_fixture() {
         let mut args = default_run_args(bids.to_path_buf(), root.join(case));
         args.dry = false;
         args.no_mem_limit = true;
-        args.pipeline.masking_input = Some(MaskInputArg::Magnitude);
-        args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
+        args.pipeline.add(&["--masking-input", "magnitude"]);
+        args.pipeline.add(&["--unwrapping-algorithm", "laplacian"]);
         // Output names and sidecars do not depend on the inversion, and the default (iLSQR,
         // with STI's 64 mm padding) takes minutes per run in a debug build.
-        args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
+        args.pipeline.add(&["--qsm-algorithm", "tkd"]);
         set(&mut args);
         super::run::execute(args).unwrap();
     };
@@ -3126,32 +2986,32 @@ fn bids_validator_fixture() {
     testutils::write_dseg(&bids.join("derivatives/mydseg/sub-1/anat/sub-1_dseg.nii"));
     run("full", &bids, &|a| {
         let p = &mut a.pipeline;
-        p.two_pass = true;
-        p.do_swi = true;
-        p.swi_filtered_phase = true;
-        p.do_smwi = true;
-        p.do_t2starmap = true;
-        p.do_r2starmap = true;
-        p.do_r2map = true;
-        p.do_r2primemap = true;
-        p.r2prime_strategy = Some(R2PrimeStrategyArg::Mese);
-        p.do_chi_separation = true;
-        p.chi_separation_algorithm = Some(SeparationAlgorithmArg::R2starQsm);
-        p.do_analysis = true;
-        p.segmentation_params.use_custom_dseg = Some("mydseg".to_string());
-        p.motion_params.motion_correction = true;
-        p.export_dicom = true;
+        p.add(&["--two-pass"]);
+        p.add(&["--do-swi"]);
+        p.add(&["--swi-filtered-phase"]);
+        p.add(&["--do-smwi"]);
+        p.add(&["--do-t2starmap"]);
+        p.add(&["--do-r2starmap"]);
+        p.add(&["--do-r2map"]);
+        p.add(&["--do-r2primemap"]);
+        p.add(&["--r2prime-strategy", "mese"]);
+        p.add(&["--do-chisep"]);
+        p.add(&["--chisep", "r2star-qsm"]);
+        p.add(&["--do-analysis"]);
+        p.add(&["--use-custom-dseg", "mydseg"]);
+        p.add(&["--motion-correction"]);
+        p.add(&["--export-dicom"]);
     });
 
     // A per-echo QSM: each echo's map beside the mean, and DECOMPOSE from them.
     let bids = scratch.path().join("perecho");
     testutils::create_multi_echo_bids(&bids);
     run("perecho", &bids, &|a| {
-        a.pipeline.qsm_per_echo = Some(true);
-        a.pipeline.do_chi_separation = true;
-        a.pipeline.chi_separation_algorithm = Some(SeparationAlgorithmArg::Decompose);
-        a.pipeline.separation_params.decompose_n_inner = Some(1);
-        a.pipeline.separation_params.decompose_max_iterations = Some(5);
+        a.pipeline.add(&["--qsm-per-echo", "true"]);
+        a.pipeline.add(&["--do-chisep"]);
+        a.pipeline.add(&["--chisep", "decompose"]);
+        a.pipeline.add(&["--decompose-n-inner", "1"]);
+        a.pipeline.add(&["--decompose-max-iterations", "5"]);
     });
 
     // Per-coil data: the MCPC-3D-S combined echoes.
@@ -3164,7 +3024,7 @@ fn bids_validator_fixture() {
     testutils::create_multi_orientation_bids(&bids);
     run("cosmos", &bids, &|a| {
         a.include = Some(vec!["*acq-dir*".to_string()]);
-        a.pipeline.orientation_group = Some("acq".to_string());
+        a.pipeline.add(&["--orientation-group", "acq"]);
     });
 
     // STI over six: the 4D tensor and eigenvector.
@@ -3184,9 +3044,9 @@ fn bids_validator_fixture() {
         }
     }
     run("sti", &bids, &|a| {
-        a.pipeline.orientation_group = Some("acq".to_string());
-        a.pipeline.multi_orientation_algorithm = Some(MultiOrientAlgorithmArg::Sti);
-        a.pipeline.multi_orientation_force = true;
+        a.pipeline.add(&["--orientation-group", "acq"]);
+        a.pipeline.add(&["--multi-orientation-algorithm", "sti"]);
+        a.pipeline.add(&["--multi-orientation-force"]);
     });
 
     // An oblique run left on its axial working grid: `space-axial` and `SpatialReference`.
@@ -3213,11 +3073,11 @@ fn bids_validator_fixture() {
         }
     }
     run("oblique", &bids, &|a| {
-        a.pipeline.axial_resampling = true;
-        a.pipeline.obliquity_threshold = Some(5.0);
-        a.pipeline.output_space = Some(OutputSpaceArg::Working);
-        a.pipeline.do_swi = true;
-        a.pipeline.swi_filtered_phase = true;
+        a.pipeline.add(&["--axial-resampling"]);
+        a.pipeline.add(&["--obliquity-threshold", "5"]);
+        a.pipeline.add(&["--output-space", "working"]);
+        a.pipeline.add(&["--do-swi"]);
+        a.pipeline.add(&["--swi-filtered-phase"]);
     });
 
     for case in ["full", "coils", "cosmos", "sti", "oblique"] {
@@ -3244,9 +3104,9 @@ fn bids_validator_fixture() {
 /// a weighted-average B0 from multi-echo data (`field-mapping.phase-offsets`).
 fn departing_args(bids: PathBuf, out: PathBuf) -> RunArgs {
     let mut args = default_run_args(bids, out);
-    args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
-    args.pipeline.phase_offset_removal = Some(false);
-    args.pipeline.masking_input = Some(MaskInputArg::MagnitudeFirst);
+    args.pipeline.add(&["--qsm-algorithm", "tkd"]);
+    args.pipeline.add(&["--phase-offset-removal", "false"]);
+    args.pipeline.add(&["--masking-input", "magnitude-first"]);
     args.no_mem_limit = true;
     args
 }
@@ -3275,7 +3135,7 @@ fn dry_lists_the_findings_and_what_accepting_would_change() {
         && text.contains("Phase offset removal: off → on (recommended; field-mapping.phase-offsets)"), "{text}");
     // Dismissed, it is listed as such and nothing would change.
     let mut dismissed = departing_args(bids.clone(), dir.path().join("out")).pipeline;
-    dismissed.dismiss_recommendation = Some(vec!["field-mapping.phase-offsets=false".into()]);
+    dismissed.add(&["--dismiss-recommendation", "field-mapping.phase-offsets=false"]);
     let config = super::run::build_config(None, &dismissed).unwrap();
     let text = super::recommend::dry_text(&config, &runs, recommendations);
     // Dismissed, it is still a warning in the log, marked as kept.
@@ -3285,9 +3145,9 @@ fn dry_lists_the_findings_and_what_accepting_would_change() {
     assert!(qsmxt_engine::generate_command(&config).contains("--dismiss-recommendation field-mapping.phase-offsets=false"));
     // An unknown rule is refused, and so is a reference-pipeline rule, which has nothing to
     // dismiss.
-    dismissed.dismiss_recommendation = Some(vec!["no.such-rule=1".into()]);
+    dismissed.add(&["--dismiss-recommendation", "no.such-rule=1"]);
     assert!(super::run::build_config(None, &dismissed).is_err());
-    dismissed.dismiss_recommendation = Some(vec!["sti.unwrap-laplacian=romeo".into()]);
+    dismissed.add(&["--dismiss-recommendation", "sti.unwrap-laplacian=romeo"]);
     let e = super::run::build_config(None, &dismissed).unwrap_err().to_string();
     assert!(e.contains("sti.unwrap-laplacian is a reference-pipeline note, not a recommendation; there is nothing to dismiss"), "{e}");
 }
@@ -3303,8 +3163,8 @@ fn authors_settings_are_applied_only_when_asked() {
     let bids = dir.path().join("bids");
     testutils::create_multi_echo_bids(&bids);
     let mut args = departing_args(bids.clone(), dir.path().join("out"));
-    args.pipeline.phase_offset_removal = None;
-    args.pipeline.b0_estimation = Some(crate::cli::B0EstimationArg::ComplexFit);
+    args.pipeline.given.retain(|g| g.flag.long != "phase-offset-removal");
+    args.pipeline.add(&["--b0-estimation", "complex-fit"]);
     let config = super::run::build_config(None, &args.pipeline).unwrap();
     let runs = crate::bids::discovery::discover_runs(&bids, &Default::default()).unwrap();
     let logged = super::recommend::found_lines(&config, &runs);

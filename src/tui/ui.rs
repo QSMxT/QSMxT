@@ -2783,7 +2783,7 @@ pub(super) mod tests {
     fn medi_app() -> App {
         let mut app = App::new();
         let medi = crate::tui::app::QSM_PICKER_OPTIONS.iter().position(|o| *o == "medi").unwrap();
-        app.pipeline_state.set_select("qsm_algorithm", medi);
+        app.set_field_select("qsm_algorithm", medi);
         app.active_tab = crate::tui::app::TAB_RECONSTRUCTION;
         app.sub_page[crate::tui::app::TAB_RECONSTRUCTION] = Some(crate::tui::app::Page::Inversion);
         app.sync_pipeline_mode();
@@ -3247,7 +3247,7 @@ pub(super) mod tests {
         // QSM off and forced back on by SMWI, a grouping, motion correction, every output.
         let mut app = App::new();
         for setup in [|_: &mut App| {}, |a: &mut App| {
-            a.pipeline_state.do_qsm = false;
+            a.form.settings.set("pipeline.do_qsm", false);
             a.form.settings.set("pipeline.do_smwi", true);
             a.form.settings.set("pipeline.do_swi", true);
             a.form.settings.set("pipeline.do_analysis", true);
@@ -3351,7 +3351,7 @@ pub(super) mod tests {
         app.active_tab = super::super::app::TAB_RECONSTRUCTION;
         let _ = render_app(&mut app);
         // Change algorithm
-        app.pipeline_state.qsm_algorithm = 3; // TSVD
+        app.set_qsm_algorithm(3); // TSVD
         let _ = render_app(&mut app);
     }
 
@@ -3678,7 +3678,7 @@ mod orientation_block_tests {
     fn heidi_defaults_read_rounded_and_stay_exact() {
         use ratatui::{backend::TestBackend, Terminal};
         let mut app = crate::tui::app::App::new();
-        app.pipeline_state.set_select("qsm_algorithm", crate::tui::app::QSM_PICKER_OPTIONS.iter().position(|o| *o == crate::tui::app::LSQR_HEIDI).unwrap());
+        app.set_field_select("qsm_algorithm", crate::tui::app::QSM_PICKER_OPTIONS.iter().position(|o| *o == crate::tui::app::LSQR_HEIDI).unwrap());
         assert!(app.goto_field("heidi_gradient_threshold"));
         let mut t = Terminal::new(TestBackend::new(200, 60)).unwrap();
         app.prepare_frame();

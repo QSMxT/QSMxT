@@ -1845,7 +1845,8 @@ pub struct RowContext {
 /// [`qsmxt_engine::requirements::InputsRead`], from the form's requests.
 pub type InputRelevance = qsmxt_engine::requirements::InputsRead;
 
-/// All pipeline form values (algorithms + parameters).
+/// The pipeline form's state on screen: the page shown, what decides its rows, focus and editing,
+/// and where the mask recipe came from. Its settings are in [`RunForm::settings`].
 #[derive(Debug, Clone)]
 pub struct PipelineFormState {
     /// Which page's rows to render — set by the App (from the active tab and sub-tab) before
@@ -1853,26 +1854,6 @@ pub struct PipelineFormState {
     pub page: Page,
     /// What the rest of the form decides about these rows — set by the App with `page`.
     pub ctx: RowContext,
-    // Algorithm selections (as indices)
-    pub qsm_algorithm: usize,
-    pub bf_algorithm: usize,
-
-
-    // The inversion's settings that stay here while the form's rule for which stages run
-    // (stage_config) or the inversion picker reads them; the others are in the settings store.
-    /// HEIDI after the inversion (built into the LSQR+HEIDI choice).
-    pub heidi_enabled: bool,
-    /// MEDI's SMV mode.
-    pub medi_smv: bool,
-    /// Compute QSM.
-    pub do_qsm: bool,
-
-    /// The recommendations dismissed (Keep mine on a `recommended` or `discouraged` finding), each
-    /// for the value its setting had then: `--dismiss-recommendation`, and so the run's config.
-    pub dismissed: Vec<qsmxt_engine::Dismissal>,
-    /// The toolbox pipeline chosen on the Pipeline tab: the config's `reference_pipeline`, while
-    /// the form still makes its choices ([`super::pipelines_tab`]).
-    pub reference_pipeline: Option<String>,
     /// The mask preset picker's choice: an index into [`MASK_PRESET_OPTIONS`], or
     /// [`MASK_PRESET_CUSTOM`] once the recipe is edited by hand. Not a setting: it names where
     /// the recipe (in the settings store, [`super::mask_builder`]) came from.
@@ -1894,18 +1875,9 @@ pub struct PipelineFormState {
 
 impl Default for PipelineFormState {
     fn default() -> Self {
-        // From qsmxt-engine, not qsm-core: it owns which of qsm-core's fields are the user's.
-        let heidi = crate::pipeline::config::HeidiConfig::default();
         Self {
             page: Page::Geometry,
             ctx: RowContext::default(),
-            qsm_algorithm: super::command::default_qsm_algorithm_index(), // ilsqr
-            bf_algorithm: 0, // vsharp
-            heidi_enabled: heidi.enabled,
-            medi_smv: qsm_core::inversion::MediParams::default().smv,
-            do_qsm: true,
-            dismissed: vec![],
-            reference_pipeline: None,
             mask_preset: 0, // robust threshold
             focus: 0,
             editing: false,
@@ -1920,7 +1892,7 @@ impl Default for PipelineFormState {
 pub const QSM_ALGO_OPTIONS: &[&str] = &["rts", "tv", "tkd", "tsvd", "tgv", "tikhonov", "nltv", "medi", "tfi", "ilsqr", "star", "lsqr", "qsmart", "ndi", "fansi", "fansi-tgv", "l1qsm", "whqsm", "hdqsm", "amp-pe", "xqsm", "qsmnet", "qsmnet-plus", "qsmnetme", "autoqsm", "qsmgan", "ir2qsm", "lpcnn", "modl-qsm", "nextqsm", "iqsm", "iqsm-plus"];
 // QSMART's inner dipole inversion (excludes the two end-to-end algorithms tgv/qsmart).
 /// The inversion picker's alias for LSQR with the HEIDI box ticked. The form never holds it: it
-/// keeps `qsm_algorithm` on `lsqr`, and `heidi_enabled`.
+/// keeps `inversion.algorithm` on `lsqr`, and `inversion.heidi.enabled` on.
 pub const LSQR_HEIDI: &str = qsmxt_engine::schema::aliases::LSQR_HEIDI.name;
 
 /// `list`, with `alias` after the entry for LSQR.
@@ -1933,9 +1905,12 @@ fn with_lsqr_heidi<T: Copy>(list: &[T], alias: T) -> Vec<T> {
 }
 
 /// The inversion row's options: [`QSM_ALGO_OPTIONS`] and the LSQR+HEIDI alias. The row's selection
-/// is an index into these; `qsm_algorithm` is an index into `QSM_ALGO_OPTIONS`.
+/// is an index into these.
 pub static QSM_PICKER_OPTIONS: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::new(|| with_lsqr_heidi(QSM_ALGO_OPTIONS, LSQR_HEIDI));
 
+/// The background-removal select's options, in its order: the tests' names for its indices
+/// (`bf_options_are_the_selects` holds them to it).
+#[cfg(test)]
 pub const BF_OPTIONS: &[&str] = &["vsharp", "pdf", "lbv", "ismv", "sharp", "resharp", "harperella", "iharperella", "bfrnet", "iqfm"];
 /// The position of an echo-time choice among an echo-time select's options: the named times,
 /// then a given time.
@@ -1982,16 +1957,16 @@ fn series_type_help(t: dicom::SeriesType) -> &'static str {
 /// ([`super::settings_rows`]).
 pub fn qsm_ref_options() -> &'static [&'static str] { super::settings_rows::options("qsm.reference").0 }
 
-impl PipelineFormState {
+impl App {
     /// QSM → Compute QSM: the QSM group's switch, with what turning it off does, or why QSM is
     /// reconstructed anyway.
-    fn compute_qsm_rows(&self, rows: &mut Vec<PipelineRow>) {
+    fn compute_qsm_rows(&self, ctx: &RowContext, rows: &mut Vec<PipelineRow>) {
         rows.push(PipelineRow::Toggle {
             label: "Compute QSM", field: "do_qsm",
             help: "Enable QSM reconstruction (disable to only run the other outputs)",
         });
-        if !self.do_qsm {
-            match self.ctx.qsm_forced_by {
+        if !self.form.settings.toggle("pipeline.do_qsm") {
+            match ctx.qsm_forced_by {
                 Some(why) => rows.push(PipelineRow::Note { text: format!("  Required: {why}. Left off, the run turns it on").into() }),
                 None => {
                     rows.push(PipelineRow::Note { text: "  Off: no field map, background removal, inversion or reference.".into() });
@@ -2001,36 +1976,15 @@ impl PipelineFormState {
         }
     }
 
-    /// Every pipeline row that shows now, page after page (the QSM switch once): for tests that
-    /// ask whether a setting is reachable, not where.
-    #[cfg(test)]
-    pub fn all_rows(&self) -> Vec<PipelineRow> {
-        let mut rows = Vec::new();
-        self.compute_qsm_rows(&mut rows);
-        rows
-    }
-
-    /// The rows of the pipeline form's page [`Self::page`]; empty for the App's own pages.
-    pub fn visible_rows(&self) -> Vec<PipelineRow> {
-        if let Some(notes) = self.page_notes() {
-            return notes;
-        }
-        let mut rows = Vec::new();
-        if self.page == Page::ComputeQsm {
-            self.compute_qsm_rows(&mut rows);
-        }
-        rows
-    }
-
     /// The notes a page of a stage that does not run shows instead of its settings: a QSM section
     /// says where QSM is turned on while it is off, and why when the settings skip its stage (the
     /// sidebar lists every section whatever the settings). `None` while the stage runs.
-    pub fn page_notes(&self) -> Option<Vec<PipelineRow>> {
+    pub fn page_notes(&self, page: Page, ctx: &RowContext) -> Option<Vec<PipelineRow>> {
         let notes = |lines: &[&'static str]| Some(lines.iter().map(|&l| PipelineRow::Note { text: l.into() }).collect());
-        match self.page {
+        match page {
             Page::FieldMap | Page::Background | Page::Inversion | Page::MultiOrientation | Page::Reference
-                if !self.qsm_runs() => notes(&[QSM_OFF_NOTE]),
-            Page::FieldMap if !self.field_mapping_runs().0 => notes(&[
+                if !self.qsm_runs(ctx) => notes(&[QSM_OFF_NOTE]),
+            Page::FieldMap if !self.field_mapping_runs_for(ctx.num_echoes).0 => notes(&[
                 "No field mapping with these settings: the inversion takes the wrapped phase",
                 "itself (iQSM, iQSM+, single-echo TGV), or iQFM makes the field from it.",
             ]),
@@ -2038,7 +1992,7 @@ impl PipelineFormState {
                 "No background removal with these settings: the inversion takes the total field",
                 "or the wrapped phase itself (see Inversion).",
             ]),
-            Page::MultiOrientation if !self.ctx.orientation_group => notes(&[
+            Page::MultiOrientation if !ctx.orientation_group => notes(&[
                 "No orientation groups: runs of one head at different angles, reconstructed together.",
                 "Choose them on 1 Input → Orientations, and these settings apply.",
             ]),
@@ -2046,95 +2000,35 @@ impl PipelineFormState {
         }
     }
 
-    /// Get a select value by field name.
-    pub fn get_select(&self, field: &str) -> usize {
-        match field {
-            "qsm_algorithm" => {
-                let name = QSM_ALGO_OPTIONS.get(self.qsm_algorithm).copied().unwrap_or("");
-                let name = if name == "lsqr" && self.heidi_enabled && !self.ctx.orientation_group { LSQR_HEIDI } else { name };
-                QSM_PICKER_OPTIONS.iter().position(|o| *o == name).unwrap_or(0)
-            }
-            "bf_algorithm" => self.bf_algorithm,
-            "mask_preset" => self.mask_preset,
-            // Stored as the CLI value (0 uniform, 1 magnitude SNR).
-            _ => 0,
-        }
-    }
-
-    /// Set a select value by field name.
-    pub fn set_select(&mut self, field: &str, val: usize) {
-        match field {
-            "qsm_algorithm" => {
-                let name = QSM_PICKER_OPTIONS.get(val).copied().unwrap_or("");
-                // LSQR+HEIDI and plain LSQR are two choices of one row.
-                if name == "lsqr" {
-                    self.heidi_enabled = false;
-                }
-                let name = if name == LSQR_HEIDI {
-                    self.heidi_enabled = true;
-                    "lsqr"
-                } else {
-                    name
-                };
-                self.qsm_algorithm = QSM_ALGO_OPTIONS.iter().position(|o| *o == name).unwrap_or(self.qsm_algorithm);
-            }
-            "bf_algorithm" => self.bf_algorithm = val,
-            // The preset's recipe is the settings store's: chosen through the App
-            // ([`App::choose_mask_preset`]).
-            _ => {}
-        }
-    }
-
-    /// Get a toggle value by field name.
-    pub fn get_toggle(&self, field: &str) -> bool {
-        match field {
-            "do_qsm" => self.do_qsm,
-            "medi_smv" => self.medi_smv,
-            "heidi_enabled" => self.heidi_enabled,
-            _ => false,
-        }
-    }
-
-    /// Toggle a boolean by field name.
-    pub fn toggle(&mut self, field: &str) {
-        match field {
-            "do_qsm" => self.do_qsm = !self.do_qsm,
-            "medi_smv" => self.medi_smv = !self.medi_smv,
-            "heidi_enabled" => self.heidi_enabled = !self.heidi_enabled,
-            _ => {}
-        }
-    }
-
     /// Whether the selected inversion reads a background-removed local field (QSM.rs
     /// `InversionInput::LocalField`), and so whether background removal is part of the run.
     pub fn inversion_needs_bg_removal(&self) -> bool {
-        self.stage_config().is_none_or(|c| !qsmxt_engine::bridge::skips_bgremove(&c))
+        !qsmxt_engine::bridge::skips_bgremove(&self.stage_config())
     }
 
     /// The settings that decide which reconstruction stages run — the inversion (and MEDI's SMV
-    /// mode) and the background removal — on an otherwise default config, or `None` for an
-    /// index no algorithm answers to.
-    fn stage_config(&self) -> Option<crate::pipeline::config::PipelineConfig> {
-        let name = |list: &[&str], i: usize| serde_json::json!(list.get(i).copied().unwrap_or(""));
+    /// mode) and the background removal — on an otherwise default config.
+    fn stage_config(&self) -> crate::pipeline::config::PipelineConfig {
+        let st = &self.form.settings;
         let mut config = crate::pipeline::config::PipelineConfig::default();
-        config.inversion.algorithm = serde_json::from_value(name(QSM_ALGO_OPTIONS, self.qsm_algorithm)).ok()?;
-        config.inversion.medi.smv = self.medi_smv;
-        config.bg_removal.algorithm = serde_json::from_value(name(BF_OPTIONS, self.bf_algorithm)).ok()?;
-        Some(config)
+        if let Ok(a) = serde_json::from_value(st.get("inversion.algorithm")) {
+            config.inversion.algorithm = a;
+        }
+        config.inversion.medi.smv = st.toggle("inversion.medi.smv");
+        if let Ok(b) = serde_json::from_value(st.get("bg_removal.algorithm")) {
+            config.bg_removal.algorithm = b;
+        }
+        config
     }
 
-    /// Whether field mapping runs in front of the inversion: `(for some runs, for every run)`.
+    /// Whether field mapping runs in front of the inversion, for a run limited to `num_echoes`
+    /// echoes (`None`: unknown): `(for some runs, for every run)`.
     ///
     /// The runner's own rule ([`crate::pipeline::runner::field_mapping_runs`]), asked for the
     /// echo count the run is limited to, or for one and for several echoes when that is unknown —
     /// TGV maps the field of multi-echo data but reconstructs a single echo from its wrapped phase.
-    pub fn field_mapping_runs(&self) -> (bool, bool) {
-        self.field_mapping_runs_for(self.ctx.num_echoes)
-    }
-
-    /// [`Self::field_mapping_runs`], for a run limited to `num_echoes` echoes (`None`: unknown).
     pub fn field_mapping_runs_for(&self, num_echoes: Option<usize>) -> (bool, bool) {
-        let Some(config) = self.stage_config() else { return (true, true) };
+        let config = self.stage_config();
         let counts = match num_echoes {
             Some(n) => vec![n],
             None => vec![1, 2],
@@ -2144,12 +2038,24 @@ impl PipelineFormState {
         (runs.iter().any(|&r| r), runs.iter().all(|&r| r))
     }
 
-
     /// Whether QSM is reconstructed: Compute QSM is on, or another output forces it.
-    pub fn qsm_runs(&self) -> bool {
-        self.do_qsm || self.ctx.qsm_forced_by.is_some()
+    pub fn qsm_runs(&self, ctx: &RowContext) -> bool {
+        self.form.settings.toggle("pipeline.do_qsm") || ctx.qsm_forced_by.is_some()
+    }
+}
+
+#[cfg(test)]
+impl App {
+    /// The chosen inversion, as its position in [`QSM_ALGO_OPTIONS`].
+    pub fn qsm_algorithm(&self) -> usize {
+        let algorithm = self.form.settings.get("inversion.algorithm");
+        QSM_ALGO_OPTIONS.iter().position(|a| algorithm == *a).expect("an inversion of QSM_ALGO_OPTIONS")
     }
 
+    /// Choose the inversion at position `i` in [`QSM_ALGO_OPTIONS`], leaving HEIDI as it is.
+    pub fn set_qsm_algorithm(&mut self, i: usize) {
+        self.form.settings.set("inversion.algorithm", QSM_ALGO_OPTIONS[i]);
+    }
 }
 
 /// Indices of the rows focus can land on: every row but separators, notes and mask headers.
@@ -2513,6 +2419,12 @@ pub struct RunForm {
     /// The settings of the sections whose rows come from the registry, in a config
     /// ([`super::settings_rows`]).
     pub settings: super::settings_rows::SettingsStore,
+    /// The recommendations dismissed (Keep mine on a `recommended` or `discouraged` finding), each
+    /// for the value its setting had then: `--dismiss-recommendation`, and so the run's config.
+    pub dismissed: Vec<qsmxt_engine::Dismissal>,
+    /// The toolbox pipeline chosen on the Pipeline tab: the config's `reference_pipeline`, while
+    /// the form still makes its choices ([`super::pipelines_tab`]).
+    pub reference_pipeline: Option<String>,
 
     // Other outputs
     pub export_dicom: bool,
@@ -2580,6 +2492,8 @@ impl Default for RunForm {
             output_dir: String::new(),
             config_file: String::new(),
             settings: Default::default(),
+            dismissed: Vec::new(),
+            reference_pipeline: None,
             export_dicom: false,
             source_dicom: String::new(),
             dicom_unticked: Vec::new(),
@@ -4053,13 +3967,12 @@ impl App {
 
     /// [`Self::row_context`], for the config the form builds now.
     fn row_context_with(&self, config: Option<&crate::pipeline::config::PipelineConfig>) -> RowContext {
-        let ps = &self.pipeline_state;
         let group = self.filter_state.orientation_group_by();
         let algorithm = self.field_select("orientation_algorithm");
         // Whether QSM runs is the resolved config's answer — the same enforcement the run applies.
         // The config as the form gives it, and as the run takes it: QSM another output needs is
         // a required change the run makes itself when it is left off.
-        let qsm_forced = config.as_ref().filter(|_| !ps.do_qsm)
+        let qsm_forced = config.as_ref().filter(|_| !self.form.settings.toggle("pipeline.do_qsm"))
             .and_then(|c| c.normalised().1.into_iter().find(|a| a.setting == "pipeline.do_qsm"));
         RowContext {
             qsm_forced_by: qsm_forced.map(|a| match a.because {
@@ -4585,14 +4498,6 @@ impl App {
         matches!(tab, TAB_RECONSTRUCTION | TAB_EXECUTION)
     }
 
-    /// The pipeline form as it decides its rows now: its context fresh from the rest of the form.
-    fn synced_pipeline(&self, page: Page, ctx: &RowContext) -> PipelineFormState {
-        let mut ps = self.pipeline_state.clone();
-        ps.page = page;
-        ps.ctx = ctx.clone();
-        ps
-    }
-
     /// A tab's pages. The Reconstruction tab lists every section whatever the settings, so the
     /// sidebar keeps its shape; one that does not apply says why ([`App::section_state`]).
     pub fn pages(&self, tab: usize) -> Vec<Page> {
@@ -4626,12 +4531,12 @@ impl App {
         match page {
             Page::ComputeQsm => on(self.qsm_on()),
             Page::FieldMap | Page::Background | Page::Inversion | Page::MultiOrientation | Page::Reference => {
-                let ps = self.synced_pipeline(page, &self.row_context());
-                if !ps.qsm_runs() {
+                let ctx = self.row_context();
+                if !self.qsm_runs(&ctx) {
                     SectionState::Off
-                } else if (page == Page::FieldMap && !ps.field_mapping_runs().0)
-                    || (page == Page::Background && !ps.inversion_needs_bg_removal())
-                    || (page == Page::MultiOrientation && !ps.ctx.orientation_group)
+                } else if (page == Page::FieldMap && !self.field_mapping_runs_for(ctx.num_echoes).0)
+                    || (page == Page::Background && !self.inversion_needs_bg_removal())
+                    || (page == Page::MultiOrientation && !ctx.orientation_group)
                 {
                     SectionState::NotApplicable
                 } else {
@@ -4651,7 +4556,7 @@ impl App {
 
     /// Whether QSM is reconstructed now (Compute QSM, or another output needs it).
     pub fn qsm_on(&self) -> bool {
-        self.synced_pipeline(Page::Inversion, &self.row_context()).qsm_runs()
+        self.qsm_runs(&self.row_context())
     }
 
     /// The badge a Reconstruction section carries for the rules' findings on its rows: `Some(true)`
@@ -4880,11 +4785,17 @@ impl App {
     fn all_page_rows_in(&self, page: Page, ctx: &RowContext, config: Option<&crate::pipeline::config::PipelineConfig>) -> Vec<PipelineRow> {
         if page.is_pipeline() {
             // A stage that does not run says why, whoever builds its rows.
-            let ps = self.synced_pipeline(page, ctx);
-            if let Some(notes) = ps.page_notes() {
+            if let Some(notes) = self.page_notes(page, ctx) {
                 return notes;
             }
-            return self.registry_rows(page, ctx, config).unwrap_or_else(|| ps.visible_rows());
+            return self.registry_rows(page, ctx, config).unwrap_or_else(|| {
+                // Compute QSM is the one page built by hand.
+                let mut rows = Vec::new();
+                if page == Page::ComputeQsm {
+                    self.compute_qsm_rows(ctx, &mut rows);
+                }
+                rows
+            });
         }
         if let Some(rows) = self.registry_rows(page, ctx, config) {
             return rows;
@@ -4981,13 +4892,52 @@ impl App {
         if field == "segmentation_source" {
             return usize::from(!self.form.settings.text(DSEG).trim().is_empty());
         }
+        if field == "qsm_algorithm" {
+            return self.inversion_picked();
+        }
         if let Some(path) = stored_path(field) {
             return self.form.settings.select(path);
         }
         if let Some(&c) = self.form.choice(field) {
             return c;
         }
-        self.pipeline_state.get_select(field)
+        if field == "mask_preset" {
+            return self.pipeline_state.mask_preset;
+        }
+        0
+    }
+
+    /// The inversion picker's choice: the algorithm, or LSQR+HEIDI for LSQR with HEIDI ticked
+    /// (not offered for an orientation group, which runs no HEIDI).
+    fn inversion_picked(&self) -> usize {
+        let st = &self.form.settings;
+        let algorithm = st.get("inversion.algorithm");
+        let name = algorithm.as_str().unwrap_or("");
+        let name = if name == "lsqr" && st.toggle("inversion.heidi.enabled") && !self.pipeline_state.ctx.orientation_group {
+            LSQR_HEIDI
+        } else {
+            name
+        };
+        QSM_PICKER_OPTIONS.iter().position(|o| *o == name).unwrap_or(0)
+    }
+
+    /// Pick the inversion: LSQR+HEIDI and plain LSQR are two choices of one row, which set
+    /// HEIDI's checkbox with the algorithm.
+    fn pick_inversion(&mut self, val: usize) {
+        let st = &mut self.form.settings;
+        let name = QSM_PICKER_OPTIONS.get(val).copied().unwrap_or("");
+        if name == "lsqr" {
+            st.set("inversion.heidi.enabled", false);
+        }
+        let name = if name == LSQR_HEIDI {
+            st.set("inversion.heidi.enabled", true);
+            "lsqr"
+        } else {
+            name
+        };
+        if QSM_ALGO_OPTIONS.contains(&name) {
+            st.set("inversion.algorithm", name);
+        }
     }
 
     pub fn set_field_select(&mut self, field: &str, val: usize) {
@@ -5006,6 +4956,9 @@ impl App {
             }
             return;
         }
+        if field == "qsm_algorithm" {
+            return self.pick_inversion(val);
+        }
         if let Some(path) = stored_path(field) {
             return self.form.settings.set_select(path, val);
         }
@@ -5014,9 +4967,8 @@ impl App {
             return;
         }
         if field == "mask_preset" {
-            return self.choose_mask_preset(val);
+            self.choose_mask_preset(val);
         }
-        self.pipeline_state.set_select(field, val)
     }
 
     /// Whether the run makes an output: its checkbox is ticked, or another setting needs it (a
@@ -5026,7 +4978,7 @@ impl App {
             return self.field_toggle(field)
                 || self.forced_by(crate::pipeline::requirements::Output::Segmentation).is_some();
         }
-        if field == "do_qsm" && !self.pipeline_state.do_qsm {
+        if field == "do_qsm" && !self.form.settings.toggle("pipeline.do_qsm") {
             return self.row_context().qsm_forced_by.is_some();
         }
         if forced_output(field).is_some_and(|out| self.forced_by(out).is_some()) {
@@ -5049,10 +5001,7 @@ impl App {
         if let Some(path) = stored_path(field) {
             return self.form.settings.toggle(path);
         }
-        match self.form.flag(field) {
-            Some(&b) => b,
-            None => self.pipeline_state.get_toggle(field),
-        }
+        self.form.flag(field).is_some_and(|&b| b)
     }
 
     /// Flip a checkbox. Turning off an output another setting needs is refused, with the reason.
@@ -5060,11 +5009,11 @@ impl App {
         if let Some(m) = dicom_map(field) {
             return self.toggle_dicom_map(m);
         }
-        if field == "do_qsm" && self.pipeline_state.do_qsm {
+        if field == "do_qsm" && self.form.settings.toggle("pipeline.do_qsm") {
             // QSM another output needs: refuse turning it off, as for the other maps.
-            self.pipeline_state.do_qsm = false;
+            self.form.settings.set("pipeline.do_qsm", false);
             let why = self.row_context().qsm_forced_by;
-            self.pipeline_state.do_qsm = true;
+            self.form.settings.set("pipeline.do_qsm", true);
             if let Some(why) = why {
                 self.error_message = Some(format!("QSM is required: {why} — change or turn that off first."));
                 return;
@@ -5102,9 +5051,8 @@ impl App {
         if let Some(path) = stored_path(field) {
             return self.form.settings.flip(path);
         }
-        match self.form.flag_mut(field) {
-            Some(b) => *b = !*b,
-            None => self.pipeline_state.toggle(field),
+        if let Some(b) = self.form.flag_mut(field) {
+            *b = !*b;
         }
     }
 
@@ -5130,7 +5078,7 @@ impl App {
 
     /// Reset one named field to its default, whichever form it lives in.
     pub(crate) fn reset_field(&mut self, field: &str) {
-        let (form, ps) = (RunForm::default(), PipelineFormState::default());
+        let form = RunForm::default();
         if let Some(m) = dicom_map(field) {
             return self.form.dicom_unticked.retain(|u| !u.eq_ignore_ascii_case(m.suffix));
         }
@@ -5152,10 +5100,8 @@ impl App {
             *v = *d;
         } else if let (Some(d), Some(v)) = (form.choice(field), self.form.choice_mut(field)) {
             *v = *d;
-        } else if ps.get_toggle(field) != self.pipeline_state.get_toggle(field) {
-            self.pipeline_state.toggle(field);
-        } else {
-            self.set_field_select(field, ps.get_select(field));
+        } else if field == "mask_preset" {
+            self.set_field_select(field, PipelineFormState::default().mask_preset);
         }
     }
 
@@ -5751,13 +5697,13 @@ mod tests {
         assert_eq!(app.algo_modal.as_ref().unwrap().cursor, 2);
         app.handle_key(key(KeyCode::Enter));
         assert!(app.algo_modal.is_none());
-        assert_eq!(app.pipeline_state.get_select("qsm_algorithm"), 2);
+        assert_eq!(app.field_select("qsm_algorithm"), 2);
     }
 
     #[test]
     fn test_algo_modal_cancel_leaves_value() {
         let mut app = App::new();
-        let before = app.pipeline_state.get_select("qsm_algorithm");
+        let before = app.field_select("qsm_algorithm");
         app.algo_modal = Some(AlgoModal {
             target: AlgoModalTarget::Select("qsm_algorithm".to_string()),
             title: "QSM inversion".to_string(),
@@ -5768,7 +5714,7 @@ mod tests {
         });
         app.handle_key(key(KeyCode::Esc));
         assert!(app.algo_modal.is_none());
-        assert_eq!(app.pipeline_state.get_select("qsm_algorithm"), before);
+        assert_eq!(app.field_select("qsm_algorithm"), before);
     }
 
     #[test]
@@ -6047,12 +5993,11 @@ mod tests {
     #[test]
     fn test_pipeline_algorithm_selects() {
         let mut app = App::new();
-        let ps = &mut app.pipeline_state;
-        assert_eq!(QSM_ALGO_OPTIONS[ps.qsm_algorithm], "ilsqr"); // the default inversion
-        ps.set_select("qsm_algorithm", 1);
-        assert_eq!(ps.qsm_algorithm, 1); // tv
-        ps.set_select("qsm_algorithm", 3);
-        assert_eq!(ps.qsm_algorithm, 3); // tgv
+        assert_eq!(QSM_ALGO_OPTIONS[app.qsm_algorithm()], "ilsqr"); // the default inversion
+        app.set_field_select("qsm_algorithm", 1);
+        assert_eq!(app.qsm_algorithm(), 1); // tv
+        app.set_field_select("qsm_algorithm", 3);
+        assert_eq!(app.qsm_algorithm(), 3); // tgv
     }
 
     // --- Text value accessors for different tabs ---
@@ -6163,23 +6108,22 @@ mod tests {
             *s = "0.25".to_string();
         }
         assert_eq!(app.field_text("bet_smoothness"), "0.25");
-        let mut ps = super::PipelineFormState::default();
 
         // Test select (qsm_algorithm)
-        ps.set_select("qsm_algorithm", 2);
-        assert_eq!(ps.get_select("qsm_algorithm"), 2);
+        app.set_field_select("qsm_algorithm", 2);
+        assert_eq!(app.field_select("qsm_algorithm"), 2);
     }
 
     #[test]
     fn test_pipeline_visible_rows_change_with_algorithm() {
         let mut app = App::new();
-        app.pipeline_state.qsm_algorithm = 0; // RTS
+        app.set_qsm_algorithm(0); // RTS
         let rows_rts = app.pipeline_rows().len();
-        app.pipeline_state.qsm_algorithm = 2; // TKD (fewer params)
+        app.set_qsm_algorithm(2); // TKD (fewer params)
         let rows_tkd = app.pipeline_rows().len();
         assert!(rows_tkd < rows_rts, "TKD should have fewer rows than RTS");
 
-        app.pipeline_state.qsm_algorithm = 4; // TGV (hides background removal)
+        app.set_qsm_algorithm(4); // TGV (hides background removal)
         let rows_tgv = app.pipeline_rows().len();
         assert!(rows_tgv < rows_rts, "TGV should hide background removal");
     }
@@ -6224,7 +6168,7 @@ mod tests {
         let state = |app: &App, p| app.section_state(p);
         assert_eq!(state(&app, Page::FieldMap), SectionState::On);
         assert_eq!(state(&app, Page::Background), SectionState::On);
-        app.pipeline_state.qsm_algorithm = idx("iqsm");
+        app.set_qsm_algorithm(idx("iqsm"));
         assert_eq!(app.pages(TAB_RECONSTRUCTION), Page::RECONSTRUCTION.to_vec(), "the list keeps its shape");
         assert_eq!(state(&app, Page::FieldMap), SectionState::NotApplicable);
         assert_eq!(state(&app, Page::Background), SectionState::NotApplicable);
@@ -6247,7 +6191,7 @@ mod tests {
         }
         // QSM off: every QSM stage is off and says where QSM is turned on; its section says
         // what off means.
-        app.pipeline_state.do_qsm = false;
+        app.form.settings.set("pipeline.do_qsm", false);
         assert_eq!(state(&app, Page::ComputeQsm), SectionState::Off);
         for p in [Page::FieldMap, Page::Background, Page::Inversion, Page::MultiOrientation, Page::Reference] {
             assert_eq!(state(&app, p), SectionState::Off, "{p:?}");
@@ -6954,11 +6898,11 @@ mod tests {
         let fi = qsm_inv_focus.expect("qsm_algorithm row not found");
         app.pipeline_state.focus = fi;
         let ilsqr = QSM_ALGO_OPTIONS.iter().position(|o| *o == "ilsqr").unwrap();
-        assert_eq!(app.pipeline_state.qsm_algorithm, ilsqr); // the default inversion
+        assert_eq!(app.qsm_algorithm(), ilsqr); // the default inversion
         step(&mut app, 1);
-        assert_eq!(QSM_ALGO_OPTIONS[app.pipeline_state.qsm_algorithm], QSM_ALGO_OPTIONS[ilsqr + 1]);
+        assert_eq!(QSM_ALGO_OPTIONS[app.qsm_algorithm()], QSM_ALGO_OPTIONS[ilsqr + 1]);
         step(&mut app, -1);
-        assert_eq!(app.pipeline_state.qsm_algorithm, ilsqr);
+        assert_eq!(app.qsm_algorithm(), ilsqr);
     }
 
     #[test]
@@ -7048,12 +6992,12 @@ mod tests {
         app.sync_pipeline_mode();
         // Focus 0 should be the do_qsm toggle
         app.pipeline_state.focus = 0;
-        assert!(app.pipeline_state.do_qsm);
+        assert!(app.form.settings.toggle("pipeline.do_qsm"));
         app.handle_key(key(KeyCode::Enter));
-        assert!(!app.pipeline_state.do_qsm);
+        assert!(!app.form.settings.toggle("pipeline.do_qsm"));
         // Toggling back
         app.handle_key(key(KeyCode::Char(' ')));
-        assert!(app.pipeline_state.do_qsm);
+        assert!(app.form.settings.toggle("pipeline.do_qsm"));
     }
 
     #[test]
@@ -7106,7 +7050,7 @@ mod tests {
     fn test_pipeline_reset_field() {
         let mut app = App::new();
         assert!(app.goto_field("qsm_algorithm"));
-        app.pipeline_state.qsm_algorithm = 5;
+        app.set_qsm_algorithm(5);
         // Find qsm_algorithm focus
         let rows = app.rows();
         let focusable = app.focusable_rows();
@@ -7120,28 +7064,28 @@ mod tests {
         let fi = fi_found.expect("qsm_algorithm not found");
         app.pipeline_state.focus = fi;
         app.handle_key(key(KeyCode::Char('r')));
-        assert_eq!(QSM_ALGO_OPTIONS[app.pipeline_state.qsm_algorithm], "ilsqr"); // default
+        assert_eq!(QSM_ALGO_OPTIONS[app.qsm_algorithm()], "ilsqr"); // default
     }
 
     #[test]
     fn test_pipeline_reset_tab() {
         let mut app = App::new();
-        app.pipeline_state.qsm_algorithm = 5;
-        app.pipeline_state.set_select("bf_algorithm", 3);
+        app.set_qsm_algorithm(5);
+        app.set_field_select("bf_algorithm", 3);
         *app.field_text_mut("tikhonov_lambda").unwrap() = "9".into();
         assert!(app.goto_field("qsm_algorithm"));
         app.handle_key(key(KeyCode::Char('R')));
         // The page's settings, the ones a reset reveals among them, and nothing on other pages.
-        assert_eq!(QSM_ALGO_OPTIONS[app.pipeline_state.qsm_algorithm], "ilsqr");
+        assert_eq!(QSM_ALGO_OPTIONS[app.qsm_algorithm()], "ilsqr");
         assert_eq!(app.field_text("tikhonov_lambda"), App::new().field_text("tikhonov_lambda"));
-        assert_eq!(app.pipeline_state.bf_algorithm, 3, "Background is another page");
+        assert_eq!(app.field_select("bf_algorithm"), 3, "Background is another page");
     }
 
     #[test]
     fn test_pipeline_visible_rows_change_on_toggle() {
         let mut app = App::new();
         let rows_with_qsm = app.pipeline_rows().len();
-        app.pipeline_state.do_qsm = false;
+        app.form.settings.set("pipeline.do_qsm", false);
         let rows_without_qsm = app.pipeline_rows().len();
         assert!(rows_without_qsm < rows_with_qsm);
     }
@@ -8640,7 +8584,8 @@ mod tests {
         };
         let with = |alg: &str, heidi: bool| {
             let mut app = App::new();
-            (app.pipeline_state.qsm_algorithm, app.pipeline_state.heidi_enabled) = (idx(alg), heidi);
+            app.set_qsm_algorithm(idx(alg));
+            app.form.settings.set("inversion.heidi.enabled", heidi);
             app
         };
 
@@ -8657,7 +8602,7 @@ mod tests {
         assert!(!fields(&with("tgv", false)).contains(&"heidi_enabled".to_string()), "not offered without a local field");
 
         // LSQR+HEIDI: LSQR with the checkbox ticked.
-        app.pipeline_state.heidi_enabled = true;
+        app.form.settings.set("inversion.heidi.enabled", true);
         let f = fields(&app);
         assert!(f.contains(&"lsqr_tol".to_string()), "HEIDI seeds with LSQR: {f:?}");
         assert!(f.contains(&"heidi_cone_threshold".to_string()), "{f:?}");
@@ -8679,53 +8624,54 @@ mod tests {
     #[test]
     fn stage_visibility_follows_the_algorithm_not_its_index() {
         let idx = |name: &str| QSM_ALGO_OPTIONS.iter().position(|o| *o == name).expect(name);
-        let has_section = |ps: &PipelineFormState, id: &str| {
+        let has_section = |app: &App, id: &str| {
             // Background removal's and field mapping's rows come from the registry; their pages
             // say when they do not run.
             let page = match id { "bgremoval" => Page::Background, "fieldmap" => Page::FieldMap, _ => unreachable!("{id}") };
-            PipelineFormState { page, ..ps.clone() }.page_notes().is_none()
+            app.page_notes(page, &app.pipeline_state.ctx).is_none()
         };
 
-        let mut ps = PipelineFormState { qsm_algorithm: idx("rts"), ..Default::default() };
-        assert!(has_section(&ps, "bgremoval"), "RTS needs background removal");
-        assert!(has_section(&ps, "fieldmap"), "RTS needs a field map");
+        let mut app = App::new();
+        app.set_qsm_algorithm(idx("rts"));
+        assert!(has_section(&app, "bgremoval"), "RTS needs background removal");
+        assert!(has_section(&app, "fieldmap"), "RTS needs a field map");
 
         // Single-step: own background removal, but still unwraps.
         for alg in ["nextqsm", "autoqsm"] {
-            ps.qsm_algorithm = idx(alg);
-            assert!(!has_section(&ps, "bgremoval"), "{alg} does its own background removal");
-            assert!(has_section(&ps, "fieldmap"), "{alg} still needs a field map");
+            app.set_qsm_algorithm(idx(alg));
+            assert!(!has_section(&app, "bgremoval"), "{alg} does its own background removal");
+            assert!(has_section(&app, "fieldmap"), "{alg} still needs a field map");
         }
         // End-to-end from wrapped phase: neither.
         for alg in ["iqsm", "iqsm-plus"] {
-            ps.qsm_algorithm = idx(alg);
-            assert!(!has_section(&ps, "bgremoval"), "{alg} takes wrapped phase");
-            assert!(!has_section(&ps, "fieldmap"), "{alg} takes wrapped phase");
+            app.set_qsm_algorithm(idx(alg));
+            assert!(!has_section(&app, "bgremoval"), "{alg} takes wrapped phase");
+            assert!(!has_section(&app, "fieldmap"), "{alg} takes wrapped phase");
         }
         // Total-field methods with their own background removal still map the field: QSMART,
         // TFI, and TGV on multi-echo data (QSM.rs `InversionConfig::input`).
         for alg in ["qsmart", "tfi", "tgv"] {
-            ps.qsm_algorithm = idx(alg);
-            assert!(!has_section(&ps, "bgremoval"), "{alg} removes the background itself");
-            assert!(has_section(&ps, "fieldmap"), "{alg} reads the total field");
+            app.set_qsm_algorithm(idx(alg));
+            assert!(!has_section(&app, "bgremoval"), "{alg} removes the background itself");
+            assert!(has_section(&app, "fieldmap"), "{alg} reads the total field");
         }
         // TGV on a single echo reconstructs from its wrapped phase.
-        ps.qsm_algorithm = idx("tgv");
-        ps.ctx.num_echoes = Some(1);
-        assert!(!has_section(&ps, "fieldmap"), "single-echo TGV takes wrapped phase");
-        ps.ctx.num_echoes = Some(4);
-        assert!(has_section(&ps, "fieldmap"), "multi-echo TGV maps the field");
-        ps.ctx.num_echoes = None;
+        app.set_qsm_algorithm(idx("tgv"));
+        app.pipeline_state.ctx.num_echoes = Some(1);
+        assert!(!has_section(&app, "fieldmap"), "single-echo TGV takes wrapped phase");
+        app.pipeline_state.ctx.num_echoes = Some(4);
+        assert!(has_section(&app, "fieldmap"), "multi-echo TGV maps the field");
+        app.pipeline_state.ctx.num_echoes = None;
         // iQFM makes the local field from phase: no field mapping in front of it.
-        ps.qsm_algorithm = idx("rts");
-        ps.bf_algorithm = BF_OPTIONS.iter().position(|o| *o == "iqfm").unwrap();
-        assert!(!has_section(&ps, "fieldmap"), "iQFM unwraps and removes the background itself");
-        ps.bf_algorithm = 0;
+        app.set_qsm_algorithm(idx("rts"));
+        app.set_field_select("bf_algorithm", BF_OPTIONS.iter().position(|o| *o == "iqfm").unwrap());
+        assert!(!has_section(&app, "fieldmap"), "iQFM unwraps and removes the background itself");
+        app.set_field_select("bf_algorithm", 0);
         // LSQR (and LSQR+HEIDI) is an ordinary local-field inversion.
-        ps.qsm_algorithm = idx("lsqr");
-        ps.heidi_enabled = true;
-        assert!(has_section(&ps, "bgremoval"), "LSQR inverts the local field");
-        assert!(has_section(&ps, "fieldmap"), "LSQR needs a field map");
+        app.set_qsm_algorithm(idx("lsqr"));
+        app.form.settings.set("inversion.heidi.enabled", true);
+        assert!(has_section(&app, "bgremoval"), "LSQR inverts the local field");
+        assert!(has_section(&app, "fieldmap"), "LSQR needs a field map");
     }
 
     /// Compute QSM off hides only the reconstruction: the geometry, motion correction, coil
@@ -8736,7 +8682,7 @@ mod tests {
         let fields = all_fields;
         let mut app = App::new();
         goto_page(&mut app, Page::Masking);
-        app.pipeline_state.do_qsm = false;
+        app.form.settings.set("pipeline.do_qsm", false);
         let f = fields(&mut app);
         for kept in ["axial_resampling", "inhomogeneity_correction", "ignore_slice_gap",
                      "motion_correction", "coil_combination_sigma",
@@ -8950,7 +8896,7 @@ mod tests {
         let qsmart = QSM_PICKER_OPTIONS.iter().position(|a| *a == "qsmart").unwrap();
         let mut app = App::new();
         let before = app.mask().sections.clone();
-        app.pipeline_state.set_select("qsm_algorithm", qsmart);
+        app.set_field_select("qsm_algorithm", qsmart);
         assert_eq!(app.mask().sections, before, "choosing QSMART changes no mask");
         assert!(!app.pipeline_rows().iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("brain mask"))));
         app.set_field_select("mask_preset", 1);
@@ -9435,9 +9381,9 @@ mod tests {
         app.sync_pipeline_mode();
         // Focus 0 is do_qsm toggle
         app.pipeline_state.focus = 0;
-        app.pipeline_state.do_qsm = false;
+        app.form.settings.set("pipeline.do_qsm", false);
         app.handle_key(key(KeyCode::Char('r')));
-        assert!(app.pipeline_state.do_qsm); // default is true
+        assert!(app.form.settings.toggle("pipeline.do_qsm")); // default is true
     }
 
     // ========== Other outputs: edit SWI fields ==========
@@ -9463,13 +9409,22 @@ mod tests {
 
     // ========== Pipeline: switch algorithms and verify row changes ==========
 
+    /// The tests name the background-removal select's indices by [`BF_OPTIONS`]: it lists the
+    /// setting's options in the select's order.
+    #[test]
+    fn bf_options_are_the_selects() {
+        let options: Vec<_> = crate::tui::settings_rows::setting("bg_removal.algorithm").value_type.options()
+            .iter().map(|o| o.value.clone()).collect();
+        assert_eq!(options, BF_OPTIONS.iter().map(|o| serde_json::json!(o)).collect::<Vec<_>>());
+    }
+
     #[test]
     fn test_pipeline_bf_algorithm_params() {
-        let mut ps = PipelineFormState::default();
+        let mut app = App::new();
         // Switch through every BG removal algorithm (incl. BFRnet/iQFM) and verify rows change.
         for algo in 0..BF_OPTIONS.len() {
-            ps.bf_algorithm = algo;
-            let rows = ps.all_rows();
+            app.set_field_select("bf_algorithm", algo);
+            let rows = app.page_rows(Page::Background);
             assert!(!rows.is_empty());
         }
     }
@@ -9480,7 +9435,7 @@ mod tests {
         // Switch through EVERY QSM algorithm (incl. the deep-learning ones: single-step
         // NeXtQSM/AutoQSM hide BG removal; end-to-end iQSM/iQSM+ hide field mapping too).
         for (algo, name) in QSM_ALGO_OPTIONS.iter().enumerate() {
-            app.pipeline_state.qsm_algorithm = algo;
+            app.set_qsm_algorithm(algo);
             let rows = app.page_rows(Page::Inversion);
             assert!(!focusable_indices(&rows).is_empty(), "{name}");
         }
@@ -9499,13 +9454,11 @@ mod tests {
 
     #[test]
     fn test_pipeline_medi_smv_shows_bg_removal() {
-        let ps = PipelineFormState {
-            qsm_algorithm: 7,
-            medi_smv: true,
-            ..Default::default()
-        };
+        let mut app = App::new();
+        app.set_qsm_algorithm(7);
+        app.form.settings.set("inversion.medi.smv", true);
         // MEDI takes the local field with every SMV option, so background removal runs.
-        assert!(PipelineFormState { page: Page::Background, ..ps }.page_notes().is_none(),
+        assert!(app.page_notes(Page::Background, &app.pipeline_state.ctx).is_none(),
                 "MEDI+SMV takes the local field from background removal");
     }
 
@@ -10520,7 +10473,7 @@ mod tests {
         let mut app = App::new();
         app.advanced = false;
         let medi = QSM_PICKER_OPTIONS.iter().position(|o| *o == "medi").unwrap();
-        app.pipeline_state.set_select("qsm_algorithm", medi);
+        app.set_field_select("qsm_algorithm", medi);
         goto_page(&mut app, Page::Inversion);
         app.subtab_focus = false;
         app

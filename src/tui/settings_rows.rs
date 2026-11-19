@@ -9,8 +9,9 @@
 //! (focus, advice, Basic mode) knows them by.
 //!
 //! The settings of the sections in [`STORED_SECTIONS`] live in [`SettingsStore`]: a config, plus
-//! the text typed on their text rows. Other settings still live in the form's own fields until
-//! their sections move here.
+//! the text typed on their text rows. The two settings outside them are the Input tab's
+//! orientation grouping and DICOM export's switch, which the run form keeps with its other run
+//! options.
 
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -23,7 +24,7 @@ use serde_json::Value;
 use qsmxt_engine::schema::{self, EchoKind, Section, Setting, ValueType, ViewFacts};
 use qsmxt_engine::PipelineConfig;
 
-use super::app::{field_of_path, field_path, App, Page, PipelineRow, RowContext, FIELD_PATHS, QSM_ALGO_OPTIONS};
+use super::app::{field_of_path, field_path, App, Page, PipelineRow, RowContext, FIELD_PATHS};
 
 /// The sections whose settings are kept in [`SettingsStore`] rather than in the form's fields.
 pub const STORED_SECTIONS: &[Section] =
@@ -40,15 +41,12 @@ fn picker(path: &str) -> Option<&'static (&'static str, &'static str, &'static s
     PICKERS.iter().find(|(p, ..)| *p == path)
 }
 
-/// Settings of [`STORED_SECTIONS`] still kept in the form's fields, with why: their rows come
-/// from the registry all the same.
-const KEPT_IN_FORM: &[(&str, &str)] = &[
-    ("bg_removal.algorithm", "the pipeline form's rule for which stages run (stage_config) reads it"),
-    ("inversion.algorithm", "the pipeline form's rule for which stages run (stage_config) reads it"),
-    ("inversion.medi.smv", "the pipeline form's rule for which stages run (stage_config) reads it"),
-    ("inversion.heidi.enabled", "the inversion picker's LSQR+HEIDI reads and sets it with the algorithm"),
-    ("pipeline.do_qsm", "whether QSM runs (qsm_runs) reads it; its own page is built by hand"),
-];
+/// Stored settings the form passes the run by rules of its own rather than while they apply
+/// (`form_values` in [`super::command`]), as it did while they were fields of the form: the
+/// inversion and MEDI's SMV mode always, background removal while its stage runs, HEIDI not for an
+/// orientation group, QSM's switch when off. [`SettingsStore::changed`] leaves them out.
+pub const PASSED_BY_THE_FORM: &[&str] =
+    &["bg_removal.algorithm", "inversion.algorithm", "inversion.medi.smv", "inversion.heidi.enabled", "pipeline.do_qsm"];
 
 /// Rows a page puts before a setting's row, from the form and the rows' context: a note, a
 /// separator, or a choice the TUI offers that is no setting of its own.
@@ -203,7 +201,7 @@ const LAYOUTS: &[PageLayout] = &[
         // A QSM per echo comes first: it decides whether anything that combines echoes applies.
         first: &["qsm.per_echo"],
         before: &[
-            ("qsm.per_echo", |app, ctx| (!app.pipeline_state.field_mapping_runs_for(ctx.num_echoes).1)
+            ("qsm.per_echo", |app, ctx| (!app.field_mapping_runs_for(ctx.num_echoes).1)
                 .then(|| PipelineRow::Note { text: "Applies to multi-echo data only: TGV reconstructs a single echo from its wrapped phase".into() })
                 .into_iter().collect()),
         ],
@@ -257,7 +255,7 @@ const LAYOUTS: &[PageLayout] = &[
 ];
 
 fn qsmart_chosen(app: &App) -> bool {
-    QSM_ALGO_OPTIONS.get(app.pipeline_state.qsm_algorithm) == Some(&"qsmart")
+    app.form.settings.get("inversion.algorithm") == "qsmart"
 }
 
 /// The Inversion page's order: each method's settings, NLTV's echo time last; under QSMART, its
@@ -415,9 +413,7 @@ pub(super) fn setting(path: &str) -> &'static Setting {
 
 /// The config path of a row's field, when its setting is kept in [`SettingsStore`].
 pub fn stored_path(field: &str) -> Option<&'static str> {
-    field_path(field).filter(|p| {
-        STORED_SECTIONS.contains(&setting(p).section) && !KEPT_IN_FORM.iter().any(|(k, _)| k == p)
-    }).filter(|_| !TUI_CHOICES.contains(&field))
+    field_path(field).filter(|p| STORED_SECTIONS.contains(&setting(p).section)).filter(|_| !TUI_CHOICES.contains(&field))
 }
 
 /// A select's options and their help, as the TUI words them, for the setting at `path`.
@@ -833,6 +829,7 @@ impl SettingsStore {
     /// the default instead would change a setting behind the user's back.
     pub fn changed_or_refused(&self) -> (Vec<(&'static str, Value)>, Vec<Refused>) {
         let mut out: BTreeMap<&'static str, Value> = self.values.clone();
+        out.retain(|p, _| !PASSED_BY_THE_FORM.contains(p));
         for (path, value) in FORM_DEFAULTS {
             out.entry(path).or_insert_with(value);
         }
@@ -1088,6 +1085,7 @@ pub fn is_value_row(field: &str, path: &str) -> bool {
 mod tests {
     use super::*;
     use super::super::command::config_from_app;
+    use super::super::app::QSM_ALGO_OPTIONS;
 
     /// A text row shows what was typed; the run takes it when it reads as the setting's value,
     /// the default when it is blank, and refuses it when it reads as no value (see
@@ -1192,7 +1190,7 @@ mod tests {
     #[test]
     fn unreadable_inversion_values_are_refused() {
         let mut app = App::new_for_trial();
-        app.pipeline_state.qsm_algorithm = QSM_ALGO_OPTIONS.iter().position(|a| *a == "nltv").unwrap();
+        app.set_qsm_algorithm(QSM_ALGO_OPTIONS.iter().position(|a| *a == "nltv").unwrap());
         unreadable(&mut app, "nltv_lambda", "abc", "--nltv-lambda abc: not a number");
         *app.field_text_mut("nltv_lambda").unwrap() = String::new();
         let ms = options("inversion.nltv.te").0.iter().position(|o| *o == "ms").unwrap();
@@ -1245,7 +1243,7 @@ mod tests {
         app.toggle_field("do_swi");
         assert!(config_from_app(&app).is_ok(), "SWI off: its strength does not apply");
         // A time typed under a named echo time, and a method not chosen.
-        app.pipeline_state.qsm_algorithm = QSM_ALGO_OPTIONS.iter().position(|a| *a == "nltv").unwrap();
+        app.set_qsm_algorithm(QSM_ALGO_OPTIONS.iter().position(|a| *a == "nltv").unwrap());
         let ms = options("inversion.nltv.te").0.iter().position(|o| *o == "ms").unwrap();
         app.set_field_select("nltv_te", ms);
         unreadable(&mut app, "nltv_te_ms", "abc", "--nltv-te abc");
@@ -1253,7 +1251,7 @@ mod tests {
         assert!(config_from_app(&app).is_ok(), "a named echo time: the time typed does not apply");
         app.set_field_select("nltv_te", ms);
         assert!(config_from_app(&app).is_err());
-        app.pipeline_state.qsm_algorithm = 0;
+        app.set_qsm_algorithm(0);
         assert!(config_from_app(&app).is_ok(), "another method: NLTV's echo time does not apply");
     }
 
@@ -1325,7 +1323,7 @@ mod tests {
     fn an_echo_time_keeps_its_time_under_a_named_one() {
         use qsmxt_engine::EchoTimeChoice;
         let mut app = App::new_for_trial();
-        app.pipeline_state.qsm_algorithm = QSM_ALGO_OPTIONS.iter().position(|a| *a == "nltv").unwrap();
+        app.set_qsm_algorithm(QSM_ALGO_OPTIONS.iter().position(|a| *a == "nltv").unwrap());
         let te = |app: &App| config_from_app(app).unwrap().inversion.nltv.te;
         let ms = options("inversion.nltv.te").0.iter().position(|o| *o == "ms").unwrap();
         assert!(options("inversion.nltv.te").1[0].ends_with("(default)"), "NLTV's default is the first echo time");
