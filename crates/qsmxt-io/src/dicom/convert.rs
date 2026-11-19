@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc;
 
-use super::{clean_bids_label, find_collisions, parse_dcm2niix_suffix, plan_session, CoilType, DicomSession, SeriesType, Target};
+use super::{clean_bids_label, find_collisions, parse_dcm2niix_suffix, plan_session, BidsStem, CoilType, DicomSession, SeriesType, Target};
 
 /// Message sent from the conversion thread to the UI.
 pub enum ConvertMessage {
@@ -445,45 +445,15 @@ pub fn convert_session_streaming(
     let send = |m: ConvertMessage| {
         let _ = tx.send(m);
     };
-    let dcm2niix = match find_dcm2niix() {
-        Some(p) => p,
-        None => {
-            send(ConvertMessage::Error(
-                "dcm2niix not found: no bundled copy in ~/.qsmxt/bin and not on PATH. \
-                 Reinstall qsmxt or install dcm2niix manually."
-                    .to_string(),
-            ));
-            send(ConvertMessage::Done { bids_dir: output_dir.to_path_buf() });
-            return;
-        }
-    };
-    if let Err(e) = fs::create_dir_all(output_dir) {
-        send(ConvertMessage::Error(format!("Failed to create output directory: {}", e)));
-        send(ConvertMessage::Done { bids_dir: output_dir.to_path_buf() });
-        return;
-    }
-    send(ConvertMessage::Log(format!("Output BIDS directory: {}", output_dir.display())));
-    send(ConvertMessage::Log(format!("Using dcm2niix: {}", dcm2niix.display())));
+    let Some(dcm2niix) = prepare(output_dir, &options, tx) else { return };
     let runner = Dcm2niix { exe: &dcm2niix, keep_uids: options.keep_dicom_uids };
-    if options.keep_dicom_uids {
-        send(ConvertMessage::Log("Keeping the study's DICOM UIDs and dates in the sidecars (patient identity is still \
-            removed): don't share this dataset outside your site".to_string()));
-    }
 
     let plans = plan_session(session);
     let has_extra = plans.iter().any(|p| matches!(p.target, Target::Extra { .. }));
     if let Err(e) = write_dataset_files(output_dir, has_extra) {
         send(ConvertMessage::Error(format!("Failed to write the dataset files: {e}")));
     }
-    for w in &session.report.warnings {
-        send(ConvertMessage::Log(format!("Warning: {w}")));
-    }
-    for n in &session.report.notes {
-        send(ConvertMessage::Log(format!("Note: {n}")));
-    }
-    for s in &session.report.skipped {
-        send(ConvertMessage::Log(format!("Skipped (not an image): {s}")));
-    }
+    log_report(session, tx);
 
     let work_root = output_dir.join(".qsmxt_dcm2niix");
     let _ = fs::remove_dir_all(&work_root);
@@ -518,18 +488,7 @@ pub fn convert_session_streaming(
                                     if split_extension(&name).is_none() {
                                         continue;
                                     }
-                                    // Volumes QSMxT separated get their number in the name.
-                                    let name = match known.volume.or(known.echo_te.map(|_| 0)) {
-                                        Some(_) => {
-                                            let tag = match (known.volume, known.echo_te) {
-                                                (Some(v), _) => format!("_vol{v}"),
-                                                (None, Some(te)) => format!("_te{}", clean_bids_label(&format!("{te}"))),
-                                                _ => String::new(),
-                                            };
-                                            name.replacen(prefix.as_str(), &format!("{prefix}{tag}"), 1)
-                                        }
-                                        None => name,
-                                    };
+                                    let name = extra_name(name, &known, prefix);
                                     staged.push(Staged { from: out, rel: format!("{}/{}", dir.join("/"), name), owner: owner.clone() });
                                 }
                             }
@@ -554,23 +513,7 @@ pub fn convert_session_streaming(
                                     let images = outputs.iter().filter(|(p, _)| is_nifti(p)).count();
                                     for (out, known) in outputs {
                                         let Some(name) = out.file_name().and_then(|n| n.to_str()).map(str::to_string) else { continue };
-                                        let Some((stem_part, ext)) = split_extension(&name) else { continue };
-                                        let mut sfx = parse_dcm2niix_suffix(stem_part.strip_prefix(base).unwrap_or(""));
-                                        if let Some(te) = known.echo_te {
-                                            sfx.echo_te = Some(te);
-                                            sfx.echo_num = None;
-                                        }
-                                        if let Some(v) = known.volume {
-                                            // The echo tags are what could not tell the volumes apart.
-                                            sfx.echo_num = None;
-                                            sfx.extra.push(format!("vol{v}"));
-                                        }
-                                        // A lone map computed at a late echo: nothing to tell apart.
-                                        if images == 1 && !stem.allows_echo {
-                                            sfx.echo_num = None;
-                                            sfx.echo_te = None;
-                                        }
-                                        let bids_name = stem.file_name(&sfx, coil, ext);
+                                        let Some(bids_name) = bids_name(&name, &known, images, stem, coil, base) else { continue };
                                         staged.push(Staged { from: out.clone(), rel: format!("{}/{}", stem.dir().join("/"), bids_name), owner: owner.clone() });
                                     }
                                 }
@@ -588,45 +531,138 @@ pub fn convert_session_streaming(
                 }
             }
 
-            staged.retain(|s| !failed.contains(&s.owner));
-            let entries: Vec<(String, String)> = staged.iter().map(|s| (s.rel.clone(), s.owner.clone())).collect();
-            let clashes = find_collisions(&entries);
-            for (name, a, b) in &clashes {
-                let msg = if a == b {
-                    format!("{name}: two images of {a} would both be written there; neither was")
-                } else {
-                    format!("{name}: {a} and {b} would both be written there; neither was")
-                };
-                send(ConvertMessage::Error(msg));
-            }
-            let clashing: Vec<&String> = clashes.iter().map(|c| &c.0).collect();
-            for s in &staged {
-                if clashing.contains(&&s.rel) {
-                    continue;
-                }
-                let dest = output_dir.join(&s.rel);
-                if let Some(parent) = dest.parent() {
-                    let _ = fs::create_dir_all(parent);
-                }
-                if fs::rename(&s.from, &dest).is_err() {
-                    if let Err(e) = fs::copy(&s.from, &dest) {
-                        send(ConvertMessage::Error(format!("Failed to write {}: {e}", dest.display())));
-                        continue;
-                    }
-                }
-                if !s.rel.ends_with(".json") {
-                    send(ConvertMessage::Log(format!("  -> {}", s.rel)));
-                }
-            }
-            // Sidecars last: a phase sidecar's Units depends on its image.
-            for s in staged.iter().filter(|s| s.rel.ends_with(".json") && !clashing.contains(&&s.rel)) {
-                fix_sidecar(&output_dir.join(&s.rel));
-            }
+            place_staged(staged, &failed, output_dir, tx);
         }
     }
 
     let _ = fs::remove_dir_all(&work_root);
     send(ConvertMessage::Done { bids_dir: output_dir.to_path_buf() });
+}
+
+/// Find dcm2niix and create `output_dir`, saying which are used; `None`, with the error and
+/// `Done` sent, when either fails.
+fn prepare(output_dir: &Path, options: &ConvertOptions, tx: &mpsc::Sender<ConvertMessage>) -> Option<PathBuf> {
+    let send = |m: ConvertMessage| {
+        let _ = tx.send(m);
+    };
+    let dcm2niix = match find_dcm2niix() {
+        Some(p) => p,
+        None => {
+            send(ConvertMessage::Error(
+                "dcm2niix not found: no bundled copy in ~/.qsmxt/bin and not on PATH. \
+                 Reinstall qsmxt or install dcm2niix manually."
+                    .to_string(),
+            ));
+            send(ConvertMessage::Done { bids_dir: output_dir.to_path_buf() });
+            return None;
+        }
+    };
+    if let Err(e) = fs::create_dir_all(output_dir) {
+        send(ConvertMessage::Error(format!("Failed to create output directory: {}", e)));
+        send(ConvertMessage::Done { bids_dir: output_dir.to_path_buf() });
+        return None;
+    }
+    send(ConvertMessage::Log(format!("Output BIDS directory: {}", output_dir.display())));
+    send(ConvertMessage::Log(format!("Using dcm2niix: {}", dcm2niix.display())));
+    if options.keep_dicom_uids {
+        send(ConvertMessage::Log("Keeping the study's DICOM UIDs and dates in the sidecars (patient identity is still \
+            removed): don't share this dataset outside your site".to_string()));
+    }
+    Some(dcm2niix)
+}
+
+/// The session report's warnings, notes and skipped files, as log lines.
+fn log_report(session: &DicomSession, tx: &mpsc::Sender<ConvertMessage>) {
+    let send = |m: ConvertMessage| {
+        let _ = tx.send(m);
+    };
+    for w in &session.report.warnings {
+        send(ConvertMessage::Log(format!("Warning: {w}")));
+    }
+    for n in &session.report.notes {
+        send(ConvertMessage::Log(format!("Note: {n}")));
+    }
+    for s in &session.report.skipped {
+        send(ConvertMessage::Log(format!("Skipped (not an image): {s}")));
+    }
+}
+
+/// The name of an extra_data output: volumes QSMxT separated get their number in the name.
+fn extra_name(name: String, known: &Known, prefix: &str) -> String {
+    match known.volume.or(known.echo_te.map(|_| 0)) {
+        Some(_) => {
+            let tag = match (known.volume, known.echo_te) {
+                (Some(v), _) => format!("_vol{v}"),
+                (None, Some(te)) => format!("_te{}", clean_bids_label(&format!("{te}"))),
+                _ => String::new(),
+            };
+            name.replacen(prefix, &format!("{prefix}{tag}"), 1)
+        }
+        None => name,
+    }
+}
+
+/// The BIDS name of dcm2niix output `name` of `stem` (`None` for a file it does not name).
+fn bids_name(name: &str, known: &Known, images: usize, stem: &BidsStem, coil: Option<u32>, base: &str) -> Option<String> {
+    let (stem_part, ext) = split_extension(name)?;
+    let mut sfx = parse_dcm2niix_suffix(stem_part.strip_prefix(base).unwrap_or(""));
+    if let Some(te) = known.echo_te {
+        sfx.echo_te = Some(te);
+        sfx.echo_num = None;
+    }
+    if let Some(v) = known.volume {
+        // The echo tags are what could not tell the volumes apart.
+        sfx.echo_num = None;
+        sfx.extra.push(format!("vol{v}"));
+    }
+    // A lone map computed at a late echo: nothing to tell apart.
+    if images == 1 && !stem.allows_echo {
+        sfx.echo_num = None;
+        sfx.echo_te = None;
+    }
+    Some(stem.file_name(&sfx, coil, ext))
+}
+
+/// Move the staged files of the series that converted into the dataset, refusing every name two
+/// files would share, then fix up their sidecars.
+fn place_staged(mut staged: Vec<Staged>, failed: &[String], output_dir: &Path, tx: &mpsc::Sender<ConvertMessage>) {
+    let send = |m: ConvertMessage| {
+        let _ = tx.send(m);
+    };
+    staged.retain(|s| !failed.contains(&s.owner));
+    let entries: Vec<(String, String)> = staged.iter().map(|s| (s.rel.clone(), s.owner.clone())).collect();
+    let clashes = find_collisions(&entries);
+    for (name, a, b) in &clashes {
+        let msg = if a == b {
+            format!("{name}: two images of {a} would both be written there; neither was")
+        } else {
+            format!("{name}: {a} and {b} would both be written there; neither was")
+        };
+        send(ConvertMessage::Error(msg));
+    }
+    let clashing: Vec<&String> = clashes.iter().map(|c| &c.0).collect();
+    for s in &staged {
+        if clashing.contains(&&s.rel) {
+            continue;
+        }
+        let dest = output_dir.join(&s.rel);
+        if let Some(parent) = dest.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if fs::rename(&s.from, &dest).is_err() {
+            if let Err(e) = fs::copy(&s.from, &dest) {
+                send(ConvertMessage::Error(format!("Failed to write {}: {e}", dest.display())));
+                continue;
+            }
+        }
+        if !s.rel.ends_with(".json") {
+            send(ConvertMessage::Log(format!("  -> {}", s.rel)));
+        }
+    }
+    // Sidecars last: a phase sidecar's Units depends on its image.
+    for s in staged.iter().filter(|s| s.rel.ends_with(".json") && !clashing.contains(&&s.rel)) {
+        fix_sidecar(&output_dir.join(&s.rel));
+    }
 }
 
 #[cfg(test)]
