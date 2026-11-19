@@ -5,6 +5,12 @@
 //! TUI's tests check that the two agree, so edit both together. `.full(..)`, `.gui(..)` and
 //! `.gui_value(..)` give the wording for other front ends where the TUI's is abbreviated, names
 //! the default, repeats the units, or is missing.
+//!
+//! `.flag("--x")` gives the setting a `qsmxt run` flag, which its type describes ([`super::cli`]):
+//! `.cli(..)` words its help for the command line, and the other flag methods (`.value_name(..)`,
+//! `.parse(..)`, `.negated(..)`, ...) say only where the flag differs from what the type implies.
+//!
+//! Each section's entries are in `table/<section>.rs`.
 
 mod input;
 mod geometry;
@@ -24,6 +30,7 @@ mod export;
 
 use serde_json::{json, Value};
 
+use super::cli::FlagParse as P;
 use super::{d, o, Def, Section::*, Ty::*};
 use crate::enums::*;
 use crate::store::Item;
