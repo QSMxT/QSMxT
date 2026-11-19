@@ -4,7 +4,7 @@
 //! looks a method up by stage and id, and [`reference_text`] and [`inline_text`] write a
 //! catalogue record in QSMxT's style. The constants below are the works that are not a catalogue
 //! method's (QSMxT and QSMbly themselves, consensus papers, repositories), and
-//! [`TEXT_OVERRIDES`] and [`method_override`] list where QSMxT's text departs from the record.
+//! [`TEXT_OVERRIDES`] lists the records QSMxT writes in its own form.
 
 use qsm_core::catalogue;
 use std::borrow::Cow;
@@ -96,26 +96,10 @@ pub(super) fn catalogue_method(stage: MethodStage, id: &str) -> &'static catalog
     catalogue::find(stage, id).unwrap_or_else(|| panic!("QSM.rs's catalogue has no {stage:?} method {id:?}"))
 }
 
-/// Methods whose citations QSMxT gives differently from the catalogue, each with why.
-fn method_override(stage: MethodStage, id: &str) -> Option<Vec<Citation>> {
-    match (stage, id) {
-        // QSMxT cites HC-ChiSep's own work only; the catalogue adds the hollow-cylinder model's
-        // paper (Wharton & Bowtell, 2012).
-        (MethodStage::Separation, "hc-chisep") => Some(vec![from_record(&catalogue_method(stage, id).citations[0])]),
-        // QSMxT cites R2*-QSM's Journal of Neuroimaging paper only; the catalogue adds its
-        // Tomography paper.
-        (MethodStage::Separation, "r2star-qsm") => Some(vec![from_record(&catalogue_method(stage, id).citations[0])]),
-        // QSMxT cites R2PRIMEnet as its own entry of χ-sepnet's paper, with another author list.
-        (MethodStage::Relaxometry, "r2primenet") => Some(vec![CITE_R2PRIMENET]),
-        _ => None,
-    }
-}
-
 /// The works the methods text cites for method `id` in `stage`: the catalogue's, the method's own
-/// first, except where [`method_override`] says otherwise.
+/// first.
 pub(super) fn method(stage: MethodStage, id: &str) -> Vec<Citation> {
-    method_override(stage, id)
-        .unwrap_or_else(|| catalogue_method(stage, id).citations.iter().map(from_record).collect())
+    catalogue_method(stage, id).citations.iter().map(from_record).collect()
 }
 
 /// The catalogue's record of the work `key`, for a paper QSMxT cites for a step that is not
@@ -126,9 +110,16 @@ pub(super) fn paper(key: &str) -> Citation {
     from_record(record)
 }
 
-/// The in-text citation of `cites`: each one's, joined by "; ".
+/// The in-text citation of `cites`: each one's, joined by "; ", once each (R2*-QSM's two papers
+/// are both "Dimov et al., 2022").
 pub(super) fn cite_inline(cites: &[Citation]) -> String {
-    cites.iter().map(|c| c.inline.as_ref()).collect::<Vec<_>>().join("; ")
+    let mut inline: Vec<&str> = Vec::new();
+    for c in cites {
+        if !inline.contains(&c.inline.as_ref()) {
+            inline.push(&c.inline);
+        }
+    }
+    inline.join("; ")
 }
 
 // ─── Works that are not a catalogue method's ───
@@ -143,12 +134,6 @@ pub(super) const CITE_QSMCI_SIGNAL_EROSION: Citation = Citation {
     key: "qsmci",
     text: Cow::Borrowed("QSM-CI: signal-gated mask erosion (QSM-CI harmonization masking, `hd-bet-qsmci`). https://github.com/QSMxT/QSM-CI"),
     inline: Cow::Borrowed("QSM-CI"),
-};
-
-pub(super) const CITE_R2PRIMENET: Citation = Citation {
-    key: "kim2025",
-    text: Cow::Borrowed("Kim, M., Ji, S., Lee, J., et al. (2025). \"chi-sepnet: Deep neural network for magnetic susceptibility source separation.\" *Human Brain Mapping*, 46(2):e70136. https://doi.org/10.1002/hbm.70136"),
-    inline: Cow::Borrowed("Kim et al., 2025"),
 };
 
 pub(super) const CITE_QSMXT: Citation = Citation {

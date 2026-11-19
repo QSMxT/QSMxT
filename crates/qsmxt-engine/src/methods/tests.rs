@@ -1000,7 +1000,9 @@ fn test_cite_inline_joins_several_works() {
     let a = Citation { key: "a2001", text: "A".into(), inline: "A et al., 2001".into() };
     let b = Citation { key: "b2002", text: "B".into(), inline: "B & C, 2002".into() };
     assert_eq!(cite_inline(std::slice::from_ref(&a)), "A et al., 2001");
-    assert_eq!(cite_inline(&[a, b]), "A et al., 2001; B & C, 2002");
+    assert_eq!(cite_inline(&[a.clone(), b.clone()]), "A et al., 2001; B & C, 2002");
+    let a2 = Citation { key: "a2001b", text: "A2".into(), inline: "A et al., 2001".into() };
+    assert_eq!(cite_inline(&[a, a2, b]), "A et al., 2001; B & C, 2002");
 }
 
 // ─── All inversion algorithms in methods ───
