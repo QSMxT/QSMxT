@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 // The framework (the Draft, its ordering, the Note, the "only non-defaults" helpers) is here;
 // each stage's prose is in its own file, and `draft` puts the paragraph together in run order.
 mod background;
-mod citations;
+pub(crate) mod citations;
 mod draft;
 mod field_map;
 mod grid;

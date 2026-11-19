@@ -181,10 +181,14 @@ weights, MEDI), SWI and relaxometry read the uncorrected echoes. QSMART's vessel
 magnitude (`--qsmart-vessel-magnitude mean-n4`) is made in the same step, with QSMART's
 own N4. `--inhomogeneity-method` chooses how:
 
+<!-- generated:inhomogeneity-methods start (from QSM.rs's method catalogue and the settings registry: do not edit; regenerate with QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs) -->
+
 | Value | Method |
 | --- | --- |
 | `makehomogeneous` | Divides the magnitude by a smoothed estimate of the receive sensitivity (MriResearchTools' `makehomogeneous`; Eckstein et al., 2019) (default) |
 | `n4` | N4 bias field correction ([Tustison et al., 2010](https://doi.org/10.1109/TMI.2010.2046908)), as ANTs' `N4BiasFieldCorrection`: a smooth B-spline bias field, fitted in the log domain over several levels of increasing resolution so that the corrected image's intensity histogram is as sharp as possible |
+
+<!-- generated:inhomogeneity-methods end -->
 
 `makehomogeneous` takes `--homogeneity-sigma-mm` and `--homogeneity-nbox`. N4
 takes:
@@ -484,12 +488,16 @@ leave them out, and the mask they work in is saved beside the field map
 (`desc-field_mask`; `--field-mask-output` for `qsmxt fieldmap`). The log and the
 methods say how many there were.
 
+<!-- generated:unwrapping-methods start (from QSM.rs's method catalogue and the settings registry: do not edit; regenerate with QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs) -->
+
 | Value | Method |
 | --- | --- |
 | `romeo` | Rapid Opensource Minimum-spanning-tree Echo Optimisation (default) |
 | `laplacian` | Laplacian-based unwrapping (QSMART's reference) |
 | `prelude` | PRELUDE region-merging unwrapping (Jenkinson, 2003) |
 | `medi-region-growing` | MEDI's magnitude-guided region-growing unwrapping (Liu et al., 2013) |
+
+<!-- generated:unwrapping-methods end -->
 
 With several echoes, ROMEO unwraps as it does by default: the first echo is unwrapped
 spatially and the others temporally from it (`--romeo-template` picks another echo), with no
@@ -688,6 +696,8 @@ In the TUI it is the "complex-fit" B0 estimation option, with its two parameters
 
 Set with `--bf-algorithm`.
 
+<!-- generated:background-methods start (from QSM.rs's method catalogue and the settings registry: do not edit; regenerate with QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs) -->
+
 | Value | Method |
 | --- | --- |
 | `vsharp` | Variable-kernel SHARP (default) |
@@ -700,6 +710,8 @@ Set with `--bf-algorithm`.
 | `iharperella` | Improved HARPERELLA |
 | `bfrnet` | BFRnet — deep-learning background removal from the total field. Needs a deep-learning build; weights downloaded on first use |
 | `iqfm` | iQFM — deep-learning joint unwrapping and background removal straight from the wrapped phase (the local-field head of iQSM). Replaces field mapping as well; refused with inversions that do not take a local field. Weights downloaded on first use |
+
+<!-- generated:background-methods end -->
 
 Choosing an inversion changes no background removal: `--qsm-algorithm medi` alone runs the
 general default (`vsharp`). MEDI's reference pipeline uses PDF, which the log, `--dry` and
@@ -795,6 +807,8 @@ reconstructions and deep-learning networks.
 
 ### Classical & iterative
 
+<!-- generated:inversion-methods start (from QSM.rs's method catalogue and the settings registry: do not edit; regenerate with QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs) -->
+
 | Value | Method |
 | --- | --- |
 | `rts` | RTS — Rapid Two-Step |
@@ -818,6 +832,8 @@ reconstructions and deep-learning networks.
 | `whqsm` | WH-QSM — Weak-Harmonic |
 | `hdqsm` | HD-QSM — Hybrid data fidelity |
 | `amp-pe` | AMP-PE — Approximate Message Passing with Parameter Estimation |
+
+<!-- generated:inversion-methods end -->
 
 ### HEIDI streaking reduction
 
@@ -967,6 +983,8 @@ config file, and blank in the TUI.
 
 ### Deep learning
 
+<!-- generated:deep-learning-inversion-methods start (from QSM.rs's method catalogue and the settings registry: do not edit; regenerate with QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs) -->
+
 | Value | Method | Tileable |
 | --- | --- | --- |
 | `xqsm` | xQSM | ✓ |
@@ -981,6 +999,8 @@ config file, and blank in the TUI.
 | `qsmgan` | QSMGAN — GAN-refined (native patching) | |
 | `iqsm` | iQSM — end-to-end from phase | |
 | `iqsm-plus` | iQSM+ — orientation-adaptive end-to-end | |
+
+<!-- generated:deep-learning-inversion-methods end -->
 
 Model weights are downloaded automatically on first use (and cached) from the
 QSMxT weight registry on [Hugging Face](https://huggingface.co/qsmxt/qsm-onnx-weights).
@@ -1364,6 +1384,8 @@ qsmxt invert sti -i f1.nii … -i f6.nii --b0-dirs dirs.txt --mask mask.nii --ou
 Enable with `--do-chisep` to split susceptibility into paramagnetic and
 diamagnetic components, and choose the method with `--chisep`.
 
+<!-- generated:separation-methods start (from QSM.rs's method catalogue and the settings registry: do not edit; regenerate with QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs) -->
+
 | Value | Method |
 | --- | --- |
 | `r2star-qsm` | R2\*-based magnitude decay modelling (default) |
@@ -1374,6 +1396,8 @@ diamagnetic components, and choose the method with `--chisep`.
 | `hc-chisep` | Hollow-cylinder χ-separation |
 | `susep-net` | SUSEP-Net (deep learning) |
 | `chi-sepnet` | χ-sepnet (deep learning) |
+
+<!-- generated:separation-methods end -->
 
 Only `r2star-qsm` and `decompose` run on a GRE acquisition alone. The rest are
 based on R2′, which comes from a multi-echo spin-echo acquisition, a

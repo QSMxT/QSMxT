@@ -279,3 +279,7 @@ qsmxt validate study/bids
 
 `validate` checks that your dataset has the phase/magnitude pairs and sidecar
 metadata the pipeline needs, so problems surface before a long run starts.
+
+<!-- generated:settings start (from the settings registry: do not edit; regenerate with QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs) -->
+
+<!-- generated:settings end -->

@@ -66,6 +66,10 @@ qsmxt run study/bids                             # run the pipeline
 Full guides and the complete command reference are on the
 **[documentation site](https://qsmxt.github.io/QSMxT/)** (or run `qsmxt --help`).
 
+<!-- generated:algorithms start (from QSM.rs's method catalogue: do not edit; regenerate with QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs) -->
+
+<!-- generated:algorithms end -->
+
 ## Coming from QSMxT 8.x (Python)?
 
 v9 is a ground-up rewrite in Rust. Template and group-space building and the web
