@@ -9,6 +9,18 @@ use crate::run::{Done, Run, chi_bound_decision};
 use crate::stages;
 use crate::store::{Contrast, Data, Item, StageStore};
 
+/// The maps χ-separation reads ([`Run::separation_maps`]).
+struct Maps {
+    magnitude_multi: Option<Vec<f64>>,
+    magnitude_rss: Option<Vec<f64>>,
+    echo_major: Vec<f64>,
+    r2star: Option<Vec<f64>>,
+    r2prime: Option<Vec<f64>>,
+    se_multi: Option<Vec<f64>>,
+    local_field: Vec<f64>,
+    qsm: Vec<f64>,
+}
+
 impl<S: StageStore + ?Sized> Run<'_, S> {
     /// χ-separation of the susceptibility map (the run's, or one supplied) into its paramagnetic
     /// and diamagnetic sources, from what the earlier steps made (local field, R2*, R2′, the
@@ -24,34 +36,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         // Every method needs a conventional QSM (χ_total): the run's, a supplied one, or (χ-sep
         // iLSQR) one this step reconstructs from the local field.
         let own_qsm = sep::reconstructs_qsm(self.config);
-        let qsm_item = match &self.config.separation.custom_qsm_tool {
-            None if own_qsm => {
-                self.decide(Decision::new(Topic::QsmSource, Choice::Computed,
-                    "The susceptibility map separated was reconstructed from the local field by iLSQR, \
-                     as the χ-separation toolbox does."));
-                None
-            }
-            Some(tool) => {
-                if !self.store.has(&Item::SuppliedChi) {
-                    return Err(crate::EngineError::Config(format!(
-                        "--do-chisep ({alg_name}) needs a QSM, and --use-custom-qsm {tool} names no Chimap \
-                         for this run under derivatives/{tool}")).into());
-                }
-                let from = self.store.identity(&Item::SuppliedChi);
-                self.log(Level::Info, &format!("Using custom QSM from {}", from.as_str().unwrap_or_default()));
-                self.decide(Decision::new(Topic::QsmSource, Choice::Supplied,
-                    "The susceptibility map separated was the one supplied with the scan.")
-                    .with_detail(from.as_str().unwrap_or_default()));
-                Some(Item::SuppliedChi)
-            }
-            None => {
-                if !self.store.has(&Item::Chi) {
-                    return Err(crate::EngineError::Config(format!(
-                        "--do-chisep ({alg_name}) needs a QSM, and none was made")).into());
-                }
-                Some(Item::Chi)
-            }
-        };
+        let qsm_item = self.chi_separation_qsm(own_qsm, &alg_name)?;
         let mese = self.store.mese();
         let s = &self.config.separation;
         let supplied: Vec<Item> = [(s.custom_qsm_tool.is_some(), Item::SuppliedChi),
@@ -71,60 +56,9 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         let mask_item = self.mask_item();
         let brain = self.store.mask(&mask_item)?;
 
-        // Multi-echo magnitude (voxel-major) and its RSS over echoes, when there is magnitude;
-        // χ-sep MEDI also takes the echoes one volume after another, for its noise map and CSF mask.
         let chi_sep_medi = alg == crate::SeparationAlgorithm::ChiSepMedi;
-        let mut echo_major = Vec::new();
-        let (magnitude_multi, magnitude_rss) = if self.meta.has_magnitude {
-            let n = self.n_echoes();
-            let mut multi = stages::relaxometry::VoxelMajor::new(n_voxels, n);
-            let mut rss = vec![0.0f64; n_voxels];
-            for e in 1..=n {
-                let item = self.working_magnitude(e);
-                let echo = self.store.real(&item)?;
-                multi.set(e - 1, &echo, &format!("mag echo {e}"))?;
-                if chi_sep_medi {
-                    echo_major.extend_from_slice(&echo);
-                }
-                for (r, m) in rss.iter_mut().zip(&echo) {
-                    *r += m * m;
-                }
-            }
-            for v in rss.iter_mut() { *v = v.sqrt(); }
-            (Some(multi.data), Some(rss))
-        } else {
-            (None, None)
-        };
-        // R2* and R2′, from the relaxometry and R2 steps, or a supplied R2′.
-        let mut r2star = if self.store.has(&Item::R2star) { Some(self.store.real(&Item::R2star)?) } else { None };
-        let r2prime_item = if self.config.separation.custom_r2prime_tool.is_some() { Item::SuppliedR2prime } else { Item::R2prime };
-        let mut r2prime = if self.store.has(&r2prime_item) { Some(self.map(&r2prime_item)?) } else { None };
-        // χ-sepnet's toolbox route predicts R2' from R2* itself, with R2PRIMEnet in its training
-        // frame, as the authors do; it takes an R2' only when that is measured or supplied.
-        if route_estimates_r2prime {
-            if r2star.is_some() {
-                self.log(Level::Info, "Chi-separation (chi-sepnet): R2' predicted from R2* inside the network's route");
-            }
-            r2prime = None;
-        }
-        // The MESE's echoes on this run's grid, for HC-ChiSep. Voxels outside its FOV are zero,
-        // the same as voxels outside the brain.
-        let se_multi = match &mese {
-            Some(m) => self.mese_on_grid(m)?.ok().map(|m| m.echoes),
-            None => None,
-        };
-        // The local field (ppm), for the field-based methods.
-        let field_item = Item::LocalField(Pass::Main);
-        let mut local_field = if self.store.has(&field_item) { self.store.real(&field_item)? } else { Vec::new() };
-        let mut qsm = match &qsm_item {
-            Some(item) => self.map(item)?,
-            None if local_field.is_empty() => Vec::new(),
-            None => {
-                let field_mask = self.store.mask(&Item::LocalFieldMask(Pass::Main))?;
-                self.log(Level::Info, "Chi-separation: reconstructing its QSM from the local field (iLSQR)");
-                sep::initial_qsm(&local_field, &field_mask, &self.meta, self.config, self.observer)?
-            }
-        };
+        let Maps { magnitude_multi, magnitude_rss, echo_major, mut r2star, mut r2prime, se_multi, mut local_field, mut qsm } =
+            self.separation_maps(qsm_item, mese.as_ref(), n_voxels, chi_sep_medi, route_estimates_r2prime)?;
 
         // χ-sep MEDI's noise map and CSF mask are made below, on the support, from the magnitude:
         // here they count as present when the magnitude is.
@@ -180,19 +114,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         }
         // DECOMPOSE takes a QSM per echo (its authors run STAR-QSM on each echo): a per-echo QSM's
         // echoes' maps, or else the one QSM given at every echo (said in the methods text).
-        let qsm_per_echo = if alg != crate::SeparationAlgorithm::Decompose {
-            None
-        } else if qsm_item == Some(Item::Chi) && self.per_echo() {
-            let mut maps = Vec::with_capacity(self.n_echoes());
-            for e in 1..=self.n_echoes() {
-                let mut map = self.store.real(&Item::EchoChi(e))?;
-                sep::zero_outside(&support, &mut map);
-                maps.push(map);
-            }
-            Some(qsm_core::pipeline::per_echo::voxel_major(&maps))
-        } else {
-            Some(sep::repeat_per_echo(&qsm, self.n_echoes()))
-        };
+        let qsm_per_echo = self.decompose_qsm_per_echo(alg, qsm_item, &support, &qsm)?;
         let (n_std, mask_csf) = if chi_sep_medi {
             let (n_std, csf) = sep::chi_sep_medi_inputs(
                 &echo_major, &self.meta.echo_times, &support, self.meta.dims, self.meta.voxel_size,
@@ -216,7 +138,133 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         self.put(Item::SeparatedChi(Contrast::Paramagnetic), Data::Real(&separated.paramagnetic))?;
         self.put(Item::SeparatedChi(Contrast::Diamagnetic), Data::Real(&separated.diamagnetic))?;
         self.put(Item::SeparatedTotalChi, Data::Real(&separated.total))?;
-        // What χ-sepnet's toolbox route used, recorded with what it made: R2′ is no output of it.
+        self.annotate_chisepnet_route(route_estimates_r2prime)?;
+        self.complete(Done {
+            step: "chi_separation", algorithm: Some(&alg_name), params: &params, outcome: None, key: &key,
+            outputs: &[Item::SeparatedChi(Contrast::Paramagnetic), Item::SeparatedChi(Contrast::Diamagnetic),
+                       Item::SeparatedTotalChi],
+        }, &format!("Chi-separation ({alg_name})"))
+    }
+
+    /// The susceptibility map χ-separation separates: a supplied one, the run's, or (`None`) one
+    /// the step reconstructs itself.
+    fn chi_separation_qsm(&mut self, own_qsm: bool, alg_name: &str) -> Result<Option<Item>, S::Error> {
+        Ok(match &self.config.separation.custom_qsm_tool {
+            None if own_qsm => {
+                self.decide(Decision::new(Topic::QsmSource, Choice::Computed,
+                    "The susceptibility map separated was reconstructed from the local field by iLSQR, \
+                     as the χ-separation toolbox does."));
+                None
+            }
+            Some(tool) => {
+                if !self.store.has(&Item::SuppliedChi) {
+                    return Err(crate::EngineError::Config(format!(
+                        "--do-chisep ({alg_name}) needs a QSM, and --use-custom-qsm {tool} names no Chimap \
+                         for this run under derivatives/{tool}")).into());
+                }
+                let from = self.store.identity(&Item::SuppliedChi);
+                self.log(Level::Info, &format!("Using custom QSM from {}", from.as_str().unwrap_or_default()));
+                self.decide(Decision::new(Topic::QsmSource, Choice::Supplied,
+                    "The susceptibility map separated was the one supplied with the scan.")
+                    .with_detail(from.as_str().unwrap_or_default()));
+                Some(Item::SuppliedChi)
+            }
+            None => {
+                if !self.store.has(&Item::Chi) {
+                    return Err(crate::EngineError::Config(format!(
+                        "--do-chisep ({alg_name}) needs a QSM, and none was made")).into());
+                }
+                Some(Item::Chi)
+            }
+        })
+    }
+
+    /// The maps χ-separation reads, as the earlier steps left them, and the QSM it reconstructs
+    /// when it makes its own.
+    fn separation_maps(
+        &mut self, qsm_item: Option<Item>, mese: Option<&crate::store::Mese>, n_voxels: usize, chi_sep_medi: bool,
+        route_estimates_r2prime: bool,
+    ) -> Result<Maps, S::Error> {
+        use stages::separation as sep;
+        // Multi-echo magnitude (voxel-major) and its RSS over echoes, when there is magnitude;
+        // χ-sep MEDI also takes the echoes one volume after another, for its noise map and CSF mask.
+        let mut echo_major = Vec::new();
+        let (magnitude_multi, magnitude_rss) = if self.meta.has_magnitude {
+            let n = self.n_echoes();
+            let mut multi = stages::relaxometry::VoxelMajor::new(n_voxels, n);
+            let mut rss = vec![0.0f64; n_voxels];
+            for e in 1..=n {
+                let item = self.working_magnitude(e);
+                let echo = self.store.real(&item)?;
+                multi.set(e - 1, &echo, &format!("mag echo {e}"))?;
+                if chi_sep_medi {
+                    echo_major.extend_from_slice(&echo);
+                }
+                for (r, m) in rss.iter_mut().zip(&echo) {
+                    *r += m * m;
+                }
+            }
+            for v in rss.iter_mut() { *v = v.sqrt(); }
+            (Some(multi.data), Some(rss))
+        } else {
+            (None, None)
+        };
+        // R2* and R2′, from the relaxometry and R2 steps, or a supplied R2′.
+        let r2star = if self.store.has(&Item::R2star) { Some(self.store.real(&Item::R2star)?) } else { None };
+        let r2prime_item = if self.config.separation.custom_r2prime_tool.is_some() { Item::SuppliedR2prime } else { Item::R2prime };
+        let mut r2prime = if self.store.has(&r2prime_item) { Some(self.map(&r2prime_item)?) } else { None };
+        // χ-sepnet's toolbox route predicts R2' from R2* itself, with R2PRIMEnet in its training
+        // frame, as the authors do; it takes an R2' only when that is measured or supplied.
+        if route_estimates_r2prime {
+            if r2star.is_some() {
+                self.log(Level::Info, "Chi-separation (chi-sepnet): R2' predicted from R2* inside the network's route");
+            }
+            r2prime = None;
+        }
+        // The MESE's echoes on this run's grid, for HC-ChiSep. Voxels outside its FOV are zero,
+        // the same as voxels outside the brain.
+        let se_multi = match mese {
+            Some(m) => self.mese_on_grid(m)?.ok().map(|m| m.echoes),
+            None => None,
+        };
+        // The local field (ppm), for the field-based methods.
+        let field_item = Item::LocalField(Pass::Main);
+        let local_field = if self.store.has(&field_item) { self.store.real(&field_item)? } else { Vec::new() };
+        let qsm = match &qsm_item {
+            Some(item) => self.map(item)?,
+            None if local_field.is_empty() => Vec::new(),
+            None => {
+                let field_mask = self.store.mask(&Item::LocalFieldMask(Pass::Main))?;
+                self.log(Level::Info, "Chi-separation: reconstructing its QSM from the local field (iLSQR)");
+                sep::initial_qsm(&local_field, &field_mask, &self.meta, self.config, self.observer)?
+            }
+        };
+        Ok(Maps { magnitude_multi, magnitude_rss, echo_major, r2star, r2prime, se_multi, local_field, qsm })
+    }
+
+    /// DECOMPOSE's QSM per echo, on the support: a per-echo QSM's echoes' maps, or else `qsm` at
+    /// every echo. `None` for the other methods.
+    fn decompose_qsm_per_echo(
+        &mut self, alg: crate::SeparationAlgorithm, qsm_item: Option<Item>, support: &[u8], qsm: &[f64],
+    ) -> Result<Option<Vec<f64>>, S::Error> {
+        use stages::separation as sep;
+        Ok(if alg != crate::SeparationAlgorithm::Decompose {
+            None
+        } else if qsm_item == Some(Item::Chi) && self.per_echo() {
+            let mut maps = Vec::with_capacity(self.n_echoes());
+            for e in 1..=self.n_echoes() {
+                let mut map = self.store.real(&Item::EchoChi(e))?;
+                sep::zero_outside(support, &mut map);
+                maps.push(map);
+            }
+            Some(qsm_core::pipeline::per_echo::voxel_major(&maps))
+        } else {
+            Some(sep::repeat_per_echo(qsm, self.n_echoes()))
+        })
+    }
+
+    /// What χ-sepnet's toolbox route used, recorded with what it made: R2′ is no output of it.
+    fn annotate_chisepnet_route(&mut self, route_estimates_r2prime: bool) -> Result<(), S::Error> {
         if crate::config::chisepnet_route_can_estimate_r2prime(self.config) {
             let mut used = serde_json::Map::new();
             used.insert("R2primeSource".into(), json!(if route_estimates_r2prime { "predicted" } else { "measured" }));
@@ -230,11 +278,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
                 self.store.annotate(&item, used.clone())?;
             }
         }
-        self.complete(Done {
-            step: "chi_separation", algorithm: Some(&alg_name), params: &params, outcome: None, key: &key,
-            outputs: &[Item::SeparatedChi(Contrast::Paramagnetic), Item::SeparatedChi(Contrast::Diamagnetic),
-                       Item::SeparatedTotalChi],
-        }, &format!("Chi-separation ({alg_name})"))
+        Ok(())
     }
 
     /// Whether χ-sepnet's toolbox route makes its own R2′ on this run: it has none measured to take.
