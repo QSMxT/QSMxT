@@ -3,6 +3,8 @@
 use crate::error::EngineError;
 use crate::scan::RunMetadata;
 
+mod step;
+
 /// The `t2star_r2star` step's parameters. `method` names the ARLO port, so that maps made by an
 /// earlier one are not reused.
 pub fn t2star_r2star_params(meta: &RunMetadata) -> serde_json::Value {

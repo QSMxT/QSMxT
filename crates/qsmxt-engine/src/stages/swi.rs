@@ -6,6 +6,8 @@ use crate::error::EngineError;
 use crate::scan::RunMetadata;
 use crate::store::{Contrast, Geometry};
 
+mod step;
+
 /// An image and its minimum-intensity projection over slabs of slices.
 pub struct Projected {
     /// The image, on the run's grid.

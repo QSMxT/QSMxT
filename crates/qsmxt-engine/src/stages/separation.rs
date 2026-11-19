@@ -7,6 +7,8 @@ use crate::error::EngineError;
 use crate::observe::Observer;
 use crate::scan::{scan_metadata, RunMetadata};
 
+mod step;
+
 /// The `chi_separation` step's parameters. A network's patch is there only when the network is
 /// the method and the patch is not its default, so a run at the default keeps the cache key it
 /// had before the setting existed.

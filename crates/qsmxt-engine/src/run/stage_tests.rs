@@ -5,7 +5,7 @@ use super::*;
 use crate::enums::{QsmAlgorithm, SeparationAlgorithm};
 use crate::masking::{MaskOp, MaskSection, MaskThresholdMethod, MaskingInput};
 use crate::observe::VolumeData;
-use crate::store::{Header, MemoryStore};
+use crate::store::{Contrast, Header, MemoryStore};
 
 /// `--tukey-window` windows every echo's magnitude and phase before any other step reads
 /// them, as qsm-core's `tukey_window_mag_phase` does, and keys `scale_phase` (only when on).
