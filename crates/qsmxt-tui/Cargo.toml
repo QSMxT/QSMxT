@@ -1,0 +1,28 @@
+[package]
+name = "qsmxt-tui"
+version.workspace = true
+edition = "2021"
+description = "QSMxT's terminal UI: the form, its tabs and pop-ups; the qsmxt binary starts the runs it builds"
+license = "GPL-3.0-only"
+
+[dependencies]
+# Pinned once, in the root Cargo.toml's [workspace.dependencies].
+qsm-core = { workspace = true }
+qsmxt-engine = { path = "../qsmxt-engine" }
+qsmxt-io = { path = "../qsmxt-io" }
+ratatui = "0.29"
+crossterm = "0.28"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+log = "0.4"
+env_logger = "0.11"
+glob = "0.3"
+
+[dev-dependencies]
+qsmxt-io = { path = "../qsmxt-io", features = ["testutils"] }
+regex = "1"
+tempfile = "3"
+
+[features]
+# What the binary's tests of the TUI against the command line use (`testutils`).
+testutils = []

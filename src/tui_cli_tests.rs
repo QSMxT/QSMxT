@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use qsmxt_engine::schema::{self, ViewFacts};
 
-use crate::tui::testutils::{build, build_command_string, build_slurm_args, config_from_app, explored, Act, App, DICOM_MAPS};
+use qsmxt_tui::testutils::{build, build_command_string, build_slurm_args, config_from_app, explored, Act, App, DICOM_MAPS};
 
 fn default_app() -> App {
     App::new()

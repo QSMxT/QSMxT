@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/qsmxt-engine", "crates/qsmxt-io"]
+members = [".", "crates/qsmxt-engine", "crates/qsmxt-io", "crates/qsmxt-tui"]
 
 # The release workflow sets every `version = ` line here from the tag: the binary's and this one,
 # which qsmxt-io takes (its provenance and state files record it).
@@ -38,6 +38,7 @@ dl = ["qsm-core/onnx", "qsm-core/download", "qsmxt-engine/onnx", "qsmxt-io/dl"]
 qsm-core = { workspace = true, features = ["parallel"] }
 qsmxt-engine = { path = "crates/qsmxt-engine" }
 qsmxt-io = { path = "crates/qsmxt-io" }
+qsmxt-tui = { path = "crates/qsmxt-tui" }
 clap = { version = "4", features = ["derive"] }
 const_format = "0.2"
 serde = { version = "1", features = ["derive"] }
@@ -45,7 +46,6 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 toml = "0.8"
 rayon = "1"
 glob = "0.3"
-regex = "1"
 log = "0.4"
 env_logger = "0.11"
 thiserror = "2"
@@ -55,8 +55,6 @@ dicom = "0.9"
 nifti = "0.17"
 # Copies a gzipped NIfTI to an uncompressed name (and back) as the name says (pipeline::runner).
 flate2 = "1"
-ratatui = "0.29"
-crossterm = "0.28"
 tempfile = "3"
 ureq = "2"
 sha2 = "0.10"
@@ -69,6 +67,7 @@ png = "0.17"
 
 [dev-dependencies]
 qsmxt-io = { path = "crates/qsmxt-io", features = ["testutils"] }
+qsmxt-tui = { path = "crates/qsmxt-tui", features = ["testutils"] }
 tempfile = "3"
 
 # Tests that pass data through qsm-core run its numerical code, which is about ten times slower

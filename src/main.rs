@@ -9,7 +9,6 @@ mod cli_snapshots;
 mod snapshot;
 mod commands;
 mod pipeline;
-mod tui;
 #[cfg(test)]
 mod tui_cli_tests;
 

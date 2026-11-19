@@ -3,10 +3,10 @@
 //! command would.
 
 use crate::cli::{RunArgs, SlurmArgs, UpdateArgs};
-use crate::tui::{Outcome, RunOptions, SlurmOptions};
+use qsmxt_tui::{Outcome, RunOptions, SlurmOptions};
 
 pub fn execute() -> crate::Result<()> {
-    match crate::tui::run_tui()? {
+    match qsmxt_tui::run_tui()? {
         Outcome::Quit => Ok(()),
         Outcome::Update => {
             let result = super::update::execute(UpdateArgs { yes: true, force: false, main: false });
