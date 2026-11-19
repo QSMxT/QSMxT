@@ -73,7 +73,7 @@ jobs:
           echo "Filter: $FILTER"
           cargo llvm-cov nextest --workspace --no-fail-fast --lcov --output-path target/lcov.info \
             --run-ignored all -E "$FILTER" --timings \
-            --ignore-filename-regex '(^|/)(src/(main|commands/update)|crates/qsmxt-tui/src/lib)\.rs$'
+            --ignore-filename-regex '(^|/)(src/(main|commands/update)\.rs|crates/qsmxt-tui/src/(lib\.rs|ui/.+\.rs))$'
 
       # Compile time per workspace crate and run time per test binary, in the log and the job
       # summary, so a change that slows the edit-test cycle shows up. Report only.
