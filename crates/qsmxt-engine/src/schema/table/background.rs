@@ -17,6 +17,10 @@ pub(super) fn defs() -> Vec<Def> {
             o("iqfm", "iqfm", "iQFM", "iQFM deep-learning joint unwrapping + background removal from phase (weights auto-downloaded) — https://doi.org/10.1016/j.neuroimage.2022.119410"),
         ])).basic().flag("--bf-algorithm").full("Background removal")
         .gui("How the background field, from sources outside the mask, is removed to leave the local field")
+        .gui_option("iharperella", "Improved HARPERELLA (iHARPERELLA)")
+        // The docs note below their table that the weights are downloaded on first use.
+        .gui_option("bfrnet", "BFRnet deep-learning background removal")
+        .gui_option("iqfm", "iQFM deep-learning joint unwrapping + background removal from phase")
         .cli("Background field removal algorithm (default: vsharp)")
         .value_help("bfrnet", "BFRnet deep-learning background removal (weights downloaded on first use)").value_help("iqfm", "iQFM deep-learning joint unwrapping + background removal from phase (weights downloaded on first use)"),
         d("bg_removal.erode_voxels", Background, "Erode mask", "Erode the brain mask after field mapping, before background removal (0 = none)", Int)

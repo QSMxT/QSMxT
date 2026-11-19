@@ -41,6 +41,19 @@ pub(super) fn defs() -> Vec<Def> {
             o("iqsm-plus", "iqsm-plus", "iQSM+", "iQSM+ (deep learning; weights auto-downloaded) — orientation-adaptive end-to-end reconstruction. https://doi.org/10.1016/j.media.2024.103160"),
         ])).basic().flag("--qsm-algorithm")
         .gui("How the field is inverted into a susceptibility map")
+        // The docs list these in a table of their own, with a note on the weights.
+        .gui_option("xqsm", "Octave-convolution U-net dipole inversion")
+        .gui_option("qsmnet", "3D U-net dipole inversion")
+        .gui_option("qsmnet-plus", "QSMnet trained for a wider susceptibility range")
+        .gui_option("qsmnetme", "The χ-separation toolbox's QSM network, trained on multi-echo data; rotates the field to B0 along z and resamples to 1 mm itself")
+        .gui_option("autoqsm", "Single-step reconstruction, no separate background removal")
+        .gui_option("qsmgan", "GAN-refined U-net dipole inversion")
+        .gui_option("ir2qsm", "Iterative unrolled U-net inversion")
+        .gui_option("lpcnn", "Learned-proximal unrolled inversion")
+        .gui_option("modl-qsm", "Model-based unrolled inversion (χ33/STI)")
+        .gui_option("nextqsm", "Single-step reconstruction, no separate background removal")
+        .gui_option("iqsm", "End-to-end reconstruction from wrapped phase")
+        .gui_option("iqsm-plus", "Orientation-adaptive end-to-end reconstruction")
         .cli("QSM dipole inversion algorithm (default: ilsqr)")
         .cli_values(&["rts", "tv", "tkd", "tsvd", "tgv", "tikhonov", "nltv", "medi", "tfi", "ilsqr", "star", "lsqr", "heidi", "qsmart", "ndi", "fansi", "fansi-tgv", "l1qsm", "whqsm", "hdqsm", "amp-pe", "xqsm", "qsmnet", "qsmnet-plus", "qsmnetme", "autoqsm", "qsmgan", "ir2qsm", "lpcnn", "modl-qsm", "nextqsm", "iqsm", "iqsm-plus"])
         .value_help("heidi", "LSQR+HEIDI, HEIDI as published: LSQR with HEIDI after it (`--qsm-algorithm lsqr --heidi`)"),
