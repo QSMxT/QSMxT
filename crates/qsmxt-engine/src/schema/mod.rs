@@ -23,7 +23,6 @@
 pub mod aliases;
 pub mod cli;
 pub mod cli_apply;
-mod cli_flags;
 pub mod mask;
 mod regular;
 mod table;
@@ -400,6 +399,8 @@ pub(crate) struct Def {
     also: &'static [Section],
     browser: Browser,
     when: Option<fn(&view::Ctx) -> bool>,
+    /// The flag's wording and parsing where its type does not imply them ([`cli`]).
+    cli: cli::FlagSpec,
 }
 
 pub(crate) fn d(path: &'static str, section: Section, label: &'static str, help: &'static str, ty: Ty) -> Def {
@@ -407,6 +408,7 @@ pub(crate) fn d(path: &'static str, section: Section, label: &'static str, help:
         path, section, label, help, ty, value: None, full: None, gui_help: None, gui_value: None, context: None,
         item: None, browser_help: None, basic: false, units: None, min: None, max: None, exclusive_min: false, exclusive_max: false,
         off: None, optional: false, flag: None, parent: None, also: &[], browser: Browser::Available, when: None,
+        cli: Default::default(),
     }
 }
 
