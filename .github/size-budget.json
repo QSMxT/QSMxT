@@ -2,7 +2,6 @@
  "files": {},
  "functions": {
   "crates/qsmxt-tui/src/app/input/nifti_to_bids.rs::handle_nifti_tab_key": 121,
-  "crates/qsmxt-tui/src/app/tabs/rows.rs::handle_rows_key": 279,
   "crates/qsmxt-tui/src/lib.rs::run_tui": 124,
   "crates/qsmxt-tui/src/ui/input/dicom_to_bids.rs::draw_dicom_series_section": 241,
   "crates/qsmxt-tui/src/ui/input/nifti_to_bids.rs::draw_nifti_section": 181,
