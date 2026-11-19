@@ -1,27 +1,19 @@
-//! The engine's settings schema (`qsmxt_engine::schema`) agrees with the TUI: the same labels and
-//! help, the same sub-tabs, and the same settings shown for the same configuration.
+//! The TUI shows what the engine's settings view says applies, and runs what it prints.
 //!
-//! The TUI's form is explored from a fresh one by changing one choice at a time (every option
-//! of every select, every checkbox, an orientation grouping and an echo limit) until no new
-//! rows appear. In each form reached, the settings the TUI shows must be exactly the ones
-//! `settings_view` reports visible for the config the form builds.
+//! The rows come from the registry, so their labels, help and options are the schema's by
+//! construction. What is checked here is what the TUI still decides itself: which pages show
+//! (a stage that does not run says why), its own conditions on rows, Basic mode, the mask builder
+//! and the Input tab; and that the command it prints parses back to the run it makes. Each check
+//! goes over every form [`super::explore`] reaches.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use qsmxt_engine::schema::{self, Section, Setting, ValueType, ViewFacts};
+use qsmxt_engine::schema::{self, Section, Setting, ViewFacts};
 
 use super::app::*;
 use super::command::config_from_app;
+use super::explore::{build, explored, Act, NOT_CONFIG};
 
-
-/// Rows that edit no config setting of their own.
-const NOT_CONFIG: &[&str] = &[
-    // Expands into the mask recipe (masking.sections and friends), which the recipe rows edit.
-    "mask_preset",
-    // Run options of `qsmxt run`, not settings of the config.
-    "source_dicom", "execution_mode", "dry_run", "n_procs", "mem_limit_gb", "slurm_account",
-    "slurm_partition", "slurm_time", "slurm_mem", "slurm_cpus", "slurm_submit", "debug", "force", "clean_intermediates",
-];
 
 fn path_of(field: &str) -> Option<&'static str> {
     field_path(field)
@@ -83,92 +75,6 @@ fn section_of(page: Page) -> Option<Section> {
         Page::Export => Section::Export,
         Page::Execution | Page::MethodsText | Page::Pipeline => return None,
     })
-}
-
-/// One change to a form.
-#[derive(Clone, Debug)]
-pub(super) enum Act {
-    Toggle(&'static str),
-    Select(&'static str, usize),
-    /// An orientation grouping on the Input tab.
-    Group,
-    /// Limit the run to this many echoes.
-    Echoes(usize),
-}
-
-pub(super) fn build(acts: &[Act]) -> App {
-    let mut app = App::new();
-    for a in acts {
-        match a {
-            Act::Toggle(f) => app.toggle_field(f),
-            Act::Select(f, i) => app.set_field_select(f, *i),
-            Act::Group => app.filter_state.orientation_group = "acq".into(),
-            Act::Echoes(n) => app.filter_state.num_echoes = n.to_string(),
-        }
-    }
-    app.sync_pipeline_mode();
-    app
-}
-
-/// Every form reached from a fresh one by changing one thing at a time, as long as each change
-/// shows a row not seen before: the changes that make each (shortest first). Worked out once.
-pub(super) fn explored() -> &'static [Vec<Act>] {
-    static FORMS: std::sync::OnceLock<Vec<Vec<Act>>> = std::sync::OnceLock::new();
-    FORMS.get_or_init(explore_forms)
-}
-
-/// The exploration behind [`explored`], from scratch each call.
-fn explore_forms() -> Vec<Vec<Act>> {
-    let mut seen: BTreeSet<String> = BTreeSet::new();
-    let mut tried: BTreeSet<String> = BTreeSet::new();
-    let mut queue: std::collections::VecDeque<Vec<Act>> =
-        [vec![], vec![Act::Group], vec![Act::Echoes(1)], vec![Act::Group, Act::Echoes(1)]].into();
-    let mut out = Vec::new();
-    while let Some(acts) = queue.pop_front() {
-        let app = build(&acts);
-        let pages = app.all_pages();
-        let mut new = acts.is_empty();
-        for (_, page, rows) in &pages {
-            for r in rows {
-                let key = match r {
-                    PipelineRow::AlgoSelect { field, .. } | PipelineRow::Param { field, .. }
-                    | PipelineRow::Toggle { field, .. } => format!("{page:?}|{field}"),
-                    other => format!("{page:?}|{other:?}"),
-                };
-                new |= seen.insert(key);
-            }
-        }
-        if !new {
-            continue;
-        }
-        for (_, _, rows) in &pages {
-            for r in rows {
-                let next: Vec<Act> = match *r {
-                    PipelineRow::AlgoSelect { field, options, .. } if !NOT_CONFIG.contains(&field) || field == "mask_preset" =>
-                        (0..options.len()).map(|i| Act::Select(field, i)).collect(),
-                    PipelineRow::Toggle { field, .. } if !NOT_CONFIG.contains(&field) => vec![Act::Toggle(field)],
-                    _ => vec![],
-                };
-                for a in next {
-                    let mut n = acts.clone();
-                    n.push(a);
-                    if tried.insert(format!("{n:?}")) {
-                        queue.push_back(n);
-                    }
-                }
-            }
-        }
-        out.push(acts);
-    }
-    out
-}
-
-/// The golden files of what each form builds (`form_snapshots`) list the forms in the order
-/// [`explored`] finds them, so the exploration must find the same forms in the same order every
-/// time: nothing in it may follow a hash map's order or the clock.
-#[test]
-fn exploring_finds_the_same_forms_in_the_same_order() {
-    assert_eq!(format!("{:?}", explore_forms()), format!("{:?}", explored()));
 }
 
 fn explore() -> impl Iterator<Item = (&'static Vec<Act>, App)> {
@@ -253,121 +159,20 @@ fn every_form_in_basic_mode_shows_the_settings_the_engine_says_basic_mode_shows(
     assert!(failures.is_empty(), "{} mismatches, first ones:\n{}", failures.len(), failures[..failures.len().min(8)].join("\n"));
 }
 
-/// Settings the schema words differently from their TUI row, and why.
-const WORDED_DIFFERENTLY: &[(&str, &str)] = &[
-    ("field_mapping.romeo.template", "the config counts echoes from 0, the TUI's row from 1"),
-];
-
+/// Every setting has a row on some form the TUI reaches (what the flag-reachability test used to
+/// ask of every flag): the mask builder, the Input tab and the reference picker have the ones
+/// that are not rows of their own.
 #[test]
-fn every_setting_has_a_row_and_is_worded_as_the_tui_words_it() {
-    let schema = by_path();
-    // Every (label, help) each setting is shown with, anywhere.
-    let mut worded: BTreeMap<&str, BTreeSet<(String, String)>> = BTreeMap::new();
-    let mut options: BTreeMap<&str, Vec<(String, String)>> = BTreeMap::new();
+fn every_setting_has_a_row() {
+    let mut shown: BTreeSet<&str> = BTreeSet::new();
     for (_, app) in explore() {
-        for (_, _, rows) in app.all_pages() {
-            for r in &rows {
-                let (field, label, help) = match r {
-                    PipelineRow::Param { field, label, help } | PipelineRow::Toggle { field, label, help } => (*field, *label, help.to_string()),
-                    PipelineRow::AlgoSelect { field, label, options: opts, help } => {
-                        if let Some(p) = path_of(field) {
-                            // The inversion picker's LSQR+HEIDI is an alias of two settings, not a value.
-                            options.entry(p).or_insert_with(|| opts.iter().zip(help.iter())
-                                .filter(|(o, _)| **o != crate::tui::app::LSQR_HEIDI)
-                                .map(|(o, h)| (o.to_string(), h.to_string())).collect());
-                        }
-                        (*field, *label, String::new())
-                    }
-                    _ => continue,
-                };
-                if let Some(p) = path_of(field) {
-                    worded.entry(p).or_default().insert((label.trim().to_string(), help));
-                }
-            }
-        }
+        shown.extend(tui_shown(&app).into_keys());
     }
-    let mut failures = Vec::new();
-    for (p, s) in &schema {
-        if p.starts_with("masking.") && matches!(s.value_type, ValueType::MaskSections | ValueType::MaskOps)
-            || *p == "masking.combine" || *p == "masking.two_pass_combine" || *p == "multi_orientation.group_by" || *p == "qsm.reference_region"
-        {
-            continue; // the mask builder, the Input tab and the reference picker: below
-        }
-        let Some(w) = worded.get(p) else {
-            failures.push(format!("{p}: no TUI row shows it"));
-            continue;
-        };
-        // The TUI's own help (the schema's `help` is worded for any front end).
-        let main = (s.label.to_string(), s.tui_help.to_string());
-        let value = s.tui_value.map(|(l, h)| (l.to_string(), h.to_string()));
-        if !w.contains(&main) && !WORDED_DIFFERENTLY.iter().any(|(q, _)| q == p) {
-            failures.push(format!("{p}: schema says {main:?}, the TUI {w:?}"));
-        }
-        if let Some(v) = value {
-            if !w.contains(&v) {
-                failures.push(format!("{p}: schema's value row says {v:?}, the TUI {w:?}"));
-            }
-        }
-        let opts = s.value_type.options();
-        if opts.is_empty() {
-            continue;
-        }
-        let Some(tui) = options.get(p) else { continue };
-        if *p == "qsm.reference" {
-            // The TUI's picker: the two methods, then every region (the schema's region choice).
-            let regions = schema["qsm.reference_region"].value_type.options();
-            let picker: Vec<_> = opts.iter().take(2).chain(regions.iter()).collect();
-            assert_eq!(picker.len(), tui.len(), "qsm.reference");
-            for (o, (label, help)) in picker.iter().zip(tui) {
-                if o.label != label || o.tui_help != *help {
-                    failures.push(format!("{p}: option {} / {label}", o.label));
-                }
-            }
-            continue;
-        }
-        // A number-or-choice setting's select starts with the number (its value row).
-        let tui = if matches!(s.value_type, ValueType::NumberOrChoice { .. }) { &tui[1..] } else { &tui[..] };
-        if opts.len() != tui.len() {
-            failures.push(format!("{p}: {} options, the TUI has {}", opts.len(), tui.len()));
-            continue;
-        }
-        for (o, (label, help)) in opts.iter().zip(tui) {
-            let help_matches = help.starts_with(o.tui_help.as_str()) && o.url.as_ref().is_none_or(|u| help.contains(u.as_str()));
-            if o.label != label || !help_matches {
-                failures.push(format!("{p}: option {:?} {:?} vs the TUI's {label:?} {help:?}", o.label, o.tui_help));
-            }
-        }
-    }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
-}
-
-#[test]
-fn every_tui_row_that_edits_the_config_is_a_setting() {
-    let schema = by_path();
-    for (field, path) in FIELD_PATHS {
-        assert!(schema.contains_key(path), "{field} → {path} is not in the schema");
-    }
-    // And every row is mapped (row_paths panics on an unmapped one).
-    for (_, app) in explore() {
-        for (_, _, rows) in app.all_pages() {
-            for r in &rows {
-                row_paths(&app, r);
-            }
-        }
-    }
-}
-
-#[test]
-fn every_schema_option_is_a_qsmxt_run_option() {
-    use clap::CommandFactory;
-    let cli = crate::cli::Cli::command();
-    let run = cli.get_subcommands().find(|c| c.get_name() == "run").expect("qsmxt run");
-    let longs: BTreeSet<String> = run.get_arguments().filter_map(|a| a.get_long()).map(|l| format!("--{l}")).collect();
-    for s in schema::schema() {
-        if let Some(f) = s.cli_flag {
-            assert!(longs.contains(f), "{}: {f} is not a qsmxt run option", s.path);
-        }
-    }
+    // How a mask's sections combine shows once it has two, which the exploration does not add.
+    let combine = ["masking.combine", "masking.two_pass_combine"];
+    let missing: Vec<&str> = schema::settings().iter().map(|s| s.path)
+        .filter(|p| !shown.contains(p) && !combine.contains(p)).collect();
+    assert!(missing.is_empty(), "no TUI row shows {missing:?}");
 }
 
 /// What [`schema::get`] reads at `path`, from a config already serialised.

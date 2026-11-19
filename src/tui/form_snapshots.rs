@@ -23,7 +23,7 @@ use crate::snapshot;
 
 use super::app::{App, PipelineRow};
 use super::command::{build_command_string, config_from_app, methods_text};
-use super::schema_parity::{build, explored, Act};
+use super::explore::{build, explored, Act};
 
 const DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/snapshots/tui/forms");
 

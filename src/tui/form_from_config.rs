@@ -111,8 +111,8 @@ impl App {
                 }
             }
             ValueType::Enum { options } => {
-                // A select lists the setting's options in the schema's order (`schema_parity`
-                // holds the two to it).
+                // A select lists the setting's options in the schema's order: its row is built
+                // from them.
                 if let Some(i) = options.iter().position(|o| o.value == *v) {
                     self.set_field_select(field, i);
                 }
@@ -264,7 +264,7 @@ impl App {
 mod tests {
     use super::*;
     use super::super::command::config_from_app;
-    use super::super::schema_parity::{build, explored};
+    use super::super::explore::{build, explored};
 
     /// The settings two configs differ in, as JSON pointers.
     fn diff(a: &PipelineConfig, b: &PipelineConfig) -> Vec<String> {
@@ -386,7 +386,7 @@ mod tests {
     /// included.
     #[test]
     fn a_form_set_to_its_own_config_is_unchanged() {
-        use super::super::schema_parity::Act;
+        use super::super::explore::Act;
         let forms: [&[Act]; 4] = [
             &[],
             &[Act::Select("qsm_algorithm", 7)],

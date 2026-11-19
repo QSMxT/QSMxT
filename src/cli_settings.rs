@@ -387,6 +387,20 @@ mod tests {
         }
     }
 
+    /// Every registry setting's flag is a `qsmxt run` flag.
+    #[test]
+    fn every_settings_flag_is_a_qsmxt_run_flag() {
+        use clap::CommandFactory;
+        let cli = crate::cli::Cli::command();
+        let run = cli.get_subcommands().find(|c| c.get_name() == "run").expect("qsmxt run");
+        let longs: Vec<String> = run.get_arguments().filter_map(|a| a.get_long()).map(|l| format!("--{l}")).collect();
+        for s in qsmxt_engine::schema::schema() {
+            if let Some(f) = s.cli_flag {
+                assert!(longs.iter().any(|l| l == f), "{}: {f} is not a qsmxt run option", s.path);
+            }
+        }
+    }
+
     /// Every flag that sets no registry setting, and is not the opposite of a registry switch, is
     /// applied here by name: none is parsed and ignored.
     #[test]
