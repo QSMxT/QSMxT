@@ -52,7 +52,7 @@ fn every_config_leaf_is_a_setting_exactly_once_or_listed_as_not_user_facing() {
         .collect();
     assert!(missing.is_empty(),
         "config settings missing from the schema: {missing:?}\n\
-         Add them to crates/qsmxt-engine/src/schema/table.rs (and the TUI), or to NOT_IN_SCHEMA with why.");
+         Add them to crates/qsmxt-engine/src/schema/table/<section>.rs (and the TUI), or to NOT_IN_SCHEMA with why.");
     let both: Vec<_> = excluded.iter().filter(|p| count.contains_key(*p)).collect();
     assert!(both.is_empty(), "both in the schema and NOT_IN_SCHEMA: {both:?}");
     let leaf_set: BTreeSet<&str> = paths.iter().map(String::as_str).collect();
