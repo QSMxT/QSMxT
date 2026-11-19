@@ -3,7 +3,7 @@ config:
   /pipeline/do_chi_separation: false -> true
 command:
   + --do-chisep
-methods: 3aed693dcf82e997 (39 lines)
+methods: 3e270d20b342d219 (39 lines)
 
 ## toggle do_chi_separation, separation_algorithm = decompose
 config:
@@ -75,7 +75,7 @@ config:
 command:
   + --do-chisep
   + --export-dicom
-methods: b4574f9f3137e86b (39 lines)
+methods: b45a2cc8182b6cef (39 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm
 config:
@@ -152,7 +152,7 @@ command:
   + --do-chisep
   + --qsm-algorithm ir2qsm
   + --chisep susep-net
-methods: 47114329031d4c2f (29 lines)
+methods: e86c7b99009850ed (29 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = lpcnn
 config:
@@ -294,7 +294,7 @@ command:
   + --bf-algorithm iqfm
   + --qsm-algorithm ir2qsm
   + --chisep susep-net
-methods: fde0b0a5c09c3f45 (29 lines)
+methods: 0ae35493df042a5d (29 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = lpcnn
 config:
@@ -411,7 +411,7 @@ command:
   + --r2prime-strategy mese
   + --qsm-algorithm ir2qsm
   + --chisep susep-net
-methods: 657f8d2acf2bfe7f (28 lines)
+methods: ca83d3baccda1f91 (28 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = lpcnn, r2prime_strategy = mese
 config:
@@ -720,7 +720,7 @@ command:
   + --bf-algorithm iqfm
   + --qsm-algorithm ir2qsm
   + --chisep susep-net
-methods: 0cac6754aa76c439 (28 lines)
+methods: a6b957bf81867fdd (28 lines)
 
 ## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = lpcnn, r2prime_strategy = mese
 config:
