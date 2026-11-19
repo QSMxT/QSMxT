@@ -35,7 +35,6 @@
   "crates/qsmxt-engine/src/run/reads_tests.rs::every_step_records_reading_everything_it_reads": 145,
   "crates/qsmxt-engine/src/schema/table/background.rs::defs": 209,
   "crates/qsmxt-engine/src/schema/table/field_map.rs::defs": 214,
-  "crates/qsmxt-engine/src/schema/table/inversion.rs::defs": 699,
   "crates/qsmxt-engine/src/schema/table/separation.rs::defs": 258,
   "crates/qsmxt-engine/src/stages/r2/step.rs::r2": 241,
   "crates/qsmxt-engine/src/stages/separation/step.rs::chi_separation": 219,

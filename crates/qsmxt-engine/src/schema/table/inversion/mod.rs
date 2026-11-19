@@ -1,8 +1,43 @@
 //! The Inversion section's settings.
 
+mod medi;
+mod qsmart;
+
 use super::*;
+use medi::medi;
+use qsmart::qsmart;
 
 pub(super) fn defs() -> Vec<Def> {
+    [
+        algorithm(),
+        rts(),
+        tv(),
+        tkd(),
+        tsvd(),
+        tgv(),
+        tikhonov(),
+        nltv(),
+        medi(),
+        tfi(),
+        ilsqr(),
+        star(),
+        lsqr(),
+        heidi(),
+        qsmart(),
+        ndi(),
+        fansi(),
+        l1qsm(),
+        whqsm(),
+        hdqsm(),
+        amp_pe(),
+        tiling(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+fn algorithm() -> Vec<Def> {
     vec![
         d("pipeline.do_qsm", Inversion, "Compute QSM", "Enable QSM reconstruction (disable to only run the other outputs)", Bool).basic().flag("--no-qsm").also(&[FieldMap, Background, MultiOrientation, Reference])
         .cli("Skip QSM processing (only run supplementary outputs like SWI, T2*, R2*)"),
@@ -57,6 +92,11 @@ pub(super) fn defs() -> Vec<Def> {
         .cli("QSM dipole inversion algorithm (default: ilsqr)")
         .cli_values(&["rts", "tv", "tkd", "tsvd", "tgv", "tikhonov", "nltv", "medi", "tfi", "ilsqr", "star", "lsqr", "heidi", "qsmart", "ndi", "fansi", "fansi-tgv", "l1qsm", "whqsm", "hdqsm", "amp-pe", "xqsm", "qsmnet", "qsmnet-plus", "qsmnetme", "autoqsm", "qsmgan", "ir2qsm", "lpcnn", "modl-qsm", "nextqsm", "iqsm", "iqsm-plus"])
         .value_help("heidi", "LSQR+HEIDI, HEIDI as published: LSQR with HEIDI after it (`--qsm-algorithm lsqr --heidi`)"),
+    ]
+}
+
+fn rts() -> Vec<Def> {
+    vec![
         // QSM.rs inversion/rts.rs: no |D| exceeds 2/3, so delta >= 2/3 empties the mask and the map is all zero.
         d("inversion.rts.delta", Inversion, "Delta", "Threshold for ill-conditioned k-space region", Float).below(qsm_core::kernels::MAX_ABS_DIPOLE).flag("--rts-delta").parent("inversion.algorithm")
         .when(|x| x.inv("rts") || x.qsmart_inner("rts"))
@@ -87,6 +127,11 @@ pub(super) fn defs() -> Vec<Def> {
         .when(|x| x.inv("rts") || x.qsmart_inner("rts")).full("Padding")
         .gui("Zero-padding before the FFTs (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded")
         .cli("RTS zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0)"),
+    ]
+}
+
+fn tv() -> Vec<Def> {
+    vec![
         d("inversion.tv.lambda", Inversion, "Lambda", "L1 regularization weight (larger = smoother)", Float).flag("--tv-lambda").parent("inversion.algorithm")
         .when(|x| x.inv("tv") || x.qsmart_inner("tv"))
         .gui("L1 regularisation weight (larger = smoother)")
@@ -107,6 +152,11 @@ pub(super) fn defs() -> Vec<Def> {
         .when(|x| x.inv("tv") || x.qsmart_inner("tv")).full("Padding")
         .gui("Zero-padding before the FFTs (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded")
         .cli("TV zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0)"),
+    ]
+}
+
+fn tkd() -> Vec<Def> {
+    vec![
         // QSM.rs inversion/tkd.rs: 1/threshold on the DC bin (D = 0) gives inf/NaN at <= 0.
         d("inversion.tkd.threshold", Inversion, "Threshold", "Truncation threshold for k-space division (0.1-0.3); larger is smoother and underestimates χ more", Float).above(0.0).below(qsm_core::kernels::MAX_ABS_DIPOLE).flag("--tkd-threshold").parent("inversion.algorithm")
         .when(|x| x.inv("tkd") || x.qsmart_inner("tkd"))
@@ -116,6 +166,11 @@ pub(super) fn defs() -> Vec<Def> {
         .when(|x| x.inv("tkd") || x.qsmart_inner("tkd")).full("Padding")
         .gui("Zero-padding before the FFTs (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded")
         .cli("TKD zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0)"),
+    ]
+}
+
+fn tsvd() -> Vec<Def> {
+    vec![
         // QSM.rs inversion/tkd.rs: < 0 inverts D = 0 (NaN); >= 2/3 zeroes every bin.
         d("inversion.tsvd.threshold", Inversion, "Threshold", "Truncation threshold for SVD (0.1-0.2)", Float).min(0.0).below(qsm_core::kernels::MAX_ABS_DIPOLE).flag("--tsvd-threshold").parent("inversion.algorithm")
         .when(|x| x.inv("tsvd") || x.qsmart_inner("tsvd"))
@@ -125,6 +180,11 @@ pub(super) fn defs() -> Vec<Def> {
         .when(|x| x.inv("tsvd") || x.qsmart_inner("tsvd")).full("Padding")
         .gui("Zero-padding before the FFTs (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded")
         .cli("TSVD zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0)"),
+    ]
+}
+
+fn tgv() -> Vec<Def> {
+    vec![
         // QSM.rs inversion/tgv.rs: 0 iterations give an all-zero map.
         d("inversion.tgv.iterations", Inversion, "Iterations", "Primal-dual iterations. Blank = from the voxel size, as the reference does", Int).min(1.0).optional().flag("--tgv-iterations").parent("inversion.algorithm")
         .when(|x| x.inv("tgv"))
@@ -150,6 +210,11 @@ pub(super) fn defs() -> Vec<Def> {
         .when(|x| x.inv("tgv"))
         .gui("The echo time the field is converted to phase at (several echoes; a single echo is at its own); the weights are in radians at it").gui_value("Echo time", "The echo time the field is converted to phase at, in ms")
         .cli("TGV: the echo time a field from several echoes is converted to phase at, and its weights are in radians at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first). A single echo is at its own"),
+    ]
+}
+
+fn tikhonov() -> Vec<Def> {
+    vec![
         d("inversion.tikhonov.lambda", Inversion, "Lambda", "L2 regularization weight", Float).flag("--tikhonov-lambda").parent("inversion.algorithm")
         .when(|x| x.inv("tikhonov") || x.qsmart_inner("tikhonov"))
         .gui("L2 regularisation weight")
@@ -159,6 +224,11 @@ pub(super) fn defs() -> Vec<Def> {
         .when(|x| x.inv("tikhonov") || x.qsmart_inner("tikhonov")).full("Padding")
         .gui("Zero-padding before the FFTs (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded")
         .cli("Tikhonov zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0)"),
+    ]
+}
+
+fn nltv() -> Vec<Def> {
+    vec![
         d("inversion.nltv.lambda", Inversion, "Lambda", "Regularization parameter", Float).flag("--nltv-lambda").parent("inversion.algorithm")
         .when(|x| x.inv("nltv") || x.qsmart_inner("nltv"))
         .gui("Regularisation parameter")
@@ -194,94 +264,11 @@ pub(super) fn defs() -> Vec<Def> {
         .when(|x| x.inv("nltv") || x.qsmart_inner("nltv")).full("Padding")
         .gui("Zero-padding before the FFTs (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded")
         .cli("NLTV zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0)"),
-        d("inversion.medi.smv", Inversion, "SMV mode", "High-pass the local field with a spherical mean value (SMV) filter, removing residual background near the brain edge (MEDI-SMV)", Bool).basic().flag("--no-medi-smv").parent("inversion.algorithm")
-        .when(|x| x.inv("medi"))
-        .cli("MEDI: no SMV high-pass of the local field")
-        .conflicts(&["medi_smv"]).negated("--medi-smv", "MEDI: high-pass the local field with a spherical mean value filter, removing residual background near the brain edge (MEDI-SMV; on by default)"),
-        d("inversion.medi.smv_radius", Inversion, "SMV radius", "SMV radius in mm (also mSMV's)", Float).units("mm").flag("--medi-smv-radius").parent("inversion.algorithm")
-        .when(|x| x.inv("medi"))
-        .gui("SMV radius (also mSMV's)")
-        .cli("MEDI SMV radius in mm (also mSMV's)"),
-        d("inversion.medi.smv_shrink_mask", Inversion, "Shrink mask", "With SMV, shrink the mask to where the SMV of the mask exceeds 0.999, dropping the edge band whose SMV reaches outside it. Off keeps the full mask", Bool).flag("--no-medi-smv-shrink-mask").parent("inversion.medi.smv")
-        .when(|x| x.inv("medi") && x.c.inversion.medi.smv && !x.c.inversion.medi.msmv).full("SMV mask shrinking")
-        .cli("MEDI-SMV: keep the full mask, high-passing the field over it")
-        .conflicts(&["medi_smv_shrink_mask"]).negated("--medi-smv-shrink-mask", "MEDI-SMV: shrink the mask to where the SMV of the mask exceeds 0.999 (on by default)"),
-        d("inversion.medi.msmv", Inversion, "mSMV", "Filter the local field by maximum spherical mean value (MEDI-mSMV, Roberts 2024) before MEDI; needs at least 3 echoes", Bool).basic().flag("--medi-msmv").parent("inversion.algorithm")
-        .when(|x| x.inv("medi")).full("MEDI-mSMV")
-        .gui("Filter the local field by maximum spherical mean value (mSMV) before MEDI, which removes residual background at the brain edge; needs at least three echoes")
-        .cli("MEDI-mSMV (Roberts et al. 2024): filter the local field by maximum spherical mean value before MEDI, which fits it with the SMV-filtered dipole kernel (it implies the SMV). Needs at least 3 echoes"),
-        // QSM.rs inversion/msmv.rs: the boundary correction makes at most maxk − 1 passes.
-        d("inversion.medi.msmv_maxk", Inversion, "mSMV max K", "mSMV's boundary correction makes at most this many passes, less one", Int).min(1.0).flag("--medi-msmv-maxk").parent("inversion.medi.msmv")
-        .when(|x| x.inv("medi") && x.c.inversion.medi.msmv).full("mSMV maximum k")
-        .cli("MEDI-mSMV: the boundary correction makes at most this many passes, less one")
-        .requires(&["medi_msmv"]),
-        d("inversion.medi.msmv_vessel_radius", Inversion, "mSMV vessel radius", "Largest vessel thickness of mSMV's vessel mask, in voxels. Blank = max(15, 8 × the largest voxel dimension)", Float).above(0.0).optional().units("voxels").flag("--medi-msmv-vessel-radius").parent("inversion.medi.msmv")
-        .when(|x| x.inv("medi") && x.c.inversion.medi.msmv)
-        .gui("Largest vessel thickness of mSMV's vessel mask. Empty: 15 voxels, or 8 times the largest voxel dimension if that is more")
-        .cli("MEDI-mSMV: largest vessel thickness of the vessel mask, in voxels (default: 15, or 8 × the largest voxel dimension if that is more)")
-        .requires(&["medi_msmv"]),
-        d("inversion.medi.msmv_prefilter", Inversion, "mSMV prefilter", "SMV-filter the field before mSMV, as the authors do. Off diverges after PDF, V-SHARP or LBV (expert)", Bool).flag("--no-medi-msmv-prefilter").parent("inversion.medi.msmv")
-        .when(|x| x.inv("medi") && x.c.inversion.medi.msmv)
-        .cli("MEDI-mSMV: no SMV prefilter before mSMV. Only consistent for a field already high-passed by the same SMV; after PDF, V-SHARP or LBV it diverges (expert)")
-        .requires(&["medi_msmv"]),
-        d("inversion.medi.lambda", Inversion, "Lambda", "Data-fidelity weight (larger fits the field more closely)", Float).flag("--medi-lambda").parent("inversion.algorithm")
-        .when(|x| x.inv("medi") || x.qsmart_inner("medi"))
-        .gui("Data-fidelity weight (larger fits the field more closely)")
-        .cli("MEDI lambda: the data-fidelity weight (larger fits the field more closely)"),
-        d("inversion.medi.percentage", Inversion, "Percentage", "Fraction of voxels considered edges (0.0-1.0)", Float).flag("--medi-percentage").parent("inversion.algorithm")
-        .when(|x| x.inv("medi") || x.qsmart_inner("medi"))
-        .cli("MEDI edge percentage (0.0-1.0)"),
-        // QSM.rs inversion/medi.rs: 0 iterations give an all-zero map.
-        d("inversion.medi.max_iter", Inversion, "Max iter", "Maximum outer iterations", Int).min(1.0).flag("--medi-max-iter").parent("inversion.algorithm")
-        .when(|x| x.inv("medi") || x.qsmart_inner("medi")).full("Maximum iterations")
-        .cli("MEDI max outer iterations"),
-        // QSM.rs inversion/medi.rs: 0 CG iterations give an all-zero map.
-        d("inversion.medi.cg_max_iter", Inversion, "CG max iter", "Maximum conjugate gradient iterations", Int).min(1.0).flag("--medi-cg-max-iter").parent("inversion.algorithm")
-        .when(|x| x.inv("medi") || x.qsmart_inner("medi")).full("CG maximum iterations")
-        .cli("MEDI CG max iterations"),
-        d("inversion.medi.cg_tol", Inversion, "CG tolerance", "CG convergence tolerance", Float).flag("--medi-cg-tol").parent("inversion.algorithm")
-        .when(|x| x.inv("medi") || x.qsmart_inner("medi"))
-        .cli("MEDI CG tolerance"),
-        d("inversion.medi.tol", Inversion, "Tolerance", "Outer convergence tolerance", Float).flag("--medi-tol").parent("inversion.algorithm")
-        .when(|x| x.inv("medi") || x.qsmart_inner("medi"))
-        .cli("MEDI outer tolerance"),
-        d("inversion.medi.merit", Inversion, "MERIT", "Iteratively down-weight voxels whose residual stays large", Bool).flag("--medi-merit").parent("inversion.algorithm")
-        .when(|x| x.inv("medi") || x.qsmart_inner("medi"))
-        .cli("MEDI: enable MERIT weighting")
-        .bool_value(),
-        // QSM.rs inversion/medi.rs: the CSF term needs R2* from at least 3 echoes; with fewer, MEDI
-        // runs without it (and the run says so, requirements::medi_csf_note).
-        d("inversion.medi.csf", Inversion, "CSF reference", "Zero-reference χ to the ventricular CSF and keep it uniform there (MEDI+0, Liu 2018); needs at least 3 echoes, with fewer MEDI runs without it", Bool).basic().flag("--medi-csf").parent("inversion.algorithm")
-        .when(|x| x.inv("medi") || x.qsmart_inner("medi")).full("CSF zero reference (MEDI+0)")
-        .gui("Zero-reference the susceptibility to the ventricular CSF, found from R2*, and keep it uniform there (MEDI+0); needs at least three echoes, with fewer MEDI runs without it")
-        .cli("MEDI+0 (Liu et al. 2018): zero-reference χ to the ventricular CSF, found from R2*, and keep it uniform there (default: true). Needs at least 3 echoes; with fewer, MEDI runs without it")
-        .bool_value(),
-        d("inversion.medi.lambda_csf", Inversion, "Lambda CSF", "Weight of the CSF uniformity term", Float).min(0.0).flag("--medi-lambda-csf").parent("inversion.medi.csf")
-        .when(|x| (x.inv("medi") || x.qsmart_inner("medi")) && x.c.inversion.medi.csf).full("CSF weight")
-        .cli("MEDI+0: weight of the CSF uniformity term (default: 100)"),
-        d("inversion.medi.csf_r2s_threshold", Inversion, "CSF R2* threshold", "Voxels below this R2* are CSF candidates", Float).above(0.0).units("Hz").flag("--medi-csf-r2s-threshold").parent("inversion.medi.csf")
-        .when(|x| (x.inv("medi") || x.qsmart_inner("medi")) && x.c.inversion.medi.csf)
-        .cli("MEDI+0: R2* in Hz below which a voxel is a CSF candidate (default: 5)"),
-        d("inversion.medi.csf_erode", Inversion, "CSF erode", "Erode the mask by a 10 mm sphere before finding the CSF", Bool).flag("--medi-csf-erode").parent("inversion.medi.csf")
-        .when(|x| (x.inv("medi") || x.qsmart_inner("medi")) && x.c.inversion.medi.csf).full("Erode before finding CSF")
-        .cli("MEDI+0: erode the mask by a 10 mm sphere before finding the CSF (default: true)")
-        .bool_value(),
-        d("inversion.medi.zeropad", Inversion, "Zero padding", "Voxels of zeros appended at the end of x, y and z before the inversion; the result is cropped back (default 0 0 0)", IntVec3).units("voxels").flag("--medi-zeropad").parent("inversion.algorithm")
-        .when(|x| x.inv("medi") || x.qsmart_inner("medi"))
-        .gui("Voxels of zeros appended at the end of each axis before the inversion; the result is cropped back")
-        .cli("MEDI: voxels of zeros appended at the end of x, y and z before the inversion; the result is cropped back (default: 0 0 0)"),
-        d("inversion.medi.data_weighting", Inversion, "Data weighting", "", Enum(vec![
-            o(0, "uniform", "Uniform", "Every voxel of the field weighs the same in the data term"),
-            o(1, "magnitude SNR", "Magnitude SNR", "Weight the data term by the magnitude SNR, so noisy voxels count for less"),
-        ])).flag("--medi-data-weighting").parent("inversion.algorithm")
-        .when(|x| x.inv("medi") || x.qsmart_inner("medi"))
-        .gui("How the voxels of the field are weighted in the data term")
-        .cli("MEDI: data weighting mode (0=uniform, 1=SNR)"),
-        d("inversion.medi.te", Inversion, "Echo time", "", EchoTime)
-        .value("Echo time (ms)", "Echo time the field is converted to phase at, ms").flag("--medi-te").parent("inversion.algorithm")
-        .when(|x| x.inv("medi") || x.qsmart_inner("medi"))
-        .gui("The echo time the field is converted to phase at").gui_value("Echo time", "The echo time the field is converted to phase at, in ms")
-        .cli("MEDI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing)"),
+    ]
+}
+
+fn tfi() -> Vec<Def> {
+    vec![
         d("inversion.tfi.lambda", Inversion, "Lambda", "Data-fidelity weight (larger fits the field more closely)", Float).flag("--tfi-lambda").parent("inversion.algorithm")
         .when(|x| x.inv("tfi"))
         .gui("Data-fidelity weight (larger fits the field more closely)")
@@ -327,6 +314,11 @@ pub(super) fn defs() -> Vec<Def> {
         .when(|x| x.inv("tfi"))
         .gui("The echo time the field is converted to phase at").gui_value("Echo time", "The echo time the field is converted to phase at, in ms")
         .cli("TFI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing)"),
+    ]
+}
+
+fn ilsqr() -> Vec<Def> {
+    vec![
         d("inversion.ilsqr.tol", Inversion, "Tolerance", "Convergence tolerance", Float).flag("--ilsqr-tol").parent("inversion.algorithm")
         .when(|x| x.inv("ilsqr") || x.qsmart_inner("ilsqr"))
         .cli("iLSQR tolerance of the streaking-artefact solve"),
@@ -348,6 +340,11 @@ pub(super) fn defs() -> Vec<Def> {
         .gui("Arithmetic of the two least-squares solves")
         .cli("iLSQR arithmetic of the two LSQR solves: double, or single as the original implementation (default: double)")
         .parse(P::Named).value_name("PRECISION"),
+    ]
+}
+
+fn star() -> Vec<Def> {
+    vec![
         d("inversion.star.pad", Inversion, "Pad (voxels)", "Zero-padding per side, voxels (x y z). Larger costs time and memory (default 8 8 20)", IntVec3).units("voxels").flag("--star-pad").parent("inversion.algorithm")
         .when(|x| x.inv("star")).full("Padding")
         .gui("Zero-padding per side (x y z). Larger costs time and memory")
@@ -357,6 +354,11 @@ pub(super) fn defs() -> Vec<Def> {
         .when(|x| x.inv("star"))
         .gui("The echo time the field is converted to phase at; STAR-QSM's result depends on it").gui_value("Echo time", "The echo time the field is converted to phase at, in ms")
         .cli("Echo time STAR-QSM converts the field to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: sum)"),
+    ]
+}
+
+fn lsqr() -> Vec<Def> {
+    vec![
         d("inversion.lsqr.residual_weighting", Inversion, "Residual weight", "Weight w on the residual field — the only regularisation. Blank = scaled from B0; 0 drops the term and streaks badly", Float).optional().flag("--lsqr-residual-weighting").parent("inversion.algorithm")
         .when(|x| x.inv("lsqr"))
         .gui("Weight w on the residual field, the only regularisation. Empty: scaled from B0; 0 drops the term and streaks badly")
@@ -370,6 +372,11 @@ pub(super) fn defs() -> Vec<Def> {
         d("inversion.lsqr.max_iter", Inversion, "LSQR max iter", "Maximum LSQR iterations", Int).min(1.0).flag("--lsqr-max-iter").parent("inversion.algorithm")
         .when(|x| x.inv("lsqr")).full("LSQR maximum iterations")
         .cli("LSQR max iterations"),
+    ]
+}
+
+fn heidi() -> Vec<Def> {
+    vec![
         // Shown wherever HEIDI can follow the inversion, and wherever it is on (so it can be
         // turned off after a change to a method it cannot follow).
         d("inversion.heidi.enabled", Inversion, "HEIDI", "Streaking reduction after the inversion: keep the map's well-conditioned k-space and refill the dipole cone under a homogeneity prior (HEIDI). With LSQR this is HEIDI as published", Bool).basic().flag("--heidi").parent("inversion.algorithm")
@@ -419,100 +426,11 @@ pub(super) fn defs() -> Vec<Def> {
         d("inversion.heidi.denoise_reference_itk", Inversion, "ITK float arithmetic", "ITK 3.20's float arithmetic for the denoising, as the authors' code runs it (for comparison with it; the default computes its conductance scale in double precision)", Bool).flag("--heidi-denoise-reference-itk").parent("inversion.heidi.denoise").context("HEIDI")
         .when(|x| x.heidi() && x.c.inversion.heidi.denoise)
         .conflicts(&["no_heidi_denoise_reference_itk"]).negated("--no-heidi-denoise-reference-itk", "The denoising in double precision, after a pipeline that turns ITK's float arithmetic on (the HEIDI pipeline)"),
-        d("inversion.qsmart.inversion", Inversion, "Inner inversion", "", Enum(vec![
-            o("ilsqr", "ilsqr", "iLSQR", "iLSQR (default) — QSMART's original inner inversion"),
-            o("rts", "rts", "RTS", "Rapid Two-Step (RTS)"),
-            o("tv", "tv", "TV-ADMM", "Total Variation ADMM (TV)"),
-            o("tkd", "tkd", "TKD", "Truncated K-space Division (TKD)"),
-            o("tsvd", "tsvd", "TSVD", "Truncated SVD (TSVD)"),
-            o("tikhonov", "tikhonov", "Tikhonov", "Tikhonov L2 regularization"),
-            o("nltv", "nltv", "NLTV", "Nonlinear Total Variation (NLTV)"),
-            o("medi", "medi", "MEDI", "Morphology Enabled Dipole Inversion (MEDI)"),
-        ])).basic().flag("--qsmart-inversion").parent("inversion.algorithm")
-        .when(|x| x.inv("qsmart"))
-        .gui("The dipole inversion QSMART runs in each of its two stages")
-        .cli("QSMART inner dipole inversion algorithm (default: ilsqr)")
-        .cli_values(&["rts", "tv", "tkd", "tsvd", "tgv", "tikhonov", "nltv", "medi", "tfi", "ilsqr", "star", "lsqr", "heidi", "qsmart", "ndi", "fansi", "fansi-tgv", "l1qsm", "whqsm", "hdqsm", "amp-pe", "xqsm", "qsmnet", "qsmnet-plus", "qsmnetme", "autoqsm", "qsmgan", "ir2qsm", "lpcnn", "modl-qsm", "nextqsm", "iqsm", "iqsm-plus"])
-        .value_help("heidi", "LSQR+HEIDI, HEIDI as published: LSQR with HEIDI after it (`--qsm-algorithm lsqr --heidi`)"),
-        // QSM.rs inversion/ilsqr.rs: 0 iterations give an all-zero map.
-        d("inversion.qsmart.ilsqr_max_iter", Inversion, "iLSQR max iter", "Maximum iLSQR iterations per stage (tolerance: iLSQR's)", Int).min(1.0).flag("--qsmart-ilsqr-max-iter").parent("inversion.qsmart.inversion")
-        .when(|x| x.qsmart_inner("ilsqr")).full("iLSQR maximum iterations")
-        .cli("QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol"),
-        // QSM.rs IlsqrParams::validate (pipeline/qsmart.rs): pad must be >= 0.
-        d("inversion.qsmart.ilsqr_pad_mm", Inversion, "iLSQR pad (mm)", "Zero-padding of the inner iLSQR solves, mm per side (default: 6)", Float).min(0.0).units("mm").flag("--qsmart-ilsqr-pad-mm").parent("inversion.qsmart.inversion")
-        .when(|x| x.qsmart_inner("ilsqr")).full("iLSQR padding")
-        .gui("Zero-padding of the inner iLSQR solves, per side")
-        .cli("Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6)")
-        .value_name("MM"),
-        d("inversion.qsmart.sdf_sigma1_stage1", Inversion, "SDF sigma1 (s1)", "Stage 1 SDF kernel sigma 1 (voxels)", Float).units("voxels").flag("--qsmart-sdf-sigma1-stage1").parent("inversion.algorithm")
-        .when(|x| x.inv("qsmart")).full("SDF sigma 1, stage 1")
-        .gui("Stage 1 SDF kernel sigma 1")
-        .cli("QSMART SDF sigma1, stage 1 (voxels)"),
-        d("inversion.qsmart.sdf_sigma2_stage1", Inversion, "SDF sigma2 (s1)", "Stage 1 SDF kernel sigma 2 (voxels)", Float).units("voxels").flag("--qsmart-sdf-sigma2-stage1").parent("inversion.algorithm")
-        .when(|x| x.inv("qsmart")).full("SDF sigma 2, stage 1")
-        .gui("Stage 1 SDF kernel sigma 2")
-        .cli("QSMART SDF sigma2, stage 1 (voxels)"),
-        d("inversion.qsmart.sdf_sigma1_stage2", Inversion, "SDF sigma1 (s2)", "Stage 2 SDF kernel sigma 1 (voxels)", Float).units("voxels").flag("--qsmart-sdf-sigma1-stage2").parent("inversion.algorithm")
-        .when(|x| x.inv("qsmart")).full("SDF sigma 1, stage 2")
-        .gui("Stage 2 SDF kernel sigma 1")
-        .cli("QSMART SDF sigma1, stage 2 (voxels)"),
-        d("inversion.qsmart.sdf_sigma2_stage2", Inversion, "SDF sigma2 (s2)", "Stage 2 SDF kernel sigma 2 (voxels)", Float).units("voxels").flag("--qsmart-sdf-sigma2-stage2").parent("inversion.algorithm")
-        .when(|x| x.inv("qsmart")).full("SDF sigma 2, stage 2")
-        .gui("Stage 2 SDF kernel sigma 2")
-        .cli("QSMART SDF sigma2, stage 2 (voxels)"),
-        d("inversion.qsmart.sdf_lower_lim", Inversion, "SDF lower lim", "SDF proximity lower limit", Float).flag("--qsmart-sdf-lower-lim").parent("inversion.algorithm")
-        .when(|x| x.inv("qsmart")).full("SDF lower limit")
-        .cli("QSMART SDF proximity lower limit"),
-        d("inversion.qsmart.sdf_curv_constant", Inversion, "SDF curv const", "SDF curvature constant", Float).flag("--qsmart-sdf-curv-constant").parent("inversion.algorithm")
-        .when(|x| x.inv("qsmart")).full("SDF curvature constant")
-        .cli("QSMART SDF curvature constant"),
-        d("inversion.qsmart.vessel_magnitude", Inversion, "Vessel magnitude", "", Enum(vec![
-            o("mean-n4", "mean-n4", "Mean + N4", "Mean over echoes, N4 bias-corrected, as QSMART prepares it (default)"),
-            o("combined", "combined", "Combined", "The combined magnitude: root sum of squares over echoes, inhomogeneity-corrected when that is on"),
-        ])).flag("--qsmart-vessel-magnitude").parent("inversion.algorithm")
-        .when(|x| x.inv("qsmart")).full("Vessel detection magnitude")
-        .gui("The magnitude vessels are detected on")
-        .cli("The magnitude QSMART detects vessels on: `mean-n4` (the mean over echoes, N4 bias-corrected, as QSMART prepares it; default) or `combined` (the root sum of squares over echoes, inhomogeneity-corrected unless --no-inhomogeneity-correction)"),
-        d("inversion.qsmart.offset_grid", Inversion, "Offset grid", "", Enum(vec![
-            o("fft", "fft", "FFT", "The FFT frequency grid (default)"),
-            o("qsmart-reference", "qsmart-reference", "QSMART's", "The grid QSMART's adjust_offset.m builds, half a step off the FFT grid on odd matrix sizes, as the QSMART pipeline runs it"),
-        ])).flag("--qsmart-offset-grid").parent("inversion.algorithm")
-        .when(|x| x.inv("qsmart")).full("Offset adjustment grid")
-        .gui("The dipole grid QSMART's offset adjustment uses")
-        .cli("The dipole grid of QSMART's offset adjustment: `fft` (default) or `qsmart-reference` (`adjust_offset.m`'s own, half a step off the FFT grid on odd matrix sizes, as the QSMART pipeline runs it)"),
-        d("inversion.qsmart.vessel_size_units", Inversion, "Vessel size units", "", Enum(vec![
-            o("voxels", "voxels", "Voxels", "Vessel radius and scales in voxels, as QSMART gives them (default)"),
-            o("mm", "mm", "mm", "Vessel radius and scales in mm, converted to voxels with the mean voxel size"),
-        ])).flag("--qsmart-vessel-units").parent("inversion.algorithm")
-        .when(|x| x.inv("qsmart"))
-        .gui("The units of the vasculature sphere radius and the Frangi scales")
-        .cli("Units of QSMART's vessel sizes (--qsmart-vasc-sphere-radius and the Frangi scales): `voxels` (default, as QSMART gives them) or `mm` (converted to voxels with the mean voxel size)"),
-        d("inversion.qsmart.vasc_sphere_radius", Inversion, "Vasc radius", "Bottom-hat sphere radius for vasculature detection, in the vessel size units", Int).flag("--qsmart-vasc-sphere-radius").parent("inversion.algorithm")
-        .when(|x| x.inv("qsmart")).full("Vasculature sphere radius")
-        .cli("QSMART vasculature detection sphere radius, in --qsmart-vessel-units (default 8)")
-        .parse(P::I32),
-        d("inversion.qsmart.frangi_scale_min", Inversion, "Frangi min", "Frangi minimum vessel radius, in the vessel size units", Float).flag("--qsmart-frangi-scale-min").parent("inversion.algorithm")
-        .when(|x| x.inv("qsmart")).full("Frangi minimum scale")
-        .cli("QSMART Frangi min vessel radius, in --qsmart-vessel-units (default 0.5)"),
-        d("inversion.qsmart.frangi_scale_max", Inversion, "Frangi max", "Frangi maximum vessel radius, in the vessel size units", Float).flag("--qsmart-frangi-scale-max").parent("inversion.algorithm")
-        .when(|x| x.inv("qsmart")).full("Frangi maximum scale")
-        .cli("QSMART Frangi max vessel radius, in --qsmart-vessel-units (default 6)"),
-        d("inversion.qsmart.frangi_scale_ratio", Inversion, "Frangi step", "Frangi scale step, in the vessel size units", Float).above(0.0).flag("--qsmart-frangi-scale-ratio").parent("inversion.algorithm")
-        .when(|x| x.inv("qsmart")).full("Frangi scale step")
-        .cli("QSMART Frangi scale step, in --qsmart-vessel-units (default 0.5)"),
-        d("inversion.qsmart.frangi_c_mode", Inversion, "Frangi C mode", "", Enum(vec![
-            o("absolute", "absolute", "Absolute", "Frangi C in the vessel magnitude's intensity units, as QSMART gives it (default)"),
-            o("relative", "relative", "Relative", "Frangi C as a factor of the vessel magnitude's median inside the brain mask, the same on every scanner's intensity scale"),
-        ])).flag("--qsmart-frangi-c-mode").parent("inversion.algorithm")
-        .when(|x| x.inv("qsmart")).full("Frangi C mode")
-        .gui("How Frangi's C is set: in magnitude units, or relative to the magnitude")
-        .cli("How QSMART's Frangi C is set: `absolute` (--qsmart-frangi-c, in magnitude units; default, as QSMART gives it) or `relative` (--qsmart-frangi-c-factor × the vessel magnitude's median inside the brain mask, the same on every scanner's intensity scale)"),
-        d("inversion.qsmart.frangi_c", Inversion, "Frangi C", "Frangi C noise threshold, in the vessel magnitude's intensity units", Float).above(0.0).flag("--qsmart-frangi-c").parent("inversion.algorithm")
-        .when(|x| x.inv("qsmart") && x.c.inversion.qsmart.frangi_c_mode == QsmartFrangiCMode::Absolute)
-        .cli("QSMART Frangi C noise threshold, in the vessel magnitude's intensity units (default 500, QSMART v1.0's); used with --qsmart-frangi-c-mode absolute"),
-        d("inversion.qsmart.frangi_c_factor", Inversion, "Frangi C factor", "Frangi C as this factor × the vessel magnitude's median inside the brain mask", Float).above(0.0).flag("--qsmart-frangi-c-factor").parent("inversion.algorithm")
-        .when(|x| x.inv("qsmart") && x.c.inversion.qsmart.frangi_c_mode == QsmartFrangiCMode::Relative).full("Frangi C factor")
-        .cli("QSMART's relative Frangi C: this factor × the vessel magnitude's median inside the brain mask (default 0.25); used with --qsmart-frangi-c-mode relative"),
+    ]
+}
+
+fn ndi() -> Vec<Def> {
+    vec![
         d("inversion.ndi.tau", Inversion, "Tau", "Gradient-descent step size", Float).flag("--ndi-tau").parent("inversion.algorithm")
         .when(|x| x.inv("ndi"))
         .cli("NDI gradient-descent step size (tau)"),
@@ -541,6 +459,11 @@ pub(super) fn defs() -> Vec<Def> {
         .gui("What the magnitude is divided by to make the data weight")
         .cli("NDI magnitude-weight normaliser: global-max (the magnitude's maximum, as FANSI; default) or mask-p999 (its 99.9th percentile inside the mask; more consistent in vivo)")
         .parse(P::Named).value_name("NORM"),
+    ]
+}
+
+fn fansi() -> Vec<Def> {
+    vec![
         d("inversion.fansi.alpha1", Inversion, "Alpha1", "First-order (TV/TGV) L1 penalty weight", Float).flag("--fansi-alpha1").parent("inversion.algorithm")
         .when(|x| x.inv("fansi") || x.inv("fansi-tgv")).context("FANSI")
         .cli("FANSI first-order (TV/TGV) L1 penalty weight (alpha1)"),
@@ -574,6 +497,11 @@ pub(super) fn defs() -> Vec<Def> {
         .when(|x| x.inv("fansi") || x.inv("fansi-tgv")).context("FANSI")
         .gui("The echo time the field is converted to phase at").gui_value("Echo time", "The echo time the field is converted to phase at, in ms")
         .cli("FANSI (nlTV and nlTGV): the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing)"),
+    ]
+}
+
+fn l1qsm() -> Vec<Def> {
+    vec![
         d("inversion.l1qsm.alpha1", Inversion, "Alpha1", "Gradient (TV) L1 penalty weight", Float).flag("--l1qsm-alpha1").parent("inversion.algorithm")
         .when(|x| x.inv("l1qsm"))
         .cli("L1-QSM gradient (TV) L1 penalty weight (alpha1)"),
@@ -605,6 +533,11 @@ pub(super) fn defs() -> Vec<Def> {
         .when(|x| x.inv("l1qsm"))
         .gui("The echo time the field is converted to phase at").gui_value("Echo time", "The echo time the field is converted to phase at, in ms")
         .cli("L1-QSM: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first)"),
+    ]
+}
+
+fn whqsm() -> Vec<Def> {
+    vec![
         d("inversion.whqsm.alpha1", Inversion, "Alpha1", "TV regularization weight", Float).flag("--whqsm-alpha1").parent("inversion.algorithm")
         .when(|x| x.inv("whqsm"))
         .gui("TV regularisation weight")
@@ -645,6 +578,11 @@ pub(super) fn defs() -> Vec<Def> {
         .when(|x| x.inv("whqsm"))
         .gui("The echo time the field is converted to phase at").gui_value("Echo time", "The echo time the field is converted to phase at, in ms")
         .cli("WH-QSM: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first)"),
+    ]
+}
+
+fn hdqsm() -> Vec<Def> {
+    vec![
         // QSM.rs inversion/hdqsm.rs: sqrt(alpha_l2) is NaN below 0.
         d("inversion.hdqsm.alpha_l2", Inversion, "Alpha L2", "L2-stage TV weight", Float).min(0.0).flag("--hdqsm-alpha-l2").parent("inversion.algorithm")
         .when(|x| x.inv("hdqsm"))
@@ -666,6 +604,11 @@ pub(super) fn defs() -> Vec<Def> {
         d("inversion.hdqsm.tol_update", Inversion, "Tol update", "Stage-2 percent-update stopping tolerance", Float).flag("--hdqsm-tol-update").parent("inversion.algorithm")
         .when(|x| x.inv("hdqsm")).full("Update tolerance")
         .cli("HD-QSM stage-2 percent-update convergence tolerance"),
+    ]
+}
+
+fn amp_pe() -> Vec<Def> {
+    vec![
         // QSM.rs utils/wavelet.rs: only the SUPPORTED_ORDERS (db1–db4) exist.
         d("inversion.amp_pe.wave_order", Inversion, "Wave order", "Daubechies wavelet order (1=db1, 2=db2)", Int).min(*WAVELET_ORDERS.start() as f64).max(*WAVELET_ORDERS.end() as f64).flag("--amp-pe-wave-order").parent("inversion.algorithm")
         .when(|x| x.inv("amp-pe")).full("Wavelet order")
@@ -704,6 +647,11 @@ pub(super) fn defs() -> Vec<Def> {
         d("inversion.amp_pe.cvg_thd", Inversion, "Convergence", "GAMP inner convergence threshold", Float).flag("--amp-pe-cvg-thd").parent("inversion.algorithm")
         .when(|x| x.inv("amp-pe")).full("Convergence threshold")
         .cli("AMP-PE GAMP inner convergence threshold"),
+    ]
+}
+
+fn tiling() -> Vec<Def> {
+    vec![
         d("inversion.tile_size", Inversion, "Tiled inference", "Run the network on overlapping tiles: bounded memory, approximate. Off = whole volume", Int)
         .value("Tile size", "Overlap-tiling core size in voxels").units("voxels").off(Value::Null).flag("--tile-size").parent("inversion.algorithm")
         .when(|x| x.tileable).gui_value("Tile size", "Core size of each overlapping tile")
