@@ -5,7 +5,6 @@
   "crates/qsmxt-tui/src/app/tabs/rows.rs::handle_rows_key": 279,
   "crates/qsmxt-tui/src/lib.rs::run_tui": 124,
   "crates/qsmxt-tui/src/ui/input/dicom_to_bids.rs::draw_dicom_series_section": 241,
-  "crates/qsmxt-tui/src/ui/input/mod.rs::draw_input_tab": 497,
   "crates/qsmxt-tui/src/ui/input/nifti_to_bids.rs::draw_nifti_section": 181,
   "crates/qsmxt-tui/src/ui/modals.rs::draw_checklist_modal": 174
  },
