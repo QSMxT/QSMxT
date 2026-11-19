@@ -22,6 +22,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::release::{check, compare_versions, quick_agent};
 
+/// The log target these messages have always had (they were the binary's `commands::news`).
+const LOG_TARGET: &str = "qsmxt::commands::news";
+
 /// Where the announcements are published: the file on QSMxT's main branch.
 pub const DEFAULT_URL: &str = "https://raw.githubusercontent.com/QSMxT/QSMxT/main/announcements.toml";
 
@@ -159,7 +162,7 @@ fn parse_all(text: &str) -> Result<(Vec<Announcement>, Vec<String>), String> {
 pub fn parse(text: &str) -> Result<Vec<Announcement>, String> {
     let (items, problems) = parse_all(text)?;
     for p in problems {
-        log::debug!("announcement left out: {p}");
+        log::debug!(target: LOG_TARGET, "announcement left out: {p}");
     }
     Ok(items)
 }
@@ -221,7 +224,7 @@ pub fn load(fetch: impl FnOnce() -> Result<String, String>) -> Loaded {
             Loaded { items, error: None }
         }
         Err(e) => {
-            log::debug!("announcements unavailable: {e}");
+            log::debug!(target: LOG_TARGET, "announcements unavailable: {e}");
             Loaded { items: load_cached(), error: Some(e) }
         }
     }

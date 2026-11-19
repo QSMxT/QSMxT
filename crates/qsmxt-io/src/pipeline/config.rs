@@ -7,16 +7,19 @@ use crate::error::QsmxtError;
 
 pub use qsmxt_engine::*;
 
+/// The log target these messages have always had (they were the binary's `pipeline::config`).
+const LOG_TARGET: &str = "qsmxt::pipeline::config";
+
 /// Load config from a TOML file.
 pub fn load_config(path: &Path) -> crate::Result<PipelineConfig> {
     let text = std::fs::read_to_string(path)?;
     let (config, migration) = PipelineConfig::from_toml_noting(&text)
         .map_err(|e| QsmxtError::Config(format!("TOML parse error: {}", e)))?;
     for w in migration.warnings {
-        log::warn!("{}: {w}", path.display());
+        log::warn!(target: LOG_TARGET, "{}: {w}", path.display());
     }
     for n in migration.notes {
-        log::info!("{}: {n}", path.display());
+        log::info!(target: LOG_TARGET, "{}: {n}", path.display());
     }
     Ok(config)
 }
@@ -145,6 +148,7 @@ pub fn validate_reference_region(config: &PipelineConfig) -> crate::Result<()> {
     let ids = qsmxt_engine::regions::resolve(spec, config.segmentation.version)
         .map_err(|e| QsmxtError::Config(format!("--qsm-reference: {e}")))?;
     log::info!(
+        target: LOG_TARGET,
         "Referencing χ to `{spec}` (SynthSeg {} label{} {})",
         config.segmentation.version,
         if ids.len() == 1 { "" } else { "s" },
@@ -161,7 +165,7 @@ pub fn validate_reference_region(config: &PipelineConfig) -> crate::Result<()> {
 pub fn normalise_logged(config: &mut PipelineConfig) {
     let (normalised, adjustments) = config.normalised();
     for a in &adjustments {
-        log::info!("{}", a.message);
+        log::info!(target: LOG_TARGET, "{}", a.message);
     }
     *config = normalised;
 }
@@ -189,7 +193,7 @@ pub fn validate_inversion_input(config: &PipelineConfig) -> crate::Result<()> {
             "--bf-algorithm iqfm produces a local field, and {what} takes {takes}, so iQFM would \
              have no effect. Choose another inversion, or drop --bf-algorithm iqfm."))),
         b if b != qsmxt_engine::BgRemovalConfig::default().algorithm => {
-            log::warn!("--bf-algorithm {b} has no effect: {what} takes {takes}");
+            log::warn!(target: LOG_TARGET, "--bf-algorithm {b} has no effect: {what} takes {takes}");
             Ok(())
         }
         _ => Ok(()),

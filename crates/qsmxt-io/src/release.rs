@@ -5,6 +5,9 @@ use crate::error::QsmxtError;
 use crate::version::strip_v;
 use std::env;
 
+/// The log target these messages have always had (they were the binary's `commands::update::check`).
+const LOG_TARGET: &str = "qsmxt::commands::update::check";
+
 pub const REPO: &str = "QSMxT/QSMxT";
 
 /// Sent on every GitHub request: the API rejects requests that omit a User-Agent.
@@ -271,7 +274,7 @@ pub mod check {
             }
             Err(e) => {
                 // Offline, rate-limited, or GitHub is down: use what we last heard, silently.
-                log::debug!("update check failed: {e}");
+                log::debug!(target: super::LOG_TARGET, "update check failed: {e}");
                 let cached = load();
                 if cached.latest_tag.is_empty() {
                     return None;

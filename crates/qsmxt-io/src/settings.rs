@@ -7,6 +7,9 @@ use qsmxt_engine::PipelineConfig;
 
 use crate::error::QsmxtError;
 
+/// The log target these messages have always had (they were the binary's `cli_settings`).
+const LOG_TARGET: &str = "qsmxt::cli_settings";
+
 /// `qsmxt run`'s settings: the flags given and, from the TUI, its form's settings by path, set
 /// before the flags (the TUI passes no flag but its dismissed recommendations).
 #[derive(Debug, Default)]
@@ -169,7 +172,7 @@ pub fn apply(config: &mut PipelineConfig, given: &[Given]) -> crate::Result<()> 
         let new_sections = crate::pipeline::config::parse_mask_sections(&sections, "--two-pass-mask")?;
         if !new_sections.is_empty() {
             for warning in crate::pipeline::config::hole_closing_warnings(&new_sections) {
-                log::warn!("{warning}");
+                log::warn!(target: LOG_TARGET, "{warning}");
             }
             config.masking.two_pass_sections = Some(new_sections);
             config.masking.two_pass = true;
@@ -182,7 +185,7 @@ pub fn apply(config: &mut PipelineConfig, given: &[Given]) -> crate::Result<()> 
     // their own.
     if let Some(input) = one("masking-input") {
         if has("mask") {
-            log::warn!("--masking-input is ignored when --mask is given (each --mask section names its own input)");
+            log::warn!(target: LOG_TARGET, "--masking-input is ignored when --mask is given (each --mask section names its own input)");
         } else {
             let input: qsmxt_engine::MaskingInput = serde_json::from_value(json(input)).map_err(|e| err(e.to_string()))?;
             for section in &mut config.masking.sections {
