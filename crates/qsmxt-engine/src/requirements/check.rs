@@ -67,6 +67,22 @@ pub fn check_scan(key: &str, f: &ScanFacts, config: &PipelineConfig, out: &mut C
 /// [`check_scan`] for a scan on its own: the same messages, without a key in front of them.
 pub fn scan_check(f: &ScanFacts, config: &PipelineConfig) -> Check {
     let mut out = Check::default();
+    input_problems_into(f, config, &mut out);
+    // The reconstruction's own methods: what they need of the data.
+    if config.pipeline.do_qsm {
+        method_problems_into(f, config, &mut out);
+    }
+    // What a chosen method cannot run without, from QSM.rs's pipeline rules (`required`): refused.
+    // QSMxT's own required changes (an output another setting needs) are not: the run applies
+    // them itself and says so ([`crate::recommendations::Recommendation::applied_by_run`]).
+    required_rules_into(f, config, &mut out);
+    notes_into(f, config, &mut out);
+    output_problems_into(f, config, &mut out);
+    out
+}
+
+/// Problems with the input data and the settings that read it, whatever was asked for.
+fn input_problems_into(f: &ScanFacts, config: &PipelineConfig, out: &mut Check) {
     if let Some(why) = input_problems(f) {
         out.errors.push(why.clone());
         out.problems.push(Problem {
@@ -104,47 +120,48 @@ pub fn scan_check(f: &ScanFacts, config: &PipelineConfig) -> Check {
             });
         }
     }
-    let label = |path: &str| crate::schema::setting(path).map_or_else(|| path.to_string(), |s| s.full_label.to_string());
-    // The reconstruction's own methods: what they need of the data.
-    if config.pipeline.do_qsm {
-        if let Some(why) = per_echo_problem(f, config) {
-            let path = "qsm.per_echo";
-            out.errors.push(format!("--qsm-per-echo {why}"));
-            out.problems.push(Problem {
-                severity: Severity::Error, setting: Some(path), implied_by: None,
-                settings: vec![path], reason: why.clone(), message: format!("{} {why}", label(path)),
-            });
-        }
-        let bg = config.bg_removal.algorithm;
-        // A per-echo QSM reconstructs each echo as a single-echo scan's: its methods are checked
-        // on each echo's, and no echo combination runs.
-        let per_echo = crate::bridge::per_echo(config, f.n_echoes);
-        let echoes: Vec<ScanFacts> = if per_echo { (0..f.n_echoes).map(|e| one_echo(f, e)).collect() } else { vec![f.clone()] };
-        let on_each = |check: fn(&ScanFacts, &PipelineConfig) -> Option<String>| echoes.iter().find_map(|f| check(f, config));
-        let methods = [
-            ("field_mapping.b0_estimation", "--b0-estimation", config.field_mapping.b0_estimation.to_string(),
-             if !per_echo && crate::bridge::field_mapping_runs(config, f.n_echoes) { field_mapping_problem(f, config) } else { None }),
-            ("field_mapping.unwrapping_algorithm", "--unwrapping-algorithm", config.field_mapping.unwrapping_algorithm.to_string(),
-             if crate::bridge::field_mapping_runs(config, f.n_echoes) { unwrapping_problem(f, config) } else { None }),
-            ("inversion.algorithm", "--qsm-algorithm", config.inversion.algorithm.to_string(),
-             on_each(inversion_problem)),
-            ("bg_removal.algorithm", "--bf-algorithm", bg.to_string(),
-             if crate::bridge::skips_bgremove(config) { None } else { on_each(bg_removal_problem) }),
-        ];
-        for (path, flag, value, why) in methods {
-            let Some(why) = why else { continue };
-            out.errors.push(format!("{flag} {value} {why}"));
-            let words = Words::labels();
-            let message = format!("{} {why}", words.choice(path, &value, ""));
-            out.problems.push(Problem {
-                severity: Severity::Error, setting: Some(path), implied_by: None,
-                settings: vec![path], reason: why, message,
-            });
-        }
+}
+
+/// What the reconstruction's own methods need of the data.
+fn method_problems_into(f: &ScanFacts, config: &PipelineConfig, out: &mut Check) {
+    if let Some(why) = per_echo_problem(f, config) {
+        let path = "qsm.per_echo";
+        out.errors.push(format!("--qsm-per-echo {why}"));
+        out.problems.push(Problem {
+            severity: Severity::Error, setting: Some(path), implied_by: None,
+            settings: vec![path], reason: why.clone(), message: format!("{} {why}", label(path)),
+        });
     }
-    // What a chosen method cannot run without, from QSM.rs's pipeline rules (`required`): refused.
-    // QSMxT's own required changes (an output another setting needs) are not: the run applies
-    // them itself and says so ([`crate::recommendations::Recommendation::applied_by_run`]).
+    let bg = config.bg_removal.algorithm;
+    // A per-echo QSM reconstructs each echo as a single-echo scan's: its methods are checked
+    // on each echo's, and no echo combination runs.
+    let per_echo = crate::bridge::per_echo(config, f.n_echoes);
+    let echoes: Vec<ScanFacts> = if per_echo { (0..f.n_echoes).map(|e| one_echo(f, e)).collect() } else { vec![f.clone()] };
+    let on_each = |check: fn(&ScanFacts, &PipelineConfig) -> Option<String>| echoes.iter().find_map(|f| check(f, config));
+    let methods = [
+        ("field_mapping.b0_estimation", "--b0-estimation", config.field_mapping.b0_estimation.to_string(),
+         if !per_echo && crate::bridge::field_mapping_runs(config, f.n_echoes) { field_mapping_problem(f, config) } else { None }),
+        ("field_mapping.unwrapping_algorithm", "--unwrapping-algorithm", config.field_mapping.unwrapping_algorithm.to_string(),
+         if crate::bridge::field_mapping_runs(config, f.n_echoes) { unwrapping_problem(f, config) } else { None }),
+        ("inversion.algorithm", "--qsm-algorithm", config.inversion.algorithm.to_string(),
+         on_each(inversion_problem)),
+        ("bg_removal.algorithm", "--bf-algorithm", bg.to_string(),
+         if crate::bridge::skips_bgremove(config) { None } else { on_each(bg_removal_problem) }),
+    ];
+    for (path, flag, value, why) in methods {
+        let Some(why) = why else { continue };
+        out.errors.push(format!("{flag} {value} {why}"));
+        let words = Words::labels();
+        let message = format!("{} {why}", words.choice(path, &value, ""));
+        out.problems.push(Problem {
+            severity: Severity::Error, setting: Some(path), implied_by: None,
+            settings: vec![path], reason: why, message,
+        });
+    }
+}
+
+/// What a chosen method cannot run without, from QSM.rs's pipeline rules.
+fn required_rules_into(f: &ScanFacts, config: &PipelineConfig, out: &mut Check) {
     for r in crate::recommendations::recommendations(config, &crate::recommendations::Facts::of_scan(f)) {
         if r.strength != crate::recommendations::Strength::Required || r.applied_by_run() {
             continue;
@@ -158,6 +175,10 @@ pub fn scan_check(f: &ScanFacts, config: &PipelineConfig) -> Check {
             reason: why.clone(), message: why,
         });
     }
+}
+
+/// MEDI's CSF term and motion correction, where this run goes without them.
+fn notes_into(f: &ScanFacts, config: &PipelineConfig, out: &mut Check) {
     if let Some(note) = medi_csf_note(f, config) {
         out.warnings.push(note.clone());
         out.problems.push(Problem {
@@ -173,6 +194,10 @@ pub fn scan_check(f: &ScanFacts, config: &PipelineConfig) -> Check {
             settings: vec![path], reason: note.clone(), message: note,
         });
     }
+}
+
+/// Each enabled output this run cannot produce: an error if asked for, a warning if implied.
+fn output_problems_into(f: &ScanFacts, config: &PipelineConfig, out: &mut Check) {
     for o in Output::ALL {
         if !o.enabled(config) {
             continue;
@@ -201,7 +226,11 @@ pub fn scan_check(f: &ScanFacts, config: &PipelineConfig) -> Check {
         }
         out.problems.push(Problem { severity, setting: Some(o.setting()), implied_by: implied, settings, reason, message });
     }
-    out
+}
+
+/// A setting's full label, or its path where the schema has none.
+fn label(path: &str) -> String {
+    crate::schema::setting(path).map_or_else(|| path.to_string(), |s| s.full_label.to_string())
 }
 
 impl Check {
