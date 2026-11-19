@@ -183,10 +183,10 @@ own N4. `--inhomogeneity-method` chooses how:
 
 <!-- generated:inhomogeneity-methods start (from QSM.rs's method catalogue and the settings registry: do not edit; regenerate with QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs) -->
 
-| Value | Method |
-| --- | --- |
-| `makehomogeneous` | Divides the magnitude by a smoothed estimate of the receive sensitivity (MriResearchTools' `makehomogeneous`; Eckstein et al., 2019) (default) |
-| `n4` | N4 bias field correction ([Tustison et al., 2010](https://doi.org/10.1109/TMI.2010.2046908)), as ANTs' `N4BiasFieldCorrection`: a smooth B-spline bias field, fitted in the log domain over several levels of increasing resolution so that the corrected image's intensity histogram is as sharp as possible |
+| Value | Method | Description | Citation |
+| --- | --- | --- | --- |
+| `makehomogeneous` | makehomogeneous (default) | Divide by a smoothed estimate of the receive sensitivity (MriResearchTools' makehomogeneous). | Eckstein et al., 2019 |
+| `n4` | N4 | N4 bias field correction, as ANTs' N4BiasFieldCorrection: a B-spline bias field fitted to sharpen the intensity histogram. | [Tustison et al., 2010](https://doi.org/10.1109/TMI.2010.2046908) |
 
 <!-- generated:inhomogeneity-methods end -->
 
@@ -490,12 +490,12 @@ methods say how many there were.
 
 <!-- generated:unwrapping-methods start (from QSM.rs's method catalogue and the settings registry: do not edit; regenerate with QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs) -->
 
-| Value | Method |
-| --- | --- |
-| `romeo` | Rapid Opensource Minimum-spanning-tree Echo Optimisation (default) |
-| `laplacian` | Laplacian-based unwrapping (QSMART's reference) |
-| `prelude` | PRELUDE region-merging unwrapping (Jenkinson, 2003) |
-| `medi-region-growing` | MEDI's magnitude-guided region-growing unwrapping (Liu et al., 2013) |
+| Value | Method | Description | Citation |
+| --- | --- | --- | --- |
+| `romeo` | ROMEO (default) | ROMEO region-growing unwrapping. | [Dymerska et al., 2021](https://doi.org/10.1002/mrm.28563) |
+| `laplacian` | Laplacian | Laplacian phase unwrapping (FFT-based). | [Schofield & Zhu, 2003](https://doi.org/10.1364/OL.28.001194) |
+| `prelude` | PRELUDE | PRELUDE region-merging unwrapping, each echo on its own. | [Jenkinson, 2003](https://doi.org/10.1002/mrm.10354) |
+| `medi-region-growing` | MEDI region growing | MEDI's magnitude-guided region-growing unwrapping; needs magnitude images. | [Liu et al., 2013](https://doi.org/10.1002/mrm.24272) |
 
 <!-- generated:unwrapping-methods end -->
 
@@ -698,18 +698,18 @@ Set with `--bf-algorithm`.
 
 <!-- generated:background-methods start (from QSM.rs's method catalogue and the settings registry: do not edit; regenerate with QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs) -->
 
-| Value | Method |
-| --- | --- |
-| `vsharp` | Variable-kernel SHARP (default) |
-| `pdf` | Projection onto Dipole Fields (MEDI's reference) |
-| `lbv` | Laplacian Boundary Value |
-| `ismv` | Iterative Spherical Mean Value |
-| `sharp` | Sophisticated Harmonic Artifact Reduction |
-| `resharp` | Regularization-enabled SHARP |
-| `harperella` | HARPERELLA |
-| `iharperella` | Improved HARPERELLA |
-| `bfrnet` | BFRnet — deep-learning background removal from the total field. Needs a deep-learning build; weights downloaded on first use |
-| `iqfm` | iQFM — deep-learning joint unwrapping and background removal straight from the wrapped phase (the local-field head of iQSM). Replaces field mapping as well; refused with inversions that do not take a local field. Weights downloaded on first use |
+| Value | Method | Description | Citation |
+| --- | --- | --- | --- |
+| `vsharp` | V-SHARP (default) | Variable-kernel SHARP (V-SHARP). | [Wu et al., 2012](https://doi.org/10.1002/mrm.23000) |
+| `pdf` | PDF | Projection onto Dipole Fields (PDF). | [Liu et al., 2011a](https://doi.org/10.1002/nbm.1670) |
+| `lbv` | LBV | Laplacian Boundary Value (LBV). | [Zhou et al., 2014](https://doi.org/10.1002/nbm.3064) |
+| `ismv` | iSMV | Iterative Spherical Mean Value (iSMV). | [Wen et al., 2014](https://doi.org/10.1002/mrm.24998) |
+| `sharp` | SHARP | SHARP (Sophisticated Harmonic Artifact Reduction). | [Schweser et al., 2011](https://doi.org/10.1016/j.neuroimage.2010.10.070) |
+| `resharp` | RESHARP | Regularized SHARP (RESHARP) with Tikhonov. | [Sun & Wilman, 2014](https://doi.org/10.1002/mrm.24765) |
+| `harperella` | HARPERELLA | HARPERELLA integrated unwrap+BFR. | [Li et al., 2014](https://doi.org/10.1002/nbm.3056) |
+| `iharperella` | iHARPERELLA | Improved HARPERELLA (iHARPERELLA) — Li et al., Proc. ISMRM 2015, p.3313. | Li et al., 2015a |
+| `bfrnet` | BFRnet | BFRnet deep-learning background removal (weights auto-downloaded). | [Zhu et al., 2023](https://doi.org/10.1016/j.zemedi.2022.08.001) |
+| `iqfm` | iQFM | iQFM deep-learning joint unwrapping + background removal from phase (weights auto-downloaded). | [Gao et al., 2022](https://doi.org/10.1016/j.neuroimage.2022.119410) |
 
 <!-- generated:background-methods end -->
 
@@ -809,29 +809,28 @@ reconstructions and deep-learning networks.
 
 <!-- generated:inversion-methods start (from QSM.rs's method catalogue and the settings registry: do not edit; regenerate with QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs) -->
 
-| Value | Method |
-| --- | --- |
-| `rts` | RTS — Rapid Two-Step |
-| `tv` | Total Variation (TV-ADMM) |
-| `tkd` | TKD — Thresholded K-space Division |
-| `tsvd` | TSVD — Truncated Singular Value Decomposition |
-| `tgv` | TGV — Total Generalized Variation |
-| `tikhonov` | Tikhonov regularization |
-| `nltv` | NLTV — Nonlinear Total Variation |
-| `medi` | MEDI — Morphology-Enabled Dipole Inversion |
-| `tfi` | TFI — Total Field Inversion |
-| `ilsqr` | iLSQR — iterative LSQR with streaking-artefact correction (default) |
-| `star` | STAR-QSM — Streaking Artifact Reduction |
-| `lsqr` | Minimally regularised LSQR, weighted by the magnitude (needs magnitude images) |
-| `heidi` | LSQR+HEIDI — HEIDI as published: `lsqr` with [`--heidi`](#heidi-streaking-reduction) |
-| `qsmart` | QSMART two-stage reconstruction |
-| `ndi` | NDI — Nonlinear Dipole Inversion |
-| `fansi` | FANSI — Nonlinear TV |
-| `fansi-tgv` | FANSI — Nonlinear TGV |
-| `l1qsm` | L1-QSM — L1 data fidelity |
-| `whqsm` | WH-QSM — Weak-Harmonic |
-| `hdqsm` | HD-QSM — Hybrid data fidelity |
-| `amp-pe` | AMP-PE — Approximate Message Passing with Parameter Estimation |
+| Value | Method | Description | Citation |
+| --- | --- | --- | --- |
+| `rts` | RTS | RTS (Rapid Two-Step) — fast two-step k-space inversion with streaking removal. | [Kames et al., 2018](https://doi.org/10.1016/j.neuroimage.2017.11.018) |
+| `tv` | TV-ADMM | TV-ADMM (Total Variation) — ADMM inversion with a total-variation prior. | [Bilgic et al., 2014a](https://doi.org/10.1002/mrm.25029) |
+| `tkd` | TKD | TKD (Thresholded K-space Division) — direct k-space division with thresholding. | [Shmueli et al., 2009](https://doi.org/10.1002/mrm.22135) |
+| `tsvd` | TSVD | TSVD (Truncated SVD) — zeroes the small singular values of the dipole kernel. | [Shmueli et al., 2009](https://doi.org/10.1002/mrm.22135) |
+| `tgv` | TGV-QSM | TGV (Total Generalized Variation) — single-step: unwrapping, background removal and inversion together. | [Langkammer et al., 2015](https://doi.org/10.1016/j.neuroimage.2015.02.041) |
+| `tikhonov` | Tikhonov | Tikhonov — closed-form L2-regularized inversion. | [Bilgic et al., 2014b](https://doi.org/10.1002/jmri.24365) |
+| `nltv` | NLTV | NLTV (Nonlinear Total Variation) — nonlinear data fidelity with a TV prior. | [Milovic et al., 2018](https://doi.org/10.1002/mrm.27073) |
+| `medi` | MEDI | MEDI (Morphology Enabled Dipole Inversion) — magnitude-guided edge weighting. | [Liu et al., 2011b](https://doi.org/10.1002/mrm.22816) |
+| `tfi` | TFI | TFI (Total Field Inversion) — inverts the total field directly (its own background removal). | [Liu et al., 2017](https://doi.org/10.1002/mrm.26331) |
+| `ilsqr` | iLSQR (default) | iLSQR — iterative LSQR with streaking-artifact correction. | [Li et al., 2015b](https://doi.org/10.1016/j.neuroimage.2014.12.043) |
+| `star` | STAR-QSM | STAR-QSM (Streaking Artifact Reduction) — sparse (L1) inversion from a k-space initial guess, for sources with a large susceptibility range. | [Wei et al., 2015](https://doi.org/10.1002/nbm.3383) |
+| `lsqr` | LSQR | LSQR (minimally regularised) — one least-squares solve for χ plus a residual field; the residual weight is the only regularisation. With HEIDI ticked, LSQR+HEIDI (HEIDI as published). | [Schweser et al., 2010](https://doi.org/10.1118/1.3481505) |
+| `qsmart` | QSMART | QSMART — two-stage spatially-dependent filtering plus inversion. | [Yaghmaie et al., 2021](https://doi.org/10.1016/j.neuroimage.2020.117701) |
+| `ndi` | NDI | NDI (Nonlinear Dipole Inversion) — gradient-descent nonlinear fit. | [Polak et al., 2020](https://doi.org/10.1002/nbm.4271) |
+| `fansi` | FANSI nonlinear TV | FANSI (Nonlinear TV) — fast nonlinear susceptibility inversion with a TV prior. | [Milovic et al., 2018](https://doi.org/10.1002/mrm.27073) |
+| `fansi-tgv` | FANSI nonlinear TGV | FANSI (Nonlinear TGV) — FANSI with a total-generalized-variation prior. | [Milovic et al., 2018](https://doi.org/10.1002/mrm.27073) |
+| `l1qsm` | L1-QSM | L1-QSM (L1 Data Fidelity) — L1 fidelity for streaking suppression. | [Milovic et al., 2022](https://doi.org/10.1002/mrm.28957) |
+| `whqsm` | WH-QSM | WH-QSM (Weak-Harmonic QSM) — jointly fits a residual harmonic background field. | [Milovic et al., 2019](https://doi.org/10.1002/mrm.27483) |
+| `hdqsm` | HD-QSM | HD-QSM (Hybrid Data Fidelity) — combined L1/L2 data fidelity. | [Lambert et al., 2022](https://doi.org/10.1002/mrm.29218) |
+| `amp-pe` | AMP-PE | AMP-PE (Approximate Message Passing with Parameter Estimation) — self-tuning Bayesian inversion. | [Huang et al., 2023](https://doi.org/10.1002/mrm.29722) |
 
 <!-- generated:inversion-methods end -->
 
@@ -985,20 +984,20 @@ config file, and blank in the TUI.
 
 <!-- generated:deep-learning-inversion-methods start (from QSM.rs's method catalogue and the settings registry: do not edit; regenerate with QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs) -->
 
-| Value | Method | Tileable |
-| --- | --- | --- |
-| `xqsm` | xQSM | ✓ |
-| `qsmnet` | QSMnet | ✓ |
-| `qsmnet-plus` | QSMnet+ | ✓ |
-| `qsmnetme` | QSMnetME — the χ-separation toolbox's network | ✓ |
-| `ir2qsm` | IR2QSM — unrolled | ✓ |
-| `lpcnn` | LPCNN — learned-proximal | ✓ |
-| `modl-qsm` | MoDL-QSM — model-based | ✓ |
-| `nextqsm` | NeXtQSM — single-step | ✓ |
-| `autoqsm` | AutoQSM — single-step (native patching) | |
-| `qsmgan` | QSMGAN — GAN-refined (native patching) | |
-| `iqsm` | iQSM — end-to-end from phase | |
-| `iqsm-plus` | iQSM+ — orientation-adaptive end-to-end | |
+| Value | Method | Description | Citation | Tileable |
+| --- | --- | --- | --- | --- |
+| `xqsm` | xQSM | xQSM (deep learning; weights auto-downloaded) — octave-convolution U-net dipole inversion. | [Gao et al., 2021](https://doi.org/10.1002/nbm.4461) | ✓ |
+| `qsmnet` | QSMnet | QSMnet (deep learning; weights auto-downloaded) — 3D U-net dipole inversion. | [Yoon et al., 2018](https://doi.org/10.1016/j.neuroimage.2018.06.030) | ✓ |
+| `qsmnet-plus` | QSMnet+ | QSMnet+ (deep learning; weights auto-downloaded) — QSMnet trained for a wider susceptibility range. | [Jung et al., 2020](https://doi.org/10.1016/j.neuroimage.2020.116619) | ✓ |
+| `qsmnetme` | QSMnetME | QSMnetME (deep learning; weights auto-downloaded) — the χ-separation toolbox's QSM network, trained on multi-echo data; rotates the field to B0 along z and resamples to 1 mm itself. | [Kim et al., 2025](https://doi.org/10.1002/hbm.70136) | ✓ |
+| `autoqsm` | AutoQSM | AutoQSM (deep learning; weights auto-downloaded) — single-step reconstruction, no separate background removal. | [Wei et al., 2019](https://doi.org/10.1016/j.neuroimage.2019.116064) |  |
+| `qsmgan` | QSMGAN | QSMGAN (deep learning; weights auto-downloaded) — GAN-refined U-net dipole inversion. | [Chen et al., 2020](https://doi.org/10.1016/j.neuroimage.2019.116389) |  |
+| `ir2qsm` | IR2QSM | IR2QSM (deep learning; weights auto-downloaded) — iterative unrolled U-net inversion. | [Li et al., 2025a](https://doi.org/10.1002/mp.17747) | ✓ |
+| `lpcnn` | LPCNN | LPCNN (deep learning; weights auto-downloaded) — learned-proximal unrolled inversion. | [Lai et al., 2020](https://doi.org/10.1007/978-3-030-59713-9_13) | ✓ |
+| `modl-qsm` | MoDL-QSM | MoDL-QSM (deep learning; weights auto-downloaded) — model-based unrolled inversion (χ33/STI). | [Feng et al., 2021](https://doi.org/10.1016/j.neuroimage.2021.118376) | ✓ |
+| `nextqsm` | NeXtQSM | NeXtQSM (deep learning; weights auto-downloaded) — single-step reconstruction, no separate background removal. | [Cognolato et al., 2023](https://doi.org/10.1016/j.media.2022.102700) | ✓ |
+| `iqsm` | iQSM | iQSM (deep learning; weights auto-downloaded) — end-to-end reconstruction from wrapped phase. | [Gao et al., 2022](https://doi.org/10.1016/j.neuroimage.2022.119410) | ✓ |
+| `iqsm-plus` | iQSM+ | iQSM+ (deep learning; weights auto-downloaded) — orientation-adaptive end-to-end reconstruction. | [Gao et al., 2024](https://doi.org/10.1016/j.media.2024.103160) | ✓ |
 
 <!-- generated:deep-learning-inversion-methods end -->
 
@@ -1386,16 +1385,16 @@ diamagnetic components, and choose the method with `--chisep`.
 
 <!-- generated:separation-methods start (from QSM.rs's method catalogue and the settings registry: do not edit; regenerate with QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs) -->
 
-| Value | Method |
-| --- | --- |
-| `r2star-qsm` | R2\*-based magnitude decay modelling (default) |
-| `decompose` | DECOMPOSE-QSM |
-| `chi-sep-ilsqr` | χ-separation, iLSQR inversion |
-| `chi-sep-medi` | χ-separation, MEDI inversion |
-| `wavesep` | Wavelet-based single-step separation |
-| `hc-chisep` | Hollow-cylinder χ-separation |
-| `susep-net` | SUSEP-Net (deep learning) |
-| `chi-sepnet` | χ-sepnet (deep learning) |
+| Value | Method | Description | Citation |
+| --- | --- | --- | --- |
+| `r2star-qsm` | R2\*-QSM (default) | R2\*-QSM closed-form (Dimov 2022) — QSM + R2\*, GRE-only. | [Dimov et al., 2022a](https://doi.org/10.1111/jon.13014); [Dimov et al., 2022b](https://doi.org/10.3390/tomography8030127) |
+| `decompose` | DECOMPOSE-QSM | DECOMPOSE-QSM signal-domain fit (Chen 2021) — QSM + multi-echo magnitude, GRE-only. | [Chen et al., 2021](https://doi.org/10.1016/j.neuroimage.2021.118477) |
+| `chi-sep-ilsqr` | χ-separation (iLSQR) | χ-separation iLSQR (Shin 2021) — local field + R2' + magnitude + QSM. | [Shin et al., 2021](https://doi.org/10.1016/j.neuroimage.2021.118371) |
+| `chi-sep-medi` | χ-separation (MEDI) | χ-separation MEDI — local field + R2' + magnitude. | [Shin et al., 2021](https://doi.org/10.1016/j.neuroimage.2021.118371) |
+| `wavesep` | WaveSep | WaveSep wavelet-L1 (Fang 2023) — QSM + R2'. | [Fang et al., 2023](https://doi.org/10.1007/978-3-031-44858-4_6) |
+| `hc-chisep` | HC-ChiSep | Hollow-cylinder χ-separation (Stewart 2026) — QSM + R2' + multi-echo magnitude. | Stewart et al., 2026; [Wharton & Bowtell, 2012](https://doi.org/10.1073/pnas.1211075109) |
+| `susep-net` | SUSEP-Net | SUSEP-Net deep-learning separation — QSM + R2' + local field (weights auto-downloaded). | [Li et al., 2025b](https://doi.org/10.48550/arXiv.2506.13293) |
+| `chi-sepnet` | χ-sepnet | χ-sepnet deep-learning separation — QSM + R2' + local field (weights auto-downloaded). | [Kim et al., 2025](https://doi.org/10.1002/hbm.70136) |
 
 <!-- generated:separation-methods end -->
 
