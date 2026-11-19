@@ -69,7 +69,7 @@ pub(super) fn chisepnet_r2prime_sentences(doc: &mut Draft, config: &PipelineConf
         doc.say(&[Stage::ChiSeparation], "χ-separation used the measured R2'.".to_string());
         return;
     }
-    doc.cite(&CITE_R2PRIMENET);
+    doc.cite_method(MethodStage::Relaxometry, "r2primenet");
     let unknown = measured == 0 && estimated == 0;
     let always = config.separation.r2prime_strategy == R2PrimeStrategy::R2primenet;
     let estimate = "estimated from R2* with R2PRIMEnet (Kim et al., 2025) in the network's training frame";
@@ -98,18 +98,21 @@ pub(super) fn chisepnet_r2prime_sentences(doc: &mut Draft, config: &PipelineConf
 
 /// The χ-separation method's name as the methods text gives it.
 pub(crate) fn separation_name(alg: SeparationAlgorithm) -> &'static str {
-    separation_name_cite(alg).0
+    separation_label(alg)
 }
 
-pub(super) fn separation_name_cite(alg: SeparationAlgorithm) -> (&'static str, &'static Citation) {
+/// Display name + citations for a source separation: the catalogue's name, or QSMxT's where it
+/// says more (what R2*-QSM and the networks do, HC-ChiSep's name in full).
+pub(super) fn separation_name_cite(alg: SeparationAlgorithm) -> (&'static str, Vec<Citation>) {
+    (separation_label(alg), method(MethodStage::Separation, alg.as_str()))
+}
+
+fn separation_label(alg: SeparationAlgorithm) -> &'static str {
     match alg {
-        SeparationAlgorithm::R2starQsm => ("R2*-QSM susceptibility source separation", &CITE_R2STARQSM),
-        SeparationAlgorithm::Decompose => ("DECOMPOSE-QSM", &CITE_DECOMPOSE),
-        SeparationAlgorithm::ChiSepIlsqr => ("χ-separation (iLSQR)", &CITE_CHISEP),
-        SeparationAlgorithm::ChiSepMedi => ("χ-separation (MEDI)", &CITE_CHISEP),
-        SeparationAlgorithm::WaveSep => ("WaveSep", &CITE_WAVESEP),
-        SeparationAlgorithm::HcChisep => ("hollow-cylinder χ-separation (HC-ChiSep)", &CITE_HCCHISEP),
-        SeparationAlgorithm::SusepNet => ("SUSEP-Net (deep-learning source separation)", &CITE_SUSEPNET),
-        SeparationAlgorithm::ChiSepNet => ("χ-sepnet (deep-learning source separation)", &CITE_CHISEPNET),
+        SeparationAlgorithm::R2starQsm => "R2*-QSM susceptibility source separation",
+        SeparationAlgorithm::HcChisep => "hollow-cylinder χ-separation (HC-ChiSep)",
+        SeparationAlgorithm::SusepNet => "SUSEP-Net (deep-learning source separation)",
+        SeparationAlgorithm::ChiSepNet => "χ-sepnet (deep-learning source separation)",
+        _ => catalogue_method(MethodStage::Separation, alg.as_str()).name,
     }
 }

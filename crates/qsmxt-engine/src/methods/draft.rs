@@ -7,10 +7,11 @@ use super::*;
 pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
     let mut doc = Draft::default();
 
-    let (cite, author_year) = match tool {
-        "QSMbly" | "qsmbly" => (&CITE_QSMBLY, "Stewart, 2026"),
-        _ => (&CITE_QSMXT, "Stewart, 2026"),
+    let cite = match tool {
+        "QSMbly" | "qsmbly" => &CITE_QSMBLY,
+        _ => &CITE_QSMXT,
     };
+    let author_year = &cite.inline;
 
     doc.cite(cite);
     if config.pipeline.do_qsm {
@@ -49,7 +50,7 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                 // Routed by QSM.rs's `InversionInput`: one echo goes in as wrapped phase (TGV
                 // unwraps it itself), several are field-mapped first and go in as the total field.
                 // Neither route runs a separate background-removal stage.
-                doc.cite(&CITE_TGV);
+                doc.cite_method(MethodStage::Inversion, "tgv");
                 doc.say(&both(Stage::Tgv), format!(
                     "QSM was computed using the Total Generalized Variation (TGV) algorithm \
                      (Langkammer et al., 2015), with background field removal and dipole inversion \
@@ -68,12 +69,12 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
             QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus => {
                 // `InversionInput::WrappedPhase`: no field mapping and no background removal ran.
                 let (name, cite) = inversion_name_cite(config.inversion.algorithm);
-                doc.cite(cite);
+                doc.cite_all(&cite);
                 doc.say(&both(Stage::Inversion), format!(
                     "QSM was reconstructed with {} ({}) from the wrapped phase of each echo, with \
                      phase unwrapping, background field removal and dipole inversion performed by the \
                      network.",
-                    name, cite_inline(cite),
+                    name, cite_inline(&cite),
                 ));
                 say_tiling(config, Stage::Inversion, &mut doc);
             }
@@ -83,18 +84,18 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                 // be described.
                 describe_field_mapping(config, ran, &mut doc);
                 let (inv_name, inv_cite) = inversion_name_cite(config.inversion.qsmart.inversion);
-                doc.cite(&CITE_QSMART);
-                doc.cite(inv_cite);
+                doc.cite_method(MethodStage::Inversion, "qsmart");
+                doc.cite_all(&inv_cite);
                 doc.say(&both(Stage::Qsmart), format!(
                     "QSM was computed using QSMART (Yaghmaie et al., 2021), with spatially dependent \
                      filtering for background field removal, {} dipole inversion ({}), and Frangi \
                      vesselness-based tissue/vasculature separation{}.",
-                    inv_name, cite_inline(inv_cite), qsmart_changes(config).comma_with(),
+                    inv_name, cite_inline(&inv_cite), qsmart_changes(config).comma_with(),
                 ));
                 // The magnitude vessels were detected on.
                 match config.inversion.qsmart.vessel_magnitude {
                     QsmartVesselMagnitude::MeanN4 => {
-                        doc.cite(&CITE_N4);
+                        doc.cite_method(MethodStage::InhomogeneityCorrection, "n4");
                         doc.say(&both(Stage::Qsmart), "Vessels were detected on the mean magnitude over echoes, \
                             bias-corrected with N4 (Tustison et al., 2010).".to_string());
                     }
@@ -113,7 +114,7 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                 if !total_field {
                     let alg = &config.bg_removal.algorithm;
                     let (name, cite) = bg_removal_name_cite(*alg);
-                    doc.cite(cite);
+                    doc.cite_all(&cite);
                     let erode = config.bg_removal.erode_voxels;
                     if erode > 0 {
                         doc.say(&both(Stage::BackgroundRemoval), format!(
@@ -121,7 +122,7 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                             if erode == 1 { "" } else { "s" }));
                     }
                     if config.bg_removal.ukb_mask_trim {
-                        doc.cite(&CITE_UKB_QSM);
+                        let ukb = doc.cite_method(MethodStage::Masking, "phase-reliability-trim");
                         doc.say(&both(Stage::BackgroundRemoval), format!(
                             "Before and after background field removal, the mask was trimmed of voxels with \
                              unreliable phase as in the UK Biobank pipeline ({}): phase-reliability maps of the \
@@ -129,7 +130,7 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                              were thresholded at 0.6 and 0.5 before background removal and at 0.7 and 0.6 after \
                              it, then in each slice components smaller than 300 (after: 200) voxels were removed \
                              and holes smaller than 50 (after: 30) voxels filled, and enclosed holes were filled.",
-                            cite_inline(&CITE_UKB_QSM)));
+                            cite_inline(&ukb)));
                     }
                     if config.bg_removal.polish_mask {
                         doc.say(&both(Stage::BackgroundRemoval),
@@ -150,7 +151,7 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                         changed.add(v.deconvolve && differs(v.threshold, d.threshold),
                             || format!("a deconvolution threshold of {}", v.threshold));
                         doc.say(&both(Stage::BackgroundRemoval), format!("Background field removal was performed using {} ({}){}.",
-                            name, cite_inline(cite), changed.with()));
+                            name, cite_inline(&cite), changed.with()));
                         let resample = "the field and mask were cropped to the brain mask's bounding box and resampled trilinearly, and the background field estimated there was interpolated back to the acquired grid, so the local field kept the acquired resolution";
                         match v.grid {
                             VsharpGrid::Finest => doc.say(&both(Stage::BackgroundRemoval), format!(
@@ -163,7 +164,7 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                         }
                     } else {
                         doc.say(&both(Stage::BackgroundRemoval), format!("Background field removal was performed using {} ({}){}.",
-                            name, cite_inline(cite), bg_removal_changes(config).with()));
+                            name, cite_inline(&cite), bg_removal_changes(config).with()));
                     }
 
                 }
@@ -171,11 +172,11 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                 // Dipole inversion
                 let (name, cite) = inversion_name_cite(config.inversion.algorithm);
                 let target = if total_field { " on the total field within the brain mask" } else { "" };
-                doc.cite(cite);
+                doc.cite_all(&cite);
                 let msmv = medi_msmv(config, &mut doc) + &medi_smv(config);
                 let changes = inversion_changes(config, config.inversion.algorithm);
                 doc.say(&both(Stage::Inversion), format!("Dipole inversion was performed{} using {} ({}){msmv}{}.",
-                    target, name, cite_inline(cite),
+                    target, name, cite_inline(&cite),
                     if msmv.is_empty() { changes.with() } else { changes.comma_with() }));
                 describe_medi_csf(config, ran, &mut doc);
                 // Deep-learning tiling (memory-bounded, approximate) is noted when enabled — only
@@ -240,11 +241,8 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
         });
     }
     if config.pipeline.do_segmentation && !dseg_all_supplied && !ran.none_ran(Stage::Segmentation) {
-        doc.cite(&CITE_SYNTHSEG);
+        doc.cite_method(MethodStage::Segmentation, config.segmentation.version.weights_id());
         let v2 = config.segmentation.version == SynthSegVersion::V2;
-        if v2 {
-            doc.cite(&CITE_SYNTHSEG2);
-        }
         // The label table counts the background.
         let structures = config.segmentation.version.to_core().n_labels() - 1;
         let (s, d) = (&config.segmentation, SegmentationConfig::default());
@@ -276,7 +274,7 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
     }
 
     if config.pipeline.do_smwi && !ran.none_ran(Stage::Smwi) {
-        doc.cite(&CITE_SMWI);
+        doc.cite_method(MethodStage::Swi, "smwi");
         let (s, d) = (&config.smwi, SmwiConfig::default());
         let mut mask = Changed::default();
         mask.add(differs(s.threshold_ppm, d.threshold_ppm), || format!("|χ| threshold {:.2} ppm", s.threshold_ppm));
@@ -299,7 +297,7 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
             _ if swi.unwrap == d.unwrap => {}
             SwiUnwrap::Romeo => {
                 changed.push("ROMEO phase unwrapping (Dymerska et al., 2021)".into());
-                doc.cite(&CITE_ROMEO);
+                doc.cite_method(MethodStage::Unwrapping, "romeo");
             }
             SwiUnwrap::LaplacianSlice => changed.push("slice-wise Laplacian phase unwrapping".into()),
             SwiUnwrap::Laplacian => changed.push("Laplacian phase unwrapping".into()),
@@ -333,7 +331,7 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
         } else {
             String::new()
         };
-        doc.cite(&CITE_CLEARSWI);
+        doc.cite_method(MethodStage::Swi, "clear-swi");
         doc.say(&[Stage::Swi], format!(
             "Susceptibility-weighted images were computed with CLEAR-SWI (Eckstein et al., 2021){using}. {mip}{phase}"
         ));
@@ -341,13 +339,13 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
 
     // T2*/R2*
     if config.pipeline.do_t2starmap && config.pipeline.do_r2starmap {
-        doc.cite(&CITE_ARLO);
+        doc.cite_method(MethodStage::Relaxometry, "arlo");
         doc.say(&[Stage::Relaxometry], "T2* and R2* maps were computed from multi-echo magnitude data using the ARLO method (Pei et al., 2015).".to_string());
     } else if config.pipeline.do_t2starmap {
-        doc.cite(&CITE_ARLO);
+        doc.cite_method(MethodStage::Relaxometry, "arlo");
         doc.say(&[Stage::Relaxometry], "T2* maps were computed from multi-echo magnitude data using the ARLO method (Pei et al., 2015).".to_string());
     } else if config.pipeline.do_r2starmap {
-        doc.cite(&CITE_ARLO);
+        doc.cite_method(MethodStage::Relaxometry, "arlo");
         doc.say(&[Stage::Relaxometry], "R2* maps were computed from multi-echo magnitude data using the ARLO method (Pei et al., 2015).".to_string());
     }
 
@@ -357,7 +355,7 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
         if config.pipeline.do_r2map && ran.only(Topic::R2Source, &[Choice::Supplied]) {
             doc.say(&[Stage::R2], "R2 maps were sourced from the supplied BIDS derivatives.".to_string());
         } else if config.pipeline.do_r2map && !ran.only(Topic::R2Source, &[Choice::Unavailable]) {
-            doc.cite(&CITE_EPG);
+            doc.cite_method(MethodStage::Relaxometry, "epg");
             doc.say(&[Stage::R2], 
                 "R2 maps were fitted from multi-echo spin-echo magnitude data using an Extended \
                  Phase Graph dictionary (Weigel, 2015).".to_string());
@@ -379,7 +377,7 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                     if measured {
                         doc.say(&[Stage::R2], "R2' was computed as R2* - R2.".to_string());
                     } else {
-                        doc.cite(&CITE_R2PRIMENET);
+                        doc.cite_method(MethodStage::Relaxometry, "r2primenet");
                         doc.say(&[Stage::R2], format!(
                             "R2' was estimated from the R2* map with R2PRIMEnet (Kim et al., 2025{r2pn}).",
                         ));
@@ -391,14 +389,14 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                     R2PrimeStrategy::Mese => doc.say(&[Stage::R2], 
                         "R2' was computed as R2* - R2.".to_string()),
                     R2PrimeStrategy::R2primenet => {
-                        doc.cite(&CITE_R2PRIMENET);
+                        doc.cite_method(MethodStage::Relaxometry, "r2primenet");
                         doc.say(&[Stage::R2], format!(
                             "R2' was estimated from the R2* map with R2PRIMEnet (Kim et al., \
                              2025{r2pn}).",
                         ));
                     }
                     R2PrimeStrategy::Auto => {
-                        doc.cite(&CITE_R2PRIMENET);
+                        doc.cite_method(MethodStage::Relaxometry, "r2primenet");
                         doc.say(&[Stage::R2], if config.separation.r2primenet.ignore_field_mismatch {
                             format!("R2' was computed as R2* - R2 where a multi-echo spin-echo \
                              acquisition was available, and estimated from R2* with R2PRIMEnet \
@@ -434,10 +432,10 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
     // Chi-separation (susceptibility source separation)
     if config.pipeline.do_chi_separation {
         let (sep_name, sep_cite) = separation_name_cite(config.separation.algorithm);
-        doc.cite(sep_cite);
+        doc.cite_all(&sep_cite);
         doc.say(&[Stage::ChiSeparation], format!(
             "Paramagnetic and diamagnetic susceptibility maps were computed using {} ({}) within {}{}.",
-            sep_name, cite_inline(sep_cite),
+            sep_name, cite_inline(&sep_cite),
             // Named in full by the referencing sentence, unless the map was left unreferenced.
             if config.pipeline.do_qsm && config.qsm.reference != QsmReference::None { RECON_MASK_AGAIN } else { RECON_MASK },
             separation_changes(config).comma_with(),
@@ -463,7 +461,7 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
             SeparationAlgorithm::ChiSepMedi => {
                 let r2star = match config.separation.chi_sep_medi.csf_r2star {
                     ChiSepCsfR2star::Arlo => {
-                        doc.cite(&CITE_ARLO);
+                        doc.cite_method(MethodStage::Relaxometry, "arlo");
                         "ARLO R2* (Pei et al., 2015)"
                     }
                     ChiSepCsfR2star::Nnls => "R2* from a non-negative least-squares mono-exponential fit",
@@ -490,10 +488,10 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                 _ => &defaults.chi_sep_ilsqr.qsm_ilsqr,
             };
             q.add_fields(crate::stages::separation::initial_qsm_ilsqr(config), d, &[]);
-            doc.cite(&CITE_ILSQR);
+            let ilsqr = doc.cite_method(MethodStage::Inversion, "ilsqr");
             doc.say(&[Stage::ChiSeparation], format!(
                 "The susceptibility map separated was reconstructed from the local field by iLSQR ({}){}.",
-                cite_inline(&CITE_ILSQR), q.with()));
+                cite_inline(&ilsqr), q.with()));
         }
     }
 
@@ -513,7 +511,7 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
         };
         match config.multi_orientation.algorithm {
             MultiOrientAlgorithm::Cosmos => {
-                doc.cite(&CITE_COSMOS);
+                doc.cite_method(MethodStage::MultiOrientation, "cosmos");
                 doc.say(&[], format!(
                     "{fields}, co-registered onto a common \
                      grid, were combined by Calculation Of Susceptibility through Multiple \
@@ -522,7 +520,7 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                 );
             }
             MultiOrientAlgorithm::Sti => {
-                doc.cite(&CITE_STI);
+                doc.cite_method(MethodStage::MultiOrientation, "sti");
                 doc.say(&[], format!(
                     "{fields}, co-registered onto a common \
                      grid, were combined by susceptibility tensor imaging (STI; Liu, 2010), \

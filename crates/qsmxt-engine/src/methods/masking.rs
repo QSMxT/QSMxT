@@ -54,7 +54,7 @@ pub(super) fn describe_generator(
     let corrected = config.masking.inhomogeneity_correction;
     let input_desc = match section.input {
         MaskingInput::PhaseQuality => {
-            doc.cite(&CITE_ROMEO);
+            doc.cite_method(MethodStage::Unwrapping, "romeo");
             if corrected {
                 "the ROMEO phase quality map (computed from phase data and the inhomogeneity-corrected RSS-combined magnitude)"
             } else {
@@ -77,7 +77,7 @@ pub(super) fn describe_generator(
 
     match &section.generator {
         MaskOp::Threshold { method: MaskThresholdMethod::Otsu, .. } => {
-            doc.cite(&CITE_OTSU);
+            doc.cite_method(MethodStage::MaskThreshold, "otsu");
             format!("Otsu thresholding (Otsu, 1979) of {}", input_desc)
         }
         MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value } => {
@@ -87,11 +87,11 @@ pub(super) fn describe_generator(
             format!("percentile thresholding ({}th percentile) of {}", value.unwrap_or(75.0), input_desc)
         }
         MaskOp::Threshold { method: MaskThresholdMethod::StiGui, .. } => {
-            doc.cite(&CITE_OTSU);
+            doc.cite_method(MethodStage::MaskThreshold, "otsu");
             format!("thresholding of {} at STI Suite's default level (Otsu's threshold of the middle slice; Otsu, 1979)", input_desc)
         }
         MaskOp::Bet { fractional_intensity, voxel_scale } => {
-            doc.cite(&CITE_BET);
+            doc.cite_method(MethodStage::Masking, "bet");
             let MaskOp::Bet { fractional_intensity: df, .. } = parse_mask_op("bet").expect("bare bet parses")
                 else { unreachable!() };
             let mut changed = Changed::default();
@@ -114,7 +114,7 @@ pub(super) fn describe_generator(
             format!("BET brain extraction (Smith, 2002{}) of {}{orientation}", changed.semi(), input_desc)
         }
         MaskOp::Rs2Net { tta, tile_step } => {
-            doc.cite(&CITE_RS2NET);
+            doc.cite_method(MethodStage::Masking, "rs2-net");
             let mut changed = Changed::default();
             changed.add(differs(*tile_step, crate::masking::rs2_net_default_tile_step()),
                 || format!("sliding-window patches stepped by {:.0}% of the patch", tile_step * 100.0));
@@ -122,13 +122,13 @@ pub(super) fn describe_generator(
             format!("RS2-Net deep-learning rodent brain extraction (Lin et al., 2024{}) of {}", changed.semi(), input_desc)
         }
         MaskOp::MindGrab { tta } => {
-            doc.cite(&CITE_MINDGRAB);
+            doc.cite_method(MethodStage::Masking, "mindgrab");
             let mut changed = Changed::default();
             changed.add(*tta, || "left-right flip test-time augmentation".to_string());
             format!("MindGrab deep-learning brain extraction (Fani et al., 2025{}) of {}", changed.semi(), input_desc)
         }
         MaskOp::HdBet { patch, tta, tile_step } => {
-            doc.cite(&CITE_HDBET);
+            doc.cite_method(MethodStage::Masking, "hd-bet");
             let mut changed = Changed::default();
             if let Some(p) = patch {
                 changed.add(true, || format!("{}x{}x{}-voxel sliding-window patches", p[0], p[1], p[2]));
@@ -179,12 +179,12 @@ pub(super) fn describe_masking(config: &PipelineConfig, ran: Ran, doc: &mut Draf
         let mut changed = Changed::default();
         let correction = match config.masking.inhomogeneity_method {
             InhomogeneityMethod::Makehomogeneous => {
-                doc.cite(&CITE_BIAS);
+                doc.cite_method(MethodStage::InhomogeneityCorrection, "makehomogeneous");
                 changed.add_fields(&config.homogeneity, &HomogeneityConfig::default(), &[]);
                 "Inhomogeneity correction (Eckstein et al., 2019"
             }
             InhomogeneityMethod::N4 => {
-                doc.cite(&CITE_N4);
+                doc.cite_method(MethodStage::InhomogeneityCorrection, "n4");
                 let (n4, d) = (&config.n4, N4Config::default());
                 if n4.max_iterations != d.max_iterations {
                     let levels: Vec<String> = n4.max_iterations.iter().map(|i| i.to_string()).collect();

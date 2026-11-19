@@ -982,22 +982,25 @@ fn test_join_list() {
 
 #[test]
 fn test_cite_inline_known_keys() {
-    assert_eq!(cite_inline(&CITE_VSHARP), "Wu et al., 2012");
-    assert_eq!(cite_inline(&CITE_SHARP), "Schweser et al., 2011");
-    assert_eq!(cite_inline(&CITE_PDF), "Liu et al., 2011");
-    assert_eq!(cite_inline(&CITE_ISMV), "Wen et al., 2014");
-    assert_eq!(cite_inline(&CITE_LBV), "Zhou et al., 2014");
-    assert_eq!(cite_inline(&CITE_RTS), "Kames et al., 2018");
-    assert_eq!(cite_inline(&CITE_RESHARP), "Sun & Wilman, 2014");
-    assert_eq!(cite_inline(&CITE_HARPERELLA), "Li et al., 2014");
-    assert_eq!(cite_inline(&CITE_IHARPERELLA), "Li et al., 2015");
-    assert_eq!(cite_inline(&CITE_BIPOLAR), "Eckstein, 2021");
+    let inline = |stage, id| cite_inline(&method(stage, id));
+    assert_eq!(inline(MethodStage::BackgroundRemoval, "vsharp"), "Wu et al., 2012");
+    assert_eq!(inline(MethodStage::BackgroundRemoval, "sharp"), "Schweser et al., 2011");
+    assert_eq!(inline(MethodStage::BackgroundRemoval, "pdf"), "Liu et al., 2011");
+    assert_eq!(inline(MethodStage::BackgroundRemoval, "ismv"), "Wen et al., 2014");
+    assert_eq!(inline(MethodStage::BackgroundRemoval, "lbv"), "Zhou et al., 2014");
+    assert_eq!(inline(MethodStage::Inversion, "rts"), "Kames et al., 2018");
+    assert_eq!(inline(MethodStage::BackgroundRemoval, "resharp"), "Sun & Wilman, 2014");
+    assert_eq!(inline(MethodStage::BackgroundRemoval, "harperella"), "Li et al., 2014");
+    assert_eq!(inline(MethodStage::BackgroundRemoval, "iharperella"), "Li et al., 2015");
+    assert_eq!(inline(MethodStage::PhaseCorrection, "bipolar-correction"), "Eckstein, 2021");
 }
 
 #[test]
-fn test_cite_inline_unknown_key() {
-    let unknown = Citation { key: "unknown2099", text: "Some text" };
-    assert_eq!(cite_inline(&unknown), "unknown2099");
+fn test_cite_inline_joins_several_works() {
+    let a = Citation { key: "a2001", text: "A".into(), inline: "A et al., 2001".into() };
+    let b = Citation { key: "b2002", text: "B".into(), inline: "B & C, 2002".into() };
+    assert_eq!(cite_inline(&[a.clone()]), "A et al., 2001");
+    assert_eq!(cite_inline(&[a, b]), "A et al., 2001; B & C, 2002");
 }
 
 // ─── All inversion algorithms in methods ───
