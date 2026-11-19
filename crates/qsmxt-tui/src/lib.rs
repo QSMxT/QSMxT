@@ -109,37 +109,7 @@ pub fn run_tui() -> qsmxt_io::Result<Outcome> {
 
     // Main loop
     loop {
-        // Pick up the launch-time release check and announcements, and open the pop-up that is
-        // due (no-op once they have been handled).
-        app.poll_launch_checks();
-        // Always poll for background DICOM scan/convert completion
-        app.dicom_state.poll_scan();
-        // Resolve dcm2niix once for the availability indicator (cached).
-        app.dicom_state.ensure_dcm2niix_checked();
-        // Example-dataset fetch: on completion hand the dataset to BIDS mode, the same
-        // way the DICOM conversion does.
-        if let Some(dataset_dir) = app.example_state.poll() {
-            app.form.bids_dir = dataset_dir.to_string_lossy().to_string();
-            app.input_mode = app::InputMode::Bids;
-            app.active_field = 0;
-            app.form_scroll_offset = 0;
-            app.filter_state.scanned_bids_dir = None;
-        }
-        if let Some(bids_dir) = app.dicom_state.poll_convert() {
-            if app.dicom_state.convert_status == app::ConvertStatus::Done {
-                app.form.bids_dir = bids_dir.to_string_lossy().to_string();
-                app.input_mode = app::InputMode::Bids;
-                app.form_scroll_offset = 0;
-                app.filter_state.scanned_bids_dir = None;
-            }
-        }
-
-        // Rescan when on Input tab (BIDS mode auto-rescans; DICOM mode
-        // only scans when explicitly triggered to avoid scanning partial paths)
-        if app.active_tab == 0 && app.input_mode == app::InputMode::Bids {
-            let bids_dir = app.form.bids_dir.clone();
-            app.filter_state.maybe_rescan(&bids_dir);
-        }
+        poll_background(&mut app);
 
         // A change that creates a recommendation opens its pop-up (`recommend`).
         app.check_recommendations();
@@ -203,6 +173,42 @@ pub fn run_tui() -> qsmxt_io::Result<Outcome> {
                 return Ok(Outcome::Run(command::build_run_args(&app)?));
             }
         }
+    }
+}
+
+/// What changed in the background since the last frame: the launch-time checks, the DICOM scan
+/// and conversion, the example dataset's download, and the BIDS directory's runs.
+fn poll_background(app: &mut App) {
+    // Pick up the launch-time release check and announcements, and open the pop-up that is
+    // due (no-op once they have been handled).
+    app.poll_launch_checks();
+    // Always poll for background DICOM scan/convert completion
+    app.dicom_state.poll_scan();
+    // Resolve dcm2niix once for the availability indicator (cached).
+    app.dicom_state.ensure_dcm2niix_checked();
+    // Example-dataset fetch: on completion hand the dataset to BIDS mode, the same
+    // way the DICOM conversion does.
+    if let Some(dataset_dir) = app.example_state.poll() {
+        app.form.bids_dir = dataset_dir.to_string_lossy().to_string();
+        app.input_mode = app::InputMode::Bids;
+        app.active_field = 0;
+        app.form_scroll_offset = 0;
+        app.filter_state.scanned_bids_dir = None;
+    }
+    if let Some(bids_dir) = app.dicom_state.poll_convert() {
+        if app.dicom_state.convert_status == app::ConvertStatus::Done {
+            app.form.bids_dir = bids_dir.to_string_lossy().to_string();
+            app.input_mode = app::InputMode::Bids;
+            app.form_scroll_offset = 0;
+            app.filter_state.scanned_bids_dir = None;
+        }
+    }
+
+    // Rescan when on Input tab (BIDS mode auto-rescans; DICOM mode
+    // only scans when explicitly triggered to avoid scanning partial paths)
+    if app.active_tab == 0 && app.input_mode == app::InputMode::Bids {
+        let bids_dir = app.form.bids_dir.clone();
+        app.filter_state.maybe_rescan(&bids_dir);
     }
 }
 
