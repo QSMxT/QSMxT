@@ -1,7 +1,5 @@
 {
  "files": {},
- "functions": {
-  "crates/qsmxt-tui/src/app/input/nifti_to_bids.rs::handle_nifti_tab_key": 121
- },
+ "functions": {},
  "test_files": {}
 }
