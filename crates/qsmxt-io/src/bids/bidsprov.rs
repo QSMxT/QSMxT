@@ -25,8 +25,8 @@ use qsmxt_engine::bids::outputs::{self, Description};
 const BIDSPROV_VERSION: &str = "0.0.1";
 const CONTEXT_URL: &str = "https://purl.org/nidash/bidsprov/context.json";
 
-/// Every step that records a `provenance.json` under a run (the names `complete_step` is called
-/// with in `pipeline::runner`), in pipeline order. Order matters where a later step rewrites an
+/// Every step that records a `provenance.json` under a run (the names
+/// `pipeline::runner::write_step_provenance` is called with), in pipeline order. Order matters where a later step rewrites an
 /// earlier one's file in place — `output_space` returns the published maps to the acquired grid —
 /// because the file on disk is then the later step's. `load` records no step. A test keeps this
 /// list in step with the runner.
@@ -507,27 +507,101 @@ mod tests {
         }
     }
 
+    /// The non-test source of every file under this crate's `src/`, keyed by its path from there.
+    fn crate_sources() -> Vec<(String, String)> {
+        fn walk(dir: &Path, root: &Path, out: &mut Vec<(String, String)>) {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let path = entry.unwrap().path();
+                let name = path.file_name().unwrap().to_string_lossy().into_owned();
+                if path.is_dir() {
+                    if name != "tests" {
+                        walk(&path, root, out);
+                    }
+                } else if name.ends_with(".rs") && name != "tests.rs" && !name.ends_with("_tests.rs") {
+                    let text = std::fs::read_to_string(&path).unwrap();
+                    let code = text[..text.find("#[cfg(test)]").unwrap_or(text.len())].to_string();
+                    let rel = path.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/");
+                    out.push((rel, code));
+                }
+            }
+        }
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut out = Vec::new();
+        walk(&root, &root, &mut out);
+        out
+    }
+
+    /// The text of argument `n` (from 0) of the call whose arguments start at `args`.
+    fn call_argument(args: &str, n: usize) -> String {
+        let (mut depth, mut index, mut from) = (0i32, 0, 0);
+        for (i, c) in args.char_indices() {
+            match c {
+                '(' | '[' | '{' => depth += 1,
+                ')' | ']' | '}' if depth == 0 => return args[from..i].trim().to_string(),
+                ')' | ']' | '}' => depth -= 1,
+                ',' if depth == 0 => {
+                    if index == n {
+                        return args[from..i].trim().to_string();
+                    }
+                    index += 1;
+                    from = i + 1;
+                }
+                _ => {}
+            }
+        }
+        panic!("a call with fewer than {} arguments", n + 1)
+    }
+
     /// `STEPS` has to name every step the runner records, or that step's provenance is never
-    /// read and the files it wrote get no `GeneratedBy` (#278). Read off the runner's source:
-    /// literal step names, each two-pass step in both passes, and the few built at run time.
+    /// read and the files it wrote get no `GeneratedBy` (#278); `GROUP_STEPS` likewise for the
+    /// multi-orientation groups. Read off the crate's source: every call to
+    /// `runner::write_step_provenance`, which is how a step is recorded, and the name each passes.
     #[test]
     fn steps_cover_every_recorded_step() {
-        let src = [include_str!("../pipeline/runner/mod.rs"), include_str!("../pipeline/runner/store.rs")]
-            .map(|s| &s[..s.find("#[cfg(test)]").unwrap_or(s.len())])
-            .concat();
-        let src = src.as_str();
-        let literal_after = |pat: &str| -> Vec<String> {
-            src.match_indices(pat)
-                .filter_map(|(i, _)| {
-                    let rest = src[i + pat.len()..].trim_start();
-                    let rest = rest.strip_prefix('"')?;
-                    Some(rest[..rest.find('"')?].to_string())
-                })
-                .collect()
-        };
-        let mut names = literal_after("complete_step(");
-        // The steps the engine computes, which the runner records under their engine names.
+        let mut names = Vec::new();
+        let mut group_names = Vec::new();
+        let mut calls = 0;
+        for (file, src) in crate_sources() {
+            for (i, pat) in src.match_indices("write_step_provenance(") {
+                if src[..i].ends_with("fn ") {
+                    continue;
+                }
+                calls += 1;
+                let step = call_argument(&src[i + pat.len()..], 1);
+                match (file.as_str(), step.as_str()) {
+                    (_, literal) if literal.starts_with('"') => names.push(literal.trim_matches('"').to_string()),
+                    // The store records each step the engine computes under its engine name.
+                    ("pipeline/runner/store.rs", "c.step") => names.extend(engine_step_names()),
+                    // The fan-in records its group under the name `desc` is matched to.
+                    ("pipeline/multiorient/reconstruct.rs", "desc") => {
+                        let arms = &src[src.find("let desc = match kind {").unwrap()..];
+                        let arms = &arms[..arms.find("};").unwrap()];
+                        group_names.extend(arms.split('"').skip(1).step_by(2).map(str::to_string));
+                    }
+                    _ => panic!("{file} records a step named by `{step}`: cover it in STEPS (or GROUP_STEPS) and in this test"),
+                }
+            }
+        }
+        // Steps are recorded some other way if none of this is found, and the checks below would
+        // pass on nothing (as they once did, scanning for a function that had gone).
+        assert!(calls > 0, "no call to write_step_provenance: find what records a step now and scan for that");
+        assert!(!names.is_empty() && !group_names.is_empty(), "no step names found");
+        for name in &names {
+            assert!(STEPS.contains(&name.as_str()), "step {name:?} is recorded but missing from STEPS");
+        }
+        for step in STEPS {
+            assert!(names.iter().any(|n| n == step), "STEPS lists {step:?}, which no step records");
+        }
+        group_names.sort();
+        let mut listed: Vec<&str> = GROUP_STEPS.to_vec();
+        listed.sort();
+        assert_eq!(group_names, listed, "GROUP_STEPS and the multi-orientation steps recorded differ");
+    }
+
+    /// The name of every step the engine computes, each two-pass step in both passes.
+    fn engine_step_names() -> Vec<String> {
         use qsmxt_engine::plan::{Pass, Stage};
+        let mut names = Vec::new();
         for pass in [Pass::Main, Pass::Reliable] {
             for stage in [Stage::Mask(pass), Stage::BackgroundRemoval(pass), Stage::Inversion(pass),
                           Stage::Tgv(pass), Stage::Qsmart(pass)] {
@@ -541,21 +615,7 @@ mod tests {
                       Stage::Segmentation, Stage::Analysis, Stage::OutputSpace] {
             names.push(stage.name());
         }
-        for name in &names {
-            assert!(STEPS.contains(&name.as_str()), "step {name:?} is recorded but missing from STEPS");
-        }
-        // Every call site whose name is not a literal is one of the cases handled above (the
-        // engine's steps, recorded by the store). A new one has to be added here (and to STEPS).
-        let dynamic = src.match_indices("complete_step(")
-            .filter(|(i, pat)| {
-                let rest = src[i + pat.len()..].trim_start();
-                !rest.starts_with('"') && !rest.starts_with("&mut")
-            })
-            .count();
-        assert_eq!(dynamic, 0, "a step name is built somewhere new: cover it in STEPS and in this test");
-        for step in STEPS {
-            assert!(names.iter().any(|n| n == step), "STEPS lists {step:?}, which no step records");
-        }
+        names
     }
 
     #[test]
