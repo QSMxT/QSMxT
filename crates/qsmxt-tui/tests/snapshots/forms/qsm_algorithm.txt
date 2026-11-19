@@ -327,7 +327,7 @@ config:
 command:
   + --do-r2primemap
   + --qsm-algorithm xqsm
-methods: 1d6c5eead654f34f (27 lines)
+methods: 1cd61f308afeab0d (27 lines)
 
 ## qsm_algorithm = qsmnet, toggle do_r2primemap
 config:
@@ -336,7 +336,7 @@ config:
 command:
   + --do-r2primemap
   + --qsm-algorithm qsmnet
-methods: bdede95aa887fe0b (28 lines)
+methods: 23d94714ec6b9941 (28 lines)
 
 ## qsm_algorithm = qsmnet-plus, toggle do_r2primemap
 config:
@@ -345,7 +345,7 @@ config:
 command:
   + --do-r2primemap
   + --qsm-algorithm qsmnet-plus
-methods: 0a78d0dfe974ee61 (28 lines)
+methods: dd22a4636384429f (28 lines)
 
 ## qsm_algorithm = autoqsm, toggle do_r2primemap
 config:
@@ -354,7 +354,7 @@ config:
 command:
   + --do-r2primemap
   + --qsm-algorithm autoqsm
-methods: 0d2f32f57064176e (26 lines)
+methods: 1873c20fab28aaa4 (26 lines)
 
 ## qsm_algorithm = qsmgan, toggle do_r2primemap
 config:
@@ -363,7 +363,7 @@ config:
 command:
   + --do-r2primemap
   + --qsm-algorithm qsmgan
-methods: dab68758d0b3b8f8 (28 lines)
+methods: 0d8421d9d75d9dae (28 lines)
 
 ## qsm_algorithm = ir2qsm, toggle do_r2primemap
 config:
@@ -372,7 +372,7 @@ config:
 command:
   + --do-r2primemap
   + --qsm-algorithm ir2qsm
-methods: 6e99fd255dbdbdfc (23 lines)
+methods: 6b8f3e39777a53fa (23 lines)
 
 ## qsm_algorithm = lpcnn, toggle do_r2primemap
 config:
@@ -381,7 +381,7 @@ config:
 command:
   + --do-r2primemap
   + --qsm-algorithm lpcnn
-methods: afc9fdb948f91589 (27 lines)
+methods: 9825c83ed5f60a77 (27 lines)
 
 ## qsm_algorithm = modl-qsm, toggle do_r2primemap
 config:
@@ -390,7 +390,7 @@ config:
 command:
   + --do-r2primemap
   + --qsm-algorithm modl-qsm
-methods: f36fd8734d57326f (23 lines)
+methods: 058b3e5244583aad (23 lines)
 
 ## qsm_algorithm = nextqsm, toggle do_r2primemap
 config:
@@ -399,7 +399,7 @@ config:
 command:
   + --do-r2primemap
   + --qsm-algorithm nextqsm
-methods: ef1d34a5db91a7f1 (26 lines)
+methods: 8497129e222e6b8f (26 lines)
 
 ## qsm_algorithm = iqsm, toggle do_r2primemap
 config:
@@ -408,7 +408,7 @@ config:
 command:
   + --do-r2primemap
   + --qsm-algorithm iqsm
-methods: d6a5a8b43e13c4c1 (25 lines)
+methods: 93521247f2a88e7f (25 lines)
 
 ## qsm_algorithm = iqsm-plus, toggle do_r2primemap
 config:
@@ -417,5 +417,5 @@ config:
 command:
   + --do-r2primemap
   + --qsm-algorithm iqsm-plus
-methods: 8204ba5818c4253b (25 lines)
+methods: 5d3408ea00066951 (25 lines)
 
