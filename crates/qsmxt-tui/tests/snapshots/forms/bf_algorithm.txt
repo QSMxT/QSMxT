@@ -45,7 +45,7 @@ config:
   /bg_removal/algorithm: "vsharp" -> "iharperella"
 command:
   + --bf-algorithm iharperella
-methods: e72492ffad95bb0a (33 lines)
+methods: 44af9df195f8625a (33 lines)
 
 ## bf_algorithm = bfrnet
 config:
