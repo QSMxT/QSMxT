@@ -101,6 +101,12 @@ const PASS_STEPS: [&str; 5] = ["mask", "bgremove", "invert", "tgv", "qsmart"];
 /// The steps that read `step_name`'s output directly; `None` for a name the table does not know,
 /// which a test keeps from happening for any step the runner records.
 pub fn downstream_steps(step_name: &str) -> Option<&'static [&'static str]> {
+    echo_readers(step_name).or_else(|| later_readers(step_name))
+}
+
+/// [`downstream_steps`] of the steps that write the echoes: loading, phase scaling, the Tukey
+/// window and the resamplings.
+fn echo_readers(step_name: &str) -> Option<&'static [&'static str]> {
     Some(match step_name {
         "load" => &[
             "resample",
@@ -189,6 +195,13 @@ pub fn downstream_steps(step_name: &str) -> Option<&'static [&'static str]> {
             "qsmart",
             "reference",
         ],
+        _ => return None,
+    })
+}
+
+/// [`downstream_steps`] of the steps after the echoes are written.
+fn later_readers(step_name: &str) -> Option<&'static [&'static str]> {
+    Some(match step_name {
         // The corrected echoes masking and the combined magnitude read, and QSMART's vessel
         // magnitude.
         "inhomog" => &[
