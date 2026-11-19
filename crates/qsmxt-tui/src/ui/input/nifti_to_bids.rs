@@ -32,6 +32,20 @@ pub(super) fn draw_nifti_section(
         )));
     }
 
+    file_lines(ns, &focused, &label_style, lines);
+
+    lines.push(Line::from(""));
+
+    parameter_lines(ns, &focused, &label_style, lines);
+}
+
+/// The magnitude and phase files, each list under its button for adding files.
+fn file_lines(
+    ns: &crate::app::NiftiState,
+    focused: &impl Fn(&crate::app::NiftiFocus) -> bool,
+    label_style: &impl Fn(&crate::app::NiftiFocus) -> Style,
+    lines: &mut Vec<Line<'_>>,
+) {
     // ── Magnitude section ──
     lines.push(Line::from(Span::styled(
         format!("  -- Magnitude files ({}) --", ns.magnitude_files.len()),
@@ -103,9 +117,16 @@ pub(super) fn draw_nifti_section(
             style,
         )));
     }
+}
 
-    lines.push(Line::from(""));
-
+/// The acquisition's parameters, a warning when the files do not pair up, and the Convert
+/// button with its log.
+fn parameter_lines(
+    ns: &crate::app::NiftiState,
+    focused: &impl Fn(&crate::app::NiftiFocus) -> bool,
+    label_style: &impl Fn(&crate::app::NiftiFocus) -> Style,
+    lines: &mut Vec<Line<'_>>,
+) {
     // ── Parameters section ──
     lines.push(Line::from(Span::styled(
         "  -- Parameters --",

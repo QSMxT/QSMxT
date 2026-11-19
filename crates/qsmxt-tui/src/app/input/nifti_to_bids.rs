@@ -430,45 +430,48 @@ impl App {
             }
 
             // Enter: start editing text fields or add files
-            KeyCode::Enter | KeyCode::Char(' ') => {
-                match &self.nifti_state.focus {
-                    NiftiFocus::AddMagnitude => {
-                        self.nifti_state.editing = true;
-                        self.nifti_state.add_pattern.clear();
-                        self.nifti_state.cursor = 0;
-                        self.nifti_state.adding_to = Some(nifti::convert::NiftiPartType::Magnitude);
-                    }
-                    NiftiFocus::AddPhase => {
-                        self.nifti_state.editing = true;
-                        self.nifti_state.add_pattern.clear();
-                        self.nifti_state.cursor = 0;
-                        self.nifti_state.adding_to = Some(nifti::convert::NiftiPartType::Phase);
-                    }
-                    NiftiFocus::EchoTimes => {
-                        self.nifti_state.editing = true;
-                        self.nifti_state.cursor = self.nifti_state.echo_times.len();
-                        self.nifti_state.adding_to = None;
-                    }
-                    NiftiFocus::FieldStrength => {
-                        self.nifti_state.editing = true;
-                        self.nifti_state.cursor = self.nifti_state.field_strength.len();
-                        self.nifti_state.adding_to = None;
-                    }
-                    NiftiFocus::B0Direction => {
-                        self.nifti_state.editing = true;
-                        self.nifti_state.cursor = self.nifti_state.b0_direction.len();
-                        self.nifti_state.adding_to = None;
-                    }
-                    NiftiFocus::MagFile(_) | NiftiFocus::PhaseFile(_) => {}
-                    NiftiFocus::ConvertButton => {
-                        self.run_nifti_conversion();
-                    }
-                }
-            }
+            KeyCode::Enter | KeyCode::Char(' ') => self.activate_nifti_focus(),
 
             KeyCode::F(5) => self.try_run(),
 
             _ => {}
+        }
+    }
+
+    /// Enter or Space on the NIfTI section: start editing a text field, add files, or convert.
+    fn activate_nifti_focus(&mut self) {
+        match &self.nifti_state.focus {
+            NiftiFocus::AddMagnitude => {
+                self.nifti_state.editing = true;
+                self.nifti_state.add_pattern.clear();
+                self.nifti_state.cursor = 0;
+                self.nifti_state.adding_to = Some(nifti::convert::NiftiPartType::Magnitude);
+            }
+            NiftiFocus::AddPhase => {
+                self.nifti_state.editing = true;
+                self.nifti_state.add_pattern.clear();
+                self.nifti_state.cursor = 0;
+                self.nifti_state.adding_to = Some(nifti::convert::NiftiPartType::Phase);
+            }
+            NiftiFocus::EchoTimes => {
+                self.nifti_state.editing = true;
+                self.nifti_state.cursor = self.nifti_state.echo_times.len();
+                self.nifti_state.adding_to = None;
+            }
+            NiftiFocus::FieldStrength => {
+                self.nifti_state.editing = true;
+                self.nifti_state.cursor = self.nifti_state.field_strength.len();
+                self.nifti_state.adding_to = None;
+            }
+            NiftiFocus::B0Direction => {
+                self.nifti_state.editing = true;
+                self.nifti_state.cursor = self.nifti_state.b0_direction.len();
+                self.nifti_state.adding_to = None;
+            }
+            NiftiFocus::MagFile(_) | NiftiFocus::PhaseFile(_) => {}
+            NiftiFocus::ConvertButton => {
+                self.run_nifti_conversion();
+            }
         }
     }
 

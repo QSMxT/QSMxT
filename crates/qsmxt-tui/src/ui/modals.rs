@@ -60,7 +60,7 @@ pub(super) fn draw_tip_modal(f: &mut Frame, modal: &TipModal, area: Rect, hits: 
 /// under the sections they are on, as on the Pipeline tab ("setting  current → new  (kind)"),
 /// then a rule and the highlighted row's reason, then Apply and Keep mine.
 pub(super) fn draw_checklist_modal(f: &mut Frame, modal: &mut crate::recommend::AdviceModal, area: Rect, hits: &crate::mouse::Hits) {
-    use crate::recommend::{AdviceKind, Strength};
+    use crate::recommend::Strength;
     let popup_w = advice_modal_width(area);
     let text_w = popup_w.saturating_sub(6).max(10) as usize;
     let muted = Style::default().fg(Color::DarkGray);
@@ -68,6 +68,81 @@ pub(super) fn draw_checklist_modal(f: &mut Frame, modal: &mut crate::recommend::
     let label_w = modal.rows.iter().map(|r| r.setting().1.chars().count()).max().unwrap_or(0).min(text_w * 2 / 5) + 2;
 
     // The list: a heading for each section, then its rows, one line each (two when narrow).
+    let (lines, row_lines) = advice_list_lines(modal, text_w, label_w, muted);
+
+    // The highlighted row's reason, in a panel of a fixed height: the tallest any row needs.
+    let explain = |i: usize| -> Vec<Line<'static>> {
+        tip_lines(&modal.explanation(i), text_w).into_iter()
+            .map(|l| Line::from(l.spans.into_iter().map(|s| Span::styled(s.content, s.style.patch(Style::default().fg(Color::Gray)))).collect::<Vec<_>>()))
+            .collect()
+    };
+    let panel_h = (0..modal.rows.len()).map(|i| explain(i).len()).max().unwrap_or(1).clamp(2, 6) as u16;
+    let panel = if modal.cursor < modal.rows.len() { explain(modal.cursor) } else { vec![] };
+
+    // Apply (dimmed while nothing is ticked) and Keep mine, then the keys.
+    let (buttons, hint) = advice_footer(modal, text_w, muted);
+
+    // Height: a blank line, the list, a blank line, the rule, the panel, a blank line, the
+    // buttons and the keys, inside the border.
+    let chrome = 1 + 1 + 1 + panel_h + 1 + 2 + 2;
+    let list_len = lines.len() as u16;
+    let popup = centered_rect(popup_w, list_len + chrome, area);
+    hits.add(popup, crate::mouse::Hit::Popup);
+    let color = if modal.findings.iter().any(|r| r.strength != Strength::Reference) { Color::Yellow } else { Color::Cyan };
+    f.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(color))
+        .title(Span::styled(modal.title(), Style::default().add_modifier(Modifier::BOLD)));
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+    // On a short terminal the panel gives way first, then the blank lines.
+    let panel_h = panel_h.min(inner.height.saturating_sub(4)).max(1);
+    let gap = u16::from(inner.height >= list_len.min(3) + 1 + panel_h + 2 + 3);
+    let [_, list, _, rule, panel_area, _, foot] = Layout::default().direction(Direction::Vertical)
+        .constraints([Constraint::Length(gap), Constraint::Min(1), Constraint::Length(gap), Constraint::Length(1),
+            Constraint::Length(panel_h), Constraint::Length(gap), Constraint::Length(2)])
+        .areas(inner);
+    let list = Rect { x: list.x + 2, width: list.width.saturating_sub(4), ..list };
+
+    // The list scrolls to keep the highlighted row in view.
+    let max_scroll = (lines.len() as u16).saturating_sub(list.height);
+    if let Some(&(start, end)) = row_lines.get(modal.cursor) {
+        let (start, end) = (start as u16, end as u16);
+        // The section heading above the first row of a section stays with it.
+        let start = if modal.cursor == 0 { 0 } else { start };
+        if start < modal.scroll {
+            modal.scroll = start;
+        } else if end > modal.scroll + list.height {
+            modal.scroll = end.saturating_sub(list.height);
+        }
+    }
+    modal.scroll = modal.scroll.min(max_scroll);
+    f.render_widget(Paragraph::new(lines).scroll((modal.scroll, 0)), list);
+    for (i, &(start, end)) in row_lines.iter().enumerate() {
+        for l in start..end {
+            let Some(y) = (l as u16).checked_sub(modal.scroll).filter(|&y| y < list.height) else { continue };
+            hits.add(Rect { x: list.x, y: list.y + y, width: list.width, height: 1 }, crate::mouse::Hit::AdviceRow(i));
+        }
+    }
+    if max_scroll > 0 {
+        let bar = Rect { x: popup.x + popup.width - 1, y: list.y, width: 1, height: list.height };
+        let mut state = ScrollbarState::new(max_scroll as usize).viewport_content_length(list.height as usize).position(modal.scroll as usize);
+        f.render_stateful_widget(Scrollbar::new(ScrollbarOrientation::VerticalRight).begin_symbol(None).end_symbol(None)
+            .thumb_style(Style::default().fg(color)), bar, &mut state);
+    }
+    help_divider(f, rule);
+    let panel_area = Rect { x: panel_area.x + 2, width: panel_area.width.saturating_sub(4), ..panel_area };
+    f.render_widget(Paragraph::new(panel), panel_area);
+    let foot_lines = vec![buttons, hint];
+    f.render_widget(Paragraph::new(foot_lines.clone()), foot);
+    hits.add_buttons(foot, &foot_lines[..1]);
+}
+
+/// The advice pop-up's list: a heading for each section, then its rows. Returns the lines and
+/// where each row's lines start and end.
+fn advice_list_lines(modal: &crate::recommend::AdviceModal, text_w: usize, label_w: usize, muted: Style) -> (Vec<Line<'static>>, Vec<(usize, usize)>) {
+    use crate::recommend::Strength;
     let mut lines: Vec<Line<'static>> = Vec::new();
     let mut row_lines: Vec<(usize, usize)> = Vec::new();
     let mut section = None;
@@ -130,18 +205,14 @@ pub(super) fn draw_checklist_modal(f: &mut Frame, modal: &mut crate::recommend::
         }
         row_lines.push((first, lines.len()));
     }
+    (lines, row_lines)
+}
 
-    // The highlighted row's reason, in a panel of a fixed height: the tallest any row needs.
-    let explain = |i: usize| -> Vec<Line<'static>> {
-        tip_lines(&modal.explanation(i), text_w).into_iter()
-            .map(|l| Line::from(l.spans.into_iter().map(|s| Span::styled(s.content, s.style.patch(Style::default().fg(Color::Gray)))).collect::<Vec<_>>()))
-            .collect()
-    };
-    let panel_h = (0..modal.rows.len()).map(|i| explain(i).len()).max().unwrap_or(1).clamp(2, 6) as u16;
-    let panel = if modal.cursor < modal.rows.len() { explain(modal.cursor) } else { vec![] };
-
-    // Apply (dimmed while nothing is ticked) and Keep mine, then the keys.
-    // The focused button (↓ past the last row, or Tab) is drawn reversed in cyan.
+/// The advice pop-up's buttons, Apply (dimmed while nothing is ticked) and Keep mine, then the
+/// keys, each fitted to `text_w`. The focused button (↓ past the last row, or Tab) is drawn
+/// reversed in cyan.
+fn advice_footer(modal: &crate::recommend::AdviceModal, text_w: usize, muted: Style) -> (Line<'static>, Line<'static>) {
+    use crate::recommend::AdviceKind;
     let ticked = modal.ticked();
     let focus_style = Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD);
     let apply_style = match (modal.button, ticked) {
@@ -176,62 +247,7 @@ pub(super) fn draw_checklist_modal(f: &mut Frame, modal: &mut crate::recommend::
         format!("A apply{short_keep} · Esc {esc}"),
     ].into_iter().find(|h| h.chars().count() <= text_w).unwrap_or_else(|| format!("A apply · Esc {esc}"));
     let hint = Line::from(Span::styled(hint, muted)).alignment(Alignment::Center);
-
-    // Height: a blank line, the list, a blank line, the rule, the panel, a blank line, the
-    // buttons and the keys, inside the border.
-    let chrome = 1 + 1 + 1 + panel_h + 1 + 2 + 2;
-    let list_len = lines.len() as u16;
-    let popup = centered_rect(popup_w, list_len + chrome, area);
-    hits.add(popup, crate::mouse::Hit::Popup);
-    let color = if modal.findings.iter().any(|r| r.strength != Strength::Reference) { Color::Yellow } else { Color::Cyan };
-    f.render_widget(Clear, popup);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(color))
-        .title(Span::styled(modal.title(), Style::default().add_modifier(Modifier::BOLD)));
-    let inner = block.inner(popup);
-    f.render_widget(block, popup);
-    // On a short terminal the panel gives way first, then the blank lines.
-    let panel_h = panel_h.min(inner.height.saturating_sub(4)).max(1);
-    let gap = u16::from(inner.height >= list_len.min(3) + 1 + panel_h + 2 + 3);
-    let [_, list, _, rule, panel_area, _, foot] = Layout::default().direction(Direction::Vertical)
-        .constraints([Constraint::Length(gap), Constraint::Min(1), Constraint::Length(gap), Constraint::Length(1),
-            Constraint::Length(panel_h), Constraint::Length(gap), Constraint::Length(2)])
-        .areas(inner);
-    let list = Rect { x: list.x + 2, width: list.width.saturating_sub(4), ..list };
-
-    // The list scrolls to keep the highlighted row in view.
-    let max_scroll = (lines.len() as u16).saturating_sub(list.height);
-    if let Some(&(start, end)) = row_lines.get(modal.cursor) {
-        let (start, end) = (start as u16, end as u16);
-        // The section heading above the first row of a section stays with it.
-        let start = if modal.cursor == 0 { 0 } else { start };
-        if start < modal.scroll {
-            modal.scroll = start;
-        } else if end > modal.scroll + list.height {
-            modal.scroll = end.saturating_sub(list.height);
-        }
-    }
-    modal.scroll = modal.scroll.min(max_scroll);
-    f.render_widget(Paragraph::new(lines).scroll((modal.scroll, 0)), list);
-    for (i, &(start, end)) in row_lines.iter().enumerate() {
-        for l in start..end {
-            let Some(y) = (l as u16).checked_sub(modal.scroll).filter(|&y| y < list.height) else { continue };
-            hits.add(Rect { x: list.x, y: list.y + y, width: list.width, height: 1 }, crate::mouse::Hit::AdviceRow(i));
-        }
-    }
-    if max_scroll > 0 {
-        let bar = Rect { x: popup.x + popup.width - 1, y: list.y, width: 1, height: list.height };
-        let mut state = ScrollbarState::new(max_scroll as usize).viewport_content_length(list.height as usize).position(modal.scroll as usize);
-        f.render_stateful_widget(Scrollbar::new(ScrollbarOrientation::VerticalRight).begin_symbol(None).end_symbol(None)
-            .thumb_style(Style::default().fg(color)), bar, &mut state);
-    }
-    help_divider(f, rule);
-    let panel_area = Rect { x: panel_area.x + 2, width: panel_area.width.saturating_sub(4), ..panel_area };
-    f.render_widget(Paragraph::new(panel), panel_area);
-    let foot_lines = vec![buttons, hint];
-    f.render_widget(Paragraph::new(foot_lines.clone()), foot);
-    hits.add_buttons(foot, &foot_lines[..1]);
+    (buttons, hint)
 }
 
 /// How wide the advice pop-ups are: wide enough to keep a long reason short, on any terminal.

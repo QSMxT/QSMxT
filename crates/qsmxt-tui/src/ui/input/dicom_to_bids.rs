@@ -46,7 +46,37 @@ pub(super) fn draw_dicom_series_section(
         "  -- Series classification --",
         Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
     )));
+    series_lines(ds, session, in_io, lines);
 
+    // What the scan found besides the series: problems, and what it left out.
+    let report = &session.report;
+    if !report.warnings.is_empty() {
+        lines.push(Line::from(""));
+        for w in &report.warnings {
+            lines.push(Line::from(Span::styled(format!("  ⚠ {w}"), Style::default().fg(Color::Yellow))));
+        }
+    }
+    if !report.notes.is_empty() || !report.skipped.is_empty() || report.not_dicom > 0 {
+        lines.push(Line::from(""));
+        for n in &report.notes {
+            lines.push(Line::from(Span::styled(format!("  {n}"), Style::default().fg(Color::DarkGray))));
+        }
+        for s in &report.skipped {
+            lines.push(Line::from(Span::styled(format!("  Not an image, not converted: {s}"), Style::default().fg(Color::DarkGray))));
+        }
+        if report.not_dicom > 0 {
+            lines.push(Line::from(Span::styled(
+                format!("  {} file(s) in the folder are not DICOM and are ignored", report.not_dicom),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+    }
+    let (keep_line, convert_line) = conversion_lines(ds, in_io, lines);
+    Some((keep_line, convert_line))
+}
+
+/// The series of `session`, one row per unique series under a header per acquisition.
+fn series_lines(ds: &crate::app::DicomConvertState, session: &qsmxt_io::dicom::DicomSession, in_io: bool, lines: &mut Vec<Line<'_>>) {
     // One row per UNIQUE series (shared across subjects), not per per-subject instance.
     let groups = session.unique_series();
     let plans = qsmxt_io::dicom::plan_session(session);
@@ -142,31 +172,11 @@ pub(super) fn draw_dicom_series_section(
             }
         }
     }
+}
 
-    // What the scan found besides the series: problems, and what it left out.
-    let report = &session.report;
-    if !report.warnings.is_empty() {
-        lines.push(Line::from(""));
-        for w in &report.warnings {
-            lines.push(Line::from(Span::styled(format!("  ⚠ {w}"), Style::default().fg(Color::Yellow))));
-        }
-    }
-    if !report.notes.is_empty() || !report.skipped.is_empty() || report.not_dicom > 0 {
-        lines.push(Line::from(""));
-        for n in &report.notes {
-            lines.push(Line::from(Span::styled(format!("  {n}"), Style::default().fg(Color::DarkGray))));
-        }
-        for s in &report.skipped {
-            lines.push(Line::from(Span::styled(format!("  Not an image, not converted: {s}"), Style::default().fg(Color::DarkGray))));
-        }
-        if report.not_dicom > 0 {
-            lines.push(Line::from(Span::styled(
-                format!("  {} file(s) in the folder are not DICOM and are ignored", report.not_dicom),
-                Style::default().fg(Color::DarkGray),
-            )));
-        }
-    }
-
+/// dcm2niix's availability, the keep-UIDs toggle, the Convert button and the conversion log.
+/// Returns the lines of the toggle and the button.
+fn conversion_lines(ds: &crate::app::DicomConvertState, in_io: bool, lines: &mut Vec<Line<'_>>) -> (usize, usize) {
     // dcm2niix availability indicator (uses the cached resolution)
     lines.push(Line::from(""));
     match ds.dcm2niix_path() {
@@ -243,5 +253,5 @@ pub(super) fn draw_dicom_series_section(
             lines.push(Line::from(Span::styled(format!("  {}", log_line), style)));
         }
     }
-    Some((keep_line, convert_line))
+    (keep_line, convert_line)
 }
