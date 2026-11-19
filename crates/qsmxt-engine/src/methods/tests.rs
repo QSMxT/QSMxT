@@ -263,6 +263,21 @@ fn chi_sep_ilsqr_methods_state_its_own_qsm() {
     assert!(!generate_methods(&config).contains(own));
 }
 
+/// HC-ChiSep cites its own work and the hollow-cylinder model's paper, in the text and the
+/// reference list.
+#[test]
+fn hc_chisep_methods_cite_both_works() {
+    let mut config = PipelineConfig::default();
+    config.pipeline.do_chi_separation = true;
+    config.separation.algorithm = SeparationAlgorithm::HcChisep;
+    let out = generate_methods(&config);
+    assert!(out.contains("hollow-cylinder χ-separation (HC-ChiSep) (Stewart et al., 2026; Wharton & Bowtell, 2012)"), "{out}");
+    let refs = out.split("## References").nth(1).expect("a reference list");
+    assert!(refs.contains("- Stewart, A., et al. (2026). \"Hollow-cylinder susceptibility source separation (HC-ChiSep).\"\n"), "{refs}");
+    assert!(refs.contains("- Wharton, S., Bowtell, R. (2012). \"Fiber orientation-dependent white matter contrast in gradient echo MRI.\" \
+        *Proceedings of the National Academy of Sciences*, 109(45):18559-18564. https://doi.org/10.1073/pnas.1211075109"), "{refs}");
+}
+
 #[test]
 fn vsharp_methods_describe_the_working_grid() {
     let mut config = PipelineConfig::default();
