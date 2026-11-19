@@ -32,8 +32,110 @@ impl ScanInputs {
             problems.push(InputProblem::error("No phase images: add each echo's phase image")
                 .fact(FactName::Echoes).part(Part::Phase));
         }
+        self.echo_problems(encoding, n_coils, &slots, &mut problems);
+        let first = self.grid_problems(&slots, &mut problems);
+        let has_magnitude = self.magnitude(n, encoding, n_coils, &mut problems);
+        let (echo_times, te_source) = self.echo_times(n, &mut problems);
+        let echo_times_known = echo_times.len() == n && n > 0;
+        let Scanner {
+            field_strength, field_source, b0_dir, b0_source, manufacturer, manufacturer_source, manufacturer_note,
+        } = self.scanner(n, encoding, &mut problems);
+        let MeseFacts { n_mese, mese_echo_times, mese_source, mese_times_shown } =
+            self.mese_facts(&slots, &mut problems);
 
-        // Every echo given the same way, with what that way needs.
+        let fact = |name: FactName, value: serde_json::Value, source: Source, note: Option<String>| Fact {
+            name, label: name.label(), units: name.units(), value, source, typed: name.typed(), note,
+        };
+        let grid_value = |f: &dyn Fn(&Geometry) -> serde_json::Value| first.map_or(serde_json::Value::Null, f);
+        let header = |known: bool| if known { Source::Header } else { Source::Missing };
+        let null = || serde_json::Value::Null;
+        let shown = vec![
+            fact(FactName::Dims, grid_value(&|g| serde_json::json!([g.dims.0, g.dims.1, g.dims.2])),
+                header(first.is_some()), None),
+            fact(FactName::VoxelSize, grid_value(&|g| serde_json::json!([g.voxel_size.0, g.voxel_size.1, g.voxel_size.2])),
+                header(first.is_some()), None),
+            fact(FactName::Echoes, n.into(), Source::Files, None),
+            fact(FactName::EchoTimes, if echo_times_known { echo_times.clone().into() } else { null() },
+                if echo_times_known { te_source } else { Source::Missing }, None),
+            fact(FactName::FieldStrength, field_strength.map_or(null(), Into::into), field_source, None),
+            fact(FactName::B0Dir, b0_dir.map_or(null(), |(x, y, z)| serde_json::json!([x, y, z])),
+                b0_source, b0_dir.is_none().then(|| {
+                    "From the image's orientation, or resampled to axial where the chosen methods need it".to_string()
+                })),
+            fact(FactName::Magnitude, has_magnitude.into(), Source::Files, match encoding {
+                Encoding::RealImaginary => Some("From the real and imaginary parts".into()),
+                Encoding::Coils if n_coils > 1 => Some("Combined from the coils".into()),
+                _ => None,
+            }),
+            fact(FactName::Manufacturer, manufacturer.clone().map_or(null(), Into::into), manufacturer_source,
+                manufacturer_note),
+            fact(FactName::RealImaginary, (encoding == Encoding::RealImaginary).into(), Source::Files, None),
+            fact(FactName::Coils, n_coils.into(), Source::Files,
+                (encoding == Encoding::Coils && n_coils == 1).then(|| "One coil: used as combined data".to_string())),
+            fact(FactName::MeseEchoes, n_mese.into(), Source::Files, None),
+            fact(FactName::MeseEchoTimes, mese_times_shown.clone().map_or(null(), Into::into),
+                if mese_times_shown.is_some() { mese_source } else { Source::Missing }, None),
+        ];
+
+        let files = self.files(&slots);
+
+        let sidecars = || self.echoes.iter().filter_map(|e| e.sidecar.as_ref());
+        let usable = n > 0 && echo_times_known && first.is_some()
+            && field_strength.is_some_and(|t| t.is_finite() && t > 0.0);
+        let (facts, sidecars) = match (usable, first, field_strength) {
+            (true, Some(grid), Some(field_strength)) => {
+                // The centre frequency, as for the field strength: the last sidecar that gives one.
+                let imaging_frequency = (field_source != Source::Typed)
+                    .then(|| sidecars().rev().find_map(|s| number(Some(s), "ImagingFrequency")))
+                    .flatten()
+                    .filter(|f| f.is_finite() && *f > 0.0);
+                let sidecars = self.echoes.iter().zip(&echo_times).map(|(echo, &te)| {
+                    let mut sc = echo.sidecar.as_ref()
+                        .and_then(|v| {
+                            let mut v = v.clone();
+                            let obj = v.as_object_mut()?;
+                            obj.insert("EchoTime".into(), te.into());
+                            obj.insert("MagneticFieldStrength".into(), field_strength.into());
+                            QsmSidecar::from_json(&v).ok()
+                        })
+                        .unwrap_or_else(|| QsmSidecar::bare(te, field_strength));
+                    sc.b0_dir = b0_dir.map(|(x, y, z)| vec![x, y, z]);
+                    sc.manufacturer = manufacturer.clone();
+                    // A typed field strength is what the user wants phase converted with.
+                    if field_source == Source::Typed {
+                        sc.imaging_frequency = None;
+                    }
+                    sc
+                }).collect();
+                let facts = ScanFacts {
+                    dims: grid.dims,
+                    voxel_size: Some(grid.voxel_size),
+                    n_echoes: n,
+                    echo_times,
+                    has_magnitude,
+                    n_coils,
+                    real_imaginary: encoding == Encoding::RealImaginary,
+                    field_strength: crate::scan::working_field_strength(field_strength, imaging_frequency),
+                    nominal_field_strength: imaging_frequency.map(|_| field_strength),
+                    imaging_frequency,
+                    b0_dir,
+                    mese_echo_times,
+                    custom_mask: false,
+                    custom_dseg: false,
+                    custom_qsm: false,
+                    custom_r2: false,
+                    custom_r2prime: false,
+                    manufacturer: manufacturer.clone(),
+                };
+                (Some(facts), sidecars)
+            }
+            _ => (None, Vec::new()),
+        };
+        ScanReport { facts, shown, problems, sidecars, files }
+    }
+
+    /// Every echo given the same way, with what that way needs.
+    fn echo_problems(&self, encoding: Encoding, n_coils: usize, slots: &[Slot], problems: &mut Vec<InputProblem>) {
         let first_way = self.echoes.iter().position(|e| !e.encodings().is_empty()).map_or(1, |i| i + 1);
         for (i, echo) in self.echoes.iter().enumerate() {
             let e = i + 1;
@@ -73,8 +175,10 @@ impl ScanInputs {
             let what = slot.name().replacen(&format!("{echo}'s "), "", 1);
             problems.push(InputProblem::error(format!("{} has no {what}{why}", capitalised(echo))).at(slot));
         }
+    }
 
-        // Every image on the first echo's first image's grid.
+    /// Every image on the first echo's first image's grid.
+    fn grid_problems(&self, slots: &[Slot], problems: &mut Vec<InputProblem>) -> Option<&Geometry> {
         let reference = slots.iter().find(|s| s.echo == 1 && s.required && !s.part.is_mese())
             .and_then(|s| self.geometry(s).map(|g| (s, g)));
         let first = reference.map(|(_, g)| g);
@@ -94,8 +198,11 @@ impl ScanInputs {
                 }
             }
         }
+        first
+    }
 
-        // Magnitude: all echoes, or none (real and imaginary parts and coils give it).
+    /// Magnitude: all echoes, or none (real and imaginary parts and coils give it).
+    fn magnitude(&self, n: usize, encoding: Encoding, n_coils: usize, problems: &mut Vec<InputProblem>) -> bool {
         let has_magnitude = match encoding {
             Encoding::MagnitudePhase => {
                 let with_magnitude = self.echoes.iter().filter(|e| e.magnitude.is_some()).count();
@@ -117,8 +224,11 @@ impl ScanInputs {
                 problems.push(InputProblem::error(why).fact(FactName::Coils));
             }
         }
+        has_magnitude
+    }
 
-        // Echo times.
+    /// The echo times, typed or else from each echo's sidecar, and where they came from.
+    fn echo_times(&self, n: usize, problems: &mut Vec<InputProblem>) -> (Vec<f64>, Source) {
         let mut echo_times = Vec::with_capacity(n);
         let te_source = if let Some(tes) = self.overrides.echo_times.as_ref() {
             if tes.len() != n {
@@ -143,8 +253,11 @@ impl ScanInputs {
             }
             if echo_times.len() == n && n > 0 { Source::Sidecar } else { Source::Missing }
         };
-        let echo_times_known = echo_times.len() == n && n > 0;
+        (echo_times, te_source)
+    }
 
+    /// The field strength, B0 direction and manufacturer.
+    fn scanner(&self, n: usize, encoding: Encoding, problems: &mut Vec<InputProblem>) -> Scanner {
         // Field strength and B0 direction: typed, else the last sidecar that gives one.
         let sidecars = || self.echoes.iter().filter_map(|e| e.sidecar.as_ref());
         let (field_strength, field_source) = match self.overrides.field_strength {
@@ -203,8 +316,11 @@ impl ScanInputs {
                  its sign, which is right unless the scanner is a GE one. Add the JSON sidecars, or type the \
                  manufacturer").fact(FactName::Manufacturer).part(Part::Sidecar));
         }
+        Scanner { field_strength, field_source, b0_dir, b0_source, manufacturer, manufacturer_source, manufacturer_note }
+    }
 
-        // The MESE: its echoes on its first echo's grid, and their echo times.
+    /// The MESE: its echoes on its first echo's grid, and their echo times.
+    fn mese_facts(&self, slots: &[Slot], problems: &mut Vec<InputProblem>) -> MeseFacts {
         let mese = self.mese.as_ref().filter(|m| !m.echoes.is_empty());
         let n_mese = mese.map_or(0, |m| m.echoes.len());
         let (mut mese_echo_times, mut mese_source) = (None, Source::Missing);
@@ -276,98 +392,33 @@ impl ScanInputs {
             };
             (tes.len() == n_mese).then_some(tes)
         });
+        MeseFacts { n_mese, mese_echo_times, mese_source, mese_times_shown }
+    }
 
-        let fact = |name: FactName, value: serde_json::Value, source: Source, note: Option<String>| Fact {
-            name, label: name.label(), units: name.units(), value, source, typed: name.typed(), note,
-        };
-        let grid_value = |f: &dyn Fn(&Geometry) -> serde_json::Value| first.map_or(serde_json::Value::Null, f);
-        let header = |known: bool| if known { Source::Header } else { Source::Missing };
-        let null = || serde_json::Value::Null;
-        let shown = vec![
-            fact(FactName::Dims, grid_value(&|g| serde_json::json!([g.dims.0, g.dims.1, g.dims.2])),
-                header(first.is_some()), None),
-            fact(FactName::VoxelSize, grid_value(&|g| serde_json::json!([g.voxel_size.0, g.voxel_size.1, g.voxel_size.2])),
-                header(first.is_some()), None),
-            fact(FactName::Echoes, n.into(), Source::Files, None),
-            fact(FactName::EchoTimes, if echo_times_known { echo_times.clone().into() } else { null() },
-                if echo_times_known { te_source } else { Source::Missing }, None),
-            fact(FactName::FieldStrength, field_strength.map_or(null(), Into::into), field_source, None),
-            fact(FactName::B0Dir, b0_dir.map_or(null(), |(x, y, z)| serde_json::json!([x, y, z])),
-                b0_source, b0_dir.is_none().then(|| {
-                    "From the image's orientation, or resampled to axial where the chosen methods need it".to_string()
-                })),
-            fact(FactName::Magnitude, has_magnitude.into(), Source::Files, match encoding {
-                Encoding::RealImaginary => Some("From the real and imaginary parts".into()),
-                Encoding::Coils if n_coils > 1 => Some("Combined from the coils".into()),
-                _ => None,
-            }),
-            fact(FactName::Manufacturer, manufacturer.clone().map_or(null(), Into::into), manufacturer_source,
-                manufacturer_note),
-            fact(FactName::RealImaginary, (encoding == Encoding::RealImaginary).into(), Source::Files, None),
-            fact(FactName::Coils, n_coils.into(), Source::Files,
-                (encoding == Encoding::Coils && n_coils == 1).then(|| "One coil: used as combined data".to_string())),
-            fact(FactName::MeseEchoes, n_mese.into(), Source::Files, None),
-            fact(FactName::MeseEchoTimes, mese_times_shown.clone().map_or(null(), Into::into),
-                if mese_times_shown.is_some() { mese_source } else { Source::Missing }, None),
-        ];
-
-        // Only the images the encoding reads: a magnitude image beside real and imaginary parts is not kept.
-        let files = slots.iter().filter_map(|s| {
+    /// Only the images the encoding reads: a magnitude image beside real and imaginary parts is not kept.
+    fn files(&self, slots: &[Slot]) -> Vec<InputFile> {
+        slots.iter().filter_map(|s| {
             self.geometry(s)?;
             Some(InputFile { key: s.item.key(), echo: s.echo, coil: s.coil, part: s.part, own_grid: s.part.is_mese() })
-        }).collect();
-
-        let usable = n > 0 && echo_times_known && first.is_some()
-            && field_strength.is_some_and(|t| t.is_finite() && t > 0.0);
-        let (facts, sidecars) = match (usable, first, field_strength) {
-            (true, Some(grid), Some(field_strength)) => {
-                // The centre frequency, as for the field strength: the last sidecar that gives one.
-                let imaging_frequency = (field_source != Source::Typed)
-                    .then(|| sidecars().rev().find_map(|s| number(Some(s), "ImagingFrequency")))
-                    .flatten()
-                    .filter(|f| f.is_finite() && *f > 0.0);
-                let sidecars = self.echoes.iter().zip(&echo_times).map(|(echo, &te)| {
-                    let mut sc = echo.sidecar.as_ref()
-                        .and_then(|v| {
-                            let mut v = v.clone();
-                            let obj = v.as_object_mut()?;
-                            obj.insert("EchoTime".into(), te.into());
-                            obj.insert("MagneticFieldStrength".into(), field_strength.into());
-                            QsmSidecar::from_json(&v).ok()
-                        })
-                        .unwrap_or_else(|| QsmSidecar::bare(te, field_strength));
-                    sc.b0_dir = b0_dir.map(|(x, y, z)| vec![x, y, z]);
-                    sc.manufacturer = manufacturer.clone();
-                    // A typed field strength is what the user wants phase converted with.
-                    if field_source == Source::Typed {
-                        sc.imaging_frequency = None;
-                    }
-                    sc
-                }).collect();
-                let facts = ScanFacts {
-                    dims: grid.dims,
-                    voxel_size: Some(grid.voxel_size),
-                    n_echoes: n,
-                    echo_times,
-                    has_magnitude,
-                    n_coils,
-                    real_imaginary: encoding == Encoding::RealImaginary,
-                    field_strength: crate::scan::working_field_strength(field_strength, imaging_frequency),
-                    nominal_field_strength: imaging_frequency.map(|_| field_strength),
-                    imaging_frequency,
-                    b0_dir,
-                    mese_echo_times,
-                    custom_mask: false,
-                    custom_dseg: false,
-                    custom_qsm: false,
-                    custom_r2: false,
-                    custom_r2prime: false,
-                    manufacturer: manufacturer.clone(),
-                };
-                (Some(facts), sidecars)
-            }
-            _ => (None, Vec::new()),
-        };
-        ScanReport { facts, shown, problems, sidecars, files }
+        }).collect()
     }
+}
+
+/// The scanner facts [`ScanInputs::facts`] reads from the sidecars or the typed values.
+struct Scanner {
+    field_strength: Option<f64>,
+    field_source: Source,
+    b0_dir: Option<(f64, f64, f64)>,
+    b0_source: Source,
+    manufacturer: Option<String>,
+    manufacturer_source: Source,
+    manufacturer_note: Option<String>,
+}
+
+/// The MESE's facts: its echo count and echo times, and the echo times as far as they are known.
+struct MeseFacts {
+    n_mese: usize,
+    mese_echo_times: Option<Vec<f64>>,
+    mese_source: Source,
+    mese_times_shown: Option<Vec<f64>>,
 }
