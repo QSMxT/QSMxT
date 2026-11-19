@@ -2312,7 +2312,6 @@ dependencies = [
  "chrono",
  "clap",
  "const_format",
- "crossterm",
  "dicom",
  "env_logger",
  "flate2",
@@ -2325,9 +2324,8 @@ dependencies = [
  "qsm-core",
  "qsmxt-engine",
  "qsmxt-io",
- "ratatui",
+ "qsmxt-tui",
  "rayon",
- "regex",
  "serde",
  "serde_json",
  "sha2",
@@ -2375,8 +2373,27 @@ dependencies = [
  "sha2",
  "tempfile",
  "thiserror 2.0.18",
+ "toml",
  "ureq",
  "zip",
+]
+
+[[package]]
+name = "qsmxt-tui"
+version = "0.0.0"
+dependencies = [
+ "crossterm",
+ "env_logger",
+ "glob",
+ "log",
+ "qsm-core",
+ "qsmxt-engine",
+ "qsmxt-io",
+ "ratatui",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

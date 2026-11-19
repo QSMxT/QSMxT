@@ -1,0 +1,763 @@
+//! The stage tab bar, the sub-tab bar and the panel that holds a tab's content.
+//!
+//! The header is a cyan "QSMxT" chip followed by quiet stage labels; the active stage is bold
+//! and underlined by a cyan `━` bar set into a dim rule, which also carries the versions. A
+//! stage with sub-tabs shows them as pills along the top of its (dim, rounded) panel: the active
+//! one filled cyan, the others on dark grey, with a `[ ] sub-tab  n/m` hint on the right. While
+//! focus is on the strip itself (←/→ move along it), the active pill is yellow, the colour of a
+//! focused row, and the hint reads `← → sub-tab`.
+//!
+//! On a narrow terminal the stage labels shorten (inactive tabs first to short names, then to
+//! their digits; the active tab keeps its full name), and the sub-tabs drop the hint and then
+//! show a window around the active one with `‹`/`›` marking the ones cut off.
+//!
+//! The Reconstruction tab's sections are a sidebar on the panel's left instead ([`draw_sidebar`]):
+//! grouped under headings, the active one a filled bar (cyan, yellow while the sidebar has focus),
+//! each with a badge for the rules' findings on its rows (⚑, ⓘ) or for not being part of the run
+//! (`off`, `–`, dimmed). Short terminals drop the blank lines, then turn the headings into rules,
+//! then drop the rules, then scroll a window around the active section; below [`SIDEBAR_MIN_WIDTH`] columns the
+//! sections fall back to the pill strip.
+
+use std::sync::OnceLock;
+
+use ratatui::{
+    buffer::Buffer,
+    layout::Rect,
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, BorderType, Borders},
+    Frame,
+};
+
+use super::app::{App, Page, TAB_NAMES};
+
+/// Short names, used for inactive tabs when the full names do not fit the width.
+const SHORT: [&str; TAB_NAMES.len()] = ["Input", "Pipe", "Recon", "Exec", "Methods"];
+
+/// Columns the sidebar takes, its divider included.
+pub const SIDEBAR_WIDTH: u16 = 22;
+/// The narrowest terminal that shows the sidebar: the sidebar and room for the rows.
+pub const SIDEBAR_MIN_WIDTH: u16 = 78;
+
+/// The greys the design is drawn with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Palette {
+    /// Inactive labels.
+    text: Color,
+    /// Digits of inactive tabs, hints, versions, cut-off markers.
+    muted: Color,
+    /// The rule under the tabs and the panel border.
+    faint: Color,
+    /// Inactive pills' background; `None` draws them on the terminal's own background.
+    pill_bg: Option<Color>,
+}
+
+impl Palette {
+    /// 256-colour greys.
+    pub(super) const EXTENDED: Palette = Palette {
+        text: Color::Indexed(250),
+        muted: Color::Indexed(244),
+        faint: Color::Indexed(240),
+        pill_bg: Some(Color::Indexed(237)),
+    };
+    /// The 16 basic colours only. Indexed greys would be mapped to whatever the terminal's
+    /// nearest colour is (often not grey at all), so these use the named greys and no pill fill.
+    pub(super) const BASIC: Palette = Palette {
+        text: Color::Gray,
+        muted: Color::DarkGray,
+        faint: Color::DarkGray,
+        pill_bg: None,
+    };
+
+    /// 256 colours unless the environment says the terminal has only the basic 16.
+    fn detect(term: Option<&str>, colorterm: Option<&str>) -> Palette {
+        if colorterm.is_some_and(|c| !c.is_empty()) {
+            return Palette::EXTENDED;
+        }
+        match term {
+            Some(t) if t.contains("256") || t.contains("direct") || t.contains("truecolor") => Palette::EXTENDED,
+            // The Linux console and old hardware terminals.
+            Some("linux" | "vt100" | "vt102" | "vt220" | "ansi" | "cons25" | "dumb") => Palette::BASIC,
+            Some(t) if t.ends_with("-16color") || t.ends_with("-color") || t.ends_with("-8color") => Palette::BASIC,
+            // Anything else (plain `xterm`, `screen`, `tmux`, unset): every terminal emulator in
+            // use does 256 colours, whatever its TERM says.
+            _ => Palette::EXTENDED,
+        }
+    }
+}
+
+fn palette() -> Palette {
+    #[cfg(test)]
+    if let Some(p) = tests::PALETTE.with(|c| c.get()) {
+        return p;
+    }
+    static P: OnceLock<Palette> = OnceLock::new();
+    *P.get_or_init(|| {
+        Palette::detect(std::env::var("TERM").ok().as_deref(), std::env::var("COLORTERM").ok().as_deref())
+    })
+}
+
+fn version() -> String {
+    // Development builds describe QSMxT and QSM.rs by a full commit hash: keep the line short.
+    let short = |s: &str| if s.chars().count() > 16 { format!("{}…", s.chars().take(15).collect::<String>()) } else { s.to_string() };
+    let qsmxt = qsmxt_io::version::describe_version();
+    format!("QSMxT {} · QSM.rs {}", short(qsmxt), short(qsmxt_io::version::QSM_CORE_DESCRIBE))
+}
+
+fn w(s: &str) -> usize {
+    s.chars().count()
+}
+
+/// Write `s` at (`x`, `y`), clipped to `area`; returns the column after it.
+fn put(buf: &mut Buffer, area: Rect, x: u16, y: u16, s: &str, style: Style) -> u16 {
+    if x >= area.right() || y >= area.bottom() {
+        return x + w(s) as u16;
+    }
+    let max = (area.right() - x) as usize;
+    buf.set_stringn(x, y, s, max, style);
+    x + w(s) as u16
+}
+
+/// The main tabs' labels at the least compression that fits: full names, then short names for
+/// the inactive tabs, then their digits alone. The active tab always keeps its full name.
+fn fit_labels(active: usize, avail: usize, total: impl Fn(&[String]) -> usize) -> Vec<String> {
+    let mut last = Vec::new();
+    for level in 0..3 {
+        last = (0..TAB_NAMES.len())
+            .map(|i| match (i == active, level) {
+                (true, _) | (_, 0) => format!("{} {}", i + 1, TAB_NAMES[i]),
+                (_, 1) => format!("{} {}", i + 1, SHORT[i]),
+                _ => format!("{}", i + 1),
+            })
+            .collect();
+        if total(&last) <= avail {
+            break;
+        }
+    }
+    last
+}
+
+/// A contiguous run of items around `active` that fits `avail` columns, counting `gap` between
+/// items and one column for each `‹`/`›` marker shown when items are cut off. Returns `lo..hi`.
+fn window(widths: &[usize], gap: usize, active: usize, avail: usize) -> (usize, usize) {
+    let n = widths.len();
+    let total = |lo: usize, hi: usize| {
+        widths[lo..hi].iter().sum::<usize>() + gap * (hi - lo).saturating_sub(1) + usize::from(lo > 0) + usize::from(hi < n)
+    };
+    if total(0, n) <= avail {
+        return (0, n);
+    }
+    let (mut lo, mut hi) = (active, active + 1);
+    loop {
+        let mut grew = false;
+        if hi < n && total(lo, hi + 1) <= avail {
+            hi += 1;
+            grew = true;
+        }
+        if lo > 0 && total(lo - 1, hi) <= avail {
+            lo -= 1;
+            grew = true;
+        }
+        if !grew {
+            return (lo, hi);
+        }
+    }
+}
+
+/// The active tab's sub-tabs and the index of the active one, when it has more than one and
+/// they are not a sidebar.
+fn subtabs(app: &App) -> Option<(Vec<&'static str>, usize)> {
+    let pages = app.pages(app.active_tab);
+    if pages.len() < 2 || app.sidebar() {
+        return None;
+    }
+    let cur = app.page();
+    let active = pages.iter().position(|&p| Some(p) == cur).unwrap_or(0);
+    Some((pages.iter().map(|p| p.label()).collect(), active))
+}
+
+// ─── Header (main tab bar) ───
+
+/// Rows the header takes: the labels, and the rule they sit on.
+pub fn header_height() -> u16 {
+    2
+}
+
+/// The brand chip and quiet labels; the active one bold, underlined by an accent bar on a rule.
+pub fn draw_header(f: &mut Frame, app: &App, area: Rect) {
+    let buf = f.buffer_mut();
+    let pal = palette();
+    let width = area.width as usize;
+    let active = app.active_tab;
+    let (y0, y1) = (area.y, area.y + 1);
+    let brand = " QSMxT ";
+    let lead = 1 + w(brand) + 2;
+    // Three columns between labels, two when that keeps the inactive tabs' (short) names.
+    let total = |gap: usize| move |l: &[String]| lead + l.iter().map(|s| w(s)).sum::<usize>() + gap * (l.len() - 1) + 1;
+    let mut gap = 3;
+    let mut labels = fit_labels(active, width, total(3));
+    if labels.iter().any(|l| w(l) == 1) {
+        gap = 2;
+        labels = fit_labels(active, width, total(2));
+    }
+
+    put(buf, area, area.x, y1, &"─".repeat(width), Style::default().fg(pal.faint));
+    let mut x = put(buf, area, area.x + 1, y0, brand, Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD));
+    x += 2;
+    let mut underline = (0u16, 0u16);
+    let accent = if app.tab_focus { Color::Yellow } else { Color::Cyan };
+    for (i, l) in labels.iter().enumerate() {
+        if i > 0 {
+            x += gap;
+        }
+        let (digit, name) = l.split_at(1);
+        app.hits.add(Rect { x, y: y0, width: w(l) as u16, height: 1 }, super::mouse::Hit::Tab(i));
+        if i == active {
+            underline = (x.saturating_sub(1), x + w(l) as u16 + 1);
+            // Yellow while the tab bar has focus, as the sub-tab strip does.
+            let name_fg = if app.tab_focus { Color::Yellow } else { Color::White };
+            x = put(buf, area, x, y0, digit, Style::default().fg(accent).add_modifier(Modifier::BOLD));
+            x = put(buf, area, x, y0, name, Style::default().fg(name_fg).add_modifier(Modifier::BOLD));
+        } else {
+            x = put(buf, area, x, y0, digit, Style::default().fg(pal.muted));
+            x = put(buf, area, x, y0, name, Style::default().fg(pal.text));
+        }
+    }
+    let (ux0, ux1) = underline;
+    put(buf, area, ux0, y1, &"━".repeat((ux1 - ux0) as usize), Style::default().fg(accent));
+
+    // The pipeline the settings follow, then the versions, set into the rule, right-aligned
+    // after the underline. When the active tab leaves too little room there, the versions move
+    // before it (from the left), and then the pipeline too. Without room for both, the pipeline
+    // stays and the versions go; neither crosses the underline.
+    let status = app.pipeline_status_text().map(|s| {
+        let color = if s.contains("departure") { Color::Yellow } else if s == "Custom" { pal.muted } else { Color::Green };
+        (format!(" Pipeline: {s} "), Style::default().fg(color).add_modifier(Modifier::BOLD))
+    });
+    let ver = (format!(" {} ", version()), Style::default().fg(pal.muted));
+    // The columns free on each side of the underline, clear of it and of the edges: text after
+    // it is right-aligned, text before it starts at the left.
+    let after = (ux1 + 2, area.right().saturating_sub(2));
+    let before = (area.x + 2, ux0.saturating_sub(1));
+    let width_of = |items: &[&(String, Style)]| (items.iter().map(|(t, _)| w(t)).sum::<usize>() + items.len().saturating_sub(1)) as u16;
+    let fits = |items: &[&(String, Style)], (lo, hi): (u16, u16)| width_of(items) <= hi.saturating_sub(lo);
+    let mut place = |items: &[&(String, Style)], side_after: bool| {
+        let mut x = if side_after { after.1 - width_of(items) } else { before.0 };
+        for (text, style) in items {
+            x = put(buf, area, x, y1, text, *style) + 1;
+        }
+    };
+    let both: Vec<&(String, Style)> = status.iter().chain(std::iter::once(&ver)).collect();
+    let (pipeline, versions): (Vec<_>, Vec<_>) = (status.iter().collect(), vec![&ver]);
+    if fits(&both, after) {
+        place(&both, true);
+    } else if fits(&pipeline, after) && (fits(&versions, before) || !fits(&both, before)) {
+        if fits(&versions, before) {
+            place(&versions, false);
+        }
+        place(&pipeline, true);
+    } else if fits(&both, before) {
+        place(&both, false);
+    } else if fits(&pipeline, before) {
+        if fits(&versions, after) {
+            place(&versions, true);
+        }
+        place(&pipeline, false);
+    }
+}
+
+// ─── Panel ───
+
+/// The dim, rounded panel a tab's content sits in, titled `Tab › Sub-tab`, or for a
+/// Reconstruction section `Reconstruction › Group › Section`.
+pub fn panel(app: &App) -> Block<'static> {
+    let pal = palette();
+    let tab = TAB_NAMES[app.active_tab];
+    let page = app.page().filter(|_| app.pages(app.active_tab).len() > 1);
+    let sub = page.map(|p| p.label());
+    let mut spans = vec![Span::raw(" "), Span::styled(tab, Style::default().fg(pal.text))];
+    if let Some(p) = page.filter(|_| app.active_tab == crate::app::TAB_RECONSTRUCTION) {
+        spans.push(Span::styled(" › ", Style::default().fg(pal.muted)));
+        spans.push(Span::styled(p.group(), Style::default().fg(pal.text)));
+    }
+    if let Some(s) = sub {
+        spans.push(Span::styled(" › ", Style::default().fg(pal.muted)));
+        spans.push(Span::styled(s, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)));
+    }
+    spans.push(Span::raw(" "));
+    Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(pal.faint))
+        .title(Line::from(spans))
+}
+
+// ─── Sidebar (the Reconstruction tab's sections) ───
+
+/// A sidebar's group heading, as the Reconstruction tab draws it (the Pipeline tab's list too).
+pub fn sidebar_heading_style() -> Style {
+    Style::default().fg(palette().muted).add_modifier(Modifier::BOLD)
+}
+
+/// One line of the sidebar.
+enum SideLine {
+    Blank,
+    Heading(&'static str),
+    Rule,
+    Section(usize, Page),
+}
+
+/// The sidebar's lines for `height` rows: headings and blank lines between groups when they
+/// fit, then no blank lines, then rules in place of headings, then the sections alone.
+fn sidebar_lines(pages: &[Page], height: usize) -> Vec<SideLine> {
+    let groups = {
+        let mut g: Vec<&'static str> = pages.iter().map(|p| p.group()).collect();
+        g.dedup();
+        g.len()
+    };
+    // One group (the Methods tab's pages) needs no heading.
+    let (blanks, headings, rules) = if groups == 1 {
+        (false, false, false)
+    } else if pages.len() + 2 * groups - 1 <= height {
+        (true, true, false)
+    } else if pages.len() + groups <= height {
+        (false, true, false)
+    } else {
+        (false, false, pages.len() + groups - 1 <= height)
+    };
+    let mut lines = Vec::new();
+    let mut last = None;
+    for (i, &p) in pages.iter().enumerate() {
+        if last != Some(p.group()) {
+            if last.is_some() && blanks {
+                lines.push(SideLine::Blank);
+            }
+            if headings {
+                lines.push(SideLine::Heading(p.group()));
+            } else if last.is_some() && rules {
+                lines.push(SideLine::Rule);
+            }
+            last = Some(p.group());
+        }
+        lines.push(SideLine::Section(i, p));
+    }
+    lines
+}
+
+/// The sidebar, in `area` (its divider in the last column).
+pub fn draw_sidebar(f: &mut Frame, app: &App, area: Rect) {
+    use crate::app::SectionState;
+    let pal = palette();
+    let buf = f.buffer_mut();
+    let pages = app.pages(app.active_tab);
+    let cur = app.page().and_then(|p| pages.iter().position(|&q| q == p)).unwrap_or(0);
+    let focused = app.on_subtabs();
+    let view = app.rule_view();
+    let width = area.width.saturating_sub(1) as usize;
+    let height = area.height as usize;
+    for y in area.y..area.bottom() {
+        put(buf, area, area.right() - 1, y, "│", Style::default().fg(pal.faint));
+    }
+    let lines = sidebar_lines(&pages, height);
+    // A window around the active section when even the compact form does not fit.
+    let active = lines.iter().position(|l| matches!(l, SideLine::Section(i, _) if *i == cur)).unwrap_or(0);
+    let (lo, hi) = if lines.len() <= height {
+        (0, lines.len())
+    } else {
+        let lo = active.saturating_sub(height / 2).min(lines.len() - height);
+        (lo, lo + height)
+    };
+    let qsm_off = !app.qsm_on();
+    for (k, line) in lines[lo..hi].iter().enumerate() {
+        let y = area.y + k as u16;
+        let row = Rect { x: area.x, y, width: width as u16, height: 1 };
+        match line {
+            SideLine::Blank => {}
+            SideLine::Rule => {
+                put(buf, area, area.x + 1, y, &"╌".repeat(width.saturating_sub(2)), Style::default().fg(pal.faint));
+            }
+            SideLine::Heading(name) => {
+                let first = pages.iter().position(|p| p.group() == *name).unwrap_or(0);
+                app.hits.add(row, super::mouse::Hit::SubTab(first));
+                put(buf, area, area.x + 1, y, &name.to_uppercase(), Style::default().fg(pal.muted).add_modifier(Modifier::BOLD));
+                if *name == "QSM" && qsm_off {
+                    put(buf, area, area.x + width as u16 - 3, y, "off", Style::default().fg(pal.faint));
+                }
+            }
+            SideLine::Section(i, page) => {
+                app.hits.add(row, super::mouse::Hit::SubTab(*i));
+                let state = app.section_state(*page);
+                let (badge, badge_style) = match state {
+                    // With QSM off, the heading says so for QSM's own stages; χ-separation and
+                    // SMWI, outputs of their own, keep their badge.
+                    SectionState::Off if qsm_off && !matches!(page, Page::Separation | Page::Smwi) && page.group() == "QSM" => ("", Style::default()),
+                    SectionState::Off => ("off", Style::default().fg(pal.faint)),
+                    SectionState::NotApplicable => ("–", Style::default().fg(pal.faint)),
+                    SectionState::On => match app.section_marker(&view, *page) {
+                        Some(true) => ("⚑", Style::default().fg(Color::Yellow)),
+                        Some(false) => ("ⓘ", Style::default().fg(Color::DarkGray)),
+                        None => ("", Style::default()),
+                    },
+                };
+                let bx = area.x + (width - w(badge).max(1)) as u16;
+                if *i == cur {
+                    let bg = if focused { Color::Yellow } else { Color::Cyan };
+                    let st = Style::default().fg(Color::Black).bg(bg).add_modifier(Modifier::BOLD);
+                    put(buf, area, area.x, y, &format!("{:width$}", format!(" ▸ {}", page.label())), st);
+                    let st = if badge == "⚑" { st.fg(Color::Red) } else { st };
+                    put(buf, area, bx, y, badge, st);
+                } else {
+                    let st = if state == SectionState::On { Style::default().fg(pal.text) } else { Style::default().fg(pal.faint) };
+                    put(buf, area, area.x + 3, y, page.label(), st);
+                    put(buf, area, bx, y, badge, badge_style);
+                }
+            }
+        }
+    }
+    if lo > 0 {
+        put(buf, area, area.x + width as u16 - 1, area.y, "▲", Style::default().fg(pal.muted));
+    }
+    if hi < lines.len() {
+        put(buf, area, area.x + width as u16 - 1, area.bottom() - 1, "▼", Style::default().fg(pal.muted));
+    }
+}
+
+// ─── Sub-tabs (inside the panel) ───
+
+/// Rows the sub-tab bar takes at the top of the panel: the pills and a blank row (0 when the
+/// tab has one page).
+pub fn subtab_rows(app: &App) -> u16 {
+    if subtabs(app).is_some() { 2 } else { 0 }
+}
+
+/// Pills, the active one filled with the accent (yellow while the strip has focus); a key hint
+/// and counter on the right.
+pub fn draw_subtabs(f: &mut Frame, app: &App, area: Rect) {
+    let Some((names, cur)) = subtabs(app) else { return };
+    let buf = f.buffer_mut();
+    let pal = palette();
+    let width = area.width as usize;
+    let items: Vec<String> = names.iter().map(|n| format!(" {n} ")).collect();
+    let widths: Vec<usize> = items.iter().map(|s| w(s)).collect();
+    let focused = app.on_subtabs();
+    let counter = format!("{}/{}", cur + 1, names.len());
+    // The two hints are the same width, so focusing the strip never moves the pills.
+    let (k0, k1) = if focused { ("←", "→") } else { ("[", "]") };
+    let hint_w = w("[ ] sub-tab  ") + w(&counter) + 1;
+    let all = widths.iter().sum::<usize>() + widths.len() - 1 + 1;
+    let show_hint = all + hint_w + 2 <= width;
+    let avail = if show_hint { width - hint_w - 2 } else { width.saturating_sub(1) };
+    let (lo, hi) = window(&widths, 1, cur, avail);
+
+    let y = area.y;
+    let mut x = area.x + 1;
+    if lo > 0 {
+        x = put(buf, area, x, y, "‹", Style::default().fg(pal.muted));
+    }
+    for (i, item) in items.iter().enumerate().take(hi).skip(lo) {
+        if i > lo {
+            x += 1;
+        }
+        app.hits.add(Rect { x, y, width: w(item) as u16, height: 1 }, super::mouse::Hit::SubTab(i));
+        let st = if i == cur {
+            let bg = if focused { Color::Yellow } else { Color::Cyan };
+            Style::default().fg(Color::Black).bg(bg).add_modifier(Modifier::BOLD)
+        } else {
+            let st = Style::default().fg(pal.text);
+            match pal.pill_bg { Some(bg) => st.bg(bg), None => st }
+        };
+        x = put(buf, area, x, y, item, st);
+    }
+    if hi < items.len() {
+        put(buf, area, x, y, "›", Style::default().fg(pal.muted));
+    }
+    if show_hint {
+        let key = Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD);
+        let dim = Style::default().fg(pal.muted);
+        let mut x = area.right() - hint_w as u16;
+        x = put(buf, area, x, y, k0, key);
+        x = put(buf, area, x, y, " ", dim);
+        x = put(buf, area, x, y, k1, key);
+        x = put(buf, area, x, y, " sub-tab  ", dim);
+        put(buf, area, x, y, &counter, Style::default().fg(pal.text));
+    }
+}
+
+#[cfg(test)]
+pub(super) mod tests {
+    use std::cell::Cell;
+
+    use super::*;
+    use crate::app::Page;
+    use ratatui::{backend::TestBackend, Terminal};
+
+    thread_local! {
+        /// A test's palette, in place of the one detected from the environment.
+        pub(super) static PALETTE: Cell<Option<Palette>> = const { Cell::new(None) };
+    }
+
+    fn render(app: &mut App, width: u16, height: u16) -> Terminal<TestBackend> {
+        let mut t = Terminal::new(TestBackend::new(width, height)).unwrap();
+        app.prepare_frame();
+        t.draw(|f| crate::ui::draw(f, app)).unwrap();
+        t
+    }
+
+    fn row(t: &Terminal<TestBackend>, y: u16) -> String {
+        let buf = t.backend().buffer();
+        (0..buf.area.width).map(|x| buf[(x, y)].symbol().to_string()).collect()
+    }
+
+    fn goto(app: &mut App, tab: usize, page: Option<Page>) {
+        app.active_tab = tab;
+        if page.is_some() {
+            app.sub_page[tab] = page;
+        }
+        app.sync_pipeline_mode();
+    }
+
+    #[test]
+    fn the_active_stage_is_underlined_and_every_stage_is_on_screen() {
+        for (width, height) in [(120, 40), (80, 24)] {
+            for (tab, name) in TAB_NAMES.iter().enumerate() {
+                let mut app = App::new();
+                goto(&mut app, tab, None);
+                let t = render(&mut app, width, height);
+                let (labels, rule) = (row(&t, 0), row(&t, 1));
+                assert!(labels.contains(" QSMxT "), "{width}x{height}: brand chip:\n{labels}");
+                // The active tab is named in full; every tab's digit is shown.
+                assert!(labels.contains(&format!("{} {name}", tab + 1)), "{width}x{height}:\n{labels}");
+                for i in 1..=TAB_NAMES.len() {
+                    assert!(labels.contains(&i.to_string()), "{width}x{height}: tab {i} missing:\n{labels}");
+                }
+                // The underline sits under the active label.
+                let start = labels.chars().collect::<Vec<_>>();
+                let col = labels.find(&format!("{} {name}", tab + 1)).unwrap();
+                let col = labels[..col].chars().count();
+                assert_eq!(rule.chars().nth(col), Some('━'), "{width}x{height} tab {tab}:\n{labels}\n{rule}");
+                assert_eq!(start.len(), width as usize);
+            }
+        }
+    }
+
+    /// On every tab, with a pipeline in the rule too: after the underline when it is on the left,
+    /// before it when the active tab is too far right; never across it.
+    #[test]
+    fn the_versions_sit_in_the_rule_when_there_is_room() {
+        let qsmxt: String = qsmxt_io::version::describe_version().chars().take(15).collect();
+        for tab in 0..TAB_NAMES.len() {
+            let mut app = App::new();
+            app.choose_pipeline("medi-toolbox").unwrap();
+            goto(&mut app, tab, None);
+            // Development builds name both versions by commit hash, which takes room.
+            let t = render(&mut app, 160, 40);
+            let rule = row(&t, 1);
+            assert!(rule.contains(&format!("QSMxT {qsmxt}")), "tab {tab}:\n{}\n{rule}", row(&t, 0));
+            assert!(rule.contains("Pipeline: MEDI toolbox"), "tab {tab}:\n{rule}");
+            let bar: String = rule.chars().filter(|c| *c == '━').collect();
+            let label = row(&t, 0);
+            let col = label[..label.find(&format!("{} {}", tab + 1, TAB_NAMES[tab])).unwrap()].chars().count();
+            assert_eq!(bar.chars().count(), w(&format!("{} {}", tab + 1, TAB_NAMES[tab])) + 2, "tab {tab}: the underline is whole:\n{rule}");
+            assert_eq!(rule.chars().nth(col), Some('━'), "tab {tab}:\n{rule}");
+        }
+    }
+
+    /// Too narrow for a sidebar, a tab's pages are pills.
+    #[test]
+    fn sub_tabs_are_pills_with_a_hint_and_a_counter() {
+        let mut app = App::new();
+        goto(&mut app, crate::app::TAB_METHODS, Some(Page::Pipeline));
+        let t = render(&mut app, SIDEBAR_MIN_WIDTH - 1, 40);
+        // Row 2 is the panel's top border with its breadcrumb title; row 3 the pills.
+        assert!(row(&t, 2).contains("Methods › Graph"), "{}", row(&t, 2));
+        let pills = row(&t, 3);
+        for name in [" Methods text ", " Graph "] {
+            assert!(pills.contains(name), "{pills}");
+        }
+        assert!(pills.contains("[ ] sub-tab  2/2"), "{pills}");
+        // The active pill is filled with the accent, the others are not.
+        let buf = t.backend().buffer();
+        let at = |s: &str| pills.find(s).map(|b| pills[..b].chars().count() as u16 + 1).unwrap();
+        assert_eq!(buf[(at(" Graph "), 3)].bg, Color::Cyan);
+        assert_ne!(buf[(at(" Methods text "), 3)].bg, Color::Cyan);
+    }
+
+    /// The Reconstruction tab's sections are a sidebar: every one listed under its group's
+    /// heading, the active one a filled bar, the title a breadcrumb, and no pill row.
+    #[test]
+    fn reconstruction_sections_are_a_sidebar() {
+        for (width, height) in [(120, 40), (100, 30), (80, 24)] {
+            let mut app = App::new();
+            goto(&mut app, crate::app::TAB_RECONSTRUCTION, Some(Page::Masking));
+            let t = render(&mut app, width, height);
+            let text = screen(&t);
+            assert!(row(&t, 2).contains("Reconstruction › Preprocessing › Masking"), "{width}x{height}:\n{}", row(&t, 2));
+            for p in Page::RECONSTRUCTION {
+                assert!(text.contains(p.label()), "{width}x{height}: {} missing:\n{text}", p.label());
+            }
+            if height >= 30 {
+                for g in ["PREPROCESSING", "QSM", "OTHER OUTPUTS", "EXPORT"] {
+                    assert!(text.contains(g), "{width}x{height}: heading {g} missing:\n{text}");
+                }
+            }
+            assert!(!text.contains("sub-tab"), "{width}x{height}: no pills beside a sidebar:\n{text}");
+            // The active section is a bar in the accent; the sidebar has focus on entering the tab
+            // by key, not here, so cyan.
+            let (x, y) = find(&t, "▸ Masking").unwrap_or_else(|| panic!("{width}x{height}:\n{text}"));
+            assert_eq!(t.backend().buffer()[(x, y)].bg, Color::Cyan, "{width}x{height}");
+            // What is off says so.
+            let line = (0..height).map(|y| row(&t, y)).find(|r| r.contains("χ-separation")).unwrap();
+            assert!(line.contains("off"), "{width}x{height}: {line}");
+        }
+    }
+
+    /// The first place `s` is drawn.
+    fn find(t: &Terminal<TestBackend>, s: &str) -> Option<(u16, u16)> {
+        (0..t.backend().buffer().area.height).find_map(|y| {
+            let r = row(t, y);
+            r.find(s).map(|b| (r[..b].chars().count() as u16, y))
+        })
+    }
+
+    /// QSM off: the QSM heading says so; COSMOS/STI without orientation groups is dimmed with
+    /// "–"; a section whose rows have an actionable finding carries ⚑.
+    #[test]
+    fn sidebar_badges_say_what_is_off_and_what_has_advice() {
+        let mut app = App::new();
+        app.form.settings.set("pipeline.do_qsm", false);
+        goto(&mut app, crate::app::TAB_RECONSTRUCTION, Some(Page::Masking));
+        let t = render(&mut app, 120, 40);
+        let heading = (0..40).map(|y| row(&t, y)).find(|r| r.contains(" QSM ") && r.contains("│")).unwrap_or_default();
+        assert!(heading.contains("off"), "{}", screen(&t));
+        let mut app = App::new();
+        goto(&mut app, crate::app::TAB_RECONSTRUCTION, Some(Page::Masking));
+        let t = render(&mut app, 120, 40);
+        let cosmos = (0..40).map(|y| row(&t, y)).find(|r| r.contains("COSMOS/STI")).unwrap();
+        assert!(cosmos.contains('–'), "{cosmos}");
+        // A finding the pipeline does not follow, offered as a change: ⚑ on its section.
+        let mut app = App::new();
+        app.choose_pipeline("medi-toolbox").unwrap();
+        let view = app.rule_view();
+        let flagged: Vec<Page> = Page::RECONSTRUCTION.into_iter().filter(|&p| app.section_marker(&view, p) == Some(true)).collect();
+        goto(&mut app, crate::app::TAB_RECONSTRUCTION, Some(Page::Masking));
+        let t = render(&mut app, 120, 40);
+        for p in flagged {
+            let line = (0..40).map(|y| row(&t, y)).find(|r| r.contains(&format!("   {}", p.label()))).unwrap();
+            assert!(line.contains('⚑'), "{line}");
+        }
+    }
+
+    #[test]
+    fn a_tab_without_sub_tabs_has_no_pill_row() {
+        let mut app = App::new();
+        goto(&mut app, 0, None);
+        let t = render(&mut app, 120, 40);
+        assert!(!row(&t, 3).contains("sub-tab"), "{}", row(&t, 3));
+        assert!(row(&t, 2).contains(" Input "), "{}", row(&t, 2));
+    }
+
+    /// Too narrow for the sidebar, the sections are a pill strip: a window around the active
+    /// one, with markers for the rest, and the active one is never cut off.
+    #[test]
+    fn a_narrow_terminal_shows_the_sections_as_pills() {
+        let mut app = App::new();
+        let last = *app.pages(crate::app::TAB_RECONSTRUCTION).last().unwrap();
+        goto(&mut app, crate::app::TAB_RECONSTRUCTION, Some(last));
+        for (width, height) in [(60, 16), (40, 24)] {
+            let t = render(&mut app, width, height);
+            let pills = row(&t, 3);
+            assert!(pills.contains(last.label()), "{width}x{height}: active section cut off:\n{}", screen(&t));
+            assert!(pills.contains('‹'), "{width}x{height}: cut-off sections should be marked:\n{pills}");
+            assert!(!app.sidebar());
+        }
+    }
+
+    #[test]
+    fn the_basic_palette_uses_only_the_16_named_colours() {
+        PALETTE.with(|c| c.set(Some(Palette::BASIC)));
+        let mut app = App::new();
+        goto(&mut app, crate::app::TAB_RECONSTRUCTION, Some(Page::Masking));
+        let t = render(&mut app, 120, 40);
+        PALETTE.with(|c| c.set(None));
+        let buf = t.backend().buffer();
+        for y in 0..5 {
+            for x in 0..buf.area.width {
+                let cell = &buf[(x, y)];
+                for c in [cell.fg, cell.bg] {
+                    assert!(!matches!(c, Color::Indexed(_) | Color::Rgb(..)), "({x},{y}) uses {c:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_palette_follows_the_terminal() {
+        assert_eq!(Palette::detect(Some("xterm-256color"), None), Palette::EXTENDED);
+        assert_eq!(Palette::detect(Some("xterm"), Some("truecolor")), Palette::EXTENDED);
+        assert_eq!(Palette::detect(Some("linux"), None), Palette::BASIC);
+        assert_eq!(Palette::detect(Some("xterm"), None), Palette::EXTENDED);
+        assert_eq!(Palette::detect(Some("rxvt-16color"), None), Palette::BASIC);
+        assert_eq!(Palette::detect(None, None), Palette::EXTENDED);
+    }
+
+    fn key(app: &mut App, code: crossterm::event::KeyCode) {
+        app.handle_key(crossterm::event::KeyEvent::new(code, crossterm::event::KeyModifiers::NONE));
+    }
+
+    fn screen(t: &Terminal<TestBackend>) -> String {
+        (0..t.backend().buffer().area.height).map(|y| row(t, y)).collect::<Vec<_>>().join("\n")
+    }
+
+    /// With focus in the sidebar the active section turns yellow (the focus colour) and the help
+    /// says how to go on; going into the rows turns it back to cyan.
+    #[test]
+    fn a_focused_sidebar_looks_focused() {
+        for (width, height) in [(120, 40), (80, 24)] {
+            let mut app = App::new();
+            key(&mut app, crossterm::event::KeyCode::Char('3')); // Masking, the default
+            let t = render(&mut app, width, height);
+            let (x, y) = find(&t, "▸ Masking").unwrap();
+            assert_eq!(t.backend().buffer()[(x, y)].bg, Color::Yellow, "{width}x{height}");
+            let text = screen(&t);
+            assert!(text.contains("choose a section"), "{width}x{height}:\n{text}");
+            assert!(row(&t, height - 1).contains("Sections"), "{width}x{height}:\n{}", row(&t, height - 1));
+
+            key(&mut app, crossterm::event::KeyCode::Right);
+            let t = render(&mut app, width, height);
+            let (x, y) = find(&t, "▸ Masking").unwrap();
+            assert_eq!(t.backend().buffer()[(x, y)].bg, Color::Cyan);
+        }
+    }
+
+    /// The Execution tab shows its Run button without scrolling, labelled with what F5 does.
+    #[test]
+    fn the_run_button_is_on_screen() {
+        for (width, height) in [(120, 40), (80, 24)] {
+            for (mode, dry, submit, label) in [(0, false, false, "▶ Run "), (0, true, false, "▶ Dry run "),
+                                               (1, false, false, "▶ Write SLURM scripts "), (1, false, true, "▶ Submit SLURM jobs ")] {
+                let mut app = App::new();
+                app.form.execution_mode = mode;
+                app.form.dry_run = dry;
+                app.form.slurm_submit = submit;
+                goto(&mut app, crate::app::TAB_EXECUTION, None);
+                let t = render(&mut app, width, height);
+                let text = screen(&t);
+                assert!(text.contains(label), "{width}x{height} {label}:\n{text}");
+            }
+        }
+    }
+
+    /// The Methods tab's footer says how to copy, and the confirmation replaces it once copied.
+    #[test]
+    fn the_methods_tab_offers_copying() {
+        for (width, height) in [(120, 40), (80, 24)] {
+            let mut app = App::new();
+            goto(&mut app, crate::app::TAB_METHODS, None);
+            let t = render(&mut app, width, height);
+            assert!(row(&t, height - 1).contains("Enter/c:Copy methods text"), "{}", row(&t, height - 1));
+            key(&mut app, crossterm::event::KeyCode::Enter);
+            let t = render(&mut app, width, height);
+            assert!(row(&t, height - 1).contains("Methods copied to clipboard"), "{}", row(&t, height - 1));
+        }
+    }
+}

@@ -23,6 +23,7 @@ pub mod slurm;
 pub mod segment;
 pub mod swi;
 pub mod t2star;
+pub mod tui;
 pub mod unwrap;
 pub mod update;
 pub mod validate;

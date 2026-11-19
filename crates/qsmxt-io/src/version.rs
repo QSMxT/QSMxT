@@ -10,6 +10,9 @@ pub fn strip_v(s: &str) -> &str {
 /// empty when neither is known.
 pub const SOURCE_COMMIT: &str = env!("QSMXT_SOURCE_COMMIT");
 
+/// The QSM.rs this build links, as the build script describes it (its release tag, or its commit).
+pub const QSM_CORE_DESCRIBE: &str = env!("QSM_CORE_DESCRIBE");
+
 /// What this build is, in the log, the TUI and the provenance a run writes: the release's tag
 /// (`v10.1.0`), or for an unreleased build (0.0.0 until the release workflow sets the version from
 /// the tag) `rev-` and the commit it was built from — both as QSM.rs is described. Comparing

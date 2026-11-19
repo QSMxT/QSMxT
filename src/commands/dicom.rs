@@ -2,7 +2,7 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::{mpsc, Arc};
 
 use crate::cli::DicomConvertArgs;
-use crate::dicom::{self, convert::ConvertMessage};
+use crate::dicom::{self, convert::ConvertMessage, unique_target_label};
 use crate::error::QsmxtError;
 
 /// Non-interactive DICOM → BIDS conversion. Scans the directory, auto-classifies
@@ -93,26 +93,6 @@ pub fn classification_lines(session: &dicom::DicomSession, unique: &[dicom::Uniq
             )
         })
         .collect()
-}
-
-/// Where a unique series goes: like [`target_label`], with `echo-<N>` when its instances (one
-/// series per echo) hold several echoes.
-pub fn unique_target_label(g: &dicom::UniqueSeries, t: &dicom::Target) -> String {
-    let label = target_label(t);
-    if g.echo_times.len() > 1 && g.refs.len() > 1 {
-        label.replacen("_echo-1_", "_echo-<N>_", 1)
-    } else {
-        label
-    }
-}
-
-/// Where a series goes, in a few words.
-pub fn target_label(t: &dicom::Target) -> String {
-    match t {
-        dicom::Target::Bids(stem) => stem.preview(),
-        dicom::Target::Extra { prefix, .. } => format!("extra_data/{prefix}"),
-        dicom::Target::Skip => "not converted".to_string(),
-    }
 }
 
 /// The scan's warnings, notes and skipped series.

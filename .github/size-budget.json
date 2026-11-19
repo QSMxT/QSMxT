@@ -13,11 +13,10 @@
   "crates/qsmxt-io/src/dicom/export.rs": 830,
   "crates/qsmxt-io/src/pipeline/multiorient.rs": 950,
   "crates/qsmxt-io/src/pipeline/runner.rs": 1171,
+  "crates/qsmxt-tui/src/mask_builder.rs": 976,
+  "crates/qsmxt-tui/src/settings_rows.rs": 1083,
   "src/cli.rs": 3535,
-  "src/commands/invert.rs": 917,
-  "src/commands/update.rs": 1068,
-  "src/tui/mask_builder.rs": 976,
-  "src/tui/settings_rows.rs": 1083
+  "src/commands/invert.rs": 917
  },
  "functions": {
   "crates/qsmxt-engine/src/bridge.rs::to_pipeline_stages": 337,
@@ -52,7 +51,15 @@
   "crates/qsmxt-io/src/dicom/synth.rs::write_fixture": 131,
   "crates/qsmxt-io/src/pipeline/figure.rs::draw": 134,
   "crates/qsmxt-io/src/pipeline/multiorient.rs::reconstruct_group": 366,
-  "src/cli_settings.rs::apply": 154,
+  "crates/qsmxt-io/src/settings.rs::apply": 153,
+  "crates/qsmxt-tui/src/app/input/nifti_to_bids.rs::handle_nifti_tab_key": 121,
+  "crates/qsmxt-tui/src/app/tabs/rows.rs::handle_rows_key": 279,
+  "crates/qsmxt-tui/src/lib.rs::run_tui": 124,
+  "crates/qsmxt-tui/src/ui/input/dicom_to_bids.rs::draw_dicom_series_section": 241,
+  "crates/qsmxt-tui/src/ui/input/mod.rs::draw_input_tab": 497,
+  "crates/qsmxt-tui/src/ui/input/nifti_to_bids.rs::draw_nifti_section": 181,
+  "crates/qsmxt-tui/src/ui/modals.rs::draw_checklist_modal": 174,
+  "crates/qsmxt-tui/src/ui/rows.rs::draw_rows_tab": 548,
   "src/commands/bgremove.rs::execute": 153,
   "src/commands/fieldmap.rs::run_field_mapping": 125,
   "src/commands/integration_tests.rs::bids_validator_fixture": 152,
@@ -60,15 +67,7 @@
   "src/commands/run.rs::execute": 237,
   "src/commands/separate.rs::execute": 330,
   "src/commands/update.rs::install_binary": 123,
-  "src/commands/validate.rs::execute": 121,
-  "src/tui/app/input/nifti_to_bids.rs::handle_nifti_tab_key": 121,
-  "src/tui/app/tabs/rows.rs::handle_rows_key": 279,
-  "src/tui/mod.rs::run_tui": 130,
-  "src/tui/ui/input/dicom_to_bids.rs::draw_dicom_series_section": 241,
-  "src/tui/ui/input/mod.rs::draw_input_tab": 497,
-  "src/tui/ui/input/nifti_to_bids.rs::draw_nifti_section": 181,
-  "src/tui/ui/modals.rs::draw_checklist_modal": 174,
-  "src/tui/ui/rows.rs::draw_rows_tab": 548
+  "src/commands/validate.rs::execute": 121
  },
  "test_files": {
   "crates/qsmxt-io/src/pipeline/runner.rs": 2505,

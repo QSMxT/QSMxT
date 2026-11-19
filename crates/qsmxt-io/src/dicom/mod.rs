@@ -24,6 +24,26 @@ use rayon::prelude::*;
 
 pub use qsmxt_engine::dicom::*;
 
+/// Where a unique series goes: like [`target_label`], with `echo-<N>` when its instances (one
+/// series per echo) hold several echoes.
+pub fn unique_target_label(g: &UniqueSeries, t: &Target) -> String {
+    let label = target_label(t);
+    if g.echo_times.len() > 1 && g.refs.len() > 1 {
+        label.replacen("_echo-1_", "_echo-<N>_", 1)
+    } else {
+        label
+    }
+}
+
+/// Where a series goes, in a few words.
+pub fn target_label(t: &Target) -> String {
+    match t {
+        Target::Bids(stem) => stem.preview(),
+        Target::Extra { prefix, .. } => format!("extra_data/{prefix}"),
+        Target::Skip => "not converted".to_string(),
+    }
+}
+
 // ─── Reading values ───
 
 fn element_str(obj: &InMemDicomObject, tag: Tag) -> String {

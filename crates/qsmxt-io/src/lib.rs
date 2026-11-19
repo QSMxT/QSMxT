@@ -13,7 +13,10 @@ pub mod example;
 pub mod executor;
 pub mod multiorient;
 pub mod nifti;
+pub mod news;
 pub mod pipeline;
+pub mod release;
+pub mod settings;
 #[cfg(any(test, feature = "testutils"))]
 pub mod testutils;
 pub mod version;
