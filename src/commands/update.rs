@@ -360,36 +360,7 @@ fn install_binary(extracted: &std::path::Path) -> crate::Result<std::path::PathB
         let _ = std::fs::remove_file(dir.join(format!(".{}.old", bin_name)));
     }
 
-    // Stage next to `dest`, falling back to sudo when the directory isn't
-    // writable by the current user. std::fs::copy preserves the file mode, so
-    // the staged binary keeps its executable bit.
-    if std::fs::copy(extracted, &staged).is_err() {
-        #[cfg(not(target_os = "windows"))]
-        {
-            println!("Installing to {} (requires sudo)...", dir.display());
-            let status = Command::new("sudo")
-                .args(["cp", "-f"])
-                .arg(extracted)
-                .arg(&staged)
-                .status()
-                .map_err(|e| {
-                    QsmxtError::Update(format!("Failed to install with sudo: {}", e))
-                })?;
-
-            if !status.success() {
-                return Err(QsmxtError::Update(
-                    "Failed to stage binary (sudo cp failed)".to_string(),
-                ));
-            }
-        }
-        #[cfg(target_os = "windows")]
-        {
-            return Err(QsmxtError::Update(format!(
-                "Failed to stage binary in {}",
-                dir.display()
-            )));
-        }
-    }
+    stage_binary(extracted, &staged, &dir)?;
 
     // Atomically swap the staged binary into place. A plain rename only needs
     // write permission on the directory, so it succeeds even when `dest` is
@@ -454,6 +425,43 @@ fn install_binary(extracted: &std::path::Path) -> crate::Result<std::path::PathB
     }
 
     Ok(dest)
+}
+
+/// Copy `extracted` to `staged`, in the destination directory `dir`.
+fn stage_binary(
+    extracted: &std::path::Path, staged: &std::path::Path, dir: &std::path::Path,
+) -> crate::Result<()> {
+    // Stage next to `dest`, falling back to sudo when the directory isn't
+    // writable by the current user. std::fs::copy preserves the file mode, so
+    // the staged binary keeps its executable bit.
+    if std::fs::copy(extracted, staged).is_err() {
+        #[cfg(not(target_os = "windows"))]
+        {
+            println!("Installing to {} (requires sudo)...", dir.display());
+            let status = Command::new("sudo")
+                .args(["cp", "-f"])
+                .arg(extracted)
+                .arg(staged)
+                .status()
+                .map_err(|e| {
+                    QsmxtError::Update(format!("Failed to install with sudo: {}", e))
+                })?;
+
+            if !status.success() {
+                return Err(QsmxtError::Update(
+                    "Failed to stage binary (sudo cp failed)".to_string(),
+                ));
+            }
+        }
+        #[cfg(target_os = "windows")]
+        {
+            return Err(QsmxtError::Update(format!(
+                "Failed to stage binary in {}",
+                dir.display()
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Copies the extracted dcm2niix (if any) into the qsmxt bin dir (`~/.qsmxt/bin`).

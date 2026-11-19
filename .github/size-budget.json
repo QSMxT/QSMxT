@@ -57,7 +57,6 @@
   "crates/qsmxt-tui/src/ui/modals.rs::draw_checklist_modal": 174,
   "crates/qsmxt-tui/src/ui/rows.rs::draw_rows_tab": 548,
   "src/commands/integration_tests.rs::bids_validator_fixture": 152,
-  "src/commands/update.rs::install_binary": 123,
   "src/commands/validate.rs::execute": 121
  },
  "test_files": {
