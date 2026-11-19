@@ -25,7 +25,5 @@
   "crates/qsmxt-tui/src/ui/modals.rs::draw_checklist_modal": 174,
   "crates/qsmxt-tui/src/ui/rows.rs::draw_rows_tab": 548
  },
- "test_files": {
-  "crates/qsmxt-io/src/pipeline/runner.rs": 2505
- }
+ "test_files": {}
 }
